@@ -28,6 +28,7 @@ from clawdstrike.guards.prompt_injection import (
 )
 from clawdstrike.guards.secret_leak import SecretLeakConfig, SecretLeakGuard, SecretPattern
 from clawdstrike.guards.shell_command import ShellCommandConfig, ShellCommandGuard
+from clawdstrike.guards.spider_sense import SpiderSenseConfig, SpiderSenseGuard
 
 POLICY_SCHEMA_VERSION = "1.2.0"
 POLICY_SUPPORTED_VERSIONS = {"1.1.0", "1.2.0"}
@@ -163,6 +164,26 @@ _GUARD_MERGE_SPECS: dict[str, dict[str, _MergeMode]] = {
     "path_allowlist": {
         "allowed_paths": _MergeMode.MERGE_LIST,
         "enabled": _MergeMode.OVERRIDE,
+    },
+    "spider_sense": {
+        "enabled": _MergeMode.OVERRIDE,
+        "similarity_threshold": _MergeMode.OVERRIDE,
+        "ambiguity_band": _MergeMode.OVERRIDE,
+        "top_k": _MergeMode.OVERRIDE,
+        "patterns": _MergeMode.OVERRIDE,
+        "embedding_api_url": _MergeMode.OVERRIDE,
+        "embedding_api_key": _MergeMode.OVERRIDE,
+        "embedding_model": _MergeMode.OVERRIDE,
+        "pattern_db_path": _MergeMode.OVERRIDE,
+        "pattern_db_version": _MergeMode.OVERRIDE,
+        "pattern_db_checksum": _MergeMode.OVERRIDE,
+        "pattern_db_signature": _MergeMode.OVERRIDE,
+        "pattern_db_public_key": _MergeMode.OVERRIDE,
+        "llm_api_url": _MergeMode.OVERRIDE,
+        "llm_api_key": _MergeMode.OVERRIDE,
+        "llm_model": _MergeMode.OVERRIDE,
+        "async_config": _MergeMode.OVERRIDE,
+        "embedding_timeout_secs": _MergeMode.OVERRIDE,
     },
 }
 
@@ -332,6 +353,7 @@ class GuardConfigs:
     jailbreak: JailbreakConfig | None = None
     shell_command: ShellCommandConfig | None = None
     path_allowlist: PathAllowlistConfig | None = None
+    spider_sense: SpiderSenseConfig | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> GuardConfigs:
@@ -346,6 +368,7 @@ class GuardConfigs:
             "jailbreak",
             "shell_command",
             "path_allowlist",
+            "spider_sense",
         }
         _reject_unknown_keys(data, allowed, path="guards")
 
@@ -419,6 +442,31 @@ class GuardConfigs:
                 session_aggregation=detector_data.get("session_aggregation", True),
             )
 
+        spider_data = data.get("spider_sense")
+        spider_config = None
+        if spider_data is not None:
+            if isinstance(spider_data, bool):
+                spider_config = SpiderSenseConfig(enabled=spider_data)
+            elif isinstance(spider_data, dict):
+                spider_kwargs = dict(spider_data)
+                async_value = spider_kwargs.pop("async", None)
+                if async_value is not None and not isinstance(async_value, dict):
+                    got = type(async_value).__name__
+                    raise PolicyError(
+                        f"Expected mapping for guards.spider_sense.async, got {got}"
+                    )
+                if async_value is not None:
+                    spider_kwargs["async_config"] = async_value
+                try:
+                    spider_config = SpiderSenseConfig(**spider_kwargs)
+                except TypeError as e:
+                    raise PolicyError(f"Invalid guards.spider_sense config: {e}") from e
+            else:
+                got = type(spider_data).__name__
+                raise PolicyError(
+                    f"Expected bool or mapping for guards.spider_sense, got {got}"
+                )
+
         return cls(
             forbidden_path=parse_guard_config(
                 ForbiddenPathConfig,
@@ -453,6 +501,7 @@ class GuardConfigs:
                 data.get("path_allowlist"),
                 path="guards.path_allowlist",
             ),
+            spider_sense=spider_config,
         )
 
 
@@ -740,6 +789,41 @@ class Policy:
                     "session_aggregation": self.guards.jailbreak.session_aggregation,
                 },
             }
+        if self.guards.spider_sense:
+            spider = self.guards.spider_sense
+            spider_data: dict[str, Any] = {
+                "enabled": spider.enabled,
+                "similarity_threshold": spider.similarity_threshold,
+                "ambiguity_band": spider.ambiguity_band,
+                "top_k": spider.top_k,
+            }
+            if spider.patterns is not None:
+                spider_data["patterns"] = spider.patterns
+            if spider.embedding_api_url is not None:
+                spider_data["embedding_api_url"] = spider.embedding_api_url
+            if spider.embedding_api_key is not None:
+                spider_data["embedding_api_key"] = spider.embedding_api_key
+            if spider.embedding_model is not None:
+                spider_data["embedding_model"] = spider.embedding_model
+            if spider.pattern_db_path is not None:
+                spider_data["pattern_db_path"] = spider.pattern_db_path
+            if spider.pattern_db_version is not None:
+                spider_data["pattern_db_version"] = spider.pattern_db_version
+            if spider.pattern_db_checksum is not None:
+                spider_data["pattern_db_checksum"] = spider.pattern_db_checksum
+            if spider.pattern_db_signature is not None:
+                spider_data["pattern_db_signature"] = spider.pattern_db_signature
+            if spider.pattern_db_public_key is not None:
+                spider_data["pattern_db_public_key"] = spider.pattern_db_public_key
+            if spider.llm_api_url is not None:
+                spider_data["llm_api_url"] = spider.llm_api_url
+            if spider.llm_api_key is not None:
+                spider_data["llm_api_key"] = spider.llm_api_key
+            if spider.llm_model is not None:
+                spider_data["llm_model"] = spider.llm_model
+            if spider.async_config is not None:
+                spider_data["async"] = spider.async_config
+            data["guards"]["spider_sense"] = spider_data
 
         result: str = yaml.dump(data, default_flow_style=False, sort_keys=False)
         return result
@@ -801,6 +885,8 @@ class PolicyEngine:
             if self.policy.guards.path_allowlist
             else PathAllowlistGuard()
         )
+        if self.policy.guards.spider_sense:
+            guards.append(SpiderSenseGuard(self.policy.guards.spider_sense))
 
         return guards
 

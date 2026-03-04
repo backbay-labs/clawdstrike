@@ -126,6 +126,8 @@ export {
   Severity,
   SpiderSenseGuard,
   type SpiderSenseGuardConfig,
+  type SpiderSenseMetrics,
+  type SpiderSenseMetricsHook,
   ToolDecision,
   toCanonicalSeverity,
 } from "./guards";

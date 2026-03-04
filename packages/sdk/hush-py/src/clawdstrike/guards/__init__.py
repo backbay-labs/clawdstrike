@@ -40,6 +40,8 @@ from clawdstrike.guards.spider_sense import (
     SpiderSenseDetector,
     SpiderSenseDetectorConfig,
     SpiderSenseGuard,
+    SpiderSenseMetrics,
+    SpiderSenseMetricsHook,
 )
 
 __all__ = [
@@ -85,6 +87,8 @@ __all__ = [
     "SpiderSenseConfig",
     "SpiderSenseDetector",
     "SpiderSenseDetectorConfig",
+    "SpiderSenseMetrics",
+    "SpiderSenseMetricsHook",
     "PatternDb",
     "PatternEntry",
     "ScreeningResult",

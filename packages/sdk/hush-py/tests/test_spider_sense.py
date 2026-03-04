@@ -1,6 +1,8 @@
 """Tests for Spider Sense detection guard."""
 
+import hashlib
 import json
+from urllib import error as urllib_error
 
 import pytest
 
@@ -33,6 +35,10 @@ def _test_pattern_db() -> PatternDb:
 
 def _test_patterns_as_dicts() -> list[dict]:
     return json.loads(_test_pattern_json())
+
+
+def _checksum_hex(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
 
 
 # ── Cosine Similarity ─────────────────────────────────────────────────────
@@ -102,6 +108,21 @@ class TestPatternDb:
     def test_from_json_invalid_json(self) -> None:
         with pytest.raises(ValueError, match="failed to parse"):
             PatternDb.from_json("{not valid json")
+
+    def test_from_json_rejects_non_finite_embedding(self) -> None:
+        data = """
+[
+  {
+    "id": "p1",
+    "category": "a",
+    "stage": "b",
+    "label": "c",
+    "embedding": [1.0, NaN, 0.0]
+  }
+]
+"""
+        with pytest.raises(ValueError, match="invalid embedding values"):
+            PatternDb.from_json(data)
 
     def test_search_returns_top_k(self) -> None:
         db = _test_pattern_db()
@@ -332,6 +353,40 @@ class TestSpiderSenseGuard:
         result = guard.check(action, context)
         assert result.allowed is True
 
+    def test_mixed_type_embedding_is_ignored(self) -> None:
+        config = SpiderSenseConfig(
+            patterns=_test_patterns_as_dicts(),
+            similarity_threshold=0.85,
+            ambiguity_band=0.10,
+        )
+        guard = SpiderSenseGuard(config)
+        context = GuardContext()
+
+        action = CustomAction(
+            custom_type="user_input",
+            custom_data={"embedding": [1.0, "bad", 0.0]},
+        )
+
+        result = guard.check(action, context)
+        assert result.allowed is True
+
+    def test_non_finite_embedding_is_ignored(self) -> None:
+        config = SpiderSenseConfig(
+            patterns=_test_patterns_as_dicts(),
+            similarity_threshold=0.85,
+            ambiguity_band=0.10,
+        )
+        guard = SpiderSenseGuard(config)
+        context = GuardContext()
+
+        action = CustomAction(
+            custom_type="user_input",
+            custom_data={"embedding": [1.0, float("nan"), 0.0]},
+        )
+
+        result = guard.check(action, context)
+        assert result.allowed is True
+
     def test_details_contain_top_matches(self) -> None:
         config = SpiderSenseConfig(
             patterns=_test_patterns_as_dicts(),
@@ -353,3 +408,130 @@ class TestSpiderSenseGuard:
         assert matches[0]["id"] == "p1"
         assert matches[0]["category"] == "prompt_injection"
         assert "score" in matches[0]
+
+    def test_provider_embedding_used_when_embedding_missing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        class _FakeResponse:
+            def __enter__(self) -> "_FakeResponse":
+                return self
+
+            def __exit__(self, exc_type, exc, tb) -> None:  # type: ignore[override]
+                return None
+
+            def getcode(self) -> int:
+                return 200
+
+            def read(self, _size: int = -1) -> bytes:
+                return json.dumps(
+                    {"data": [{"embedding": [1.0, 0.0, 0.0]}]}
+                ).encode("utf-8")
+
+        def _fake_urlopen(*_args: object, **_kwargs: object) -> _FakeResponse:
+            return _FakeResponse()
+
+        monkeypatch.setattr("clawdstrike.guards.spider_sense.urllib_request.urlopen", _fake_urlopen)
+
+        config = SpiderSenseConfig(
+            patterns=_test_patterns_as_dicts(),
+            embedding_api_url="https://api.openai.com/v1/embeddings",
+            embedding_api_key="test-key",
+            embedding_model="text-embedding-3-small",
+        )
+        guard = SpiderSenseGuard(config)
+        result = guard.check(
+            CustomAction(custom_type="user_input", custom_data={"text": "hello"}),
+            GuardContext(),
+        )
+        assert result.allowed is False
+        assert result.details is not None
+        assert result.details["embedding_from"] == "provider"
+
+    def test_provider_failure_is_fail_closed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def _fake_urlopen(*_args: object, **_kwargs: object) -> object:
+            raise urllib_error.URLError("network down")
+
+        monkeypatch.setattr("clawdstrike.guards.spider_sense.urllib_request.urlopen", _fake_urlopen)
+
+        config = SpiderSenseConfig(
+            patterns=_test_patterns_as_dicts(),
+            embedding_api_url="https://api.openai.com/v1/embeddings",
+            embedding_api_key="test-key",
+            embedding_model="text-embedding-3-small",
+        )
+        guard = SpiderSenseGuard(config)
+        result = guard.check(
+            CustomAction(custom_type="user_input", custom_data={"text": "hello"}),
+            GuardContext(),
+        )
+        assert result.allowed is False
+        assert result.severity == Severity.ERROR
+        assert result.details is not None
+        assert result.details["analysis"] == "provider"
+
+    def test_pattern_db_path_integrity_controls(self, tmp_path) -> None:
+        db_path = tmp_path / "patterns.json"
+        db_bytes = b'[{\"id\":\"p1\",\"category\":\"test\",\"stage\":\"perception\",\"label\":\"x\",\"embedding\":[1.0,0.0,0.0]}]'
+        db_path.write_bytes(db_bytes)
+
+        guard = SpiderSenseGuard(
+            SpiderSenseConfig(
+                pattern_db_path=str(db_path),
+                pattern_db_version="test-v1",
+                pattern_db_checksum=_checksum_hex(db_bytes),
+            )
+        )
+        deny_result = guard.check(
+            CustomAction(custom_type="user_input", custom_data={"embedding": [1.0, 0.0, 0.0]}),
+            GuardContext(),
+        )
+        assert deny_result.allowed is False
+
+        with pytest.raises(ValueError, match="checksum mismatch"):
+            SpiderSenseGuard(
+                SpiderSenseConfig(
+                    pattern_db_path=str(db_path),
+                    pattern_db_version="test-v1",
+                    pattern_db_checksum="deadbeef",
+                )
+            )
+
+    def test_pattern_db_signature_pair_validation(self, tmp_path) -> None:
+        db_path = tmp_path / "patterns.json"
+        db_bytes = b'[{\"id\":\"p1\",\"category\":\"test\",\"stage\":\"perception\",\"label\":\"x\",\"embedding\":[1.0,0.0,0.0]}]'
+        db_path.write_bytes(db_bytes)
+
+        with pytest.raises(ValueError, match="must either both be set"):
+            SpiderSenseGuard(
+                SpiderSenseConfig(
+                    pattern_db_path=str(db_path),
+                    pattern_db_version="test-v1",
+                    pattern_db_checksum=_checksum_hex(db_bytes),
+                    pattern_db_signature="abcd",
+                )
+            )
+
+    def test_metrics_hook_emits_counts(self) -> None:
+        snapshots = []
+
+        def _hook(snapshot) -> None:
+            snapshots.append(snapshot)
+
+        guard = SpiderSenseGuard(
+            SpiderSenseConfig(
+                patterns=_test_patterns_as_dicts(),
+                metrics_hook=_hook,
+            )
+        )
+        context = GuardContext()
+        guard.check(
+            CustomAction(custom_type="user_input", custom_data={"embedding": [1.0, 0.0, 0.0]}),
+            context,
+        )
+        guard.check(
+            CustomAction(custom_type="user_input", custom_data={"embedding": [0.577, 0.577, 0.577]}),
+            context,
+        )
+        assert len(snapshots) == 2
+        assert snapshots[0].top_score >= 0.0
+        assert snapshots[1].total_count == 2

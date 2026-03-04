@@ -289,5 +289,5 @@ export interface Guard {
   /**
    * Evaluate the action.
    */
-  check(action: GuardAction, context: GuardContext): GuardResult;
+  check(action: GuardAction, context: GuardContext): GuardResult | Promise<GuardResult>;
 }

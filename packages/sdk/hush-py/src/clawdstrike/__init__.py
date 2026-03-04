@@ -50,6 +50,8 @@ from clawdstrike.guards import (
     ShellCommandGuard,
     SpiderSenseConfig,
     SpiderSenseGuard,
+    SpiderSenseMetrics,
+    SpiderSenseMetricsHook,
 )
 from clawdstrike.merkle import (
     MerkleProof,
@@ -168,6 +170,8 @@ __all__ = [
     "PathAllowlistConfig",
     "SpiderSenseGuard",
     "SpiderSenseConfig",
+    "SpiderSenseMetrics",
+    "SpiderSenseMetricsHook",
     # Merkle
     "hash_leaf",
     "hash_node",

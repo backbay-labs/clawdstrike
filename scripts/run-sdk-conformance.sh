@@ -11,11 +11,12 @@ bold "Go SDK conformance vectors"
   cd packages/sdk/hush-go
   go test ./policy -run TestPolicyConformanceVectors
   go test ./canonical
+  go test ./guards -run TestSpiderSenseConformanceVectors
 )
 
 bold "TypeScript SDK conformance vectors"
 npm --prefix packages/sdk/hush-ts ci
-npm --prefix packages/sdk/hush-ts test -- tests/policy-conformance.test.ts tests/canonical.test.ts
+npm --prefix packages/sdk/hush-ts test -- tests/policy-conformance.test.ts tests/canonical.test.ts tests/spider-sense-conformance.test.ts
 
 bold "Python SDK conformance vectors"
 VENV_DIR="${VENV_DIR:-/tmp/hush-sdk-conformance-venv}"
@@ -26,6 +27,7 @@ fi
 "$VENV_DIR/bin/python" -m pip install -e "packages/sdk/hush-py[dev]"
 "$VENV_DIR/bin/python" -m pytest -q \
   packages/sdk/hush-py/tests/test_policy_conformance.py \
-  packages/sdk/hush-py/tests/test_canonical.py
+  packages/sdk/hush-py/tests/test_canonical.py \
+  packages/sdk/hush-py/tests/test_spider_sense_conformance.py
 
 bold "SDK conformance complete"

@@ -317,7 +317,9 @@ function translateCanonicalPolicy(canonical: CanonicalPolicy): Policy {
       };
     }
 
-    if (typeof guards.spider_sense === "object") {
+    if (typeof guards.spider_sense === "boolean") {
+      toggles.spider_sense = guards.spider_sense;
+    } else if (typeof guards.spider_sense === "object") {
       const cfg = guards.spider_sense as Record<string, unknown>;
       toggles.spider_sense = cfg.enabled !== false;
     }

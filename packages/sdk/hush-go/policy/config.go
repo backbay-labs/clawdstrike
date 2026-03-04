@@ -78,11 +78,25 @@ type JailbreakConfig struct {
 // Pointer types are used for numeric fields so that an explicit zero value
 // (valid in Rust) is distinguishable from "not set" (use default).
 type SpiderSenseConfig struct {
-	Enabled             *bool            `yaml:"enabled,omitempty"`
-	SimilarityThreshold *float64         `yaml:"similarity_threshold,omitempty"`
-	AmbiguityBand       *float64         `yaml:"ambiguity_band,omitempty"`
-	TopK                *int             `yaml:"top_k,omitempty"`
+	Enabled             *bool                `yaml:"enabled,omitempty"`
+	SimilarityThreshold *float64             `yaml:"similarity_threshold,omitempty"`
+	AmbiguityBand       *float64             `yaml:"ambiguity_band,omitempty"`
+	TopK                *int                 `yaml:"top_k,omitempty"`
 	Patterns            []PatternEntryConfig `yaml:"patterns,omitempty" json:"patterns,omitempty"`
+
+	// Canonical (Rust-compatible) fields accepted for policy parsing parity.
+	EmbeddingAPIURL    string                 `yaml:"embedding_api_url,omitempty"`
+	EmbeddingAPIKey    string                 `yaml:"embedding_api_key,omitempty"`
+	EmbeddingModel     string                 `yaml:"embedding_model,omitempty"`
+	PatternDBPath      string                 `yaml:"pattern_db_path,omitempty"`
+	PatternDBVersion   string                 `yaml:"pattern_db_version,omitempty"`
+	PatternDBChecksum  string                 `yaml:"pattern_db_checksum,omitempty"`
+	PatternDBSignature string                 `yaml:"pattern_db_signature,omitempty"`
+	PatternDBPublicKey string                 `yaml:"pattern_db_public_key,omitempty"`
+	LlmAPIURL          string                 `yaml:"llm_api_url,omitempty"`
+	LlmAPIKey          string                 `yaml:"llm_api_key,omitempty"`
+	LlmModel           string                 `yaml:"llm_model,omitempty"`
+	Async              map[string]interface{} `yaml:"async,omitempty"`
 }
 
 // GuardEnabled returns whether a guard is enabled based on its Enabled field.

@@ -207,6 +207,32 @@ class TestGuardConfigs:
         assert configs.patch_integrity is not None
         assert len(configs.patch_integrity.forbidden_patterns) == 1
 
+    def test_from_dict_spider_sense_object(self) -> None:
+        configs = GuardConfigs.from_dict({
+            "spider_sense": {
+                "enabled": True,
+                "pattern_db_path": "builtin:s2bench-v1",
+                "pattern_db_version": "s2bench-v1",
+                "pattern_db_checksum": (
+                    "8943003a9de9619d2f8f0bf133c9c7690ab3a582cbcbe4cb9692d44ee9643a73"
+                ),
+                "embedding_api_url": "https://api.openai.com/v1/embeddings",
+                "embedding_api_key": "test-key",
+                "embedding_model": "text-embedding-3-small",
+                "async": {"timeout_ms": 5000},
+            },
+        })
+        assert configs.spider_sense is not None
+        assert configs.spider_sense.pattern_db_path == "builtin:s2bench-v1"
+        assert configs.spider_sense.async_config == {"timeout_ms": 5000}
+
+    def test_from_dict_spider_sense_bool(self) -> None:
+        configs = GuardConfigs.from_dict({
+            "spider_sense": True,
+        })
+        assert configs.spider_sense is not None
+        assert configs.spider_sense.enabled is True
+
 
 class TestPolicySettings:
     def test_default_settings(self) -> None:

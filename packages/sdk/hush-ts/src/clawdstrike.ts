@@ -41,6 +41,7 @@ import { McpToolGuard } from './guards/mcp-tool.js';
 import { PatchIntegrityGuard } from './guards/patch-integrity.js';
 import { PromptInjectionGuard } from './guards/prompt-injection.js';
 import { SecretLeakGuard } from './guards/secret-leak.js';
+import { SpiderSenseGuard } from './guards/spider-sense.js';
 import { GuardAction, GuardContext, Severity } from './guards/types.js';
 import type { Guard, GuardResult } from './guards/types.js';
 import type { EgressAllowlistConfig } from './guards/egress-allowlist.js';
@@ -50,6 +51,7 @@ import type { McpToolConfig } from './guards/mcp-tool.js';
 import type { PatchIntegrityConfig } from './guards/patch-integrity.js';
 import type { PromptInjectionConfig } from './guards/prompt-injection.js';
 import type { SecretLeakConfig } from './guards/secret-leak.js';
+import type { SpiderSenseGuardConfig } from './guards/spider-sense.js';
 import { getWasmModule } from './crypto/backend.js';
 
 // ============================================================
@@ -735,6 +737,48 @@ function toJailbreakConfig(value: unknown): JailbreakGuardConfig | undefined {
   };
 }
 
+function toSpiderSenseConfig(value: unknown): SpiderSenseGuardConfig | undefined {
+  if (!isPlainObject(value)) {
+    return undefined;
+  }
+
+  const patterns = Array.isArray(value.patterns)
+    ? value.patterns
+      .filter((entry): entry is Record<string, unknown> => isPlainObject(entry))
+      .map((entry) => ({
+        id: typeof entry.id === 'string' ? entry.id : '',
+        category: typeof entry.category === 'string' ? entry.category : '',
+        stage: typeof entry.stage === 'string' ? entry.stage : '',
+        label: typeof entry.label === 'string' ? entry.label : '',
+        embedding: Array.isArray(entry.embedding)
+          ? entry.embedding.filter((item): item is number => typeof item === 'number')
+          : [],
+      }))
+    : undefined;
+
+  return {
+    enabled: toBoolean(value.enabled),
+    similarityThreshold: toNumber(value.similarity_threshold),
+    ambiguityBand: toNumber(value.ambiguity_band),
+    topK: toNumber(value.top_k),
+    patterns,
+    embeddingApiUrl: typeof value.embedding_api_url === 'string' ? value.embedding_api_url : undefined,
+    embeddingApiKey: typeof value.embedding_api_key === 'string' ? value.embedding_api_key : undefined,
+    embeddingModel: typeof value.embedding_model === 'string' ? value.embedding_model : undefined,
+    patternDbPath: typeof value.pattern_db_path === 'string' ? value.pattern_db_path : undefined,
+    patternDbVersion: typeof value.pattern_db_version === 'string' ? value.pattern_db_version : undefined,
+    patternDbChecksum: typeof value.pattern_db_checksum === 'string'
+      ? value.pattern_db_checksum
+      : undefined,
+    patternDbSignature: typeof value.pattern_db_signature === 'string'
+      ? value.pattern_db_signature
+      : undefined,
+    patternDbPublicKey: typeof value.pattern_db_public_key === 'string'
+      ? value.pattern_db_public_key
+      : undefined,
+  };
+}
+
 function isGuardDisabled(value: unknown): boolean {
   if (value === false) {
     return true;
@@ -876,6 +920,13 @@ function buildGuardsFromPolicy(policy: PolicyDoc): Guard[] {
       isPlainObject(guardConfigs.jailbreak) ? guardConfigs.jailbreak : {},
     );
     guards.push(new JailbreakGuard(jailbreakConfig ?? {}));
+  }
+
+  if (!isGuardDisabled(guardConfigs.spider_sense)) {
+    const spiderSenseConfig = toSpiderSenseConfig(
+      isPlainObject(guardConfigs.spider_sense) ? guardConfigs.spider_sense : {},
+    );
+    guards.push(new SpiderSenseGuard(spiderSenseConfig ?? {}));
   }
 
   return guards;
@@ -1344,7 +1395,7 @@ export class ClawdstrikeSession {
         continue;
       }
 
-      const result = guard.check(guardAction, guardContext);
+      const result = await guard.check(guardAction, guardContext);
       const decision = guardResultToDecision(result);
 
       if (decision.status === 'deny') {
@@ -1638,7 +1689,7 @@ export class Clawdstrike {
         continue;
       }
 
-      const result = guard.check(guardAction, this.defaultContext);
+      const result = await guard.check(guardAction, this.defaultContext);
       const decision = guardResultToDecision(result);
 
       if (decision.status === 'deny') {

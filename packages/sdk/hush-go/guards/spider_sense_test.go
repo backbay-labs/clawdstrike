@@ -1,7 +1,14 @@
 package guards
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"math"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/backbay-labs/clawdstrike-go/policy"
@@ -200,12 +207,7 @@ func TestSpiderSenseGuardScreen(t *testing.T) {
 	})
 
 	t.Run("no pattern db returns allow", func(t *testing.T) {
-		cfg := &policy.SpiderSenseConfig{
-			SimilarityThreshold: ptrF64(0.85),
-			AmbiguityBand:       ptrF64(0.10),
-			TopK:                ptrInt(5),
-		}
-		g, err := NewSpiderSenseGuard(cfg)
+		g, err := NewSpiderSenseGuard(nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -327,12 +329,7 @@ func TestSpiderSenseGuardCheck(t *testing.T) {
 	})
 
 	t.Run("handles all action types", func(t *testing.T) {
-		cfg := &policy.SpiderSenseConfig{
-			SimilarityThreshold: ptrF64(0.85),
-			AmbiguityBand:       ptrF64(0.10),
-			TopK:                ptrInt(5),
-		}
-		g, err := NewSpiderSenseGuard(cfg)
+		g, err := NewSpiderSenseGuard(nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -378,9 +375,8 @@ func TestSpiderSenseConfigValidation(t *testing.T) {
 		}
 	})
 
-	t.Run("defaults used when nil values", func(t *testing.T) {
-		cfg := &policy.SpiderSenseConfig{}
-		g, err := NewSpiderSenseGuard(cfg)
+	t.Run("defaults used when nil config", func(t *testing.T) {
+		g, err := NewSpiderSenseGuard(nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -394,13 +390,34 @@ func TestSpiderSenseConfigValidation(t *testing.T) {
 			t.Errorf("expected default top_k %v, got %v", DefaultTopK, g.topK)
 		}
 	})
+
+	t.Run("explicit empty patterns rejected", func(t *testing.T) {
+		cfg := &policy.SpiderSenseConfig{
+			Patterns: []policy.PatternEntryConfig{},
+		}
+		_, err := NewSpiderSenseGuard(cfg)
+		if err == nil {
+			t.Fatal("expected error for explicit empty patterns")
+		}
+	})
+
+	t.Run("missing patterns and pattern_db_path rejected", func(t *testing.T) {
+		cfg := &policy.SpiderSenseConfig{
+			SimilarityThreshold: ptrF64(0.85),
+			AmbiguityBand:       ptrF64(0.10),
+			TopK:                ptrInt(5),
+		}
+		_, err := NewSpiderSenseGuard(cfg)
+		if err == nil {
+			t.Fatal("expected error when spider_sense config lacks pattern source")
+		}
+	})
 }
 
 // --- Guard name ---
 
 func TestSpiderSenseGuardName(t *testing.T) {
-	cfg := &policy.SpiderSenseConfig{}
-	g, err := NewSpiderSenseGuard(cfg)
+	g, err := NewSpiderSenseGuard(nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -432,6 +449,221 @@ func TestSpiderSenseInlinePatterns(t *testing.T) {
 	}
 }
 
+func TestSpiderSensePatternDBPath(t *testing.T) {
+	t.Run("loads builtin pattern db", func(t *testing.T) {
+		cfg := &policy.SpiderSenseConfig{
+			SimilarityThreshold: ptrF64(0.85),
+			AmbiguityBand:       ptrF64(0.10),
+			TopK:                ptrInt(5),
+			PatternDBPath:       "builtin:s2bench-v1",
+			PatternDBVersion:    "s2bench-v1",
+			PatternDBChecksum:   "8943003a9de9619d2f8f0bf133c9c7690ab3a582cbcbe4cb9692d44ee9643a73",
+		}
+		g, err := NewSpiderSenseGuard(cfg)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if g.patternDb == nil {
+			t.Fatal("expected pattern DB to be initialized from builtin path")
+		}
+		if g.patternDb.Len() == 0 {
+			t.Fatal("expected builtin pattern DB to contain entries")
+		}
+	})
+
+	t.Run("loads external pattern db file", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "patterns.json")
+		content := []byte(`[
+			{"id":"p1","category":"test","stage":"perception","label":"test pattern","embedding":[1.0,0.0,0.0]}
+		]`)
+		if err := os.WriteFile(path, content, 0o644); err != nil {
+			t.Fatalf("write patterns: %v", err)
+		}
+
+		cfg := &policy.SpiderSenseConfig{
+			PatternDBPath:     path,
+			PatternDBVersion:  "test-v1",
+			PatternDBChecksum: checksumHex(content),
+		}
+		g, err := NewSpiderSenseGuard(cfg)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if g.patternDb == nil {
+			t.Fatal("expected pattern DB to be initialized from file path")
+		}
+		if g.patternDb.Len() != 1 {
+			t.Fatalf("expected 1 pattern, got %d", g.patternDb.Len())
+		}
+	})
+}
+
+func TestSpiderSenseEmbeddingProvider(t *testing.T) {
+	t.Run("uses provider embedding when action embedding missing", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":[{"embedding":[1.0,0.0,0.0]}]}`))
+		}))
+		defer server.Close()
+
+		cfg := &policy.SpiderSenseConfig{
+			Patterns: []policy.PatternEntryConfig{
+				{
+					ID:        "p1",
+					Category:  "prompt_injection",
+					Stage:     "perception",
+					Label:     "ignore previous",
+					Embedding: []float32{1, 0, 0},
+				},
+			},
+			EmbeddingAPIURL: server.URL,
+			EmbeddingAPIKey: "test-key",
+			EmbeddingModel:  "text-embedding-3-small",
+		}
+		guard, err := NewSpiderSenseGuard(cfg)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		result := guard.Check(Custom("spider_sense", map[string]interface{}{"text": "hello"}), NewContext())
+		if result.Allowed {
+			t.Fatal("expected provider-based deny")
+		}
+
+		details, ok := result.Details.(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected details map, got %T", result.Details)
+		}
+		if got := details["embedding_from"]; got != "provider" {
+			t.Fatalf("expected embedding_from provider, got %v", got)
+		}
+	})
+
+	t.Run("provider failures are fail-closed", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "boom", http.StatusInternalServerError)
+		}))
+		defer server.Close()
+
+		cfg := &policy.SpiderSenseConfig{
+			Patterns: []policy.PatternEntryConfig{
+				{
+					ID:        "p1",
+					Category:  "prompt_injection",
+					Stage:     "perception",
+					Label:     "ignore previous",
+					Embedding: []float32{1, 0, 0},
+				},
+			},
+			EmbeddingAPIURL: server.URL,
+			EmbeddingAPIKey: "test-key",
+			EmbeddingModel:  "text-embedding-3-small",
+		}
+		guard, err := NewSpiderSenseGuard(cfg)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		result := guard.Check(Custom("spider_sense", map[string]interface{}{"text": "hello"}), NewContext())
+		if result.Allowed {
+			t.Fatal("expected deny on provider failure")
+		}
+		if result.Severity != Error {
+			t.Fatalf("expected Error severity, got %v", result.Severity)
+		}
+	})
+}
+
+func TestSpiderSensePatternDBIntegrityControls(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "patterns.json")
+	content := []byte(`[
+		{"id":"p1","category":"test","stage":"perception","label":"test pattern","embedding":[1.0,0.0,0.0]}
+	]`)
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		t.Fatalf("write patterns: %v", err)
+	}
+
+	t.Run("version and checksum are required", func(t *testing.T) {
+		_, err := NewSpiderSenseGuard(&policy.SpiderSenseConfig{
+			PatternDBPath: path,
+		})
+		if err == nil {
+			t.Fatal("expected missing integrity fields error")
+		}
+	})
+
+	t.Run("signature/public key pair must be complete", func(t *testing.T) {
+		_, err := NewSpiderSenseGuard(&policy.SpiderSenseConfig{
+			PatternDBPath:      path,
+			PatternDBVersion:   "test-v1",
+			PatternDBChecksum:  checksumHex(content),
+			PatternDBSignature: "abcd",
+		})
+		if err == nil {
+			t.Fatal("expected signature/public key pairing error")
+		}
+	})
+
+	t.Run("valid checksum without signature is accepted", func(t *testing.T) {
+		guard, err := NewSpiderSenseGuard(&policy.SpiderSenseConfig{
+			PatternDBPath:     path,
+			PatternDBVersion:  "test-v1",
+			PatternDBChecksum: checksumHex(content),
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if guard.patternDb == nil {
+			t.Fatal("expected pattern db to load")
+		}
+	})
+}
+
+func TestSpiderSenseMetricsHook(t *testing.T) {
+	cfg := &policy.SpiderSenseConfig{
+		SimilarityThreshold: ptrF64(0.85),
+		AmbiguityBand:       ptrF64(0.10),
+		TopK:                ptrInt(5),
+		Patterns: []policy.PatternEntryConfig{
+			{ID: "p1", Category: "test", Stage: "perception", Label: "test pattern", Embedding: []float32{1, 0, 0}},
+		},
+	}
+
+	var mu sync.Mutex
+	events := make([]SpiderSenseMetrics, 0, 2)
+	guard, err := NewSpiderSenseGuardWithOptions(cfg, SpiderSenseGuardOptions{
+		MetricsHook: func(event SpiderSenseMetrics) {
+			mu.Lock()
+			defer mu.Unlock()
+			events = append(events, event)
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	_ = guard.Check(Custom("spider_sense", map[string]interface{}{
+		"embedding": []interface{}{float64(1), float64(0), float64(0)},
+	}), NewContext())
+	_ = guard.Check(Custom("spider_sense", map[string]interface{}{
+		"embedding": []interface{}{float64(0.2), float64(0.8), float64(0.0)},
+	}), NewContext())
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(events) != 2 {
+		t.Fatalf("expected 2 metrics events, got %d", len(events))
+	}
+	if events[1].TotalCount != 2 {
+		t.Fatalf("expected total_count=2, got %d", events[1].TotalCount)
+	}
+	if events[1].AmbiguityRate < 0 {
+		t.Fatalf("expected non-negative ambiguity rate, got %f", events[1].AmbiguityRate)
+	}
+}
+
 // --- Helper ---
 
 func testPatternDB(t *testing.T) *PatternDb {
@@ -446,4 +678,9 @@ func testPatternDB(t *testing.T) *PatternDb {
 		t.Fatalf("failed to parse test pattern DB: %v", err)
 	}
 	return db
+}
+
+func checksumHex(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }

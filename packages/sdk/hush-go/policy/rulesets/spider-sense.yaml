@@ -1,10 +1,9 @@
+# Spider-Sense Ruleset
 version: "1.2.0"
-name: "spider-sense"
+name: spider-sense
 description: >
   Spider-Sense hierarchical screening guard using embedding-based cosine
   similarity against the S2Bench taxonomy (4 stages x 9 attack types).
-  Requires an embedding API endpoint. Optionally enables the LLM deep
-  reasoning path for ambiguous cases.
 
 guards:
   spider_sense:

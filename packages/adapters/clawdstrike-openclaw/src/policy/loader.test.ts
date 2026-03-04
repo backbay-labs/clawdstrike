@@ -71,6 +71,31 @@ guards:
     expect(policy.guards?.input_injection_capability?.allowed_input_types).toContain("keyboard");
     expect(policy.guards?.input_injection_capability?.require_postcondition_probe).toBe(true);
   });
+
+  it("translates canonical spider_sense boolean toggle", () => {
+    const yaml = `
+version: "1.2.0"
+name: "spider-sense-bool"
+guards:
+  spider_sense: true
+`;
+
+    const policy = loadPolicyFromString(yaml);
+    expect(policy.guards?.spider_sense).toBe(true);
+  });
+
+  it("translates canonical spider_sense object toggle", () => {
+    const yaml = `
+version: "1.2.0"
+name: "spider-sense-object"
+guards:
+  spider_sense:
+    enabled: false
+`;
+
+    const policy = loadPolicyFromString(yaml);
+    expect(policy.guards?.spider_sense).toBe(false);
+  });
 });
 
 describe("loadPolicy", () => {
