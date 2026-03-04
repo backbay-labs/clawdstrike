@@ -817,11 +817,6 @@ fn normalize_spider_sense_trusted_key(
         .map(normalize_hex_value)
         .filter(|v| !v.is_empty())
         .unwrap_or_else(|| derived_key_id.clone());
-    if key_id != derived_key_id {
-        return Err(format!(
-            "trusted key_id \"{key_id}\" does not match derived key_id \"{derived_key_id}\""
-        ));
-    }
 
     let status = match entry
         .status
@@ -1934,5 +1929,27 @@ mod tests {
             err.contains("manifest signature verification failed"),
             "expected signature verification failure, got: {err}"
         );
+    }
+
+    #[test]
+    fn trust_store_allows_custom_key_ids() {
+        let keypair = Keypair::generate();
+        let public_key = keypair.public_key().to_hex();
+        let store = load_spider_sense_trust_store(
+            "",
+            &[SpiderSenseTrustedKeyConfig {
+                key_id: Some("external-kid-01".to_string()),
+                public_key,
+                not_before: None,
+                not_after: None,
+                status: Some("active".to_string()),
+            }],
+        )
+        .expect("load trust store");
+
+        let selected = store
+            .select_key("external-kid-01", Utc::now())
+            .expect("select custom key id");
+        assert_eq!(selected.key_id, "external-kid-01");
     }
 }
