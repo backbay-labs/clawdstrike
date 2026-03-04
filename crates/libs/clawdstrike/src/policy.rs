@@ -2022,6 +2022,48 @@ name: Test
     }
 
     #[test]
+    fn test_policy_1_3_spider_sense_fields_parse() {
+        let yaml = r#"
+version: "1.3.0"
+name: SpiderSense13
+guards:
+  spider_sense:
+    enabled: true
+    embedding_api_url: "https://api.openai.com/v1/embeddings"
+    embedding_api_key: "${SPIDER_SENSE_EMBEDDING_KEY}"
+    embedding_model: "text-embedding-3-small"
+    similarity_threshold: 0.85
+    ambiguity_band: 0.10
+    top_k: 5
+    pattern_db_manifest_path: "/tmp/spider/manifest.json"
+    pattern_db_manifest_trust_store_path: "/tmp/spider/manifest-roots.json"
+    llm_api_url: "https://api.openai.com/v1/chat/completions"
+    llm_api_key: "${SPIDER_SENSE_LLM_KEY}"
+    llm_model: "gpt-4.1-mini"
+    llm_prompt_template_id: "spider_sense.deep_path.json_classifier"
+    llm_prompt_template_version: "1.0.0"
+    llm_timeout_ms: 1500
+    llm_fail_mode: "warn"
+"#;
+
+        let policy = Policy::from_yaml(yaml).expect("1.3 spider-sense config should parse");
+        let spider = policy
+            .guards
+            .spider_sense
+            .as_ref()
+            .expect("spider_sense should be present");
+        assert_eq!(
+            spider.pattern_db_manifest_path.as_deref(),
+            Some("/tmp/spider/manifest.json")
+        );
+        assert_eq!(
+            spider.llm_prompt_template_id.as_deref(),
+            Some("spider_sense.deep_path.json_classifier")
+        );
+        assert_eq!(spider.llm_prompt_template_version.as_deref(), Some("1.0.0"));
+    }
+
+    #[test]
     fn test_posture_parses_for_1_2_0() {
         let yaml = r#"
 version: "1.2.0"

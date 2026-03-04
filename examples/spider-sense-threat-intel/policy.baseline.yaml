@@ -1,0 +1,17 @@
+version: "1.3.0"
+name: "spider-sense-threat-intel-baseline"
+description: >
+  Baseline Spider-Sense policy for the threat-intel + behavior-profile example.
+  Runs offline against local pattern DB and does not require an embedding provider.
+
+guards:
+  spider_sense:
+    enabled: true
+    similarity_threshold: 0.86
+    ambiguity_band: 0.06
+    top_k: 3
+    pattern_db_path: "./data/pattern_db.s2intel-v1.json"
+    pattern_db_version: "s2intel-v1"
+    pattern_db_checksum: "9a98e026b6d7923bf459443719d1c0d2a7ca4a6d580c3b5d3e54c89f0a880f90"
+settings:
+  fail_fast: false

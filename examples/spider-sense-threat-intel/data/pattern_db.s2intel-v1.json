@@ -1,0 +1,65 @@
+[
+  {
+    "id": "ti-perception-prompt-injection-system-override",
+    "category": "prompt_injection",
+    "stage": "perception",
+    "label": "OWASP LLM01 prompt injection system override",
+    "embedding": [0.95, 0.05, 0.02, 0.03, 0.12, 0.01]
+  },
+  {
+    "id": "ti-perception-jailbreak-roleplay",
+    "category": "jailbreak",
+    "stage": "perception",
+    "label": "ATT&CK T1566 social engineering jailbreak role-play",
+    "embedding": [0.92, 0.04, 0.10, 0.02, 0.08, 0.03]
+  },
+  {
+    "id": "ti-action-data-exfiltration-egress",
+    "category": "data_exfiltration",
+    "stage": "action",
+    "label": "ATT&CK T1041 exfiltration over network egress",
+    "embedding": [0.08, 0.96, 0.06, 0.05, 0.07, 0.02]
+  },
+  {
+    "id": "ti-action-privilege-escalation",
+    "category": "privilege_escalation",
+    "stage": "action",
+    "label": "ATT&CK TA0004 privilege escalation attempt",
+    "embedding": [0.12, 0.18, 0.94, 0.10, 0.05, 0.03]
+  },
+  {
+    "id": "ti-action-supply-chain-compromise",
+    "category": "supply_chain",
+    "stage": "action",
+    "label": "ATT&CK T1195 supply chain compromise behavior",
+    "embedding": [0.06, 0.14, 0.22, 0.95, 0.11, 0.08]
+  },
+  {
+    "id": "ti-cognition-evasion-obfuscation",
+    "category": "evasion",
+    "stage": "cognition",
+    "label": "ATT&CK T1027 obfuscated command and payload chain",
+    "embedding": [0.20, 0.07, 0.08, 0.12, 0.96, 0.07]
+  },
+  {
+    "id": "ti-feedback-persistence-loop",
+    "category": "evasion",
+    "stage": "feedback",
+    "label": "OWASP LLM09 self-reinforcing feedback abuse",
+    "embedding": [0.30, 0.22, 0.16, 0.12, 0.20, 0.92]
+  },
+  {
+    "id": "ti-cognition-reconnaissance-probe",
+    "category": "reconnaissance",
+    "stage": "cognition",
+    "label": "ATT&CK T1595 active scanning and capability probing",
+    "embedding": [0.18, 0.20, 0.14, 0.10, 0.88, 0.12]
+  },
+  {
+    "id": "ti-perception-social-engineering-authority",
+    "category": "social_engineering",
+    "stage": "perception",
+    "label": "ATT&CK T1656 authority impersonation prompt",
+    "embedding": [0.86, 0.14, 0.08, 0.05, 0.30, 0.06]
+  }
+]

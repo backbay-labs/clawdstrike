@@ -12,6 +12,7 @@
 //! different, but reusing the same fast/deep tiering and the S2Bench
 //! taxonomy (four semantic stages × nine attack types).
 
+use std::path::Path;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -38,6 +39,26 @@ const DEFAULT_TOP_K: usize = 5;
 /// Built-in S2Bench v1 pattern database (36 demo entries, 3-dim embeddings).
 const BUILTIN_S2BENCH_V1: &str =
     include_str!("../../../../../../rulesets/patterns/s2bench-v1.json");
+
+/// Policy-level configuration for the Spider-Sense guard.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SpiderSenseTrustedKeyConfig {
+    /// Optional explicit key id. If omitted, SDKs may derive from public key.
+    #[serde(default)]
+    pub key_id: Option<String>,
+    /// Public signing key (hex-encoded).
+    pub public_key: String,
+    /// Optional key validity start (RFC3339).
+    #[serde(default)]
+    pub not_before: Option<String>,
+    /// Optional key validity end (RFC3339).
+    #[serde(default)]
+    pub not_after: Option<String>,
+    /// Optional key status (`active` / `deprecated` / `revoked`).
+    #[serde(default)]
+    pub status: Option<String>,
+}
 
 /// Policy-level configuration for the Spider-Sense guard.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -80,6 +101,30 @@ pub struct SpiderSensePolicyConfig {
     /// Optional SHA-256 checksum for the external pattern DB (metadata only).
     #[serde(default)]
     pub pattern_db_checksum: Option<String>,
+    /// Optional signature over the pattern DB payload.
+    #[serde(default)]
+    pub pattern_db_signature: Option<String>,
+    /// Optional trust-store key id for pattern DB signature verification.
+    #[serde(default)]
+    pub pattern_db_signature_key_id: Option<String>,
+    /// Optional legacy inline public key for signature verification.
+    #[serde(default)]
+    pub pattern_db_public_key: Option<String>,
+    /// Optional trust-store path for pattern DB signature keys.
+    #[serde(default)]
+    pub pattern_db_trust_store_path: Option<String>,
+    /// Optional inline trusted keys for pattern DB signature verification.
+    #[serde(default)]
+    pub pattern_db_trusted_keys: Vec<SpiderSenseTrustedKeyConfig>,
+    /// Optional signed manifest path (can provide DB path/version/checksum/signature chain).
+    #[serde(default)]
+    pub pattern_db_manifest_path: Option<String>,
+    /// Optional trust-store path for manifest signature verification.
+    #[serde(default)]
+    pub pattern_db_manifest_trust_store_path: Option<String>,
+    /// Optional inline trusted keys for manifest signature verification.
+    #[serde(default)]
+    pub pattern_db_manifest_trusted_keys: Vec<SpiderSenseTrustedKeyConfig>,
 
     /// Optional LLM API URL for the deep reasoning path.
     #[serde(default)]
@@ -90,6 +135,18 @@ pub struct SpiderSensePolicyConfig {
     /// Optional LLM model name.
     #[serde(default)]
     pub llm_model: Option<String>,
+    /// Optional deep-path prompt template id.
+    #[serde(default)]
+    pub llm_prompt_template_id: Option<String>,
+    /// Optional deep-path prompt template version.
+    #[serde(default)]
+    pub llm_prompt_template_version: Option<String>,
+    /// Optional deep-path timeout override in milliseconds.
+    #[serde(default)]
+    pub llm_timeout_ms: Option<u64>,
+    /// Optional deep-path failure mode (`allow` | `warn` | `deny`).
+    #[serde(default)]
+    pub llm_fail_mode: Option<String>,
 
     /// Optional async guard configuration (used when Spider-Sense is configured
     /// as a first-class field in `guards.spider_sense` rather than via
@@ -130,9 +187,9 @@ pub struct SpiderSenseGuard {
 impl SpiderSenseGuard {
     /// Create a new SpiderSenseGuard. Fails if the pattern DB cannot be loaded.
     pub fn new(cfg: SpiderSensePolicyConfig, async_cfg: AsyncGuardConfig) -> Result<Self, String> {
-        let pattern_db = load_pattern_db(&cfg.pattern_db_path)?;
-
         let (upper_bound, lower_bound) = validate_policy_config(&cfg)?;
+        let pattern_db_path = resolve_pattern_db_path(&cfg)?;
+        let pattern_db = load_pattern_db(&pattern_db_path)?;
 
         let request_policy = embedding_request_policy(&cfg.embedding_api_url)?;
         let llm_request_policy = cfg
@@ -487,6 +544,13 @@ struct LlmVerdict {
     sanitized_text: Option<String>,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PatternDbManifest {
+    #[serde(default)]
+    pattern_db_path: Option<String>,
+}
+
 #[async_trait]
 impl AsyncGuard for SpiderSenseGuard {
     fn name(&self) -> &str {
@@ -636,6 +700,48 @@ fn load_pattern_db(path: &str) -> Result<PatternDb, String> {
     }
 }
 
+fn resolve_pattern_db_path(cfg: &SpiderSensePolicyConfig) -> Result<String, String> {
+    let manifest_path = cfg
+        .pattern_db_manifest_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty());
+    if let Some(manifest_path) = manifest_path {
+        let raw = std::fs::read_to_string(manifest_path)
+            .map_err(|e| format!("failed to read pattern DB manifest '{manifest_path}': {e}"))?;
+        let manifest: PatternDbManifest = serde_json::from_str(&raw)
+            .map_err(|e| format!("failed to parse pattern DB manifest '{manifest_path}': {e}"))?;
+        let db_path = manifest
+            .pattern_db_path
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .ok_or_else(|| {
+                format!("pattern DB manifest '{manifest_path}' missing non-empty pattern_db_path")
+            })?;
+
+        if db_path.starts_with("builtin:") {
+            return Ok(db_path.to_string());
+        }
+
+        let path = Path::new(db_path);
+        if path.is_absolute() {
+            return Ok(db_path.to_string());
+        }
+
+        let base = Path::new(manifest_path)
+            .parent()
+            .unwrap_or_else(|| Path::new("."));
+        return Ok(base.join(path).to_string_lossy().to_string());
+    }
+
+    let path = cfg.pattern_db_path.trim();
+    if path.is_empty() {
+        return Err("either pattern_db_path or pattern_db_manifest_path must be set".to_string());
+    }
+    Ok(path.to_string())
+}
+
 fn validate_policy_config(cfg: &SpiderSensePolicyConfig) -> Result<(f64, f64), String> {
     if cfg.embedding_api_url.trim().is_empty() {
         return Err("embedding_api_url cannot be empty".to_string());
@@ -646,8 +752,49 @@ fn validate_policy_config(cfg: &SpiderSensePolicyConfig) -> Result<(f64, f64), S
     if cfg.embedding_model.trim().is_empty() {
         return Err("embedding_model cannot be empty".to_string());
     }
-    if cfg.pattern_db_path.trim().is_empty() {
-        return Err("pattern_db_path cannot be empty".to_string());
+
+    let has_pattern_db_path = !cfg.pattern_db_path.trim().is_empty();
+    let has_manifest_path = cfg
+        .pattern_db_manifest_path
+        .as_deref()
+        .is_some_and(|v| !v.trim().is_empty());
+    if has_pattern_db_path && has_manifest_path {
+        return Err(
+            "pattern_db_path and pattern_db_manifest_path are mutually exclusive".to_string(),
+        );
+    }
+    if !has_pattern_db_path && !has_manifest_path {
+        return Err("either pattern_db_path or pattern_db_manifest_path must be set".to_string());
+    }
+
+    let has_manifest_trust_store = cfg
+        .pattern_db_manifest_trust_store_path
+        .as_deref()
+        .is_some_and(|v| !v.trim().is_empty());
+    let has_manifest_trusted_keys = !cfg.pattern_db_manifest_trusted_keys.is_empty();
+    if has_manifest_path {
+        let has_db_trust_store = cfg
+            .pattern_db_trust_store_path
+            .as_deref()
+            .is_some_and(|v| !v.trim().is_empty());
+        let has_db_trusted_keys = !cfg.pattern_db_trusted_keys.is_empty();
+        if has_db_trust_store || has_db_trusted_keys {
+            return Err(
+                "pattern_db_manifest_path cannot be combined with pattern_db_trust_store_path or pattern_db_trusted_keys"
+                    .to_string(),
+            );
+        }
+        if !has_manifest_trust_store && !has_manifest_trusted_keys {
+            return Err(
+                "pattern_db_manifest_path requires pattern_db_manifest_trust_store_path or pattern_db_manifest_trusted_keys"
+                    .to_string(),
+            );
+        }
+    } else if has_manifest_trust_store || has_manifest_trusted_keys {
+        return Err(
+            "pattern_db_manifest_trust_store_path and pattern_db_manifest_trusted_keys require pattern_db_manifest_path"
+                .to_string(),
+        );
     }
 
     if !cfg.similarity_threshold.is_finite() {
@@ -702,6 +849,51 @@ fn validate_policy_config(cfg: &SpiderSensePolicyConfig) -> Result<(f64, f64), S
         }
     }
 
+    let has_template_id = cfg
+        .llm_prompt_template_id
+        .as_deref()
+        .is_some_and(|value| !value.trim().is_empty());
+    let has_template_version = cfg
+        .llm_prompt_template_version
+        .as_deref()
+        .is_some_and(|value| !value.trim().is_empty());
+    if has_template_id != has_template_version {
+        return Err(
+            "llm_prompt_template_id and llm_prompt_template_version must be set together"
+                .to_string(),
+        );
+    }
+
+    let llm_configured = has_llm_url
+        || has_llm_key
+        || cfg
+            .llm_model
+            .as_deref()
+            .is_some_and(|value| !value.trim().is_empty());
+    if llm_configured && !(has_template_id && has_template_version) {
+        return Err(
+            "LLM deep path configuration requires llm_prompt_template_id and llm_prompt_template_version"
+                .to_string(),
+        );
+    }
+
+    if let Some(timeout_ms) = cfg.llm_timeout_ms {
+        if timeout_ms == 0 {
+            return Err("llm_timeout_ms must be >= 1 when provided".to_string());
+        }
+    }
+
+    if let Some(mode) = cfg.llm_fail_mode.as_deref() {
+        let normalized = mode.trim().to_ascii_lowercase();
+        if !normalized.is_empty()
+            && normalized != "allow"
+            && normalized != "warn"
+            && normalized != "deny"
+        {
+            return Err("llm_fail_mode must be one of allow|warn|deny".to_string());
+        }
+    }
+
     Ok((upper_bound, lower_bound))
 }
 
@@ -739,9 +931,21 @@ mod tests {
             pattern_db_path: "/tmp/patterns.json".to_string(),
             pattern_db_version: None,
             pattern_db_checksum: None,
+            pattern_db_signature: None,
+            pattern_db_signature_key_id: None,
+            pattern_db_public_key: None,
+            pattern_db_trust_store_path: None,
+            pattern_db_trusted_keys: vec![],
+            pattern_db_manifest_path: None,
+            pattern_db_manifest_trust_store_path: None,
+            pattern_db_manifest_trusted_keys: vec![],
             llm_api_url: None,
             llm_api_key: None,
             llm_model: None,
+            llm_prompt_template_id: None,
+            llm_prompt_template_version: None,
+            llm_timeout_ms: None,
+            llm_fail_mode: None,
             async_config: None,
         }
     }
@@ -957,10 +1161,32 @@ mod tests {
         let mut cfg = test_cfg();
         cfg.llm_api_url = Some("http://127.0.0.1:8081/v1/messages".to_string());
         cfg.llm_api_key = Some("llm-test-key".to_string());
+        cfg.llm_prompt_template_id = Some("spider_sense.deep_path.json_classifier".to_string());
+        cfg.llm_prompt_template_version = Some("1.0.0".to_string());
         cfg.llm_model = Some("   ".to_string());
         let result = SpiderSenseGuard::with_pattern_db(cfg, test_async_cfg(), test_pattern_db());
         assert!(result.is_err(), "empty llm_model should be rejected");
         let err = result.err().expect("error must be present");
         assert!(err.contains("llm_model"));
+    }
+
+    #[test]
+    fn guard_config_accepts_manifest_and_prompt_template_fields() {
+        let mut cfg = test_cfg();
+        cfg.pattern_db_path.clear();
+        cfg.pattern_db_manifest_path = Some("/tmp/pattern-db.manifest.json".to_string());
+        cfg.pattern_db_manifest_trust_store_path = Some("/tmp/manifest-roots.json".to_string());
+        cfg.llm_api_url = Some("http://127.0.0.1:8081/v1/messages".to_string());
+        cfg.llm_api_key = Some("llm-test-key".to_string());
+        cfg.llm_prompt_template_id = Some("spider_sense.deep_path.json_classifier".to_string());
+        cfg.llm_prompt_template_version = Some("1.0.0".to_string());
+        cfg.llm_timeout_ms = Some(1500);
+        cfg.llm_fail_mode = Some("warn".to_string());
+
+        let result = SpiderSenseGuard::with_pattern_db(cfg, test_async_cfg(), test_pattern_db());
+        assert!(
+            result.is_ok(),
+            "manifest + prompt template schema fields should parse/validate"
+        );
     }
 }

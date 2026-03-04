@@ -1,0 +1,11 @@
+{
+  "keys": [
+    {
+      "key_id": "a56cfff6a996040c",
+      "public_key": "d88d26ca9f0241555e38a004531ac50838f58db9bb601dfbb10b65be1c994ee1",
+      "status": "active",
+      "not_before": "2025-01-01T00:00:00Z",
+      "not_after": "2030-01-01T00:00:00Z"
+    }
+  ]
+}

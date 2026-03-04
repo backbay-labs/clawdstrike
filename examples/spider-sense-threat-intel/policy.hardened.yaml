@@ -1,0 +1,47 @@
+version: "1.3.0"
+name: "spider-sense-threat-intel-hardened"
+description: >
+  Hardened Spider-Sense policy using signed manifest + trust stores and runtime
+  resiliency knobs for provider integrations.
+
+guards:
+  spider_sense:
+    enabled: true
+    similarity_threshold: 0.86
+    ambiguity_band: 0.06
+    top_k: 3
+
+    pattern_db_manifest_path: "./data/pattern_db.manifest.json"
+    pattern_db_manifest_trust_store_path: "manifest.trust-store.json"
+
+    async:
+      timeout_ms: 5000
+      cache:
+        enabled: true
+        ttl_seconds: 3600
+        max_size_mb: 64
+      retry:
+        max_retries: 2
+        initial_backoff_ms: 250
+        max_backoff_ms: 2000
+        multiplier: 2.0
+        honor_retry_after: true
+        retry_after_cap_ms: 10000
+        honor_rate_limit_reset: true
+        rate_limit_reset_grace_ms: 250
+      circuit_breaker:
+        failure_threshold: 5
+        reset_timeout_ms: 30000
+        success_threshold: 2
+        on_open: deny
+
+    # Optional deep-path knobs. Uncomment only when an LLM provider is configured.
+    # llm_api_url: "${SPIDER_SENSE_LLM_URL}"
+    # llm_api_key: "${SPIDER_SENSE_LLM_KEY}"
+    # llm_model: "gpt-4.1-mini"
+    # llm_prompt_template_id: "spider_sense.deep_path.json_classifier"
+    # llm_prompt_template_version: "1.0.0"
+    # llm_fail_mode: warn
+
+settings:
+  fail_fast: false

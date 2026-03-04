@@ -190,3 +190,10 @@ Run all SDK conformance checks:
 ```bash
 bash scripts/run-sdk-conformance.sh
 ```
+
+## Full Example
+
+A full runnable example with curated threat-intel patterns, behavior profile embeddings,
+signed manifest/trust-store rotation, and TS/Python/Go parity runners is available at:
+
+- `examples/spider-sense-threat-intel/`
