@@ -8,9 +8,9 @@
     "dry-run": "npx tsx agent.ts --dry-run"
   },
   "dependencies": {
-    "@clawdstrike/sdk": "workspace:*",
-    "@clawdstrike/openai": "workspace:*",
-    "@clawdstrike/policy": "workspace:*",
+    "@clawdstrike/sdk": "^0.2.3",
+    "@clawdstrike/openai": "^0.2.3",
+    "@clawdstrike/policy": "^0.2.3",
     "openai": "^4.0.0"
   },
   "devDependencies": {
