@@ -73,6 +73,7 @@ fn normalize_policy_check_input(mut input: PolicyCheckInput) -> PolicyCheckInput
     input
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn enqueue_offline_audit_event(
     audit_queue: Option<&Arc<crate::daemon::AuditQueue>>,
     action_type: &str,
