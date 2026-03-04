@@ -1,7 +1,6 @@
 package guards
 
 import (
-	"encoding/json"
 	"math"
 	"testing"
 
@@ -413,19 +412,13 @@ func TestSpiderSenseGuardName(t *testing.T) {
 // --- Inline patterns via config ---
 
 func TestSpiderSenseInlinePatterns(t *testing.T) {
-	patterns := []PatternEntry{
-		{ID: "p1", Category: "test", Stage: "perception", Label: "test pattern", Embedding: []float32{1, 0, 0}},
-	}
-	patternJSON, err := json.Marshal(patterns)
-	if err != nil {
-		t.Fatalf("marshal patterns: %v", err)
-	}
-
 	cfg := &policy.SpiderSenseConfig{
 		SimilarityThreshold: ptrF64(0.85),
 		AmbiguityBand:       ptrF64(0.10),
 		TopK:                ptrInt(5),
-		Patterns:            json.RawMessage(patternJSON),
+		Patterns: []policy.PatternEntryConfig{
+			{ID: "p1", Category: "test", Stage: "perception", Label: "test pattern", Embedding: []float32{1, 0, 0}},
+		},
 	}
 	g, err := NewSpiderSenseGuard(cfg)
 	if err != nil {

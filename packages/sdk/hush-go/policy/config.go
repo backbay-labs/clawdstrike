@@ -1,7 +1,14 @@
 // Package policy implements Clawdstrike policy loading, validation, and resolution.
 package policy
 
-import "encoding/json"
+// PatternEntryConfig is a policy-level pattern entry for inline pattern databases.
+type PatternEntryConfig struct {
+	ID        string    `yaml:"id" json:"id"`
+	Category  string    `yaml:"category" json:"category"`
+	Stage     string    `yaml:"stage" json:"stage"`
+	Label     string    `yaml:"label" json:"label"`
+	Embedding []float32 `yaml:"embedding" json:"embedding"`
+}
 
 // ForbiddenPathConfig configures the forbidden path guard.
 type ForbiddenPathConfig struct {
@@ -75,7 +82,7 @@ type SpiderSenseConfig struct {
 	SimilarityThreshold *float64         `yaml:"similarity_threshold,omitempty"`
 	AmbiguityBand       *float64         `yaml:"ambiguity_band,omitempty"`
 	TopK                *int             `yaml:"top_k,omitempty"`
-	Patterns            json.RawMessage  `yaml:"patterns,omitempty" json:"patterns,omitempty"`
+	Patterns            []PatternEntryConfig `yaml:"patterns,omitempty" json:"patterns,omitempty"`
 }
 
 // GuardEnabled returns whether a guard is enabled based on its Enabled field.

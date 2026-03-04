@@ -89,6 +89,13 @@ function ensureBoolean(value: unknown, field: string, errors: string[]): void {
   }
 }
 
+function ensureBooleanOrObject(value: unknown, field: string, errors: string[]): void {
+  if (value === undefined) return;
+  if (typeof value !== "boolean" && (typeof value !== "object" || value === null || Array.isArray(value))) {
+    errors.push(`${field} must be a boolean or object`);
+  }
+}
+
 function ensureStringArray(
   value: unknown,
   field: string,
@@ -284,7 +291,7 @@ export function validatePolicy(policy: unknown): PolicyLintResult {
       ensureBoolean((p.guards as any).secret_leak, "guards.secret_leak", errors);
       ensureBoolean((p.guards as any).patch_integrity, "guards.patch_integrity", errors);
       ensureBoolean((p.guards as any).mcp_tool, "guards.mcp_tool", errors);
-      ensureBoolean((p.guards as any).spider_sense, "guards.spider_sense", errors);
+      ensureBooleanOrObject((p.guards as any).spider_sense, "guards.spider_sense", errors);
 
       const computerUse = (p.guards as any).computer_use;
       if (computerUse !== undefined) {

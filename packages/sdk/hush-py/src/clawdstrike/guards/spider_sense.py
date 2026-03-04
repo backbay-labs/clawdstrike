@@ -42,10 +42,13 @@ def cosine_similarity(a: list[float], b: list[float]) -> float:
         norm_b += y * y
 
     denom = math.sqrt(norm_a) * math.sqrt(norm_b)
-    if denom == 0.0:
+    if denom == 0.0 or not math.isfinite(denom):
         return 0.0
 
-    return dot / denom
+    result = dot / denom
+    if not math.isfinite(result):
+        return 0.0
+    return result
 
 
 # ── Pattern Database ──────────────────────────────────────────────────────

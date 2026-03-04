@@ -34,10 +34,14 @@ func CosineSimilarityF32(a, b []float32) float64 {
 	}
 
 	denom := math.Sqrt(normA) * math.Sqrt(normB)
-	if denom == 0.0 {
+	if denom == 0.0 || math.IsNaN(denom) || math.IsInf(denom, 0) {
 		return 0.0
 	}
-	return dot / denom
+	result := dot / denom
+	if math.IsNaN(result) || math.IsInf(result, 0) {
+		return 0.0
+	}
+	return result
 }
 
 // PatternEntry is a single entry in the pattern database.
@@ -213,8 +217,11 @@ func NewSpiderSenseGuard(cfg *policy.SpiderSenseConfig) (*SpiderSenseGuard, erro
 
 	var db *PatternDb
 	if cfg != nil && len(cfg.Patterns) > 0 {
-		var err error
-		db, err = ParsePatternDB(cfg.Patterns)
+		jsonBytes, err := json.Marshal(cfg.Patterns)
+		if err != nil {
+			return nil, fmt.Errorf("spider_sense: failed to serialize patterns: %w", err)
+		}
+		db, err = ParsePatternDB(jsonBytes)
 		if err != nil {
 			return nil, fmt.Errorf("spider_sense: %w", err)
 		}

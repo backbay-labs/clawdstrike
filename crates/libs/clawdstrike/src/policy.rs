@@ -1674,6 +1674,7 @@ impl RuleSet {
             "remote-desktop-permissive" => {
                 Some(include_str!("../rulesets/remote-desktop-permissive.yaml"))
             }
+            #[cfg(feature = "full")]
             "spider-sense" => Some(include_str!("../../../../rulesets/spider-sense.yaml")),
             _ => None,
         }?;
@@ -1706,6 +1707,7 @@ impl RuleSet {
             "remote-desktop",
             "remote-desktop-strict",
             "remote-desktop-permissive",
+            #[cfg(feature = "full")]
             "spider-sense",
         ]
     }
