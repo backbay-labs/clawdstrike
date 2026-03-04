@@ -2656,6 +2656,7 @@ guards:
                 }))
                 .unwrap(),
             ),
+            spider_sense_present_fields: std::iter::once("enabled".to_string()).collect(),
             ..Default::default()
         };
 
@@ -2690,6 +2691,8 @@ guards:
                 }))
                 .unwrap(),
             ),
+            spider_sense_present_fields: std::iter::once("similarity_threshold".to_string())
+                .collect(),
             ..Default::default()
         };
 
@@ -2706,6 +2709,48 @@ guards:
         assert_eq!(merged_spider.embedding_model, "text-embedding-3-small");
         assert_eq!(merged_spider.pattern_db_path, "builtin:s2bench-v1");
         assert_eq!(merged_spider.similarity_threshold, 0.91);
+    }
+
+    #[cfg(feature = "full")]
+    #[test]
+    fn test_spider_sense_deep_merge_without_presence_honors_child_default_scalar_overrides() {
+        let base = GuardConfigs {
+            spider_sense: Some(
+                serde_json::from_value(serde_json::json!({
+                    "enabled": false,
+                    "embedding_api_url": "https://example.invalid/v1/embeddings",
+                    "embedding_api_key": "base-key",
+                    "embedding_model": "text-embedding-3-small",
+                    "similarity_threshold": 0.95,
+                    "ambiguity_band": 0.02,
+                    "top_k": 9,
+                    "pattern_db_path": "builtin:s2bench-v1"
+                }))
+                .unwrap(),
+            ),
+            ..Default::default()
+        };
+        let child = GuardConfigs {
+            spider_sense: Some(
+                serde_json::from_value(serde_json::json!({
+                    "enabled": true,
+                    "similarity_threshold": 0.85,
+                    "ambiguity_band": 0.10,
+                    "top_k": 5
+                }))
+                .unwrap(),
+            ),
+            ..Default::default()
+        };
+
+        let merged = base.merge_with(&child);
+        let ss = merged.spider_sense.expect("merged spider_sense");
+        assert!(ss.enabled);
+        assert_eq!(ss.similarity_threshold, 0.85);
+        assert_eq!(ss.ambiguity_band, 0.10);
+        assert_eq!(ss.top_k, 5);
+        assert_eq!(ss.embedding_api_key, "base-key");
+        assert_eq!(ss.pattern_db_path, "builtin:s2bench-v1");
     }
 
     #[cfg(feature = "full")]

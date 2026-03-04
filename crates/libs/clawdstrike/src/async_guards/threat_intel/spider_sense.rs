@@ -358,14 +358,11 @@ impl SpiderSensePolicyConfig {
             };
         }
 
-        let defaults = Self::default();
-
+        // Programmatic merge path has no source-level field-presence metadata.
+        // Prefer child scalar values directly so explicit "default" overrides
+        // (for example, enabled=true) are honored.
         Self {
-            enabled: if child.enabled != defaults.enabled {
-                child.enabled
-            } else {
-                self.enabled
-            },
+            enabled: child.enabled,
             embedding_api_url: if !child.embedding_api_url.trim().is_empty() {
                 child.embedding_api_url.clone()
             } else {
@@ -381,21 +378,9 @@ impl SpiderSensePolicyConfig {
             } else {
                 self.embedding_model.clone()
             },
-            similarity_threshold: if child.similarity_threshold != defaults.similarity_threshold {
-                child.similarity_threshold
-            } else {
-                self.similarity_threshold
-            },
-            ambiguity_band: if child.ambiguity_band != defaults.ambiguity_band {
-                child.ambiguity_band
-            } else {
-                self.ambiguity_band
-            },
-            top_k: if child.top_k != defaults.top_k {
-                child.top_k
-            } else {
-                self.top_k
-            },
+            similarity_threshold: child.similarity_threshold,
+            ambiguity_band: child.ambiguity_band,
+            top_k: child.top_k,
             pattern_db_path: if !child.pattern_db_path.trim().is_empty() {
                 child.pattern_db_path.clone()
             } else {

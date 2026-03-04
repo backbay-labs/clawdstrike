@@ -973,12 +973,16 @@ function buildGuardsFromPolicy(policy: PolicyDoc): Guard[] {
 
   const spiderSenseConfigRaw = guardConfigs.spider_sense;
   if (spiderSenseConfigRaw !== undefined) {
-    if (!isPlainObject(spiderSenseConfigRaw)) {
+    if (isGuardDisabled(spiderSenseConfigRaw)) {
+      // Explicit boolean/object disable toggle.
+    } else if (spiderSenseConfigRaw === true) {
+      const spiderSenseConfig = toSpiderSenseConfig({});
+      guards.push(new SpiderSenseGuard(spiderSenseConfig ?? {}));
+    } else if (!isPlainObject(spiderSenseConfigRaw)) {
       throw new Error(
-        "invalid guards.spider_sense config: expected mapping; use guards.spider_sense.enabled: false to disable",
+        "invalid guards.spider_sense config: expected boolean or mapping",
       );
-    }
-    if (!isGuardDisabled(spiderSenseConfigRaw)) {
+    } else {
       const spiderSenseConfig = toSpiderSenseConfig(spiderSenseConfigRaw);
       guards.push(new SpiderSenseGuard(spiderSenseConfig ?? {}));
     }
