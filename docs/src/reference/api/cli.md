@@ -98,7 +98,7 @@ clawdstrike guard validate ./plugins/my-guard --strict --json
   - Default: writes a hex-encoded seed to `<path>` and a hex-encoded public key to `<path>.pub`.
   - With `--tpm-seal`: writes a TPM-sealed blob JSON to `<path>` and a hex-encoded public key to `<path>.pub` (requires `tpm2-tools`).
 - `clawdstrike verify [--json] <receipt.json> --pubkey <pubkey>` — verify a `SignedReceipt` (signature + verdict).
-- `clawdstrike hash <file|- >` — compute `sha256` or `keccak256`.
+- `clawdstrike hash <file|->` — compute `sha256` or `keccak256`.
 - `clawdstrike sign --key <private_key> <file>` — sign a file (raw Ed25519 signature).
 - `clawdstrike merkle root|proof|verify` — Merkle tree utilities for files.
 
@@ -129,7 +129,7 @@ The wrapped process inherits `HTTP_PROXY`/`HTTPS_PROXY` environment variables po
 
 ## `clawdstrike daemon` (optional)
 
-The CLI can start/inspect a `clawdstriked` daemon, but `clawdstriked` must be installed separately.
+The CLI can start/inspect a `hushd` daemon (binary names: `hushd` and `clawdstriked`), but it must be installed separately.
 
 ```bash
 cargo install --path crates/services/hushd
@@ -147,7 +147,7 @@ clawdstrike completions zsh
 
 ```bash
 # Start daemon
-clawdstrike daemon start --config /etc/clawdstriked/config.yaml
+clawdstrike daemon start --config /etc/hushd/config.yaml
 
 # Status
 clawdstrike daemon status

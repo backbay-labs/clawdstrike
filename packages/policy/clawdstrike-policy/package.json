@@ -1,6 +1,6 @@
 {
   "name": "@clawdstrike/policy",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Canonical policy loader and engine (async guards + threat intel)",
   "type": "module",
   "main": "dist/index.js",

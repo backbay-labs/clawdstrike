@@ -1,6 +1,6 @@
-# Self-Hosted Runners (clawdstriked)
+# Self-Hosted Runners (`hushd` / `clawdstriked`)
 
-`clawdstriked` is an optional HTTP daemon for centralized policy evaluation and a persistent audit ledger (SQLite).
+`hushd` (`clawdstriked` is an alias binary) is an optional HTTP daemon for centralized policy evaluation and a persistent audit ledger (SQLite).
 
 Packaging/deployment (Docker/Kubernetes/Helm) is not provided in this repository yet; treat this as a "run from source" recipe.
 
@@ -15,13 +15,15 @@ cargo install --path crates/services/hushd
 Use a ruleset:
 
 ```bash
-clawdstriked start --bind 127.0.0.1 --port 9876 --ruleset default
+hushd start --bind 127.0.0.1 --port 9876 --ruleset default
+# equivalent: clawdstriked start --bind 127.0.0.1 --port 9876 --ruleset default
 ```
 
 Or use a config file (YAML or TOML):
 
 ```bash
-clawdstriked start --config ./clawdstriked.yaml
+hushd start --config ./hushd.yaml
+# equivalent: clawdstriked start --config ./hushd.yaml
 ```
 
 ## Minimal config example

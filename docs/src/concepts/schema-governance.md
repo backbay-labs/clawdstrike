@@ -10,18 +10,19 @@ Clawdstrike is a multi-language repo (Rust crates + TypeScript/Python SDKs + an 
 
 | Schema | Used by | Version field | File format | Notes |
 |---|---|---|---|---|
-| Rust **policy** schema | `clawdstrike` engine + `clawdstrike` CLI + `clawdstriked` | `policy.version` (`"1.1.0"`) | YAML | Parsed with strict semver + unknown-field rejection. |
-| OpenClaw **policy** schema | `@clawdstrike/openclaw` | `policy.version` (`"clawdstrike-v1.0"`) | YAML | **Not** the same as Rust policy schema; smaller surface and OpenClaw-shaped. Strict validation + unknown-field rejection. |
+| Rust **policy** schema | `clawdstrike` engine + `clawdstrike` CLI + `hushd`/`clawdstriked` | `policy.version` (`"1.1.0"` or `"1.2.0"`, default `"1.2.0"`) | YAML | Parsed with strict semver + unknown-field rejection. |
+| OpenClaw **policy** schema | `@clawdstrike/openclaw` | `policy.version` (`"clawdstrike-v1.0"` legacy, or canonical `"1.1.0"`/`"1.2.0"`) | YAML | Runtime shape is OpenClaw-specific; canonical policies are translated before enforcement. Strict validation + unknown-field rejection. |
 | **Receipt** schema | `hush-core` + SDKs | `receipt.version` (`"1.0.0"`) | JSON | Signed receipts use canonical JSON (RFC 8785 / JCS). |
 
 ## Rust vs OpenClaw policy compatibility (important)
 
-The Rust policy schema and the OpenClaw plugin policy schema are **not wire-compatible**.
+The Rust policy schema and the OpenClaw runtime policy shape are **not wire-identical**.
 
 - Rust policies live under `guards.*` and are designed for the Rust `HushEngine`/`clawdstriked` stack.
-- OpenClaw policies live under top-level sections like `egress`, `filesystem`, `execution`, and are designed for OpenClaw hooks + the `policy_check` tool.
+- Legacy OpenClaw policies live under top-level sections like `egress`, `filesystem`, `execution`, and are designed for OpenClaw hooks + the `policy_check` tool.
+- Canonical Rust policies (`1.1.0` / `1.2.0`) are accepted by the OpenClaw adapter, validated with canonical rules, then translated to the OpenClaw runtime shape.
 
-If you copy a Rust policy YAML into OpenClaw (or vice-versa), the correct behavior is: **reject it**, not “best effort”.
+If parsing or translation fails, the correct behavior remains: **fail closed**.
 
 ## Migration policy
 

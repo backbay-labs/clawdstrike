@@ -1,6 +1,6 @@
 {
   "name": "@clawdstrike/engine-remote",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Policy engine adapter that calls hushd /api/v1/eval",
   "type": "module",
   "main": "dist/index.js",

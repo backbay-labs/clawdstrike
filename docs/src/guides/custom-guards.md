@@ -85,4 +85,4 @@ guards:
 | `config` | JSON object | `{}` | Configuration passed to the guard factory. |
 | `async` | object or null | `null` | Optional async guard policy config (rate limiting, retries, timeouts). |
 
-`guards.custom[]` supports a reserved set of built-in threat-intel guards (see [Threat Intel Guards](threat-intel.md)) plus manifest-based plugin loading. Use `hush guard inspect` and `hush guard validate` to verify plugin metadata/compatibility, and use `executionMode: wasm` for sandboxed plugin execution paths.
+`guards.custom[]` supports a reserved set of built-in threat-intel guards (see [Threat Intel Guards](threat-intel.md)) plus manifest-based plugin loading. Use `clawdstrike guard inspect` and `clawdstrike guard validate` (or the `hush` alias) to verify plugin metadata/compatibility, and use `executionMode: wasm` for sandboxed plugin execution paths.

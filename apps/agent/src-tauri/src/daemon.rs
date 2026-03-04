@@ -1923,14 +1923,21 @@ mod tests {
                 guard.push_back(serde_json::json!({"id": i.to_string()}));
             }
         }
-        queue
-            .enqueue(serde_json::json!({"id": "overflow"}))
-            .await;
+        queue.enqueue(serde_json::json!({"id": "overflow"})).await;
         assert_eq!(queue.len().await, MAX_AUDIT_QUEUE_LEN);
         let guard = queue.queue.lock().await;
-        assert_eq!(guard.front().and_then(|v| v.get("id")).and_then(|v| v.as_str()), Some("1"));
         assert_eq!(
-            guard.back().and_then(|v| v.get("id")).and_then(|v| v.as_str()),
+            guard
+                .front()
+                .and_then(|v| v.get("id"))
+                .and_then(|v| v.as_str()),
+            Some("1")
+        );
+        assert_eq!(
+            guard
+                .back()
+                .and_then(|v| v.get("id"))
+                .and_then(|v| v.as_str()),
             Some("overflow")
         );
     }

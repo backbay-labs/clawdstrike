@@ -60,9 +60,14 @@ openclaw agent --local --session-id test \
 
 ## Important: policy schema is different from Rust
 
-The OpenClaw plugin uses its **own policy schema** (currently `version: "clawdstrike-v1.0"`). It is **not** the same as the Rust `clawdstrike::Policy` schema (`version: "1.2.0"`).
+The OpenClaw plugin runtime shape is **not identical** to the Rust `clawdstrike::Policy` shape, but it supports two policy inputs:
 
-If you paste a Rust policy into OpenClaw, it should fail closed (and it does): unknown fields are rejected.
+- Legacy OpenClaw schema: `version: "clawdstrike-v1.0"`
+- Canonical schema: `version: "1.1.0"` or `version: "1.2.0"` (preferred)
+
+Canonical policies are validated using canonical rules and translated into the OpenClaw runtime shape before enforcement.
+
+Invalid/unsupported policy inputs fail closed.
 
 **Exception:** OpenClaw policies may include `guards.custom[]` entries (threat-intel guards) using the canonical config shape (`package`, `config`, `async`). This is intentionally plugin-shaped and is validated fail-closed.
 

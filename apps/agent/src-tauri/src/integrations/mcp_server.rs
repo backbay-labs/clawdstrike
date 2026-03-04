@@ -2,11 +2,11 @@
 //!
 //! Exposes a `policy_check` tool via JSON-RPC that AI tools can call.
 
+use crate::agent_auth::read_local_api_token;
 use crate::policy::{evaluate_policy_check, PolicyCheckInput};
 use crate::security::auth::constant_time_eq_token;
 use crate::session::SessionManager;
 use crate::settings::Settings;
-use crate::agent_auth::read_local_api_token;
 use anyhow::{Context, Result};
 use axum::extract::{DefaultBodyLimit, State};
 use axum::http::header::AUTHORIZATION;

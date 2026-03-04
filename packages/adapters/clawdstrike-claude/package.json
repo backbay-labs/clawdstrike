@@ -1,6 +1,6 @@
 {
   "name": "@clawdstrike/claude",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "In-process tool boundary hooks for Claude Code and the Claude Agent SDK",
   "type": "module",
   "main": "dist/index.js",

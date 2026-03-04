@@ -28,7 +28,7 @@ settings:
 
 ## Persistent audit trails (daemon)
 
-For a persistent audit ledger, use `clawdstriked` (optional/WIP). It stores audit events in an SQLite database.
+For a persistent audit ledger, use `hushd` (`clawdstriked` alias; optional/WIP). It stores audit events in an SQLite database.
 
 ```bash
 cargo install --path crates/services/hushd

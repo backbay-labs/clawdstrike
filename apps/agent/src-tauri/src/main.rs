@@ -24,10 +24,10 @@ mod openclaw;
 mod policy;
 mod policy_sync;
 mod posture_commands;
+mod runtime_registry;
 mod security;
 mod session;
 mod settings;
-mod runtime_registry;
 mod telemetry_publisher;
 mod tray;
 mod updater;
@@ -47,8 +47,8 @@ use notifications::{
     NotificationManager,
 };
 use openclaw::OpenClawManager;
-use session::SessionManager;
 use runtime_registry::resolve_effective_endpoint_agent_id;
+use session::SessionManager;
 use settings::{ensure_default_policy, NatsSettings, Settings};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;

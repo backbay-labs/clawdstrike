@@ -84,6 +84,32 @@ if native_pkg_name != "clawdstrike":
         f"expected clawdstrike, found {native_pkg_name}"
     )
 
+native_cargo = read_toml("packages/sdk/hush-py/hush-native/Cargo.toml")
+native_cargo_version = native_cargo.get("package", {}).get("version")
+errors.append(
+    check(
+        "packages/sdk/hush-py/hush-native/Cargo.toml [package].version",
+        native_cargo_version,
+    )
+)
+
+agent_cargo = read_toml("apps/agent/src-tauri/Cargo.toml")
+agent_cargo_version = agent_cargo.get("package", {}).get("version")
+errors.append(
+    check(
+        "apps/agent/src-tauri/Cargo.toml [package].version",
+        agent_cargo_version,
+    )
+)
+
+agent_tauri = read_json("apps/agent/src-tauri/tauri.conf.json")
+errors.append(
+    check(
+        "apps/agent/src-tauri/tauri.conf.json version",
+        agent_tauri.get("version"),
+    )
+)
+
 py_init_rel = None
 for rel in ("packages/sdk/hush-py/src/clawdstrike/__init__.py", "packages/sdk/hush-py/src/hush/__init__.py"):
     if (repo_root / rel).exists():

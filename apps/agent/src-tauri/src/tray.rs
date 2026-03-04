@@ -8,7 +8,7 @@ use crate::notifications::show_notification;
 use crate::settings::Settings;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use tauri::Manager;
@@ -702,19 +702,12 @@ fn present_ui_bootstrap_code<R: Runtime>(app: &AppHandle<R>, code: &str, ttl_sec
     let tray_manager = tray_manager_state.inner().clone();
     let code_for_clear = code.to_string();
     let clear_after = ttl_seconds.min(300);
-    let expires_at = Instant::now() + Duration::from_secs(clear_after);
+    let hint = format!("Web UI code: {code_for_clear} (valid for {clear_after}s) · click to copy");
     tauri::async_runtime::spawn(async move {
-        loop {
-            let remaining = expires_at.saturating_duration_since(Instant::now()).as_secs();
-            if remaining == 0 {
-                break;
-            }
-            let hint = format!("Web UI code: {code_for_clear} ({remaining}s) · click to copy");
-            tray_manager
-                .set_ui_bootstrap_hint(Some(hint), Some(code_for_clear.clone()))
-                .await;
-            sleep(Duration::from_secs(1)).await;
-        }
+        tray_manager
+            .set_ui_bootstrap_hint(Some(hint), Some(code_for_clear.clone()))
+            .await;
+        sleep(Duration::from_secs(clear_after)).await;
         tray_manager
             .clear_ui_bootstrap_hint_if_code_matches(&code_for_clear)
             .await;
@@ -876,10 +869,7 @@ fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
                                 show_notification(
                                     &app_handle,
                                     "Diagnostics Bundle Created",
-                                    &format!(
-                                        "Bundle generated at {}",
-                                        payload.generated_at
-                                    ),
+                                    &format!("Bundle generated at {}", payload.generated_at),
                                 );
                             }
                             Err(err) => {

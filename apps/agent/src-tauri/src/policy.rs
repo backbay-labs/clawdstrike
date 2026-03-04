@@ -279,7 +279,9 @@ pub async fn evaluate_policy_check(
                 &message,
                 session_id_for_audit.as_deref(),
                 &endpoint_agent_id,
-                runtime_identity.as_ref().map(|value| value.runtime_agent_id.as_str()),
+                runtime_identity
+                    .as_ref()
+                    .map(|value| value.runtime_agent_id.as_str()),
                 runtime_identity
                     .as_ref()
                     .map(|value| value.runtime_agent_kind.as_str()),
@@ -363,7 +365,9 @@ pub async fn evaluate_policy_check(
             &message,
             session_id_for_audit.as_deref(),
             &endpoint_agent_id,
-            runtime_identity.as_ref().map(|value| value.runtime_agent_id.as_str()),
+            runtime_identity
+                .as_ref()
+                .map(|value| value.runtime_agent_id.as_str()),
             runtime_identity
                 .as_ref()
                 .map(|value| value.runtime_agent_kind.as_str()),
@@ -413,8 +417,8 @@ pub async fn evaluate_policy_check(
             if let Some(truncated) = body_truncated {
                 details["body_truncated"] = serde_json::Value::Bool(truncated);
             }
-            let message =
-                "Policy daemon returned malformed response — action denied (fail-closed)".to_string();
+            let message = "Policy daemon returned malformed response — action denied (fail-closed)"
+                .to_string();
             enqueue_offline_audit_event(
                 audit_queue.as_ref(),
                 &action_type,
@@ -424,7 +428,9 @@ pub async fn evaluate_policy_check(
                 &message,
                 session_id_for_audit.as_deref(),
                 &endpoint_agent_id,
-                runtime_identity.as_ref().map(|value| value.runtime_agent_id.as_str()),
+                runtime_identity
+                    .as_ref()
+                    .map(|value| value.runtime_agent_id.as_str()),
                 runtime_identity
                     .as_ref()
                     .map(|value| value.runtime_agent_kind.as_str()),

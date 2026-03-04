@@ -68,7 +68,11 @@ fn now_rfc3339() -> String {
     chrono::Utc::now().to_rfc3339()
 }
 
-fn build_runtime_id(endpoint_agent_id: &str, kind: &str, external_runtime_id: Option<&str>) -> String {
+fn build_runtime_id(
+    endpoint_agent_id: &str,
+    kind: &str,
+    external_runtime_id: Option<&str>,
+) -> String {
     if let Some(external) = external_runtime_id {
         let material = format!("{endpoint_agent_id}:{kind}:{external}");
         let digest = hush_core::sha256(material.as_bytes()).to_hex();
@@ -79,7 +83,10 @@ fn build_runtime_id(endpoint_agent_id: &str, kind: &str, external_runtime_id: Op
     format!("rt-{}-{}", short_kind(kind), &random[..12])
 }
 
-pub fn resolve_effective_endpoint_agent_id(settings: &mut Settings, requested: Option<&str>) -> String {
+pub fn resolve_effective_endpoint_agent_id(
+    settings: &mut Settings,
+    requested: Option<&str>,
+) -> String {
     if let Some(endpoint_id) = normalize_non_empty(requested) {
         return endpoint_id;
     }
@@ -223,9 +230,9 @@ pub fn resolve_runtime_for_policy_event(
 
     match (runtime_agent_id, runtime_agent_kind) {
         (None, None) => Ok(None),
-        (Some(_), None) | (None, Some(_)) => Err(
-            "runtime_agent_id and runtime_agent_kind must be provided together".to_string(),
-        ),
+        (Some(_), None) | (None, Some(_)) => {
+            Err("runtime_agent_id and runtime_agent_kind must be provided together".to_string())
+        }
         (Some(external_runtime_id), Some(kind)) => {
             let registration = register_runtime_agent(
                 settings,
@@ -284,12 +291,8 @@ mod tests {
     #[test]
     fn runtime_policy_resolution_requires_complete_runtime_identity_pair() {
         let mut settings = Settings::default();
-        let result = resolve_runtime_for_policy_event(
-            &mut settings,
-            "desktop-a",
-            Some("runtime-1"),
-            None,
-        );
+        let result =
+            resolve_runtime_for_policy_event(&mut settings, "desktop-a", Some("runtime-1"), None);
         assert!(result.is_err());
     }
 }

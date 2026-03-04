@@ -25,9 +25,9 @@ cargo install hush-cli
 clawdstrike --version
 ```
 
-## Daemon (`clawdstriked`) (optional)
+## Daemon (`hushd` / `clawdstriked`) (optional)
 
-`clawdstriked` is an HTTP daemon that can evaluate checks server-side. It is still evolving, so treat it as optional/WIP.
+`hushd` (`clawdstriked` is an alias binary) is an HTTP daemon that can evaluate checks server-side. It is still evolving, so treat it as optional/WIP.
 
 ```bash
 cargo install --path crates/services/hushd

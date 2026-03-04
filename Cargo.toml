@@ -42,7 +42,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "0.2.3"
+version = "0.2.4"
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/backbay-labs/clawdstrike"
@@ -151,17 +151,17 @@ md-5 = "0.10"
 jsonwebtoken = { version = "10", default-features = false, features = ["aws_lc_rs", "use_pem"] }
 
 # Internal crates
-hush-core = { path = "crates/libs/hush-core", version = "0.2.3" }
-hush-proxy = { path = "crates/libs/hush-proxy", version = "0.2.3" }
-clawdstrike = { path = "crates/libs/clawdstrike", version = "0.2.3", default-features = false }
-hush-certification = { path = "crates/libs/hush-certification", version = "0.2.3" }
-spine = { package = "hush-spine", path = "crates/libs/spine", version = "0.2.3" }
-bridge-runtime = { path = "crates/libs/bridge-runtime", version = "0.2.3" }
-hunt-scan = { path = "crates/libs/hunt-scan", version = "0.2.3" }
-hunt-query = { path = "crates/libs/hunt-query", version = "0.2.3" }
-hunt-correlate = { path = "crates/libs/hunt-correlate", version = "0.2.3" }
-clawdstrike-ocsf = { path = "crates/libs/clawdstrike-ocsf", version = "0.2.3" }
-clawdstrike-policy-event = { path = "crates/libs/clawdstrike-policy-event", version = "0.2.3", default-features = false }
+hush-core = { path = "crates/libs/hush-core", version = "0.2.4" }
+hush-proxy = { path = "crates/libs/hush-proxy", version = "0.2.4" }
+clawdstrike = { path = "crates/libs/clawdstrike", version = "0.2.4", default-features = false }
+hush-certification = { path = "crates/libs/hush-certification", version = "0.2.4" }
+spine = { package = "hush-spine", path = "crates/libs/spine", version = "0.2.4" }
+bridge-runtime = { path = "crates/libs/bridge-runtime", version = "0.2.4" }
+hunt-scan = { path = "crates/libs/hunt-scan", version = "0.2.4" }
+hunt-query = { path = "crates/libs/hunt-query", version = "0.2.4" }
+hunt-correlate = { path = "crates/libs/hunt-correlate", version = "0.2.4" }
+clawdstrike-ocsf = { path = "crates/libs/clawdstrike-ocsf", version = "0.2.4" }
+clawdstrike-policy-event = { path = "crates/libs/clawdstrike-policy-event", version = "0.2.4", default-features = false }
 
 [profile.release]
 lto = true

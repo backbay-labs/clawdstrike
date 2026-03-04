@@ -246,7 +246,12 @@ impl ApprovalSubmissionLimiter {
 }
 
 impl RouteRateLimiter {
-    fn allow_now(&mut self, now: Instant, window: Duration, limit: usize) -> std::result::Result<(), u64> {
+    fn allow_now(
+        &mut self,
+        now: Instant,
+        window: Duration,
+        limit: usize,
+    ) -> std::result::Result<(), u64> {
         while self
             .events
             .front()
@@ -1613,8 +1618,8 @@ async fn fetch_daemon_endpoint_status_for_health(
     expected_policy_version: Option<&str>,
     expected_daemon_version: Option<&str>,
 ) -> Option<DaemonEndpointStatus> {
-    let mut url = reqwest::Url::parse(&format!("{}/api/v1/agents/status", settings.daemon_url()))
-        .ok()?;
+    let mut url =
+        reqwest::Url::parse(&format!("{}/api/v1/agents/status", settings.daemon_url())).ok()?;
     {
         let mut query = url.query_pairs_mut();
         query.append_pair("endpoint_agent_id", endpoint_agent_id);
@@ -1652,7 +1657,13 @@ fn redact_settings_json(raw: &mut Value) {
         return;
     };
 
-    for key in ["api_key", "token", "nkey_seed", "enrollment_token", "secret"] {
+    for key in [
+        "api_key",
+        "token",
+        "nkey_seed",
+        "enrollment_token",
+        "secret",
+    ] {
         if let Some(value) = obj.get_mut(key) {
             *value = Value::String("[REDACTED]".to_string());
         }
@@ -1687,11 +1698,7 @@ fn trim_tail_lines(content: &str, lines: usize) -> String {
     if lines == 0 {
         return String::new();
     }
-    let mut collected = content
-        .lines()
-        .rev()
-        .take(lines)
-        .collect::<Vec<_>>();
+    let mut collected = content.lines().rev().take(lines).collect::<Vec<_>>();
     collected.reverse();
     collected.join("\n")
 }
@@ -1722,7 +1729,8 @@ async fn write_diagnostics_bundle(
         .map(str::trim)
         .filter(|value| !value.is_empty())
     {
-        health_request = health_request.header(AUTHORIZATION.as_str(), format!("Bearer {}", api_key));
+        health_request =
+            health_request.header(AUTHORIZATION.as_str(), format!("Bearer {}", api_key));
     }
     let daemon_health = match health_request.send().await {
         Ok(response) => {
@@ -1742,10 +1750,8 @@ async fn write_diagnostics_bundle(
 
     let diagnostics_root = crate::settings::get_config_dir().join("diagnostics");
     let generated_at = chrono::Utc::now();
-    let bundle_dir = diagnostics_root.join(format!(
-        "bundle-{}",
-        generated_at.format("%Y%m%dT%H%M%SZ")
-    ));
+    let bundle_dir =
+        diagnostics_root.join(format!("bundle-{}", generated_at.format("%Y%m%dT%H%M%SZ")));
     let bundle_dir_for_write = bundle_dir.clone();
     let manifest = serde_json::json!({
         "generated_at": generated_at.to_rfc3339(),
@@ -1770,8 +1776,12 @@ async fn write_diagnostics_bundle(
         "pending_approvals": pending_approvals,
     });
 
-    let agent_log_path = crate::settings::get_config_dir().join("logs").join("agent.log");
-    let hushd_log_path = crate::settings::get_config_dir().join("logs").join("hushd.log");
+    let agent_log_path = crate::settings::get_config_dir()
+        .join("logs")
+        .join("agent.log");
+    let hushd_log_path = crate::settings::get_config_dir()
+        .join("logs")
+        .join("hushd.log");
     let agent_log = if include_logs {
         std::fs::read_to_string(&agent_log_path)
             .map(|content| trim_tail_lines(&content, log_lines))
@@ -1830,12 +1840,12 @@ async fn write_diagnostics_bundle(
             bundle_dir_for_write.join("logs").join("agent.tail.log"),
             agent_log,
         )
-            .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
         std::fs::write(
             bundle_dir_for_write.join("logs").join("hushd.tail.log"),
             hushd_log,
         )
-            .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
+        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
         Ok(())
     })
     .await
@@ -2270,7 +2280,10 @@ fn truncate_delivery_error(message: &str) -> String {
     if message.chars().count() <= MAX_LEN {
         return message.to_string();
     }
-    let mut out = message.chars().take(MAX_LEN.saturating_sub(3)).collect::<String>();
+    let mut out = message
+        .chars()
+        .take(MAX_LEN.saturating_sub(3))
+        .collect::<String>();
     out.push_str("...");
     out
 }
@@ -3037,10 +3050,7 @@ async fn rotate_local_api_token_route(
     }))
 }
 
-async fn token_rotation_loop(
-    state: Arc<AgentApiState>,
-    shutdown_rx: &mut broadcast::Receiver<()>,
-) {
+async fn token_rotation_loop(state: Arc<AgentApiState>, shutdown_rx: &mut broadcast::Receiver<()>) {
     loop {
         let interval_hours = {
             let settings = state.settings.read().await;
@@ -3060,10 +3070,7 @@ async fn token_rotation_loop(
 
         match rotate_local_api_token_with_grace(&state) {
             Ok(grace_secs) => {
-                tracing::info!(
-                    grace_secs,
-                    "Rotated local API auth token on schedule"
-                );
+                tracing::info!(grace_secs, "Rotated local API auth token on schedule");
             }
             Err((status, err)) => {
                 tracing::warn!(
@@ -3549,7 +3556,10 @@ mod tests {
                 "/api/v1/agent/integrations",
                 get(get_integrations_settings).put(update_integrations_settings),
             )
-            .route("/api/v1/agent/integrations/test", post(test_integration_delivery))
+            .route(
+                "/api/v1/agent/integrations/test",
+                post(test_integration_delivery),
+            )
             .with_state(state);
 
         let put_req = axum::http::Request::builder()
@@ -3769,7 +3779,10 @@ mod tests {
                 "/api/v1/agent/integrations",
                 get(get_integrations_settings).put(update_integrations_settings),
             )
-            .route("/api/v1/agent/integrations/test", post(test_integration_delivery))
+            .route(
+                "/api/v1/agent/integrations/test",
+                post(test_integration_delivery),
+            )
             .with_state(state);
 
         let get_req = axum::http::Request::builder()

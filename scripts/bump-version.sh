@@ -47,8 +47,23 @@ find_package_json_files() {
 echo "  Updating Cargo.toml workspace version..."
 sed_inplace "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" Cargo.toml
 
-# Update all crate Cargo.toml files that use workspace version inheritance
-# (They inherit from workspace, so we only need to update the root)
+# Update internal workspace dependency versions used for publishing metadata.
+echo "  Updating Cargo.toml internal dependency versions..."
+for crate in \
+    hush-core \
+    hush-proxy \
+    clawdstrike \
+    hush-certification \
+    spine \
+    bridge-runtime \
+    hunt-scan \
+    hunt-query \
+    hunt-correlate \
+    clawdstrike-ocsf \
+    clawdstrike-policy-event
+do
+    sed_inplace "s/\\(${crate} = {[^}]*version = \\)\"[^\"]*\"/\\1\"$VERSION\"/" Cargo.toml
+done
 
 # Update package.json files across published npm packages
 echo "  Updating packages/**/package.json versions..."
@@ -93,6 +108,36 @@ fi
 if [[ -f "packages/sdk/hush-py/pyproject.toml" ]]; then
     echo "  Updating packages/sdk/hush-py/pyproject.toml..."
     sed_inplace "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" packages/sdk/hush-py/pyproject.toml
+fi
+
+if [[ -f "packages/sdk/hush-py/hush-native/pyproject.toml" ]]; then
+    echo "  Updating packages/sdk/hush-py/hush-native/pyproject.toml..."
+    sed_inplace "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" packages/sdk/hush-py/hush-native/pyproject.toml
+fi
+
+if [[ -f "packages/sdk/hush-py/hush-native/Cargo.toml" ]]; then
+    echo "  Updating packages/sdk/hush-py/hush-native/Cargo.toml..."
+    sed_inplace "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" packages/sdk/hush-py/hush-native/Cargo.toml
+fi
+
+if [[ -f "apps/agent/src-tauri/Cargo.toml" ]]; then
+    echo "  Updating apps/agent/src-tauri/Cargo.toml..."
+    sed_inplace "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" apps/agent/src-tauri/Cargo.toml
+fi
+
+if [[ -f "apps/agent/src-tauri/tauri.conf.json" ]]; then
+    echo "  Updating apps/agent/src-tauri/tauri.conf.json..."
+    if command -v node &> /dev/null; then
+        node -e "
+            const fs = require('fs');
+            const path = 'apps/agent/src-tauri/tauri.conf.json';
+            const data = JSON.parse(fs.readFileSync(path, 'utf8'));
+            data.version = process.argv[1];
+            fs.writeFileSync(path, JSON.stringify(data, null, 2) + '\\n');
+        " "$VERSION"
+    else
+        sed_inplace "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" apps/agent/src-tauri/tauri.conf.json
+    fi
 fi
 
 PY_INIT_PATH=""

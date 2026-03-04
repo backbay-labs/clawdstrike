@@ -1,6 +1,6 @@
 {
   "name": "@clawdstrike/langchain",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Minimal Clawdstrike tool wrappers for LangChain tools",
   "type": "module",
   "main": "dist/index.js",

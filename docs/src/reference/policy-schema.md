@@ -26,7 +26,7 @@ Default serialized version is `1.2.0`.
 Remote `extends` is **disabled by default** and must be explicitly enabled via an **allowlist**:
 
 - `hushd`: configure `remote_extends.allowed_hosts`
-- `hush`: pass `--remote-extends-allow-host` (repeatable)
+- `clawdstrike` (or `hush` alias): pass `--remote-extends-allow-host` (repeatable)
 
 Remote references must be **integrity pinned** with `#sha256=<64-hex>`. By default, the resolver is hardened:
 
