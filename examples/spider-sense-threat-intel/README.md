@@ -39,6 +39,15 @@ Optional live mode:
 2. re-sign assets
 3. re-run runners
 
+## First-Class Guard Note
+
+This example uses the first-class guard config (`guards.spider_sense`) in both policy files.
+It does **not** register Spider-Sense via `guards.custom`.
+
+The runners call `check()` with a custom action payload (`custom_type = "spider_sense"`) only
+to inject precomputed scenario embeddings for deterministic offline parity.
+That is an action-shape choice for the demo, not a custom-guard wiring path.
+
 ## Run: TypeScript
 
 ```bash
