@@ -1220,25 +1220,30 @@ const SPIDER_SENSE_BUILTIN_S2BENCH: SpiderSensePattern[] = [
 ];
 
 function parseSpiderSensePatterns(config: Record<string, unknown>): SpiderSensePattern[] {
+  const parsePattern = (entry: unknown): SpiderSensePattern | null => {
+    if (!isRecord(entry) || !Array.isArray(entry.embedding) || entry.embedding.length === 0) {
+      return null;
+    }
+    const embedding: number[] = [];
+    for (const value of entry.embedding) {
+      if (typeof value !== "number" || !Number.isFinite(value)) {
+        return null;
+      }
+      embedding.push(value);
+    }
+    return {
+      id: typeof entry.id === "string" ? entry.id : "",
+      category: typeof entry.category === "string" ? entry.category : "",
+      stage: typeof entry.stage === "string" ? entry.stage : "",
+      label: typeof entry.label === "string" ? entry.label : "",
+      embedding,
+    };
+  };
+
   const rawPatterns = config.patterns;
   if (Array.isArray(rawPatterns)) {
     const parsed = rawPatterns
-      .map((entry) => {
-        if (!isRecord(entry)) return null;
-        const embedding = Array.isArray(entry.embedding)
-          ? entry.embedding.filter(
-              (value): value is number => typeof value === "number" && Number.isFinite(value),
-            )
-          : [];
-        if (embedding.length === 0) return null;
-        return {
-          id: typeof entry.id === "string" ? entry.id : "",
-          category: typeof entry.category === "string" ? entry.category : "",
-          stage: typeof entry.stage === "string" ? entry.stage : "",
-          label: typeof entry.label === "string" ? entry.label : "",
-          embedding,
-        };
-      })
+      .map((entry) => parsePattern(entry))
       .filter((value): value is SpiderSensePattern => value !== null);
     if (parsed.length > 0) {
       return parsed;
@@ -1256,7 +1261,15 @@ function parseSpiderSensePatterns(config: Record<string, unknown>): SpiderSenseP
     if (!Array.isArray(parsed) || parsed.length === 0) {
       throw new Error(`spider_sense pattern DB at '${patternDbPath}' is empty or invalid`);
     }
-    return parsed as SpiderSensePattern[];
+    return parsed.map((entry, index) => {
+      const pattern = parsePattern(entry);
+      if (!pattern) {
+        throw new Error(
+          `spider_sense pattern DB at '${patternDbPath}' contains invalid entry at index ${index}`,
+        );
+      }
+      return pattern;
+    });
   }
   return [];
 }

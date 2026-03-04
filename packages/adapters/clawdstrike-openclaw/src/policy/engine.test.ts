@@ -178,6 +178,51 @@ guards:
     expect(decision.guard).toBe("clawdstrike-spider-sense");
   });
 
+  it("rejects malformed external spider_sense pattern DB entries at load time", () => {
+    const patternDbPath = join(testDir, "spider-sense-patterns-invalid.json");
+    writeFileSync(
+      patternDbPath,
+      JSON.stringify([
+        {
+          id: "bad-1",
+          category: "prompt_injection",
+          stage: "perception",
+          label: "missing embedding",
+        },
+      ]),
+    );
+
+    const policyPath = join(testDir, "spider-sense-invalid-db-policy.yaml");
+    writeFileSync(
+      policyPath,
+      `
+version: clawdstrike-v1.0
+guards:
+  custom:
+    - package: clawdstrike-spider-sense
+      enabled: true
+      config:
+        pattern_db_path: "${patternDbPath}"
+`,
+    );
+
+    expect(
+      () =>
+        new PolicyEngine({
+          policy: policyPath,
+          mode: "deterministic",
+          logLevel: "error",
+          guards: {
+            forbidden_path: false,
+            egress: false,
+            secret_leak: false,
+            patch_integrity: false,
+            spider_sense: true,
+          },
+        }),
+    ).toThrow(/contains invalid entry at index 0/);
+  });
+
   it("warns but allows in advisory mode", async () => {
     const engine = new PolicyEngine({
       policy: "clawdstrike:ai-agent-minimal",
