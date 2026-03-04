@@ -21,21 +21,30 @@ const DEFAULT_CACHE_MAX_SIZE_MB: u64 = 64;
 
 pub fn build_async_guards(policy: &Policy) -> Result<Vec<Arc<dyn AsyncGuard>>> {
     let mut out: Vec<Arc<dyn AsyncGuard>> = Vec::new();
-    let has_first_class_spider = policy.guards.spider_sense.is_some();
+    let has_first_class_spider = policy
+        .guards
+        .spider_sense
+        .as_ref()
+        .map(|cfg| cfg.enabled)
+        .unwrap_or(false);
 
     // First-class spider_sense field.
     if let Some(ref ss_cfg) = policy.guards.spider_sense {
-        let async_cfg = async_config_for_spec(ss_cfg.async_config.as_ref())?;
-        // Resolve env-var placeholders (${VAR}) in the config, matching the
-        // guards.custom path which calls resolve_placeholders_in_json.
-        let json = serde_json::to_value(ss_cfg)
-            .map_err(|e| Error::ConfigError(format!("spider-sense serialize: {e}")))?;
-        let resolved = resolve_placeholders_in_json(json)?;
-        let resolved_cfg: SpiderSensePolicyConfig = serde_json::from_value(resolved)
-            .map_err(|e| Error::ConfigError(format!("spider-sense deserialize: {e}")))?;
-        let guard = SpiderSenseGuard::new(resolved_cfg, async_cfg)
-            .map_err(|e| Error::ConfigError(format!("spider-sense init: {e}")))?;
-        out.push(Arc::new(guard));
+        if !ss_cfg.enabled {
+            tracing::info!("guards.spider_sense disabled by config");
+        } else {
+            let async_cfg = async_config_for_spec(ss_cfg.async_config.as_ref())?;
+            // Resolve env-var placeholders (${VAR}) in the config, matching the
+            // guards.custom path which calls resolve_placeholders_in_json.
+            let json = serde_json::to_value(ss_cfg)
+                .map_err(|e| Error::ConfigError(format!("spider-sense serialize: {e}")))?;
+            let resolved = resolve_placeholders_in_json(json)?;
+            let resolved_cfg: SpiderSensePolicyConfig = serde_json::from_value(resolved)
+                .map_err(|e| Error::ConfigError(format!("spider-sense deserialize: {e}")))?;
+            let guard = SpiderSenseGuard::new(resolved_cfg, async_cfg)
+                .map_err(|e| Error::ConfigError(format!("spider-sense init: {e}")))?;
+            out.push(Arc::new(guard));
+        }
     }
 
     for spec in &policy.guards.custom {
@@ -179,6 +188,7 @@ mod tests {
 
     fn spider_config() -> SpiderSensePolicyConfig {
         SpiderSensePolicyConfig {
+            enabled: true,
             embedding_api_url: "https://api.openai.com/v1/embeddings".to_string(),
             embedding_api_key: "test-key".to_string(),
             embedding_model: "text-embedding-3-small".to_string(),
@@ -215,5 +225,32 @@ mod tests {
 
         let guards = build_async_guards(&policy).expect("build async guards");
         assert_eq!(guards.len(), 1, "custom spider-sense should be skipped");
+    }
+
+    #[test]
+    fn disabled_first_class_spider_does_not_shadow_custom_spider() {
+        let mut policy = Policy::default();
+        policy.guards.spider_sense = Some(
+            serde_json::from_value(json!({
+                "enabled": false
+            }))
+            .expect("disabled first-class spider config should parse"),
+        );
+        policy.guards.custom.push(CustomGuardSpec {
+            package: "clawdstrike-spider-sense".to_string(),
+            registry: None,
+            version: None,
+            enabled: true,
+            config: json!({
+                "embedding_api_url": "https://api.openai.com/v1/embeddings",
+                "embedding_api_key": "test-key",
+                "embedding_model": "text-embedding-3-small",
+                "pattern_db_path": "builtin:s2bench-v1",
+            }),
+            async_config: None,
+        });
+
+        let guards = build_async_guards(&policy).expect("build async guards");
+        assert_eq!(guards.len(), 1, "custom spider-sense should remain active");
     }
 }

@@ -44,7 +44,7 @@ Integrity pinning and resolver hardening:
 ```yaml
 version: "1.3.0"
 name: Example
-description: Example policy with core guards and Spider-Sense
+description: Example policy with core guards, posture, and Spider-Sense
 extends: clawdstrike:default
 merge_strategy: deep_merge
 
@@ -62,6 +62,59 @@ guards:
     allow: ["api.github.com", "*.openai.com"]
     block: []
     default_action: block
+
+  secret_leak:
+    patterns:
+      - name: github_token
+        pattern: "gh[ps]_[A-Za-z0-9]{36}"
+        severity: critical
+
+  patch_integrity:
+    max_additions: 1000
+    max_deletions: 500
+    forbidden_patterns: ["(?i)rm\\s+-rf\\s+/"]
+
+  shell_command:
+    enabled: true
+    forbidden_patterns:
+      - '(?i)\brm\s+(-rf?|--recursive)\s+/\s*(?:$|\*)'
+      - '(?i)\bcurl\s+[^|]*\|\s*(bash|sh|zsh)\b'
+    enforce_forbidden_paths: true
+
+  mcp_tool:
+    allow: []
+    block: ["shell_exec"]
+    require_confirmation: ["git_push"]
+    default_action: allow
+
+  prompt_injection:
+    enabled: true
+
+  jailbreak:
+    enabled: true
+
+  computer_use:
+    enabled: true
+    mode: guardrail
+    allowed_actions:
+      - "remote.session.connect"
+      - "remote.session.disconnect"
+      - "input.inject"
+
+  remote_desktop_side_channel:
+    enabled: true
+    clipboard_enabled: false
+    file_transfer_enabled: false
+    session_share_enabled: false
+    audio_enabled: true
+    drive_mapping_enabled: false
+    printing_enabled: false
+    max_transfer_size_bytes: 104857600
+
+  input_injection_capability:
+    enabled: true
+    allowed_input_types: ["keyboard", "mouse"]
+    require_postcondition_probe: false
 
   spider_sense:
     enabled: true
@@ -100,6 +153,20 @@ settings:
   fail_fast: false
   verbose_logging: false
   session_timeout_secs: 3600
+
+posture:
+  initial: work
+  states:
+    work:
+      capabilities: [file_access, file_write, egress, mcp_tool]
+      budgets:
+        file_writes: 100
+        egress_calls: 50
+    quarantine:
+      capabilities: []
+      budgets: {}
+  transitions:
+    - { from: "*", to: quarantine, on: critical_violation }
 ```
 
 ## `guards.spider_sense` Fields

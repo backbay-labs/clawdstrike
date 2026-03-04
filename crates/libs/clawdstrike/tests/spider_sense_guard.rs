@@ -1345,12 +1345,16 @@ async fn spider_sense_merge_child_overrides_parent() {
     use clawdstrike::policy::GuardConfigs;
 
     let parent_cfg = SpiderSensePolicyConfig {
+        enabled: true,
         embedding_api_url: "http://parent.example.com/v1/embeddings".to_string(),
         embedding_api_key: "parent-key".to_string(),
         embedding_model: "parent-model".to_string(),
         similarity_threshold: 0.80,
         ambiguity_band: 0.15,
+        top_k: 5,
         pattern_db_path: "builtin:s2bench-v1".to_string(),
+        pattern_db_version: None,
+        pattern_db_checksum: None,
         llm_api_url: None,
         llm_api_key: None,
         llm_model: None,
@@ -1358,12 +1362,16 @@ async fn spider_sense_merge_child_overrides_parent() {
     };
 
     let child_cfg = SpiderSensePolicyConfig {
+        enabled: true,
         embedding_api_url: "http://child.example.com/v1/embeddings".to_string(),
         embedding_api_key: "child-key".to_string(),
         embedding_model: "child-model".to_string(),
         similarity_threshold: 0.90,
         ambiguity_band: 0.05,
+        top_k: 5,
         pattern_db_path: "builtin:s2bench-v1".to_string(),
+        pattern_db_version: None,
+        pattern_db_checksum: None,
         llm_api_url: None,
         llm_api_key: None,
         llm_model: None,
@@ -1397,12 +1405,16 @@ async fn spider_sense_merge_parent_preserved_when_child_absent() {
     use clawdstrike::policy::GuardConfigs;
 
     let parent_cfg = SpiderSensePolicyConfig {
+        enabled: true,
         embedding_api_url: "http://parent.example.com/v1/embeddings".to_string(),
         embedding_api_key: "parent-key".to_string(),
         embedding_model: "parent-model".to_string(),
         similarity_threshold: 0.80,
         ambiguity_band: 0.15,
+        top_k: 5,
         pattern_db_path: "builtin:s2bench-v1".to_string(),
+        pattern_db_version: None,
+        pattern_db_checksum: None,
         llm_api_url: None,
         llm_api_key: None,
         llm_model: None,

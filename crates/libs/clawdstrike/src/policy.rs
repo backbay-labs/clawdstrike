@@ -24,7 +24,7 @@ use crate::posture::{validate_posture_config, PostureConfig};
 /// This is a schema compatibility boundary (not the crate version). Runtimes should fail closed on
 /// unsupported versions to prevent silent drift.
 pub const POLICY_SCHEMA_VERSION: &str = "1.2.0";
-pub const POLICY_SUPPORTED_SCHEMA_VERSIONS: &[&str] = &["1.1.0", "1.2.0"];
+pub const POLICY_SUPPORTED_SCHEMA_VERSIONS: &[&str] = &["1.1.0", "1.2.0", "1.3.0"];
 const MAX_POLICY_EXTENDS_DEPTH: usize = 32;
 
 fn default_true() -> bool {
@@ -2011,6 +2011,17 @@ name: Test
     }
 
     #[test]
+    fn test_policy_version_accepts_1_3_0() {
+        let yaml = r#"
+version: "1.3.0"
+name: Test
+"#;
+
+        let policy = Policy::from_yaml(yaml).unwrap();
+        assert_eq!(policy.version, "1.3.0");
+    }
+
+    #[test]
     fn test_posture_parses_for_1_2_0() {
         let yaml = r#"
 version: "1.2.0"
@@ -2467,5 +2478,38 @@ guards:
             effective.iter().any(|p| p.name == "my_custom"),
             "additional pattern added in deep merge"
         );
+    }
+
+    #[cfg(feature = "full")]
+    #[test]
+    fn test_spider_sense_deep_merge_allows_child_disable_override() {
+        let base = GuardConfigs {
+            spider_sense: Some(
+                serde_json::from_value(serde_json::json!({
+                    "enabled": true,
+                    "embedding_api_url": "https://example.invalid/v1/embeddings",
+                    "embedding_api_key": "base-key",
+                    "embedding_model": "text-embedding-3-small",
+                    "pattern_db_path": "builtin:s2bench-v1"
+                }))
+                .unwrap(),
+            ),
+            ..Default::default()
+        };
+        let child = GuardConfigs {
+            spider_sense: Some(
+                serde_json::from_value(serde_json::json!({
+                    "enabled": false
+                }))
+                .unwrap(),
+            ),
+            ..Default::default()
+        };
+
+        let merged = base.merge_with(&child);
+        let merged_spider = merged
+            .spider_sense
+            .expect("child disable override should preserve explicit spider_sense config");
+        assert!(!merged_spider.enabled);
     }
 }

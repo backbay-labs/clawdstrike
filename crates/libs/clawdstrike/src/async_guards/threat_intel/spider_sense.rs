@@ -43,11 +43,18 @@ const BUILTIN_S2BENCH_V1: &str =
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SpiderSensePolicyConfig {
+    /// Enable/disable Spider-Sense. Default: true.
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+
     /// URL of the embedding API (OpenAI-compatible POST /embeddings).
+    #[serde(default)]
     pub embedding_api_url: String,
     /// API key for the embedding service.
+    #[serde(default)]
     pub embedding_api_key: String,
     /// Embedding model name (e.g. `"text-embedding-3-small"`).
+    #[serde(default)]
     pub embedding_model: String,
 
     /// Cosine similarity threshold above which a match is considered a threat.
@@ -65,6 +72,7 @@ pub struct SpiderSensePolicyConfig {
 
     /// Path to the external JSON pattern database file, or `builtin:s2bench-v1`
     /// to use the embedded demo database.
+    #[serde(default)]
     pub pattern_db_path: String,
     /// Optional version label for the external pattern DB (metadata only).
     #[serde(default)]
@@ -92,6 +100,10 @@ pub struct SpiderSensePolicyConfig {
 
 fn default_similarity_threshold() -> f64 {
     DEFAULT_SIMILARITY_THRESHOLD
+}
+
+fn default_enabled() -> bool {
+    true
 }
 
 fn default_ambiguity_band() -> f64 {
@@ -717,6 +729,7 @@ mod tests {
 
     fn test_cfg() -> SpiderSensePolicyConfig {
         SpiderSensePolicyConfig {
+            enabled: true,
             embedding_api_url: "http://127.0.0.1:8080/v1/embeddings".to_string(),
             embedding_api_key: "test-key".to_string(),
             embedding_model: "test-model".to_string(),

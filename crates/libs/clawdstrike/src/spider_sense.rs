@@ -59,7 +59,6 @@ fn default_top_k() -> usize {
 
 /// A single entry in the pattern database.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct PatternEntry {
     /// Unique identifier for this pattern.
     pub id: String,
@@ -392,6 +391,26 @@ mod tests {
     fn pattern_db_parse_valid() {
         let db = test_pattern_db();
         assert_eq!(db.len(), 3);
+        assert_eq!(db.expected_dim(), Some(3));
+    }
+
+    #[test]
+    fn pattern_db_parse_allows_extra_metadata_fields() {
+        let json = r#"[
+            {
+                "id": "p1",
+                "category": "prompt_injection",
+                "stage": "perception",
+                "label": "ignore previous instructions",
+                "embedding": [0.1, 0.2, 0.3],
+                "description": "extra metadata should be ignored",
+                "severity": "critical",
+                "source": "custom-db",
+                "created_at": "2026-03-04T00:00:00Z"
+            }
+        ]"#;
+        let db = PatternDb::parse_json(json).expect("pattern DB with extra metadata should parse");
+        assert_eq!(db.len(), 1);
         assert_eq!(db.expected_dim(), Some(3));
     }
 
