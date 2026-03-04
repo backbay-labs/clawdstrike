@@ -347,7 +347,12 @@ impl SpiderSensePolicyConfig {
             present_fields.insert("async".to_string());
         }
 
-        if child.enabled != self.enabled {
+        // Heuristic merge cannot reliably distinguish serde-default
+        // enabled=true from explicit enabled=true, so only enabled=false is
+        // treated as explicitly present here.
+        // For explicit enabled=true overrides, callers should use
+        // `merge_with_present_fields` with `enabled` in the field set.
+        if !child.enabled {
             present_fields.insert("enabled".to_string());
         }
 
@@ -2025,14 +2030,18 @@ mod tests {
     }
 
     #[test]
-    fn spider_sense_policy_merge_with_allows_programmatic_enable_override() {
+    fn spider_sense_policy_merge_with_present_fields_allows_explicit_enable_override() {
         let mut base = test_cfg();
         base.enabled = false;
         let mut child = SpiderSensePolicyConfig::default();
         child.enabled = true;
+        let present_fields = std::iter::once("enabled".to_string()).collect();
 
-        let merged = base.merge_with(&child);
-        assert!(merged.enabled, "child enabled=true should override base");
+        let merged = base.merge_with_present_fields(&child, &present_fields);
+        assert!(
+            merged.enabled,
+            "explicit enabled presence should override base"
+        );
     }
 
     #[test]
@@ -2071,23 +2080,44 @@ mod tests {
     }
 
     #[test]
-    fn spider_sense_policy_merge_with_allows_programmatic_enable_with_other_overrides() {
+    fn spider_sense_policy_merge_with_preserves_base_when_child_partial_serde_defaults() {
+        let mut base = test_cfg();
+        base.enabled = false;
+        base.similarity_threshold = 0.84;
+        let child: SpiderSensePolicyConfig = serde_json::from_value(serde_json::json!({
+            "similarity_threshold": 0.91
+        }))
+        .expect("policy config should deserialize");
+
+        let merged = base.merge_with(&child);
+        assert!(
+            !merged.enabled,
+            "heuristic merge should not auto-enable from serde defaults"
+        );
+        assert_eq!(
+            merged.similarity_threshold, 0.91,
+            "non-default child threshold should still override"
+        );
+    }
+
+    #[test]
+    fn spider_sense_policy_merge_with_present_fields_allows_enable_with_other_overrides() {
         let mut base = test_cfg();
         base.enabled = false;
         base.similarity_threshold = 0.84;
         let mut child = SpiderSensePolicyConfig::default();
         child.enabled = true;
         child.similarity_threshold = 0.91;
+        let present_fields = std::iter::once("enabled".to_string())
+            .chain(std::iter::once("similarity_threshold".to_string()))
+            .collect();
 
-        let merged = base.merge_with(&child);
+        let merged = base.merge_with_present_fields(&child, &present_fields);
         assert!(
             merged.enabled,
-            "programmatic enabled=true should be preserved alongside other overrides"
+            "explicit enabled presence should override base"
         );
-        assert_eq!(
-            merged.similarity_threshold, 0.91,
-            "child threshold override should still be honored"
-        );
+        assert_eq!(merged.similarity_threshold, 0.91);
     }
 
     #[test]
