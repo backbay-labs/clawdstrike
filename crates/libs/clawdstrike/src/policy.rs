@@ -269,6 +269,14 @@ pub struct GuardConfigs {
     #[cfg(feature = "full")]
     #[serde(default)]
     pub spider_sense: Option<crate::async_guards::threat_intel::SpiderSensePolicyConfig>,
+    /// Spider-Sense passthrough config in `policy-event` builds.
+    ///
+    /// `policy-event` consumers only need schema compatibility and should not
+    /// reject valid 1.3 policies because runtime-only Spider-Sense types are
+    /// unavailable outside `full` builds.
+    #[cfg(all(feature = "policy-event", not(feature = "full")))]
+    #[serde(default)]
+    pub spider_sense: Option<serde_json::Value>,
     /// Custom (plugin-shaped) guards.
     ///
     /// Note: for now, only a small reserved set of built-in packages is supported. Unknown
@@ -342,6 +350,11 @@ impl GuardConfigs {
                 .clone()
                 .or_else(|| self.input_injection_capability.clone()),
             #[cfg(feature = "full")]
+            spider_sense: child
+                .spider_sense
+                .clone()
+                .or_else(|| self.spider_sense.clone()),
+            #[cfg(all(feature = "policy-event", not(feature = "full")))]
             spider_sense: child
                 .spider_sense
                 .clone()
@@ -2062,6 +2075,39 @@ guards:
             Some("spider_sense.deep_path.json_classifier")
         );
         assert_eq!(spider.llm_prompt_template_version.as_deref(), Some("1.0.0"));
+    }
+
+    #[cfg(all(feature = "policy-event", not(feature = "full")))]
+    #[test]
+    fn test_policy_1_3_spider_sense_fields_parse_policy_event_build() {
+        let yaml = r#"
+version: "1.3.0"
+name: SpiderSense13PolicyEvent
+guards:
+  spider_sense:
+    enabled: true
+    embedding_api_url: "https://api.openai.com/v1/embeddings"
+    embedding_api_key: "${SPIDER_SENSE_EMBEDDING_KEY}"
+    embedding_model: "text-embedding-3-small"
+    similarity_threshold: 0.85
+    ambiguity_band: 0.10
+    top_k: 5
+    pattern_db_manifest_path: "/tmp/spider/manifest.json"
+    pattern_db_manifest_trust_store_path: "/tmp/spider/manifest-roots.json"
+"#;
+
+        let policy = Policy::from_yaml(yaml).expect("1.3 spider-sense policy should parse");
+        let spider = policy
+            .guards
+            .spider_sense
+            .as_ref()
+            .expect("spider_sense field should be preserved");
+        assert_eq!(
+            spider
+                .pointer("/pattern_db_manifest_path")
+                .and_then(|v| v.as_str()),
+            Some("/tmp/spider/manifest.json")
+        );
     }
 
     #[test]

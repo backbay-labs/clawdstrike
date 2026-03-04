@@ -1316,6 +1316,55 @@ fn resolve_pattern_db_path(cfg: &SpiderSensePolicyConfig) -> Result<String, Stri
     if path.is_empty() {
         return Err("either pattern_db_path or pattern_db_manifest_path must be set".to_string());
     }
+
+    let has_integrity_fields = cfg
+        .pattern_db_version
+        .as_deref()
+        .is_some_and(|value| !value.trim().is_empty())
+        || cfg
+            .pattern_db_checksum
+            .as_deref()
+            .is_some_and(|value| !value.trim().is_empty())
+        || cfg
+            .pattern_db_signature
+            .as_deref()
+            .is_some_and(|value| !value.trim().is_empty())
+        || cfg
+            .pattern_db_signature_key_id
+            .as_deref()
+            .is_some_and(|value| !value.trim().is_empty())
+        || cfg
+            .pattern_db_public_key
+            .as_deref()
+            .is_some_and(|value| !value.trim().is_empty())
+        || cfg
+            .pattern_db_trust_store_path
+            .as_deref()
+            .is_some_and(|value| !value.trim().is_empty())
+        || !cfg.pattern_db_trusted_keys.is_empty();
+
+    if has_integrity_fields {
+        let trust_store_path = resolve_path_relative(
+            path,
+            cfg.pattern_db_trust_store_path
+                .as_deref()
+                .unwrap_or_default(),
+        );
+        let integrity = required_pattern_db_integrity_fields(
+            cfg.pattern_db_version.as_deref().unwrap_or_default(),
+            cfg.pattern_db_checksum.as_deref().unwrap_or_default(),
+            cfg.pattern_db_signature.as_deref().unwrap_or_default(),
+            cfg.pattern_db_public_key.as_deref().unwrap_or_default(),
+            cfg.pattern_db_signature_key_id
+                .as_deref()
+                .unwrap_or_default(),
+            &trust_store_path,
+            cfg.pattern_db_trusted_keys.clone(),
+        )?;
+        let data = read_pattern_db_bytes(path)?;
+        let _ = verify_pattern_db_integrity(&data, &integrity)?;
+    }
+
     Ok(path.to_string())
 }
 
@@ -1929,6 +1978,106 @@ mod tests {
             err.contains("manifest signature verification failed"),
             "expected signature verification failure, got: {err}"
         );
+    }
+
+    #[test]
+    fn resolve_pattern_db_path_verifies_direct_path_checksum_when_present() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let pattern_db_path = dir.path().join("db.json");
+        let pattern_db_json = r#"[
+  {
+    "id": "p1",
+    "category": "prompt_injection",
+    "stage": "perception",
+    "label": "ignore previous",
+    "embedding": [1.0, 0.0, 0.0]
+  }
+]"#;
+        std::fs::write(&pattern_db_path, pattern_db_json).expect("write pattern db");
+
+        let mut cfg = test_cfg();
+        cfg.pattern_db_path = pattern_db_path.to_string_lossy().to_string();
+        cfg.pattern_db_version = Some("direct-v1".to_string());
+        cfg.pattern_db_checksum = Some(sha256(pattern_db_json.as_bytes()).to_hex());
+
+        let resolved = resolve_pattern_db_path(&cfg).expect("resolve direct db path");
+        assert_eq!(resolved, cfg.pattern_db_path);
+    }
+
+    #[test]
+    fn resolve_pattern_db_path_rejects_direct_path_checksum_mismatch() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let pattern_db_path = dir.path().join("db.json");
+        let pattern_db_json = r#"[
+  {
+    "id": "p1",
+    "category": "prompt_injection",
+    "stage": "perception",
+    "label": "ignore previous",
+    "embedding": [1.0, 0.0, 0.0]
+  }
+]"#;
+        std::fs::write(&pattern_db_path, pattern_db_json).expect("write pattern db");
+
+        let mut cfg = test_cfg();
+        cfg.pattern_db_path = pattern_db_path.to_string_lossy().to_string();
+        cfg.pattern_db_version = Some("direct-v1".to_string());
+        cfg.pattern_db_checksum = Some("00".repeat(32));
+
+        let err = resolve_pattern_db_path(&cfg).expect_err("checksum mismatch should fail");
+        assert!(
+            err.contains("checksum mismatch"),
+            "expected checksum mismatch, got: {err}"
+        );
+    }
+
+    #[test]
+    fn resolve_pattern_db_path_verifies_direct_path_trust_store_signature() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let pattern_db_path = dir.path().join("db.json");
+        let pattern_db_json = r#"[
+  {
+    "id": "p1",
+    "category": "prompt_injection",
+    "stage": "perception",
+    "label": "ignore previous",
+    "embedding": [1.0, 0.0, 0.0]
+  }
+]"#;
+        std::fs::write(&pattern_db_path, pattern_db_json).expect("write pattern db");
+
+        let checksum = sha256(pattern_db_json.as_bytes()).to_hex();
+        let keypair = Keypair::generate();
+        let key_id = "rotation-key-1";
+        let signature = keypair
+            .sign(format!("spider_sense_db:v1:direct-v1:{checksum}").as_bytes())
+            .to_hex();
+        let trust_store_path = dir.path().join("db-trust-store.json");
+        std::fs::write(
+            &trust_store_path,
+            serde_json::json!({
+                "keys": [
+                    {
+                        "key_id": key_id,
+                        "public_key": keypair.public_key().to_hex(),
+                        "status": "active"
+                    }
+                ]
+            })
+            .to_string(),
+        )
+        .expect("write trust store");
+
+        let mut cfg = test_cfg();
+        cfg.pattern_db_path = pattern_db_path.to_string_lossy().to_string();
+        cfg.pattern_db_version = Some("direct-v1".to_string());
+        cfg.pattern_db_checksum = Some(checksum);
+        cfg.pattern_db_signature = Some(signature);
+        cfg.pattern_db_signature_key_id = Some(key_id.to_string());
+        cfg.pattern_db_trust_store_path = Some(trust_store_path.to_string_lossy().to_string());
+
+        let resolved = resolve_pattern_db_path(&cfg).expect("resolve direct db path");
+        assert_eq!(resolved, cfg.pattern_db_path);
     }
 
     #[test]
