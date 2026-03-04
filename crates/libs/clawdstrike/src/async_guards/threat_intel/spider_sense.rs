@@ -864,16 +864,9 @@ fn validate_policy_config(cfg: &SpiderSensePolicyConfig) -> Result<(f64, f64), S
         );
     }
 
-    let llm_configured = has_llm_url
-        || has_llm_key
-        || cfg
-            .llm_model
-            .as_deref()
-            .is_some_and(|value| !value.trim().is_empty());
-    if llm_configured && !(has_template_id && has_template_version) {
+    if has_template_id && !(has_llm_url && has_llm_key) {
         return Err(
-            "LLM deep path configuration requires llm_prompt_template_id and llm_prompt_template_version"
-                .to_string(),
+            "llm_prompt_template_id/version require both llm_api_url and llm_api_key".to_string(),
         );
     }
 
@@ -1161,13 +1154,25 @@ mod tests {
         let mut cfg = test_cfg();
         cfg.llm_api_url = Some("http://127.0.0.1:8081/v1/messages".to_string());
         cfg.llm_api_key = Some("llm-test-key".to_string());
-        cfg.llm_prompt_template_id = Some("spider_sense.deep_path.json_classifier".to_string());
-        cfg.llm_prompt_template_version = Some("1.0.0".to_string());
         cfg.llm_model = Some("   ".to_string());
         let result = SpiderSenseGuard::with_pattern_db(cfg, test_async_cfg(), test_pattern_db());
         assert!(result.is_err(), "empty llm_model should be rejected");
         let err = result.err().expect("error must be present");
         assert!(err.contains("llm_model"));
+    }
+
+    #[test]
+    fn guard_config_allows_legacy_llm_without_prompt_template_fields() {
+        let mut cfg = test_cfg();
+        cfg.llm_api_url = Some("http://127.0.0.1:8081/v1/messages".to_string());
+        cfg.llm_api_key = Some("llm-test-key".to_string());
+        cfg.llm_model = Some("claude-haiku-4-5-20251001".to_string());
+
+        let result = SpiderSenseGuard::with_pattern_db(cfg, test_async_cfg(), test_pattern_db());
+        assert!(
+            result.is_ok(),
+            "legacy LLM configuration without template fields should remain supported"
+        );
     }
 
     #[test]

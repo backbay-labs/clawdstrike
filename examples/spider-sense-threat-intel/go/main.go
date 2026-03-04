@@ -274,19 +274,6 @@ func asMap(value interface{}) map[string]interface{} {
 	return map[string]interface{}{}
 }
 
-func asFloat(value interface{}, fallback float64) float64 {
-	switch typed := value.(type) {
-	case float64:
-		return typed
-	case float32:
-		return float64(typed)
-	case int:
-		return float64(typed)
-	default:
-		return fallback
-	}
-}
-
 func screenEmbedding(embedding []float64, patterns []patternEntry) (float64, map[string]interface{}) {
 	if len(patterns) == 0 {
 		return 0, map[string]interface{}{}
