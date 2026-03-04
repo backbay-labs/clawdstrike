@@ -82,6 +82,18 @@ guards:
     expect(decision.status).toBe("allow");
   });
 
+  it("fromPolicy rejects guards.spider_sense: true without executable config", async () => {
+    const policy = `
+version: "1.2.0"
+name: "bare spider_sense true"
+guards:
+  spider_sense: true
+`;
+    await expect(Clawdstrike.fromPolicy(policy)).rejects.toThrow(
+      /guards\.spider_sense: true is not executable/i,
+    );
+  });
+
   it("fromPolicy rejects invalid scalar guards.spider_sense configs", async () => {
     const policy = `
 version: "1.2.0"

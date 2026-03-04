@@ -976,8 +976,9 @@ function buildGuardsFromPolicy(policy: PolicyDoc): Guard[] {
     if (isGuardDisabled(spiderSenseConfigRaw)) {
       // Explicit boolean/object disable toggle.
     } else if (spiderSenseConfigRaw === true) {
-      const spiderSenseConfig = toSpiderSenseConfig({});
-      guards.push(new SpiderSenseGuard(spiderSenseConfig ?? {}));
+      throw new Error(
+        "guards.spider_sense: true is not executable without an object config; provide guards.spider_sense mapping fields",
+      );
     } else if (!isPlainObject(spiderSenseConfigRaw)) {
       throw new Error(
         "invalid guards.spider_sense config: expected boolean or mapping",
