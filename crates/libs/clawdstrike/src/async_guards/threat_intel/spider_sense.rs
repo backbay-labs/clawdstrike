@@ -215,7 +215,7 @@ impl SpiderSensePolicyConfig {
     pub fn merge_with(&self, child: &Self) -> Self {
         let mut present_fields = BTreeSet::new();
 
-        if child.enabled {
+        if child.enabled != self.enabled {
             present_fields.insert("enabled".to_string());
         }
         if !child.embedding_api_url.trim().is_empty() {
@@ -2007,10 +2007,11 @@ mod tests {
         base.top_k = 7;
 
         let mut child = SpiderSensePolicyConfig::default();
+        child.enabled = true;
         child.top_k = 11;
 
         let merged = base.merge_with(&child);
-        assert!(merged.enabled, "default child should not disable base");
+        assert!(merged.enabled);
         assert_eq!(
             merged.embedding_api_url, base.embedding_api_url,
             "default child should preserve base required fields"
@@ -2031,6 +2032,17 @@ mod tests {
 
         let merged = base.merge_with(&child);
         assert!(merged.enabled, "child enabled=true should override base");
+    }
+
+    #[test]
+    fn spider_sense_policy_merge_with_allows_programmatic_disable_override() {
+        let mut base = test_cfg();
+        base.enabled = true;
+        let mut child = SpiderSensePolicyConfig::default();
+        child.enabled = false;
+
+        let merged = base.merge_with(&child);
+        assert!(!merged.enabled, "child enabled=false should override base");
     }
 
     #[test]
