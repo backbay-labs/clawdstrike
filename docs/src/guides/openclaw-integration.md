@@ -134,4 +134,5 @@ openclaw clawdstrike check <action> <resource>
 
 - OpenClaw plugin docs: `packages/adapters/clawdstrike-openclaw/docs/`
 - OpenClaw plugin code: `packages/adapters/clawdstrike-openclaw/src/`
-- Example (minimal wiring): `packages/adapters/clawdstrike-openclaw/examples/hello-secure-agent/`
+- Plugin-scoped minimal example: `packages/adapters/clawdstrike-openclaw/examples/hello-secure-agent/`
+- Top-level example app: `examples/openclaw-plugin/`

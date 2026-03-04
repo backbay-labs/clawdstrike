@@ -11,7 +11,7 @@ This example demonstrates enforcement at the **OpenClaw tool boundary** (preflig
 This example contains configuration files only (`openclaw.json` and `policy.yaml`). No `package.json` or `npm install` step is needed.
 
 ```bash
-cd examples/hello-secure-agent
+cd packages/adapters/clawdstrike-openclaw/examples/hello-secure-agent
 
 # Ensure the clawdstrike-openclaw plugin is installed and enabled
 openclaw plugins enable @clawdstrike/openclaw

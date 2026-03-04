@@ -17,7 +17,8 @@ import { Clawdstrike } from "@clawdstrike/sdk";
 const cs = Clawdstrike.withDefaults("strict");
 
 // Simple check
-const decision = await cs.checkFile("~/.ssh/id_rsa", "read");
+const home = process.env.HOME ?? "";
+const decision = await cs.checkFile(`${home}/.ssh/id_rsa`, "read");
 if (decision.status === "deny") {
   console.log("Blocked:", decision.message);
 }

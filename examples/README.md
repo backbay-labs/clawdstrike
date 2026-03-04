@@ -7,7 +7,12 @@ Representative domains:
 1. `examples/rust/` and `examples/typescript/` - language quickstarts.
 2. `examples/docker-compose/` and `examples/enterprise-deployment/` - infra deployment patterns.
 3. `examples/edr-pipeline/`, `examples/bb-edr/`, and `examples/autonomous-sandbox/` - security pipeline compositions.
-4. `examples/hello-secure-agent/`, `examples/secure-coding-assistant/`, and `examples/multi-agent-orchestration/` - agent workflows.
+4. Agent workflows:
+   - `examples/hello-secure-agent-ts/` - TypeScript tool-shape demo with inline policy checks.
+   - `examples/hello-secure-agent-py/` - Python + OpenAI Agents SDK with inline policy checks.
+   - `examples/hello-secure-agent-vercel/` - TypeScript + Vercel AI SDK middleware pattern.
+   - `examples/openclaw-plugin/` - OpenClaw plugin integration (legacy).
+   - `examples/secure-coding-assistant/` and `examples/multi-agent-orchestration/` - advanced agent workflows.
 5. Swarm examples (multi-agent security enforcement with hushd):
    - `examples/secure-agent-swarm/` - 3-agent swarm with different adapters (ClaudeAdapter, VercelAIAdapter, FrameworkToolBoundary) + hushd attribution.
    - `examples/red-blue-swarm/` - Red team attacks vs blue team SSE monitoring with 100% detection.

@@ -392,11 +392,13 @@ pub async fn cmd_run(
         Ok(status) => status,
         Err(e) => {
             let _ = writeln!(stderr, "Error: {}", e);
-            drop(event_emitter);
-            let _ = writer_handle.await;
+            // Abort proxy first so its task drops EventEmitter clones; otherwise
+            // waiting on writer_handle can block forever on channel close.
             if let Some(h) = proxy_handle {
                 h.abort();
             }
+            drop(event_emitter);
+            let _ = writer_handle.await;
             return ExitCode::RuntimeError.as_i32();
         }
     };
@@ -1658,6 +1660,55 @@ guards:
             queued += 1;
         }
         assert_eq!(queued, 2, "queue must stay bounded at channel capacity");
+    }
+
+    #[tokio::test]
+    async fn cmd_run_spawn_failure_does_not_hang_with_proxy_enabled() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let policy_path = temp.path().join("policy.yaml");
+        std::fs::write(
+            &policy_path,
+            "version: \"1.1.0\"\nname: \"spawn-failure\"\n",
+        )
+        .expect("write policy");
+
+        let args = RunArgs {
+            policy: policy_path.display().to_string(),
+            events_out: temp.path().join("events.jsonl").display().to_string(),
+            receipt_out: temp.path().join("receipt.json").display().to_string(),
+            signing_key: temp.path().join("clawdstrike.key").display().to_string(),
+            no_proxy: false,
+            proxy_port: 0,
+            proxy_allow_private_ips: false,
+            sandbox: false,
+            hushd_url: None,
+            hushd_token: None,
+            command: vec!["echo ~/.ssh".to_string()],
+        };
+
+        let remote = crate::remote_extends::RemoteExtendsConfig::disabled();
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+
+        let code = tokio::time::timeout(
+            Duration::from_secs(5),
+            cmd_run(args, &remote, &mut stdout, &mut stderr),
+        )
+        .await
+        .expect("cmd_run should return even when command spawn fails");
+
+        assert_eq!(code, ExitCode::RuntimeError.as_i32());
+        let stderr_text = String::from_utf8_lossy(&stderr);
+        assert!(
+            stderr_text.contains("Proxy listening on"),
+            "test requires proxy startup; stderr was:\n{}",
+            stderr_text
+        );
+        assert!(
+            stderr_text.contains("Error: spawn child process"),
+            "expected spawn failure in stderr; stderr was:\n{}",
+            stderr_text
+        );
     }
 
     #[tokio::test]

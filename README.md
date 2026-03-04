@@ -263,7 +263,7 @@ import { Clawdstrike } from "@clawdstrike/sdk";
 
 const cs = Clawdstrike.withDefaults("strict");
 const decision = await cs.checkNetwork("api.openai.com:443");
-console.log(decision.status); // "denied" - strict blocks all egress by default
+console.log(decision.status); // "deny" - strict blocks all egress by default
 ```
 
 #### Jailbreak Session Tracking
@@ -310,6 +310,11 @@ try {
   }
 }
 ```
+
+Runnable examples:
+- [`examples/hello-secure-agent-ts/`](examples/hello-secure-agent-ts/) -- TypeScript tool-shape demo with inline policy checks
+- [`examples/hello-secure-agent-py/`](examples/hello-secure-agent-py/) -- Python + OpenAI Agents SDK
+- [`examples/hello-secure-agent-vercel/`](examples/hello-secure-agent-vercel/) -- TypeScript + Vercel AI SDK (middleware pattern)
 
 See all supported frameworks in the [Multi-Language & Frameworks guide](docs/src/concepts/multi-language.md).
 
