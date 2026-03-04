@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from clawdstrike.guards.base import (
@@ -350,14 +350,14 @@ class SpiderSenseGuard(Guard):
         if result.verdict == ScreeningVerdict.DENY:
             return GuardResult.block(
                 self.name,
-                Severity.CRITICAL,
-                "Spider Sense threat detected",
+                Severity.ERROR,
+                "Spider-Sense threat detected",
             ).with_details(details)
 
         if result.verdict == ScreeningVerdict.AMBIGUOUS:
             return GuardResult.warn(
                 self.name,
-                "Spider Sense ambiguous match",
+                "Spider-Sense ambiguous match detected",
             ).with_details(details)
 
         return GuardResult.allow(self.name)

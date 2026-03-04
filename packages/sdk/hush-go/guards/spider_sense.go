@@ -170,14 +170,14 @@ func NewSpiderSenseGuard(cfg *policy.SpiderSenseConfig) (*SpiderSenseGuard, erro
 	topK := DefaultTopK
 
 	if cfg != nil {
-		if cfg.SimilarityThreshold != 0 {
-			threshold = cfg.SimilarityThreshold
+		if cfg.SimilarityThreshold != nil {
+			threshold = *cfg.SimilarityThreshold
 		}
-		if cfg.AmbiguityBand != 0 {
-			ambiguityBand = cfg.AmbiguityBand
+		if cfg.AmbiguityBand != nil {
+			ambiguityBand = *cfg.AmbiguityBand
 		}
-		if cfg.TopK != 0 {
-			topK = cfg.TopK
+		if cfg.TopK != nil {
+			topK = *cfg.TopK
 		}
 	}
 
@@ -279,12 +279,12 @@ func (g *SpiderSenseGuard) Check(action GuardAction, _ *GuardContext) GuardResul
 		if len(result.TopMatches) > 0 {
 			topLabel = result.TopMatches[0].Entry.Label
 		}
-		return Block(g.Name(), Critical,
-			fmt.Sprintf("threat pattern detected (score=%.3f, label=%q)", result.TopScore, topLabel)).
+		return Block(g.Name(), Error,
+			fmt.Sprintf("Spider-Sense threat detected (score=%.3f, label=%q)", result.TopScore, topLabel)).
 			WithDetails(details)
 	case VerdictAmbiguous:
 		return Warn(g.Name(),
-			fmt.Sprintf("ambiguous pattern match (score=%.3f)", result.TopScore)).
+			fmt.Sprintf("Spider-Sense ambiguous match detected (score=%.3f)", result.TopScore)).
 			WithDetails(details)
 	default:
 		return Allow(g.Name()).WithDetails(details)

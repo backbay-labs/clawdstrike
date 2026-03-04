@@ -25,7 +25,14 @@ pub fn build_async_guards(policy: &Policy) -> Result<Vec<Arc<dyn AsyncGuard>>> {
     // First-class spider_sense field.
     if let Some(ref ss_cfg) = policy.guards.spider_sense {
         let async_cfg = async_config_for_spec(ss_cfg.async_config.as_ref())?;
-        let guard = SpiderSenseGuard::new(ss_cfg.clone(), async_cfg)
+        // Resolve env-var placeholders (${VAR}) in the config, matching the
+        // guards.custom path which calls resolve_placeholders_in_json.
+        let json = serde_json::to_value(ss_cfg)
+            .map_err(|e| Error::ConfigError(format!("spider-sense serialize: {e}")))?;
+        let resolved = resolve_placeholders_in_json(json)?;
+        let resolved_cfg: SpiderSensePolicyConfig = serde_json::from_value(resolved)
+            .map_err(|e| Error::ConfigError(format!("spider-sense deserialize: {e}")))?;
+        let guard = SpiderSenseGuard::new(resolved_cfg, async_cfg)
             .map_err(|e| Error::ConfigError(format!("spider-sense init: {e}")))?;
         out.push(Arc::new(guard));
     }

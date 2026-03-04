@@ -37,7 +37,17 @@ export class SpiderSenseGuard implements Guard {
       return GuardResult.allow(this.name);
     }
 
-    const result = this.detector.screen(embedding);
+    let result: import("../spider-sense.js").ScreeningResult;
+    try {
+      result = this.detector.screen(embedding);
+    } catch (err) {
+      // Fail-closed: if screening fails (e.g. no patterns loaded), deny.
+      return GuardResult.block(
+        this.name,
+        Severity.ERROR,
+        `Spider-Sense screening error: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
 
     const details = {
       verdict: result.verdict,

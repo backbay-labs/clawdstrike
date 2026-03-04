@@ -68,11 +68,13 @@ type JailbreakConfig struct {
 
 // SpiderSenseConfig configures the spider_sense guard for embedding-based
 // threat detection via cosine similarity against a pattern database.
+// Pointer types are used for numeric fields so that an explicit zero value
+// (valid in Rust) is distinguishable from "not set" (use default).
 type SpiderSenseConfig struct {
 	Enabled             *bool            `yaml:"enabled,omitempty"`
-	SimilarityThreshold float64          `yaml:"similarity_threshold,omitempty"`
-	AmbiguityBand       float64          `yaml:"ambiguity_band,omitempty"`
-	TopK                int              `yaml:"top_k,omitempty"`
+	SimilarityThreshold *float64         `yaml:"similarity_threshold,omitempty"`
+	AmbiguityBand       *float64         `yaml:"ambiguity_band,omitempty"`
+	TopK                *int             `yaml:"top_k,omitempty"`
 	Patterns            json.RawMessage  `yaml:"patterns,omitempty" json:"patterns,omitempty"`
 }
 

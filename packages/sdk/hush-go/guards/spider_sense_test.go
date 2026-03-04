@@ -8,6 +8,10 @@ import (
 	"github.com/backbay-labs/clawdstrike-go/policy"
 )
 
+// Helpers for pointer literals in config structs.
+func ptrF64(v float64) *float64 { return &v }
+func ptrInt(v int) *int         { return &v }
+
 // --- CosineSimilarityF32 ---
 
 func TestCosineSimilarityF32(t *testing.T) {
@@ -141,9 +145,9 @@ func TestSpiderSenseGuardScreen(t *testing.T) {
 
 	t.Run("deny - identical vector", func(t *testing.T) {
 		cfg := &policy.SpiderSenseConfig{
-			SimilarityThreshold: 0.85,
-			AmbiguityBand:       0.10,
-			TopK:                5,
+			SimilarityThreshold: ptrF64(0.85),
+			AmbiguityBand:       ptrF64(0.10),
+			TopK:                ptrInt(5),
 		}
 		g, err := NewSpiderSenseGuardWithDB(db, cfg)
 		if err != nil {
@@ -161,16 +165,16 @@ func TestSpiderSenseGuardScreen(t *testing.T) {
 
 	t.Run("allow - orthogonal", func(t *testing.T) {
 		cfg := &policy.SpiderSenseConfig{
-			SimilarityThreshold: 0.85,
-			AmbiguityBand:       0.10,
-			TopK:                5,
+			SimilarityThreshold: ptrF64(0.85),
+			AmbiguityBand:       ptrF64(0.10),
+			TopK:                ptrInt(5),
 		}
 		g, err := NewSpiderSenseGuardWithDB(db, cfg)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		// Equally similar to all three orthogonal patterns → score ~0.577
+		// Equally similar to all three orthogonal patterns -> score ~0.577
 		// which is below the lower bound of 0.75
 		result := g.Screen([]float32{0.577, 0.577, 0.577})
 		if result.Verdict != VerdictAllow {
@@ -180,16 +184,16 @@ func TestSpiderSenseGuardScreen(t *testing.T) {
 
 	t.Run("ambiguous - partial similarity", func(t *testing.T) {
 		cfg := &policy.SpiderSenseConfig{
-			SimilarityThreshold: 0.50,
-			AmbiguityBand:       0.10,
-			TopK:                5,
+			SimilarityThreshold: ptrF64(0.50),
+			AmbiguityBand:       ptrF64(0.10),
+			TopK:                ptrInt(5),
 		}
 		g, err := NewSpiderSenseGuardWithDB(db, cfg)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		// Equally similar to all patterns → score ~0.577, within [0.40, 0.60]
+		// Equally similar to all patterns -> score ~0.577, within [0.40, 0.60]
 		result := g.Screen([]float32{0.577, 0.577, 0.577})
 		if result.Verdict != VerdictAmbiguous {
 			t.Errorf("expected ambiguous, got %s (top_score=%v)", result.Verdict, result.TopScore)
@@ -198,9 +202,9 @@ func TestSpiderSenseGuardScreen(t *testing.T) {
 
 	t.Run("no pattern db returns allow", func(t *testing.T) {
 		cfg := &policy.SpiderSenseConfig{
-			SimilarityThreshold: 0.85,
-			AmbiguityBand:       0.10,
-			TopK:                5,
+			SimilarityThreshold: ptrF64(0.85),
+			AmbiguityBand:       ptrF64(0.10),
+			TopK:                ptrInt(5),
 		}
 		g, err := NewSpiderSenseGuard(cfg)
 		if err != nil {
@@ -221,9 +225,9 @@ func TestSpiderSenseGuardCheck(t *testing.T) {
 
 	t.Run("action with embedding - deny", func(t *testing.T) {
 		cfg := &policy.SpiderSenseConfig{
-			SimilarityThreshold: 0.85,
-			AmbiguityBand:       0.10,
-			TopK:                5,
+			SimilarityThreshold: ptrF64(0.85),
+			AmbiguityBand:       ptrF64(0.10),
+			TopK:                ptrInt(5),
 		}
 		g, err := NewSpiderSenseGuardWithDB(db, cfg)
 		if err != nil {
@@ -244,9 +248,9 @@ func TestSpiderSenseGuardCheck(t *testing.T) {
 
 	t.Run("action with embedding - allow", func(t *testing.T) {
 		cfg := &policy.SpiderSenseConfig{
-			SimilarityThreshold: 0.85,
-			AmbiguityBand:       0.10,
-			TopK:                5,
+			SimilarityThreshold: ptrF64(0.85),
+			AmbiguityBand:       ptrF64(0.10),
+			TopK:                ptrInt(5),
 		}
 		g, err := NewSpiderSenseGuardWithDB(db, cfg)
 		if err != nil {
@@ -264,9 +268,9 @@ func TestSpiderSenseGuardCheck(t *testing.T) {
 
 	t.Run("action without embedding - allow", func(t *testing.T) {
 		cfg := &policy.SpiderSenseConfig{
-			SimilarityThreshold: 0.85,
-			AmbiguityBand:       0.10,
-			TopK:                5,
+			SimilarityThreshold: ptrF64(0.85),
+			AmbiguityBand:       ptrF64(0.10),
+			TopK:                ptrInt(5),
 		}
 		g, err := NewSpiderSenseGuardWithDB(db, cfg)
 		if err != nil {
@@ -282,9 +286,9 @@ func TestSpiderSenseGuardCheck(t *testing.T) {
 
 	t.Run("action with map but no embedding key - allow", func(t *testing.T) {
 		cfg := &policy.SpiderSenseConfig{
-			SimilarityThreshold: 0.85,
-			AmbiguityBand:       0.10,
-			TopK:                5,
+			SimilarityThreshold: ptrF64(0.85),
+			AmbiguityBand:       ptrF64(0.10),
+			TopK:                ptrInt(5),
 		}
 		g, err := NewSpiderSenseGuardWithDB(db, cfg)
 		if err != nil {
@@ -302,9 +306,9 @@ func TestSpiderSenseGuardCheck(t *testing.T) {
 
 	t.Run("ambiguous returns warn (allowed)", func(t *testing.T) {
 		cfg := &policy.SpiderSenseConfig{
-			SimilarityThreshold: 0.50,
-			AmbiguityBand:       0.10,
-			TopK:                5,
+			SimilarityThreshold: ptrF64(0.50),
+			AmbiguityBand:       ptrF64(0.10),
+			TopK:                ptrInt(5),
 		}
 		g, err := NewSpiderSenseGuardWithDB(db, cfg)
 		if err != nil {
@@ -325,9 +329,9 @@ func TestSpiderSenseGuardCheck(t *testing.T) {
 
 	t.Run("handles all action types", func(t *testing.T) {
 		cfg := &policy.SpiderSenseConfig{
-			SimilarityThreshold: 0.85,
-			AmbiguityBand:       0.10,
-			TopK:                5,
+			SimilarityThreshold: ptrF64(0.85),
+			AmbiguityBand:       ptrF64(0.10),
+			TopK:                ptrInt(5),
 		}
 		g, err := NewSpiderSenseGuard(cfg)
 		if err != nil {
@@ -353,9 +357,9 @@ func TestSpiderSenseConfigValidation(t *testing.T) {
 
 	t.Run("invalid threshold", func(t *testing.T) {
 		cfg := &policy.SpiderSenseConfig{
-			SimilarityThreshold: 1.5,
-			AmbiguityBand:       0.10,
-			TopK:                5,
+			SimilarityThreshold: ptrF64(1.5),
+			AmbiguityBand:       ptrF64(0.10),
+			TopK:                ptrInt(5),
 		}
 		_, err := NewSpiderSenseGuardWithDB(db, cfg)
 		if err == nil {
@@ -365,9 +369,9 @@ func TestSpiderSenseConfigValidation(t *testing.T) {
 
 	t.Run("out of range bounds", func(t *testing.T) {
 		cfg := &policy.SpiderSenseConfig{
-			SimilarityThreshold: 0.95,
-			AmbiguityBand:       0.10,
-			TopK:                5,
+			SimilarityThreshold: ptrF64(0.95),
+			AmbiguityBand:       ptrF64(0.10),
+			TopK:                ptrInt(5),
 		}
 		_, err := NewSpiderSenseGuardWithDB(db, cfg)
 		if err == nil {
@@ -375,7 +379,7 @@ func TestSpiderSenseConfigValidation(t *testing.T) {
 		}
 	})
 
-	t.Run("defaults used when zero values", func(t *testing.T) {
+	t.Run("defaults used when nil values", func(t *testing.T) {
 		cfg := &policy.SpiderSenseConfig{}
 		g, err := NewSpiderSenseGuard(cfg)
 		if err != nil {
@@ -418,9 +422,9 @@ func TestSpiderSenseInlinePatterns(t *testing.T) {
 	}
 
 	cfg := &policy.SpiderSenseConfig{
-		SimilarityThreshold: 0.85,
-		AmbiguityBand:       0.10,
-		TopK:                5,
+		SimilarityThreshold: ptrF64(0.85),
+		AmbiguityBand:       ptrF64(0.10),
+		TopK:                ptrInt(5),
 		Patterns:            json.RawMessage(patternJSON),
 	}
 	g, err := NewSpiderSenseGuard(cfg)

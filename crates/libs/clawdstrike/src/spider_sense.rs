@@ -59,6 +59,7 @@ fn default_top_k() -> usize {
 
 /// A single entry in the pattern database.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PatternEntry {
     /// Unique identifier for this pattern.
     pub id: String,
@@ -119,6 +120,11 @@ impl PatternDb {
                     entry.embedding.len()
                 ));
             }
+            if let Some(j) = entry.embedding.iter().position(|v| !v.is_finite()) {
+                return Err(format!(
+                    "pattern DB entry {i} has non-finite embedding value at dimension {j}"
+                ));
+            }
         }
 
         Ok(Self {
@@ -170,7 +176,9 @@ impl PatternDb {
 // ── Cosine Similarity ───────────────────────────────────────────────────
 
 /// Compute cosine similarity between two f32 vectors, using f64 precision
-/// for the accumulation. Returns 0.0 if either vector has zero norm.
+/// for the accumulation. Returns 0.0 if either vector has zero norm or if
+/// any element is non-finite (NaN, Inf). This ensures fail-closed behavior:
+/// corrupted embeddings produce a zero score rather than propagating NaN.
 pub fn cosine_similarity_f32(a: &[f32], b: &[f32]) -> f64 {
     if a.len() != b.len() {
         return 0.0;
@@ -189,11 +197,16 @@ pub fn cosine_similarity_f32(a: &[f32], b: &[f32]) -> f64 {
     }
 
     let denom = norm_a.sqrt() * norm_b.sqrt();
-    if denom == 0.0 {
+    if !denom.is_normal() {
         return 0.0;
     }
 
-    dot / denom
+    let result = dot / denom;
+    if result.is_finite() {
+        result
+    } else {
+        0.0
+    }
 }
 
 // ── Screening ───────────────────────────────────────────────────────────
@@ -503,5 +516,122 @@ mod tests {
         let json = serde_json::to_string(&result).expect("should serialize");
         assert!(json.contains("\"verdict\""));
         assert!(json.contains("\"top_score\""));
+    }
+
+    #[test]
+    fn cosine_nan_returns_zero() {
+        let a = vec![f32::NAN, 1.0, 0.0];
+        let b = vec![1.0, 0.0, 0.0];
+        assert_eq!(
+            cosine_similarity_f32(&a, &b),
+            0.0,
+            "NaN input must return 0 (fail-closed)"
+        );
+    }
+
+    #[test]
+    fn cosine_infinity_returns_zero() {
+        let a = vec![f32::INFINITY, 0.0, 0.0];
+        let b = vec![1.0, 0.0, 0.0];
+        assert_eq!(
+            cosine_similarity_f32(&a, &b),
+            0.0,
+            "Inf input must return 0 (fail-closed)"
+        );
+    }
+
+    #[test]
+    fn cosine_neg_infinity_returns_zero() {
+        let a = vec![f32::NEG_INFINITY, 0.0];
+        let b = vec![1.0, 0.0];
+        assert_eq!(
+            cosine_similarity_f32(&a, &b),
+            0.0,
+            "negative Inf must return 0 (fail-closed)"
+        );
+    }
+
+    #[test]
+    fn cosine_empty_vectors() {
+        let a: Vec<f32> = vec![];
+        let b: Vec<f32> = vec![];
+        assert_eq!(
+            cosine_similarity_f32(&a, &b),
+            0.0,
+            "empty vectors must return 0"
+        );
+    }
+
+    #[test]
+    fn pattern_db_rejects_nan_embedding() {
+        let json = r#"[
+            { "id": "p1", "category": "a", "stage": "b", "label": "c", "embedding": [1.0, NaN, 0.0] }
+        ]"#;
+        // NaN is not valid JSON, so serde_json will reject it at parse time.
+        assert!(PatternDb::parse_json(json).is_err());
+    }
+
+    #[test]
+    fn pattern_db_rejects_infinity_embedding() {
+        // Infinity is not valid JSON, so serde_json rejects it.
+        let json = r#"[
+            { "id": "p1", "category": "a", "stage": "b", "label": "c", "embedding": [1.0, Infinity, 0.0] }
+        ]"#;
+        assert!(PatternDb::parse_json(json).is_err());
+    }
+
+    #[test]
+    fn pattern_db_search_with_mismatched_query_dim() {
+        let db = test_pattern_db();
+        // Query has 2 dims, DB has 3 dims — cosine_similarity returns 0.0 for each
+        let results = db.search(&[1.0, 0.0], 3);
+        assert_eq!(results.len(), 3);
+        for m in &results {
+            assert_eq!(m.score, 0.0, "dimension mismatch should produce zero score");
+        }
+    }
+
+    #[test]
+    fn pattern_db_search_top_k_larger_than_db() {
+        let db = test_pattern_db();
+        let results = db.search(&[1.0, 0.0, 0.0], 100);
+        assert_eq!(
+            results.len(),
+            3,
+            "top_k > entries should return all entries"
+        );
+    }
+
+    #[test]
+    fn detector_config_rejects_negative_threshold() {
+        let db = test_pattern_db();
+        let config = SpiderSenseDetectorConfig {
+            similarity_threshold: -0.1,
+            ambiguity_band: 0.05,
+            top_k: 5,
+        };
+        assert!(SpiderSenseDetector::new(db, &config).is_err());
+    }
+
+    #[test]
+    fn detector_config_rejects_nan_ambiguity_band() {
+        let db = test_pattern_db();
+        let config = SpiderSenseDetectorConfig {
+            similarity_threshold: 0.5,
+            ambiguity_band: f64::NAN,
+            top_k: 5,
+        };
+        assert!(SpiderSenseDetector::new(db, &config).is_err());
+    }
+
+    #[test]
+    fn default_config_roundtrips_through_serde() {
+        let config = SpiderSenseDetectorConfig::default();
+        let json = serde_json::to_string(&config).expect("should serialize");
+        let parsed: SpiderSenseDetectorConfig =
+            serde_json::from_str(&json).expect("should deserialize");
+        assert!((parsed.similarity_threshold - config.similarity_threshold).abs() < f64::EPSILON);
+        assert!((parsed.ambiguity_band - config.ambiguity_band).abs() < f64::EPSILON);
+        assert_eq!(parsed.top_k, config.top_k);
     }
 }

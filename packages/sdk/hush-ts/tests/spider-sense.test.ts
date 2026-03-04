@@ -103,7 +103,7 @@ describe.skipIf(!wasmAvailable)("spider-sense detection", () => {
 
   it("throws when screening without loaded patterns", () => {
     const d = new SpiderSenseDetector();
-    expect(() => d.screen([1.0, 0.0, 0.0])).toThrow();
+    expect(() => d.screen([1.0, 0.0, 0.0])).toThrow(/patterns/i);
   });
 
   it("respects topK config", () => {
@@ -111,6 +111,45 @@ describe.skipIf(!wasmAvailable)("spider-sense detection", () => {
     d.loadPatterns(testPatterns);
     const result = d.screen([1.0, 0.0, 0.0]);
     expect(result.topMatches.length).toBe(1);
+  });
+
+  it("rejects empty patterns array", () => {
+    const d = new SpiderSenseDetector();
+    expect(() => d.loadPatterns([])).toThrow();
+  });
+
+  it("rejects dimension mismatch in patterns", () => {
+    const d = new SpiderSenseDetector();
+    const bad: PatternEntry[] = [
+      { id: "a", category: "x", stage: "y", label: "z", embedding: [1.0, 0.0] },
+      { id: "b", category: "x", stage: "y", label: "z", embedding: [1.0, 0.0, 0.0] },
+    ];
+    expect(() => d.loadPatterns(bad)).toThrow(/dimension/i);
+  });
+
+  it("returns topMatches with entry and score fields", () => {
+    const d = new SpiderSenseDetector();
+    d.loadPatterns(testPatterns);
+    const result = d.screen([1.0, 0.0, 0.0]);
+    const match = result.topMatches[0];
+    expect(match).toHaveProperty("entry");
+    expect(match).toHaveProperty("score");
+    expect(match.entry).toHaveProperty("id");
+    expect(match.entry).toHaveProperty("category");
+    expect(match.entry).toHaveProperty("stage");
+    expect(match.entry).toHaveProperty("label");
+    expect(match.entry).toHaveProperty("embedding");
+    expect(typeof match.score).toBe("number");
+  });
+
+  it("rejects invalid config values", () => {
+    // Threshold outside [0, 1] should fail
+    expect(
+      () => {
+        const d = new SpiderSenseDetector({ similarityThreshold: 1.5 });
+        d.loadPatterns(testPatterns);
+      },
+    ).toThrow();
   });
 });
 
@@ -215,5 +254,52 @@ describe.skipIf(!wasmAvailable)("spider-sense guard", () => {
     expect(result.details?.threshold).toBeDefined();
     expect(result.details?.ambiguity_band).toBeDefined();
     expect(result.details?.top_matches_count).toBeGreaterThan(0);
+  });
+
+  it("fails closed when patterns not loaded (deny)", () => {
+    const guard = new SpiderSenseGuard();
+    // No loadPatterns() call — screen() will throw
+    const action = new GuardAction({
+      actionType: "custom",
+      customType: "embedding_check",
+      customData: { embedding: [1.0, 0.0, 0.0] },
+    });
+    const result = guard.check(action, ctx);
+    expect(result.allowed).toBe(false);
+    expect(result.message).toContain("screening error");
+  });
+
+  it("ignores mixed-type arrays in embedding data", () => {
+    const guard = makeGuard();
+    const action = new GuardAction({
+      actionType: "custom",
+      customType: "embedding_check",
+      customData: { embedding: [1.0, "bad", 0.0] },
+    });
+    const result = guard.check(action, ctx);
+    // extractEmbedding validates every element is a number
+    expect(result.allowed).toBe(true);
+  });
+
+  it("ignores null customData", () => {
+    const guard = makeGuard();
+    const action = new GuardAction({
+      actionType: "custom",
+      customType: "embedding_check",
+    });
+    const result = guard.check(action, ctx);
+    expect(result.allowed).toBe(true);
+  });
+
+  it("ignores empty embedding array", () => {
+    const guard = makeGuard();
+    const action = new GuardAction({
+      actionType: "custom",
+      customType: "embedding_check",
+      customData: { embedding: [] },
+    });
+    const result = guard.check(action, ctx);
+    // Empty array passes the type check but screen() returns allow (0.0 score)
+    expect(result.allowed).toBe(true);
   });
 });

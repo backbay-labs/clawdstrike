@@ -30,7 +30,7 @@
   {"id":"s2b-feedback-jailbreak","category":"jailbreak","stage":"feedback","label":"Self-reinforcing jailbreak via feedback","embedding":[0.45,0.10,0.50]},
   {"id":"s2b-feedback-social_engineering","category":"social_engineering","stage":"feedback","label":"Trust amplification via repeated feedback","embedding":[0.40,0.20,0.45]},
   {"id":"s2b-feedback-data_poisoning","category":"data_poisoning","stage":"feedback","label":"Feedback-driven model drift","embedding":[0.35,0.25,0.40]},
-  {"id":"s2b-feedback-evasion","category":"evasion","stage":"feedback","label":"Adaptive evasion from feedback","embedding":[0.45,0.10,0.50]},
+  {"id":"s2b-feedback-evasion","category":"evasion","stage":"feedback","label":"Adaptive evasion from feedback","embedding":[0.42,0.12,0.48]},
   {"id":"s2b-feedback-reconnaissance","category":"reconnaissance","stage":"feedback","label":"Response analysis for reconnaissance","embedding":[0.40,0.15,0.50]},
   {"id":"s2b-feedback-supply_chain","category":"supply_chain","stage":"feedback","label":"Supply chain persistence via feedback","embedding":[0.35,0.30,0.40]},
   {"id":"s2b-feedback-data_exfiltration","category":"data_exfiltration","stage":"feedback","label":"Gradual data leak via feedback","embedding":[0.30,0.35,0.40]},

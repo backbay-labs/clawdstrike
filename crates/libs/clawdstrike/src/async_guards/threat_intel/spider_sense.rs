@@ -27,6 +27,7 @@ use crate::async_guards::types::{
 };
 use crate::guards::{GuardAction, GuardContext, GuardResult, Severity};
 use crate::spider_sense::{PatternDb, PatternMatch};
+use crate::text_utils;
 
 // ── Configuration ───────────────────────────────────────────────────────
 
@@ -35,7 +36,8 @@ const DEFAULT_AMBIGUITY_BAND: f64 = 0.10;
 const DEFAULT_TOP_K: usize = 5;
 
 /// Built-in S2Bench v1 pattern database (36 demo entries, 3-dim embeddings).
-const BUILTIN_S2BENCH_V1: &str = include_str!("../../../../../../rulesets/patterns/s2bench-v1.json");
+const BUILTIN_S2BENCH_V1: &str =
+    include_str!("../../../../../../rulesets/patterns/s2bench-v1.json");
 
 /// Policy-level configuration for the Spider-Sense guard.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -179,7 +181,7 @@ impl SpiderSenseGuard {
                 format!("[file_access] {}", path)
             }
             GuardAction::Patch(file, diff) => {
-                let preview = truncate_str(diff, 512);
+                let preview = text_utils::truncate_to_char_boundary(diff, 512).0;
                 format!("[patch:{}] {}", file, preview)
             }
         }
@@ -444,7 +446,7 @@ impl SpiderSenseGuard {
         .with_details(serde_json::json!({
             "analysis": "deep_path",
             "parse_error": true,
-            "raw_content": truncate_str(content_text, 200),
+            "raw_content": text_utils::truncate_to_char_boundary(content_text, 200).0,
             "top_matches": format_matches(top_matches),
         })))
     }
@@ -481,8 +483,8 @@ impl AsyncGuard for SpiderSenseGuard {
         &self.async_cfg
     }
 
-    fn cache_key(&self, action: &GuardAction<'_>, _context: &GuardContext) -> Option<String> {
-        let text = Self::action_to_text(action, _context);
+    fn cache_key(&self, action: &GuardAction<'_>, context: &GuardContext) -> Option<String> {
+        let text = Self::action_to_text(action, context);
         let hash = sha256(text.as_bytes()).to_hex();
         Some(format!("spider_sense:{}", hash))
     }
@@ -581,19 +583,6 @@ impl AsyncGuard for SpiderSenseGuard {
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────
-
-/// Truncate a `&str` to at most `max_bytes` without splitting a multi-byte
-/// UTF-8 code point (which would panic on `&s[..n]`).
-fn truncate_str(s: &str, max_bytes: usize) -> &str {
-    if s.len() <= max_bytes {
-        return s;
-    }
-    let mut end = max_bytes;
-    while end > 0 && !s.is_char_boundary(end) {
-        end -= 1;
-    }
-    &s[..end]
-}
 
 fn embedding_request_policy(api_url: &str) -> Result<HttpRequestPolicy, String> {
     let parsed =

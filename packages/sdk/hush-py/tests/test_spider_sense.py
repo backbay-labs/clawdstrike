@@ -7,7 +7,6 @@ import pytest
 from clawdstrike.guards.base import CustomAction, GuardContext, Severity
 from clawdstrike.guards.spider_sense import (
     PatternDb,
-    PatternEntry,
     ScreeningVerdict,
     SpiderSenseConfig,
     SpiderSenseDetector,
@@ -238,7 +237,7 @@ class TestSpiderSenseGuard:
         result = guard.check(action, context)
         assert result.allowed is False
         assert result.guard == "spider_sense"
-        assert result.severity == Severity.CRITICAL
+        assert result.severity == Severity.ERROR
         assert result.details is not None
         assert result.details["verdict"] == ScreeningVerdict.DENY
 

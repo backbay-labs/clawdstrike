@@ -78,8 +78,8 @@ pub use output_sanitizer::{
     StreamingConfig,
 };
 pub use spider_sense::{
-    PatternDb, PatternEntry, PatternMatch, ScreeningResult, ScreeningVerdict,
-    SpiderSenseDetector, SpiderSenseDetectorConfig,
+    PatternDb, PatternEntry, PatternMatch, ScreeningResult, ScreeningVerdict, SpiderSenseDetector,
+    SpiderSenseDetectorConfig,
 };
 
 // ============================================================================
