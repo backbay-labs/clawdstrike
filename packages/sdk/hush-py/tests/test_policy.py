@@ -251,12 +251,11 @@ class TestGuardConfigs:
         assert configs.spider_sense.llm_prompt_template_id == "spider_sense.deep_path.json_classifier"
         assert configs.spider_sense.llm_timeout_ms == 1200
 
-    def test_from_dict_spider_sense_bool(self) -> None:
-        configs = GuardConfigs.from_dict({
-            "spider_sense": True,
-        })
-        assert configs.spider_sense is not None
-        assert configs.spider_sense.enabled is True
+    def test_from_dict_spider_sense_bool_rejected(self) -> None:
+        with pytest.raises(PolicyError, match="Expected mapping for guards.spider_sense"):
+            GuardConfigs.from_dict({
+                "spider_sense": True,
+            })
 
 
 class TestPolicySettings:

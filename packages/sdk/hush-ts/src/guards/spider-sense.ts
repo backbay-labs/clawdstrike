@@ -1199,6 +1199,7 @@ export class SpiderSenseGuard implements Guard {
     this.dbSource = "inline";
     this.dbVersion = "inline";
     this.trustKeyId = "";
+    this.pendingPatternConfig = null;
     this.loadPromise = null;
   }
 
@@ -1408,15 +1409,24 @@ export class SpiderSenseGuard implements Guard {
 
   private async ensurePatternDbLoaded(): Promise<void> {
     if (!this.loadPromise && this.pendingPatternConfig) {
-      this.loadPromise = this.loadPatternDbFromPath(this.pendingPatternConfig);
+      const configForLoad = { ...this.pendingPatternConfig };
       this.pendingPatternConfig = null;
+      this.loadPromise = (async () => {
+        try {
+          await this.loadPatternDbFromPath(configForLoad);
+        } catch (err) {
+          // Preserve retryability after transient load failures.
+          this.pendingPatternConfig = { ...configForLoad };
+          throw err;
+        } finally {
+          this.loadPromise = null;
+        }
+      })();
     }
     if (!this.loadPromise) {
       return;
     }
-    const current = this.loadPromise;
-    this.loadPromise = null;
-    await current;
+    await this.loadPromise;
   }
 
   private async loadPatternDbFromPath(config: SpiderSenseGuardConfig): Promise<void> {

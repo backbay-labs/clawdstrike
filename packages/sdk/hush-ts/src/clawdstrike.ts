@@ -971,11 +971,17 @@ function buildGuardsFromPolicy(policy: PolicyDoc): Guard[] {
     guards.push(new JailbreakGuard(jailbreakConfig ?? {}));
   }
 
-  if (!isGuardDisabled(guardConfigs.spider_sense)) {
-    const spiderSenseConfig = toSpiderSenseConfig(
-      isPlainObject(guardConfigs.spider_sense) ? guardConfigs.spider_sense : {},
-    );
-    guards.push(new SpiderSenseGuard(spiderSenseConfig ?? {}));
+  const spiderSenseConfigRaw = guardConfigs.spider_sense;
+  if (spiderSenseConfigRaw !== undefined) {
+    if (!isPlainObject(spiderSenseConfigRaw)) {
+      throw new Error(
+        "invalid guards.spider_sense config: expected mapping; use guards.spider_sense.enabled: false to disable",
+      );
+    }
+    if (!isGuardDisabled(spiderSenseConfigRaw)) {
+      const spiderSenseConfig = toSpiderSenseConfig(spiderSenseConfigRaw);
+      guards.push(new SpiderSenseGuard(spiderSenseConfig ?? {}));
+    }
   }
 
   return guards;

@@ -456,7 +456,10 @@ class GuardConfigs:
         spider_config = None
         if spider_data is not None:
             if isinstance(spider_data, bool):
-                spider_config = SpiderSenseConfig(enabled=spider_data)
+                raise PolicyError(
+                    "Expected mapping for guards.spider_sense; "
+                    "use guards.spider_sense.enabled: false to disable"
+                )
             elif isinstance(spider_data, dict):
                 spider_kwargs = dict(spider_data)
                 async_value = spider_kwargs.pop("async", None)

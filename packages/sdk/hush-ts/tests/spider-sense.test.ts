@@ -824,6 +824,109 @@ describe("spider-sense guard", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
+  it("serializes concurrent checks while pattern DB load is in-flight", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "spider-sense-ts-race-"));
+    const dbPath = path.join(dir, "patterns.json");
+    const dbJson = JSON.stringify([
+      {
+        id: "p1",
+        category: "prompt_injection",
+        stage: "perception",
+        label: "ignore previous",
+        embedding: [1.0, 0.0, 0.0],
+      },
+    ]);
+    await writeFile(dbPath, dbJson, "utf8");
+    const checksum = createHash("sha256").update(dbJson).digest("hex");
+
+    const guard = new SpiderSenseGuard({
+      patternDbPath: dbPath,
+      patternDbVersion: "test-v1",
+      patternDbChecksum: checksum,
+    });
+    const action = GuardAction.custom("embedding_check", { embedding: [1.0, 0.0, 0.0] });
+
+    type LoaderHook = (config: unknown) => Promise<void>;
+    const guarded = guard as unknown as { loadPatternDbFromPath: LoaderHook };
+    const originalLoad = guarded.loadPatternDbFromPath.bind(guarded);
+    let releaseLoad!: () => void;
+    const loadGate = new Promise<void>((resolve) => {
+      releaseLoad = resolve;
+    });
+    let signalStart!: () => void;
+    const loadStarted = new Promise<void>((resolve) => {
+      signalStart = resolve;
+    });
+
+    guarded.loadPatternDbFromPath = async (config: unknown) => {
+      signalStart();
+      await loadGate;
+      await originalLoad(config);
+    };
+
+    const firstCheck = guard.check(action, ctx);
+    await loadStarted;
+    await Promise.resolve();
+
+    let secondSettled = false;
+    const secondCheck = guard.check(action, ctx).then((result) => {
+      secondSettled = true;
+      return result;
+    });
+
+    await Promise.resolve();
+    expect(secondSettled).toBe(false);
+
+    releaseLoad();
+    const [firstResult, secondResult] = await Promise.all([firstCheck, secondCheck]);
+    expect(firstResult.allowed).toBe(false);
+    expect(secondResult.allowed).toBe(false);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("retries pattern DB loading after a transient initialization failure", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "spider-sense-ts-retry-"));
+    const dbPath = path.join(dir, "patterns.json");
+    const dbJson = JSON.stringify([
+      {
+        id: "p1",
+        category: "prompt_injection",
+        stage: "perception",
+        label: "ignore previous",
+        embedding: [1.0, 0.0, 0.0],
+      },
+    ]);
+    await writeFile(dbPath, dbJson, "utf8");
+    const checksum = createHash("sha256").update(dbJson).digest("hex");
+
+    const guard = new SpiderSenseGuard({
+      patternDbPath: dbPath,
+      patternDbVersion: "test-v1",
+      patternDbChecksum: checksum,
+    });
+    const action = GuardAction.custom("embedding_check", { embedding: [1.0, 0.0, 0.0] });
+
+    type LoaderHook = (config: unknown) => Promise<void>;
+    const guarded = guard as unknown as { loadPatternDbFromPath: LoaderHook };
+    const originalLoad = guarded.loadPatternDbFromPath.bind(guarded);
+    let attempts = 0;
+    guarded.loadPatternDbFromPath = async (config: unknown) => {
+      attempts += 1;
+      if (attempts === 1) {
+        throw new Error("transient load failure");
+      }
+      await originalLoad(config);
+    };
+
+    await expect(guard.check(action, ctx)).rejects.toThrow(/transient load failure/i);
+    const second = await guard.check(action, ctx);
+    expect(second.allowed).toBe(false);
+    expect(attempts).toBe(2);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
   it("emits metrics snapshots", async () => {
     const events: Array<Record<string, unknown>> = [];
     const guard = new SpiderSenseGuard({
