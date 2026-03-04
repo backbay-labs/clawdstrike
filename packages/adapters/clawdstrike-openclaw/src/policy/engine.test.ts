@@ -80,7 +80,6 @@ guards:
     });
     const disabledDecision = await disabledEngine.evaluate(event);
     expect(disabledDecision.status).toBe("allow");
-
   });
 
   it("skips spider_sense custom guard execution when policy guards.spider_sense is false", async () => {
@@ -129,6 +128,54 @@ guards:
     });
     const decision = await engine.evaluate(event);
     expect(decision.status).toBe("allow");
+  });
+
+  it("executes spider_sense custom guard when enabled", async () => {
+    const policyPath = join(testDir, "spider-sense-enabled-policy.yaml");
+    writeFileSync(
+      policyPath,
+      `
+version: clawdstrike-v1.0
+guards:
+  custom:
+    - package: clawdstrike-spider-sense
+      enabled: true
+      config:
+        patterns:
+          - id: p1
+            category: prompt_injection
+            stage: perception
+            label: ignore previous
+            embedding: [1, 0, 0]
+`,
+    );
+
+    const event: PolicyEvent = {
+      eventId: "spider-sense-enabled",
+      eventType: "custom",
+      timestamp: new Date().toISOString(),
+      data: {
+        type: "custom",
+        customType: "embedding_check",
+        embedding: [1, 0, 0],
+      },
+    };
+
+    const engine = new PolicyEngine({
+      policy: policyPath,
+      mode: "deterministic",
+      logLevel: "error",
+      guards: {
+        forbidden_path: false,
+        egress: false,
+        secret_leak: false,
+        patch_integrity: false,
+        spider_sense: true,
+      },
+    });
+    const decision = await engine.evaluate(event);
+    expect(decision.status).toBe("deny");
+    expect(decision.guard).toBe("clawdstrike-spider-sense");
   });
 
   it("warns but allows in advisory mode", async () => {

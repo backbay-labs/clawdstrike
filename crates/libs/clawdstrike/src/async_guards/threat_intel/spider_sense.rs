@@ -215,7 +215,7 @@ impl SpiderSensePolicyConfig {
     pub fn merge_with(&self, child: &Self) -> Self {
         let mut present_fields = BTreeSet::new();
 
-        if child.enabled != self.enabled {
+        if !child.enabled {
             present_fields.insert("enabled".to_string());
         }
         if !child.embedding_api_url.trim().is_empty() {
@@ -2024,14 +2024,22 @@ mod tests {
     }
 
     #[test]
-    fn spider_sense_policy_merge_with_allows_programmatic_enable_override() {
+    fn spider_sense_policy_merge_with_preserves_base_disabled_when_child_enabled_default() {
         let mut base = test_cfg();
         base.enabled = false;
-        let mut child = SpiderSensePolicyConfig::default();
-        child.enabled = true;
+        let child: SpiderSensePolicyConfig = serde_json::from_value(serde_json::json!({
+            "embedding_api_url": "https://api.example.test/v1/embeddings",
+            "embedding_api_key": "test-key",
+            "embedding_model": "test-model",
+            "pattern_db_path": "builtin:s2bench-v1"
+        }))
+        .expect("policy config should deserialize");
 
         let merged = base.merge_with(&child);
-        assert!(merged.enabled, "child enabled=true should override base");
+        assert!(
+            !merged.enabled,
+            "heuristic merge should not auto-enable from serde defaults"
+        );
     }
 
     #[test]
