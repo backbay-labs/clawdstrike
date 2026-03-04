@@ -283,7 +283,7 @@ describe("spider-sense guard", () => {
     expect(Array.isArray(result.details?.top_matches)).toBe(true);
   });
 
-  it("allows when patterns are not loaded", async () => {
+  it("fails closed when patterns are not loaded", async () => {
     const guard = new SpiderSenseGuard();
     const action = new GuardAction({
       actionType: "custom",
@@ -291,7 +291,10 @@ describe("spider-sense guard", () => {
       customData: { embedding: [1.0, 0.0, 0.0] },
     });
     const result = await guard.check(action, ctx);
-    expect(result.allowed).toBe(true);
+    expect(result.allowed).toBe(false);
+    expect(result.severity).toBe("error");
+    expect(result.message).toContain("pattern DB missing");
+    expect(result.details?.analysis).toBe("configuration");
   });
 
   it("ignores mixed-type arrays in embedding data", async () => {

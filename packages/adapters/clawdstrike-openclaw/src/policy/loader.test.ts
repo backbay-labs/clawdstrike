@@ -131,6 +131,37 @@ guards:
       delete process.env.SPIDER_SENSE_EMBEDDING_KEY;
     }
   });
+
+  it("deduplicates deprecated custom spider-sense when first-class config is present", () => {
+    const yaml = `
+version: "1.3.0"
+name: "spider-sense-dedupe"
+guards:
+  custom:
+    - package: "clawdstrike-spider-sense"
+      enabled: true
+      config:
+        pattern_db_path: "builtin:legacy"
+        embedding_api_url: "https://legacy.example/v1/embeddings"
+    - package: "clawdstrike-virustotal"
+      enabled: true
+      config:
+        api_key: "vt-key"
+  spider_sense:
+    enabled: true
+    pattern_db_path: "builtin:s2bench-v1"
+    embedding_api_url: "https://api.openai.com/v1/embeddings"
+`;
+
+    const policy = loadPolicyFromString(yaml);
+    const custom = (policy.guards?.custom as Array<Record<string, unknown>>) ?? [];
+    const spiderSenseEntries = custom.filter((entry) => entry.package === "clawdstrike-spider-sense");
+    expect(spiderSenseEntries).toHaveLength(1);
+    expect((spiderSenseEntries[0]?.config as Record<string, unknown>).pattern_db_path).toBe(
+      "builtin:s2bench-v1",
+    );
+    expect(custom.some((entry) => entry.package === "clawdstrike-virustotal")).toBe(true);
+  });
 });
 
 describe("loadPolicy", () => {

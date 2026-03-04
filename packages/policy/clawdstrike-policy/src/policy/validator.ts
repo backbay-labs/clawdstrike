@@ -12,6 +12,7 @@ const RESERVED_PACKAGES = new Set([
   "clawdstrike-virustotal",
   "clawdstrike-safe-browsing",
   "clawdstrike-snyk",
+  "clawdstrike-spider-sense",
 ]);
 const SUPPORTED_POLICY_VERSIONS = new Set(["1.1.0", "1.2.0", "1.3.0"]);
 const DEFAULT_POLICY_VERSION = "1.2.0";

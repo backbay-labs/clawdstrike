@@ -30,6 +30,12 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isSpiderSenseCustomGuard(value: unknown): boolean {
+  if (!isPlainObject(value)) return false;
+  const pkg = value.package;
+  return typeof pkg === "string" && pkg.trim().toLowerCase() === "clawdstrike-spider-sense";
+}
+
 function isBuiltinRef(ref: string): string | null {
   if (!ref) return null;
   if (ref.startsWith("clawdstrike:")) return ref;
@@ -349,6 +355,10 @@ function translateCanonicalPolicy(canonical: CanonicalPolicy): Policy {
         if (isPlainObject(asyncCfg)) {
           customSpec.async = asyncCfg;
         }
+        // Prefer first-class spider_sense guard config over deprecated custom entries.
+        const dedupedCustomGuards = customGuards.filter((entry) => !isSpiderSenseCustomGuard(entry));
+        customGuards.length = 0;
+        customGuards.push(...dedupedCustomGuards);
         customGuards.push(customSpec);
       }
     }

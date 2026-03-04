@@ -1221,8 +1221,18 @@ export class SpiderSenseGuard implements Guard {
     await this.ensurePatternDbLoaded();
     runtime.trustKeyId = this.trustKeyId;
     if (!this.patternDb) {
-      const result = GuardResult.allow(this.name);
-      this.emitMetrics("allow", 0, result.severity, false, "pattern_db_missing", undefined, runtime);
+      const details = {
+        analysis: "configuration",
+        error: "pattern DB missing while spider_sense is enabled",
+        db_source: this.dbSource,
+        db_version: this.dbVersion,
+      };
+      const result = GuardResult.block(
+        this.name,
+        Severity.ERROR,
+        "Spider-Sense pattern DB missing (fail-closed)",
+      ).withDetails(details);
+      this.emitMetrics("deny", 0, result.severity, false, "pattern_db_missing", undefined, runtime);
       return result;
     }
 

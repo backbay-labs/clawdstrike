@@ -128,4 +128,24 @@ describe("policy validator posture/version gating", () => {
     expect(lint.valid).toBe(true);
     expect(lint.warnings.some((warning) => warning.includes("1.3.0 fields"))).toBe(true);
   });
+
+  it("accepts reserved spider-sense custom guard package for migration", () => {
+    const lint = validatePolicy({
+      version: "1.3.0",
+      guards: {
+        custom: [
+          {
+            package: "clawdstrike-spider-sense",
+            enabled: true,
+            config: {
+              pattern_db_path: "builtin:s2bench-v1",
+            },
+          },
+        ],
+      },
+    });
+
+    expect(lint.valid).toBe(true);
+    expect(lint.errors).toEqual([]);
+  });
 });
