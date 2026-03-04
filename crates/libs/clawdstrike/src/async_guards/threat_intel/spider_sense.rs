@@ -349,21 +349,15 @@ impl SpiderSensePolicyConfig {
 
         // Heuristic merge without source-presence metadata:
         // - preserve explicit disables (`enabled=false`)
-        // - allow explicit programmatic enables (`enabled=true`) when the
-        //   child is either a toggle-only override or carries other
-        //   non-default overrides.
+        // - allow explicit programmatic toggle-only enable overrides
+        //   (`enabled=true` with all other fields at programmatic defaults)
         let explicit_programmatic_enable_toggle = child.enabled && !self.enabled && {
             let mut toggle_only = Self::default();
             toggle_only.enabled = true;
             child == &toggle_only
         };
-        let explicit_programmatic_enable_with_overrides =
-            child.enabled && !self.enabled && !present_fields.is_empty();
 
-        if !child.enabled
-            || explicit_programmatic_enable_toggle
-            || explicit_programmatic_enable_with_overrides
-        {
+        if !child.enabled || explicit_programmatic_enable_toggle {
             present_fields.insert("enabled".to_string());
         }
 
@@ -2081,7 +2075,7 @@ mod tests {
     }
 
     #[test]
-    fn spider_sense_policy_merge_with_allows_programmatic_enable_with_other_overrides() {
+    fn spider_sense_policy_merge_with_preserves_base_enable_with_other_overrides() {
         let mut base = test_cfg();
         base.enabled = false;
         base.similarity_threshold = 0.84;
@@ -2091,8 +2085,8 @@ mod tests {
 
         let merged = base.merge_with(&child);
         assert!(
-            merged.enabled,
-            "enabled=true plus other non-default overrides should enable in heuristic mode"
+            !merged.enabled,
+            "heuristic merge should not implicitly enable from default-enabled child plus overrides"
         );
         assert_eq!(merged.similarity_threshold, 0.91);
     }
@@ -2122,7 +2116,7 @@ mod tests {
     }
 
     #[test]
-    fn spider_sense_policy_merge_with_enables_when_child_sets_true_with_overrides() {
+    fn spider_sense_policy_merge_with_preserves_base_when_child_partial_serde_defaults() {
         let mut base = test_cfg();
         base.enabled = false;
         base.similarity_threshold = 0.84;
@@ -2133,8 +2127,8 @@ mod tests {
 
         let merged = base.merge_with(&child);
         assert!(
-            merged.enabled,
-            "heuristic merge treats enabled=true plus non-default overrides as explicit enable"
+            !merged.enabled,
+            "heuristic merge should not auto-enable from serde defaults"
         );
         assert_eq!(
             merged.similarity_threshold, 0.91,
