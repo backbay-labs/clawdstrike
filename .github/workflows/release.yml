@@ -94,7 +94,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          crates=(hush-core hush-proxy hush-spine clawdstrike hush-cli)
+          crates=(hush-core hush-proxy hush-spine clawdstrike clawdstrike-ocsf clawdstrike-policy-event hunt-scan hunt-query hunt-correlate hush-cli)
           missing=()
           for crate in "${crates[@]}"; do
             code="$(curl -s -o /dev/null -w '%{http_code}' "https://crates.io/api/v1/crates/${crate}/${VERSION}")"
@@ -160,6 +160,11 @@ jobs:
           publish_with_retry hush-proxy
           publish_with_retry hush-spine
           publish_with_retry clawdstrike
+          publish_with_retry clawdstrike-ocsf
+          publish_with_retry clawdstrike-policy-event
+          publish_with_retry hunt-scan
+          publish_with_retry hunt-query
+          publish_with_retry hunt-correlate
           publish_with_retry hush-cli
 
       - name: Crates already published
@@ -467,6 +472,10 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Add Rust cross-compilation targets (macOS)
+        if: runner.os == 'macOS'
+        run: rustup target add x86_64-apple-darwin aarch64-apple-darwin
 
       - name: Setup QEMU (linux aarch64 wheels)
         if: runner.os == 'Linux'
