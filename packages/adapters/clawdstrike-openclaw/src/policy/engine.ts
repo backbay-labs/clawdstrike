@@ -7,7 +7,7 @@ import type { PolicyEngineLike as CanonicalPolicyEngineLike } from "@clawdstrike
 import { parseNetworkTarget } from "@clawdstrike/adapter-core";
 import { type Policy as CanonicalPolicy, createPolicyEngineFromPolicy } from "@clawdstrike/policy";
 
-import { mergeConfig } from "../config.js";
+import { mergeConfig, resolveBuiltinPolicy } from "../config.js";
 import {
   EgressGuard,
   ForbiddenPathGuard,
@@ -268,7 +268,11 @@ export class PolicyEngine {
     this.egressGuard = new EgressGuard();
     this.secretLeakGuard = new SecretLeakGuard();
     this.patchIntegrityGuard = new PatchIntegrityGuard();
-    this.threatIntelEngine = buildThreatIntelEngine(this.policy, this.config.guards);
+    this.threatIntelEngine = buildThreatIntelEngine(
+      this.policy,
+      this.config.guards,
+      policyBaseDirFromRef(this.config.policy),
+    );
   }
 
   enabledGuards(): string[] {
@@ -920,6 +924,14 @@ export class PolicyEngine {
   }
 }
 
+function policyBaseDirFromRef(policyRef: string): string | undefined {
+  const trimmed = policyRef.trim();
+  if (trimmed.length === 0) return undefined;
+  if (trimmed.startsWith("clawdstrike:")) return undefined;
+  if (resolveBuiltinPolicy(`clawdstrike:${trimmed}`)) return undefined;
+  return path.dirname(path.resolve(trimmed));
+}
+
 function isSpiderSenseCustomGuard(entry: unknown): boolean {
   if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
     return false;
@@ -1220,7 +1232,10 @@ const SPIDER_SENSE_BUILTIN_S2BENCH: SpiderSensePattern[] = [
   },
 ];
 
-function parseSpiderSensePatterns(config: Record<string, unknown>): SpiderSensePattern[] {
+function parseSpiderSensePatterns(
+  config: Record<string, unknown>,
+  policyBaseDir?: string,
+): SpiderSensePattern[] {
   const normalizeHex = (value: string): string => {
     const trimmed = value.trim().toLowerCase();
     return trimmed.startsWith("0x") ? trimmed.slice(2) : trimmed;
@@ -1279,12 +1294,16 @@ function parseSpiderSensePatterns(config: Record<string, unknown>): SpiderSenseP
     }
   }
 
-  const patternDbPath =
+  const rawPatternDbPath =
     typeof config.pattern_db_path === "string" ? config.pattern_db_path.trim() : "";
-  if (patternDbPath === "builtin:s2bench-v1") {
+  if (rawPatternDbPath === "builtin:s2bench-v1") {
     assertConsistentEmbeddingDimensions(SPIDER_SENSE_BUILTIN_S2BENCH, "builtin:s2bench-v1");
     return SPIDER_SENSE_BUILTIN_S2BENCH;
   }
+  const patternDbPath =
+    rawPatternDbPath.length > 0 && !path.isAbsolute(rawPatternDbPath)
+      ? path.resolve(policyBaseDir ?? process.cwd(), rawPatternDbPath)
+      : rawPatternDbPath;
   if (patternDbPath.length > 0) {
     const raw = readFileSync(patternDbPath, "utf8");
     const expectedChecksum = hasNonEmptyString(config.pattern_db_checksum)
@@ -1337,7 +1356,10 @@ function parseSpiderSensePatterns(config: Record<string, unknown>): SpiderSenseP
   return [];
 }
 
-function buildSpiderSenseRuntimeConfig(spec: unknown): SpiderSenseRuntimeConfig {
+function buildSpiderSenseRuntimeConfig(
+  spec: unknown,
+  options: { policyBaseDir?: string } = {},
+): SpiderSenseRuntimeConfig {
   const record = isRecord(spec) ? spec : {};
   const config = isRecord(record.config) ? record.config : {};
   const similarityThreshold =
@@ -1352,8 +1374,23 @@ function buildSpiderSenseRuntimeConfig(spec: unknown): SpiderSenseRuntimeConfig 
     typeof config.top_k === "number"
       ? Math.max(1, Math.trunc(config.top_k))
       : SPIDER_SENSE_DEFAULT_TOP_K;
+  if (!Number.isFinite(similarityThreshold) || similarityThreshold < 0 || similarityThreshold > 1) {
+    throw new Error(
+      `spider_sense similarity_threshold must be in [0, 1], got ${String(similarityThreshold)}`,
+    );
+  }
+  if (!Number.isFinite(ambiguityBand) || ambiguityBand < 0 || ambiguityBand > 1) {
+    throw new Error(`spider_sense ambiguity_band must be in [0, 1], got ${String(ambiguityBand)}`);
+  }
+  const upperBound = similarityThreshold + ambiguityBand;
+  const lowerBound = similarityThreshold - ambiguityBand;
+  if (upperBound > 1 || lowerBound < 0) {
+    throw new Error(
+      `spider_sense threshold/band produce invalid decision range: lower=${lowerBound.toFixed(3)}, upper=${upperBound.toFixed(3)}`,
+    );
+  }
 
-  const patterns = parseSpiderSensePatterns(config);
+  const patterns = parseSpiderSensePatterns(config, options.policyBaseDir);
   if (patterns.length === 0) {
     throw new Error("spider_sense requires non-empty patterns or pattern_db_path");
   }
@@ -1519,6 +1556,7 @@ async function evaluateSpiderSenseRuntime(
 function buildThreatIntelEngine(
   policy: Policy,
   guardToggles: Required<ClawdstrikeConfig>["guards"],
+  policyBaseDir?: string,
 ): CanonicalPolicyEngineLike | null {
   const custom = policy.guards?.custom;
   if (!Array.isArray(custom) || custom.length === 0) {
@@ -1533,7 +1571,7 @@ function buildThreatIntelEngine(
       if (isRecord(entry) && entry.enabled === false) return false;
       return true;
     })
-    .map((entry) => buildSpiderSenseRuntimeConfig(entry));
+    .map((entry) => buildSpiderSenseRuntimeConfig(entry, { policyBaseDir }));
   const filteredCustom = custom.filter((entry) => {
     if (isSpiderSenseCustomGuard(entry)) {
       return false;

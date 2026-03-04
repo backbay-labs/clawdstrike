@@ -225,6 +225,67 @@ guards:
     ).toThrow(/contains invalid entry at index 0/);
   });
 
+  it("resolves relative spider_sense pattern_db_path from the policy file directory", async () => {
+    const policyDir = join(testDir, "spider-sense-relative-db");
+    const patternsDir = join(policyDir, "patterns");
+    mkdirSync(patternsDir, { recursive: true });
+
+    const patternDbPath = join(patternsDir, "db.json");
+    writeFileSync(
+      patternDbPath,
+      JSON.stringify([
+        {
+          id: "p1",
+          category: "prompt_injection",
+          stage: "perception",
+          label: "relative path pattern",
+          embedding: [1, 0, 0],
+        },
+      ]),
+    );
+
+    const policyPath = join(policyDir, "policy.yaml");
+    writeFileSync(
+      policyPath,
+      `
+version: clawdstrike-v1.0
+guards:
+  custom:
+    - package: clawdstrike-spider-sense
+      enabled: true
+      config:
+        pattern_db_path: "./patterns/db.json"
+`,
+    );
+
+    const engine = new PolicyEngine({
+      policy: policyPath,
+      mode: "deterministic",
+      logLevel: "error",
+      guards: {
+        forbidden_path: false,
+        egress: false,
+        secret_leak: false,
+        patch_integrity: false,
+        spider_sense: true,
+      },
+    });
+
+    const decision = await engine.evaluate({
+      eventId: "spider-sense-relative-db",
+      eventType: "custom",
+      timestamp: new Date().toISOString(),
+      data: {
+        type: "custom",
+        customType: "embedding_check",
+        embedding: [1, 0, 0],
+      },
+    });
+
+    expect(decision.status).toBe("deny");
+    expect(decision.guard).toBe("clawdstrike-spider-sense");
+  });
+
   it("rejects malformed inline spider_sense patterns at load time", () => {
     const policyPath = join(testDir, "spider-sense-inline-invalid-policy.yaml");
     writeFileSync(
@@ -318,6 +379,44 @@ guards:
           },
         }),
     ).toThrow(/embedding dimension mismatch/i);
+  });
+
+  it("rejects spider_sense runtime config with out-of-range similarity_threshold", () => {
+    const policyPath = join(testDir, "spider-sense-threshold-out-of-range-policy.yaml");
+    writeFileSync(
+      policyPath,
+      `
+version: clawdstrike-v1.0
+guards:
+  custom:
+    - package: clawdstrike-spider-sense
+      enabled: true
+      config:
+        similarity_threshold: 5
+        patterns:
+          - id: p1
+            category: prompt_injection
+            stage: perception
+            label: valid pattern
+            embedding: [1, 0, 0]
+`,
+    );
+
+    expect(
+      () =>
+        new PolicyEngine({
+          policy: policyPath,
+          mode: "deterministic",
+          logLevel: "error",
+          guards: {
+            forbidden_path: false,
+            egress: false,
+            secret_leak: false,
+            patch_integrity: false,
+            spider_sense: true,
+          },
+        }),
+    ).toThrow(/similarity_threshold must be in \[0, 1\]/i);
   });
 
   it("fails closed with deny decision when spider_sense embedding provider returns non-2xx", async () => {
