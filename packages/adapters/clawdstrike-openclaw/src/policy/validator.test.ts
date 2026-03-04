@@ -100,6 +100,28 @@ describe("validatePolicy", () => {
     expect(result.errors).toHaveLength(0);
   });
 
+  it("accepts clawdstrike-spider-sense as a reserved custom guard package", () => {
+    const policy = {
+      version: "clawdstrike-v1.0",
+      guards: {
+        custom: [
+          {
+            package: "clawdstrike-spider-sense",
+            enabled: true,
+            config: {
+              embedding_api_url: "https://api.openai.com/v1/embeddings",
+              embedding_api_key: "test",
+              embedding_model: "text-embedding-3-small",
+              pattern_db_path: "builtin:s2bench-v1",
+            },
+          },
+        ],
+      },
+    };
+    const result = validatePolicy(policy as any);
+    expect(result.valid).toBe(true);
+  });
+
   it("rejects invalid computer_use mode", () => {
     const policy = {
       version: "clawdstrike-v1.0",

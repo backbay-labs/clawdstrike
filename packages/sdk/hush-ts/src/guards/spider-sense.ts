@@ -1474,7 +1474,7 @@ export class SpiderSenseGuard implements Guard {
     let bytes: Uint8Array;
     let source = path;
     if (path === "builtin:s2bench-v1") {
-      const builtinUrl = new URL("../../../hush-go/guards/patterns/s2bench-v1.json", import.meta.url);
+      const builtinUrl = new URL("./patterns/s2bench-v1.json", import.meta.url);
       bytes = await readFile(builtinUrl);
       source = "builtin:s2bench-v1";
     } else {

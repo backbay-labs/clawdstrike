@@ -240,6 +240,10 @@ function translateCanonicalPolicy(canonical: CanonicalPolicy): Policy {
   const guards = canonical.guards as Record<string, any> | undefined;
   const toggles: Record<string, boolean> = {};
   if (guards) {
+    const customGuards: unknown[] = Array.isArray((guards as any).custom)
+      ? [...((guards as any).custom as unknown[])]
+      : [];
+
     if (typeof guards.forbidden_path === "object") {
       const cfg = guards.forbidden_path as Record<string, unknown>;
       toggles.forbidden_path = cfg.enabled !== false;
@@ -319,9 +323,34 @@ function translateCanonicalPolicy(canonical: CanonicalPolicy): Policy {
 
     if (typeof guards.spider_sense === "boolean") {
       toggles.spider_sense = guards.spider_sense;
+      if (guards.spider_sense) {
+        throw new PolicyLoadError(
+          "canonical guards.spider_sense: true is not executable in OpenClaw translation; provide an object config or guards.custom entry",
+        );
+      }
     } else if (typeof guards.spider_sense === "object") {
       const cfg = guards.spider_sense as Record<string, unknown>;
       toggles.spider_sense = cfg.enabled !== false;
+      if (toggles.spider_sense) {
+        const customConfig: Record<string, unknown> = { ...cfg };
+        delete customConfig.enabled;
+        const asyncCfg = customConfig.async;
+        delete customConfig.async;
+        if (Object.keys(customConfig).length === 0) {
+          throw new PolicyLoadError(
+            "canonical guards.spider_sense object must include executable guard configuration when enabled",
+          );
+        }
+        const customSpec: Record<string, unknown> = {
+          package: "clawdstrike-spider-sense",
+          enabled: true,
+          config: customConfig,
+        };
+        if (isPlainObject(asyncCfg)) {
+          customSpec.async = asyncCfg;
+        }
+        customGuards.push(customSpec);
+      }
     }
 
     if (typeof guards.computer_use === "object") {
@@ -387,10 +416,10 @@ function translateCanonicalPolicy(canonical: CanonicalPolicy): Policy {
       };
     }
 
-    if (Array.isArray((guards as any).custom)) {
+    if (customGuards.length > 0) {
       out.guards = {
         ...out.guards,
-        custom: (guards as any).custom,
+        custom: customGuards,
       };
     }
   }

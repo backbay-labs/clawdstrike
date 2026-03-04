@@ -72,7 +72,7 @@ guards:
     expect(policy.guards?.input_injection_capability?.require_postcondition_probe).toBe(true);
   });
 
-  it("translates canonical spider_sense boolean toggle", () => {
+  it("rejects canonical spider_sense boolean true because it is not executable in OpenClaw", () => {
     const yaml = `
 version: "1.3.0"
 name: "spider-sense-bool"
@@ -80,8 +80,7 @@ guards:
   spider_sense: true
 `;
 
-    const policy = loadPolicyFromString(yaml);
-    expect(policy.guards?.spider_sense).toBe(true);
+    expect(() => loadPolicyFromString(yaml)).toThrow(/spider_sense: true is not executable/i);
   });
 
   it("translates canonical spider_sense object toggle", () => {
@@ -95,6 +94,42 @@ guards:
 
     const policy = loadPolicyFromString(yaml);
     expect(policy.guards?.spider_sense).toBe(false);
+    expect(policy.guards?.custom).toBeUndefined();
+  });
+
+  it("translates canonical spider_sense object config into executable custom guard spec", () => {
+    const yaml = `
+version: "1.3.0"
+name: "spider-sense-object-config"
+guards:
+  spider_sense:
+    enabled: true
+    embedding_api_url: "https://api.openai.com/v1/embeddings"
+    embedding_api_key: "\${SPIDER_SENSE_EMBEDDING_KEY}"
+    embedding_model: "text-embedding-3-small"
+    pattern_db_path: "builtin:s2bench-v1"
+    pattern_db_version: "s2bench-v1"
+    pattern_db_checksum: "8943003a9de9619d2f8f0bf133c9c7690ab3a582cbcbe4cb9692d44ee9643a73"
+    async:
+      timeout_ms: 1234
+`;
+
+    process.env.SPIDER_SENSE_EMBEDDING_KEY = "test-key";
+    try {
+      const policy = loadPolicyFromString(yaml);
+      expect(policy.guards?.spider_sense).toBe(true);
+      expect(Array.isArray(policy.guards?.custom)).toBe(true);
+      const custom = (policy.guards?.custom as Array<Record<string, unknown>>)[0];
+      expect(custom?.package).toBe("clawdstrike-spider-sense");
+      expect(custom?.enabled).toBe(true);
+      expect((custom?.config as Record<string, unknown>).pattern_db_path).toBe("builtin:s2bench-v1");
+      expect((custom?.config as Record<string, unknown>).embedding_api_url).toBe(
+        "https://api.openai.com/v1/embeddings",
+      );
+      expect((custom?.async as Record<string, unknown>).timeout_ms).toBe(1234);
+    } finally {
+      delete process.env.SPIDER_SENSE_EMBEDDING_KEY;
+    }
   });
 });
 

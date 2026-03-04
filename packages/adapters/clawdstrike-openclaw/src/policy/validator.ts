@@ -17,6 +17,7 @@ const RESERVED_PACKAGES = new Set([
   "clawdstrike-virustotal",
   "clawdstrike-safe-browsing",
   "clawdstrike-snyk",
+  "clawdstrike-spider-sense",
 ]);
 
 const POLICY_KEYS = new Set([
