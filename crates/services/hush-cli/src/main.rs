@@ -1471,9 +1471,13 @@ async fn run(cli: Cli, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
 
         Commands::Guard { command } => guard_cli::cmd_guard(command, stdout, stderr).as_i32(),
 
-        Commands::Pkg { command } => pkg_cli::cmd_pkg(command, stdout, stderr).as_i32(),
+        Commands::Pkg { command } => tokio::task::block_in_place(|| {
+            pkg_cli::cmd_pkg(command, stdout, stderr).as_i32()
+        }),
 
-        Commands::Daemon { command } => cmd_daemon(command, stdout, stderr).as_i32(),
+        Commands::Daemon { command } => tokio::task::block_in_place(|| {
+            cmd_daemon(command, stdout, stderr).as_i32()
+        }),
 
         Commands::Completions { shell } => {
             let mut cmd = Cli::command();
