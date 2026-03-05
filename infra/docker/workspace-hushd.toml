@@ -14,7 +14,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.2.4"
+version = "0.2.5"
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/backbay-labs/clawdstrike"
@@ -110,15 +110,15 @@ pubgrub = "0.3"
 jsonwebtoken = { version = "10", default-features = false, features = ["aws_lc_rs", "use_pem"] }
 
 # Internal crates
-hush-core = { path = "crates/libs/hush-core", version = "0.2.4" }
-hush-proxy = { path = "crates/libs/hush-proxy", version = "0.2.4" }
-spine = { package = "hush-spine", path = "crates/libs/spine", version = "0.2.4" }
-clawdstrike = { path = "crates/libs/clawdstrike", version = "0.2.4" }
-clawdstrike-ocsf = { path = "crates/libs/clawdstrike-ocsf", version = "0.2.4" }
-clawdstrike-policy-event = { path = "crates/libs/clawdstrike-policy-event", version = "0.2.4", default-features = false }
-hunt-scan = { path = "crates/libs/hunt-scan", version = "0.2.4" }
-hunt-query = { path = "crates/libs/hunt-query", version = "0.2.4" }
-hush-certification = { path = "crates/libs/hush-certification", version = "0.2.4" }
+hush-core = { path = "crates/libs/hush-core", version = "0.2.5" }
+hush-proxy = { path = "crates/libs/hush-proxy", version = "0.2.5" }
+spine = { package = "hush-spine", path = "crates/libs/spine", version = "0.2.5" }
+clawdstrike = { path = "crates/libs/clawdstrike", version = "0.2.5" }
+clawdstrike-ocsf = { path = "crates/libs/clawdstrike-ocsf", version = "0.2.5" }
+clawdstrike-policy-event = { path = "crates/libs/clawdstrike-policy-event", version = "0.2.5", default-features = false }
+hunt-scan = { path = "crates/libs/hunt-scan", version = "0.2.5" }
+hunt-query = { path = "crates/libs/hunt-query", version = "0.2.5" }
+hush-certification = { path = "crates/libs/hush-certification", version = "0.2.5" }
 
 [profile.release]
 lto = true

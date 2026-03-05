@@ -92,6 +92,14 @@ flowchart LR
     H -.-> I[Control API + Control Console]
 ```
 
+Three layers, one system:
+
+| Layer | What It Does |
+| ----- | ------------ |
+| **Guard Stack** | 13 composable guards at the tool boundary: path access, egress, secrets, shell commands, MCP tools, jailbreak detection, prompt injection, CUA controls, Spider-Sense threat screening. Every verdict is Ed25519-signed into a non-repudiable receipt. |
+| **Swarm C2** | An operational control plane for managing agent fleets in production. Durable, replayable fleet transport over NATS JetStream, policy flow coordination via Spine, enrollment and credential provisioning, posture commands with request/reply acknowledgements, and a Proofs API + Control Console for verification and SOC workflows. |
+| **Swarm Trace** | Prevention + hunting at the agent tool boundary. Hunt across signed receipts, kernel telemetry (Tetragon, auditd), and network flows (Hubble), build timelines, run natural-language and structured queries, correlate against detection rules, and ship OCSF-formatted findings straight into your SIEM. |
+
 ---
 
 ## Why This Matters

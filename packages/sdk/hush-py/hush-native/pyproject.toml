@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "clawdstrike"
-version = "0.2.4"
+version = "0.2.5"
 description = "Python SDK for clawdstrike security verification"
 readme = "../README.md"
 requires-python = ">=3.10"

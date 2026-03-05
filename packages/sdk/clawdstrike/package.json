@@ -1,6 +1,6 @@
 {
   "name": "clawdstrike",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "Official Clawdstrike TypeScript SDK",
   "type": "module",
   "main": "./index.cjs",

@@ -1,6 +1,6 @@
 [project]
 name = "clawdstrike"
-version = "0.2.4"
+version = "0.2.5"
 description = "Python SDK for clawdstrike security verification"
 readme = "README.md"
 license = { text = "Apache-2.0" }

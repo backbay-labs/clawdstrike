@@ -626,8 +626,10 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Build release binary
-        run: cargo build --release --target ${{ matrix.target }} -p hush-cli
+      - name: Build release binaries
+        run: |
+          cargo build --release --target ${{ matrix.target }} -p hush-cli
+          cargo build --release --target ${{ matrix.target }} -p hushd
 
       - name: Rename binary (Unix)
         if: runner.os != 'Windows'
@@ -650,6 +652,7 @@ jobs:
           mkdir -p _archive
           cp target/${{ matrix.target }}/release/hush _archive/
           cp target/${{ matrix.target }}/release/clawdstrike _archive/
+          cp target/${{ matrix.target }}/release/hushd _archive/
           tar -czf ${{ matrix.archive }}.tar.gz -C _archive .
 
       - name: Upload release archive
@@ -906,10 +909,12 @@ jobs:
             def install
               bin.install "hush"
               bin.install "clawdstrike"
+              bin.install "hushd"
             end
 
             test do
               assert_match version.to_s, shell_output("#{bin}/hush --version")
+              assert_match "hushd", shell_output("#{bin}/hushd --version")
             end
           end
           RUBY

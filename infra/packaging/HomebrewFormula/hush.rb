@@ -9,7 +9,7 @@
 class Hush < Formula
   desc "CLI for clawdstrike security verification and policy enforcement"
   homepage "https://github.com/backbay-labs/clawdstrike"
-  url "https://github.com/backbay-labs/clawdstrike/archive/refs/tags/v0.2.4.tar.gz"
+  url "https://github.com/backbay-labs/clawdstrike/archive/refs/tags/v0.2.5.tar.gz"
   sha256 "PLACEHOLDER_SHA256_WILL_BE_UPDATED_ON_RELEASE"
   license "Apache-2.0"
   head "https://github.com/backbay-labs/clawdstrike.git", branch: "main"
@@ -18,24 +18,15 @@ class Hush < Formula
 
   def install
     system "cargo", "install", *std_cargo_args(path: "crates/services/hush-cli")
+    system "cargo", "install", *std_cargo_args(path: "crates/services/hushd")
 
     # Generate shell completions
     generate_completions_from_executable(bin/"hush", "completions")
   end
 
-  def caveats
-    <<~EOS
-      This formula installs the `hush` CLI only.
-
-      The `hushd` daemon is experimental and is not installed by default.
-      If you want to try it anyway, build it from source:
-
-        cargo install --path crates/services/hushd
-    EOS
-  end
-
   test do
     assert_match "hush #{version}", shell_output("#{bin}/hush --version")
+    assert_match "hushd", shell_output("#{bin}/hushd --version")
 
     # Test basic help
     assert_match "security verification", shell_output("#{bin}/hush --help")

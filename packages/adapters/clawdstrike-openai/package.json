@@ -1,6 +1,6 @@
 {
   "name": "@clawdstrike/openai",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "In-process tool boundary hooks for the OpenAI Agents SDK",
   "type": "module",
   "main": "dist/index.js",
