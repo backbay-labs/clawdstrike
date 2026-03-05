@@ -7,6 +7,7 @@ import type {
   InboundMessageTranslationInput,
 } from "./adapter.js";
 import type { AuditEvent, AuditEventType } from "./audit.js";
+import { sanitizeAuditText } from "./audit-sanitizer.js";
 import type { SecurityContext } from "./context.js";
 import type { PolicyEngineLike } from "./engine.js";
 import { allowDecision, denyDecision, warnDecision, type Decision, type PolicyEvent } from "./types.js";
@@ -20,21 +21,6 @@ function generateEventId(sessionId: string): string {
 
 function fingerprintText(value: string): string {
   return createHash("sha256").update(value).digest("hex");
-}
-
-function redactPII(value: string): string {
-  let redacted = value;
-
-  redacted = redacted.replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[REDACTED_EMAIL]");
-  redacted = redacted.replace(/\b\d{3}-\d{2}-\d{4}\b/g, "[REDACTED_SSN]");
-  redacted = redacted.replace(/\+?\d[\d\s().-]{8,}\d/g, "[REDACTED_PHONE]");
-
-  return redacted;
-}
-
-function sanitizeAuditText(text: string, engine: PolicyEngineLike, config: AdapterConfig): string {
-  const secretRedacted = engine.redactSecrets ? engine.redactSecrets(text) : text;
-  return config.audit?.redactPII ? redactPII(secretRedacted) : secretRedacted;
 }
 
 function defaultInboundEvent(
@@ -91,10 +77,18 @@ function buildInboundAuditDetails(
   };
 
   if (contentMode === "raw") {
-    details.content = sanitizeAuditText(message.text, engine, config);
+    details.content = sanitizeAuditText(
+      message.text,
+      engine.redactSecrets,
+      config.audit?.redactPII,
+    );
   } else if (contentMode === "redacted_snippet") {
     const length = config.inbound?.redactedSnippetLength ?? DEFAULT_REDACTED_SNIPPET_LENGTH;
-    const sanitized = sanitizeAuditText(message.text, engine, config);
+    const sanitized = sanitizeAuditText(
+      message.text,
+      engine.redactSecrets,
+      config.audit?.redactPII,
+    );
     details.contentSnippet = sanitized.slice(0, Math.max(0, length));
     details.contentSnippetTruncated = sanitized.length > length;
   }

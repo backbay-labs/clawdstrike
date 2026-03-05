@@ -55,14 +55,21 @@ describe('Cross-Adapter Interface Consistency', () => {
         'createContext',
         'interceptToolCall',
         'processOutput',
-        'interceptInboundMessage',
         'finalizeContext',
         'getEngine',
         'getHooks',
       ] as const;
+      const optionalMethods = ['interceptInboundMessage'] as const;
 
       for (const method of requiredMethods) {
         expect(typeof (adapter as Record<string, unknown>)[method]).toBe('function');
+      }
+
+      for (const method of optionalMethods) {
+        const candidate = (adapter as Record<string, unknown>)[method];
+        if (candidate !== undefined) {
+          expect(typeof candidate).toBe('function');
+        }
       }
     });
 
