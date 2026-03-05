@@ -166,11 +166,21 @@ if [[ $START_PHASE -le 2 ]]; then
     # The control-api auth middleware hashes the raw API key with SHA-256
     API_KEY_HASH=$(printf '%s' "$API_KEY" | shasum -a 256 | cut -d' ' -f1)
 
+    # On rerun, reuse the existing tenant to avoid FK violations on agents/api_keys.
+    EXISTING_ID=$(psql "$PG_URL" -tAq -c "SELECT id FROM tenants WHERE slug = 'localdev' LIMIT 1")
+    if [[ -n "$EXISTING_ID" ]]; then
+        TENANT_ID="$EXISTING_ID"
+        step "Reusing existing tenant ${TENANT_ID}"
+    fi
+
     psql "$PG_URL" -q <<SQL
 INSERT INTO tenants (id, name, slug, plan, status, agent_limit, retention_days)
 VALUES ('${TENANT_ID}', 'E2E Local Dev', 'localdev', 'enterprise', 'active', 100, 30)
-ON CONFLICT (slug) DO UPDATE SET id = EXCLUDED.id;
+ON CONFLICT (slug) DO UPDATE
+    SET name = EXCLUDED.name, plan = EXCLUDED.plan, status = EXCLUDED.status,
+        agent_limit = EXCLUDED.agent_limit, retention_days = EXCLUDED.retention_days;
 
+DELETE FROM api_keys WHERE tenant_id = '${TENANT_ID}' AND key_prefix = 'cs_local';
 INSERT INTO api_keys (tenant_id, name, key_hash, key_prefix, scopes)
 VALUES ('${TENANT_ID}', 'e2e-admin', '${API_KEY_HASH}', 'cs_local', ARRAY['admin']);
 SQL
@@ -309,7 +319,7 @@ if [[ $START_PHASE -le 5 ]]; then
         --nats-url "$NATS_URL" \
         --subject "${SUBJECT_PREFIX}.${AGENT_ID}" \
         --command set-posture --posture restricted \
-        --timeout-secs 3 || true
+        --timeout-secs 3
     ok "set_posture sent"
 
     step "Sending request_policy_reload..."
@@ -318,7 +328,7 @@ if [[ $START_PHASE -le 5 ]]; then
         --nats-url "$NATS_URL" \
         --subject "${SUBJECT_PREFIX}.${AGENT_ID}" \
         --command request-policy-reload \
-        --timeout-secs 3 || true
+        --timeout-secs 3
     ok "request_policy_reload sent"
 
     step "Sending kill_switch..."
@@ -327,7 +337,7 @@ if [[ $START_PHASE -le 5 ]]; then
         --nats-url "$NATS_URL" \
         --subject "${SUBJECT_PREFIX}.${AGENT_ID}" \
         --command kill-switch --reason "e2e test" \
-        --timeout-secs 3 || true
+        --timeout-secs 3
     ok "kill_switch sent"
 
     echo ""
