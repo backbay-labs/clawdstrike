@@ -78,6 +78,7 @@ export interface InputInjectionCapabilityGuardConfig {
 import type {
   ClawdstrikeConfig as AdapterCoreClawdstrikeConfig,
   GuardToggles as AdapterCoreGuardToggles,
+  InboundConfig as AdapterCoreInboundConfig,
 } from "@clawdstrike/adapter-core";
 
 // Keep openclaw config tolerant to newer guard toggles even when adapter-core
@@ -88,6 +89,7 @@ export interface GuardToggles extends AdapterCoreGuardToggles {
 
 export interface ClawdstrikeConfig extends Omit<AdapterCoreClawdstrikeConfig, "guards"> {
   guards?: GuardToggles;
+  inbound?: AdapterCoreInboundConfig;
 }
 
 export interface PolicyGuards extends GuardToggles {

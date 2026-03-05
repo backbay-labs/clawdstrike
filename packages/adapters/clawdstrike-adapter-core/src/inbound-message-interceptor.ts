@@ -178,8 +178,26 @@ export async function interceptInboundMessage(
       ...(event.metadata ?? {}),
     };
 
-    const decision = await Promise.resolve(engine.evaluate(event));
+    const evaluatedDecision = await Promise.resolve(engine.evaluate(event));
+    const sanitizedText =
+      evaluatedDecision.status === "sanitize" ? extractSanitizedText(evaluatedDecision) : null;
+    const decision: Decision =
+      evaluatedDecision.status === "sanitize" && sanitizedText === null
+        ? denyDecision({
+            reason_code: "ADC_POLICY_DENY",
+            guard: evaluatedDecision.guard ?? "inbound_message",
+            severity: "high",
+            message:
+              evaluatedDecision.message ??
+              evaluatedDecision.reason ??
+              "Inbound message sanitize decision missing sanitized replacement text",
+          })
+        : evaluatedDecision;
+
     const auditDetails = buildInboundAuditDetails(message, engine, config);
+    if (evaluatedDecision.status === "sanitize" && sanitizedText === null) {
+      auditDetails.sanitizeFallback = "deny_missing_replacement";
+    }
     await emitAuditEvent(
       context,
       config,
@@ -208,24 +226,14 @@ export async function interceptInboundMessage(
     }
 
     if (decision.status === "sanitize") {
-      const sanitized = extractSanitizedText(decision);
-      if (sanitized !== null) {
-        return {
-          proceed: true,
-          decision,
-          modifiedMessage: {
-            ...message,
-            text: sanitized,
-          },
-          warning: decision.message ?? decision.reason,
-          duration: Date.now() - startTime,
-        };
-      }
-
       return {
         proceed: true,
         decision,
-        warning: decision.message ?? decision.reason ?? "Inbound message flagged for sanitization",
+        modifiedMessage: {
+          ...message,
+          text: sanitizedText ?? message.text,
+        },
+        warning: decision.message ?? decision.reason,
         duration: Date.now() - startTime,
       };
     }

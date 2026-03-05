@@ -97,6 +97,28 @@ describe("inbound-message-interceptor", () => {
     expect(result.modifiedMessage?.text).toBe("safe text");
   });
 
+  it("fails closed when sanitize decision has no replacement text", async () => {
+    const engine = buildEngine(
+      sanitizeDecision({
+        reason_code: "TEST_SANITIZE_EMPTY",
+        guard: "prompt_injection",
+        message: "sanitize without replacement",
+      }),
+    );
+    const context = createFrameworkAdapter("openclaw", engine).createContext();
+    const result = await interceptInboundMessage(
+      engine,
+      { inbound: { enabled: true } },
+      context,
+      buildInboundMessage("unsafe text"),
+    );
+
+    expect(result.proceed).toBe(false);
+    expect(result.decision.status).toBe("deny");
+    expect(result.decision.guard).toBe("prompt_injection");
+    expect(result.decision.reason_code).toBe("ADC_POLICY_DENY");
+  });
+
   it("records metadata plus content hash by default", async () => {
     const events: Array<{ type: string; details?: Record<string, unknown> }> = [];
     const logger = {

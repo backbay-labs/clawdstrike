@@ -7,7 +7,7 @@ import type { PolicyEngineLike as CanonicalPolicyEngineLike } from "@clawdstrike
 import { parseNetworkTarget } from "@clawdstrike/adapter-core";
 import { type Policy as CanonicalPolicy, createPolicyEngineFromPolicy } from "@clawdstrike/policy";
 
-import { mergeConfig, resolveBuiltinPolicy } from "../config.js";
+import { mergeConfig, resolveBuiltinPolicy, type ResolvedClawdstrikeConfig } from "../config.js";
 import {
   EgressGuard,
   ForbiddenPathGuard,
@@ -253,7 +253,7 @@ function ensureReasonCode(decision: Decision): Decision {
 }
 
 export class PolicyEngine {
-  private readonly config: Required<ClawdstrikeConfig>;
+  private readonly config: ResolvedClawdstrikeConfig;
   private readonly policy: Policy;
   private readonly forbiddenPathGuard: ForbiddenPathGuard;
   private readonly egressGuard: EgressGuard;
@@ -1555,7 +1555,7 @@ async function evaluateSpiderSenseRuntime(
 
 function buildThreatIntelEngine(
   policy: Policy,
-  guardToggles: Required<ClawdstrikeConfig>["guards"],
+  guardToggles: ResolvedClawdstrikeConfig["guards"],
   policyBaseDir?: string,
 ): CanonicalPolicyEngineLike | null {
   const custom = policy.guards?.custom;
