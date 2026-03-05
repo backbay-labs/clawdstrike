@@ -413,7 +413,11 @@ export class BaseToolInterceptor implements ToolInterceptor {
     }
 
     if (typeof value === "string") {
-      return sanitizeAuditText(value, this.engine.redactSecrets, this.config.audit?.redactPII);
+      return sanitizeAuditText(
+        value,
+        this.engine.redactSecrets?.bind(this.engine),
+        this.config.audit?.redactPII,
+      );
     }
 
     if (typeof value !== "object") {

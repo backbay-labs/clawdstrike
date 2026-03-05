@@ -66,6 +66,7 @@ function buildInboundAuditDetails(
   config: AdapterConfig,
 ): Record<string, unknown> {
   const contentMode = config.inbound?.auditContentMode ?? "hash";
+  const redactSecrets = engine.redactSecrets?.bind(engine);
   const details: Record<string, unknown> = {
     messageId: message.id,
     source: message.source,
@@ -79,14 +80,14 @@ function buildInboundAuditDetails(
   if (contentMode === "raw") {
     details.content = sanitizeAuditText(
       message.text,
-      engine.redactSecrets,
+      redactSecrets,
       config.audit?.redactPII,
     );
   } else if (contentMode === "redacted_snippet") {
     const length = config.inbound?.redactedSnippetLength ?? DEFAULT_REDACTED_SNIPPET_LENGTH;
     const sanitized = sanitizeAuditText(
       message.text,
-      engine.redactSecrets,
+      redactSecrets,
       config.audit?.redactPII,
     );
     details.contentSnippet = sanitized.slice(0, Math.max(0, length));
