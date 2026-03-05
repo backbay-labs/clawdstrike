@@ -185,6 +185,35 @@ hushd:
   #         topologyKey: kubernetes.io/hostname
 
 # ---------------------------------------------------------------------------
+# Registry (package registry)
+# ---------------------------------------------------------------------------
+registry:
+  enabled: false
+  image:
+    repository: ghcr.io/backbay-labs/clawdstrike/registry
+    tag: ""
+  replicas: 1
+  port: 3100
+  auth:
+    enabled: true
+    existingSecret: ""
+    apiKey: ""
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClassName: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+  service:
+    type: ClusterIP
+    port: 3100
+
+# ---------------------------------------------------------------------------
 # Bridge workloads
 # ---------------------------------------------------------------------------
 bridges:
@@ -396,6 +425,13 @@ ingress:
   proofsApi:
     enabled: true
     host: proofs-api.clawdstrike.local
+    path: /
+    pathType: Prefix
+    annotations: {}
+    tls: []
+  registry:
+    enabled: false
+    host: registry.clawdstrike.dev
     path: /
     pathType: Prefix
     annotations: {}

@@ -101,3 +101,7 @@ bash scripts/path-lint.sh
 bash scripts/move-validation.sh
 bash scripts/architecture-guardrails.sh
 """
+
+[tasks.registry-smoke]
+description = "Run registry end-to-end smoke test"
+run = "bash tests/registry-smoke.sh"

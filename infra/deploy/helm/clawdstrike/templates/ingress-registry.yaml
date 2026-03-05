@@ -1,0 +1,39 @@
+{{- if and .Values.ingress.enabled .Values.ingress.registry.enabled .Values.registry.enabled }}
+{{- $annotations := dict }}
+{{- range $k, $v := .Values.ingress.commonAnnotations }}
+{{- $_ := set $annotations $k $v }}
+{{- end }}
+{{- range $k, $v := .Values.ingress.registry.annotations }}
+{{- $_ := set $annotations $k $v }}
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "clawdstrike.fullname" . }}-registry
+  namespace: {{ include "clawdstrike.namespace" . }}
+  labels:
+    {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "registry") | nindent 4 }}
+  {{- if $annotations }}
+  annotations:
+    {{- toYaml $annotations | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className | quote }}
+  {{- end }}
+  {{- if .Values.ingress.registry.tls }}
+  tls:
+    {{- toYaml .Values.ingress.registry.tls | nindent 4 }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.registry.host | quote }}
+      http:
+        paths:
+          - path: {{ .Values.ingress.registry.path }}
+            pathType: {{ .Values.ingress.registry.pathType }}
+            backend:
+              service:
+                name: {{ include "clawdstrike.fullname" . }}-registry
+                port:
+                  name: http
+{{- end }}

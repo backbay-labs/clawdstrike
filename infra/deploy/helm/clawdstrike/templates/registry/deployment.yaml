@@ -1,0 +1,88 @@
+{{- if .Values.registry.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "clawdstrike.fullname" . }}-registry
+  namespace: {{ include "clawdstrike.namespace" . }}
+  labels:
+    {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "registry") | nindent 4 }}
+spec:
+  replicas: {{ .Values.registry.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "clawdstrike.componentSelectorLabels" (dict "ctx" . "component" "registry") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "registry") | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/registry/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- include "clawdstrike.imagePullSecrets" . | nindent 6 }}
+      {{- include "clawdstrike.globalScheduling" . | nindent 6 }}
+      serviceAccountName: {{ include "clawdstrike.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: registry
+          image: "{{ .Values.registry.image.repository }}:{{ .Values.registry.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.registry.port }}
+          env:
+            - name: CLAWDSTRIKE_REGISTRY_HOST
+              value: "0.0.0.0"
+            - name: CLAWDSTRIKE_REGISTRY_PORT
+              value: {{ .Values.registry.port | quote }}
+            - name: CLAWDSTRIKE_REGISTRY_DATA_DIR
+              value: "/var/lib/clawdstrike-registry"
+            - name: RUST_LOG
+              value: "info,clawdstrike_registry=debug"
+          {{- if .Values.registry.auth.enabled }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.registry.auth.existingSecret | default (printf "%s-registry" (include "clawdstrike.fullname" .)) }}
+          {{- end }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/clawdstrike-registry
+            - name: data
+              mountPath: /var/lib/clawdstrike-registry
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.registry.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "clawdstrike.fullname" . }}-registry
+        {{- if .Values.registry.persistence.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "clawdstrike.fullname" . }}-registry
+        {{- else }}
+        - name: data
+          emptyDir: {}
+        {{- end }}
+{{- end }}

@@ -1,0 +1,10 @@
+{{- if .Values.registry.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "clawdstrike.fullname" . }}-registry
+  namespace: {{ include "clawdstrike.namespace" . }}
+  labels:
+    {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "registry") | nindent 4 }}
+data: {}
+{{- end }}

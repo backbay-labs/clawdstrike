@@ -112,5 +112,28 @@ services:
     profiles:
       - bridges
 
+  # ---------------------------------------------------------------------------
+  # Package Registry
+  # ---------------------------------------------------------------------------
+  clawdstrike-registry:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.registry
+    ports:
+      - "3100:3100"
+    environment:
+      CLAWDSTRIKE_REGISTRY_HOST: "0.0.0.0"
+      CLAWDSTRIKE_REGISTRY_PORT: "3100"
+      CLAWDSTRIKE_REGISTRY_ALLOW_INSECURE_NO_AUTH: "true"
+      RUST_LOG: info,clawdstrike_registry=debug
+    volumes:
+      - registry-data:/var/lib/clawdstrike-registry
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:3100/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
 volumes:
   nats-data:
+  registry-data:

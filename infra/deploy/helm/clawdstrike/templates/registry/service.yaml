@@ -1,0 +1,17 @@
+{{- if .Values.registry.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "clawdstrike.fullname" . }}-registry
+  namespace: {{ include "clawdstrike.namespace" . }}
+  labels:
+    {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "registry") | nindent 4 }}
+spec:
+  type: {{ .Values.registry.service.type }}
+  selector:
+    {{- include "clawdstrike.componentSelectorLabels" (dict "ctx" . "component" "registry") | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.registry.service.port }}
+      targetPort: http
+{{- end }}

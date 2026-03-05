@@ -1,0 +1,49 @@
+# syntax=docker/dockerfile:1
+
+# Build stage
+FROM rust:1.93-bookworm AS builder
+
+WORKDIR /build
+
+# Copy a minimal workspace manifest and lockfile.
+COPY infra/docker/workspace-registry.toml Cargo.toml
+COPY Cargo.lock ./
+
+# Copy only crates needed to build the registry.
+COPY crates/libs/hush-core crates/libs/hush-core
+COPY crates/libs/clawdstrike crates/libs/clawdstrike
+COPY crates/services/clawdstrike-registry crates/services/clawdstrike-registry
+
+# Build release binaries
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/build/target \
+    cargo build --release --bin clawdstrike-registry --bin clawdstrike-audit-monitor && \
+    cp /build/target/release/clawdstrike-registry /usr/local/bin/clawdstrike-registry && \
+    cp /build/target/release/clawdstrike-audit-monitor /usr/local/bin/clawdstrike-audit-monitor
+
+# Runtime stage
+FROM debian:bookworm-slim
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates libssl3 tini && \
+    rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN groupadd -g 1000 registry && \
+    useradd -u 1000 -g registry -d /var/lib/clawdstrike-registry -m registry
+
+# Create directories
+RUN mkdir -p /var/lib/clawdstrike-registry /var/log/clawdstrike-registry && \
+    chown -R registry:registry /var/lib/clawdstrike-registry /var/log/clawdstrike-registry
+
+# Copy binaries
+COPY --from=builder /usr/local/bin/clawdstrike-registry /usr/local/bin/
+COPY --from=builder /usr/local/bin/clawdstrike-audit-monitor /usr/local/bin/
+
+USER registry
+WORKDIR /var/lib/clawdstrike-registry
+
+EXPOSE 3100
+
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["clawdstrike-registry"]
