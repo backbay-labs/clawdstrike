@@ -59,6 +59,8 @@ fn load_keypair(path: &str) -> anyhow::Result<hush_core::Keypair> {
     Ok(keypair)
 }
 
+/// Build the envelope fact matching the agent's `PostureCommand` serde format:
+/// `#[serde(tag = "command", rename_all = "snake_case")]`
 fn build_fact(cli: &Cli) -> anyhow::Result<serde_json::Value> {
     match cli.command {
         PostureCommand::SetPosture => {
@@ -67,22 +69,20 @@ fn build_fact(cli: &Cli) -> anyhow::Result<serde_json::Value> {
                 .as_deref()
                 .ok_or_else(|| anyhow::anyhow!("--posture is required for set_posture"))?;
             Ok(serde_json::json!({
-                "type": "posture.set",
+                "command": "set_posture",
                 "posture": posture,
             }))
         }
         PostureCommand::KillSwitch => {
-            let reason = cli
-                .reason
-                .as_deref()
-                .ok_or_else(|| anyhow::anyhow!("--reason is required for kill_switch"))?;
-            Ok(serde_json::json!({
-                "type": "posture.kill_switch",
-                "reason": reason,
-            }))
+            let reason = cli.reason.as_deref();
+            let mut fact = serde_json::json!({ "command": "kill_switch" });
+            if let Some(r) = reason {
+                fact["reason"] = serde_json::json!(r);
+            }
+            Ok(fact)
         }
         PostureCommand::RequestPolicyReload => Ok(serde_json::json!({
-            "type": "posture.request_policy_reload",
+            "command": "request_policy_reload",
         })),
     }
 }
