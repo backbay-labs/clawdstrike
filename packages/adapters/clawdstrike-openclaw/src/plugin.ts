@@ -5,11 +5,15 @@
  */
 
 import { readFileSync } from "node:fs";
+import type { InboundConfig } from "@clawdstrike/adapter-core";
 import { getSharedEngine, initializeEngine } from "./engine-holder.js";
 import agentBootstrapHandler, {
   initialize as initBootstrap,
 } from "./hooks/agent-bootstrap/handler.js";
 import cuaBridgeHandler, { initialize as initCuaBridge } from "./hooks/cua-bridge/handler.js";
+import inboundMessageHandler, {
+  initialize as initInboundMessage,
+} from "./hooks/inbound-message/handler.js";
 import toolGuardHandler, { initialize as initToolGuard } from "./hooks/tool-guard/handler.js";
 import toolPreflightHandler, {
   initialize as initPreflight,
@@ -50,6 +54,8 @@ interface OpenClawPluginAPI {
   on?(event: string, handler: HookHandler): void;
 }
 
+type PluginRuntimeConfig = ClawdstrikeConfig & { inbound?: InboundConfig };
+
 /**
  * Plugin registration function (function format per OpenClaw docs)
  */
@@ -72,8 +78,37 @@ export default function clawdstrikePlugin(api: OpenClawPluginAPI) {
     }
   };
 
+  const parseInboundConfig = (value: unknown): InboundConfig | undefined => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+
+    const raw = value as Record<string, unknown>;
+    const inbound: InboundConfig = {};
+
+    if (typeof raw.enabled === "boolean") {
+      inbound.enabled = raw.enabled;
+    }
+    if (raw.failMode === "open" || raw.failMode === "closed") {
+      inbound.failMode = raw.failMode;
+    }
+    if (typeof raw.customType === "string" && raw.customType.length > 0) {
+      inbound.customType = raw.customType;
+    }
+    if (
+      raw.auditContentMode === "hash" ||
+      raw.auditContentMode === "raw" ||
+      raw.auditContentMode === "redacted_snippet"
+    ) {
+      inbound.auditContentMode = raw.auditContentMode;
+    }
+    if (typeof raw.redactedSnippetLength === "number" && Number.isFinite(raw.redactedSnippetLength)) {
+      inbound.redactedSnippetLength = Math.max(0, Math.floor(raw.redactedSnippetLength));
+    }
+
+    return Object.keys(inbound).length > 0 ? inbound : undefined;
+  };
+
   // Load config from plugin settings
-  const getConfig = (): ClawdstrikeConfig => {
+  const getConfig = (): PluginRuntimeConfig => {
     const entries = api.config?.plugins?.entries ?? {};
     const apiPluginConfig =
       entries["clawdstrike-security"]?.config ?? entries["openclaw"]?.config ?? {};
@@ -87,15 +122,17 @@ export default function clawdstrikePlugin(api: OpenClawPluginAPI) {
       pluginConfig.guards && typeof pluginConfig.guards === "object"
         ? (pluginConfig.guards as ClawdstrikeConfig["guards"])
         : { forbidden_path: true, egress: true, secret_leak: true, patch_integrity: true };
+    const inbound = parseInboundConfig(pluginConfig.inbound);
     return {
       policy,
       mode: mode as ClawdstrikeConfig["mode"],
       logLevel: logLevel as ClawdstrikeConfig["logLevel"],
       guards,
+      ...(inbound ? { inbound } : {}),
     };
   };
 
-  const refreshSharedEngine = (): ClawdstrikeConfig => {
+  const refreshSharedEngine = (): PluginRuntimeConfig => {
     const config = getConfig();
     initializeEngine(config);
     return config;
@@ -225,6 +262,7 @@ export default function clawdstrikePlugin(api: OpenClawPluginAPI) {
   initToolGuard(config);
   initBootstrap(config);
   initCuaBridge(config);
+  initInboundMessage(config);
 
   const withFreshEngine = (handler: HookHandler): HookHandler => {
     return async (event, ctx) => {
@@ -237,6 +275,7 @@ export default function clawdstrikePlugin(api: OpenClawPluginAPI) {
   const wrappedToolPreflightHandler = withFreshEngine(toolPreflightHandler);
   const wrappedToolGuardHandler = withFreshEngine(toolGuardHandler);
   const wrappedAgentBootstrapHandler = withFreshEngine(agentBootstrapHandler);
+  const wrappedInboundMessageHandler = withFreshEngine(inboundMessageHandler);
 
   // Register hooks — prefer named hook registration for modern runtimes,
   // but fall back to legacy registration shapes for compatibility.
@@ -286,6 +325,16 @@ export default function clawdstrikePlugin(api: OpenClawPluginAPI) {
       wrappedToolGuardHandler,
     );
     registerHookCompat(
+      "inbound_message",
+      "clawdstrike:inbound-message:inbound-message",
+      wrappedInboundMessageHandler,
+    );
+    registerHookCompat(
+      "user_input",
+      "clawdstrike:inbound-message:user-input",
+      wrappedInboundMessageHandler,
+    );
+    registerHookCompat(
       "agent:bootstrap",
       "clawdstrike:agent-bootstrap",
       wrappedAgentBootstrapHandler,
@@ -297,6 +346,8 @@ export default function clawdstrikePlugin(api: OpenClawPluginAPI) {
     registerHook("tool_call", wrappedCuaBridgeHandler);
     registerHook("tool_call", wrappedToolPreflightHandler);
     registerHook("tool_result_persist", wrappedToolGuardHandler);
+    registerHook("inbound_message", wrappedInboundMessageHandler);
+    registerHook("user_input", wrappedInboundMessageHandler);
     registerHook("agent:bootstrap", wrappedAgentBootstrapHandler);
   }
 

@@ -19,6 +19,11 @@ export interface FrameworkAdapter<TContext = unknown> {
     output: unknown,
   ): Promise<ProcessedOutput>;
 
+  interceptInboundMessage?(
+    context: SecurityContext,
+    message: GenericInboundMessage,
+  ): Promise<InboundInterceptResult>;
+
   finalizeContext(context: SecurityContext): Promise<SessionSummary>;
   getEngine(): PolicyEngineLike;
   getHooks(): FrameworkHooks<TContext>;
@@ -30,6 +35,7 @@ export interface AdapterConfig extends ClawdstrikeConfig {
   injectSecurityPrompt?: boolean;
   normalizeToolName?: (name: string) => string;
   translateToolCall?: ToolCallTranslator;
+  inbound?: InboundConfig;
   excludedTools?: string[];
   audit?: AuditConfig;
   handlers?: EventHandlers;
@@ -69,6 +75,20 @@ export interface GenericToolCall {
   metadata?: Record<string, unknown>;
 }
 
+export type InboundChatType = "dm" | "group" | "channel";
+
+export interface GenericInboundMessage {
+  id: string;
+  text: string;
+  timestamp: Date;
+  source: string;
+  senderId?: string;
+  senderName?: string;
+  channel?: string;
+  chatType?: InboundChatType;
+  metadata?: Record<string, unknown>;
+}
+
 export interface ToolCallTranslationInput {
   framework: string;
   toolName: string;
@@ -79,6 +99,32 @@ export interface ToolCallTranslationInput {
 }
 
 export type ToolCallTranslator = (input: ToolCallTranslationInput) => PolicyEvent | null;
+
+export interface InboundMessageTranslationInput {
+  framework: string;
+  message: GenericInboundMessage;
+  sessionId?: string;
+  contextMetadata?: Record<string, unknown>;
+}
+
+export type InboundMessageTranslator = (input: InboundMessageTranslationInput) => PolicyEvent | null;
+
+export interface InboundConfig {
+  enabled?: boolean;
+  failMode?: "open" | "closed";
+  customType?: string;
+  translateMessage?: InboundMessageTranslator;
+  auditContentMode?: "hash" | "raw" | "redacted_snippet";
+  redactedSnippetLength?: number;
+}
+
+export interface InboundInterceptResult {
+  proceed: boolean;
+  decision: Decision;
+  modifiedMessage?: GenericInboundMessage;
+  warning?: string;
+  duration: number;
+}
 
 export interface SessionSummary {
   sessionId: string;

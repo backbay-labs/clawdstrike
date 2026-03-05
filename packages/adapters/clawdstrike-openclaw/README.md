@@ -53,6 +53,7 @@ The package exports hook handlers for direct OpenClaw integration:
 - `agentBootstrapHandler` -- Injects security prompt at session start
 - `toolPreflightHandler` -- Preflight policy check before tool execution
 - `cuaBridgeHandler` -- Computer-use agent bridge with CUA-specific checks
+- `inboundMessageHandler` -- Pre-context inbound message guard (`inbound_message` / `user_input`)
 
 ### CLI
 
@@ -87,6 +88,7 @@ These commands build `@clawdstrike/policy` and `@clawdstrike/adapter-core` befor
 | `ReceiptSigner` | Decision receipt signing |
 | `generateSecurityPrompt` | Security system prompt generation |
 | `openclawTranslator` | OpenClaw config translation |
+| `inboundMessageHandler` | Inbound message hook handler |
 | `registerCli` / `createCli` | CLI registration helpers |
 
 ## License

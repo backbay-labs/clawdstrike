@@ -2,6 +2,7 @@ import type {
   AdapterConfig,
   FrameworkAdapter,
   FrameworkHooks,
+  GenericInboundMessage,
   GenericToolCall,
   SessionSummary,
 } from "./adapter.js";
@@ -10,6 +11,7 @@ import { createSecurityContext, type SecurityContext } from "./context.js";
 import type { PolicyEngineLike } from "./engine.js";
 import { createSessionSummary } from "./finalize-context.js";
 import { FrameworkToolBoundary } from "./framework-tool-boundary.js";
+import { allowInboundBypass, interceptInboundMessage } from "./inbound-message-interceptor.js";
 import type { ProcessedOutput } from "./interceptor.js";
 
 export function createFrameworkAdapter(
@@ -45,6 +47,14 @@ export function createFrameworkAdapter(
       output: unknown,
     ): Promise<ProcessedOutput> {
       return await interceptor.afterExecute(toolCall.name, toolCall.parameters, output, context);
+    },
+
+    async interceptInboundMessage(context: SecurityContext, message: GenericInboundMessage) {
+      if (!currentConfig.inbound?.enabled) {
+        return allowInboundBypass();
+      }
+
+      return interceptInboundMessage(engine, currentConfig, context, message);
     },
 
     async finalizeContext(context: SecurityContext): Promise<SessionSummary> {

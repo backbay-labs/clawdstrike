@@ -6,10 +6,14 @@
 
 import type { ClawdstrikeConfig, EvaluationMode, GuardToggles, LogLevel } from "./types.js";
 
+export type ResolvedClawdstrikeConfig = Required<Omit<ClawdstrikeConfig, "inbound">> & {
+  inbound?: ClawdstrikeConfig["inbound"];
+};
+
 /**
  * Default configuration values
  */
-export const DEFAULT_CONFIG: Required<ClawdstrikeConfig> = {
+export const DEFAULT_CONFIG: ResolvedClawdstrikeConfig = {
   policy: "clawdstrike:ai-agent-minimal",
   mode: "deterministic",
   logLevel: "info",
@@ -26,12 +30,13 @@ export const DEFAULT_CONFIG: Required<ClawdstrikeConfig> = {
 /**
  * Merge user config with defaults
  */
-export function mergeConfig(userConfig: ClawdstrikeConfig = {}): Required<ClawdstrikeConfig> {
+export function mergeConfig(userConfig: ClawdstrikeConfig = {}): ResolvedClawdstrikeConfig {
   return {
     policy: userConfig.policy ?? DEFAULT_CONFIG.policy,
     mode: userConfig.mode ?? DEFAULT_CONFIG.mode,
     logLevel: userConfig.logLevel ?? DEFAULT_CONFIG.logLevel,
     guards: mergeGuardToggles(userConfig.guards),
+    inbound: userConfig.inbound,
   };
 }
 

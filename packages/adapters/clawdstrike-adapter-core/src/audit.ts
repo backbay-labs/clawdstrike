@@ -13,6 +13,11 @@ export type AuditEventType =
   | "prompt_security_instruction_hierarchy"
   | "prompt_security_watermark"
   | "prompt_security_output_sanitized"
+  | "inbound_message_allowed"
+  | "inbound_message_warning"
+  | "inbound_message_blocked"
+  | "inbound_message_sanitized"
+  | "inbound_message_error"
   | "wasm_degraded"
   | "session_start"
   | "session_end";

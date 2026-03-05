@@ -12,6 +12,7 @@ export {
   default as cuaBridgeHandler,
   isCuaToolCall,
 } from "./hooks/cua-bridge/handler.js";
+export { default as inboundMessageHandler } from "./hooks/inbound-message/handler.js";
 export { default as toolPreflightHandler } from "./hooks/tool-preflight/handler.js";
 // Adapter (FrameworkAdapter interface from @clawdstrike/adapter-core)
 export { OpenClawAdapter, type OpenClawAdapterOptions } from "./openclaw-adapter.js";
@@ -32,6 +33,8 @@ export type {
   ClawdstrikeConfig,
   Decision,
   EvaluationMode,
+  InboundConfig,
+  InboundMessageEvent,
   Policy,
   PolicyEvent,
   PolicyLintResult,

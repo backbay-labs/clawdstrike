@@ -6,6 +6,7 @@ Clawdstrike provides **tool-layer guardrails** for AI agents running in OpenClaw
 
 Clawdstrike enforces policy at the **OpenClaw tool boundary**:
 
+- **Pre-context inbound**: `inbound_message` / `user_input` hooks can allow, warn, block, or sanitize text before it reaches the model context.
 - **Preflight**: agents can use `policy_check` before attempting risky operations.
 - **Post-action**: the `tool_result_persist` hook can block/redact tool outputs and record violations.
 
@@ -207,6 +208,13 @@ Available rulesets:
         "egress": true,
         "secret_leak": true,
         "patch_integrity": true
+      },
+      "inbound": {
+        "enabled": true,
+        "failMode": "open",
+        "customType": "untrusted_text",
+        "auditContentMode": "hash",
+        "redactedSnippetLength": 160
       }
     }
   }
@@ -217,6 +225,11 @@ Available rulesets:
 - `mode`: `deterministic` (block), `advisory` (warn), or `audit` (log only)
 - `logLevel`: `debug`, `info`, `warn`, or `error`
 - `guards`: Enable/disable specific guards
+- `inbound.enabled`: Enable inbound hook enforcement (`inbound_message` / `user_input`)
+- `inbound.failMode`: `open` (warn+continue on errors) or `closed` (block on evaluator errors)
+- `inbound.customType`: Custom event subtype for policy (`custom` event with `customType`)
+- `inbound.auditContentMode`: `hash` (default), `raw`, or `redacted_snippet`
+- `inbound.redactedSnippetLength`: Max snippet length when `auditContentMode` is `redacted_snippet`
 
 ## Next Steps
 

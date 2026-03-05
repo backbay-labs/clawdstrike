@@ -8,6 +8,8 @@ const EXPECTED_EVENTS = [
   'tool_call',
   'tool_call',
   'tool_result_persist',
+  'inbound_message',
+  'user_input',
   'agent:bootstrap',
 ] as const;
 

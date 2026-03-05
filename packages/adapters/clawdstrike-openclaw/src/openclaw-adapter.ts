@@ -3,8 +3,10 @@ import type {
   AuditLogger,
   FrameworkAdapter,
   FrameworkHooks,
+  GenericInboundMessage,
   GenericToolCall,
   InterceptResult,
+  InboundInterceptResult,
   PolicyEngineLike,
   ProcessedOutput,
   SecurityContext,
@@ -103,6 +105,25 @@ export class OpenClawAdapter implements FrameworkAdapter {
     output: unknown,
   ): Promise<ProcessedOutput> {
     return this.delegate.processOutput(context, toolCall, output);
+  }
+
+  async interceptInboundMessage(
+    context: SecurityContext,
+    message: GenericInboundMessage,
+  ): Promise<InboundInterceptResult> {
+    if (typeof this.delegate.interceptInboundMessage !== "function") {
+      return {
+        proceed: true,
+        decision: {
+          status: "allow",
+          guard: "inbound_disabled",
+          message: "Inbound interception disabled",
+        },
+        duration: 0,
+      };
+    }
+
+    return this.delegate.interceptInboundMessage(context, message);
   }
 
   async finalizeContext(context: SecurityContext): Promise<SessionSummary> {

@@ -10,7 +10,13 @@ export type {
   EventHandlers,
   FrameworkAdapter,
   FrameworkHooks,
+  GenericInboundMessage,
   GenericToolCall,
+  InboundChatType,
+  InboundConfig,
+  InboundInterceptResult,
+  InboundMessageTranslationInput,
+  InboundMessageTranslator,
   SessionSummary,
   ToolCallTranslationInput,
   ToolCallTranslator,
@@ -40,6 +46,7 @@ export {
   FrameworkToolBoundary,
   wrapFrameworkToolDispatcher,
 } from "./framework-tool-boundary.js";
+export { allowInboundBypass, interceptInboundMessage } from "./inbound-message-interceptor.js";
 
 export type {
   GenericToolBoundaryOptions,

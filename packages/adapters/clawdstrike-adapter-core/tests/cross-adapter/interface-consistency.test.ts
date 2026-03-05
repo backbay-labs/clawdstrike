@@ -49,12 +49,13 @@ describe('Cross-Adapter Interface Consistency', () => {
       expect(adapter.version.length).toBeGreaterThan(0);
     });
 
-    it('exposes all 7 FrameworkAdapter methods', () => {
+    it('exposes all FrameworkAdapter methods', () => {
       const requiredMethods = [
         'initialize',
         'createContext',
         'interceptToolCall',
         'processOutput',
+        'interceptInboundMessage',
         'finalizeContext',
         'getEngine',
         'getHooks',
