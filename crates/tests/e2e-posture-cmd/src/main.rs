@@ -137,18 +137,15 @@ async fn main() -> anyhow::Result<()> {
             println!("{{\"status\":\"published\",\"message\":\"command sent (no responder)\"}}");
         }
         Err(_) => {
+            // request() already published the message — it just didn't get a reply.
+            // Do NOT re-publish to avoid duplicate delivery (especially dangerous for
+            // non-idempotent commands like kill_switch).
             eprintln!(
-                "No reply within {}s — the command was published but no subscriber responded.",
+                "No reply within {}s — command was delivered but no subscriber responded.",
                 cli.timeout_secs
             );
             eprintln!("This is expected if the agent is not listening on {}", cli.subject);
-            eprintln!("Falling back to fire-and-forget publish...");
-            client
-                .publish(cli.subject, serde_json::to_vec(&envelope)?.into())
-                .await
-                .map_err(|e| anyhow::anyhow!("NATS publish error: {e}"))?;
-            client.flush().await.map_err(|e| anyhow::anyhow!("NATS flush error: {e}"))?;
-            println!("{{\"status\":\"published\",\"message\":\"command sent (no reply)\"}}");
+            println!("{{\"status\":\"delivered\",\"message\":\"command sent, no reply within timeout\"}}");
         }
     }
 
