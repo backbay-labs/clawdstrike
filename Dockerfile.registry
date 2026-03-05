@@ -12,6 +12,8 @@ COPY Cargo.lock ./
 # Copy only crates needed to build the registry.
 COPY crates/libs/hush-core crates/libs/hush-core
 COPY crates/libs/clawdstrike crates/libs/clawdstrike
+COPY crates/libs/spine crates/libs/spine
+COPY crates/libs/hush-proxy crates/libs/hush-proxy
 COPY crates/services/clawdstrike-registry crates/services/clawdstrike-registry
 
 # Build release binaries
@@ -25,7 +27,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 FROM debian:bookworm-slim
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ca-certificates libssl3 tini && \
+    apt-get install -y --no-install-recommends ca-certificates libssl3 tini wget && \
     rm -rf /var/lib/apt/lists/*
 
 # Create non-root user

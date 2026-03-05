@@ -3,6 +3,8 @@ resolver = "2"
 members = [
     "crates/libs/hush-core",
     "crates/libs/clawdstrike",
+    "crates/libs/spine",
+    "crates/libs/hush-proxy",
     "crates/services/clawdstrike-registry",
 ]
 
@@ -118,6 +120,8 @@ jsonwebtoken = { version = "10", default-features = false, features = ["aws_lc_r
 # Internal crates
 hush-core = { path = "crates/libs/hush-core", version = "0.2.4" }
 clawdstrike = { path = "crates/libs/clawdstrike", version = "0.2.4", default-features = false }
+spine = { package = "hush-spine", path = "crates/libs/spine", version = "0.2.4" }
+hush-proxy = { path = "crates/libs/hush-proxy", version = "0.2.4" }
 
 [profile.release]
 lto = true
