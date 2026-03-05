@@ -1,5 +1,6 @@
 import type { AdapterConfig, GenericToolCall } from "./adapter.js";
 import type { AuditEvent } from "./audit.js";
+import { emitAuditEvent as emitAuditEventShared } from "./audit-event-emitter.js";
 import { sanitizeAuditText } from "./audit-sanitizer.js";
 import type { SecurityContext } from "./context.js";
 import { DefaultOutputSanitizer } from "./default-output-sanitizer.js";
@@ -451,26 +452,8 @@ export class BaseToolInterceptor implements ToolInterceptor {
   }
 
   private async emitAuditEvent(context: SecurityContext, event: AuditEvent): Promise<void> {
-    if (this.config.audit?.enabled === false) {
-      return;
-    }
-
-    const allowedEvents = this.config.audit?.events;
-    if (allowedEvents && !allowedEvents.includes(event.type)) {
-      return;
-    }
-
-    context.addAuditEvent(event);
-
-    const logger = this.config.audit?.logger;
-    if (!logger) {
-      return;
-    }
-
-    try {
-      await logger.log(event);
-    } catch (error) {
-      this.config.handlers?.onError?.(error as Error);
-    }
+    await emitAuditEventShared(context, this.config, event, (error) => {
+      this.config.handlers?.onError?.(error);
+    });
   }
 }

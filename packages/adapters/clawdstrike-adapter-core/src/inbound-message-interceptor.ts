@@ -6,7 +6,8 @@ import type {
   InboundInterceptResult,
   InboundMessageTranslationInput,
 } from "./adapter.js";
-import type { AuditEvent, AuditEventType } from "./audit.js";
+import type { AuditEventType } from "./audit.js";
+import { emitAuditEvent } from "./audit-event-emitter.js";
 import { sanitizeAuditText } from "./audit-sanitizer.js";
 import type { SecurityContext } from "./context.js";
 import type { PolicyEngineLike } from "./engine.js";
@@ -107,29 +108,6 @@ function extractSanitizedText(decision: Extract<Decision, { status: "sanitize" }
 
   const fromDetails = details?.sanitized_text;
   return typeof fromDetails === "string" ? fromDetails : null;
-}
-
-async function emitAuditEvent(
-  context: SecurityContext,
-  config: AdapterConfig,
-  event: AuditEvent,
-  onError: (error: Error) => void,
-): Promise<void> {
-  if (config.audit?.enabled === false) return;
-
-  const allowedEvents = config.audit?.events;
-  if (allowedEvents && !allowedEvents.includes(event.type)) return;
-
-  context.addAuditEvent(event);
-
-  const logger = config.audit?.logger;
-  if (!logger) return;
-
-  try {
-    await logger.log(event);
-  } catch (error) {
-    onError(error as Error);
-  }
 }
 
 function decisionToInboundAuditType(decision: Decision): AuditEventType {

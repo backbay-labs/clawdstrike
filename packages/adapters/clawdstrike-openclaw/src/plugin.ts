@@ -13,6 +13,7 @@ import agentBootstrapHandler, {
 import cuaBridgeHandler, { initialize as initCuaBridge } from "./hooks/cua-bridge/handler.js";
 import inboundMessageHandler, {
   initialize as initInboundMessage,
+  refreshRuntimeConfig as refreshInboundRuntimeConfig,
 } from "./hooks/inbound-message/handler.js";
 import toolGuardHandler, { initialize as initToolGuard } from "./hooks/tool-guard/handler.js";
 import toolPreflightHandler, {
@@ -264,9 +265,13 @@ export default function clawdstrikePlugin(api: OpenClawPluginAPI) {
   initCuaBridge(config);
   initInboundMessage(config);
 
-  const withFreshEngine = (handler: HookHandler): HookHandler => {
+  const withFreshEngine = (
+    handler: HookHandler,
+    onRefreshed?: (config: PluginRuntimeConfig) => void,
+  ): HookHandler => {
     return async (event, ctx) => {
-      refreshSharedEngine();
+      const latestConfig = refreshSharedEngine();
+      onRefreshed?.(latestConfig);
       return handler(event, ctx);
     };
   };
@@ -275,13 +280,21 @@ export default function clawdstrikePlugin(api: OpenClawPluginAPI) {
   const wrappedToolPreflightHandler = withFreshEngine(toolPreflightHandler);
   const wrappedToolGuardHandler = withFreshEngine(toolGuardHandler);
   const wrappedAgentBootstrapHandler = withFreshEngine(agentBootstrapHandler);
-  const wrappedInboundMessageHandler = withFreshEngine(inboundMessageHandler);
+  const wrappedInboundMessageHandler = withFreshEngine(
+    inboundMessageHandler,
+    refreshInboundRuntimeConfig,
+  );
 
   // Register hooks — prefer named hook registration for modern runtimes,
   // but fall back to legacy registration shapes for compatibility.
   if (typeof api.registerHook === "function") {
     const registerHook = api.registerHook.bind(api);
-    const registerHookCompat = (event: string, name: string, handler: HookHandler): void => {
+    const registerHookCompat = (
+      event: string,
+      name: string,
+      handler: HookHandler,
+      options?: { optional?: boolean },
+    ): void => {
       const namedOpts: RegisterHookOptions = {
         name,
         entry: {
@@ -291,15 +304,37 @@ export default function clawdstrikePlugin(api: OpenClawPluginAPI) {
         },
       };
 
+      let lastError: unknown;
       try {
         registerHook(event, handler, namedOpts);
-      } catch {
-        try {
-          registerHook(event, handler, { name });
-        } catch {
-          registerHook(event, handler);
-        }
+        return;
+      } catch (error) {
+        lastError = error;
       }
+
+      try {
+        registerHook(event, handler, { name });
+        return;
+      } catch (error) {
+        lastError = error;
+      }
+
+      try {
+        registerHook(event, handler);
+        return;
+      } catch (error) {
+        lastError = error;
+      }
+
+      if (options?.optional) {
+        const detail = lastError instanceof Error ? lastError.message : String(lastError);
+        logger.warn?.(
+          `[clawdstrike] Optional hook "${event}" could not be registered; continuing without it (${detail})`,
+        );
+        return;
+      }
+
+      throw (lastError instanceof Error ? lastError : new Error(String(lastError)));
     };
 
     // Register for both modern and legacy event names for compatibility.
@@ -328,11 +363,13 @@ export default function clawdstrikePlugin(api: OpenClawPluginAPI) {
       "inbound_message",
       "clawdstrike:inbound-message:inbound-message",
       wrappedInboundMessageHandler,
+      { optional: true },
     );
     registerHookCompat(
       "user_input",
       "clawdstrike:inbound-message:user-input",
       wrappedInboundMessageHandler,
+      { optional: true },
     );
     registerHookCompat(
       "agent:bootstrap",
@@ -341,13 +378,29 @@ export default function clawdstrikePlugin(api: OpenClawPluginAPI) {
     );
   } else if (typeof api.on === "function") {
     const registerHook = api.on.bind(api);
+    const registerOnCompat = (
+      event: string,
+      handler: HookHandler,
+      options?: { optional?: boolean },
+    ): void => {
+      try {
+        registerHook(event, handler);
+      } catch (error) {
+        if (!options?.optional) throw error;
+        const detail = error instanceof Error ? error.message : String(error);
+        logger.warn?.(
+          `[clawdstrike] Optional hook "${event}" could not be registered; continuing without it (${detail})`,
+        );
+      }
+    };
+
     registerHook("before_tool_call", wrappedCuaBridgeHandler);
     registerHook("before_tool_call", wrappedToolPreflightHandler);
     registerHook("tool_call", wrappedCuaBridgeHandler);
     registerHook("tool_call", wrappedToolPreflightHandler);
     registerHook("tool_result_persist", wrappedToolGuardHandler);
-    registerHook("inbound_message", wrappedInboundMessageHandler);
-    registerHook("user_input", wrappedInboundMessageHandler);
+    registerOnCompat("inbound_message", wrappedInboundMessageHandler, { optional: true });
+    registerOnCompat("user_input", wrappedInboundMessageHandler, { optional: true });
     registerHook("agent:bootstrap", wrappedAgentBootstrapHandler);
   }
 

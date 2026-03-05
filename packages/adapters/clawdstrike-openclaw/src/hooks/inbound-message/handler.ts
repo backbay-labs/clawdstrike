@@ -44,8 +44,12 @@ type OpenClawInboundRuntimeConfig = ClawdstrikeConfig & { inbound?: InboundConfi
 
 let currentConfig: OpenClawInboundRuntimeConfig = {};
 
-export function initialize(config: ClawdstrikeConfig): void {
+export function refreshRuntimeConfig(config: ClawdstrikeConfig): void {
   currentConfig = config as OpenClawInboundRuntimeConfig;
+}
+
+export function initialize(config: ClawdstrikeConfig): void {
+  refreshRuntimeConfig(config);
   initializeEngine(config);
 }
 
