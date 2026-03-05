@@ -304,37 +304,30 @@ export default function clawdstrikePlugin(api: OpenClawPluginAPI) {
         },
       };
 
-      let lastError: unknown;
       try {
         registerHook(event, handler, namedOpts);
         return;
-      } catch (error) {
-        lastError = error;
-      }
+      } catch {}
 
       try {
         registerHook(event, handler, { name });
         return;
-      } catch (error) {
-        lastError = error;
-      }
+      } catch {}
 
       try {
         registerHook(event, handler);
         return;
       } catch (error) {
-        lastError = error;
-      }
+        if (options?.optional) {
+          const detail = error instanceof Error ? error.message : String(error);
+          logger.warn?.(
+            `[clawdstrike] Optional hook "${event}" could not be registered; continuing without it (${detail})`,
+          );
+          return;
+        }
 
-      if (options?.optional) {
-        const detail = lastError instanceof Error ? lastError.message : String(lastError);
-        logger.warn?.(
-          `[clawdstrike] Optional hook "${event}" could not be registered; continuing without it (${detail})`,
-        );
-        return;
+        throw (error instanceof Error ? error : new Error(String(error)));
       }
-
-      throw (lastError instanceof Error ? lastError : new Error(String(lastError)));
     };
 
     // Register for both modern and legacy event names for compatibility.

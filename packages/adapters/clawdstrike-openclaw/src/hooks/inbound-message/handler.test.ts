@@ -102,6 +102,23 @@ describe("inbound-message handler", () => {
     expect(event.messages).toContain("[clawdstrike] Inbound warning: suspicious");
   });
 
+  it("does not append warning text for allow decisions with informational messages", async () => {
+    interceptInboundMessageMock.mockResolvedValue({
+      proceed: true,
+      decision: {
+        status: "allow",
+        message: "allowed after scan",
+      },
+      duration: 1,
+    } satisfies InboundInterceptResult);
+
+    const event = legacyEvent("user_input");
+    const result = await handler(event);
+
+    expect(result).toBeUndefined();
+    expect(event.messages).toEqual([]);
+  });
+
   it("applies sanitized text to modern inbound payloads", async () => {
     interceptInboundMessageMock.mockResolvedValue({
       proceed: true,

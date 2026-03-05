@@ -186,7 +186,11 @@ function applyDecisionToEvent(
       ? modernEvent.message
       : null;
   const messages = extractMessageList(event);
-  const warning = result.warning ?? result.decision.message ?? result.decision.reason;
+  const decisionWarning =
+    result.decision.status === "warn" || result.decision.status === "sanitize"
+      ? result.decision.message ?? result.decision.reason
+      : undefined;
+  const warning = result.warning ?? decisionWarning;
 
   if (!result.proceed || result.decision.status === "deny") {
     const blockReason =

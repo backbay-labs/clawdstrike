@@ -218,7 +218,8 @@ export async function interceptInboundMessage(
       duration: Date.now() - startTime,
     };
   } catch (error) {
-    const messageText = error instanceof Error ? error.message : String(error);
+    const runtimeError = error instanceof Error ? error : new Error(String(error));
+    const messageText = runtimeError.message;
     const decision =
       failMode === "closed"
         ? denyDecision({
@@ -234,11 +235,30 @@ export async function interceptInboundMessage(
             message: `Inbound evaluation failed (fail-open): ${messageText}`,
           });
 
-    const auditDetails = {
-      ...buildInboundAuditDetails(message, engine, config),
-      error: messageText,
-      failMode,
-    };
+    let auditDetails: Record<string, unknown>;
+    try {
+      auditDetails = {
+        ...buildInboundAuditDetails(message, engine, config),
+        error: messageText,
+        failMode,
+      };
+    } catch (auditError) {
+      const auditBuildError =
+        auditError instanceof Error ? auditError : new Error(String(auditError));
+      auditDetails = {
+        messageId: message.id,
+        source: message.source,
+        senderId: message.senderId,
+        senderName: message.senderName,
+        channel: message.channel,
+        chatType: message.chatType,
+        contentHash: fingerprintText(message.text),
+        error: messageText,
+        failMode,
+        auditDetailsError: auditBuildError.message,
+      };
+      config.handlers?.onError?.(auditBuildError);
+    }
 
     await emitAuditEvent(
       context,
@@ -257,7 +277,7 @@ export async function interceptInboundMessage(
       },
     );
 
-    config.handlers?.onError?.(error as Error);
+    config.handlers?.onError?.(runtimeError);
     if (decision.status === "deny") {
       context.violationCount++;
       context.recordBlocked("inbound_message", decision);
