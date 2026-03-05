@@ -43,6 +43,9 @@ describe("inbound-message handler", () => {
       policy: "clawdstrike:ai-agent-minimal",
       mode: "deterministic",
       logLevel: "error",
+      inbound: {
+        enabled: true,
+      },
     });
   });
 
@@ -133,6 +136,43 @@ describe("inbound-message handler", () => {
     expect(result).toBeUndefined();
     expect(event.message.text).toBe("safe rewritten text");
     expect(event.messages).toContain("[clawdstrike] Inbound warning: sanitized");
+  });
+
+  it("applies sanitize updates even when sanitized text is empty", async () => {
+    interceptInboundMessageMock.mockResolvedValue({
+      proceed: true,
+      decision: {
+        status: "sanitize",
+        reason_code: "TEST_SANITIZE_EMPTY",
+        guard: "prompt_injection",
+        message: "fully redacted",
+      },
+      modifiedMessage: {
+        id: "msg-empty",
+        text: "",
+        source: "openclaw.inbound_hook",
+        timestamp: new Date("2026-03-05T12:02:00.000Z"),
+      },
+      duration: 2,
+    } satisfies InboundInterceptResult);
+
+    const event = legacyEvent();
+    const result = await handler(event);
+
+    expect(result).toBeUndefined();
+    expect(event.context.message.text).toBe("");
+  });
+
+  it("skips interception when inbound config is missing (opt-in)", async () => {
+    initialize({
+      mode: "deterministic",
+    });
+
+    const event = legacyEvent();
+    const result = await handler(event);
+
+    expect(result).toBeUndefined();
+    expect(interceptInboundMessageMock).not.toHaveBeenCalled();
   });
 
   it("skips interception when inbound handling is disabled", async () => {

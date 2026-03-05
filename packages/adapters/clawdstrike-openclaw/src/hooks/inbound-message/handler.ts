@@ -81,7 +81,7 @@ function normalizeChatType(value: unknown): "dm" | "group" | "channel" | undefin
 
 function resolveInboundConfig(config: OpenClawInboundRuntimeConfig): InboundConfig {
   return {
-    enabled: true,
+    enabled: false,
     failMode: "open",
     customType: "untrusted_text",
     auditContentMode: "hash",
@@ -198,7 +198,7 @@ function applyDecisionToEvent(
     return { block: true, blockReason };
   }
 
-  if (result.modifiedMessage?.text) {
+  if (result.modifiedMessage && typeof result.modifiedMessage.text === "string") {
     if (isInboundLegacyEvent(event)) {
       event.context.message.text = result.modifiedMessage.text;
     } else if (modernMessage) {
