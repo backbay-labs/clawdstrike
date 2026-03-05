@@ -199,12 +199,16 @@ export async function interceptInboundMessage(
     }
 
     if (decision.status === "sanitize") {
+      const sanitizedReplacement = sanitizedText;
+      if (sanitizedReplacement === null) {
+        throw new Error("Invariant violation: sanitize decision missing replacement text");
+      }
       return {
         proceed: true,
         decision,
         modifiedMessage: {
           ...message,
-          text: sanitizedText ?? message.text,
+          text: sanitizedReplacement,
         },
         warning: decision.message ?? decision.reason,
         duration: Date.now() - startTime,
