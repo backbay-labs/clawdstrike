@@ -249,6 +249,14 @@ export async function interceptInboundMessage(
     } catch (auditError) {
       const auditBuildError =
         auditError instanceof Error ? auditError : new Error(String(auditError));
+      let fallbackContentHash: string | undefined;
+      try {
+        fallbackContentHash = fingerprintText(message.text);
+      } catch (hashError) {
+        const fallbackHashError =
+          hashError instanceof Error ? hashError : new Error(String(hashError));
+        config.handlers?.onError?.(fallbackHashError);
+      }
       auditDetails = {
         messageId: message.id,
         source: message.source,
@@ -256,7 +264,7 @@ export async function interceptInboundMessage(
         senderName: message.senderName,
         channel: message.channel,
         chatType: message.chatType,
-        contentHash: fingerprintText(message.text),
+        ...(fallbackContentHash ? { contentHash: fallbackContentHash } : {}),
         error: messageText,
         failMode,
         auditDetailsError: auditBuildError.message,

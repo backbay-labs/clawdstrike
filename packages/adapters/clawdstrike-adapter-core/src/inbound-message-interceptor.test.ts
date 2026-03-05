@@ -248,4 +248,60 @@ describe("inbound-message-interceptor", () => {
     expect(handledErrors).toContain("redact boom");
     expect(handledErrors).toContain("boom");
   });
+
+  it("returns fail-open decision when fallback audit hash computation throws", async () => {
+    const events: Array<{ type: string; details?: Record<string, unknown> }> = [];
+    const handledErrors: string[] = [];
+    const engine: PolicyEngineLike = {
+      evaluate: async () => {
+        throw new Error("boom");
+      },
+    };
+    const logger = {
+      async log(event: { type: string; details?: Record<string, unknown> }) {
+        events.push(event);
+      },
+      async getSessionEvents() {
+        return [];
+      },
+      async getContextEvents() {
+        return [];
+      },
+      async export() {
+        return "";
+      },
+      async prune() {
+        return 0;
+      },
+    };
+    const malformedMessage = {
+      ...buildInboundMessage("placeholder"),
+      text: Symbol("bad") as unknown as string,
+    };
+
+    const context = createFrameworkAdapter("openclaw", buildEngine(allowDecision())).createContext();
+    const result = await interceptInboundMessage(
+      engine,
+      {
+        inbound: { enabled: true, failMode: "open" },
+        audit: { enabled: true, logger },
+        handlers: {
+          onError: (error) => {
+            handledErrors.push(error.message);
+          },
+        },
+      },
+      context,
+      malformedMessage,
+    );
+
+    expect(result.proceed).toBe(true);
+    expect(result.decision.status).toBe("warn");
+    const errorEvent = events.find((event) => event.type === "inbound_message_error");
+    expect(errorEvent).toBeDefined();
+    expect(errorEvent?.details?.contentHash).toBeUndefined();
+    expect(typeof errorEvent?.details?.auditDetailsError).toBe("string");
+    expect(handledErrors).toContain("boom");
+    expect(handledErrors.length).toBeGreaterThanOrEqual(2);
+  });
 });
