@@ -34,7 +34,7 @@ struct Cli {
     #[arg(long)]
     posture: Option<String>,
 
-    /// Reason string (required for kill_switch).
+    /// Reason string (optional, used with kill_switch).
     #[arg(long)]
     reason: Option<String>,
 
