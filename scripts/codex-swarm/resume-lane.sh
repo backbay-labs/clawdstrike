@@ -89,7 +89,7 @@ exit "\$status"
 EOF
 chmod +x "$runner_file"
 
-nohup "$runner_file" > "$log_file" 2> "$stderr_file" &
+nohup bash "$runner_file" > "$log_file" 2> "$stderr_file" &
 pid="$!"
 printf '%s\n' "$pid" > "$pid_file"
 
