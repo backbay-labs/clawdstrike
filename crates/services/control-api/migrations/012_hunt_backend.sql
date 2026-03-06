@@ -1,4 +1,4 @@
-CREATE TABLE hunt_envelopes (
+CREATE TABLE IF NOT EXISTS hunt_envelopes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     source TEXT NOT NULL,
@@ -14,7 +14,7 @@ CREATE TABLE hunt_envelopes (
     UNIQUE (tenant_id, raw_ref)
 );
 
-CREATE TABLE hunt_events (
+CREATE TABLE IF NOT EXISTS hunt_events (
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     event_id TEXT NOT NULL,
     envelope_id UUID REFERENCES hunt_envelopes(id) ON DELETE SET NULL,
@@ -49,7 +49,7 @@ CREATE TABLE hunt_events (
     PRIMARY KEY (tenant_id, event_id)
 );
 
-CREATE TABLE saved_hunts (
+CREATE TABLE IF NOT EXISTS saved_hunts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
@@ -60,7 +60,7 @@ CREATE TABLE saved_hunts (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE hunt_jobs (
+CREATE TABLE IF NOT EXISTS hunt_jobs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     job_type TEXT NOT NULL,
@@ -72,13 +72,13 @@ CREATE TABLE hunt_jobs (
     completed_at TIMESTAMPTZ
 );
 
-CREATE INDEX idx_hunt_envelopes_tenant_issued_at ON hunt_envelopes(tenant_id, issued_at DESC);
-CREATE INDEX idx_hunt_events_tenant_time ON hunt_events(tenant_id, timestamp DESC, event_id DESC);
-CREATE INDEX idx_hunt_events_tenant_source ON hunt_events(tenant_id, source, timestamp DESC, event_id DESC);
-CREATE INDEX idx_hunt_events_tenant_principal ON hunt_events(tenant_id, principal_id, timestamp DESC, event_id DESC);
-CREATE INDEX idx_hunt_events_tenant_session ON hunt_events(tenant_id, session_id, timestamp DESC, event_id DESC);
-CREATE INDEX idx_hunt_events_tenant_endpoint ON hunt_events(tenant_id, endpoint_agent_id, timestamp DESC, event_id DESC);
-CREATE INDEX idx_hunt_events_tenant_runtime ON hunt_events(tenant_id, runtime_agent_id, timestamp DESC, event_id DESC);
-CREATE INDEX idx_hunt_events_detection_ids ON hunt_events USING GIN(detection_ids);
-CREATE INDEX idx_saved_hunts_tenant_updated ON saved_hunts(tenant_id, updated_at DESC);
-CREATE INDEX idx_hunt_jobs_tenant_created ON hunt_jobs(tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_hunt_envelopes_tenant_issued_at ON hunt_envelopes(tenant_id, issued_at DESC);
+CREATE INDEX IF NOT EXISTS idx_hunt_events_tenant_time ON hunt_events(tenant_id, timestamp DESC, event_id DESC);
+CREATE INDEX IF NOT EXISTS idx_hunt_events_tenant_source ON hunt_events(tenant_id, source, timestamp DESC, event_id DESC);
+CREATE INDEX IF NOT EXISTS idx_hunt_events_tenant_principal ON hunt_events(tenant_id, principal_id, timestamp DESC, event_id DESC);
+CREATE INDEX IF NOT EXISTS idx_hunt_events_tenant_session ON hunt_events(tenant_id, session_id, timestamp DESC, event_id DESC);
+CREATE INDEX IF NOT EXISTS idx_hunt_events_tenant_endpoint ON hunt_events(tenant_id, endpoint_agent_id, timestamp DESC, event_id DESC);
+CREATE INDEX IF NOT EXISTS idx_hunt_events_tenant_runtime ON hunt_events(tenant_id, runtime_agent_id, timestamp DESC, event_id DESC);
+CREATE INDEX IF NOT EXISTS idx_hunt_events_detection_ids ON hunt_events USING GIN(detection_ids);
+CREATE INDEX IF NOT EXISTS idx_saved_hunts_tenant_updated ON saved_hunts(tenant_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_hunt_jobs_tenant_created ON hunt_jobs(tenant_id, created_at DESC);

@@ -420,7 +420,6 @@ fn strip_yara_comments_and_literals(source_text: &str) -> String {
         LineComment,
         BlockComment,
         DoubleQuotedString,
-        RegexLiteral,
     }
 
     let chars = source_text.chars().collect::<Vec<_>>();
@@ -450,11 +449,6 @@ fn strip_yara_comments_and_literals(source_text: &str) -> String {
                     sanitized.push(' ');
                     index += 1;
                     state = State::DoubleQuotedString;
-                }
-                ('/', _) => {
-                    sanitized.push(' ');
-                    index += 1;
-                    state = State::RegexLiteral;
                 }
                 _ => {
                     sanitized.push(ch);
@@ -489,22 +483,6 @@ fn strip_yara_comments_and_literals(source_text: &str) -> String {
                     index += 2;
                 }
                 ('"', _) => {
-                    sanitized.push(' ');
-                    index += 1;
-                    state = State::Code;
-                }
-                _ => {
-                    sanitized.push(if ch == '\n' { '\n' } else { ' ' });
-                    index += 1;
-                }
-            },
-            State::RegexLiteral => match (ch, next) {
-                ('\\', Some(escaped)) => {
-                    sanitized.push(' ');
-                    sanitized.push(if escaped == '\n' { '\n' } else { ' ' });
-                    index += 2;
-                }
-                ('/', _) => {
                     sanitized.push(' ');
                     index += 1;
                     state = State::Code;
@@ -607,6 +585,13 @@ mod tests {
         let source = "/* rule commented_out { condition: true } */\nrule real_rule {\n  meta:\n    note = \"rule fake_rule\"\n  condition:\n    true\n}";
         let compiled = compile_rule_source("yara", source).expect("compile yara");
         assert_eq!(compiled.compiled_artifact["rule_count_estimate"], 1);
+    }
+
+    #[test]
+    fn yara_validation_keeps_slashes_in_rule_bodies() {
+        let source = "rule first_rule {\n  condition:\n    filesize / 2 > 10\n}\nrule second_rule { condition: true }";
+        let compiled = compile_rule_source("yara", source).expect("compile yara");
+        assert_eq!(compiled.compiled_artifact["rule_count_estimate"], 2);
     }
 
     #[test]

@@ -193,7 +193,8 @@ fn init_and_adaptive_migrations_are_ordered() {
         "010 must define detection rule storage before downstream detection features"
     );
     assert!(
-        hunt_backend_sql.contains("CREATE TABLE hunt_envelopes"),
+        hunt_backend_sql.contains("CREATE TABLE hunt_envelopes")
+            || hunt_backend_sql.contains("CREATE TABLE IF NOT EXISTS hunt_envelopes"),
         "012 must define hunt envelope storage after the detection and response base exists"
     );
 }
@@ -266,23 +267,28 @@ fn hunt_backend_migration_adds_event_store_and_saved_hunts() {
         .expect("failed to read 012 migration");
 
     assert!(
-        sql.contains("CREATE TABLE hunt_envelopes"),
+        sql.contains("CREATE TABLE hunt_envelopes")
+            || sql.contains("CREATE TABLE IF NOT EXISTS hunt_envelopes"),
         "012 migration must create hunt_envelopes"
     );
     assert!(
-        sql.contains("CREATE TABLE hunt_events"),
+        sql.contains("CREATE TABLE hunt_events")
+            || sql.contains("CREATE TABLE IF NOT EXISTS hunt_events"),
         "012 migration must create hunt_events"
     );
     assert!(
-        sql.contains("CREATE TABLE saved_hunts"),
+        sql.contains("CREATE TABLE saved_hunts")
+            || sql.contains("CREATE TABLE IF NOT EXISTS saved_hunts"),
         "012 migration must create saved_hunts"
     );
     assert!(
-        sql.contains("CREATE TABLE hunt_jobs"),
+        sql.contains("CREATE TABLE hunt_jobs")
+            || sql.contains("CREATE TABLE IF NOT EXISTS hunt_jobs"),
         "012 migration must create hunt_jobs"
     );
     assert!(
-        sql.contains("CREATE INDEX idx_hunt_events_detection_ids"),
+        sql.contains("CREATE INDEX idx_hunt_events_detection_ids")
+            || sql.contains("CREATE INDEX IF NOT EXISTS idx_hunt_events_detection_ids"),
         "012 migration must index detection_ids for investigation joins"
     );
 }

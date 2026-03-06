@@ -36,6 +36,8 @@ SELECT
     CASE a.status
         WHEN 'stale' THEN 'stale'
         WHEN 'dead' THEN 'dead'
+        WHEN 'inactive' THEN 'unknown'
+        WHEN 'revoked' THEN 'unknown'
         ELSE 'active'
     END,
     a.public_key,

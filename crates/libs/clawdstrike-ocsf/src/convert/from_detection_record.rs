@@ -139,4 +139,50 @@ mod tests {
         assert_eq!(finding.disposition_id, DispositionId::Logged.as_u8());
         assert!(finding.evidence.is_some());
     }
+
+    #[test]
+    fn resolved_detection_finding_maps_to_successful_allowed_outcome() {
+        let finding = persisted_detection_finding_to_ocsf(&PersistedDetectionFindingInput {
+            finding_id: "finding-2",
+            time_ms: 1_710_000_000_000,
+            severity: "medium",
+            status: "resolved",
+            title: "Resolved finding",
+            summary: "closed by analyst",
+            rule_id: "rule-2",
+            rule_name: "resolved-rule",
+            source_format: "sigma",
+            session_id: None,
+            principal_id: None,
+            evidence_refs: &[],
+            product_version: "0.1.0",
+        });
+
+        assert_eq!(finding.status_id, StatusId::Success.as_u8());
+        assert_eq!(finding.action_id, ActionId::Allowed.as_u8());
+        assert_eq!(finding.disposition_id, DispositionId::Allowed.as_u8());
+    }
+
+    #[test]
+    fn unknown_detection_status_falls_back_to_unknown_outcome() {
+        let finding = persisted_detection_finding_to_ocsf(&PersistedDetectionFindingInput {
+            finding_id: "finding-3",
+            time_ms: 1_710_000_000_000,
+            severity: "low",
+            status: "triaging",
+            title: "Triaging finding",
+            summary: "still under review",
+            rule_id: "rule-3",
+            rule_name: "triage-rule",
+            source_format: "native_correlation",
+            session_id: None,
+            principal_id: None,
+            evidence_refs: &[],
+            product_version: "0.1.0",
+        });
+
+        assert_eq!(finding.status_id, StatusId::Unknown.as_u8());
+        assert_eq!(finding.action_id, ActionId::Unknown.as_u8());
+        assert_eq!(finding.disposition_id, DispositionId::Unknown.as_u8());
+    }
 }
