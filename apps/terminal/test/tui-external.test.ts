@@ -12,6 +12,7 @@ import {
   isRecoverableExternalLaunchError,
 } from "../src/tui/external/state"
 import { makeTerminalWindowRef, parseTerminalWindowRef } from "../src/tui/external/terminal-app"
+import { resolveWezTermShell } from "../src/tui/external/wezterm"
 import type { ExternalRunSessionPlan, ExternalTerminalAdapter } from "../src/tui/external/types"
 
 function createPlan(): ExternalRunSessionPlan {
@@ -127,5 +128,15 @@ describe("external adapter registry", () => {
     expect(makeTerminalWindowRef(5126)).toBe("terminal-window:5126")
     expect(parseTerminalWindowRef("terminal-window:5126")).toBe(5126)
     expect(parseTerminalWindowRef("terminal-app")).toBeNull()
+  })
+
+  test("uses the current shell for WezTerm launches", () => {
+    const previousShell = process.env.SHELL
+    process.env.SHELL = "/usr/local/bin/fish"
+    expect(resolveWezTermShell()).toBe("/usr/local/bin/fish")
+    delete process.env.SHELL
+    expect(resolveWezTermShell()).toBe("sh")
+    if (previousShell === undefined) delete process.env.SHELL
+    else process.env.SHELL = previousShell
   })
 })

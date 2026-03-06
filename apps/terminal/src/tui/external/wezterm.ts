@@ -1,5 +1,9 @@
 import type { ExternalRunSessionPlan, ExternalTerminalAdapter, ExternalTerminalLaunchResult } from "./types"
 
+export function resolveWezTermShell(): string {
+  return process.env.SHELL?.trim() || "sh"
+}
+
 async function spawnDetached(command: string[]): Promise<ExternalTerminalLaunchResult> {
   const proc = Bun.spawn(command, {
     stdin: "ignore",
@@ -32,7 +36,7 @@ export const weztermAdapter: ExternalTerminalAdapter = {
       "start",
       "--cwd",
       plan.workcell.directory,
-      "/bin/zsh",
+      resolveWezTermShell(),
       plan.scriptPath,
     ])
   },

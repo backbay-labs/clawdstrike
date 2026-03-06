@@ -1128,13 +1128,11 @@ impl AuditQueue {
                 let mut queue = self.queue.lock().await;
                 let (events, dropped_invalid) = drain_flush_batch(&mut queue);
                 dropped_invalid_total += dropped_invalid;
-                if let Err(err) = persist_audit_queue(&self.path, &queue) {
-                    tracing::warn!(error = %err, "Failed to persist audit outbox after batch drain");
-                }
                 events
             };
 
             if events.is_empty() {
+                self.persist_current_queue("after draining audit outbox").await;
                 if dropped_invalid_total > 0 {
                     tracing::warn!(
                         dropped_invalid = dropped_invalid_total,
@@ -1200,28 +1198,24 @@ impl AuditQueue {
                             );
                             return Ok(outcome);
                         } else {
+                            self.requeue_failed_flush(events).await;
                             tracing::warn!(
+                                prior_accepted = outcome.accepted,
+                                prior_duplicates = outcome.duplicates,
+                                accepted = summary.accepted,
+                                duplicates = summary.duplicates,
                                 rejected = summary.rejected,
                                 rejected_ids = rejected_ids.len(),
                                 "Daemon response lacked complete rejected event IDs; requeueing entire batch"
                             );
-                            self.requeue_failed_flush(events).await;
+                            anyhow::bail!(
+                                "Audit batch upload partially rejected after previously flushing {} accepted events; current batch status: accepted={}, duplicates={}, rejected={}",
+                                outcome.accepted,
+                                summary.accepted,
+                                summary.duplicates,
+                                summary.rejected
+                            );
                         }
-                        tracing::warn!(
-                            prior_accepted = outcome.accepted,
-                            prior_duplicates = outcome.duplicates,
-                            accepted = summary.accepted,
-                            duplicates = summary.duplicates,
-                            rejected = summary.rejected,
-                            "Daemon rejected some audit outbox events"
-                        );
-                        anyhow::bail!(
-                            "Audit batch upload partially rejected after previously flushing {} accepted events; current batch status: accepted={}, duplicates={}, rejected={}",
-                            outcome.accepted,
-                            summary.accepted,
-                            summary.duplicates,
-                            summary.rejected
-                        );
                     }
                     if !summary.accepted_ids.is_empty() || !summary.duplicate_ids.is_empty() {
                         tracing::debug!(
@@ -2423,6 +2417,77 @@ mod tests {
             .unwrap();
         assert_eq!(flushed.accepted, 2);
         assert_eq!(queue.len().await, 0);
+
+        let persisted: PersistedAuditQueue =
+            serde_json::from_slice(&std::fs::read(&queue.path).unwrap()).unwrap();
+        assert!(persisted.entries.is_empty());
+
+        let _ = std::fs::remove_file(&queue.path);
+    }
+
+    #[tokio::test]
+    async fn audit_queue_flush_keeps_batch_persisted_until_daemon_acknowledges() {
+        use axum::{extract::State, routing::post, Json, Router};
+        use std::sync::Arc;
+        use tokio::{net::TcpListener, sync::Notify};
+
+        #[derive(Clone)]
+        struct FlushGate {
+            started: Arc<Notify>,
+            release: Arc<Notify>,
+        }
+
+        let queue = Arc::new(AuditQueue::new_test_isolated());
+        queue.enqueue(sample_audit_event("evt-1")).await;
+        queue.enqueue(sample_audit_event("evt-2")).await;
+
+        let gate = FlushGate {
+            started: Arc::new(Notify::new()),
+            release: Arc::new(Notify::new()),
+        };
+
+        let app = Router::new().route(
+            "/api/v1/audit/batch",
+            post(
+                |State(gate): State<FlushGate>| async move {
+                    gate.started.notify_one();
+                    gate.release.notified().await;
+                    Json(serde_json::json!({
+                        "accepted": 2,
+                        "duplicates": 0,
+                        "rejected": 0,
+                        "accepted_ids": ["evt-1", "evt-2"]
+                    }))
+                },
+            ),
+        ).with_state(gate.clone());
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let queue_for_flush = Arc::clone(&queue);
+        let flush_task = tokio::spawn(async move {
+            queue_for_flush.flush(&format!("http://{}", addr), None).await
+        });
+
+        gate.started.notified().await;
+
+        let persisted: PersistedAuditQueue =
+            serde_json::from_slice(&std::fs::read(&queue.path).unwrap()).unwrap();
+        let ids: Vec<_> = persisted
+            .entries
+            .iter()
+            .filter_map(|event| event.get("id").and_then(|id| id.as_str()))
+            .collect();
+        assert_eq!(ids, vec!["evt-1", "evt-2"]);
+
+        gate.release.notify_one();
+
+        let flushed = flush_task.await.unwrap().unwrap();
+        assert_eq!(flushed.accepted, 2);
 
         let persisted: PersistedAuditQueue =
             serde_json::from_slice(&std::fs::read(&queue.path).unwrap()).unwrap();
