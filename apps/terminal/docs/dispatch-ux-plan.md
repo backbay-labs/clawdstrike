@@ -15,6 +15,7 @@ Recommended reading order:
 2. [Dispatch Phase 1 Engineering Breakdown](./dispatch-phase1-engineering.md)
 3. [Dispatch Phases 2-5 Overview](./dispatch-phases2-5-overview.md)
 4. Phase-specific breakdowns linked below
+5. Embedded PTY follow-on docs linked below
 
 Concrete Phase 1 file-by-file breakdown:
 
@@ -24,12 +25,21 @@ Concrete Phase 1 file-by-file breakdown:
 - [Dispatch Phase 3 Engineering Breakdown](./dispatch-phase3-engineering.md)
 - [Dispatch Phase 4 Engineering Breakdown](./dispatch-phase4-engineering.md)
 - [Dispatch Phase 5 Engineering Breakdown](./dispatch-phase5-engineering.md)
+- [Embedded PTY Surface Spec](./embedded-pty-surface-spec.md)
+- [Embedded PTY Surface Plan](./embedded-pty-surface-plan.md)
+- [Embedded PTY Phase 6 Engineering Breakdown](./embedded-pty-phase6-engineering.md)
 
 The plan deliberately avoids:
 
 - making tmux mandatory
 - spawning a new terminal window by default
-- embedding a full terminal multiplexer into the TUI
+- embedding a full terminal multiplexer into the TUI during phases 1-5
+
+Follow-on embedded PTY planning now lives in:
+
+- [Embedded PTY Surface Spec](./embedded-pty-surface-spec.md)
+- [Embedded PTY Surface Plan](./embedded-pty-surface-plan.md)
+- [Embedded PTY Phase 6 Engineering Breakdown](./embedded-pty-phase6-engineering.md)
 
 ## Scope
 

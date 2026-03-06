@@ -42,10 +42,16 @@ If the default is wrong, the TUI stops feeling like the product and becomes a la
 
 ## Non-Goals
 
-- building a terminal multiplexer inside ClawdStrike
+- building a terminal multiplexer inside ClawdStrike during the initial dispatch phases
+- treating embedded PTY as solved by raw attach handoff
 - making tmux a hard dependency
 - opening a new OS terminal window for every dispatch by default
 - replacing the existing result, audit, or report workflows
+
+Follow-on design work for an embedded PTY surface now lives in:
+
+- [Embedded PTY Surface Spec](./embedded-pty-surface-spec.md)
+- [Embedded PTY Surface Plan](./embedded-pty-surface-plan.md)
 
 ## Design Principles
 

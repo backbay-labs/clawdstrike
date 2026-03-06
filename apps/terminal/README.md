@@ -109,6 +109,9 @@ Recommended reading order:
 6. Phase 3 engineering breakdown: [docs/dispatch-phase3-engineering.md](./docs/dispatch-phase3-engineering.md)
 7. Phase 4 engineering breakdown: [docs/dispatch-phase4-engineering.md](./docs/dispatch-phase4-engineering.md)
 8. Phase 5 engineering breakdown: [docs/dispatch-phase5-engineering.md](./docs/dispatch-phase5-engineering.md)
+9. Embedded PTY follow-on spec: [docs/embedded-pty-surface-spec.md](./docs/embedded-pty-surface-spec.md)
+10. Embedded PTY follow-on plan: [docs/embedded-pty-surface-plan.md](./docs/embedded-pty-surface-plan.md)
+11. Embedded PTY Phase 6 engineering breakdown: [docs/embedded-pty-phase6-engineering.md](./docs/embedded-pty-phase6-engineering.md)
 
 ## CLI Usage
 
