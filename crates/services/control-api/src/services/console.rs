@@ -18,6 +18,7 @@ use crate::models::console::{
     ConsoleTimelineEvent, ConsoleTimelineQuery, FleetConsoleOverview,
 };
 use crate::services::policy_distribution;
+use crate::services::principal_resolution;
 
 const DEFAULT_LIST_LIMIT: i64 = 100;
 const MAX_LIST_LIMIT: i64 = 500;
@@ -573,7 +574,7 @@ async fn load_principal_rows(
                FROM response_actions AS ra
                WHERE ra.tenant_id = p.tenant_id
                  AND ra.target_kind = 'principal'
-                 AND (ra.target_id = p.id::text OR ra.target_id = p.stable_ref)
+                 AND ra.target_id = p.id::text
                  AND ra.status IN ('queued', 'approved', 'published')
            ) AS open_actions ON TRUE
            WHERE p.tenant_id = $1
@@ -646,19 +647,12 @@ async fn load_principal_by_identifier(
     tenant_id: Uuid,
     principal_identifier: &str,
 ) -> Result<PrincipalBaseRow, ApiError> {
-    let parsed_principal_id = Uuid::parse_str(principal_identifier).ok();
-
-    if let Some(principal_id) = parsed_principal_id {
-        if let Some(row) = load_principal_by_id(db, tenant_id, principal_id).await? {
-            return Ok(row);
-        }
-    }
-
-    if let Some(row) = load_principal_by_stable_ref(db, tenant_id, principal_identifier).await? {
-        return Ok(row);
-    }
-
-    Err(ApiError::NotFound)
+    let principal =
+        principal_resolution::resolve_principal_identifier(db, tenant_id, principal_identifier)
+            .await?;
+    load_principal_by_id(db, tenant_id, principal.id)
+        .await?
+        .ok_or(ApiError::NotFound)
 }
 
 async fn load_principal_by_id(
@@ -689,7 +683,7 @@ async fn load_principal_by_id(
                FROM response_actions AS ra
                WHERE ra.tenant_id = p.tenant_id
                  AND ra.target_kind = 'principal'
-                 AND (ra.target_id = p.id::text OR ra.target_id = p.stable_ref)
+                 AND ra.target_id = p.id::text
                  AND ra.status IN ('queued', 'approved', 'published')
            ) AS open_actions ON TRUE
            WHERE p.tenant_id = $1
@@ -697,51 +691,6 @@ async fn load_principal_by_id(
     )
     .bind(tenant_id)
     .bind(principal_id)
-    .fetch_optional(db)
-    .await
-    .map_err(ApiError::Database)?;
-
-    row.map(map_principal_row).transpose()
-}
-
-async fn load_principal_by_stable_ref(
-    db: &PgPool,
-    tenant_id: Uuid,
-    stable_ref: &str,
-) -> Result<Option<PrincipalBaseRow>, ApiError> {
-    let row = sqlx::query::query(
-        r#"SELECT p.id,
-                  p.principal_type,
-                  p.display_name,
-                  p.stable_ref,
-                  p.lifecycle_state,
-                  p.liveness_state,
-                  p.trust_level,
-                  p.metadata AS principal_metadata,
-                  a.agent_id,
-                  a.last_heartbeat_at,
-                  a.metadata AS agent_metadata,
-                  COALESCE(open_actions.open_response_action_count, 0)::bigint
-                      AS open_response_action_count
-           FROM principals AS p
-           LEFT JOIN agents AS a
-             ON a.tenant_id = p.tenant_id
-            AND a.principal_id = p.id
-           LEFT JOIN LATERAL (
-               SELECT COUNT(*)::bigint AS open_response_action_count
-               FROM response_actions AS ra
-               WHERE ra.tenant_id = p.tenant_id
-                 AND ra.target_kind = 'principal'
-                 AND (ra.target_id = p.id::text OR ra.target_id = p.stable_ref)
-                 AND ra.status IN ('queued', 'approved', 'published')
-           ) AS open_actions ON TRUE
-           WHERE p.tenant_id = $1
-             AND p.stable_ref = $2
-           ORDER BY p.created_at DESC, p.id DESC
-           LIMIT 1"#,
-    )
-    .bind(tenant_id)
-    .bind(stable_ref)
     .fetch_optional(db)
     .await
     .map_err(ApiError::Database)?;
@@ -1106,7 +1055,7 @@ async fn list_response_actions_with_limit(
            LEFT JOIN principals AS p
              ON ra.target_kind = 'principal'
             AND p.tenant_id = ra.tenant_id
-            AND (p.id::text = ra.target_id OR p.stable_ref = ra.target_id)
+            AND p.id::text = ra.target_id
            LEFT JOIN agents AS a
              ON ra.target_kind = 'endpoint'
             AND a.tenant_id = ra.tenant_id
@@ -1421,27 +1370,17 @@ async fn resolve_principal_filter_aliases(
     tenant_id: Uuid,
     principal_identifier: &str,
 ) -> Result<Vec<String>, ApiError> {
-    let row = sqlx::query::query(
-        r#"SELECT id::text AS id_text, stable_ref
-           FROM principals
-           WHERE tenant_id = $1
-             AND (id::text = $2 OR stable_ref = $2)
-           LIMIT 1"#,
+    if let Some(principal) = principal_resolution::resolve_principal_identifier_optional(
+        db,
+        tenant_id,
+        principal_identifier,
     )
-    .bind(tenant_id)
-    .bind(principal_identifier)
-    .fetch_optional(db)
-    .await
-    .map_err(ApiError::Database)?;
-
-    if let Some(row) = row {
-        let id_text = row
-            .try_get::<String, _>("id_text")
-            .map_err(ApiError::Database)?;
-        let stable_ref = row
-            .try_get::<String, _>("stable_ref")
-            .map_err(ApiError::Database)?;
-        Ok(principal_aliases(&id_text, Some(&stable_ref)))
+    .await?
+    {
+        Ok(principal_aliases(
+            &principal.id.to_string(),
+            Some(&principal.stable_ref),
+        ))
     } else {
         Ok(principal_aliases(principal_identifier, None))
     }

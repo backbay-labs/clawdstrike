@@ -5,7 +5,7 @@ use hush_multi_agent::{
     AgentCapability, AgentId, DelegationClaims, DelegationGraphEdgeKind, DelegationGraphNodeKind,
     GrantLineageFacts, InMemoryRevocationStore, SignedDelegationToken, DELEGATION_AUDIENCE,
 };
-use serde_json::json;
+use serde_json::{json, Value};
 use sqlx::row::Row;
 use sqlx::transaction::Transaction;
 use uuid::Uuid;
@@ -17,11 +17,23 @@ use crate::models::delegation_graph::{
     GrantExerciseRequest, IngestGrantRequest, ListGrantsQuery, RevokeGrantRequest,
     RevokeGrantResponse,
 };
+use crate::services::principal_resolution;
 
 struct TenantGraphData {
     grants: BTreeMap<Uuid, FleetGrant>,
     nodes: BTreeMap<String, DelegationGraphNode>,
     edges: Vec<DelegationGraphEdge>,
+}
+
+pub struct RevokePrincipalGrantsRequest {
+    pub principal_id: Uuid,
+    pub principal_stable_ref: String,
+    pub reason: String,
+    pub revoked_by: Option<String>,
+    pub response_action_id: Option<String>,
+    pub response_action_label: Option<String>,
+    pub response_action_state: Option<String>,
+    pub response_action_metadata: Option<Value>,
 }
 
 pub async fn list_grants(
@@ -81,6 +93,8 @@ pub async fn ingest_grant(
     .await?;
     verify_signed_token(&token, &trusted_issuer_key)?;
     reject_revoked_chain(db, tenant_id, &token.claims).await?;
+    reject_blocked_principal_authority(db, tenant_id, token.claims.iss.as_str(), "issuer").await?;
+    reject_blocked_principal_authority(db, tenant_id, token.claims.sub.as_str(), "subject").await?;
 
     let lineage = GrantLineageFacts::from_claims(&token.claims);
     let grant_type = request
@@ -95,7 +109,7 @@ pub async fn ingest_grant(
         None
     };
     if let Some(parent_grant) = parent_grant.as_ref() {
-        validate_child_grant_against_parent(&token.claims, parent_grant)?;
+        validate_child_grant_against_parent(db, tenant_id, &token.claims, parent_grant).await?;
     }
 
     let now = Utc::now();
@@ -467,43 +481,15 @@ pub async fn revoke_grant(
 
     let mut tx = db.begin().await.map_err(ApiError::Database)?;
     let now = Utc::now();
-    for current_grant_id in &revoked_ids {
-        let row = sqlx::query::query(
-            r#"UPDATE fleet_grants
-               SET status = 'revoked',
-                   revoked_at = $3,
-                   revoked_by = $4,
-                   revoke_reason = $5,
-                   updated_at = now()
-               WHERE tenant_id = $1 AND id = $2
-               RETURNING *"#,
-        )
-        .bind(tenant_id)
-        .bind(current_grant_id)
-        .bind(now)
-        .bind(&revoked_by)
-        .bind(&request.reason)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(ApiError::Database)?;
-
-        let current_grant = FleetGrant::from_row(row).map_err(ApiError::Database)?;
-        let node_id = DelegationGraphNodeKind::Grant.node_id(&current_grant.id.to_string());
-        upsert_node(
-            &mut tx,
-            tenant_id,
-            &node_id,
-            DelegationGraphNodeKind::Grant.as_str(),
-            &grant_label(&current_grant),
-            Some("revoked"),
-            json!({
-                "grant_id": current_grant.id.to_string(),
-                "revoked_by": &revoked_by,
-                "revoke_reason": &request.reason,
-            }),
-        )
-        .await?;
-    }
+    revoke_grant_ids(
+        &mut tx,
+        tenant_id,
+        &revoked_ids,
+        now,
+        &revoked_by,
+        &request.reason,
+    )
+    .await?;
 
     if let Some(response_action_id) = request.response_action_id.as_deref() {
         let response_node_id = DelegationGraphNodeKind::ResponseAction.node_id(response_action_id);
@@ -540,6 +526,144 @@ pub async fn revoke_grant(
         grant,
         revoked_grant_ids: revoked_ids,
     })
+}
+
+pub async fn revoke_principal_grants(
+    db: &PgPool,
+    tenant_id: Uuid,
+    request: RevokePrincipalGrantsRequest,
+) -> Result<Vec<Uuid>, ApiError> {
+    let mut principal_aliases = BTreeSet::new();
+    principal_aliases.insert(request.principal_id.to_string());
+    principal_aliases.insert(request.principal_stable_ref.clone());
+    let seed_grant_ids = fetch_principal_seed_grant_ids(db, tenant_id, &principal_aliases).await?;
+    let revoked_ids = if seed_grant_ids.is_empty() {
+        Vec::new()
+    } else {
+        fetch_descendant_grant_ids(
+            db,
+            tenant_id,
+            &seed_grant_ids.iter().copied().collect::<Vec<_>>(),
+        )
+        .await?
+        .into_iter()
+        .collect::<Vec<_>>()
+    };
+
+    let mut tx = db.begin().await.map_err(ApiError::Database)?;
+    let now = Utc::now();
+    if !revoked_ids.is_empty() {
+        revoke_grant_ids(
+            &mut tx,
+            tenant_id,
+            &revoked_ids,
+            now,
+            request.revoked_by.as_deref().unwrap_or("control-api"),
+            &request.reason,
+        )
+        .await?;
+    }
+    sqlx::query::query(
+        r#"UPDATE grants
+           SET status = 'revoked',
+               updated_at = now()
+           WHERE tenant_id = $1
+             AND status = 'active'
+             AND (issuer_principal_id = $2 OR subject_principal_id = $2)"#,
+    )
+    .bind(tenant_id)
+    .bind(request.principal_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(ApiError::Database)?;
+
+    if let Some(response_action_id) = request.response_action_id.as_deref() {
+        let response_node_id = DelegationGraphNodeKind::ResponseAction.node_id(response_action_id);
+        upsert_node(
+            &mut tx,
+            tenant_id,
+            &response_node_id,
+            DelegationGraphNodeKind::ResponseAction.as_str(),
+            request
+                .response_action_label
+                .as_deref()
+                .unwrap_or(response_action_id),
+            request.response_action_state.as_deref(),
+            request
+                .response_action_metadata
+                .unwrap_or_else(|| json!({ "response_action_id": response_action_id })),
+        )
+        .await?;
+        for grant_id in &revoked_ids {
+            let grant_node_id = DelegationGraphNodeKind::Grant.node_id(&grant_id.to_string());
+            upsert_edge(
+                &mut tx,
+                tenant_id,
+                &response_node_id,
+                &grant_node_id,
+                DelegationGraphEdgeKind::RevokedBy.as_str(),
+                json!({
+                    "reason": &request.reason,
+                    "revoked_by": request.revoked_by.as_deref().unwrap_or("control-api"),
+                    "principal_id": request.principal_id.to_string(),
+                    "principal_stable_ref": &request.principal_stable_ref,
+                }),
+            )
+            .await?;
+        }
+    }
+
+    tx.commit().await.map_err(ApiError::Database)?;
+    Ok(revoked_ids)
+}
+
+async fn revoke_grant_ids(
+    tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
+    tenant_id: Uuid,
+    grant_ids: &[Uuid],
+    revoked_at: DateTime<Utc>,
+    revoked_by: &str,
+    reason: &str,
+) -> Result<(), ApiError> {
+    for current_grant_id in grant_ids {
+        let row = sqlx::query::query(
+            r#"UPDATE fleet_grants
+               SET status = 'revoked',
+                   revoked_at = $3,
+                   revoked_by = $4,
+                   revoke_reason = $5,
+                   updated_at = now()
+               WHERE tenant_id = $1 AND id = $2
+               RETURNING *"#,
+        )
+        .bind(tenant_id)
+        .bind(current_grant_id)
+        .bind(revoked_at)
+        .bind(revoked_by)
+        .bind(reason)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(ApiError::Database)?;
+
+        let current_grant = FleetGrant::from_row(row).map_err(ApiError::Database)?;
+        let node_id = DelegationGraphNodeKind::Grant.node_id(&current_grant.id.to_string());
+        upsert_node(
+            tx,
+            tenant_id,
+            &node_id,
+            DelegationGraphNodeKind::Grant.as_str(),
+            &grant_label(&current_grant),
+            Some("revoked"),
+            json!({
+                "grant_id": current_grant.id.to_string(),
+                "revoked_by": revoked_by,
+                "revoke_reason": reason,
+            }),
+        )
+        .await?;
+    }
+
+    Ok(())
 }
 
 pub async fn grant_lineage_snapshot(
@@ -613,32 +737,20 @@ async fn resolve_principal_aliases(
     tenant_id: Uuid,
     principal_identifier: &str,
 ) -> Result<PrincipalAliases, ApiError> {
-    let row = sqlx::query::query(
-        r#"SELECT id::text AS id_text, stable_ref
-           FROM principals
-           WHERE tenant_id = $1
-             AND (id::text = $2 OR stable_ref = $2)
-           LIMIT 1"#,
-    )
-    .bind(tenant_id)
-    .bind(principal_identifier)
-    .fetch_optional(db)
-    .await
-    .map_err(ApiError::Database)?;
-
     let mut aliases = BTreeSet::new();
     aliases.insert(principal_identifier.to_string());
 
-    let canonical_id = if let Some(row) = row {
-        let id_text = row
-            .try_get::<String, _>("id_text")
-            .map_err(ApiError::Database)?;
-        let stable_ref = row
-            .try_get::<String, _>("stable_ref")
-            .map_err(ApiError::Database)?;
-        aliases.insert(id_text.clone());
-        aliases.insert(stable_ref);
-        id_text
+    let canonical_id = if let Some(principal) =
+        principal_resolution::resolve_principal_identifier_optional(
+            db,
+            tenant_id,
+            principal_identifier,
+        )
+        .await?
+    {
+        aliases.insert(principal.id.to_string());
+        aliases.insert(principal.stable_ref.clone());
+        principal.id.to_string()
     } else {
         principal_identifier.to_string()
     };
@@ -819,6 +931,7 @@ async fn fetch_principal_seed_grant_ids(
         r#"SELECT id
            FROM fleet_grants
            WHERE tenant_id = $1
+             AND status = 'active'
              AND (
                  issuer_principal_id = ANY($2::text[])
                  OR subject_principal_id = ANY($2::text[])
@@ -1169,22 +1282,35 @@ async fn load_registered_issuer_public_key(
     tenant_id: Uuid,
     issuer_identifier: &str,
 ) -> Result<Option<hush_core::PublicKey>, ApiError> {
+    if let Some(principal) = principal_resolution::resolve_principal_identifier_optional(
+        db,
+        tenant_id,
+        issuer_identifier,
+    )
+    .await?
+    {
+        principal_resolution::ensure_delegation_allowed(&principal, "issuer")?;
+        let encoded = principal.public_key.ok_or_else(|| {
+            ApiError::BadRequest(format!(
+                "registered principal '{}' is missing a public key",
+                principal.stable_ref
+            ))
+        })?;
+        let public_key = hush_core::PublicKey::from_hex(&encoded).map_err(|err| {
+            ApiError::Internal(format!(
+                "registered issuer key for '{issuer_identifier}' is invalid: {err}"
+            ))
+        })?;
+        return Ok(Some(public_key));
+    }
+
     let row = sqlx::query::query(
         r#"SELECT public_key
-           FROM (
-               SELECT public_key, 0 AS precedence
-               FROM principals
-               WHERE tenant_id = $1
-                 AND public_key IS NOT NULL
-                 AND (stable_ref = $2 OR id::text = $2)
-               UNION ALL
-               SELECT public_key, 1 AS precedence
-               FROM agents
-               WHERE tenant_id = $1
-                 AND public_key IS NOT NULL
-                 AND (agent_id = $2 OR id::text = $2)
-           ) AS issuer_keys
-           ORDER BY precedence ASC
+           FROM agents
+           WHERE tenant_id = $1
+             AND public_key IS NOT NULL
+             AND (agent_id = $2 OR id::text = $2)
+           ORDER BY created_at DESC, id DESC
            LIMIT 1"#,
     )
     .bind(tenant_id)
@@ -1208,7 +1334,28 @@ async fn load_registered_issuer_public_key(
     Ok(Some(public_key))
 }
 
-fn validate_child_grant_against_parent(
+async fn reject_blocked_principal_authority(
+    db: &PgPool,
+    tenant_id: Uuid,
+    principal_identifier: &str,
+    purpose: &str,
+) -> Result<(), ApiError> {
+    let Some(principal) = principal_resolution::resolve_principal_identifier_optional(
+        db,
+        tenant_id,
+        principal_identifier,
+    )
+    .await?
+    else {
+        return Ok(());
+    };
+
+    principal_resolution::ensure_delegation_allowed(&principal, purpose)
+}
+
+async fn validate_child_grant_against_parent(
+    db: &PgPool,
+    tenant_id: Uuid,
     child_claims: &DelegationClaims,
     parent_grant: &FleetGrant,
 ) -> Result<(), ApiError> {
@@ -1218,6 +1365,15 @@ fn validate_child_grant_against_parent(
             parent_grant.token_jti
         )));
     }
+    reject_blocked_principal_authority(db, tenant_id, &parent_grant.issuer_principal_id, "issuer")
+        .await?;
+    reject_blocked_principal_authority(
+        db,
+        tenant_id,
+        &parent_grant.subject_principal_id,
+        "subject",
+    )
+    .await?;
 
     let parent_claims = claims_from_grant(parent_grant)?;
     child_claims

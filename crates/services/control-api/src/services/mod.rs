@@ -10,6 +10,7 @@ pub mod delegation_graph;
 pub mod hunt;
 pub mod metering;
 pub mod policy_distribution;
+pub mod principal_resolution;
 pub mod retention;
 pub mod stale_agent_detector;
 pub mod tenant_provisioner;

@@ -20,6 +20,8 @@ CREATE INDEX IF NOT EXISTS idx_fleet_cases_tenant_updated
     ON fleet_cases(tenant_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_fleet_cases_tenant_status
     ON fleet_cases(tenant_id, status, updated_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_fleet_cases_tenant_id
+    ON fleet_cases(tenant_id, id);
 
 CREATE TABLE IF NOT EXISTS fleet_case_artifacts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

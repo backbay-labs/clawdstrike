@@ -14,6 +14,7 @@ use crate::auth::AuthenticatedTenant;
 use crate::error::ApiError;
 use crate::models::delegation_graph::RevokeGrantRequest;
 use crate::services::delegation_graph as delegation_graph_service;
+use crate::services::principal_resolution;
 use crate::services::tenant_provisioner::tenant_subject_prefix;
 use crate::state::AppState;
 
@@ -133,7 +134,7 @@ pub struct ResponseActionRecord {
     pub requested_at: DateTime<Utc>,
     pub expires_at: Option<DateTime<Utc>>,
     pub reason: String,
-    pub case_id: Option<String>,
+    pub case_id: Option<Uuid>,
     pub source_detection_id: Option<Uuid>,
     pub source_approval_id: Option<Uuid>,
     pub require_acknowledgement: bool,
@@ -280,7 +281,7 @@ pub struct CreateResponseActionRequest {
     pub target: ResponseTargetInput,
     pub reason: String,
     pub expires_at: Option<DateTime<Utc>>,
-    pub case_id: Option<String>,
+    pub case_id: Option<Uuid>,
     pub source_detection_id: Option<Uuid>,
     pub source_approval_id: Option<Uuid>,
     pub require_acknowledgement: Option<bool>,
@@ -312,7 +313,7 @@ struct ValidatedCreateAction {
     resolved_target_id: String,
     reason: String,
     expires_at: Option<DateTime<Utc>>,
-    case_id: Option<String>,
+    case_id: Option<Uuid>,
     source_detection_id: Option<Uuid>,
     source_approval_id: Option<Uuid>,
     require_acknowledgement: bool,
@@ -533,9 +534,10 @@ async fn prepare_create_action(
 
     let resolved_target_id =
         resolve_action_target_id(tx, auth.tenant_id, &target_kind, input.target.id.trim()).await?;
-    validate_action_provenance(
+    validate_action_links(
         tx,
         auth.tenant_id,
+        input.case_id,
         input.source_detection_id,
         input.source_approval_id,
     )
@@ -591,7 +593,7 @@ async fn insert_action(
     .bind(auth.actor_id())
     .bind(draft.expires_at)
     .bind(&draft.reason)
-    .bind(draft.case_id.as_deref())
+    .bind(draft.case_id)
     .bind(draft.source_detection_id)
     .bind(draft.source_approval_id)
     .bind(draft.require_acknowledgement)
@@ -690,6 +692,22 @@ async fn load_ack_context(
     if expected_ack_token != ack.ack_token {
         return Err(ApiError::Forbidden);
     }
+    let ack_exists = sqlx::query_scalar::query_scalar::<_, bool>(
+        r#"SELECT EXISTS(
+                   SELECT 1
+                   FROM response_action_acks
+                   WHERE delivery_id = $1
+               )"#,
+    )
+    .bind(delivery_id)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(ApiError::Database)?;
+    if ack_exists {
+        return Err(ApiError::Conflict(
+            "delivery acknowledgement has already been recorded".to_string(),
+        ));
+    }
 
     Ok(AckContext {
         action,
@@ -704,18 +722,20 @@ async fn persist_ack_submission(
 ) -> Result<(), ApiError> {
     sqlx::query::query(
         r#"INSERT INTO response_action_acks (
+               delivery_id,
                action_id,
                tenant_id,
                target_kind,
                target_id,
-               observed_at,
+                observed_at,
                status,
                message,
                resulting_state,
                raw_payload
            )
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"#,
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"#,
     )
+    .bind(context.delivery_id)
     .bind(context.action.id)
     .bind(context.action.tenant_id)
     .bind(ack.target_kind.as_str())
@@ -944,6 +964,7 @@ async fn apply_delivery_execution(
             let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
             sqlx::query::query(
                 r#"INSERT INTO response_action_acks (
+                       delivery_id,
                        action_id,
                        tenant_id,
                        target_kind,
@@ -954,8 +975,9 @@ async fn apply_delivery_execution(
                        resulting_state,
                        raw_payload
                    )
-                   VALUES ($1, $2, $3, $4, $5, 'acknowledged', $6, $7, $8)"#,
+                   VALUES ($1, $2, $3, $4, $5, $6, 'acknowledged', $7, $8, $9)"#,
             )
+            .bind(context.delivery.id)
             .bind(context.action.id)
             .bind(context.action.tenant_id)
             .bind(&context.delivery.target_kind)
@@ -1111,30 +1133,10 @@ async fn resolve_action_target_id(
             }
         }
         ResponseTargetKind::Principal => {
-            if let Some(row) = sqlx::query::query(
-                "SELECT id::text AS id_text FROM principals WHERE tenant_id = $1 AND stable_ref = $2",
-            )
-            .bind(tenant_id)
-            .bind(target_id)
-            .fetch_optional(&mut **tx)
-            .await
-            .map_err(ApiError::Database)?
-            {
-                row.try_get("id_text").map_err(ApiError::Database)?
-            } else if let Ok(principal_id) = Uuid::parse_str(target_id) {
-                let row = sqlx::query::query(
-                    "SELECT id::text AS id_text FROM principals WHERE tenant_id = $1 AND id = $2",
-                )
-                .bind(tenant_id)
-                .bind(principal_id)
-                .fetch_optional(&mut **tx)
-                .await
-                .map_err(ApiError::Database)?
-                .ok_or(ApiError::NotFound)?;
-                row.try_get("id_text").map_err(ApiError::Database)?
-            } else {
-                return Err(ApiError::NotFound);
-            }
+            principal_resolution::resolve_principal_identifier(&mut **tx, tenant_id, target_id)
+                .await?
+                .id
+                .to_string()
         }
         ResponseTargetKind::Grant => {
             let grant_id = Uuid::parse_str(target_id).map_err(|_| {
@@ -1167,12 +1169,31 @@ async fn resolve_action_target_id(
     Ok(resolved)
 }
 
-async fn validate_action_provenance(
+async fn validate_action_links(
     tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
     tenant_id: Uuid,
+    case_id: Option<Uuid>,
     source_detection_id: Option<Uuid>,
     source_approval_id: Option<Uuid>,
 ) -> Result<(), ApiError> {
+    if let Some(case_id) = case_id {
+        let exists = sqlx::query_scalar::query_scalar::<_, bool>(
+            r#"SELECT EXISTS(
+                   SELECT 1
+                   FROM fleet_cases
+                   WHERE tenant_id = $1 AND id = $2
+               )"#,
+        )
+        .bind(tenant_id)
+        .bind(case_id)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(ApiError::Database)?;
+        if !exists {
+            return Err(ApiError::NotFound);
+        }
+    }
+
     if let Some(finding_id) = source_detection_id {
         let exists = sqlx::query_scalar::query_scalar::<_, bool>(
             r#"SELECT EXISTS(
@@ -1430,6 +1451,24 @@ async fn execute_principal_lifecycle_action(
     )
     .await?;
     sync_principal_graph_state(&state.db, action.tenant_id, &target, lifecycle_state).await?;
+    let revoked_grant_ids = delegation_graph_service::revoke_principal_grants(
+        &state.db,
+        action.tenant_id,
+        delegation_graph_service::RevokePrincipalGrantsRequest {
+            principal_id: target.principal_id,
+            principal_stable_ref: target.stable_ref.clone(),
+            reason: action.reason.clone(),
+            revoked_by: Some(action.requested_by.actor_id.clone()),
+            response_action_id: Some(action.id.to_string()),
+            response_action_label: Some(action.action_type.clone()),
+            response_action_state: Some("acknowledged".to_string()),
+            response_action_metadata: Some(json!({
+                "response_action_id": action.id.to_string(),
+                "action_type": action.action_type.as_str(),
+            })),
+        },
+    )
+    .await?;
 
     Ok(DeliveryExecution::Acknowledged {
         observed_at: Utc::now(),
@@ -1440,6 +1479,7 @@ async fn execute_principal_lifecycle_action(
             "stableRef": target.stable_ref,
             "status": "acknowledged",
             "lifecycleState": lifecycle_state,
+            "revokedGrantIds": revoked_grant_ids,
         }),
     })
 }
@@ -1450,16 +1490,19 @@ async fn update_principal_lifecycle_target(
     target_id: &str,
     lifecycle_state: &str,
 ) -> Result<PrincipalLifecycleTarget, ApiError> {
+    let principal_id = Uuid::parse_str(target_id.trim()).map_err(|_| {
+        ApiError::Internal("principal response targets must be canonical UUID ids".to_string())
+    })?;
     let row = sqlx::query::query(
         r#"UPDATE principals
            SET lifecycle_state = $3,
                updated_at = now()
            WHERE tenant_id = $1
-             AND (id::text = $2 OR stable_ref = $2)
+             AND id = $2
            RETURNING id, stable_ref"#,
     )
     .bind(tenant_id)
-    .bind(target_id.trim())
+    .bind(principal_id)
     .bind(lifecycle_state)
     .fetch_optional(db)
     .await

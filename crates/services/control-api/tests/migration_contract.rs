@@ -253,6 +253,18 @@ fn response_action_migration_adds_execution_ledger_schema() {
         "011 migration must create response_action_acks"
     );
     assert!(
+        sql.contains("case_id UUID"),
+        "011 migration must persist case_id as a UUID"
+    );
+    assert!(
+        sql.contains("delivery_id UUID NOT NULL"),
+        "011 migration must link acknowledgements to a concrete delivery"
+    );
+    assert!(
+        sql.contains("UNIQUE (delivery_id)"),
+        "011 migration must prevent multiple acknowledgements per delivery"
+    );
+    assert!(
         sql.contains("status IN (")
             && sql.contains("'queued'")
             && sql.contains("'acknowledged'")
@@ -322,6 +334,10 @@ fn case_evidence_migration_adds_case_bundle_schema() {
         sql.contains("UNIQUE (case_id, artifact_kind, artifact_id)"),
         "013 migration must deduplicate case artifact references"
     );
+    assert!(
+        sql.contains("CREATE UNIQUE INDEX IF NOT EXISTS idx_fleet_cases_tenant_id"),
+        "013 migration must make (tenant_id, id) referenceable for downstream FKs"
+    );
 }
 
 #[test]
@@ -340,5 +356,20 @@ fn delegation_graph_migration_adds_grant_ledger_and_graph_tables() {
     assert!(
         sql.contains("CREATE TABLE IF NOT EXISTS delegation_graph_edges"),
         "014 migration must define graph edges"
+    );
+}
+
+#[test]
+fn response_action_case_link_migration_adds_case_fk() {
+    let sql = fs::read_to_string(migration_path("015_response_action_case_links.sql"))
+        .expect("failed to read 015 migration");
+
+    assert!(
+        sql.contains("response_actions_case_tenant_fk"),
+        "015 migration must add the response action -> case tenant-scoped FK"
+    );
+    assert!(
+        sql.contains("REFERENCES fleet_cases(tenant_id, id)"),
+        "015 migration must reference fleet_cases by tenant_id + id"
     );
 }

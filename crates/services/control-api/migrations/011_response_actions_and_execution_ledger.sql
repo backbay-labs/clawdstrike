@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS response_actions (
     requested_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     expires_at TIMESTAMPTZ,
     reason TEXT NOT NULL,
-    case_id TEXT,
+    case_id UUID,
     source_detection_id UUID,
     source_approval_id UUID,
     require_acknowledgement BOOLEAN NOT NULL DEFAULT true,
@@ -111,6 +111,7 @@ ON response_action_deliveries(tenant_id, status, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS response_action_acks (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    delivery_id UUID NOT NULL REFERENCES response_action_deliveries(id) ON DELETE CASCADE,
     action_id UUID NOT NULL REFERENCES response_actions(id) ON DELETE CASCADE,
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     target_kind TEXT NOT NULL,
@@ -123,6 +124,7 @@ CREATE TABLE IF NOT EXISTS response_action_acks (
     resulting_state TEXT,
     raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (delivery_id),
     CONSTRAINT fk_response_action_acks_delivery
         FOREIGN KEY (action_id, target_kind, target_id)
         REFERENCES response_action_deliveries(action_id, target_kind, target_id)

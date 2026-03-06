@@ -2884,6 +2884,77 @@ async fn grants_reject_unregistered_issuers_without_explicit_public_keys() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn grants_reject_revoked_registered_principal_issuers() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let keypair = hush_core::Keypair::generate();
+    let stable_ref = "revoked-issuer";
+    let principal_id = Uuid::new_v4();
+
+    sqlx::query::query(
+        r#"INSERT INTO principals (
+               id,
+               tenant_id,
+               principal_type,
+               stable_ref,
+               display_name,
+               trust_level,
+               lifecycle_state,
+               liveness_state,
+               public_key,
+               metadata
+           ) VALUES (
+               $1,
+               $2,
+               'service_account',
+               $3,
+               'Revoked Issuer',
+               'high',
+               'revoked',
+               'active',
+               $4,
+               '{}'::jsonb
+           )"#,
+    )
+    .bind(principal_id)
+    .bind(harness.tenant_id)
+    .bind(stable_ref)
+    .bind(keypair.public_key().to_hex())
+    .execute(&harness.db)
+    .await
+    .expect("seed revoked issuer principal");
+
+    let now = Utc::now().timestamp();
+    let claims = hush_multi_agent::DelegationClaims::new(
+        hush_multi_agent::AgentId::new(stable_ref).expect("issuer"),
+        hush_multi_agent::AgentId::new("agent:delegate").expect("subject"),
+        now,
+        now + 600,
+        vec![hush_multi_agent::AgentCapability::DeployApproval],
+    )
+    .expect("build delegation claims");
+    let token = hush_multi_agent::SignedDelegationToken::sign_with_public_key(claims, &keypair)
+        .expect("sign delegation token");
+
+    let response = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/grants".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "token": token,
+            "grant_type": "delegation"
+        })),
+    )
+    .await;
+    assert_eq!(response.0, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn hunt_mutation_endpoints_reject_viewer_api_keys() {
     if !docker_available() {
         eprintln!("Skipping integration test: docker is unavailable");
@@ -3056,6 +3127,22 @@ async fn response_actions_execute_supported_cloud_only_targets() {
         .try_get("lifecycle_state")
         .expect("principal lifecycle state");
     assert_eq!(lifecycle_state, "quarantined");
+    assert_eq!(
+        quarantine_approve.1["acknowledgements"][0]["raw_payload"]["revokedGrantIds"][0],
+        fixture.grant_id.to_string()
+    );
+
+    let grant_row_after_quarantine =
+        sqlx::query::query("SELECT status FROM fleet_grants WHERE tenant_id = $1 AND id = $2")
+            .bind(harness.tenant_id)
+            .bind(fixture.grant_id)
+            .fetch_one(&harness.db)
+            .await
+            .expect("fetch grant status after quarantine");
+    let grant_status_after_quarantine: String = grant_row_after_quarantine
+        .try_get("status")
+        .expect("grant status after quarantine");
+    assert_eq!(grant_status_after_quarantine, "revoked");
 
     let revoke_create = request_json(
         &harness.app,
@@ -3157,6 +3244,118 @@ async fn response_action_acks_reject_actions_without_acknowledgement_enabled() {
     assert_eq!(
         ack_resp.1["error"],
         "acknowledgements are not enabled for this action"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn response_action_acks_reject_duplicate_delivery_acks() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let action_id = Uuid::new_v4();
+    let delivery_id = Uuid::new_v4();
+    let ack_token = Uuid::new_v4().to_string();
+
+    sqlx::query::query(
+        r#"INSERT INTO response_actions (
+               id,
+               tenant_id,
+               action_type,
+               target_kind,
+               target_id,
+               requested_by_type,
+               requested_by_id,
+               requested_at,
+               reason,
+               require_acknowledgement,
+               payload,
+               status
+           ) VALUES (
+               $1,
+               $2,
+               'request_policy_reload',
+               'endpoint',
+               'endpoint-1',
+               'service',
+               'integration',
+               now(),
+               'ack once',
+               true,
+               '{}'::jsonb,
+               'published'
+           )"#,
+    )
+    .bind(action_id)
+    .bind(harness.tenant_id)
+    .execute(&harness.db)
+    .await
+    .expect("seed ack-enabled action");
+    sqlx::query::query(
+        r#"INSERT INTO response_action_deliveries (
+               id,
+               action_id,
+               tenant_id,
+               target_kind,
+               target_id,
+               executor_kind,
+               delivery_subject,
+               status,
+               metadata
+           ) VALUES (
+               $1,
+               $2,
+               $3,
+               'endpoint',
+               'endpoint-1',
+               'endpoint_agent',
+               'tenant-acme.clawdstrike.response.command.endpoint.endpoint-1',
+               'published',
+               jsonb_build_object('ack_token', $4)
+           )"#,
+    )
+    .bind(delivery_id)
+    .bind(action_id)
+    .bind(harness.tenant_id)
+    .bind(&ack_token)
+    .execute(&harness.db)
+    .await
+    .expect("seed ack-enabled delivery");
+
+    let first_ack = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/response-actions/{action_id}/acks"),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "targetKind": "endpoint",
+            "targetId": "endpoint-1",
+            "status": "acknowledged",
+            "ackToken": &ack_token
+        })),
+    )
+    .await;
+    assert_eq!(first_ack.0, StatusCode::OK);
+
+    let second_ack = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/response-actions/{action_id}/acks"),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "targetKind": "endpoint",
+            "targetId": "endpoint-1",
+            "status": "failed",
+            "ackToken": &ack_token
+        })),
+    )
+    .await;
+    assert_eq!(second_ack.0, StatusCode::CONFLICT);
+    assert_eq!(
+        second_ack.1["error"],
+        "delivery acknowledgement has already been recorded"
     );
 }
 
@@ -3273,6 +3472,138 @@ async fn response_actions_accept_uuid_shaped_external_target_ids() {
     .await;
     assert_eq!(principal_resp.0, StatusCode::OK);
     assert_eq!(principal_resp.1["target"]["id"], principal_id.to_string());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn principal_identifier_resolution_fails_closed_on_uuid_stable_ref_collisions() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let primary_principal_id = Uuid::new_v4();
+    let colliding_stable_ref = primary_principal_id.to_string();
+
+    sqlx::query::query(
+        r#"INSERT INTO principals (
+               id,
+               tenant_id,
+               principal_type,
+               stable_ref,
+               display_name,
+               trust_level,
+               lifecycle_state,
+               liveness_state,
+               public_key,
+               metadata
+           ) VALUES
+           ($1, $3, 'endpoint_agent', 'primary-endpoint', 'Primary Principal', 'high', 'active', 'active', 'pk-primary', '{}'::jsonb),
+           ($2, $3, 'service_account', $4, 'Colliding Principal', 'medium', 'active', 'active', 'pk-collision', '{}'::jsonb)"#,
+    )
+    .bind(primary_principal_id)
+    .bind(Uuid::new_v4())
+    .bind(harness.tenant_id)
+    .bind(&colliding_stable_ref)
+    .execute(&harness.db)
+    .await
+    .expect("seed colliding principals");
+
+    let response_action = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/response-actions".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "actionType": "quarantine_principal",
+            "target": {
+                "kind": "principal",
+                "id": colliding_stable_ref
+            },
+            "reason": "Ambiguous principal",
+            "requireAcknowledgement": false,
+            "payload": {}
+        })),
+    )
+    .await;
+    assert_eq!(response_action.0, StatusCode::CONFLICT);
+
+    let detail = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/console/principals/{colliding_stable_ref}"),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(detail.0, StatusCode::CONFLICT);
+
+    sqlx::query::query(
+        r#"INSERT INTO response_actions (
+               tenant_id,
+               action_type,
+               target_kind,
+               target_id,
+               requested_by_type,
+               requested_by_id,
+               reason,
+               require_acknowledgement,
+               payload,
+               metadata,
+               status
+           ) VALUES (
+               $1,
+               'quarantine_principal',
+               'principal',
+               $2,
+               'service',
+               'integration-test',
+               'Contain primary principal',
+               false,
+               '{}'::jsonb,
+               '{}'::jsonb,
+               'queued'
+           )"#,
+    )
+    .bind(harness.tenant_id)
+    .bind(primary_principal_id.to_string())
+    .execute(&harness.db)
+    .await
+    .expect("seed principal response action");
+
+    let principals = request_json(
+        &harness.app,
+        Method::GET,
+        "/api/v1/console/principals".to_string(),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(principals.0, StatusCode::OK);
+    let principals = principals.1.as_array().expect("principals list");
+    let primary = principals
+        .iter()
+        .find(|item| item["principalId"] == primary_principal_id.to_string())
+        .expect("primary principal entry");
+    assert_eq!(primary["openResponseActionCount"], 1);
+    let colliding = principals
+        .iter()
+        .find(|item| item["stableRef"] == colliding_stable_ref)
+        .expect("colliding principal entry");
+    assert_eq!(colliding["openResponseActionCount"], 0);
+
+    let actions = request_json(
+        &harness.app,
+        Method::GET,
+        "/api/v1/console/response-actions".to_string(),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(actions.0, StatusCode::OK);
+    let actions = actions.1.as_array().expect("response actions list");
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0]["targetDisplayName"], "Primary Principal");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -3541,6 +3872,37 @@ async fn response_actions_reject_missing_or_cross_tenant_provenance() {
     )
     .await;
     assert_eq!(cross_tenant_approval_resp.0, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn response_actions_reject_missing_case_references() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let fixture = seed_console_read_model_fixture(&harness).await;
+
+    let create_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/response-actions".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "actionType": "quarantine_principal",
+            "target": {
+                "kind": "principal",
+                "id": fixture.principal_id.to_string()
+            },
+            "reason": "Contain principal",
+            "caseId": Uuid::new_v4().to_string(),
+            "requireAcknowledgement": false,
+            "payload": {}
+        })),
+    )
+    .await;
+    assert_eq!(create_resp.0, StatusCode::NOT_FOUND);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
