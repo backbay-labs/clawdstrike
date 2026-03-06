@@ -25,12 +25,15 @@ afterEach(() => {
   process.env.PATH = originalPath
 })
 
-async function withFakeCli(name: string): Promise<string> {
+async function withFakeCli(
+  name: string,
+  script = "#!/bin/sh\nexit 0\n"
+): Promise<string> {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), `clawdstrike-adapter-${name}-`))
   const binDir = path.join(tempDir, "bin")
   await fs.mkdir(binDir, { recursive: true })
   const cliPath = path.join(binDir, name)
-  await fs.writeFile(cliPath, "#!/bin/sh\nexit 0\n", { mode: 0o755 })
+  await fs.writeFile(cliPath, script, { mode: 0o755 })
   process.env.PATH = [binDir, originalPath].filter(Boolean).join(":")
   process.env.HOME = tempDir
   process.env.USERPROFILE = tempDir
@@ -131,10 +134,23 @@ describe("Adapter availability", () => {
   })
 
   test("ClaudeAdapter.isAvailable returns false when auth state is missing", async () => {
-    const tempDir = await withFakeCli("claude")
+    const tempDir = await withFakeCli(
+      "claude",
+      "#!/bin/sh\nif [ \"$1\" = \"auth\" ] && [ \"$2\" = \"status\" ]; then\n  exit 1\nfi\nexit 0\n"
+    )
     await fs.mkdir(path.join(tempDir, ".claude"), { recursive: true })
 
     await expect(ClaudeAdapter.isAvailable()).resolves.toBe(false)
+  })
+
+  test("ClaudeAdapter.isAvailable falls back to claude auth status", async () => {
+    const tempDir = await withFakeCli(
+      "claude",
+      "#!/bin/sh\nif [ \"$1\" = \"auth\" ] && [ \"$2\" = \"status\" ]; then\n  exit 0\nfi\nexit 1\n"
+    )
+    await fs.mkdir(path.join(tempDir, ".claude"), { recursive: true })
+
+    await expect(ClaudeAdapter.isAvailable()).resolves.toBe(true)
   })
 
   test("OpenCodeAdapter.isAvailable returns boolean", async () => {

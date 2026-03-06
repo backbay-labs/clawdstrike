@@ -29,11 +29,36 @@ const DEFAULT_CONFIG: ClaudeConfig = {
 
 let config: ClaudeConfig = { ...DEFAULT_CONFIG }
 
+const CLAUDE_AUTH_STATUS_TIMEOUT_MS = 1500
+
 /**
  * Configure Claude adapter
  */
 export function configure(newConfig: Partial<ClaudeConfig>): void {
   config = { ...config, ...newConfig }
+}
+
+async function checkClaudeAuthStatus(): Promise<boolean> {
+  try {
+    const proc = Bun.spawn(["claude", "auth", "status"], {
+      env: {
+        ...process.env,
+        CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+      },
+      stdout: "ignore",
+      stderr: "ignore",
+    })
+
+    const timeout = setTimeout(() => {
+      proc.kill()
+    }, CLAUDE_AUTH_STATUS_TIMEOUT_MS)
+
+    const exitCode = await proc.exited
+    clearTimeout(timeout)
+    return exitCode === 0
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -63,7 +88,7 @@ export const ClaudeAdapter: Adapter = {
       await stat(configPath)
       return true
     } catch {
-      return false
+      return checkClaudeAuthStatus()
     }
   },
 
