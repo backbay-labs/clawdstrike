@@ -102,6 +102,25 @@ pub enum DaemonEvent {
         #[serde(default)]
         to: Option<String>,
     },
+    /// Endpoint/runtime heartbeat update from hushd.
+    AgentHeartbeat {
+        #[serde(default)]
+        endpoint_agent_id: Option<String>,
+        #[serde(default)]
+        runtime_agent_id: Option<String>,
+        #[serde(default)]
+        runtime_agent_kind: Option<String>,
+        #[serde(default)]
+        session_id: Option<String>,
+        #[serde(default)]
+        posture: Option<String>,
+        #[serde(default)]
+        policy_version: Option<String>,
+        #[serde(default)]
+        daemon_version: Option<String>,
+        #[serde(default)]
+        timestamp: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -353,7 +372,11 @@ impl EventManager {
 
         // Daemon-level events: hushd sends type via SSE `event:` field.
         match event_type {
-            "policy_updated" | "violation" | "check" | "session_posture_transition" => {
+            "policy_updated"
+            | "violation"
+            | "check"
+            | "session_posture_transition"
+            | "agent_heartbeat" => {
                 let mut json: serde_json::Value =
                     serde_json::from_str(data).with_context(|| {
                         format!("Malformed JSON in SSE daemon event ({event_type}): {data}")
@@ -572,6 +595,23 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn daemon_event_agent_heartbeat_deserializes() {
+        let json = r#"{"type":"agent_heartbeat","endpoint_agent_id":"agent-1","runtime_agent_id":"runtime-1","runtime_agent_kind":"desktop","session_id":"s-1","posture":"standard","policy_version":"1.0.0","daemon_version":"0.2.5","timestamp":"2026-03-06T03:49:39Z"}"#;
+        let event: DaemonEvent = match serde_json::from_str(json) {
+            Ok(v) => v,
+            Err(err) => panic!("failed to parse agent heartbeat event: {err}"),
+        };
+        assert!(matches!(
+            event,
+            DaemonEvent::AgentHeartbeat {
+                endpoint_agent_id: Some(ref agent_id),
+                runtime_agent_id: Some(ref runtime_id),
+                ..
+            } if agent_id == "agent-1" && runtime_id == "runtime-1"
+        ));
+    }
+
     /// Verify that handle_sse_message dispatches daemon events using the SSE event-type
     /// field (how hushd actually sends them) rather than requiring "type" in the JSON data.
     #[tokio::test]
@@ -615,6 +655,25 @@ mod tests {
         assert!(
             matches!(evt, DaemonEvent::Violation { guard: Some(g), session_id: Some(s), .. } if g == "fs_blocklist" && s == "s-1")
         );
+
+        mgr.handle_sse_message(
+            "agent_heartbeat",
+            r#"{"endpoint_agent_id":"agent-1","runtime_agent_id":"runtime-1","runtime_agent_kind":"desktop","session_id":"s-1","posture":"standard","policy_version":"1.0.0","daemon_version":"0.2.5","timestamp":"2026-03-06T03:49:39Z"}"#,
+        )
+        .await
+        .expect("should dispatch agent heartbeat");
+
+        let evt = daemon_rx
+            .try_recv()
+            .expect("should have received agent heartbeat event");
+        assert!(matches!(
+            evt,
+            DaemonEvent::AgentHeartbeat {
+                endpoint_agent_id: Some(ref agent_id),
+                posture: Some(ref posture),
+                ..
+            } if agent_id == "agent-1" && posture == "standard"
+        ));
     }
 
     /// Verify that audit events (no special SSE event field) still parse correctly.

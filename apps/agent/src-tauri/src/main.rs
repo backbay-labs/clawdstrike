@@ -786,6 +786,28 @@ async fn run_agent<R: Runtime>(
                         .notify_posture_transition(&old_posture, &new_posture)
                         .await;
                 }
+                DaemonEvent::AgentHeartbeat {
+                    endpoint_agent_id,
+                    runtime_agent_id,
+                    runtime_agent_kind,
+                    session_id,
+                    posture,
+                    policy_version,
+                    daemon_version,
+                    timestamp,
+                } => {
+                    tracing::debug!(
+                        endpoint_agent_id = ?endpoint_agent_id,
+                        runtime_agent_id = ?runtime_agent_id,
+                        runtime_agent_kind = ?runtime_agent_kind,
+                        session_id = ?session_id,
+                        posture = ?posture,
+                        policy_version = ?policy_version,
+                        daemon_version = ?daemon_version,
+                        timestamp = ?timestamp,
+                        "Received agent heartbeat event from hushd"
+                    );
+                }
             }
         }
     });
