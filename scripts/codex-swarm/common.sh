@@ -256,8 +256,24 @@ import os
 import shlex
 
 value = os.environ.get("CLAWDSTRIKE_SWARM_CODEX_ARGS", "").strip()
-for arg in shlex.split(value):
+args = shlex.split(value)
+i = 0
+while i < len(args):
+    arg = args[i]
+    if arg in ("-a", "--ask-for-approval"):
+        if i + 1 >= len(args):
+            raise SystemExit(f"missing value for {arg}")
+        print("-c")
+        print(f'approval_policy="{args[i + 1]}"')
+        i += 2
+        continue
+    if arg.startswith("--ask-for-approval="):
+        print("-c")
+        print(f'approval_policy="{arg.split("=", 1)[1]}"')
+        i += 1
+        continue
     print(arg)
+    i += 1
 PY
 }
 
