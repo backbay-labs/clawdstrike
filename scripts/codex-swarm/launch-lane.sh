@@ -67,6 +67,9 @@ swarm_write_lane_prompt "$lane" "$prompt_file" "$note" "$repo_root"
 while IFS= read -r arg; do
   codex_args+=("$arg")
 done < <(swarm_codex_profile_args "$profile_name")
+while IFS= read -r arg; do
+  codex_args+=("$arg")
+done < <(swarm_codex_extra_args)
 
 cat > "$runner_file" <<EOF
 #!/usr/bin/env bash

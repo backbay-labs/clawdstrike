@@ -250,6 +250,17 @@ swarm_codex_profile_args() {
   esac
 }
 
+swarm_codex_extra_args() {
+  python3 - <<'PY'
+import os
+import shlex
+
+value = os.environ.get("CLAWDSTRIKE_SWARM_CODEX_ARGS", "").strip()
+for arg in shlex.split(value):
+    print(arg)
+PY
+}
+
 swarm_run_lane_bootstrap() {
   local lane="$1"
   local repo_root="${2:-$(swarm_repo_root)}"
