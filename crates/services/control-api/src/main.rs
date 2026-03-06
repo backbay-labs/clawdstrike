@@ -23,6 +23,7 @@ use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
 use crate::config::Config;
+use crate::db::run_migrations;
 use crate::services::agent_heartbeat_consumer;
 use crate::services::alerter::AlerterService;
 use crate::services::approval_request_consumer;
@@ -59,6 +60,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     // Connect to PostgreSQL
     let pool = db::create_pool(&config.database_url).await?;
     tracing::info!("Connected to PostgreSQL");
+    run_migrations(&pool).await?;
+    tracing::info!("Applied control-api migrations");
 
     // Connect to NATS
     let nats = async_nats::connect(&config.nats_url).await?;
@@ -67,7 +70,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize services
     let provisioner = TenantProvisioner::new(
         pool.clone(),
-        config.nats_url.clone(),
+        config.agent_nats_url.clone(),
         &config.nats_provisioning_mode,
         config.nats_provisioner_base_url.clone(),
         config.nats_provisioner_api_token.clone(),

@@ -55,12 +55,20 @@ spec:
     {{- end }}
     # Allow external access to proofs-api and hushd
     - ports:
+        {{- if .Values.controlApi.enabled }}
+        - port: {{ .Values.controlApi.port }}
+          protocol: TCP
+        {{- end }}
         {{- if and .Values.spine.enabled .Values.spine.proofsApi.enabled }}
         - port: {{ .Values.spine.proofsApi.port }}
           protocol: TCP
         {{- end }}
         {{- if .Values.hushd.enabled }}
         - port: {{ .Values.hushd.port }}
+          protocol: TCP
+        {{- end }}
+        {{- if and .Values.nats.enabled (not .Values.nats.external.enabled) .Values.nats.publicService.enabled }}
+        - port: {{ .Values.nats.publicService.port }}
           protocol: TCP
         {{- end }}
         {{- if .Values.bridges.k8sAudit.enabled }}

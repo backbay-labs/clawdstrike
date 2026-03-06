@@ -15,7 +15,7 @@ use uuid::Uuid;
 
 use crate::auth::api_key::hash_api_key;
 use crate::config::Config;
-use crate::db::{create_pool, PgPool};
+use crate::db::{create_pool, run_migrations, PgPool};
 use crate::routes;
 use crate::services::alerter::AlerterService;
 use crate::services::metering::MeteringService;
@@ -344,6 +344,7 @@ async fn create_tenant_rolls_back_when_nats_provisioning_fails() {
             listen_addr: "127.0.0.1:0".parse().expect("listen addr"),
             database_url: "postgres://unused".to_string(),
             nats_url: harness.nats_url.clone(),
+            agent_nats_url: harness.nats_url.clone(),
             nats_provisioning_mode: "external".to_string(),
             nats_provisioner_base_url: Some("http://127.0.0.1:9".to_string()),
             nats_provisioner_api_token: None,
@@ -442,7 +443,7 @@ async fn setup_harness() -> Harness {
     wait_for_nats(&nats_url).await;
 
     let db = create_pool(&database_url).await.expect("create pool");
-    apply_migrations(&db).await;
+    run_migrations(&db).await.expect("apply migrations");
 
     let nats_client = async_nats::connect(&nats_url).await.expect("connect nats");
     let signing_keypair = Arc::new(hush_core::Keypair::generate());
@@ -451,6 +452,7 @@ async fn setup_harness() -> Harness {
         listen_addr: "127.0.0.1:0".parse().expect("listen addr"),
         database_url: database_url.clone(),
         nats_url: nats_url.clone(),
+        agent_nats_url: nats_url.clone(),
         nats_provisioning_mode: "mock".to_string(),
         nats_provisioner_base_url: None,
         nats_provisioner_api_token: None,
@@ -482,7 +484,7 @@ async fn setup_harness() -> Harness {
 
     let provisioner = TenantProvisioner::new(
         db.clone(),
-        nats_url.clone(),
+        config.agent_nats_url.clone(),
         &config.nats_provisioning_mode,
         config.nats_provisioner_base_url.clone(),
         config.nats_provisioner_api_token.clone(),
@@ -536,23 +538,6 @@ async fn setup_harness() -> Harness {
         api_key,
         _postgres: postgres,
         _nats: nats,
-    }
-}
-
-async fn apply_migrations(db: &PgPool) {
-    let mut files =
-        std::fs::read_dir(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("migrations"))
-            .expect("read migrations")
-            .map(|entry| entry.expect("entry").path())
-            .collect::<Vec<_>>();
-    files.sort();
-
-    for file in files {
-        let sql = std::fs::read_to_string(&file).expect("read migration file");
-        sqlx::raw_sql::raw_sql(&sql)
-            .execute(db)
-            .await
-            .unwrap_or_else(|err| panic!("migration {:?} failed: {}", file, err));
     }
 }
 

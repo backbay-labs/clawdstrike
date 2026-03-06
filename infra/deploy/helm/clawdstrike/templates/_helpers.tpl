@@ -99,6 +99,44 @@ NATS URL - returns either the external URL or the internal service URL.
 {{- end }}
 
 {{/*
+Agent-facing NATS URL returned by control-api enrollment responses.
+*/}}
+{{- define "clawdstrike.agentNatsUrl" -}}
+{{- if .Values.controlApi.agentNatsUrl }}
+{{- .Values.controlApi.agentNatsUrl }}
+{{- else }}
+{{- include "clawdstrike.natsUrl" . }}
+{{- end }}
+{{- end }}
+
+{{/*
+Control API service name.
+*/}}
+{{- define "clawdstrike.controlApiName" -}}
+{{- printf "%s-control-api" (include "clawdstrike.fullname" .) }}
+{{- end }}
+
+{{/*
+Embedded Postgres service name for control-api.
+*/}}
+{{- define "clawdstrike.controlApiPostgresName" -}}
+{{- printf "%s-postgres" (include "clawdstrike.controlApiName" .) }}
+{{- end }}
+
+{{/*
+Control API database URL.
+*/}}
+{{- define "clawdstrike.controlApiDatabaseUrl" -}}
+{{- if .Values.controlApi.databaseUrl }}
+{{- .Values.controlApi.databaseUrl }}
+{{- else if .Values.controlApi.postgres.enabled }}
+{{- printf "postgres://%s:%s@%s:5432/%s" .Values.controlApi.postgres.username .Values.controlApi.postgres.password (include "clawdstrike.controlApiPostgresName" .) .Values.controlApi.postgres.database }}
+{{- else }}
+{{- "" }}
+{{- end }}
+{{- end }}
+
+{{/*
 Image pull secrets.
 */}}
 {{- define "clawdstrike.imagePullSecrets" -}}

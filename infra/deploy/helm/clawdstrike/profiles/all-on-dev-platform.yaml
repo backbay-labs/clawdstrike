@@ -28,9 +28,42 @@ hushd:
   persistence:
     enabled: false
 
+controlApi:
+  enabled: true
+  agentNatsUrl: "nats://nats.clawdstrike.dev.backbay.io:4222"
+  secrets:
+    jwtSecret: "dev-platform-control-api-jwt-secret"
+    stripeSecretKey: "sk_test_platform_dev"
+    stripeWebhookSecret: "whsec_platform_dev"
+    approvalSigningKeypair: "9f03c4d7e1ab25cc6f2e0ff8c56b41a4c66f2e7341d9af81394bb219a8f26d41"
+  env:
+    RUST_LOG: "info,clawdstrike_control_api=debug"
+    NATS_PROVISIONING_MODE: "mock"
+    NATS_PROVISIONER_BASE_URL: ""
+    NATS_ALLOW_INSECURE_MOCK_PROVISIONER: "true"
+    APPROVAL_SIGNING_ENABLED: "true"
+    APPROVAL_RESOLUTION_OUTBOX_ENABLED: "true"
+    APPROVAL_RESOLUTION_OUTBOX_POLL_INTERVAL_SECS: "5"
+    AUDIT_CONSUMER_ENABLED: "false"
+    APPROVAL_CONSUMER_ENABLED: "false"
+    HEARTBEAT_CONSUMER_ENABLED: "false"
+    STALE_DETECTOR_ENABLED: "false"
+  postgres:
+    enabled: true
+    password: "clawdstrike-dev-postgres-password"
+    persistence:
+      enabled: false
+
 nats:
   jetstream:
     maxFileStoreBytes: "25769803776"
+  publicService:
+    enabled: true
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
+      service.beta.kubernetes.io/aws-load-balancer-type: external
+      service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: ip
+      external-dns.alpha.kubernetes.io/hostname: nats.clawdstrike.dev.backbay.io
 
 bridges:
   tetragon:
@@ -93,6 +126,14 @@ ingress:
     annotations:
       alb.ingress.kubernetes.io/healthcheck-path: /health
       external-dns.alpha.kubernetes.io/hostname: hushd.clawdstrike.dev.backbay.io
+  controlApi:
+    enabled: true
+    host: control-api.clawdstrike.dev.backbay.io
+    path: /
+    pathType: Prefix
+    annotations:
+      alb.ingress.kubernetes.io/healthcheck-path: /api/v1/health
+      external-dns.alpha.kubernetes.io/hostname: control-api.clawdstrike.dev.backbay.io
   proofsApi:
     enabled: true
     host: proofs-api.clawdstrike.dev.backbay.io

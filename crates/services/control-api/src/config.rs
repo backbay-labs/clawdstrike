@@ -7,6 +7,7 @@ pub struct Config {
     pub listen_addr: SocketAddr,
     pub database_url: String,
     pub nats_url: String,
+    pub agent_nats_url: String,
     pub nats_provisioning_mode: String,
     pub nats_provisioner_base_url: Option<String>,
     pub nats_provisioner_api_token: Option<String>,
@@ -57,6 +58,7 @@ impl Config {
             .map_err(|_| ConfigError::MissingVar("DATABASE_URL".into()))?;
         let nats_url =
             std::env::var("NATS_URL").unwrap_or_else(|_| "nats://localhost:4222".to_string());
+        let agent_nats_url = std::env::var("AGENT_NATS_URL").unwrap_or_else(|_| nats_url.clone());
         let nats_provisioning_mode =
             std::env::var("NATS_PROVISIONING_MODE").unwrap_or_else(|_| "external".to_string());
         let nats_provisioner_base_url = std::env::var("NATS_PROVISIONER_BASE_URL").ok();
@@ -170,6 +172,7 @@ impl Config {
             listen_addr,
             database_url,
             nats_url,
+            agent_nats_url,
             nats_provisioning_mode,
             nats_provisioner_base_url,
             nats_provisioner_api_token,
@@ -510,6 +513,7 @@ mod tests {
             "LISTEN_ADDR",
             "DATABASE_URL",
             "NATS_URL",
+            "AGENT_NATS_URL",
             "NATS_PROVISIONING_MODE",
             "NATS_PROVISIONER_BASE_URL",
             "NATS_PROVISIONER_API_TOKEN",
@@ -551,6 +555,7 @@ mod tests {
                 assert_eq!(config.listen_addr.to_string(), "0.0.0.0:8080");
                 assert_eq!(config.database_url, "postgres://test:test@localhost/test");
                 assert_eq!(config.nats_url, "nats://localhost:4222");
+                assert_eq!(config.agent_nats_url, "nats://localhost:4222");
                 assert_eq!(config.nats_provisioning_mode, "external");
                 assert!(!config.nats_allow_insecure_mock_provisioner);
                 assert!(config.approval_signing_enabled);
@@ -629,6 +634,26 @@ mod tests {
             || {
                 let config = Config::from_env().expect("should parse");
                 assert_eq!(config.listen_addr.to_string(), "127.0.0.1:9090");
+            },
+        );
+    }
+
+    #[test]
+    fn from_env_uses_explicit_agent_nats_url_when_set() {
+        with_env_vars(
+            &[
+                ("DATABASE_URL", "postgres://localhost/test"),
+                ("JWT_SECRET", "s"),
+                ("STRIPE_SECRET_KEY", "sk"),
+                ("STRIPE_WEBHOOK_SECRET", "wh"),
+                ("NATS_URL", "nats://internal-nats:4222"),
+                ("AGENT_NATS_URL", "nats://public-nats.example.com:4222"),
+            ],
+            &[],
+            || {
+                let config = Config::from_env().expect("should parse");
+                assert_eq!(config.nats_url, "nats://internal-nats:4222");
+                assert_eq!(config.agent_nats_url, "nats://public-nats.example.com:4222");
             },
         );
     }

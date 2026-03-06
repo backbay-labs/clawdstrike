@@ -1,0 +1,17 @@
+{{- if and .Values.controlApi.enabled .Values.controlApi.postgres.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "clawdstrike.controlApiPostgresName" . }}
+  namespace: {{ include "clawdstrike.namespace" . }}
+  labels:
+    {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "control-api-postgres") | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "clawdstrike.componentSelectorLabels" (dict "ctx" . "component" "control-api-postgres") | nindent 4 }}
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+{{- end }}

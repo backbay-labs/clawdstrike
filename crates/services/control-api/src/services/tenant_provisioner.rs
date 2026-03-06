@@ -38,7 +38,7 @@ enum ProvisioningBackend {
 #[derive(Clone)]
 pub struct TenantProvisioner {
     db: PgPool,
-    nats_url: String,
+    agent_nats_url: String,
     backend: ProvisioningBackend,
 }
 
@@ -46,7 +46,7 @@ impl TenantProvisioner {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         db: PgPool,
-        nats_url: String,
+        agent_nats_url: String,
         provisioning_mode: &str,
         external_base_url: Option<String>,
         external_api_token: Option<String>,
@@ -93,7 +93,7 @@ impl TenantProvisioner {
 
         Ok(Self {
             db,
-            nats_url,
+            agent_nats_url,
             backend,
         })
     }
@@ -159,7 +159,7 @@ impl TenantProvisioner {
         tracing::info!(agent_id = %agent_id, account = %account, "Created NATS agent credentials");
 
         Ok(NatsCredentials {
-            nats_url: self.nats_url.clone(),
+            nats_url: self.agent_nats_url.clone(),
             account,
             subject_prefix,
             token,

@@ -1,0 +1,94 @@
+{{- if .Values.controlApi.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "clawdstrike.controlApiName" . }}
+  namespace: {{ include "clawdstrike.namespace" . }}
+  labels:
+    {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "control-api") | nindent 4 }}
+spec:
+  replicas: {{ .Values.controlApi.replicas }}
+  selector:
+    matchLabels:
+      {{- include "clawdstrike.componentSelectorLabels" (dict "ctx" . "component" "control-api") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "control-api") | nindent 8 }}
+      annotations:
+        checksum/secret: {{ include (print $.Template.BasePath "/control-api/secret.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- include "clawdstrike.imagePullSecrets" . | nindent 6 }}
+      {{- include "clawdstrike.globalScheduling" . | nindent 6 }}
+      serviceAccountName: {{ include "clawdstrike.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: control-api
+          image: "{{ .Values.controlApi.image.repository }}:{{ .Values.controlApi.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.controlApi.port }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.controlApi.secrets.existingSecret | default (include "clawdstrike.controlApiName" .) }}
+          env:
+            - name: LISTEN_ADDR
+              value: "0.0.0.0:{{ .Values.controlApi.port }}"
+            - name: NATS_URL
+              value: {{ include "clawdstrike.natsUrl" . | quote }}
+            - name: AGENT_NATS_URL
+              value: {{ include "clawdstrike.agentNatsUrl" . | quote }}
+            - name: NATS_PROVISIONING_MODE
+              value: {{ .Values.controlApi.env.NATS_PROVISIONING_MODE | quote }}
+            - name: NATS_PROVISIONER_BASE_URL
+              value: {{ .Values.controlApi.env.NATS_PROVISIONER_BASE_URL | quote }}
+            - name: NATS_ALLOW_INSECURE_MOCK_PROVISIONER
+              value: {{ .Values.controlApi.env.NATS_ALLOW_INSECURE_MOCK_PROVISIONER | quote }}
+            - name: APPROVAL_SIGNING_ENABLED
+              value: {{ .Values.controlApi.env.APPROVAL_SIGNING_ENABLED | quote }}
+            - name: APPROVAL_SIGNING_KEYPAIR_PATH
+              value: /etc/control-api/APPROVAL_SIGNING_KEYPAIR
+            - name: APPROVAL_RESOLUTION_OUTBOX_ENABLED
+              value: {{ .Values.controlApi.env.APPROVAL_RESOLUTION_OUTBOX_ENABLED | quote }}
+            - name: APPROVAL_RESOLUTION_OUTBOX_POLL_INTERVAL_SECS
+              value: {{ .Values.controlApi.env.APPROVAL_RESOLUTION_OUTBOX_POLL_INTERVAL_SECS | quote }}
+            - name: AUDIT_CONSUMER_ENABLED
+              value: {{ .Values.controlApi.env.AUDIT_CONSUMER_ENABLED | quote }}
+            - name: APPROVAL_CONSUMER_ENABLED
+              value: {{ .Values.controlApi.env.APPROVAL_CONSUMER_ENABLED | quote }}
+            - name: HEARTBEAT_CONSUMER_ENABLED
+              value: {{ .Values.controlApi.env.HEARTBEAT_CONSUMER_ENABLED | quote }}
+            - name: STALE_DETECTOR_ENABLED
+              value: {{ .Values.controlApi.env.STALE_DETECTOR_ENABLED | quote }}
+            - name: RUST_LOG
+              value: {{ .Values.controlApi.env.RUST_LOG | quote }}
+          volumeMounts:
+            - name: config-secret
+              mountPath: /etc/control-api
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health/ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.controlApi.resources | nindent 12 }}
+      volumes:
+        - name: config-secret
+          secret:
+            secretName: {{ .Values.controlApi.secrets.existingSecret | default (include "clawdstrike.controlApiName" .) }}
+{{- end }}

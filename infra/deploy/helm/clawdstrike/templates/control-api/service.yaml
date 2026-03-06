@@ -1,0 +1,17 @@
+{{- if .Values.controlApi.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "clawdstrike.controlApiName" . }}
+  namespace: {{ include "clawdstrike.namespace" . }}
+  labels:
+    {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "control-api") | nindent 4 }}
+spec:
+  type: {{ .Values.controlApi.service.type }}
+  selector:
+    {{- include "clawdstrike.componentSelectorLabels" (dict "ctx" . "component" "control-api") | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.controlApi.service.port }}
+      targetPort: http
+{{- end }}
