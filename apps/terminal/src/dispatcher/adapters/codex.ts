@@ -61,7 +61,7 @@ export const CodexAdapter: Adapter = {
       await stat(authPath)
       return true
     } catch {
-      return true
+      return false
     }
   },
 

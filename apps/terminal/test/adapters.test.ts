@@ -4,13 +4,38 @@
  * Tests for CLI adapter implementations.
  */
 
-import { describe, test, expect } from "bun:test"
+import { afterEach, describe, test, expect } from "bun:test"
+import * as fs from "node:fs/promises"
+import * as os from "node:os"
+import * as path from "node:path"
 import { Dispatcher } from "../src/dispatcher"
 import { CodexAdapter } from "../src/dispatcher/adapters/codex"
 import { ClaudeAdapter } from "../src/dispatcher/adapters/claude"
 import { OpenCodeAdapter } from "../src/dispatcher/adapters/opencode"
 import { CrushAdapter } from "../src/dispatcher/adapters/crush"
 import type { WorkcellInfo, TaskInput } from "../src/types"
+
+const originalHome = process.env.HOME
+const originalUserProfile = process.env.USERPROFILE
+const originalPath = process.env.PATH
+
+afterEach(() => {
+  process.env.HOME = originalHome
+  process.env.USERPROFILE = originalUserProfile
+  process.env.PATH = originalPath
+})
+
+async function withFakeCli(name: string): Promise<string> {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), `clawdstrike-adapter-${name}-`))
+  const binDir = path.join(tempDir, "bin")
+  await fs.mkdir(binDir, { recursive: true })
+  const cliPath = path.join(binDir, name)
+  await fs.writeFile(cliPath, "#!/bin/sh\nexit 0\n", { mode: 0o755 })
+  process.env.PATH = [binDir, originalPath].filter(Boolean).join(":")
+  process.env.HOME = tempDir
+  process.env.USERPROFILE = tempDir
+  return tempDir
+}
 
 // Mock workcell for testing
 const mockWorkcell: WorkcellInfo = {
@@ -96,6 +121,20 @@ describe("Adapter availability", () => {
       new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 2000)),
     ])
     expect(typeof result).toBe("boolean")
+  })
+
+  test("CodexAdapter.isAvailable returns false when auth state is missing", async () => {
+    const tempDir = await withFakeCli("codex")
+    await fs.mkdir(path.join(tempDir, ".codex"), { recursive: true })
+
+    await expect(CodexAdapter.isAvailable()).resolves.toBe(false)
+  })
+
+  test("ClaudeAdapter.isAvailable returns false when auth state is missing", async () => {
+    const tempDir = await withFakeCli("claude")
+    await fs.mkdir(path.join(tempDir, ".claude"), { recursive: true })
+
+    await expect(ClaudeAdapter.isAvailable()).resolves.toBe(false)
   })
 
   test("OpenCodeAdapter.isAvailable returns boolean", async () => {

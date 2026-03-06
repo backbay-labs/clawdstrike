@@ -210,15 +210,21 @@ async function exportCurrentReport(ctx: ScreenContext): Promise<void> {
       )
       await syncExportedReportMarkdown(ctx.app.getCwd(), current.report, historyEntry)
     } else {
+      const auditStatus = ctx.state.hushdStatus === "not_configured"
+        ? "not_configured"
+        : "degraded"
+      const error = ctx.state.hushdStatus === "unauthorized"
+        ? "hushd authorization required"
+        : ctx.state.hushdStatus === "not_configured"
+          ? "hushd not configured for remote audit export"
+          : "hushd unavailable during export"
       historyEntry = await updateReportHistoryTraceability(
         ctx.app.getCwd(),
         historyEntry,
         {
           ...historyEntry.traceability,
-          auditStatus: "degraded",
-          error: ctx.state.hushdStatus === "unauthorized"
-            ? "hushd authorization required"
-            : "hushd unavailable during export",
+          auditStatus,
+          error,
         },
       )
       await syncExportedReportMarkdown(ctx.app.getCwd(), current.report, historyEntry)

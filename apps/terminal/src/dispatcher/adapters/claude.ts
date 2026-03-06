@@ -63,7 +63,7 @@ export const ClaudeAdapter: Adapter = {
       await stat(configPath)
       return true
     } catch {
-      return true
+      return false
     }
   },
 

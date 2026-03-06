@@ -122,6 +122,48 @@ async fn policies_deploy_and_enroll_backfills_policy_kv_bucket() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn run_migrations_is_safe_under_concurrent_startup() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let pg_port = free_local_port();
+    let postgres = run_container(&[
+        "run",
+        "-d",
+        "--rm",
+        "-e",
+        "POSTGRES_USER=postgres",
+        "-e",
+        "POSTGRES_PASSWORD=postgres",
+        "-e",
+        "POSTGRES_DB=cloud_api",
+        "-p",
+        &format!("{pg_port}:5432"),
+        "postgres:16-alpine",
+    ]);
+
+    let database_url = format!("postgres://postgres:postgres@127.0.0.1:{pg_port}/cloud_api");
+    wait_for_postgres(&database_url).await;
+
+    let pool_a = create_pool(&database_url).await.expect("create pool a");
+    let pool_b = create_pool(&database_url).await.expect("create pool b");
+
+    let (left, right) = tokio::join!(run_migrations(&pool_a), run_migrations(&pool_b));
+    left.expect("first migration runner should succeed");
+    right.expect("second migration runner should succeed");
+
+    let applied: i64 = sqlx::query_scalar::query_scalar("SELECT COUNT(*) FROM schema_migrations")
+        .fetch_one(&pool_a)
+        .await
+        .expect("count applied migrations");
+    assert_eq!(applied, 5);
+
+    drop(postgres);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn agents_heartbeat_recovers_stale_agent_and_reconciles_policy_kv() {
     if !docker_available() {
         eprintln!("Skipping integration test: docker is unavailable");

@@ -549,6 +549,29 @@ describe("hunt report screen", () => {
     expect(stripAnsi(state.hunt.report.statusMessage ?? "")).toContain("Exported report bundle:")
   })
 
+  test("preserves not-configured audit traceability during export", async () => {
+    const state = createState()
+    state.hushdStatus = "not_configured"
+    updateInvestigation(state, {
+      origin: "scan",
+      title: "MCP Scan Explorer",
+      summary: "8 path(s) scanned for MCP exposure and policy drift.",
+      query: null,
+      events: [],
+      findings: ["warning: Unused MCP server configuration detected"],
+    })
+    state.hunt.report.report = buildInvestigationReport(state)
+
+    const app = new TestApp(tempDir)
+    const ctx = createContext(state, app, 100, 24)
+
+    expect(huntReportScreen.handleInput("x", ctx)).toBe(true)
+    await Bun.sleep(25)
+
+    expect(stripAnsi(state.hunt.report.statusMessage ?? "")).toContain("[audit:not_configured]")
+    expect(state.hunt.reportHistory.entries[0]?.traceability.auditStatus).toBe("not_configured")
+  })
+
   test("opens exported reports from history", async () => {
     const state = createState()
     updateInvestigation(state, {

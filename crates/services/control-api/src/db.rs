@@ -32,6 +32,8 @@ const EMBEDDED_MIGRATIONS: &[EmbeddedMigration] = &[
     },
 ];
 
+const MIGRATION_LOCK_KEY: i64 = 0x4353_4D49_4752;
+
 /// Create a PostgreSQL connection pool from the given database URL.
 pub async fn create_pool(database_url: &str) -> Result<PgPool, sqlx::error::Error> {
     PgPoolOptions::new()
@@ -42,26 +44,31 @@ pub async fn create_pool(database_url: &str) -> Result<PgPool, sqlx::error::Erro
 
 /// Apply embedded SQL migrations exactly once per database.
 pub async fn run_migrations(pool: &PgPool) -> Result<(), sqlx::error::Error> {
+    let mut tx = pool.begin().await?;
+    sqlx::query::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(MIGRATION_LOCK_KEY)
+        .execute(&mut *tx)
+        .await?;
+
     sqlx::query::query(
         r#"CREATE TABLE IF NOT EXISTS schema_migrations (
                name TEXT PRIMARY KEY,
                applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
            )"#,
     )
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
 
     for migration in EMBEDDED_MIGRATIONS {
         let already_applied = sqlx::query::query("SELECT 1 FROM schema_migrations WHERE name = $1")
             .bind(migration.name)
-            .fetch_optional(pool)
+            .fetch_optional(&mut *tx)
             .await?
             .is_some();
         if already_applied {
             continue;
         }
 
-        let mut tx = pool.begin().await?;
         sqlx::raw_sql::raw_sql(migration.sql)
             .execute(&mut *tx)
             .await?;
@@ -69,8 +76,8 @@ pub async fn run_migrations(pool: &PgPool) -> Result<(), sqlx::error::Error> {
             .bind(migration.name)
             .execute(&mut *tx)
             .await?;
-        tx.commit().await?;
     }
 
+    tx.commit().await?;
     Ok(())
 }
