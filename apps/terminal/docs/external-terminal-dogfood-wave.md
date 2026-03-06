@@ -39,4 +39,6 @@ The swarm launcher now accepts extra `codex` CLI args through:
 export CLAWDSTRIKE_SWARM_CODEX_ARGS='-s danger-full-access -a never'
 ```
 
+Those args must be applied before the `exec` subcommand so global flags like `-a/--ask-for-approval` are parsed correctly.
+
 This is for investigation only. It should not become the default lane policy without clear evidence.

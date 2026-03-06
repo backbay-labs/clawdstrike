@@ -7,6 +7,7 @@ import type {
   RunPhase,
   RunRecord,
 } from "./types"
+import { getExternalAdapter } from "./external/registry"
 
 export interface ManagedRunContext {
   cwd: string
@@ -276,6 +277,32 @@ export function getRunExternalDisabledReason(
   }
 
   return null
+}
+
+export function getExternalAdapterLabel(adapterId: string | null): string {
+  if (!adapterId) {
+    return "none"
+  }
+
+  return getExternalAdapter(adapterId)?.label ?? adapterId
+}
+
+export function getRunExternalSurfaceSummary(
+  run: Pick<RunRecord, "external" | "phase">,
+): string | null {
+  const adapterLabel = getExternalAdapterLabel(run.external.adapterId)
+  switch (run.external.status) {
+    case "launching":
+      return `${adapterLabel} launching`
+    case "running":
+      return `${adapterLabel} live`
+    case "failed":
+      return `${adapterLabel} failed`
+    case "idle":
+      return run.external.adapterId && isRunTerminal(run.phase) ? `${adapterLabel} completed` : null
+    default:
+      return null
+  }
 }
 
 export function updateRunRecord(

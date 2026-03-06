@@ -84,7 +84,7 @@ cd "$worktree_path"
 prompt="\$(cat "$prompt_file")"
 unset CODEX_THREAD_ID
 unset CODEX_MANAGED_BY_BUN
-if env codex exec \\
+if env codex \\
 EOF
 
 for arg in "${codex_args[@]}"; do
@@ -92,6 +92,7 @@ for arg in "${codex_args[@]}"; do
 done
 
 cat >> "$runner_file" <<EOF
+  exec \\
   --json \\
   -o "$final_file" \\
 EOF

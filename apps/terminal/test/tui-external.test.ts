@@ -1,9 +1,15 @@
 import { describe, expect, test } from "bun:test"
+import { createManagedRun } from "../src/tui/runs"
 import {
   getAvailableExternalAdapters,
   getExternalAdapter,
   toExternalAdapterOptions,
 } from "../src/tui/external/registry"
+import {
+  createRecoverableExternalFailureRun,
+  ExternalLaunchStartupTimeoutError,
+  isRecoverableExternalLaunchError,
+} from "../src/tui/external/state"
 import type { ExternalRunSessionPlan, ExternalTerminalAdapter } from "../src/tui/external/types"
 
 function createPlan(): ExternalRunSessionPlan {
@@ -70,5 +76,44 @@ describe("external adapter registry", () => {
     expect(getExternalAdapter("missing", [adapter])).toBeNull()
     expect(getExternalAdapter("terminal-app", [adapter])?.label).toBe("Terminal.app")
     await expect(adapter.launch(createPlan())).resolves.toEqual({ ref: "terminal-app" })
+  })
+
+  test("marks startup timeout failures as recoverable", () => {
+    const error = new ExternalLaunchStartupTimeoutError()
+    expect(isRecoverableExternalLaunchError(error)).toBe(true)
+    expect(isRecoverableExternalLaunchError(new Error("boom"))).toBe(false)
+  })
+
+  test("preserves a retryable run after external launch failure", () => {
+    const run = createManagedRun({
+      prompt: "Investigate terminal launch",
+      action: "dispatch",
+      agentId: "codex",
+      agentLabel: "Codex",
+      mode: "external",
+    })
+
+    run.phase = "executing"
+    run.routing = { toolchain: "codex", strategy: "external terminal", gates: [] }
+    run.workcellId = "wc_123"
+    run.worktreePath = "/tmp/workcell"
+    run.ptySessionId = "pty_123"
+
+    const failed = createRecoverableExternalFailureRun(
+      run,
+      "terminal-app",
+      "launch script never started",
+    )
+
+    expect(failed.phase).toBe("launching")
+    expect(failed.completedAt).toBeNull()
+    expect(failed.routing).toBeNull()
+    expect(failed.workcellId).toBeNull()
+    expect(failed.worktreePath).toBeNull()
+    expect(failed.ptySessionId).toBeNull()
+    expect(failed.result).toBeNull()
+    expect(failed.external.adapterId).toBe("terminal-app")
+    expect(failed.external.status).toBe("failed")
+    expect(failed.external.error).toBe("launch script never started")
   })
 })

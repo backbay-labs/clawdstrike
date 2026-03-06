@@ -76,7 +76,7 @@ cd "$worktree_path"
 prompt="\$(cat "$resume_prompt")"
 unset CODEX_THREAD_ID
 unset CODEX_MANAGED_BY_BUN
-if env codex exec resume --last \\
+if env codex \\
 EOF
 
 for arg in "${codex_args[@]}"; do
@@ -84,6 +84,7 @@ for arg in "${codex_args[@]}"; do
 done
 
 cat >> "$runner_file" <<EOF
+  exec resume --last \\
   --json \\
   -o "$final_file" \\
   "\$prompt"

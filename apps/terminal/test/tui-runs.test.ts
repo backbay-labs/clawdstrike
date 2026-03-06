@@ -5,8 +5,10 @@ import {
   createManagedRun,
   executeManagedRun,
   filterRuns,
+  getExternalAdapterLabel,
   getRunAttachDisabledReason,
   getRunExternalDisabledReason,
+  getRunExternalSurfaceSummary,
   getRunReviewRoute,
   isRunTerminal,
 } from "../src/tui/runs"
@@ -186,5 +188,35 @@ describe("tui managed runs", () => {
     expect(canRunExternal(externalRun)).toBe(true)
     expect(externalRun.external.status).toBe("idle")
     expect(getRunExternalDisabledReason(managedRun)).toBe("External execution is only available for runs launched in external mode.")
+  })
+
+  test("formats external adapter labels from the registry", () => {
+    expect(getExternalAdapterLabel("terminal-app")).toBe("Terminal.app")
+    expect(getExternalAdapterLabel("tmux-split")).toBe("tmux split")
+    expect(getExternalAdapterLabel("unknown-adapter")).toBe("unknown-adapter")
+    expect(getExternalAdapterLabel(null)).toBe("none")
+  })
+
+  test("summarizes running and completed external runs", () => {
+    const run = createManagedRun({
+      prompt: "Check reopen copy",
+      action: "dispatch",
+      agentId: "codex",
+      agentLabel: "Codex",
+      mode: "external",
+    })
+
+    run.external = {
+      kind: "terminal-app",
+      adapterId: "terminal-app",
+      ref: "terminal-app",
+      status: "running",
+      error: null,
+    }
+    expect(getRunExternalSurfaceSummary(run)).toBe("Terminal.app live")
+
+    run.external.status = "idle"
+    run.phase = "completed"
+    expect(getRunExternalSurfaceSummary(run)).toBe("Terminal.app completed")
   })
 })

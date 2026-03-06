@@ -39,6 +39,11 @@ import {
 import { createAttachRunSession } from "./pty"
 import { getAvailableExternalAdapters, getExternalAdapter, toExternalAdapterOptions } from "./external/registry"
 import { createExternalRunSession } from "./external/session"
+import {
+  createRecoverableExternalFailureRun,
+  ExternalLaunchStartupTimeoutError,
+  isRecoverableExternalLaunchError,
+} from "./external/state"
 import type { ExternalRunSessionPlan, ExternalRunStatusPayload } from "./external/types"
 
 // Screen imports
@@ -946,6 +951,11 @@ export class TUIApp implements AppController {
       this.render()
       return
     }
+    if (run.external.status === "running") {
+      this.state.statusMessage = `${THEME.warning}!${THEME.reset} ${currentAdapter?.label ?? "This external adapter"} does not support reopen from the TUI yet.`
+      this.render()
+      return
+    }
 
     const reason = getRunExternalDisabledReason(run)
     if (reason) {
@@ -1376,7 +1386,7 @@ export class TUIApp implements AppController {
       }
 
       if (!started && Date.now() >= deadline) {
-        throw new Error("External terminal opened, but the launch script never started.")
+        throw new ExternalLaunchStartupTimeoutError()
       }
 
       await Bun.sleep(400)
@@ -1435,34 +1445,42 @@ export class TUIApp implements AppController {
       const message = error instanceof Error ? error.message : String(error)
       const currentRun = this.state.runs.entries.find((entry) => entry.id === runId)
       if (currentRun) {
-        const failedRun = updateRunRecord(
-          currentRun,
-          {
-            phase: "failed",
-            completedAt: new Date().toISOString(),
-            error: message,
-            execution: { success: false, error: message },
-            result: {
-              success: false,
-              taskId: sessionPlan.workcell.id,
-              agent: currentRun.agentLabel,
-              action: currentRun.action,
-              routing: sessionPlan.routing,
-              execution: { success: false, error: message },
-              error: message,
-              duration: Date.now() - startedAt,
-            },
-            external: {
-              ...currentRun.external,
-              status: "failed",
-              error: message,
-            },
-          },
-          { kind: "error", message: `External launch failed: ${message}` },
-        )
+        const failedRun = isRecoverableExternalLaunchError(error)
+          ? createRecoverableExternalFailureRun(
+              currentRun,
+              currentRun.external.adapterId ?? "external",
+              message,
+            )
+          : updateRunRecord(
+              currentRun,
+              {
+                phase: "failed",
+                completedAt: new Date().toISOString(),
+                error: message,
+                execution: { success: false, error: message },
+                result: {
+                  success: false,
+                  taskId: sessionPlan.workcell.id,
+                  agent: currentRun.agentLabel,
+                  action: currentRun.action,
+                  routing: sessionPlan.routing,
+                  execution: { success: false, error: message },
+                  error: message,
+                  duration: Date.now() - startedAt,
+                },
+                external: {
+                  ...currentRun.external,
+                  status: "failed",
+                  error: message,
+                },
+              },
+              { kind: "error", message: `External launch failed: ${message}` },
+            )
         this.replaceRun(failedRun)
         this.state.lastResult = failedRun.result
-        this.state.statusMessage = `${THEME.error}✗${THEME.reset} ${failedRun.agentLabel} external session failed`
+        this.state.statusMessage = isRecoverableExternalLaunchError(error)
+          ? `${THEME.warning}!${THEME.reset} ${failedRun.agentLabel} external launch did not start; retry or fall back`
+          : `${THEME.error}✗${THEME.reset} ${failedRun.agentLabel} external session failed`
         this.syncManagedRunState()
         this.render()
       }
@@ -1542,22 +1560,13 @@ export class TUIApp implements AppController {
       void this.finalizeExternalRun(runId, sessionPlan, startedAt)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      const failedRun = updateRunRecord(
+      const failedRun = createRecoverableExternalFailureRun(
         this.state.runs.entries.find((entry) => entry.id === runId) ?? originalRun,
-        {
-          error: message,
-          external: {
-            kind: adapter.id,
-            adapterId: adapter.id,
-            ref: null,
-            status: "failed",
-            error: message,
-          },
-        },
-        { kind: "error", message: `External launch failed: ${message}` },
+        adapter.id,
+        message,
       )
       this.replaceRun(failedRun)
-      this.state.statusMessage = `${THEME.error}✗${THEME.reset} External launch failed`
+      this.state.statusMessage = `${THEME.warning}!${THEME.reset} External launch failed; retry or fall back`
       this.render()
       await sessionPlan?.cleanup().catch(() => {})
     }

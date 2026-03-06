@@ -5,7 +5,14 @@ import { renderSplit } from "../components/split-pane"
 import { renderSurfaceHeader } from "../components/surface-header"
 import { THEME } from "../theme"
 import type { RunListFilter, RunRecord, Screen, ScreenContext } from "../types"
-import { filterRuns, formatRunPhase, getRunReviewRoute, isRunTerminal } from "../runs"
+import {
+  filterRuns,
+  formatRunPhase,
+  getExternalAdapterLabel,
+  getRunExternalSurfaceSummary,
+  getRunReviewRoute,
+  isRunTerminal,
+} from "../runs"
 
 const FILTERS: RunListFilter[] = ["active", "review_ready", "all"]
 
@@ -60,7 +67,8 @@ function syncSelection(ctx: ScreenContext, viewportHeight: number): RunRecord | 
 
 function listLabel(run: RunRecord): string {
   const activity = formatTimestamp(run.completedAt ?? run.updatedAt)
-  return `${run.title}  ${THEME.dim}•${THEME.reset} ${run.agentLabel}  ${THEME.dim}•${THEME.reset} ${formatRunPhase(run.phase)}  ${THEME.dim}•${THEME.reset} ${run.mode}  ${THEME.dim}•${THEME.reset} ${activity}`
+  const externalSummary = getRunExternalSurfaceSummary(run)
+  return `${run.title}  ${THEME.dim}•${THEME.reset} ${run.agentLabel}  ${THEME.dim}•${THEME.reset} ${formatRunPhase(run.phase)}  ${THEME.dim}•${THEME.reset} ${run.mode}${externalSummary ? ` ${THEME.dim}(${externalSummary})${THEME.reset}` : ""}  ${THEME.dim}•${THEME.reset} ${activity}`
 }
 
 function renderRunsList(ctx: ScreenContext, width: number, height: number): string[] {
@@ -148,8 +156,8 @@ function renderRunSummary(run: RunRecord, width: number): string[] {
   if (run.external.adapterId || run.external.status !== "idle") {
     lines.push("")
     lines.push(`${THEME.secondary}${THEME.bold}External Surface${THEME.reset}`)
-    addRow("Adapter", `${THEME.white}${run.external.adapterId ?? "none"}${THEME.reset}`)
-    addRow("Status", `${THEME.white}${run.external.status}${THEME.reset}`)
+    addRow("Adapter", `${THEME.white}${getExternalAdapterLabel(run.external.adapterId)}${THEME.reset}`)
+    addRow("Status", `${THEME.white}${getRunExternalSurfaceSummary(run) ?? run.external.status}${THEME.reset}`)
     if (run.external.ref) {
       addRow("Surface", `${THEME.dim}${run.external.ref}${THEME.reset}`)
     }

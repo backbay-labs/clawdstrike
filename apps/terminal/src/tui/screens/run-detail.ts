@@ -5,12 +5,15 @@ import { renderSplit } from "../components/split-pane"
 import { renderSurfaceHeader } from "../components/surface-header"
 import { THEME } from "../theme"
 import type { RunEvent, RunRecord, Screen, ScreenContext } from "../types"
+import { getExternalAdapter } from "../external/registry"
 import {
   canRunAttach,
   canRunExternal,
   formatRunPhase,
+  getExternalAdapterLabel,
   getRunAttachDisabledReason,
   getRunExternalDisabledReason,
+  getRunExternalSurfaceSummary,
   getRunReviewRoute,
   isRunReviewReady,
 } from "../runs"
@@ -98,6 +101,10 @@ function renderStatusCard(run: RunRecord, width: number): string[] {
   const addRow = (label: string, value: string) => {
     content.push(`${THEME.dim}${label.padEnd(11)}${THEME.reset} ${value}`)
   }
+  const currentExternalAdapter = run.external.adapterId
+    ? getExternalAdapter(run.external.adapterId)
+    : null
+  const externalSummary = getRunExternalSurfaceSummary(run)
 
   if (!run.result) {
     content.push(`${THEME.muted}Waiting for execution result…${THEME.reset}`)
@@ -164,13 +171,25 @@ function renderStatusCard(run: RunRecord, width: number): string[] {
 
   content.push("")
   content.push(`${THEME.secondary}${THEME.bold}External${THEME.reset}`)
-  if (canRunExternal(run)) {
+  if (run.external.status === "running" && run.external.ref && currentExternalAdapter?.focus) {
+    content.push(
+      `${THEME.success}Ready${THEME.reset} reopen this live ${currentExternalAdapter.label} surface from the detail footer.`,
+    )
+  } else if (run.external.status === "running") {
+    content.push(
+      `${THEME.dim}${currentExternalAdapter?.label ?? "External adapter"} is already running. Reopen is not available for this adapter yet.${THEME.reset}`,
+    )
+  } else if (run.external.status === "failed" && !run.result) {
+    content.push(
+      `${THEME.warning}Recoverable${THEME.reset} retry external launch or fall back to managed or attach from the overlay.`,
+    )
+  } else if (canRunExternal(run)) {
     content.push(`${THEME.success}Ready${THEME.reset} open this run in an external terminal adapter.`)
   } else {
     content.push(`${THEME.dim}${getRunExternalDisabledReason(run) ?? "External execution is not available for this run."}${THEME.reset}`)
   }
-  addRow("Adapter", `${THEME.white}${run.external.adapterId ?? "none"}${THEME.reset}`)
-  addRow("Status", `${THEME.white}${run.external.status}${THEME.reset}`)
+  addRow("Adapter", `${THEME.white}${getExternalAdapterLabel(run.external.adapterId)}${THEME.reset}`)
+  addRow("Status", `${THEME.white}${externalSummary ?? run.external.status}${THEME.reset}`)
   if (run.external.ref) {
     addRow("Surface", `${THEME.dim}${run.external.ref}${THEME.reset}`)
   }
@@ -353,11 +372,20 @@ export const runDetailScreen: Screen = {
     }
 
     lines.push("")
+    const currentExternalAdapter = run.external.adapterId
+      ? getExternalAdapter(run.external.adapterId)
+      : null
+    const externalActionLabel =
+      run.external.status === "running" && run.external.ref && currentExternalAdapter?.focus
+        ? "reopen"
+        : run.external.status === "failed" && !run.result
+          ? "retry"
+          : "external"
     lines.push(centerLine(
       `${THEME.dim}esc${THEME.reset}${THEME.muted} back${THEME.reset}  ` +
         `${THEME.dim}r${THEME.reset}${THEME.muted} runs${THEME.reset}  ` +
         `${THEME.dim}a${THEME.reset}${THEME.muted} attach${THEME.reset}  ` +
-        `${THEME.dim}o${THEME.reset}${THEME.muted} external${THEME.reset}  ` +
+        `${THEME.dim}o${THEME.reset}${THEME.muted} ${externalActionLabel}${THEME.reset}  ` +
         `${THEME.dim}c${THEME.reset}${THEME.muted} cancel${THEME.reset}  ` +
         `${THEME.dim}↑↓${THEME.reset}${THEME.muted} events${THEME.reset}  ` +
         `${THEME.dim}enter${THEME.reset}${THEME.muted} ${isRunReviewReady(run) ? "review" : "result"}${THEME.reset}`,

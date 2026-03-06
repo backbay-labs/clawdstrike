@@ -33,4 +33,16 @@ export const terminalAppAdapter: ExternalTerminalAdapter = {
 
     return { ref: "terminal-app" }
   },
+  async focus(): Promise<void> {
+    const proc = Bun.spawn(["osascript", "-e", 'tell application "Terminal" to activate'], {
+      stdin: "ignore",
+      stdout: "ignore",
+      stderr: "pipe",
+    })
+    const exitCode = await proc.exited
+    if (exitCode !== 0) {
+      const errorText = await new Response(proc.stderr).text()
+      throw new Error(errorText.trim() || `osascript exited with code ${exitCode}`)
+    }
+  },
 }
