@@ -1,6 +1,3 @@
-CREATE UNIQUE INDEX IF NOT EXISTS idx_fleet_cases_tenant_id
-ON fleet_cases(tenant_id, id);
-
 DO $$
 BEGIN
     IF NOT EXISTS (
