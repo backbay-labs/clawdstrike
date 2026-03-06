@@ -14,7 +14,7 @@ import { asCheckEventData, eventDecision, type DaemonEvent } from "../../hushd"
 const STREAM_STALE_MS = 5 * 60_000
 const HOME_ACTION_COLUMNS = 2
 const HOME_ACTION_SELECTED_BG = "\x1b[48;5;52m"
-const PROMPT_PULSE_FRAMES = 10
+const PROMPT_TRACE_FRAMES = 10
 
 interface HomeAction {
   key: string
@@ -214,36 +214,80 @@ function setHomeFocus(state: AppState, focus: HomeFocus): void {
 
   state.homeFocus = focus
   if (focus === "prompt") {
-    state.homePromptPulseStartFrame = state.animationFrame
+    state.homePromptTraceStartFrame = state.animationFrame
   }
 }
 
-function promptPulseColors(state: AppState): { borderColor: string; titleColor: string } {
+function promptTraceProgress(state: AppState): number {
   if (state.homeFocus !== "prompt") {
-    return {
-      borderColor: THEME.dim,
-      titleColor: THEME.dim,
-    }
+    return 0
   }
 
-  const age = Math.max(0, state.animationFrame - state.homePromptPulseStartFrame)
-  if (age < PROMPT_PULSE_FRAMES) {
-    const phase = age % 4
-    if (phase === 0) {
-      return { borderColor: THEME.accent, titleColor: THEME.white }
-    }
-    if (phase === 1) {
-      return { borderColor: THEME.secondary, titleColor: THEME.white }
-    }
-    if (phase === 2) {
-      return { borderColor: THEME.accent, titleColor: THEME.secondary }
-    }
+  const age = Math.max(0, state.animationFrame - state.homePromptTraceStartFrame)
+  if (age >= PROMPT_TRACE_FRAMES) {
+    return 1
   }
 
-  return {
-    borderColor: THEME.secondary,
-    titleColor: THEME.secondary,
+  return Math.max(0.08, (age + 1) / PROMPT_TRACE_FRAMES)
+}
+
+function renderPromptBox(title: string, contentLines: string[], width: number, state: AppState): string[] {
+  const promptFocused = state.homeFocus === "prompt"
+  const baseBorderColor = THEME.dim
+  const activeBorderColor = THEME.secondary
+  const titleColor = promptFocused ? THEME.secondary : THEME.dim
+
+  if (!promptFocused) {
+    return renderBox(title, contentLines, width, THEME, {
+      style: "rounded",
+      titleAlign: "left",
+      padding: 1,
+      borderColor: baseBorderColor,
+      titleColor,
+    })
   }
+
+  const padding = 1
+  const innerWidth = width - 2
+  const paddedInnerWidth = innerWidth - padding * 2
+  const padStr = " ".repeat(padding)
+  const border = { tl: "╭", tr: "╮", bl: "╰", br: "╯", h: "─", v: "│" }
+  const rows = contentLines.length === 0 ? [""] : contentLines
+  const decoratedTitle = ` \u27E8 ${title} \u27E9 `
+  const titleFits = decoratedTitle.length < innerWidth
+  const remaining = titleFits ? innerWidth - decoratedTitle.length : innerWidth
+  const leftFill = titleFits ? 1 : 0
+  const rightFill = titleFits ? remaining - leftFill : innerWidth
+  const visibleTopSegments = titleFits ? leftFill + rightFill + 2 : innerWidth + 2
+  const perimeterSegments = visibleTopSegments + width + rows.length * 2
+  const activeSegments = Math.min(
+    perimeterSegments,
+    Math.max(1, Math.ceil(perimeterSegments * promptTraceProgress(state))),
+  )
+
+  let segmentIndex = 0
+  const segment = (char: string): string => {
+    const color = segmentIndex < activeSegments ? activeBorderColor : baseBorderColor
+    segmentIndex += 1
+    return `${color}${char}${THEME.reset}`
+  }
+
+  const topLine = titleFits
+    ? `${segment(border.tl)}${Array.from({ length: leftFill }, () => segment(border.h)).join("")}` +
+      `${titleColor}${decoratedTitle}${THEME.reset}` +
+      `${Array.from({ length: rightFill }, () => segment(border.h)).join("")}${segment(border.tr)}`
+    : `${segment(border.tl)}${Array.from({ length: innerWidth }, () => segment(border.h)).join("")}${segment(border.tr)}`
+
+  const lines = [topLine]
+  for (const line of rows) {
+    const fitted = fitString(line, paddedInnerWidth)
+    lines.push(`${segment(border.v)}${padStr}${fitted}${padStr}${segment(border.v)}`)
+  }
+  lines.push(
+    `${segment(border.bl)}${Array.from({ length: innerWidth }, () => segment(border.h)).join("")}${segment(border.br)}`,
+  )
+
+  return lines
 }
 
 function renderHomeActionGuide(focus: HomeFocus, contentWidth: number): string[] {
@@ -594,7 +638,6 @@ function renderMainContent(ctx: ScreenContext, _commands: Command[]): string {
   const placeholder = 'Ask anything... "Fix broken tests"'
   const cursor = prompt ? THEME.secondary + "▎" + THEME.reset : ""
   const promptFocused = state.homeFocus === "prompt"
-  const promptBoxColors = promptPulseColors(state)
   const promptTextColor = promptFocused ? THEME.white : THEME.muted
   const placeholderColor = promptFocused ? THEME.dim : THEME.dimAttr + THEME.muted
   const metaColor = promptFocused ? THEME.dim : THEME.muted
@@ -605,7 +648,7 @@ function renderMainContent(ctx: ScreenContext, _commands: Command[]): string {
     : prompt
   const inputContent = visiblePrompt + cursor
   const agent = AGENTS[state.agentIndex]
-  const inputBox = renderBox(
+  const inputBox = renderPromptBox(
     homeFocusTitle(state.homeFocus),
     [
       prompt
@@ -619,14 +662,7 @@ function renderMainContent(ctx: ScreenContext, _commands: Command[]): string {
       ),
     ],
     inputWidth,
-    THEME,
-    {
-      style: "rounded",
-      titleAlign: "left",
-      padding: 1,
-      borderColor: promptBoxColors.borderColor,
-      titleColor: promptBoxColors.titleColor,
-    },
+    state,
   )
   lines.push(...centerBlock(inputBox, width))
 

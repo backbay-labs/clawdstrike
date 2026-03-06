@@ -94,7 +94,7 @@ export class TUIApp implements AppController {
       agentIndex: 0,
       homeActionIndex: 0,
       homeFocus: "prompt",
-      homePromptPulseStartFrame: 0,
+      homePromptTraceStartFrame: 0,
       inputMode: "main",
       commandIndex: 0,
       statusMessage: "",
@@ -610,7 +610,7 @@ export class TUIApp implements AppController {
     this.state.inputMode = mode
     if (mode === "main") {
       this.state.homeFocus = "prompt"
-      this.state.homePromptPulseStartFrame = this.state.animationFrame
+      this.state.homePromptTraceStartFrame = this.state.animationFrame
     }
 
     const newScreen = this.screens.get(mode)

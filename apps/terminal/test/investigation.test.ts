@@ -10,7 +10,7 @@ function createState(): AppState {
     agentIndex: 0,
     homeActionIndex: 0,
     homeFocus: "prompt",
-    homePromptPulseStartFrame: 0,
+    homePromptTraceStartFrame: 0,
     inputMode: "main",
     commandIndex: 0,
     statusMessage: "",
