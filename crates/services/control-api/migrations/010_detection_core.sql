@@ -1,4 +1,4 @@
-CREATE TABLE detection_rules (
+CREATE TABLE IF NOT EXISTS detection_rules (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
@@ -32,7 +32,7 @@ CREATE TABLE detection_rules (
     UNIQUE (tenant_id, id)
 );
 
-CREATE TABLE detection_findings (
+CREATE TABLE IF NOT EXISTS detection_findings (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     rule_id UUID NOT NULL,
@@ -59,7 +59,7 @@ CREATE TABLE detection_findings (
     UNIQUE (tenant_id, id)
 );
 
-CREATE TABLE detection_finding_evidence (
+CREATE TABLE IF NOT EXISTS detection_finding_evidence (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     finding_id UUID NOT NULL,
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
@@ -72,7 +72,7 @@ CREATE TABLE detection_finding_evidence (
         ON DELETE CASCADE
 );
 
-CREATE TABLE detection_suppressions (
+CREATE TABLE IF NOT EXISTS detection_suppressions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     rule_id UUID,
@@ -94,7 +94,7 @@ CREATE TABLE detection_suppressions (
         ON DELETE CASCADE
 );
 
-CREATE TABLE installed_detection_packs (
+CREATE TABLE IF NOT EXISTS installed_detection_packs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     package_name TEXT NOT NULL,
@@ -110,17 +110,17 @@ CREATE TABLE installed_detection_packs (
     UNIQUE (tenant_id, package_name, version)
 );
 
-CREATE INDEX idx_detection_rules_tenant_enabled
+CREATE INDEX IF NOT EXISTS idx_detection_rules_tenant_enabled
     ON detection_rules(tenant_id, enabled, updated_at DESC);
 
-CREATE INDEX idx_detection_findings_tenant_status
+CREATE INDEX IF NOT EXISTS idx_detection_findings_tenant_status
     ON detection_findings(tenant_id, status, last_seen_at DESC);
 
-CREATE INDEX idx_detection_findings_tenant_rule
+CREATE INDEX IF NOT EXISTS idx_detection_findings_tenant_rule
     ON detection_findings(tenant_id, rule_id, last_seen_at DESC);
 
-CREATE INDEX idx_detection_findings_tenant_principal
+CREATE INDEX IF NOT EXISTS idx_detection_findings_tenant_principal
     ON detection_findings(tenant_id, principal_id, last_seen_at DESC);
 
-CREATE INDEX idx_detection_suppressions_tenant_status
+CREATE INDEX IF NOT EXISTS idx_detection_suppressions_tenant_status
     ON detection_suppressions(tenant_id, status, created_at DESC);

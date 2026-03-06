@@ -188,7 +188,8 @@ fn init_and_adaptive_migrations_are_ordered() {
         "009 must add principal references after principal backfill exists"
     );
     assert!(
-        detection_core_sql.contains("CREATE TABLE detection_rules"),
+        detection_core_sql.contains("CREATE TABLE detection_rules")
+            || detection_core_sql.contains("CREATE TABLE IF NOT EXISTS detection_rules"),
         "010 must define detection rule storage before downstream detection features"
     );
     assert!(
@@ -203,19 +204,23 @@ fn detection_core_migration_adds_rule_finding_and_pack_schema() {
         .expect("failed to read 010 migration");
 
     assert!(
-        sql.contains("CREATE TABLE detection_rules"),
+        sql.contains("CREATE TABLE detection_rules")
+            || sql.contains("CREATE TABLE IF NOT EXISTS detection_rules"),
         "010 migration must create detection_rules"
     );
     assert!(
-        sql.contains("CREATE TABLE detection_findings"),
+        sql.contains("CREATE TABLE detection_findings")
+            || sql.contains("CREATE TABLE IF NOT EXISTS detection_findings"),
         "010 migration must create detection_findings"
     );
     assert!(
-        sql.contains("CREATE TABLE detection_suppressions"),
+        sql.contains("CREATE TABLE detection_suppressions")
+            || sql.contains("CREATE TABLE IF NOT EXISTS detection_suppressions"),
         "010 migration must create detection_suppressions"
     );
     assert!(
-        sql.contains("CREATE TABLE installed_detection_packs"),
+        sql.contains("CREATE TABLE installed_detection_packs")
+            || sql.contains("CREATE TABLE IF NOT EXISTS installed_detection_packs"),
         "010 migration must create installed_detection_packs"
     );
     assert!(

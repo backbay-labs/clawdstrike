@@ -115,6 +115,8 @@ ON principal_memberships(tenant_id, principal_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_principal_memberships_target
 ON principal_memberships(tenant_id, target_kind, target_id, created_at DESC);
 
+-- approvals is created in 002_adaptive_sdr_schema.sql and remains the source table
+-- for approval-linked delegation metadata in the directory model.
 CREATE TABLE IF NOT EXISTS grants (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
