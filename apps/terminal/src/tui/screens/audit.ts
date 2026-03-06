@@ -11,6 +11,16 @@ import type { Screen, ScreenContext } from "../types"
 const DECISION_FILTERS = ["any", "blocked", "allowed"] as const
 const EVENT_FILTERS = ["any", "check", "violation", "report_export"] as const
 
+function truncateMiddle(value: string, maxLength: number): string {
+  if (value.length <= maxLength) {
+    return value
+  }
+
+  const head = Math.max(4, Math.floor((maxLength - 1) / 2))
+  const tail = Math.max(4, maxLength - head - 1)
+  return `${value.slice(0, head)}…${value.slice(-tail)}`
+}
+
 function formatTimestamp(iso: string): string {
   const parsed = new Date(iso)
   if (Number.isNaN(parsed.getTime())) {
@@ -34,13 +44,14 @@ function eventColor(event: AuditEvent): string {
 
 function toListItem(event: AuditEvent): ListItem {
   const timestamp = event.timestamp.slice(0, 19).replace("T", " ")
-  const target = event.target ?? event.message ?? event.id
+  const target = truncateMiddle(event.target ?? event.message ?? event.id, 26)
+  const eventType = truncateMiddle(event.event_type, 20)
   const label =
     `${THEME.dim}${timestamp}${THEME.reset} ` +
     `${eventColor(event)}[${event.decision}]${THEME.reset} ` +
-    `${THEME.white}${event.event_type}${THEME.reset} ` +
+    `${THEME.white}${eventType}${THEME.reset} ` +
     `${THEME.muted}${target}${THEME.reset}`
-  const plain = `${timestamp} [${event.decision}] ${event.event_type} ${target}`
+  const plain = `${timestamp} [${event.decision}] ${eventType} ${target}`
   return { label, plainLength: plain.length }
 }
 

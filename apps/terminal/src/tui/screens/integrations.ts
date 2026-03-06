@@ -35,6 +35,28 @@ export const integrationsScreen: Screen = {
   },
 }
 
+function truncateMiddle(value: string, maxLength: number): string {
+  if (value.length <= maxLength) {
+    return value
+  }
+
+  const head = Math.max(5, Math.floor((maxLength - 1) / 2))
+  const tail = Math.max(5, maxLength - head - 1)
+  return `${value.slice(0, head)}…${value.slice(-tail)}`
+}
+
+function renderValueBlock(label: string, value: string, width: number, color = THEME.white): string[] {
+  const singleLine = `${THEME.dim}${label}:${THEME.reset} ${color}${value}${THEME.reset}`
+  if (singleLine.replace(/\x1b\[[0-9;]*m/g, "").length <= width) {
+    return [singleLine]
+  }
+
+  return [
+    `${THEME.dim}${label}:${THEME.reset}`,
+    `${color}${truncateMiddle(value, width)}${THEME.reset}`,
+  ]
+}
+
 function renderIntegrationsScreen(ctx: ScreenContext): string {
   const { width, height } = ctx
   const lines: string[] = []
@@ -97,11 +119,7 @@ function renderRuntimeCard(ctx: ScreenContext, boxWidth: number): string[] {
     `${THEME.dim}hushd:${THEME.reset} ${THEME.white}${state.hushdStatus}${THEME.reset}`,
     contentWidth,
   ))
-  content.push(
-    ...wrapText(`entry: ${runtimeEntry}`, contentWidth).map((line) => (
-      `${THEME.dim}${line}${THEME.reset}`
-    )),
-  )
+  content.push(...renderValueBlock("entry", runtimeEntry, contentWidth, THEME.dim))
   if (state.securityError) {
     content.push(`${THEME.warning}${state.securityError}${THEME.reset}`)
   }
@@ -126,27 +144,20 @@ function renderRuntimeCard(ctx: ScreenContext, boxWidth: number): string[] {
       `${THEME.dim}api:${THEME.reset} ${THEME.white}${desktop.agentApiPort ?? "-"}${THEME.reset}`,
       contentWidth,
     ))
-    content.push(
-      ...wrapText(`config: ${desktop.settingsPath ?? "unknown"}`, contentWidth).map((line) => (
-        `${THEME.dim}${line}${THEME.reset}`
-      )),
-    )
+    content.push(...renderValueBlock("config", desktop.settingsPath ?? "unknown", contentWidth, THEME.dim))
     if (desktop.localAgentId) {
-      content.push(
-        ...wrapText(`local id: ${desktop.localAgentId}`, contentWidth).map((line) => (
-          `${THEME.dim}${line}${THEME.reset}`
-        )),
-      )
+      content.push(...renderValueBlock("local id", desktop.localAgentId, contentWidth, THEME.dim))
     }
 
     const clusterStatus = desktop.natsEnabled
       ? `enabled${desktop.natsUrl ? ` ${desktop.natsUrl}` : ""}`
       : "disabled"
-    content.push(
-      ...wrapText(`cluster stream: ${clusterStatus}`, contentWidth).map((line) => (
-        `${desktop.natsEnabled ? THEME.muted : THEME.warning}${line}${THEME.reset}`
-      )),
-    )
+    content.push(...renderValueBlock(
+      "cluster stream",
+      clusterStatus,
+      contentWidth,
+      desktop.natsEnabled ? THEME.muted : THEME.warning,
+    ))
 
     if (watchConfig.kind === "configured" || watchConfig.kind === "manual") {
       const authLabel = watchConfig.authType === "creds"
@@ -159,11 +170,7 @@ function renderRuntimeCard(ctx: ScreenContext, boxWidth: number): string[] {
       content.push(`${THEME.dim}watch auth:${THEME.reset} ${THEME.white}${authLabel}${THEME.reset}`)
     }
     if (desktop.dashboardUrl) {
-      content.push(
-        ...wrapText(`dashboard: ${desktop.dashboardUrl}`, contentWidth).map((line) => (
-          `${THEME.dim}${line}${THEME.reset}`
-        )),
-      )
+      content.push(...renderValueBlock("dashboard", desktop.dashboardUrl, contentWidth, THEME.dim))
     }
 
     if (watchConfig.kind !== "configured" && watchConfig.kind !== "manual" && watchConfig.kind !== "not_found") {

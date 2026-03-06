@@ -513,13 +513,12 @@ export const huntReportScreen: Screen = {
 
 function renderHelpBar(width: number): string {
   const help =
-    `${THEME.dim}j/k${THEME.reset}${THEME.muted} navigate${THEME.reset}  ` +
+    `${THEME.dim}j/k${THEME.reset}${THEME.muted} move${THEME.reset}  ` +
     `${THEME.dim}J/K${THEME.reset}${THEME.muted} scroll${THEME.reset}  ` +
-    `${THEME.dim}Enter${THEME.reset}${THEME.muted} expand${THEME.reset}  ` +
-    `${THEME.dim}r${THEME.reset}${THEME.muted} rebuild${THEME.reset}  ` +
-    `${THEME.dim}h${THEME.reset}${THEME.muted} history${THEME.reset}  ` +
+    `${THEME.dim}Enter${THEME.reset}${THEME.muted} toggle${THEME.reset}  ` +
+    `${THEME.dim}h${THEME.reset}${THEME.muted} hist${THEME.reset}  ` +
     `${THEME.dim}x${THEME.reset}${THEME.muted} export${THEME.reset}  ` +
-    `${THEME.dim}c${THEME.reset}${THEME.muted} copy JSON${THEME.reset}  ` +
+    `${THEME.dim}c${THEME.reset}${THEME.muted} copy${THEME.reset}  ` +
     `${THEME.dim}ESC${THEME.reset}${THEME.muted} back${THEME.reset}`
   return fitString(help, width)
 }

@@ -7,6 +7,7 @@ import { createInitialAuditLogState, createInitialHuntState } from "../src/tui/t
 import { THEME } from "../src/tui/theme"
 import { createMainScreen } from "../src/tui/screens/main"
 import { integrationsScreen } from "../src/tui/screens/integrations"
+import { auditScreen } from "../src/tui/screens/audit"
 import { huntReportScreen } from "../src/tui/screens/hunt-report"
 import { huntReportHistoryScreen } from "../src/tui/screens/hunt-report-history"
 import { huntQueryScreen } from "../src/tui/screens/hunt-query"
@@ -232,6 +233,81 @@ describe("main screen", () => {
     expect(output).toContain("or use shortcut keys")
     expect(output).toContain("Integrations runtime status")
     expect(output).toContain("Timeline event replay")
+  })
+})
+
+describe("supported surface polish", () => {
+  test("shortens long integration runtime values into labeled blocks", () => {
+    const state = createState()
+    state.runtimeInfo = {
+      source: "repo-source",
+      scriptPath: "/Users/connor/Medica/backbay/standalone/clawdstrike-sdks/apps/terminal/src/cli/index.ts",
+      bunVersion: "1.3.3",
+    }
+    state.desktopAgent = {
+      found: true,
+      enabled: true,
+      enrolled: true,
+      enrollmentInProgress: false,
+      settingsPath: "/Users/connor/Library/Application Support/clawdstrike/agent.json",
+      localAgentId: "endpoint-e5a1cf6a-3311-4882-a596-4151d240d241",
+      daemonPort: 9876,
+      mcpPort: 9877,
+      agentApiPort: 9878,
+      dashboardUrl: "http://127.0.0.1:9878/ui",
+      tenantId: "tenant-dogfood-1",
+      natsEnabled: true,
+      natsUrl: "nats://k8s-clawdstr-clawdstr-c56cf8ccc8-ae1abaa88d768410.elb.us-east-1.amazonaws.com:4222",
+      natsCredsFile: null,
+      natsToken: "token",
+      nkeySeed: null,
+      natsTokenConfigured: true,
+      nkeySeedConfigured: false,
+      subjectPrefix: "tenant.desktop",
+      error: null,
+    }
+    state.hushdStatus = "connected"
+
+    const output = stripAnsi(integrationsScreen.render(createContext(state, new TestApp(tempDir), 90, 28)))
+
+    expect(output).toContain("entry:")
+    expect(output).toContain("cluster stream:")
+    expect(output).toContain("dashboard:")
+    expect(output).toContain("…")
+  })
+
+  test("keeps audit rows clear of the split divider", () => {
+    const state = createState()
+    state.auditLog.events = [
+      {
+        id: "audit-1",
+        timestamp: new Date().toISOString(),
+        event_type: "local_service_session_created",
+        action_type: "session",
+        decision: "allowed",
+        target: "local_service_session_created_for_really_long_target_name",
+        session_id: "session-1",
+        agent_id: null,
+        guard: null,
+        message: null,
+        metadata: {},
+      },
+    ]
+
+    const output = stripAnsi(auditScreen.render(createContext(state, new TestApp(tempDir), 100, 24)))
+
+    expect(output).toContain(" │ ╭")
+    expect(output).toContain("local_ser…")
+  })
+
+  test("keeps the report help bar readable at 80 columns", () => {
+    const state = createState()
+    const app = new TestApp(tempDir)
+    const output = stripAnsi(huntReportScreen.render(createContext(state, app, 80, 24)))
+
+    expect(output).toContain("c copy")
+    expect(output).toContain("ESC back")
+    expect(output).not.toContain("c copy J")
   })
 })
 

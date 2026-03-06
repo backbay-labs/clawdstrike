@@ -15,9 +15,14 @@ export function renderSplit(
 ): string[] {
   if (width < 3 || height <= 0) return []
 
+  const useGutter = width >= 48
+  const gutterWidth = useGutter ? 2 : 0
   const dividerWidth = 1
-  const leftWidth = Math.max(1, Math.floor((width - dividerWidth) * ratio))
-  const rightWidth = Math.max(1, width - leftWidth - dividerWidth)
+  const contentWidth = Math.max(2, width - dividerWidth - gutterWidth)
+  const leftWidth = Math.max(1, Math.floor(contentWidth * ratio))
+  const rightWidth = Math.max(1, contentWidth - leftWidth)
+  const leftGap = useGutter ? " " : ""
+  const rightGap = useGutter ? " " : ""
 
   const lines: string[] = []
 
@@ -29,7 +34,7 @@ export function renderSplit(
     const right = fitString(rightContent, rightWidth)
     const divider = `${theme.dim}\u2502${theme.reset}`
 
-    lines.push(`${left}${divider}${right}`)
+    lines.push(`${left}${leftGap}${divider}${rightGap}${right}`)
   }
 
   return lines
