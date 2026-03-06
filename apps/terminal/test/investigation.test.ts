@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test"
 import type { AppState } from "../src/tui/types"
-import { createInitialAuditLogState, createInitialHuntState } from "../src/tui/types"
+import {
+  createInitialAuditLogState,
+  createInitialDispatchSheetState,
+  createInitialHuntState,
+  createInitialRunListState,
+} from "../src/tui/types"
 import { buildInvestigationReport, getInvestigationCounts, updateInvestigation } from "../src/tui/investigation"
 import { getSurfaceMeta } from "../src/tui/surfaces"
 
@@ -36,6 +41,10 @@ function createState(): AppState {
     auditStats: null,
     activePolicy: null,
     securityError: null,
+    dispatchSheet: createInitialDispatchSheetState(),
+    runs: createInitialRunListState(),
+    activeRunId: null,
+    runDetailEvents: { offset: 0, selected: 0 },
     lastResult: null,
     setupDetection: null,
     setupStep: "detecting",

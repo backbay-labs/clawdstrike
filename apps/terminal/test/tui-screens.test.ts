@@ -3,7 +3,12 @@ import * as fs from "node:fs/promises"
 import * as os from "node:os"
 import * as path from "node:path"
 import type { AppController, AppState, InputMode, ScreenContext } from "../src/tui/types"
-import { createInitialAuditLogState, createInitialHuntState } from "../src/tui/types"
+import {
+  createInitialAuditLogState,
+  createInitialDispatchSheetState,
+  createInitialHuntState,
+  createInitialRunListState,
+} from "../src/tui/types"
 import { THEME } from "../src/tui/theme"
 import { createMainScreen } from "../src/tui/screens/main"
 import { integrationsScreen } from "../src/tui/screens/integrations"
@@ -29,11 +34,31 @@ class TestApp implements AppController {
   public renderCount = 0
   public quitCalled = false
   public submitted: "dispatch" | "speculate" | null = null
+  public launchedDispatchSheet = false
+  public closedDispatchSheet = false
+  public openedRunId: string | null = null
+  public canceledRunId: string | null = null
 
   constructor(private cwd: string) {}
 
   setScreen(mode: InputMode): void {
     this.screen = mode
+  }
+
+  launchDispatchSheet(): void {
+    this.launchedDispatchSheet = true
+  }
+
+  closeDispatchSheet(): void {
+    this.closedDispatchSheet = true
+  }
+
+  openRun(runId: string): void {
+    this.openedRunId = runId
+  }
+
+  cancelRun(runId: string): void {
+    this.canceledRunId = runId
   }
 
   render(): void {
@@ -90,6 +115,10 @@ function createState(): AppState {
     auditStats: null,
     activePolicy: null,
     securityError: null,
+    dispatchSheet: createInitialDispatchSheetState(),
+    runs: createInitialRunListState(),
+    activeRunId: null,
+    runDetailEvents: { offset: 0, selected: 0 },
     lastResult: null,
     setupDetection: null,
     setupStep: "detecting",
@@ -256,7 +285,8 @@ describe("main screen", () => {
     const promptOutput = stripAnsi(screen.render(createContext(state, app, 120, 36)))
     expect(promptOutput).toContain("Dispatch [prompt]")
     expect(promptOutput).toContain("Prompt focus:")
-    expect(promptOutput).toContain("type here without triggering page shortcuts")
+    expect(promptOutput).toContain("Enter dispatch sheet")
+    expect(promptOutput).toContain("type here without")
 
     state.homeFocus = "actions"
     const actionsOutput = stripAnsi(screen.render(createContext(state, app, 120, 36)))

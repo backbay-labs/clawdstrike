@@ -17,7 +17,11 @@ export const resultScreen: Screen = {
 
   handleInput(key: string, ctx: ScreenContext): boolean {
     if (key === "\x1b" || key === "q" || key === "\r" || key === " ") {
-      ctx.app.setScreen("main")
+      if (ctx.state.activeRunId) {
+        ctx.app.openRun(ctx.state.activeRunId)
+      } else {
+        ctx.app.setScreen("main")
+      }
       return true
     }
     return false

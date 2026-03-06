@@ -325,7 +325,8 @@ function renderHomeActionGuide(focus: HomeFocus, contentWidth: number): string[]
     default:
       return wrapText(
         `${THEME.dim}Prompt focus:${THEME.reset} ${THEME.white}Tab${THEME.reset} actions  ` +
-          `${THEME.white}Esc${THEME.reset} nav  ${THEME.dim}type here without triggering page shortcuts${THEME.reset}`,
+          `${THEME.white}Enter${THEME.reset} dispatch sheet  ${THEME.white}Esc${THEME.reset} nav  ` +
+          `${THEME.dim}type here without triggering page shortcuts${THEME.reset}`,
         contentWidth,
       )
   }
@@ -368,6 +369,8 @@ export function createMainScreen(commands: Command[]): Screen {
       let content = renderMainContent(ctx, commands)
       if (ctx.state.inputMode === "commands") {
         content = overlayCommandPalette(content, ctx, commands)
+      } else if (ctx.state.inputMode === "dispatch-sheet") {
+        content = overlayDispatchSheet(content, ctx)
       }
       return content
     },
@@ -375,6 +378,9 @@ export function createMainScreen(commands: Command[]): Screen {
     handleInput(key: string, ctx: ScreenContext): boolean {
       if (ctx.state.inputMode === "commands") {
         return handleCommandsInput(key, ctx, commands)
+      }
+      if (ctx.state.inputMode === "dispatch-sheet") {
+        return handleDispatchSheetInput(key, ctx)
       }
       return handleMainInput(key, ctx)
     },
@@ -690,7 +696,7 @@ function renderMainContent(ctx: ScreenContext, _commands: Command[]): string {
 
   // Hint bar - centered
   const primaryHints = state.homeFocus === "prompt"
-    ? `${THEME.bold}Enter${THEME.reset}${THEME.muted} dispatch${THEME.reset}    ` +
+    ? `${THEME.bold}Enter${THEME.reset}${THEME.muted} dispatch sheet${THEME.reset}    ` +
       `${THEME.bold}Tab${THEME.reset}${THEME.muted} actions${THEME.reset}    ` +
       `${THEME.bold}Ctrl+P${THEME.reset}${THEME.muted} commands${THEME.reset}    ` +
       `${THEME.bold}Esc${THEME.reset}${THEME.muted} nav${THEME.reset}`
@@ -738,6 +744,136 @@ function renderMainContent(ctx: ScreenContext, _commands: Command[]): string {
   const currentLines = lines.length
   for (let i = currentLines; i < height - 2; i++) {
     lines.push("")
+  }
+
+  return lines.join("\n")
+}
+
+function cycleDispatchSheetOption(
+  current: number,
+  length: number,
+  direction: -1 | 1,
+): number {
+  return (current + direction + length) % length
+}
+
+function handleDispatchSheetInput(key: string, ctx: ScreenContext): boolean {
+  const { state, app } = ctx
+  const sheet = state.dispatchSheet
+  if (!sheet.open) {
+    return false
+  }
+
+  if (key === "\x1b" || key === "\x1b\x1b" || key.toLowerCase() === "q") {
+    app.closeDispatchSheet()
+    return true
+  }
+
+  if (key === "\r") {
+    app.launchDispatchSheet()
+    return true
+  }
+
+  if (key === "\t" || key === "\x1b[B" || key === "down") {
+    sheet.focusedField = ((sheet.focusedField + 1) % 4) as 0 | 1 | 2 | 3
+    sheet.error = null
+    app.render()
+    return true
+  }
+
+  if (key === "\x1b[A" || key === "up") {
+    sheet.focusedField = ((sheet.focusedField + 3) % 4) as 0 | 1 | 2 | 3
+    sheet.error = null
+    app.render()
+    return true
+  }
+
+  if (key === "\x1b[C" || key === "right" || key === "\x1b[D" || key === "left") {
+    const direction: -1 | 1 = key === "\x1b[D" || key === "left" ? -1 : 1
+    if (sheet.focusedField === 1) {
+      sheet.action = sheet.action === "dispatch" ? "speculate" : "dispatch"
+    } else if (sheet.focusedField === 2) {
+      const modes = ["managed", "attach", "external"] as const
+      sheet.mode = modes[cycleDispatchSheetOption(modes.indexOf(sheet.mode), modes.length, direction)]
+    } else if (sheet.focusedField === 3) {
+      sheet.agentIndex = cycleDispatchSheetOption(sheet.agentIndex, AGENTS.length, direction)
+    }
+    sheet.error = null
+    app.render()
+    return true
+  }
+
+  if (key === "d" || key === "s") {
+    sheet.action = key === "d" ? "dispatch" : "speculate"
+    sheet.error = null
+    app.render()
+    return true
+  }
+
+  return false
+}
+
+function dispatchField(label: string, value: string, selected: boolean): string {
+  const marker = selected ? `${THEME.accent}${THEME.bold}▸${THEME.reset}` : `${THEME.dim}•${THEME.reset}`
+  return `${marker} ${THEME.dim}${label}:${THEME.reset} ${value}`
+}
+
+function overlayDispatchSheet(baseScreen: string, ctx: ScreenContext): string {
+  const { state, width } = ctx
+  const lines = baseScreen.split("\n")
+  const sheetWidth = Math.max(52, Math.min(82, width - 12))
+  const startY = 6
+  const sheet = state.dispatchSheet
+  const promptPreview = wrapText(sheet.prompt, sheetWidth - 8)
+  const content: string[] = [
+    `${THEME.dim}Use${THEME.reset} ${THEME.white}↑/↓${THEME.reset} ${THEME.dim}focus${THEME.reset}  ` +
+      `${THEME.white}←/→${THEME.reset} ${THEME.dim}change${THEME.reset}  ` +
+      `${THEME.white}Enter${THEME.reset} ${THEME.dim}launch${THEME.reset}  ` +
+      `${THEME.white}Esc${THEME.reset} ${THEME.dim}cancel${THEME.reset}`,
+    "",
+    dispatchField(
+      "Prompt",
+      promptPreview[0]
+        ? `${THEME.white}${promptPreview[0]}${THEME.reset}`
+        : `${THEME.muted}(empty)${THEME.reset}`,
+      sheet.focusedField === 0,
+    ),
+    ...promptPreview.slice(1).map((line) => `  ${THEME.muted}${line}${THEME.reset}`),
+    "",
+    dispatchField("Action", `${THEME.white}${sheet.action}${THEME.reset}`, sheet.focusedField === 1),
+    dispatchField(
+      "Mode",
+      sheet.mode === "managed"
+        ? `${THEME.white}${sheet.mode}${THEME.reset}`
+        : `${THEME.warning}${sheet.mode}${THEME.reset} ${THEME.dim}(later phase)${THEME.reset}`,
+      sheet.focusedField === 2,
+    ),
+    dispatchField(
+      "Agent",
+      `${THEME.white}${AGENTS[sheet.agentIndex]?.name ?? AGENTS[0].name}${THEME.reset}`,
+      sheet.focusedField === 3,
+    ),
+  ]
+
+  if (sheet.error) {
+    content.push("")
+    content.push(`${THEME.error}${sheet.error}${THEME.reset}`)
+  }
+
+  const overlay = centerBlock(
+    renderBox("Dispatch Sheet", content, sheetWidth, THEME, {
+      style: "rounded",
+      titleAlign: "left",
+      padding: 1,
+    }),
+    width,
+  )
+
+  for (let i = 0; i < overlay.length; i++) {
+    const lineIndex = startY + i
+    if (lineIndex < lines.length) {
+      lines[lineIndex] = overlay[i]
+    }
   }
 
   return lines.join("\n")

@@ -9,10 +9,12 @@ export interface SurfaceMeta {
 const SURFACE_META: Record<InputMode, SurfaceMeta> = {
   main: { label: "main", stage: "supported", group: "core" },
   commands: { label: "commands", stage: "supported", group: "core" },
+  "dispatch-sheet": { label: "dispatch-sheet", stage: "supported", group: "core" },
   integrations: { label: "integrations", stage: "supported", group: "core" },
   security: { label: "security", stage: "supported", group: "core" },
   audit: { label: "audit", stage: "supported", group: "core" },
   policy: { label: "policy", stage: "supported", group: "core" },
+  "run-detail": { label: "run-detail", stage: "supported", group: "core" },
   result: { label: "result", stage: "supported", group: "core" },
   setup: { label: "setup", stage: "supported", group: "setup" },
   "hunt-watch": { label: "watch", stage: "supported", group: "hunt" },

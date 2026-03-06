@@ -66,6 +66,14 @@ export interface Screen {
 export interface AppController {
   /** Navigate to a different screen */
   setScreen(mode: InputMode): void
+  /** Launch the current dispatch sheet selection */
+  launchDispatchSheet(): void
+  /** Close the dispatch confirmation sheet */
+  closeDispatchSheet(): void
+  /** Open a managed run in the run-detail surface */
+  openRun(runId: string): void
+  /** Mark a managed run as canceled from the TUI */
+  cancelRun(runId: string): void
   /** Trigger a re-render */
   render(): void
   /** Run healthcheck */
@@ -109,10 +117,12 @@ export interface Command {
 export type InputMode =
   | "main"
   | "commands"
+  | "dispatch-sheet"
   | "integrations"
   | "security"
   | "audit"
   | "policy"
+  | "run-detail"
   | "result"
   | "setup"
   // Hunt screens
@@ -133,6 +143,61 @@ export type HomeFocus = "prompt" | "actions" | "nav"
 // =============================================================================
 // DISPATCH RESULT
 // =============================================================================
+
+export type DispatchExecutionMode = "managed" | "attach" | "external"
+
+export type RunPhase =
+  | "draft"
+  | "launching"
+  | "routing"
+  | "executing"
+  | "verifying"
+  | "review_ready"
+  | "completed"
+  | "failed"
+  | "canceled"
+
+export interface RunEvent {
+  timestamp: string
+  kind: "status" | "log" | "warning" | "error"
+  message: string
+}
+
+export interface RunRecord {
+  id: string
+  title: string
+  prompt: string
+  action: "dispatch" | "speculate"
+  agentId: string
+  agentLabel: string
+  mode: DispatchExecutionMode
+  phase: RunPhase
+  createdAt: string
+  updatedAt: string
+  workcellId: string | null
+  worktreePath: string | null
+  routing: DispatchResultInfo["routing"] | null
+  execution: DispatchResultInfo["execution"] | null
+  verification: DispatchResultInfo["verification"] | null
+  result: DispatchResultInfo | null
+  error: string | null
+  events: RunEvent[]
+}
+
+export interface RunListState {
+  entries: RunRecord[]
+  selectedRunId: string | null
+}
+
+export interface DispatchSheetState {
+  open: boolean
+  prompt: string
+  action: "dispatch" | "speculate"
+  mode: DispatchExecutionMode
+  agentIndex: number
+  focusedField: 0 | 1 | 2 | 3
+  error: string | null
+}
 
 export interface DispatchResultInfo {
   success: boolean
@@ -355,6 +420,12 @@ export interface AppState {
   activePolicy: PolicyResponse | null
   securityError: string | null
 
+  // Dispatch sheet and managed runs
+  dispatchSheet: DispatchSheetState
+  runs: RunListState
+  activeRunId: string | null
+  runDetailEvents: ListViewport
+
   // Last dispatch result
   lastResult: DispatchResultInfo | null
 
@@ -505,5 +576,24 @@ export function createInitialAuditLogState(): AuditLogState {
     offset: 0,
     nextCursor: null,
     hasMore: false,
+  }
+}
+
+export function createInitialDispatchSheetState(): DispatchSheetState {
+  return {
+    open: false,
+    prompt: "",
+    action: "dispatch",
+    mode: "managed",
+    agentIndex: 0,
+    focusedField: 0,
+    error: null,
+  }
+}
+
+export function createInitialRunListState(): RunListState {
+  return {
+    entries: [],
+    selectedRunId: null,
   }
 }

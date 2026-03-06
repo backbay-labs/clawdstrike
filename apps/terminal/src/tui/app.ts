@@ -18,8 +18,15 @@ import { THEME, ESC, AGENTS } from "./theme"
 import { renderStatusBar } from "./components/status-bar"
 import { getInvestigationCounts, isInvestigationStale } from "./investigation"
 import { getSurfaceMeta } from "./surfaces"
-import type { Screen, ScreenContext, AppState, InputMode, Command, AppController } from "./types"
-import { createInitialAuditLogState, createInitialHuntState, type RuntimeInfo } from "./types"
+import type { Screen, ScreenContext, AppState, InputMode, Command, AppController, DispatchResultInfo, RunRecord } from "./types"
+import {
+  createInitialAuditLogState,
+  createInitialDispatchSheetState,
+  createInitialHuntState,
+  createInitialRunListState,
+  type RuntimeInfo,
+} from "./types"
+import { createManagedRun, executeManagedRun, isRunTerminal } from "./runs"
 
 // Screen imports
 import { createMainScreen } from "./screens/main"
@@ -28,6 +35,7 @@ import { integrationsScreen } from "./screens/integrations"
 import { securityScreen } from "./screens/security"
 import { auditScreen } from "./screens/audit"
 import { policyScreen } from "./screens/policy"
+import { runDetailScreen } from "./screens/run-detail"
 import { resultScreen } from "./screens/result"
 
 // Hunt screen imports
@@ -84,6 +92,7 @@ export class TUIApp implements AppController {
   private width: number = 80
   private height: number = 24
   private cwd: string
+  private canceledRunIds = new Set<string>()
 
   private commands: Command[]
   private screens: Map<string, Screen>
@@ -121,6 +130,10 @@ export class TUIApp implements AppController {
       auditStats: null,
       activePolicy: null,
       securityError: null,
+      dispatchSheet: createInitialDispatchSheetState(),
+      runs: createInitialRunListState(),
+      activeRunId: null,
+      runDetailEvents: { offset: 0, selected: 0 },
       lastResult: null,
       setupDetection: null,
       setupStep: "detecting",
@@ -158,11 +171,13 @@ export class TUIApp implements AppController {
     this.screens = new Map<string, Screen>([
       ["main", mainScreen],
       ["commands", mainScreen], // commands overlay shares the main screen
+      ["dispatch-sheet", mainScreen], // dispatch overlay shares the main screen
       ["setup", setupScreen],
       ["integrations", integrationsScreen],
       ["security", securityScreen],
       ["audit", auditScreen],
       ["policy", policyScreen],
+      ["run-detail", runDetailScreen],
       ["result", resultScreen],
       ["hunt-watch", huntWatchScreen],
       ["hunt-scan", huntScanScreen],
@@ -651,6 +666,87 @@ export class TUIApp implements AppController {
     this.render()
   }
 
+  launchDispatchSheet(): void {
+    if (!this.state.dispatchSheet.open) {
+      return
+    }
+
+    if (this.state.dispatchSheet.mode !== "managed") {
+      this.state.dispatchSheet = {
+        ...this.state.dispatchSheet,
+        error: `${this.state.dispatchSheet.mode} mode is reserved for later phases.`,
+      }
+      this.render()
+      return
+    }
+
+    const { prompt, action, agentIndex } = this.state.dispatchSheet
+    const agent = AGENTS[agentIndex]
+    const run = createManagedRun({
+      prompt,
+      action,
+      agentId: agent.id,
+      agentLabel: agent.name,
+    })
+
+    this.state.agentIndex = agentIndex
+    this.state.dispatchSheet = createInitialDispatchSheetState()
+    this.state.promptBuffer = ""
+    this.replaceRun(run)
+    this.state.statusMessage =
+      `${THEME.accent}⠋${THEME.reset} ${action === "dispatch" ? "Managed run launched" : "Managed speculation launched"} via ${agent.name}`
+    this.syncManagedRunState()
+    this.openRun(run.id)
+
+    void this.launchManagedRun(run)
+  }
+
+  closeDispatchSheet(): void {
+    this.state.dispatchSheet = createInitialDispatchSheetState()
+    this.state.inputMode = "main"
+    this.state.homeFocus = "prompt"
+    this.state.homePromptTraceStartFrame = this.state.animationFrame
+    this.render()
+  }
+
+  openRun(runId: string): void {
+    const run = this.state.runs.entries.find((entry) => entry.id === runId)
+    if (!run) {
+      return
+    }
+
+    this.state.activeRunId = runId
+    this.state.runs.selectedRunId = runId
+    const lastEventIndex = Math.max(0, run.events.length - 1)
+    this.state.runDetailEvents = { offset: Math.max(0, lastEventIndex - 5), selected: lastEventIndex }
+    this.setScreen("run-detail")
+  }
+
+  cancelRun(runId: string): void {
+    const run = this.state.runs.entries.find((entry) => entry.id === runId)
+    if (!run || isRunTerminal(run.phase)) {
+      return
+    }
+
+    this.canceledRunIds.add(runId)
+    this.replaceRun({
+      ...run,
+      phase: "canceled",
+      updatedAt: new Date().toISOString(),
+      events: [
+        ...run.events,
+        {
+          timestamp: new Date().toISOString(),
+          kind: "warning",
+          message: "Run canceled from the TUI",
+        },
+      ],
+    })
+    this.state.statusMessage = `${THEME.warning}!${THEME.reset} Run ${run.title} canceled from the TUI`
+    this.syncManagedRunState()
+    this.render()
+  }
+
   getCwd(): string {
     return this.cwd
   }
@@ -667,7 +763,7 @@ export class TUIApp implements AppController {
   private async refresh(): Promise<void> {
     try {
       const active = Telemetry.getActive()
-      this.state.activeRuns = active.length
+      this.state.activeRuns = Math.max(active.length, this.getManagedActiveRunCount())
 
       const beads = await Beads.query({ status: "open", limit: 100 })
       this.state.openBeads = beads.length
@@ -687,85 +783,143 @@ export class TUIApp implements AppController {
   // ACTIONS
   // ===========================================================================
 
+  private getManagedActiveRunCount(): number {
+    return this.state.runs.entries.filter((entry) => !isRunTerminal(entry.phase)).length
+  }
+
+  private syncManagedRunState(): void {
+    const activeRunCount = this.getManagedActiveRunCount()
+    this.state.isRunning = activeRunCount > 0
+    this.state.activeRuns = activeRunCount
+  }
+
+  private replaceRun(nextRun: RunRecord): void {
+    const entries = [...this.state.runs.entries]
+    const index = entries.findIndex((entry) => entry.id === nextRun.id)
+
+    if (index >= 0) {
+      entries[index] = nextRun
+    } else {
+      entries.unshift(nextRun)
+    }
+
+    entries.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+    this.state.runs.entries = entries
+
+    if (!this.state.activeRunId) {
+      this.state.activeRunId = nextRun.id
+    }
+    if (!this.state.runs.selectedRunId) {
+      this.state.runs.selectedRunId = nextRun.id
+    }
+
+    if (this.state.activeRunId === nextRun.id) {
+      const lastEventIndex = Math.max(0, nextRun.events.length - 1)
+      this.state.runDetailEvents = { offset: Math.max(0, lastEventIndex - 5), selected: lastEventIndex }
+    }
+  }
+
+  private openDispatchSheet(action: "dispatch" | "speculate"): void {
+    const prompt = this.state.promptBuffer.trim()
+    if (!prompt) {
+      return
+    }
+
+    this.state.dispatchSheet = {
+      open: true,
+      prompt,
+      action,
+      mode: "managed",
+      agentIndex: this.state.agentIndex,
+      focusedField: 0,
+      error: null,
+    }
+    this.state.inputMode = "dispatch-sheet"
+    this.render()
+  }
+
+  private finishRun(run: RunRecord, result: DispatchResultInfo): void {
+    const nextPhase = result.success
+      ? result.verification
+        ? "review_ready"
+        : "completed"
+      : "failed"
+    const nextRun: RunRecord = {
+      ...run,
+      phase: nextPhase,
+      updatedAt: new Date().toISOString(),
+      routing: result.routing ?? null,
+      execution: result.execution ?? null,
+      verification: result.verification ?? null,
+      result,
+      error: result.error ?? result.execution?.error ?? null,
+      workcellId: result.taskId || null,
+      events: [
+        ...run.events,
+        {
+          timestamp: new Date().toISOString(),
+          kind: result.success ? "status" : "error",
+          message: result.success
+            ? nextPhase === "review_ready"
+              ? "Run ready for review"
+              : "Run completed"
+            : `Run failed: ${result.error ?? result.execution?.error ?? "unknown error"}`,
+        },
+      ],
+    }
+
+    this.replaceRun(nextRun)
+    this.state.lastResult = result
+    this.state.statusMessage = result.success
+      ? `${THEME.success}✓${THEME.reset} ${run.agentLabel} ${nextPhase === "review_ready" ? "ready for review" : "completed"}`
+      : `${THEME.error}✗${THEME.reset} ${run.agentLabel} failed`
+    this.syncManagedRunState()
+    this.render()
+  }
+
+  private async launchManagedRun(run: RunRecord): Promise<void> {
+    try {
+      const { executeTool } = await import("../tools")
+      await executeManagedRun(run, {
+        cwd: this.cwd,
+        projectId: "default",
+        executeTool,
+        shouldAbort: () => this.canceledRunIds.has(run.id),
+        onUpdate: (nextRun) => {
+          this.replaceRun(nextRun)
+          if (nextRun.result) {
+            this.state.lastResult = nextRun.result
+          }
+          if (isRunTerminal(nextRun.phase)) {
+            this.canceledRunIds.delete(nextRun.id)
+            this.state.statusMessage =
+              nextRun.phase === "canceled"
+                ? `${THEME.warning}!${THEME.reset} ${nextRun.title} canceled`
+                : nextRun.result?.success
+                  ? `${THEME.success}✓${THEME.reset} ${nextRun.agentLabel} ${nextRun.phase === "review_ready" ? "ready for review" : "completed"}`
+                  : `${THEME.error}✗${THEME.reset} ${nextRun.agentLabel} failed`
+          }
+          this.syncManagedRunState()
+          this.render()
+        },
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      this.finishRun(run, {
+        success: false,
+        taskId: "",
+        agent: run.agentLabel,
+        action: run.action,
+        error: message,
+        duration: 0,
+      })
+    }
+  }
+
   async submitPrompt(action: "dispatch" | "speculate"): Promise<void> {
     const prompt = this.state.promptBuffer.trim()
     if (!prompt) return
-
-    const agent = AGENTS[this.state.agentIndex]
-    this.state.statusMessage = `${THEME.accent}⠋${THEME.reset} ${action === "dispatch" ? "Dispatching" : "Speculating"} via ${agent.name}...`
-    this.state.isRunning = true
-    this.render()
-
-    const startTime = Date.now()
-
-    try {
-      const { executeTool } = await import("../tools")
-      const context = { cwd: this.cwd, projectId: "default" }
-
-      if (action === "dispatch") {
-        const raw = await executeTool("dispatch", { prompt, toolchain: agent.id }, context) as Record<string, unknown>
-        const duration = Date.now() - startTime
-        const routing = raw.routing as Record<string, unknown> | undefined
-        const result = raw.result as Record<string, unknown> | undefined
-        const verification = raw.verification as Record<string, unknown> | undefined
-        const telemetry = result?.telemetry as Record<string, unknown> | undefined
-        this.state.lastResult = {
-          success: raw.success as boolean,
-          taskId: (raw.taskId as string) ?? "",
-          agent: agent.name,
-          action,
-          routing: routing ? {
-            toolchain: routing.toolchain as string,
-            strategy: routing.strategy as string,
-            gates: (routing.gates as string[]) ?? [],
-          } : undefined,
-          execution: result ? {
-            success: result.success as boolean,
-            error: result.error as string | undefined,
-            model: telemetry?.model as string | undefined,
-            tokens: telemetry?.tokens as { input: number; output: number } | undefined,
-            cost: telemetry?.cost as number | undefined,
-          } : undefined,
-          verification: verification ? {
-            allPassed: verification.allPassed as boolean,
-            score: verification.score as number,
-            summary: verification.summary as string,
-            results: ((verification.results as Array<Record<string, unknown>>) ?? []).map(r => ({
-              gate: r.gate as string,
-              passed: r.passed as boolean,
-            })),
-          } : undefined,
-          error: raw.error as string | undefined,
-          duration,
-        }
-      } else {
-        const raw = await executeTool("speculate", { prompt }, context) as Record<string, unknown>
-        const duration = Date.now() - startTime
-        this.state.lastResult = {
-          success: raw.success as boolean,
-          taskId: "",
-          agent: "multi",
-          action,
-          error: raw.success ? undefined : "No passing result from speculation",
-          duration,
-        }
-      }
-    } catch (err) {
-      this.state.lastResult = {
-        success: false,
-        taskId: "",
-        agent: agent.name,
-        action,
-        error: err instanceof Error ? err.message : String(err),
-        duration: Date.now() - startTime,
-      }
-    }
-
-    this.state.isRunning = false
-    this.state.promptBuffer = ""
-    this.state.statusMessage = ""
-    this.state.inputMode = "result"
-    this.render()
+    this.openDispatchSheet(action)
   }
 
   async runGates(): Promise<void> {
@@ -880,14 +1034,23 @@ export class TUIApp implements AppController {
     console.log("")
     console.log(`  ${THEME.secondary}↑/↓${THEME.reset}  ${THEME.muted}or${THEME.reset}  ${THEME.secondary}j/k${THEME.reset}     Navigate`)
     console.log(`  ${THEME.secondary}Enter${THEME.reset}  ${THEME.muted}or${THEME.reset}  ${THEME.secondary}Space${THEME.reset}   Select`)
-    console.log(`  ${THEME.secondary}d${THEME.reset}                   Dispatch`)
-    console.log(`  ${THEME.secondary}s${THEME.reset}                   Speculate`)
+    console.log(`  ${THEME.secondary}Enter${THEME.reset}               Open dispatch sheet from the home prompt`)
+    console.log(`  ${THEME.secondary}Tab${THEME.reset}                 Switch between prompt and actions`)
+    console.log(`  ${THEME.secondary}Esc${THEME.reset}                 Toggle prompt and nav focus`)
     console.log(`  ${THEME.secondary}g${THEME.reset}                   Gates`)
     console.log(`  ${THEME.secondary}b${THEME.reset}                   Beads`)
     console.log(`  ${THEME.secondary}r${THEME.reset}                   Runs`)
     console.log(`  ${THEME.secondary}i${THEME.reset}                   Integrations`)
+    console.log(`  ${THEME.secondary}Ctrl+N${THEME.reset}              Cycle agents`)
     console.log(`  ${THEME.secondary}Ctrl+S${THEME.reset}              Security overview`)
     console.log(`  ${THEME.secondary}Ctrl+P${THEME.reset}              Command palette`)
+    console.log("")
+    console.log(THEME.white + THEME.bold + "  Dispatch Sheet" + THEME.reset)
+    console.log("")
+    console.log(`  ${THEME.secondary}↑/↓${THEME.reset}                 Focus action / mode / agent`)
+    console.log(`  ${THEME.secondary}←/→${THEME.reset}                 Change selected field`)
+    console.log(`  ${THEME.secondary}d / s${THEME.reset}               Set action to dispatch or speculate`)
+    console.log(`  ${THEME.secondary}Enter${THEME.reset}               Launch managed run`)
     console.log("")
     console.log(THEME.white + THEME.bold + "  Hunt Commands" + THEME.reset)
     console.log("")
