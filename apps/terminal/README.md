@@ -91,6 +91,7 @@ The terminal subtree includes a Codex agent pack for live dogfooding, UI polish,
 release hardening, and multi-agent debugging.
 
 - Usage guide: [docs/codex-agent-pack.md](./docs/codex-agent-pack.md)
+- Repo-wide swarm playbook: [../../docs/plans/multi-agent/codex-swarm-playbook.md](../../docs/plans/multi-agent/codex-swarm-playbook.md)
 - Project config: [.codex/config.toml](../../.codex/config.toml)
 - Terminal working agreement: [AGENTS.md](./AGENTS.md)
 

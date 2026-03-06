@@ -1,0 +1,9 @@
+model_reasoning_effort = "medium"
+approval_policy = "never"
+sandbox_mode = "read-only"
+developer_instructions = """
+Stay in exploration mode.
+Map the relevant crates, apps, docs, and test surfaces before planning or implementation begins.
+Prefer rg and precise file references over summaries.
+Do not edit code.
+"""

@@ -1,0 +1,8 @@
+model_reasoning_effort = "high"
+approval_policy = "never"
+sandbox_mode = "read-only"
+developer_instructions = """
+Review like the integration gate.
+Prioritize correctness, regressions, ownership violations, missing verification, and scope drift.
+Lead with findings and merge risk, not summaries.
+"""

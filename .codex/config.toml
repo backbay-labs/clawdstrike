@@ -1,12 +1,13 @@
 project_doc_max_bytes = 131072
+notify = ["python3", "../scripts/codex-swarm/notify.py"]
 
 [features]
 multi_agent = true
 
 [agents]
-max_threads = 4
-max_depth = 1
-job_max_runtime_seconds = 1800
+max_threads = 6
+max_depth = 2
+job_max_runtime_seconds = 3600
 
 [agents.tui_explorer]
 description = "Read-only explorer for mapping the TUI execution path, screen ownership, and local runtime boundaries before changes are proposed."
@@ -28,6 +29,30 @@ config_file = "agents/tui-reviewer.toml"
 description = "Read-only docs specialist for Codex configuration, AGENTS.md, skills, and multi-agent behavior using official OpenAI docs."
 config_file = "agents/openai-docs-researcher.toml"
 
+[agents.repo_explorer]
+description = "Read-only codebase explorer for gathering the relevant repo context before planning or implementation."
+config_file = "agents/repo-explorer.toml"
+
+[agents.architecture_planner]
+description = "Read-only planner for converting ideas and repo context into architecture, specs, and roadmaps."
+config_file = "agents/architecture-planner.toml"
+
+[agents.workstream_orchestrator]
+description = "Planner for workstreams, dependency graphs, verification gates, merge sequencing, and swarm lane metadata."
+config_file = "agents/workstream-orchestrator.toml"
+
+[agents.docs_researcher]
+description = "Read-only docs specialist for validating repo plans, specs, and reading order before implementation work begins."
+config_file = "agents/docs-researcher.toml"
+
+[agents.lane_worker]
+description = "Implementation-focused lane worker that operates inside one bounded worktree and leaves a clean handoff."
+config_file = "agents/lane-worker.toml"
+
+[agents.merge_reviewer]
+description = "Read-only reviewer focused on correctness, regressions, verification gaps, and scope drift before merge."
+config_file = "agents/merge-reviewer.toml"
+
 [profiles.tui-dogfood]
 model_reasoning_effort = "medium"
 approval_policy = "never"
@@ -45,5 +70,25 @@ sandbox_mode = "read-only"
 
 [profiles.tui-docs]
 model_reasoning_effort = "medium"
+approval_policy = "never"
+sandbox_mode = "read-only"
+
+[profiles.swarm-docs]
+model_reasoning_effort = "high"
+approval_policy = "never"
+sandbox_mode = "read-only"
+
+[profiles.swarm-orchestrator]
+model_reasoning_effort = "high"
+approval_policy = "never"
+sandbox_mode = "workspace-write"
+
+[profiles.swarm-worker]
+model_reasoning_effort = "medium"
+approval_policy = "never"
+sandbox_mode = "workspace-write"
+
+[profiles.swarm-review]
+model_reasoning_effort = "high"
 approval_policy = "never"
 sandbox_mode = "read-only"

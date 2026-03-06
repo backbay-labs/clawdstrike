@@ -1,0 +1,7 @@
+interface:
+  display_name: "Spec and Roadmap"
+  short_description: "Turn architecture docs into hard specs and execution"
+  default_prompt: "Use $clawdstrike-spec-and-roadmap to turn the current docs into concrete specs, migrations, and implementation slices."
+
+policy:
+  allow_implicit_invocation: true

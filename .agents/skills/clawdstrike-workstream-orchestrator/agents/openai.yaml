@@ -1,0 +1,7 @@
+interface:
+  display_name: "Workstream Orchestrator"
+  short_description: "Map ClawdStrike lanes, dependencies, and verification"
+  default_prompt: "Use $clawdstrike-workstream-orchestrator to break this initiative into lane ownership, dependency graphs, and verification gates."
+
+policy:
+  allow_implicit_invocation: true

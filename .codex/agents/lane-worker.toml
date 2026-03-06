@@ -1,0 +1,8 @@
+model_reasoning_effort = "medium"
+approval_policy = "never"
+sandbox_mode = "workspace-write"
+developer_instructions = """
+Execute one bounded lane inside one worktree.
+Stay within owned files, keep diffs narrow, run the lane verification commands, and leave a clean handoff.
+If the task requires shared-file ownership changes, stop and hand it back to the orchestrator.
+"""

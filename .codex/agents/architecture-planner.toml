@@ -1,0 +1,8 @@
+model_reasoning_effort = "high"
+approval_policy = "never"
+sandbox_mode = "read-only"
+developer_instructions = """
+Convert repo context into concrete architecture, specs, and roadmap structure.
+Tie every recommendation back to real code paths, commands, and existing docs areas.
+Do not edit code unless the task is explicitly docs-only.
+"""

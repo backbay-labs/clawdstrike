@@ -1,0 +1,8 @@
+model_reasoning_effort = "high"
+approval_policy = "never"
+sandbox_mode = "workspace-write"
+developer_instructions = """
+Own coordination artifacts, not feature code.
+Split work into bounded lanes, define explicit ownership, dependency order, verification gates, and merge sequence.
+Update .codex/swarm/lanes.tsv and .codex/swarm/waves.tsv when lane topology changes.
+"""

@@ -1,4 +1,7 @@
 interface:
   display_name: "TUI Multi-Agent Debug"
-  short_description: "Split TUI debugging across explorer, dogfooder, worker, docs, and reviewer roles."
-  default_prompt: "Use tui_explorer, tui_dogfooder, tui_worker, tui_reviewer, and openai_docs_researcher as needed to investigate and fix this ClawdStrike TUI issue."
+  short_description: "Split a TUI issue across explorer, dogfooder, worker, docs, and review roles"
+  default_prompt: "Use $clawdstrike-tui-multi-agent-debug to split this TUI issue across the right focused sub-agents."
+
+policy:
+  allow_implicit_invocation: false

@@ -2,12 +2,48 @@
 
 This terminal subtree ships a Codex agent pack tuned for ClawdStrike TUI dogfooding, UI polish, release hardening, and targeted multi-agent debugging.
 
+The repo root now also includes a generic swarm/orchestration layer for parallel
+worktree execution across broader initiatives. Use the TUI pack for
+`apps/terminal`-specific work. Use the swarm layer when the job is lane
+planning, worktree coordination, or bounded parallel execution across multiple
+surfaces.
+
 ## File Layout
 
 - `.codex/config.toml`: project-scoped Codex profiles and multi-agent role registry
 - `.codex/agents/*.toml`: per-role defaults and role-specific instructions
+- `.codex/swarm/lanes.tsv` and `.codex/swarm/waves.tsv`: initiative lane metadata and wave order for parallel work
 - `.agents/skills/*/SKILL.md`: repo-scoped skills for TUI dogfooding, polish, hardening, and multi-agent coordination
 - `apps/terminal/AGENTS.md`: terminal-subtree working agreement that tightens quality bars for supported beta screens
+- `docs/plans/multi-agent/codex-swarm-playbook.md`: project-wide swarm/orchestration guide
+
+## Two Layers
+
+### Generic swarm layer
+
+Use the generic swarm layer when the task needs:
+
+- idea-to-architecture work
+- repo-wide specs and roadmaps
+- lane ownership and dependency graphs
+- parallel worktrees
+- worker/reviewer/orchestrator separation
+
+Relevant pieces:
+
+- profiles: `swarm-docs`, `swarm-orchestrator`, `swarm-worker`, `swarm-review`
+- roles: `repo_explorer`, `architecture_planner`, `workstream_orchestrator`, `docs_researcher`, `lane_worker`, `merge_reviewer`
+- skills: `$clawdstrike-idea-to-architecture`, `$clawdstrike-spec-and-roadmap`, `$clawdstrike-workstream-orchestrator`, `$clawdstrike-swarm-supervisor`, `$clawdstrike-lane-executor`, `$clawdstrike-merge-verifier`
+
+Playbook:
+
+- [../../docs/plans/multi-agent/codex-swarm-playbook.md](../../docs/plans/multi-agent/codex-swarm-playbook.md)
+
+### TUI-specific layer
+
+Use the TUI-specific layer when the task is specifically about operator-shell
+behavior, PTY reproduction, layout/polish, or TUI release hardening inside
+`apps/terminal`.
 
 ## Profiles
 

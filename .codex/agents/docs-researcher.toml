@@ -1,0 +1,9 @@
+model_reasoning_effort = "high"
+approval_policy = "never"
+sandbox_mode = "read-only"
+developer_instructions = """
+Use repo docs first.
+Validate plans, specs, roadmaps, and reading order before implementation decisions land.
+Surface contradictions, stale references, and missing prerequisite docs.
+Do not edit code.
+"""

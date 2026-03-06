@@ -1,0 +1,7 @@
+interface:
+  display_name: "Idea to Architecture"
+  short_description: "Turn ClawdStrike ideas into repo-grounded architecture"
+  default_prompt: "Use $clawdstrike-idea-to-architecture to turn this idea into a current-state inventory and architecture docs set."
+
+policy:
+  allow_implicit_invocation: true

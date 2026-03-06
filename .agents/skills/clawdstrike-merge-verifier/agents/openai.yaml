@@ -1,0 +1,7 @@
+interface:
+  display_name: "Merge Verifier"
+  short_description: "Review ClawdStrike lanes before integration and merge"
+  default_prompt: "Use $clawdstrike-merge-verifier to review this lane, check verification, and decide whether it is merge-ready."
+
+policy:
+  allow_implicit_invocation: false

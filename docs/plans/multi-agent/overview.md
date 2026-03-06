@@ -2,6 +2,9 @@
 
 ## Executive Summary
 
+For Codex worktree orchestration in this repo, also read
+`docs/plans/multi-agent/codex-swarm-playbook.md`.
+
 As AI systems evolve from single-agent architectures to multi-agent orchestrations, security boundaries become exponentially more complex. This specification defines the security primitives, protocols, and enforcement mechanisms required to enable secure multi-agent coordination within the Clawdstrike security framework.
 
 Multi-agent systems introduce novel threat vectors that single-agent security models cannot address:
