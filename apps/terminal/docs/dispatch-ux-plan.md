@@ -7,6 +7,11 @@ Implement dispatch as a managed run workflow inside ClawdStrike TUI.
 Concrete Phase 1 file-by-file breakdown:
 
 - [Dispatch Phase 1 Engineering Breakdown](./dispatch-phase1-engineering.md)
+- [Dispatch Phases 2-5 Overview](./dispatch-phases2-5-overview.md)
+- [Dispatch Phase 2 Engineering Breakdown](./dispatch-phase2-engineering.md)
+- [Dispatch Phase 3 Engineering Breakdown](./dispatch-phase3-engineering.md)
+- [Dispatch Phase 4 Engineering Breakdown](./dispatch-phase4-engineering.md)
+- [Dispatch Phase 5 Engineering Breakdown](./dispatch-phase5-engineering.md)
 
 The plan deliberately avoids:
 

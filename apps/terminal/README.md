@@ -99,6 +99,11 @@ The planned dispatch UX is documented separately:
 - Product spec: [docs/dispatch-ux-spec.md](./docs/dispatch-ux-spec.md)
 - Implementation plan: [docs/dispatch-ux-plan.md](./docs/dispatch-ux-plan.md)
 - Phase 1 engineering breakdown: [docs/dispatch-phase1-engineering.md](./docs/dispatch-phase1-engineering.md)
+- Phases 2-5 overview: [docs/dispatch-phases2-5-overview.md](./docs/dispatch-phases2-5-overview.md)
+- Phase 2 engineering breakdown: [docs/dispatch-phase2-engineering.md](./docs/dispatch-phase2-engineering.md)
+- Phase 3 engineering breakdown: [docs/dispatch-phase3-engineering.md](./docs/dispatch-phase3-engineering.md)
+- Phase 4 engineering breakdown: [docs/dispatch-phase4-engineering.md](./docs/dispatch-phase4-engineering.md)
+- Phase 5 engineering breakdown: [docs/dispatch-phase5-engineering.md](./docs/dispatch-phase5-engineering.md)
 
 ## CLI Usage
 
