@@ -262,6 +262,24 @@ describe("HushdClient", () => {
       expect(result!.events[0].decision).toBe("blocked")
     })
 
+    test("normalizes allow/deny decision filters for the daemon API", async () => {
+      const requestedUrls: string[] = []
+      globalThis.fetch = mock(async (input: string | URL | Request) => {
+        const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+        requestedUrls.push(url)
+        return new Response(JSON.stringify({ events: [], total: 0, offset: 0, limit: 50 }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      }) as unknown as typeof fetch
+
+      await client.getAuditDetailed({ decision: "allow" })
+      await client.getAuditDetailed({ decision: "deny" })
+
+      expect(requestedUrls[0]).toContain("decision=allowed")
+      expect(requestedUrls[1]).toContain("decision=blocked")
+    })
+
     test("returns null on error", async () => {
       mockFetchError()
       const result = await client.getAudit()

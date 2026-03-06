@@ -153,6 +153,16 @@ describe("Adapter availability", () => {
     await expect(ClaudeAdapter.isAvailable()).resolves.toBe(true)
   })
 
+  test("ClaudeAdapter.isAvailable returns false when auth status times out", async () => {
+    const tempDir = await withFakeCli(
+      "claude",
+      "#!/bin/sh\nif [ \"$1\" = \"auth\" ] && [ \"$2\" = \"status\" ]; then\n  sleep 2\n  exit 0\nfi\nexit 1\n"
+    )
+    await fs.mkdir(path.join(tempDir, ".claude"), { recursive: true })
+
+    await expect(ClaudeAdapter.isAvailable()).resolves.toBe(false)
+  })
+
   test("OpenCodeAdapter.isAvailable returns boolean", async () => {
     const result = await OpenCodeAdapter.isAvailable()
     expect(typeof result).toBe("boolean")

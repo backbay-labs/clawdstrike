@@ -49,13 +49,15 @@ async function checkClaudeAuthStatus(): Promise<boolean> {
       stderr: "ignore",
     })
 
+    let timedOut = false
     const timeout = setTimeout(() => {
+      timedOut = true
       proc.kill()
     }, CLAUDE_AUTH_STATUS_TIMEOUT_MS)
 
     const exitCode = await proc.exited
     clearTimeout(timeout)
-    return exitCode === 0
+    return !timedOut && exitCode === 0
   } catch {
     return false
   }

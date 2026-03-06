@@ -1162,7 +1162,8 @@ impl AuditQueue {
                 anyhow::bail!("Audit batch upload returned {}: {}", status, body.trim());
             }
 
-            match response.json::<FlushAuditBatchResponse>().await {
+            let body = response.text().await.unwrap_or_default();
+            match serde_json::from_str::<FlushAuditBatchResponse>(&body) {
                 Ok(summary) => {
                     if summary.duplicates > 0 {
                         tracing::info!(
@@ -1207,14 +1208,14 @@ impl AuditQueue {
                         .await;
                 }
                 Err(err) => {
+                    self.requeue_failed_flush(events).await;
                     tracing::warn!(
                         error = %err,
                         attempted,
-                        "Failed to parse audit batch response; assuming queued events were accepted"
+                        body = %body,
+                        "Failed to parse audit batch response; requeued audit outbox batch"
                     );
-                    flushed += attempted;
-                    self.persist_current_queue("after accepted audit batch fallback")
-                        .await;
+                    anyhow::bail!("Failed to parse audit batch response: {}", err);
                 }
             }
         }
@@ -2383,6 +2384,42 @@ mod tests {
         assert!(persisted.entries.is_empty());
 
         let _ = std::fs::remove_file(&queue.path);
+    }
+
+    #[tokio::test]
+    async fn audit_queue_flush_requeues_batch_when_response_body_is_invalid() {
+        use axum::{routing::post, Router};
+        use tokio::net::TcpListener;
+
+        let queue = AuditQueue::new_test_isolated();
+        queue.enqueue(sample_audit_event("evt-1")).await;
+        queue.enqueue(sample_audit_event("evt-2")).await;
+
+        let app = Router::new().route(
+            "/api/v1/audit/batch",
+            post(|| async { "not-json" }),
+        );
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let err = queue
+            .flush(&format!("http://{}", addr), None)
+            .await
+            .expect_err("invalid response bodies must requeue the batch");
+        assert!(err
+            .to_string()
+            .contains("Failed to parse audit batch response"));
+
+        let guard = queue.queue.lock().await;
+        let ids: Vec<_> = guard
+            .iter()
+            .filter_map(|event| event.get("id").and_then(|id| id.as_str()))
+            .collect();
+        assert_eq!(ids, vec!["evt-1", "evt-2"]);
     }
 
     #[tokio::test]

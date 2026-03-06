@@ -54,7 +54,7 @@ export interface AuditQuery {
   offset?: number
   cursor?: string
   action_type?: string
-  decision?: "allowed" | "blocked"
+  decision?: "allowed" | "blocked" | "allow" | "deny"
   guard?: string
   session_id?: string
   agent_id?: string

@@ -73,6 +73,18 @@ function extractTimestamp(payload: Record<string, unknown>): string {
   return firstString(payload, "timestamp") ?? new Date().toISOString()
 }
 
+function normalizeAuditDecisionQuery(
+  decision: AuditQuery["decision"],
+): "allowed" | "blocked" | undefined {
+  if (decision === "allow") {
+    return "allowed"
+  }
+  if (decision === "deny") {
+    return "blocked"
+  }
+  return decision
+}
+
 function normalizeSseEvent(
   eventType: string,
   payloadText: string,
@@ -412,7 +424,12 @@ export class HushdClient {
         if (query.cursor) params.set("cursor", query.cursor)
         if (query.event_type) params.set("event_type", query.event_type)
         if (query.action_type) params.set("action_type", query.action_type)
-        if (query.decision) params.set("decision", query.decision)
+        if (query.decision) {
+          const decision = normalizeAuditDecisionQuery(query.decision)
+          if (decision) {
+            params.set("decision", decision)
+          }
+        }
         if (query.guard) params.set("guard", query.guard)
         if (query.session_id) params.set("session_id", query.session_id)
         if (query.agent_id) params.set("agent_id", query.agent_id)
@@ -532,7 +549,7 @@ export class HushdClient {
               continue
             }
             if (line.startsWith("event:")) {
-              eventType = line.slice(6).trimStart() || "message"
+              eventType = line.slice(6).replace(/^ /, "") || "message"
               continue
             }
             if (line.startsWith("data:")) {

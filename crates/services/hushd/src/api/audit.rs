@@ -206,20 +206,23 @@ pub async fn ingest_audit_batch(
 
         match state.ledger.record_async(event.clone()).await {
             Ok(()) => {
+                let event_id = event.id.clone();
                 accepted += 1;
-                accepted_ids.push(event.id);
+                accepted_ids.push(event_id);
                 state.metrics.inc_audit_event();
                 if let Some(forwarder) = &state.audit_forwarder {
                     forwarder.try_enqueue(event);
                 }
             }
             Err(err) if is_duplicate_audit_error(&err) => {
+                let event_id = event.id.clone();
                 duplicates += 1;
-                duplicate_ids.push(event.id);
+                duplicate_ids.push(event_id);
             }
             Err(err) => {
+                let event_id = event.id.clone();
                 rejected += 1;
-                rejected_ids.push(event.id);
+                rejected_ids.push(event_id);
                 state.metrics.inc_audit_write_failure();
                 tracing::warn!(error = %err, "Failed to ingest audit batch event");
             }
