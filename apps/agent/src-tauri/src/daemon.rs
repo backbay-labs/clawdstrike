@@ -1063,6 +1063,13 @@ impl AuditQueue {
         }
     }
 
+    async fn persist_current_queue(&self, context: &str) {
+        let queue = self.queue.lock().await;
+        if let Err(err) = persist_audit_queue(&self.path, &queue) {
+            tracing::warn!(error = %err, context, "Failed to persist audit outbox");
+        }
+    }
+
     async fn requeue_failed_flush(&self, events: VecDeque<serde_json::Value>) {
         // Preserve chronological ordering: front=oldest, back=newest.
         // If over capacity, drop oldest entries to match `enqueue()` semantics.
@@ -1196,6 +1203,8 @@ impl AuditQueue {
                         );
                     }
                     flushed += summary.accepted;
+                    self.persist_current_queue("after accepted audit batch confirmation")
+                        .await;
                 }
                 Err(err) => {
                     tracing::warn!(
@@ -1204,6 +1213,8 @@ impl AuditQueue {
                         "Failed to parse audit batch response; assuming queued events were accepted"
                     );
                     flushed += attempted;
+                    self.persist_current_queue("after accepted audit batch fallback")
+                        .await;
                 }
             }
         }
@@ -2334,6 +2345,44 @@ mod tests {
         let flushed = queue.flush(&format!("http://{}", addr), None).await.unwrap();
         assert_eq!(flushed, 0);
         assert_eq!(queue.len().await, 0);
+    }
+
+    #[tokio::test]
+    async fn audit_queue_flush_persists_empty_outbox_after_acceptance() {
+        use axum::{routing::post, Json, Router};
+        use tokio::net::TcpListener;
+
+        let queue = AuditQueue::new_test_isolated();
+        queue.enqueue(sample_audit_event("evt-1")).await;
+        queue.enqueue(sample_audit_event("evt-2")).await;
+
+        let app = Router::new().route(
+            "/api/v1/audit/batch",
+            post(|| async {
+                Json(serde_json::json!({
+                    "accepted": 2,
+                    "duplicates": 0,
+                    "rejected": 0,
+                    "accepted_ids": ["evt-1", "evt-2"]
+                }))
+            }),
+        );
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let flushed = queue.flush(&format!("http://{}", addr), None).await.unwrap();
+        assert_eq!(flushed, 2);
+        assert_eq!(queue.len().await, 0);
+
+        let persisted: PersistedAuditQueue =
+            serde_json::from_slice(&std::fs::read(&queue.path).unwrap()).unwrap();
+        assert!(persisted.entries.is_empty());
+
+        let _ = std::fs::remove_file(&queue.path);
     }
 
     #[tokio::test]

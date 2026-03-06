@@ -384,6 +384,34 @@ describe("HushdClient", () => {
       expect(events[0]?.data.decision).toBe("deny")
       expect(events[0]?.data.message).toBe("blocked by policy")
     })
+
+    test("flushes CRLF-delimited SSE frames and normalizes unknown severity to null", async () => {
+      const encoder = new TextEncoder()
+      globalThis.fetch = mock(async () => new Response(new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode("event: check\r\n"))
+          controller.enqueue(encoder.encode("data: {\"timestamp\":\"2026-03-06T06:00:01Z\",\"action_type\":\"read\",\"target\":\"/tmp/demo\",\"allowed\":true,\"severity\":\"notice\",\"message\":\"allowed by policy\"}\r\n\r\n"))
+          controller.close()
+        },
+      }), {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      })) as unknown as typeof fetch
+
+      const events: Array<{ type: string; timestamp: string; data: Record<string, unknown> }> = []
+      client.connectSSE((event) => {
+        events.push(event as { type: string; timestamp: string; data: Record<string, unknown> })
+      })
+
+      await Bun.sleep(25)
+      client.disconnectSSE()
+
+      expect(events).toHaveLength(1)
+      expect(events[0]?.type).toBe("check")
+      expect(events[0]?.timestamp).toBe("2026-03-06T06:00:01Z")
+      expect(events[0]?.data.decision).toBe("allow")
+      expect(events[0]?.data.severity).toBeNull()
+    })
   })
 })
 

@@ -55,7 +55,7 @@ function normalizeDecision(
 
 function normalizeSeverity(
   payload: Record<string, unknown>,
-): "info" | "warning" | "error" | "critical" | null | undefined {
+): "info" | "warning" | "error" | "critical" | null {
   const severity = firstString(payload, "severity")
   if (
     severity === "info" ||
@@ -66,7 +66,7 @@ function normalizeSeverity(
     return severity
   }
 
-  return severity ? undefined : null
+  return null
 }
 
 function extractTimestamp(payload: Record<string, unknown>): string {
@@ -526,7 +526,8 @@ export class HushdClient {
           const lines = buffer.split("\n")
           buffer = lines.pop() ?? ""
 
-          for (const line of lines) {
+          for (const rawLine of lines) {
+            const line = rawLine.replace(/\r$/, "")
             if (line.startsWith(":")) {
               continue
             }
