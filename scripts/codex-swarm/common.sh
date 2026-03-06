@@ -277,6 +277,26 @@ while i < len(args):
 PY
 }
 
+swarm_codex_extra_overrides_sandbox() {
+  python3 - <<'PY'
+import os
+import shlex
+
+args = shlex.split(os.environ.get("CLAWDSTRIKE_SWARM_CODEX_ARGS", "").strip())
+i = 0
+while i < len(args):
+    arg = args[i]
+    if arg in ("-s", "--sandbox"):
+        print("true")
+        raise SystemExit(0)
+    if arg.startswith("--sandbox="):
+        print("true")
+        raise SystemExit(0)
+    i += 2 if arg in ("-a", "--ask-for-approval", "-s", "--sandbox") else 1
+print("false")
+PY
+}
+
 swarm_run_lane_bootstrap() {
   local lane="$1"
   local repo_root="${2:-$(swarm_repo_root)}"

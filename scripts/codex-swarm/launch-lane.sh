@@ -50,6 +50,7 @@ pid_file="$lane_dir/run.pid"
 exit_file="$lane_dir/run.exit"
 cmd_file="$lane_dir/run.cmd"
 declare -a codex_args=()
+extra_overrides_sandbox="false"
 
 if [[ ! -d "$worktree_path" ]]; then
   printf 'worktree missing for %s: %s\n' "$lane" "$worktree_path" >&2
@@ -64,7 +65,12 @@ fi
 
 rm -f "$log_file" "$stderr_file" "$final_file" "$pid_file" "$exit_file"
 swarm_write_lane_prompt "$lane" "$prompt_file" "$note" "$repo_root"
+extra_overrides_sandbox="$(swarm_codex_extra_overrides_sandbox)"
 while IFS= read -r arg; do
+  if [[ "$extra_overrides_sandbox" == "true" && "$arg" == "--sandbox" ]]; then
+    read -r _ || true
+    continue
+  fi
   codex_args+=("$arg")
 done < <(swarm_codex_profile_args "$profile_name")
 while IFS= read -r arg; do
