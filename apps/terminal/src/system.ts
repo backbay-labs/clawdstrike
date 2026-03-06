@@ -9,7 +9,3 @@ export function commandExists(command: string): boolean {
 export function homeDirFromEnv(): string | null {
   return process.env.HOME ?? process.env.USERPROFILE ?? null
 }
-
-export function homeDirOr(fallback = "."): string {
-  return homeDirFromEnv() ?? fallback
-}
