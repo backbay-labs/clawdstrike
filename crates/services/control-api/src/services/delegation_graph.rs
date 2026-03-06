@@ -12,8 +12,7 @@ use uuid::Uuid;
 
 use crate::db::PgPool;
 use crate::error::ApiError;
-
-use super::delegation_graph_models::{
+use crate::models::delegation_graph::{
     DelegationGraphEdge, DelegationGraphNode, DelegationGraphSnapshot, FleetGrant,
     GrantExerciseRequest, IngestGrantRequest, ListGrantsQuery, RevokeGrantRequest,
     RevokeGrantResponse,

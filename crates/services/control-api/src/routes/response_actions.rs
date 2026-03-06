@@ -12,11 +12,10 @@ use uuid::Uuid;
 
 use crate::auth::AuthenticatedTenant;
 use crate::error::ApiError;
+use crate::models::delegation_graph::RevokeGrantRequest;
+use crate::services::delegation_graph as delegation_graph_service;
 use crate::services::tenant_provisioner::tenant_subject_prefix;
 use crate::state::AppState;
-
-use super::delegation_graph_models::RevokeGrantRequest;
-use super::delegation_graph_service;
 
 const ACK_DEADLINE_MINUTES: i64 = 10;
 

@@ -6,10 +6,6 @@ pub mod cases;
 pub mod compliance;
 pub mod console;
 pub mod delegation_graph;
-#[path = "../models/delegation_graph.rs"]
-mod delegation_graph_models;
-#[path = "../services/delegation_graph.rs"]
-mod delegation_graph_service;
 pub mod events;
 pub mod health;
 pub mod hunt;

@@ -14,12 +14,11 @@ use crate::models::console::{
     ConsoleGraphNode, ConsoleGraphNodeKind, ConsoleGraphView, ConsolePrincipalDetail,
     ConsolePrincipalListQuery, ConsoleResponseActionListQuery, ConsoleTimelineQuery,
 };
+use crate::models::delegation_graph::DelegationGraphSnapshot;
 use crate::services::console as console_service;
+use crate::services::delegation_graph as delegation_graph_service;
 use crate::services::tenant_provisioner::tenant_subject_prefix;
 use crate::state::AppState;
-
-use super::delegation_graph_models::DelegationGraphSnapshot;
-use super::delegation_graph_service;
 
 pub fn router() -> Router<AppState> {
     Router::new()

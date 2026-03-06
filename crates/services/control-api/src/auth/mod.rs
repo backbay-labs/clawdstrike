@@ -98,3 +98,41 @@ impl<S: Send + Sync> FromRequestParts<S> for AuthenticatedTenant {
             .ok_or(ApiError::Unauthorized)
     }
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn actor_id_prefers_user_identity() {
+        let auth = AuthenticatedTenant {
+            tenant_id: Uuid::new_v4(),
+            slug: "acme".to_string(),
+            plan: "enterprise".to_string(),
+            agent_limit: 100,
+            user_id: Some(Uuid::nil()),
+            api_key_id: None,
+            role: "admin".to_string(),
+            auth_source: AuthSource::Jwt,
+        };
+
+        assert_eq!(auth.actor_id(), Uuid::nil().to_string());
+    }
+
+    #[test]
+    fn actor_id_falls_back_to_slug_and_role() {
+        let auth = AuthenticatedTenant {
+            tenant_id: Uuid::new_v4(),
+            slug: "acme".to_string(),
+            plan: "enterprise".to_string(),
+            agent_limit: 100,
+            user_id: None,
+            api_key_id: None,
+            role: "admin".to_string(),
+            auth_source: AuthSource::ApiKey,
+        };
+
+        assert_eq!(auth.actor_id(), "tenant:acme:admin");
+    }
+}

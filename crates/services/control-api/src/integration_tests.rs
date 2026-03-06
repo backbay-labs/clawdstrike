@@ -2451,6 +2451,84 @@ async fn fleet_operator_workflow_links_detection_response_case_hunt_graph_and_co
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn expired_evidence_bundles_are_not_downloadable() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let export_id = format!("exp-{}", Uuid::new_v4());
+    let file_path = std::env::temp_dir().join(format!("{export_id}.zip"));
+    std::fs::write(&file_path, b"bundle").expect("write evidence bundle fixture");
+
+    sqlx::query::query(
+        r#"INSERT INTO fleet_evidence_bundles (
+               export_id,
+               tenant_id,
+               status,
+               requested_by,
+               requested_at,
+               completed_at,
+               file_path,
+               sha256,
+               size_bytes,
+               expires_at,
+               retention_days,
+               filters,
+               artifact_counts,
+               metadata
+           ) VALUES (
+               $1,
+               $2,
+               'completed',
+               'operator@example.com',
+               now() - interval '2 days',
+               now() - interval '2 days',
+               $3,
+               'deadbeef',
+               6,
+               now() - interval '1 hour',
+               1,
+               '{}'::jsonb,
+               '{}'::jsonb,
+               '{}'::jsonb
+           )"#,
+    )
+    .bind(&export_id)
+    .bind(harness.tenant_id)
+    .bind(file_path.to_string_lossy().to_string())
+    .execute(&harness.db)
+    .await
+    .expect("seed expired evidence bundle");
+
+    let download_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/evidence-bundles/{export_id}/download"),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(download_resp.0, StatusCode::BAD_REQUEST);
+    assert_eq!(download_resp.1["error"], "evidence bundle has expired");
+
+    let status: String = sqlx::query::query(
+        "SELECT status FROM fleet_evidence_bundles WHERE tenant_id = $1 AND export_id = $2",
+    )
+    .bind(harness.tenant_id)
+    .bind(&export_id)
+    .fetch_one(&harness.db)
+    .await
+    .expect("fetch expired bundle status")
+    .try_get("status")
+    .expect("read bundle status");
+    assert_eq!(status, "expired");
+
+    let _ = std::fs::remove_file(file_path);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn authorization_bearer_header_rejects_api_keys() {
     if !docker_available() {
         eprintln!("Skipping integration test: docker is unavailable");

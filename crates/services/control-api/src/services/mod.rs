@@ -6,6 +6,7 @@ pub mod audit_consumer;
 pub mod case_evidence;
 pub mod console;
 pub mod consumer_ack;
+pub mod delegation_graph;
 pub mod hunt;
 pub mod metering;
 pub mod policy_distribution;

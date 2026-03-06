@@ -80,7 +80,7 @@ async fn correlate(
     if auth.role == "viewer" {
         return Err(ApiError::Forbidden);
     }
-    let created_by = created_by(&auth);
+    let created_by = auth.actor_id();
     Ok(Json(
         hunt::run_correlation_job(&state.db, auth.tenant_id, &created_by, &request).await?,
     ))
@@ -94,7 +94,7 @@ async fn ioc_match(
     if auth.role == "viewer" {
         return Err(ApiError::Forbidden);
     }
-    let created_by = created_by(&auth);
+    let created_by = auth.actor_id();
     Ok(Json(
         hunt::run_ioc_job(&state.db, auth.tenant_id, &created_by, &request).await?,
     ))
@@ -125,7 +125,7 @@ async fn create_saved_hunt(
     if auth.role == "viewer" {
         return Err(ApiError::Forbidden);
     }
-    let created_by = created_by(&auth);
+    let created_by = auth.actor_id();
     Ok(Json(
         hunt::create_saved_hunt(&state.db, auth.tenant_id, &created_by, &request).await?,
     ))
@@ -175,14 +175,8 @@ async fn run_saved_hunt(
     if auth.role == "viewer" {
         return Err(ApiError::Forbidden);
     }
-    let created_by = created_by(&auth);
+    let created_by = auth.actor_id();
     Ok(Json(
         hunt::run_saved_hunt(&state.db, auth.tenant_id, id, &created_by).await?,
     ))
-}
-
-fn created_by(auth: &AuthenticatedTenant) -> String {
-    auth.user_id
-        .map(|user_id| user_id.to_string())
-        .unwrap_or_else(|| format!("tenant:{}", auth.tenant_id))
 }

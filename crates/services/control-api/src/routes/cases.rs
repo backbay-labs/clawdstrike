@@ -64,7 +64,8 @@ async fn create_case(
         return Err(ApiError::Forbidden);
     }
 
-    let case = case_evidence::create_case(&state.db, auth.tenant_id, &actor_id(&auth), req).await?;
+    let actor_id = auth.actor_id();
+    let case = case_evidence::create_case(&state.db, auth.tenant_id, &actor_id, req).await?;
     Ok(Json(case))
 }
 
@@ -87,8 +88,8 @@ async fn update_case(
         return Err(ApiError::Forbidden);
     }
 
-    let case =
-        case_evidence::update_case(&state.db, auth.tenant_id, id, &actor_id(&auth), req).await?;
+    let actor_id = auth.actor_id();
+    let case = case_evidence::update_case(&state.db, auth.tenant_id, id, &actor_id, req).await?;
     Ok(Json(case))
 }
 
@@ -104,8 +105,9 @@ async fn add_artifact(
 
     let req = parse_add_artifact_request(payload)?;
 
+    let actor_id = auth.actor_id();
     let artifact =
-        case_evidence::add_artifact(&state.db, auth.tenant_id, id, &actor_id(&auth), req).await?;
+        case_evidence::add_artifact(&state.db, auth.tenant_id, id, &actor_id, req).await?;
     Ok(Json(artifact))
 }
 
@@ -147,12 +149,13 @@ async fn export_evidence_bundle(
     let signer = state.signing_keypair.as_deref().ok_or_else(|| {
         ApiError::Internal("approval response signing keypair is not configured".to_string())
     })?;
+    let actor_id = auth.actor_id();
 
     let bundle = case_evidence::create_evidence_bundle(
         &state.db,
         auth.tenant_id,
         id,
-        &actor_id(&auth),
+        &actor_id,
         req,
         signer,
     )
@@ -199,12 +202,6 @@ async fn download_bundle(
     Ok((headers, Body::from_stream(stream)).into_response())
 }
 
-fn actor_id(auth: &AuthenticatedTenant) -> String {
-    auth.user_id
-        .map(|user_id| user_id.to_string())
-        .unwrap_or_else(|| format!("tenant:{}:{}", auth.slug, auth.role))
-}
-
 #[cfg(test)]
 use crate::integration_tests::case_evidence as crate_case;
 #[cfg(not(test))]
@@ -214,22 +211,6 @@ use crate::models::case_evidence as crate_case;
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn actor_id_prefers_user_identity() {
-        let auth = AuthenticatedTenant {
-            tenant_id: Uuid::new_v4(),
-            slug: "acme".to_string(),
-            plan: "enterprise".to_string(),
-            agent_limit: 100,
-            user_id: Some(Uuid::nil()),
-            api_key_id: None,
-            role: "admin".to_string(),
-            auth_source: crate::auth::AuthSource::Jwt,
-        };
-
-        assert_eq!(actor_id(&auth), Uuid::nil().to_string());
-    }
 
     #[test]
     fn parse_add_artifact_request_accepts_single_object_shape() {

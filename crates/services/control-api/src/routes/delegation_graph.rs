@@ -5,13 +5,12 @@ use uuid::Uuid;
 
 use crate::auth::AuthenticatedTenant;
 use crate::error::ApiError;
-use crate::state::AppState;
-
-use super::delegation_graph_models::{
+use crate::models::delegation_graph::{
     DelegationGraphSnapshot, FleetGrant, GrantExerciseRequest, GraphPathQuery, IngestGrantRequest,
     ListGrantsQuery, RevokeGrantRequest, RevokeGrantResponse,
 };
-use super::delegation_graph_service;
+use crate::services::delegation_graph as delegation_graph_service;
+use crate::state::AppState;
 
 pub fn router() -> Router<AppState> {
     Router::new()

@@ -568,7 +568,21 @@ pub async fn bundle_download_path(
     export_id: &str,
 ) -> Result<PathBuf, ApiError> {
     let bundle = get_bundle(db, tenant_id, export_id).await?;
-    if bundle.status == "expired" {
+    if bundle_has_expired(&bundle, Utc::now()) {
+        sqlx::query::query(
+            r#"UPDATE fleet_evidence_bundles
+               SET status = 'expired'
+               WHERE tenant_id = $1
+                 AND export_id = $2
+                 AND status = 'completed'
+                 AND expires_at IS NOT NULL
+                 AND expires_at <= now()"#,
+        )
+        .bind(tenant_id)
+        .bind(export_id)
+        .execute(db)
+        .await
+        .map_err(ApiError::Database)?;
         return Err(ApiError::BadRequest(
             "evidence bundle has expired".to_string(),
         ));
@@ -585,6 +599,10 @@ pub async fn bundle_download_path(
         return Err(ApiError::NotFound);
     }
     Ok(path)
+}
+
+fn bundle_has_expired(bundle: &FleetEvidenceBundle, now: DateTime<Utc>) -> bool {
+    bundle.status == "expired" || bundle.expires_at.is_some_and(|ts| ts <= now)
 }
 
 async fn ensure_case_exists(db: &PgPool, tenant_id: Uuid, case_id: Uuid) -> Result<(), ApiError> {
@@ -1141,5 +1159,29 @@ mod tests {
         assert!(filtered
             .iter()
             .any(|artifact| artifact.artifact_id == "ra-1"));
+    }
+
+    #[test]
+    fn bundle_has_expired_when_retention_deadline_passes() {
+        let bundle = FleetEvidenceBundle {
+            export_id: "exp-1".to_string(),
+            tenant_id: Uuid::new_v4(),
+            case_id: None,
+            status: "completed".to_string(),
+            requested_by: "operator".to_string(),
+            requested_at: Utc::now(),
+            completed_at: Some(Utc::now()),
+            file_path: Some("/tmp/fleet-evidence.zip".to_string()),
+            sha256: None,
+            size_bytes: None,
+            manifest_ref: None,
+            expires_at: Some(Utc::now() - Duration::seconds(1)),
+            retention_days: 1,
+            filters: serde_json::json!({}),
+            artifact_counts: serde_json::json!({}),
+            metadata: serde_json::json!({}),
+        };
+
+        assert!(bundle_has_expired(&bundle, Utc::now()));
     }
 }
