@@ -148,4 +148,60 @@ describe("TUIApp security refresh", () => {
       app.hushdReconnectTimer = null
     }
   })
+
+  test("ignores stale hushd probe failures after lifecycle cleanup", async () => {
+    let resolveProbe!: (value: boolean) => void
+    const probePromise = new Promise<boolean>((resolve) => {
+      resolveProbe = resolve
+    })
+
+    const app = new TUIApp(process.cwd()) as unknown as {
+      state: {
+        hushdStatus: string
+        hushdReconnectAttempts: number
+      }
+      render: () => void
+      connectHushd: () => void
+      hushdReconnectTimer: ReturnType<typeof setTimeout> | null
+      hushdLifecycleToken: number
+    }
+
+    app.render = () => {}
+
+    ;(Hushd as unknown as {
+      getClient: typeof Hushd.getClient
+      isInitialized: typeof Hushd.isInitialized
+      init: typeof Hushd.init
+      reset: typeof Hushd.reset
+    }).isInitialized = () => false
+    ;(Hushd as unknown as {
+      getClient: typeof Hushd.getClient
+      isInitialized: typeof Hushd.isInitialized
+      init: typeof Hushd.init
+      reset: typeof Hushd.reset
+    }).init = () => {}
+    ;(Hushd as unknown as {
+      getClient: typeof Hushd.getClient
+      isInitialized: typeof Hushd.isInitialized
+      init: typeof Hushd.init
+      reset: typeof Hushd.reset
+    }).reset = () => {}
+    ;(Hushd as unknown as {
+      getClient: typeof Hushd.getClient
+      isInitialized: typeof Hushd.isInitialized
+      init: typeof Hushd.init
+      reset: typeof Hushd.reset
+    }).getClient = () => ({
+      probe: async () => probePromise,
+    } as never)
+
+    app.connectHushd()
+    app.hushdLifecycleToken += 1
+    resolveProbe(false)
+    await Bun.sleep(0)
+
+    expect(app.state.hushdStatus).toBe("connecting")
+    expect(app.state.hushdReconnectAttempts).toBe(0)
+    expect(app.hushdReconnectTimer).toBeNull()
+  })
 })

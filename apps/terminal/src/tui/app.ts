@@ -78,6 +78,7 @@ export class TUIApp implements AppController {
   private refreshTimer: ReturnType<typeof setInterval> | null = null
   private animationTimer: ReturnType<typeof setInterval> | null = null
   private hushdReconnectTimer: ReturnType<typeof setTimeout> | null = null
+  private hushdLifecycleToken = 0
   private auditPreviewRefreshing = false
   private lastAuditPreviewRefreshAt = 0
   private width: number = 80
@@ -248,6 +249,8 @@ export class TUIApp implements AppController {
   }
 
   connectHushd(): void {
+    const lifecycleToken = ++this.hushdLifecycleToken
+
     if (this.hushdReconnectTimer) {
       clearTimeout(this.hushdReconnectTimer)
       this.hushdReconnectTimer = null
@@ -266,6 +269,9 @@ export class TUIApp implements AppController {
 
     client.probe()
       .then(async (connected) => {
+        if (lifecycleToken !== this.hushdLifecycleToken) {
+          return
+        }
         this.state.hushdConnected = connected
 
         if (!connected) {
@@ -273,7 +279,7 @@ export class TUIApp implements AppController {
           this.state.hushdLastError = "health probe failed"
           this.state.securityError = "hushd is unreachable."
           this.state.recentAuditPreview = []
-          this.scheduleHushdReconnect()
+          this.scheduleHushdReconnect(lifecycleToken)
           return
         }
 
@@ -282,6 +288,9 @@ export class TUIApp implements AppController {
           client.getAuditStatsDetailed(),
           client.getAuditDetailed({ limit: 6 }),
         ])
+        if (lifecycleToken !== this.hushdLifecycleToken) {
+          return
+        }
         const unauthorized = [policyResult.status, statsResult.status, previewResult.status].some(
           (status) => status === 401 || status === 403,
         )
@@ -306,6 +315,9 @@ export class TUIApp implements AppController {
 
         client.connectSSE(
           (event) => {
+            if (lifecycleToken !== this.hushdLifecycleToken) {
+              return
+            }
             this.state.recentEvents.unshift(event)
             if (this.state.recentEvents.length > 50) {
               this.state.recentEvents.length = 50
@@ -318,6 +330,9 @@ export class TUIApp implements AppController {
             this.render()
           },
           (error) => {
+            if (lifecycleToken !== this.hushdLifecycleToken) {
+              return
+            }
             const message = error.message || "stream error"
             this.state.hushdLastError = message
             this.state.securityError = message
@@ -338,25 +353,33 @@ export class TUIApp implements AppController {
 
             this.state.hushdConnected = false
             this.state.hushdStatus = this.state.hushdLastEventAt ? "stale" : "disconnected"
-            this.scheduleHushdReconnect()
+            this.scheduleHushdReconnect(lifecycleToken)
             this.render()
           },
         )
       })
       .catch((err) => {
+        if (lifecycleToken !== this.hushdLifecycleToken) {
+          return
+        }
         this.state.hushdConnected = false
         this.state.hushdStatus = "error"
         this.state.hushdLastError = err instanceof Error ? err.message : String(err)
         this.state.securityError = this.state.hushdLastError
         this.state.recentAuditPreview = []
-        this.scheduleHushdReconnect()
+        this.scheduleHushdReconnect(lifecycleToken)
       })
       .finally(() => {
-        this.render()
+        if (lifecycleToken === this.hushdLifecycleToken) {
+          this.render()
+        }
       })
   }
 
-  private scheduleHushdReconnect(): void {
+  private scheduleHushdReconnect(lifecycleToken: number = this.hushdLifecycleToken): void {
+    if (lifecycleToken !== this.hushdLifecycleToken) {
+      return
+    }
     if (this.hushdReconnectTimer || this.state.hushdStatus === "unauthorized") {
       return
     }
@@ -365,6 +388,10 @@ export class TUIApp implements AppController {
     const delay = Math.min(15_000, 1_000 * (2 ** Math.min(attempt - 1, 4)))
     this.state.hushdReconnectAttempts = attempt
     this.hushdReconnectTimer = setTimeout(() => {
+      if (lifecycleToken !== this.hushdLifecycleToken) {
+        this.hushdReconnectTimer = null
+        return
+      }
       this.hushdReconnectTimer = null
       this.connectHushd()
     }, delay)
@@ -435,6 +462,8 @@ export class TUIApp implements AppController {
   }
 
   private async cleanup(): Promise<void> {
+    this.hushdLifecycleToken += 1
+
     if (this.refreshTimer) {
       clearInterval(this.refreshTimer)
       this.refreshTimer = null
