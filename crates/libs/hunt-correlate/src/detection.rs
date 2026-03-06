@@ -254,9 +254,25 @@ fn sigma_preview_to_native_rule(source_text: &str) -> Result<String> {
         .and_then(|(_, value)| value.as_str())
         .unwrap_or(".*");
     let source = sigma_preview_source(&parsed);
-    Ok(format!(
-        "schema: clawdstrike.hunt.correlation.v1\nname: \"{title}\"\nseverity: {severity}\ndescription: \"Sigma compatibility preview\"\nwindow: {timeframe}\nconditions:\n  - source: {source}\n    target_pattern: \"{target_pattern}\"\n    bind: sigma_selection\noutput:\n  title: \"{title}\"\n  evidence:\n    - sigma_selection\n"
-    ))
+    let preview = json!({
+        "schema": "clawdstrike.hunt.correlation.v1",
+        "name": title,
+        "severity": severity,
+        "description": "Sigma compatibility preview",
+        "window": timeframe,
+        "conditions": [
+            {
+                "source": source.to_string(),
+                "target_pattern": target_pattern,
+                "bind": "sigma_selection",
+            }
+        ],
+        "output": {
+            "title": title,
+            "evidence": ["sigma_selection"],
+        },
+    });
+    render_preview_yaml(&preview)
 }
 
 fn sigma_preview_selection(detection: &Map<String, Value>) -> Result<&Map<String, Value>> {
@@ -337,7 +353,8 @@ fn yara_rule_declaration_count(source_text: &str) -> Result<usize> {
     let declaration_re =
         Regex::new(r"(?m)^\s*(?:(?:private|global)\s+)*rule\s+[A-Za-z_][A-Za-z0-9_]*\b")
             .map_err(|err| Error::Regex(format!("invalid YARA declaration regex: {err}")))?;
-    Ok(declaration_re.find_iter(source_text).count())
+    let sanitized = strip_yara_comments_and_literals(source_text);
+    Ok(declaration_re.find_iter(&sanitized).count())
 }
 
 fn sigma_preview_source(parsed: &Value) -> EventSource {
@@ -385,6 +402,122 @@ fn severity_label(severity: RuleSeverity) -> &'static str {
         RuleSeverity::High => "high",
         RuleSeverity::Critical => "critical",
     }
+}
+
+fn render_preview_yaml(value: &Value) -> Result<String> {
+    let yaml = serde_yaml::to_string(value)
+        .map_err(|err| Error::InvalidRule(format!("failed to serialize preview YAML: {err}")))?;
+    Ok(yaml
+        .strip_prefix("---\n")
+        .unwrap_or(yaml.as_str())
+        .to_string())
+}
+
+fn strip_yara_comments_and_literals(source_text: &str) -> String {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum State {
+        Code,
+        LineComment,
+        BlockComment,
+        DoubleQuotedString,
+        RegexLiteral,
+    }
+
+    let chars = source_text.chars().collect::<Vec<_>>();
+    let mut sanitized = String::with_capacity(source_text.len());
+    let mut state = State::Code;
+    let mut index = 0usize;
+
+    while index < chars.len() {
+        let ch = chars[index];
+        let next = chars.get(index + 1).copied();
+
+        match state {
+            State::Code => match (ch, next) {
+                ('/', Some('/')) => {
+                    sanitized.push(' ');
+                    sanitized.push(' ');
+                    index += 2;
+                    state = State::LineComment;
+                }
+                ('/', Some('*')) => {
+                    sanitized.push(' ');
+                    sanitized.push(' ');
+                    index += 2;
+                    state = State::BlockComment;
+                }
+                ('"', _) => {
+                    sanitized.push(' ');
+                    index += 1;
+                    state = State::DoubleQuotedString;
+                }
+                ('/', _) => {
+                    sanitized.push(' ');
+                    index += 1;
+                    state = State::RegexLiteral;
+                }
+                _ => {
+                    sanitized.push(ch);
+                    index += 1;
+                }
+            },
+            State::LineComment => {
+                if ch == '\n' {
+                    sanitized.push('\n');
+                    state = State::Code;
+                } else {
+                    sanitized.push(' ');
+                }
+                index += 1;
+            }
+            State::BlockComment => match (ch, next) {
+                ('*', Some('/')) => {
+                    sanitized.push(' ');
+                    sanitized.push(' ');
+                    index += 2;
+                    state = State::Code;
+                }
+                _ => {
+                    sanitized.push(if ch == '\n' { '\n' } else { ' ' });
+                    index += 1;
+                }
+            },
+            State::DoubleQuotedString => match (ch, next) {
+                ('\\', Some(escaped)) => {
+                    sanitized.push(' ');
+                    sanitized.push(if escaped == '\n' { '\n' } else { ' ' });
+                    index += 2;
+                }
+                ('"', _) => {
+                    sanitized.push(' ');
+                    index += 1;
+                    state = State::Code;
+                }
+                _ => {
+                    sanitized.push(if ch == '\n' { '\n' } else { ' ' });
+                    index += 1;
+                }
+            },
+            State::RegexLiteral => match (ch, next) {
+                ('\\', Some(escaped)) => {
+                    sanitized.push(' ');
+                    sanitized.push(if escaped == '\n' { '\n' } else { ' ' });
+                    index += 2;
+                }
+                ('/', _) => {
+                    sanitized.push(' ');
+                    index += 1;
+                    state = State::Code;
+                }
+                _ => {
+                    sanitized.push(if ch == '\n' { '\n' } else { ' ' });
+                    index += 1;
+                }
+            },
+        }
+    }
+
+    sanitized
 }
 
 #[cfg(test)]
@@ -470,18 +603,41 @@ mod tests {
     }
 
     #[test]
+    fn yara_validation_ignores_block_comments_and_string_literals() {
+        let source = "/* rule commented_out { condition: true } */\nrule real_rule {\n  meta:\n    note = \"rule fake_rule\"\n  condition:\n    true\n}";
+        let compiled = compile_rule_source("yara", source).expect("compile yara");
+        assert_eq!(compiled.compiled_artifact["rule_count_estimate"], 1);
+    }
+
+    #[test]
     fn sigma_preview_supports_compound_condition_expressions() {
         let sigma = "title: Suspicious Access\nlogsource:\n  category: process_creation\ndetection:\n  selection:\n    CommandLine: secret\n  filter:\n    Image: trusted\n  condition: selection and not filter\n";
         let preview = sigma_preview_to_native_rule(sigma).expect("build preview");
         assert!(preview.contains("source: tetragon"));
-        assert!(preview.contains("target_pattern: \"secret\""));
+        assert!(preview.contains("target_pattern: secret"));
     }
 
     #[test]
     fn sigma_preview_supports_wildcard_condition_selectors() {
         let sigma = "title: Wildcard Selection\nlogsource:\n  category: process_creation\ndetection:\n  selection_alpha:\n    CommandLine: secret\n  selection_beta:\n    Image: /usr/bin/curl\n  condition: 1 of selection_*\n";
         let preview = sigma_preview_to_native_rule(sigma).expect("build preview");
-        assert!(preview.contains("target_pattern: \"secret\""));
+        assert!(preview.contains("target_pattern: secret"));
+    }
+
+    #[test]
+    fn sigma_preview_serialization_escapes_yaml_control_characters() {
+        let sigma = "title: \"Escalation\\nseverity: low\"\nlevel: high\nlogsource:\n  category: process_creation\ndetection:\n  selection:\n    CommandLine: \"curl: --config\"\n  condition: selection\n";
+        let preview = sigma_preview_to_native_rule(sigma).expect("build preview");
+        let parsed: Value = serde_yaml::from_str(&preview).expect("parse preview yaml");
+        assert_eq!(
+            parsed.get("name").and_then(Value::as_str),
+            Some("Escalation\nseverity: low")
+        );
+        assert_eq!(parsed.get("severity").and_then(Value::as_str), Some("high"));
+        assert_eq!(
+            parsed["conditions"][0]["target_pattern"].as_str(),
+            Some("curl: --config")
+        );
     }
 
     #[test]

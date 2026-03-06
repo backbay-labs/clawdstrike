@@ -28,16 +28,7 @@ pub fn persisted_detection_finding_to_ocsf(
     input: &PersistedDetectionFindingInput<'_>,
 ) -> DetectionFinding {
     let severity = map_severity(input.severity);
-    let status_id = match input.status {
-        "resolved" | "false_positive" | "expired" => StatusId::Success,
-        "suppressed" => StatusId::Unknown,
-        _ => StatusId::Failure,
-    };
-    let disposition = match input.status {
-        "suppressed" => DispositionId::Logged,
-        "resolved" | "false_positive" | "expired" => DispositionId::Allowed,
-        _ => DispositionId::Blocked,
-    };
+    let (status_id, action_id, disposition) = detection_outcome(input.status);
     let metadata = Metadata::clawdstrike(input.product_version).with_original_uid(input.finding_id);
     let finding_info = FindingInfo {
         uid: input.finding_id.to_string(),
@@ -58,7 +49,7 @@ pub fn persisted_detection_finding_to_ocsf(
         input.time_ms,
         severity.as_u8(),
         status_id.as_u8(),
-        ActionId::Denied.as_u8(),
+        action_id.as_u8(),
         disposition.as_u8(),
         metadata,
         finding_info,
@@ -105,6 +96,16 @@ pub fn persisted_detection_finding_to_ocsf(
     finding
 }
 
+fn detection_outcome(status: &str) -> (StatusId, ActionId, DispositionId) {
+    match status {
+        "resolved" | "false_positive" | "expired" => {
+            (StatusId::Success, ActionId::Allowed, DispositionId::Allowed)
+        }
+        "suppressed" | "open" => (StatusId::Unknown, ActionId::Unknown, DispositionId::Logged),
+        _ => (StatusId::Unknown, ActionId::Unknown, DispositionId::Unknown),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -133,6 +134,9 @@ mod tests {
             finding.finding_info.analytic.version.as_deref(),
             Some("native_correlation")
         );
+        assert_eq!(finding.status_id, StatusId::Unknown.as_u8());
+        assert_eq!(finding.action_id, ActionId::Unknown.as_u8());
+        assert_eq!(finding.disposition_id, DispositionId::Logged.as_u8());
         assert!(finding.evidence.is_some());
     }
 }

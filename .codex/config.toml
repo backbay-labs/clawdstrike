@@ -1,5 +1,5 @@
 project_doc_max_bytes = 131072
-notify = ["python3", "../scripts/codex-swarm/notify.py"]
+notify = ["python3", "scripts/codex-swarm/notify.py"]
 
 [agents]
 max_threads = 6
