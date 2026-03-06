@@ -4,6 +4,11 @@
 
 Phase 2 turns managed runs into a navigable system rather than a single active detail view.
 
+Status:
+
+- planned engineering breakdown
+- assumes Phase 1 exists first
+
 Goal:
 
 - add a `Runs` index and make `review_ready` completion a first-class workflow

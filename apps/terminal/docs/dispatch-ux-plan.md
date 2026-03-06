@@ -4,6 +4,18 @@
 
 Implement dispatch as a managed run workflow inside ClawdStrike TUI.
 
+Status:
+
+- this is a planned implementation sequence
+- only the planning/docs work is complete at this point
+
+Recommended reading order:
+
+1. [Dispatch UX Spec](./dispatch-ux-spec.md)
+2. [Dispatch Phase 1 Engineering Breakdown](./dispatch-phase1-engineering.md)
+3. [Dispatch Phases 2-5 Overview](./dispatch-phases2-5-overview.md)
+4. Phase-specific breakdowns linked below
+
 Concrete Phase 1 file-by-file breakdown:
 
 - [Dispatch Phase 1 Engineering Breakdown](./dispatch-phase1-engineering.md)

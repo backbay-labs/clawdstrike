@@ -4,6 +4,11 @@
 
 Phase 4 adds tmux as an optional adapter on top of the managed + attachable run model.
 
+Status:
+
+- planned engineering breakdown
+- depends on working managed and attach flows first
+
 Goal:
 
 - support tmux users without making tmux the default execution path

@@ -4,6 +4,11 @@
 
 This document turns Phase 1 of the dispatch UX plan into concrete implementation work against the current `apps/terminal` codebase.
 
+Status:
+
+- planned engineering breakdown
+- not yet implemented unless a later PR explicitly references this doc
+
 Phase 1 goal:
 
 - replace "submit prompt, block, then jump to result" with "launch a managed run, transition to run detail, keep the TUI in control"

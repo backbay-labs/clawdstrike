@@ -4,6 +4,11 @@
 
 Phase 1 establishes managed dispatch, a dispatch sheet, and a run detail screen.
 
+Status:
+
+- planned sequence for later phases
+- not a description of currently shipped dispatch behavior
+
 Phases 2-5 extend that foundation in a deliberate order:
 
 1. `Phase 2`: make runs navigable and reviewable at scale

@@ -4,6 +4,11 @@
 
 `dispatch` should create a managed run inside ClawdStrike TUI, not immediately eject the user into another terminal.
 
+Status:
+
+- this document describes the planned target UX
+- current implementation still dispatches directly and then routes into the existing result surface
+
 The TUI remains the control plane for:
 
 - task composition
@@ -73,8 +78,6 @@ Each run should keep:
 The default should optimize for clarity and control, not terminal cleverness.
 
 Power-user affordances such as tmux pane launch should be optional adapters layered on top.
-
-## Recommended Interaction Model
 
 ## Dispatch Modes
 

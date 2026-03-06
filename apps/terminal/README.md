@@ -36,19 +36,21 @@ Run the TUI through the main CLI with `clawdstrike tui`, or use the package-loca
 
 | Key | Action |
 |-----|--------|
-| `d` | Quick dispatch |
-| `s` | Quick speculate |
+| `Enter` | Dispatch the current prompt |
+| `Tab` | Cycle home focus between prompt and actions |
+| `Esc` | Toggle prompt and nav focus |
+| `Ctrl+N` | Cycle agents |
+| `Ctrl+P` | Open command palette |
+| `Ctrl+S` | Security overview |
+| `S/A/P/I` | Security / audit / policy / integrations in nav focus |
+| `W/X/T/Q/E/H` | Watch / scan / timeline / query / report / history in nav focus |
 | `g` | Run quality gates |
 | `b` | View work graph (beads) |
 | `r` | View active rollouts |
-| `Ctrl+S` | Security overview |
-| `a` | Audit log |
-| `p` | Policy viewer |
-| `W/X/T/Q/E/H` | Watch / scan / timeline / query / report / history |
-| `h` | Help |
+| `?` | Help |
 | `q` | Quit |
 | `↑/↓` or `j/k` | Navigate / scroll |
-| `Enter` | Select item |
+| `↑↓←→` | Move across home actions after `Tab` |
 
 ## Security Integration
 
@@ -92,18 +94,20 @@ release hardening, and multi-agent debugging.
 - Project config: [.codex/config.toml](../../.codex/config.toml)
 - Terminal working agreement: [AGENTS.md](./AGENTS.md)
 
-## Dispatch UX Design
+## Dispatch UX Planning Docs
 
-The planned dispatch UX is documented separately:
+These docs describe planned dispatch work, not current shipped behavior.
 
-- Product spec: [docs/dispatch-ux-spec.md](./docs/dispatch-ux-spec.md)
-- Implementation plan: [docs/dispatch-ux-plan.md](./docs/dispatch-ux-plan.md)
-- Phase 1 engineering breakdown: [docs/dispatch-phase1-engineering.md](./docs/dispatch-phase1-engineering.md)
-- Phases 2-5 overview: [docs/dispatch-phases2-5-overview.md](./docs/dispatch-phases2-5-overview.md)
-- Phase 2 engineering breakdown: [docs/dispatch-phase2-engineering.md](./docs/dispatch-phase2-engineering.md)
-- Phase 3 engineering breakdown: [docs/dispatch-phase3-engineering.md](./docs/dispatch-phase3-engineering.md)
-- Phase 4 engineering breakdown: [docs/dispatch-phase4-engineering.md](./docs/dispatch-phase4-engineering.md)
-- Phase 5 engineering breakdown: [docs/dispatch-phase5-engineering.md](./docs/dispatch-phase5-engineering.md)
+Recommended reading order:
+
+1. Product spec: [docs/dispatch-ux-spec.md](./docs/dispatch-ux-spec.md)
+2. Implementation plan: [docs/dispatch-ux-plan.md](./docs/dispatch-ux-plan.md)
+3. Phase 1 engineering breakdown: [docs/dispatch-phase1-engineering.md](./docs/dispatch-phase1-engineering.md)
+4. Later-phase overview: [docs/dispatch-phases2-5-overview.md](./docs/dispatch-phases2-5-overview.md)
+5. Phase 2 engineering breakdown: [docs/dispatch-phase2-engineering.md](./docs/dispatch-phase2-engineering.md)
+6. Phase 3 engineering breakdown: [docs/dispatch-phase3-engineering.md](./docs/dispatch-phase3-engineering.md)
+7. Phase 4 engineering breakdown: [docs/dispatch-phase4-engineering.md](./docs/dispatch-phase4-engineering.md)
+8. Phase 5 engineering breakdown: [docs/dispatch-phase5-engineering.md](./docs/dispatch-phase5-engineering.md)
 
 ## CLI Usage
 

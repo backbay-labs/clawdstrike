@@ -4,6 +4,11 @@
 
 Phase 3 adds `attach here` as a first-class interactive mode on top of the managed run model.
 
+Status:
+
+- planned engineering breakdown
+- depends on the managed run model from earlier phases
+
 Goal:
 
 - let the user temporarily hand the current terminal to a run PTY and then return to ClawdStrike cleanly

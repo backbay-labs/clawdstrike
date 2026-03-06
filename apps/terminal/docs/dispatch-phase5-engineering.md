@@ -4,6 +4,11 @@
 
 Phase 5 adds non-tmux external terminal adapters and hardens non-default execution surfaces for release use.
 
+Status:
+
+- planned engineering breakdown
+- intentionally the last phase because it carries the most platform variance
+
 Goal:
 
 - support external terminal windows without changing the default managed flow
