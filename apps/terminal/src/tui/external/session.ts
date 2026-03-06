@@ -8,6 +8,8 @@ import type { ExternalRunSessionPlan } from "./types"
 
 const CLAUDE_ALLOWED_TOOLS = ["Read", "Glob", "Grep", "Edit", "Write", "Bash"]
 const EXTERNAL_STARTUP_TIMEOUT_MS = 10_000
+const EXTERNAL_LIVENESS_TIMEOUT_MS = 15_000
+const EXTERNAL_HEARTBEAT_INTERVAL_SECONDS = 2
 
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`
@@ -62,12 +64,32 @@ function buildLaunchScript(
     "#!/bin/zsh",
     "set +e",
     ...envLines,
-    "mkdir -p \"$(dirname " + shellQuote(statusPath) + ")\"",
-    `printf '{"state":"starting","startedAt":"%s"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > ${shellQuote(statusPath)}`,
-    `cd ${shellQuote(worktreePath)} || exit 1`,
+    `status_path=${shellQuote(statusPath)}`,
+    "mkdir -p \"$(dirname \"$status_path\")\"",
+    "started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+    `printf '{"state":"starting","startedAt":"%s"}\n' "$started_at" > "$status_path"`,
+    `if ! cd ${shellQuote(worktreePath)}; then`,
+    `  printf '{"state":"finished","exitCode":1,"startedAt":"%s","finishedAt":"%s"}\n' "$started_at" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$status_path"`,
+    "  exit 1",
+    "fi",
+    "__clawdstrike_external_heartbeat() {",
+    "  while true; do",
+    `    printf '{"state":"running","startedAt":"%s","heartbeatAt":"%s"}\n' "$started_at" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$status_path"`,
+    `    sleep ${EXTERNAL_HEARTBEAT_INTERVAL_SECONDS}`,
+    "  done",
+    "}",
+    "__clawdstrike_external_heartbeat &",
+    "heartbeat_pid=$!",
+    "__clawdstrike_external_cleanup() {",
+    "  if [ -n \"$heartbeat_pid\" ]; then",
+    "    kill \"$heartbeat_pid\" 2>/dev/null || true",
+    "    wait \"$heartbeat_pid\" 2>/dev/null || true",
+    "  fi",
+    "}",
+    "trap __clawdstrike_external_cleanup EXIT",
     `${commandLine}`,
     "exit_code=$?",
-    `printf '{"state":"finished","exitCode":%s,"finishedAt":"%s"}\n' "$exit_code" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > ${shellQuote(statusPath)}`,
+    `printf '{"state":"finished","exitCode":%s,"startedAt":"%s","finishedAt":"%s"}\n' "$exit_code" "$started_at" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$status_path"`,
     "exit \"$exit_code\"",
   ].join("\n")
 }
@@ -121,6 +143,7 @@ export async function createExternalRunSession(
     scriptPath,
     statusPath,
     startupTimeoutMs: EXTERNAL_STARTUP_TIMEOUT_MS,
+    livenessTimeoutMs: EXTERNAL_LIVENESS_TIMEOUT_MS,
     cleanup: async () => {
       await Workcell.release(workcell.id, { reset: true })
       if (workcell.directory.includes(".clawdstrike/tmp/")) {

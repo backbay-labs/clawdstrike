@@ -11,8 +11,9 @@ export interface ExternalTerminalLaunchResult {
 }
 
 export interface ExternalRunStatusPayload {
-  state?: "starting" | "finished"
+  state?: "starting" | "running" | "finished"
   startedAt?: string
+  heartbeatAt?: string
   finishedAt?: string
   exitCode?: number
 }
@@ -24,6 +25,7 @@ export interface ExternalRunSessionPlan {
   scriptPath: string
   statusPath: string
   startupTimeoutMs: number
+  livenessTimeoutMs: number
   cleanup: () => Promise<void>
 }
 

@@ -310,6 +310,8 @@ describe("TUIApp security refresh", () => {
       agentLabel: "Codex",
       mode: "external",
     })
+    run.phase = "failed"
+    run.completedAt = new Date().toISOString()
     run.external = {
       kind: "wezterm",
       adapterId: "wezterm",
@@ -330,6 +332,7 @@ describe("TUIApp security refresh", () => {
     app.launchRunInMode(run.id, "managed")
 
     expect(app.state.runs.entries[0]?.mode).toBe("managed")
+    expect(app.state.runs.entries[0]?.phase).toBe("launching")
     expect(app.state.runs.entries[0]?.external.status).toBe("idle")
     expect(app.state.externalSheet.runId).toBeNull()
     expect(launchedMode as string | null).toBe("managed")
@@ -337,13 +340,42 @@ describe("TUIApp security refresh", () => {
 
   test("times out external sessions that never start", async () => {
     const app = new TUIApp(process.cwd()) as unknown as {
-      waitForExternalExit: (statusPath: string, startupTimeoutMs: number) => Promise<number>
+      waitForExternalExit: (
+        statusPath: string,
+        startupTimeoutMs: number,
+        livenessTimeoutMs: number,
+      ) => Promise<number>
     }
     const dir = await mkdtemp(join(tmpdir(), "clawdstrike-external-timeout-"))
     const statusPath = join(dir, "external-status.json")
 
-    await expect(app.waitForExternalExit(statusPath, 10)).rejects.toThrow(
+    await expect(app.waitForExternalExit(statusPath, 10, 50)).rejects.toThrow(
       "launch script never started",
+    )
+  })
+
+  test("times out external sessions that stop reporting heartbeat after startup", async () => {
+    const app = new TUIApp(process.cwd()) as unknown as {
+      waitForExternalExit: (
+        statusPath: string,
+        startupTimeoutMs: number,
+        livenessTimeoutMs: number,
+      ) => Promise<number>
+    }
+    const dir = await mkdtemp(join(tmpdir(), "clawdstrike-external-stale-"))
+    const statusPath = join(dir, "external-status.json")
+
+    await Bun.write(
+      statusPath,
+      JSON.stringify({
+        state: "running",
+        startedAt: new Date(Date.now() - 1_000).toISOString(),
+        heartbeatAt: new Date(Date.now() - 1_000).toISOString(),
+      }),
+    )
+
+    await expect(app.waitForExternalExit(statusPath, 100, 20)).rejects.toThrow(
+      "stopped reporting liveness",
     )
   })
 })

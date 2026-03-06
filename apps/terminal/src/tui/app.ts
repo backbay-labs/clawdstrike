@@ -32,6 +32,7 @@ import {
   executeManagedRun,
   getRunAttachDisabledReason,
   getRunExternalDisabledReason,
+  isRecoverableExternalFailure,
   isRunTerminal,
   supportsAttachToolchain,
   updateRunRecord,
@@ -41,6 +42,7 @@ import { getAvailableExternalAdapters, getExternalAdapter, toExternalAdapterOpti
 import { createExternalRunSession } from "./external/session"
 import {
   createRecoverableExternalFailureRun,
+  ExternalRunHeartbeatTimeoutError,
   ExternalLaunchStartupTimeoutError,
   isRecoverableExternalLaunchError,
 } from "./external/state"
@@ -1018,7 +1020,7 @@ export class TUIApp implements AppController {
 
   launchRunInMode(runId: string, mode: "managed" | "attach"): void {
     const run = this.state.runs.entries.find((entry) => entry.id === runId)
-    if (!run || isRunTerminal(run.phase)) {
+    if (!run || (isRunTerminal(run.phase) && !isRecoverableExternalFailure(run))) {
       return
     }
 
@@ -1030,6 +1032,16 @@ export class TUIApp implements AppController {
 
     const nextRun = updateRunRecord(run, {
       mode,
+      phase: "launching",
+      routing: null,
+      workcellId: null,
+      worktreePath: null,
+      ptySessionId: null,
+      execution: null,
+      verification: null,
+      result: null,
+      completedAt: null,
+      attached: false,
       canAttach: mode === "attach",
       attachState: "detached",
       external: {
@@ -1370,23 +1382,40 @@ export class TUIApp implements AppController {
     }
   }
 
-  private async waitForExternalExit(statusPath: string, startupTimeoutMs: number): Promise<number> {
+  private async waitForExternalExit(
+    statusPath: string,
+    startupTimeoutMs: number,
+    livenessTimeoutMs: number,
+  ): Promise<number> {
     const deadline = Date.now() + startupTimeoutMs
-    let started = false
+    let lastLiveAt: number | null = null
     for (;;) {
       const file = Bun.file(statusPath)
       if (await file.exists()) {
         const payload = await file.json().catch(() => null) as ExternalRunStatusPayload | null
-        if (payload?.state === "starting" || typeof payload?.startedAt === "string") {
-          started = true
+        if (
+          payload?.state === "starting" ||
+          payload?.state === "running" ||
+          typeof payload?.startedAt === "string"
+        ) {
+          const lastSeenAt = payload?.heartbeatAt ?? payload?.startedAt ?? null
+          if (typeof lastSeenAt === "string") {
+            const lastSeenMs = Date.parse(lastSeenAt)
+            if (Number.isFinite(lastSeenMs)) {
+              lastLiveAt = lastSeenMs
+            }
+          }
         }
         if (payload?.state === "finished" && typeof payload.exitCode === "number") {
           return payload.exitCode
         }
       }
 
-      if (!started && Date.now() >= deadline) {
+      if (lastLiveAt === null && Date.now() >= deadline) {
         throw new ExternalLaunchStartupTimeoutError()
+      }
+      if (lastLiveAt !== null && Date.now() - lastLiveAt >= livenessTimeoutMs) {
+        throw new ExternalRunHeartbeatTimeoutError()
       }
 
       await Bun.sleep(400)
@@ -1399,7 +1428,11 @@ export class TUIApp implements AppController {
     startedAt: number,
   ): Promise<void> {
     try {
-      const exitCode = await this.waitForExternalExit(sessionPlan.statusPath, sessionPlan.startupTimeoutMs)
+      const exitCode = await this.waitForExternalExit(
+        sessionPlan.statusPath,
+        sessionPlan.startupTimeoutMs,
+        sessionPlan.livenessTimeoutMs,
+      )
       const currentRun = this.state.runs.entries.find((entry) => entry.id === runId)
       if (!currentRun) {
         return

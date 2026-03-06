@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { createManagedRun } from "../src/tui/runs"
+import { canRunExternal, createManagedRun, getRunExternalDisabledReason } from "../src/tui/runs"
 import {
   getAvailableExternalAdapters,
   getExternalAdapter,
@@ -7,9 +7,11 @@ import {
 } from "../src/tui/external/registry"
 import {
   createRecoverableExternalFailureRun,
+  ExternalRunHeartbeatTimeoutError,
   ExternalLaunchStartupTimeoutError,
   isRecoverableExternalLaunchError,
 } from "../src/tui/external/state"
+import { makeTerminalWindowRef, parseTerminalWindowRef } from "../src/tui/external/terminal-app"
 import type { ExternalRunSessionPlan, ExternalTerminalAdapter } from "../src/tui/external/types"
 
 function createPlan(): ExternalRunSessionPlan {
@@ -29,6 +31,7 @@ function createPlan(): ExternalRunSessionPlan {
     scriptPath: "/tmp/wc-1/.clawdstrike/external-launch.zsh",
     statusPath: "/tmp/wc-1/.clawdstrike/external-status.json",
     startupTimeoutMs: 10_000,
+    livenessTimeoutMs: 15_000,
     cleanup: async () => {},
   }
 }
@@ -81,6 +84,7 @@ describe("external adapter registry", () => {
   test("marks startup timeout failures as recoverable", () => {
     const error = new ExternalLaunchStartupTimeoutError()
     expect(isRecoverableExternalLaunchError(error)).toBe(true)
+    expect(isRecoverableExternalLaunchError(new ExternalRunHeartbeatTimeoutError())).toBe(true)
     expect(isRecoverableExternalLaunchError(new Error("boom"))).toBe(false)
   })
 
@@ -105,8 +109,8 @@ describe("external adapter registry", () => {
       "launch script never started",
     )
 
-    expect(failed.phase).toBe("launching")
-    expect(failed.completedAt).toBeNull()
+    expect(failed.phase).toBe("failed")
+    expect(failed.completedAt).not.toBeNull()
     expect(failed.routing).toBeNull()
     expect(failed.workcellId).toBeNull()
     expect(failed.worktreePath).toBeNull()
@@ -115,5 +119,13 @@ describe("external adapter registry", () => {
     expect(failed.external.adapterId).toBe("terminal-app")
     expect(failed.external.status).toBe("failed")
     expect(failed.external.error).toBe("launch script never started")
+    expect(canRunExternal(failed)).toBe(true)
+    expect(getRunExternalDisabledReason(failed)).toBeNull()
+  })
+
+  test("round-trips Terminal.app window refs", () => {
+    expect(makeTerminalWindowRef(5126)).toBe("terminal-window:5126")
+    expect(parseTerminalWindowRef("terminal-window:5126")).toBe(5126)
+    expect(parseTerminalWindowRef("terminal-app")).toBeNull()
   })
 })

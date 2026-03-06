@@ -1,7 +1,27 @@
 import type { ExternalRunSessionPlan, ExternalTerminalAdapter, ExternalTerminalLaunchResult } from "./types"
 
+const TERMINAL_WINDOW_REF_PREFIX = "terminal-window:"
+
 function appleScriptQuote(value: string): string {
   return value.replaceAll("\\", "\\\\").replaceAll("\"", "\\\"")
+}
+
+export function makeTerminalWindowRef(windowId: number): string {
+  return `${TERMINAL_WINDOW_REF_PREFIX}${windowId}`
+}
+
+export function parseTerminalWindowRef(ref: string | null | undefined): number | null {
+  if (!ref) {
+    return null
+  }
+
+  const match = /^terminal-window:(\d+)$/.exec(ref.trim())
+  if (!match) {
+    return null
+  }
+
+  const windowId = Number(match[1])
+  return Number.isInteger(windowId) ? windowId : null
 }
 
 export const terminalAppAdapter: ExternalTerminalAdapter = {
@@ -17,7 +37,14 @@ export const terminalAppAdapter: ExternalTerminalAdapter = {
       [
         "osascript",
         "-e",
-        `tell application "Terminal" to do script "${appleScriptQuote(command)}"`,
+        [
+          'tell application "Terminal"',
+          "activate",
+          `set launchedTab to do script "${appleScriptQuote(command)}"`,
+          "delay 0.2",
+          "return id of front window",
+          "end tell",
+        ].join("\n"),
       ],
       {
         stdin: "ignore",
@@ -31,10 +58,22 @@ export const terminalAppAdapter: ExternalTerminalAdapter = {
       throw new Error(errorText.trim() || `osascript exited with code ${exitCode}`)
     }
 
-    return { ref: "terminal-app" }
+    const outputText = (await new Response(proc.stdout).text()).trim()
+    const windowId = Number(outputText)
+    if (!Number.isInteger(windowId)) {
+      throw new Error(`Terminal.app did not return a window id: ${outputText || "empty output"}`)
+    }
+
+    return { ref: makeTerminalWindowRef(windowId) }
   },
-  async focus(): Promise<void> {
-    const proc = Bun.spawn(["osascript", "-e", 'tell application "Terminal" to activate'], {
+  async focus(ref: string): Promise<void> {
+    const windowId = parseTerminalWindowRef(ref)
+    const script = windowId
+      ? ['tell application "Terminal"', "activate", `set frontmost of window id ${windowId} to true`, "end tell"].join(
+          "\n",
+        )
+      : 'tell application "Terminal" to activate'
+    const proc = Bun.spawn(["osascript", "-e", script], {
       stdin: "ignore",
       stdout: "ignore",
       stderr: "pipe",

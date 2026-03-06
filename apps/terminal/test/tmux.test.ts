@@ -25,6 +25,7 @@ function createPlan(): ExternalRunSessionPlan {
     scriptPath: "/tmp/wc-1/.clawdstrike/external-launch.zsh",
     statusPath: "/tmp/wc-1/.clawdstrike/external-status.json",
     startupTimeoutMs: 10_000,
+    livenessTimeoutMs: 15_000,
     cleanup: async () => {},
   }
 }

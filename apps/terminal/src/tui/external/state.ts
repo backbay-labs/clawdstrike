@@ -8,10 +8,17 @@ export class ExternalLaunchStartupTimeoutError extends Error {
   }
 }
 
+export class ExternalRunHeartbeatTimeoutError extends Error {
+  constructor(message = "External terminal stopped reporting liveness after startup.") {
+    super(message)
+    this.name = "ExternalRunHeartbeatTimeoutError"
+  }
+}
+
 export function isRecoverableExternalLaunchError(
   error: unknown,
-): error is ExternalLaunchStartupTimeoutError {
-  return error instanceof ExternalLaunchStartupTimeoutError
+): error is ExternalLaunchStartupTimeoutError | ExternalRunHeartbeatTimeoutError {
+  return error instanceof ExternalLaunchStartupTimeoutError || error instanceof ExternalRunHeartbeatTimeoutError
 }
 
 export function createRecoverableExternalFailureRun(
@@ -22,7 +29,7 @@ export function createRecoverableExternalFailureRun(
   return updateRunRecord(
     run,
     {
-      phase: "launching",
+      phase: "failed",
       routing: null,
       workcellId: null,
       worktreePath: null,
@@ -31,7 +38,7 @@ export function createRecoverableExternalFailureRun(
       verification: null,
       result: null,
       error: message,
-      completedAt: null,
+      completedAt: new Date().toISOString(),
       external: {
         kind: adapterId,
         adapterId,

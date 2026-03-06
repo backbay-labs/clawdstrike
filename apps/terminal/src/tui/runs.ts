@@ -210,9 +210,21 @@ export function canRunAttach(run: Pick<RunRecord, "action" | "mode" | "phase" | 
 }
 
 export function canRunExternal(
-  run: Pick<RunRecord, "action" | "mode" | "phase" | "agentId" | "external">,
+  run: Pick<RunRecord, "action" | "mode" | "phase" | "agentId" | "external" | "result">,
 ): boolean {
   return getRunExternalDisabledReason(run) === null
+}
+
+export function isRecoverableExternalFailure(
+  run: Pick<RunRecord, "action" | "mode" | "phase" | "external" | "result">,
+): boolean {
+  return (
+    run.action === "dispatch" &&
+    run.mode === "external" &&
+    run.phase === "failed" &&
+    run.external.status === "failed" &&
+    run.result === null
+  )
 }
 
 export function getRunAttachDisabledReason(
@@ -250,7 +262,7 @@ export function getRunAttachDisabledReason(
 }
 
 export function getRunExternalDisabledReason(
-  run: Pick<RunRecord, "action" | "mode" | "phase" | "agentId" | "external">,
+  run: Pick<RunRecord, "action" | "mode" | "phase" | "agentId" | "external" | "result">,
 ): string | null {
   if (run.action !== "dispatch") {
     return "External execution is only available for dispatch runs."
@@ -262,6 +274,10 @@ export function getRunExternalDisabledReason(
 
   if (!supportsAttachToolchain(run.agentId)) {
     return "This agent does not expose an interactive external session yet."
+  }
+
+  if (isRecoverableExternalFailure(run)) {
+    return null
   }
 
   if (isRunTerminal(run.phase)) {
