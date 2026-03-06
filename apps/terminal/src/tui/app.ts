@@ -15,8 +15,10 @@ import { Hushd } from "../hushd"
 import { Config } from "../config"
 import { THEME, ESC, AGENTS } from "./theme"
 import { renderStatusBar } from "./components/status-bar"
+import { getInvestigationCounts, isInvestigationStale } from "./investigation"
+import { getSurfaceMeta } from "./surfaces"
 import type { Screen, ScreenContext, AppState, InputMode, Command, AppController } from "./types"
-import { createInitialHuntState } from "./types"
+import { createInitialAuditLogState, createInitialHuntState, type RuntimeInfo } from "./types"
 
 // Screen imports
 import { createMainScreen } from "./screens/main"
@@ -35,6 +37,7 @@ import { huntRuleBuilderScreen } from "./screens/hunt-rule-builder"
 import { huntQueryScreen } from "./screens/hunt-query"
 import { huntDiffScreen } from "./screens/hunt-diff"
 import { huntReportScreen } from "./screens/hunt-report"
+import { huntReportHistoryScreen } from "./screens/hunt-report-history"
 import { huntMitreScreen } from "./screens/hunt-mitre"
 import { huntPlaybookScreen } from "./screens/hunt-playbook"
 
@@ -42,10 +45,36 @@ import { huntPlaybookScreen } from "./screens/hunt-playbook"
 // TUI APP
 // =============================================================================
 
+function resolveRuntimeInfo(): RuntimeInfo {
+  const scriptPath = process.env.CLAWDSTRIKE_TUI_RUNTIME_SCRIPT ?? Bun.main ?? process.argv[1] ?? null
+  const envSource = process.env.CLAWDSTRIKE_TUI_RUNTIME_SOURCE
+
+  if (
+    envSource === "override" ||
+    envSource === "installed-bundle" ||
+    envSource === "embedded-bundle" ||
+    envSource === "repo-source" ||
+    envSource === "direct"
+  ) {
+    return {
+      source: envSource,
+      scriptPath,
+      bunVersion: Bun.version ?? null,
+    }
+  }
+
+  if (scriptPath?.includes("/apps/terminal/src/cli/index.ts")) {
+    return { source: "repo-source", scriptPath, bunVersion: Bun.version ?? null }
+  }
+
+  return { source: "direct", scriptPath, bunVersion: Bun.version ?? null }
+}
+
 export class TUIApp implements AppController {
   private state: AppState
   private refreshTimer: ReturnType<typeof setInterval> | null = null
   private animationTimer: ReturnType<typeof setInterval> | null = null
+  private hushdReconnectTimer: ReturnType<typeof setTimeout> | null = null
   private width: number = 80
   private height: number = 24
   private cwd: string
@@ -68,8 +97,15 @@ export class TUIApp implements AppController {
       health: null,
       healthChecking: false,
       animationFrame: 0,
+      runtimeInfo: resolveRuntimeInfo(),
+      hushdStatus: "disconnected",
       hushdConnected: false,
+      hushdLastEventAt: null,
+      hushdLastError: null,
+      hushdReconnectAttempts: 0,
+      hushdDroppedEvents: 0,
       recentEvents: [],
+      auditLog: createInitialAuditLogState(),
       auditStats: null,
       activePolicy: null,
       securityError: null,
@@ -82,26 +118,27 @@ export class TUIApp implements AppController {
 
     // Build commands list (including hunt commands)
     this.commands = [
-      { key: "d", label: "dispatch", description: "send task to agent", action: () => this.submitPrompt("dispatch") },
-      { key: "s", label: "speculate", description: "parallel multi-agent", action: () => this.submitPrompt("speculate") },
-      { key: "g", label: "gates", description: "run quality gates", action: () => this.runGates() },
-      { key: "S", label: "security", description: "security overview", action: () => this.setScreen("security") },
-      { key: "a", label: "audit", description: "audit log", action: () => this.setScreen("audit") },
-      { key: "p", label: "policy", description: "active policy", action: () => this.setScreen("policy") },
-      { key: "W", label: "watch", description: "live hunt stream", action: () => this.setScreen("hunt-watch") },
-      { key: "X", label: "scan", description: "MCP scan explorer", action: () => this.setScreen("hunt-scan") },
-      { key: "T", label: "timeline", description: "timeline replay", action: () => this.setScreen("hunt-timeline") },
-      { key: "R", label: "rules", description: "correlation rule builder", action: () => this.setScreen("hunt-rule-builder") },
-      { key: "Q", label: "query", description: "hunt query REPL", action: () => this.setScreen("hunt-query") },
-      { key: "D", label: "diff", description: "scan change detection", action: () => this.setScreen("hunt-diff") },
-      { key: "E", label: "evidence", description: "evidence report", action: () => this.setScreen("hunt-report") },
-      { key: "M", label: "mitre", description: "MITRE ATT&CK heatmap", action: () => this.setScreen("hunt-mitre") },
-      { key: "P", label: "playbook", description: "playbook runner", action: () => this.setScreen("hunt-playbook") },
-      { key: "b", label: "beads", description: "view work graph", action: () => this.showBeads() },
-      { key: "r", label: "runs", description: "active rollouts", action: () => this.showRuns() },
-      { key: "i", label: "integrations", description: "system status", action: () => this.setScreen("integrations") },
-      { key: "?", label: "help", description: "keyboard shortcuts", action: () => this.showHelp() },
-      { key: "q", label: "quit", description: "exit clawdstrike", action: () => this.quit() },
+      { key: "d", label: "dispatch", description: "send task to agent", stage: "supported", action: () => this.submitPrompt("dispatch") },
+      { key: "s", label: "speculate", description: "parallel multi-agent", stage: "supported", action: () => this.submitPrompt("speculate") },
+      { key: "g", label: "gates", description: "run quality gates", stage: "supported", action: () => this.runGates() },
+      { key: "S", label: "security", description: "security overview", stage: "supported", action: () => this.setScreen("security") },
+      { key: "a", label: "audit", description: "audit log", stage: "supported", action: () => this.setScreen("audit") },
+      { key: "p", label: "policy", description: "active policy", stage: "supported", action: () => this.setScreen("policy") },
+      { key: "W", label: "watch", description: "live hunt stream", stage: "supported", action: () => this.setScreen("hunt-watch") },
+      { key: "X", label: "scan", description: "MCP scan explorer", stage: "supported", action: () => this.setScreen("hunt-scan") },
+      { key: "T", label: "timeline", description: "timeline replay", stage: "supported", action: () => this.setScreen("hunt-timeline") },
+      { key: "R", label: "rules", description: "correlation rule builder", stage: "experimental", action: () => this.setScreen("hunt-rule-builder") },
+      { key: "Q", label: "query", description: "hunt query REPL", stage: "supported", action: () => this.setScreen("hunt-query") },
+      { key: "D", label: "diff", description: "scan change detection", stage: "experimental", action: () => this.setScreen("hunt-diff") },
+      { key: "E", label: "evidence", description: "evidence report", stage: "supported", action: () => this.setScreen("hunt-report") },
+      { key: "H", label: "history", description: "exported report index", stage: "supported", action: () => this.setScreen("hunt-report-history") },
+      { key: "M", label: "mitre", description: "MITRE ATT&CK heatmap", stage: "experimental", action: () => this.setScreen("hunt-mitre") },
+      { key: "P", label: "playbook", description: "playbook runner", stage: "experimental", action: () => this.setScreen("hunt-playbook") },
+      { key: "b", label: "beads", description: "view work graph", stage: "supported", action: () => this.showBeads() },
+      { key: "r", label: "runs", description: "active rollouts", stage: "supported", action: () => this.showRuns() },
+      { key: "i", label: "integrations", description: "system status", stage: "supported", action: () => this.setScreen("integrations") },
+      { key: "?", label: "help", description: "keyboard shortcuts", stage: "supported", action: () => this.showHelp() },
+      { key: "q", label: "quit", description: "exit clawdstrike", stage: "supported", action: () => this.quit() },
     ]
 
     // Build screen registry
@@ -122,6 +159,7 @@ export class TUIApp implements AppController {
       ["hunt-query", huntQueryScreen],
       ["hunt-diff", huntDiffScreen],
       ["hunt-report", huntReportScreen],
+      ["hunt-report-history", huntReportHistoryScreen],
       ["hunt-mitre", huntMitreScreen],
       ["hunt-playbook", huntPlaybookScreen],
     ])
@@ -197,42 +235,118 @@ export class TUIApp implements AppController {
   }
 
   connectHushd(): void {
+    if (this.hushdReconnectTimer) {
+      clearTimeout(this.hushdReconnectTimer)
+      this.hushdReconnectTimer = null
+    }
+
+    if (Hushd.isInitialized()) {
+      Hushd.reset()
+    }
     Hushd.init()
     const client = Hushd.getClient()
+    this.state.hushdStatus = "connecting"
+    this.state.hushdLastError = null
+    this.state.securityError = null
+    this.render()
 
     client.probe()
       .then(async (connected) => {
         this.state.hushdConnected = connected
 
-        if (connected) {
-          const [policy, stats] = await Promise.all([
-            client.getPolicy(),
-            client.getAuditStats(),
-          ])
-          this.state.activePolicy = policy
-          this.state.auditStats = stats
-
-          client.connectSSE(
-            (event) => {
-              this.state.recentEvents.unshift(event)
-              if (this.state.recentEvents.length > 50) {
-                this.state.recentEvents.length = 50
-              }
-              this.render()
-            },
-            () => {
-              this.state.hushdConnected = false
-              this.render()
-            }
-          )
+        if (!connected) {
+          this.state.hushdStatus = "disconnected"
+          this.state.hushdLastError = "health probe failed"
+          this.state.securityError = "hushd is unreachable."
+          return
         }
+
+        const [policyResult, statsResult] = await Promise.all([
+          client.getPolicyDetailed(),
+          client.getAuditStatsDetailed(),
+        ])
+        const unauthorized = [policyResult.status, statsResult.status].some(
+          (status) => status === 401 || status === 403,
+        )
+        const errors = [policyResult.error, statsResult.error].filter(Boolean)
+
+        this.state.activePolicy = policyResult.data ?? null
+        this.state.auditStats = statsResult.data ?? null
+        this.state.hushdConnected = !unauthorized
+        this.state.hushdStatus = unauthorized
+          ? "unauthorized"
+          : policyResult.ok && statsResult.ok
+            ? "connected"
+            : "degraded"
+        this.state.hushdLastError = errors[0] ?? null
+        this.state.securityError = errors[0] ?? null
+
+        if (unauthorized) {
+          return
+        }
+
+        client.connectSSE(
+          (event) => {
+            this.state.recentEvents.unshift(event)
+            if (this.state.recentEvents.length > 50) {
+              this.state.recentEvents.length = 50
+            }
+            this.state.hushdConnected = true
+            this.state.hushdStatus = "connected"
+            this.state.hushdLastEventAt = event.timestamp
+            this.state.hushdLastError = null
+            this.state.hushdReconnectAttempts = 0
+            this.render()
+          },
+          (error) => {
+            const message = error.message || "stream error"
+            this.state.hushdLastError = message
+            this.state.securityError = message
+
+            if (message.startsWith("Failed to parse")) {
+              this.state.hushdDroppedEvents += 1
+              this.state.hushdStatus = "degraded"
+              this.render()
+              return
+            }
+
+            if (message.includes("401") || message.includes("403")) {
+              this.state.hushdConnected = false
+              this.state.hushdStatus = "unauthorized"
+              this.render()
+              return
+            }
+
+            this.state.hushdConnected = false
+            this.state.hushdStatus = this.state.hushdLastEventAt ? "stale" : "disconnected"
+            this.scheduleHushdReconnect()
+            this.render()
+          },
+        )
       })
-      .catch(() => {
+      .catch((err) => {
         this.state.hushdConnected = false
+        this.state.hushdStatus = "error"
+        this.state.hushdLastError = err instanceof Error ? err.message : String(err)
+        this.state.securityError = this.state.hushdLastError
       })
       .finally(() => {
         this.render()
       })
+  }
+
+  private scheduleHushdReconnect(): void {
+    if (this.hushdReconnectTimer || this.state.hushdStatus === "unauthorized") {
+      return
+    }
+
+    const attempt = this.state.hushdReconnectAttempts + 1
+    const delay = Math.min(15_000, 1_000 * (2 ** Math.min(attempt - 1, 4)))
+    this.state.hushdReconnectAttempts = attempt
+    this.hushdReconnectTimer = setTimeout(() => {
+      this.hushdReconnectTimer = null
+      this.connectHushd()
+    }, delay)
   }
 
   private async checkFirstRun(): Promise<void> {
@@ -245,7 +359,12 @@ export class TUIApp implements AppController {
     const detection = await Config.detect(this.cwd)
     this.state.setupDetection = detection
     this.state.setupStep = "review"
-    this.state.setupSandboxIndex = 0
+    this.state.setupSandboxIndex =
+      detection.recommended_sandbox === "worktree"
+        ? 1
+        : detection.recommended_sandbox === "tmpdir"
+          ? 2
+          : 0
     this.render()
   }
 
@@ -258,6 +377,11 @@ export class TUIApp implements AppController {
     if (this.animationTimer) {
       clearInterval(this.animationTimer)
       this.animationTimer = null
+    }
+
+    if (this.hushdReconnectTimer) {
+      clearTimeout(this.hushdReconnectTimer)
+      this.hushdReconnectTimer = null
     }
 
     try {
@@ -353,24 +477,45 @@ export class TUIApp implements AppController {
   }
 
   private buildStatusBar(): string {
+    const surface = getSurfaceMeta(this.state.inputMode)
+    const investigation = this.state.hunt.investigation
+    const investigationCounts = getInvestigationCounts(investigation)
+
     return renderStatusBar(
       {
         version: VERSION,
         cwd: this.cwd,
+        currentScreenLabel: surface.label,
+        currentScreenStage: surface.stage,
         healthChecking: this.state.healthChecking,
         health: this.state.health,
-        hushdConnected: this.state.hushdConnected,
+        hushdStatus: this.state.hushdStatus,
         deniedCount: this.state.recentEvents.filter(e =>
           e.type === "check" && (e.data as { decision?: string }).decision === "deny"
         ).length,
         activeRuns: this.state.activeRuns,
         openBeads: this.state.openBeads,
         agentId: AGENTS[this.state.agentIndex].id,
+        investigation:
+          investigation.origin || investigationCounts.events > 0 || investigationCounts.findings > 0
+            ? {
+                origin: investigation.origin ?? "manual",
+                events: investigationCounts.events,
+                findings: investigationCounts.findings,
+                stale: isInvestigationStale(investigation),
+              }
+            : null,
         huntWatch: this.state.hunt.watch.running ? {
           events: this.state.hunt.watch.stats?.events_processed ?? 0,
           alerts: this.state.hunt.watch.stats?.alerts_fired ?? 0,
         } : null,
         huntScan: this.state.hunt.scan.loading ? { status: "scanning" } : null,
+        lastExportedReport: this.state.hunt.reportHistory.entries[0]
+          ? {
+              title: this.state.hunt.reportHistory.entries[0].title,
+              severity: this.state.hunt.reportHistory.entries[0].severity,
+            }
+          : null,
       },
       this.width,
       THEME,
@@ -643,15 +788,16 @@ export class TUIApp implements AppController {
     console.log("")
     console.log(THEME.white + THEME.bold + "  Hunt Commands" + THEME.reset)
     console.log("")
-    console.log(`  ${THEME.secondary}W${THEME.reset}                   Watch (live stream)`)
-    console.log(`  ${THEME.secondary}X${THEME.reset}                   Scan (MCP explorer)`)
-    console.log(`  ${THEME.secondary}T${THEME.reset}                   Timeline replay`)
-    console.log(`  ${THEME.secondary}R${THEME.reset}                   Rule builder`)
-    console.log(`  ${THEME.secondary}Q${THEME.reset}                   Query REPL`)
-    console.log(`  ${THEME.secondary}D${THEME.reset}                   Diff (scan changes)`)
-    console.log(`  ${THEME.secondary}E${THEME.reset}                   Evidence report`)
-    console.log(`  ${THEME.secondary}M${THEME.reset}                   MITRE ATT&CK map`)
-    console.log(`  ${THEME.secondary}P${THEME.reset}                   Playbook runner`)
+    console.log(`  ${THEME.secondary}W${THEME.reset}                   Watch (live stream) ${THEME.success}[beta]${THEME.reset}`)
+    console.log(`  ${THEME.secondary}X${THEME.reset}                   Scan (MCP explorer) ${THEME.success}[beta]${THEME.reset}`)
+    console.log(`  ${THEME.secondary}T${THEME.reset}                   Timeline replay ${THEME.success}[beta]${THEME.reset}`)
+    console.log(`  ${THEME.secondary}R${THEME.reset}                   Rule builder ${THEME.warning}[exp]${THEME.reset}`)
+    console.log(`  ${THEME.secondary}Q${THEME.reset}                   Query REPL ${THEME.success}[beta]${THEME.reset}`)
+    console.log(`  ${THEME.secondary}D${THEME.reset}                   Diff (scan changes) ${THEME.warning}[exp]${THEME.reset}`)
+    console.log(`  ${THEME.secondary}E${THEME.reset}                   Evidence report ${THEME.success}[beta]${THEME.reset}`)
+    console.log(`  ${THEME.secondary}H${THEME.reset}                   Export history ${THEME.success}[beta]${THEME.reset}`)
+    console.log(`  ${THEME.secondary}M${THEME.reset}                   MITRE ATT&CK map ${THEME.warning}[exp]${THEME.reset}`)
+    console.log(`  ${THEME.secondary}P${THEME.reset}                   Playbook runner ${THEME.warning}[exp]${THEME.reset}`)
     console.log("")
     console.log(THEME.dim + "  Press any key to return..." + THEME.reset)
 

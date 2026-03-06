@@ -150,7 +150,9 @@ function renderSetupScreen(ctx: ScreenContext): string {
       const boxIcon = selected ? `${THEME.secondary}■` : `${THEME.dim}□`
       const nameColor = opt.disabled ? THEME.dim : THEME.muted
       const descColor = opt.disabled ? THEME.dim : THEME.dim
-      const suffix = opt.idx === 0 ? " (recommended)" : opt.disabled ? " (no git)" : ""
+      const isRecommended =
+        detection.recommended_sandbox === opt.name
+      const suffix = isRecommended ? " (recommended)" : opt.disabled ? " (no git)" : ""
       const content = `  ${selIcon}${THEME.reset} ${boxIcon}${THEME.reset} ${nameColor}${opt.name.padEnd(12)}${THEME.reset}${descColor}${opt.desc}${suffix}${THEME.reset}`
       const contentLen = `  > ■ ${opt.name.padEnd(12)}${opt.desc}${suffix}`.length
       lines.push(" ".repeat(boxPad) + THEME.dim + "║" + THEME.reset + content + " ".repeat(Math.max(0, boxWidth - contentLen - 2)) + THEME.dim + "║" + THEME.reset)

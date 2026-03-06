@@ -49,41 +49,60 @@ export interface PostureInfo {
 // =============================================================================
 
 export interface AuditQuery {
+  event_type?: string
   limit?: number
   offset?: number
+  cursor?: string
   action_type?: string
-  decision?: "allow" | "deny"
+  decision?: "allowed" | "blocked"
   guard?: string
-  since?: string
-  until?: string
+  session_id?: string
+  agent_id?: string
+  runtime_agent_id?: string
+  runtime_agent_kind?: string
+  format?: "json" | "csv" | "jsonl"
 }
 
 export interface AuditEvent {
   id: string
   timestamp: string
+  event_type: string
   action_type: string
-  target: string
-  decision: "allow" | "deny"
-  guard: string
-  severity: "info" | "warning" | "error" | "critical"
-  reason?: string
-  receipt_id?: string
+  target?: string | null
+  decision: "allowed" | "blocked"
+  guard?: string | null
+  severity?: "info" | "warning" | "error" | "critical" | null
+  message?: string | null
+  session_id?: string | null
+  agent_id?: string | null
+  metadata?: Record<string, unknown> | null
 }
 
 export interface AuditResponse {
   events: AuditEvent[]
   total: number
-  offset: number
-  limit: number
+  offset?: number
+  limit?: number
+  next_cursor?: string
+  has_more?: boolean
+}
+
+export interface AuditBatchRequest {
+  events: Array<Record<string, unknown>>
+}
+
+export interface AuditBatchResponse {
+  accepted: number
+  duplicates: number
+  rejected: number
 }
 
 export interface AuditStats {
-  total_checks: number
+  total_events: number
+  violations: number
   allowed: number
-  denied: number
-  by_guard: Record<string, { allowed: number; denied: number }>
-  by_action_type: Record<string, { allowed: number; denied: number }>
-  since: string
+  session_id: string
+  uptime_secs: number
 }
 
 // =============================================================================
@@ -140,4 +159,12 @@ export interface ErrorData {
 // CONNECTION STATE
 // =============================================================================
 
-export type HushdConnectionState = "disconnected" | "connecting" | "connected" | "error"
+export type HushdConnectionState =
+  | "not_configured"
+  | "connecting"
+  | "connected"
+  | "degraded"
+  | "stale"
+  | "disconnected"
+  | "unauthorized"
+  | "error"

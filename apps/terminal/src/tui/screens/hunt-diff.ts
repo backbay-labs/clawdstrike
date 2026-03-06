@@ -10,11 +10,15 @@ import { renderList, scrollUp, scrollDown, type ListItem } from "../components/s
 import { renderSplit } from "../components/split-pane"
 import { renderBox } from "../components/box"
 import { fitString } from "../components/types"
+import { renderSurfaceHeader } from "../components/surface-header"
 import { readFile, writeFile, mkdir } from "node:fs/promises"
-import { homedir } from "node:os"
 import { join } from "node:path"
 
-const HISTORY_PATH = join(homedir(), ".clawdstrike", "scan_history.json")
+function homeDirFromEnv(): string {
+  return process.env.HOME ?? process.env.USERPROFILE ?? "."
+}
+
+const HISTORY_PATH = join(homeDirFromEnv(), ".clawdstrike", "scan_history.json")
 
 const CHANGE_COLORS: Record<ChangeKind, string> = {
   added: THEME.success,
@@ -40,7 +44,7 @@ async function loadPreviousScan(): Promise<ScanPathResult[]> {
 
 async function saveScanHistory(results: ScanPathResult[]): Promise<void> {
   try {
-    const dir = join(homedir(), ".clawdstrike")
+    const dir = join(homeDirFromEnv(), ".clawdstrike")
     await mkdir(dir, { recursive: true })
     await writeFile(HISTORY_PATH, JSON.stringify(results, null, 2), "utf-8")
   } catch {
@@ -195,10 +199,7 @@ export const huntDiffScreen: Screen = {
     const d = state.hunt.diff
     const lines: string[] = []
 
-    // Title bar
-    const title = `${THEME.accent}${THEME.bold} HUNT ${THEME.reset}${THEME.dim} // ${THEME.reset}${THEME.secondary}Scan Diff${THEME.reset}`
-    lines.push(fitString(title, width))
-    lines.push(fitString(`${THEME.dim}${"─".repeat(width)}${THEME.reset}`, width))
+    lines.push(...renderSurfaceHeader("hunt-diff", "Scan Diff", width, THEME))
 
     // Loading state
     if (d.loading) {

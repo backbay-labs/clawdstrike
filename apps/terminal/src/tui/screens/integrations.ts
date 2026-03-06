@@ -5,6 +5,8 @@
 import { THEME } from "../theme"
 import type { Screen, ScreenContext } from "../types"
 import type { HealthStatus } from "../../health"
+import { renderSurfaceHeader } from "../components/surface-header"
+import { fitString } from "../components/types"
 
 export const integrationsScreen: Screen = {
   render(ctx: ScreenContext): string {
@@ -37,16 +39,36 @@ function renderIntegrationsScreen(ctx: ScreenContext): string {
   const boxPad = Math.max(0, Math.floor((width - boxWidth) / 2))
   const startY = Math.max(2, Math.floor(height / 6))
 
-  for (let i = 0; i < startY; i++) {
+  lines.push(...renderSurfaceHeader("integrations", "Integrations", width, THEME))
+
+  for (let i = lines.length; i < startY; i++) {
     lines.push("")
   }
 
-  // Gothic title bar
-  const title = "⟨ Integrations ⟩"
-  const titlePadLeft = Math.floor((boxWidth - title.length - 4) / 2)
-  const titlePadRight = boxWidth - title.length - titlePadLeft - 4
-  const titleLine = "╔═" + "═".repeat(titlePadLeft) + title + "═".repeat(titlePadRight) + "═╗"
-  lines.push(" ".repeat(boxPad) + THEME.dim + titleLine + THEME.reset)
+  lines.push(" ".repeat(boxPad) + THEME.dim + "╔" + "═".repeat(boxWidth - 2) + "╗" + THEME.reset)
+  lines.push(" ".repeat(boxPad) + THEME.dim + "║" + " ".repeat(boxWidth - 2) + "║" + THEME.reset)
+
+  const runtimeLines = [
+    `  ${THEME.secondary}◇${THEME.reset} ${THEME.white}${THEME.bold}Runtime${THEME.reset}`,
+    fitString(
+      `    source: ${THEME.white}${state.runtimeInfo?.source ?? "unknown"}${THEME.reset}` +
+      `  ${THEME.dim}hushd:${THEME.reset} ${THEME.white}${state.hushdStatus}${THEME.reset}`,
+      boxWidth - 2,
+    ),
+    fitString(
+      `    entry: ${THEME.dim}${state.runtimeInfo?.scriptPath ?? "unknown"}${THEME.reset}`,
+      boxWidth - 2,
+    ),
+  ]
+  for (const line of runtimeLines) {
+    const plain = line.replace(/\x1b\[[0-9;]*m/g, "")
+    lines.push(" ".repeat(boxPad) + THEME.dim + "║" + THEME.reset + line + " ".repeat(Math.max(0, boxWidth - plain.length - 2)) + THEME.dim + "║" + THEME.reset)
+  }
+  if (state.securityError) {
+    const line = fitString(`    ${THEME.warning}${state.securityError}${THEME.reset}`, boxWidth - 2)
+    const plain = line.replace(/\x1b\[[0-9;]*m/g, "")
+    lines.push(" ".repeat(boxPad) + THEME.dim + "║" + THEME.reset + line + " ".repeat(Math.max(0, boxWidth - plain.length - 2)) + THEME.dim + "║" + THEME.reset)
+  }
   lines.push(" ".repeat(boxPad) + THEME.dim + "║" + " ".repeat(boxWidth - 2) + "║" + THEME.reset)
 
   const addSection = (label: string, items: HealthStatus[], color: string) => {

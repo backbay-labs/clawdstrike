@@ -50,6 +50,15 @@ npm --prefix apps/control-console run build
 cargo check --manifest-path apps/agent/src-tauri/Cargo.toml
 """
 
+[tasks."test:tui"]
+description = "Terminal TUI typecheck, tests, and wrapper smokes"
+run = """
+(cd apps/terminal && bun install --frozen-lockfile)
+(cd apps/terminal && bun run typecheck)
+(cd apps/terminal && bun test)
+cargo test -p hush-cli tui::tests -- --nocapture
+"""
+
 [tasks."test:packages:ts"]
 description = "TypeScript package smoke checks"
 run = "bash scripts/smoke-ts-file-deps.sh"

@@ -4,7 +4,13 @@
 
 import type { ThemeColors } from "./theme"
 import type { HealthSummary } from "../health"
-import type { DaemonEvent, AuditStats, PolicyResponse } from "../hushd"
+import type {
+  AuditEvent,
+  AuditStats,
+  DaemonEvent,
+  HushdConnectionState,
+  PolicyResponse,
+} from "../hushd"
 import type { DetectionResult } from "../config"
 import type {
   TimelineEvent,
@@ -20,6 +26,7 @@ import type { TreeViewport } from "./components/tree-view"
 import type { FormState } from "./components/form"
 import type { LogState } from "./components/streaming-log"
 import type { GridSelection } from "./components/grid"
+import type { ReportHistoryEntry } from "./report-export"
 
 // =============================================================================
 // SCREEN SYSTEM
@@ -88,6 +95,7 @@ export interface Command {
   key: string
   label: string
   description: string
+  stage?: ScreenStage
   action: () => Promise<void> | void
 }
 
@@ -112,8 +120,11 @@ export type InputMode =
   | "hunt-query"
   | "hunt-diff"
   | "hunt-report"
+  | "hunt-report-history"
   | "hunt-mitre"
   | "hunt-playbook"
+
+export type ScreenStage = "supported" | "experimental"
 
 // =============================================================================
 // DISPATCH RESULT
@@ -140,6 +151,31 @@ export interface DispatchResultInfo {
   }
   error?: string
   duration: number
+}
+
+export interface RuntimeInfo {
+  source: "override" | "installed-bundle" | "embedded-bundle" | "repo-source" | "direct"
+  scriptPath: string | null
+  bunVersion: string | null
+}
+
+export interface AuditLogFilters {
+  decision: "any" | "allowed" | "blocked"
+  eventType: "any" | "check" | "violation" | "report_export"
+  sessionId: string
+}
+
+export interface AuditLogState {
+  events: AuditEvent[]
+  list: ListViewport
+  loading: boolean
+  error: string | null
+  statusMessage: string | null
+  filters: AuditLogFilters
+  limit: number
+  offset: number
+  nextCursor: string | null
+  hasMore: boolean
 }
 
 // =============================================================================
@@ -208,6 +244,25 @@ export interface HuntReportState {
   list: ListViewport
   expandedEvidence: number | null
   error: string | null
+  statusMessage: string | null
+}
+
+export interface HuntReportHistoryState {
+  entries: ReportHistoryEntry[]
+  list: ListViewport
+  loading: boolean
+  error: string | null
+  statusMessage: string | null
+}
+
+export interface HuntInvestigationState {
+  origin: "watch" | "scan" | "timeline" | "query" | "report" | null
+  title: string
+  summary: string | null
+  query: string | null
+  events: TimelineEvent[]
+  findings: string[]
+  updatedAt: string | null
 }
 
 export interface HuntMitreState {
@@ -232,6 +287,7 @@ export interface HuntPlaybookState {
 }
 
 export interface HuntState {
+  investigation: HuntInvestigationState
   watch: HuntWatchState
   scan: HuntScanState
   timeline: HuntTimelineState
@@ -239,6 +295,7 @@ export interface HuntState {
   query: HuntQueryState
   diff: HuntDiffState
   report: HuntReportState
+  reportHistory: HuntReportHistoryState
   mitre: HuntMitreState
   playbook: HuntPlaybookState
 }
@@ -271,8 +328,15 @@ export interface AppState {
   animationFrame: number
 
   // Security (hushd)
+  runtimeInfo: RuntimeInfo | null
+  hushdStatus: HushdConnectionState
   hushdConnected: boolean
+  hushdLastEventAt: string | null
+  hushdLastError: string | null
+  hushdReconnectAttempts: number
+  hushdDroppedEvents: number
   recentEvents: DaemonEvent[]
+  auditLog: AuditLogState
   auditStats: AuditStats | null
   activePolicy: PolicyResponse | null
   securityError: string | null
@@ -295,6 +359,15 @@ export interface AppState {
 
 export function createInitialHuntState(): HuntState {
   return {
+    investigation: {
+      origin: null,
+      title: "",
+      summary: null,
+      query: null,
+      events: [],
+      findings: [],
+      updatedAt: null,
+    },
     watch: {
       log: { lines: [], maxLines: 1000, viewport: 0, paused: false },
       running: false,
@@ -367,6 +440,14 @@ export function createInitialHuntState(): HuntState {
       list: { offset: 0, selected: 0 },
       expandedEvidence: null,
       error: null,
+      statusMessage: null,
+    },
+    reportHistory: {
+      entries: [],
+      list: { offset: 0, selected: 0 },
+      loading: false,
+      error: null,
+      statusMessage: null,
     },
     mitre: {
       grid: { row: 0, col: 0 },
@@ -387,5 +468,24 @@ export function createInitialHuntState(): HuntState {
       error: null,
       report: null,
     },
+  }
+}
+
+export function createInitialAuditLogState(): AuditLogState {
+  return {
+    events: [],
+    list: { offset: 0, selected: 0 },
+    loading: false,
+    error: null,
+    statusMessage: null,
+    filters: {
+      decision: "any",
+      eventType: "any",
+      sessionId: "",
+    },
+    limit: 20,
+    offset: 0,
+    nextCursor: null,
+    hasMore: false,
   }
 }

@@ -174,12 +174,13 @@ describe("HushdClient", () => {
           {
             id: "evt-1",
             timestamp: new Date().toISOString(),
+            event_type: "violation",
             action_type: "file",
             target: "/etc/passwd",
-            decision: "deny",
+            decision: "blocked",
             guard: "ForbiddenPathGuard",
             severity: "critical",
-            reason: "Path is forbidden",
+            message: "Path is forbidden",
           },
         ],
         total: 1,
@@ -191,10 +192,10 @@ describe("HushdClient", () => {
         ["/api/v1/audit", { status: 200, body: mockAudit }],
       ]))
 
-      const result = await client.getAudit({ limit: 10, decision: "deny" })
+      const result = await client.getAudit({ limit: 10, decision: "blocked" })
       expect(result).not.toBeNull()
       expect(result!.events).toHaveLength(1)
-      expect(result!.events[0].decision).toBe("deny")
+      expect(result!.events[0].decision).toBe("blocked")
     })
 
     test("returns null on error", async () => {
@@ -207,18 +208,11 @@ describe("HushdClient", () => {
   describe("getAuditStats", () => {
     test("fetches audit statistics", async () => {
       const mockStats: AuditStats = {
-        total_checks: 100,
+        total_events: 100,
         allowed: 95,
-        denied: 5,
-        by_guard: {
-          ForbiddenPathGuard: { allowed: 45, denied: 3 },
-          SecretLeakGuard: { allowed: 50, denied: 2 },
-        },
-        by_action_type: {
-          file: { allowed: 60, denied: 4 },
-          shell: { allowed: 35, denied: 1 },
-        },
-        since: new Date().toISOString(),
+        violations: 5,
+        session_id: "sess-1",
+        uptime_secs: 42,
       }
 
       mockFetch(new Map([
@@ -227,8 +221,8 @@ describe("HushdClient", () => {
 
       const result = await client.getAuditStats()
       expect(result).not.toBeNull()
-      expect(result!.total_checks).toBe(100)
-      expect(result!.denied).toBe(5)
+      expect(result!.total_events).toBe(100)
+      expect(result!.violations).toBe(5)
     })
 
     test("returns null on error", async () => {
@@ -258,6 +252,31 @@ describe("HushdClient", () => {
       expect(capturedHeaders["Authorization"]).toBe("Bearer test-token")
 
       tokenClient.disconnectSSE()
+    })
+  })
+
+  describe("ingestAuditBatch", () => {
+    test("submits report export audit events", async () => {
+      mockFetch(new Map([
+        ["/api/v1/audit/batch", { status: 200, body: { accepted: 1, duplicates: 0, rejected: 0 } }],
+      ]))
+
+      const result = await client.ingestAuditBatch([
+        {
+          id: "audit-export-1",
+          timestamp: new Date().toISOString(),
+          event_type: "report_export",
+          action_type: "report_export",
+          target: "investigation-1",
+          decision: "allowed",
+          severity: "info",
+          message: "Investigation report exported",
+          metadata: { report_id: "investigation-1" },
+        },
+      ])
+
+      expect(result.ok).toBe(true)
+      expect(result.data?.accepted).toBe(1)
     })
   })
 

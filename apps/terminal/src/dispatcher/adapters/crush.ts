@@ -5,7 +5,6 @@
  * Used for unreliable networks or batch jobs.
  */
 
-import { $ } from "bun"
 import { join } from "path"
 import { mkdir, writeFile } from "fs/promises"
 import type { Adapter, AdapterResult } from "../index"
@@ -30,6 +29,14 @@ const DEFAULT_CONFIG: CrushConfig = {
 }
 
 let config: CrushConfig = { ...DEFAULT_CONFIG }
+
+function commandExists(command: string): boolean {
+  const bunRuntime = Bun as unknown as {
+    which?: (binary: string) => string | null | undefined
+  }
+
+  return !!bunRuntime.which?.(command)
+}
 
 /**
  * Configure Crush adapter
@@ -58,13 +65,10 @@ export const CrushAdapter: Adapter = {
   },
 
   async isAvailable(): Promise<boolean> {
-    // Check if `crush` CLI exists
-    const which = await $`which crush`.quiet().nothrow()
-    if (which.exitCode === 0) {
+    if (commandExists("crush")) {
       return true
     }
 
-    // Crush is also available if we have any API keys for fallback
     const hasAnyKey =
       !!process.env.ANTHROPIC_API_KEY ||
       !!process.env.OPENAI_API_KEY ||
@@ -81,7 +85,7 @@ export const CrushAdapter: Adapter = {
     const startTime = Date.now()
 
     // Try CLI first if available
-    const cliAvailable = (await $`which crush`.quiet().nothrow()).exitCode === 0
+    const cliAvailable = commandExists("crush")
 
     if (cliAvailable) {
       return executeViaCli(workcell, task, signal, startTime)

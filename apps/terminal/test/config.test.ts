@@ -167,3 +167,20 @@ describe("Config.detect", () => {
     }
   })
 })
+
+describe("Config.inspectProject", () => {
+  test("recommends inplace outside git", async () => {
+    const result = await Config.inspectProject(testDir)
+    expect(result.git_available).toBe(false)
+    expect(result.recommended_sandbox).toBe("inplace")
+  })
+
+  test("recommends worktree when .git marker exists", async () => {
+    const { mkdir } = await import("fs/promises")
+    await mkdir(join(testDir, ".git"))
+
+    const result = await Config.inspectProject(testDir)
+    expect(result.git_available).toBe(true)
+    expect(result.recommended_sandbox).toBe("worktree")
+  })
+})

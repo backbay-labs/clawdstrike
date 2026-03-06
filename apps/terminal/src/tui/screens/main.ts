@@ -4,6 +4,109 @@
 
 import { THEME, LOGO, AGENTS, getAnimatedStrike } from "../theme"
 import type { Screen, ScreenContext, Command } from "../types"
+import { renderBox } from "../components/box"
+import { getInvestigationCounts, isInvestigationStale } from "../investigation"
+import type { AppState } from "../types"
+import type { CheckEventData, DaemonEvent } from "../../hushd"
+
+const STREAM_STALE_MS = 5 * 60_000
+
+function formatAge(ms: number): string {
+  if (ms < 60_000) {
+    return `${Math.max(1, Math.floor(ms / 1000))}s`
+  }
+  if (ms < 3_600_000) {
+    return `${Math.floor(ms / 60_000)}m`
+  }
+  return `${Math.floor(ms / 3_600_000)}h`
+}
+
+function truncateMiddle(value: string, maxLength: number): string {
+  if (value.length <= maxLength) {
+    return value
+  }
+
+  const head = Math.max(4, Math.floor((maxLength - 1) / 2))
+  const tail = Math.max(4, maxLength - head - 1)
+  return `${value.slice(0, head)}…${value.slice(-tail)}`
+}
+
+function flattenHealth(state: AppState) {
+  return state.health
+    ? [...state.health.security, ...state.health.ai, ...state.health.infra, ...state.health.mcp]
+    : []
+}
+
+function renderHealthStatus(state: AppState): string {
+  if (state.healthChecking) {
+    return `${THEME.secondary}checking${THEME.reset}`
+  }
+
+  const items = flattenHealth(state)
+  if (items.length === 0) {
+    return `${THEME.dim}unknown${THEME.reset}`
+  }
+
+  const unavailable = items.filter((item) => !item.available)
+  if (unavailable.length === 0) {
+    return `${THEME.success}healthy${THEME.reset} ${THEME.dim}${items.length}/${items.length} up${THEME.reset}`
+  }
+
+  return `${THEME.warning}degraded${THEME.reset} ${THEME.dim}${unavailable.length}/${items.length} down${THEME.reset}`
+}
+
+function renderStreamStatus(state: AppState, now = Date.now()): string {
+  if (state.hushdStatus === "connecting") {
+    return `${THEME.warning}connecting${THEME.reset}`
+  }
+
+  if (state.hushdStatus === "unauthorized") {
+    return `${THEME.error}unauthorized${THEME.reset}`
+  }
+
+  if (state.hushdStatus === "degraded") {
+    return `${THEME.warning}degraded${THEME.reset}`
+  }
+
+  if (state.hushdStatus === "disconnected" || state.hushdStatus === "error") {
+    return `${THEME.dim}offline${THEME.reset}`
+  }
+
+  const latestTimestamp = state.hushdLastEventAt ?? state.recentEvents[0]?.timestamp
+  if (!latestTimestamp) {
+    return `${THEME.muted}idle${THEME.reset} ${THEME.dim}no recent events${THEME.reset}`
+  }
+
+  const timestamp = new Date(latestTimestamp).getTime()
+  if (Number.isNaN(timestamp)) {
+    return `${THEME.success}live${THEME.reset}`
+  }
+
+  const age = Math.max(0, now - timestamp)
+  if (state.hushdStatus === "stale" || age > STREAM_STALE_MS) {
+    return `${THEME.warning}stale${THEME.reset} ${THEME.dim}${formatAge(age)} since last event${THEME.reset}`
+  }
+
+  return `${THEME.success}live${THEME.reset} ${THEME.dim}${formatAge(age)} ago${THEME.reset}`
+}
+
+function findLastDeniedEvent(state: AppState): DaemonEvent | null {
+  return state.recentEvents.find((event) => (
+    event.type === "check" &&
+    (event.data as CheckEventData).decision === "deny"
+  )) ?? null
+}
+
+function renderLastDenied(state: AppState): string | null {
+  const event = findLastDeniedEvent(state)
+  if (!event || event.type !== "check") {
+    return null
+  }
+
+  const data = event.data as CheckEventData
+  const target = truncateMiddle(data.target, 42)
+  return `${THEME.error}${data.action_type}${THEME.reset} ${THEME.white}${target}${THEME.reset} ${THEME.dim}via ${data.guard}${THEME.reset}`
+}
 
 export function createMainScreen(commands: Command[]): Screen {
   return {
@@ -46,6 +149,33 @@ function handleMainInput(key: string, ctx: ScreenContext): boolean {
     state.commandIndex = 0
     app.render()
     return true
+  }
+
+  if (!state.promptBuffer) {
+    if (key === "W") {
+      app.setScreen("hunt-watch")
+      return true
+    }
+    if (key === "X") {
+      app.setScreen("hunt-scan")
+      return true
+    }
+    if (key === "T") {
+      app.setScreen("hunt-timeline")
+      return true
+    }
+    if (key === "Q") {
+      app.setScreen("hunt-query")
+      return true
+    }
+    if (key === "E") {
+      app.setScreen("hunt-report")
+      return true
+    }
+    if (key === "H") {
+      app.setScreen("hunt-report-history")
+      return true
+    }
   }
 
   // Enter - submit prompt
@@ -134,13 +264,116 @@ function handleCommandsInput(key: string, ctx: ScreenContext, commands: Command[
   return false
 }
 
+function buildOpsSnapshot(ctx: ScreenContext, width: number): { boxWidth: number; lines: string[] } | null {
+  const { state, height } = ctx
+  const boxWidth = Math.min(84, width - 8)
+  if (boxWidth < 28) {
+    return null
+  }
+
+  const investigation = state.hunt.investigation
+  const counts = getInvestigationCounts(investigation)
+  const hasInvestigation =
+    Boolean(investigation.origin) || counts.events > 0 || counts.findings > 0
+  const stale = hasInvestigation ? isInvestigationStale(investigation) : false
+  const compact = height < 28
+  const hushdState = state.hushdStatus === "connected"
+    ? `${THEME.success}online${THEME.reset}`
+    : state.hushdStatus === "connecting"
+      ? `${THEME.warning}connecting${THEME.reset}`
+      : state.hushdStatus === "unauthorized"
+        ? `${THEME.error}unauthorized${THEME.reset}`
+        : state.hushdStatus === "stale"
+          ? `${THEME.warning}stale${THEME.reset}`
+          : state.hushdStatus === "degraded"
+            ? `${THEME.warning}degraded${THEME.reset}`
+            : `${THEME.dim}offline${THEME.reset}`
+  const lines: string[] = [
+    `${THEME.dim}Local:${THEME.reset} hushd ${hushdState}  ` +
+      `${THEME.dim}runs:${THEME.reset} ${THEME.white}${state.activeRuns}${THEME.reset}  ` +
+      `${THEME.dim}beads:${THEME.reset} ${THEME.white}${state.openBeads}${THEME.reset}`,
+    `${THEME.dim}Health:${THEME.reset} ${renderHealthStatus(state)}  ` +
+      `${THEME.dim}Stream:${THEME.reset} ${renderStreamStatus(state)}`,
+  ]
+
+  const lastDenied = renderLastDenied(state)
+  if (lastDenied) {
+    lines.push(`${THEME.dim}Last deny:${THEME.reset} ${lastDenied}`)
+  }
+
+  const latestExport = state.hunt.reportHistory.entries[0]
+  if (latestExport) {
+    lines.push(
+      `${THEME.dim}Last export:${THEME.reset} ${THEME.white}${latestExport.title}${THEME.reset} ` +
+        `${THEME.dim}${latestExport.exportedAt.slice(0, 19).replace("T", " ")}${THEME.reset}`,
+    )
+  }
+
+  if (hasInvestigation) {
+    const freshness = stale
+      ? `${THEME.warning}stale${THEME.reset}`
+      : `${THEME.success}active${THEME.reset}`
+    const summary = investigation.summary ?? "Evidence is available for review."
+    lines.push(
+      `${THEME.dim}Investigation:${THEME.reset} ${THEME.white}${investigation.title || "Untitled"}${THEME.reset}`,
+    )
+    lines.push(
+      `${THEME.dim}State:${THEME.reset} ${THEME.white}${investigation.origin ?? "manual"}${THEME.reset} ${freshness}  ` +
+        `${THEME.dim}events:${THEME.reset} ${THEME.white}${counts.events}${THEME.reset}  ` +
+        `${THEME.dim}findings:${THEME.reset} ${THEME.white}${counts.findings}${THEME.reset}`,
+    )
+    if (!compact) {
+      lines.push(`${THEME.dim}Summary:${THEME.reset} ${THEME.muted}${summary}${THEME.reset}`)
+    }
+    lines.push(
+      `${THEME.dim}Jump:${THEME.reset} ${THEME.white}E${THEME.reset} report  ` +
+        `${THEME.white}H${THEME.reset} history  ` +
+        `${THEME.white}T${THEME.reset} timeline  ` +
+        `${THEME.white}W${THEME.reset} watch  ` +
+        `${THEME.white}X${THEME.reset} scan  ` +
+        `${THEME.white}Q${THEME.reset} query`,
+    )
+  } else {
+    lines.push(`${THEME.muted}No active investigation loaded.${THEME.reset}`)
+    if (!compact) {
+      lines.push(
+        `${THEME.dim}Loop:${THEME.reset} ${THEME.white}X${THEME.reset} scan  ->  ` +
+          `${THEME.white}Q${THEME.reset} query  ->  ` +
+          `${THEME.white}T${THEME.reset} timeline  ->  ` +
+          `${THEME.white}E${THEME.reset} report  ->  ` +
+          `${THEME.white}H${THEME.reset} history`,
+      )
+    }
+    lines.push(
+      `${THEME.dim}Start:${THEME.reset} ${THEME.white}W${THEME.reset} watch live events  ` +
+        `${THEME.white}X${THEME.reset} scan local MCP  ` +
+        `${THEME.white}Q${THEME.reset} run a hunt query`,
+    )
+  }
+
+  return {
+    boxWidth,
+    lines: renderBox(
+      hasInvestigation ? "Active Investigation" : "Ops Snapshot",
+      lines,
+      boxWidth,
+      THEME,
+      { style: "rounded", padding: 1 },
+    ),
+  }
+}
+
 function renderMainContent(ctx: ScreenContext, _commands: Command[]): string {
   const { state, width, height } = ctx
   const lines: string[] = []
+  const opsSnapshot = buildOpsSnapshot(ctx, width)
+  const opsHeight = opsSnapshot ? opsSnapshot.lines.length + 2 : 0
+  const tickerHeight = state.recentEvents.length > 0 ? 2 : 0
+  const statusHeight = state.statusMessage ? 2 : 0
 
   // Calculate vertical centering for logo + input
-  const contentHeight = LOGO.main.length + LOGO.strike.length + 9
-  const startY = Math.max(2, Math.floor((height - contentHeight) / 2))
+  const contentHeight = LOGO.main.length + LOGO.strike.length + 9 + opsHeight + tickerHeight + statusHeight
+  const startY = Math.max(1, Math.floor((height - contentHeight) / 3))
 
   // Top padding
   for (let i = 0; i < startY; i++) {
@@ -207,8 +440,11 @@ function renderMainContent(ctx: ScreenContext, _commands: Command[]): string {
   lines.push("")
 
   // Hint bar - centered
-  const hints = `${THEME.bold}tab${THEME.reset}${THEME.muted} switch agent${THEME.reset}    ${THEME.bold}ctrl+p${THEME.reset}${THEME.muted} commands${THEME.reset}`
-  const hintsTextLen = "tab switch agent    ctrl+p commands".length
+  const hints =
+    `${THEME.bold}tab${THEME.reset}${THEME.muted} switch agent${THEME.reset}    ` +
+    `${THEME.bold}ctrl+p${THEME.reset}${THEME.muted} commands${THEME.reset}    ` +
+    `${THEME.bold}W/X/Q/T/E/H${THEME.reset}${THEME.muted} hunt loop${THEME.reset}`
+  const hintsTextLen = "tab switch agent    ctrl+p commands    W/X/Q/T/E/H hunt loop".length
   const hintsPad = Math.max(0, Math.floor((width - hintsTextLen) / 2))
   lines.push(" ".repeat(hintsPad) + hints)
 
@@ -235,6 +471,14 @@ function renderMainContent(ctx: ScreenContext, _commands: Command[]): string {
     lines.push(" ".repeat(statusPad) + state.statusMessage)
   }
 
+  if (opsSnapshot) {
+    lines.push("")
+    const boxPad = Math.max(0, Math.floor((width - opsSnapshot.boxWidth) / 2))
+    for (const line of opsSnapshot.lines) {
+      lines.push(" ".repeat(boxPad) + line)
+    }
+  }
+
   // Fill remaining space (leave room for status bar)
   const currentLines = lines.length
   for (let i = currentLines; i < height - 2; i++) {
@@ -242,6 +486,20 @@ function renderMainContent(ctx: ScreenContext, _commands: Command[]): string {
   }
 
   return lines.join("\n")
+}
+
+function commandStageTag(command: Command): { text: string; plainLength: number } {
+  if (command.stage === "experimental") {
+    return {
+      text: `${THEME.warning}exp${THEME.reset}`,
+      plainLength: 3,
+    }
+  }
+
+  return {
+    text: `${THEME.success}beta${THEME.reset}`,
+    plainLength: 4,
+  }
 }
 
 function overlayCommandPalette(baseScreen: string, ctx: ScreenContext, commands: Command[]): string {
@@ -278,7 +536,7 @@ function overlayCommandPalette(baseScreen: string, ctx: ScreenContext, commands:
   const categories = [
     { name: "Actions", commands: commands.filter(c => ["d", "s", "g"].includes(c.key)) },
     { name: "Security", commands: commands.filter(c => ["S", "a", "p"].includes(c.key)) },
-    { name: "Hunt", commands: commands.filter(c => ["W", "X", "T", "R", "Q", "D", "E", "M", "P"].includes(c.key)) },
+    { name: "Hunt", commands: commands.filter(c => ["W", "X", "T", "R", "Q", "D", "E", "H", "M", "P"].includes(c.key)) },
     { name: "Views", commands: commands.filter(c => ["b", "r", "i"].includes(c.key)) },
     { name: "System", commands: commands.filter(c => ["?", "q"].includes(c.key)) },
   ]
@@ -294,22 +552,25 @@ function overlayCommandPalette(baseScreen: string, ctx: ScreenContext, commands:
       const isSelected = globalIndex === state.commandIndex
       const label = cmd.label
       const shortcut = cmd.key
+      const stage = commandStageTag(cmd)
       const contentWidth = paletteWidth - 4
 
       if (isSelected) {
-        const labelPad = contentWidth - label.length - shortcut.length - 1
+        const labelPad = contentWidth - label.length - stage.plainLength - shortcut.length - 4
         paletteLines.push(
           modalBg + THEME.dim + "│" + THEME.reset +
           highlightBg + highlightFg + " " + THEME.bold + label + THEME.reset +
+          highlightBg + " " + stage.text + THEME.reset +
           highlightBg + " ".repeat(Math.max(1, labelPad)) +
           highlightFg + shortcut + " " + THEME.reset +
           modalBg + THEME.dim + "│" + THEME.reset
         )
       } else {
-        const labelPad = contentWidth - label.length - shortcut.length - 1
+        const labelPad = contentWidth - label.length - stage.plainLength - shortcut.length - 4
         paletteLines.push(
           modalBg + THEME.dim + "│" + THEME.reset +
           modalBg + " " + THEME.white + label + THEME.reset +
+          modalBg + " " + stage.text + THEME.reset +
           modalBg + " ".repeat(Math.max(1, labelPad)) +
           THEME.dim + shortcut + " " + THEME.reset +
           modalBg + THEME.dim + "│" + THEME.reset

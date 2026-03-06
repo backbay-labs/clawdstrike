@@ -175,6 +175,18 @@ mod cli_parsing {
     }
 
     #[test]
+    fn test_tui_command_parses_with_passthrough_args() {
+        let cli = Cli::parse_from(["hush", "tui", "doctor", "--json"]);
+
+        match cli.command {
+            Commands::Tui { args } => {
+                assert_eq!(args, vec!["doctor".to_string(), "--json".to_string()]);
+            }
+            _ => panic!("Expected Tui command"),
+        }
+    }
+
+    #[test]
     fn test_policy_show_default_ruleset() {
         let cli = Cli::parse_from(["hush", "policy", "show"]);
 

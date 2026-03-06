@@ -12,11 +12,20 @@ import type {
   PolicyResponse,
   AuditQuery,
   AuditResponse,
+  AuditEvent,
+  AuditBatchResponse,
   AuditStats,
   DaemonEvent,
 } from "./types"
 
 const DEFAULT_TIMEOUT = 5000
+
+export interface HushdRequestResult<T> {
+  ok: boolean
+  status: number | null
+  data?: T
+  error?: string
+}
 
 export class HushdClient {
   private baseUrl: string
@@ -41,6 +50,59 @@ export class HushdClient {
       h["Authorization"] = `Bearer ${this.token}`
     }
     return h
+  }
+
+  private async requestJson<T>(
+    path: string,
+    init: RequestInit = {},
+    timeoutMs = DEFAULT_TIMEOUT,
+  ): Promise<HushdRequestResult<T>> {
+    try {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), timeoutMs)
+      const res = await fetch(`${this.baseUrl}${path}`, {
+        ...init,
+        headers: {
+          ...this.headers(),
+          ...(init.headers as Record<string, string> | undefined),
+        },
+        signal: controller.signal,
+      })
+      clearTimeout(timeout)
+
+      const bodyText = await res.text()
+      if (!res.ok) {
+        return {
+          ok: false,
+          status: res.status,
+          error: bodyText.trim() || `HTTP ${res.status}`,
+        }
+      }
+
+      if (!bodyText.trim()) {
+        return { ok: true, status: res.status }
+      }
+
+      try {
+        return {
+          ok: true,
+          status: res.status,
+          data: JSON.parse(bodyText) as T,
+        }
+      } catch {
+        return {
+          ok: false,
+          status: res.status,
+          error: `Failed to parse JSON response: ${bodyText.slice(0, 200)}`,
+        }
+      }
+    } catch (err) {
+      return {
+        ok: false,
+        status: null,
+        error: err instanceof Error ? err.message : String(err),
+      }
+    }
   }
 
   // ===========================================================================
@@ -72,21 +134,15 @@ export class HushdClient {
    * Submit an action for policy check. Returns null on connectivity error.
    */
   async check(req: CheckRequest): Promise<CheckResponse | null> {
-    try {
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT)
-      const res = await fetch(`${this.baseUrl}/api/v1/check`, {
-        method: "POST",
-        headers: this.headers(),
-        body: JSON.stringify(req),
-        signal: controller.signal,
-      })
-      clearTimeout(timeout)
-      if (!res.ok) return null
-      return (await res.json()) as CheckResponse
-    } catch {
-      return null
-    }
+    const result = await this.checkDetailed(req)
+    return result.data ?? null
+  }
+
+  async checkDetailed(req: CheckRequest): Promise<HushdRequestResult<CheckResponse>> {
+    return this.requestJson<CheckResponse>("/api/v1/check", {
+      method: "POST",
+      body: JSON.stringify(req),
+    })
   }
 
   // ===========================================================================
@@ -97,19 +153,14 @@ export class HushdClient {
    * Get active policy configuration. Returns null on connectivity error.
    */
   async getPolicy(): Promise<PolicyResponse | null> {
-    try {
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT)
-      const res = await fetch(`${this.baseUrl}/api/v1/policy`, {
-        headers: this.headers(),
-        signal: controller.signal,
-      })
-      clearTimeout(timeout)
-      if (!res.ok) return null
-      return (await res.json()) as PolicyResponse
-    } catch {
-      return null
-    }
+    const result = await this.getPolicyDetailed()
+    return result.data ?? null
+  }
+
+  async getPolicyDetailed(): Promise<HushdRequestResult<PolicyResponse>> {
+    return this.requestJson<PolicyResponse>("/api/v1/policy", {
+      method: "GET",
+    })
   }
 
   // ===========================================================================
@@ -120,32 +171,38 @@ export class HushdClient {
    * Query audit log. Returns null on connectivity error.
    */
   async getAudit(query?: AuditQuery): Promise<AuditResponse | null> {
+    const result = await this.getAuditDetailed(query)
+    return result.data ?? null
+  }
+
+  async getAuditDetailed(query?: AuditQuery): Promise<HushdRequestResult<AuditResponse>> {
     try {
       const params = new URLSearchParams()
       if (query) {
         if (query.limit !== undefined) params.set("limit", String(query.limit))
         if (query.offset !== undefined) params.set("offset", String(query.offset))
+        if (query.cursor) params.set("cursor", query.cursor)
+        if (query.event_type) params.set("event_type", query.event_type)
         if (query.action_type) params.set("action_type", query.action_type)
         if (query.decision) params.set("decision", query.decision)
         if (query.guard) params.set("guard", query.guard)
-        if (query.since) params.set("since", query.since)
-        if (query.until) params.set("until", query.until)
+        if (query.session_id) params.set("session_id", query.session_id)
+        if (query.agent_id) params.set("agent_id", query.agent_id)
+        if (query.runtime_agent_id) params.set("runtime_agent_id", query.runtime_agent_id)
+        if (query.runtime_agent_kind) params.set("runtime_agent_kind", query.runtime_agent_kind)
+        if (query.format) params.set("format", query.format)
       }
 
       const qs = params.toString()
-      const url = `${this.baseUrl}/api/v1/audit${qs ? `?${qs}` : ""}`
-
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT)
-      const res = await fetch(url, {
-        headers: this.headers(),
-        signal: controller.signal,
+      return this.requestJson<AuditResponse>(`/api/v1/audit${qs ? `?${qs}` : ""}`, {
+        method: "GET",
       })
-      clearTimeout(timeout)
-      if (!res.ok) return null
-      return (await res.json()) as AuditResponse
-    } catch {
-      return null
+    } catch (err) {
+      return {
+        ok: false,
+        status: null,
+        error: err instanceof Error ? err.message : String(err),
+      }
     }
   }
 
@@ -153,19 +210,21 @@ export class HushdClient {
    * Get audit statistics. Returns null on connectivity error.
    */
   async getAuditStats(): Promise<AuditStats | null> {
-    try {
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT)
-      const res = await fetch(`${this.baseUrl}/api/v1/audit/stats`, {
-        headers: this.headers(),
-        signal: controller.signal,
-      })
-      clearTimeout(timeout)
-      if (!res.ok) return null
-      return (await res.json()) as AuditStats
-    } catch {
-      return null
-    }
+    const result = await this.getAuditStatsDetailed()
+    return result.data ?? null
+  }
+
+  async getAuditStatsDetailed(): Promise<HushdRequestResult<AuditStats>> {
+    return this.requestJson<AuditStats>("/api/v1/audit/stats", {
+      method: "GET",
+    })
+  }
+
+  async ingestAuditBatch(events: AuditEvent[]): Promise<HushdRequestResult<AuditBatchResponse>> {
+    return this.requestJson<AuditBatchResponse>("/api/v1/audit/batch", {
+      method: "POST",
+      body: JSON.stringify({ events }),
+    })
   }
 
   // ===========================================================================

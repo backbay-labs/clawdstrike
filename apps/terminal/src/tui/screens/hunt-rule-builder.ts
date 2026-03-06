@@ -10,6 +10,7 @@ import { renderForm, focusNext, focusPrev, handleFieldInput, type FormState } fr
 import { renderList, scrollUp, scrollDown, type ListItem } from "../components/scrollable-list"
 import { renderBox } from "../components/box"
 import { fitString } from "../components/types"
+import { renderSurfaceHeader } from "../components/surface-header"
 
 type Section = "form" | "conditions" | "actions"
 const SECTIONS: Section[] = ["form", "conditions", "actions"]
@@ -107,10 +108,7 @@ export const huntRuleBuilderScreen: Screen = {
     const rb = state.hunt.ruleBuilder
     const lines: string[] = []
 
-    // Title
-    const title = `${THEME.accent}${THEME.bold} HUNT ${THEME.reset}${THEME.dim} // ${THEME.reset}${THEME.secondary}Rule Builder${THEME.reset}`
-    lines.push(fitString(title, width))
-    lines.push(fitString(`${THEME.dim}${"─".repeat(width)}${THEME.reset}`, width))
+    lines.push(...renderSurfaceHeader("hunt-rule-builder", "Rule Builder", width, THEME))
 
     // Error / status
     if (rb.error) {

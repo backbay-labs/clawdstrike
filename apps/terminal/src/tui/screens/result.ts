@@ -3,6 +3,7 @@
  */
 
 import { TUI } from "../index"
+import { renderSurfaceHeader } from "../components/surface-header"
 import { THEME } from "../theme"
 import type { Screen, ScreenContext } from "../types"
 
@@ -29,7 +30,8 @@ function renderResultScreen(ctx: ScreenContext): string {
   const boxPad = Math.max(0, Math.floor((width - boxWidth) / 2))
   const startY = Math.max(2, Math.floor(height / 6))
 
-  for (let i = 0; i < startY; i++) lines.push("")
+  lines.push(...renderSurfaceHeader("result", "Execution Result", width, THEME, r?.success ? "success" : "failed"))
+  for (let i = lines.length; i < startY; i++) lines.push("")
 
   // Title
   const titleIcon = r?.success ? `${THEME.success}✓` : `${THEME.error}✗`

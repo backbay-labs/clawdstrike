@@ -6,7 +6,7 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "bin": {
-    "clawdstrike": "./src/cli/index.ts"
+    "clawdstrike-tui": "./src/cli/index.ts"
   },
   "exports": {
     ".": "./src/index.ts",
@@ -16,6 +16,7 @@
   "scripts": {
     "dev": "bun run --watch src/index.ts",
     "build": "bun build ./src/index.ts --outdir ./dist",
+    "build:tui-runtime": "mkdir -p ./dist ../../crates/services/hush-cli/assets/tui && bun build ./src/cli/index.ts --outfile ./dist/cli.js --target bun --format esm && bun build ./src/cli/index.ts --outfile ../../crates/services/hush-cli/assets/tui/cli.js --target bun --format esm",
     "cli": "bun run ./src/cli/index.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit"

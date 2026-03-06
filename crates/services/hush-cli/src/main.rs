@@ -60,6 +60,7 @@ mod policy_test;
 mod policy_version;
 mod registry_config;
 mod remote_extends;
+mod tui;
 mod ui;
 
 const CLI_JSON_VERSION: u8 = 1;
@@ -266,6 +267,13 @@ enum Commands {
     Hunt {
         #[command(subcommand)]
         command: HuntCommands,
+    },
+
+    /// Launch the terminal user interface
+    Tui {
+        /// Arguments passed through to the TUI runtime
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
     },
 
     /// Initialize a new Clawdstrike project
@@ -1525,6 +1533,8 @@ async fn run(cli: Cli, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
             )
             .await
         }
+
+        Commands::Tui { args } => tui::cmd_tui(args, no_color, stderr),
 
         Commands::Init {
             non_interactive,

@@ -17,6 +17,8 @@ import {
   type LogLine,
 } from "../components/streaming-log"
 import { fitString } from "../components/types"
+import { renderSurfaceHeader } from "../components/surface-header"
+import { appendInvestigationEvent, updateInvestigation } from "../investigation"
 
 const SOURCE_ICONS: Record<EventSource, string> = {
   tetragon: "T",
@@ -71,6 +73,14 @@ export const huntWatchScreen: Screen = {
     if (w.running) return
 
     ctx.state.hunt.watch = { ...w, running: true }
+    updateInvestigation(ctx.state, {
+      origin: "watch",
+      title: "Live Watch",
+      summary: "Watching live policy and hunt events.",
+      query: w.filter === "all" ? null : w.filter,
+      events: [],
+      findings: [],
+    })
 
     const rules = ["~/.clawdstrike/rules/*.yaml"]
 
@@ -83,6 +93,13 @@ export const huntWatchScreen: Screen = {
           ...ws,
           log: appendLine(ws.log, formatEvent(event)),
         }
+        appendInvestigationEvent(ctx.state, event, {
+          origin: "watch",
+          title: "Live Watch",
+          summary: event.summary,
+          query: ws.filter === "all" ? null : ws.filter,
+          findings: ctx.state.hunt.investigation.findings,
+        })
         ctx.app.render()
       },
       (alert: Alert) => {
@@ -96,11 +113,27 @@ export const huntWatchScreen: Screen = {
           ctx.app.render()
         }, 5000)
 
+        const findings = [...ctx.state.hunt.investigation.findings, `${alert.severity}: ${alert.title}`]
+          .slice(-8)
+
         ctx.state.hunt.watch = { ...ws, lastAlert: alert, alertFadeTimer: fadeTimer }
+        updateInvestigation(ctx.state, {
+          origin: "watch",
+          title: "Live Watch",
+          summary: alert.description ?? alert.title,
+          query: ws.filter === "all" ? null : ws.filter,
+          findings,
+        })
         ctx.app.render()
       },
       (stats: WatchStats) => {
         ctx.state.hunt.watch = { ...ctx.state.hunt.watch, stats }
+        updateInvestigation(ctx.state, {
+          origin: "watch",
+          title: "Live Watch",
+          summary: `${stats.events_processed} event(s) processed with ${stats.alerts_fired} alert(s).`,
+          query: ctx.state.hunt.watch.filter === "all" ? null : ctx.state.hunt.watch.filter,
+        })
         ctx.app.render()
       },
     )
@@ -121,11 +154,8 @@ export const huntWatchScreen: Screen = {
     const w = state.hunt.watch
     const lines: string[] = []
 
-    // Title bar
-    const title = `${THEME.accent}${THEME.bold} HUNT ${THEME.reset}${THEME.dim} // ${THEME.reset}${THEME.secondary}Live Watch${THEME.reset}`
-    const filterLabel = `${THEME.dim}filter: ${THEME.reset}${THEME.white}${w.filter}${THEME.reset}`
-    lines.push(fitString(`${title}  ${filterLabel}`, width))
-    lines.push(fitString(`${THEME.dim}${"─".repeat(width)}${THEME.reset}`, width))
+    const filterLabel = `filter ${w.filter}`
+    lines.push(...renderSurfaceHeader("hunt-watch", "Live Watch", width, THEME, filterLabel))
 
     if (!w.running) {
       // Not running state
@@ -194,28 +224,44 @@ export const huntWatchScreen: Screen = {
       const idx = FILTERS.indexOf(w.filter)
       const next = FILTERS[(idx + 1) % FILTERS.length]
       ctx.state.hunt.watch = { ...w, filter: next }
+      updateInvestigation(ctx.state, {
+        origin: "watch",
+        title: "Live Watch",
+        summary: ctx.state.hunt.investigation.summary,
+        query: next === "all" ? null : next,
+      })
+      ctx.app.render()
+      return true
+    }
+
+    if (key === "e") {
+      ctx.app.setScreen("hunt-report")
       return true
     }
 
     // Clear log
     if (key === "c") {
       ctx.state.hunt.watch = { ...w, log: clearLog(w.log) }
+      ctx.app.render()
       return true
     }
 
     // Pause/resume
     if (key === " ") {
       ctx.state.hunt.watch = { ...w, log: togglePause(w.log) }
+      ctx.app.render()
       return true
     }
 
     // Scroll when paused
     if (key === "up" || key === "k") {
       ctx.state.hunt.watch = { ...w, log: scrollLogUp(w.log) }
+      ctx.app.render()
       return true
     }
     if (key === "down" || key === "j") {
       ctx.state.hunt.watch = { ...w, log: scrollLogDown(w.log) }
+      ctx.app.render()
       return true
     }
 
@@ -227,6 +273,7 @@ function renderHelpBar(width: number): string {
   const help =
     `${THEME.dim}q${THEME.reset}${THEME.muted} back${THEME.reset}  ` +
     `${THEME.dim}f${THEME.reset}${THEME.muted} filter${THEME.reset}  ` +
+    `${THEME.dim}e${THEME.reset}${THEME.muted} report${THEME.reset}  ` +
     `${THEME.dim}c${THEME.reset}${THEME.muted} clear${THEME.reset}  ` +
     `${THEME.dim}space${THEME.reset}${THEME.muted} pause${THEME.reset}  ` +
     `${THEME.dim}j/k${THEME.reset}${THEME.muted} scroll${THEME.reset}`

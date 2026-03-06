@@ -2,6 +2,7 @@
  * Policy Screen - Active policy viewer
  */
 
+import { renderSurfaceHeader } from "../components/surface-header"
 import { THEME } from "../theme"
 import type { Screen, ScreenContext } from "../types"
 
@@ -33,8 +34,7 @@ function renderPolicyScreen(ctx: ScreenContext): string {
   const boxWidth = Math.min(65, width - 10)
   const boxPad = Math.max(0, Math.floor((width - boxWidth) / 2))
 
-  lines.push("")
-  lines.push("")
+  lines.push(...renderSurfaceHeader("policy", "Active Policy", width, THEME, state.hushdStatus))
 
   const title = "⟨ Active Policy ⟩"
   const titlePadLeft = Math.floor((boxWidth - title.length - 4) / 2)
@@ -44,7 +44,11 @@ function renderPolicyScreen(ctx: ScreenContext): string {
 
   const p = state.activePolicy
   if (!state.hushdConnected || !p) {
-    const msg = !state.hushdConnected ? "  hushd not connected" : "  No policy loaded"
+    const msg = !state.hushdConnected
+      ? state.hushdStatus === "unauthorized"
+        ? "  hushd authorization required"
+        : `  hushd ${state.hushdStatus}`
+      : "  No policy loaded"
     const mLen = msg.length
     lines.push(" ".repeat(boxPad) + THEME.dim + "║" + THEME.reset + `  ${THEME.muted}${msg.trim()}${THEME.reset}` + " ".repeat(Math.max(0, boxWidth - mLen - 2)) + THEME.dim + "║" + THEME.reset)
   } else {

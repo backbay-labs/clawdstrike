@@ -3,11 +3,15 @@
  */
 
 import type { ThemeColors } from "./types"
+import type { ScreenStage } from "../types"
+import type { HushdConnectionState } from "../../hushd"
 import { fitString, stripAnsi } from "./types"
 
 export interface StatusBarData {
   version: string
   cwd: string
+  currentScreenLabel: string
+  currentScreenStage: ScreenStage
   healthChecking: boolean
   health: {
     security: Array<{ available: boolean }>
@@ -15,13 +19,20 @@ export interface StatusBarData {
     infra: Array<{ available: boolean }>
     mcp: Array<{ available: boolean }>
   } | null
-  hushdConnected: boolean
+  hushdStatus: HushdConnectionState
   deniedCount: number
   activeRuns: number
   openBeads: number
   agentId: string
+  investigation: {
+    origin: string
+    events: number
+    findings: number
+    stale: boolean
+  } | null
   huntWatch?: { events: number; alerts: number } | null
   huntScan?: { status: string } | null
+  lastExportedReport?: { title: string; severity: string } | null
 }
 
 function healthDot(items: Array<{ available: boolean }> | undefined, theme: ThemeColors): string {
@@ -31,6 +42,36 @@ function healthDot(items: Array<{ available: boolean }> | undefined, theme: Them
   if (allUp) return `${theme.success}\u25CF${theme.reset}`
   if (anyUp) return `${theme.warning}\u25CF${theme.reset}`
   return `${theme.error}\u25CF${theme.reset}`
+}
+
+function renderStageBadge(stage: ScreenStage, theme: ThemeColors): string {
+  if (stage === "experimental") {
+    return `${theme.warning}exp${theme.reset}`
+  }
+
+  return `${theme.success}beta${theme.reset}`
+}
+
+function renderHushdBadge(status: HushdConnectionState, theme: ThemeColors): string {
+  switch (status) {
+    case "connected":
+      return `${theme.success}\u25CF${theme.reset}${theme.dim} hushd${theme.reset}`
+    case "connecting":
+      return `${theme.warning}\u25D0${theme.reset}${theme.dim} hushd${theme.reset}`
+    case "degraded":
+      return `${theme.warning}\u25CF${theme.reset}${theme.dim} hushd${theme.reset}`
+    case "stale":
+      return `${theme.warning}\u25CC${theme.reset}${theme.dim} hushd${theme.reset}`
+    case "unauthorized":
+      return `${theme.error}\u2716${theme.reset}${theme.dim} hushd${theme.reset}`
+    case "error":
+      return `${theme.error}\u25CF${theme.reset}${theme.dim} hushd${theme.reset}`
+    case "not_configured":
+      return `${theme.dim}? hushd${theme.reset}`
+    case "disconnected":
+    default:
+      return `${theme.dim}\u25CB hushd${theme.reset}`
+  }
 }
 
 export function renderStatusBar(
@@ -44,6 +85,9 @@ export function renderStatusBar(
 
   // Version
   segments.push(`${theme.dim}v${data.version}${theme.reset}`)
+  segments.push(
+    `${renderStageBadge(data.currentScreenStage, theme)} ${theme.muted}${data.currentScreenLabel}${theme.reset}`,
+  )
 
   // Health dots
   if (data.healthChecking) {
@@ -56,10 +100,7 @@ export function renderStatusBar(
     segments.push(`${sec}${ai}${infra}${mcp}`)
   }
 
-  // Hushd connection
-  if (data.hushdConnected) {
-    segments.push(`${theme.success}\u25CF${theme.reset}${theme.dim} hushd${theme.reset}`)
-  }
+  segments.push(renderHushdBadge(data.hushdStatus, theme))
 
   // Denied count
   if (data.deniedCount > 0) {
@@ -87,6 +128,19 @@ export function renderStatusBar(
   // Hunt scan
   if (data.huntScan) {
     segments.push(`${theme.muted}\u2261 ${data.huntScan.status}${theme.reset}`)
+  }
+
+  if (data.lastExportedReport) {
+    segments.push(`${theme.muted}report${theme.reset}`)
+  }
+
+  // Shared investigation summary
+  if (data.investigation) {
+    const invColor = data.investigation.stale ? theme.warning : theme.secondary
+    segments.push(
+      `${invColor}inv${theme.reset} ${theme.muted}${data.investigation.origin}${theme.reset} ` +
+      `${theme.white}${data.investigation.events}e/${data.investigation.findings}f${theme.reset}`,
+    )
   }
 
   const left = segments.join(` ${theme.dim}\u2502${theme.reset} `)

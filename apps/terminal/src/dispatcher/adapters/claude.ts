@@ -5,10 +5,8 @@
  * Preserves Claude Pro/Team subscription authentication.
  */
 
-import { $ } from "bun"
 import { join } from "path"
 import { stat } from "fs/promises"
-import { homedir } from "os"
 import type { Adapter, AdapterResult } from "../index"
 import type { WorkcellInfo, TaskInput } from "../../types"
 
@@ -30,6 +28,18 @@ const DEFAULT_CONFIG: ClaudeConfig = {
 
 let config: ClaudeConfig = { ...DEFAULT_CONFIG }
 
+function commandExists(command: string): boolean {
+  const bunRuntime = Bun as unknown as {
+    which?: (binary: string) => string | null | undefined
+  }
+
+  return !!bunRuntime.which?.(command)
+}
+
+function homeDirFromEnv(): string | null {
+  return process.env.HOME ?? process.env.USERPROFILE ?? null
+}
+
 /**
  * Configure Claude adapter
  */
@@ -50,22 +60,21 @@ export const ClaudeAdapter: Adapter = {
   },
 
   async isAvailable(): Promise<boolean> {
-    // Check if `claude` CLI exists
-    const which = await $`which claude`.quiet().nothrow()
-    if (which.exitCode !== 0) {
+    if (!commandExists("claude")) {
       return false
     }
 
-    // Check if auth is configured
-    // Claude Code stores OAuth in ~/.claude/
-    const configPath = join(homedir(), ".claude", "config.json")
+    const homeDir = homeDirFromEnv()
+    if (!homeDir) {
+      return true
+    }
+
+    const configPath = join(homeDir, ".claude", "config.json")
     try {
       await stat(configPath)
       return true
     } catch {
-      // Config doesn't exist, check if logged in via other means
-      const authCheck = await $`claude auth status`.quiet().nothrow()
-      return authCheck.exitCode === 0
+      return true
     }
   },
 

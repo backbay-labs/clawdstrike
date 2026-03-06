@@ -1,22 +1,21 @@
 # ClawdStrike TUI
 
-**Security-aware orchestration engine for AI coding agents**
+**Local-first security operations cockpit for AI agent workflows**
 
-ClawdStrike TUI dispatches coding tasks to native AI CLIs (Codex, Claude Code, OpenCode) with intelligent routing, parallel execution with voting, and quality gates — all with ambient runtime security enforcement via [hushd](../../crates/services/hushd/).
+ClawdStrike TUI is a beta operator cockpit for local security review of AI agent activity. It combines local runtime health, hushd security state, supported hunt workflows, and evidence handoff into one terminal interface, with optional task dispatch still available through the same CLI.
 
 ## Features
 
-- **Intelligent Routing** - Route tasks based on risk, size, labels, and prompt patterns
-- **Speculate+Vote** - Run multiple agents in parallel, select best result
-- **Quality Gates** - pytest, mypy, ruff, and ClawdStrike policy checks
+- **Operator Dashboard** - Local health, hushd status, stream freshness, active investigation state
+- **Security Surfaces** - Integrations, security overview, audit log, and policy viewer
+- **Supported Hunt Loop** - watch, scan, timeline, query, report, and report history
+- **Evidence Handoff** - Export markdown + JSON bundles with receipt/audit trace metadata
 - **Workcell Isolation** - Git worktree sandboxes for safe concurrent execution
-- **Security Integration** - Live hushd connection with SSE event streaming, audit log, and policy viewer
-- **Telemetry** - Execution tracking with rollout persistence
-- **Interactive TUI** - Full-screen gothic terminal dashboard with security indicators
+- **Optional Agent Actions** - dispatch, speculate, gates, beads, and rollout status
 
 ## Interactive TUI
 
-Running `clawdstrike` without arguments launches an interactive terminal UI:
+Run the TUI through the main CLI with `clawdstrike tui`, or use the package-local binary as `clawdstrike-tui`:
 
 ```
  ██████╗██╗      █████╗ ██╗    ██╗██████╗
@@ -45,6 +44,7 @@ Running `clawdstrike` without arguments launches an interactive terminal UI:
 | `Ctrl+S` | Security overview |
 | `a` | Audit log |
 | `p` | Policy viewer |
+| `W/X/T/Q/E/H` | Watch / scan / timeline / query / report / history |
 | `h` | Help |
 | `q` | Quit |
 | `↑/↓` or `j/k` | Navigate / scroll |
@@ -71,31 +71,57 @@ cd apps/terminal
 bun install
 ```
 
+The beta TUI runtime currently requires `bun` on the machine running `clawdstrike tui`.
+
 ## CLI Usage
 
 ```bash
-# Run via bun
-bun run cli <command>
+# Run via the main Rust CLI
+clawdstrike tui <command>
 
-# Or link globally
+# Or run the package-local TUI binary
+bun run cli <command>
 bun link
-clawdstrike <command>
+clawdstrike-tui <command>
 ```
 
 ### Commands
 
 ```bash
-clawdstrike                         # Launch interactive TUI
-clawdstrike dispatch <prompt>       # Submit task for AI execution
-clawdstrike speculate <prompt>      # Run with multiple agents
-clawdstrike gate [gates...]         # Run quality gates
-clawdstrike beads list              # List issues
-clawdstrike beads ready             # Get ready issues
-clawdstrike beads create <title>    # Create issue
-clawdstrike status                  # Show kernel status
-clawdstrike init                    # Initialize in current directory
-clawdstrike help                    # Show CLI help
+clawdstrike tui                     # Launch interactive TUI
+clawdstrike tui dispatch <prompt>   # Submit task for AI execution
+clawdstrike tui speculate <prompt>  # Run with multiple agents
+clawdstrike tui gate [gates...]     # Run quality gates
+clawdstrike tui beads list          # List issues
+clawdstrike tui beads ready         # Get ready issues
+clawdstrike tui beads create <title> # Create issue
+clawdstrike tui status              # Show kernel status
+clawdstrike tui init                # Initialize in current directory
+clawdstrike tui doctor              # Inspect local environment and services
+clawdstrike tui help                # Show CLI help
 ```
+
+### Supported vs Experimental
+
+Supported beta screens:
+- main dashboard
+- integrations
+- security
+- audit
+- policy
+- result
+- hunt watch
+- hunt scan
+- hunt timeline
+- hunt query
+- hunt report
+- hunt report history
+
+Experimental screens:
+- hunt rule builder
+- hunt diff
+- hunt mitre
+- hunt playbook
 
 ### Options
 
@@ -116,6 +142,11 @@ clawdstrike help                    # Show CLI help
 # Simple dispatch
 clawdstrike dispatch "Fix the null pointer in auth.ts"
 
+# Operator bootstrap
+clawdstrike tui init
+clawdstrike tui doctor --json
+clawdstrike tui
+
 # Force Claude toolchain
 clawdstrike dispatch -t claude "Add unit tests for utils.ts"
 
@@ -130,6 +161,8 @@ clawdstrike beads list -j
 ```
 
 ## Programmatic Usage
+
+The package API remains unstable during beta. The supported public interface is `clawdstrike tui` through the main Rust CLI.
 
 ```typescript
 import {
@@ -271,7 +304,7 @@ src/
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CLAWDSTRIKE_HUSHD_URL` | `http://127.0.0.1:8080` | hushd daemon URL |
+| `CLAWDSTRIKE_HUSHD_URL` | `http://127.0.0.1:9876` | hushd daemon URL |
 | `CLAWDSTRIKE_SANDBOX` | - | Sandbox mode for codex adapter |
 | `NO_COLOR` | - | Disable color output |
 

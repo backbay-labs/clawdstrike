@@ -10,6 +10,7 @@ import { renderList, type ListItem } from "../components/scrollable-list"
 import { renderSplit } from "../components/split-pane"
 import { renderBox } from "../components/box"
 import { fitString } from "../components/types"
+import { renderSurfaceHeader } from "../components/surface-header"
 
 const STATUS_ICONS: Record<PlaybookStepStatus, string> = {
   pending: "\u25C7",   // ◇
@@ -107,10 +108,7 @@ export const huntPlaybookScreen: Screen = {
     const pb = state.hunt.playbook
     const lines: string[] = []
 
-    // Title bar
-    const title = `${THEME.accent}${THEME.bold} HUNT ${THEME.reset}${THEME.dim} // ${THEME.reset}${THEME.secondary}Playbook Runner${THEME.reset}`
-    lines.push(fitString(title, width))
-    lines.push(fitString(`${THEME.dim}${"─".repeat(width)}${THEME.reset}`, width))
+    lines.push(...renderSurfaceHeader("hunt-playbook", "Playbook Runner", width, THEME))
 
     // Progress indicator
     const totalSteps = pb.steps.length

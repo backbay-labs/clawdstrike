@@ -72,6 +72,12 @@ ensure_node_modules apps/control-console
 (cd apps/control-console && npm run typecheck)
 (cd apps/control-console && npm run build)
 
+bold "Terminal TUI"
+(cd apps/terminal && bun install --frozen-lockfile)
+(cd apps/terminal && bun run typecheck)
+(cd apps/terminal && bun test)
+cargo test -p hush-cli tui::tests -- --nocapture
+
 bold "Python package"
 VENV_DIR="${VENV_DIR:-/tmp/hushpy-venv}"
 if [[ ! -d "$VENV_DIR" ]]; then

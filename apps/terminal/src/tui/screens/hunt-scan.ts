@@ -17,8 +17,10 @@ import {
 } from "../components/tree-view"
 import { renderSplit } from "../components/split-pane"
 import { fitString } from "../components/types"
+import { renderSurfaceHeader } from "../components/surface-header"
 import { runScan } from "../../hunt/bridge-scan"
 import type { ScanPathResult, ServerScanResult } from "../../hunt/types"
+import { updateInvestigation } from "../investigation"
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -152,6 +154,23 @@ function findServerForKey(
   return null
 }
 
+function collectFindings(results: ScanPathResult[]): string[] {
+  const findings: string[] = []
+
+  for (const result of results) {
+    for (const server of result.servers) {
+      for (const violation of server.violations) {
+        findings.push(`${server.name}: ${violation.guard} blocked ${violation.target}`)
+      }
+      for (const issue of server.issues) {
+        findings.push(`${server.name}: [${issue.severity}] ${issue.message}`)
+      }
+    }
+  }
+
+  return findings.slice(0, 12)
+}
+
 function renderDetail(
   results: ScanPathResult[],
   selectedKey: string | null,
@@ -249,10 +268,7 @@ export const huntScanScreen: Screen = {
     const scan = state.hunt.scan
     const lines: string[] = []
 
-    // Header
-    const title = `${THEME.secondary}${THEME.bold} MCP Scan Explorer ${THEME.reset}`
-    lines.push(fitString(title, width))
-    lines.push(fitString(`${THEME.dim}${"─".repeat(width)}${THEME.reset}`, width))
+    lines.push(...renderSurfaceHeader("hunt-scan", "MCP Scan Explorer", width, THEME))
 
     if (scan.loading) {
       lines.push(fitString(`${THEME.muted}  Scanning MCP configurations...${THEME.reset}`, width))
@@ -299,7 +315,7 @@ export const huntScanScreen: Screen = {
 
     // Footer
     lines.push(fitString(`${THEME.dim}${"─".repeat(width)}${THEME.reset}`, width))
-    const footer = `${THEME.muted}  j/k navigate  Enter expand/collapse  r rescan  ESC back${THEME.reset}`
+    const footer = `${THEME.muted}  j/k navigate  Enter expand/collapse  e report  r rescan  ESC back${THEME.reset}`
     lines.push(fitString(footer, width))
 
     while (lines.length < height) lines.push(" ".repeat(width))
@@ -346,6 +362,11 @@ export const huntScanScreen: Screen = {
       return true
     }
 
+    if (key === "e") {
+      ctx.app.setScreen("hunt-report")
+      return true
+    }
+
     return false
   },
 }
@@ -359,6 +380,14 @@ async function doScan(ctx: ScreenContext) {
     ctx.state.hunt.scan.results = results
     ctx.state.hunt.scan.tree = { offset: 0, selected: 0, expandedKeys: new Set() }
     ctx.state.hunt.scan.loading = false
+    updateInvestigation(ctx.state, {
+      origin: "scan",
+      title: "MCP Scan Explorer",
+      summary: `${results.length} path(s) scanned for MCP exposure and policy drift.`,
+      findings: collectFindings(results),
+      events: [],
+      query: null,
+    })
   } catch (err) {
     ctx.state.hunt.scan.error = err instanceof Error ? err.message : String(err)
     ctx.state.hunt.scan.loading = false

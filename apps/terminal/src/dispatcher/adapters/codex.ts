@@ -5,10 +5,8 @@
  * Preserves ChatGPT Plus/Team/Enterprise subscription authentication.
  */
 
-import { $ } from "bun"
 import { join } from "path"
-import { mkdir, writeFile } from "fs/promises"
-import { homedir } from "os"
+import { mkdir, stat, writeFile } from "fs/promises"
 import type { Adapter, AdapterResult } from "../index"
 import type { WorkcellInfo, TaskInput } from "../../types"
 
@@ -27,6 +25,18 @@ const DEFAULT_CONFIG: CodexConfig = {
 }
 
 let config: CodexConfig = { ...DEFAULT_CONFIG }
+
+function commandExists(command: string): boolean {
+  const bunRuntime = Bun as unknown as {
+    which?: (binary: string) => string | null | undefined
+  }
+
+  return !!bunRuntime.which?.(command)
+}
+
+function homeDirFromEnv(): string | null {
+  return process.env.HOME ?? process.env.USERPROFILE ?? null
+}
 
 /**
  * Configure Codex adapter
@@ -48,25 +58,21 @@ export const CodexAdapter: Adapter = {
   },
 
   async isAvailable(): Promise<boolean> {
-    // Check if `codex` CLI exists
-    const which = await $`which codex`.quiet().nothrow()
-    if (which.exitCode !== 0) {
+    if (!commandExists("codex")) {
       return false
     }
 
-    // Check if auth is configured
-    // Codex stores OAuth tokens in ~/.codex/
-    const authPath = join(homedir(), ".codex", "auth.json")
+    const homeDir = homeDirFromEnv()
+    if (!homeDir) {
+      return true
+    }
+
+    const authPath = join(homeDir, ".codex", "auth.json")
     try {
-      const authCheck = await $`test -f ${authPath}`.quiet().nothrow()
-      if (authCheck.exitCode !== 0) {
-        // Try checking via codex auth status
-        const statusCheck = await $`codex auth status`.quiet().nothrow()
-        return statusCheck.exitCode === 0
-      }
+      await stat(authPath)
       return true
     } catch {
-      return false
+      return true
     }
   },
 
