@@ -5,7 +5,7 @@ import { renderSplit } from "../components/split-pane"
 import { renderSurfaceHeader } from "../components/surface-header"
 import { THEME } from "../theme"
 import type { RunEvent, RunRecord, Screen, ScreenContext } from "../types"
-import { formatRunPhase } from "../runs"
+import { formatRunPhase, getRunReviewRoute, isRunReviewReady } from "../runs"
 
 function getCurrentRun(ctx: ScreenContext): RunRecord | null {
   const { runs, activeRunId } = ctx.state
@@ -124,6 +124,17 @@ function renderStatusCard(run: RunRecord, width: number): string[] {
       }
     }
 
+    const reviewRoute = getRunReviewRoute(run)
+    if (reviewRoute) {
+      content.push("")
+      content.push(`${THEME.secondary}${THEME.bold}Review${THEME.reset}`)
+      content.push(
+        isRunReviewReady(run)
+          ? `${THEME.success}Ready${THEME.reset} open ${THEME.white}${reviewRoute}${THEME.reset} review from detail or the runs backlog.`
+          : `${THEME.dim}Review target:${THEME.reset} ${THEME.white}${reviewRoute}${THEME.reset}`,
+      )
+    }
+
     if (run.error) {
       content.push("")
       content.push(`${THEME.secondary}${THEME.bold}Failure${THEME.reset}`)
@@ -224,9 +235,10 @@ export const runDetailScreen: Screen = {
     lines.push("")
     lines.push(centerLine(
       `${THEME.dim}esc${THEME.reset}${THEME.muted} back${THEME.reset}  ` +
+        `${THEME.dim}r${THEME.reset}${THEME.muted} runs${THEME.reset}  ` +
         `${THEME.dim}c${THEME.reset}${THEME.muted} cancel${THEME.reset}  ` +
         `${THEME.dim}↑↓${THEME.reset}${THEME.muted} events${THEME.reset}  ` +
-        `${THEME.dim}enter${THEME.reset}${THEME.muted} review${THEME.reset}`,
+        `${THEME.dim}enter${THEME.reset}${THEME.muted} ${isRunReviewReady(run) ? "review" : "result"}${THEME.reset}`,
       ctx.width,
     ))
 
@@ -242,6 +254,11 @@ export const runDetailScreen: Screen = {
 
     if (key === "\x1b" || key === "q" || key === "b") {
       ctx.app.setScreen("main")
+      return true
+    }
+
+    if (key === "r") {
+      ctx.app.showRuns()
       return true
     }
 

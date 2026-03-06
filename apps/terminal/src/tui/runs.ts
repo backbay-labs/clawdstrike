@@ -1,6 +1,7 @@
 import type {
   DispatchResultInfo,
   RunEvent,
+  RunListFilter,
   RunPhase,
   RunRecord,
 } from "./types"
@@ -172,6 +173,30 @@ export function formatRunPhase(phase: RunPhase): string {
   }
 }
 
+export function isRunReviewReady(run: RunRecord): boolean {
+  return run.phase === "review_ready"
+}
+
+export function getRunReviewRoute(run: RunRecord): "result" | "diff" | "report" | null {
+  if (run.result) {
+    return "result"
+  }
+
+  return null
+}
+
+export function filterRuns(entries: RunRecord[], filter: RunListFilter): RunRecord[] {
+  switch (filter) {
+    case "active":
+      return entries.filter((entry) => !isRunTerminal(entry.phase))
+    case "review_ready":
+      return entries.filter((entry) => isRunReviewReady(entry))
+    case "all":
+    default:
+      return entries
+  }
+}
+
 export function createManagedRun(init: ManagedRunInit): RunRecord {
   const timestamp = nowIso()
   return {
@@ -192,6 +217,7 @@ export function createManagedRun(init: ManagedRunInit): RunRecord {
     verification: null,
     result: null,
     error: null,
+    completedAt: null,
     events: [
       createEvent(
         "status",
@@ -215,7 +241,7 @@ export function cancelManagedRun(run: RunRecord, message = "Run canceled from th
     return run
   }
 
-  return applyUpdate(run, { phase: "canceled" }, { kind: "warning", message })
+  return applyUpdate(run, { phase: "canceled", completedAt: nowIso() }, { kind: "warning", message })
 }
 
 export async function executeManagedRun(
@@ -280,6 +306,7 @@ export async function executeManagedRun(
             verification: mapped.verification ?? null,
             result: mapped,
             error: mapped.success ? null : getFailureMessage(mapped),
+            completedAt: isRunTerminal(finalPhase) ? nowIso() : null,
           },
           {
             kind: mapped.success ? "status" : "error",
@@ -318,6 +345,7 @@ export async function executeManagedRun(
           verification: null,
           result: mapped,
           error: mapped.success ? null : getFailureMessage(mapped),
+          completedAt: nowIso(),
         },
         {
           kind: mapped.success ? "status" : "error",
@@ -338,6 +366,7 @@ export async function executeManagedRun(
           phase: "failed",
           error: error instanceof Error ? error.message : String(error),
           execution: { success: false, error: error instanceof Error ? error.message : String(error) },
+          completedAt: nowIso(),
           result: {
             success: false,
             taskId: "",

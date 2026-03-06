@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { createManagedRun, executeManagedRun, isRunTerminal } from "../src/tui/runs"
+import { createManagedRun, executeManagedRun, filterRuns, getRunReviewRoute, isRunTerminal } from "../src/tui/runs"
 import type { RunRecord } from "../src/tui/types"
 
 describe("tui managed runs", () => {
@@ -41,7 +41,9 @@ describe("tui managed runs", () => {
     expect(finalRun.phase).toBe("review_ready")
     expect(finalRun.result?.success).toBe(true)
     expect(finalRun.verification?.score).toBe(96)
+    expect(finalRun.completedAt).not.toBeNull()
     expect(finalRun.events.at(-1)?.message).toBe("Run ready for review")
+    expect(getRunReviewRoute(finalRun)).toBe("result")
     expect(isRunTerminal(finalRun.phase)).toBe(true)
   })
 
@@ -68,6 +70,7 @@ describe("tui managed runs", () => {
     })
 
     expect(finalRun.phase).toBe("canceled")
+    expect(finalRun.completedAt).not.toBeNull()
     expect(finalRun.events.at(-1)?.message).toContain("canceled")
   })
 
@@ -90,6 +93,47 @@ describe("tui managed runs", () => {
     expect(finalRun.phase).toBe("failed")
     expect(finalRun.error).toBe("tool exploded")
     expect(finalRun.result?.success).toBe(false)
+    expect(finalRun.completedAt).not.toBeNull()
     expect(finalRun.events.at(-1)?.message).toBe("Run failed: tool exploded")
+  })
+
+  test("filters active and review-ready runs without dropping completed backlog entries", () => {
+    const active = createManagedRun({
+      prompt: "Keep routing",
+      action: "dispatch",
+      agentId: "codex",
+      agentLabel: "Codex",
+    })
+    active.phase = "executing"
+
+    const reviewReady = createManagedRun({
+      prompt: "Review me",
+      action: "dispatch",
+      agentId: "codex",
+      agentLabel: "Codex",
+    })
+    reviewReady.phase = "review_ready"
+    reviewReady.result = {
+      success: true,
+      taskId: "task-review",
+      agent: "Codex",
+      action: "dispatch",
+      duration: 1234,
+    }
+    reviewReady.completedAt = "2026-03-06T09:00:00Z"
+
+    const failed = createManagedRun({
+      prompt: "I failed",
+      action: "dispatch",
+      agentId: "codex",
+      agentLabel: "Codex",
+    })
+    failed.phase = "failed"
+    failed.completedAt = "2026-03-06T10:00:00Z"
+
+    const entries = [active, reviewReady, failed]
+    expect(filterRuns(entries, "active").map((run) => run.id)).toEqual([active.id])
+    expect(filterRuns(entries, "review_ready").map((run) => run.id)).toEqual([reviewReady.id])
+    expect(filterRuns(entries, "all").map((run) => run.id)).toEqual([active.id, reviewReady.id, failed.id])
   })
 })

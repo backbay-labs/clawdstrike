@@ -19,6 +19,7 @@ import { huntQueryScreen } from "../src/tui/screens/hunt-query"
 import { huntScanScreen } from "../src/tui/screens/hunt-scan"
 import { huntTimelineScreen } from "../src/tui/screens/hunt-timeline"
 import { huntWatchScreen } from "../src/tui/screens/hunt-watch"
+import { runsScreen } from "../src/tui/screens/runs"
 import { securityScreen } from "../src/tui/screens/security"
 import { policyScreen } from "../src/tui/screens/policy"
 import { getRecommendedSandboxIndex } from "../src/tui/screens/setup"
@@ -28,6 +29,7 @@ import { updateInvestigation, buildInvestigationReport } from "../src/tui/invest
 import { exportReportBundle } from "../src/tui/report-export"
 import { Hushd } from "../src/hushd"
 import type { CheckEventData } from "../src/hushd"
+import { createManagedRun } from "../src/tui/runs"
 
 class TestApp implements AppController {
   public screen: InputMode | null = null
@@ -72,7 +74,9 @@ class TestApp implements AppController {
   }
   runGates(): void {}
   showBeads(): void {}
-  showRuns(): void {}
+  showRuns(): void {
+    this.screen = "runs"
+  }
   showHelp(): void {}
   quit(): void {
     this.quitCalled = true
@@ -196,6 +200,11 @@ describe("main screen", () => {
     const integrationsCtx = createContext(state, integrationsApp)
     expect(screen.handleInput("I", integrationsCtx)).toBe(true)
     expect(integrationsApp.screen).toBe("integrations")
+
+    const runsApp = new TestApp(tempDir)
+    const runsCtx = createContext(state, runsApp)
+    expect(screen.handleInput("R", runsCtx)).toBe(true)
+    expect(runsApp.screen).toBe("runs")
   })
 
   test("supports tab into actions, arrow-key selection, and enter to open", () => {
@@ -348,6 +357,46 @@ describe("main screen", () => {
     expect(output).toContain("Prompt focus:")
     expect(output).toContain("Integrations runtime status")
     expect(output).toContain("Timeline event replay")
+  })
+})
+
+describe("runs screen", () => {
+  test("cycles filters and opens the selected run detail", () => {
+    const state = createState()
+    const app = new TestApp(tempDir)
+    const activeRun = createManagedRun({
+      prompt: "Keep running",
+      action: "dispatch",
+      agentId: "codex",
+      agentLabel: "Codex",
+    })
+    activeRun.phase = "executing"
+    const reviewRun = createManagedRun({
+      prompt: "Ready for review",
+      action: "dispatch",
+      agentId: "codex",
+      agentLabel: "Codex",
+    })
+    reviewRun.phase = "review_ready"
+    reviewRun.completedAt = "2026-03-06T09:00:00Z"
+    reviewRun.result = {
+      success: true,
+      taskId: "task-runs-screen",
+      agent: "Codex",
+      action: "dispatch",
+      duration: 500,
+    }
+    state.runs.entries = [activeRun, reviewRun]
+
+    const ctx = createContext(state, app, 128, 34)
+    expect(stripAnsi(runsScreen.render(ctx))).toContain("Managed Runs")
+
+    expect(runsScreen.handleInput("f", ctx)).toBe(true)
+    expect(state.runs.filter).toBe("review_ready")
+    expect(state.runs.selectedRunId).toBe(reviewRun.id)
+
+    expect(runsScreen.handleInput("\r", ctx)).toBe(true)
+    expect(app.openedRunId).toBe(reviewRun.id)
   })
 })
 

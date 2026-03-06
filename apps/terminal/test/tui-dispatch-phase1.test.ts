@@ -7,6 +7,7 @@ import {
   createInitialRunListState,
 } from "../src/tui/types"
 import { createMainScreen } from "../src/tui/screens/main"
+import { runsScreen } from "../src/tui/screens/runs"
 import { runDetailScreen } from "../src/tui/screens/run-detail"
 import { resultScreen } from "../src/tui/screens/result"
 import { createManagedRun } from "../src/tui/runs"
@@ -54,7 +55,9 @@ class TestApp implements AppController {
   }
   runGates(): void {}
   showBeads(): void {}
-  showRuns(): void {}
+  showRuns(): void {
+    this.screen = "runs"
+  }
   showHelp(): void {}
   quit(): void {}
   getCwd(): string {
@@ -176,6 +179,7 @@ describe("run detail surface", () => {
     })
 
     run.phase = "review_ready"
+    run.completedAt = "2026-03-06T08:00:03Z"
     run.routing = { toolchain: "codex", strategy: "single", gates: ["bun test"] }
     run.execution = { success: true, model: "gpt-5.2", tokens: { input: 12, output: 34 }, cost: 0.1234 }
     run.verification = {
@@ -239,6 +243,22 @@ describe("run detail surface", () => {
 
     expect(runDetailScreen.handleInput("\r", ctx)).toBe(true)
     expect(app.screen).toBe("result")
+  })
+
+  test("routes backlog shortcut through the controller", () => {
+    const state = createState()
+    const app = new TestApp()
+    const run = createManagedRun({
+      prompt: "Return me to backlog",
+      action: "dispatch",
+      agentId: "codex",
+      agentLabel: "Codex",
+    })
+    state.runs.entries = [run]
+    state.activeRunId = run.id
+
+    expect(runDetailScreen.handleInput("r", createContext(state, app))).toBe(true)
+    expect(app.screen).toBe("runs")
   })
 })
 
@@ -331,5 +351,101 @@ describe("TUIApp phase one dispatch flow", () => {
     expect(app.state.runs.entries[0]?.events.some((event) => event.message.includes("Run completed"))).toBe(true)
     expect(app.state.lastResult?.taskId).toBe("task-12345678")
     expect(app.state.lastResult?.action).toBe("dispatch")
+  })
+
+  test("keeps completed runs reopenable from the runs backlog without hijacking navigation", () => {
+    const app = new TUIApp(process.cwd()) as unknown as {
+      state: {
+        inputMode: InputMode
+        activeRunId: string | null
+        lastResult: { taskId: string } | null
+        runs: {
+          entries: Array<{
+            id: string
+            phase: string
+            completedAt: string | null
+            result: { taskId: string } | null
+          }>
+          selectedRunId: string | null
+        }
+      }
+      render: () => void
+      replaceRun: (run: ReturnType<typeof createManagedRun>) => void
+      finishRun: (
+        run: ReturnType<typeof createManagedRun>,
+        result: { success: boolean; taskId: string; agent: string; action: "dispatch" | "speculate"; duration: number },
+      ) => void
+      showRuns: () => Promise<void>
+    }
+
+    app.render = () => {}
+    const run = createManagedRun({
+      prompt: "Leave detail while execution finishes",
+      action: "dispatch",
+      agentId: "codex",
+      agentLabel: "Codex",
+    })
+
+    app.replaceRun(run)
+    app.state.inputMode = "main"
+    app.finishRun(run, {
+      success: true,
+      taskId: "task-finished",
+      agent: "Codex",
+      action: "dispatch",
+      duration: 99,
+    })
+
+    expect(app.state.inputMode as InputMode).toBe("main")
+    expect(app.state.runs.entries[0]?.phase).toBe("completed")
+    expect(app.state.runs.entries[0]?.completedAt).not.toBeNull()
+    expect(app.state.runs.selectedRunId).toBe(app.state.runs.entries[0]?.id ?? null)
+
+    void app.showRuns()
+    expect(app.state.inputMode as InputMode).toBe("runs")
+  })
+})
+
+describe("runs surface", () => {
+  test("renders the managed backlog and opens review-ready runs into result", () => {
+    const state = createState()
+    const app = new TestApp()
+    const run = createManagedRun({
+      prompt: "Review this managed run from the backlog",
+      action: "dispatch",
+      agentId: "codex",
+      agentLabel: "Codex",
+    })
+    run.phase = "review_ready"
+    run.completedAt = "2026-03-06T09:00:00Z"
+    run.routing = { toolchain: "codex", strategy: "single", gates: ["bun test"] }
+    run.verification = {
+      allPassed: false,
+      score: 81,
+      summary: "One gate failed but the run still needs operator review.",
+      results: [{ gate: "bun test", passed: false }],
+    }
+    run.result = {
+      success: true,
+      taskId: "task-review",
+      agent: "Codex",
+      action: "dispatch",
+      routing: run.routing,
+      verification: run.verification,
+      duration: 3200,
+    }
+    state.runs.entries = [run]
+    state.runs.filter = "all"
+
+    const ctx = createContext(state, app, 132, 36)
+    const output = stripAnsi(runsScreen.render(ctx))
+    expect(output).toContain("Managed Runs")
+    expect(output).toContain("Review Guidance")
+    expect(output).toContain("One gate failed but the run still needs operator review.")
+
+    expect(runsScreen.handleInput("r", ctx)).toBe(true)
+    expect(state.activeRunId).toBe(run.id)
+    expect(state.lastResult?.taskId).toBe("task-review")
+    expect(app.screen).toBe("result")
   })
 })

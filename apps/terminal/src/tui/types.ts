@@ -86,7 +86,7 @@ export interface AppController {
   runGates(): void
   /** Show beads (exits TUI) */
   showBeads(): void
-  /** Show runs (exits TUI) */
+  /** Show the managed runs surface */
   showRuns(): void
   /** Show help (exits TUI) */
   showHelp(): void
@@ -118,6 +118,7 @@ export type InputMode =
   | "main"
   | "commands"
   | "dispatch-sheet"
+  | "runs"
   | "integrations"
   | "security"
   | "audit"
@@ -181,12 +182,17 @@ export interface RunRecord {
   verification: DispatchResultInfo["verification"] | null
   result: DispatchResultInfo | null
   error: string | null
+  completedAt: string | null
   events: RunEvent[]
 }
+
+export type RunListFilter = "active" | "review_ready" | "all"
 
 export interface RunListState {
   entries: RunRecord[]
   selectedRunId: string | null
+  filter: RunListFilter
+  list: ListViewport
 }
 
 export interface DispatchSheetState {
@@ -595,5 +601,7 @@ export function createInitialRunListState(): RunListState {
   return {
     entries: [],
     selectedRunId: null,
+    filter: "active",
+    list: { offset: 0, selected: 0 },
   }
 }

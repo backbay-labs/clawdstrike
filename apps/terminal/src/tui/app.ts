@@ -5,7 +5,6 @@
  * All screen rendering/input is delegated to screen modules.
  */
 
-import { TUI } from "./index"
 import { VERSION, init, shutdown, isInitialized } from "../index"
 import { Beads } from "../beads"
 import { Telemetry } from "../telemetry"
@@ -35,6 +34,7 @@ import { integrationsScreen } from "./screens/integrations"
 import { securityScreen } from "./screens/security"
 import { auditScreen } from "./screens/audit"
 import { policyScreen } from "./screens/policy"
+import { runsScreen } from "./screens/runs"
 import { runDetailScreen } from "./screens/run-detail"
 import { resultScreen } from "./screens/result"
 
@@ -160,7 +160,7 @@ export class TUIApp implements AppController {
       { key: "M", label: "mitre", description: "MITRE ATT&CK heatmap", stage: "experimental", action: () => this.setScreen("hunt-mitre") },
       { key: "P", label: "playbook", description: "playbook runner", stage: "experimental", action: () => this.setScreen("hunt-playbook") },
       { key: "b", label: "beads", description: "view work graph", stage: "supported", action: () => this.showBeads() },
-      { key: "r", label: "runs", description: "active rollouts", stage: "supported", action: () => this.showRuns() },
+      { key: "r", label: "runs", description: "managed backlog", stage: "supported", action: () => this.showRuns() },
       { key: "i", label: "integrations", description: "system status", stage: "supported", action: () => this.setScreen("integrations") },
       { key: "?", label: "help", description: "keyboard shortcuts", stage: "supported", action: () => this.showHelp() },
       { key: "q", label: "quit", description: "exit clawdstrike", stage: "supported", action: () => this.quit() },
@@ -177,6 +177,7 @@ export class TUIApp implements AppController {
       ["security", securityScreen],
       ["audit", auditScreen],
       ["policy", policyScreen],
+      ["runs", runsScreen],
       ["run-detail", runDetailScreen],
       ["result", resultScreen],
       ["hunt-watch", huntWatchScreen],
@@ -733,6 +734,7 @@ export class TUIApp implements AppController {
       ...run,
       phase: "canceled",
       updatedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
       events: [
         ...run.events,
         {
@@ -853,6 +855,10 @@ export class TUIApp implements AppController {
       verification: result.verification ?? null,
       result,
       error: result.error ?? result.execution?.error ?? null,
+      completedAt:
+        nextPhase === "review_ready" || nextPhase === "completed" || nextPhase === "failed"
+          ? new Date().toISOString()
+          : null,
       workcellId: result.taskId || null,
       events: [
         ...run.events,
@@ -991,36 +997,7 @@ export class TUIApp implements AppController {
   }
 
   async showRuns(): Promise<void> {
-    await this.cleanup()
-
-    console.log("")
-    console.log(THEME.secondary + THEME.bold + "  ⟨ Active Rollouts ⟩" + THEME.reset)
-    console.log(THEME.dim + "  " + "═".repeat(40) + THEME.reset)
-    console.log("")
-
-    try {
-      const active = Telemetry.getActive()
-
-      if (active.length === 0) {
-        console.log(THEME.muted + "  No active incantations" + THEME.reset)
-      } else {
-        for (const id of active) {
-          const rollout = await Telemetry.getRollout(id)
-          if (rollout) {
-            console.log(TUI.formatRollout(rollout))
-            console.log("")
-          }
-        }
-      }
-    } catch (err) {
-      console.log(THEME.error + `  Error: ${err}` + THEME.reset)
-    }
-
-    console.log("")
-    console.log(THEME.dim + "  Press any key to return..." + THEME.reset)
-
-    await this.waitForKey()
-    await this.start()
+    this.setScreen("runs")
   }
 
   async showHelp(): Promise<void> {

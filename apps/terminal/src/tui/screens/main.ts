@@ -125,6 +125,7 @@ const HOME_ACTIONS: HomeAction[] = [
   { key: "A", label: "Audit", description: "event log", action: (ctx) => ctx.app.setScreen("audit") },
   { key: "P", label: "Policy", description: "active rules", action: (ctx) => ctx.app.setScreen("policy") },
   { key: "I", label: "Integrations", description: "runtime status", action: (ctx) => ctx.app.setScreen("integrations") },
+  { key: "R", label: "Runs", description: "managed backlog", action: (ctx) => ctx.app.showRuns() },
   { key: "W", label: "Watch", description: "live stream", action: (ctx) => ctx.app.setScreen("hunt-watch") },
   { key: "X", label: "Scan", description: "MCP exposure", action: (ctx) => ctx.app.setScreen("hunt-scan") },
   { key: "T", label: "Timeline", description: "event replay", action: (ctx) => ctx.app.setScreen("hunt-timeline") },
@@ -319,7 +320,7 @@ function renderHomeActionGuide(focus: HomeFocus, contentWidth: number): string[]
     case "nav":
       return wrapText(
         `${THEME.dim}Nav mode:${THEME.reset} ${THEME.white}S/A/P/I${THEME.reset} core surfaces  ` +
-          `${THEME.white}W/X/T/Q/E/H${THEME.reset} hunt loop  ${THEME.white}Esc${THEME.reset} prompt`,
+          `${THEME.white}R${THEME.reset} runs  ${THEME.white}W/X/T/Q/E/H${THEME.reset} hunt loop  ${THEME.white}Esc${THEME.reset} prompt`,
         contentWidth,
       )
     default:
@@ -601,7 +602,7 @@ function buildOpsSnapshot(ctx: ScreenContext, width: number): { boxWidth: number
   if (compact && hasInvestigation) {
     lines.push(
       `${THEME.dim}Jump:${THEME.reset} ${THEME.white}E${THEME.reset} report  ` +
-        `${THEME.white}H${THEME.reset} history  ${THEME.white}T${THEME.reset} timeline`,
+        `${THEME.white}H${THEME.reset} history  ${THEME.white}R${THEME.reset} runs  ${THEME.white}T${THEME.reset} timeline`,
     )
   }
   lines.push(...renderHomeActionRows(ctx, boxWidth - 4))
@@ -706,6 +707,7 @@ function renderMainContent(ctx: ScreenContext, _commands: Command[]): string {
         `${THEME.bold}Tab${THEME.reset}${THEME.muted} prompt${THEME.reset}    ` +
         `${THEME.bold}Esc${THEME.reset}${THEME.muted} prompt${THEME.reset}`
       : `${THEME.bold}S/A/P/I${THEME.reset}${THEME.muted} core pages${THEME.reset}    ` +
+        `${THEME.bold}R${THEME.reset}${THEME.muted} runs${THEME.reset}    ` +
         `${THEME.bold}W/X/T/Q/E/H${THEME.reset}${THEME.muted} hunt pages${THEME.reset}    ` +
         `${THEME.bold}Esc${THEME.reset}${THEME.muted} prompt${THEME.reset}`
   const secondaryHints = state.homeFocus === "prompt"
