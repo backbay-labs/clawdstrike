@@ -253,11 +253,14 @@ describe("main screen", () => {
     const actionsOutput = stripAnsi(screen.render(createContext(state, app, 120, 36)))
     expect(actionsOutput).toContain("Dispatch [actions]")
     expect(actionsOutput).toContain("Actions focus:")
+    expect(actionsOutput).toContain("Ops Snapshot • actions")
+    expect(actionsOutput).toContain("Selected [S] Security overview")
 
     state.homeFocus = "nav"
     const navOutput = stripAnsi(screen.render(createContext(state, app, 120, 36)))
     expect(navOutput).toContain("Dispatch [nav]")
     expect(navOutput).toContain("Nav mode:")
+    expect(navOutput).toContain("Ops Snapshot • nav")
   })
 
   test("renders degraded health, stale stream state, and last deny summary", () => {

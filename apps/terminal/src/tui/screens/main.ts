@@ -13,6 +13,7 @@ import { asCheckEventData, eventDecision, type DaemonEvent } from "../../hushd"
 
 const STREAM_STALE_MS = 5 * 60_000
 const HOME_ACTION_COLUMNS = 2
+const HOME_ACTION_SELECTED_BG = "\x1b[48;5;52m"
 
 interface HomeAction {
   key: string
@@ -175,13 +176,18 @@ function moveHomeActionSelection(index: number, key: string): number {
 }
 
 function renderHomeActionCell(action: HomeAction, selected: boolean, width: number): string {
-  const prefix = selected
-    ? `${THEME.accent}${THEME.bold}▶${THEME.reset}`
-    : `${THEME.dim}•${THEME.reset}`
+  if (selected) {
+    const innerWidth = Math.max(0, width - 2)
+    const content = fitString(
+      `${THEME.bold}[${action.key}]${THEME.reset} ${THEME.bold}${action.label}${THEME.reset} ${THEME.white}${action.description}${THEME.reset}`,
+      innerWidth,
+    )
+    return `${THEME.accent}${THEME.bold}▌${THEME.reset}${HOME_ACTION_SELECTED_BG}${THEME.white}${content}${THEME.reset}${THEME.accent}${THEME.bold}▐${THEME.reset}`
+  }
+
+  const prefix = `${THEME.dim}•${THEME.reset}`
   const badge = `${THEME.secondary}${action.key}${THEME.reset}`
-  const label = selected
-    ? `${THEME.white}${THEME.bold}${action.label}${THEME.reset}`
-    : `${THEME.white}${action.label}${THEME.reset}`
+  const label = `${THEME.white}${action.label}${THEME.reset}`
   return fitString(`${prefix} ${badge} ${label} ${THEME.dim}${action.description}${THEME.reset}`, width)
 }
 
@@ -228,10 +234,20 @@ function renderHomeActionRows(ctx: ScreenContext, contentWidth: number): string[
   const rows: string[] = []
   const selection = Math.min(ctx.state.homeActionIndex, HOME_ACTIONS.length - 1)
   const activeSelection = ctx.state.homeFocus !== "prompt"
+  const selectedAction = HOME_ACTIONS[selection]
   const gap = 3
   const cellWidth = Math.max(22, Math.floor((contentWidth - gap) / HOME_ACTION_COLUMNS))
 
   rows.push(...renderHomeActionGuide(ctx.state.homeFocus, contentWidth))
+  if (activeSelection && selectedAction) {
+    rows.push(
+      fitString(
+        `${THEME.accent}${THEME.bold}Selected${THEME.reset} ${THEME.secondary}[${selectedAction.key}]${THEME.reset} ` +
+          `${THEME.white}${selectedAction.label}${THEME.reset} ${THEME.dim}${selectedAction.description}${THEME.reset}`,
+        contentWidth,
+      ),
+    )
+  }
 
   for (let i = 0; i < HOME_ACTIONS.length; i += HOME_ACTION_COLUMNS) {
     const left = renderHomeActionCell(HOME_ACTIONS[i], activeSelection && selection === i, cellWidth)
@@ -486,7 +502,13 @@ function buildOpsSnapshot(ctx: ScreenContext, width: number): { boxWidth: number
   return {
     boxWidth,
     lines: renderBox(
-      hasInvestigation ? "Active Investigation" : "Ops Snapshot",
+      hasInvestigation
+        ? state.homeFocus === "prompt"
+          ? "Active Investigation"
+          : `Active Investigation • ${state.homeFocus}`
+        : state.homeFocus === "prompt"
+          ? "Ops Snapshot"
+          : `Ops Snapshot • ${state.homeFocus}`,
       lines,
       boxWidth,
       THEME,
