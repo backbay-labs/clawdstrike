@@ -22,6 +22,23 @@ pub struct SpinePublisher {
     subject_prefix: String,
 }
 
+fn sanitize_stream_component(input: &str) -> String {
+    input
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect()
+}
+
+fn receipts_stream_name(subject_prefix: &str) -> String {
+    format!("{}-receipts", sanitize_stream_component(subject_prefix))
+}
+
 impl SpinePublisher {
     /// Create a new publisher and ensure the receipts stream exists.
     pub async fn new(
@@ -31,7 +48,7 @@ impl SpinePublisher {
     ) -> Result<Self> {
         spine::nats_transport::ensure_stream(
             &js,
-            &format!("{subject_prefix}-receipts"),
+            &receipts_stream_name(&subject_prefix),
             vec![format!("{subject_prefix}.receipts.>")],
             1,
         )
@@ -212,5 +229,13 @@ mod tests {
 
         assert!(spine::verify_envelope(&e1).unwrap());
         assert!(spine::verify_envelope(&e2).unwrap());
+    }
+
+    #[test]
+    fn receipts_stream_name_is_jetstream_safe() {
+        assert_eq!(
+            receipts_stream_name("tenant-desktop-dev.clawdstrike"),
+            "tenant-desktop-dev-clawdstrike-receipts"
+        );
     }
 }

@@ -1735,6 +1735,21 @@ pub fn prepare_managed_hushd_binary() -> Result<Option<PathBuf>> {
         })?;
     }
 
+    #[cfg(target_os = "macos")]
+    if copy_needed {
+        let status = std::process::Command::new("codesign")
+            .args(["--force", "--sign", "-", managed_path.to_string_lossy().as_ref()])
+            .status()
+            .with_context(|| format!("Failed to invoke codesign for {:?}", managed_path))?;
+        if !status.success() {
+            anyhow::bail!(
+                "codesign failed for managed hushd at {:?} with status {}",
+                managed_path,
+                status
+            );
+        }
+    }
+
     Ok(Some(managed_path))
 }
 
