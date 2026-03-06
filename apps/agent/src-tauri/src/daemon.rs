@@ -1208,7 +1208,7 @@ impl AuditQueue {
                             self.requeue_failed_flush(events).await;
                         }
                         tracing::warn!(
-                            flushed = outcome.accepted,
+                            prior_accepted = outcome.accepted,
                             prior_duplicates = outcome.duplicates,
                             accepted = summary.accepted,
                             duplicates = summary.duplicates,
@@ -1216,7 +1216,7 @@ impl AuditQueue {
                             "Daemon rejected some audit outbox events"
                         );
                         anyhow::bail!(
-                            "Audit batch upload partially rejected after flushing {} accepted events: accepted={}, duplicates={}, rejected={}",
+                            "Audit batch upload partially rejected after previously flushing {} accepted events; current batch status: accepted={}, duplicates={}, rejected={}",
                             outcome.accepted,
                             summary.accepted,
                             summary.duplicates,
@@ -2543,7 +2543,9 @@ mod tests {
         assert!(err
             .to_string()
             .contains("Audit batch upload partially rejected"));
-        assert!(err.to_string().contains("after flushing 0 accepted events"));
+        assert!(err
+            .to_string()
+            .contains("after previously flushing 0 accepted events"));
 
         let guard = queue.queue.lock().await;
         let ids: Vec<_> = guard

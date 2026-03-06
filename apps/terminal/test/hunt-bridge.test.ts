@@ -2,10 +2,23 @@ import { afterEach, describe, expect, test } from "bun:test"
 import * as fs from "node:fs/promises"
 import * as os from "node:os"
 import * as path from "node:path"
-import { extractHuntEnvelopeData, findRepoHuntBinary, resolveDefaultWatchRules, resolveHuntBinary } from "../src/hunt/bridge"
+import {
+  extractHuntEnvelopeData,
+  findRepoHuntBinary,
+  resolveDefaultWatchRules,
+  resolveHuntBinary,
+  spawnHuntStream,
+} from "../src/hunt/bridge"
 import { normalizeScanResults } from "../src/hunt/bridge-scan"
 
 const HUNT_BINARY_ENV = "CLAWDSTRIKE_TUI_HUNT_BINARY"
+
+async function writeExecutableScript(dir: string, name: string, contents: string): Promise<string> {
+  const scriptPath = path.join(dir, name)
+  await fs.writeFile(scriptPath, contents, { mode: 0o755 })
+  await fs.chmod(scriptPath, 0o755)
+  return scriptPath
+}
 
 afterEach(() => {
   delete process.env[HUNT_BINARY_ENV]
@@ -60,6 +73,32 @@ describe("hunt bridge", () => {
 
     expect(payload).toEqual({ events: ["a", "b"] })
     expect(extractHuntEnvelopeData<string[]>(["legacy"])).toEqual(["legacy"])
+  })
+
+  test("waits for stdout consumption before surfacing stream errors", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "clawdstrike-watch-stream-"))
+    const scriptPath = await writeExecutableScript(
+      tempDir,
+      "fake-clawdstrike",
+      `#!/usr/bin/env bash
+set -euo pipefail
+printf 'line one\\n'
+printf 'line two\\n'
+`,
+    )
+
+    process.env[HUNT_BINARY_ENV] = scriptPath
+
+    const errorPromise = new Promise<string>((resolve) => {
+      spawnHuntStream(
+        ["watch"],
+        () => {},
+        (error) => resolve(error),
+      )
+    })
+
+    await expect(errorPromise).resolves.toContain("line two")
+    await fs.rm(tempDir, { recursive: true, force: true })
   })
 
   test("normalizes scan results from the hunt CLI envelope shape", () => {

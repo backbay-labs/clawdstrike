@@ -17,6 +17,13 @@ export interface WatchOptions {
   natsNkeySeed?: string
 }
 
+export interface WatchCallbacks {
+  onEvent: (event: TimelineEvent) => void
+  onAlert: (alert: Alert) => void
+  onStats?: (stats: WatchStats) => void
+  onError?: (error: string) => void
+}
+
 interface HuntCorrelatePayload {
   alerts?: Alert[]
 }
@@ -32,10 +39,7 @@ export async function runCorrelate(opts: CorrelateOptions): Promise<Alert[]> {
 
 export function startWatch(
   rules: string[],
-  onEvent: (event: TimelineEvent) => void,
-  onAlert: (alert: Alert) => void,
-  onStats?: (stats: WatchStats) => void,
-  onError?: (error: string) => void,
+  callbacks: WatchCallbacks,
   opts?: WatchOptions,
 ): HuntStreamHandle {
   const args = ["watch"]
@@ -48,12 +52,12 @@ export function startWatch(
   return spawnHuntStream(
     args,
     (line: WatchJsonLine) => {
-      if (line.type === "event") onEvent(line.data)
-      else if (line.type === "alert") onAlert(line.data)
-      else if (line.type === "stats" && onStats) onStats(line.data)
+      if (line.type === "event") callbacks.onEvent(line.data)
+      else if (line.type === "alert") callbacks.onAlert(line.data)
+      else if (line.type === "stats" && callbacks.onStats) callbacks.onStats(line.data)
     },
     (error) => {
-      onError?.(error)
+      callbacks.onError?.(error)
     },
     {
       cwd: opts?.cwd,

@@ -173,7 +173,8 @@ export const huntWatchScreen: Screen = {
 
     watchHandle = startWatch(
       rules,
-      (event: TimelineEvent) => {
+      {
+        onEvent: (event: TimelineEvent) => {
         const ws = ctx.state.hunt.watch
         if (!matchesFilter(event, ws.filter)) return
         ctx.state.hunt.watch = {
@@ -188,8 +189,8 @@ export const huntWatchScreen: Screen = {
           findings: ctx.state.hunt.investigation.findings,
         })
         ctx.app.render()
-      },
-      (alert: Alert) => {
+        },
+        onAlert: (alert: Alert) => {
         const ws = ctx.state.hunt.watch
 
         // Clear previous fade timer
@@ -212,8 +213,8 @@ export const huntWatchScreen: Screen = {
           findings,
         })
         ctx.app.render()
-      },
-      (stats: WatchStats) => {
+        },
+        onStats: (stats: WatchStats) => {
         ctx.state.hunt.watch = { ...ctx.state.hunt.watch, stats }
         updateInvestigation(ctx.state, {
           origin: "watch",
@@ -222,8 +223,8 @@ export const huntWatchScreen: Screen = {
           query: ctx.state.hunt.watch.filter === "all" ? null : ctx.state.hunt.watch.filter,
         })
         ctx.app.render()
-      },
-      (error: string) => {
+        },
+        onError: (error: string) => {
         const ws = ctx.state.hunt.watch
         const readableError = explainUnavailableWatch(error, ctx)
         ctx.state.hunt.watch = {
@@ -242,6 +243,7 @@ export const huntWatchScreen: Screen = {
           query: ws.filter === "all" ? null : ws.filter,
         })
         ctx.app.render()
+        },
       },
       {
         cwd: ctx.app.getCwd(),

@@ -321,8 +321,11 @@ export function spawnHuntStream(
     }
   }
 
+  const stdoutDone = readLines()
+
   const watchExit = async () => {
     const [exitCode, stderr] = await Promise.all([proc.exited, stderrText])
+    await stdoutDone
     if (killed) return
 
     if (exitCode === 0) {
@@ -348,7 +351,6 @@ export function spawnHuntStream(
     onError(`Process exited with code ${exitCode}`)
   }
 
-  void readLines()
   void watchExit()
 
   return {
