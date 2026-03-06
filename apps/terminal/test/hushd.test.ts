@@ -201,6 +201,34 @@ describe("HushdClient", () => {
         { id: "secret_leak", enabled: false },
       ])
     })
+
+    test("does not treat guard names containing null as disabled", async () => {
+      mockFetch(new Map([
+        ["/api/v1/policy", {
+          status: 200,
+          body: {
+            name: "Default",
+            version: "1.1.0",
+            policy_hash: "abc123",
+            yaml: [
+              "version: 1.1.0",
+              "guards:",
+              "  null_check_guard:",
+              "    enabled: true",
+              "  actually_disabled: null",
+            ].join("\n"),
+            schema: { current: "1.2.0" },
+          },
+        }],
+      ]))
+
+      const result = await client.getPolicy()
+      expect(result).not.toBeNull()
+      expect(result!.guards).toEqual([
+        { id: "null_check_guard", enabled: true },
+        { id: "actually_disabled", enabled: false },
+      ])
+    })
   })
 
   describe("getAudit", () => {

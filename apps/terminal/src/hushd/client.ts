@@ -56,12 +56,12 @@ function extractPolicyGuardsFromYaml(yamlText: string | undefined): PolicyRespon
       break
     }
 
-    const guardMatch = line.match(/^ {2}([A-Za-z0-9_]+):(?:\s*null)?\s*$/)
+    const guardMatch = line.match(/^ {2}([A-Za-z0-9_]+):(\s*null)?\s*$/)
     if (guardMatch) {
       flushCurrent()
       currentGuard = {
         id: guardMatch[1],
-        enabled: line.includes("null") ? false : true,
+        enabled: guardMatch[2] === undefined,
       }
       continue
     }

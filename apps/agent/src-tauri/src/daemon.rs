@@ -4,7 +4,7 @@
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -856,6 +856,12 @@ struct FlushAuditBatchResponse {
     accepted: usize,
     duplicates: usize,
     rejected: usize,
+    #[serde(default)]
+    accepted_ids: Vec<String>,
+    #[serde(default)]
+    duplicate_ids: Vec<String>,
+    #[serde(default)]
+    rejected_ids: Vec<String>,
 }
 
 const MAX_AUDIT_QUEUE_LEN: usize = 10_000;
@@ -1073,6 +1079,22 @@ impl AuditQueue {
         }
     }
 
+    async fn requeue_selected_flush(
+        &self,
+        events: VecDeque<serde_json::Value>,
+        failed_ids: &HashSet<String>,
+    ) {
+        let selected = events
+            .into_iter()
+            .filter(|event| {
+                event.get("id")
+                    .and_then(normalize_audit_event_id)
+                    .is_some_and(|id| failed_ids.contains(&id))
+            })
+            .collect();
+        self.requeue_failed_flush(selected).await;
+    }
+
     /// Drain all queued events and upload them to hushd.
     pub async fn flush(&self, daemon_url: &str, api_key: Option<&str>) -> Result<usize> {
         // Serialize flushes so we never interleave drain/requeue in ways that can reorder or
@@ -1142,7 +1164,17 @@ impl AuditQueue {
                         );
                     }
                     if summary.rejected > 0 {
-                        self.requeue_failed_flush(events).await;
+                        let rejected_ids: HashSet<_> = summary.rejected_ids.into_iter().collect();
+                        if rejected_ids.len() == summary.rejected {
+                            self.requeue_selected_flush(events, &rejected_ids).await;
+                        } else {
+                            tracing::warn!(
+                                rejected = summary.rejected,
+                                rejected_ids = rejected_ids.len(),
+                                "Daemon response lacked complete rejected event IDs; requeueing entire batch"
+                            );
+                            self.requeue_failed_flush(events).await;
+                        }
                         tracing::warn!(
                             accepted = summary.accepted,
                             duplicates = summary.duplicates,
@@ -1154,6 +1186,13 @@ impl AuditQueue {
                             summary.accepted,
                             summary.duplicates,
                             summary.rejected
+                        );
+                    }
+                    if !summary.accepted_ids.is_empty() || !summary.duplicate_ids.is_empty() {
+                        tracing::debug!(
+                            accepted_ids = summary.accepted_ids.len(),
+                            duplicate_ids = summary.duplicate_ids.len(),
+                            "Daemon returned audit batch event ID summaries"
                         );
                     }
                     flushed += summary.accepted;
@@ -2299,6 +2338,51 @@ mod tests {
 
     #[tokio::test]
     async fn audit_queue_flush_requeues_partially_rejected_batches() {
+        use axum::{routing::post, Json, Router};
+        use tokio::net::TcpListener;
+
+        let queue = AuditQueue::new_test_isolated();
+        queue.enqueue(sample_audit_event("evt-1")).await;
+        queue.enqueue(sample_audit_event("evt-2")).await;
+        queue.enqueue(sample_audit_event("evt-3")).await;
+
+        let app = Router::new().route(
+            "/api/v1/audit/batch",
+            post(|| async {
+                Json(serde_json::json!({
+                    "accepted": 2,
+                    "duplicates": 0,
+                    "rejected": 1,
+                    "accepted_ids": ["evt-1", "evt-2"],
+                    "rejected_ids": ["evt-3"]
+                }))
+            }),
+        );
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let err = queue
+            .flush(&format!("http://{}", addr), None)
+            .await
+            .expect_err("partial rejection should fail the flush");
+        assert!(err
+            .to_string()
+            .contains("Audit batch upload partially rejected"));
+
+        let guard = queue.queue.lock().await;
+        let ids: Vec<_> = guard
+            .iter()
+            .filter_map(|event| event.get("id").and_then(|id| id.as_str()))
+            .collect();
+        assert_eq!(ids, vec!["evt-3"]);
+    }
+
+    #[tokio::test]
+    async fn audit_queue_flush_requeues_full_batch_when_rejected_ids_are_missing() {
         use axum::{routing::post, Json, Router};
         use tokio::net::TcpListener;
 

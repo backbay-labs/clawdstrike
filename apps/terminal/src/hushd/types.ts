@@ -95,6 +95,9 @@ export interface AuditBatchResponse {
   accepted: number
   duplicates: number
   rejected: number
+  accepted_ids?: string[]
+  duplicate_ids?: string[]
+  rejected_ids?: string[]
 }
 
 export interface AuditStats {
