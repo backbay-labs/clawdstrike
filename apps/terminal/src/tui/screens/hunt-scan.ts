@@ -177,7 +177,7 @@ function renderScanStateCard(
   title: string,
   body: string[],
   width: number,
-  height: number,
+  bodyHeight: number,
   footer: string,
 ): string[] {
   const boxWidth = Math.min(96, width - 6)
@@ -189,10 +189,10 @@ function renderScanStateCard(
     padding: 1,
   })
   const lines: string[] = []
-  const startY = Math.max(3, Math.floor((height - card.length - 2) / 2))
+  const startY = Math.max(1, Math.floor((bodyHeight - card.length - 2) / 2))
   while (lines.length < startY) lines.push(" ".repeat(width))
   lines.push(...centerBlock(card, width))
-  while (lines.length < height - 1) lines.push(" ".repeat(width))
+  while (lines.length < bodyHeight - 1) lines.push(" ".repeat(width))
   lines.push(centerLine(footer, width))
   return lines
 }
@@ -299,6 +299,7 @@ export const huntScanScreen: Screen = {
     if (scan.loading) {
       const spinChars = ["\u2847", "\u2846", "\u2834", "\u2831", "\u2839", "\u283B", "\u283F", "\u2857"]
       const frame = ctx.state.animationFrame % spinChars.length
+      const bodyHeight = Math.max(6, height - lines.length)
       lines.push(...renderScanStateCard(
         "Scan In Progress",
         [
@@ -306,13 +307,14 @@ export const huntScanScreen: Screen = {
           `${spinChars[frame]} collecting clients, servers, signatures, issues, and violations`,
         ],
         width,
-        height,
+        bodyHeight,
         `${THEME.dim}esc${THEME.reset}${THEME.muted} back${THEME.reset}`,
       ))
       return lines.join("\n")
     }
 
     if (scan.error) {
+      const bodyHeight = Math.max(6, height - lines.length)
       lines.push(...renderScanStateCard(
         "Scan Failed",
         [
@@ -320,13 +322,14 @@ export const huntScanScreen: Screen = {
           scan.error,
         ],
         width,
-        height,
+        bodyHeight,
         `${THEME.dim}r${THEME.reset}${THEME.muted} rescan${THEME.reset}  ${THEME.dim}esc${THEME.reset}${THEME.muted} back${THEME.reset}`,
       ))
       return lines.join("\n")
     }
 
     if (scan.results.length === 0) {
+      const bodyHeight = Math.max(6, height - lines.length)
       lines.push(...renderScanStateCard(
         "No Scan Results",
         [
@@ -334,7 +337,7 @@ export const huntScanScreen: Screen = {
           `Run the scan from a machine with MCP clients configured, or rescan after starting the local agent runtime.`,
         ],
         width,
-        height,
+        bodyHeight,
         `${THEME.dim}r${THEME.reset}${THEME.muted} rescan${THEME.reset}  ${THEME.dim}esc${THEME.reset}${THEME.muted} back${THEME.reset}`,
       ))
       return lines.join("\n")

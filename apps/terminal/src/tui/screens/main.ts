@@ -5,7 +5,7 @@
 import { THEME, LOGO, AGENTS, getAnimatedStrike } from "../theme"
 import type { Screen, ScreenContext, Command } from "../types"
 import { renderBox } from "../components/box"
-import { centerBlock, centerLine, joinColumns } from "../components/layout"
+import { centerBlock, centerLine, joinColumns, wrapText } from "../components/layout"
 import { fitString } from "../components/types"
 import { getInvestigationCounts, isInvestigationStale } from "../investigation"
 import type { AppState } from "../types"
@@ -119,24 +119,24 @@ function renderLastDenied(state: AppState): string | null {
 }
 
 const HOME_ACTIONS: HomeAction[] = [
-  { key: "S", label: "Security", description: "security overview", action: (ctx) => ctx.app.setScreen("security") },
-  { key: "A", label: "Audit", description: "audit log", action: (ctx) => ctx.app.setScreen("audit") },
-  { key: "P", label: "Policy", description: "active policy", action: (ctx) => ctx.app.setScreen("policy") },
-  { key: "I", label: "Integrations", description: "runtime and agent state", action: (ctx) => ctx.app.setScreen("integrations") },
-  { key: "W", label: "Watch", description: "live hunt stream", action: (ctx) => ctx.app.setScreen("hunt-watch") },
-  { key: "X", label: "Scan", description: "scan MCP exposure", action: (ctx) => ctx.app.setScreen("hunt-scan") },
-  { key: "T", label: "Timeline", description: "replay investigation events", action: (ctx) => ctx.app.setScreen("hunt-timeline") },
-  { key: "Q", label: "Query", description: "search receipts and runtime events", action: (ctx) => ctx.app.setScreen("hunt-query") },
+  { key: "S", label: "Security", description: "overview", action: (ctx) => ctx.app.setScreen("security") },
+  { key: "A", label: "Audit", description: "event log", action: (ctx) => ctx.app.setScreen("audit") },
+  { key: "P", label: "Policy", description: "active rules", action: (ctx) => ctx.app.setScreen("policy") },
+  { key: "I", label: "Integrations", description: "runtime status", action: (ctx) => ctx.app.setScreen("integrations") },
+  { key: "W", label: "Watch", description: "live stream", action: (ctx) => ctx.app.setScreen("hunt-watch") },
+  { key: "X", label: "Scan", description: "MCP exposure", action: (ctx) => ctx.app.setScreen("hunt-scan") },
+  { key: "T", label: "Timeline", description: "event replay", action: (ctx) => ctx.app.setScreen("hunt-timeline") },
+  { key: "Q", label: "Query", description: "search events", action: (ctx) => ctx.app.setScreen("hunt-query") },
   {
     key: "E",
     label: "Report",
-    description: "review evidence handoff",
+    description: "evidence review",
     action: (ctx) => {
       ctx.state.hunt.report.returnScreen = "main"
       ctx.app.setScreen("hunt-report")
     },
   },
-  { key: "H", label: "History", description: "open exported report index", action: (ctx) => ctx.app.setScreen("hunt-report-history") },
+  { key: "H", label: "History", description: "report index", action: (ctx) => ctx.app.setScreen("hunt-report-history") },
 ]
 
 function findHomeActionIndex(key: string): number {
@@ -191,10 +191,11 @@ function renderHomeActionRows(ctx: ScreenContext, contentWidth: number): string[
   const gap = 3
   const cellWidth = Math.max(22, Math.floor((contentWidth - gap) / HOME_ACTION_COLUMNS))
 
-  rows.push(
+  rows.push(...wrapText(
     `${THEME.dim}Navigate:${THEME.reset} ${THEME.white}↑↓←→${THEME.reset} select  ` +
-      `${THEME.white}Enter${THEME.reset} open  ${THEME.dim}or press the shortcut key directly${THEME.reset}`,
-  )
+      `${THEME.white}Enter${THEME.reset} open  ${THEME.dim}or use shortcut keys${THEME.reset}`,
+    contentWidth,
+  ))
 
   for (let i = 0; i < HOME_ACTIONS.length; i += HOME_ACTION_COLUMNS) {
     const left = renderHomeActionCell(HOME_ACTIONS[i], selection === i, cellWidth)

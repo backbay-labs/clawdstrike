@@ -2,7 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test"
 import * as fs from "node:fs/promises"
 import * as os from "node:os"
 import * as path from "node:path"
-import { findRepoHuntBinary, resolveDefaultWatchRules, resolveHuntBinary } from "../src/hunt/bridge"
+import { extractHuntEnvelopeData, findRepoHuntBinary, resolveDefaultWatchRules, resolveHuntBinary } from "../src/hunt/bridge"
+import { normalizeScanResults } from "../src/hunt/bridge-scan"
 
 const HUNT_BINARY_ENV = "CLAWDSTRIKE_TUI_HUNT_BINARY"
 
@@ -47,5 +48,65 @@ describe("hunt bridge", () => {
     const rules = resolveDefaultWatchRules(path.join(os.tmpdir(), "clawdstrike-no-rules"))
     expect(rules.length).toBeGreaterThan(0)
     expect(rules[0]).toEndWith(path.join("src", "hunt", "rules", "default-watch.yaml"))
+  })
+
+  test("unwraps hunt command envelope payloads", () => {
+    const payload = extractHuntEnvelopeData<{ events: string[] }>({
+      version: 1,
+      command: "hunt timeline",
+      exit_code: 0,
+      data: { events: ["a", "b"] },
+    })
+
+    expect(payload).toEqual({ events: ["a", "b"] })
+    expect(extractHuntEnvelopeData<string[]>(["legacy"])).toEqual(["legacy"])
+  })
+
+  test("normalizes scan results from the hunt CLI envelope shape", () => {
+    const normalized = normalizeScanResults([
+      {
+        client: "cursor",
+        path: "/tmp/mcp.json",
+        servers: [
+          {
+            name: "blender",
+            server: {
+              command: "/usr/local/bin/blender-mcp",
+              args: ["--stdio"],
+              env: { MODE: "dev" },
+            },
+            signature: {
+              metadata: {
+                serverInfo: {
+                  name: "BlenderMCP",
+                  version: "1.0.0",
+                },
+              },
+              tools: [
+                {
+                  name: "search_blender_docs",
+                  description: "Search docs",
+                  inputSchema: { type: "object" },
+                },
+              ],
+              prompts: [{ name: "asset_creation_strategy" }],
+              resources: [{ uri: "resource://scene" }],
+            },
+            issues: [],
+            policy_violations: [],
+          },
+        ],
+        error: {
+          category: "file_not_found",
+          exception: "FileNotFoundConfig",
+          message: "missing",
+        },
+      },
+    ])
+
+    expect(normalized[0].client).toBe("cursor")
+    expect(normalized[0].servers[0].command).toBe("/usr/local/bin/blender-mcp")
+    expect(normalized[0].servers[0].signature?.tools[0].input_schema).toEqual({ type: "object" })
+    expect(normalized[0].errors[0]?.error).toContain("file_not_found")
   })
 })

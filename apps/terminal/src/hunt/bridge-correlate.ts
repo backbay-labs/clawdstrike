@@ -1,6 +1,6 @@
 // hunt/bridge-correlate.ts - Correlation and watch mode bridge wrapper
 
-import { runHuntCommand, spawnHuntStream, type HuntStreamHandle } from "./bridge"
+import { extractHuntEnvelopeData, runHuntCommand, spawnHuntStream, type HuntStreamHandle } from "./bridge"
 import type { Alert, TimelineEvent, WatchJsonLine, WatchStats } from "./types"
 
 export interface CorrelateOptions {
@@ -17,13 +17,17 @@ export interface WatchOptions {
   natsNkeySeed?: string
 }
 
+interface HuntCorrelatePayload {
+  alerts?: Alert[]
+}
+
 export async function runCorrelate(opts: CorrelateOptions): Promise<Alert[]> {
   const args = ["correlate"]
   for (const rule of opts.rules) args.push("--rules", rule)
   if (opts.since) args.push("--since", opts.since)
   if (opts.until) args.push("--until", opts.until)
-  const result = await runHuntCommand<Alert[]>(args)
-  return result.data ?? []
+  const result = await runHuntCommand<HuntCorrelatePayload>(args)
+  return extractHuntEnvelopeData<HuntCorrelatePayload>(result.data)?.alerts ?? []
 }
 
 export function startWatch(

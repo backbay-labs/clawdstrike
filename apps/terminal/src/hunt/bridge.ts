@@ -30,6 +30,17 @@ export interface HuntCommandOptions {
   env?: Record<string, string>
 }
 
+export interface HuntJsonEnvelope<T> {
+  version?: number
+  command?: string
+  exit_code?: number
+  error?: {
+    kind?: string
+    message?: string
+  } | null
+  data?: T
+}
+
 function uniquePaths(paths: Array<string | null | undefined>): string[] {
   const seen = new Set<string>()
   const resolved: string[] = []
@@ -217,6 +228,19 @@ export async function runHuntCommand<T>(
     const message = err instanceof Error ? err.message : String(err)
     return { ok: false, error: message, exitCode: -1 }
   }
+}
+
+export function extractHuntEnvelopeData<T>(payload: unknown): T | undefined {
+  if (payload == null) return undefined
+  if (Array.isArray(payload)) return payload as T
+  if (typeof payload !== "object") return payload as T
+
+  const envelope = payload as HuntJsonEnvelope<T>
+  if ("data" in envelope) {
+    return envelope.data
+  }
+
+  return payload as T
 }
 
 /**

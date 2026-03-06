@@ -9,6 +9,9 @@ import { createMainScreen } from "../src/tui/screens/main"
 import { integrationsScreen } from "../src/tui/screens/integrations"
 import { huntReportScreen } from "../src/tui/screens/hunt-report"
 import { huntReportHistoryScreen } from "../src/tui/screens/hunt-report-history"
+import { huntQueryScreen } from "../src/tui/screens/hunt-query"
+import { huntScanScreen } from "../src/tui/screens/hunt-scan"
+import { huntTimelineScreen } from "../src/tui/screens/hunt-timeline"
 import { huntWatchScreen } from "../src/tui/screens/hunt-watch"
 import { securityScreen } from "../src/tui/screens/security"
 import { loadDesktopAgentSnapshotSync } from "../src/desktop-agent"
@@ -216,6 +219,53 @@ describe("main screen", () => {
     expect(output).toContain("Stream: stale")
     expect(output).toContain("Last deny:")
     expect(output).toContain("shell.policy")
+  })
+
+  test("renders full home navigation copy without truncating the shortcut hint", () => {
+    const state = createState()
+    state.hushdConnected = true
+    state.hushdStatus = "connected"
+    const app = new TestApp(tempDir)
+    const screen = createMainScreen([])
+    const output = stripAnsi(screen.render(createContext(state, app, 120, 36)))
+
+    expect(output).toContain("or use shortcut keys")
+    expect(output).toContain("Integrations runtime status")
+    expect(output).toContain("Timeline event replay")
+  })
+})
+
+describe("hunt state cards", () => {
+  test("keeps the scan header visible during loading", () => {
+    const state = createState()
+    state.hunt.scan.loading = true
+    const app = new TestApp(tempDir)
+
+    const output = stripAnsi(huntScanScreen.render(createContext(state, app, 100, 24)))
+
+    expect(output).toContain("HUNT // MCP Scan Explorer [beta]")
+    expect(output).toContain("Scan In Progress")
+  })
+
+  test("keeps the query header visible in empty state", () => {
+    const state = createState()
+    const app = new TestApp(tempDir)
+
+    const output = stripAnsi(huntQueryScreen.render(createContext(state, app, 100, 24)))
+
+    expect(output).toContain("HUNT // Hunt Query [beta]")
+    expect(output).toContain("No Matches")
+  })
+
+  test("keeps the timeline header visible in error state", () => {
+    const state = createState()
+    state.hunt.timeline.error = "timeline failed"
+    const app = new TestApp(tempDir)
+
+    const output = stripAnsi(huntTimelineScreen.render(createContext(state, app, 100, 24)))
+
+    expect(output).toContain("HUNT // Timeline Replay [beta]")
+    expect(output).toContain("Timeline Failed")
   })
 })
 

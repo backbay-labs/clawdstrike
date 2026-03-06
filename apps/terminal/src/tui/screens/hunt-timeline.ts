@@ -95,7 +95,7 @@ function renderTimelineStateCard(
   title: string,
   body: string[],
   width: number,
-  height: number,
+  bodyHeight: number,
   footer: string,
 ): string[] {
   const boxWidth = Math.min(94, width - 6)
@@ -107,10 +107,10 @@ function renderTimelineStateCard(
     padding: 1,
   })
   const lines: string[] = []
-  const startY = Math.max(4, Math.floor((height - card.length - 2) / 2))
+  const startY = Math.max(1, Math.floor((bodyHeight - card.length - 2) / 2))
   while (lines.length < startY) lines.push(" ".repeat(width))
   lines.push(...centerBlock(card, width))
-  while (lines.length < height - 1) lines.push(" ".repeat(width))
+  while (lines.length < bodyHeight - 1) lines.push(" ".repeat(width))
   lines.push(centerLine(footer, width))
   return lines
 }
@@ -174,6 +174,7 @@ export const huntTimelineScreen: Screen = {
     if (tl.loading) {
       const spinChars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
       const spinner = spinChars[state.animationFrame % spinChars.length]
+      const bodyHeight = Math.max(6, height - lines.length)
       lines.push(...renderTimelineStateCard(
         "Timeline Loading",
         [
@@ -181,7 +182,7 @@ export const huntTimelineScreen: Screen = {
           `${spinner} fetching receipts and runtime events for the current investigation`,
         ],
         width,
-        height,
+        bodyHeight,
         renderHelpBar(width),
       ))
       return lines.join("\n")
@@ -189,6 +190,7 @@ export const huntTimelineScreen: Screen = {
 
     // Error state
     if (tl.error) {
+      const bodyHeight = Math.max(6, height - lines.length)
       lines.push(...renderTimelineStateCard(
         "Timeline Failed",
         [
@@ -196,7 +198,7 @@ export const huntTimelineScreen: Screen = {
           tl.error,
         ],
         width,
-        height,
+        bodyHeight,
         renderHelpBar(width),
       ))
       return lines.join("\n")
@@ -206,6 +208,7 @@ export const huntTimelineScreen: Screen = {
 
     // Empty state
     if (filtered.length === 0) {
+      const bodyHeight = Math.max(6, height - lines.length)
       lines.push(...renderTimelineStateCard(
         "No Timeline Events",
         [
@@ -215,7 +218,7 @@ export const huntTimelineScreen: Screen = {
           "Toggle sources with 1-4 or reload the timeline to try again.",
         ],
         width,
-        height,
+        bodyHeight,
         renderHelpBar(width),
       ))
       return lines.join("\n")

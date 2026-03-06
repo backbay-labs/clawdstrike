@@ -73,7 +73,7 @@ function renderQueryStateCard(
   title: string,
   body: string[],
   width: number,
-  height: number,
+  bodyHeight: number,
   footer: string,
 ): string[] {
   const boxWidth = Math.min(92, width - 6)
@@ -85,10 +85,10 @@ function renderQueryStateCard(
     padding: 1,
   })
   const lines: string[] = []
-  const startY = Math.max(4, Math.floor((height - card.length - 2) / 2))
+  const startY = Math.max(1, Math.floor((bodyHeight - card.length - 2) / 2))
   while (lines.length < startY) lines.push(" ".repeat(width))
   lines.push(...centerBlock(card, width))
-  while (lines.length < height - 1) lines.push(" ".repeat(width))
+  while (lines.length < bodyHeight - 1) lines.push(" ".repeat(width))
   lines.push(centerLine(footer, width))
   return lines
 }
@@ -126,6 +126,7 @@ export const huntQueryScreen: Screen = {
     if (q.loading) {
       const spinChars = ["\u2847", "\u2846", "\u2834", "\u2831", "\u2839", "\u283B", "\u283F", "\u2857"]
       const frame = ctx.state.animationFrame % spinChars.length
+      const bodyHeight = Math.max(6, height - lines.length)
       lines.push(...renderQueryStateCard(
         "Running Query",
         [
@@ -133,7 +134,7 @@ export const huntQueryScreen: Screen = {
           `${spinChars[frame]} collecting matching events and rebuilding the investigation view`,
         ],
         width,
-        height,
+        bodyHeight,
         `${THEME.dim}tab${THEME.reset}${THEME.muted} switch mode${THEME.reset}  ${THEME.dim}esc${THEME.reset}${THEME.muted} back${THEME.reset}`,
       ))
       return lines.join("\n")
@@ -141,6 +142,7 @@ export const huntQueryScreen: Screen = {
 
     // Error
     if (q.error && q.results.length === 0) {
+      const bodyHeight = Math.max(6, height - lines.length)
       lines.push(...renderQueryStateCard(
         "Query Failed",
         [
@@ -148,7 +150,7 @@ export const huntQueryScreen: Screen = {
           q.error,
         ],
         width,
-        height,
+        bodyHeight,
         `${THEME.dim}tab${THEME.reset}${THEME.muted} switch mode${THEME.reset}  ${THEME.dim}esc${THEME.reset}${THEME.muted} back${THEME.reset}`,
       ))
       return lines.join("\n")
@@ -164,6 +166,7 @@ export const huntQueryScreen: Screen = {
     const listHeight = Math.max(1, height - usedLines)
 
     if (resultCount === 0 && !q.error) {
+      const bodyHeight = Math.max(6, height - lines.length)
       lines.push(...renderQueryStateCard(
         "No Matches",
         [
@@ -173,7 +176,7 @@ export const huntQueryScreen: Screen = {
             : "Adjust the structured filters, then press Enter to run the query again.",
         ],
         width,
-        height,
+        bodyHeight,
         q.mode === "nl"
           ? `${THEME.dim}enter${THEME.reset}${THEME.muted} execute${THEME.reset}  ${THEME.dim}tab${THEME.reset}${THEME.muted} structured mode${THEME.reset}  ${THEME.dim}esc${THEME.reset}${THEME.muted} back${THEME.reset}`
           : `${THEME.dim}enter${THEME.reset}${THEME.muted} execute${THEME.reset}  ${THEME.dim}↑/↓${THEME.reset}${THEME.muted} fields${THEME.reset}  ${THEME.dim}tab${THEME.reset}${THEME.muted} NL mode${THEME.reset}`,
