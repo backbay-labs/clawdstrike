@@ -2,8 +2,8 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use chrono::{DateTime, TimeZone, Utc};
 use hush_multi_agent::{
-    DelegationClaims, DelegationGraphEdgeKind, DelegationGraphNodeKind, GrantLineageFacts,
-    InMemoryRevocationStore, SignedDelegationToken, DELEGATION_AUDIENCE,
+    AgentCapability, AgentId, DelegationClaims, DelegationGraphEdgeKind, DelegationGraphNodeKind,
+    GrantLineageFacts, InMemoryRevocationStore, SignedDelegationToken, DELEGATION_AUDIENCE,
 };
 use serde_json::json;
 use sqlx::row::Row;
@@ -88,6 +88,9 @@ pub async fn ingest_grant(
     } else {
         None
     };
+    if let Some(parent_grant) = parent_grant.as_ref() {
+        validate_child_grant_against_parent(&token.claims, parent_grant)?;
+    }
 
     let now = Utc::now();
     let status = if token.claims.exp <= now.timestamp() {
@@ -558,10 +561,13 @@ pub async fn principal_graph_snapshot(
     principal_id: &str,
     include_context: bool,
 ) -> Result<DelegationGraphSnapshot, ApiError> {
+    let principal_aliases = resolve_principal_aliases(db, tenant_id, principal_id).await?;
     let data = load_tenant_graph_data(db, tenant_id).await?;
     let mut starting_grants = BTreeSet::new();
     for (grant_id, grant) in &data.grants {
-        if grant.issuer_principal_id == principal_id || grant.subject_principal_id == principal_id {
+        if principal_aliases.matches(&grant.issuer_principal_id)
+            || principal_aliases.matches(&grant.subject_principal_id)
+        {
             starting_grants.insert(*grant_id);
         }
     }
@@ -571,13 +577,66 @@ pub async fn principal_graph_snapshot(
         expanded.extend(lineage_grant_ids(&data.grants, *grant_id));
     }
 
-    let root_node_id = Some(DelegationGraphNodeKind::Principal.node_id(principal_id));
+    let root_node_id =
+        Some(DelegationGraphNodeKind::Principal.node_id(&principal_aliases.canonical_id));
     Ok(snapshot_for_grant_ids(
         &data,
         &expanded,
         root_node_id,
         include_context,
     ))
+}
+
+struct PrincipalAliases {
+    canonical_id: String,
+    aliases: BTreeSet<String>,
+}
+
+impl PrincipalAliases {
+    fn matches(&self, candidate: &str) -> bool {
+        self.aliases.contains(candidate)
+    }
+}
+
+async fn resolve_principal_aliases(
+    db: &PgPool,
+    tenant_id: Uuid,
+    principal_identifier: &str,
+) -> Result<PrincipalAliases, ApiError> {
+    let row = sqlx::query::query(
+        r#"SELECT id::text AS id_text, stable_ref
+           FROM principals
+           WHERE tenant_id = $1
+             AND (id::text = $2 OR stable_ref = $2)
+           LIMIT 1"#,
+    )
+    .bind(tenant_id)
+    .bind(principal_identifier)
+    .fetch_optional(db)
+    .await
+    .map_err(ApiError::Database)?;
+
+    let mut aliases = BTreeSet::new();
+    aliases.insert(principal_identifier.to_string());
+
+    let canonical_id = if let Some(row) = row {
+        let id_text = row
+            .try_get::<String, _>("id_text")
+            .map_err(ApiError::Database)?;
+        let stable_ref = row
+            .try_get::<String, _>("stable_ref")
+            .map_err(ApiError::Database)?;
+        aliases.insert(id_text.clone());
+        aliases.insert(stable_ref);
+        id_text
+    } else {
+        principal_identifier.to_string()
+    };
+
+    Ok(PrincipalAliases {
+        canonical_id,
+        aliases,
+    })
 }
 
 pub async fn graph_path_snapshot(
@@ -880,6 +939,83 @@ fn verify_signed_token(
             None,
         )
         .map_err(|err| ApiError::BadRequest(format!("invalid delegation token: {err}")))
+}
+
+fn validate_child_grant_against_parent(
+    child_claims: &DelegationClaims,
+    parent_grant: &FleetGrant,
+) -> Result<(), ApiError> {
+    if parent_grant.status == "revoked" {
+        return Err(ApiError::BadRequest(format!(
+            "parent grant {} is revoked",
+            parent_grant.token_jti
+        )));
+    }
+
+    let parent_claims = claims_from_grant(parent_grant)?;
+    child_claims
+        .validate_redelegation_from(&parent_claims)
+        .map_err(|err| {
+            ApiError::BadRequest(format!(
+                "invalid delegation token for parent {}: {err}",
+                parent_grant.token_jti
+            ))
+        })
+}
+
+fn claims_from_grant(grant: &FleetGrant) -> Result<DelegationClaims, ApiError> {
+    let iss = AgentId::new(grant.issuer_principal_id.clone()).map_err(|err| {
+        ApiError::Internal(format!(
+            "stored fleet grant {} has invalid issuer principal id: {err}",
+            grant.id
+        ))
+    })?;
+    let sub = AgentId::new(grant.subject_principal_id.clone()).map_err(|err| {
+        ApiError::Internal(format!(
+            "stored fleet grant {} has invalid subject principal id: {err}",
+            grant.id
+        ))
+    })?;
+    let cap: Vec<AgentCapability> =
+        serde_json::from_value(grant.capabilities.clone()).map_err(|err| {
+            ApiError::Internal(format!(
+                "stored fleet grant {} has invalid capabilities: {err}",
+                grant.id
+            ))
+        })?;
+    let cel: Vec<AgentCapability> = serde_json::from_value(grant.capability_ceiling.clone())
+        .map_err(|err| {
+            ApiError::Internal(format!(
+                "stored fleet grant {} has invalid capability ceiling: {err}",
+                grant.id
+            ))
+        })?;
+    let ctx = if grant.context.as_object().is_some_and(|map| map.is_empty()) {
+        None
+    } else {
+        Some(grant.context.clone())
+    };
+    let claims = DelegationClaims {
+        iss,
+        sub,
+        aud: grant.audience.clone(),
+        iat: grant.issued_at.timestamp(),
+        exp: grant.expires_at.timestamp(),
+        nbf: grant.not_before.map(|value| value.timestamp()),
+        jti: grant.token_jti.clone(),
+        cap,
+        chn: grant.lineage_chain.clone(),
+        cel,
+        pur: grant.purpose.clone(),
+        ctx,
+    };
+    claims.validate_basic().map_err(|err| {
+        ApiError::Internal(format!(
+            "stored fleet grant {} could not be reconstructed as valid claims: {err}",
+            grant.id
+        ))
+    })?;
+    Ok(claims)
 }
 
 fn validate_grant_type(grant_type: &str) -> Result<(), ApiError> {

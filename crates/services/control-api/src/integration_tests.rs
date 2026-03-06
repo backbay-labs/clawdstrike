@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use axum::body::{to_bytes, Body};
 use axum::http::{Method, Request, StatusCode};
+use chrono::Utc;
 use futures::StreamExt;
 use serde_json::Value;
 use sqlx::row::Row;
@@ -2470,6 +2471,79 @@ async fn authorization_bearer_header_rejects_api_keys() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn grants_reject_child_tokens_that_violate_parent_chain_constraints() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let now = Utc::now().timestamp();
+
+    let parent_keypair = hush_core::Keypair::generate();
+    let parent_claims = hush_multi_agent::DelegationClaims::new(
+        hush_multi_agent::AgentId::new("agent:root").expect("root issuer"),
+        hush_multi_agent::AgentId::new("agent:child").expect("parent subject"),
+        now,
+        now + 3600,
+        vec![hush_multi_agent::AgentCapability::DeployApproval],
+    )
+    .expect("build parent claims");
+    let parent_jti = parent_claims.jti.clone();
+    let parent_token = hush_multi_agent::SignedDelegationToken::sign_with_public_key(
+        parent_claims,
+        &parent_keypair,
+    )
+    .expect("sign parent token");
+
+    let parent_response = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/grants".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "token": parent_token,
+            "grant_type": "delegation"
+        })),
+    )
+    .await;
+    assert_eq!(parent_response.0, StatusCode::OK);
+
+    let child_keypair = hush_core::Keypair::generate();
+    let mut invalid_child_claims = hush_multi_agent::DelegationClaims::new(
+        hush_multi_agent::AgentId::new("agent:spoofed").expect("spoofed issuer"),
+        hush_multi_agent::AgentId::new("agent:grandchild").expect("grandchild subject"),
+        now + 10,
+        now + 600,
+        vec![hush_multi_agent::AgentCapability::AgentAdmin],
+    )
+    .expect("build invalid child claims");
+    invalid_child_claims.aud = hush_multi_agent::DELEGATION_AUDIENCE.to_string();
+    invalid_child_claims.chn = vec![parent_jti];
+
+    let invalid_child_token = hush_multi_agent::SignedDelegationToken::sign_with_public_key(
+        invalid_child_claims,
+        &child_keypair,
+    )
+    .expect("sign invalid child token");
+
+    let child_response = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/grants".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "token": invalid_child_token,
+            "grant_type": "delegation"
+        })),
+    )
+    .await;
+    assert_eq!(child_response.0, StatusCode::BAD_REQUEST);
+    let error_message = child_response.1["error"].as_str().unwrap_or_default();
+    assert!(!error_message.is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn hunt_mutation_endpoints_reject_viewer_api_keys() {
     if !docker_available() {
         eprintln!("Skipping integration test: docker is unavailable");
@@ -2691,6 +2765,59 @@ async fn response_actions_execute_supported_cloud_only_targets() {
             .expect("fetch grant status");
     let grant_status: String = grant_row.try_get("status").expect("grant status");
     assert_eq!(grant_status, "revoked");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn response_action_acks_reject_actions_without_acknowledgement_enabled() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    seed_console_read_model_fixture(&harness).await;
+
+    let create_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/response-actions".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "actionType": "request_policy_reload",
+            "target": {
+                "kind": "endpoint",
+                "id": "endpoint-1"
+            },
+            "reason": "Contain endpoint",
+            "requireAcknowledgement": false,
+            "payload": {}
+        })),
+    )
+    .await;
+    assert_eq!(create_resp.0, StatusCode::OK);
+    let action_id = create_resp.1["id"]
+        .as_str()
+        .expect("response action id")
+        .to_string();
+
+    let ack_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/response-actions/{action_id}/acks"),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "targetKind": "endpoint",
+            "targetId": "endpoint-1",
+            "status": "acknowledged",
+            "ackToken": "not-enabled"
+        })),
+    )
+    .await;
+    assert_eq!(ack_resp.0, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        ack_resp.1["error"],
+        "acknowledgements are not enabled for this action"
+    );
 }
 
 async fn setup_harness() -> Harness {
@@ -3610,7 +3737,7 @@ async fn seed_console_read_model_fixture(harness: &Harness) -> ConsoleFixture {
     .bind(grant_id)
     .bind(harness.tenant_id)
     .bind(secondary_principal_id.to_string())
-    .bind(principal_id.to_string())
+    .bind("endpoint-1")
     .execute(&harness.db)
     .await
     .expect("seed fleet grant");

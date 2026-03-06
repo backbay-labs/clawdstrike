@@ -275,7 +275,8 @@ pub async fn get_principal_detail(
         Err(err) => return Err(err),
     };
 
-    let active_grants = load_active_grants(db, tenant_id, principal.id).await?;
+    let active_grants =
+        load_active_grants(db, tenant_id, principal.id, &principal.stable_ref).await?;
     let recent_sessions = load_recent_sessions(
         db,
         tenant_id,
@@ -912,6 +913,7 @@ async fn load_active_grants(
     db: &PgPool,
     tenant_id: Uuid,
     principal_id: Uuid,
+    principal_stable_ref: &str,
 ) -> Result<Vec<ConsoleActiveGrant>, ApiError> {
     let principal_id_text = principal_id.to_string();
     let rows = sqlx::query::query(
@@ -931,7 +933,12 @@ async fn load_active_grants(
            FROM fleet_grants
            WHERE tenant_id = $1
              AND status = 'active'
-             AND (issuer_principal_id = $4 OR subject_principal_id = $4)
+             AND (
+                  issuer_principal_id = $4
+                  OR subject_principal_id = $4
+                  OR issuer_principal_id = $5
+                  OR subject_principal_id = $5
+             )
            ORDER BY expires_at ASC, grant_id ASC"#,
     )
     .bind(tenant_id)
@@ -940,6 +947,7 @@ async fn load_active_grants(
         INDEFINITE_GRANT_EXPIRY,
         "grant_expiry_fallback",
     )?)
+    .bind(principal_stable_ref)
     .bind(&principal_id_text)
     .fetch_all(db)
     .await

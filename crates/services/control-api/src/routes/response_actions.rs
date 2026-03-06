@@ -527,6 +527,11 @@ async fn record_ack(
     .map_err(ApiError::Database)?
     .ok_or(ApiError::NotFound)?;
     let action = ResponseActionRecord::from_row(action).map_err(ApiError::Database)?;
+    if !action.require_acknowledgement {
+        return Err(ApiError::BadRequest(
+            "acknowledgements are not enabled for this action".to_string(),
+        ));
+    }
 
     let delivery = sqlx::query::query(
         r#"SELECT id, metadata
@@ -552,7 +557,9 @@ async fn record_ack(
     let expected_ack_token = delivery_metadata
         .get("ack_token")
         .and_then(Value::as_str)
-        .ok_or_else(|| ApiError::Internal("delivery missing acknowledgement token".to_string()))?;
+        .ok_or_else(|| {
+            ApiError::BadRequest("delivery is not acknowledgement-enabled".to_string())
+        })?;
     if expected_ack_token != ack_token {
         return Err(ApiError::Forbidden);
     }
