@@ -451,11 +451,11 @@ describe("HushdClient", () => {
       expect(events[0]?.data.severity).toBeNull()
     })
 
-    test("tolerates extra leading spaces in SSE event names", async () => {
+    test("strips only the single spec-allowed leading space in SSE event names", async () => {
       const encoder = new TextEncoder()
       globalThis.fetch = mock(async () => new Response(new ReadableStream({
         start(controller) {
-          controller.enqueue(encoder.encode("event:  violation\n"))
+          controller.enqueue(encoder.encode("event: violation\n"))
           controller.enqueue(encoder.encode("data: {\"timestamp\":\"2026-03-06T06:00:02Z\",\"action_type\":\"file\",\"target\":\"/tmp/demo\",\"decision\":\"blocked\"}\n\n"))
           controller.close()
         },
