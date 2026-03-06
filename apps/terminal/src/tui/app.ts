@@ -42,8 +42,10 @@ import { getAvailableExternalAdapters, getExternalAdapter, toExternalAdapterOpti
 import { createExternalRunSession } from "./external/session"
 import {
   createRecoverableExternalFailureRun,
+  describeExternalExitCode,
   ExternalRunHeartbeatTimeoutError,
   ExternalLaunchStartupTimeoutError,
+  ExternalRunSurfaceClosedError,
   isRecoverableExternalLaunchError,
 } from "./external/state"
 import type { ExternalRunSessionPlan, ExternalRunStatusPayload } from "./external/types"
@@ -126,6 +128,9 @@ export class TUIApp implements AppController {
   private canceledRunIds = new Set<string>()
   private attachedSession: { exited: Promise<number>; terminate: () => void } | null = null
   private externalSessionCleanup = new Map<string, () => Promise<void>>()
+  private exitPromise: Promise<void>
+  private resolveExitPromise: (() => void) | null = null
+  private exitSignaled = false
   private readonly inputListener = (key: string) => this.handleInput(key)
   private readonly resizeListener = () => {
     this.updateTerminalSize()
@@ -139,6 +144,9 @@ export class TUIApp implements AppController {
 
   constructor(cwd: string = process.cwd()) {
     this.cwd = cwd
+    this.exitPromise = new Promise((resolve) => {
+      this.resolveExitPromise = resolve
+    })
     this.state = {
       promptBuffer: "",
       agentIndex: 0,
@@ -271,6 +279,11 @@ export class TUIApp implements AppController {
     this.startBackgroundServices()
     await this.refresh()
     this.render()
+  }
+
+  async run(): Promise<void> {
+    await this.start()
+    await this.exitPromise
   }
 
   private startBackgroundServices(): void {
@@ -547,6 +560,10 @@ export class TUIApp implements AppController {
 
     Hushd.reset()
     this.detachTerminalListeners()
+    if (process.stdin.isTTY) {
+      process.stdin.setRawMode(false)
+    }
+    process.stdin.pause()
     this.attachedSession?.terminate()
     this.attachedSession = null
     await Promise.allSettled(
@@ -563,6 +580,15 @@ export class TUIApp implements AppController {
     if (isInitialized()) {
       await shutdown()
     }
+  }
+
+  private signalExit(): void {
+    if (this.exitSignaled) {
+      return
+    }
+
+    this.exitSignaled = true
+    this.resolveExitPromise?.()
   }
 
   private updateTerminalSize(): void {
@@ -1018,14 +1044,14 @@ export class TUIApp implements AppController {
     }
   }
 
-  launchRunInMode(runId: string, mode: "managed" | "attach"): void {
+  launchRunInMode(runId: string, mode: "managed" | "attach" | "external"): void {
     const run = this.state.runs.entries.find((entry) => entry.id === runId)
     if (!run || (isRunTerminal(run.phase) && !isRecoverableExternalFailure(run))) {
       return
     }
 
-    if (mode === "attach" && !supportsAttachToolchain(run.agentId)) {
-      this.state.statusMessage = `${THEME.warning}!${THEME.reset} ${run.agentLabel} does not expose an interactive attach session yet.`
+    if ((mode === "attach" || mode === "external") && !supportsAttachToolchain(run.agentId)) {
+      this.state.statusMessage = `${THEME.warning}!${THEME.reset} ${run.agentLabel} does not expose an interactive ${mode} session yet.`
       this.render()
       return
     }
@@ -1054,6 +1080,8 @@ export class TUIApp implements AppController {
     this.state.statusMessage =
       mode === "attach"
         ? `${THEME.accent}⠋${THEME.reset} Attach fallback staged`
+        : mode === "external"
+          ? `${THEME.accent}⠋${THEME.reset} External fallback staged`
         : `${THEME.accent}⠋${THEME.reset} Managed fallback staged`
     this.render()
 
@@ -1062,7 +1090,48 @@ export class TUIApp implements AppController {
       return
     }
 
+    if (mode === "external") {
+      void this.beginExternalRunFlow(runId)
+      return
+    }
+
     void this.launchManagedRun(nextRun)
+  }
+
+  relaunchRunInMode(runId: string, mode: "attach" | "external"): void {
+    const run = this.state.runs.entries.find((entry) => entry.id === runId)
+    if (!run || run.action !== "dispatch" || !isRunTerminal(run.phase)) {
+      return
+    }
+
+    if (!supportsAttachToolchain(run.agentId)) {
+      this.state.statusMessage = `${THEME.warning}!${THEME.reset} ${run.agentLabel} does not expose an interactive ${mode} session yet.`
+      this.render()
+      return
+    }
+
+    const nextRun = createManagedRun({
+      prompt: run.prompt,
+      action: run.action,
+      agentId: run.agentId,
+      agentLabel: run.agentLabel,
+      mode,
+    })
+
+    this.replaceRun(nextRun)
+    this.state.statusMessage =
+      mode === "attach"
+        ? `${THEME.accent}⠋${THEME.reset} Attach relaunch staged from ${run.agentLabel}`
+        : `${THEME.accent}⠋${THEME.reset} External relaunch staged from ${run.agentLabel}`
+    this.syncManagedRunState()
+    this.openRun(nextRun.id)
+
+    if (mode === "attach") {
+      this.beginAttachRun(nextRun.id)
+      return
+    }
+
+    void this.beginExternalRunFlow(nextRun.id)
   }
 
   cancelRun(runId: string): void {
@@ -1386,6 +1455,8 @@ export class TUIApp implements AppController {
     statusPath: string,
     startupTimeoutMs: number,
     livenessTimeoutMs: number,
+    surfaceAlive?: () => Promise<boolean>,
+    surfaceClosedMessage = "External terminal window closed",
   ): Promise<number> {
     const deadline = Date.now() + startupTimeoutMs
     let lastLiveAt: number | null = null
@@ -1414,6 +1485,12 @@ export class TUIApp implements AppController {
       if (lastLiveAt === null && Date.now() >= deadline) {
         throw new ExternalLaunchStartupTimeoutError()
       }
+      if (lastLiveAt !== null && surfaceAlive) {
+        const alive = await surfaceAlive().catch(() => true)
+        if (!alive) {
+          throw new ExternalRunSurfaceClosedError(surfaceClosedMessage)
+        }
+      }
       if (lastLiveAt !== null && Date.now() - lastLiveAt >= livenessTimeoutMs) {
         throw new ExternalRunHeartbeatTimeoutError()
       }
@@ -1426,12 +1503,16 @@ export class TUIApp implements AppController {
     runId: string,
     sessionPlan: ExternalRunSessionPlan,
     startedAt: number,
+    surfaceAlive?: () => Promise<boolean>,
+    surfaceClosedMessage?: string,
   ): Promise<void> {
     try {
       const exitCode = await this.waitForExternalExit(
         sessionPlan.statusPath,
         sessionPlan.startupTimeoutMs,
         sessionPlan.livenessTimeoutMs,
+        surfaceAlive,
+        surfaceClosedMessage,
       )
       const currentRun = this.state.runs.entries.find((entry) => entry.id === runId)
       if (!currentRun) {
@@ -1439,32 +1520,33 @@ export class TUIApp implements AppController {
       }
 
       const success = exitCode === 0
+      const exitMessage = describeExternalExitCode(exitCode)
       const finishedRun = updateRunRecord(
         currentRun,
         {
           phase: success ? "completed" : "failed",
           completedAt: new Date().toISOString(),
-          error: success ? null : `External session exited with code ${exitCode}`,
-          execution: success ? { success: true } : { success: false, error: `External session exited with code ${exitCode}` },
+          error: success ? null : exitMessage,
+          execution: success ? { success: true } : { success: false, error: exitMessage },
           result: {
             success,
             taskId: sessionPlan.workcell.id,
             agent: currentRun.agentLabel,
             action: currentRun.action,
             routing: sessionPlan.routing,
-            execution: success ? { success: true } : { success: false, error: `External session exited with code ${exitCode}` },
-            error: success ? undefined : `External session exited with code ${exitCode}`,
+            execution: success ? { success: true } : { success: false, error: exitMessage },
+            error: success ? undefined : exitMessage,
             duration: Date.now() - startedAt,
           },
           external: {
             ...currentRun.external,
             status: success ? "idle" : "failed",
-            error: success ? null : `External session exited with code ${exitCode}`,
+            error: success ? null : exitMessage,
           },
         },
         {
           kind: success ? "status" : "error",
-          message: success ? "External session completed" : `Run failed: External session exited with code ${exitCode}`,
+          message: success ? "External session completed" : `Run failed: ${exitMessage}`,
         },
       )
       this.replaceRun(finishedRun)
@@ -1590,7 +1672,12 @@ export class TUIApp implements AppController {
       this.syncManagedRunState()
       this.render()
 
-      void this.finalizeExternalRun(runId, sessionPlan, startedAt)
+      const surfaceAlive =
+        adapter.isAlive && launchResult.ref ? () => adapter.isAlive!(launchResult.ref!) : undefined
+      const surfaceClosedMessage =
+        adapter.id === "terminal-app" ? "External terminal window closed" : `${adapter.label} surface closed`
+
+      void this.finalizeExternalRun(runId, sessionPlan, startedAt, surfaceAlive, surfaceClosedMessage)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       const failedRun = createRecoverableExternalFailureRun(
@@ -1719,6 +1806,21 @@ export class TUIApp implements AppController {
   }
 
   async showRuns(): Promise<void> {
+    const selectedRunId = this.state.activeRunId ?? this.state.runs.selectedRunId
+    const selectedRun = selectedRunId
+      ? this.state.runs.entries.find((entry) => entry.id === selectedRunId) ?? null
+      : null
+
+    if (selectedRun) {
+      this.state.runs.selectedRunId = selectedRun.id
+      this.state.runs.filter =
+        selectedRun.phase === "review_ready"
+          ? "review_ready"
+          : isRunTerminal(selectedRun.phase)
+            ? "all"
+            : "active"
+    }
+
     this.setScreen("runs")
   }
 
@@ -1778,7 +1880,7 @@ export class TUIApp implements AppController {
     }
 
     await this.cleanup()
-    process.exit(0)
+    this.signalExit()
   }
 
   private waitForKey(): Promise<void> {
@@ -1802,5 +1904,5 @@ export class TUIApp implements AppController {
  */
 export async function launchTUI(cwd?: string): Promise<void> {
   const app = new TUIApp(cwd)
-  await app.start()
+  await app.run()
 }

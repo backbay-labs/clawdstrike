@@ -143,6 +143,16 @@ export async function focusTmuxSurface(
   }
 }
 
+export async function isTmuxSurfaceAlive(
+  kind: "tmux-split" | "tmux-window",
+  ref: string,
+  runCommand: TmuxCommandRunner = runTmuxCommand,
+): Promise<boolean> {
+  const format = kind === "tmux-split" ? "#{pane_id}" : "#{window_id}"
+  const result = await runCommand(["display-message", "-p", "-t", ref, format])
+  return result.exitCode === 0 && result.stdout.trim().length > 0
+}
+
 export const tmuxSplitAdapter: ExternalTerminalAdapter = {
   id: "tmux-split",
   label: "tmux split",
@@ -160,6 +170,9 @@ export const tmuxSplitAdapter: ExternalTerminalAdapter = {
   },
   async focus(ref: string): Promise<void> {
     await focusTmuxSurface("tmux-split", ref)
+  },
+  async isAlive(ref: string): Promise<boolean> {
+    return isTmuxSurfaceAlive("tmux-split", ref)
   },
 }
 
@@ -180,5 +193,8 @@ export const tmuxWindowAdapter: ExternalTerminalAdapter = {
   },
   async focus(ref: string): Promise<void> {
     await focusTmuxSurface("tmux-window", ref)
+  },
+  async isAlive(ref: string): Promise<boolean> {
+    return isTmuxSurfaceAlive("tmux-window", ref)
   },
 }

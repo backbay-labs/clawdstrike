@@ -4,6 +4,7 @@ import {
   detectTmuxAvailability,
   focusTmuxSurface,
   hasTmuxAdapter,
+  isTmuxSurfaceAlive,
   launchInTmux,
 } from "../src/tui/external/tmux"
 import type { ExternalRunSessionPlan } from "../src/tui/external/types"
@@ -115,5 +116,21 @@ describe("tmux adapter", () => {
         process.env.TMUX = originalTmux
       }
     }
+  })
+
+  test("detects whether a tmux surface still exists", async () => {
+    await expect(
+      isTmuxSurfaceAlive("tmux-split", "%11", async (args) => {
+        expect(args).toEqual(["display-message", "-p", "-t", "%11", "#{pane_id}"])
+        return { exitCode: 0, stdout: "%11\n", stderr: "" }
+      }),
+    ).resolves.toBe(true)
+
+    await expect(
+      isTmuxSurfaceAlive("tmux-window", "@9", async (args) => {
+        expect(args).toEqual(["display-message", "-p", "-t", "@9", "#{window_id}"])
+        return { exitCode: 1, stdout: "", stderr: "can't find window" }
+      }),
+    ).resolves.toBe(false)
   })
 })

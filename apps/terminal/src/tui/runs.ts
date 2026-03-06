@@ -209,6 +209,18 @@ export function canRunAttach(run: Pick<RunRecord, "action" | "mode" | "phase" | 
   return getRunAttachDisabledReason(run) === null
 }
 
+export function canRelaunchRunInMode(
+  run: Pick<RunRecord, "action" | "mode" | "phase" | "agentId">,
+  _mode: "attach" | "external",
+): boolean {
+  return (
+    run.action === "dispatch" &&
+    run.mode === "managed" &&
+    isRunTerminal(run.phase) &&
+    supportsAttachToolchain(run.agentId)
+  )
+}
+
 export function canRunExternal(
   run: Pick<RunRecord, "action" | "mode" | "phase" | "agentId" | "external" | "result">,
 ): boolean {

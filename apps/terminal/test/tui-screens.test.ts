@@ -46,7 +46,8 @@ class TestApp implements AppController {
   public beganExternalRunId: string | null = null
   public confirmedExternal = false
   public canceledExternal = false
-  public launchedFallback: { runId: string; mode: "managed" | "attach" } | null = null
+  public launchedFallback: { runId: string; mode: "managed" | "attach" | "external" } | null = null
+  public relaunchedRun: { runId: string; mode: "attach" | "external" } | null = null
   public canceledRunId: string | null = null
 
   constructor(private cwd: string) {}
@@ -91,8 +92,12 @@ class TestApp implements AppController {
     this.canceledExternal = true
   }
 
-  launchRunInMode(runId: string, mode: "managed" | "attach"): void {
+  launchRunInMode(runId: string, mode: "managed" | "attach" | "external"): void {
     this.launchedFallback = { runId, mode }
+  }
+
+  relaunchRunInMode(runId: string, mode: "attach" | "external"): void {
+    this.relaunchedRun = { runId, mode }
   }
 
   cancelRun(runId: string): void {
@@ -204,15 +209,15 @@ afterEach(async () => {
 })
 
 describe("main screen", () => {
-  test("keeps printable home hotkeys in the prompt by default", () => {
+  test("opens home shortcuts from an empty prompt by default", () => {
     const state = createState()
     const app = new TestApp(tempDir)
     const screen = createMainScreen([])
     const ctx = createContext(state, app)
 
     expect(screen.handleInput("W", ctx)).toBe(true)
-    expect(app.screen).toBeNull()
-    expect(state.promptBuffer).toBe("W")
+    expect(app.screen).toBe("hunt-watch")
+    expect(state.promptBuffer).toBe("")
     expect(state.homeFocus).toBe("prompt")
   })
 
@@ -297,6 +302,21 @@ describe("main screen", () => {
     expect(state.promptBuffer).toBe("triage W")
   })
 
+  test("keeps home hotkeys in the prompt once typing has started", () => {
+    const state = createState()
+    const app = new TestApp(tempDir)
+    const screen = createMainScreen([])
+    const ctx = createContext(state, app)
+
+    expect(screen.handleInput("f", ctx)).toBe(true)
+    expect(app.screen).toBeNull()
+    expect(state.promptBuffer).toBe("f")
+
+    expect(screen.handleInput("W", ctx)).toBe(true)
+    expect(app.screen).toBeNull()
+    expect(state.promptBuffer).toBe("fW")
+  })
+
   test("does not open the selected home action when enter is pressed in prompt focus", () => {
     const state = createState()
     const app = new TestApp(tempDir)
@@ -335,7 +355,8 @@ describe("main screen", () => {
     expect(promptOutput).toContain("Dispatch [prompt]")
     expect(promptOutput).toContain("Prompt focus:")
     expect(promptOutput).toContain("Enter dispatch sheet")
-    expect(promptOutput).toContain("type here without")
+    expect(promptOutput).toContain("empty prompt keeps")
+    expect(promptOutput).toContain("W/X/T/Q/E/H live")
 
     state.homeFocus = "actions"
     const actionsOutput = stripAnsi(screen.render(createContext(state, app, 120, 36)))

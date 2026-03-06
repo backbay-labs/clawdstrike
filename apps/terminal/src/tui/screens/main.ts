@@ -327,7 +327,7 @@ function renderHomeActionGuide(focus: HomeFocus, contentWidth: number): string[]
       return wrapText(
         `${THEME.dim}Prompt focus:${THEME.reset} ${THEME.white}Tab${THEME.reset} actions  ` +
           `${THEME.white}Enter${THEME.reset} dispatch sheet  ${THEME.white}Esc${THEME.reset} nav  ` +
-          `${THEME.dim}type here without triggering page shortcuts${THEME.reset}`,
+          `${THEME.dim}empty prompt keeps W/X/T/Q/E/H live; once you type, keys stay in the prompt${THEME.reset}`,
         contentWidth,
       )
   }
@@ -439,6 +439,13 @@ function handleMainInput(key: string, ctx: ScreenContext): boolean {
 
   if (state.homeFocus === "nav") {
     const actionIndex = findHomeActionIndex(key)
+    if (actionIndex >= 0) {
+      return activateHomeAction(actionIndex, ctx)
+    }
+  }
+
+  if (state.homeFocus === "prompt" && state.promptBuffer.length === 0) {
+    const actionIndex = HOME_ACTIONS.findIndex((action) => action.key === key)
     if (actionIndex >= 0) {
       return activateHomeAction(actionIndex, ctx)
     }

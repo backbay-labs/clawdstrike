@@ -1,3 +1,6 @@
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { describe, expect, test } from "bun:test"
 import { canRunExternal, createManagedRun, getRunExternalDisabledReason } from "../src/tui/runs"
 import {
@@ -7,10 +10,12 @@ import {
 } from "../src/tui/external/registry"
 import {
   createRecoverableExternalFailureRun,
+  describeExternalExitCode,
   ExternalRunHeartbeatTimeoutError,
   ExternalLaunchStartupTimeoutError,
   isRecoverableExternalLaunchError,
 } from "../src/tui/external/state"
+import { buildLaunchScript } from "../src/tui/external/session"
 import { makeTerminalWindowRef, parseTerminalWindowRef } from "../src/tui/external/terminal-app"
 import { resolveWezTermShell } from "../src/tui/external/wezterm"
 import type { ExternalRunSessionPlan, ExternalTerminalAdapter } from "../src/tui/external/types"
@@ -34,6 +39,23 @@ function createPlan(): ExternalRunSessionPlan {
     startupTimeoutMs: 10_000,
     livenessTimeoutMs: 15_000,
     cleanup: async () => {},
+  }
+}
+
+async function waitFor<T>(
+  fn: () => Promise<T | null> | T | null,
+  timeoutMs = 5_000,
+): Promise<T> {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    const value = await fn()
+    if (value !== null) {
+      return value
+    }
+    if (Date.now() >= deadline) {
+      throw new Error("Timed out waiting for test condition")
+    }
+    await Bun.sleep(100)
   }
 }
 
@@ -138,5 +160,76 @@ describe("external adapter registry", () => {
     expect(resolveWezTermShell()).toBe("sh")
     if (previousShell === undefined) delete process.env.SHELL
     else process.env.SHELL = previousShell
+  })
+
+  test("writes a finished status when the external shell receives hangup", async () => {
+    const root = await mkdtemp(join(tmpdir(), "clawdstrike-external-"))
+    const worktreePath = join(root, "wc-1")
+    const childPidPath = join(root, "child.pid")
+    const statusPath = join(root, "external-status.json")
+    const scriptPath = join(root, "external-launch.zsh")
+
+    await mkdir(worktreePath, { recursive: true })
+    await writeFile(
+      scriptPath,
+      buildLaunchScript(
+        worktreePath,
+        ["zsh", "-lc", `echo $$ > '${childPidPath}'; while true; do sleep 1; done`],
+        {},
+        statusPath,
+      ),
+      { mode: 0o755 },
+    )
+
+    const proc = Bun.spawn(["zsh", scriptPath], {
+      cwd: worktreePath,
+      stdout: "ignore",
+      stderr: "ignore",
+    })
+
+    try {
+      const childPid = await waitFor(async () => {
+        try {
+          const value = await readFile(childPidPath, "utf8")
+          const parsed = Number.parseInt(value.trim(), 10)
+          return Number.isFinite(parsed) ? parsed : null
+        } catch {
+          return null
+        }
+      })
+
+      await waitFor(async () => {
+        const file = Bun.file(statusPath)
+        if (!(await file.exists())) {
+          return null
+        }
+        const payload = await file.json().catch(() => null) as { state?: string } | null
+        return payload?.state === "running" ? payload : null
+      })
+
+      process.kill(childPid, "SIGHUP")
+      proc.kill("SIGHUP")
+      await Promise.race([
+        proc.exited,
+        Bun.sleep(2_000).then(() => {
+          throw new Error("Timed out waiting for external shell to exit after hangup")
+        }),
+      ])
+
+      const payload = JSON.parse(await readFile(statusPath, "utf8")) as {
+        state?: string
+        exitCode?: number
+        reason?: string
+      }
+
+      expect(payload.state).toBe("finished")
+      expect(payload.exitCode).toBe(129)
+      expect(payload.reason).toBe("hangup")
+      expect(describeExternalExitCode(payload.exitCode ?? 0)).toBe("External terminal window closed")
+    } finally {
+      proc.kill("SIGKILL")
+      await proc.exited.catch(() => {})
+      await rm(root, { recursive: true, force: true })
+    }
   })
 })

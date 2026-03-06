@@ -6,6 +6,21 @@ function appleScriptQuote(value: string): string {
   return value.replaceAll("\\", "\\\\").replaceAll("\"", "\\\"")
 }
 
+async function runAppleScript(script: string): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+  const proc = Bun.spawn(["osascript", "-e", script], {
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+  })
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ])
+
+  return { exitCode, stdout, stderr }
+}
+
 export function makeTerminalWindowRef(windowId: number): string {
   return `${TERMINAL_WINDOW_REF_PREFIX}${windowId}`
 }
@@ -33,32 +48,21 @@ export const terminalAppAdapter: ExternalTerminalAdapter = {
   },
   async launch(plan: ExternalRunSessionPlan): Promise<ExternalTerminalLaunchResult> {
     const command = `cd ${JSON.stringify(plan.workcell.directory)}; /bin/zsh ${JSON.stringify(plan.scriptPath)}`
-    const proc = Bun.spawn(
+    const { exitCode, stdout, stderr } = await runAppleScript(
       [
-        "osascript",
-        "-e",
-        [
-          'tell application "Terminal"',
-          "activate",
-          `set launchedTab to do script "${appleScriptQuote(command)}"`,
-          "delay 0.2",
-          "return id of front window",
-          "end tell",
-        ].join("\n"),
-      ],
-      {
-        stdin: "ignore",
-        stdout: "pipe",
-        stderr: "pipe",
-      },
+        'tell application "Terminal"',
+        "activate",
+        `set launchedTab to do script "${appleScriptQuote(command)}"`,
+        "delay 0.2",
+        "return id of front window",
+        "end tell",
+      ].join("\n"),
     )
-    const exitCode = await proc.exited
     if (exitCode !== 0) {
-      const errorText = await new Response(proc.stderr).text()
-      throw new Error(errorText.trim() || `osascript exited with code ${exitCode}`)
+      throw new Error(stderr.trim() || `osascript exited with code ${exitCode}`)
     }
 
-    const outputText = (await new Response(proc.stdout).text()).trim()
+    const outputText = stdout.trim()
     const windowId = Number(outputText)
     if (!Number.isInteger(windowId)) {
       throw new Error(`Terminal.app did not return a window id: ${outputText || "empty output"}`)
@@ -73,15 +77,20 @@ export const terminalAppAdapter: ExternalTerminalAdapter = {
           "\n",
         )
       : 'tell application "Terminal" to activate'
-    const proc = Bun.spawn(["osascript", "-e", script], {
-      stdin: "ignore",
-      stdout: "ignore",
-      stderr: "pipe",
-    })
-    const exitCode = await proc.exited
+    const { exitCode, stderr } = await runAppleScript(script)
     if (exitCode !== 0) {
-      const errorText = await new Response(proc.stderr).text()
-      throw new Error(errorText.trim() || `osascript exited with code ${exitCode}`)
+      throw new Error(stderr.trim() || `osascript exited with code ${exitCode}`)
     }
+  },
+  async isAlive(ref: string): Promise<boolean> {
+    const windowId = parseTerminalWindowRef(ref)
+    if (!windowId) {
+      return false
+    }
+
+    const { exitCode, stdout } = await runAppleScript(
+      ['tell application "Terminal"', `return exists window id ${windowId}`, "end tell"].join("\n"),
+    )
+    return exitCode === 0 && stdout.trim() === "true"
   },
 }

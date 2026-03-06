@@ -8,6 +8,7 @@ import type { RunEvent, RunRecord, Screen, ScreenContext } from "../types"
 import { getExternalAdapter } from "../external/registry"
 import {
   canRunAttach,
+  canRelaunchRunInMode,
   canRunExternal,
   formatRunPhase,
   getExternalAdapterLabel,
@@ -161,6 +162,8 @@ function renderStatusCard(run: RunRecord, width: number): string[] {
   content.push(`${THEME.secondary}${THEME.bold}Attach${THEME.reset}`)
   if (canRunAttach(run)) {
     content.push(`${THEME.success}Ready${THEME.reset} hand the terminal to this run from the detail footer.`)
+  } else if (canRelaunchRunInMode(run, "attach")) {
+    content.push(`${THEME.success}Ready${THEME.reset} relaunch this prompt in attach mode from the detail footer.`)
   } else {
     content.push(`${THEME.dim}${getRunAttachDisabledReason(run) ?? "Attach is not available for this run."}${THEME.reset}`)
   }
@@ -183,6 +186,8 @@ function renderStatusCard(run: RunRecord, width: number): string[] {
     content.push(
       `${THEME.warning}Recoverable${THEME.reset} retry external launch or fall back to managed or attach from the overlay.`,
     )
+  } else if (canRelaunchRunInMode(run, "external")) {
+    content.push(`${THEME.success}Ready${THEME.reset} relaunch this prompt in external mode from the detail footer.`)
   } else if (canRunExternal(run)) {
     content.push(`${THEME.success}Ready${THEME.reset} open this run in an external terminal adapter.`)
   } else {
@@ -380,11 +385,14 @@ export const runDetailScreen: Screen = {
         ? "reopen"
         : run.external.status === "failed" && !run.result
           ? "retry"
+          : canRelaunchRunInMode(run, "external")
+            ? "relaunch"
           : "external"
+    const attachActionLabel = canRelaunchRunInMode(run, "attach") ? "relaunch" : "attach"
     lines.push(centerLine(
       `${THEME.dim}esc${THEME.reset}${THEME.muted} back${THEME.reset}  ` +
         `${THEME.dim}r${THEME.reset}${THEME.muted} runs${THEME.reset}  ` +
-        `${THEME.dim}a${THEME.reset}${THEME.muted} attach${THEME.reset}  ` +
+        `${THEME.dim}a${THEME.reset}${THEME.muted} ${attachActionLabel}${THEME.reset}  ` +
         `${THEME.dim}o${THEME.reset}${THEME.muted} ${externalActionLabel}${THEME.reset}  ` +
         `${THEME.dim}c${THEME.reset}${THEME.muted} cancel${THEME.reset}  ` +
         `${THEME.dim}↑↓${THEME.reset}${THEME.muted} events${THEME.reset}  ` +
@@ -482,11 +490,19 @@ export const runDetailScreen: Screen = {
     }
 
     if (key === "a") {
+      if (canRelaunchRunInMode(run, "attach")) {
+        ctx.app.relaunchRunInMode(run.id, "attach")
+        return true
+      }
       ctx.app.beginAttachRun(run.id)
       return true
     }
 
     if (key === "o") {
+      if (canRelaunchRunInMode(run, "external")) {
+        ctx.app.relaunchRunInMode(run.id, "external")
+        return true
+      }
       ctx.app.beginExternalRun(run.id)
       return true
     }

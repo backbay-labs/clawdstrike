@@ -238,6 +238,40 @@ describe("TUIApp security refresh", () => {
     expect(app.state.ptyHandoffActive).toBe(false)
   })
 
+  test("run stays active until quit performs final cleanup", async () => {
+    const app = new TUIApp(process.cwd()) as unknown as {
+      start: () => Promise<void>
+      cleanup: () => Promise<void>
+      run: () => Promise<void>
+      quit: () => Promise<void>
+    }
+
+    let started = false
+    let cleaned = false
+    let settled = false
+
+    app.start = async () => {
+      started = true
+    }
+    app.cleanup = async () => {
+      cleaned = true
+    }
+
+    const runPromise = app.run().then(() => {
+      settled = true
+    })
+
+    await Bun.sleep(0)
+    expect(started).toBe(true)
+    expect(settled).toBe(false)
+
+    await app.quit()
+    await runPromise
+
+    expect(cleaned).toBe(true)
+    expect(settled).toBe(true)
+  })
+
   test("rejects unsupported attach runs before creating backlog entries", () => {
     const app = new TUIApp(process.cwd()) as unknown as {
       state: {
@@ -294,7 +328,7 @@ describe("TUIApp security refresh", () => {
       }
       render: () => void
       launchManagedRun: (run: ReturnType<typeof createManagedRun>) => Promise<void>
-      launchRunInMode: (runId: string, mode: "managed" | "attach") => void
+      launchRunInMode: (runId: string, mode: "managed" | "attach" | "external") => void
     }
 
     let launchedMode: "managed" | "attach" | "external" | null = null
@@ -338,12 +372,115 @@ describe("TUIApp security refresh", () => {
     expect(launchedMode as string | null).toBe("managed")
   })
 
+  test("relaunches a completed managed run into external mode without mutating the original run", () => {
+    const app = new TUIApp(process.cwd()) as unknown as {
+      state: {
+        runs: {
+          entries: Array<ReturnType<typeof createManagedRun>>
+        }
+        statusMessage: string
+        activeRunId: string | null
+      }
+      render: () => void
+      beginExternalRunFlow: (runId: string) => Promise<void>
+      relaunchRunInMode: (runId: string, mode: "attach" | "external") => void
+    }
+
+    let openedExternalRunId: string | null = null
+    app.render = () => {}
+    app.beginExternalRunFlow = async (runId) => {
+      openedExternalRunId = runId
+    }
+
+    const run = createManagedRun({
+      prompt: "Relaunch me externally",
+      action: "dispatch",
+      agentId: "codex",
+      agentLabel: "Codex",
+    })
+    run.phase = "review_ready"
+    run.completedAt = new Date().toISOString()
+    run.result = {
+      success: true,
+      taskId: "task-review",
+      agent: "Codex",
+      action: "dispatch",
+      duration: 1000,
+    }
+
+    app.state.runs.entries = [run]
+    app.state.activeRunId = run.id
+
+    app.relaunchRunInMode(run.id, "external")
+
+    expect(app.state.runs.entries).toHaveLength(2)
+    expect(app.state.runs.entries.some((entry) => entry.id === run.id && entry.phase === "review_ready")).toBe(true)
+    const relaunched = app.state.runs.entries.find((entry) => entry.id !== run.id)
+    const relaunchedId = relaunched?.id as string
+    expect(relaunched?.mode).toBe("external")
+    expect(relaunched?.phase).toBe("launching")
+    expect(openedExternalRunId).not.toBeNull()
+    if (openedExternalRunId === null) {
+      throw new Error("expected external relaunch to open a new run")
+    }
+    expect(openedExternalRunId === relaunchedId).toBe(true)
+  })
+
+  test("showRuns picks a filter that includes the active completed run", async () => {
+    const app = new TUIApp(process.cwd()) as unknown as {
+      state: {
+        runs: {
+          entries: Array<ReturnType<typeof createManagedRun>>
+          selectedRunId: string | null
+          filter: "active" | "review_ready" | "all"
+        }
+        activeRunId: string | null
+      }
+      setScreen: (mode: "runs") => void
+      showRuns: () => Promise<void>
+    }
+
+    let openedScreen: string | null = null
+    app.setScreen = (mode) => {
+      openedScreen = mode
+    }
+
+    const run = createManagedRun({
+      prompt: "Reopen me from backlog",
+      action: "dispatch",
+      agentId: "codex",
+      agentLabel: "Codex",
+    })
+    run.phase = "review_ready"
+    run.completedAt = new Date().toISOString()
+    run.result = {
+      success: true,
+      taskId: "task-review",
+      agent: "Codex",
+      action: "dispatch",
+      duration: 1000,
+    }
+
+    app.state.runs.entries = [run]
+    app.state.runs.filter = "active"
+    app.state.runs.selectedRunId = null
+    app.state.activeRunId = run.id
+
+    await app.showRuns()
+
+    expect(openedScreen === "runs").toBe(true)
+    expect((app.state.runs.filter as unknown as string) === "review_ready").toBe(true)
+    expect(app.state.runs.selectedRunId === run.id).toBe(true)
+  })
+
   test("times out external sessions that never start", async () => {
     const app = new TUIApp(process.cwd()) as unknown as {
       waitForExternalExit: (
         statusPath: string,
         startupTimeoutMs: number,
         livenessTimeoutMs: number,
+        surfaceAlive?: () => Promise<boolean>,
+        surfaceClosedMessage?: string,
       ) => Promise<number>
     }
     const dir = await mkdtemp(join(tmpdir(), "clawdstrike-external-timeout-"))
@@ -360,6 +497,8 @@ describe("TUIApp security refresh", () => {
         statusPath: string,
         startupTimeoutMs: number,
         livenessTimeoutMs: number,
+        surfaceAlive?: () => Promise<boolean>,
+        surfaceClosedMessage?: string,
       ) => Promise<number>
     }
     const dir = await mkdtemp(join(tmpdir(), "clawdstrike-external-stale-"))
@@ -377,5 +516,32 @@ describe("TUIApp security refresh", () => {
     await expect(app.waitForExternalExit(statusPath, 100, 20)).rejects.toThrow(
       "stopped reporting liveness",
     )
+  })
+
+  test("reports closed external surfaces before heartbeat timeout", async () => {
+    const app = new TUIApp(process.cwd()) as unknown as {
+      waitForExternalExit: (
+        statusPath: string,
+        startupTimeoutMs: number,
+        livenessTimeoutMs: number,
+        surfaceAlive?: () => Promise<boolean>,
+        surfaceClosedMessage?: string,
+      ) => Promise<number>
+    }
+    const dir = await mkdtemp(join(tmpdir(), "clawdstrike-external-closed-"))
+    const statusPath = join(dir, "external-status.json")
+
+    await Bun.write(
+      statusPath,
+      JSON.stringify({
+        state: "running",
+        startedAt: new Date().toISOString(),
+        heartbeatAt: new Date().toISOString(),
+      }),
+    )
+
+    await expect(
+      app.waitForExternalExit(statusPath, 100, 5_000, async () => false, "External terminal window closed"),
+    ).rejects.toThrow("External terminal window closed")
   })
 })

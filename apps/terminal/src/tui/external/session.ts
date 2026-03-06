@@ -4,9 +4,8 @@ import { Config } from "../../config"
 import { Workcell } from "../../workcell"
 import type { Toolchain } from "../../types"
 import type { RunRecord } from "../types"
+import { buildInteractiveSessionCommand } from "../interactive-command"
 import type { ExternalRunSessionPlan } from "./types"
-
-const CLAUDE_ALLOWED_TOOLS = ["Read", "Glob", "Grep", "Edit", "Write", "Bash"]
 const EXTERNAL_STARTUP_TIMEOUT_MS = 10_000
 const EXTERNAL_LIVENESS_TIMEOUT_MS = 15_000
 const EXTERNAL_HEARTBEAT_INTERVAL_SECONDS = 2
@@ -19,40 +18,15 @@ function isInteractiveToolchain(toolchain: string): toolchain is Toolchain {
   return toolchain === "claude" || toolchain === "codex"
 }
 
-async function buildInteractiveCommand(
+function buildInteractiveCommand(
   toolchain: Toolchain,
   worktreePath: string,
   prompt: string,
-): Promise<string[]> {
-  if (toolchain === "codex") {
-    const metaDir = join(worktreePath, ".clawdstrike")
-    const promptPath = join(metaDir, "prompt.md")
-    await mkdir(metaDir, { recursive: true })
-    await writeFile(promptPath, prompt)
-    return [
-      "codex",
-      "--approval-mode",
-      "suggest",
-      "--writable-root",
-      worktreePath,
-      "--prompt-file",
-      promptPath,
-    ]
-  }
-
-  if (toolchain === "claude") {
-    return [
-      "claude",
-      "--allowedTools",
-      CLAUDE_ALLOWED_TOOLS.join(","),
-      prompt,
-    ]
-  }
-
-  throw new Error(`External execution is not available for ${toolchain}`)
+) {
+  return buildInteractiveSessionCommand(toolchain, worktreePath, prompt)
 }
 
-function buildLaunchScript(
+export function buildLaunchScript(
   worktreePath: string,
   command: string[],
   env: Record<string, string>,
@@ -67,9 +41,18 @@ function buildLaunchScript(
     `status_path=${shellQuote(statusPath)}`,
     "mkdir -p \"$(dirname \"$status_path\")\"",
     "started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+    "__clawdstrike_external_status_written=0",
     `printf '{"state":"starting","startedAt":"%s"}\n' "$started_at" > "$status_path"`,
+    "__clawdstrike_external_write_finished() {",
+    "  exit_code=$1",
+    "  reason=$2",
+    "  if [ \"$__clawdstrike_external_status_written\" -eq 0 ]; then",
+    `    printf '{"state":"finished","exitCode":%s,"startedAt":"%s","finishedAt":"%s","reason":"%s"}\n' "$exit_code" "$started_at" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$reason" > "$status_path"`,
+    "    __clawdstrike_external_status_written=1",
+    "  fi",
+    "}",
     `if ! cd ${shellQuote(worktreePath)}; then`,
-    `  printf '{"state":"finished","exitCode":1,"startedAt":"%s","finishedAt":"%s"}\n' "$started_at" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$status_path"`,
+    "  __clawdstrike_external_write_finished 1 setup",
     "  exit 1",
     "fi",
     "__clawdstrike_external_heartbeat() {",
@@ -86,10 +69,28 @@ function buildLaunchScript(
     "    wait \"$heartbeat_pid\" 2>/dev/null || true",
     "  fi",
     "}",
-    "trap __clawdstrike_external_cleanup EXIT",
+    "TRAPEXIT() {",
+    "  exit_code=$?",
+    "  __clawdstrike_external_cleanup",
+    "  __clawdstrike_external_write_finished \"$exit_code\" exit",
+    "}",
+    "TRAPHUP() {",
+    "  __clawdstrike_external_cleanup",
+    "  __clawdstrike_external_write_finished 129 hangup",
+    "  return 129",
+    "}",
+    "TRAPINT() {",
+    "  __clawdstrike_external_cleanup",
+    "  __clawdstrike_external_write_finished 130 interrupted",
+    "  return 130",
+    "}",
+    "TRAPTERM() {",
+    "  __clawdstrike_external_cleanup",
+    "  __clawdstrike_external_write_finished 143 terminated",
+    "  return 143",
+    "}",
     `${commandLine}`,
     "exit_code=$?",
-    `printf '{"state":"finished","exitCode":%s,"startedAt":"%s","finishedAt":"%s"}\n' "$exit_code" "$started_at" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$status_path"`,
     "exit \"$exit_code\"",
   ].join("\n")
 }
@@ -108,7 +109,7 @@ export async function createExternalRunSession(
     cwd: options.cwd,
     sandboxMode,
   })
-  const command = await buildInteractiveCommand(run.agentId, workcell.directory, run.prompt)
+  const command = buildInteractiveCommand(run.agentId, workcell.directory, run.prompt)
   const ptySessionId = `pty_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
   const metaDir = join(workcell.directory, ".clawdstrike")
   const scriptPath = join(metaDir, "external-launch.zsh")

@@ -29,7 +29,8 @@ class TestApp implements AppController {
   public beganExternalRunId: string | null = null
   public confirmedExternal = false
   public canceledExternal = false
-  public launchedFallback: { runId: string; mode: "managed" | "attach" } | null = null
+  public launchedFallback: { runId: string; mode: "managed" | "attach" | "external" } | null = null
+  public relaunchedRun: { runId: string; mode: "attach" | "external" } | null = null
   public canceledRunId: string | null = null
 
   setScreen(mode: InputMode): void {
@@ -72,8 +73,12 @@ class TestApp implements AppController {
     this.canceledExternal = true
   }
 
-  launchRunInMode(runId: string, mode: "managed" | "attach"): void {
+  launchRunInMode(runId: string, mode: "managed" | "attach" | "external"): void {
     this.launchedFallback = { runId, mode }
+  }
+
+  relaunchRunInMode(runId: string, mode: "attach" | "external"): void {
+    this.relaunchedRun = { runId, mode }
   }
 
   cancelRun(runId: string): void {
@@ -363,6 +368,42 @@ describe("run detail surface", () => {
 
     expect(runDetailScreen.handleInput("m", ctx)).toBe(true)
     expect(app.launchedFallback).toEqual({ runId: run.id, mode: "managed" })
+  })
+
+  test("relaunches completed managed runs into interactive modes", () => {
+    const state = createState()
+    const app = new TestApp()
+    const run = createManagedRun({
+      prompt: "Relaunch this prompt in another mode",
+      action: "dispatch",
+      agentId: "codex",
+      agentLabel: "Codex",
+    })
+    run.phase = "review_ready"
+    run.completedAt = "2026-03-06T08:00:03Z"
+    run.result = {
+      success: true,
+      taskId: "task-789",
+      agent: "Codex",
+      action: "dispatch",
+      duration: 1000,
+    }
+    state.runs.entries = [run]
+    state.activeRunId = run.id
+
+    const ctx = createContext(state, app)
+    expect(runDetailScreen.handleInput("a", ctx)).toBe(true)
+    const attachRelaunch = app.relaunchedRun as { runId: string; mode: "attach" | "external" } | null
+    expect(attachRelaunch).not.toBeNull()
+    expect(attachRelaunch?.runId).toBe(run.id)
+    expect(attachRelaunch?.mode).toBe("attach")
+
+    app.relaunchedRun = null
+    expect(runDetailScreen.handleInput("o", ctx)).toBe(true)
+    const externalRelaunch = app.relaunchedRun as { runId: string; mode: "attach" | "external" } | null
+    expect(externalRelaunch).not.toBeNull()
+    expect(externalRelaunch?.runId).toBe(run.id)
+    expect(externalRelaunch?.mode).toBe("external")
   })
 })
 

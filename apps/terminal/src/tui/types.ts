@@ -86,7 +86,9 @@ export interface AppController {
   /** Cancel the pending external execution sheet */
   cancelExternalRun(): void
   /** Fall back to another launch mode for a staged run */
-  launchRunInMode(runId: string, mode: "managed" | "attach"): void
+  launchRunInMode(runId: string, mode: "managed" | "attach" | "external"): void
+  /** Relaunch a completed managed run in another interactive mode */
+  relaunchRunInMode(runId: string, mode: "attach" | "external"): void
   /** Mark a managed run as canceled from the TUI */
   cancelRun(runId: string): void
   /** Trigger a re-render */

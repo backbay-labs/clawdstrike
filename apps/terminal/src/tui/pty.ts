@@ -1,11 +1,9 @@
-import { mkdir, rm, writeFile } from "node:fs/promises"
-import { join } from "node:path"
+import { rm } from "node:fs/promises"
 import { Config } from "../config"
 import { Workcell } from "../workcell"
 import type { Toolchain } from "../types"
 import type { RunRecord } from "./types"
-
-const CLAUDE_ALLOWED_TOOLS = ["Read", "Glob", "Grep", "Edit", "Write", "Bash"]
+import { buildInteractiveSessionCommand } from "./interactive-command"
 
 export interface AttachRunSession {
   ptySessionId: string
@@ -19,37 +17,12 @@ function isInteractiveToolchain(toolchain: string): toolchain is Toolchain {
   return toolchain === "claude" || toolchain === "codex"
 }
 
-async function buildInteractiveCommand(
+function buildInteractiveCommand(
   toolchain: Toolchain,
   worktreePath: string,
   prompt: string,
-): Promise<string[]> {
-  if (toolchain === "codex") {
-    const metaDir = join(worktreePath, ".clawdstrike")
-    const promptPath = join(metaDir, "prompt.md")
-    await mkdir(metaDir, { recursive: true })
-    await writeFile(promptPath, prompt)
-    return [
-      "codex",
-      "--approval-mode",
-      "suggest",
-      "--writable-root",
-      worktreePath,
-      "--prompt-file",
-      promptPath,
-    ]
-  }
-
-  if (toolchain === "claude") {
-    return [
-      "claude",
-      "--allowedTools",
-      CLAUDE_ALLOWED_TOOLS.join(","),
-      prompt,
-    ]
-  }
-
-  throw new Error(`Interactive attach is not available for ${toolchain}`)
+) {
+  return buildInteractiveSessionCommand(toolchain, worktreePath, prompt)
 }
 
 export async function createAttachRunSession(
@@ -66,7 +39,7 @@ export async function createAttachRunSession(
     cwd: options.cwd,
     sandboxMode,
   })
-  const command = await buildInteractiveCommand(run.agentId, workcell.directory, run.prompt)
+  const command = buildInteractiveCommand(run.agentId, workcell.directory, run.prompt)
   const ptySessionId = `pty_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
 
   return {

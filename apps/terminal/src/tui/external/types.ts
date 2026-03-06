@@ -16,6 +16,7 @@ export interface ExternalRunStatusPayload {
   heartbeatAt?: string
   finishedAt?: string
   exitCode?: number
+  reason?: string
 }
 
 export interface ExternalRunSessionPlan {
@@ -33,6 +34,7 @@ export interface ExternalTerminalAdapter extends ExternalTerminalAdapterOption {
   isAvailable(): Promise<boolean>
   launch(plan: ExternalRunSessionPlan): Promise<ExternalTerminalLaunchResult>
   focus?(ref: string): Promise<void>
+  isAlive?(ref: string): Promise<boolean>
 }
 
 export interface ExternalRunState {

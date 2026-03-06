@@ -109,9 +109,14 @@ class McpServerImpl {
    * Stop the MCP server
    */
   async stop(): Promise<void> {
-    if (!this.server) {
+    const server = this.server
+    if (!server) {
+      Health.setMcpStatus(false)
+      await this.removeDiscovery().catch(() => {})
       return
     }
+
+    this.server = null
 
     // Close all client connections
     for (const client of this.clients.values()) {
@@ -119,17 +124,43 @@ class McpServerImpl {
     }
     this.clients.clear()
 
+    const finalizeStop = async () => {
+      Health.setMcpStatus(false)
+      await this.removeDiscovery().catch(() => {})
+    }
+
+    if (!server.listening) {
+      await finalizeStop()
+      return
+    }
+
     // Close server
     return new Promise((resolve, reject) => {
-      this.server?.close((err) => {
-        if (err) {
-          reject(err)
-        } else {
-          this.server = null
-          Health.setMcpStatus(false)
-          this.removeDiscovery().then(resolve).catch(resolve) // ignore cleanup errors
-        }
-      })
+      const finish = (err?: Error | null) => {
+        finalizeStop()
+          .then(() => {
+            const code = (err as NodeJS.ErrnoException | null | undefined)?.code
+            if (err && code !== "ERR_SERVER_NOT_RUNNING") {
+              reject(err)
+              return
+            }
+            resolve()
+          })
+          .catch(() => {
+            const code = (err as NodeJS.ErrnoException | null | undefined)?.code
+            if (err && code !== "ERR_SERVER_NOT_RUNNING") {
+              reject(err)
+              return
+            }
+            resolve()
+          })
+      }
+
+      try {
+        server.close((err) => finish(err))
+      } catch (err) {
+        finish(err instanceof Error ? err : new Error(String(err)))
+      }
     })
   }
 
