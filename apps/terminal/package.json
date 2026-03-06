@@ -16,7 +16,7 @@
   "scripts": {
     "dev": "bun run --watch src/index.ts",
     "build": "bun build ./src/index.ts --outdir ./dist",
-    "build:tui-runtime": "mkdir -p ./dist ../../crates/services/hush-cli/assets/tui && bun build ./src/cli/index.ts --outfile ./dist/cli.js --target bun --format esm && bun build ./src/cli/index.ts --outfile ../../crates/services/hush-cli/assets/tui/cli.js --target bun --format esm",
+    "build:tui-runtime": "mkdir -p ./dist ../../crates/services/hush-cli/assets/tui && printf '#!/usr/bin/env bun\\n// clawdstrike local runtime launcher\\nimport { main } from \"../src/cli/index.ts\"\\nawait main()\\n' > ./dist/cli.js && printf '#!/usr/bin/env bun\\n// clawdstrike installed runtime launcher\\nimport { main } from \"./src/cli/index.ts\"\\nawait main()\\n' > ../../crates/services/hush-cli/assets/tui/cli.js && chmod +x ./dist/cli.js ../../crates/services/hush-cli/assets/tui/cli.js",
     "cli": "bun run ./src/cli/index.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit"

@@ -1,3 +1,4 @@
 #!/usr/bin/env bun
-// clawdstrike embedded launcher stub
-import "./src/cli/index.ts"
+// clawdstrike installed runtime launcher
+import { main } from "./src/cli/index.ts"
+await main()
