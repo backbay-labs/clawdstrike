@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{DateTime, TimeZone, Utc};
 use hush_multi_agent::{
@@ -452,13 +452,14 @@ pub async fn revoke_grant(
         .revoked_by
         .clone()
         .unwrap_or_else(|| "control-api".to_string());
-    let data = load_tenant_graph_data(db, tenant_id).await?;
-    if !data.grants.contains_key(&grant_id) {
-        return Err(ApiError::NotFound);
-    }
     let grant_ids = if request.revoke_descendants.unwrap_or(true) {
-        descendant_grant_ids(&data.grants, grant_id)
+        let descendant_ids = fetch_descendant_grant_ids(db, tenant_id, &[grant_id]).await?;
+        if descendant_ids.is_empty() {
+            return Err(ApiError::NotFound);
+        }
+        descendant_ids
     } else {
+        get_grant(db, tenant_id, grant_id).await?;
         let mut only_self = BTreeSet::new();
         only_self.insert(grant_id);
         only_self
@@ -547,13 +548,14 @@ pub async fn grant_lineage_snapshot(
     tenant_id: Uuid,
     grant_id: Uuid,
 ) -> Result<DelegationGraphSnapshot, ApiError> {
-    let data = load_tenant_graph_data(db, tenant_id).await?;
-    if !data.grants.contains_key(&grant_id) {
+    let grant_ids = fetch_related_grant_ids(db, tenant_id, &[grant_id]).await?;
+    if grant_ids.is_empty() {
         return Err(ApiError::NotFound);
     }
-
-    let grant_ids = lineage_grant_ids(&data.grants, grant_id);
     let root_node_id = Some(DelegationGraphNodeKind::Grant.node_id(&grant_id.to_string()));
+    let data =
+        load_graph_data_for_grant_ids(db, tenant_id, &grant_ids, true, root_node_id.as_deref())
+            .await?;
     Ok(snapshot_for_grant_ids(
         &data,
         &grant_ids,
@@ -569,23 +571,25 @@ pub async fn principal_graph_snapshot(
     include_context: bool,
 ) -> Result<DelegationGraphSnapshot, ApiError> {
     let principal_aliases = resolve_principal_aliases(db, tenant_id, principal_id).await?;
-    let data = load_tenant_graph_data(db, tenant_id).await?;
-    let mut starting_grants = BTreeSet::new();
-    for (grant_id, grant) in &data.grants {
-        if principal_aliases.matches(&grant.issuer_principal_id)
-            || principal_aliases.matches(&grant.subject_principal_id)
-        {
-            starting_grants.insert(*grant_id);
-        }
-    }
-
-    let mut expanded = BTreeSet::new();
-    for grant_id in &starting_grants {
-        expanded.extend(lineage_grant_ids(&data.grants, *grant_id));
-    }
+    let starting_grants =
+        fetch_principal_seed_grant_ids(db, tenant_id, &principal_aliases.aliases).await?;
+    let expanded = fetch_related_grant_ids(
+        db,
+        tenant_id,
+        &starting_grants.iter().copied().collect::<Vec<_>>(),
+    )
+    .await?;
 
     let root_node_id =
         Some(DelegationGraphNodeKind::Principal.node_id(&principal_aliases.canonical_id));
+    let data = load_graph_data_for_grant_ids(
+        db,
+        tenant_id,
+        &expanded,
+        include_context,
+        root_node_id.as_deref(),
+    )
+    .await?;
     Ok(snapshot_for_grant_ids(
         &data,
         &expanded,
@@ -652,63 +656,60 @@ pub async fn graph_path_snapshot(
     from: &str,
     to: &str,
 ) -> Result<DelegationGraphSnapshot, ApiError> {
-    let data = load_tenant_graph_data(db, tenant_id).await?;
-    let mut adjacency = BTreeMap::<String, Vec<&DelegationGraphEdge>>::new();
-    for edge in &data.edges {
-        adjacency.entry(edge.from.clone()).or_default().push(edge);
+    if from == to {
+        let nodes = load_nodes_by_ids(db, tenant_id, &[from.to_string()]).await?;
+        return Ok(DelegationGraphSnapshot {
+            root_node_id: Some(from.to_string()),
+            nodes: nodes.into_values().collect(),
+            edges: Vec::new(),
+            generated_at: Utc::now(),
+        });
     }
 
-    if !data.nodes.contains_key(from) || !data.nodes.contains_key(to) {
+    let row = sqlx::query::query(
+        r#"WITH RECURSIVE walk AS (
+               SELECT e.to_node_id,
+                      ARRAY[$2::text, e.to_node_id]::text[] AS path_nodes,
+                      ARRAY[e.id]::uuid[] AS path_edges
+               FROM delegation_graph_edges e
+               WHERE e.tenant_id = $1
+                 AND e.from_node_id = $2
+               UNION ALL
+               SELECT e.to_node_id,
+                      walk.path_nodes || e.to_node_id,
+                      walk.path_edges || e.id
+               FROM delegation_graph_edges e
+               JOIN walk ON e.from_node_id = walk.to_node_id
+               WHERE e.tenant_id = $1
+                 AND NOT e.to_node_id = ANY(walk.path_nodes)
+                 AND cardinality(walk.path_edges) < 64
+           )
+           SELECT path_nodes, path_edges
+           FROM walk
+           WHERE to_node_id = $3
+           ORDER BY cardinality(path_edges)
+           LIMIT 1"#,
+    )
+    .bind(tenant_id)
+    .bind(from)
+    .bind(to)
+    .fetch_optional(db)
+    .await
+    .map_err(ApiError::Database)?;
+
+    let Some(row) = row else {
         return Ok(empty_snapshot(Some(from.to_string())));
-    }
+    };
+    let node_ids: Vec<String> = row.try_get("path_nodes").map_err(ApiError::Database)?;
+    let edge_ids: Vec<Uuid> = row.try_get("path_edges").map_err(ApiError::Database)?;
 
-    let mut queue = VecDeque::new();
-    let mut visited = BTreeSet::new();
-    let mut previous = BTreeMap::<String, (String, Uuid)>::new();
-
-    queue.push_back(from.to_string());
-    visited.insert(from.to_string());
-
-    while let Some(node_id) = queue.pop_front() {
-        if node_id == to {
-            break;
-        }
-        if let Some(edges) = adjacency.get(&node_id) {
-            for edge in edges {
-                if visited.insert(edge.to.clone()) {
-                    previous.insert(edge.to.clone(), (node_id.clone(), edge.id));
-                    queue.push_back(edge.to.clone());
-                }
-            }
-        }
-    }
-
-    if !visited.contains(to) {
-        return Ok(empty_snapshot(Some(from.to_string())));
-    }
-
-    let mut node_ids = BTreeSet::new();
-    let mut edge_ids = BTreeSet::new();
-    let mut cursor = to.to_string();
-    node_ids.insert(cursor.clone());
-    while let Some((prior, edge_id)) = previous.get(&cursor) {
-        edge_ids.insert(*edge_id);
-        node_ids.insert(prior.clone());
-        cursor = prior.clone();
-    }
-
-    let mut nodes = node_ids
-        .into_iter()
-        .filter_map(|node_id| data.nodes.get(&node_id).cloned())
+    let nodes = load_nodes_by_ids(db, tenant_id, &node_ids)
+        .await?
+        .into_values()
         .collect::<Vec<_>>();
+    let mut edges = load_edges_by_ids(db, tenant_id, &edge_ids).await?;
+    let mut nodes = nodes;
     nodes.sort_by(|left, right| left.id.cmp(&right.id));
-
-    let mut edges = data
-        .edges
-        .iter()
-        .filter(|edge| edge_ids.contains(&edge.id))
-        .cloned()
-        .collect::<Vec<_>>();
     edges.sort_by(|left, right| left.id.cmp(&right.id));
 
     Ok(DelegationGraphSnapshot {
@@ -719,105 +720,276 @@ pub async fn graph_path_snapshot(
     })
 }
 
-async fn load_tenant_graph_data(db: &PgPool, tenant_id: Uuid) -> Result<TenantGraphData, ApiError> {
-    let grant_rows = sqlx::query::query("SELECT * FROM fleet_grants WHERE tenant_id = $1")
-        .bind(tenant_id)
-        .fetch_all(db)
-        .await
-        .map_err(ApiError::Database)?;
-    let node_rows = sqlx::query::query(
-        "SELECT id, kind, label, state, metadata FROM delegation_graph_nodes WHERE tenant_id = $1",
+async fn fetch_related_grant_ids(
+    db: &PgPool,
+    tenant_id: Uuid,
+    seed_grant_ids: &[Uuid],
+) -> Result<BTreeSet<Uuid>, ApiError> {
+    if seed_grant_ids.is_empty() {
+        return Ok(BTreeSet::new());
+    }
+
+    let rows = sqlx::query::query(
+        r#"WITH RECURSIVE seed AS (
+               SELECT id, parent_grant_id
+               FROM fleet_grants
+               WHERE tenant_id = $1
+                 AND id = ANY($2::uuid[])
+           ),
+           ancestors AS (
+               SELECT id, parent_grant_id FROM seed
+               UNION
+               SELECT parent.id, parent.parent_grant_id
+               FROM fleet_grants parent
+               JOIN ancestors child ON child.parent_grant_id = parent.id
+               WHERE parent.tenant_id = $1
+           ),
+           descendants AS (
+               SELECT id, parent_grant_id FROM seed
+               UNION
+               SELECT child.id, child.parent_grant_id
+               FROM fleet_grants child
+               JOIN descendants parent_tree ON child.parent_grant_id = parent_tree.id
+               WHERE child.tenant_id = $1
+           ),
+           selected AS (
+               SELECT id FROM ancestors
+               UNION
+               SELECT id FROM descendants
+           )
+           SELECT id FROM selected"#,
     )
     .bind(tenant_id)
-    .fetch_all(db)
-    .await
-    .map_err(ApiError::Database)?;
-    let edge_rows = sqlx::query::query(
-        "SELECT id, from_node_id, to_node_id, kind, metadata FROM delegation_graph_edges WHERE tenant_id = $1",
-    )
-    .bind(tenant_id)
+    .bind(seed_grant_ids)
     .fetch_all(db)
     .await
     .map_err(ApiError::Database)?;
 
+    rows.into_iter()
+        .map(|row| row.try_get("id"))
+        .collect::<Result<BTreeSet<_>, _>>()
+        .map_err(ApiError::Database)
+}
+
+async fn fetch_descendant_grant_ids(
+    db: &PgPool,
+    tenant_id: Uuid,
+    seed_grant_ids: &[Uuid],
+) -> Result<BTreeSet<Uuid>, ApiError> {
+    if seed_grant_ids.is_empty() {
+        return Ok(BTreeSet::new());
+    }
+
+    let rows = sqlx::query::query(
+        r#"WITH RECURSIVE descendants AS (
+               SELECT id
+               FROM fleet_grants
+               WHERE tenant_id = $1
+                 AND id = ANY($2::uuid[])
+               UNION
+               SELECT child.id
+               FROM fleet_grants child
+               JOIN descendants parent_tree ON child.parent_grant_id = parent_tree.id
+               WHERE child.tenant_id = $1
+           )
+           SELECT id FROM descendants"#,
+    )
+    .bind(tenant_id)
+    .bind(seed_grant_ids)
+    .fetch_all(db)
+    .await
+    .map_err(ApiError::Database)?;
+
+    rows.into_iter()
+        .map(|row| row.try_get("id"))
+        .collect::<Result<BTreeSet<_>, _>>()
+        .map_err(ApiError::Database)
+}
+
+async fn fetch_principal_seed_grant_ids(
+    db: &PgPool,
+    tenant_id: Uuid,
+    principal_aliases: &BTreeSet<String>,
+) -> Result<BTreeSet<Uuid>, ApiError> {
+    if principal_aliases.is_empty() {
+        return Ok(BTreeSet::new());
+    }
+
+    let aliases = principal_aliases.iter().cloned().collect::<Vec<_>>();
+    let rows = sqlx::query::query(
+        r#"SELECT id
+           FROM fleet_grants
+           WHERE tenant_id = $1
+             AND (
+                 issuer_principal_id = ANY($2::text[])
+                 OR subject_principal_id = ANY($2::text[])
+             )"#,
+    )
+    .bind(tenant_id)
+    .bind(&aliases)
+    .fetch_all(db)
+    .await
+    .map_err(ApiError::Database)?;
+
+    rows.into_iter()
+        .map(|row| row.try_get("id"))
+        .collect::<Result<BTreeSet<_>, _>>()
+        .map_err(ApiError::Database)
+}
+
+async fn load_graph_data_for_grant_ids(
+    db: &PgPool,
+    tenant_id: Uuid,
+    grant_ids: &BTreeSet<Uuid>,
+    include_context: bool,
+    root_node_id: Option<&str>,
+) -> Result<TenantGraphData, ApiError> {
+    if grant_ids.is_empty() {
+        return Ok(TenantGraphData {
+            grants: BTreeMap::new(),
+            nodes: load_nodes_by_ids(
+                db,
+                tenant_id,
+                &root_node_id
+                    .into_iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>(),
+            )
+            .await?,
+            edges: Vec::new(),
+        });
+    }
+
+    let grant_id_list = grant_ids.iter().copied().collect::<Vec<_>>();
+    let grant_rows = sqlx::query::query(
+        "SELECT * FROM fleet_grants WHERE tenant_id = $1 AND id = ANY($2::uuid[])",
+    )
+    .bind(tenant_id)
+    .bind(&grant_id_list)
+    .fetch_all(db)
+    .await
+    .map_err(ApiError::Database)?;
     let grants = grant_rows
         .into_iter()
         .map(FleetGrant::from_row)
         .collect::<Result<Vec<_>, _>>()
         .map_err(ApiError::Database)?;
-    let nodes = node_rows
+    let grants_by_id = grants
         .into_iter()
-        .map(DelegationGraphNode::from_row)
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(ApiError::Database)?;
+        .map(|grant| (grant.id, grant))
+        .collect::<BTreeMap<_, _>>();
+
+    let grant_node_ids = grant_id_list
+        .iter()
+        .map(|grant_id| DelegationGraphNodeKind::Grant.node_id(&grant_id.to_string()))
+        .collect::<Vec<_>>();
+    let edge_rows = if include_context {
+        sqlx::query::query(
+            r#"SELECT id, from_node_id, to_node_id, kind, metadata
+               FROM delegation_graph_edges
+               WHERE tenant_id = $1
+                 AND (from_node_id = ANY($2::text[]) OR to_node_id = ANY($2::text[]))"#,
+        )
+        .bind(tenant_id)
+        .bind(&grant_node_ids)
+        .fetch_all(db)
+        .await
+    } else {
+        sqlx::query::query(
+            r#"SELECT id, from_node_id, to_node_id, kind, metadata
+               FROM delegation_graph_edges
+               WHERE tenant_id = $1
+                 AND from_node_id = ANY($2::text[])
+                 AND to_node_id = ANY($2::text[])"#,
+        )
+        .bind(tenant_id)
+        .bind(&grant_node_ids)
+        .fetch_all(db)
+        .await
+    }
+    .map_err(ApiError::Database)?;
     let edges = edge_rows
         .into_iter()
         .map(DelegationGraphEdge::from_row)
         .collect::<Result<Vec<_>, _>>()
         .map_err(ApiError::Database)?;
 
-    let grants_by_id = grants
-        .into_iter()
-        .map(|grant| (grant.id, grant))
-        .collect::<BTreeMap<_, _>>();
-    let nodes_by_id = nodes
-        .into_iter()
-        .map(|node| (node.id.clone(), node))
-        .collect::<BTreeMap<_, _>>();
+    let mut node_ids = grant_node_ids.into_iter().collect::<BTreeSet<_>>();
+    if let Some(root_node_id) = root_node_id {
+        node_ids.insert(root_node_id.to_string());
+    }
+    for edge in &edges {
+        node_ids.insert(edge.from.clone());
+        node_ids.insert(edge.to.clone());
+    }
 
     Ok(TenantGraphData {
         grants: grants_by_id,
-        nodes: nodes_by_id,
+        nodes: load_nodes_by_ids(db, tenant_id, &node_ids.into_iter().collect::<Vec<_>>()).await?,
         edges,
     })
 }
 
-fn lineage_grant_ids(grants: &BTreeMap<Uuid, FleetGrant>, grant_id: Uuid) -> BTreeSet<Uuid> {
-    let mut visited = BTreeSet::new();
-    let mut queue = VecDeque::new();
-    queue.push_back(grant_id);
-
-    while let Some(current_id) = queue.pop_front() {
-        if !visited.insert(current_id) {
-            continue;
-        }
-        if let Some(parent_id) = grants
-            .get(&current_id)
-            .and_then(|grant| grant.parent_grant_id)
-        {
-            queue.push_back(parent_id);
-        }
-        for child_id in grants
-            .values()
-            .filter(|grant| grant.parent_grant_id == Some(current_id))
-            .map(|grant| grant.id)
-        {
-            queue.push_back(child_id);
-        }
+async fn load_nodes_by_ids(
+    db: &PgPool,
+    tenant_id: Uuid,
+    node_ids: &[String],
+) -> Result<BTreeMap<String, DelegationGraphNode>, ApiError> {
+    if node_ids.is_empty() {
+        return Ok(BTreeMap::new());
     }
 
-    visited
+    let node_rows = sqlx::query::query(
+        r#"SELECT id, kind, label, state, metadata
+           FROM delegation_graph_nodes
+           WHERE tenant_id = $1
+             AND id = ANY($2::text[])"#,
+    )
+    .bind(tenant_id)
+    .bind(node_ids)
+    .fetch_all(db)
+    .await
+    .map_err(ApiError::Database)?;
+
+    node_rows
+        .into_iter()
+        .map(DelegationGraphNode::from_row)
+        .collect::<Result<Vec<_>, _>>()
+        .map(|nodes| {
+            nodes
+                .into_iter()
+                .map(|node| (node.id.clone(), node))
+                .collect::<BTreeMap<_, _>>()
+        })
+        .map_err(ApiError::Database)
 }
 
-fn descendant_grant_ids(grants: &BTreeMap<Uuid, FleetGrant>, grant_id: Uuid) -> BTreeSet<Uuid> {
-    let mut visited = BTreeSet::new();
-    let mut queue = VecDeque::new();
-    queue.push_back(grant_id);
-
-    while let Some(current_id) = queue.pop_front() {
-        if !visited.insert(current_id) {
-            continue;
-        }
-        for child_id in grants
-            .values()
-            .filter(|grant| grant.parent_grant_id == Some(current_id))
-            .map(|grant| grant.id)
-        {
-            queue.push_back(child_id);
-        }
+async fn load_edges_by_ids(
+    db: &PgPool,
+    tenant_id: Uuid,
+    edge_ids: &[Uuid],
+) -> Result<Vec<DelegationGraphEdge>, ApiError> {
+    if edge_ids.is_empty() {
+        return Ok(Vec::new());
     }
 
-    visited
+    let edge_rows = sqlx::query::query(
+        r#"SELECT id, from_node_id, to_node_id, kind, metadata
+           FROM delegation_graph_edges
+           WHERE tenant_id = $1
+             AND id = ANY($2::uuid[])"#,
+    )
+    .bind(tenant_id)
+    .bind(edge_ids)
+    .fetch_all(db)
+    .await
+    .map_err(ApiError::Database)?;
+
+    edge_rows
+        .into_iter()
+        .map(DelegationGraphEdge::from_row)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(ApiError::Database)
 }
 
 fn snapshot_for_grant_ids(
@@ -870,6 +1042,32 @@ fn empty_snapshot(root_node_id: Option<String>) -> DelegationGraphSnapshot {
         edges: Vec::new(),
         generated_at: Utc::now(),
     }
+}
+
+#[cfg(test)]
+fn lineage_grant_ids(grants: &BTreeMap<Uuid, FleetGrant>, grant_id: Uuid) -> BTreeSet<Uuid> {
+    let mut visited = BTreeSet::new();
+    let mut pending = vec![grant_id];
+
+    while let Some(current_id) = pending.pop() {
+        if !visited.insert(current_id) {
+            continue;
+        }
+        if let Some(parent_id) = grants
+            .get(&current_id)
+            .and_then(|grant| grant.parent_grant_id)
+        {
+            pending.push(parent_id);
+        }
+        pending.extend(
+            grants
+                .values()
+                .filter(|grant| grant.parent_grant_id == Some(current_id))
+                .map(|grant| grant.id),
+        );
+    }
+
+    visited
 }
 
 async fn reject_revoked_chain(
