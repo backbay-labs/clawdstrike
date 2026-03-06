@@ -47,6 +47,7 @@ struct Harness {
     tenant_id: Uuid,
     tenant_slug: String,
     api_key: String,
+    signing_keypair: Arc<hush_core::Keypair>,
     _postgres: DockerContainer,
     _nats: DockerContainer,
 }
@@ -64,6 +65,7 @@ struct OperatorFlowFixture {
     response_raw_ref: String,
     principal_id: Uuid,
     response_subject: String,
+    legacy_response_subject: String,
     grant_id: Uuid,
     finding_id: Uuid,
     case_id: String,
@@ -1392,6 +1394,26 @@ async fn hunt_search_timeline_and_saved_hunts_round_trip() {
     assert_eq!(next_page_resp.0, StatusCode::OK);
     assert_eq!(next_page_resp.1["events"][0]["eventId"], "hunt-evt-1");
 
+    let literal_wildcard_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/hunt/search".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "process": "%",
+            "limit": 10
+        })),
+    )
+    .await;
+    assert_eq!(literal_wildcard_resp.0, StatusCode::OK);
+    assert_eq!(
+        literal_wildcard_resp.1["events"]
+            .as_array()
+            .expect("literal wildcard events")
+            .len(),
+        0
+    );
+
     let timeline_resp = request_json(
         &harness.app,
         Method::POST,
@@ -1455,6 +1477,50 @@ async fn hunt_search_timeline_and_saved_hunts_round_trip() {
             .len(),
         2
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn hunt_ingest_rejects_unsigned_envelopes() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let response = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/hunt/events/ingest".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "event": {
+                "eventId": "unsigned-hunt-evt-1",
+                "tenantId": harness.tenant_id.to_string(),
+                "source": "tetragon",
+                "kind": "process_exec",
+                "occurredAt": "2026-03-06T12:00:00Z",
+                "ingestedAt": "2026-03-06T12:00:01Z",
+                "severity": "low",
+                "verdict": "allow",
+                "summary": "unsigned event",
+                "actionType": "process",
+                "evidence": {
+                    "rawRef": "hunt-envelope:unsigned-hunt-evt-1",
+                    "schemaName": "clawdstrike.sdr.fact.tetragon_event.v1"
+                },
+                "attributes": {
+                    "process": "/usr/bin/false"
+                }
+            },
+            "rawEnvelope": {
+                "fact": {
+                    "eventId": "unsigned-hunt-evt-1"
+                }
+            }
+        })),
+    )
+    .await;
+    assert_eq!(response.0, StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1740,6 +1806,7 @@ async fn fleet_operator_workflow_links_detection_response_case_hunt_graph_and_co
         response_raw_ref,
         principal_id,
         response_subject,
+        legacy_response_subject,
         grant_id,
         finding_id,
         case_id,
@@ -1750,6 +1817,11 @@ async fn fleet_operator_workflow_links_detection_response_case_hunt_graph_and_co
         .subscribe(response_subject.clone())
         .await
         .expect("subscribe response subject");
+    let mut legacy_subscriber = harness
+        .nats
+        .subscribe(legacy_response_subject.clone())
+        .await
+        .expect("subscribe legacy response subject");
     harness.nats.flush().await.expect("nats flush");
 
     let finding_resp = request_json(
@@ -1818,6 +1890,17 @@ async fn fleet_operator_workflow_links_detection_response_case_hunt_graph_and_co
         finding_id.to_string()
     );
     assert_eq!(envelope["fact"]["caseId"], case_id);
+    let legacy_message = tokio::time::timeout(Duration::from_secs(5), legacy_subscriber.next())
+        .await
+        .expect("legacy response action publish timeout")
+        .expect("legacy subscriber stream ended");
+    let legacy_envelope: Value = serde_json::from_slice(&legacy_message.payload)
+        .expect("legacy response payload should be JSON");
+    assert!(
+        spine::verify_envelope(&legacy_envelope).expect("legacy envelope should verify"),
+        "legacy response payload must be a signed spine envelope"
+    );
+    assert_eq!(legacy_envelope["fact"]["command"], "request_policy_reload");
 
     let overview_resp = request_json(
         &harness.app,
@@ -1847,8 +1930,9 @@ async fn fleet_operator_workflow_links_detection_response_case_hunt_graph_and_co
         Method::POST,
         "/api/v1/hunt/events/ingest".to_string(),
         Some(&harness.api_key),
-        Some(serde_json::json!({
-            "event": {
+        Some(signed_hunt_ingest_request(
+            &harness,
+            serde_json::json!({
                 "eventId": detection_event_id,
                 "tenantId": harness.tenant_id.to_string(),
                 "source": "tetragon",
@@ -1884,16 +1968,44 @@ async fn fleet_operator_workflow_links_detection_response_case_hunt_graph_and_co
                     "pod": "operator-endpoint",
                     "url": "https://evil.example/payload"
                 }
-            },
-            "rawEnvelope": {
-                "fact": {
-                    "schema": "clawdstrike.sdr.fact.tetragon_event.v1"
-                }
-            }
-        })),
+            }),
+        )),
     )
     .await;
     assert_eq!(detection_event_resp.0, StatusCode::OK);
+
+    let ack_row = sqlx::query::query(
+        "SELECT metadata FROM response_action_deliveries WHERE tenant_id = $1 AND action_id = $2",
+    )
+    .bind(harness.tenant_id)
+    .bind(action_id)
+    .fetch_one(&harness.db)
+    .await
+    .expect("fetch response action delivery metadata");
+    let ack_metadata: Value = ack_row.try_get("metadata").expect("delivery metadata");
+    let ack_token = ack_metadata
+        .get("ack_token")
+        .and_then(Value::as_str)
+        .expect("delivery ack token")
+        .to_string();
+    assert!(approve_resp.1["deliveries"][0]["metadata"]
+        .get("ack_token")
+        .is_none());
+
+    let missing_token_ack_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/response-actions/{action_id}/acks"),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "targetKind": "endpoint",
+            "targetId": agent_id,
+            "ackToken": "wrong-token",
+            "status": "acknowledged",
+        })),
+    )
+    .await;
+    assert_eq!(missing_token_ack_resp.0, StatusCode::FORBIDDEN);
 
     let ack_resp = request_json(
         &harness.app,
@@ -1903,6 +2015,7 @@ async fn fleet_operator_workflow_links_detection_response_case_hunt_graph_and_co
         Some(serde_json::json!({
             "targetKind": "endpoint",
             "targetId": agent_id,
+            "ackToken": ack_token,
             "status": "acknowledged",
             "message": "policy reload completed",
             "resultingState": "reloaded"
@@ -1920,8 +2033,9 @@ async fn fleet_operator_workflow_links_detection_response_case_hunt_graph_and_co
         Method::POST,
         "/api/v1/hunt/events/ingest".to_string(),
         Some(&harness.api_key),
-        Some(serde_json::json!({
-            "event": {
+        Some(signed_hunt_ingest_request(
+            &harness,
+            serde_json::json!({
                 "eventId": response_event_id,
                 "tenantId": harness.tenant_id.to_string(),
                 "source": "response",
@@ -1957,13 +2071,8 @@ async fn fleet_operator_workflow_links_detection_response_case_hunt_graph_and_co
                     "status": "acknowledged",
                     "message": "policy reload completed"
                 }
-            },
-            "rawEnvelope": {
-                "fact": {
-                    "schema": "clawdstrike.sdr.fact.response_action.v1"
-                }
-            }
-        })),
+            }),
+        )),
     )
     .await;
     assert_eq!(response_event_resp.0, StatusCode::OK);
@@ -2394,7 +2503,7 @@ async fn fleet_operator_workflow_links_detection_response_case_hunt_graph_and_co
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn authorization_bearer_header_accepts_api_keys() {
+async fn authorization_bearer_header_rejects_api_keys() {
     if !docker_available() {
         eprintln!("Skipping integration test: docker is unavailable");
         return;
@@ -2410,7 +2519,7 @@ async fn authorization_bearer_header_accepts_api_keys() {
         None,
     )
     .await;
-    assert_eq!(response.0, StatusCode::OK);
+    assert_eq!(response.0, StatusCode::UNAUTHORIZED);
 }
 
 async fn setup_harness() -> Harness {
@@ -2503,7 +2612,7 @@ async fn setup_harness() -> Harness {
         metering: MeteringService::new(db.clone()),
         alerter: AlerterService::new(db.clone()),
         retention: RetentionService::new(db.clone()),
-        signing_keypair: Some(signing_keypair),
+        signing_keypair: Some(signing_keypair.clone()),
     };
     let app = routes::router(state);
 
@@ -2540,6 +2649,7 @@ async fn setup_harness() -> Harness {
         tenant_id,
         tenant_slug,
         api_key,
+        signing_keypair,
         _postgres: postgres,
         _nats: nats,
     }
@@ -2578,10 +2688,41 @@ async fn apply_migrations(db: &PgPool) {
     }
 }
 
+fn signed_hunt_ingest_request(harness: &Harness, mut event: Value) -> Value {
+    let issuer_probe = spine::build_signed_envelope(
+        harness.signing_keypair.as_ref(),
+        0,
+        None,
+        event.clone(),
+        spine::now_rfc3339(),
+    )
+    .expect("sign hunt event");
+    let issuer = issuer_probe
+        .get("issuer")
+        .and_then(Value::as_str)
+        .expect("signed hunt event issuer")
+        .to_string();
+
+    event["evidence"]["issuer"] = Value::String(issuer);
+    event["evidence"]["signatureValid"] = Value::Bool(true);
+    let envelope = spine::build_signed_envelope(
+        harness.signing_keypair.as_ref(),
+        0,
+        None,
+        event.clone(),
+        spine::now_rfc3339(),
+    )
+    .expect("sign hunt event");
+
+    serde_json::json!({
+        "event": event,
+        "rawEnvelope": envelope,
+    })
+}
+
 async fn seed_hunt_events(harness: &Harness) {
     for event in [
         serde_json::json!({
-            "event": {
                 "eventId": "hunt-evt-1",
                 "tenantId": harness.tenant_id.to_string(),
                 "source": "tetragon",
@@ -2619,11 +2760,8 @@ async fn seed_hunt_events(harness: &Harness) {
                     "pod": "agent-pod-1",
                     "url": "https://evil.com/payload"
                 }
-            },
-            "rawEnvelope": {"fact": {"schema": "clawdstrike.sdr.fact.tetragon_event.v1"}}
         }),
         serde_json::json!({
-            "event": {
                 "eventId": "hunt-evt-2",
                 "tenantId": harness.tenant_id.to_string(),
                 "source": "tetragon",
@@ -2659,11 +2797,8 @@ async fn seed_hunt_events(harness: &Harness) {
                     "namespace": "default",
                     "pod": "agent-pod-1"
                 }
-            },
-            "rawEnvelope": {"fact": {"schema": "clawdstrike.sdr.fact.tetragon_event.v1"}}
         }),
         serde_json::json!({
-            "event": {
                 "eventId": "hunt-evt-3",
                 "tenantId": harness.tenant_id.to_string(),
                 "source": "hubble",
@@ -2697,16 +2832,15 @@ async fn seed_hunt_events(harness: &Harness) {
                     "namespace": "prod",
                     "pod": "network-pod-1"
                 }
-            },
-            "rawEnvelope": {"fact": {"schema": "clawdstrike.sdr.fact.hubble_flow.v1"}}
         }),
     ] {
+        let request_body = signed_hunt_ingest_request(harness, event);
         let response = request_json(
             &harness.app,
             Method::POST,
             "/api/v1/hunt/events/ingest".to_string(),
             Some(&harness.api_key),
-            Some(event),
+            Some(request_body),
         )
         .await;
         assert_eq!(response.0, StatusCode::OK);
@@ -2752,11 +2886,15 @@ async fn seed_operator_flow_fixture(harness: &Harness) -> OperatorFlowFixture {
         "{}.response.command.endpoint.{agent_id}",
         tenant_subject_prefix(&harness.tenant_slug)
     );
+    let legacy_response_subject = format!(
+        "{}.posture.command.{agent_id}",
+        tenant_subject_prefix(&harness.tenant_slug)
+    );
     let js = async_nats::jetstream::new(harness.nats.clone());
     spine::nats_transport::ensure_stream(
         &js,
         "response-action-integration",
-        vec![response_subject.clone()],
+        vec![response_subject.clone(), legacy_response_subject.clone()],
         1,
     )
     .await
@@ -2903,6 +3041,7 @@ async fn seed_operator_flow_fixture(harness: &Harness) -> OperatorFlowFixture {
         response_raw_ref,
         principal_id,
         response_subject,
+        legacy_response_subject,
         grant_id,
         finding_id: finding.id,
         case_id,

@@ -208,7 +208,9 @@ mod tests {
             plan: "enterprise".to_string(),
             agent_limit: 100,
             user_id: Some(Uuid::nil()),
+            api_key_id: None,
             role: "admin".to_string(),
+            auth_source: crate::auth::AuthSource::Jwt,
         };
 
         assert_eq!(actor_id(&auth), Uuid::nil().to_string());

@@ -217,7 +217,7 @@ impl HuntQueryRequest {
             process: self.process.clone(),
             namespace: self.namespace.clone(),
             pod: self.pod.clone(),
-            limit: self.limit.unwrap_or(100),
+            limit: self.limit_or_default(),
             entity: self.entity.clone(),
         }
     }
@@ -336,6 +336,18 @@ mod tests {
         assert_eq!(query.limit, 25);
         assert_eq!(query.process.as_deref(), Some("curl"));
         assert_eq!(query.entity.as_deref(), Some("agent-pod"));
+    }
+
+    #[test]
+    fn request_conversion_clamps_limit_to_public_bounds() {
+        let request = HuntQueryRequest {
+            limit: Some(10_000),
+            ..Default::default()
+        };
+
+        let query = request.to_hunt_query();
+        assert_eq!(query.limit, 500);
+        assert_eq!(request.limit_or_default(), 500);
     }
 
     #[test]

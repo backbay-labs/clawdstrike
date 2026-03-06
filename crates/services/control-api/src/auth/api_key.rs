@@ -1,7 +1,7 @@
 use sha2::{Digest, Sha256};
 use sqlx::row::Row;
 
-use crate::auth::AuthenticatedTenant;
+use crate::auth::{AuthSource, AuthenticatedTenant};
 use crate::error::ApiError;
 use crate::state::AppState;
 
@@ -13,7 +13,12 @@ pub async fn validate_key(
     let key_hash = hash_api_key(raw_key);
 
     let row = sqlx::query::query(
-        r#"SELECT ak.tenant_id, ak.scopes, t.slug, t.plan, t.agent_limit
+        r#"SELECT ak.id,
+                  ak.tenant_id,
+                  ak.scopes,
+                  t.slug,
+                  t.plan,
+                  t.agent_limit
            FROM api_keys ak
            JOIN tenants t ON t.id = ak.tenant_id
            WHERE ak.key_hash = $1
@@ -44,7 +49,9 @@ pub async fn validate_key(
         plan: row.try_get("plan").map_err(ApiError::Database)?,
         agent_limit: row.try_get("agent_limit").map_err(ApiError::Database)?,
         user_id: None,
+        api_key_id: Some(row.try_get("id").map_err(ApiError::Database)?),
         role,
+        auth_source: AuthSource::ApiKey,
     })
 }
 

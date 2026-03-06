@@ -27,8 +27,18 @@ pub async fn ingest_event(
     db: &PgPool,
     tenant_id: Uuid,
     event: FleetEventEnvelope,
-    raw_envelope: Option<Value>,
+    raw_envelope: Value,
+    trusted_signing_keypair: Option<&hush_core::Keypair>,
 ) -> Result<HuntEvent, ApiError> {
+    let trusted_issuer = trusted_hunt_issuer(trusted_signing_keypair)?;
+    let (verified_event, envelope_issuer) =
+        verify_signed_hunt_envelope(&raw_envelope, &trusted_issuer)?;
+    if verified_event != event {
+        return Err(ApiError::BadRequest(
+            "event must match the signed rawEnvelope fact".to_string(),
+        ));
+    }
+    let event = verified_event;
     let event_tenant_id = Uuid::parse_str(&event.tenant_id)
         .map_err(|_| ApiError::BadRequest("event.tenantId must be a UUID".to_string()))?;
     if event_tenant_id != tenant_id {
@@ -43,12 +53,6 @@ pub async fn ingest_event(
     let ingested_at = DateTime::parse_from_rfc3339(&event.ingested_at)
         .map_err(|_| ApiError::BadRequest("event.ingestedAt must be RFC3339".to_string()))?
         .with_timezone(&Utc);
-    let raw_payload = raw_envelope.unwrap_or_else(|| {
-        serde_json::json!({
-            "rawRef": event.evidence.raw_ref,
-            "summary": event.summary,
-        })
-    });
 
     let envelope_row = sqlx::query::query(
         r#"INSERT INTO hunt_envelopes (
@@ -79,14 +83,14 @@ pub async fn ingest_event(
     )
     .bind(tenant_id)
     .bind(fleet_source_to_str(event.source))
-    .bind(event.evidence.issuer.as_deref())
+    .bind(Some(envelope_issuer.as_str()))
     .bind(occurred_at)
     .bind(ingested_at)
     .bind(event.evidence.envelope_hash.as_deref())
     .bind(event.evidence.schema_name.as_deref())
     .bind(&event.evidence.raw_ref)
-    .bind(raw_payload)
-    .bind(event.evidence.signature_valid)
+    .bind(raw_envelope.clone())
+    .bind(Some(true))
     .fetch_one(db)
     .await
     .map_err(ApiError::Database)?;
@@ -105,7 +109,7 @@ pub async fn ingest_event(
                $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
                $21, $22, $23, $24, $25, $26, $27, $28, $29, $30
            )
-           ON CONFLICT (event_id)
+           ON CONFLICT (tenant_id, event_id)
            DO UPDATE SET
                envelope_id = EXCLUDED.envelope_id,
                source = EXCLUDED.source,
@@ -191,9 +195,9 @@ pub async fn ingest_event(
             .and_then(|target| target.name.as_deref()),
     )
     .bind(event.evidence.envelope_hash.as_deref())
-    .bind(event.evidence.issuer.as_deref())
+    .bind(Some(envelope_issuer.as_str()))
     .bind(event.evidence.schema_name.as_deref())
-    .bind(event.evidence.signature_valid)
+    .bind(Some(true))
     .bind(&event.evidence.raw_ref)
     .bind(&event.attributes)
     .execute(db)
@@ -593,7 +597,11 @@ fn apply_filters<'a>(
     }
     if let Some(process) = request.process.as_deref() {
         builder.push(" AND lower(coalesce(process, '')) LIKE ");
-        builder.push_bind(format!("%{}%", process.to_lowercase()));
+        builder.push_bind(format!(
+            "%{}%",
+            escape_like_pattern(&process.to_lowercase())
+        ));
+        builder.push(" ESCAPE '\\'");
     }
     if let Some(namespace) = request.namespace.as_deref() {
         builder.push(" AND lower(coalesce(namespace, '')) = lower(");
@@ -602,15 +610,18 @@ fn apply_filters<'a>(
     }
     if let Some(pod) = request.pod.as_deref() {
         builder.push(" AND lower(coalesce(pod, '')) LIKE ");
-        builder.push_bind(format!("%{}%", pod.to_lowercase()));
+        builder.push_bind(format!("%{}%", escape_like_pattern(&pod.to_lowercase())));
+        builder.push(" ESCAPE '\\'");
     }
     if let Some(entity) = request.entity.as_deref() {
-        let entity_pattern = format!("%{}%", entity.to_lowercase());
+        let entity_pattern = format!("%{}%", escape_like_pattern(&entity.to_lowercase()));
         builder.push(" AND (");
         builder.push(" lower(coalesce(pod, '')) LIKE ");
         builder.push_bind(entity_pattern.clone());
+        builder.push(" ESCAPE '\\'");
         builder.push(" OR lower(coalesce(namespace, '')) LIKE ");
         builder.push_bind(entity_pattern);
+        builder.push(" ESCAPE '\\'");
         builder.push(" )");
     }
     if let Some(principal_id) = request.principal_id.as_deref() {
@@ -658,6 +669,61 @@ fn grouped_by(request: &HuntQueryRequest) -> Option<TimelineGroupedBy> {
     } else {
         None
     }
+}
+
+fn escape_like_pattern(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
+}
+
+fn trusted_hunt_issuer(signing_keypair: Option<&hush_core::Keypair>) -> Result<String, ApiError> {
+    let keypair = signing_keypair.ok_or_else(|| {
+        ApiError::Internal("hunt ingest requires a configured signing keypair".to_string())
+    })?;
+    let probe = spine::build_signed_envelope(
+        keypair,
+        0,
+        None,
+        serde_json::json!({ "probe": true }),
+        spine::now_rfc3339(),
+    )
+    .map_err(|err| ApiError::Internal(format!("failed to derive trusted hunt issuer: {err}")))?;
+    probe
+        .get("issuer")
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned)
+        .ok_or_else(|| ApiError::Internal("signed hunt envelope is missing an issuer".to_string()))
+}
+
+fn verify_signed_hunt_envelope(
+    raw_envelope: &Value,
+    trusted_issuer: &str,
+) -> Result<(FleetEventEnvelope, String), ApiError> {
+    if !spine::verify_envelope(raw_envelope)
+        .map_err(|err| ApiError::BadRequest(format!("rawEnvelope verification failed: {err}")))?
+    {
+        return Err(ApiError::BadRequest(
+            "rawEnvelope signature verification failed".to_string(),
+        ));
+    }
+
+    let issuer = raw_envelope
+        .get("issuer")
+        .and_then(Value::as_str)
+        .ok_or_else(|| ApiError::BadRequest("rawEnvelope is missing issuer".to_string()))?;
+    if issuer != trusted_issuer {
+        return Err(ApiError::Forbidden);
+    }
+
+    let fact = raw_envelope
+        .get("fact")
+        .cloned()
+        .ok_or_else(|| ApiError::BadRequest("rawEnvelope is missing fact".to_string()))?;
+    let event: FleetEventEnvelope = serde_json::from_value(fact)
+        .map_err(|err| ApiError::BadRequest(format!("rawEnvelope fact is invalid: {err}")))?;
+    Ok((event, issuer.to_string()))
 }
 
 fn map_event_row(row: sqlx_postgres::PgRow) -> Result<HuntEvent, ApiError> {

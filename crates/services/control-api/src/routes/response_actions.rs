@@ -296,6 +296,7 @@ pub struct ResponseTargetInput {
 pub struct RecordResponseAckRequest {
     pub target_kind: String,
     pub target_id: String,
+    pub ack_token: String,
     pub status: String,
     pub observed_at: Option<DateTime<Utc>>,
     pub message: Option<String>,
@@ -334,14 +335,15 @@ async fn create_action(
                payload,
                metadata
            )
-           VALUES ($1, $2, $3, $4, 'user', $5, $6, $7, $8, $9, $10, $11, $12, $13)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
            RETURNING *"#,
     )
     .bind(auth.tenant_id)
     .bind(action_type.as_str())
     .bind(target_kind.as_str())
     .bind(input.target.id.trim())
-    .bind("api_key")
+    .bind(auth.actor_type())
+    .bind(auth.actor_id())
     .bind(input.expires_at)
     .bind(input.reason.trim())
     .bind(input.case_id.as_deref())
@@ -480,7 +482,7 @@ async fn record_ack(
     Path(id): Path<Uuid>,
     Json(input): Json<RecordResponseAckRequest>,
 ) -> Result<Json<ResponseActionDetail>, ApiError> {
-    if auth.role == "viewer" {
+    if auth.role == "viewer" || !auth.is_api_key() {
         return Err(ApiError::Forbidden);
     }
 
@@ -498,6 +500,10 @@ async fn record_ack(
             "resulting_state": input.resulting_state.clone(),
         })
     });
+    let ack_token = input.ack_token.trim();
+    if ack_token.is_empty() {
+        return Err(ApiError::BadRequest("ack_token is required".to_string()));
+    }
 
     let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
     let action = sqlx::query::query(
@@ -512,7 +518,7 @@ async fn record_ack(
     let action = ResponseActionRecord::from_row(action).map_err(ApiError::Database)?;
 
     let delivery = sqlx::query::query(
-        r#"SELECT id
+        r#"SELECT id, metadata
            FROM response_action_deliveries
            WHERE action_id = $1
              AND tenant_id = $2
@@ -531,6 +537,14 @@ async fn record_ack(
         ApiError::BadRequest("acknowledgement target does not match a known delivery".to_string())
     })?;
     let delivery_id: Uuid = delivery.try_get("id").map_err(ApiError::Database)?;
+    let delivery_metadata: Value = delivery.try_get("metadata").map_err(ApiError::Database)?;
+    let expected_ack_token = delivery_metadata
+        .get("ack_token")
+        .and_then(Value::as_str)
+        .ok_or_else(|| ApiError::Internal("delivery missing acknowledgement token".to_string()))?;
+    if expected_ack_token != ack_token {
+        return Err(ApiError::Forbidden);
+    }
 
     sqlx::query::query(
         r#"INSERT INTO response_action_acks (
@@ -652,6 +666,7 @@ async fn publish_action(
            SET executor_kind = EXCLUDED.executor_kind,
                delivery_subject = EXCLUDED.delivery_subject,
                acknowledgement_deadline = EXCLUDED.acknowledgement_deadline,
+               metadata = EXCLUDED.metadata,
                status = 'approved',
                updated_at = now()
            RETURNING *"#,
@@ -680,17 +695,35 @@ async fn publish_action(
 
     let publish_result: Result<(), ApiError> =
         if let Some(subject) = delivery.delivery_subject.clone() {
-            let payload_bytes = build_signed_response_action_payload_bytes(
-                action.to_transport_payload(),
+            let js = async_nats::jetstream::new(state.nats.clone());
+            let payload_bytes = build_delivery_payload_bytes(
+                &action,
+                &delivery,
                 state.config.approval_signing_enabled,
                 state.signing_keypair.as_deref(),
             )?;
-            let js = async_nats::jetstream::new(state.nats.clone());
             js.publish(subject, payload_bytes.into())
                 .await
                 .map_err(|err| ApiError::Nats(err.to_string()))?
                 .await
                 .map_err(|err| ApiError::Nats(err.to_string()))?;
+            if let Some(compat_subject) = delivery
+                .metadata
+                .get("compat_mirror_subject")
+                .and_then(Value::as_str)
+            {
+                let compat_payload = legacy_posture_command_payload(&action)?;
+                let compat_payload_bytes = build_signed_payload_bytes(
+                    compat_payload,
+                    state.config.approval_signing_enabled,
+                    state.signing_keypair.as_deref(),
+                )?;
+                js.publish(compat_subject.to_string(), compat_payload_bytes.into())
+                    .await
+                    .map_err(|err| ApiError::Nats(err.to_string()))?
+                    .await
+                    .map_err(|err| ApiError::Nats(err.to_string()))?;
+            }
             Ok(())
         } else {
             Ok(())
@@ -781,6 +814,13 @@ fn validate_create_request(
             ));
         }
     }
+    if matches!(action_type, ResponseActionType::TransitionPosture)
+        && transition_posture_value(input.payload.as_ref().unwrap_or(&Value::Null)).is_none()
+    {
+        return Err(ApiError::BadRequest(
+            "transition_posture actions require payload.toState or payload.posture".to_string(),
+        ));
+    }
 
     match (action_type, target_kind) {
         (ResponseActionType::TransitionPosture, ResponseTargetKind::Endpoint)
@@ -850,38 +890,57 @@ fn delivery_plan(action: &ResponseActionRecord, tenant_slug: &str) -> DeliveryPl
     let ack_deadline = action
         .require_acknowledgement
         .then(|| Utc::now() + Duration::minutes(ACK_DEADLINE_MINUTES));
+    let ack_token = action
+        .require_acknowledgement
+        .then(|| Uuid::new_v4().to_string());
 
     match action.target.kind {
         ResponseTargetKind::Endpoint
         | ResponseTargetKind::Runtime
-        | ResponseTargetKind::Session => DeliveryPlan {
-            target_kind: action.target.kind.as_str().to_string(),
-            target_id: action.target.id.clone(),
-            executor_kind: match action.target.kind {
-                ResponseTargetKind::Endpoint => "endpoint_agent".to_string(),
-                ResponseTargetKind::Runtime => "runtime_agent".to_string(),
-                ResponseTargetKind::Session => "session_api".to_string(),
-                _ => "endpoint_agent".to_string(),
-            },
-            delivery_subject: Some(format!(
-                "{subject_prefix}.response.command.{}.{}",
-                action.target.kind.as_str(),
-                action.target.id
-            )),
-            acknowledgement_deadline: ack_deadline,
-            metadata: json!({
-                "compat_mirror_subject": legacy_posture_subject(action, &subject_prefix),
-            }),
-        },
+        | ResponseTargetKind::Session => {
+            let canonical_subject = canonical_response_subject(action, &subject_prefix);
+            let legacy_subject = legacy_posture_subject(action, &subject_prefix);
+
+            DeliveryPlan {
+                target_kind: action.target.kind.as_str().to_string(),
+                target_id: action.target.id.clone(),
+                executor_kind: match action.target.kind {
+                    ResponseTargetKind::Endpoint => "endpoint_agent".to_string(),
+                    ResponseTargetKind::Runtime => "runtime_agent".to_string(),
+                    ResponseTargetKind::Session => "session_api".to_string(),
+                    _ => "endpoint_agent".to_string(),
+                },
+                delivery_subject: Some(canonical_subject.clone()),
+                acknowledgement_deadline: ack_deadline,
+                metadata: json!({
+                    "ack_token": ack_token,
+                    "canonical_subject": canonical_subject,
+                    "compat_mirror_subject": legacy_subject,
+                    "protocol": "response_action_v1",
+                }),
+            }
+        }
         _ => DeliveryPlan {
             target_kind: action.target.kind.as_str().to_string(),
             target_id: action.target.id.clone(),
             executor_kind: "cloud_only".to_string(),
             delivery_subject: None,
             acknowledgement_deadline: ack_deadline,
-            metadata: json!({ "cloud_only": true }),
+            metadata: json!({
+                "ack_token": ack_token,
+                "cloud_only": true,
+                "protocol": "cloud_only",
+            }),
         },
     }
+}
+
+fn canonical_response_subject(action: &ResponseActionRecord, subject_prefix: &str) -> String {
+    format!(
+        "{subject_prefix}.response.command.{}.{}",
+        action.target.kind.as_str(),
+        action.target.id
+    )
 }
 
 fn legacy_posture_subject(action: &ResponseActionRecord, subject_prefix: &str) -> Option<String> {
@@ -899,7 +958,60 @@ fn legacy_posture_subject(action: &ResponseActionRecord, subject_prefix: &str) -
     }
 }
 
-fn build_signed_response_action_payload_bytes(
+fn build_delivery_payload_bytes(
+    action: &ResponseActionRecord,
+    delivery: &ResponseActionDelivery,
+    signing_enabled: bool,
+    signing_keypair: Option<&hush_core::Keypair>,
+) -> Result<Vec<u8>, ApiError> {
+    let payload = action_transport_payload(action, delivery);
+    build_signed_payload_bytes(payload, signing_enabled, signing_keypair)
+}
+
+fn action_transport_payload(
+    action: &ResponseActionRecord,
+    delivery: &ResponseActionDelivery,
+) -> Value {
+    let ack_token = delivery.metadata.get("ack_token").and_then(Value::as_str);
+
+    let mut payload = action.to_transport_payload();
+    payload["delivery"] = json!({
+        "subject": delivery.delivery_subject,
+        "targetKind": delivery.target_kind,
+        "targetId": delivery.target_id,
+        "ackToken": ack_token,
+    });
+    payload
+}
+
+fn legacy_posture_command_payload(action: &ResponseActionRecord) -> Result<Value, ApiError> {
+    match action.action_type.as_str() {
+        "transition_posture" => {
+            let posture = transition_posture_value(&action.payload).ok_or_else(|| {
+                ApiError::BadRequest(
+                    "transition_posture actions require payload.toState or payload.posture"
+                        .to_string(),
+                )
+            })?;
+            Ok(json!({
+                "command": "set_posture",
+                "posture": posture,
+            }))
+        }
+        "request_policy_reload" => Ok(json!({
+            "command": "request_policy_reload",
+        })),
+        "kill_switch" => Ok(json!({
+            "command": "kill_switch",
+            "reason": action.reason,
+        })),
+        other => Err(ApiError::BadRequest(format!(
+            "action '{other}' does not support legacy posture transport"
+        ))),
+    }
+}
+
+fn build_signed_payload_bytes(
     payload: Value,
     signing_enabled: bool,
     signing_keypair: Option<&hush_core::Keypair>,
@@ -920,6 +1032,24 @@ fn build_signed_response_action_payload_bytes(
     }
 
     Ok(serde_json::to_vec(&payload).unwrap_or_default())
+}
+
+fn transition_posture_value(payload: &Value) -> Option<String> {
+    payload
+        .get("toState")
+        .and_then(Value::as_str)
+        .or_else(|| payload.get("to_state").and_then(Value::as_str))
+        .or_else(|| payload.get("posture").and_then(Value::as_str))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn scrub_delivery_metadata(mut metadata: Value) -> Value {
+    if let Some(object) = metadata.as_object_mut() {
+        object.remove("ack_token");
+    }
+    metadata
 }
 
 async fn fetch_action(
@@ -956,6 +1086,11 @@ async fn fetch_deliveries(
 
     rows.into_iter()
         .map(ResponseActionDelivery::from_row)
+        .map(|delivery| {
+            let mut delivery = delivery?;
+            delivery.metadata = scrub_delivery_metadata(delivery.metadata);
+            Ok(delivery)
+        })
         .collect::<Result<Vec<_>, _>>()
         .map_err(ApiError::Database)
 }
@@ -1071,6 +1206,11 @@ mod tests {
             plan.metadata["compat_mirror_subject"],
             "tenant-acme.clawdstrike.posture.command.agent-123"
         );
+        assert_eq!(
+            plan.metadata["canonical_subject"],
+            "tenant-acme.clawdstrike.response.command.endpoint.agent-123"
+        );
+        assert!(plan.metadata["ack_token"].is_string());
     }
 
     #[test]
@@ -1127,5 +1267,45 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(err, ApiError::BadRequest(_)));
+    }
+
+    #[test]
+    fn transition_posture_requires_target_state_in_payload() {
+        let input = CreateResponseActionRequest {
+            action_type: "transition_posture".to_string(),
+            target: ResponseTargetInput {
+                kind: "endpoint".to_string(),
+                id: "agent-1".to_string(),
+            },
+            reason: "contain".to_string(),
+            expires_at: None,
+            case_id: None,
+            source_detection_id: None,
+            source_approval_id: None,
+            require_acknowledgement: Some(true),
+            payload: Some(json!({})),
+        };
+
+        let err = validate_create_request(
+            &input,
+            &ResponseActionType::TransitionPosture,
+            &ResponseTargetKind::Endpoint,
+        )
+        .unwrap_err();
+        assert!(matches!(err, ApiError::BadRequest(_)));
+    }
+
+    #[test]
+    fn scrub_delivery_metadata_hides_ack_token() {
+        let scrubbed = scrub_delivery_metadata(json!({
+            "ack_token": "secret",
+            "compat_mirror_subject": "tenant-acme.clawdstrike.posture.command.agent-123",
+        }));
+
+        assert!(scrubbed.get("ack_token").is_none());
+        assert_eq!(
+            scrubbed["compat_mirror_subject"],
+            "tenant-acme.clawdstrike.posture.command.agent-123"
+        );
     }
 }

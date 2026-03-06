@@ -11,6 +11,13 @@ use crate::error::ApiError;
 use crate::state::AppState;
 
 /// Authenticated identity extracted from either a JWT or API key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthSource {
+    Jwt,
+    ApiKey,
+}
+
+/// Authenticated identity extracted from either a JWT or API key.
 #[derive(Debug, Clone)]
 pub struct AuthenticatedTenant {
     pub tenant_id: Uuid,
@@ -18,7 +25,35 @@ pub struct AuthenticatedTenant {
     pub plan: String,
     pub agent_limit: i32,
     pub user_id: Option<Uuid>,
+    pub api_key_id: Option<Uuid>,
     pub role: String,
+    pub auth_source: AuthSource,
+}
+
+impl AuthenticatedTenant {
+    pub fn is_api_key(&self) -> bool {
+        self.auth_source == AuthSource::ApiKey
+    }
+
+    pub fn actor_type(&self) -> &'static str {
+        match self.auth_source {
+            AuthSource::Jwt => "user",
+            AuthSource::ApiKey => "service",
+        }
+    }
+
+    pub fn actor_id(&self) -> String {
+        match self.auth_source {
+            AuthSource::Jwt => self
+                .user_id
+                .map(|user_id| user_id.to_string())
+                .unwrap_or_else(|| format!("tenant:{}:{}", self.slug, self.role)),
+            AuthSource::ApiKey => self
+                .api_key_id
+                .map(|api_key_id| api_key_id.to_string())
+                .unwrap_or_else(|| format!("tenant:{}:{}", self.slug, self.role)),
+        }
+    }
 }
 
 /// Auth middleware that checks for JWT bearer token or API key header.
@@ -33,21 +68,9 @@ pub async fn require_auth(
     if let Some(auth_header) = headers.get("authorization") {
         let header_str = auth_header.to_str().map_err(|_| ApiError::Unauthorized)?;
         if let Some(token) = header_str.strip_prefix("Bearer ") {
-            match jwt::validate_token(token, &state).await {
-                Ok(tenant) => {
-                    request.extensions_mut().insert(tenant);
-                    return Ok(next.run(request).await);
-                }
-                Err(ApiError::Unauthorized) => match api_key::validate_key(token, &state).await {
-                    Ok(tenant) => {
-                        request.extensions_mut().insert(tenant);
-                        return Ok(next.run(request).await);
-                    }
-                    Err(ApiError::Unauthorized) => return Err(ApiError::Unauthorized),
-                    Err(err) => return Err(err),
-                },
-                Err(err) => return Err(err),
-            }
+            let tenant = jwt::validate_token(token, &state).await?;
+            request.extensions_mut().insert(tenant);
+            return Ok(next.run(request).await);
         }
     }
 

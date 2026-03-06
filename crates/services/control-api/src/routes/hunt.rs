@@ -34,11 +34,19 @@ async fn ingest_event(
     auth: AuthenticatedTenant,
     Json(request): Json<IngestHuntEventRequest>,
 ) -> Result<Json<hunt_query::service::HuntEvent>, ApiError> {
+    if auth.role == "viewer" || !auth.is_api_key() {
+        return Err(ApiError::Forbidden);
+    }
+
+    let raw_envelope = request
+        .raw_envelope
+        .ok_or_else(|| ApiError::BadRequest("rawEnvelope is required".to_string()))?;
     let event = hunt::ingest_event(
         &state.db,
         auth.tenant_id,
         request.event,
-        request.raw_envelope,
+        raw_envelope,
+        state.signing_keypair.as_deref(),
     )
     .await?;
     Ok(Json(event))

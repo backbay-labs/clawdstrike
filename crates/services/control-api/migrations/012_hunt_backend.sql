@@ -15,8 +15,8 @@ CREATE TABLE hunt_envelopes (
 );
 
 CREATE TABLE hunt_events (
-    event_id TEXT PRIMARY KEY,
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    event_id TEXT NOT NULL,
     envelope_id UUID REFERENCES hunt_envelopes(id) ON DELETE SET NULL,
     source TEXT NOT NULL,
     kind TEXT NOT NULL,
@@ -45,7 +45,8 @@ CREATE TABLE hunt_events (
     signature_valid BOOLEAN,
     raw_ref TEXT NOT NULL,
     attributes JSONB NOT NULL DEFAULT '{}'::jsonb,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, event_id)
 );
 
 CREATE TABLE saved_hunts (

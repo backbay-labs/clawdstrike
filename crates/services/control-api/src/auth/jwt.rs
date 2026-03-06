@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::row::Row;
 use uuid::Uuid;
 
-use crate::auth::AuthenticatedTenant;
+use crate::auth::{AuthSource, AuthenticatedTenant};
 use crate::error::ApiError;
 use crate::state::AppState;
 
@@ -48,6 +48,8 @@ pub async fn validate_token(
         plan: row.try_get("plan").map_err(ApiError::Database)?,
         agent_limit: row.try_get("agent_limit").map_err(ApiError::Database)?,
         user_id: Some(claims.sub),
+        api_key_id: None,
         role: claims.role,
+        auth_source: AuthSource::Jwt,
     })
 }

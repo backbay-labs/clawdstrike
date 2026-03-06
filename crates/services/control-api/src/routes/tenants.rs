@@ -272,7 +272,9 @@ mod tests {
             plan: "team".to_string(),
             agent_limit: 10,
             user_id: None,
+            api_key_id: None,
             role: role.to_string(),
+            auth_source: crate::auth::AuthSource::Jwt,
         }
     }
 
