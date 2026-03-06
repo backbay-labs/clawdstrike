@@ -231,6 +231,9 @@ MISSING_LCOV_ALLOWLIST = {
     normalize("crates/bridges/darwin-telemetry-bridge/src/fsevents.rs"),
     normalize("crates/bridges/darwin-telemetry-bridge/src/process.rs"),
     normalize("crates/bridges/darwin-telemetry-bridge/src/unified_log.rs"),
+    # This module is compiled via a #[path = "../models/delegation_graph.rs"] include
+    # under routes/mod.rs and has been a flaky LCOV emitter in Linux CI.
+    normalize("crates/services/control-api/src/models/delegation_graph.rs"),
 }
 
 
