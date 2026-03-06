@@ -1,4 +1,7 @@
 use chrono::{DateTime, Utc};
+use clawdstrike_ocsf::fleet::{
+    value_is_empty_object, FleetEventEnvelope, FleetEventSeverity, FleetEventVerdict,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
@@ -6,93 +9,9 @@ use uuid::Uuid;
 use crate::query::{EventSource, HuntQuery, QueryVerdict};
 use crate::timeline::{NormalizedVerdict, TimelineEvent, TimelineEventKind};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum HuntEventSource {
-    Receipt,
-    Tetragon,
-    Hubble,
-    Scan,
-    Response,
-    Directory,
-    Detection,
-}
-
-impl HuntEventSource {
-    pub fn parse(value: &str) -> Option<Self> {
-        match value.trim().to_lowercase().as_str() {
-            "receipt" => Some(Self::Receipt),
-            "tetragon" => Some(Self::Tetragon),
-            "hubble" => Some(Self::Hubble),
-            "scan" => Some(Self::Scan),
-            "response" => Some(Self::Response),
-            "directory" => Some(Self::Directory),
-            "detection" => Some(Self::Detection),
-            _ => None,
-        }
-    }
-
-    pub fn as_query_source(self) -> Option<EventSource> {
-        match self {
-            Self::Receipt => Some(EventSource::Receipt),
-            Self::Tetragon => Some(EventSource::Tetragon),
-            Self::Hubble => Some(EventSource::Hubble),
-            Self::Scan => Some(EventSource::Scan),
-            Self::Response | Self::Directory | Self::Detection => None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum HuntEventKind {
-    GuardDecision,
-    ProcessExec,
-    ProcessExit,
-    ProcessKprobe,
-    NetworkFlow,
-    ScanResult,
-    JoinCompleted,
-    PrincipalStateChanged,
-    ResponseActionCreated,
-    ResponseActionUpdated,
-    DetectionFired,
-}
-
-impl HuntEventKind {
-    pub fn parse(value: &str) -> Option<Self> {
-        match value.trim().to_lowercase().as_str() {
-            "guard_decision" => Some(Self::GuardDecision),
-            "process_exec" => Some(Self::ProcessExec),
-            "process_exit" => Some(Self::ProcessExit),
-            "process_kprobe" => Some(Self::ProcessKprobe),
-            "network_flow" => Some(Self::NetworkFlow),
-            "scan_result" => Some(Self::ScanResult),
-            "join_completed" => Some(Self::JoinCompleted),
-            "principal_state_changed" => Some(Self::PrincipalStateChanged),
-            "response_action_created" => Some(Self::ResponseActionCreated),
-            "response_action_updated" => Some(Self::ResponseActionUpdated),
-            "detection_fired" => Some(Self::DetectionFired),
-            _ => None,
-        }
-    }
-
-    pub fn as_timeline_kind(self) -> Option<TimelineEventKind> {
-        match self {
-            Self::GuardDecision => Some(TimelineEventKind::GuardDecision),
-            Self::ProcessExec => Some(TimelineEventKind::ProcessExec),
-            Self::ProcessExit => Some(TimelineEventKind::ProcessExit),
-            Self::ProcessKprobe => Some(TimelineEventKind::ProcessKprobe),
-            Self::NetworkFlow => Some(TimelineEventKind::NetworkFlow),
-            Self::ScanResult => Some(TimelineEventKind::ScanResult),
-            Self::JoinCompleted
-            | Self::PrincipalStateChanged
-            | Self::ResponseActionCreated
-            | Self::ResponseActionUpdated
-            | Self::DetectionFired => None,
-        }
-    }
-}
+pub use clawdstrike_ocsf::fleet::{
+    FleetEventKind as HuntEventKind, FleetEventSource as HuntEventSource,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -147,17 +66,13 @@ pub struct HuntEvent {
     pub attributes: Value,
 }
 
-fn value_is_empty_object(value: &Value) -> bool {
-    matches!(value, Value::Object(map) if map.is_empty())
-}
-
 impl HuntEvent {
     pub fn to_timeline_event(&self) -> Option<TimelineEvent> {
         Some(TimelineEvent {
             event_id: Some(self.event_id.clone()),
             timestamp: self.timestamp,
-            source: self.source.as_query_source()?,
-            kind: self.kind.as_timeline_kind()?,
+            source: hunt_event_source_as_query_source(self.source)?,
+            kind: hunt_event_kind_as_timeline_kind(self.kind)?,
             verdict: self.verdict,
             severity: self.severity.clone(),
             summary: self.summary.clone(),
@@ -168,6 +83,76 @@ impl HuntEvent {
             signature_valid: self.signature_valid,
             raw: Some(self.attributes.clone()),
         })
+    }
+
+    pub fn try_from_fleet_event(event: &FleetEventEnvelope) -> Result<Self, String> {
+        let tenant_id = Uuid::parse_str(&event.tenant_id)
+            .map_err(|_| "event.tenantId must be a UUID".to_string())?;
+        let timestamp = DateTime::parse_from_rfc3339(&event.occurred_at)
+            .map_err(|_| "event.occurredAt must be RFC3339".to_string())?
+            .with_timezone(&Utc);
+        let verdict = map_fleet_verdict(event.verdict)?;
+        let severity = event.severity.map(fleet_severity_label);
+
+        Ok(Self {
+            event_id: event.event_id.clone(),
+            tenant_id,
+            source: event.source,
+            kind: event.kind,
+            timestamp,
+            verdict,
+            severity,
+            summary: event.summary.clone(),
+            action_type: event.action_type.clone(),
+            process: event
+                .attributes
+                .get("process")
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned),
+            namespace: event
+                .attributes
+                .get("namespace")
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned),
+            pod: event
+                .attributes
+                .get("pod")
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned),
+            session_id: event.session_id.clone(),
+            endpoint_agent_id: event
+                .principal
+                .as_ref()
+                .and_then(|principal| principal.endpoint_agent_id.clone()),
+            runtime_agent_id: event
+                .principal
+                .as_ref()
+                .and_then(|principal| principal.runtime_agent_id.clone()),
+            principal_id: event
+                .principal
+                .as_ref()
+                .and_then(|principal| principal.principal_id.clone()),
+            grant_id: event.grant_id.clone(),
+            response_action_id: event.response_action_id.clone(),
+            detection_ids: event.detection_ids.clone(),
+            target_kind: event.target.as_ref().and_then(|target| target.kind.clone()),
+            target_id: event.target.as_ref().and_then(|target| target.id.clone()),
+            target_name: event.target.as_ref().and_then(|target| target.name.clone()),
+            envelope_hash: event.evidence.envelope_hash.clone(),
+            issuer: event.evidence.issuer.clone(),
+            schema_name: event.evidence.schema_name.clone(),
+            signature_valid: event.evidence.signature_valid,
+            raw_ref: event.evidence.raw_ref.clone(),
+            attributes: event.attributes.clone(),
+        })
+    }
+}
+
+impl TryFrom<&FleetEventEnvelope> for HuntEvent {
+    type Error = String;
+
+    fn try_from(value: &FleetEventEnvelope) -> Result<Self, Self::Error> {
+        Self::try_from_fleet_event(value)
     }
 }
 
@@ -225,6 +210,54 @@ impl HuntQueryRequest {
     pub fn limit_or_default(&self) -> usize {
         self.limit.unwrap_or(100).clamp(1, 500)
     }
+}
+
+fn hunt_event_source_as_query_source(source: HuntEventSource) -> Option<EventSource> {
+    match source {
+        HuntEventSource::Receipt => Some(EventSource::Receipt),
+        HuntEventSource::Tetragon => Some(EventSource::Tetragon),
+        HuntEventSource::Hubble => Some(EventSource::Hubble),
+        HuntEventSource::Scan => Some(EventSource::Scan),
+        HuntEventSource::Response | HuntEventSource::Directory | HuntEventSource::Detection => None,
+    }
+}
+
+fn hunt_event_kind_as_timeline_kind(kind: HuntEventKind) -> Option<TimelineEventKind> {
+    match kind {
+        HuntEventKind::GuardDecision => Some(TimelineEventKind::GuardDecision),
+        HuntEventKind::ProcessExec => Some(TimelineEventKind::ProcessExec),
+        HuntEventKind::ProcessExit => Some(TimelineEventKind::ProcessExit),
+        HuntEventKind::ProcessKprobe => Some(TimelineEventKind::ProcessKprobe),
+        HuntEventKind::NetworkFlow => Some(TimelineEventKind::NetworkFlow),
+        HuntEventKind::ScanResult => Some(TimelineEventKind::ScanResult),
+        HuntEventKind::JoinCompleted
+        | HuntEventKind::PrincipalStateChanged
+        | HuntEventKind::ResponseActionCreated
+        | HuntEventKind::ResponseActionUpdated
+        | HuntEventKind::DetectionFired => None,
+    }
+}
+
+fn map_fleet_verdict(verdict: Option<FleetEventVerdict>) -> Result<NormalizedVerdict, String> {
+    Ok(match verdict.unwrap_or(FleetEventVerdict::None) {
+        FleetEventVerdict::Allow => NormalizedVerdict::Allow,
+        FleetEventVerdict::Deny => NormalizedVerdict::Deny,
+        FleetEventVerdict::Warn => NormalizedVerdict::Warn,
+        FleetEventVerdict::None => NormalizedVerdict::None,
+        FleetEventVerdict::Forwarded => NormalizedVerdict::Forwarded,
+        FleetEventVerdict::Dropped => NormalizedVerdict::Dropped,
+    })
+}
+
+fn fleet_severity_label(severity: FleetEventSeverity) -> String {
+    match severity {
+        FleetEventSeverity::Info => "info",
+        FleetEventSeverity::Low => "low",
+        FleetEventSeverity::Medium => "medium",
+        FleetEventSeverity::High => "high",
+        FleetEventSeverity::Critical => "critical",
+    }
+    .to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -309,6 +342,9 @@ pub struct HuntJobRecord {
 mod tests {
     use super::*;
     use chrono::TimeZone;
+    use clawdstrike_ocsf::fleet::{
+        FleetEventEvidence, FleetEventKind, FleetEventPrincipal, FleetEventSource, FleetEventTarget,
+    };
 
     #[test]
     fn request_converts_into_existing_query_primitives() {
@@ -423,5 +459,56 @@ mod tests {
         };
 
         assert!(event.to_timeline_event().is_none());
+    }
+
+    #[test]
+    fn fleet_event_envelope_converts_into_hunt_event_projection() {
+        let fleet_event = FleetEventEnvelope {
+            event_id: "evt-3".to_string(),
+            tenant_id: Uuid::nil().to_string(),
+            source: FleetEventSource::Tetragon,
+            kind: FleetEventKind::ProcessExec,
+            occurred_at: "2026-03-06T12:00:00Z".to_string(),
+            ingested_at: "2026-03-06T12:00:01Z".to_string(),
+            severity: Some(FleetEventSeverity::High),
+            verdict: Some(FleetEventVerdict::Deny),
+            summary: "process_exec /usr/bin/curl".to_string(),
+            action_type: Some("process".to_string()),
+            principal: Some(FleetEventPrincipal {
+                principal_id: Some("principal-1".to_string()),
+                endpoint_agent_id: Some("endpoint-1".to_string()),
+                runtime_agent_id: None,
+                principal_type: Some("endpoint_agent".to_string()),
+            }),
+            session_id: Some("session-1".to_string()),
+            grant_id: Some("grant-1".to_string()),
+            response_action_id: Some("action-1".to_string()),
+            detection_ids: vec!["finding-1".to_string()],
+            target: Some(FleetEventTarget {
+                kind: Some("process".to_string()),
+                id: Some("123".to_string()),
+                name: Some("curl".to_string()),
+            }),
+            evidence: FleetEventEvidence {
+                raw_ref: "hunt-envelope:evt-3".to_string(),
+                envelope_hash: Some("hash-1".to_string()),
+                issuer: Some("spiffe://tenant/acme".to_string()),
+                schema_name: Some("clawdstrike.sdr.fact.tetragon_event.v1".to_string()),
+                signature_valid: Some(true),
+            },
+            attributes: serde_json::json!({
+                "process": "/usr/bin/curl",
+                "namespace": "default",
+                "pod": "agent-pod"
+            }),
+        };
+
+        let event = HuntEvent::try_from_fleet_event(&fleet_event).expect("convert fleet event");
+        assert_eq!(event.source, HuntEventSource::Tetragon);
+        assert_eq!(event.kind, HuntEventKind::ProcessExec);
+        assert_eq!(event.verdict, NormalizedVerdict::Deny);
+        assert_eq!(event.severity.as_deref(), Some("high"));
+        assert_eq!(event.endpoint_agent_id.as_deref(), Some("endpoint-1"));
+        assert_eq!(event.process.as_deref(), Some("/usr/bin/curl"));
     }
 }

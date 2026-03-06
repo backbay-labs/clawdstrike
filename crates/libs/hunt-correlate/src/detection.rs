@@ -1,8 +1,9 @@
 use chrono::Utc;
 use hunt_query::query::EventSource;
 use hunt_query::timeline::TimelineEvent;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 
 use crate::engine::CorrelationEngine;
 use crate::error::{Error, Result};
@@ -140,7 +141,8 @@ fn compile_sigma_rule(source_text: &str) -> Result<DetectionRuleCompilation> {
 
 fn prepare_yara_rule(source_text: &str) -> Result<DetectionRuleCompilation> {
     let trimmed = source_text.trim();
-    if !trimmed.contains("rule ") {
+    let rule_count = yara_rule_declaration_count(trimmed)?;
+    if rule_count == 0 {
         return Err(Error::InvalidRule(
             "YARA import requires at least one `rule` declaration".to_string(),
         ));
@@ -153,7 +155,7 @@ fn prepare_yara_rule(source_text: &str) -> Result<DetectionRuleCompilation> {
         compiled_artifact: json!({
             "kind": "yara_hook",
             "translation_status": "executor_pending",
-            "rule_count_estimate": trimmed.matches("rule ").count(),
+            "rule_count_estimate": rule_count,
         }),
     })
 }
@@ -245,16 +247,7 @@ fn sigma_preview_to_native_rule(source_text: &str) -> Result<String> {
         .get("timeframe")
         .and_then(Value::as_str)
         .unwrap_or("5m");
-    let condition_name = detection
-        .get("condition")
-        .and_then(Value::as_str)
-        .unwrap_or("selection");
-    let selection = detection
-        .get(condition_name)
-        .and_then(Value::as_object)
-        .ok_or_else(|| {
-            Error::InvalidRule(format!("Sigma import requires `{condition_name}` object"))
-        })?;
+    let selection = sigma_preview_selection(detection)?;
     let target_pattern = selection
         .iter()
         .next()
@@ -264,6 +257,87 @@ fn sigma_preview_to_native_rule(source_text: &str) -> Result<String> {
     Ok(format!(
         "schema: clawdstrike.hunt.correlation.v1\nname: \"{title}\"\nseverity: {severity}\ndescription: \"Sigma compatibility preview\"\nwindow: {timeframe}\nconditions:\n  - source: {source}\n    target_pattern: \"{target_pattern}\"\n    bind: sigma_selection\noutput:\n  title: \"{title}\"\n  evidence:\n    - sigma_selection\n"
     ))
+}
+
+fn sigma_preview_selection(detection: &Map<String, Value>) -> Result<&Map<String, Value>> {
+    if let Some(selection) = detection.get("selection").and_then(Value::as_object) {
+        return Ok(selection);
+    }
+
+    if let Some(condition) = detection.get("condition").and_then(Value::as_str) {
+        for selector_name in sigma_condition_selector_candidates(condition, detection)? {
+            if let Some(selection) = detection.get(&selector_name).and_then(Value::as_object) {
+                return Ok(selection);
+            }
+        }
+    }
+
+    detection
+        .iter()
+        .filter(|(key, _)| !matches!(key.as_str(), "condition" | "timeframe"))
+        .find_map(|(_, value)| value.as_object())
+        .ok_or_else(|| {
+            Error::InvalidRule(
+                "Sigma import requires at least one object-valued detection selector".to_string(),
+            )
+        })
+}
+
+fn sigma_condition_selector_candidates(
+    condition: &str,
+    detection: &Map<String, Value>,
+) -> Result<Vec<String>> {
+    let token_re = Regex::new(r"[A-Za-z_][A-Za-z0-9_]*\*?")
+        .map_err(|err| Error::Regex(format!("invalid Sigma token regex: {err}")))?;
+    let mut selectors = Vec::new();
+    for token in token_re
+        .find_iter(condition)
+        .map(|matched| matched.as_str())
+    {
+        let lowered = token.to_ascii_lowercase();
+        if matches!(
+            lowered.as_str(),
+            "and"
+                | "or"
+                | "not"
+                | "of"
+                | "all"
+                | "them"
+                | "near"
+                | "by"
+                | "count"
+                | "true"
+                | "false"
+        ) || lowered.chars().all(|ch| ch.is_ascii_digit())
+        {
+            continue;
+        }
+
+        if let Some(prefix) = token.strip_suffix('*') {
+            selectors.extend(
+                detection
+                    .keys()
+                    .filter(|key| key.starts_with(prefix))
+                    .cloned(),
+            );
+            continue;
+        }
+
+        selectors.push(token.to_string());
+    }
+
+    if selectors.is_empty() {
+        selectors.push("selection".to_string());
+    }
+
+    Ok(selectors)
+}
+
+fn yara_rule_declaration_count(source_text: &str) -> Result<usize> {
+    let declaration_re =
+        Regex::new(r"(?m)^\s*(?:(?:private|global)\s+)*rule\s+[A-Za-z_][A-Za-z0-9_]*\b")
+            .map_err(|err| Error::Regex(format!("invalid YARA declaration regex: {err}")))?;
+    Ok(declaration_re.find_iter(source_text).count())
 }
 
 fn sigma_preview_source(parsed: &Value) -> EventSource {
@@ -386,6 +460,28 @@ mod tests {
     fn yara_requires_rule_keyword() {
         let err = compile_rule_source("yara", "meta: nope").expect_err("should reject");
         assert!(err.to_string().contains("rule"));
+    }
+
+    #[test]
+    fn yara_validation_accepts_tabbed_rule_declaration_and_ignores_comments() {
+        let source = "// rule this is only a comment\nrule\tcontains_payload { condition: true }";
+        let compiled = compile_rule_source("yara", source).expect("compile yara");
+        assert_eq!(compiled.compiled_artifact["rule_count_estimate"], 1);
+    }
+
+    #[test]
+    fn sigma_preview_supports_compound_condition_expressions() {
+        let sigma = "title: Suspicious Access\nlogsource:\n  category: process_creation\ndetection:\n  selection:\n    CommandLine: secret\n  filter:\n    Image: trusted\n  condition: selection and not filter\n";
+        let preview = sigma_preview_to_native_rule(sigma).expect("build preview");
+        assert!(preview.contains("source: tetragon"));
+        assert!(preview.contains("target_pattern: \"secret\""));
+    }
+
+    #[test]
+    fn sigma_preview_supports_wildcard_condition_selectors() {
+        let sigma = "title: Wildcard Selection\nlogsource:\n  category: process_creation\ndetection:\n  selection_alpha:\n    CommandLine: secret\n  selection_beta:\n    Image: /usr/bin/curl\n  condition: 1 of selection_*\n";
+        let preview = sigma_preview_to_native_rule(sigma).expect("build preview");
+        assert!(preview.contains("target_pattern: \"secret\""));
     }
 
     #[test]

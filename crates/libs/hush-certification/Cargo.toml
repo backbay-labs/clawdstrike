@@ -23,6 +23,8 @@ anyhow.workspace = true
 
 zip = "0.6.6"
 
+[dev-dependencies]
+tempfile = "3"
+
 [lints]
 workspace = true
-

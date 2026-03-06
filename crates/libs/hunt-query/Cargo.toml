@@ -24,10 +24,10 @@ regex.workspace = true
 dirs.workspace = true
 time = "0.3"
 uuid.workspace = true
-clawdstrike-ocsf = { workspace = true, optional = true }
+clawdstrike-ocsf.workspace = true
 
 [features]
-ocsf = ["dep:clawdstrike-ocsf"]
+ocsf = []
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

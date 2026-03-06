@@ -19,6 +19,7 @@ pub enum FleetEventKind {
     GuardDecision,
     ProcessExec,
     ProcessExit,
+    ProcessKprobe,
     NetworkFlow,
     ScanResult,
     JoinCompleted,
@@ -120,8 +121,42 @@ pub struct FleetEventEnvelope {
     pub attributes: Value,
 }
 
-fn value_is_empty_object(value: &Value) -> bool {
+pub fn value_is_empty_object(value: &Value) -> bool {
     matches!(value, Value::Object(map) if map.is_empty())
+}
+
+impl FleetEventSource {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_lowercase().as_str() {
+            "receipt" => Some(Self::Receipt),
+            "tetragon" => Some(Self::Tetragon),
+            "hubble" => Some(Self::Hubble),
+            "scan" => Some(Self::Scan),
+            "response" => Some(Self::Response),
+            "directory" => Some(Self::Directory),
+            "detection" => Some(Self::Detection),
+            _ => None,
+        }
+    }
+}
+
+impl FleetEventKind {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_lowercase().as_str() {
+            "guard_decision" => Some(Self::GuardDecision),
+            "process_exec" => Some(Self::ProcessExec),
+            "process_exit" => Some(Self::ProcessExit),
+            "process_kprobe" => Some(Self::ProcessKprobe),
+            "network_flow" => Some(Self::NetworkFlow),
+            "scan_result" => Some(Self::ScanResult),
+            "join_completed" => Some(Self::JoinCompleted),
+            "principal_state_changed" => Some(Self::PrincipalStateChanged),
+            "response_action_created" => Some(Self::ResponseActionCreated),
+            "response_action_updated" => Some(Self::ResponseActionUpdated),
+            "detection_fired" => Some(Self::DetectionFired),
+            _ => None,
+        }
+    }
 }
 
 #[cfg(test)]

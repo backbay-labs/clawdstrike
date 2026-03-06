@@ -3329,6 +3329,7 @@ async fn seed_operator_flow_fixture(harness: &Harness) -> OperatorFlowFixture {
     let session_id = "session-operator-flow-1".to_string();
     let detection_raw_ref = "hunt-envelope:operator-flow-detection-1".to_string();
     let response_raw_ref = "hunt-envelope:operator-flow-response-1".to_string();
+    let operator_keypair = hush_core::Keypair::generate();
 
     let register_resp = request_json(
         &harness.app,
@@ -3338,7 +3339,7 @@ async fn seed_operator_flow_fixture(harness: &Harness) -> OperatorFlowFixture {
         Some(serde_json::json!({
             "agent_id": &agent_id,
             "name": "Operator Endpoint",
-            "public_key": hush_core::Keypair::generate().public_key().to_hex(),
+            "public_key": operator_keypair.public_key().to_hex(),
             "role": "coder",
             "trust_level": "high"
         })),
@@ -3377,7 +3378,6 @@ async fn seed_operator_flow_fixture(harness: &Harness) -> OperatorFlowFixture {
     .await
     .expect("response action stream should exist");
 
-    let grant_keypair = hush_core::Keypair::generate();
     let now = chrono::Utc::now().timestamp();
     let mut grant_claims = hush_multi_agent::DelegationClaims::new(
         hush_multi_agent::AgentId::new(principal_id.to_string())
@@ -3393,9 +3393,11 @@ async fn seed_operator_flow_fixture(harness: &Harness) -> OperatorFlowFixture {
     grant_claims.ctx = Some(serde_json::json!({
         "workflow": "fleet_operator_e2e"
     }));
-    let grant_token =
-        hush_multi_agent::SignedDelegationToken::sign_with_public_key(grant_claims, &grant_keypair)
-            .expect("sign delegation token");
+    let grant_token = hush_multi_agent::SignedDelegationToken::sign_with_public_key(
+        grant_claims,
+        &operator_keypair,
+    )
+    .expect("sign delegation token");
 
     let grant_resp = request_json(
         &harness.app,
@@ -3406,7 +3408,7 @@ async fn seed_operator_flow_fixture(harness: &Harness) -> OperatorFlowFixture {
             "token": grant_token,
             "grant_type": "delegation",
             "source_session_id": &session_id,
-            "issuer_public_key": grant_keypair.public_key().to_hex()
+            "issuer_public_key": operator_keypair.public_key().to_hex()
         })),
     )
     .await;

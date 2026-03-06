@@ -143,6 +143,28 @@ pub struct GenericEvidenceBundleEntry {
     pub bytes: Vec<u8>,
 }
 
+struct GenericManifestPayload<'a> {
+    export_id: &'a str,
+    subject: &'a GenericEvidenceBundleSubject,
+    generated_at: &'a str,
+    entry_count: usize,
+    merkle_root: &'a str,
+    metadata: Option<&'a Value>,
+    public_key: &'a str,
+    signed_at: &'a str,
+}
+
+struct EvidenceManifestPayload<'a> {
+    export_id: &'a str,
+    certification_id: &'a str,
+    generated_at: &'a str,
+    event_count: usize,
+    merkle_root: &'a str,
+    request: &'a EvidenceExportRequest,
+    public_key: &'a str,
+    signed_at: &'a str,
+}
+
 pub struct SqliteEvidenceExportStore {
     conn: Mutex<Connection>,
 }
@@ -366,42 +388,18 @@ pub fn build_signed_evidence_bundle_zip(
 
     let merkle_root = merkle_root_for_blobs(&sorted_entries)?;
     let signed_at = generated_at.to_string();
-    let public_key = URL_SAFE_NO_PAD.encode(signer.public_key().as_bytes());
-
-    let mut unsigned_for_sig = serde_json::json!({
-        "exportId": export_id,
-        "subject": {
-            "kind": subject.kind,
-            "id": subject.id,
-        },
-        "generatedAt": generated_at,
-        "entryCount": sorted_entries.len(),
-        "merkleRoot": merkle_root,
+    let public_key = manifest_public_key(signer);
+    let unsigned_for_sig = generic_manifest_signature_payload(GenericManifestPayload {
+        export_id,
+        subject: &subject,
+        generated_at,
+        entry_count: sorted_entries.len(),
+        merkle_root: &merkle_root,
+        metadata: metadata.as_ref(),
+        public_key: &public_key,
+        signed_at: &signed_at,
     });
-
-    if let Some(extra_metadata) = metadata.clone() {
-        if let Some(obj) = unsigned_for_sig.as_object_mut() {
-            obj.insert("metadata".to_string(), extra_metadata);
-        }
-    }
-
-    if let Some(obj) = unsigned_for_sig.as_object_mut() {
-        obj.insert(
-            "issuer".to_string(),
-            serde_json::json!({
-                "publicKey": public_key,
-                "signedAt": signed_at,
-            }),
-        );
-    }
-
-    let canonical = hush_core::canonicalize_json(&unsigned_for_sig)?;
-    let sig = signer.sign(canonical.as_bytes());
-    let issuer = ManifestIssuer {
-        public_key: URL_SAFE_NO_PAD.encode(signer.public_key().as_bytes()),
-        signature: URL_SAFE_NO_PAD.encode(sig.to_bytes()),
-        signed_at,
-    };
+    let issuer = sign_manifest_issuer(&unsigned_for_sig, signer, signed_at.clone())?;
 
     let manifest = GenericEvidenceBundleManifest {
         export_id: export_id.to_string(),
@@ -412,9 +410,10 @@ pub fn build_signed_evidence_bundle_zip(
         metadata,
         issuer,
     };
+    let manifest_bytes = serde_json::to_vec_pretty(&manifest)?;
 
     zip.start_file("manifest.json", opts)?;
-    zip.write_all(serde_json::to_string_pretty(&manifest)?.as_bytes())?;
+    zip.write_all(&manifest_bytes)?;
     zip.write_all(b"\n")?;
 
     let mut file = zip.finish()?;
@@ -469,52 +468,18 @@ pub fn build_evidence_bundle_zip(
     let merkle_root = merkle_root_for_events(events)?;
     let generated_at = Utc::now().to_rfc3339_opts(SecondsFormat::Nanos, true);
     let signed_at = generated_at.clone();
-    let public_key = URL_SAFE_NO_PAD.encode(signer.public_key().as_bytes());
-
-    let mut manifest_value = serde_json::json!({
-        "exportId": export_id,
-        "certificationId": certification.certification_id,
-        "generatedAt": generated_at,
-        "eventCount": events.len(),
-        "merkleRoot": merkle_root,
+    let public_key = manifest_public_key(signer);
+    let unsigned_for_sig = evidence_manifest_signature_payload(EvidenceManifestPayload {
+        export_id,
+        certification_id: &certification.certification_id,
+        generated_at: &generated_at,
+        event_count: events.len(),
+        merkle_root: &merkle_root,
+        request,
+        public_key: &public_key,
+        signed_at: &signed_at,
     });
-
-    if let (Some(start), Some(end)) = (request.date_start.as_ref(), request.date_end.as_ref()) {
-        if let Some(obj) = manifest_value.as_object_mut() {
-            obj.insert(
-                "dateRange".to_string(),
-                serde_json::json!({ "start": start, "end": end }),
-            );
-        }
-    }
-
-    if let Some(tpl) = request.compliance_template.as_ref() {
-        if let Some(obj) = manifest_value.as_object_mut() {
-            obj.insert("complianceTemplate".to_string(), Value::String(tpl.clone()));
-        }
-    }
-
-    // Sign manifest (excluding issuer.signature field).
-    let unsigned_for_sig = {
-        let mut v = manifest_value.clone();
-        if let Some(obj) = v.as_object_mut() {
-            obj.insert(
-                "issuer".to_string(),
-                serde_json::json!({ "publicKey": public_key, "signedAt": signed_at }),
-            );
-        }
-        v
-    };
-
-    let canonical = hush_core::canonicalize_json(&unsigned_for_sig)?;
-    let sig = signer.sign(canonical.as_bytes());
-    let sig_b64 = URL_SAFE_NO_PAD.encode(sig.to_bytes());
-
-    let issuer = ManifestIssuer {
-        public_key: URL_SAFE_NO_PAD.encode(signer.public_key().as_bytes()),
-        signature: sig_b64,
-        signed_at,
-    };
+    let issuer = sign_manifest_issuer(&unsigned_for_sig, signer, signed_at.clone())?;
 
     let manifest = EvidenceBundleManifest {
         export_id: export_id.to_string(),
@@ -532,9 +497,10 @@ pub fn build_evidence_bundle_zip(
         compliance_template: request.compliance_template.clone(),
         issuer,
     };
+    let manifest_bytes = serde_json::to_vec_pretty(&manifest)?;
 
     zip.start_file("manifest.json", opts)?;
-    zip.write_all(serde_json::to_string_pretty(&manifest)?.as_bytes())?;
+    zip.write_all(&manifest_bytes)?;
     zip.write_all(b"\n")?;
 
     let mut file = zip.finish()?;
@@ -581,4 +547,168 @@ fn merkle_root_for_blobs(entries: &[GenericEvidenceBundleEntry]) -> Result<Strin
 
     let tree = hush_core::MerkleTree::from_leaves(&leaves)?;
     Ok(format!("sha256:{}", tree.root().to_hex()))
+}
+
+fn manifest_public_key(signer: &hush_core::Keypair) -> String {
+    URL_SAFE_NO_PAD.encode(signer.public_key().as_bytes())
+}
+
+fn sign_manifest_issuer(
+    unsigned_for_sig: &Value,
+    signer: &hush_core::Keypair,
+    signed_at: String,
+) -> Result<ManifestIssuer> {
+    let canonical = hush_core::canonicalize_json(unsigned_for_sig)?;
+    let sig = signer.sign(canonical.as_bytes());
+    Ok(ManifestIssuer {
+        public_key: manifest_public_key(signer),
+        signature: URL_SAFE_NO_PAD.encode(sig.to_bytes()),
+        signed_at,
+    })
+}
+
+fn generic_manifest_signature_payload(payload: GenericManifestPayload<'_>) -> Value {
+    let mut unsigned_for_sig = serde_json::json!({
+        "exportId": payload.export_id,
+        "subject": {
+            "kind": &payload.subject.kind,
+            "id": &payload.subject.id,
+        },
+        "generatedAt": payload.generated_at,
+        "entryCount": payload.entry_count,
+        "merkleRoot": payload.merkle_root,
+        "issuer": {
+            "publicKey": payload.public_key,
+            "signedAt": payload.signed_at,
+        },
+    });
+
+    if let Some(extra_metadata) = payload.metadata.cloned() {
+        if let Some(obj) = unsigned_for_sig.as_object_mut() {
+            obj.insert("metadata".to_string(), extra_metadata);
+        }
+    }
+
+    unsigned_for_sig
+}
+
+fn evidence_manifest_signature_payload(payload: EvidenceManifestPayload<'_>) -> Value {
+    let mut manifest_value = serde_json::json!({
+        "exportId": payload.export_id,
+        "certificationId": payload.certification_id,
+        "generatedAt": payload.generated_at,
+        "eventCount": payload.event_count,
+        "merkleRoot": payload.merkle_root,
+        "issuer": {
+            "publicKey": payload.public_key,
+            "signedAt": payload.signed_at,
+        },
+    });
+
+    if let (Some(start), Some(end)) = (
+        payload.request.date_start.as_ref(),
+        payload.request.date_end.as_ref(),
+    ) {
+        if let Some(obj) = manifest_value.as_object_mut() {
+            obj.insert(
+                "dateRange".to_string(),
+                serde_json::json!({ "start": start, "end": end }),
+            );
+        }
+    }
+
+    if let Some(tpl) = payload.request.compliance_template.as_ref() {
+        if let Some(obj) = manifest_value.as_object_mut() {
+            obj.insert("complianceTemplate".to_string(), Value::String(tpl.clone()));
+        }
+    }
+
+    manifest_value
+}
+
+#[cfg(test)]
+fn verify_manifest_signature(unsigned_for_sig: &Value, issuer: &ManifestIssuer) -> Result<bool> {
+    let pubkey_bytes = URL_SAFE_NO_PAD
+        .decode(&issuer.public_key)
+        .map_err(|e| crate::Error::InvalidInput(format!("invalid issuer public key: {e}")))?;
+    let pubkey_bytes: [u8; 32] = pubkey_bytes.try_into().map_err(|_| {
+        crate::Error::InvalidInput("issuer public key must be 32 bytes".to_string())
+    })?;
+    let pubkey = hush_core::PublicKey::from_bytes(&pubkey_bytes)?;
+
+    let sig_bytes = URL_SAFE_NO_PAD
+        .decode(&issuer.signature)
+        .map_err(|e| crate::Error::InvalidInput(format!("invalid issuer signature: {e}")))?;
+    let sig_bytes: [u8; 64] = sig_bytes
+        .try_into()
+        .map_err(|_| crate::Error::InvalidInput("issuer signature must be 64 bytes".to_string()))?;
+    let sig = hush_core::Signature::from_bytes(&sig_bytes);
+    let canonical = hush_core::canonicalize_json(unsigned_for_sig)?;
+    Ok(pubkey.verify(canonical.as_bytes(), &sig))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Read;
+
+    use tempfile::tempdir;
+    use zip::ZipArchive;
+
+    use super::*;
+
+    #[test]
+    fn generic_bundle_manifest_signature_verifies() -> Result<()> {
+        let tempdir = tempdir()?;
+        let signer = hush_core::Keypair::generate();
+        let subject = GenericEvidenceBundleSubject {
+            kind: "case".to_string(),
+            id: "case-1".to_string(),
+        };
+        let metadata = Some(serde_json::json!({ "tenant": "acme" }));
+        let generated_at = "2026-03-06T12:00:00Z";
+        let entries = vec![
+            GenericEvidenceBundleEntry {
+                path: "events/a.json".to_string(),
+                bytes: br#"{"id":"a"}"#.to_vec(),
+            },
+            GenericEvidenceBundleEntry {
+                path: "events/b.json".to_string(),
+                bytes: br#"{"id":"b"}"#.to_vec(),
+            },
+        ];
+
+        let output = build_signed_evidence_bundle_zip(
+            tempdir.path(),
+            "exp-test",
+            subject.clone(),
+            generated_at,
+            metadata.clone(),
+            &entries,
+            &signer,
+        )?;
+
+        let file = File::open(output.file_path)?;
+        let mut archive = ZipArchive::new(file)?;
+        let mut manifest_file = archive.by_name("manifest.json")?;
+        let mut manifest_json = String::new();
+        manifest_file.read_to_string(&mut manifest_json)?;
+        let manifest: GenericEvidenceBundleManifest = serde_json::from_str(&manifest_json)?;
+
+        let unsigned = generic_manifest_signature_payload(GenericManifestPayload {
+            export_id: &manifest.export_id,
+            subject: &manifest.subject,
+            generated_at: &manifest.generated_at,
+            entry_count: manifest.entry_count as usize,
+            merkle_root: &manifest.merkle_root,
+            metadata: manifest.metadata.as_ref(),
+            public_key: &manifest.issuer.public_key,
+            signed_at: &manifest.issuer.signed_at,
+        });
+        assert!(
+            verify_manifest_signature(&unsigned, &manifest.issuer)?,
+            "manifest signature should verify"
+        );
+        assert_eq!(manifest.merkle_root, output.merkle_root);
+        Ok(())
+    }
 }

@@ -817,6 +817,7 @@ fn fleet_kind_to_str(kind: FleetEventKind) -> &'static str {
         FleetEventKind::GuardDecision => "guard_decision",
         FleetEventKind::ProcessExec => "process_exec",
         FleetEventKind::ProcessExit => "process_exit",
+        FleetEventKind::ProcessKprobe => "process_kprobe",
         FleetEventKind::NetworkFlow => "network_flow",
         FleetEventKind::ScanResult => "scan_result",
         FleetEventKind::JoinCompleted => "join_completed",
