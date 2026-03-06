@@ -28,6 +28,7 @@ function createState(): AppState {
     hushdReconnectAttempts: 0,
     hushdDroppedEvents: 0,
     recentEvents: [],
+    recentAuditPreview: [],
     auditLog: createInitialAuditLogState(),
     auditStats: null,
     activePolicy: null,

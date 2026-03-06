@@ -2,6 +2,7 @@
  * Security Screen - Security overview with hushd connection status
  */
 
+import type { AuditEvent } from "../../hushd"
 import { THEME } from "../theme"
 import type { Screen, ScreenContext } from "../types"
 import { renderBox } from "../components/box"
@@ -31,6 +32,85 @@ export const securityScreen: Screen = {
   },
 }
 
+function truncateMiddle(value: string, maxLength: number): string {
+  if (value.length <= maxLength) {
+    return value
+  }
+
+  const head = Math.max(5, Math.floor((maxLength - 1) / 2))
+  const tail = Math.max(5, maxLength - head - 1)
+  return `${value.slice(0, head)}…${value.slice(-tail)}`
+}
+
+type SecurityFeedSource = "live" | "audit"
+
+function formatAuditPreviewTime(iso: string): string {
+  const parsed = new Date(iso)
+  if (Number.isNaN(parsed.getTime())) {
+    return iso.slice(0, 8)
+  }
+
+  return parsed.toTimeString().slice(0, 8)
+}
+
+function renderAuditPreviewRow(event: AuditEvent, width: number): string {
+  const icon = event.decision === "blocked" ? `${THEME.error}✗` : `${THEME.success}✓`
+  const label = event.event_type === "report_export" ? "report" : event.action_type
+  const target = truncateMiddle(event.target ?? event.message ?? event.id, Math.max(10, width - 24))
+  const right = `${THEME.dim}${formatAuditPreviewTime(event.timestamp)}${THEME.reset}`
+  return joinColumns(
+    `${icon}${THEME.reset} ${THEME.muted}${label}${THEME.reset} ${THEME.white}${target}${THEME.reset}`,
+    right,
+    width,
+  )
+}
+
+function renderLiveEventRow(
+  actionType: string | undefined,
+  targetValue: string | undefined,
+  guard: string | undefined,
+  decision: string | undefined,
+  width: number,
+): string {
+  const icon = decision === "deny" ? `${THEME.error}✗` : `${THEME.success}✓`
+  const target = truncateMiddle(targetValue ?? "", Math.max(10, width - 28))
+  const right = guard ? `${THEME.dim}${guard}${THEME.reset}` : `${THEME.dim}stream${THEME.reset}`
+  return joinColumns(
+    `${icon}${THEME.reset} ${THEME.muted}${actionType ?? "check"}${THEME.reset} ${THEME.white}${target}${THEME.reset}`,
+    right,
+    width,
+  )
+}
+
+function getRenderedRecentEventLines(ctx: ScreenContext, width: number, maxEvents: number): {
+  source: SecurityFeedSource | null
+  lines: string[]
+} {
+  const liveChecks = ctx.state.recentEvents
+    .filter((evt) => evt.type === "check")
+    .slice(0, maxEvents)
+
+  if (liveChecks.length > 0) {
+    return {
+      source: "live",
+      lines: liveChecks.map((evt) => {
+        const d = evt.data as { action_type?: string; target?: string; guard?: string; decision?: string }
+        return renderLiveEventRow(d.action_type, d.target, d.guard, d.decision, width)
+      }),
+    }
+  }
+
+  const auditPreview = ctx.state.recentAuditPreview.slice(0, maxEvents)
+  if (auditPreview.length > 0) {
+    return {
+      source: "audit",
+      lines: auditPreview.map((event) => renderAuditPreviewRow(event, width)),
+    }
+  }
+
+  return { source: null, lines: [] }
+}
+
 function renderEmptyRecentEventsState(ctx: ScreenContext, width: number): string[] {
   const { state } = ctx
 
@@ -50,7 +130,7 @@ function renderEmptyRecentEventsState(ctx: ScreenContext, width: number): string
         return `${THEME.dim}Recent events unavailable because hushd is offline.${THEME.reset}`
       case "connected":
       default:
-        return `${THEME.muted}No events yet.${THEME.reset}`
+        return `${THEME.muted}No recent checks are visible in the live stream or audit preview.${THEME.reset}`
     }
   })()
 
@@ -132,29 +212,20 @@ function renderPostureCard(ctx: ScreenContext, boxWidth: number): string[] {
 }
 
 function renderRecentEventsCard(ctx: ScreenContext, boxWidth: number, availableHeight: number): string[] {
-  const { state } = ctx
   const contentWidth = boxWidth - 4
   const content: string[] = []
-  const maxEvents = Math.min(state.recentEvents.length, Math.max(3, availableHeight - 6))
+  const maxEvents = Math.max(3, availableHeight - 7)
+  const feed = getRenderedRecentEventLines(ctx, contentWidth, maxEvents)
 
-  if (maxEvents === 0) {
+  if (feed.lines.length === 0) {
     content.push(...renderEmptyRecentEventsState(ctx, contentWidth))
   } else {
-    for (let i = 0; i < maxEvents; i++) {
-      const evt = state.recentEvents[i]
-      if (evt.type !== "check") {
-        continue
-      }
-
-      const d = evt.data as { action_type?: string; target?: string; guard?: string; decision?: string }
-      const icon = d.decision === "deny" ? `${THEME.error}✗` : `${THEME.success}✓`
-      const target = (d.target ?? "").length > 25 ? "…" + (d.target ?? "").slice(-24) : (d.target ?? "")
-      content.push(joinColumns(
-        `${icon}${THEME.reset} ${THEME.muted}${d.action_type ?? "check"}${THEME.reset} ${THEME.white}${target}${THEME.reset}`,
-        `${THEME.dim}${d.guard ?? ""}${THEME.reset}`,
-        contentWidth,
-      ))
-    }
+    const sourceLabel = feed.source === "live"
+      ? `${THEME.dim}source:${THEME.reset} ${THEME.success}live hushd stream${THEME.reset}`
+      : `${THEME.dim}source:${THEME.reset} ${THEME.secondary}recent audit log${THEME.reset}`
+    content.push(sourceLabel)
+    content.push("")
+    content.push(...feed.lines)
   }
 
   return renderBox("Recent Events", content, boxWidth, THEME, {

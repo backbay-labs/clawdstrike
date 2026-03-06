@@ -80,6 +80,7 @@ function createState(): AppState {
     hushdReconnectAttempts: 0,
     hushdDroppedEvents: 0,
     recentEvents: [],
+    recentAuditPreview: [],
     auditLog: createInitialAuditLogState(),
     auditStats: null,
     activePolicy: null,
@@ -463,6 +464,32 @@ describe("hunt report screen", () => {
     expect(stripAnsi(state.hunt.report.statusMessage ?? "")).toContain("Exported report bundle:")
   })
 
+  test("exports a zero-evidence scan report from the screen", async () => {
+    const state = createState()
+    updateInvestigation(state, {
+      origin: "scan",
+      title: "MCP Scan Explorer",
+      summary: "8 path(s) scanned for MCP exposure and policy drift.",
+      query: null,
+      events: [],
+      findings: ["warning: Unused MCP server configuration detected"],
+    })
+    state.hunt.report.report = buildInvestigationReport(state)
+
+    const app = new TestApp(tempDir)
+    const ctx = createContext(state, app, 100, 24)
+
+    expect(huntReportScreen.handleInput("x", ctx)).toBe(true)
+    await Bun.sleep(25)
+
+    const reportDir = path.join(tempDir, ".clawdstrike", "reports")
+    const entries = await fs.readdir(reportDir)
+
+    expect(entries.some((entry) => entry.endsWith(".json"))).toBe(true)
+    expect(entries.some((entry) => entry.endsWith(".md"))).toBe(true)
+    expect(stripAnsi(state.hunt.report.statusMessage ?? "")).toContain("Exported report bundle:")
+  })
+
   test("opens exported reports from history", async () => {
     const state = createState()
     updateInvestigation(state, {
@@ -826,6 +853,34 @@ describe("security screen", () => {
 
     expect(rendered).toContain("Policy")
     expect(rendered).toContain("guards: 1 active")
+  })
+
+  test("falls back to recent audit history when the live stream is quiet", () => {
+    const state = createState()
+    state.hushdStatus = "connected"
+    state.recentAuditPreview = [
+      {
+        id: "audit-preview-1",
+        timestamp: new Date("2026-03-06T06:00:00Z").toISOString(),
+        event_type: "report_export",
+        action_type: "report_export",
+        decision: "blocked",
+        target: "/Users/connor/very/long/path/to/generated/report-export-validation.md",
+        guard: null,
+        severity: "warning",
+        message: "report export preview",
+        session_id: "session-preview-1",
+        agent_id: "agent-preview-1",
+        metadata: {},
+      },
+    ]
+
+    const app = new TestApp(tempDir)
+    const rendered = stripAnsi(securityScreen.render(createContext(state, app, 120, 30)))
+
+    expect(rendered).toContain("source: recent audit log")
+    expect(rendered).toContain("report")
+    expect(rendered).toContain("validation.md")
   })
 })
 

@@ -108,6 +108,7 @@ export class TUIApp implements AppController {
       hushdReconnectAttempts: 0,
       hushdDroppedEvents: 0,
       recentEvents: [],
+      recentAuditPreview: [],
       auditLog: createInitialAuditLogState(),
       auditStats: null,
       activePolicy: null,
@@ -253,6 +254,7 @@ export class TUIApp implements AppController {
     this.state.hushdStatus = "connecting"
     this.state.hushdLastError = null
     this.state.securityError = null
+    this.state.recentAuditPreview = []
     this.render()
 
     client.probe()
@@ -263,20 +265,23 @@ export class TUIApp implements AppController {
           this.state.hushdStatus = "disconnected"
           this.state.hushdLastError = "health probe failed"
           this.state.securityError = "hushd is unreachable."
+          this.state.recentAuditPreview = []
           return
         }
 
-        const [policyResult, statsResult] = await Promise.all([
+        const [policyResult, statsResult, previewResult] = await Promise.all([
           client.getPolicyDetailed(),
           client.getAuditStatsDetailed(),
+          client.getAuditDetailed({ limit: 6 }),
         ])
-        const unauthorized = [policyResult.status, statsResult.status].some(
+        const unauthorized = [policyResult.status, statsResult.status, previewResult.status].some(
           (status) => status === 401 || status === 403,
         )
         const errors = [policyResult.error, statsResult.error].filter(Boolean)
 
         this.state.activePolicy = policyResult.data ?? null
         this.state.auditStats = statsResult.data ?? null
+        this.state.recentAuditPreview = previewResult.data?.events ?? []
         this.state.hushdConnected = !unauthorized
         this.state.hushdStatus = unauthorized
           ? "unauthorized"
@@ -334,6 +339,7 @@ export class TUIApp implements AppController {
         this.state.hushdStatus = "error"
         this.state.hushdLastError = err instanceof Error ? err.message : String(err)
         this.state.securityError = this.state.hushdLastError
+        this.state.recentAuditPreview = []
       })
       .finally(() => {
         this.render()

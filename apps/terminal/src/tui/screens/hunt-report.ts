@@ -404,6 +404,34 @@ export const huntReportScreen: Screen = {
 
     if (!rs.report) return false
 
+    // Copy report JSON to clipboard
+    if (key === "c") {
+      const json = JSON.stringify(rs.report, null, 2)
+      try {
+        const proc = Bun.spawn(["pbcopy"], { stdin: "pipe" })
+        proc.stdin.write(json)
+        proc.stdin.end()
+        ctx.state.hunt.report = {
+          ...rs,
+          error: null,
+          statusMessage: `${THEME.success}Copied report JSON to clipboard.${THEME.reset}`,
+        }
+      } catch {
+        ctx.state.hunt.report = {
+          ...rs,
+          error: "Clipboard export failed.",
+          statusMessage: null,
+        }
+      }
+      ctx.app.render()
+      return true
+    }
+
+    if (key === "x") {
+      void exportCurrentReport(ctx)
+      return true
+    }
+
     const evidenceCount = rs.report.evidence.length
     if (evidenceCount === 0) return false
 
@@ -476,34 +504,6 @@ export const huntReportScreen: Screen = {
         list: viewport,
       }
       ctx.app.render()
-      return true
-    }
-
-    // Copy report JSON to clipboard
-    if (key === "c") {
-      const json = JSON.stringify(rs.report, null, 2)
-      try {
-        const proc = Bun.spawn(["pbcopy"], { stdin: "pipe" })
-        proc.stdin.write(json)
-        proc.stdin.end()
-        ctx.state.hunt.report = {
-          ...rs,
-          error: null,
-          statusMessage: `${THEME.success}Copied report JSON to clipboard.${THEME.reset}`,
-        }
-      } catch {
-        ctx.state.hunt.report = {
-          ...rs,
-          error: "Clipboard export failed.",
-          statusMessage: null,
-        }
-      }
-      ctx.app.render()
-      return true
-    }
-
-    if (key === "x") {
-      void exportCurrentReport(ctx)
       return true
     }
 

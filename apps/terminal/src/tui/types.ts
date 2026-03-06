@@ -343,6 +343,7 @@ export interface AppState {
   hushdReconnectAttempts: number
   hushdDroppedEvents: number
   recentEvents: DaemonEvent[]
+  recentAuditPreview: AuditEvent[]
   auditLog: AuditLogState
   auditStats: AuditStats | null
   activePolicy: PolicyResponse | null
