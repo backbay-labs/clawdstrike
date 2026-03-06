@@ -1,4 +1,5 @@
 use chrono::Utc;
+use hunt_query::query::EventSource;
 use hunt_query::timeline::TimelineEvent;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -259,9 +260,48 @@ fn sigma_preview_to_native_rule(source_text: &str) -> Result<String> {
         .next()
         .and_then(|(_, value)| value.as_str())
         .unwrap_or(".*");
+    let source = sigma_preview_source(&parsed);
     Ok(format!(
-        "schema: clawdstrike.hunt.correlation.v1\nname: \"{title}\"\nseverity: {severity}\ndescription: \"Sigma compatibility preview\"\nwindow: {timeframe}\nconditions:\n  - source: receipt\n    target_pattern: \"{target_pattern}\"\n    bind: sigma_selection\noutput:\n  title: \"{title}\"\n  evidence:\n    - sigma_selection\n"
+        "schema: clawdstrike.hunt.correlation.v1\nname: \"{title}\"\nseverity: {severity}\ndescription: \"Sigma compatibility preview\"\nwindow: {timeframe}\nconditions:\n  - source: {source}\n    target_pattern: \"{target_pattern}\"\n    bind: sigma_selection\noutput:\n  title: \"{title}\"\n  evidence:\n    - sigma_selection\n"
     ))
+}
+
+fn sigma_preview_source(parsed: &Value) -> EventSource {
+    let logsource = parsed.get("logsource").and_then(Value::as_object);
+    let category = logsource
+        .and_then(|logsource| logsource.get("category"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let product = logsource
+        .and_then(|logsource| logsource.get("product"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let service = logsource
+        .and_then(|logsource| logsource.get("service"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    match category.as_str() {
+        "process_creation" | "process_access" | "image_load" | "file_event" | "registry_event" => {
+            EventSource::Tetragon
+        }
+        "network_connection" | "dns_query" | "dns" | "network" | "proxy" => EventSource::Hubble,
+        _ if matches!(
+            product.as_str(),
+            "linux" | "windows" | "macos" | "endpoint" | "container"
+        ) =>
+        {
+            EventSource::Tetragon
+        }
+        _ if matches!(service.as_str(), "dns" | "network" | "proxy") => EventSource::Hubble,
+        _ => EventSource::Receipt,
+    }
 }
 
 fn severity_label(severity: RuleSeverity) -> &'static str {
@@ -322,6 +362,13 @@ mod tests {
     }
 
     #[test]
+    fn sigma_preview_source_uses_logsource_category() {
+        let sigma = "title: Suspicious Access\nlogsource:\n  category: process_creation\ndetection:\n  selection:\n    CommandLine: secret\n  condition: selection\n";
+        let preview = sigma_preview_to_native_rule(sigma).expect("build preview");
+        assert!(preview.contains("source: tetragon"));
+    }
+
+    #[test]
     fn native_rule_test_returns_findings() {
         let yaml = "schema: clawdstrike.hunt.correlation.v1\nname: test\nseverity: high\ndescription: test\nwindow: 30s\nconditions:\n  - source: receipt\n    target_pattern: secret\n    bind: one\noutput:\n  title: test finding\n  evidence:\n    - one\n";
         let result = test_rule_source(
@@ -345,6 +392,7 @@ mod tests {
     fn sigma_preview_test_uses_native_engine() {
         let sigma = "title: Suspicious Access\nlevel: high\nlogsource:\n  category: process_creation\ndetection:\n  selection:\n    CommandLine: secret\n  condition: selection\n  timeframe: 30s\n";
         let mut event = sample_event("read secret file");
+        event.source = EventSource::Tetragon;
         event.timestamp += Duration::seconds(1);
         let result = test_rule_source("sigma", sigma, &[event]).expect("sigma test");
         assert!(result.valid);

@@ -111,17 +111,20 @@ pub fn build_ioc_database(request: &IocMatchRequest) -> Result<IocDatabase> {
 pub fn match_hunt_events(db: &IocDatabase, events: &[HuntEvent]) -> Vec<IocEventMatch> {
     events
         .iter()
-        .filter_map(|event| {
-            let timeline_event = event.to_timeline_event()?;
-            let first = crate::ioc::match_event(db, &timeline_event)
+        .flat_map(|event| {
+            let Some(timeline_event) = event.to_timeline_event() else {
+                return Vec::new().into_iter();
+            };
+            crate::ioc::match_event(db, &timeline_event)
                 .into_iter()
-                .next()?;
-            Some(IocEventMatch {
-                event_id: event.event_id.clone(),
-                summary: event.summary.clone(),
-                match_field: first.match_field,
-                matched_iocs: first.matched_iocs,
-            })
+                .map(|matched| IocEventMatch {
+                    event_id: event.event_id.clone(),
+                    summary: event.summary.clone(),
+                    match_field: matched.match_field,
+                    matched_iocs: matched.matched_iocs,
+                })
+                .collect::<Vec<_>>()
+                .into_iter()
         })
         .collect()
 }
@@ -225,5 +228,31 @@ output:
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].event_id, "evt-3");
         assert_eq!(matches[0].matched_iocs[0].indicator, "evil.com");
+    }
+
+    #[test]
+    fn match_hunt_events_preserves_multiple_indicator_matches() {
+        let request = IocMatchRequest {
+            indicators: vec!["evil.com".to_string(), "10.0.0.9".to_string()],
+            stix_bundle: None,
+            query: None,
+        };
+        let db = build_ioc_database(&request).expect("build IOC db");
+        let matches = match_hunt_events(
+            &db,
+            &[make_event(
+                "evt-1",
+                "process_exec curl evil.com/payload",
+                Some("connect 10.0.0.9"),
+            )],
+        );
+
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0].event_id, "evt-1");
+        assert_eq!(matches[0].match_field, "summary");
+        assert_eq!(matches[0].matched_iocs[0].indicator, "evil.com");
+        assert_eq!(matches[1].event_id, "evt-1");
+        assert_eq!(matches[1].match_field, "process");
+        assert_eq!(matches[1].matched_iocs[0].indicator, "10.0.0.9");
     }
 }
