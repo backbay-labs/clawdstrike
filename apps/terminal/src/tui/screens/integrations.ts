@@ -5,8 +5,9 @@
 import { THEME } from "../theme"
 import type { Screen, ScreenContext } from "../types"
 import type { HealthStatus } from "../../health"
+import { renderBox } from "../components/box"
+import { centerBlock, centerLine, joinColumns } from "../components/layout"
 import { renderSurfaceHeader } from "../components/surface-header"
-import { fitString } from "../components/types"
 
 export const integrationsScreen: Screen = {
   render(ctx: ScreenContext): string {
@@ -35,9 +36,9 @@ function renderIntegrationsScreen(ctx: ScreenContext): string {
   const lines: string[] = []
   const health = state.health
 
-  const boxWidth = Math.min(65, width - 10)
-  const boxPad = Math.max(0, Math.floor((width - boxWidth) / 2))
+  const boxWidth = Math.min(72, width - 10)
   const startY = Math.max(2, Math.floor(height / 6))
+  const contentWidth = boxWidth - 4
 
   lines.push(...renderSurfaceHeader("integrations", "Integrations", width, THEME))
 
@@ -45,72 +46,65 @@ function renderIntegrationsScreen(ctx: ScreenContext): string {
     lines.push("")
   }
 
-  lines.push(" ".repeat(boxPad) + THEME.dim + "╔" + "═".repeat(boxWidth - 2) + "╗" + THEME.reset)
-  lines.push(" ".repeat(boxPad) + THEME.dim + "║" + " ".repeat(boxWidth - 2) + "║" + THEME.reset)
+  const content: string[] = []
 
   const runtimeLines = [
-    `  ${THEME.secondary}◇${THEME.reset} ${THEME.white}${THEME.bold}Runtime${THEME.reset}`,
-    fitString(
-      `    source: ${THEME.white}${state.runtimeInfo?.source ?? "unknown"}${THEME.reset}` +
-      `  ${THEME.dim}hushd:${THEME.reset} ${THEME.white}${state.hushdStatus}${THEME.reset}`,
-      boxWidth - 2,
+    `${THEME.secondary}${THEME.bold}Runtime${THEME.reset}`,
+    joinColumns(
+      `${THEME.dim}source:${THEME.reset} ${THEME.white}${state.runtimeInfo?.source ?? "unknown"}${THEME.reset}`,
+      `${THEME.dim}hushd:${THEME.reset} ${THEME.white}${state.hushdStatus}${THEME.reset}`,
+      contentWidth,
     ),
-    fitString(
-      `    entry: ${THEME.dim}${state.runtimeInfo?.scriptPath ?? "unknown"}${THEME.reset}`,
-      boxWidth - 2,
-    ),
+    `${THEME.dim}entry:${THEME.reset} ${THEME.muted}${state.runtimeInfo?.scriptPath ?? "unknown"}${THEME.reset}`,
   ]
-  for (const line of runtimeLines) {
-    const plain = line.replace(/\x1b\[[0-9;]*m/g, "")
-    lines.push(" ".repeat(boxPad) + THEME.dim + "║" + THEME.reset + line + " ".repeat(Math.max(0, boxWidth - plain.length - 2)) + THEME.dim + "║" + THEME.reset)
-  }
+  content.push(...runtimeLines)
   if (state.securityError) {
-    const line = fitString(`    ${THEME.warning}${state.securityError}${THEME.reset}`, boxWidth - 2)
-    const plain = line.replace(/\x1b\[[0-9;]*m/g, "")
-    lines.push(" ".repeat(boxPad) + THEME.dim + "║" + THEME.reset + line + " ".repeat(Math.max(0, boxWidth - plain.length - 2)) + THEME.dim + "║" + THEME.reset)
+    content.push(`${THEME.warning}${state.securityError}${THEME.reset}`)
   }
-  lines.push(" ".repeat(boxPad) + THEME.dim + "║" + " ".repeat(boxWidth - 2) + "║" + THEME.reset)
 
   const addSection = (label: string, items: HealthStatus[], color: string) => {
-    lines.push(" ".repeat(boxPad) + THEME.dim + "║  " + THEME.reset + THEME.secondary + "◇ " + THEME.reset + THEME.white + THEME.bold + label + THEME.reset + " ".repeat(boxWidth - label.length - 6) + THEME.dim + "║" + THEME.reset)
+    content.push("")
+    content.push(`${THEME.secondary}${THEME.bold}${label}${THEME.reset}`)
 
     for (const item of items) {
       const icon = item.available ? `${color}◆${THEME.reset}` : `${THEME.dim}◇${THEME.reset}`
-      const name = item.name.toLowerCase().padEnd(12)
-      const version = item.available ? (item.version || "").padEnd(12) : ""
-      const latency = item.available && item.latency ? `${THEME.muted}${item.latency}ms${THEME.reset}` : ""
-      const error = !item.available && item.error ? THEME.dim + item.error + THEME.reset : ""
-
-      const content = `    ${icon} ${THEME.muted}${name}${THEME.reset}${version}${latency}${error}`
-      const contentLen = `    ◆ ${item.name.toLowerCase().padEnd(12)}${version}${item.latency ? `${item.latency}ms` : ""}${item.error || ""}`.length
-      const rightPad = Math.max(0, boxWidth - contentLen - 3)
-
-      lines.push(" ".repeat(boxPad) + THEME.dim + "║" + THEME.reset + content + " ".repeat(rightPad) + THEME.dim + "║" + THEME.reset)
+      const left = `${icon} ${THEME.white}${item.name.toLowerCase()}${THEME.reset}`
+      const detail = item.available
+        ? `${item.version ?? "available"}${item.latency ? `  ${item.latency}ms` : ""}`
+        : item.error ?? "unavailable"
+      content.push(joinColumns(
+        left,
+        `${item.available ? THEME.muted : THEME.dim}${detail}${THEME.reset}`,
+        contentWidth,
+      ))
     }
-
-    lines.push(" ".repeat(boxPad) + THEME.dim + "║" + " ".repeat(boxWidth - 2) + "║" + THEME.reset)
   }
 
   if (state.healthChecking) {
-    lines.push(" ".repeat(boxPad) + THEME.dim + "║  " + THEME.secondary + "◈" + THEME.reset + THEME.muted + " Divining system state..." + THEME.reset + " ".repeat(boxWidth - 30) + THEME.dim + "║" + THEME.reset)
-    lines.push(" ".repeat(boxPad) + THEME.dim + "║" + " ".repeat(boxWidth - 2) + "║" + THEME.reset)
+    content.push("")
+    content.push(`${THEME.secondary}◈${THEME.reset} ${THEME.muted}Divining system state...${THEME.reset}`)
   } else if (health) {
     addSection("Security", health.security, THEME.warning)
     addSection("AI Toolchains", health.ai, THEME.accent)
     addSection("Infrastructure", health.infra, THEME.white)
     addSection("MCP Server", health.mcp, THEME.success)
   } else {
-    lines.push(" ".repeat(boxPad) + THEME.dim + "║  " + THEME.muted + "No readings available. Press r to divine." + THEME.reset + " ".repeat(boxWidth - 45) + THEME.dim + "║" + THEME.reset)
-    lines.push(" ".repeat(boxPad) + THEME.dim + "║" + " ".repeat(boxWidth - 2) + "║" + THEME.reset)
+    content.push("")
+    content.push(`${THEME.muted}No readings available. Press r to refresh.${THEME.reset}`)
   }
 
-  // Help text
-  const helpText = "r refresh  ◆  esc back"
-  const helpPad = Math.max(0, Math.floor((boxWidth - helpText.length) / 2))
-  lines.push(" ".repeat(boxPad) + THEME.dim + "║" + " ".repeat(helpPad) + helpText + " ".repeat(boxWidth - helpPad - helpText.length - 2) + "║" + THEME.reset)
-
-  // Bottom border
-  lines.push(" ".repeat(boxPad) + THEME.dim + "╚" + "═".repeat(boxWidth - 2) + "╝" + THEME.reset)
+  const card = renderBox("System Status", content, boxWidth, THEME, {
+    style: "rounded",
+    titleAlign: "left",
+    padding: 1,
+  })
+  lines.push(...centerBlock(card, width))
+  lines.push("")
+  lines.push(centerLine(
+    `${THEME.dim}r${THEME.reset}${THEME.muted} refresh${THEME.reset}  ` +
+      `${THEME.dim}esc${THEME.reset}${THEME.muted} back${THEME.reset}`,
+    width,
+  ))
 
   // Fill remaining
   for (let i = lines.length; i < height - 1; i++) {

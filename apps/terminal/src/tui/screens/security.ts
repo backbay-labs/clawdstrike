@@ -4,8 +4,9 @@
 
 import { THEME } from "../theme"
 import type { Screen, ScreenContext } from "../types"
+import { renderBox } from "../components/box"
+import { centerBlock, centerLine, joinColumns } from "../components/layout"
 import { renderSurfaceHeader } from "../components/surface-header"
-import { fitString } from "../components/types"
 
 export const securityScreen: Screen = {
   render(ctx: ScreenContext): string {
@@ -32,16 +33,15 @@ export const securityScreen: Screen = {
 function renderSecurityScreen(ctx: ScreenContext): string {
   const { state, width, height } = ctx
   const lines: string[] = []
-  const boxWidth = Math.min(75, width - 6)
-  const boxPad = Math.max(0, Math.floor((width - boxWidth) / 2))
+  const boxWidth = Math.min(78, width - 8)
   const startY = Math.max(1, Math.floor(height / 10))
+  const contentWidth = boxWidth - 4
 
   lines.push(...renderSurfaceHeader("security", "Security Overview", width, THEME, state.hushdStatus))
 
   for (let i = lines.length; i < startY; i++) lines.push("")
 
-  lines.push(" ".repeat(boxPad) + THEME.dim + "╔" + "═".repeat(boxWidth - 2) + "╗" + THEME.reset)
-  lines.push(" ".repeat(boxPad) + THEME.dim + "║" + " ".repeat(boxWidth - 2) + "║" + THEME.reset)
+  const content: string[] = []
 
   // Connection status
   const connIcon = state.hushdStatus === "connected"
@@ -51,57 +51,56 @@ function renderSecurityScreen(ctx: ScreenContext): string {
       : state.hushdStatus === "connecting" || state.hushdStatus === "degraded" || state.hushdStatus === "stale"
         ? `${THEME.warning}◆`
         : `${THEME.dim}◇`
-  const connText = state.hushdStatus
-  const connLine = `  ${connIcon}${THEME.reset} hushd: ${THEME.muted}${connText}${THEME.reset}`
-  lines.push(" ".repeat(boxPad) + THEME.dim + "║" + THEME.reset + connLine + " ".repeat(Math.max(0, boxWidth - connText.length - 16)) + THEME.dim + "║" + THEME.reset)
+  content.push(joinColumns(
+    `${connIcon}${THEME.reset} ${THEME.white}${THEME.bold}hushd${THEME.reset}`,
+    `${THEME.muted}${state.hushdStatus}${THEME.reset}`,
+    contentWidth,
+  ))
   if (state.hushdDroppedEvents > 0 || state.hushdReconnectAttempts > 0) {
-    const streamLine = fitString(
+    content.push(
       `  ${THEME.dim}stream:${THEME.reset} dropped ${state.hushdDroppedEvents}  reconnect ${state.hushdReconnectAttempts}`,
-      boxWidth - 2,
     )
-    const plain = streamLine.replace(/\x1b\[[0-9;]*m/g, "")
-    lines.push(" ".repeat(boxPad) + THEME.dim + "║" + THEME.reset + streamLine + " ".repeat(Math.max(0, boxWidth - plain.length - 2)) + THEME.dim + "║" + THEME.reset)
   }
   if (state.hushdLastError) {
-    const errorLine = fitString(`  ${THEME.dim}last error:${THEME.reset} ${THEME.warning}${state.hushdLastError}${THEME.reset}`, boxWidth - 2)
-    const plain = errorLine.replace(/\x1b\[[0-9;]*m/g, "")
-    lines.push(" ".repeat(boxPad) + THEME.dim + "║" + THEME.reset + errorLine + " ".repeat(Math.max(0, boxWidth - plain.length - 2)) + THEME.dim + "║" + THEME.reset)
+    content.push(`  ${THEME.dim}last error:${THEME.reset} ${THEME.warning}${state.hushdLastError}${THEME.reset}`)
   }
 
   // Policy info
   if (state.activePolicy) {
     const p = state.activePolicy
-    const policyLine = `  ${THEME.secondary}◇${THEME.reset} policy: ${THEME.white}${p.name}${THEME.reset} ${THEME.dim}v${p.version}${THEME.reset}`
-    const pLen = `  ◇ policy: ${p.name} v${p.version}`.length
-    lines.push(" ".repeat(boxPad) + THEME.dim + "║" + THEME.reset + policyLine + " ".repeat(Math.max(0, boxWidth - pLen - 2)) + THEME.dim + "║" + THEME.reset)
-    const guardsLine = `    ${THEME.dim}guards: ${p.guards.filter(g => g.enabled).length} active${THEME.reset}`
-    const gLen = `    guards: ${p.guards.filter(g => g.enabled).length} active`.length
-    lines.push(" ".repeat(boxPad) + THEME.dim + "║" + THEME.reset + guardsLine + " ".repeat(Math.max(0, boxWidth - gLen - 2)) + THEME.dim + "║" + THEME.reset)
+    content.push("")
+    content.push(`${THEME.secondary}${THEME.bold}Policy${THEME.reset}`)
+    content.push(joinColumns(
+      `${THEME.white}${p.name}${THEME.reset}`,
+      `${THEME.dim}v${p.version}${THEME.reset}`,
+      contentWidth,
+    ))
+    content.push(`  ${THEME.dim}guards:${THEME.reset} ${THEME.white}${p.guards.filter(g => g.enabled).length}${THEME.reset} active`)
   }
 
   // Stats
   if (state.auditStats) {
     const s = state.auditStats
-    lines.push(" ".repeat(boxPad) + THEME.dim + "║" + " ".repeat(boxWidth - 2) + "║" + THEME.reset)
-    const statsHeader = `  ${THEME.secondary}◇${THEME.reset} ${THEME.white}${THEME.bold}Statistics${THEME.reset}`
-    lines.push(" ".repeat(boxPad) + THEME.dim + "║" + THEME.reset + statsHeader + " ".repeat(Math.max(0, boxWidth - 15)) + THEME.dim + "║" + THEME.reset)
-    const totalLine = `    total: ${THEME.white}${s.total_events}${THEME.reset}  allowed: ${THEME.success}${s.allowed}${THEME.reset}  violations: ${THEME.error}${s.violations}${THEME.reset}`
-    const tLen = `    total: ${s.total_events}  allowed: ${s.allowed}  violations: ${s.violations}`.length
-    lines.push(" ".repeat(boxPad) + THEME.dim + "║" + THEME.reset + totalLine + " ".repeat(Math.max(0, boxWidth - tLen - 2)) + THEME.dim + "║" + THEME.reset)
-    const uptimeLine = `    uptime: ${THEME.white}${s.uptime_secs}s${THEME.reset}  session: ${THEME.dim}${s.session_id}${THEME.reset}`
-    const uLen = `    uptime: ${s.uptime_secs}s  session: ${s.session_id}`.length
-    lines.push(" ".repeat(boxPad) + THEME.dim + "║" + THEME.reset + uptimeLine + " ".repeat(Math.max(0, boxWidth - uLen - 2)) + THEME.dim + "║" + THEME.reset)
+    content.push("")
+    content.push(`${THEME.secondary}${THEME.bold}Statistics${THEME.reset}`)
+    content.push(
+      `  ${THEME.dim}total:${THEME.reset} ${THEME.white}${s.total_events}${THEME.reset}  ` +
+      `${THEME.dim}allowed:${THEME.reset} ${THEME.success}${s.allowed}${THEME.reset}  ` +
+      `${THEME.dim}violations:${THEME.reset} ${THEME.error}${s.violations}${THEME.reset}`,
+    )
+    content.push(
+      `  ${THEME.dim}uptime:${THEME.reset} ${THEME.white}${s.uptime_secs}s${THEME.reset}  ` +
+      `${THEME.dim}session:${THEME.reset} ${THEME.muted}${s.session_id}${THEME.reset}`,
+    )
   }
 
   // Recent events
-  lines.push(" ".repeat(boxPad) + THEME.dim + "║" + " ".repeat(boxWidth - 2) + "║" + THEME.reset)
-  const evtHeader = `  ${THEME.secondary}◇${THEME.reset} ${THEME.white}${THEME.bold}Recent Events${THEME.reset}`
-  lines.push(" ".repeat(boxPad) + THEME.dim + "║" + THEME.reset + evtHeader + " ".repeat(Math.max(0, boxWidth - 19)) + THEME.dim + "║" + THEME.reset)
+  content.push("")
+  content.push(`${THEME.secondary}${THEME.bold}Recent Events${THEME.reset}`)
 
   const maxEvents = Math.min(state.recentEvents.length, height - lines.length - 8)
   if (maxEvents === 0) {
-    const noEvt = `    ${THEME.muted}No events yet${THEME.reset}`
-    lines.push(" ".repeat(boxPad) + THEME.dim + "║" + THEME.reset + noEvt + " ".repeat(Math.max(0, boxWidth - 17)) + THEME.dim + "║" + THEME.reset)
+    content.push(`  ${THEME.muted}No events yet${THEME.reset}`)
   } else {
     for (let i = 0; i < maxEvents; i++) {
       const evt = state.recentEvents[i]
@@ -109,19 +108,27 @@ function renderSecurityScreen(ctx: ScreenContext): string {
         const d = evt.data as { action_type?: string; target?: string; guard?: string; decision?: string }
         const icon = d.decision === "deny" ? `${THEME.error}✗` : `${THEME.success}✓`
         const target = (d.target ?? "").length > 25 ? "…" + (d.target ?? "").slice(-24) : (d.target ?? "")
-        const evtLine = `    ${icon}${THEME.reset} ${THEME.muted}${(d.action_type ?? "").padEnd(7)}${THEME.reset} ${target.padEnd(26)} ${THEME.dim}${d.guard ?? ""}${THEME.reset}`
-        const evtLen = `    ✗ ${(d.action_type ?? "").padEnd(7)} ${target.padEnd(26)} ${d.guard ?? ""}`.length
-        lines.push(" ".repeat(boxPad) + THEME.dim + "║" + THEME.reset + evtLine + " ".repeat(Math.max(0, boxWidth - evtLen - 2)) + THEME.dim + "║" + THEME.reset)
+        content.push(joinColumns(
+          `${icon}${THEME.reset} ${THEME.muted}${d.action_type ?? "check"}${THEME.reset} ${THEME.white}${target}${THEME.reset}`,
+          `${THEME.dim}${d.guard ?? ""}${THEME.reset}`,
+          contentWidth,
+        ))
       }
     }
   }
 
-  // Help
-  lines.push(" ".repeat(boxPad) + THEME.dim + "║" + " ".repeat(boxWidth - 2) + "║" + THEME.reset)
-  const helpText = "r refresh  ◆  esc back"
-  const helpPad = Math.max(0, Math.floor((boxWidth - helpText.length) / 2))
-  lines.push(" ".repeat(boxPad) + THEME.dim + "║" + " ".repeat(helpPad) + helpText + " ".repeat(boxWidth - helpPad - helpText.length - 2) + "║" + THEME.reset)
-  lines.push(" ".repeat(boxPad) + THEME.dim + "╚" + "═".repeat(boxWidth - 2) + "╝" + THEME.reset)
+  const card = renderBox("Security Posture", content, boxWidth, THEME, {
+    style: "rounded",
+    titleAlign: "left",
+    padding: 1,
+  })
+  lines.push(...centerBlock(card, width))
+  lines.push("")
+  lines.push(centerLine(
+    `${THEME.dim}r${THEME.reset}${THEME.muted} refresh${THEME.reset}  ` +
+      `${THEME.dim}esc${THEME.reset}${THEME.muted} back${THEME.reset}`,
+    width,
+  ))
 
   // Fill remaining
   for (let i = lines.length; i < height - 1; i++) lines.push("")

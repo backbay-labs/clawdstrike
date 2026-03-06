@@ -2,6 +2,8 @@
  * Policy Screen - Active policy viewer
  */
 
+import { renderBox } from "../components/box"
+import { centerBlock, centerLine, joinColumns } from "../components/layout"
 import { renderSurfaceHeader } from "../components/surface-header"
 import { THEME } from "../theme"
 import type { Screen, ScreenContext } from "../types"
@@ -32,27 +34,19 @@ function renderPolicyScreen(ctx: ScreenContext): string {
   const { state, width, height } = ctx
   const lines: string[] = []
   const boxWidth = Math.min(65, width - 10)
-  const boxPad = Math.max(0, Math.floor((width - boxWidth) / 2))
+  const contentWidth = boxWidth - 4
 
   lines.push(...renderSurfaceHeader("policy", "Active Policy", width, THEME, state.hushdStatus))
-
-  const title = "⟨ Active Policy ⟩"
-  const titlePadLeft = Math.floor((boxWidth - title.length - 4) / 2)
-  const titlePadRight = boxWidth - title.length - titlePadLeft - 4
-  lines.push(" ".repeat(boxPad) + THEME.dim + "╔═" + "═".repeat(titlePadLeft) + title + "═".repeat(titlePadRight) + "═╗" + THEME.reset)
-  lines.push(" ".repeat(boxPad) + THEME.dim + "║" + " ".repeat(boxWidth - 2) + "║" + THEME.reset)
+  const content: string[] = []
 
   const p = state.activePolicy
   if (!state.hushdConnected || !p) {
-    const msg = !state.hushdConnected
+    content.push(!state.hushdConnected
       ? state.hushdStatus === "unauthorized"
-        ? "  hushd authorization required"
-        : `  hushd ${state.hushdStatus}`
-      : "  No policy loaded"
-    const mLen = msg.length
-    lines.push(" ".repeat(boxPad) + THEME.dim + "║" + THEME.reset + `  ${THEME.muted}${msg.trim()}${THEME.reset}` + " ".repeat(Math.max(0, boxWidth - mLen - 2)) + THEME.dim + "║" + THEME.reset)
+        ? `${THEME.muted}hushd authorization required${THEME.reset}`
+        : `${THEME.muted}hushd ${state.hushdStatus}${THEME.reset}`
+      : `${THEME.muted}No policy loaded${THEME.reset}`)
   } else {
-    // Policy metadata
     const fields = [
       ["Name", p.name],
       ["Version", p.version],
@@ -62,36 +56,43 @@ function renderPolicyScreen(ctx: ScreenContext): string {
     ]
 
     for (const [key, value] of fields) {
-      const fLine = `  ${THEME.muted}${key.padEnd(10)}${THEME.reset}${THEME.white}${value}${THEME.reset}`
-      const fLen = `  ${key.padEnd(10)}${value}`.length
-      lines.push(" ".repeat(boxPad) + THEME.dim + "║" + THEME.reset + fLine + " ".repeat(Math.max(0, boxWidth - fLen - 2)) + THEME.dim + "║" + THEME.reset)
+      content.push(joinColumns(
+        `${THEME.dim}${key}${THEME.reset}`,
+        `${THEME.white}${value}${THEME.reset}`,
+        contentWidth,
+      ))
     }
 
     if (p.extends && p.extends.length > 0) {
-      const eLine = `  ${THEME.muted}Extends   ${THEME.reset}${THEME.dim}${p.extends.join(", ")}${THEME.reset}`
-      const eLen = `  Extends   ${p.extends.join(", ")}`.length
-      lines.push(" ".repeat(boxPad) + THEME.dim + "║" + THEME.reset + eLine + " ".repeat(Math.max(0, boxWidth - eLen - 2)) + THEME.dim + "║" + THEME.reset)
+      content.push(`${THEME.dim}Extends${THEME.reset} ${THEME.muted}${p.extends.join(", ")}${THEME.reset}`)
     }
 
-    // Guards list
-    lines.push(" ".repeat(boxPad) + THEME.dim + "║" + " ".repeat(boxWidth - 2) + "║" + THEME.reset)
-    const guardsHeader = `  ${THEME.secondary}◇${THEME.reset} ${THEME.white}${THEME.bold}Guards${THEME.reset}`
-    lines.push(" ".repeat(boxPad) + THEME.dim + "║" + THEME.reset + guardsHeader + " ".repeat(Math.max(0, boxWidth - 12)) + THEME.dim + "║" + THEME.reset)
+    content.push("")
+    content.push(`${THEME.secondary}${THEME.bold}Guards${THEME.reset}`)
 
     for (const guard of p.guards) {
       const icon = guard.enabled ? `${THEME.success}◆` : `${THEME.dim}◇`
       const status = guard.enabled ? "active" : "disabled"
-      const gLine = `    ${icon}${THEME.reset} ${THEME.muted}${guard.id.padEnd(30)}${THEME.reset}${THEME.dim}${status}${THEME.reset}`
-      const gLen = `    ◆ ${guard.id.padEnd(30)}${status}`.length
-      lines.push(" ".repeat(boxPad) + THEME.dim + "║" + THEME.reset + gLine + " ".repeat(Math.max(0, boxWidth - gLen - 2)) + THEME.dim + "║" + THEME.reset)
+      content.push(joinColumns(
+        `${icon}${THEME.reset} ${THEME.white}${guard.id}${THEME.reset}`,
+        `${THEME.dim}${status}${THEME.reset}`,
+        contentWidth,
+      ))
     }
   }
 
-  lines.push(" ".repeat(boxPad) + THEME.dim + "║" + " ".repeat(boxWidth - 2) + "║" + THEME.reset)
-  const helpText = "r refresh  ◆  esc back"
-  const helpPad = Math.max(0, Math.floor((boxWidth - helpText.length) / 2))
-  lines.push(" ".repeat(boxPad) + THEME.dim + "║" + " ".repeat(helpPad) + helpText + " ".repeat(boxWidth - helpPad - helpText.length - 2) + "║" + THEME.reset)
-  lines.push(" ".repeat(boxPad) + THEME.dim + "╚" + "═".repeat(boxWidth - 2) + "╝" + THEME.reset)
+  const card = renderBox("Policy", content, boxWidth, THEME, {
+    style: "rounded",
+    titleAlign: "left",
+    padding: 1,
+  })
+  lines.push(...centerBlock(card, width))
+  lines.push("")
+  lines.push(centerLine(
+    `${THEME.dim}r${THEME.reset}${THEME.muted} refresh${THEME.reset}  ` +
+      `${THEME.dim}esc${THEME.reset}${THEME.muted} back${THEME.reset}`,
+    width,
+  ))
 
   for (let i = lines.length; i < height - 1; i++) lines.push("")
   return lines.join("\n")

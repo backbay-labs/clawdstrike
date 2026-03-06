@@ -5,6 +5,7 @@
 import { THEME, LOGO, AGENTS, getAnimatedStrike } from "../theme"
 import type { Screen, ScreenContext, Command } from "../types"
 import { renderBox } from "../components/box"
+import { centerBlock, centerLine, joinColumns } from "../components/layout"
 import { getInvestigationCounts, isInvestigationStale } from "../investigation"
 import type { AppState } from "../types"
 import type { CheckEventData, DaemonEvent } from "../../hushd"
@@ -381,61 +382,50 @@ function renderMainContent(ctx: ScreenContext, _commands: Command[]): string {
   }
 
   // Logo - stacked layout: CLAWD on top, STRIKE below
-  const mainWidth = LOGO.main[0].length
-  const strikeWidth = LOGO.strike[0].length
-  const mainPad = Math.max(0, Math.floor((width - mainWidth) / 2))
-  const strikePad = Math.max(0, Math.floor((width - strikeWidth) / 2))
-
   // Render CLAWD lines in crimson
-  for (let i = 0; i < LOGO.main.length; i++) {
-    lines.push(" ".repeat(mainPad) + THEME.accent + LOGO.main[i] + THEME.reset)
-  }
+  lines.push(...centerBlock(
+    LOGO.main.map((line) => `${THEME.accent}${line}${THEME.reset}`),
+    width,
+  ))
 
   // Get animated STRIKE for current frame and render below
   const animatedStrike = getAnimatedStrike(state.animationFrame)
-  for (let i = 0; i < animatedStrike.length; i++) {
-    lines.push(" ".repeat(strikePad) + animatedStrike[i])
-  }
+  lines.push(...centerBlock(animatedStrike, width))
 
   lines.push("")
   lines.push("")
 
   // Hero input box
-  const inputWidth = Math.min(80, width - 8)
-  const inputPad = Math.max(0, Math.floor((width - inputWidth) / 2))
+  const inputWidth = Math.min(78, width - 10)
 
   const prompt = state.promptBuffer
   const placeholder = 'Ask anything... "Fix broken tests"'
   const cursor = prompt ? THEME.secondary + "▎" + THEME.reset : ""
 
-  // Top of input box
-  lines.push(" ".repeat(inputPad) + THEME.dim + "┌" + "─".repeat(inputWidth - 2) + "┐" + THEME.reset)
-
-  // Input line with accent bar
   const innerWidth = inputWidth - 4
   const visiblePrompt = prompt.length > innerWidth - 2
     ? "…" + prompt.slice(-(innerWidth - 3))
     : prompt
   const inputContent = visiblePrompt + cursor
-  const inputPadding = Math.max(0, innerWidth - visiblePrompt.length - 1)
-
-  if (prompt) {
-    lines.push(" ".repeat(inputPad) + THEME.accent + "│" + THEME.reset + " " + THEME.white + inputContent + THEME.reset + " ".repeat(inputPadding) + THEME.dim + "│" + THEME.reset)
-  } else {
-    lines.push(" ".repeat(inputPad) + THEME.accent + "│" + THEME.reset + " " + THEME.dim + placeholder + THEME.reset + " ".repeat(Math.max(0, innerWidth - placeholder.length)) + THEME.dim + "│" + THEME.reset)
-  }
-
-  lines.push(" ".repeat(inputPad) + THEME.dim + "│" + " ".repeat(inputWidth - 2) + "│" + THEME.reset)
-
-  // Agent info line
   const agent = AGENTS[state.agentIndex]
-  const agentLine = `${THEME.accent}${agent.name}${THEME.reset}  ${THEME.muted}${agent.model}${THEME.reset} ${THEME.dim}${agent.provider}${THEME.reset}`
-  const agentTextLen = agent.name.length + 2 + agent.model.length + 1 + agent.provider.length
-  const agentPadding = Math.max(0, inputWidth - 4 - agentTextLen)
-  lines.push(" ".repeat(inputPad) + THEME.dim + "│" + THEME.reset + " " + agentLine + " ".repeat(agentPadding) + THEME.dim + "│" + THEME.reset)
-
-  // Bottom of input box
-  lines.push(" ".repeat(inputPad) + THEME.dim + "└" + "─".repeat(inputWidth - 2) + "┘" + THEME.reset)
+  const inputBox = renderBox(
+    "Dispatch",
+    [
+      prompt
+        ? `${THEME.white}${inputContent}${THEME.reset}`
+        : `${THEME.dim}${placeholder}${THEME.reset}`,
+      "",
+      joinColumns(
+        `${THEME.accent}${agent.name}${THEME.reset}  ${THEME.muted}${agent.model}${THEME.reset} ${THEME.dim}${agent.provider}${THEME.reset}`,
+        `${THEME.dim}tab${THEME.reset} ${THEME.muted}switch agent${THEME.reset}`,
+        inputWidth - 4,
+      ),
+    ],
+    inputWidth,
+    THEME,
+    { style: "rounded", titleAlign: "left", padding: 1 },
+  )
+  lines.push(...centerBlock(inputBox, width))
 
   lines.push("")
 
@@ -444,9 +434,7 @@ function renderMainContent(ctx: ScreenContext, _commands: Command[]): string {
     `${THEME.bold}tab${THEME.reset}${THEME.muted} switch agent${THEME.reset}    ` +
     `${THEME.bold}ctrl+p${THEME.reset}${THEME.muted} commands${THEME.reset}    ` +
     `${THEME.bold}W/X/Q/T/E/H${THEME.reset}${THEME.muted} hunt loop${THEME.reset}`
-  const hintsTextLen = "tab switch agent    ctrl+p commands    W/X/Q/T/E/H hunt loop".length
-  const hintsPad = Math.max(0, Math.floor((width - hintsTextLen) / 2))
-  lines.push(" ".repeat(hintsPad) + hints)
+  lines.push(centerLine(hints, width))
 
   // Security event ticker
   if (state.recentEvents.length > 0) {
@@ -457,26 +445,19 @@ function renderMainContent(ctx: ScreenContext, _commands: Command[]): string {
       const icon = data.decision === "deny" ? THEME.error + "◆" : THEME.success + "◆"
       const target = (data.target ?? "").length > 40 ? "…" + (data.target ?? "").slice(-39) : (data.target ?? "")
       const ticker = `${icon}${THEME.reset} ${data.action_type ?? ""} ${THEME.muted}${target}${THEME.reset} via ${THEME.dim}${data.guard ?? ""}${THEME.reset}`
-      const tickerLen = `◆ ${data.action_type ?? ""} ${target} via ${data.guard ?? ""}`.length
-      const tickerPad = Math.max(0, Math.floor((width - tickerLen) / 2))
-      lines.push(" ".repeat(tickerPad) + ticker)
+      lines.push(centerLine(ticker, width))
     }
   }
 
   // Status message (if any)
   if (state.statusMessage) {
     lines.push("")
-    const statusLen = state.statusMessage.replace(/\x1b\[[0-9;]*m/g, "").length
-    const statusPad = Math.max(0, Math.floor((width - statusLen) / 2))
-    lines.push(" ".repeat(statusPad) + state.statusMessage)
+    lines.push(centerLine(state.statusMessage, width))
   }
 
   if (opsSnapshot) {
     lines.push("")
-    const boxPad = Math.max(0, Math.floor((width - opsSnapshot.boxWidth) / 2))
-    for (const line of opsSnapshot.lines) {
-      lines.push(" ".repeat(boxPad) + line)
-    }
+    lines.push(...centerBlock(opsSnapshot.lines, width))
   }
 
   // Fill remaining space (leave room for status bar)
@@ -505,32 +486,14 @@ function commandStageTag(command: Command): { text: string; plainLength: number 
 function overlayCommandPalette(baseScreen: string, ctx: ScreenContext, commands: Command[]): string {
   const { state, width } = ctx
   const lines = baseScreen.split("\n")
+  const paletteWidth = Math.min(74, width - 12)
+  const startY = 4
+  const contentWidth = paletteWidth - 4
 
-  const paletteWidth = Math.min(70, width - 10)
-  const startX = Math.max(0, Math.floor((width - paletteWidth) / 2))
-  const startY = 3
-
-  const modalBg = "\x1b[48;2;32;32;36m"
-  const highlightBg = "\x1b[48;2;204;153;102m"
-  const highlightFg = "\x1b[38;5;235m"
-
-  const paletteLines: string[] = []
-
-  // Top border (rounded)
-  paletteLines.push(modalBg + THEME.dim + "╭" + "─".repeat(paletteWidth - 2) + "╮" + THEME.reset)
-
-  // Header
-  const title = "Commands"
-  const escHint = "esc"
-  const headerPad = paletteWidth - 4 - title.length - escHint.length
-  paletteLines.push(modalBg + THEME.dim + "│" + THEME.reset + modalBg + " " + THEME.white + THEME.bold + title + THEME.reset + modalBg + " ".repeat(headerPad) + THEME.muted + escHint + " " + THEME.dim + "│" + THEME.reset)
-
-  paletteLines.push(modalBg + THEME.dim + "│" + THEME.reset + modalBg + " ".repeat(paletteWidth - 2) + THEME.dim + "│" + THEME.reset)
-
-  // Search placeholder
-  paletteLines.push(modalBg + THEME.dim + "│" + THEME.reset + modalBg + " " + THEME.dim + "Search" + THEME.reset + modalBg + " ".repeat(paletteWidth - 9) + THEME.dim + "│" + THEME.reset)
-
-  paletteLines.push(modalBg + THEME.dim + "│" + THEME.reset + modalBg + " ".repeat(paletteWidth - 2) + THEME.dim + "│" + THEME.reset)
+  const paletteLines: string[] = [
+    `${THEME.dim}Search:${THEME.reset} ${THEME.muted}shortcut, j/k, enter${THEME.reset}`,
+    "",
+  ]
 
   // Group commands by category
   const categories = [
@@ -545,53 +508,40 @@ function overlayCommandPalette(baseScreen: string, ctx: ScreenContext, commands:
   for (const category of categories) {
     if (category.commands.length === 0) continue
 
-    const catPad = paletteWidth - 3 - category.name.length
-    paletteLines.push(modalBg + THEME.dim + "│" + THEME.reset + modalBg + " " + THEME.secondary + category.name + THEME.reset + modalBg + " ".repeat(catPad) + THEME.dim + "│" + THEME.reset)
+    paletteLines.push(`${THEME.secondary}${THEME.bold}${category.name}${THEME.reset}`)
 
     for (const cmd of category.commands) {
       const isSelected = globalIndex === state.commandIndex
-      const label = cmd.label
-      const shortcut = cmd.key
       const stage = commandStageTag(cmd)
-      const contentWidth = paletteWidth - 4
-
-      if (isSelected) {
-        const labelPad = contentWidth - label.length - stage.plainLength - shortcut.length - 4
-        paletteLines.push(
-          modalBg + THEME.dim + "│" + THEME.reset +
-          highlightBg + highlightFg + " " + THEME.bold + label + THEME.reset +
-          highlightBg + " " + stage.text + THEME.reset +
-          highlightBg + " ".repeat(Math.max(1, labelPad)) +
-          highlightFg + shortcut + " " + THEME.reset +
-          modalBg + THEME.dim + "│" + THEME.reset
-        )
-      } else {
-        const labelPad = contentWidth - label.length - stage.plainLength - shortcut.length - 4
-        paletteLines.push(
-          modalBg + THEME.dim + "│" + THEME.reset +
-          modalBg + " " + THEME.white + label + THEME.reset +
-          modalBg + " " + stage.text + THEME.reset +
-          modalBg + " ".repeat(Math.max(1, labelPad)) +
-          THEME.dim + shortcut + " " + THEME.reset +
-          modalBg + THEME.dim + "│" + THEME.reset
-        )
-      }
+      const left = isSelected
+        ? `${THEME.accent}${THEME.bold}▸${THEME.reset} ${THEME.white}${THEME.bold}${cmd.label}${THEME.reset} ${THEME.dim}${cmd.description}${THEME.reset}`
+        : `${THEME.dim}•${THEME.reset} ${THEME.white}${cmd.label}${THEME.reset} ${THEME.dim}${cmd.description}${THEME.reset}`
+      const right = `${stage.text} ${THEME.dim}${cmd.key}${THEME.reset}`
+      paletteLines.push(joinColumns(left, right, contentWidth))
       globalIndex++
     }
 
-    if (category !== categories[categories.length - 1]) {
-      paletteLines.push(modalBg + THEME.dim + "│" + THEME.reset + modalBg + " ".repeat(paletteWidth - 2) + THEME.dim + "│" + THEME.reset)
-    }
+    paletteLines.push("")
   }
 
-  paletteLines.push(modalBg + THEME.dim + "│" + THEME.reset + modalBg + " ".repeat(paletteWidth - 2) + THEME.dim + "│" + THEME.reset)
-  paletteLines.push(modalBg + THEME.dim + "╰" + "─".repeat(paletteWidth - 2) + "╯" + THEME.reset)
+  while (paletteLines.length > 0 && paletteLines[paletteLines.length - 1] === "") {
+    paletteLines.pop()
+  }
+
+  const palette = centerBlock(
+    renderBox("Commands", paletteLines, paletteWidth, THEME, {
+      style: "rounded",
+      titleAlign: "left",
+      padding: 1,
+    }),
+    width,
+  )
 
   // Overlay palette onto base screen
-  for (let i = 0; i < paletteLines.length; i++) {
+  for (let i = 0; i < palette.length; i++) {
     const lineIndex = startY + i
     if (lineIndex < lines.length) {
-      lines[lineIndex] = " ".repeat(startX) + paletteLines[i]
+      lines[lineIndex] = palette[i]
     }
   }
 
