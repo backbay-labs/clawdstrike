@@ -21,6 +21,7 @@ import type { Screen, ScreenContext, AppState, InputMode, Command, AppController
 import {
   createInitialAuditLogState,
   createInitialDispatchSheetState,
+  createInitialExternalExecutionSheetState,
   createInitialHuntState,
   createInitialRunListState,
   type RuntimeInfo,
@@ -30,11 +31,15 @@ import {
   createManagedRun,
   executeManagedRun,
   getRunAttachDisabledReason,
+  getRunExternalDisabledReason,
   isRunTerminal,
   supportsAttachToolchain,
   updateRunRecord,
 } from "./runs"
 import { createAttachRunSession } from "./pty"
+import { getAvailableExternalAdapters, getExternalAdapter, toExternalAdapterOptions } from "./external/registry"
+import { createExternalRunSession } from "./external/session"
+import type { ExternalRunSessionPlan, ExternalRunStatusPayload } from "./external/types"
 
 // Screen imports
 import { createMainScreen } from "./screens/main"
@@ -60,6 +65,16 @@ import { huntMitreScreen } from "./screens/hunt-mitre"
 import { huntPlaybookScreen } from "./screens/hunt-playbook"
 
 const AUDIT_PREVIEW_REFRESH_INTERVAL_MS = 15_000
+
+function createInitialExternalState() {
+  return {
+    kind: "none",
+    adapterId: null,
+    ref: null,
+    status: "idle" as const,
+    error: null,
+  }
+}
 
 // =============================================================================
 // TUI APP
@@ -103,6 +118,7 @@ export class TUIApp implements AppController {
   private cwd: string
   private canceledRunIds = new Set<string>()
   private attachedSession: { exited: Promise<number>; terminate: () => void } | null = null
+  private externalSessionCleanup = new Map<string, () => Promise<void>>()
   private readonly inputListener = (key: string) => this.handleInput(key)
   private readonly resizeListener = () => {
     this.updateTerminalSize()
@@ -148,6 +164,7 @@ export class TUIApp implements AppController {
       activePolicy: null,
       securityError: null,
       dispatchSheet: createInitialDispatchSheetState(),
+      externalSheet: createInitialExternalExecutionSheetState(),
       runs: createInitialRunListState(),
       activeRunId: null,
       pendingAttachRunId: null,
@@ -525,8 +542,13 @@ export class TUIApp implements AppController {
     this.detachTerminalListeners()
     this.attachedSession?.terminate()
     this.attachedSession = null
+    await Promise.allSettled(
+      [...this.externalSessionCleanup.values()].map(async (cleanup) => cleanup()),
+    )
+    this.externalSessionCleanup.clear()
     this.state.attachedRunId = null
     this.state.pendingAttachRunId = null
+    this.state.externalSheet = createInitialExternalExecutionSheetState()
     this.state.ptyHandoffActive = false
 
     process.stdout.write(ESC.showCursor + ESC.mainScreen)
@@ -706,32 +728,28 @@ export class TUIApp implements AppController {
       return
     }
 
-    if (this.state.dispatchSheet.mode === "external") {
-      this.state.dispatchSheet = {
-        ...this.state.dispatchSheet,
-        error: `${this.state.dispatchSheet.mode} mode is reserved for later phases.`,
-      }
-      this.render()
-      return
-    }
-
     const { prompt, action, agentIndex, mode } = this.state.dispatchSheet
-    if (mode === "attach" && action !== "dispatch") {
+    if ((mode === "attach" || mode === "external") && action !== "dispatch") {
       this.state.dispatchSheet = {
         ...this.state.dispatchSheet,
-        error: "attach mode is only available for dispatch runs.",
+        error: `${mode} mode is only available for dispatch runs.`,
       }
       this.render()
       return
     }
 
     const agent = AGENTS[agentIndex]
-    if (mode === "attach" && !supportsAttachToolchain(agent.id)) {
+    if ((mode === "attach" || mode === "external") && !supportsAttachToolchain(agent.id)) {
       this.state.dispatchSheet = {
         ...this.state.dispatchSheet,
-        error: `${agent.name} does not expose an interactive attach session yet.`,
+        error: `${agent.name} does not expose an interactive ${mode} session yet.`,
       }
       this.render()
+      return
+    }
+
+    if (mode === "external") {
+      void this.launchExternalDispatchSheet(prompt, action, agentIndex, agent.name, agent.id)
       return
     }
 
@@ -760,6 +778,66 @@ export class TUIApp implements AppController {
     }
 
     void this.launchManagedRun(run)
+  }
+
+  private async launchExternalDispatchSheet(
+    prompt: string,
+    action: "dispatch" | "speculate",
+    agentIndex: number,
+    agentLabel: string,
+    agentId: string,
+  ): Promise<void> {
+    this.state.dispatchSheet = {
+      ...this.state.dispatchSheet,
+      error: null,
+    }
+    this.state.statusMessage = `${THEME.accent}⠋${THEME.reset} Checking external terminal adapters`
+    this.render()
+
+    try {
+      const adapters = await getAvailableExternalAdapters()
+      if (adapters.length === 0) {
+        this.state.dispatchSheet = {
+          ...this.state.dispatchSheet,
+          error: "No supported external terminal adapters are available on this machine.",
+        }
+        this.state.statusMessage = `${THEME.warning}!${THEME.reset} No supported external adapters are available`
+        this.render()
+        return
+      }
+
+      const run = createManagedRun({
+        prompt,
+        action,
+        agentId,
+        agentLabel,
+        mode: "external",
+      })
+
+      this.state.agentIndex = agentIndex
+      this.state.dispatchSheet = createInitialDispatchSheetState()
+      this.state.promptBuffer = ""
+      this.replaceRun(run)
+      this.state.statusMessage = `${THEME.accent}⠋${THEME.reset} External run staged via ${agentLabel}`
+      this.syncManagedRunState()
+      this.openRun(run.id)
+      this.state.externalSheet = {
+        runId: run.id,
+        adapters: toExternalAdapterOptions(adapters),
+        selectedIndex: 0,
+        loading: false,
+        error: null,
+      }
+      this.render()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      this.state.dispatchSheet = {
+        ...this.state.dispatchSheet,
+        error: message,
+      }
+      this.state.statusMessage = `${THEME.error}✗${THEME.reset} External adapter probe failed`
+      this.render()
+    }
   }
 
   closeDispatchSheet(): void {
@@ -819,6 +897,150 @@ export class TUIApp implements AppController {
   cancelAttachRun(): void {
     this.state.pendingAttachRunId = null
     this.render()
+  }
+
+  beginExternalRun(runId: string): void {
+    void this.beginExternalRunFlow(runId)
+  }
+
+  confirmExternalRun(): void {
+    const runId = this.state.externalSheet.runId
+    if (!runId || this.state.externalSheet.loading) {
+      return
+    }
+
+    const adapter = this.state.externalSheet.adapters[this.state.externalSheet.selectedIndex]
+    if (!adapter) {
+      this.state.externalSheet = {
+        ...this.state.externalSheet,
+        error: this.state.externalSheet.error ?? "Select an external adapter first.",
+      }
+      this.render()
+      return
+    }
+
+    this.state.externalSheet = createInitialExternalExecutionSheetState()
+    void this.launchExternalRun(runId, adapter.id)
+  }
+
+  cancelExternalRun(): void {
+    this.state.externalSheet = createInitialExternalExecutionSheetState()
+    this.render()
+  }
+
+  private async beginExternalRunFlow(runId: string): Promise<void> {
+    const run = this.state.runs.entries.find((entry) => entry.id === runId)
+    if (!run) {
+      return
+    }
+
+    const currentAdapter = run.external.adapterId ? getExternalAdapter(run.external.adapterId) : null
+    if (run.external.status === "running" && run.external.ref && currentAdapter?.focus) {
+      try {
+        await currentAdapter.focus(run.external.ref)
+        this.state.statusMessage = `${THEME.success}✓${THEME.reset} Reopened ${run.agentLabel} in ${currentAdapter.label}`
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        this.state.statusMessage = `${THEME.error}✗${THEME.reset} ${message}`
+      }
+      this.render()
+      return
+    }
+
+    const reason = getRunExternalDisabledReason(run)
+    if (reason) {
+      this.state.statusMessage = `${THEME.warning}!${THEME.reset} ${reason}`
+      this.render()
+      return
+    }
+
+    this.state.externalSheet = {
+      runId,
+      adapters: [],
+      selectedIndex: 0,
+      loading: true,
+      error: null,
+    }
+    this.render()
+
+    try {
+      const adapters = await getAvailableExternalAdapters()
+      if (this.state.externalSheet.runId !== runId) {
+        return
+      }
+
+      if (adapters.length === 0) {
+        this.state.externalSheet = {
+          runId,
+          adapters: [],
+          selectedIndex: 0,
+          loading: false,
+          error: "No supported external terminal adapters are available on this machine.",
+        }
+        this.render()
+        return
+      }
+
+      this.state.externalSheet = {
+        runId,
+        adapters: toExternalAdapterOptions(adapters),
+        selectedIndex: 0,
+        loading: false,
+        error: null,
+      }
+      this.render()
+    } catch (error) {
+      if (this.state.externalSheet.runId !== runId) {
+        return
+      }
+
+      const message = error instanceof Error ? error.message : String(error)
+      this.state.externalSheet = {
+        runId,
+        adapters: [],
+        selectedIndex: 0,
+        loading: false,
+        error: message,
+      }
+      this.render()
+    }
+  }
+
+  launchRunInMode(runId: string, mode: "managed" | "attach"): void {
+    const run = this.state.runs.entries.find((entry) => entry.id === runId)
+    if (!run || isRunTerminal(run.phase)) {
+      return
+    }
+
+    if (mode === "attach" && !supportsAttachToolchain(run.agentId)) {
+      this.state.statusMessage = `${THEME.warning}!${THEME.reset} ${run.agentLabel} does not expose an interactive attach session yet.`
+      this.render()
+      return
+    }
+
+    const nextRun = updateRunRecord(run, {
+      mode,
+      canAttach: mode === "attach",
+      attachState: "detached",
+      external: {
+        ...createInitialExternalState(),
+      },
+      error: null,
+    })
+    this.replaceRun(nextRun)
+    this.state.externalSheet = createInitialExternalExecutionSheetState()
+    this.state.statusMessage =
+      mode === "attach"
+        ? `${THEME.accent}⠋${THEME.reset} Attach fallback staged`
+        : `${THEME.accent}⠋${THEME.reset} Managed fallback staged`
+    this.render()
+
+    if (mode === "attach") {
+      this.beginAttachRun(runId)
+      return
+    }
+
+    void this.launchManagedRun(nextRun)
   }
 
   cancelRun(runId: string): void {
@@ -1134,6 +1356,209 @@ export class TUIApp implements AppController {
       this.syncManagedRunState()
       this.render()
     } finally {
+      await sessionPlan?.cleanup().catch(() => {})
+    }
+  }
+
+  private async waitForExternalExit(statusPath: string, startupTimeoutMs: number): Promise<number> {
+    const deadline = Date.now() + startupTimeoutMs
+    let started = false
+    for (;;) {
+      const file = Bun.file(statusPath)
+      if (await file.exists()) {
+        const payload = await file.json().catch(() => null) as ExternalRunStatusPayload | null
+        if (payload?.state === "starting" || typeof payload?.startedAt === "string") {
+          started = true
+        }
+        if (payload?.state === "finished" && typeof payload.exitCode === "number") {
+          return payload.exitCode
+        }
+      }
+
+      if (!started && Date.now() >= deadline) {
+        throw new Error("External terminal opened, but the launch script never started.")
+      }
+
+      await Bun.sleep(400)
+    }
+  }
+
+  private async finalizeExternalRun(
+    runId: string,
+    sessionPlan: ExternalRunSessionPlan,
+    startedAt: number,
+  ): Promise<void> {
+    try {
+      const exitCode = await this.waitForExternalExit(sessionPlan.statusPath, sessionPlan.startupTimeoutMs)
+      const currentRun = this.state.runs.entries.find((entry) => entry.id === runId)
+      if (!currentRun) {
+        return
+      }
+
+      const success = exitCode === 0
+      const finishedRun = updateRunRecord(
+        currentRun,
+        {
+          phase: success ? "completed" : "failed",
+          completedAt: new Date().toISOString(),
+          error: success ? null : `External session exited with code ${exitCode}`,
+          execution: success ? { success: true } : { success: false, error: `External session exited with code ${exitCode}` },
+          result: {
+            success,
+            taskId: sessionPlan.workcell.id,
+            agent: currentRun.agentLabel,
+            action: currentRun.action,
+            routing: sessionPlan.routing,
+            execution: success ? { success: true } : { success: false, error: `External session exited with code ${exitCode}` },
+            error: success ? undefined : `External session exited with code ${exitCode}`,
+            duration: Date.now() - startedAt,
+          },
+          external: {
+            ...currentRun.external,
+            status: success ? "idle" : "failed",
+            error: success ? null : `External session exited with code ${exitCode}`,
+          },
+        },
+        {
+          kind: success ? "status" : "error",
+          message: success ? "External session completed" : `Run failed: External session exited with code ${exitCode}`,
+        },
+      )
+      this.replaceRun(finishedRun)
+      this.state.lastResult = finishedRun.result
+      this.state.statusMessage = success
+        ? `${THEME.success}✓${THEME.reset} ${finishedRun.agentLabel} completed in external terminal`
+        : `${THEME.error}✗${THEME.reset} ${finishedRun.agentLabel} external session failed`
+      this.syncManagedRunState()
+      this.render()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      const currentRun = this.state.runs.entries.find((entry) => entry.id === runId)
+      if (currentRun) {
+        const failedRun = updateRunRecord(
+          currentRun,
+          {
+            phase: "failed",
+            completedAt: new Date().toISOString(),
+            error: message,
+            execution: { success: false, error: message },
+            result: {
+              success: false,
+              taskId: sessionPlan.workcell.id,
+              agent: currentRun.agentLabel,
+              action: currentRun.action,
+              routing: sessionPlan.routing,
+              execution: { success: false, error: message },
+              error: message,
+              duration: Date.now() - startedAt,
+            },
+            external: {
+              ...currentRun.external,
+              status: "failed",
+              error: message,
+            },
+          },
+          { kind: "error", message: `External launch failed: ${message}` },
+        )
+        this.replaceRun(failedRun)
+        this.state.lastResult = failedRun.result
+        this.state.statusMessage = `${THEME.error}✗${THEME.reset} ${failedRun.agentLabel} external session failed`
+        this.syncManagedRunState()
+        this.render()
+      }
+    } finally {
+      const cleanup = this.externalSessionCleanup.get(runId)
+      this.externalSessionCleanup.delete(runId)
+      await cleanup?.().catch(() => {})
+    }
+  }
+
+  private async launchExternalRun(runId: string, adapterId: string): Promise<void> {
+    const originalRun = this.state.runs.entries.find((entry) => entry.id === runId)
+    if (!originalRun) {
+      return
+    }
+
+    const adapter = getExternalAdapter(adapterId)
+    if (!adapter) {
+      this.state.statusMessage = `${THEME.error}✗${THEME.reset} Unknown external adapter: ${adapterId}`
+      this.render()
+      return
+    }
+
+    const startedAt = Date.now()
+    let sessionPlan: ExternalRunSessionPlan | null = null
+
+    try {
+      const launchingRun = updateRunRecord(
+        originalRun,
+        {
+          external: {
+            kind: adapter.id,
+            adapterId: adapter.id,
+            ref: null,
+            status: "launching",
+            error: null,
+          },
+          error: null,
+        },
+        { kind: "status", message: `Opening ${adapter.label}` },
+      )
+      this.replaceRun(launchingRun)
+      this.state.statusMessage = `${THEME.accent}⠋${THEME.reset} Opening ${adapter.label}`
+      this.render()
+
+      sessionPlan = await createExternalRunSession(launchingRun, {
+        cwd: this.cwd,
+        projectId: "default",
+      })
+
+      const launchResult = await adapter.launch(sessionPlan)
+      this.externalSessionCleanup.set(runId, sessionPlan.cleanup)
+
+      const runningRun = updateRunRecord(
+        this.state.runs.entries.find((entry) => entry.id === runId) ?? launchingRun,
+        {
+          phase: "executing",
+          routing: sessionPlan.routing,
+          workcellId: sessionPlan.workcell.id,
+          worktreePath: sessionPlan.workcell.directory,
+          ptySessionId: sessionPlan.ptySessionId,
+          external: {
+            kind: adapter.id,
+            adapterId: adapter.id,
+            ref: launchResult.ref,
+            status: "running",
+            error: null,
+          },
+        },
+        { kind: "status", message: `${adapter.label} opened for interactive execution` },
+      )
+      this.replaceRun(runningRun)
+      this.state.statusMessage = `${THEME.success}✓${THEME.reset} ${adapter.label} opened`
+      this.syncManagedRunState()
+      this.render()
+
+      void this.finalizeExternalRun(runId, sessionPlan, startedAt)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      const failedRun = updateRunRecord(
+        this.state.runs.entries.find((entry) => entry.id === runId) ?? originalRun,
+        {
+          error: message,
+          external: {
+            kind: adapter.id,
+            adapterId: adapter.id,
+            ref: null,
+            status: "failed",
+            error: message,
+          },
+        },
+        { kind: "error", message: `External launch failed: ${message}` },
+      )
+      this.replaceRun(failedRun)
+      this.state.statusMessage = `${THEME.error}✗${THEME.reset} External launch failed`
+      this.render()
       await sessionPlan?.cleanup().catch(() => {})
     }
   }

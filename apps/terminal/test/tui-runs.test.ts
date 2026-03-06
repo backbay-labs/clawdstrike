@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import {
   canRunAttach,
+  canRunExternal,
   createManagedRun,
   executeManagedRun,
   filterRuns,
   getRunAttachDisabledReason,
+  getRunExternalDisabledReason,
   getRunReviewRoute,
   isRunTerminal,
 } from "../src/tui/runs"
@@ -164,5 +166,25 @@ describe("tui managed runs", () => {
     expect(canRunAttach(attachRun)).toBe(true)
     expect(managedRun.canAttach).toBe(false)
     expect(getRunAttachDisabledReason(managedRun)).toBe("Attach is only available for runs launched in attach mode.")
+  })
+
+  test("marks external-mode dispatch runs as eligible for adapter launch", () => {
+    const externalRun = createManagedRun({
+      prompt: "Open an external coding session",
+      action: "dispatch",
+      agentId: "codex",
+      agentLabel: "Codex",
+      mode: "external",
+    })
+    const managedRun = createManagedRun({
+      prompt: "Stay local",
+      action: "dispatch",
+      agentId: "codex",
+      agentLabel: "Codex",
+    })
+
+    expect(canRunExternal(externalRun)).toBe(true)
+    expect(externalRun.external.status).toBe("idle")
+    expect(getRunExternalDisabledReason(managedRun)).toBe("External execution is only available for runs launched in external mode.")
   })
 })

@@ -1,6 +1,10 @@
+import { mkdtemp } from "node:fs/promises"
+import { join } from "node:path"
+import { tmpdir } from "node:os"
 import { afterEach, describe, expect, test } from "bun:test"
 import { TUIApp } from "../src/tui/app"
 import { Hushd } from "../src/hushd"
+import { createManagedRun } from "../src/tui/runs"
 
 const originalGetClient = Hushd.getClient
 const originalIsInitialized = Hushd.isInitialized
@@ -271,5 +275,75 @@ describe("TUIApp security refresh", () => {
     expect(app.state.runs.entries).toHaveLength(0)
     expect(app.state.dispatchSheet.error).toContain("does not expose an interactive attach session yet")
     expect(app.state.inputMode).toBe("main")
+  })
+
+  test("falls back from staged external mode into managed execution", () => {
+    const app = new TUIApp(process.cwd()) as unknown as {
+      state: {
+        runs: {
+          entries: Array<ReturnType<typeof createManagedRun>>
+        }
+        externalSheet: {
+          runId: string | null
+          adapters: unknown[]
+          selectedIndex: number
+          loading: boolean
+          error: string | null
+        }
+        statusMessage: string
+      }
+      render: () => void
+      launchManagedRun: (run: ReturnType<typeof createManagedRun>) => Promise<void>
+      launchRunInMode: (runId: string, mode: "managed" | "attach") => void
+    }
+
+    let launchedMode: "managed" | "attach" | "external" | null = null
+    app.render = () => {}
+    app.launchManagedRun = async (run) => {
+      launchedMode = run.mode
+    }
+
+    const run = createManagedRun({
+      prompt: "Retry this in managed mode",
+      action: "dispatch",
+      agentId: "codex",
+      agentLabel: "Codex",
+      mode: "external",
+    })
+    run.external = {
+      kind: "wezterm",
+      adapterId: "wezterm",
+      ref: null,
+      status: "failed",
+      error: "wezterm not found",
+    }
+
+    app.state.runs.entries = [run]
+    app.state.externalSheet = {
+      runId: run.id,
+      adapters: [],
+      selectedIndex: 0,
+      loading: false,
+      error: "wezterm not found",
+    }
+
+    app.launchRunInMode(run.id, "managed")
+
+    expect(app.state.runs.entries[0]?.mode).toBe("managed")
+    expect(app.state.runs.entries[0]?.external.status).toBe("idle")
+    expect(app.state.externalSheet.runId).toBeNull()
+    expect(launchedMode as string | null).toBe("managed")
+  })
+
+  test("times out external sessions that never start", async () => {
+    const app = new TUIApp(process.cwd()) as unknown as {
+      waitForExternalExit: (statusPath: string, startupTimeoutMs: number) => Promise<number>
+    }
+    const dir = await mkdtemp(join(tmpdir(), "clawdstrike-external-timeout-"))
+    const statusPath = join(dir, "external-status.json")
+
+    await expect(app.waitForExternalExit(statusPath, 10)).rejects.toThrow(
+      "launch script never started",
+    )
   })
 })

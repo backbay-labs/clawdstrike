@@ -3,6 +3,7 @@ import type { AppState } from "../src/tui/types"
 import {
   createInitialAuditLogState,
   createInitialDispatchSheetState,
+  createInitialExternalExecutionSheetState,
   createInitialHuntState,
   createInitialRunListState,
 } from "../src/tui/types"
@@ -42,6 +43,7 @@ function createState(): AppState {
     activePolicy: null,
     securityError: null,
     dispatchSheet: createInitialDispatchSheetState(),
+    externalSheet: createInitialExternalExecutionSheetState(),
     runs: createInitialRunListState(),
     activeRunId: null,
     pendingAttachRunId: null,

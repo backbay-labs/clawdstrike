@@ -6,6 +6,7 @@ import type { AppController, AppState, InputMode, ScreenContext } from "../src/t
 import {
   createInitialAuditLogState,
   createInitialDispatchSheetState,
+  createInitialExternalExecutionSheetState,
   createInitialHuntState,
   createInitialRunListState,
 } from "../src/tui/types"
@@ -42,6 +43,10 @@ class TestApp implements AppController {
   public beganAttachRunId: string | null = null
   public confirmedAttach = false
   public canceledAttach = false
+  public beganExternalRunId: string | null = null
+  public confirmedExternal = false
+  public canceledExternal = false
+  public launchedFallback: { runId: string; mode: "managed" | "attach" } | null = null
   public canceledRunId: string | null = null
 
   constructor(private cwd: string) {}
@@ -72,6 +77,22 @@ class TestApp implements AppController {
 
   cancelAttachRun(): void {
     this.canceledAttach = true
+  }
+
+  beginExternalRun(runId: string): void {
+    this.beganExternalRunId = runId
+  }
+
+  confirmExternalRun(): void {
+    this.confirmedExternal = true
+  }
+
+  cancelExternalRun(): void {
+    this.canceledExternal = true
+  }
+
+  launchRunInMode(runId: string, mode: "managed" | "attach"): void {
+    this.launchedFallback = { runId, mode }
   }
 
   cancelRun(runId: string): void {
@@ -135,6 +156,7 @@ function createState(): AppState {
     activePolicy: null,
     securityError: null,
     dispatchSheet: createInitialDispatchSheetState(),
+    externalSheet: createInitialExternalExecutionSheetState(),
     runs: createInitialRunListState(),
     activeRunId: null,
     pendingAttachRunId: null,

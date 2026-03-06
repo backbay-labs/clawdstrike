@@ -849,7 +849,7 @@ function overlayDispatchSheet(baseScreen: string, ctx: ScreenContext): string {
         ? `${THEME.white}${sheet.mode}${THEME.reset}`
         : sheet.mode === "attach"
           ? `${THEME.success}${sheet.mode}${THEME.reset} ${THEME.dim}(phase 3)${THEME.reset}`
-          : `${THEME.warning}${sheet.mode}${THEME.reset} ${THEME.dim}(later phase)${THEME.reset}`,
+          : `${THEME.warning}${sheet.mode}${THEME.reset} ${THEME.dim}(phase 5)${THEME.reset}`,
       sheet.focusedField === 2,
     ),
     dispatchField(

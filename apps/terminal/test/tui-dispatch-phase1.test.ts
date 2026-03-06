@@ -3,6 +3,7 @@ import type { AppController, AppState, InputMode, ScreenContext } from "../src/t
 import {
   createInitialAuditLogState,
   createInitialDispatchSheetState,
+  createInitialExternalExecutionSheetState,
   createInitialHuntState,
   createInitialRunListState,
 } from "../src/tui/types"
@@ -25,6 +26,10 @@ class TestApp implements AppController {
   public beganAttachRunId: string | null = null
   public confirmedAttach = false
   public canceledAttach = false
+  public beganExternalRunId: string | null = null
+  public confirmedExternal = false
+  public canceledExternal = false
+  public launchedFallback: { runId: string; mode: "managed" | "attach" } | null = null
   public canceledRunId: string | null = null
 
   setScreen(mode: InputMode): void {
@@ -53,6 +58,22 @@ class TestApp implements AppController {
 
   cancelAttachRun(): void {
     this.canceledAttach = true
+  }
+
+  beginExternalRun(runId: string): void {
+    this.beganExternalRunId = runId
+  }
+
+  confirmExternalRun(): void {
+    this.confirmedExternal = true
+  }
+
+  cancelExternalRun(): void {
+    this.canceledExternal = true
+  }
+
+  launchRunInMode(runId: string, mode: "managed" | "attach"): void {
+    this.launchedFallback = { runId, mode }
   }
 
   cancelRun(runId: string): void {
@@ -114,6 +135,7 @@ function createState(): AppState {
     activePolicy: null,
     securityError: null,
     dispatchSheet: createInitialDispatchSheetState(),
+    externalSheet: createInitialExternalExecutionSheetState(),
     runs: createInitialRunListState(),
     activeRunId: null,
     pendingAttachRunId: null,
@@ -304,6 +326,44 @@ describe("run detail surface", () => {
     expect(runDetailScreen.handleInput("a", createContext({ ...state, pendingAttachRunId: null }, app))).toBe(true)
     expect(app.beganAttachRunId).toBe(run.id)
   })
+
+  test("shows the external sheet and routes adapter and fallback actions through the controller", () => {
+    const state = createState()
+    const app = new TestApp()
+    const run = createManagedRun({
+      prompt: "Open me in WezTerm",
+      action: "dispatch",
+      agentId: "codex",
+      agentLabel: "Codex",
+      mode: "external",
+    })
+    state.runs.entries = [run]
+    state.activeRunId = run.id
+    state.externalSheet = {
+      runId: run.id,
+      adapters: [
+        { id: "wezterm", label: "WezTerm", description: "Launch a new WezTerm window." },
+        { id: "terminal-app", label: "Terminal.app", description: "Launch macOS Terminal." },
+      ],
+      selectedIndex: 0,
+      loading: false,
+      error: null,
+    }
+
+    const ctx = createContext(state, app, 120, 36)
+    const output = stripAnsi(runDetailScreen.render(ctx))
+    expect(output).toContain("Open External Execution")
+    expect(output).toContain("WezTerm")
+
+    expect(runDetailScreen.handleInput("\x1b[B", ctx)).toBe(true)
+    expect(state.externalSheet.selectedIndex).toBe(1)
+
+    expect(runDetailScreen.handleInput("\r", ctx)).toBe(true)
+    expect(app.confirmedExternal).toBe(true)
+
+    expect(runDetailScreen.handleInput("m", ctx)).toBe(true)
+    expect(app.launchedFallback).toEqual({ runId: run.id, mode: "managed" })
+  })
 })
 
 describe("result screen managed-run handoff", () => {
@@ -435,6 +495,81 @@ describe("TUIApp phase one dispatch flow", () => {
     expect(app.state.runs.entries[0]?.mode).toBe("attach")
     expect(app.state.runs.entries[0]?.attachState).toBe("detached")
     expect(app.state.runs.entries[0]?.canAttach).toBe(true)
+  })
+
+  test("stages external mode in run detail and opens the external selection sheet", async () => {
+    const app = new TUIApp(process.cwd()) as unknown as {
+      state: {
+        promptBuffer: string
+        inputMode: string
+        agentIndex: number
+        activeRunId: string | null
+        dispatchSheet: {
+          mode: "managed" | "attach" | "external"
+          action: "dispatch" | "speculate"
+          open: boolean
+        }
+        externalSheet: {
+          runId: string | null
+          loading: boolean
+          adapters?: Array<{ id: string; label: string; description: string }>
+          selectedIndex?: number
+          error?: string | null
+        }
+        runs: {
+          entries: Array<{
+            id: string
+            mode: string
+            external: { status: string }
+          }>
+        }
+      }
+      render: () => void
+      openDispatchSheet: (action: "dispatch" | "speculate") => void
+      launchDispatchSheet: () => void
+      launchExternalDispatchSheet: (
+        prompt: string,
+        action: "dispatch" | "speculate",
+        agentIndex: number,
+        agentLabel: string,
+        agentId: string,
+      ) => Promise<void>
+    }
+
+    app.render = () => {}
+    app.launchExternalDispatchSheet = async (prompt, action, agentIndex, agentLabel, agentId) => {
+      const run = createManagedRun({
+        prompt,
+        action,
+        agentId,
+        agentLabel,
+        mode: "external",
+      })
+      app.state.agentIndex = agentIndex
+      app.state.dispatchSheet = createInitialDispatchSheetState()
+      app.state.promptBuffer = ""
+      app.state.inputMode = "run-detail"
+      app.state.activeRunId = run.id
+      app.state.runs.entries = [run]
+      app.state.externalSheet = {
+        runId: run.id,
+        loading: false,
+        adapters: [{ id: "tmux-split", label: "tmux split", description: "Open in tmux split." }],
+        selectedIndex: 0,
+        error: null,
+      }
+    }
+    app.state.promptBuffer = "launch external flow"
+    app.openDispatchSheet("dispatch")
+    app.state.dispatchSheet.mode = "external"
+    app.launchDispatchSheet()
+    await Promise.resolve()
+
+    expect(app.state.inputMode).toBe("run-detail")
+    expect(app.state.activeRunId).not.toBeNull()
+    expect(app.state.externalSheet.runId).toBe(app.state.activeRunId)
+    expect(app.state.runs.entries[0]?.mode).toBe("external")
+    expect(app.state.runs.entries[0]?.external.status).toBe("idle")
   })
 
   test("keeps completed runs reopenable from the runs backlog without hijacking navigation", () => {

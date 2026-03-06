@@ -28,6 +28,7 @@ import type { FormState } from "./components/form"
 import type { LogState } from "./components/streaming-log"
 import type { GridSelection } from "./components/grid"
 import type { ReportHistoryEntry } from "./report-export"
+import type { ExternalRunState, ExternalTerminalAdapterOption } from "./external/types"
 
 // =============================================================================
 // SCREEN SYSTEM
@@ -78,6 +79,14 @@ export interface AppController {
   confirmAttachRun(): void
   /** Cancel the pending attach confirmation */
   cancelAttachRun(): void
+  /** Load available external terminal adapters for a run */
+  beginExternalRun(runId: string): void
+  /** Confirm external execution for the pending run */
+  confirmExternalRun(): void
+  /** Cancel the pending external execution sheet */
+  cancelExternalRun(): void
+  /** Fall back to another launch mode for a staged run */
+  launchRunInMode(runId: string, mode: "managed" | "attach"): void
   /** Mark a managed run as canceled from the TUI */
   cancelRun(runId: string): void
   /** Trigger a re-render */
@@ -195,6 +204,7 @@ export interface RunRecord {
   attachState: RunAttachState
   ptySessionId: string | null
   canAttach: boolean
+  external: ExternalRunState
   ptyTail: string[]
   events: RunEvent[]
 }
@@ -215,6 +225,14 @@ export interface DispatchSheetState {
   mode: DispatchExecutionMode
   agentIndex: number
   focusedField: 0 | 1 | 2 | 3
+  error: string | null
+}
+
+export interface ExternalExecutionSheetState {
+  runId: string | null
+  adapters: ExternalTerminalAdapterOption[]
+  selectedIndex: number
+  loading: boolean
   error: string | null
 }
 
@@ -441,6 +459,7 @@ export interface AppState {
 
   // Dispatch sheet and managed runs
   dispatchSheet: DispatchSheetState
+  externalSheet: ExternalExecutionSheetState
   runs: RunListState
   activeRunId: string | null
   pendingAttachRunId: string | null
@@ -609,6 +628,16 @@ export function createInitialDispatchSheetState(): DispatchSheetState {
     mode: "managed",
     agentIndex: 0,
     focusedField: 0,
+    error: null,
+  }
+}
+
+export function createInitialExternalExecutionSheetState(): ExternalExecutionSheetState {
+  return {
+    runId: null,
+    adapters: [],
+    selectedIndex: 0,
+    loading: false,
     error: null,
   }
 }

@@ -5,7 +5,15 @@ import { renderSplit } from "../components/split-pane"
 import { renderSurfaceHeader } from "../components/surface-header"
 import { THEME } from "../theme"
 import type { RunEvent, RunRecord, Screen, ScreenContext } from "../types"
-import { canRunAttach, formatRunPhase, getRunAttachDisabledReason, getRunReviewRoute, isRunReviewReady } from "../runs"
+import {
+  canRunAttach,
+  canRunExternal,
+  formatRunPhase,
+  getRunAttachDisabledReason,
+  getRunExternalDisabledReason,
+  getRunReviewRoute,
+  isRunReviewReady,
+} from "../runs"
 
 function getCurrentRun(ctx: ScreenContext): RunRecord | null {
   const { runs, activeRunId } = ctx.state
@@ -154,6 +162,22 @@ function renderStatusCard(run: RunRecord, width: number): string[] {
   }
   addRow("State", `${THEME.white}${run.attachState}${THEME.reset}`)
 
+  content.push("")
+  content.push(`${THEME.secondary}${THEME.bold}External${THEME.reset}`)
+  if (canRunExternal(run)) {
+    content.push(`${THEME.success}Ready${THEME.reset} open this run in an external terminal adapter.`)
+  } else {
+    content.push(`${THEME.dim}${getRunExternalDisabledReason(run) ?? "External execution is not available for this run."}${THEME.reset}`)
+  }
+  addRow("Adapter", `${THEME.white}${run.external.adapterId ?? "none"}${THEME.reset}`)
+  addRow("Status", `${THEME.white}${run.external.status}${THEME.reset}`)
+  if (run.external.ref) {
+    addRow("Surface", `${THEME.dim}${run.external.ref}${THEME.reset}`)
+  }
+  if (run.external.error) {
+    content.push(...wrapText(run.external.error, Math.max(12, width - 4)).map((line) => `${THEME.error}${line}${THEME.reset}`))
+  }
+
   return renderBox("Status", content, width, THEME, {
     style: "rounded",
     titleAlign: "left",
@@ -232,6 +256,61 @@ function overlayAttachBanner(baseScreen: string, ctx: ScreenContext, run: RunRec
   return lines.join("\n")
 }
 
+function overlayExternalSheet(baseScreen: string, ctx: ScreenContext, run: RunRecord): string {
+  const lines = baseScreen.split("\n")
+  const sheetWidth = Math.max(58, Math.min(86, ctx.width - 12))
+  const sheet = ctx.state.externalSheet
+  const body: string[] = [
+    `${THEME.dim}Run:${THEME.reset} ${THEME.white}${run.id}${THEME.reset} ${THEME.dim}${run.title}${THEME.reset}`,
+    "",
+  ]
+
+  if (sheet.loading) {
+    body.push(`${THEME.accent}⠋${THEME.reset} ${THEME.dim}Checking available adapters…${THEME.reset}`)
+  } else if (sheet.adapters.length === 0) {
+    body.push(`${THEME.warning}!${THEME.reset} ${THEME.dim}No supported adapters are ready.${THEME.reset}`)
+  } else {
+    body.push(`${THEME.secondary}${THEME.bold}Adapters${THEME.reset}`)
+    for (const [index, adapter] of sheet.adapters.entries()) {
+      const marker = index === sheet.selectedIndex ? `${THEME.accent}${THEME.bold}▸${THEME.reset}` : `${THEME.dim}•${THEME.reset}`
+      body.push(`${marker} ${THEME.white}${adapter.label}${THEME.reset} ${THEME.dim}(${adapter.id})${THEME.reset}`)
+      body.push(`  ${THEME.dim}${adapter.description}${THEME.reset}`)
+    }
+  }
+
+  if (sheet.error) {
+    body.push("")
+    body.push(`${THEME.error}${sheet.error}${THEME.reset}`)
+  }
+
+  body.push("")
+  body.push(
+    `${THEME.white}Enter${THEME.reset} ${THEME.dim}open${THEME.reset}  ` +
+      `${THEME.white}↑/↓${THEME.reset} ${THEME.dim}select${THEME.reset}  ` +
+      `${THEME.white}m${THEME.reset} ${THEME.dim}managed fallback${THEME.reset}  ` +
+      `${THEME.white}a${THEME.reset} ${THEME.dim}attach fallback${THEME.reset}  ` +
+      `${THEME.white}Esc${THEME.reset} ${THEME.dim}cancel${THEME.reset}`,
+  )
+
+  const overlay = centerBlock(
+    renderBox("Open External Execution", body, sheetWidth, THEME, {
+      style: "rounded",
+      titleAlign: "left",
+      padding: 1,
+    }),
+    ctx.width,
+  )
+
+  for (let i = 0; i < overlay.length; i++) {
+    const lineIndex = 6 + i
+    if (lineIndex < lines.length) {
+      lines[lineIndex] = overlay[i]
+    }
+  }
+
+  return lines.join("\n")
+}
+
 export const runDetailScreen: Screen = {
   render(ctx: ScreenContext): string {
     const run = getCurrentRun(ctx)
@@ -278,6 +357,7 @@ export const runDetailScreen: Screen = {
       `${THEME.dim}esc${THEME.reset}${THEME.muted} back${THEME.reset}  ` +
         `${THEME.dim}r${THEME.reset}${THEME.muted} runs${THEME.reset}  ` +
         `${THEME.dim}a${THEME.reset}${THEME.muted} attach${THEME.reset}  ` +
+        `${THEME.dim}o${THEME.reset}${THEME.muted} external${THEME.reset}  ` +
         `${THEME.dim}c${THEME.reset}${THEME.muted} cancel${THEME.reset}  ` +
         `${THEME.dim}↑↓${THEME.reset}${THEME.muted} events${THEME.reset}  ` +
         `${THEME.dim}enter${THEME.reset}${THEME.muted} ${isRunReviewReady(run) ? "review" : "result"}${THEME.reset}`,
@@ -291,6 +371,9 @@ export const runDetailScreen: Screen = {
     const rendered = lines.join("\n")
     if (ctx.state.pendingAttachRunId === run.id) {
       return overlayAttachBanner(rendered, ctx, run)
+    }
+    if (ctx.state.externalSheet.runId === run.id) {
+      return overlayExternalSheet(rendered, ctx, run)
     }
 
     return rendered
@@ -307,6 +390,46 @@ export const runDetailScreen: Screen = {
 
       if (key === "\x1b" || key === "q") {
         ctx.app.cancelAttachRun()
+        return true
+      }
+    }
+
+    if (run && ctx.state.externalSheet.runId === run.id) {
+      if (key === "\r") {
+        ctx.app.confirmExternalRun()
+        return true
+      }
+
+      if (key === "\x1b" || key === "q") {
+        ctx.app.cancelExternalRun()
+        return true
+      }
+
+      if (key === "\x1b[A" || key === "up" || key === "k") {
+        if (ctx.state.externalSheet.adapters.length > 0) {
+          const count = ctx.state.externalSheet.adapters.length
+          ctx.state.externalSheet.selectedIndex = (ctx.state.externalSheet.selectedIndex + count - 1) % count
+          ctx.app.render()
+        }
+        return true
+      }
+
+      if (key === "\x1b[B" || key === "down" || key === "j") {
+        if (ctx.state.externalSheet.adapters.length > 0) {
+          const count = ctx.state.externalSheet.adapters.length
+          ctx.state.externalSheet.selectedIndex = (ctx.state.externalSheet.selectedIndex + 1) % count
+          ctx.app.render()
+        }
+        return true
+      }
+
+      if (key === "m") {
+        ctx.app.launchRunInMode(run.id, "managed")
+        return true
+      }
+
+      if (key === "a") {
+        ctx.app.launchRunInMode(run.id, "attach")
         return true
       }
     }
@@ -332,6 +455,11 @@ export const runDetailScreen: Screen = {
 
     if (key === "a") {
       ctx.app.beginAttachRun(run.id)
+      return true
+    }
+
+    if (key === "o") {
+      ctx.app.beginExternalRun(run.id)
       return true
     }
 

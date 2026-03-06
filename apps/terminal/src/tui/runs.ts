@@ -208,6 +208,12 @@ export function canRunAttach(run: Pick<RunRecord, "action" | "mode" | "phase" | 
   return getRunAttachDisabledReason(run) === null
 }
 
+export function canRunExternal(
+  run: Pick<RunRecord, "action" | "mode" | "phase" | "agentId" | "external">,
+): boolean {
+  return getRunExternalDisabledReason(run) === null
+}
+
 export function getRunAttachDisabledReason(
   run: Pick<RunRecord, "action" | "mode" | "phase" | "agentId" | "attachState">,
 ): string | null {
@@ -237,6 +243,36 @@ export function getRunAttachDisabledReason(
 
   if (run.attachState === "returning") {
     return "ClawdStrike is restoring the run detail surface."
+  }
+
+  return null
+}
+
+export function getRunExternalDisabledReason(
+  run: Pick<RunRecord, "action" | "mode" | "phase" | "agentId" | "external">,
+): string | null {
+  if (run.action !== "dispatch") {
+    return "External execution is only available for dispatch runs."
+  }
+
+  if (run.mode !== "external") {
+    return "External execution is only available for runs launched in external mode."
+  }
+
+  if (!supportsAttachToolchain(run.agentId)) {
+    return "This agent does not expose an interactive external session yet."
+  }
+
+  if (isRunTerminal(run.phase)) {
+    return "This run has already finished."
+  }
+
+  if (run.external.status === "launching") {
+    return "External launch is in progress."
+  }
+
+  if (run.external.status === "running") {
+    return "This run is already active in an external terminal."
   }
 
   return null
@@ -279,6 +315,13 @@ export function createManagedRun(
     attachState,
     ptySessionId: null,
     canAttach: mode === "attach" && init.action === "dispatch" && supportsAttachToolchain(init.agentId),
+    external: {
+      kind: "none",
+      adapterId: null,
+      ref: null,
+      status: "idle",
+      error: null,
+    },
     ptyTail: [],
     events: [
       createEvent(
@@ -286,6 +329,8 @@ export function createManagedRun(
         init.action === "dispatch"
           ? mode === "attach"
             ? "Attach run requested"
+            : mode === "external"
+              ? "External run requested"
             : "Dispatch requested"
           : "Speculation requested",
         timestamp,

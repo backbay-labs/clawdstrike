@@ -145,6 +145,16 @@ function renderRunSummary(run: RunRecord, width: number): string[] {
     lines.push(`${THEME.muted}Execution is still in progress.${THEME.reset}`)
   }
 
+  if (run.external.adapterId || run.external.status !== "idle") {
+    lines.push("")
+    lines.push(`${THEME.secondary}${THEME.bold}External Surface${THEME.reset}`)
+    addRow("Adapter", `${THEME.white}${run.external.adapterId ?? "none"}${THEME.reset}`)
+    addRow("Status", `${THEME.white}${run.external.status}${THEME.reset}`)
+    if (run.external.ref) {
+      addRow("Surface", `${THEME.dim}${run.external.ref}${THEME.reset}`)
+    }
+  }
+
   lines.push("")
   lines.push(`${THEME.secondary}${THEME.bold}Review Guidance${THEME.reset}`)
   if (run.phase === "review_ready" && reviewRoute) {

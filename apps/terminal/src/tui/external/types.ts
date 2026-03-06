@@ -1,0 +1,42 @@
+import type { WorkcellInfo } from "../../types"
+
+export interface ExternalTerminalAdapterOption {
+  id: string
+  label: string
+  description: string
+}
+
+export interface ExternalTerminalLaunchResult {
+  ref: string | null
+}
+
+export interface ExternalRunStatusPayload {
+  state?: "starting" | "finished"
+  startedAt?: string
+  finishedAt?: string
+  exitCode?: number
+}
+
+export interface ExternalRunSessionPlan {
+  ptySessionId: string
+  workcell: WorkcellInfo
+  routing: { toolchain: string; strategy: string; gates: string[] }
+  scriptPath: string
+  statusPath: string
+  startupTimeoutMs: number
+  cleanup: () => Promise<void>
+}
+
+export interface ExternalTerminalAdapter extends ExternalTerminalAdapterOption {
+  isAvailable(): Promise<boolean>
+  launch(plan: ExternalRunSessionPlan): Promise<ExternalTerminalLaunchResult>
+  focus?(ref: string): Promise<void>
+}
+
+export interface ExternalRunState {
+  kind: string
+  adapterId: string | null
+  ref: string | null
+  status: "idle" | "launching" | "running" | "failed"
+  error: string | null
+}
