@@ -9,7 +9,7 @@ import { centerBlock, centerLine, joinColumns, wrapText } from "../components/la
 import { fitString } from "../components/types"
 import { getInvestigationCounts, isInvestigationStale } from "../investigation"
 import type { AppState } from "../types"
-import type { CheckEventData, DaemonEvent } from "../../hushd"
+import { asCheckEventData, eventDecision, type DaemonEvent } from "../../hushd"
 
 const STREAM_STALE_MS = 5 * 60_000
 const HOME_ACTION_COLUMNS = 2
@@ -101,21 +101,21 @@ function renderStreamStatus(state: AppState, now = Date.now()): string {
 }
 
 function findLastDeniedEvent(state: AppState): DaemonEvent | null {
-  return state.recentEvents.find((event) => (
-    event.type === "check" &&
-    (event.data as CheckEventData).decision === "deny"
-  )) ?? null
+  return state.recentEvents.find((event) => eventDecision(event) === "deny") ?? null
 }
 
 function renderLastDenied(state: AppState): string | null {
   const event = findLastDeniedEvent(state)
-  if (!event || event.type !== "check") {
+  if (!event) {
     return null
   }
 
-  const data = event.data as CheckEventData
+  const data = asCheckEventData(event)
+  if (!data) {
+    return null
+  }
   const target = truncateMiddle(data.target, 42)
-  return `${THEME.error}${data.action_type}${THEME.reset} ${THEME.white}${target}${THEME.reset} ${THEME.dim}via ${data.guard}${THEME.reset}`
+  return `${THEME.error}${data.action_type}${THEME.reset} ${THEME.white}${target}${THEME.reset} ${THEME.dim}via ${data.guard ?? "stream"}${THEME.reset}`
 }
 
 const HOME_ACTIONS: HomeAction[] = [

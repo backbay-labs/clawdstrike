@@ -11,7 +11,7 @@ import { Beads } from "../beads"
 import { Telemetry } from "../telemetry"
 import { Health } from "../health"
 import { MCP } from "../mcp"
-import { Hushd } from "../hushd"
+import { Hushd, eventDecision } from "../hushd"
 import { Config } from "../config"
 import { loadDesktopAgentSnapshotSync } from "../desktop-agent"
 import { THEME, ESC, AGENTS } from "./theme"
@@ -41,6 +41,8 @@ import { huntReportScreen } from "./screens/hunt-report"
 import { huntReportHistoryScreen } from "./screens/hunt-report-history"
 import { huntMitreScreen } from "./screens/hunt-mitre"
 import { huntPlaybookScreen } from "./screens/hunt-playbook"
+
+const AUDIT_PREVIEW_REFRESH_INTERVAL_MS = 15_000
 
 // =============================================================================
 // TUI APP
@@ -76,6 +78,8 @@ export class TUIApp implements AppController {
   private refreshTimer: ReturnType<typeof setInterval> | null = null
   private animationTimer: ReturnType<typeof setInterval> | null = null
   private hushdReconnectTimer: ReturnType<typeof setTimeout> | null = null
+  private auditPreviewRefreshing = false
+  private lastAuditPreviewRefreshAt = 0
   private width: number = 80
   private height: number = 24
   private cwd: string
@@ -282,6 +286,7 @@ export class TUIApp implements AppController {
         this.state.activePolicy = policyResult.data ?? null
         this.state.auditStats = statsResult.data ?? null
         this.state.recentAuditPreview = previewResult.data?.events ?? []
+        this.lastAuditPreviewRefreshAt = previewResult.ok ? Date.now() : 0
         this.state.hushdConnected = !unauthorized
         this.state.hushdStatus = unauthorized
           ? "unauthorized"
@@ -358,6 +363,53 @@ export class TUIApp implements AppController {
       this.hushdReconnectTimer = null
       this.connectHushd()
     }, delay)
+  }
+
+  private async refreshRecentAuditPreview(force = false): Promise<void> {
+    if (this.auditPreviewRefreshing || !Hushd.isInitialized()) {
+      return
+    }
+
+    if (
+      !force &&
+      Date.now() - this.lastAuditPreviewRefreshAt < AUDIT_PREVIEW_REFRESH_INTERVAL_MS
+    ) {
+      return
+    }
+
+    if (
+      this.state.hushdStatus === "connecting" ||
+      this.state.hushdStatus === "disconnected" ||
+      this.state.hushdStatus === "error" ||
+      this.state.hushdStatus === "not_configured" ||
+      this.state.hushdStatus === "unauthorized"
+    ) {
+      return
+    }
+
+    this.auditPreviewRefreshing = true
+    try {
+      const result = await Hushd.getClient().getAuditDetailed({ limit: 6 })
+      if (result.ok && result.data) {
+        this.state.recentAuditPreview = result.data.events
+        this.lastAuditPreviewRefreshAt = Date.now()
+        if (this.state.inputMode === "main" || this.state.inputMode === "security") {
+          this.render()
+        }
+        return
+      }
+
+      if (result.status === 401 || result.status === 403) {
+        this.state.hushdConnected = false
+        this.state.hushdStatus = "unauthorized"
+        this.state.hushdLastError = result.error ?? "audit access denied"
+        this.state.securityError = this.state.hushdLastError
+        this.state.recentAuditPreview = []
+        this.render()
+      }
+    } finally {
+      this.auditPreviewRefreshing = false
+    }
   }
 
   private async checkFirstRun(): Promise<void> {
@@ -501,9 +553,7 @@ export class TUIApp implements AppController {
         healthChecking: this.state.healthChecking,
         health: this.state.health,
         hushdStatus: this.state.hushdStatus,
-        deniedCount: this.state.recentEvents.filter(e =>
-          e.type === "check" && (e.data as { decision?: string }).decision === "deny"
-        ).length,
+        deniedCount: this.state.recentEvents.filter((event) => eventDecision(event) === "deny").length,
         activeRuns: this.state.activeRuns,
         openBeads: this.state.openBeads,
         agentId: AGENTS[this.state.agentIndex].id,
@@ -587,6 +637,7 @@ export class TUIApp implements AppController {
       this.state.openBeads = beads.length
 
       this.state.lastRefresh = new Date()
+      await this.refreshRecentAuditPreview()
 
       if (this.state.inputMode === "main" && !this.state.isRunning) {
         this.render()

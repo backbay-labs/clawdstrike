@@ -38,7 +38,9 @@ function serverStatusColor(srv: ServerScanResult): string {
 
 function summarizePath(result: ScanPathResult): string {
   const serverCount = result.servers.length
-  const issueCount = result.servers.reduce((sum, srv) => sum + srv.issues.length, 0)
+  const issueCount =
+    result.issues.length +
+    result.servers.reduce((sum, srv) => sum + srv.issues.length, 0)
   const violationCount = result.servers.reduce((sum, srv) => sum + srv.violations.length, 0)
   const pathErrors = result.errors.length + result.servers.filter((srv) => !!srv.error).length
   const summary: string[] = []
@@ -192,6 +194,9 @@ function collectFindings(results: ScanPathResult[]): string[] {
   const findings: string[] = []
 
   for (const result of results) {
+    for (const issue of result.issues) {
+      findings.push(`${basename(result.path) || result.path}: [${issue.severity}] ${issue.message}`)
+    }
     for (const server of result.servers) {
       for (const violation of server.violations) {
         findings.push(`${server.name}: ${violation.guard} blocked ${violation.target}`)
@@ -262,10 +267,17 @@ function renderDetail(
       pushField("Path", pathResult.path)
       lines.push(fitString(
         `${THEME.muted}  Servers:${THEME.reset} ${pathResult.servers.length}  ` +
-          `${THEME.muted}Issues:${THEME.reset} ${pathResult.servers.reduce((sum, srv) => sum + srv.issues.length, 0)}  ` +
+          `${THEME.muted}Issues:${THEME.reset} ${pathResult.issues.length + pathResult.servers.reduce((sum, srv) => sum + srv.issues.length, 0)}  ` +
           `${THEME.muted}Violations:${THEME.reset} ${pathResult.servers.reduce((sum, srv) => sum + srv.violations.length, 0)}`,
         width,
       ))
+      if (pathResult.issues.length > 0) {
+        lines.push(fitString("", width))
+        lines.push(fitString(`${THEME.warning}  Path Issues:${THEME.reset}`, width))
+        for (const issue of pathResult.issues) {
+          pushField("Issue", `[${issue.severity}] ${issue.message}`, THEME.warning)
+        }
+      }
       if (pathResult.errors.length > 0) {
         lines.push(fitString("", width))
         lines.push(fitString(`${THEME.error}  Errors:${THEME.reset}`, width))

@@ -136,30 +136,68 @@ export interface PolicyGuardConfig {
 // SSE EVENTS
 // =============================================================================
 
+export type DaemonEventType =
+  | "check"
+  | "violation"
+  | "eval"
+  | "policy_reload"
+  | "policy_reloaded"
+  | "agent_heartbeat"
+  | "error"
+  | (string & {})
+
 export interface DaemonEvent {
-  type: "check" | "policy_reload" | "error"
+  type: DaemonEventType
   timestamp: string
-  data: CheckEventData | PolicyReloadData | ErrorData
+  data: DaemonEventData
 }
 
+export type DaemonEventData =
+  | CheckEventData
+  | PolicyReloadData
+  | AgentHeartbeatData
+  | ErrorData
+  | Record<string, unknown>
+
 export interface CheckEventData {
+  event_id?: string
   action_type: string
   target: string
   decision: "allow" | "deny"
-  guard: string
-  severity: "info" | "warning" | "error" | "critical"
+  guard?: string | null
+  severity?: "info" | "warning" | "error" | "critical" | null
   reason?: string
+  message?: string
+  session_id?: string | null
+  agent_id?: string | null
+  endpoint_agent_id?: string | null
+  runtime_agent_id?: string | null
+  runtime_agent_kind?: string | null
 }
 
 export interface PolicyReloadData {
-  policy: string
-  version: string
-  guards: string[]
+  policy?: string
+  version?: string
+  guards?: string[]
+  [key: string]: unknown
+}
+
+export interface AgentHeartbeatData {
+  timestamp?: string
+  session_id?: string | null
+  endpoint_agent_id?: string | null
+  runtime_agent_id?: string | null
+  runtime_agent_kind?: string | null
+  posture?: string | null
+  policy_version?: string | null
+  daemon_version?: string | null
+  [key: string]: unknown
 }
 
 export interface ErrorData {
   message: string
   code?: string
+  [key: string]: unknown
 }
 
 // =============================================================================

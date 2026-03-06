@@ -20,6 +20,123 @@ import type {
 
 const DEFAULT_TIMEOUT = 5000
 
+function firstString(
+  payload: Record<string, unknown>,
+  ...keys: string[]
+): string | undefined {
+  for (const key of keys) {
+    const value = payload[key]
+    if (typeof value === "string" && value.trim()) {
+      return value.trim()
+    }
+  }
+
+  return undefined
+}
+
+function normalizeDecision(
+  eventType: string,
+  payload: Record<string, unknown>,
+): "allow" | "deny" {
+  const decision = firstString(payload, "decision")
+  if (decision === "allow" || decision === "allowed") {
+    return "allow"
+  }
+  if (decision === "deny" || decision === "blocked") {
+    return "deny"
+  }
+
+  if (typeof payload.allowed === "boolean") {
+    return payload.allowed ? "allow" : "deny"
+  }
+
+  return eventType === "violation" ? "deny" : "allow"
+}
+
+function normalizeSeverity(
+  payload: Record<string, unknown>,
+): "info" | "warning" | "error" | "critical" | null | undefined {
+  const severity = firstString(payload, "severity")
+  if (
+    severity === "info" ||
+    severity === "warning" ||
+    severity === "error" ||
+    severity === "critical"
+  ) {
+    return severity
+  }
+
+  return severity ? undefined : null
+}
+
+function extractTimestamp(payload: Record<string, unknown>): string {
+  return firstString(payload, "timestamp") ?? new Date().toISOString()
+}
+
+function normalizeSseEvent(
+  eventType: string,
+  payloadText: string,
+): DaemonEvent {
+  const parsed = JSON.parse(payloadText) as unknown
+  const payload = parsed && typeof parsed === "object" && !Array.isArray(parsed)
+    ? parsed as Record<string, unknown>
+    : { value: parsed }
+  const timestamp = extractTimestamp(payload)
+
+  if (eventType === "check" || eventType === "violation" || eventType === "eval") {
+    return {
+      type: eventType,
+      timestamp,
+      data: {
+        event_id: firstString(payload, "event_id", "eventId"),
+        action_type: firstString(payload, "action_type", "actionType") ?? "check",
+        target: firstString(payload, "target") ?? "<none>",
+        decision: normalizeDecision(eventType, payload),
+        guard: firstString(payload, "guard") ?? null,
+        severity: normalizeSeverity(payload),
+        reason: firstString(payload, "reason", "message"),
+        message: firstString(payload, "message", "reason"),
+        session_id: firstString(payload, "session_id", "sessionId") ?? null,
+        agent_id: firstString(payload, "agent_id", "agentId") ?? null,
+        endpoint_agent_id: firstString(payload, "endpoint_agent_id", "endpointAgentId") ?? null,
+        runtime_agent_id: firstString(payload, "runtime_agent_id", "runtimeAgentId") ?? null,
+        runtime_agent_kind: firstString(payload, "runtime_agent_kind", "runtimeAgentKind") ?? null,
+      },
+    }
+  }
+
+  if (eventType === "policy_reload" || eventType === "policy_reloaded") {
+    return {
+      type: eventType,
+      timestamp,
+      data: {
+        ...payload,
+        guards: Array.isArray(payload.guards)
+          ? payload.guards.filter((value): value is string => typeof value === "string")
+          : undefined,
+      },
+    }
+  }
+
+  if (eventType === "error") {
+    return {
+      type: eventType,
+      timestamp,
+      data: {
+        ...payload,
+        message: firstString(payload, "message") ?? "unknown error",
+        code: firstString(payload, "code"),
+      },
+    }
+  }
+
+  return {
+    type: eventType,
+    timestamp,
+    data: payload,
+  }
+}
+
 export interface HushdRequestResult<T> {
   ok: boolean
   status: number | null
@@ -374,6 +491,30 @@ export class HushdClient {
         const reader = res.body.getReader()
         const decoder = new TextDecoder()
         let buffer = ""
+        let eventType = "message"
+        let eventDataLines: string[] = []
+
+        const flushEvent = () => {
+          if (eventDataLines.length === 0) {
+            eventType = "message"
+            return
+          }
+
+          const eventData = eventDataLines.join("\n").trim()
+          eventDataLines = []
+          const frameType = eventType
+          eventType = "message"
+
+          if (!eventData) {
+            return
+          }
+
+          try {
+            onEvent(normalizeSseEvent(frameType, eventData))
+          } catch {
+            onError?.(new Error(`Failed to parse SSE event payload: ${eventData.slice(0, 200)}`))
+          }
+        }
 
         while (true) {
           const { done, value } = await reader.read()
@@ -385,22 +526,25 @@ export class HushdClient {
           const lines = buffer.split("\n")
           buffer = lines.pop() ?? ""
 
-          let eventData = ""
           for (const line of lines) {
-            if (line.startsWith("data: ")) {
-              eventData += line.slice(6)
-            } else if (line === "" && eventData) {
-              // End of event
-              try {
-                const event = JSON.parse(eventData) as DaemonEvent
-                onEvent(event)
-              } catch {
-                // Skip malformed events
-              }
-              eventData = ""
+            if (line.startsWith(":")) {
+              continue
+            }
+            if (line.startsWith("event:")) {
+              eventType = line.slice(6).trimStart() || "message"
+              continue
+            }
+            if (line.startsWith("data:")) {
+              eventDataLines.push(line.slice(5).replace(/^ /, ""))
+              continue
+            }
+            if (line === "") {
+              flushEvent()
             }
           }
         }
+
+        flushEvent()
       } catch (err) {
         if (signal.aborted) return // Expected disconnect
         onError?.(err instanceof Error ? err : new Error(String(err)))

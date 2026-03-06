@@ -101,6 +101,7 @@ export function normalizeScanResults(results: RawScanPathResult[]): ScanPathResu
       violations: server.policy_violations ?? [],
       error: server.error ? describeScanError(server.error) : undefined,
     })),
+    issues: result.issues ?? [],
     errors: result.error
       ? [{ path: result.path, error: describeScanError(result.error) }]
       : [],

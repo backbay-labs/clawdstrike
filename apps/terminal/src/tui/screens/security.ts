@@ -2,7 +2,7 @@
  * Security Screen - Security overview with hushd connection status
  */
 
-import type { AuditEvent } from "../../hushd"
+import { asCheckEventData, type AuditEvent } from "../../hushd"
 import { THEME } from "../theme"
 import type { Screen, ScreenContext } from "../types"
 import { renderBox } from "../components/box"
@@ -87,15 +87,15 @@ function getRenderedRecentEventLines(ctx: ScreenContext, width: number, maxEvent
   lines: string[]
 } {
   const liveChecks = ctx.state.recentEvents
-    .filter((evt) => evt.type === "check")
+    .map((event) => ({ event, data: asCheckEventData(event) }))
+    .filter((item) => item.data !== null)
     .slice(0, maxEvents)
 
   if (liveChecks.length > 0) {
     return {
       source: "live",
-      lines: liveChecks.map((evt) => {
-        const d = evt.data as { action_type?: string; target?: string; guard?: string; decision?: string }
-        return renderLiveEventRow(d.action_type, d.target, d.guard, d.decision, width)
+      lines: liveChecks.map(({ data }) => {
+        return renderLiveEventRow(data?.action_type, data?.target, data?.guard ?? undefined, data?.decision, width)
       }),
     }
   }

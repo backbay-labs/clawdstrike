@@ -20,6 +20,7 @@ import { loadDesktopAgentSnapshotSync } from "../src/desktop-agent"
 import { stripAnsi } from "../src/tui/components/types"
 import { updateInvestigation, buildInvestigationReport } from "../src/tui/investigation"
 import { exportReportBundle } from "../src/tui/report-export"
+import { Hushd } from "../src/hushd"
 import type { CheckEventData } from "../src/hushd"
 
 class TestApp implements AppController {
@@ -335,6 +336,46 @@ describe("supported surface polish", () => {
     expect(output).toContain("next page ready")
   })
 
+  test("uses daemon cursors for audit pagination", async () => {
+    const state = createState()
+    state.auditLog.nextCursor = "off_20"
+    state.auditLog.hasMore = true
+    const app = new TestApp(tempDir)
+    const queries: Array<Record<string, unknown>> = []
+    const originalGetClient = Hushd.getClient
+
+    try {
+      ;(Hushd as unknown as { getClient: typeof Hushd.getClient }).getClient = () => ({
+        getAuditDetailed: async (query?: Record<string, unknown>) => {
+          queries.push(query ?? {})
+          return {
+            ok: true,
+            status: 200,
+            data: {
+              events: [],
+              total: 0,
+              offset: 20,
+              limit: 20,
+              next_cursor: "off_40",
+              has_more: true,
+            },
+          }
+        },
+      } as never)
+
+      expect(auditScreen.handleInput("n", createContext(state, app, 110, 24))).toBe(true)
+      await Bun.sleep(0)
+
+      expect(queries).toHaveLength(1)
+      expect(queries[0]?.cursor).toBe("off_20")
+      expect(queries[0]?.offset).toBeUndefined()
+      expect(state.auditLog.cursor).toBe("off_20")
+      expect(state.auditLog.previousCursors).toEqual([null])
+    } finally {
+      ;(Hushd as unknown as { getClient: typeof Hushd.getClient }).getClient = originalGetClient
+    }
+  })
+
   test("keeps the report help bar readable at 80 columns", () => {
     const state = createState()
     const app = new TestApp(tempDir)
@@ -385,6 +426,7 @@ describe("hunt state cards", () => {
       {
         client: "cursor",
         path: "/Users/connor/Library/Application Support/Cursor/User/globalStorage/mcp.json",
+        issues: [{ severity: "warning", code: "path-warning", message: "Path issue" }],
         servers: [
           {
             name: "filesystem",
@@ -402,7 +444,7 @@ describe("hunt state cards", () => {
 
     const output = stripAnsi(huntScanScreen.render(createContext(state, app, 100, 28)))
 
-    expect(output).toContain("cursor · mcp.json 1s 1i")
+    expect(output).toContain("cursor · mcp.json 1s 2i")
     expect(output).toContain("Path: /Users/connor/Library/Applicati")
     expect(output).toContain("Support/Cursor/User/globalStora")
     expect(output).not.toContain("cursor — /Users/connor/Library")

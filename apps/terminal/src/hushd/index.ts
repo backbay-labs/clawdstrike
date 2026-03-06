@@ -8,6 +8,7 @@
 import { HushdClient } from "./client"
 
 export type { HushdClient, HushdRequestResult } from "./client"
+export { asCheckEventData, eventDecision } from "./events"
 export type {
   CheckRequest,
   CheckResponse,
@@ -22,8 +23,11 @@ export type {
   PolicyResponse,
   PolicyGuardConfig,
   DaemonEvent,
+  DaemonEventType,
+  DaemonEventData,
   CheckEventData,
   PolicyReloadData,
+  AgentHeartbeatData,
   ErrorData,
   HushdConnectionState,
 } from "./types"

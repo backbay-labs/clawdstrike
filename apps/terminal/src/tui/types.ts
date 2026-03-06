@@ -176,6 +176,8 @@ export interface AuditLogState {
   statusMessage: string | null
   filters: AuditLogFilters
   limit: number
+  cursor: string | null
+  previousCursors: Array<string | null>
   offset: number
   nextCursor: string | null
   hasMore: boolean
@@ -494,6 +496,8 @@ export function createInitialAuditLogState(): AuditLogState {
       sessionId: "",
     },
     limit: 20,
+    cursor: null,
+    previousCursors: [],
     offset: 0,
     nextCursor: null,
     hasMore: false,

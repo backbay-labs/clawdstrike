@@ -67,6 +67,13 @@ describe("hunt bridge", () => {
       {
         client: "cursor",
         path: "/tmp/mcp.json",
+        issues: [
+          {
+            severity: "warning",
+            code: "path_warning",
+            message: "Path-level issue",
+          },
+        ],
         servers: [
           {
             name: "blender",
@@ -105,6 +112,7 @@ describe("hunt bridge", () => {
     ])
 
     expect(normalized[0].client).toBe("cursor")
+    expect(normalized[0].issues).toHaveLength(1)
     expect(normalized[0].servers[0].command).toBe("/usr/local/bin/blender-mcp")
     expect(normalized[0].servers[0].signature?.tools[0].input_schema).toEqual({ type: "object" })
     expect(normalized[0].errors[0]?.error).toContain("file_not_found")

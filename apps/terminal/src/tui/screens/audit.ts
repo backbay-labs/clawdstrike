@@ -220,18 +220,30 @@ function selectedEvent(ctx: ScreenContext): AuditEvent | null {
   return audit.events[Math.min(audit.list.selected, audit.events.length - 1)] ?? null
 }
 
-function buildQuery(ctx: ScreenContext, offset = ctx.state.auditLog.offset): AuditQuery {
+interface AuditPageRequest {
+  cursor: string | null
+  previousCursors: Array<string | null>
+}
+
+function buildQuery(ctx: ScreenContext, page: AuditPageRequest): AuditQuery {
   const filters = ctx.state.auditLog.filters
   return {
     limit: ctx.state.auditLog.limit,
-    offset,
+    cursor: page.cursor ?? undefined,
+    offset: page.cursor == null ? 0 : undefined,
     decision: filters.decision === "any" ? undefined : filters.decision,
     event_type: filters.eventType === "any" ? undefined : filters.eventType,
     session_id: filters.sessionId.trim() || undefined,
   }
 }
 
-async function loadAudit(ctx: ScreenContext, offset = ctx.state.auditLog.offset): Promise<void> {
+async function loadAudit(
+  ctx: ScreenContext,
+  page: AuditPageRequest = {
+    cursor: ctx.state.auditLog.cursor,
+    previousCursors: ctx.state.auditLog.previousCursors,
+  },
+): Promise<void> {
   const current = ctx.state.auditLog
   ctx.state.auditLog = {
     ...current,
@@ -241,7 +253,7 @@ async function loadAudit(ctx: ScreenContext, offset = ctx.state.auditLog.offset)
   }
   ctx.app.render()
 
-  const result = await Hushd.getClient().getAuditDetailed(buildQuery(ctx, offset))
+  const result = await Hushd.getClient().getAuditDetailed(buildQuery(ctx, page))
   if (!result.ok || !result.data) {
     if (result.status === 401 || result.status === 403) {
       ctx.state.hushdConnected = false
@@ -262,15 +274,17 @@ async function loadAudit(ctx: ScreenContext, offset = ctx.state.auditLog.offset)
 
   ctx.state.auditLog = {
     ...ctx.state.auditLog,
-    events: result.data.events,
-    list: { offset: 0, selected: 0 },
-    loading: false,
-    error: null,
-    statusMessage: `Loaded ${result.data.events.length} event(s) from offset ${result.data.offset ?? offset}.`,
-    offset: result.data.offset ?? offset,
-    limit: result.data.limit ?? ctx.state.auditLog.limit,
-    nextCursor: result.data.next_cursor ?? null,
-    hasMore: result.data.has_more ?? false,
+      events: result.data.events,
+      list: { offset: 0, selected: 0 },
+      loading: false,
+      error: null,
+      statusMessage: `Loaded ${result.data.events.length} event(s) from offset ${result.data.offset ?? 0}.`,
+      cursor: page.cursor,
+      previousCursors: page.previousCursors,
+      offset: result.data.offset ?? 0,
+      limit: result.data.limit ?? ctx.state.auditLog.limit,
+      nextCursor: result.data.next_cursor ?? null,
+      hasMore: result.data.has_more ?? false,
   }
   ctx.app.render()
 }
@@ -333,7 +347,7 @@ function renderEventListPane(ctx: ScreenContext, width: number, height: number):
 export const auditScreen: Screen = {
   onEnter(ctx: ScreenContext): void {
     if (ctx.state.auditLog.events.length === 0 && !ctx.state.auditLog.loading) {
-      void loadAudit(ctx, 0)
+      void loadAudit(ctx, { cursor: null, previousCursors: [] })
     }
   },
 
@@ -381,7 +395,10 @@ export const auditScreen: Screen = {
     }
 
     if (key === "r") {
-      void loadAudit(ctx, audit.offset)
+      void loadAudit(ctx, {
+        cursor: audit.cursor,
+        previousCursors: audit.previousCursors,
+      })
       return true
     }
 
@@ -390,9 +407,13 @@ export const auditScreen: Screen = {
       ctx.state.auditLog = {
         ...audit,
         filters: { ...audit.filters, decision: DECISION_FILTERS[next] },
+        cursor: null,
+        previousCursors: [],
         offset: 0,
+        nextCursor: null,
+        hasMore: false,
       }
-      void loadAudit(ctx, 0)
+      void loadAudit(ctx, { cursor: null, previousCursors: [] })
       return true
     }
 
@@ -401,19 +422,33 @@ export const auditScreen: Screen = {
       ctx.state.auditLog = {
         ...audit,
         filters: { ...audit.filters, eventType: EVENT_FILTERS[next] },
+        cursor: null,
+        previousCursors: [],
         offset: 0,
+        nextCursor: null,
+        hasMore: false,
       }
-      void loadAudit(ctx, 0)
+      void loadAudit(ctx, { cursor: null, previousCursors: [] })
       return true
     }
 
-    if (key === "n" && audit.hasMore) {
-      void loadAudit(ctx, audit.offset + audit.limit)
+    if (key === "n" && audit.hasMore && audit.nextCursor) {
+      void loadAudit(ctx, {
+        cursor: audit.nextCursor,
+        previousCursors: [...audit.previousCursors, audit.cursor],
+      })
       return true
     }
 
-    if (key === "p" && audit.offset > 0) {
-      void loadAudit(ctx, Math.max(0, audit.offset - audit.limit))
+    if (key === "p" && (audit.previousCursors.length > 0 || audit.offset > 0)) {
+      const previousCursors = audit.previousCursors.slice(0, -1)
+      const previousCursor = audit.previousCursors.length > 0
+        ? audit.previousCursors[audit.previousCursors.length - 1] ?? null
+        : null
+      void loadAudit(ctx, {
+        cursor: previousCursor,
+        previousCursors,
+      })
       return true
     }
 

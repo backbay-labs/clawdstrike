@@ -354,6 +354,36 @@ describe("HushdClient", () => {
       client.disconnectSSE()
       expect(client.isSSEConnected()).toBe(false)
     })
+
+    test("normalizes hushd SSE event frames using the event field", async () => {
+      const encoder = new TextEncoder()
+      globalThis.fetch = mock(async () => new Response(new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode("event: violation\n"))
+          controller.enqueue(encoder.encode("data: {\"timestamp\":\"2026-03-06T06:00:00Z\",\"action_type\":\"shell\",\"target\":\"rm -rf /tmp/demo\",\"allowed\":false,\"guard\":\"policy_guard\",\"severity\":\"critical\",\"message\":\"blocked by policy\"}\n\n"))
+          controller.close()
+        },
+      }), {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      })) as unknown as typeof fetch
+
+      const events: Array<{ type: string; timestamp: string; data: Record<string, unknown> }> = []
+      client.connectSSE((event) => {
+        events.push(event as { type: string; timestamp: string; data: Record<string, unknown> })
+      })
+
+      await Bun.sleep(25)
+      client.disconnectSSE()
+
+      expect(events).toHaveLength(1)
+      expect(events[0]?.type).toBe("violation")
+      expect(events[0]?.timestamp).toBe("2026-03-06T06:00:00Z")
+      expect(events[0]?.data.action_type).toBe("shell")
+      expect(events[0]?.data.target).toBe("rm -rf /tmp/demo")
+      expect(events[0]?.data.decision).toBe("deny")
+      expect(events[0]?.data.message).toBe("blocked by policy")
+    })
   })
 })
 
