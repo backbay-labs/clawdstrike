@@ -39,6 +39,9 @@ class TestApp implements AppController {
   public launchedDispatchSheet = false
   public closedDispatchSheet = false
   public openedRunId: string | null = null
+  public beganAttachRunId: string | null = null
+  public confirmedAttach = false
+  public canceledAttach = false
   public canceledRunId: string | null = null
 
   constructor(private cwd: string) {}
@@ -57,6 +60,18 @@ class TestApp implements AppController {
 
   openRun(runId: string): void {
     this.openedRunId = runId
+  }
+
+  beginAttachRun(runId: string): void {
+    this.beganAttachRunId = runId
+  }
+
+  confirmAttachRun(): void {
+    this.confirmedAttach = true
+  }
+
+  cancelAttachRun(): void {
+    this.canceledAttach = true
   }
 
   cancelRun(runId: string): void {
@@ -122,6 +137,9 @@ function createState(): AppState {
     dispatchSheet: createInitialDispatchSheetState(),
     runs: createInitialRunListState(),
     activeRunId: null,
+    pendingAttachRunId: null,
+    attachedRunId: null,
+    ptyHandoffActive: false,
     runDetailEvents: { offset: 0, selected: 0 },
     lastResult: null,
     setupDetection: null,

@@ -5,7 +5,7 @@ import { renderSplit } from "../components/split-pane"
 import { renderSurfaceHeader } from "../components/surface-header"
 import { THEME } from "../theme"
 import type { RunEvent, RunRecord, Screen, ScreenContext } from "../types"
-import { formatRunPhase, getRunReviewRoute, isRunReviewReady } from "../runs"
+import { canRunAttach, formatRunPhase, getRunAttachDisabledReason, getRunReviewRoute, isRunReviewReady } from "../runs"
 
 function getCurrentRun(ctx: ScreenContext): RunRecord | null {
   const { runs, activeRunId } = ctx.state
@@ -142,6 +142,18 @@ function renderStatusCard(run: RunRecord, width: number): string[] {
     }
   }
 
+  content.push("")
+  content.push(`${THEME.secondary}${THEME.bold}Attach${THEME.reset}`)
+  if (canRunAttach(run)) {
+    content.push(`${THEME.success}Ready${THEME.reset} hand the terminal to this run from the detail footer.`)
+  } else {
+    content.push(`${THEME.dim}${getRunAttachDisabledReason(run) ?? "Attach is not available for this run."}${THEME.reset}`)
+  }
+  if (run.ptySessionId) {
+    addRow("Session", `${THEME.dim}${run.ptySessionId}${THEME.reset}`)
+  }
+  addRow("State", `${THEME.white}${run.attachState}${THEME.reset}`)
+
   return renderBox("Status", content, width, THEME, {
     style: "rounded",
     titleAlign: "left",
@@ -191,6 +203,35 @@ function eventViewportHeight(height: number): number {
   return Math.max(6, height - 10)
 }
 
+function overlayAttachBanner(baseScreen: string, ctx: ScreenContext, run: RunRecord): string {
+  const lines = baseScreen.split("\n")
+  const overlay = centerBlock(
+    renderBox(
+      "Attach To Run",
+      [
+        `${THEME.dim}Run:${THEME.reset} ${THEME.white}${run.id}${THEME.reset} ${THEME.dim}${run.title}${THEME.reset}`,
+        `${THEME.dim}Mode:${THEME.reset} ${THEME.white}${run.mode}${THEME.reset} ${THEME.dim}-> attach${THEME.reset}`,
+        `${THEME.dim}Detach:${THEME.reset} ${THEME.white}exit${THEME.reset} ${THEME.dim}or the agent's detach flow${THEME.reset}`,
+        "",
+        `${THEME.white}Enter${THEME.reset} ${THEME.dim}attach${THEME.reset}  ${THEME.white}Esc${THEME.reset} ${THEME.dim}cancel${THEME.reset}`,
+      ],
+      Math.max(56, Math.min(82, ctx.width - 12)),
+      THEME,
+      { style: "rounded", titleAlign: "left", padding: 1 },
+    ),
+    ctx.width,
+  )
+
+  for (let i = 0; i < overlay.length; i++) {
+    const lineIndex = 6 + i
+    if (lineIndex < lines.length) {
+      lines[lineIndex] = overlay[i]
+    }
+  }
+
+  return lines.join("\n")
+}
+
 export const runDetailScreen: Screen = {
   render(ctx: ScreenContext): string {
     const run = getCurrentRun(ctx)
@@ -236,6 +277,7 @@ export const runDetailScreen: Screen = {
     lines.push(centerLine(
       `${THEME.dim}esc${THEME.reset}${THEME.muted} back${THEME.reset}  ` +
         `${THEME.dim}r${THEME.reset}${THEME.muted} runs${THEME.reset}  ` +
+        `${THEME.dim}a${THEME.reset}${THEME.muted} attach${THEME.reset}  ` +
         `${THEME.dim}c${THEME.reset}${THEME.muted} cancel${THEME.reset}  ` +
         `${THEME.dim}↑↓${THEME.reset}${THEME.muted} events${THEME.reset}  ` +
         `${THEME.dim}enter${THEME.reset}${THEME.muted} ${isRunReviewReady(run) ? "review" : "result"}${THEME.reset}`,
@@ -246,11 +288,28 @@ export const runDetailScreen: Screen = {
       lines.push("")
     }
 
-    return lines.join("\n")
+    const rendered = lines.join("\n")
+    if (ctx.state.pendingAttachRunId === run.id) {
+      return overlayAttachBanner(rendered, ctx, run)
+    }
+
+    return rendered
   },
 
   handleInput(key: string, ctx: ScreenContext): boolean {
     const run = getCurrentRun(ctx)
+
+    if (run && ctx.state.pendingAttachRunId === run.id) {
+      if (key === "\r") {
+        ctx.app.confirmAttachRun()
+        return true
+      }
+
+      if (key === "\x1b" || key === "q") {
+        ctx.app.cancelAttachRun()
+        return true
+      }
+    }
 
     if (key === "\x1b" || key === "q" || key === "b") {
       ctx.app.setScreen("main")
@@ -268,6 +327,11 @@ export const runDetailScreen: Screen = {
 
     if (key === "c") {
       ctx.app.cancelRun(run.id)
+      return true
+    }
+
+    if (key === "a") {
+      ctx.app.beginAttachRun(run.id)
       return true
     }
 

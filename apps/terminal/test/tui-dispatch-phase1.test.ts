@@ -22,6 +22,9 @@ class TestApp implements AppController {
   public launchedDispatchSheet = false
   public closedDispatchSheet = false
   public openedRunId: string | null = null
+  public beganAttachRunId: string | null = null
+  public confirmedAttach = false
+  public canceledAttach = false
   public canceledRunId: string | null = null
 
   setScreen(mode: InputMode): void {
@@ -38,6 +41,18 @@ class TestApp implements AppController {
 
   openRun(runId: string): void {
     this.openedRunId = runId
+  }
+
+  beginAttachRun(runId: string): void {
+    this.beganAttachRunId = runId
+  }
+
+  confirmAttachRun(): void {
+    this.confirmedAttach = true
+  }
+
+  cancelAttachRun(): void {
+    this.canceledAttach = true
   }
 
   cancelRun(runId: string): void {
@@ -101,6 +116,9 @@ function createState(): AppState {
     dispatchSheet: createInitialDispatchSheetState(),
     runs: createInitialRunListState(),
     activeRunId: null,
+    pendingAttachRunId: null,
+    attachedRunId: null,
+    ptyHandoffActive: false,
     runDetailEvents: { offset: 0, selected: 0 },
     lastResult: null,
     setupDetection: null,
@@ -260,6 +278,32 @@ describe("run detail surface", () => {
     expect(runDetailScreen.handleInput("r", createContext(state, app))).toBe(true)
     expect(app.screen).toBe("runs")
   })
+
+  test("shows the attach confirmation and routes attach actions through the controller", () => {
+    const state = createState()
+    const app = new TestApp()
+    const run = createManagedRun({
+      prompt: "Attach me here",
+      action: "dispatch",
+      agentId: "codex",
+      agentLabel: "Codex",
+      mode: "attach",
+    })
+    state.runs.entries = [run]
+    state.activeRunId = run.id
+    state.pendingAttachRunId = run.id
+
+    const ctx = createContext(state, app, 120, 36)
+    const output = stripAnsi(runDetailScreen.render(ctx))
+    expect(output).toContain("Attach To Run")
+    expect(output).toContain("Enter attach")
+
+    expect(runDetailScreen.handleInput("\r", ctx)).toBe(true)
+    expect(app.confirmedAttach).toBe(true)
+
+    expect(runDetailScreen.handleInput("a", createContext({ ...state, pendingAttachRunId: null }, app))).toBe(true)
+    expect(app.beganAttachRunId).toBe(run.id)
+  })
 })
 
 describe("result screen managed-run handoff", () => {
@@ -351,6 +395,46 @@ describe("TUIApp phase one dispatch flow", () => {
     expect(app.state.runs.entries[0]?.events.some((event) => event.message.includes("Run completed"))).toBe(true)
     expect(app.state.lastResult?.taskId).toBe("task-12345678")
     expect(app.state.lastResult?.action).toBe("dispatch")
+  })
+
+  test("stages attach mode in run detail and opens the attach confirmation", () => {
+    const app = new TUIApp(process.cwd()) as unknown as {
+      state: {
+        promptBuffer: string
+        inputMode: string
+        activeRunId: string | null
+        pendingAttachRunId: string | null
+        runs: {
+          entries: Array<{
+            id: string
+            mode: string
+            attachState: string
+            canAttach: boolean
+          }>
+        }
+        dispatchSheet: {
+          mode: "managed" | "attach" | "external"
+          action: "dispatch" | "speculate"
+          open: boolean
+        }
+      }
+      render: () => void
+      openDispatchSheet: (action: "dispatch" | "speculate") => void
+      launchDispatchSheet: () => void
+    }
+
+    app.render = () => {}
+    app.state.promptBuffer = "launch attached flow"
+    app.openDispatchSheet("dispatch")
+    app.state.dispatchSheet.mode = "attach"
+    app.launchDispatchSheet()
+
+    expect(app.state.inputMode).toBe("run-detail")
+    expect(app.state.activeRunId).not.toBeNull()
+    expect(app.state.pendingAttachRunId).toBe(app.state.activeRunId)
+    expect(app.state.runs.entries[0]?.mode).toBe("attach")
+    expect(app.state.runs.entries[0]?.attachState).toBe("detached")
+    expect(app.state.runs.entries[0]?.canAttach).toBe(true)
   })
 
   test("keeps completed runs reopenable from the runs backlog without hijacking navigation", () => {

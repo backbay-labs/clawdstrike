@@ -1,5 +1,7 @@
 import type {
   DispatchResultInfo,
+  DispatchExecutionMode,
+  RunAttachState,
   RunEvent,
   RunListFilter,
   RunPhase,
@@ -33,6 +35,7 @@ export interface ManagedRunInit {
 }
 
 const TERMINAL_PHASES = new Set<RunPhase>(["review_ready", "completed", "failed", "canceled"])
+const ATTACHABLE_TOOLCHAINS = new Set(["claude", "codex"])
 
 function nowIso(): string {
   return new Date().toISOString()
@@ -67,6 +70,10 @@ function applyUpdate(
     updatedAt: timestamp,
     events: event ? [...run.events, createEvent(event.kind, event.message, timestamp)] : run.events,
   }
+}
+
+export function supportsAttachToolchain(agentId: string): boolean {
+  return ATTACHABLE_TOOLCHAINS.has(agentId)
 }
 
 function mapDispatchResult(
@@ -197,8 +204,58 @@ export function filterRuns(entries: RunRecord[], filter: RunListFilter): RunReco
   }
 }
 
-export function createManagedRun(init: ManagedRunInit): RunRecord {
+export function canRunAttach(run: Pick<RunRecord, "action" | "mode" | "phase" | "agentId" | "attachState">): boolean {
+  return getRunAttachDisabledReason(run) === null
+}
+
+export function getRunAttachDisabledReason(
+  run: Pick<RunRecord, "action" | "mode" | "phase" | "agentId" | "attachState">,
+): string | null {
+  if (run.action !== "dispatch") {
+    return "Attach is only available for dispatch runs."
+  }
+
+  if (run.mode !== "attach") {
+    return "Attach is only available for runs launched in attach mode."
+  }
+
+  if (!supportsAttachToolchain(run.agentId)) {
+    return "This agent does not expose an interactive attach session yet."
+  }
+
+  if (isRunTerminal(run.phase)) {
+    return "This run has already finished."
+  }
+
+  if (run.attachState === "attaching") {
+    return "Attach handoff is preparing."
+  }
+
+  if (run.attachState === "attached") {
+    return "This run already owns the terminal."
+  }
+
+  if (run.attachState === "returning") {
+    return "ClawdStrike is restoring the run detail surface."
+  }
+
+  return null
+}
+
+export function updateRunRecord(
+  run: RunRecord,
+  patch: Partial<RunRecord>,
+  event?: { kind: RunEvent["kind"]; message: string },
+): RunRecord {
+  return applyUpdate(run, patch, event)
+}
+
+export function createManagedRun(
+  init: ManagedRunInit & { mode?: DispatchExecutionMode; attachState?: RunAttachState },
+): RunRecord {
   const timestamp = nowIso()
+  const mode = init.mode ?? "managed"
+  const attachState = init.attachState ?? "detached"
   return {
     id: makeRunId(),
     title: truncateTitle(init.prompt),
@@ -206,7 +263,7 @@ export function createManagedRun(init: ManagedRunInit): RunRecord {
     action: init.action,
     agentId: init.agentId,
     agentLabel: init.agentLabel,
-    mode: "managed",
+    mode,
     phase: "launching",
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -218,10 +275,19 @@ export function createManagedRun(init: ManagedRunInit): RunRecord {
     result: null,
     error: null,
     completedAt: null,
+    attached: false,
+    attachState,
+    ptySessionId: null,
+    canAttach: mode === "attach" && init.action === "dispatch" && supportsAttachToolchain(init.agentId),
+    ptyTail: [],
     events: [
       createEvent(
         "status",
-        init.action === "dispatch" ? "Dispatch requested" : "Speculation requested",
+        init.action === "dispatch"
+          ? mode === "attach"
+            ? "Attach run requested"
+            : "Dispatch requested"
+          : "Speculation requested",
         timestamp,
       ),
     ],

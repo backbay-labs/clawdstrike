@@ -25,7 +25,16 @@ import {
   createInitialRunListState,
   type RuntimeInfo,
 } from "./types"
-import { createManagedRun, executeManagedRun, isRunTerminal } from "./runs"
+import {
+  canRunAttach,
+  createManagedRun,
+  executeManagedRun,
+  getRunAttachDisabledReason,
+  isRunTerminal,
+  supportsAttachToolchain,
+  updateRunRecord,
+} from "./runs"
+import { createAttachRunSession } from "./pty"
 
 // Screen imports
 import { createMainScreen } from "./screens/main"
@@ -93,6 +102,14 @@ export class TUIApp implements AppController {
   private height: number = 24
   private cwd: string
   private canceledRunIds = new Set<string>()
+  private attachedSession: { exited: Promise<number>; terminate: () => void } | null = null
+  private readonly inputListener = (key: string) => this.handleInput(key)
+  private readonly resizeListener = () => {
+    this.updateTerminalSize()
+    if (!this.state.ptyHandoffActive) {
+      this.render()
+    }
+  }
 
   private commands: Command[]
   private screens: Map<string, Screen>
@@ -133,6 +150,9 @@ export class TUIApp implements AppController {
       dispatchSheet: createInitialDispatchSheetState(),
       runs: createInitialRunListState(),
       activeRunId: null,
+      pendingAttachRunId: null,
+      attachedRunId: null,
+      ptyHandoffActive: false,
       runDetailEvents: { offset: 0, selected: 0 },
       lastResult: null,
       setupDetection: null,
@@ -502,6 +522,12 @@ export class TUIApp implements AppController {
     }
 
     Hushd.reset()
+    this.detachTerminalListeners()
+    this.attachedSession?.terminate()
+    this.attachedSession = null
+    this.state.attachedRunId = null
+    this.state.pendingAttachRunId = null
+    this.state.ptyHandoffActive = false
 
     process.stdout.write(ESC.showCursor + ESC.mainScreen)
 
@@ -521,15 +547,19 @@ export class TUIApp implements AppController {
     }
     process.stdin.resume()
     process.stdin.setEncoding("utf8")
+    this.attachTerminalListeners()
+  }
 
-    process.stdin.on("data", (key: string) => {
-      this.handleInput(key)
-    })
+  private attachTerminalListeners(): void {
+    process.stdin.off("data", this.inputListener)
+    process.stdout.off("resize", this.resizeListener)
+    process.stdin.on("data", this.inputListener)
+    process.stdout.on("resize", this.resizeListener)
+  }
 
-    process.stdout.on("resize", () => {
-      this.updateTerminalSize()
-      this.render()
-    })
+  private detachTerminalListeners(): void {
+    process.stdin.off("data", this.inputListener)
+    process.stdout.off("resize", this.resizeListener)
   }
 
   // ===========================================================================
@@ -537,6 +567,10 @@ export class TUIApp implements AppController {
   // ===========================================================================
 
   private handleInput(key: string): void {
+    if (this.state.ptyHandoffActive) {
+      return
+    }
+
     // Ctrl+C always quits
     if (key === "\x03") {
       this.quit()
@@ -672,7 +706,7 @@ export class TUIApp implements AppController {
       return
     }
 
-    if (this.state.dispatchSheet.mode !== "managed") {
+    if (this.state.dispatchSheet.mode === "external") {
       this.state.dispatchSheet = {
         ...this.state.dispatchSheet,
         error: `${this.state.dispatchSheet.mode} mode is reserved for later phases.`,
@@ -681,13 +715,32 @@ export class TUIApp implements AppController {
       return
     }
 
-    const { prompt, action, agentIndex } = this.state.dispatchSheet
+    const { prompt, action, agentIndex, mode } = this.state.dispatchSheet
+    if (mode === "attach" && action !== "dispatch") {
+      this.state.dispatchSheet = {
+        ...this.state.dispatchSheet,
+        error: "attach mode is only available for dispatch runs.",
+      }
+      this.render()
+      return
+    }
+
     const agent = AGENTS[agentIndex]
+    if (mode === "attach" && !supportsAttachToolchain(agent.id)) {
+      this.state.dispatchSheet = {
+        ...this.state.dispatchSheet,
+        error: `${agent.name} does not expose an interactive attach session yet.`,
+      }
+      this.render()
+      return
+    }
+
     const run = createManagedRun({
       prompt,
       action,
       agentId: agent.id,
       agentLabel: agent.name,
+      mode,
     })
 
     this.state.agentIndex = agentIndex
@@ -695,9 +748,16 @@ export class TUIApp implements AppController {
     this.state.promptBuffer = ""
     this.replaceRun(run)
     this.state.statusMessage =
-      `${THEME.accent}⠋${THEME.reset} ${action === "dispatch" ? "Managed run launched" : "Managed speculation launched"} via ${agent.name}`
+      mode === "attach"
+        ? `${THEME.accent}⠋${THEME.reset} Attach run staged via ${agent.name}`
+        : `${THEME.accent}⠋${THEME.reset} ${action === "dispatch" ? "Managed run launched" : "Managed speculation launched"} via ${agent.name}`
     this.syncManagedRunState()
     this.openRun(run.id)
+
+    if (mode === "attach") {
+      this.beginAttachRun(run.id)
+      return
+    }
 
     void this.launchManagedRun(run)
   }
@@ -721,6 +781,44 @@ export class TUIApp implements AppController {
     const lastEventIndex = Math.max(0, run.events.length - 1)
     this.state.runDetailEvents = { offset: Math.max(0, lastEventIndex - 5), selected: lastEventIndex }
     this.setScreen("run-detail")
+  }
+
+  beginAttachRun(runId: string): void {
+    const run = this.state.runs.entries.find((entry) => entry.id === runId)
+    if (!run) {
+      return
+    }
+
+    const reason = getRunAttachDisabledReason(run)
+    if (reason) {
+      this.state.statusMessage = `${THEME.warning}!${THEME.reset} ${reason}`
+      this.render()
+      return
+    }
+
+    this.state.pendingAttachRunId = runId
+    this.render()
+  }
+
+  confirmAttachRun(): void {
+    const runId = this.state.pendingAttachRunId
+    if (!runId) {
+      return
+    }
+
+    const run = this.state.runs.entries.find((entry) => entry.id === runId)
+    if (!run || !canRunAttach(run)) {
+      this.cancelAttachRun()
+      return
+    }
+
+    this.state.pendingAttachRunId = null
+    void this.launchAttachRun(run.id)
+  }
+
+  cancelAttachRun(): void {
+    this.state.pendingAttachRunId = null
+    this.render()
   }
 
   cancelRun(runId: string): void {
@@ -821,6 +919,25 @@ export class TUIApp implements AppController {
     }
   }
 
+  private prepareTerminalForPtyHandoff(): void {
+    this.state.ptyHandoffActive = true
+    this.detachTerminalListeners()
+    process.stdout.write(ESC.showCursor + ESC.mainScreen)
+    if (process.stdin.isTTY) {
+      process.stdin.setRawMode(false)
+    }
+  }
+
+  private restoreTerminalAfterPtyHandoff(): void {
+    if (process.stdin.isTTY) {
+      process.stdin.setRawMode(true)
+    }
+    this.attachTerminalListeners()
+    this.state.ptyHandoffActive = false
+    process.stdout.write(ESC.altScreen + ESC.hideCursor)
+    this.updateTerminalSize()
+  }
+
   private openDispatchSheet(action: "dispatch" | "speculate"): void {
     const prompt = this.state.promptBuffer.trim()
     if (!prompt) {
@@ -881,6 +998,144 @@ export class TUIApp implements AppController {
       : `${THEME.error}✗${THEME.reset} ${run.agentLabel} failed`
     this.syncManagedRunState()
     this.render()
+  }
+
+  private async launchAttachRun(runId: string): Promise<void> {
+    const originalRun = this.state.runs.entries.find((entry) => entry.id === runId)
+    if (!originalRun) {
+      return
+    }
+
+    let sessionPlan: Awaited<ReturnType<typeof createAttachRunSession>> | null = null
+    let terminalPrepared = false
+    const startedAt = Date.now()
+
+    try {
+      const preparingRun = updateRunRecord(
+        originalRun,
+        {
+          attachState: "attaching",
+          attached: false,
+          error: null,
+        },
+        { kind: "status", message: "Preparing attach session" },
+      )
+      this.replaceRun(preparingRun)
+      this.state.statusMessage = `${THEME.accent}⠋${THEME.reset} Preparing attach session`
+      this.syncManagedRunState()
+      this.render()
+
+      sessionPlan = await createAttachRunSession(preparingRun, {
+        cwd: this.cwd,
+        projectId: "default",
+      })
+
+      const attachedRun = updateRunRecord(
+        this.state.runs.entries.find((entry) => entry.id === runId) ?? preparingRun,
+        {
+          phase: "executing",
+          routing: sessionPlan.routing,
+          workcellId: sessionPlan.workcell.id,
+          worktreePath: sessionPlan.workcell.directory,
+          ptySessionId: sessionPlan.ptySessionId,
+          attached: true,
+          attachState: "attached",
+        },
+        { kind: "status", message: "Terminal attached to interactive session" },
+      )
+      this.replaceRun(attachedRun)
+      this.state.attachedRunId = runId
+      this.prepareTerminalForPtyHandoff()
+      terminalPrepared = true
+      this.attachedSession = sessionPlan.start()
+
+      const exitCode = await this.attachedSession.exited
+      const returningRun = updateRunRecord(
+        this.state.runs.entries.find((entry) => entry.id === runId) ?? attachedRun,
+        {
+          attached: false,
+          attachState: "returning",
+        },
+        { kind: "status", message: "Returning control to ClawdStrike" },
+      )
+      this.replaceRun(returningRun)
+      this.state.attachedRunId = null
+      this.attachedSession = null
+      this.restoreTerminalAfterPtyHandoff()
+      terminalPrepared = false
+
+      const success = exitCode === 0
+      const finishedRun = updateRunRecord(
+        this.state.runs.entries.find((entry) => entry.id === runId) ?? returningRun,
+        {
+          phase: success ? "completed" : "failed",
+          result: {
+            success,
+            taskId: sessionPlan.workcell.id,
+            agent: returningRun.agentLabel,
+            action: returningRun.action,
+            routing: sessionPlan.routing,
+            execution: success ? { success: true } : { success: false, error: `Interactive session exited with code ${exitCode}` },
+            error: success ? undefined : `Interactive session exited with code ${exitCode}`,
+            duration: Date.now() - startedAt,
+          },
+          execution: success ? { success: true } : { success: false, error: `Interactive session exited with code ${exitCode}` },
+          error: success ? null : `Interactive session exited with code ${exitCode}`,
+          completedAt: new Date().toISOString(),
+          attached: false,
+          attachState: "detached",
+        },
+        {
+          kind: success ? "status" : "error",
+          message: success ? "Interactive session completed" : `Run failed: Interactive session exited with code ${exitCode}`,
+        },
+      )
+      this.replaceRun(finishedRun)
+      this.state.lastResult = finishedRun.result
+      this.state.statusMessage = success
+        ? `${THEME.success}✓${THEME.reset} ${finishedRun.agentLabel} returned from attach`
+        : `${THEME.error}✗${THEME.reset} ${finishedRun.agentLabel} attach session failed`
+      this.syncManagedRunState()
+      this.openRun(runId)
+    } catch (error) {
+      if (terminalPrepared) {
+        this.restoreTerminalAfterPtyHandoff()
+      }
+      this.attachedSession?.terminate()
+      this.attachedSession = null
+      this.state.attachedRunId = null
+
+      const message = error instanceof Error ? error.message : String(error)
+      const failedRun = updateRunRecord(
+        this.state.runs.entries.find((entry) => entry.id === runId) ?? originalRun,
+        {
+          phase: "failed",
+          attached: false,
+          attachState: "detached",
+          error: message,
+          completedAt: new Date().toISOString(),
+          result: {
+            success: false,
+            taskId: sessionPlan?.workcell.id ?? "",
+            agent: originalRun.agentLabel,
+            action: originalRun.action,
+            routing: sessionPlan?.routing,
+            execution: { success: false, error: message },
+            error: message,
+            duration: Date.now() - startedAt,
+          },
+          execution: { success: false, error: message },
+        },
+        { kind: "error", message: `Run failed: ${message}` },
+      )
+      this.replaceRun(failedRun)
+      this.state.lastResult = failedRun.result
+      this.state.statusMessage = `${THEME.error}✗${THEME.reset} Attach failed`
+      this.syncManagedRunState()
+      this.render()
+    } finally {
+      await sessionPlan?.cleanup().catch(() => {})
+    }
   }
 
   private async launchManagedRun(run: RunRecord): Promise<void> {

@@ -1,5 +1,13 @@
 import { describe, expect, test } from "bun:test"
-import { createManagedRun, executeManagedRun, filterRuns, getRunReviewRoute, isRunTerminal } from "../src/tui/runs"
+import {
+  canRunAttach,
+  createManagedRun,
+  executeManagedRun,
+  filterRuns,
+  getRunAttachDisabledReason,
+  getRunReviewRoute,
+  isRunTerminal,
+} from "../src/tui/runs"
 import type { RunRecord } from "../src/tui/types"
 
 describe("tui managed runs", () => {
@@ -135,5 +143,26 @@ describe("tui managed runs", () => {
     expect(filterRuns(entries, "active").map((run) => run.id)).toEqual([active.id])
     expect(filterRuns(entries, "review_ready").map((run) => run.id)).toEqual([reviewReady.id])
     expect(filterRuns(entries, "all").map((run) => run.id)).toEqual([active.id, reviewReady.id, failed.id])
+  })
+
+  test("marks attach-mode dispatch runs as attachable and leaves managed runs detached", () => {
+    const attachRun = createManagedRun({
+      prompt: "Open an interactive coding session",
+      action: "dispatch",
+      agentId: "codex",
+      agentLabel: "Codex",
+      mode: "attach",
+    })
+    const managedRun = createManagedRun({
+      prompt: "Stay managed",
+      action: "dispatch",
+      agentId: "codex",
+      agentLabel: "Codex",
+    })
+
+    expect(attachRun.canAttach).toBe(true)
+    expect(canRunAttach(attachRun)).toBe(true)
+    expect(managedRun.canAttach).toBe(false)
+    expect(getRunAttachDisabledReason(managedRun)).toBe("Attach is only available for runs launched in attach mode.")
   })
 })

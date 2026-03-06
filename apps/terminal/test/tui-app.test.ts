@@ -204,4 +204,72 @@ describe("TUIApp security refresh", () => {
     expect(app.state.hushdReconnectAttempts).toBe(0)
     expect(app.hushdReconnectTimer).toBeNull()
   })
+
+  test("cleanup terminates an attached session and clears handoff state", async () => {
+    const app = new TUIApp(process.cwd()) as unknown as {
+      state: {
+        attachedRunId: string | null
+        pendingAttachRunId: string | null
+        ptyHandoffActive: boolean
+      }
+      attachedSession: { terminate: () => void } | null
+      cleanup: () => Promise<void>
+    }
+
+    let terminated = false
+    app.state.attachedRunId = "run_attach"
+    app.state.pendingAttachRunId = "run_attach"
+    app.state.ptyHandoffActive = true
+    app.attachedSession = {
+      terminate: () => {
+        terminated = true
+      },
+    }
+
+    await app.cleanup()
+
+    expect(terminated).toBe(true)
+    expect(app.state.attachedRunId).toBeNull()
+    expect(app.state.pendingAttachRunId).toBeNull()
+    expect(app.state.ptyHandoffActive).toBe(false)
+  })
+
+  test("rejects unsupported attach runs before creating backlog entries", () => {
+    const app = new TUIApp(process.cwd()) as unknown as {
+      state: {
+        dispatchSheet: {
+          open: boolean
+          prompt: string
+          action: "dispatch" | "speculate"
+          mode: "managed" | "attach" | "external"
+          agentIndex: number
+          focusedField: 0 | 1 | 2 | 3
+          error: string | null
+        }
+        runs: {
+          entries: unknown[]
+        }
+        inputMode: string
+      }
+      render: () => void
+      launchDispatchSheet: () => void
+    }
+
+    app.render = () => {}
+    app.state.dispatchSheet = {
+      open: true,
+      prompt: "open an attach session on an unsupported agent",
+      action: "dispatch",
+      mode: "attach",
+      agentIndex: 2,
+      focusedField: 0,
+      error: null,
+    }
+
+    app.launchDispatchSheet()
+
+    expect(app.state.runs.entries).toHaveLength(0)
+    expect(app.state.dispatchSheet.error).toContain("does not expose an interactive attach session yet")
+    expect(app.state.inputMode).toBe("main")
+  })
 })

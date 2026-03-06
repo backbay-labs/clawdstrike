@@ -72,6 +72,12 @@ export interface AppController {
   closeDispatchSheet(): void
   /** Open a managed run in the run-detail surface */
   openRun(runId: string): void
+  /** Open the attach confirmation for a run */
+  beginAttachRun(runId: string): void
+  /** Confirm attach for the pending run */
+  confirmAttachRun(): void
+  /** Cancel the pending attach confirmation */
+  cancelAttachRun(): void
   /** Mark a managed run as canceled from the TUI */
   cancelRun(runId: string): void
   /** Trigger a re-render */
@@ -158,6 +164,8 @@ export type RunPhase =
   | "failed"
   | "canceled"
 
+export type RunAttachState = "detached" | "attaching" | "attached" | "returning"
+
 export interface RunEvent {
   timestamp: string
   kind: "status" | "log" | "warning" | "error"
@@ -183,6 +191,11 @@ export interface RunRecord {
   result: DispatchResultInfo | null
   error: string | null
   completedAt: string | null
+  attached: boolean
+  attachState: RunAttachState
+  ptySessionId: string | null
+  canAttach: boolean
+  ptyTail: string[]
   events: RunEvent[]
 }
 
@@ -430,6 +443,9 @@ export interface AppState {
   dispatchSheet: DispatchSheetState
   runs: RunListState
   activeRunId: string | null
+  pendingAttachRunId: string | null
+  attachedRunId: string | null
+  ptyHandoffActive: boolean
   runDetailEvents: ListViewport
 
   // Last dispatch result
