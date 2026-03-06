@@ -77,6 +77,9 @@ async fn correlate(
     auth: AuthenticatedTenant,
     Json(request): Json<CorrelateRequest>,
 ) -> Result<Json<hunt_query::service::HuntJobRecord>, ApiError> {
+    if auth.role == "viewer" {
+        return Err(ApiError::Forbidden);
+    }
     let created_by = created_by(&auth);
     Ok(Json(
         hunt::run_correlation_job(&state.db, auth.tenant_id, &created_by, &request).await?,
@@ -88,6 +91,9 @@ async fn ioc_match(
     auth: AuthenticatedTenant,
     Json(request): Json<IocMatchRequest>,
 ) -> Result<Json<hunt_query::service::HuntJobRecord>, ApiError> {
+    if auth.role == "viewer" {
+        return Err(ApiError::Forbidden);
+    }
     let created_by = created_by(&auth);
     Ok(Json(
         hunt::run_ioc_job(&state.db, auth.tenant_id, &created_by, &request).await?,
@@ -116,6 +122,9 @@ async fn create_saved_hunt(
     auth: AuthenticatedTenant,
     Json(request): Json<CreateSavedHuntRequest>,
 ) -> Result<Json<hunt_query::service::SavedHuntRecord>, ApiError> {
+    if auth.role == "viewer" {
+        return Err(ApiError::Forbidden);
+    }
     let created_by = created_by(&auth);
     Ok(Json(
         hunt::create_saved_hunt(&state.db, auth.tenant_id, &created_by, &request).await?,
@@ -138,6 +147,9 @@ async fn update_saved_hunt(
     Path(id): Path<Uuid>,
     Json(request): Json<UpdateSavedHuntRequest>,
 ) -> Result<Json<hunt_query::service::SavedHuntRecord>, ApiError> {
+    if auth.role == "viewer" {
+        return Err(ApiError::Forbidden);
+    }
     Ok(Json(
         hunt::update_saved_hunt(&state.db, auth.tenant_id, id, &request).await?,
     ))
@@ -148,6 +160,9 @@ async fn delete_saved_hunt(
     auth: AuthenticatedTenant,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    if auth.role == "viewer" {
+        return Err(ApiError::Forbidden);
+    }
     hunt::delete_saved_hunt(&state.db, auth.tenant_id, id).await?;
     Ok(Json(serde_json::json!({ "deleted": true })))
 }
@@ -157,6 +172,9 @@ async fn run_saved_hunt(
     auth: AuthenticatedTenant,
     Path(id): Path<Uuid>,
 ) -> Result<Json<hunt_query::service::HuntJobRecord>, ApiError> {
+    if auth.role == "viewer" {
+        return Err(ApiError::Forbidden);
+    }
     let created_by = created_by(&auth);
     Ok(Json(
         hunt::run_saved_hunt(&state.db, auth.tenant_id, id, &created_by).await?,

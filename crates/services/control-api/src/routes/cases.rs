@@ -1,10 +1,13 @@
+use axum::body::{Body, Bytes};
 use axum::extract::{Path, State};
 use axum::http::header;
 use axum::http::{HeaderMap, HeaderValue};
 use axum::response::IntoResponse;
 use axum::routing::{get, patch, post};
 use axum::{Json, Router};
+use futures::stream;
 use serde_json::Value;
+use tokio::io::AsyncReadExt;
 use uuid::Uuid;
 
 use crate::auth::AuthenticatedTenant;
@@ -172,7 +175,19 @@ async fn download_bundle(
     Path(export_id): Path<String>,
 ) -> Result<axum::response::Response, ApiError> {
     let path = case_evidence::bundle_download_path(&state.db, auth.tenant_id, &export_id).await?;
-    let bytes = std::fs::read(&path).map_err(|err| ApiError::Internal(err.to_string()))?;
+    let file = tokio::fs::File::open(&path)
+        .await
+        .map_err(|err| ApiError::Internal(err.to_string()))?;
+    let stream = stream::try_unfold(file, |mut file| async move {
+        let mut buffer = vec![0_u8; 64 * 1024];
+        let read = file.read(&mut buffer).await?;
+        if read == 0 {
+            Ok::<_, std::io::Error>(None)
+        } else {
+            buffer.truncate(read);
+            Ok(Some((Bytes::from(buffer), file)))
+        }
+    });
     let mut headers = HeaderMap::new();
     headers.insert(
         header::CONTENT_TYPE,
@@ -181,7 +196,7 @@ async fn download_bundle(
     let disposition = HeaderValue::from_str(&format!("attachment; filename={export_id}.zip"))
         .map_err(|err| ApiError::Internal(err.to_string()))?;
     headers.insert(header::CONTENT_DISPOSITION, disposition);
-    Ok((headers, bytes).into_response())
+    Ok((headers, Body::from_stream(stream)).into_response())
 }
 
 fn actor_id(auth: &AuthenticatedTenant) -> String {

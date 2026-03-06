@@ -15,6 +15,9 @@ use crate::error::ApiError;
 use crate::services::tenant_provisioner::tenant_subject_prefix;
 use crate::state::AppState;
 
+use super::delegation_graph_models::RevokeGrantRequest;
+use super::delegation_graph_service;
+
 const ACK_DEADLINE_MINUTES: i64 = 10;
 
 pub fn router() -> Router<AppState> {
@@ -315,9 +318,17 @@ async fn create_action(
 
     let action_type = ResponseActionType::from_str(&input.action_type)?;
     let target_kind = ResponseTargetKind::from_str(&input.target.kind)?;
-    validate_create_request(&input, &action_type, &target_kind)?;
+    let require_acknowledgement = input.require_acknowledgement.unwrap_or(false);
+    validate_create_request(&input, &action_type, &target_kind, require_acknowledgement)?;
 
     let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
+    ensure_action_target_exists(
+        &mut tx,
+        auth.tenant_id,
+        &target_kind,
+        input.target.id.trim(),
+    )
+    .await?;
     let row = sqlx::query::query(
         r#"INSERT INTO response_actions (
                tenant_id,
@@ -349,7 +360,7 @@ async fn create_action(
     .bind(input.case_id.as_deref())
     .bind(input.source_detection_id.as_deref())
     .bind(input.source_approval_id)
-    .bind(input.require_acknowledgement.unwrap_or(true))
+    .bind(require_acknowledgement)
     .bind(input.payload.unwrap_or_else(|| json!({})))
     .bind(json!({
         "requested_by_slug": auth.slug,
@@ -693,7 +704,7 @@ async fn publish_action(
     .map_err(ApiError::Database)?;
     tx.commit().await.map_err(ApiError::Database)?;
 
-    let publish_result: Result<(), ApiError> =
+    let publish_result: Result<DeliveryExecution, ApiError> =
         if let Some(subject) = delivery.delivery_subject.clone() {
             let js = async_nats::jetstream::new(state.nats.clone());
             let payload_bytes = build_delivery_payload_bytes(
@@ -724,13 +735,13 @@ async fn publish_action(
                     .await
                     .map_err(|err| ApiError::Nats(err.to_string()))?;
             }
-            Ok(())
+            Ok(DeliveryExecution::Published)
         } else {
-            Ok(())
+            execute_cloud_only_action(state, &action).await
         };
 
     match publish_result {
-        Ok(()) => {
+        Ok(DeliveryExecution::Published) => {
             let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
             sqlx::query::query(
                 r#"UPDATE response_actions
@@ -753,6 +764,66 @@ async fn publish_action(
                    WHERE id = $1"#,
             )
             .bind(delivery.id)
+            .execute(&mut *tx)
+            .await
+            .map_err(ApiError::Database)?;
+            tx.commit().await.map_err(ApiError::Database)?;
+        }
+        Ok(DeliveryExecution::Acknowledged {
+            observed_at,
+            message,
+            resulting_state,
+            raw_payload,
+        }) => {
+            let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
+            sqlx::query::query(
+                r#"INSERT INTO response_action_acks (
+                       action_id,
+                       tenant_id,
+                       target_kind,
+                       target_id,
+                       observed_at,
+                       status,
+                       message,
+                       resulting_state,
+                       raw_payload
+                   )
+                   VALUES ($1, $2, $3, $4, $5, 'acknowledged', $6, $7, $8)"#,
+            )
+            .bind(action.id)
+            .bind(action.tenant_id)
+            .bind(&delivery.target_kind)
+            .bind(&delivery.target_id)
+            .bind(observed_at)
+            .bind(message.as_deref())
+            .bind(resulting_state.as_deref())
+            .bind(raw_payload)
+            .execute(&mut *tx)
+            .await
+            .map_err(ApiError::Database)?;
+            sqlx::query::query(
+                r#"UPDATE response_actions
+                   SET status = 'acknowledged',
+                       updated_at = now()
+                   WHERE id = $1 AND tenant_id = $2"#,
+            )
+            .bind(action.id)
+            .bind(action.tenant_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(ApiError::Database)?;
+            sqlx::query::query(
+                r#"UPDATE response_action_deliveries
+                   SET status = 'acknowledged',
+                       attempt_count = attempt_count + 1,
+                       published_at = COALESCE(published_at, $2),
+                       acknowledged_at = $2,
+                       last_error = NULL,
+                       updated_at = now()
+                   WHERE id = $1"#,
+            )
+            .bind(delivery.id)
+            .bind(observed_at)
             .execute(&mut *tx)
             .await
             .map_err(ApiError::Database)?;
@@ -800,6 +871,7 @@ fn validate_create_request(
     input: &CreateResponseActionRequest,
     action_type: &ResponseActionType,
     target_kind: &ResponseTargetKind,
+    require_acknowledgement: bool,
 ) -> Result<(), ApiError> {
     if input.reason.trim().is_empty() {
         return Err(ApiError::BadRequest("reason is required".to_string()));
@@ -821,26 +893,100 @@ fn validate_create_request(
             "transition_posture actions require payload.toState or payload.posture".to_string(),
         ));
     }
+    if require_acknowledgement {
+        return Err(ApiError::BadRequest(
+            "response acknowledgements are not supported for the current executor set".to_string(),
+        ));
+    }
 
     match (action_type, target_kind) {
         (ResponseActionType::TransitionPosture, ResponseTargetKind::Endpoint)
-        | (ResponseActionType::TransitionPosture, ResponseTargetKind::Runtime)
-        | (ResponseActionType::TransitionPosture, ResponseTargetKind::Session)
         | (ResponseActionType::RequestPolicyReload, ResponseTargetKind::Endpoint)
-        | (ResponseActionType::RequestPolicyReload, ResponseTargetKind::Runtime)
-        | (ResponseActionType::TerminateSession, ResponseTargetKind::Session)
         | (ResponseActionType::KillSwitch, ResponseTargetKind::Endpoint)
-        | (ResponseActionType::KillSwitch, ResponseTargetKind::Runtime)
-        | (ResponseActionType::KillSwitch, ResponseTargetKind::Session)
         | (ResponseActionType::QuarantinePrincipal, ResponseTargetKind::Principal)
-        | (ResponseActionType::QuarantinePrincipal, ResponseTargetKind::Project)
-        | (ResponseActionType::QuarantinePrincipal, ResponseTargetKind::Swarm)
         | (ResponseActionType::RevokeGrant, ResponseTargetKind::Grant)
         | (ResponseActionType::RevokePrincipal, ResponseTargetKind::Principal) => Ok(()),
         _ => Err(ApiError::BadRequest(format!(
             "action '{}' is not valid for target kind '{}'",
             input.action_type, input.target.kind
         ))),
+    }
+}
+
+async fn ensure_action_target_exists(
+    tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
+    tenant_id: Uuid,
+    target_kind: &ResponseTargetKind,
+    target_id: &str,
+) -> Result<(), ApiError> {
+    let exists = match target_kind {
+        ResponseTargetKind::Endpoint => {
+            if let Ok(agent_row_id) = Uuid::parse_str(target_id) {
+                sqlx::query::query("SELECT 1 FROM agents WHERE tenant_id = $1 AND id = $2")
+                    .bind(tenant_id)
+                    .bind(agent_row_id)
+                    .fetch_optional(&mut **tx)
+                    .await
+                    .map_err(ApiError::Database)?
+                    .is_some()
+            } else {
+                sqlx::query::query("SELECT 1 FROM agents WHERE tenant_id = $1 AND agent_id = $2")
+                    .bind(tenant_id)
+                    .bind(target_id)
+                    .fetch_optional(&mut **tx)
+                    .await
+                    .map_err(ApiError::Database)?
+                    .is_some()
+            }
+        }
+        ResponseTargetKind::Principal => {
+            if let Ok(principal_id) = Uuid::parse_str(target_id) {
+                sqlx::query::query("SELECT 1 FROM principals WHERE tenant_id = $1 AND id = $2")
+                    .bind(tenant_id)
+                    .bind(principal_id)
+                    .fetch_optional(&mut **tx)
+                    .await
+                    .map_err(ApiError::Database)?
+                    .is_some()
+            } else {
+                sqlx::query::query(
+                    "SELECT 1 FROM principals WHERE tenant_id = $1 AND stable_ref = $2",
+                )
+                .bind(tenant_id)
+                .bind(target_id)
+                .fetch_optional(&mut **tx)
+                .await
+                .map_err(ApiError::Database)?
+                .is_some()
+            }
+        }
+        ResponseTargetKind::Grant => {
+            let grant_id = Uuid::parse_str(target_id).map_err(|_| {
+                ApiError::BadRequest("grant targets must use a UUID grant id".to_string())
+            })?;
+            sqlx::query::query("SELECT 1 FROM fleet_grants WHERE tenant_id = $1 AND id = $2")
+                .bind(tenant_id)
+                .bind(grant_id)
+                .fetch_optional(&mut **tx)
+                .await
+                .map_err(ApiError::Database)?
+                .is_some()
+        }
+        ResponseTargetKind::Runtime
+        | ResponseTargetKind::Session
+        | ResponseTargetKind::Swarm
+        | ResponseTargetKind::Project => {
+            return Err(ApiError::BadRequest(format!(
+                "target kind '{}' does not have a registered executor",
+                target_kind.as_str()
+            )));
+        }
+    };
+
+    if exists {
+        Ok(())
+    } else {
+        Err(ApiError::NotFound)
     }
 }
 
@@ -883,6 +1029,16 @@ struct DeliveryPlan {
     delivery_subject: Option<String>,
     acknowledgement_deadline: Option<DateTime<Utc>>,
     metadata: Value,
+}
+
+enum DeliveryExecution {
+    Published,
+    Acknowledged {
+        observed_at: DateTime<Utc>,
+        message: Option<String>,
+        resulting_state: Option<String>,
+        raw_payload: Value,
+    },
 }
 
 fn delivery_plan(action: &ResponseActionRecord, tenant_slug: &str) -> DeliveryPlan {
@@ -982,6 +1138,126 @@ fn action_transport_payload(
         "ackToken": ack_token,
     });
     payload
+}
+
+async fn execute_cloud_only_action(
+    state: &AppState,
+    action: &ResponseActionRecord,
+) -> Result<DeliveryExecution, ApiError> {
+    match (
+        ResponseActionType::from_str(&action.action_type)?,
+        &action.target.kind,
+    ) {
+        (ResponseActionType::RevokeGrant, ResponseTargetKind::Grant) => {
+            let grant_id = Uuid::parse_str(&action.target.id).map_err(|_| {
+                ApiError::BadRequest("grant targets must use a UUID grant id".to_string())
+            })?;
+            let response = delegation_graph_service::revoke_grant(
+                &state.db,
+                action.tenant_id,
+                grant_id,
+                RevokeGrantRequest {
+                    reason: action.reason.clone(),
+                    revoke_descendants: Some(true),
+                    revoked_by: Some(action.requested_by.actor_id.clone()),
+                    response_action_id: Some(action.id.to_string()),
+                    response_action_label: Some(action.action_type.clone()),
+                    response_action_state: Some("acknowledged".to_string()),
+                    response_action_metadata: Some(json!({
+                        "response_action_id": action.id.to_string(),
+                        "action_type": action.action_type.as_str(),
+                    })),
+                },
+            )
+            .await?;
+
+            Ok(DeliveryExecution::Acknowledged {
+                observed_at: Utc::now(),
+                message: Some("grant revoked".to_string()),
+                resulting_state: Some("revoked".to_string()),
+                raw_payload: json!({
+                    "grantId": grant_id,
+                    "revokedGrantIds": response.revoked_grant_ids,
+                    "status": "acknowledged",
+                }),
+            })
+        }
+        (ResponseActionType::QuarantinePrincipal, ResponseTargetKind::Principal) => {
+            execute_principal_lifecycle_action(state, action, "quarantined").await
+        }
+        (ResponseActionType::RevokePrincipal, ResponseTargetKind::Principal) => {
+            execute_principal_lifecycle_action(state, action, "revoked").await
+        }
+        _ => Err(ApiError::BadRequest(format!(
+            "action '{}' does not have an executable control-plane handler",
+            action.action_type
+        ))),
+    }
+}
+
+async fn execute_principal_lifecycle_action(
+    state: &AppState,
+    action: &ResponseActionRecord,
+    lifecycle_state: &str,
+) -> Result<DeliveryExecution, ApiError> {
+    let row = if let Ok(principal_id) = Uuid::parse_str(&action.target.id) {
+        sqlx::query::query(
+            r#"UPDATE principals
+               SET lifecycle_state = $3,
+                   updated_at = now()
+               WHERE tenant_id = $1 AND id = $2
+               RETURNING id, stable_ref"#,
+        )
+        .bind(action.tenant_id)
+        .bind(principal_id)
+        .bind(lifecycle_state)
+        .fetch_optional(&state.db)
+        .await
+        .map_err(ApiError::Database)?
+    } else {
+        sqlx::query::query(
+            r#"UPDATE principals
+               SET lifecycle_state = $3,
+                   updated_at = now()
+               WHERE tenant_id = $1 AND stable_ref = $2
+               RETURNING id, stable_ref"#,
+        )
+        .bind(action.tenant_id)
+        .bind(action.target.id.trim())
+        .bind(lifecycle_state)
+        .fetch_optional(&state.db)
+        .await
+        .map_err(ApiError::Database)?
+    }
+    .ok_or(ApiError::NotFound)?;
+
+    let principal_id: Uuid = row.try_get("id").map_err(ApiError::Database)?;
+    let stable_ref: String = row.try_get("stable_ref").map_err(ApiError::Database)?;
+    let node_id = format!("principal:{principal_id}");
+    sqlx::query::query(
+        r#"UPDATE delegation_graph_nodes
+           SET state = $3,
+               updated_at = now()
+           WHERE tenant_id = $1 AND id = $2"#,
+    )
+    .bind(action.tenant_id)
+    .bind(&node_id)
+    .bind(lifecycle_state)
+    .execute(&state.db)
+    .await
+    .map_err(ApiError::Database)?;
+
+    Ok(DeliveryExecution::Acknowledged {
+        observed_at: Utc::now(),
+        message: Some(format!("principal transitioned to {lifecycle_state}")),
+        resulting_state: Some(lifecycle_state.to_string()),
+        raw_payload: json!({
+            "principalId": principal_id,
+            "stableRef": stable_ref,
+            "status": "acknowledged",
+            "lifecycleState": lifecycle_state,
+        }),
+    })
 }
 
 fn legacy_posture_command_payload(action: &ResponseActionRecord) -> Result<Value, ApiError> {
@@ -1257,13 +1533,14 @@ mod tests {
             case_id: None,
             source_detection_id: None,
             source_approval_id: None,
-            require_acknowledgement: Some(true),
+            require_acknowledgement: Some(false),
             payload: None,
         };
         let err = validate_create_request(
             &input,
             &ResponseActionType::RequestPolicyReload,
             &ResponseTargetKind::Principal,
+            false,
         )
         .unwrap_err();
         assert!(matches!(err, ApiError::BadRequest(_)));
@@ -1282,7 +1559,7 @@ mod tests {
             case_id: None,
             source_detection_id: None,
             source_approval_id: None,
-            require_acknowledgement: Some(true),
+            require_acknowledgement: Some(false),
             payload: Some(json!({})),
         };
 
@@ -1290,6 +1567,61 @@ mod tests {
             &input,
             &ResponseActionType::TransitionPosture,
             &ResponseTargetKind::Endpoint,
+            false,
+        )
+        .unwrap_err();
+        assert!(matches!(err, ApiError::BadRequest(_)));
+    }
+
+    #[test]
+    fn create_validation_rejects_acknowledgement_until_executor_support_exists() {
+        let input = CreateResponseActionRequest {
+            action_type: "request_policy_reload".to_string(),
+            target: ResponseTargetInput {
+                kind: "endpoint".to_string(),
+                id: "agent-1".to_string(),
+            },
+            reason: "reload".to_string(),
+            expires_at: None,
+            case_id: None,
+            source_detection_id: None,
+            source_approval_id: None,
+            require_acknowledgement: Some(true),
+            payload: None,
+        };
+
+        let err = validate_create_request(
+            &input,
+            &ResponseActionType::RequestPolicyReload,
+            &ResponseTargetKind::Endpoint,
+            true,
+        )
+        .unwrap_err();
+        assert!(matches!(err, ApiError::BadRequest(_)));
+    }
+
+    #[test]
+    fn create_validation_rejects_unsupported_runtime_targets() {
+        let input = CreateResponseActionRequest {
+            action_type: "kill_switch".to_string(),
+            target: ResponseTargetInput {
+                kind: "runtime".to_string(),
+                id: "runtime-1".to_string(),
+            },
+            reason: "contain".to_string(),
+            expires_at: None,
+            case_id: None,
+            source_detection_id: None,
+            source_approval_id: None,
+            require_acknowledgement: Some(false),
+            payload: None,
+        };
+
+        let err = validate_create_request(
+            &input,
+            &ResponseActionType::KillSwitch,
+            &ResponseTargetKind::Runtime,
+            false,
         )
         .unwrap_err();
         assert!(matches!(err, ApiError::BadRequest(_)));

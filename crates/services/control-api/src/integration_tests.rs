@@ -1974,59 +1974,6 @@ async fn fleet_operator_workflow_links_detection_response_case_hunt_graph_and_co
     .await;
     assert_eq!(detection_event_resp.0, StatusCode::OK);
 
-    let ack_row = sqlx::query::query(
-        "SELECT metadata FROM response_action_deliveries WHERE tenant_id = $1 AND action_id = $2",
-    )
-    .bind(harness.tenant_id)
-    .bind(action_id)
-    .fetch_one(&harness.db)
-    .await
-    .expect("fetch response action delivery metadata");
-    let ack_metadata: Value = ack_row.try_get("metadata").expect("delivery metadata");
-    let ack_token = ack_metadata
-        .get("ack_token")
-        .and_then(Value::as_str)
-        .expect("delivery ack token")
-        .to_string();
-    assert!(approve_resp.1["deliveries"][0]["metadata"]
-        .get("ack_token")
-        .is_none());
-
-    let missing_token_ack_resp = request_json(
-        &harness.app,
-        Method::POST,
-        format!("/api/v1/response-actions/{action_id}/acks"),
-        Some(&harness.api_key),
-        Some(serde_json::json!({
-            "targetKind": "endpoint",
-            "targetId": agent_id,
-            "ackToken": "wrong-token",
-            "status": "acknowledged",
-        })),
-    )
-    .await;
-    assert_eq!(missing_token_ack_resp.0, StatusCode::FORBIDDEN);
-
-    let ack_resp = request_json(
-        &harness.app,
-        Method::POST,
-        format!("/api/v1/response-actions/{action_id}/acks"),
-        Some(&harness.api_key),
-        Some(serde_json::json!({
-            "targetKind": "endpoint",
-            "targetId": agent_id,
-            "ackToken": ack_token,
-            "status": "acknowledged",
-            "message": "policy reload completed",
-            "resultingState": "reloaded"
-        })),
-    )
-    .await;
-    assert_eq!(ack_resp.0, StatusCode::OK);
-    assert_eq!(ack_resp.1["action"]["status"], "acknowledged");
-    assert_eq!(ack_resp.1["deliveries"][0]["status"], "acknowledged");
-    assert_eq!(ack_resp.1["acknowledgements"][0]["status"], "acknowledged");
-
     let response_event_id = "operator-flow-hunt-2";
     let response_event_resp = request_json(
         &harness.app,
@@ -2044,7 +1991,7 @@ async fn fleet_operator_workflow_links_detection_response_case_hunt_graph_and_co
                 "ingestedAt": "2026-03-06T13:05:01Z",
                 "severity": "medium",
                 "verdict": "deny",
-                "summary": "response action acknowledged for Operator Endpoint",
+                "summary": "response action published for Operator Endpoint",
                 "actionType": "request_policy_reload",
                 "principal": {
                     "principalId": principal_id.to_string(),
@@ -2068,8 +2015,8 @@ async fn fleet_operator_workflow_links_detection_response_case_hunt_graph_and_co
                     "signatureValid": true
                 },
                 "attributes": {
-                    "status": "acknowledged",
-                    "message": "policy reload completed"
+                    "status": "published",
+                    "message": "policy reload published"
                 }
             }),
         )),
@@ -2111,7 +2058,7 @@ async fn fleet_operator_workflow_links_detection_response_case_hunt_graph_and_co
             "session_state": "observed",
             "response_action_id": action_id.to_string(),
             "response_action_label": "Policy reload request",
-            "response_action_state": "acknowledged",
+            "response_action_state": "published",
             "response_action_metadata": {
                 "caseId": case_id,
                 "sourceDetectionId": finding_id.to_string()
@@ -2235,12 +2182,12 @@ async fn fleet_operator_workflow_links_detection_response_case_hunt_graph_and_co
         serde_json::json!({
             "artifactKind": "response_action",
             "artifactId": action_id.to_string(),
-            "summary": "Response action acknowledgement",
+            "summary": "Response action publication",
             "metadata": {
                 "principalId": principal_id.to_string(),
                 "detectionId": finding_id.to_string(),
                 "responseActionId": action_id.to_string(),
-                "status": "acknowledged",
+                "status": "published",
                 "caseId": case_id,
                 "sourceDetectionId": finding_id.to_string()
             }
@@ -2441,7 +2388,7 @@ async fn fleet_operator_workflow_links_detection_response_case_hunt_graph_and_co
         .as_array()
         .expect("console response actions");
     assert_eq!(console_actions.len(), 1);
-    assert_eq!(console_actions[0]["status"], "acknowledged");
+    assert_eq!(console_actions[0]["status"], "published");
     assert_eq!(console_actions[0]["targetDisplayName"], "Operator Endpoint");
     assert_eq!(
         console_actions[0]["sourceDetectionId"],
@@ -2520,6 +2467,230 @@ async fn authorization_bearer_header_rejects_api_keys() {
     )
     .await;
     assert_eq!(response.0, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn hunt_mutation_endpoints_reject_viewer_api_keys() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let viewer_api_key = "cs_it_viewer_key";
+    insert_api_key_for_tenant(
+        &harness.db,
+        harness.tenant_id,
+        viewer_api_key,
+        "viewer",
+        &[],
+    )
+    .await;
+
+    let create_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/hunt/saved".to_string(),
+        Some(viewer_api_key),
+        Some(serde_json::json!({
+            "name": "viewer forbidden",
+            "query": {
+                "limit": 10
+            }
+        })),
+    )
+    .await;
+    assert_eq!(create_resp.0, StatusCode::FORBIDDEN);
+
+    let correlate_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/hunt/correlate".to_string(),
+        Some(viewer_api_key),
+        Some(serde_json::json!({
+            "rules": []
+        })),
+    )
+    .await;
+    assert_eq!(correlate_resp.0, StatusCode::FORBIDDEN);
+
+    let ioc_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/hunt/ioc/match".to_string(),
+        Some(viewer_api_key),
+        Some(serde_json::json!({
+            "indicators": []
+        })),
+    )
+    .await;
+    assert_eq!(ioc_resp.0, StatusCode::FORBIDDEN);
+
+    let saved_hunt_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/hunt/saved".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "name": "admin hunt",
+            "query": {
+                "limit": 10
+            }
+        })),
+    )
+    .await;
+    assert_eq!(saved_hunt_resp.0, StatusCode::OK);
+    let saved_hunt_id = saved_hunt_resp.1["id"]
+        .as_str()
+        .expect("saved hunt id")
+        .to_string();
+
+    let update_resp = request_json(
+        &harness.app,
+        Method::PATCH,
+        format!("/api/v1/hunt/saved/{saved_hunt_id}"),
+        Some(viewer_api_key),
+        Some(serde_json::json!({
+            "name": "viewer rename"
+        })),
+    )
+    .await;
+    assert_eq!(update_resp.0, StatusCode::FORBIDDEN);
+
+    let run_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/hunt/saved/{saved_hunt_id}/run"),
+        Some(viewer_api_key),
+        None,
+    )
+    .await;
+    assert_eq!(run_resp.0, StatusCode::FORBIDDEN);
+
+    let delete_resp = request_json(
+        &harness.app,
+        Method::DELETE,
+        format!("/api/v1/hunt/saved/{saved_hunt_id}"),
+        Some(viewer_api_key),
+        None,
+    )
+    .await;
+    assert_eq!(delete_resp.0, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn response_actions_execute_supported_cloud_only_targets() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let fixture = seed_console_read_model_fixture(&harness).await;
+
+    let quarantine_create = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/response-actions".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "actionType": "quarantine_principal",
+            "target": {
+                "kind": "principal",
+                "id": fixture.principal_id.to_string()
+            },
+            "reason": "Contain endpoint",
+            "requireAcknowledgement": false,
+            "payload": {}
+        })),
+    )
+    .await;
+    assert_eq!(quarantine_create.0, StatusCode::OK);
+    let quarantine_action_id = quarantine_create.1["id"]
+        .as_str()
+        .expect("quarantine action id")
+        .to_string();
+
+    let quarantine_approve = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/response-actions/{quarantine_action_id}/approve"),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(quarantine_approve.0, StatusCode::OK);
+    assert_eq!(quarantine_approve.1["action"]["status"], "acknowledged");
+    assert_eq!(
+        quarantine_approve.1["deliveries"][0]["status"],
+        "acknowledged"
+    );
+    assert_eq!(
+        quarantine_approve.1["acknowledgements"][0]["resulting_state"],
+        "quarantined"
+    );
+
+    let principal_row = sqlx::query::query(
+        "SELECT lifecycle_state FROM principals WHERE tenant_id = $1 AND id = $2",
+    )
+    .bind(harness.tenant_id)
+    .bind(fixture.principal_id)
+    .fetch_one(&harness.db)
+    .await
+    .expect("fetch principal lifecycle");
+    let lifecycle_state: String = principal_row
+        .try_get("lifecycle_state")
+        .expect("principal lifecycle state");
+    assert_eq!(lifecycle_state, "quarantined");
+
+    let revoke_create = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/response-actions".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "actionType": "revoke_grant",
+            "target": {
+                "kind": "grant",
+                "id": fixture.grant_id.to_string()
+            },
+            "reason": "Revoke delegated access",
+            "requireAcknowledgement": false,
+            "payload": {}
+        })),
+    )
+    .await;
+    assert_eq!(revoke_create.0, StatusCode::OK);
+    let revoke_action_id = revoke_create.1["id"]
+        .as_str()
+        .expect("revoke action id")
+        .to_string();
+
+    let revoke_approve = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/response-actions/{revoke_action_id}/approve"),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(revoke_approve.0, StatusCode::OK);
+    assert_eq!(revoke_approve.1["action"]["status"], "acknowledged");
+    assert_eq!(revoke_approve.1["deliveries"][0]["status"], "acknowledged");
+    assert_eq!(
+        revoke_approve.1["acknowledgements"][0]["resulting_state"],
+        "revoked"
+    );
+
+    let grant_row =
+        sqlx::query::query("SELECT status FROM fleet_grants WHERE tenant_id = $1 AND id = $2")
+            .bind(harness.tenant_id)
+            .bind(fixture.grant_id)
+            .fetch_one(&harness.db)
+            .await
+            .expect("fetch grant status");
+    let grant_status: String = grant_row.try_get("status").expect("grant status");
+    assert_eq!(grant_status, "revoked");
 }
 
 async fn setup_harness() -> Harness {
@@ -2686,6 +2857,31 @@ async fn apply_migrations(db: &PgPool) {
             .await
             .unwrap_or_else(|err| panic!("migration {:?} failed: {}", file, err));
     }
+}
+
+async fn insert_api_key_for_tenant(
+    db: &PgPool,
+    tenant_id: Uuid,
+    raw_key: &str,
+    name: &str,
+    scopes: &[&str],
+) {
+    let scope_values = scopes
+        .iter()
+        .map(|scope| scope.to_string())
+        .collect::<Vec<_>>();
+    sqlx::query::query(
+        r#"INSERT INTO api_keys (
+               tenant_id, name, key_hash, key_prefix, scopes
+           ) VALUES ($1, $2, $3, 'cs_it', $4)"#,
+    )
+    .bind(tenant_id)
+    .bind(name)
+    .bind(hash_api_key(raw_key))
+    .bind(&scope_values)
+    .execute(db)
+    .await
+    .expect("seed tenant api key");
 }
 
 fn signed_hunt_ingest_request(harness: &Harness, mut event: Value) -> Value {
@@ -3022,7 +3218,7 @@ async fn seed_operator_flow_fixture(harness: &Harness) -> OperatorFlowFixture {
             "reason": "Investigate suspicious operator flow",
             "caseId": &case_id,
             "sourceDetectionId": finding.id.to_string(),
-            "requireAcknowledgement": true,
+            "requireAcknowledgement": false,
             "payload": {
                 "reloadMode": "full"
             }

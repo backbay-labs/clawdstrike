@@ -13,6 +13,7 @@ pub fn policy_event_to_timeline(event: &PolicyEvent) -> TimelineEvent {
     let verdict = verdict_from_metadata(event.metadata.as_ref());
 
     TimelineEvent {
+        event_id: None,
         timestamp: event.timestamp,
         source: EventSource::Receipt,
         kind: TimelineEventKind::GuardDecision,
