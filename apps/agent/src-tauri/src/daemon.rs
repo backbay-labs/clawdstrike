@@ -864,6 +864,14 @@ struct FlushAuditBatchResponse {
     rejected_ids: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AuditFlushOutcome {
+    pub accepted: usize,
+    pub duplicates: usize,
+    pub rejected: usize,
+    pub partial_rejection: bool,
+}
+
 const MAX_AUDIT_QUEUE_LEN: usize = 10_000;
 const MAX_AUDIT_BATCH_LEN: usize = 5_000;
 
@@ -1107,12 +1115,12 @@ impl AuditQueue {
     }
 
     /// Drain all queued events and upload them to hushd.
-    pub async fn flush(&self, daemon_url: &str, api_key: Option<&str>) -> Result<usize> {
+    pub async fn flush(&self, daemon_url: &str, api_key: Option<&str>) -> Result<AuditFlushOutcome> {
         // Serialize flushes so we never interleave drain/requeue in ways that can reorder or
         // duplicate audit uploads during rapid reconnects.
         let _flush_guard = self.flush_lock.lock().await;
         let url = format!("{}/api/v1/audit/batch", daemon_url);
-        let mut flushed = 0usize;
+        let mut outcome = AuditFlushOutcome::default();
         let mut dropped_invalid_total = 0usize;
 
         loop {
@@ -1133,10 +1141,10 @@ impl AuditQueue {
                         "Dropped invalid audit events from offline outbox"
                     );
                 }
-                if flushed > 0 {
-                    tracing::info!(count = flushed, "Flushed queued audit events to daemon");
+                if outcome.accepted > 0 {
+                    tracing::info!(count = outcome.accepted, "Flushed queued audit events to daemon");
                 }
-                return Ok(flushed);
+                return Ok(outcome);
             }
 
             let attempted = events.len();
@@ -1179,8 +1187,18 @@ impl AuditQueue {
                         let rejected_ids: HashSet<_> = summary.rejected_ids.into_iter().collect();
                         let has_complete_rejected_ids = rejected_ids.len() == summary.rejected;
                         if has_complete_rejected_ids {
-                            flushed += summary.accepted;
+                            outcome.accepted += summary.accepted;
+                            outcome.duplicates += summary.duplicates;
+                            outcome.rejected += summary.rejected;
+                            outcome.partial_rejection = true;
                             self.requeue_selected_flush(events, &rejected_ids).await;
+                            tracing::warn!(
+                                accepted = outcome.accepted,
+                                duplicates = outcome.duplicates,
+                                rejected = outcome.rejected,
+                                "Daemon rejected some audit outbox events; rejected entries remain queued"
+                            );
+                            return Ok(outcome);
                         } else {
                             tracing::warn!(
                                 rejected = summary.rejected,
@@ -1190,7 +1208,8 @@ impl AuditQueue {
                             self.requeue_failed_flush(events).await;
                         }
                         tracing::warn!(
-                            flushed,
+                            flushed = outcome.accepted,
+                            prior_duplicates = outcome.duplicates,
                             accepted = summary.accepted,
                             duplicates = summary.duplicates,
                             rejected = summary.rejected,
@@ -1198,7 +1217,7 @@ impl AuditQueue {
                         );
                         anyhow::bail!(
                             "Audit batch upload partially rejected after flushing {} accepted events: accepted={}, duplicates={}, rejected={}",
-                            flushed,
+                            outcome.accepted,
                             summary.accepted,
                             summary.duplicates,
                             summary.rejected
@@ -1211,7 +1230,8 @@ impl AuditQueue {
                             "Daemon returned audit batch event ID summaries"
                         );
                     }
-                    flushed += summary.accepted;
+                    outcome.accepted += summary.accepted;
+                    outcome.duplicates += summary.duplicates;
                     self.persist_current_queue("after accepted audit batch confirmation")
                         .await;
                 }
@@ -2329,7 +2349,8 @@ mod tests {
             .flush(&format!("http://{}", addr), None)
             .await
             .unwrap();
-        assert_eq!(flushed, total_events);
+        assert_eq!(flushed.accepted, total_events);
+        assert_eq!(flushed.rejected, 0);
         assert_eq!(queue.len().await, 0);
         assert_eq!(&*sizes.lock().unwrap(), &[MAX_AUDIT_BATCH_LEN, 37]);
     }
@@ -2364,7 +2385,8 @@ mod tests {
             .flush(&format!("http://{}", addr), None)
             .await
             .unwrap();
-        assert_eq!(flushed, 0);
+        assert_eq!(flushed.accepted, 0);
+        assert_eq!(flushed.duplicates, 2);
         assert_eq!(queue.len().await, 0);
     }
 
@@ -2399,7 +2421,7 @@ mod tests {
             .flush(&format!("http://{}", addr), None)
             .await
             .unwrap();
-        assert_eq!(flushed, 2);
+        assert_eq!(flushed.accepted, 2);
         assert_eq!(queue.len().await, 0);
 
         let persisted: PersistedAuditQueue =
@@ -2471,14 +2493,13 @@ mod tests {
             axum::serve(listener, app).await.unwrap();
         });
 
-        let err = queue
+        let outcome = queue
             .flush(&format!("http://{}", addr), None)
             .await
-            .expect_err("partial rejection should fail the flush");
-        assert!(err
-            .to_string()
-            .contains("Audit batch upload partially rejected"));
-        assert!(err.to_string().contains("after flushing 2 accepted events"));
+            .expect("complete rejected_ids should return a partial flush outcome");
+        assert_eq!(outcome.accepted, 2);
+        assert_eq!(outcome.rejected, 1);
+        assert!(outcome.partial_rejection);
 
         let guard = queue.queue.lock().await;
         let ids: Vec<_> = guard
@@ -2596,14 +2617,13 @@ mod tests {
             axum::serve(listener, app).await.unwrap();
         });
 
-        let err = queue
+        let outcome = queue
             .flush(&format!("http://{}", addr), None)
             .await
-            .expect_err("later partial rejection should still report prior accepted batches");
-        assert!(err.to_string().contains(&format!(
-            "after flushing {} accepted events",
-            MAX_AUDIT_BATCH_LEN + 1
-        )));
+            .expect("later partial rejection should still report prior accepted batches");
+        assert_eq!(outcome.accepted, MAX_AUDIT_BATCH_LEN + 1);
+        assert_eq!(outcome.rejected, 1);
+        assert!(outcome.partial_rejection);
 
         let guard = queue.queue.lock().await;
         let ids: Vec<String> = guard

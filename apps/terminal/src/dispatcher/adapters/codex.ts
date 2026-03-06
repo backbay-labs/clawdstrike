@@ -26,12 +26,34 @@ const DEFAULT_CONFIG: CodexConfig = {
 }
 
 let config: CodexConfig = { ...DEFAULT_CONFIG }
+const CODEX_AUTH_STATUS_TIMEOUT_MS = 1500
 
 /**
  * Configure Codex adapter
  */
 export function configure(newConfig: Partial<CodexConfig>): void {
   config = { ...config, ...newConfig }
+}
+
+async function checkCodexAuthStatus(): Promise<boolean> {
+  try {
+    const proc = Bun.spawn(["codex", "login", "status"], {
+      stdout: "ignore",
+      stderr: "ignore",
+    })
+
+    let timedOut = false
+    const timeout = setTimeout(() => {
+      timedOut = true
+      proc.kill()
+    }, CODEX_AUTH_STATUS_TIMEOUT_MS)
+
+    const exitCode = await proc.exited
+    clearTimeout(timeout)
+    return !timedOut && exitCode === 0
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -53,7 +75,7 @@ export const CodexAdapter: Adapter = {
 
     const homeDir = homeDirFromEnv()
     if (!homeDir) {
-      return true
+      return checkCodexAuthStatus()
     }
 
     const authPath = join(homeDir, ".codex", "auth.json")
@@ -61,7 +83,7 @@ export const CodexAdapter: Adapter = {
       await stat(authPath)
       return true
     } catch {
-      return false
+      return checkCodexAuthStatus()
     }
   },
 

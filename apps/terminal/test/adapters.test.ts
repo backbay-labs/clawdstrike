@@ -4,7 +4,7 @@
  * Tests for CLI adapter implementations.
  */
 
-import { afterEach, describe, test, expect } from "bun:test"
+import { describe, test, expect } from "bun:test"
 import * as fs from "node:fs/promises"
 import * as os from "node:os"
 import * as path from "node:path"
@@ -15,15 +15,7 @@ import { OpenCodeAdapter } from "../src/dispatcher/adapters/opencode"
 import { CrushAdapter } from "../src/dispatcher/adapters/crush"
 import type { WorkcellInfo, TaskInput } from "../src/types"
 
-const originalHome = process.env.HOME
-const originalUserProfile = process.env.USERPROFILE
 const originalPath = process.env.PATH
-
-afterEach(() => {
-  process.env.HOME = originalHome
-  process.env.USERPROFILE = originalUserProfile
-  process.env.PATH = originalPath
-})
 
 async function withFakeCli(
   name: string,
@@ -38,6 +30,41 @@ async function withFakeCli(
   process.env.HOME = tempDir
   process.env.USERPROFILE = tempDir
   return tempDir
+}
+
+async function probeAdapterAvailability(
+  modulePath: "./src/dispatcher/adapters/codex" | "./src/dispatcher/adapters/claude",
+  exportName: "CodexAdapter" | "ClaudeAdapter",
+  envOverrides: Record<string, string | undefined>,
+): Promise<boolean> {
+  const script =
+    `import { ${exportName} } from ${JSON.stringify(modulePath)};\n` +
+    `console.log(JSON.stringify(await ${exportName}.isAvailable()));\n`
+  const env = {
+    ...process.env,
+    ...envOverrides,
+  }
+  if (envOverrides.HOME === undefined) {
+    delete env.HOME
+  }
+  if (envOverrides.USERPROFILE === undefined) {
+    delete env.USERPROFILE
+  }
+
+  const proc = Bun.spawn(["bun", "-e", script], {
+    cwd: process.cwd(),
+    env,
+    stdout: "pipe",
+    stderr: "pipe",
+  })
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ])
+  expect(exitCode).toBe(0)
+  expect(stderr.trim()).toBe("")
+  return JSON.parse(stdout.trim()) as boolean
 }
 
 // Mock workcell for testing
@@ -127,10 +154,47 @@ describe("Adapter availability", () => {
   })
 
   test("CodexAdapter.isAvailable returns false when auth state is missing", async () => {
-    const tempDir = await withFakeCli("codex")
+    const tempDir = await withFakeCli(
+      "codex",
+      "#!/bin/sh\nif [ \"$1\" = \"login\" ] && [ \"$2\" = \"status\" ]; then\n  exit 1\nfi\nexit 0\n"
+    )
     await fs.mkdir(path.join(tempDir, ".codex"), { recursive: true })
+    await expect(
+      probeAdapterAvailability("./src/dispatcher/adapters/codex", "CodexAdapter", {
+        PATH: [path.join(tempDir, "bin"), originalPath].filter(Boolean).join(":"),
+        HOME: tempDir,
+        USERPROFILE: tempDir,
+      }),
+    ).resolves.toBe(false)
+  })
 
-    await expect(CodexAdapter.isAvailable()).resolves.toBe(false)
+  test("CodexAdapter.isAvailable falls back to codex auth status", async () => {
+    const tempDir = await withFakeCli(
+      "codex",
+      "#!/bin/sh\nif [ \"$1\" = \"login\" ] && [ \"$2\" = \"status\" ]; then\n  exit 0\nfi\nexit 1\n"
+    )
+    await fs.mkdir(path.join(tempDir, ".codex"), { recursive: true })
+    await expect(
+      probeAdapterAvailability("./src/dispatcher/adapters/codex", "CodexAdapter", {
+        PATH: [path.join(tempDir, "bin"), originalPath].filter(Boolean).join(":"),
+        HOME: tempDir,
+        USERPROFILE: tempDir,
+      }),
+    ).resolves.toBe(true)
+  })
+
+  test("CodexAdapter.isAvailable checks auth status when HOME is unset", async () => {
+    const tempDir = await withFakeCli(
+      "codex",
+      "#!/bin/sh\nif [ \"$1\" = \"login\" ] && [ \"$2\" = \"status\" ]; then\n  exit 0\nfi\nexit 1\n"
+    )
+    await expect(
+      probeAdapterAvailability("./src/dispatcher/adapters/codex", "CodexAdapter", {
+        PATH: [path.join(tempDir, "bin"), originalPath].filter(Boolean).join(":"),
+        HOME: undefined,
+        USERPROFILE: undefined,
+      }),
+    ).resolves.toBe(true)
   })
 
   test("ClaudeAdapter.isAvailable returns false when auth state is missing", async () => {
@@ -139,8 +203,13 @@ describe("Adapter availability", () => {
       "#!/bin/sh\nif [ \"$1\" = \"auth\" ] && [ \"$2\" = \"status\" ]; then\n  exit 1\nfi\nexit 0\n"
     )
     await fs.mkdir(path.join(tempDir, ".claude"), { recursive: true })
-
-    await expect(ClaudeAdapter.isAvailable()).resolves.toBe(false)
+    await expect(
+      probeAdapterAvailability("./src/dispatcher/adapters/claude", "ClaudeAdapter", {
+        PATH: [path.join(tempDir, "bin"), originalPath].filter(Boolean).join(":"),
+        HOME: tempDir,
+        USERPROFILE: tempDir,
+      }),
+    ).resolves.toBe(false)
   })
 
   test("ClaudeAdapter.isAvailable falls back to claude auth status", async () => {
@@ -149,8 +218,13 @@ describe("Adapter availability", () => {
       "#!/bin/sh\nif [ \"$1\" = \"auth\" ] && [ \"$2\" = \"status\" ]; then\n  exit 0\nfi\nexit 1\n"
     )
     await fs.mkdir(path.join(tempDir, ".claude"), { recursive: true })
-
-    await expect(ClaudeAdapter.isAvailable()).resolves.toBe(true)
+    await expect(
+      probeAdapterAvailability("./src/dispatcher/adapters/claude", "ClaudeAdapter", {
+        PATH: [path.join(tempDir, "bin"), originalPath].filter(Boolean).join(":"),
+        HOME: tempDir,
+        USERPROFILE: tempDir,
+      }),
+    ).resolves.toBe(true)
   })
 
   test("ClaudeAdapter.isAvailable returns false when auth status times out", async () => {
@@ -159,8 +233,27 @@ describe("Adapter availability", () => {
       "#!/bin/sh\nif [ \"$1\" = \"auth\" ] && [ \"$2\" = \"status\" ]; then\n  sleep 2\n  exit 0\nfi\nexit 1\n"
     )
     await fs.mkdir(path.join(tempDir, ".claude"), { recursive: true })
+    await expect(
+      probeAdapterAvailability("./src/dispatcher/adapters/claude", "ClaudeAdapter", {
+        PATH: [path.join(tempDir, "bin"), originalPath].filter(Boolean).join(":"),
+        HOME: tempDir,
+        USERPROFILE: tempDir,
+      }),
+    ).resolves.toBe(false)
+  })
 
-    await expect(ClaudeAdapter.isAvailable()).resolves.toBe(false)
+  test("ClaudeAdapter.isAvailable checks auth status when HOME is unset", async () => {
+    const tempDir = await withFakeCli(
+      "claude",
+      "#!/bin/sh\nif [ \"$1\" = \"auth\" ] && [ \"$2\" = \"status\" ]; then\n  exit 0\nfi\nexit 1\n"
+    )
+    await expect(
+      probeAdapterAvailability("./src/dispatcher/adapters/claude", "ClaudeAdapter", {
+        PATH: [path.join(tempDir, "bin"), originalPath].filter(Boolean).join(":"),
+        HOME: undefined,
+        USERPROFILE: undefined,
+      }),
+    ).resolves.toBe(true)
   })
 
   test("OpenCodeAdapter.isAvailable returns boolean", async () => {

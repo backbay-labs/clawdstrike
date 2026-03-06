@@ -416,7 +416,13 @@ async fn run_agent<R: Runtime>(
         // Flush any queued audit events from a previous offline period.
         if audit_queue.len().await > 0 {
             match audit_queue.flush(&daemon_url, api_key.as_deref()).await {
-                Ok(count) => tracing::info!(count, "Flushed queued audit events on startup"),
+                Ok(outcome) if outcome.partial_rejection => tracing::warn!(
+                    count = outcome.accepted,
+                    duplicates = outcome.duplicates,
+                    rejected = outcome.rejected,
+                    "Flushed queued audit events on startup with rejected entries still queued"
+                ),
+                Ok(outcome) => tracing::info!(count = outcome.accepted, "Flushed queued audit events on startup"),
                 Err(err) => tracing::warn!(error = %err, "Failed to flush queued audit events"),
             }
         }
@@ -580,8 +586,16 @@ async fn run_agent<R: Runtime>(
                             (guard.daemon_url(), guard.api_key.clone())
                         };
                         match audit_queue_for_periodic.flush(&daemon_url, api_key.as_deref()).await {
-                            Ok(count) if count > 0 => {
-                                tracing::debug!(count, "Flushed durable audit outbox");
+                            Ok(outcome) if outcome.partial_rejection => {
+                                tracing::warn!(
+                                    count = outcome.accepted,
+                                    duplicates = outcome.duplicates,
+                                    rejected = outcome.rejected,
+                                    "Durable audit outbox flush partially succeeded; rejected entries remain queued"
+                                );
+                            }
+                            Ok(outcome) if outcome.accepted > 0 => {
+                                tracing::debug!(count = outcome.accepted, "Flushed durable audit outbox");
                             }
                             Ok(_) => {}
                             Err(err) => {
@@ -642,8 +656,16 @@ async fn run_agent<R: Runtime>(
                         .flush(&daemon_url, api_key.as_deref())
                         .await
                     {
-                        Ok(count) => {
-                            tracing::info!(count, "Flushed queued audit events after reconnect")
+                        Ok(outcome) if outcome.partial_rejection => {
+                            tracing::warn!(
+                                count = outcome.accepted,
+                                duplicates = outcome.duplicates,
+                                rejected = outcome.rejected,
+                                "Flushed queued audit events after reconnect with rejected entries still queued"
+                            )
+                        }
+                        Ok(outcome) => {
+                            tracing::info!(count = outcome.accepted, "Flushed queued audit events after reconnect")
                         }
                         Err(err) => {
                             tracing::warn!(error = %err, "Failed to flush audit queue after reconnect")

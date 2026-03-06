@@ -600,13 +600,16 @@ async function cmdDoctor(options: CLIOptions): Promise<void> {
 
   try {
     const runtime = detectRuntimeInfo()
-    const [configExists, config, project, detection, health] = await Promise.all([
+    const [configExists, config, detection, health] = await Promise.all([
       Config.exists(cwd),
       Config.load(cwd),
-      Config.inspectProject(cwd),
       Config.detect(cwd),
       Health.checkAll({ force: true, timeout: 2000 }),
     ])
+    const project = {
+      git_available: detection.git_available,
+      recommended_sandbox: detection.recommended_sandbox,
+    }
 
     const result = {
       cwd,

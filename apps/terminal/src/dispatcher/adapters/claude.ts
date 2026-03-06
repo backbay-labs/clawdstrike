@@ -82,7 +82,7 @@ export const ClaudeAdapter: Adapter = {
 
     const homeDir = homeDirFromEnv()
     if (!homeDir) {
-      return true
+      return checkClaudeAuthStatus()
     }
 
     const configPath = join(homeDir, ".claude", "config.json")
