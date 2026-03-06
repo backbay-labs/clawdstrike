@@ -1,0 +1,4 @@
+interface:
+  display_name: "TUI UI Polish"
+  short_description: "Polish terminal layout, spacing, and hierarchy without changing scope."
+  default_prompt: "Polish the ClawdStrike TUI screen layout and visual hierarchy, fix alignment and empty states, and keep the scope tightly bounded."

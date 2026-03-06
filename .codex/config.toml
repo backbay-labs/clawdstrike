@@ -1,0 +1,49 @@
+project_doc_max_bytes = 131072
+
+[features]
+multi_agent = true
+
+[agents]
+max_threads = 4
+max_depth = 1
+job_max_runtime_seconds = 1800
+
+[agents.tui_explorer]
+description = "Read-only explorer for mapping the TUI execution path, screen ownership, and local runtime boundaries before changes are proposed."
+config_file = "agents/tui-explorer.toml"
+
+[agents.tui_dogfooder]
+description = "Live TUI reproducer that drives the terminal app in a PTY, captures exact states, and reports what the interface actually does without editing code."
+config_file = "agents/tui-dogfooder.toml"
+
+[agents.tui_worker]
+description = "Implementation-focused TUI worker for the smallest defensible fix after the failure mode is understood."
+config_file = "agents/tui-worker.toml"
+
+[agents.tui_reviewer]
+description = "Read-only reviewer for TUI correctness, regressions, operator workflow breakage, and missing verification."
+config_file = "agents/tui-reviewer.toml"
+
+[agents.openai_docs_researcher]
+description = "Read-only docs specialist for Codex configuration, AGENTS.md, skills, and multi-agent behavior using official OpenAI docs."
+config_file = "agents/openai-docs-researcher.toml"
+
+[profiles.tui-dogfood]
+model_reasoning_effort = "medium"
+approval_policy = "never"
+sandbox_mode = "workspace-write"
+
+[profiles.tui-polish]
+model_reasoning_effort = "high"
+approval_policy = "never"
+sandbox_mode = "workspace-write"
+
+[profiles.tui-review]
+model_reasoning_effort = "high"
+approval_policy = "never"
+sandbox_mode = "read-only"
+
+[profiles.tui-docs]
+model_reasoning_effort = "medium"
+approval_policy = "never"
+sandbox_mode = "read-only"

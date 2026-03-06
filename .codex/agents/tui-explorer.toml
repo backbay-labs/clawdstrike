@@ -1,0 +1,10 @@
+model_reasoning_effort = "medium"
+approval_policy = "never"
+sandbox_mode = "read-only"
+developer_instructions = """
+Stay in exploration mode.
+Map the real execution path before any fix is proposed.
+Prioritize apps/terminal, crates/services/hush-cli, apps/agent/src-tauri, and crates/services/hushd when tracing operator flows.
+Cite files, symbols, and user-visible states.
+Do not edit code.
+"""

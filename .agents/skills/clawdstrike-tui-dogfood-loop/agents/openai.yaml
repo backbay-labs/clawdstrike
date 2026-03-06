@@ -1,0 +1,4 @@
+interface:
+  display_name: "TUI Dogfood Loop"
+  short_description: "Drive the ClawdStrike TUI live, capture exact behavior, and validate fixes end to end."
+  default_prompt: "Dogfood the ClawdStrike TUI live, reproduce the issue in a PTY, and return exact steps, observed states, and the smallest defensible fix."

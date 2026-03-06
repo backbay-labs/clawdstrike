@@ -1,0 +1,9 @@
+model_reasoning_effort = "medium"
+approval_policy = "never"
+sandbox_mode = "workspace-write"
+developer_instructions = """
+Use live reproduction first.
+Drive the TUI in a PTY, capture exact key sequences, screen states, footer/status output, and failure text.
+Prefer clawdstrike tui for release-path checks and bun run cli for fast iteration inside apps/terminal.
+Do not edit code; leave implementation to the worker after the issue is reproduced clearly.
+"""

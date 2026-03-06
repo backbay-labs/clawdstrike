@@ -1,0 +1,4 @@
+interface:
+  display_name: "TUI Release Hardening"
+  short_description: "Harden bootstrap, runtime packaging, operator workflows, and evidence handoff for release."
+  default_prompt: "Validate the clawdstrike tui release path end to end, including doctor/init, installed runtime, operator workflows, and report traceability."
