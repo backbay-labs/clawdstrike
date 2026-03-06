@@ -55,6 +55,9 @@ struct Harness {
 
 struct ConsoleFixture {
     principal_id: Uuid,
+    principal_stable_ref: String,
+    endpoint_agent_id: String,
+    endpoint_agent_row_id: Uuid,
     grant_id: Uuid,
     action_id: Uuid,
 }
@@ -1793,6 +1796,96 @@ async fn console_read_model_routes_project_tenant_scoped_data() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn console_principal_detail_rejects_unresolved_policy_refs() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let fixture = seed_console_read_model_fixture(&harness).await;
+
+    sqlx::query::query(
+        r#"INSERT INTO policy_attachments (
+               tenant_id,
+               target_kind,
+               priority,
+               policy_ref,
+               checksum_sha256,
+               created_by
+           ) VALUES ($1, 'tenant', 5, 'catalog/default', 'checksum-unresolved', 'integration')"#,
+    )
+    .bind(harness.tenant_id)
+    .execute(&harness.db)
+    .await
+    .expect("seed unresolved policy attachment");
+
+    let detail_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/console/principals/{}", fixture.principal_id),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(detail_resp.0, StatusCode::CONFLICT);
+    let error = detail_resp.1["error"]
+        .as_str()
+        .expect("console policy error");
+    assert!(
+        error.contains("unresolved policy_ref`catalog/default`")
+            || error.contains("unresolved policy_ref `catalog/default`")
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn console_timeline_and_sessions_match_principal_aliases() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let fixture = seed_console_read_model_fixture(&harness).await;
+
+    sqlx::query::query(
+        "UPDATE hunt_events SET principal_id = $3 WHERE tenant_id = $1 AND principal_id = $2",
+    )
+    .bind(harness.tenant_id)
+    .bind(fixture.principal_id.to_string())
+    .bind(&fixture.principal_stable_ref)
+    .execute(&harness.db)
+    .await
+    .expect("rewrite hunt principal aliases");
+
+    let detail_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/console/principals/{}", fixture.principal_id),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(detail_resp.0, StatusCode::OK);
+    assert_eq!(detail_resp.1["recentSessions"][0]["sessionId"], "session-1");
+
+    let timeline_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!(
+            "/api/v1/console/principals/{}/timeline",
+            fixture.principal_id
+        ),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(timeline_resp.0, StatusCode::OK);
+    let timeline = timeline_resp.1.as_array().expect("principal timeline");
+    assert_eq!(timeline.len(), 2);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn fleet_operator_workflow_links_detection_response_case_hunt_graph_and_console() {
     if !docker_available() {
         eprintln!("Skipping integration test: docker is unavailable");
@@ -3031,6 +3124,7 @@ async fn response_actions_accept_uuid_shaped_external_target_ids() {
     )
     .await;
     assert_eq!(endpoint_resp.0, StatusCode::OK);
+    assert_eq!(endpoint_resp.1["target"]["id"], endpoint_agent_id);
 
     let principal_resp = request_json(
         &harness.app,
@@ -3050,6 +3144,175 @@ async fn response_actions_accept_uuid_shaped_external_target_ids() {
     )
     .await;
     assert_eq!(principal_resp.0, StatusCode::OK);
+    assert_eq!(principal_resp.1["target"]["id"], principal_id.to_string());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn response_actions_canonicalize_endpoint_row_ids_to_public_agent_ids() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let fixture = seed_console_read_model_fixture(&harness).await;
+
+    let create_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/response-actions".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "actionType": "request_policy_reload",
+            "target": {
+                "kind": "endpoint",
+                "id": fixture.endpoint_agent_row_id.to_string()
+            },
+            "reason": "Reload endpoint policy",
+            "requireAcknowledgement": false,
+            "payload": {}
+        })),
+    )
+    .await;
+    assert_eq!(create_resp.0, StatusCode::OK);
+    assert_eq!(create_resp.1["target"]["id"], fixture.endpoint_agent_id);
+    let action_id = create_resp.1["id"]
+        .as_str()
+        .expect("response action id")
+        .to_string();
+
+    let approve_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/response-actions/{action_id}/approve"),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(approve_resp.0, StatusCode::OK);
+    assert_eq!(
+        approve_resp.1["deliveries"][0]["target_id"],
+        fixture.endpoint_agent_id
+    );
+    let subject = approve_resp.1["deliveries"][0]["delivery_subject"]
+        .as_str()
+        .expect("delivery subject");
+    assert!(subject.ends_with(&format!(".{}", fixture.endpoint_agent_id)));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn response_actions_reject_missing_or_cross_tenant_provenance() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let fixture = seed_console_read_model_fixture(&harness).await;
+
+    let missing_detection_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/response-actions".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "actionType": "quarantine_principal",
+            "target": {
+                "kind": "principal",
+                "id": fixture.principal_id.to_string()
+            },
+            "reason": "Contain principal",
+            "sourceDetectionId": Uuid::new_v4().to_string(),
+            "requireAcknowledgement": false,
+            "payload": {}
+        })),
+    )
+    .await;
+    assert_eq!(missing_detection_resp.0, StatusCode::NOT_FOUND);
+
+    let other_tenant_id = Uuid::new_v4();
+    let other_approval_id = Uuid::new_v4();
+    sqlx::query::query(
+        r#"INSERT INTO tenants (id, name, slug, plan, status, agent_limit, retention_days)
+           VALUES ($1, 'Other Tenant', 'other-tenant', 'enterprise', 'active', 10, 30)"#,
+    )
+    .bind(other_tenant_id)
+    .execute(&harness.db)
+    .await
+    .expect("seed other tenant");
+    sqlx::query::query(
+        r#"INSERT INTO approvals (
+               id,
+               tenant_id,
+               request_id,
+               agent_id,
+               event_type,
+               event_data,
+               status
+           )
+           VALUES ($1, $2, $3, 'other-agent', 'manual', '{}'::jsonb, 'pending')"#,
+    )
+    .bind(other_approval_id)
+    .bind(other_tenant_id)
+    .bind(format!("approval-{other_approval_id}"))
+    .execute(&harness.db)
+    .await
+    .expect("seed cross-tenant approval");
+
+    let cross_tenant_approval_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/response-actions".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "actionType": "quarantine_principal",
+            "target": {
+                "kind": "principal",
+                "id": fixture.principal_id.to_string()
+            },
+            "reason": "Contain principal",
+            "sourceApprovalId": other_approval_id,
+            "requireAcknowledgement": false,
+            "payload": {}
+        })),
+    )
+    .await;
+    assert_eq!(cross_tenant_approval_resp.0, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn detection_rule_creates_record_api_key_actor_identity() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let api_key_id: Uuid =
+        sqlx::query::query("SELECT id FROM api_keys WHERE tenant_id = $1 LIMIT 1")
+            .bind(harness.tenant_id)
+            .fetch_one(&harness.db)
+            .await
+            .expect("load api key row")
+            .try_get("id")
+            .expect("api key id");
+
+    let create_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/detections/rules".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "name": "api-key-rule",
+            "severity": "high",
+            "source_format": "sigma",
+            "execution_mode": "streaming",
+            "source_text": "title: api-key-rule\nlogsource:\n  product: tetragon\ndetection:\n  selection:\n    action_type: exec\n  condition: selection\n"
+        })),
+    )
+    .await;
+    assert_eq!(create_resp.0, StatusCode::OK);
+    assert_eq!(create_resp.1["created_by"], api_key_id.to_string());
 }
 
 async fn setup_harness() -> Harness {
@@ -3679,7 +3942,7 @@ async fn seed_console_read_model_fixture(harness: &Harness) -> ConsoleFixture {
     .await
     .expect("seed secondary principal");
 
-    sqlx::query::query(
+    let agent_row = sqlx::query::query(
         r#"INSERT INTO agents (
                tenant_id,
                agent_id,
@@ -3702,14 +3965,16 @@ async fn seed_console_read_model_fixture(harness: &Harness) -> ConsoleFixture {
                '2026-03-06T12:00:00Z'::timestamptz,
                $2,
                $3
-           )"#,
+           )
+           RETURNING id"#,
     )
     .bind(harness.tenant_id)
     .bind(serde_json::json!({ "posture": "nominal", "daemon": "healthy" }))
     .bind(principal_id)
-    .execute(&harness.db)
+    .fetch_one(&harness.db)
     .await
     .expect("seed endpoint agent");
+    let endpoint_agent_row_id: Uuid = agent_row.try_get("id").expect("endpoint agent row id");
 
     sqlx::query::query(
         r#"INSERT INTO swarms (id, tenant_id, slug, name, kind)
@@ -3931,7 +4196,7 @@ async fn seed_console_read_model_fixture(harness: &Harness) -> ConsoleFixture {
     .bind(action_id)
     .bind(harness.tenant_id)
     .bind(principal_id.to_string())
-    .bind(detection_id.to_string())
+    .bind(detection_id)
     .execute(&harness.db)
     .await
     .expect("seed response action");
@@ -4258,6 +4523,9 @@ async fn seed_console_read_model_fixture(harness: &Harness) -> ConsoleFixture {
 
     ConsoleFixture {
         principal_id,
+        principal_stable_ref: "endpoint-1".to_string(),
+        endpoint_agent_id: "endpoint-1".to_string(),
+        endpoint_agent_row_id,
         grant_id,
         action_id,
     }

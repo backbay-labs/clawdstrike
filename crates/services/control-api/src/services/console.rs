@@ -21,7 +21,6 @@ use crate::services::policy_distribution;
 
 const DEFAULT_LIST_LIMIT: i64 = 100;
 const MAX_LIST_LIMIT: i64 = 500;
-const DEFAULT_EFFECTIVE_POLICY_CHECKSUM: &str = "pending-read-model";
 const INDEFINITE_GRANT_EXPIRY: &str = "9999-12-31T23:59:59Z";
 
 #[derive(Debug, Clone)]
@@ -261,19 +260,14 @@ pub async fn get_principal_detail(
         .unwrap_or_default();
     let principal_item = principal_list_item_from_parts(&principal, &scope);
 
-    let policy = match resolve_effective_policy(
+    let policy = resolve_effective_policy(
         db,
         tenant_id,
         principal.id,
         &principal.lifecycle_state,
         &scope,
     )
-    .await
-    {
-        Ok(resolved) => resolved,
-        Err(ApiError::Conflict(_)) => default_effective_policy(),
-        Err(err) => return Err(err),
-    };
+    .await?;
 
     let active_grants =
         load_active_grants(db, tenant_id, principal.id, &principal.stable_ref).await?;
@@ -281,6 +275,7 @@ pub async fn get_principal_detail(
         db,
         tenant_id,
         &principal_item.principal_id,
+        &principal.stable_ref,
         principal.agent_id.as_deref(),
         principal.last_heartbeat_at,
         principal_item.endpoint_posture.clone(),
@@ -312,6 +307,12 @@ pub async fn list_timeline_events(
     let from = parse_optional_rfc3339(query.from.as_deref(), "from")?;
     let to = parse_optional_rfc3339(query.to.as_deref(), "to")?;
     let limit = normalize_limit(query.limit);
+    let filter_principal = effective_principal_id.is_some();
+    let principal_aliases = if let Some(principal_identifier) = effective_principal_id {
+        resolve_principal_filter_aliases(db, tenant_id, principal_identifier).await?
+    } else {
+        Vec::new()
+    };
 
     let rows = sqlx::query::query(
         r#"SELECT event_id,
@@ -336,14 +337,15 @@ pub async fn list_timeline_events(
                   attributes
            FROM hunt_events
            WHERE tenant_id = $1
-             AND ($2::text IS NULL OR principal_id = $2)
-             AND ($3::timestamptz IS NULL OR timestamp >= $3)
-             AND ($4::timestamptz IS NULL OR timestamp <= $4)
+             AND ($2 = false OR principal_id = ANY($3))
+             AND ($4::timestamptz IS NULL OR timestamp >= $4)
+             AND ($5::timestamptz IS NULL OR timestamp <= $5)
            ORDER BY timestamp DESC, event_id DESC
-           LIMIT $5"#,
+           LIMIT $6"#,
     )
     .bind(tenant_id)
-    .bind(effective_principal_id)
+    .bind(filter_principal)
+    .bind(&principal_aliases)
     .bind(from)
     .bind(to)
     .bind(limit)
@@ -973,24 +975,26 @@ async fn load_recent_sessions(
     db: &PgPool,
     tenant_id: Uuid,
     principal_id: &str,
+    principal_stable_ref: &str,
     agent_id: Option<&str>,
     last_heartbeat_at: Option<DateTime<Utc>>,
     default_posture: Option<String>,
 ) -> Result<Vec<ConsoleRecentSession>, ApiError> {
+    let principal_aliases = principal_aliases(principal_id, Some(principal_stable_ref));
     let rows = sqlx::query::query(
         r#"SELECT session_id,
                   MIN(timestamp) AS started_at,
                   MAX(timestamp) AS ended_at
            FROM hunt_events
            WHERE tenant_id = $1
-             AND principal_id = $2
+             AND principal_id = ANY($2)
              AND session_id IS NOT NULL
            GROUP BY session_id
            ORDER BY MAX(timestamp) DESC, session_id DESC
            LIMIT 10"#,
     )
     .bind(tenant_id)
-    .bind(principal_id)
+    .bind(&principal_aliases)
     .fetch_all(db)
     .await
     .map_err(ApiError::Database)?;
@@ -1097,6 +1101,10 @@ async fn list_response_actions_with_limit(
                 .map_err(ApiError::Database)?;
             let requested_by_id: String =
                 row.try_get("requested_by_id").map_err(ApiError::Database)?;
+            let source_detection_id = row
+                .try_get::<Option<Uuid>, _>("source_detection_id")
+                .map_err(ApiError::Database)?
+                .map(|value| value.to_string());
             Ok(ConsoleResponseActionListItem {
                 action_id: row
                     .try_get::<Uuid, _>("id")
@@ -1112,9 +1120,7 @@ async fn list_response_actions_with_limit(
                 requested_at: row.try_get("requested_at").map_err(ApiError::Database)?,
                 requested_by: format_requested_by(&requested_by_type, requested_by_id),
                 reason: row.try_get("reason").map_err(ApiError::Database)?,
-                source_detection_id: row
-                    .try_get("source_detection_id")
-                    .map_err(ApiError::Database)?,
+                source_detection_id,
             })
         })
         .collect()
@@ -1356,23 +1362,51 @@ fn merge_metadata_values(
     }
 }
 
-fn default_effective_policy() -> ResolvedEffectivePolicy {
-    ResolvedEffectivePolicy {
-        effective_policy: ConsoleEffectivePolicy {
-            checksum_sha256: DEFAULT_EFFECTIVE_POLICY_CHECKSUM.to_string(),
-            resolution_version: 0,
-            overlays: Vec::new(),
-        },
-        compiled_policy_yaml: None,
-        source_attachments: None,
-    }
-}
-
 fn normalize_limit(limit: Option<u32>) -> i64 {
     limit
         .map(i64::from)
         .map(|value| value.clamp(1, MAX_LIST_LIMIT))
         .unwrap_or(DEFAULT_LIST_LIMIT)
+}
+
+async fn resolve_principal_filter_aliases(
+    db: &PgPool,
+    tenant_id: Uuid,
+    principal_identifier: &str,
+) -> Result<Vec<String>, ApiError> {
+    let row = sqlx::query::query(
+        r#"SELECT id::text AS id_text, stable_ref
+           FROM principals
+           WHERE tenant_id = $1
+             AND (id::text = $2 OR stable_ref = $2)
+           LIMIT 1"#,
+    )
+    .bind(tenant_id)
+    .bind(principal_identifier)
+    .fetch_optional(db)
+    .await
+    .map_err(ApiError::Database)?;
+
+    if let Some(row) = row {
+        let id_text = row
+            .try_get::<String, _>("id_text")
+            .map_err(ApiError::Database)?;
+        let stable_ref = row
+            .try_get::<String, _>("stable_ref")
+            .map_err(ApiError::Database)?;
+        Ok(principal_aliases(&id_text, Some(&stable_ref)))
+    } else {
+        Ok(principal_aliases(principal_identifier, None))
+    }
+}
+
+fn principal_aliases(principal_id: &str, principal_stable_ref: Option<&str>) -> Vec<String> {
+    let mut aliases = Vec::new();
+    push_unique(&mut aliases, principal_id.to_string());
+    if let Some(principal_stable_ref) = principal_stable_ref {
+        push_unique(&mut aliases, principal_stable_ref.to_string());
+    }
+    aliases
 }
 
 fn parse_optional_rfc3339(

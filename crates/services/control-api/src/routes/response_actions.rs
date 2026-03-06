@@ -134,7 +134,7 @@ pub struct ResponseActionRecord {
     pub expires_at: Option<DateTime<Utc>>,
     pub reason: String,
     pub case_id: Option<String>,
-    pub source_detection_id: Option<String>,
+    pub source_detection_id: Option<Uuid>,
     pub source_approval_id: Option<Uuid>,
     pub require_acknowledgement: bool,
     pub payload: Value,
@@ -281,7 +281,7 @@ pub struct CreateResponseActionRequest {
     pub reason: String,
     pub expires_at: Option<DateTime<Utc>>,
     pub case_id: Option<String>,
-    pub source_detection_id: Option<String>,
+    pub source_detection_id: Option<Uuid>,
     pub source_approval_id: Option<Uuid>,
     pub require_acknowledgement: Option<bool>,
     pub payload: Option<Value>,
@@ -321,11 +321,18 @@ async fn create_action(
     validate_create_request(&input, &action_type, &target_kind, require_acknowledgement)?;
 
     let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
-    ensure_action_target_exists(
+    let resolved_target_id = resolve_action_target_id(
         &mut tx,
         auth.tenant_id,
         &target_kind,
         input.target.id.trim(),
+    )
+    .await?;
+    validate_action_provenance(
+        &mut tx,
+        auth.tenant_id,
+        input.source_detection_id,
+        input.source_approval_id,
     )
     .await?;
     let row = sqlx::query::query(
@@ -351,13 +358,13 @@ async fn create_action(
     .bind(auth.tenant_id)
     .bind(action_type.as_str())
     .bind(target_kind.as_str())
-    .bind(input.target.id.trim())
+    .bind(&resolved_target_id)
     .bind(auth.actor_type())
     .bind(auth.actor_id())
     .bind(input.expires_at)
     .bind(input.reason.trim())
     .bind(input.case_id.as_deref())
-    .bind(input.source_detection_id.as_deref())
+    .bind(input.source_detection_id)
     .bind(input.source_approval_id)
     .bind(require_acknowledgement)
     .bind(input.payload.unwrap_or_else(|| json!({})))
@@ -373,7 +380,7 @@ async fn create_action(
         &mut tx,
         auth.tenant_id,
         action.id,
-        action.source_detection_id.as_deref(),
+        action.source_detection_id,
     )
     .await?;
     tx.commit().await.map_err(ApiError::Database)?;
@@ -712,36 +719,39 @@ async fn publish_action(
 
     let publish_result: Result<DeliveryExecution, ApiError> =
         if let Some(subject) = delivery.delivery_subject.clone() {
-            let js = async_nats::jetstream::new(state.nats.clone());
-            let payload_bytes = build_delivery_payload_bytes(
-                &action,
-                &delivery,
-                state.config.approval_signing_enabled,
-                state.signing_keypair.as_deref(),
-            )?;
-            js.publish(subject, payload_bytes.into())
-                .await
-                .map_err(|err| ApiError::Nats(err.to_string()))?
-                .await
-                .map_err(|err| ApiError::Nats(err.to_string()))?;
-            if let Some(compat_subject) = delivery
-                .metadata
-                .get("compat_mirror_subject")
-                .and_then(Value::as_str)
-            {
-                let compat_payload = legacy_posture_command_payload(&action)?;
-                let compat_payload_bytes = build_signed_payload_bytes(
-                    compat_payload,
+            let state_nats = state.nats.clone();
+            let action_ref = &action;
+            let delivery_ref = &delivery;
+            async move {
+                let payload_bytes = build_delivery_payload_bytes(
+                    action_ref,
+                    delivery_ref,
                     state.config.approval_signing_enabled,
                     state.signing_keypair.as_deref(),
                 )?;
-                js.publish(compat_subject.to_string(), compat_payload_bytes.into())
-                    .await
-                    .map_err(|err| ApiError::Nats(err.to_string()))?
+                state_nats
+                    .publish(subject, payload_bytes.into())
                     .await
                     .map_err(|err| ApiError::Nats(err.to_string()))?;
+                if let Some(compat_subject) = delivery_ref
+                    .metadata
+                    .get("compat_mirror_subject")
+                    .and_then(Value::as_str)
+                {
+                    let compat_payload = legacy_posture_command_payload(action_ref)?;
+                    let compat_payload_bytes = build_signed_payload_bytes(
+                        compat_payload,
+                        state.config.approval_signing_enabled,
+                        state.signing_keypair.as_deref(),
+                    )?;
+                    state_nats
+                        .publish(compat_subject.to_string(), compat_payload_bytes.into())
+                        .await
+                        .map_err(|err| ApiError::Nats(err.to_string()))?;
+                }
+                Ok(DeliveryExecution::Published)
             }
-            Ok(DeliveryExecution::Published)
+            .await
         } else {
             execute_cloud_only_action(state, &action).await
         };
@@ -919,75 +929,81 @@ fn validate_create_request(
     }
 }
 
-async fn ensure_action_target_exists(
+async fn resolve_action_target_id(
     tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
     tenant_id: Uuid,
     target_kind: &ResponseTargetKind,
     target_id: &str,
-) -> Result<(), ApiError> {
-    let exists = match target_kind {
+) -> Result<String, ApiError> {
+    let resolved = match target_kind {
         ResponseTargetKind::Endpoint => {
-            let mut exists = false;
-            if let Ok(agent_row_id) = Uuid::parse_str(target_id) {
-                exists =
-                    sqlx::query::query("SELECT 1 FROM agents WHERE tenant_id = $1 AND id = $2")
-                        .bind(tenant_id)
-                        .bind(agent_row_id)
-                        .fetch_optional(&mut **tx)
-                        .await
-                        .map_err(ApiError::Database)?
-                        .is_some();
-            }
-            if !exists {
-                exists = sqlx::query::query(
-                    "SELECT 1 FROM agents WHERE tenant_id = $1 AND agent_id = $2",
+            if let Some(row) = sqlx::query::query(
+                "SELECT agent_id FROM agents WHERE tenant_id = $1 AND agent_id = $2",
+            )
+            .bind(tenant_id)
+            .bind(target_id)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(ApiError::Database)?
+            {
+                row.try_get("agent_id").map_err(ApiError::Database)?
+            } else if let Ok(agent_row_id) = Uuid::parse_str(target_id) {
+                let row = sqlx::query::query(
+                    "SELECT agent_id FROM agents WHERE tenant_id = $1 AND id = $2",
                 )
                 .bind(tenant_id)
-                .bind(target_id)
+                .bind(agent_row_id)
                 .fetch_optional(&mut **tx)
                 .await
                 .map_err(ApiError::Database)?
-                .is_some();
+                .ok_or(ApiError::NotFound)?;
+                row.try_get("agent_id").map_err(ApiError::Database)?
+            } else {
+                return Err(ApiError::NotFound);
             }
-            exists
         }
         ResponseTargetKind::Principal => {
-            let mut exists = false;
-            if let Ok(principal_id) = Uuid::parse_str(target_id) {
-                exists =
-                    sqlx::query::query("SELECT 1 FROM principals WHERE tenant_id = $1 AND id = $2")
-                        .bind(tenant_id)
-                        .bind(principal_id)
-                        .fetch_optional(&mut **tx)
-                        .await
-                        .map_err(ApiError::Database)?
-                        .is_some();
-            }
-            if !exists {
-                sqlx::query::query(
-                    "SELECT 1 FROM principals WHERE tenant_id = $1 AND stable_ref = $2",
+            if let Some(row) = sqlx::query::query(
+                "SELECT id::text AS id_text FROM principals WHERE tenant_id = $1 AND stable_ref = $2",
+            )
+            .bind(tenant_id)
+            .bind(target_id)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(ApiError::Database)?
+            {
+                row.try_get("id_text").map_err(ApiError::Database)?
+            } else if let Ok(principal_id) = Uuid::parse_str(target_id) {
+                let row = sqlx::query::query(
+                    "SELECT id::text AS id_text FROM principals WHERE tenant_id = $1 AND id = $2",
                 )
                 .bind(tenant_id)
-                .bind(target_id)
+                .bind(principal_id)
                 .fetch_optional(&mut **tx)
                 .await
                 .map_err(ApiError::Database)?
-                .is_some()
+                .ok_or(ApiError::NotFound)?;
+                row.try_get("id_text").map_err(ApiError::Database)?
             } else {
-                true
+                return Err(ApiError::NotFound);
             }
         }
         ResponseTargetKind::Grant => {
             let grant_id = Uuid::parse_str(target_id).map_err(|_| {
                 ApiError::BadRequest("grant targets must use a UUID grant id".to_string())
             })?;
-            sqlx::query::query("SELECT 1 FROM fleet_grants WHERE tenant_id = $1 AND id = $2")
-                .bind(tenant_id)
-                .bind(grant_id)
-                .fetch_optional(&mut **tx)
-                .await
-                .map_err(ApiError::Database)?
-                .is_some()
+            let exists =
+                sqlx::query::query("SELECT 1 FROM fleet_grants WHERE tenant_id = $1 AND id = $2")
+                    .bind(tenant_id)
+                    .bind(grant_id)
+                    .fetch_optional(&mut **tx)
+                    .await
+                    .map_err(ApiError::Database)?
+                    .is_some();
+            if !exists {
+                return Err(ApiError::NotFound);
+            }
+            grant_id.to_string()
         }
         ResponseTargetKind::Runtime
         | ResponseTargetKind::Session
@@ -1000,11 +1016,52 @@ async fn ensure_action_target_exists(
         }
     };
 
-    if exists {
-        Ok(())
-    } else {
-        Err(ApiError::NotFound)
+    Ok(resolved)
+}
+
+async fn validate_action_provenance(
+    tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
+    tenant_id: Uuid,
+    source_detection_id: Option<Uuid>,
+    source_approval_id: Option<Uuid>,
+) -> Result<(), ApiError> {
+    if let Some(finding_id) = source_detection_id {
+        let exists = sqlx::query_scalar::query_scalar::<_, bool>(
+            r#"SELECT EXISTS(
+                   SELECT 1
+                   FROM detection_findings
+                   WHERE tenant_id = $1 AND id = $2
+               )"#,
+        )
+        .bind(tenant_id)
+        .bind(finding_id)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(ApiError::Database)?;
+        if !exists {
+            return Err(ApiError::NotFound);
+        }
     }
+
+    if let Some(approval_id) = source_approval_id {
+        let exists = sqlx::query_scalar::query_scalar::<_, bool>(
+            r#"SELECT EXISTS(
+                   SELECT 1
+                   FROM approvals
+                   WHERE tenant_id = $1 AND id = $2
+               )"#,
+        )
+        .bind(tenant_id)
+        .bind(approval_id)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(ApiError::Database)?;
+        if !exists {
+            return Err(ApiError::NotFound);
+        }
+    }
+
+    Ok(())
 }
 
 fn normalize_ack_status(status: &str) -> Result<&'static str, ApiError> {
@@ -1430,16 +1487,13 @@ async fn link_action_to_source_detection(
     tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
     tenant_id: Uuid,
     action_id: Uuid,
-    source_detection_id: Option<&str>,
+    source_detection_id: Option<Uuid>,
 ) -> Result<(), ApiError> {
-    let Some(source_detection_id) = source_detection_id else {
-        return Ok(());
-    };
-    let Ok(finding_id) = Uuid::parse_str(source_detection_id) else {
+    let Some(finding_id) = source_detection_id else {
         return Ok(());
     };
 
-    sqlx::query::query(
+    let result = sqlx::query::query(
         r#"UPDATE detection_findings
            SET response_action_ids = CASE
                    WHEN COALESCE(response_action_ids, '[]'::jsonb)
@@ -1455,6 +1509,10 @@ async fn link_action_to_source_detection(
     .execute(&mut **tx)
     .await
     .map_err(ApiError::Database)?;
+
+    if result.rows_affected() == 0 {
+        return Err(ApiError::NotFound);
+    }
 
     Ok(())
 }

@@ -112,9 +112,7 @@ fn ensure_detection_write_access(auth: &AuthenticatedTenant) -> Result<(), ApiEr
 }
 
 fn actor_label(auth: &AuthenticatedTenant) -> String {
-    auth.user_id
-        .map(|user_id| user_id.to_string())
-        .unwrap_or_else(|| format!("tenant-role:{}", auth.role))
+    auth.actor_id()
 }
 
 async fn create_alert(

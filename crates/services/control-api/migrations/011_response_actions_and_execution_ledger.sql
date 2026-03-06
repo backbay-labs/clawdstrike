@@ -32,8 +32,8 @@ CREATE TABLE IF NOT EXISTS response_actions (
     expires_at TIMESTAMPTZ,
     reason TEXT NOT NULL,
     case_id TEXT,
-    source_detection_id TEXT,
-    source_approval_id UUID REFERENCES approvals(id) ON DELETE SET NULL,
+    source_detection_id UUID,
+    source_approval_id UUID,
     require_acknowledgement BOOLEAN NOT NULL DEFAULT true,
     payload JSONB NOT NULL DEFAULT '{}'::jsonb,
     status TEXT NOT NULL DEFAULT 'queued' CHECK (
@@ -50,7 +50,15 @@ CREATE TABLE IF NOT EXISTS response_actions (
     ),
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT response_actions_source_detection_tenant_fk
+        FOREIGN KEY (tenant_id, source_detection_id)
+        REFERENCES detection_findings(tenant_id, id)
+        ON DELETE SET NULL,
+    CONSTRAINT response_actions_source_approval_tenant_fk
+        FOREIGN KEY (tenant_id, source_approval_id)
+        REFERENCES approvals(tenant_id, id)
+        ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_response_actions_tenant_requested

@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS approvals (
     status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'denied')),
     resolved_by TEXT,
     resolved_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (tenant_id, id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_approvals_tenant_status_created

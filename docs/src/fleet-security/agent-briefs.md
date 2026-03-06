@@ -380,3 +380,110 @@ Final handoff must include:
 - commands run
 - remaining platform gaps
 ```
+
+## `T1` Brief
+
+```text
+You are worker lane T1: Integration Harness Hardening.
+
+Read these docs first:
+- docs/src/fleet-security/verification-matrix.md
+- docs/src/fleet-security/codex-cli-playbook.md
+- docs/src/fleet-security/execution-orchestration.md
+
+Your goal:
+- make the control-api integration harness safe under the default parallel test runner
+- remove or materially reduce flaky Docker port-allocation failures in CI
+
+Owned surfaces:
+- crates/services/control-api/src/integration_tests.rs
+- test-only helper modules or scripts that are directly required by the control-api suite
+- CI docs or verification notes if the harness contract changes
+
+Do not edit:
+- product code unrelated to test stability unless the harness proves it is required
+- swarm-orchestrator shared files owned by ORCH
+
+Execution requirements:
+- inspect the current harness setup, container launch path, and any port allocation helpers first
+- prefer deterministic container/network allocation or serialized test grouping over fragile host-port probing
+- keep the suite runnable on developer machines and in GitHub Actions
+- add or update regression coverage where possible
+- run the relevant verification commands from verification-matrix.md
+
+Final handoff must include:
+- root cause summary for the flake
+- changed files
+- commands run
+- any remaining CI caveats
+```
+
+## `T2` Brief
+
+```text
+You are worker lane T2: CI Parity and Verification.
+
+Read these docs first:
+- docs/src/fleet-security/verification-matrix.md
+- docs/src/fleet-security/codex-cli-playbook.md
+
+Your goal:
+- run the merge-relevant validation stack for the fleet security branch
+- close gaps between local verification and CI expectations
+
+Owned surfaces:
+- repo verification scripts under scripts/ if changes are needed for parity
+- docs or notes that clarify required verification for this branch
+- lane-local issue summaries and handoff artifacts
+
+Do not edit:
+- feature implementation files unless a verification failure requires a minimal targeted fix
+- shared merge wiring owned by ORCH
+
+Execution requirements:
+- start from the current fleet-security feature branch state
+- prioritize the exact jobs likely to gate merge: Rust, docs, frontend build/typecheck/test, changed-file coverage, and any offline/vendored checks that are relevant
+- if a failure is real, fix it minimally and verify the fix
+- if a failure is environmental, document it cleanly for ORCH
+
+Final handoff must include:
+- commands run
+- pass/fail summary by gate
+- any fixes applied
+- any remaining blockers to merge
+```
+
+## `T3` Brief
+
+```text
+You are worker lane T3: Merge Shepherding.
+
+Read these docs first:
+- docs/src/fleet-security/execution-orchestration.md
+- docs/src/fleet-security/dependency-graph.md
+- docs/src/fleet-security/verification-matrix.md
+
+Your goal:
+- prepare the fleet security branch for final merge while other stabilization lanes run
+- act as the bounded worker that watches branch state, outstanding review risk, and merge prerequisites
+
+Owned surfaces:
+- orchestration notes and handoff artifacts for merge readiness
+- minimal branch hygiene changes if they are clearly required for merge
+
+Do not edit:
+- broad feature code that belongs to another lane
+- shared route/model registration unless ORCH explicitly redirects you
+
+Execution requirements:
+- inspect current branch status, active review state, and likely merge blockers first
+- keep a clear checklist of what must be true before merge
+- if CI or review feedback uncovers a small isolated fix, note it and defer to the correct lane unless it is clearly in your bounded scope
+- leave a concise operator-grade handoff for ORCH
+
+Final handoff must include:
+- merge readiness checklist
+- outstanding blockers or risks
+- recommended next action for ORCH
+- commands run
+```
