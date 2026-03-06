@@ -62,6 +62,7 @@ function createState(): AppState {
     promptBuffer: "",
     agentIndex: 0,
     homeActionIndex: 0,
+    homeFocus: "prompt",
     inputMode: "main",
     commandIndex: 0,
     statusMessage: "",
@@ -127,18 +128,21 @@ afterEach(async () => {
 })
 
 describe("main screen", () => {
-  test("uses hunt shortcuts when prompt is empty", () => {
+  test("keeps printable home hotkeys in the prompt by default", () => {
     const state = createState()
     const app = new TestApp(tempDir)
     const screen = createMainScreen([])
     const ctx = createContext(state, app)
 
     expect(screen.handleInput("W", ctx)).toBe(true)
-    expect(app.screen).toBe("hunt-watch")
+    expect(app.screen).toBeNull()
+    expect(state.promptBuffer).toBe("W")
+    expect(state.homeFocus).toBe("prompt")
   })
 
-  test("uses supported surface shortcuts when prompt is empty", () => {
+  test("uses home hotkeys only in nav focus", () => {
     const state = createState()
+    state.homeFocus = "nav"
     const screen = createMainScreen([])
     const securityApp = new TestApp(tempDir)
     const securityCtx = createContext(state, securityApp)
@@ -162,11 +166,14 @@ describe("main screen", () => {
     expect(integrationsApp.screen).toBe("integrations")
   })
 
-  test("supports arrow-key home action selection with enter", () => {
+  test("supports tab into actions, arrow-key selection, and enter to open", () => {
     const state = createState()
     const app = new TestApp(tempDir)
     const screen = createMainScreen([])
     const ctx = createContext(state, app)
+
+    expect(screen.handleInput("\t", ctx)).toBe(true)
+    expect(state.homeFocus).toBe("actions")
 
     expect(screen.handleInput("\x1b[B", ctx)).toBe(true)
     expect(state.homeActionIndex).toBe(2)
@@ -178,7 +185,23 @@ describe("main screen", () => {
     expect(app.screen).toBe("integrations")
   })
 
-  test("keeps shortcut keys as prompt input when text already exists", () => {
+  test("uses esc to toggle prompt and nav focus without clearing prompt text", () => {
+    const state = createState()
+    state.promptBuffer = "triage "
+    const app = new TestApp(tempDir)
+    const screen = createMainScreen([])
+    const ctx = createContext(state, app)
+
+    expect(screen.handleInput("\x1b", ctx)).toBe(true)
+    expect(state.homeFocus).toBe("nav")
+    expect(state.promptBuffer).toBe("triage ")
+
+    expect(screen.handleInput("\x1b", ctx)).toBe(true)
+    expect(state.homeFocus).toBe("prompt")
+    expect(state.promptBuffer).toBe("triage ")
+  })
+
+  test("keeps printable keys as prompt input when text already exists", () => {
     const state = createState()
     state.promptBuffer = "triage "
     const app = new TestApp(tempDir)
@@ -188,6 +211,53 @@ describe("main screen", () => {
     expect(screen.handleInput("W", ctx)).toBe(true)
     expect(app.screen).toBeNull()
     expect(state.promptBuffer).toBe("triage W")
+  })
+
+  test("does not open the selected home action when enter is pressed in prompt focus", () => {
+    const state = createState()
+    const app = new TestApp(tempDir)
+    const screen = createMainScreen([])
+    const ctx = createContext(state, app)
+
+    state.homeActionIndex = 3
+
+    expect(screen.handleInput("\r", ctx)).toBe(true)
+    expect(app.screen).toBeNull()
+    expect(app.submitted).toBeNull()
+  })
+
+  test("cycles between prompt and actions with tab", () => {
+    const state = createState()
+    const app = new TestApp(tempDir)
+    const screen = createMainScreen([])
+    const ctx = createContext(state, app)
+
+    expect(screen.handleInput("\t", ctx)).toBe(true)
+    expect(state.homeFocus).toBe("actions")
+
+    expect(screen.handleInput("\t", ctx)).toBe(true)
+    expect(state.homeFocus).toBe("prompt")
+  })
+
+  test("renders focus-aware home hints", () => {
+    const state = createState()
+    const app = new TestApp(tempDir)
+    const screen = createMainScreen([])
+
+    const promptOutput = stripAnsi(screen.render(createContext(state, app, 120, 36)))
+    expect(promptOutput).toContain("Dispatch [prompt]")
+    expect(promptOutput).toContain("Prompt focus:")
+    expect(promptOutput).toContain("type here without triggering page shortcuts")
+
+    state.homeFocus = "actions"
+    const actionsOutput = stripAnsi(screen.render(createContext(state, app, 120, 36)))
+    expect(actionsOutput).toContain("Dispatch [actions]")
+    expect(actionsOutput).toContain("Actions focus:")
+
+    state.homeFocus = "nav"
+    const navOutput = stripAnsi(screen.render(createContext(state, app, 120, 36)))
+    expect(navOutput).toContain("Dispatch [nav]")
+    expect(navOutput).toContain("Nav mode:")
   })
 
   test("renders degraded health, stale stream state, and last deny summary", () => {
@@ -233,7 +303,7 @@ describe("main screen", () => {
     const screen = createMainScreen([])
     const output = stripAnsi(screen.render(createContext(state, app, 120, 36)))
 
-    expect(output).toContain("or use shortcut keys")
+    expect(output).toContain("Prompt focus:")
     expect(output).toContain("Integrations runtime status")
     expect(output).toContain("Timeline event replay")
   })

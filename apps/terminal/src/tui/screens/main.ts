@@ -3,7 +3,7 @@
  */
 
 import { THEME, LOGO, AGENTS, getAnimatedStrike } from "../theme"
-import type { Screen, ScreenContext, Command } from "../types"
+import type { Screen, ScreenContext, Command, HomeFocus } from "../types"
 import { renderBox } from "../components/box"
 import { centerBlock, centerLine, joinColumns, wrapText } from "../components/layout"
 import { fitString } from "../components/types"
@@ -185,23 +185,59 @@ function renderHomeActionCell(action: HomeAction, selected: boolean, width: numb
   return fitString(`${prefix} ${badge} ${label} ${THEME.dim}${action.description}${THEME.reset}`, width)
 }
 
+function cycleHomeFocus(focus: HomeFocus): HomeFocus {
+  return focus === "prompt" ? "actions" : "prompt"
+}
+
+function homeFocusTitle(focus: HomeFocus): string {
+  switch (focus) {
+    case "actions":
+      return "Dispatch [actions]"
+    case "nav":
+      return "Dispatch [nav]"
+    default:
+      return "Dispatch [prompt]"
+  }
+}
+
+function renderHomeActionGuide(focus: HomeFocus, contentWidth: number): string[] {
+  switch (focus) {
+    case "actions":
+      return wrapText(
+        `${THEME.dim}Actions focus:${THEME.reset} ${THEME.white}↑↓←→${THEME.reset} move  ` +
+          `${THEME.white}Enter${THEME.reset} open  ${THEME.white}Tab${THEME.reset} prompt  ` +
+          `${THEME.white}Esc${THEME.reset} prompt`,
+        contentWidth,
+      )
+    case "nav":
+      return wrapText(
+        `${THEME.dim}Nav mode:${THEME.reset} ${THEME.white}S/A/P/I${THEME.reset} core surfaces  ` +
+          `${THEME.white}W/X/T/Q/E/H${THEME.reset} hunt loop  ${THEME.white}Esc${THEME.reset} prompt`,
+        contentWidth,
+      )
+    default:
+      return wrapText(
+        `${THEME.dim}Prompt focus:${THEME.reset} ${THEME.white}Tab${THEME.reset} actions  ` +
+          `${THEME.white}Esc${THEME.reset} nav  ${THEME.dim}type here without triggering page shortcuts${THEME.reset}`,
+        contentWidth,
+      )
+  }
+}
+
 function renderHomeActionRows(ctx: ScreenContext, contentWidth: number): string[] {
   const rows: string[] = []
   const selection = Math.min(ctx.state.homeActionIndex, HOME_ACTIONS.length - 1)
+  const activeSelection = ctx.state.homeFocus !== "prompt"
   const gap = 3
   const cellWidth = Math.max(22, Math.floor((contentWidth - gap) / HOME_ACTION_COLUMNS))
 
-  rows.push(...wrapText(
-    `${THEME.dim}Navigate:${THEME.reset} ${THEME.white}↑↓←→${THEME.reset} select  ` +
-      `${THEME.white}Enter${THEME.reset} open  ${THEME.dim}or use shortcut keys${THEME.reset}`,
-    contentWidth,
-  ))
+  rows.push(...renderHomeActionGuide(ctx.state.homeFocus, contentWidth))
 
   for (let i = 0; i < HOME_ACTIONS.length; i += HOME_ACTION_COLUMNS) {
-    const left = renderHomeActionCell(HOME_ACTIONS[i], selection === i, cellWidth)
+    const left = renderHomeActionCell(HOME_ACTIONS[i], activeSelection && selection === i, cellWidth)
     const rightAction = HOME_ACTIONS[i + 1]
     const right = rightAction
-      ? renderHomeActionCell(rightAction, selection === i + 1, cellWidth)
+      ? renderHomeActionCell(rightAction, activeSelection && selection === i + 1, cellWidth)
       : ""
     rows.push(joinColumns(left, right, contentWidth))
   }
@@ -237,9 +273,16 @@ function handleMainInput(key: string, ctx: ScreenContext): boolean {
     return true
   }
 
-  // Tab - cycle agents
-  if (key === "\t") {
+  // Ctrl+N - cycle agents
+  if (key === "\x0e") {
     state.agentIndex = (state.agentIndex + 1) % AGENTS.length
+    app.render()
+    return true
+  }
+
+  // Tab - cycle prompt/actions focus
+  if (key === "\t") {
+    state.homeFocus = cycleHomeFocus(state.homeFocus)
     app.render()
     return true
   }
@@ -252,22 +295,34 @@ function handleMainInput(key: string, ctx: ScreenContext): boolean {
     return true
   }
 
-  if (!state.promptBuffer) {
-    if (key === "\x1b[A" || key === "\x1b[B" || key === "\x1b[C" || key === "\x1b[D" || key === "up" || key === "down" || key === "left" || key === "right") {
+  const isArrowKey =
+    key === "\x1b[A" ||
+    key === "\x1b[B" ||
+    key === "\x1b[C" ||
+    key === "\x1b[D" ||
+    key === "up" ||
+    key === "down" ||
+    key === "left" ||
+    key === "right"
+
+  if (state.homeFocus === "actions" || state.homeFocus === "nav") {
+    if (isArrowKey) {
       state.homeActionIndex = moveHomeActionSelection(state.homeActionIndex, key)
       app.render()
       return true
     }
+  }
 
+  if (state.homeFocus === "nav") {
     const actionIndex = findHomeActionIndex(key)
     if (actionIndex >= 0) {
       return activateHomeAction(actionIndex, ctx)
     }
   }
 
-  // Enter - submit prompt
+  // Enter - submit prompt or open selected action
   if (key === "\r") {
-    if (!state.promptBuffer) {
+    if (state.homeFocus !== "prompt") {
       return activateHomeAction(state.homeActionIndex, ctx)
     }
     if (state.promptBuffer.trim()) {
@@ -277,32 +332,32 @@ function handleMainInput(key: string, ctx: ScreenContext): boolean {
   }
 
   // Backspace
-  if (key === "\x7f" || key === "\b") {
+  if ((key === "\x7f" || key === "\b") && state.homeFocus === "prompt") {
     state.promptBuffer = state.promptBuffer.slice(0, -1)
     app.render()
     return true
   }
 
   // Ctrl+U - clear line
-  if (key === "\x15") {
+  if (key === "\x15" && state.homeFocus === "prompt") {
     state.promptBuffer = ""
     app.render()
     return true
   }
 
-  // Escape - clear or quit
+  // Escape - toggle prompt/nav, or exit actions focus back to prompt
   if (key === "\x1b" || key === "\x1b\x1b") {
-    if (state.promptBuffer) {
-      state.promptBuffer = ""
-      app.render()
+    if (state.homeFocus === "actions") {
+      state.homeFocus = "prompt"
     } else {
-      app.quit()
+      state.homeFocus = state.homeFocus === "prompt" ? "nav" : "prompt"
     }
+    app.render()
     return true
   }
 
   // Regular characters - add to prompt
-  if (key.length === 1 && key >= " ") {
+  if (state.homeFocus === "prompt" && key.length === 1 && key >= " ") {
     state.promptBuffer += key
     app.render()
     return true
@@ -484,7 +539,7 @@ function renderMainContent(ctx: ScreenContext, _commands: Command[]): string {
   const inputContent = visiblePrompt + cursor
   const agent = AGENTS[state.agentIndex]
   const inputBox = renderBox(
-    "Dispatch",
+    homeFocusTitle(state.homeFocus),
     [
       prompt
         ? `${THEME.white}${inputContent}${THEME.reset}`
@@ -492,7 +547,7 @@ function renderMainContent(ctx: ScreenContext, _commands: Command[]): string {
       "",
       joinColumns(
         `${THEME.accent}${agent.name}${THEME.reset}  ${THEME.muted}${agent.model}${THEME.reset} ${THEME.dim}${agent.provider}${THEME.reset}`,
-        `${THEME.dim}tab${THEME.reset} ${THEME.muted}switch agent${THEME.reset}`,
+        `${THEME.dim}ctrl+n${THEME.reset} ${THEME.muted}next agent${THEME.reset}`,
         inputWidth - 4,
       ),
     ],
@@ -505,14 +560,24 @@ function renderMainContent(ctx: ScreenContext, _commands: Command[]): string {
   lines.push("")
 
   // Hint bar - centered
-  const primaryHints =
-    `${THEME.bold}tab${THEME.reset}${THEME.muted} agent${THEME.reset}    ` +
-    `${THEME.bold}ctrl+p${THEME.reset}${THEME.muted} commands${THEME.reset}    ` +
-    `${THEME.bold}enter${THEME.reset}${THEME.muted} dispatch / open${THEME.reset}`
-  const secondaryHints =
-    `${THEME.bold}↑↓←→${THEME.reset}${THEME.muted} select home action${THEME.reset}    ` +
-    `${THEME.bold}S/A/P/I${THEME.reset}${THEME.muted} core surfaces${THEME.reset}    ` +
-    `${THEME.bold}W/X/Q/T/E/H${THEME.reset}${THEME.muted} hunt loop${THEME.reset}`
+  const primaryHints = state.homeFocus === "prompt"
+    ? `${THEME.bold}Enter${THEME.reset}${THEME.muted} dispatch${THEME.reset}    ` +
+      `${THEME.bold}Tab${THEME.reset}${THEME.muted} actions${THEME.reset}    ` +
+      `${THEME.bold}Ctrl+P${THEME.reset}${THEME.muted} commands${THEME.reset}    ` +
+      `${THEME.bold}Esc${THEME.reset}${THEME.muted} nav${THEME.reset}`
+    : state.homeFocus === "actions"
+      ? `${THEME.bold}↑↓←→${THEME.reset}${THEME.muted} move${THEME.reset}    ` +
+        `${THEME.bold}Enter${THEME.reset}${THEME.muted} open${THEME.reset}    ` +
+        `${THEME.bold}Tab${THEME.reset}${THEME.muted} prompt${THEME.reset}    ` +
+        `${THEME.bold}Esc${THEME.reset}${THEME.muted} prompt${THEME.reset}`
+      : `${THEME.bold}S/A/P/I${THEME.reset}${THEME.muted} core pages${THEME.reset}    ` +
+        `${THEME.bold}W/X/T/Q/E/H${THEME.reset}${THEME.muted} hunt pages${THEME.reset}    ` +
+        `${THEME.bold}Esc${THEME.reset}${THEME.muted} prompt${THEME.reset}`
+  const secondaryHints = state.homeFocus === "prompt"
+    ? `${THEME.bold}Ctrl+N${THEME.reset}${THEME.muted} next agent${THEME.reset}    ` +
+      `${THEME.bold}↑↓←→${THEME.reset}${THEME.muted} available after Tab${THEME.reset}`
+    : `${THEME.bold}Ctrl+P${THEME.reset}${THEME.muted} commands${THEME.reset}    ` +
+      `${THEME.bold}Ctrl+N${THEME.reset}${THEME.muted} next agent${THEME.reset}`
   lines.push(centerLine(primaryHints, width))
   lines.push(centerLine(secondaryHints, width))
 

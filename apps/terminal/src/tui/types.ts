@@ -128,6 +128,7 @@ export type InputMode =
   | "hunt-playbook"
 
 export type ScreenStage = "supported" | "experimental"
+export type HomeFocus = "prompt" | "actions" | "nav"
 
 // =============================================================================
 // DISPATCH RESULT
@@ -316,6 +317,7 @@ export interface AppState {
   promptBuffer: string
   agentIndex: number
   homeActionIndex: number
+  homeFocus: HomeFocus
 
   // UI mode
   inputMode: InputMode
