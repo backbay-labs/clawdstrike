@@ -15,7 +15,9 @@ import {
   moveUp,
   moveDown,
 } from "../components/tree-view"
+import { renderBox } from "../components/box"
 import { renderSplit } from "../components/split-pane"
+import { centerBlock, centerLine, wrapText } from "../components/layout"
 import { fitString } from "../components/types"
 import { renderSurfaceHeader } from "../components/surface-header"
 import { runScan } from "../../hunt/bridge-scan"
@@ -171,6 +173,30 @@ function collectFindings(results: ScanPathResult[]): string[] {
   return findings.slice(0, 12)
 }
 
+function renderScanStateCard(
+  title: string,
+  body: string[],
+  width: number,
+  height: number,
+  footer: string,
+): string[] {
+  const boxWidth = Math.min(96, width - 6)
+  const innerWidth = boxWidth - 4
+  const content = body.flatMap((line) => wrapText(line, innerWidth))
+  const card = renderBox(title, content, boxWidth, THEME, {
+    style: "rounded",
+    titleAlign: "left",
+    padding: 1,
+  })
+  const lines: string[] = []
+  const startY = Math.max(3, Math.floor((height - card.length - 2) / 2))
+  while (lines.length < startY) lines.push(" ".repeat(width))
+  lines.push(...centerBlock(card, width))
+  while (lines.length < height - 1) lines.push(" ".repeat(width))
+  lines.push(centerLine(footer, width))
+  return lines
+}
+
 function renderDetail(
   results: ScanPathResult[],
   selectedKey: string | null,
@@ -271,29 +297,46 @@ export const huntScanScreen: Screen = {
     lines.push(...renderSurfaceHeader("hunt-scan", "MCP Scan Explorer", width, THEME))
 
     if (scan.loading) {
-      lines.push(fitString(`${THEME.muted}  Scanning MCP configurations...${THEME.reset}`, width))
       const spinChars = ["\u2847", "\u2846", "\u2834", "\u2831", "\u2839", "\u283B", "\u283F", "\u2857"]
       const frame = ctx.state.animationFrame % spinChars.length
-      lines.push(fitString(`${THEME.accent}  ${spinChars[frame]}${THEME.reset}`, width))
-      while (lines.length < height - 1) lines.push(" ".repeat(width))
-      lines.push(fitString(`${THEME.dim}  ESC back${THEME.reset}`, width))
+      lines.push(...renderScanStateCard(
+        "Scan In Progress",
+        [
+          `Scanning MCP configurations from the current workstation.`,
+          `${spinChars[frame]} collecting clients, servers, signatures, issues, and violations`,
+        ],
+        width,
+        height,
+        `${THEME.dim}esc${THEME.reset}${THEME.muted} back${THEME.reset}`,
+      ))
       return lines.join("\n")
     }
 
     if (scan.error) {
-      lines.push(fitString(`${THEME.error}  Error: ${scan.error}${THEME.reset}`, width))
-      lines.push(fitString("", width))
-      lines.push(fitString(`${THEME.muted}  r rescan  ESC back${THEME.reset}`, width))
-      while (lines.length < height - 1) lines.push(" ".repeat(width))
+      lines.push(...renderScanStateCard(
+        "Scan Failed",
+        [
+          `${THEME.error}The MCP scan did not complete.${THEME.reset}`,
+          scan.error,
+        ],
+        width,
+        height,
+        `${THEME.dim}r${THEME.reset}${THEME.muted} rescan${THEME.reset}  ${THEME.dim}esc${THEME.reset}${THEME.muted} back${THEME.reset}`,
+      ))
       return lines.join("\n")
     }
 
     if (scan.results.length === 0) {
-      lines.push(fitString(`${THEME.muted}  No MCP configurations found.${THEME.reset}`, width))
-      lines.push(fitString(`${THEME.dim}  Run with MCP servers configured to see scan results.${THEME.reset}`, width))
-      lines.push(fitString("", width))
-      lines.push(fitString(`${THEME.muted}  r rescan  ESC back${THEME.reset}`, width))
-      while (lines.length < height - 1) lines.push(" ".repeat(width))
+      lines.push(...renderScanStateCard(
+        "No Scan Results",
+        [
+          `No MCP configurations were discovered from the current working directory.`,
+          `Run the scan from a machine with MCP clients configured, or rescan after starting the local agent runtime.`,
+        ],
+        width,
+        height,
+        `${THEME.dim}r${THEME.reset}${THEME.muted} rescan${THEME.reset}  ${THEME.dim}esc${THEME.reset}${THEME.muted} back${THEME.reset}`,
+      ))
       return lines.join("\n")
     }
 

@@ -55,6 +55,7 @@ function createState(): AppState {
   return {
     promptBuffer: "",
     agentIndex: 0,
+    homeActionIndex: 0,
     inputMode: "main",
     commandIndex: 0,
     statusMessage: "",
@@ -152,6 +153,22 @@ describe("main screen", () => {
     const integrationsCtx = createContext(state, integrationsApp)
     expect(screen.handleInput("I", integrationsCtx)).toBe(true)
     expect(integrationsApp.screen).toBe("integrations")
+  })
+
+  test("supports arrow-key home action selection with enter", () => {
+    const state = createState()
+    const app = new TestApp(tempDir)
+    const screen = createMainScreen([])
+    const ctx = createContext(state, app)
+
+    expect(screen.handleInput("\x1b[B", ctx)).toBe(true)
+    expect(state.homeActionIndex).toBe(2)
+
+    expect(screen.handleInput("\x1b[C", ctx)).toBe(true)
+    expect(state.homeActionIndex).toBe(3)
+
+    expect(screen.handleInput("\r", ctx)).toBe(true)
+    expect(app.screen).toBe("integrations")
   })
 
   test("keeps shortcut keys as prompt input when text already exists", () => {

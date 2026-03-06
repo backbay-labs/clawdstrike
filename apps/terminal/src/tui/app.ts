@@ -88,6 +88,7 @@ export class TUIApp implements AppController {
     this.state = {
       promptBuffer: "",
       agentIndex: 0,
+      homeActionIndex: 0,
       inputMode: "main",
       commandIndex: 0,
       statusMessage: "",

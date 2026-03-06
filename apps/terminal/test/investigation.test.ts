@@ -8,6 +8,7 @@ function createState(): AppState {
   return {
     promptBuffer: "",
     agentIndex: 0,
+    homeActionIndex: 0,
     inputMode: "main",
     commandIndex: 0,
     statusMessage: "",

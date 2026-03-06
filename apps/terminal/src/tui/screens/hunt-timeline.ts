@@ -8,6 +8,7 @@ import type { TimelineEvent, EventSource, NormalizedVerdict } from "../../hunt/t
 import { runTimeline } from "../../hunt/bridge-query"
 import { renderList, scrollUp, scrollDown, type ListItem } from "../components/scrollable-list"
 import { renderBox } from "../components/box"
+import { centerBlock, centerLine, wrapText } from "../components/layout"
 import { fitString } from "../components/types"
 import { renderSurfaceHeader } from "../components/surface-header"
 import { updateInvestigation } from "../investigation"
@@ -90,6 +91,30 @@ function syncInvestigation(ctx: ScreenContext): void {
   })
 }
 
+function renderTimelineStateCard(
+  title: string,
+  body: string[],
+  width: number,
+  height: number,
+  footer: string,
+): string[] {
+  const boxWidth = Math.min(94, width - 6)
+  const innerWidth = boxWidth - 4
+  const content = body.flatMap((line) => wrapText(line, innerWidth))
+  const card = renderBox(title, content, boxWidth, THEME, {
+    style: "rounded",
+    titleAlign: "left",
+    padding: 1,
+  })
+  const lines: string[] = []
+  const startY = Math.max(4, Math.floor((height - card.length - 2) / 2))
+  while (lines.length < startY) lines.push(" ".repeat(width))
+  lines.push(...centerBlock(card, width))
+  while (lines.length < height - 1) lines.push(" ".repeat(width))
+  lines.push(centerLine(footer, width))
+  return lines
+}
+
 export const huntTimelineScreen: Screen = {
   onEnter(ctx: ScreenContext): void {
     const tl = ctx.state.hunt.timeline
@@ -149,22 +174,31 @@ export const huntTimelineScreen: Screen = {
     if (tl.loading) {
       const spinChars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
       const spinner = spinChars[state.animationFrame % spinChars.length]
-      const msgY = Math.floor(height / 2) - 2
-      for (let i = lines.length; i < msgY; i++) lines.push(" ".repeat(width))
-      lines.push(fitString(`${THEME.secondary}  ${spinner} Loading timeline events...${THEME.reset}`, width))
-      for (let i = lines.length; i < height - 1; i++) lines.push(" ".repeat(width))
-      lines.push(renderHelpBar(width))
+      lines.push(...renderTimelineStateCard(
+        "Timeline Loading",
+        [
+          `Replaying hunt events across the enabled sources.`,
+          `${spinner} fetching receipts and runtime events for the current investigation`,
+        ],
+        width,
+        height,
+        renderHelpBar(width),
+      ))
       return lines.join("\n")
     }
 
     // Error state
     if (tl.error) {
-      const msgY = Math.floor(height / 2) - 2
-      for (let i = lines.length; i < msgY; i++) lines.push(" ".repeat(width))
-      lines.push(fitString(`${THEME.error}  Error: ${tl.error}${THEME.reset}`, width))
-      lines.push(fitString(`${THEME.dim}  Press r to retry.${THEME.reset}`, width))
-      for (let i = lines.length; i < height - 1; i++) lines.push(" ".repeat(width))
-      lines.push(renderHelpBar(width))
+      lines.push(...renderTimelineStateCard(
+        "Timeline Failed",
+        [
+          `${THEME.error}Timeline replay did not complete.${THEME.reset}`,
+          tl.error,
+        ],
+        width,
+        height,
+        renderHelpBar(width),
+      ))
       return lines.join("\n")
     }
 
@@ -172,16 +206,18 @@ export const huntTimelineScreen: Screen = {
 
     // Empty state
     if (filtered.length === 0) {
-      const msgY = Math.floor(height / 2) - 2
-      for (let i = lines.length; i < msgY; i++) lines.push(" ".repeat(width))
-      if (tl.events.length === 0) {
-        lines.push(fitString(`${THEME.muted}  No timeline events found.${THEME.reset}`, width))
-      } else {
-        lines.push(fitString(`${THEME.muted}  No events match active source filters.${THEME.reset}`, width))
-      }
-      lines.push(fitString(`${THEME.dim}  Toggle sources with 1-4 or press r to reload.${THEME.reset}`, width))
-      for (let i = lines.length; i < height - 1; i++) lines.push(" ".repeat(width))
-      lines.push(renderHelpBar(width))
+      lines.push(...renderTimelineStateCard(
+        "No Timeline Events",
+        [
+          tl.events.length === 0
+            ? "No timeline events were returned for this investigation."
+            : "No events match the currently enabled source filters.",
+          "Toggle sources with 1-4 or reload the timeline to try again.",
+        ],
+        width,
+        height,
+        renderHelpBar(width),
+      ))
       return lines.join("\n")
     }
 

@@ -93,6 +93,39 @@ function explainUnavailableWatch(error: string, ctx: ScreenContext): string {
   return error
 }
 
+function renderWatchSummaryCard(ctx: ScreenContext, width: number): string[] {
+  const { state } = ctx
+  const w = state.hunt.watch
+  const boxWidth = Math.min(108, width - 6)
+  const content: string[] = [
+    `${THEME.dim}Mode:${THEME.reset} ${THEME.white}${w.log.paused ? "paused" : "live"}${THEME.reset}  ` +
+      `${THEME.dim}Filter:${THEME.reset} ${THEME.white}${w.filter}${THEME.reset}  ` +
+      `${THEME.dim}Local hushd:${THEME.reset} ${THEME.white}${state.hushdStatus}${THEME.reset}`,
+  ]
+
+  if (w.stats) {
+    content.push(
+      `${THEME.dim}Events:${THEME.reset} ${THEME.white}${w.stats.events_processed}${THEME.reset}  ` +
+        `${THEME.dim}Alerts:${THEME.reset} ${THEME.warning}${w.stats.alerts_fired}${THEME.reset}  ` +
+        `${THEME.dim}Rules:${THEME.reset} ${THEME.white}${w.stats.active_rules}${THEME.reset}  ` +
+        `${THEME.dim}Uptime:${THEME.reset} ${THEME.white}${w.stats.uptime_seconds}s${THEME.reset}`,
+    )
+  } else {
+    content.push(`${THEME.dim}Waiting for stream statistics from the cluster watch process.${THEME.reset}`)
+  }
+
+  content.push(
+    `${THEME.dim}Actions:${THEME.reset} ${THEME.white}f${THEME.reset} filter  ` +
+      `${THEME.white}space${THEME.reset} pause  ${THEME.white}c${THEME.reset} clear  ${THEME.white}e${THEME.reset} report`,
+  )
+
+  return renderBox("Watch Session", content, boxWidth, THEME, {
+    style: "rounded",
+    titleAlign: "left",
+    padding: 1,
+  })
+}
+
 export const huntWatchScreen: Screen = {
   onEnter(ctx: ScreenContext): void {
     ctx.app.refreshDesktopAgent()
@@ -265,7 +298,6 @@ export const huntWatchScreen: Screen = {
     }
 
     // Alert banner (if present)
-    let alertLines = 0
     if (w.lastAlert) {
       const severityColor = w.lastAlert.severity === "critical" ? THEME.error : THEME.warning
       const alertText =
@@ -273,29 +305,17 @@ export const huntWatchScreen: Screen = {
         `${severityColor}${w.lastAlert.title}${THEME.reset} ` +
         `${THEME.dim}(${w.lastAlert.rule})${THEME.reset}`
       lines.push(fitString(alertText, width))
-      alertLines = 1
     }
 
-    // Stats bar height
-    const statsLines = 1
-    // Log area: remaining height minus header(2) - alert - stats - help(1)
-    const logHeight = height - 2 - alertLines - statsLines - 1
+    const summaryCard = renderWatchSummaryCard(ctx, width)
+    lines.push(...centerBlock(summaryCard, width))
+    lines.push("")
+
+    const logHeight = Math.max(3, height - lines.length - 1)
 
     // Streaming log
     const logOutput = renderLog(w.log, logHeight, width, THEME)
     for (const l of logOutput) lines.push(l)
-
-    // Stats bar
-    if (w.stats) {
-      const statsText =
-        `${THEME.dim}events: ${THEME.reset}${THEME.white}${w.stats.events_processed}${THEME.reset}` +
-        `${THEME.dim} | alerts: ${THEME.reset}${THEME.warning}${w.stats.alerts_fired}${THEME.reset}` +
-        `${THEME.dim} | rules: ${THEME.reset}${THEME.white}${w.stats.active_rules}${THEME.reset}` +
-        `${THEME.dim} | uptime: ${THEME.reset}${THEME.white}${w.stats.uptime_seconds}s${THEME.reset}`
-      lines.push(fitString(statsText, width))
-    } else {
-      lines.push(fitString(`${THEME.dim}Waiting for stats...${THEME.reset}`, width))
-    }
 
     // Help bar
     lines.push(renderHelpBar(width))

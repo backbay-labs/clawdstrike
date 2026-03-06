@@ -73,6 +73,16 @@ bun install
 
 The beta TUI runtime currently requires `bun` on the machine running `clawdstrike tui`.
 
+### Wrapper And Doctor Notes
+
+- `clawdstrike tui doctor --json` reports the active runtime under `runtime.source`, `runtime.script_path`, and `runtime.bun_version`.
+- The Rust wrapper resolves the TUI runtime in this order:
+  1. `CLAWDSTRIKE_TUI_DIR`
+  2. installed bundle beside the CLI binary at `../share/clawdstrike/tui/cli.js`
+  3. repo source fallback at `apps/terminal/src/cli/index.ts`
+- If `bun` on `PATH` is a crashing shim layer, `doctor` will still show the selected runtime, but launch can fail before the TUI starts. In that case, put the real Bun binary earlier on `PATH` than the shim.
+- A concrete failure we hit during dogfooding was a `~/.proto/shims/bun` wrapper panic on macOS. Pointing `PATH` at the real Bun binary fixed the issue without changing any TUI code.
+
 ## Codex Agent Pack
 
 The terminal subtree includes a Codex agent pack for live dogfooding, UI polish,

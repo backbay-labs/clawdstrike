@@ -12,6 +12,7 @@ import { renderList, scrollUp, scrollDown } from "../components/scrollable-list"
 import { renderForm, focusNext, focusPrev, handleFieldInput } from "../components/form"
 import type { SelectField, TextField } from "../components/form"
 import { renderBox } from "../components/box"
+import { centerBlock, centerLine, wrapText } from "../components/layout"
 import { fitString } from "../components/types"
 import { renderSurfaceHeader } from "../components/surface-header"
 import { runQuery } from "../../hunt/bridge-query"
@@ -68,6 +69,30 @@ function syncQueryInvestigation(
   })
 }
 
+function renderQueryStateCard(
+  title: string,
+  body: string[],
+  width: number,
+  height: number,
+  footer: string,
+): string[] {
+  const boxWidth = Math.min(92, width - 6)
+  const innerWidth = boxWidth - 4
+  const content = body.flatMap((line) => wrapText(line, innerWidth))
+  const card = renderBox(title, content, boxWidth, THEME, {
+    style: "rounded",
+    titleAlign: "left",
+    padding: 1,
+  })
+  const lines: string[] = []
+  const startY = Math.max(4, Math.floor((height - card.length - 2) / 2))
+  while (lines.length < startY) lines.push(" ".repeat(width))
+  lines.push(...centerBlock(card, width))
+  while (lines.length < height - 1) lines.push(" ".repeat(width))
+  lines.push(centerLine(footer, width))
+  return lines
+}
+
 // ---------------------------------------------------------------------------
 // Screen
 // ---------------------------------------------------------------------------
@@ -101,16 +126,32 @@ export const huntQueryScreen: Screen = {
     if (q.loading) {
       const spinChars = ["\u2847", "\u2846", "\u2834", "\u2831", "\u2839", "\u283B", "\u283F", "\u2857"]
       const frame = ctx.state.animationFrame % spinChars.length
-      lines.push(fitString(`${THEME.accent}  ${spinChars[frame]} Querying...${THEME.reset}`, width))
-      while (lines.length < height - 1) lines.push(" ".repeat(width))
-      lines.push(fitString(`${THEME.dim}  Tab switch mode  ESC back${THEME.reset}`, width))
+      lines.push(...renderQueryStateCard(
+        "Running Query",
+        [
+          `Executing the active ${modeLabel.toLowerCase()} hunt query.`,
+          `${spinChars[frame]} collecting matching events and rebuilding the investigation view`,
+        ],
+        width,
+        height,
+        `${THEME.dim}tab${THEME.reset}${THEME.muted} switch mode${THEME.reset}  ${THEME.dim}esc${THEME.reset}${THEME.muted} back${THEME.reset}`,
+      ))
       return lines.join("\n")
     }
 
     // Error
-    if (q.error) {
-      lines.push(fitString(`${THEME.error}  Error: ${q.error}${THEME.reset}`, width))
-      lines.push(fitString("", width))
+    if (q.error && q.results.length === 0) {
+      lines.push(...renderQueryStateCard(
+        "Query Failed",
+        [
+          `${THEME.error}The hunt query did not complete.${THEME.reset}`,
+          q.error,
+        ],
+        width,
+        height,
+        `${THEME.dim}tab${THEME.reset}${THEME.muted} switch mode${THEME.reset}  ${THEME.dim}esc${THEME.reset}${THEME.muted} back${THEME.reset}`,
+      ))
+      return lines.join("\n")
     }
 
     // Results header
@@ -123,8 +164,21 @@ export const huntQueryScreen: Screen = {
     const listHeight = Math.max(1, height - usedLines)
 
     if (resultCount === 0 && !q.error) {
-      lines.push(fitString(`${THEME.muted}  No results. Enter a query to search.${THEME.reset}`, width))
-      while (lines.length < height - 1) lines.push(" ".repeat(width))
+      lines.push(...renderQueryStateCard(
+        "No Matches",
+        [
+          `No events matched the active ${modeLabel.toLowerCase()} hunt query.`,
+          q.mode === "nl"
+            ? "Edit the query text and press Enter to search again."
+            : "Adjust the structured filters, then press Enter to run the query again.",
+        ],
+        width,
+        height,
+        q.mode === "nl"
+          ? `${THEME.dim}enter${THEME.reset}${THEME.muted} execute${THEME.reset}  ${THEME.dim}tab${THEME.reset}${THEME.muted} structured mode${THEME.reset}  ${THEME.dim}esc${THEME.reset}${THEME.muted} back${THEME.reset}`
+          : `${THEME.dim}enter${THEME.reset}${THEME.muted} execute${THEME.reset}  ${THEME.dim}↑/↓${THEME.reset}${THEME.muted} fields${THEME.reset}  ${THEME.dim}tab${THEME.reset}${THEME.muted} NL mode${THEME.reset}`,
+      ))
+      return lines.join("\n")
     } else {
       const items = eventsToListItems(q.results)
       const listLines = renderList(items, q.resultList, listHeight, width, THEME)

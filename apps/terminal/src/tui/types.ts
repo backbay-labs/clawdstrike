@@ -313,6 +313,7 @@ export interface AppState {
   // Input
   promptBuffer: string
   agentIndex: number
+  homeActionIndex: number
 
   // UI mode
   inputMode: InputMode

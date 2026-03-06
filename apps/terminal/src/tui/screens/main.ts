@@ -6,11 +6,20 @@ import { THEME, LOGO, AGENTS, getAnimatedStrike } from "../theme"
 import type { Screen, ScreenContext, Command } from "../types"
 import { renderBox } from "../components/box"
 import { centerBlock, centerLine, joinColumns } from "../components/layout"
+import { fitString } from "../components/types"
 import { getInvestigationCounts, isInvestigationStale } from "../investigation"
 import type { AppState } from "../types"
 import type { CheckEventData, DaemonEvent } from "../../hushd"
 
 const STREAM_STALE_MS = 5 * 60_000
+const HOME_ACTION_COLUMNS = 2
+
+interface HomeAction {
+  key: string
+  label: string
+  description: string
+  action: (ctx: ScreenContext) => void
+}
 
 function formatAge(ms: number): string {
   if (ms < 60_000) {
@@ -109,6 +118,96 @@ function renderLastDenied(state: AppState): string | null {
   return `${THEME.error}${data.action_type}${THEME.reset} ${THEME.white}${target}${THEME.reset} ${THEME.dim}via ${data.guard}${THEME.reset}`
 }
 
+const HOME_ACTIONS: HomeAction[] = [
+  { key: "S", label: "Security", description: "security overview", action: (ctx) => ctx.app.setScreen("security") },
+  { key: "A", label: "Audit", description: "audit log", action: (ctx) => ctx.app.setScreen("audit") },
+  { key: "P", label: "Policy", description: "active policy", action: (ctx) => ctx.app.setScreen("policy") },
+  { key: "I", label: "Integrations", description: "runtime and agent state", action: (ctx) => ctx.app.setScreen("integrations") },
+  { key: "W", label: "Watch", description: "live hunt stream", action: (ctx) => ctx.app.setScreen("hunt-watch") },
+  { key: "X", label: "Scan", description: "scan MCP exposure", action: (ctx) => ctx.app.setScreen("hunt-scan") },
+  { key: "T", label: "Timeline", description: "replay investigation events", action: (ctx) => ctx.app.setScreen("hunt-timeline") },
+  { key: "Q", label: "Query", description: "search receipts and runtime events", action: (ctx) => ctx.app.setScreen("hunt-query") },
+  {
+    key: "E",
+    label: "Report",
+    description: "review evidence handoff",
+    action: (ctx) => {
+      ctx.state.hunt.report.returnScreen = "main"
+      ctx.app.setScreen("hunt-report")
+    },
+  },
+  { key: "H", label: "History", description: "open exported report index", action: (ctx) => ctx.app.setScreen("hunt-report-history") },
+]
+
+function findHomeActionIndex(key: string): number {
+  return HOME_ACTIONS.findIndex((action) => action.key === key.toUpperCase())
+}
+
+function activateHomeAction(index: number, ctx: ScreenContext): boolean {
+  const action = HOME_ACTIONS[index]
+  if (!action) {
+    return false
+  }
+
+  ctx.state.homeActionIndex = index
+  action.action(ctx)
+  return true
+}
+
+function moveHomeActionSelection(index: number, key: string): number {
+  const maxIndex = HOME_ACTIONS.length - 1
+  switch (key) {
+    case "\x1b[A":
+    case "up":
+      return Math.max(0, index - HOME_ACTION_COLUMNS)
+    case "\x1b[B":
+    case "down":
+      return Math.min(maxIndex, index + HOME_ACTION_COLUMNS)
+    case "\x1b[D":
+    case "left":
+      return index % HOME_ACTION_COLUMNS === 0 ? index : index - 1
+    case "\x1b[C":
+    case "right":
+      return index + 1 > maxIndex || index % HOME_ACTION_COLUMNS === HOME_ACTION_COLUMNS - 1 ? index : index + 1
+    default:
+      return index
+  }
+}
+
+function renderHomeActionCell(action: HomeAction, selected: boolean, width: number): string {
+  const prefix = selected
+    ? `${THEME.accent}${THEME.bold}▶${THEME.reset}`
+    : `${THEME.dim}•${THEME.reset}`
+  const badge = `${THEME.secondary}${action.key}${THEME.reset}`
+  const label = selected
+    ? `${THEME.white}${THEME.bold}${action.label}${THEME.reset}`
+    : `${THEME.white}${action.label}${THEME.reset}`
+  return fitString(`${prefix} ${badge} ${label} ${THEME.dim}${action.description}${THEME.reset}`, width)
+}
+
+function renderHomeActionRows(ctx: ScreenContext, contentWidth: number): string[] {
+  const rows: string[] = []
+  const selection = Math.min(ctx.state.homeActionIndex, HOME_ACTIONS.length - 1)
+  const gap = 3
+  const cellWidth = Math.max(22, Math.floor((contentWidth - gap) / HOME_ACTION_COLUMNS))
+
+  rows.push(
+    `${THEME.dim}Navigate:${THEME.reset} ${THEME.white}↑↓←→${THEME.reset} select  ` +
+      `${THEME.white}Enter${THEME.reset} open  ${THEME.dim}or press the shortcut key directly${THEME.reset}`,
+  )
+
+  for (let i = 0; i < HOME_ACTIONS.length; i += HOME_ACTION_COLUMNS) {
+    const left = renderHomeActionCell(HOME_ACTIONS[i], selection === i, cellWidth)
+    const rightAction = HOME_ACTIONS[i + 1]
+    const right = rightAction
+      ? renderHomeActionCell(rightAction, selection === i + 1, cellWidth)
+      : ""
+    rows.push(joinColumns(left, right, contentWidth))
+  }
+
+  return rows
+}
+
 export function createMainScreen(commands: Command[]): Screen {
   return {
     render(ctx: ScreenContext): string {
@@ -153,51 +252,23 @@ function handleMainInput(key: string, ctx: ScreenContext): boolean {
   }
 
   if (!state.promptBuffer) {
-    if (key === "S") {
-      app.setScreen("security")
+    if (key === "\x1b[A" || key === "\x1b[B" || key === "\x1b[C" || key === "\x1b[D" || key === "up" || key === "down" || key === "left" || key === "right") {
+      state.homeActionIndex = moveHomeActionSelection(state.homeActionIndex, key)
+      app.render()
       return true
     }
-    if (key === "A") {
-      app.setScreen("audit")
-      return true
-    }
-    if (key === "P") {
-      app.setScreen("policy")
-      return true
-    }
-    if (key === "I") {
-      app.setScreen("integrations")
-      return true
-    }
-    if (key === "W") {
-      app.setScreen("hunt-watch")
-      return true
-    }
-    if (key === "X") {
-      app.setScreen("hunt-scan")
-      return true
-    }
-    if (key === "T") {
-      app.setScreen("hunt-timeline")
-      return true
-    }
-    if (key === "Q") {
-      app.setScreen("hunt-query")
-      return true
-    }
-    if (key === "E") {
-      ctx.state.hunt.report.returnScreen = "main"
-      app.setScreen("hunt-report")
-      return true
-    }
-    if (key === "H") {
-      app.setScreen("hunt-report-history")
-      return true
+
+    const actionIndex = findHomeActionIndex(key)
+    if (actionIndex >= 0) {
+      return activateHomeAction(actionIndex, ctx)
     }
   }
 
   // Enter - submit prompt
   if (key === "\r") {
+    if (!state.promptBuffer) {
+      return activateHomeAction(state.homeActionIndex, ctx)
+    }
     if (state.promptBuffer.trim()) {
       app.submitPrompt("dispatch")
     }
@@ -343,31 +414,18 @@ function buildOpsSnapshot(ctx: ScreenContext, width: number): { boxWidth: number
     if (!compact) {
       lines.push(`${THEME.dim}Summary:${THEME.reset} ${THEME.muted}${summary}${THEME.reset}`)
     }
-    lines.push(
-      `${THEME.dim}Jump:${THEME.reset} ${THEME.white}E${THEME.reset} report  ` +
-        `${THEME.white}H${THEME.reset} history  ` +
-        `${THEME.white}T${THEME.reset} timeline  ` +
-        `${THEME.white}W${THEME.reset} watch  ` +
-        `${THEME.white}X${THEME.reset} scan  ` +
-        `${THEME.white}Q${THEME.reset} query`,
-    )
   } else {
     lines.push(`${THEME.muted}No active investigation loaded.${THEME.reset}`)
-    if (!compact) {
-      lines.push(
-        `${THEME.dim}Loop:${THEME.reset} ${THEME.white}X${THEME.reset} scan  ->  ` +
-          `${THEME.white}Q${THEME.reset} query  ->  ` +
-          `${THEME.white}T${THEME.reset} timeline  ->  ` +
-          `${THEME.white}E${THEME.reset} report  ->  ` +
-          `${THEME.white}H${THEME.reset} history`,
-      )
-    }
+  }
+
+  lines.push("")
+  if (compact && hasInvestigation) {
     lines.push(
-      `${THEME.dim}Start:${THEME.reset} ${THEME.white}W${THEME.reset} watch live events  ` +
-        `${THEME.white}X${THEME.reset} scan local MCP  ` +
-        `${THEME.white}Q${THEME.reset} run a hunt query`,
+      `${THEME.dim}Jump:${THEME.reset} ${THEME.white}E${THEME.reset} report  ` +
+        `${THEME.white}H${THEME.reset} history  ${THEME.white}T${THEME.reset} timeline`,
     )
   }
+  lines.push(...renderHomeActionRows(ctx, boxWidth - 4))
 
   return {
     boxWidth,
@@ -449,8 +507,9 @@ function renderMainContent(ctx: ScreenContext, _commands: Command[]): string {
   const primaryHints =
     `${THEME.bold}tab${THEME.reset}${THEME.muted} agent${THEME.reset}    ` +
     `${THEME.bold}ctrl+p${THEME.reset}${THEME.muted} commands${THEME.reset}    ` +
-    `${THEME.bold}enter${THEME.reset}${THEME.muted} dispatch${THEME.reset}`
+    `${THEME.bold}enter${THEME.reset}${THEME.muted} dispatch / open${THEME.reset}`
   const secondaryHints =
+    `${THEME.bold}↑↓←→${THEME.reset}${THEME.muted} select home action${THEME.reset}    ` +
     `${THEME.bold}S/A/P/I${THEME.reset}${THEME.muted} core surfaces${THEME.reset}    ` +
     `${THEME.bold}W/X/Q/T/E/H${THEME.reset}${THEME.muted} hunt loop${THEME.reset}`
   lines.push(centerLine(primaryHints, width))
@@ -506,12 +565,14 @@ function commandStageTag(command: Command): { text: string; plainLength: number 
 function overlayCommandPalette(baseScreen: string, ctx: ScreenContext, commands: Command[]): string {
   const { state, width } = ctx
   const lines = baseScreen.split("\n")
-  const paletteWidth = Math.min(74, width - 12)
+  const paletteWidth = Math.min(78, width - 12)
   const startY = 4
   const contentWidth = paletteWidth - 4
 
   const paletteLines: string[] = [
-    `${THEME.dim}Search:${THEME.reset} ${THEME.muted}shortcut, j/k, enter${THEME.reset}`,
+    `${THEME.dim}Navigate:${THEME.reset} ${THEME.white}↑/↓${THEME.reset} select  ` +
+      `${THEME.white}Enter${THEME.reset} run  ${THEME.white}Esc${THEME.reset} close  ` +
+      `${THEME.dim}or press a shortcut key directly${THEME.reset}`,
     "",
   ]
 
@@ -534,7 +595,7 @@ function overlayCommandPalette(baseScreen: string, ctx: ScreenContext, commands:
       const isSelected = globalIndex === state.commandIndex
       const stage = commandStageTag(cmd)
       const left = isSelected
-        ? `${THEME.accent}${THEME.bold}▸${THEME.reset} ${THEME.white}${THEME.bold}${cmd.label}${THEME.reset} ${THEME.dim}${cmd.description}${THEME.reset}`
+        ? `${THEME.accent}${THEME.bold}▶${THEME.reset} ${THEME.white}${THEME.bold}${cmd.label}${THEME.reset} ${THEME.dim}${cmd.description}${THEME.reset}`
         : `${THEME.dim}•${THEME.reset} ${THEME.white}${cmd.label}${THEME.reset} ${THEME.dim}${cmd.description}${THEME.reset}`
       const right = `${stage.text} ${THEME.dim}${cmd.key}${THEME.reset}`
       paletteLines.push(joinColumns(left, right, contentWidth))

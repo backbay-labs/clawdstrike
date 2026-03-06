@@ -143,6 +143,11 @@ cargo test -p hush-cli test_tui_command_parses_with_passthrough_args -- --nocapt
   binary may lag the current branch and miss the `tui` subcommand entirely.
 - Prefer `clawdstrike tui` when validating a freshly built or staged release artifact.
 - Prefer `bun run cli` inside `apps/terminal` for faster local iteration.
+- Use `clawdstrike tui doctor --json` to confirm the runtime resolution path:
+  `CLAWDSTRIKE_TUI_DIR` override, then installed bundle, then repo source fallback.
+- If Bun crashes before the TUI starts, verify whether `bun` on `PATH` is a shim
+  wrapper rather than the real binary. During RC dogfooding, a `~/.proto/shims/bun`
+  wrapper panic was fixed by moving the real Bun binary earlier on `PATH`.
 - Supported beta screens should be held to a higher bar than experimental hunt screens.
 - A graceful degraded state is acceptable. A misleading healthy state is not.
 
