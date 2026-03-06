@@ -48,6 +48,7 @@ stderr_file="$lane_dir/run.stderr"
 final_file="$lane_dir/final.md"
 pid_file="$lane_dir/run.pid"
 cmd_file="$lane_dir/run.cmd"
+declare -a codex_args=()
 
 if [[ ! -d "$worktree_path" ]]; then
   printf 'worktree missing for %s: %s\n' "$lane" "$worktree_path" >&2
@@ -61,13 +62,22 @@ if swarm_pid_is_running "$pid_file"; then
 fi
 
 swarm_write_lane_prompt "$lane" "$prompt_file" "$note" "$repo_root"
+while IFS= read -r arg; do
+  codex_args+=("$arg")
+done < <(swarm_codex_profile_args "$profile_name")
 
 cat > "$runner_file" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$worktree_path"
 exec codex exec \\
-  --profile "$profile_name" \\
+EOF
+
+for arg in "${codex_args[@]}"; do
+  printf '  %q \\\n' "$arg" >> "$runner_file"
+done
+
+cat >> "$runner_file" <<EOF
   --json \\
   -o "$final_file" \\
 EOF

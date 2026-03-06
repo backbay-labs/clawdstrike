@@ -6,40 +6,86 @@ swarm_repo_root() {
   git -C "${1:-$(pwd)}" rev-parse --show-toplevel
 }
 
-swarm_repo_name() {
+swarm_repo_parent_dir() {
   local repo_root
   repo_root="$(swarm_repo_root "${1:-$(pwd)}")"
-  basename "$repo_root"
+  (
+    cd "$repo_root/.."
+    pwd
+  )
+}
+
+swarm_repo_name() {
+  local repo_root
+  local repo_parent
+  local parent_name
+  repo_root="$(swarm_repo_root "${1:-$(pwd)}")"
+  repo_parent="$(swarm_repo_parent_dir "$repo_root")"
+  parent_name="$(basename "$repo_parent")"
+
+  case "$parent_name" in
+    *-worktrees)
+      printf '%s\n' "${parent_name%-worktrees}"
+      ;;
+    *-orchestration)
+      printf '%s\n' "${parent_name%-orchestration}"
+      ;;
+    *)
+      basename "$repo_root"
+      ;;
+  esac
 }
 
 swarm_worktrees_dir() {
   local repo_root
+  local repo_parent
+  local parent_name
   local repo_name
   repo_root="$(swarm_repo_root "${1:-$(pwd)}")"
+  repo_parent="$(swarm_repo_parent_dir "$repo_root")"
+  parent_name="$(basename "$repo_parent")"
   repo_name="$(swarm_repo_name "$repo_root")"
   if [[ -n "${CLAWDSTRIKE_SWARM_WORKTREES_DIR:-}" ]]; then
     printf '%s\n' "$CLAWDSTRIKE_SWARM_WORKTREES_DIR"
     return
   fi
-  (
-    cd "$repo_root/.."
-    printf '%s/%s-worktrees\n' "$PWD" "$repo_name"
-  )
+  case "$parent_name" in
+    *-worktrees)
+      printf '%s\n' "$repo_parent"
+      ;;
+    *-orchestration)
+      printf '%s/%s-worktrees\n' "$(dirname "$repo_parent")" "$repo_name"
+      ;;
+    *)
+      printf '%s/%s-worktrees\n' "$repo_parent" "$repo_name"
+      ;;
+  esac
 }
 
 swarm_orchestration_dir() {
   local repo_root
+  local repo_parent
+  local parent_name
   local repo_name
   repo_root="$(swarm_repo_root "${1:-$(pwd)}")"
+  repo_parent="$(swarm_repo_parent_dir "$repo_root")"
+  parent_name="$(basename "$repo_parent")"
   repo_name="$(swarm_repo_name "$repo_root")"
   if [[ -n "${CLAWDSTRIKE_SWARM_ORCH_DIR:-}" ]]; then
     printf '%s\n' "$CLAWDSTRIKE_SWARM_ORCH_DIR"
     return
   fi
-  (
-    cd "$repo_root/.."
-    printf '%s/%s-orchestration\n' "$PWD" "$repo_name"
-  )
+  case "$parent_name" in
+    *-orchestration)
+      printf '%s\n' "$repo_parent"
+      ;;
+    *-worktrees)
+      printf '%s/%s-orchestration\n' "$(dirname "$repo_parent")" "$repo_name"
+      ;;
+    *)
+      printf '%s/%s-orchestration\n' "$repo_parent" "$repo_name"
+      ;;
+  esac
 }
 
 swarm_lane_table() {
@@ -156,6 +202,52 @@ swarm_assert_codex() {
     printf 'codex is not installed or not on PATH\n' >&2
     exit 1
   fi
+}
+
+swarm_codex_profile_args() {
+  local profile="$1"
+  case "$profile" in
+    swarm-docs)
+      printf '%s\n' \
+        --enable \
+        multi_agent \
+        --sandbox \
+        read-only \
+        -c \
+        'model_reasoning_effort="high"'
+      ;;
+    swarm-orchestrator)
+      printf '%s\n' \
+        --enable \
+        multi_agent \
+        --sandbox \
+        workspace-write \
+        -c \
+        'model_reasoning_effort="high"'
+      ;;
+    swarm-worker)
+      printf '%s\n' \
+        --enable \
+        multi_agent \
+        --sandbox \
+        workspace-write \
+        -c \
+        'model_reasoning_effort="medium"'
+      ;;
+    swarm-review)
+      printf '%s\n' \
+        --enable \
+        multi_agent \
+        --sandbox \
+        read-only \
+        -c \
+        'model_reasoning_effort="high"'
+      ;;
+    *)
+      printf 'Unknown Codex profile: %s\n' "$profile" >&2
+      exit 1
+      ;;
+  esac
 }
 
 swarm_run_lane_bootstrap() {

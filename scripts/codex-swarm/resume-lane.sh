@@ -41,6 +41,7 @@ log_file="$lane_dir/resume.jsonl"
 stderr_file="$lane_dir/resume.stderr"
 final_file="$lane_dir/resume-final.md"
 pid_file="$lane_dir/resume.pid"
+declare -a codex_args=()
 
 if [[ ! -d "$worktree_path" ]]; then
   printf 'worktree missing for %s: %s\n' "$lane" "$worktree_path" >&2
@@ -53,12 +54,25 @@ if swarm_pid_is_running "$pid_file"; then
 fi
 
 printf '%s\n' "$message" > "$resume_prompt"
+while IFS= read -r arg; do
+  codex_args+=("$arg")
+done < <(swarm_codex_profile_args "$profile_name")
 
 cat > "$runner_file" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$worktree_path"
-exec codex exec resume --last --profile "$profile_name" --json -o "$final_file" - < "$resume_prompt"
+exec codex exec resume --last \\
+EOF
+
+for arg in "${codex_args[@]}"; do
+  printf '  %q \\\n' "$arg" >> "$runner_file"
+done
+
+cat >> "$runner_file" <<EOF
+  --json \\
+  -o "$final_file" \\
+  - < "$resume_prompt"
 EOF
 chmod +x "$runner_file"
 
