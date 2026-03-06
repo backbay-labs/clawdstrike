@@ -4,6 +4,10 @@
 
 Implement dispatch as a managed run workflow inside ClawdStrike TUI.
 
+Concrete Phase 1 file-by-file breakdown:
+
+- [Dispatch Phase 1 Engineering Breakdown](./dispatch-phase1-engineering.md)
+
 The plan deliberately avoids:
 
 - making tmux mandatory

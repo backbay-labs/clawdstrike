@@ -98,6 +98,7 @@ The planned dispatch UX is documented separately:
 
 - Product spec: [docs/dispatch-ux-spec.md](./docs/dispatch-ux-spec.md)
 - Implementation plan: [docs/dispatch-ux-plan.md](./docs/dispatch-ux-plan.md)
+- Phase 1 engineering breakdown: [docs/dispatch-phase1-engineering.md](./docs/dispatch-phase1-engineering.md)
 
 ## CLI Usage
 
