@@ -92,6 +92,13 @@ release hardening, and multi-agent debugging.
 - Project config: [.codex/config.toml](../../.codex/config.toml)
 - Terminal working agreement: [AGENTS.md](./AGENTS.md)
 
+## Dispatch UX Design
+
+The planned dispatch UX is documented separately:
+
+- Product spec: [docs/dispatch-ux-spec.md](./docs/dispatch-ux-spec.md)
+- Implementation plan: [docs/dispatch-ux-plan.md](./docs/dispatch-ux-plan.md)
+
 ## CLI Usage
 
 ```bash
