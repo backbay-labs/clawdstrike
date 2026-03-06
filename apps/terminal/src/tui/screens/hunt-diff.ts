@@ -13,12 +13,9 @@ import { fitString } from "../components/types"
 import { renderSurfaceHeader } from "../components/surface-header"
 import { readFile, writeFile, mkdir } from "node:fs/promises"
 import { join } from "node:path"
+import { homeDirOr } from "../../system"
 
-function homeDirFromEnv(): string {
-  return process.env.HOME ?? process.env.USERPROFILE ?? "."
-}
-
-const HISTORY_PATH = join(homeDirFromEnv(), ".clawdstrike", "scan_history.json")
+const HISTORY_PATH = join(homeDirOr(), ".clawdstrike", "scan_history.json")
 
 const CHANGE_COLORS: Record<ChangeKind, string> = {
   added: THEME.success,
@@ -44,7 +41,7 @@ async function loadPreviousScan(): Promise<ScanPathResult[]> {
 
 async function saveScanHistory(results: ScanPathResult[]): Promise<void> {
   try {
-    const dir = join(homeDirFromEnv(), ".clawdstrike")
+    const dir = join(homeDirOr(), ".clawdstrike")
     await mkdir(dir, { recursive: true })
     await writeFile(HISTORY_PATH, JSON.stringify(results, null, 2), "utf-8")
   } catch {

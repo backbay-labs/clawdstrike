@@ -68,6 +68,57 @@ function wrapField(label: string, value: string, width: number): string[] {
   ))
 }
 
+function wrapMetadataValue(value: string, width: number): string[] {
+  if (width <= 0) {
+    return [""]
+  }
+
+  const source = value.trim()
+  if (!source) {
+    return [""]
+  }
+
+  const logicalLines = source.split("\n")
+  const lines: string[] = []
+
+  for (const logicalLine of logicalLines) {
+    const segments = wrapText(logicalLine, width).filter(Boolean)
+    if (segments.length > 0) {
+      lines.push(...segments)
+      continue
+    }
+
+    let remainder = logicalLine
+    while (remainder.length > width) {
+      lines.push(remainder.slice(0, width))
+      remainder = remainder.slice(width)
+    }
+    lines.push(remainder)
+  }
+
+  return lines.length > 0 ? lines : [""]
+}
+
+function formatMetadataValue(value: unknown): string[] {
+  if (typeof value === "string") {
+    return [value]
+  }
+
+  if (
+    typeof value === "number" ||
+    typeof value === "boolean" ||
+    value === null
+  ) {
+    return [String(value)]
+  }
+
+  try {
+    return JSON.stringify(value, null, 2)?.split("\n") ?? [String(value)]
+  } catch {
+    return [String(value)]
+  }
+}
+
 function toListItem(event: AuditEvent): ListItem {
   const timestamp = event.timestamp.slice(0, 19).replace("T", " ")
   const target = truncateMiddle(event.target ?? event.message ?? event.id, 22)
@@ -88,11 +139,21 @@ function renderMetadata(metadata: Record<string, unknown> | null | undefined, wi
 
   const lines: string[] = []
   for (const [key, value] of Object.entries(metadata).slice(0, 10)) {
-    const renderedValue = typeof value === "string" ? value : JSON.stringify(value)
-    const wrapped = wrapText(renderedValue, Math.max(12, width - key.length - 2))
-    lines.push(fitString(`${THEME.tertiary}${key}${THEME.reset}: ${THEME.white}${wrapped[0] ?? ""}${THEME.reset}`, width))
+    const wrapped = formatMetadataValue(value)
+      .flatMap((line) => wrapMetadataValue(line, Math.max(12, width - key.length - 2)))
+    lines.push(
+      fitString(
+        `${THEME.tertiary}${key}${THEME.reset}: ${THEME.white}${wrapped[0] ?? ""}${THEME.reset}`,
+        width,
+      ),
+    )
     for (const line of wrapped.slice(1)) {
-      lines.push(fitString(`${" ".repeat(key.length + 2)}${THEME.white}${line}${THEME.reset}`, width))
+      lines.push(
+        fitString(
+          `${" ".repeat(key.length + 2)}${THEME.white}${line}${THEME.reset}`,
+          width,
+        ),
+      )
     }
   }
   if (Object.keys(metadata).length > 10) {

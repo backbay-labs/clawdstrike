@@ -10,6 +10,7 @@ import { mkdir, writeFile } from "fs/promises"
 import type { Adapter, AdapterResult } from "../index"
 import type { WorkcellInfo, TaskInput } from "../../types"
 import { callAnthropicApi, callOpenAiApi } from "./llm-api"
+import { commandExists } from "../../system"
 
 /**
  * Crush configuration
@@ -29,14 +30,6 @@ const DEFAULT_CONFIG: CrushConfig = {
 }
 
 let config: CrushConfig = { ...DEFAULT_CONFIG }
-
-function commandExists(command: string): boolean {
-  const bunRuntime = Bun as unknown as {
-    which?: (binary: string) => string | null | undefined
-  }
-
-  return !!bunRuntime.which?.(command)
-}
 
 /**
  * Configure Crush adapter

@@ -9,6 +9,7 @@ import { join } from "path"
 import { mkdir, stat, writeFile } from "fs/promises"
 import type { Adapter, AdapterResult } from "../index"
 import type { WorkcellInfo, TaskInput } from "../../types"
+import { commandExists, homeDirFromEnv } from "../../system"
 
 /**
  * Codex CLI configuration
@@ -25,18 +26,6 @@ const DEFAULT_CONFIG: CodexConfig = {
 }
 
 let config: CodexConfig = { ...DEFAULT_CONFIG }
-
-function commandExists(command: string): boolean {
-  const bunRuntime = Bun as unknown as {
-    which?: (binary: string) => string | null | undefined
-  }
-
-  return !!bunRuntime.which?.(command)
-}
-
-function homeDirFromEnv(): string | null {
-  return process.env.HOME ?? process.env.USERPROFILE ?? null
-}
 
 /**
  * Configure Codex adapter

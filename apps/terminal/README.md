@@ -88,9 +88,9 @@ The beta TUI runtime currently requires `bun` on the machine running `clawdstrik
 The terminal subtree includes a Codex agent pack for live dogfooding, UI polish,
 release hardening, and multi-agent debugging.
 
-- Usage guide: [docs/codex-agent-pack.md](/Users/connor/Medica/backbay/standalone/clawdstrike-sdks/apps/terminal/docs/codex-agent-pack.md)
-- Project config: [.codex/config.toml](/Users/connor/Medica/backbay/standalone/clawdstrike-sdks/.codex/config.toml)
-- Terminal working agreement: [AGENTS.md](/Users/connor/Medica/backbay/standalone/clawdstrike-sdks/apps/terminal/AGENTS.md)
+- Usage guide: [docs/codex-agent-pack.md](./docs/codex-agent-pack.md)
+- Project config: [.codex/config.toml](../../.codex/config.toml)
+- Terminal working agreement: [AGENTS.md](./AGENTS.md)
 
 ## CLI Usage
 

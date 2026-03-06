@@ -9,6 +9,7 @@ import { z } from "zod"
 import { dirname, join } from "path"
 import { mkdir, readFile, writeFile, stat } from "fs/promises"
 import type { Toolchain, SandboxMode } from "../types"
+import { commandExists } from "../system"
 
 // =============================================================================
 // SCHEMA
@@ -62,14 +63,6 @@ async function pathExists(path: string): Promise<boolean> {
   } catch {
     return false
   }
-}
-
-function commandExists(command: string): boolean {
-  const bunRuntime = Bun as unknown as {
-    which?: (binary: string) => string | null | undefined
-  }
-
-  return !!bunRuntime.which?.(command)
 }
 
 async function detectGitAvailability(cwd: string): Promise<boolean> {

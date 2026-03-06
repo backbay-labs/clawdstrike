@@ -43,7 +43,7 @@ export function wrapText(text: string, width: number): string[] {
       continue
     }
 
-    if (`${current} ${word}`.length <= width) {
+    if (visibleLength(`${current} ${word}`) <= width) {
       current = `${current} ${word}`
       continue
     }

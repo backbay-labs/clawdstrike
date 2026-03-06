@@ -8,6 +8,7 @@
 import { THEME } from "../theme"
 import type { Screen, ScreenContext } from "../types"
 import type { TreeNode } from "../components/tree-view"
+import { basename } from "path"
 import {
   renderTree,
   flattenTree,
@@ -30,8 +31,34 @@ import { updateInvestigation } from "../investigation"
 
 function serverStatusColor(srv: ServerScanResult): string {
   if (srv.violations.length > 0) return THEME.error
+  if (srv.error) return THEME.error
   if (srv.issues.length > 0) return THEME.warning
   return THEME.success
+}
+
+function summarizePath(result: ScanPathResult): string {
+  const serverCount = result.servers.length
+  const issueCount = result.servers.reduce((sum, srv) => sum + srv.issues.length, 0)
+  const violationCount = result.servers.reduce((sum, srv) => sum + srv.violations.length, 0)
+  const pathErrors = result.errors.length + result.servers.filter((srv) => !!srv.error).length
+  const summary: string[] = []
+
+  if (serverCount > 0) summary.push(`${serverCount}s`)
+  if (issueCount > 0) summary.push(`${issueCount}i`)
+  if (violationCount > 0) summary.push(`${violationCount}v`)
+  if (pathErrors > 0) summary.push(`${pathErrors}e`)
+
+  return summary.length > 0 ? ` ${THEME.dim}${summary.join(" ")}${THEME.reset}` : ""
+}
+
+function summarizeServer(srv: ServerScanResult): string {
+  const summary: string[] = []
+
+  if (srv.violations.length > 0) summary.push(`${srv.violations.length}v`)
+  if (srv.issues.length > 0) summary.push(`${srv.issues.length}i`)
+  if (srv.error) summary.push("err")
+
+  return summary.length > 0 ? ` ${THEME.dim}${summary.join(" ")}${THEME.reset}` : ""
 }
 
 function buildTreeNodes(results: ScanPathResult[]): TreeNode[] {
@@ -122,8 +149,8 @@ function buildTreeNodes(results: ScanPathResult[]): TreeNode[] {
       }
 
       return {
-        label: srv.name,
-        plainLength: srv.name.length,
+        label: `${srv.name}${summarizeServer(srv)}`,
+        plainLength: srv.name.length + summarizeServer(srv).replace(/\x1b\[[0-9;]*m/g, "").length,
         key: `${r.path}:${srv.name}`,
         icon: "\u25CF",
         color: serverStatusColor(srv),
@@ -131,9 +158,14 @@ function buildTreeNodes(results: ScanPathResult[]): TreeNode[] {
       }
     })
 
+    const pathLabel = basename(r.path) || r.path
+    const summary = summarizePath(r)
+    const label = `${r.client} \u00B7 ${pathLabel}${summary}`
+    const plainLength = `${r.client} \u00B7 ${pathLabel}${summary.replace(/\x1b\[[0-9;]*m/g, "")}`.length
+
     return {
-      label: `${r.client} \u2014 ${r.path}`,
-      plainLength: `${r.client} \u2014 ${r.path}`.length,
+      label,
+      plainLength,
       key: r.path,
       icon: "\u229A",
       color: THEME.secondary,
@@ -204,6 +236,16 @@ function renderDetail(
   width: number,
 ): string[] {
   const lines: string[] = []
+  const valueWidth = Math.max(16, width - 4)
+
+  function pushField(label: string, value: string, color = THEME.muted) {
+    const wrapped = wrapText(value, Math.max(12, valueWidth - label.length - 2))
+    const head = wrapped.shift() ?? ""
+    lines.push(fitString(`${color}  ${label}:${THEME.reset} ${head}`, width))
+    for (const line of wrapped) {
+      lines.push(fitString(`${" ".repeat(label.length + 4)}${THEME.white}${line}${THEME.reset}`, width))
+    }
+  }
 
   if (!selectedKey) {
     lines.push(fitString(`${THEME.muted}  Select a node to view details${THEME.reset}`, width))
@@ -217,13 +259,19 @@ function renderDetail(
     const pathResult = results.find((r) => r.path === selectedKey)
     if (pathResult) {
       lines.push(fitString(`${THEME.secondary}${THEME.bold}  ${pathResult.client}${THEME.reset}`, width))
-      lines.push(fitString(`${THEME.muted}  Path: ${pathResult.path}${THEME.reset}`, width))
-      lines.push(fitString(`${THEME.muted}  Servers: ${pathResult.servers.length}${THEME.reset}`, width))
+      pushField("Path", pathResult.path)
+      lines.push(fitString(
+        `${THEME.muted}  Servers:${THEME.reset} ${pathResult.servers.length}  ` +
+          `${THEME.muted}Issues:${THEME.reset} ${pathResult.servers.reduce((sum, srv) => sum + srv.issues.length, 0)}  ` +
+          `${THEME.muted}Violations:${THEME.reset} ${pathResult.servers.reduce((sum, srv) => sum + srv.violations.length, 0)}`,
+        width,
+      ))
       if (pathResult.errors.length > 0) {
         lines.push(fitString("", width))
         lines.push(fitString(`${THEME.error}  Errors:${THEME.reset}`, width))
         for (const e of pathResult.errors) {
-          lines.push(fitString(`${THEME.error}    ${e.path}: ${e.error}${THEME.reset}`, width))
+          pushField("File", e.path, THEME.error)
+          pushField("Reason", e.error, THEME.dim)
         }
       }
     } else {
@@ -233,9 +281,10 @@ function renderDetail(
     return lines
   }
 
-  const { server: srv } = match
+  const { path, server: srv } = match
   lines.push(fitString(`${THEME.secondary}${THEME.bold}  ${srv.name}${THEME.reset}`, width))
-  lines.push(fitString(`${THEME.muted}  Command: ${srv.command}${srv.args ? " " + srv.args.join(" ") : ""}${THEME.reset}`, width))
+  pushField("Config", path.path)
+  pushField("Command", `${srv.command}${srv.args ? ` ${srv.args.join(" ")}` : ""}`)
 
   if (srv.signature) {
     lines.push(fitString("", width))
@@ -261,16 +310,17 @@ function renderDetail(
     lines.push(fitString("", width))
     lines.push(fitString(`${THEME.warning}${THEME.bold}  Issues (${srv.issues.length})${THEME.reset}`, width))
     for (const iss of srv.issues) {
-      lines.push(fitString(`${THEME.warning}    [${iss.severity}] ${iss.code}: ${iss.message}${THEME.reset}`, width))
+      lines.push(fitString(`${THEME.warning}    [${iss.severity}] ${iss.code}${THEME.reset}`, width))
+      pushField("Message", iss.message, THEME.warning)
       if (iss.detail) {
-        lines.push(fitString(`${THEME.dim}      ${iss.detail}${THEME.reset}`, width))
+        pushField("Detail", iss.detail, THEME.dim)
       }
     }
   }
 
   if (srv.error) {
     lines.push(fitString("", width))
-    lines.push(fitString(`${THEME.error}  Error: ${srv.error}${THEME.reset}`, width))
+    pushField("Error", srv.error, THEME.error)
   }
 
   while (lines.length < height) lines.push(" ".repeat(width))

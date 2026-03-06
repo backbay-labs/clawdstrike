@@ -9,6 +9,7 @@ import { join } from "path"
 import { stat } from "fs/promises"
 import type { Adapter, AdapterResult } from "../index"
 import type { WorkcellInfo, TaskInput } from "../../types"
+import { commandExists, homeDirFromEnv } from "../../system"
 
 /**
  * Claude Code configuration
@@ -27,18 +28,6 @@ const DEFAULT_CONFIG: ClaudeConfig = {
 }
 
 let config: ClaudeConfig = { ...DEFAULT_CONFIG }
-
-function commandExists(command: string): boolean {
-  const bunRuntime = Bun as unknown as {
-    which?: (binary: string) => string | null | undefined
-  }
-
-  return !!bunRuntime.which?.(command)
-}
-
-function homeDirFromEnv(): string | null {
-  return process.env.HOME ?? process.env.USERPROFILE ?? null
-}
 
 /**
  * Configure Claude adapter

@@ -99,7 +99,7 @@ export function normalizeScanResults(results: RawScanPathResult[]): ScanPathResu
       signature: normalizeSignature(server.signature),
       issues: server.issues ?? [],
       violations: server.policy_violations ?? [],
-      error: describeScanError(server.error),
+      error: server.error ? describeScanError(server.error) : undefined,
     })),
     errors: result.error
       ? [{ path: result.path, error: describeScanError(result.error) }]

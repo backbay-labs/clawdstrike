@@ -108,5 +108,6 @@ describe("hunt bridge", () => {
     expect(normalized[0].servers[0].command).toBe("/usr/local/bin/blender-mcp")
     expect(normalized[0].servers[0].signature?.tools[0].input_schema).toEqual({ type: "object" })
     expect(normalized[0].errors[0]?.error).toContain("file_not_found")
+    expect(normalized[0].servers[0].error).toBeUndefined()
   })
 })

@@ -378,6 +378,65 @@ describe("hunt state cards", () => {
     expect(output).toContain("HUNT // Timeline Replay [beta]")
     expect(output).toContain("Timeline Failed")
   })
+
+  test("compresses scan rows while keeping full detail context", () => {
+    const state = createState()
+    state.hunt.scan.results = [
+      {
+        client: "cursor",
+        path: "/Users/connor/Library/Application Support/Cursor/User/globalStorage/mcp.json",
+        servers: [
+          {
+            name: "filesystem",
+            command: "/usr/local/bin/fs-mcp",
+            args: ["--stdio"],
+            issues: [{ severity: "warning", code: "unused", message: "Unused server entry" }],
+            violations: [],
+          },
+        ],
+        errors: [],
+      },
+    ]
+    state.hunt.scan.tree.expandedKeys = new Set([state.hunt.scan.results[0].path])
+    const app = new TestApp(tempDir)
+
+    const output = stripAnsi(huntScanScreen.render(createContext(state, app, 100, 28)))
+
+    expect(output).toContain("cursor · mcp.json 1s 1i")
+    expect(output).toContain("Path: /Users/connor/Library/Applicati")
+    expect(output).toContain("Support/Cursor/User/globalStora")
+    expect(output).not.toContain("cursor — /Users/connor/Library")
+  })
+})
+
+describe("audit metadata rendering", () => {
+  test("pretty-prints nested metadata instead of clipping JSON blobs", () => {
+    const state = createState()
+    state.auditLog.events = [
+      {
+        id: "evt-1",
+        timestamp: "2026-03-06T06:20:12Z",
+        decision: "allowed",
+        event_type: "report_export",
+        action_type: "report_export",
+        message: "Report exported",
+        metadata: {
+          principal: {
+            source_ip: "127.0.0.1",
+            issuer: "Local Service",
+            roles: ["local-service"],
+          },
+        },
+      },
+    ]
+    const app = new TestApp(tempDir)
+
+    const output = stripAnsi(auditScreen.render(createContext(state, app, 84, 26)))
+
+    expect(output).toContain("principal: {")
+    expect(output).toContain("\"source_ip\": \"127.0.0.1\"")
+    expect(output).toContain("\"issuer\": \"Local Service\"")
+  })
 })
 
 describe("hunt report screen", () => {

@@ -142,7 +142,7 @@ fn resolve_cwd_arg(value: &str, base_cwd: &Path) -> String {
 
 fn resolve_tui_script() -> Option<ResolvedTuiScript> {
     if let Some(dir) = env::var_os(TUI_DIR_ENV) {
-        let path = PathBuf::from(dir);
+        let path = resolve_override_tui_dir(&dir);
         let script = normalize_tui_path(&path);
         if script.is_file() {
             return Some(ResolvedTuiScript {
@@ -190,6 +190,18 @@ fn resolve_tui_script() -> Option<ResolvedTuiScript> {
         });
     }
     None
+}
+
+fn resolve_override_tui_dir(path: &std::ffi::OsStr) -> PathBuf {
+    let path = PathBuf::from(path);
+    if path.is_absolute() {
+        return path;
+    }
+
+    match env::current_dir() {
+        Ok(current_dir) => current_dir.join(path),
+        Err(_) => path,
+    }
 }
 
 fn normalize_tui_path(path: &Path) -> PathBuf {
@@ -249,7 +261,7 @@ fn resolve_tui_dir(script: &Path) -> Option<PathBuf> {
 
 #[cfg(all(test, unix))]
 mod tests {
-    use super::{cmd_tui, resolve_installed_tui_bundle, TUI_DIR_ENV};
+    use super::{cmd_tui, resolve_installed_tui_bundle, resolve_tui_script, TUI_DIR_ENV};
     use std::env;
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
@@ -486,5 +498,32 @@ mod tests {
             fs::canonicalize(resolved).unwrap(),
             fs::canonicalize(bundle).unwrap()
         );
+    }
+
+    #[test]
+    fn resolve_override_tui_dir_uses_caller_directory_for_relative_paths() {
+        let _guard = env_lock().lock().expect("env lock");
+        let temp = tempdir().expect("tempdir");
+        let tui_dir = temp.path().join("apps/terminal");
+        let script_path = tui_dir.join("src/cli/index.ts");
+        fs::create_dir_all(script_path.parent().expect("script parent")).expect("create tui dir");
+        fs::write(&script_path, "// stub").expect("write script");
+
+        let old_cwd = env::current_dir().expect("current dir");
+        env::set_current_dir(temp.path()).expect("set current dir");
+        unsafe {
+            env::set_var(TUI_DIR_ENV, "apps/terminal");
+        }
+
+        let resolved = resolve_tui_script().expect("resolve override");
+        assert_eq!(
+            fs::canonicalize(resolved.path).unwrap(),
+            fs::canonicalize(script_path).unwrap()
+        );
+
+        env::set_current_dir(old_cwd).expect("restore current dir");
+        unsafe {
+            env::remove_var(TUI_DIR_ENV);
+        }
     }
 }

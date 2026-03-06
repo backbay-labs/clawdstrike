@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { centerBlock, centerLine, joinColumns } from "../src/tui/components/layout"
+import { centerBlock, centerLine, joinColumns, wrapText } from "../src/tui/components/layout"
 import { stripAnsi, visibleLength } from "../src/tui/components/types"
 import { THEME } from "../src/tui/theme"
 
@@ -34,5 +34,17 @@ describe("tui layout helpers", () => {
 
     expect(stripAnsi(joined)).toBe("security        ok")
     expect(visibleLength(joined)).toBe(18)
+  })
+
+  test("wraps colored text using visible width", () => {
+    const wrapped = wrapText(
+      `${THEME.warning}long label${THEME.reset} ${THEME.white}still visible${THEME.reset}`,
+      14,
+    )
+
+    expect(wrapped).toEqual([
+      `${THEME.warning}long label${THEME.reset}`,
+      `${THEME.white}still visible${THEME.reset}`,
+    ])
   })
 })

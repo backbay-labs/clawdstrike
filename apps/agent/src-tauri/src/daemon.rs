@@ -1135,15 +1135,28 @@ impl AuditQueue {
 
             match response.json::<FlushAuditBatchResponse>().await {
                 Ok(summary) => {
+                    if summary.duplicates > 0 {
+                        tracing::info!(
+                            duplicates = summary.duplicates,
+                            "Daemon reported duplicate audit outbox events already ingested"
+                        );
+                    }
                     if summary.rejected > 0 {
+                        self.requeue_failed_flush(events).await;
                         tracing::warn!(
                             accepted = summary.accepted,
                             duplicates = summary.duplicates,
                             rejected = summary.rejected,
                             "Daemon rejected some audit outbox events"
                         );
+                        anyhow::bail!(
+                            "Audit batch upload partially rejected: accepted={}, duplicates={}, rejected={}",
+                            summary.accepted,
+                            summary.duplicates,
+                            summary.rejected
+                        );
                     }
-                    flushed += summary.accepted + summary.duplicates;
+                    flushed += summary.accepted;
                 }
                 Err(err) => {
                     tracing::warn!(
@@ -2251,6 +2264,80 @@ mod tests {
         assert_eq!(flushed, total_events);
         assert_eq!(queue.len().await, 0);
         assert_eq!(&*sizes.lock().unwrap(), &[MAX_AUDIT_BATCH_LEN, 37]);
+    }
+
+    #[tokio::test]
+    async fn audit_queue_flush_does_not_count_duplicates_as_new_uploads() {
+        use axum::{routing::post, Json, Router};
+        use tokio::net::TcpListener;
+
+        let queue = AuditQueue::new_test_isolated();
+        queue.enqueue(sample_audit_event("dup-1")).await;
+        queue.enqueue(sample_audit_event("dup-2")).await;
+
+        let app = Router::new().route(
+            "/api/v1/audit/batch",
+            post(|| async {
+                Json(serde_json::json!({
+                    "accepted": 0,
+                    "duplicates": 2,
+                    "rejected": 0
+                }))
+            }),
+        );
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let flushed = queue.flush(&format!("http://{}", addr), None).await.unwrap();
+        assert_eq!(flushed, 0);
+        assert_eq!(queue.len().await, 0);
+    }
+
+    #[tokio::test]
+    async fn audit_queue_flush_requeues_partially_rejected_batches() {
+        use axum::{routing::post, Json, Router};
+        use tokio::net::TcpListener;
+
+        let queue = AuditQueue::new_test_isolated();
+        queue.enqueue(sample_audit_event("evt-1")).await;
+        queue.enqueue(sample_audit_event("evt-2")).await;
+        queue.enqueue(sample_audit_event("evt-3")).await;
+
+        let app = Router::new().route(
+            "/api/v1/audit/batch",
+            post(|| async {
+                Json(serde_json::json!({
+                    "accepted": 2,
+                    "duplicates": 0,
+                    "rejected": 1
+                }))
+            }),
+        );
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let err = queue
+            .flush(&format!("http://{}", addr), None)
+            .await
+            .expect_err("partial rejection should fail the flush");
+        assert!(err
+            .to_string()
+            .contains("Audit batch upload partially rejected"));
+
+        let guard = queue.queue.lock().await;
+        let ids: Vec<_> = guard
+            .iter()
+            .filter_map(|event| event.get("id").and_then(|id| id.as_str()))
+            .collect();
+        assert_eq!(ids, vec!["evt-1", "evt-2", "evt-3"]);
     }
 
     #[tokio::test]
