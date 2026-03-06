@@ -111,10 +111,6 @@ fn ensure_detection_write_access(auth: &AuthenticatedTenant) -> Result<(), ApiEr
     Ok(())
 }
 
-fn actor_label(auth: &AuthenticatedTenant) -> String {
-    auth.actor_id()
-}
-
 async fn create_alert(
     State(state): State<AppState>,
     auth: AuthenticatedTenant,
@@ -248,9 +244,10 @@ async fn create_detection_rule(
     Json(req): Json<CreateDetectionRule>,
 ) -> Result<Json<crate::services::alerter::DetectionRuleRecord>, ApiError> {
     ensure_detection_write_access(&auth)?;
+    let actor_id = auth.actor_id();
     let created = state
         .alerter
-        .create_detection_rule(auth.tenant_id, &actor_label(&auth), req)
+        .create_detection_rule(auth.tenant_id, &actor_id, req)
         .await?;
     Ok(Json(created))
 }
@@ -281,9 +278,10 @@ async fn update_detection_rule(
     Json(req): Json<UpdateDetectionRule>,
 ) -> Result<Json<crate::services::alerter::DetectionRuleRecord>, ApiError> {
     ensure_detection_write_access(&auth)?;
+    let actor_id = auth.actor_id();
     let updated = state
         .alerter
-        .update_detection_rule(auth.tenant_id, id, &actor_label(&auth), req)
+        .update_detection_rule(auth.tenant_id, id, &actor_id, req)
         .await?;
     Ok(Json(updated))
 }
@@ -322,10 +320,11 @@ async fn import_sigma_rule(
     Json(req): Json<CreateDetectionRule>,
 ) -> Result<Json<crate::services::alerter::DetectionRuleRecord>, ApiError> {
     ensure_detection_write_access(&auth)?;
+    let actor_id = auth.actor_id();
     Ok(Json(
         state
             .alerter
-            .import_detection_rule(auth.tenant_id, &actor_label(&auth), req, "sigma")
+            .import_detection_rule(auth.tenant_id, &actor_id, req, "sigma")
             .await?,
     ))
 }
@@ -336,10 +335,11 @@ async fn import_yara_rule(
     Json(req): Json<CreateDetectionRule>,
 ) -> Result<Json<crate::services::alerter::DetectionRuleRecord>, ApiError> {
     ensure_detection_write_access(&auth)?;
+    let actor_id = auth.actor_id();
     Ok(Json(
         state
             .alerter
-            .import_detection_rule(auth.tenant_id, &actor_label(&auth), req, "yara")
+            .import_detection_rule(auth.tenant_id, &actor_id, req, "yara")
             .await?,
     ))
 }
@@ -383,10 +383,11 @@ async fn suppress_detection_finding(
     Json(req): Json<FindingActionRequest>,
 ) -> Result<Json<crate::services::alerter::DetectionFindingRecord>, ApiError> {
     ensure_detection_write_access(&auth)?;
+    let actor_id = auth.actor_id();
     Ok(Json(
         state
             .alerter
-            .suppress_detection_finding(auth.tenant_id, id, &actor_label(&auth), &req.reason)
+            .suppress_detection_finding(auth.tenant_id, id, &actor_id, &req.reason)
             .await?,
     ))
 }
@@ -439,10 +440,11 @@ async fn create_detection_suppression(
     Json(req): Json<CreateDetectionSuppression>,
 ) -> Result<Json<crate::services::alerter::DetectionSuppressionRecord>, ApiError> {
     ensure_detection_write_access(&auth)?;
+    let actor_id = auth.actor_id();
     Ok(Json(
         state
             .alerter
-            .create_detection_suppression(auth.tenant_id, &actor_label(&auth), req)
+            .create_detection_suppression(auth.tenant_id, &actor_id, req)
             .await?,
     ))
 }
@@ -489,10 +491,11 @@ async fn install_detection_pack(
     Json(req): Json<InstallDetectionPackRequest>,
 ) -> Result<Json<crate::services::alerter::InstalledDetectionPackRecord>, ApiError> {
     ensure_detection_write_access(&auth)?;
+    let actor_id = auth.actor_id();
     Ok(Json(
         state
             .alerter
-            .install_detection_pack(auth.tenant_id, &actor_label(&auth), req)
+            .install_detection_pack(auth.tenant_id, &actor_id, req)
             .await?,
     ))
 }

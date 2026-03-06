@@ -14,14 +14,40 @@ use hunt_query::service::{
 };
 use hunt_query::timeline::NormalizedVerdict;
 use serde_json::Value;
+use sqlx::executor::Executor;
 use sqlx::query_builder::QueryBuilder;
 use sqlx::row::Row;
+use sqlx::transaction::Transaction;
 use sqlx_postgres::Postgres;
 use uuid::Uuid;
 
-use crate::db::PgPool;
+use crate::db::{PgPool, PgRow};
 use crate::error::ApiError;
 use crate::models::hunt::StoredSearchCursor;
+
+const EVENT_ID_CONFLICT: &str = "hunt event conflict: eventId already ingested";
+const RAW_REF_CONFLICT: &str = "hunt evidence conflict: rawRef already ingested";
+
+struct VerifiedHuntIngest {
+    event: FleetEventEnvelope,
+    raw_envelope: Value,
+    envelope_issuer: String,
+    occurred_at: DateTime<Utc>,
+    ingested_at: DateTime<Utc>,
+    hunt_event: HuntEvent,
+}
+
+struct StoredHuntEnvelope {
+    id: Uuid,
+    source: String,
+    issuer: Option<String>,
+    issued_at: DateTime<Utc>,
+    ingested_at: DateTime<Utc>,
+    envelope_hash: Option<String>,
+    schema_name: Option<String>,
+    raw_envelope: Value,
+    signature_valid: Option<bool>,
+}
 
 pub async fn ingest_event(
     db: &PgPool,
@@ -30,181 +56,27 @@ pub async fn ingest_event(
     raw_envelope: Value,
     trusted_signing_keypair: Option<&hush_core::Keypair>,
 ) -> Result<HuntEvent, ApiError> {
-    let trusted_issuer = trusted_hunt_issuer(trusted_signing_keypair)?;
-    let (verified_event, envelope_issuer) =
-        verify_signed_hunt_envelope(&raw_envelope, &trusted_issuer)?;
-    if verified_event != event {
-        return Err(ApiError::BadRequest(
-            "event must match the signed rawEnvelope fact".to_string(),
-        ));
-    }
-    let event = verified_event;
-    let event_tenant_id = Uuid::parse_str(&event.tenant_id)
-        .map_err(|_| ApiError::BadRequest("event.tenantId must be a UUID".to_string()))?;
-    if event_tenant_id != tenant_id {
-        return Err(ApiError::BadRequest(
-            "event.tenantId must match authenticated tenant".to_string(),
-        ));
+    let ingest = verify_ingest_event(tenant_id, event, raw_envelope, trusted_signing_keypair)?;
+    let mut tx = db.begin().await.map_err(ApiError::Database)?;
+
+    if let Some(existing) = find_existing_hunt_event(&mut tx, tenant_id, &ingest).await? {
+        tx.rollback().await.map_err(ApiError::Database)?;
+        return Ok(existing);
     }
 
-    let occurred_at = DateTime::parse_from_rfc3339(&event.occurred_at)
-        .map_err(|_| ApiError::BadRequest("event.occurredAt must be RFC3339".to_string()))?
-        .with_timezone(&Utc);
-    let ingested_at = DateTime::parse_from_rfc3339(&event.ingested_at)
-        .map_err(|_| ApiError::BadRequest("event.ingestedAt must be RFC3339".to_string()))?
-        .with_timezone(&Utc);
+    let envelope_id = persist_hunt_envelope(&mut tx, tenant_id, &ingest).await?;
+    let existing = persist_hunt_event(&mut tx, tenant_id, envelope_id, &ingest).await?;
 
-    let envelope_row = sqlx::query::query(
-        r#"INSERT INTO hunt_envelopes (
-               tenant_id,
-               source,
-               issuer,
-               issued_at,
-               ingested_at,
-               envelope_hash,
-               schema_name,
-               raw_ref,
-               raw_envelope,
-               signature_valid,
-               created_at
-           )
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())
-           ON CONFLICT (tenant_id, raw_ref)
-           DO UPDATE SET
-               source = EXCLUDED.source,
-               issuer = EXCLUDED.issuer,
-               issued_at = EXCLUDED.issued_at,
-               ingested_at = EXCLUDED.ingested_at,
-               envelope_hash = EXCLUDED.envelope_hash,
-               schema_name = EXCLUDED.schema_name,
-               raw_envelope = EXCLUDED.raw_envelope,
-               signature_valid = EXCLUDED.signature_valid
-           RETURNING id"#,
-    )
-    .bind(tenant_id)
-    .bind(fleet_source_to_str(event.source))
-    .bind(Some(envelope_issuer.as_str()))
-    .bind(occurred_at)
-    .bind(ingested_at)
-    .bind(event.evidence.envelope_hash.as_deref())
-    .bind(event.evidence.schema_name.as_deref())
-    .bind(&event.evidence.raw_ref)
-    .bind(raw_envelope.clone())
-    .bind(Some(true))
-    .fetch_one(db)
-    .await
-    .map_err(ApiError::Database)?;
-    let envelope_id: Uuid = envelope_row.try_get("id").map_err(ApiError::Database)?;
-
-    sqlx::query::query(
-        r#"INSERT INTO hunt_events (
-               event_id, tenant_id, envelope_id, source, kind, timestamp, ingested_at, verdict,
-               severity, summary, action_type, process, namespace, pod, session_id,
-               endpoint_agent_id, runtime_agent_id, principal_id, grant_id,
-               response_action_id, detection_ids, target_kind, target_id, target_name,
-               envelope_hash, issuer, schema_name, signature_valid, raw_ref, attributes
-           )
-           VALUES (
-               $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-               $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-               $21, $22, $23, $24, $25, $26, $27, $28, $29, $30
-           )
-           ON CONFLICT (tenant_id, event_id)
-           DO UPDATE SET
-               envelope_id = EXCLUDED.envelope_id,
-               source = EXCLUDED.source,
-               kind = EXCLUDED.kind,
-               timestamp = EXCLUDED.timestamp,
-               ingested_at = EXCLUDED.ingested_at,
-               verdict = EXCLUDED.verdict,
-               severity = EXCLUDED.severity,
-               summary = EXCLUDED.summary,
-               action_type = EXCLUDED.action_type,
-               process = EXCLUDED.process,
-               namespace = EXCLUDED.namespace,
-               pod = EXCLUDED.pod,
-               session_id = EXCLUDED.session_id,
-               endpoint_agent_id = EXCLUDED.endpoint_agent_id,
-               runtime_agent_id = EXCLUDED.runtime_agent_id,
-               principal_id = EXCLUDED.principal_id,
-               grant_id = EXCLUDED.grant_id,
-               response_action_id = EXCLUDED.response_action_id,
-               detection_ids = EXCLUDED.detection_ids,
-               target_kind = EXCLUDED.target_kind,
-               target_id = EXCLUDED.target_id,
-               target_name = EXCLUDED.target_name,
-               envelope_hash = EXCLUDED.envelope_hash,
-               issuer = EXCLUDED.issuer,
-               schema_name = EXCLUDED.schema_name,
-               signature_valid = EXCLUDED.signature_valid,
-               raw_ref = EXCLUDED.raw_ref,
-               attributes = EXCLUDED.attributes"#,
-    )
-    .bind(&event.event_id)
-    .bind(tenant_id)
-    .bind(envelope_id)
-    .bind(fleet_source_to_str(event.source))
-    .bind(fleet_kind_to_str(event.kind))
-    .bind(occurred_at)
-    .bind(ingested_at)
-    .bind(fleet_verdict_to_str(event.verdict).unwrap_or("none"))
-    .bind(event.severity.map(fleet_severity_to_str))
-    .bind(&event.summary)
-    .bind(event.action_type.as_deref())
-    .bind(event.attributes.get("process").and_then(Value::as_str))
-    .bind(event.attributes.get("namespace").and_then(Value::as_str))
-    .bind(event.attributes.get("pod").and_then(Value::as_str))
-    .bind(event.session_id.as_deref())
-    .bind(
-        event
-            .principal
-            .as_ref()
-            .and_then(|principal| principal.endpoint_agent_id.as_deref()),
-    )
-    .bind(
-        event
-            .principal
-            .as_ref()
-            .and_then(|principal| principal.runtime_agent_id.as_deref()),
-    )
-    .bind(
-        event
-            .principal
-            .as_ref()
-            .and_then(|principal| principal.principal_id.as_deref()),
-    )
-    .bind(event.grant_id.as_deref())
-    .bind(event.response_action_id.as_deref())
-    .bind(&event.detection_ids)
-    .bind(
-        event
-            .target
-            .as_ref()
-            .and_then(|target| target.kind.as_deref()),
-    )
-    .bind(
-        event
-            .target
-            .as_ref()
-            .and_then(|target| target.id.as_deref()),
-    )
-    .bind(
-        event
-            .target
-            .as_ref()
-            .and_then(|target| target.name.as_deref()),
-    )
-    .bind(event.evidence.envelope_hash.as_deref())
-    .bind(Some(envelope_issuer.as_str()))
-    .bind(event.evidence.schema_name.as_deref())
-    .bind(Some(true))
-    .bind(&event.evidence.raw_ref)
-    .bind(&event.attributes)
-    .execute(db)
-    .await
-    .map_err(ApiError::Database)?;
-
-    get_event(db, tenant_id, &event.event_id).await
+    match existing {
+        Some(existing) => {
+            tx.rollback().await.map_err(ApiError::Database)?;
+            Ok(existing)
+        }
+        None => {
+            tx.commit().await.map_err(ApiError::Database)?;
+            get_event(db, tenant_id, &ingest.event.event_id).await
+        }
+    }
 }
 
 pub async fn search_events(
@@ -438,6 +310,247 @@ pub async fn get_event(
     tenant_id: Uuid,
     event_id: &str,
 ) -> Result<HuntEvent, ApiError> {
+    get_event_optional(db, tenant_id, event_id)
+        .await?
+        .ok_or(ApiError::NotFound)
+}
+
+fn verify_ingest_event(
+    tenant_id: Uuid,
+    event: FleetEventEnvelope,
+    raw_envelope: Value,
+    trusted_signing_keypair: Option<&hush_core::Keypair>,
+) -> Result<VerifiedHuntIngest, ApiError> {
+    let trusted_issuer = trusted_hunt_issuer(trusted_signing_keypair)?;
+    let (verified_event, envelope_issuer) =
+        verify_signed_hunt_envelope(&raw_envelope, &trusted_issuer)?;
+    if verified_event != event {
+        return Err(ApiError::BadRequest(
+            "event must match the signed rawEnvelope fact".to_string(),
+        ));
+    }
+
+    let event_tenant_id = Uuid::parse_str(&verified_event.tenant_id)
+        .map_err(|_| ApiError::BadRequest("event.tenantId must be a UUID".to_string()))?;
+    if event_tenant_id != tenant_id {
+        return Err(ApiError::BadRequest(
+            "event.tenantId must match authenticated tenant".to_string(),
+        ));
+    }
+
+    let occurred_at = DateTime::parse_from_rfc3339(&verified_event.occurred_at)
+        .map_err(|_| ApiError::BadRequest("event.occurredAt must be RFC3339".to_string()))?
+        .with_timezone(&Utc);
+    let ingested_at = DateTime::parse_from_rfc3339(&verified_event.ingested_at)
+        .map_err(|_| ApiError::BadRequest("event.ingestedAt must be RFC3339".to_string()))?
+        .with_timezone(&Utc);
+    let hunt_event =
+        HuntEvent::try_from_fleet_event(&verified_event).map_err(ApiError::BadRequest)?;
+
+    Ok(VerifiedHuntIngest {
+        event: verified_event,
+        raw_envelope,
+        envelope_issuer,
+        occurred_at,
+        ingested_at,
+        hunt_event,
+    })
+}
+
+async fn find_existing_hunt_event(
+    tx: &mut Transaction<'_, Postgres>,
+    tenant_id: Uuid,
+    ingest: &VerifiedHuntIngest,
+) -> Result<Option<HuntEvent>, ApiError> {
+    if let Some(existing) = get_event_optional(&mut **tx, tenant_id, &ingest.event.event_id).await?
+    {
+        return ensure_matching_hunt_event(existing, &ingest.hunt_event, EVENT_ID_CONFLICT)
+            .map(Some);
+    }
+
+    if let Some(existing) =
+        get_event_by_raw_ref_optional(&mut **tx, tenant_id, &ingest.event.evidence.raw_ref).await?
+    {
+        return ensure_matching_hunt_event(existing, &ingest.hunt_event, RAW_REF_CONFLICT)
+            .map(Some);
+    }
+
+    Ok(None)
+}
+
+async fn persist_hunt_envelope(
+    tx: &mut Transaction<'_, Postgres>,
+    tenant_id: Uuid,
+    ingest: &VerifiedHuntIngest,
+) -> Result<Uuid, ApiError> {
+    // Evidence is immutable: concurrent or duplicate ingests reuse the existing row only if the
+    // stored envelope still matches byte-for-byte and metadata-for-metadata.
+    let row = sqlx::query::query(
+        r#"INSERT INTO hunt_envelopes (
+               tenant_id,
+               source,
+               issuer,
+               issued_at,
+               ingested_at,
+               envelope_hash,
+               schema_name,
+               raw_ref,
+               raw_envelope,
+               signature_valid,
+               created_at
+           )
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())
+           ON CONFLICT (tenant_id, raw_ref)
+           DO NOTHING
+           RETURNING id"#,
+    )
+    .bind(tenant_id)
+    .bind(fleet_source_to_str(ingest.event.source))
+    .bind(Some(ingest.envelope_issuer.as_str()))
+    .bind(ingest.occurred_at)
+    .bind(ingest.ingested_at)
+    .bind(ingest.event.evidence.envelope_hash.as_deref())
+    .bind(ingest.event.evidence.schema_name.as_deref())
+    .bind(&ingest.event.evidence.raw_ref)
+    .bind(ingest.raw_envelope.clone())
+    .bind(Some(true))
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(ApiError::Database)?;
+
+    if let Some(row) = row {
+        return row.try_get("id").map_err(ApiError::Database);
+    }
+
+    let existing = get_envelope_by_raw_ref(&mut **tx, tenant_id, &ingest.event.evidence.raw_ref)
+        .await?
+        .ok_or_else(|| ApiError::Conflict(RAW_REF_CONFLICT.to_string()))?;
+    ensure_matching_hunt_envelope(&existing, ingest)?;
+    Ok(existing.id)
+}
+
+async fn persist_hunt_event(
+    tx: &mut Transaction<'_, Postgres>,
+    tenant_id: Uuid,
+    envelope_id: Uuid,
+    ingest: &VerifiedHuntIngest,
+) -> Result<Option<HuntEvent>, ApiError> {
+    // We never rewrite a previously ingested event on key collision. Exact duplicates are
+    // idempotent; everything else is an explicit conflict.
+    let row = sqlx::query::query(
+        r#"INSERT INTO hunt_events (
+               event_id, tenant_id, envelope_id, source, kind, timestamp, ingested_at, verdict,
+               severity, summary, action_type, process, namespace, pod, session_id,
+               endpoint_agent_id, runtime_agent_id, principal_id, grant_id,
+               response_action_id, detection_ids, target_kind, target_id, target_name,
+               envelope_hash, issuer, schema_name, signature_valid, raw_ref, attributes
+           )
+           VALUES (
+               $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+               $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+               $21, $22, $23, $24, $25, $26, $27, $28, $29, $30
+           )
+           ON CONFLICT (tenant_id, event_id)
+           DO NOTHING
+           RETURNING event_id"#,
+    )
+    .bind(&ingest.event.event_id)
+    .bind(tenant_id)
+    .bind(envelope_id)
+    .bind(fleet_source_to_str(ingest.event.source))
+    .bind(fleet_kind_to_str(ingest.event.kind))
+    .bind(ingest.occurred_at)
+    .bind(ingest.ingested_at)
+    .bind(fleet_verdict_to_str(ingest.event.verdict).unwrap_or("none"))
+    .bind(ingest.event.severity.map(fleet_severity_to_str))
+    .bind(&ingest.event.summary)
+    .bind(ingest.event.action_type.as_deref())
+    .bind(
+        ingest
+            .event
+            .attributes
+            .get("process")
+            .and_then(Value::as_str),
+    )
+    .bind(
+        ingest
+            .event
+            .attributes
+            .get("namespace")
+            .and_then(Value::as_str),
+    )
+    .bind(ingest.event.attributes.get("pod").and_then(Value::as_str))
+    .bind(ingest.event.session_id.as_deref())
+    .bind(
+        ingest
+            .event
+            .principal
+            .as_ref()
+            .and_then(|principal| principal.endpoint_agent_id.as_deref()),
+    )
+    .bind(
+        ingest
+            .event
+            .principal
+            .as_ref()
+            .and_then(|principal| principal.runtime_agent_id.as_deref()),
+    )
+    .bind(
+        ingest
+            .event
+            .principal
+            .as_ref()
+            .and_then(|principal| principal.principal_id.as_deref()),
+    )
+    .bind(ingest.event.grant_id.as_deref())
+    .bind(ingest.event.response_action_id.as_deref())
+    .bind(&ingest.event.detection_ids)
+    .bind(
+        ingest
+            .event
+            .target
+            .as_ref()
+            .and_then(|target| target.kind.as_deref()),
+    )
+    .bind(
+        ingest
+            .event
+            .target
+            .as_ref()
+            .and_then(|target| target.id.as_deref()),
+    )
+    .bind(
+        ingest
+            .event
+            .target
+            .as_ref()
+            .and_then(|target| target.name.as_deref()),
+    )
+    .bind(ingest.event.evidence.envelope_hash.as_deref())
+    .bind(Some(ingest.envelope_issuer.as_str()))
+    .bind(ingest.event.evidence.schema_name.as_deref())
+    .bind(Some(true))
+    .bind(&ingest.event.evidence.raw_ref)
+    .bind(&ingest.event.attributes)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(ApiError::Database)?;
+
+    if row.is_some() {
+        return Ok(None);
+    }
+
+    let existing = get_event_optional(&mut **tx, tenant_id, &ingest.event.event_id)
+        .await?
+        .ok_or_else(|| ApiError::Conflict(EVENT_ID_CONFLICT.to_string()))?;
+    ensure_matching_hunt_event(existing, &ingest.hunt_event, EVENT_ID_CONFLICT).map(Some)
+}
+
+async fn get_event_optional(
+    executor: impl Executor<'_, Database = Postgres>,
+    tenant_id: Uuid,
+    event_id: &str,
+) -> Result<Option<HuntEvent>, ApiError> {
     let row = sqlx::query::query(
         r#"SELECT event_id, tenant_id, source, kind, timestamp, verdict, severity, summary,
                   action_type, process, namespace, pod, session_id, endpoint_agent_id,
@@ -449,11 +562,109 @@ pub async fn get_event(
     )
     .bind(tenant_id)
     .bind(event_id)
-    .fetch_optional(db)
+    .fetch_optional(executor)
     .await
-    .map_err(ApiError::Database)?
-    .ok_or(ApiError::NotFound)?;
-    map_event_row(row)
+    .map_err(ApiError::Database)?;
+    row.map(map_event_row).transpose()
+}
+
+async fn get_event_by_raw_ref_optional(
+    executor: impl Executor<'_, Database = Postgres>,
+    tenant_id: Uuid,
+    raw_ref: &str,
+) -> Result<Option<HuntEvent>, ApiError> {
+    let row = sqlx::query::query(
+        r#"SELECT event_id, tenant_id, source, kind, timestamp, verdict, severity, summary,
+                  action_type, process, namespace, pod, session_id, endpoint_agent_id,
+                  runtime_agent_id, principal_id, grant_id, response_action_id, detection_ids,
+                  target_kind, target_id, target_name, envelope_hash, issuer, schema_name,
+                  signature_valid, raw_ref, attributes
+           FROM hunt_events
+           WHERE tenant_id = $1 AND raw_ref = $2
+           ORDER BY timestamp DESC, event_id DESC
+           LIMIT 1"#,
+    )
+    .bind(tenant_id)
+    .bind(raw_ref)
+    .fetch_optional(executor)
+    .await
+    .map_err(ApiError::Database)?;
+    row.map(map_event_row).transpose()
+}
+
+async fn get_envelope_by_raw_ref(
+    executor: impl Executor<'_, Database = Postgres>,
+    tenant_id: Uuid,
+    raw_ref: &str,
+) -> Result<Option<StoredHuntEnvelope>, ApiError> {
+    let row = sqlx::query::query(
+        r#"SELECT id, source, issuer, issued_at, ingested_at, envelope_hash, schema_name,
+                  raw_envelope, signature_valid
+           FROM hunt_envelopes
+           WHERE tenant_id = $1 AND raw_ref = $2"#,
+    )
+    .bind(tenant_id)
+    .bind(raw_ref)
+    .fetch_optional(executor)
+    .await
+    .map_err(ApiError::Database)?;
+    row.map(map_envelope_row).transpose()
+}
+
+fn ensure_matching_hunt_event(
+    existing: HuntEvent,
+    incoming: &HuntEvent,
+    conflict_message: &str,
+) -> Result<HuntEvent, ApiError> {
+    if existing == *incoming {
+        return Ok(existing);
+    }
+    Err(ApiError::Conflict(conflict_message.to_string()))
+}
+
+fn ensure_matching_hunt_envelope(
+    existing: &StoredHuntEnvelope,
+    ingest: &VerifiedHuntIngest,
+) -> Result<(), ApiError> {
+    let incoming = StoredHuntEnvelope {
+        id: existing.id,
+        source: fleet_source_to_str(ingest.event.source).to_string(),
+        issuer: Some(ingest.envelope_issuer.clone()),
+        issued_at: ingest.occurred_at,
+        ingested_at: ingest.ingested_at,
+        envelope_hash: ingest.event.evidence.envelope_hash.clone(),
+        schema_name: ingest.event.evidence.schema_name.clone(),
+        raw_envelope: ingest.raw_envelope.clone(),
+        signature_valid: Some(true),
+    };
+
+    if existing.source == incoming.source
+        && existing.issuer == incoming.issuer
+        && existing.issued_at == incoming.issued_at
+        && existing.ingested_at == incoming.ingested_at
+        && existing.envelope_hash == incoming.envelope_hash
+        && existing.schema_name == incoming.schema_name
+        && existing.raw_envelope == incoming.raw_envelope
+        && existing.signature_valid == incoming.signature_valid
+    {
+        return Ok(());
+    }
+
+    Err(ApiError::Conflict(RAW_REF_CONFLICT.to_string()))
+}
+
+fn map_envelope_row(row: PgRow) -> Result<StoredHuntEnvelope, ApiError> {
+    Ok(StoredHuntEnvelope {
+        id: row.try_get("id").map_err(ApiError::Database)?,
+        source: row.try_get("source").map_err(ApiError::Database)?,
+        issuer: row.try_get("issuer").map_err(ApiError::Database)?,
+        issued_at: row.try_get("issued_at").map_err(ApiError::Database)?,
+        ingested_at: row.try_get("ingested_at").map_err(ApiError::Database)?,
+        envelope_hash: row.try_get("envelope_hash").map_err(ApiError::Database)?,
+        schema_name: row.try_get("schema_name").map_err(ApiError::Database)?,
+        raw_envelope: row.try_get("raw_envelope").map_err(ApiError::Database)?,
+        signature_valid: row.try_get("signature_valid").map_err(ApiError::Database)?,
+    })
 }
 
 async fn create_job(

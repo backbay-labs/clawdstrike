@@ -57,6 +57,23 @@ struct ResolvedEffectivePolicy {
     source_attachments: Option<Vec<ConsolePolicySourceAttachment>>,
 }
 
+struct PrincipalDetailContext {
+    principal: PrincipalBaseRow,
+    principal_item: ConsolePrincipalListItem,
+    scope: PrincipalMembershipScope,
+    policy: ResolvedEffectivePolicy,
+    active_grants: Vec<ConsoleActiveGrant>,
+    recent_sessions: Vec<ConsoleRecentSession>,
+}
+
+struct TimelineQueryContext {
+    principal_aliases: Vec<String>,
+    filter_principal: bool,
+    from: Option<DateTime<Utc>>,
+    to: Option<DateTime<Utc>>,
+    limit: i64,
+}
+
 #[derive(Debug, Clone)]
 struct PolicyAttachmentRow {
     id: Uuid,
@@ -252,48 +269,20 @@ pub async fn get_principal_detail(
     tenant_id: Uuid,
     principal_identifier: &str,
 ) -> Result<ConsolePrincipalDetail, ApiError> {
-    let principal = load_principal_by_identifier(db, tenant_id, principal_identifier).await?;
-    let membership_map = load_membership_scope_map(db, tenant_id, &[principal.id]).await?;
-    let scope = membership_map
-        .get(&principal.id)
-        .cloned()
-        .unwrap_or_default();
-    let principal_item = principal_list_item_from_parts(&principal, &scope);
-
-    let policy = resolve_effective_policy(
-        db,
-        tenant_id,
-        principal.id,
-        &principal.lifecycle_state,
-        &scope,
-    )
-    .await?;
-
-    let active_grants =
-        load_active_grants(db, tenant_id, principal.id, &principal.stable_ref).await?;
-    let recent_sessions = load_recent_sessions(
-        db,
-        tenant_id,
-        &principal_item.principal_id,
-        &principal.stable_ref,
-        principal.agent_id.as_deref(),
-        principal.last_heartbeat_at,
-        principal_item.endpoint_posture.clone(),
-    )
-    .await?;
+    let context = load_principal_detail_context(db, tenant_id, principal_identifier).await?;
 
     Ok(ConsolePrincipalDetail {
-        principal: principal_item,
+        principal: context.principal_item,
         metadata: merge_metadata_values(
-            &principal.principal_metadata,
-            principal.agent_metadata.as_ref(),
+            &context.principal.principal_metadata,
+            context.principal.agent_metadata.as_ref(),
         ),
-        memberships: scope.memberships,
-        effective_policy: policy.effective_policy,
-        active_grants,
-        recent_sessions,
-        compiled_policy_yaml: policy.compiled_policy_yaml,
-        source_attachments: policy.source_attachments,
+        memberships: context.scope.memberships,
+        effective_policy: context.policy.effective_policy,
+        active_grants: context.active_grants,
+        recent_sessions: context.recent_sessions,
+        compiled_policy_yaml: context.policy.compiled_policy_yaml,
+        source_attachments: context.policy.source_attachments,
     })
 }
 
@@ -303,16 +292,7 @@ pub async fn list_timeline_events(
     principal_id: Option<&str>,
     query: &ConsoleTimelineQuery,
 ) -> Result<Vec<ConsoleTimelineEvent>, ApiError> {
-    let effective_principal_id = principal_id.or(query.principal_id.as_deref());
-    let from = parse_optional_rfc3339(query.from.as_deref(), "from")?;
-    let to = parse_optional_rfc3339(query.to.as_deref(), "to")?;
-    let limit = normalize_limit(query.limit);
-    let filter_principal = effective_principal_id.is_some();
-    let principal_aliases = if let Some(principal_identifier) = effective_principal_id {
-        resolve_principal_filter_aliases(db, tenant_id, principal_identifier).await?
-    } else {
-        Vec::new()
-    };
+    let context = resolve_timeline_query_context(db, tenant_id, principal_id, query).await?;
 
     let rows = sqlx::query::query(
         r#"SELECT event_id,
@@ -344,11 +324,11 @@ pub async fn list_timeline_events(
            LIMIT $6"#,
     )
     .bind(tenant_id)
-    .bind(filter_principal)
-    .bind(&principal_aliases)
-    .bind(from)
-    .bind(to)
-    .bind(limit)
+    .bind(context.filter_principal)
+    .bind(&context.principal_aliases)
+    .bind(context.from)
+    .bind(context.to)
+    .bind(context.limit)
     .fetch_all(db)
     .await
     .map_err(ApiError::Database)?;
@@ -618,6 +598,49 @@ async fn load_principal_rows(
     rows.into_iter().map(map_principal_row).collect()
 }
 
+async fn load_principal_detail_context(
+    db: &PgPool,
+    tenant_id: Uuid,
+    principal_identifier: &str,
+) -> Result<PrincipalDetailContext, ApiError> {
+    let principal = load_principal_by_identifier(db, tenant_id, principal_identifier).await?;
+    let membership_map = load_membership_scope_map(db, tenant_id, &[principal.id]).await?;
+    let scope = membership_map
+        .get(&principal.id)
+        .cloned()
+        .unwrap_or_default();
+    let principal_item = principal_list_item_from_parts(&principal, &scope);
+    let policy = resolve_effective_policy(
+        db,
+        tenant_id,
+        principal.id,
+        &principal.lifecycle_state,
+        &scope,
+    )
+    .await?;
+    let active_grants =
+        load_active_grants(db, tenant_id, principal.id, &principal.stable_ref).await?;
+    let recent_sessions = load_recent_sessions(
+        db,
+        tenant_id,
+        &principal_item.principal_id,
+        &principal.stable_ref,
+        principal.agent_id.as_deref(),
+        principal.last_heartbeat_at,
+        principal_item.endpoint_posture.clone(),
+    )
+    .await?;
+
+    Ok(PrincipalDetailContext {
+        principal,
+        principal_item,
+        scope,
+        policy,
+        active_grants,
+        recent_sessions,
+    })
+}
+
 async fn load_principal_by_identifier(
     db: &PgPool,
     tenant_id: Uuid,
@@ -813,6 +836,30 @@ async fn load_membership_scope_map(
     }
 
     Ok(scopes)
+}
+
+async fn resolve_timeline_query_context(
+    db: &PgPool,
+    tenant_id: Uuid,
+    principal_id: Option<&str>,
+    query: &ConsoleTimelineQuery,
+) -> Result<TimelineQueryContext, ApiError> {
+    let effective_principal_id = principal_id.or(query.principal_id.as_deref());
+    let from = parse_optional_rfc3339(query.from.as_deref(), "from")?;
+    let to = parse_optional_rfc3339(query.to.as_deref(), "to")?;
+    let principal_aliases = if let Some(principal_identifier) = effective_principal_id {
+        resolve_principal_filter_aliases(db, tenant_id, principal_identifier).await?
+    } else {
+        Vec::new()
+    };
+
+    Ok(TimelineQueryContext {
+        filter_principal: effective_principal_id.is_some(),
+        principal_aliases,
+        from,
+        to,
+        limit: normalize_limit(query.limit),
+    })
 }
 
 async fn resolve_effective_policy(

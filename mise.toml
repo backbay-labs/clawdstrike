@@ -45,6 +45,7 @@ cargo check --manifest-path apps/agent/src-tauri/Cargo.toml
 description = "App checks for control console and agent Tauri backend"
 run = """
 npm --prefix apps/control-console ci
+npm --prefix apps/control-console test
 npm --prefix apps/control-console run typecheck
 npm --prefix apps/control-console run build
 cargo check --manifest-path apps/agent/src-tauri/Cargo.toml

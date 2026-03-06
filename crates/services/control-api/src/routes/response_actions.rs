@@ -306,76 +306,60 @@ pub struct RecordResponseAckRequest {
     pub raw_payload: Option<Value>,
 }
 
+struct ValidatedCreateAction {
+    action_type: ResponseActionType,
+    target_kind: ResponseTargetKind,
+    resolved_target_id: String,
+    reason: String,
+    expires_at: Option<DateTime<Utc>>,
+    case_id: Option<String>,
+    source_detection_id: Option<Uuid>,
+    source_approval_id: Option<Uuid>,
+    require_acknowledgement: bool,
+    payload: Value,
+    metadata: Value,
+}
+
+struct AckSubmission {
+    target_kind: ResponseTargetKind,
+    target_id: String,
+    ack_token: String,
+    ack_status: &'static str,
+    observed_at: DateTime<Utc>,
+    message: Option<String>,
+    resulting_state: Option<String>,
+    raw_payload: Value,
+}
+
+struct AckContext {
+    action: ResponseActionRecord,
+    delivery_id: Uuid,
+}
+
+struct PublishContext {
+    action: ResponseActionRecord,
+    delivery: ResponseActionDelivery,
+}
+
+struct PrincipalLifecycleTarget {
+    principal_id: Uuid,
+    stable_ref: String,
+}
+
+enum PublishPreparation {
+    Ready(Box<PublishContext>),
+    Expired,
+}
+
 async fn create_action(
     State(state): State<AppState>,
     auth: AuthenticatedTenant,
     Json(input): Json<CreateResponseActionRequest>,
 ) -> Result<Json<ResponseActionRecord>, ApiError> {
-    if auth.role == "viewer" {
-        return Err(ApiError::Forbidden);
-    }
-
-    let action_type = ResponseActionType::from_str(&input.action_type)?;
-    let target_kind = ResponseTargetKind::from_str(&input.target.kind)?;
-    let require_acknowledgement = input.require_acknowledgement.unwrap_or(false);
-    validate_create_request(&input, &action_type, &target_kind, require_acknowledgement)?;
-
+    ensure_write_access(&auth)?;
     let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
-    let resolved_target_id = resolve_action_target_id(
-        &mut tx,
-        auth.tenant_id,
-        &target_kind,
-        input.target.id.trim(),
-    )
-    .await?;
-    validate_action_provenance(
-        &mut tx,
-        auth.tenant_id,
-        input.source_detection_id,
-        input.source_approval_id,
-    )
-    .await?;
-    let row = sqlx::query::query(
-        r#"INSERT INTO response_actions (
-               tenant_id,
-               action_type,
-               target_kind,
-               target_id,
-               requested_by_type,
-               requested_by_id,
-               expires_at,
-               reason,
-               case_id,
-               source_detection_id,
-               source_approval_id,
-               require_acknowledgement,
-               payload,
-               metadata
-           )
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-           RETURNING *"#,
-    )
-    .bind(auth.tenant_id)
-    .bind(action_type.as_str())
-    .bind(target_kind.as_str())
-    .bind(&resolved_target_id)
-    .bind(auth.actor_type())
-    .bind(auth.actor_id())
-    .bind(input.expires_at)
-    .bind(input.reason.trim())
-    .bind(input.case_id.as_deref())
-    .bind(input.source_detection_id)
-    .bind(input.source_approval_id)
-    .bind(require_acknowledgement)
-    .bind(input.payload.unwrap_or_else(|| json!({})))
-    .bind(json!({
-        "requested_by_slug": auth.slug,
-    }))
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(ApiError::Database)?;
-
-    let action = ResponseActionRecord::from_row(row).map_err(ApiError::Database)?;
+    let draft = prepare_create_action(&mut tx, &auth, input).await?;
+    let action = insert_action(&mut tx, &auth, draft).await?;
     link_action_to_source_detection(
         &mut tx,
         auth.tenant_id,
@@ -432,9 +416,7 @@ async fn approve_action(
     auth: AuthenticatedTenant,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ResponseActionDetail>, ApiError> {
-    if auth.role == "viewer" {
-        return Err(ApiError::Forbidden);
-    }
+    ensure_write_access(&auth)?;
     publish_action(&state, &auth.slug, auth.tenant_id, id, false).await
 }
 
@@ -443,9 +425,7 @@ async fn retry_action(
     auth: AuthenticatedTenant,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ResponseActionDetail>, ApiError> {
-    if auth.role == "viewer" {
-        return Err(ApiError::Forbidden);
-    }
+    ensure_write_access(&auth)?;
     publish_action(&state, &auth.slug, auth.tenant_id, id, true).await
 }
 
@@ -454,9 +434,7 @@ async fn cancel_action(
     auth: AuthenticatedTenant,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ResponseActionRecord>, ApiError> {
-    if auth.role == "viewer" {
-        return Err(ApiError::Forbidden);
-    }
+    ensure_write_access(&auth)?;
 
     let row = sqlx::query::query(
         r#"UPDATE response_actions
@@ -499,17 +477,147 @@ async fn record_ack(
     Path(id): Path<Uuid>,
     Json(input): Json<RecordResponseAckRequest>,
 ) -> Result<Json<ResponseActionDetail>, ApiError> {
+    ensure_api_key_executor(&auth)?;
+    let ack = parse_ack_submission(input)?;
+
+    let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
+    let context = load_ack_context(&mut tx, auth.tenant_id, id, &ack).await?;
+    persist_ack_submission(&mut tx, &context, &ack).await?;
+    tx.commit().await.map_err(ApiError::Database)?;
+    get_action(State(state), auth, Path(id)).await
+}
+
+async fn publish_action(
+    state: &AppState,
+    tenant_slug: &str,
+    tenant_id: Uuid,
+    action_id: Uuid,
+    allow_retry: bool,
+) -> Result<Json<ResponseActionDetail>, ApiError> {
+    match prepare_publish(state, tenant_slug, tenant_id, action_id, allow_retry).await? {
+        PublishPreparation::Expired => {}
+        PublishPreparation::Ready(context) => {
+            let execution = execute_delivery(state, &context).await;
+            apply_delivery_execution(state, &context, execution).await?;
+        }
+    }
+
+    Ok(Json(
+        fetch_action_detail(state, tenant_id, action_id).await?,
+    ))
+}
+
+fn ensure_write_access(auth: &AuthenticatedTenant) -> Result<(), ApiError> {
+    if auth.role == "viewer" {
+        return Err(ApiError::Forbidden);
+    }
+    Ok(())
+}
+
+fn ensure_api_key_executor(auth: &AuthenticatedTenant) -> Result<(), ApiError> {
     if auth.role == "viewer" || !auth.is_api_key() {
         return Err(ApiError::Forbidden);
     }
+    Ok(())
+}
 
-    let observed_at = input.observed_at.unwrap_or_else(Utc::now);
+async fn prepare_create_action(
+    tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
+    auth: &AuthenticatedTenant,
+    input: CreateResponseActionRequest,
+) -> Result<ValidatedCreateAction, ApiError> {
+    let action_type = ResponseActionType::from_str(&input.action_type)?;
+    let target_kind = ResponseTargetKind::from_str(&input.target.kind)?;
+    let require_acknowledgement = input.require_acknowledgement.unwrap_or(false);
+    validate_create_request(&input, &action_type, &target_kind, require_acknowledgement)?;
+
+    let resolved_target_id =
+        resolve_action_target_id(tx, auth.tenant_id, &target_kind, input.target.id.trim()).await?;
+    validate_action_provenance(
+        tx,
+        auth.tenant_id,
+        input.source_detection_id,
+        input.source_approval_id,
+    )
+    .await?;
+
+    Ok(ValidatedCreateAction {
+        action_type,
+        target_kind,
+        resolved_target_id,
+        reason: input.reason.trim().to_string(),
+        expires_at: input.expires_at,
+        case_id: input.case_id,
+        source_detection_id: input.source_detection_id,
+        source_approval_id: input.source_approval_id,
+        require_acknowledgement,
+        payload: input.payload.unwrap_or_else(|| json!({})),
+        metadata: json!({
+            "requested_by_slug": auth.slug,
+        }),
+    })
+}
+
+async fn insert_action(
+    tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
+    auth: &AuthenticatedTenant,
+    draft: ValidatedCreateAction,
+) -> Result<ResponseActionRecord, ApiError> {
+    let row = sqlx::query::query(
+        r#"INSERT INTO response_actions (
+               tenant_id,
+               action_type,
+               target_kind,
+               target_id,
+               requested_by_type,
+               requested_by_id,
+               expires_at,
+               reason,
+               case_id,
+               source_detection_id,
+               source_approval_id,
+               require_acknowledgement,
+               payload,
+               metadata
+           )
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+           RETURNING *"#,
+    )
+    .bind(auth.tenant_id)
+    .bind(draft.action_type.as_str())
+    .bind(draft.target_kind.as_str())
+    .bind(&draft.resolved_target_id)
+    .bind(auth.actor_type())
+    .bind(auth.actor_id())
+    .bind(draft.expires_at)
+    .bind(&draft.reason)
+    .bind(draft.case_id.as_deref())
+    .bind(draft.source_detection_id)
+    .bind(draft.source_approval_id)
+    .bind(draft.require_acknowledgement)
+    .bind(draft.payload)
+    .bind(draft.metadata)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(ApiError::Database)?;
+
+    ResponseActionRecord::from_row(row).map_err(ApiError::Database)
+}
+
+fn parse_ack_submission(input: RecordResponseAckRequest) -> Result<AckSubmission, ApiError> {
     let ack_status = normalize_ack_status(&input.status)?;
     let target_kind = ResponseTargetKind::from_str(input.target_kind.trim())?;
     let target_id = input.target_id.trim();
     if target_id.is_empty() {
         return Err(ApiError::BadRequest("target_id is required".to_string()));
     }
+
+    let ack_token = input.ack_token.trim();
+    if ack_token.is_empty() {
+        return Err(ApiError::BadRequest("ack_token is required".to_string()));
+    }
+
+    let observed_at = input.observed_at.unwrap_or_else(Utc::now);
     let raw_payload = input.raw_payload.unwrap_or_else(|| {
         json!({
             "status": ack_status,
@@ -517,18 +625,31 @@ async fn record_ack(
             "resulting_state": input.resulting_state.clone(),
         })
     });
-    let ack_token = input.ack_token.trim();
-    if ack_token.is_empty() {
-        return Err(ApiError::BadRequest("ack_token is required".to_string()));
-    }
 
-    let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
+    Ok(AckSubmission {
+        target_kind,
+        target_id: target_id.to_string(),
+        ack_token: ack_token.to_string(),
+        ack_status,
+        observed_at,
+        message: input.message,
+        resulting_state: input.resulting_state,
+        raw_payload,
+    })
+}
+
+async fn load_ack_context(
+    tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
+    tenant_id: Uuid,
+    action_id: Uuid,
+    ack: &AckSubmission,
+) -> Result<AckContext, ApiError> {
     let action = sqlx::query::query(
         "SELECT * FROM response_actions WHERE id = $1 AND tenant_id = $2 FOR UPDATE",
     )
-    .bind(id)
-    .bind(auth.tenant_id)
-    .fetch_optional(&mut *tx)
+    .bind(action_id)
+    .bind(tenant_id)
+    .fetch_optional(&mut **tx)
     .await
     .map_err(ApiError::Database)?
     .ok_or(ApiError::NotFound)?;
@@ -550,9 +671,9 @@ async fn record_ack(
     )
     .bind(action.id)
     .bind(action.tenant_id)
-    .bind(target_kind.as_str())
-    .bind(target_id)
-    .fetch_optional(&mut *tx)
+    .bind(ack.target_kind.as_str())
+    .bind(&ack.target_id)
+    .fetch_optional(&mut **tx)
     .await
     .map_err(ApiError::Database)?
     .ok_or_else(|| {
@@ -566,10 +687,21 @@ async fn record_ack(
         .ok_or_else(|| {
             ApiError::BadRequest("delivery is not acknowledgement-enabled".to_string())
         })?;
-    if expected_ack_token != ack_token {
+    if expected_ack_token != ack.ack_token {
         return Err(ApiError::Forbidden);
     }
 
+    Ok(AckContext {
+        action,
+        delivery_id,
+    })
+}
+
+async fn persist_ack_submission(
+    tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
+    context: &AckContext,
+    ack: &AckSubmission,
+) -> Result<(), ApiError> {
     sqlx::query::query(
         r#"INSERT INTO response_action_acks (
                action_id,
@@ -584,16 +716,16 @@ async fn record_ack(
            )
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"#,
     )
-    .bind(action.id)
-    .bind(action.tenant_id)
-    .bind(target_kind.as_str())
-    .bind(target_id)
-    .bind(observed_at)
-    .bind(ack_status)
-    .bind(input.message.as_deref())
-    .bind(input.resulting_state.as_deref())
-    .bind(raw_payload)
-    .execute(&mut *tx)
+    .bind(context.action.id)
+    .bind(context.action.tenant_id)
+    .bind(ack.target_kind.as_str())
+    .bind(&ack.target_id)
+    .bind(ack.observed_at)
+    .bind(ack.ack_status)
+    .bind(ack.message.as_deref())
+    .bind(ack.resulting_state.as_deref())
+    .bind(&ack.raw_payload)
+    .execute(&mut **tx)
     .await
     .map_err(ApiError::Database)?;
 
@@ -607,13 +739,13 @@ async fn record_ack(
              AND action_id = $1
              AND tenant_id = $2"#,
     )
-    .bind(action.id)
-    .bind(action.tenant_id)
-    .bind(observed_at)
-    .bind(ack_status)
-    .bind(input.message.as_deref())
-    .bind(delivery_id)
-    .execute(&mut *tx)
+    .bind(context.action.id)
+    .bind(context.action.tenant_id)
+    .bind(ack.observed_at)
+    .bind(ack.ack_status)
+    .bind(ack.message.as_deref())
+    .bind(context.delivery_id)
+    .execute(&mut **tx)
     .await
     .map_err(ApiError::Database)?;
 
@@ -623,24 +755,23 @@ async fn record_ack(
                updated_at = now()
            WHERE id = $1 AND tenant_id = $2"#,
     )
-    .bind(action.id)
-    .bind(action.tenant_id)
-    .bind(ack_status)
-    .execute(&mut *tx)
+    .bind(context.action.id)
+    .bind(context.action.tenant_id)
+    .bind(ack.ack_status)
+    .execute(&mut **tx)
     .await
     .map_err(ApiError::Database)?;
 
-    tx.commit().await.map_err(ApiError::Database)?;
-    get_action(State(state), auth, Path(id)).await
+    Ok(())
 }
 
-async fn publish_action(
+async fn prepare_publish(
     state: &AppState,
     tenant_slug: &str,
     tenant_id: Uuid,
     action_id: Uuid,
     allow_retry: bool,
-) -> Result<Json<ResponseActionDetail>, ApiError> {
+) -> Result<PublishPreparation, ApiError> {
     let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
     let row = sqlx::query::query(
         "SELECT * FROM response_actions WHERE id = $1 AND tenant_id = $2 FOR UPDATE",
@@ -666,12 +797,31 @@ async fn publish_action(
         .await
         .map_err(ApiError::Database)?;
         tx.commit().await.map_err(ApiError::Database)?;
-        return Ok(Json(
-            fetch_action_detail(state, tenant_id, action_id).await?,
-        ));
+        return Ok(PublishPreparation::Expired);
     }
 
-    let plan = delivery_plan(&action, tenant_slug);
+    let delivery = upsert_delivery_plan(&mut tx, &action, tenant_slug).await?;
+    sqlx::query::query(
+        "UPDATE response_actions SET status = 'approved', updated_at = now() WHERE id = $1",
+    )
+    .bind(action.id)
+    .execute(&mut *tx)
+    .await
+    .map_err(ApiError::Database)?;
+    tx.commit().await.map_err(ApiError::Database)?;
+
+    Ok(PublishPreparation::Ready(Box::new(PublishContext {
+        action,
+        delivery,
+    })))
+}
+
+async fn upsert_delivery_plan(
+    tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
+    action: &ResponseActionRecord,
+    tenant_slug: &str,
+) -> Result<ResponseActionDelivery, ApiError> {
+    let plan = delivery_plan(action, tenant_slug);
     let delivery_row = sqlx::query::query(
         r#"INSERT INTO response_action_deliveries (
                action_id,
@@ -697,66 +847,66 @@ async fn publish_action(
     )
     .bind(action.id)
     .bind(action.tenant_id)
-    .bind(plan.target_kind.clone())
-    .bind(plan.target_id.clone())
-    .bind(plan.executor_kind.clone())
-    .bind(plan.delivery_subject.clone())
+    .bind(plan.target_kind)
+    .bind(plan.target_id)
+    .bind(plan.executor_kind)
+    .bind(plan.delivery_subject)
     .bind(plan.acknowledgement_deadline)
-    .bind(plan.metadata.clone())
-    .fetch_one(&mut *tx)
+    .bind(plan.metadata)
+    .fetch_one(&mut **tx)
     .await
     .map_err(ApiError::Database)?;
-    let delivery = ResponseActionDelivery::from_row(delivery_row).map_err(ApiError::Database)?;
+    ResponseActionDelivery::from_row(delivery_row).map_err(ApiError::Database)
+}
 
-    sqlx::query::query(
-        "UPDATE response_actions SET status = 'approved', updated_at = now() WHERE id = $1",
-    )
-    .bind(action.id)
-    .execute(&mut *tx)
-    .await
-    .map_err(ApiError::Database)?;
-    tx.commit().await.map_err(ApiError::Database)?;
-
-    let publish_result: Result<DeliveryExecution, ApiError> =
-        if let Some(subject) = delivery.delivery_subject.clone() {
-            let state_nats = state.nats.clone();
-            let action_ref = &action;
-            let delivery_ref = &delivery;
-            async move {
-                let payload_bytes = build_delivery_payload_bytes(
-                    action_ref,
-                    delivery_ref,
-                    state.config.approval_signing_enabled,
-                    state.signing_keypair.as_deref(),
-                )?;
-                state_nats
-                    .publish(subject, payload_bytes.into())
-                    .await
-                    .map_err(|err| ApiError::Nats(err.to_string()))?;
-                if let Some(compat_subject) = delivery_ref
-                    .metadata
-                    .get("compat_mirror_subject")
-                    .and_then(Value::as_str)
-                {
-                    let compat_payload = legacy_posture_command_payload(action_ref)?;
-                    let compat_payload_bytes = build_signed_payload_bytes(
-                        compat_payload,
-                        state.config.approval_signing_enabled,
-                        state.signing_keypair.as_deref(),
-                    )?;
-                    state_nats
-                        .publish(compat_subject.to_string(), compat_payload_bytes.into())
-                        .await
-                        .map_err(|err| ApiError::Nats(err.to_string()))?;
-                }
-                Ok(DeliveryExecution::Published)
-            }
+async fn execute_delivery(
+    state: &AppState,
+    context: &PublishContext,
+) -> Result<DeliveryExecution, ApiError> {
+    if let Some(subject) = context.delivery.delivery_subject.clone() {
+        let payload_bytes = build_delivery_payload_bytes(
+            &context.action,
+            &context.delivery,
+            state.config.approval_signing_enabled,
+            state.signing_keypair.as_deref(),
+        )?;
+        state
+            .nats
+            .publish(subject, payload_bytes.into())
             .await
-        } else {
-            execute_cloud_only_action(state, &action).await
-        };
+            .map_err(|err| ApiError::Nats(err.to_string()))?;
 
-    match publish_result {
+        if let Some(compat_subject) = context
+            .delivery
+            .metadata
+            .get("compat_mirror_subject")
+            .and_then(Value::as_str)
+        {
+            let compat_payload = legacy_posture_command_payload(&context.action)?;
+            let compat_payload_bytes = build_signed_payload_bytes(
+                compat_payload,
+                state.config.approval_signing_enabled,
+                state.signing_keypair.as_deref(),
+            )?;
+            state
+                .nats
+                .publish(compat_subject.to_string(), compat_payload_bytes.into())
+                .await
+                .map_err(|err| ApiError::Nats(err.to_string()))?;
+        }
+
+        return Ok(DeliveryExecution::Published);
+    }
+
+    execute_cloud_only_action(state, &context.action).await
+}
+
+async fn apply_delivery_execution(
+    state: &AppState,
+    context: &PublishContext,
+    execution: Result<DeliveryExecution, ApiError>,
+) -> Result<(), ApiError> {
+    match execution {
         Ok(DeliveryExecution::Published) => {
             let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
             sqlx::query::query(
@@ -765,8 +915,8 @@ async fn publish_action(
                        updated_at = now()
                    WHERE id = $1 AND tenant_id = $2"#,
             )
-            .bind(action.id)
-            .bind(action.tenant_id)
+            .bind(context.action.id)
+            .bind(context.action.tenant_id)
             .execute(&mut *tx)
             .await
             .map_err(ApiError::Database)?;
@@ -779,7 +929,7 @@ async fn publish_action(
                        updated_at = now()
                    WHERE id = $1"#,
             )
-            .bind(delivery.id)
+            .bind(context.delivery.id)
             .execute(&mut *tx)
             .await
             .map_err(ApiError::Database)?;
@@ -806,10 +956,10 @@ async fn publish_action(
                    )
                    VALUES ($1, $2, $3, $4, $5, 'acknowledged', $6, $7, $8)"#,
             )
-            .bind(action.id)
-            .bind(action.tenant_id)
-            .bind(&delivery.target_kind)
-            .bind(&delivery.target_id)
+            .bind(context.action.id)
+            .bind(context.action.tenant_id)
+            .bind(&context.delivery.target_kind)
+            .bind(&context.delivery.target_id)
             .bind(observed_at)
             .bind(message.as_deref())
             .bind(resulting_state.as_deref())
@@ -823,8 +973,8 @@ async fn publish_action(
                        updated_at = now()
                    WHERE id = $1 AND tenant_id = $2"#,
             )
-            .bind(action.id)
-            .bind(action.tenant_id)
+            .bind(context.action.id)
+            .bind(context.action.tenant_id)
             .execute(&mut *tx)
             .await
             .map_err(ApiError::Database)?;
@@ -838,7 +988,7 @@ async fn publish_action(
                        updated_at = now()
                    WHERE id = $1"#,
             )
-            .bind(delivery.id)
+            .bind(context.delivery.id)
             .bind(observed_at)
             .execute(&mut *tx)
             .await
@@ -855,8 +1005,8 @@ async fn publish_action(
                        updated_at = now()
                    WHERE id = $1 AND tenant_id = $2"#,
             )
-            .bind(action.id)
-            .bind(action.tenant_id)
+            .bind(context.action.id)
+            .bind(context.action.tenant_id)
             .bind(&err_string)
             .execute(&mut *tx)
             .await
@@ -869,7 +1019,7 @@ async fn publish_action(
                        updated_at = now()
                    WHERE id = $1"#,
             )
-            .bind(delivery.id)
+            .bind(context.delivery.id)
             .bind(&err_string)
             .execute(&mut *tx)
             .await
@@ -878,9 +1028,7 @@ async fn publish_action(
         }
     }
 
-    Ok(Json(
-        fetch_action_detail(state, tenant_id, action_id).await?,
-    ))
+    Ok(())
 }
 
 fn validate_create_request(
@@ -1274,64 +1422,80 @@ async fn execute_principal_lifecycle_action(
     action: &ResponseActionRecord,
     lifecycle_state: &str,
 ) -> Result<DeliveryExecution, ApiError> {
-    let row = if let Ok(principal_id) = Uuid::parse_str(&action.target.id) {
-        sqlx::query::query(
-            r#"UPDATE principals
-               SET lifecycle_state = $3,
-                   updated_at = now()
-               WHERE tenant_id = $1 AND id = $2
-               RETURNING id, stable_ref"#,
-        )
-        .bind(action.tenant_id)
-        .bind(principal_id)
-        .bind(lifecycle_state)
-        .fetch_optional(&state.db)
-        .await
-        .map_err(ApiError::Database)?
-    } else {
-        sqlx::query::query(
-            r#"UPDATE principals
-               SET lifecycle_state = $3,
-                   updated_at = now()
-               WHERE tenant_id = $1 AND stable_ref = $2
-               RETURNING id, stable_ref"#,
-        )
-        .bind(action.tenant_id)
-        .bind(action.target.id.trim())
-        .bind(lifecycle_state)
-        .fetch_optional(&state.db)
-        .await
-        .map_err(ApiError::Database)?
-    }
-    .ok_or(ApiError::NotFound)?;
-
-    let principal_id: Uuid = row.try_get("id").map_err(ApiError::Database)?;
-    let stable_ref: String = row.try_get("stable_ref").map_err(ApiError::Database)?;
-    let node_id = format!("principal:{principal_id}");
-    sqlx::query::query(
-        r#"UPDATE delegation_graph_nodes
-           SET state = $3,
-               updated_at = now()
-           WHERE tenant_id = $1 AND id = $2"#,
+    let target = update_principal_lifecycle_target(
+        &state.db,
+        action.tenant_id,
+        &action.target.id,
+        lifecycle_state,
     )
-    .bind(action.tenant_id)
-    .bind(&node_id)
-    .bind(lifecycle_state)
-    .execute(&state.db)
-    .await
-    .map_err(ApiError::Database)?;
+    .await?;
+    sync_principal_graph_state(&state.db, action.tenant_id, &target, lifecycle_state).await?;
 
     Ok(DeliveryExecution::Acknowledged {
         observed_at: Utc::now(),
         message: Some(format!("principal transitioned to {lifecycle_state}")),
         resulting_state: Some(lifecycle_state.to_string()),
         raw_payload: json!({
-            "principalId": principal_id,
-            "stableRef": stable_ref,
+            "principalId": target.principal_id,
+            "stableRef": target.stable_ref,
             "status": "acknowledged",
             "lifecycleState": lifecycle_state,
         }),
     })
+}
+
+async fn update_principal_lifecycle_target(
+    db: &crate::db::PgPool,
+    tenant_id: Uuid,
+    target_id: &str,
+    lifecycle_state: &str,
+) -> Result<PrincipalLifecycleTarget, ApiError> {
+    let row = sqlx::query::query(
+        r#"UPDATE principals
+           SET lifecycle_state = $3,
+               updated_at = now()
+           WHERE tenant_id = $1
+             AND (id::text = $2 OR stable_ref = $2)
+           RETURNING id, stable_ref"#,
+    )
+    .bind(tenant_id)
+    .bind(target_id.trim())
+    .bind(lifecycle_state)
+    .fetch_optional(db)
+    .await
+    .map_err(ApiError::Database)?
+    .ok_or(ApiError::NotFound)?;
+
+    Ok(PrincipalLifecycleTarget {
+        principal_id: row.try_get("id").map_err(ApiError::Database)?,
+        stable_ref: row.try_get("stable_ref").map_err(ApiError::Database)?,
+    })
+}
+
+async fn sync_principal_graph_state(
+    db: &crate::db::PgPool,
+    tenant_id: Uuid,
+    target: &PrincipalLifecycleTarget,
+    lifecycle_state: &str,
+) -> Result<(), ApiError> {
+    let node_ids = vec![
+        format!("principal:{}", target.principal_id),
+        format!("principal:{}", target.stable_ref),
+    ];
+    sqlx::query::query(
+        r#"UPDATE delegation_graph_nodes
+           SET state = $3,
+               updated_at = now()
+           WHERE tenant_id = $1
+             AND id = ANY($2)"#,
+    )
+    .bind(tenant_id)
+    .bind(&node_ids)
+    .bind(lifecycle_state)
+    .execute(db)
+    .await
+    .map_err(ApiError::Database)?;
+    Ok(())
 }
 
 fn legacy_posture_command_payload(action: &ResponseActionRecord) -> Result<Value, ApiError> {

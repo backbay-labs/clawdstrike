@@ -24,6 +24,8 @@ review_file="$lane_dir/review.md"
 log_file="$lane_dir/review.jsonl"
 stderr_file="$lane_dir/review.stderr"
 
+mkdir -p "$lane_dir"
+
 if [[ ! -d "$worktree_path" ]]; then
   printf 'worktree missing for %s: %s\n' "$lane" "$worktree_path" >&2
   exit 1
@@ -31,7 +33,7 @@ fi
 
 (
   cd "$worktree_path"
-  exec codex exec review --base "$base_branch" --profile swarm-review --json -o "$review_file"
+  exec codex exec review --base "$base_branch" --json -o "$review_file"
 ) > "$log_file" 2> "$stderr_file"
 
 printf 'review complete for %s\n' "$lane"

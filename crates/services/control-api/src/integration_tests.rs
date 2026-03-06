@@ -1,6 +1,5 @@
 #![allow(clippy::duplicate_mod, clippy::expect_used, clippy::unwrap_used)]
 
-use std::net::TcpListener;
 use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
@@ -1525,6 +1524,135 @@ async fn hunt_ingest_rejects_unsigned_envelopes() {
     )
     .await;
     assert_eq!(response.0, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn hunt_ingest_rejects_conflicting_duplicate_event_ids_without_mutating_evidence() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let original_event = serde_json::json!({
+        "eventId": "hunt-immutable-evt-1",
+        "tenantId": harness.tenant_id.to_string(),
+        "source": "tetragon",
+        "kind": "process_exec",
+        "occurredAt": "2026-03-06T12:00:00Z",
+        "ingestedAt": "2026-03-06T12:00:01Z",
+        "severity": "medium",
+        "verdict": "allow",
+        "summary": "original summary",
+        "actionType": "process",
+        "evidence": {
+            "rawRef": "hunt-envelope:immutable-evt-1",
+            "envelopeHash": "immutable-hash-1",
+            "schemaName": "clawdstrike.sdr.fact.tetragon_event.v1"
+        },
+        "attributes": {
+            "process": "/usr/bin/original"
+        }
+    });
+    let duplicate_event = serde_json::json!({
+        "eventId": "hunt-immutable-evt-1",
+        "tenantId": harness.tenant_id.to_string(),
+        "source": "tetragon",
+        "kind": "process_exec",
+        "occurredAt": "2026-03-06T12:05:00Z",
+        "ingestedAt": "2026-03-06T12:05:01Z",
+        "severity": "critical",
+        "verdict": "deny",
+        "summary": "mutated summary",
+        "actionType": "process",
+        "evidence": {
+            "rawRef": "hunt-envelope:immutable-evt-1",
+            "envelopeHash": "immutable-hash-2",
+            "schemaName": "clawdstrike.sdr.fact.tetragon_event.v1"
+        },
+        "attributes": {
+            "process": "/usr/bin/mutated"
+        }
+    });
+
+    let original_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/hunt/events/ingest".to_string(),
+        Some(&harness.api_key),
+        Some(signed_hunt_ingest_request(&harness, original_event)),
+    )
+    .await;
+    assert_eq!(original_resp.0, StatusCode::OK);
+
+    let duplicate_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/hunt/events/ingest".to_string(),
+        Some(&harness.api_key),
+        Some(signed_hunt_ingest_request(&harness, duplicate_event)),
+    )
+    .await;
+    assert_eq!(duplicate_resp.0, StatusCode::CONFLICT);
+    assert_eq!(
+        duplicate_resp.1["error"],
+        "hunt event conflict: eventId already ingested"
+    );
+
+    let stored_event = sqlx::query::query(
+        r#"SELECT summary,
+                  attributes ->> 'process' AS process,
+                  envelope_hash
+           FROM hunt_events
+           WHERE tenant_id = $1 AND event_id = $2"#,
+    )
+    .bind(harness.tenant_id)
+    .bind("hunt-immutable-evt-1")
+    .fetch_one(&harness.db)
+    .await
+    .expect("load immutable hunt event");
+    assert_eq!(
+        stored_event
+            .try_get::<String, _>("summary")
+            .expect("event summary"),
+        "original summary"
+    );
+    assert_eq!(
+        stored_event
+            .try_get::<String, _>("process")
+            .expect("event process"),
+        "/usr/bin/original"
+    );
+    assert_eq!(
+        stored_event
+            .try_get::<String, _>("envelope_hash")
+            .expect("event envelope hash"),
+        "immutable-hash-1"
+    );
+
+    let stored_envelope = sqlx::query::query(
+        r#"SELECT raw_envelope -> 'fact' ->> 'summary' AS summary,
+                  raw_envelope -> 'fact' -> 'attributes' ->> 'process' AS process
+           FROM hunt_envelopes
+           WHERE tenant_id = $1 AND raw_ref = $2"#,
+    )
+    .bind(harness.tenant_id)
+    .bind("hunt-envelope:immutable-evt-1")
+    .fetch_one(&harness.db)
+    .await
+    .expect("load immutable hunt envelope");
+    assert_eq!(
+        stored_envelope
+            .try_get::<String, _>("summary")
+            .expect("envelope summary"),
+        "original summary"
+    );
+    assert_eq!(
+        stored_envelope
+            .try_get::<String, _>("process")
+            .expect("envelope process"),
+        "/usr/bin/original"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -3148,6 +3276,141 @@ async fn response_actions_accept_uuid_shaped_external_target_ids() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn response_actions_principal_lifecycle_updates_uuid_shaped_targets_and_graph_aliases() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let principal_stable_ref = Uuid::new_v4().to_string();
+    let principal_id = Uuid::new_v4();
+
+    sqlx::query::query(
+        r#"INSERT INTO principals (
+               id,
+               tenant_id,
+               principal_type,
+               stable_ref,
+               display_name,
+               trust_level,
+               lifecycle_state,
+               liveness_state,
+               public_key,
+               metadata
+           ) VALUES (
+               $1,
+               $2,
+               'endpoint_agent',
+               $3,
+               'UUID-shaped Principal',
+               'medium',
+               'active',
+               'active',
+               'pk-uuid-shaped',
+               '{}'::jsonb
+           )"#,
+    )
+    .bind(principal_id)
+    .bind(harness.tenant_id)
+    .bind(&principal_stable_ref)
+    .execute(&harness.db)
+    .await
+    .expect("seed uuid-shaped principal");
+
+    for node_id in [
+        format!("principal:{principal_id}"),
+        format!("principal:{principal_stable_ref}"),
+    ] {
+        sqlx::query::query(
+            r#"INSERT INTO delegation_graph_nodes (
+                   tenant_id,
+                   id,
+                   kind,
+                   label,
+                   state,
+                   metadata
+               ) VALUES ($1, $2, 'principal', 'UUID-shaped Principal', 'active', '{}'::jsonb)"#,
+        )
+        .bind(harness.tenant_id)
+        .bind(node_id)
+        .execute(&harness.db)
+        .await
+        .expect("seed principal graph alias node");
+    }
+
+    let create_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/response-actions".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "actionType": "quarantine_principal",
+            "target": {
+                "kind": "principal",
+                "id": principal_stable_ref
+            },
+            "reason": "Contain principal",
+            "requireAcknowledgement": false,
+            "payload": {}
+        })),
+    )
+    .await;
+    assert_eq!(create_resp.0, StatusCode::OK);
+    let action_id = create_resp.1["id"]
+        .as_str()
+        .expect("response action id")
+        .to_string();
+    assert_eq!(create_resp.1["target"]["id"], principal_id.to_string());
+
+    let approve_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/response-actions/{action_id}/approve"),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(approve_resp.0, StatusCode::OK);
+    assert_eq!(approve_resp.1["action"]["status"], "acknowledged");
+    assert_eq!(
+        approve_resp.1["action"]["target"]["id"],
+        principal_id.to_string()
+    );
+
+    let lifecycle_state: String = sqlx::query_scalar::query_scalar(
+        "SELECT lifecycle_state FROM principals WHERE tenant_id = $1 AND id = $2",
+    )
+    .bind(harness.tenant_id)
+    .bind(principal_id)
+    .fetch_one(&harness.db)
+    .await
+    .expect("principal lifecycle state");
+    assert_eq!(lifecycle_state, "quarantined");
+
+    let graph_states = sqlx::query::query(
+        r#"SELECT id, state
+           FROM delegation_graph_nodes
+           WHERE tenant_id = $1
+             AND id = ANY($2)
+           ORDER BY id ASC"#,
+    )
+    .bind(harness.tenant_id)
+    .bind(vec![
+        format!("principal:{principal_id}"),
+        format!("principal:{principal_stable_ref}"),
+    ])
+    .fetch_all(&harness.db)
+    .await
+    .expect("graph alias states");
+    assert_eq!(graph_states.len(), 2);
+    for row in graph_states {
+        let state: Option<String> = row.try_get("state").expect("node state");
+        assert_eq!(state.as_deref(), Some("quarantined"));
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn response_actions_canonicalize_endpoint_row_ids_to_public_agent_ids() {
     if !docker_available() {
         eprintln!("Skipping integration test: docker is unavailable");
@@ -3316,9 +3579,6 @@ async fn detection_rule_creates_record_api_key_actor_identity() {
 }
 
 async fn setup_harness() -> Harness {
-    let pg_port = free_local_port();
-    let nats_port = free_local_port();
-
     let postgres = run_container(&[
         "run",
         "-d",
@@ -3330,7 +3590,7 @@ async fn setup_harness() -> Harness {
         "-e",
         "POSTGRES_DB=cloud_api",
         "-p",
-        &format!("{pg_port}:5432"),
+        "127.0.0.1::5432",
         "postgres:16-alpine",
     ]);
     let nats = run_container(&[
@@ -3338,11 +3598,13 @@ async fn setup_harness() -> Harness {
         "-d",
         "--rm",
         "-p",
-        &format!("{nats_port}:4222"),
+        "127.0.0.1::4222",
         "nats:2.10-alpine",
         "-js",
     ]);
 
+    let pg_port = container_host_port(&postgres, 5432);
+    let nats_port = container_host_port(&nats, 4222);
     let database_url = format!("postgres://postgres:postgres@127.0.0.1:{pg_port}/cloud_api");
     let nats_url = format!("nats://127.0.0.1:{nats_port}");
 
@@ -4622,9 +4884,40 @@ fn run_container(args: &[&str]) -> DockerContainer {
     DockerContainer { id }
 }
 
-fn free_local_port() -> u16 {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("bind local port");
-    listener.local_addr().expect("local addr").port()
+fn container_host_port(container: &DockerContainer, container_port: u16) -> u16 {
+    for _ in 0..20 {
+        if let Some(port) = try_container_host_port(container, container_port) {
+            return port;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+
+    panic!(
+        "timed out resolving host port for container {} port {}",
+        container.id, container_port
+    );
+}
+
+fn try_container_host_port(container: &DockerContainer, container_port: u16) -> Option<u16> {
+    let output = Command::new("docker")
+        .args(["port", &container.id, &format!("{container_port}/tcp")])
+        .output()
+        .expect("docker port should execute");
+    assert!(
+        output.status.success(),
+        "docker port failed for {}: {}",
+        container.id,
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8(output.stdout).expect("docker port output utf8");
+    parse_docker_host_port(&stdout)
+}
+
+fn parse_docker_host_port(output: &str) -> Option<u16> {
+    output
+        .lines()
+        .find_map(|line| line.rsplit_once(':')?.1.trim().parse::<u16>().ok())
 }
 
 async fn wait_for_postgres(database_url: &str) {
@@ -4651,4 +4944,20 @@ async fn wait_for_nats(nats_url: &str) {
         }
     }
     panic!("timed out waiting for nats");
+}
+
+#[test]
+fn parse_docker_host_port_extracts_ipv4_and_ipv6_bindings() {
+    assert_eq!(parse_docker_host_port("127.0.0.1:49153\n"), Some(49153));
+    assert_eq!(parse_docker_host_port("::1:49154\n"), Some(49154));
+    assert_eq!(
+        parse_docker_host_port("0.0.0.0:49155\n:::49155\n"),
+        Some(49155)
+    );
+}
+
+#[test]
+fn parse_docker_host_port_returns_none_for_unpublished_output() {
+    assert_eq!(parse_docker_host_port(""), None);
+    assert_eq!(parse_docker_host_port("not published"), None);
 }

@@ -54,6 +54,8 @@ run_ts=0
 run_py=0
 run_docs=0
 run_infra=0
+run_full=0
+run_slop_audit=0
 
 if matches "^(crates/|Cargo.toml$|Cargo.lock$|clippy.toml$|deny.toml$|scripts/cargo-offline.sh$)"; then
   run_rust=1
@@ -67,11 +69,30 @@ fi
 if matches "^packages/sdk/hush-py/"; then
   run_py=1
 fi
-if matches "^(docs/|README.md$|CONTRIBUTING.md$|AGENTS.md$)"; then
+if matches "^(docs/|README.md$|CONTRIBUTING.md$|AGENTS.md$|tools/scripts/validate-docs$)"; then
   run_docs=1
 fi
-if matches "^(infra/|Dockerfile.hushd$|\\.github/workflows/|scripts/(path-lint|move-validation|architecture-guardrails|ci-changed).sh$)"; then
+if matches "^scripts/slop-audit.sh$"; then
+  run_slop_audit=1
+fi
+if matches "^(mise.toml$|scripts/test-platform.sh$)"; then
+  run_full=1
+fi
+if matches "^(infra/|Dockerfile.hushd$|\\.github/workflows/|scripts/(path-lint|move-validation|architecture-guardrails|ci-changed|slop-audit|test-platform).sh$)"; then
   run_infra=1
+fi
+
+if [[ "$run_slop_audit" -eq 1 ]]; then
+  bold "Slop audit"
+  bash scripts/slop-audit.sh
+fi
+
+if [[ "$run_full" -eq 1 ]]; then
+  bold "Full platform"
+  bash scripts/test-platform.sh
+  echo
+  echo "[ci:changed] OK"
+  exit 0
 fi
 
 if [[ "$run_rust" -eq 1 ]]; then

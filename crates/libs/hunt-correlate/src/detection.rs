@@ -395,7 +395,7 @@ fn sigma_preview_source(parsed: &Value) -> EventSource {
     }
 }
 
-fn severity_label(severity: RuleSeverity) -> &'static str {
+pub(crate) fn severity_label(severity: RuleSeverity) -> &'static str {
     match severity {
         RuleSeverity::Low => "low",
         RuleSeverity::Medium => "medium",

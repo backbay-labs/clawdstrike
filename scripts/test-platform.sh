@@ -36,6 +36,9 @@ bash scripts/move-validation.sh
 bold "Architecture guardrails"
 bash scripts/architecture-guardrails.sh
 
+bold "Slop audit"
+bash scripts/slop-audit.sh
+
 bold "Rust workspace"
 cargo test --workspace
 
@@ -69,6 +72,7 @@ npm --prefix packages/adapters/clawdstrike-openclaw run e2e
 
 bold "Control console app"
 ensure_node_modules apps/control-console
+(cd apps/control-console && npm test)
 (cd apps/control-console && npm run typecheck)
 (cd apps/control-console && npm run build)
 
@@ -82,6 +86,7 @@ fi
 "$VENV_DIR/bin/python" -m pytest -q packages/sdk/hush-py
 
 bold "Docs (mdbook)"
+tools/scripts/validate-docs
 mdbook build docs
 mdbook test docs
 

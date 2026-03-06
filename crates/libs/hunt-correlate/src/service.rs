@@ -3,6 +3,7 @@ use hunt_query::service::HuntEvent;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::detection::severity_label;
 use crate::engine::{Alert, CorrelationEngine};
 use crate::error::{Error, Result};
 use crate::ioc::detect_ioc_type;
@@ -75,7 +76,7 @@ fn map_alert(alert: Alert) -> CorrelationFinding {
     CorrelationFinding {
         rule_name: alert.rule_name,
         title: alert.title,
-        severity: format!("{:?}", alert.severity).to_lowercase(),
+        severity: severity_label(alert.severity).to_string(),
         triggered_at: alert.triggered_at,
         evidence_event_ids: alert
             .evidence
