@@ -116,7 +116,11 @@ export interface PolicyResponse {
   schema_version: string
   guards: PolicyGuardConfig[]
   extends?: string[]
-  loaded_at: string
+  loaded_at: string | null
+  description?: string
+  yaml?: string
+  source?: unknown
+  schema?: unknown
 }
 
 export interface PolicyGuardConfig {

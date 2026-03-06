@@ -1,4 +1,5 @@
 import { renderBox } from "../components/box"
+import { joinColumns, wrapText } from "../components/layout"
 import { renderList, scrollDown, scrollUp, type ListItem } from "../components/scrollable-list"
 import { renderSplit } from "../components/split-pane"
 import { fitString } from "../components/types"
@@ -14,6 +15,16 @@ function formatTimestamp(iso: string): string {
   }
 
   return parsed.toLocaleString()
+}
+
+function truncateMiddle(value: string, maxLength: number): string {
+  if (value.length <= maxLength) {
+    return value
+  }
+
+  const head = Math.max(6, Math.floor((maxLength - 1) / 2))
+  const tail = Math.max(6, maxLength - head - 1)
+  return `${value.slice(0, head)}…${value.slice(-tail)}`
 }
 
 function toListItem(entry: ReportHistoryEntry): ListItem {
@@ -39,6 +50,53 @@ function selectedEntry(ctx: ScreenContext): ReportHistoryEntry | null {
   return history.entries[Math.min(history.list.selected, history.entries.length - 1)] ?? null
 }
 
+function wrapField(label: string, value: string, width: number): string[] {
+  const labelWidth = label.length + 2
+  const valueWidth = Math.max(14, width - labelWidth)
+  const wrapped = /\s/.test(value)
+    ? wrapText(value, valueWidth)
+    : [truncateMiddle(value, valueWidth)]
+  if (wrapped.length === 0) {
+    return [fitString(`${THEME.dim}${label}:${THEME.reset}`, width)]
+  }
+
+  return wrapped.map((line, index) => (
+    index === 0
+      ? fitString(`${THEME.dim}${label}:${THEME.reset} ${THEME.white}${line}${THEME.reset}`, width)
+      : fitString(`${" ".repeat(labelWidth)}${THEME.white}${line}${THEME.reset}`, width)
+  ))
+}
+
+function renderHistoryListPane(ctx: ScreenContext, width: number, height: number): string[] {
+  const history = ctx.state.hunt.reportHistory
+  const contentWidth = width - 4
+  const availableLines = Math.max(1, height - 2)
+  const summary = [
+    fitString(`${THEME.dim}bundles:${THEME.reset} ${THEME.white}${history.entries.length}${THEME.reset}`, contentWidth),
+    fitString(
+      history.error
+        ? `${THEME.error}attention required${THEME.reset}`
+        : `${THEME.dim}enter opens selected bundle${THEME.reset}`,
+      contentWidth,
+    ),
+    "",
+  ]
+  const listHeight = Math.max(1, availableLines - summary.length)
+  const listLines = renderList(
+    history.entries.map((entry) => toListItem(entry)),
+    history.list,
+    listHeight,
+    contentWidth,
+    THEME,
+  )
+
+  return renderBox("Export Bundles", [...summary, ...listLines], width, THEME, {
+    style: "rounded",
+    padding: 1,
+    titleAlign: "left",
+  })
+}
+
 function renderDetailPane(entry: ReportHistoryEntry | null, width: number, height: number): string[] {
   if (!entry) {
     const empty = [
@@ -52,39 +110,45 @@ function renderDetailPane(entry: ReportHistoryEntry | null, width: number, heigh
   }
 
   const trace = entry.trace
-  const lines = [
-    `${THEME.white}${THEME.bold}${entry.title}${THEME.reset}`,
-    `${THEME.dim}Exported:${THEME.reset} ${formatTimestamp(entry.exportedAt)}`,
-    `${THEME.dim}Created:${THEME.reset} ${formatTimestamp(entry.reportCreatedAt)}`,
-    `${THEME.dim}Severity:${THEME.reset} ${entry.severity}`,
-    `${THEME.dim}Evidence:${THEME.reset} ${entry.evidenceCount}`,
-    `${THEME.dim}Origin:${THEME.reset} ${entry.investigationOrigin ?? "unknown"}`,
-    `${THEME.dim}Markdown:${THEME.reset} ${entry.markdownPath}`,
-    `${THEME.dim}JSON:${THEME.reset} ${entry.jsonPath}`,
-  ]
+  const lines = [`${THEME.white}${THEME.bold}${entry.title}${THEME.reset}`]
+
+  lines.push(
+    joinColumns(
+      `${THEME.dim}severity:${THEME.reset} ${THEME.white}${entry.severity}${THEME.reset}`,
+      `${THEME.dim}evidence:${THEME.reset} ${THEME.white}${entry.evidenceCount}${THEME.reset}`,
+      width - 4,
+    ),
+  )
+  lines.push(...wrapField("exported", formatTimestamp(entry.exportedAt), width - 4))
+  lines.push(...wrapField("created", formatTimestamp(entry.reportCreatedAt), width - 4))
+  lines.push(...wrapField("origin", entry.investigationOrigin ?? "unknown", width - 4))
+  lines.push(...wrapField("markdown", entry.markdownPath, width - 4))
+  lines.push(...wrapField("json", entry.jsonPath, width - 4))
 
   if (entry.merkleRoot) {
-    lines.push(`${THEME.dim}Merkle:${THEME.reset} ${entry.merkleRoot}`)
+    lines.push(...wrapField("merkle", entry.merkleRoot, width - 4))
   }
   if (trace.receiptIds.length > 0) {
-    lines.push(`${THEME.dim}Receipts:${THEME.reset} ${trace.receiptIds.join(", ")}`)
+    lines.push(...wrapField("receipts", trace.receiptIds.join(", "), width - 4))
   }
   if (trace.auditEventIds.length > 0) {
-    lines.push(`${THEME.dim}Audit IDs:${THEME.reset} ${trace.auditEventIds.join(", ")}`)
+    lines.push(...wrapField("audit ids", trace.auditEventIds.join(", "), width - 4))
   }
   if (trace.sessionIds.length > 0) {
-    lines.push(`${THEME.dim}Sessions:${THEME.reset} ${trace.sessionIds.join(", ")}`)
+    lines.push(...wrapField("sessions", trace.sessionIds.join(", "), width - 4))
   }
   if (trace.eventSources.length > 0) {
-    lines.push(`${THEME.dim}Sources:${THEME.reset} ${trace.eventSources.join(", ")}`)
+    lines.push(...wrapField("sources", trace.eventSources.join(", "), width - 4))
   }
-  lines.push(`${THEME.dim}Export Audit:${THEME.reset} ${entry.traceability.auditStatus}`)
-  lines.push(`${THEME.dim}Export Event:${THEME.reset} ${entry.traceability.exportAuditEventId}`)
+  lines.push("")
+  lines.push(`${THEME.secondary}Traceability${THEME.reset}`)
+  lines.push(...wrapField("audit", entry.traceability.auditStatus, width - 4))
+  lines.push(...wrapField("event", entry.traceability.exportAuditEventId, width - 4))
   if (entry.traceability.auditRecordedAt) {
-    lines.push(`${THEME.dim}Recorded:${THEME.reset} ${formatTimestamp(entry.traceability.auditRecordedAt)}`)
+    lines.push(...wrapField("recorded", formatTimestamp(entry.traceability.auditRecordedAt), width - 4))
   }
   if (entry.traceability.error) {
-    lines.push(`${THEME.dim}Trace Error:${THEME.reset} ${entry.traceability.error}`)
+    lines.push(...wrapField("error", entry.traceability.error, width - 4))
   }
   lines.push("", `${THEME.muted}${entry.summary}${THEME.reset}`)
 
@@ -177,7 +241,7 @@ export const huntReportHistoryScreen: Screen = {
     const history = ctx.state.hunt.reportHistory
     const lines: string[] = []
 
-    lines.push(...renderSurfaceHeader("hunt-report-history", "Report History", width, THEME))
+    lines.push(...renderSurfaceHeader("hunt-report-history", "Report History", width, THEME, `${history.entries.length} bundles`))
 
     if (history.error) {
       lines.push(fitString(`${THEME.error} Error: ${history.error}${THEME.reset}`, width))
@@ -199,17 +263,11 @@ export const huntReportHistoryScreen: Screen = {
     }
 
     const contentHeight = Math.max(3, height - lines.length - 1)
-    const leftWidth = Math.max(28, Math.floor(width * 0.42))
+    const leftWidth = Math.max(34, Math.floor(width * 0.4))
     const rightWidth = Math.max(24, width - leftWidth - 1)
-    const listLines = renderList(
-      history.entries.map((entry) => toListItem(entry)),
-      history.list,
-      contentHeight,
-      leftWidth,
-      THEME,
-    )
+    const listLines = renderHistoryListPane(ctx, leftWidth, contentHeight)
     const detailLines = renderDetailPane(selectedEntry(ctx), rightWidth, contentHeight)
-    lines.push(...renderSplit(listLines, detailLines, width, contentHeight, THEME, 0.42))
+    lines.push(...renderSplit(listLines, detailLines, width, contentHeight, THEME, 0.4))
     lines.push(renderHelpBar(width))
     return lines.join("\n")
   },

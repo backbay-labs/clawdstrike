@@ -1,6 +1,7 @@
 import { Hushd } from "../../hushd"
 import type { AuditEvent, AuditQuery } from "../../hushd"
 import { renderBox } from "../components/box"
+import { joinColumns, wrapText } from "../components/layout"
 import { renderList, scrollDown, scrollUp, type ListItem } from "../components/scrollable-list"
 import { renderSplit } from "../components/split-pane"
 import { fitString } from "../components/types"
@@ -42,16 +43,41 @@ function eventColor(event: AuditEvent): string {
   return THEME.success
 }
 
+function formatEventRange(total: number, offset: number): string {
+  if (total === 0) {
+    return "0"
+  }
+
+  return `${offset + 1}-${offset + total}`
+}
+
+function wrapField(label: string, value: string, width: number): string[] {
+  const labelWidth = label.length + 2
+  const valueWidth = Math.max(12, width - labelWidth)
+  const wrapped = /\s/.test(value)
+    ? wrapText(value, valueWidth)
+    : [truncateMiddle(value, valueWidth)]
+  if (wrapped.length === 0) {
+    return [fitString(`${THEME.dim}${label}:${THEME.reset}`, width)]
+  }
+
+  return wrapped.map((line, index) => (
+    index === 0
+      ? fitString(`${THEME.dim}${label}:${THEME.reset} ${THEME.white}${line}${THEME.reset}`, width)
+      : fitString(`${" ".repeat(labelWidth)}${THEME.white}${line}${THEME.reset}`, width)
+  ))
+}
+
 function toListItem(event: AuditEvent): ListItem {
   const timestamp = event.timestamp.slice(0, 19).replace("T", " ")
-  const target = truncateMiddle(event.target ?? event.message ?? event.id, 26)
-  const eventType = truncateMiddle(event.event_type, 20)
+  const target = truncateMiddle(event.target ?? event.message ?? event.id, 22)
+  const eventType = truncateMiddle(event.event_type, 14)
   const label =
     `${THEME.dim}${timestamp}${THEME.reset} ` +
-    `${eventColor(event)}[${event.decision}]${THEME.reset} ` +
+    `${eventColor(event)}${event.decision}${THEME.reset} ` +
     `${THEME.white}${eventType}${THEME.reset} ` +
     `${THEME.muted}${target}${THEME.reset}`
-  const plain = `${timestamp} [${event.decision}] ${eventType} ${target}`
+  const plain = `${timestamp} ${event.decision} ${eventType} ${target}`
   return { label, plainLength: plain.length }
 }
 
@@ -63,9 +89,11 @@ function renderMetadata(metadata: Record<string, unknown> | null | undefined, wi
   const lines: string[] = []
   for (const [key, value] of Object.entries(metadata).slice(0, 10)) {
     const renderedValue = typeof value === "string" ? value : JSON.stringify(value)
-    lines.push(
-      fitString(`${THEME.tertiary}${key}${THEME.reset}: ${THEME.white}${renderedValue}${THEME.reset}`, width),
-    )
+    const wrapped = wrapText(renderedValue, Math.max(12, width - key.length - 2))
+    lines.push(fitString(`${THEME.tertiary}${key}${THEME.reset}: ${THEME.white}${wrapped[0] ?? ""}${THEME.reset}`, width))
+    for (const line of wrapped.slice(1)) {
+      lines.push(fitString(`${" ".repeat(key.length + 2)}${THEME.white}${line}${THEME.reset}`, width))
+    }
   }
   if (Object.keys(metadata).length > 10) {
     lines.push(fitString(`${THEME.dim}... +${Object.keys(metadata).length - 10} more fields${THEME.reset}`, width))
@@ -87,26 +115,26 @@ function renderDetail(event: AuditEvent | null, width: number, height: number): 
 
   const content: string[] = [
     `${THEME.white}${THEME.bold}${event.event_type}${THEME.reset}`,
-    `${THEME.dim}Decision:${THEME.reset} ${event.decision}`,
-    `${THEME.dim}Action:${THEME.reset} ${event.action_type}`,
-    `${THEME.dim}Time:${THEME.reset} ${formatTimestamp(event.timestamp)}`,
-    `${THEME.dim}ID:${THEME.reset} ${event.id}`,
+    fitString(`${THEME.dim}decision:${THEME.reset} ${eventColor(event)}${event.decision}${THEME.reset}`, width - 4),
+    fitString(`${THEME.dim}action:${THEME.reset} ${THEME.white}${event.action_type}${THEME.reset}`, width - 4),
   ]
+  content.push(...wrapField("time", formatTimestamp(event.timestamp), width - 4))
+  content.push(...wrapField("id", event.id, width - 4))
 
   if (event.target) {
-    content.push(`${THEME.dim}Target:${THEME.reset} ${event.target}`)
+    content.push(...wrapField("target", event.target, width - 4))
   }
   if (event.guard) {
-    content.push(`${THEME.dim}Guard:${THEME.reset} ${event.guard}`)
+    content.push(...wrapField("guard", event.guard, width - 4))
   }
   if (event.session_id) {
-    content.push(`${THEME.dim}Session:${THEME.reset} ${event.session_id}`)
+    content.push(...wrapField("session", event.session_id, width - 4))
   }
   if (event.agent_id) {
-    content.push(`${THEME.dim}Agent:${THEME.reset} ${event.agent_id}`)
+    content.push(...wrapField("agent", event.agent_id, width - 4))
   }
   if (event.message) {
-    content.push(`${THEME.dim}Message:${THEME.reset} ${event.message}`)
+    content.push(...wrapField("message", event.message, width - 4))
   }
   content.push("")
   content.push(`${THEME.secondary}Metadata${THEME.reset}`)
@@ -188,7 +216,57 @@ async function loadAudit(ctx: ScreenContext, offset = ctx.state.auditLog.offset)
 
 function detailLabel(ctx: ScreenContext): string {
   const audit = ctx.state.auditLog
-  return `decision ${audit.filters.decision}  event ${audit.filters.eventType}`
+  const scope = `decision ${audit.filters.decision} | event ${audit.filters.eventType}`
+  const range = `rows ${formatEventRange(audit.events.length, audit.offset)}`
+  return `${scope} | ${range}`
+}
+
+function renderScopeLine(ctx: ScreenContext, width: number): string {
+  const audit = ctx.state.auditLog
+  return fitString(
+    `${THEME.dim}scope:${THEME.reset} ${THEME.white}${audit.filters.decision}${THEME.reset} / ${THEME.white}${audit.filters.eventType}${THEME.reset}`,
+    width,
+  )
+}
+
+function renderSessionLine(ctx: ScreenContext, width: number): string {
+  const session = ctx.state.auditLog.filters.sessionId.trim() || "all sessions"
+  return fitString(`${THEME.dim}session:${THEME.reset} ${THEME.muted}${session}${THEME.reset}`, width)
+}
+
+function renderPageLine(ctx: ScreenContext, width: number): string {
+  const audit = ctx.state.auditLog
+  const left = `${THEME.dim}showing:${THEME.reset} ${THEME.white}${formatEventRange(audit.events.length, audit.offset)}${THEME.reset}`
+  const right = audit.hasMore
+    ? `${THEME.secondary}next page ready${THEME.reset}`
+    : `${THEME.dim}end of results${THEME.reset}`
+  return joinColumns(left, right, width)
+}
+
+function renderEventListPane(ctx: ScreenContext, width: number, height: number): string[] {
+  const audit = ctx.state.auditLog
+  const contentWidth = width - 4
+  const availableLines = Math.max(1, height - 2)
+  const headerLines = [
+    fitString(renderScopeLine(ctx, contentWidth), contentWidth),
+    fitString(renderSessionLine(ctx, contentWidth), contentWidth),
+    fitString(renderPageLine(ctx, contentWidth), contentWidth),
+    "",
+  ]
+  const listHeight = Math.max(1, availableLines - headerLines.length)
+  const listLines = renderList(
+    audit.events.map((event) => toListItem(event)),
+    audit.list,
+    listHeight,
+    contentWidth,
+    THEME,
+  )
+
+  return renderBox("Audit Events", [...headerLines, ...listLines], width, THEME, {
+    style: "rounded",
+    titleAlign: "left",
+    padding: 1,
+  })
 }
 
 export const auditScreen: Screen = {
@@ -220,17 +298,11 @@ export const auditScreen: Screen = {
     }
 
     const contentHeight = Math.max(6, height - lines.length - 1)
-    const leftWidth = Math.max(34, Math.floor(width * 0.55))
+    const leftWidth = Math.max(40, Math.floor(width * 0.5))
     const rightWidth = Math.max(24, width - leftWidth - 1)
-    const listLines = renderList(
-      audit.events.map((event) => toListItem(event)),
-      audit.list,
-      contentHeight,
-      leftWidth,
-      THEME,
-    )
+    const listLines = renderEventListPane(ctx, leftWidth, contentHeight)
     const detailLines = renderDetail(selectedEvent(ctx), rightWidth, contentHeight)
-    lines.push(...renderSplit(listLines, detailLines, width, contentHeight, THEME, 0.55))
+    lines.push(...renderSplit(listLines, detailLines, width, contentHeight, THEME, 0.5))
     lines.push(renderHelpBar(width))
     return lines.join("\n")
   },

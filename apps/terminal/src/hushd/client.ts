@@ -27,6 +27,99 @@ export interface HushdRequestResult<T> {
   error?: string
 }
 
+function extractPolicyGuardsFromYaml(yamlText: string | undefined): PolicyResponse["guards"] {
+  if (!yamlText) {
+    return []
+  }
+
+  const lines = yamlText.split(/\r?\n/)
+  const guards: PolicyResponse["guards"] = []
+  let inGuards = false
+  let currentGuard: PolicyResponse["guards"][number] | null = null
+
+  const flushCurrent = () => {
+    if (currentGuard) {
+      guards.push(currentGuard)
+      currentGuard = null
+    }
+  }
+
+  for (const line of lines) {
+    if (!inGuards) {
+      if (/^guards:\s*$/.test(line)) {
+        inGuards = true
+      }
+      continue
+    }
+
+    if (/^[^\s#][^:]*:\s*/.test(line)) {
+      break
+    }
+
+    const guardMatch = line.match(/^ {2}([A-Za-z0-9_]+):(?:\s*null)?\s*$/)
+    if (guardMatch) {
+      flushCurrent()
+      currentGuard = {
+        id: guardMatch[1],
+        enabled: line.includes("null") ? false : true,
+      }
+      continue
+    }
+
+    const enabledMatch = line.match(/^ {4}enabled:\s*(true|false)\s*$/)
+    if (enabledMatch && currentGuard) {
+      currentGuard.enabled = enabledMatch[1] === "true"
+    }
+  }
+
+  flushCurrent()
+  return guards
+}
+
+function normalizePolicyResponse(raw: unknown): PolicyResponse | null {
+  if (!raw || typeof raw !== "object") {
+    return null
+  }
+
+  const data = raw as Record<string, unknown>
+  const yaml = typeof data.yaml === "string" ? data.yaml : undefined
+  const schema = (data.schema && typeof data.schema === "object")
+    ? data.schema as Record<string, unknown>
+    : null
+
+  return {
+    name: typeof data.name === "string" ? data.name : "unknown",
+    version: typeof data.version === "string" ? data.version : "unknown",
+    hash: typeof data.hash === "string"
+      ? data.hash
+      : typeof data.policy_hash === "string"
+        ? data.policy_hash
+        : "",
+    schema_version: typeof data.schema_version === "string"
+      ? data.schema_version
+      : typeof schema?.current === "string"
+        ? schema.current
+        : "unknown",
+    guards: Array.isArray(data.guards)
+      ? data.guards
+        .filter((guard): guard is Record<string, unknown> => Boolean(guard) && typeof guard === "object")
+        .map((guard) => ({
+          id: typeof guard.id === "string" ? guard.id : "unknown",
+          enabled: guard.enabled !== false,
+          config: typeof guard.config === "object" && guard.config !== null ? guard.config as Record<string, unknown> : undefined,
+        }))
+      : extractPolicyGuardsFromYaml(yaml),
+    extends: Array.isArray(data.extends)
+      ? data.extends.filter((value): value is string => typeof value === "string")
+      : undefined,
+    loaded_at: typeof data.loaded_at === "string" ? data.loaded_at : null,
+    description: typeof data.description === "string" ? data.description : undefined,
+    yaml,
+    source: data.source,
+    schema: data.schema,
+  }
+}
+
 export class HushdClient {
   private baseUrl: string
   private token?: string
@@ -158,9 +251,27 @@ export class HushdClient {
   }
 
   async getPolicyDetailed(): Promise<HushdRequestResult<PolicyResponse>> {
-    return this.requestJson<PolicyResponse>("/api/v1/policy", {
+    const result = await this.requestJson<unknown>("/api/v1/policy", {
       method: "GET",
     })
+    if (!result.ok) {
+      return result as HushdRequestResult<PolicyResponse>
+    }
+
+    const normalized = normalizePolicyResponse(result.data)
+    if (!normalized) {
+      return {
+        ok: false,
+        status: result.status,
+        error: "Failed to normalize policy response",
+      }
+    }
+
+    return {
+      ok: true,
+      status: result.status,
+      data: normalized,
+    }
   }
 
   // ===========================================================================

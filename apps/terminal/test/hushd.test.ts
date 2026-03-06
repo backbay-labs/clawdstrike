@@ -165,6 +165,42 @@ describe("HushdClient", () => {
       const result = await client.getPolicy()
       expect(result).toBeNull()
     })
+
+    test("normalizes the live daemon policy shape", async () => {
+      mockFetch(new Map([
+        ["/api/v1/policy", {
+          status: 200,
+          body: {
+            name: "Default",
+            version: "1.1.0",
+            description: "Default security rules",
+            policy_hash: "abc123",
+            yaml: [
+              "version: 1.1.0",
+              "name: Default",
+              "guards:",
+              "  forbidden_path:",
+              "    enabled: true",
+              "  path_allowlist: null",
+              "  secret_leak:",
+              "    enabled: false",
+            ].join("\n"),
+            source: { kind: "ruleset:default" },
+            schema: { current: "1.2.0", supported: ["1.1.0", "1.2.0"] },
+          },
+        }],
+      ]))
+
+      const result = await client.getPolicy()
+      expect(result).not.toBeNull()
+      expect(result!.hash).toBe("abc123")
+      expect(result!.schema_version).toBe("1.2.0")
+      expect(result!.guards).toEqual([
+        { id: "forbidden_path", enabled: true },
+        { id: "path_allowlist", enabled: false },
+        { id: "secret_leak", enabled: false },
+      ])
+    })
   })
 
   describe("getAudit", () => {

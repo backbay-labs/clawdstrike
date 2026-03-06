@@ -94,6 +94,7 @@ function renderPostureCard(ctx: ScreenContext, boxWidth: number): string[] {
 
   if (state.activePolicy) {
     const p = state.activePolicy
+    const enabledGuardCount = p.guards.filter((guard) => guard.enabled).length
     content.push("")
     content.push(`${THEME.secondary}${THEME.bold}Policy${THEME.reset}`)
     content.push(joinColumns(
@@ -101,7 +102,11 @@ function renderPostureCard(ctx: ScreenContext, boxWidth: number): string[] {
       `${THEME.dim}v${p.version}${THEME.reset}`,
       contentWidth,
     ))
-    content.push(`  ${THEME.dim}guards:${THEME.reset} ${THEME.white}${p.guards.filter((guard) => guard.enabled).length}${THEME.reset} active`)
+    if (p.guards.length > 0) {
+      content.push(`  ${THEME.dim}guards:${THEME.reset} ${THEME.white}${enabledGuardCount}${THEME.reset} active`)
+    } else {
+      content.push(`  ${THEME.dim}guards:${THEME.reset} ${THEME.muted}summary unavailable${THEME.reset}`)
+    }
   }
 
   if (state.auditStats) {

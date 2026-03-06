@@ -15,6 +15,7 @@ import { huntScanScreen } from "../src/tui/screens/hunt-scan"
 import { huntTimelineScreen } from "../src/tui/screens/hunt-timeline"
 import { huntWatchScreen } from "../src/tui/screens/hunt-watch"
 import { securityScreen } from "../src/tui/screens/security"
+import { policyScreen } from "../src/tui/screens/policy"
 import { loadDesktopAgentSnapshotSync } from "../src/desktop-agent"
 import { stripAnsi } from "../src/tui/components/types"
 import { updateInvestigation, buildInvestigationReport } from "../src/tui/investigation"
@@ -296,8 +297,41 @@ describe("supported surface polish", () => {
 
     const output = stripAnsi(auditScreen.render(createContext(state, new TestApp(tempDir), 100, 24)))
 
+    expect(output).toContain("Audit Events")
     expect(output).toContain(" │ ╭")
-    expect(output).toContain("local_ser…")
+    expect(output).toContain("allowed local_…created")
+  })
+
+  test("renders an audit scope summary inside the list pane", () => {
+    const state = createState()
+    state.auditLog.filters.decision = "blocked"
+    state.auditLog.filters.eventType = "report_export"
+    state.auditLog.filters.sessionId = "session-prod-9"
+    state.auditLog.offset = 20
+    state.auditLog.limit = 20
+    state.auditLog.hasMore = true
+    state.auditLog.events = [
+      {
+        id: "audit-1",
+        timestamp: new Date().toISOString(),
+        event_type: "report_export",
+        action_type: "report",
+        decision: "blocked",
+        target: "/reports/20260306-policy.md",
+        session_id: "session-prod-9",
+        agent_id: null,
+        guard: null,
+        message: "export blocked",
+        metadata: {},
+      },
+    ]
+
+    const output = stripAnsi(auditScreen.render(createContext(state, new TestApp(tempDir), 110, 24)))
+
+    expect(output).toContain("scope: blocked / report_export")
+    expect(output).toContain("session: session-prod-9")
+    expect(output).toContain("showing: 21-21")
+    expect(output).toContain("next page ready")
   })
 
   test("keeps the report help bar readable at 80 columns", () => {
@@ -459,6 +493,8 @@ describe("hunt report screen", () => {
 
     const rendered = stripAnsi(huntReportHistoryScreen.render(ctx))
     expect(rendered).toContain("History Entry")
+    expect(rendered).toContain("Export Bundles")
+    expect(rendered).toContain("Traceability")
     expect(rendered).toContain("rcpt-1")
 
     expect(huntReportHistoryScreen.handleInput("\r", ctx)).toBe(true)
@@ -764,5 +800,62 @@ describe("security screen", () => {
     expect(rendered).toContain("authorization")
     expect(rendered).toContain("required.")
     expect(rendered).not.toContain("No events yet")
+  })
+
+  test("renders a daemon-normalized policy guard summary without crashing", () => {
+    const state = createState()
+    state.hushdStatus = "connected"
+    state.activePolicy = {
+      name: "Default",
+      version: "1.1.0",
+      hash: "abc123",
+      schema_version: "1.2.0",
+      guards: [
+        { id: "forbidden_path", enabled: true },
+        { id: "path_allowlist", enabled: false },
+      ],
+      loaded_at: null,
+      description: "Default security rules",
+      yaml: "guards:\\n  forbidden_path:\\n    enabled: true",
+      source: { kind: "ruleset:default" },
+      schema: { current: "1.2.0", supported: ["1.1.0", "1.2.0"] },
+    }
+
+    const app = new TestApp(tempDir)
+    const rendered = stripAnsi(securityScreen.render(createContext(state, app, 110, 28)))
+
+    expect(rendered).toContain("Policy")
+    expect(rendered).toContain("guards: 1 active")
+  })
+})
+
+describe("policy screen", () => {
+  test("renders guard information from normalized live policy data", () => {
+    const state = createState()
+    state.hushdStatus = "connected"
+    state.activePolicy = {
+      name: "Default",
+      version: "1.1.0",
+      hash: "abc123",
+      schema_version: "1.2.0",
+      guards: [
+        { id: "forbidden_path", enabled: true },
+        { id: "secret_leak", enabled: false },
+      ],
+      loaded_at: null,
+      description: "Default security rules",
+      yaml: "guards:\\n  forbidden_path:\\n    enabled: true",
+      source: { kind: "ruleset:default" },
+      schema: { current: "1.2.0", supported: ["1.1.0", "1.2.0"] },
+    }
+
+    const rendered = stripAnsi(policyScreen.render(createContext(state, new TestApp(tempDir), 110, 28)))
+
+    expect(rendered).toContain("Policy Summary")
+    expect(rendered).toContain("Summary")
+    expect(rendered).toContain("unknown")
+    expect(rendered).toContain("forbidden_path")
+    expect(rendered).toContain("ruleset:default")
+    expect(rendered).toContain("secret_leak")
   })
 })

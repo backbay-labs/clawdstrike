@@ -61,13 +61,33 @@ function renderPolicySummaryCard(ctx: ScreenContext, boxWidth: number): string[]
     ["Version", p.version],
     ["Schema", p.schema_version],
     ["Hash", `${p.hash.slice(0, 16)}…`],
-    ["Loaded", new Date(p.loaded_at).toLocaleString()],
+    ["Loaded", p.loaded_at ? new Date(p.loaded_at).toLocaleString() : "unknown"],
   ]
 
   for (const [key, value] of fields) {
     content.push(joinColumns(
       `${THEME.dim}${key}${THEME.reset}`,
       `${THEME.white}${value}${THEME.reset}`,
+      contentWidth,
+    ))
+  }
+
+  if (p.description) {
+    content.push("")
+    content.push(`${THEME.secondary}${THEME.bold}Summary${THEME.reset}`)
+    content.push(...wrapText(p.description, contentWidth).map((line) => (
+      `${THEME.muted}${line}${THEME.reset}`
+    )))
+  }
+
+  const sourceKind = p.source && typeof p.source === "object" && "kind" in p.source
+    ? String((p.source as { kind?: unknown }).kind ?? "unknown")
+    : null
+  if (sourceKind) {
+    content.push("")
+    content.push(joinColumns(
+      `${THEME.dim}Source${THEME.reset}`,
+      `${THEME.muted}${sourceKind}${THEME.reset}`,
       contentWidth,
     ))
   }
@@ -96,17 +116,21 @@ function renderPolicyGuardsCard(ctx: ScreenContext, boxWidth: number): string[] 
   if (!p) {
     content.push(`${THEME.muted}No guards to display.${THEME.reset}`)
   } else {
-    const enabled = p.guards.filter((guard) => guard.enabled).length
-    content.push(`${THEME.dim}${enabled}/${p.guards.length} enabled${THEME.reset}`)
-    content.push("")
-    for (const guard of p.guards) {
-      const icon = guard.enabled ? `${THEME.success}◆${THEME.reset}` : `${THEME.dim}◇${THEME.reset}`
-      const status = guard.enabled ? "active" : "disabled"
-      content.push(joinColumns(
-        `${icon} ${THEME.white}${guard.id}${THEME.reset}`,
-        `${THEME.dim}${status}${THEME.reset}`,
-        contentWidth,
-      ))
+    if (p.guards.length === 0) {
+      content.push(`${THEME.muted}Guard summary unavailable from the active daemon policy response.${THEME.reset}`)
+    } else {
+      const enabled = p.guards.filter((guard) => guard.enabled).length
+      content.push(`${THEME.dim}${enabled}/${p.guards.length} enabled${THEME.reset}`)
+      content.push("")
+      for (const guard of p.guards) {
+        const icon = guard.enabled ? `${THEME.success}◆${THEME.reset}` : `${THEME.dim}◇${THEME.reset}`
+        const status = guard.enabled ? "active" : "disabled"
+        content.push(joinColumns(
+          `${icon} ${THEME.white}${guard.id}${THEME.reset}`,
+          `${THEME.dim}${status}${THEME.reset}`,
+          contentWidth,
+        ))
+      }
     }
   }
 
