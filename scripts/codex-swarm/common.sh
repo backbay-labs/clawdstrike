@@ -289,6 +289,25 @@ swarm_pid_is_running() {
   kill -0 "$pid" >/dev/null 2>&1
 }
 
+swarm_wait_for_background_start() {
+  local pid_file="$1"
+  local final_file="$2"
+  local log_file="$3"
+  local stderr_file="$4"
+  local exit_file="$5"
+  local attempts="${6:-10}"
+  local attempt
+
+  for ((attempt = 0; attempt < attempts; attempt++)); do
+    if swarm_pid_is_running "$pid_file" || [[ -f "$final_file" ]] || [[ -s "$log_file" ]] || [[ -s "$stderr_file" ]] || [[ -f "$exit_file" ]]; then
+      return 0
+    fi
+    sleep 1
+  done
+
+  return 1
+}
+
 swarm_prompt_docs_block() {
   local lane="$1"
   local repo_root="${2:-$(swarm_repo_root)}"
