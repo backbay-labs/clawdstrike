@@ -344,17 +344,27 @@ fn verify_ingest_event(
     let ingested_at = DateTime::parse_from_rfc3339(&verified_event.ingested_at)
         .map_err(|_| ApiError::BadRequest("event.ingestedAt must be RFC3339".to_string()))?
         .with_timezone(&Utc);
+    let canonical_event = canonicalize_verified_event(verified_event, &envelope_issuer);
     let hunt_event =
-        HuntEvent::try_from_fleet_event(&verified_event).map_err(ApiError::BadRequest)?;
+        HuntEvent::try_from_fleet_event(&canonical_event).map_err(ApiError::BadRequest)?;
 
     Ok(VerifiedHuntIngest {
-        event: verified_event,
+        event: canonical_event,
         raw_envelope,
         envelope_issuer,
         occurred_at,
         ingested_at,
         hunt_event,
     })
+}
+
+fn canonicalize_verified_event(
+    mut event: FleetEventEnvelope,
+    envelope_issuer: &str,
+) -> FleetEventEnvelope {
+    event.evidence.issuer = Some(envelope_issuer.to_string());
+    event.evidence.signature_valid = Some(true);
+    event
 }
 
 async fn find_existing_hunt_event(

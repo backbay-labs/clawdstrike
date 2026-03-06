@@ -1656,6 +1656,78 @@ async fn hunt_ingest_rejects_conflicting_duplicate_event_ids_without_mutating_ev
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn hunt_ingest_treats_retries_without_canonical_evidence_fields_as_idempotent() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let event = serde_json::json!({
+        "eventId": "hunt-idempotent-evt-1",
+        "tenantId": harness.tenant_id.to_string(),
+        "source": "tetragon",
+        "kind": "process_exec",
+        "occurredAt": "2026-03-06T12:00:00Z",
+        "ingestedAt": "2026-03-06T12:00:01Z",
+        "severity": "medium",
+        "verdict": "allow",
+        "summary": "idempotent duplicate",
+        "actionType": "process",
+        "evidence": {
+            "rawRef": "hunt-envelope:idempotent-evt-1",
+            "envelopeHash": "idempotent-hash-1",
+            "schemaName": "clawdstrike.sdr.fact.tetragon_event.v1"
+        },
+        "attributes": {
+            "process": "/usr/bin/idempotent"
+        }
+    });
+
+    let first = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/hunt/events/ingest".to_string(),
+        Some(&harness.api_key),
+        Some(signed_hunt_ingest_request_without_canonical_evidence(
+            &harness,
+            event.clone(),
+        )),
+    )
+    .await;
+    assert_eq!(first.0, StatusCode::OK);
+    assert_eq!(first.1["eventId"], "hunt-idempotent-evt-1");
+    assert!(
+        first.1["issuer"].as_str().is_some(),
+        "stored event should expose canonical issuer"
+    );
+    assert_eq!(first.1["signatureValid"], true);
+
+    let second = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/hunt/events/ingest".to_string(),
+        Some(&harness.api_key),
+        Some(signed_hunt_ingest_request_without_canonical_evidence(
+            &harness, event,
+        )),
+    )
+    .await;
+    assert_eq!(second.0, StatusCode::OK);
+    assert_eq!(second.1, first.1);
+
+    let count: i64 = sqlx::query_scalar::query_scalar(
+        "SELECT COUNT(*) FROM hunt_events WHERE tenant_id = $1 AND event_id = $2",
+    )
+    .bind(harness.tenant_id)
+    .bind("hunt-idempotent-evt-1")
+    .fetch_one(&harness.db)
+    .await
+    .expect("count idempotent hunt events");
+    assert_eq!(count, 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn hunt_correlation_and_ioc_jobs_store_results() {
     if !docker_available() {
         eprintln!("Skipping integration test: docker is unavailable");
@@ -4155,6 +4227,22 @@ fn signed_hunt_ingest_request(harness: &Harness, mut event: Value) -> Value {
         spine::now_rfc3339(),
     )
     .expect("sign hunt event");
+
+    serde_json::json!({
+        "event": event,
+        "rawEnvelope": envelope,
+    })
+}
+
+fn signed_hunt_ingest_request_without_canonical_evidence(harness: &Harness, event: Value) -> Value {
+    let envelope = spine::build_signed_envelope(
+        harness.signing_keypair.as_ref(),
+        0,
+        None,
+        event.clone(),
+        spine::now_rfc3339(),
+    )
+    .expect("sign hunt event without canonical evidence");
 
     serde_json::json!({
         "event": event,
