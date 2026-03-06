@@ -23,6 +23,7 @@ export function startWatch(
   onEvent: (event: TimelineEvent) => void,
   onAlert: (alert: Alert) => void,
   onStats?: (stats: WatchStats) => void,
+  onError?: (error: string) => void,
 ): HuntStreamHandle {
   const args = ["watch"]
   for (const rule of rules) args.push("--rules", rule)
@@ -34,7 +35,7 @@ export function startWatch(
       else if (line.type === "stats" && onStats) onStats(line.data)
     },
     (error) => {
-      console.error("Watch error:", error)
+      onError?.(error)
     },
   )
 }

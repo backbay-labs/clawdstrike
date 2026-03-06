@@ -6,6 +6,7 @@ import { THEME } from "../theme"
 import type { Screen, ScreenContext } from "../types"
 import type { PlaybookStep, PlaybookStepStatus } from "../../hunt/types"
 import { buildDefaultPlaybook, executePlaybook, type PlaybookConfig } from "../../hunt/playbook"
+import { resolveDefaultWatchRules } from "../../hunt/bridge"
 import { renderList, type ListItem } from "../components/scrollable-list"
 import { renderSplit } from "../components/split-pane"
 import { renderBox } from "../components/box"
@@ -83,7 +84,7 @@ const DEFAULT_CONFIG: PlaybookConfig = {
   name: "Default Hunt Playbook",
   description: "Standard threat hunting workflow",
   timeRange: "24h",
-  rules: ["~/.clawdstrike/rules/*.yaml"],
+  rules: [],
   iocFeeds: [],
 }
 
@@ -92,7 +93,10 @@ export const huntPlaybookScreen: Screen = {
     const pb = ctx.state.hunt.playbook
     if (pb.steps.length > 0) return
 
-    const steps = buildDefaultPlaybook(DEFAULT_CONFIG)
+    const steps = buildDefaultPlaybook({
+      ...DEFAULT_CONFIG,
+      rules: resolveDefaultWatchRules(ctx.app.getCwd()),
+    })
     ctx.state.hunt.playbook = {
       ...pb,
       steps,
@@ -234,7 +238,10 @@ export const huntPlaybookScreen: Screen = {
       ctx.app.render()
 
       executePlaybook(
-        DEFAULT_CONFIG,
+        {
+          ...DEFAULT_CONFIG,
+          rules: resolveDefaultWatchRules(ctx.app.getCwd()),
+        },
         resetSteps,
         (index: number, step: PlaybookStep) => {
           const current = ctx.state.hunt.playbook

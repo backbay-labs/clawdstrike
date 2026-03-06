@@ -6,6 +6,7 @@ use std::process::Command;
 const TUI_DIR_ENV: &str = "CLAWDSTRIKE_TUI_DIR";
 const TUI_RUNTIME_SOURCE_ENV: &str = "CLAWDSTRIKE_TUI_RUNTIME_SOURCE";
 const TUI_RUNTIME_SCRIPT_ENV: &str = "CLAWDSTRIKE_TUI_RUNTIME_SCRIPT";
+const TUI_HUNT_BINARY_ENV: &str = "CLAWDSTRIKE_TUI_HUNT_BINARY";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum TuiScriptSource {
@@ -77,13 +78,18 @@ pub(crate) fn cmd_tui(args: Vec<String>, no_color: bool, stderr: &mut dyn Write)
     }
     child_args.extend(args);
 
-    match Command::new("bun")
+    let mut command = Command::new("bun");
+    command
         .args(&child_args)
         .env(TUI_RUNTIME_SOURCE_ENV, script.source.as_env_value())
         .env(TUI_RUNTIME_SCRIPT_ENV, &script.path)
-        .current_dir(&tui_dir)
-        .status()
-    {
+        .current_dir(&tui_dir);
+
+    if let Ok(exe) = env::current_exe() {
+        command.env(TUI_HUNT_BINARY_ENV, exe);
+    }
+
+    match command.status() {
         Ok(status) => status.code().unwrap_or(1),
         Err(err) => {
             let hint = if err.kind() == std::io::ErrorKind::NotFound {
@@ -243,7 +249,7 @@ mod tests {
         write_executable(
             &bun_path,
             &format!(
-                "#!/bin/sh\nprintf '%s\n' \"$PWD\" > \"{}\"\nprintf '%s\n' \"$@\" > \"{}\"\nprintf '%s\n%s\n' \"$CLAWDSTRIKE_TUI_RUNTIME_SOURCE\" \"$CLAWDSTRIKE_TUI_RUNTIME_SCRIPT\" > \"{}\"\nexit 0\n",
+                "#!/bin/sh\nprintf '%s\n' \"$PWD\" > \"{}\"\nprintf '%s\n' \"$@\" > \"{}\"\nprintf '%s\n%s\n%s\n' \"$CLAWDSTRIKE_TUI_RUNTIME_SOURCE\" \"$CLAWDSTRIKE_TUI_RUNTIME_SCRIPT\" \"$CLAWDSTRIKE_TUI_HUNT_BINARY\" > \"{}\"\nexit 0\n",
                 cwd_file.display(),
                 args_file.display(),
                 env_file.display()
@@ -288,6 +294,7 @@ mod tests {
         assert!(args.contains("--json"));
         assert!(env_text.contains("override"));
         assert!(env_text.contains("src/cli/index.ts"));
+        assert!(env_text.contains("clawdstrike") || env_text.contains("hush"));
 
         unsafe {
             env::remove_var(TUI_DIR_ENV);

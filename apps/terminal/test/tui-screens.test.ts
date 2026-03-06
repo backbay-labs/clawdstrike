@@ -8,6 +8,7 @@ import { THEME } from "../src/tui/theme"
 import { createMainScreen } from "../src/tui/screens/main"
 import { huntReportScreen } from "../src/tui/screens/hunt-report"
 import { huntReportHistoryScreen } from "../src/tui/screens/hunt-report-history"
+import { huntWatchScreen } from "../src/tui/screens/hunt-watch"
 import { stripAnsi } from "../src/tui/components/types"
 import { updateInvestigation, buildInvestigationReport } from "../src/tui/investigation"
 import { exportReportBundle } from "../src/tui/report-export"
@@ -286,5 +287,73 @@ describe("hunt report screen", () => {
     expect(app.screen).toBe("hunt-report")
     expect(state.hunt.report.report?.title).toBe("History Entry")
     expect(stripAnsi(state.hunt.report.statusMessage ?? "")).toContain("Loaded exported report:")
+  })
+})
+
+describe("hunt watch screen", () => {
+  test("surfaces launch failures inside the screen", async () => {
+    const state = createState()
+    const app = new TestApp(tempDir)
+    const ctx = createContext(state, app, 96, 18)
+    const fakeBinary = path.join(tempDir, "clawdstrike-watch-stub")
+
+    await fs.writeFile(fakeBinary, "#!/bin/sh\necho 'stub watch failed' >&2\nexit 5\n")
+    await fs.chmod(fakeBinary, 0o755)
+
+    const original = process.env.CLAWDSTRIKE_TUI_HUNT_BINARY
+    process.env.CLAWDSTRIKE_TUI_HUNT_BINARY = fakeBinary
+
+    try {
+      huntWatchScreen.onEnter?.(ctx)
+
+      for (let i = 0; i < 20 && state.hunt.watch.error == null; i++) {
+        await Bun.sleep(25)
+      }
+
+      expect(state.hunt.watch.running).toBe(false)
+      expect(state.hunt.watch.error).toContain("stub watch failed")
+
+      const rendered = stripAnsi(huntWatchScreen.render(ctx))
+      expect(rendered).toContain("Watch unavailable.")
+      expect(rendered).toContain("stub watch failed")
+    } finally {
+      if (original == null) delete process.env.CLAWDSTRIKE_TUI_HUNT_BINARY
+      else process.env.CLAWDSTRIKE_TUI_HUNT_BINARY = original
+    }
+  })
+
+  test("collapses structured json watch failures into a readable message", async () => {
+    const state = createState()
+    const app = new TestApp(tempDir)
+    const ctx = createContext(state, app, 96, 18)
+    const fakeBinary = path.join(tempDir, "clawdstrike-watch-json-stub")
+
+    await fs.writeFile(
+      fakeBinary,
+      "#!/bin/sh\ncat <<'EOF'\n{\n  \"version\": 1,\n  \"command\": \"hunt watch\",\n  \"exit_code\": 4,\n  \"error\": {\n    \"kind\": \"runtime_error\",\n    \"message\": \"Watch failed: NATS error: connection refused\"\n  },\n  \"data\": null\n}\nEOF\nexit 4\n",
+    )
+    await fs.chmod(fakeBinary, 0o755)
+
+    const original = process.env.CLAWDSTRIKE_TUI_HUNT_BINARY
+    process.env.CLAWDSTRIKE_TUI_HUNT_BINARY = fakeBinary
+
+    try {
+      huntWatchScreen.onEnter?.(ctx)
+
+      for (let i = 0; i < 20 && state.hunt.watch.error == null; i++) {
+        await Bun.sleep(25)
+      }
+
+      expect(state.hunt.watch.running).toBe(false)
+      expect(state.hunt.watch.error).toContain("Watch failed: NATS error: connection refused")
+
+      const rendered = stripAnsi(huntWatchScreen.render(ctx))
+      expect(rendered).toContain("Watch unavailable.")
+      expect(rendered).toContain("Watch failed: NATS error: connection refused")
+      expect(rendered).not.toContain("Failed to parse stream line")
+    } finally {
+      if (original == null) delete process.env.CLAWDSTRIKE_TUI_HUNT_BINARY
+      else process.env.CLAWDSTRIKE_TUI_HUNT_BINARY = original
+    }
   })
 })

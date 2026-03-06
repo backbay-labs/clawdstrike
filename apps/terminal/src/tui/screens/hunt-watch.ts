@@ -7,6 +7,7 @@ import type { Screen, ScreenContext, HuntWatchState } from "../types"
 import type { TimelineEvent, Alert, WatchStats, EventSource, NormalizedVerdict } from "../../hunt/types"
 import type { HuntStreamHandle } from "../../hunt/bridge"
 import { startWatch } from "../../hunt/bridge-correlate"
+import { resolveDefaultWatchRules } from "../../hunt/bridge"
 import {
   renderLog,
   appendLine,
@@ -72,7 +73,18 @@ export const huntWatchScreen: Screen = {
     const w = ctx.state.hunt.watch
     if (w.running) return
 
-    ctx.state.hunt.watch = { ...w, running: true }
+    const rules = resolveDefaultWatchRules(ctx.app.getCwd())
+    if (rules.length === 0) {
+      ctx.state.hunt.watch = {
+        ...w,
+        running: false,
+        error: "No correlation rule files are available for live watch.",
+      }
+      ctx.app.render()
+      return
+    }
+
+    ctx.state.hunt.watch = { ...w, running: true, error: null }
     updateInvestigation(ctx.state, {
       origin: "watch",
       title: "Live Watch",
@@ -81,8 +93,6 @@ export const huntWatchScreen: Screen = {
       events: [],
       findings: [],
     })
-
-    const rules = ["~/.clawdstrike/rules/*.yaml"]
 
     watchHandle = startWatch(
       rules,
@@ -136,6 +146,25 @@ export const huntWatchScreen: Screen = {
         })
         ctx.app.render()
       },
+      (error: string) => {
+        const ws = ctx.state.hunt.watch
+        ctx.state.hunt.watch = {
+          ...ws,
+          running: false,
+          error,
+          log: appendLine(ws.log, {
+            text: `${THEME.error}watch error:${THEME.reset} ${THEME.muted}${error}${THEME.reset}`,
+            plainLength: `watch error: ${error}`.length,
+          }),
+        }
+        updateInvestigation(ctx.state, {
+          origin: "watch",
+          title: "Live Watch",
+          summary: `Watch unavailable: ${error}`,
+          query: ws.filter === "all" ? null : ws.filter,
+        })
+        ctx.app.render()
+      },
     )
   },
 
@@ -161,8 +190,13 @@ export const huntWatchScreen: Screen = {
       // Not running state
       const msgY = Math.floor(height / 2) - 2
       for (let i = 2; i < msgY; i++) lines.push(" ".repeat(width))
-      lines.push(fitString(`${THEME.muted}  Watch is not running.${THEME.reset}`, width))
-      lines.push(fitString(`${THEME.dim}  Press any key to return, or restart the screen.${THEME.reset}`, width))
+      if (w.error) {
+        lines.push(fitString(`${THEME.error}  Watch unavailable.${THEME.reset}`, width))
+        lines.push(fitString(`${THEME.dim}  ${w.error}${THEME.reset}`, width))
+      } else {
+        lines.push(fitString(`${THEME.muted}  Watch is not running.${THEME.reset}`, width))
+        lines.push(fitString(`${THEME.dim}  Press q to return to the dashboard.${THEME.reset}`, width))
+      }
       for (let i = lines.length; i < height - 1; i++) lines.push(" ".repeat(width))
       lines.push(renderHelpBar(width))
       return lines.join("\n")

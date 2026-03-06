@@ -1,0 +1,13 @@
+schema: clawdstrike.hunt.correlation.v1
+name: "Denied Guard Action"
+severity: high
+description: "Highlights denied guard decisions as high-signal live watch alerts."
+window: 5m
+conditions:
+  - source: receipt
+    verdict: deny
+    bind: denied_action
+output:
+  title: "Denied guard action"
+  evidence:
+    - denied_action

@@ -188,6 +188,7 @@ export interface HuntWatchState {
   filter: "all" | "allow" | "deny" | "audit"
   stats: WatchStats | null
   lastAlert: Alert | null
+  error: string | null
   alertFadeTimer: ReturnType<typeof setTimeout> | null
 }
 
@@ -374,6 +375,7 @@ export function createInitialHuntState(): HuntState {
       filter: "all",
       stats: null,
       lastAlert: null,
+      error: null,
       alertFadeTimer: null,
     },
     scan: {
