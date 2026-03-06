@@ -399,6 +399,7 @@ mod tests {
         ts: DateTime<Utc>,
     ) -> TimelineEvent {
         TimelineEvent {
+            event_id: None,
             timestamp: ts,
             source,
             kind: TimelineEventKind::GuardDecision,

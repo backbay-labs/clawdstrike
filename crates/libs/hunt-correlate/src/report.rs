@@ -335,6 +335,7 @@ mod tests {
 
     fn make_timeline_event(summary: &str, ts: DateTime<Utc>) -> TimelineEvent {
         TimelineEvent {
+            event_id: None,
             timestamp: ts,
             source: EventSource::Receipt,
             kind: TimelineEventKind::GuardDecision,
@@ -517,6 +518,7 @@ mod tests {
     fn evidence_from_ioc_matches_conversion() {
         let ts = Utc.with_ymd_and_hms(2025, 6, 15, 12, 0, 0).unwrap();
         let event = TimelineEvent {
+            event_id: None,
             timestamp: ts,
             source: EventSource::Tetragon,
             kind: TimelineEventKind::ProcessExec,

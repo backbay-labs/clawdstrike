@@ -1,13 +1,13 @@
 //! Timeline event model and envelope parsing.
 
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::query::EventSource;
 
 /// Classification of timeline events.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TimelineEventKind {
     ProcessExec,
@@ -32,7 +32,7 @@ impl std::fmt::Display for TimelineEventKind {
 }
 
 /// Normalized verdict across all event sources.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NormalizedVerdict {
     Allow,
@@ -59,6 +59,8 @@ impl std::fmt::Display for NormalizedVerdict {
 /// A single event in the reconstructed timeline.
 #[derive(Debug, Clone, Serialize)]
 pub struct TimelineEvent {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event_id: Option<String>,
     pub timestamp: DateTime<Utc>,
     pub source: EventSource,
     pub kind: TimelineEventKind,
@@ -78,6 +80,34 @@ pub struct TimelineEvent {
     pub signature_valid: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub raw: Option<Value>,
+}
+
+impl TimelineEventKind {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_lowercase().as_str() {
+            "process_exec" => Some(Self::ProcessExec),
+            "process_exit" => Some(Self::ProcessExit),
+            "process_kprobe" => Some(Self::ProcessKprobe),
+            "network_flow" => Some(Self::NetworkFlow),
+            "guard_decision" => Some(Self::GuardDecision),
+            "scan_result" => Some(Self::ScanResult),
+            _ => None,
+        }
+    }
+}
+
+impl NormalizedVerdict {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_lowercase().as_str() {
+            "allow" => Some(Self::Allow),
+            "deny" => Some(Self::Deny),
+            "warn" => Some(Self::Warn),
+            "none" => Some(Self::None),
+            "forwarded" => Some(Self::Forwarded),
+            "dropped" => Some(Self::Dropped),
+            _ => None,
+        }
+    }
 }
 
 /// Parse a spine envelope JSON into a [`TimelineEvent`].
@@ -160,6 +190,7 @@ fn parse_tetragon(
     let summary = format!("{} {}", event_type.to_lowercase(), binary.unwrap_or("?"));
 
     Some(TimelineEvent {
+        event_id: None,
         timestamp,
         source: EventSource::Tetragon,
         kind,
@@ -215,6 +246,7 @@ fn parse_hubble(
     let summary = format!("{} {}", direction.to_lowercase(), flow_summary);
 
     Some(TimelineEvent {
+        event_id: None,
         timestamp,
         source: EventSource::Hubble,
         kind: TimelineEventKind::NetworkFlow,
@@ -281,6 +313,7 @@ fn parse_receipt(
     let summary = format!("{} decision={}", guard_name, decision);
 
     Some(TimelineEvent {
+        event_id: None,
         timestamp,
         source: EventSource::Receipt,
         kind: TimelineEventKind::GuardDecision,
@@ -326,6 +359,7 @@ fn parse_scan(
     let summary = format!("scan {} status={}", scan_type, status);
 
     Some(TimelineEvent {
+        event_id: None,
         timestamp,
         source: EventSource::Scan,
         kind: TimelineEventKind::ScanResult,
@@ -639,6 +673,7 @@ mod tests {
     fn merge_timeline_sorts_by_timestamp() {
         let events = vec![
             TimelineEvent {
+                event_id: None,
                 timestamp: Utc.with_ymd_and_hms(2025, 6, 15, 14, 0, 0).unwrap(),
                 source: EventSource::Tetragon,
                 kind: TimelineEventKind::ProcessExec,
@@ -653,6 +688,7 @@ mod tests {
                 raw: None,
             },
             TimelineEvent {
+                event_id: None,
                 timestamp: Utc.with_ymd_and_hms(2025, 6, 15, 12, 0, 0).unwrap(),
                 source: EventSource::Hubble,
                 kind: TimelineEventKind::NetworkFlow,
@@ -667,6 +703,7 @@ mod tests {
                 raw: None,
             },
             TimelineEvent {
+                event_id: None,
                 timestamp: Utc.with_ymd_and_hms(2025, 6, 15, 16, 0, 0).unwrap(),
                 source: EventSource::Receipt,
                 kind: TimelineEventKind::GuardDecision,
@@ -698,6 +735,7 @@ mod tests {
     #[test]
     fn timeline_event_serialization_skips_none_fields() {
         let event = TimelineEvent {
+            event_id: None,
             timestamp: Utc.with_ymd_and_hms(2025, 6, 15, 12, 0, 0).unwrap(),
             source: EventSource::Tetragon,
             kind: TimelineEventKind::ProcessExec,

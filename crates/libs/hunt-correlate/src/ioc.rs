@@ -8,6 +8,7 @@ use std::path::Path;
 
 use hunt_query::timeline::TimelineEvent;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::error::{Error, Result};
 
@@ -31,7 +32,7 @@ pub enum IocType {
 }
 
 /// A single IOC entry.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IocEntry {
     /// The indicator value (hash, domain, IP, URL).
     pub indicator: String,
@@ -274,9 +275,13 @@ impl IocDatabase {
     /// patterns of the form `[TYPE:PROPERTY = 'VALUE']` are supported.
     pub fn load_stix_bundle(path: &Path) -> Result<Self> {
         let content = std::fs::read_to_string(path)?;
-        let bundle: serde_json::Value =
+        let bundle: Value =
             serde_json::from_str(&content).map_err(|e| Error::IocParse(e.to_string()))?;
 
+        Self::load_stix_bundle_value(&bundle)
+    }
+
+    pub fn load_stix_bundle_value(bundle: &Value) -> Result<Self> {
         let mut db = Self::new();
 
         let objects = bundle
@@ -632,6 +637,7 @@ mod tests {
         raw: Option<serde_json::Value>,
     ) -> TimelineEvent {
         TimelineEvent {
+            event_id: None,
             timestamp: Utc.with_ymd_and_hms(2025, 6, 15, 12, 0, 0).unwrap(),
             source: EventSource::Tetragon,
             kind: TimelineEventKind::ProcessExec,

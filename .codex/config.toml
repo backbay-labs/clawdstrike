@@ -1,0 +1,51 @@
+project_doc_max_bytes = 131072
+notify = ["python3", "../scripts/codex-swarm/notify.py"]
+
+[agents]
+max_threads = 6
+max_depth = 2
+job_max_runtime_seconds = 3600
+
+[agents.repo-explorer]
+description = "Read-only codebase explorer for gathering the relevant repo context before planning or implementation."
+config_file = "agents/repo-explorer.toml"
+
+[agents.architecture-planner]
+description = "Read-only planner for converting ideas and repo context into architecture, specs, and roadmaps."
+config_file = "agents/architecture-planner.toml"
+
+[agents.workstream-orchestrator]
+description = "Planner for workstreams, dependency graphs, verification gates, and merge sequencing."
+config_file = "agents/workstream-orchestrator.toml"
+
+[agents.docs-researcher]
+description = "Read-only docs specialist for validating Codex, OpenAI, and repo documentation before decisions land."
+config_file = "agents/docs-researcher.toml"
+
+[agents.lane-worker]
+description = "Implementation-focused lane worker that operates inside one bounded worktree and leaves a clean handoff."
+config_file = "agents/lane-worker.toml"
+
+[agents.merge-reviewer]
+description = "Read-only reviewer focused on correctness, regressions, verification gaps, and scope drift before merge."
+config_file = "agents/merge-reviewer.toml"
+
+[profiles.swarm-docs]
+model_reasoning_effort = "high"
+approval_policy = "never"
+sandbox_mode = "read-only"
+
+[profiles.swarm-orchestrator]
+model_reasoning_effort = "high"
+approval_policy = "never"
+sandbox_mode = "workspace-write"
+
+[profiles.swarm-worker]
+model_reasoning_effort = "medium"
+approval_policy = "never"
+sandbox_mode = "workspace-write"
+
+[profiles.swarm-review]
+model_reasoning_effort = "high"
+approval_policy = "never"
+sandbox_mode = "read-only"

@@ -1,12 +1,12 @@
 //! Structured query predicates for hunt envelope filtering.
 
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::timeline::{NormalizedVerdict, TimelineEvent};
 
 /// Source system for events.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EventSource {
     Tetragon,
@@ -72,7 +72,7 @@ impl std::fmt::Display for EventSource {
 }
 
 /// Verdict filter for queries.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum QueryVerdict {
     Allow,
@@ -246,6 +246,7 @@ mod tests {
 
     fn make_event() -> TimelineEvent {
         TimelineEvent {
+            event_id: None,
             timestamp: Utc.with_ymd_and_hms(2025, 6, 15, 12, 0, 0).unwrap(),
             source: EventSource::Tetragon,
             kind: TimelineEventKind::ProcessExec,

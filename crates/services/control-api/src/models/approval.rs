@@ -12,6 +12,7 @@ use crate::db::PgRow;
 pub struct Approval {
     pub id: Uuid,
     pub tenant_id: Uuid,
+    pub principal_id: Option<Uuid>,
     pub agent_id: String,
     pub request_id: String,
     pub event_type: String,
@@ -27,6 +28,7 @@ impl Approval {
         Ok(Self {
             id: row.try_get("id")?,
             tenant_id: row.try_get("tenant_id")?,
+            principal_id: row.try_get("principal_id")?,
             agent_id: row.try_get("agent_id")?,
             request_id: row.try_get("request_id")?,
             event_type: row.try_get("event_type")?,

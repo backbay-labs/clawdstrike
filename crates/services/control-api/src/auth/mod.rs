@@ -33,9 +33,21 @@ pub async fn require_auth(
     if let Some(auth_header) = headers.get("authorization") {
         let header_str = auth_header.to_str().map_err(|_| ApiError::Unauthorized)?;
         if let Some(token) = header_str.strip_prefix("Bearer ") {
-            let tenant = jwt::validate_token(token, &state).await?;
-            request.extensions_mut().insert(tenant);
-            return Ok(next.run(request).await);
+            match jwt::validate_token(token, &state).await {
+                Ok(tenant) => {
+                    request.extensions_mut().insert(tenant);
+                    return Ok(next.run(request).await);
+                }
+                Err(ApiError::Unauthorized) => match api_key::validate_key(token, &state).await {
+                    Ok(tenant) => {
+                        request.extensions_mut().insert(tenant);
+                        return Ok(next.run(request).await);
+                    }
+                    Err(ApiError::Unauthorized) => return Err(ApiError::Unauthorized),
+                    Err(err) => return Err(err),
+                },
+                Err(err) => return Err(err),
+            }
         }
     }
 

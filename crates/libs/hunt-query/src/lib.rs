@@ -8,6 +8,7 @@ pub mod nl;
 pub mod query;
 pub mod render;
 pub mod replay;
+pub mod service;
 pub mod timeline;
 
 #[cfg(feature = "ocsf")]

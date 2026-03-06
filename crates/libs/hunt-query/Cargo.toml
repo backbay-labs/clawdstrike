@@ -23,6 +23,7 @@ crossterm.workspace = true
 regex.workspace = true
 dirs.workspace = true
 time = "0.3"
+uuid.workspace = true
 clawdstrike-ocsf = { workspace = true, optional = true }
 
 [features]

@@ -54,6 +54,60 @@ fn adaptive_sdr_followup_migration_hardens_token_and_approval_flow() {
 }
 
 #[test]
+fn fleet_directory_migrations_define_core_tables_and_backfills() {
+    let core_sql = fs::read_to_string(migration_path("006_fleet_directory_core.sql"))
+        .expect("failed to read 006 migration");
+    let backfill_sql = fs::read_to_string(migration_path("007_fleet_directory_backfill.sql"))
+        .expect("failed to read 007 migration");
+    let attachment_sql =
+        fs::read_to_string(migration_path("008_fleet_directory_policy_attachments.sql"))
+            .expect("failed to read 008 migration");
+    let references_sql = fs::read_to_string(migration_path("009_fleet_directory_references.sql"))
+        .expect("failed to read 009 migration");
+
+    assert!(
+        core_sql.contains("CREATE TABLE IF NOT EXISTS principals"),
+        "006 migration must create principals table"
+    );
+    assert!(
+        core_sql.contains("CREATE TABLE IF NOT EXISTS principal_memberships"),
+        "006 migration must create principal membership table"
+    );
+    assert!(
+        core_sql.contains("CREATE TABLE IF NOT EXISTS delegation_edges"),
+        "006 migration must create delegation edge table"
+    );
+    assert!(
+        backfill_sql.contains("ADD COLUMN IF NOT EXISTS principal_id"),
+        "007 migration must add agents.principal_id"
+    );
+    assert!(
+        backfill_sql.contains("INSERT INTO principals"),
+        "007 migration must backfill principals"
+    );
+    assert!(
+        attachment_sql.contains("CREATE TABLE IF NOT EXISTS policy_attachments"),
+        "008 migration must create policy_attachments"
+    );
+    assert!(
+        attachment_sql.contains("policy_ref TEXT"),
+        "008 migration must persist optional policy references"
+    );
+    assert!(
+        attachment_sql.contains("policy_attachments_payload_check"),
+        "008 migration must validate attachment payload presence"
+    );
+    assert!(
+        references_sql.contains("ALTER TABLE approvals"),
+        "009 migration must extend approvals"
+    );
+    assert!(
+        references_sql.contains("idx_approvals_tenant_principal"),
+        "009 migration must index approval principal lookups"
+    );
+}
+
+#[test]
 fn init_and_adaptive_migrations_are_ordered() {
     let init_sql =
         fs::read_to_string(migration_path("001_init.sql")).expect("failed to read 001 migration");
@@ -69,6 +123,21 @@ fn init_and_adaptive_migrations_are_ordered() {
     let approval_outbox_sql =
         fs::read_to_string(migration_path("005_adaptive_sdr_approval_outbox.sql"))
             .expect("failed to read 005 migration");
+    let directory_core_sql = fs::read_to_string(migration_path("006_fleet_directory_core.sql"))
+        .expect("failed to read 006 migration");
+    let directory_backfill_sql =
+        fs::read_to_string(migration_path("007_fleet_directory_backfill.sql"))
+            .expect("failed to read 007 migration");
+    let directory_attachments_sql =
+        fs::read_to_string(migration_path("008_fleet_directory_policy_attachments.sql"))
+            .expect("failed to read 008 migration");
+    let directory_references_sql =
+        fs::read_to_string(migration_path("009_fleet_directory_references.sql"))
+            .expect("failed to read 009 migration");
+    let detection_core_sql = fs::read_to_string(migration_path("010_detection_core.sql"))
+        .expect("failed to read 010 migration");
+    let hunt_backend_sql = fs::read_to_string(migration_path("012_hunt_backend.sql"))
+        .expect("failed to read 012 migration");
 
     assert!(
         init_sql.contains("CREATE TABLE tenants"),
@@ -101,5 +170,164 @@ fn init_and_adaptive_migrations_are_ordered() {
     assert!(
         approval_outbox_sql.contains("CHECK (status IN ('pending', 'sent'))"),
         "005 must constrain outbox statuses"
+    );
+    assert!(
+        directory_core_sql.contains("CREATE TABLE IF NOT EXISTS principals"),
+        "006 must establish directory tables before compatibility links"
+    );
+    assert!(
+        directory_backfill_sql.contains("ALTER TABLE agents"),
+        "007 must extend agents after core directory schema exists"
+    );
+    assert!(
+        directory_attachments_sql.contains("CREATE TABLE IF NOT EXISTS policy_attachments"),
+        "008 must land attachment storage after principal schema exists"
+    );
+    assert!(
+        directory_references_sql.contains("ALTER TABLE approvals"),
+        "009 must add principal references after principal backfill exists"
+    );
+    assert!(
+        detection_core_sql.contains("CREATE TABLE detection_rules"),
+        "010 must define detection rule storage before downstream detection features"
+    );
+    assert!(
+        hunt_backend_sql.contains("CREATE TABLE hunt_envelopes"),
+        "012 must define hunt envelope storage after the detection and response base exists"
+    );
+}
+
+#[test]
+fn detection_core_migration_adds_rule_finding_and_pack_schema() {
+    let sql = fs::read_to_string(migration_path("010_detection_core.sql"))
+        .expect("failed to read 010 migration");
+
+    assert!(
+        sql.contains("CREATE TABLE detection_rules"),
+        "010 migration must create detection_rules"
+    );
+    assert!(
+        sql.contains("CREATE TABLE detection_findings"),
+        "010 migration must create detection_findings"
+    );
+    assert!(
+        sql.contains("CREATE TABLE detection_suppressions"),
+        "010 migration must create detection_suppressions"
+    );
+    assert!(
+        sql.contains("CREATE TABLE installed_detection_packs"),
+        "010 migration must create installed_detection_packs"
+    );
+    assert!(
+        sql.contains("source_format IN (")
+            && sql.contains("'native_correlation'")
+            && sql.contains("'sigma'")
+            && sql.contains("'yara'"),
+        "010 migration must constrain supported detection source formats"
+    );
+}
+
+#[test]
+fn response_action_migration_adds_execution_ledger_schema() {
+    let sql = fs::read_to_string(migration_path(
+        "011_response_actions_and_execution_ledger.sql",
+    ))
+    .expect("failed to read 011 migration");
+
+    assert!(
+        sql.contains("CREATE TABLE IF NOT EXISTS response_actions"),
+        "011 migration must create response_actions"
+    );
+    assert!(
+        sql.contains("CREATE TABLE IF NOT EXISTS response_action_deliveries"),
+        "011 migration must create response_action_deliveries"
+    );
+    assert!(
+        sql.contains("CREATE TABLE IF NOT EXISTS response_action_acks"),
+        "011 migration must create response_action_acks"
+    );
+    assert!(
+        sql.contains("status IN (")
+            && sql.contains("'queued'")
+            && sql.contains("'acknowledged'")
+            && sql.contains("'cancelled'"),
+        "011 migration must constrain response action statuses"
+    );
+}
+
+#[test]
+fn hunt_backend_migration_adds_event_store_and_saved_hunts() {
+    let sql = fs::read_to_string(migration_path("012_hunt_backend.sql"))
+        .expect("failed to read 012 migration");
+
+    assert!(
+        sql.contains("CREATE TABLE hunt_envelopes"),
+        "012 migration must create hunt_envelopes"
+    );
+    assert!(
+        sql.contains("CREATE TABLE hunt_events"),
+        "012 migration must create hunt_events"
+    );
+    assert!(
+        sql.contains("CREATE TABLE saved_hunts"),
+        "012 migration must create saved_hunts"
+    );
+    assert!(
+        sql.contains("CREATE TABLE hunt_jobs"),
+        "012 migration must create hunt_jobs"
+    );
+    assert!(
+        sql.contains("CREATE INDEX idx_hunt_events_detection_ids"),
+        "012 migration must index detection_ids for investigation joins"
+    );
+}
+
+#[test]
+fn case_evidence_migration_adds_case_bundle_schema() {
+    let sql = fs::read_to_string(migration_path("013_case_evidence_bundles.sql"))
+        .expect("failed to read 013 migration");
+
+    assert!(
+        sql.contains("CREATE TABLE IF NOT EXISTS fleet_cases"),
+        "013 migration must create fleet_cases"
+    );
+    assert!(
+        sql.contains("CREATE TABLE IF NOT EXISTS fleet_case_artifacts"),
+        "013 migration must create fleet_case_artifacts"
+    );
+    assert!(
+        sql.contains("CREATE TABLE IF NOT EXISTS fleet_case_events"),
+        "013 migration must create fleet_case_events"
+    );
+    assert!(
+        sql.contains("CREATE TABLE IF NOT EXISTS fleet_evidence_bundles"),
+        "013 migration must create fleet_evidence_bundles"
+    );
+    assert!(
+        sql.contains("status IN ('processing', 'completed', 'failed', 'expired')"),
+        "013 migration must constrain fleet_evidence_bundles.status"
+    );
+    assert!(
+        sql.contains("UNIQUE (case_id, artifact_kind, artifact_id)"),
+        "013 migration must deduplicate case artifact references"
+    );
+}
+
+#[test]
+fn delegation_graph_migration_adds_grant_ledger_and_graph_tables() {
+    let sql = fs::read_to_string(migration_path("014_grants_delegation_graph.sql"))
+        .expect("failed to read 014 migration");
+
+    assert!(
+        sql.contains("CREATE TABLE IF NOT EXISTS fleet_grants"),
+        "014 migration must define the durable fleet grant ledger"
+    );
+    assert!(
+        sql.contains("CREATE TABLE IF NOT EXISTS delegation_graph_nodes"),
+        "014 migration must define graph nodes"
+    );
+    assert!(
+        sql.contains("CREATE TABLE IF NOT EXISTS delegation_graph_edges"),
+        "014 migration must define graph edges"
     );
 }

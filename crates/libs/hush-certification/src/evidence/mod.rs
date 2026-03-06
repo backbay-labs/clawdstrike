@@ -12,6 +12,7 @@ use serde_json::Value;
 use uuid::Uuid;
 use zip::write::{FileOptions, ZipWriter};
 use zip::CompressionMethod;
+use zip::DateTime as ZipDateTime;
 
 use crate::audit::AuditEventV2;
 use crate::badge::CertificationBadge;
@@ -114,6 +115,32 @@ pub struct ManifestIssuer {
     pub public_key: String,
     pub signature: String,
     pub signed_at: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GenericEvidenceBundleSubject {
+    pub kind: String,
+    pub id: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GenericEvidenceBundleManifest {
+    pub export_id: String,
+    pub subject: GenericEvidenceBundleSubject,
+    pub generated_at: String,
+    pub entry_count: u64,
+    pub merkle_root: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<Value>,
+    pub issuer: ManifestIssuer,
+}
+
+#[derive(Clone, Debug)]
+pub struct GenericEvidenceBundleEntry {
+    pub path: String,
+    pub bytes: Vec<u8>,
 }
 
 pub struct SqliteEvidenceExportStore {
@@ -308,6 +335,100 @@ pub struct EvidenceBundleOutput {
     pub merkle_root: String,
 }
 
+pub fn build_signed_evidence_bundle_zip(
+    out_dir: impl AsRef<Path>,
+    export_id: &str,
+    subject: GenericEvidenceBundleSubject,
+    generated_at: &str,
+    metadata: Option<Value>,
+    entries: &[GenericEvidenceBundleEntry],
+    signer: &hush_core::Keypair,
+) -> Result<EvidenceBundleOutput> {
+    std::fs::create_dir_all(out_dir.as_ref())?;
+
+    let file_path = out_dir.as_ref().join(format!("{export_id}.zip"));
+    let file = File::create(&file_path)?;
+    let mut zip = ZipWriter::new(file);
+    let timestamp = ZipDateTime::from_date_and_time(1980, 1, 1, 0, 0, 0)
+        .map_err(|_| crate::Error::InvalidInput("invalid reproducible ZIP timestamp".into()))?;
+    let opts = FileOptions::default()
+        .compression_method(CompressionMethod::Deflated)
+        .last_modified_time(timestamp)
+        .unix_permissions(0o644);
+
+    let mut sorted_entries = entries.to_vec();
+    sorted_entries.sort_by(|left, right| left.path.cmp(&right.path));
+
+    for entry in &sorted_entries {
+        zip.start_file(&entry.path, opts)?;
+        zip.write_all(&entry.bytes)?;
+    }
+
+    let merkle_root = merkle_root_for_blobs(&sorted_entries)?;
+    let signed_at = generated_at.to_string();
+    let public_key = URL_SAFE_NO_PAD.encode(signer.public_key().as_bytes());
+
+    let mut unsigned_for_sig = serde_json::json!({
+        "exportId": export_id,
+        "subject": {
+            "kind": subject.kind,
+            "id": subject.id,
+        },
+        "generatedAt": generated_at,
+        "entryCount": sorted_entries.len(),
+        "merkleRoot": merkle_root,
+    });
+
+    if let Some(extra_metadata) = metadata.clone() {
+        if let Some(obj) = unsigned_for_sig.as_object_mut() {
+            obj.insert("metadata".to_string(), extra_metadata);
+        }
+    }
+
+    if let Some(obj) = unsigned_for_sig.as_object_mut() {
+        obj.insert(
+            "issuer".to_string(),
+            serde_json::json!({
+                "publicKey": public_key,
+                "signedAt": signed_at,
+            }),
+        );
+    }
+
+    let canonical = hush_core::canonicalize_json(&unsigned_for_sig)?;
+    let sig = signer.sign(canonical.as_bytes());
+    let issuer = ManifestIssuer {
+        public_key: URL_SAFE_NO_PAD.encode(signer.public_key().as_bytes()),
+        signature: URL_SAFE_NO_PAD.encode(sig.to_bytes()),
+        signed_at,
+    };
+
+    let manifest = GenericEvidenceBundleManifest {
+        export_id: export_id.to_string(),
+        subject,
+        generated_at: generated_at.to_string(),
+        entry_count: u64::try_from(sorted_entries.len()).unwrap_or(u64::MAX),
+        merkle_root: merkle_root.clone(),
+        metadata,
+        issuer,
+    };
+
+    zip.start_file("manifest.json", opts)?;
+    zip.write_all(serde_json::to_string_pretty(&manifest)?.as_bytes())?;
+    zip.write_all(b"\n")?;
+
+    let mut file = zip.finish()?;
+    file.flush()?;
+
+    let bytes = std::fs::read(&file_path)?;
+    Ok(EvidenceBundleOutput {
+        file_path,
+        sha256_hex: hush_core::sha256(&bytes).to_hex(),
+        size_bytes: u64::try_from(bytes.len()).unwrap_or(u64::MAX),
+        merkle_root,
+    })
+}
+
 pub fn build_evidence_bundle_zip(
     out_dir: impl AsRef<Path>,
     export_id: &str,
@@ -443,6 +564,20 @@ fn merkle_root_for_events(events: &[AuditEventV2]) -> Result<String> {
     if leaves.is_empty() {
         return Ok(format!("sha256:{}", hush_core::Hash::zero().to_hex()));
     }
+
+    let tree = hush_core::MerkleTree::from_leaves(&leaves)?;
+    Ok(format!("sha256:{}", tree.root().to_hex()))
+}
+
+fn merkle_root_for_blobs(entries: &[GenericEvidenceBundleEntry]) -> Result<String> {
+    if entries.is_empty() {
+        return Ok(format!("sha256:{}", hush_core::Hash::zero().to_hex()));
+    }
+
+    let leaves: Vec<Vec<u8>> = entries
+        .iter()
+        .map(|entry| hush_core::sha256(&entry.bytes).as_bytes().to_vec())
+        .collect();
 
     let tree = hush_core::MerkleTree::from_leaves(&leaves)?;
     Ok(format!("sha256:{}", tree.root().to_hex()))

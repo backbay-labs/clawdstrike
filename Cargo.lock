@@ -1710,10 +1710,15 @@ dependencies = [
  "axum",
  "axum-extra",
  "chrono",
+ "clawdstrike-ocsf",
  "futures",
  "hex",
  "hmac",
+ "hunt-correlate",
+ "hunt-query",
+ "hush-certification",
  "hush-core",
+ "hush-multi-agent",
  "hush-spine",
  "jsonwebtoken",
  "reqwest 0.13.2",
@@ -3552,6 +3557,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -3575,6 +3581,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tracing",
+ "uuid",
 ]
 
 [[package]]

@@ -12,6 +12,7 @@
 
 mod correlation;
 mod error;
+mod graph;
 mod identity_registry;
 mod message;
 mod revocation;
@@ -20,6 +21,7 @@ mod types;
 
 pub use correlation::{CorrelationContext, CrossAgentAuditEvent, CrossAgentEventType};
 pub use error::{Error, Result};
+pub use graph::{DelegationGraphEdgeKind, DelegationGraphNodeKind, GrantLineageFacts};
 pub use identity_registry::{IdentityRegistry, InMemoryIdentityRegistry};
 pub use message::{MessageClaims, SignedMessage};
 #[cfg(feature = "sqlite")]

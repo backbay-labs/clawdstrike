@@ -1,0 +1,83 @@
+CREATE TABLE hunt_envelopes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    source TEXT NOT NULL,
+    issuer TEXT,
+    issued_at TIMESTAMPTZ NOT NULL,
+    ingested_at TIMESTAMPTZ NOT NULL,
+    envelope_hash TEXT,
+    schema_name TEXT,
+    raw_ref TEXT NOT NULL,
+    raw_envelope JSONB NOT NULL,
+    signature_valid BOOLEAN,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (tenant_id, raw_ref)
+);
+
+CREATE TABLE hunt_events (
+    event_id TEXT PRIMARY KEY,
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    envelope_id UUID REFERENCES hunt_envelopes(id) ON DELETE SET NULL,
+    source TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    timestamp TIMESTAMPTZ NOT NULL,
+    ingested_at TIMESTAMPTZ NOT NULL,
+    verdict TEXT NOT NULL,
+    severity TEXT,
+    summary TEXT NOT NULL,
+    action_type TEXT,
+    process TEXT,
+    namespace TEXT,
+    pod TEXT,
+    session_id TEXT,
+    endpoint_agent_id TEXT,
+    runtime_agent_id TEXT,
+    principal_id TEXT,
+    grant_id TEXT,
+    response_action_id TEXT,
+    detection_ids TEXT[] NOT NULL DEFAULT '{}',
+    target_kind TEXT,
+    target_id TEXT,
+    target_name TEXT,
+    envelope_hash TEXT,
+    issuer TEXT,
+    schema_name TEXT,
+    signature_valid BOOLEAN,
+    raw_ref TEXT NOT NULL,
+    attributes JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE saved_hunts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    description TEXT,
+    query JSONB NOT NULL,
+    created_by TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE hunt_jobs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    job_type TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'queued',
+    request JSONB NOT NULL,
+    result JSONB,
+    created_by TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    completed_at TIMESTAMPTZ
+);
+
+CREATE INDEX idx_hunt_envelopes_tenant_issued_at ON hunt_envelopes(tenant_id, issued_at DESC);
+CREATE INDEX idx_hunt_events_tenant_time ON hunt_events(tenant_id, timestamp DESC, event_id DESC);
+CREATE INDEX idx_hunt_events_tenant_source ON hunt_events(tenant_id, source, timestamp DESC, event_id DESC);
+CREATE INDEX idx_hunt_events_tenant_principal ON hunt_events(tenant_id, principal_id, timestamp DESC, event_id DESC);
+CREATE INDEX idx_hunt_events_tenant_session ON hunt_events(tenant_id, session_id, timestamp DESC, event_id DESC);
+CREATE INDEX idx_hunt_events_tenant_endpoint ON hunt_events(tenant_id, endpoint_agent_id, timestamp DESC, event_id DESC);
+CREATE INDEX idx_hunt_events_tenant_runtime ON hunt_events(tenant_id, runtime_agent_id, timestamp DESC, event_id DESC);
+CREATE INDEX idx_hunt_events_detection_ids ON hunt_events USING GIN(detection_ids);
+CREATE INDEX idx_saved_hunts_tenant_updated ON saved_hunts(tenant_id, updated_at DESC);
+CREATE INDEX idx_hunt_jobs_tenant_created ON hunt_jobs(tenant_id, created_at DESC);

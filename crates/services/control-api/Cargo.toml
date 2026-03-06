@@ -17,8 +17,13 @@ path = "src/main.rs"
 
 [dependencies]
 # Internal crates
+hush-certification.workspace = true
 hush-core.workspace = true
+hunt-correlate.workspace = true
+hunt-query.workspace = true
+hush-multi-agent = { path = "../../libs/hush-multi-agent", version = "0.2.4" }
 spine.workspace = true
+clawdstrike-ocsf.workspace = true
 
 # Web framework
 axum.workspace = true

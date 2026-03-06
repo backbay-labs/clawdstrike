@@ -9,6 +9,7 @@ use crate::db::PgRow;
 pub struct Agent {
     pub id: Uuid,
     pub tenant_id: Uuid,
+    pub principal_id: Option<Uuid>,
     pub agent_id: String,
     pub name: String,
     pub public_key: String,
@@ -25,6 +26,7 @@ impl Agent {
         Ok(Self {
             id: row.try_get("id")?,
             tenant_id: row.try_get("tenant_id")?,
+            principal_id: row.try_get("principal_id")?,
             agent_id: row.try_get("agent_id")?,
             name: row.try_get("name")?,
             public_key: row.try_get("public_key")?,

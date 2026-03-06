@@ -3,19 +3,25 @@
 //! Periodically scans the agents table and marks agents as `stale` (120s without
 //! heartbeat) or `dead` (300s without heartbeat).
 
+use std::collections::HashSet;
 use std::time::Duration;
 
 use crate::db::PgPool;
+use sqlx::row::Row;
+use sqlx::transaction::Transaction;
+use uuid::Uuid;
 
 const DEAD_UPDATE_SQL: &str = r#"UPDATE agents
            SET status = 'dead'
            WHERE status = 'stale'
-             AND COALESCE(last_heartbeat_at, created_at) < now() - make_interval(secs => $1)"#;
+             AND COALESCE(last_heartbeat_at, created_at) < now() - make_interval(secs => $1)
+           RETURNING principal_id"#;
 
 const STALE_UPDATE_SQL: &str = r#"UPDATE agents
            SET status = 'stale'
            WHERE status = 'active'
-             AND COALESCE(last_heartbeat_at, created_at) < now() - make_interval(secs => $1)"#;
+             AND COALESCE(last_heartbeat_at, created_at) < now() - make_interval(secs => $1)
+           RETURNING principal_id"#;
 
 /// Configuration for the stale agent detector.
 #[derive(Debug, Clone)]
@@ -66,34 +72,71 @@ pub async fn run(
     }
 }
 
-async fn detect_stale_agents(
+pub(crate) async fn detect_stale_agents(
     db: &PgPool,
     config: &StaleAgentConfig,
 ) -> Result<(), sqlx::error::Error> {
+    let mut tx = db.begin().await?;
+
     // Mark previously stale agents as dead.
     // Ordering matters: this runs before the stale transition so agents cannot
     // jump directly from active -> dead within a single detection cycle.
-    let dead_result = sqlx::query::query(DEAD_UPDATE_SQL)
+    let dead_rows = sqlx::query::query(DEAD_UPDATE_SQL)
         .bind(config.dead_threshold_secs as f64)
-        .execute(db)
+        .fetch_all(tx.as_mut())
         .await?;
+    let dead_principal_ids = collect_principal_ids(dead_rows)?;
+    sync_principal_liveness_state(&mut tx, &dead_principal_ids, "dead").await?;
 
-    if dead_result.rows_affected() > 0 {
-        tracing::info!(count = dead_result.rows_affected(), "Marked agents as dead");
+    if !dead_principal_ids.is_empty() {
+        tracing::info!(count = dead_principal_ids.len(), "Marked agents as dead");
     }
 
     // Mark active agents as stale. For newly enrolled agents that have not
     // heartbeated yet, created_at serves as a fallback staleness timestamp.
-    let stale_result = sqlx::query::query(STALE_UPDATE_SQL)
+    let stale_rows = sqlx::query::query(STALE_UPDATE_SQL)
         .bind(config.stale_threshold_secs as f64)
-        .execute(db)
+        .fetch_all(tx.as_mut())
         .await?;
+    let stale_principal_ids = collect_principal_ids(stale_rows)?;
+    sync_principal_liveness_state(&mut tx, &stale_principal_ids, "stale").await?;
 
-    if stale_result.rows_affected() > 0 {
-        tracing::info!(
-            count = stale_result.rows_affected(),
-            "Marked agents as stale"
-        );
+    tx.commit().await?;
+
+    if !stale_principal_ids.is_empty() {
+        tracing::info!(count = stale_principal_ids.len(), "Marked agents as stale");
+    }
+
+    Ok(())
+}
+
+fn collect_principal_ids(rows: Vec<sqlx_postgres::PgRow>) -> Result<Vec<Uuid>, sqlx::error::Error> {
+    let mut principal_ids = HashSet::new();
+    for row in rows {
+        if let Some(principal_id) = row.try_get::<Option<Uuid>, _>("principal_id")? {
+            principal_ids.insert(principal_id);
+        }
+    }
+
+    Ok(principal_ids.into_iter().collect())
+}
+
+async fn sync_principal_liveness_state(
+    tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
+    principal_ids: &[Uuid],
+    liveness_state: &str,
+) -> Result<(), sqlx::error::Error> {
+    for principal_id in principal_ids {
+        sqlx::query::query(
+            r#"UPDATE principals
+               SET liveness_state = $2,
+                   updated_at = now()
+               WHERE id = $1"#,
+        )
+        .bind(principal_id)
+        .bind(liveness_state)
+        .execute(tx.as_mut())
+        .await?;
     }
 
     Ok(())
@@ -117,5 +160,7 @@ mod tests {
         assert!(STALE_UPDATE_SQL.contains("WHERE status = 'active'"));
         assert!(STALE_UPDATE_SQL.contains("COALESCE(last_heartbeat_at, created_at)"));
         assert!(DEAD_UPDATE_SQL.contains("COALESCE(last_heartbeat_at, created_at)"));
+        assert!(STALE_UPDATE_SQL.contains("RETURNING principal_id"));
+        assert!(DEAD_UPDATE_SQL.contains("RETURNING principal_id"));
     }
 }

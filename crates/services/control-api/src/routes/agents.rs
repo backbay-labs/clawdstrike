@@ -1,12 +1,17 @@
 use axum::extract::{Path, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use chrono::Utc;
+use serde::Serialize;
+use sha2::{Digest, Sha256};
 use sqlx::row::Row;
+use sqlx::transaction::Transaction;
+use std::collections::HashSet;
 use uuid::Uuid;
 
 use crate::auth::AuthenticatedTenant;
 use crate::crypto::hash_enrollment_token;
-use crate::error::ApiError;
+use crate::error::{is_unique_violation, ApiError};
 use crate::models::agent::{
     Agent, EnrollmentRequest, EnrollmentResponse, HeartbeatRequest, RegisterAgentRequest,
     RegisterAgentResponse,
@@ -20,7 +25,8 @@ const HEARTBEAT_UPDATE_SQL: &str = r#"UPDATE agents
                metadata = COALESCE($3, metadata)
            WHERE tenant_id = $1
              AND agent_id = $2
-             AND status IN ('active', 'stale', 'dead')"#;
+             AND status IN ('active', 'stale', 'dead')
+           RETURNING principal_id"#;
 
 const ENROLL_TOKEN_LOCK_SQL: &str = r#"SELECT et.id AS enrollment_token_id,
                   et.tenant_id,
@@ -45,6 +51,10 @@ pub fn router() -> Router<AppState> {
         .route("/agents", post(register_agent))
         .route("/agents", get(list_agents))
         .route("/agents/{id}", get(get_agent))
+        .route(
+            "/agents/{id}/effective-policy",
+            get(get_agent_effective_policy),
+        )
         .route("/agents/heartbeat", post(heartbeat))
 }
 
@@ -82,31 +92,71 @@ async fn register_agent(
     let role = req.role.as_deref().unwrap_or("coder");
     let trust_level = req.trust_level.as_deref().unwrap_or("medium");
     let metadata = req.metadata.clone().unwrap_or(serde_json::json!({}));
+    let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
+    let principal_id = upsert_endpoint_principal(
+        &mut tx,
+        EndpointPrincipalUpsert {
+            tenant_id: auth.tenant_id,
+            stable_ref: &req.agent_id,
+            display_name: &req.name,
+            public_key: &req.public_key,
+            trust_level,
+            lifecycle_state: "active",
+            liveness_state: Some("active"),
+            metadata: &metadata,
+        },
+    )
+    .await?;
 
     let row = sqlx::query::query(
-        r#"INSERT INTO agents (tenant_id, agent_id, name, public_key, role, trust_level, metadata)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
+        r#"INSERT INTO agents (
+               tenant_id,
+               principal_id,
+               agent_id,
+               name,
+               public_key,
+               role,
+               trust_level,
+               metadata
+           )
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
            RETURNING *"#,
     )
     .bind(auth.tenant_id)
+    .bind(principal_id)
     .bind(&req.agent_id)
     .bind(&req.name)
     .bind(&req.public_key)
     .bind(role)
     .bind(trust_level)
     .bind(&metadata)
-    .fetch_one(&state.db)
+    .fetch_one(tx.as_mut())
     .await
-    .map_err(ApiError::Database)?;
+    .map_err(|err| {
+        if is_unique_violation(&err) {
+            ApiError::Conflict(format!("agent '{}' already exists", req.agent_id))
+        } else {
+            ApiError::Database(err)
+        }
+    })?;
 
     let agent = Agent::from_row(row).map_err(ApiError::Database)?;
+    tx.commit().await.map_err(ApiError::Database)?;
 
     // Generate NATS credentials for this agent
-    let nats_creds = state
+    let nats_creds = match state
         .provisioner
         .create_agent_credentials(auth.tenant_id, &auth.slug, &req.agent_id)
         .await
-        .map_err(|e| ApiError::Nats(e.to_string()))?;
+    {
+        Ok(creds) => creds,
+        Err(err) => {
+            rollback_failed_agent_creation(&state.db, agent.id)
+                .await
+                .map_err(ApiError::Database)?;
+            return Err(ApiError::Nats(err.to_string()));
+        }
+    };
 
     // Record usage event
     let _ = state
@@ -158,22 +208,199 @@ async fn get_agent(
     Ok(Json(agent))
 }
 
+async fn get_agent_effective_policy(
+    State(state): State<AppState>,
+    auth: AuthenticatedTenant,
+    Path(id): Path<Uuid>,
+) -> Result<Json<EffectivePolicyResponse>, ApiError> {
+    let row = sqlx::query::query(
+        r#"SELECT a.id,
+                  a.tenant_id,
+                  a.agent_id,
+                  a.principal_id,
+                  p.lifecycle_state,
+                  p.liveness_state
+           FROM agents AS a
+           LEFT JOIN principals AS p
+             ON p.id = a.principal_id
+           WHERE a.id = $1
+             AND a.tenant_id = $2"#,
+    )
+    .bind(id)
+    .bind(auth.tenant_id)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(ApiError::Database)?
+    .ok_or(ApiError::NotFound)?;
+
+    let principal_id: Option<Uuid> = row.try_get("principal_id").map_err(ApiError::Database)?;
+    let principal_id = principal_id.ok_or_else(|| {
+        ApiError::BadRequest("agent is not linked to a directory principal".to_string())
+    })?;
+
+    let memberships = sqlx::query::query(
+        r#"SELECT target_kind, target_id
+           FROM principal_memberships
+           WHERE tenant_id = $1
+             AND principal_id = $2"#,
+    )
+    .bind(auth.tenant_id)
+    .bind(principal_id)
+    .fetch_all(&state.db)
+    .await
+    .map_err(ApiError::Database)?;
+
+    let mut swarm_ids = HashSet::new();
+    let mut project_ids = HashSet::new();
+    let mut capability_group_ids = HashSet::new();
+    for membership in memberships {
+        let target_kind: String = membership
+            .try_get("target_kind")
+            .map_err(ApiError::Database)?;
+        let target_id: Uuid = membership
+            .try_get("target_id")
+            .map_err(ApiError::Database)?;
+        match target_kind.as_str() {
+            "swarm" => {
+                swarm_ids.insert(target_id);
+            }
+            "project" => {
+                project_ids.insert(target_id);
+            }
+            "capability_group" => {
+                capability_group_ids.insert(target_id);
+            }
+            _ => {}
+        }
+    }
+
+    let attachment_rows = sqlx::query::query(
+        r#"SELECT id,
+                  target_kind,
+                  target_id,
+                  priority,
+                  policy_ref,
+                  policy_yaml,
+                  checksum_sha256,
+                  created_at
+           FROM policy_attachments
+           WHERE tenant_id = $1
+           ORDER BY CASE target_kind
+                        WHEN 'tenant' THEN 1
+                        WHEN 'swarm' THEN 2
+                        WHEN 'project' THEN 3
+                        WHEN 'capability_group' THEN 4
+                        WHEN 'principal' THEN 5
+                        ELSE 6
+                    END ASC,
+                    priority ASC,
+                    created_at ASC,
+                    id ASC"#,
+    )
+    .bind(auth.tenant_id)
+    .fetch_all(&state.db)
+    .await
+    .map_err(ApiError::Database)?;
+
+    let active_policy =
+        policy_distribution::fetch_active_policy_by_tenant_id(&state.db, auth.tenant_id)
+            .await
+            .map_err(ApiError::Database)?;
+
+    let mut compiled = match active_policy.as_ref() {
+        Some(policy) => parse_yaml_value(&policy.policy_yaml).map_err(|err| {
+            ApiError::Internal(format!("active tenant policy is invalid YAML: {err}"))
+        })?,
+        None => serde_yaml::Value::Mapping(serde_yaml::Mapping::new()),
+    };
+    let mut source_attachments = Vec::new();
+    let mut applied_attachment_count = 0_i64;
+
+    for row in attachment_rows {
+        let attachment = PolicyAttachmentRow::from_row(row).map_err(ApiError::Database)?;
+        if !attachment.matches(
+            auth.tenant_id,
+            principal_id,
+            &swarm_ids,
+            &project_ids,
+            &capability_group_ids,
+        ) {
+            continue;
+        }
+
+        if let Some(policy_yaml) = attachment.resolved_policy_yaml()? {
+            let overlay = parse_yaml_value(policy_yaml).map_err(|err| {
+                ApiError::Internal(format!(
+                    "policy attachment {} contains invalid YAML: {err}",
+                    attachment.id
+                ))
+            })?;
+            merge_yaml_value(&mut compiled, overlay);
+        }
+
+        source_attachments.push(ResolvedPolicyAttachment {
+            attachment_id: attachment.id,
+            target_kind: attachment.target_kind.clone(),
+            target_id: attachment.target_id.unwrap_or(auth.tenant_id),
+            priority: attachment.priority,
+            policy_ref: attachment.policy_ref.clone(),
+            checksum_sha256: attachment.checksum_sha256.clone(),
+        });
+        applied_attachment_count += 1;
+    }
+
+    let lifecycle_state: String = row.try_get("lifecycle_state").map_err(ApiError::Database)?;
+    let liveness_state: Option<String> =
+        row.try_get("liveness_state").map_err(ApiError::Database)?;
+    let applied_overlays = lifecycle_overlay_names(&lifecycle_state);
+    let compiled_policy_yaml = serialize_compiled_policy(&compiled).map_err(|err| {
+        ApiError::Internal(format!("failed to serialize effective policy YAML: {err}"))
+    })?;
+    let compiled_policy_sha256 = checksum_sha256_hex(&compiled_policy_yaml);
+    let resolution_version = active_policy
+        .as_ref()
+        .map(|policy| policy.version)
+        .unwrap_or(0)
+        + applied_attachment_count;
+
+    Ok(Json(EffectivePolicyResponse {
+        tenant_id: auth.tenant_id,
+        principal_id,
+        agent_id: Some(row.try_get("agent_id").map_err(ApiError::Database)?),
+        lifecycle_state,
+        liveness_state,
+        compiled_policy_yaml,
+        compiled_policy_sha256,
+        resolution_version,
+        resolved_at: Utc::now(),
+        source_attachments,
+        applied_overlays,
+    }))
+}
+
 async fn heartbeat(
     State(state): State<AppState>,
     auth: AuthenticatedTenant,
     Json(req): Json<HeartbeatRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let result = sqlx::query::query(HEARTBEAT_UPDATE_SQL)
+    let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
+    let row = sqlx::query::query(HEARTBEAT_UPDATE_SQL)
         .bind(auth.tenant_id)
         .bind(&req.agent_id)
         .bind(req.metadata.as_ref())
-        .execute(&state.db)
+        .fetch_optional(tx.as_mut())
         .await
         .map_err(ApiError::Database)?;
 
-    if result.rows_affected() == 0 {
+    let Some(row) = row else {
         return Err(ApiError::NotFound);
-    }
+    };
+
+    let principal_id = row
+        .try_get::<Option<Uuid>, _>("principal_id")
+        .map_err(ApiError::Database)?;
+    set_principal_liveness_state(&mut tx, principal_id, "active").await?;
+    tx.commit().await.map_err(ApiError::Database)?;
 
     // Reconciliation path: if a tenant-level active policy exists, ensure this
     // agent's KV bucket converges even if it missed a historical deploy.
@@ -254,7 +481,7 @@ async fn enroll_agent(
         "SELECT COUNT(*)::bigint as cnt FROM agents WHERE tenant_id = $1 AND status = 'active'",
     )
     .bind(tenant_id)
-    .fetch_one(&mut *tx)
+    .fetch_one(tx.as_mut())
     .await
     .map_err(ApiError::Database)?;
     let count: i64 = count_row.try_get("cnt").map_err(ApiError::Database)?;
@@ -272,18 +499,42 @@ async fn enroll_agent(
         "version": req.version,
         "enrolled_at": chrono::Utc::now().to_rfc3339(),
     });
+    let principal_id = upsert_endpoint_principal(
+        &mut tx,
+        EndpointPrincipalUpsert {
+            tenant_id,
+            stable_ref: &agent_id,
+            display_name: &req.hostname,
+            public_key: &req.public_key,
+            trust_level: "medium",
+            lifecycle_state: "active",
+            liveness_state: Some("active"),
+            metadata: &metadata,
+        },
+    )
+    .await?;
 
     let row = sqlx::query::query(
-        r#"INSERT INTO agents (tenant_id, agent_id, name, public_key, role, trust_level, metadata)
-           VALUES ($1, $2, $3, $4, 'coder', 'medium', $5)
+        r#"INSERT INTO agents (
+               tenant_id,
+               principal_id,
+               agent_id,
+               name,
+               public_key,
+               role,
+               trust_level,
+               metadata
+           )
+           VALUES ($1, $2, $3, $4, $5, 'coder', 'medium', $6)
            RETURNING *"#,
     )
     .bind(tenant_id)
+    .bind(principal_id)
     .bind(&agent_id)
     .bind(&req.hostname)
     .bind(&req.public_key)
     .bind(&metadata)
-    .fetch_one(&mut *tx)
+    .fetch_one(tx.as_mut())
     .await
     .map_err(ApiError::Database)?;
 
@@ -382,10 +633,23 @@ async fn rollback_failed_enrollment(
 ) -> Result<(), sqlx::error::Error> {
     let mut tx = db.begin().await?;
 
+    let principal_row = sqlx::query::query("SELECT principal_id FROM agents WHERE id = $1")
+        .bind(agent_uuid)
+        .fetch_optional(&mut *tx)
+        .await?;
+    let principal_id = principal_row
+        .as_ref()
+        .and_then(|row| row.try_get::<Option<Uuid>, _>("principal_id").ok())
+        .flatten();
+
     sqlx::query::query("DELETE FROM agents WHERE id = $1")
         .bind(agent_uuid)
         .execute(&mut *tx)
         .await?;
+
+    if let Some(principal_id) = principal_id {
+        delete_principal_if_unreferenced(&mut tx, principal_id).await?;
+    }
 
     sqlx::query::query(
         r#"UPDATE tenant_enrollment_tokens
@@ -398,6 +662,289 @@ async fn rollback_failed_enrollment(
 
     tx.commit().await?;
     Ok(())
+}
+
+async fn rollback_failed_agent_creation(
+    db: &crate::db::PgPool,
+    agent_uuid: Uuid,
+) -> Result<(), sqlx::error::Error> {
+    let mut tx = db.begin().await?;
+
+    let principal_row = sqlx::query::query("SELECT principal_id FROM agents WHERE id = $1")
+        .bind(agent_uuid)
+        .fetch_optional(&mut *tx)
+        .await?;
+    let principal_id = principal_row
+        .as_ref()
+        .and_then(|row| row.try_get::<Option<Uuid>, _>("principal_id").ok())
+        .flatten();
+
+    sqlx::query::query("DELETE FROM agents WHERE id = $1")
+        .bind(agent_uuid)
+        .execute(&mut *tx)
+        .await?;
+
+    if let Some(principal_id) = principal_id {
+        delete_principal_if_unreferenced(&mut tx, principal_id).await?;
+    }
+
+    tx.commit().await?;
+    Ok(())
+}
+
+async fn upsert_endpoint_principal(
+    tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
+    principal: EndpointPrincipalUpsert<'_>,
+) -> Result<Uuid, ApiError> {
+    let row = sqlx::query::query(
+        r#"INSERT INTO principals (
+               tenant_id,
+               principal_type,
+               stable_ref,
+               display_name,
+               trust_level,
+               lifecycle_state,
+               liveness_state,
+               public_key,
+               metadata
+           )
+           VALUES ($1, 'endpoint_agent', $2, $3, $4, $5, $6, $7, $8)
+           ON CONFLICT (tenant_id, principal_type, stable_ref) DO UPDATE
+           SET display_name = EXCLUDED.display_name,
+               trust_level = EXCLUDED.trust_level,
+               lifecycle_state = EXCLUDED.lifecycle_state,
+               liveness_state = EXCLUDED.liveness_state,
+               public_key = EXCLUDED.public_key,
+               metadata = EXCLUDED.metadata,
+               updated_at = now()
+           RETURNING id"#,
+    )
+    .bind(principal.tenant_id)
+    .bind(principal.stable_ref)
+    .bind(principal.display_name)
+    .bind(principal.trust_level)
+    .bind(principal.lifecycle_state)
+    .bind(principal.liveness_state)
+    .bind(principal.public_key)
+    .bind(principal.metadata)
+    .fetch_one(tx.as_mut())
+    .await
+    .map_err(ApiError::Database)?;
+
+    row.try_get("id").map_err(ApiError::Database)
+}
+
+async fn set_principal_liveness_state(
+    tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
+    principal_id: Option<Uuid>,
+    liveness_state: &str,
+) -> Result<(), ApiError> {
+    let Some(principal_id) = principal_id else {
+        return Ok(());
+    };
+
+    sqlx::query::query(
+        r#"UPDATE principals
+           SET liveness_state = $2,
+               updated_at = now()
+           WHERE id = $1"#,
+    )
+    .bind(principal_id)
+    .bind(liveness_state)
+    .execute(tx.as_mut())
+    .await
+    .map_err(ApiError::Database)?;
+
+    Ok(())
+}
+
+async fn delete_principal_if_unreferenced(
+    tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
+    principal_id: Uuid,
+) -> Result<(), sqlx::error::Error> {
+    sqlx::query::query(
+        r#"DELETE FROM principals AS p
+           WHERE p.id = $1
+             AND NOT EXISTS (
+                 SELECT 1
+                 FROM agents AS a
+                 WHERE a.principal_id = p.id
+             )
+             AND NOT EXISTS (
+                 SELECT 1
+                 FROM approvals AS ap
+                 WHERE ap.principal_id = p.id
+             )
+             AND NOT EXISTS (
+                 SELECT 1
+                 FROM principal_memberships AS pm
+                 WHERE pm.principal_id = p.id
+             )
+             AND NOT EXISTS (
+                 SELECT 1
+                 FROM grants AS g
+                 WHERE g.issuer_principal_id = p.id
+                    OR g.subject_principal_id = p.id
+             )
+             AND NOT EXISTS (
+                 SELECT 1
+                 FROM delegation_edges AS de
+                 WHERE de.parent_principal_id = p.id
+                    OR de.child_principal_id = p.id
+             )
+             AND NOT EXISTS (
+                 SELECT 1
+                 FROM policy_attachments AS pa
+                 WHERE pa.target_kind = 'principal'
+                   AND pa.target_id = p.id
+             )"#,
+    )
+    .bind(principal_id)
+    .execute(tx.as_mut())
+    .await?;
+
+    Ok(())
+}
+
+struct EndpointPrincipalUpsert<'a> {
+    tenant_id: Uuid,
+    stable_ref: &'a str,
+    display_name: &'a str,
+    public_key: &'a str,
+    trust_level: &'a str,
+    lifecycle_state: &'a str,
+    liveness_state: Option<&'a str>,
+    metadata: &'a serde_json::Value,
+}
+
+fn checksum_sha256_hex(input: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(input.as_bytes());
+    hex::encode(hasher.finalize())
+}
+
+fn parse_yaml_value(input: &str) -> Result<serde_yaml::Value, serde_yaml::Error> {
+    serde_yaml::from_str::<serde_yaml::Value>(input)
+}
+
+fn serialize_compiled_policy(value: &serde_yaml::Value) -> Result<String, serde_yaml::Error> {
+    match value {
+        serde_yaml::Value::Mapping(map) if map.is_empty() => Ok(String::new()),
+        serde_yaml::Value::Null => Ok(String::new()),
+        _ => serde_yaml::to_string(value),
+    }
+}
+
+fn merge_yaml_value(base: &mut serde_yaml::Value, overlay: serde_yaml::Value) {
+    match (base, overlay) {
+        (serde_yaml::Value::Mapping(base_map), serde_yaml::Value::Mapping(overlay_map)) => {
+            for (key, value) in overlay_map {
+                if value.is_null() {
+                    base_map.remove(&key);
+                    continue;
+                }
+
+                if let Some(existing) = base_map.get_mut(&key) {
+                    merge_yaml_value(existing, value);
+                } else {
+                    base_map.insert(key, value);
+                }
+            }
+        }
+        (base_slot, replacement) => {
+            *base_slot = replacement;
+        }
+    }
+}
+
+fn lifecycle_overlay_names(lifecycle_state: &str) -> Vec<String> {
+    match lifecycle_state {
+        "restricted" => vec!["restricted".to_string()],
+        "observe_only" => vec!["observe_only".to_string()],
+        "quarantined" => vec!["quarantined".to_string()],
+        "revoked" => vec!["revoked".to_string()],
+        _ => Vec::new(),
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct EffectivePolicyResponse {
+    tenant_id: Uuid,
+    principal_id: Uuid,
+    agent_id: Option<String>,
+    lifecycle_state: String,
+    liveness_state: Option<String>,
+    compiled_policy_yaml: String,
+    compiled_policy_sha256: String,
+    resolution_version: i64,
+    resolved_at: chrono::DateTime<chrono::Utc>,
+    source_attachments: Vec<ResolvedPolicyAttachment>,
+    applied_overlays: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct ResolvedPolicyAttachment {
+    attachment_id: Uuid,
+    target_kind: String,
+    target_id: Uuid,
+    priority: i32,
+    policy_ref: Option<String>,
+    checksum_sha256: Option<String>,
+}
+
+struct PolicyAttachmentRow {
+    id: Uuid,
+    target_kind: String,
+    target_id: Option<Uuid>,
+    priority: i32,
+    policy_ref: Option<String>,
+    policy_yaml: Option<String>,
+    checksum_sha256: Option<String>,
+}
+
+impl PolicyAttachmentRow {
+    fn from_row(row: sqlx_postgres::PgRow) -> Result<Self, sqlx::error::Error> {
+        Ok(Self {
+            id: row.try_get("id")?,
+            target_kind: row.try_get("target_kind")?,
+            target_id: row.try_get("target_id")?,
+            priority: row.try_get("priority")?,
+            policy_ref: row.try_get("policy_ref")?,
+            policy_yaml: row.try_get("policy_yaml")?,
+            checksum_sha256: row.try_get("checksum_sha256")?,
+        })
+    }
+
+    fn matches(
+        &self,
+        tenant_id: Uuid,
+        principal_id: Uuid,
+        swarm_ids: &HashSet<Uuid>,
+        project_ids: &HashSet<Uuid>,
+        capability_group_ids: &HashSet<Uuid>,
+    ) -> bool {
+        match self.target_kind.as_str() {
+            "tenant" => self.target_id.is_none(),
+            "swarm" => self.target_id.is_some_and(|id| swarm_ids.contains(&id)),
+            "project" => self.target_id.is_some_and(|id| project_ids.contains(&id)),
+            "capability_group" => self
+                .target_id
+                .is_some_and(|id| capability_group_ids.contains(&id)),
+            "principal" => self.target_id == Some(principal_id),
+            _ => self.target_id == Some(tenant_id) && self.target_kind == "tenant",
+        }
+    }
+
+    fn resolved_policy_yaml(&self) -> Result<Option<&str>, ApiError> {
+        match (self.policy_yaml.as_deref(), self.policy_ref.as_deref()) {
+            (Some(policy_yaml), _) => Ok(Some(policy_yaml)),
+            (None, Some(policy_ref)) => Err(ApiError::Conflict(format!(
+                "policy attachment {} references unresolved policy_ref `{policy_ref}`",
+                self.id
+            ))),
+            (None, None) => Ok(None),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -429,5 +976,94 @@ mod tests {
         let hash = hash_enrollment_token("cset_example");
         assert_eq!(hash.len(), 64);
         assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn merge_yaml_replaces_arrays_and_removes_null_fields() {
+        let mut base =
+            parse_yaml_value("rules:\n  - name: base\nsettings:\n  mode: standard\n  keep: true\n")
+                .expect("base yaml");
+        let overlay = parse_yaml_value(
+            "rules:\n  - name: override\nsettings:\n  mode: restricted\n  keep: null\n",
+        )
+        .expect("overlay yaml");
+
+        merge_yaml_value(&mut base, overlay);
+        let rendered = serialize_compiled_policy(&base).expect("serialize merged yaml");
+        let merged: serde_yaml::Value = serde_yaml::from_str(&rendered).expect("parse merged yaml");
+        assert_eq!(merged["rules"][0]["name"], "override");
+        assert_eq!(merged["settings"]["mode"], "restricted");
+        assert!(merged["settings"].get("keep").is_none());
+    }
+
+    #[test]
+    fn lifecycle_overlay_names_follow_directory_contract() {
+        assert!(lifecycle_overlay_names("active").is_empty());
+        assert_eq!(
+            lifecycle_overlay_names("observe_only"),
+            vec!["observe_only"]
+        );
+        assert_eq!(lifecycle_overlay_names("quarantined"), vec!["quarantined"]);
+        assert_eq!(lifecycle_overlay_names("revoked"), vec!["revoked"]);
+    }
+
+    #[test]
+    fn policy_attachment_rejects_unknown_target_kind() {
+        let attachment = PolicyAttachmentRow {
+            id: Uuid::new_v4(),
+            target_kind: "unknown".to_string(),
+            target_id: Some(Uuid::new_v4()),
+            priority: 10,
+            policy_ref: None,
+            policy_yaml: Some("policy:\n  mode: noop\n".to_string()),
+            checksum_sha256: None,
+        };
+
+        assert!(!attachment.matches(
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            &HashSet::new(),
+            &HashSet::new(),
+            &HashSet::new(),
+        ));
+    }
+
+    #[test]
+    fn policy_attachment_ref_without_inline_yaml_fails_closed() {
+        let attachment = PolicyAttachmentRow {
+            id: Uuid::new_v4(),
+            target_kind: "tenant".to_string(),
+            target_id: None,
+            priority: 10,
+            policy_ref: Some("catalog/default".to_string()),
+            policy_yaml: None,
+            checksum_sha256: None,
+        };
+
+        let error = attachment
+            .resolved_policy_yaml()
+            .expect_err("ref-only attachment should fail closed");
+        assert!(matches!(error, ApiError::Conflict(_)));
+        assert!(error.to_string().contains("catalog/default"));
+    }
+
+    #[test]
+    fn policy_attachment_prefers_inline_yaml_when_present() {
+        let attachment = PolicyAttachmentRow {
+            id: Uuid::new_v4(),
+            target_kind: "tenant".to_string(),
+            target_id: None,
+            priority: 10,
+            policy_ref: Some("catalog/default".to_string()),
+            policy_yaml: Some("policy:\n  mode: inline\n".to_string()),
+            checksum_sha256: None,
+        };
+
+        assert_eq!(
+            attachment
+                .resolved_policy_yaml()
+                .expect("inline yaml should resolve"),
+            Some("policy:\n  mode: inline\n")
+        );
     }
 }

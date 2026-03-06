@@ -4,7 +4,9 @@
 //! so cloud fleet state tracks the same signal the agent is publishing.
 
 use serde_json::Value;
+use sqlx::row::Row;
 use tokio::sync::watch;
+use uuid::Uuid;
 
 use crate::db::PgPool;
 #[cfg(test)]
@@ -124,7 +126,11 @@ async fn process_heartbeat_message(
     })?;
 
     let metadata = heartbeat_metadata(&msg.payload);
-    let result = sqlx::query::query(
+    let mut tx = db
+        .begin()
+        .await
+        .map_err(|err| ProcessingError::retryable(err.to_string()))?;
+    let row = sqlx::query::query(
         r#"UPDATE agents AS a
            SET last_heartbeat_at = now(),
                status = 'active',
@@ -133,22 +139,43 @@ async fn process_heartbeat_message(
            WHERE t.id = a.tenant_id
              AND t.slug = $1
              AND a.agent_id = $2
-             AND a.status IN ('active', 'stale', 'dead')"#,
+             AND a.status IN ('active', 'stale', 'dead')
+           RETURNING a.principal_id"#,
     )
     .bind(tenant_slug)
     .bind(agent_id)
     .bind(metadata)
-    .execute(db)
+    .fetch_optional(tx.as_mut())
     .await
     .map_err(|err| ProcessingError::retryable(err.to_string()))?;
 
-    if result.rows_affected() == 0 {
+    let Some(row) = row else {
         tracing::debug!(
             subject = %subject,
             "Heartbeat did not match an active/stale/dead agent row"
         );
         return Ok(());
+    };
+
+    let principal_id = row
+        .try_get::<Option<Uuid>, _>("principal_id")
+        .map_err(|err| ProcessingError::retryable(err.to_string()))?;
+    if let Some(principal_id) = principal_id {
+        sqlx::query::query(
+            r#"UPDATE principals
+               SET liveness_state = 'active',
+                   updated_at = now()
+               WHERE id = $1"#,
+        )
+        .bind(principal_id)
+        .execute(tx.as_mut())
+        .await
+        .map_err(|err| ProcessingError::retryable(err.to_string()))?;
     }
+
+    tx.commit()
+        .await
+        .map_err(|err| ProcessingError::retryable(err.to_string()))?;
 
     if let Some(active_policy) =
         policy_distribution::fetch_active_policy_by_tenant_slug(db, tenant_slug)

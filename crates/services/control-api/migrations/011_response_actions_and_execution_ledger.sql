@@ -1,0 +1,128 @@
+-- Durable fleet response-action ledger and acknowledgement scaffolding.
+
+CREATE TABLE IF NOT EXISTS response_actions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    action_type TEXT NOT NULL CHECK (
+        action_type IN (
+            'transition_posture',
+            'request_policy_reload',
+            'terminate_session',
+            'kill_switch',
+            'quarantine_principal',
+            'revoke_grant',
+            'revoke_principal'
+        )
+    ),
+    target_kind TEXT NOT NULL CHECK (
+        target_kind IN (
+            'endpoint',
+            'runtime',
+            'session',
+            'principal',
+            'grant',
+            'swarm',
+            'project'
+        )
+    ),
+    target_id TEXT NOT NULL,
+    requested_by_type TEXT NOT NULL CHECK (requested_by_type IN ('user', 'service')),
+    requested_by_id TEXT NOT NULL,
+    requested_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at TIMESTAMPTZ,
+    reason TEXT NOT NULL,
+    case_id TEXT,
+    source_detection_id TEXT,
+    source_approval_id UUID REFERENCES approvals(id) ON DELETE SET NULL,
+    require_acknowledgement BOOLEAN NOT NULL DEFAULT true,
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    status TEXT NOT NULL DEFAULT 'queued' CHECK (
+        status IN (
+            'queued',
+            'approved',
+            'published',
+            'acknowledged',
+            'rejected',
+            'failed',
+            'expired',
+            'cancelled'
+        )
+    ),
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_response_actions_tenant_requested
+ON response_actions(tenant_id, requested_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_response_actions_tenant_status
+ON response_actions(tenant_id, status, requested_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_response_actions_target
+ON response_actions(tenant_id, target_kind, target_id);
+
+CREATE TABLE IF NOT EXISTS response_action_deliveries (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    action_id UUID NOT NULL REFERENCES response_actions(id) ON DELETE CASCADE,
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    target_kind TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    executor_kind TEXT NOT NULL DEFAULT 'endpoint_agent' CHECK (
+        executor_kind IN ('endpoint_agent', 'runtime_agent', 'session_api', 'cloud_only')
+    ),
+    delivery_subject TEXT,
+    status TEXT NOT NULL DEFAULT 'queued' CHECK (
+        status IN (
+            'queued',
+            'approved',
+            'published',
+            'acknowledged',
+            'rejected',
+            'failed',
+            'expired',
+            'cancelled'
+        )
+    ),
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    published_at TIMESTAMPTZ,
+    acknowledged_at TIMESTAMPTZ,
+    acknowledgement_deadline TIMESTAMPTZ,
+    last_error TEXT,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (action_id, target_kind, target_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_response_action_deliveries_action
+ON response_action_deliveries(action_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_response_action_deliveries_tenant_status
+ON response_action_deliveries(tenant_id, status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS response_action_acks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    action_id UUID NOT NULL REFERENCES response_actions(id) ON DELETE CASCADE,
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    target_kind TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    observed_at TIMESTAMPTZ NOT NULL,
+    status TEXT NOT NULL CHECK (
+        status IN ('acknowledged', 'rejected', 'failed', 'expired')
+    ),
+    message TEXT,
+    resulting_state TEXT,
+    raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT fk_response_action_acks_delivery
+        FOREIGN KEY (action_id, target_kind, target_id)
+        REFERENCES response_action_deliveries(action_id, target_kind, target_id)
+        ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_response_action_acks_action
+ON response_action_acks(action_id, observed_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_response_action_acks_tenant_target
+ON response_action_acks(tenant_id, target_kind, target_id, observed_at DESC);

@@ -248,6 +248,7 @@ mod tests {
     fn make_test_alert(severity: RuleSeverity) -> Alert {
         let evidence = vec![
             TimelineEvent {
+                event_id: None,
                 timestamp: Utc.with_ymd_and_hms(2025, 6, 15, 12, 0, 0).unwrap(),
                 source: EventSource::Receipt,
                 kind: TimelineEventKind::GuardDecision,
@@ -262,6 +263,7 @@ mod tests {
                 raw: None,
             },
             TimelineEvent {
+                event_id: None,
                 timestamp: Utc.with_ymd_and_hms(2025, 6, 15, 12, 0, 25).unwrap(),
                 source: EventSource::Hubble,
                 kind: TimelineEventKind::NetworkFlow,
