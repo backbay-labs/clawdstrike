@@ -63,6 +63,7 @@ function createState(): AppState {
     agentIndex: 0,
     homeActionIndex: 0,
     homeFocus: "prompt",
+    homePromptPulseStartFrame: 0,
     inputMode: "main",
     commandIndex: 0,
     statusMessage: "",
@@ -188,6 +189,7 @@ describe("main screen", () => {
   test("uses esc to toggle prompt and nav focus without clearing prompt text", () => {
     const state = createState()
     state.promptBuffer = "triage "
+    state.animationFrame = 12
     const app = new TestApp(tempDir)
     const screen = createMainScreen([])
     const ctx = createContext(state, app)
@@ -199,6 +201,7 @@ describe("main screen", () => {
     expect(screen.handleInput("\x1b", ctx)).toBe(true)
     expect(state.homeFocus).toBe("prompt")
     expect(state.promptBuffer).toBe("triage ")
+    expect(state.homePromptPulseStartFrame).toBe(12)
   })
 
   test("keeps printable keys as prompt input when text already exists", () => {
@@ -228,6 +231,7 @@ describe("main screen", () => {
 
   test("cycles between prompt and actions with tab", () => {
     const state = createState()
+    state.animationFrame = 9
     const app = new TestApp(tempDir)
     const screen = createMainScreen([])
     const ctx = createContext(state, app)
@@ -237,6 +241,7 @@ describe("main screen", () => {
 
     expect(screen.handleInput("\t", ctx)).toBe(true)
     expect(state.homeFocus).toBe("prompt")
+    expect(state.homePromptPulseStartFrame).toBe(9)
   })
 
   test("renders focus-aware home hints", () => {

@@ -9,6 +9,8 @@ export interface BoxOptions {
   style?: "single" | "double" | "rounded"
   titleAlign?: "left" | "center" | "right"
   padding?: number
+  borderColor?: string
+  titleColor?: string
 }
 
 const BORDERS = {
@@ -28,6 +30,8 @@ export function renderBox(
   const style = opts?.style ?? "single"
   const titleAlign = opts?.titleAlign ?? "center"
   const padding = opts?.padding ?? 0
+  const borderColor = opts?.borderColor ?? theme.dim
+  const titleColor = opts?.titleColor ?? theme.secondary
   const b = BORDERS[style]
 
   const innerWidth = width - 2
@@ -56,26 +60,26 @@ export function renderBox(
         rightFill = remaining - leftFill
       }
       topBar =
-        `${theme.dim}${b.tl}${b.h.repeat(leftFill)}${theme.reset}` +
-        `${theme.secondary}${decorated}${theme.reset}` +
-        `${theme.dim}${b.h.repeat(rightFill)}${b.tr}${theme.reset}`
+        `${borderColor}${b.tl}${b.h.repeat(leftFill)}${theme.reset}` +
+        `${titleColor}${decorated}${theme.reset}` +
+        `${borderColor}${b.h.repeat(rightFill)}${b.tr}${theme.reset}`
     }
   } else {
-    topBar = `${theme.dim}${b.tl}${b.h.repeat(innerWidth)}${b.tr}${theme.reset}`
+    topBar = `${borderColor}${b.tl}${b.h.repeat(innerWidth)}${b.tr}${theme.reset}`
   }
 
   // Build bottom border
-  const bottomBar = `${theme.dim}${b.bl}${b.h.repeat(innerWidth)}${b.br}${theme.reset}`
+  const bottomBar = `${borderColor}${b.bl}${b.h.repeat(innerWidth)}${b.br}${theme.reset}`
 
   // Build content lines
   const lines: string[] = [topBar]
   if (contentLines.length === 0) {
-    lines.push(`${theme.dim}${b.v}${theme.reset}${" ".repeat(innerWidth)}${theme.dim}${b.v}${theme.reset}`)
+    lines.push(`${borderColor}${b.v}${theme.reset}${" ".repeat(innerWidth)}${borderColor}${b.v}${theme.reset}`)
   } else {
     for (const line of contentLines) {
       const fitted = fitString(line, paddedInnerWidth)
       lines.push(
-        `${theme.dim}${b.v}${theme.reset}${padStr}${fitted}${padStr}${theme.dim}${b.v}${theme.reset}`,
+        `${borderColor}${b.v}${theme.reset}${padStr}${fitted}${padStr}${borderColor}${b.v}${theme.reset}`,
       )
     }
   }

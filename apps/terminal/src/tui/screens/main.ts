@@ -14,6 +14,7 @@ import { asCheckEventData, eventDecision, type DaemonEvent } from "../../hushd"
 const STREAM_STALE_MS = 5 * 60_000
 const HOME_ACTION_COLUMNS = 2
 const HOME_ACTION_SELECTED_BG = "\x1b[48;5;52m"
+const PROMPT_PULSE_FRAMES = 10
 
 interface HomeAction {
   key: string
@@ -206,6 +207,45 @@ function homeFocusTitle(focus: HomeFocus): string {
   }
 }
 
+function setHomeFocus(state: AppState, focus: HomeFocus): void {
+  if (state.homeFocus === focus) {
+    return
+  }
+
+  state.homeFocus = focus
+  if (focus === "prompt") {
+    state.homePromptPulseStartFrame = state.animationFrame
+  }
+}
+
+function promptPulseColors(state: AppState): { borderColor: string; titleColor: string } {
+  if (state.homeFocus !== "prompt") {
+    return {
+      borderColor: THEME.dim,
+      titleColor: THEME.dim,
+    }
+  }
+
+  const age = Math.max(0, state.animationFrame - state.homePromptPulseStartFrame)
+  if (age < PROMPT_PULSE_FRAMES) {
+    const phase = age % 4
+    if (phase === 0) {
+      return { borderColor: THEME.accent, titleColor: THEME.white }
+    }
+    if (phase === 1) {
+      return { borderColor: THEME.secondary, titleColor: THEME.white }
+    }
+    if (phase === 2) {
+      return { borderColor: THEME.accent, titleColor: THEME.secondary }
+    }
+  }
+
+  return {
+    borderColor: THEME.secondary,
+    titleColor: THEME.secondary,
+  }
+}
+
 function renderHomeActionGuide(focus: HomeFocus, contentWidth: number): string[] {
   switch (focus) {
     case "actions":
@@ -298,7 +338,7 @@ function handleMainInput(key: string, ctx: ScreenContext): boolean {
 
   // Tab - cycle prompt/actions focus
   if (key === "\t") {
-    state.homeFocus = cycleHomeFocus(state.homeFocus)
+    setHomeFocus(state, cycleHomeFocus(state.homeFocus))
     app.render()
     return true
   }
@@ -364,9 +404,9 @@ function handleMainInput(key: string, ctx: ScreenContext): boolean {
   // Escape - toggle prompt/nav, or exit actions focus back to prompt
   if (key === "\x1b" || key === "\x1b\x1b") {
     if (state.homeFocus === "actions") {
-      state.homeFocus = "prompt"
+      setHomeFocus(state, "prompt")
     } else {
-      state.homeFocus = state.homeFocus === "prompt" ? "nav" : "prompt"
+      setHomeFocus(state, state.homeFocus === "prompt" ? "nav" : "prompt")
     }
     app.render()
     return true
@@ -553,6 +593,11 @@ function renderMainContent(ctx: ScreenContext, _commands: Command[]): string {
   const prompt = state.promptBuffer
   const placeholder = 'Ask anything... "Fix broken tests"'
   const cursor = prompt ? THEME.secondary + "▎" + THEME.reset : ""
+  const promptFocused = state.homeFocus === "prompt"
+  const promptBoxColors = promptPulseColors(state)
+  const promptTextColor = promptFocused ? THEME.white : THEME.muted
+  const placeholderColor = promptFocused ? THEME.dim : THEME.dimAttr + THEME.muted
+  const metaColor = promptFocused ? THEME.dim : THEME.muted
 
   const innerWidth = inputWidth - 4
   const visiblePrompt = prompt.length > innerWidth - 2
@@ -564,18 +609,24 @@ function renderMainContent(ctx: ScreenContext, _commands: Command[]): string {
     homeFocusTitle(state.homeFocus),
     [
       prompt
-        ? `${THEME.white}${inputContent}${THEME.reset}`
-        : `${THEME.dim}${placeholder}${THEME.reset}`,
+        ? `${promptTextColor}${inputContent}${THEME.reset}`
+        : `${placeholderColor}${placeholder}${THEME.reset}`,
       "",
       joinColumns(
-        `${THEME.accent}${agent.name}${THEME.reset}  ${THEME.muted}${agent.model}${THEME.reset} ${THEME.dim}${agent.provider}${THEME.reset}`,
-        `${THEME.dim}ctrl+n${THEME.reset} ${THEME.muted}next agent${THEME.reset}`,
+        `${THEME.accent}${agent.name}${THEME.reset}  ${metaColor}${agent.model}${THEME.reset} ${THEME.dim}${agent.provider}${THEME.reset}`,
+        `${metaColor}ctrl+n${THEME.reset} ${metaColor}next agent${THEME.reset}`,
         inputWidth - 4,
       ),
     ],
     inputWidth,
     THEME,
-    { style: "rounded", titleAlign: "left", padding: 1 },
+    {
+      style: "rounded",
+      titleAlign: "left",
+      padding: 1,
+      borderColor: promptBoxColors.borderColor,
+      titleColor: promptBoxColors.titleColor,
+    },
   )
   lines.push(...centerBlock(inputBox, width))
 

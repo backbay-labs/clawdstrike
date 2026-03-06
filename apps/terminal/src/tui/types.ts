@@ -318,6 +318,7 @@ export interface AppState {
   agentIndex: number
   homeActionIndex: number
   homeFocus: HomeFocus
+  homePromptPulseStartFrame: number
 
   // UI mode
   inputMode: InputMode
