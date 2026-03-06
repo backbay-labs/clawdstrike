@@ -750,6 +750,41 @@ describe("hunt report screen", () => {
     expect(stripAnsi(state.hunt.report.statusMessage ?? "")).toContain("Loaded exported report:")
   })
 
+  test("supports ANSI arrow keys in report history", async () => {
+    const state = createState()
+    updateInvestigation(state, {
+      origin: "timeline",
+      title: "First Entry",
+      summary: "First exported report.",
+      query: "source=receipt",
+      events: [],
+      findings: ["first"],
+    })
+    await exportReportBundle(buildInvestigationReport(state)!, tempDir)
+
+    updateInvestigation(state, {
+      origin: "timeline",
+      title: "Second Entry",
+      summary: "Second exported report.",
+      query: "source=receipt",
+      events: [],
+      findings: ["second"],
+    })
+    await exportReportBundle(buildInvestigationReport(state)!, tempDir)
+
+    const app = new TestApp(tempDir)
+    const ctx = createContext(state, app, 110, 24)
+
+    huntReportHistoryScreen.onEnter?.(ctx)
+    await Bun.sleep(25)
+
+    expect(state.hunt.reportHistory.list.selected).toBe(0)
+    expect(huntReportHistoryScreen.handleInput("\x1b[B", ctx)).toBe(true)
+    expect(state.hunt.reportHistory.list.selected).toBe(1)
+    expect(huntReportHistoryScreen.handleInput("\x1b[A", ctx)).toBe(true)
+    expect(state.hunt.reportHistory.list.selected).toBe(0)
+  })
+
   test("returns to the originating hunt screen when exiting report", () => {
     const state = createState()
     updateInvestigation(state, {

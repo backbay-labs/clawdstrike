@@ -273,6 +273,7 @@ export class TUIApp implements AppController {
           this.state.hushdLastError = "health probe failed"
           this.state.securityError = "hushd is unreachable."
           this.state.recentAuditPreview = []
+          this.scheduleHushdReconnect()
           return
         }
 
@@ -348,6 +349,7 @@ export class TUIApp implements AppController {
         this.state.hushdLastError = err instanceof Error ? err.message : String(err)
         this.state.securityError = this.state.hushdLastError
         this.state.recentAuditPreview = []
+        this.scheduleHushdReconnect()
       })
       .finally(() => {
         this.render()

@@ -289,7 +289,7 @@ export const huntReportHistoryScreen: Screen = {
       return false
     }
 
-    if (key === "j" || key === "down") {
+    if (key === "j" || key === "down" || key === "\x1b[B") {
       ctx.state.hunt.reportHistory = {
         ...history,
         list: scrollDown(history.list, history.entries.length, Math.max(3, ctx.height - 5)),
@@ -298,7 +298,7 @@ export const huntReportHistoryScreen: Screen = {
       return true
     }
 
-    if (key === "k" || key === "up") {
+    if (key === "k" || key === "up" || key === "\x1b[A") {
       ctx.state.hunt.reportHistory = {
         ...history,
         list: scrollUp(history.list),

@@ -1177,10 +1177,9 @@ impl AuditQueue {
                     }
                     if summary.rejected > 0 {
                         let rejected_ids: HashSet<_> = summary.rejected_ids.into_iter().collect();
-                        if rejected_ids.len() == summary.rejected {
+                        let has_complete_rejected_ids = rejected_ids.len() == summary.rejected;
+                        if has_complete_rejected_ids {
                             flushed += summary.accepted;
-                        }
-                        if rejected_ids.len() == summary.rejected {
                             self.requeue_selected_flush(events, &rejected_ids).await;
                         } else {
                             tracing::warn!(

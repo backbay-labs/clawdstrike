@@ -422,6 +422,8 @@ export class HushdClient {
         if (query.limit !== undefined) params.set("limit", String(query.limit))
         if (query.offset !== undefined) params.set("offset", String(query.offset))
         if (query.cursor) params.set("cursor", query.cursor)
+        if (query.since) params.set("since", query.since)
+        if (query.until) params.set("until", query.until)
         if (query.event_type) params.set("event_type", query.event_type)
         if (query.action_type) params.set("action_type", query.action_type)
         if (query.decision) {

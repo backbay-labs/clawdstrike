@@ -4,16 +4,34 @@ import { Hushd } from "../src/hushd"
 
 const originalGetClient = Hushd.getClient
 const originalIsInitialized = Hushd.isInitialized
+const originalInit = Hushd.init
+const originalReset = Hushd.reset
 
 afterEach(() => {
   ;(Hushd as unknown as {
     getClient: typeof Hushd.getClient
     isInitialized: typeof Hushd.isInitialized
+    init: typeof Hushd.init
+    reset: typeof Hushd.reset
   }).getClient = originalGetClient
   ;(Hushd as unknown as {
     getClient: typeof Hushd.getClient
     isInitialized: typeof Hushd.isInitialized
+    init: typeof Hushd.init
+    reset: typeof Hushd.reset
   }).isInitialized = originalIsInitialized
+  ;(Hushd as unknown as {
+    getClient: typeof Hushd.getClient
+    isInitialized: typeof Hushd.isInitialized
+    init: typeof Hushd.init
+    reset: typeof Hushd.reset
+  }).init = originalInit
+  ;(Hushd as unknown as {
+    getClient: typeof Hushd.getClient
+    isInitialized: typeof Hushd.isInitialized
+    init: typeof Hushd.init
+    reset: typeof Hushd.reset
+  }).reset = originalReset
 })
 
 describe("TUIApp security refresh", () => {
@@ -74,5 +92,60 @@ describe("TUIApp security refresh", () => {
 
     expect(calls).toBe(1)
     expect(app.state.recentAuditPreview).toHaveLength(1)
+  })
+
+  test("schedules reconnect when the initial hushd probe fails", async () => {
+    const app = new TUIApp(process.cwd()) as unknown as {
+      state: {
+        hushdStatus: string
+        hushdReconnectAttempts: number
+        hushdLastError: string | null
+      }
+      render: () => void
+      connectHushd: () => void
+      hushdReconnectTimer: ReturnType<typeof setTimeout> | null
+    }
+
+    app.render = () => {}
+
+    ;(Hushd as unknown as {
+      getClient: typeof Hushd.getClient
+      isInitialized: typeof Hushd.isInitialized
+      init: typeof Hushd.init
+      reset: typeof Hushd.reset
+    }).isInitialized = () => false
+    ;(Hushd as unknown as {
+      getClient: typeof Hushd.getClient
+      isInitialized: typeof Hushd.isInitialized
+      init: typeof Hushd.init
+      reset: typeof Hushd.reset
+    }).init = () => {}
+    ;(Hushd as unknown as {
+      getClient: typeof Hushd.getClient
+      isInitialized: typeof Hushd.isInitialized
+      init: typeof Hushd.init
+      reset: typeof Hushd.reset
+    }).reset = () => {}
+    ;(Hushd as unknown as {
+      getClient: typeof Hushd.getClient
+      isInitialized: typeof Hushd.isInitialized
+      init: typeof Hushd.init
+      reset: typeof Hushd.reset
+    }).getClient = () => ({
+      probe: async () => false,
+    } as never)
+
+    app.connectHushd()
+    await Bun.sleep(0)
+
+    expect(app.state.hushdStatus).toBe("disconnected")
+    expect(app.state.hushdLastError).toBe("health probe failed")
+    expect(app.state.hushdReconnectAttempts).toBe(1)
+    expect(app.hushdReconnectTimer).not.toBeNull()
+
+    if (app.hushdReconnectTimer) {
+      clearTimeout(app.hushdReconnectTimer)
+      app.hushdReconnectTimer = null
+    }
   })
 })

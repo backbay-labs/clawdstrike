@@ -53,6 +53,8 @@ export interface AuditQuery {
   limit?: number
   offset?: number
   cursor?: string
+  since?: string
+  until?: string
   action_type?: string
   decision?: "allowed" | "blocked" | "allow" | "deny"
   guard?: string

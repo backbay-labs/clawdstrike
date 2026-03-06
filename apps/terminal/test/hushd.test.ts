@@ -280,6 +280,26 @@ describe("HushdClient", () => {
       expect(requestedUrls[1]).toContain("decision=blocked")
     })
 
+    test("preserves since and until audit filters", async () => {
+      const requestedUrls: string[] = []
+      globalThis.fetch = mock(async (input: string | URL | Request) => {
+        const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+        requestedUrls.push(url)
+        return new Response(JSON.stringify({ events: [], total: 0, offset: 0, limit: 50 }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      }) as unknown as typeof fetch
+
+      await client.getAuditDetailed({
+        since: "2026-03-06T00:00:00Z",
+        until: "2026-03-06T01:00:00Z",
+      })
+
+      expect(requestedUrls[0]).toContain("since=2026-03-06T00%3A00%3A00Z")
+      expect(requestedUrls[0]).toContain("until=2026-03-06T01%3A00%3A00Z")
+    })
+
     test("returns null on error", async () => {
       mockFetchError()
       const result = await client.getAudit()
