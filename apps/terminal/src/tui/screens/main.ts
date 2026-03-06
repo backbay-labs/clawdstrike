@@ -153,6 +153,22 @@ function handleMainInput(key: string, ctx: ScreenContext): boolean {
   }
 
   if (!state.promptBuffer) {
+    if (key === "S") {
+      app.setScreen("security")
+      return true
+    }
+    if (key === "A") {
+      app.setScreen("audit")
+      return true
+    }
+    if (key === "P") {
+      app.setScreen("policy")
+      return true
+    }
+    if (key === "I") {
+      app.setScreen("integrations")
+      return true
+    }
     if (key === "W") {
       app.setScreen("hunt-watch")
       return true
@@ -374,7 +390,7 @@ function renderMainContent(ctx: ScreenContext, _commands: Command[]): string {
   const statusHeight = state.statusMessage ? 2 : 0
 
   // Calculate vertical centering for logo + input
-  const contentHeight = LOGO.main.length + LOGO.strike.length + 9 + opsHeight + tickerHeight + statusHeight
+  const contentHeight = LOGO.main.length + LOGO.strike.length + 10 + opsHeight + tickerHeight + statusHeight
   const startY = Math.max(1, Math.floor((height - contentHeight) / 3))
 
   // Top padding
@@ -393,7 +409,6 @@ function renderMainContent(ctx: ScreenContext, _commands: Command[]): string {
   const animatedStrike = getAnimatedStrike(state.animationFrame)
   lines.push(...centerBlock(animatedStrike, width))
 
-  lines.push("")
   lines.push("")
 
   // Hero input box
@@ -431,11 +446,15 @@ function renderMainContent(ctx: ScreenContext, _commands: Command[]): string {
   lines.push("")
 
   // Hint bar - centered
-  const hints =
-    `${THEME.bold}tab${THEME.reset}${THEME.muted} switch agent${THEME.reset}    ` +
+  const primaryHints =
+    `${THEME.bold}tab${THEME.reset}${THEME.muted} agent${THEME.reset}    ` +
     `${THEME.bold}ctrl+p${THEME.reset}${THEME.muted} commands${THEME.reset}    ` +
+    `${THEME.bold}enter${THEME.reset}${THEME.muted} dispatch${THEME.reset}`
+  const secondaryHints =
+    `${THEME.bold}S/A/P/I${THEME.reset}${THEME.muted} core surfaces${THEME.reset}    ` +
     `${THEME.bold}W/X/Q/T/E/H${THEME.reset}${THEME.muted} hunt loop${THEME.reset}`
-  lines.push(centerLine(hints, width))
+  lines.push(centerLine(primaryHints, width))
+  lines.push(centerLine(secondaryHints, width))
 
   // Security event ticker
   if (state.recentEvents.length > 0) {

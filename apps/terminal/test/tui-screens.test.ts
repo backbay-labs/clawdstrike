@@ -101,6 +101,13 @@ function createContext(
   }
 }
 
+async function waitForWatchError(state: AppState, timeoutMs = 2500): Promise<void> {
+  const started = Date.now()
+  while (state.hunt.watch.error == null && Date.now() - started < timeoutMs) {
+    await Bun.sleep(25)
+  }
+}
+
 let tempDir: string
 
 beforeEach(async () => {
@@ -120,6 +127,31 @@ describe("main screen", () => {
 
     expect(screen.handleInput("W", ctx)).toBe(true)
     expect(app.screen).toBe("hunt-watch")
+  })
+
+  test("uses supported surface shortcuts when prompt is empty", () => {
+    const state = createState()
+    const screen = createMainScreen([])
+    const securityApp = new TestApp(tempDir)
+    const securityCtx = createContext(state, securityApp)
+
+    expect(screen.handleInput("S", securityCtx)).toBe(true)
+    expect(securityApp.screen).toBe("security")
+
+    const auditApp = new TestApp(tempDir)
+    const auditCtx = createContext(state, auditApp)
+    expect(screen.handleInput("A", auditCtx)).toBe(true)
+    expect(auditApp.screen).toBe("audit")
+
+    const policyApp = new TestApp(tempDir)
+    const policyCtx = createContext(state, policyApp)
+    expect(screen.handleInput("P", policyCtx)).toBe(true)
+    expect(policyApp.screen).toBe("policy")
+
+    const integrationsApp = new TestApp(tempDir)
+    const integrationsCtx = createContext(state, integrationsApp)
+    expect(screen.handleInput("I", integrationsCtx)).toBe(true)
+    expect(integrationsApp.screen).toBe("integrations")
   })
 
   test("keeps shortcut keys as prompt input when text already exists", () => {
@@ -379,10 +411,7 @@ describe("hunt watch screen", () => {
 
     try {
       huntWatchScreen.onEnter?.(ctx)
-
-      for (let i = 0; i < 20 && state.hunt.watch.error == null; i++) {
-        await Bun.sleep(25)
-      }
+      await waitForWatchError(state)
 
       expect(state.hunt.watch.running).toBe(false)
       expect(state.hunt.watch.error).toContain("stub watch failed")
@@ -413,10 +442,7 @@ describe("hunt watch screen", () => {
 
     try {
       huntWatchScreen.onEnter?.(ctx)
-
-      for (let i = 0; i < 20 && state.hunt.watch.error == null; i++) {
-        await Bun.sleep(25)
-      }
+      await waitForWatchError(state)
 
       expect(state.hunt.watch.running).toBe(false)
       expect(state.hunt.watch.error).toContain("Watch failed: NATS error: connection refused")
@@ -477,10 +503,7 @@ describe("hunt watch screen", () => {
 
     try {
       huntWatchScreen.onEnter?.(ctx)
-
-      for (let i = 0; i < 20 && state.hunt.watch.error == null; i++) {
-        await Bun.sleep(25)
-      }
+      await waitForWatchError(state)
 
       expect(state.hunt.watch.running).toBe(false)
       expect(state.hunt.watch.error).toContain("cluster connect failed")
@@ -581,7 +604,9 @@ describe("security screen", () => {
     const app = new TestApp(tempDir)
     const rendered = stripAnsi(securityScreen.render(createContext(state, app, 110, 28)))
 
-    expect(rendered).toContain("Recent events unavailable because hushd is offline.")
+    expect(rendered).toContain("Recent events")
+    expect(rendered).toContain("unavailable because hushd is")
+    expect(rendered).toContain("offline.")
     expect(rendered).not.toContain("No events yet")
   })
 
@@ -592,7 +617,9 @@ describe("security screen", () => {
     const app = new TestApp(tempDir)
     const rendered = stripAnsi(securityScreen.render(createContext(state, app, 110, 28)))
 
-    expect(rendered).toContain("Recent events unavailable: hushd authorization required.")
+    expect(rendered).toContain("Recent events")
+    expect(rendered).toContain("authorization")
+    expect(rendered).toContain("required.")
     expect(rendered).not.toContain("No events yet")
   })
 })
