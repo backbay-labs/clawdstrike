@@ -549,7 +549,7 @@ export class HushdClient {
               continue
             }
             if (line.startsWith("event:")) {
-              eventType = line.slice(6).replace(/^ /, "") || "message"
+              eventType = line.slice(6).replace(/^ /, "").trimStart() || "message"
               continue
             }
             if (line.startsWith("data:")) {
