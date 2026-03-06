@@ -73,11 +73,24 @@ bun install
 
 The beta TUI runtime currently requires `bun` on the machine running `clawdstrike tui`.
 
+## Codex Agent Pack
+
+The terminal subtree includes a Codex agent pack for live dogfooding, UI polish,
+release hardening, and multi-agent debugging.
+
+- Usage guide: [docs/codex-agent-pack.md](/Users/connor/Medica/backbay/standalone/clawdstrike-sdks/apps/terminal/docs/codex-agent-pack.md)
+- Project config: [.codex/config.toml](/Users/connor/Medica/backbay/standalone/clawdstrike-sdks/.codex/config.toml)
+- Terminal working agreement: [AGENTS.md](/Users/connor/Medica/backbay/standalone/clawdstrike-sdks/apps/terminal/AGENTS.md)
+
 ## CLI Usage
 
 ```bash
 # Run via the main Rust CLI
 clawdstrike tui <command>
+
+# In a repo checkout, this exercises the current branch even if a globally
+# installed clawdstrike binary is older:
+cargo run -q -p hush-cli --bin clawdstrike -- tui --cwd apps/terminal
 
 # Or run the package-local TUI binary
 bun run cli <command>

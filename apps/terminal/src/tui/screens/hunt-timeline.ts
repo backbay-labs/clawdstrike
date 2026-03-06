@@ -332,6 +332,7 @@ export const huntTimelineScreen: Screen = {
     }
 
     if (key === "e") {
+      ctx.state.hunt.report.returnScreen = "hunt-timeline"
       ctx.app.setScreen("hunt-report")
       return true
     }

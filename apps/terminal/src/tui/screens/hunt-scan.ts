@@ -363,6 +363,7 @@ export const huntScanScreen: Screen = {
     }
 
     if (key === "e") {
+      ctx.state.hunt.report.returnScreen = "hunt-scan"
       ctx.app.setScreen("hunt-report")
       return true
     }

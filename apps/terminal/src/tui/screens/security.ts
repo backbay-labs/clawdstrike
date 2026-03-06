@@ -30,6 +30,38 @@ export const securityScreen: Screen = {
   },
 }
 
+function renderEmptyRecentEventsState(ctx: ScreenContext): string[] {
+  const { state } = ctx
+
+  switch (state.hushdStatus) {
+    case "unauthorized":
+      return [
+        `  ${THEME.error}Recent events unavailable: hushd authorization required.${THEME.reset}`,
+      ]
+    case "connecting":
+      return [
+        `  ${THEME.warning}Connecting to hushd event stream...${THEME.reset}`,
+      ]
+    case "degraded":
+      return [
+        `  ${THEME.warning}Recent events temporarily unavailable while the stream is degraded.${THEME.reset}`,
+      ]
+    case "stale":
+      return [
+        `  ${THEME.warning}Recent events are stale; waiting for a fresh hushd update.${THEME.reset}`,
+      ]
+    case "disconnected":
+    case "error":
+    case "not_configured":
+      return [
+        `  ${THEME.dim}Recent events unavailable because hushd is offline.${THEME.reset}`,
+      ]
+    case "connected":
+    default:
+      return [`  ${THEME.muted}No events yet${THEME.reset}`]
+  }
+}
+
 function renderSecurityScreen(ctx: ScreenContext): string {
   const { state, width, height } = ctx
   const lines: string[] = []
@@ -100,7 +132,7 @@ function renderSecurityScreen(ctx: ScreenContext): string {
 
   const maxEvents = Math.min(state.recentEvents.length, height - lines.length - 8)
   if (maxEvents === 0) {
-    content.push(`  ${THEME.muted}No events yet${THEME.reset}`)
+    content.push(...renderEmptyRecentEventsState(ctx))
   } else {
     for (let i = 0; i < maxEvents; i++) {
       const evt = state.recentEvents[i]

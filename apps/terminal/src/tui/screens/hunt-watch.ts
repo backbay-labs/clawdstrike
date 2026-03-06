@@ -331,6 +331,7 @@ export const huntWatchScreen: Screen = {
     }
 
     if (key === "e") {
+      ctx.state.hunt.report.returnScreen = "hunt-watch"
       ctx.app.setScreen("hunt-report")
       return true
     }

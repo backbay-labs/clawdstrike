@@ -466,10 +466,10 @@ export class TUIApp implements AppController {
       return THEME.bg + line + clearToEol
     })
 
-    // Add status bar as last 2 lines
+    // Add status bar as the last line
     if (paddedLines.length < this.height) {
-      // Pad to fill screen minus status bar
-      while (paddedLines.length < this.height - 2) {
+      // Pad to fill screen minus the single status bar row
+      while (paddedLines.length < this.height - 1) {
         paddedLines.push(THEME.bg + clearToEol)
       }
       paddedLines.push(THEME.bg + statusBar + clearToEol)
@@ -530,7 +530,7 @@ export class TUIApp implements AppController {
     return {
       state: this.state,
       width: this.width,
-      height: this.height - 2, // Reserve 2 lines for status bar
+      height: this.height - 1, // Reserve 1 line for the shared status bar
       theme: THEME,
       app: this,
     }

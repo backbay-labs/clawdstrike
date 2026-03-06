@@ -154,6 +154,7 @@ async function openSelectedEntry(ctx: ScreenContext): Promise<void> {
       expandedEvidence: null,
       error: null,
       statusMessage: `${THEME.success}Loaded exported report:${THEME.reset} ${THEME.white}${entry.jsonPath}${THEME.reset}`,
+      returnScreen: "hunt-report-history",
     }
     ctx.app.setScreen("hunt-report")
   } catch (err) {

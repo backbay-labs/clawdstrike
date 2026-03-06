@@ -381,7 +381,7 @@ export const huntReportScreen: Screen = {
 
     // Navigation: back
     if (key === "q" || key === "\x1b" || key === "\x1b\x1b") {
-      ctx.app.setScreen("main")
+      ctx.app.setScreen(rs.returnScreen)
       return true
     }
 

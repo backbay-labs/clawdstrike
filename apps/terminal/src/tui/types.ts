@@ -249,6 +249,7 @@ export interface HuntReportState {
   expandedEvidence: number | null
   error: string | null
   statusMessage: string | null
+  returnScreen: InputMode
 }
 
 export interface HuntReportHistoryState {
@@ -447,6 +448,7 @@ export function createInitialHuntState(): HuntState {
       expandedEvidence: null,
       error: null,
       statusMessage: null,
+      returnScreen: "main",
     },
     reportHistory: {
       entries: [],

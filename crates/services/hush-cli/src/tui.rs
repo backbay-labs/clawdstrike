@@ -66,6 +66,7 @@ pub(crate) fn cmd_tui(args: Vec<String>, no_color: bool, stderr: &mut dyn Write)
         .iter()
         .any(|arg| arg == "--cwd" || arg.starts_with("--cwd="));
     let has_no_color = args.iter().any(|arg| arg == "--no-color");
+    let normalized_args = normalize_explicit_cwd_args(args, &cwd);
 
     let mut child_args = vec![
         "run".to_string(),
@@ -79,7 +80,7 @@ pub(crate) fn cmd_tui(args: Vec<String>, no_color: bool, stderr: &mut dyn Write)
     if no_color && !has_no_color {
         child_args.push("--no-color".to_string());
     }
-    child_args.extend(args);
+    child_args.extend(normalized_args);
 
     let mut command = Command::new("bun");
     command
@@ -104,6 +105,39 @@ pub(crate) fn cmd_tui(args: Vec<String>, no_color: bool, stderr: &mut dyn Write)
             4
         }
     }
+}
+
+fn normalize_explicit_cwd_args(args: Vec<String>, base_cwd: &Path) -> Vec<String> {
+    let mut normalized = Vec::with_capacity(args.len());
+    let mut iter = args.into_iter();
+
+    while let Some(arg) = iter.next() {
+        if arg == "--cwd" {
+            normalized.push(arg);
+            if let Some(value) = iter.next() {
+                normalized.push(resolve_cwd_arg(&value, base_cwd));
+            }
+            continue;
+        }
+
+        if let Some(value) = arg.strip_prefix("--cwd=") {
+            normalized.push(format!("--cwd={}", resolve_cwd_arg(value, base_cwd)));
+            continue;
+        }
+
+        normalized.push(arg);
+    }
+
+    normalized
+}
+
+fn resolve_cwd_arg(value: &str, base_cwd: &Path) -> String {
+    let path = Path::new(value);
+    if path.is_absolute() {
+        return value.to_string();
+    }
+
+    base_cwd.join(path).to_string_lossy().into_owned()
 }
 
 fn resolve_tui_script() -> Option<ResolvedTuiScript> {
@@ -362,6 +396,67 @@ mod tests {
         assert_eq!(args.matches("--no-color").count(), 1);
         assert!(args.contains(explicit_cwd.to_string_lossy().as_ref()));
 
+        unsafe {
+            env::remove_var(TUI_DIR_ENV);
+            if let Some(path) = old_path {
+                env::set_var("PATH", path);
+            } else {
+                env::remove_var("PATH");
+            }
+        }
+    }
+
+    #[test]
+    fn cmd_tui_resolves_relative_explicit_cwd_against_caller_directory() {
+        let _guard = env_lock().lock().expect("env lock");
+        let temp = tempdir().expect("tempdir");
+        let tui_dir = temp.path().join("apps/terminal");
+        let script_path = tui_dir.join("src/cli/index.ts");
+        fs::create_dir_all(script_path.parent().expect("script parent")).expect("create tui dir");
+        fs::write(&script_path, "// stub").expect("write script");
+
+        let bin_dir = temp.path().join("bin");
+        fs::create_dir_all(&bin_dir).expect("create bin");
+        let args_file = temp.path().join("bun-args.log");
+        let bun_path = bin_dir.join("bun");
+        write_executable(
+            &bun_path,
+            &format!(
+                "#!/bin/sh\nprintf '%s\n' \"$@\" > \"{}\"\nexit 0\n",
+                args_file.display()
+            ),
+        );
+
+        let old_path = env::var_os("PATH");
+        let old_cwd = env::current_dir().expect("current dir");
+        env::set_current_dir(temp.path()).expect("set current dir");
+        unsafe {
+            env::set_var(TUI_DIR_ENV, &tui_dir);
+            env::set_var(
+                "PATH",
+                format!(
+                    "{}:{}",
+                    bin_dir.display(),
+                    old_path.as_deref().unwrap_or_default().to_string_lossy()
+                ),
+            );
+        }
+
+        let mut stderr = Vec::new();
+        let exit = cmd_tui(
+            vec!["doctor".into(), "--cwd".into(), "apps/terminal".into()],
+            false,
+            &mut stderr,
+        );
+
+        let args = fs::read_to_string(&args_file).expect("read args");
+        let expected_cwd = temp.path().join("apps/terminal");
+
+        assert_eq!(exit, 0);
+        assert!(stderr.is_empty());
+        assert!(args.contains(expected_cwd.to_string_lossy().as_ref()));
+
+        env::set_current_dir(old_cwd).expect("restore current dir");
         unsafe {
             env::remove_var(TUI_DIR_ENV);
             if let Some(path) = old_path {

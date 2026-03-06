@@ -10,6 +10,7 @@ import { integrationsScreen } from "../src/tui/screens/integrations"
 import { huntReportScreen } from "../src/tui/screens/hunt-report"
 import { huntReportHistoryScreen } from "../src/tui/screens/hunt-report-history"
 import { huntWatchScreen } from "../src/tui/screens/hunt-watch"
+import { securityScreen } from "../src/tui/screens/security"
 import { loadDesktopAgentSnapshotSync } from "../src/desktop-agent"
 import { stripAnsi } from "../src/tui/components/types"
 import { updateInvestigation, buildInvestigationReport } from "../src/tui/investigation"
@@ -292,6 +293,35 @@ describe("hunt report screen", () => {
     expect(state.hunt.report.report?.title).toBe("History Entry")
     expect(stripAnsi(state.hunt.report.statusMessage ?? "")).toContain("Loaded exported report:")
   })
+
+  test("returns to the originating hunt screen when exiting report", () => {
+    const state = createState()
+    updateInvestigation(state, {
+      origin: "watch",
+      title: "Watch Investigation",
+      summary: "Return to watch after reviewing evidence.",
+      query: "deny events",
+      events: [
+        {
+          timestamp: new Date().toISOString(),
+          source: "receipt",
+          kind: "policy_violation",
+          verdict: "deny",
+          summary: "Denied change to policy file",
+          details: { path: "/tmp/policy.yaml" },
+        },
+      ],
+      findings: ["deny: Denied change to policy file"],
+    })
+    state.hunt.report.report = buildInvestigationReport(state)
+    state.hunt.report.returnScreen = "hunt-watch"
+
+    const app = new TestApp(tempDir)
+    const ctx = createContext(state, app, 100, 24)
+
+    expect(huntReportScreen.handleInput("q", ctx)).toBe(true)
+    expect(app.screen).toBe("hunt-watch")
+  })
 })
 
 describe("hunt watch screen", () => {
@@ -540,5 +570,29 @@ describe("integrations screen", () => {
       if (original == null) delete process.env.CLAWDSTRIKE_AGENT_SETTINGS_PATH
       else process.env.CLAWDSTRIKE_AGENT_SETTINGS_PATH = original
     }
+  })
+})
+
+describe("security screen", () => {
+  test("explains when recent events are unavailable because hushd is offline", () => {
+    const state = createState()
+    state.hushdStatus = "disconnected"
+
+    const app = new TestApp(tempDir)
+    const rendered = stripAnsi(securityScreen.render(createContext(state, app, 110, 28)))
+
+    expect(rendered).toContain("Recent events unavailable because hushd is offline.")
+    expect(rendered).not.toContain("No events yet")
+  })
+
+  test("explains when recent events require hushd authorization", () => {
+    const state = createState()
+    state.hushdStatus = "unauthorized"
+
+    const app = new TestApp(tempDir)
+    const rendered = stripAnsi(securityScreen.render(createContext(state, app, 110, 28)))
+
+    expect(rendered).toContain("Recent events unavailable: hushd authorization required.")
+    expect(rendered).not.toContain("No events yet")
   })
 })

@@ -170,6 +170,7 @@ function handleMainInput(key: string, ctx: ScreenContext): boolean {
       return true
     }
     if (key === "E") {
+      ctx.state.hunt.report.returnScreen = "main"
       app.setScreen("hunt-report")
       return true
     }

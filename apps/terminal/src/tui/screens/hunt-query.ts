@@ -169,6 +169,7 @@ export const huntQueryScreen: Screen = {
     }
 
     if (key === "E" && q.results.length > 0) {
+      ctx.state.hunt.report.returnScreen = "hunt-query"
       ctx.app.setScreen("hunt-report")
       return true
     }
