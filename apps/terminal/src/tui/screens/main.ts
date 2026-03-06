@@ -14,7 +14,7 @@ import { asCheckEventData, eventDecision, type DaemonEvent } from "../../hushd"
 const STREAM_STALE_MS = 5 * 60_000
 const HOME_ACTION_COLUMNS = 2
 const HOME_ACTION_SELECTED_BG = "\x1b[48;5;52m"
-const PROMPT_TRACE_FRAMES = 10
+const BOX_TRACE_FRAMES = 8
 
 interface HomeAction {
   key: string
@@ -212,32 +212,42 @@ function setHomeFocus(state: AppState, focus: HomeFocus): void {
     return
   }
 
+  const previousFocus = state.homeFocus
   state.homeFocus = focus
   if (focus === "prompt") {
     state.homePromptTraceStartFrame = state.animationFrame
+  } else if (previousFocus === "prompt") {
+    state.homeActionsTraceStartFrame = state.animationFrame
   }
 }
 
-function promptTraceProgress(state: AppState): number {
-  if (state.homeFocus !== "prompt") {
-    return 0
-  }
-
-  const age = Math.max(0, state.animationFrame - state.homePromptTraceStartFrame)
-  if (age >= PROMPT_TRACE_FRAMES) {
+function boxTraceProgress(animationFrame: number, traceStartFrame: number): number {
+  const age = Math.max(0, animationFrame - traceStartFrame)
+  if (age >= BOX_TRACE_FRAMES) {
     return 1
   }
 
-  return Math.max(0.08, (age + 1) / PROMPT_TRACE_FRAMES)
+  return Math.max(0.08, (age + 1) / BOX_TRACE_FRAMES)
 }
 
-function renderPromptBox(title: string, contentLines: string[], width: number, state: AppState): string[] {
-  const promptFocused = state.homeFocus === "prompt"
+function renderTracedBox(
+  title: string,
+  contentLines: string[],
+  width: number,
+  state: AppState,
+  options: {
+    focused: boolean
+    traceStartFrame: number
+    focusedTitleColor?: string
+    unfocusedTitleColor?: string
+  },
+): string[] {
+  const { focused, traceStartFrame, focusedTitleColor = THEME.secondary, unfocusedTitleColor = THEME.dim } = options
   const baseBorderColor = THEME.dim
   const activeBorderColor = THEME.secondary
-  const titleColor = promptFocused ? THEME.secondary : THEME.dim
+  const titleColor = focused ? focusedTitleColor : unfocusedTitleColor
 
-  if (!promptFocused) {
+  if (!focused) {
     return renderBox(title, contentLines, width, THEME, {
       style: "rounded",
       titleAlign: "left",
@@ -262,7 +272,7 @@ function renderPromptBox(title: string, contentLines: string[], width: number, s
   const perimeterSegments = visibleTopSegments + width + rows.length * 2
   const activeSegments = Math.min(
     perimeterSegments,
-    Math.max(1, Math.ceil(perimeterSegments * promptTraceProgress(state))),
+    Math.max(1, Math.ceil(perimeterSegments * boxTraceProgress(state.animationFrame, traceStartFrame))),
   )
 
   let segmentIndex = 0
@@ -288,6 +298,13 @@ function renderPromptBox(title: string, contentLines: string[], width: number, s
   )
 
   return lines
+}
+
+function renderPromptBox(title: string, contentLines: string[], width: number, state: AppState): string[] {
+  return renderTracedBox(title, contentLines, width, state, {
+    focused: state.homeFocus === "prompt",
+    traceStartFrame: state.homePromptTraceStartFrame,
+  })
 }
 
 function renderHomeActionGuide(focus: HomeFocus, contentWidth: number): string[] {
@@ -585,7 +602,7 @@ function buildOpsSnapshot(ctx: ScreenContext, width: number): { boxWidth: number
 
   return {
     boxWidth,
-    lines: renderBox(
+    lines: renderTracedBox(
       hasInvestigation
         ? state.homeFocus === "prompt"
           ? "Active Investigation"
@@ -595,8 +612,11 @@ function buildOpsSnapshot(ctx: ScreenContext, width: number): { boxWidth: number
           : `Ops Snapshot • ${state.homeFocus}`,
       lines,
       boxWidth,
-      THEME,
-      { style: "rounded", padding: 1 },
+      state,
+      {
+        focused: state.homeFocus !== "prompt",
+        traceStartFrame: state.homeActionsTraceStartFrame,
+      },
     ),
   }
 }

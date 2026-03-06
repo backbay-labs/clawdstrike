@@ -11,6 +11,7 @@ function createState(): AppState {
     homeActionIndex: 0,
     homeFocus: "prompt",
     homePromptTraceStartFrame: 0,
+    homeActionsTraceStartFrame: 0,
     inputMode: "main",
     commandIndex: 0,
     statusMessage: "",

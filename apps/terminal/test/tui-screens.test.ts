@@ -64,6 +64,7 @@ function createState(): AppState {
     homeActionIndex: 0,
     homeFocus: "prompt",
     homePromptTraceStartFrame: 0,
+    homeActionsTraceStartFrame: 0,
     inputMode: "main",
     commandIndex: 0,
     statusMessage: "",
@@ -197,6 +198,7 @@ describe("main screen", () => {
     expect(screen.handleInput("\x1b", ctx)).toBe(true)
     expect(state.homeFocus).toBe("nav")
     expect(state.promptBuffer).toBe("triage ")
+    expect(state.homeActionsTraceStartFrame).toBe(12)
 
     expect(screen.handleInput("\x1b", ctx)).toBe(true)
     expect(state.homeFocus).toBe("prompt")
@@ -238,6 +240,7 @@ describe("main screen", () => {
 
     expect(screen.handleInput("\t", ctx)).toBe(true)
     expect(state.homeFocus).toBe("actions")
+    expect(state.homeActionsTraceStartFrame).toBe(9)
 
     expect(screen.handleInput("\t", ctx)).toBe(true)
     expect(state.homeFocus).toBe("prompt")

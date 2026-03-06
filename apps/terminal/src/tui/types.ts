@@ -319,6 +319,7 @@ export interface AppState {
   homeActionIndex: number
   homeFocus: HomeFocus
   homePromptTraceStartFrame: number
+  homeActionsTraceStartFrame: number
 
   // UI mode
   inputMode: InputMode
