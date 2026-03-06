@@ -928,34 +928,43 @@ async fn ensure_action_target_exists(
 ) -> Result<(), ApiError> {
     let exists = match target_kind {
         ResponseTargetKind::Endpoint => {
+            let mut exists = false;
             if let Ok(agent_row_id) = Uuid::parse_str(target_id) {
-                sqlx::query::query("SELECT 1 FROM agents WHERE tenant_id = $1 AND id = $2")
-                    .bind(tenant_id)
-                    .bind(agent_row_id)
-                    .fetch_optional(&mut **tx)
-                    .await
-                    .map_err(ApiError::Database)?
-                    .is_some()
-            } else {
-                sqlx::query::query("SELECT 1 FROM agents WHERE tenant_id = $1 AND agent_id = $2")
-                    .bind(tenant_id)
-                    .bind(target_id)
-                    .fetch_optional(&mut **tx)
-                    .await
-                    .map_err(ApiError::Database)?
-                    .is_some()
+                exists =
+                    sqlx::query::query("SELECT 1 FROM agents WHERE tenant_id = $1 AND id = $2")
+                        .bind(tenant_id)
+                        .bind(agent_row_id)
+                        .fetch_optional(&mut **tx)
+                        .await
+                        .map_err(ApiError::Database)?
+                        .is_some();
             }
+            if !exists {
+                exists = sqlx::query::query(
+                    "SELECT 1 FROM agents WHERE tenant_id = $1 AND agent_id = $2",
+                )
+                .bind(tenant_id)
+                .bind(target_id)
+                .fetch_optional(&mut **tx)
+                .await
+                .map_err(ApiError::Database)?
+                .is_some();
+            }
+            exists
         }
         ResponseTargetKind::Principal => {
+            let mut exists = false;
             if let Ok(principal_id) = Uuid::parse_str(target_id) {
-                sqlx::query::query("SELECT 1 FROM principals WHERE tenant_id = $1 AND id = $2")
-                    .bind(tenant_id)
-                    .bind(principal_id)
-                    .fetch_optional(&mut **tx)
-                    .await
-                    .map_err(ApiError::Database)?
-                    .is_some()
-            } else {
+                exists =
+                    sqlx::query::query("SELECT 1 FROM principals WHERE tenant_id = $1 AND id = $2")
+                        .bind(tenant_id)
+                        .bind(principal_id)
+                        .fetch_optional(&mut **tx)
+                        .await
+                        .map_err(ApiError::Database)?
+                        .is_some();
+            }
+            if !exists {
                 sqlx::query::query(
                     "SELECT 1 FROM principals WHERE tenant_id = $1 AND stable_ref = $2",
                 )
@@ -965,6 +974,8 @@ async fn ensure_action_target_exists(
                 .await
                 .map_err(ApiError::Database)?
                 .is_some()
+            } else {
+                true
             }
         }
         ResponseTargetKind::Grant => {

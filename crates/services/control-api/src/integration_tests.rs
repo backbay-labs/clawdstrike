@@ -2503,7 +2503,8 @@ async fn grants_reject_child_tokens_that_violate_parent_chain_constraints() {
         Some(&harness.api_key),
         Some(serde_json::json!({
             "token": parent_token,
-            "grant_type": "delegation"
+            "grant_type": "delegation",
+            "issuer_public_key": parent_keypair.public_key().to_hex()
         })),
     )
     .await;
@@ -2534,13 +2535,53 @@ async fn grants_reject_child_tokens_that_violate_parent_chain_constraints() {
         Some(&harness.api_key),
         Some(serde_json::json!({
             "token": invalid_child_token,
-            "grant_type": "delegation"
+            "grant_type": "delegation",
+            "issuer_public_key": child_keypair.public_key().to_hex()
         })),
     )
     .await;
     assert_eq!(child_response.0, StatusCode::BAD_REQUEST);
     let error_message = child_response.1["error"].as_str().unwrap_or_default();
     assert!(!error_message.is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn grants_reject_unregistered_issuers_without_explicit_public_keys() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let keypair = hush_core::Keypair::generate();
+    let now = Utc::now().timestamp();
+    let claims = hush_multi_agent::DelegationClaims::new(
+        hush_multi_agent::AgentId::new("agent:unregistered-root").expect("issuer"),
+        hush_multi_agent::AgentId::new("agent:delegate").expect("subject"),
+        now,
+        now + 600,
+        vec![hush_multi_agent::AgentCapability::DeployApproval],
+    )
+    .expect("build delegation claims");
+    let token = hush_multi_agent::SignedDelegationToken::sign_with_public_key(claims, &keypair)
+        .expect("sign delegation token");
+
+    let response = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/grants".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "token": token,
+            "grant_type": "delegation"
+        })),
+    )
+    .await;
+    assert_eq!(response.0, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        response.1["error"],
+        "issuer_public_key is required for issuers that are not enrolled in the directory"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -2818,6 +2859,119 @@ async fn response_action_acks_reject_actions_without_acknowledgement_enabled() {
         ack_resp.1["error"],
         "acknowledgements are not enabled for this action"
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn response_actions_accept_uuid_shaped_external_target_ids() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let endpoint_agent_id = Uuid::new_v4().to_string();
+    let principal_stable_ref = Uuid::new_v4().to_string();
+    let principal_id = Uuid::new_v4();
+
+    sqlx::query::query(
+        r#"INSERT INTO principals (
+               id,
+               tenant_id,
+               principal_type,
+               stable_ref,
+               display_name,
+               trust_level,
+               lifecycle_state,
+               liveness_state,
+               public_key,
+               metadata
+           ) VALUES (
+               $1,
+               $2,
+               'endpoint_agent',
+               $3,
+               'UUID-shaped Principal',
+               'medium',
+               'active',
+               'active',
+               'pk-uuid-shaped',
+               '{}'::jsonb
+           )"#,
+    )
+    .bind(principal_id)
+    .bind(harness.tenant_id)
+    .bind(&principal_stable_ref)
+    .execute(&harness.db)
+    .await
+    .expect("seed uuid-shaped principal");
+
+    sqlx::query::query(
+        r#"INSERT INTO agents (
+               tenant_id,
+               agent_id,
+               name,
+               public_key,
+               role,
+               trust_level,
+               status,
+               metadata,
+               principal_id
+           ) VALUES (
+               $1,
+               $2,
+               'UUID-shaped Endpoint',
+               'pk-uuid-shaped',
+               'coder',
+               'medium',
+               'active',
+               '{}'::jsonb,
+               $3
+           )"#,
+    )
+    .bind(harness.tenant_id)
+    .bind(&endpoint_agent_id)
+    .bind(principal_id)
+    .execute(&harness.db)
+    .await
+    .expect("seed uuid-shaped endpoint");
+
+    let endpoint_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/response-actions".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "actionType": "request_policy_reload",
+            "target": {
+                "kind": "endpoint",
+                "id": endpoint_agent_id
+            },
+            "reason": "Reload endpoint policy",
+            "requireAcknowledgement": false,
+            "payload": {}
+        })),
+    )
+    .await;
+    assert_eq!(endpoint_resp.0, StatusCode::OK);
+
+    let principal_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/response-actions".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "actionType": "quarantine_principal",
+            "target": {
+                "kind": "principal",
+                "id": principal_stable_ref
+            },
+            "reason": "Contain principal",
+            "requireAcknowledgement": false,
+            "payload": {}
+        })),
+    )
+    .await;
+    assert_eq!(principal_resp.0, StatusCode::OK);
 }
 
 async fn setup_harness() -> Harness {
@@ -3251,7 +3405,8 @@ async fn seed_operator_flow_fixture(harness: &Harness) -> OperatorFlowFixture {
         Some(serde_json::json!({
             "token": grant_token,
             "grant_type": "delegation",
-            "source_session_id": &session_id
+            "source_session_id": &session_id,
+            "issuer_public_key": grant_keypair.public_key().to_hex()
         })),
     )
     .await;

@@ -73,7 +73,14 @@ pub async fn ingest_grant(
     request: IngestGrantRequest,
 ) -> Result<FleetGrant, ApiError> {
     let token = request.token;
-    verify_signed_token(&token, request.issuer_public_key.as_deref())?;
+    let trusted_issuer_key = resolve_trusted_issuer_public_key(
+        db,
+        tenant_id,
+        token.claims.iss.as_str(),
+        request.issuer_public_key.as_deref(),
+    )
+    .await?;
+    verify_signed_token(&token, &trusted_issuer_key)?;
     reject_revoked_chain(db, tenant_id, &token.claims).await?;
 
     let lineage = GrantLineageFacts::from_claims(&token.claims);
@@ -915,30 +922,93 @@ async fn reject_revoked_chain(
 
 fn verify_signed_token(
     token: &SignedDelegationToken,
-    issuer_public_key: Option<&str>,
+    public_key: &hush_core::PublicKey,
 ) -> Result<(), ApiError> {
-    let public_key = if let Some(encoded) = issuer_public_key {
-        hush_core::PublicKey::from_hex(encoded)
-            .map_err(|_| ApiError::BadRequest("issuer_public_key must be valid hex".to_string()))?
-    } else if let Some(public_key) = token.public_key.clone() {
-        public_key
-    } else {
-        return Err(ApiError::BadRequest(
-            "signed delegation token must include an embedded public key or issuer_public_key"
-                .to_string(),
-        ));
-    };
-
     let revocations = InMemoryRevocationStore::default();
     token
         .verify_and_validate(
-            &public_key,
+            public_key,
             Utc::now().timestamp(),
             &revocations,
             DELEGATION_AUDIENCE,
             None,
         )
         .map_err(|err| ApiError::BadRequest(format!("invalid delegation token: {err}")))
+}
+
+async fn resolve_trusted_issuer_public_key(
+    db: &PgPool,
+    tenant_id: Uuid,
+    issuer_identifier: &str,
+    issuer_public_key: Option<&str>,
+) -> Result<hush_core::PublicKey, ApiError> {
+    let requested_key = issuer_public_key
+        .map(hush_core::PublicKey::from_hex)
+        .transpose()
+        .map_err(|_| ApiError::BadRequest("issuer_public_key must be valid hex".to_string()))?;
+    let registered_key =
+        load_registered_issuer_public_key(db, tenant_id, issuer_identifier).await?;
+
+    match (registered_key, requested_key) {
+        (Some(registered_key), Some(requested_key)) => {
+            if registered_key.to_hex() != requested_key.to_hex() {
+                return Err(ApiError::BadRequest(
+                    "issuer_public_key does not match the registered issuer key".to_string(),
+                ));
+            }
+            Ok(registered_key)
+        }
+        (Some(registered_key), None) => Ok(registered_key),
+        (None, Some(requested_key)) => Ok(requested_key),
+        (None, None) => Err(ApiError::BadRequest(
+            "issuer_public_key is required for issuers that are not enrolled in the directory"
+                .to_string(),
+        )),
+    }
+}
+
+async fn load_registered_issuer_public_key(
+    db: &PgPool,
+    tenant_id: Uuid,
+    issuer_identifier: &str,
+) -> Result<Option<hush_core::PublicKey>, ApiError> {
+    let row = sqlx::query::query(
+        r#"SELECT public_key
+           FROM (
+               SELECT public_key, 0 AS precedence
+               FROM principals
+               WHERE tenant_id = $1
+                 AND public_key IS NOT NULL
+                 AND (stable_ref = $2 OR id::text = $2)
+               UNION ALL
+               SELECT public_key, 1 AS precedence
+               FROM agents
+               WHERE tenant_id = $1
+                 AND public_key IS NOT NULL
+                 AND (agent_id = $2 OR id::text = $2)
+           ) AS issuer_keys
+           ORDER BY precedence ASC
+           LIMIT 1"#,
+    )
+    .bind(tenant_id)
+    .bind(issuer_identifier)
+    .fetch_optional(db)
+    .await
+    .map_err(ApiError::Database)?;
+
+    let Some(row) = row else {
+        return Ok(None);
+    };
+
+    let encoded = row
+        .try_get::<String, _>("public_key")
+        .map_err(ApiError::Database)?;
+    let public_key = hush_core::PublicKey::from_hex(&encoded).map_err(|err| {
+        ApiError::Internal(format!(
+            "registered issuer key for '{issuer_identifier}' is invalid: {err}"
+        ))
+    })?;
+    Ok(Some(public_key))
 }
 
 fn validate_child_grant_against_parent(
