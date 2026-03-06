@@ -253,6 +253,10 @@ function eventViewportHeight(height: number): number {
 
 function overlayAttachBanner(baseScreen: string, ctx: ScreenContext, run: RunRecord): string {
   const lines = baseScreen.split("\n")
+  const instruction =
+    run.agentId === "claude"
+      ? `${THEME.dim}Claude starts at a blank prompt. The staged task will be shown before handoff.${THEME.reset}`
+      : `${THEME.dim}The terminal will be cleared and attached directly to the agent session.${THEME.reset}`
   const overlay = centerBlock(
     renderBox(
       "Attach To Run",
@@ -260,6 +264,8 @@ function overlayAttachBanner(baseScreen: string, ctx: ScreenContext, run: RunRec
         `${THEME.dim}Run:${THEME.reset} ${THEME.white}${run.id}${THEME.reset} ${THEME.dim}${run.title}${THEME.reset}`,
         `${THEME.dim}Mode:${THEME.reset} ${THEME.white}${run.mode}${THEME.reset} ${THEME.dim}-> attach${THEME.reset}`,
         `${THEME.dim}Detach:${THEME.reset} ${THEME.white}exit${THEME.reset} ${THEME.dim}or the agent's detach flow${THEME.reset}`,
+        "",
+        instruction,
         "",
         `${THEME.white}Enter${THEME.reset} ${THEME.dim}attach${THEME.reset}  ${THEME.white}Esc${THEME.reset} ${THEME.dim}cancel${THEME.reset}`,
       ],

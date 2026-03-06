@@ -1235,7 +1235,7 @@ export class TUIApp implements AppController {
   private prepareTerminalForPtyHandoff(): void {
     this.state.ptyHandoffActive = true
     this.detachTerminalListeners()
-    process.stdout.write(ESC.showCursor + ESC.mainScreen)
+    process.stdout.write(ESC.showCursor + ESC.mainScreen + ESC.clearScreen + "\x1b[3J" + ESC.moveTo(1, 1))
     if (process.stdin.isTTY) {
       process.stdin.setRawMode(false)
     }

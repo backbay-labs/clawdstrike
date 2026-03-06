@@ -25,6 +25,52 @@ function buildInteractiveCommand(
   return buildInteractiveSessionCommand(toolchain, worktreePath, prompt)
 }
 
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`
+}
+
+function attachInstruction(run: RunRecord): string {
+  if (run.agentId === "claude") {
+    return "Claude interactive sessions start at a blank prompt. Use the staged task below, then press Enter."
+  }
+
+  return "The agent is attached to this terminal. Continue the session here and press Ctrl+C to return to ClawdStrike."
+}
+
+export function buildAttachLauncherScript(
+  run: RunRecord,
+  worktreePath: string,
+  command: string[],
+): string {
+  const commandLine = command.map(shellQuote).join(" ")
+  const stagedPrompt = run.prompt.replace(/\r\n/g, "\n").trim() || "(empty prompt)"
+  const promptLines = stagedPrompt.split("\n")
+
+  const bannerLines = [
+    "ClawdStrike interactive attach",
+    `Agent: ${run.agentLabel}`,
+    `Mode: ${run.mode} -> attach`,
+    `Worktree: ${worktreePath}`,
+    "",
+    "Staged task:",
+    ...promptLines.map((line) => `  ${line}`),
+    "",
+    attachInstruction(run),
+    "Press Ctrl+C or exit the agent to return to ClawdStrike.",
+  ]
+
+  const printBannerLines = bannerLines.map((line) => `print -r -- ${shellQuote(line)}`)
+
+  return [
+    "#!/bin/zsh",
+    "set +e",
+    "printf '\\033[2J\\033[3J\\033[H'",
+    ...printBannerLines,
+    "print",
+    `exec ${commandLine}`,
+  ].join("\n")
+}
+
 export async function createAttachRunSession(
   run: RunRecord,
   options: { cwd: string; projectId: string },
@@ -51,7 +97,7 @@ export async function createAttachRunSession(
       gates: [],
     },
     start: () => {
-      const proc = Bun.spawn(command, {
+      const proc = Bun.spawn(["/bin/zsh", "-lc", buildAttachLauncherScript(run, workcell.directory, command)], {
         cwd: workcell.directory,
         env: {
           ...process.env,
