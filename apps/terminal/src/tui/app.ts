@@ -23,7 +23,7 @@ import { createInitialAuditLogState, createInitialHuntState, type RuntimeInfo } 
 
 // Screen imports
 import { createMainScreen } from "./screens/main"
-import { setupScreen } from "./screens/setup"
+import { getRecommendedSandboxIndex, setupScreen } from "./screens/setup"
 import { integrationsScreen } from "./screens/integrations"
 import { securityScreen } from "./screens/security"
 import { auditScreen } from "./screens/audit"
@@ -425,12 +425,10 @@ export class TUIApp implements AppController {
     const detection = await Config.detect(this.cwd)
     this.state.setupDetection = detection
     this.state.setupStep = "review"
-    this.state.setupSandboxIndex =
-      detection.recommended_sandbox === "worktree"
-        ? 1
-        : detection.recommended_sandbox === "tmpdir"
-          ? 2
-          : 0
+    this.state.setupSandboxIndex = getRecommendedSandboxIndex(
+      detection.recommended_sandbox,
+      detection.git_available,
+    )
     this.render()
   }
 

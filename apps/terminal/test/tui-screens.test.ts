@@ -16,6 +16,7 @@ import { huntTimelineScreen } from "../src/tui/screens/hunt-timeline"
 import { huntWatchScreen } from "../src/tui/screens/hunt-watch"
 import { securityScreen } from "../src/tui/screens/security"
 import { policyScreen } from "../src/tui/screens/policy"
+import { getRecommendedSandboxIndex } from "../src/tui/screens/setup"
 import { loadDesktopAgentSnapshotSync } from "../src/desktop-agent"
 import { stripAnsi } from "../src/tui/components/types"
 import { updateInvestigation, buildInvestigationReport } from "../src/tui/investigation"
@@ -317,6 +318,18 @@ describe("main screen", () => {
     expect(output).toContain("Prompt focus:")
     expect(output).toContain("Integrations runtime status")
     expect(output).toContain("Timeline event replay")
+  })
+})
+
+describe("setup sandbox mapping", () => {
+  test("maps recommended sandbox through the available option list", () => {
+    expect(getRecommendedSandboxIndex("inplace", false)).toBe(0)
+    expect(getRecommendedSandboxIndex("worktree", true)).toBe(1)
+    expect(getRecommendedSandboxIndex("tmpdir", false)).toBe(2)
+  })
+
+  test("falls back to inplace when the recommended sandbox is unavailable", () => {
+    expect(getRecommendedSandboxIndex("worktree", false)).toBe(0)
   })
 })
 

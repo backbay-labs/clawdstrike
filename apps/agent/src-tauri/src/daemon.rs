@@ -908,7 +908,8 @@ fn persist_audit_queue(path: &Path, queue: &VecDeque<serde_json::Value>) -> Resu
 }
 
 fn non_empty_audit_string(value: Option<&serde_json::Value>) -> bool {
-    value.and_then(|value| value.as_str())
+    value
+        .and_then(|value| value.as_str())
         .map(str::trim)
         .is_some_and(|value| !value.is_empty())
 }
@@ -988,7 +989,9 @@ fn sanitize_persisted_audit_queue(
     (sanitized, changed)
 }
 
-fn drain_flush_batch(queue: &mut VecDeque<serde_json::Value>) -> (VecDeque<serde_json::Value>, usize) {
+fn drain_flush_batch(
+    queue: &mut VecDeque<serde_json::Value>,
+) -> (VecDeque<serde_json::Value>, usize) {
     let mut batch = VecDeque::new();
     let mut dropped_invalid = 0usize;
 
@@ -1094,7 +1097,8 @@ impl AuditQueue {
         let selected = events
             .into_iter()
             .filter(|event| {
-                event.get("id")
+                event
+                    .get("id")
                     .and_then(normalize_audit_event_id)
                     .is_some_and(|id| failed_ids.contains(&id))
             })
@@ -1174,6 +1178,9 @@ impl AuditQueue {
                     if summary.rejected > 0 {
                         let rejected_ids: HashSet<_> = summary.rejected_ids.into_iter().collect();
                         if rejected_ids.len() == summary.rejected {
+                            flushed += summary.accepted;
+                        }
+                        if rejected_ids.len() == summary.rejected {
                             self.requeue_selected_flush(events, &rejected_ids).await;
                         } else {
                             tracing::warn!(
@@ -1184,13 +1191,15 @@ impl AuditQueue {
                             self.requeue_failed_flush(events).await;
                         }
                         tracing::warn!(
+                            flushed,
                             accepted = summary.accepted,
                             duplicates = summary.duplicates,
                             rejected = summary.rejected,
                             "Daemon rejected some audit outbox events"
                         );
                         anyhow::bail!(
-                            "Audit batch upload partially rejected: accepted={}, duplicates={}, rejected={}",
+                            "Audit batch upload partially rejected after flushing {} accepted events: accepted={}, duplicates={}, rejected={}",
+                            flushed,
                             summary.accepted,
                             summary.duplicates,
                             summary.rejected
@@ -1919,7 +1928,12 @@ pub fn prepare_managed_hushd_binary() -> Result<Option<PathBuf>> {
     #[cfg(target_os = "macos")]
     if copy_needed {
         let status = std::process::Command::new("codesign")
-            .args(["--force", "--sign", "-", managed_path.to_string_lossy().as_ref()])
+            .args([
+                "--force",
+                "--sign",
+                "-",
+                managed_path.to_string_lossy().as_ref(),
+            ])
             .status()
             .with_context(|| format!("Failed to invoke codesign for {:?}", managed_path))?;
         if !status.success() {
@@ -2283,27 +2297,28 @@ mod tests {
             sizes: Arc::new(StdMutex::new(Vec::new())),
         };
         let sizes = state.sizes.clone();
-        let app = Router::new()
-            .route(
-                "/api/v1/audit/batch",
-                post(
-                    |State(state): State<BatchState>,
-                     Json(payload): Json<serde_json::Value>| async move {
-                        let len = payload
-                            .get("events")
-                            .and_then(|events| events.as_array())
-                            .map(|events| events.len())
-                            .unwrap_or(0);
-                        state.sizes.lock().unwrap().push(len);
-                        Json(serde_json::json!({
-                            "accepted": len,
-                            "duplicates": 0,
-                            "rejected": 0
-                        }))
-                    },
-                ),
-            )
-            .with_state(state);
+        let app =
+            Router::new()
+                .route(
+                    "/api/v1/audit/batch",
+                    post(
+                        |State(state): State<BatchState>,
+                         Json(payload): Json<serde_json::Value>| async move {
+                            let len = payload
+                                .get("events")
+                                .and_then(|events| events.as_array())
+                                .map(|events| events.len())
+                                .unwrap_or(0);
+                            state.sizes.lock().unwrap().push(len);
+                            Json(serde_json::json!({
+                                "accepted": len,
+                                "duplicates": 0,
+                                "rejected": 0
+                            }))
+                        },
+                    ),
+                )
+                .with_state(state);
 
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -2311,7 +2326,10 @@ mod tests {
             axum::serve(listener, app).await.unwrap();
         });
 
-        let flushed = queue.flush(&format!("http://{}", addr), None).await.unwrap();
+        let flushed = queue
+            .flush(&format!("http://{}", addr), None)
+            .await
+            .unwrap();
         assert_eq!(flushed, total_events);
         assert_eq!(queue.len().await, 0);
         assert_eq!(&*sizes.lock().unwrap(), &[MAX_AUDIT_BATCH_LEN, 37]);
@@ -2343,7 +2361,10 @@ mod tests {
             axum::serve(listener, app).await.unwrap();
         });
 
-        let flushed = queue.flush(&format!("http://{}", addr), None).await.unwrap();
+        let flushed = queue
+            .flush(&format!("http://{}", addr), None)
+            .await
+            .unwrap();
         assert_eq!(flushed, 0);
         assert_eq!(queue.len().await, 0);
     }
@@ -2375,7 +2396,10 @@ mod tests {
             axum::serve(listener, app).await.unwrap();
         });
 
-        let flushed = queue.flush(&format!("http://{}", addr), None).await.unwrap();
+        let flushed = queue
+            .flush(&format!("http://{}", addr), None)
+            .await
+            .unwrap();
         assert_eq!(flushed, 2);
         assert_eq!(queue.len().await, 0);
 
@@ -2395,10 +2419,7 @@ mod tests {
         queue.enqueue(sample_audit_event("evt-1")).await;
         queue.enqueue(sample_audit_event("evt-2")).await;
 
-        let app = Router::new().route(
-            "/api/v1/audit/batch",
-            post(|| async { "not-json" }),
-        );
+        let app = Router::new().route("/api/v1/audit/batch", post(|| async { "not-json" }));
 
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -2458,6 +2479,7 @@ mod tests {
         assert!(err
             .to_string()
             .contains("Audit batch upload partially rejected"));
+        assert!(err.to_string().contains("after flushing 2 accepted events"));
 
         let guard = queue.queue.lock().await;
         let ids: Vec<_> = guard
@@ -2501,6 +2523,7 @@ mod tests {
         assert!(err
             .to_string()
             .contains("Audit batch upload partially rejected"));
+        assert!(err.to_string().contains("after flushing 0 accepted events"));
 
         let guard = queue.queue.lock().await;
         let ids: Vec<_> = guard
@@ -2508,6 +2531,88 @@ mod tests {
             .filter_map(|event| event.get("id").and_then(|id| id.as_str()))
             .collect();
         assert_eq!(ids, vec!["evt-1", "evt-2", "evt-3"]);
+    }
+
+    #[tokio::test]
+    async fn audit_queue_flush_reports_prior_accepted_count_on_later_batch_rejection() {
+        use axum::{extract::State, routing::post, Json, Router};
+        use std::sync::{Arc, Mutex as StdMutex};
+        use tokio::net::TcpListener;
+
+        #[derive(Clone)]
+        struct BatchState {
+            calls: Arc<StdMutex<usize>>,
+        }
+
+        let queue = AuditQueue::new_test_isolated();
+        let total_events = MAX_AUDIT_BATCH_LEN + 2;
+        {
+            let mut guard = queue.queue.lock().await;
+            for i in 0..total_events {
+                guard.push_back(sample_audit_event(format!("evt-{i}")));
+            }
+            persist_audit_queue(&queue.path, &guard).unwrap();
+        }
+
+        let state = BatchState {
+            calls: Arc::new(StdMutex::new(0)),
+        };
+        let app =
+            Router::new()
+                .route(
+                    "/api/v1/audit/batch",
+                    post(
+                        |State(state): State<BatchState>,
+                         Json(payload): Json<serde_json::Value>| async move {
+                            let len = payload
+                                .get("events")
+                                .and_then(|events| events.as_array())
+                                .map(|events| events.len())
+                                .unwrap_or(0);
+                            let mut calls = state.calls.lock().unwrap();
+                            *calls += 1;
+                            if *calls == 1 {
+                                Json(serde_json::json!({
+                                    "accepted": len,
+                                    "duplicates": 0,
+                                    "rejected": 0
+                                }))
+                            } else {
+                                Json(serde_json::json!({
+                                    "accepted": 1,
+                                    "duplicates": 0,
+                                    "rejected": 1,
+                                    "accepted_ids": [format!("evt-{}", MAX_AUDIT_BATCH_LEN)],
+                                    "rejected_ids": [format!("evt-{}", MAX_AUDIT_BATCH_LEN + 1)]
+                                }))
+                            }
+                        },
+                    ),
+                )
+                .with_state(state);
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let err = queue
+            .flush(&format!("http://{}", addr), None)
+            .await
+            .expect_err("later partial rejection should still report prior accepted batches");
+        assert!(err.to_string().contains(&format!(
+            "after flushing {} accepted events",
+            MAX_AUDIT_BATCH_LEN + 1
+        )));
+
+        let guard = queue.queue.lock().await;
+        let ids: Vec<String> = guard
+            .iter()
+            .filter_map(|event| event.get("id").and_then(|id| id.as_str()))
+            .map(ToString::to_string)
+            .collect();
+        assert_eq!(ids, vec![format!("evt-{}", MAX_AUDIT_BATCH_LEN + 1)]);
     }
 
     #[tokio::test]
