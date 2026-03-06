@@ -18,6 +18,10 @@ pub struct WatchConfig {
     pub nats_url: String,
     /// Path to NATS credentials file.
     pub nats_creds: Option<String>,
+    /// Bearer token for NATS authentication.
+    pub nats_token: Option<String>,
+    /// NKey seed for NATS authentication.
+    pub nats_nkey_seed: Option<String>,
     /// Correlation rules to evaluate.
     pub rules: Vec<CorrelationRule>,
     /// Maximum sliding window duration for eviction.
@@ -49,14 +53,18 @@ pub async fn run_watch(
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> Result<WatchStats> {
-    let auth = config
-        .nats_creds
-        .as_ref()
-        .map(|c| spine::nats_transport::NatsAuthConfig {
-            creds_file: Some(c.clone()),
-            token: None,
-            nkey_seed: None,
-        });
+    let auth = if config.nats_creds.is_some()
+        || config.nats_token.is_some()
+        || config.nats_nkey_seed.is_some()
+    {
+        Some(spine::nats_transport::NatsAuthConfig {
+            creds_file: config.nats_creds.clone(),
+            token: config.nats_token.clone(),
+            nkey_seed: config.nats_nkey_seed.clone(),
+        })
+    } else {
+        None
+    };
 
     let client = spine::nats_transport::connect_with_auth(&config.nats_url, auth.as_ref())
         .await

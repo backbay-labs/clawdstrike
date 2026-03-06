@@ -93,6 +93,16 @@ function renderIntegrationsScreen(ctx: ScreenContext): string {
       ? `${THEME.success}enabled${THEME.reset}${desktop.natsUrl ? ` ${THEME.dim}${desktop.natsUrl}${THEME.reset}` : ""}`
       : `${THEME.warning}disabled${THEME.reset}`
     content.push(`${THEME.dim}cluster stream:${THEME.reset} ${clusterStatus}`)
+    if (watchConfig.kind === "configured" || watchConfig.kind === "manual") {
+      const authLabel = watchConfig.authType === "creds"
+        ? "creds file"
+        : watchConfig.authType === "token"
+          ? "token"
+          : watchConfig.authType === "nkey"
+            ? "nkey"
+            : "none"
+      content.push(`${THEME.dim}watch auth:${THEME.reset} ${THEME.white}${authLabel}${THEME.reset}`)
+    }
     if (desktop.dashboardUrl) {
       content.push(`${THEME.dim}dashboard:${THEME.reset} ${THEME.muted}${desktop.dashboardUrl}${THEME.reset}`)
     }

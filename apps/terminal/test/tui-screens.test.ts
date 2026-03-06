@@ -400,6 +400,69 @@ describe("hunt watch screen", () => {
       else process.env.CLAWDSTRIKE_TUI_HUNT_BINARY = original
     }
   })
+
+  test("passes token-backed desktop-agent auth through the environment", async () => {
+    const state = createState()
+    const app = new TestApp(tempDir)
+    const ctx = createContext(state, app, 96, 18)
+    const fakeBinary = path.join(tempDir, "clawdstrike-watch-token-stub")
+    const settingsPath = path.join(tempDir, "agent.json")
+
+    await fs.writeFile(settingsPath, JSON.stringify({
+      enabled: true,
+      daemon_port: 9876,
+      mcp_port: 9877,
+      agent_api_port: 9878,
+      dashboard_url: "http://127.0.0.1:9878/ui",
+      local_agent_id: "endpoint-cluster",
+      nats: {
+        enabled: true,
+        nats_url: "nats://cluster.example:4222",
+        creds_file: null,
+        token: "secret-token",
+        nkey_seed: null,
+      },
+      enrollment: { enrolled: true, enrollment_in_progress: false },
+    }))
+
+    await fs.writeFile(
+      fakeBinary,
+      [
+        "#!/bin/sh",
+        "case \" $* \" in",
+        "  *\" --nats-token \"*) echo 'token leaked on argv' >&2; exit 7 ;;",
+        "esac",
+        "if [ \"$CLAWDSTRIKE_HUNT_NATS_TOKEN\" != \"secret-token\" ]; then echo 'missing token env' >&2; exit 6; fi",
+        "echo 'cluster connect failed' >&2",
+        "exit 5",
+      ].join("\n"),
+    )
+    await fs.chmod(fakeBinary, 0o755)
+
+    const originalBinary = process.env.CLAWDSTRIKE_TUI_HUNT_BINARY
+    const originalSettings = process.env.CLAWDSTRIKE_AGENT_SETTINGS_PATH
+    process.env.CLAWDSTRIKE_TUI_HUNT_BINARY = fakeBinary
+    process.env.CLAWDSTRIKE_AGENT_SETTINGS_PATH = settingsPath
+    state.desktopAgent = loadDesktopAgentSnapshotSync()
+
+    try {
+      huntWatchScreen.onEnter?.(ctx)
+
+      for (let i = 0; i < 20 && state.hunt.watch.error == null; i++) {
+        await Bun.sleep(25)
+      }
+
+      expect(state.hunt.watch.running).toBe(false)
+      expect(state.hunt.watch.error).toContain("cluster connect failed")
+      expect(state.hunt.watch.error).not.toContain("missing token env")
+      expect(state.hunt.watch.error).not.toContain("token leaked on argv")
+    } finally {
+      if (originalBinary == null) delete process.env.CLAWDSTRIKE_TUI_HUNT_BINARY
+      else process.env.CLAWDSTRIKE_TUI_HUNT_BINARY = originalBinary
+      if (originalSettings == null) delete process.env.CLAWDSTRIKE_AGENT_SETTINGS_PATH
+      else process.env.CLAWDSTRIKE_AGENT_SETTINGS_PATH = originalSettings
+    }
+  })
 })
 
 describe("integrations screen", () => {
@@ -432,6 +495,47 @@ describe("integrations screen", () => {
       expect(rendered).toContain("not enrolled")
       expect(rendered).toContain("cluster stream: disabled")
       expect(rendered).toContain("Use Security or Audit for local events")
+    } finally {
+      if (original == null) delete process.env.CLAWDSTRIKE_AGENT_SETTINGS_PATH
+      else process.env.CLAWDSTRIKE_AGENT_SETTINGS_PATH = original
+    }
+  })
+
+  test("shows token-backed cluster watch as configured", async () => {
+    const state = createState()
+    state.hushdConnected = true
+    state.hushdStatus = "connected"
+
+    const settingsPath = path.join(tempDir, "agent.json")
+    await fs.writeFile(settingsPath, JSON.stringify({
+      enabled: true,
+      daemon_port: 9876,
+      mcp_port: 9877,
+      agent_api_port: 9878,
+      dashboard_url: "http://127.0.0.1:9878/ui",
+      local_agent_id: "endpoint-cluster",
+      nats: {
+        enabled: true,
+        nats_url: "nats://cluster.example:4222",
+        creds_file: null,
+        token: "secret-token",
+        nkey_seed: null,
+      },
+      enrollment: { enrolled: true, enrollment_in_progress: false },
+    }))
+
+    const original = process.env.CLAWDSTRIKE_AGENT_SETTINGS_PATH
+    process.env.CLAWDSTRIKE_AGENT_SETTINGS_PATH = settingsPath
+    state.desktopAgent = loadDesktopAgentSnapshotSync()
+
+    try {
+      const app = new TestApp(tempDir)
+      const rendered = stripAnsi(integrationsScreen.render(createContext(state, app, 120, 34)))
+
+      expect(rendered).toContain("enrolled")
+      expect(rendered).toContain("cluster stream: enabled nats://cluster.example:4222")
+      expect(rendered).toContain("watch auth: token")
+      expect(rendered).not.toContain("Use Security or Audit for local events")
     } finally {
       if (original == null) delete process.env.CLAWDSTRIKE_AGENT_SETTINGS_PATH
       else process.env.CLAWDSTRIKE_AGENT_SETTINGS_PATH = original

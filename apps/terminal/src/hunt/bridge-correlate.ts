@@ -13,6 +13,8 @@ export interface WatchOptions {
   cwd?: string
   natsUrl?: string
   natsCreds?: string
+  natsToken?: string
+  natsNkeySeed?: string
 }
 
 export async function runCorrelate(opts: CorrelateOptions): Promise<Alert[]> {
@@ -33,9 +35,12 @@ export function startWatch(
   opts?: WatchOptions,
 ): HuntStreamHandle {
   const args = ["watch"]
+  const env: Record<string, string> = {}
   for (const rule of rules) args.push("--rules", rule)
   if (opts?.natsUrl) args.push("--nats-url", opts.natsUrl)
   if (opts?.natsCreds) args.push("--nats-creds", opts.natsCreds)
+  if (opts?.natsToken) env.CLAWDSTRIKE_HUNT_NATS_TOKEN = opts.natsToken
+  if (opts?.natsNkeySeed) env.CLAWDSTRIKE_HUNT_NATS_NKEY_SEED = opts.natsNkeySeed
   return spawnHuntStream(
     args,
     (line: WatchJsonLine) => {
@@ -46,6 +51,9 @@ export function startWatch(
     (error) => {
       onError?.(error)
     },
-    { cwd: opts?.cwd },
+    {
+      cwd: opts?.cwd,
+      env: Object.keys(env).length > 0 ? env : undefined,
+    },
   )
 }

@@ -196,13 +196,19 @@ pub async fn replay_all(
     query: &HuntQuery,
     nats_url: &str,
     nats_creds: Option<&str>,
+    nats_token: Option<&str>,
+    nats_nkey_seed: Option<&str>,
     verify: bool,
 ) -> Result<Vec<TimelineEvent>> {
-    let auth = nats_creds.map(|c| spine::nats_transport::NatsAuthConfig {
-        creds_file: Some(c.to_string()),
-        token: None,
-        nkey_seed: None,
-    });
+    let auth = if nats_creds.is_some() || nats_token.is_some() || nats_nkey_seed.is_some() {
+        Some(spine::nats_transport::NatsAuthConfig {
+            creds_file: nats_creds.map(ToString::to_string),
+            token: nats_token.map(ToString::to_string),
+            nkey_seed: nats_nkey_seed.map(ToString::to_string),
+        })
+    } else {
+        None
+    };
 
     let client = spine::nats_transport::connect_with_auth(nats_url, auth.as_ref())
         .await
@@ -425,7 +431,7 @@ mod tests {
     async fn replay_all_unreachable_nats_returns_error() {
         let query = HuntQuery::default();
         // Use a port that is almost certainly not running NATS.
-        let result = replay_all(&query, "nats://127.0.0.1:14223", None, false).await;
+        let result = replay_all(&query, "nats://127.0.0.1:14223", None, None, None, false).await;
         assert!(result.is_err(), "should fail when NATS is unreachable");
     }
 }

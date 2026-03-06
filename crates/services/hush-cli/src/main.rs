@@ -973,6 +973,14 @@ enum HuntCommands {
         #[arg(long)]
         nats_creds: Option<String>,
 
+        /// NATS bearer token (prefer env to avoid leaking in shell history)
+        #[arg(long, env = "CLAWDSTRIKE_HUNT_NATS_TOKEN", hide_env_values = true)]
+        nats_token: Option<String>,
+
+        /// NATS nkey seed (prefer env to avoid leaking in shell history)
+        #[arg(long, env = "CLAWDSTRIKE_HUNT_NATS_NKEY_SEED", hide_env_values = true)]
+        nats_nkey_seed: Option<String>,
+
         /// Offline mode: query only local directories
         #[arg(long)]
         offline: bool,
@@ -1052,6 +1060,14 @@ enum HuntCommands {
         #[arg(long)]
         nats_creds: Option<String>,
 
+        /// NATS bearer token (prefer env to avoid leaking in shell history)
+        #[arg(long, env = "CLAWDSTRIKE_HUNT_NATS_TOKEN", hide_env_values = true)]
+        nats_token: Option<String>,
+
+        /// NATS nkey seed (prefer env to avoid leaking in shell history)
+        #[arg(long, env = "CLAWDSTRIKE_HUNT_NATS_NKEY_SEED", hide_env_values = true)]
+        nats_nkey_seed: Option<String>,
+
         /// Offline mode
         #[arg(long)]
         offline: bool,
@@ -1098,6 +1114,14 @@ enum HuntCommands {
         /// Path to NATS credentials file
         #[arg(long)]
         nats_creds: Option<String>,
+
+        /// NATS bearer token (prefer env to avoid leaking in shell history)
+        #[arg(long, env = "CLAWDSTRIKE_HUNT_NATS_TOKEN", hide_env_values = true)]
+        nats_token: Option<String>,
+
+        /// NATS nkey seed (prefer env to avoid leaking in shell history)
+        #[arg(long, env = "CLAWDSTRIKE_HUNT_NATS_NKEY_SEED", hide_env_values = true)]
+        nats_nkey_seed: Option<String>,
 
         /// Maximum sliding window duration (e.g. "5m", "1h")
         #[arg(long, default_value = "5m")]
@@ -1166,6 +1190,14 @@ enum HuntCommands {
         #[arg(long)]
         nats_creds: Option<String>,
 
+        /// NATS bearer token (prefer env to avoid leaking in shell history)
+        #[arg(long, env = "CLAWDSTRIKE_HUNT_NATS_TOKEN", hide_env_values = true)]
+        nats_token: Option<String>,
+
+        /// NATS nkey seed (prefer env to avoid leaking in shell history)
+        #[arg(long, env = "CLAWDSTRIKE_HUNT_NATS_NKEY_SEED", hide_env_values = true)]
+        nats_nkey_seed: Option<String>,
+
         /// Offline mode: query only local directories
         #[arg(long)]
         offline: bool,
@@ -1224,6 +1256,14 @@ enum HuntCommands {
         /// Path to NATS credentials file
         #[arg(long)]
         nats_creds: Option<String>,
+
+        /// NATS bearer token (prefer env to avoid leaking in shell history)
+        #[arg(long, env = "CLAWDSTRIKE_HUNT_NATS_TOKEN", hide_env_values = true)]
+        nats_token: Option<String>,
+
+        /// NATS nkey seed (prefer env to avoid leaking in shell history)
+        #[arg(long, env = "CLAWDSTRIKE_HUNT_NATS_NKEY_SEED", hide_env_values = true)]
+        nats_nkey_seed: Option<String>,
 
         /// Offline mode: query only local directories
         #[arg(long)]

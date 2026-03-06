@@ -5,6 +5,8 @@ import * as path from "node:path"
 const SETTINGS_PATH_ENV = "CLAWDSTRIKE_AGENT_SETTINGS_PATH"
 const WATCH_NATS_URL_ENV = "CLAWDSTRIKE_TUI_HUNT_NATS_URL"
 const WATCH_NATS_CREDS_ENV = "CLAWDSTRIKE_TUI_HUNT_NATS_CREDS"
+const WATCH_NATS_TOKEN_ENV = "CLAWDSTRIKE_TUI_HUNT_NATS_TOKEN"
+const WATCH_NATS_NKEY_SEED_ENV = "CLAWDSTRIKE_TUI_HUNT_NATS_NKEY_SEED"
 
 export interface DesktopAgentSnapshot {
   found: boolean
@@ -21,6 +23,8 @@ export interface DesktopAgentSnapshot {
   natsEnabled: boolean
   natsUrl: string | null
   natsCredsFile: string | null
+  natsToken: string | null
+  nkeySeed: string | null
   natsTokenConfigured: boolean
   nkeySeedConfigured: boolean
   subjectPrefix: string | null
@@ -36,10 +40,12 @@ export interface DesktopAgentWatchConfig {
     | "nats_disabled"
     | "missing_nats_url"
     | "missing_creds"
-    | "token_only"
     | "read_error"
   natsUrl?: string
   natsCreds?: string
+  natsToken?: string
+  natsNkeySeed?: string
+  authType?: "creds" | "token" | "nkey" | "unauthenticated"
   message: string
 }
 
@@ -67,6 +73,8 @@ function defaultSnapshot(settingsPath: string | null, error: string | null = nul
     natsEnabled: false,
     natsUrl: null,
     natsCredsFile: null,
+    natsToken: null,
+    nkeySeed: null,
     natsTokenConfigured: false,
     nkeySeedConfigured: false,
     subjectPrefix: null,
@@ -115,6 +123,8 @@ export function loadDesktopAgentSnapshotSync(): DesktopAgentSnapshot {
         natsEnabled: nats.enabled === true,
         natsUrl: normalizeString(nats.nats_url),
         natsCredsFile: normalizeString(nats.creds_file),
+        natsToken: normalizeString(nats.token),
+        nkeySeed: normalizeString(nats.nkey_seed),
         natsTokenConfigured: normalizeString(nats.token) != null,
         nkeySeedConfigured: normalizeString(nats.nkey_seed) != null,
         subjectPrefix: normalizeString(nats.subject_prefix),
@@ -136,10 +146,22 @@ export function resolveDesktopAgentWatchConfig(
 ): DesktopAgentWatchConfig {
   const manualNatsUrl = normalizeString(process.env[WATCH_NATS_URL_ENV])
   if (manualNatsUrl) {
+    const manualNatsCreds = normalizeString(process.env[WATCH_NATS_CREDS_ENV]) ?? undefined
+    const manualNatsToken = normalizeString(process.env[WATCH_NATS_TOKEN_ENV]) ?? undefined
+    const manualNatsNkeySeed = normalizeString(process.env[WATCH_NATS_NKEY_SEED_ENV]) ?? undefined
     return {
       kind: "manual",
       natsUrl: manualNatsUrl,
-      natsCreds: normalizeString(process.env[WATCH_NATS_CREDS_ENV]) ?? undefined,
+      natsCreds: manualNatsCreds,
+      natsToken: manualNatsToken,
+      natsNkeySeed: manualNatsNkeySeed,
+      authType: manualNatsCreds
+        ? "creds"
+        : manualNatsToken
+          ? "token"
+          : manualNatsNkeySeed
+            ? "nkey"
+            : "unauthenticated",
       message: `Using manual watch stream override ${manualNatsUrl}.`,
     }
   }
@@ -191,19 +213,33 @@ export function resolveDesktopAgentWatchConfig(
       kind: "configured",
       natsUrl: snapshot.natsUrl,
       natsCreds: snapshot.natsCredsFile,
-      message: `Using desktop agent cluster stream ${snapshot.natsUrl}.`,
+      authType: "creds",
+      message: `Using desktop agent cluster stream ${snapshot.natsUrl} with creds-file auth.`,
     }
   }
 
-  if (snapshot.natsTokenConfigured || snapshot.nkeySeedConfigured) {
+  if (snapshot.natsToken) {
     return {
-      kind: "token_only",
-      message: "Desktop agent cluster streaming is configured via token or nkey, but Live Watch currently needs a NATS creds file.",
+      kind: "configured",
+      natsUrl: snapshot.natsUrl,
+      natsToken: snapshot.natsToken,
+      authType: "token",
+      message: `Using desktop agent cluster stream ${snapshot.natsUrl} with token auth.`,
+    }
+  }
+
+  if (snapshot.nkeySeed) {
+    return {
+      kind: "configured",
+      natsUrl: snapshot.natsUrl,
+      natsNkeySeed: snapshot.nkeySeed,
+      authType: "nkey",
+      message: `Using desktop agent cluster stream ${snapshot.natsUrl} with nkey auth.`,
     }
   }
 
   return {
     kind: "missing_creds",
-    message: "Desktop agent cluster streaming is enabled, but no NATS creds file is configured for Live Watch.",
+    message: "Desktop agent cluster streaming is enabled, but no NATS auth material is configured for Live Watch.",
   }
 }

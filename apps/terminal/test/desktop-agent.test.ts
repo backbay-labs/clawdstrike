@@ -51,7 +51,7 @@ describe("desktop agent discovery", () => {
     expect(snapshot.natsCredsFile).toBe("/tmp/cluster.creds")
   })
 
-  test("reports when watch is configured via token without a creds file", async () => {
+  test("accepts token-backed watch configuration without a creds file", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "clawdstrike-desktop-agent-"))
     const settingsPath = path.join(tempDir, "agent.json")
 
@@ -73,7 +73,9 @@ describe("desktop agent discovery", () => {
     process.env[SETTINGS_PATH_ENV] = settingsPath
     const watch = resolveDesktopAgentWatchConfig(loadDesktopAgentSnapshotSync())
 
-    expect(watch.kind).toBe("token_only")
-    expect(watch.message).toContain("needs a NATS creds file")
+    expect(watch.kind).toBe("configured")
+    expect(watch.authType).toBe("token")
+    expect(watch.natsToken).toBe("secret-token")
+    expect(watch.message).toContain("token auth")
   })
 })

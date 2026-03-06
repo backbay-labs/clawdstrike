@@ -46,7 +46,10 @@ pub(crate) fn cmd_tui(args: Vec<String>, no_color: bool, stderr: &mut dyn Write)
     let tui_dir = match resolve_tui_dir(&script.path) {
         Some(path) => path,
         None => {
-            let _ = writeln!(stderr, "Error: failed to resolve the TUI runtime directory.");
+            let _ = writeln!(
+                stderr,
+                "Error: failed to resolve the TUI runtime directory."
+            );
             return 4;
         }
     };
@@ -198,10 +201,11 @@ fn find_tui_repo_script(start: &Path) -> Option<PathBuf> {
 }
 
 fn resolve_tui_dir(script: &Path) -> Option<PathBuf> {
-    if script
-        .file_name()
-        .is_some_and(|name| name == "index.ts")
-        && script.parent()?.file_name().is_some_and(|name| name == "cli")
+    if script.file_name().is_some_and(|name| name == "index.ts")
+        && script
+            .parent()?
+            .file_name()
+            .is_some_and(|name| name == "cli")
     {
         return Some(script.parent()?.parent()?.parent()?.to_path_buf());
     }
@@ -265,10 +269,7 @@ mod tests {
                 format!(
                     "{}:{}",
                     bin_dir.display(),
-                    old_path
-                        .as_deref()
-                        .unwrap_or_default()
-                        .to_string_lossy()
+                    old_path.as_deref().unwrap_or_default().to_string_lossy()
                 ),
             );
         }
@@ -336,10 +337,7 @@ mod tests {
                 format!(
                     "{}:{}",
                     bin_dir.display(),
-                    old_path
-                        .as_deref()
-                        .unwrap_or_default()
-                        .to_string_lossy()
+                    old_path.as_deref().unwrap_or_default().to_string_lossy()
                 ),
             );
         }
@@ -389,6 +387,9 @@ mod tests {
         fs::write(&bundle, "console.log('bundle')").expect("write bundle");
 
         let resolved = resolve_installed_tui_bundle(&exe).expect("resolve installed bundle");
-        assert_eq!(fs::canonicalize(resolved).unwrap(), fs::canonicalize(bundle).unwrap());
+        assert_eq!(
+            fs::canonicalize(resolved).unwrap(),
+            fs::canonicalize(bundle).unwrap()
+        );
     }
 }

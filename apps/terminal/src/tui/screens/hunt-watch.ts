@@ -82,7 +82,7 @@ function explainUnavailableWatch(error: string, ctx: ScreenContext): string {
     return `${prefix}${hint.message} Use Security or Audit for local events, or enroll the desktop agent to enable Live Watch.`
   }
 
-  if (hint.kind === "token_only" || hint.kind === "missing_creds") {
+  if (hint.kind === "missing_creds") {
     return `${prefix}${hint.message}`
   }
 
@@ -214,6 +214,8 @@ export const huntWatchScreen: Screen = {
         cwd: ctx.app.getCwd(),
         natsUrl: watchConfig.kind === "manual" || watchConfig.kind === "configured" ? watchConfig.natsUrl : undefined,
         natsCreds: watchConfig.kind === "manual" || watchConfig.kind === "configured" ? watchConfig.natsCreds : undefined,
+        natsToken: watchConfig.kind === "manual" || watchConfig.kind === "configured" ? watchConfig.natsToken : undefined,
+        natsNkeySeed: watchConfig.kind === "manual" || watchConfig.kind === "configured" ? watchConfig.natsNkeySeed : undefined,
       },
     )
   },
