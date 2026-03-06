@@ -19,6 +19,7 @@ function createState(): AppState {
     healthChecking: false,
     animationFrame: 0,
     runtimeInfo: null,
+    desktopAgent: null,
     hushdStatus: "disconnected",
     hushdConnected: false,
     hushdLastEventAt: null,

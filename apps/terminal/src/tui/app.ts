@@ -13,6 +13,7 @@ import { Health } from "../health"
 import { MCP } from "../mcp"
 import { Hushd } from "../hushd"
 import { Config } from "../config"
+import { loadDesktopAgentSnapshotSync } from "../desktop-agent"
 import { THEME, ESC, AGENTS } from "./theme"
 import { renderStatusBar } from "./components/status-bar"
 import { getInvestigationCounts, isInvestigationStale } from "./investigation"
@@ -98,6 +99,7 @@ export class TUIApp implements AppController {
       healthChecking: false,
       animationFrame: 0,
       runtimeInfo: resolveRuntimeInfo(),
+      desktopAgent: loadDesktopAgentSnapshotSync(),
       hushdStatus: "disconnected",
       hushdConnected: false,
       hushdLastEventAt: null,
@@ -202,6 +204,7 @@ export class TUIApp implements AppController {
   }
 
   private startBackgroundServices(): void {
+    this.state.desktopAgent = loadDesktopAgentSnapshotSync()
     this.startMcpServer()
     this.connectHushd()
     this.runHealthcheck()
@@ -218,6 +221,7 @@ export class TUIApp implements AppController {
   }
 
   runHealthcheck(): void {
+    this.state.desktopAgent = loadDesktopAgentSnapshotSync()
     this.state.healthChecking = true
     this.render()
 
@@ -556,6 +560,11 @@ export class TUIApp implements AppController {
 
   getCwd(): string {
     return this.cwd
+  }
+
+  refreshDesktopAgent(): void {
+    this.state.desktopAgent = loadDesktopAgentSnapshotSync()
+    this.render()
   }
 
   // ===========================================================================

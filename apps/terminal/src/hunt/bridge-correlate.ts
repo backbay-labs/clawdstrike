@@ -9,6 +9,12 @@ export interface CorrelateOptions {
   until?: string
 }
 
+export interface WatchOptions {
+  cwd?: string
+  natsUrl?: string
+  natsCreds?: string
+}
+
 export async function runCorrelate(opts: CorrelateOptions): Promise<Alert[]> {
   const args = ["correlate"]
   for (const rule of opts.rules) args.push("--rules", rule)
@@ -24,9 +30,12 @@ export function startWatch(
   onAlert: (alert: Alert) => void,
   onStats?: (stats: WatchStats) => void,
   onError?: (error: string) => void,
+  opts?: WatchOptions,
 ): HuntStreamHandle {
   const args = ["watch"]
   for (const rule of rules) args.push("--rules", rule)
+  if (opts?.natsUrl) args.push("--nats-url", opts.natsUrl)
+  if (opts?.natsCreds) args.push("--nats-creds", opts.natsCreds)
   return spawnHuntStream(
     args,
     (line: WatchJsonLine) => {
@@ -37,5 +46,6 @@ export function startWatch(
     (error) => {
       onError?.(error)
     },
+    { cwd: opts?.cwd },
   )
 }

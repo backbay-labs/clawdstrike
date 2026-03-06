@@ -5,8 +5,9 @@
 import { THEME } from "../theme"
 import type { Screen, ScreenContext } from "../types"
 import type { HealthStatus } from "../../health"
+import { resolveDesktopAgentWatchConfig } from "../../desktop-agent"
 import { renderBox } from "../components/box"
-import { centerBlock, centerLine, joinColumns } from "../components/layout"
+import { centerBlock, centerLine, joinColumns, wrapText } from "../components/layout"
 import { renderSurfaceHeader } from "../components/surface-header"
 
 export const integrationsScreen: Screen = {
@@ -23,6 +24,8 @@ export const integrationsScreen: Screen = {
     }
 
     if (key === "r") {
+      app.refreshDesktopAgent()
+      app.connectHushd()
       app.runHealthcheck()
       return true
     }
@@ -60,6 +63,49 @@ function renderIntegrationsScreen(ctx: ScreenContext): string {
   content.push(...runtimeLines)
   if (state.securityError) {
     content.push(`${THEME.warning}${state.securityError}${THEME.reset}`)
+  }
+
+  const desktop = state.desktopAgent
+  const watchConfig = resolveDesktopAgentWatchConfig(desktop)
+  content.push("")
+  content.push(`${THEME.secondary}${THEME.bold}Desktop Agent${THEME.reset}`)
+  if (!desktop?.found) {
+    content.push(`${THEME.muted}settings not found${THEME.reset}`)
+  } else if (desktop.error) {
+    content.push(`${THEME.warning}${desktop.error}${THEME.reset}`)
+  } else {
+    content.push(joinColumns(
+      `${THEME.dim}config:${THEME.reset} ${THEME.white}${desktop.settingsPath ?? "unknown"}${THEME.reset}`,
+      `${desktop.enabled ? THEME.success : THEME.warning}${desktop.enabled ? "enabled" : "disabled"}${THEME.reset}`,
+      contentWidth,
+    ))
+    content.push(joinColumns(
+      `${THEME.dim}ports:${THEME.reset} ${THEME.white}daemon ${desktop.daemonPort ?? "-"}${THEME.reset} ${THEME.dim}|${THEME.reset} ${THEME.white}mcp ${desktop.mcpPort ?? "-"}${THEME.reset}`,
+      `${THEME.dim}api:${THEME.reset} ${THEME.white}${desktop.agentApiPort ?? "-"}${THEME.reset}`,
+      contentWidth,
+    ))
+    content.push(joinColumns(
+      `${THEME.dim}enrollment:${THEME.reset} ${desktop.enrolled ? `${THEME.success}enrolled${THEME.reset}` : `${THEME.warning}not enrolled${THEME.reset}`}`,
+      `${THEME.dim}local id:${THEME.reset} ${THEME.muted}${desktop.localAgentId ?? "unknown"}${THEME.reset}`,
+      contentWidth,
+    ))
+    const clusterStatus = desktop.natsEnabled
+      ? `${THEME.success}enabled${THEME.reset}${desktop.natsUrl ? ` ${THEME.dim}${desktop.natsUrl}${THEME.reset}` : ""}`
+      : `${THEME.warning}disabled${THEME.reset}`
+    content.push(`${THEME.dim}cluster stream:${THEME.reset} ${clusterStatus}`)
+    if (desktop.dashboardUrl) {
+      content.push(`${THEME.dim}dashboard:${THEME.reset} ${THEME.muted}${desktop.dashboardUrl}${THEME.reset}`)
+    }
+
+    if (watchConfig.kind !== "configured" && watchConfig.kind !== "manual" && watchConfig.kind !== "not_found") {
+      content.push("")
+      content.push(`${THEME.secondary}${THEME.bold}Live Watch${THEME.reset}`)
+      const prefix = state.hushdConnected ? "Local hushd is online. " : ""
+      content.push(...wrapText(`${prefix}${watchConfig.message}`, contentWidth).map(line => `${THEME.muted}${line}${THEME.reset}`))
+      if (watchConfig.kind === "not_enrolled" || watchConfig.kind === "nats_disabled") {
+        content.push(...wrapText("Use Security or Audit for local events, or enroll the desktop agent to enable cluster-backed Live Watch.", contentWidth).map(line => `${THEME.muted}${line}${THEME.reset}`))
+      }
+    }
   }
 
   const addSection = (label: string, items: HealthStatus[], color: string) => {

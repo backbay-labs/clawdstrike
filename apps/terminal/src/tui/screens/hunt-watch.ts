@@ -8,6 +8,7 @@ import type { TimelineEvent, Alert, WatchStats, EventSource, NormalizedVerdict }
 import type { HuntStreamHandle } from "../../hunt/bridge"
 import { startWatch } from "../../hunt/bridge-correlate"
 import { resolveDefaultWatchRules } from "../../hunt/bridge"
+import { resolveDesktopAgentWatchConfig } from "../../desktop-agent"
 import {
   renderLog,
   appendLine,
@@ -17,6 +18,8 @@ import {
   clearLog,
   type LogLine,
 } from "../components/streaming-log"
+import { renderBox } from "../components/box"
+import { centerBlock, centerLine, wrapText } from "../components/layout"
 import { fitString } from "../components/types"
 import { renderSurfaceHeader } from "../components/surface-header"
 import { appendInvestigationEvent, updateInvestigation } from "../investigation"
@@ -68,8 +71,31 @@ function matchesFilter(event: TimelineEvent, filter: HuntWatchState["filter"]): 
   return event.verdict === filter
 }
 
+function explainUnavailableWatch(error: string, ctx: ScreenContext): string {
+  const desktop = ctx.state.desktopAgent
+  const hint = resolveDesktopAgentWatchConfig(desktop)
+  const prefix = ctx.state.hushdConnected
+    ? "Local hushd is reachable, but "
+    : ""
+
+  if (hint.kind === "not_enrolled" || hint.kind === "nats_disabled") {
+    return `${prefix}${hint.message} Use Security or Audit for local events, or enroll the desktop agent to enable Live Watch.`
+  }
+
+  if (hint.kind === "token_only" || hint.kind === "missing_creds") {
+    return `${prefix}${hint.message}`
+  }
+
+  if (hint.kind === "read_error") {
+    return `${prefix}${hint.message}`
+  }
+
+  return error
+}
+
 export const huntWatchScreen: Screen = {
   onEnter(ctx: ScreenContext): void {
+    ctx.app.refreshDesktopAgent()
     const w = ctx.state.hunt.watch
     if (w.running) return
 
@@ -80,6 +106,24 @@ export const huntWatchScreen: Screen = {
         running: false,
         error: "No correlation rule files are available for live watch.",
       }
+      ctx.app.render()
+      return
+    }
+
+    const watchConfig = resolveDesktopAgentWatchConfig(ctx.state.desktopAgent)
+    if (watchConfig.kind === "not_enrolled" || watchConfig.kind === "nats_disabled") {
+      const error = explainUnavailableWatch(watchConfig.message, ctx)
+      ctx.state.hunt.watch = {
+        ...w,
+        running: false,
+        error,
+      }
+      updateInvestigation(ctx.state, {
+        origin: "watch",
+        title: "Live Watch",
+        summary: error,
+        query: w.filter === "all" ? null : w.filter,
+      })
       ctx.app.render()
       return
     }
@@ -148,22 +192,28 @@ export const huntWatchScreen: Screen = {
       },
       (error: string) => {
         const ws = ctx.state.hunt.watch
+        const readableError = explainUnavailableWatch(error, ctx)
         ctx.state.hunt.watch = {
           ...ws,
           running: false,
-          error,
+          error: readableError,
           log: appendLine(ws.log, {
-            text: `${THEME.error}watch error:${THEME.reset} ${THEME.muted}${error}${THEME.reset}`,
-            plainLength: `watch error: ${error}`.length,
+            text: `${THEME.error}watch error:${THEME.reset} ${THEME.muted}${readableError}${THEME.reset}`,
+            plainLength: `watch error: ${readableError}`.length,
           }),
         }
         updateInvestigation(ctx.state, {
           origin: "watch",
           title: "Live Watch",
-          summary: `Watch unavailable: ${error}`,
+          summary: `Watch unavailable: ${readableError}`,
           query: ws.filter === "all" ? null : ws.filter,
         })
         ctx.app.render()
+      },
+      {
+        cwd: ctx.app.getCwd(),
+        natsUrl: watchConfig.kind === "manual" || watchConfig.kind === "configured" ? watchConfig.natsUrl : undefined,
+        natsCreds: watchConfig.kind === "manual" || watchConfig.kind === "configured" ? watchConfig.natsCreds : undefined,
       },
     )
   },
@@ -187,18 +237,28 @@ export const huntWatchScreen: Screen = {
     lines.push(...renderSurfaceHeader("hunt-watch", "Live Watch", width, THEME, filterLabel))
 
     if (!w.running) {
-      // Not running state
-      const msgY = Math.floor(height / 2) - 2
-      for (let i = 2; i < msgY; i++) lines.push(" ".repeat(width))
+      const boxWidth = Math.min(96, width - 6)
+      const innerWidth = boxWidth - 4
+      const content: string[] = []
+
       if (w.error) {
-        lines.push(fitString(`${THEME.error}  Watch unavailable.${THEME.reset}`, width))
-        lines.push(fitString(`${THEME.dim}  ${w.error}${THEME.reset}`, width))
+        content.push(`${THEME.error}${THEME.bold}Cluster watch unavailable${THEME.reset}`)
+        content.push(...wrapText(w.error, innerWidth).map(line => `${THEME.dim}${line}${THEME.reset}`))
       } else {
-        lines.push(fitString(`${THEME.muted}  Watch is not running.${THEME.reset}`, width))
-        lines.push(fitString(`${THEME.dim}  Press q to return to the dashboard.${THEME.reset}`, width))
+        content.push(`${THEME.muted}Watch is not running.${THEME.reset}`)
+        content.push(`${THEME.dim}Press q to return to the dashboard.${THEME.reset}`)
       }
-      for (let i = lines.length; i < height - 1; i++) lines.push(" ".repeat(width))
-      lines.push(renderHelpBar(width))
+
+      const card = renderBox("Live Watch", content.map(line => fitString(line, innerWidth)), boxWidth, THEME, {
+        style: "rounded",
+        titleAlign: "left",
+        padding: 1,
+      })
+      const startY = Math.max(lines.length, Math.floor((height - card.length - 2) / 2))
+      while (lines.length < startY) lines.push(" ".repeat(width))
+      lines.push(...centerBlock(card, width))
+      while (lines.length < height - 2) lines.push(" ".repeat(width))
+      lines.push(centerLine(renderHelpBar(width), width))
       return lines.join("\n")
     }
 

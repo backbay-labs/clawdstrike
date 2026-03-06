@@ -23,3 +23,38 @@ export function joinColumns(left: string, right: string, width: number): string 
 
   return `${fitString(left, width - rightWidth)}${right}`
 }
+
+export function wrapText(text: string, width: number): string[] {
+  if (width <= 0) {
+    return [""]
+  }
+
+  const words = text.trim().split(/\s+/).filter(Boolean)
+  if (words.length === 0) {
+    return [""]
+  }
+
+  const lines: string[] = []
+  let current = ""
+
+  for (const word of words) {
+    if (!current) {
+      current = word
+      continue
+    }
+
+    if (`${current} ${word}`.length <= width) {
+      current = `${current} ${word}`
+      continue
+    }
+
+    lines.push(current)
+    current = word
+  }
+
+  if (current) {
+    lines.push(current)
+  }
+
+  return lines
+}

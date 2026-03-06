@@ -4,6 +4,7 @@
 
 import type { ThemeColors } from "./theme"
 import type { HealthSummary } from "../health"
+import type { DesktopAgentSnapshot } from "../desktop-agent"
 import type {
   AuditEvent,
   AuditStats,
@@ -85,6 +86,8 @@ export interface AppController {
   quit(): void
   /** Get CWD */
   getCwd(): string
+  /** Refresh local desktop-agent snapshot */
+  refreshDesktopAgent(): void
 }
 
 // =============================================================================
@@ -330,6 +333,7 @@ export interface AppState {
 
   // Security (hushd)
   runtimeInfo: RuntimeInfo | null
+  desktopAgent: DesktopAgentSnapshot | null
   hushdStatus: HushdConnectionState
   hushdConnected: boolean
   hushdLastEventAt: string | null

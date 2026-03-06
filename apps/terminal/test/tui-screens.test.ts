@@ -6,9 +6,11 @@ import type { AppController, AppState, InputMode, ScreenContext } from "../src/t
 import { createInitialAuditLogState, createInitialHuntState } from "../src/tui/types"
 import { THEME } from "../src/tui/theme"
 import { createMainScreen } from "../src/tui/screens/main"
+import { integrationsScreen } from "../src/tui/screens/integrations"
 import { huntReportScreen } from "../src/tui/screens/hunt-report"
 import { huntReportHistoryScreen } from "../src/tui/screens/hunt-report-history"
 import { huntWatchScreen } from "../src/tui/screens/hunt-watch"
+import { loadDesktopAgentSnapshotSync } from "../src/desktop-agent"
 import { stripAnsi } from "../src/tui/components/types"
 import { updateInvestigation, buildInvestigationReport } from "../src/tui/investigation"
 import { exportReportBundle } from "../src/tui/report-export"
@@ -45,6 +47,7 @@ class TestApp implements AppController {
   getCwd(): string {
     return this.cwd
   }
+  refreshDesktopAgent(): void {}
 }
 
 function createState(): AppState {
@@ -62,6 +65,7 @@ function createState(): AppState {
     healthChecking: false,
     animationFrame: 0,
     runtimeInfo: null,
+    desktopAgent: null,
     hushdStatus: "disconnected",
     hushdConnected: false,
     hushdLastEventAt: null,
@@ -291,6 +295,46 @@ describe("hunt report screen", () => {
 })
 
 describe("hunt watch screen", () => {
+  test("explains when the workstation is local-only", async () => {
+    const state = createState()
+    state.hushdConnected = true
+    state.hushdStatus = "connected"
+
+    const settingsPath = path.join(tempDir, "agent.json")
+    await fs.writeFile(settingsPath, JSON.stringify({
+      enabled: true,
+      daemon_port: 9876,
+      mcp_port: 9877,
+      agent_api_port: 9878,
+      dashboard_url: "http://127.0.0.1:9878/ui",
+      local_agent_id: "endpoint-local",
+      nats: { enabled: false, nats_url: null, creds_file: null, token: null, nkey_seed: null },
+      enrollment: { enrolled: false, enrollment_in_progress: false },
+    }))
+
+    const original = process.env.CLAWDSTRIKE_AGENT_SETTINGS_PATH
+    process.env.CLAWDSTRIKE_AGENT_SETTINGS_PATH = settingsPath
+    state.desktopAgent = loadDesktopAgentSnapshotSync()
+
+    try {
+      const app = new TestApp(tempDir)
+      const ctx = createContext(state, app, 108, 20)
+
+      huntWatchScreen.onEnter?.(ctx)
+
+      expect(state.hunt.watch.running).toBe(false)
+      expect(state.hunt.watch.error).toContain("cluster streaming is not configured")
+
+      const rendered = stripAnsi(huntWatchScreen.render(ctx))
+      expect(rendered).toContain("Cluster watch unavailable")
+      expect(rendered).toContain("Use Security or Audit for local")
+      expect(rendered).toContain("events, or enroll the desktop agent")
+    } finally {
+      if (original == null) delete process.env.CLAWDSTRIKE_AGENT_SETTINGS_PATH
+      else process.env.CLAWDSTRIKE_AGENT_SETTINGS_PATH = original
+    }
+  })
+
   test("surfaces launch failures inside the screen", async () => {
     const state = createState()
     const app = new TestApp(tempDir)
@@ -314,7 +358,7 @@ describe("hunt watch screen", () => {
       expect(state.hunt.watch.error).toContain("stub watch failed")
 
       const rendered = stripAnsi(huntWatchScreen.render(ctx))
-      expect(rendered).toContain("Watch unavailable.")
+      expect(rendered).toContain("Cluster watch unavailable")
       expect(rendered).toContain("stub watch failed")
     } finally {
       if (original == null) delete process.env.CLAWDSTRIKE_TUI_HUNT_BINARY
@@ -348,12 +392,49 @@ describe("hunt watch screen", () => {
       expect(state.hunt.watch.error).toContain("Watch failed: NATS error: connection refused")
 
       const rendered = stripAnsi(huntWatchScreen.render(ctx))
-      expect(rendered).toContain("Watch unavailable.")
+      expect(rendered).toContain("Cluster watch unavailable")
       expect(rendered).toContain("Watch failed: NATS error: connection refused")
       expect(rendered).not.toContain("Failed to parse stream line")
     } finally {
       if (original == null) delete process.env.CLAWDSTRIKE_TUI_HUNT_BINARY
       else process.env.CLAWDSTRIKE_TUI_HUNT_BINARY = original
+    }
+  })
+})
+
+describe("integrations screen", () => {
+  test("shows desktop-agent enrollment and cluster-watch status", async () => {
+    const state = createState()
+    state.hushdConnected = true
+    state.hushdStatus = "connected"
+
+    const settingsPath = path.join(tempDir, "agent.json")
+    await fs.writeFile(settingsPath, JSON.stringify({
+      enabled: true,
+      daemon_port: 9876,
+      mcp_port: 9877,
+      agent_api_port: 9878,
+      dashboard_url: "http://127.0.0.1:9878/ui",
+      local_agent_id: "endpoint-local",
+      nats: { enabled: false, nats_url: null, creds_file: null, token: null, nkey_seed: null },
+      enrollment: { enrolled: false, enrollment_in_progress: false },
+    }))
+
+    const original = process.env.CLAWDSTRIKE_AGENT_SETTINGS_PATH
+    process.env.CLAWDSTRIKE_AGENT_SETTINGS_PATH = settingsPath
+    state.desktopAgent = loadDesktopAgentSnapshotSync()
+
+    try {
+      const app = new TestApp(tempDir)
+      const rendered = stripAnsi(integrationsScreen.render(createContext(state, app, 120, 34)))
+
+      expect(rendered).toContain("Desktop Agent")
+      expect(rendered).toContain("not enrolled")
+      expect(rendered).toContain("cluster stream: disabled")
+      expect(rendered).toContain("Use Security or Audit for local events")
+    } finally {
+      if (original == null) delete process.env.CLAWDSTRIKE_AGENT_SETTINGS_PATH
+      else process.env.CLAWDSTRIKE_AGENT_SETTINGS_PATH = original
     }
   })
 })
