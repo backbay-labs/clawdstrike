@@ -4,7 +4,7 @@
  * Tests for CLI adapter implementations.
  */
 
-import { describe, test, expect } from "bun:test"
+import { afterEach, describe, test, expect } from "bun:test"
 import * as fs from "node:fs/promises"
 import * as os from "node:os"
 import * as path from "node:path"
@@ -16,6 +16,8 @@ import { CrushAdapter } from "../src/dispatcher/adapters/crush"
 import type { WorkcellInfo, TaskInput } from "../src/types"
 
 const originalPath = process.env.PATH
+const originalHome = process.env.HOME
+const originalUserProfile = process.env.USERPROFILE
 
 async function withFakeCli(
   name: string,
@@ -31,6 +33,14 @@ async function withFakeCli(
   process.env.USERPROFILE = tempDir
   return tempDir
 }
+
+afterEach(() => {
+  process.env.PATH = originalPath
+  if (originalHome === undefined) delete process.env.HOME
+  else process.env.HOME = originalHome
+  if (originalUserProfile === undefined) delete process.env.USERPROFILE
+  else process.env.USERPROFILE = originalUserProfile
+})
 
 async function probeAdapterAvailability(
   modulePath: "./src/dispatcher/adapters/codex" | "./src/dispatcher/adapters/claude",
@@ -230,7 +240,7 @@ describe("Adapter availability", () => {
   test("ClaudeAdapter.isAvailable returns false when auth status times out", async () => {
     const tempDir = await withFakeCli(
       "claude",
-      "#!/bin/sh\nif [ \"$1\" = \"auth\" ] && [ \"$2\" = \"status\" ]; then\n  sleep 2\n  exit 0\nfi\nexit 1\n"
+      "#!/bin/sh\nif [ \"$1\" = \"auth\" ] && [ \"$2\" = \"status\" ]; then\n  sleep 4\n  exit 0\nfi\nexit 1\n"
     )
     await fs.mkdir(path.join(tempDir, ".claude"), { recursive: true })
     await expect(
@@ -285,6 +295,23 @@ describe("Adapter telemetry parsing", () => {
     expect(telemetry!.cost).toBe(0.01)
   })
 
+  test("CodexAdapter parses telemetry from current exec JSONL output", () => {
+    const output = [
+      JSON.stringify({ type: "thread.started", thread_id: "thread_123" }),
+      JSON.stringify({
+        type: "turn.completed",
+        usage: {
+          input_tokens: 12339,
+          output_tokens: 35,
+        },
+      }),
+    ].join("\n")
+
+    const telemetry = CodexAdapter.parseTelemetry(output)
+    expect(telemetry!.tokens?.input).toBe(12339)
+    expect(telemetry!.tokens?.output).toBe(35)
+  })
+
   test("ClaudeAdapter parses telemetry from JSON output", () => {
     const output = JSON.stringify({
       model: "claude-3-opus-20240229",
@@ -300,6 +327,30 @@ describe("Adapter telemetry parsing", () => {
     expect(telemetry!.tokens?.input).toBe(200)
     expect(telemetry!.tokens?.output).toBe(100)
     expect(telemetry!.cost).toBe(0.02)
+  })
+
+  test("ClaudeAdapter parses telemetry from current result output", () => {
+    const output = JSON.stringify({
+      type: "result",
+      result: "OK",
+      total_cost_usd: 0.0353275,
+      usage: {
+        input_tokens: 3,
+        output_tokens: 4,
+      },
+      modelUsage: {
+        "claude-opus-4-6": {
+          inputTokens: 3,
+          outputTokens: 4,
+        },
+      },
+    })
+
+    const telemetry = ClaudeAdapter.parseTelemetry(output)
+    expect(telemetry!.model).toBe("claude-opus-4-6")
+    expect(telemetry!.tokens?.input).toBe(3)
+    expect(telemetry!.tokens?.output).toBe(4)
+    expect(telemetry!.cost).toBe(0.0353275)
   })
 
   test("OpenCodeAdapter parses telemetry from JSON output", () => {
@@ -350,6 +401,79 @@ Some text after`
 })
 
 describe("Dispatcher execution", () => {
+  test("CodexAdapter.execute uses current exec flags and stdin prompts", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "clawdstrike-codex-exec-"))
+    const captureArgsPath = path.join(tempDir, "codex-args.txt")
+    const capturePromptPath = path.join(tempDir, "codex-prompt.txt")
+    const binDir = path.join(tempDir, "bin")
+    const cliPath = path.join(binDir, "codex")
+    await fs.mkdir(binDir, { recursive: true })
+    await fs.writeFile(
+      cliPath,
+      `#!/bin/sh
+printf '%s\n' "$@" > ${JSON.stringify(captureArgsPath)}
+cat > ${JSON.stringify(capturePromptPath)}
+printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"OK"}}'
+printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":12,"output_tokens":2}}'
+`,
+      { mode: 0o755 },
+    )
+    await fs.chmod(cliPath, 0o755)
+
+    process.env.PATH = [binDir, originalPath].filter(Boolean).join(":")
+
+    const workcellDir = path.join(tempDir, "workcell")
+    await fs.mkdir(workcellDir, { recursive: true })
+
+    const result = await CodexAdapter.execute(
+      { ...mockWorkcell, directory: workcellDir },
+      mockTask,
+      new AbortController().signal,
+    )
+
+    expect(result.success).toBe(true)
+    expect(result.output).toBe("OK")
+    expect(result.telemetry?.tokens?.input).toBe(12)
+    expect(result.telemetry?.tokens?.output).toBe(2)
+
+    const args = (await fs.readFile(captureArgsPath, "utf8")).trim().split("\n")
+    expect(args).toEqual(["-a", "never", "-s", "workspace-write", "exec", "--json", "-C", workcellDir, "-"])
+    expect(await fs.readFile(capturePromptPath, "utf8")).toBe(mockTask.prompt)
+  })
+
+  test("ClaudeAdapter.execute returns the parsed result text", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "clawdstrike-claude-exec-"))
+    const binDir = path.join(tempDir, "bin")
+    const cliPath = path.join(binDir, "claude")
+    await fs.mkdir(binDir, { recursive: true })
+    await fs.writeFile(
+      cliPath,
+      `#!/bin/sh
+printf '%s\n' '{"type":"result","result":"OK","total_cost_usd":0.02,"usage":{"input_tokens":8,"output_tokens":3},"modelUsage":{"claude-opus-4-6":{"inputTokens":8,"outputTokens":3}}}'
+`,
+      { mode: 0o755 },
+    )
+    await fs.chmod(cliPath, 0o755)
+
+    process.env.PATH = [binDir, originalPath].filter(Boolean).join(":")
+
+    const workcellDir = path.join(tempDir, "workcell")
+    await fs.mkdir(workcellDir, { recursive: true })
+
+    const result = await ClaudeAdapter.execute(
+      { ...mockWorkcell, directory: workcellDir },
+      mockTask,
+      new AbortController().signal,
+    )
+
+    expect(result.success).toBe(true)
+    expect(result.output).toBe("OK")
+    expect(result.telemetry?.model).toBe("claude-opus-4-6")
+    expect(result.telemetry?.tokens?.input).toBe(8)
+    expect(result.telemetry?.tokens?.output).toBe(3)
+    expect(result.telemetry?.cost).toBe(0.02)
+  })
+
   test("execute returns error when adapter unavailable", async () => {
     const result = await Dispatcher.execute({
       task: mockTask,

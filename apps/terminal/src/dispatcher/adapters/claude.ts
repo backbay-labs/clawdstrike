@@ -29,7 +29,20 @@ const DEFAULT_CONFIG: ClaudeConfig = {
 
 let config: ClaudeConfig = { ...DEFAULT_CONFIG }
 
-const CLAUDE_AUTH_STATUS_TIMEOUT_MS = 1500
+const CLAUDE_AUTH_STATUS_TIMEOUT_MS = 3500
+
+function extractClaudeOutput(output: string): string {
+  try {
+    const data = JSON.parse(output) as { result?: string }
+    if (typeof data.result === "string" && data.result.trim()) {
+      return data.result
+    }
+  } catch {
+    // Fall back to the raw CLI output when Claude does not return JSON.
+  }
+
+  return output
+}
 
 /**
  * Configure Claude adapter
@@ -106,6 +119,7 @@ export const ClaudeAdapter: Adapter = {
     const args: string[] = [
       "--print",
       "--output-format", "json",
+      "--permission-mode", "bypassPermissions",
     ]
 
     // Add allowed tools whitelist
@@ -161,7 +175,7 @@ export const ClaudeAdapter: Adapter = {
       if (signal.aborted) {
         return {
           success: false,
-          output: stdout,
+          output: extractClaudeOutput(stdout),
           error: "Execution cancelled",
         }
       }
@@ -169,7 +183,7 @@ export const ClaudeAdapter: Adapter = {
       if (exitCode !== 0) {
         return {
           success: false,
-          output: stdout,
+          output: extractClaudeOutput(stdout),
           error: stderr || `Claude exited with code ${exitCode}`,
         }
       }
@@ -179,7 +193,7 @@ export const ClaudeAdapter: Adapter = {
 
       return {
         success: true,
-        output: stdout,
+        output: extractClaudeOutput(stdout),
         telemetry: {
           ...telemetry,
           startedAt: startTime,
@@ -202,15 +216,25 @@ export const ClaudeAdapter: Adapter = {
       for (const line of lines) {
         if (line.startsWith("{") && line.includes("usage")) {
           try {
-            const data = JSON.parse(line)
+            const data = JSON.parse(line) as {
+              model?: string
+              cost?: number
+              total_cost_usd?: number
+              usage?: {
+                input_tokens?: number
+                output_tokens?: number
+              }
+              modelUsage?: Record<string, unknown>
+            }
+            const inferredModel = data.model ?? Object.keys(data.modelUsage ?? {})[0]
             if (data.usage) {
               return {
-                model: data.model,
+                model: inferredModel,
                 tokens: {
                   input: data.usage.input_tokens || 0,
                   output: data.usage.output_tokens || 0,
                 },
-                cost: data.cost,
+                cost: data.total_cost_usd ?? data.cost,
               }
             }
           } catch {
@@ -221,15 +245,25 @@ export const ClaudeAdapter: Adapter = {
 
       // Try parsing the entire output as JSON
       try {
-        const data = JSON.parse(output)
+        const data = JSON.parse(output) as {
+          model?: string
+          cost?: number
+          total_cost_usd?: number
+          usage?: {
+            input_tokens?: number
+            output_tokens?: number
+          }
+          modelUsage?: Record<string, unknown>
+        }
+        const inferredModel = data.model ?? Object.keys(data.modelUsage ?? {})[0]
         if (data.usage) {
           return {
-            model: data.model,
+            model: inferredModel,
             tokens: {
               input: data.usage.input_tokens || 0,
               output: data.usage.output_tokens || 0,
             },
-            cost: data.cost,
+            cost: data.total_cost_usd ?? data.cost,
           }
         }
       } catch {
