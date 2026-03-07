@@ -261,7 +261,9 @@ impl EnclaveResolver {
     // Default behavior fallback
     // -----------------------------------------------------------------------
 
-    fn apply_default_behavior(behavior: &OriginDefaultBehavior) -> Result<ResolvedEnclave> {
+    pub(crate) fn apply_default_behavior(
+        behavior: &OriginDefaultBehavior,
+    ) -> Result<ResolvedEnclave> {
         match behavior {
             OriginDefaultBehavior::Deny => Err(Error::ConfigError(
                 "no origin profile matched and default behavior is deny".into(),

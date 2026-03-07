@@ -458,6 +458,26 @@ impl HushEngine {
                     return Err(e);
                 }
             }
+        } else if context.origin.is_none() {
+            // No origin and no pre-set enclave — materialize MinimalProfile fallback
+            // if the origins config uses that default behavior. This ensures the
+            // enclave MCP pre-check runs with restrictive defaults even when no
+            // origin context is provided.
+            if let Some(ref origins_config) = self.policy.origins {
+                if *origins_config.effective_default_behavior()
+                    == OriginDefaultBehavior::MinimalProfile
+                {
+                    if let Ok(fallback) = EnclaveResolver::apply_default_behavior(
+                        &OriginDefaultBehavior::MinimalProfile,
+                    ) {
+                        debug!(
+                            resolution_path = ?fallback.resolution_path,
+                            "Materialized minimal_profile fallback enclave"
+                        );
+                        effective_context.enclave = Some(fallback);
+                    }
+                }
+            }
         }
         let context = &effective_context;
 
