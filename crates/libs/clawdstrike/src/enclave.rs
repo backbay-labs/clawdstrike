@@ -89,9 +89,7 @@ impl EnclaveResolver {
                         &score,
                         idx,
                         prev,
-                        best.as_ref()
-                            .map(|(i, _, _)| *i)
-                            .unwrap_or(usize::MAX),
+                        best.as_ref().map(|(i, _, _)| *i).unwrap_or(usize::MAX),
                     ),
                 };
                 if dominated {

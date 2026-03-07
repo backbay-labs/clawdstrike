@@ -234,10 +234,9 @@ pub fn cmd_origin(
             stderr,
         ),
 
-        OriginCommands::ListProfiles {
-            policy_path,
-            json,
-        } => cmd_list_profiles(&policy_path, json, remote_extends, stdout, stderr),
+        OriginCommands::ListProfiles { policy_path, json } => {
+            cmd_list_profiles(&policy_path, json, remote_extends, stdout, stderr)
+        }
     }
 }
 
@@ -468,7 +467,11 @@ fn emit_resolve_human(enclave: &ResolvedEnclave, stdout: &mut dyn Write) {
     }
 
     if !enclave.resolution_path.is_empty() {
-        ui::kv("Resolution path", &enclave.resolution_path.join("; "), stdout);
+        ui::kv(
+            "Resolution path",
+            &enclave.resolution_path.join("; "),
+            stdout,
+        );
     }
 
     if let Some(ref explanation) = enclave.explanation {
@@ -633,10 +636,7 @@ struct FieldResult {
 }
 
 /// Evaluate each profile against the origin and return detailed results.
-fn evaluate_profiles(
-    origin: &OriginContext,
-    config: &OriginsConfig,
-) -> Vec<ProfileEvaluation> {
+fn evaluate_profiles(origin: &OriginContext, config: &OriginsConfig) -> Vec<ProfileEvaluation> {
     config
         .profiles
         .iter()
@@ -644,10 +644,7 @@ fn evaluate_profiles(
         .collect()
 }
 
-fn evaluate_single_profile(
-    origin: &OriginContext,
-    profile: &OriginProfile,
-) -> ProfileEvaluation {
+fn evaluate_single_profile(origin: &OriginContext, profile: &OriginProfile) -> ProfileEvaluation {
     let rules = &profile.match_rules;
     let mut field_results = Vec::new();
     let mut all_matched = true;
@@ -712,7 +709,8 @@ fn evaluate_single_profile(
             .as_ref()
             .map(|s| s.to_string())
             .unwrap_or("(none)".into());
-        let matched = origin.space_type.as_ref().map(|s| s.to_string()) == Some(rule_space_type.to_string());
+        let matched =
+            origin.space_type.as_ref().map(|s| s.to_string()) == Some(rule_space_type.to_string());
         if matched {
             specificity += 1;
         } else {
@@ -750,7 +748,8 @@ fn evaluate_single_profile(
             .as_ref()
             .map(|v| v.to_string())
             .unwrap_or("(none)".into());
-        let matched = origin.visibility.as_ref().map(|v| v.to_string()) == Some(rule_vis.to_string());
+        let matched =
+            origin.visibility.as_ref().map(|v| v.to_string()) == Some(rule_vis.to_string());
         if matched {
             specificity += 1;
         } else {
@@ -959,9 +958,7 @@ fn emit_explain_human(
                 let _ = writeln!(
                     stdout,
                     "  {icon} {}: {} = {}",
-                    fr.field,
-                    fr.actual,
-                    fr.expected
+                    fr.field, fr.actual, fr.expected
                 );
             } else {
                 let _ = writeln!(
@@ -984,12 +981,7 @@ fn emit_explain_human(
                     .bold()
             );
         } else {
-            let _ = writeln!(
-                stdout,
-                "  {} {}",
-                "->".dimmed(),
-                "NO MATCH".dimmed()
-            );
+            let _ = writeln!(stdout, "  {} {}", "->".dimmed(), "NO MATCH".dimmed());
         }
 
         let _ = writeln!(stdout);
@@ -1002,11 +994,7 @@ fn emit_explain_human(
                 .profile_id
                 .as_deref()
                 .unwrap_or("(default behavior)");
-            let _ = writeln!(
-                stdout,
-                "{}",
-                format!("Winner: {profile_id}").green().bold()
-            );
+            let _ = writeln!(stdout, "{}", format!("Winner: {profile_id}").green().bold());
             if !enclave.resolution_path.is_empty() {
                 let _ = writeln!(
                     stdout,
@@ -1114,17 +1102,9 @@ fn emit_list_profiles_table(config: &OriginsConfig, stdout: &mut dyn Write) {
     for profile in &config.profiles {
         let criteria = format_match_criteria(&profile.match_rules);
         let posture = profile.posture.as_deref().unwrap_or("-");
-        let explanation = profile
-            .explanation
-            .as_deref()
-            .unwrap_or("-");
+        let explanation = profile.explanation.as_deref().unwrap_or("-");
 
-        table.add_row(vec![
-            &profile.id,
-            &criteria,
-            posture,
-            explanation,
-        ]);
+        table.add_row(vec![&profile.id, &criteria, posture, explanation]);
     }
 
     let _ = writeln!(stdout, "{table}");

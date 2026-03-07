@@ -383,7 +383,10 @@ mod tests {
         assert_eq!(ctx.tenant_id, None);
 
         assert_eq!(Visibility::default(), Visibility::Unknown);
-        assert_eq!(ProvenanceConfidence::default(), ProvenanceConfidence::Unknown);
+        assert_eq!(
+            ProvenanceConfidence::default(),
+            ProvenanceConfidence::Unknown
+        );
     }
 
     #[test]
@@ -445,7 +448,10 @@ mod tests {
         assert_eq!(ctx.space_type, Some(SpaceType::PullRequest));
         assert_eq!(ctx.visibility, Some(Visibility::ExternalShared));
         assert_eq!(ctx.actor_type, Some(ActorType::Service));
-        assert_eq!(ctx.provenance_confidence, Some(ProvenanceConfidence::Medium));
+        assert_eq!(
+            ctx.provenance_confidence,
+            Some(ProvenanceConfidence::Medium)
+        );
     }
 
     #[test]

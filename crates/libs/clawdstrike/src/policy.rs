@@ -9,7 +9,6 @@ use std::path::{Path, PathBuf};
 use globset::GlobBuilder;
 
 use crate::error::{Error, PolicyFieldError, PolicyValidationError, Result};
-use crate::origin::{OriginProvider, ProvenanceConfidence, SpaceType, Visibility};
 use crate::guards::{
     ComputerUseConfig, ComputerUseGuard, EgressAllowlistConfig, EgressAllowlistGuard,
     ForbiddenPathConfig, ForbiddenPathGuard, Guard, InputInjectionCapabilityConfig,
@@ -19,6 +18,7 @@ use crate::guards::{
     RemoteDesktopSideChannelGuard, SecretLeakConfig, SecretLeakGuard, ShellCommandConfig,
     ShellCommandGuard,
 };
+use crate::origin::{OriginProvider, ProvenanceConfidence, SpaceType, Visibility};
 use crate::placeholders::env_var_for_placeholder;
 use crate::posture::{validate_posture_config, PostureConfig};
 
@@ -554,7 +554,9 @@ pub struct OriginsConfig {
 impl OriginsConfig {
     /// Returns the effective default behavior, defaulting to `Deny` if unset.
     pub fn effective_default_behavior(&self) -> &OriginDefaultBehavior {
-        self.default_behavior.as_ref().unwrap_or(&OriginDefaultBehavior::Deny)
+        self.default_behavior
+            .as_ref()
+            .unwrap_or(&OriginDefaultBehavior::Deny)
     }
 
     /// Merge with a child config: child profiles replace base profiles by ID, or append if new.
@@ -570,7 +572,10 @@ impl OriginsConfig {
             }
         }
         Self {
-            default_behavior: child.default_behavior.clone().or_else(|| self.default_behavior.clone()),
+            default_behavior: child
+                .default_behavior
+                .clone()
+                .or_else(|| self.default_behavior.clone()),
             profiles,
         }
     }
@@ -3185,14 +3190,8 @@ origins:
         let profile = &origins.profiles[0];
         assert_eq!(profile.id, "slack-internal");
         assert_eq!(profile.match_rules.provider, Some(OriginProvider::Slack));
-        assert_eq!(
-            profile.match_rules.space_type,
-            Some(SpaceType::Channel)
-        );
-        assert_eq!(
-            profile.match_rules.visibility,
-            Some(Visibility::Internal)
-        );
+        assert_eq!(profile.match_rules.space_type, Some(SpaceType::Channel));
+        assert_eq!(profile.match_rules.visibility, Some(Visibility::Internal));
         assert_eq!(profile.match_rules.tags, vec!["hipaa"]);
         assert_eq!(
             profile.match_rules.provenance_confidence,
@@ -3220,10 +3219,7 @@ origins:
             bridge.allowed_targets[0].provider,
             Some(OriginProvider::GitHub)
         );
-        assert_eq!(
-            bridge.allowed_targets[0].space_type,
-            Some(SpaceType::Issue)
-        );
+        assert_eq!(bridge.allowed_targets[0].space_type, Some(SpaceType::Issue));
 
         assert_eq!(
             profile.explanation.as_deref(),
@@ -3256,7 +3252,9 @@ origins:
             Error::PolicyValidation(e) => {
                 assert!(
                     e.errors.iter().any(|fe| fe.path == "origins"
-                        && fe.message.contains("origins block requires schema version >= 1.4.0")),
+                        && fe
+                            .message
+                            .contains("origins block requires schema version >= 1.4.0")),
                     "expected origins version gating error, got: {:?}",
                     e.errors
                 );
@@ -3358,7 +3356,10 @@ name: LegacyPolicy
         let origins = merged.origins.expect("merged origins");
 
         // Child's default_behavior wins
-        assert_eq!(origins.default_behavior, Some(OriginDefaultBehavior::MinimalProfile));
+        assert_eq!(
+            origins.default_behavior,
+            Some(OriginDefaultBehavior::MinimalProfile)
+        );
 
         // Should have 2 profiles: slack-internal overridden, github-ci preserved
         assert_eq!(origins.profiles.len(), 2);
@@ -3373,10 +3374,7 @@ name: LegacyPolicy
             Some("child-posture"),
             "child profile should override base"
         );
-        assert_eq!(
-            slack.explanation.as_deref(),
-            Some("child explanation"),
-        );
+        assert_eq!(slack.explanation.as_deref(), Some("child explanation"),);
         assert_eq!(
             slack.match_rules.visibility,
             Some(Visibility::Private),
@@ -3478,7 +3476,10 @@ origins:
 "#;
         let policy = Policy::from_yaml(yaml).unwrap();
         let origins = policy.origins.expect("origins");
-        assert_eq!(origins.default_behavior, Some(OriginDefaultBehavior::MinimalProfile));
+        assert_eq!(
+            origins.default_behavior,
+            Some(OriginDefaultBehavior::MinimalProfile)
+        );
     }
 
     #[test]

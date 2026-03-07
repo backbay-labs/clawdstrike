@@ -72,14 +72,14 @@ pub use jailbreak::{
     JailbreakGuardConfig, JailbreakSeverity, JailbreakSignal, LayerResult, LayerResults,
     LinearModelConfig, SessionAggPersisted, SessionRiskSnapshot,
 };
+pub use origin::{
+    ActorType, OriginContext, OriginProvider, ProvenanceConfidence, SpaceType, Visibility,
+};
 pub use output_sanitizer::{
     AllowlistConfig, DenylistConfig, DetectorType, EntityFinding, EntityRecognizer,
     OutputSanitizer, OutputSanitizerConfig, ProcessingStats, Redaction, RedactionStrategy,
     SanitizationResult, SanitizationStream, SensitiveCategory, SensitiveDataFinding, Span,
     StreamingConfig,
-};
-pub use origin::{
-    ActorType, OriginContext, OriginProvider, ProvenanceConfidence, SpaceType, Visibility,
 };
 pub use spider_sense::{
     PatternDb, PatternEntry, PatternMatch, ScreeningResult, ScreeningVerdict, SpiderSenseDetector,
@@ -93,11 +93,11 @@ pub use spider_sense::{
 #[cfg(feature = "full")]
 pub mod async_guards;
 #[cfg(feature = "full")]
-pub mod enclave;
-#[cfg(feature = "full")]
 pub mod curator_config;
 #[cfg(feature = "full")]
 pub mod decision_taxonomy;
+#[cfg(feature = "full")]
+pub mod enclave;
 #[cfg(feature = "full")]
 pub mod engine;
 #[cfg(any(feature = "full", feature = "policy-event"))]
@@ -132,12 +132,12 @@ pub mod spine_bridge;
 pub mod watermarking;
 
 #[cfg(feature = "full")]
-pub use enclave::{EnclaveResolver, ResolvedEnclave};
-#[cfg(feature = "full")]
 pub use curator_config::{
     default_config_path, CuratorConfig, CuratorConfigFile, CuratorEntry, CuratorTrustSet,
     RichCuratorConfigFile, TrustLevel, ValidatedCurator,
 };
+#[cfg(feature = "full")]
+pub use enclave::{EnclaveResolver, ResolvedEnclave};
 #[cfg(feature = "full")]
 pub use engine::{GuardReport, HushEngine, PostureAwareReport};
 #[cfg(any(feature = "full", feature = "policy-event"))]
