@@ -372,7 +372,7 @@ impl HushEngine {
         state.last_evaluation_path = None;
         state.violations.push(ViolationRef {
             guard: result.guard.clone(),
-            severity: format!("{:?}", result.severity),
+            severity: format!("{:?}", result.severity).to_ascii_lowercase(),
             message: result.message.clone(),
             action: None,
         });
@@ -802,7 +802,7 @@ impl HushEngine {
             state.violation_count += 1;
             state.violations.push(ViolationRef {
                 guard: result.guard.clone(),
-                severity: format!("{:?}", result.severity),
+                severity: format!("{:?}", result.severity).to_ascii_lowercase(),
                 message: result.message.clone(),
                 action: None,
             });
