@@ -226,19 +226,301 @@ function createPtyRuntime(
   }
 }
 
+type EscapeMode = "none" | "esc" | "csi" | "osc" | "osc_esc"
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value))
+}
+
+function trimRightText(value: string): string {
+  return value.replace(/\s+$/u, "")
+}
+
+export class InteractiveTerminalBuffer {
+  private lines: string[][] = [[]]
+  private row = 0
+  private col = 0
+  private cols: number
+  private rows: number
+  private maxLines: number
+  private escapeMode: EscapeMode = "none"
+  private csiBuffer = ""
+  private oscBuffer = ""
+  private savedCursor: { row: number; col: number } | null = null
+  private pendingCarriageReturn = false
+
+  constructor(cols = 120, rows = 40, maxLines = 1200) {
+    this.cols = Math.max(cols, 20)
+    this.rows = Math.max(rows, 8)
+    this.maxLines = Math.max(maxLines, this.rows * 4)
+  }
+
+  resize(cols: number, rows: number): void {
+    this.cols = Math.max(cols, 20)
+    this.rows = Math.max(rows, 8)
+    this.maxLines = Math.max(this.maxLines, this.rows * 4)
+  }
+
+  feed(chunk: string): void {
+    for (const ch of chunk) {
+      if (this.pendingCarriageReturn && ch !== "\n") {
+        this.ensureRow(this.row)
+        this.lines[this.row] = []
+        this.pendingCarriageReturn = false
+      }
+
+      if (this.escapeMode === "osc") {
+        if (ch === "\x07") {
+          this.escapeMode = "none"
+          this.oscBuffer = ""
+        } else if (ch === "\x1b") {
+          this.escapeMode = "osc_esc"
+        } else {
+          this.oscBuffer += ch
+        }
+        continue
+      }
+
+      if (this.escapeMode === "osc_esc") {
+        if (ch === "\\") {
+          this.escapeMode = "none"
+          this.oscBuffer = ""
+        } else {
+          this.escapeMode = "osc"
+          this.oscBuffer += ch
+        }
+        continue
+      }
+
+      if (this.escapeMode === "csi") {
+        this.csiBuffer += ch
+        if (ch >= "@" && ch <= "~") {
+          this.handleCsi(this.csiBuffer)
+          this.csiBuffer = ""
+          this.escapeMode = "none"
+        }
+        continue
+      }
+
+      if (this.escapeMode === "esc") {
+        if (ch === "[") {
+          this.escapeMode = "csi"
+          this.csiBuffer = ""
+        } else if (ch === "]") {
+          this.escapeMode = "osc"
+          this.oscBuffer = ""
+        } else {
+          this.handleEsc(ch)
+          this.escapeMode = "none"
+        }
+        continue
+      }
+
+      if (ch === "\x1b") {
+        this.escapeMode = "esc"
+        continue
+      }
+
+      this.handleChar(ch)
+    }
+  }
+
+  snapshot(limit = this.maxLines): string[] {
+    const trimmedLines = this.lines
+      .map((line) => trimRightText(line.join("").replace(/\u00a0/g, " ")))
+      .filter((line) => line.length > 0)
+
+    return trimmedLines.slice(Math.max(0, trimmedLines.length - limit))
+  }
+
+  private ensureRow(row: number): void {
+    while (this.lines.length <= row) {
+      this.lines.push([])
+    }
+  }
+
+  private lineFeed(): void {
+    this.row += 1
+    this.col = 0
+    this.ensureRow(this.row)
+    if (this.lines.length > this.maxLines) {
+      this.lines.shift()
+      this.row = Math.max(0, this.row - 1)
+      if (this.savedCursor) {
+        this.savedCursor = {
+          row: Math.max(0, this.savedCursor.row - 1),
+          col: this.savedCursor.col,
+        }
+      }
+    }
+  }
+
+  private carriageReturn(): void {
+    this.col = 0
+    this.pendingCarriageReturn = true
+  }
+
+  private writeChar(ch: string): void {
+    if (this.col >= this.cols) {
+      this.lineFeed()
+    }
+    this.ensureRow(this.row)
+    const line = this.lines[this.row]!
+    while (line.length < this.col) {
+      line.push(" ")
+    }
+    line[this.col] = ch
+    this.col += 1
+  }
+
+  private clearLine(mode: number): void {
+    this.ensureRow(this.row)
+    const line = this.lines[this.row]!
+    if (mode === 1) {
+      for (let i = 0; i <= this.col; i++) {
+        line[i] = " "
+      }
+      return
+    }
+    if (mode === 2) {
+      this.lines[this.row] = []
+      this.col = 0
+      return
+    }
+    line.length = Math.min(line.length, this.col)
+  }
+
+  private clearScreen(mode: number): void {
+    if (mode === 2 || mode === 3) {
+      this.lines = [[]]
+      this.row = 0
+      this.col = 0
+      return
+    }
+    if (mode === 1) {
+      for (let row = 0; row < this.row; row++) {
+        this.lines[row] = []
+      }
+      this.clearLine(1)
+      return
+    }
+    for (let row = this.row + 1; row < this.lines.length; row++) {
+      this.lines[row] = []
+    }
+    this.clearLine(0)
+  }
+
+  private setCursor(row: number, col: number): void {
+    this.row = clamp(row, 0, this.maxLines - 1)
+    this.col = clamp(col, 0, this.cols - 1)
+    this.ensureRow(this.row)
+  }
+
+  private moveCursor(rowDelta: number, colDelta: number): void {
+    this.setCursor(this.row + rowDelta, this.col + colDelta)
+  }
+
+  private handleEsc(ch: string): void {
+    if (ch === "7") {
+      this.savedCursor = { row: this.row, col: this.col }
+      return
+    }
+    if (ch === "8" && this.savedCursor) {
+      this.setCursor(this.savedCursor.row, this.savedCursor.col)
+    }
+  }
+
+  private handleCsi(sequence: string): void {
+    const final = sequence.slice(-1)
+    const rawParams = sequence.slice(0, -1)
+    const normalized = rawParams.startsWith("?") ? rawParams.slice(1) : rawParams
+    const params = normalized.length === 0
+      ? []
+      : normalized.split(";").map((value) => {
+        const parsed = Number.parseInt(value, 10)
+        return Number.isFinite(parsed) ? parsed : 0
+      })
+
+    switch (final) {
+      case "A":
+        this.moveCursor(-(params[0] || 1), 0)
+        break
+      case "B":
+        this.moveCursor(params[0] || 1, 0)
+        break
+      case "C":
+        this.moveCursor(0, params[0] || 1)
+        break
+      case "D":
+        this.moveCursor(0, -(params[0] || 1))
+        break
+      case "E":
+        this.setCursor(this.row + (params[0] || 1), 0)
+        break
+      case "F":
+        this.setCursor(this.row - (params[0] || 1), 0)
+        break
+      case "G":
+        this.setCursor(this.row, (params[0] || 1) - 1)
+        break
+      case "H":
+      case "f":
+        this.setCursor((params[0] || 1) - 1, (params[1] || 1) - 1)
+        break
+      case "J":
+        this.clearScreen(params[0] || 0)
+        break
+      case "K":
+        this.clearLine(params[0] || 0)
+        break
+      case "m":
+        break
+      case "s":
+        this.savedCursor = { row: this.row, col: this.col }
+        break
+      case "u":
+        if (this.savedCursor) {
+          this.setCursor(this.savedCursor.row, this.savedCursor.col)
+        }
+        break
+      default:
+        break
+    }
+  }
+
+  private handleChar(ch: string): void {
+    if (ch === "\r") {
+      this.carriageReturn()
+      return
+    }
+    if (ch === "\n") {
+      this.pendingCarriageReturn = false
+      this.lineFeed()
+      return
+    }
+    if (ch === "\b") {
+      this.col = Math.max(0, this.col - 1)
+      return
+    }
+    if (ch === "\t") {
+      const remainder = this.col % 4
+      const spaces = remainder === 0 ? 4 : 4 - remainder
+      for (let i = 0; i < spaces; i++) {
+        this.writeChar(" ")
+      }
+      return
+    }
+    if (ch < " " || ch === "\x7f") {
+      return
+    }
+    this.writeChar(ch)
+  }
+}
+
 export function sanitizeInteractiveOutput(rawChunk: string): string[] {
-  const normalizedBackspaces = rawChunk.replace(/.\x08/g, "")
-  const normalizedCarriage = normalizedBackspaces.replace(/\r\n/g, "\n").replace(/\r/g, "\n")
-  const withCursorSpacing = normalizedCarriage
-    .replace(/\x1b\[(\d*)C/g, (_, count: string) => " ".repeat(Math.min(Math.max(Number.parseInt(count || "1", 10), 1), 4)))
-    .replace(/\u00a0/g, " ")
-  const withoutOsc = withCursorSpacing.replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "")
-  const withoutAnsi = withoutOsc.replace(/\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, "")
-  const withoutControls = withoutAnsi.replace(/[\x00-\x08\x0B-\x1A\x1C-\x1F\x7F]/g, "")
-  return withoutControls
-    .split("\n")
-    .map((line) => line.trimEnd())
-    .filter((line) => line.length > 0)
+  const buffer = new InteractiveTerminalBuffer()
+  buffer.feed(rawChunk)
+  return buffer.snapshot()
 }
 
 export async function createEmbeddedInteractiveSession(

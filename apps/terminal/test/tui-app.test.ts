@@ -311,6 +311,45 @@ describe("TUIApp security refresh", () => {
     expect(app.state.inputMode).toBe("main")
   })
 
+  test("uses the embedded interactive surface for codex attach by default", () => {
+    const app = new TUIApp(process.cwd()) as unknown as {
+      state: {
+        pendingAttachRunId: string | null
+        runs: {
+          entries: Array<ReturnType<typeof createManagedRun>>
+        }
+      }
+      launchEmbeddedInteractiveRun: (runId: string) => Promise<void>
+      launchAttachRun: (runId: string) => Promise<void>
+      confirmAttachRun: () => void
+    }
+
+    let embeddedRunId: string | null = null
+    let rawRunId: string | null = null
+    app.launchEmbeddedInteractiveRun = async (runId) => {
+      embeddedRunId = runId
+    }
+    app.launchAttachRun = async (runId) => {
+      rawRunId = runId
+    }
+
+    const run = createManagedRun({
+      prompt: "open codex interactively",
+      action: "dispatch",
+      agentId: "codex",
+      agentLabel: "Codex",
+      mode: "attach",
+    })
+
+    app.state.runs.entries = [run]
+    app.state.pendingAttachRunId = run.id
+    app.confirmAttachRun()
+
+    expect(embeddedRunId === run.id).toBe(true)
+    expect(rawRunId).toBeNull()
+    expect(app.state.pendingAttachRunId).toBeNull()
+  })
+
   test("falls back from staged external mode into managed execution", () => {
     const app = new TUIApp(process.cwd()) as unknown as {
       state: {

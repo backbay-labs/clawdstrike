@@ -51,6 +51,7 @@ import {
 import { createAttachRunSession } from "./pty"
 import {
   createEmbeddedInteractiveSession,
+  InteractiveTerminalBuffer,
   sanitizeInteractiveOutput,
   type EmbeddedInteractiveSessionPlan,
   type InteractivePtyRuntime,
@@ -150,6 +151,7 @@ export class TUIApp implements AppController {
   private interactiveRuntimeRunId: string | null = null
   private interactiveRuntimeStartedAt = 0
   private interactiveRuntimeCancelRequested = false
+  private interactiveTranscriptBuffer: InteractiveTerminalBuffer | null = null
   private externalSessionCleanup = new Map<string, () => Promise<void>>()
   private exitPromise: Promise<void>
   private resolveExitPromise: (() => void) | null = null
@@ -598,6 +600,7 @@ export class TUIApp implements AppController {
     this.interactiveRuntimeRunId = null
     this.interactiveRuntimeStartedAt = 0
     this.interactiveRuntimeCancelRequested = false
+    this.interactiveTranscriptBuffer = null
     this.resetInteractiveSessionState()
     await Promise.allSettled(
       [...this.externalSessionCleanup.values()].map(async (cleanup) => cleanup()),
@@ -1401,7 +1404,7 @@ export class TUIApp implements AppController {
     if (override === "embedded") {
       return supportsAttachToolchain(run.agentId)
     }
-    return run.agentId === "claude"
+    return supportsAttachToolchain(run.agentId)
   }
 
   private resetInteractiveSessionState(): void {
@@ -1417,23 +1420,27 @@ export class TUIApp implements AppController {
       rows,
     }
     this.interactiveRuntime?.resize(cols, rows)
+    this.interactiveTranscriptBuffer?.resize(cols, rows)
   }
 
   private appendInteractiveOutput(runId: string, chunk: string): void {
-    const nextLines = sanitizeInteractiveOutput(chunk)
-    if (nextLines.length === 0) {
-      return
-    }
-
     const run = this.state.runs.entries.find((entry) => entry.id === runId)
     if (!run) {
       return
     }
 
-    const scrollback = [...this.state.interactiveSession.scrollback, ...nextLines]
-    const maxScrollback = 1200
-    if (scrollback.length > maxScrollback) {
-      scrollback.splice(0, scrollback.length - maxScrollback)
+    if (!this.interactiveTranscriptBuffer) {
+      const { cols, rows } = this.state.interactiveSession.viewport
+      this.interactiveTranscriptBuffer = new InteractiveTerminalBuffer(cols, rows)
+    }
+    this.interactiveTranscriptBuffer.feed(chunk)
+    const scrollback = this.interactiveTranscriptBuffer.snapshot(1200)
+    if (scrollback.length === 0) {
+      const nextLines = sanitizeInteractiveOutput(chunk)
+      if (nextLines.length === 0) {
+        return
+      }
+      scrollback.push(...nextLines)
     }
 
     this.state.interactiveSession = {
@@ -1525,6 +1532,7 @@ export class TUIApp implements AppController {
     this.interactiveRuntimeRunId = null
     this.interactiveRuntimeStartedAt = 0
     this.interactiveRuntimeCancelRequested = false
+    this.interactiveTranscriptBuffer = null
     const cleanup = this.interactiveRuntimeCleanup
     this.interactiveRuntimeCleanup = null
     this.resetInteractiveSessionState()
@@ -1613,6 +1621,10 @@ export class TUIApp implements AppController {
         lastHeartbeatAt: null,
         error: null,
       }
+      this.interactiveTranscriptBuffer = new InteractiveTerminalBuffer(
+        this.state.interactiveSession.viewport.cols,
+        this.state.interactiveSession.viewport.rows,
+      )
       this.syncInteractiveViewport()
       this.state.statusMessage = `${THEME.success}✓${THEME.reset} Embedded interactive session ready`
       this.state.activeRunId = runId
@@ -1655,6 +1667,7 @@ export class TUIApp implements AppController {
       this.replaceRun(failedRun)
       this.state.lastResult = failedRun.result
       this.state.statusMessage = `${THEME.error}✗${THEME.reset} Embedded interactive session failed`
+      this.interactiveTranscriptBuffer = null
       this.resetInteractiveSessionState()
       this.syncManagedRunState()
       await plan?.cleanup().catch(() => {})
