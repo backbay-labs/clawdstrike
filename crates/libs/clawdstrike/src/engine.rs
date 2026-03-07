@@ -530,8 +530,12 @@ impl HushEngine {
                 // First origin in this session — establish it and snapshot the
                 // resolved enclave so we can use its bridge policy for future
                 // cross-origin checks.
+                // Use the locally resolved enclave from effective_context rather
+                // than state.last_resolved_enclave to avoid a TOCTOU race where
+                // a concurrent call overwrites last_resolved_enclave between
+                // resolution and this snapshot.
                 state.session_origin = Some(origin.clone());
-                state.session_resolved_enclave = state.last_resolved_enclave.clone();
+                state.session_resolved_enclave = effective_context.enclave.clone();
                 drop(state);
             }
         }
@@ -834,61 +838,19 @@ impl HushEngine {
         // than resolving again inside check_action_report. This avoids double
         // resolution and inconsistent error handling.
         let mut posture_context = context.clone();
-        if let (Some(ref origin), Some(ref origins_config)) =
+        if posture_context.enclave.is_some() {
+            // Enclave already populated by caller — skip re-resolution.
+            if let Some(ref origin) = context.origin {
+                let mut state = self.state.write().await;
+                state.last_origin = Some(origin.clone());
+                state.last_resolved_enclave = posture_context.enclave.clone();
+                drop(state);
+            }
+        } else if let (Some(ref origin), Some(ref origins_config)) =
             (&context.origin, &self.policy.origins)
         {
             match EnclaveResolver::resolve(origin, origins_config) {
                 Ok(resolved) => {
-                    if let Some(ref enclave_posture) = resolved.posture {
-                        let state = posture_state.as_mut().ok_or_else(|| {
-                            Error::ConfigError(
-                                "posture state not initialized".to_string(),
-                            )
-                        })?;
-
-                        // Only override if the session is still in its initial state
-                        // (hasn't transitioned yet) — don't override mid-session.
-                        if state.transition_history.is_empty() {
-                            // Validate that the enclave's posture state exists in the program.
-                            if program.state(enclave_posture).is_some() {
-                                if state.current_state != *enclave_posture {
-                                    let from = state.current_state.clone();
-                                    debug!(
-                                        from = %from,
-                                        to = %enclave_posture,
-                                        "Enclave overriding initial posture"
-                                    );
-                                    state.current_state = enclave_posture.clone();
-                                    state.entered_at = chrono::Utc::now().to_rfc3339();
-                                    // Re-initialize budgets for the new state.
-                                    if let Some(compiled) =
-                                        program.state(enclave_posture)
-                                    {
-                                        state.budgets = compiled.initial_budgets();
-                                    }
-                                    // Record synthetic transition so subsequent
-                                    // calls cannot re-override the posture.
-                                    state.transition_history.push(
-                                        crate::posture::PostureTransitionRecord {
-                                            from,
-                                            to: enclave_posture.clone(),
-                                            trigger: "enclave_init".to_string(),
-                                            at: state.entered_at.clone(),
-                                        },
-                                    );
-                                }
-                            } else {
-                                // Fail-closed: enclave references nonexistent posture state.
-                                let available: Vec<&String> =
-                                    program.states.keys().collect();
-                                return Err(Error::ConfigError(format!(
-                                    "enclave profile references unknown posture state \
-                                     '{}' (available: {:?})",
-                                    enclave_posture, available
-                                )));
-                            }
-                        }
-                    }
                     // Pre-populate enclave on context so check_action_report
                     // won't need to resolve again.
                     posture_context.enclave = Some(resolved);
@@ -897,6 +859,61 @@ impl HushEngine {
                     // Fail-closed: enclave resolution failure denies the action.
                     warn!(error = %e, "Enclave resolution failed in posture path — denying");
                     return Err(e);
+                }
+            }
+        }
+
+        // Apply enclave posture override regardless of how the enclave was
+        // obtained (pre-set or freshly resolved).
+        if let Some(ref enclave) = posture_context.enclave {
+            if let Some(ref enclave_posture) = enclave.posture {
+                let state = posture_state.as_mut().ok_or_else(|| {
+                    Error::ConfigError(
+                        "posture state not initialized".to_string(),
+                    )
+                })?;
+
+                // Only override if the session is still in its initial state
+                // (hasn't transitioned yet) — don't override mid-session.
+                if state.transition_history.is_empty() {
+                    // Validate that the enclave's posture state exists in the program.
+                    if program.state(enclave_posture).is_some() {
+                        if state.current_state != *enclave_posture {
+                            let from = state.current_state.clone();
+                            debug!(
+                                from = %from,
+                                to = %enclave_posture,
+                                "Enclave overriding initial posture"
+                            );
+                            state.current_state = enclave_posture.clone();
+                            state.entered_at = chrono::Utc::now().to_rfc3339();
+                            // Re-initialize budgets for the new state.
+                            if let Some(compiled) =
+                                program.state(enclave_posture)
+                            {
+                                state.budgets = compiled.initial_budgets();
+                            }
+                            // Record synthetic transition so subsequent
+                            // calls cannot re-override the posture.
+                            state.transition_history.push(
+                                crate::posture::PostureTransitionRecord {
+                                    from,
+                                    to: enclave_posture.clone(),
+                                    trigger: "enclave_init".to_string(),
+                                    at: state.entered_at.clone(),
+                                },
+                            );
+                        }
+                    } else {
+                        // Fail-closed: enclave references nonexistent posture state.
+                        let available: Vec<&String> =
+                            program.states.keys().collect();
+                        return Err(Error::ConfigError(format!(
+                            "enclave profile references unknown posture state \
+                             '{}' (available: {:?})",
+                            enclave_posture, available
+                        )));
+                    }
                 }
             }
         }
