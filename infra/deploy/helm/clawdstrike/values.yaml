@@ -54,6 +54,9 @@ nats:
     port: 8222
   publicService:
     enabled: false
+    # -- Explicit unsafe opt-in. The bundled chart does not configure NATS
+    # server-side auth or TLS for public exposure.
+    allowInsecureUnauthenticated: false
     type: LoadBalancer
     port: 4222
     annotations: {}
@@ -229,6 +232,7 @@ controlApi:
     approvalSigningKeypair: ""
   postgres:
     enabled: false
+    existingSecret: ""
     image:
       repository: postgres
       tag: "16-alpine"

@@ -6,6 +6,12 @@
 {{- range $k, $v := .Values.ingress.controlApi.annotations }}
 {{- $_ := set $annotations $k $v }}
 {{- end }}
+{{- $listenPorts := index $annotations "alb.ingress.kubernetes.io/listen-ports" | default "" }}
+{{- $certificateArn := index $annotations "alb.ingress.kubernetes.io/certificate-arn" | default "" }}
+{{- $hasAlbTls := and (contains "HTTPS" $listenPorts) (ne $certificateArn "") }}
+{{- if and (not .Values.ingress.controlApi.tls) (not $hasAlbTls) }}
+{{- fail "public controlApi ingress requires TLS via ingress.controlApi.tls or ALB HTTPS annotations" }}
+{{- end }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:

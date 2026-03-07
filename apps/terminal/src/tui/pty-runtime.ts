@@ -537,7 +537,9 @@ export async function createEmbeddedInteractiveSession(
     cwd: options.cwd,
     sandboxMode,
   })
-  const commandPlan = buildEmbeddedInteractiveSessionCommand(run.agentId, workcell.directory, run.prompt)
+  const commandPlan = buildEmbeddedInteractiveSessionCommand(run.agentId, workcell.directory, {
+    sandboxMode,
+  })
   const sessionId = makeSessionId()
   const runtime = createPtyRuntime(
     sessionId,

@@ -1,7 +1,8 @@
-import { rm } from "node:fs/promises"
+import { mkdir, rm, writeFile } from "node:fs/promises"
+import { join } from "node:path"
 import { Config } from "../config"
 import { Workcell } from "../workcell"
-import type { Toolchain } from "../types"
+import type { SandboxMode, Toolchain } from "../types"
 import type { RunRecord } from "./types"
 import { buildInteractiveSessionCommand } from "./interactive-command"
 
@@ -20,9 +21,9 @@ function isInteractiveToolchain(toolchain: string): toolchain is Toolchain {
 function buildInteractiveCommand(
   toolchain: Toolchain,
   worktreePath: string,
-  prompt: string,
+  sandboxMode?: SandboxMode,
 ) {
-  return buildInteractiveSessionCommand(toolchain, worktreePath, prompt)
+  return buildInteractiveSessionCommand(toolchain, worktreePath, { sandboxMode })
 }
 
 function shellQuote(value: string): string {
@@ -41,19 +42,15 @@ export function buildAttachLauncherScript(
   run: RunRecord,
   worktreePath: string,
   command: string[],
+  stagedTaskPath: string,
 ): string {
   const commandLine = command.map(shellQuote).join(" ")
-  const stagedPrompt = run.prompt.replace(/\r\n/g, "\n").trim() || "(empty prompt)"
-  const promptLines = stagedPrompt.split("\n")
 
   const bannerLines = [
     "ClawdStrike interactive attach",
     `Agent: ${run.agentLabel}`,
     `Mode: ${run.mode} -> attach`,
     `Worktree: ${worktreePath}`,
-    "",
-    "Staged task:",
-    ...promptLines.map((line) => `  ${line}`),
     "",
     attachInstruction(run),
     "Press Ctrl+C or exit the agent to return to ClawdStrike.",
@@ -66,6 +63,16 @@ export function buildAttachLauncherScript(
     "set +e",
     "printf '\\033[2J\\033[3J\\033[H'",
     ...printBannerLines,
+    `staged_task_path=${shellQuote(stagedTaskPath)}`,
+    "if [ -s \"$staged_task_path\" ]; then",
+    "  print -r -- 'Staged task:'",
+    "  while IFS= read -r line || [ -n \"$line\" ]; do",
+    "    print -r -- \"  $line\"",
+    "  done < \"$staged_task_path\"",
+    "else",
+    "  print -r -- 'Staged task:'",
+    "  print -r -- '  (empty prompt)'",
+    "fi",
     "print",
     `exec ${commandLine}`,
   ].join("\n")
@@ -85,8 +92,19 @@ export async function createAttachRunSession(
     cwd: options.cwd,
     sandboxMode,
   })
-  const command = buildInteractiveCommand(run.agentId, workcell.directory, run.prompt)
+  const command = buildInteractiveCommand(run.agentId, workcell.directory, sandboxMode)
   const ptySessionId = `pty_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+  const metaDir = join(workcell.directory, ".clawdstrike")
+  const scriptPath = join(metaDir, "attach-launch.zsh")
+  const stagedTaskPath = join(metaDir, "attach-prompt.txt")
+
+  await mkdir(metaDir, { recursive: true })
+  await writeFile(stagedTaskPath, run.prompt, { mode: 0o600 })
+  await writeFile(
+    scriptPath,
+    buildAttachLauncherScript(run, workcell.directory, command, stagedTaskPath),
+    { mode: 0o700 },
+  )
 
   return {
     ptySessionId,
@@ -97,7 +115,7 @@ export async function createAttachRunSession(
       gates: [],
     },
     start: () => {
-      const proc = Bun.spawn(["/bin/zsh", "-lc", buildAttachLauncherScript(run, workcell.directory, command)], {
+      const proc = Bun.spawn(["/bin/zsh", scriptPath], {
         cwd: workcell.directory,
         env: {
           ...process.env,

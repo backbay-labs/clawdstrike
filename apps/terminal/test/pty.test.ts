@@ -15,16 +15,19 @@ describe("attach launcher", () => {
     const script = buildAttachLauncherScript(
       run,
       "/tmp/workcell",
-      ["claude", "--permission-mode", "bypassPermissions", "reply with ok"],
+      ["claude", "--permission-mode", "bypassPermissions", "--allowedTools", "Read,Glob,Grep,Edit,Write,Bash"],
+      "/tmp/workcell/.clawdstrike/attach-prompt.txt",
     )
 
     expect(script).toContain("ClawdStrike interactive attach")
     expect(script).toContain("Agent: Claude")
     expect(script).toContain("Staged task:")
-    expect(script).toContain("reply with ok")
     expect(script).toContain("Claude interactive sessions start at a blank prompt")
     expect(script).toContain("printf '\\033[2J\\033[3J\\033[H'")
-    expect(script).toContain("exec 'claude' '--permission-mode' 'bypassPermissions' 'reply with ok'")
+    expect(script).toContain("staged_task_path='/tmp/workcell/.clawdstrike/attach-prompt.txt'")
+    expect(script).toContain("exec 'claude' '--permission-mode' 'bypassPermissions' '--allowedTools' 'Read,Glob,Grep,Edit,Write,Bash'")
+    expect(script).not.toContain("reply with ok")
+    expect(script).not.toContain("exec 'claude' '--permission-mode' 'bypassPermissions' 'reply with ok'")
   })
 
   test("renders a direct attach handoff for Codex", () => {
@@ -39,10 +42,12 @@ describe("attach launcher", () => {
     const script = buildAttachLauncherScript(
       run,
       "/tmp/workcell",
-      ["codex", "-a", "never", "-s", "workspace-write", "-C", "/tmp/workcell", "Reply with exactly OK"],
+      ["codex", "-a", "never", "-s", "workspace-write", "-C", "/tmp/workcell"],
+      "/tmp/workcell/.clawdstrike/attach-prompt.txt",
     )
 
     expect(script).toContain("The agent is attached to this terminal.")
-    expect(script).toContain("exec 'codex' '-a' 'never' '-s' 'workspace-write' '-C' '/tmp/workcell' 'Reply with exactly OK'")
+    expect(script).toContain("exec 'codex' '-a' 'never' '-s' 'workspace-write' '-C' '/tmp/workcell'")
+    expect(script).not.toContain("exec 'codex' '-a' 'never' '-s' 'workspace-write' '-C' '/tmp/workcell' 'Reply with exactly OK'")
   })
 })

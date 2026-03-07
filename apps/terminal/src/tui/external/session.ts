@@ -2,7 +2,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { Config } from "../../config"
 import { Workcell } from "../../workcell"
-import type { Toolchain } from "../../types"
+import type { SandboxMode, Toolchain } from "../../types"
 import type { RunRecord } from "../types"
 import { buildInteractiveSessionCommand } from "../interactive-command"
 import type { ExternalRunSessionPlan } from "./types"
@@ -21,9 +21,9 @@ function isInteractiveToolchain(toolchain: string): toolchain is Toolchain {
 function buildInteractiveCommand(
   toolchain: Toolchain,
   worktreePath: string,
-  prompt: string,
+  sandboxMode?: SandboxMode,
 ) {
-  return buildInteractiveSessionCommand(toolchain, worktreePath, prompt)
+  return buildInteractiveSessionCommand(toolchain, worktreePath, { sandboxMode })
 }
 
 export function buildLaunchScript(
@@ -109,7 +109,7 @@ export async function createExternalRunSession(
     cwd: options.cwd,
     sandboxMode,
   })
-  const command = buildInteractiveCommand(run.agentId, workcell.directory, run.prompt)
+  const command = buildInteractiveCommand(run.agentId, workcell.directory, sandboxMode)
   const ptySessionId = `pty_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
   const metaDir = join(workcell.directory, ".clawdstrike")
   const scriptPath = join(metaDir, "external-launch.zsh")
@@ -130,7 +130,7 @@ export async function createExternalRunSession(
       },
       statusPath,
     ),
-    { mode: 0o755 },
+    { mode: 0o700 },
   )
 
   return {

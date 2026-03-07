@@ -32,7 +32,7 @@ spec:
               containerPort: 5432
           envFrom:
             - secretRef:
-                name: {{ include "clawdstrike.controlApiPostgresName" . }}
+                name: {{ .Values.controlApi.postgres.existingSecret | default (include "clawdstrike.controlApiPostgresName" .) }}
           readinessProbe:
             exec:
               command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]

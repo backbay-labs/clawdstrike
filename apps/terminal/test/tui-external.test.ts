@@ -16,7 +16,11 @@ import {
   isRecoverableExternalLaunchError,
 } from "../src/tui/external/state"
 import { buildLaunchScript } from "../src/tui/external/session"
-import { makeTerminalWindowRef, parseTerminalWindowRef } from "../src/tui/external/terminal-app"
+import {
+  buildTerminalAppLaunchCommand,
+  makeTerminalWindowRef,
+  parseTerminalWindowRef,
+} from "../src/tui/external/terminal-app"
 import { resolveWezTermShell } from "../src/tui/external/wezterm"
 import type { ExternalRunSessionPlan, ExternalTerminalAdapter } from "../src/tui/external/types"
 
@@ -150,6 +154,16 @@ describe("external adapter registry", () => {
     expect(makeTerminalWindowRef(5126)).toBe("terminal-window:5126")
     expect(parseTerminalWindowRef("terminal-window:5126")).toBe(5126)
     expect(parseTerminalWindowRef("terminal-app")).toBeNull()
+  })
+
+  test("shell-quotes Terminal.app launch commands", () => {
+    const plan = createPlan()
+    plan.workcell.directory = "/tmp/wc-$(touch pwned)"
+    plan.scriptPath = "/tmp/wc-$(touch pwned)/launch-'quoted'.zsh"
+
+    expect(buildTerminalAppLaunchCommand(plan)).toBe(
+      "cd -- '/tmp/wc-$(touch pwned)'; exec /bin/zsh '/tmp/wc-$(touch pwned)/launch-'\\''quoted'\\''.zsh'",
+    )
   })
 
   test("uses the current shell for WezTerm launches", () => {

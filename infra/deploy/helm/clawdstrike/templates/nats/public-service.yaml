@@ -1,4 +1,7 @@
 {{- if and .Values.nats.enabled (not .Values.nats.external.enabled) .Values.nats.publicService.enabled }}
+{{- if not .Values.nats.publicService.allowInsecureUnauthenticated }}
+{{- fail "nats.publicService.enabled requires nats.publicService.allowInsecureUnauthenticated=true. Public NATS is disabled by default because this chart does not configure NATS auth or TLS." }}
+{{- end }}
 apiVersion: v1
 kind: Service
 metadata:

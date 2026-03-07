@@ -474,6 +474,86 @@ printf '%s\n' '{"type":"result","result":"OK","total_cost_usd":0.02,"usage":{"in
     expect(result.telemetry?.cost).toBe(0.02)
   })
 
+  test("ClaudeAdapter.execute omits bypassPermissions for inplace workcells", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "clawdstrike-claude-inplace-"))
+    const binDir = path.join(tempDir, "bin")
+    const cliPath = path.join(binDir, "claude")
+    const captureArgsPath = path.join(tempDir, "claude-args.txt")
+    await fs.mkdir(binDir, { recursive: true })
+    await fs.writeFile(
+      cliPath,
+      `#!/bin/sh
+printf '%s\n' "$@" > "${captureArgsPath}"
+printf '%s\n' '{"type":"result","result":"OK"}'
+`,
+      { mode: 0o755 },
+    )
+    await fs.chmod(cliPath, 0o755)
+
+    process.env.PATH = [binDir, originalPath].filter(Boolean).join(":")
+
+    const result = await ClaudeAdapter.execute(
+      { ...mockWorkcell, name: "inplace" },
+      mockTask,
+      new AbortController().signal,
+    )
+
+    expect(result.success).toBe(true)
+    const args = (await fs.readFile(captureArgsPath, "utf8")).trim().split("\n")
+    expect(args).not.toContain("--permission-mode")
+    expect(args).toEqual([
+      "--print",
+      "--output-format",
+      "json",
+      "--allowedTools",
+      "Read,Glob,Grep,Edit,Write,Bash",
+      "--max-turns",
+      "50",
+      mockTask.prompt,
+    ])
+  })
+
+  test("ClaudeAdapter.execute keeps bypassPermissions for isolated workcells", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "clawdstrike-claude-isolated-"))
+    const binDir = path.join(tempDir, "bin")
+    const cliPath = path.join(binDir, "claude")
+    const captureArgsPath = path.join(tempDir, "claude-args.txt")
+    await fs.mkdir(binDir, { recursive: true })
+    await fs.writeFile(
+      cliPath,
+      `#!/bin/sh
+printf '%s\n' "$@" > "${captureArgsPath}"
+printf '%s\n' '{"type":"result","result":"OK"}'
+`,
+      { mode: 0o755 },
+    )
+    await fs.chmod(cliPath, 0o755)
+
+    process.env.PATH = [binDir, originalPath].filter(Boolean).join(":")
+
+    const result = await ClaudeAdapter.execute(
+      { ...mockWorkcell, name: "wc-isolated" },
+      mockTask,
+      new AbortController().signal,
+    )
+
+    expect(result.success).toBe(true)
+    const args = (await fs.readFile(captureArgsPath, "utf8")).trim().split("\n")
+    expect(args).toContain("--permission-mode")
+    expect(args).toEqual([
+      "--print",
+      "--output-format",
+      "json",
+      "--permission-mode",
+      "bypassPermissions",
+      "--allowedTools",
+      "Read,Glob,Grep,Edit,Write,Bash",
+      "--max-turns",
+      "50",
+      mockTask.prompt,
+    ])
+  })
+
   test("execute returns error when adapter unavailable", async () => {
     const result = await Dispatcher.execute({
       task: mockTask,

@@ -1,5 +1,8 @@
 # All-on profile for platform-dev.
-# Enables bridges, ingress, service monitoring, and network policy hardening.
+# Enables bridges, monitoring, and network policy hardening while requiring
+# out-of-band secret provisioning for any sensitive material. Public ingress and
+# public NATS exposure stay disabled here until a separate secure override adds
+# TLS and authenticated endpoints.
 global:
   namespace: clawdstrike
   imagePullSecrets:
@@ -12,30 +15,30 @@ namespace:
   name: clawdstrike
 
 spine:
+  secrets:
+    existingSecret: "clawdstrike-helm-spine"
   image:
     tag: "spine-checkpointer-2ba330f736d108a1ff37e4d17782edc9532eb73e"
   checkpointer:
-    logSeedHex: "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
     streamReplicas: 1
-  witness:
-    seedHex: "f1e1d1c1b1a191817161514131211101f0e0d0c0b0a090807060504030201000"
 
 hushd:
   image:
     tag: "2ba330f736d108a1ff37e4d17782edc9532eb73e"
   auth:
-    enabled: false
+    enabled: true
+    existingSecret: "clawdstrike-helm-hushd"
   persistence:
     enabled: false
 
 controlApi:
   enabled: true
-  agentNatsUrl: "nats://nats.clawdstrike.dev.backbay.io:4222"
+  # Leave blank here so agents are not pointed at a public insecure NATS
+  # endpoint. Secure public enrollment should supply a TLS-protected external
+  # URL from a separate override.
+  agentNatsUrl: ""
   secrets:
-    jwtSecret: "dev-platform-control-api-jwt-secret"
-    stripeSecretKey: "sk_test_platform_dev"
-    stripeWebhookSecret: "whsec_platform_dev"
-    approvalSigningKeypair: "9f03c4d7e1ab25cc6f2e0ff8c56b41a4c66f2e7341d9af81394bb219a8f26d41"
+    existingSecret: "clawdstrike-helm-control-api"
   env:
     RUST_LOG: "info,clawdstrike_control_api=debug"
     NATS_PROVISIONING_MODE: "mock"
@@ -50,7 +53,7 @@ controlApi:
     STALE_DETECTOR_ENABLED: "false"
   postgres:
     enabled: true
-    password: "clawdstrike-dev-postgres-password"
+    existingSecret: "clawdstrike-helm-control-api-postgres"
     persistence:
       enabled: false
 
@@ -58,12 +61,7 @@ nats:
   jetstream:
     maxFileStoreBytes: "25769803776"
   publicService:
-    enabled: true
-    annotations:
-      service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
-      service.beta.kubernetes.io/aws-load-balancer-type: external
-      service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: ip
-      external-dns.alpha.kubernetes.io/hostname: nats.clawdstrike.dev.backbay.io
+    enabled: false
 
 bridges:
   tetragon:
@@ -111,15 +109,15 @@ easAnchor:
     existingSecret: "clawdstrike-helm-eas-anchor"
 
 ingress:
-  enabled: true
+  enabled: false
   className: alb
   commonAnnotations:
-    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/scheme: internal
     alb.ingress.kubernetes.io/target-type: ip
-    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
     alb.ingress.kubernetes.io/group.name: clawdstrike
   hushd:
-    enabled: true
+    enabled: false
     host: hushd.clawdstrike.dev.backbay.io
     path: /
     pathType: Prefix
@@ -127,7 +125,7 @@ ingress:
       alb.ingress.kubernetes.io/healthcheck-path: /health
       external-dns.alpha.kubernetes.io/hostname: hushd.clawdstrike.dev.backbay.io
   controlApi:
-    enabled: true
+    enabled: false
     host: control-api.clawdstrike.dev.backbay.io
     path: /
     pathType: Prefix
@@ -135,7 +133,7 @@ ingress:
       alb.ingress.kubernetes.io/healthcheck-path: /api/v1/health
       external-dns.alpha.kubernetes.io/hostname: control-api.clawdstrike.dev.backbay.io
   proofsApi:
-    enabled: true
+    enabled: false
     host: proofs-api.clawdstrike.dev.backbay.io
     path: /
     pathType: Prefix

@@ -31,6 +31,36 @@ let config: ClaudeConfig = { ...DEFAULT_CONFIG }
 
 const CLAUDE_AUTH_STATUS_TIMEOUT_MS = 3500
 
+function shouldBypassClaudePermissions(workcell: WorkcellInfo): boolean {
+  return workcell.name !== "inplace"
+}
+
+function buildClaudeExecArgs(workcell: WorkcellInfo, prompt: string): string[] {
+  const args: string[] = [
+    "--print",
+    "--output-format", "json",
+  ]
+
+  if (shouldBypassClaudePermissions(workcell)) {
+    args.push("--permission-mode", "bypassPermissions")
+  }
+
+  if (config.allowedTools && config.allowedTools.length > 0) {
+    args.push("--allowedTools", config.allowedTools.join(","))
+  }
+
+  if (config.model) {
+    args.push("--model", config.model)
+  }
+
+  if (config.maxTurns) {
+    args.push("--max-turns", String(config.maxTurns))
+  }
+
+  args.push(prompt)
+  return args
+}
+
 function extractClaudeOutput(output: string): string {
   try {
     const data = JSON.parse(output) as { result?: string }
@@ -113,32 +143,7 @@ export const ClaudeAdapter: Adapter = {
     signal: AbortSignal
   ): Promise<AdapterResult> {
     const startTime = Date.now()
-
-    // Build command arguments
-    // Claude Code uses --print for non-interactive single-prompt mode
-    const args: string[] = [
-      "--print",
-      "--output-format", "json",
-      "--permission-mode", "bypassPermissions",
-    ]
-
-    // Add allowed tools whitelist
-    if (config.allowedTools && config.allowedTools.length > 0) {
-      args.push("--allowedTools", config.allowedTools.join(","))
-    }
-
-    // Add model if specified
-    if (config.model) {
-      args.push("--model", config.model)
-    }
-
-    // Add max turns if specified
-    if (config.maxTurns) {
-      args.push("--max-turns", String(config.maxTurns))
-    }
-
-    // Add the prompt as the last argument
-    args.push(task.prompt)
+    const args = buildClaudeExecArgs(workcell, task.prompt)
 
     try {
       // Execute claude CLI

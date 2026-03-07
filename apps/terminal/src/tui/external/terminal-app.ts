@@ -6,6 +6,10 @@ function appleScriptQuote(value: string): string {
   return value.replaceAll("\\", "\\\\").replaceAll("\"", "\\\"")
 }
 
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`
+}
+
 async function runAppleScript(script: string): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   const proc = Bun.spawn(["osascript", "-e", script], {
     stdin: "ignore",
@@ -39,6 +43,10 @@ export function parseTerminalWindowRef(ref: string | null | undefined): number |
   return Number.isInteger(windowId) ? windowId : null
 }
 
+export function buildTerminalAppLaunchCommand(plan: ExternalRunSessionPlan): string {
+  return `cd -- ${shellQuote(plan.workcell.directory)}; exec /bin/zsh ${shellQuote(plan.scriptPath)}`
+}
+
 export const terminalAppAdapter: ExternalTerminalAdapter = {
   id: "terminal-app",
   label: "Terminal.app",
@@ -47,7 +55,7 @@ export const terminalAppAdapter: ExternalTerminalAdapter = {
     return process.platform === "darwin" && Bun.which("osascript") !== null
   },
   async launch(plan: ExternalRunSessionPlan): Promise<ExternalTerminalLaunchResult> {
-    const command = `cd ${JSON.stringify(plan.workcell.directory)}; /bin/zsh ${JSON.stringify(plan.scriptPath)}`
+    const command = buildTerminalAppLaunchCommand(plan)
     const { exitCode, stdout, stderr } = await runAppleScript(
       [
         'tell application "Terminal"',

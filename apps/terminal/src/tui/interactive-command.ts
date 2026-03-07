@@ -1,4 +1,4 @@
-import type { Toolchain } from "../types"
+import type { SandboxMode, Toolchain } from "../types"
 
 const CLAUDE_ALLOWED_TOOLS = ["Read", "Glob", "Grep", "Edit", "Write", "Bash"]
 
@@ -8,10 +8,18 @@ export interface EmbeddedInteractiveCommandPlan {
   stagedTaskEditable: boolean
 }
 
+export interface InteractiveCommandOptions {
+  sandboxMode?: SandboxMode
+}
+
+function canBypassClaudePermissions(sandboxMode?: SandboxMode): boolean {
+  return sandboxMode === "worktree" || sandboxMode === "tmpdir"
+}
+
 export function buildInteractiveSessionCommand(
   toolchain: Toolchain,
   worktreePath: string,
-  prompt: string,
+  options: InteractiveCommandOptions = {},
 ): string[] {
   if (toolchain === "codex") {
     return [
@@ -22,19 +30,16 @@ export function buildInteractiveSessionCommand(
       "workspace-write",
       "-C",
       worktreePath,
-      prompt,
     ]
   }
 
   if (toolchain === "claude") {
-    return [
-      "claude",
-      "--permission-mode",
-      "bypassPermissions",
-      "--allowedTools",
-      CLAUDE_ALLOWED_TOOLS.join(","),
-      prompt,
-    ]
+    const args = ["claude"]
+    if (canBypassClaudePermissions(options.sandboxMode)) {
+      args.push("--permission-mode", "bypassPermissions")
+    }
+    args.push("--allowedTools", CLAUDE_ALLOWED_TOOLS.join(","))
+    return args
   }
 
   throw new Error(`Interactive session is not available for ${toolchain}`)
@@ -43,7 +48,7 @@ export function buildInteractiveSessionCommand(
 export function buildEmbeddedInteractiveSessionCommand(
   toolchain: Toolchain,
   worktreePath: string,
-  prompt: string,
+  options: InteractiveCommandOptions = {},
 ): EmbeddedInteractiveCommandPlan {
   if (toolchain === "codex") {
     return {
@@ -56,22 +61,20 @@ export function buildEmbeddedInteractiveSessionCommand(
         "workspace-write",
         "-C",
         worktreePath,
-        prompt,
       ],
-      launchConsumesPrompt: true,
+      launchConsumesPrompt: false,
       stagedTaskEditable: false,
     }
   }
 
   if (toolchain === "claude") {
+    const command = ["claude"]
+    if (canBypassClaudePermissions(options.sandboxMode)) {
+      command.push("--permission-mode", "bypassPermissions")
+    }
+    command.push("--allowedTools", CLAUDE_ALLOWED_TOOLS.join(","))
     return {
-      command: [
-        "claude",
-        "--permission-mode",
-        "bypassPermissions",
-        "--allowedTools",
-        CLAUDE_ALLOWED_TOOLS.join(","),
-      ],
+      command,
       launchConsumesPrompt: false,
       stagedTaskEditable: true,
     }
