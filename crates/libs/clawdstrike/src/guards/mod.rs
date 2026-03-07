@@ -294,6 +294,19 @@ pub enum GuardAction<'a> {
     Custom(&'a str, &'a serde_json::Value),
 }
 
+/// Trait for security guards
+#[async_trait]
+pub trait Guard: Send + Sync {
+    /// Name of the guard
+    fn name(&self) -> &str;
+
+    /// Check if this guard handles the given action type
+    fn handles(&self, action: &GuardAction<'_>) -> bool;
+
+    /// Evaluate the action
+    async fn check(&self, action: &GuardAction<'_>, context: &GuardContext) -> GuardResult;
+}
+
 // ===========================================================================
 // Tests
 // ===========================================================================
@@ -323,17 +336,4 @@ mod tests {
         let ctx = GuardContext::new();
         assert!(ctx.origin.is_none());
     }
-}
-
-/// Trait for security guards
-#[async_trait]
-pub trait Guard: Send + Sync {
-    /// Name of the guard
-    fn name(&self) -> &str;
-
-    /// Check if this guard handles the given action type
-    fn handles(&self, action: &GuardAction<'_>) -> bool;
-
-    /// Evaluate the action
-    async fn check(&self, action: &GuardAction<'_>, context: &GuardContext) -> GuardResult;
 }
