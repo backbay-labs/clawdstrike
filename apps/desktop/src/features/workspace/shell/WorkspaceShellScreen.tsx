@@ -2,12 +2,12 @@ import { clsx } from "clsx";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   getWorkspaceShellSnapshot,
-  readWorkspaceFile,
   registerWorkspaceRoot,
   type WorkspaceEntry,
   type WorkspaceRoot,
   type WorkspaceServiceError,
 } from "@/services/workspace";
+import { WorkspaceEditorPane } from "@/features/workspace/editor";
 import {
   createWorkspaceSurfaceState,
   focusWorkspacePane,
@@ -49,12 +49,33 @@ export function WorkspaceShellScreen({ section = "workspace" }: WorkspaceShellSc
     createWorkspaceSurfaceState({ roots: [], tree: [], suggestedTabs: [] }),
   );
   const [isLoading, setIsLoading] = useState(true);
-  const [previewContents, setPreviewContents] = useState<string>("");
+  const [dirtyBuffers, setDirtyBuffers] = useState<Record<string, boolean>>({});
   const [registerRootPath, setRegisterRootPath] = useState("");
+
+  const updateDirtyBufferState = useCallback((rootId: string, relativePath: string, isDirty: boolean) => {
+    const dirtyKey = `${rootId}::${relativePath}`;
+    setDirtyBuffers((current) => {
+      if (!isDirty && !current[dirtyKey]) {
+        return current;
+      }
+
+      if (!isDirty) {
+        const nextState = { ...current };
+        delete nextState[dirtyKey];
+        return nextState;
+      }
+
+      return {
+        ...current,
+        [dirtyKey]: true,
+      };
+    });
+  }, []);
 
   const applySnapshot = useCallback(
     (snapshot: Awaited<ReturnType<typeof getWorkspaceShellSnapshot>>) => {
       const nextState = createWorkspaceSurfaceState(snapshot);
+      setDirtyBuffers({});
       setState({
         ...nextState,
         route: { section, activeFilePath: nextState.route.activeFilePath },
@@ -106,39 +127,17 @@ export function WorkspaceShellScreen({ section = "workspace" }: WorkspaceShellSc
 
   const activeTab = useMemo(() => getWorkspaceActiveTab(state), [state]);
 
-  useEffect(() => {
-    let cancelled = false;
-    if (!activeRoot?.id || !activeTab?.relativePath) {
-      setPreviewContents("");
-      return;
-    }
-
-    readWorkspaceFile(activeRoot.id, activeTab.relativePath)
-      .then((file) => {
-        if (!cancelled) {
-          setPreviewContents(file.contents);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setPreviewContents("Preview unavailable until backend file loading is wired.");
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeRoot?.id, activeTab?.relativePath]);
-
   const handleSelectEntry = useCallback((entry: WorkspaceEntry) => {
     setState((current) => {
       if (entry.kind === "directory") {
         return focusWorkspacePane(current, "workspace-tree");
       }
 
+      const existingTab = current.tabs.find((candidate) => candidate.relativePath === entry.relativePath);
+
       return upsertWorkspaceTab(
         selectWorkspacePath(current, entry.relativePath),
-        {
+        existingTab ?? {
           id: `workspace-${entry.relativePath}`,
           title: entry.name,
           relativePath: entry.relativePath,
@@ -289,6 +288,9 @@ export function WorkspaceShellScreen({ section = "workspace" }: WorkspaceShellSc
                 {state.tabs.length ? (
                   state.tabs.map((tab) => {
                     const isActive = tab.relativePath === state.route.activeFilePath;
+                    const isDirty = Boolean(
+                      activeRoot && dirtyBuffers[`${activeRoot.id}::${tab.relativePath}`],
+                    );
                     return (
                       <button
                         key={tab.id}
@@ -306,7 +308,10 @@ export function WorkspaceShellScreen({ section = "workspace" }: WorkspaceShellSc
                             : "border-sdr-border text-sdr-text-muted",
                         )}
                       >
-                        {tab.title}
+                        <span className="inline-flex items-center gap-2">
+                          <span>{tab.title}</span>
+                          {isDirty ? <span className="text-[color:rgba(238,220,166,0.96)]">•</span> : null}
+                        </span>
                       </button>
                     );
                   })
@@ -341,7 +346,7 @@ export function WorkspaceShellScreen({ section = "workspace" }: WorkspaceShellSc
                     activeRoot={activeRoot}
                     activeTabTitle={activeTab?.title}
                     activeFilePath={state.route.activeFilePath}
-                    previewContents={previewContents}
+                    onDirtyStateChange={updateDirtyBufferState}
                   />
                 </div>
               </section>
@@ -405,13 +410,13 @@ function WorkspaceMainPane({
   activeRoot,
   activeTabTitle,
   activeFilePath,
-  previewContents,
+  onDirtyStateChange,
 }: {
   section: WorkspaceRouteSection;
   activeRoot?: WorkspaceRoot;
   activeTabTitle?: string;
   activeFilePath?: string;
-  previewContents: string;
+  onDirtyStateChange: (rootId: string, relativePath: string, isDirty: boolean) => void;
 }) {
   if (section === "workspace") {
     return (
@@ -437,21 +442,12 @@ function WorkspaceMainPane({
   }
 
   return (
-    <div className="flex h-full flex-col gap-3">
-      <div className="flex items-center justify-between gap-3 text-sm">
-        <div>
-          <div className="font-medium text-sdr-text-primary">{activeTabTitle ?? "Preview"}</div>
-          <div className="text-xs text-sdr-text-muted">{activeFilePath ?? "Select a file from the workspace tree"}</div>
-        </div>
-        <div className="rounded-full border border-sdr-border px-2 py-1 text-[11px] uppercase tracking-[0.12em] text-sdr-text-muted">
-          Editor frame
-        </div>
-      </div>
-
-      <pre className="min-h-0 flex-1 overflow-auto rounded-xl border border-sdr-border bg-[rgba(4,7,14,0.84)] p-4 text-xs leading-6 text-[color:rgba(214,224,255,0.92)]">
-        {previewContents || "Select a file to populate the editor preview frame."}
-      </pre>
-    </div>
+    <WorkspaceEditorPane
+      rootId={activeRoot?.id}
+      activeFilePath={activeFilePath}
+      activeTabTitle={activeTabTitle}
+      onDirtyStateChange={onDirtyStateChange}
+    />
   );
 }
 
