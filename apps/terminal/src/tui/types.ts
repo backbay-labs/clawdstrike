@@ -136,6 +136,7 @@ export type InputMode =
   | "commands"
   | "dispatch-sheet"
   | "runs"
+  | "interactive-run"
   | "integrations"
   | "security"
   | "audit"
@@ -176,6 +177,15 @@ export type RunPhase =
   | "canceled"
 
 export type RunAttachState = "detached" | "attaching" | "attached" | "returning"
+export type InteractiveSurfacePhase =
+  | "connecting"
+  | "ready"
+  | "awaiting_first_input"
+  | "running"
+  | "returning"
+  | "failed"
+export type InteractiveSurfaceFocus = "pty" | "controls" | "staged_task"
+export type InteractiveSurfaceKind = "none" | "embedded" | "tmux" | "external"
 
 export interface RunEvent {
   timestamp: string
@@ -206,6 +216,9 @@ export interface RunRecord {
   attachState: RunAttachState
   ptySessionId: string | null
   canAttach: boolean
+  interactiveSessionId: string | null
+  interactiveSurface: InteractiveSurfaceKind
+  interactivePhase: InteractiveSurfacePhase | null
   external: ExternalRunState
   ptyTail: string[]
   events: RunEvent[]
@@ -235,6 +248,30 @@ export interface ExternalExecutionSheetState {
   adapters: ExternalTerminalAdapterOption[]
   selectedIndex: number
   loading: boolean
+  error: string | null
+}
+
+export interface InteractiveViewportState {
+  cols: number
+  rows: number
+  scrollOffset: number
+  autoFollow: boolean
+}
+
+export interface InteractiveSessionState {
+  runId: string | null
+  sessionId: string | null
+  focus: InteractiveSurfaceFocus
+  phase: InteractiveSurfacePhase
+  stagedTask: {
+    text: string
+    sent: boolean
+    editable: boolean
+  }
+  viewport: InteractiveViewportState
+  scrollback: string[]
+  lastOutputAt: string | null
+  lastHeartbeatAt: string | null
   error: string | null
 }
 
@@ -463,6 +500,7 @@ export interface AppState {
   dispatchSheet: DispatchSheetState
   externalSheet: ExternalExecutionSheetState
   runs: RunListState
+  interactiveSession: InteractiveSessionState
   activeRunId: string | null
   pendingAttachRunId: string | null
   attachedRunId: string | null
@@ -640,6 +678,30 @@ export function createInitialExternalExecutionSheetState(): ExternalExecutionShe
     adapters: [],
     selectedIndex: 0,
     loading: false,
+    error: null,
+  }
+}
+
+export function createInitialInteractiveSessionState(): InteractiveSessionState {
+  return {
+    runId: null,
+    sessionId: null,
+    focus: "staged_task",
+    phase: "connecting",
+    stagedTask: {
+      text: "",
+      sent: false,
+      editable: true,
+    },
+    viewport: {
+      cols: 0,
+      rows: 0,
+      scrollOffset: 0,
+      autoFollow: true,
+    },
+    scrollback: [],
+    lastOutputAt: null,
+    lastHeartbeatAt: null,
     error: null,
   }
 }

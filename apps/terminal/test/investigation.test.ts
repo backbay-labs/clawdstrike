@@ -5,6 +5,7 @@ import {
   createInitialDispatchSheetState,
   createInitialExternalExecutionSheetState,
   createInitialHuntState,
+  createInitialInteractiveSessionState,
   createInitialRunListState,
 } from "../src/tui/types"
 import { buildInvestigationReport, getInvestigationCounts, updateInvestigation } from "../src/tui/investigation"
@@ -45,6 +46,7 @@ function createState(): AppState {
     dispatchSheet: createInitialDispatchSheetState(),
     externalSheet: createInitialExternalExecutionSheetState(),
     runs: createInitialRunListState(),
+    interactiveSession: createInitialInteractiveSessionState(),
     activeRunId: null,
     pendingAttachRunId: null,
     attachedRunId: null,

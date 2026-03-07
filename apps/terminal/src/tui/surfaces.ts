@@ -11,6 +11,7 @@ const SURFACE_META: Record<InputMode, SurfaceMeta> = {
   commands: { label: "commands", stage: "supported", group: "core" },
   "dispatch-sheet": { label: "dispatch-sheet", stage: "supported", group: "core" },
   runs: { label: "runs", stage: "supported", group: "core" },
+  "interactive-run": { label: "interactive-run", stage: "experimental", group: "core" },
   integrations: { label: "integrations", stage: "supported", group: "core" },
   security: { label: "security", stage: "supported", group: "core" },
   audit: { label: "audit", stage: "supported", group: "core" },

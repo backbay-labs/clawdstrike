@@ -370,6 +370,9 @@ export function createManagedRun(
     attachState,
     ptySessionId: null,
     canAttach: mode === "attach" && init.action === "dispatch" && supportsAttachToolchain(init.agentId),
+    interactiveSessionId: null,
+    interactiveSurface: "none",
+    interactivePhase: null,
     external: {
       kind: "none",
       adapterId: null,

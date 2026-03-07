@@ -5,6 +5,7 @@ import {
   createInitialDispatchSheetState,
   createInitialExternalExecutionSheetState,
   createInitialHuntState,
+  createInitialInteractiveSessionState,
   createInitialRunListState,
 } from "../src/tui/types"
 import { createMainScreen } from "../src/tui/screens/main"
@@ -142,6 +143,7 @@ function createState(): AppState {
     dispatchSheet: createInitialDispatchSheetState(),
     externalSheet: createInitialExternalExecutionSheetState(),
     runs: createInitialRunListState(),
+    interactiveSession: createInitialInteractiveSessionState(),
     activeRunId: null,
     pendingAttachRunId: null,
     attachedRunId: null,

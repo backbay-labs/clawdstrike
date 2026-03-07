@@ -23,6 +23,7 @@ import {
   createInitialDispatchSheetState,
   createInitialExternalExecutionSheetState,
   createInitialHuntState,
+  createInitialInteractiveSessionState,
   createInitialRunListState,
   type RuntimeInfo,
 } from "./types"
@@ -59,6 +60,7 @@ import { auditScreen } from "./screens/audit"
 import { policyScreen } from "./screens/policy"
 import { runsScreen } from "./screens/runs"
 import { runDetailScreen } from "./screens/run-detail"
+import { interactiveRunScreen } from "./screens/interactive-run"
 import { resultScreen } from "./screens/result"
 
 // Hunt screen imports
@@ -181,6 +183,7 @@ export class TUIApp implements AppController {
       dispatchSheet: createInitialDispatchSheetState(),
       externalSheet: createInitialExternalExecutionSheetState(),
       runs: createInitialRunListState(),
+      interactiveSession: createInitialInteractiveSessionState(),
       activeRunId: null,
       pendingAttachRunId: null,
       attachedRunId: null,
@@ -231,6 +234,7 @@ export class TUIApp implements AppController {
       ["policy", policyScreen],
       ["runs", runsScreen],
       ["run-detail", runDetailScreen],
+      ["interactive-run", interactiveRunScreen],
       ["result", resultScreen],
       ["hunt-watch", huntWatchScreen],
       ["hunt-scan", huntScanScreen],

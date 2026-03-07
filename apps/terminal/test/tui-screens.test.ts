@@ -8,6 +8,7 @@ import {
   createInitialDispatchSheetState,
   createInitialExternalExecutionSheetState,
   createInitialHuntState,
+  createInitialInteractiveSessionState,
   createInitialRunListState,
 } from "../src/tui/types"
 import { THEME } from "../src/tui/theme"
@@ -163,6 +164,7 @@ function createState(): AppState {
     dispatchSheet: createInitialDispatchSheetState(),
     externalSheet: createInitialExternalExecutionSheetState(),
     runs: createInitialRunListState(),
+    interactiveSession: createInitialInteractiveSessionState(),
     activeRunId: null,
     pendingAttachRunId: null,
     attachedRunId: null,
