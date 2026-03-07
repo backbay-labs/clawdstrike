@@ -1,12 +1,10 @@
 //! Timeline event model and envelope parsing.
 
 use chrono::{DateTime, Utc};
-use clawdstrike_ocsf::fleet::{
-    FleetEventEnvelope, FleetEventKind, FleetEventSeverity, FleetEventSource, FleetEventVerdict,
-};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::fleet_projection::{fleet_event_to_timeline_event, looks_like_fleet_event_fact};
 use crate::query::EventSource;
 
 /// Classification of timeline events.
@@ -164,6 +162,10 @@ pub fn parse_envelope(envelope: &Value, verify: bool) -> Option<TimelineEvent> {
             }
             _ => None,
         };
+    }
+
+    if !looks_like_fleet_event_fact(fact) {
+        return None;
     }
 
     parse_fleet_event(fact, signature_valid, envelope.clone())
@@ -397,88 +399,8 @@ fn parse_scan(
 }
 
 fn parse_fleet_event(fact: &Value, sig: Option<bool>, raw: Value) -> Option<TimelineEvent> {
-    let event: FleetEventEnvelope = serde_json::from_value(fact.clone()).ok()?;
-    let timestamp = DateTime::parse_from_rfc3339(&event.occurred_at)
-        .ok()?
-        .with_timezone(&Utc);
-
-    Some(TimelineEvent {
-        event_id: Some(event.event_id),
-        timestamp,
-        source: map_fleet_source(event.source),
-        kind: map_fleet_kind(event.kind),
-        verdict: map_fleet_verdict(event.verdict),
-        severity: event.severity.map(map_fleet_severity),
-        summary: event.summary,
-        process: event
-            .attributes
-            .get("process")
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned),
-        namespace: event
-            .attributes
-            .get("namespace")
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned),
-        pod: event
-            .attributes
-            .get("pod")
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned),
-        action_type: event.action_type,
-        signature_valid: sig.or(event.evidence.signature_valid),
-        raw: Some(raw),
-    })
-}
-
-fn map_fleet_source(source: FleetEventSource) -> EventSource {
-    match source {
-        FleetEventSource::Receipt => EventSource::Receipt,
-        FleetEventSource::Tetragon => EventSource::Tetragon,
-        FleetEventSource::Hubble => EventSource::Hubble,
-        FleetEventSource::Scan => EventSource::Scan,
-        FleetEventSource::Response => EventSource::Response,
-        FleetEventSource::Directory => EventSource::Directory,
-        FleetEventSource::Detection => EventSource::Detection,
-    }
-}
-
-fn map_fleet_kind(kind: FleetEventKind) -> TimelineEventKind {
-    match kind {
-        FleetEventKind::GuardDecision => TimelineEventKind::GuardDecision,
-        FleetEventKind::ProcessExec => TimelineEventKind::ProcessExec,
-        FleetEventKind::ProcessExit => TimelineEventKind::ProcessExit,
-        FleetEventKind::ProcessKprobe => TimelineEventKind::ProcessKprobe,
-        FleetEventKind::NetworkFlow => TimelineEventKind::NetworkFlow,
-        FleetEventKind::ScanResult => TimelineEventKind::ScanResult,
-        FleetEventKind::JoinCompleted => TimelineEventKind::JoinCompleted,
-        FleetEventKind::PrincipalStateChanged => TimelineEventKind::PrincipalStateChanged,
-        FleetEventKind::ResponseActionCreated => TimelineEventKind::ResponseActionCreated,
-        FleetEventKind::ResponseActionUpdated => TimelineEventKind::ResponseActionUpdated,
-        FleetEventKind::DetectionFired => TimelineEventKind::DetectionFired,
-    }
-}
-
-fn map_fleet_verdict(verdict: Option<FleetEventVerdict>) -> NormalizedVerdict {
-    match verdict.unwrap_or(FleetEventVerdict::None) {
-        FleetEventVerdict::Allow => NormalizedVerdict::Allow,
-        FleetEventVerdict::Deny => NormalizedVerdict::Deny,
-        FleetEventVerdict::Warn => NormalizedVerdict::Warn,
-        FleetEventVerdict::None => NormalizedVerdict::None,
-        FleetEventVerdict::Forwarded => NormalizedVerdict::Forwarded,
-        FleetEventVerdict::Dropped => NormalizedVerdict::Dropped,
-    }
-}
-
-fn map_fleet_severity(severity: FleetEventSeverity) -> String {
-    match severity {
-        FleetEventSeverity::Info => "info",
-        FleetEventSeverity::Low => "low",
-        FleetEventSeverity::Medium => "medium",
-        FleetEventSeverity::High => "high",
-        FleetEventSeverity::Critical => "critical",
-    }
-    .to_string()
+    let event = serde_json::from_value(fact.clone()).ok()?;
+    fleet_event_to_timeline_event(event, sig, raw)
 }
 
 /// Merge multiple event lists into a single timeline, sorted by timestamp ascending.
@@ -780,6 +702,20 @@ mod tests {
         assert_eq!(event.namespace.as_deref(), Some("default"));
         assert_eq!(event.pod.as_deref(), Some("agent-1"));
         assert_eq!(event.signature_valid, Some(true));
+    }
+
+    #[test]
+    fn parse_missing_schema_non_fleet_fact_returns_none() {
+        let envelope = json!({
+            "issued_at": "2026-03-06T12:00:30Z",
+            "fact": {
+                "eventId": "evt-1",
+                "tenantId": "00000000-0000-0000-0000-000000000001",
+                "summary": "missing required fleet fields"
+            }
+        });
+
+        assert!(parse_envelope(&envelope, false).is_none());
     }
 
     #[test]

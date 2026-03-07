@@ -7,6 +7,7 @@
 //! that still enable it.
 
 pub mod error;
+mod fleet_projection;
 pub mod local;
 pub mod nl;
 pub mod query;

@@ -1,14 +1,15 @@
 use chrono::{DateTime, Utc};
-use clawdstrike_ocsf::fleet::{
-    default_empty_object, value_is_empty_object, FleetEventEnvelope, FleetEventSeverity,
-    FleetEventVerdict,
-};
+use clawdstrike_ocsf::fleet::{default_empty_object, value_is_empty_object, FleetEventEnvelope};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
+use crate::fleet_projection::{
+    fleet_event_kind_as_timeline_kind, fleet_event_source_as_query_source, fleet_severity_label,
+    fleet_verdict_as_normalized,
+};
 use crate::query::{EventSource, HuntQuery, QueryVerdict};
-use crate::timeline::{NormalizedVerdict, TimelineEvent, TimelineEventKind};
+use crate::timeline::{NormalizedVerdict, TimelineEvent};
 
 pub use clawdstrike_ocsf::fleet::{
     FleetEventKind as HuntEventKind, FleetEventSource as HuntEventSource,
@@ -75,8 +76,8 @@ impl HuntEvent {
         TimelineEvent {
             event_id: Some(self.event_id.clone()),
             timestamp: self.timestamp,
-            source: hunt_event_source_as_query_source(self.source),
-            kind: hunt_event_kind_as_timeline_kind(self.kind),
+            source: fleet_event_source_as_query_source(self.source),
+            kind: fleet_event_kind_as_timeline_kind(self.kind),
             verdict: self.verdict,
             severity: self.severity.clone(),
             summary: self.summary.clone(),
@@ -95,7 +96,7 @@ impl HuntEvent {
         let timestamp = DateTime::parse_from_rfc3339(&event.occurred_at)
             .map_err(|_| "event.occurredAt must be RFC3339".to_string())?
             .with_timezone(&Utc);
-        let verdict = map_fleet_verdict(event.verdict);
+        let verdict = fleet_verdict_as_normalized(event.verdict);
         let severity = event.severity.map(fleet_severity_label);
 
         Ok(Self {
@@ -222,56 +223,6 @@ impl HuntQueryRequest {
     }
 }
 
-fn hunt_event_source_as_query_source(source: HuntEventSource) -> EventSource {
-    match source {
-        HuntEventSource::Receipt => EventSource::Receipt,
-        HuntEventSource::Tetragon => EventSource::Tetragon,
-        HuntEventSource::Hubble => EventSource::Hubble,
-        HuntEventSource::Scan => EventSource::Scan,
-        HuntEventSource::Response => EventSource::Response,
-        HuntEventSource::Directory => EventSource::Directory,
-        HuntEventSource::Detection => EventSource::Detection,
-    }
-}
-
-fn hunt_event_kind_as_timeline_kind(kind: HuntEventKind) -> TimelineEventKind {
-    match kind {
-        HuntEventKind::GuardDecision => TimelineEventKind::GuardDecision,
-        HuntEventKind::ProcessExec => TimelineEventKind::ProcessExec,
-        HuntEventKind::ProcessExit => TimelineEventKind::ProcessExit,
-        HuntEventKind::ProcessKprobe => TimelineEventKind::ProcessKprobe,
-        HuntEventKind::NetworkFlow => TimelineEventKind::NetworkFlow,
-        HuntEventKind::ScanResult => TimelineEventKind::ScanResult,
-        HuntEventKind::JoinCompleted => TimelineEventKind::JoinCompleted,
-        HuntEventKind::PrincipalStateChanged => TimelineEventKind::PrincipalStateChanged,
-        HuntEventKind::ResponseActionCreated => TimelineEventKind::ResponseActionCreated,
-        HuntEventKind::ResponseActionUpdated => TimelineEventKind::ResponseActionUpdated,
-        HuntEventKind::DetectionFired => TimelineEventKind::DetectionFired,
-    }
-}
-
-fn map_fleet_verdict(verdict: Option<FleetEventVerdict>) -> NormalizedVerdict {
-    match verdict.unwrap_or(FleetEventVerdict::None) {
-        FleetEventVerdict::Allow => NormalizedVerdict::Allow,
-        FleetEventVerdict::Deny => NormalizedVerdict::Deny,
-        FleetEventVerdict::Warn => NormalizedVerdict::Warn,
-        FleetEventVerdict::None => NormalizedVerdict::None,
-        FleetEventVerdict::Forwarded => NormalizedVerdict::Forwarded,
-        FleetEventVerdict::Dropped => NormalizedVerdict::Dropped,
-    }
-}
-
-fn fleet_severity_label(severity: FleetEventSeverity) -> String {
-    match severity {
-        FleetEventSeverity::Info => "info",
-        FleetEventSeverity::Low => "low",
-        FleetEventSeverity::Medium => "medium",
-        FleetEventSeverity::High => "high",
-        FleetEventSeverity::Critical => "critical",
-    }
-    .to_string()
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct HuntQueryResponse {
@@ -353,9 +304,11 @@ pub struct HuntJobRecord {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::timeline::TimelineEventKind;
     use chrono::TimeZone;
     use clawdstrike_ocsf::fleet::{
-        FleetEventEvidence, FleetEventKind, FleetEventPrincipal, FleetEventSource, FleetEventTarget,
+        FleetEventEvidence, FleetEventKind, FleetEventPrincipal, FleetEventSeverity,
+        FleetEventSource, FleetEventTarget, FleetEventVerdict,
     };
 
     #[test]
