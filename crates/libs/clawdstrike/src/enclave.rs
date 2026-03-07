@@ -272,8 +272,15 @@ impl EnclaveResolver {
                 profile_id: None,
                 mcp: Some(McpToolConfig {
                     enabled: true,
+                    allow: vec![],
+                    block: vec![],
+                    require_confirmation: vec![],
                     default_action: Some(McpDefaultAction::Block),
-                    ..McpToolConfig::default()
+                    max_args_size: None,
+                    additional_allow: vec![],
+                    additional_block: vec![],
+                    remove_allow: vec![],
+                    remove_block: vec![],
                 }),
                 posture: None,
                 egress: None,
@@ -586,6 +593,18 @@ mod tests {
         assert!(result.mcp.is_some());
         let mcp = result.mcp.as_ref().unwrap();
         assert_eq!(mcp.default_action, Some(McpDefaultAction::Block));
+        assert!(
+            mcp.allow.is_empty(),
+            "minimal profile should not inherit default allow list"
+        );
+        assert!(
+            mcp.block.is_empty(),
+            "minimal profile should not inherit default block list"
+        );
+        assert!(
+            mcp.require_confirmation.is_empty(),
+            "minimal profile should not inherit default require_confirmation list"
+        );
         assert_eq!(result.posture, None);
         assert_eq!(result.egress, None);
         assert_eq!(result.data, None);

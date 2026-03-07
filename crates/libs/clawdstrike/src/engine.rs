@@ -474,6 +474,9 @@ impl HushEngine {
                             resolution_path = ?fallback.resolution_path,
                             "Materialized minimal_profile fallback enclave"
                         );
+                        let mut state = self.state.write().await;
+                        state.last_resolved_enclave = Some(fallback.clone());
+                        drop(state);
                         effective_context.enclave = Some(fallback);
                     }
                 }
