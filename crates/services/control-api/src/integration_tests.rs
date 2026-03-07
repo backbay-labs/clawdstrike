@@ -3411,14 +3411,14 @@ async fn response_action_acks_reject_actions_without_acknowledgement_enabled() {
     );
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn response_action_acks_reject_duplicate_delivery_acks() {
-    if !docker_available() {
-        eprintln!("Skipping integration test: docker is unavailable");
-        return;
-    }
-
-    let harness = setup_harness().await;
+async fn seed_ack_enabled_response_action(
+    db: &crate::db::PgPool,
+    tenant_id: Uuid,
+    action_status: &str,
+    delivery_status: &str,
+    expires_at: Option<chrono::DateTime<chrono::Utc>>,
+    acknowledgement_deadline: Option<chrono::DateTime<chrono::Utc>>,
+) -> (Uuid, String) {
     let action_id = Uuid::new_v4();
     let delivery_id = Uuid::new_v4();
     let ack_token = Uuid::new_v4().to_string();
@@ -3433,6 +3433,7 @@ async fn response_action_acks_reject_duplicate_delivery_acks() {
                requested_by_type,
                requested_by_id,
                requested_at,
+               expires_at,
                reason,
                require_acknowledgement,
                payload,
@@ -3446,17 +3447,21 @@ async fn response_action_acks_reject_duplicate_delivery_acks() {
                'service',
                'integration',
                now(),
-               'ack once',
+               $3,
+               'ack fixture',
                true,
                '{}'::jsonb,
-               'published'
+               $4
            )"#,
     )
     .bind(action_id)
-    .bind(harness.tenant_id)
-    .execute(&harness.db)
+    .bind(tenant_id)
+    .bind(expires_at)
+    .bind(action_status)
+    .execute(db)
     .await
     .expect("seed ack-enabled action");
+
     sqlx::query::query(
         r#"INSERT INTO response_action_deliveries (
                id,
@@ -3467,6 +3472,7 @@ async fn response_action_acks_reject_duplicate_delivery_acks() {
                executor_kind,
                delivery_subject,
                status,
+               acknowledgement_deadline,
                metadata
            ) VALUES (
                $1,
@@ -3476,17 +3482,41 @@ async fn response_action_acks_reject_duplicate_delivery_acks() {
                'endpoint-1',
                'endpoint_agent',
                'tenant-acme.clawdstrike.response.command.endpoint.endpoint-1',
-               'published',
-               jsonb_build_object('ack_token', $4)
+               $4,
+               $5,
+               jsonb_build_object('ack_token', $6)
            )"#,
     )
     .bind(delivery_id)
     .bind(action_id)
-    .bind(harness.tenant_id)
+    .bind(tenant_id)
+    .bind(delivery_status)
+    .bind(acknowledgement_deadline)
     .bind(&ack_token)
-    .execute(&harness.db)
+    .execute(db)
     .await
     .expect("seed ack-enabled delivery");
+
+    (action_id, ack_token)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn response_action_acks_reject_duplicate_delivery_acks() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let (action_id, ack_token) = seed_ack_enabled_response_action(
+        &harness.db,
+        harness.tenant_id,
+        "published",
+        "published",
+        None,
+        Some(chrono::Utc::now() + chrono::Duration::minutes(10)),
+    )
+    .await;
 
     let first_ack = request_json(
         &harness.app,
@@ -3521,6 +3551,169 @@ async fn response_action_acks_reject_duplicate_delivery_acks() {
         second_ack.1["error"],
         "delivery acknowledgement has already been recorded"
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn response_action_acks_reject_cancelled_actions() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let (action_id, ack_token) = seed_ack_enabled_response_action(
+        &harness.db,
+        harness.tenant_id,
+        "published",
+        "published",
+        None,
+        Some(chrono::Utc::now() + chrono::Duration::minutes(10)),
+    )
+    .await;
+
+    let cancel_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/response-actions/{action_id}/cancel"),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(cancel_resp.0, StatusCode::OK);
+    assert_eq!(cancel_resp.1["status"], "cancelled");
+
+    let ack_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/response-actions/{action_id}/acks"),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "targetKind": "endpoint",
+            "targetId": "endpoint-1",
+            "status": "acknowledged",
+            "ackToken": &ack_token
+        })),
+    )
+    .await;
+    assert_eq!(ack_resp.0, StatusCode::CONFLICT);
+    assert_eq!(
+        ack_resp.1["error"],
+        "action status 'cancelled' cannot accept acknowledgements"
+    );
+
+    let detail_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/response-actions/{action_id}"),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(detail_resp.0, StatusCode::OK);
+    assert_eq!(detail_resp.1["action"]["status"], "cancelled");
+    assert_eq!(detail_resp.1["deliveries"][0]["status"], "cancelled");
+    assert_eq!(
+        detail_resp.1["acknowledgements"]
+            .as_array()
+            .expect("ack list")
+            .len(),
+        0
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn response_action_acks_expire_elapsed_actions() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let (action_id, ack_token) = seed_ack_enabled_response_action(
+        &harness.db,
+        harness.tenant_id,
+        "published",
+        "published",
+        Some(chrono::Utc::now() - chrono::Duration::minutes(1)),
+        Some(chrono::Utc::now() + chrono::Duration::minutes(10)),
+    )
+    .await;
+
+    let ack_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/response-actions/{action_id}/acks"),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "targetKind": "endpoint",
+            "targetId": "endpoint-1",
+            "status": "acknowledged",
+            "ackToken": &ack_token
+        })),
+    )
+    .await;
+    assert_eq!(ack_resp.0, StatusCode::CONFLICT);
+    assert_eq!(ack_resp.1["error"], "acknowledgement window has expired");
+
+    let detail_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/response-actions/{action_id}"),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(detail_resp.0, StatusCode::OK);
+    assert_eq!(detail_resp.1["action"]["status"], "expired");
+    assert_eq!(detail_resp.1["deliveries"][0]["status"], "expired");
+    assert_eq!(
+        detail_resp.1["acknowledgements"]
+            .as_array()
+            .expect("ack list")
+            .len(),
+        0
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn response_action_cancel_does_not_rewrite_expired_actions() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let (action_id, _) = seed_ack_enabled_response_action(
+        &harness.db,
+        harness.tenant_id,
+        "expired",
+        "expired",
+        Some(chrono::Utc::now() - chrono::Duration::minutes(1)),
+        Some(chrono::Utc::now() - chrono::Duration::minutes(1)),
+    )
+    .await;
+
+    let cancel_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/response-actions/{action_id}/cancel"),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(cancel_resp.0, StatusCode::NOT_FOUND);
+
+    let detail_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/response-actions/{action_id}"),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(detail_resp.0, StatusCode::OK);
+    assert_eq!(detail_resp.1["action"]["status"], "expired");
+    assert_eq!(detail_resp.1["deliveries"][0]["status"], "expired");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

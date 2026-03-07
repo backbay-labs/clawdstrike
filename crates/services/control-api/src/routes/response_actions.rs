@@ -443,7 +443,7 @@ async fn cancel_action(
                updated_at = now()
            WHERE id = $1
              AND tenant_id = $2
-             AND status IN ('queued', 'approved', 'published', 'failed', 'expired')
+             AND status IN ('queued', 'approved', 'published', 'failed')
            RETURNING *"#,
     )
     .bind(id)
@@ -459,7 +459,7 @@ async fn cancel_action(
                updated_at = now()
            WHERE action_id = $1
              AND tenant_id = $2
-             AND status IN ('queued', 'approved', 'published', 'failed', 'expired')"#,
+             AND status IN ('queued', 'approved', 'published', 'failed')"#,
     )
     .bind(id)
     .bind(auth.tenant_id)
@@ -482,7 +482,15 @@ async fn record_ack(
     let ack = parse_ack_submission(input)?;
 
     let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
-    let context = load_ack_context(&mut tx, auth.tenant_id, id, &ack).await?;
+    let context = match load_ack_context(&mut tx, auth.tenant_id, id, &ack).await? {
+        Some(context) => context,
+        None => {
+            tx.commit().await.map_err(ApiError::Database)?;
+            return Err(ApiError::Conflict(
+                "acknowledgement window has expired".to_string(),
+            ));
+        }
+    };
     persist_ack_submission(&mut tx, &context, &ack).await?;
     tx.commit().await.map_err(ApiError::Database)?;
     get_action(State(state), auth, Path(id)).await
@@ -645,7 +653,7 @@ async fn load_ack_context(
     tenant_id: Uuid,
     action_id: Uuid,
     ack: &AckSubmission,
-) -> Result<AckContext, ApiError> {
+) -> Result<Option<AckContext>, ApiError> {
     let action = sqlx::query::query(
         "SELECT * FROM response_actions WHERE id = $1 AND tenant_id = $2 FOR UPDATE",
     )
@@ -663,7 +671,7 @@ async fn load_ack_context(
     }
 
     let delivery = sqlx::query::query(
-        r#"SELECT id, metadata
+        r#"SELECT id, status, acknowledgement_deadline, metadata
            FROM response_action_deliveries
            WHERE action_id = $1
              AND tenant_id = $2
@@ -682,6 +690,10 @@ async fn load_ack_context(
         ApiError::BadRequest("acknowledgement target does not match a known delivery".to_string())
     })?;
     let delivery_id: Uuid = delivery.try_get("id").map_err(ApiError::Database)?;
+    let delivery_status: String = delivery.try_get("status").map_err(ApiError::Database)?;
+    let acknowledgement_deadline: Option<DateTime<Utc>> = delivery
+        .try_get("acknowledgement_deadline")
+        .map_err(ApiError::Database)?;
     let delivery_metadata: Value = delivery.try_get("metadata").map_err(ApiError::Database)?;
     let expected_ack_token = delivery_metadata
         .get("ack_token")
@@ -709,10 +721,96 @@ async fn load_ack_context(
         ));
     }
 
-    Ok(AckContext {
+    if ensure_ack_window_open(
+        tx,
+        &action,
+        delivery_id,
+        &delivery_status,
+        acknowledgement_deadline,
+        Utc::now(),
+    )
+    .await?
+    {
+        return Ok(None);
+    }
+
+    Ok(Some(AckContext {
         action,
         delivery_id,
-    })
+    }))
+}
+
+async fn ensure_ack_window_open(
+    tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
+    action: &ResponseActionRecord,
+    delivery_id: Uuid,
+    delivery_status: &str,
+    acknowledgement_deadline: Option<DateTime<Utc>>,
+    now: DateTime<Utc>,
+) -> Result<bool, ApiError> {
+    if action.status != "published" {
+        return Err(ApiError::Conflict(format!(
+            "action status '{}' cannot accept acknowledgements",
+            action.status
+        )));
+    }
+
+    if delivery_status != "published" {
+        return Err(ApiError::Conflict(format!(
+            "delivery status '{}' cannot accept acknowledgements",
+            delivery_status
+        )));
+    }
+
+    let window_expired = action
+        .expires_at
+        .is_some_and(|expires_at| expires_at <= now)
+        || acknowledgement_deadline.is_some_and(|deadline| deadline <= now);
+    if !window_expired {
+        return Ok(false);
+    }
+
+    expire_ack_window(tx, action, delivery_id).await?;
+    Ok(true)
+}
+
+async fn expire_ack_window(
+    tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
+    action: &ResponseActionRecord,
+    delivery_id: Uuid,
+) -> Result<(), ApiError> {
+    sqlx::query::query(
+        r#"UPDATE response_actions
+           SET status = 'expired',
+               updated_at = now()
+           WHERE id = $1
+             AND tenant_id = $2
+             AND status = 'published'"#,
+    )
+    .bind(action.id)
+    .bind(action.tenant_id)
+    .execute(&mut **tx)
+    .await
+    .map_err(ApiError::Database)?;
+
+    sqlx::query::query(
+        r#"UPDATE response_action_deliveries
+           SET status = 'expired',
+               updated_at = now(),
+               last_error = COALESCE(last_error, 'acknowledgement window expired')
+           WHERE id = $1
+             AND action_id = $2
+             AND tenant_id = $3
+             AND status = 'published'"#,
+    )
+    .bind(delivery_id)
+    .bind(action.id)
+    .bind(action.tenant_id)
+    .execute(&mut **tx)
+    .await
+    .map_err(ApiError::Database)?;
+
+    Ok(())
 }
 
 async fn persist_ack_submission(
