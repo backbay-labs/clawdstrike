@@ -18,7 +18,7 @@ use crate::guards::{
 };
 use crate::origin::OriginContext;
 use crate::pipeline::{builtin_stage_for_guard_name, EvaluationPath, EvaluationStage};
-use crate::policy::{Policy, PolicyGuards, RuleSet};
+use crate::policy::{OriginDefaultBehavior, Policy, PolicyGuards, RuleSet};
 use crate::posture::{
     elapsed_since_timestamp, Capability, PostureBudgetCounter, PostureProgram, PostureRuntimeState,
     PostureTransitionRecord, RuntimeTransitionTrigger,
@@ -384,6 +384,47 @@ impl HushEngine {
                 state.last_resolved_enclave = effective_context.enclave.clone();
                 drop(state);
             }
+        } else if let (None, Some(ref origins_config)) =
+            (&context.origin, &self.policy.origins)
+        {
+            // Fail-closed: when origins policy is enabled but no origin context is
+            // provided (and no session origin is established yet), apply the
+            // default_behavior. If Deny, block the request so that origin-scoped
+            // controls cannot be bypassed by omitting origin metadata.
+            let state = self.state.read().await;
+            let session_exists = state.session_origin.is_some();
+            drop(state);
+            if !session_exists {
+                match origins_config.effective_default_behavior() {
+                    OriginDefaultBehavior::Deny => {
+                        let result = GuardResult::block(
+                            "origin_required",
+                            Severity::Error,
+                            "origin context required: policy has origins block but no origin was provided".to_string(),
+                        );
+                        let mut state = self.state.write().await;
+                        state.action_count += 1;
+                        state.violation_count += 1;
+                        state.last_evaluation_path = None;
+                        state.violations.push(ViolationRef {
+                            guard: result.guard.clone(),
+                            severity: format!("{:?}", result.severity),
+                            message: result.message.clone(),
+                            action: None,
+                        });
+                        return Ok(GuardReport {
+                            overall: result.clone(),
+                            per_guard: vec![result],
+                            evaluation_path: None,
+                        });
+                    }
+                    OriginDefaultBehavior::MinimalProfile => {
+                        // Allow through to base guard pipeline with no enclave
+                        debug!("Origins policy present but no origin context — applying minimal_profile fallback");
+                    }
+                }
+            }
+            // If session_exists, the C2 check below will handle it.
         } else if let (Some(ref origin), Some(ref origins_config)) =
             (&context.origin, &self.policy.origins)
         {
@@ -434,6 +475,7 @@ impl HushEngine {
                 let mut state = self.state.write().await;
                 state.action_count += 1;
                 state.violation_count += 1;
+                state.last_evaluation_path = None;
                 state.violations.push(ViolationRef {
                     guard: result.guard.clone(),
                     severity: format!("{:?}", result.severity),
@@ -489,6 +531,7 @@ impl HushEngine {
                             let mut state = self.state.write().await;
                             state.action_count += 1;
                             state.violation_count += 1;
+                            state.last_evaluation_path = None;
                             state.violations.push(ViolationRef {
                                 guard: result.guard.clone(),
                                 severity: format!("{:?}", result.severity),
@@ -510,6 +553,7 @@ impl HushEngine {
                             let mut state = self.state.write().await;
                             state.action_count += 1;
                             state.violation_count += 1;
+                            state.last_evaluation_path = None;
                             state.violations.push(ViolationRef {
                                 guard: result.guard.clone(),
                                 severity: format!("{:?}", result.severity),
@@ -560,6 +604,7 @@ impl HushEngine {
                         let mut state = self.state.write().await;
                         state.action_count += 1;
                         state.violation_count += 1;
+                        state.last_evaluation_path = None;
                         state.violations.push(ViolationRef {
                             guard: result.guard.clone(),
                             severity: format!("{:?}", result.severity),
@@ -585,6 +630,7 @@ impl HushEngine {
                         let mut state = self.state.write().await;
                         state.action_count += 1;
                         state.violation_count += 1;
+                        state.last_evaluation_path = None;
                         state.violations.push(ViolationRef {
                             guard: result.guard.clone(),
                             severity: format!("{:?}", result.severity),
@@ -609,6 +655,7 @@ impl HushEngine {
                             let mut state = self.state.write().await;
                             state.action_count += 1;
                             state.violation_count += 1;
+                            state.last_evaluation_path = None;
                             state.violations.push(ViolationRef {
                                 guard: result.guard.clone(),
                                 severity: format!("{:?}", result.severity),
@@ -637,6 +684,7 @@ impl HushEngine {
                         let mut state = self.state.write().await;
                         state.action_count += 1;
                         state.violation_count += 1;
+                        state.last_evaluation_path = None;
                         state.violations.push(ViolationRef {
                             guard: result.guard.clone(),
                             severity: format!("{:?}", result.severity),

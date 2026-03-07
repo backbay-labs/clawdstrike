@@ -56,9 +56,13 @@ pub enum OriginCommands {
         #[arg(long)]
         thread_id: Option<String>,
 
-        /// Flag: external participants present
-        #[arg(long)]
+        /// Flag: external participants present (use --no-external-participants for false)
+        #[arg(long, overrides_with = "no_external_participants")]
         external_participants: bool,
+
+        /// Flag: no external participants (sets external_participants=false)
+        #[arg(long, overrides_with = "external_participants", hide = true)]
+        no_external_participants: bool,
 
         /// Sensitivity level
         #[arg(long)]
@@ -103,9 +107,13 @@ pub enum OriginCommands {
         #[arg(long)]
         thread_id: Option<String>,
 
-        /// Flag: external participants present
-        #[arg(long)]
+        /// Flag: external participants present (use --no-external-participants for false)
+        #[arg(long, overrides_with = "no_external_participants")]
         external_participants: bool,
+
+        /// Flag: no external participants (sets external_participants=false)
+        #[arg(long, overrides_with = "external_participants", hide = true)]
+        no_external_participants: bool,
 
         /// Sensitivity level
         #[arg(long)]
@@ -141,7 +149,7 @@ struct OriginArgs {
     tags: Option<String>,
     tenant_id: Option<String>,
     thread_id: Option<String>,
-    external_participants: bool,
+    external_participants: Option<bool>,
     sensitivity: Option<String>,
 }
 
@@ -166,6 +174,7 @@ pub fn cmd_origin(
             tenant_id,
             thread_id,
             external_participants,
+            no_external_participants,
             sensitivity,
             json,
         } => cmd_resolve(
@@ -178,7 +187,10 @@ pub fn cmd_origin(
                 tags,
                 tenant_id,
                 thread_id,
-                external_participants,
+                external_participants: ext_participants_flag(
+                    external_participants,
+                    no_external_participants,
+                ),
                 sensitivity,
             },
             json,
@@ -197,6 +209,7 @@ pub fn cmd_origin(
             tenant_id,
             thread_id,
             external_participants,
+            no_external_participants,
             sensitivity,
             json,
         } => cmd_explain(
@@ -209,7 +222,10 @@ pub fn cmd_origin(
                 tags,
                 tenant_id,
                 thread_id,
-                external_participants,
+                external_participants: ext_participants_flag(
+                    external_participants,
+                    no_external_participants,
+                ),
                 sensitivity,
             },
             json,
@@ -222,6 +238,18 @@ pub fn cmd_origin(
             policy_path,
             json,
         } => cmd_list_profiles(&policy_path, json, remote_extends, stdout, stderr),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Helper: convert --external-participants / --no-external-participants to Option<bool>
+// ---------------------------------------------------------------------------
+
+fn ext_participants_flag(yes: bool, no: bool) -> Option<bool> {
+    match (yes, no) {
+        (true, _) => Some(true),
+        (_, true) => Some(false),
+        _ => None,
     }
 }
 
@@ -246,11 +274,7 @@ fn build_origin_context(args: &OriginArgs) -> OriginContext {
             .unwrap_or_default(),
         tenant_id: args.tenant_id.clone(),
         thread_id: args.thread_id.clone(),
-        external_participants: if args.external_participants {
-            Some(true)
-        } else {
-            None
-        },
+        external_participants: args.external_participants,
         sensitivity: args.sensitivity.clone(),
         ..Default::default()
     }
@@ -1203,7 +1227,7 @@ mod tests {
             tags: Some("incident,pci".into()),
             tenant_id: Some("T001".into()),
             thread_id: Some("thread-42".into()),
-            external_participants: true,
+            external_participants: Some(true),
             sensitivity: Some("high".into()),
         };
 
@@ -1229,7 +1253,7 @@ mod tests {
             tags: None,
             tenant_id: None,
             thread_id: None,
-            external_participants: false,
+            external_participants: None,
             sensitivity: None,
         };
 
@@ -1238,6 +1262,24 @@ mod tests {
         assert_eq!(ctx.space_id, None);
         assert!(ctx.tags.is_empty());
         assert_eq!(ctx.external_participants, None);
+    }
+
+    #[test]
+    fn build_origin_context_external_participants_false() {
+        let args = OriginArgs {
+            provider: Some("slack".into()),
+            space_id: None,
+            space_type: None,
+            visibility: None,
+            tags: None,
+            tenant_id: None,
+            thread_id: None,
+            external_participants: Some(false),
+            sensitivity: None,
+        };
+
+        let ctx = build_origin_context(&args);
+        assert_eq!(ctx.external_participants, Some(false));
     }
 
     #[test]
