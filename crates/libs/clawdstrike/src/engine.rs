@@ -656,37 +656,9 @@ impl HushEngine {
                             });
                         }
 
-                        // 3. default_action=Block when allow list is empty
-                        if enclave_mcp.allow.is_empty() {
-                            if let Some(McpDefaultAction::Block) = enclave_mcp.default_action {
-                                let result = GuardResult::block(
-                                    "enclave",
-                                    Severity::Error,
-                                    format!(
-                                        "tool '{}' blocked by default_action for profile '{}'",
-                                        tool_name, profile_label
-                                    ),
-                                );
-                                let mut state = self.state.write().await;
-                                state.action_count += 1;
-                                state.violation_count += 1;
-                                state.last_evaluation_path = None;
-                                state.violations.push(ViolationRef {
-                                    guard: result.guard.clone(),
-                                    severity: format!("{:?}", result.severity),
-                                    message: result.message.clone(),
-                                    action: None,
-                                });
-                                return Ok(GuardReport {
-                                    overall: result.clone(),
-                                    per_guard: vec![result],
-                                    evaluation_path: None,
-                                });
-                            }
-                        }
-
-                        // 4. require_confirmation: deny with Warning severity so
-                        //    the caller knows approval is needed before proceeding.
+                        // 3. require_confirmation: checked before default_action
+                        //    so that confirmation tools are not hard-blocked when
+                        //    default_action=Block with an empty allow list.
                         if enclave_mcp
                             .require_confirmation
                             .iter()
@@ -715,6 +687,35 @@ impl HushEngine {
                                 per_guard: vec![result],
                                 evaluation_path: None,
                             });
+                        }
+
+                        // 4. default_action=Block when allow list is empty
+                        if enclave_mcp.allow.is_empty() {
+                            if let Some(McpDefaultAction::Block) = enclave_mcp.default_action {
+                                let result = GuardResult::block(
+                                    "enclave",
+                                    Severity::Error,
+                                    format!(
+                                        "tool '{}' blocked by default_action for profile '{}'",
+                                        tool_name, profile_label
+                                    ),
+                                );
+                                let mut state = self.state.write().await;
+                                state.action_count += 1;
+                                state.violation_count += 1;
+                                state.last_evaluation_path = None;
+                                state.violations.push(ViolationRef {
+                                    guard: result.guard.clone(),
+                                    severity: format!("{:?}", result.severity),
+                                    message: result.message.clone(),
+                                    action: None,
+                                });
+                                return Ok(GuardReport {
+                                    overall: result.clone(),
+                                    per_guard: vec![result],
+                                    evaluation_path: None,
+                                });
+                            }
                         }
                     } // end enabled check
                 }
