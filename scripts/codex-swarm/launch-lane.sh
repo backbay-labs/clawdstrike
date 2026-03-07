@@ -19,6 +19,10 @@ dangerous="false"
 while (($# > 0)); do
   case "$1" in
     --note)
+      if (($# < 2)); then
+        printf 'Missing value for --note\n' >&2
+        exit 1
+      fi
       note="$2"
       shift 2
       ;;

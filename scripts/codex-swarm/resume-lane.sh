@@ -18,6 +18,10 @@ message="Continue from the current branch state. Keep file ownership boundaries.
 while (($# > 0)); do
   case "$1" in
     --message)
+      if (($# < 2)); then
+        printf 'Missing value for --message\n' >&2
+        exit 1
+      fi
       message="$2"
       shift 2
       ;;

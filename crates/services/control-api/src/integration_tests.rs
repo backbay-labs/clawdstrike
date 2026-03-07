@@ -3267,6 +3267,98 @@ async fn response_actions_execute_supported_cloud_only_targets() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn response_actions_require_admin_equivalent_roles() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let fixture = seed_console_read_model_fixture(&harness).await;
+    let member_api_key = "cs_it_member_key";
+    insert_api_key_for_tenant(
+        &harness.db,
+        harness.tenant_id,
+        member_api_key,
+        "member",
+        &["write"],
+    )
+    .await;
+
+    let create_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/response-actions".to_string(),
+        Some(member_api_key),
+        Some(serde_json::json!({
+            "actionType": "quarantine_principal",
+            "target": {
+                "kind": "principal",
+                "id": fixture.principal_id.to_string()
+            },
+            "reason": "should be forbidden",
+            "requireAcknowledgement": false,
+            "payload": {}
+        })),
+    )
+    .await;
+    assert_eq!(create_resp.0, StatusCode::FORBIDDEN);
+
+    let admin_create = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/response-actions".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "actionType": "quarantine_principal",
+            "target": {
+                "kind": "principal",
+                "id": fixture.principal_id.to_string()
+            },
+            "reason": "admin containment",
+            "requireAcknowledgement": false,
+            "payload": {}
+        })),
+    )
+    .await;
+    assert_eq!(admin_create.0, StatusCode::OK);
+    let action_id = admin_create.1["id"]
+        .as_str()
+        .expect("response action id")
+        .to_string();
+
+    let approve_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/response-actions/{action_id}/approve"),
+        Some(member_api_key),
+        None,
+    )
+    .await;
+    assert_eq!(approve_resp.0, StatusCode::FORBIDDEN);
+
+    let retry_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/response-actions/{action_id}/retry"),
+        Some(member_api_key),
+        None,
+    )
+    .await;
+    assert_eq!(retry_resp.0, StatusCode::FORBIDDEN);
+
+    let cancel_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/response-actions/{action_id}/cancel"),
+        Some(member_api_key),
+        None,
+    )
+    .await;
+    assert_eq!(cancel_resp.0, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn response_action_acks_reject_actions_without_acknowledgement_enabled() {
     if !docker_available() {
         eprintln!("Skipping integration test: docker is unavailable");

@@ -509,7 +509,7 @@ async fn publish_action(
 }
 
 fn ensure_write_access(auth: &AuthenticatedTenant) -> Result<(), ApiError> {
-    if auth.role == "viewer" {
+    if !matches!(auth.role.as_str(), "owner" | "admin") {
         return Err(ApiError::Forbidden);
     }
     Ok(())
