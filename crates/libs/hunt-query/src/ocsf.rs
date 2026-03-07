@@ -1,6 +1,7 @@
 //! Convert hunt-query timeline events to OCSF events.
 //!
-//! Gated behind the `ocsf` feature flag.
+//! The legacy `ocsf` cargo feature remains as a compatibility shim, but the
+//! OCSF conversion surface is always available.
 
 use serde_json::Value;
 
@@ -28,6 +29,9 @@ pub fn timeline_to_ocsf(events: &[TimelineEvent]) -> Vec<Value> {
             EventSource::Hubble => "hubble",
             EventSource::Receipt => "receipt",
             EventSource::Scan => "scan",
+            EventSource::Response => "response",
+            EventSource::Directory => "directory",
+            EventSource::Detection => "detection",
         };
 
         let input = TimelineEventInput {

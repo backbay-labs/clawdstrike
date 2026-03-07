@@ -787,6 +787,9 @@ fn apply_filters<'a>(
                 EventSource::Hubble => "hubble",
                 EventSource::Receipt => "receipt",
                 EventSource::Scan => "scan",
+                EventSource::Response => "response",
+                EventSource::Directory => "directory",
+                EventSource::Detection => "detection",
             })
             .collect::<Vec<_>>();
         builder.push(" AND source = ANY(");

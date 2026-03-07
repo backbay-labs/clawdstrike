@@ -16,6 +16,11 @@ pub enum TimelineEventKind {
     NetworkFlow,
     GuardDecision,
     ScanResult,
+    JoinCompleted,
+    PrincipalStateChanged,
+    ResponseActionCreated,
+    ResponseActionUpdated,
+    DetectionFired,
 }
 
 impl std::fmt::Display for TimelineEventKind {
@@ -27,6 +32,11 @@ impl std::fmt::Display for TimelineEventKind {
             Self::NetworkFlow => write!(f, "network_flow"),
             Self::GuardDecision => write!(f, "guard_decision"),
             Self::ScanResult => write!(f, "scan_result"),
+            Self::JoinCompleted => write!(f, "join_completed"),
+            Self::PrincipalStateChanged => write!(f, "principal_state_changed"),
+            Self::ResponseActionCreated => write!(f, "response_action_created"),
+            Self::ResponseActionUpdated => write!(f, "response_action_updated"),
+            Self::DetectionFired => write!(f, "detection_fired"),
         }
     }
 }
@@ -91,6 +101,11 @@ impl TimelineEventKind {
             "network_flow" => Some(Self::NetworkFlow),
             "guard_decision" => Some(Self::GuardDecision),
             "scan_result" => Some(Self::ScanResult),
+            "join_completed" => Some(Self::JoinCompleted),
+            "principal_state_changed" => Some(Self::PrincipalStateChanged),
+            "response_action_created" => Some(Self::ResponseActionCreated),
+            "response_action_updated" => Some(Self::ResponseActionUpdated),
+            "detection_fired" => Some(Self::DetectionFired),
             _ => None,
         }
     }

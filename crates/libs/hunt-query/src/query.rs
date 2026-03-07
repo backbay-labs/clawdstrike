@@ -13,6 +13,9 @@ pub enum EventSource {
     Hubble,
     Receipt,
     Scan,
+    Response,
+    Directory,
+    Detection,
 }
 
 impl EventSource {
@@ -23,6 +26,9 @@ impl EventSource {
             "hubble" => Some(Self::Hubble),
             "receipt" | "receipts" => Some(Self::Receipt),
             "scan" | "scans" => Some(Self::Scan),
+            "response" => Some(Self::Response),
+            "directory" => Some(Self::Directory),
+            "detection" => Some(Self::Detection),
             _ => None,
         }
     }
@@ -41,6 +47,7 @@ impl EventSource {
             Self::Hubble => "CLAWDSTRIKE_HUBBLE",
             Self::Receipt => "CLAWDSTRIKE_RECEIPTS",
             Self::Scan => "CLAWDSTRIKE_SCANS",
+            Self::Response | Self::Directory | Self::Detection => "clawdstrike_adaptive_ingress",
         }
     }
 
@@ -51,6 +58,7 @@ impl EventSource {
             Self::Hubble => "clawdstrike.sdr.fact.hubble_flow.>",
             Self::Receipt => "clawdstrike.sdr.fact.receipt.>",
             Self::Scan => "clawdstrike.sdr.fact.scan.>",
+            Self::Response | Self::Directory | Self::Detection => "tenant-*.>",
         }
     }
 
@@ -67,6 +75,9 @@ impl std::fmt::Display for EventSource {
             Self::Hubble => write!(f, "hubble"),
             Self::Receipt => write!(f, "receipt"),
             Self::Scan => write!(f, "scan"),
+            Self::Response => write!(f, "response"),
+            Self::Directory => write!(f, "directory"),
+            Self::Detection => write!(f, "detection"),
         }
     }
 }
@@ -270,6 +281,15 @@ mod tests {
         assert_eq!(EventSource::parse("receipts"), Some(EventSource::Receipt));
         assert_eq!(EventSource::parse("scan"), Some(EventSource::Scan));
         assert_eq!(EventSource::parse("scans"), Some(EventSource::Scan));
+        assert_eq!(EventSource::parse("response"), Some(EventSource::Response));
+        assert_eq!(
+            EventSource::parse("directory"),
+            Some(EventSource::Directory)
+        );
+        assert_eq!(
+            EventSource::parse("detection"),
+            Some(EventSource::Detection)
+        );
         assert_eq!(EventSource::parse("unknown"), None);
     }
 
@@ -311,6 +331,9 @@ mod tests {
         assert_eq!(EventSource::Hubble.to_string(), "hubble");
         assert_eq!(EventSource::Receipt.to_string(), "receipt");
         assert_eq!(EventSource::Scan.to_string(), "scan");
+        assert_eq!(EventSource::Response.to_string(), "response");
+        assert_eq!(EventSource::Directory.to_string(), "directory");
+        assert_eq!(EventSource::Detection.to_string(), "detection");
     }
 
     #[test]

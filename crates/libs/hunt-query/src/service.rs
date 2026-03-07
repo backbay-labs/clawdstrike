@@ -71,12 +71,12 @@ pub struct HuntEvent {
 }
 
 impl HuntEvent {
-    pub fn to_timeline_event(&self) -> Option<TimelineEvent> {
-        Some(TimelineEvent {
+    pub fn to_timeline_event(&self) -> TimelineEvent {
+        TimelineEvent {
             event_id: Some(self.event_id.clone()),
             timestamp: self.timestamp,
-            source: hunt_event_source_as_query_source(self.source)?,
-            kind: hunt_event_kind_as_timeline_kind(self.kind)?,
+            source: hunt_event_source_as_query_source(self.source),
+            kind: hunt_event_kind_as_timeline_kind(self.kind),
             verdict: self.verdict,
             severity: self.severity.clone(),
             summary: self.summary.clone(),
@@ -86,7 +86,7 @@ impl HuntEvent {
             action_type: self.action_type.clone(),
             signature_valid: self.signature_valid,
             raw: Some(self.attributes.clone()),
-        })
+        }
     }
 
     pub fn try_from_fleet_event(event: &FleetEventEnvelope) -> Result<Self, String> {
@@ -222,29 +222,31 @@ impl HuntQueryRequest {
     }
 }
 
-fn hunt_event_source_as_query_source(source: HuntEventSource) -> Option<EventSource> {
+fn hunt_event_source_as_query_source(source: HuntEventSource) -> EventSource {
     match source {
-        HuntEventSource::Receipt => Some(EventSource::Receipt),
-        HuntEventSource::Tetragon => Some(EventSource::Tetragon),
-        HuntEventSource::Hubble => Some(EventSource::Hubble),
-        HuntEventSource::Scan => Some(EventSource::Scan),
-        HuntEventSource::Response | HuntEventSource::Directory | HuntEventSource::Detection => None,
+        HuntEventSource::Receipt => EventSource::Receipt,
+        HuntEventSource::Tetragon => EventSource::Tetragon,
+        HuntEventSource::Hubble => EventSource::Hubble,
+        HuntEventSource::Scan => EventSource::Scan,
+        HuntEventSource::Response => EventSource::Response,
+        HuntEventSource::Directory => EventSource::Directory,
+        HuntEventSource::Detection => EventSource::Detection,
     }
 }
 
-fn hunt_event_kind_as_timeline_kind(kind: HuntEventKind) -> Option<TimelineEventKind> {
+fn hunt_event_kind_as_timeline_kind(kind: HuntEventKind) -> TimelineEventKind {
     match kind {
-        HuntEventKind::GuardDecision => Some(TimelineEventKind::GuardDecision),
-        HuntEventKind::ProcessExec => Some(TimelineEventKind::ProcessExec),
-        HuntEventKind::ProcessExit => Some(TimelineEventKind::ProcessExit),
-        HuntEventKind::ProcessKprobe => Some(TimelineEventKind::ProcessKprobe),
-        HuntEventKind::NetworkFlow => Some(TimelineEventKind::NetworkFlow),
-        HuntEventKind::ScanResult => Some(TimelineEventKind::ScanResult),
-        HuntEventKind::JoinCompleted
-        | HuntEventKind::PrincipalStateChanged
-        | HuntEventKind::ResponseActionCreated
-        | HuntEventKind::ResponseActionUpdated
-        | HuntEventKind::DetectionFired => None,
+        HuntEventKind::GuardDecision => TimelineEventKind::GuardDecision,
+        HuntEventKind::ProcessExec => TimelineEventKind::ProcessExec,
+        HuntEventKind::ProcessExit => TimelineEventKind::ProcessExit,
+        HuntEventKind::ProcessKprobe => TimelineEventKind::ProcessKprobe,
+        HuntEventKind::NetworkFlow => TimelineEventKind::NetworkFlow,
+        HuntEventKind::ScanResult => TimelineEventKind::ScanResult,
+        HuntEventKind::JoinCompleted => TimelineEventKind::JoinCompleted,
+        HuntEventKind::PrincipalStateChanged => TimelineEventKind::PrincipalStateChanged,
+        HuntEventKind::ResponseActionCreated => TimelineEventKind::ResponseActionCreated,
+        HuntEventKind::ResponseActionUpdated => TimelineEventKind::ResponseActionUpdated,
+        HuntEventKind::DetectionFired => TimelineEventKind::DetectionFired,
     }
 }
 
@@ -449,14 +451,14 @@ mod tests {
             attributes: serde_json::json!({"pid": 1001}),
         };
 
-        let projected = event.to_timeline_event().expect("supported event");
+        let projected = event.to_timeline_event();
         assert_eq!(projected.event_id.as_deref(), Some("evt-1"));
         assert_eq!(projected.kind, TimelineEventKind::ProcessExec);
         assert_eq!(projected.source, EventSource::Tetragon);
     }
 
     #[test]
-    fn unsupported_sources_do_not_project_into_timeline() {
+    fn control_plane_sources_project_into_timeline() {
         let event = HuntEvent {
             event_id: "evt-2".to_string(),
             tenant_id: Uuid::nil(),
@@ -488,7 +490,10 @@ mod tests {
             attributes: Value::Object(Default::default()),
         };
 
-        assert!(event.to_timeline_event().is_none());
+        let projected = event.to_timeline_event();
+        assert_eq!(projected.source, EventSource::Detection);
+        assert_eq!(projected.kind, TimelineEventKind::DetectionFired);
+        assert_eq!(projected.event_id.as_deref(), Some("evt-2"));
     }
 
     #[test]

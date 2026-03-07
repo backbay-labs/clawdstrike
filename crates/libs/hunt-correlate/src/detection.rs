@@ -300,11 +300,49 @@ fn sigma_preview_target_pattern(selection: &Map<String, Value>) -> Option<&str> 
         .iter()
         .filter_map(|(field, value)| value.as_str().map(|pattern| (field.as_str(), pattern)))
         .collect();
-    string_patterns.sort_by(|left, right| left.0.cmp(right.0));
+    string_patterns.sort_by(|left, right| {
+        sigma_preview_field_priority(left.0)
+            .cmp(&sigma_preview_field_priority(right.0))
+            .then_with(|| sigma_preview_field_stem(left.0).cmp(sigma_preview_field_stem(right.0)))
+            .then_with(|| left.0.cmp(right.0))
+    });
     string_patterns
         .into_iter()
         .map(|(_, pattern)| pattern)
         .next()
+}
+
+fn sigma_preview_field_priority(field: &str) -> usize {
+    match sigma_preview_field_stem(field)
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "targetfilename"
+        | "targetfile"
+        | "filepath"
+        | "filename"
+        | "targetpath"
+        | "path"
+        | "targetobject"
+        | "registrypath"
+        | "registrykey"
+        | "objectname"
+        | "url"
+        | "uri"
+        | "destinationhostname"
+        | "destinationip"
+        | "destinationport"
+        | "queryname"
+        | "hostname"
+        | "domain" => 0,
+        "commandline" | "parentcommandline" => 1,
+        "image" | "parentimage" | "processname" | "originalfilename" | "imagepath" => 2,
+        _ => 3,
+    }
+}
+
+fn sigma_preview_field_stem(field: &str) -> &str {
+    field.split('|').next().unwrap_or(field)
 }
 
 fn sigma_condition_selector_candidates(
@@ -615,6 +653,13 @@ mod tests {
         let sigma = "title: Ordered Selection\nlogsource:\n  category: process_creation\ndetection:\n  selection:\n    Image: /usr/bin/curl\n    CommandLine: secret\n  condition: selection\n";
         let preview = sigma_preview_to_native_rule(sigma).expect("build preview");
         assert!(preview.contains("target_pattern: secret"));
+    }
+
+    #[test]
+    fn sigma_preview_prefers_target_artifacts_over_command_lines() {
+        let sigma = "title: Target Selection\nlogsource:\n  category: process_creation\ndetection:\n  selection:\n    TargetFilename: secret.txt\n    CommandLine: benign\n  condition: selection\n";
+        let preview = sigma_preview_to_native_rule(sigma).expect("build preview");
+        assert!(preview.contains("target_pattern: secret.txt"));
     }
 
     #[test]

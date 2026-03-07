@@ -59,7 +59,7 @@ pub fn correlate_hunt_events(
 ) -> Result<Vec<CorrelationFinding>> {
     let timeline_events = events
         .iter()
-        .filter_map(HuntEvent::to_timeline_event)
+        .map(HuntEvent::to_timeline_event)
         .collect::<Vec<_>>();
     let mut engine = CorrelationEngine::new(rules)?;
     let mut alerts = Vec::new();
@@ -113,9 +113,7 @@ pub fn match_hunt_events(db: &IocDatabase, events: &[HuntEvent]) -> Vec<IocEvent
     events
         .iter()
         .flat_map(|event| {
-            let Some(timeline_event) = event.to_timeline_event() else {
-                return Vec::new().into_iter();
-            };
+            let timeline_event = event.to_timeline_event();
             crate::ioc::match_event(db, &timeline_event)
                 .into_iter()
                 .map(|matched| IocEventMatch {
@@ -255,6 +253,125 @@ output:
         assert_eq!(matches[1].event_id, "evt-1");
         assert_eq!(matches[1].match_field, "process");
         assert_eq!(matches[1].matched_iocs[0].indicator, "10.0.0.9");
+    }
+
+    #[test]
+    fn control_plane_events_participate_in_ioc_matching() {
+        let request = IocMatchRequest {
+            indicators: vec!["evil.com".to_string()],
+            stix_bundle: None,
+            query: None,
+        };
+        let db = build_ioc_database(&request).expect("build IOC db");
+        let event = HuntEvent {
+            event_id: "evt-response".to_string(),
+            tenant_id: Uuid::nil(),
+            source: HuntEventSource::Response,
+            kind: HuntEventKind::ResponseActionCreated,
+            timestamp: Utc.with_ymd_and_hms(2025, 3, 6, 12, 0, 0).unwrap(),
+            verdict: NormalizedVerdict::Warn,
+            severity: Some("medium".to_string()),
+            summary: "response action created for evil.com containment".to_string(),
+            action_type: Some("transition_posture".to_string()),
+            process: None,
+            namespace: None,
+            pod: None,
+            session_id: None,
+            endpoint_agent_id: None,
+            runtime_agent_id: None,
+            principal_id: Some("principal-1".to_string()),
+            grant_id: None,
+            response_action_id: Some("action-1".to_string()),
+            detection_ids: Vec::new(),
+            target_kind: Some("principal".to_string()),
+            target_id: Some("principal-1".to_string()),
+            target_name: Some("agent".to_string()),
+            envelope_hash: None,
+            issuer: None,
+            schema_name: None,
+            signature_valid: Some(true),
+            raw_ref: "hunt-envelope:evt-response".to_string(),
+            attributes: serde_json::json!({"operation": "containment", "indicator": "evil.com"}),
+        };
+
+        let matches = match_hunt_events(&db, &[event]);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].event_id, "evt-response");
+    }
+
+    #[test]
+    fn control_plane_events_participate_in_correlation() {
+        let rule_yaml = r#"
+schema: clawdstrike.hunt.correlation.v1
+name: response_then_detection
+severity: medium
+description: control plane sequence
+window: 10m
+conditions:
+  - source: response
+    target_pattern: containment
+    bind: response
+  - source: detection
+    target_pattern: containment
+    after: response
+    within: 5m
+    bind: detection
+output:
+  title: containment escalated
+  evidence: [response, detection]
+"#;
+        let rule = crate::rules::parse_rule(rule_yaml).expect("parse rule");
+        let response_event = HuntEvent {
+            event_id: "evt-response".to_string(),
+            tenant_id: Uuid::nil(),
+            source: HuntEventSource::Response,
+            kind: HuntEventKind::ResponseActionCreated,
+            timestamp: Utc.with_ymd_and_hms(2025, 3, 6, 12, 0, 0).unwrap(),
+            verdict: NormalizedVerdict::Warn,
+            severity: Some("medium".to_string()),
+            summary: "response action created for containment".to_string(),
+            action_type: Some("transition_posture".to_string()),
+            process: None,
+            namespace: None,
+            pod: None,
+            session_id: None,
+            endpoint_agent_id: None,
+            runtime_agent_id: None,
+            principal_id: Some("principal-1".to_string()),
+            grant_id: None,
+            response_action_id: Some("action-1".to_string()),
+            detection_ids: Vec::new(),
+            target_kind: Some("principal".to_string()),
+            target_id: Some("principal-1".to_string()),
+            target_name: Some("agent".to_string()),
+            envelope_hash: None,
+            issuer: None,
+            schema_name: None,
+            signature_valid: Some(true),
+            raw_ref: "hunt-envelope:evt-response".to_string(),
+            attributes: serde_json::json!({"operation": "containment"}),
+        };
+        let detection_event = HuntEvent {
+            event_id: "evt-detection".to_string(),
+            source: HuntEventSource::Detection,
+            kind: HuntEventKind::DetectionFired,
+            timestamp: Utc.with_ymd_and_hms(2025, 3, 6, 12, 1, 0).unwrap(),
+            summary: "detection fired after containment".to_string(),
+            action_type: Some("containment".to_string()),
+            response_action_id: Some("action-1".to_string()),
+            severity: Some("high".to_string()),
+            raw_ref: "hunt-envelope:evt-detection".to_string(),
+            attributes: serde_json::json!({"finding": "containment escalation"}),
+            ..response_event.clone()
+        };
+
+        let findings =
+            correlate_hunt_events(vec![rule], &[response_event, detection_event]).expect("run");
+        assert_eq!(findings.len(), 1);
+        assert_eq!(
+            findings[0].evidence_event_ids,
+            vec!["evt-response", "evt-detection"]
+        );
     }
 
     #[test]

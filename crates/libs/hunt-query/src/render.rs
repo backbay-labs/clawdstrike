@@ -96,6 +96,9 @@ fn source_color(source: &EventSource) -> Color {
         EventSource::Hubble => Color::Blue,
         EventSource::Receipt => Color::Magenta,
         EventSource::Scan => Color::White,
+        EventSource::Response => Color::Yellow,
+        EventSource::Directory => Color::Green,
+        EventSource::Detection => Color::Red,
     }
 }
 
