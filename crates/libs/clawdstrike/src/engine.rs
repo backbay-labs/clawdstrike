@@ -411,72 +411,13 @@ impl HushEngine {
         }
         let context = &effective_context;
 
-        // After enclave resolution, check if the action is blocked by the enclave's tool surface
-        if let Some(ref enclave) = effective_context.enclave {
-            if let GuardAction::McpTool(tool_name, _) = action {
-                if let Some(ref enclave_mcp) = enclave.mcp {
-                    // Check if the tool is explicitly blocked by the enclave
-                    if enclave_mcp.block.iter().any(|b| tool_matches(tool_name, b)) {
-                        let result = GuardResult::block(
-                            "enclave",
-                            Severity::Error,
-                            format!(
-                                "tool '{}' blocked by enclave profile '{}'",
-                                tool_name,
-                                enclave.profile_id.as_deref().unwrap_or("unknown")
-                            ),
-                        );
-                        let mut state = self.state.write().await;
-                        state.action_count += 1;
-                        state.violation_count += 1;
-                        state.violations.push(ViolationRef {
-                            guard: result.guard.clone(),
-                            severity: format!("{:?}", result.severity),
-                            message: result.message.clone(),
-                            action: None,
-                        });
-                        return Ok(GuardReport {
-                            overall: result.clone(),
-                            per_guard: vec![result],
-                            evaluation_path: None,
-                        });
-                    }
-                    // Check default_action if tool is not in allow list
-                    if let Some(McpDefaultAction::Block) = enclave_mcp.default_action {
-                        if !enclave_mcp.allow.iter().any(|a| tool_matches(tool_name, a)) {
-                            let result = GuardResult::block(
-                                "enclave",
-                                Severity::Error,
-                                format!(
-                                    "tool '{}' not in enclave allow list for profile '{}'",
-                                    tool_name,
-                                    enclave.profile_id.as_deref().unwrap_or("unknown")
-                                ),
-                            );
-                            let mut state = self.state.write().await;
-                            state.action_count += 1;
-                            state.violation_count += 1;
-                            state.violations.push(ViolationRef {
-                                guard: result.guard.clone(),
-                                severity: format!("{:?}", result.severity),
-                                message: result.message.clone(),
-                                action: None,
-                            });
-                            return Ok(GuardReport {
-                                overall: result.clone(),
-                                per_guard: vec![result],
-                                evaluation_path: None,
-                            });
-                        }
-                    }
-                }
-            }
-        }
-        // --- End Origin Enclave Resolution ---
-
         // --- Cross-Origin Isolation Check (Phase 1b) ---
         // Only enforce cross-origin checks when the policy has an `origins` block.
         // Legacy policies without origins should not be affected by origin tracking.
+        //
+        // Session origin establishment MUST happen before the enclave MCP pre-check
+        // so that even if the MCP check blocks, the session origin is tracked and
+        // cross-origin detection works on subsequent calls.
         if self.policy.origins.is_some() {
         // C2 fix: If a session origin was established, any subsequent check
         // WITHOUT an origin must be denied (fail-closed). Otherwise an attacker
@@ -596,6 +537,118 @@ impl HushEngine {
         }
         } // end origins.is_some() guard
         // --- End Cross-Origin Isolation Check ---
+
+        // --- Enclave MCP Tool Surface Pre-Check ---
+        // This runs AFTER session origin tracking so that even if blocked here,
+        // the session origin is properly established for future cross-origin detection.
+        if let Some(ref enclave) = effective_context.enclave {
+            if let GuardAction::McpTool(tool_name, _) = action {
+                if let Some(ref enclave_mcp) = enclave.mcp {
+                    let profile_label = enclave.profile_id.as_deref().unwrap_or("unknown");
+
+                    // 1. Block list takes precedence
+                    if enclave_mcp.block.iter().any(|b| tool_matches(tool_name, b)) {
+                        let result = GuardResult::block(
+                            "enclave",
+                            Severity::Error,
+                            format!("tool '{}' blocked by enclave profile '{}'", tool_name, profile_label),
+                        );
+                        let mut state = self.state.write().await;
+                        state.action_count += 1;
+                        state.violation_count += 1;
+                        state.violations.push(ViolationRef {
+                            guard: result.guard.clone(),
+                            severity: format!("{:?}", result.severity),
+                            message: result.message.clone(),
+                            action: None,
+                        });
+                        return Ok(GuardReport {
+                            overall: result.clone(),
+                            per_guard: vec![result],
+                            evaluation_path: None,
+                        });
+                    }
+
+                    // 2. If allow list is non-empty, it's an allowlist: reject tools not in it
+                    if !enclave_mcp.allow.is_empty()
+                        && !enclave_mcp.allow.iter().any(|a| tool_matches(tool_name, a))
+                    {
+                        let result = GuardResult::block(
+                            "enclave",
+                            Severity::Error,
+                            format!("tool '{}' not in enclave allow list for profile '{}'", tool_name, profile_label),
+                        );
+                        let mut state = self.state.write().await;
+                        state.action_count += 1;
+                        state.violation_count += 1;
+                        state.violations.push(ViolationRef {
+                            guard: result.guard.clone(),
+                            severity: format!("{:?}", result.severity),
+                            message: result.message.clone(),
+                            action: None,
+                        });
+                        return Ok(GuardReport {
+                            overall: result.clone(),
+                            per_guard: vec![result],
+                            evaluation_path: None,
+                        });
+                    }
+
+                    // 3. default_action=Block when allow list is empty
+                    if enclave_mcp.allow.is_empty() {
+                        if let Some(McpDefaultAction::Block) = enclave_mcp.default_action {
+                            let result = GuardResult::block(
+                                "enclave",
+                                Severity::Error,
+                                format!("tool '{}' blocked by default_action for profile '{}'", tool_name, profile_label),
+                            );
+                            let mut state = self.state.write().await;
+                            state.action_count += 1;
+                            state.violation_count += 1;
+                            state.violations.push(ViolationRef {
+                                guard: result.guard.clone(),
+                                severity: format!("{:?}", result.severity),
+                                message: result.message.clone(),
+                                action: None,
+                            });
+                            return Ok(GuardReport {
+                                overall: result.clone(),
+                                per_guard: vec![result],
+                                evaluation_path: None,
+                            });
+                        }
+                    }
+
+                    // 4. require_confirmation: deny with Warning severity so
+                    //    the caller knows approval is needed before proceeding.
+                    if enclave_mcp.require_confirmation.iter().any(|r| tool_matches(tool_name, r)) {
+                        let result = GuardResult::block(
+                            "enclave",
+                            Severity::Warning,
+                            format!(
+                                "tool '{}' requires confirmation per enclave profile '{}'",
+                                tool_name, profile_label
+                            ),
+                        );
+                        let mut state = self.state.write().await;
+                        state.action_count += 1;
+                        state.violation_count += 1;
+                        state.violations.push(ViolationRef {
+                            guard: result.guard.clone(),
+                            severity: format!("{:?}", result.severity),
+                            message: result.message.clone(),
+                            action: None,
+                        });
+                        return Ok(GuardReport {
+                            overall: result.clone(),
+                            per_guard: vec![result],
+                            evaluation_path: None,
+                        });
+                    }
+                }
+            }
+        }
+        // --- End Enclave MCP Tool Surface Pre-Check ---
 
         let mut fast_guards: Vec<&dyn Guard> = Vec::new();
         let mut std_guards: Vec<&dyn Guard> = Vec::new();
@@ -2710,7 +2763,7 @@ posture:
 
         assert!(!report.overall.allowed);
         assert_eq!(report.overall.guard, "enclave");
-        assert!(report.overall.message.contains("not in enclave allow list"));
+        assert!(report.overall.message.contains("blocked by default_action"));
     }
 
     #[tokio::test]
