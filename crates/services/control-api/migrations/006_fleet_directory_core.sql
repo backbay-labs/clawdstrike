@@ -127,6 +127,19 @@ ON principal_memberships(tenant_id, target_kind, target_id, created_at DESC);
 
 -- approvals is created in 002_adaptive_sdr_schema.sql and remains the source table
 -- for approval-linked delegation metadata in the directory model.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'approvals_tenant_id_id_key'
+    ) THEN
+        ALTER TABLE approvals
+            ADD CONSTRAINT approvals_tenant_id_id_key
+            UNIQUE (tenant_id, id);
+    END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS grants (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
@@ -135,7 +148,7 @@ CREATE TABLE IF NOT EXISTS grants (
     grant_type TEXT NOT NULL CHECK (grant_type IN ('delegation', 'approval', 'session_override')),
     capabilities JSONB NOT NULL DEFAULT '[]'::jsonb,
     status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'expired', 'revoked')),
-    source_approval_id UUID REFERENCES approvals(id) ON DELETE SET NULL,
+    source_approval_id UUID,
     source_session_id TEXT,
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     expires_at TIMESTAMPTZ,
@@ -149,7 +162,11 @@ CREATE TABLE IF NOT EXISTS grants (
     CONSTRAINT grants_subject_principal_tenant_fk
         FOREIGN KEY (tenant_id, subject_principal_id)
         REFERENCES principals(tenant_id, id)
-        ON DELETE CASCADE
+        ON DELETE CASCADE,
+    CONSTRAINT grants_source_approval_tenant_fk
+        FOREIGN KEY (tenant_id, source_approval_id)
+        REFERENCES approvals(tenant_id, id)
+        ON DELETE SET NULL (source_approval_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_grants_tenant_subject

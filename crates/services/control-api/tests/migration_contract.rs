@@ -85,6 +85,11 @@ fn fleet_directory_migrations_define_core_tables_and_backfills() {
         "006 migration must scope grant principal links by tenant"
     );
     assert!(
+        core_sql.contains("grants_source_approval_tenant_fk")
+            && core_sql.contains("REFERENCES approvals(tenant_id, id)"),
+        "006 migration must scope grant approval provenance by tenant"
+    );
+    assert!(
         core_sql.contains("CREATE TABLE IF NOT EXISTS delegation_edges"),
         "006 migration must create delegation edge table"
     );
@@ -353,6 +358,11 @@ fn hunt_backend_migration_adds_event_store_and_saved_hunts() {
             || sql.contains("CREATE INDEX IF NOT EXISTS idx_hunt_events_detection_ids"),
         "012 migration must index detection_ids for investigation joins"
     );
+    assert!(
+        sql.contains("hunt_envelopes_tenant_id_id_key")
+            && sql.contains("REFERENCES hunt_envelopes(tenant_id, id)"),
+        "012 migration must keep hunt event -> envelope links tenant-scoped"
+    );
 }
 
 #[test]
@@ -385,8 +395,9 @@ fn case_evidence_migration_adds_case_bundle_schema() {
         "013 migration must deduplicate case artifact references"
     );
     assert!(
-        sql.contains("CREATE UNIQUE INDEX IF NOT EXISTS idx_fleet_cases_tenant_id"),
-        "013 migration must make (tenant_id, id) referenceable for downstream FKs"
+        sql.contains("fleet_cases_tenant_id_id_key")
+            && sql.contains("REFERENCES fleet_cases(tenant_id, id)"),
+        "013 migration must keep case child tables tenant-scoped"
     );
 }
 
@@ -406,6 +417,11 @@ fn delegation_graph_migration_adds_grant_ledger_and_graph_tables() {
     assert!(
         sql.contains("CREATE TABLE IF NOT EXISTS delegation_graph_edges"),
         "014 migration must define graph edges"
+    );
+    assert!(
+        sql.contains("fleet_grants_parent_tenant_fk")
+            && sql.contains("REFERENCES fleet_grants(tenant_id, id)"),
+        "014 migration must keep parent grant lineage tenant-scoped"
     );
 }
 

@@ -11,13 +11,14 @@ CREATE TABLE IF NOT EXISTS hunt_envelopes (
     raw_envelope JSONB NOT NULL,
     signature_valid BOOLEAN,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT hunt_envelopes_tenant_id_id_key UNIQUE (tenant_id, id),
     UNIQUE (tenant_id, raw_ref)
 );
 
 CREATE TABLE IF NOT EXISTS hunt_events (
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     event_id TEXT NOT NULL,
-    envelope_id UUID REFERENCES hunt_envelopes(id) ON DELETE SET NULL,
+    envelope_id UUID,
     source TEXT NOT NULL,
     kind TEXT NOT NULL,
     timestamp TIMESTAMPTZ NOT NULL,
@@ -46,6 +47,10 @@ CREATE TABLE IF NOT EXISTS hunt_events (
     raw_ref TEXT NOT NULL,
     attributes JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT hunt_events_envelope_tenant_fk
+        FOREIGN KEY (tenant_id, envelope_id)
+        REFERENCES hunt_envelopes(tenant_id, id)
+        ON DELETE SET NULL (envelope_id),
     PRIMARY KEY (tenant_id, event_id)
 );
 

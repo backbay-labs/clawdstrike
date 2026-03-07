@@ -13,20 +13,19 @@ CREATE TABLE IF NOT EXISTS fleet_cases (
     tags TEXT[] NOT NULL DEFAULT '{}',
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT fleet_cases_tenant_id_id_key UNIQUE (tenant_id, id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_fleet_cases_tenant_updated
     ON fleet_cases(tenant_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_fleet_cases_tenant_status
     ON fleet_cases(tenant_id, status, updated_at DESC);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_fleet_cases_tenant_id
-    ON fleet_cases(tenant_id, id);
 
 CREATE TABLE IF NOT EXISTS fleet_case_artifacts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    case_id UUID NOT NULL REFERENCES fleet_cases(id) ON DELETE CASCADE,
+    case_id UUID NOT NULL,
     artifact_kind TEXT NOT NULL CHECK (
         artifact_kind IN (
             'fleet_event',
@@ -46,6 +45,10 @@ CREATE TABLE IF NOT EXISTS fleet_case_artifacts (
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     added_by TEXT NOT NULL,
     added_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT fleet_case_artifacts_case_tenant_fk
+        FOREIGN KEY (tenant_id, case_id)
+        REFERENCES fleet_cases(tenant_id, id)
+        ON DELETE CASCADE,
     UNIQUE (case_id, artifact_kind, artifact_id)
 );
 
@@ -57,7 +60,7 @@ CREATE INDEX IF NOT EXISTS idx_fleet_case_artifacts_tenant_kind
 CREATE TABLE IF NOT EXISTS fleet_case_events (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    case_id UUID NOT NULL REFERENCES fleet_cases(id) ON DELETE CASCADE,
+    case_id UUID NOT NULL,
     event_kind TEXT NOT NULL CHECK (
         event_kind IN (
             'case_created',
@@ -71,7 +74,11 @@ CREATE TABLE IF NOT EXISTS fleet_case_events (
     ),
     actor_id TEXT NOT NULL,
     payload JSONB NOT NULL DEFAULT '{}'::jsonb,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT fleet_case_events_case_tenant_fk
+        FOREIGN KEY (tenant_id, case_id)
+        REFERENCES fleet_cases(tenant_id, id)
+        ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_fleet_case_events_case_created
@@ -80,7 +87,7 @@ CREATE INDEX IF NOT EXISTS idx_fleet_case_events_case_created
 CREATE TABLE IF NOT EXISTS fleet_evidence_bundles (
     export_id TEXT PRIMARY KEY,
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    case_id UUID REFERENCES fleet_cases(id) ON DELETE SET NULL,
+    case_id UUID,
     status TEXT NOT NULL CHECK (status IN ('processing', 'completed', 'failed', 'expired')),
     requested_by TEXT NOT NULL,
     requested_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -93,7 +100,11 @@ CREATE TABLE IF NOT EXISTS fleet_evidence_bundles (
     retention_days INTEGER NOT NULL,
     filters JSONB NOT NULL DEFAULT '{}'::jsonb,
     artifact_counts JSONB NOT NULL DEFAULT '{}'::jsonb,
-    metadata JSONB NOT NULL DEFAULT '{}'::jsonb
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    CONSTRAINT fleet_evidence_bundles_case_tenant_fk
+        FOREIGN KEY (tenant_id, case_id)
+        REFERENCES fleet_cases(tenant_id, id)
+        ON DELETE SET NULL (case_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_fleet_evidence_bundles_case_requested

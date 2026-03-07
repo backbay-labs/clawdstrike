@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS fleet_grants (
         CHECK (grant_type IN ('delegation', 'approval', 'session_override')),
     audience TEXT NOT NULL,
     token_jti TEXT NOT NULL,
-    parent_grant_id UUID REFERENCES fleet_grants(id) ON DELETE SET NULL,
+    parent_grant_id UUID,
     parent_token_jti TEXT,
     delegation_depth INTEGER NOT NULL DEFAULT 0,
     lineage_chain JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -30,6 +30,11 @@ CREATE TABLE IF NOT EXISTS fleet_grants (
     revoke_reason TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT fleet_grants_tenant_id_id_key UNIQUE (tenant_id, id),
+    CONSTRAINT fleet_grants_parent_tenant_fk
+        FOREIGN KEY (tenant_id, parent_grant_id)
+        REFERENCES fleet_grants(tenant_id, id)
+        ON DELETE SET NULL (parent_grant_id),
     UNIQUE (tenant_id, token_jti)
 );
 
