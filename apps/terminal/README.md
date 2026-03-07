@@ -1,22 +1,21 @@
 # ClawdStrike TUI
 
-**Security-aware orchestration engine for AI coding agents**
+**Local-first security operations cockpit for AI agent workflows**
 
-ClawdStrike TUI dispatches coding tasks to native AI CLIs (Codex, Claude Code, OpenCode) with intelligent routing, parallel execution with voting, and quality gates — all with ambient runtime security enforcement via [hushd](../../crates/services/hushd/).
+ClawdStrike TUI is a beta operator cockpit for local security review of AI agent activity. It combines local runtime health, hushd security state, supported hunt workflows, and evidence handoff into one terminal interface, with optional task dispatch still available through the same CLI.
 
 ## Features
 
-- **Intelligent Routing** - Route tasks based on risk, size, labels, and prompt patterns
-- **Speculate+Vote** - Run multiple agents in parallel, select best result
-- **Quality Gates** - pytest, mypy, ruff, and ClawdStrike policy checks
+- **Operator Dashboard** - Local health, hushd status, stream freshness, active investigation state
+- **Security Surfaces** - Integrations, security overview, audit log, and policy viewer
+- **Supported Hunt Loop** - watch, scan, timeline, query, report, and report history
+- **Evidence Handoff** - Export markdown + JSON bundles with receipt/audit trace metadata
 - **Workcell Isolation** - Git worktree sandboxes for safe concurrent execution
-- **Security Integration** - Live hushd connection with SSE event streaming, audit log, and policy viewer
-- **Telemetry** - Execution tracking with rollout persistence
-- **Interactive TUI** - Full-screen gothic terminal dashboard with security indicators
+- **Optional Agent Actions** - dispatch, speculate, gates, beads, and rollout status
 
 ## Interactive TUI
 
-Running `clawdstrike` without arguments launches an interactive terminal UI:
+Run the TUI through the main CLI with `clawdstrike tui`, or use the package-local binary as `clawdstrike-tui`:
 
 ```
  ██████╗██╗      █████╗ ██╗    ██╗██████╗
@@ -37,18 +36,21 @@ Running `clawdstrike` without arguments launches an interactive terminal UI:
 
 | Key | Action |
 |-----|--------|
-| `d` | Quick dispatch |
-| `s` | Quick speculate |
+| `Enter` | Dispatch the current prompt |
+| `Tab` | Cycle home focus between prompt and actions |
+| `Esc` | Toggle prompt and nav focus |
+| `Ctrl+N` | Cycle agents |
+| `Ctrl+P` | Open command palette |
+| `Ctrl+S` | Security overview |
+| `S/A/P/I` | Security / audit / policy / integrations in nav focus |
+| `W/X/T/Q/E/H` | Watch / scan / timeline / query / report / history in nav focus |
 | `g` | Run quality gates |
 | `b` | View work graph (beads) |
 | `r` | View active rollouts |
-| `Ctrl+S` | Security overview |
-| `a` | Audit log |
-| `p` | Policy viewer |
-| `h` | Help |
+| `?` | Help |
 | `q` | Quit |
 | `↑/↓` or `j/k` | Navigate / scroll |
-| `Enter` | Select item |
+| `↑↓←→` | Move across home actions after `Tab` |
 
 ## Security Integration
 
@@ -71,31 +73,99 @@ cd apps/terminal
 bun install
 ```
 
+The beta TUI runtime currently requires `bun` on the machine running `clawdstrike tui`.
+
+### Wrapper And Doctor Notes
+
+- `clawdstrike tui doctor --json` reports the active runtime under `runtime.source`, `runtime.script_path`, and `runtime.bun_version`.
+- The Rust wrapper resolves the TUI runtime in this order:
+  1. `CLAWDSTRIKE_TUI_DIR`
+  2. installed bundle beside the CLI binary at `../share/clawdstrike/tui/cli.js`
+  3. repo source fallback at `apps/terminal/src/cli/index.ts`
+- If `bun` on `PATH` is a crashing shim layer, `doctor` will still show the selected runtime, but launch can fail before the TUI starts. In that case, put the real Bun binary earlier on `PATH` than the shim.
+- A concrete failure we hit during dogfooding was a `~/.proto/shims/bun` wrapper panic on macOS. Pointing `PATH` at the real Bun binary fixed the issue without changing any TUI code.
+
+## Codex Agent Pack
+
+The terminal subtree includes a Codex agent pack for live dogfooding, UI polish,
+release hardening, and multi-agent debugging.
+
+- Usage guide: [docs/codex-agent-pack.md](./docs/codex-agent-pack.md)
+- Repo-wide swarm playbook: [../../docs/plans/multi-agent/codex-swarm-playbook.md](../../docs/plans/multi-agent/codex-swarm-playbook.md)
+- Project config: [.codex/config.toml](../../.codex/config.toml)
+- Terminal working agreement: [AGENTS.md](./AGENTS.md)
+
+## Dispatch UX Planning Docs
+
+These docs describe planned dispatch work, not current shipped behavior.
+
+Recommended reading order:
+
+1. Product spec: [docs/dispatch-ux-spec.md](./docs/dispatch-ux-spec.md)
+2. Implementation plan: [docs/dispatch-ux-plan.md](./docs/dispatch-ux-plan.md)
+3. Phase 1 engineering breakdown: [docs/dispatch-phase1-engineering.md](./docs/dispatch-phase1-engineering.md)
+4. Later-phase overview: [docs/dispatch-phases2-5-overview.md](./docs/dispatch-phases2-5-overview.md)
+5. Phase 2 engineering breakdown: [docs/dispatch-phase2-engineering.md](./docs/dispatch-phase2-engineering.md)
+6. Phase 3 engineering breakdown: [docs/dispatch-phase3-engineering.md](./docs/dispatch-phase3-engineering.md)
+7. Phase 4 engineering breakdown: [docs/dispatch-phase4-engineering.md](./docs/dispatch-phase4-engineering.md)
+8. Phase 5 engineering breakdown: [docs/dispatch-phase5-engineering.md](./docs/dispatch-phase5-engineering.md)
+9. Embedded PTY follow-on spec: [docs/embedded-pty-surface-spec.md](./docs/embedded-pty-surface-spec.md)
+10. Embedded PTY follow-on plan: [docs/embedded-pty-surface-plan.md](./docs/embedded-pty-surface-plan.md)
+11. Embedded PTY Phase 6 engineering breakdown: [docs/embedded-pty-phase6-engineering.md](./docs/embedded-pty-phase6-engineering.md)
+
 ## CLI Usage
 
 ```bash
-# Run via bun
-bun run cli <command>
+# Run via the main Rust CLI
+clawdstrike tui <command>
 
-# Or link globally
+# In a repo checkout, this exercises the current branch even if a globally
+# installed clawdstrike binary is older:
+cargo run -q -p hush-cli --bin clawdstrike -- tui --cwd apps/terminal
+
+# Or run the package-local TUI binary
+bun run cli <command>
 bun link
-clawdstrike <command>
+clawdstrike-tui <command>
 ```
 
 ### Commands
 
 ```bash
-clawdstrike                         # Launch interactive TUI
-clawdstrike dispatch <prompt>       # Submit task for AI execution
-clawdstrike speculate <prompt>      # Run with multiple agents
-clawdstrike gate [gates...]         # Run quality gates
-clawdstrike beads list              # List issues
-clawdstrike beads ready             # Get ready issues
-clawdstrike beads create <title>    # Create issue
-clawdstrike status                  # Show kernel status
-clawdstrike init                    # Initialize in current directory
-clawdstrike help                    # Show CLI help
+clawdstrike tui                     # Launch interactive TUI
+clawdstrike tui dispatch <prompt>   # Submit task for AI execution
+clawdstrike tui speculate <prompt>  # Run with multiple agents
+clawdstrike tui gate [gates...]     # Run quality gates
+clawdstrike tui beads list          # List issues
+clawdstrike tui beads ready         # Get ready issues
+clawdstrike tui beads create <title> # Create issue
+clawdstrike tui status              # Show kernel status
+clawdstrike tui init                # Initialize in current directory
+clawdstrike tui doctor              # Inspect local environment and services
+clawdstrike tui help                # Show CLI help
 ```
+
+### Supported vs Experimental
+
+Supported beta screens:
+- main dashboard
+- integrations
+- security
+- audit
+- policy
+- result
+- hunt watch
+- hunt scan
+- hunt timeline
+- hunt query
+- hunt report
+- hunt report history
+
+Experimental screens:
+- hunt rule builder
+- hunt diff
+- hunt mitre
+- hunt playbook
 
 ### Options
 
@@ -116,6 +186,11 @@ clawdstrike help                    # Show CLI help
 # Simple dispatch
 clawdstrike dispatch "Fix the null pointer in auth.ts"
 
+# Operator bootstrap
+clawdstrike tui init
+clawdstrike tui doctor --json
+clawdstrike tui
+
 # Force Claude toolchain
 clawdstrike dispatch -t claude "Add unit tests for utils.ts"
 
@@ -130,6 +205,8 @@ clawdstrike beads list -j
 ```
 
 ## Programmatic Usage
+
+The package API remains unstable during beta. The supported public interface is `clawdstrike tui` through the main Rust CLI.
 
 ```typescript
 import {
@@ -271,7 +348,7 @@ src/
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CLAWDSTRIKE_HUSHD_URL` | `http://127.0.0.1:8080` | hushd daemon URL |
+| `CLAWDSTRIKE_HUSHD_URL` | `http://127.0.0.1:9876` | hushd daemon URL |
 | `CLAWDSTRIKE_SANDBOX` | - | Sandbox mode for codex adapter |
 | `NO_COLOR` | - | Disable color output |
 

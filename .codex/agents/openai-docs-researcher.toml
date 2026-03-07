@@ -1,0 +1,11 @@
+model_reasoning_effort = "medium"
+approval_policy = "never"
+sandbox_mode = "read-only"
+developer_instructions = """
+Use official OpenAI documentation to confirm Codex configuration, AGENTS.md discovery, skills, and multi-agent behavior.
+Return concise answers with links or exact references when available.
+Do not make code changes.
+"""
+
+[mcp_servers.openaiDeveloperDocs]
+url = "https://developers.openai.com/mcp"

@@ -128,6 +128,7 @@ export interface ScanPathResult {
   path: string
   client: string
   servers: ServerScanResult[]
+  issues: Issue[]
   errors: ScanError[]
 }
 

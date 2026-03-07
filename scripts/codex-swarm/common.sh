@@ -6,38 +6,86 @@ swarm_repo_root() {
   git -C "${1:-$(pwd)}" rev-parse --show-toplevel
 }
 
-swarm_primary_repo_root() {
+swarm_repo_parent_dir() {
   local repo_root
-  local common_dir
   repo_root="$(swarm_repo_root "${1:-$(pwd)}")"
-  common_dir="$(git -C "$repo_root" rev-parse --path-format=absolute --git-common-dir)"
-  dirname "$common_dir"
+  (
+    cd "$repo_root/.."
+    pwd
+  )
+}
+
+swarm_repo_name() {
+  local repo_root
+  local repo_parent
+  local parent_name
+  repo_root="$(swarm_repo_root "${1:-$(pwd)}")"
+  repo_parent="$(swarm_repo_parent_dir "$repo_root")"
+  parent_name="$(basename "$repo_parent")"
+
+  case "$parent_name" in
+    *-worktrees)
+      printf '%s\n' "${parent_name%-worktrees}"
+      ;;
+    *-orchestration)
+      printf '%s\n' "${parent_name%-orchestration}"
+      ;;
+    *)
+      basename "$repo_root"
+      ;;
+  esac
 }
 
 swarm_worktrees_dir() {
-  local primary_root
-  primary_root="$(swarm_primary_repo_root "${1:-$(pwd)}")"
+  local repo_root
+  local repo_parent
+  local parent_name
+  local repo_name
+  repo_root="$(swarm_repo_root "${1:-$(pwd)}")"
+  repo_parent="$(swarm_repo_parent_dir "$repo_root")"
+  parent_name="$(basename "$repo_parent")"
+  repo_name="$(swarm_repo_name "$repo_root")"
   if [[ -n "${CLAWDSTRIKE_SWARM_WORKTREES_DIR:-}" ]]; then
     printf '%s\n' "$CLAWDSTRIKE_SWARM_WORKTREES_DIR"
     return
   fi
-  (
-    cd "$primary_root/.."
-    printf '%s/clawdstrike-worktrees\n' "$PWD"
-  )
+  case "$parent_name" in
+    *-worktrees)
+      printf '%s\n' "$repo_parent"
+      ;;
+    *-orchestration)
+      printf '%s/%s-worktrees\n' "$(dirname "$repo_parent")" "$repo_name"
+      ;;
+    *)
+      printf '%s/%s-worktrees\n' "$repo_parent" "$repo_name"
+      ;;
+  esac
 }
 
 swarm_orchestration_dir() {
-  local primary_root
-  primary_root="$(swarm_primary_repo_root "${1:-$(pwd)}")"
+  local repo_root
+  local repo_parent
+  local parent_name
+  local repo_name
+  repo_root="$(swarm_repo_root "${1:-$(pwd)}")"
+  repo_parent="$(swarm_repo_parent_dir "$repo_root")"
+  parent_name="$(basename "$repo_parent")"
+  repo_name="$(swarm_repo_name "$repo_root")"
   if [[ -n "${CLAWDSTRIKE_SWARM_ORCH_DIR:-}" ]]; then
     printf '%s\n' "$CLAWDSTRIKE_SWARM_ORCH_DIR"
     return
   fi
-  (
-    cd "$primary_root/.."
-    printf '%s/clawdstrike-orchestration\n' "$PWD"
-  )
+  case "$parent_name" in
+    *-orchestration)
+      printf '%s\n' "$repo_parent"
+      ;;
+    *-worktrees)
+      printf '%s/%s-orchestration\n' "$(dirname "$repo_parent")" "$repo_name"
+      ;;
+    *)
+      printf '%s/%s-orchestration\n' "$repo_parent" "$repo_name"
+      ;;
+  esac
 }
 
 swarm_lane_table() {
@@ -64,10 +112,23 @@ swarm_lane_field() {
       next
     }
     $1 == lane {
-      print $(idx[field])
+      if (field in idx) {
+        print $(idx[field])
+      }
       exit
     }
   ' "$(swarm_lane_table "$repo_root")"
+}
+
+swarm_lane_docs() {
+  local lane="$1"
+  local repo_root="${2:-$(swarm_repo_root)}"
+  local docs
+  docs="$(swarm_lane_field "$lane" docs "$repo_root")"
+  if [[ -z "$docs" ]]; then
+    return 0
+  fi
+  printf '%s\n' "$docs" | tr ',' '\n' | sed '/^$/d'
 }
 
 swarm_require_lane() {
@@ -143,6 +204,83 @@ swarm_assert_codex() {
   fi
 }
 
+swarm_codex_profile_args() {
+  local profile="$1"
+  case "$profile" in
+    swarm-docs)
+      printf '%s\n' \
+        --enable \
+        multi_agent \
+        --sandbox \
+        read-only \
+        -c \
+        'model_reasoning_effort="high"'
+      ;;
+    swarm-orchestrator)
+      printf '%s\n' \
+        --enable \
+        multi_agent \
+        --sandbox \
+        workspace-write \
+        -c \
+        'model_reasoning_effort="high"'
+      ;;
+    swarm-worker)
+      printf '%s\n' \
+        --enable \
+        multi_agent \
+        --sandbox \
+        workspace-write \
+        -c \
+        'model_reasoning_effort="medium"'
+      ;;
+    swarm-review)
+      printf '%s\n' \
+        --enable \
+        multi_agent \
+        --sandbox \
+        read-only \
+        -c \
+        'model_reasoning_effort="high"'
+      ;;
+    *)
+      printf 'Unknown Codex profile: %s\n' "$profile" >&2
+      exit 1
+      ;;
+  esac
+}
+
+swarm_codex_extra_args() {
+  python3 - <<'PY'
+import os
+import shlex
+
+value = os.environ.get("CLAWDSTRIKE_SWARM_CODEX_ARGS", "").strip()
+for arg in shlex.split(value):
+    print(arg)
+PY
+}
+
+swarm_codex_extra_overrides_sandbox() {
+  python3 - <<'PY'
+import os
+import shlex
+
+args = shlex.split(os.environ.get("CLAWDSTRIKE_SWARM_CODEX_ARGS", "").strip())
+i = 0
+while i < len(args):
+    arg = args[i]
+    if arg in ("-s", "--sandbox"):
+        print("true")
+        raise SystemExit(0)
+    if arg.startswith("--sandbox="):
+        print("true")
+        raise SystemExit(0)
+    i += 2 if arg in ("-a", "--ask-for-approval", "-s", "--sandbox") else 1
+print("false")
+PY
+}
+
 swarm_run_lane_bootstrap() {
   local lane="$1"
   local repo_root="${2:-$(swarm_repo_root)}"
@@ -182,6 +320,36 @@ swarm_pid_is_running() {
   kill -0 "$pid" >/dev/null 2>&1
 }
 
+swarm_wait_for_background_start() {
+  local pid_file="$1"
+  local final_file="$2"
+  local log_file="$3"
+  local stderr_file="$4"
+  local exit_file="$5"
+  local attempts="${6:-10}"
+  local attempt
+
+  for ((attempt = 0; attempt < attempts; attempt++)); do
+    if swarm_pid_is_running "$pid_file" || [[ -f "$final_file" ]] || [[ -s "$log_file" ]] || [[ -s "$stderr_file" ]] || [[ -f "$exit_file" ]]; then
+      return 0
+    fi
+    sleep 1
+  done
+
+  return 1
+}
+
+swarm_prompt_docs_block() {
+  local lane="$1"
+  local repo_root="${2:-$(swarm_repo_root)}"
+  {
+    printf '%s\n' 'docs/plans/multi-agent/codex-swarm-playbook.md'
+    printf '%s\n' '.codex/swarm/lanes.tsv'
+    printf '%s\n' '.codex/swarm/waves.tsv'
+    swarm_lane_docs "$lane" "$repo_root"
+  } | awk 'NF && !seen[$0]++ { print "- " $0 }'
+}
+
 swarm_write_lane_prompt() {
   local lane="$1"
   local prompt_file="$2"
@@ -189,53 +357,48 @@ swarm_write_lane_prompt() {
   local repo_root="${4:-$(swarm_repo_root)}"
   local brief_id
   local description
+  local docs_block
 
   swarm_require_lane "$lane" "$repo_root"
   brief_id="$(swarm_lane_field "$lane" brief_id "$repo_root")"
   description="$(swarm_lane_field "$lane" description "$repo_root")"
+  docs_block="$(swarm_prompt_docs_block "$lane" "$repo_root")"
 
   if [[ "$lane" == "orch" ]]; then
-    cat > "$prompt_file" <<EOF
+    cat > "$prompt_file" <<EOF_PROMPT
 Use \$clawdstrike-swarm-supervisor.
 
 Current lane: ORCH.
 Lane purpose: ${description}
 
 Read these docs first:
-- docs/src/fleet-security/execution-orchestration.md
-- docs/src/fleet-security/workstream-map.md
-- docs/src/fleet-security/dependency-graph.md
-- docs/src/fleet-security/verification-matrix.md
-- docs/src/fleet-security/codex-cli-playbook.md
-- docs/src/fleet-security/agent-briefs.md
+${docs_block}
 
 Operate as the orchestrator lane only.
 
 Requirements:
-- own shared wiring, review, merge sequencing, and wave advancement
+- own shared wiring, review, merge sequencing, wave advancement, and swarm metadata
 - do not drift into implementing a worker lane unless the operator explicitly redirects you
-- use the workstream docs as the source of truth
-- if a worker lane completed, inspect the handoff and suggest the next review or merge action
+- keep .codex/swarm/lanes.tsv and .codex/swarm/waves.tsv aligned with reality
+- inspect repo state and orchestration artifacts before deciding the next action
 
 Operator note:
 ${note:-No extra operator note. Start by checking repo state and active orchestration artifacts.}
-EOF
+EOF_PROMPT
     return
   fi
 
-  cat > "$prompt_file" <<EOF
+  cat > "$prompt_file" <<EOF_PROMPT
 Use \$clawdstrike-lane-executor.
 
 Current lane: ${brief_id}.
 Lane purpose: ${description}
 
 Read these docs first:
-- docs/src/fleet-security/workstream-map.md
-- docs/src/fleet-security/verification-matrix.md
-- docs/src/fleet-security/agent-briefs.md
+${docs_block}
 
 Execution requirements:
-- follow the ${brief_id} brief in docs/src/fleet-security/agent-briefs.md
+- follow the lane docs above as the source of truth
 - stay within lane-owned files
 - do not edit orchestrator-owned shared registration files
 - inspect the existing code before editing
@@ -244,5 +407,5 @@ Execution requirements:
 
 Operator note:
 ${note:-No extra operator note. Start from the current branch state and execute the lane cleanly.}
-EOF
+EOF_PROMPT
 }

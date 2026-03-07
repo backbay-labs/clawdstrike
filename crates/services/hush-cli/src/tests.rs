@@ -175,6 +175,18 @@ mod cli_parsing {
     }
 
     #[test]
+    fn test_tui_command_parses_with_passthrough_args() {
+        let cli = Cli::parse_from(["hush", "tui", "doctor", "--json"]);
+
+        match cli.command {
+            Commands::Tui { args } => {
+                assert_eq!(args, vec!["doctor".to_string(), "--json".to_string()]);
+            }
+            _ => panic!("Expected Tui command"),
+        }
+    }
+
+    #[test]
     fn test_policy_show_default_ruleset() {
         let cli = Cli::parse_from(["hush", "policy", "show"]);
 
@@ -3565,11 +3577,13 @@ mod hunt_cli_parsing {
         let cli = Cli::parse_from(["hush", "hunt", "watch", "--rules", "rule.yaml"]);
 
         match cli.command {
-            Commands::Hunt { command } => match command {
+            Commands::Hunt { command } => match *command {
                 HuntCommands::Watch {
                     rules,
                     nats_url,
                     nats_creds,
+                    nats_token,
+                    nats_nkey_seed,
                     max_window,
                     json,
                     no_color,
@@ -3577,6 +3591,8 @@ mod hunt_cli_parsing {
                     assert_eq!(rules, vec!["rule.yaml"]);
                     assert_eq!(nats_url, "nats://localhost:4222");
                     assert!(nats_creds.is_none());
+                    assert!(nats_token.is_none());
+                    assert!(nats_nkey_seed.is_none());
                     assert_eq!(max_window, "5m");
                     assert!(!json);
                     assert!(!no_color);
@@ -3604,7 +3620,7 @@ mod hunt_cli_parsing {
         ]);
 
         match cli.command {
-            Commands::Hunt { command } => match command {
+            Commands::Hunt { command } => match *command {
                 HuntCommands::Watch {
                     rules,
                     max_window,
@@ -3616,6 +3632,39 @@ mod hunt_cli_parsing {
                     assert_eq!(max_window, "10m");
                     assert!(json);
                     assert!(no_color);
+                }
+                _ => panic!("Expected Watch command"),
+            },
+            _ => panic!("Expected Hunt command"),
+        }
+    }
+
+    #[test]
+    fn hunt_watch_parses_token_and_nkey_auth() {
+        let cli = Cli::parse_from([
+            "hush",
+            "hunt",
+            "watch",
+            "--rules",
+            "rule.yaml",
+            "--nats-token",
+            "token-123",
+            "--nats-nkey-seed",
+            "SUAAAAABBBBBBCCCCCCDDDDDDEEEEEFFFFFGGGGGHHHHH",
+        ]);
+
+        match cli.command {
+            Commands::Hunt { command } => match *command {
+                HuntCommands::Watch {
+                    nats_token,
+                    nats_nkey_seed,
+                    ..
+                } => {
+                    assert_eq!(nats_token.as_deref(), Some("token-123"));
+                    assert_eq!(
+                        nats_nkey_seed.as_deref(),
+                        Some("SUAAAAABBBBBBCCCCCCDDDDDDEEEEEFFFFFGGGGGHHHHH")
+                    );
                 }
                 _ => panic!("Expected Watch command"),
             },
@@ -3644,7 +3693,7 @@ mod hunt_cli_parsing {
         ]);
 
         match cli.command {
-            Commands::Hunt { command } => match command {
+            Commands::Hunt { command } => match *command {
                 HuntCommands::Correlate {
                     rules,
                     source,
@@ -3674,7 +3723,7 @@ mod hunt_cli_parsing {
         let cli = Cli::parse_from(["hush", "hunt", "correlate", "--rules", "r.yaml"]);
 
         match cli.command {
-            Commands::Hunt { command } => match command {
+            Commands::Hunt { command } => match *command {
                 HuntCommands::Correlate {
                     rules,
                     source,
@@ -3722,7 +3771,7 @@ mod hunt_cli_parsing {
         ]);
 
         match cli.command {
-            Commands::Hunt { command } => match command {
+            Commands::Hunt { command } => match *command {
                 HuntCommands::Ioc {
                     feed,
                     stix,
@@ -3749,7 +3798,7 @@ mod hunt_cli_parsing {
         let cli = Cli::parse_from(["hush", "hunt", "ioc", "--feed", "iocs.txt"]);
 
         match cli.command {
-            Commands::Hunt { command } => match command {
+            Commands::Hunt { command } => match *command {
                 HuntCommands::Ioc {
                     feed,
                     stix,
@@ -3816,6 +3865,8 @@ mod hunt_contract {
                 nl: None,
                 nats_url: "nats://localhost:4222".to_string(),
                 nats_creds: None,
+                nats_token: None,
+                nats_nkey_seed: None,
                 offline: true,
                 local_dir: None,
                 verify: false,
@@ -3890,6 +3941,8 @@ output:
                 nl: None,
                 nats_url: "nats://localhost:4222".to_string(),
                 nats_creds: None,
+                nats_token: None,
+                nats_nkey_seed: None,
                 offline: true,
                 local_dir: Some(vec![local_dir.to_string_lossy().to_string()]),
                 verify: false,
@@ -3942,6 +3995,8 @@ output:
                 nl: None,
                 nats_url: "nats://localhost:4222".to_string(),
                 nats_creds: None,
+                nats_token: None,
+                nats_nkey_seed: None,
                 offline: true,
                 local_dir: None,
                 verify: false,
@@ -3985,6 +4040,8 @@ output:
                 limit: 100,
                 nats_url: "nats://localhost:4222".to_string(),
                 nats_creds: None,
+                nats_token: None,
+                nats_nkey_seed: None,
                 offline: true,
                 local_dir: None,
                 verify: false,
@@ -4035,6 +4092,8 @@ output:
                 limit: 100,
                 nats_url: "nats://localhost:4222".to_string(),
                 nats_creds: None,
+                nats_token: None,
+                nats_nkey_seed: None,
                 offline: true,
                 local_dir: Some(vec![local_dir.to_string_lossy().to_string()]),
                 verify: false,
@@ -4081,6 +4140,8 @@ output:
                 limit: 100,
                 nats_url: "nats://localhost:4222".to_string(),
                 nats_creds: None,
+                nats_token: None,
+                nats_nkey_seed: None,
                 offline: true,
                 local_dir: None,
                 verify: false,
@@ -4140,6 +4201,8 @@ output:
                 limit: 100,
                 nats_url: "nats://localhost:4222".to_string(),
                 nats_creds: None,
+                nats_token: None,
+                nats_nkey_seed: None,
                 offline: true,
                 local_dir: Some(vec![local_dir.to_string_lossy().to_string()]),
                 verify: false,
@@ -4173,6 +4236,8 @@ output:
                 rules: vec![],
                 nats_url: "nats://localhost:4222".to_string(),
                 nats_creds: None,
+                nats_token: None,
+                nats_nkey_seed: None,
                 max_window: "5m".to_string(),
                 json: true,
                 no_color: true,
@@ -4224,6 +4289,8 @@ output:
                 rules: vec![rule_path.to_string_lossy().to_string()],
                 nats_url: "nats://localhost:4222".to_string(),
                 nats_creds: None,
+                nats_token: None,
+                nats_nkey_seed: None,
                 max_window: "invalid".to_string(),
                 json: true,
                 no_color: true,
@@ -4267,6 +4334,8 @@ output:
                 nl: None,
                 nats_url: "nats://localhost:4222".to_string(),
                 nats_creds: None,
+                nats_token: None,
+                nats_nkey_seed: None,
                 offline: true,
                 local_dir: None,
                 verify: false,

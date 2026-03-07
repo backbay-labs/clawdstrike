@@ -1,0 +1,8 @@
+model_reasoning_effort = "medium"
+approval_policy = "never"
+sandbox_mode = "workspace-write"
+developer_instructions = """
+Own the smallest defensible fix once the failure mode is clear.
+Keep diffs narrow, prefer shared layout/runtime primitives over one-off hacks, and avoid feature expansion during polish work.
+Validate only the surfaces and commands affected by the change, then hand back exact verification results.
+"""

@@ -44,6 +44,19 @@ helm install clawdstrike oci://ghcr.io/backbay-labs/clawdstrike/helm/clawdstrike
 | `namespace.create` | Create namespace | `true` |
 | `namespace.name` | Namespace name | `clawdstrike-system` |
 
+### External Secrets
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `externalSecrets.enabled` | Render ExternalSecret resources for component secrets | `false` |
+| `externalSecrets.secretStoreRef.kind` | External Secrets store kind | `ClusterSecretStore` |
+| `externalSecrets.secretStoreRef.name` | External Secrets store name | `aws-secrets-manager` |
+| `externalSecrets.secrets.spine.remoteKey` | Remote secret key for `SPINE_*` seeds | `""` |
+| `externalSecrets.secrets.hushd.remoteKey` | Remote secret key for hushd auth material | `""` |
+| `externalSecrets.secrets.controlApi.remoteKey` | Remote secret key for control-api secrets | `""` |
+| `externalSecrets.secrets.controlApiPostgres.remoteKey` | Remote secret key for control-api Postgres auth | `""` |
+| `externalSecrets.secrets.easAnchor.remoteKey` | Remote secret key for `EAS_SIGNER_PRIVATE_KEY` | `""` |
+
 ### NATS
 
 | Parameter | Description | Default |
@@ -94,8 +107,10 @@ helm install clawdstrike oci://ghcr.io/backbay-labs/clawdstrike/helm/clawdstrike
 |-----------|-------------|---------|
 | `bridges.tetragon.enabled` | Deploy tetragon-bridge | `false` |
 | `bridges.tetragon.grpcEndpoint` | Tetragon gRPC address | `http://localhost:54321` |
+| `bridges.tetragon.adminPort` | Admin HTTP port for `/healthz`, `/readyz`, `/metrics` | `22112` |
 | `bridges.tetragon.hostNetwork` | Run tetragon-bridge with host networking | `true` |
 | `bridges.tetragon.dnsPolicy` | DNS policy for host-networked bridge | `ClusterFirstWithHostNet` |
+| `bridges.tetragon.probes.enabled` | Enable admin HTTP liveness/readiness probes | `true` |
 | `bridges.hubble.enabled` | Deploy hubble-bridge | `false` |
 | `bridges.hubble.replicas` | Hubble bridge replica count | `1` |
 | `bridges.hubble.grpcEndpoint` | Hubble gRPC address | `http://hubble-relay.kube-system.svc.cluster.local:80` |

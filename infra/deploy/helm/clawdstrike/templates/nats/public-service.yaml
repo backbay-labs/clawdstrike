@@ -1,0 +1,27 @@
+{{- if and .Values.nats.enabled (not .Values.nats.external.enabled) .Values.nats.publicService.enabled }}
+{{- if not .Values.nats.publicService.allowInsecureUnauthenticated }}
+{{- fail "nats.publicService.enabled requires nats.publicService.allowInsecureUnauthenticated=true. Public NATS is disabled by default because this chart does not configure NATS auth or TLS." }}
+{{- end }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "clawdstrike.fullname" . }}-nats-public
+  namespace: {{ include "clawdstrike.namespace" . }}
+  labels:
+    {{- include "clawdstrike.componentLabels" (dict "ctx" . "component" "nats-public") | nindent 4 }}
+  {{- with .Values.nats.publicService.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.nats.publicService.type }}
+  {{- if .Values.nats.publicService.loadBalancerClass }}
+  loadBalancerClass: {{ .Values.nats.publicService.loadBalancerClass | quote }}
+  {{- end }}
+  selector:
+    {{- include "clawdstrike.componentSelectorLabels" (dict "ctx" . "component" "nats") | nindent 4 }}
+  ports:
+    - name: client
+      port: {{ .Values.nats.publicService.port }}
+      targetPort: client
+{{- end }}

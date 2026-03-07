@@ -50,75 +50,82 @@ interface IntegrationDef {
   httpProbe?: string
 }
 
-const INTEGRATIONS: IntegrationDef[] = [
-  // Security
-  {
-    id: "hushd",
-    name: "hushd",
-    category: "security",
-    httpProbe: "http://127.0.0.1:8080/health",
-  },
-  {
-    id: "hush-cli",
-    name: "hush-cli",
-    category: "security",
-    command: "clawdstrike",
-    args: ["--version"],
-    versionParser: (out) => out.match(/(\d+\.\d+(?:\.\d+)?)/)?.[1],
-  },
+function hushdHealthUrl(): string {
+  const baseUrl = process.env.CLAWDSTRIKE_HUSHD_URL ?? "http://127.0.0.1:9876"
+  return `${baseUrl.replace(/\/$/, "")}/health`
+}
 
-  // AI Toolchains
-  {
-    id: "claude",
-    name: "Claude",
-    category: "ai",
-    command: "claude",
-    args: ["--version"],
-    versionParser: (out) => out.match(/(\d+\.\d+(?:\.\d+)?)/)?.[1],
-  },
-  {
-    id: "codex",
-    name: "Codex",
-    category: "ai",
-    command: "codex",
-    args: ["--version"],
-    versionParser: (out) => out.match(/(\d+\.\d+(?:\.\d+)?)/)?.[1],
-  },
-  {
-    id: "opencode",
-    name: "OpenCode",
-    category: "ai",
-    command: "opencode",
-    args: ["--version"],
-    versionParser: (out) => out.match(/(\d+\.\d+(?:\.\d+)?)/)?.[1],
-  },
+function getIntegrations(): IntegrationDef[] {
+  return [
+    // Security
+    {
+      id: "hushd",
+      name: "hushd",
+      category: "security",
+      httpProbe: hushdHealthUrl(),
+    },
+    {
+      id: "hush-cli",
+      name: "hush-cli",
+      category: "security",
+      command: "clawdstrike",
+      args: ["--version"],
+      versionParser: (out) => out.match(/(\d+\.\d+(?:\.\d+)?)/)?.[1],
+    },
 
-  // Infrastructure
-  {
-    id: "git",
-    name: "Git",
-    category: "infra",
-    command: "git",
-    args: ["--version"],
-    versionParser: (out) => out.match(/git version (\d+\.\d+(?:\.\d+)?)/)?.[1],
-  },
-  {
-    id: "python",
-    name: "Python",
-    category: "infra",
-    command: "python3",
-    args: ["--version"],
-    versionParser: (out) => out.match(/Python (\d+\.\d+(?:\.\d+)?)/)?.[1],
-  },
-  {
-    id: "bun",
-    name: "Bun",
-    category: "infra",
-    command: "bun",
-    args: ["--version"],
-    versionParser: (out) => out.match(/(\d+\.\d+(?:\.\d+)?)/)?.[1],
-  },
-]
+    // AI Toolchains
+    {
+      id: "claude",
+      name: "Claude",
+      category: "ai",
+      command: "claude",
+      args: ["--version"],
+      versionParser: (out) => out.match(/(\d+\.\d+(?:\.\d+)?)/)?.[1],
+    },
+    {
+      id: "codex",
+      name: "Codex",
+      category: "ai",
+      command: "codex",
+      args: ["--version"],
+      versionParser: (out) => out.match(/(\d+\.\d+(?:\.\d+)?)/)?.[1],
+    },
+    {
+      id: "opencode",
+      name: "OpenCode",
+      category: "ai",
+      command: "opencode",
+      args: ["--version"],
+      versionParser: (out) => out.match(/(\d+\.\d+(?:\.\d+)?)/)?.[1],
+    },
+
+    // Infrastructure
+    {
+      id: "git",
+      name: "Git",
+      category: "infra",
+      command: "git",
+      args: ["--version"],
+      versionParser: (out) => out.match(/git version (\d+\.\d+(?:\.\d+)?)/)?.[1],
+    },
+    {
+      id: "python",
+      name: "Python",
+      category: "infra",
+      command: "python3",
+      args: ["--version"],
+      versionParser: (out) => out.match(/Python (\d+\.\d+(?:\.\d+)?)/)?.[1],
+    },
+    {
+      id: "bun",
+      name: "Bun",
+      category: "infra",
+      command: "bun",
+      args: ["--version"],
+      versionParser: (out) => out.match(/(\d+\.\d+(?:\.\d+)?)/)?.[1],
+    },
+  ]
+}
 
 // =============================================================================
 // CACHE
@@ -253,7 +260,7 @@ export namespace Health {
     }
 
     // Check all integrations in parallel
-    const checks = INTEGRATIONS.map((def) => checkIntegration(def, timeout))
+    const checks = getIntegrations().map((def) => checkIntegration(def, timeout))
     const results = await Promise.all(checks)
 
     // Update cache
@@ -281,7 +288,7 @@ export namespace Health {
     }
 
     // Find integration definition
-    const def = INTEGRATIONS.find((i) => i.id === id)
+    const def = getIntegrations().find((i) => i.id === id)
     if (!def) {
       return undefined
     }
@@ -376,7 +383,7 @@ export namespace Health {
    * Get list of all integration IDs
    */
   export function getIntegrationIds(): string[] {
-    return INTEGRATIONS.map((i) => i.id)
+    return getIntegrations().map((i) => i.id)
   }
 
   /**

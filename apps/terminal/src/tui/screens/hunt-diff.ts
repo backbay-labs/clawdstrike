@@ -10,11 +10,15 @@ import { renderList, scrollUp, scrollDown, type ListItem } from "../components/s
 import { renderSplit } from "../components/split-pane"
 import { renderBox } from "../components/box"
 import { fitString } from "../components/types"
+import { renderSurfaceHeader } from "../components/surface-header"
 import { readFile, writeFile, mkdir } from "node:fs/promises"
-import { homedir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
+import { homeDirFromEnv } from "../../system"
 
-const HISTORY_PATH = join(homedir(), ".clawdstrike", "scan_history.json")
+function getHistoryPath(): string | null {
+  const homeDir = homeDirFromEnv()
+  return homeDir ? join(homeDir, ".clawdstrike", "scan_history.json") : null
+}
 
 const CHANGE_COLORS: Record<ChangeKind, string> = {
   added: THEME.success,
@@ -29,8 +33,13 @@ const CHANGE_ICONS: Record<ChangeKind, string> = {
 }
 
 async function loadPreviousScan(): Promise<ScanPathResult[]> {
+  const historyPath = getHistoryPath()
+  if (!historyPath) {
+    return []
+  }
+
   try {
-    const raw = await readFile(HISTORY_PATH, "utf-8")
+    const raw = await readFile(historyPath, "utf-8")
     const data = JSON.parse(raw)
     return Array.isArray(data) ? data : []
   } catch {
@@ -39,10 +48,15 @@ async function loadPreviousScan(): Promise<ScanPathResult[]> {
 }
 
 async function saveScanHistory(results: ScanPathResult[]): Promise<void> {
+  const historyPath = getHistoryPath()
+  if (!historyPath) {
+    return
+  }
+
   try {
-    const dir = join(homedir(), ".clawdstrike")
+    const dir = dirname(historyPath)
     await mkdir(dir, { recursive: true })
-    await writeFile(HISTORY_PATH, JSON.stringify(results, null, 2), "utf-8")
+    await writeFile(historyPath, JSON.stringify(results, null, 2), "utf-8")
   } catch {
     // Best-effort save
   }
@@ -195,10 +209,7 @@ export const huntDiffScreen: Screen = {
     const d = state.hunt.diff
     const lines: string[] = []
 
-    // Title bar
-    const title = `${THEME.accent}${THEME.bold} HUNT ${THEME.reset}${THEME.dim} // ${THEME.reset}${THEME.secondary}Scan Diff${THEME.reset}`
-    lines.push(fitString(title, width))
-    lines.push(fitString(`${THEME.dim}${"─".repeat(width)}${THEME.reset}`, width))
+    lines.push(...renderSurfaceHeader("hunt-diff", "Scan Diff", width, THEME))
 
     // Loading state
     if (d.loading) {

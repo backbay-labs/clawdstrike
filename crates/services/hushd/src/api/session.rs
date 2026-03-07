@@ -1,11 +1,14 @@
 //! Session management endpoints.
 
+use std::collections::HashMap;
+
 use axum::{
     extract::{Path, State},
     Json,
 };
 
 use crate::api::v1::V1Error;
+use clawdstrike::{AuthMethod, IdentityPrincipal, IdentityProvider, RequestContext};
 use serde::{Deserialize, Serialize};
 
 use crate::audit::AuditEvent;
@@ -85,6 +88,54 @@ pub struct PostureTransitionInfo {
     pub at: String,
 }
 
+fn local_service_principal(request: &RequestContext) -> IdentityPrincipal {
+    let mut attributes = HashMap::new();
+    if let Some(source_ip) = request.source_ip.as_ref() {
+        attributes.insert(
+            "source_ip".to_string(),
+            serde_json::Value::String(source_ip.clone()),
+        );
+    }
+    if let Some(user_agent) = request.user_agent.as_ref() {
+        attributes.insert(
+            "user_agent".to_string(),
+            serde_json::Value::String(user_agent.clone()),
+        );
+    }
+
+    IdentityPrincipal {
+        id: "local-service".to_string(),
+        provider: IdentityProvider::Custom,
+        issuer: "hushd://local".to_string(),
+        display_name: Some("Local Service".to_string()),
+        email: None,
+        email_verified: None,
+        organization_id: None,
+        teams: Vec::new(),
+        roles: vec!["local-service".to_string()],
+        attributes,
+        authenticated_at: chrono::Utc::now().to_rfc3339(),
+        auth_method: Some(AuthMethod::ServiceAccount),
+        expires_at: None,
+    }
+}
+
+fn resolve_session_identity(
+    auth_enabled: bool,
+    actor: Option<AuthenticatedActor>,
+    request_ctx: &RequestContext,
+) -> Result<IdentityPrincipal, V1Error> {
+    match actor {
+        Some(AuthenticatedActor::User(principal)) => Ok(principal),
+        Some(AuthenticatedActor::ApiKey(_)) => Err(V1Error::forbidden(
+            "API_KEY_CANNOT_CREATE_USER_SESSION",
+            "api_key_cannot_create_user_session",
+        )),
+        None if !auth_enabled => Ok(local_service_principal(request_ctx)),
+        None => Err(V1Error::unauthorized("UNAUTHENTICATED", "unauthenticated")),
+    }
+}
+
 /// POST /api/v1/session
 pub async fn create_session(
     State(state): State<AppState>,
@@ -93,18 +144,7 @@ pub async fn create_session(
     axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
     body: Option<Json<CreateSessionOptions>>,
 ) -> Result<Json<CreateSessionResponse>, V1Error> {
-    let Some(axum::extract::Extension(actor)) = actor else {
-        return Err(V1Error::unauthorized("UNAUTHENTICATED", "unauthenticated"));
-    };
-
-    let AuthenticatedActor::User(principal) = actor else {
-        return Err(V1Error::forbidden(
-            "API_KEY_CANNOT_CREATE_USER_SESSION",
-            "api_key_cannot_create_user_session",
-        ));
-    };
-
-    let request_ctx = clawdstrike::RequestContext {
+    let request_ctx = RequestContext {
         request_id: uuid::Uuid::new_v4().to_string(),
         source_ip: Some(addr.ip().to_string()),
         user_agent: headers
@@ -125,10 +165,12 @@ pub async fn create_session(
         is_corporate_network: None,
         timestamp: chrono::Utc::now().to_rfc3339(),
     };
+    let principal =
+        resolve_session_identity(state.auth_enabled(), actor.map(|ext| ext.0), &request_ctx)?;
 
     let mut options = body.map(|Json(v)| v).unwrap_or_default();
     if options.request.is_none() {
-        options.request = Some(request_ctx);
+        options.request = Some(request_ctx.clone());
     }
 
     let session = match state.sessions.create_session(principal, Some(options)) {
@@ -147,8 +189,17 @@ pub async fn create_session(
     let roles = session.effective_roles.clone();
     let permissions = session.effective_permissions.clone();
     let mut audit = AuditEvent::session_start(&session.session_id, None);
-    audit.event_type = "user_session_created".to_string();
-    audit.message = Some("User session created".to_string());
+    let is_local_service = matches!(principal.auth_method, Some(AuthMethod::ServiceAccount));
+    audit.event_type = if is_local_service {
+        "local_service_session_created".to_string()
+    } else {
+        "user_session_created".to_string()
+    };
+    audit.message = Some(if is_local_service {
+        "Local service session created".to_string()
+    } else {
+        "User session created".to_string()
+    });
     audit.metadata = Some(serde_json::json!({
         "principal": principal,
         "roles": roles,
@@ -538,4 +589,39 @@ pub async fn transition_session_posture(
         to_state: posture.current_state,
         message: None,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_request() -> RequestContext {
+        RequestContext {
+            request_id: "req-1".to_string(),
+            source_ip: Some("127.0.0.1".to_string()),
+            user_agent: Some("agent-test".to_string()),
+            geo_location: None,
+            is_vpn: None,
+            is_corporate_network: None,
+            timestamp: chrono::Utc::now().to_rfc3339(),
+        }
+    }
+
+    #[test]
+    fn resolve_session_identity_uses_local_service_when_auth_disabled() {
+        let principal =
+            resolve_session_identity(false, None, &sample_request()).expect("principal");
+
+        assert_eq!(principal.id, "local-service");
+        assert_eq!(principal.issuer, "hushd://local");
+        assert_eq!(principal.auth_method, Some(AuthMethod::ServiceAccount));
+    }
+
+    #[test]
+    fn resolve_session_identity_rejects_missing_actor_when_auth_enabled() {
+        let err = resolve_session_identity(true, None, &sample_request())
+            .expect_err("missing actor should be unauthorized");
+
+        assert_eq!(err.code, "UNAUTHENTICATED");
+    }
 }

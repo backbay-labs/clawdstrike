@@ -60,6 +60,7 @@ mod policy_test;
 mod policy_version;
 mod registry_config;
 mod remote_extends;
+mod tui;
 mod ui;
 
 const CLI_JSON_VERSION: u8 = 1;
@@ -265,7 +266,14 @@ enum Commands {
     /// Threat hunting for AI agent ecosystems
     Hunt {
         #[command(subcommand)]
-        command: HuntCommands,
+        command: Box<HuntCommands>,
+    },
+
+    /// Launch the terminal user interface
+    Tui {
+        /// Arguments passed through to the TUI runtime
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
     },
 
     /// Initialize a new Clawdstrike project
@@ -965,6 +973,14 @@ enum HuntCommands {
         #[arg(long)]
         nats_creds: Option<String>,
 
+        /// NATS bearer token (prefer env to avoid leaking in shell history)
+        #[arg(long, env = "CLAWDSTRIKE_HUNT_NATS_TOKEN", hide_env_values = true)]
+        nats_token: Option<String>,
+
+        /// NATS nkey seed (prefer env to avoid leaking in shell history)
+        #[arg(long, env = "CLAWDSTRIKE_HUNT_NATS_NKEY_SEED", hide_env_values = true)]
+        nats_nkey_seed: Option<String>,
+
         /// Offline mode: query only local directories
         #[arg(long)]
         offline: bool,
@@ -1044,6 +1060,14 @@ enum HuntCommands {
         #[arg(long)]
         nats_creds: Option<String>,
 
+        /// NATS bearer token (prefer env to avoid leaking in shell history)
+        #[arg(long, env = "CLAWDSTRIKE_HUNT_NATS_TOKEN", hide_env_values = true)]
+        nats_token: Option<String>,
+
+        /// NATS nkey seed (prefer env to avoid leaking in shell history)
+        #[arg(long, env = "CLAWDSTRIKE_HUNT_NATS_NKEY_SEED", hide_env_values = true)]
+        nats_nkey_seed: Option<String>,
+
         /// Offline mode
         #[arg(long)]
         offline: bool,
@@ -1090,6 +1114,14 @@ enum HuntCommands {
         /// Path to NATS credentials file
         #[arg(long)]
         nats_creds: Option<String>,
+
+        /// NATS bearer token (prefer env to avoid leaking in shell history)
+        #[arg(long, env = "CLAWDSTRIKE_HUNT_NATS_TOKEN", hide_env_values = true)]
+        nats_token: Option<String>,
+
+        /// NATS nkey seed (prefer env to avoid leaking in shell history)
+        #[arg(long, env = "CLAWDSTRIKE_HUNT_NATS_NKEY_SEED", hide_env_values = true)]
+        nats_nkey_seed: Option<String>,
 
         /// Maximum sliding window duration (e.g. "5m", "1h")
         #[arg(long, default_value = "5m")]
@@ -1158,6 +1190,14 @@ enum HuntCommands {
         #[arg(long)]
         nats_creds: Option<String>,
 
+        /// NATS bearer token (prefer env to avoid leaking in shell history)
+        #[arg(long, env = "CLAWDSTRIKE_HUNT_NATS_TOKEN", hide_env_values = true)]
+        nats_token: Option<String>,
+
+        /// NATS nkey seed (prefer env to avoid leaking in shell history)
+        #[arg(long, env = "CLAWDSTRIKE_HUNT_NATS_NKEY_SEED", hide_env_values = true)]
+        nats_nkey_seed: Option<String>,
+
         /// Offline mode: query only local directories
         #[arg(long)]
         offline: bool,
@@ -1216,6 +1256,14 @@ enum HuntCommands {
         /// Path to NATS credentials file
         #[arg(long)]
         nats_creds: Option<String>,
+
+        /// NATS bearer token (prefer env to avoid leaking in shell history)
+        #[arg(long, env = "CLAWDSTRIKE_HUNT_NATS_TOKEN", hide_env_values = true)]
+        nats_token: Option<String>,
+
+        /// NATS nkey seed (prefer env to avoid leaking in shell history)
+        #[arg(long, env = "CLAWDSTRIKE_HUNT_NATS_NKEY_SEED", hide_env_values = true)]
+        nats_nkey_seed: Option<String>,
 
         /// Offline mode: query only local directories
         #[arg(long)]
@@ -1517,7 +1565,7 @@ async fn run(cli: Cli, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
 
         Commands::Hunt { command } => {
             hunt::cmd_hunt(
-                command,
+                *command,
                 &remote_extends,
                 no_color || std::env::var_os("NO_COLOR").is_some(),
                 stdout,
@@ -1525,6 +1573,8 @@ async fn run(cli: Cli, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
             )
             .await
         }
+
+        Commands::Tui { args } => tui::cmd_tui(args, no_color, stderr),
 
         Commands::Init {
             non_interactive,

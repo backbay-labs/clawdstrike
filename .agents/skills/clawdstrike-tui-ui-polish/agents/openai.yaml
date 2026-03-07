@@ -1,0 +1,7 @@
+interface:
+  display_name: "TUI UI Polish"
+  short_description: "Polish TUI spacing, hierarchy, and degraded states"
+  default_prompt: "Use $clawdstrike-tui-ui-polish to tighten the affected screens without expanding product scope."
+
+policy:
+  allow_implicit_invocation: true

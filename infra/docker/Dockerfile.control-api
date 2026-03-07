@@ -1,0 +1,39 @@
+# syntax=docker/dockerfile:1
+
+FROM rust:1.93-bookworm AS builder
+
+WORKDIR /build
+
+COPY infra/docker/workspace-control-api.toml Cargo.toml
+COPY Cargo.lock ./
+
+COPY crates/libs/hush-core crates/libs/hush-core
+COPY crates/libs/spine crates/libs/spine
+COPY crates/services/control-api crates/services/control-api
+
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/build/target \
+    cargo build --release --bin clawdstrike-control-api && \
+    cp /build/target/release/clawdstrike-control-api /usr/local/bin/clawdstrike-control-api
+
+FROM debian:bookworm-slim
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates libssl3 tini && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -g 1000 controlapi && \
+    useradd -u 1000 -g controlapi -d /var/lib/clawdstrike-control-api -m controlapi
+
+RUN mkdir -p /var/lib/clawdstrike-control-api && \
+    chown -R controlapi:controlapi /var/lib/clawdstrike-control-api
+
+COPY --from=builder /usr/local/bin/clawdstrike-control-api /usr/local/bin/
+
+USER controlapi
+WORKDIR /var/lib/clawdstrike-control-api
+
+EXPOSE 8080
+
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["clawdstrike-control-api"]

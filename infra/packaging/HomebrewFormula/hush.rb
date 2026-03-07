@@ -15,10 +15,21 @@ class Hush < Formula
   head "https://github.com/backbay-labs/clawdstrike.git", branch: "main"
 
   depends_on "rust" => :build
+  depends_on "bun"
 
   def install
     system "cargo", "install", *std_cargo_args(path: "crates/services/hush-cli")
     system "cargo", "install", *std_cargo_args(path: "crates/services/hushd")
+
+    tui_dir = share/"clawdstrike/tui"
+    tui_dir.mkpath
+    tui_dir.install "apps/terminal/package.json"
+    tui_dir.install "apps/terminal/bun.lockb"
+    tui_dir.install "crates/services/hush-cli/assets/tui/cli.js"
+    cp_r "apps/terminal/src", tui_dir/"src"
+    cd tui_dir do
+      system "bun", "install", "--production", "--frozen-lockfile"
+    end
 
     # Generate shell completions
     generate_completions_from_executable(bin/"hush", "completions")
@@ -30,5 +41,6 @@ class Hush < Formula
 
     # Test basic help
     assert_match "security verification", shell_output("#{bin}/hush --help")
+    assert_match "\"runtime\"", shell_output("#{bin}/clawdstrike tui doctor --json")
   end
 end

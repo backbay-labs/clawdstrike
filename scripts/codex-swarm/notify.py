@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,7 +11,10 @@ def repo_root() -> Path:
 
 
 def orchestration_root(root: Path) -> Path:
-    return root.parent / "clawdstrike-orchestration"
+    override = os.environ.get("CLAWDSTRIKE_SWARM_ORCH_DIR")
+    if override:
+        return Path(override)
+    return root.parent / f"{root.name}-orchestration"
 
 
 def load_lane_map(root: Path) -> dict[str, str]:
@@ -26,6 +30,17 @@ def load_lane_map(root: Path) -> dict[str, str]:
         lane, worktree, *_rest = line.split("\t")
         lane_map[worktree] = lane
     return lane_map
+
+
+def match_lane(cwd: str, lane_map: dict[str, str]) -> str | None:
+    if not cwd:
+        return None
+    path = Path(cwd)
+    for candidate in [path, *path.parents]:
+        lane = lane_map.get(candidate.name)
+        if lane:
+            return lane
+    return None
 
 
 def write_jsonl(path: Path, payload: dict) -> None:
@@ -54,9 +69,8 @@ def main() -> int:
 
     write_jsonl(orch / "notifications.jsonl", payload)
 
-    cwd = Path(notification.get("cwd", ""))
     lane_map = load_lane_map(root)
-    lane = lane_map.get(cwd.name)
+    lane = match_lane(str(notification.get("cwd", "")), lane_map)
     if lane:
         write_jsonl(orch / lane / "notify.jsonl", payload)
 

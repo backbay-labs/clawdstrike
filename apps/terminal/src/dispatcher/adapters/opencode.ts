@@ -5,12 +5,12 @@
  * Uses API key authentication (not subscription-based).
  */
 
-import { $ } from "bun"
 import { join } from "path"
 import { mkdir, writeFile } from "fs/promises"
 import type { Adapter, AdapterResult } from "../index"
 import type { WorkcellInfo, TaskInput } from "../../types"
 import { callAnthropicApi, callOpenAiApi } from "./llm-api"
+import { commandExists } from "../../system"
 
 /**
  * OpenCode configuration
@@ -65,15 +65,11 @@ export const OpenCodeAdapter: Adapter = {
   },
 
   async isAvailable(): Promise<boolean> {
-    // OpenCode is available if we have an API key
-    // or if the opencode CLI is installed
     if (hasApiKey()) {
       return true
     }
 
-    // Check for opencode CLI
-    const which = await $`which opencode`.quiet().nothrow()
-    return which.exitCode === 0
+    return commandExists("opencode")
   },
 
   async execute(
@@ -84,7 +80,7 @@ export const OpenCodeAdapter: Adapter = {
     const startTime = Date.now()
 
     // Try CLI first if available
-    const cliAvailable = (await $`which opencode`.quiet().nothrow()).exitCode === 0
+    const cliAvailable = commandExists("opencode")
 
     if (cliAvailable) {
       return executeViaCli(workcell, task, signal, startTime)

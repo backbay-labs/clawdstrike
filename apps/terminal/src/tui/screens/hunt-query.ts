@@ -12,9 +12,12 @@ import { renderList, scrollUp, scrollDown } from "../components/scrollable-list"
 import { renderForm, focusNext, focusPrev, handleFieldInput } from "../components/form"
 import type { SelectField, TextField } from "../components/form"
 import { renderBox } from "../components/box"
+import { centerBlock, centerLine, wrapText } from "../components/layout"
 import { fitString } from "../components/types"
+import { renderSurfaceHeader } from "../components/surface-header"
 import { runQuery } from "../../hunt/bridge-query"
 import type { TimelineEvent } from "../../hunt/types"
+import { updateInvestigation } from "../investigation"
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -43,6 +46,53 @@ function eventsToListItems(events: TimelineEvent[]): ListItem[] {
   }))
 }
 
+function queryFindings(events: TimelineEvent[]): string[] {
+  return events
+    .filter((event) => event.verdict === "deny" || event.verdict === "audit")
+    .slice(0, 8)
+    .map((event) => `${event.verdict}: ${event.summary}`)
+}
+
+function syncQueryInvestigation(
+  ctx: ScreenContext,
+  label: string,
+  query: string | null,
+  events: TimelineEvent[],
+): void {
+  updateInvestigation(ctx.state, {
+    origin: "query",
+    title: label,
+    summary: `${events.length} event(s) matched the active hunt query.`,
+    query,
+    events,
+    findings: queryFindings(events),
+  })
+}
+
+function renderQueryStateCard(
+  title: string,
+  body: string[],
+  width: number,
+  bodyHeight: number,
+  footer: string,
+): string[] {
+  const boxWidth = Math.min(92, width - 6)
+  const innerWidth = boxWidth - 4
+  const content = body.flatMap((line) => wrapText(line, innerWidth))
+  const card = renderBox(title, content, boxWidth, THEME, {
+    style: "rounded",
+    titleAlign: "left",
+    padding: 1,
+  })
+  const lines: string[] = []
+  const startY = Math.max(1, Math.floor((bodyHeight - card.length - 2) / 2))
+  while (lines.length < startY) lines.push(" ".repeat(width))
+  lines.push(...centerBlock(card, width))
+  while (lines.length < bodyHeight - 1) lines.push(" ".repeat(width))
+  lines.push(centerLine(footer, width))
+  return lines
+}
+
 // ---------------------------------------------------------------------------
 // Screen
 // ---------------------------------------------------------------------------
@@ -53,11 +103,8 @@ export const huntQueryScreen: Screen = {
     const q = state.hunt.query
     const lines: string[] = []
 
-    // Header
     const modeLabel = q.mode === "nl" ? "Natural Language" : "Structured"
-    const title = `${THEME.secondary}${THEME.bold} Hunt Query ${THEME.reset}${THEME.dim} \u2014 ${modeLabel}${THEME.reset}`
-    lines.push(fitString(title, width))
-    lines.push(fitString(`${THEME.dim}${"─".repeat(width)}${THEME.reset}`, width))
+    lines.push(...renderSurfaceHeader("hunt-query", "Hunt Query", width, THEME, modeLabel))
 
     if (q.mode === "nl") {
       // NL input box
@@ -79,16 +126,34 @@ export const huntQueryScreen: Screen = {
     if (q.loading) {
       const spinChars = ["\u2847", "\u2846", "\u2834", "\u2831", "\u2839", "\u283B", "\u283F", "\u2857"]
       const frame = ctx.state.animationFrame % spinChars.length
-      lines.push(fitString(`${THEME.accent}  ${spinChars[frame]} Querying...${THEME.reset}`, width))
-      while (lines.length < height - 1) lines.push(" ".repeat(width))
-      lines.push(fitString(`${THEME.dim}  Tab switch mode  ESC back${THEME.reset}`, width))
+      const bodyHeight = Math.max(6, height - lines.length)
+      lines.push(...renderQueryStateCard(
+        "Running Query",
+        [
+          `Executing the active ${modeLabel.toLowerCase()} hunt query.`,
+          `${spinChars[frame]} collecting matching events and rebuilding the investigation view`,
+        ],
+        width,
+        bodyHeight,
+        `${THEME.dim}tab${THEME.reset}${THEME.muted} switch mode${THEME.reset}  ${THEME.dim}esc${THEME.reset}${THEME.muted} back${THEME.reset}`,
+      ))
       return lines.join("\n")
     }
 
     // Error
-    if (q.error) {
-      lines.push(fitString(`${THEME.error}  Error: ${q.error}${THEME.reset}`, width))
-      lines.push(fitString("", width))
+    if (q.error && q.results.length === 0) {
+      const bodyHeight = Math.max(6, height - lines.length)
+      lines.push(...renderQueryStateCard(
+        "Query Failed",
+        [
+          `${THEME.error}The hunt query did not complete.${THEME.reset}`,
+          q.error,
+        ],
+        width,
+        bodyHeight,
+        `${THEME.dim}tab${THEME.reset}${THEME.muted} switch mode${THEME.reset}  ${THEME.dim}esc${THEME.reset}${THEME.muted} back${THEME.reset}`,
+      ))
+      return lines.join("\n")
     }
 
     // Results header
@@ -101,8 +166,22 @@ export const huntQueryScreen: Screen = {
     const listHeight = Math.max(1, height - usedLines)
 
     if (resultCount === 0 && !q.error) {
-      lines.push(fitString(`${THEME.muted}  No results. Enter a query to search.${THEME.reset}`, width))
-      while (lines.length < height - 1) lines.push(" ".repeat(width))
+      const bodyHeight = Math.max(6, height - lines.length)
+      lines.push(...renderQueryStateCard(
+        "No Matches",
+        [
+          `No events matched the active ${modeLabel.toLowerCase()} hunt query.`,
+          q.mode === "nl"
+            ? "Edit the query text and press Enter to search again."
+            : "Adjust the structured filters, then press Enter to run the query again.",
+        ],
+        width,
+        bodyHeight,
+        q.mode === "nl"
+          ? `${THEME.dim}enter${THEME.reset}${THEME.muted} execute${THEME.reset}  ${THEME.dim}tab${THEME.reset}${THEME.muted} structured mode${THEME.reset}  ${THEME.dim}esc${THEME.reset}${THEME.muted} back${THEME.reset}`
+          : `${THEME.dim}enter${THEME.reset}${THEME.muted} execute${THEME.reset}  ${THEME.dim}↑/↓${THEME.reset}${THEME.muted} fields${THEME.reset}  ${THEME.dim}tab${THEME.reset}${THEME.muted} NL mode${THEME.reset}`,
+      ))
+      return lines.join("\n")
     } else {
       const items = eventsToListItems(q.results)
       const listLines = renderList(items, q.resultList, listHeight, width, THEME)
@@ -112,8 +191,8 @@ export const huntQueryScreen: Screen = {
     // Footer
     while (lines.length < height - 1) lines.push(" ".repeat(width))
     const footerParts = q.mode === "nl"
-      ? "Enter execute  Tab structured mode  t timeline  ESC back"
-      : "j/k navigate fields  Enter execute  Tab NL mode  t timeline  ESC back"
+      ? "Enter execute  Tab structured mode  t timeline  Shift+E report  ESC back"
+      : "j/k navigate fields  Enter execute  Tab NL mode  t timeline  Shift+E report  ESC back"
     lines.push(fitString(`${THEME.dim}  ${footerParts}${THEME.reset}`, width))
 
     while (lines.length < height) lines.push(" ".repeat(width))
@@ -143,6 +222,12 @@ export const huntQueryScreen: Screen = {
       ctx.state.hunt.timeline.events = q.results
       ctx.state.hunt.timeline.list = { offset: 0, selected: q.resultList.selected }
       ctx.app.setScreen("hunt-timeline")
+      return true
+    }
+
+    if (key === "E" && q.results.length > 0) {
+      ctx.state.hunt.report.returnScreen = "hunt-query"
+      ctx.app.setScreen("hunt-report")
       return true
     }
 
@@ -227,6 +312,7 @@ async function doQuery(ctx: ScreenContext) {
     ctx.state.hunt.query.results = results
     ctx.state.hunt.query.resultList = { offset: 0, selected: 0 }
     ctx.state.hunt.query.loading = false
+    syncQueryInvestigation(ctx, "Hunt Query", q.nlInput, results)
   } catch (err) {
     ctx.state.hunt.query.error = err instanceof Error ? err.message : String(err)
     ctx.state.hunt.query.loading = false
@@ -258,6 +344,14 @@ async function doStructuredQuery(ctx: ScreenContext) {
     })
     ctx.state.hunt.query.results = results
     ctx.state.hunt.query.resultList = { offset: 0, selected: 0 }
+    syncQueryInvestigation(
+      ctx,
+      "Structured Hunt Query",
+      [source !== "any" ? `source=${source}` : null, verdict !== "any" ? `verdict=${verdict}` : null, since ? `since=${since}` : null]
+        .filter(Boolean)
+        .join(" "),
+      results,
+    )
     ctx.state.hunt.query.loading = false
   } catch (err) {
     ctx.state.hunt.query.error = err instanceof Error ? err.message : String(err)

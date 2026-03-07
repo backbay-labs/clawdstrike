@@ -18,10 +18,6 @@ message="Continue from the current branch state. Keep file ownership boundaries.
 while (($# > 0)); do
   case "$1" in
     --message)
-      if (($# < 2)); then
-        printf 'Missing value for --message\n' >&2
-        exit 1
-      fi
       message="$2"
       shift 2
       ;;
@@ -45,6 +41,9 @@ log_file="$lane_dir/resume.jsonl"
 stderr_file="$lane_dir/resume.stderr"
 final_file="$lane_dir/resume-final.md"
 pid_file="$lane_dir/resume.pid"
+exit_file="$lane_dir/resume.exit"
+declare -a codex_args=()
+extra_overrides_sandbox="false"
 
 if [[ ! -d "$worktree_path" ]]; then
   printf 'worktree missing for %s: %s\n' "$lane" "$worktree_path" >&2
@@ -56,19 +55,70 @@ if swarm_pid_is_running "$pid_file"; then
   exit 1
 fi
 
+rm -f "$log_file" "$stderr_file" "$final_file" "$pid_file" "$exit_file"
 printf '%s\n' "$message" > "$resume_prompt"
+extra_overrides_sandbox="$(swarm_codex_extra_overrides_sandbox)"
+while IFS= read -r arg; do
+  if [[ "$extra_overrides_sandbox" == "true" && "$arg" == "--sandbox" ]]; then
+    read -r _ || true
+    continue
+  fi
+  codex_args+=("$arg")
+done < <(swarm_codex_profile_args "$profile_name")
+while IFS= read -r arg; do
+  codex_args+=("$arg")
+done < <(swarm_codex_extra_args)
 
 cat > "$runner_file" <<EOF
 #!/usr/bin/env bash
-set -euo pipefail
+set -uo pipefail
 cd "$worktree_path"
-exec codex exec resume --last --profile "$profile_name" --json -o "$final_file" - < "$resume_prompt"
+prompt="\$(cat "$resume_prompt")"
+unset CODEX_THREAD_ID
+unset CODEX_MANAGED_BY_BUN
+if env codex \\
+EOF
+
+for arg in "${codex_args[@]}"; do
+  printf '  %q \\\n' "$arg" >> "$runner_file"
+done
+
+cat >> "$runner_file" <<EOF
+  exec resume --last \\
+  --json \\
+  -o "$final_file" \\
+  "\$prompt"
+then
+  status=0
+else
+  status=\$?
+fi
+printf '%s\n' "\$status" > "$exit_file"
+rm -f "$pid_file"
+exit "\$status"
 EOF
 chmod +x "$runner_file"
 
-nohup "$runner_file" > "$log_file" 2> "$stderr_file" &
+nohup bash "$runner_file" > "$log_file" 2> "$stderr_file" &
 pid="$!"
 printf '%s\n' "$pid" > "$pid_file"
+
+if ! swarm_wait_for_background_start "$pid_file" "$final_file" "$log_file" "$stderr_file" "$exit_file"; then
+  rm -f "$pid_file"
+  printf 'resume for %s failed to start: no pid, log, stderr, final, or exit marker appeared\n' "$lane" >&2
+  exit 1
+fi
+
+sleep 1
+if [[ -f "$exit_file" ]] && [[ ! -f "$final_file" ]]; then
+  status="$(tr -d '[:space:]' < "$exit_file")"
+  printf 'resume for %s exited before producing a final handoff (status %s)\n' "$lane" "${status:-unknown}" >&2
+  if [[ -s "$stderr_file" ]]; then
+    printf '%s\n' '--- stderr ---' >&2
+    sed -n '1,40p' "$stderr_file" >&2
+  fi
+  exit 1
+fi
 
 printf 'resumed %s (pid %s)\n' "$lane" "$pid"
 printf '  final: %s\n' "$final_file"

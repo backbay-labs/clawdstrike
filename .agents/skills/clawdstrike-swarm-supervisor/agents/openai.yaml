@@ -1,6 +1,6 @@
 interface:
   display_name: "Swarm Supervisor"
-  short_description: "Launch, monitor, and advance the Clawdstrike swarm"
+  short_description: "Launch, monitor, and advance the ClawdStrike swarm"
   default_prompt: "Use $clawdstrike-swarm-supervisor to set up worktrees, launch the next wave, and monitor lane progress."
 
 policy:

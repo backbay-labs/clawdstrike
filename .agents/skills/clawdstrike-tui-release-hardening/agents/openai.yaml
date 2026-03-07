@@ -1,0 +1,7 @@
+interface:
+  display_name: "TUI Release Hardening"
+  short_description: "Harden bootstrap, packaging, and operator release paths"
+  default_prompt: "Use $clawdstrike-tui-release-hardening to validate and harden the release-path behavior for this TUI issue."
+
+policy:
+  allow_implicit_invocation: true

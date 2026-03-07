@@ -7,6 +7,13 @@ import type { Screen, ScreenContext } from "../types"
 import type { SandboxMode } from "../../types"
 import { Config } from "../../config"
 
+interface SetupSandboxOption {
+  idx: number
+  name: SandboxMode
+  desc: string
+  disabled: boolean
+}
+
 export const setupScreen: Screen = {
   render(ctx: ScreenContext): string {
     return renderSetupScreen(ctx)
@@ -17,13 +24,26 @@ export const setupScreen: Screen = {
   },
 }
 
+export function getSetupSandboxOptions(gitAvailable: boolean): SetupSandboxOption[] {
+  return [
+    { idx: 0, name: "inplace", desc: "run in current directory", disabled: false },
+    { idx: 1, name: "worktree", desc: "git worktree isolation", disabled: !gitAvailable },
+    { idx: 2, name: "tmpdir", desc: "copy to temp directory", disabled: false },
+  ]
+}
+
+export function getRecommendedSandboxIndex(
+  sandbox: SandboxMode,
+  gitAvailable: boolean,
+): number {
+  const match = getSetupSandboxOptions(gitAvailable).find((option) => option.name === sandbox && !option.disabled)
+  return match?.idx ?? 0
+}
+
 function getAvailableSandboxModes(ctx: ScreenContext): number[] {
-  const modes = [0] // inplace always available
-  if (ctx.state.setupDetection?.git_available) {
-    modes.push(1) // worktree
-  }
-  modes.push(2) // tmpdir always available
-  return modes
+  return getSetupSandboxOptions(Boolean(ctx.state.setupDetection?.git_available))
+    .filter((option) => !option.disabled)
+    .map((option) => option.idx)
 }
 
 function handleSetupInput(key: string, ctx: ScreenContext): boolean {
@@ -138,11 +158,7 @@ function renderSetupScreen(ctx: ScreenContext): string {
     const sbLabel = "Sandbox Mode"
     lines.push(" ".repeat(boxPad) + THEME.dim + "║  " + THEME.reset + THEME.secondary + "◇ " + THEME.reset + THEME.white + THEME.bold + sbLabel + THEME.reset + " ".repeat(boxWidth - sbLabel.length - 6) + THEME.dim + "║" + THEME.reset)
 
-    const sandboxOptions: Array<{ idx: number; name: string; desc: string; disabled: boolean }> = [
-      { idx: 0, name: "inplace", desc: "run in current directory", disabled: false },
-      { idx: 1, name: "worktree", desc: "git worktree isolation", disabled: !detection.git_available },
-      { idx: 2, name: "tmpdir", desc: "copy to temp directory", disabled: false },
-    ]
+    const sandboxOptions = getSetupSandboxOptions(detection.git_available)
 
     for (const opt of sandboxOptions) {
       const selected = state.setupSandboxIndex === opt.idx
@@ -150,7 +166,9 @@ function renderSetupScreen(ctx: ScreenContext): string {
       const boxIcon = selected ? `${THEME.secondary}■` : `${THEME.dim}□`
       const nameColor = opt.disabled ? THEME.dim : THEME.muted
       const descColor = opt.disabled ? THEME.dim : THEME.dim
-      const suffix = opt.idx === 0 ? " (recommended)" : opt.disabled ? " (no git)" : ""
+      const isRecommended =
+        detection.recommended_sandbox === opt.name
+      const suffix = isRecommended ? " (recommended)" : opt.disabled ? " (no git)" : ""
       const content = `  ${selIcon}${THEME.reset} ${boxIcon}${THEME.reset} ${nameColor}${opt.name.padEnd(12)}${THEME.reset}${descColor}${opt.desc}${suffix}${THEME.reset}`
       const contentLen = `  > ■ ${opt.name.padEnd(12)}${opt.desc}${suffix}`.length
       lines.push(" ".repeat(boxPad) + THEME.dim + "║" + THEME.reset + content + " ".repeat(Math.max(0, boxWidth - contentLen - 2)) + THEME.dim + "║" + THEME.reset)

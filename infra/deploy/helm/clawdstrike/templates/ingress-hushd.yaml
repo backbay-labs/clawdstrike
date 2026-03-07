@@ -6,6 +6,15 @@
 {{- range $k, $v := .Values.ingress.hushd.annotations }}
 {{- $_ := set $annotations $k $v }}
 {{- end }}
+{{- $listenPorts := index $annotations "alb.ingress.kubernetes.io/listen-ports" | default "" }}
+{{- $certificateArn := index $annotations "alb.ingress.kubernetes.io/certificate-arn" | default "" }}
+{{- $hasAlbTls := and (contains "HTTPS" $listenPorts) (ne $certificateArn "") }}
+{{- if not .Values.hushd.auth.enabled }}
+{{- fail "public hushd ingress requires hushd.auth.enabled=true" }}
+{{- end }}
+{{- if and (not .Values.ingress.hushd.tls) (not $hasAlbTls) }}
+{{- fail "public hushd ingress requires TLS via ingress.hushd.tls or ALB HTTPS annotations" }}
+{{- end }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:

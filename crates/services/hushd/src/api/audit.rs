@@ -66,6 +66,12 @@ pub struct AuditBatchResponse {
     pub accepted: usize,
     pub duplicates: usize,
     pub rejected: usize,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub accepted_ids: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub duplicate_ids: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub rejected_ids: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -142,6 +148,21 @@ fn is_duplicate_audit_error(err: &AuditError) -> bool {
     }
 }
 
+fn extract_audit_event_id(raw: &serde_json::Value) -> Option<String> {
+    match raw.get("id") {
+        Some(serde_json::Value::String(id)) => {
+            let trimmed = id.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        }
+        Some(serde_json::Value::Number(id)) => Some(id.to_string()),
+        _ => None,
+    }
+}
+
 /// POST /api/v1/audit/batch
 pub async fn ingest_audit_batch(
     State(state): State<AppState>,
@@ -166,29 +187,42 @@ pub async fn ingest_audit_batch(
     let mut accepted = 0usize;
     let mut duplicates = 0usize;
     let mut rejected = 0usize;
+    let mut accepted_ids = Vec::new();
+    let mut duplicate_ids = Vec::new();
+    let mut rejected_ids = Vec::new();
 
     for raw in request.events {
+        let event_id = extract_audit_event_id(&raw);
         let event: AuditEvent = match serde_json::from_value(raw) {
             Ok(event) => event,
             Err(_) => {
                 rejected += 1;
+                if let Some(event_id) = event_id {
+                    rejected_ids.push(event_id);
+                }
                 continue;
             }
         };
 
         match state.ledger.record_async(event.clone()).await {
             Ok(()) => {
+                let event_id = event.id.clone();
                 accepted += 1;
+                accepted_ids.push(event_id);
                 state.metrics.inc_audit_event();
                 if let Some(forwarder) = &state.audit_forwarder {
                     forwarder.try_enqueue(event);
                 }
             }
             Err(err) if is_duplicate_audit_error(&err) => {
+                let event_id = event.id.clone();
                 duplicates += 1;
+                duplicate_ids.push(event_id);
             }
             Err(err) => {
+                let event_id = event.id.clone();
                 rejected += 1;
+                rejected_ids.push(event_id);
                 state.metrics.inc_audit_write_failure();
                 tracing::warn!(error = %err, "Failed to ingest audit batch event");
             }
@@ -199,6 +233,9 @@ pub async fn ingest_audit_batch(
         accepted,
         duplicates,
         rejected,
+        accepted_ids,
+        duplicate_ids,
+        rejected_ids,
     }))
 }
 

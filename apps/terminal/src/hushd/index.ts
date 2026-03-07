@@ -2,12 +2,13 @@
  * Hushd - Client module for the hushd security daemon
  *
  * Provides init/getClient/reset lifecycle for the hushd HTTP client.
- * Default URL: http://127.0.0.1:8080, override via CLAWDSTRIKE_HUSHD_URL.
+ * Default URL: http://127.0.0.1:9876, override via CLAWDSTRIKE_HUSHD_URL.
  */
 
 import { HushdClient } from "./client"
 
-export type { HushdClient } from "./client"
+export type { HushdClient, HushdRequestResult } from "./client"
+export { asCheckEventData, eventDecision } from "./events"
 export type {
   CheckRequest,
   CheckResponse,
@@ -15,18 +16,23 @@ export type {
   PostureInfo,
   AuditQuery,
   AuditEvent,
+  AuditBatchRequest,
+  AuditBatchResponse,
   AuditResponse,
   AuditStats,
   PolicyResponse,
   PolicyGuardConfig,
   DaemonEvent,
+  DaemonEventType,
+  DaemonEventData,
   CheckEventData,
   PolicyReloadData,
+  AgentHeartbeatData,
   ErrorData,
   HushdConnectionState,
 } from "./types"
 
-const DEFAULT_URL = "http://127.0.0.1:8080"
+const DEFAULT_URL = "http://127.0.0.1:9876"
 
 let client: HushdClient | null = null
 
@@ -36,7 +42,7 @@ let client: HushdClient | null = null
 export namespace Hushd {
   /**
    * Initialize the hushd client.
-   * Uses CLAWDSTRIKE_HUSHD_URL env var or default (http://127.0.0.1:8080).
+   * Uses CLAWDSTRIKE_HUSHD_URL env var or default (http://127.0.0.1:9876).
    */
   export function init(options?: { url?: string; token?: string }): void {
     const url = options?.url ?? process.env.CLAWDSTRIKE_HUSHD_URL ?? DEFAULT_URL

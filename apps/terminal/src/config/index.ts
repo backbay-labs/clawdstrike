@@ -6,9 +6,10 @@
  */
 
 import { z } from "zod"
-import { join } from "path"
+import { dirname, join } from "path"
 import { mkdir, readFile, writeFile, stat } from "fs/promises"
 import type { Toolchain, SandboxMode } from "../types"
+import { commandExists } from "../system"
 
 // =============================================================================
 // SCHEMA
@@ -55,6 +56,36 @@ function configPath(cwd: string): string {
   return join(cwd, CONFIG_DIR, CONFIG_FILE)
 }
 
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await stat(path)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function detectGitAvailability(cwd: string): Promise<boolean> {
+  if (!commandExists("git")) {
+    return false
+  }
+
+  let current = cwd
+
+  while (true) {
+    if (await pathExists(join(current, ".git"))) {
+      return true
+    }
+
+    const parent = dirname(current)
+    if (parent === current) {
+      return false
+    }
+
+    current = parent
+  }
+}
+
 export namespace Config {
   /**
    * Check if config file exists
@@ -96,47 +127,51 @@ export namespace Config {
   }
 
   /**
+   * Inspect local project state using filesystem checks only.
+   */
+  export async function inspectProject(
+    cwd: string
+  ): Promise<Pick<DetectionResult, "git_available" | "recommended_sandbox">> {
+    const git_available = await detectGitAvailability(cwd)
+
+    return {
+      git_available,
+      recommended_sandbox: git_available ? "worktree" : "inplace",
+    }
+  }
+
+  /**
    * Detect available toolchains, git status, and recommend configuration
    */
   export async function detect(cwd: string): Promise<DetectionResult> {
     const { getAllAdapters } = await import("../dispatcher/adapters")
     const allAdapters = getAllAdapters()
+    const project = await inspectProject(cwd)
 
-    // Run all adapter availability checks in parallel + git check
-    const adapterChecks = allAdapters.map(async (adapter) => {
-      const available = await adapter.isAvailable()
-      return {
-        id: adapter.info.id,
-        available,
-      }
-    })
-
-    const gitCheck = async (): Promise<boolean> => {
-      try {
-        const { getGitRoot } = await import("../workcell/git")
-        await getGitRoot(cwd)
-        return true
-      } catch {
-        return false
-      }
-    }
-
-    const [adapterResults, gitAvailable] = await Promise.all([
-      Promise.all(adapterChecks),
-      gitCheck(),
-    ])
+    const adapterResults = await Promise.allSettled(
+      allAdapters.map(async (adapter) => {
+        const available = await adapter.isAvailable()
+        return {
+          id: adapter.info.id,
+          available,
+        }
+      })
+    )
 
     // Build adapters map
     const adapters: Record<string, { available: boolean; version?: string }> =
       {}
-    for (const result of adapterResults) {
-      adapters[result.id] = { available: result.available }
-    }
 
-    // Recommend sandbox: worktree if git available, otherwise inplace
-    const recommended_sandbox: SandboxMode = gitAvailable
-      ? "worktree"
-      : "inplace"
+    for (const [index, result] of adapterResults.entries()) {
+      const id = allAdapters[index]?.info.id
+      if (!id) continue
+
+      if (result.status === "fulfilled") {
+        adapters[id] = { available: result.value.available }
+      } else {
+        adapters[id] = { available: false }
+      }
+    }
 
     // Recommend first available toolchain (prefer claude > codex > opencode > crush)
     const priority: Toolchain[] = ["claude", "codex", "opencode", "crush"]
@@ -144,8 +179,8 @@ export namespace Config {
 
     return {
       adapters,
-      git_available: gitAvailable,
-      recommended_sandbox,
+      git_available: project.git_available,
+      recommended_sandbox: project.recommended_sandbox,
       recommended_toolchain,
     }
   }

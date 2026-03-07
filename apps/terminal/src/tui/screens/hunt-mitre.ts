@@ -12,6 +12,7 @@ import { renderGrid, moveSelection } from "../components/grid"
 import type { ListItem } from "../components/scrollable-list"
 import { renderList, scrollUp, scrollDown } from "../components/scrollable-list"
 import { fitString } from "../components/types"
+import { renderSurfaceHeader } from "../components/surface-header"
 import { runTimeline } from "../../hunt/bridge-query"
 import { buildCoverageMatrix, TACTICS } from "../../hunt/mitre"
 import type { CoverageMatrix } from "../../hunt/mitre"
@@ -86,10 +87,7 @@ export const huntMitreScreen: Screen = {
     const mitre = state.hunt.mitre
     const lines: string[] = []
 
-    // Header
-    const title = `${THEME.secondary}${THEME.bold} MITRE ATT&CK Heatmap ${THEME.reset}`
-    lines.push(fitString(title, width))
-    lines.push(fitString(`${THEME.dim}${"─".repeat(width)}${THEME.reset}`, width))
+    lines.push(...renderSurfaceHeader("hunt-mitre", "MITRE ATT&CK Heatmap", width, THEME))
 
     if (mitre.loading) {
       const spinChars = ["\u2847", "\u2846", "\u2834", "\u2831", "\u2839", "\u283B", "\u283F", "\u2857"]

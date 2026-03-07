@@ -34,9 +34,16 @@ done
 # shellcheck source=scripts/codex-swarm/common.sh
 source "$SCRIPT_DIR/common.sh"
 repo_root="$(swarm_repo_root)"
-mapfile -t lanes < <(swarm_wave_lanes "$wave" "$repo_root")
+declare -a lanes=()
+while IFS= read -r lane; do
+  lanes+=("$lane")
+done < <(swarm_wave_lanes "$wave" "$repo_root")
 "$SCRIPT_DIR/setup-worktrees.sh" "${lanes[@]}"
 
 for lane in "${lanes[@]}"; do
-  "$SCRIPT_DIR/launch-lane.sh" "$lane" "${dangerous[@]}" --note "${note:-Launched as part of ${wave}. Follow the lane brief and leave a clean handoff.}"
+  if ((${#dangerous[@]} > 0)); then
+    "$SCRIPT_DIR/launch-lane.sh" "$lane" "${dangerous[@]}" --note "${note:-Launched as part of ${wave}. Follow the lane brief and leave a clean handoff.}"
+  else
+    "$SCRIPT_DIR/launch-lane.sh" "$lane" --note "${note:-Launched as part of ${wave}. Follow the lane brief and leave a clean handoff.}"
+  fi
 done

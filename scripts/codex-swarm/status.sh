@@ -26,6 +26,8 @@ for lane in "${lanes[@]}"; do
   lane_dir="$(swarm_lane_orch_dir "$lane" "$repo_root")"
   run_pid="$lane_dir/run.pid"
   resume_pid="$lane_dir/resume.pid"
+  run_exit="$lane_dir/run.exit"
+  resume_exit="$lane_dir/resume.exit"
   final_file="$lane_dir/final.md"
   review_file="$lane_dir/review.md"
 
@@ -35,6 +37,8 @@ for lane in "${lanes[@]}"; do
     state="resumed"
   elif [[ -f "$final_file" ]]; then
     state="done"
+  elif [[ -f "$resume_exit" ]] || [[ -f "$run_exit" ]]; then
+    state="failed"
   elif [[ -d "$worktree_path" ]]; then
     state="ready"
   else

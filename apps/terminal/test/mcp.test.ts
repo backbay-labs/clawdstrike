@@ -10,7 +10,7 @@ import { Health } from "../src/health"
 import * as fs from "node:fs/promises"
 import * as path from "node:path"
 import * as os from "node:os"
-import { Socket } from "node:net"
+import { Socket, createServer } from "node:net"
 
 // Create temp directory for tests
 let tempDir: string
@@ -92,6 +92,23 @@ describe("MCP Server", () => {
 
     test("does not throw if not running", async () => {
       await expect(MCP.stop()).resolves.toBeUndefined()
+    })
+
+    test("does not throw if a server object exists before listen starts", async () => {
+      ;(MCP as unknown as {
+        server: ReturnType<typeof createServer> | null
+        discoveryPath: string
+      }).server = createServer()
+      ;(MCP as unknown as {
+        server: ReturnType<typeof createServer> | null
+        discoveryPath: string
+      }).discoveryPath = path.join(tempDir, ".clawdstrike", "mcp.json")
+
+      Health.setMcpStatus(true, 9999)
+
+      await expect(MCP.stop()).resolves.toBeUndefined()
+      expect(MCP.isRunning()).toBe(false)
+      expect(Health.getMcpStatus().running).toBe(false)
     })
   })
 

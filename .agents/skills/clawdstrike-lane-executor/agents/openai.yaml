@@ -1,6 +1,6 @@
 interface:
   display_name: "Lane Executor"
-  short_description: "Implement one bounded Clawdstrike lane in a worktree"
+  short_description: "Implement one bounded ClawdStrike lane in a worktree"
   default_prompt: "Use $clawdstrike-lane-executor to execute the assigned lane in this worktree and leave a verification-backed handoff."
 
 policy:

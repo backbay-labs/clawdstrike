@@ -22,6 +22,42 @@ namespace:
   name: "clawdstrike-system"
 
 # ---------------------------------------------------------------------------
+# External Secrets
+# ---------------------------------------------------------------------------
+externalSecrets:
+  # -- Enable ExternalSecret resources that hydrate component secrets from an
+  # existing secret manager such as AWS Secrets Manager.
+  enabled: false
+  # -- Refresh interval passed to generated ExternalSecret resources.
+  refreshInterval: 1h
+  secretStoreRef:
+    # -- External Secrets store kind.
+    kind: ClusterSecretStore
+    # -- External Secrets store name.
+    name: aws-secrets-manager
+  secrets:
+    spine:
+      enabled: false
+      remoteKey: ""
+      targetName: ""
+    hushd:
+      enabled: false
+      remoteKey: ""
+      targetName: ""
+    controlApi:
+      enabled: false
+      remoteKey: ""
+      targetName: ""
+    controlApiPostgres:
+      enabled: false
+      remoteKey: ""
+      targetName: ""
+    easAnchor:
+      enabled: false
+      remoteKey: ""
+      targetName: ""
+
+# ---------------------------------------------------------------------------
 # NATS JetStream
 # ---------------------------------------------------------------------------
 nats:
@@ -52,6 +88,15 @@ nats:
   monitoring:
     enabled: true
     port: 8222
+  publicService:
+    enabled: false
+    # -- Explicit unsafe opt-in. The bundled chart does not configure NATS
+    # server-side auth or TLS for public exposure.
+    allowInsecureUnauthenticated: false
+    type: LoadBalancer
+    port: 4222
+    annotations: {}
+    loadBalancerClass: ""
 
 # ---------------------------------------------------------------------------
 # Spine services (checkpointer, witness, proofs-api)
@@ -144,11 +189,15 @@ hushd:
     logLevel: "info"
   auth:
     enabled: true
-    # -- Name of existing Secret containing CLAWDSTRIKE_API_KEY and CLAWDSTRIKE_ADMIN_KEY
+    # -- Name of existing Secret containing CLAWDSTRIKE_API_KEY,
+    # -- CLAWDSTRIKE_ADMIN_KEY, and CLAWDSTRIKE_AUTH_PEPPER
     existingSecret: ""
-    # -- API key (only used if existingSecret is empty; stored in auto-generated Secret)
+    # -- API key (only used if existingSecret is empty; required)
     apiKey: ""
+    # -- Admin key (only used if existingSecret is empty; required)
     adminKey: ""
+    # -- Auth pepper (only used if existingSecret is empty; required)
+    pepper: ""
   persistence:
     enabled: true
     size: 1Gi
@@ -183,6 +232,71 @@ hushd:
   #               operator: In
   #               values: ["hushd"]
   #         topologyKey: kubernetes.io/hostname
+
+# ---------------------------------------------------------------------------
+# control-api (cloud enrollment/control plane)
+# ---------------------------------------------------------------------------
+controlApi:
+  enabled: false
+  image:
+    repository: ghcr.io/backbay-labs/clawdstrike/control-api
+    tag: ""
+  replicas: 1
+  port: 8080
+  service:
+    type: ClusterIP
+    port: 8080
+  # -- Explicit external NATS URL returned to enrolled agents. Defaults to the
+  # internal NATS URL when unset.
+  agentNatsUrl: ""
+  # -- Explicit database URL. Leave empty to derive from embedded Postgres.
+  databaseUrl: ""
+  env:
+    RUST_LOG: "info,clawdstrike_control_api=debug"
+    NATS_PROVISIONING_MODE: "external"
+    NATS_PROVISIONER_BASE_URL: ""
+    NATS_ALLOW_INSECURE_MOCK_PROVISIONER: "false"
+    APPROVAL_SIGNING_ENABLED: "true"
+    APPROVAL_RESOLUTION_OUTBOX_ENABLED: "true"
+    APPROVAL_RESOLUTION_OUTBOX_POLL_INTERVAL_SECS: "5"
+    AUDIT_CONSUMER_ENABLED: "false"
+    APPROVAL_CONSUMER_ENABLED: "true"
+    HEARTBEAT_CONSUMER_ENABLED: "true"
+    STALE_DETECTOR_ENABLED: "true"
+  secrets:
+    existingSecret: ""
+    jwtSecret: ""
+    stripeSecretKey: ""
+    stripeWebhookSecret: ""
+    natsProvisionerApiToken: ""
+    approvalSigningKeypair: ""
+  postgres:
+    enabled: false
+    existingSecret: ""
+    image:
+      repository: postgres
+      tag: "16-alpine"
+    database: cloud_api
+    username: clawdstrike
+    password: ""
+    persistence:
+      enabled: true
+      size: 10Gi
+      storageClassName: ""
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: "1"
+        memory: 1Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
 
 # ---------------------------------------------------------------------------
 # Registry (package registry)
@@ -223,7 +337,10 @@ bridges:
       repository: ghcr.io/backbay-labs/clawdstrike/tetragon-bridge
       tag: ""
     grpcEndpoint: "http://localhost:54321"
-    adminPort: 2112
+    # -- Use a high port by default because the bridge commonly runs with
+    # hostNetwork enabled and lower ports are more likely to collide with
+    # node-local agents or other exporters.
+    adminPort: 22112
     hostNetwork: true
     dnsPolicy: ClusterFirstWithHostNet
     env:
@@ -254,6 +371,8 @@ bridges:
         accessModes:
           - ReadWriteMany
         size: 2Gi
+    probes:
+      enabled: true
     resources:
       requests:
         cpu: 50m
@@ -415,6 +534,13 @@ ingress:
   enabled: false
   className: ""
   commonAnnotations: {}
+  controlApi:
+    enabled: false
+    host: control-api.clawdstrike.local
+    path: /
+    pathType: Prefix
+    annotations: {}
+    tls: []
   hushd:
     enabled: true
     host: hushd.clawdstrike.local

@@ -1,0 +1,8 @@
+model_reasoning_effort = "high"
+approval_policy = "never"
+sandbox_mode = "read-only"
+developer_instructions = """
+Review like the operator on call.
+Prioritize correctness, workflow breakage, regressions in supported beta screens, wrapper/bootstrap issues, and missing tests.
+Lead with concrete findings and reproduction paths. Style-only comments are noise unless they hide a real failure or make the UI materially less usable.
+"""

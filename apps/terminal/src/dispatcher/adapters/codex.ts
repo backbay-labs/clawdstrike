@@ -5,12 +5,11 @@
  * Preserves ChatGPT Plus/Team/Enterprise subscription authentication.
  */
 
-import { $ } from "bun"
 import { join } from "path"
-import { mkdir, writeFile } from "fs/promises"
-import { homedir } from "os"
+import { stat } from "fs/promises"
 import type { Adapter, AdapterResult } from "../index"
 import type { WorkcellInfo, TaskInput } from "../../types"
+import { commandExists, homeDirFromEnv } from "../../system"
 
 /**
  * Codex CLI configuration
@@ -27,12 +26,74 @@ const DEFAULT_CONFIG: CodexConfig = {
 }
 
 let config: CodexConfig = { ...DEFAULT_CONFIG }
+const CODEX_AUTH_STATUS_TIMEOUT_MS = 1500
+
+function buildCodexExecArgs(workcellDir: string): string[] {
+  const args = ["-a", "never", "-s", "workspace-write", "exec", "--json", "-C", workcellDir]
+
+  if (config.model) {
+    args.push("--model", config.model)
+  }
+
+  args.push("-")
+  return args
+}
+
+function extractCodexOutput(output: string): string {
+  const lines = output.split("\n")
+  let lastAgentMessage: string | undefined
+
+  for (const line of lines) {
+    if (!line.trim().startsWith("{")) {
+      continue
+    }
+
+    try {
+      const data = JSON.parse(line) as {
+        type?: string
+        item?: {
+          type?: string
+          text?: string
+        }
+      }
+
+      if (data.type === "item.completed" && data.item?.type === "agent_message" && data.item.text) {
+        lastAgentMessage = data.item.text
+      }
+    } catch {
+      // Ignore malformed event lines.
+    }
+  }
+
+  return lastAgentMessage ?? output
+}
 
 /**
  * Configure Codex adapter
  */
 export function configure(newConfig: Partial<CodexConfig>): void {
   config = { ...config, ...newConfig }
+}
+
+async function checkCodexAuthStatus(): Promise<boolean> {
+  try {
+    const proc = Bun.spawn(["codex", "login", "status"], {
+      stdout: "ignore",
+      stderr: "ignore",
+    })
+
+    let timedOut = false
+    const timeout = setTimeout(() => {
+      timedOut = true
+      proc.kill()
+    }, CODEX_AUTH_STATUS_TIMEOUT_MS)
+
+    const exitCode = await proc.exited
+    clearTimeout(timeout)
+    return !timedOut && exitCode === 0
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -48,25 +109,21 @@ export const CodexAdapter: Adapter = {
   },
 
   async isAvailable(): Promise<boolean> {
-    // Check if `codex` CLI exists
-    const which = await $`which codex`.quiet().nothrow()
-    if (which.exitCode !== 0) {
+    if (!commandExists("codex")) {
       return false
     }
 
-    // Check if auth is configured
-    // Codex stores OAuth tokens in ~/.codex/
-    const authPath = join(homedir(), ".codex", "auth.json")
+    const homeDir = homeDirFromEnv()
+    if (!homeDir) {
+      return checkCodexAuthStatus()
+    }
+
+    const authPath = join(homeDir, ".codex", "auth.json")
     try {
-      const authCheck = await $`test -f ${authPath}`.quiet().nothrow()
-      if (authCheck.exitCode !== 0) {
-        // Try checking via codex auth status
-        const statusCheck = await $`codex auth status`.quiet().nothrow()
-        return statusCheck.exitCode === 0
-      }
+      await stat(authPath)
       return true
     } catch {
-      return false
+      return checkCodexAuthStatus()
     }
   },
 
@@ -76,30 +133,7 @@ export const CodexAdapter: Adapter = {
     signal: AbortSignal
   ): Promise<AdapterResult> {
     const startTime = Date.now()
-
-    // Write prompt to file (codex prefers file input for long prompts)
-    const metaDir = join(workcell.directory, ".clawdstrike")
-    const promptPath = join(metaDir, "prompt.md")
-    await mkdir(metaDir, { recursive: true })
-    await writeFile(promptPath, task.prompt)
-
-    // Build command arguments
-    const args: string[] = [
-      "run",
-      "--format", "json",
-      "--approval-mode", config.approvalMode || "suggest",
-    ]
-
-    // Add sandbox options if available
-    args.push("--writable-root", workcell.directory)
-
-    // Add prompt file
-    args.push("--prompt-file", promptPath)
-
-    // Add model if specified
-    if (config.model) {
-      args.push("--model", config.model)
-    }
+    const args = buildCodexExecArgs(workcell.directory)
 
     try {
       // Execute codex CLI
@@ -113,9 +147,13 @@ export const CodexAdapter: Adapter = {
           CLAWDSTRIKE_WORKCELL_ROOT: workcell.directory,
           CLAWDSTRIKE_WORKCELL_ID: workcell.id,
         },
+        stdin: "pipe",
         stdout: "pipe",
         stderr: "pipe",
       })
+
+      proc.stdin.write(task.prompt)
+      proc.stdin.end()
 
       // Handle abort signal
       const abortHandler = () => {
@@ -135,7 +173,7 @@ export const CodexAdapter: Adapter = {
       if (signal.aborted) {
         return {
           success: false,
-          output: stdout,
+          output: extractCodexOutput(stdout),
           error: "Execution cancelled",
         }
       }
@@ -143,7 +181,7 @@ export const CodexAdapter: Adapter = {
       if (exitCode !== 0) {
         return {
           success: false,
-          output: stdout,
+          output: extractCodexOutput(stdout),
           error: stderr || `Codex exited with code ${exitCode}`,
         }
       }
@@ -153,7 +191,7 @@ export const CodexAdapter: Adapter = {
 
       return {
         success: true,
-        output: stdout,
+        output: extractCodexOutput(stdout),
         telemetry: {
           ...telemetry,
           startedAt: startTime,
@@ -171,27 +209,37 @@ export const CodexAdapter: Adapter = {
 
   parseTelemetry(output: string): Partial<AdapterResult["telemetry"]> {
     try {
-      // Try to parse JSON output
       const lines = output.split("\n")
       for (const line of lines) {
-        if (line.startsWith("{")) {
-          try {
-            const data = JSON.parse(line)
-            if (data.usage || data.model) {
-              return {
-                model: data.model,
-                tokens: data.usage
-                  ? {
-                      input: data.usage.input_tokens || data.usage.prompt_tokens || 0,
-                      output: data.usage.output_tokens || data.usage.completion_tokens || 0,
-                    }
-                  : undefined,
-                cost: data.cost,
-              }
+        if (!line.startsWith("{")) {
+          continue
+        }
+
+        try {
+          const data = JSON.parse(line) as {
+            model?: string
+            cost?: number
+            usage?: {
+              input_tokens?: number
+              prompt_tokens?: number
+              output_tokens?: number
+              completion_tokens?: number
             }
-          } catch {
-            // Not valid JSON, continue
           }
+          if (data.usage || data.model) {
+            return {
+              model: data.model,
+              tokens: data.usage
+                ? {
+                    input: data.usage.input_tokens || data.usage.prompt_tokens || 0,
+                    output: data.usage.output_tokens || data.usage.completion_tokens || 0,
+                  }
+                : undefined,
+              cost: data.cost,
+            }
+          }
+        } catch {
+          // Not valid JSON, continue
         }
       }
     } catch {

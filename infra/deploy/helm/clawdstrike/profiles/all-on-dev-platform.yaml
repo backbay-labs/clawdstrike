@@ -1,5 +1,8 @@
 # All-on profile for platform-dev.
-# Enables bridges, ingress, service monitoring, and network policy hardening.
+# Enables bridges, monitoring, and network policy hardening while requiring
+# out-of-band secret provisioning for any sensitive material. Public ingress and
+# public NATS exposure stay disabled here until a separate secure override adds
+# TLS and authenticated endpoints.
 global:
   namespace: clawdstrike
   imagePullSecrets:
@@ -11,56 +14,109 @@ namespace:
   create: true
   name: clawdstrike
 
+externalSecrets:
+  enabled: true
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: aws-secrets-manager
+  secrets:
+    spine:
+      enabled: true
+      remoteKey: "platform-dev/clawdstrike-spine"
+    hushd:
+      enabled: true
+      remoteKey: "platform-dev/clawdstrike-hushd"
+    controlApi:
+      enabled: true
+      remoteKey: "platform-dev/clawdstrike-control-api"
+    controlApiPostgres:
+      enabled: true
+      remoteKey: "platform-dev/clawdstrike-control-api-postgres"
+    easAnchor:
+      enabled: true
+      remoteKey: "platform-dev/clawdstrike-eas-anchor"
+
 spine:
+  secrets:
+    existingSecret: "clawdstrike-helm-spine"
   image:
-    tag: "spine-checkpointer-2ba330f736d108a1ff37e4d17782edc9532eb73e"
+    tag: "spine-checkpointer-2ed7e663e2b668807ab1ab936f5f972ae9fad95c"
   checkpointer:
-    logSeedHex: "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
     streamReplicas: 1
-  witness:
-    seedHex: "f1e1d1c1b1a191817161514131211101f0e0d0c0b0a090807060504030201000"
 
 hushd:
   image:
-    tag: "2ba330f736d108a1ff37e4d17782edc9532eb73e"
+    tag: "2ed7e663e2b668807ab1ab936f5f972ae9fad95c"
   auth:
-    enabled: false
+    enabled: true
+    existingSecret: "clawdstrike-helm-hushd"
   persistence:
     enabled: false
+
+controlApi:
+  enabled: true
+  # Leave blank here so agents are not pointed at a public insecure NATS
+  # endpoint. Secure public enrollment should supply a TLS-protected external
+  # URL from a separate override.
+  agentNatsUrl: ""
+  secrets:
+    existingSecret: "clawdstrike-helm-control-api"
+  env:
+    RUST_LOG: "info,clawdstrike_control_api=debug"
+    NATS_PROVISIONING_MODE: "mock"
+    NATS_PROVISIONER_BASE_URL: ""
+    NATS_ALLOW_INSECURE_MOCK_PROVISIONER: "true"
+    APPROVAL_SIGNING_ENABLED: "true"
+    APPROVAL_RESOLUTION_OUTBOX_ENABLED: "true"
+    APPROVAL_RESOLUTION_OUTBOX_POLL_INTERVAL_SECS: "5"
+    AUDIT_CONSUMER_ENABLED: "false"
+    APPROVAL_CONSUMER_ENABLED: "false"
+    HEARTBEAT_CONSUMER_ENABLED: "false"
+    STALE_DETECTOR_ENABLED: "false"
+  postgres:
+    enabled: true
+    existingSecret: "clawdstrike-helm-control-api-postgres"
+    persistence:
+      enabled: false
 
 nats:
   jetstream:
     maxFileStoreBytes: "25769803776"
+  publicService:
+    enabled: false
 
 bridges:
   tetragon:
     enabled: true
     image:
-      tag: "2ba330f736d108a1ff37e4d17782edc9532eb73e"
+      tag: "2ed7e663e2b668807ab1ab936f5f972ae9fad95c"
     grpcEndpoint: "http://localhost:54321"
+    adminPort: 22112
     hostNetwork: true
     dnsPolicy: ClusterFirstWithHostNet
+    probes:
+      enabled: false
     nodeSelector:
       kubernetes.io/arch: amd64
   hubble:
     enabled: true
     replicas: 1
     image:
-      tag: "2ba330f736d108a1ff37e4d17782edc9532eb73e"
+      tag: "2ed7e663e2b668807ab1ab936f5f972ae9fad95c"
     grpcEndpoint: "http://hubble-relay.kube-system.svc.cluster.local:80"
     nodeSelector:
       kubernetes.io/arch: amd64
   auditd:
     enabled: true
     image:
-      tag: "2ba330f736d108a1ff37e4d17782edc9532eb73e"
+      tag: "2ed7e663e2b668807ab1ab936f5f972ae9fad95c"
     nodeSelector:
       kubernetes.io/arch: amd64
   k8sAudit:
     enabled: true
     replicas: 1
     image:
-      tag: "2ba330f736d108a1ff37e4d17782edc9532eb73e"
+      tag: "2ed7e663e2b668807ab1ab936f5f972ae9fad95c"
     nodeSelector:
       kubernetes.io/arch: amd64
 
@@ -68,9 +124,11 @@ spiffe:
   enabled: true
 
 easAnchor:
-  enabled: true
+  # Keep disabled in platform-dev until the Base EAS schemas have been
+  # registered and their UIDs are provided here.
+  enabled: false
   image:
-    tag: "2ba330f736d108a1ff37e4d17782edc9532eb73e"
+    tag: "2ed7e663e2b668807ab1ab936f5f972ae9fad95c"
   chain:
     rpcUrl: "https://sepolia.base.org"
     chainId: 84532
@@ -78,23 +136,31 @@ easAnchor:
     existingSecret: "clawdstrike-helm-eas-anchor"
 
 ingress:
-  enabled: true
+  enabled: false
   className: alb
   commonAnnotations:
-    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/scheme: internal
     alb.ingress.kubernetes.io/target-type: ip
-    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
     alb.ingress.kubernetes.io/group.name: clawdstrike
   hushd:
-    enabled: true
+    enabled: false
     host: hushd.clawdstrike.dev.backbay.io
     path: /
     pathType: Prefix
     annotations:
       alb.ingress.kubernetes.io/healthcheck-path: /health
       external-dns.alpha.kubernetes.io/hostname: hushd.clawdstrike.dev.backbay.io
+  controlApi:
+    enabled: false
+    host: control-api.clawdstrike.dev.backbay.io
+    path: /
+    pathType: Prefix
+    annotations:
+      alb.ingress.kubernetes.io/healthcheck-path: /api/v1/health
+      external-dns.alpha.kubernetes.io/hostname: control-api.clawdstrike.dev.backbay.io
   proofsApi:
-    enabled: true
+    enabled: false
     host: proofs-api.clawdstrike.dev.backbay.io
     path: /
     pathType: Prefix

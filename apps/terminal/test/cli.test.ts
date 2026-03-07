@@ -202,6 +202,25 @@ describe("CLI Integration", () => {
     expect(beadsExists).toBe(true)
   })
 
+  test("doctor command reports local environment", async () => {
+    const proc = Bun.spawn(
+      ["bun", "run", "./src/cli/index.ts", "doctor", "--cwd", tempDir],
+      {
+        cwd: process.cwd(),
+        stdout: "pipe",
+        stderr: "pipe",
+      }
+    )
+
+    const stdout = await new Response(proc.stdout).text()
+    const exitCode = await proc.exited
+
+    expect(exitCode).toBe(0)
+    expect(stdout).toContain("clawdstrike Doctor")
+    expect(stdout).toContain("Recommended Sandbox")
+    expect(stdout).toContain("Detected adapters")
+  })
+
   test("beads list shows empty initially", async () => {
     const proc = Bun.spawn(
       ["bun", "run", "./src/cli/index.ts", "beads", "list", "--cwd", tempDir],

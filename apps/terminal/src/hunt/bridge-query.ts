@@ -1,6 +1,6 @@
 // hunt/bridge-query.ts - Timeline query bridge wrapper
 
-import { runHuntCommand } from "./bridge"
+import { extractHuntEnvelopeData, runHuntCommand } from "./bridge"
 import type { TimelineEvent, EventSource, NormalizedVerdict } from "./types"
 
 export interface QueryFilters {
@@ -13,6 +13,10 @@ export interface QueryFilters {
   limit?: number
 }
 
+interface HuntQueryPayload {
+  events?: TimelineEvent[]
+}
+
 export async function runQuery(filters: QueryFilters): Promise<TimelineEvent[]> {
   const args = ["query"]
   if (filters.nl) args.push(filters.nl)
@@ -22,8 +26,8 @@ export async function runQuery(filters: QueryFilters): Promise<TimelineEvent[]> 
   if (filters.since) args.push("--since", filters.since)
   if (filters.until) args.push("--until", filters.until)
   if (filters.limit) args.push("--limit", String(filters.limit))
-  const result = await runHuntCommand<TimelineEvent[]>(args)
-  return result.data ?? []
+  const result = await runHuntCommand<HuntQueryPayload>(args)
+  return extractHuntEnvelopeData<HuntQueryPayload>(result.data)?.events ?? []
 }
 
 export async function runTimeline(filters: QueryFilters): Promise<TimelineEvent[]> {
@@ -33,6 +37,6 @@ export async function runTimeline(filters: QueryFilters): Promise<TimelineEvent[
   if (filters.since) args.push("--since", filters.since)
   if (filters.until) args.push("--until", filters.until)
   if (filters.limit) args.push("--limit", String(filters.limit))
-  const result = await runHuntCommand<TimelineEvent[]>(args)
-  return result.data ?? []
+  const result = await runHuntCommand<HuntQueryPayload>(args)
+  return extractHuntEnvelopeData<HuntQueryPayload>(result.data)?.events ?? []
 }

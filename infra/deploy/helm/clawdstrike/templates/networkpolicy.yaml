@@ -1,4 +1,10 @@
 {{- if .Values.networkPolicy.enabled }}
+{{- $allowExternalControlApi := and .Values.controlApi.enabled (or (ne .Values.controlApi.service.type "ClusterIP") (and .Values.ingress.enabled .Values.ingress.controlApi.enabled)) }}
+{{- $allowExternalProofsApi := and .Values.spine.enabled .Values.spine.proofsApi.enabled (or (ne .Values.spine.proofsApi.service.type "ClusterIP") (and .Values.ingress.enabled .Values.ingress.proofsApi.enabled)) }}
+{{- $allowExternalHushd := and .Values.hushd.enabled (or (ne .Values.hushd.service.type "ClusterIP") (and .Values.ingress.enabled .Values.ingress.hushd.enabled)) }}
+{{- $allowExternalNats := and .Values.nats.enabled (not .Values.nats.external.enabled) .Values.nats.publicService.enabled .Values.nats.publicService.allowInsecureUnauthenticated }}
+{{- $allowExternalK8sAudit := and .Values.bridges.k8sAudit.enabled (ne .Values.bridges.k8sAudit.service.type "ClusterIP") }}
+{{- $hasExternalIngress := or $allowExternalControlApi $allowExternalProofsApi $allowExternalHushd $allowExternalNats $allowExternalK8sAudit }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -53,20 +59,30 @@ spec:
           protocol: TCP
         {{- end }}
     {{- end }}
-    # Allow external access to proofs-api and hushd
+    {{- if $hasExternalIngress }}
+    # Allow explicitly configured public services and ingress-backed endpoints
     - ports:
-        {{- if and .Values.spine.enabled .Values.spine.proofsApi.enabled }}
+        {{- if $allowExternalControlApi }}
+        - port: {{ .Values.controlApi.port }}
+          protocol: TCP
+        {{- end }}
+        {{- if $allowExternalProofsApi }}
         - port: {{ .Values.spine.proofsApi.port }}
           protocol: TCP
         {{- end }}
-        {{- if .Values.hushd.enabled }}
+        {{- if $allowExternalHushd }}
         - port: {{ .Values.hushd.port }}
           protocol: TCP
         {{- end }}
-        {{- if .Values.bridges.k8sAudit.enabled }}
+        {{- if $allowExternalNats }}
+        - port: {{ .Values.nats.publicService.port }}
+          protocol: TCP
+        {{- end }}
+        {{- if $allowExternalK8sAudit }}
         - port: {{ .Values.bridges.k8sAudit.service.port }}
           protocol: TCP
         {{- end }}
+    {{- end }}
   egress:
     # Allow intra-namespace communication
     - to:

@@ -159,6 +159,57 @@ jobs:
       - name: Run SDK conformance runner
         run: bash scripts/run-sdk-conformance.sh
 
+  terminal-tui:
+    name: Terminal TUI
+    runs-on: ubuntu-latest
+    needs: check
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        working-directory: apps/terminal
+        run: bun install --frozen-lockfile
+
+      - name: Type check
+        working-directory: apps/terminal
+        run: bun run typecheck
+
+      - name: Unit tests
+        working-directory: apps/terminal
+        run: bun test
+
+      - name: Wrapper smoke tests
+        run: cargo test -p hush-cli tui::tests -- --nocapture
+
+      - name: Installed wrapper smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build -p hush-cli --bin clawdstrike
+
+          STAGE="$RUNNER_TEMP/clawdstrike-tui-stage"
+          mkdir -p "$STAGE/bin" "$STAGE/share/clawdstrike/tui"
+
+          cp target/debug/clawdstrike "$STAGE/bin/clawdstrike"
+          cp apps/terminal/package.json "$STAGE/share/clawdstrike/tui/"
+          cp apps/terminal/bun.lockb "$STAGE/share/clawdstrike/tui/"
+          cp crates/services/hush-cli/assets/tui/cli.js "$STAGE/share/clawdstrike/tui/"
+          cp -R apps/terminal/src "$STAGE/share/clawdstrike/tui/src"
+
+          (
+            cd "$STAGE/share/clawdstrike/tui"
+            bun install --production --frozen-lockfile
+          )
+
+          "$STAGE/bin/clawdstrike" tui doctor --json > "$RUNNER_TEMP/tui-doctor.json"
+          grep '"runtime"' "$RUNNER_TEMP/tui-doctor.json"
+
   tauri-rust-check:
     name: Tauri Rust Crates
     runs-on: ubuntu-latest

@@ -1,0 +1,7 @@
+interface:
+  display_name: "TUI Dogfood Loop"
+  short_description: "Dogfood the TUI against the real runtime and capture failures"
+  default_prompt: "Use $clawdstrike-tui-dogfood-loop to reproduce this issue live in the TUI, capture exact states, and return the highest-priority failures."
+
+policy:
+  allow_implicit_invocation: true

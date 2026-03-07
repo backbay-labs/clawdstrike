@@ -5,12 +5,11 @@
  * Preserves Claude Pro/Team subscription authentication.
  */
 
-import { $ } from "bun"
 import { join } from "path"
 import { stat } from "fs/promises"
-import { homedir } from "os"
 import type { Adapter, AdapterResult } from "../index"
 import type { WorkcellInfo, TaskInput } from "../../types"
+import { commandExists, homeDirFromEnv } from "../../system"
 
 /**
  * Claude Code configuration
@@ -30,11 +29,81 @@ const DEFAULT_CONFIG: ClaudeConfig = {
 
 let config: ClaudeConfig = { ...DEFAULT_CONFIG }
 
+const CLAUDE_AUTH_STATUS_TIMEOUT_MS = 3500
+
+function shouldBypassClaudePermissions(workcell: WorkcellInfo): boolean {
+  return workcell.name !== "inplace"
+}
+
+function buildClaudeExecArgs(workcell: WorkcellInfo, prompt: string): string[] {
+  const args: string[] = [
+    "--print",
+    "--output-format", "json",
+  ]
+
+  if (shouldBypassClaudePermissions(workcell)) {
+    args.push("--permission-mode", "bypassPermissions")
+  }
+
+  if (config.allowedTools && config.allowedTools.length > 0) {
+    args.push("--allowedTools", config.allowedTools.join(","))
+  }
+
+  if (config.model) {
+    args.push("--model", config.model)
+  }
+
+  if (config.maxTurns) {
+    args.push("--max-turns", String(config.maxTurns))
+  }
+
+  args.push(prompt)
+  return args
+}
+
+function extractClaudeOutput(output: string): string {
+  try {
+    const data = JSON.parse(output) as { result?: string }
+    if (typeof data.result === "string" && data.result.trim()) {
+      return data.result
+    }
+  } catch {
+    // Fall back to the raw CLI output when Claude does not return JSON.
+  }
+
+  return output
+}
+
 /**
  * Configure Claude adapter
  */
 export function configure(newConfig: Partial<ClaudeConfig>): void {
   config = { ...config, ...newConfig }
+}
+
+async function checkClaudeAuthStatus(): Promise<boolean> {
+  try {
+    const proc = Bun.spawn(["claude", "auth", "status"], {
+      env: {
+        ...process.env,
+        CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+      },
+      stdout: "ignore",
+      stderr: "ignore",
+    })
+
+    let timedOut = false
+    const timeout = setTimeout(() => {
+      timedOut = true
+      proc.kill()
+    }, CLAUDE_AUTH_STATUS_TIMEOUT_MS)
+
+    const exitCode = await proc.exited
+    clearTimeout(timeout)
+    return !timedOut && exitCode === 0
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -50,22 +119,21 @@ export const ClaudeAdapter: Adapter = {
   },
 
   async isAvailable(): Promise<boolean> {
-    // Check if `claude` CLI exists
-    const which = await $`which claude`.quiet().nothrow()
-    if (which.exitCode !== 0) {
+    if (!commandExists("claude")) {
       return false
     }
 
-    // Check if auth is configured
-    // Claude Code stores OAuth in ~/.claude/
-    const configPath = join(homedir(), ".claude", "config.json")
+    const homeDir = homeDirFromEnv()
+    if (!homeDir) {
+      return checkClaudeAuthStatus()
+    }
+
+    const configPath = join(homeDir, ".claude", "config.json")
     try {
       await stat(configPath)
       return true
     } catch {
-      // Config doesn't exist, check if logged in via other means
-      const authCheck = await $`claude auth status`.quiet().nothrow()
-      return authCheck.exitCode === 0
+      return checkClaudeAuthStatus()
     }
   },
 
@@ -75,31 +143,7 @@ export const ClaudeAdapter: Adapter = {
     signal: AbortSignal
   ): Promise<AdapterResult> {
     const startTime = Date.now()
-
-    // Build command arguments
-    // Claude Code uses --print for non-interactive single-prompt mode
-    const args: string[] = [
-      "--print",
-      "--output-format", "json",
-    ]
-
-    // Add allowed tools whitelist
-    if (config.allowedTools && config.allowedTools.length > 0) {
-      args.push("--allowedTools", config.allowedTools.join(","))
-    }
-
-    // Add model if specified
-    if (config.model) {
-      args.push("--model", config.model)
-    }
-
-    // Add max turns if specified
-    if (config.maxTurns) {
-      args.push("--max-turns", String(config.maxTurns))
-    }
-
-    // Add the prompt as the last argument
-    args.push(task.prompt)
+    const args = buildClaudeExecArgs(workcell, task.prompt)
 
     try {
       // Execute claude CLI
@@ -136,7 +180,7 @@ export const ClaudeAdapter: Adapter = {
       if (signal.aborted) {
         return {
           success: false,
-          output: stdout,
+          output: extractClaudeOutput(stdout),
           error: "Execution cancelled",
         }
       }
@@ -144,7 +188,7 @@ export const ClaudeAdapter: Adapter = {
       if (exitCode !== 0) {
         return {
           success: false,
-          output: stdout,
+          output: extractClaudeOutput(stdout),
           error: stderr || `Claude exited with code ${exitCode}`,
         }
       }
@@ -154,7 +198,7 @@ export const ClaudeAdapter: Adapter = {
 
       return {
         success: true,
-        output: stdout,
+        output: extractClaudeOutput(stdout),
         telemetry: {
           ...telemetry,
           startedAt: startTime,
@@ -177,15 +221,25 @@ export const ClaudeAdapter: Adapter = {
       for (const line of lines) {
         if (line.startsWith("{") && line.includes("usage")) {
           try {
-            const data = JSON.parse(line)
+            const data = JSON.parse(line) as {
+              model?: string
+              cost?: number
+              total_cost_usd?: number
+              usage?: {
+                input_tokens?: number
+                output_tokens?: number
+              }
+              modelUsage?: Record<string, unknown>
+            }
+            const inferredModel = data.model ?? Object.keys(data.modelUsage ?? {})[0]
             if (data.usage) {
               return {
-                model: data.model,
+                model: inferredModel,
                 tokens: {
                   input: data.usage.input_tokens || 0,
                   output: data.usage.output_tokens || 0,
                 },
-                cost: data.cost,
+                cost: data.total_cost_usd ?? data.cost,
               }
             }
           } catch {
@@ -196,15 +250,25 @@ export const ClaudeAdapter: Adapter = {
 
       // Try parsing the entire output as JSON
       try {
-        const data = JSON.parse(output)
+        const data = JSON.parse(output) as {
+          model?: string
+          cost?: number
+          total_cost_usd?: number
+          usage?: {
+            input_tokens?: number
+            output_tokens?: number
+          }
+          modelUsage?: Record<string, unknown>
+        }
+        const inferredModel = data.model ?? Object.keys(data.modelUsage ?? {})[0]
         if (data.usage) {
           return {
-            model: data.model,
+            model: inferredModel,
             tokens: {
               input: data.usage.input_tokens || 0,
               output: data.usage.output_tokens || 0,
             },
-            cost: data.cost,
+            cost: data.total_cost_usd ?? data.cost,
           }
         }
       } catch {

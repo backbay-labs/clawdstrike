@@ -13,5 +13,6 @@ See `docs/plans/decisions/` for individual decision records.
 ## Featured plans
 
 - `docs/plans/monorepo-staff-organization-plan.md` - staff/principal monorepo reorganization audit and migration plan.
+- `docs/plans/multi-agent/codex-swarm-playbook.md` - project-wide Codex swarm/orchestration playbook for lane planning, worktrees, and parallel execution.
 
 Related point-in-time audit reports live in `docs/audits/`.

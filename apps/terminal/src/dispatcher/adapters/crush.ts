@@ -5,12 +5,12 @@
  * Used for unreliable networks or batch jobs.
  */
 
-import { $ } from "bun"
 import { join } from "path"
 import { mkdir, writeFile } from "fs/promises"
 import type { Adapter, AdapterResult } from "../index"
 import type { WorkcellInfo, TaskInput } from "../../types"
 import { callAnthropicApi, callOpenAiApi } from "./llm-api"
+import { commandExists } from "../../system"
 
 /**
  * Crush configuration
@@ -58,13 +58,10 @@ export const CrushAdapter: Adapter = {
   },
 
   async isAvailable(): Promise<boolean> {
-    // Check if `crush` CLI exists
-    const which = await $`which crush`.quiet().nothrow()
-    if (which.exitCode === 0) {
+    if (commandExists("crush")) {
       return true
     }
 
-    // Crush is also available if we have any API keys for fallback
     const hasAnyKey =
       !!process.env.ANTHROPIC_API_KEY ||
       !!process.env.OPENAI_API_KEY ||
@@ -81,7 +78,7 @@ export const CrushAdapter: Adapter = {
     const startTime = Date.now()
 
     // Try CLI first if available
-    const cliAvailable = (await $`which crush`.quiet().nothrow()).exitCode === 0
+    const cliAvailable = commandExists("crush")
 
     if (cliAvailable) {
       return executeViaCli(workcell, task, signal, startTime)

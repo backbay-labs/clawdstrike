@@ -8,7 +8,10 @@ import type { TimelineEvent, EventSource, NormalizedVerdict } from "../../hunt/t
 import { runTimeline } from "../../hunt/bridge-query"
 import { renderList, scrollUp, scrollDown, type ListItem } from "../components/scrollable-list"
 import { renderBox } from "../components/box"
+import { centerBlock, centerLine, wrapText } from "../components/layout"
 import { fitString } from "../components/types"
+import { renderSurfaceHeader } from "../components/surface-header"
+import { updateInvestigation } from "../investigation"
 
 const SOURCE_ICONS: Record<EventSource, string> = {
   tetragon: "T",
@@ -66,10 +69,60 @@ function buildEventItems(events: TimelineEvent[]): ListItem[] {
   })
 }
 
+function timelineFindings(events: TimelineEvent[]): string[] {
+  return events
+    .filter((event) => event.verdict === "deny" || event.verdict === "audit")
+    .slice(0, 8)
+    .map((event) => `${event.verdict}: ${event.summary}`)
+}
+
+function syncInvestigation(ctx: ScreenContext): void {
+  const filtered = getFilteredEvents(ctx)
+  updateInvestigation(ctx.state, {
+    origin: "timeline",
+    title: "Timeline Replay",
+    summary: `${filtered.length} event(s) match the active source filters.`,
+    events: filtered,
+    findings: timelineFindings(filtered),
+    query: Object.entries(ctx.state.hunt.timeline.sourceFilters)
+      .filter(([, enabled]) => enabled)
+      .map(([source]) => source)
+      .join(","),
+  })
+}
+
+function renderTimelineStateCard(
+  title: string,
+  body: string[],
+  width: number,
+  bodyHeight: number,
+  footer: string,
+): string[] {
+  const boxWidth = Math.min(94, width - 6)
+  const innerWidth = boxWidth - 4
+  const content = body.flatMap((line) => wrapText(line, innerWidth))
+  const card = renderBox(title, content, boxWidth, THEME, {
+    style: "rounded",
+    titleAlign: "left",
+    padding: 1,
+  })
+  const lines: string[] = []
+  const startY = Math.max(1, Math.floor((bodyHeight - card.length - 2) / 2))
+  while (lines.length < startY) lines.push(" ".repeat(width))
+  lines.push(...centerBlock(card, width))
+  while (lines.length < bodyHeight - 1) lines.push(" ".repeat(width))
+  lines.push(centerLine(footer, width))
+  return lines
+}
+
 export const huntTimelineScreen: Screen = {
   onEnter(ctx: ScreenContext): void {
     const tl = ctx.state.hunt.timeline
     if (tl.loading) return
+    if (tl.events.length > 0) {
+      syncInvestigation(ctx)
+      return
+    }
 
     ctx.state.hunt.timeline = { ...tl, loading: true, error: null }
     ctx.app.render()
@@ -83,6 +136,7 @@ export const huntTimelineScreen: Screen = {
           list: { offset: 0, selected: 0 },
           expandedIndex: null,
         }
+        syncInvestigation(ctx)
         ctx.app.render()
       })
       .catch((err) => {
@@ -100,10 +154,7 @@ export const huntTimelineScreen: Screen = {
     const tl = state.hunt.timeline
     const lines: string[] = []
 
-    // Title bar
-    const title = `${THEME.accent}${THEME.bold} HUNT ${THEME.reset}${THEME.dim} // ${THEME.reset}${THEME.secondary}Timeline Replay${THEME.reset}`
-    lines.push(fitString(title, width))
-    lines.push(fitString(`${THEME.dim}${"─".repeat(width)}${THEME.reset}`, width))
+    lines.push(...renderSurfaceHeader("hunt-timeline", "Timeline Replay", width, THEME))
 
     // Source filter toggles row
     const filters = tl.sourceFilters
@@ -123,22 +174,33 @@ export const huntTimelineScreen: Screen = {
     if (tl.loading) {
       const spinChars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
       const spinner = spinChars[state.animationFrame % spinChars.length]
-      const msgY = Math.floor(height / 2) - 2
-      for (let i = lines.length; i < msgY; i++) lines.push(" ".repeat(width))
-      lines.push(fitString(`${THEME.secondary}  ${spinner} Loading timeline events...${THEME.reset}`, width))
-      for (let i = lines.length; i < height - 1; i++) lines.push(" ".repeat(width))
-      lines.push(renderHelpBar(width))
+      const bodyHeight = Math.max(6, height - lines.length)
+      lines.push(...renderTimelineStateCard(
+        "Timeline Loading",
+        [
+          `Replaying hunt events across the enabled sources.`,
+          `${spinner} fetching receipts and runtime events for the current investigation`,
+        ],
+        width,
+        bodyHeight,
+        renderHelpBar(width),
+      ))
       return lines.join("\n")
     }
 
     // Error state
     if (tl.error) {
-      const msgY = Math.floor(height / 2) - 2
-      for (let i = lines.length; i < msgY; i++) lines.push(" ".repeat(width))
-      lines.push(fitString(`${THEME.error}  Error: ${tl.error}${THEME.reset}`, width))
-      lines.push(fitString(`${THEME.dim}  Press r to retry.${THEME.reset}`, width))
-      for (let i = lines.length; i < height - 1; i++) lines.push(" ".repeat(width))
-      lines.push(renderHelpBar(width))
+      const bodyHeight = Math.max(6, height - lines.length)
+      lines.push(...renderTimelineStateCard(
+        "Timeline Failed",
+        [
+          `${THEME.error}Timeline replay did not complete.${THEME.reset}`,
+          tl.error,
+        ],
+        width,
+        bodyHeight,
+        renderHelpBar(width),
+      ))
       return lines.join("\n")
     }
 
@@ -146,16 +208,19 @@ export const huntTimelineScreen: Screen = {
 
     // Empty state
     if (filtered.length === 0) {
-      const msgY = Math.floor(height / 2) - 2
-      for (let i = lines.length; i < msgY; i++) lines.push(" ".repeat(width))
-      if (tl.events.length === 0) {
-        lines.push(fitString(`${THEME.muted}  No timeline events found.${THEME.reset}`, width))
-      } else {
-        lines.push(fitString(`${THEME.muted}  No events match active source filters.${THEME.reset}`, width))
-      }
-      lines.push(fitString(`${THEME.dim}  Toggle sources with 1-4 or press r to reload.${THEME.reset}`, width))
-      for (let i = lines.length; i < height - 1; i++) lines.push(" ".repeat(width))
-      lines.push(renderHelpBar(width))
+      const bodyHeight = Math.max(6, height - lines.length)
+      lines.push(...renderTimelineStateCard(
+        "No Timeline Events",
+        [
+          tl.events.length === 0
+            ? "No timeline events were returned for this investigation."
+            : "No events match the currently enabled source filters.",
+          "Toggle sources with 1-4 or reload the timeline to try again.",
+        ],
+        width,
+        bodyHeight,
+        renderHelpBar(width),
+      ))
       return lines.join("\n")
     }
 
@@ -236,6 +301,7 @@ export const huntTimelineScreen: Screen = {
           list: scrollDown(tl.list, filtered.length, ctx.height - 8),
           expandedIndex: null,
         }
+        ctx.app.render()
       }
       return true
     }
@@ -246,6 +312,7 @@ export const huntTimelineScreen: Screen = {
           list: scrollUp(tl.list),
           expandedIndex: null,
         }
+        ctx.app.render()
       }
       return true
     }
@@ -257,6 +324,7 @@ export const huntTimelineScreen: Screen = {
         let vp = tl.list
         for (let i = 0; i < pageSize; i++) vp = scrollUp(vp)
         ctx.state.hunt.timeline = { ...tl, list: vp, expandedIndex: null }
+        ctx.app.render()
       }
       return true
     }
@@ -266,6 +334,7 @@ export const huntTimelineScreen: Screen = {
         let vp = tl.list
         for (let i = 0; i < pageSize; i++) vp = scrollDown(vp, filtered.length, ctx.height - 8)
         ctx.state.hunt.timeline = { ...tl, list: vp, expandedIndex: null }
+        ctx.app.render()
       }
       return true
     }
@@ -279,6 +348,7 @@ export const huntTimelineScreen: Screen = {
           ...tl,
           expandedIndex: current === selected ? null : selected,
         }
+        ctx.app.render()
       }
       return true
     }
@@ -295,6 +365,14 @@ export const huntTimelineScreen: Screen = {
         list: { offset: 0, selected: 0 },
         expandedIndex: null,
       }
+      syncInvestigation(ctx)
+      ctx.app.render()
+      return true
+    }
+
+    if (key === "e") {
+      ctx.state.hunt.report.returnScreen = "hunt-timeline"
+      ctx.app.setScreen("hunt-report")
       return true
     }
 
@@ -312,6 +390,7 @@ export const huntTimelineScreen: Screen = {
             list: { offset: 0, selected: 0 },
             expandedIndex: null,
           }
+          syncInvestigation(ctx)
           ctx.app.render()
         })
         .catch((err) => {
@@ -335,6 +414,7 @@ function renderHelpBar(width: number): string {
     `${THEME.dim}j/k${THEME.reset}${THEME.muted} scroll${THEME.reset}  ` +
     `${THEME.dim}h/l${THEME.reset}${THEME.muted} page${THEME.reset}  ` +
     `${THEME.dim}enter${THEME.reset}${THEME.muted} expand${THEME.reset}  ` +
+    `${THEME.dim}e${THEME.reset}${THEME.muted} report${THEME.reset}  ` +
     `${THEME.dim}1-4${THEME.reset}${THEME.muted} sources${THEME.reset}  ` +
     `${THEME.dim}r${THEME.reset}${THEME.muted} reload${THEME.reset}`
   return fitString(help, width)

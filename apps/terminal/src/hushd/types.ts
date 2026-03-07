@@ -49,41 +49,65 @@ export interface PostureInfo {
 // =============================================================================
 
 export interface AuditQuery {
+  event_type?: string
   limit?: number
   offset?: number
-  action_type?: string
-  decision?: "allow" | "deny"
-  guard?: string
+  cursor?: string
   since?: string
   until?: string
+  action_type?: string
+  decision?: "allowed" | "blocked" | "allow" | "deny"
+  guard?: string
+  session_id?: string
+  agent_id?: string
+  runtime_agent_id?: string
+  runtime_agent_kind?: string
+  format?: "json" | "csv" | "jsonl"
 }
 
 export interface AuditEvent {
   id: string
   timestamp: string
+  event_type: string
   action_type: string
-  target: string
-  decision: "allow" | "deny"
-  guard: string
-  severity: "info" | "warning" | "error" | "critical"
-  reason?: string
-  receipt_id?: string
+  target?: string | null
+  decision: "allowed" | "blocked"
+  guard?: string | null
+  severity?: "info" | "warning" | "error" | "critical" | null
+  message?: string | null
+  session_id?: string | null
+  agent_id?: string | null
+  metadata?: Record<string, unknown> | null
 }
 
 export interface AuditResponse {
   events: AuditEvent[]
   total: number
-  offset: number
-  limit: number
+  offset?: number
+  limit?: number
+  next_cursor?: string
+  has_more?: boolean
+}
+
+export interface AuditBatchRequest {
+  events: Array<Record<string, unknown>>
+}
+
+export interface AuditBatchResponse {
+  accepted: number
+  duplicates: number
+  rejected: number
+  accepted_ids?: string[]
+  duplicate_ids?: string[]
+  rejected_ids?: string[]
 }
 
 export interface AuditStats {
-  total_checks: number
+  total_events: number
+  violations: number
   allowed: number
-  denied: number
-  by_guard: Record<string, { allowed: number; denied: number }>
-  by_action_type: Record<string, { allowed: number; denied: number }>
-  since: string
+  session_id: string
+  uptime_secs: number
 }
 
 // =============================================================================
@@ -97,7 +121,11 @@ export interface PolicyResponse {
   schema_version: string
   guards: PolicyGuardConfig[]
   extends?: string[]
-  loaded_at: string
+  loaded_at: string | null
+  description?: string
+  yaml?: string
+  source?: unknown
+  schema?: unknown
 }
 
 export interface PolicyGuardConfig {
@@ -110,34 +138,80 @@ export interface PolicyGuardConfig {
 // SSE EVENTS
 // =============================================================================
 
+export type DaemonEventType =
+  | "check"
+  | "violation"
+  | "eval"
+  | "policy_reload"
+  | "policy_reloaded"
+  | "agent_heartbeat"
+  | "error"
+  | (string & {})
+
 export interface DaemonEvent {
-  type: "check" | "policy_reload" | "error"
+  type: DaemonEventType
   timestamp: string
-  data: CheckEventData | PolicyReloadData | ErrorData
+  data: DaemonEventData
 }
 
+export type DaemonEventData =
+  | CheckEventData
+  | PolicyReloadData
+  | AgentHeartbeatData
+  | ErrorData
+  | Record<string, unknown>
+
 export interface CheckEventData {
+  event_id?: string
   action_type: string
   target: string
   decision: "allow" | "deny"
-  guard: string
-  severity: "info" | "warning" | "error" | "critical"
+  guard?: string | null
+  severity?: "info" | "warning" | "error" | "critical" | null
   reason?: string
+  message?: string
+  session_id?: string | null
+  agent_id?: string | null
+  endpoint_agent_id?: string | null
+  runtime_agent_id?: string | null
+  runtime_agent_kind?: string | null
 }
 
 export interface PolicyReloadData {
-  policy: string
-  version: string
-  guards: string[]
+  policy?: string
+  version?: string
+  guards?: string[]
+  [key: string]: unknown
+}
+
+export interface AgentHeartbeatData {
+  timestamp?: string
+  session_id?: string | null
+  endpoint_agent_id?: string | null
+  runtime_agent_id?: string | null
+  runtime_agent_kind?: string | null
+  posture?: string | null
+  policy_version?: string | null
+  daemon_version?: string | null
+  [key: string]: unknown
 }
 
 export interface ErrorData {
   message: string
   code?: string
+  [key: string]: unknown
 }
 
 // =============================================================================
 // CONNECTION STATE
 // =============================================================================
 
-export type HushdConnectionState = "disconnected" | "connecting" | "connected" | "error"
+export type HushdConnectionState =
+  | "not_configured"
+  | "connecting"
+  | "connected"
+  | "degraded"
+  | "stale"
+  | "disconnected"
+  | "unauthorized"
+  | "error"

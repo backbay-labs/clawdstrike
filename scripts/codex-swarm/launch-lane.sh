@@ -19,10 +19,6 @@ dangerous="false"
 while (($# > 0)); do
   case "$1" in
     --note)
-      if (($# < 2)); then
-        printf 'Missing value for --note\n' >&2
-        exit 1
-      fi
       note="$2"
       shift 2
       ;;
@@ -46,11 +42,15 @@ worktree_path="$(swarm_lane_worktree_path "$lane" "$repo_root")"
 lane_dir="$(swarm_lane_orch_dir "$lane" "$repo_root")"
 profile_name="$(swarm_lane_field "$lane" profile "$repo_root")"
 prompt_file="$lane_dir/prompt.md"
+runner_file="$lane_dir/run.sh"
 log_file="$lane_dir/run.jsonl"
 stderr_file="$lane_dir/run.stderr"
 final_file="$lane_dir/final.md"
 pid_file="$lane_dir/run.pid"
+exit_file="$lane_dir/run.exit"
 cmd_file="$lane_dir/run.cmd"
+declare -a codex_args=()
+extra_overrides_sandbox="false"
 
 if [[ ! -d "$worktree_path" ]]; then
   printf 'worktree missing for %s: %s\n' "$lane" "$worktree_path" >&2
@@ -63,28 +63,81 @@ if swarm_pid_is_running "$pid_file"; then
   exit 1
 fi
 
+rm -f "$log_file" "$stderr_file" "$final_file" "$pid_file" "$exit_file"
 swarm_write_lane_prompt "$lane" "$prompt_file" "$note" "$repo_root"
+extra_overrides_sandbox="$(swarm_codex_extra_overrides_sandbox)"
+while IFS= read -r arg; do
+  if [[ "$extra_overrides_sandbox" == "true" && "$arg" == "--sandbox" ]]; then
+    read -r _ || true
+    continue
+  fi
+  codex_args+=("$arg")
+done < <(swarm_codex_profile_args "$profile_name")
+while IFS= read -r arg; do
+  codex_args+=("$arg")
+done < <(swarm_codex_extra_args)
 
-declare -a cmd=(
-  codex exec
-  -C "$worktree_path"
-  --profile "$profile_name"
-  --json
-  -o "$final_file"
-)
+cat > "$runner_file" <<EOF
+#!/usr/bin/env bash
+set -uo pipefail
+cd "$worktree_path"
+prompt="\$(cat "$prompt_file")"
+unset CODEX_THREAD_ID
+unset CODEX_MANAGED_BY_BUN
+if env codex \\
+EOF
+
+for arg in "${codex_args[@]}"; do
+  printf '  %q \\\n' "$arg" >> "$runner_file"
+done
+
+cat >> "$runner_file" <<EOF
+  exec \\
+  --json \\
+  -o "$final_file" \\
+EOF
 
 if [[ "$dangerous" == "true" ]]; then
-  cmd+=(--dangerously-bypass-approvals-and-sandbox)
+  cat >> "$runner_file" <<'EOF'
+  --dangerously-bypass-approvals-and-sandbox \
+EOF
 fi
 
-cmd+=(-)
+cat >> "$runner_file" <<EOF
+  "\$prompt"
+then
+  status=0
+else
+  status=\$?
+fi
+printf '%s\n' "\$status" > "$exit_file"
+rm -f "$pid_file"
+exit "\$status"
+EOF
 
-printf '%q ' "${cmd[@]}" > "$cmd_file"
-printf '\n' >> "$cmd_file"
+chmod +x "$runner_file"
+cp "$runner_file" "$cmd_file"
 
-nohup "${cmd[@]}" < "$prompt_file" > "$log_file" 2> "$stderr_file" &
+nohup bash "$runner_file" > "$log_file" 2> "$stderr_file" &
 pid="$!"
 printf '%s\n' "$pid" > "$pid_file"
+
+if ! swarm_wait_for_background_start "$pid_file" "$final_file" "$log_file" "$stderr_file" "$exit_file"; then
+  rm -f "$pid_file"
+  printf 'lane %s failed to start: no pid, log, stderr, final, or exit marker appeared\n' "$lane" >&2
+  exit 1
+fi
+
+sleep 1
+if [[ -f "$exit_file" ]] && [[ ! -f "$final_file" ]]; then
+  status="$(tr -d '[:space:]' < "$exit_file")"
+  printf 'lane %s exited before producing a final handoff (status %s)\n' "$lane" "${status:-unknown}" >&2
+  if [[ -s "$stderr_file" ]]; then
+    printf '%s\n' '--- stderr ---' >&2
+    sed -n '1,40p' "$stderr_file" >&2
+  fi
+  exit 1
+fi
 
 printf 'launched %s (pid %s)\n' "$lane" "$pid"
 printf '  worktree: %s\n' "$worktree_path"

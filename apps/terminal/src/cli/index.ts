@@ -9,6 +9,7 @@
  *   clawdstrike beads <subcommand>    Manage work graph
  *   clawdstrike status                Show kernel status
  *   clawdstrike init                  Initialize clawdstrike
+ *   clawdstrike doctor                Inspect local environment and services
  *   clawdstrike version               Show version
  */
 
@@ -17,6 +18,8 @@ import { TUI, launchTUI } from "../tui"
 import { VERSION, init, shutdown, isInitialized } from "../index"
 import { Beads } from "../beads"
 import { Telemetry } from "../telemetry"
+import { Health, type HealthStatus } from "../health"
+import { Config } from "../config"
 import { executeTool } from "../tools"
 import type { ToolContext } from "../tools"
 
@@ -108,6 +111,7 @@ ${TUI.info("Commands:")}
   beads <subcommand>      Manage work graph (list, get, ready, create)
   status                  Show active rollouts and kernel status
   init                    Initialize clawdstrike in current directory
+  doctor                  Inspect local environment and services
   version                 Show version information
   help                    Show this help message
 
@@ -137,6 +141,7 @@ ${TUI.info("Examples:")}
   clawdstrike gate pytest mypy
   clawdstrike beads list --status open
   clawdstrike beads ready
+  clawdstrike doctor
 `
 }
 
@@ -519,16 +524,14 @@ async function cmdInit(options: CLIOptions): Promise<void> {
       telemetryDir: `${cwd}/.clawdstrike/runs`,
     })
 
-    // Detect available adapters and write config
-    const { Config } = await import("../config")
-    const detection = await Config.detect(cwd)
+    // Keep init lightweight and deterministic; richer probing belongs in doctor.
+    const project = await Config.inspectProject(cwd)
 
     const config = {
       schema_version: "1.0.0" as const,
-      sandbox: "inplace" as const,
-      toolchain: detection.recommended_toolchain,
-      adapters: detection.adapters,
-      git_available: detection.git_available,
+      sandbox: project.recommended_sandbox,
+      adapters: {},
+      git_available: project.git_available,
       project_id: options.project ?? "default",
     }
     await Config.save(cwd, config)
@@ -540,22 +543,125 @@ async function cmdInit(options: CLIOptions): Promise<void> {
       ["Config", ".clawdstrike/config.json"],
       ["Beads", ".beads/issues.jsonl"],
       ["Telemetry", ".clawdstrike/runs/"],
-      ["Sandbox", "inplace"],
-      ["Git", detection.git_available ? "detected" : "not found"],
+      ["Sandbox", project.recommended_sandbox],
+      ["Git", project.git_available ? "detected" : "not found"],
+      ["Next", "run clawdstrike doctor"],
     ]
-
-    // Add adapter status
-    for (const [id, info] of Object.entries(detection.adapters)) {
-      rows.push([id, info.available ? "available" : "not found"])
-    }
-
-    if (detection.recommended_toolchain) {
-      rows.push(["Default", detection.recommended_toolchain])
-    }
 
     console.log(TUI.formatTable(rows, { indent: 2 }))
   } catch (err) {
     console.error(TUI.error(`Initialization failed: ${err}`))
+    process.exit(1)
+  }
+}
+
+function formatHealthStatus(status: HealthStatus | undefined): string {
+  if (!status) {
+    return "unknown"
+  }
+
+  if (status.available) {
+    const detail = status.version ? ` (${status.version})` : ""
+    return `available${detail}`
+  }
+
+  return status.error ? `unavailable (${status.error})` : "unavailable"
+}
+
+function detectRuntimeInfo(): { source: string; script_path: string | null; bun_version: string | null } {
+  const scriptPath = process.env.CLAWDSTRIKE_TUI_RUNTIME_SCRIPT ?? Bun.main ?? process.argv[1] ?? null
+  const envSource = process.env.CLAWDSTRIKE_TUI_RUNTIME_SOURCE
+
+  if (envSource) {
+    return {
+      source: envSource,
+      script_path: scriptPath,
+      bun_version: Bun.version ?? null,
+    }
+  }
+
+  if (scriptPath?.includes("/apps/terminal/src/cli/index.ts")) {
+    return {
+      source: "repo-source",
+      script_path: scriptPath,
+      bun_version: Bun.version ?? null,
+    }
+  }
+
+  return {
+    source: "direct",
+    script_path: scriptPath,
+    bun_version: Bun.version ?? null,
+  }
+}
+
+async function cmdDoctor(options: CLIOptions): Promise<void> {
+  const cwd = options.cwd ?? process.cwd()
+
+  try {
+    const runtime = detectRuntimeInfo()
+    const [configExists, config, detection, health] = await Promise.all([
+      Config.exists(cwd),
+      Config.load(cwd),
+      Config.detect(cwd),
+      Health.checkAll({ force: true, timeout: 2000 }),
+    ])
+    const project = {
+      git_available: detection.git_available,
+      recommended_sandbox: detection.recommended_sandbox,
+    }
+
+    const result = {
+      cwd,
+      config_exists: configExists,
+      config_status: configExists ? (config ? "valid" : "invalid") : "missing",
+      config,
+      project,
+      runtime,
+      detection,
+      health,
+    }
+
+    if (options.json) {
+      console.log(JSON.stringify(result, null, 2))
+      return
+    }
+
+    const rows: [string, string][] = [
+      ["Working Directory", cwd],
+      ["Config", result.config_status],
+      ["TUI Runtime", runtime.source],
+      ["Bun", runtime.bun_version ?? "unknown"],
+      ["Saved Sandbox", config?.sandbox ?? "unset"],
+      ["Saved Toolchain", config?.toolchain ?? "unset"],
+      ["Recommended Sandbox", project.recommended_sandbox],
+      ["Git", project.git_available ? "detected" : "not found"],
+    ]
+
+    console.log(TUI.header("clawdstrike Doctor"))
+    console.log(TUI.formatTable(rows))
+
+    const sections: Array<[string, HealthStatus[]]> = [
+      ["Security", health.security],
+      ["AI", health.ai],
+      ["Infrastructure", health.infra],
+      ["MCP", health.mcp],
+    ]
+
+    for (const [label, statuses] of sections) {
+      console.log(`\n${TUI.info(`${label}:`)}`)
+      for (const status of statuses) {
+        console.log(`  ${status.id.padEnd(16)} ${formatHealthStatus(status)}`)
+      }
+    }
+
+    console.log(`\n${TUI.info("Detected adapters:")}`)
+    for (const [id, adapter] of Object.entries(detection.adapters)) {
+      const suffix = detection.recommended_toolchain === id ? " (recommended)" : ""
+      console.log(`  ${id.padEnd(16)} ${adapter.available ? "available" : "unavailable"}${suffix}`)
+    }
+  } catch (err) {
+    console.error(TUI.error(`Doctor failed: ${err}`))
     process.exit(1)
   }
 }
@@ -628,6 +734,9 @@ async function main(): Promise<void> {
       case "init":
         await cmdInit(options)
         break
+      case "doctor":
+        await cmdDoctor(options)
+        break
       case "version":
         await cmdVersion()
         break
@@ -647,10 +756,11 @@ async function main(): Promise<void> {
   }
 }
 
-// Run CLI
-main().catch((err) => {
-  console.error(TUI.error(`Fatal error: ${err}`))
-  process.exit(1)
-})
+if (import.meta.main) {
+  main().catch((err) => {
+    console.error(TUI.error(`Fatal error: ${err}`))
+    process.exit(1)
+  })
+}
 
 export { main, parseCliArgs }
