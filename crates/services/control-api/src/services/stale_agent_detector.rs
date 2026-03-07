@@ -15,13 +15,25 @@ const DEAD_UPDATE_SQL: &str = r#"UPDATE agents
            SET status = 'dead'
            WHERE status = 'stale'
              AND COALESCE(last_heartbeat_at, created_at) < now() - make_interval(secs => $1)
-           RETURNING principal_id"#;
+           RETURNING tenant_id, principal_id"#;
 
 const STALE_UPDATE_SQL: &str = r#"UPDATE agents
            SET status = 'stale'
            WHERE status = 'active'
              AND COALESCE(last_heartbeat_at, created_at) < now() - make_interval(secs => $1)
-           RETURNING principal_id"#;
+           RETURNING tenant_id, principal_id"#;
+
+const SYNC_PRINCIPAL_LIVENESS_SQL: &str = r#"UPDATE principals
+               SET liveness_state = $3,
+                   updated_at = now()
+               WHERE tenant_id = $1
+                 AND id = $2"#;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct PrincipalLivenessRef {
+    tenant_id: Uuid,
+    principal_id: Uuid,
+}
 
 /// Configuration for the stale agent detector.
 #[derive(Debug, Clone)]
@@ -110,11 +122,17 @@ pub(crate) async fn detect_stale_agents(
     Ok(())
 }
 
-fn collect_principal_ids(rows: Vec<sqlx_postgres::PgRow>) -> Result<Vec<Uuid>, sqlx::error::Error> {
+fn collect_principal_ids(
+    rows: Vec<sqlx_postgres::PgRow>,
+) -> Result<Vec<PrincipalLivenessRef>, sqlx::error::Error> {
     let mut principal_ids = HashSet::new();
     for row in rows {
         if let Some(principal_id) = row.try_get::<Option<Uuid>, _>("principal_id")? {
-            principal_ids.insert(principal_id);
+            let tenant_id = row.try_get::<Uuid, _>("tenant_id")?;
+            principal_ids.insert(PrincipalLivenessRef {
+                tenant_id,
+                principal_id,
+            });
         }
     }
 
@@ -123,20 +141,16 @@ fn collect_principal_ids(rows: Vec<sqlx_postgres::PgRow>) -> Result<Vec<Uuid>, s
 
 async fn sync_principal_liveness_state(
     tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
-    principal_ids: &[Uuid],
+    principal_ids: &[PrincipalLivenessRef],
     liveness_state: &str,
 ) -> Result<(), sqlx::error::Error> {
     for principal_id in principal_ids {
-        sqlx::query::query(
-            r#"UPDATE principals
-               SET liveness_state = $2,
-                   updated_at = now()
-               WHERE id = $1"#,
-        )
-        .bind(principal_id)
-        .bind(liveness_state)
-        .execute(tx.as_mut())
-        .await?;
+        sqlx::query::query(SYNC_PRINCIPAL_LIVENESS_SQL)
+            .bind(principal_id.tenant_id)
+            .bind(principal_id.principal_id)
+            .bind(liveness_state)
+            .execute(tx.as_mut())
+            .await?;
     }
 
     Ok(())
@@ -160,7 +174,14 @@ mod tests {
         assert!(STALE_UPDATE_SQL.contains("WHERE status = 'active'"));
         assert!(STALE_UPDATE_SQL.contains("COALESCE(last_heartbeat_at, created_at)"));
         assert!(DEAD_UPDATE_SQL.contains("COALESCE(last_heartbeat_at, created_at)"));
-        assert!(STALE_UPDATE_SQL.contains("RETURNING principal_id"));
-        assert!(DEAD_UPDATE_SQL.contains("RETURNING principal_id"));
+        assert!(STALE_UPDATE_SQL.contains("RETURNING tenant_id, principal_id"));
+        assert!(DEAD_UPDATE_SQL.contains("RETURNING tenant_id, principal_id"));
+    }
+
+    #[test]
+    fn principal_liveness_sync_is_tenant_scoped() {
+        assert!(SYNC_PRINCIPAL_LIVENESS_SQL.contains("WHERE tenant_id = $1"));
+        assert!(SYNC_PRINCIPAL_LIVENESS_SQL.contains("AND id = $2"));
+        assert!(SYNC_PRINCIPAL_LIVENESS_SQL.contains("SET liveness_state = $3"));
     }
 }

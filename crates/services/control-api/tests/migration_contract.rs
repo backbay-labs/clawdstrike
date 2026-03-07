@@ -82,6 +82,14 @@ fn fleet_directory_migrations_define_core_tables_and_backfills() {
         "007 migration must add agents.principal_id"
     );
     assert!(
+        backfill_sql.contains("agents_principal_tenant_fk"),
+        "007 migration must enforce tenant-scoped agent principal links"
+    );
+    assert!(
+        backfill_sql.contains("REFERENCES principals(tenant_id, id)"),
+        "007 migration must reference principals by tenant_id + id"
+    );
+    assert!(
         backfill_sql.contains("INSERT INTO principals"),
         "007 migration must backfill principals"
     );
@@ -100,6 +108,10 @@ fn fleet_directory_migrations_define_core_tables_and_backfills() {
     assert!(
         references_sql.contains("ALTER TABLE approvals"),
         "009 migration must extend approvals"
+    );
+    assert!(
+        references_sql.contains("approvals_principal_tenant_fk"),
+        "009 migration must enforce tenant-scoped approval principal links"
     );
     assert!(
         references_sql.contains("idx_approvals_tenant_principal"),
@@ -261,6 +273,14 @@ fn response_action_migration_adds_execution_ledger_schema() {
         "011 migration must link acknowledgements to a concrete delivery"
     );
     assert!(
+        !sql.contains("REFERENCES detection_findings(tenant_id, id)\n        ON DELETE SET NULL"),
+        "011 migration must keep tenant-scoped provenance FKs immutable"
+    );
+    assert!(
+        !sql.contains("REFERENCES approvals(tenant_id, id)\n        ON DELETE SET NULL"),
+        "011 migration must keep tenant-scoped approval provenance FKs immutable"
+    );
+    assert!(
         sql.contains("UNIQUE (delivery_id)"),
         "011 migration must prevent multiple acknowledgements per delivery"
     );
@@ -371,5 +391,9 @@ fn response_action_case_link_migration_adds_case_fk() {
     assert!(
         sql.contains("REFERENCES fleet_cases(tenant_id, id)"),
         "015 migration must reference fleet_cases by tenant_id + id"
+    );
+    assert!(
+        !sql.contains("ON DELETE SET NULL"),
+        "015 migration must not rely on composite ON DELETE SET NULL"
     );
 }

@@ -19,6 +19,8 @@ use crate::badge::CertificationBadge;
 use crate::certification::CertificationRecord;
 use crate::Result;
 
+const GENERIC_BUNDLE_ENTRY_LEAF_DOMAIN: &[u8] = b"clawdstrike:evidence-entry:v1\0";
+
 const CREATE_TABLES: &str = r#"
 CREATE TABLE IF NOT EXISTS evidence_exports (
   export_id TEXT PRIMARY KEY,
@@ -540,13 +542,20 @@ fn merkle_root_for_blobs(entries: &[GenericEvidenceBundleEntry]) -> Result<Strin
         return Ok(format!("sha256:{}", hush_core::Hash::zero().to_hex()));
     }
 
-    let leaves: Vec<Vec<u8>> = entries
-        .iter()
-        .map(|entry| hush_core::sha256(&entry.bytes).as_bytes().to_vec())
-        .collect();
+    let leaves: Vec<Vec<u8>> = entries.iter().map(entry_merkle_leaf).collect();
 
     let tree = hush_core::MerkleTree::from_leaves(&leaves)?;
     Ok(format!("sha256:{}", tree.root().to_hex()))
+}
+
+fn entry_merkle_leaf(entry: &GenericEvidenceBundleEntry) -> Vec<u8> {
+    let path_hash = hush_core::sha256(entry.path.as_bytes());
+    let blob_hash = hush_core::sha256(&entry.bytes);
+    let mut leaf_material = Vec::with_capacity(GENERIC_BUNDLE_ENTRY_LEAF_DOMAIN.len() + (32 * 2));
+    leaf_material.extend_from_slice(GENERIC_BUNDLE_ENTRY_LEAF_DOMAIN);
+    leaf_material.extend_from_slice(path_hash.as_bytes());
+    leaf_material.extend_from_slice(blob_hash.as_bytes());
+    hush_core::sha256(&leaf_material).as_bytes().to_vec()
 }
 
 fn manifest_public_key(signer: &hush_core::Keypair) -> String {
@@ -707,6 +716,160 @@ mod tests {
         assert!(
             verify_manifest_signature(&unsigned, &manifest.issuer)?,
             "manifest signature should verify"
+        );
+        assert_eq!(manifest.merkle_root, output.merkle_root);
+        Ok(())
+    }
+
+    #[test]
+    fn generic_bundle_merkle_root_binds_entry_paths() -> Result<()> {
+        let original_entries = vec![GenericEvidenceBundleEntry {
+            path: "events/a.json".to_string(),
+            bytes: br#"{"id":"a"}"#.to_vec(),
+        }];
+        let renamed_entries = vec![GenericEvidenceBundleEntry {
+            path: "events/renamed.json".to_string(),
+            bytes: br#"{"id":"a"}"#.to_vec(),
+        }];
+
+        let original_root = merkle_root_for_blobs(&original_entries)?;
+        let renamed_root = merkle_root_for_blobs(&renamed_entries)?;
+
+        assert_ne!(original_root, renamed_root);
+        Ok(())
+    }
+
+    #[test]
+    fn evidence_bundle_manifest_signature_verifies() -> Result<()> {
+        let tempdir = tempdir()?;
+        let signer = hush_core::Keypair::generate();
+        let certification = CertificationRecord {
+            certification_id: "cert-1".to_string(),
+            version: "1".to_string(),
+            subject: crate::certification::Subject {
+                subject_type: "agent".to_string(),
+                id: "agent-1".to_string(),
+                name: "Agent 1".to_string(),
+                organization_id: Some("org-1".to_string()),
+                metadata: None,
+            },
+            tier: crate::badge::CertificationTier::Gold,
+            issue_date: "2026-03-06T12:00:00Z".to_string(),
+            expiry_date: "2027-03-06T12:00:00Z".to_string(),
+            frameworks: vec!["soc2".to_string()],
+            status: crate::certification::CertificationStatus::Active,
+            policy: crate::certification::PolicyBinding {
+                hash: "sha256:policy".to_string(),
+                version: "v1".to_string(),
+                ruleset: None,
+            },
+            evidence: crate::certification::EvidenceBinding {
+                receipt_count: 1,
+                merkle_root: Some("sha256:evidence".to_string()),
+                audit_log_ref: None,
+                last_updated: None,
+            },
+            issuer: crate::certification::Issuer {
+                id: "issuer-1".to_string(),
+                name: "Issuer".to_string(),
+                public_key: manifest_public_key(&signer),
+                signature: "sig".to_string(),
+                signed_at: "2026-03-06T12:00:00Z".to_string(),
+            },
+        };
+        let badge = CertificationBadge {
+            certification_id: certification.certification_id.clone(),
+            version: certification.version.clone(),
+            subject: crate::badge::BadgeSubject {
+                subject_type: certification.subject.subject_type.clone(),
+                id: certification.subject.id.clone(),
+                name: certification.subject.name.clone(),
+                metadata: None,
+            },
+            certification: crate::badge::BadgeCertificationBinding {
+                tier: certification.tier,
+                issue_date: certification.issue_date.clone(),
+                expiry_date: certification.expiry_date.clone(),
+                frameworks: certification.frameworks.clone(),
+            },
+            policy: crate::badge::BadgePolicyBinding {
+                hash: certification.policy.hash.clone(),
+                version: certification.policy.version.clone(),
+                ruleset: certification.policy.ruleset.clone(),
+            },
+            evidence: crate::badge::BadgeEvidenceBinding {
+                receipt_count: certification.evidence.receipt_count,
+                merkle_root: certification.evidence.merkle_root.clone(),
+                audit_log_ref: certification.evidence.audit_log_ref.clone(),
+            },
+            issuer: crate::badge::BadgeIssuer {
+                id: certification.issuer.id.clone(),
+                name: certification.issuer.name.clone(),
+                public_key: certification.issuer.public_key.clone(),
+                signature: certification.issuer.signature.clone(),
+                signed_at: certification.issuer.signed_at.clone(),
+            },
+        };
+        let events = vec![AuditEventV2 {
+            event_id: "evt-1".to_string(),
+            timestamp: "2026-03-06T12:00:00Z".to_string(),
+            sequence: 1,
+            session_id: "sess-1".to_string(),
+            agent_id: Some("agent-1".to_string()),
+            organization_id: Some("org-1".to_string()),
+            correlation_id: None,
+            action_type: "tool_call".to_string(),
+            action_resource: "terminal.exec".to_string(),
+            action_parameters: None,
+            action_result: None,
+            decision_allowed: true,
+            decision_guard: Some("allow".to_string()),
+            decision_severity: Some("low".to_string()),
+            decision_reason: Some("ok".to_string()),
+            decision_policy_hash: "sha256:policy".to_string(),
+            provenance: None,
+            extensions: None,
+            content_hash: hush_core::sha256(br#"{"event":"evt-1"}"#).to_hex(),
+            previous_hash: hush_core::Hash::zero().to_hex(),
+            signature: None,
+        }];
+        let request = EvidenceExportRequest {
+            date_start: Some("2026-03-01T00:00:00Z".to_string()),
+            date_end: Some("2026-03-06T23:59:59Z".to_string()),
+            include_types: Some(vec!["audit".to_string()]),
+            compliance_template: Some("soc2".to_string()),
+        };
+
+        let output = build_evidence_bundle_zip(
+            tempdir.path(),
+            "export-1",
+            &certification,
+            &badge,
+            &events,
+            &request,
+            &signer,
+        )?;
+
+        let file = File::open(output.file_path)?;
+        let mut archive = ZipArchive::new(file)?;
+        let mut manifest_file = archive.by_name("manifest.json")?;
+        let mut manifest_json = String::new();
+        manifest_file.read_to_string(&mut manifest_json)?;
+        let manifest: EvidenceBundleManifest = serde_json::from_str(&manifest_json)?;
+
+        let unsigned = evidence_manifest_signature_payload(EvidenceManifestPayload {
+            export_id: &manifest.export_id,
+            certification_id: &manifest.certification_id,
+            generated_at: &manifest.generated_at,
+            event_count: manifest.event_count as usize,
+            merkle_root: &manifest.merkle_root,
+            request: &request,
+            public_key: &manifest.issuer.public_key,
+            signed_at: &manifest.issuer.signed_at,
+        });
+        assert!(
+            verify_manifest_signature(&unsigned, &manifest.issuer)?,
+            "evidence manifest signature should verify"
         );
         assert_eq!(manifest.merkle_root, output.merkle_root);
         Ok(())

@@ -8,7 +8,6 @@ BEGIN
         ALTER TABLE response_actions
             ADD CONSTRAINT response_actions_case_tenant_fk
             FOREIGN KEY (tenant_id, case_id)
-            REFERENCES fleet_cases(tenant_id, id)
-            ON DELETE SET NULL;
+            REFERENCES fleet_cases(tenant_id, id);
     END IF;
 END $$;

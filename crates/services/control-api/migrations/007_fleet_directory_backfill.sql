@@ -2,7 +2,33 @@
 -- Adds agents.principal_id and backfills endpoint/operator principals.
 
 ALTER TABLE agents
-ADD COLUMN IF NOT EXISTS principal_id UUID REFERENCES principals(id) ON DELETE SET NULL;
+ADD COLUMN IF NOT EXISTS principal_id UUID;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_principals_tenant_id
+ON principals(tenant_id, id);
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'agents_principal_id_fkey'
+    ) THEN
+        ALTER TABLE agents
+            DROP CONSTRAINT agents_principal_id_fkey;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'agents_principal_tenant_fk'
+    ) THEN
+        ALTER TABLE agents
+            ADD CONSTRAINT agents_principal_tenant_fk
+            FOREIGN KEY (tenant_id, principal_id)
+            REFERENCES principals(tenant_id, id);
+    END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_agents_tenant_principal
 ON agents(tenant_id, principal_id)

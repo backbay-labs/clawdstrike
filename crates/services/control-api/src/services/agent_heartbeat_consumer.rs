@@ -14,6 +14,12 @@ use crate::services::consumer_ack::ack_kind_for_processing_result;
 use crate::services::consumer_ack::{acknowledge_after_processing, ProcessingError};
 use crate::services::policy_distribution;
 
+const SYNC_HEARTBEAT_PRINCIPAL_LIVENESS_SQL: &str = r#"UPDATE principals
+               SET liveness_state = 'active',
+                   updated_at = now()
+               WHERE tenant_id = $1
+                 AND id = $2"#;
+
 /// Run the heartbeat consumer loop until the shutdown receiver signals.
 ///
 /// `subject_filter` example:
@@ -140,7 +146,8 @@ async fn process_heartbeat_message(
              AND t.slug = $1
              AND a.agent_id = $2
              AND a.status IN ('active', 'stale', 'dead')
-           RETURNING a.principal_id"#,
+           RETURNING a.tenant_id,
+                     a.principal_id"#,
     )
     .bind(tenant_slug)
     .bind(agent_id)
@@ -161,16 +168,15 @@ async fn process_heartbeat_message(
         .try_get::<Option<Uuid>, _>("principal_id")
         .map_err(|err| ProcessingError::retryable(err.to_string()))?;
     if let Some(principal_id) = principal_id {
-        sqlx::query::query(
-            r#"UPDATE principals
-               SET liveness_state = 'active',
-                   updated_at = now()
-               WHERE id = $1"#,
-        )
-        .bind(principal_id)
-        .execute(tx.as_mut())
-        .await
-        .map_err(|err| ProcessingError::retryable(err.to_string()))?;
+        let tenant_id = row
+            .try_get::<Uuid, _>("tenant_id")
+            .map_err(|err| ProcessingError::retryable(err.to_string()))?;
+        sqlx::query::query(SYNC_HEARTBEAT_PRINCIPAL_LIVENESS_SQL)
+            .bind(tenant_id)
+            .bind(principal_id)
+            .execute(tx.as_mut())
+            .await
+            .map_err(|err| ProcessingError::retryable(err.to_string()))?;
     }
 
     tx.commit()
@@ -269,5 +275,11 @@ mod tests {
             ack_kind_for_processing_result(&Err(ProcessingError::permanent("bad subject"))),
             async_nats::jetstream::AckKind::Term
         ));
+    }
+
+    #[test]
+    fn heartbeat_principal_sync_scopes_updates_by_tenant() {
+        assert!(SYNC_HEARTBEAT_PRINCIPAL_LIVENESS_SQL.contains("WHERE tenant_id = $1"));
+        assert!(SYNC_HEARTBEAT_PRINCIPAL_LIVENESS_SQL.contains("AND id = $2"));
     }
 }

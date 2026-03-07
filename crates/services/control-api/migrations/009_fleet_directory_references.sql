@@ -2,7 +2,30 @@
 -- Adds approvals.principal_id and backfills endpoint-principal references.
 
 ALTER TABLE approvals
-ADD COLUMN IF NOT EXISTS principal_id UUID REFERENCES principals(id) ON DELETE SET NULL;
+ADD COLUMN IF NOT EXISTS principal_id UUID;
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'approvals_principal_id_fkey'
+    ) THEN
+        ALTER TABLE approvals
+            DROP CONSTRAINT approvals_principal_id_fkey;
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'approvals_principal_tenant_fk'
+    ) THEN
+        ALTER TABLE approvals
+            ADD CONSTRAINT approvals_principal_tenant_fk
+            FOREIGN KEY (tenant_id, principal_id)
+            REFERENCES principals(tenant_id, id);
+    END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_approvals_tenant_principal
 ON approvals(tenant_id, principal_id, created_at DESC)

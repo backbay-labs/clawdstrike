@@ -58,12 +58,10 @@ CREATE TABLE IF NOT EXISTS response_actions (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT response_actions_source_detection_tenant_fk
         FOREIGN KEY (tenant_id, source_detection_id)
-        REFERENCES detection_findings(tenant_id, id)
-        ON DELETE SET NULL,
+        REFERENCES detection_findings(tenant_id, id),
     CONSTRAINT response_actions_source_approval_tenant_fk
         FOREIGN KEY (tenant_id, source_approval_id)
         REFERENCES approvals(tenant_id, id)
-        ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_response_actions_tenant_requested

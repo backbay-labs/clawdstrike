@@ -91,7 +91,7 @@ impl HuntEvent {
         let timestamp = DateTime::parse_from_rfc3339(&event.occurred_at)
             .map_err(|_| "event.occurredAt must be RFC3339".to_string())?
             .with_timezone(&Utc);
-        let verdict = map_fleet_verdict(event.verdict)?;
+        let verdict = map_fleet_verdict(event.verdict);
         let severity = event.severity.map(fleet_severity_label);
 
         Ok(Self {
@@ -238,15 +238,15 @@ fn hunt_event_kind_as_timeline_kind(kind: HuntEventKind) -> Option<TimelineEvent
     }
 }
 
-fn map_fleet_verdict(verdict: Option<FleetEventVerdict>) -> Result<NormalizedVerdict, String> {
-    Ok(match verdict.unwrap_or(FleetEventVerdict::None) {
+fn map_fleet_verdict(verdict: Option<FleetEventVerdict>) -> NormalizedVerdict {
+    match verdict.unwrap_or(FleetEventVerdict::None) {
         FleetEventVerdict::Allow => NormalizedVerdict::Allow,
         FleetEventVerdict::Deny => NormalizedVerdict::Deny,
         FleetEventVerdict::Warn => NormalizedVerdict::Warn,
         FleetEventVerdict::None => NormalizedVerdict::None,
         FleetEventVerdict::Forwarded => NormalizedVerdict::Forwarded,
         FleetEventVerdict::Dropped => NormalizedVerdict::Dropped,
-    })
+    }
 }
 
 fn fleet_severity_label(severity: FleetEventSeverity) -> String {

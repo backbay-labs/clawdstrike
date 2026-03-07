@@ -248,11 +248,7 @@ fn sigma_preview_to_native_rule(source_text: &str) -> Result<String> {
         .and_then(Value::as_str)
         .unwrap_or("5m");
     let selection = sigma_preview_selection(detection)?;
-    let target_pattern = selection
-        .iter()
-        .next()
-        .and_then(|(_, value)| value.as_str())
-        .unwrap_or(".*");
+    let target_pattern = sigma_preview_target_pattern(selection).unwrap_or(".*");
     let source = sigma_preview_source(&parsed);
     let preview = json!({
         "schema": "clawdstrike.hunt.correlation.v1",
@@ -297,6 +293,18 @@ fn sigma_preview_selection(detection: &Map<String, Value>) -> Result<&Map<String
                 "Sigma import requires at least one object-valued detection selector".to_string(),
             )
         })
+}
+
+fn sigma_preview_target_pattern(selection: &Map<String, Value>) -> Option<&str> {
+    let mut string_patterns: Vec<(&str, &str)> = selection
+        .iter()
+        .filter_map(|(field, value)| value.as_str().map(|pattern| (field.as_str(), pattern)))
+        .collect();
+    string_patterns.sort_by(|left, right| left.0.cmp(right.0));
+    string_patterns
+        .into_iter()
+        .map(|(_, pattern)| pattern)
+        .next()
 }
 
 fn sigma_condition_selector_candidates(
@@ -599,6 +607,13 @@ mod tests {
         let sigma = "title: Suspicious Access\nlogsource:\n  category: process_creation\ndetection:\n  selection:\n    CommandLine: secret\n  filter:\n    Image: trusted\n  condition: selection and not filter\n";
         let preview = sigma_preview_to_native_rule(sigma).expect("build preview");
         assert!(preview.contains("source: tetragon"));
+        assert!(preview.contains("target_pattern: secret"));
+    }
+
+    #[test]
+    fn sigma_preview_selects_target_pattern_deterministically() {
+        let sigma = "title: Ordered Selection\nlogsource:\n  category: process_creation\ndetection:\n  selection:\n    Image: /usr/bin/curl\n    CommandLine: secret\n  condition: selection\n";
+        let preview = sigma_preview_to_native_rule(sigma).expect("build preview");
         assert!(preview.contains("target_pattern: secret"));
     }
 
