@@ -17,7 +17,17 @@ import { THEME, ESC, AGENTS } from "./theme"
 import { renderStatusBar } from "./components/status-bar"
 import { getInvestigationCounts, isInvestigationStale } from "./investigation"
 import { getSurfaceMeta } from "./surfaces"
-import type { Screen, ScreenContext, AppState, InputMode, Command, AppController, DispatchResultInfo, RunRecord } from "./types"
+import type {
+  Screen,
+  ScreenContext,
+  AppState,
+  InputMode,
+  Command,
+  AppController,
+  DispatchResultInfo,
+  RunRecord,
+  InteractiveSurfaceFocus,
+} from "./types"
 import {
   createInitialAuditLogState,
   createInitialDispatchSheetState,
@@ -39,6 +49,12 @@ import {
   updateRunRecord,
 } from "./runs"
 import { createAttachRunSession } from "./pty"
+import {
+  createEmbeddedInteractiveSession,
+  sanitizeInteractiveOutput,
+  type EmbeddedInteractiveSessionPlan,
+  type InteractivePtyRuntime,
+} from "./pty-runtime"
 import { getAvailableExternalAdapters, getExternalAdapter, toExternalAdapterOptions } from "./external/registry"
 import { createExternalRunSession } from "./external/session"
 import {
@@ -129,6 +145,11 @@ export class TUIApp implements AppController {
   private cwd: string
   private canceledRunIds = new Set<string>()
   private attachedSession: { exited: Promise<number>; terminate: () => void } | null = null
+  private interactiveRuntime: InteractivePtyRuntime | null = null
+  private interactiveRuntimeCleanup: (() => Promise<void>) | null = null
+  private interactiveRuntimeRunId: string | null = null
+  private interactiveRuntimeStartedAt = 0
+  private interactiveRuntimeCancelRequested = false
   private externalSessionCleanup = new Map<string, () => Promise<void>>()
   private exitPromise: Promise<void>
   private resolveExitPromise: (() => void) | null = null
@@ -570,6 +591,14 @@ export class TUIApp implements AppController {
     process.stdin.pause()
     this.attachedSession?.terminate()
     this.attachedSession = null
+    this.interactiveRuntime?.kill()
+    this.interactiveRuntime = null
+    await this.interactiveRuntimeCleanup?.().catch(() => {})
+    this.interactiveRuntimeCleanup = null
+    this.interactiveRuntimeRunId = null
+    this.interactiveRuntimeStartedAt = 0
+    this.interactiveRuntimeCancelRequested = false
+    this.resetInteractiveSessionState()
     await Promise.allSettled(
       [...this.externalSessionCleanup.values()].map(async (cleanup) => cleanup()),
     )
@@ -598,6 +627,9 @@ export class TUIApp implements AppController {
   private updateTerminalSize(): void {
     this.width = process.stdout.columns || 80
     this.height = process.stdout.rows || 24
+    if (this.interactiveRuntime) {
+      this.syncInteractiveViewport()
+    }
   }
 
   private setupInput(): void {
@@ -750,6 +782,8 @@ export class TUIApp implements AppController {
     if (mode === "main") {
       this.state.homeFocus = "prompt"
       this.state.homePromptTraceStartFrame = this.state.animationFrame
+    } else if (mode === "interactive-run") {
+      this.syncInteractiveViewport()
     }
 
     const newScreen = this.screens.get(mode)
@@ -928,6 +962,11 @@ export class TUIApp implements AppController {
     }
 
     this.state.pendingAttachRunId = null
+    if (this.shouldUseEmbeddedInteractive(run)) {
+      void this.launchEmbeddedInteractiveRun(run.id)
+      return
+    }
+
     void this.launchAttachRun(run.id)
   }
 
@@ -1173,6 +1212,124 @@ export class TUIApp implements AppController {
     this.render()
   }
 
+  interactiveSendInput(input: string): void {
+    if (!this.interactiveRuntime || this.state.interactiveSession.focus !== "pty") {
+      return
+    }
+
+    this.interactiveRuntime.write(input)
+  }
+
+  interactiveSendStagedTask(): void {
+    if (!this.interactiveRuntime) {
+      return
+    }
+
+    const text = this.state.interactiveSession.stagedTask.text.trim()
+    if (!text) {
+      this.state.interactiveSession.error = "Stage a task before sending it to the interactive session."
+      this.render()
+      return
+    }
+
+    this.interactiveRuntime.write(`${text}\r`)
+    this.state.interactiveSession = {
+      ...this.state.interactiveSession,
+      stagedTask: {
+        ...this.state.interactiveSession.stagedTask,
+        sent: true,
+        editable: false,
+      },
+      focus: "pty",
+      returnFocus: "pty",
+      phase: "running",
+      error: null,
+    }
+
+    const run = this.state.runs.entries.find((entry) => entry.id === this.state.interactiveSession.runId)
+    if (run) {
+      this.replaceRun(updateRunRecord(run, { interactivePhase: "running" }, { kind: "status", message: "Staged task sent to interactive session" }))
+    }
+    this.render()
+  }
+
+  interactiveUpdateStagedTask(text: string): void {
+    this.state.interactiveSession = {
+      ...this.state.interactiveSession,
+      stagedTask: {
+        ...this.state.interactiveSession.stagedTask,
+        text,
+      },
+      error: null,
+    }
+    this.render()
+  }
+
+  interactiveSetFocus(focus: InteractiveSurfaceFocus): void {
+    this.state.interactiveSession = {
+      ...this.state.interactiveSession,
+      focus,
+      returnFocus: focus === "controls" ? this.state.interactiveSession.returnFocus : focus,
+      error: null,
+    }
+    this.render()
+  }
+
+  interactiveToggleControls(): void {
+    const session = this.state.interactiveSession
+    this.state.interactiveSession = {
+      ...session,
+      focus: session.focus === "controls" ? session.returnFocus : "controls",
+      returnFocus: session.focus === "controls" ? session.returnFocus : session.focus,
+      error: null,
+    }
+    this.render()
+  }
+
+  interactiveReturnToRunDetail(): void {
+    if (this.state.interactiveSession.runId) {
+      this.openRun(this.state.interactiveSession.runId)
+      return
+    }
+    this.setScreen("run-detail")
+  }
+
+  interactiveCancelSession(): void {
+    if (!this.interactiveRuntime || !this.interactiveRuntimeRunId) {
+      return
+    }
+
+    this.interactiveRuntimeCancelRequested = true
+    this.state.interactiveSession = {
+      ...this.state.interactiveSession,
+      phase: "returning",
+      error: null,
+    }
+    const run = this.state.runs.entries.find((entry) => entry.id === this.interactiveRuntimeRunId)
+    if (run) {
+      this.replaceRun(updateRunRecord(run, { interactivePhase: "returning" }, { kind: "warning", message: "Canceling embedded interactive session" }))
+    }
+    this.interactiveRuntime.kill()
+    this.render()
+  }
+
+  interactiveScrollViewport(delta: number): void {
+    const maxOffset = Math.max(
+      0,
+      this.state.interactiveSession.scrollback.length - Math.max(1, this.state.interactiveSession.viewport.rows),
+    )
+    const nextOffset = Math.max(0, Math.min(maxOffset, this.state.interactiveSession.viewport.scrollOffset + delta))
+    this.state.interactiveSession = {
+      ...this.state.interactiveSession,
+      viewport: {
+        ...this.state.interactiveSession.viewport,
+        scrollOffset: nextOffset,
+        autoFollow: nextOffset === 0,
+      },
+    }
+    this.render()
+  }
+
   // ===========================================================================
   // DATA REFRESH
   // ===========================================================================
@@ -1233,6 +1390,275 @@ export class TUIApp implements AppController {
     if (this.state.activeRunId === nextRun.id) {
       const lastEventIndex = Math.max(0, nextRun.events.length - 1)
       this.state.runDetailEvents = { offset: Math.max(0, lastEventIndex - 5), selected: lastEventIndex }
+    }
+  }
+
+  private shouldUseEmbeddedInteractive(run: RunRecord): boolean {
+    const override = process.env.CLAWDSTRIKE_ATTACH_MODE?.trim().toLowerCase()
+    if (override === "raw") {
+      return false
+    }
+    if (override === "embedded") {
+      return supportsAttachToolchain(run.agentId)
+    }
+    return run.agentId === "claude"
+  }
+
+  private resetInteractiveSessionState(): void {
+    this.state.interactiveSession = createInitialInteractiveSessionState()
+  }
+
+  private syncInteractiveViewport(): void {
+    const cols = Math.max(32, this.width - 10)
+    const rows = Math.max(8, this.height - 16)
+    this.state.interactiveSession.viewport = {
+      ...this.state.interactiveSession.viewport,
+      cols,
+      rows,
+    }
+    this.interactiveRuntime?.resize(cols, rows)
+  }
+
+  private appendInteractiveOutput(runId: string, chunk: string): void {
+    const nextLines = sanitizeInteractiveOutput(chunk)
+    if (nextLines.length === 0) {
+      return
+    }
+
+    const run = this.state.runs.entries.find((entry) => entry.id === runId)
+    if (!run) {
+      return
+    }
+
+    const scrollback = [...this.state.interactiveSession.scrollback, ...nextLines]
+    const maxScrollback = 1200
+    if (scrollback.length > maxScrollback) {
+      scrollback.splice(0, scrollback.length - maxScrollback)
+    }
+
+    this.state.interactiveSession = {
+      ...this.state.interactiveSession,
+      scrollback,
+      lastOutputAt: new Date().toISOString(),
+      lastHeartbeatAt: new Date().toISOString(),
+      phase: this.state.interactiveSession.stagedTask.sent ? "running" : this.state.interactiveSession.phase,
+    }
+
+    const nextRun = updateRunRecord(run, {
+      ptyTail: scrollback.slice(-6),
+      interactivePhase: this.state.interactiveSession.phase,
+    })
+    this.replaceRun(nextRun)
+    if (this.state.interactiveSession.viewport.autoFollow) {
+      this.state.interactiveSession.viewport.scrollOffset = 0
+    }
+    if (this.state.inputMode === "interactive-run" && this.state.activeRunId === runId) {
+      this.render()
+    }
+  }
+
+  private async finalizeEmbeddedInteractiveRun(
+    runId: string,
+    plan: EmbeddedInteractiveSessionPlan,
+    exitCode: number | null,
+  ): Promise<void> {
+    const currentRun = this.state.runs.entries.find((entry) => entry.id === runId)
+    if (!currentRun) {
+      return
+    }
+
+    const canceled = this.interactiveRuntimeCancelRequested
+    const success = !canceled && exitCode === 0
+    const error = canceled
+      ? "Interactive session canceled from embedded surface"
+      : exitCode === 0 || exitCode === null
+        ? null
+        : `Interactive session exited with code ${exitCode}`
+    const nextPhase = canceled ? "canceled" : success ? "completed" : "failed"
+    const result: DispatchResultInfo = {
+      success,
+      taskId: plan.workcell.id,
+      agent: currentRun.agentLabel,
+      action: currentRun.action,
+      routing: plan.routing,
+      execution: success ? { success: true } : { success: false, error: error ?? undefined },
+      error: error ?? undefined,
+      duration: Math.max(0, Date.now() - this.interactiveRuntimeStartedAt),
+    }
+
+    const finishedRun = updateRunRecord(
+      currentRun,
+      {
+        phase: nextPhase,
+        routing: plan.routing,
+        workcellId: plan.workcell.id,
+        worktreePath: plan.workcell.directory,
+        ptySessionId: null,
+        interactiveSessionId: null,
+        interactiveSurface: "none",
+        interactivePhase: null,
+        attachState: "detached",
+        attached: false,
+        execution: result.execution ?? null,
+        result,
+        error,
+        completedAt: new Date().toISOString(),
+      },
+      {
+        kind: canceled ? "warning" : success ? "status" : "error",
+        message: canceled
+          ? "Interactive session canceled"
+          : success
+            ? "Interactive session completed"
+            : `Run failed: ${error ?? "interactive session failed"}`,
+      },
+    )
+
+    this.replaceRun(finishedRun)
+    this.state.lastResult = result
+    this.state.statusMessage = canceled
+      ? `${THEME.warning}!${THEME.reset} ${finishedRun.agentLabel} interactive session canceled`
+      : success
+        ? `${THEME.success}✓${THEME.reset} ${finishedRun.agentLabel} interactive session completed`
+        : `${THEME.error}✗${THEME.reset} ${finishedRun.agentLabel} interactive session failed`
+    this.interactiveRuntime = null
+    this.interactiveRuntimeRunId = null
+    this.interactiveRuntimeStartedAt = 0
+    this.interactiveRuntimeCancelRequested = false
+    const cleanup = this.interactiveRuntimeCleanup
+    this.interactiveRuntimeCleanup = null
+    this.resetInteractiveSessionState()
+    this.syncManagedRunState()
+    await cleanup?.().catch(() => {})
+    if (this.state.inputMode === "interactive-run") {
+      this.openRun(runId)
+    } else {
+      this.render()
+    }
+  }
+
+  private async launchEmbeddedInteractiveRun(runId: string): Promise<void> {
+    const originalRun = this.state.runs.entries.find((entry) => entry.id === runId)
+    if (!originalRun) {
+      return
+    }
+
+    if (this.interactiveRuntime && this.interactiveRuntimeRunId !== runId) {
+      this.state.statusMessage = `${THEME.warning}!${THEME.reset} Only one embedded interactive session can be active at a time.`
+      this.render()
+      return
+    }
+
+    let plan: EmbeddedInteractiveSessionPlan | null = null
+    try {
+      const preparingRun = updateRunRecord(
+        originalRun,
+        {
+          phase: "executing",
+          attachState: "attaching",
+          attached: false,
+          error: null,
+        },
+        { kind: "status", message: "Preparing embedded interactive session" },
+      )
+      this.replaceRun(preparingRun)
+      this.state.statusMessage = `${THEME.accent}⠋${THEME.reset} Preparing interactive session`
+      this.render()
+
+      plan = await createEmbeddedInteractiveSession(preparingRun, {
+        cwd: this.cwd,
+        projectId: "default",
+      })
+
+      this.interactiveRuntime = plan.runtime
+      this.interactiveRuntimeCleanup = plan.cleanup
+      this.interactiveRuntimeRunId = runId
+      this.interactiveRuntimeStartedAt = Date.now()
+      this.interactiveRuntimeCancelRequested = false
+
+      const runningRun = updateRunRecord(
+        this.state.runs.entries.find((entry) => entry.id === runId) ?? preparingRun,
+        {
+          phase: "executing",
+          routing: plan.routing,
+          workcellId: plan.workcell.id,
+          worktreePath: plan.workcell.directory,
+          ptySessionId: plan.sessionId,
+          interactiveSessionId: plan.sessionId,
+          interactiveSurface: "embedded",
+          interactivePhase: plan.launchConsumesPrompt ? "running" : "awaiting_first_input",
+          attachState: "attached",
+          attached: true,
+        },
+        { kind: "status", message: "Embedded interactive session opened" },
+      )
+      this.replaceRun(runningRun)
+
+      this.state.interactiveSession = {
+        runId,
+        sessionId: plan.sessionId,
+        toolchain: runningRun.agentId,
+        focus: plan.launchConsumesPrompt ? "pty" : "staged_task",
+        returnFocus: plan.launchConsumesPrompt ? "pty" : "staged_task",
+        phase: plan.launchConsumesPrompt ? "running" : "awaiting_first_input",
+        launchConsumesPrompt: plan.launchConsumesPrompt,
+        stagedTask: {
+          text: runningRun.prompt,
+          sent: plan.launchConsumesPrompt,
+          editable: plan.stagedTaskEditable,
+        },
+        viewport: this.state.interactiveSession.viewport,
+        scrollback: [],
+        lastOutputAt: null,
+        lastHeartbeatAt: null,
+        error: null,
+      }
+      this.syncInteractiveViewport()
+      this.state.statusMessage = `${THEME.success}✓${THEME.reset} Embedded interactive session ready`
+      this.state.activeRunId = runId
+      this.state.runs.selectedRunId = runId
+      this.setScreen("interactive-run")
+
+      plan.runtime.onOutput((chunk) => {
+        this.appendInteractiveOutput(runId, chunk)
+      })
+      plan.runtime.onExit((code) => {
+        void this.finalizeEmbeddedInteractiveRun(runId, plan!, code)
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      const failedRun = updateRunRecord(
+        this.state.runs.entries.find((entry) => entry.id === runId) ?? originalRun,
+        {
+          phase: "failed",
+          attachState: "detached",
+          attached: false,
+          interactiveSessionId: null,
+          interactiveSurface: "none",
+          interactivePhase: null,
+          error: message,
+          completedAt: new Date().toISOString(),
+          execution: { success: false, error: message },
+          result: {
+            success: false,
+            taskId: plan?.workcell.id ?? "",
+            agent: originalRun.agentLabel,
+            action: originalRun.action,
+            routing: plan?.routing,
+            execution: { success: false, error: message },
+            error: message,
+            duration: 0,
+          },
+        },
+        { kind: "error", message: `Run failed: ${message}` },
+      )
+      this.replaceRun(failedRun)
+      this.state.lastResult = failedRun.result
+      this.state.statusMessage = `${THEME.error}✗${THEME.reset} Embedded interactive session failed`
+      this.resetInteractiveSessionState()
+      this.syncManagedRunState()
+      await plan?.cleanup().catch(() => {})
+      this.render()
     }
   }
 

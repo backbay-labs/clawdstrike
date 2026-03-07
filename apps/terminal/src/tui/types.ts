@@ -113,6 +113,22 @@ export interface AppController {
   getCwd(): string
   /** Refresh local desktop-agent snapshot */
   refreshDesktopAgent(): void
+  /** Send raw input to the embedded interactive PTY */
+  interactiveSendInput?(input: string): void
+  /** Send the staged task into the embedded interactive PTY */
+  interactiveSendStagedTask?(): void
+  /** Update the staged task text */
+  interactiveUpdateStagedTask?(text: string): void
+  /** Switch the embedded interactive focus target */
+  interactiveSetFocus?(focus: InteractiveSurfaceFocus): void
+  /** Toggle the embedded interactive controls overlay */
+  interactiveToggleControls?(): void
+  /** Return from the embedded interactive surface to run detail */
+  interactiveReturnToRunDetail?(): void
+  /** Cancel the embedded interactive session */
+  interactiveCancelSession?(): void
+  /** Scroll the embedded interactive viewport */
+  interactiveScrollViewport?(delta: number): void
 }
 
 // =============================================================================
@@ -261,8 +277,11 @@ export interface InteractiveViewportState {
 export interface InteractiveSessionState {
   runId: string | null
   sessionId: string | null
+  toolchain: string | null
   focus: InteractiveSurfaceFocus
+  returnFocus: InteractiveSurfaceFocus
   phase: InteractiveSurfacePhase
+  launchConsumesPrompt: boolean
   stagedTask: {
     text: string
     sent: boolean
@@ -686,8 +705,11 @@ export function createInitialInteractiveSessionState(): InteractiveSessionState 
   return {
     runId: null,
     sessionId: null,
+    toolchain: null,
     focus: "staged_task",
+    returnFocus: "pty",
     phase: "connecting",
+    launchConsumesPrompt: false,
     stagedTask: {
       text: "",
       sent: false,

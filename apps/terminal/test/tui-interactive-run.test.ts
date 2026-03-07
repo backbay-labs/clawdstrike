@@ -15,6 +15,11 @@ import { stripAnsi } from "../src/tui/components/types"
 
 class TestApp implements AppController {
   public screen: InputMode | null = null
+  public sentInputs: string[] = []
+  public stagedTaskSends = 0
+  public updatedTaskText: string | null = null
+  public focus: "pty" | "controls" | "staged_task" | null = null
+  public toggledControls = 0
 
   setScreen(mode: InputMode): void {
     this.screen = mode
@@ -45,6 +50,21 @@ class TestApp implements AppController {
     return process.cwd()
   }
   refreshDesktopAgent(): void {}
+  interactiveSendInput(input: string): void {
+    this.sentInputs.push(input)
+  }
+  interactiveSendStagedTask(): void {
+    this.stagedTaskSends += 1
+  }
+  interactiveUpdateStagedTask(text: string): void {
+    this.updatedTaskText = text
+  }
+  interactiveSetFocus(focus: "pty" | "controls" | "staged_task"): void {
+    this.focus = focus
+  }
+  interactiveToggleControls(): void {
+    this.toggledControls += 1
+  }
 }
 
 function createState(): AppState {
@@ -106,8 +126,8 @@ function createContext(state: AppState, app: AppController): ScreenContext {
   }
 }
 
-describe("interactive run scaffold", () => {
-  test("renders the phase six shell for the active run", () => {
+describe("interactive run surface", () => {
+  test("renders the embedded session shell for the active run", () => {
     const state = createState()
     const app = new TestApp()
     const run = createManagedRun({
@@ -138,8 +158,9 @@ describe("interactive run scaffold", () => {
 
     const output = stripAnsi(interactiveRunScreen.render(createContext(state, app)))
     expect(output).toContain("Interactive Run")
-    expect(output).toContain("Phase 6 scaffold only.")
-    expect(output).toContain("Staged Task")
+    expect(output).toContain("Session Rail")
+    expect(output).toContain("Task Bar")
+    expect(output).toContain("Transcript")
     expect(output).toContain("reply with ok")
     expect(output).toContain("Ctrl+G")
   })
@@ -159,5 +180,44 @@ describe("interactive run scaffold", () => {
 
     expect(interactiveRunScreen.handleInput("\x1b", createContext(state, app))).toBe(true)
     expect(app.screen).toBe("run-detail")
+  })
+
+  test("opens controls from Ctrl+G", () => {
+    const state = createState()
+    const app = new TestApp()
+    state.interactiveSession.focus = "pty"
+
+    expect(interactiveRunScreen.handleInput("\x07", createContext(state, app))).toBe(true)
+    expect(app.toggledControls).toBe(1)
+  })
+
+  test("sends the staged task from staged task focus", () => {
+    const state = createState()
+    const app = new TestApp()
+    state.interactiveSession.focus = "staged_task"
+    state.interactiveSession.stagedTask.text = "reply with ok"
+
+    expect(interactiveRunScreen.handleInput("\r", createContext(state, app))).toBe(true)
+    expect(app.stagedTaskSends).toBe(1)
+  })
+
+  test("accepts pasted staged task chunks", () => {
+    const state = createState()
+    const app = new TestApp()
+    state.interactiveSession.focus = "staged_task"
+    state.interactiveSession.stagedTask.editable = true
+    state.interactiveSession.stagedTask.text = "reply"
+
+    expect(interactiveRunScreen.handleInput(" with ok", createContext(state, app))).toBe(true)
+    expect(app.updatedTaskText).toBe("reply with ok")
+  })
+
+  test("forwards printable input to the PTY when PTY focus is active", () => {
+    const state = createState()
+    const app = new TestApp()
+    state.interactiveSession.focus = "pty"
+
+    expect(interactiveRunScreen.handleInput("h", createContext(state, app))).toBe(true)
+    expect(app.sentInputs).toEqual(["h"])
   })
 })

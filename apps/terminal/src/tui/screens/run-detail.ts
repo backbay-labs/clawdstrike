@@ -16,6 +16,7 @@ import {
   getRunExternalDisabledReason,
   getRunExternalSurfaceSummary,
   getRunReviewRoute,
+  isRunTerminal,
   isRunReviewReady,
 } from "../runs"
 
@@ -160,7 +161,9 @@ function renderStatusCard(run: RunRecord, width: number): string[] {
 
   content.push("")
   content.push(`${THEME.secondary}${THEME.bold}Attach${THEME.reset}`)
-  if (canRunAttach(run)) {
+  if (run.interactiveSurface === "embedded" && run.interactiveSessionId && !isRunTerminal(run.phase)) {
+    content.push(`${THEME.success}Ready${THEME.reset} reopen this embedded interactive surface from the detail footer.`)
+  } else if (canRunAttach(run)) {
     content.push(`${THEME.success}Ready${THEME.reset} hand the terminal to this run from the detail footer.`)
   } else if (canRelaunchRunInMode(run, "attach")) {
     content.push(`${THEME.success}Ready${THEME.reset} relaunch this prompt in attach mode from the detail footer.`)
@@ -255,19 +258,19 @@ function overlayAttachBanner(baseScreen: string, ctx: ScreenContext, run: RunRec
   const lines = baseScreen.split("\n")
   const instruction =
     run.agentId === "claude"
-      ? `${THEME.dim}Claude starts at a blank prompt. The staged task will be shown before handoff.${THEME.reset}`
-      : `${THEME.dim}The terminal will be cleared and attached directly to the agent session.${THEME.reset}`
+      ? `${THEME.dim}Claude will open in the embedded interactive surface with a staged task bar.${THEME.reset}`
+      : `${THEME.dim}This run will open in the interactive attach flow.${THEME.reset}`
   const overlay = centerBlock(
     renderBox(
       "Attach To Run",
       [
         `${THEME.dim}Run:${THEME.reset} ${THEME.white}${run.id}${THEME.reset} ${THEME.dim}${run.title}${THEME.reset}`,
         `${THEME.dim}Mode:${THEME.reset} ${THEME.white}${run.mode}${THEME.reset} ${THEME.dim}-> attach${THEME.reset}`,
-        `${THEME.dim}Detach:${THEME.reset} ${THEME.white}exit${THEME.reset} ${THEME.dim}or the agent's detach flow${THEME.reset}`,
+        `${THEME.dim}Surface:${THEME.reset} ${THEME.white}interactive-run${THEME.reset}`,
         "",
         instruction,
         "",
-        `${THEME.white}Enter${THEME.reset} ${THEME.dim}attach${THEME.reset}  ${THEME.white}Esc${THEME.reset} ${THEME.dim}cancel${THEME.reset}`,
+        `${THEME.white}Enter${THEME.reset} ${THEME.dim}open${THEME.reset}  ${THEME.white}Esc${THEME.reset} ${THEME.dim}cancel${THEME.reset}`,
       ],
       Math.max(56, Math.min(82, ctx.width - 12)),
       THEME,
@@ -386,6 +389,7 @@ export const runDetailScreen: Screen = {
     const currentExternalAdapter = run.external.adapterId
       ? getExternalAdapter(run.external.adapterId)
       : null
+    const hasEmbeddedInteractive = run.interactiveSurface === "embedded" && run.interactiveSessionId && !isRunTerminal(run.phase)
     const externalActionLabel =
       run.external.status === "running" && run.external.ref && currentExternalAdapter?.focus
         ? "reopen"
@@ -394,7 +398,7 @@ export const runDetailScreen: Screen = {
           : canRelaunchRunInMode(run, "external")
             ? "relaunch"
           : "external"
-    const attachActionLabel = canRelaunchRunInMode(run, "attach") ? "relaunch" : "attach"
+    const attachActionLabel = hasEmbeddedInteractive ? "resume" : canRelaunchRunInMode(run, "attach") ? "relaunch" : "attach"
     lines.push(centerLine(
       `${THEME.dim}esc${THEME.reset}${THEME.muted} back${THEME.reset}  ` +
         `${THEME.dim}r${THEME.reset}${THEME.muted} runs${THEME.reset}  ` +
@@ -496,6 +500,10 @@ export const runDetailScreen: Screen = {
     }
 
     if (key === "a") {
+      if (run.interactiveSurface === "embedded" && run.interactiveSessionId && !isRunTerminal(run.phase)) {
+        ctx.app.setScreen("interactive-run")
+        return true
+      }
       if (canRelaunchRunInMode(run, "attach")) {
         ctx.app.relaunchRunInMode(run.id, "attach")
         return true

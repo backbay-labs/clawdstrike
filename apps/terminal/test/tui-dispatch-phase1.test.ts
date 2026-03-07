@@ -173,6 +173,15 @@ function createContext(
 }
 
 describe("dispatch sheet overlay", () => {
+  test("accepts pasted prompt text chunks on the home surface", () => {
+    const state = createState()
+    const app = new TestApp()
+    const screen = createMainScreen([])
+
+    expect(screen.handleInput("reply with ok", createContext(state, app))).toBe(true)
+    expect(state.promptBuffer).toBe("reply with ok")
+  })
+
   test("keeps Enter in prompt focus routed through submitPrompt", () => {
     const state = createState()
     state.promptBuffer = "triage phase one"
@@ -325,7 +334,7 @@ describe("run detail surface", () => {
     const ctx = createContext(state, app, 120, 36)
     const output = stripAnsi(runDetailScreen.render(ctx))
     expect(output).toContain("Attach To Run")
-    expect(output).toContain("Enter attach")
+    expect(output).toContain("Enter open")
 
     expect(runDetailScreen.handleInput("\r", ctx)).toBe(true)
     expect(app.confirmedAttach).toBe(true)

@@ -487,9 +487,10 @@ function handleMainInput(key: string, ctx: ScreenContext): boolean {
     return true
   }
 
-  // Regular characters - add to prompt
-  if (state.homeFocus === "prompt" && key.length === 1 && key >= " ") {
-    state.promptBuffer += key
+  // Regular characters or pasted text - add to prompt
+  const printableChunk = state.homeFocus === "prompt" ? printableTextChunk(key) : null
+  if (printableChunk) {
+    state.promptBuffer += printableChunk
     app.render()
     return true
   }
@@ -764,6 +765,14 @@ function cycleDispatchSheetOption(
   direction: -1 | 1,
 ): number {
   return (current + direction + length) % length
+}
+
+function printableTextChunk(key: string): string | null {
+  if (!key || key.includes("\x1b")) {
+    return null
+  }
+  const text = [...key].filter((ch) => ch >= " " && ch !== "\x7f").join("")
+  return text.length > 0 ? text : null
 }
 
 function handleDispatchSheetInput(key: string, ctx: ScreenContext): boolean {
