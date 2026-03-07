@@ -7,6 +7,11 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
+[features]
+# Compatibility shim for downstream manifests that still enable `hunt-query/ocsf`.
+# OCSF support is built in unconditionally now, so this feature is intentionally a no-op.
+ocsf = []
+
 [dependencies]
 hunt-scan.workspace = true
 spine.workspace = true

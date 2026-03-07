@@ -1,6 +1,10 @@
 #![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
 
 //! Hunt Query — structured querying and timeline reconstruction for clawdstrike hunt.
+//!
+//! OCSF projection is part of the crate's baseline surface. The legacy `ocsf`
+//! cargo feature remains as a no-op compatibility shim for downstream manifests
+//! that still enable it.
 
 pub mod error;
 pub mod local;

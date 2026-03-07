@@ -4,9 +4,6 @@
 ALTER TABLE agents
 ADD COLUMN IF NOT EXISTS principal_id UUID;
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_principals_tenant_id
-ON principals(tenant_id, id);
-
 DO $$
 BEGIN
     IF EXISTS (
