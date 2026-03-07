@@ -133,14 +133,16 @@ impl NormalizedVerdict {
 pub fn parse_envelope(envelope: &Value, verify: bool) -> Option<TimelineEvent> {
     let fact = envelope.get("fact")?;
 
-    // Verify signature if requested
-    let signature_valid = if verify {
-        Some(spine::verify_envelope(envelope).unwrap_or(false))
-    } else {
-        None
-    };
-
     if let Some(schema) = fact.get("schema").and_then(|s| s.as_str()) {
+        // Only spine-schema facts participate in spine signature verification.
+        // Fleet events carry their own evidence signature state and are not
+        // spine-signed envelopes.
+        let signature_valid = if verify {
+            Some(spine::verify_envelope(envelope).unwrap_or(false))
+        } else {
+            None
+        };
+
         // Parse timestamp from issued_at
         let issued_at = envelope.get("issued_at").and_then(|v| v.as_str())?;
         let timestamp = DateTime::parse_from_rfc3339(issued_at)
@@ -168,7 +170,7 @@ pub fn parse_envelope(envelope: &Value, verify: bool) -> Option<TimelineEvent> {
         return None;
     }
 
-    parse_fleet_event(fact, signature_valid, envelope.clone())
+    parse_fleet_event(fact, None, envelope.clone())
 }
 
 /// Parse a Tetragon process event.
@@ -701,6 +703,32 @@ mod tests {
         assert_eq!(event.process.as_deref(), Some("/usr/bin/curl"));
         assert_eq!(event.namespace.as_deref(), Some("default"));
         assert_eq!(event.pod.as_deref(), Some("agent-1"));
+        assert_eq!(event.signature_valid, Some(true));
+    }
+
+    #[test]
+    fn parse_fleet_control_plane_envelope_preserves_evidence_signature_when_verify_enabled() {
+        let envelope = json!({
+            "issued_at": "2026-03-06T12:00:30Z",
+            "issuer": "spiffe://tenant/acme",
+            "fact": {
+                "eventId": "evt-verify",
+                "tenantId": "00000000-0000-0000-0000-000000000001",
+                "source": "directory",
+                "kind": "principal_state_changed",
+                "occurredAt": "2026-03-06T12:00:00Z",
+                "ingestedAt": "2026-03-06T12:00:01Z",
+                "summary": "principal quarantined",
+                "evidence": {
+                    "rawRef": "hunt-envelope:evt-verify",
+                    "signatureValid": true
+                }
+            }
+        });
+
+        let event = parse_envelope(&envelope, true).unwrap();
+        assert_eq!(event.source, EventSource::Directory);
+        assert_eq!(event.kind, TimelineEventKind::PrincipalStateChanged);
         assert_eq!(event.signature_valid, Some(true));
     }
 
