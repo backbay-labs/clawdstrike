@@ -429,6 +429,12 @@ impl HushEngine {
                         let mut state = self.state.write().await;
                         state.action_count += 1;
                         state.violation_count += 1;
+                        state.violations.push(ViolationRef {
+                            guard: result.guard.clone(),
+                            severity: format!("{:?}", result.severity),
+                            message: result.message.clone(),
+                            action: None,
+                        });
                         return Ok(GuardReport {
                             overall: result.clone(),
                             per_guard: vec![result],
@@ -450,6 +456,12 @@ impl HushEngine {
                             let mut state = self.state.write().await;
                             state.action_count += 1;
                             state.violation_count += 1;
+                            state.violations.push(ViolationRef {
+                                guard: result.guard.clone(),
+                                severity: format!("{:?}", result.severity),
+                                message: result.message.clone(),
+                                action: None,
+                            });
                             return Ok(GuardReport {
                                 overall: result.clone(),
                                 per_guard: vec![result],
@@ -463,6 +475,9 @@ impl HushEngine {
         // --- End Origin Enclave Resolution ---
 
         // --- Cross-Origin Isolation Check (Phase 1b) ---
+        // Only enforce cross-origin checks when the policy has an `origins` block.
+        // Legacy policies without origins should not be affected by origin tracking.
+        if self.policy.origins.is_some() {
         // C2 fix: If a session origin was established, any subsequent check
         // WITHOUT an origin must be denied (fail-closed). Otherwise an attacker
         // could drop the origin context to bypass enclave restrictions.
@@ -478,6 +493,12 @@ impl HushEngine {
                 let mut state = self.state.write().await;
                 state.action_count += 1;
                 state.violation_count += 1;
+                state.violations.push(ViolationRef {
+                    guard: result.guard.clone(),
+                    severity: format!("{:?}", result.severity),
+                    message: result.message.clone(),
+                    action: None,
+                });
                 return Ok(GuardReport {
                     overall: result.clone(),
                     per_guard: vec![result],
@@ -527,6 +548,12 @@ impl HushEngine {
                             let mut state = self.state.write().await;
                             state.action_count += 1;
                             state.violation_count += 1;
+                            state.violations.push(ViolationRef {
+                                guard: result.guard.clone(),
+                                severity: format!("{:?}", result.severity),
+                                message: result.message.clone(),
+                                action: None,
+                            });
                             return Ok(GuardReport {
                                 overall: result.clone(),
                                 per_guard: vec![result],
@@ -542,6 +569,12 @@ impl HushEngine {
                             let mut state = self.state.write().await;
                             state.action_count += 1;
                             state.violation_count += 1;
+                            state.violations.push(ViolationRef {
+                                guard: result.guard.clone(),
+                                severity: format!("{:?}", result.severity),
+                                message: result.message.clone(),
+                                action: None,
+                            });
                             return Ok(GuardReport {
                                 overall: result.clone(),
                                 per_guard: vec![result],
@@ -561,6 +594,7 @@ impl HushEngine {
                 drop(state);
             }
         }
+        } // end origins.is_some() guard
         // --- End Cross-Origin Isolation Check ---
 
         let mut fast_guards: Vec<&dyn Guard> = Vec::new();
@@ -765,8 +799,9 @@ impl HushEngine {
                             // Validate that the enclave's posture state exists in the program.
                             if program.state(enclave_posture).is_some() {
                                 if state.current_state != *enclave_posture {
+                                    let from = state.current_state.clone();
                                     debug!(
-                                        from = %state.current_state,
+                                        from = %from,
                                         to = %enclave_posture,
                                         "Enclave overriding initial posture"
                                     );
@@ -778,6 +813,16 @@ impl HushEngine {
                                     {
                                         state.budgets = compiled.initial_budgets();
                                     }
+                                    // Record synthetic transition so subsequent
+                                    // calls cannot re-override the posture.
+                                    state.transition_history.push(
+                                        crate::posture::PostureTransitionRecord {
+                                            from,
+                                            to: enclave_posture.clone(),
+                                            trigger: "enclave_init".to_string(),
+                                            at: state.entered_at.clone(),
+                                        },
+                                    );
                                 }
                             } else {
                                 // Fail-closed: enclave references nonexistent posture state.
@@ -1339,11 +1384,18 @@ enum BridgeCheckResult {
 
 /// Check if two origins represent different contexts.
 ///
-/// Two origins are considered different if their provider OR space_id differs.
-/// Same provider + same space_id = same origin (even if other fields differ).
+/// Two origins are considered different if their provider, tenant_id, OR
+/// space_id differs. Same (provider + tenant_id + space_id) = same origin.
 fn is_different_origin(a: &OriginContext, b: &OriginContext) -> bool {
     if a.provider != b.provider {
         return true;
+    }
+    // Compare tenant_id — different tenants of the same provider are different origins.
+    match (&a.tenant_id, &b.tenant_id) {
+        (Some(a_id), Some(b_id)) if a_id != b_id => return true,
+        (None, None) => {}
+        (Some(_), None) | (None, Some(_)) => return true,
+        _ => {}
     }
     match (&a.space_id, &b.space_id) {
         (Some(a_id), Some(b_id)) => a_id != b_id,
@@ -2424,7 +2476,7 @@ posture:
         };
 
         let origins = OriginsConfig {
-            default_behavior: OriginDefaultBehavior::Deny,
+            default_behavior: Some(OriginDefaultBehavior::Deny),
             profiles: vec![slack_profile_with_mcp("slack-restricted", mcp)],
         };
         let policy = policy_with_origins(origins);
@@ -2456,7 +2508,7 @@ posture:
         };
 
         let origins = OriginsConfig {
-            default_behavior: OriginDefaultBehavior::Deny,
+            default_behavior: Some(OriginDefaultBehavior::Deny),
             profiles: vec![slack_profile_with_mcp("slack-open", mcp)],
         };
         let policy = policy_with_origins(origins);
@@ -2491,7 +2543,7 @@ posture:
         };
 
         let origins = OriginsConfig {
-            default_behavior: OriginDefaultBehavior::Deny,
+            default_behavior: Some(OriginDefaultBehavior::Deny),
             profiles: vec![slack_profile_with_mcp("slack-permissive", enclave_mcp)],
         };
 
@@ -2540,7 +2592,7 @@ posture:
         };
 
         let origins = OriginsConfig {
-            default_behavior: OriginDefaultBehavior::Deny,
+            default_behavior: Some(OriginDefaultBehavior::Deny),
             profiles: vec![slack_profile_with_mcp("slack-meta", mcp)],
         };
         let policy = policy_with_origins(origins);
@@ -2592,7 +2644,7 @@ posture:
     async fn test_enclave_resolution_failure_deny() {
         // Origins config has deny default and no matching profile for Slack
         let origins = OriginsConfig {
-            default_behavior: OriginDefaultBehavior::Deny,
+            default_behavior: Some(OriginDefaultBehavior::Deny),
             profiles: vec![OriginProfile {
                 id: "github-only".to_string(),
                 match_rules: OriginMatch {
@@ -2638,7 +2690,7 @@ posture:
         };
 
         let origins = OriginsConfig {
-            default_behavior: OriginDefaultBehavior::Deny,
+            default_behavior: Some(OriginDefaultBehavior::Deny),
             profiles: vec![slack_profile_with_mcp("slack-locked", mcp)],
         };
         let policy = policy_with_origins(origins);
@@ -2670,7 +2722,7 @@ posture:
         };
 
         let origins = OriginsConfig {
-            default_behavior: OriginDefaultBehavior::Deny,
+            default_behavior: Some(OriginDefaultBehavior::Deny),
             profiles: vec![slack_profile_with_mcp("slack-allowlist", mcp)],
         };
         let policy = policy_with_origins(origins);
@@ -2708,7 +2760,7 @@ posture:
         };
 
         let origins = OriginsConfig {
-            default_behavior: OriginDefaultBehavior::Deny,
+            default_behavior: Some(OriginDefaultBehavior::Deny),
             profiles: vec![slack_profile_with_mcp("slack-wildcard", mcp)],
         };
         let policy = policy_with_origins(origins);
@@ -2802,7 +2854,7 @@ posture:
         };
 
         let origins = OriginsConfig {
-            default_behavior: OriginDefaultBehavior::Deny,
+            default_behavior: Some(OriginDefaultBehavior::Deny),
             profiles: vec![slack_profile_with_mcp("slack-lockdown", mcp)],
         };
         let policy = policy_with_origins(origins);
@@ -2873,7 +2925,7 @@ posture:
 "#;
 
         let origins = OriginsConfig {
-            default_behavior: OriginDefaultBehavior::MinimalProfile,
+            default_behavior: Some(OriginDefaultBehavior::MinimalProfile),
             profiles: vec![slack_profile_with_posture("slack-elevated", "elevated")],
         };
         let policy = policy_with_posture_and_origins(posture_yaml, origins);
@@ -2927,7 +2979,7 @@ posture:
 "#;
 
         let origins = OriginsConfig {
-            default_behavior: OriginDefaultBehavior::MinimalProfile,
+            default_behavior: Some(OriginDefaultBehavior::MinimalProfile),
             profiles: vec![slack_profile_with_posture("slack-elevated", "elevated")],
         };
         let policy = policy_with_posture_and_origins(posture_yaml, origins);
@@ -2980,7 +3032,7 @@ posture:
 "#;
 
         let origins = OriginsConfig {
-            default_behavior: OriginDefaultBehavior::MinimalProfile,
+            default_behavior: Some(OriginDefaultBehavior::MinimalProfile),
             profiles: vec![slack_profile_with_posture("slack-bad", "nonexistent")],
         };
         let policy = policy_with_posture_and_origins(posture_yaml, origins);
@@ -3037,7 +3089,7 @@ posture:
         };
 
         let origins = OriginsConfig {
-            default_behavior: OriginDefaultBehavior::MinimalProfile,
+            default_behavior: Some(OriginDefaultBehavior::MinimalProfile),
             profiles: vec![profile],
         };
         let policy = policy_with_posture_and_origins(posture_yaml, origins);
@@ -3147,7 +3199,7 @@ posture:
         // Two checks from the same origin (same provider + same space_id)
         // should both succeed without any cross-origin denial.
         let origins = OriginsConfig {
-            default_behavior: OriginDefaultBehavior::Deny,
+            default_behavior: Some(OriginDefaultBehavior::Deny),
             profiles: vec![slack_profile_with_bridge("slack-base", None)],
         };
         let policy = policy_with_origins(origins);
@@ -3174,7 +3226,7 @@ posture:
     async fn test_cross_origin_different_origin_no_bridge_denied() {
         // First check from Slack, second from GitHub, no bridge policy -> denied
         let origins = OriginsConfig {
-            default_behavior: OriginDefaultBehavior::Deny,
+            default_behavior: Some(OriginDefaultBehavior::Deny),
             profiles: vec![
                 slack_profile_with_bridge("slack-no-bridge", None),
                 github_profile(),
@@ -3222,7 +3274,7 @@ posture:
             require_approval: false,
         };
         let origins = OriginsConfig {
-            default_behavior: OriginDefaultBehavior::Deny,
+            default_behavior: Some(OriginDefaultBehavior::Deny),
             profiles: vec![
                 slack_profile_with_bridge("slack-bridged", Some(bridge)),
                 github_profile(),
@@ -3257,7 +3309,7 @@ posture:
             require_approval: true,
         };
         let origins = OriginsConfig {
-            default_behavior: OriginDefaultBehavior::Deny,
+            default_behavior: Some(OriginDefaultBehavior::Deny),
             profiles: vec![
                 slack_profile_with_bridge("slack-approval", Some(bridge)),
                 github_profile(),
@@ -3300,7 +3352,7 @@ posture:
             require_approval: false,
         };
         let origins = OriginsConfig {
-            default_behavior: OriginDefaultBehavior::Deny,
+            default_behavior: Some(OriginDefaultBehavior::Deny),
             profiles: vec![
                 slack_profile_with_bridge("slack-github-only", Some(bridge)),
                 github_profile(),
@@ -3340,7 +3392,7 @@ posture:
         // First check sets session_origin; verify by checking that a different
         // origin is detected as cross-origin on the second check.
         let origins = OriginsConfig {
-            default_behavior: OriginDefaultBehavior::Deny,
+            default_behavior: Some(OriginDefaultBehavior::Deny),
             profiles: vec![
                 slack_profile_with_bridge("slack-no-bridge", None),
                 github_profile(),
@@ -3383,7 +3435,7 @@ posture:
             require_approval: false,
         };
         let origins = OriginsConfig {
-            default_behavior: OriginDefaultBehavior::Deny,
+            default_behavior: Some(OriginDefaultBehavior::Deny),
             profiles: vec![
                 slack_profile_with_bridge("slack-disabled-bridge", Some(bridge)),
                 github_profile(),
@@ -3428,7 +3480,7 @@ posture:
             require_approval: false,
         };
         let origins = OriginsConfig {
-            default_behavior: OriginDefaultBehavior::Deny,
+            default_behavior: Some(OriginDefaultBehavior::Deny),
             profiles: vec![
                 slack_profile_with_bridge("slack-github-issues", Some(bridge)),
                 github_profile(),
@@ -3474,7 +3526,7 @@ posture:
             require_approval: false,
         };
         let origins = OriginsConfig {
-            default_behavior: OriginDefaultBehavior::Deny,
+            default_behavior: Some(OriginDefaultBehavior::Deny),
             profiles: vec![
                 slack_profile_with_bridge("slack-public-github", Some(bridge)),
                 github_profile(),
@@ -3511,7 +3563,7 @@ posture:
             require_approval: false,
         };
         let origins2 = OriginsConfig {
-            default_behavior: OriginDefaultBehavior::Deny,
+            default_behavior: Some(OriginDefaultBehavior::Deny),
             profiles: vec![
                 slack_profile_with_bridge("slack-public-github", Some(bridge2)),
                 github_profile(),

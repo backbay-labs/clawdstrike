@@ -858,7 +858,7 @@ fn emit_explain_json(
         "origin": origin,
         "evaluations": evaluations,
         "winner": winner,
-        "default_behavior": format!("{:?}", config.default_behavior),
+        "default_behavior": format!("{:?}", config.effective_default_behavior()),
     });
 
     let _ = writeln!(
@@ -1004,7 +1004,7 @@ fn emit_explain_human(
             let _ = writeln!(
                 stdout,
                 "  default_behavior: {:?}",
-                config.default_behavior
+                config.effective_default_behavior()
             );
         }
     }
@@ -1056,7 +1056,7 @@ fn emit_list_profiles_json(config: &OriginsConfig, stdout: &mut dyn Write) {
         .collect();
 
     let output = serde_json::json!({
-        "default_behavior": format!("{:?}", config.default_behavior),
+        "default_behavior": format!("{:?}", config.effective_default_behavior()),
         "profile_count": profiles.len(),
         "profiles": profiles,
     });
@@ -1075,7 +1075,7 @@ fn emit_list_profiles_table(config: &OriginsConfig, stdout: &mut dyn Write) {
         format!(
             "Origin profiles ({} total, default_behavior: {:?})",
             config.profiles.len(),
-            config.default_behavior
+            config.effective_default_behavior()
         )
         .bold()
     );

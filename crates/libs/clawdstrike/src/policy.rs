@@ -542,15 +542,24 @@ pub enum OriginDefaultBehavior {
 #[serde(deny_unknown_fields)]
 pub struct OriginsConfig {
     /// Default behavior when no profile matches.
-    #[serde(default)]
-    pub default_behavior: OriginDefaultBehavior,
+    /// `None` means the field was omitted (inherits from parent during merge).
+    /// Defaults to `Deny` at resolution time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_behavior: Option<OriginDefaultBehavior>,
     /// Named origin profiles.
     #[serde(default)]
     pub profiles: Vec<OriginProfile>,
 }
 
 impl OriginsConfig {
+    /// Returns the effective default behavior, defaulting to `Deny` if unset.
+    pub fn effective_default_behavior(&self) -> &OriginDefaultBehavior {
+        self.default_behavior.as_ref().unwrap_or(&OriginDefaultBehavior::Deny)
+    }
+
     /// Merge with a child config: child profiles replace base profiles by ID, or append if new.
+    /// Child's `default_behavior` takes precedence only if explicitly set; otherwise
+    /// the base value is preserved.
     pub fn merge_with(&self, child: &Self) -> Self {
         let mut profiles = self.profiles.clone();
         for child_profile in &child.profiles {
@@ -561,7 +570,7 @@ impl OriginsConfig {
             }
         }
         Self {
-            default_behavior: child.default_behavior.clone(),
+            default_behavior: child.default_behavior.clone().or_else(|| self.default_behavior.clone()),
             profiles,
         }
     }
@@ -2524,7 +2533,7 @@ guards:
         assert_eq!(origins.profiles[1].id, "external-chat");
         assert_eq!(origins.profiles[2].id, "code-review");
         assert_eq!(origins.profiles[3].id, "internal-default");
-        assert_eq!(origins.default_behavior, OriginDefaultBehavior::Deny);
+        assert_eq!(origins.default_behavior, Some(OriginDefaultBehavior::Deny));
     }
 
     #[test]
@@ -3170,7 +3179,7 @@ origins:
         assert_eq!(policy.version, "1.4.0");
 
         let origins = policy.origins.as_ref().expect("origins must be present");
-        assert_eq!(origins.default_behavior, OriginDefaultBehavior::Deny);
+        assert_eq!(origins.default_behavior, Some(OriginDefaultBehavior::Deny));
         assert_eq!(origins.profiles.len(), 1);
 
         let profile = &origins.profiles[0];
@@ -3285,7 +3294,7 @@ name: LegacyPolicy
             version: "1.4.0".to_string(),
             name: "Base".to_string(),
             origins: Some(OriginsConfig {
-                default_behavior: OriginDefaultBehavior::Deny,
+                default_behavior: Some(OriginDefaultBehavior::Deny),
                 profiles: vec![
                     OriginProfile {
                         id: "slack-internal".to_string(),
@@ -3325,7 +3334,7 @@ name: LegacyPolicy
             name: "Child".to_string(),
             merge_strategy: MergeStrategy::DeepMerge,
             origins: Some(OriginsConfig {
-                default_behavior: OriginDefaultBehavior::MinimalProfile,
+                default_behavior: Some(OriginDefaultBehavior::MinimalProfile),
                 profiles: vec![OriginProfile {
                     id: "slack-internal".to_string(),
                     match_rules: OriginMatch {
@@ -3349,7 +3358,7 @@ name: LegacyPolicy
         let origins = merged.origins.expect("merged origins");
 
         // Child's default_behavior wins
-        assert_eq!(origins.default_behavior, OriginDefaultBehavior::MinimalProfile);
+        assert_eq!(origins.default_behavior, Some(OriginDefaultBehavior::MinimalProfile));
 
         // Should have 2 profiles: slack-internal overridden, github-ci preserved
         assert_eq!(origins.profiles.len(), 2);
@@ -3469,7 +3478,7 @@ origins:
 "#;
         let policy = Policy::from_yaml(yaml).unwrap();
         let origins = policy.origins.expect("origins");
-        assert_eq!(origins.default_behavior, OriginDefaultBehavior::MinimalProfile);
+        assert_eq!(origins.default_behavior, Some(OriginDefaultBehavior::MinimalProfile));
     }
 
     #[test]
@@ -3477,7 +3486,7 @@ origins:
         let base = Policy {
             version: "1.4.0".to_string(),
             origins: Some(OriginsConfig {
-                default_behavior: OriginDefaultBehavior::Deny,
+                default_behavior: Some(OriginDefaultBehavior::Deny),
                 profiles: vec![OriginProfile {
                     id: "existing".to_string(),
                     match_rules: OriginMatch::default(),
@@ -3497,7 +3506,7 @@ origins:
             version: "1.4.0".to_string(),
             merge_strategy: MergeStrategy::DeepMerge,
             origins: Some(OriginsConfig {
-                default_behavior: OriginDefaultBehavior::Deny,
+                default_behavior: Some(OriginDefaultBehavior::Deny),
                 profiles: vec![OriginProfile {
                     id: "new-profile".to_string(),
                     match_rules: OriginMatch {

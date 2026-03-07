@@ -105,7 +105,7 @@ impl EnclaveResolver {
                 let resolution_path = vec![Self::describe_match(&profile.match_rules, &score)];
                 Ok(Self::enclave_from_profile(profile, resolution_path))
             }
-            None => Self::apply_default_behavior(&config.default_behavior),
+            None => Self::apply_default_behavior(config.effective_default_behavior()),
         }
     }
 
@@ -361,7 +361,7 @@ mod tests {
 
     fn empty_origins_config(behavior: OriginDefaultBehavior) -> OriginsConfig {
         OriginsConfig {
-            default_behavior: behavior,
+            default_behavior: Some(behavior),
             profiles: Vec::new(),
         }
     }
@@ -403,7 +403,7 @@ mod tests {
     #[test]
     fn exact_space_id_match() {
         let config = OriginsConfig {
-            default_behavior: OriginDefaultBehavior::Deny,
+            default_behavior: Some(OriginDefaultBehavior::Deny),
             profiles: vec![profile(
                 "channel-c123",
                 OriginMatch {
@@ -425,7 +425,7 @@ mod tests {
     #[test]
     fn tag_and_visibility_match() {
         let config = OriginsConfig {
-            default_behavior: OriginDefaultBehavior::Deny,
+            default_behavior: Some(OriginDefaultBehavior::Deny),
             profiles: vec![profile(
                 "incident-internal",
                 OriginMatch {
@@ -449,7 +449,7 @@ mod tests {
     #[test]
     fn provider_only_match() {
         let config = OriginsConfig {
-            default_behavior: OriginDefaultBehavior::Deny,
+            default_behavior: Some(OriginDefaultBehavior::Deny),
             profiles: vec![profile(
                 "slack-general",
                 OriginMatch {
@@ -471,7 +471,7 @@ mod tests {
     #[test]
     fn most_specific_wins() {
         let config = OriginsConfig {
-            default_behavior: OriginDefaultBehavior::Deny,
+            default_behavior: Some(OriginDefaultBehavior::Deny),
             profiles: vec![
                 profile(
                     "two-fields",
@@ -504,7 +504,7 @@ mod tests {
     #[test]
     fn exact_space_id_beats_higher_specificity() {
         let config = OriginsConfig {
-            default_behavior: OriginDefaultBehavior::Deny,
+            default_behavior: Some(OriginDefaultBehavior::Deny),
             profiles: vec![
                 // 5 fields but no space_id
                 profile(
@@ -541,7 +541,7 @@ mod tests {
     #[test]
     fn no_match_deny() {
         let config = OriginsConfig {
-            default_behavior: OriginDefaultBehavior::Deny,
+            default_behavior: Some(OriginDefaultBehavior::Deny),
             profiles: vec![profile(
                 "github-only",
                 OriginMatch {
@@ -566,7 +566,7 @@ mod tests {
     #[test]
     fn no_match_minimal_profile() {
         let config = OriginsConfig {
-            default_behavior: OriginDefaultBehavior::MinimalProfile,
+            default_behavior: Some(OriginDefaultBehavior::MinimalProfile),
             profiles: vec![profile(
                 "github-only",
                 OriginMatch {
@@ -597,7 +597,7 @@ mod tests {
     #[test]
     fn default_profile_catches_unmatched() {
         let config = OriginsConfig {
-            default_behavior: OriginDefaultBehavior::Deny,
+            default_behavior: Some(OriginDefaultBehavior::Deny),
             profiles: vec![
                 profile(
                     "github-only",
@@ -622,7 +622,7 @@ mod tests {
     #[test]
     fn tag_intersection_superset_matches() {
         let config = OriginsConfig {
-            default_behavior: OriginDefaultBehavior::Deny,
+            default_behavior: Some(OriginDefaultBehavior::Deny),
             profiles: vec![profile(
                 "pci-hipaa",
                 OriginMatch {
@@ -644,7 +644,7 @@ mod tests {
     #[test]
     fn tag_mismatch_no_match() {
         let config = OriginsConfig {
-            default_behavior: OriginDefaultBehavior::MinimalProfile,
+            default_behavior: Some(OriginDefaultBehavior::MinimalProfile),
             profiles: vec![profile(
                 "needs-sox",
                 OriginMatch {
@@ -671,7 +671,7 @@ mod tests {
     #[test]
     fn stable_ordering_first_wins() {
         let config = OriginsConfig {
-            default_behavior: OriginDefaultBehavior::Deny,
+            default_behavior: Some(OriginDefaultBehavior::Deny),
             profiles: vec![
                 profile(
                     "first",
@@ -701,7 +701,7 @@ mod tests {
     #[test]
     fn all_fields_match() {
         let config = OriginsConfig {
-            default_behavior: OriginDefaultBehavior::Deny,
+            default_behavior: Some(OriginDefaultBehavior::Deny),
             profiles: vec![profile(
                 "full-match",
                 OriginMatch {
@@ -760,7 +760,7 @@ mod tests {
         p.posture = Some("standard".into());
 
         let config = OriginsConfig {
-            default_behavior: OriginDefaultBehavior::Deny,
+            default_behavior: Some(OriginDefaultBehavior::Deny),
             profiles: vec![p],
         };
 
@@ -775,7 +775,7 @@ mod tests {
     #[test]
     fn mismatched_provider_does_not_match() {
         let config = OriginsConfig {
-            default_behavior: OriginDefaultBehavior::MinimalProfile,
+            default_behavior: Some(OriginDefaultBehavior::MinimalProfile),
             profiles: vec![profile(
                 "teams-only",
                 OriginMatch {
@@ -792,7 +792,7 @@ mod tests {
     #[test]
     fn space_id_mismatch_does_not_match() {
         let config = OriginsConfig {
-            default_behavior: OriginDefaultBehavior::MinimalProfile,
+            default_behavior: Some(OriginDefaultBehavior::MinimalProfile),
             profiles: vec![profile(
                 "wrong-space",
                 OriginMatch {
@@ -816,7 +816,7 @@ mod tests {
         };
 
         let config = OriginsConfig {
-            default_behavior: OriginDefaultBehavior::MinimalProfile,
+            default_behavior: Some(OriginDefaultBehavior::MinimalProfile),
             profiles: vec![profile(
                 "needs-tenant",
                 OriginMatch {
@@ -835,7 +835,7 @@ mod tests {
         // OriginContext has no actor_role field, so any profile requiring it
         // must fail to match (fail-closed).
         let config = OriginsConfig {
-            default_behavior: OriginDefaultBehavior::MinimalProfile,
+            default_behavior: Some(OriginDefaultBehavior::MinimalProfile),
             profiles: vec![profile(
                 "needs-role",
                 OriginMatch {
