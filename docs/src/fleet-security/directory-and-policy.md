@@ -1,155 +1,62 @@
-# Directory and Policy Plane
+# Identity, Policy, and Posture
 
-This document defines the target identity and policy model for autonomous agent
-fleets.
+Fleet Security treats identity as the control plane for autonomous systems.
 
-## Objective
+That means the important question is not only "what policy is installed?" It is
+"which principal is acting, what trust does it have, and what posture should it
+be allowed to operate under right now?"
 
-Clawdstrike needs a directory plane that can answer four classes of question:
+## Principals
 
-- Identity: what is this endpoint, runtime, agent, or subagent?
-- Membership: what tenant, swarm, project, role, and capability groups does it belong to?
-- Policy: what inherited policy applies right now?
-- Control: can the platform revoke, quarantine, downgrade, or approve changes immediately?
+The platform tracks more than one kind of identity:
 
-## Principal Types
+- endpoint agents
+- runtime agents
+- delegated agents
+- operators
+- service accounts
 
-The directory should model more than one kind of principal.
+Each principal has a stable reference, lifecycle state, liveness state, and
+optionally key material used for trust and attestation.
 
-| Principal type | Description |
-|---|---|
-| Tenant | Administrative boundary and billing/isolation unit |
-| Swarm | A fleet segment or operational grouping |
-| Project / mission | Work-scoped grouping for runs and policy |
-| Endpoint agent | The installed host-side agent instance |
-| Runtime agent | A runtime or worker executing actions on behalf of a session |
-| Session | A time-bounded execution context |
-| Delegated subagent | A child principal created through delegation |
-| Operator | Human or service identity acting on the fleet |
+## Policy
 
-## Core Objects
+Policy answers what a principal is allowed to do. In practice that covers:
 
-The first durable directory model should include these object families:
+- tools and actions
+- environments and targets
+- approval requirements
+- threat-detection behavior
 
-- `tenant`
-- `swarm`
-- `project`
-- `capability_group`
-- `agent_principal`
-- `runtime_principal`
-- `session`
-- `delegation_edge`
-- `policy_attachment`
-- `grant`
-- `response_action`
+The useful operator habit is to attach policy to stable fleet structure instead
+of baking it into one-off agent configurations.
 
-## Policy Inheritance
+## Posture
 
-The target inheritance chain is:
+Posture answers how much freedom the fleet has right now.
 
-```text
-global
-  -> tenant
-    -> swarm
-      -> project
-        -> capability group / role
-          -> principal
-            -> session grant / override
-```
+Examples:
 
-This is the fleet-native equivalent of group policy inheritance. It should be
-resolvable centrally and enforceable locally.
+- normal operation
+- tighter observation
+- restricted execution
+- quarantine
 
-## Session Grants
+Posture is intentionally operational. It is the quickest way to reduce risk
+when the environment changes or an incident is underway.
 
-Agents should not rely on permanently broad capability envelopes. The control
-plane should issue scoped, time-bounded grants for:
+## Grants and Delegation
 
-- specific tools
-- specific repos or path sets
-- specific network destinations
-- specific model or MCP surfaces
-- specific production environments
+Autonomous systems do not just act directly. They delegate, spawn subagents,
+and pass authority.
 
-The existing approval flows and multi-agent delegation tokens already point in
-this direction.
+That is why Fleet Security tracks grants and delegated authority as first-class
+objects instead of pretending every action comes straight from one long-lived
+agent identity.
 
-Current anchors:
+## Operator Guidance
 
-- `crates/services/control-api/src/routes/approvals.rs`
-- `apps/agent/src-tauri/src/approval_sync.rs`
-- `crates/libs/hush-multi-agent/src/token.rs`
-
-## Lifecycle States
-
-Directory objects should carry explicit control state beyond simple liveness.
-
-Recommended lifecycle and posture states:
-
-- `active`
-- `stale`
-- `dead`
-- `restricted`
-- `observe_only`
-- `quarantined`
-- `revoked`
-
-The current codebase already contains part of this model:
-
-- `active`, `stale`, `dead`, `revoked` in `control-api` agent lifecycle
-- posture values such as `standard`, `restricted`, `audit`, `locked` in the desktop agent
-
-Those need to be unified into one platform-wide control vocabulary.
-
-## Enrollment and Join Flow
-
-The fleet directory should treat enrollment as a join operation:
-
-1. endpoint proves possession of a new key
-2. tenant-scoped enrollment token authorizes initial registration
-3. control plane creates principal and transport bindings
-4. endpoint receives policy sync and command channels
-5. endpoint begins attested heartbeat and runtime registration
-
-Current anchors:
-
-- `crates/services/control-api/src/routes/tenants.rs`
-- `crates/services/control-api/src/routes/agents.rs`
-- `apps/agent/src-tauri/src/enrollment.rs`
-
-## Required Additions
-
-The current cloud control plane still needs:
-
-- group and project objects
-- inherited policy attachments in the cloud model
-- directory-backed capability groups
-- explicit grant issuance and expiry
-- directory-backed revocation and quarantine actions
-- delegated lineage storage
-- cloud-side effective-policy resolution
-
-## Relationship to `hushd`
-
-`hushd` already contains local policy scoping and RBAC semantics. Those should
-be treated as the policy engine and local enforcement substrate, not as the
-long-term replacement for the cloud directory.
-
-Current anchors:
-
-- `crates/services/hushd/src/api/policy_scoping.rs`
-- `crates/services/hushd/src/api/rbac.rs`
-- `crates/services/hushd/src/api/agent_status.rs`
-
-The key design rule is:
-
-**The cloud directory should decide policy inheritance; endpoints should enforce
-and cache the result.**
-
-For the concrete schema and contract set, start with:
-
-- [Directory Object Model Spec](directory-object-model.md)
-- [Effective Policy Resolution Spec](effective-policy-resolution.md)
-- [Principal Lifecycle Spec](principal-lifecycle.md)
-- [Directory API Contract Spec](directory-api-contract.md)
-- [Enrollment and Join Protocol Spec](enrollment-join-protocol.md)
+- Keep principal identity stable even when individual sessions are ephemeral.
+- Use policy to describe steady-state behavior.
+- Use posture to describe temporary operating conditions.
+- Revoke grants or quarantine principals when you need to cut off authority fast.

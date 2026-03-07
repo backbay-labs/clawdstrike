@@ -1,154 +1,64 @@
 # Detection, Hunt, and Response
 
-This document defines the target investigation and response model for the fleet
-platform.
+This is the operator workflow layer of Fleet Security.
 
-## Objective
+The platform is not useful if it can only block actions. It has to help teams
+understand what happened, decide whether it matters, and contain it without
+destroying context.
 
-The platform needs to support three operator loops:
+## Detection
 
-- detect suspicious behavior
-- investigate what actually happened
-- respond without losing execution truth
+Detections turn normalized fleet activity into findings.
 
-## Event Sources
+The important user-facing outcome is simple:
 
-The target detection plane should ingest and normalize at least these classes of
-evidence:
+- operators get a finding tied to real fleet entities
+- findings can be tuned, suppressed, or escalated
+- findings can be linked forward into response actions and cases
 
-- policy decisions and guard violations
-- signed receipts and execution attestations
-- endpoint and runtime liveness
-- approval requests and resolutions
-- host telemetry from kernel and OS bridges
-- network flow telemetry
-- Kubernetes audit telemetry
-- inventory and posture scan results
+## Hunt
 
-Current anchors:
+Hunt is for questions that do not fit into a single alert.
 
-- `crates/bridges/tetragon-bridge`
-- `crates/bridges/hubble-bridge`
-- `crates/bridges/auditd-bridge`
-- `crates/bridges/k8s-audit-bridge`
-- `crates/bridges/darwin-telemetry-bridge`
-- `crates/libs/hunt-query`
-- `crates/libs/clawdstrike-policy-event`
+Use hunts to answer things like:
 
-## Detection Model
+- where else did this principal appear
+- which runtimes executed the same pattern
+- what changed before the posture transition
+- which agents were connected through a delegation chain
 
-The initial detection model should support:
+## Response
 
-- threshold and rule-based detections
-- posture drift detections
-- policy bypass and disabled-control detections
-- suspicious delegation-chain detections
-- exfiltration and lateral movement detections
-- correlation between agent actions and host/network telemetry
+Response actions are the containment layer.
 
-The current alert surface under `control-api` is useful but still narrow. It is
-configuration and dispatch oriented, not yet a full detection system.
+Examples include:
 
-Current anchors:
+- transition posture
+- request policy reload
+- kill switch
+- revoke grant
+- revoke or quarantine principal
 
-- `crates/services/control-api/src/routes/alerts.rs`
-- `crates/services/control-api/src/services/alerter.rs`
+The response ledger matters as much as the action itself. Operators should be
+able to see why an action was requested, what it targeted, and what happened
+afterward.
 
-## Hunt Model
+## Cases
 
-The hunt plane should evolve from the existing CLI into a service-backed
-investigation workflow.
+A case is where a fleet incident becomes durable.
 
-Core capabilities:
+Cases pull together:
 
-- structured historical search
-- timeline reconstruction
-- graph traversal across principals, sessions, and delegation edges
-- IOC matching and watch mode
-- saved hunts
-- investigation cases with retained evidence
+- findings
+- response actions
+- graph pivots
+- notes and artifacts
+- exported evidence
 
-Current anchors:
+## Recommended Workflow
 
-- `docs/src/hunt/index.md`
-- `docs/src/hunt/architecture.md`
-- `crates/services/hush-cli/src/hunt.rs`
-- `crates/libs/hunt-query`
-- `crates/libs/hunt-correlate`
-
-## Provenance Graph
-
-One of the distinctive pieces of this platform should be a first-class swarm
-provenance graph.
-
-It should let operators answer:
-
-- which agent spawned or delegated to which child
-- which grants were used
-- which tool call produced which downstream side effect
-- which endpoint or runtime executed the action
-- where the trust chain stopped being reliable
-
-The current UI graph under `apps/control-console/src/components/advanced/ForceGraph.tsx`
-is a good visualization seed, but it is event-derived and lightweight. The
-target system needs a persisted graph model and query surface.
-
-## Response Model
-
-Response should be explicit, signed, and auditable.
-
-Response actions should include:
-
-- `transition_posture`
-- `quarantine_principal`
-- `revoke_grant`
-- `revoke_enrollment`
-- `request_policy_reload`
-- `terminate_session`
-- `kill_switch`
-
-The endpoint side of this is already partially implemented.
-
-Current anchors:
-
-- `apps/agent/src-tauri/src/posture_commands.rs`
-- `crates/services/hushd/src/api/mod.rs`
-- `crates/services/hushd/src/api/session`
-
-What is still missing is the cloud-side response plane that owns action intent,
-authorization, publication, acknowledgement, and audit history.
-
-## Data Retention and Evidence
-
-Response and hunt become much more valuable when evidence is packaged and
-retained consistently.
-
-The platform should standardize:
-
-- canonical event identity
-- event-to-principal joins
-- case bundles
-- signed replay artifacts
-- retention policy by tenant and event class
-
-Current anchors:
-
-- `crates/services/control-api/src/routes/compliance.rs`
-- `crates/services/hushd/src/api/spine_replay.rs`
-
-## Immediate Design Priority
-
-The first implementation milestone should not be "build a new SIEM."
-
-It should be:
-
-1. normalize fleet evidence around principals, sessions, and grants
-2. expose that data through a hunt and response backend
-3. let operators take signed response actions against that model
-
-For the first concrete contracts, see the
-[Response Action Contract Spec](response-action-contract.md), the
-[Response Execution Pipeline Spec](response-execution-pipeline.md), the
-[Normalized Fleet Event Envelope Spec](normalized-fleet-event-envelope.md), the
-[Hunt Backend API and Data Model Spec](hunt-backend.md), and the
-[Detection and Rule Model Spec](detection-rule-model.md).
+1. Start with the finding or hunt result.
+2. Pivot into the timeline or graph until the affected scope is clear.
+3. Apply the narrowest response that contains the problem.
+4. Open or update a case if the activity needs durable handling.
+5. Export evidence when the issue needs review outside the console.
