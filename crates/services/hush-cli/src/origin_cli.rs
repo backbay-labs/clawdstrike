@@ -712,7 +712,7 @@ fn evaluate_single_profile(
             .as_ref()
             .map(|s| s.to_string())
             .unwrap_or("(none)".into());
-        let matched = origin.space_type.as_ref() == Some(rule_space_type);
+        let matched = origin.space_type.as_ref().map(|s| s.to_string()) == Some(rule_space_type.to_string());
         if matched {
             specificity += 1;
         } else {
@@ -750,7 +750,7 @@ fn evaluate_single_profile(
             .as_ref()
             .map(|v| v.to_string())
             .unwrap_or("(none)".into());
-        let matched = origin.visibility.as_ref() == Some(rule_vis);
+        let matched = origin.visibility.as_ref().map(|v| v.to_string()) == Some(rule_vis.to_string());
         if matched {
             specificity += 1;
         } else {
