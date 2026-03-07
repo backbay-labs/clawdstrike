@@ -266,7 +266,7 @@ enum Commands {
     /// Threat hunting for AI agent ecosystems
     Hunt {
         #[command(subcommand)]
-        command: HuntCommands,
+        command: Box<HuntCommands>,
     },
 
     /// Launch the terminal user interface
@@ -1565,7 +1565,7 @@ async fn run(cli: Cli, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
 
         Commands::Hunt { command } => {
             hunt::cmd_hunt(
-                command,
+                *command,
                 &remote_extends,
                 no_color || std::env::var_os("NO_COLOR").is_some(),
                 stdout,

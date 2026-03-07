@@ -3577,7 +3577,7 @@ mod hunt_cli_parsing {
         let cli = Cli::parse_from(["hush", "hunt", "watch", "--rules", "rule.yaml"]);
 
         match cli.command {
-            Commands::Hunt { command } => match command {
+            Commands::Hunt { command } => match *command {
                 HuntCommands::Watch {
                     rules,
                     nats_url,
@@ -3620,7 +3620,7 @@ mod hunt_cli_parsing {
         ]);
 
         match cli.command {
-            Commands::Hunt { command } => match command {
+            Commands::Hunt { command } => match *command {
                 HuntCommands::Watch {
                     rules,
                     max_window,
@@ -3654,7 +3654,7 @@ mod hunt_cli_parsing {
         ]);
 
         match cli.command {
-            Commands::Hunt { command } => match command {
+            Commands::Hunt { command } => match *command {
                 HuntCommands::Watch {
                     nats_token,
                     nats_nkey_seed,
@@ -3693,7 +3693,7 @@ mod hunt_cli_parsing {
         ]);
 
         match cli.command {
-            Commands::Hunt { command } => match command {
+            Commands::Hunt { command } => match *command {
                 HuntCommands::Correlate {
                     rules,
                     source,
@@ -3723,7 +3723,7 @@ mod hunt_cli_parsing {
         let cli = Cli::parse_from(["hush", "hunt", "correlate", "--rules", "r.yaml"]);
 
         match cli.command {
-            Commands::Hunt { command } => match command {
+            Commands::Hunt { command } => match *command {
                 HuntCommands::Correlate {
                     rules,
                     source,
@@ -3771,7 +3771,7 @@ mod hunt_cli_parsing {
         ]);
 
         match cli.command {
-            Commands::Hunt { command } => match command {
+            Commands::Hunt { command } => match *command {
                 HuntCommands::Ioc {
                     feed,
                     stix,
@@ -3798,7 +3798,7 @@ mod hunt_cli_parsing {
         let cli = Cli::parse_from(["hush", "hunt", "ioc", "--feed", "iocs.txt"]);
 
         match cli.command {
-            Commands::Hunt { command } => match command {
+            Commands::Hunt { command } => match *command {
                 HuntCommands::Ioc {
                     feed,
                     stix,
