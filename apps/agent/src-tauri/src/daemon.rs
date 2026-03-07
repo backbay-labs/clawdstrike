@@ -1260,13 +1260,17 @@ impl AuditQueue {
                                 rejected_ids = rejected_ids.len(),
                                 "Daemon response lacked complete rejected event IDs; requeueing entire batch"
                             );
-                            anyhow::bail!(
+                            let message = format!(
                                 "Audit batch upload partially rejected after previously flushing {} accepted events; current batch status: accepted={}, duplicates={}, rejected={}",
                                 outcome.accepted,
                                 summary.accepted,
                                 summary.duplicates,
                                 summary.rejected
                             );
+                            if audit_flush_has_prior_progress(outcome) {
+                                return Err(audit_flush_progress_error(outcome, message));
+                            }
+                            anyhow::bail!("{}", message);
                         }
                     }
                     if !summary.accepted_ids.is_empty() || !summary.duplicate_ids.is_empty() {
@@ -2759,6 +2763,97 @@ mod tests {
             .map(ToString::to_string)
             .collect();
         assert_eq!(ids, vec![format!("evt-{}", MAX_AUDIT_BATCH_LEN + 1)]);
+    }
+
+    #[tokio::test]
+    async fn audit_queue_flush_reports_prior_progress_when_rejected_ids_are_incomplete() {
+        use axum::{extract::State, routing::post, Json, Router};
+        use std::sync::{Arc, Mutex as StdMutex};
+        use tokio::net::TcpListener;
+
+        #[derive(Clone)]
+        struct BatchState {
+            calls: Arc<StdMutex<usize>>,
+        }
+
+        let queue = AuditQueue::new_test_isolated();
+        let total_events = MAX_AUDIT_BATCH_LEN + 2;
+        {
+            let mut guard = queue.queue.lock().await;
+            for i in 0..total_events {
+                guard.push_back(sample_audit_event(format!("evt-{i}")));
+            }
+            persist_audit_queue(&queue.path, &guard).unwrap();
+        }
+
+        let state = BatchState {
+            calls: Arc::new(StdMutex::new(0)),
+        };
+        let app =
+            Router::new()
+                .route(
+                    "/api/v1/audit/batch",
+                    post(
+                        |State(state): State<BatchState>,
+                         Json(payload): Json<serde_json::Value>| async move {
+                            let len = payload
+                                .get("events")
+                                .and_then(|events| events.as_array())
+                                .map(|events| events.len())
+                                .unwrap_or(0);
+                            let mut calls = state.calls.lock().unwrap();
+                            *calls += 1;
+                            if *calls == 1 {
+                                Json(serde_json::json!({
+                                    "accepted": len,
+                                    "duplicates": 0,
+                                    "rejected": 0
+                                }))
+                            } else {
+                                Json(serde_json::json!({
+                                    "accepted": 1,
+                                    "duplicates": 0,
+                                    "rejected": 1
+                                }))
+                            }
+                        },
+                    ),
+                )
+                .with_state(state);
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let err = queue
+            .flush(&format!("http://{}", addr), None)
+            .await
+            .expect_err("incomplete rejected_ids should preserve prior flush progress");
+        let progress = err
+            .downcast_ref::<AuditFlushProgressError>()
+            .expect("incomplete rejected_ids should return a structured progress error");
+        assert_eq!(progress.outcome.accepted, MAX_AUDIT_BATCH_LEN);
+        assert_eq!(progress.outcome.duplicates, 0);
+        assert_eq!(progress.outcome.rejected, 0);
+        assert!(progress
+            .message
+            .contains("Audit batch upload partially rejected"));
+
+        let guard = queue.queue.lock().await;
+        let ids: Vec<String> = guard
+            .iter()
+            .filter_map(|event| event.get("id").and_then(|id| id.as_str()))
+            .map(ToString::to_string)
+            .collect();
+        assert_eq!(
+            ids,
+            vec![
+                format!("evt-{}", MAX_AUDIT_BATCH_LEN),
+                format!("evt-{}", MAX_AUDIT_BATCH_LEN + 1)
+            ]
+        );
     }
 
     #[tokio::test]
