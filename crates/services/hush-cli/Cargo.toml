@@ -42,7 +42,7 @@ regorus = { version = "0.9.1", optional = true }
 toml.workspace = true
 dirs.workspace = true
 hunt-scan.workspace = true
-hunt-query = { workspace = true, features = ["ocsf"] }
+hunt-query.workspace = true
 hunt-correlate.workspace = true
 colored.workspace = true
 comfy-table.workspace = true

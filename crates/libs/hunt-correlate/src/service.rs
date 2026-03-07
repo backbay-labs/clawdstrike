@@ -256,4 +256,18 @@ output:
         assert_eq!(matches[1].match_field, "process");
         assert_eq!(matches[1].matched_iocs[0].indicator, "10.0.0.9");
     }
+
+    #[test]
+    fn ioc_match_request_defaults_missing_indicators() {
+        let request: IocMatchRequest = serde_json::from_value(serde_json::json!({
+            "query": {
+                "limit": 25
+            }
+        }))
+        .expect("deserialize IOC request without indicators");
+
+        assert!(request.indicators.is_empty());
+        assert!(request.stix_bundle.is_none());
+        assert_eq!(request.query.and_then(|query| query.limit), Some(25));
+    }
 }

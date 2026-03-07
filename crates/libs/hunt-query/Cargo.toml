@@ -26,9 +26,6 @@ time = "0.3"
 uuid.workspace = true
 clawdstrike-ocsf.workspace = true
 
-[features]
-ocsf = []
-
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 tempfile = "3"

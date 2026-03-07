@@ -11,5 +11,4 @@ pub mod replay;
 pub mod service;
 pub mod timeline;
 
-#[cfg(feature = "ocsf")]
 pub mod ocsf;
