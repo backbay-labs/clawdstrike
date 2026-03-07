@@ -865,8 +865,10 @@ impl HushEngine {
         // before the origin requirement is verified.
         let mut posture_context = context.clone();
         if context.origin.is_none() && self.policy.origins.is_some() {
-            // Skip enclave resolution and posture override — let
-            // check_action_report handle the origin_required denial.
+            // Discard any caller-injected enclave — without an origin,
+            // a caller-supplied enclave could bypass posture controls.
+            // check_action_report will handle origin_required denial.
+            posture_context.enclave = None;
         } else if posture_context.enclave.is_some() {
             // Enclave already populated by caller — skip re-resolution.
             if let Some(ref origin) = context.origin {
