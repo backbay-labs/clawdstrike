@@ -289,6 +289,7 @@ export interface InteractiveSessionState {
   }
   viewport: InteractiveViewportState
   scrollback: string[]
+  activityLines: string[]
   lastOutputAt: string | null
   lastHeartbeatAt: string | null
   error: string | null
@@ -723,6 +724,7 @@ export function createInitialInteractiveSessionState(): InteractiveSessionState 
       autoFollow: true,
     },
     scrollback: [],
+    activityLines: [],
     lastOutputAt: null,
     lastHeartbeatAt: null,
     error: null,

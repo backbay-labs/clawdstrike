@@ -94,6 +94,42 @@ import { huntMitreScreen } from "./screens/hunt-mitre"
 import { huntPlaybookScreen } from "./screens/hunt-playbook"
 
 const AUDIT_PREVIEW_REFRESH_INTERVAL_MS = 15_000
+const INTERACTIVE_ACTIVITY_LIMIT = 8
+
+function stripInteractiveControlSequences(rawChunk: string): string {
+  return rawChunk
+    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, " ")
+    .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, " ")
+    .replace(/\x1b[@-_]/g, " ")
+    .replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "")
+}
+
+function extractInteractiveActivityLines(rawChunk: string): string[] {
+  return stripInteractiveControlSequences(rawChunk)
+    .replace(/\u00a0/g, " ")
+    .split(/[\r\n]+/)
+    .map((line) => line.replace(/\b\d+[A-Z]\b/g, "").replace(/\s+/g, " ").trim())
+    .filter((line) => line.length >= 4)
+    .filter((line) => /[\p{L}\p{N}]/u.test(line))
+    .filter((line) => !/^(hi|ok|yes|no)$/iu.test(line))
+    .filter((line) => !line.includes("~/"))
+    .filter((line) => !/^\d+[A-Z]/.test(line))
+}
+
+function mergeInteractiveActivityLines(existing: string[], incoming: string[]): string[] {
+  const merged = [...existing]
+  for (const line of incoming) {
+    if (merged.at(-1) === line) {
+      continue
+    }
+    const priorIndex = merged.indexOf(line)
+    if (priorIndex >= 0) {
+      merged.splice(priorIndex, 1)
+    }
+    merged.push(line)
+  }
+  return merged.slice(-INTERACTIVE_ACTIVITY_LIMIT)
+}
 
 function createInitialExternalState() {
   return {
@@ -1444,10 +1480,16 @@ export class TUIApp implements AppController {
       }
       scrollback.push(...nextLines)
     }
+    const activityLines = extractInteractiveActivityLines(chunk)
+    const nextActivityLines =
+      activityLines.length > 0
+        ? mergeInteractiveActivityLines(this.state.interactiveSession.activityLines, activityLines)
+        : this.state.interactiveSession.activityLines
 
     this.state.interactiveSession = {
       ...this.state.interactiveSession,
       scrollback,
+      activityLines: nextActivityLines,
       lastOutputAt: new Date().toISOString(),
       lastHeartbeatAt: new Date().toISOString(),
       phase: this.state.interactiveSession.stagedTask.sent ? "running" : this.state.interactiveSession.phase,
@@ -1481,6 +1523,7 @@ export class TUIApp implements AppController {
     this.state.interactiveSession = {
       ...this.state.interactiveSession,
       scrollback,
+      activityLines: mergeInteractiveActivityLines(this.state.interactiveSession.activityLines, [line]),
       lastOutputAt: new Date().toISOString(),
       lastHeartbeatAt: new Date().toISOString(),
     }
@@ -1651,6 +1694,7 @@ export class TUIApp implements AppController {
         },
         viewport: this.state.interactiveSession.viewport,
         scrollback: [],
+        activityLines: [],
         lastOutputAt: null,
         lastHeartbeatAt: null,
         error: null,

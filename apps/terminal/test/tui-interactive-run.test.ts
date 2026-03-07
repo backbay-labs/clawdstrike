@@ -249,4 +249,34 @@ describe("interactive run surface", () => {
     expect(output).toContain("Waiting for interactive output")
     expect(output).toContain("Claude is processing the staged task")
   })
+
+  test("surfaces recent activity while Claude redraw output is still settling", () => {
+    const state = createState()
+    const app = new TestApp()
+    const run = createManagedRun({
+      prompt: "hi",
+      action: "dispatch",
+      agentId: "claude",
+      agentLabel: "Claude",
+      mode: "attach",
+    })
+    run.interactiveSurface = "embedded"
+    run.interactiveSessionId = "pty_embedded_activity"
+    state.runs.entries = [run]
+    state.activeRunId = run.id
+    state.runs.selectedRunId = run.id
+    state.interactiveSession.runId = run.id
+    state.interactiveSession.sessionId = run.interactiveSessionId
+    state.interactiveSession.toolchain = "claude"
+    state.interactiveSession.phase = "running"
+    state.interactiveSession.focus = "pty"
+    state.interactiveSession.stagedTask.text = "hi"
+    state.interactiveSession.stagedTask.sent = true
+    state.interactiveSession.scrollback = ["› staged task sent: hi", "hi"]
+    state.interactiveSession.activityLines = ["Medium /model", "Embellishing…"]
+
+    const output = stripAnsi(interactiveRunScreen.render(createContext(state, app)))
+    expect(output).toContain("Recent Activity")
+    expect(output).toContain("Embellishing")
+  })
 })

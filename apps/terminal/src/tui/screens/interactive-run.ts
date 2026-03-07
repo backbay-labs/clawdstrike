@@ -112,6 +112,24 @@ function isDecorativeTranscriptLine(line: string): boolean {
   return !/[\p{L}\p{N}]/u.test(normalized)
 }
 
+function isLocalSessionEcho(line: string, stagedTask: string): boolean {
+  const normalized = line.trim()
+  if (!normalized) {
+    return true
+  }
+  if (normalized.startsWith("› staged task sent:")) {
+    return true
+  }
+  const trimmedTask = stagedTask.trim()
+  if (!trimmedTask) {
+    return false
+  }
+  if (normalized === trimmedTask) {
+    return true
+  }
+  return normalized.replace(/^[>❯•*\s]+/u, "").trim() === trimmedTask
+}
+
 function renderViewport(run: RunRecord, ctx: ScreenContext, width: number, height: number): string[] {
   const session = ctx.state.interactiveSession
   const focusLabel =
@@ -125,14 +143,25 @@ function renderViewport(run: RunRecord, ctx: ScreenContext, width: number, heigh
   const start = Math.max(0, scrollback.length - viewportHeight - offset)
   const end = Math.max(start, scrollback.length - offset)
   const lines = scrollback.slice(start, end)
+  const stableTranscriptLines = lines.filter((line) => !isLocalSessionEcho(line, session.stagedTask.text))
+  const activityLines = session.activityLines.filter((line) => !isLocalSessionEcho(line, session.stagedTask.text))
 
-  if (lines.length === 0 || lines.every(isDecorativeTranscriptLine)) {
+  if (
+    lines.length === 0 ||
+    stableTranscriptLines.length === 0 ||
+    stableTranscriptLines.every(isDecorativeTranscriptLine)
+  ) {
     body.push(`${THEME.dim}Waiting for interactive output…${THEME.reset}`)
     if (session.stagedTask.sent) {
       body.push(`${THEME.dim}${run.agentLabel} is processing the staged task now.${THEME.reset}`)
       body.push(`${THEME.dim}The first visible response can take a few seconds in interactive mode.${THEME.reset}`)
     } else {
       body.push(`${THEME.dim}The session is open. Send the staged task or type directly into the PTY.${THEME.reset}`)
+    }
+    if (activityLines.length > 0) {
+      body.push("")
+      body.push(`${THEME.secondary}${THEME.bold}Recent Activity${THEME.reset}`)
+      body.push(...activityLines.slice(-4).map((line) => `${THEME.dim}• ${fitString(line, Math.max(12, width - 8))}${THEME.reset}`))
     }
   } else {
     body.push(...lines.map((line) => fitString(line, Math.max(12, width - 4))))
