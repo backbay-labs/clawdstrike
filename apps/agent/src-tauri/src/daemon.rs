@@ -1278,6 +1278,8 @@ impl AuditQueue {
                     }
                     outcome.accepted += summary.accepted;
                     outcome.duplicates += summary.duplicates;
+                    // Persist after each acknowledged batch so a crash before the next loop
+                    // iteration does not resurrect events the daemon already accepted.
                     self.persist_current_queue("after accepted audit batch confirmation")
                         .await;
                 }
