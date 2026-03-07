@@ -212,7 +212,7 @@ pub async fn replay_all(
 
     let mut all_events = Vec::new();
 
-    for source in &query.effective_sources() {
+    for source in &query.effective_replay_sources() {
         match replay_stream(&js, source, query, verify).await {
             Ok(events) => {
                 all_events.extend(events);

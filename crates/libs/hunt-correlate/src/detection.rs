@@ -370,8 +370,7 @@ fn sigma_condition_selector_candidates(
                 | "count"
                 | "true"
                 | "false"
-        ) || lowered.chars().all(|ch| ch.is_ascii_digit())
-        {
+        ) {
             continue;
         }
 

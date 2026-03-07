@@ -62,6 +62,13 @@ impl EventSource {
         }
     }
 
+    /// JetStream replay identity. Sources that share this tuple can be
+    /// consumed from a single subscription without losing source fidelity,
+    /// because the envelope parser still projects the original event source.
+    pub fn replay_key(&self) -> (&'static str, &'static str) {
+        (self.stream_name(), self.subject_filter())
+    }
+
     /// All known sources.
     pub fn all() -> Vec<Self> {
         vec![
@@ -161,6 +168,25 @@ impl HuntQuery {
             }
             deduped
         }
+    }
+
+    /// Returns the distinct replay subscriptions needed to satisfy this query.
+    ///
+    /// Multiple logical sources can share a single JetStream stream/subject
+    /// pair. Replay should consume each pair once and let envelope parsing
+    /// recover the concrete event source for downstream filtering.
+    pub fn effective_replay_sources(&self) -> Vec<EventSource> {
+        let mut deduped = Vec::new();
+        let mut replay_keys = Vec::new();
+        for source in self.effective_sources() {
+            let replay_key = source.replay_key();
+            if replay_keys.contains(&replay_key) {
+                continue;
+            }
+            replay_keys.push(replay_key);
+            deduped.push(source);
+        }
+        deduped
     }
 
     /// Returns true if the event matches ALL active predicates.
@@ -459,6 +485,38 @@ mod tests {
         assert_eq!(
             q.effective_sources(),
             vec![EventSource::Receipt, EventSource::Hubble]
+        );
+    }
+
+    #[test]
+    fn hunt_query_effective_replay_sources_collapse_shared_streams() {
+        let q = HuntQuery::default();
+        assert_eq!(
+            q.effective_replay_sources(),
+            vec![
+                EventSource::Tetragon,
+                EventSource::Hubble,
+                EventSource::Receipt,
+                EventSource::Scan,
+                EventSource::Response,
+            ]
+        );
+    }
+
+    #[test]
+    fn hunt_query_effective_replay_sources_preserve_first_matching_source() {
+        let q = HuntQuery {
+            sources: vec![
+                EventSource::Detection,
+                EventSource::Response,
+                EventSource::Directory,
+                EventSource::Tetragon,
+            ],
+            ..Default::default()
+        };
+        assert_eq!(
+            q.effective_replay_sources(),
+            vec![EventSource::Detection, EventSource::Tetragon]
         );
     }
 
