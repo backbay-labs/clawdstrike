@@ -1,6 +1,6 @@
 -- Durable fleet response-action ledger and acknowledgement scaffolding.
 -- Depends on:
---   * 002_adaptive_sdr_schema.sql for approvals(tenant_id, id)
+--   * 009_fleet_directory_references.sql for approvals(tenant_id, id)
 --   * 010_detection_core.sql for detection_findings(tenant_id, id)
 -- The fleet_cases tenant-scoped FK is added later in 015_response_action_case_links.sql
 -- because fleet_cases is introduced in 013_case_evidence_bundles.sql.

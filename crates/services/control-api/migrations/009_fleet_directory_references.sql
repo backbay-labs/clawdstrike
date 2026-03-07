@@ -6,6 +6,16 @@ ADD COLUMN IF NOT EXISTS principal_id UUID;
 
 DO $$
 BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'approvals_tenant_id_id_key'
+    ) THEN
+        ALTER TABLE approvals
+            ADD CONSTRAINT approvals_tenant_id_id_key
+            UNIQUE (tenant_id, id);
+    END IF;
+
     IF EXISTS (
         SELECT 1
         FROM pg_constraint

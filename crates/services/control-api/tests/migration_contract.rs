@@ -121,6 +121,10 @@ fn fleet_directory_migrations_define_core_tables_and_backfills() {
         "009 migration must extend approvals"
     );
     assert!(
+        references_sql.contains("approvals_tenant_id_id_key"),
+        "009 migration must add the approvals tenant composite uniqueness needed by downstream FKs"
+    );
+    assert!(
         references_sql.contains("approvals_principal_tenant_fk"),
         "009 migration must enforce tenant-scoped approval principal links"
     );
