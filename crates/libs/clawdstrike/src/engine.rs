@@ -1378,7 +1378,7 @@ fn intersect_mcp_configs(
     // Block list: union of both block lists (most restrictive)
     let mut block = policy_mcp.block.clone();
     for b in &enclave_mcp.block {
-        if !block.contains(b) {
+        if !block.iter().any(|existing| tool_matches(b, existing)) {
             block.push(b.clone());
         }
     }
@@ -1392,18 +1392,28 @@ fn intersect_mcp_configs(
     } else if enclave_mcp.allow.is_empty() {
         policy_mcp.allow.clone()
     } else {
-        policy_mcp
-            .allow
-            .iter()
-            .filter(|a| enclave_mcp.allow.contains(a))
-            .cloned()
-            .collect()
+        // Use tool_matches for wildcard-aware intersection: a policy entry
+        // is kept if any enclave entry matches it, and vice versa.
+        let mut merged = Vec::new();
+        for p in &policy_mcp.allow {
+            if enclave_mcp
+                .allow
+                .iter()
+                .any(|e| tool_matches(p, e) || tool_matches(e, p))
+            {
+                merged.push(p.clone());
+            }
+        }
+        merged
     };
 
     // Require confirmation: union (if either requires confirmation, require it)
     let mut require_confirmation = policy_mcp.require_confirmation.clone();
     for rc in &enclave_mcp.require_confirmation {
-        if !require_confirmation.contains(rc) {
+        if !require_confirmation
+            .iter()
+            .any(|existing| tool_matches(rc, existing))
+        {
             require_confirmation.push(rc.clone());
         }
     }
