@@ -1,0 +1,13 @@
+lane	worktree	branch	profile	role	brief_id	description	bootstrap
+orch	orch	feature/fleet-orchestrator	swarm-orchestrator	workstream-orchestrator	ORCH	Orchestrator lane for dispatch review and shared wiring	
+a1	a1-directory	feature/fleet-directory	swarm-worker	lane-worker	A1	Directory foundation lane	
+a2	a2-detection	feature/fleet-detection	swarm-worker	lane-worker	A2	Detection core lane	
+a3	a3-response	feature/fleet-response	swarm-worker	lane-worker	A3	Response execution lane	
+a4	a4-hunt	feature/fleet-hunt	swarm-worker	lane-worker	A4	Hunt backend lane	
+a5	a5-console	feature/fleet-console	swarm-worker	lane-worker	A5	Fleet console lane	npm --prefix apps/control-console ci
+a6	a6-cases	feature/fleet-cases	swarm-worker	lane-worker	A6	Cases and evidence lane	
+a7	a7-graph	feature/fleet-graph	swarm-worker	lane-worker	A7	Delegation graph lane	
+a8	a8-telemetry	feature/fleet-telemetry	swarm-worker	lane-worker	A8	Telemetry expansion lane	
+t1	t1-harness	feature/fleet-stabilize-harness	swarm-worker	lane-worker	T1	Integration harness hardening lane	
+t2	t2-ci	feature/fleet-ci-parity	swarm-worker	lane-worker	T2	Repo CI parity and verification lane	npm --prefix apps/control-console ci
+t3	t3-merge	feature/fleet-merge-shepherd	swarm-worker	lane-worker	T3	Merge shepherding and CI watch lane	

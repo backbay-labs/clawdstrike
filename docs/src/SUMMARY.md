@@ -25,6 +25,17 @@
 - [Terminology](concepts/terminology.md)
 - [Adaptive Architecture](concepts/adaptive-architecture.md)
 
+# Fleet Security
+
+- [Overview](fleet-security/index.md)
+  - [For Users](fleet-security/for-users.md)
+  - [Operator Guide](fleet-security/operator-guide.md)
+  - [Rollout](fleet-security/rollout.md)
+  - [Target Architecture](fleet-security/architecture.md)
+  - [Identity, Policy, and Posture](fleet-security/directory-and-policy.md)
+  - [Detection, Hunt, and Response](fleet-security/detection-response.md)
+  - [Evidence and Attestation](fleet-security/evidence-attestation.md)
+
 # Guides
 
 - [OpenClaw Integration](guides/openclaw-integration.md)
