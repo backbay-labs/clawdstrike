@@ -80,6 +80,29 @@ clawdstrike policy bundle build ai-agent --resolve --key ./bundle-signing.key --
 clawdstrike policy bundle verify ./policy.bundle.json
 ```
 
+## `clawdstrike origin`
+
+Inspect and debug origin-aware policy enforcement.
+
+- `clawdstrike origin resolve <POLICY> [--provider ...] [--space-id ...] [--visibility ...] [--json]` — resolve an origin context against a policy and show the matched enclave profile.
+- `clawdstrike origin explain <POLICY> [--provider ...] [--space-id ...] [--json]` — explain why each profile did or didn't match.
+- `clawdstrike origin list-profiles <POLICY> [--json]` — list all origin profiles in a policy.
+
+Origin flags: `--provider`, `--space-id`, `--space-type`, `--visibility`, `--tenant-id`, `--thread-id`, `--tags`, `--sensitivity`, `--external-participants` / `--no-external-participants`.
+
+Examples:
+
+```bash
+# Resolve: which profile matches a Slack DM?
+clawdstrike origin resolve ./policy.yaml --provider slack --visibility private
+
+# Explain: why did this GitHub origin match (or not)?
+clawdstrike origin explain ./policy.yaml --provider github --space-type pull_request
+
+# List all profiles
+clawdstrike origin list-profiles ./policy.yaml --json
+```
+
 ## `clawdstrike guard`
 
 - `clawdstrike guard inspect <PLUGIN_REF> [--json]` — inspect manifest metadata and compatibility.

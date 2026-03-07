@@ -22,6 +22,7 @@
 - [Schema Governance](concepts/schema-governance.md)
 - [Decisions](concepts/decisions.md)
 - [Postures](concepts/postures.md)
+- [Origin Enclaves](concepts/origin-enclaves.md)
 - [Terminology](concepts/terminology.md)
 - [Adaptive Architecture](concepts/adaptive-architecture.md)
 
@@ -55,6 +56,7 @@
 - [Enterprise Enrollment](guides/enterprise-enrollment.md)
 - [Audit Logging](guides/audit-logging.md)
 - [Marketplace Feed](guides/marketplace-feed.md)
+- [Origin Enclaves](guides/origin-enclaves.md)
 - [Computer Use Gateway](guides/computer-use-gateway.md)
 
 # Package Manager

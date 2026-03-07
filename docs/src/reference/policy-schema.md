@@ -7,10 +7,11 @@ Reference for canonical Clawdstrike policy files (`version`, `guards`, `settings
 - `1.1.0`
 - `1.2.0`
 - `1.3.0`
+- `1.4.0`
 
 Notes:
 
-- `1.3.0` is the latest schema version.
+- `1.4.0` is the latest schema version (adds `origins` for Origin Enclaves).
 - Some SDK validators still default to `1.2.0` when `version` is omitted; set `version` explicitly in production policies.
 
 ## Top-Level Fields
@@ -24,6 +25,7 @@ Notes:
 - `custom_guards` (array)
 - `settings` (object)
 - `posture` (object, `1.2.0+`)
+- `origins` (object, `1.4.0+`) — see [Origin Enclaves](../concepts/origin-enclaves.md)
 
 ## Remote `extends` Security
 
@@ -240,6 +242,9 @@ See [SpiderSenseGuard](./guards/spider-sense.md) for behavior details and operat
   - `guards.spider_sense` accepts `1.3.0` fields with compatibility warnings in TS canonical validator
 - `version: "1.3.0"`
   - includes Spider-Sense deep-path template/version and signed manifest trust-store fields
+- `version: "1.4.0"`
+  - adds `origins` top-level field for Origin Enclaves (profiles, match rules, default behavior)
+  - enclave MCP pre-check, cross-origin isolation, bridge policies
 
 ## Validation Rules (High-Level)
 
