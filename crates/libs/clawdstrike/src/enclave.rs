@@ -12,7 +12,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
-use crate::guards::{EgressAllowlistConfig, McpToolConfig};
+use crate::guards::{EgressAllowlistConfig, McpDefaultAction, McpToolConfig};
 use crate::origin::OriginContext;
 use crate::policy::{
     BridgePolicy, OriginBudgets, OriginDataPolicy, OriginDefaultBehavior, OriginMatch,
@@ -170,10 +170,10 @@ impl EnclaveResolver {
             }
         }
 
-        // visibility
+        // visibility — compare via string representation (same reason as provider)
         if let Some(ref rule_vis) = rules.visibility {
             match &origin.visibility {
-                Some(origin_vis) if origin_vis == rule_vis => {
+                Some(origin_vis) if origin_vis.to_string() == rule_vis.to_string() => {
                     specificity += 1;
                 }
                 _ => return None,
@@ -268,13 +268,17 @@ impl EnclaveResolver {
             )),
             OriginDefaultBehavior::MinimalProfile => Ok(ResolvedEnclave {
                 profile_id: None,
-                mcp: None,
+                mcp: Some(McpToolConfig {
+                    enabled: true,
+                    default_action: Some(McpDefaultAction::Block),
+                    ..McpToolConfig::default()
+                }),
                 posture: None,
                 egress: None,
                 data: None,
                 budgets: None,
                 bridge_policy: None,
-                explanation: None,
+                explanation: Some("minimal fallback profile: MCP tools blocked by default".into()),
                 resolution_path: vec!["default_behavior:minimal_profile".into()],
             }),
         }
@@ -576,12 +580,16 @@ mod tests {
 
         let result = EnclaveResolver::resolve(&slack_origin(), &config).unwrap();
         assert_eq!(result.profile_id, None);
-        assert_eq!(result.mcp, None);
+        // MinimalProfile materializes a restrictive MCP config (block by default)
+        assert!(result.mcp.is_some());
+        let mcp = result.mcp.as_ref().unwrap();
+        assert_eq!(mcp.default_action, Some(McpDefaultAction::Block));
         assert_eq!(result.posture, None);
         assert_eq!(result.egress, None);
         assert_eq!(result.data, None);
         assert_eq!(result.budgets, None);
         assert_eq!(result.bridge_policy, None);
+        assert!(result.explanation.is_some());
         assert_eq!(
             result.resolution_path,
             vec!["default_behavior:minimal_profile"]
