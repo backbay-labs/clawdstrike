@@ -24,7 +24,9 @@ use crate::policy::{
 // ---------------------------------------------------------------------------
 
 /// Result of enclave resolution — the effective security profile for an origin.
+#[must_use]
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ResolvedEnclave {
     /// Profile ID that matched (None if default behavior applied).
     pub profile_id: Option<String>,
@@ -119,9 +121,9 @@ impl EnclaveResolver {
         let mut specificity: usize = 0;
         let mut exact_space_id = false;
 
-        // provider
+        // provider — compare via string representation to avoid Custom("slack") != Slack
         if let Some(ref rule_provider) = rules.provider {
-            if &origin.provider != rule_provider {
+            if origin.provider.to_string() != rule_provider.to_string() {
                 return None;
             }
             specificity += 1;
@@ -148,10 +150,12 @@ impl EnclaveResolver {
             }
         }
 
-        // space_type
+        // space_type — compare via string representation (same reason as provider)
         if let Some(ref rule_space_type) = rules.space_type {
             match &origin.space_type {
-                Some(origin_space_type) if origin_space_type == rule_space_type => {
+                Some(origin_space_type)
+                    if origin_space_type.to_string() == rule_space_type.to_string() =>
+                {
                     specificity += 1;
                 }
                 _ => return None,

@@ -789,6 +789,29 @@ impl Policy {
                         format!("duplicate origin profile id: {}", profile.id),
                     ));
                 }
+                // H3 fix: validate posture references at load time
+                if let Some(ref posture_ref) = profile.posture {
+                    if let Some(ref posture_config) = self.posture {
+                        if !posture_config.states.contains_key(posture_ref) {
+                            errors.push(PolicyFieldError::new(
+                                format!("origins.profiles[{}].posture", profile.id),
+                                format!(
+                                    "references unknown posture state '{}' (available: {:?})",
+                                    posture_ref,
+                                    posture_config.states.keys().collect::<Vec<_>>()
+                                ),
+                            ));
+                        }
+                    } else {
+                        errors.push(PolicyFieldError::new(
+                            format!("origins.profiles[{}].posture", profile.id),
+                            format!(
+                                "references posture state '{}' but no posture config is defined",
+                                posture_ref
+                            ),
+                        ));
+                    }
+                }
             }
         }
 
@@ -3096,6 +3119,13 @@ guards:
         let yaml = r#"
 version: "1.4.0"
 name: OriginTest
+posture:
+  initial: standard
+  states:
+    standard:
+      description: Standard posture
+    restricted:
+      description: Restricted posture
 origins:
   default_behavior: deny
   profiles:

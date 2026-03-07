@@ -82,8 +82,8 @@ export interface OriginContext {
   /** Whether external (non-org) participants are present. */
   externalParticipants?: boolean;
 
-  /** Policy-relevant tags derived from the origin. */
-  tags?: string[];
+  /** Policy-relevant tags derived from the origin (defaults to []). */
+  tags: string[];
 
   /** Sensitivity label (e.g. "public", "confidential", "restricted"). */
   sensitivity?: string;

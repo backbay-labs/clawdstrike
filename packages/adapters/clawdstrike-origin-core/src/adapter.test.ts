@@ -53,6 +53,7 @@ class MockTestAdapter implements TrustAdapter {
       tags: this.deriveTags({
         provider: this.provider,
         visibility: "internal",
+        tags: [],
       }),
     };
   }
@@ -152,6 +153,7 @@ function makeApprovalRequest(): ApprovalRequest {
       tenantId: "T12345",
       spaceId: "C67890",
       visibility: "internal",
+      tags: [],
     },
     enclaveId: "enclave-default",
     toolName: "file_write",
@@ -257,7 +259,7 @@ describe("deriveTags()", () => {
   const adapter = new MockTestAdapter();
 
   it("returns string array with provider tag", () => {
-    const tags = adapter.deriveTags({ provider: "slack" });
+    const tags = adapter.deriveTags({ provider: "slack", tags: [] });
     expect(Array.isArray(tags)).toBe(true);
     expect(tags).toContain("provider:slack");
   });
@@ -265,6 +267,7 @@ describe("deriveTags()", () => {
   it("includes visibility tag when present", () => {
     const tags = adapter.deriveTags({
       provider: "slack",
+      tags: [],
       visibility: "public",
     });
     expect(tags).toContain("visibility:public");
@@ -273,6 +276,7 @@ describe("deriveTags()", () => {
   it("includes external-participants tag when true", () => {
     const tags = adapter.deriveTags({
       provider: "slack",
+      tags: [],
       externalParticipants: true,
     });
     expect(tags).toContain("external-participants");
@@ -281,13 +285,14 @@ describe("deriveTags()", () => {
   it("includes space-type tag when present", () => {
     const tags = adapter.deriveTags({
       provider: "github",
+      tags: [],
       spaceType: "pull_request",
     });
     expect(tags).toContain("space-type:pull_request");
   });
 
   it("does not include absent optional tags", () => {
-    const tags = adapter.deriveTags({ provider: "slack" });
+    const tags = adapter.deriveTags({ provider: "slack", tags: [] });
     expect(tags).not.toContain("external-participants");
     const hasVisibility = tags.some((t) => t.startsWith("visibility:"));
     expect(hasVisibility).toBe(false);
@@ -360,7 +365,7 @@ describe("consumeApprovalResponse()", () => {
 
 describe("OriginContext type structure", () => {
   it("accepts a minimal OriginContext (provider only)", () => {
-    const ctx: OriginContext = { provider: "slack" };
+    const ctx: OriginContext = { provider: "slack", tags: [] };
     expect(ctx.provider).toBe("slack");
     expect(ctx.tenantId).toBeUndefined();
   });
@@ -388,7 +393,7 @@ describe("OriginContext type structure", () => {
   });
 
   it("accepts custom provider strings", () => {
-    const ctx: OriginContext = { provider: "custom-provider" };
+    const ctx: OriginContext = { provider: "custom-provider", tags: [] };
     expect(ctx.provider).toBe("custom-provider");
   });
 
@@ -396,6 +401,7 @@ describe("OriginContext type structure", () => {
     const ctx: OriginContext = {
       provider: "jira",
       spaceType: "epic",
+      tags: [],
     };
     expect(ctx.spaceType).toBe("epic");
   });

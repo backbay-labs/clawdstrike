@@ -375,7 +375,16 @@ impl HushEngine {
 
         // --- Origin Enclave Resolution ---
         let mut effective_context = context.clone();
-        if let (Some(ref origin), Some(ref origins_config)) =
+        // Skip resolution if enclave was already resolved (e.g., by the posture path).
+        if effective_context.enclave.is_some() {
+            // Enclave already populated — store in engine state for receipt enrichment.
+            if let Some(ref origin) = effective_context.origin {
+                let mut state = self.state.write().await;
+                state.last_origin = Some(origin.clone());
+                state.last_resolved_enclave = effective_context.enclave.clone();
+                drop(state);
+            }
+        } else if let (Some(ref origin), Some(ref origins_config)) =
             (&context.origin, &self.policy.origins)
         {
             match EnclaveResolver::resolve(origin, origins_config) {
@@ -454,6 +463,29 @@ impl HushEngine {
         // --- End Origin Enclave Resolution ---
 
         // --- Cross-Origin Isolation Check (Phase 1b) ---
+        // C2 fix: If a session origin was established, any subsequent check
+        // WITHOUT an origin must be denied (fail-closed). Otherwise an attacker
+        // could drop the origin context to bypass enclave restrictions.
+        {
+            let state = self.state.read().await;
+            if state.session_origin.is_some() && effective_context.origin.is_none() {
+                drop(state);
+                let result = GuardResult::block(
+                    "cross_origin",
+                    Severity::Error,
+                    "origin context required: session has an established origin but this check omits it".to_string(),
+                );
+                let mut state = self.state.write().await;
+                state.action_count += 1;
+                state.violation_count += 1;
+                return Ok(GuardReport {
+                    overall: result.clone(),
+                    per_guard: vec![result],
+                    evaluation_path: None,
+                });
+            }
+        }
+
         if let Some(ref origin) = effective_context.origin {
             let mut state = self.state.write().await;
 
@@ -710,55 +742,63 @@ impl HushEngine {
         // Phase 1.3: If enclave specifies a posture and session hasn't been
         // posture-initialized from an enclave yet, override the initial posture
         // with the enclave's posture.
-        if let Some(ref origin) = context.origin {
-            if let Some(ref origins_config) = self.policy.origins {
-                match EnclaveResolver::resolve(origin, origins_config) {
-                    Ok(resolved) => {
-                        if let Some(ref enclave_posture) = resolved.posture {
-                            let state = posture_state.as_mut().ok_or_else(|| {
-                                Error::ConfigError(
-                                    "posture state not initialized".to_string(),
-                                )
-                            })?;
+        //
+        // C1 fix: Resolve the enclave once here and pass it via context, rather
+        // than resolving again inside check_action_report. This avoids double
+        // resolution and inconsistent error handling.
+        let mut posture_context = context.clone();
+        if let (Some(ref origin), Some(ref origins_config)) =
+            (&context.origin, &self.policy.origins)
+        {
+            match EnclaveResolver::resolve(origin, origins_config) {
+                Ok(resolved) => {
+                    if let Some(ref enclave_posture) = resolved.posture {
+                        let state = posture_state.as_mut().ok_or_else(|| {
+                            Error::ConfigError(
+                                "posture state not initialized".to_string(),
+                            )
+                        })?;
 
-                            // Only override if the session is still in its initial state
-                            // (hasn't transitioned yet) — don't override mid-session.
-                            if state.transition_history.is_empty() {
-                                // Validate that the enclave's posture state exists in the program.
-                                if program.state(enclave_posture).is_some() {
-                                    if state.current_state != *enclave_posture {
-                                        debug!(
-                                            from = %state.current_state,
-                                            to = %enclave_posture,
-                                            "Enclave overriding initial posture"
-                                        );
-                                        state.current_state = enclave_posture.clone();
-                                        state.entered_at = chrono::Utc::now().to_rfc3339();
-                                        // Re-initialize budgets for the new state.
-                                        if let Some(compiled) =
-                                            program.state(enclave_posture)
-                                        {
-                                            state.budgets = compiled.initial_budgets();
-                                        }
+                        // Only override if the session is still in its initial state
+                        // (hasn't transitioned yet) — don't override mid-session.
+                        if state.transition_history.is_empty() {
+                            // Validate that the enclave's posture state exists in the program.
+                            if program.state(enclave_posture).is_some() {
+                                if state.current_state != *enclave_posture {
+                                    debug!(
+                                        from = %state.current_state,
+                                        to = %enclave_posture,
+                                        "Enclave overriding initial posture"
+                                    );
+                                    state.current_state = enclave_posture.clone();
+                                    state.entered_at = chrono::Utc::now().to_rfc3339();
+                                    // Re-initialize budgets for the new state.
+                                    if let Some(compiled) =
+                                        program.state(enclave_posture)
+                                    {
+                                        state.budgets = compiled.initial_budgets();
                                     }
-                                } else {
-                                    // Fail-closed: enclave references nonexistent posture state.
-                                    let available: Vec<&String> =
-                                        program.states.keys().collect();
-                                    return Err(Error::ConfigError(format!(
-                                        "enclave profile references unknown posture state \
-                                         '{}' (available: {:?})",
-                                        enclave_posture, available
-                                    )));
                                 }
+                            } else {
+                                // Fail-closed: enclave references nonexistent posture state.
+                                let available: Vec<&String> =
+                                    program.states.keys().collect();
+                                return Err(Error::ConfigError(format!(
+                                    "enclave profile references unknown posture state \
+                                     '{}' (available: {:?})",
+                                    enclave_posture, available
+                                )));
                             }
                         }
                     }
-                    Err(_) => {
-                        // Enclave resolution failure is already handled in
-                        // check_action_report which is called below — don't
-                        // duplicate the error here.
-                    }
+                    // Pre-populate enclave on context so check_action_report
+                    // won't need to resolve again.
+                    posture_context.enclave = Some(resolved);
+                }
+                Err(e) => {
+                    // Fail-closed: enclave resolution failure denies the action.
+                    warn!(error = %e, "Enclave resolution failed in posture path — denying");
+                    return Err(e);
                 }
             }
         }
@@ -807,7 +847,7 @@ impl HushEngine {
             });
         }
 
-        let guard_report = self.check_action_report(action, context).await?;
+        let guard_report = self.check_action_report(action, &posture_context).await?;
         let mut budget_deltas: HashMap<String, i64> = HashMap::new();
 
         let mut trigger: Option<RuntimeTransitionTrigger> = None;
