@@ -153,11 +153,15 @@ hushd:
     logLevel: "info"
   auth:
     enabled: true
-    # -- Name of existing Secret containing CLAWDSTRIKE_API_KEY and CLAWDSTRIKE_ADMIN_KEY
+    # -- Name of existing Secret containing CLAWDSTRIKE_API_KEY,
+    # -- CLAWDSTRIKE_ADMIN_KEY, and CLAWDSTRIKE_AUTH_PEPPER
     existingSecret: ""
-    # -- API key (only used if existingSecret is empty; stored in auto-generated Secret)
+    # -- API key (only used if existingSecret is empty; required)
     apiKey: ""
+    # -- Admin key (only used if existingSecret is empty; required)
     adminKey: ""
+    # -- Auth pepper (only used if existingSecret is empty; required)
+    pepper: ""
   persistence:
     enabled: true
     size: 1Gi
