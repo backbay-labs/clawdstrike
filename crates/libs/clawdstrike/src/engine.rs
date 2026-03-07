@@ -425,6 +425,14 @@ impl HushEngine {
 
         // --- Origin Enclave Resolution ---
         let mut effective_context = context.clone();
+
+        // When origins are configured and no origin is provided, any caller-supplied
+        // enclave must be discarded — otherwise a caller could inject a permissive
+        // enclave to bypass enclave restrictions.
+        if self.policy.origins.is_some() && effective_context.origin.is_none() {
+            effective_context.enclave = None;
+        }
+
         // Skip resolution if enclave was already resolved (e.g., by the posture path).
         if effective_context.enclave.is_some() {
             // Enclave already populated — store in engine state for receipt enrichment.
@@ -455,7 +463,13 @@ impl HushEngine {
                 Err(e) => {
                     // Fail-closed: if enclave resolution fails, deny the action
                     warn!(error = %e, "Enclave resolution failed — denying action");
-                    return Err(e);
+                    return Ok(self
+                        .deny_early(GuardResult::block(
+                            "enclave",
+                            Severity::Error,
+                            format!("enclave resolution failed: {e}"),
+                        ))
+                        .await);
                 }
             }
         } else if context.origin.is_none() {
@@ -2748,15 +2762,14 @@ posture:
         let context = GuardContext::new().with_origin(test_slack_origin());
         let args = serde_json::json!({});
 
-        // Slack origin + deny default + no Slack profile → resolution fails → deny
-        let err = engine
+        // Slack origin + deny default + no Slack profile → resolution fails → deny report
+        let report = engine
             .check_action_report(&GuardAction::McpTool("any_tool", &args), &context)
             .await
-            .unwrap_err();
+            .unwrap();
 
-        assert!(err
-            .to_string()
-            .contains("no origin profile matched and default behavior is deny"));
+        assert!(!report.overall.allowed);
+        assert!(report.overall.message.contains("enclave resolution failed"));
     }
 
     #[tokio::test]
