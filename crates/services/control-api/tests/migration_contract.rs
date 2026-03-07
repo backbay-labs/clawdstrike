@@ -288,6 +288,21 @@ fn response_action_migration_adds_execution_ledger_schema() {
         "011 migration must link acknowledgements to a concrete delivery"
     );
     assert!(
+        sql.contains("CONSTRAINT response_actions_tenant_id_id_key")
+            && sql.contains("UNIQUE (tenant_id, id)"),
+        "011 migration must add a tenant-scoped unique key for response actions"
+    );
+    assert!(
+        sql.contains("FOREIGN KEY (tenant_id, action_id)\n        REFERENCES response_actions(tenant_id, id)"),
+        "011 migration must enforce tenant-scoped delivery/action integrity"
+    );
+    assert!(
+        sql.contains(
+            "FOREIGN KEY (tenant_id, delivery_id, action_id, target_kind, target_id)\n        REFERENCES response_action_deliveries(tenant_id, id, action_id, target_kind, target_id)"
+        ),
+        "011 migration must bind acknowledgements to the same delivery identity they reference"
+    );
+    assert!(
         !sql.contains("REFERENCES detection_findings(tenant_id, id)\n        ON DELETE SET NULL"),
         "011 migration must keep tenant-scoped provenance FKs immutable"
     );

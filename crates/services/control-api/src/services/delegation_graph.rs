@@ -36,6 +36,44 @@ pub struct RevokePrincipalGrantsRequest {
     pub response_action_metadata: Option<Value>,
 }
 
+struct PreparedGrantIngest {
+    issuer_principal_id: String,
+    subject_principal_id: String,
+    grant_type: String,
+    audience: String,
+    token_jti: String,
+    parent_token_jti: Option<String>,
+    delegation_depth: i32,
+    lineage_chain: Vec<String>,
+    capabilities: Value,
+    capability_ceiling: Value,
+    purpose: Option<String>,
+    context: Value,
+    source_approval_id: Option<String>,
+    source_session_id: Option<String>,
+    issued_at: DateTime<Utc>,
+    not_before: Option<DateTime<Utc>>,
+    expires_at: DateTime<Utc>,
+    status: String,
+}
+
+struct GrantExerciseEvent {
+    event_id: String,
+    summary: String,
+    source: String,
+    session_id: Option<String>,
+    response_action_id: Option<String>,
+    grant_id: Option<String>,
+    timestamp: DateTime<Utc>,
+}
+
+struct ResponseActionNode {
+    id: String,
+    label: String,
+    state: String,
+    metadata: Value,
+}
+
 pub async fn list_grants(
     db: &PgPool,
     tenant_id: Uuid,
@@ -83,12 +121,18 @@ pub async fn ingest_grant(
     tenant_id: Uuid,
     request: IngestGrantRequest,
 ) -> Result<FleetGrant, ApiError> {
-    let token = request.token;
+    let IngestGrantRequest {
+        token,
+        grant_type,
+        source_approval_id,
+        source_session_id,
+        issuer_public_key,
+    } = request;
     let trusted_issuer_key = resolve_trusted_issuer_public_key(
         db,
         tenant_id,
         token.claims.iss.as_str(),
-        request.issuer_public_key.as_deref(),
+        issuer_public_key.as_deref(),
     )
     .await?;
     verify_signed_token(&token, &trusted_issuer_key)?;
@@ -97,13 +141,23 @@ pub async fn ingest_grant(
     reject_blocked_principal_authority(db, tenant_id, token.claims.sub.as_str(), "subject").await?;
 
     let lineage = GrantLineageFacts::from_claims(&token.claims);
-    let grant_type = request
-        .grant_type
-        .unwrap_or_else(|| "delegation".to_string());
+    let grant_type = grant_type.unwrap_or_else(|| "delegation".to_string());
     validate_grant_type(&grant_type)?;
+    validate_grant_source_refs(db, tenant_id, source_approval_id.as_deref()).await?;
+
+    let prepared = prepare_grant_ingest(
+        &token.claims,
+        &lineage,
+        &grant_type,
+        source_approval_id,
+        source_session_id,
+    )?;
+    if let Some(existing) = get_grant_by_token_optional(db, tenant_id, &prepared.token_jti).await? {
+        return ensure_matching_grant_ingest(existing, &prepared);
+    }
 
     let mut tx = db.begin().await.map_err(ApiError::Database)?;
-    let parent_grant = if let Some(parent_token_jti) = lineage.parent_token_jti.as_deref() {
+    let parent_grant = if let Some(parent_token_jti) = prepared.parent_token_jti.as_deref() {
         fetch_grant_by_token(&mut tx, tenant_id, parent_token_jti).await?
     } else {
         None
@@ -111,31 +165,6 @@ pub async fn ingest_grant(
     if let Some(parent_grant) = parent_grant.as_ref() {
         validate_child_grant_against_parent(db, tenant_id, &token.claims, parent_grant).await?;
     }
-
-    let now = Utc::now();
-    let status = if token.claims.exp <= now.timestamp() {
-        "expired"
-    } else {
-        "active"
-    };
-    let lineage_chain = serde_json::to_value(&lineage.chain).map_err(|err| {
-        ApiError::Internal(format!(
-            "failed to serialize lineage chain for grant ingest: {err}"
-        ))
-    })?;
-    let capabilities = serde_json::to_value(&token.claims.cap).map_err(|err| {
-        ApiError::Internal(format!("failed to serialize grant capabilities: {err}"))
-    })?;
-    let capability_ceiling =
-        serde_json::to_value(token.claims.effective_ceiling()).map_err(|err| {
-            ApiError::Internal(format!(
-                "failed to serialize grant capability ceiling: {err}"
-            ))
-        })?;
-    let context = token.claims.ctx.clone().unwrap_or_else(|| json!({}));
-    let issued_at = unix_to_utc(token.claims.iat)?;
-    let not_before = token.claims.nbf.map(unix_to_utc).transpose()?;
-    let expires_at = unix_to_utc(token.claims.exp)?;
 
     let row = sqlx::query::query(
         r#"INSERT INTO fleet_grants (
@@ -166,58 +195,52 @@ pub async fn ingest_grant(
                $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, now()
            )
            ON CONFLICT (tenant_id, token_jti)
-           DO UPDATE SET
-               issuer_principal_id = EXCLUDED.issuer_principal_id,
-               subject_principal_id = EXCLUDED.subject_principal_id,
-               grant_type = EXCLUDED.grant_type,
-               audience = EXCLUDED.audience,
-               parent_grant_id = EXCLUDED.parent_grant_id,
-               parent_token_jti = EXCLUDED.parent_token_jti,
-               delegation_depth = EXCLUDED.delegation_depth,
-               lineage_chain = EXCLUDED.lineage_chain,
-               lineage_resolved = EXCLUDED.lineage_resolved,
-               capabilities = EXCLUDED.capabilities,
-               capability_ceiling = EXCLUDED.capability_ceiling,
-               purpose = EXCLUDED.purpose,
-               context = EXCLUDED.context,
-               source_approval_id = COALESCE(EXCLUDED.source_approval_id, fleet_grants.source_approval_id),
-               source_session_id = COALESCE(EXCLUDED.source_session_id, fleet_grants.source_session_id),
-               issued_at = EXCLUDED.issued_at,
-               not_before = EXCLUDED.not_before,
-               expires_at = EXCLUDED.expires_at,
-               status = CASE
-                   WHEN fleet_grants.status = 'revoked' THEN fleet_grants.status
-                   ELSE EXCLUDED.status
-               END,
-               updated_at = now()
+           DO NOTHING
            RETURNING *"#,
     )
     .bind(tenant_id)
-    .bind(token.claims.iss.as_str())
-    .bind(token.claims.sub.as_str())
-    .bind(&grant_type)
-    .bind(&token.claims.aud)
-    .bind(&token.claims.jti)
+    .bind(&prepared.issuer_principal_id)
+    .bind(&prepared.subject_principal_id)
+    .bind(&prepared.grant_type)
+    .bind(&prepared.audience)
+    .bind(&prepared.token_jti)
     .bind(parent_grant.as_ref().map(|grant| grant.id))
-    .bind(lineage.parent_token_jti.as_deref())
-    .bind(i32::try_from(lineage.depth).map_err(|err| {
-        ApiError::BadRequest(format!("delegation depth exceeds supported range: {err}"))
-    })?)
-    .bind(lineage_chain)
+    .bind(prepared.parent_token_jti.as_deref())
+    .bind(prepared.delegation_depth)
+    .bind(
+        serde_json::to_value(&prepared.lineage_chain).map_err(|err| {
+            ApiError::Internal(format!(
+                "failed to serialize lineage chain for grant ingest: {err}"
+            ))
+        })?,
+    )
     .bind(parent_grant.is_some() || lineage.parent_token_jti.is_none())
-    .bind(capabilities)
-    .bind(capability_ceiling)
-    .bind(token.claims.pur.as_deref())
-    .bind(context)
-    .bind(request.source_approval_id.as_deref())
-    .bind(request.source_session_id.as_deref())
-    .bind(issued_at)
-    .bind(not_before)
-    .bind(expires_at)
-    .bind(status)
-    .fetch_one(&mut *tx)
+    .bind(prepared.capabilities.clone())
+    .bind(prepared.capability_ceiling.clone())
+    .bind(prepared.purpose.as_deref())
+    .bind(prepared.context.clone())
+    .bind(prepared.source_approval_id.as_deref())
+    .bind(prepared.source_session_id.as_deref())
+    .bind(prepared.issued_at)
+    .bind(prepared.not_before)
+    .bind(prepared.expires_at)
+    .bind(&prepared.status)
+    .fetch_optional(&mut *tx)
     .await
     .map_err(ApiError::Database)?;
+
+    let Some(row) = row else {
+        let existing = fetch_grant_by_token(&mut tx, tenant_id, &prepared.token_jti)
+            .await?
+            .ok_or_else(|| {
+                ApiError::Conflict(format!(
+                    "grant ingest conflict: token_jti '{}' already exists",
+                    prepared.token_jti
+                ))
+            })?;
+        tx.rollback().await.map_err(ApiError::Database)?;
+        return ensure_matching_grant_ingest(existing, &prepared);
+    };
 
     let grant = FleetGrant::from_row(row).map_err(ApiError::Database)?;
     let issuer_node_id = DelegationGraphNodeKind::Principal.node_id(&grant.issuer_principal_id);
@@ -354,6 +377,128 @@ pub async fn ingest_grant(
     Ok(grant)
 }
 
+fn prepare_grant_ingest(
+    claims: &DelegationClaims,
+    lineage: &GrantLineageFacts,
+    grant_type: &str,
+    source_approval_id: Option<String>,
+    source_session_id: Option<String>,
+) -> Result<PreparedGrantIngest, ApiError> {
+    let now = Utc::now();
+    let status = if claims.exp <= now.timestamp() {
+        "expired".to_string()
+    } else {
+        "active".to_string()
+    };
+    let capabilities = serde_json::to_value(&claims.cap).map_err(|err| {
+        ApiError::Internal(format!("failed to serialize grant capabilities: {err}"))
+    })?;
+    let capability_ceiling = serde_json::to_value(claims.effective_ceiling()).map_err(|err| {
+        ApiError::Internal(format!(
+            "failed to serialize grant capability ceiling: {err}"
+        ))
+    })?;
+
+    Ok(PreparedGrantIngest {
+        issuer_principal_id: claims.iss.as_str().to_string(),
+        subject_principal_id: claims.sub.as_str().to_string(),
+        grant_type: grant_type.to_string(),
+        audience: claims.aud.clone(),
+        token_jti: claims.jti.clone(),
+        parent_token_jti: lineage.parent_token_jti.clone(),
+        delegation_depth: i32::try_from(lineage.depth).map_err(|err| {
+            ApiError::BadRequest(format!("delegation depth exceeds supported range: {err}"))
+        })?,
+        lineage_chain: lineage.chain.clone(),
+        capabilities,
+        capability_ceiling,
+        purpose: claims.pur.clone(),
+        context: claims.ctx.clone().unwrap_or_else(|| json!({})),
+        source_approval_id,
+        source_session_id,
+        issued_at: unix_to_utc(claims.iat)?,
+        not_before: claims.nbf.map(unix_to_utc).transpose()?,
+        expires_at: unix_to_utc(claims.exp)?,
+        status,
+    })
+}
+
+fn ensure_matching_grant_ingest(
+    existing: FleetGrant,
+    prepared: &PreparedGrantIngest,
+) -> Result<FleetGrant, ApiError> {
+    let matches = existing.issuer_principal_id == prepared.issuer_principal_id
+        && existing.subject_principal_id == prepared.subject_principal_id
+        && existing.grant_type == prepared.grant_type
+        && existing.audience == prepared.audience
+        && existing.token_jti == prepared.token_jti
+        && existing.parent_token_jti == prepared.parent_token_jti
+        && existing.delegation_depth == prepared.delegation_depth
+        && existing.lineage_chain == prepared.lineage_chain
+        && existing.capabilities == prepared.capabilities
+        && existing.capability_ceiling == prepared.capability_ceiling
+        && existing.purpose == prepared.purpose
+        && existing.context == prepared.context
+        && existing.source_approval_id == prepared.source_approval_id
+        && existing.source_session_id == prepared.source_session_id
+        && existing.issued_at == prepared.issued_at
+        && existing.not_before == prepared.not_before
+        && existing.expires_at == prepared.expires_at;
+
+    if matches {
+        Ok(existing)
+    } else {
+        Err(ApiError::Conflict(format!(
+            "grant ingest conflict: token_jti '{}' already exists with different contents",
+            prepared.token_jti
+        )))
+    }
+}
+
+async fn validate_grant_source_refs(
+    db: &PgPool,
+    tenant_id: Uuid,
+    source_approval_id: Option<&str>,
+) -> Result<(), ApiError> {
+    if let Some(source_approval_id) = source_approval_id {
+        let exists = sqlx::query_scalar::query_scalar::<_, bool>(
+            r#"SELECT EXISTS(
+                   SELECT 1
+                   FROM approvals
+                   WHERE tenant_id = $1
+                     AND id::text = $2
+               )"#,
+        )
+        .bind(tenant_id)
+        .bind(source_approval_id)
+        .fetch_one(db)
+        .await
+        .map_err(ApiError::Database)?;
+        if !exists {
+            return Err(ApiError::NotFound);
+        }
+    }
+    Ok(())
+}
+
+async fn get_grant_by_token_optional(
+    db: &PgPool,
+    tenant_id: Uuid,
+    token_jti: &str,
+) -> Result<Option<FleetGrant>, ApiError> {
+    let row =
+        sqlx::query::query("SELECT * FROM fleet_grants WHERE tenant_id = $1 AND token_jti = $2")
+            .bind(tenant_id)
+            .bind(token_jti)
+            .fetch_optional(db)
+            .await
+            .map_err(ApiError::Database)?;
+
+    row.map(FleetGrant::from_row)
+        .transpose()
+        .map_err(ApiError::Database)
+}
+
 pub async fn exercise_grant(
     db: &PgPool,
     tenant_id: Uuid,
@@ -361,21 +506,24 @@ pub async fn exercise_grant(
     request: GrantExerciseRequest,
 ) -> Result<DelegationGraphSnapshot, ApiError> {
     let grant = get_grant(db, tenant_id, grant_id).await?;
+    ensure_grant_is_exercisable(&grant)?;
+    let event = load_grant_exercise_event(db, tenant_id, grant_id, &request).await?;
     let grant_node_id = DelegationGraphNodeKind::Grant.node_id(&grant.id.to_string());
     let mut tx = db.begin().await.map_err(ApiError::Database)?;
 
-    if let Some(session_id) = request.session_id.as_deref() {
+    if let Some(session_id) = event.session_id.as_deref() {
         let session_node_id = DelegationGraphNodeKind::Session.node_id(session_id);
         upsert_node(
             &mut tx,
             tenant_id,
             &session_node_id,
             DelegationGraphNodeKind::Session.as_str(),
-            request.session_label.as_deref().unwrap_or(session_id),
-            request.session_state.as_deref(),
-            request
-                .session_metadata
-                .unwrap_or_else(|| json!({ "session_id": session_id })),
+            session_id,
+            Some("observed"),
+            json!({
+                "session_id": session_id,
+                "grant_id": grant.id.to_string(),
+            }),
         )
         .await?;
         upsert_edge(
@@ -389,64 +537,206 @@ pub async fn exercise_grant(
         .await?;
     }
 
-    let mut event_node_id = None;
-    if let Some(event_id) = request.event_id.as_deref() {
-        let node_id = DelegationGraphNodeKind::Event.node_id(event_id);
-        upsert_node(
-            &mut tx,
-            tenant_id,
-            &node_id,
-            DelegationGraphNodeKind::Event.as_str(),
-            request.event_label.as_deref().unwrap_or(event_id),
-            request.event_state.as_deref(),
-            request
-                .event_metadata
-                .unwrap_or_else(|| json!({ "event_id": event_id })),
-        )
-        .await?;
-        upsert_edge(
-            &mut tx,
-            tenant_id,
-            &grant_node_id,
-            &node_id,
-            DelegationGraphEdgeKind::ExercisedInEvent.as_str(),
-            json!({ "event_id": event_id, "token_jti": &grant.token_jti }),
-        )
-        .await?;
-        event_node_id = Some(node_id);
-    }
+    let event_node_id = DelegationGraphNodeKind::Event.node_id(&event.event_id);
+    upsert_node(
+        &mut tx,
+        tenant_id,
+        &event_node_id,
+        DelegationGraphNodeKind::Event.as_str(),
+        &event.summary,
+        Some("observed"),
+        json!({
+            "event_id": event.event_id,
+            "grant_id": grant.id.to_string(),
+            "source": event.source,
+            "session_id": event.session_id,
+            "response_action_id": event.response_action_id,
+            "timestamp": event.timestamp.to_rfc3339(),
+        }),
+    )
+    .await?;
+    upsert_edge(
+        &mut tx,
+        tenant_id,
+        &grant_node_id,
+        &event_node_id,
+        DelegationGraphEdgeKind::ExercisedInEvent.as_str(),
+        json!({ "event_id": event.event_id, "token_jti": &grant.token_jti }),
+    )
+    .await?;
 
-    if let Some(response_action_id) = request.response_action_id.as_deref() {
-        let response_node_id = DelegationGraphNodeKind::ResponseAction.node_id(response_action_id);
+    if let Some(response_action) = load_exercise_response_action_node(
+        &mut tx,
+        tenant_id,
+        event.response_action_id.as_deref(),
+        &request,
+    )
+    .await?
+    {
+        let response_node_id = DelegationGraphNodeKind::ResponseAction.node_id(&response_action.id);
         upsert_node(
             &mut tx,
             tenant_id,
             &response_node_id,
             DelegationGraphNodeKind::ResponseAction.as_str(),
-            request
-                .response_action_label
-                .as_deref()
-                .unwrap_or(response_action_id),
-            request.response_action_state.as_deref(),
-            request
-                .response_action_metadata
-                .unwrap_or_else(|| json!({ "response_action_id": response_action_id })),
+            &response_action.label,
+            Some(&response_action.state),
+            response_action.metadata,
         )
         .await?;
-        let from_node_id = event_node_id.as_deref().unwrap_or(grant_node_id.as_str());
         upsert_edge(
             &mut tx,
             tenant_id,
-            from_node_id,
+            &event_node_id,
             &response_node_id,
             DelegationGraphEdgeKind::TriggeredResponseAction.as_str(),
-            json!({ "response_action_id": response_action_id }),
+            json!({ "response_action_id": response_action.id }),
         )
         .await?;
     }
 
     tx.commit().await.map_err(ApiError::Database)?;
     grant_lineage_snapshot(db, tenant_id, grant_id).await
+}
+
+fn ensure_grant_is_exercisable(grant: &FleetGrant) -> Result<(), ApiError> {
+    if grant.status != "active" {
+        return Err(ApiError::Conflict(format!(
+            "grant {} is not active",
+            grant.id
+        )));
+    }
+
+    let now = Utc::now();
+    if grant.not_before.is_some_and(|not_before| now < not_before) {
+        return Err(ApiError::Conflict(format!(
+            "grant {} is not active yet",
+            grant.id
+        )));
+    }
+    if now >= grant.expires_at {
+        return Err(ApiError::Conflict(format!(
+            "grant {} has expired",
+            grant.id
+        )));
+    }
+    Ok(())
+}
+
+async fn load_grant_exercise_event(
+    db: &PgPool,
+    tenant_id: Uuid,
+    grant_id: Uuid,
+    request: &GrantExerciseRequest,
+) -> Result<GrantExerciseEvent, ApiError> {
+    let event_id = request.event_id.as_deref().ok_or_else(|| {
+        ApiError::BadRequest("grant exercise requires an existing event_id".to_string())
+    })?;
+
+    let row = sqlx::query::query(
+        r#"SELECT event_id,
+                  summary,
+                  source,
+                  session_id,
+                  response_action_id,
+                  grant_id,
+                  timestamp
+           FROM hunt_events
+           WHERE tenant_id = $1 AND event_id = $2"#,
+    )
+    .bind(tenant_id)
+    .bind(event_id)
+    .fetch_optional(db)
+    .await
+    .map_err(ApiError::Database)?
+    .ok_or(ApiError::NotFound)?;
+
+    let recorded_grant_id: Option<String> = row.try_get("grant_id").map_err(ApiError::Database)?;
+    if recorded_grant_id.as_deref() != Some(&grant_id.to_string()) {
+        return Err(ApiError::BadRequest(
+            "event_id does not belong to the requested grant".to_string(),
+        ));
+    }
+
+    let session_id: Option<String> = row.try_get("session_id").map_err(ApiError::Database)?;
+    if let Some(expected_session_id) = request.session_id.as_deref() {
+        if session_id.as_deref() != Some(expected_session_id) {
+            return Err(ApiError::BadRequest(
+                "session_id does not match the verified event session".to_string(),
+            ));
+        }
+    }
+
+    let response_action_id: Option<String> = row
+        .try_get("response_action_id")
+        .map_err(ApiError::Database)?;
+    if let Some(expected_response_action_id) = request.response_action_id.as_deref() {
+        if response_action_id.as_deref() != Some(expected_response_action_id) {
+            return Err(ApiError::BadRequest(
+                "response_action_id does not match the verified event".to_string(),
+            ));
+        }
+    }
+
+    Ok(GrantExerciseEvent {
+        event_id: row.try_get("event_id").map_err(ApiError::Database)?,
+        summary: row.try_get("summary").map_err(ApiError::Database)?,
+        source: row.try_get("source").map_err(ApiError::Database)?,
+        session_id,
+        response_action_id,
+        grant_id: recorded_grant_id,
+        timestamp: row.try_get("timestamp").map_err(ApiError::Database)?,
+    })
+}
+
+async fn load_exercise_response_action_node(
+    tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
+    tenant_id: Uuid,
+    response_action_id: Option<&str>,
+    request: &GrantExerciseRequest,
+) -> Result<Option<ResponseActionNode>, ApiError> {
+    if response_action_id.is_none() {
+        if request.response_action_id.is_some() {
+            return Err(ApiError::BadRequest(
+                "response_action_id must be anchored by the verified event".to_string(),
+            ));
+        }
+        return Ok(None);
+    }
+
+    let Some(response_action_id) = response_action_id else {
+        return Ok(None);
+    };
+    let action_uuid = Uuid::parse_str(response_action_id).map_err(|_| {
+        ApiError::Internal("verified event carried a non-UUID response_action_id".to_string())
+    })?;
+    let row = sqlx::query::query(
+        r#"SELECT id, action_type, status, target_kind, target_id
+           FROM response_actions
+           WHERE tenant_id = $1 AND id = $2"#,
+    )
+    .bind(tenant_id)
+    .bind(action_uuid)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(ApiError::Database)?
+    .ok_or(ApiError::NotFound)?;
+
+    let action_type: String = row.try_get("action_type").map_err(ApiError::Database)?;
+    let target_kind: String = row.try_get("target_kind").map_err(ApiError::Database)?;
+    let target_id: String = row.try_get("target_id").map_err(ApiError::Database)?;
+
+    Ok(Some(ResponseActionNode {
+        id: response_action_id.to_string(),
+        label: format!("{action_type} -> {target_kind}:{target_id}"),
+        state: row.try_get("status").map_err(ApiError::Database)?,
+        metadata: json!({
+            "response_action_id": response_action_id,
+            "action_type": action_type,
+            "target_kind": target_kind,
+            "target_id": target_id,
+        }),
+    }))
 }
 
 pub async fn revoke_grant(
@@ -1025,6 +1315,41 @@ async fn load_graph_data_for_grant_ids(
         .map(DelegationGraphEdge::from_row)
         .collect::<Result<Vec<_>, _>>()
         .map_err(ApiError::Database)?;
+    let mut edges_by_id = edges
+        .into_iter()
+        .map(|edge| (edge.id, edge))
+        .collect::<BTreeMap<_, _>>();
+
+    if include_context {
+        let event_node_ids = edges_by_id
+            .values()
+            .flat_map(|edge| [&edge.from, &edge.to])
+            .filter(|node_id| node_id.starts_with("event:"))
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        if !event_node_ids.is_empty() {
+            let extra_edge_rows = sqlx::query::query(
+                r#"SELECT id, from_node_id, to_node_id, kind, metadata
+                   FROM delegation_graph_edges
+                   WHERE tenant_id = $1
+                     AND (from_node_id = ANY($2::text[]) OR to_node_id = ANY($2::text[]))"#,
+            )
+            .bind(tenant_id)
+            .bind(event_node_ids.into_iter().collect::<Vec<_>>())
+            .fetch_all(db)
+            .await
+            .map_err(ApiError::Database)?;
+            for edge in extra_edge_rows
+                .into_iter()
+                .map(DelegationGraphEdge::from_row)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(ApiError::Database)?
+            {
+                edges_by_id.insert(edge.id, edge);
+            }
+        }
+    }
+    let edges = edges_by_id.into_values().collect::<Vec<_>>();
 
     let mut node_ids = grant_node_ids.into_iter().collect::<BTreeSet<_>>();
     if let Some(root_node_id) = root_node_id {
@@ -1115,16 +1440,25 @@ fn snapshot_for_grant_ids(
         included_node_ids.insert(DelegationGraphNodeKind::Grant.node_id(&grant_id.to_string()));
     }
 
-    let mut included_edges = Vec::new();
-    for edge in &data.edges {
-        let touches_grant =
-            included_node_ids.contains(&edge.from) || included_node_ids.contains(&edge.to);
-        let both_included =
-            included_node_ids.contains(&edge.from) && included_node_ids.contains(&edge.to);
-        if both_included || (include_context && touches_grant) {
-            included_node_ids.insert(edge.from.clone());
-            included_node_ids.insert(edge.to.clone());
-            included_edges.push(edge.clone());
+    let mut included_edge_ids = BTreeSet::new();
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for edge in &data.edges {
+            if included_edge_ids.contains(&edge.id) {
+                continue;
+            }
+
+            let touches_included =
+                included_node_ids.contains(&edge.from) || included_node_ids.contains(&edge.to);
+            let both_included =
+                included_node_ids.contains(&edge.from) && included_node_ids.contains(&edge.to);
+            if both_included || (include_context && touches_included) {
+                let inserted_edge = included_edge_ids.insert(edge.id);
+                let inserted_from = included_node_ids.insert(edge.from.clone());
+                let inserted_to = included_node_ids.insert(edge.to.clone());
+                changed |= inserted_edge || inserted_from || inserted_to;
+            }
         }
     }
 
@@ -1135,6 +1469,12 @@ fn snapshot_for_grant_ids(
     let mut nodes = included_node_ids
         .into_iter()
         .filter_map(|node_id| data.nodes.get(&node_id).cloned())
+        .collect::<Vec<_>>();
+    let mut included_edges = data
+        .edges
+        .iter()
+        .filter(|edge| included_edge_ids.contains(&edge.id))
+        .cloned()
         .collect::<Vec<_>>();
     nodes.sort_by(|left, right| left.id.cmp(&right.id));
     included_edges.sort_by(|left, right| left.id.cmp(&right.id));

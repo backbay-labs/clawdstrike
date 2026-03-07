@@ -158,6 +158,7 @@ clawdstrike = { path = "crates/libs/clawdstrike", version = "0.2.5", default-fea
 hush-certification = { path = "crates/libs/hush-certification", version = "0.2.5" }
 spine = { package = "hush-spine", path = "crates/libs/spine", version = "0.2.5" }
 bridge-runtime = { path = "crates/libs/bridge-runtime", version = "0.2.5" }
+hush-multi-agent = { path = "crates/libs/hush-multi-agent", version = "0.2.5" }
 hunt-scan = { path = "crates/libs/hunt-scan", version = "0.2.5" }
 hunt-query = { path = "crates/libs/hunt-query", version = "0.2.5" }
 hunt-correlate = { path = "crates/libs/hunt-correlate", version = "0.2.5" }

@@ -44,9 +44,7 @@ async fn ingest_grant(
     auth: AuthenticatedTenant,
     Json(request): Json<IngestGrantRequest>,
 ) -> Result<Json<FleetGrant>, ApiError> {
-    if auth.role == "viewer" {
-        return Err(ApiError::Forbidden);
-    }
+    ensure_grant_write_access(&auth)?;
     let grant = delegation_graph_service::ingest_grant(&state.db, auth.tenant_id, request).await?;
     Ok(Json(grant))
 }
@@ -76,9 +74,7 @@ async fn exercise_grant(
     Path(id): Path<Uuid>,
     Json(request): Json<GrantExerciseRequest>,
 ) -> Result<Json<DelegationGraphSnapshot>, ApiError> {
-    if auth.role == "viewer" {
-        return Err(ApiError::Forbidden);
-    }
+    ensure_grant_write_access(&auth)?;
     let snapshot =
         delegation_graph_service::exercise_grant(&state.db, auth.tenant_id, id, request).await?;
     Ok(Json(snapshot))
@@ -90,12 +86,17 @@ async fn revoke_grant(
     Path(id): Path<Uuid>,
     Json(request): Json<RevokeGrantRequest>,
 ) -> Result<Json<RevokeGrantResponse>, ApiError> {
-    if auth.role == "viewer" {
-        return Err(ApiError::Forbidden);
-    }
+    ensure_grant_write_access(&auth)?;
     let response =
         delegation_graph_service::revoke_grant(&state.db, auth.tenant_id, id, request).await?;
     Ok(Json(response))
+}
+
+fn ensure_grant_write_access(auth: &AuthenticatedTenant) -> Result<(), ApiError> {
+    if !matches!(auth.role.as_str(), "owner" | "admin") {
+        return Err(ApiError::Forbidden);
+    }
+    Ok(())
 }
 
 async fn get_principal_delegation_graph(

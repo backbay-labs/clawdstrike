@@ -192,23 +192,59 @@ fn normalize_graph_snapshot(
     }
 
     let mut edges = Vec::new();
+    let mut seen_edges = HashSet::new();
+    let mut hidden_event_inbound = HashMap::<String, Vec<String>>::new();
+    let mut hidden_event_outbound = HashMap::<String, Vec<(String, String)>>::new();
     for edge in snapshot.edges {
-        let Some(from) = id_map.get(&edge.from).cloned() else {
-            continue;
-        };
-        let Some(to) = id_map.get(&edge.to).cloned() else {
-            continue;
-        };
-        if !seen_nodes.contains(&from) || !seen_nodes.contains(&to) {
-            continue;
-        }
+        let from = id_map.get(&edge.from).cloned();
+        let to = id_map.get(&edge.to).cloned();
 
-        edges.push(crate::models::console::ConsoleGraphEdge {
-            id: edge.id.to_string(),
-            from,
-            to,
-            kind: edge.kind,
-        });
+        match (from, to) {
+            (Some(from), Some(to)) => {
+                if !seen_nodes.contains(&from) || !seen_nodes.contains(&to) {
+                    continue;
+                }
+                if seen_edges.insert((from.clone(), to.clone(), edge.kind.clone())) {
+                    edges.push(crate::models::console::ConsoleGraphEdge {
+                        id: edge.id.to_string(),
+                        from,
+                        to,
+                        kind: edge.kind,
+                    });
+                }
+            }
+            (Some(from), None) if edge.to.starts_with("event:") => {
+                hidden_event_inbound.entry(edge.to).or_default().push(from);
+            }
+            (None, Some(to)) if edge.from.starts_with("event:") => {
+                hidden_event_outbound
+                    .entry(edge.from)
+                    .or_default()
+                    .push((to, edge.kind));
+            }
+            _ => {}
+        }
+    }
+
+    for (event_id, inbound_nodes) in hidden_event_inbound {
+        let Some(outbound_nodes) = hidden_event_outbound.get(&event_id) else {
+            continue;
+        };
+        for from in inbound_nodes {
+            for (to, kind) in outbound_nodes {
+                if !seen_nodes.contains(&from) || !seen_nodes.contains(to) {
+                    continue;
+                }
+                if seen_edges.insert((from.clone(), to.clone(), kind.clone())) {
+                    edges.push(crate::models::console::ConsoleGraphEdge {
+                        id: format!("{event_id}:{from}:{to}:{kind}"),
+                        from: from.clone(),
+                        to: to.clone(),
+                        kind: kind.clone(),
+                    });
+                }
+            }
+        }
     }
 
     if edges.is_empty() && nodes.len() <= 1 {

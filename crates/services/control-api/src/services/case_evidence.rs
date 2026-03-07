@@ -1,11 +1,11 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Duration, SecondsFormat, Utc};
 use hush_certification::evidence::{
     build_signed_evidence_bundle_zip, GenericEvidenceBundleEntry, GenericEvidenceBundleSubject,
 };
-use serde_json::Value;
+use serde_json::{json, Value};
 use sqlx::row::Row;
 use sqlx::transaction::Transaction;
 use uuid::Uuid;
@@ -39,6 +39,13 @@ const VALID_ARTIFACT_KINDS: &[&str] = &[
     "note",
     "bundle_export",
 ];
+
+struct PreparedCaseArtifact {
+    artifact_kind: String,
+    artifact_id: String,
+    summary: Option<String>,
+    metadata: Value,
+}
 
 pub async fn list_cases(db: &PgPool, tenant_id: Uuid) -> Result<Vec<FleetCase>, ApiError> {
     let rows = sqlx::query::query(
@@ -297,10 +304,10 @@ pub async fn add_artifact(
     req: AddCaseArtifactRequest,
 ) -> Result<CaseArtifactRef, ApiError> {
     validate_artifact_kind(&req.artifact_kind)?;
-    let metadata = normalize_metadata(req.metadata)?;
     ensure_case_exists(db, tenant_id, case_id).await?;
 
     let mut tx = db.begin().await.map_err(ApiError::Database)?;
+    let prepared = prepare_case_artifact(&mut tx, tenant_id, req).await?;
     let row = sqlx::query::query(
         r#"INSERT INTO fleet_case_artifacts (
                tenant_id,
@@ -316,10 +323,10 @@ pub async fn add_artifact(
     )
     .bind(tenant_id)
     .bind(case_id)
-    .bind(&req.artifact_kind)
-    .bind(req.artifact_id.trim())
-    .bind(req.summary.as_deref())
-    .bind(&metadata)
+    .bind(&prepared.artifact_kind)
+    .bind(&prepared.artifact_id)
+    .bind(prepared.summary.as_deref())
+    .bind(&prepared.metadata)
     .bind(actor_id)
     .fetch_one(&mut *tx)
     .await
@@ -342,6 +349,506 @@ pub async fn add_artifact(
 
     tx.commit().await.map_err(ApiError::Database)?;
     Ok(artifact)
+}
+
+async fn prepare_case_artifact(
+    tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
+    tenant_id: Uuid,
+    req: AddCaseArtifactRequest,
+) -> Result<PreparedCaseArtifact, ApiError> {
+    match req.artifact_kind.as_str() {
+        "fleet_event" => resolve_fleet_event_artifact(tx, tenant_id, req.artifact_id.trim()).await,
+        "raw_envelope" => {
+            resolve_raw_envelope_artifact(tx, tenant_id, req.artifact_id.trim()).await
+        }
+        "saved_hunt" => resolve_saved_hunt_artifact(tx, tenant_id, req.artifact_id.trim()).await,
+        "hunt_job" => resolve_hunt_job_artifact(tx, tenant_id, req.artifact_id.trim()).await,
+        "detection" => resolve_detection_artifact(tx, tenant_id, req.artifact_id.trim()).await,
+        "response_action" => {
+            resolve_response_action_artifact(tx, tenant_id, req.artifact_id.trim()).await
+        }
+        "grant" => resolve_grant_artifact(tx, tenant_id, req.artifact_id.trim()).await,
+        "note" => prepare_annotation_artifact(req, "operator_annotation"),
+        "graph_snapshot" => prepare_annotation_artifact(req, "operator_annotation"),
+        "bundle_export" => Err(ApiError::BadRequest(
+            "bundle_export artifacts are managed by the evidence service".to_string(),
+        )),
+        other => Err(ApiError::BadRequest(format!(
+            "invalid artifactKind: {other}"
+        ))),
+    }
+}
+
+fn prepare_annotation_artifact(
+    req: AddCaseArtifactRequest,
+    artifact_class: &str,
+) -> Result<PreparedCaseArtifact, ApiError> {
+    let mut metadata = normalize_metadata(req.metadata)?;
+    metadata["artifactClass"] = Value::String(artifact_class.to_string());
+
+    Ok(PreparedCaseArtifact {
+        artifact_kind: req.artifact_kind,
+        artifact_id: req.artifact_id.trim().to_string(),
+        summary: normalize_summary(req.summary),
+        metadata,
+    })
+}
+
+async fn resolve_fleet_event_artifact(
+    tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
+    tenant_id: Uuid,
+    event_id: &str,
+) -> Result<PreparedCaseArtifact, ApiError> {
+    let row = sqlx::query::query(
+        r#"SELECT event_id,
+                  summary,
+                  source,
+                  kind,
+                  timestamp,
+                  ingested_at,
+                  verdict,
+                  severity,
+                  session_id,
+                  endpoint_agent_id,
+                  runtime_agent_id,
+                  principal_id,
+                  grant_id,
+                  response_action_id,
+                  detection_ids,
+                  target_kind,
+                  target_id,
+                  target_name,
+                  raw_ref,
+                  envelope_hash,
+                  issuer,
+                  schema_name,
+                  signature_valid
+           FROM hunt_events
+           WHERE tenant_id = $1 AND event_id = $2"#,
+    )
+    .bind(tenant_id)
+    .bind(event_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(ApiError::Database)?
+    .ok_or(ApiError::NotFound)?;
+
+    let summary: String = row.try_get("summary").map_err(ApiError::Database)?;
+    Ok(PreparedCaseArtifact {
+        artifact_kind: "fleet_event".to_string(),
+        artifact_id: row.try_get("event_id").map_err(ApiError::Database)?,
+        summary: Some(summary.clone()),
+        metadata: json!({
+            "artifactClass": "verified_reference",
+            "sourceTable": "hunt_events",
+            "eventId": event_id,
+            "summary": summary,
+            "source": row.try_get::<String, _>("source").map_err(ApiError::Database)?,
+            "kind": row.try_get::<String, _>("kind").map_err(ApiError::Database)?,
+            "timestamp": row.try_get::<DateTime<Utc>, _>("timestamp").map_err(ApiError::Database)?.to_rfc3339(),
+            "ingestedAt": row.try_get::<DateTime<Utc>, _>("ingested_at").map_err(ApiError::Database)?.to_rfc3339(),
+            "verdict": row.try_get::<String, _>("verdict").map_err(ApiError::Database)?,
+            "severity": row.try_get::<Option<String>, _>("severity").map_err(ApiError::Database)?,
+            "sessionId": row.try_get::<Option<String>, _>("session_id").map_err(ApiError::Database)?,
+            "endpointAgentId": row.try_get::<Option<String>, _>("endpoint_agent_id").map_err(ApiError::Database)?,
+            "runtimeAgentId": row.try_get::<Option<String>, _>("runtime_agent_id").map_err(ApiError::Database)?,
+            "principalId": row.try_get::<Option<String>, _>("principal_id").map_err(ApiError::Database)?,
+            "grantId": row.try_get::<Option<String>, _>("grant_id").map_err(ApiError::Database)?,
+            "responseActionId": row.try_get::<Option<String>, _>("response_action_id").map_err(ApiError::Database)?,
+            "detectionIds": row.try_get::<Vec<String>, _>("detection_ids").map_err(ApiError::Database)?,
+            "targetKind": row.try_get::<Option<String>, _>("target_kind").map_err(ApiError::Database)?,
+            "targetId": row.try_get::<Option<String>, _>("target_id").map_err(ApiError::Database)?,
+            "targetName": row.try_get::<Option<String>, _>("target_name").map_err(ApiError::Database)?,
+            "rawRef": row.try_get::<String, _>("raw_ref").map_err(ApiError::Database)?,
+            "envelopeHash": row.try_get::<Option<String>, _>("envelope_hash").map_err(ApiError::Database)?,
+            "issuer": row.try_get::<Option<String>, _>("issuer").map_err(ApiError::Database)?,
+            "schemaName": row.try_get::<Option<String>, _>("schema_name").map_err(ApiError::Database)?,
+            "signatureValid": row.try_get::<Option<bool>, _>("signature_valid").map_err(ApiError::Database)?,
+        }),
+    })
+}
+
+async fn resolve_raw_envelope_artifact(
+    tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
+    tenant_id: Uuid,
+    raw_ref: &str,
+) -> Result<PreparedCaseArtifact, ApiError> {
+    let row = sqlx::query::query(
+        r#"SELECT raw_ref,
+                  source,
+                  issuer,
+                  issued_at,
+                  ingested_at,
+                  envelope_hash,
+                  schema_name,
+                  signature_valid
+           FROM hunt_envelopes
+           WHERE tenant_id = $1 AND raw_ref = $2"#,
+    )
+    .bind(tenant_id)
+    .bind(raw_ref)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(ApiError::Database)?
+    .ok_or(ApiError::NotFound)?;
+
+    let schema_name: Option<String> = row.try_get("schema_name").map_err(ApiError::Database)?;
+    let artifact_id: String = row.try_get("raw_ref").map_err(ApiError::Database)?;
+    Ok(PreparedCaseArtifact {
+        artifact_kind: "raw_envelope".to_string(),
+        artifact_id: artifact_id.clone(),
+        summary: Some(
+            schema_name
+                .clone()
+                .unwrap_or_else(|| format!("raw envelope {artifact_id}")),
+        ),
+        metadata: json!({
+            "artifactClass": "verified_reference",
+            "sourceTable": "hunt_envelopes",
+            "rawRef": artifact_id,
+            "source": row.try_get::<String, _>("source").map_err(ApiError::Database)?,
+            "issuer": row.try_get::<Option<String>, _>("issuer").map_err(ApiError::Database)?,
+            "issuedAt": row.try_get::<DateTime<Utc>, _>("issued_at").map_err(ApiError::Database)?.to_rfc3339(),
+            "ingestedAt": row.try_get::<DateTime<Utc>, _>("ingested_at").map_err(ApiError::Database)?.to_rfc3339(),
+            "envelopeHash": row.try_get::<Option<String>, _>("envelope_hash").map_err(ApiError::Database)?,
+            "schemaName": schema_name,
+            "signatureValid": row.try_get::<Option<bool>, _>("signature_valid").map_err(ApiError::Database)?,
+        }),
+    })
+}
+
+async fn resolve_saved_hunt_artifact(
+    tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
+    tenant_id: Uuid,
+    artifact_id: &str,
+) -> Result<PreparedCaseArtifact, ApiError> {
+    let hunt_id = parse_uuid_artifact_id(artifact_id, "saved_hunt")?;
+    let row = sqlx::query::query(
+        r#"SELECT id, name, description, query, created_by, created_at, updated_at
+           FROM saved_hunts
+           WHERE tenant_id = $1 AND id = $2"#,
+    )
+    .bind(tenant_id)
+    .bind(hunt_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(ApiError::Database)?
+    .ok_or(ApiError::NotFound)?;
+    let name: String = row.try_get("name").map_err(ApiError::Database)?;
+    Ok(PreparedCaseArtifact {
+        artifact_kind: "saved_hunt".to_string(),
+        artifact_id: hunt_id.to_string(),
+        summary: Some(name.clone()),
+        metadata: json!({
+            "artifactClass": "verified_reference",
+            "sourceTable": "saved_hunts",
+            "savedHuntId": hunt_id,
+            "name": name,
+            "description": row.try_get::<Option<String>, _>("description").map_err(ApiError::Database)?,
+            "query": row.try_get::<Value, _>("query").map_err(ApiError::Database)?,
+            "createdBy": row.try_get::<String, _>("created_by").map_err(ApiError::Database)?,
+            "createdAt": row.try_get::<DateTime<Utc>, _>("created_at").map_err(ApiError::Database)?.to_rfc3339(),
+            "updatedAt": row.try_get::<DateTime<Utc>, _>("updated_at").map_err(ApiError::Database)?.to_rfc3339(),
+        }),
+    })
+}
+
+async fn resolve_hunt_job_artifact(
+    tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
+    tenant_id: Uuid,
+    artifact_id: &str,
+) -> Result<PreparedCaseArtifact, ApiError> {
+    let job_id = parse_uuid_artifact_id(artifact_id, "hunt_job")?;
+    let row = sqlx::query::query(
+        r#"SELECT id, job_type, status, request, result, created_by, created_at, completed_at
+           FROM hunt_jobs
+           WHERE tenant_id = $1 AND id = $2"#,
+    )
+    .bind(tenant_id)
+    .bind(job_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(ApiError::Database)?
+    .ok_or(ApiError::NotFound)?;
+    let job_type: String = row.try_get("job_type").map_err(ApiError::Database)?;
+    Ok(PreparedCaseArtifact {
+        artifact_kind: "hunt_job".to_string(),
+        artifact_id: job_id.to_string(),
+        summary: Some(format!("{job_type} hunt job")),
+        metadata: json!({
+            "artifactClass": "verified_reference",
+            "sourceTable": "hunt_jobs",
+            "huntJobId": job_id,
+            "jobType": job_type,
+            "status": row.try_get::<String, _>("status").map_err(ApiError::Database)?,
+            "request": row.try_get::<Value, _>("request").map_err(ApiError::Database)?,
+            "result": row.try_get::<Option<Value>, _>("result").map_err(ApiError::Database)?,
+            "createdBy": row.try_get::<String, _>("created_by").map_err(ApiError::Database)?,
+            "createdAt": row.try_get::<DateTime<Utc>, _>("created_at").map_err(ApiError::Database)?.to_rfc3339(),
+            "completedAt": row.try_get::<Option<DateTime<Utc>>, _>("completed_at").map_err(ApiError::Database)?.map(|value| value.to_rfc3339()),
+        }),
+    })
+}
+
+async fn resolve_detection_artifact(
+    tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
+    tenant_id: Uuid,
+    artifact_id: &str,
+) -> Result<PreparedCaseArtifact, ApiError> {
+    let detection_id = parse_uuid_artifact_id(artifact_id, "detection")?;
+    let row = sqlx::query::query(
+        r#"SELECT id,
+                  rule_id,
+                  rule_name,
+                  source_format,
+                  severity,
+                  status,
+                  title,
+                  summary,
+                  principal_id,
+                  session_id,
+                  grant_id,
+                  response_action_ids,
+                  first_seen_at,
+                  last_seen_at,
+                  metadata
+           FROM detection_findings
+           WHERE tenant_id = $1 AND id = $2"#,
+    )
+    .bind(tenant_id)
+    .bind(detection_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(ApiError::Database)?
+    .ok_or(ApiError::NotFound)?;
+    let evidence_rows = sqlx::query::query(
+        r#"SELECT artifact_ref
+           FROM detection_finding_evidence
+           WHERE tenant_id = $1 AND finding_id = $2
+           ORDER BY artifact_ref ASC"#,
+    )
+    .bind(tenant_id)
+    .bind(detection_id)
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(ApiError::Database)?;
+    let evidence_refs = evidence_rows
+        .into_iter()
+        .map(|evidence_row| evidence_row.try_get("artifact_ref"))
+        .collect::<Result<Vec<String>, _>>()
+        .map_err(ApiError::Database)?;
+    let response_action_ids: Value = row
+        .try_get("response_action_ids")
+        .map_err(ApiError::Database)?;
+    let primary_response_action_id = response_action_ids
+        .as_array()
+        .and_then(|ids| (ids.len() == 1).then_some(ids))
+        .and_then(|ids| ids.first())
+        .and_then(Value::as_str)
+        .map(ToString::to_string);
+
+    let title: String = row.try_get("title").map_err(ApiError::Database)?;
+    Ok(PreparedCaseArtifact {
+        artifact_kind: "detection".to_string(),
+        artifact_id: detection_id.to_string(),
+        summary: Some(title.clone()),
+        metadata: json!({
+            "artifactClass": "verified_reference",
+            "sourceTable": "detection_findings",
+            "detectionId": detection_id,
+            "ruleId": row.try_get::<Uuid, _>("rule_id").map_err(ApiError::Database)?.to_string(),
+            "ruleName": row.try_get::<String, _>("rule_name").map_err(ApiError::Database)?,
+            "sourceFormat": row.try_get::<String, _>("source_format").map_err(ApiError::Database)?,
+            "severity": row.try_get::<String, _>("severity").map_err(ApiError::Database)?,
+            "status": row.try_get::<String, _>("status").map_err(ApiError::Database)?,
+            "title": title,
+            "summary": row.try_get::<String, _>("summary").map_err(ApiError::Database)?,
+            "principalId": row.try_get::<Option<Uuid>, _>("principal_id").map_err(ApiError::Database)?.map(|value| value.to_string()),
+            "sessionId": row.try_get::<Option<String>, _>("session_id").map_err(ApiError::Database)?,
+            "grantId": row.try_get::<Option<Uuid>, _>("grant_id").map_err(ApiError::Database)?.map(|value| value.to_string()),
+            "responseActionId": primary_response_action_id,
+            "responseActionIds": response_action_ids,
+            "firstSeenAt": row.try_get::<DateTime<Utc>, _>("first_seen_at").map_err(ApiError::Database)?.to_rfc3339(),
+            "lastSeenAt": row.try_get::<DateTime<Utc>, _>("last_seen_at").map_err(ApiError::Database)?.to_rfc3339(),
+            "evidenceRefs": evidence_refs,
+            "metadata": row.try_get::<Value, _>("metadata").map_err(ApiError::Database)?,
+        }),
+    })
+}
+
+async fn resolve_response_action_artifact(
+    tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
+    tenant_id: Uuid,
+    artifact_id: &str,
+) -> Result<PreparedCaseArtifact, ApiError> {
+    let action_id = parse_uuid_artifact_id(artifact_id, "response_action")?;
+    let row = sqlx::query::query(
+        r#"SELECT id,
+                  action_type,
+                  target_kind,
+                  target_id,
+                  requested_by_type,
+                  requested_by_id,
+                  requested_at,
+                  expires_at,
+                  reason,
+                  case_id,
+                  source_detection_id,
+                  source_approval_id,
+                  require_acknowledgement,
+                  payload,
+                  status,
+                  metadata
+           FROM response_actions
+           WHERE tenant_id = $1 AND id = $2"#,
+    )
+    .bind(tenant_id)
+    .bind(action_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(ApiError::Database)?
+    .ok_or(ApiError::NotFound)?;
+
+    let action_type: String = row.try_get("action_type").map_err(ApiError::Database)?;
+    let target_kind: String = row.try_get("target_kind").map_err(ApiError::Database)?;
+    let target_id: String = row.try_get("target_id").map_err(ApiError::Database)?;
+    let source_detection_id: Option<Uuid> = row
+        .try_get("source_detection_id")
+        .map_err(ApiError::Database)?;
+    let source_detection_principal_id = if let Some(source_detection_id) = source_detection_id {
+        sqlx::query_scalar::query_scalar::<_, Option<Uuid>>(
+            r#"SELECT principal_id
+               FROM detection_findings
+               WHERE tenant_id = $1 AND id = $2"#,
+        )
+        .bind(tenant_id)
+        .bind(source_detection_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(ApiError::Database)?
+        .flatten()
+        .map(|value| value.to_string())
+    } else {
+        None
+    };
+
+    Ok(PreparedCaseArtifact {
+        artifact_kind: "response_action".to_string(),
+        artifact_id: action_id.to_string(),
+        summary: Some(format!("{action_type} -> {target_kind}:{target_id}")),
+        metadata: json!({
+            "artifactClass": "verified_reference",
+            "sourceTable": "response_actions",
+            "responseActionId": action_id,
+            "actionType": action_type,
+            "targetKind": target_kind,
+            "targetId": target_id,
+            "requestedByType": row.try_get::<String, _>("requested_by_type").map_err(ApiError::Database)?,
+            "requestedById": row.try_get::<String, _>("requested_by_id").map_err(ApiError::Database)?,
+            "requestedAt": row.try_get::<DateTime<Utc>, _>("requested_at").map_err(ApiError::Database)?.to_rfc3339(),
+            "expiresAt": row.try_get::<Option<DateTime<Utc>>, _>("expires_at").map_err(ApiError::Database)?.map(|value| value.to_rfc3339()),
+            "reason": row.try_get::<String, _>("reason").map_err(ApiError::Database)?,
+            "principalId": source_detection_principal_id,
+            "caseId": row.try_get::<Option<Uuid>, _>("case_id").map_err(ApiError::Database)?.map(|value| value.to_string()),
+            "detectionId": source_detection_id.map(|value| value.to_string()),
+            "sourceDetectionId": source_detection_id.map(|value| value.to_string()),
+            "sourceApprovalId": row.try_get::<Option<Uuid>, _>("source_approval_id").map_err(ApiError::Database)?.map(|value| value.to_string()),
+            "requireAcknowledgement": row.try_get::<bool, _>("require_acknowledgement").map_err(ApiError::Database)?,
+            "payload": row.try_get::<Value, _>("payload").map_err(ApiError::Database)?,
+            "status": row.try_get::<String, _>("status").map_err(ApiError::Database)?,
+            "metadata": row.try_get::<Value, _>("metadata").map_err(ApiError::Database)?,
+        }),
+    })
+}
+
+async fn resolve_grant_artifact(
+    tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
+    tenant_id: Uuid,
+    artifact_id: &str,
+) -> Result<PreparedCaseArtifact, ApiError> {
+    let grant_id = parse_uuid_artifact_id(artifact_id, "grant")?;
+    let row = sqlx::query::query(
+        r#"SELECT id,
+                  issuer_principal_id,
+                  subject_principal_id,
+                  grant_type,
+                  audience,
+                  token_jti,
+                  parent_grant_id,
+                  parent_token_jti,
+                  capabilities,
+                  capability_ceiling,
+                  purpose,
+                  context,
+                  source_approval_id,
+                  source_session_id,
+                  issued_at,
+                  not_before,
+                  expires_at,
+                  status,
+                  revoked_at,
+                  revoked_by,
+                  revoke_reason
+           FROM fleet_grants
+           WHERE tenant_id = $1 AND id = $2"#,
+    )
+    .bind(tenant_id)
+    .bind(grant_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(ApiError::Database)?
+    .ok_or(ApiError::NotFound)?;
+
+    let token_jti: String = row.try_get("token_jti").map_err(ApiError::Database)?;
+    Ok(PreparedCaseArtifact {
+        artifact_kind: "grant".to_string(),
+        artifact_id: grant_id.to_string(),
+        summary: Some(
+            row.try_get::<Option<String>, _>("purpose")
+                .map_err(ApiError::Database)?
+                .unwrap_or_else(|| format!("grant {token_jti}")),
+        ),
+        metadata: json!({
+            "artifactClass": "verified_reference",
+            "sourceTable": "fleet_grants",
+            "grantId": grant_id,
+            "issuerPrincipalId": row.try_get::<String, _>("issuer_principal_id").map_err(ApiError::Database)?,
+            "subjectPrincipalId": row.try_get::<String, _>("subject_principal_id").map_err(ApiError::Database)?,
+            "grantType": row.try_get::<String, _>("grant_type").map_err(ApiError::Database)?,
+            "audience": row.try_get::<String, _>("audience").map_err(ApiError::Database)?,
+            "tokenJti": token_jti,
+            "parentGrantId": row.try_get::<Option<Uuid>, _>("parent_grant_id").map_err(ApiError::Database)?.map(|value| value.to_string()),
+            "parentTokenJti": row.try_get::<Option<String>, _>("parent_token_jti").map_err(ApiError::Database)?,
+            "capabilities": row.try_get::<Value, _>("capabilities").map_err(ApiError::Database)?,
+            "capabilityCeiling": row.try_get::<Value, _>("capability_ceiling").map_err(ApiError::Database)?,
+            "purpose": row.try_get::<Option<String>, _>("purpose").map_err(ApiError::Database)?,
+            "context": row.try_get::<Value, _>("context").map_err(ApiError::Database)?,
+            "sourceApprovalId": row.try_get::<Option<String>, _>("source_approval_id").map_err(ApiError::Database)?,
+            "sourceSessionId": row.try_get::<Option<String>, _>("source_session_id").map_err(ApiError::Database)?,
+            "issuedAt": row.try_get::<DateTime<Utc>, _>("issued_at").map_err(ApiError::Database)?.to_rfc3339(),
+            "notBefore": row.try_get::<Option<DateTime<Utc>>, _>("not_before").map_err(ApiError::Database)?.map(|value| value.to_rfc3339()),
+            "expiresAt": row.try_get::<DateTime<Utc>, _>("expires_at").map_err(ApiError::Database)?.to_rfc3339(),
+            "status": row.try_get::<String, _>("status").map_err(ApiError::Database)?,
+            "revokedAt": row.try_get::<Option<DateTime<Utc>>, _>("revoked_at").map_err(ApiError::Database)?.map(|value| value.to_rfc3339()),
+            "revokedBy": row.try_get::<Option<String>, _>("revoked_by").map_err(ApiError::Database)?,
+            "revokeReason": row.try_get::<Option<String>, _>("revoke_reason").map_err(ApiError::Database)?,
+        }),
+    })
+}
+
+fn parse_uuid_artifact_id(artifact_id: &str, artifact_kind: &str) -> Result<Uuid, ApiError> {
+    Uuid::parse_str(artifact_id).map_err(|_| {
+        ApiError::BadRequest(format!(
+            "{artifact_kind} artifacts must use a UUID artifactId"
+        ))
+    })
+}
+
+fn normalize_summary(summary: Option<String>) -> Option<String> {
+    summary.and_then(|value| {
+        let trimmed = value.trim();
+        (!trimmed.is_empty()).then(|| trimmed.to_string())
+    })
 }
 
 pub async fn list_timeline(
@@ -939,62 +1446,349 @@ fn filter_artifacts<'a>(
     let detection_ids: Option<Vec<String>> = req.detection_ids.clone().map(normalize_strings);
     let response_action_ids: Option<Vec<String>> =
         req.response_action_ids.clone().map(normalize_strings);
-    let source_families: Option<Vec<String>> = req.source_families.clone().map(normalize_strings);
+    let include_raw_envelopes = req.include_raw_envelopes.unwrap_or(false);
 
-    artifacts
+    let eligible = artifacts
         .iter()
-        .filter(|artifact| match artifact.artifact_kind.as_str() {
-            "raw_envelope" => req.include_raw_envelopes.unwrap_or(false),
-            _ => true,
-        })
-        .filter(|artifact| {
-            let artifact_time = artifact_time(artifact);
-            if let Some(start) = req.start {
-                if artifact_time < start {
-                    return false;
-                }
-            }
-            if let Some(end) = req.end {
-                if artifact_time > end {
-                    return false;
-                }
-            }
-            true
-        })
-        .filter(|artifact| matches_identity_filter(artifact, principal_ids.as_ref(), "principalId"))
-        .filter(|artifact| {
-            matches_ids(artifact, detection_ids.as_ref(), "detectionId", "detection")
-        })
-        .filter(|artifact| {
-            matches_ids(
+        .filter(|artifact| include_artifact_for_export_window(artifact, req, include_raw_envelopes))
+        .collect::<Vec<_>>();
+
+    if principal_ids.is_none() && detection_ids.is_none() && response_action_ids.is_none() {
+        return eligible;
+    }
+
+    let mut included = BTreeSet::new();
+    let mut detection_closure = detection_ids
+        .clone()
+        .unwrap_or_default()
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    let mut response_action_closure = response_action_ids
+        .clone()
+        .unwrap_or_default()
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    let mut raw_ref_closure = BTreeSet::new();
+
+    for artifact in &eligible {
+        if artifact_matches_seed_filters(
+            artifact,
+            principal_ids.as_ref(),
+            detection_ids.as_ref(),
+            response_action_ids.as_ref(),
+        ) {
+            included.insert(artifact.id);
+            extend_case_artifact_closure(
                 artifact,
-                response_action_ids.as_ref(),
-                "responseActionId",
-                "response_action",
-            )
-        })
-        .filter(|artifact| {
-            if let Some(source_families) = source_families.as_ref() {
-                let source = artifact
-                    .metadata
-                    .get("source")
-                    .and_then(Value::as_str)
-                    .or_else(|| {
-                        artifact
-                            .metadata
-                            .get("sourceFamily")
-                            .and_then(Value::as_str)
-                    });
-                if let Some(source) = source {
-                    source_families.iter().any(|value| value == source)
-                } else {
-                    true
-                }
-            } else {
-                true
+                &mut detection_closure,
+                &mut response_action_closure,
+                &mut raw_ref_closure,
+            );
+        }
+    }
+
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for artifact in &eligible {
+            if included.contains(&artifact.id) {
+                continue;
             }
-        })
+            if artifact_matches_authoritative_closure(
+                artifact,
+                principal_ids.as_ref(),
+                &detection_closure,
+                &response_action_closure,
+                &raw_ref_closure,
+            ) {
+                included.insert(artifact.id);
+                extend_case_artifact_closure(
+                    artifact,
+                    &mut detection_closure,
+                    &mut response_action_closure,
+                    &mut raw_ref_closure,
+                );
+                changed = true;
+            }
+        }
+    }
+
+    eligible
+        .into_iter()
+        .filter(|artifact| included.contains(&artifact.id))
         .collect()
+}
+
+fn include_artifact_for_export_window(
+    artifact: &CaseArtifactRef,
+    req: &ExportEvidenceBundleRequest,
+    include_raw_envelopes: bool,
+) -> bool {
+    if artifact.artifact_kind == "raw_envelope" && !include_raw_envelopes {
+        return false;
+    }
+
+    let artifact_time = artifact_time(artifact);
+    if let Some(start) = req.start {
+        if artifact_time < start {
+            return false;
+        }
+    }
+    if let Some(end) = req.end {
+        if artifact_time > end {
+            return false;
+        }
+    }
+
+    if let Some(source_families) = req.source_families.as_ref() {
+        let normalized = normalize_strings(source_families.clone());
+        if let Some(source) = artifact_source_family(artifact) {
+            return normalized.iter().any(|value| value == source);
+        }
+    }
+
+    true
+}
+
+fn artifact_matches_seed_filters(
+    artifact: &CaseArtifactRef,
+    principal_ids: Option<&Vec<String>>,
+    detection_ids: Option<&Vec<String>>,
+    response_action_ids: Option<&Vec<String>>,
+) -> bool {
+    let principal_match =
+        principal_ids.is_some_and(|ids| artifact_matches_principal_ids(artifact, ids));
+    let detection_match =
+        detection_ids.is_some_and(|ids| artifact_matches_detection_ids(artifact, ids));
+    let response_action_match =
+        response_action_ids.is_some_and(|ids| artifact_matches_response_action_ids(artifact, ids));
+
+    principal_match || detection_match || response_action_match
+}
+
+fn artifact_matches_authoritative_closure(
+    artifact: &CaseArtifactRef,
+    principal_ids: Option<&Vec<String>>,
+    detection_closure: &BTreeSet<String>,
+    response_action_closure: &BTreeSet<String>,
+    raw_ref_closure: &BTreeSet<String>,
+) -> bool {
+    match artifact.artifact_kind.as_str() {
+        "detection" => artifact
+            .metadata
+            .get("detectionId")
+            .and_then(Value::as_str)
+            .is_some_and(|value| detection_closure.contains(value)),
+        "response_action" => {
+            artifact
+                .metadata
+                .get("responseActionId")
+                .and_then(Value::as_str)
+                .is_some_and(|value| response_action_closure.contains(value))
+                || artifact
+                    .metadata
+                    .get("detectionId")
+                    .and_then(Value::as_str)
+                    .is_some_and(|value| detection_closure.contains(value))
+        }
+        "fleet_event" => {
+            artifact
+                .metadata
+                .get("detectionIds")
+                .and_then(Value::as_array)
+                .is_some_and(|values| {
+                    values
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .any(|value| detection_closure.contains(value))
+                })
+                || artifact
+                    .metadata
+                    .get("responseActionId")
+                    .and_then(Value::as_str)
+                    .is_some_and(|value| response_action_closure.contains(value))
+                || principal_ids.is_some_and(|ids| artifact_matches_principal_ids(artifact, ids))
+        }
+        "raw_envelope" => artifact
+            .metadata
+            .get("rawRef")
+            .and_then(Value::as_str)
+            .is_some_and(|value| raw_ref_closure.contains(value)),
+        "graph_snapshot" | "note" => artifact_matches_seed_filters(
+            artifact,
+            principal_ids,
+            Some(&detection_closure.iter().cloned().collect::<Vec<_>>()),
+            Some(&response_action_closure.iter().cloned().collect::<Vec<_>>()),
+        ),
+        "saved_hunt" | "hunt_job" | "grant" => {
+            principal_ids.is_some_and(|ids| artifact_matches_principal_ids(artifact, ids))
+        }
+        _ => false,
+    }
+}
+
+fn extend_case_artifact_closure(
+    artifact: &CaseArtifactRef,
+    detection_closure: &mut BTreeSet<String>,
+    response_action_closure: &mut BTreeSet<String>,
+    raw_ref_closure: &mut BTreeSet<String>,
+) {
+    match artifact.artifact_kind.as_str() {
+        "detection" => {
+            if let Some(detection_id) = artifact.metadata.get("detectionId").and_then(Value::as_str)
+            {
+                detection_closure.insert(detection_id.to_string());
+            }
+            if let Some(response_action_id) = artifact
+                .metadata
+                .get("responseActionId")
+                .and_then(Value::as_str)
+            {
+                response_action_closure.insert(response_action_id.to_string());
+            }
+            for response_action_id in artifact
+                .metadata
+                .get("responseActionIds")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+            {
+                response_action_closure.insert(response_action_id.to_string());
+            }
+            for evidence_ref in artifact
+                .metadata
+                .get("evidenceRefs")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+            {
+                raw_ref_closure.insert(evidence_ref.to_string());
+            }
+        }
+        "response_action" => {
+            if let Some(response_action_id) = artifact
+                .metadata
+                .get("responseActionId")
+                .and_then(Value::as_str)
+            {
+                response_action_closure.insert(response_action_id.to_string());
+            }
+            if let Some(detection_id) = artifact.metadata.get("detectionId").and_then(Value::as_str)
+            {
+                detection_closure.insert(detection_id.to_string());
+            }
+        }
+        "fleet_event" => {
+            if let Some(response_action_id) = artifact
+                .metadata
+                .get("responseActionId")
+                .and_then(Value::as_str)
+            {
+                response_action_closure.insert(response_action_id.to_string());
+            }
+            for detection_id in artifact
+                .metadata
+                .get("detectionIds")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+            {
+                detection_closure.insert(detection_id.to_string());
+            }
+            if let Some(raw_ref) = artifact.metadata.get("rawRef").and_then(Value::as_str) {
+                raw_ref_closure.insert(raw_ref.to_string());
+            }
+        }
+        "raw_envelope" => {
+            if let Some(raw_ref) = artifact.metadata.get("rawRef").and_then(Value::as_str) {
+                raw_ref_closure.insert(raw_ref.to_string());
+            }
+        }
+        _ => {}
+    }
+}
+
+fn artifact_matches_principal_ids(artifact: &CaseArtifactRef, ids: &[String]) -> bool {
+    artifact_principal_id(artifact)
+        .is_some_and(|artifact_id| ids.iter().any(|value| value == artifact_id))
+}
+
+fn artifact_matches_detection_ids(artifact: &CaseArtifactRef, ids: &[String]) -> bool {
+    match artifact.artifact_kind.as_str() {
+        "detection" => ids.iter().any(|value| value == &artifact.artifact_id),
+        "fleet_event" => artifact
+            .metadata
+            .get("detectionIds")
+            .and_then(Value::as_array)
+            .is_some_and(|values| {
+                values
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .any(|value| ids.iter().any(|candidate| candidate == value))
+            }),
+        _ => artifact
+            .metadata
+            .get("detectionId")
+            .and_then(Value::as_str)
+            .is_some_and(|artifact_id| ids.iter().any(|value| value == artifact_id)),
+    }
+}
+
+fn artifact_matches_response_action_ids(artifact: &CaseArtifactRef, ids: &[String]) -> bool {
+    match artifact.artifact_kind.as_str() {
+        "response_action" => ids.iter().any(|value| value == &artifact.artifact_id),
+        "detection" => {
+            artifact
+                .metadata
+                .get("responseActionIds")
+                .and_then(Value::as_array)
+                .is_some_and(|values| {
+                    values
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .any(|value| ids.iter().any(|candidate| candidate == value))
+                })
+                || artifact
+                    .metadata
+                    .get("responseActionId")
+                    .and_then(Value::as_str)
+                    .is_some_and(|artifact_id| ids.iter().any(|value| value == artifact_id))
+        }
+        _ => artifact
+            .metadata
+            .get("responseActionId")
+            .and_then(Value::as_str)
+            .is_some_and(|artifact_id| ids.iter().any(|value| value == artifact_id)),
+    }
+}
+
+fn artifact_principal_id(artifact: &CaseArtifactRef) -> Option<&str> {
+    artifact
+        .metadata
+        .get("principalId")
+        .and_then(Value::as_str)
+        .or_else(|| {
+            artifact
+                .metadata
+                .get("principal_id")
+                .and_then(Value::as_str)
+        })
+}
+
+fn artifact_source_family(artifact: &CaseArtifactRef) -> Option<&str> {
+    artifact
+        .metadata
+        .get("source")
+        .and_then(Value::as_str)
+        .or_else(|| {
+            artifact
+                .metadata
+                .get("sourceFamily")
+                .and_then(Value::as_str)
+        })
 }
 
 fn artifact_time(artifact: &CaseArtifactRef) -> DateTime<Utc> {
@@ -1005,53 +1799,6 @@ fn artifact_time(artifact: &CaseArtifactRef) -> DateTime<Utc> {
         .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
         .map(|value: chrono::DateTime<chrono::FixedOffset>| value.with_timezone(&Utc))
         .unwrap_or(artifact.added_at)
-}
-
-fn matches_identity_filter(
-    artifact: &CaseArtifactRef,
-    ids: Option<&Vec<String>>,
-    metadata_key: &str,
-) -> bool {
-    if let Some(ids) = ids {
-        let artifact_id = artifact
-            .metadata
-            .get(metadata_key)
-            .and_then(Value::as_str)
-            .or_else(|| {
-                artifact
-                    .metadata
-                    .get("principal_id")
-                    .and_then(Value::as_str)
-            });
-        if let Some(artifact_id) = artifact_id {
-            ids.iter().any(|value| value == artifact_id)
-        } else {
-            false
-        }
-    } else {
-        true
-    }
-}
-
-fn matches_ids(
-    artifact: &CaseArtifactRef,
-    ids: Option<&Vec<String>>,
-    metadata_key: &str,
-    artifact_kind: &str,
-) -> bool {
-    if let Some(ids) = ids {
-        if artifact.artifact_kind == artifact_kind {
-            ids.iter().any(|value| value == &artifact.artifact_id)
-        } else {
-            artifact
-                .metadata
-                .get(metadata_key)
-                .and_then(Value::as_str)
-                .is_some_and(|artifact_id| ids.iter().any(|value| value == artifact_id))
-        }
-    } else {
-        true
-    }
 }
 
 fn newline_terminated(mut bytes: Vec<u8>) -> Vec<u8> {
@@ -1159,6 +1906,83 @@ mod tests {
         assert!(filtered
             .iter()
             .any(|artifact| artifact.artifact_id == "ra-1"));
+    }
+
+    #[test]
+    fn filter_artifacts_expands_trusted_detection_and_response_closure() {
+        let artifacts = vec![
+            artifact(
+                "detection",
+                "det-1",
+                serde_json::json!({
+                    "timestamp": "2026-03-06T12:00:00Z",
+                    "principalId": "pr-1",
+                    "detectionId": "det-1",
+                    "responseActionIds": ["ra-1"],
+                    "evidenceRefs": ["env-1"]
+                }),
+            ),
+            artifact(
+                "response_action",
+                "ra-1",
+                serde_json::json!({
+                    "timestamp": "2026-03-06T12:01:00Z",
+                    "principalId": "pr-1",
+                    "responseActionId": "ra-1",
+                    "detectionId": "det-1"
+                }),
+            ),
+            artifact(
+                "fleet_event",
+                "evt-1",
+                serde_json::json!({
+                    "timestamp": "2026-03-06T12:02:00Z",
+                    "principalId": "pr-1",
+                    "responseActionId": "ra-1",
+                    "detectionIds": ["det-1"],
+                    "rawRef": "env-1",
+                    "source": "tetragon"
+                }),
+            ),
+            artifact(
+                "raw_envelope",
+                "env-1",
+                serde_json::json!({
+                    "timestamp": "2026-03-06T12:02:00Z",
+                    "rawRef": "env-1",
+                    "source": "tetragon"
+                }),
+            ),
+        ];
+
+        let filtered = filter_artifacts(
+            &artifacts,
+            &ExportEvidenceBundleRequest {
+                start: None,
+                end: None,
+                principal_ids: Some(vec!["pr-1".to_string()]),
+                detection_ids: Some(vec!["det-1".to_string()]),
+                response_action_ids: Some(vec!["ra-1".to_string()]),
+                source_families: Some(vec!["tetragon".to_string()]),
+                include_raw_envelopes: Some(true),
+                include_ocsf: Some(false),
+                retention_days: None,
+            },
+        );
+
+        assert_eq!(filtered.len(), 4);
+        assert!(filtered
+            .iter()
+            .any(|artifact| artifact.artifact_id == "det-1"));
+        assert!(filtered
+            .iter()
+            .any(|artifact| artifact.artifact_id == "ra-1"));
+        assert!(filtered
+            .iter()
+            .any(|artifact| artifact.artifact_id == "evt-1"));
+        assert!(filtered
+            .iter()
+            .any(|artifact| artifact.artifact_id == "env-1"));
     }
 
     #[test]

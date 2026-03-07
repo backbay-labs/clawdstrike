@@ -2347,16 +2347,9 @@ async fn fleet_operator_workflow_links_detection_response_case_hunt_graph_and_co
         format!("/api/v1/grants/{grant_id}/exercise"),
         Some(&harness.api_key),
         Some(serde_json::json!({
+            "event_id": response_event_id,
             "session_id": session_id,
-            "session_label": "Operator workflow session",
-            "session_state": "observed",
             "response_action_id": action_id.to_string(),
-            "response_action_label": "Policy reload request",
-            "response_action_state": "published",
-            "response_action_metadata": {
-                "caseId": case_id,
-                "sourceDetectionId": finding_id.to_string()
-            }
         })),
     )
     .await;
@@ -2365,7 +2358,7 @@ async fn fleet_operator_workflow_links_detection_response_case_hunt_graph_and_co
         .as_array()
         .expect("grant exercise edges")
         .iter()
-        .any(|edge| edge["kind"] == "triggered_response_action"));
+        .any(|edge| edge["kind"] == "exercised_in_event"));
 
     let search_resp = request_json(
         &harness.app,
@@ -2744,6 +2737,149 @@ async fn fleet_operator_workflow_links_detection_response_case_hunt_graph_and_co
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn case_artifacts_require_verified_references_and_mark_annotations_untrusted() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let fixture = seed_operator_flow_fixture(&harness).await;
+
+    let missing_event_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/cases/{}/artifacts", fixture.case_id),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "artifactKind": "fleet_event",
+            "artifactId": "missing-event",
+            "summary": "spoofed event",
+            "metadata": {
+                "artifactClass": "verified_reference",
+                "sourceTable": "hunt_events"
+            }
+        })),
+    )
+    .await;
+    assert_eq!(missing_event_resp.0, StatusCode::NOT_FOUND);
+
+    let missing_envelope_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/cases/{}/artifacts", fixture.case_id),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "artifactKind": "raw_envelope",
+            "artifactId": "missing-envelope",
+            "summary": "spoofed envelope",
+            "metadata": {
+                "artifactClass": "verified_reference",
+                "sourceTable": "hunt_envelopes"
+            }
+        })),
+    )
+    .await;
+    assert_eq!(missing_envelope_resp.0, StatusCode::NOT_FOUND);
+
+    let bundle_export_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/cases/{}/artifacts", fixture.case_id),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "artifactKind": "bundle_export",
+            "artifactId": "export-1",
+            "summary": "should be rejected",
+            "metadata": {}
+        })),
+    )
+    .await;
+    assert_eq!(bundle_export_resp.0, StatusCode::BAD_REQUEST);
+
+    let response_action_artifact_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/cases/{}/artifacts", fixture.case_id),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "artifactKind": "response_action",
+            "artifactId": fixture.action_id.to_string(),
+            "summary": "spoofed response summary",
+            "metadata": {
+                "artifactClass": "verified_reference",
+                "status": "acknowledged",
+                "sourceTable": "totally_fake"
+            }
+        })),
+    )
+    .await;
+    assert_eq!(response_action_artifact_resp.0, StatusCode::OK);
+
+    let note_artifact_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/cases/{}/artifacts", fixture.case_id),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "artifactKind": "note",
+            "artifactId": "operator-note-1",
+            "summary": "operator note",
+            "metadata": {
+                "artifactClass": "verified_reference",
+                "message": "manual analyst note"
+            }
+        })),
+    )
+    .await;
+    assert_eq!(note_artifact_resp.0, StatusCode::OK);
+
+    let case_detail_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/cases/{}", fixture.case_id),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(case_detail_resp.0, StatusCode::OK);
+    let artifacts = case_detail_resp.1["artifacts"]
+        .as_array()
+        .expect("case artifacts");
+
+    let response_action_artifact = artifacts
+        .iter()
+        .find(|artifact| {
+            artifact["artifactKind"] == "response_action"
+                && artifact["artifactId"] == fixture.action_id.to_string()
+        })
+        .expect("response_action artifact");
+    assert_eq!(
+        response_action_artifact["summary"],
+        format!("request_policy_reload -> endpoint:{}", fixture.agent_id)
+    );
+    assert_eq!(
+        response_action_artifact["metadata"]["artifactClass"],
+        "verified_reference"
+    );
+    assert_eq!(
+        response_action_artifact["metadata"]["sourceTable"],
+        "response_actions"
+    );
+    assert_eq!(response_action_artifact["metadata"]["status"], "queued");
+
+    let note_artifact = artifacts
+        .iter()
+        .find(|artifact| artifact["artifactKind"] == "note")
+        .expect("note artifact");
+    assert_eq!(
+        note_artifact["metadata"]["artifactClass"],
+        "operator_annotation"
+    );
+    assert_eq!(note_artifact["metadata"]["message"], "manual analyst note");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn expired_evidence_bundles_are_not_downloadable() {
     if !docker_available() {
         eprintln!("Skipping integration test: docker is unavailable");
@@ -3024,6 +3160,327 @@ async fn grants_reject_revoked_registered_principal_issuers() {
     )
     .await;
     assert_eq!(response.0, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn grant_mutation_endpoints_require_admin_equivalent_roles() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let fixture = seed_console_read_model_fixture(&harness).await;
+    let member_api_key = "cs_it_grant_member_key";
+    insert_api_key_for_tenant(
+        &harness.db,
+        harness.tenant_id,
+        member_api_key,
+        "member",
+        &["write"],
+    )
+    .await;
+
+    let keypair = hush_core::Keypair::generate();
+    let now = Utc::now().timestamp();
+    let claims = hush_multi_agent::DelegationClaims::new(
+        hush_multi_agent::AgentId::new("agent:member-test-issuer").expect("issuer"),
+        hush_multi_agent::AgentId::new("agent:member-test-subject").expect("subject"),
+        now,
+        now + 600,
+        vec![hush_multi_agent::AgentCapability::DeployApproval],
+    )
+    .expect("build delegation claims");
+    let token = hush_multi_agent::SignedDelegationToken::sign_with_public_key(claims, &keypair)
+        .expect("sign delegation token");
+
+    let ingest_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/grants".to_string(),
+        Some(member_api_key),
+        Some(serde_json::json!({
+            "token": token,
+            "grant_type": "delegation",
+            "issuer_public_key": keypair.public_key().to_hex()
+        })),
+    )
+    .await;
+    assert_eq!(ingest_resp.0, StatusCode::FORBIDDEN);
+
+    let exercise_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/grants/{}/exercise", fixture.grant_id),
+        Some(member_api_key),
+        Some(serde_json::json!({})),
+    )
+    .await;
+    assert_eq!(exercise_resp.0, StatusCode::FORBIDDEN);
+
+    let revoke_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/grants/{}/revoke", fixture.grant_id),
+        Some(member_api_key),
+        Some(serde_json::json!({
+            "reason": "should be forbidden"
+        })),
+    )
+    .await;
+    assert_eq!(revoke_resp.0, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn grants_ingest_is_idempotent_and_conflicts_on_reused_jti_with_different_contents() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let keypair = hush_core::Keypair::generate();
+    let now = Utc::now().timestamp();
+    let mut claims = hush_multi_agent::DelegationClaims::new(
+        hush_multi_agent::AgentId::new("agent:immutable-root").expect("issuer"),
+        hush_multi_agent::AgentId::new("agent:immutable-subject").expect("subject"),
+        now,
+        now + 900,
+        vec![hush_multi_agent::AgentCapability::DeployApproval],
+    )
+    .expect("build delegation claims");
+    claims.pur = Some("immutable ingest".to_string());
+    claims.ctx = Some(serde_json::json!({ "run": "first" }));
+    let token_jti = claims.jti.clone();
+    let token = hush_multi_agent::SignedDelegationToken::sign_with_public_key(claims, &keypair)
+        .expect("sign delegation token");
+
+    let first_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/grants".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "token": token.clone(),
+            "grant_type": "delegation",
+            "issuer_public_key": keypair.public_key().to_hex()
+        })),
+    )
+    .await;
+    assert_eq!(first_resp.0, StatusCode::OK);
+    let grant_id = first_resp.1["id"].as_str().expect("grant id").to_string();
+
+    let duplicate_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/grants".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "token": token,
+            "grant_type": "delegation",
+            "issuer_public_key": keypair.public_key().to_hex()
+        })),
+    )
+    .await;
+    assert_eq!(duplicate_resp.0, StatusCode::OK);
+    assert_eq!(duplicate_resp.1["id"], grant_id);
+
+    let mut conflicting_claims = hush_multi_agent::DelegationClaims::new(
+        hush_multi_agent::AgentId::new("agent:immutable-root").expect("issuer"),
+        hush_multi_agent::AgentId::new("agent:immutable-subject").expect("subject"),
+        now,
+        now + 900,
+        vec![hush_multi_agent::AgentCapability::DeployApproval],
+    )
+    .expect("build conflicting claims");
+    conflicting_claims.jti = token_jti.clone();
+    conflicting_claims.pur = Some("mutated grant".to_string());
+    conflicting_claims.ctx = Some(serde_json::json!({ "run": "mutated" }));
+    let conflicting_token =
+        hush_multi_agent::SignedDelegationToken::sign_with_public_key(conflicting_claims, &keypair)
+            .expect("sign conflicting delegation token");
+
+    let conflict_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/grants".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "token": conflicting_token,
+            "grant_type": "delegation",
+            "issuer_public_key": keypair.public_key().to_hex()
+        })),
+    )
+    .await;
+    assert_eq!(conflict_resp.0, StatusCode::CONFLICT);
+
+    let grant_count = sqlx::query_scalar::query_scalar::<_, i64>(
+        r#"SELECT COUNT(*)
+           FROM fleet_grants
+           WHERE tenant_id = $1
+             AND token_jti = $2"#,
+    )
+    .bind(harness.tenant_id)
+    .bind(token_jti)
+    .fetch_one(&harness.db)
+    .await
+    .expect("count immutable grants");
+    assert_eq!(grant_count, 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn grant_exercise_requires_verified_event_and_active_grant() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let fixture = seed_operator_flow_fixture(&harness).await;
+    let valid_event_id = "grant-exercise-valid";
+    let mismatched_event_id = "grant-exercise-mismatched";
+
+    let valid_event_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/hunt/events/ingest".to_string(),
+        Some(&harness.api_key),
+        Some(signed_hunt_ingest_request(
+            &harness,
+            serde_json::json!({
+                "eventId": valid_event_id,
+                "tenantId": harness.tenant_id.to_string(),
+                "source": "response",
+                "kind": "response_action_updated",
+                "occurredAt": "2026-03-06T14:00:00Z",
+                "ingestedAt": "2026-03-06T14:00:01Z",
+                "severity": "medium",
+                "verdict": "deny",
+                "summary": "verified response exercise event",
+                "actionType": "request_policy_reload",
+                "principal": {
+                    "principalId": fixture.principal_id.to_string(),
+                    "endpointAgentId": fixture.agent_id,
+                    "principalType": "endpoint_agent"
+                },
+                "sessionId": fixture.session_id,
+                "grantId": fixture.grant_id.to_string(),
+                "responseActionId": fixture.action_id.to_string(),
+                "target": {
+                    "kind": "endpoint",
+                    "id": fixture.agent_id,
+                    "name": "Operator Endpoint"
+                },
+                "evidence": {
+                    "rawRef": fixture.response_raw_ref,
+                    "envelopeHash": "hash-grant-exercise-valid",
+                    "issuer": "spiffe://tenant/acme-int",
+                    "schemaName": "clawdstrike.sdr.fact.response_action.v1",
+                    "signatureValid": true
+                },
+                "attributes": {
+                    "status": "published"
+                }
+            }),
+        )),
+    )
+    .await;
+    assert_eq!(valid_event_resp.0, StatusCode::OK);
+
+    let missing_event_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/grants/{}/exercise", fixture.grant_id),
+        Some(&harness.api_key),
+        Some(serde_json::json!({})),
+    )
+    .await;
+    assert_eq!(missing_event_resp.0, StatusCode::BAD_REQUEST);
+
+    let mismatched_event_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/hunt/events/ingest".to_string(),
+        Some(&harness.api_key),
+        Some(signed_hunt_ingest_request(
+            &harness,
+            serde_json::json!({
+                "eventId": mismatched_event_id,
+                "tenantId": harness.tenant_id.to_string(),
+                "source": "response",
+                "kind": "response_action_updated",
+                "occurredAt": "2026-03-06T14:05:00Z",
+                "ingestedAt": "2026-03-06T14:05:01Z",
+                "severity": "medium",
+                "verdict": "deny",
+                "summary": "mismatched grant exercise event",
+                "actionType": "request_policy_reload",
+                "principal": {
+                    "principalId": fixture.principal_id.to_string(),
+                    "endpointAgentId": fixture.agent_id,
+                    "principalType": "endpoint_agent"
+                },
+                "sessionId": fixture.session_id,
+                "grantId": Uuid::new_v4().to_string(),
+                "responseActionId": fixture.action_id.to_string(),
+                "target": {
+                    "kind": "endpoint",
+                    "id": fixture.agent_id,
+                    "name": "Operator Endpoint"
+                },
+                "evidence": {
+                    "rawRef": "hunt-envelope:grant-exercise-mismatched",
+                    "envelopeHash": "hash-grant-exercise-mismatched",
+                    "issuer": "spiffe://tenant/acme-int",
+                    "schemaName": "clawdstrike.sdr.fact.response_action.v1",
+                    "signatureValid": true
+                },
+                "attributes": {
+                    "status": "published"
+                }
+            }),
+        )),
+    )
+    .await;
+    assert_eq!(mismatched_event_resp.0, StatusCode::OK);
+
+    let wrong_event_grant_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/grants/{}/exercise", fixture.grant_id),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "event_id": mismatched_event_id
+        })),
+    )
+    .await;
+    assert_eq!(wrong_event_grant_resp.0, StatusCode::BAD_REQUEST);
+
+    sqlx::query::query(
+        r#"UPDATE fleet_grants
+           SET status = 'revoked',
+               revoked_at = now(),
+               updated_at = now()
+           WHERE tenant_id = $1
+             AND id = $2"#,
+    )
+    .bind(harness.tenant_id)
+    .bind(fixture.grant_id)
+    .execute(&harness.db)
+    .await
+    .expect("revoke fixture grant");
+
+    let revoked_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/grants/{}/exercise", fixture.grant_id),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "event_id": valid_event_id
+        })),
+    )
+    .await;
+    assert_eq!(revoked_resp.0, StatusCode::CONFLICT);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
