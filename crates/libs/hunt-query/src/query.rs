@@ -64,7 +64,15 @@ impl EventSource {
 
     /// All known sources.
     pub fn all() -> Vec<Self> {
-        vec![Self::Tetragon, Self::Hubble, Self::Receipt, Self::Scan]
+        vec![
+            Self::Tetragon,
+            Self::Hubble,
+            Self::Receipt,
+            Self::Scan,
+            Self::Response,
+            Self::Directory,
+            Self::Detection,
+        ]
     }
 }
 
@@ -339,11 +347,14 @@ mod tests {
     #[test]
     fn event_source_all() {
         let all = EventSource::all();
-        assert_eq!(all.len(), 4);
+        assert_eq!(all.len(), 7);
         assert!(all.contains(&EventSource::Tetragon));
         assert!(all.contains(&EventSource::Hubble));
         assert!(all.contains(&EventSource::Receipt));
         assert!(all.contains(&EventSource::Scan));
+        assert!(all.contains(&EventSource::Response));
+        assert!(all.contains(&EventSource::Directory));
+        assert!(all.contains(&EventSource::Detection));
     }
 
     #[test]
