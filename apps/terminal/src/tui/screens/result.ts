@@ -39,8 +39,19 @@ function renderOverviewCard(ctx: ScreenContext, boxWidth: number): string[] {
   if (!r) {
     content.push(`${THEME.muted}No execution result recorded.${THEME.reset}`)
   } else {
-    const titleIcon = r.success ? `${THEME.success}✓` : `${THEME.error}✗`
-    const titleText = r.success ? "Task Completed" : "Task Failed"
+    const reviewWithWarnings = Boolean(
+      r.execution?.success && r.verification && !r.verification.allPassed && r.verification.criticalPassed,
+    )
+    const titleIcon = reviewWithWarnings
+      ? `${THEME.warning}!`
+      : r.success
+        ? `${THEME.success}✓`
+        : `${THEME.error}✗`
+    const titleText = reviewWithWarnings
+      ? "Task Ready With Warnings"
+      : r.success
+        ? "Task Completed"
+        : "Task Failed"
     addRow("Status", `${titleIcon}${THEME.reset} ${titleText}`)
     addRow("Agent", `${THEME.white}${r.agent}${THEME.reset}`)
     addRow("Duration", `${THEME.muted}${TUI.formatDuration(r.duration)}${THEME.reset}`)
@@ -94,7 +105,11 @@ function renderDetailCard(ctx: ScreenContext, boxWidth: number): string[] {
     }
 
     if (r.verification) {
-      const vIcon = r.verification.allPassed ? `${THEME.success}✓` : `${THEME.error}✗`
+      const vIcon = r.verification.allPassed
+        ? `${THEME.success}✓`
+        : r.verification.criticalPassed
+          ? `${THEME.warning}!`
+          : `${THEME.error}✗`
       content.push(`${THEME.secondary}${THEME.bold}Verification${THEME.reset}`)
       addRow("Score", `${vIcon}${THEME.reset} ${r.verification.score}/100`)
       for (const g of r.verification.results) {

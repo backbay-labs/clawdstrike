@@ -240,6 +240,7 @@ describe("run detail surface", () => {
     run.execution = { success: true, model: "gpt-5.2", tokens: { input: 12, output: 34 }, cost: 0.1234 }
     run.verification = {
       allPassed: true,
+      criticalPassed: true,
       score: 97,
       summary: "All required checks passed.",
       results: [{ gate: "bun test", passed: true }],
@@ -251,7 +252,7 @@ describe("run detail surface", () => {
       action: "dispatch",
       routing: run.routing,
       execution: run.execution,
-      verification: run.verification,
+      verification: run.verification ?? undefined,
       duration: 4200,
     }
     run.events = [
@@ -692,6 +693,7 @@ describe("runs surface", () => {
     run.routing = { toolchain: "codex", strategy: "single", gates: ["bun test"] }
     run.verification = {
       allPassed: false,
+      criticalPassed: true,
       score: 81,
       summary: "One gate failed but the run still needs operator review.",
       results: [{ gate: "bun test", passed: false }],
@@ -702,7 +704,7 @@ describe("runs surface", () => {
       agent: "Codex",
       action: "dispatch",
       routing: run.routing,
-      verification: run.verification,
+      verification: run.verification ?? undefined,
       duration: 3200,
     }
     state.runs.entries = [run]

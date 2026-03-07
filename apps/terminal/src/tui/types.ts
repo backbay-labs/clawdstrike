@@ -309,6 +309,7 @@ export interface DispatchResultInfo {
   }
   verification?: {
     allPassed: boolean
+    criticalPassed: boolean
     score: number
     summary: string
     results: Array<{ gate: string; passed: boolean }>

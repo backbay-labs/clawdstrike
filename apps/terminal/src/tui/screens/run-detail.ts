@@ -103,6 +103,9 @@ function renderStatusCard(run: RunRecord, width: number): string[] {
   const addRow = (label: string, value: string) => {
     content.push(`${THEME.dim}${label.padEnd(11)}${THEME.reset} ${value}`)
   }
+  const verificationWarningOnly = Boolean(
+    run.execution?.success && run.verification && !run.verification.allPassed && run.verification.criticalPassed,
+  )
   const currentExternalAdapter = run.external.adapterId
     ? getExternalAdapter(run.external.adapterId)
     : null
@@ -111,7 +114,14 @@ function renderStatusCard(run: RunRecord, width: number): string[] {
   if (!run.result) {
     content.push(`${THEME.muted}Waiting for execution result…${THEME.reset}`)
   } else {
-    addRow("Outcome", run.result.success ? `${THEME.success}success${THEME.reset}` : `${THEME.error}failed${THEME.reset}`)
+    addRow(
+      "Outcome",
+      verificationWarningOnly
+        ? `${THEME.warning}review with warnings${THEME.reset}`
+        : run.result.success
+          ? `${THEME.success}success${THEME.reset}`
+          : `${THEME.error}failed${THEME.reset}`,
+    )
     addRow("Duration", `${THEME.dim}${Math.max(0, Math.round(run.result.duration / 1000))}s${THEME.reset}`)
     if (run.execution?.model) {
       addRow("Model", `${THEME.dim}${run.execution.model}${THEME.reset}`)
@@ -130,7 +140,9 @@ function renderStatusCard(run: RunRecord, width: number): string[] {
         "Score",
         run.verification.allPassed
           ? `${THEME.success}${run.verification.score}/100${THEME.reset}`
-          : `${THEME.warning}${run.verification.score}/100${THEME.reset}`,
+          : run.verification.criticalPassed
+            ? `${THEME.warning}${run.verification.score}/100${THEME.reset}`
+            : `${THEME.error}${run.verification.score}/100${THEME.reset}`,
       )
       if (run.verification.summary) {
         content.push(...wrapText(run.verification.summary, Math.max(12, width - 4)).map((line) => `${THEME.dim}${line}${THEME.reset}`))

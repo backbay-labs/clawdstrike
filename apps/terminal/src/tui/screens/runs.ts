@@ -106,6 +106,9 @@ function renderRunsList(ctx: ScreenContext, width: number, height: number): stri
 function renderRunSummary(run: RunRecord, width: number): string[] {
   const reviewRoute = getRunReviewRoute(run)
   const lines: string[] = []
+  const reviewWithWarnings = Boolean(
+    run.execution?.success && run.verification && !run.verification.allPassed && run.verification.criticalPassed,
+  )
   const addRow = (label: string, value: string) => {
     lines.push(`${THEME.dim}${label.padEnd(12)}${THEME.reset} ${value}`)
   }
@@ -138,13 +141,22 @@ function renderRunSummary(run: RunRecord, width: number): string[] {
   lines.push("")
   lines.push(`${THEME.secondary}${THEME.bold}Execution${THEME.reset}`)
   if (run.result) {
-    addRow("Outcome", run.result.success ? `${THEME.success}success${THEME.reset}` : `${THEME.error}failed${THEME.reset}`)
+    addRow(
+      "Outcome",
+      reviewWithWarnings
+        ? `${THEME.warning}review with warnings${THEME.reset}`
+        : run.result.success
+          ? `${THEME.success}success${THEME.reset}`
+          : `${THEME.error}failed${THEME.reset}`,
+    )
     if (run.verification) {
       addRow(
         "Verification",
         run.verification.allPassed
           ? `${THEME.success}${run.verification.score}/100${THEME.reset}`
-          : `${THEME.warning}${run.verification.score}/100${THEME.reset}`,
+          : run.verification.criticalPassed
+            ? `${THEME.warning}${run.verification.score}/100${THEME.reset}`
+            : `${THEME.error}${run.verification.score}/100${THEME.reset}`,
       )
     } else {
       addRow("Verification", `${THEME.muted}not available${THEME.reset}`)

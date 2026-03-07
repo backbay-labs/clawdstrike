@@ -111,9 +111,31 @@ function mapDispatchResult(
   const result = raw.result as Record<string, unknown> | undefined
   const verification = raw.verification as Record<string, unknown> | undefined
   const telemetry = result?.telemetry as Record<string, unknown> | undefined
+  const executionSuccess = result ? Boolean(result.success) : Boolean(raw.success)
+  const verificationInfo = verification
+    ? {
+        allPassed: Boolean(verification.allPassed),
+        criticalPassed:
+          typeof verification.criticalPassed === "boolean"
+            ? verification.criticalPassed
+            : Boolean(verification.allPassed),
+        score: typeof verification.score === "number" ? verification.score : 0,
+        summary: typeof verification.summary === "string" ? verification.summary : "",
+        results: Array.isArray(verification.results)
+          ? verification.results.map((entry) => {
+              const gate = entry as Record<string, unknown>
+              return {
+                gate: String(gate.gate),
+                passed: Boolean(gate.passed),
+              }
+            })
+          : [],
+      }
+    : undefined
+  const verificationPassed = verificationInfo?.criticalPassed ?? true
 
   return {
-    success: Boolean(raw.success),
+    success: executionSuccess && verificationPassed,
     taskId: typeof raw.taskId === "string" ? raw.taskId : "",
     agent: run.agentLabel,
     action: run.action,
@@ -126,7 +148,7 @@ function mapDispatchResult(
       : undefined,
     execution: result
       ? {
-          success: Boolean(result.success),
+          success: executionSuccess,
           error: typeof result.error === "string" ? result.error : undefined,
           model: typeof telemetry?.model === "string" ? telemetry.model : undefined,
           tokens:
@@ -143,29 +165,23 @@ function mapDispatchResult(
           cost: typeof telemetry?.cost === "number" ? telemetry.cost : undefined,
         }
       : undefined,
-    verification: verification
-      ? {
-          allPassed: Boolean(verification.allPassed),
-          score: typeof verification.score === "number" ? verification.score : 0,
-          summary: typeof verification.summary === "string" ? verification.summary : "",
-          results: Array.isArray(verification.results)
-            ? verification.results.map((entry) => {
-                const gate = entry as Record<string, unknown>
-                return {
-                  gate: String(gate.gate),
-                  passed: Boolean(gate.passed),
-                }
-              })
-            : [],
-        }
-      : undefined,
+    verification: verificationInfo,
     error: typeof raw.error === "string" ? raw.error : undefined,
     duration,
   }
 }
 
-function getFailureMessage(result: DispatchResultInfo): string {
-  return result.error ?? result.execution?.error ?? "execution failed"
+export function getFailureMessage(result: DispatchResultInfo): string {
+  if (result.error) {
+    return result.error
+  }
+  if (result.execution?.error) {
+    return result.execution.error
+  }
+  if (result.verification && !result.verification.criticalPassed) {
+    return result.verification.summary || "verification failed"
+  }
+  return "execution failed"
 }
 
 export function isRunTerminal(phase: RunPhase): boolean {

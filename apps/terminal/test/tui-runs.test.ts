@@ -41,6 +41,7 @@ describe("tui managed runs", () => {
         },
         verification: {
           allPassed: true,
+          criticalPassed: true,
           score: 96,
           summary: "Checks passed",
           results: [{ gate: "bun test", passed: true }],
@@ -107,6 +108,46 @@ describe("tui managed runs", () => {
     expect(finalRun.result?.success).toBe(false)
     expect(finalRun.completedAt).not.toBeNull()
     expect(finalRun.events.at(-1)?.message).toBe("Run failed: tool exploded")
+  })
+
+  test("keeps non-critical verification failures reviewable", async () => {
+    const run = createManagedRun({
+      prompt: "Say hi",
+      action: "dispatch",
+      agentId: "claude",
+      agentLabel: "Claude",
+    })
+
+    const finalRun = await executeManagedRun(run, {
+      cwd: process.cwd(),
+      projectId: "default",
+      executeTool: async () => ({
+        success: false,
+        taskId: "task-verify",
+        routing: { toolchain: "claude", strategy: "single", gates: ["ruff"] },
+        result: {
+          success: true,
+          telemetry: {
+            model: "claude-opus-4-6",
+            tokens: { input: 3, output: 10 },
+            cost: 0.0333,
+          },
+        },
+        verification: {
+          allPassed: false,
+          criticalPassed: true,
+          score: 96,
+          summary: "Some gates failed (non-critical)",
+          results: [{ gate: "ruff", passed: false }],
+        },
+      }),
+    })
+
+    expect(finalRun.phase).toBe("review_ready")
+    expect(finalRun.result?.success).toBe(true)
+    expect(finalRun.execution?.success).toBe(true)
+    expect(finalRun.error).toBeNull()
+    expect(finalRun.events.at(-1)?.message).toBe("Run ready for review")
   })
 
   test("filters active and review-ready runs without dropping completed backlog entries", () => {

@@ -47,6 +47,7 @@ import {
   isRunTerminal,
   supportsAttachToolchain,
   updateRunRecord,
+  getFailureMessage,
 } from "./runs"
 import { createAttachRunSession } from "./pty"
 import {
@@ -1252,6 +1253,7 @@ export class TUIApp implements AppController {
     const run = this.state.runs.entries.find((entry) => entry.id === this.state.interactiveSession.runId)
     if (run) {
       this.replaceRun(updateRunRecord(run, { interactivePhase: "running" }, { kind: "status", message: "Staged task sent to interactive session" }))
+      this.appendInteractiveSystemLine(run.id, `› staged task sent: ${text}`)
     }
     this.render()
   }
@@ -1464,6 +1466,37 @@ export class TUIApp implements AppController {
     }
   }
 
+  private appendInteractiveSystemLine(runId: string, line: string): void {
+    if (!line.trim()) {
+      return
+    }
+
+    if (!this.interactiveTranscriptBuffer) {
+      const { cols, rows } = this.state.interactiveSession.viewport
+      this.interactiveTranscriptBuffer = new InteractiveTerminalBuffer(cols, rows)
+    }
+    this.interactiveTranscriptBuffer.feed(`${line}\n`)
+    const scrollback = this.interactiveTranscriptBuffer.snapshot(1200)
+
+    this.state.interactiveSession = {
+      ...this.state.interactiveSession,
+      scrollback,
+      lastOutputAt: new Date().toISOString(),
+      lastHeartbeatAt: new Date().toISOString(),
+    }
+
+    const run = this.state.runs.entries.find((entry) => entry.id === runId)
+    if (run) {
+      this.replaceRun(updateRunRecord(run, { ptyTail: scrollback.slice(-6) }))
+    }
+    if (this.state.interactiveSession.viewport.autoFollow) {
+      this.state.interactiveSession.viewport.scrollOffset = 0
+    }
+    if (this.state.inputMode === "interactive-run" && this.state.activeRunId === runId) {
+      this.render()
+    }
+  }
+
   private async finalizeEmbeddedInteractiveRun(
     runId: string,
     plan: EmbeddedInteractiveSessionPlan,
@@ -1601,19 +1634,20 @@ export class TUIApp implements AppController {
         { kind: "status", message: "Embedded interactive session opened" },
       )
       this.replaceRun(runningRun)
+      const autoSendStagedTask = !plan.launchConsumesPrompt && Boolean(runningRun.prompt.trim())
 
       this.state.interactiveSession = {
         runId,
         sessionId: plan.sessionId,
         toolchain: runningRun.agentId,
-        focus: plan.launchConsumesPrompt ? "pty" : "staged_task",
-        returnFocus: plan.launchConsumesPrompt ? "pty" : "staged_task",
-        phase: plan.launchConsumesPrompt ? "running" : "awaiting_first_input",
+        focus: plan.launchConsumesPrompt || autoSendStagedTask ? "pty" : "staged_task",
+        returnFocus: plan.launchConsumesPrompt || autoSendStagedTask ? "pty" : "staged_task",
+        phase: plan.launchConsumesPrompt || autoSendStagedTask ? "running" : "awaiting_first_input",
         launchConsumesPrompt: plan.launchConsumesPrompt,
         stagedTask: {
           text: runningRun.prompt,
-          sent: plan.launchConsumesPrompt,
-          editable: plan.stagedTaskEditable,
+          sent: plan.launchConsumesPrompt || autoSendStagedTask,
+          editable: autoSendStagedTask ? false : plan.stagedTaskEditable,
         },
         viewport: this.state.interactiveSession.viewport,
         scrollback: [],
@@ -1630,6 +1664,18 @@ export class TUIApp implements AppController {
       this.state.activeRunId = runId
       this.state.runs.selectedRunId = runId
       this.setScreen("interactive-run")
+
+      if (autoSendStagedTask) {
+        plan.runtime.write(`${runningRun.prompt.trim()}\r`)
+        this.replaceRun(
+          updateRunRecord(
+            this.state.runs.entries.find((entry) => entry.id === runId) ?? runningRun,
+            { interactivePhase: "running" },
+            { kind: "status", message: "Staged task sent to interactive session" },
+          ),
+        )
+        this.appendInteractiveSystemLine(runId, `› staged task sent: ${runningRun.prompt.trim()}`)
+      }
 
       plan.runtime.onOutput((chunk) => {
         this.appendInteractiveOutput(runId, chunk)
@@ -1727,7 +1773,7 @@ export class TUIApp implements AppController {
       execution: result.execution ?? null,
       verification: result.verification ?? null,
       result,
-      error: result.error ?? result.execution?.error ?? null,
+      error: result.success ? null : getFailureMessage(result),
       completedAt:
         nextPhase === "review_ready" || nextPhase === "completed" || nextPhase === "failed"
           ? new Date().toISOString()
@@ -1742,7 +1788,7 @@ export class TUIApp implements AppController {
             ? nextPhase === "review_ready"
               ? "Run ready for review"
               : "Run completed"
-            : `Run failed: ${result.error ?? result.execution?.error ?? "unknown error"}`,
+            : `Run failed: ${getFailureMessage(result)}`,
         },
       ],
     }

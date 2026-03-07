@@ -86,6 +86,9 @@ function renderStagedTask(run: RunRecord, ctx: ScreenContext, width: number): st
     body.push("")
     if (session.stagedTask.sent) {
       body.push(`${THEME.success}Task sent to the session.${THEME.reset} ${THEME.dim}Use Ctrl+G for ClawdStrike controls.${THEME.reset}`)
+      if (session.toolchain === "claude") {
+        body.push(`${THEME.dim}Claude interactive responses can take a few seconds before the first visible line appears.${THEME.reset}`)
+      }
     } else if (session.focus === "staged_task") {
       body.push(`${THEME.white}Enter${THEME.reset} ${THEME.dim}send task${THEME.reset}  ${THEME.white}Tab${THEME.reset} ${THEME.dim}focus PTY${THEME.reset}`)
     } else {
@@ -101,7 +104,15 @@ function renderStagedTask(run: RunRecord, ctx: ScreenContext, width: number): st
   })
 }
 
-function renderViewport(ctx: ScreenContext, width: number, height: number): string[] {
+function isDecorativeTranscriptLine(line: string): boolean {
+  const normalized = line.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "").trim()
+  if (normalized.length === 0) {
+    return true
+  }
+  return !/[\p{L}\p{N}]/u.test(normalized)
+}
+
+function renderViewport(run: RunRecord, ctx: ScreenContext, width: number, height: number): string[] {
   const session = ctx.state.interactiveSession
   const focusLabel =
     session.focus === "pty"
@@ -115,8 +126,14 @@ function renderViewport(ctx: ScreenContext, width: number, height: number): stri
   const end = Math.max(start, scrollback.length - offset)
   const lines = scrollback.slice(start, end)
 
-  if (lines.length === 0) {
+  if (lines.length === 0 || lines.every(isDecorativeTranscriptLine)) {
     body.push(`${THEME.dim}Waiting for interactive output…${THEME.reset}`)
+    if (session.stagedTask.sent) {
+      body.push(`${THEME.dim}${run.agentLabel} is processing the staged task now.${THEME.reset}`)
+      body.push(`${THEME.dim}The first visible response can take a few seconds in interactive mode.${THEME.reset}`)
+    } else {
+      body.push(`${THEME.dim}The session is open. Send the staged task or type directly into the PTY.${THEME.reset}`)
+    }
   } else {
     body.push(...lines.map((line) => fitString(line, Math.max(12, width - 4))))
   }
@@ -228,7 +245,7 @@ export const interactiveRunScreen: Screen = {
     const viewWidth = contentWidth >= 104 ? contentWidth - railWidth - 1 : contentWidth
 
     const rail = [...renderRail(run, ctx, railWidth), "", ...renderStagedTask(run, ctx, railWidth)]
-    const view = renderViewport(ctx, viewWidth, Math.max(16, ctx.height - 8))
+    const view = renderViewport(run, ctx, viewWidth, Math.max(16, ctx.height - 8))
 
     if (contentWidth >= 104) {
       lines.push(...centerBlock(
