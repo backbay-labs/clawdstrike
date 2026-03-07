@@ -1,6 +1,9 @@
 //! Timeline event model and envelope parsing.
 
 use chrono::{DateTime, Utc};
+use clawdstrike_ocsf::fleet::{
+    FleetEventEnvelope, FleetEventKind, FleetEventSeverity, FleetEventSource, FleetEventVerdict,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -131,13 +134,6 @@ impl NormalizedVerdict {
 /// extract source-specific fields.
 pub fn parse_envelope(envelope: &Value, verify: bool) -> Option<TimelineEvent> {
     let fact = envelope.get("fact")?;
-    let schema = fact.get("schema").and_then(|s| s.as_str())?;
-
-    // Parse timestamp from issued_at
-    let issued_at = envelope.get("issued_at").and_then(|v| v.as_str())?;
-    let timestamp = DateTime::parse_from_rfc3339(issued_at)
-        .ok()?
-        .with_timezone(&Utc);
 
     // Verify signature if requested
     let signature_valid = if verify {
@@ -146,21 +142,31 @@ pub fn parse_envelope(envelope: &Value, verify: bool) -> Option<TimelineEvent> {
         None
     };
 
-    match schema {
-        "clawdstrike.sdr.fact.tetragon_event.v1" => {
-            parse_tetragon(fact, timestamp, signature_valid, envelope.clone())
-        }
-        "clawdstrike.sdr.fact.hubble_flow.v1" => {
-            parse_hubble(fact, timestamp, signature_valid, envelope.clone())
-        }
-        s if s.starts_with("clawdstrike.sdr.fact.receipt") => {
-            parse_receipt(fact, timestamp, signature_valid, envelope.clone())
-        }
-        s if s.starts_with("clawdstrike.sdr.fact.scan") => {
-            parse_scan(fact, timestamp, signature_valid, envelope.clone())
-        }
-        _ => None,
+    if let Some(schema) = fact.get("schema").and_then(|s| s.as_str()) {
+        // Parse timestamp from issued_at
+        let issued_at = envelope.get("issued_at").and_then(|v| v.as_str())?;
+        let timestamp = DateTime::parse_from_rfc3339(issued_at)
+            .ok()?
+            .with_timezone(&Utc);
+
+        return match schema {
+            "clawdstrike.sdr.fact.tetragon_event.v1" => {
+                parse_tetragon(fact, timestamp, signature_valid, envelope.clone())
+            }
+            "clawdstrike.sdr.fact.hubble_flow.v1" => {
+                parse_hubble(fact, timestamp, signature_valid, envelope.clone())
+            }
+            s if s.starts_with("clawdstrike.sdr.fact.receipt") => {
+                parse_receipt(fact, timestamp, signature_valid, envelope.clone())
+            }
+            s if s.starts_with("clawdstrike.sdr.fact.scan") => {
+                parse_scan(fact, timestamp, signature_valid, envelope.clone())
+            }
+            _ => None,
+        };
     }
+
+    parse_fleet_event(fact, signature_valid, envelope.clone())
 }
 
 /// Parse a Tetragon process event.
@@ -388,6 +394,91 @@ fn parse_scan(
         signature_valid: sig,
         raw: Some(raw),
     })
+}
+
+fn parse_fleet_event(fact: &Value, sig: Option<bool>, raw: Value) -> Option<TimelineEvent> {
+    let event: FleetEventEnvelope = serde_json::from_value(fact.clone()).ok()?;
+    let timestamp = DateTime::parse_from_rfc3339(&event.occurred_at)
+        .ok()?
+        .with_timezone(&Utc);
+
+    Some(TimelineEvent {
+        event_id: Some(event.event_id),
+        timestamp,
+        source: map_fleet_source(event.source),
+        kind: map_fleet_kind(event.kind),
+        verdict: map_fleet_verdict(event.verdict),
+        severity: event.severity.map(map_fleet_severity),
+        summary: event.summary,
+        process: event
+            .attributes
+            .get("process")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned),
+        namespace: event
+            .attributes
+            .get("namespace")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned),
+        pod: event
+            .attributes
+            .get("pod")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned),
+        action_type: event.action_type,
+        signature_valid: sig.or(event.evidence.signature_valid),
+        raw: Some(raw),
+    })
+}
+
+fn map_fleet_source(source: FleetEventSource) -> EventSource {
+    match source {
+        FleetEventSource::Receipt => EventSource::Receipt,
+        FleetEventSource::Tetragon => EventSource::Tetragon,
+        FleetEventSource::Hubble => EventSource::Hubble,
+        FleetEventSource::Scan => EventSource::Scan,
+        FleetEventSource::Response => EventSource::Response,
+        FleetEventSource::Directory => EventSource::Directory,
+        FleetEventSource::Detection => EventSource::Detection,
+    }
+}
+
+fn map_fleet_kind(kind: FleetEventKind) -> TimelineEventKind {
+    match kind {
+        FleetEventKind::GuardDecision => TimelineEventKind::GuardDecision,
+        FleetEventKind::ProcessExec => TimelineEventKind::ProcessExec,
+        FleetEventKind::ProcessExit => TimelineEventKind::ProcessExit,
+        FleetEventKind::ProcessKprobe => TimelineEventKind::ProcessKprobe,
+        FleetEventKind::NetworkFlow => TimelineEventKind::NetworkFlow,
+        FleetEventKind::ScanResult => TimelineEventKind::ScanResult,
+        FleetEventKind::JoinCompleted => TimelineEventKind::JoinCompleted,
+        FleetEventKind::PrincipalStateChanged => TimelineEventKind::PrincipalStateChanged,
+        FleetEventKind::ResponseActionCreated => TimelineEventKind::ResponseActionCreated,
+        FleetEventKind::ResponseActionUpdated => TimelineEventKind::ResponseActionUpdated,
+        FleetEventKind::DetectionFired => TimelineEventKind::DetectionFired,
+    }
+}
+
+fn map_fleet_verdict(verdict: Option<FleetEventVerdict>) -> NormalizedVerdict {
+    match verdict.unwrap_or(FleetEventVerdict::None) {
+        FleetEventVerdict::Allow => NormalizedVerdict::Allow,
+        FleetEventVerdict::Deny => NormalizedVerdict::Deny,
+        FleetEventVerdict::Warn => NormalizedVerdict::Warn,
+        FleetEventVerdict::None => NormalizedVerdict::None,
+        FleetEventVerdict::Forwarded => NormalizedVerdict::Forwarded,
+        FleetEventVerdict::Dropped => NormalizedVerdict::Dropped,
+    }
+}
+
+fn map_fleet_severity(severity: FleetEventSeverity) -> String {
+    match severity {
+        FleetEventSeverity::Info => "info",
+        FleetEventSeverity::Low => "low",
+        FleetEventSeverity::Medium => "medium",
+        FleetEventSeverity::High => "high",
+        FleetEventSeverity::Critical => "critical",
+    }
+    .to_string()
 }
 
 /// Merge multiple event lists into a single timeline, sorted by timestamp ascending.
@@ -648,6 +739,47 @@ mod tests {
         assert_eq!(event.verdict, NormalizedVerdict::Deny);
         assert_eq!(event.severity.as_deref(), Some("high"));
         assert!(event.summary.contains("vulnerability"));
+    }
+
+    #[test]
+    fn parse_fleet_control_plane_envelope() {
+        let envelope = json!({
+            "issued_at": "2026-03-06T12:00:30Z",
+            "issuer": "spiffe://tenant/acme",
+            "fact": {
+                "eventId": "evt-1",
+                "tenantId": "00000000-0000-0000-0000-000000000001",
+                "source": "response",
+                "kind": "response_action_created",
+                "occurredAt": "2026-03-06T12:00:00Z",
+                "ingestedAt": "2026-03-06T12:00:01Z",
+                "severity": "medium",
+                "verdict": "warn",
+                "summary": "response action created",
+                "actionType": "set_posture",
+                "evidence": {
+                    "rawRef": "hunt-envelope:evt-1",
+                    "signatureValid": true
+                },
+                "attributes": {
+                    "process": "/usr/bin/curl",
+                    "namespace": "default",
+                    "pod": "agent-1"
+                }
+            }
+        });
+
+        let event = parse_envelope(&envelope, false).unwrap();
+        assert_eq!(event.event_id.as_deref(), Some("evt-1"));
+        assert_eq!(event.source, EventSource::Response);
+        assert_eq!(event.kind, TimelineEventKind::ResponseActionCreated);
+        assert_eq!(event.verdict, NormalizedVerdict::Warn);
+        assert_eq!(event.severity.as_deref(), Some("medium"));
+        assert_eq!(event.action_type.as_deref(), Some("set_posture"));
+        assert_eq!(event.process.as_deref(), Some("/usr/bin/curl"));
+        assert_eq!(event.namespace.as_deref(), Some("default"));
+        assert_eq!(event.pod.as_deref(), Some("agent-1"));
+        assert_eq!(event.signature_valid, Some(true));
     }
 
     #[test]

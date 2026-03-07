@@ -5,6 +5,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::timeline::{NormalizedVerdict, TimelineEvent};
 
+const ADAPTIVE_INGRESS_STREAM_NAME: &str = "clawdstrike_adaptive_ingress";
+const ADAPTIVE_INGRESS_SUBJECT_FILTER: &str = "tenant-*.>";
+
 /// Source system for events.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -47,7 +50,7 @@ impl EventSource {
             Self::Hubble => "CLAWDSTRIKE_HUBBLE",
             Self::Receipt => "CLAWDSTRIKE_RECEIPTS",
             Self::Scan => "CLAWDSTRIKE_SCANS",
-            Self::Response | Self::Directory | Self::Detection => "clawdstrike_adaptive_ingress",
+            Self::Response | Self::Directory | Self::Detection => ADAPTIVE_INGRESS_STREAM_NAME,
         }
     }
 
@@ -58,7 +61,7 @@ impl EventSource {
             Self::Hubble => "clawdstrike.sdr.fact.hubble_flow.>",
             Self::Receipt => "clawdstrike.sdr.fact.receipt.>",
             Self::Scan => "clawdstrike.sdr.fact.scan.>",
-            Self::Response | Self::Directory | Self::Detection => "tenant-*.>",
+            Self::Response | Self::Directory | Self::Detection => ADAPTIVE_INGRESS_SUBJECT_FILTER,
         }
     }
 
@@ -345,6 +348,10 @@ mod tests {
         assert_eq!(EventSource::Hubble.stream_name(), "CLAWDSTRIKE_HUBBLE");
         assert_eq!(EventSource::Receipt.stream_name(), "CLAWDSTRIKE_RECEIPTS");
         assert_eq!(EventSource::Scan.stream_name(), "CLAWDSTRIKE_SCANS");
+        assert_eq!(
+            EventSource::Response.stream_name(),
+            ADAPTIVE_INGRESS_STREAM_NAME
+        );
     }
 
     #[test]
@@ -356,6 +363,10 @@ mod tests {
         assert_eq!(
             EventSource::Hubble.subject_filter(),
             "clawdstrike.sdr.fact.hubble_flow.>"
+        );
+        assert_eq!(
+            EventSource::Directory.subject_filter(),
+            ADAPTIVE_INGRESS_SUBJECT_FILTER
         );
     }
 
