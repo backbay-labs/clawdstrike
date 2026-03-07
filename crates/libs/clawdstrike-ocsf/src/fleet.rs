@@ -117,8 +117,15 @@ pub struct FleetEventEnvelope {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target: Option<FleetEventTarget>,
     pub evidence: FleetEventEvidence,
-    #[serde(default, skip_serializing_if = "value_is_empty_object")]
+    #[serde(
+        default = "default_empty_object",
+        skip_serializing_if = "value_is_empty_object"
+    )]
     pub attributes: Value,
+}
+
+pub fn default_empty_object() -> Value {
+    Value::Object(Default::default())
 }
 
 pub fn value_is_empty_object(value: &Value) -> bool {
@@ -206,5 +213,38 @@ mod tests {
         assert_eq!(json["source"], "tetragon");
         assert_eq!(json["kind"], "process_exec");
         assert_eq!(json["evidence"]["rawRef"], "hunt-envelope:evt-1");
+    }
+
+    #[test]
+    fn fleet_event_envelope_omits_absent_attributes() {
+        let event = FleetEventEnvelope {
+            event_id: "evt-2".to_string(),
+            tenant_id: "tenant-1".to_string(),
+            source: FleetEventSource::Receipt,
+            kind: FleetEventKind::GuardDecision,
+            occurred_at: "2026-03-06T12:00:00Z".to_string(),
+            ingested_at: "2026-03-06T12:00:01Z".to_string(),
+            severity: None,
+            verdict: None,
+            summary: "receipt".to_string(),
+            action_type: None,
+            principal: None,
+            session_id: None,
+            grant_id: None,
+            response_action_id: None,
+            detection_ids: Vec::new(),
+            target: None,
+            evidence: FleetEventEvidence {
+                raw_ref: "hunt-envelope:evt-2".to_string(),
+                envelope_hash: None,
+                issuer: None,
+                schema_name: None,
+                signature_valid: None,
+            },
+            attributes: default_empty_object(),
+        };
+
+        let json = serde_json::to_value(&event).expect("serialize event");
+        assert!(json.get("attributes").is_none());
     }
 }

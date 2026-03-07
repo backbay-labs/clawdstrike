@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS swarms (
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT swarms_tenant_id_id_key UNIQUE (tenant_id, id),
     UNIQUE (tenant_id, slug)
 );
 
@@ -20,13 +21,17 @@ ON swarms(tenant_id, created_at DESC);
 CREATE TABLE IF NOT EXISTS projects (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    swarm_id UUID REFERENCES swarms(id) ON DELETE SET NULL,
+    swarm_id UUID,
     slug TEXT NOT NULL,
     name TEXT NOT NULL,
     environment TEXT CHECK (environment IN ('dev', 'staging', 'prod', 'custom')),
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT projects_tenant_swarm_fk
+        FOREIGN KEY (tenant_id, swarm_id)
+        REFERENCES swarms(tenant_id, id)
+        ON DELETE SET NULL (swarm_id),
     UNIQUE (tenant_id, slug)
 );
 
@@ -84,6 +89,7 @@ CREATE TABLE IF NOT EXISTS principals (
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT principals_tenant_id_id_key UNIQUE (tenant_id, id),
     UNIQUE (tenant_id, principal_type, stable_ref)
 );
 
@@ -100,12 +106,16 @@ WHERE liveness_state IS NOT NULL;
 CREATE TABLE IF NOT EXISTS principal_memberships (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    principal_id UUID NOT NULL REFERENCES principals(id) ON DELETE CASCADE,
+    principal_id UUID NOT NULL,
     target_kind TEXT NOT NULL CHECK (target_kind IN ('swarm', 'project', 'capability_group')),
     target_id UUID NOT NULL,
     role TEXT,
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT principal_memberships_principal_tenant_fk
+        FOREIGN KEY (tenant_id, principal_id)
+        REFERENCES principals(tenant_id, id)
+        ON DELETE CASCADE,
     UNIQUE (tenant_id, principal_id, target_kind, target_id)
 );
 
@@ -120,8 +130,8 @@ ON principal_memberships(tenant_id, target_kind, target_id, created_at DESC);
 CREATE TABLE IF NOT EXISTS grants (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    issuer_principal_id UUID NOT NULL REFERENCES principals(id) ON DELETE CASCADE,
-    subject_principal_id UUID NOT NULL REFERENCES principals(id) ON DELETE CASCADE,
+    issuer_principal_id UUID NOT NULL,
+    subject_principal_id UUID NOT NULL,
     grant_type TEXT NOT NULL CHECK (grant_type IN ('delegation', 'approval', 'session_override')),
     capabilities JSONB NOT NULL DEFAULT '[]'::jsonb,
     status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'expired', 'revoked')),
@@ -130,7 +140,16 @@ CREATE TABLE IF NOT EXISTS grants (
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     expires_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT grants_tenant_id_id_key UNIQUE (tenant_id, id),
+    CONSTRAINT grants_issuer_principal_tenant_fk
+        FOREIGN KEY (tenant_id, issuer_principal_id)
+        REFERENCES principals(tenant_id, id)
+        ON DELETE CASCADE,
+    CONSTRAINT grants_subject_principal_tenant_fk
+        FOREIGN KEY (tenant_id, subject_principal_id)
+        REFERENCES principals(tenant_id, id)
+        ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_grants_tenant_subject
@@ -142,14 +161,26 @@ ON grants(tenant_id, status, created_at DESC);
 CREATE TABLE IF NOT EXISTS delegation_edges (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    parent_principal_id UUID NOT NULL REFERENCES principals(id) ON DELETE CASCADE,
-    child_principal_id UUID NOT NULL REFERENCES principals(id) ON DELETE CASCADE,
-    grant_id UUID NOT NULL REFERENCES grants(id) ON DELETE CASCADE,
+    parent_principal_id UUID NOT NULL,
+    child_principal_id UUID NOT NULL,
+    grant_id UUID NOT NULL,
     token_id TEXT,
     issued_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     expires_at TIMESTAMPTZ,
     revoked_at TIMESTAMPTZ,
-    metadata JSONB NOT NULL DEFAULT '{}'::jsonb
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    CONSTRAINT delegation_edges_parent_principal_tenant_fk
+        FOREIGN KEY (tenant_id, parent_principal_id)
+        REFERENCES principals(tenant_id, id)
+        ON DELETE CASCADE,
+    CONSTRAINT delegation_edges_child_principal_tenant_fk
+        FOREIGN KEY (tenant_id, child_principal_id)
+        REFERENCES principals(tenant_id, id)
+        ON DELETE CASCADE,
+    CONSTRAINT delegation_edges_grant_tenant_fk
+        FOREIGN KEY (tenant_id, grant_id)
+        REFERENCES grants(tenant_id, id)
+        ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_delegation_edges_parent

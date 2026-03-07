@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use clawdstrike_ocsf::fleet::{
-    value_is_empty_object, FleetEventEnvelope, FleetEventSeverity, FleetEventVerdict,
+    default_empty_object, value_is_empty_object, FleetEventEnvelope, FleetEventSeverity,
+    FleetEventVerdict,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -62,7 +63,10 @@ pub struct HuntEvent {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub signature_valid: Option<bool>,
     pub raw_ref: String,
-    #[serde(default, skip_serializing_if = "value_is_empty_object")]
+    #[serde(
+        default = "default_empty_object",
+        skip_serializing_if = "value_is_empty_object"
+    )]
     pub attributes: Value,
 }
 
@@ -192,7 +196,13 @@ pub struct HuntQueryRequest {
 }
 
 impl HuntQueryRequest {
-    pub fn to_hunt_query(&self) -> HuntQuery {
+    /// Builds the shared hunt-query primitive consumed by the generic query layer.
+    ///
+    /// Fleet-specific identifiers such as `principal_id`, `session_id`,
+    /// `endpoint_agent_id`, `runtime_agent_id`, and `cursor` are intentionally
+    /// applied by the control-api fleet read model instead of the generic
+    /// `HuntQuery` type.
+    pub fn to_core_hunt_query(&self) -> HuntQuery {
         HuntQuery {
             sources: self.sources.clone().unwrap_or_default(),
             verdict: self.verdict,
@@ -366,7 +376,7 @@ mod tests {
             cursor: Some("cursor-1".to_string()),
         };
 
-        let query = request.to_hunt_query();
+        let query = request.to_core_hunt_query();
         assert_eq!(query.sources, vec![EventSource::Tetragon]);
         assert_eq!(query.verdict, Some(QueryVerdict::Deny));
         assert_eq!(query.limit, 25);
@@ -381,9 +391,29 @@ mod tests {
             ..Default::default()
         };
 
-        let query = request.to_hunt_query();
+        let query = request.to_core_hunt_query();
         assert_eq!(query.limit, 500);
         assert_eq!(request.limit_or_default(), 500);
+    }
+
+    #[test]
+    fn fleet_specific_filters_remain_on_request_boundary() {
+        let request = HuntQueryRequest {
+            principal_id: Some("principal-1".to_string()),
+            session_id: Some("session-1".to_string()),
+            endpoint_agent_id: Some("endpoint-1".to_string()),
+            runtime_agent_id: Some("runtime-1".to_string()),
+            cursor: Some("cursor-1".to_string()),
+            ..Default::default()
+        };
+
+        let query = request.to_core_hunt_query();
+        assert!(query.entity.is_none());
+        assert_eq!(request.principal_id.as_deref(), Some("principal-1"));
+        assert_eq!(request.session_id.as_deref(), Some("session-1"));
+        assert_eq!(request.endpoint_agent_id.as_deref(), Some("endpoint-1"));
+        assert_eq!(request.runtime_agent_id.as_deref(), Some("runtime-1"));
+        assert_eq!(request.cursor.as_deref(), Some("cursor-1"));
     }
 
     #[test]
@@ -510,5 +540,42 @@ mod tests {
         assert_eq!(event.severity.as_deref(), Some("high"));
         assert_eq!(event.endpoint_agent_id.as_deref(), Some("endpoint-1"));
         assert_eq!(event.process.as_deref(), Some("/usr/bin/curl"));
+    }
+
+    #[test]
+    fn hunt_event_omits_absent_attributes() {
+        let event = HuntEvent {
+            event_id: "evt-4".to_string(),
+            tenant_id: Uuid::nil(),
+            source: HuntEventSource::Receipt,
+            kind: HuntEventKind::GuardDecision,
+            timestamp: Utc.with_ymd_and_hms(2025, 3, 6, 12, 0, 0).unwrap(),
+            verdict: NormalizedVerdict::None,
+            severity: None,
+            summary: "receipt".to_string(),
+            action_type: None,
+            process: None,
+            namespace: None,
+            pod: None,
+            session_id: None,
+            endpoint_agent_id: None,
+            runtime_agent_id: None,
+            principal_id: None,
+            grant_id: None,
+            response_action_id: None,
+            detection_ids: Vec::new(),
+            target_kind: None,
+            target_id: None,
+            target_name: None,
+            envelope_hash: None,
+            issuer: None,
+            schema_name: None,
+            signature_valid: None,
+            raw_ref: "hunt-envelope:evt-4".to_string(),
+            attributes: default_empty_object(),
+        };
+
+        let json = serde_json::to_value(&event).expect("serialize event");
+        assert!(json.get("attributes").is_none());
     }
 }

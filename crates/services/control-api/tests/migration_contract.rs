@@ -74,6 +74,17 @@ fn fleet_directory_migrations_define_core_tables_and_backfills() {
         "006 migration must create principal membership table"
     );
     assert!(
+        core_sql.contains("projects_tenant_swarm_fk")
+            && core_sql.contains("REFERENCES swarms(tenant_id, id)"),
+        "006 migration must scope project-to-swarm links by tenant"
+    );
+    assert!(
+        core_sql.contains("grants_issuer_principal_tenant_fk")
+            && core_sql.contains("grants_subject_principal_tenant_fk")
+            && core_sql.contains("REFERENCES principals(tenant_id, id)"),
+        "006 migration must scope grant principal links by tenant"
+    );
+    assert!(
         core_sql.contains("CREATE TABLE IF NOT EXISTS delegation_edges"),
         "006 migration must create delegation edge table"
     );
