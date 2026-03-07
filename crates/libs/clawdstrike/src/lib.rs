@@ -50,6 +50,7 @@
 pub mod hygiene;
 pub mod instruction_hierarchy;
 pub mod jailbreak;
+pub mod origin;
 pub mod output_sanitizer;
 pub mod spider_sense;
 pub mod text_utils;
@@ -77,6 +78,9 @@ pub use output_sanitizer::{
     SanitizationResult, SanitizationStream, SensitiveCategory, SensitiveDataFinding, Span,
     StreamingConfig,
 };
+pub use origin::{
+    ActorType, OriginContext, OriginProvider, ProvenanceConfidence, SpaceType, Visibility,
+};
 pub use spider_sense::{
     PatternDb, PatternEntry, PatternMatch, ScreeningResult, ScreeningVerdict, SpiderSenseDetector,
     SpiderSenseDetectorConfig,
@@ -88,6 +92,8 @@ pub use spider_sense::{
 
 #[cfg(feature = "full")]
 pub mod async_guards;
+#[cfg(feature = "full")]
+pub mod enclave;
 #[cfg(feature = "full")]
 pub mod curator_config;
 #[cfg(feature = "full")]
@@ -125,6 +131,8 @@ pub mod spine_bridge;
 #[cfg(feature = "full")]
 pub mod watermarking;
 
+#[cfg(feature = "full")]
+pub use enclave::{EnclaveResolver, ResolvedEnclave};
 #[cfg(feature = "full")]
 pub use curator_config::{
     default_config_path, CuratorConfig, CuratorConfigFile, CuratorEntry, CuratorTrustSet,

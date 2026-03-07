@@ -59,6 +59,10 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 use crate::identity::{IdentityPrincipal, OrganizationContext, RequestContext, SessionContext};
+use crate::origin::OriginContext;
+
+#[cfg(feature = "full")]
+use crate::enclave::ResolvedEnclave;
 
 /// Severity level for violations
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -190,6 +194,11 @@ pub struct GuardContext {
     pub permissions: Option<Vec<String>>,
     /// Session context snapshot (control-plane view)
     pub session: Option<SessionContext>,
+    /// Origin context (where this action was triggered from).
+    pub origin: Option<OriginContext>,
+    /// Resolved enclave profile (result of origin resolution).
+    #[cfg(feature = "full")]
+    pub enclave: Option<ResolvedEnclave>,
 }
 
 impl GuardContext {
@@ -251,6 +260,19 @@ impl GuardContext {
         self.session = Some(session);
         self
     }
+
+    /// Set the origin context.
+    pub fn with_origin(mut self, origin: OriginContext) -> Self {
+        self.origin = Some(origin);
+        self
+    }
+
+    /// Set the resolved enclave.
+    #[cfg(feature = "full")]
+    pub fn with_enclave(mut self, enclave: ResolvedEnclave) -> Self {
+        self.enclave = Some(enclave);
+        self
+    }
 }
 
 /// Action type for guard checks
@@ -270,6 +292,37 @@ pub enum GuardAction<'a> {
     Patch(&'a str, &'a str),
     /// Generic action with custom type
     Custom(&'a str, &'a serde_json::Value),
+}
+
+// ===========================================================================
+// Tests
+// ===========================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::origin::{OriginContext, OriginProvider};
+
+    #[test]
+    fn test_guard_context_with_origin() {
+        let origin = OriginContext {
+            provider: OriginProvider::Slack,
+            space_id: Some("C123".to_string()),
+            ..Default::default()
+        };
+
+        let ctx = GuardContext::new().with_origin(origin);
+        assert!(ctx.origin.is_some());
+        let origin_ref = ctx.origin.as_ref().expect("origin should be set");
+        assert_eq!(origin_ref.provider, OriginProvider::Slack);
+        assert_eq!(origin_ref.space_id.as_deref(), Some("C123"));
+    }
+
+    #[test]
+    fn test_guard_context_default_origin_is_none() {
+        let ctx = GuardContext::new();
+        assert!(ctx.origin.is_none());
+    }
 }
 
 /// Trait for security guards

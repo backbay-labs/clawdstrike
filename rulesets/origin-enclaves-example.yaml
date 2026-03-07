@@ -1,0 +1,160 @@
+version: "1.4.0"
+name: "origin-enclaves-example"
+description: "Example policy demonstrating origin-aware enforcement with enclave profiles"
+
+extends: "default"
+
+guards:
+  mcp_tool:
+    default_action: block
+  egress_allowlist:
+    enabled: true
+    allow:
+      - "*.internal.corp"
+
+origins:
+  default_behavior: "deny"
+  profiles:
+    - id: "incident-room"
+      match_rules:
+        provider: "slack"
+        tags: ["incident"]
+        visibility: "internal"
+      posture: "elevated"
+      mcp:
+        default_action: allow
+        block:
+          - "deploy_*"
+        require_confirmation:
+          - "rollback_*"
+      egress:
+        enabled: true
+        allow:
+          - "*.internal.corp"
+          - "pagerduty.com"
+          - "statuspage.io"
+      data:
+        allow_external_sharing: false
+        redact_before_send: false
+        block_sensitive_outputs: false
+      budgets:
+        mcp_tool_calls: 200
+        egress_calls: 50
+        shell_commands: 30
+      bridge_policy:
+        allow_cross_origin: true
+        require_approval: false
+        allowed_targets:
+          - provider: "github"
+            space_type: "pull_request"
+      explanation: "High-trust internal incident response — broad tool access, no deploy"
+
+    - id: "external-chat"
+      match_rules:
+        visibility: "external_shared"
+      posture: "restricted"
+      mcp:
+        default_action: block
+        allow:
+          - "docs.*"
+          - "search.query"
+      egress:
+        enabled: true
+        allow:
+          - "docs.internal.corp"
+      data:
+        allow_external_sharing: false
+        redact_before_send: true
+        block_sensitive_outputs: true
+      budgets:
+        mcp_tool_calls: 20
+        egress_calls: 5
+        shell_commands: 0
+      explanation: "Minimal access for channels with external participants"
+
+    - id: "code-review"
+      match_rules:
+        provider: "github"
+        space_type: "pull_request"
+      posture: "standard"
+      mcp:
+        default_action: allow
+        block:
+          - "deploy_*"
+          - "delete_*"
+      egress:
+        enabled: true
+        allow:
+          - "*.internal.corp"
+          - "api.github.com"
+      data:
+        allow_external_sharing: false
+        redact_before_send: false
+        block_sensitive_outputs: false
+      budgets:
+        mcp_tool_calls: 100
+        egress_calls: 30
+      bridge_policy:
+        allow_cross_origin: true
+        require_approval: true
+        allowed_targets:
+          - tags: ["engineering"]
+            provider: "slack"
+      explanation: "Code review context — broad access, no destructive ops"
+
+    - id: "internal-default"
+      match_rules:
+        visibility: "internal"
+      mcp:
+        default_action: block
+      data:
+        allow_external_sharing: false
+        redact_before_send: false
+        block_sensitive_outputs: false
+      budgets:
+        mcp_tool_calls: 50
+        egress_calls: 10
+        shell_commands: 5
+      explanation: "Catch-all for internal channels without a specific profile"
+
+posture:
+  initial: "standard"
+  states:
+    standard:
+      capabilities:
+        - file_access
+        - file_write
+        - egress
+        - shell
+        - mcp_tool
+        - patch
+      budgets:
+        mcp_tool_calls: 100
+    elevated:
+      capabilities:
+        - file_access
+        - file_write
+        - egress
+        - shell
+        - mcp_tool
+        - patch
+      budgets:
+        mcp_tool_calls: 200
+        shell_commands: 50
+    restricted:
+      capabilities:
+        - file_access
+        - egress
+        - mcp_tool
+      budgets:
+        mcp_tool_calls: 20
+  transitions:
+    - from: "standard"
+      to: "elevated"
+      on: user_approval
+    - from: "standard"
+      to: "restricted"
+      on: critical_violation
+    - from: "elevated"
+      to: "restricted"
+      on: critical_violation
