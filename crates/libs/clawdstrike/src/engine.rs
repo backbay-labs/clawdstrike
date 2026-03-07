@@ -901,6 +901,10 @@ impl HushEngine {
                 Ok(resolved) => {
                     // Pre-populate enclave on context so check_action_report
                     // won't need to resolve again.
+                    let mut state = self.state.write().await;
+                    state.last_origin = Some(origin.clone());
+                    state.last_resolved_enclave = Some(resolved.clone());
+                    drop(state);
                     posture_context.enclave = Some(resolved);
                 }
                 Err(e) => {
