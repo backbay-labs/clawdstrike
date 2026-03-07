@@ -360,6 +360,29 @@ impl HushEngine {
         Ok(self.check_action_report(action, context).await?.overall)
     }
 
+    /// Record a violation in engine state and return a single-guard deny report.
+    ///
+    /// This is a shared helper for the origin-requirement, cross-origin, and
+    /// enclave MCP pre-check fast paths that all follow the same pattern:
+    /// increment counters → push ViolationRef → return GuardReport.
+    async fn deny_early(&self, result: GuardResult) -> GuardReport {
+        let mut state = self.state.write().await;
+        state.action_count += 1;
+        state.violation_count += 1;
+        state.last_evaluation_path = None;
+        state.violations.push(ViolationRef {
+            guard: result.guard.clone(),
+            severity: format!("{:?}", result.severity),
+            message: result.message.clone(),
+            action: None,
+        });
+        GuardReport {
+            overall: result.clone(),
+            per_guard: vec![result],
+            evaluation_path: None,
+        }
+    }
+
     /// Check any action and return per-guard evidence plus the aggregated verdict.
     pub async fn check_action_report(
         &self,
@@ -386,26 +409,11 @@ impl HushEngine {
                 if !session_exists {
                     match origins_config.effective_default_behavior() {
                         OriginDefaultBehavior::Deny => {
-                            let result = GuardResult::block(
+                            return Ok(self.deny_early(GuardResult::block(
                                 "origin_required",
                                 Severity::Error,
                                 "origin context required: policy has origins block but no origin was provided".to_string(),
-                            );
-                            let mut state = self.state.write().await;
-                            state.action_count += 1;
-                            state.violation_count += 1;
-                            state.last_evaluation_path = None;
-                            state.violations.push(ViolationRef {
-                                guard: result.guard.clone(),
-                                severity: format!("{:?}", result.severity),
-                                message: result.message.clone(),
-                                action: None,
-                            });
-                            return Ok(GuardReport {
-                                overall: result.clone(),
-                                per_guard: vec![result],
-                                evaluation_path: None,
-                            });
+                            )).await);
                         }
                         OriginDefaultBehavior::MinimalProfile => {
                             debug!("Origins policy present but no origin context — applying minimal_profile fallback");
@@ -468,26 +476,11 @@ impl HushEngine {
                 let state = self.state.read().await;
                 if state.session_origin.is_some() && effective_context.origin.is_none() {
                     drop(state);
-                    let result = GuardResult::block(
-                    "cross_origin",
-                    Severity::Error,
-                    "origin context required: session has an established origin but this check omits it".to_string(),
-                );
-                    let mut state = self.state.write().await;
-                    state.action_count += 1;
-                    state.violation_count += 1;
-                    state.last_evaluation_path = None;
-                    state.violations.push(ViolationRef {
-                        guard: result.guard.clone(),
-                        severity: format!("{:?}", result.severity),
-                        message: result.message.clone(),
-                        action: None,
-                    });
-                    return Ok(GuardReport {
-                        overall: result.clone(),
-                        per_guard: vec![result],
-                        evaluation_path: None,
-                    });
+                    return Ok(self.deny_early(GuardResult::block(
+                        "cross_origin",
+                        Severity::Error,
+                        "origin context required: session has an established origin but this check omits it".to_string(),
+                    )).await);
                 }
             }
 
@@ -520,52 +513,26 @@ impl HushEngine {
                                 debug!("Cross-origin bridge allowed");
                             }
                             BridgeCheckResult::RequireApproval => {
-                                let result = GuardResult::block(
-                                    "cross_origin",
-                                    Severity::Warning,
-                                    format!(
+                                return Ok(self
+                                    .deny_early(GuardResult::block(
+                                        "cross_origin",
+                                        Severity::Warning,
+                                        format!(
                                         "cross-origin transition requires approval (from {} to {})",
                                         format_origin_brief(&session_origin_snapshot),
                                         format_origin_brief(origin),
                                     ),
-                                );
-                                let mut state = self.state.write().await;
-                                state.action_count += 1;
-                                state.violation_count += 1;
-                                state.last_evaluation_path = None;
-                                state.violations.push(ViolationRef {
-                                    guard: result.guard.clone(),
-                                    severity: format!("{:?}", result.severity),
-                                    message: result.message.clone(),
-                                    action: None,
-                                });
-                                return Ok(GuardReport {
-                                    overall: result.clone(),
-                                    per_guard: vec![result],
-                                    evaluation_path: None,
-                                });
+                                    ))
+                                    .await);
                             }
                             BridgeCheckResult::Deny(reason) => {
-                                let result = GuardResult::block(
-                                    "cross_origin",
-                                    Severity::Error,
-                                    format!("cross-origin transition denied: {}", reason),
-                                );
-                                let mut state = self.state.write().await;
-                                state.action_count += 1;
-                                state.violation_count += 1;
-                                state.last_evaluation_path = None;
-                                state.violations.push(ViolationRef {
-                                    guard: result.guard.clone(),
-                                    severity: format!("{:?}", result.severity),
-                                    message: result.message.clone(),
-                                    action: None,
-                                });
-                                return Ok(GuardReport {
-                                    overall: result.clone(),
-                                    per_guard: vec![result],
-                                    evaluation_path: None,
-                                });
+                                return Ok(self
+                                    .deny_early(GuardResult::block(
+                                        "cross_origin",
+                                        Severity::Error,
+                                        format!("cross-origin transition denied: {}", reason),
+                                    ))
+                                    .await);
                             }
                         }
                     } else {
@@ -602,58 +569,32 @@ impl HushEngine {
 
                         // 1. Block list takes precedence
                         if enclave_mcp.block.iter().any(|b| tool_matches(tool_name, b)) {
-                            let result = GuardResult::block(
-                                "enclave",
-                                Severity::Error,
-                                format!(
-                                    "tool '{}' blocked by enclave profile '{}'",
-                                    tool_name, profile_label
-                                ),
-                            );
-                            let mut state = self.state.write().await;
-                            state.action_count += 1;
-                            state.violation_count += 1;
-                            state.last_evaluation_path = None;
-                            state.violations.push(ViolationRef {
-                                guard: result.guard.clone(),
-                                severity: format!("{:?}", result.severity),
-                                message: result.message.clone(),
-                                action: None,
-                            });
-                            return Ok(GuardReport {
-                                overall: result.clone(),
-                                per_guard: vec![result],
-                                evaluation_path: None,
-                            });
+                            return Ok(self
+                                .deny_early(GuardResult::block(
+                                    "enclave",
+                                    Severity::Error,
+                                    format!(
+                                        "tool '{}' blocked by enclave profile '{}'",
+                                        tool_name, profile_label
+                                    ),
+                                ))
+                                .await);
                         }
 
                         // 2. If allow list is non-empty, it's an allowlist: reject tools not in it
                         if !enclave_mcp.allow.is_empty()
                             && !enclave_mcp.allow.iter().any(|a| tool_matches(tool_name, a))
                         {
-                            let result = GuardResult::block(
-                                "enclave",
-                                Severity::Error,
-                                format!(
-                                    "tool '{}' not in enclave allow list for profile '{}'",
-                                    tool_name, profile_label
-                                ),
-                            );
-                            let mut state = self.state.write().await;
-                            state.action_count += 1;
-                            state.violation_count += 1;
-                            state.last_evaluation_path = None;
-                            state.violations.push(ViolationRef {
-                                guard: result.guard.clone(),
-                                severity: format!("{:?}", result.severity),
-                                message: result.message.clone(),
-                                action: None,
-                            });
-                            return Ok(GuardReport {
-                                overall: result.clone(),
-                                per_guard: vec![result],
-                                evaluation_path: None,
-                            });
+                            return Ok(self
+                                .deny_early(GuardResult::block(
+                                    "enclave",
+                                    Severity::Error,
+                                    format!(
+                                        "tool '{}' not in enclave allow list for profile '{}'",
+                                        tool_name, profile_label
+                                    ),
+                                ))
+                                .await);
                         }
 
                         // 3. require_confirmation: checked before default_action
@@ -664,57 +605,31 @@ impl HushEngine {
                             .iter()
                             .any(|r| tool_matches(tool_name, r))
                         {
-                            let result = GuardResult::block(
-                                "enclave",
-                                Severity::Warning,
-                                format!(
-                                    "tool '{}' requires confirmation per enclave profile '{}'",
-                                    tool_name, profile_label
-                                ),
-                            );
-                            let mut state = self.state.write().await;
-                            state.action_count += 1;
-                            state.violation_count += 1;
-                            state.last_evaluation_path = None;
-                            state.violations.push(ViolationRef {
-                                guard: result.guard.clone(),
-                                severity: format!("{:?}", result.severity),
-                                message: result.message.clone(),
-                                action: None,
-                            });
-                            return Ok(GuardReport {
-                                overall: result.clone(),
-                                per_guard: vec![result],
-                                evaluation_path: None,
-                            });
+                            return Ok(self
+                                .deny_early(GuardResult::block(
+                                    "enclave",
+                                    Severity::Warning,
+                                    format!(
+                                        "tool '{}' requires confirmation per enclave profile '{}'",
+                                        tool_name, profile_label
+                                    ),
+                                ))
+                                .await);
                         }
 
                         // 4. default_action=Block when allow list is empty
                         if enclave_mcp.allow.is_empty() {
                             if let Some(McpDefaultAction::Block) = enclave_mcp.default_action {
-                                let result = GuardResult::block(
-                                    "enclave",
-                                    Severity::Error,
-                                    format!(
-                                        "tool '{}' blocked by default_action for profile '{}'",
-                                        tool_name, profile_label
-                                    ),
-                                );
-                                let mut state = self.state.write().await;
-                                state.action_count += 1;
-                                state.violation_count += 1;
-                                state.last_evaluation_path = None;
-                                state.violations.push(ViolationRef {
-                                    guard: result.guard.clone(),
-                                    severity: format!("{:?}", result.severity),
-                                    message: result.message.clone(),
-                                    action: None,
-                                });
-                                return Ok(GuardReport {
-                                    overall: result.clone(),
-                                    per_guard: vec![result],
-                                    evaluation_path: None,
-                                });
+                                return Ok(self
+                                    .deny_early(GuardResult::block(
+                                        "enclave",
+                                        Severity::Error,
+                                        format!(
+                                            "tool '{}' blocked by default_action for profile '{}'",
+                                            tool_name, profile_label
+                                        ),
+                                    ))
+                                    .await);
                             }
                         }
                     } // end enabled check
