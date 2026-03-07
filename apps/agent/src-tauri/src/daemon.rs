@@ -5,6 +5,7 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -872,8 +873,41 @@ pub struct AuditFlushOutcome {
     pub partial_rejection: bool,
 }
 
+#[derive(Debug, Clone)]
+pub struct AuditFlushProgressError {
+    pub outcome: AuditFlushOutcome,
+    pub message: String,
+}
+
+impl fmt::Display for AuditFlushProgressError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} (accepted={}, duplicates={}, rejected={})",
+            self.message, self.outcome.accepted, self.outcome.duplicates, self.outcome.rejected
+        )
+    }
+}
+
+impl std::error::Error for AuditFlushProgressError {}
+
 const MAX_AUDIT_QUEUE_LEN: usize = 10_000;
 const MAX_AUDIT_BATCH_LEN: usize = 5_000;
+
+fn audit_flush_has_prior_progress(outcome: AuditFlushOutcome) -> bool {
+    outcome.accepted > 0 || outcome.duplicates > 0 || outcome.rejected > 0
+}
+
+fn audit_flush_progress_error(
+    outcome: AuditFlushOutcome,
+    message: impl Into<String>,
+) -> anyhow::Error {
+    AuditFlushProgressError {
+        outcome,
+        message: message.into(),
+    }
+    .into()
+}
 
 fn audit_queue_path() -> PathBuf {
     crate::settings::get_config_dir().join("audit-outbox.json")
@@ -1158,6 +1192,12 @@ impl AuditQueue {
                 Ok(resp) => resp,
                 Err(err) => {
                     self.requeue_failed_flush(events).await;
+                    if audit_flush_has_prior_progress(outcome) {
+                        return Err(audit_flush_progress_error(
+                            outcome,
+                            format!("Failed to flush audit queue to daemon: {}", err),
+                        ));
+                    }
                     return Err(err).with_context(|| "Failed to flush audit queue to daemon");
                 }
             };
@@ -1166,6 +1206,18 @@ impl AuditQueue {
             if !status.is_success() {
                 let body = response.text().await.unwrap_or_default();
                 self.requeue_failed_flush(events).await;
+                if audit_flush_has_prior_progress(outcome) {
+                    if body.trim().is_empty() {
+                        return Err(audit_flush_progress_error(
+                            outcome,
+                            format!("Audit batch upload returned {}", status),
+                        ));
+                    }
+                    return Err(audit_flush_progress_error(
+                        outcome,
+                        format!("Audit batch upload returned {}: {}", status, body.trim()),
+                    ));
+                }
                 if body.trim().is_empty() {
                     anyhow::bail!("Audit batch upload returned {}", status);
                 }
@@ -1237,6 +1289,12 @@ impl AuditQueue {
                         body = %body,
                         "Failed to parse audit batch response; requeued audit outbox batch"
                     );
+                    if audit_flush_has_prior_progress(outcome) {
+                        return Err(audit_flush_progress_error(
+                            outcome,
+                            format!("Failed to parse audit batch response: {}", err),
+                        ));
+                    }
                     anyhow::bail!("Failed to parse audit batch response: {}", err);
                 }
             }
@@ -2699,6 +2757,179 @@ mod tests {
             .map(ToString::to_string)
             .collect();
         assert_eq!(ids, vec![format!("evt-{}", MAX_AUDIT_BATCH_LEN + 1)]);
+    }
+
+    #[tokio::test]
+    async fn audit_queue_flush_reports_prior_accepted_count_on_later_http_failure() {
+        use axum::{extract::State, http::StatusCode, routing::post, Json, Router};
+        use std::sync::{Arc, Mutex as StdMutex};
+        use tokio::net::TcpListener;
+
+        #[derive(Clone)]
+        struct BatchState {
+            calls: Arc<StdMutex<usize>>,
+        }
+
+        let queue = AuditQueue::new_test_isolated();
+        let total_events = MAX_AUDIT_BATCH_LEN + 2;
+        {
+            let mut guard = queue.queue.lock().await;
+            for i in 0..total_events {
+                guard.push_back(sample_audit_event(format!("evt-{i}")));
+            }
+            persist_audit_queue(&queue.path, &guard).unwrap();
+        }
+
+        let state = BatchState {
+            calls: Arc::new(StdMutex::new(0)),
+        };
+        let app = Router::new()
+            .route(
+                "/api/v1/audit/batch",
+                post(
+                    |State(state): State<BatchState>,
+                     Json(payload): Json<serde_json::Value>| async move {
+                        let len = payload
+                            .get("events")
+                            .and_then(|events| events.as_array())
+                            .map(|events| events.len())
+                            .unwrap_or(0);
+                        let mut calls = state.calls.lock().unwrap();
+                        *calls += 1;
+                        if *calls == 1 {
+                            Ok::<_, StatusCode>(Json(serde_json::json!({
+                                "accepted": len,
+                                "duplicates": 0,
+                                "rejected": 0
+                            })))
+                        } else {
+                            Err(StatusCode::INTERNAL_SERVER_ERROR)
+                        }
+                    },
+                ),
+            )
+            .with_state(state);
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let err = queue
+            .flush(&format!("http://{}", addr), None)
+            .await
+            .expect_err("later HTTP failure should preserve prior accepted counts");
+        let progress = err
+            .downcast_ref::<AuditFlushProgressError>()
+            .expect("later HTTP failure should preserve flush progress");
+        assert_eq!(progress.outcome.accepted, MAX_AUDIT_BATCH_LEN);
+        assert_eq!(progress.outcome.duplicates, 0);
+        assert_eq!(progress.outcome.rejected, 0);
+        assert!(progress
+            .message
+            .contains("Audit batch upload returned 500 Internal Server Error"));
+
+        let guard = queue.queue.lock().await;
+        let ids: Vec<String> = guard
+            .iter()
+            .filter_map(|event| event.get("id").and_then(|id| id.as_str()))
+            .map(ToString::to_string)
+            .collect();
+        assert_eq!(
+            ids,
+            vec![
+                format!("evt-{}", MAX_AUDIT_BATCH_LEN),
+                format!("evt-{}", MAX_AUDIT_BATCH_LEN + 1)
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn audit_queue_flush_reports_prior_accepted_count_on_later_parse_failure() {
+        use axum::{extract::State, response::IntoResponse, routing::post, Json, Router};
+        use std::sync::{Arc, Mutex as StdMutex};
+        use tokio::net::TcpListener;
+
+        #[derive(Clone)]
+        struct BatchState {
+            calls: Arc<StdMutex<usize>>,
+        }
+
+        let queue = AuditQueue::new_test_isolated();
+        let total_events = MAX_AUDIT_BATCH_LEN + 2;
+        {
+            let mut guard = queue.queue.lock().await;
+            for i in 0..total_events {
+                guard.push_back(sample_audit_event(format!("evt-{i}")));
+            }
+            persist_audit_queue(&queue.path, &guard).unwrap();
+        }
+
+        let state = BatchState {
+            calls: Arc::new(StdMutex::new(0)),
+        };
+        let app = Router::new()
+            .route(
+                "/api/v1/audit/batch",
+                post(
+                    |State(state): State<BatchState>,
+                     Json(payload): Json<serde_json::Value>| async move {
+                        let len = payload
+                            .get("events")
+                            .and_then(|events| events.as_array())
+                            .map(|events| events.len())
+                            .unwrap_or(0);
+                        let mut calls = state.calls.lock().unwrap();
+                        *calls += 1;
+                        if *calls == 1 {
+                            Json(serde_json::json!({
+                                "accepted": len,
+                                "duplicates": 0,
+                                "rejected": 0
+                            }))
+                            .into_response()
+                        } else {
+                            "not-json".into_response()
+                        }
+                    },
+                ),
+            )
+            .with_state(state);
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let err = queue
+            .flush(&format!("http://{}", addr), None)
+            .await
+            .expect_err("later parse failure should preserve prior accepted counts");
+        let progress = err
+            .downcast_ref::<AuditFlushProgressError>()
+            .expect("later parse failure should preserve flush progress");
+        assert_eq!(progress.outcome.accepted, MAX_AUDIT_BATCH_LEN);
+        assert_eq!(progress.outcome.duplicates, 0);
+        assert_eq!(progress.outcome.rejected, 0);
+        assert!(progress
+            .message
+            .contains("Failed to parse audit batch response"));
+
+        let guard = queue.queue.lock().await;
+        let ids: Vec<String> = guard
+            .iter()
+            .filter_map(|event| event.get("id").and_then(|id| id.as_str()))
+            .map(ToString::to_string)
+            .collect();
+        assert_eq!(
+            ids,
+            vec![
+                format!("evt-{}", MAX_AUDIT_BATCH_LEN),
+                format!("evt-{}", MAX_AUDIT_BATCH_LEN + 1)
+            ]
+        );
     }
 
     #[tokio::test]

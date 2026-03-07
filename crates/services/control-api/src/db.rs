@@ -1,3 +1,4 @@
+use sqlx::transaction::Transaction;
 use sqlx_postgres::{PgPoolOptions, Postgres};
 
 /// PostgreSQL connection pool type alias.
@@ -34,6 +35,114 @@ const EMBEDDED_MIGRATIONS: &[EmbeddedMigration] = &[
 
 const MIGRATION_LOCK_KEY: i64 = 0x4353_4D49_4752;
 
+async fn table_exists(
+    tx: &mut Transaction<'_, Postgres>,
+    table_name: &str,
+) -> Result<bool, sqlx::error::Error> {
+    sqlx::query_scalar::query_scalar::<_, bool>(
+        r#"SELECT EXISTS (
+               SELECT 1
+               FROM information_schema.tables
+               WHERE table_schema = 'public' AND table_name = $1
+           )"#,
+    )
+    .bind(table_name)
+    .fetch_one(&mut **tx)
+    .await
+}
+
+async fn column_exists(
+    tx: &mut Transaction<'_, Postgres>,
+    table_name: &str,
+    column_name: &str,
+) -> Result<bool, sqlx::error::Error> {
+    sqlx::query_scalar::query_scalar::<_, bool>(
+        r#"SELECT EXISTS (
+               SELECT 1
+               FROM information_schema.columns
+               WHERE table_schema = 'public'
+                 AND table_name = $1
+                 AND column_name = $2
+           )"#,
+    )
+    .bind(table_name)
+    .bind(column_name)
+    .fetch_one(&mut **tx)
+    .await
+}
+
+async fn insert_migration_marker(
+    tx: &mut Transaction<'_, Postgres>,
+    name: &'static str,
+) -> Result<(), sqlx::error::Error> {
+    sqlx::query::query("INSERT INTO schema_migrations (name) VALUES ($1) ON CONFLICT DO NOTHING")
+        .bind(name)
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
+}
+
+async fn backfill_legacy_migration_markers(
+    tx: &mut Transaction<'_, Postgres>,
+) -> Result<(), sqlx::error::Error> {
+    let has_markers = sqlx::query_scalar::query_scalar::<_, bool>(
+        "SELECT EXISTS (SELECT 1 FROM schema_migrations LIMIT 1)",
+    )
+    .fetch_one(&mut **tx)
+    .await?;
+    if has_markers {
+        return Ok(());
+    }
+
+    let core_tables_exist = {
+        let mut all_exist = true;
+        for table in [
+            "tenants",
+            "users",
+            "api_keys",
+            "agents",
+            "alert_configs",
+            "usage_events",
+        ] {
+            all_exist &= table_exists(tx, table).await?;
+        }
+        all_exist
+    };
+    if !core_tables_exist {
+        return Ok(());
+    }
+
+    insert_migration_marker(tx, "001_init.sql").await?;
+
+    let approvals_exists = table_exists(tx, "approvals").await?;
+    if approvals_exists {
+        insert_migration_marker(tx, "002_adaptive_sdr_schema.sql").await?;
+    }
+
+    let tenant_enrollment_tokens_exists = table_exists(tx, "tenant_enrollment_tokens").await?;
+    let tenants_enrollment_token_exists = column_exists(tx, "tenants", "enrollment_token").await?;
+    let approvals_request_id_exists = if approvals_exists {
+        column_exists(tx, "approvals", "request_id").await?
+    } else {
+        false
+    };
+    if tenant_enrollment_tokens_exists
+        || (approvals_exists && approvals_request_id_exists && !tenants_enrollment_token_exists)
+    {
+        insert_migration_marker(tx, "003_adaptive_sdr_token_and_approval_flow.sql").await?;
+    }
+
+    if table_exists(tx, "tenant_active_policies").await? {
+        insert_migration_marker(tx, "004_adaptive_sdr_active_policy.sql").await?;
+    }
+
+    if table_exists(tx, "approval_resolution_outbox").await? {
+        insert_migration_marker(tx, "005_adaptive_sdr_approval_outbox.sql").await?;
+    }
+
+    Ok(())
+}
+
 /// Create a PostgreSQL connection pool from the given database URL.
 pub async fn create_pool(database_url: &str) -> Result<PgPool, sqlx::error::Error> {
     PgPoolOptions::new()
@@ -58,6 +167,8 @@ pub async fn run_migrations(pool: &PgPool) -> Result<(), sqlx::error::Error> {
     )
     .execute(&mut *tx)
     .await?;
+
+    backfill_legacy_migration_markers(&mut tx).await?;
 
     for migration in EMBEDDED_MIGRATIONS {
         let already_applied = sqlx::query::query("SELECT 1 FROM schema_migrations WHERE name = $1")

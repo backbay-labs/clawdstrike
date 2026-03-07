@@ -36,8 +36,8 @@ use agent_auth::ensure_local_api_token;
 use api_server::{AgentApiServer, AgentApiServerDeps};
 use approval::ApprovalQueue;
 use daemon::{
-    find_hushd_binary, prepare_managed_hushd_binary, AuditQueue, DaemonConfig, DaemonManager,
-    DaemonState, PolicyCache,
+    find_hushd_binary, prepare_managed_hushd_binary, AuditFlushProgressError, AuditQueue,
+    DaemonConfig, DaemonManager, DaemonState, PolicyCache,
 };
 use events::EventManager;
 use integrations::{ClaudeCodeIntegration, McpServer, OpenClawPluginIntegration};
@@ -75,6 +75,21 @@ struct AppState {
     shutdown_tx: broadcast::Sender<()>,
     agent_api_token: String,
     shutdown_complete: Arc<ShutdownComplete>,
+}
+
+fn log_audit_flush_failure(err: &anyhow::Error, message: &'static str) {
+    if let Some(progress) = err.downcast_ref::<AuditFlushProgressError>() {
+        tracing::warn!(
+            error = %progress.message,
+            count = progress.outcome.accepted,
+            duplicates = progress.outcome.duplicates,
+            rejected = progress.outcome.rejected,
+            "{} after partial progress",
+            message
+        );
+    } else {
+        tracing::warn!(error = %err, "{}", message);
+    }
 }
 
 #[derive(Clone)]
@@ -423,7 +438,7 @@ async fn run_agent<R: Runtime>(
                     "Flushed queued audit events on startup with rejected entries still queued"
                 ),
                 Ok(outcome) => tracing::info!(count = outcome.accepted, "Flushed queued audit events on startup"),
-                Err(err) => tracing::warn!(error = %err, "Failed to flush queued audit events"),
+                Err(err) => log_audit_flush_failure(&err, "Failed to flush queued audit events"),
             }
         }
     }
@@ -598,9 +613,7 @@ async fn run_agent<R: Runtime>(
                                 tracing::debug!(count = outcome.accepted, "Flushed durable audit outbox");
                             }
                             Ok(_) => {}
-                            Err(err) => {
-                                tracing::debug!(error = %err, "Durable audit outbox flush failed");
-                            }
+                            Err(err) => log_audit_flush_failure(&err, "Durable audit outbox flush failed"),
                         }
                     }
                 }
@@ -667,9 +680,7 @@ async fn run_agent<R: Runtime>(
                         Ok(outcome) => {
                             tracing::info!(count = outcome.accepted, "Flushed queued audit events after reconnect")
                         }
-                        Err(err) => {
-                            tracing::warn!(error = %err, "Failed to flush audit queue after reconnect")
-                        }
+                        Err(err) => log_audit_flush_failure(&err, "Failed to flush audit queue after reconnect"),
                     }
                 }
                 if let Err(err) = policy_cache_for_daemon
