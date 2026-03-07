@@ -6,14 +6,25 @@ mod commands;
 mod marketplace_discovery;
 mod state;
 
+use std::path::PathBuf;
+
 use state::AppState;
+
+fn workspace_settings_path() -> PathBuf {
+    let base = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
+    base.join("huntronomer").join("workspace-settings.json")
+}
 
 fn main() {
     let app_state = AppState::new();
+    let workspace_state =
+        commands::workspace::WorkspaceCommandState::new(workspace_settings_path())
+            .expect("workspace command state should initialize");
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .manage(app_state)
+        .manage(workspace_state)
         .invoke_handler(tauri::generate_handler![
             commands::hushd::test_connection,
             commands::hushd::get_daemon_status,
@@ -45,6 +56,16 @@ fn main() {
             commands::workflows::save_workflow,
             commands::workflows::delete_workflow,
             commands::workflows::test_workflow,
+            commands::workspace::workspace_register_root,
+            commands::workspace::workspace_remove_root,
+            commands::workspace::workspace_list_recent_roots,
+            commands::workspace::workspace_list_dir,
+            commands::workspace::workspace_stat_path,
+            commands::workspace::workspace_read_file,
+            commands::workspace::workspace_write_file,
+            commands::workspace::workspace_create_path,
+            commands::workspace::workspace_move_path,
+            commands::workspace::workspace_delete_path,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

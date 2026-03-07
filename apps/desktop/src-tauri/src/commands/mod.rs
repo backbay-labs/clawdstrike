@@ -7,4 +7,5 @@ pub mod openclaw;
 pub mod policy;
 pub mod receipts;
 pub mod spine;
+pub mod workspace;
 pub mod workflows;

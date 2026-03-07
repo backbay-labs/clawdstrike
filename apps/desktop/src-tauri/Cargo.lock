@@ -2106,6 +2106,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6dbf3de79e51f3d586ab4cb9d5c3e2c14aa28ed23d180cf89b4df0454a69cc87"
 
 [[package]]
+name = "huntronomer-workspace-core"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "uuid",
+]
+
+[[package]]
 name = "hush-core"
 version = "0.2.5"
 dependencies = [
@@ -4920,6 +4931,7 @@ dependencies = [
  "clawdstrike",
  "dirs",
  "futures",
+ "huntronomer-workspace-core",
  "hush-core",
  "hush-spine",
  "libp2p",

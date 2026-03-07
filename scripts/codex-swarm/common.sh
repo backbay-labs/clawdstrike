@@ -36,6 +36,52 @@ swarm_repo_name() {
   esac
 }
 
+swarm_namespace() {
+  local repo_root
+  local namespace
+  local orch_worktree
+  local orch_branch
+  repo_root="$(swarm_repo_root "${1:-$(pwd)}")"
+  if [[ -n "${CLAWDSTRIKE_SWARM_NAMESPACE:-}" ]]; then
+    printf '%s\n' "$CLAWDSTRIKE_SWARM_NAMESPACE"
+    return
+  fi
+  namespace="$(
+    awk -F '\t' '
+      NR == 1 {
+        for (i = 1; i <= NF; i++) {
+          idx[$i] = i
+        }
+        next
+      }
+      ("swarm" in idx) && $(idx["swarm"]) != "" {
+        print $(idx["swarm"])
+        exit
+      }
+    ' "$(swarm_lane_table "$repo_root")"
+  )"
+  if [[ -n "$namespace" ]]; then
+    printf '%s\n' "$namespace"
+    return
+  fi
+  orch_worktree="$(swarm_lane_field orch worktree "$repo_root")"
+  if [[ "$orch_worktree" == *-orch ]]; then
+    printf '%s\n' "${orch_worktree%-orch}"
+    return
+  fi
+  orch_branch="$(swarm_lane_field orch branch "$repo_root")"
+  if [[ -n "$orch_branch" ]]; then
+    namespace="${orch_branch##*/}"
+    namespace="${namespace%-orchestrator}"
+    namespace="${namespace%-orch}"
+    if [[ -n "$namespace" ]] && [[ "$namespace" != "orch" ]]; then
+      printf '%s\n' "$namespace"
+      return
+    fi
+  fi
+  swarm_repo_name "$repo_root"
+}
+
 swarm_worktrees_dir() {
   local repo_root
   local repo_parent
@@ -66,11 +112,11 @@ swarm_orchestration_dir() {
   local repo_root
   local repo_parent
   local parent_name
-  local repo_name
+  local namespace
   repo_root="$(swarm_repo_root "${1:-$(pwd)}")"
   repo_parent="$(swarm_repo_parent_dir "$repo_root")"
   parent_name="$(basename "$repo_parent")"
-  repo_name="$(swarm_repo_name "$repo_root")"
+  namespace="$(swarm_namespace "$repo_root")"
   if [[ -n "${CLAWDSTRIKE_SWARM_ORCH_DIR:-}" ]]; then
     printf '%s\n' "$CLAWDSTRIKE_SWARM_ORCH_DIR"
     return
@@ -80,10 +126,10 @@ swarm_orchestration_dir() {
       printf '%s\n' "$repo_parent"
       ;;
     *-worktrees)
-      printf '%s/%s-orchestration\n' "$(dirname "$repo_parent")" "$repo_name"
+      printf '%s/%s-orchestration\n' "$(dirname "$repo_parent")" "$namespace"
       ;;
     *)
-      printf '%s/%s-orchestration\n' "$repo_parent" "$repo_name"
+      printf '%s/%s-orchestration\n' "$repo_parent" "$namespace"
       ;;
   esac
 }

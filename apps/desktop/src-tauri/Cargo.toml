@@ -50,6 +50,7 @@ libp2p = { version = "0.56", features = ["tokio", "tcp", "dns", "noise", "yamux"
 hush-core = { path = "../../../crates/libs/hush-core" }
 clawdstrike = { path = "../../../crates/libs/clawdstrike" }
 spine = { package = "hush-spine", path = "../../../crates/libs/spine" }
+huntronomer-workspace-core = { path = "../../../crates/libs/huntronomer-workspace-core" }
 
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }

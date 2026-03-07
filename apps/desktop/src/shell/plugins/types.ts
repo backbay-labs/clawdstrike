@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 
 export type AppId =
   | "nexus"
+  | "workspace"
   | "operations"
   | "events"
   | "policies"
@@ -43,6 +44,7 @@ export interface AppPlugin {
 
 export type PluginIcon =
   | "nexus"
+  | "folder"
   | "activity"
   | "shield"
   | "beaker"
@@ -64,6 +66,8 @@ export interface PluginRegistry {
 // Icon mapping for the nav rail
 export const PLUGIN_ICONS: Record<PluginIcon, string> = {
   nexus: "M12 2l3 5h6l-3 5 3 5h-6l-3 5-3-5H3l3-5-3-5h6z",
+  folder:
+    "M3 6a2 2 0 012-2h4l2 2h8a2 2 0 012 2v2H3V6zm0 4h20v8a2 2 0 01-2 2H5a2 2 0 01-2-2v-8z",
   activity: "M22 12h-4l-3 9L9 3l-3 9H2",
   shield: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z",
   beaker: "M9 3h6v5l4 8H5l4-8V3M8 22h8",

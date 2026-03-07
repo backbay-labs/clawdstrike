@@ -8,6 +8,11 @@ import { useConnection } from "@/context/ConnectionContext";
 import { dispatchCyberNexusCommand } from "@/features/cyber-nexus/events";
 import { ChronicleWorkbenchShelf } from "@/features/forensics/policy-workbench/ChronicleWorkbenchShelf";
 import {
+  createWorkspacePaletteCommands,
+  WORKSPACE_OPEN_FOLDER_EVENT,
+  WORKSPACE_SAVE_ACTIVE_FILE_EVENT,
+} from "@/features/workspace/shell";
+import {
   POLICY_WORKBENCH_DIRTY_EVENT,
   type PolicyWorkbenchDirtyEventDetail,
 } from "@/features/forensics/policy-workbench/events";
@@ -119,6 +124,7 @@ export function ShellLayout() {
     const appId = location.pathname.split("/").filter(Boolean)[0] ?? "";
     return !new Set([
       "nexus",
+      "workspace",
       "swarm",
       "threat-radar",
       "attack-graph",
@@ -277,6 +283,45 @@ export function ShellLayout() {
     ];
   }, [activeAppId]);
 
+  const handleWorkspacePaletteAction = useCallback(
+    (result: { kind: string; [key: string]: unknown }) => {
+      if (result.kind === "navigate" && typeof result.to === "string") {
+        navigate(result.to);
+        return;
+      }
+
+      if (result.kind === "invoke" && typeof result.action === "string") {
+        window.dispatchEvent(new Event(result.action));
+        if (result.action === WORKSPACE_OPEN_FOLDER_EVENT) {
+          navigate("/workspace");
+        }
+        if (result.action === WORKSPACE_SAVE_ACTIVE_FILE_EVENT) {
+          console.info("Workspace save command is reserved for WS4 editor integration.");
+        }
+      }
+    },
+    [navigate],
+  );
+
+  const workspaceCommands = useMemo(() => {
+    if (activeAppId !== "workspace") return [];
+
+    return createWorkspacePaletteCommands(
+      {
+        activeScope: "workspace",
+        workspaceRootId: "workspace-root",
+        activeSurfaceRoute: location.pathname,
+        selectedObjectIds: [],
+        focusedPane: "main",
+        connectivity: {
+          daemon: daemonStatus === "connected" ? "connected" : "degraded",
+          openclaw: daemonStatus === "connected" ? "connected" : "offline",
+        },
+      },
+      (result) => handleWorkspacePaletteAction(result),
+    );
+  }, [activeAppId, daemonStatus, handleWorkspacePaletteAction, location.pathname]);
+
   useEffect(() => {
     setActiveApp(activeAppId);
   }, [activeAppId, setActiveApp]);
@@ -378,7 +423,7 @@ export function ShellLayout() {
           isOpen={isCommandPaletteOpen}
           onClose={() => setIsCommandPaletteOpen(false)}
           onSelectApp={handleSelectApp}
-          extraCommands={cyberNexusCommands}
+          extraCommands={activeAppId === "workspace" ? workspaceCommands : cyberNexusCommands}
         />
 
         <HuntronomerLaunchOverlay

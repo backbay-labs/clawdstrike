@@ -84,6 +84,12 @@ The scripts use `.codex/swarm/lanes.tsv` and `.codex/swarm/waves.tsv` as the
 source of truth. Raw `git worktree` commands remain a fallback for debugging the
 orchestration flow itself.
 
+When multiple initiatives share one `*-worktrees` directory, orchestration
+artifacts default to a swarm-specific namespace inferred from the `ORCH` lane
+metadata so stale `final.md`, `review.md`, or `run.pid` files do not collide.
+Override that namespace with `CLAWDSTRIKE_SWARM_NAMESPACE` or set an exact path
+with `CLAWDSTRIKE_SWARM_ORCH_DIR` when needed.
+
 By default they create sibling directories named after the repo, for example:
 
 - `../clawdstrike-sdks-worktrees/`

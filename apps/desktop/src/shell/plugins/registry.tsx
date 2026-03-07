@@ -2,6 +2,7 @@
  * Plugin Registry - Huntronomer desktop plugins
  */
 import React from "react";
+import { getWorkspaceShellRoutes } from "@/features/workspace/shell";
 import type { AppId, AppPlugin } from "./types";
 
 // Lazy loaded feature views
@@ -46,6 +47,14 @@ const SecurityOverviewView = React.lazy(() =>
   })),
 );
 
+function createWorkspacePluginRoutes() {
+  return getWorkspaceShellRoutes().map((route) => ({
+    index: route.path === "/workspace",
+    path: route.path === "/workspace" ? "" : route.path.replace(/^\/workspace\//, ""),
+    element: route.element,
+  }));
+}
+
 // Plugin definitions
 const plugins: AppPlugin[] = [
   {
@@ -60,11 +69,19 @@ const plugins: AppPlugin[] = [
     ],
   },
   {
+    id: "workspace",
+    name: "Workspace",
+    icon: "folder",
+    description: "Trusted roots, editor panes, terminal docks, and local authoring tools",
+    order: 2,
+    routes: createWorkspacePluginRoutes(),
+  },
+  {
     id: "operations",
     name: "Operations",
     icon: "dashboard",
     description: "Fleet management, daemon connection, and preferences",
-    order: 2,
+    order: 3,
     routes: [{ path: "", element: <OperationsHubView />, index: true }],
   },
   {
@@ -72,7 +89,7 @@ const plugins: AppPlugin[] = [
     name: "Event Stream",
     icon: "activity",
     description: "Real-time policy decisions and audit log",
-    order: 3,
+    order: 4,
     routes: [{ path: "", element: <EventStreamView />, index: true }],
   },
   {
@@ -80,7 +97,7 @@ const plugins: AppPlugin[] = [
     name: "Policy Viewer",
     icon: "shield",
     description: "Browse and validate policies",
-    order: 4,
+    order: 5,
     routes: [{ path: "", element: <PolicyViewerView />, index: true }],
   },
   {
@@ -88,7 +105,7 @@ const plugins: AppPlugin[] = [
     name: "Policy Tester",
     icon: "beaker",
     description: "Simulate policy checks",
-    order: 5,
+    order: 6,
     routes: [{ path: "", element: <PolicyTesterView />, index: true }],
   },
   {
@@ -96,7 +113,7 @@ const plugins: AppPlugin[] = [
     name: "Swarm Map",
     icon: "network",
     description: "3D visualization of agent identities",
-    order: 6,
+    order: 7,
     routes: [{ path: "", element: <SwarmMapView />, index: true }],
   },
   {
@@ -104,7 +121,7 @@ const plugins: AppPlugin[] = [
     name: "Marketplace",
     icon: "store",
     description: "Discover and share community policies",
-    order: 7,
+    order: 8,
     routes: [{ path: "", element: <MarketplaceView />, index: true }],
   },
   {
@@ -112,7 +129,7 @@ const plugins: AppPlugin[] = [
     name: "Workflows",
     icon: "workflow",
     description: "Automated response chains",
-    order: 8,
+    order: 9,
     routes: [{ path: "", element: <WorkflowsView />, index: true }],
   },
   {
@@ -120,7 +137,7 @@ const plugins: AppPlugin[] = [
     name: "Threat Radar",
     icon: "radar",
     description: "Live 3D threat detection radar",
-    order: 9,
+    order: 10,
     routes: [{ path: "", element: <ThreatRadarView />, index: true }],
   },
   {
@@ -128,7 +145,7 @@ const plugins: AppPlugin[] = [
     name: "Attack Graph",
     icon: "graph",
     description: "MITRE ATT&CK chain visualization",
-    order: 10,
+    order: 11,
     routes: [{ path: "", element: <AttackGraphView />, index: true }],
   },
   {
@@ -136,7 +153,7 @@ const plugins: AppPlugin[] = [
     name: "Network Map",
     icon: "topology",
     description: "3D network infrastructure map",
-    order: 11,
+    order: 12,
     routes: [{ path: "", element: <NetworkMapView />, index: true }],
   },
   {
@@ -144,7 +161,7 @@ const plugins: AppPlugin[] = [
     name: "Security Overview",
     icon: "dashboard",
     description: "Composite security monitoring",
-    order: 12,
+    order: 13,
     routes: [{ path: "", element: <SecurityOverviewView />, index: true }],
   },
 ];
