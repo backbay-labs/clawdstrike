@@ -1387,7 +1387,9 @@ enum BridgeCheckResult {
 /// Two origins are considered different if their provider, tenant_id, OR
 /// space_id differs. Same (provider + tenant_id + space_id) = same origin.
 fn is_different_origin(a: &OriginContext, b: &OriginContext) -> bool {
-    if a.provider != b.provider {
+    // Use to_string() comparison to match EnclaveResolver behavior and avoid
+    // Custom("slack") != Slack inconsistency.
+    if a.provider.to_string() != b.provider.to_string() {
         return true;
     }
     // Compare tenant_id — different tenants of the same provider are different origins.
@@ -1422,15 +1424,17 @@ fn check_bridge_policy(
     // An empty allowed_targets list means "all targets are allowed".
     let target_matches = bridge.allowed_targets.is_empty()
         || bridge.allowed_targets.iter().any(|t| {
+            // Use to_string() comparison to match EnclaveResolver behavior
+            // and avoid Custom("slack") != Slack inconsistency.
             let provider_ok = t
                 .provider
                 .as_ref()
-                .is_none_or(|p| *p == target_origin.provider);
+                .is_none_or(|p| p.to_string() == target_origin.provider.to_string());
             let space_type_ok = t.space_type.as_ref().is_none_or(|st| {
                 target_origin
                     .space_type
                     .as_ref()
-                    .is_some_and(|tst| *tst == *st)
+                    .is_some_and(|tst| tst.to_string() == st.to_string())
             });
             let tags_ok = t.tags.is_empty()
                 || t.tags
@@ -1440,7 +1444,7 @@ fn check_bridge_policy(
                 target_origin
                     .visibility
                     .as_ref()
-                    .is_some_and(|tv| *tv == *v)
+                    .is_some_and(|tv| tv.to_string() == v.to_string())
             });
             provider_ok && space_type_ok && tags_ok && visibility_ok
         });
