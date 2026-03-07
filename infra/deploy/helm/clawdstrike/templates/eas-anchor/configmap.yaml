@@ -1,4 +1,7 @@
 {{- if .Values.easAnchor.enabled }}
+{{- $policyAttestationUid := required "easAnchor.schemas.policyAttestationUid is required when easAnchor.enabled=true" .Values.easAnchor.schemas.policyAttestationUid }}
+{{- $checkpointAnchorUid := required "easAnchor.schemas.checkpointAnchorUid is required when easAnchor.enabled=true" .Values.easAnchor.schemas.checkpointAnchorUid }}
+{{- $keyRotationUid := required "easAnchor.schemas.keyRotationUid is required when easAnchor.enabled=true" .Values.easAnchor.schemas.keyRotationUid }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -23,9 +26,9 @@ data:
     min_batch_size = {{ .Values.easAnchor.batching.minBatchSize }}
 
     [schemas]
-    policy_attestation_uid = {{ .Values.easAnchor.schemas.policyAttestationUid | quote }}
-    checkpoint_anchor_uid = {{ .Values.easAnchor.schemas.checkpointAnchorUid | quote }}
-    key_rotation_uid = {{ .Values.easAnchor.schemas.keyRotationUid | quote }}
+    policy_attestation_uid = {{ $policyAttestationUid | quote }}
+    checkpoint_anchor_uid = {{ $checkpointAnchorUid | quote }}
+    key_rotation_uid = {{ $keyRotationUid | quote }}
 
     [nats]
     url = {{ include "clawdstrike.natsUrl" . | quote }}

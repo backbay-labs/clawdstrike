@@ -14,6 +14,28 @@ namespace:
   create: true
   name: clawdstrike
 
+externalSecrets:
+  enabled: true
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: aws-secrets-manager
+  secrets:
+    spine:
+      enabled: true
+      remoteKey: "platform-dev/clawdstrike-spine"
+    hushd:
+      enabled: true
+      remoteKey: "platform-dev/clawdstrike-hushd"
+    controlApi:
+      enabled: true
+      remoteKey: "platform-dev/clawdstrike-control-api"
+    controlApiPostgres:
+      enabled: true
+      remoteKey: "platform-dev/clawdstrike-control-api-postgres"
+    easAnchor:
+      enabled: true
+      remoteKey: "platform-dev/clawdstrike-eas-anchor"
+
 spine:
   secrets:
     existingSecret: "clawdstrike-helm-spine"
@@ -69,8 +91,11 @@ bridges:
     image:
       tag: "2ba330f736d108a1ff37e4d17782edc9532eb73e"
     grpcEndpoint: "http://localhost:54321"
+    adminPort: 22112
     hostNetwork: true
     dnsPolicy: ClusterFirstWithHostNet
+    probes:
+      enabled: false
     nodeSelector:
       kubernetes.io/arch: amd64
   hubble:
@@ -99,7 +124,9 @@ spiffe:
   enabled: true
 
 easAnchor:
-  enabled: true
+  # Keep disabled in platform-dev until the Base EAS schemas have been
+  # registered and their UIDs are provided here.
+  enabled: false
   image:
     tag: "2ba330f736d108a1ff37e4d17782edc9532eb73e"
   chain:
