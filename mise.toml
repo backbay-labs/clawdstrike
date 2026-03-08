@@ -4,9 +4,10 @@ node = "24"
 python = "3.12"
 
 [tasks.check]
-description = "Run cargo check on workspace and the agent Tauri crate"
+description = "Run cargo check on workspace and Tauri app crates"
 run = """
 cargo check --workspace
+cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
 cargo check --manifest-path apps/agent/src-tauri/Cargo.toml
 """
 
@@ -28,26 +29,36 @@ run = "cargo fmt --all -- --check"
 
 [tasks.deny]
 description = "Run cargo-deny checks"
-run = "cargo deny check"
+run = """
+cargo deny check
+cargo metadata --manifest-path apps/desktop/src-tauri/Cargo.toml --format-version 1 --locked > /tmp/desktop-tauri-metadata.json
+cargo deny check --metadata-path /tmp/desktop-tauri-metadata.json licenses sources
+"""
 
 [tasks.doc]
 description = "Build documentation"
 run = "cargo doc --no-deps --all-features"
 
 [tasks."test:rust"]
-description = "Rust workspace tests and agent Tauri crate checks"
+description = "Rust workspace tests and app crate checks"
 run = """
 cargo test --workspace
+cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
 cargo check --manifest-path apps/agent/src-tauri/Cargo.toml
 """
 
 [tasks."test:apps"]
-description = "App checks for control console and agent Tauri backend"
+description = "App checks for desktop, control console, and Tauri backends"
 run = """
+(cd apps/desktop && bun install --frozen-lockfile)
+(cd apps/desktop && bun run typecheck)
+(cd apps/desktop && bun run test)
+(cd apps/desktop && bun run build)
 npm --prefix apps/control-console ci
 npm --prefix apps/control-console test
 npm --prefix apps/control-console run typecheck
 npm --prefix apps/control-console run build
+cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
 cargo check --manifest-path apps/agent/src-tauri/Cargo.toml
 """
 
@@ -106,6 +117,11 @@ run = """
 cargo fmt --all -- --check
 cargo clippy --workspace -- -D warnings
 cargo test --workspace
+(cd apps/desktop && bun install --frozen-lockfile)
+(cd apps/desktop && bun run typecheck)
+(cd apps/desktop && bun run test)
+(cd apps/desktop && bun run build)
+cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
 cargo check --manifest-path apps/agent/src-tauri/Cargo.toml
 bash scripts/path-lint.sh
 bash scripts/move-validation.sh

@@ -1,0 +1,64 @@
+{
+  "bundle": {
+    "version": "clawdstrike-policy-bundle-v1",
+    "bundle_id": "15ee3078-ae67-48bb-9c58-bb90accb9f1b",
+    "compiled_at": "2026-02-05T06:17:43.300671+00:00",
+    "policy": {
+      "version": "1.1.0",
+      "name": "Permissive",
+      "description": "Permissive rules for development (use with caution)",
+      "extends": null,
+      "merge_strategy": "deep_merge",
+      "guards": {
+        "forbidden_path": null,
+        "egress_allowlist": {
+          "enabled": true,
+          "allow": [
+            "*"
+          ],
+          "block": [],
+          "default_action": "allow",
+          "additional_allow": [],
+          "remove_allow": [],
+          "additional_block": [],
+          "remove_block": []
+        },
+        "secret_leak": null,
+        "patch_integrity": {
+          "enabled": true,
+          "max_additions": 10000,
+          "max_deletions": 5000,
+          "forbidden_patterns": [
+            "(?i)disable[_\\-]?(security|auth|ssl|tls)",
+            "(?i)skip[_\\-]?(verify|validation|check)",
+            "(?i)rm\\s+-rf\\s+/",
+            "(?i)chmod\\s+777",
+            "(?i)eval\\s*\\(",
+            "(?i)exec\\s*\\(",
+            "(?i)reverse[_\\-]?shell",
+            "(?i)bind[_\\-]?shell",
+            "base64[_\\-]?decode.*exec"
+          ],
+          "require_balance": false,
+          "max_imbalance_ratio": 50.0
+        },
+        "mcp_tool": null,
+        "prompt_injection": null,
+        "jailbreak": null,
+        "custom": []
+      },
+      "custom_guards": [],
+      "settings": {
+        "fail_fast": false,
+        "verbose_logging": true,
+        "session_timeout_secs": 7200
+      }
+    },
+    "policy_hash": "0x388beaeda0fd5f2cb2365db8239cafba731b9bdb94050ab6ff77566c6f35d7fc",
+    "sources": [
+      "file:rulesets/permissive.yaml"
+    ]
+  },
+  "signature": "73f81536e3a0b041931deaf70a1c7060e1a13787191696f4ef5da85a6aca320482e1268fa2e1fd64f8f654708c495ca2f6768e27e1da29418445a51ad3b81605",
+  "public_key": "04a66588333edb5b212046cc58a5c13d1d1759386a3b482e6dbb8b3ab6af27f7"
+}

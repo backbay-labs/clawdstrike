@@ -1,0 +1,68 @@
+$schema: "https://moonrepo.dev/schemas/project.json"
+
+# ClawdStrike Desktop
+# Tauri 2 + Vite + React security operations desktop app
+
+type: "application"
+language: "typescript"
+
+tags:
+  - "app"
+  - "desktop"
+  - "tauri"
+  - "standalone"
+
+tasks:
+  dev:
+    command: "bun run dev"
+    local: true
+    options:
+      persistent: true
+      runInCI: false
+
+  build:
+    command: "bun run build"
+    inputs:
+      - "src/**/*"
+      - "package.json"
+      - "tsconfig.json"
+      - "vite.config.ts"
+      - "tailwind.config.ts"
+    outputs:
+      - "dist"
+
+  typecheck:
+    command: "bun run typecheck"
+    inputs:
+      - "src/**/*"
+      - "tsconfig.json"
+
+  lint:
+    command: "bun run lint"
+    inputs:
+      - "src/**/*"
+
+  lint-fix:
+    command: "bun run lint:fix"
+    local: true
+
+  test:
+    command: "bun run test"
+    inputs:
+      - "src/**/*"
+
+  tauri-dev:
+    command: "bun run tauri:dev"
+    local: true
+    options:
+      persistent: true
+      runInCI: false
+
+  tauri-build:
+    command: "bun run tauri:build"
+    inputs:
+      - "src/**/*"
+      - "src-tauri/**/*"
+      - "package.json"
+      - "tsconfig.json"
+      - "vite.config.ts"

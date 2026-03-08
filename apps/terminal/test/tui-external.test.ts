@@ -177,6 +177,11 @@ describe("external adapter registry", () => {
   })
 
   test("writes a finished status when the external shell receives hangup", async () => {
+    const zsh = Bun.which("zsh")
+    if (!zsh) {
+      return
+    }
+
     const root = await mkdtemp(join(tmpdir(), "clawdstrike-external-"))
     const worktreePath = join(root, "wc-1")
     const childPidPath = join(root, "child.pid")
@@ -188,14 +193,14 @@ describe("external adapter registry", () => {
       scriptPath,
       buildLaunchScript(
         worktreePath,
-        ["zsh", "-lc", `echo $$ > '${childPidPath}'; while true; do sleep 1; done`],
+        [zsh, "-lc", `echo $$ > '${childPidPath}'; while true; do sleep 1; done`],
         {},
         statusPath,
       ),
       { mode: 0o755 },
     )
 
-    const proc = Bun.spawn(["zsh", scriptPath], {
+    const proc = Bun.spawn([zsh, scriptPath], {
       cwd: worktreePath,
       stdout: "ignore",
       stderr: "ignore",

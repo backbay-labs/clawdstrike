@@ -812,6 +812,19 @@ impl HushEngine {
             ));
         }
 
+        if enclave_mcp.allow.is_empty()
+            && matches!(enclave_mcp.default_action, Some(McpDefaultAction::Block))
+        {
+            return Some(GuardResult::block(
+                "enclave",
+                Severity::Error,
+                format!(
+                    "tool '{}' blocked by default_action for profile '{}'",
+                    tool_name, profile_label
+                ),
+            ));
+        }
+
         if enclave_mcp
             .require_confirmation
             .iter()
@@ -822,19 +835,6 @@ impl HushEngine {
                 Severity::Warning,
                 format!(
                     "tool '{}' requires confirmation per enclave profile '{}'",
-                    tool_name, profile_label
-                ),
-            ));
-        }
-
-        if enclave_mcp.allow.is_empty()
-            && matches!(enclave_mcp.default_action, Some(McpDefaultAction::Block))
-        {
-            return Some(GuardResult::block(
-                "enclave",
-                Severity::Error,
-                format!(
-                    "tool '{}' blocked by default_action for profile '{}'",
                     tool_name, profile_label
                 ),
             ));
@@ -3440,6 +3440,38 @@ origins:
 
         assert!(!report.overall.allowed);
         assert_eq!(report.overall.guard, "enclave");
+        assert!(report.overall.message.contains("blocked by default_action"));
+    }
+
+    #[tokio::test]
+    async fn test_enclave_default_action_block_beats_confirmation_without_allow_list() {
+        let mcp = crate::guards::McpToolConfig {
+            enabled: true,
+            block: vec![],
+            allow: vec![],
+            require_confirmation: vec!["any_tool".to_string()],
+            default_action: Some(McpDefaultAction::Block),
+            ..Default::default()
+        };
+
+        let origins = OriginsConfig {
+            default_behavior: Some(OriginDefaultBehavior::Deny),
+            profiles: vec![slack_profile_with_mcp("slack-locked", mcp)],
+        };
+        let policy = policy_with_origins(origins);
+        let engine = HushEngine::with_policy(policy);
+
+        let context = GuardContext::new().with_origin(test_slack_origin());
+        let args = serde_json::json!({});
+
+        let report = engine
+            .check_action_report(&GuardAction::McpTool("any_tool", &args), &context)
+            .await
+            .unwrap();
+
+        assert!(!report.overall.allowed);
+        assert_eq!(report.overall.guard, "enclave");
+        assert_eq!(report.overall.severity, Severity::Error);
         assert!(report.overall.message.contains("blocked by default_action"));
     }
 

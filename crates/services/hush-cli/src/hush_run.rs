@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::io::Write;
 use std::net::{IpAddr, Ipv6Addr, SocketAddr};
+use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -25,7 +26,9 @@ use crate::policy_event::{
     PolicyEventType,
 };
 use crate::remote_extends;
+use crate::sandbox_nono;
 use crate::ExitCode;
+use crate::SandboxMode;
 
 const EVENT_QUEUE_CAPACITY_DEFAULT: usize = 1024;
 const PROXY_MAX_IN_FLIGHT_CONNECTIONS_DEFAULT: usize = 256;
@@ -225,9 +228,10 @@ pub struct RunArgs {
     pub no_proxy: bool,
     pub proxy_port: u16,
     pub proxy_allow_private_ips: bool,
-    pub sandbox: bool,
+    pub sandbox: SandboxMode,
     pub hushd_url: Option<String>,
     pub hushd_token: Option<String>,
+    pub supervised: bool,
     pub command: Vec<String>,
 }
 
@@ -248,6 +252,7 @@ pub async fn cmd_run(
         sandbox,
         hushd_url,
         hushd_token,
+        supervised,
         command,
     } = args;
 
@@ -272,6 +277,7 @@ pub async fn cmd_run(
         }
     };
 
+    let sandbox_policy = loaded.policy.clone();
     let engine = match HushEngine::builder(loaded.policy).build() {
         Ok(engine) => engine,
         Err(e) => {
@@ -374,36 +380,295 @@ pub async fn cmd_run(
         }
     };
 
-    let (sandbox_wrapper, sandbox_note) = match maybe_prepare_sandbox(sandbox, stderr) {
-        Ok(v) => v,
-        Err(e) => {
-            let _ = writeln!(stderr, "Warning: failed to prepare sandbox: {}", e);
-            (SandboxWrapper::None, "disabled".to_string())
+    let (sandbox_execution, sandbox_note) = match sandbox {
+        SandboxMode::Nono => {
+            let working_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+
+            // Extract proxy port from proxy URL
+            let proxy_port = env_proxy_url
+                .as_ref()
+                .and_then(|url| url.rsplit(':').next().and_then(|p| p.parse::<u16>().ok()));
+
+            // Build capability set from policy using CapabilityBuilder
+            let supervisor_policy = if supervised {
+                Some(sandbox_policy.clone())
+            } else {
+                None
+            };
+            let mut builder =
+                clawdstrike::sandbox::CapabilityBuilder::new(sandbox_policy, working_dir.clone());
+            if let Some(port) = proxy_port {
+                builder = builder.with_proxy_port(port);
+            }
+
+            match builder.build_with_diagnostics() {
+                Ok((caps, translation_warnings)) => {
+                    // Log translation warnings
+                    for tw in &translation_warnings {
+                        match tw.severity {
+                            clawdstrike::sandbox::WarningSeverity::Warning => {
+                                let _ = writeln!(
+                                    stderr,
+                                    "[nono] warning: {}: {}",
+                                    tw.guard, tw.message
+                                );
+                            }
+                            clawdstrike::sandbox::WarningSeverity::Info => {
+                                // Only show info in verbose mode (skip for now)
+                            }
+                        }
+                    }
+
+                    // Pre-flight validation
+                    let preflight =
+                        clawdstrike::sandbox::preflight_check(&caps, &command, &working_dir);
+                    for e in &preflight.errors {
+                        let _ = writeln!(stderr, "[nono] error: {}", e);
+                    }
+                    for w in &preflight.warnings {
+                        let _ = writeln!(stderr, "[nono] warning: {}", w);
+                    }
+
+                    if !preflight.is_ok() {
+                        let _ = writeln!(
+                            stderr,
+                            "[nono] aborting: sandbox pre-flight failed (fail-closed)"
+                        );
+                        drop(event_emitter);
+                        await_event_writer(writer_handle, stderr).await;
+                        return ExitCode::RuntimeError.as_i32();
+                    } else {
+                        // Check platform support
+                        if !nono::Sandbox::is_supported() {
+                            let support = nono::Sandbox::support_info();
+                            let _ = writeln!(
+                                stderr,
+                                "[nono] warning: sandbox not supported: {}",
+                                support.details
+                            );
+                        }
+
+                        if let Some(ref sp) = supervisor_policy {
+                            // Build never-grant list and supervisor context
+                            let never_grant_paths =
+                                clawdstrike::sandbox::build_never_grant_list(sp);
+                            match nono::NeverGrantChecker::new(&never_grant_paths) {
+                                Ok(never_grant) => {
+                                    let context = GuardContext::new();
+                                    let _ = writeln!(
+                                        stderr,
+                                        "[nono] supervised mode: {} never-grant paths",
+                                        never_grant.len()
+                                    );
+                                    (
+                                        SandboxExecution::Supervised(Box::new(SupervisedData {
+                                            caps: Box::new(caps),
+                                            engine: Arc::clone(&engine),
+                                            context,
+                                            never_grant,
+                                        })),
+                                        "nono+supervised".to_string(),
+                                    )
+                                }
+                                Err(e) => {
+                                    let _ = writeln!(
+                                        stderr,
+                                        "[nono] error: failed to activate supervised mode: {}",
+                                        e
+                                    );
+                                    drop(event_emitter);
+                                    await_event_writer(writer_handle, stderr).await;
+                                    return ExitCode::RuntimeError.as_i32();
+                                }
+                            }
+                        } else {
+                            (
+                                SandboxExecution::Nono {
+                                    caps: Box::new(caps),
+                                    working_dir,
+                                },
+                                "nono".to_string(),
+                            )
+                        }
+                    }
+                }
+                Err(e) => {
+                    let _ = writeln!(
+                        stderr,
+                        "[nono] FATAL: failed to build sandbox: {}. Aborting -- will not run unsandboxed.",
+                        e
+                    );
+                    return ExitCode::RuntimeError.as_i32();
+                }
+            }
+        }
+        SandboxMode::Legacy => match maybe_prepare_sandbox(true, stderr) {
+            Ok((wrapper, note)) => (SandboxExecution::Legacy(wrapper), note),
+            Err(e) => {
+                let _ = writeln!(stderr, "Warning: failed to prepare sandbox: {}", e);
+                (SandboxExecution::None, "disabled".to_string())
+            }
+        },
+        SandboxMode::None => (SandboxExecution::None, "disabled".to_string()),
+    };
+
+    let sandbox_run = match sandbox_execution {
+        SandboxExecution::Nono { caps, .. } => {
+            // Build env overrides for the child
+            let mut env_overrides = HashMap::new();
+            env_overrides.insert("HUSH_SESSION_ID".to_string(), session_id.clone());
+            if let Some(ref proxy_url) = env_proxy_url {
+                env_overrides.insert("HTTPS_PROXY".to_string(), proxy_url.clone());
+                env_overrides.insert("ALL_PROXY".to_string(), proxy_url.clone());
+            }
+            let _ = writeln!(stderr, "Running: {}", command.join(" "));
+            match sandbox_nono::spawn_sandboxed_child(&caps, &command, &env_overrides) {
+                Ok(result) => SandboxRunResult {
+                    child_status: exit_status_from_code(result.exit_code),
+                    sandbox_attestation_json: serde_json::to_value(
+                        clawdstrike::sandbox::build_attestation(
+                            &caps,
+                            clawdstrike::sandbox::SandboxRuntimeState::static_mode(
+                                result.sandbox_applied,
+                                result.sandbox_error.clone(),
+                            ),
+                        ),
+                    )
+                    .ok(),
+                    sandbox_failure: result.sandbox_error,
+                },
+                Err(e) => {
+                    let _ = writeln!(stderr, "Error: {}", e);
+                    if let Some(h) = proxy_handle {
+                        h.abort();
+                    }
+                    drop(event_emitter);
+                    await_event_writer(writer_handle, stderr).await;
+                    return ExitCode::RuntimeError.as_i32();
+                }
+            }
+        }
+        SandboxExecution::Supervised(data) => {
+            let SupervisedData {
+                caps,
+                engine: sup_engine,
+                context,
+                never_grant,
+            } = *data;
+            let mut env_overrides = HashMap::new();
+            env_overrides.insert("HUSH_SESSION_ID".to_string(), session_id.clone());
+            if let Some(ref proxy_url) = env_proxy_url {
+                env_overrides.insert("HTTPS_PROXY".to_string(), proxy_url.clone());
+                env_overrides.insert("ALL_PROXY".to_string(), proxy_url.clone());
+            }
+            let _ = writeln!(stderr, "Running (supervised): {}", command.join(" "));
+            match crate::supervised_exec::spawn_supervised_child(
+                &caps,
+                &command,
+                &env_overrides,
+                sup_engine,
+                context,
+                never_grant,
+            ) {
+                Ok(result) => {
+                    let mut attestation = clawdstrike::sandbox::build_attestation(
+                        &caps,
+                        clawdstrike::sandbox::SandboxRuntimeState::supervised_mode(
+                            result.sandbox_applied,
+                            result.supervised_active,
+                            result.sandbox_error.clone(),
+                        ),
+                    );
+                    if result.supervised_active {
+                        attestation.supervisor = Some(result.stats.clone());
+                    }
+                    if !result.denials.is_empty() {
+                        attestation.denials = result.denials.clone();
+                    }
+                    let _ = writeln!(
+                        stderr,
+                        "[nono] supervisor stats: {} requests ({} granted, {} denied, {} never-grant)",
+                        result.stats.requests_total,
+                        result.stats.requests_granted,
+                        result.stats.requests_denied,
+                        result.stats.never_grant_blocks,
+                    );
+                    SandboxRunResult {
+                        child_status: exit_status_from_code(result.exit_code),
+                        sandbox_attestation_json: serde_json::to_value(&attestation).ok(),
+                        sandbox_failure: result.sandbox_error,
+                    }
+                }
+                Err(e) => {
+                    let _ = writeln!(stderr, "Error: {}", e);
+                    if let Some(h) = proxy_handle {
+                        h.abort();
+                    }
+                    drop(event_emitter);
+                    await_event_writer(writer_handle, stderr).await;
+                    return ExitCode::RuntimeError.as_i32();
+                }
+            }
+        }
+        SandboxExecution::Legacy(wrapper) => {
+            match spawn_and_wait_child(
+                &command,
+                wrapper,
+                env_proxy_url.as_deref(),
+                &session_id,
+                stderr,
+            )
+            .await
+            {
+                Ok(status) => SandboxRunResult {
+                    child_status: status,
+                    sandbox_attestation_json: None,
+                    sandbox_failure: None,
+                },
+                Err(e) => {
+                    let _ = writeln!(stderr, "Error: {}", e);
+                    if let Some(h) = proxy_handle {
+                        h.abort();
+                    }
+                    drop(event_emitter);
+                    await_event_writer(writer_handle, stderr).await;
+                    return ExitCode::RuntimeError.as_i32();
+                }
+            }
+        }
+        SandboxExecution::None => {
+            match spawn_and_wait_child(
+                &command,
+                SandboxWrapper::None,
+                env_proxy_url.as_deref(),
+                &session_id,
+                stderr,
+            )
+            .await
+            {
+                Ok(status) => SandboxRunResult {
+                    child_status: status,
+                    sandbox_attestation_json: None,
+                    sandbox_failure: None,
+                },
+                Err(e) => {
+                    let _ = writeln!(stderr, "Error: {}", e);
+                    if let Some(h) = proxy_handle {
+                        h.abort();
+                    }
+                    drop(event_emitter);
+                    await_event_writer(writer_handle, stderr).await;
+                    return ExitCode::RuntimeError.as_i32();
+                }
+            }
         }
     };
 
-    let child_status = match spawn_and_wait_child(
-        &command,
-        sandbox_wrapper,
-        env_proxy_url.as_deref(),
-        &session_id,
-        stderr,
-    )
-    .await
-    {
-        Ok(status) => status,
-        Err(e) => {
-            let _ = writeln!(stderr, "Error: {}", e);
-            // Abort proxy first so its task drops EventEmitter clones; otherwise
-            // waiting on writer_handle can block forever on channel close.
-            if let Some(h) = proxy_handle {
-                h.abort();
-            }
-            drop(event_emitter);
-            let _ = writer_handle.await;
-            return ExitCode::RuntimeError.as_i32();
-        }
-    };
+    let SandboxRunResult {
+        child_status,
+        sandbox_attestation_json,
+        sandbox_failure,
+    } = sandbox_run;
 
     let child_exit_code = child_exit_code(child_status);
 
@@ -458,15 +723,7 @@ pub async fn cmd_run(
     }
 
     drop(event_emitter);
-    match writer_handle.await {
-        Ok(Ok(())) => {}
-        Ok(Err(e)) => {
-            let _ = writeln!(stderr, "Warning: failed to write events log: {}", e);
-        }
-        Err(e) => {
-            let _ = writeln!(stderr, "Warning: event writer task failed: {}", e);
-        }
-    }
+    await_event_writer(writer_handle, stderr).await;
     if dropped_events > 0 {
         let _ = writeln!(
             stderr,
@@ -504,6 +761,7 @@ pub async fn cmd_run(
                     "events": events_out,
                     "proxy": env_proxy_url,
                     "sandbox": sandbox_note,
+                    "sandbox_failure": sandbox_failure.clone(),
                     "child_exit_code": child_exit_code,
                     "policy_exit_code": outcome.exit_code(),
                 }
@@ -514,9 +772,20 @@ pub async fn cmd_run(
         }
     };
 
-    // Override verdict with the run outcome (warns are pass; blocks are fail).
+    // Merge sandbox attestation into receipt metadata
+    let receipt = if let Some(sandbox_json) = sandbox_attestation_json {
+        receipt.merge_metadata(serde_json::json!({ "sandbox": sandbox_json }))
+    } else {
+        receipt
+    };
+
+    let receipt_verdict = if sandbox_failure.is_some() {
+        Verdict::fail()
+    } else {
+        outcome.verdict()
+    };
     let receipt = Receipt {
-        verdict: outcome.verdict(),
+        verdict: receipt_verdict,
         ..receipt
     };
 
@@ -590,6 +859,25 @@ fn child_exit_code(status: std::process::ExitStatus) -> i32 {
     }
     // On Unix, a signal-terminated process yields None. Use a conventional non-zero value.
     1
+}
+
+fn exit_status_from_code(code: i32) -> std::process::ExitStatus {
+    std::process::ExitStatus::from_raw(code << 8)
+}
+
+async fn await_event_writer(
+    writer_handle: tokio::task::JoinHandle<Result<(), anyhow::Error>>,
+    stderr: &mut dyn Write,
+) {
+    match writer_handle.await {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => {
+            let _ = writeln!(stderr, "Warning: failed to write events log: {}", e);
+        }
+        Err(e) => {
+            let _ = writeln!(stderr, "Warning: event writer task failed: {}", e);
+        }
+    }
 }
 
 fn default_run_artifact_paths(
@@ -685,6 +973,36 @@ enum SandboxWrapper {
     Bwrap {
         args: Vec<String>,
     },
+}
+
+/// Data for supervised nono execution, boxed to keep enum variant sizes balanced.
+struct SupervisedData {
+    caps: Box<nono::CapabilitySet>,
+    engine: Arc<HushEngine>,
+    context: GuardContext,
+    never_grant: nono::NeverGrantChecker,
+}
+
+struct SandboxRunResult {
+    child_status: std::process::ExitStatus,
+    sandbox_attestation_json: Option<serde_json::Value>,
+    sandbox_failure: Option<String>,
+}
+
+/// Execution mode for the child process sandbox.
+enum SandboxExecution {
+    /// Nono kernel-level sandbox
+    Nono {
+        caps: Box<nono::CapabilitySet>,
+        #[allow(dead_code)] // reserved for Phase 2 diagnostics
+        working_dir: PathBuf,
+    },
+    /// Nono kernel-level sandbox with supervisor dynamic enforcement
+    Supervised(Box<SupervisedData>),
+    /// Legacy sandbox-exec/bwrap wrapper
+    Legacy(SandboxWrapper),
+    /// No sandboxing
+    None,
 }
 
 fn maybe_prepare_sandbox(
@@ -1735,9 +2053,10 @@ guards:
             no_proxy: false,
             proxy_port: 0,
             proxy_allow_private_ips: false,
-            sandbox: false,
+            sandbox: SandboxMode::None,
             hushd_url: None,
             hushd_token: None,
+            supervised: false,
             command: vec!["echo ~/.ssh".to_string()],
         };
 

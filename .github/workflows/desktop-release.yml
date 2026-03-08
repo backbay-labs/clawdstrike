@@ -1,0 +1,91 @@
+name: Desktop Artifacts (Unsigned)
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to build (branch, tag, or SHA)"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-macos:
+    name: Build macOS Desktop (Unsigned)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install desktop dependencies
+        working-directory: apps/desktop
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck desktop frontend
+        working-directory: apps/desktop
+        run: bun run typecheck
+
+      - name: Build unsigned desktop bundles
+        working-directory: apps/desktop
+        run: bun run tauri build --bundles app,dmg
+
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BUNDLE_DIR="apps/desktop/src-tauri/target/release/bundle"
+          ARTIFACT_DIR="artifacts/desktop-macos-unsigned"
+
+          mkdir -p "$ARTIFACT_DIR"
+
+          dmg_count=0
+          while IFS= read -r -d '' dmg; do
+            cp "$dmg" "$ARTIFACT_DIR/"
+            dmg_count=$((dmg_count + 1))
+          done < <(find "$BUNDLE_DIR" -type f -name "*.dmg" -print0)
+          if [[ "$dmg_count" -eq 0 ]]; then
+            echo "No .dmg artifacts found in $BUNDLE_DIR" >&2
+            exit 1
+          fi
+
+          app_count=0
+          while IFS= read -r -d '' app; do
+            app_parent="$(dirname "$app")"
+            app_base="$(basename "$app")"
+            tar -C "$app_parent" -czf "$ARTIFACT_DIR/${app_base}.tar.gz" "$app_base"
+            app_count=$((app_count + 1))
+          done < <(find "$BUNDLE_DIR" -type d -name "*.app" -print0)
+          if [[ "$app_count" -eq 0 ]]; then
+            echo "No .app bundles found in $BUNDLE_DIR" >&2
+            exit 1
+          fi
+
+          (
+            cd "$ARTIFACT_DIR"
+            shasum -a 256 *.dmg *.tar.gz > SHA256SUMS
+          )
+
+          echo "Artifacts prepared in $ARTIFACT_DIR"
+          ls -lh "$ARTIFACT_DIR"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: desktop-macos-unsigned-${{ github.run_number }}
+          path: artifacts/desktop-macos-unsigned/*
+          if-no-files-found: error

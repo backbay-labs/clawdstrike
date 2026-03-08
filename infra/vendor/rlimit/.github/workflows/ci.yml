@@ -1,0 +1,237 @@
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  schedule: # https://docs.github.com/en/actions/reference/workflow-syntax-for-github-actions#onschedule
+    - cron: '0 0 * * 0' # at midnight of each sunday
+
+
+name: CI
+
+permissions:
+  contents: read
+
+jobs:
+  develop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy -- -D warnings
+      - run: cargo test --all-features
+
+  msrv:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: 
+          - 1.65.0 # MSRV
+          - stable
+    steps:
+      - uses: actions/checkout@v6
+      - uses: taiki-e/install-action@just
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p rlimit --all-features
+
+  cross:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          # copied from `rustup target list`
+          # - aarch64-apple-darwin                  # (build error)
+          # - aarch64-apple-ios                     # (build error)
+          # - aarch64-apple-ios-sim                 # (build error)
+          # - aarch64-fuchsia                       # (fuchsia does not have [sg]etrlimit)
+          - aarch64-linux-android
+          # - aarch64-pc-windows-msvc               # (missing docker image)
+          - aarch64-unknown-linux-gnu
+          - aarch64-unknown-linux-musl
+          # - aarch64-unknown-none                  # (no std)
+          # - aarch64-unknown-none-softfloat        # (no std)
+          - arm-linux-androideabi
+          - arm-unknown-linux-gnueabi # (libc mismatch)
+          - arm-unknown-linux-gnueabihf # (libc mismatch)
+          - arm-unknown-linux-musleabi
+          - arm-unknown-linux-musleabihf
+          # - armebv7r-none-eabi                    # (no std)
+          # - armebv7r-none-eabihf                  # (no std)
+          - armv5te-unknown-linux-gnueabi # (libc mismatch)
+          - armv5te-unknown-linux-musleabi
+          - armv7-linux-androideabi
+          # - armv7-unknown-linux-gnueabi           # (missing docker image)
+          - armv7-unknown-linux-gnueabihf # (libc mismatch)
+          # - armv7-unknown-linux-musleabi          # (missing docker image)
+          - armv7-unknown-linux-musleabihf
+          # - armv7a-none-eabi                      # (no std)
+          # - armv7r-none-eabi                      # (no std)
+          # - armv7r-none-eabihf                    # (no std)
+          # - asmjs-unknown-emscripten              # (build error)
+          # - i586-pc-windows-msvc                  # (missing docker image)
+          - i586-unknown-linux-gnu # (libc mismatch)
+          - i586-unknown-linux-musl
+          - i686-linux-android
+          # - i686-pc-windows-gnu                   # (missing docker image)
+          # - i686-pc-windows-msvc                  # (missing docker image)
+          # - i686-unknown-freebsd                  # (missing docker image)
+          - i686-unknown-linux-gnu # (libc mismatch)
+          - i686-unknown-linux-musl
+          # - mips-unknown-linux-gnu # (rust-std unavailable)
+          # - mips-unknown-linux-musl # (rust-std unavailable)
+          # - mips64-unknown-linux-gnuabi64 # (rust-std unavailable)
+          # - mips64-unknown-linux-muslabi64        # (missing docker image)
+          # - mips64el-unknown-linux-gnuabi64 # (rust-std unavailable)
+          # - mips64el-unknown-linux-muslabi64      # (missing docker image)
+          # - mipsel-unknown-linux-gnu # (rust-std unavailable)
+          # - mipsel-unknown-linux-musl # (rust-std unavailable)
+          # - nvptx64-nvidia-cuda                   # (no std)
+          - powerpc-unknown-linux-gnu # (libc mismatch)
+          # - powerpc64-unknown-linux-gnu           # (missing docker image)
+          - powerpc64le-unknown-linux-gnu
+          # - riscv32i-unknown-none-elf             # (no std)
+          # - riscv32imac-unknown-none-elf          # (no std)
+          # - riscv32imc-unknown-none-elf           # (no std)
+          - riscv64gc-unknown-linux-gnu
+          # - riscv64gc-unknown-none-elf            # (no std)
+          # - riscv64imac-unknown-none-elf          # (no std)
+          - s390x-unknown-linux-gnu
+          # - sparc64-unknown-linux-gnu             # (missing docker image)
+          # - sparcv9-sun-solaris                   # (build error)
+          # - thumbv6m-none-eabi                    # (no std)
+          # - thumbv7em-none-eabi                   # (no std)
+          # - thumbv7em-none-eabihf                 # (no std)
+          # - thumbv7m-none-eabi                    # (no std)
+          # - thumbv7neon-linux-androideabi         # (missing docker image)
+          # - thumbv7neon-unknown-linux-gnueabihf   # (missing docker image)
+          # - thumbv8m.base-none-eabi               # (no std)
+          # - thumbv8m.main-none-eabi               # (no std)
+          # - thumbv8m.main-none-eabihf             # (no std)
+          # - wasm32-unknown-emscripten             # (build error)
+          # - wasm32-unknown-unknown                # (tester error)
+          # - wasm32-wasi                           # (tester error)
+          # - x86_64-apple-darwin                   # (build error)
+          # - x86_64-apple-ios                      # (build error)
+          # - x86_64-fortanix-unknown-sgx           # (tester error)
+          # - x86_64-fuchsia                        # (fuchsia does not have [sg]etrlimit)
+          - x86_64-linux-android
+          # - x86_64-pc-solaris                     # (missing docker image)
+          # - x86_64-pc-windows-gnu                 # (other)
+          # - x86_64-pc-windows-msvc                # (missing docker image)
+          # - x86_64-sun-solaris                    # (build error)
+          # - x86_64-unknown-freebsd                # (missing docker image)
+          # - x86_64-unknown-illumos                # (build error)
+          - x86_64-unknown-linux-gnu
+          # - x86_64-unknown-linux-gnux32           # (missing docker image)
+          - x86_64-unknown-linux-musl
+          # - x86_64-unknown-netbsd                 # (tester error)
+          # - x86_64-unknown-redox                  # (nightly)
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cross
+      - name: cross test
+        run: |
+          # TODO: remove this when `cross` updates
+          # See https://github.com/cross-rs/cross/issues/1217
+          export CROSS_TARGET_AARCH64_LINUX_ANDROID_IMAGE="ghcr.io/cross-rs/aarch64-linux-android:main"
+          export CROSS_TARGET_I686_LINUX_ANDROID_IMAGE="ghcr.io/cross-rs/i686-linux-android:main"
+          export CROSS_TARGET_X86_64_LINUX_ANDROID_IMAGE="ghcr.io/cross-rs/x86_64-linux-android:main"
+
+          cross test --all-features --target=${{ matrix.target }}
+
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest
+          - runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - run: |
+          cargo test --all-features
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - run: |
+          cargo test --all-features
+
+  ubuntu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - run: |
+          cargo test --all-features
+
+  diff-codegen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: diff
+        run: |
+          ./scripts/codegen.sh
+          [[ -z $(git status -s) ]] # Fail if changed. See https://stackoverflow.com/a/9393642
+
+  bsd:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - name: freebsd
+            version: '14.3'
+          - name: netbsd
+            version: '10.1'
+          # - name: openbsd
+          #   version: '7.8'
+    steps:
+      - uses: actions/checkout@v6
+      - name: Test on ${{ matrix.os.name }}
+        uses: cross-platform-actions/action@v0.32.0
+        with:
+          operating_system: ${{ matrix.os.name }}
+          version: ${{ matrix.os.version }}
+          run: |
+            uname -a
+            # Install curl if needed (NetBSD may not have it by default)
+            if ! command -v curl > /dev/null 2>&1; then
+              if command -v pkgin > /dev/null 2>&1; then
+                sudo pkgin -y install curl
+              elif command -v pkg_add > /dev/null 2>&1; then
+                sudo pkg_add -v curl
+              elif command -v pkg > /dev/null 2>&1; then
+                sudo pkg install -y curl
+              fi
+            fi
+            # Install rustup
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
+            . "$HOME/.cargo/env"
+            rustc --version
+            cargo --version
+            cargo test --all-features

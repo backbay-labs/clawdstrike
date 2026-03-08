@@ -487,6 +487,7 @@ printf '%s\\n' '{"type":"result","result":"OK","total_cost_usd":0.02,"usage":{"i
       `#!/bin/sh
 printf '%s\\n' "$@" > "${captureArgsPath}"
 printf '%s\\n' '{"type":"result","result":"OK"}'
+exit 0
 `,
       { mode: 0o755 },
     )
@@ -528,6 +529,7 @@ printf '%s\\n' '{"type":"result","result":"OK"}'
       `#!/bin/sh
 printf '%s\\n' "$@" > "${captureArgsPath}"
 printf '%s\\n' '{"type":"result","result":"OK"}'
+exit 0
 `,
       { mode: 0o755 },
     )

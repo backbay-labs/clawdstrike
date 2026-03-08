@@ -126,6 +126,8 @@ pub mod policy;
 pub mod policy_bundle;
 #[cfg(any(feature = "full", feature = "policy-event"))]
 pub mod posture;
+#[cfg(all(feature = "full", unix))]
+pub mod sandbox;
 #[cfg(feature = "full")]
 mod semver_utils;
 #[cfg(all(feature = "full", feature = "spine"))]

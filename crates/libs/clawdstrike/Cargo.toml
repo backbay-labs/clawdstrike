@@ -28,6 +28,7 @@ hush-proxy = { workspace = true, optional = true }
 spine = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
 dirs = { workspace = true, optional = true }
+nono = { workspace = true, optional = true }
 serde_yaml = { workspace = true, optional = true }
 toml = { workspace = true, optional = true }
 glob = { workspace = true, optional = true }
@@ -87,7 +88,7 @@ policy-event = [
 full = [
   "policy-event",
   "spine",
-  "dep:tokio", "dep:dirs", "dep:dashmap", "dep:futures", "dep:uuid",
+  "dep:tokio", "dep:dirs", "dep:nono", "dep:dashmap", "dep:futures", "dep:uuid",
   "dep:reqwest", "dep:sha2", "dep:semver", "dep:pubgrub", "dep:tar", "dep:zstd",
 ]
 ipfs = ["full"]

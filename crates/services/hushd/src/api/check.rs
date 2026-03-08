@@ -236,9 +236,25 @@ fn origin_budget_session_required(
     request: &CheckRequest,
     enclave: Option<&clawdstrike::ResolvedEnclave>,
 ) -> bool {
+    let budget_key = match request.action_type.as_str() {
+        "mcp_tool" => Some("mcp_tool_calls"),
+        "egress" => Some("egress_calls"),
+        "shell" => Some("shell_commands"),
+        _ => None,
+    };
+
     request.session_id.is_none()
-        && enclave
-            .and_then(|resolved| resolved.budgets.as_ref())
+        && budget_key
+            .and_then(|key| {
+                enclave
+                    .and_then(|resolved| resolved.budgets.as_ref())
+                    .and_then(|budgets| match key {
+                        "mcp_tool_calls" => budgets.mcp_tool_calls,
+                        "egress_calls" => budgets.egress_calls,
+                        "shell_commands" => budgets.shell_commands,
+                        _ => None,
+                    })
+            })
             .is_some()
 }
 
@@ -1090,5 +1106,55 @@ mod tests {
             &request_with_session,
             Some(&enclave)
         ));
+    }
+
+    #[test]
+    fn unbudgeted_origin_action_does_not_require_session_id() {
+        let request = CheckRequest {
+            action_type: "file_access".to_string(),
+            target: "safe_tool".to_string(),
+            content: None,
+            args: None,
+            origin: Some(OriginContext {
+                provider: OriginProvider::Slack,
+                tags: vec!["provider:slack".to_string()],
+                ..OriginContext::default()
+            }),
+            session_id: None,
+            endpoint_agent_id: None,
+            runtime_agent_id: None,
+            runtime_agent_kind: None,
+        };
+
+        let enclave = resolve_request_origin_enclave(&request, &policy_with_budgeted_origin())
+            .expect("origin should resolve");
+        assert!(!origin_budget_session_required(&request, Some(&enclave)));
+    }
+
+    #[test]
+    fn empty_origin_budgets_do_not_require_session_id() {
+        let request = CheckRequest {
+            action_type: "mcp_tool".to_string(),
+            target: "safe_tool".to_string(),
+            content: None,
+            args: None,
+            origin: Some(OriginContext {
+                provider: OriginProvider::Slack,
+                tags: vec!["provider:slack".to_string()],
+                ..OriginContext::default()
+            }),
+            session_id: None,
+            endpoint_agent_id: None,
+            runtime_agent_id: None,
+            runtime_agent_kind: None,
+        };
+
+        let mut policy = policy_with_budgeted_origin();
+        policy.origins.as_mut().expect("origins").profiles[0].budgets =
+            Some(OriginBudgets::default());
+
+        let enclave =
+            resolve_request_origin_enclave(&request, &policy).expect("origin should resolve");
+        assert!(!origin_budget_session_required(&request, Some(&enclave)));
     }
 }

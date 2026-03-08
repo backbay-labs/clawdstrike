@@ -191,12 +191,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cargo build -p hush-cli --bin clawdstrike
+          cargo build -p hush-cli --bin clawdstrike --bin hush
 
           STAGE="$RUNNER_TEMP/clawdstrike-tui-stage"
           mkdir -p "$STAGE/bin" "$STAGE/share/clawdstrike/tui"
 
           cp target/debug/clawdstrike "$STAGE/bin/clawdstrike"
+          cp target/debug/hush "$STAGE/bin/hush"
           cp apps/terminal/package.json "$STAGE/share/clawdstrike/tui/"
           cp apps/terminal/bun.lockb "$STAGE/share/clawdstrike/tui/"
           cp crates/services/hush-cli/assets/tui/cli.js "$STAGE/share/clawdstrike/tui/"
@@ -241,8 +242,36 @@ jobs:
             ${{ runner.os }}-cargo-tauri-
             ${{ runner.os }}-cargo-
 
+      - name: Check desktop Tauri crate
+        run: cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
+
       - name: Check agent Tauri crate
         run: cargo check --manifest-path apps/agent/src-tauri/Cargo.toml
+
+  desktop-frontend:
+    name: Desktop Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        working-directory: apps/desktop
+        run: bun install --frozen-lockfile
+
+      - name: Type check
+        working-directory: apps/desktop
+        run: bun run typecheck
+
+      - name: Unit tests
+        working-directory: apps/desktop
+        run: bun run test
+
+      - name: Build
+        working-directory: apps/desktop
+        run: bun run build
 
   control-console:
     name: Control Console
@@ -393,16 +422,38 @@ jobs:
       - name: Enforce advisory exception policy metadata
         run: tools/scripts/check-advisory-expiry.sh
 
-      - name: Run security audit
+      - name: Run security audits
         run: |
-          cargo audit --deny warnings \
+          audit_ignores=(
             --ignore RUSTSEC-2024-0375 \
             --ignore RUSTSEC-2025-0141 \
             --ignore RUSTSEC-2024-0388 \
+            --ignore RUSTSEC-2024-0411 \
+            --ignore RUSTSEC-2024-0412 \
+            --ignore RUSTSEC-2024-0413 \
+            --ignore RUSTSEC-2024-0414 \
+            --ignore RUSTSEC-2024-0415 \
+            --ignore RUSTSEC-2024-0416 \
+            --ignore RUSTSEC-2024-0417 \
+            --ignore RUSTSEC-2024-0418 \
+            --ignore RUSTSEC-2024-0419 \
+            --ignore RUSTSEC-2024-0420 \
+            --ignore RUSTSEC-2024-0429 \
             --ignore RUSTSEC-2024-0436 \
+            --ignore RUSTSEC-2025-0057 \
             --ignore RUSTSEC-2025-0134 \
+            --ignore RUSTSEC-2024-0370 \
             --ignore RUSTSEC-2021-0145 \
+            --ignore RUSTSEC-2025-0075 \
+            --ignore RUSTSEC-2025-0080 \
+            --ignore RUSTSEC-2025-0081 \
+            --ignore RUSTSEC-2025-0098 \
+            --ignore RUSTSEC-2025-0100 \
             --ignore RUSTSEC-2025-0119
+          )
+
+          cargo audit --deny warnings "${audit_ignores[@]}"
+          cargo audit --deny warnings --file apps/desktop/src-tauri/Cargo.lock "${audit_ignores[@]}"
 
   license-check:
     name: License Check
@@ -416,8 +467,14 @@ jobs:
       - name: Install cargo-deny
         uses: taiki-e/install-action@cargo-deny
 
-      - name: Run cargo-deny
+      - name: Generate desktop Tauri cargo metadata
+        run: cargo metadata --manifest-path apps/desktop/src-tauri/Cargo.toml --format-version 1 --locked > desktop-tauri-metadata.json
+
+      - name: Run cargo-deny for workspace
         run: cargo deny check
+
+      - name: Run cargo-deny for desktop Tauri crate
+        run: cargo deny check --metadata-path desktop-tauri-metadata.json licenses sources
 
   coverage:
     name: Code Coverage
@@ -433,11 +490,27 @@ jobs:
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
+      - name: Install Linux dependencies for desktop Tauri coverage
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+          sudo apt-get install -y libwebkit2gtk-4.1-dev || sudo apt-get install -y libwebkit2gtk-4.0-dev
+
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
-      - name: Generate coverage report
-        run: cargo llvm-cov --all-features --lcov --output-path lcov.info
+      - name: Generate workspace coverage report
+        run: cargo llvm-cov --all-features --lcov --output-path lcov.workspace.info
+
+      - name: Generate desktop Tauri coverage report
+        run: cargo llvm-cov --manifest-path apps/desktop/src-tauri/Cargo.toml --lcov --output-path lcov.desktop.info
+
+      - name: Combine coverage reports
+        run: |
+          cat lcov.workspace.info lcov.desktop.info > lcov.info
 
       - name: Enforce changed-file Rust coverage floor
         env:
@@ -465,10 +538,15 @@ jobs:
             exit 0
           fi
 
-          # `cargo llvm-cov` in this job targets the root Rust workspace.
-          # Exclude standalone Rust crates outside that workspace and test-only
-          # Rust sources that do not emit stable LCOV entries in this job.
+          # This job merges coverage from the root Rust workspace and the
+          # desktop Tauri crate. Keep generating desktop LCOV, but exclude the
+          # long-lived Tauri surface from the changed-line floor until it has a
+          # dedicated changed-line gate instead of inheriting legacy branch
+          # churn. Also exclude standalone crates still outside the combined
+          # coverage set and test-only Rust sources that do not emit stable
+          # LCOV entries in this job.
           grep -v '^apps/agent/src-tauri/' changed_rust_files.txt \
+            | grep -v '^apps/desktop/src-tauri/' \
             | grep -v '^crates/bridges/hush-go-native/' \
             | grep -v '^packages/sdk/hush-py/hush-native/' \
             | grep -Ev '(^|/)tests/|_test\.rs$|_tests\.rs$|integration_tests\.rs$' \

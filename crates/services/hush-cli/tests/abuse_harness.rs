@@ -69,7 +69,9 @@ impl HarnessProcess {
             .arg("--signing-key")
             .arg(&key_path)
             .arg("--proxy-port")
-            .arg("0");
+            .arg("0")
+            .arg("--sandbox")
+            .arg("none");
 
         for arg in extra_args {
             cmd.arg(arg);
