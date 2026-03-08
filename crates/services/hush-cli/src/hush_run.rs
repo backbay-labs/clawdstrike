@@ -1966,6 +1966,14 @@ mod tests {
         )
     }
 
+    fn expected_supervised_degraded_reason() -> &'static str {
+        if cfg!(target_os = "macos") {
+            "macos_authorization_contract_unavailable"
+        } else {
+            "supervised_interception_inactive"
+        }
+    }
+
     fn test_custom_event(id: usize) -> PolicyEvent {
         PolicyEvent {
             event_id: format!("event-{id}"),
@@ -2011,7 +2019,7 @@ mod tests {
         assert_eq!(note, "nono+supervised-degraded");
         assert_eq!(
             failure.as_deref(),
-            Some("macos_authorization_contract_unavailable")
+            Some(expected_supervised_degraded_reason())
         );
     }
 

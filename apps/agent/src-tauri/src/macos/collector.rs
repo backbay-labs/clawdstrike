@@ -233,8 +233,9 @@ fn merge_install_state(
     match (current, candidate) {
         (SystemExtensionInstallState::NotInstalled, _)
         | (_, SystemExtensionInstallState::NotInstalled) => SystemExtensionInstallState::NotInstalled,
-        (SystemExtensionInstallState::Installed, _)
-        | (_, SystemExtensionInstallState::Installed) => SystemExtensionInstallState::Installed,
+        (SystemExtensionInstallState::Installed, SystemExtensionInstallState::Installed) => {
+            SystemExtensionInstallState::Installed
+        }
         _ => SystemExtensionInstallState::Unknown,
     }
 }
@@ -246,7 +247,7 @@ fn merge_approval_state(
     match (current, candidate) {
         (SystemExtensionApproval::ApprovalBlocked, _)
         | (_, SystemExtensionApproval::ApprovalBlocked) => SystemExtensionApproval::ApprovalBlocked,
-        (SystemExtensionApproval::Approved, _) | (_, SystemExtensionApproval::Approved) => {
+        (SystemExtensionApproval::Approved, SystemExtensionApproval::Approved) => {
             SystemExtensionApproval::Approved
         }
         _ => SystemExtensionApproval::Unknown,
@@ -404,8 +405,8 @@ mod tests {
             None,
         );
 
-        assert_eq!(combined.install_state, SystemExtensionInstallState::Installed);
-        assert_eq!(combined.approval, SystemExtensionApproval::Approved);
+        assert_eq!(combined.install_state, SystemExtensionInstallState::Unknown);
+        assert_eq!(combined.approval, SystemExtensionApproval::Unknown);
         assert_eq!(
             combined.endpoint_security,
             ProviderStatus {
@@ -430,6 +431,45 @@ mod tests {
                 SystemExtensionInstallState::Installed,
             ),
             SystemExtensionInstallState::NotInstalled
+        );
+        assert_eq!(
+            merge_install_state(
+                SystemExtensionInstallState::Installed,
+                SystemExtensionInstallState::Unknown,
+            ),
+            SystemExtensionInstallState::Unknown
+        );
+        assert_eq!(
+            merge_install_state(
+                SystemExtensionInstallState::Unknown,
+                SystemExtensionInstallState::Installed,
+            ),
+            SystemExtensionInstallState::Unknown
+        );
+    }
+
+    #[test]
+    fn merge_approval_state_requires_consistent_approval_proof() {
+        assert_eq!(
+            merge_approval_state(
+                SystemExtensionApproval::Approved,
+                SystemExtensionApproval::Unknown,
+            ),
+            SystemExtensionApproval::Unknown
+        );
+        assert_eq!(
+            merge_approval_state(
+                SystemExtensionApproval::Unknown,
+                SystemExtensionApproval::Approved,
+            ),
+            SystemExtensionApproval::Unknown
+        );
+        assert_eq!(
+            merge_approval_state(
+                SystemExtensionApproval::Approved,
+                SystemExtensionApproval::Approved,
+            ),
+            SystemExtensionApproval::Approved
         );
     }
 }
