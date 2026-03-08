@@ -269,9 +269,17 @@ class DaemonEngineBackend:
         return self._post_report(self._check_url, request_payload)
 
     def _eval(self, event: dict[str, Any]) -> dict[str, Any]:
-        report = self._post_json(self._eval_url, event).get("report")
+        parsed = self._post_json(self._eval_url, event)
+        if "overall" in parsed and "per_guard" in parsed:
+            return parsed
+
+        report = parsed.get("report")
         if isinstance(report, dict) and "overall" in report and "per_guard" in report:
             return report
+
+        message = parsed.get("message")
+        if isinstance(message, str) and message:
+            return self._daemon_failure(message)
         return self._daemon_failure("Daemon returned malformed eval payload")
 
     def _post_report(self, url: str, payload: dict[str, Any]) -> dict[str, Any]:

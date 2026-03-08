@@ -372,7 +372,7 @@ swarm_write_lane_prompt() {
     cat > "$prompt_file" <<EOF_PROMPT
 Use \$clawdstrike-swarm-supervisor.
 
-Current lane: ORCH.
+Current lane: ${brief_id}.
 Lane purpose: ${description}
 
 Read these docs first:
