@@ -114,8 +114,8 @@ struct PreparedContext {
 }
 
 enum PreparedEvaluation {
-    Continue(PreparedContext),
-    Complete(GuardReport),
+    Continue(Box<PreparedContext>),
+    Complete(Box<GuardReport>),
 }
 
 /// The main security enforcement engine
@@ -444,8 +444,8 @@ impl HushEngine {
             return Err(Error::ConfigError(msg.clone()));
         }
         let prepared = match self.prepare_origin_context(context, None).await? {
-            PreparedEvaluation::Continue(prepared) => prepared,
-            PreparedEvaluation::Complete(report) => return Ok(report),
+            PreparedEvaluation::Continue(prepared) => *prepared,
+            PreparedEvaluation::Complete(report) => return Ok(*report),
         };
 
         self.check_action_report_prepared(action, prepared, None)
@@ -487,7 +487,7 @@ impl HushEngine {
                                         ),
                                     )
                                     .await;
-                                return Ok(PreparedEvaluation::Complete(report));
+                                return Ok(PreparedEvaluation::Complete(Box::new(report)));
                             }
                         }
                     }
@@ -508,7 +508,7 @@ impl HushEngine {
                                 None,
                             )
                             .await;
-                        return Ok(PreparedEvaluation::Complete(report));
+                        return Ok(PreparedEvaluation::Complete(Box::new(report)));
                     }
                     match origins_config.effective_default_behavior() {
                         OriginDefaultBehavior::Deny => {
@@ -522,7 +522,7 @@ impl HushEngine {
                                     None,
                                 )
                                 .await;
-                            return Ok(PreparedEvaluation::Complete(report));
+                            return Ok(PreparedEvaluation::Complete(Box::new(report)));
                         }
                         OriginDefaultBehavior::MinimalProfile => {
                             debug!(
@@ -569,7 +569,7 @@ impl HushEngine {
                                                 metadata.clone(),
                                             )
                                             .await;
-                                        return Ok(PreparedEvaluation::Complete(report));
+                                        return Ok(PreparedEvaluation::Complete(Box::new(report)));
                                     }
                                     BridgeCheckResult::Deny(reason) => {
                                         let report = self
@@ -584,7 +584,7 @@ impl HushEngine {
                                                 metadata.clone(),
                                             )
                                             .await;
-                                        return Ok(PreparedEvaluation::Complete(report));
+                                        return Ok(PreparedEvaluation::Complete(Box::new(report)));
                                     }
                                 }
                                 *origin_state = Some(OriginRuntimeState::new(
@@ -620,10 +620,10 @@ impl HushEngine {
             }
         }
 
-        Ok(PreparedEvaluation::Continue(PreparedContext {
+        Ok(PreparedEvaluation::Continue(Box::new(PreparedContext {
             context: effective_context,
             metadata,
-        }))
+        })))
     }
 
     async fn check_action_report_prepared(
@@ -658,14 +658,13 @@ impl HushEngine {
         }
 
         if let Some(result) = self
-            .origin_budget_precheck(
-                action,
-                &context,
-                origin_state.as_ref().map(|state| &**state),
-            )
+            .origin_budget_precheck(action, &context, origin_state.as_deref())
             .await
         {
-            return Ok(self.single_result_report(result, metadata).await);
+            if !result.allowed {
+                return Ok(self.single_result_report(result, metadata).await);
+            }
+            pre_guard.push(result);
         }
 
         for result in &pre_guard {
@@ -929,20 +928,14 @@ impl HushEngine {
     ) -> Option<GuardResult> {
         let capability = Capability::from_action(action);
         let budget_key = capability.budget_key()?;
-        let Some(enclave) = context.enclave.as_ref() else {
-            return None;
-        };
+        let enclave = context.enclave.as_ref()?;
         let configured = enclave
             .budgets
             .as_ref()
             .and_then(|budgets| origin_budget_limit(budgets, budget_key));
-        let Some(limit) = configured else {
-            return None;
-        };
+        let limit = configured?;
 
-        let Some(origin_state) = origin_state else {
-            return None;
-        };
+        let origin_state = origin_state?;
 
         let Some(runtime) = origin_state.as_ref() else {
             return Some(GuardResult::block(
@@ -1077,10 +1070,10 @@ impl HushEngine {
                 .prepare_origin_context(context, Some(origin_state))
                 .await?
             {
-                PreparedEvaluation::Continue(prepared) => prepared,
+                PreparedEvaluation::Continue(prepared) => *prepared,
                 PreparedEvaluation::Complete(report) => {
                     return Ok(PostureAwareReport {
-                        guard_report: report,
+                        guard_report: *report,
                         posture_before: "default".to_string(),
                         posture_after: "default".to_string(),
                         budgets_before: HashMap::new(),
@@ -1109,13 +1102,13 @@ impl HushEngine {
             .prepare_origin_context(context, Some(origin_state))
             .await?
         {
-            PreparedEvaluation::Continue(prepared) => prepared,
+            PreparedEvaluation::Continue(prepared) => *prepared,
             PreparedEvaluation::Complete(report) => {
                 let state = posture_state.as_ref().ok_or_else(|| {
                     Error::ConfigError("failed to initialize posture runtime state".to_string())
                 })?;
                 return Ok(PostureAwareReport {
-                    guard_report: report,
+                    guard_report: *report,
                     posture_before: state.current_state.clone(),
                     posture_after: state.current_state.clone(),
                     budgets_before: state.budgets.clone(),

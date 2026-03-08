@@ -115,12 +115,13 @@ pub async fn replay_events(
             )
         } else {
             let mut ephemeral_posture: Option<PostureRuntimeState> = None;
+            let mut ephemeral_origin: Option<OriginRuntimeState> = None;
             let report = engine
                 .check_action_report_with_runtime(
                     &mapped.action.as_guard_action(),
                     &mapped.context,
                     &mut ephemeral_posture,
-                    &mut origin_state,
+                    &mut ephemeral_origin,
                 )
                 .await?
                 .guard_report;

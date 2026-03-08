@@ -207,11 +207,24 @@ fn representative_domain(pattern: &str) -> String {
             }
             '{' => {
                 let mut selected = String::new();
+                let mut depth = 1usize;
+                let mut collecting = true;
                 for inner in chars.by_ref() {
-                    if matches!(inner, ',' | '}') {
-                        break;
+                    match inner {
+                        '{' => {
+                            depth += 1;
+                            collecting = false;
+                        }
+                        '}' => {
+                            depth -= 1;
+                            if depth == 0 {
+                                break;
+                            }
+                        }
+                        ',' if depth == 1 => collecting = false,
+                        _ if collecting && depth == 1 => selected.push(inner),
+                        _ => {}
                     }
-                    selected.push(inner);
                 }
                 if selected.is_empty() {
                     out.push('x');
@@ -522,6 +535,23 @@ mod tests {
 
         let effective = base.intersect_with(&enclave);
         assert_eq!(effective.allow, vec!["api*.openai.com".to_string()]);
+    }
+
+    #[test]
+    fn test_intersect_with_preserves_brace_subset_overlap() {
+        let base = EgressAllowlistConfig {
+            allow: vec!["*.openai.com".to_string()],
+            default_action: Some(PolicyAction::Block),
+            ..Default::default()
+        };
+        let enclave = EgressAllowlistConfig {
+            allow: vec!["{api,chat}.openai.com".to_string()],
+            default_action: Some(PolicyAction::Block),
+            ..Default::default()
+        };
+
+        let effective = base.intersect_with(&enclave);
+        assert_eq!(effective.allow, vec!["{api,chat}.openai.com".to_string()]);
     }
 
     #[tokio::test]
