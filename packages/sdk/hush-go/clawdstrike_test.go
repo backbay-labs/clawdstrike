@@ -26,6 +26,14 @@ func (s *stubChecker) CheckAction(_ guards.GuardAction, _ *guards.GuardContext) 
 	return s.result
 }
 
+type originCapableStubChecker struct {
+	stubChecker
+}
+
+func (s *originCapableStubChecker) SupportsOriginRuntime() bool {
+	return true
+}
+
 func TestFromPolicyBuildsEngine(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "policy.yaml")
@@ -762,7 +770,7 @@ func TestLocalEngineFailsClosedWhenOutputSendIsRequested(t *testing.T) {
 	}
 }
 
-func TestNonLocalCheckerDoesNotShortCircuitOriginAwareChecks(t *testing.T) {
+func TestNonOriginRuntimeCapableCheckerFailsClosedForOriginAwareChecks(t *testing.T) {
 	checker := &stubChecker{
 		result: guards.Allow("stub"),
 	}
@@ -773,8 +781,29 @@ func TestNonLocalCheckerDoesNotShortCircuitOriginAwareChecks(t *testing.T) {
 		guards.NewContext().WithOrigin(guards.NewOriginContext(guards.OriginProviderGitHub)),
 	)
 
+	if decision.Status != StatusDeny {
+		t.Fatalf("expected deny from non-origin-capable checker, got %s", decision.Status)
+	}
+	if checker.calls != 0 {
+		t.Fatalf("expected checker call count 0, got %d", checker.calls)
+	}
+}
+
+func TestOriginRuntimeCapableCheckerDoesNotShortCircuitOriginAwareChecks(t *testing.T) {
+	checker := &originCapableStubChecker{
+		stubChecker: stubChecker{
+			result: guards.Allow("stub"),
+		},
+	}
+	cs := &Clawdstrike{checker: checker}
+
+	decision := cs.CheckWithContext(
+		guards.FileAccess("/tmp/report.txt"),
+		guards.NewContext().WithOrigin(guards.NewOriginContext(guards.OriginProviderGitHub)),
+	)
+
 	if decision.Status != StatusAllow {
-		t.Fatalf("expected allow from non-local checker, got %s", decision.Status)
+		t.Fatalf("expected allow from origin-capable checker, got %s", decision.Status)
 	}
 	if checker.calls != 1 {
 		t.Fatalf("expected checker call count 1, got %d", checker.calls)

@@ -1,5 +1,7 @@
 """Tests for hush.policy module."""
 
+from pathlib import Path
+
 import pytest
 
 from clawdstrike.exceptions import PolicyError, UnsupportedOriginFeatureError
@@ -13,6 +15,8 @@ from clawdstrike.policy import (
 
 
 class TestPolicy:
+    _fixtures_dir = Path(__file__).resolve().parent / "fixtures"
+
     def test_default_policy(self) -> None:
         policy = Policy()
         assert policy.version == "1.2.0"
@@ -85,7 +89,7 @@ origins:
             UnsupportedOriginFeatureError,
             match="Use the native or daemon-backed backend for origin enforcement",
         ):
-            Policy.from_yaml_with_extends(yaml_str, base_path="packages/sdk/hush-py/tests/fixtures")
+            Policy.from_yaml_with_extends(yaml_str, base_path=self._fixtures_dir)
 
     def test_policy_rejects_unknown_top_level_keys(self) -> None:
         with pytest.raises(PolicyError):

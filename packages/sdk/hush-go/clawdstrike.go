@@ -37,6 +37,10 @@ type checker interface {
 	CheckAction(action guards.GuardAction, ctx *guards.GuardContext) guards.GuardResult
 }
 
+type originRuntimeCapable interface {
+	SupportsOriginRuntime() bool
+}
+
 // DaemonConfig configures daemon-backed policy evaluation.
 type DaemonConfig struct {
 	APIKey        string
@@ -127,12 +131,13 @@ func (c *Clawdstrike) Check(action guards.GuardAction) Decision {
 }
 
 func (c *Clawdstrike) CheckWithContext(action guards.GuardAction, ctx *guards.GuardContext) Decision {
-	if c != nil && c.engine != nil {
+	checker := c.effectiveChecker()
+	if originAwareRequest(action, ctx) && !checkerSupportsOriginRuntime(checker) {
 		if result, blocked := localUnsupportedOriginResult(action, ctx); blocked {
 			return guards.DecisionFromResult(result)
 		}
 	}
-	result := c.effectiveChecker().CheckAction(action, ctx)
+	result := checker.CheckAction(action, ctx)
 	return guards.DecisionFromResult(result)
 }
 
@@ -189,11 +194,18 @@ func (c *Clawdstrike) effectiveChecker() checker {
 }
 
 func localUnsupportedOriginResult(action guards.GuardAction, ctx *guards.GuardContext) (guards.GuardResult, bool) {
-	if ctx != nil && ctx.Origin != nil {
-		return guards.Block("origin", guards.Critical, localOriginUnsupportedMessage), true
-	}
-	if action.Type == "custom" && action.CustomType == "origin.output_send" {
+	if originAwareRequest(action, ctx) {
 		return guards.Block("origin", guards.Critical, localOriginUnsupportedMessage), true
 	}
 	return guards.GuardResult{}, false
+}
+
+func originAwareRequest(action guards.GuardAction, ctx *guards.GuardContext) bool {
+	return (ctx != nil && ctx.Origin != nil) ||
+		(action.Type == "custom" && action.CustomType == "origin.output_send")
+}
+
+func checkerSupportsOriginRuntime(checker checker) bool {
+	capable, ok := checker.(originRuntimeCapable)
+	return ok && capable.SupportsOriginRuntime()
 }
