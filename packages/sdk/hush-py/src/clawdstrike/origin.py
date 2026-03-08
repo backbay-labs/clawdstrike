@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Literal, TypeAlias
+from typing import Any, Literal, TypeAlias, cast
 
 _FIELD_ALIASES: dict[str, str] = {
     "tenantId": "tenant_id",
@@ -85,7 +85,7 @@ def _coerce_optional_provenance_confidence(value: Any) -> ProvenanceConfidence |
             "origin.provenance_confidence must be one of: "
             + ", ".join(sorted(_PROVENANCE_CONFIDENCE_VALUES))
         )
-    return value
+    return cast(ProvenanceConfidence, value)
 
 
 def _coerce_optional_metadata(value: Any) -> dict[str, Any] | None:
