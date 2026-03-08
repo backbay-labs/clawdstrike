@@ -84,6 +84,23 @@ def test_origin_context_requires_provider() -> None:
         OriginContext.from_dict({"spaceId": "C456"})
 
 
+def test_origin_context_direct_init_validates_optional_fields() -> None:
+    with pytest.raises(TypeError, match="origin.external_participants must be a bool"):
+        OriginContext(provider="slack", external_participants="yes")  # type: ignore[arg-type]
+
+
+def test_origin_context_direct_init_clones_mutable_fields() -> None:
+    tags = ["pager"]
+    metadata = {"source": "slash-command"}
+    origin = OriginContext(provider="slack", tags=tags, metadata=metadata)
+
+    tags.append("external")
+    metadata["source"] = "mutated"
+
+    assert origin.to_dict()["tags"] == ["pager"]
+    assert origin.to_dict()["metadata"] == {"source": "slash-command"}
+
+
 def test_origin_context_rejects_invalid_provenance_confidence() -> None:
     with pytest.raises(ValueError, match="origin.provenance_confidence must be one of"):
         OriginContext.from_dict({

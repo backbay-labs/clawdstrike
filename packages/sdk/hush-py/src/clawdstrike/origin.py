@@ -137,7 +137,73 @@ class OriginContext:
     metadata: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
-        _coerce_required_str(self.provider, field_name="provider")
+        object.__setattr__(
+            self,
+            "provider",
+            _coerce_required_str(self.provider, field_name="provider"),
+        )
+        object.__setattr__(
+            self,
+            "tenant_id",
+            _coerce_optional_str(self.tenant_id, field_name="tenant_id"),
+        )
+        object.__setattr__(
+            self,
+            "space_id",
+            _coerce_optional_str(self.space_id, field_name="space_id"),
+        )
+        object.__setattr__(
+            self,
+            "space_type",
+            _coerce_optional_str(self.space_type, field_name="space_type"),
+        )
+        object.__setattr__(
+            self,
+            "thread_id",
+            _coerce_optional_str(self.thread_id, field_name="thread_id"),
+        )
+        object.__setattr__(
+            self,
+            "actor_id",
+            _coerce_optional_str(self.actor_id, field_name="actor_id"),
+        )
+        object.__setattr__(
+            self,
+            "actor_type",
+            _coerce_optional_str(self.actor_type, field_name="actor_type"),
+        )
+        object.__setattr__(
+            self,
+            "actor_role",
+            _coerce_optional_str(self.actor_role, field_name="actor_role"),
+        )
+        object.__setattr__(
+            self,
+            "visibility",
+            _coerce_optional_str(self.visibility, field_name="visibility"),
+        )
+        object.__setattr__(
+            self,
+            "external_participants",
+            _coerce_optional_bool(
+                self.external_participants,
+                field_name="external_participants",
+            ),
+        )
+        tags = _coerce_optional_tags(self.tags)
+        object.__setattr__(self, "tags", list(tags) if tags is not None else None)
+        object.__setattr__(
+            self,
+            "sensitivity",
+            _coerce_optional_str(self.sensitivity, field_name="sensitivity"),
+        )
+        object.__setattr__(
+            self,
+            "provenance_confidence",
+            _coerce_optional_provenance_confidence(self.provenance_confidence),
+        )
+        metadata = _coerce_optional_metadata(self.metadata)
+        object.__setattr__(self, "metadata", dict(metadata) if metadata is not None else None)
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> OriginContext:

@@ -46,6 +46,28 @@ type daemonCheckResponse struct {
 	Details  interface{} `json:"details,omitempty"`
 }
 
+type daemonEvalRequest struct {
+	EventID   string                 `json:"eventId"`
+	EventType string                 `json:"eventType"`
+	Timestamp string                 `json:"timestamp"`
+	SessionID string                 `json:"sessionId,omitempty"`
+	Data      daemonEvalCustomData   `json:"data"`
+	Metadata  map[string]interface{} `json:"metadata,omitempty"`
+}
+
+type daemonEvalCustomData struct {
+	Type       string `json:"type"`
+	CustomType string `json:"customType"`
+	Text       string `json:"text"`
+	Source     string `json:"source,omitempty"`
+}
+
+type daemonEvalResponse struct {
+	Report struct {
+		Overall daemonCheckResponse `json:"overall"`
+	} `json:"report"`
+}
+
 func newDaemonChecker(rawURL string, cfg DaemonConfig) (*daemonChecker, error) {
 	trimmed := strings.TrimRight(strings.TrimSpace(rawURL), "/")
 	if trimmed == "" {
@@ -89,6 +111,10 @@ func newDaemonChecker(rawURL string, cfg DaemonConfig) (*daemonChecker, error) {
 }
 
 func (d *daemonChecker) CheckAction(action guards.GuardAction, guardCtx *guards.GuardContext) guards.GuardResult {
+	if action.Type == "custom" && action.CustomType == "untrusted_text" {
+		return d.checkUntrustedText(action, guardCtx)
+	}
+
 	reqBody, err := toDaemonRequest(action, guardCtx)
 	if err != nil {
 		return daemonFailure(fmt.Sprintf("Invalid daemon request: %v", err))
@@ -126,6 +152,63 @@ func (d *daemonChecker) CheckAction(action guards.GuardAction, guardCtx *guards.
 
 func (d *daemonChecker) SupportsOriginRuntime() bool {
 	return true
+}
+
+func (d *daemonChecker) checkUntrustedText(
+	action guards.GuardAction,
+	guardCtx *guards.GuardContext,
+) guards.GuardResult {
+	text, source, err := extractUntrustedTextPayload(action.CustomData)
+	if err != nil {
+		return daemonFailure(fmt.Sprintf("Invalid daemon request: %v", err))
+	}
+
+	reqBody := daemonEvalRequest{
+		EventID:   internal.CreateID("evt"),
+		EventType: "custom",
+		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+		Data: daemonEvalCustomData{
+			Type:       "custom",
+			CustomType: "untrusted_text",
+			Text:       text,
+			Source:     source,
+		},
+	}
+
+	if guardCtx != nil {
+		reqBody.SessionID = guardCtx.SessionID
+		reqBody.Metadata = daemonEvalMetadata(guardCtx)
+	}
+
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return daemonFailure(fmt.Sprintf("Failed to encode daemon request: %v", err))
+	}
+
+	requestCtx := daemonRequestContext(guardCtx)
+
+	var lastFailure string
+	for attempt := 1; attempt <= d.retry.attempts; attempt++ {
+		if err := requestCtx.Err(); err != nil {
+			return daemonFailure(fmt.Sprintf("Daemon check canceled: %v", err))
+		}
+		result, retryable, failure := d.doEvalRequest(requestCtx, body)
+		if failure == "" {
+			return result
+		}
+		lastFailure = failure
+		if attempt == d.retry.attempts || !retryable {
+			break
+		}
+		wait := daemonRetryDelay(d.retry.backoff, attempt)
+		if wait > 0 {
+			if !internal.SleepWithContext(requestCtx, wait) {
+				return daemonFailure(fmt.Sprintf("Daemon check canceled: %v", requestCtx.Err()))
+			}
+		}
+	}
+
+	return daemonFailure(lastFailure)
 }
 
 func (d *daemonChecker) doRequest(requestCtx context.Context, body []byte) (guards.GuardResult, bool, string) {
@@ -185,6 +268,71 @@ func (d *daemonChecker) doRequest(requestCtx context.Context, body []byte) (guar
 		Severity: sev,
 		Message:  parsed.Message,
 		Details:  parsed.Details,
+	}, false, ""
+}
+
+func (d *daemonChecker) doEvalRequest(
+	requestCtx context.Context,
+	body []byte,
+) (guards.GuardResult, bool, string) {
+	if requestCtx == nil {
+		requestCtx = context.Background()
+	}
+	req, err := http.NewRequestWithContext(
+		requestCtx,
+		http.MethodPost,
+		d.url+"/api/v1/eval",
+		bytes.NewReader(body),
+	)
+	if err != nil {
+		return guards.GuardResult{}, false, fmt.Sprintf("Failed to build daemon request: %v", err)
+	}
+	req.Header.Set("content-type", "application/json")
+	req.Header.Set("accept", "application/json")
+	if d.apiKey != "" {
+		req.Header.Set("authorization", "Bearer "+d.apiKey)
+	}
+
+	resp, err := d.client.Do(req)
+	if err != nil {
+		return guards.GuardResult{}, true, fmt.Sprintf("Daemon check failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return guards.GuardResult{}, true, fmt.Sprintf("Daemon response read failed: %v", err)
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		retryable := resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500
+		detail := strings.TrimSpace(string(respBody))
+		if detail != "" {
+			return guards.GuardResult{}, retryable, fmt.Sprintf("Daemon check failed with HTTP %d: %s", resp.StatusCode, detail)
+		}
+		return guards.GuardResult{}, retryable, fmt.Sprintf("Daemon check failed with HTTP %d", resp.StatusCode)
+	}
+
+	var parsed daemonEvalResponse
+	if err := json.Unmarshal(respBody, &parsed); err != nil {
+		return guards.GuardResult{}, false, "Daemon returned invalid JSON"
+	}
+	if parsed.Report.Overall.Guard == "" ||
+		parsed.Report.Overall.Severity == "" ||
+		parsed.Report.Overall.Message == "" {
+		return guards.GuardResult{}, false, "Daemon returned malformed eval payload"
+	}
+
+	sev, err := guards.ParseSeverity(parsed.Report.Overall.Severity)
+	if err != nil {
+		sev = guards.Error
+	}
+	return guards.GuardResult{
+		Allowed:  parsed.Report.Overall.Allowed,
+		Guard:    parsed.Report.Overall.Guard,
+		Severity: sev,
+		Message:  parsed.Report.Overall.Message,
+		Details:  parsed.Report.Overall.Details,
 	}, false, ""
 }
 
@@ -302,4 +450,53 @@ func daemonRequestContext(ctx *guards.GuardContext) context.Context {
 		return ctx.Context
 	}
 	return context.Background()
+}
+
+func extractUntrustedTextPayload(payload interface{}) (string, string, error) {
+	switch value := payload.(type) {
+	case string:
+		text := strings.TrimSpace(value)
+		if text == "" {
+			return "", "", fmt.Errorf("untrusted_text requires a non-empty string")
+		}
+		return text, "", nil
+	case map[string]interface{}:
+		text, ok := value["text"].(string)
+		if !ok || strings.TrimSpace(text) == "" {
+			return "", "", fmt.Errorf("untrusted_text requires payload.text to be a non-empty string")
+		}
+		source, _ := value["source"].(string)
+		return text, source, nil
+	default:
+		raw, err := json.Marshal(value)
+		if err != nil {
+			return "", "", fmt.Errorf("untrusted_text payload must be JSON-serializable: %w", err)
+		}
+		var decoded map[string]interface{}
+		if err := json.Unmarshal(raw, &decoded); err != nil {
+			return "", "", fmt.Errorf("untrusted_text payload must be a string or object")
+		}
+		return extractUntrustedTextPayload(decoded)
+	}
+}
+
+func daemonEvalMetadata(ctx *guards.GuardContext) map[string]interface{} {
+	if ctx == nil {
+		return nil
+	}
+
+	metadata := make(map[string]interface{})
+	for key, value := range ctx.Metadata {
+		metadata[key] = value
+	}
+	if ctx.Origin != nil {
+		metadata["origin"] = ctx.Origin
+	}
+	if ctx.AgentID != "" {
+		metadata["endpointAgentId"] = ctx.AgentID
+	}
+	if len(metadata) == 0 {
+		return nil
+	}
+	return metadata
 }
