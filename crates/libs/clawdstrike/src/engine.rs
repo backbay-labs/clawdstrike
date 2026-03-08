@@ -939,7 +939,11 @@ impl HushEngine {
             return None;
         };
 
-        let Some(runtime) = origin_state.and_then(|state| state.as_ref()) else {
+        let Some(origin_state) = origin_state else {
+            return None;
+        };
+
+        let Some(runtime) = origin_state.as_ref() else {
             return Some(GuardResult::block(
                 "origin_budget",
                 Severity::Error,
@@ -3264,6 +3268,48 @@ origins:
         assert!(!denied.guard_report.overall.allowed);
         assert_eq!(denied.guard_report.overall.guard, "origin_budget");
         assert!(denied.guard_report.overall.message.contains("exhausted"));
+    }
+
+    #[tokio::test]
+    async fn test_origin_budget_is_skipped_on_stateless_api_path() {
+        let policy = policy_with_origins(OriginsConfig {
+            default_behavior: Some(OriginDefaultBehavior::Deny),
+            profiles: vec![OriginProfile {
+                id: "slack-budgeted".to_string(),
+                match_rules: OriginMatch {
+                    provider: Some(OriginProvider::Slack),
+                    ..Default::default()
+                },
+                mcp: None,
+                posture: None,
+                egress: None,
+                data: None,
+                budgets: Some(crate::policy::OriginBudgets {
+                    mcp_tool_calls: Some(1),
+                    ..Default::default()
+                }),
+                bridge_policy: None,
+                explanation: None,
+            }],
+        });
+        let engine = HushEngine::with_policy(policy);
+        let context = GuardContext::new().with_origin(test_slack_origin());
+        let args = serde_json::json!({});
+
+        let report = engine
+            .check_action_report(&GuardAction::McpTool("safe_tool", &args), &context)
+            .await
+            .unwrap();
+        assert!(
+            report.overall.allowed,
+            "stateless API should skip origin budget enforcement when runtime tracking is inactive"
+        );
+
+        let second = engine
+            .check_action_report(&GuardAction::McpTool("safe_tool", &args), &context)
+            .await
+            .unwrap();
+        assert!(second.overall.allowed);
     }
 
     #[tokio::test]
