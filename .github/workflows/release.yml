@@ -747,7 +747,7 @@ jobs:
       APPLE_ID: ${{ secrets.APPLE_ID }}
       APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
       CLAWDSTRIKE_REQUIRE_CONCRETE_MACOS_PACKAGING: "1"
-      NOTARIZE_OUT_DIR: ${{ runner.temp }}/clawdstrike-notarization
+      NOTARIZE_OUT_DIR: ${{ github.workspace }}/.github-artifacts/clawdstrike-notarization
     steps:
       - uses: actions/checkout@v6
 
