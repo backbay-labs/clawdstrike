@@ -69,7 +69,8 @@ export const OpenCodeAdapter: Adapter = {
       return true
     }
 
-    return commandExists("opencode")
+    const cliAvailable = await commandExists("opencode")
+    return cliAvailable
   },
 
   async execute(

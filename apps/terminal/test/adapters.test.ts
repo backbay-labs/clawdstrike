@@ -271,6 +271,17 @@ describe("Adapter availability", () => {
     expect(typeof result).toBe("boolean")
   })
 
+  test("OpenCodeAdapter.isAvailable returns false without API key or CLI", async () => {
+    const { configure } = await import("../src/dispatcher/adapters/opencode")
+    configure({ provider: "anthropic", apiKeyEnvVar: undefined })
+    delete process.env.ANTHROPIC_API_KEY
+    delete process.env.OPENAI_API_KEY
+    delete process.env.GOOGLE_API_KEY
+    process.env.PATH = ""
+
+    await expect(OpenCodeAdapter.isAvailable()).resolves.toBe(false)
+  })
+
   test("CrushAdapter.isAvailable returns boolean", async () => {
     const result = await CrushAdapter.isAvailable()
     expect(typeof result).toBe("boolean")

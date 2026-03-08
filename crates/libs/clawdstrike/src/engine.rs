@@ -849,17 +849,21 @@ impl HushEngine {
         action: &GuardAction<'_>,
         context: &GuardContext,
     ) -> Option<GuardResult> {
-        let payload = match output_send_payload(action) {
-            OutputSendPayload::NotOutputSend => return None,
-            OutputSendPayload::Invalid(message) => {
-                return Some(GuardResult::block("origin_data", Severity::Error, message));
-            }
-            OutputSendPayload::Valid(payload) => payload,
-        };
+        let payload = output_send_payload(action);
+        if matches!(payload, OutputSendPayload::NotOutputSend) {
+            return None;
+        }
 
         let enclave = context.enclave.as_ref()?;
         let data_policy = enclave.data.as_ref()?;
         let profile_label = enclave.profile_id.as_deref().unwrap_or("unknown");
+        let payload = match payload {
+            OutputSendPayload::Invalid(message) => {
+                return Some(GuardResult::block("origin_data", Severity::Error, message));
+            }
+            OutputSendPayload::Valid(payload) => payload,
+            OutputSendPayload::NotOutputSend => return None,
+        };
 
         if !data_policy.allow_external_sharing && is_external_origin(context.origin.as_ref()) {
             return Some(GuardResult::block(
@@ -3163,6 +3167,28 @@ origins:
         assert!(!report.overall.allowed);
         assert_eq!(report.overall.guard, "origin_data");
         assert!(report.overall.message.contains("external origin"));
+    }
+
+    #[tokio::test]
+    async fn test_origin_output_send_invalid_payload_is_ignored_without_data_policy() {
+        let engine = HushEngine::new();
+        let payload = serde_json::json!({
+            "target": "external-room"
+        });
+
+        let report = engine
+            .check_action_report(
+                &GuardAction::Custom("origin.output_send", &payload),
+                &GuardContext::new(),
+            )
+            .await
+            .unwrap();
+
+        assert!(report.overall.allowed);
+        assert!(!report
+            .per_guard
+            .iter()
+            .any(|result| result.guard == "origin_data"));
     }
 
     #[tokio::test]

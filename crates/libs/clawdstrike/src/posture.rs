@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use crate::error::PolicyFieldError;
 use crate::guards::GuardAction;
+#[cfg(feature = "full")]
 use crate::origin_runtime::OriginRuntimeState;
 
 pub const KNOWN_POSTURE_CAPABILITIES: &[&str] = &[
@@ -495,6 +496,7 @@ pub struct PostureRuntimeState {
     pub transition_history: Vec<PostureTransitionRecord>,
     #[serde(default)]
     pub budgets: HashMap<String, PostureBudgetCounter>,
+    #[cfg(feature = "full")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin_runtime: Option<OriginRuntimeState>,
 }
@@ -506,6 +508,7 @@ impl PostureRuntimeState {
             entered_at: Utc::now().to_rfc3339(),
             transition_history: Vec::new(),
             budgets,
+            #[cfg(feature = "full")]
             origin_runtime: None,
         }
     }
