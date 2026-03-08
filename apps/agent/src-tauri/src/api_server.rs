@@ -1446,6 +1446,14 @@ fn macos_host_health_status(status: &CombinedSystemExtensionStatus) -> &'static 
     }
 }
 
+fn agent_health_status(status: &CombinedSystemExtensionStatus) -> &'static str {
+    if cfg!(target_os = "macos") {
+        macos_host_health_status(status)
+    } else {
+        "ok"
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct DaemonEndpointDrift {
     #[serde(default)]
@@ -1961,7 +1969,7 @@ async fn agent_health(
         };
 
     Ok(Json(AgentHealthResponse {
-        status: macos_host_health_status(&macos_host),
+        status: agent_health_status(&macos_host),
         daemon,
         session,
         macos_host,
@@ -3346,6 +3354,16 @@ mod tests {
     }
 
     #[test]
+    fn agent_health_status_preserves_non_macos_ok_fallback() {
+        let status = CombinedSystemExtensionStatus::default();
+        if cfg!(target_os = "macos") {
+            assert_eq!(agent_health_status(&status), "pending");
+        } else {
+            assert_eq!(agent_health_status(&status), "ok");
+        }
+    }
+
+    #[test]
     fn auth_accepts_bearer_token() {
         let state = test_state();
         let mut headers = HeaderMap::new();
@@ -3661,7 +3679,12 @@ mod tests {
             .unwrap_or_else(|e| panic!("failed to read response body: {e}"));
         let payload: serde_json::Value = serde_json::from_slice(&body)
             .unwrap_or_else(|e| panic!("failed to decode response body: {e}"));
-        assert_eq!(payload["status"], "pending");
+        let expected_status = if cfg!(target_os = "macos") {
+            "pending"
+        } else {
+            "ok"
+        };
+        assert_eq!(payload["status"], expected_status);
         assert_eq!(payload["macos_host"]["install_state"], "unknown");
         assert_eq!(payload["macos_host"]["approval"], "unknown");
         assert_eq!(

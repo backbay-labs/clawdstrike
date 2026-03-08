@@ -20,7 +20,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use clawdstrike::sandbox::attestation::{ProviderState, SandboxRuntimeState};
+#[cfg(not(target_os = "linux"))]
+use clawdstrike::sandbox::attestation::ProviderState;
+use clawdstrike::sandbox::attestation::SandboxRuntimeState;
 use clawdstrike::sandbox::{SupervisorStats, TimestampedDenial};
 use clawdstrike::{GuardContext, HushEngine};
 use nono::{CapabilitySet, NeverGrantChecker};

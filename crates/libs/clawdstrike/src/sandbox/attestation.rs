@@ -326,7 +326,7 @@ impl SandboxRuntimeState {
             deadline_miss_count: 0,
             dropped_event_count: 0,
             degraded_reasons: Vec::new(),
-            provider_states: default_provider_states(applied, false),
+            provider_states: default_provider_states(applied),
             failure_reason,
         };
         if !state.applied {
@@ -356,7 +356,7 @@ impl SandboxRuntimeState {
             deadline_miss_count: 0,
             dropped_event_count: 0,
             degraded_reasons: Vec::new(),
-            provider_states: default_provider_states(applied, true),
+            provider_states: default_provider_states(applied),
             failure_reason,
         };
 
@@ -397,7 +397,7 @@ impl SandboxRuntimeState {
                 "macos_authorization_contract_unavailable".to_string(),
                 "supervised_launch_refused_without_live_authorization_provider".to_string(),
             ],
-            provider_states: default_provider_states(false, true),
+            provider_states: default_provider_states(false),
             failure_reason: Some(failure_reason.into()),
         }
     }
@@ -599,12 +599,15 @@ fn platform_mechanisms(runtime: &SandboxRuntimeState) -> Vec<String> {
             .filter(|provider| provider.active)
         {
             match provider.provider.as_str() {
-                "endpoint_security" => mechanisms.push("endpoint_security_contract".to_string()),
-                "network_extension" => mechanisms.push("network_extension_contract".to_string()),
+                "endpoint_security" => {
+                    push_unique_mechanism(&mut mechanisms, "endpoint_security_contract")
+                }
+                "network_extension" => {
+                    push_unique_mechanism(&mut mechanisms, "network_extension_contract")
+                }
                 _ => {}
             }
         }
-        mechanisms.dedup();
         mechanisms
     } else if cfg!(target_os = "linux") {
         let mut mechanisms = vec!["landlock".to_string()];
@@ -614,6 +617,12 @@ fn platform_mechanisms(runtime: &SandboxRuntimeState) -> Vec<String> {
         mechanisms
     } else {
         vec!["none".to_string()]
+    }
+}
+
+fn push_unique_mechanism(mechanisms: &mut Vec<String>, mechanism: &str) {
+    if !mechanisms.iter().any(|existing| existing == mechanism) {
+        mechanisms.push(mechanism.to_string());
     }
 }
 
@@ -642,26 +651,13 @@ fn effective_enforcement_level(
     }
 }
 
-fn default_provider_states(applied: bool, supervised_requested: bool) -> Vec<ProviderState> {
+fn default_provider_states(applied: bool) -> Vec<ProviderState> {
     if cfg!(target_os = "macos") {
-        let mut providers = vec![if applied {
+        vec![if applied {
             ProviderState::active_without_approval("seatbelt")
         } else {
             ProviderState::unavailable_without_approval("seatbelt", "sandbox_apply_failed")
-        }];
-
-        if supervised_requested {
-            providers.push(ProviderState::unknown(
-                "endpoint_security",
-                "provider_state_unknown",
-            ));
-            providers.push(ProviderState::unknown(
-                "network_extension",
-                "provider_state_unknown",
-            ));
-        }
-
-        providers
+        }]
     } else {
         Vec::new()
     }
@@ -721,14 +717,10 @@ mod tests {
             &caps,
             SandboxRuntimeState::supervised_mode(true, true, None),
         );
-        if cfg!(target_os = "linux") {
-            assert_eq!(
-                attestation.enforcement_level,
-                EnforcementLevel::KernelSupervised
-            );
-        } else {
-            assert_eq!(attestation.enforcement_level, EnforcementLevel::Degraded);
-        }
+        assert_eq!(
+            attestation.enforcement_level,
+            EnforcementLevel::KernelSupervised
+        );
     }
 
     #[test]
@@ -762,12 +754,22 @@ mod tests {
 
         let attestation = build_attestation(&caps, SandboxRuntimeState::static_mode(true, None));
         let json = serde_json::to_value(&attestation).unwrap();
+        let expected_mechanism = if cfg!(target_os = "linux") {
+            "landlock"
+        } else if cfg!(target_os = "macos") {
+            "seatbelt"
+        } else {
+            "none"
+        };
 
         assert!(json["enforced"].is_boolean());
         assert!(json["runtime"]["applied"].is_boolean());
         assert!(json["capabilities"]["proxy_port"].as_u64().is_some());
         assert_eq!(json["capabilities"]["proxy_port"].as_u64().unwrap(), 8080);
-        assert_eq!(json["platform"]["mechanism"].as_str(), Some("seatbelt"));
+        assert_eq!(
+            json["platform"]["mechanism"].as_str(),
+            Some(expected_mechanism)
+        );
         assert!(json["platform"]["mechanisms"].is_array());
         assert!(!json["capabilities"]["blocked_commands"]
             .as_array()
@@ -900,6 +902,13 @@ mod tests {
 
         if cfg!(target_os = "macos") {
             assert!(mechanisms.iter().any(|value| value == "seatbelt"));
+            assert_eq!(
+                mechanisms
+                    .iter()
+                    .filter(|value| *value == "seatbelt")
+                    .count(),
+                1
+            );
             assert!(mechanisms
                 .iter()
                 .any(|value| value == "endpoint_security_contract"));

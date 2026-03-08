@@ -231,11 +231,10 @@ fn merge_install_state(
     candidate: SystemExtensionInstallState,
 ) -> SystemExtensionInstallState {
     match (current, candidate) {
-        (SystemExtensionInstallState::Installed, _) | (_, SystemExtensionInstallState::Installed) => {
-            SystemExtensionInstallState::Installed
-        }
         (SystemExtensionInstallState::NotInstalled, _)
         | (_, SystemExtensionInstallState::NotInstalled) => SystemExtensionInstallState::NotInstalled,
+        (SystemExtensionInstallState::Installed, _)
+        | (_, SystemExtensionInstallState::Installed) => SystemExtensionInstallState::Installed,
         _ => SystemExtensionInstallState::Unknown,
     }
 }
@@ -414,5 +413,23 @@ mod tests {
             }
         );
         assert_eq!(combined.network_extension, ProviderStatus::unknown());
+    }
+
+    #[test]
+    fn merge_install_state_fails_closed_for_partial_installation() {
+        assert_eq!(
+            merge_install_state(
+                SystemExtensionInstallState::Installed,
+                SystemExtensionInstallState::NotInstalled,
+            ),
+            SystemExtensionInstallState::NotInstalled
+        );
+        assert_eq!(
+            merge_install_state(
+                SystemExtensionInstallState::NotInstalled,
+                SystemExtensionInstallState::Installed,
+            ),
+            SystemExtensionInstallState::NotInstalled
+        );
     }
 }
