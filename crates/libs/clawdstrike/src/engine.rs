@@ -841,6 +841,10 @@ impl HushEngine {
         _action: &GuardAction<'_>,
         _context: &GuardContext,
     ) -> Option<GuardResult> {
+        // Enclave egress narrowing is evaluated inside `EgressAllowlistGuard`
+        // so it composes with the base policy in one place. When the top-level
+        // egress guard is disabled, egress enforcement is intentionally
+        // disabled end-to-end, including enclave-specific restrictions.
         None
     }
 

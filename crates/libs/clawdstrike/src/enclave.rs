@@ -353,6 +353,9 @@ impl EnclaveResolver {
         if let Some(ref sens) = rules.sensitivity {
             parts.push(format!("sensitivity={sens}"));
         }
+        if let Some(ref actor_role) = rules.actor_role {
+            parts.push(format!("actor_role={actor_role}"));
+        }
         if let Some(ref pc) = rules.provenance_confidence {
             parts.push(format!("provenance_confidence={pc}"));
         }
@@ -899,6 +902,29 @@ mod tests {
 
         let result = EnclaveResolver::resolve(&origin, &config).unwrap();
         assert_eq!(result.profile_id, None);
+    }
+
+    #[test]
+    fn actor_role_is_included_in_resolution_path() {
+        let config = OriginsConfig {
+            default_behavior: Some(OriginDefaultBehavior::MinimalProfile),
+            profiles: vec![profile(
+                "admin-role",
+                OriginMatch {
+                    actor_role: Some("admin".into()),
+                    ..Default::default()
+                },
+            )],
+        };
+
+        let mut origin = slack_origin();
+        origin.actor_role = Some("admin".into());
+
+        let result = EnclaveResolver::resolve(&origin, &config).unwrap();
+        assert!(result
+            .resolution_path
+            .iter()
+            .any(|part| part.contains("actor_role=admin")));
     }
 
     #[test]
