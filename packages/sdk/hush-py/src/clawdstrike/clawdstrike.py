@@ -320,16 +320,6 @@ class ClawdstrikeSession:
         self._deny_count = 0
         self._blocked_actions: list[str] = []
 
-    def _context_kwargs(self) -> dict[str, Any]:
-        kwargs: dict[str, Any] = {}
-        if self._options.session_id:
-            kwargs["session_id"] = self._options.session_id
-        if self._options.agent_id:
-            kwargs["agent_id"] = self._options.agent_id
-        if self._options.metadata:
-            kwargs["metadata"] = self._options.metadata
-        return kwargs
-
     def _track(self, decision: Decision, action_desc: str) -> Decision:
         self._check_count += 1
         if decision.status == DecisionStatus.DENY:

@@ -133,9 +133,7 @@ func (c *Clawdstrike) Check(action guards.GuardAction) Decision {
 func (c *Clawdstrike) CheckWithContext(action guards.GuardAction, ctx *guards.GuardContext) Decision {
 	checker := c.effectiveChecker()
 	if originAwareRequest(action, ctx) && !checkerSupportsOriginRuntime(checker) {
-		if result, blocked := localUnsupportedOriginResult(action, ctx); blocked {
-			return guards.DecisionFromResult(result)
-		}
+		return guards.DecisionFromResult(localUnsupportedOriginResult())
 	}
 	result := checker.CheckAction(action, ctx)
 	return guards.DecisionFromResult(result)
@@ -193,11 +191,8 @@ func (c *Clawdstrike) effectiveChecker() checker {
 	}
 }
 
-func localUnsupportedOriginResult(action guards.GuardAction, ctx *guards.GuardContext) (guards.GuardResult, bool) {
-	if originAwareRequest(action, ctx) {
-		return guards.Block("origin", guards.Critical, localOriginUnsupportedMessage), true
-	}
-	return guards.GuardResult{}, false
+func localUnsupportedOriginResult() guards.GuardResult {
+	return guards.Block("origin", guards.Critical, localOriginUnsupportedMessage)
 }
 
 func originAwareRequest(action guards.GuardAction, ctx *guards.GuardContext) bool {
