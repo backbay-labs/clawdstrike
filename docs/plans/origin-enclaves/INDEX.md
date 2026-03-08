@@ -6,6 +6,12 @@
 
 This document maps the Origin Enclaves product spec to the existing Clawdstrike codebase, identifying every integration point, extension surface, and dependency.
 
+## Follow-up SDK parity docs
+
+- `docs/specs/19-origin-sdk-parity-api-contract.md`
+- `docs/plans/origin-enclaves/sdk-parity-roadmap.md`
+- `docs/plans/origin-enclaves/sdk-parity-swarm-plan.md`
+
 ---
 
 ## 1. Existing Primitives Summary
