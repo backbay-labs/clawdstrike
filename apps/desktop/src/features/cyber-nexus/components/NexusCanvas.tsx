@@ -5,6 +5,8 @@ import * as THREE from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { calculateLayoutPositions } from "../layouts";
 import { GlyphSentinel, type Vec3 } from "../scene/sentinels/GlyphSentinel";
+import { NexusSpiritCompanion } from "../scene/spirits/NexusSpiritCompanion";
+import type { NexusSpiritSceneActor } from "../scene/spirits/runtime";
 import { GroundPlatform } from "../scene/terrain/GroundPlatform";
 import type {
   NexusLayoutMode,
@@ -26,6 +28,7 @@ interface NexusCanvasProps {
   viewMode: NexusViewMode;
   fieldVisible: boolean;
   cameraResetToken: number;
+  activeSpiritActor: NexusSpiritSceneActor | null;
   onSelectStrikecell: (id: StrikecellDomainId) => void;
   onToggleExpandedStrikecell: (id: StrikecellDomainId) => void;
   onToggleNodeSelection: (nodeId: string) => void;
@@ -131,6 +134,7 @@ export function NexusCanvas({
   viewMode,
   fieldVisible,
   cameraResetToken,
+  activeSpiritActor,
   onSelectStrikecell,
   onToggleExpandedStrikecell,
   onToggleNodeSelection: _onToggleNodeSelection,
@@ -184,6 +188,8 @@ export function NexusCanvas({
           ],
           opacity: 0.16 + connection.strength * 0.34,
           strength: connection.strength,
+          sourceId: connection.sourceId,
+          targetId: connection.targetId,
         };
       })
       .filter(
@@ -194,6 +200,8 @@ export function NexusCanvas({
           points: [[number, number, number], [number, number, number]];
           opacity: number;
           strength: number;
+          sourceId: StrikecellDomainId;
+          targetId: StrikecellDomainId;
         } => Boolean(line),
       );
   }, [connections, strikecellPositions]);
@@ -233,19 +241,34 @@ export function NexusCanvas({
             <Line
               key={line.id}
               points={line.points}
-              color={line.strength > 0.7 ? "#d5ad57" : "#7e8ba7"}
+              color={
+                (activeSpiritActor?.stationAffinities[line.sourceId] ?? 0) > 0.22 ||
+                (activeSpiritActor?.stationAffinities[line.targetId] ?? 0) > 0.22
+                  ? (activeSpiritActor?.accentColor ?? "#d5ad57")
+                  : line.strength > 0.7
+                    ? "#d5ad57"
+                    : "#7e8ba7"
+              }
               transparent
               opacity={line.opacity}
               lineWidth={1.1}
             />
           ))}
 
+          <NexusSpiritCompanion
+            actor={activeSpiritActor}
+            strikecellPositions={strikecellPositions}
+          />
+
           {strikecells.map((strikecell) => {
             const position = strikecellPositions.get(strikecell.id);
             if (!position) return null;
             const active = strikecell.id === activeStrikecellId;
             const accent = STATUS_COLORS[strikecell.status];
-            const ringOpacity = active ? 0.28 : 0.14;
+            const spiritAffinity = activeSpiritActor?.stationAffinities[strikecell.id] ?? 0;
+            const spiritLikely = activeSpiritActor?.likelyStationId === strikecell.id;
+            const spiritAccent = activeSpiritActor?.accentColor ?? accent;
+            const ringOpacity = active ? 0.28 : 0.14 + spiritAffinity * 0.12;
 
             return (
               <group key={strikecell.id} position={position}>
@@ -271,7 +294,7 @@ export function NexusCanvas({
                     roughness={0.3}
                     metalness={0.92}
                     emissive={accent}
-                    emissiveIntensity={active ? 0.42 : 0.22}
+                    emissiveIntensity={active ? 0.42 : 0.22 + spiritAffinity * 0.24}
                   />
                 </mesh>
 
@@ -279,6 +302,31 @@ export function NexusCanvas({
                   <ringGeometry args={[1.15, active ? 1.55 : 1.4, 48]} />
                   <meshBasicMaterial color={accent} transparent opacity={ringOpacity} />
                 </mesh>
+
+                {spiritAffinity > 0.12 ? (
+                  <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.87, 0]}>
+                    <ringGeometry args={[1.46, 1.76 + spiritAffinity * 0.22, 52]} />
+                    <meshBasicMaterial
+                      color={spiritAccent}
+                      transparent
+                      opacity={0.08 + spiritAffinity * 0.22}
+                    />
+                  </mesh>
+                ) : null}
+
+                {spiritLikely ? (
+                  <mesh position={[0, 0.38, 0]}>
+                    <cylinderGeometry
+                      args={[0.04, 0.16, 1.05 + spiritAffinity * 0.8, 18, 1, true]}
+                    />
+                    <meshBasicMaterial
+                      color={spiritAccent}
+                      transparent
+                      opacity={0.12 + spiritAffinity * 0.18}
+                      depthWrite={false}
+                    />
+                  </mesh>
+                ) : null}
 
                 <Html
                   center
@@ -329,6 +377,52 @@ export function NexusCanvas({
           />
         </Suspense>
       </Canvas>
+
+      {activeSpiritActor ? (
+        <div className="pointer-events-none absolute top-4 right-4 z-20 max-w-[320px] rounded-xl border border-[rgba(212,168,75,0.24)] bg-[linear-gradient(180deg,rgba(10,13,20,0.92)_0%,rgba(6,9,14,0.96)_100%)] px-3 py-2 shadow-[0_18px_44px_rgba(0,0,0,0.44)]">
+          <div className="flex items-center gap-2">
+            <span
+              className="h-2.5 w-2.5 rounded-full shadow-[0_0_14px_currentColor]"
+              style={{
+                color: activeSpiritActor.accentColor,
+                background: activeSpiritActor.accentColor,
+              }}
+            />
+            <div className="text-[10px] font-mono uppercase tracking-[0.16em] text-[rgba(212,168,75,0.94)]">
+              Active Hunt Spirit
+            </div>
+          </div>
+
+          <div className="mt-1 text-sm font-mono uppercase tracking-[0.08em] text-sdr-text-primary">
+            {activeSpiritActor.label} · {activeSpiritActor.huntTitle}
+          </div>
+
+          <div className="mt-1 text-xs text-sdr-text-secondary">
+            {activeSpiritActor.cue?.reason ??
+              activeSpiritActor.reason ??
+              "Holding posture against the active strikecell."}
+          </div>
+
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <span className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] font-mono uppercase tracking-[0.12em] text-white/68">
+              {activeSpiritActor.stance}
+            </span>
+            {activeSpiritActor.likelyStationId ? (
+              <span className="rounded-full border border-[rgba(212,168,75,0.22)] px-2 py-0.5 text-[10px] font-mono uppercase tracking-[0.12em] text-[rgba(244,225,177,0.82)]">
+                {activeSpiritActor.likelyStationId.replaceAll("-", " ")}
+              </span>
+            ) : null}
+            {activeSpiritActor.emphasis.map((item) => (
+              <span
+                key={item}
+                className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] font-mono uppercase tracking-[0.12em] text-white/56"
+              >
+                {item}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

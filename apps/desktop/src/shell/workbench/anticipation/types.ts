@@ -119,6 +119,19 @@ export interface AdjacentSurfacePromotion {
   reason: string | null;
 }
 
+export interface AnticipationSpiritBias {
+  kind: string;
+  label: string;
+  mood: string;
+  stance: string;
+  preferredLens: LensId;
+  preferredIntent: IntentType;
+  preferredSemantics: DropSemantic[];
+  wakeLabel: string;
+  reason: string;
+  confidenceGatePassed: boolean;
+}
+
 export type SidebarWakeAnchorKind = "row" | "hunt-pill" | "dock-icon";
 export type SidebarWakeAnchorSource = "hover" | "drag";
 export type SidebarWakePeekVariant =
@@ -206,6 +219,7 @@ export interface AnticipationContext {
   modifierOverride: DropSemantic | null;
   stagingItemCount: number;
   stagingSuggestions: StagingSuggestion[];
+  spiritBias: AnticipationSpiritBias | null;
 
   // Flags
   isAttachMode: boolean;

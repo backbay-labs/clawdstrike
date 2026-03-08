@@ -36,6 +36,7 @@ function makeContext(
     modifierOverride: null,
     stagingItemCount: 0,
     stagingSuggestions: [],
+    spiritBias: null,
     isAttachMode: false,
     isSpringLoaded: false,
     springLoadedTargetId: null,
@@ -173,5 +174,33 @@ describe("buildSidebarDirectorState", () => {
 
     expect(state.adjacentSurfacePromotion.bottomPanelTab).toBe("diff");
     expect(state.adjacentSurfacePromotion.inspectorTab).toBe("proof");
+  });
+
+  it("uses confidence-gated spirit bias for target lens and note promotion", () => {
+    const state = buildSidebarDirectorState(
+      makeContext({
+        currentLens: "entities",
+        confidence: "medium",
+        spiritBias: {
+          kind: "ledger",
+          label: "Ledger",
+          mood: "witnessing",
+          stance: "witness",
+          preferredLens: "notes",
+          preferredIntent: "cite",
+          preferredSemantics: ["cite", "compare", "notes"],
+          wakeLabel: "Lock proof into case notes",
+          reason: "Ledger is in witness stance, biasing proof and case-ready notes.",
+          confidenceGatePassed: true,
+        },
+      }),
+    );
+
+    expect(state.targetLens).toBe("notes");
+    expect(state.globalReason).toBe("Ledger is in witness stance, biasing proof and case-ready notes.");
+    expect(state.lensSections.notes?.promotedSectionIds).toContain("hunt-notes");
+    expect(state.lensSections.notes?.reasonsBySectionId["hunt-notes"]).toBe(
+      "Ledger is in witness stance, biasing proof and case-ready notes.",
+    );
   });
 });

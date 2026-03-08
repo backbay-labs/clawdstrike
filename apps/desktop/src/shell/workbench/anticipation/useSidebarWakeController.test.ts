@@ -42,6 +42,7 @@ function makeContext(
     modifierOverride: null,
     stagingItemCount: 0,
     stagingSuggestions: [],
+    spiritBias: null,
     isAttachMode: false,
     isSpringLoaded: false,
     springLoadedTargetId: null,
@@ -110,7 +111,36 @@ describe("buildSidebarWakePreview", () => {
 
     expect(preview.anchorLens).toBe("files");
     expect(preview.predictedActionLabel).toBe("Open likely file surfaces");
-    expect(preview.predictedReason).toBe("default");
+    expect(preview.predictedReason).toBe("file context is active in the current shell");
+  });
+
+  it("uses spirit-aware wake copy when direct prediction is absent", () => {
+    const preview = buildSidebarWakePreview(
+      makeContext({
+        confidence: "medium",
+        spiritBias: {
+          kind: "forge",
+          label: "Forge",
+          mood: "focused",
+          stance: "absorb",
+          preferredLens: "files",
+          preferredIntent: "mount",
+          preferredSemantics: ["mount", "run-input", "evidence"],
+          wakeLabel: "Seat likely file inputs",
+          reason: "Forge is in absorb stance, biasing mounts and run inputs.",
+          confidenceGatePassed: true,
+        },
+      }),
+      makeDirector({
+        targetLens: "files",
+      }),
+      true,
+    );
+
+    expect(preview.predictedActionLabel).toBe("Seat likely file inputs");
+    expect(preview.predictedReason).toBe("Forge is in absorb stance, biasing mounts and run inputs.");
+    expect(preview.shouldWarmDock).toBe(true);
+    expect(preview.allowGhostPeek).toBe(true);
   });
 
   it("does not warm the dock once the sidebar is already open", () => {

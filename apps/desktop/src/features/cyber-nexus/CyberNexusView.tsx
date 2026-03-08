@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useConnection } from "@/context/ConnectionContext";
 import { loadMarketplaceFeedSources } from "@/services/marketplaceSettings";
@@ -11,6 +11,11 @@ import {
   type Workflow,
 } from "@/services/tauri";
 import { dispatchShellOpenCommandPalette } from "@/shell/events";
+import {
+  deriveHuntSpiritRuntimeState,
+  selectActiveHuntSpiritSignalSnapshot,
+} from "@/shell/workbench/spirit";
+import { useWorkbench } from "@/shell/workbench/WorkbenchStateProvider";
 import { NexusAppRail } from "./components/NexusAppRail";
 import { NexusCanvas } from "./components/NexusCanvas";
 import { NexusControlStrip } from "./components/NexusControlStrip";
@@ -29,6 +34,11 @@ import {
   getNexusOperationMode,
   setNexusOperationMode,
 } from "./mode";
+import {
+  deriveNexusSpiritSceneActor,
+  detectNexusSpiritCue,
+  type NexusSpiritCueEvent,
+} from "./scene/spirits/runtime";
 import {
   type NexusContextMenuState,
   NexusStateProvider,
@@ -137,6 +147,7 @@ function useCyberNexusExternalData() {
 }
 
 function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
+  const { state: workbenchState } = useWorkbench();
   const location = useLocation();
   const navigate = useNavigate();
   const { status: connectionStatus } = useConnection();
@@ -225,6 +236,52 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
     () => strikecells.find((strikecell) => strikecell.id === state.drawerAppId) ?? null,
     [state.drawerAppId, strikecells],
   );
+  const activeSpiritSnapshot = useMemo(
+    () => selectActiveHuntSpiritSignalSnapshot(workbenchState),
+    [workbenchState],
+  );
+  const activeSpiritRuntime = useMemo(() => {
+    const likelyIntent = activeSpiritSnapshot?.likelyIntent ?? null;
+    const isAttachMode =
+      likelyIntent === "attach-target" ||
+      likelyIntent === "attach-evidence" ||
+      likelyIntent === "mount" ||
+      likelyIntent === "run-input";
+
+    return deriveHuntSpiritRuntimeState(activeSpiritSnapshot?.boundSpirit ?? null, {
+      currentShell: activeSpiritSnapshot?.currentShell ?? null,
+      currentLens: activeSpiritSnapshot?.currentLens ?? null,
+      activeStationId: state.selection.activeStrikecellId,
+      likelyIntent,
+      confidenceScore: activeSpiritSnapshot?.confidenceScore ?? null,
+      isAttachMode,
+      isActive: true,
+    });
+  }, [activeSpiritSnapshot, state.selection.activeStrikecellId]);
+  const [activeSpiritCue, setActiveSpiritCue] = useState<NexusSpiritCueEvent | null>(null);
+  const previousSpiritSnapshotRef = useRef<typeof activeSpiritSnapshot>(null);
+  const previousSpiritStrikecellRef = useRef<StrikecellDomainId | null>(null);
+  const previousCameraResetRef = useRef(state.cameraResetToken);
+  const activateStrikecell = useCallback(
+    (id: StrikecellDomainId, options?: { closeSearch?: boolean }) => {
+      if (state.selection.activeStrikecellId === id) {
+        requestCameraReset();
+      }
+      setActiveStrikecell(id);
+      setKeyboardHighlight(id);
+      if (options?.closeSearch) {
+        setSearchOpen(false);
+        setSearchQuery("");
+      }
+    },
+    [
+      requestCameraReset,
+      setActiveStrikecell,
+      setKeyboardHighlight,
+      setSearchOpen,
+      state.selection.activeStrikecellId,
+    ],
+  );
 
   const filteredStrikecells = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -261,11 +318,53 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
   }, [strikecells, syncStrikecells]);
 
   useEffect(() => {
+    const cue = detectNexusSpiritCue({
+      runtime: activeSpiritRuntime,
+      snapshot: activeSpiritSnapshot,
+      previousSnapshot: previousSpiritSnapshotRef.current,
+      activeStrikecellId: state.selection.activeStrikecellId,
+      previousActiveStrikecellId: previousSpiritStrikecellRef.current,
+      recenterToken: state.cameraResetToken,
+      previousRecenterToken: previousCameraResetRef.current,
+      nowMs: Date.now(),
+    });
+    if (cue) setActiveSpiritCue(cue);
+    previousSpiritSnapshotRef.current = activeSpiritSnapshot;
+    previousSpiritStrikecellRef.current = state.selection.activeStrikecellId;
+    previousCameraResetRef.current = state.cameraResetToken;
+  }, [
+    activeSpiritRuntime,
+    activeSpiritSnapshot,
+    state.selection.activeStrikecellId,
+    state.cameraResetToken,
+  ]);
+
+  useEffect(() => {
+    if (!activeSpiritCue) return;
+    const remainingMs = activeSpiritCue.expiresAt - Date.now();
+    if (remainingMs <= 0) {
+      setActiveSpiritCue((current) =>
+        current?.expiresAt === activeSpiritCue.expiresAt ? null : current,
+      );
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setActiveSpiritCue((current) =>
+        current?.expiresAt === activeSpiritCue.expiresAt ? null : current,
+      );
+    }, remainingMs);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [activeSpiritCue]);
+
+  useEffect(() => {
     if (!focusFromUrl) return;
     if (state.selection.activeStrikecellId === focusFromUrl) return;
-    setActiveStrikecell(focusFromUrl);
-    setKeyboardHighlight(focusFromUrl);
-  }, [focusFromUrl, setActiveStrikecell, setKeyboardHighlight, state.selection.activeStrikecellId]);
+    activateStrikecell(focusFromUrl);
+  }, [activateStrikecell, focusFromUrl, state.selection.activeStrikecellId]);
 
   useEffect(() => {
     if (!location.pathname.startsWith("/nexus")) return;
@@ -342,7 +441,7 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
 
       if (state.carouselFocused && event.key === "Enter" && state.keyboardHighlightedStrikecellId) {
         event.preventDefault();
-        setActiveStrikecell(state.keyboardHighlightedStrikecellId);
+        activateStrikecell(state.keyboardHighlightedStrikecellId);
         return;
       }
 
@@ -371,9 +470,9 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [
+    activateStrikecell,
     escClose,
     navigateCarousel,
-    setActiveStrikecell,
     setCarouselFocused,
     setCarouselVisible,
     setLayoutDropdownOpen,
@@ -395,8 +494,7 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
 
       switch (payload.type) {
         case "focus-strikecell":
-          setActiveStrikecell(payload.strikecellId);
-          setKeyboardHighlight(payload.strikecellId);
+          activateStrikecell(payload.strikecellId);
           break;
         case "reset-camera":
           requestCameraReset();
@@ -435,10 +533,9 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
     window.addEventListener(CYBER_NEXUS_COMMAND_EVENT, listener);
     return () => window.removeEventListener(CYBER_NEXUS_COMMAND_EVENT, listener);
   }, [
+    activateStrikecell,
     navigateCarousel,
     requestCameraReset,
-    setActiveStrikecell,
-    setKeyboardHighlight,
     setDrawerApp,
     setLayoutDropdownOpen,
     setLayoutMode,
@@ -456,12 +553,9 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
 
   const handleSearchSelect = useCallback(
     (id: StrikecellDomainId) => {
-      setActiveStrikecell(id);
-      setKeyboardHighlight(id);
-      setSearchOpen(false);
-      setSearchQuery("");
+      activateStrikecell(id, { closeSearch: true });
     },
-    [setActiveStrikecell, setKeyboardHighlight, setSearchOpen],
+    [activateStrikecell],
   );
 
   const handleContextAction = useCallback(
@@ -474,7 +568,7 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
         (menu.targetType === "strikecell" ? (menu.targetId as StrikecellDomainId) : null);
 
       if (action === "focus" && strikecellId) {
-        setActiveStrikecell(strikecellId);
+        activateStrikecell(strikecellId);
       }
       if (action === "expand" && strikecellId) toggleExpanded(strikecellId);
       if (action === "pin-left" && strikecellId) pinStrikecell(strikecellId, "left");
@@ -489,14 +583,32 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
       setContextMenu(null);
     },
     [
+      activateStrikecell,
       clearSelection,
       handleOpenFullView,
       pinStrikecell,
-      setActiveStrikecell,
       setContextMenu,
       state.contextMenu,
       strikecells,
       toggleExpanded,
+    ],
+  );
+
+  const activeSpiritActor = useMemo(
+    () =>
+      deriveNexusSpiritSceneActor({
+        runtime: activeSpiritRuntime,
+        snapshot: activeSpiritSnapshot,
+        strikecells,
+        activeStrikecellId: state.selection.activeStrikecellId,
+        cue: activeSpiritCue,
+      }),
+    [
+      activeSpiritCue,
+      activeSpiritRuntime,
+      activeSpiritSnapshot,
+      strikecells,
+      state.selection.activeStrikecellId,
     ],
   );
 
@@ -541,10 +653,8 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
             viewMode={state.hud.viewMode}
             fieldVisible={state.hud.fieldVisible}
             cameraResetToken={state.cameraResetToken}
-            onSelectStrikecell={(id) => {
-              setActiveStrikecell(id);
-              setKeyboardHighlight(id);
-            }}
+            activeSpiritActor={activeSpiritActor}
+            onSelectStrikecell={(id) => activateStrikecell(id)}
             onToggleExpandedStrikecell={toggleExpanded}
             onToggleNodeSelection={toggleNodeSelection}
             onFocusNode={setFocusedNode}
@@ -575,7 +685,7 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
             onFocusChange={setCarouselFocused}
             onNavigate={navigateCarousel}
             onActivate={(id) => {
-              setActiveStrikecell(id);
+              activateStrikecell(id);
             }}
             onHighlight={setKeyboardHighlight}
             onToggleExpanded={toggleExpanded}

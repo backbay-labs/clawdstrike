@@ -73,6 +73,9 @@ export function buildSidebarWakePreview(
   director: SidebarDirectorState,
   sidebarCollapsed: boolean,
 ): SidebarWakePreview {
+  const openModeReason = anticipation.openModeReason !== "default"
+    ? anticipation.openModeReason
+    : null;
   const anchorLens =
     director.targetLens
     ?? anticipation.suggestedLens
@@ -80,18 +83,29 @@ export function buildSidebarWakePreview(
   const predictedActionLabel =
     anticipation.dropPrediction?.defaultLabel
     ?? anticipation.pathSuggestedAction?.label
+    ?? (
+      anticipation.spiritBias?.confidenceGatePassed
+        ? anticipation.spiritBias.wakeLabel
+        : null
+    )
     ?? LENS_ACTION_FALLBACKS[anchorLens];
   const predictedReason =
     director.globalReason
     ?? anticipation.pathSuggestedAction?.label
     ?? anticipation.lensChangeReason
-    ?? anticipation.openModeReason
+    ?? openModeReason
+    ?? (
+      anticipation.spiritBias?.confidenceGatePassed
+        ? anticipation.spiritBias.reason
+        : null
+    )
     ?? LENS_REASON_FALLBACKS[anchorLens];
   const allowGhostPeek =
     anticipation.confidence !== "low"
     || anticipation.isAttachMode
     || anticipation.dropPrediction !== null
-    || anticipation.pathSuggestedAction !== null;
+    || anticipation.pathSuggestedAction !== null
+    || Boolean(anticipation.spiritBias?.confidenceGatePassed);
 
   return {
     anchorLens,
@@ -108,6 +122,7 @@ export function buildSidebarWakePreview(
         || anticipation.isAttachMode
         || director.targetLens !== null
         || anticipation.dropPrediction !== null
+        || Boolean(anticipation.spiritBias?.confidenceGatePassed)
       ),
     allowGhostPeek,
   };

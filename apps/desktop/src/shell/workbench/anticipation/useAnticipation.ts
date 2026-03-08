@@ -29,6 +29,7 @@ import { useDragAnticipation } from "./useDragAnticipation";
 import { useDropPrediction } from "./useDropPrediction";
 import { usePathMemory } from "./usePathMemory";
 import { usePredictiveLayout } from "./usePredictiveLayout";
+import { buildAnticipationSpiritBias } from "./spiritBias";
 import { useStagingShelf } from "./useStagingShelf";
 
 const MAX_RECENT = 10;
@@ -123,17 +124,40 @@ export function useAnticipation(): AnticipationContext {
       ?? (dragAnticipation.defaultRole
         ? semanticToIntent(dragAnticipation.defaultRole.semantic)
         : null);
-    const likelyIntent = drag.active
+    const baseLikelyIntent = drag.active
       ? dragIntent
       : selectionIntent?.intent ?? null;
 
-    const confidenceScore = Math.min(
+    const baseConfidenceScore = Math.min(
       100,
       Math.max(
         confidence.score,
         selectionIntent?.confidence ?? 0,
         dragAnticipation.defaultRole?.confidence ?? 0,
       ) + (drag.active ? 10 : 0),
+    );
+    const spiritBias = buildAnticipationSpiritBias({
+      spirit: activeHunt?.spirit,
+      currentShell: shell,
+      currentLens: lens,
+      likelyIntent: baseLikelyIntent,
+      confidenceScore: baseConfidenceScore,
+      isAttachMode: drag.active,
+      hasActiveRun: activeRunId !== null,
+    });
+    const likelyIntent =
+      baseLikelyIntent
+      ?? (spiritBias?.confidenceGatePassed ? spiritBias.preferredIntent : null);
+    const confidenceScore = Math.min(
+      100,
+      baseConfidenceScore
+        + (
+          spiritBias?.confidenceGatePassed
+          && likelyIntent !== null
+          && spiritBias.preferredIntent === likelyIntent
+            ? 6
+            : 0
+        ),
     );
 
     return {
@@ -185,6 +209,7 @@ export function useAnticipation(): AnticipationContext {
       modifierOverride: dragAnticipation.modifierOverride,
       stagingItemCount: stagingShelf.items.length,
       stagingSuggestions: stagingShelf.suggestions,
+      spiritBias,
       isAttachMode: drag.active,
       isSpringLoaded: dragAnticipation.springLoadedId !== null,
       springLoadedTargetId: dragAnticipation.springLoadedId,
@@ -216,6 +241,7 @@ export function useAnticipation(): AnticipationContext {
     dragAnticipation.springLoadedId,
     stagingShelf.items.length,
     stagingShelf.suggestions,
+    activeHunt?.spirit,
     drag.active,
   ]);
 }

@@ -91,11 +91,44 @@ function resolveReason(
   anticipation: AnticipationContext,
   fallback: string,
 ): string {
+  const openModeReason = anticipation.openModeReason !== "default"
+    ? anticipation.openModeReason
+    : null;
   return (
     anticipation.dropPrediction?.reason
     ?? anticipation.lensChangeReason
-    ?? anticipation.openModeReason
+    ?? openModeReason
+    ?? (
+      anticipation.spiritBias?.confidenceGatePassed
+        ? anticipation.spiritBias.reason
+        : null
+    )
     ?? fallback
+  );
+}
+
+function promoteSpiritBiasSection(
+  directive: LensSectionDirective,
+  anticipation: AnticipationContext,
+  preferredLens: LensId,
+  targetLens: LensId | null,
+  sectionId: string,
+  fallback: string,
+  options: { expand?: boolean; prioritize?: boolean } = {},
+) {
+  if (!anticipation.spiritBias?.confidenceGatePassed) return;
+  if (anticipation.spiritBias.preferredLens !== preferredLens && targetLens !== preferredLens) {
+    return;
+  }
+
+  promoteSection(
+    directive,
+    sectionId,
+    anticipation.spiritBias.reason ?? fallback,
+    {
+      expand: anticipation.confidence === "high" || options.expand === true,
+      prioritize: options.prioritize,
+    },
   );
 }
 
@@ -148,6 +181,15 @@ function buildEntitiesDirective(
     );
   }
 
+  promoteSpiritBiasSection(
+    directive,
+    anticipation,
+    "entities",
+    targetLens,
+    "hunt-entities",
+    "Spirit stance is leaning toward target context.",
+  );
+
   if (anticipation.confidence === "high" && anticipation.isAttachMode) {
     directive.expandedSectionIds.push("hosts", "identities", "quick-actions");
     directive.retractPolicy = "spring";
@@ -196,6 +238,15 @@ function buildNotesDirective(
     promoteSection(directive, "current-shell", "Case reporting keeps proof context close.");
     promoteSection(directive, "templates", "Reporting flow benefits from fast note templates.");
   }
+
+  promoteSpiritBiasSection(
+    directive,
+    anticipation,
+    "notes",
+    targetLens,
+    "hunt-notes",
+    "Spirit stance is leaning toward proof and note surfaces.",
+  );
 
   if (anticipation.confidence === "high" && anticipation.isAttachMode) {
     directive.expandedSectionIds.push("current-shell", "templates");
@@ -265,6 +316,15 @@ function buildFilesDirective(
     promoteSection(directive, "current-shell", "Lab shell prefers live file surfaces.");
   }
 
+  promoteSpiritBiasSection(
+    directive,
+    anticipation,
+    "files",
+    targetLens,
+    anticipation.spiritBias?.preferredIntent === "mount" ? "mounts" : "hunt-files",
+    "Spirit stance is leaning toward file intake and execution surfaces.",
+  );
+
   if (anticipation.confidence === "high" && anticipation.isAttachMode) {
     directive.expandedSectionIds.push("workspace", "mounts", "hunt-files");
     directive.retractPolicy = "spring";
@@ -319,6 +379,15 @@ function buildScopesDirective(
     );
   }
 
+  promoteSpiritBiasSection(
+    directive,
+    anticipation,
+    "scopes",
+    targetLens,
+    "watchlists",
+    "Spirit stance is leaning toward scope and watch work.",
+  );
+
   if (anticipation.confidence === "high" && anticipation.isAttachMode) {
     directive.expandedSectionIds.push("feeds", "quick-actions");
     directive.retractPolicy = "spring";
@@ -367,6 +436,16 @@ function buildHistoryDirective(
     promoteSection(directive, "hunt-runs", "Active runs should stay visible during investigation.");
   }
 
+  promoteSpiritBiasSection(
+    directive,
+    anticipation,
+    "history",
+    targetLens,
+    "current-session",
+    "Spirit stance is leaning toward recent pivots and comparison history.",
+    { expand: false },
+  );
+
   if (anticipation.confidence === "high" && anticipation.isAttachMode) {
     directive.expandedSectionIds.push("hunt-runs", "today");
     directive.retractPolicy = "spring";
@@ -406,6 +485,16 @@ function buildSandboxesDirective(
       { prioritize: false },
     );
   }
+
+  promoteSpiritBiasSection(
+    directive,
+    anticipation,
+    "sandboxes",
+    targetLens,
+    "live",
+    "Spirit stance is leaning toward live sandbox absorption.",
+    { prioritize: false },
+  );
 
   if (anticipation.confidence === "high" && anticipation.isAttachMode) {
     directive.expandedSectionIds.push("hunt-sandboxes");
@@ -524,7 +613,10 @@ export function buildSidebarDirectorState(
     ? (DRAG_LENS_MAP[anticipation.draggedObjectKind] ?? null)
     : null;
 
-  const targetLens = dragTargetLens ?? anticipation.suggestedLens ?? null;
+  const targetLens =
+    dragTargetLens
+    ?? anticipation.suggestedLens
+    ?? (anticipation.spiritBias?.confidenceGatePassed ? anticipation.spiritBias.preferredLens : null);
   const shouldOpenSidebar =
     (anticipation.isAttachMode && anticipation.confidence !== "low")
     || (anticipation.shouldChangeLens && anticipation.confidence === "high");
@@ -545,7 +637,12 @@ export function buildSidebarDirectorState(
     globalReason:
       anticipation.dropPrediction?.reason
       ?? anticipation.lensChangeReason
-      ?? anticipation.openModeReason
+      ?? (anticipation.openModeReason !== "default" ? anticipation.openModeReason : null)
+      ?? (
+        anticipation.spiritBias?.confidenceGatePassed
+          ? anticipation.spiritBias.reason
+          : null
+      )
       ?? anticipation.pathSuggestedAction?.label
       ?? null,
     lensSections: {
