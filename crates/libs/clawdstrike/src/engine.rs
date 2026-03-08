@@ -637,13 +637,6 @@ impl HushEngine {
             pre_guard.push(result);
         }
 
-        if let Some(result) = self.enclave_egress_precheck(action, &context).await {
-            if !result.allowed {
-                return Ok(self.single_result_report(result, metadata).await);
-            }
-            pre_guard.push(result);
-        }
-
         if let Some(result) = self.origin_data_precheck(action, &context).await {
             if !result.allowed {
                 return Ok(self.single_result_report(result, metadata).await);
@@ -833,18 +826,6 @@ impl HushEngine {
             ));
         }
 
-        None
-    }
-
-    async fn enclave_egress_precheck(
-        &self,
-        _action: &GuardAction<'_>,
-        _context: &GuardContext,
-    ) -> Option<GuardResult> {
-        // Enclave egress narrowing is evaluated inside `EgressAllowlistGuard`
-        // so it composes with the base policy in one place. When the top-level
-        // egress guard is disabled, egress enforcement is intentionally
-        // disabled end-to-end, including enclave-specific restrictions.
         None
     }
 
@@ -1596,111 +1577,6 @@ fn tool_matches(tool_name: &str, pattern: &str) -> bool {
         tool_name.starts_with(prefix)
     } else {
         tool_name == pattern
-    }
-}
-
-#[cfg(test)]
-fn intersect_tool_patterns(left: &str, right: &str) -> Option<String> {
-    if left == right {
-        return Some(left.to_string());
-    }
-
-    let left_is_wildcard = left.ends_with('*');
-    let right_is_wildcard = right.ends_with('*');
-
-    match (left_is_wildcard, right_is_wildcard) {
-        (false, false) => None,
-        (true, false) => tool_matches(right, left).then(|| right.to_string()),
-        (false, true) => tool_matches(left, right).then(|| left.to_string()),
-        (true, true) => {
-            let left_prefix = left.strip_suffix('*').unwrap_or(left);
-            let right_prefix = right.strip_suffix('*').unwrap_or(right);
-
-            if left_prefix.starts_with(right_prefix) {
-                Some(left.to_string())
-            } else if right_prefix.starts_with(left_prefix) {
-                Some(right.to_string())
-            } else {
-                None
-            }
-        }
-    }
-}
-
-/// Compute the intersection of two [`McpToolConfig`] instances.
-///
-/// "Most restrictive wins": a tool is only allowed if **both** configs allow it.
-#[cfg(test)]
-fn intersect_mcp_configs(
-    policy_mcp: &crate::guards::McpToolConfig,
-    enclave_mcp: &crate::guards::McpToolConfig,
-) -> crate::guards::McpToolConfig {
-    use crate::guards::McpToolConfig;
-
-    // The intersection uses the MORE restrictive default_action
-    let default_action = match (&policy_mcp.default_action, &enclave_mcp.default_action) {
-        // If either blocks by default, intersection blocks
-        (Some(McpDefaultAction::Block), _) | (_, Some(McpDefaultAction::Block)) => {
-            Some(McpDefaultAction::Block)
-        }
-        // Both allow → allow
-        (Some(McpDefaultAction::Allow), Some(McpDefaultAction::Allow)) => {
-            Some(McpDefaultAction::Allow)
-        }
-        // If one is None (unspecified), use the other
-        (Some(a), None) => Some(*a),
-        (None, Some(a)) => Some(*a),
-        (None, None) => None,
-    };
-
-    // Block list: union of both block lists (most restrictive)
-    let mut block = policy_mcp.block.clone();
-    for b in &enclave_mcp.block {
-        if !block.iter().any(|existing| tool_matches(b, existing)) {
-            block.push(b.clone());
-        }
-    }
-
-    // Allow list: intersection of both allow lists
-    // Only tools in BOTH allow lists are allowed
-    let allow = if policy_mcp.allow.is_empty() && enclave_mcp.allow.is_empty() {
-        Vec::new()
-    } else if policy_mcp.allow.is_empty() {
-        enclave_mcp.allow.clone()
-    } else if enclave_mcp.allow.is_empty() {
-        policy_mcp.allow.clone()
-    } else {
-        let mut merged = Vec::new();
-        for p in &policy_mcp.allow {
-            for e in &enclave_mcp.allow {
-                let Some(intersection) = intersect_tool_patterns(p, e) else {
-                    continue;
-                };
-                if !merged.contains(&intersection) {
-                    merged.push(intersection);
-                }
-            }
-        }
-        merged
-    };
-
-    // Require confirmation: union (if either requires confirmation, require it)
-    let mut require_confirmation = policy_mcp.require_confirmation.clone();
-    for rc in &enclave_mcp.require_confirmation {
-        if !require_confirmation
-            .iter()
-            .any(|existing| tool_matches(rc, existing))
-        {
-            require_confirmation.push(rc.clone());
-        }
-    }
-
-    McpToolConfig {
-        default_action,
-        allow,
-        block,
-        require_confirmation,
-        ..Default::default()
     }
 }
 
@@ -3656,67 +3532,6 @@ origins:
 
         // Prefix only (no wildcard)
         assert!(!tool_matches("read_file_extra", "read_file"));
-    }
-
-    #[test]
-    fn test_intersect_mcp_configs() {
-        use crate::guards::McpToolConfig;
-
-        // Both allow → allow
-        let a = McpToolConfig {
-            default_action: Some(McpDefaultAction::Allow),
-            allow: vec!["tool_a".into(), "tool_b".into()],
-            block: vec!["bad_a".into()],
-            require_confirmation: vec!["confirm_a".into()],
-            ..Default::default()
-        };
-        let b = McpToolConfig {
-            default_action: Some(McpDefaultAction::Allow),
-            allow: vec!["tool_b".into(), "tool_c".into()],
-            block: vec!["bad_b".into()],
-            require_confirmation: vec!["confirm_b".into()],
-            ..Default::default()
-        };
-
-        let result = intersect_mcp_configs(&a, &b);
-        assert_eq!(result.default_action, Some(McpDefaultAction::Allow));
-        // allow intersection: only tool_b is in both
-        assert_eq!(result.allow, vec!["tool_b".to_string()]);
-        // block union: bad_a + bad_b
-        assert!(result.block.contains(&"bad_a".to_string()));
-        assert!(result.block.contains(&"bad_b".to_string()));
-        // confirmation union
-        assert!(result
-            .require_confirmation
-            .contains(&"confirm_a".to_string()));
-        assert!(result
-            .require_confirmation
-            .contains(&"confirm_b".to_string()));
-
-        // One blocks → intersection blocks
-        let c = McpToolConfig {
-            default_action: Some(McpDefaultAction::Block),
-            ..Default::default()
-        };
-        let result = intersect_mcp_configs(&a, &c);
-        assert_eq!(result.default_action, Some(McpDefaultAction::Block));
-    }
-
-    #[test]
-    fn test_intersect_mcp_configs_keeps_narrower_allow_pattern() {
-        use crate::guards::McpToolConfig;
-
-        let policy = McpToolConfig {
-            allow: vec!["read_*".into()],
-            ..Default::default()
-        };
-        let enclave = McpToolConfig {
-            allow: vec!["read_file".into()],
-            ..Default::default()
-        };
-
-        let result = intersect_mcp_configs(&policy, &enclave);
-        assert_eq!(result.allow, vec!["read_file".to_string()]);
     }
 
     #[tokio::test]
