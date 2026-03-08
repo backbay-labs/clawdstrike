@@ -15,12 +15,16 @@ import (
 // Re-export Decision types from guards package for top-level API convenience.
 type Decision = guards.Decision
 type DecisionStatus = guards.DecisionStatus
+type OriginContext = guards.OriginContext
+type OutputSendPayload = guards.OutputSendPayload
 
 const (
 	StatusAllow = guards.StatusAllow
 	StatusWarn  = guards.StatusWarn
 	StatusDeny  = guards.StatusDeny
 )
+
+const localOriginUnsupportedMessage = "origin-aware evaluation is not supported by the local Go engine; use a daemon-backed Clawdstrike instance"
 
 // Clawdstrike is the main entry point for the SDK. It wraps a HushEngine
 // and exposes convenience methods for common security checks.
@@ -123,6 +127,11 @@ func (c *Clawdstrike) Check(action guards.GuardAction) Decision {
 }
 
 func (c *Clawdstrike) CheckWithContext(action guards.GuardAction, ctx *guards.GuardContext) Decision {
+	if c != nil && c.engine != nil {
+		if result, blocked := localUnsupportedOriginResult(action, ctx); blocked {
+			return guards.DecisionFromResult(result)
+		}
+	}
 	result := c.effectiveChecker().CheckAction(action, ctx)
 	return guards.DecisionFromResult(result)
 }
@@ -177,4 +186,14 @@ func (c *Clawdstrike) effectiveChecker() checker {
 		guard:   "clawdstrike",
 		message: "clawdstrike checker is not initialized",
 	}
+}
+
+func localUnsupportedOriginResult(action guards.GuardAction, ctx *guards.GuardContext) (guards.GuardResult, bool) {
+	if ctx != nil && ctx.Origin != nil {
+		return guards.Block("origin", guards.Critical, localOriginUnsupportedMessage), true
+	}
+	if action.Type == "custom" && action.CustomType == "origin.output_send" {
+		return guards.Block("origin", guards.Critical, localOriginUnsupportedMessage), true
+	}
+	return guards.GuardResult{}, false
 }

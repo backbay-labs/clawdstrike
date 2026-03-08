@@ -14,7 +14,7 @@ from typing import Any
 import yaml
 
 from clawdstrike._version import parse_semver_strict
-from clawdstrike.exceptions import PolicyError
+from clawdstrike.exceptions import PolicyError, UnsupportedOriginFeatureError
 from clawdstrike.guards.base import Action, Guard, GuardContext, GuardResult, Severity
 from clawdstrike.guards.egress_allowlist import EgressAllowlistConfig, EgressAllowlistGuard
 from clawdstrike.guards.forbidden_path import ForbiddenPathConfig, ForbiddenPathGuard
@@ -67,6 +67,16 @@ def _validate_policy_version(version: str) -> None:
         raise PolicyError(
             f"Unsupported policy version: {version!r} (supported: {supported})"
         )
+
+
+def _reject_unsupported_origin_features(data: dict[str, Any], *, version: str) -> None:
+    if "origins" not in data:
+        return
+    raise UnsupportedOriginFeatureError(
+        "Origin-aware policies are not supported by the pure-Python backend; "
+        f"policy version {version!r} includes policy.origins. "
+        "Use the native or daemon-backed backend for origin enforcement."
+    )
 
 
 def _require_mapping(value: Any, *, path: str) -> dict[str, Any]:
@@ -240,7 +250,13 @@ class PolicyResolver:
         else:
             ruleset_id = reference
         builtin_names = {
-            "default", "strict", "ai-agent", "ai-agent-posture", "cicd", "permissive", "spider-sense",
+            "default",
+            "strict",
+            "ai-agent",
+            "ai-agent-posture",
+            "cicd",
+            "permissive",
+            "spider-sense",
         }
 
         if ruleset_id in builtin_names:
@@ -543,13 +559,14 @@ class Policy:
         _reject_unknown_keys(
             data,
             {"version", "name", "description", "extends", "merge_strategy",
-             "guards", "settings", "posture", "custom_guards"},
+             "guards", "settings", "posture", "custom_guards", "origins"},
             path="policy",
         )
 
         version = data.get("version", POLICY_SCHEMA_VERSION)
         if not isinstance(version, str):
             raise PolicyError("policy.version must be a string")
+        _reject_unsupported_origin_features(data, version=version)
         _validate_policy_version(version)
         _parse_extends(data.get("extends"), path="policy.extends")
 
@@ -840,9 +857,13 @@ class Policy:
             if spider.pattern_db_manifest_path is not None:
                 spider_data["pattern_db_manifest_path"] = spider.pattern_db_manifest_path
             if spider.pattern_db_manifest_trust_store_path is not None:
-                spider_data["pattern_db_manifest_trust_store_path"] = spider.pattern_db_manifest_trust_store_path
+                spider_data["pattern_db_manifest_trust_store_path"] = (
+                    spider.pattern_db_manifest_trust_store_path
+                )
             if spider.pattern_db_manifest_trusted_keys is not None:
-                spider_data["pattern_db_manifest_trusted_keys"] = spider.pattern_db_manifest_trusted_keys
+                spider_data["pattern_db_manifest_trusted_keys"] = (
+                    spider.pattern_db_manifest_trusted_keys
+                )
             if spider.llm_api_url is not None:
                 spider_data["llm_api_url"] = spider.llm_api_url
             if spider.llm_api_key is not None:

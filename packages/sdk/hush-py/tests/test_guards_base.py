@@ -1,14 +1,15 @@
 """Tests for hush.guards base types."""
 
 from clawdstrike.guards.base import (
-    GuardResult,
-    GuardContext,
     FileAccessAction,
     FileWriteAction,
-    NetworkEgressAction,
+    GuardContext,
+    GuardResult,
     McpToolAction,
+    NetworkEgressAction,
     Severity,
 )
+from clawdstrike.origin import OriginContext
 
 
 class TestSeverity:
@@ -51,6 +52,7 @@ class TestGuardContext:
         ctx = GuardContext()
         assert ctx.cwd is None
         assert ctx.session_id is None
+        assert ctx.origin is None
 
     def test_context_with_values(self) -> None:
         ctx = GuardContext(
@@ -61,6 +63,25 @@ class TestGuardContext:
         assert ctx.cwd == "/app"
         assert ctx.session_id == "sess-123"
         assert ctx.agent_id == "agent-456"
+
+    def test_context_normalizes_origin_mapping(self) -> None:
+        ctx = GuardContext(origin={
+            "provider": "slack",
+            "tenantId": "T123",
+            "actorRole": "owner",
+        })
+
+        assert isinstance(ctx.origin, OriginContext)
+        assert ctx.origin.tenant_id == "T123"
+        assert ctx.origin.actor_role == "owner"
+
+    def test_context_rejects_origin_mapping_without_provider(self) -> None:
+        try:
+            GuardContext(origin={"tenantId": "T123"})
+        except TypeError as exc:
+            assert "origin.provider must be a non-empty string" in str(exc)
+        else:
+            raise AssertionError("expected missing origin provider to be rejected")
 
 
 class TestTypedActions:

@@ -61,6 +61,7 @@ Fields:
 | `actor_type` | string | Human, bot, service, webhook, custom |
 | `actor_role` | string | Role used in enclave matching |
 | `provenance_confidence` | enum/string | Strong, medium, weak, unknown |
+| `metadata` | object | Optional provider-specific metadata passthrough |
 
 ## Canonical Output Action Contract
 
@@ -169,4 +170,3 @@ Cross-surface:
 - shared golden vectors for snake_case and camelCase input acceptance
 - shared `origin.output_send` payload vectors
 - actor-role and external-participant fields verified end to end
-

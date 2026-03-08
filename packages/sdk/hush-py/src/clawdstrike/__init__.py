@@ -12,6 +12,7 @@ from clawdstrike.exceptions import (
     NativeBackendError,
     PolicyError,
     ReceiptError,
+    UnsupportedOriginFeatureError,
 )
 from clawdstrike.guards import (
     Action,
@@ -62,7 +63,12 @@ from clawdstrike.merkle import (
     hash_node,
 )
 from clawdstrike.native import NATIVE_AVAILABLE, init_native
-from clawdstrike.policy_lab import PolicyLab
+from clawdstrike.origin import (
+    OriginContext,
+    ProvenanceConfidence,
+    normalize_origin_dict,
+    normalize_origin_input,
+)
 from clawdstrike.policy import (
     GuardConfigs,
     Policy,
@@ -73,6 +79,7 @@ from clawdstrike.policy import (
     PostureState,
     PostureTransition,
 )
+from clawdstrike.policy_lab import PolicyLab
 from clawdstrike.receipt import (
     RECEIPT_SCHEMA_VERSION,
     Provenance,
@@ -98,6 +105,7 @@ __all__ = [
     "ReceiptError",
     "ConfigurationError",
     "NativeBackendError",
+    "UnsupportedOriginFeatureError",
     # Core crypto
     "sha256",
     "keccak256",
@@ -140,6 +148,11 @@ __all__ = [
     "McpToolAction",
     "PatchAction",
     "CustomAction",
+    # Origin
+    "OriginContext",
+    "ProvenanceConfidence",
+    "normalize_origin_dict",
+    "normalize_origin_input",
     # Decision / Facade
     "Decision",
     "DecisionStatus",

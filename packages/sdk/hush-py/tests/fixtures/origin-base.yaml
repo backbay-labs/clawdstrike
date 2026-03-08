@@ -1,0 +1,5 @@
+version: "1.4.0"
+name: origin-base
+origins:
+  default_behavior: deny
+  profiles: []

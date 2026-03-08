@@ -1,6 +1,7 @@
 package policy
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -157,6 +158,50 @@ name: Test
 	_, err := FromYAML(yamlData)
 	if err == nil {
 		t.Fatal("expected error for unsupported version, got nil")
+	}
+}
+
+func TestOriginAwarePolicyFailsClosedExplicitly(t *testing.T) {
+	yamlData := []byte(`
+version: "1.4.0"
+name: OriginAware
+origins:
+  default_behavior: deny
+  profiles:
+    - id: public-room
+      match:
+        provider: slack
+`)
+
+	_, err := FromYAML(yamlData)
+	if err == nil {
+		t.Fatal("expected explicit origin-aware policy failure, got nil")
+	}
+
+	var unsupported *UnsupportedOriginFeatureError
+	if !errors.As(err, &unsupported) {
+		t.Fatalf("expected UnsupportedOriginFeatureError, got %T: %v", err, err)
+	}
+	if !strings.Contains(err.Error(), "policy.origins") {
+		t.Fatalf("expected policy.origins error message, got %q", err.Error())
+	}
+}
+
+func TestVersionOneFourWithoutOriginsStillUsesLegacyUnsupportedVersionError(t *testing.T) {
+	yamlData := []byte(`
+version: "1.4.0"
+name: FuturePolicy
+`)
+
+	_, err := FromYAML(yamlData)
+	if err == nil {
+		t.Fatal("expected unsupported version error, got nil")
+	}
+	if strings.Contains(err.Error(), "policy.origins") {
+		t.Fatalf("expected legacy unsupported-version behavior without origins, got %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "unsupported version") {
+		t.Fatalf("expected unsupported version error, got %q", err.Error())
 	}
 }
 

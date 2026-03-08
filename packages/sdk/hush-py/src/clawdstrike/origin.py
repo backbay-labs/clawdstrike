@@ -1,0 +1,198 @@
+"""Origin context types and helpers for origin-aware policy enforcement."""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import dataclass
+from typing import Any, Literal, TypeAlias
+
+_FIELD_ALIASES: dict[str, str] = {
+    "tenantId": "tenant_id",
+    "spaceId": "space_id",
+    "spaceType": "space_type",
+    "threadId": "thread_id",
+    "actorId": "actor_id",
+    "actorType": "actor_type",
+    "actorRole": "actor_role",
+    "externalParticipants": "external_participants",
+    "provenanceConfidence": "provenance_confidence",
+}
+
+_CANONICAL_FIELD_ORDER = (
+    "provider",
+    "tenant_id",
+    "space_id",
+    "space_type",
+    "thread_id",
+    "actor_id",
+    "actor_type",
+    "actor_role",
+    "visibility",
+    "external_participants",
+    "tags",
+    "sensitivity",
+    "provenance_confidence",
+    "metadata",
+)
+_CANONICAL_FIELDS = set(_CANONICAL_FIELD_ORDER)
+_PROVENANCE_CONFIDENCE_VALUES = frozenset(("strong", "medium", "weak", "unknown"))
+
+ProvenanceConfidence: TypeAlias = Literal["strong", "medium", "weak", "unknown"]
+
+
+def _coerce_required_str(value: Any, *, field_name: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise TypeError(f"origin.{field_name} must be a non-empty string")
+    return value
+
+
+def _coerce_optional_str(value: Any, *, field_name: str) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise TypeError(f"origin.{field_name} must be a string")
+    return value
+
+
+def _coerce_optional_bool(value: Any, *, field_name: str) -> bool | None:
+    if value is None:
+        return None
+    if not isinstance(value, bool):
+        raise TypeError(f"origin.{field_name} must be a bool")
+    return value
+
+
+def _coerce_optional_tags(value: Any) -> list[str] | None:
+    if value is None:
+        return None
+    if not isinstance(value, list):
+        raise TypeError("origin.tags must be a list of strings")
+    tags: list[str] = []
+    for tag in value:
+        if not isinstance(tag, str):
+            raise TypeError("origin.tags must be a list of strings")
+        tags.append(tag)
+    return tags
+
+
+def _coerce_optional_provenance_confidence(value: Any) -> ProvenanceConfidence | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise TypeError("origin.provenance_confidence must be a string")
+    if value not in _PROVENANCE_CONFIDENCE_VALUES:
+        raise ValueError(
+            "origin.provenance_confidence must be one of: "
+            + ", ".join(sorted(_PROVENANCE_CONFIDENCE_VALUES))
+        )
+    return value
+
+
+def _coerce_optional_metadata(value: Any) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if not isinstance(value, Mapping):
+        raise TypeError("origin.metadata must be a mapping")
+    metadata: dict[str, Any] = {}
+    for key, item in value.items():
+        if not isinstance(key, str):
+            raise TypeError("origin.metadata keys must be strings")
+        metadata[key] = item
+    return metadata
+
+
+def normalize_origin_dict(data: Mapping[str, Any]) -> dict[str, Any]:
+    """Normalize an origin mapping to the canonical snake_case wire shape."""
+
+    normalized: dict[str, Any] = {}
+    for key, value in data.items():
+        if not isinstance(key, str):
+            raise TypeError("origin field names must be strings")
+        canonical_key = _FIELD_ALIASES.get(key, key)
+        if canonical_key not in _CANONICAL_FIELDS:
+            raise ValueError(f"Unknown origin field: {key}")
+        if canonical_key in normalized:
+            raise ValueError(f"Duplicate origin field: {canonical_key}")
+        normalized[canonical_key] = value
+    return normalized
+
+
+@dataclass(frozen=True)
+class OriginContext:
+    """Canonical origin context used by origin-aware policies."""
+
+    provider: str
+    tenant_id: str | None = None
+    space_id: str | None = None
+    space_type: str | None = None
+    thread_id: str | None = None
+    actor_id: str | None = None
+    actor_type: str | None = None
+    actor_role: str | None = None
+    visibility: str | None = None
+    external_participants: bool | None = None
+    tags: list[str] | None = None
+    sensitivity: str | None = None
+    provenance_confidence: ProvenanceConfidence | None = None
+    metadata: dict[str, Any] | None = None
+
+    def __post_init__(self) -> None:
+        _coerce_required_str(self.provider, field_name="provider")
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> OriginContext:
+        """Create an OriginContext from canonical or camelCase field names."""
+
+        normalized = normalize_origin_dict(data)
+        return cls(
+            provider=_coerce_required_str(normalized.get("provider"), field_name="provider"),
+            tenant_id=_coerce_optional_str(normalized.get("tenant_id"), field_name="tenant_id"),
+            space_id=_coerce_optional_str(normalized.get("space_id"), field_name="space_id"),
+            space_type=_coerce_optional_str(normalized.get("space_type"), field_name="space_type"),
+            thread_id=_coerce_optional_str(normalized.get("thread_id"), field_name="thread_id"),
+            actor_id=_coerce_optional_str(normalized.get("actor_id"), field_name="actor_id"),
+            actor_type=_coerce_optional_str(normalized.get("actor_type"), field_name="actor_type"),
+            actor_role=_coerce_optional_str(normalized.get("actor_role"), field_name="actor_role"),
+            visibility=_coerce_optional_str(normalized.get("visibility"), field_name="visibility"),
+            external_participants=_coerce_optional_bool(
+                normalized.get("external_participants"),
+                field_name="external_participants",
+            ),
+            tags=_coerce_optional_tags(normalized.get("tags")),
+            sensitivity=_coerce_optional_str(
+                normalized.get("sensitivity"),
+                field_name="sensitivity",
+            ),
+            provenance_confidence=_coerce_optional_provenance_confidence(
+                normalized.get("provenance_confidence"),
+            ),
+            metadata=_coerce_optional_metadata(normalized.get("metadata")),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize the origin context using canonical snake_case keys."""
+
+        result: dict[str, Any] = {}
+        for key in _CANONICAL_FIELD_ORDER:
+            value = getattr(self, key)
+            if value is not None:
+                result[key] = list(value) if key == "tags" else value
+        return result
+
+
+def normalize_origin_input(
+    origin: OriginContext | Mapping[str, Any] | None,
+) -> OriginContext | None:
+    """Convert mapping input to OriginContext and preserve canonical instances."""
+
+    if origin is None or isinstance(origin, OriginContext):
+        return origin
+    return OriginContext.from_dict(origin)
+
+
+__all__ = [
+    "OriginContext",
+    "ProvenanceConfidence",
+    "normalize_origin_dict",
+    "normalize_origin_input",
+]

@@ -16,6 +16,16 @@ import (
 	"github.com/backbay-labs/clawdstrike-go/guards"
 )
 
+type stubChecker struct {
+	result guards.GuardResult
+	calls  int
+}
+
+func (s *stubChecker) CheckAction(_ guards.GuardAction, _ *guards.GuardContext) guards.GuardResult {
+	s.calls++
+	return s.result
+}
+
 func TestFromPolicyBuildsEngine(t *testing.T) {
 	dir := t.TempDir()
 	policyPath := filepath.Join(dir, "policy.yaml")
@@ -364,5 +374,65 @@ func TestFromDaemonWithConfigRequestContextCancellation(t *testing.T) {
 	}
 	if got := rt.calls.Load(); got < 1 {
 		t.Fatalf("expected at least one daemon request, got %d", got)
+	}
+}
+
+func TestLocalEngineFailsClosedWhenOriginContextProvided(t *testing.T) {
+	cs, err := WithDefaults("default")
+	if err != nil {
+		t.Fatalf("WithDefaults: %v", err)
+	}
+
+	decision := cs.CheckWithContext(
+		guards.FileAccess("/tmp/report.txt"),
+		guards.NewContext().WithOrigin(
+			guards.NewOriginContext(guards.OriginProviderSlack).
+				WithSpaceID("C123").
+				WithActorRole("owner"),
+		),
+	)
+
+	if decision.Status != StatusDeny {
+		t.Fatalf("expected deny, got %s", decision.Status)
+	}
+	if decision.Guard != "origin" {
+		t.Fatalf("expected origin guard, got %q", decision.Guard)
+	}
+	if !strings.Contains(decision.Message, "daemon-backed") {
+		t.Fatalf("expected daemon-backed guidance, got %q", decision.Message)
+	}
+}
+
+func TestLocalEngineFailsClosedWhenOutputSendIsRequested(t *testing.T) {
+	cs, err := WithDefaults("default")
+	if err != nil {
+		t.Fatalf("WithDefaults: %v", err)
+	}
+
+	decision := cs.Check(guards.OutputSend("send to public room"))
+	if decision.Status != StatusDeny {
+		t.Fatalf("expected deny, got %s", decision.Status)
+	}
+	if decision.Guard != "origin" {
+		t.Fatalf("expected origin guard, got %q", decision.Guard)
+	}
+}
+
+func TestNonLocalCheckerDoesNotShortCircuitOriginAwareChecks(t *testing.T) {
+	checker := &stubChecker{
+		result: guards.Allow("stub"),
+	}
+	cs := &Clawdstrike{checker: checker}
+
+	decision := cs.CheckWithContext(
+		guards.FileAccess("/tmp/report.txt"),
+		guards.NewContext().WithOrigin(guards.NewOriginContext(guards.OriginProviderGitHub)),
+	)
+
+	if decision.Status != StatusAllow {
+		t.Fatalf("expected allow from non-local checker, got %s", decision.Status)
+	}
+	if checker.calls != 1 {
+		t.Fatalf("expected checker call count 1, got %d", checker.calls)
 	}
 }

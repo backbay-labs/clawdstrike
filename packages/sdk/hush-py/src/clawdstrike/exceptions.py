@@ -9,6 +9,10 @@ class PolicyError(ClawdstrikeError, ValueError):
     """Error in policy loading, parsing, or validation."""
 
 
+class UnsupportedOriginFeatureError(PolicyError):
+    """Origin-aware policy or context was requested on an unsupported backend."""
+
+
 class GuardError(ClawdstrikeError):
     """Error during guard evaluation."""
 
