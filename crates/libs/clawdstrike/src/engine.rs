@@ -545,47 +545,67 @@ impl HushEngine {
 
         let metadata = Self::report_metadata_for_context(&effective_context);
 
-        if let Some(origin_state) = origin_state {
-            if let Some(origin) = effective_context.origin.clone() {
-                if let Some(current_enclave) = effective_context.enclave.clone() {
-                    let current_fingerprint = OriginFingerprint::from(&origin);
-                    if let Some(existing) = origin_state.as_ref() {
-                        if existing.current_origin_fingerprint != current_fingerprint {
-                            match check_bridge_policy(&existing.current_enclave, &origin) {
-                                BridgeCheckResult::Allow => {
-                                    debug!("Cross-origin bridge allowed");
-                                }
-                                BridgeCheckResult::RequireApproval => {
-                                    let report = self
-                                        .single_result_report(
-                                            GuardResult::block(
-                                                "cross_origin",
-                                                Severity::Warning,
-                                                format!(
-                                                    "cross-origin transition requires approval (from {} to {})",
-                                                    format_origin_brief(&existing.current_origin),
-                                                    format_origin_brief(&origin),
+        if self.policy.origins.is_some() {
+            if let Some(origin_state) = origin_state {
+                if let Some(origin) = effective_context.origin.clone() {
+                    if let Some(current_enclave) = effective_context.enclave.clone() {
+                        let current_fingerprint = OriginFingerprint::from(&origin);
+                        if let Some(existing) = origin_state.as_ref() {
+                            if existing.current_origin_fingerprint != current_fingerprint {
+                                match check_bridge_policy(&existing.current_enclave, &origin) {
+                                    BridgeCheckResult::Allow => {
+                                        debug!("Cross-origin bridge allowed");
+                                    }
+                                    BridgeCheckResult::RequireApproval => {
+                                        let report = self
+                                            .single_result_report(
+                                                GuardResult::block(
+                                                    "cross_origin",
+                                                    Severity::Warning,
+                                                    format!(
+                                                        "cross-origin transition requires approval (from {} to {})",
+                                                        format_origin_brief(&existing.current_origin),
+                                                        format_origin_brief(&origin),
+                                                    ),
                                                 ),
-                                            ),
-                                            metadata.clone(),
-                                        )
-                                        .await;
-                                    return Ok(PreparedEvaluation::Complete(report));
+                                                metadata.clone(),
+                                            )
+                                            .await;
+                                        return Ok(PreparedEvaluation::Complete(report));
+                                    }
+                                    BridgeCheckResult::Deny(reason) => {
+                                        let report = self
+                                            .single_result_report(
+                                                GuardResult::block(
+                                                    "cross_origin",
+                                                    Severity::Error,
+                                                    format!(
+                                                        "cross-origin transition denied: {reason}"
+                                                    ),
+                                                ),
+                                                metadata.clone(),
+                                            )
+                                            .await;
+                                        return Ok(PreparedEvaluation::Complete(report));
+                                    }
                                 }
-                                BridgeCheckResult::Deny(reason) => {
-                                    let report = self
-                                        .single_result_report(
-                                            GuardResult::block(
-                                                "cross_origin",
-                                                Severity::Error,
-                                                format!("cross-origin transition denied: {reason}"),
-                                            ),
-                                            metadata.clone(),
-                                        )
-                                        .await;
-                                    return Ok(PreparedEvaluation::Complete(report));
-                                }
+                                *origin_state = Some(OriginRuntimeState::new(
+                                    origin,
+                                    current_enclave,
+                                    origin_budget_counters(
+                                        effective_context
+                                            .enclave
+                                            .as_ref()
+                                            .and_then(|enclave| enclave.budgets.as_ref()),
+                                    ),
+                                ));
+                            } else if let Some(existing) = origin_state.as_mut() {
+                                existing.current_origin = origin;
+                                existing.current_origin_fingerprint = current_fingerprint;
+                                existing.current_enclave = current_enclave;
+                                normalize_origin_budgets(existing);
                             }
+                        } else {
                             *origin_state = Some(OriginRuntimeState::new(
                                 origin,
                                 current_enclave,
@@ -596,23 +616,7 @@ impl HushEngine {
                                         .and_then(|enclave| enclave.budgets.as_ref()),
                                 ),
                             ));
-                        } else if let Some(existing) = origin_state.as_mut() {
-                            existing.current_origin = origin;
-                            existing.current_origin_fingerprint = current_fingerprint;
-                            existing.current_enclave = current_enclave;
-                            normalize_origin_budgets(existing);
                         }
-                    } else {
-                        *origin_state = Some(OriginRuntimeState::new(
-                            origin,
-                            current_enclave,
-                            origin_budget_counters(
-                                effective_context
-                                    .enclave
-                                    .as_ref()
-                                    .and_then(|enclave| enclave.budgets.as_ref()),
-                            ),
-                        ));
                     }
                 }
             }
@@ -3695,6 +3699,52 @@ posture:
     }
 
     #[tokio::test]
+    async fn test_posture_path_uses_pre_resolved_enclave() {
+        let posture_yaml = r#"
+version: "1.2.0"
+name: "enclave-pre-resolved"
+posture:
+  initial: standard
+  states:
+    standard:
+      capabilities: [file_access]
+      budgets: {}
+    elevated:
+      capabilities: [file_access, file_write]
+      budgets: {}
+"#;
+
+        let origins = OriginsConfig {
+            default_behavior: Some(OriginDefaultBehavior::Deny),
+            profiles: vec![slack_profile_with_posture("slack-elevated", "elevated")],
+        };
+        let policy = policy_with_posture_and_origins(posture_yaml, origins);
+        let engine = HushEngine::with_policy(policy);
+
+        let context = GuardContext::new()
+            .with_origin(test_github_origin())
+            .with_enclave(manual_enclave("manual-pre-resolved", Some("elevated")));
+        let mut posture = None;
+
+        let report = engine
+            .check_action_report_with_posture(
+                &GuardAction::FileAccess("/app/src/main.rs"),
+                &context,
+                &mut posture,
+            )
+            .await
+            .unwrap();
+
+        assert!(report.guard_report.overall.allowed);
+        assert_eq!(report.posture_before, "elevated");
+        assert_eq!(report.posture_after, "elevated");
+        assert_eq!(
+            posture.as_ref().map(|state| state.current_state.as_str()),
+            Some("elevated")
+        );
+    }
+
+    #[tokio::test]
     async fn test_enclave_references_nonexistent_posture_state() {
         // Enclave specifies posture="nonexistent" which doesn't exist in the program.
         // Should return an error (fail-closed).
@@ -3890,6 +3940,20 @@ posture:
             .guard_report
     }
 
+    fn manual_enclave(profile_id: &str, posture: Option<&str>) -> crate::enclave::ResolvedEnclave {
+        crate::enclave::ResolvedEnclave {
+            profile_id: Some(profile_id.to_string()),
+            mcp: None,
+            posture: posture.map(str::to_string),
+            egress: None,
+            data: None,
+            budgets: None,
+            bridge_policy: None,
+            explanation: Some("manual test enclave".to_string()),
+            resolution_path: vec!["manual:test".to_string()],
+        }
+    }
+
     #[tokio::test]
     async fn test_cross_origin_same_origin_passes() {
         // Two checks from the same origin (same provider + same space_id)
@@ -3911,6 +3975,30 @@ posture:
         // Second check with same origin should pass
         let report = check_with_origin_runtime(&engine, &context, &mut origin_state).await;
         assert!(report.overall.allowed);
+    }
+
+    #[tokio::test]
+    async fn test_origin_runtime_is_ignored_without_origins_policy() {
+        let mut policy = Policy::new();
+        policy.version = "1.4.0".to_string();
+        policy.name = "origin-runtime-opt-in".to_string();
+        let engine = HushEngine::with_policy(policy);
+        let mut origin_state = None;
+
+        let slack_ctx = GuardContext::new()
+            .with_origin(test_slack_origin())
+            .with_enclave(manual_enclave("manual-slack", None));
+        let slack_report = check_with_origin_runtime(&engine, &slack_ctx, &mut origin_state).await;
+        assert!(slack_report.overall.allowed);
+        assert!(origin_state.is_none());
+
+        let github_ctx = GuardContext::new()
+            .with_origin(test_github_origin())
+            .with_enclave(manual_enclave("manual-github", None));
+        let github_report =
+            check_with_origin_runtime(&engine, &github_ctx, &mut origin_state).await;
+        assert!(github_report.overall.allowed);
+        assert!(origin_state.is_none());
     }
 
     #[tokio::test]
