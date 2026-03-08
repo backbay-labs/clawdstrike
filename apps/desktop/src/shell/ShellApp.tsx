@@ -6,7 +6,6 @@
  * - / - Redirects to Nexus (default)
  */
 
-import { UiThemeProvider } from "@backbay/glia/theme";
 import { Suspense, useMemo } from "react";
 import { createHashRouter, Navigate, RouterProvider } from "react-router-dom";
 import { ConnectionProvider } from "@/context/ConnectionContext";
@@ -16,8 +15,12 @@ import { SwarmProvider } from "@/context/SwarmContext";
 import { MarketplaceDiscoveryBootstrap } from "./MarketplaceDiscoveryBootstrap";
 import { getPlugins } from "./plugins";
 import { ShellLayout } from "./ShellLayout";
+import { HuntronomerThemeProvider } from "./theme/HuntronomerThemeProvider";
+import { isWorkbenchV2Enabled, WorkbenchShell } from "./workbench";
 
 export function ShellApp() {
+  const v2 = useMemo(() => isWorkbenchV2Enabled(), []);
+
   const router = useMemo(() => {
     const plugins = getPlugins();
     const loadingFallback = (
@@ -26,10 +29,12 @@ export function ShellApp() {
       </div>
     );
 
+    const LayoutComponent = v2 ? WorkbenchShell : ShellLayout;
+
     return createHashRouter([
       {
         path: "/",
-        element: <ShellLayout />,
+        element: <LayoutComponent />,
         children: [
           {
             index: true,
@@ -47,10 +52,10 @@ export function ShellApp() {
         ],
       },
     ]);
-  }, []);
+  }, [v2]);
 
   return (
-    <UiThemeProvider themeId="nebula">
+    <HuntronomerThemeProvider>
       <ConnectionProvider>
         <OpenClawProvider>
           <PolicyProvider>
@@ -61,6 +66,6 @@ export function ShellApp() {
           </PolicyProvider>
         </OpenClawProvider>
       </ConnectionProvider>
-    </UiThemeProvider>
+    </HuntronomerThemeProvider>
   );
 }

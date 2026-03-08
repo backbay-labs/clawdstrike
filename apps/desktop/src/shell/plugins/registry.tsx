@@ -63,6 +63,8 @@ const plugins: AppPlugin[] = [
     icon: "nexus",
     description: "Autonomous threat hunting command surface",
     order: 1,
+    tabKind: "hunt",
+    singleton: true,
     routes: [
       { path: "", element: <NexusView />, index: true },
       { path: ":sessionId", element: <NexusView /> },
@@ -74,6 +76,8 @@ const plugins: AppPlugin[] = [
     icon: "folder",
     description: "Trusted roots, editor panes, terminal docks, and local authoring tools",
     order: 2,
+    tabKind: "artifact",
+    singleton: true,
     routes: createWorkspacePluginRoutes(),
   },
   {
@@ -82,6 +86,8 @@ const plugins: AppPlugin[] = [
     icon: "dashboard",
     description: "Fleet management, daemon connection, and preferences",
     order: 3,
+    tabKind: "operations",
+    singleton: true,
     routes: [{ path: "", element: <OperationsHubView />, index: true }],
   },
   {
@@ -90,6 +96,8 @@ const plugins: AppPlugin[] = [
     icon: "activity",
     description: "Real-time policy decisions and audit log",
     order: 4,
+    tabKind: "signal-thread",
+    singleton: true,
     routes: [{ path: "", element: <EventStreamView />, index: true }],
   },
   {
@@ -98,6 +106,8 @@ const plugins: AppPlugin[] = [
     icon: "shield",
     description: "Browse and validate policies",
     order: 5,
+    tabKind: "policy",
+    singleton: true,
     routes: [{ path: "", element: <PolicyViewerView />, index: true }],
   },
   {
@@ -106,6 +116,8 @@ const plugins: AppPlugin[] = [
     icon: "beaker",
     description: "Simulate policy checks",
     order: 6,
+    tabKind: "sandbox",
+    singleton: true,
     routes: [{ path: "", element: <PolicyTesterView />, index: true }],
   },
   {
@@ -114,6 +126,8 @@ const plugins: AppPlugin[] = [
     icon: "network",
     description: "3D visualization of agent identities",
     order: 7,
+    tabKind: "profile",
+    singleton: true,
     routes: [{ path: "", element: <SwarmMapView />, index: true }],
   },
   {
@@ -122,6 +136,8 @@ const plugins: AppPlugin[] = [
     icon: "store",
     description: "Discover and share community policies",
     order: 8,
+    tabKind: "marketplace",
+    singleton: true,
     routes: [{ path: "", element: <MarketplaceView />, index: true }],
   },
   {
@@ -130,6 +146,8 @@ const plugins: AppPlugin[] = [
     icon: "workflow",
     description: "Automated response chains",
     order: 9,
+    tabKind: "workflow",
+    singleton: true,
     routes: [{ path: "", element: <WorkflowsView />, index: true }],
   },
   {
@@ -138,6 +156,8 @@ const plugins: AppPlugin[] = [
     icon: "radar",
     description: "Live 3D threat detection radar",
     order: 10,
+    tabKind: "threat-radar",
+    singleton: true,
     routes: [{ path: "", element: <ThreatRadarView />, index: true }],
   },
   {
@@ -146,6 +166,8 @@ const plugins: AppPlugin[] = [
     icon: "graph",
     description: "MITRE ATT&CK chain visualization",
     order: 11,
+    tabKind: "attack-graph",
+    singleton: true,
     routes: [{ path: "", element: <AttackGraphView />, index: true }],
   },
   {
@@ -154,6 +176,8 @@ const plugins: AppPlugin[] = [
     icon: "topology",
     description: "3D network infrastructure map",
     order: 12,
+    tabKind: "network-map",
+    singleton: true,
     routes: [{ path: "", element: <NetworkMapView />, index: true }],
   },
   {
@@ -162,6 +186,8 @@ const plugins: AppPlugin[] = [
     icon: "dashboard",
     description: "Composite security monitoring",
     order: 13,
+    tabKind: "brief",
+    singleton: true,
     routes: [{ path: "", element: <SecurityOverviewView />, index: true }],
   },
 ];

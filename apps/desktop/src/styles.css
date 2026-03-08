@@ -110,36 +110,8 @@
   --nexus-plate-radius: 16px;
   --nexus-header-height: 72px;
 
-  /* Override @backbay/glia neon defaults to Clawdstrike gold/steel palette */
-  --glia-color-accent: #d5ad57;
-  --glia-color-accent-secondary: #7e8ba7;
-  --glia-color-accent-destructive: #c45c5c;
-  --glia-color-border: rgba(213, 173, 87, 0.34);
-  --glia-color-bg-body: #07090f;
-  --glia-color-text-primary: #ece7dc;
-  --glia-color-text-soft: #b6b7c1;
-  --glia-glass-card-bg: linear-gradient(180deg, rgba(10, 13, 21, 0.95) 0%, rgba(6, 9, 15, 0.96) 100%);
-  --glia-radius-sm: 8px;
-  --glia-radius-md: 10px;
-  --glia-radius-lg: 14px;
-  --glia-tw-primary: 43 60% 58%;
-  --glia-tw-primary-foreground: 220 20% 6%;
-  --glia-tw-secondary: 221 20% 58%;
-  --glia-tw-secondary-foreground: 220 20% 96%;
-  --glia-tw-border: 43 35% 30%;
-  --glia-tw-input: 220 18% 14%;
-  --glia-tw-ring: 43 66% 58%;
-  --glia-tw-foreground: 43 26% 88%;
-  --glia-tw-muted-foreground: 220 12% 66%;
-  --glia-tw-accent: 43 34% 18%;
-  --glia-tw-accent-foreground: 43 62% 64%;
-  --glia-tw-cyan-neon: 43 66% 58%;
-  --glia-tw-magenta-neon: 220 40% 65%;
-  --glia-tw-emerald-neon: 160 42% 48%;
-  --glia-tw-violet-neon: 242 34% 66%;
-  --glia-tw-yellow-warning: 43 72% 56%;
-  --glia-tw-destructive: 358 52% 56%;
-  --glia-tw-destructive-foreground: 220 20% 94%;
+  /* Glia theme overrides applied at runtime via HuntronomerThemeProvider
+     (applyThemeCssVariables injects --theme-* vars on documentElement) */
 }
 
 * {
@@ -276,243 +248,184 @@ body {
   background: rgba(11, 14, 22, 0.72);
 }
 
+/* ── Orb: 40px visible, alive + glowing ────────────────────────── */
 .nexus-orb {
   position: relative;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 0;
-  padding: 10px 0 10px;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  padding: 0;
   background: transparent;
   border: none;
   cursor: pointer;
-  transition: transform 180ms ease, filter 180ms ease;
+  transition: transform 80ms ease, filter 120ms ease;
 }
 
 .nexus-orb:hover {
   transform: translateY(-1px);
-  filter: brightness(1.04);
+  filter: brightness(1.06);
 }
 
+/* Ambient glow — always alive, intensifies on hover */
 .nexus-orb-glow {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 108px;
-  height: 108px;
-  transform: translate(-50%, -60%);
-  background: radial-gradient(
-    circle,
-    rgba(213, 173, 87, 0.26) 0%,
-    rgba(213, 173, 87, 0.08) 42%,
-    transparent 70%
-  );
-  border-radius: 50%;
-  filter: blur(13px);
-  animation: nexus-orb-pulse 4s ease-in-out infinite;
-  pointer-events: none;
-}
-
-@keyframes nexus-orb-pulse {
-  0%,
-  100% {
-    opacity: 0.6;
-    transform: translate(-50%, -60%) scale(1);
-  }
-  50% {
-    opacity: 1;
-    transform: translate(-50%, -60%) scale(1.1);
-  }
-}
-
-.nexus-orb-mode-ring {
-  --orb-angle: -90deg;
-  --orb-active-color: rgba(213, 173, 87, 0.7);
-  --orb-track-color: rgba(213, 173, 87, 0.22);
   position: absolute;
   top: 50%;
   left: 50%;
   width: 72px;
   height: 72px;
-  transform: translate(-50%, -58%);
+  transform: translate(-50%, -50%);
+  background: radial-gradient(
+    circle,
+    rgba(213, 173, 87, 0.22) 0%,
+    rgba(213, 173, 87, 0.06) 45%,
+    transparent 72%
+  );
+  border-radius: 50%;
+  filter: blur(8px);
+  pointer-events: none;
+  animation: orb-breathe 4s ease-in-out infinite;
+}
+
+.nexus-orb:hover .nexus-orb-glow {
+  animation: none;
+  opacity: 1;
+  filter: blur(6px);
+}
+
+@keyframes orb-breathe {
+  0%, 100% { opacity: 0.5; transform: translate(-50%, -50%) scale(1); }
+  50%      { opacity: 0.85; transform: translate(-50%, -50%) scale(1.08); }
+}
+
+/* Outer ring — thin segmented gold arc */
+.nexus-orb-mode-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 46px;
+  height: 46px;
+  transform: translate(-50%, -50%);
   border-radius: 999px;
-  background:
-    conic-gradient(
-      from -90deg,
-      var(--orb-track-color) 0deg 70deg,
-      transparent 70deg 90deg,
-      var(--orb-track-color) 90deg 160deg,
-      transparent 160deg 180deg,
-      var(--orb-track-color) 180deg 250deg,
-      transparent 250deg 270deg,
-      var(--orb-track-color) 270deg 340deg,
-      transparent 340deg 360deg
-    ),
-    conic-gradient(from var(--orb-angle), var(--orb-active-color) 0deg 70deg, transparent 70deg 360deg);
-  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
-  mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
-  filter: drop-shadow(0 0 8px rgba(213, 173, 87, 0.26));
+  background: conic-gradient(
+    from -90deg,
+    rgba(213, 173, 87, 0.18) 0deg 48deg,
+    transparent 48deg 52deg,
+    rgba(213, 173, 87, 0.14) 52deg 100deg,
+    transparent 100deg 104deg,
+    rgba(213, 173, 87, 0.18) 104deg 152deg,
+    transparent 152deg 156deg,
+    rgba(213, 173, 87, 0.14) 156deg 204deg,
+    transparent 204deg 208deg,
+    rgba(213, 173, 87, 0.18) 208deg 256deg,
+    transparent 256deg 260deg,
+    rgba(213, 173, 87, 0.14) 260deg 308deg,
+    transparent 308deg 312deg,
+    rgba(213, 173, 87, 0.18) 312deg 360deg
+  );
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 2px));
+  pointer-events: none;
+  opacity: 0.7;
+  transition: opacity 200ms ease;
 }
 
-.nexus-orb-mode-ring[data-mode-index="0"] {
-  --orb-angle: -90deg;
+.nexus-orb:hover .nexus-orb-mode-ring {
+  opacity: 1;
 }
 
-.nexus-orb-mode-ring[data-mode-index="1"] {
-  --orb-angle: 0deg;
-}
-
-.nexus-orb-mode-ring[data-mode-index="2"] {
-  --orb-angle: 90deg;
-}
-
-.nexus-orb-mode-ring[data-mode-index="3"] {
-  --orb-angle: 180deg;
-}
-
-.nexus-orb-mode-ring[data-tone="gold"] {
-  --orb-active-color: rgba(210, 170, 89, 0.82);
-}
-
-.nexus-orb-mode-ring[data-tone="amber"] {
-  --orb-active-color: rgba(207, 144, 52, 0.86);
-}
-
-.nexus-orb-mode-ring[data-tone="crimson"] {
-  --orb-active-color: rgba(172, 38, 52, 0.9);
-}
-
+/* Visual core — the nucleus */
 .nexus-orb-visual {
   position: relative;
-  width: 64px;
-  height: 64px;
+  z-index: 1;
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, rgba(22, 26, 37, 0.96) 0%, rgba(9, 11, 17, 0.98) 100%);
-  border: 1px solid rgba(213, 173, 87, 0.5);
+  background: linear-gradient(135deg, rgba(20, 23, 33, 0.97) 0%, rgba(9, 11, 17, 0.98) 100%);
+  border: 1px solid rgba(213, 173, 87, 0.42);
   border-radius: 50%;
   box-shadow:
-    0 0 24px rgba(213, 173, 87, 0.24),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+    0 0 16px rgba(213, 173, 87, 0.18),
+    0 0 4px rgba(213, 173, 87, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 
 .nexus-orb:hover .nexus-orb-visual {
-  transform: scale(1.05);
-  border-color: rgba(213, 173, 87, 0.72);
+  border-color: rgba(213, 173, 87, 0.62);
   box-shadow:
-    0 0 30px rgba(213, 173, 87, 0.34),
-    inset 0 1px 0 rgba(255, 255, 255, 0.12);
-}
-
-.nexus-orb.active .nexus-orb-visual {
-  background: linear-gradient(135deg, rgba(33, 28, 18, 0.92) 0%, rgba(15, 15, 18, 0.96) 100%);
-  border-color: rgba(213, 173, 87, 0.82);
+    0 0 22px rgba(213, 173, 87, 0.28),
+    0 0 6px rgba(213, 173, 87, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .nexus-orb-icon {
   color: var(--origin-gold);
-  filter: drop-shadow(0 0 7px rgba(213, 173, 87, 0.5));
+  filter: drop-shadow(0 0 4px rgba(213, 173, 87, 0.4));
 }
 
-.nexus-orb-tooltip {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 50%;
-  transform: translate(-50%, 3px);
-  width: 146px;
-  border-radius: 10px;
-  border: 1px solid rgba(213, 173, 87, 0.34);
-  background: linear-gradient(180deg, rgba(9, 12, 19, 0.96) 0%, rgba(5, 8, 13, 0.96) 100%);
-  padding: 6px 8px;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 140ms ease, transform 140ms ease;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.42);
-  z-index: 10;
+/* ── Lens chooser: vertical list anchored right of spine ───────── */
+.orb-lens-menu {
+  position: fixed;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+  min-width: 130px;
+  border: 1px solid rgba(213, 173, 87, 0.22);
+  border-radius: 8px;
+  background: rgba(9, 12, 19, 0.97);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 1px rgba(213, 173, 87, 0.15);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  user-select: none;
 }
 
-.nexus-orb:hover .nexus-orb-tooltip,
-.nexus-orb:focus-visible .nexus-orb-tooltip {
-  opacity: 1;
-  transform: translate(-50%, 0);
+.orb-lens-menu__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 28px;
+  padding: 0 10px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  transition: background 60ms ease, color 60ms ease;
 }
 
-.nexus-orb-tooltip-title {
+.orb-lens-menu__item:hover,
+.orb-lens-menu__item[data-hovered="true"] {
+  background: rgba(213, 173, 87, 0.08);
+}
+
+.orb-lens-menu__item[data-active="true"] {
+  background: rgba(213, 173, 87, 0.06);
+}
+
+.orb-lens-menu__item[data-active="true"] .orb-lens-menu__label {
+  color: rgba(213, 173, 87, 0.9);
+}
+
+.orb-lens-menu__label {
   font-family: var(--font-mono);
-  font-size: 9px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: rgba(213, 173, 87, 0.88);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: rgba(232, 230, 222, 0.75);
 }
 
-.nexus-orb-tooltip-copy {
-  margin-top: 2px;
+.orb-lens-menu__item:hover .orb-lens-menu__label,
+.orb-lens-menu__item[data-hovered="true"] .orb-lens-menu__label {
+  color: rgba(232, 230, 222, 0.95);
+}
+
+.orb-lens-menu__key {
+  font-family: var(--font-mono);
   font-size: 10px;
-  line-height: 1.3;
-  color: rgba(182, 183, 193, 0.84);
-}
-
-.nexus-orb-mode-menu {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 156px;
-  height: 156px;
-  transform: translate(-50%, -50%);
-  pointer-events: none;
-  z-index: 12;
-}
-
-.nexus-orb-mode-menu-item {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%) rotate(var(--orb-menu-angle)) translateY(-66px)
-    rotate(calc(var(--orb-menu-angle) * -1));
-  pointer-events: auto;
-  border: 1px solid rgba(213, 173, 87, 0.38);
-  border-radius: 999px;
-  background: linear-gradient(180deg, rgba(16, 20, 29, 0.95) 0%, rgba(8, 11, 18, 0.96) 100%);
-  min-width: 72px;
-  padding: 5px 8px;
-  font-family: var(--font-mono);
-  font-size: 9px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: rgba(182, 183, 193, 0.9);
-  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.4);
-  transition: border-color 140ms ease, box-shadow 140ms ease, color 140ms ease, transform 140ms ease;
-}
-
-.nexus-orb-mode-menu-item:hover {
-  border-color: rgba(213, 173, 87, 0.62);
-  color: rgba(232, 224, 204, 0.94);
-}
-
-.nexus-orb-mode-menu-item[data-active="true"] {
-  border-color: rgba(213, 173, 87, 0.72);
-  box-shadow:
-    0 10px 22px rgba(0, 0, 0, 0.42),
-    0 0 14px rgba(213, 173, 87, 0.2);
-  color: rgba(213, 173, 87, 0.94);
-}
-
-.nexus-orb-mode-menu-item[data-tone="amber"][data-active="true"] {
-  border-color: rgba(207, 144, 52, 0.72);
-  box-shadow:
-    0 10px 22px rgba(0, 0, 0, 0.42),
-    0 0 14px rgba(207, 144, 52, 0.2);
-  color: rgba(223, 176, 96, 0.94);
-}
-
-.nexus-orb-mode-menu-item[data-tone="crimson"][data-active="true"] {
-  border-color: rgba(172, 38, 52, 0.72);
-  box-shadow:
-    0 10px 22px rgba(0, 0, 0, 0.42),
-    0 0 14px rgba(172, 38, 52, 0.2);
-  color: rgba(210, 112, 122, 0.95);
+  color: rgba(182, 183, 193, 0.3);
+  margin-left: 12px;
 }
 
 .nexus-divider {
@@ -1724,6 +1637,121 @@ body {
   height: 72px;
   border: 1px solid color-mix(in srgb, var(--origin-panel-border-muted) 70%, transparent);
   opacity: 0.6;
+}
+
+/* ── Welcome Screen (full-viewport landing) ──────────────────────── */
+
+.welcome-action-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 120px;
+  padding: 16px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(213, 173, 87, 0.12);
+  background: rgba(9, 12, 19, 0.6);
+  backdrop-filter: blur(12px);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+
+.welcome-action-card:hover {
+  border-color: rgba(213, 173, 87, 0.3);
+  background: rgba(213, 173, 87, 0.06);
+  box-shadow: 0 0 20px rgba(213, 173, 87, 0.08);
+}
+
+.welcome-action-card__icon {
+  color: rgba(213, 173, 87, 0.7);
+}
+
+.welcome-action-card__label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: rgba(232, 230, 222, 0.7);
+}
+
+/* ── Hunt Dock ─────────────────────────────────────────────── */
+
+.hunt-dock::-webkit-scrollbar {
+  display: none;
+}
+
+.hunt-dock__new-btn:hover {
+  border-color: rgba(213, 173, 87, 0.55) !important;
+  color: rgba(213, 173, 87, 0.8) !important;
+}
+
+.hunt-dock__pill--pinned:hover {
+  border-color: rgba(213, 173, 87, 0.7) !important;
+}
+
+.hunt-dock__flyout {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+}
+
+.hunt-dock__context-menu {
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+}
+
+/* ── Drag & Drop ─────────────────────────────────────────── */
+
+.hunt-dock__pill--drop-target {
+  border-color: rgba(213, 173, 87, 0.6) !important;
+  box-shadow: 0 0 8px rgba(213, 173, 87, 0.3);
+}
+
+.hunt-dock__pill--drop-flash {
+  animation: drop-flash 400ms ease-out;
+}
+
+@keyframes drop-flash {
+  0% { background: rgba(213, 173, 87, 0.2); }
+  100% { background: transparent; }
+}
+
+@keyframes intent-pulse {
+  0%, 100% { border-color: rgba(213, 173, 87, 0.15); }
+  50% { border-color: rgba(213, 173, 87, 0.3); }
+}
+
+.hunt-dock__pill--compatible {
+  animation: intent-pulse 1.5s ease-in-out infinite;
+}
+
+.drag-ghost {
+  position: fixed;
+  pointer-events: none;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(10, 12, 18, 0.95);
+  border: 1px solid rgba(213, 173, 87, 0.25);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: rgba(232, 230, 222, 0.85);
+  white-space: nowrap;
+}
+
+.drag-ghost__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: rgba(213, 173, 87, 0.7);
+}
+
+/* ── Bucket Summary ─────────────────────────────────────── */
+
+.bucket-summary--drop-target {
+  border-color: rgba(213, 173, 87, 0.5) !important;
+  background: rgba(213, 173, 87, 0.06) !important;
 }
 
 .nexus-hero-corner--tl {

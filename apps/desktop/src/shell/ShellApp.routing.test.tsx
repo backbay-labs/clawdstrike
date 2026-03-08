@@ -9,6 +9,7 @@ import { ShellApp } from "./ShellApp";
 
 vi.mock("@backbay/glia/theme", () => ({
   UiThemeProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+  applyThemeCssVariables: vi.fn(),
 }));
 
 vi.mock("./ShellLayout", async () => {
@@ -22,8 +23,14 @@ vi.mock("./ShellLayout", async () => {
   };
 });
 
-vi.mock("./plugins", () => ({
-  getPlugins: () => [
+vi.mock("./workbench", () => ({
+  isWorkbenchV2Enabled: () => false,
+  WorkbenchShell: () => <div>Workbench</div>,
+}));
+
+vi.mock("./plugins", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./plugins")>();
+  const plugins = [
     {
       id: "nexus",
       name: "Nexus",
@@ -32,11 +39,18 @@ vi.mock("./plugins", () => ({
       order: 1,
       routes: [{ path: "", index: true, element: <div>Nexus View</div> }],
     },
-  ],
-}));
+  ];
+
+  return {
+    ...actual,
+    getPlugins: () => plugins,
+    getVisiblePlugins: () => plugins,
+  };
+});
 
 vi.mock("@/context/ConnectionContext", () => ({
   ConnectionProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+  useConnection: () => ({ status: "connected" }),
 }));
 
 vi.mock("@/context/OpenClawContext", () => ({

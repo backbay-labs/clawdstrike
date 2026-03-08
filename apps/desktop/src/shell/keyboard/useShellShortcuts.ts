@@ -1,7 +1,7 @@
 /**
  * useShellShortcuts - Global keyboard shortcuts for shell navigation
  *
- * Shortcuts:
+ * Shortcuts (v1 / legacy):
  * - Cmd+1-9: Navigate to view by index
  * - Cmd+,: Operations
  * - Cmd+K: Command palette
@@ -9,6 +9,16 @@
  * - Cmd+N: New session
  * - Cmd+[/]: Previous/next view
  * - Esc: Close modal/panel
+ *
+ * Shortcuts (workbench v2, when isWorkbench=true):
+ * - Cmd+1-7: Select lens by index
+ * - Cmd+Shift+1-4: Switch shell (wire, hunt, lab, case)
+ * - Cmd+Shift+B: Toggle sidebar
+ * - Cmd+J: Toggle bottom panel
+ * - Cmd+\: Toggle context inspector
+ * - Cmd+W: Close active tab
+ * - Ctrl+Tab: Next tab in active pane
+ * - Ctrl+Shift+Tab: Previous tab in active pane
  */
 import { useCallback, useEffect } from "react";
 import type { AppId } from "../plugins/types";
@@ -36,6 +46,16 @@ export interface ShellShortcutHandlers {
   onSelectApp?: (appId: AppId) => void;
   onOpenSettings?: () => void;
   onCloseModal?: () => void;
+  isWorkbench?: boolean;
+  onSelectLens?: (index: number) => void;
+  onSelectShell?: (index: number) => void;
+  onToggleHuntDock?: () => void;
+  onToggleSidebar?: () => void;
+  onToggleBottomPanel?: () => void;
+  onToggleInspector?: () => void;
+  onCloseTab?: () => void;
+  onNextTab?: () => void;
+  onPrevTab?: () => void;
 }
 
 export function useShellShortcuts(handlers: ShellShortcutHandlers) {
@@ -85,10 +105,73 @@ export function useShellShortcuts(handlers: ShellShortcutHandlers) {
         return;
       }
 
-      // Cmd+1-9: Select view by index
-      if (isMeta && VIEW_KEYS[key] && handlers.onSelectApp) {
+      // Cmd+Shift+1-4: Switch shell (workbench v2)
+      if (isMeta && e.shiftKey && ["1", "2", "3", "4"].includes(key)) {
         e.preventDefault();
-        handlers.onSelectApp(VIEW_KEYS[key]);
+        handlers.onSelectShell?.(parseInt(key, 10));
+        return;
+      }
+
+      // Cmd+Shift+H: Toggle hunt dock (workbench v2)
+      if (isMeta && e.shiftKey && key === "h") {
+        e.preventDefault();
+        handlers.onToggleHuntDock?.();
+        return;
+      }
+
+      // Cmd+Shift+B: Toggle sidebar (workbench v2)
+      if (isMeta && e.shiftKey && key === "b") {
+        e.preventDefault();
+        handlers.onToggleSidebar?.();
+        return;
+      }
+
+      // Cmd+J: Toggle bottom panel (workbench v2)
+      if (isMeta && key === "j") {
+        e.preventDefault();
+        handlers.onToggleBottomPanel?.();
+        return;
+      }
+
+      // Cmd+\: Toggle inspector (workbench v2)
+      if (isMeta && key === "\\") {
+        e.preventDefault();
+        handlers.onToggleInspector?.();
+        return;
+      }
+
+      // Cmd+W: Close active tab (workbench v2)
+      if (isMeta && key === "w") {
+        e.preventDefault();
+        handlers.onCloseTab?.();
+        return;
+      }
+
+      // Ctrl+Tab / Ctrl+Shift+Tab: Next/prev tab in active pane
+      if (e.ctrlKey && key === "tab") {
+        e.preventDefault();
+        if (e.shiftKey) {
+          handlers.onPrevTab?.();
+        } else {
+          handlers.onNextTab?.();
+        }
+        return;
+      }
+
+      // Cmd+1-9: Select view by index (v1) or lens (v2)
+      if (isMeta && !e.shiftKey && VIEW_KEYS[key]) {
+        e.preventDefault();
+        if (handlers.isWorkbench) {
+          const index = parseInt(key, 10);
+          if (index <= 7 && handlers.onSelectLens) {
+            handlers.onSelectLens(index);
+          }
+          // In workbench mode, keys 8-9 have no lens mapping -- suppress legacy navigation
+          return;
+        }
+        if (handlers.onSelectApp) {
+          handlers.onSelectApp(VIEW_KEYS[key]);
+        }
         return;
       }
 

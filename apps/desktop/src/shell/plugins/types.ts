@@ -2,6 +2,7 @@
  * Shell Plugin System - Type Definitions
  */
 import type { ReactNode } from "react";
+import type { TabKind } from "@/shell/workbench/workbenchState";
 
 export type AppId =
   | "nexus"
@@ -40,6 +41,9 @@ export interface AppPlugin {
   routes: PluginRoute[];
   commands?: PluginCommand[];
   hidden?: boolean;
+  tabKind?: TabKind;
+  openAsTab?: boolean;
+  singleton?: boolean;
 }
 
 export type PluginIcon =

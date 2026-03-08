@@ -60,5 +60,14 @@ declare module "@backbay/glia/primitives" {
 declare module "@backbay/glia/theme" {
   import type * as React from "react";
 
-  export const UiThemeProvider: React.FC<{ themeId: string; children?: React.ReactNode }>;
+  export const UiThemeProvider: React.FC<{
+    themeId?: string;
+    defaultThemeId?: string;
+    disableCssVariables?: boolean;
+    storageKey?: string;
+    onThemeChange?: (id: string) => void;
+    children?: React.ReactNode;
+  }>;
+  export function applyThemeCssVariables(theme: Record<string, unknown>, target: HTMLElement): void;
+  export function themeToCssVariables(theme: Record<string, unknown>): Record<string, string>;
 }
