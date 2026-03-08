@@ -210,10 +210,14 @@ impl EnclaveResolver {
             }
         }
 
-        // actor_role — OriginContext does not have actor_role, so if the rule
-        // specifies it we can never match (fail-closed).
-        if rules.actor_role.is_some() {
-            return None;
+        // actor_role
+        if let Some(ref rule_actor_role) = rules.actor_role {
+            match &origin.actor_role {
+                Some(origin_actor_role) if origin_actor_role == rule_actor_role => {
+                    specificity += 1;
+                }
+                _ => return None,
+            }
         }
 
         // provenance_confidence
@@ -858,9 +862,27 @@ mod tests {
     }
 
     #[test]
-    fn actor_role_always_fails_match() {
-        // OriginContext has no actor_role field, so any profile requiring it
-        // must fail to match (fail-closed).
+    fn actor_role_matches_when_origin_supplies_role() {
+        let config = OriginsConfig {
+            default_behavior: Some(OriginDefaultBehavior::MinimalProfile),
+            profiles: vec![profile(
+                "admin-role",
+                OriginMatch {
+                    actor_role: Some("admin".into()),
+                    ..Default::default()
+                },
+            )],
+        };
+
+        let mut origin = slack_origin();
+        origin.actor_role = Some("admin".into());
+
+        let result = EnclaveResolver::resolve(&origin, &config).unwrap();
+        assert_eq!(result.profile_id.as_deref(), Some("admin-role"));
+    }
+
+    #[test]
+    fn actor_role_mismatch_fails_closed() {
         let config = OriginsConfig {
             default_behavior: Some(OriginDefaultBehavior::MinimalProfile),
             profiles: vec![profile(
@@ -872,7 +894,10 @@ mod tests {
             )],
         };
 
-        let result = EnclaveResolver::resolve(&slack_origin(), &config).unwrap();
+        let mut origin = slack_origin();
+        origin.actor_role = Some("member".into());
+
+        let result = EnclaveResolver::resolve(&origin, &config).unwrap();
         assert_eq!(result.profile_id, None);
     }
 

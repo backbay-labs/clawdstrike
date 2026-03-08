@@ -17,6 +17,8 @@ use crate::guards::{
     CustomGuardRegistry, Guard, GuardAction, GuardContext, GuardResult, McpDefaultAction, Severity,
 };
 use crate::origin::OriginContext;
+use crate::origin_runtime::{OriginFingerprint, OriginRuntimeState};
+use crate::output_sanitizer::OutputSanitizer;
 use crate::pipeline::{builtin_stage_for_guard_name, EvaluationPath, EvaluationStage};
 use crate::policy::{OriginDefaultBehavior, Policy, PolicyGuards, RuleSet};
 use crate::posture::{
@@ -32,6 +34,26 @@ pub struct GuardReport {
     pub per_guard: Vec<GuardResult>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub evaluation_path: Option<EvaluationPath>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<GuardEvaluationMetadata>,
+}
+
+#[must_use]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GuardEvaluationMetadata {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub origin: Option<OriginContext>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enclave: Option<GuardResolvedEnclave>,
+}
+
+#[must_use]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GuardResolvedEnclave {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub resolution_path: Vec<String>,
 }
 
 /// Guard report plus posture runtime updates.
@@ -84,6 +106,16 @@ impl PosturePrecheck {
     }
 }
 
+struct PreparedContext {
+    context: GuardContext,
+    metadata: Option<GuardEvaluationMetadata>,
+}
+
+enum PreparedEvaluation {
+    Continue(PreparedContext),
+    Complete(GuardReport),
+}
+
 /// The main security enforcement engine
 pub struct HushEngine {
     /// Active policy
@@ -123,14 +155,6 @@ struct EngineState {
     last_evaluation_path: Option<EvaluationPath>,
     /// Aggregate count of observed stage paths (for receipt summary).
     evaluation_path_counts: HashMap<String, u64>,
-    /// Last observed origin context (for cross-origin detection in Phase 1b).
-    last_origin: Option<OriginContext>,
-    /// Last resolved enclave (for receipt enrichment).
-    last_resolved_enclave: Option<crate::enclave::ResolvedEnclave>,
-    /// The origin established for this session (first origin seen).
-    session_origin: Option<OriginContext>,
-    /// The resolved enclave for the session origin (captured when session_origin is set).
-    session_resolved_enclave: Option<crate::enclave::ResolvedEnclave>,
 }
 
 impl HushEngine {
@@ -360,27 +384,49 @@ impl HushEngine {
         Ok(self.check_action_report(action, context).await?.overall)
     }
 
-    /// Record a violation in engine state and return a single-guard deny report.
-    ///
-    /// This is a shared helper for the origin-requirement, cross-origin, and
-    /// enclave MCP pre-check fast paths that all follow the same pattern:
-    /// increment counters → push ViolationRef → return GuardReport.
-    async fn deny_early(&self, result: GuardResult) -> GuardReport {
+    /// Record a one-result evaluation and return a single-guard report.
+    async fn single_result_report(
+        &self,
+        result: GuardResult,
+        metadata: Option<GuardEvaluationMetadata>,
+    ) -> GuardReport {
         let mut state = self.state.write().await;
         state.action_count += 1;
-        state.violation_count += 1;
         state.last_evaluation_path = None;
-        state.violations.push(ViolationRef {
-            guard: result.guard.clone(),
-            severity: format!("{:?}", result.severity).to_ascii_lowercase(),
-            message: result.message.clone(),
-            action: None,
-        });
+        if !result.allowed {
+            state.violation_count += 1;
+            state.violations.push(ViolationRef {
+                guard: result.guard.clone(),
+                severity: format!("{:?}", result.severity).to_ascii_lowercase(),
+                message: result.message.clone(),
+                action: None,
+            });
+        }
         GuardReport {
             overall: result.clone(),
             per_guard: vec![result],
             evaluation_path: None,
+            metadata,
         }
+    }
+
+    fn build_report_metadata(
+        origin: Option<&OriginContext>,
+        enclave: Option<&crate::enclave::ResolvedEnclave>,
+    ) -> Option<GuardEvaluationMetadata> {
+        let origin = origin.cloned();
+        let enclave = enclave.map(|value| GuardResolvedEnclave {
+            profile_id: value.profile_id.clone(),
+            resolution_path: value.resolution_path.clone(),
+        });
+        if origin.is_none() && enclave.is_none() {
+            return None;
+        }
+        Some(GuardEvaluationMetadata { origin, enclave })
+    }
+
+    fn report_metadata_for_context(context: &GuardContext) -> Option<GuardEvaluationMetadata> {
+        Self::build_report_metadata(context.origin.as_ref(), context.enclave.as_ref())
     }
 
     /// Check any action and return per-guard evidence plus the aggregated verdict.
@@ -395,285 +441,234 @@ impl HushEngine {
         if let Some(msg) = self.async_guard_init_error.as_ref() {
             return Err(Error::ConfigError(msg.clone()));
         }
+        let prepared = match self.prepare_origin_context(context, None).await? {
+            PreparedEvaluation::Continue(prepared) => prepared,
+            PreparedEvaluation::Complete(report) => return Ok(report),
+        };
 
-        // --- Origin Requirement Check ---
-        // Must run BEFORE enclave resolution so that a prepopulated enclave
-        // without an origin cannot bypass origin-scoped controls.
-        if let Some(ref origins_config) = self.policy.origins {
-            if context.origin.is_none() {
-                let state = self.state.read().await;
-                let session_exists = state.session_origin.is_some();
-                drop(state);
-                // If no session exists yet, apply default_behavior.
-                // If session exists, the C2 check below will handle it.
-                if !session_exists {
-                    match origins_config.effective_default_behavior() {
-                        OriginDefaultBehavior::Deny => {
-                            return Ok(self.deny_early(GuardResult::block(
-                                "origin_required",
-                                Severity::Error,
-                                "origin context required: policy has origins block but no origin was provided".to_string(),
-                            )).await);
-                        }
-                        OriginDefaultBehavior::MinimalProfile => {
-                            debug!("Origins policy present but no origin context — applying minimal_profile fallback");
-                        }
-                    }
-                }
-            }
-        }
+        self.check_action_report_prepared(action, prepared, None)
+            .await
+    }
 
-        // --- Origin Enclave Resolution ---
+    async fn prepare_origin_context(
+        &self,
+        context: &GuardContext,
+        origin_state: Option<&mut Option<OriginRuntimeState>>,
+    ) -> Result<PreparedEvaluation> {
         let mut effective_context = context.clone();
 
-        // When origins are configured and no origin is provided, any caller-supplied
-        // enclave must be discarded — otherwise a caller could inject a permissive
-        // enclave to bypass enclave restrictions.
         if self.policy.origins.is_some() && effective_context.origin.is_none() {
             effective_context.enclave = None;
         }
 
-        // Skip resolution if enclave was already resolved (e.g., by the posture path).
-        if effective_context.enclave.is_some() {
-            // Enclave already populated — store in engine state for receipt enrichment.
-            if let Some(ref origin) = effective_context.origin {
-                let mut state = self.state.write().await;
-                state.last_origin = Some(origin.clone());
-                state.last_resolved_enclave = effective_context.enclave.clone();
-                drop(state);
-            }
-        } else if let (Some(ref origin), Some(ref origins_config)) =
-            (&context.origin, &self.policy.origins)
-        {
-            match EnclaveResolver::resolve(origin, origins_config) {
-                Ok(resolved) => {
-                    debug!(
-                        profile_id = ?resolved.profile_id,
-                        resolution_path = ?resolved.resolution_path,
-                        "Enclave resolved for origin"
-                    );
-                    effective_context.enclave = Some(resolved.clone());
-
-                    // Store in engine state for receipt enrichment
-                    let mut state = self.state.write().await;
-                    state.last_origin = Some(origin.clone());
-                    state.last_resolved_enclave = Some(resolved);
-                    drop(state);
-                }
-                Err(e) => {
-                    // Fail-closed: if enclave resolution fails, deny the action
-                    warn!(error = %e, "Enclave resolution failed — denying action");
-                    return Ok(self
-                        .deny_early(GuardResult::block(
-                            "enclave",
-                            Severity::Error,
-                            format!("enclave resolution failed: {e}"),
-                        ))
-                        .await);
-                }
-            }
-        } else if context.origin.is_none() {
-            // No origin and no pre-set enclave — materialize MinimalProfile fallback
-            // if the origins config uses that default behavior. This ensures the
-            // enclave MCP pre-check runs with restrictive defaults even when no
-            // origin context is provided.
-            if let Some(ref origins_config) = self.policy.origins {
-                if *origins_config.effective_default_behavior()
-                    == OriginDefaultBehavior::MinimalProfile
-                {
-                    if let Ok(fallback) = EnclaveResolver::apply_default_behavior(
-                        &OriginDefaultBehavior::MinimalProfile,
-                    ) {
-                        debug!(
-                            resolution_path = ?fallback.resolution_path,
-                            "Materialized minimal_profile fallback enclave"
-                        );
-                        let mut state = self.state.write().await;
-                        state.last_resolved_enclave = Some(fallback.clone());
-                        drop(state);
-                        effective_context.enclave = Some(fallback);
-                    }
-                }
-            }
-        }
-        let context = &effective_context;
-
-        // --- Cross-Origin Isolation Check (Phase 1b) ---
-        // Only enforce cross-origin checks when the policy has an `origins` block.
-        // Legacy policies without origins should not be affected by origin tracking.
-        //
-        // Session origin establishment MUST happen before the enclave MCP pre-check
-        // so that even if the MCP check blocks, the session origin is tracked and
-        // cross-origin detection works on subsequent calls.
-        if self.policy.origins.is_some() {
-            // C2 fix: If a session origin was established, any subsequent check
-            // WITHOUT an origin must be denied (fail-closed). Otherwise an attacker
-            // could drop the origin context to bypass enclave restrictions.
-            {
-                let state = self.state.read().await;
-                if state.session_origin.is_some() && effective_context.origin.is_none() {
-                    drop(state);
-                    return Ok(self.deny_early(GuardResult::block(
-                        "cross_origin",
-                        Severity::Error,
-                        "origin context required: session has an established origin but this check omits it".to_string(),
-                    )).await);
-                }
-            }
-
-            if let Some(ref origin) = effective_context.origin {
-                let mut state = self.state.write().await;
-
-                if let Some(ref session_origin) = state.session_origin {
-                    // Check if this is a different origin than the session origin
-                    if is_different_origin(session_origin, origin) {
-                        // Capture what we need before dropping the lock.
-                        // Use session_resolved_enclave (the enclave from the first origin),
-                        // not last_resolved_enclave (which was just overwritten by the
-                        // current origin's resolution above).
-                        let session_origin_snapshot = session_origin.clone();
-                        let session_enclave_snapshot = state.session_resolved_enclave.clone();
-
-                        // Cross-origin detected — check bridge policy on the session's enclave
-                        let bridge_allowed = if let Some(ref enclave) = session_enclave_snapshot {
-                            check_bridge_policy(enclave, origin)
-                        } else {
-                            BridgeCheckResult::Deny(
-                                "no enclave resolved for session origin".to_string(),
-                            )
-                        };
-
-                        drop(state); // Release lock before returning
-
-                        match bridge_allowed {
-                            BridgeCheckResult::Allow => {
-                                debug!("Cross-origin bridge allowed");
+        if let Some(origins_config) = self.policy.origins.as_ref() {
+            match effective_context.origin.as_ref() {
+                Some(origin) => {
+                    if effective_context.enclave.is_none() {
+                        match EnclaveResolver::resolve(origin, origins_config) {
+                            Ok(resolved) => {
+                                debug!(
+                                    profile_id = ?resolved.profile_id,
+                                    resolution_path = ?resolved.resolution_path,
+                                    "Enclave resolved for origin"
+                                );
+                                effective_context.enclave = Some(resolved);
                             }
-                            BridgeCheckResult::RequireApproval => {
-                                return Ok(self
-                                    .deny_early(GuardResult::block(
-                                        "cross_origin",
-                                        Severity::Warning,
-                                        format!(
-                                        "cross-origin transition requires approval (from {} to {})",
-                                        format_origin_brief(&session_origin_snapshot),
-                                        format_origin_brief(origin),
-                                    ),
-                                    ))
-                                    .await);
-                            }
-                            BridgeCheckResult::Deny(reason) => {
-                                return Ok(self
-                                    .deny_early(GuardResult::block(
-                                        "cross_origin",
-                                        Severity::Error,
-                                        format!("cross-origin transition denied: {}", reason),
-                                    ))
-                                    .await);
-                            }
-                        }
-                    } else {
-                        drop(state);
-                    }
-                } else {
-                    // First origin in this session — establish it and snapshot the
-                    // resolved enclave so we can use its bridge policy for future
-                    // cross-origin checks.
-                    // Use the locally resolved enclave from effective_context rather
-                    // than state.last_resolved_enclave to avoid a TOCTOU race where
-                    // a concurrent call overwrites last_resolved_enclave between
-                    // resolution and this snapshot.
-                    state.session_origin = Some(origin.clone());
-                    state.session_resolved_enclave = effective_context.enclave.clone();
-                    drop(state);
-                }
-            }
-        } // end origins.is_some() guard
-          // --- End Cross-Origin Isolation Check ---
-
-        // --- Enclave MCP Tool Surface Pre-Check ---
-        // This runs AFTER session origin tracking so that even if blocked here,
-        // the session origin is properly established for future cross-origin detection.
-        if let Some(ref enclave) = effective_context.enclave {
-            if let GuardAction::McpTool(tool_name, _) = action {
-                if let Some(ref enclave_mcp) = enclave.mcp {
-                    // Skip pre-check if enclave MCP config is explicitly disabled,
-                    // matching McpToolGuard's behavior.
-                    if !enclave_mcp.enabled {
-                        debug!("Enclave MCP pre-check skipped: enabled=false");
-                    } else {
-                        let profile_label = enclave.profile_id.as_deref().unwrap_or("unknown");
-
-                        // 1. Block list takes precedence
-                        if enclave_mcp.block.iter().any(|b| tool_matches(tool_name, b)) {
-                            return Ok(self
-                                .deny_early(GuardResult::block(
-                                    "enclave",
-                                    Severity::Error,
-                                    format!(
-                                        "tool '{}' blocked by enclave profile '{}'",
-                                        tool_name, profile_label
-                                    ),
-                                ))
-                                .await);
-                        }
-
-                        // 2. If allow list is non-empty, it's an allowlist: reject tools not in it
-                        if !enclave_mcp.allow.is_empty()
-                            && !enclave_mcp.allow.iter().any(|a| tool_matches(tool_name, a))
-                        {
-                            return Ok(self
-                                .deny_early(GuardResult::block(
-                                    "enclave",
-                                    Severity::Error,
-                                    format!(
-                                        "tool '{}' not in enclave allow list for profile '{}'",
-                                        tool_name, profile_label
-                                    ),
-                                ))
-                                .await);
-                        }
-
-                        // 3. require_confirmation: checked before default_action
-                        //    so that confirmation tools are not hard-blocked when
-                        //    default_action=Block with an empty allow list.
-                        if enclave_mcp
-                            .require_confirmation
-                            .iter()
-                            .any(|r| tool_matches(tool_name, r))
-                        {
-                            return Ok(self
-                                .deny_early(GuardResult::block(
-                                    "enclave",
-                                    Severity::Warning,
-                                    format!(
-                                        "tool '{}' requires confirmation per enclave profile '{}'",
-                                        tool_name, profile_label
-                                    ),
-                                ))
-                                .await);
-                        }
-
-                        // 4. default_action=Block when allow list is empty
-                        if enclave_mcp.allow.is_empty() {
-                            if let Some(McpDefaultAction::Block) = enclave_mcp.default_action {
-                                return Ok(self
-                                    .deny_early(GuardResult::block(
-                                        "enclave",
-                                        Severity::Error,
-                                        format!(
-                                            "tool '{}' blocked by default_action for profile '{}'",
-                                            tool_name, profile_label
+                            Err(err) => {
+                                warn!(error = %err, "Enclave resolution failed — denying action");
+                                let report = self
+                                    .single_result_report(
+                                        GuardResult::block(
+                                            "enclave",
+                                            Severity::Error,
+                                            format!("enclave resolution failed: {err}"),
                                         ),
-                                    ))
-                                    .await);
+                                        Self::build_report_metadata(
+                                            effective_context.origin.as_ref(),
+                                            None,
+                                        ),
+                                    )
+                                    .await;
+                                return Ok(PreparedEvaluation::Complete(report));
                             }
                         }
-                    } // end enabled check
+                    }
+                }
+                None => {
+                    let established_origin = origin_state
+                        .as_ref()
+                        .and_then(|state| state.as_ref())
+                        .is_some();
+                    if established_origin {
+                        let report = self
+                            .single_result_report(
+                                GuardResult::block(
+                                    "cross_origin",
+                                    Severity::Error,
+                                    "origin context required: session has an established origin but this check omits it".to_string(),
+                                ),
+                                None,
+                            )
+                            .await;
+                        return Ok(PreparedEvaluation::Complete(report));
+                    }
+                    match origins_config.effective_default_behavior() {
+                        OriginDefaultBehavior::Deny => {
+                            let report = self
+                                .single_result_report(
+                                    GuardResult::block(
+                                        "origin_required",
+                                        Severity::Error,
+                                        "origin context required: policy has origins block but no origin was provided".to_string(),
+                                    ),
+                                    None,
+                                )
+                                .await;
+                            return Ok(PreparedEvaluation::Complete(report));
+                        }
+                        OriginDefaultBehavior::MinimalProfile => {
+                            debug!(
+                                "Origins policy present but no origin context — applying minimal_profile fallback"
+                            );
+                            if effective_context.enclave.is_none() {
+                                if let Ok(fallback) = EnclaveResolver::apply_default_behavior(
+                                    &OriginDefaultBehavior::MinimalProfile,
+                                ) {
+                                    effective_context.enclave = Some(fallback);
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
-        // --- End Enclave MCP Tool Surface Pre-Check ---
+
+        let metadata = Self::report_metadata_for_context(&effective_context);
+
+        if let Some(origin_state) = origin_state {
+            if let Some(origin) = effective_context.origin.clone() {
+                if let Some(current_enclave) = effective_context.enclave.clone() {
+                    let current_fingerprint = OriginFingerprint::from(&origin);
+                    if let Some(existing) = origin_state.as_ref() {
+                        if existing.current_origin_fingerprint != current_fingerprint {
+                            match check_bridge_policy(&existing.current_enclave, &origin) {
+                                BridgeCheckResult::Allow => {
+                                    debug!("Cross-origin bridge allowed");
+                                }
+                                BridgeCheckResult::RequireApproval => {
+                                    let report = self
+                                        .single_result_report(
+                                            GuardResult::block(
+                                                "cross_origin",
+                                                Severity::Warning,
+                                                format!(
+                                                    "cross-origin transition requires approval (from {} to {})",
+                                                    format_origin_brief(&existing.current_origin),
+                                                    format_origin_brief(&origin),
+                                                ),
+                                            ),
+                                            metadata.clone(),
+                                        )
+                                        .await;
+                                    return Ok(PreparedEvaluation::Complete(report));
+                                }
+                                BridgeCheckResult::Deny(reason) => {
+                                    let report = self
+                                        .single_result_report(
+                                            GuardResult::block(
+                                                "cross_origin",
+                                                Severity::Error,
+                                                format!("cross-origin transition denied: {reason}"),
+                                            ),
+                                            metadata.clone(),
+                                        )
+                                        .await;
+                                    return Ok(PreparedEvaluation::Complete(report));
+                                }
+                            }
+                            *origin_state = Some(OriginRuntimeState::new(
+                                origin,
+                                current_enclave,
+                                origin_budget_counters(
+                                    effective_context
+                                        .enclave
+                                        .as_ref()
+                                        .and_then(|enclave| enclave.budgets.as_ref()),
+                                ),
+                            ));
+                        } else if let Some(existing) = origin_state.as_mut() {
+                            existing.current_origin = origin;
+                            existing.current_origin_fingerprint = current_fingerprint;
+                            existing.current_enclave = current_enclave;
+                            normalize_origin_budgets(existing);
+                        }
+                    } else {
+                        *origin_state = Some(OriginRuntimeState::new(
+                            origin,
+                            current_enclave,
+                            origin_budget_counters(
+                                effective_context
+                                    .enclave
+                                    .as_ref()
+                                    .and_then(|enclave| enclave.budgets.as_ref()),
+                            ),
+                        ));
+                    }
+                }
+            }
+        }
+
+        Ok(PreparedEvaluation::Continue(PreparedContext {
+            context: effective_context,
+            metadata,
+        }))
+    }
+
+    async fn check_action_report_prepared(
+        &self,
+        action: &GuardAction<'_>,
+        prepared: PreparedContext,
+        origin_state: Option<&mut Option<OriginRuntimeState>>,
+    ) -> Result<GuardReport> {
+        let PreparedContext { context, metadata } = prepared;
+
+        let mut pre_guard: Vec<GuardResult> = Vec::new();
+
+        if let Some(result) = self.enclave_mcp_precheck(action, &context).await {
+            if !result.allowed {
+                return Ok(self.single_result_report(result, metadata).await);
+            }
+            pre_guard.push(result);
+        }
+
+        if let Some(result) = self.enclave_egress_precheck(action, &context).await {
+            if !result.allowed {
+                return Ok(self.single_result_report(result, metadata).await);
+            }
+            pre_guard.push(result);
+        }
+
+        if let Some(result) = self.origin_data_precheck(action, &context).await {
+            if !result.allowed {
+                return Ok(self.single_result_report(result, metadata).await);
+            }
+            pre_guard.push(result);
+        }
+
+        if let Some(result) = self
+            .origin_budget_precheck(
+                action,
+                &context,
+                origin_state.as_ref().map(|state| &**state),
+            )
+            .await
+        {
+            return Ok(self.single_result_report(result, metadata).await);
+        }
+
+        for result in &pre_guard {
+            self.observe_guard_result(result).await;
+        }
 
         let mut fast_guards: Vec<&dyn Guard> = Vec::new();
         let mut std_guards: Vec<&dyn Guard> = Vec::new();
@@ -687,8 +682,10 @@ impl HushEngine {
         std_guards.extend(self.custom_guards.iter().map(|g| g.as_ref()));
         std_guards.extend(self.extra_guards.iter().map(|g| g.as_ref()));
 
-        let mut per_guard: Vec<GuardResult> =
-            Vec::with_capacity(fast_guards.len() + std_guards.len() + self.async_guards.len());
+        let mut per_guard: Vec<GuardResult> = Vec::with_capacity(
+            pre_guard.len() + fast_guards.len() + std_guards.len() + self.async_guards.len(),
+        );
+        per_guard.extend(pre_guard);
         let mut evaluation_path = EvaluationPath::default();
         let fail_fast = self.policy.settings.effective_fail_fast();
 
@@ -697,7 +694,7 @@ impl HushEngine {
                 EvaluationStage::FastPath,
                 &fast_guards,
                 action,
-                context,
+                &context,
                 &mut per_guard,
                 &mut evaluation_path,
             )
@@ -709,19 +706,18 @@ impl HushEngine {
                     EvaluationStage::StdPath,
                     &std_guards,
                     action,
-                    context,
+                    &context,
                     &mut per_guard,
                     &mut evaluation_path,
                 )
                 .await;
         }
 
-        // If we've already denied locally, don't run async guards (avoids unnecessary network calls).
         if per_guard.iter().all(|r| r.allowed) && !self.async_guards.is_empty() {
             let deep_start = Instant::now();
             let async_results = self
                 .async_runtime
-                .evaluate_async_guards(&self.async_guards, action, context, fail_fast)
+                .evaluate_async_guards(&self.async_guards, action, &context, fail_fast)
                 .await;
             let mut deep_stage_guards: Vec<String> = Vec::new();
 
@@ -746,7 +742,6 @@ impl HushEngine {
         let overall = aggregate_overall(&per_guard);
         let evaluation_path = (!evaluation_path.is_empty()).then_some(evaluation_path);
 
-        // Count the check and remember latest path even if we fail-fast.
         {
             let mut state = self.state.write().await;
             state.action_count += 1;
@@ -759,11 +754,231 @@ impl HushEngine {
             }
         }
 
+        if overall.allowed {
+            self.consume_origin_budget(action, origin_state);
+        }
+
         Ok(GuardReport {
             overall,
             per_guard,
             evaluation_path,
+            metadata,
         })
+    }
+
+    async fn enclave_mcp_precheck(
+        &self,
+        action: &GuardAction<'_>,
+        context: &GuardContext,
+    ) -> Option<GuardResult> {
+        let GuardAction::McpTool(tool_name, _) = action else {
+            return None;
+        };
+        let enclave = context.enclave.as_ref()?;
+        let enclave_mcp = enclave.mcp.as_ref()?;
+        if !enclave_mcp.enabled {
+            debug!("Enclave MCP pre-check skipped: enabled=false");
+            return None;
+        }
+
+        let profile_label = enclave.profile_id.as_deref().unwrap_or("unknown");
+
+        if enclave_mcp.block.iter().any(|b| tool_matches(tool_name, b)) {
+            return Some(GuardResult::block(
+                "enclave",
+                Severity::Error,
+                format!(
+                    "tool '{}' blocked by enclave profile '{}'",
+                    tool_name, profile_label
+                ),
+            ));
+        }
+
+        if !enclave_mcp.allow.is_empty()
+            && !enclave_mcp.allow.iter().any(|a| tool_matches(tool_name, a))
+        {
+            return Some(GuardResult::block(
+                "enclave",
+                Severity::Error,
+                format!(
+                    "tool '{}' not in enclave allow list for profile '{}'",
+                    tool_name, profile_label
+                ),
+            ));
+        }
+
+        if enclave_mcp
+            .require_confirmation
+            .iter()
+            .any(|r| tool_matches(tool_name, r))
+        {
+            return Some(GuardResult::block(
+                "enclave",
+                Severity::Warning,
+                format!(
+                    "tool '{}' requires confirmation per enclave profile '{}'",
+                    tool_name, profile_label
+                ),
+            ));
+        }
+
+        if enclave_mcp.allow.is_empty()
+            && matches!(enclave_mcp.default_action, Some(McpDefaultAction::Block))
+        {
+            return Some(GuardResult::block(
+                "enclave",
+                Severity::Error,
+                format!(
+                    "tool '{}' blocked by default_action for profile '{}'",
+                    tool_name, profile_label
+                ),
+            ));
+        }
+
+        None
+    }
+
+    async fn enclave_egress_precheck(
+        &self,
+        _action: &GuardAction<'_>,
+        _context: &GuardContext,
+    ) -> Option<GuardResult> {
+        None
+    }
+
+    async fn origin_data_precheck(
+        &self,
+        action: &GuardAction<'_>,
+        context: &GuardContext,
+    ) -> Option<GuardResult> {
+        let payload = match output_send_payload(action) {
+            OutputSendPayload::NotOutputSend => return None,
+            OutputSendPayload::Invalid(message) => {
+                return Some(GuardResult::block("origin_data", Severity::Error, message));
+            }
+            OutputSendPayload::Valid(payload) => payload,
+        };
+
+        let enclave = context.enclave.as_ref()?;
+        let data_policy = enclave.data.as_ref()?;
+        let profile_label = enclave.profile_id.as_deref().unwrap_or("unknown");
+
+        if !data_policy.allow_external_sharing && is_external_origin(context.origin.as_ref()) {
+            return Some(GuardResult::block(
+                "origin_data",
+                Severity::Error,
+                format!(
+                    "output blocked by origin data policy for profile '{}' on external origin",
+                    profile_label
+                ),
+            ));
+        }
+
+        let sanitizer = OutputSanitizer::new();
+        let sanitized = sanitizer.sanitize_sync(payload.text);
+
+        if data_policy.block_sensitive_outputs && !sanitized.findings.is_empty() {
+            return Some(
+                GuardResult::block(
+                    "origin_data",
+                    Severity::Error,
+                    format!(
+                        "output blocked by origin data policy for profile '{}' due to sensitive content",
+                        profile_label
+                    ),
+                )
+                .with_details(serde_json::json!({
+                    "action": "blocked_sensitive_output",
+                    "findings_count": sanitized.findings.len(),
+                    "redactions_count": sanitized.redactions.len(),
+                })),
+            );
+        }
+
+        if data_policy.redact_before_send && sanitized.was_redacted {
+            return Some(
+                GuardResult::warn(
+                    "origin_data",
+                    format!(
+                        "output sanitized by origin data policy for profile '{}'",
+                        profile_label
+                    ),
+                )
+                .with_details(serde_json::json!({
+                    "action": "sanitized",
+                    "sanitized": sanitized.sanitized,
+                    "findings_count": sanitized.findings.len(),
+                    "redactions_count": sanitized.redactions.len(),
+                })),
+            );
+        }
+
+        None
+    }
+
+    async fn origin_budget_precheck(
+        &self,
+        action: &GuardAction<'_>,
+        context: &GuardContext,
+        origin_state: Option<&Option<OriginRuntimeState>>,
+    ) -> Option<GuardResult> {
+        let capability = Capability::from_action(action);
+        let budget_key = capability.budget_key()?;
+        let Some(enclave) = context.enclave.as_ref() else {
+            return None;
+        };
+        let configured = enclave
+            .budgets
+            .as_ref()
+            .and_then(|budgets| origin_budget_limit(budgets, budget_key));
+        let Some(limit) = configured else {
+            return None;
+        };
+
+        let Some(runtime) = origin_state.and_then(|state| state.as_ref()) else {
+            return Some(GuardResult::block(
+                "origin_budget",
+                Severity::Error,
+                format!(
+                    "origin budget '{}' requires session runtime state (limit={limit})",
+                    budget_key
+                ),
+            ));
+        };
+
+        if let Some(counter) = runtime.budgets.get(budget_key) {
+            if counter.is_exhausted() {
+                return Some(GuardResult::block(
+                    "origin_budget",
+                    Severity::Error,
+                    format!(
+                        "origin budget '{}' exhausted ({}/{})",
+                        budget_key, counter.used, counter.limit
+                    ),
+                ));
+            }
+        }
+
+        None
+    }
+
+    fn consume_origin_budget(
+        &self,
+        action: &GuardAction<'_>,
+        origin_state: Option<&mut Option<OriginRuntimeState>>,
+    ) {
+        let Some(budget_key) = Capability::from_action(action).budget_key() else {
+            return;
+        };
+        let Some(origin_state) = origin_state else {
+            return;
+        };
+        let Some(runtime) = origin_state.as_mut() else {
+            return;
+        };
+        if let Some(counter) = runtime.budgets.get_mut(budget_key) {
+            let _ = counter.try_consume();
+        }
     }
 
     async fn evaluate_guard_stage(
@@ -836,8 +1051,39 @@ impl HushEngine {
         context: &GuardContext,
         posture_state: &mut Option<PostureRuntimeState>,
     ) -> Result<PostureAwareReport> {
+        let mut origin_state = None;
+        self.check_action_report_with_runtime(action, context, posture_state, &mut origin_state)
+            .await
+    }
+
+    pub async fn check_action_report_with_runtime(
+        &self,
+        action: &GuardAction<'_>,
+        context: &GuardContext,
+        posture_state: &mut Option<PostureRuntimeState>,
+        origin_state: &mut Option<OriginRuntimeState>,
+    ) -> Result<PostureAwareReport> {
         let Some(program) = self.posture_program.as_ref() else {
-            let guard_report = self.check_action_report(action, context).await?;
+            let prepared = match self
+                .prepare_origin_context(context, Some(origin_state))
+                .await?
+            {
+                PreparedEvaluation::Continue(prepared) => prepared,
+                PreparedEvaluation::Complete(report) => {
+                    return Ok(PostureAwareReport {
+                        guard_report: report,
+                        posture_before: "default".to_string(),
+                        posture_after: "default".to_string(),
+                        budgets_before: HashMap::new(),
+                        budgets_after: HashMap::new(),
+                        budget_deltas: HashMap::new(),
+                        transition: None,
+                    });
+                }
+            };
+            let guard_report = self
+                .check_action_report_prepared(action, prepared, Some(origin_state))
+                .await?;
             return Ok(PostureAwareReport {
                 guard_report,
                 posture_before: "default".to_string(),
@@ -850,53 +1096,27 @@ impl HushEngine {
         };
 
         self.ensure_posture_initialized(program, posture_state)?;
-
-        // Phase 1.3: If enclave specifies a posture and session hasn't been
-        // posture-initialized from an enclave yet, override the initial posture
-        // with the enclave's posture.
-        //
-        // C1 fix: Resolve the enclave once here and pass it via context, rather
-        // than resolving again inside check_action_report. This avoids double
-        // resolution and inconsistent error handling.
-        //
-        // Fail-closed: if origins policy exists but no origin is provided,
-        // delegate immediately to check_action_report which enforces
-        // the origin_required check. This avoids running posture logic
-        // before the origin requirement is verified.
-        let mut posture_context = context.clone();
-        if context.origin.is_none() && self.policy.origins.is_some() {
-            // Discard any caller-injected enclave — without an origin,
-            // a caller-supplied enclave could bypass posture controls.
-            // check_action_report will handle origin_required denial.
-            posture_context.enclave = None;
-        } else if posture_context.enclave.is_some() {
-            // Enclave already populated by caller — skip re-resolution.
-            if let Some(ref origin) = context.origin {
-                let mut state = self.state.write().await;
-                state.last_origin = Some(origin.clone());
-                state.last_resolved_enclave = posture_context.enclave.clone();
-                drop(state);
-            }
-        } else if let (Some(ref origin), Some(ref origins_config)) =
-            (&context.origin, &self.policy.origins)
+        let prepared = match self
+            .prepare_origin_context(context, Some(origin_state))
+            .await?
         {
-            match EnclaveResolver::resolve(origin, origins_config) {
-                Ok(resolved) => {
-                    // Pre-populate enclave on context so check_action_report
-                    // won't need to resolve again.
-                    let mut state = self.state.write().await;
-                    state.last_origin = Some(origin.clone());
-                    state.last_resolved_enclave = Some(resolved.clone());
-                    drop(state);
-                    posture_context.enclave = Some(resolved);
-                }
-                Err(e) => {
-                    // Fail-closed: enclave resolution failure denies the action.
-                    warn!(error = %e, "Enclave resolution failed in posture path — denying");
-                    return Err(e);
-                }
+            PreparedEvaluation::Continue(prepared) => prepared,
+            PreparedEvaluation::Complete(report) => {
+                let state = posture_state.as_ref().ok_or_else(|| {
+                    Error::ConfigError("failed to initialize posture runtime state".to_string())
+                })?;
+                return Ok(PostureAwareReport {
+                    guard_report: report,
+                    posture_before: state.current_state.clone(),
+                    posture_after: state.current_state.clone(),
+                    budgets_before: state.budgets.clone(),
+                    budgets_after: state.budgets.clone(),
+                    budget_deltas: HashMap::new(),
+                    transition: None,
+                });
             }
-        }
+        };
+        let posture_context = prepared.context.clone();
 
         // Apply enclave posture override regardless of how the enclave was
         // obtained (pre-set or freshly resolved).
@@ -967,19 +1187,9 @@ impl HushEngine {
             }
 
             let denied = GuardResult::block(precheck.guard, precheck.severity, precheck.message);
-            self.observe_guard_result(&denied).await;
-            let guard_report = GuardReport {
-                overall: denied.clone(),
-                per_guard: vec![denied],
-                evaluation_path: None,
-            };
-
-            {
-                let mut engine_state = self.state.write().await;
-                engine_state.action_count += 1;
-                // No guard pipeline ran for this check; avoid carrying stale path telemetry.
-                engine_state.last_evaluation_path = None;
-            }
+            let guard_report = self
+                .single_result_report(denied, prepared.metadata.clone())
+                .await;
 
             return Ok(PostureAwareReport {
                 guard_report,
@@ -992,7 +1202,16 @@ impl HushEngine {
             });
         }
 
-        let guard_report = self.check_action_report(action, &posture_context).await?;
+        let guard_report = self
+            .check_action_report_prepared(
+                action,
+                PreparedContext {
+                    context: posture_context,
+                    metadata: prepared.metadata.clone(),
+                },
+                Some(origin_state),
+            )
+            .await?;
         let mut budget_deltas: HashMap<String, i64> = HashMap::new();
 
         let mut trigger: Option<RuntimeTransitionTrigger> = None;
@@ -1231,28 +1450,20 @@ impl HushEngine {
             }));
         }
 
-        // Origin + enclave metadata
-        if let Some(ref origin) = state.last_origin {
-            if let Ok(origin_json) = serde_json::to_value(origin) {
-                receipt = receipt.merge_metadata(serde_json::json!({
-                    "clawdstrike": {
-                        "origin": origin_json,
-                    }
-                }));
-            }
-        }
-        if let Some(ref enclave) = state.last_resolved_enclave {
-            receipt = receipt.merge_metadata(serde_json::json!({
-                "clawdstrike": {
-                    "enclave": {
-                        "profile_id": enclave.profile_id,
-                        "resolution_path": enclave.resolution_path,
-                    }
-                }
-            }));
-        }
-
         Ok(receipt)
+    }
+
+    /// Create a receipt enriched with the origin/enclave metadata from a guard report.
+    pub async fn create_receipt_for_report(
+        &self,
+        content_hash: Hash,
+        report: &GuardReport,
+    ) -> Result<Receipt> {
+        let receipt = self.create_receipt(content_hash).await?;
+        Ok(merge_report_metadata_into_receipt(
+            receipt,
+            report.metadata.as_ref(),
+        ))
     }
 
     /// Create and sign a receipt
@@ -1263,6 +1474,21 @@ impl HushEngine {
             .ok_or_else(|| Error::ConfigError("No signing keypair configured".into()))?;
 
         let receipt = self.create_receipt(content_hash).await?;
+        SignedReceipt::sign(receipt, keypair).map_err(Error::from)
+    }
+
+    /// Create and sign a receipt enriched with per-report origin metadata.
+    pub async fn create_signed_receipt_for_report(
+        &self,
+        content_hash: Hash,
+        report: &GuardReport,
+    ) -> Result<SignedReceipt> {
+        let keypair = self
+            .keypair
+            .as_ref()
+            .ok_or_else(|| Error::ConfigError("No signing keypair configured".into()))?;
+
+        let receipt = self.create_receipt_for_report(content_hash, report).await?;
         SignedReceipt::sign(receipt, keypair).map_err(Error::from)
     }
 
@@ -1429,6 +1655,114 @@ fn intersect_mcp_configs(
     }
 }
 
+fn origin_budget_limit(budgets: &crate::policy::OriginBudgets, key: &str) -> Option<u64> {
+    match key {
+        "mcp_tool_calls" => budgets.mcp_tool_calls,
+        "egress_calls" => budgets.egress_calls,
+        "shell_commands" => budgets.shell_commands,
+        _ => None,
+    }
+}
+
+fn origin_budget_counters(
+    budgets: Option<&crate::policy::OriginBudgets>,
+) -> HashMap<String, PostureBudgetCounter> {
+    let mut counters = HashMap::new();
+    let Some(budgets) = budgets else {
+        return counters;
+    };
+
+    for key in ["mcp_tool_calls", "egress_calls", "shell_commands"] {
+        if let Some(limit) = origin_budget_limit(budgets, key) {
+            counters.insert(key.to_string(), PostureBudgetCounter { used: 0, limit });
+        }
+    }
+
+    counters
+}
+
+fn normalize_origin_budgets(state: &mut OriginRuntimeState) {
+    let configured = origin_budget_counters(state.current_enclave.budgets.as_ref());
+    state.budgets.retain(|key, _| configured.contains_key(key));
+    for (key, desired) in configured {
+        let counter = state.budgets.entry(key).or_insert(PostureBudgetCounter {
+            used: 0,
+            limit: desired.limit,
+        });
+        counter.limit = desired.limit;
+        if counter.used > counter.limit {
+            counter.used = counter.limit;
+        }
+    }
+}
+
+fn is_external_origin(origin: Option<&OriginContext>) -> bool {
+    origin.is_some_and(|origin| {
+        origin.external_participants == Some(true)
+            || matches!(
+                origin.visibility,
+                Some(crate::origin::Visibility::Public | crate::origin::Visibility::ExternalShared)
+            )
+    })
+}
+
+enum OutputSendPayload<'a> {
+    NotOutputSend,
+    Invalid(String),
+    Valid(OutputSendValue<'a>),
+}
+
+struct OutputSendValue<'a> {
+    text: &'a str,
+}
+
+fn output_send_payload<'a>(action: &'a GuardAction<'a>) -> OutputSendPayload<'a> {
+    let GuardAction::Custom(kind, payload) = action else {
+        return OutputSendPayload::NotOutputSend;
+    };
+    if *kind != "origin.output_send" {
+        return OutputSendPayload::NotOutputSend;
+    }
+    let Some(text) = payload.get("text").and_then(|value| value.as_str()) else {
+        return OutputSendPayload::Invalid(
+            "origin.output_send requires payload.text to be a string".to_string(),
+        );
+    };
+    OutputSendPayload::Valid(OutputSendValue { text })
+}
+
+fn merge_report_metadata_into_receipt(
+    mut receipt: Receipt,
+    metadata: Option<&GuardEvaluationMetadata>,
+) -> Receipt {
+    let Some(metadata) = metadata else {
+        return receipt;
+    };
+
+    if let Some(origin) = metadata.origin.as_ref() {
+        if let Ok(origin_json) = serde_json::to_value(origin) {
+            receipt = receipt.merge_metadata(serde_json::json!({
+                "clawdstrike": {
+                    "origin": origin_json,
+                }
+            }));
+        }
+    }
+
+    if let Some(enclave) = metadata.enclave.as_ref() {
+        receipt = receipt.merge_metadata(serde_json::json!({
+            "clawdstrike": {
+                "enclave": {
+                    "profile_id": enclave.profile_id,
+                    "resolution_path": enclave.resolution_path,
+                }
+            }
+        }));
+    }
+
+    receipt
+}
+
 fn build_custom_guards_from_policy(
     policy: &Policy,
     registry: Option<&CustomGuardRegistry>,
@@ -1490,30 +1824,6 @@ enum BridgeCheckResult {
     RequireApproval,
     /// The transition is denied with the given reason.
     Deny(String),
-}
-
-/// Check if two origins represent different contexts.
-///
-/// Two origins are considered different if their provider, tenant_id, OR
-/// space_id differs. Same (provider + tenant_id + space_id) = same origin.
-fn is_different_origin(a: &OriginContext, b: &OriginContext) -> bool {
-    // Use to_string() comparison to match EnclaveResolver behavior and avoid
-    // Custom("slack") != Slack inconsistency.
-    if a.provider.to_string() != b.provider.to_string() {
-        return true;
-    }
-    // Compare tenant_id — different tenants of the same provider are different origins.
-    match (&a.tenant_id, &b.tenant_id) {
-        (Some(a_id), Some(b_id)) if a_id != b_id => return true,
-        (None, None) => {}
-        (Some(_), None) | (None, Some(_)) => return true,
-        _ => {}
-    }
-    match (&a.space_id, &b.space_id) {
-        (Some(a_id), Some(b_id)) => a_id != b_id,
-        (None, None) => false, // Both unspecified = same
-        _ => true,             // One specified, one not = different
-    }
 }
 
 /// Check the bridge policy on the **session's** enclave (source) to determine
@@ -2696,6 +3006,263 @@ posture:
     }
 
     #[tokio::test]
+    async fn test_posture_origin_resolution_failure_returns_deny_report() {
+        let policy = Policy::from_yaml(
+            r#"
+version: "1.4.0"
+name: "posture-origin-resolution-failure"
+posture:
+  initial: work
+  states:
+    work:
+      capabilities: [mcp_tool]
+      budgets: {}
+origins:
+  default_behavior: deny
+  profiles:
+    - id: github-only
+      match_rules:
+        provider: github
+"#,
+        )
+        .unwrap();
+
+        let engine = HushEngine::with_policy(policy);
+        let context = GuardContext::new().with_origin(test_slack_origin());
+        let mut posture = None;
+        let args = serde_json::json!({});
+
+        let report = engine
+            .check_action_report_with_posture(
+                &GuardAction::McpTool("safe_tool", &args),
+                &context,
+                &mut posture,
+            )
+            .await
+            .expect("resolution failure should return a deny report, not an error");
+
+        assert!(!report.guard_report.overall.allowed);
+        assert_eq!(report.guard_report.overall.guard, "enclave");
+        assert!(report
+            .guard_report
+            .overall
+            .message
+            .contains("enclave resolution failed"));
+    }
+
+    #[tokio::test]
+    async fn test_origin_egress_profile_intersects_with_base_policy() {
+        use hush_proxy::policy::PolicyAction;
+
+        let mut policy = policy_with_origins(OriginsConfig {
+            default_behavior: Some(OriginDefaultBehavior::Deny),
+            profiles: vec![OriginProfile {
+                id: "slack-egress".to_string(),
+                match_rules: OriginMatch {
+                    provider: Some(OriginProvider::Slack),
+                    ..Default::default()
+                },
+                mcp: None,
+                posture: None,
+                egress: Some(crate::guards::EgressAllowlistConfig {
+                    enabled: true,
+                    allow: vec!["api.github.com".to_string()],
+                    block: vec![],
+                    default_action: Some(PolicyAction::Block),
+                    additional_allow: vec![],
+                    remove_allow: vec![],
+                    additional_block: vec![],
+                    remove_block: vec![],
+                }),
+                data: None,
+                budgets: None,
+                bridge_policy: None,
+                explanation: None,
+            }],
+        });
+        policy.guards.egress_allowlist = Some(crate::guards::EgressAllowlistConfig {
+            enabled: true,
+            allow: vec!["api.openai.com".to_string(), "api.github.com".to_string()],
+            block: vec![],
+            default_action: Some(PolicyAction::Block),
+            additional_allow: vec![],
+            remove_allow: vec![],
+            additional_block: vec![],
+            remove_block: vec![],
+        });
+
+        let engine = HushEngine::with_policy(policy);
+        let context = GuardContext::new().with_origin(test_slack_origin());
+
+        let allowed = engine
+            .check_egress("api.github.com", 443, &context)
+            .await
+            .unwrap();
+        assert!(allowed.allowed);
+
+        let blocked = engine
+            .check_egress("api.openai.com", 443, &context)
+            .await
+            .unwrap();
+        assert!(!blocked.allowed);
+        assert_eq!(blocked.guard, "egress_allowlist");
+    }
+
+    #[tokio::test]
+    async fn test_origin_output_send_blocks_external_sharing() {
+        let policy = policy_with_origins(OriginsConfig {
+            default_behavior: Some(OriginDefaultBehavior::Deny),
+            profiles: vec![OriginProfile {
+                id: "slack-data".to_string(),
+                match_rules: OriginMatch {
+                    provider: Some(OriginProvider::Slack),
+                    ..Default::default()
+                },
+                mcp: None,
+                posture: None,
+                egress: None,
+                data: Some(crate::policy::OriginDataPolicy {
+                    allow_external_sharing: false,
+                    redact_before_send: false,
+                    block_sensitive_outputs: false,
+                }),
+                budgets: None,
+                bridge_policy: None,
+                explanation: None,
+            }],
+        });
+        let engine = HushEngine::with_policy(policy);
+        let context = GuardContext::new().with_origin(OriginContext {
+            provider: OriginProvider::Slack,
+            space_id: Some("C-external".into()),
+            visibility: Some(Visibility::ExternalShared),
+            tags: vec!["provider:slack".to_string()],
+            ..OriginContext::default()
+        });
+        let payload = serde_json::json!({
+            "text": "share this status update",
+            "target": "external-room"
+        });
+
+        let report = engine
+            .check_action_report(
+                &GuardAction::Custom("origin.output_send", &payload),
+                &context,
+            )
+            .await
+            .unwrap();
+
+        assert!(!report.overall.allowed);
+        assert_eq!(report.overall.guard, "origin_data");
+        assert!(report.overall.message.contains("external origin"));
+    }
+
+    #[tokio::test]
+    async fn test_origin_output_send_sanitizes_without_leaking_raw_content() {
+        let policy = policy_with_origins(OriginsConfig {
+            default_behavior: Some(OriginDefaultBehavior::Deny),
+            profiles: vec![OriginProfile {
+                id: "slack-redact".to_string(),
+                match_rules: OriginMatch {
+                    provider: Some(OriginProvider::Slack),
+                    ..Default::default()
+                },
+                mcp: None,
+                posture: None,
+                egress: None,
+                data: Some(crate::policy::OriginDataPolicy {
+                    allow_external_sharing: true,
+                    redact_before_send: true,
+                    block_sensitive_outputs: false,
+                }),
+                budgets: None,
+                bridge_policy: None,
+                explanation: None,
+            }],
+        });
+        let engine = HushEngine::with_policy(policy);
+        let context = GuardContext::new().with_origin(test_slack_origin());
+        let raw_email = "alice@example.com";
+        let payload = serde_json::json!({
+            "text": format!("Contact {raw_email} for incident updates."),
+            "target": "slack-channel"
+        });
+
+        let report = engine
+            .check_action_report(
+                &GuardAction::Custom("origin.output_send", &payload),
+                &context,
+            )
+            .await
+            .unwrap();
+
+        assert!(report.overall.allowed);
+        assert_eq!(report.overall.guard, "origin_data");
+        let details = report.overall.details.as_ref().expect("details");
+        let sanitized = details
+            .get("sanitized")
+            .and_then(|value| value.as_str())
+            .expect("sanitized text");
+        assert!(!sanitized.contains(raw_email));
+        assert!(sanitized.contains("***"));
+        let serialized_report = serde_json::to_string(&report).unwrap();
+        assert!(!serialized_report.contains(raw_email));
+    }
+
+    #[tokio::test]
+    async fn test_origin_budget_exhaustion_blocks_followup_action() {
+        let policy = policy_with_origins(OriginsConfig {
+            default_behavior: Some(OriginDefaultBehavior::Deny),
+            profiles: vec![OriginProfile {
+                id: "slack-budgeted".to_string(),
+                match_rules: OriginMatch {
+                    provider: Some(OriginProvider::Slack),
+                    ..Default::default()
+                },
+                mcp: None,
+                posture: None,
+                egress: None,
+                data: None,
+                budgets: Some(crate::policy::OriginBudgets {
+                    mcp_tool_calls: Some(1),
+                    ..Default::default()
+                }),
+                bridge_policy: None,
+                explanation: None,
+            }],
+        });
+        let engine = HushEngine::with_policy(policy);
+        let context = GuardContext::new().with_origin(test_slack_origin());
+        let mut posture_state = None;
+        let mut origin_state = None;
+        let args = serde_json::json!({});
+
+        let allowed = engine
+            .check_action_report_with_runtime(
+                &GuardAction::McpTool("safe_tool", &args),
+                &context,
+                &mut posture_state,
+                &mut origin_state,
+            )
+            .await
+            .unwrap();
+        assert!(allowed.guard_report.overall.allowed);
+
+        let denied = engine
+            .check_action_report_with_runtime(
+                &GuardAction::McpTool("safe_tool", &args),
+                &context,
+                &mut posture_state,
+                &mut origin_state,
+            )
+            .await
+            .unwrap();
+        assert!(!denied.guard_report.overall.allowed);
+        assert_eq!(denied.guard_report.overall.guard, "origin_budget");
+        assert!(denied.guard_report.overall.message.contains("exhausted"));
+    }
+
+    #[tokio::test]
     async fn test_receipt_contains_origin_metadata() {
         let mcp = crate::guards::McpToolConfig {
             enabled: true,
@@ -2716,12 +3283,15 @@ posture:
         let context = GuardContext::new().with_origin(test_slack_origin());
         let args = serde_json::json!({});
 
-        let _ = engine
+        let report = engine
             .check_action_report(&GuardAction::McpTool("safe_tool", &args), &context)
             .await
             .unwrap();
 
-        let receipt = engine.create_receipt(sha256(b"origin-test")).await.unwrap();
+        let receipt = engine
+            .create_receipt_for_report(sha256(b"origin-test"), &report)
+            .await
+            .unwrap();
         let metadata = receipt.metadata.expect("expected receipt metadata");
 
         // Verify origin metadata is present
@@ -3302,6 +3872,24 @@ posture:
         }
     }
 
+    async fn check_with_origin_runtime(
+        engine: &HushEngine,
+        context: &GuardContext,
+        origin_state: &mut Option<OriginRuntimeState>,
+    ) -> GuardReport {
+        let mut posture_state = None;
+        engine
+            .check_action_report_with_runtime(
+                &GuardAction::FileAccess("/app/src/main.rs"),
+                context,
+                &mut posture_state,
+                origin_state,
+            )
+            .await
+            .unwrap()
+            .guard_report
+    }
+
     #[tokio::test]
     async fn test_cross_origin_same_origin_passes() {
         // Two checks from the same origin (same provider + same space_id)
@@ -3314,19 +3902,14 @@ posture:
         let engine = HushEngine::with_policy(policy);
 
         let context = GuardContext::new().with_origin(test_slack_origin());
+        let mut origin_state = None;
 
         // First check establishes session origin
-        let report = engine
-            .check_action_report(&GuardAction::FileAccess("/app/src/main.rs"), &context)
-            .await
-            .unwrap();
+        let report = check_with_origin_runtime(&engine, &context, &mut origin_state).await;
         assert!(report.overall.allowed);
 
         // Second check with same origin should pass
-        let report = engine
-            .check_action_report(&GuardAction::FileAccess("/app/src/lib.rs"), &context)
-            .await
-            .unwrap();
+        let report = check_with_origin_runtime(&engine, &context, &mut origin_state).await;
         assert!(report.overall.allowed);
     }
 
@@ -3342,21 +3925,16 @@ posture:
         };
         let policy = policy_with_origins(origins);
         let engine = HushEngine::with_policy(policy);
+        let mut origin_state = None;
 
         // First check from Slack establishes session origin
         let slack_ctx = GuardContext::new().with_origin(test_slack_origin());
-        let report = engine
-            .check_action_report(&GuardAction::FileAccess("/app/src/main.rs"), &slack_ctx)
-            .await
-            .unwrap();
+        let report = check_with_origin_runtime(&engine, &slack_ctx, &mut origin_state).await;
         assert!(report.overall.allowed);
 
         // Second check from GitHub: cross-origin, no bridge policy -> denied
         let github_ctx = GuardContext::new().with_origin(test_github_origin());
-        let report = engine
-            .check_action_report(&GuardAction::FileAccess("/app/src/main.rs"), &github_ctx)
-            .await
-            .unwrap();
+        let report = check_with_origin_runtime(&engine, &github_ctx, &mut origin_state).await;
         assert!(!report.overall.allowed);
         assert_eq!(report.overall.guard, "cross_origin");
         assert_eq!(report.overall.severity, Severity::Error);
@@ -3388,21 +3966,16 @@ posture:
         };
         let policy = policy_with_origins(origins);
         let engine = HushEngine::with_policy(policy);
+        let mut origin_state = None;
 
         // First check from Slack establishes session origin
         let slack_ctx = GuardContext::new().with_origin(test_slack_origin());
-        let report = engine
-            .check_action_report(&GuardAction::FileAccess("/app/src/main.rs"), &slack_ctx)
-            .await
-            .unwrap();
+        let report = check_with_origin_runtime(&engine, &slack_ctx, &mut origin_state).await;
         assert!(report.overall.allowed);
 
         // Second check from GitHub: bridge allows it
         let github_ctx = GuardContext::new().with_origin(test_github_origin());
-        let report = engine
-            .check_action_report(&GuardAction::FileAccess("/app/src/main.rs"), &github_ctx)
-            .await
-            .unwrap();
+        let report = check_with_origin_runtime(&engine, &github_ctx, &mut origin_state).await;
         assert!(report.overall.allowed);
     }
 
@@ -3423,21 +3996,16 @@ posture:
         };
         let policy = policy_with_origins(origins);
         let engine = HushEngine::with_policy(policy);
+        let mut origin_state = None;
 
         // First check from Slack establishes session origin
         let slack_ctx = GuardContext::new().with_origin(test_slack_origin());
-        let report = engine
-            .check_action_report(&GuardAction::FileAccess("/app/src/main.rs"), &slack_ctx)
-            .await
-            .unwrap();
+        let report = check_with_origin_runtime(&engine, &slack_ctx, &mut origin_state).await;
         assert!(report.overall.allowed);
 
         // Second check from GitHub: requires approval -> denied with Warning
         let github_ctx = GuardContext::new().with_origin(test_github_origin());
-        let report = engine
-            .check_action_report(&GuardAction::FileAccess("/app/src/main.rs"), &github_ctx)
-            .await
-            .unwrap();
+        let report = check_with_origin_runtime(&engine, &github_ctx, &mut origin_state).await;
         assert!(!report.overall.allowed);
         assert_eq!(report.overall.guard, "cross_origin");
         assert_eq!(report.overall.severity, Severity::Warning);
@@ -3467,21 +4035,16 @@ posture:
         };
         let policy = policy_with_origins(origins);
         let engine = HushEngine::with_policy(policy);
+        let mut origin_state = None;
 
         // First check from Slack establishes session origin
         let slack_ctx = GuardContext::new().with_origin(test_slack_origin());
-        let report = engine
-            .check_action_report(&GuardAction::FileAccess("/app/src/main.rs"), &slack_ctx)
-            .await
-            .unwrap();
+        let report = check_with_origin_runtime(&engine, &slack_ctx, &mut origin_state).await;
         assert!(report.overall.allowed);
 
         // Second check from Teams: not in allowed targets -> denied
         let teams_ctx = GuardContext::new().with_origin(test_teams_origin());
-        let report = engine
-            .check_action_report(&GuardAction::FileAccess("/app/src/main.rs"), &teams_ctx)
-            .await
-            .unwrap();
+        let report = check_with_origin_runtime(&engine, &teams_ctx, &mut origin_state).await;
         assert!(!report.overall.allowed);
         assert_eq!(report.overall.guard, "cross_origin");
         assert_eq!(report.overall.severity, Severity::Error);
@@ -3504,21 +4067,16 @@ posture:
         };
         let policy = policy_with_origins(origins);
         let engine = HushEngine::with_policy(policy);
+        let mut origin_state = None;
 
         // First check from Slack establishes session origin
         let slack_ctx = GuardContext::new().with_origin(test_slack_origin());
-        let report = engine
-            .check_action_report(&GuardAction::FileAccess("/app/src/main.rs"), &slack_ctx)
-            .await
-            .unwrap();
+        let report = check_with_origin_runtime(&engine, &slack_ctx, &mut origin_state).await;
         assert!(report.overall.allowed);
 
         // Verify session_origin was set: different origin triggers cross-origin detection
         let github_ctx = GuardContext::new().with_origin(test_github_origin());
-        let report = engine
-            .check_action_report(&GuardAction::FileAccess("/app/src/main.rs"), &github_ctx)
-            .await
-            .unwrap();
+        let report = check_with_origin_runtime(&engine, &github_ctx, &mut origin_state).await;
         assert!(!report.overall.allowed);
         assert_eq!(report.overall.guard, "cross_origin");
         // No bridge policy configured, so it should say so
@@ -3545,19 +4103,14 @@ posture:
         };
         let policy = policy_with_origins(origins);
         let engine = HushEngine::with_policy(policy);
+        let mut origin_state = None;
 
         let slack_ctx = GuardContext::new().with_origin(test_slack_origin());
-        let report = engine
-            .check_action_report(&GuardAction::FileAccess("/app/src/main.rs"), &slack_ctx)
-            .await
-            .unwrap();
+        let report = check_with_origin_runtime(&engine, &slack_ctx, &mut origin_state).await;
         assert!(report.overall.allowed);
 
         let github_ctx = GuardContext::new().with_origin(test_github_origin());
-        let report = engine
-            .check_action_report(&GuardAction::FileAccess("/app/src/main.rs"), &github_ctx)
-            .await
-            .unwrap();
+        let report = check_with_origin_runtime(&engine, &github_ctx, &mut origin_state).await;
         assert!(!report.overall.allowed);
         assert_eq!(report.overall.guard, "cross_origin");
         assert!(report
@@ -3588,20 +4141,15 @@ posture:
         };
         let policy = policy_with_origins(origins);
         let engine = HushEngine::with_policy(policy);
+        let mut origin_state = None;
 
         let slack_ctx = GuardContext::new().with_origin(test_slack_origin());
-        let report = engine
-            .check_action_report(&GuardAction::FileAccess("/app/src/main.rs"), &slack_ctx)
-            .await
-            .unwrap();
+        let report = check_with_origin_runtime(&engine, &slack_ctx, &mut origin_state).await;
         assert!(report.overall.allowed);
 
         // GitHub origin with space_type=PullRequest but bridge only allows Issue -> denied
         let github_ctx = GuardContext::new().with_origin(test_github_origin());
-        let report = engine
-            .check_action_report(&GuardAction::FileAccess("/app/src/main.rs"), &github_ctx)
-            .await
-            .unwrap();
+        let report = check_with_origin_runtime(&engine, &github_ctx, &mut origin_state).await;
         assert!(!report.overall.allowed);
         assert_eq!(report.overall.guard, "cross_origin");
         assert!(report
@@ -3632,20 +4180,15 @@ posture:
         };
         let policy = policy_with_origins(origins);
         let engine = HushEngine::with_policy(policy);
+        let mut origin_state = None;
 
         let slack_ctx = GuardContext::new().with_origin(test_slack_origin());
-        let report = engine
-            .check_action_report(&GuardAction::FileAccess("/app/src/main.rs"), &slack_ctx)
-            .await
-            .unwrap();
+        let report = check_with_origin_runtime(&engine, &slack_ctx, &mut origin_state).await;
         assert!(report.overall.allowed);
 
         // GitHub origin without visibility does not match Public filter -> denied
         let github_ctx = GuardContext::new().with_origin(test_github_origin());
-        let report = engine
-            .check_action_report(&GuardAction::FileAccess("/app/src/main.rs"), &github_ctx)
-            .await
-            .unwrap();
+        let report = check_with_origin_runtime(&engine, &github_ctx, &mut origin_state).await;
         assert!(!report.overall.allowed);
         assert_eq!(report.overall.guard, "cross_origin");
 
@@ -3668,12 +4211,10 @@ posture:
             ],
         };
         let engine2 = HushEngine::with_policy(policy_with_origins(origins2));
+        let mut origin_state2 = None;
 
         let slack_ctx2 = GuardContext::new().with_origin(test_slack_origin());
-        let _ = engine2
-            .check_action_report(&GuardAction::FileAccess("/app/src/main.rs"), &slack_ctx2)
-            .await
-            .unwrap();
+        let _ = check_with_origin_runtime(&engine2, &slack_ctx2, &mut origin_state2).await;
 
         let public_github = OriginContext {
             provider: OriginProvider::GitHub,
@@ -3682,10 +4223,82 @@ posture:
             ..OriginContext::default()
         };
         let github_ctx2 = GuardContext::new().with_origin(public_github);
-        let report = engine2
-            .check_action_report(&GuardAction::FileAccess("/app/src/main.rs"), &github_ctx2)
-            .await
-            .unwrap();
+        let report = check_with_origin_runtime(&engine2, &github_ctx2, &mut origin_state2).await;
         assert!(report.overall.allowed);
+    }
+
+    #[tokio::test]
+    async fn test_cross_origin_same_space_trust_downgrade_denied_without_bridge() {
+        let origins = OriginsConfig {
+            default_behavior: Some(OriginDefaultBehavior::Deny),
+            profiles: vec![
+                OriginProfile {
+                    id: "slack-internal".to_string(),
+                    match_rules: OriginMatch {
+                        provider: Some(OriginProvider::Slack),
+                        external_participants: Some(false),
+                        ..Default::default()
+                    },
+                    mcp: None,
+                    posture: None,
+                    egress: None,
+                    data: None,
+                    budgets: None,
+                    bridge_policy: None,
+                    explanation: None,
+                },
+                OriginProfile {
+                    id: "slack-external".to_string(),
+                    match_rules: OriginMatch {
+                        provider: Some(OriginProvider::Slack),
+                        external_participants: Some(true),
+                        ..Default::default()
+                    },
+                    mcp: None,
+                    posture: None,
+                    egress: None,
+                    data: None,
+                    budgets: None,
+                    bridge_policy: None,
+                    explanation: None,
+                },
+            ],
+        };
+        let engine = HushEngine::with_policy(policy_with_origins(origins));
+        let mut origin_state = None;
+
+        let internal_origin = OriginContext {
+            provider: OriginProvider::Slack,
+            space_id: Some("C-test-123".into()),
+            external_participants: Some(false),
+            ..OriginContext::default()
+        };
+        let external_origin = OriginContext {
+            provider: OriginProvider::Slack,
+            space_id: Some("C-test-123".into()),
+            external_participants: Some(true),
+            ..OriginContext::default()
+        };
+
+        let internal_report = check_with_origin_runtime(
+            &engine,
+            &GuardContext::new().with_origin(internal_origin),
+            &mut origin_state,
+        )
+        .await;
+        assert!(internal_report.overall.allowed);
+
+        let external_report = check_with_origin_runtime(
+            &engine,
+            &GuardContext::new().with_origin(external_origin),
+            &mut origin_state,
+        )
+        .await;
+        assert!(!external_report.overall.allowed);
+        assert_eq!(external_report.overall.guard, "cross_origin");
+        assert!(external_report
+            .overall
+            .message
+            .contains("no bridge policy configured"));
     }
 }

@@ -22,6 +22,16 @@ export type {
 } from "./types.js";
 
 export type {
+  OriginContextInput,
+  OriginContextWire,
+} from "./origin-context-wire.js";
+
+export {
+  normalizeOriginContext,
+  toWireOriginContext,
+} from "./origin-context-wire.js";
+
+export type {
   ProviderEvent,
   ProviderPayload,
   ProviderResponse,

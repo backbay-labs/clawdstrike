@@ -111,6 +111,8 @@ pub mod irm;
 #[cfg(feature = "full")]
 pub mod marketplace_feed;
 #[cfg(feature = "full")]
+pub mod origin_runtime;
+#[cfg(feature = "full")]
 pub mod pipeline;
 #[cfg(feature = "full")]
 pub mod pkg;
@@ -205,6 +207,8 @@ pub use irm::{
     HostCallMetadata, IrmEvent, IrmRouter, Monitor, NetOperation, NetworkIrm, Sandbox,
     SandboxConfig, SandboxStats,
 };
+#[cfg(feature = "full")]
+pub use origin_runtime::{OriginFingerprint, OriginRuntimeState};
 
 /// Re-export core types
 pub mod core {

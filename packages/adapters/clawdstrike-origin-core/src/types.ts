@@ -76,6 +76,9 @@ export interface OriginContext {
   /** Classification of the actor. */
   actorType?: ActorType;
 
+  /** Role of the actor within the originating system. */
+  actorRole?: string;
+
   /** Visibility of the originating space. */
   visibility?: Visibility;
 

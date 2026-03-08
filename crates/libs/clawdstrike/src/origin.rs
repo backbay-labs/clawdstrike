@@ -223,35 +223,42 @@ pub struct OriginContext {
     pub provider: OriginProvider,
 
     /// Tenant/workspace identifier (e.g., Slack workspace ID).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", alias = "tenantId")]
     pub tenant_id: Option<String>,
 
     /// Space/channel/room identifier.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", alias = "spaceId")]
     pub space_id: Option<String>,
 
     /// Kind of space (channel, DM, issue, etc.).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", alias = "spaceType")]
     pub space_type: Option<SpaceType>,
 
     /// Thread/conversation identifier within the space.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", alias = "threadId")]
     pub thread_id: Option<String>,
 
     /// Identifier of the actor who initiated the action.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", alias = "actorId")]
     pub actor_id: Option<String>,
 
     /// Type of actor (human, bot, service).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", alias = "actorType")]
     pub actor_type: Option<ActorType>,
+
+    /// Provider-specific actor role used by origin profile matching.
+    #[serde(skip_serializing_if = "Option::is_none", alias = "actorRole")]
+    pub actor_role: Option<String>,
 
     /// Visibility level of the originating space.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub visibility: Option<Visibility>,
 
     /// Whether external (non-org) participants are present.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        alias = "externalParticipants"
+    )]
     pub external_participants: Option<bool>,
 
     /// Free-form tags for policy matching (e.g., `["pci", "hipaa"]`).
@@ -263,7 +270,10 @@ pub struct OriginContext {
     pub sensitivity: Option<String>,
 
     /// Confidence in the provenance chain.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        alias = "provenanceConfidence"
+    )]
     pub provenance_confidence: Option<ProvenanceConfidence>,
 
     /// Arbitrary provider-specific metadata.
@@ -281,6 +291,7 @@ impl Default for OriginContext {
             thread_id: None,
             actor_id: None,
             actor_type: None,
+            actor_role: None,
             visibility: None,
             external_participants: None,
             tags: Vec::new(),
@@ -309,6 +320,7 @@ mod tests {
             thread_id: Some("thread-1".into()),
             actor_id: Some("U001".into()),
             actor_type: Some(ActorType::Human),
+            actor_role: Some("incident_commander".into()),
             visibility: Some(Visibility::Internal),
             external_participants: Some(false),
             tags: vec!["hipaa".into(), "prod".into()],
@@ -327,6 +339,10 @@ mod tests {
         assert_eq!(deserialized.thread_id.as_deref(), Some("thread-1"));
         assert_eq!(deserialized.actor_id.as_deref(), Some("U001"));
         assert_eq!(deserialized.actor_type, Some(ActorType::Human));
+        assert_eq!(
+            deserialized.actor_role.as_deref(),
+            Some("incident_commander")
+        );
         assert_eq!(deserialized.visibility, Some(Visibility::Internal));
         assert_eq!(deserialized.external_participants, Some(false));
         assert_eq!(deserialized.tags, vec!["hipaa", "prod"]);
@@ -350,6 +366,7 @@ mod tests {
         assert_eq!(ctx.thread_id, None);
         assert_eq!(ctx.actor_id, None);
         assert_eq!(ctx.actor_type, None);
+        assert_eq!(ctx.actor_role, None);
         assert_eq!(ctx.visibility, None);
         assert_eq!(ctx.external_participants, None);
         assert!(ctx.tags.is_empty());
@@ -440,6 +457,7 @@ mod tests {
             "space_type": "pull_request",
             "visibility": "external_shared",
             "actor_type": "service",
+            "actor_role": "approver",
             "provenance_confidence": "medium"
         }"#;
         let ctx: OriginContext = serde_json::from_str(json).unwrap();
@@ -448,9 +466,40 @@ mod tests {
         assert_eq!(ctx.space_type, Some(SpaceType::PullRequest));
         assert_eq!(ctx.visibility, Some(Visibility::ExternalShared));
         assert_eq!(ctx.actor_type, Some(ActorType::Service));
+        assert_eq!(ctx.actor_role.as_deref(), Some("approver"));
         assert_eq!(
             ctx.provenance_confidence,
             Some(ProvenanceConfidence::Medium)
+        );
+    }
+
+    #[test]
+    fn deserialize_accepts_camel_case_fields() {
+        let json = r#"{
+            "provider": "slack",
+            "tenantId": "T123",
+            "spaceId": "C999",
+            "spaceType": "channel",
+            "threadId": "thread-1",
+            "actorId": "U001",
+            "actorType": "human",
+            "actorRole": "incident_commander",
+            "externalParticipants": true,
+            "provenanceConfidence": "strong"
+        }"#;
+        let ctx: OriginContext = serde_json::from_str(json).unwrap();
+
+        assert_eq!(ctx.tenant_id.as_deref(), Some("T123"));
+        assert_eq!(ctx.space_id.as_deref(), Some("C999"));
+        assert_eq!(ctx.space_type, Some(SpaceType::Channel));
+        assert_eq!(ctx.thread_id.as_deref(), Some("thread-1"));
+        assert_eq!(ctx.actor_id.as_deref(), Some("U001"));
+        assert_eq!(ctx.actor_type, Some(ActorType::Human));
+        assert_eq!(ctx.actor_role.as_deref(), Some("incident_commander"));
+        assert_eq!(ctx.external_participants, Some(true));
+        assert_eq!(
+            ctx.provenance_confidence,
+            Some(ProvenanceConfidence::Strong)
         );
     }
 

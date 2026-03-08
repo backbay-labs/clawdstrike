@@ -232,6 +232,7 @@ describe("normalize()", () => {
     expect(ctx.threadId).toBe("1234567890.123456");
     expect(ctx.actorId).toBe("U11111");
     expect(ctx.actorType).toBe("human");
+    expect(ctx.actorRole).toBeUndefined();
     expect(ctx.visibility).toBe("internal");
     expect(ctx.externalParticipants).toBe(false);
   });
@@ -379,6 +380,7 @@ describe("OriginContext type structure", () => {
       threadId: "pr-789",
       actorId: "user-abc",
       actorType: "human",
+      actorRole: "maintainer",
       visibility: "internal",
       externalParticipants: false,
       tags: ["provider:github", "visibility:internal"],
@@ -388,6 +390,7 @@ describe("OriginContext type structure", () => {
     };
     expect(ctx.provider).toBe("github");
     expect(ctx.spaceType).toBe("pull_request");
+    expect(ctx.actorRole).toBe("maintainer");
     expect(ctx.tags).toHaveLength(2);
     expect(ctx.metadata?.["installation_id"]).toBe(12345);
   });

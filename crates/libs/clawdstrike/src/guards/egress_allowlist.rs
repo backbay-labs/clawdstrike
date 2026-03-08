@@ -117,12 +117,106 @@ impl EgressAllowlistConfig {
             remove_block: vec![],
         }
     }
+
+    /// Compute the effective intersection of two egress configs.
+    ///
+    /// The result is the most restrictive combination:
+    /// - if both sides define allowlists, only the intersection survives
+    /// - blocklists are unioned
+    /// - the stricter default action wins (`block` > `log` > `allow`)
+    /// - a disabled side contributes no additional restriction
+    pub fn intersect_with(&self, other: &Self) -> Self {
+        match (self.enabled, other.enabled) {
+            (false, false) => {
+                return Self {
+                    enabled: false,
+                    ..Self::default()
+                };
+            }
+            (false, true) => return other.clone(),
+            (true, false) => return self.clone(),
+            (true, true) => {}
+        }
+
+        let allow = match (self.allow.is_empty(), other.allow.is_empty()) {
+            (false, false) => self
+                .allow
+                .iter()
+                .filter(|pattern| other.allow.contains(*pattern))
+                .cloned()
+                .collect(),
+            (false, true) => self.allow.clone(),
+            (true, false) => other.allow.clone(),
+            (true, true) => Vec::new(),
+        };
+
+        let mut block = self.block.clone();
+        for pattern in &other.block {
+            if !block.contains(pattern) {
+                block.push(pattern.clone());
+            }
+        }
+
+        Self {
+            enabled: true,
+            allow,
+            block,
+            default_action: Some(stricter_action(
+                self.default_action.as_ref(),
+                other.default_action.as_ref(),
+            )),
+            additional_allow: Vec::new(),
+            remove_allow: Vec::new(),
+            additional_block: Vec::new(),
+            remove_block: Vec::new(),
+        }
+    }
+}
+
+fn stricter_action(a: Option<&PolicyAction>, b: Option<&PolicyAction>) -> PolicyAction {
+    match (
+        a.cloned().unwrap_or_default(),
+        b.cloned().unwrap_or_default(),
+    ) {
+        (PolicyAction::Block, _) | (_, PolicyAction::Block) => PolicyAction::Block,
+        (PolicyAction::Log, _) | (_, PolicyAction::Log) => PolicyAction::Log,
+        _ => PolicyAction::Allow,
+    }
+}
+
+fn domain_policy_from_config(config: &EgressAllowlistConfig) -> DomainPolicy {
+    let mut policy = DomainPolicy::new();
+    policy.set_default_action(config.default_action.clone().unwrap_or_default());
+    policy.extend_allow(config.allow.clone());
+    policy.extend_block(config.block.clone());
+    policy
+}
+
+#[cfg(feature = "full")]
+fn effective_egress_config(
+    base: &EgressAllowlistConfig,
+    context: &GuardContext,
+) -> EgressAllowlistConfig {
+    context
+        .enclave
+        .as_ref()
+        .and_then(|enclave| enclave.egress.as_ref())
+        .map(|enclave_config| base.intersect_with(enclave_config))
+        .unwrap_or_else(|| base.clone())
+}
+
+#[cfg(not(feature = "full"))]
+fn effective_egress_config(
+    base: &EgressAllowlistConfig,
+    _context: &GuardContext,
+) -> EgressAllowlistConfig {
+    base.clone()
 }
 
 /// Guard that controls network egress via domain allowlist
 pub struct EgressAllowlistGuard {
     name: String,
-    enabled: bool,
+    config: EgressAllowlistConfig,
     policy: DomainPolicy,
 }
 
@@ -134,15 +228,11 @@ impl EgressAllowlistGuard {
 
     /// Create with custom configuration
     pub fn with_config(config: EgressAllowlistConfig) -> Self {
-        let enabled = config.enabled;
-        let mut policy = DomainPolicy::new();
-        policy.set_default_action(config.default_action.unwrap_or_default());
-        policy.extend_allow(config.allow);
-        policy.extend_block(config.block);
+        let policy = domain_policy_from_config(&config);
 
         Self {
             name: "egress_allowlist".to_string(),
-            enabled,
+            config,
             policy,
         }
     }
@@ -166,15 +256,13 @@ impl Guard for EgressAllowlistGuard {
     }
 
     fn handles(&self, action: &GuardAction<'_>) -> bool {
-        if !self.enabled {
-            return false;
-        }
-
         matches!(action, GuardAction::NetworkEgress(_, _))
     }
 
-    async fn check(&self, action: &GuardAction<'_>, _context: &GuardContext) -> GuardResult {
-        if !self.enabled {
+    async fn check(&self, action: &GuardAction<'_>, context: &GuardContext) -> GuardResult {
+        let effective_config = effective_egress_config(&self.config, context);
+
+        if !effective_config.enabled {
             return GuardResult::allow(&self.name);
         }
 
@@ -183,30 +271,39 @@ impl Guard for EgressAllowlistGuard {
             _ => return GuardResult::allow(&self.name),
         };
 
-        let result = self.policy.evaluate_detailed(host);
+        let policy = if effective_config == self.config {
+            &self.policy
+        } else {
+            // Only build a transient policy when an enclave narrows the surface.
+            let transient = domain_policy_from_config(&effective_config);
+            return evaluate_domain_policy(&self.name, &transient, host, port);
+        };
 
-        match result.action {
-            PolicyAction::Allow => GuardResult::allow(&self.name),
-            PolicyAction::Block => GuardResult::block(
-                &self.name,
-                Severity::Error,
-                format!("Egress to {} blocked by policy", host),
-            )
+        evaluate_domain_policy(&self.name, policy, host, port)
+    }
+}
+
+fn evaluate_domain_policy(name: &str, policy: &DomainPolicy, host: &str, port: u16) -> GuardResult {
+    let result = policy.evaluate_detailed(host);
+
+    match result.action {
+        PolicyAction::Allow => GuardResult::allow(name),
+        PolicyAction::Block => GuardResult::block(
+            name,
+            Severity::Error,
+            format!("Egress to {} blocked by policy", host),
+        )
+        .with_details(serde_json::json!({
+            "host": host,
+            "port": port,
+            "matched_pattern": result.matched_pattern,
+            "is_default": result.is_default,
+        })),
+        PolicyAction::Log => GuardResult::warn(name, format!("Egress to {} logged", host))
             .with_details(serde_json::json!({
                 "host": host,
                 "port": port,
-                "matched_pattern": result.matched_pattern,
-                "is_default": result.is_default,
             })),
-            PolicyAction::Log => {
-                GuardResult::warn(&self.name, format!("Egress to {} logged", host)).with_details(
-                    serde_json::json!({
-                        "host": host,
-                        "port": port,
-                    }),
-                )
-            }
-        }
     }
 }
 

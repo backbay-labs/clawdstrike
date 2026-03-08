@@ -411,10 +411,10 @@ describe("Dispatcher execution", () => {
     await fs.writeFile(
       cliPath,
       `#!/bin/sh
-printf '%s\n' "$@" > ${JSON.stringify(captureArgsPath)}
+printf '%s\\n' "$@" > ${JSON.stringify(captureArgsPath)}
 cat > ${JSON.stringify(capturePromptPath)}
-printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"OK"}}'
-printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":12,"output_tokens":2}}'
+printf '%s\\n' '{"type":"item.completed","item":{"type":"agent_message","text":"OK"}}'
+printf '%s\\n' '{"type":"turn.completed","usage":{"input_tokens":12,"output_tokens":2}}'
 `,
       { mode: 0o755 },
     )
@@ -449,7 +449,7 @@ printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":12,"output_token
     await fs.writeFile(
       cliPath,
       `#!/bin/sh
-printf '%s\n' '{"type":"result","result":"OK","total_cost_usd":0.02,"usage":{"input_tokens":8,"output_tokens":3},"modelUsage":{"claude-opus-4-6":{"inputTokens":8,"outputTokens":3}}}'
+printf '%s\\n' '{"type":"result","result":"OK","total_cost_usd":0.02,"usage":{"input_tokens":8,"output_tokens":3},"modelUsage":{"claude-opus-4-6":{"inputTokens":8,"outputTokens":3}}}'
 `,
       { mode: 0o755 },
     )
@@ -479,12 +479,14 @@ printf '%s\n' '{"type":"result","result":"OK","total_cost_usd":0.02,"usage":{"in
     const binDir = path.join(tempDir, "bin")
     const cliPath = path.join(binDir, "claude")
     const captureArgsPath = path.join(tempDir, "claude-args.txt")
+    const workcellDir = path.join(tempDir, "workcell")
     await fs.mkdir(binDir, { recursive: true })
+    await fs.mkdir(workcellDir, { recursive: true })
     await fs.writeFile(
       cliPath,
       `#!/bin/sh
-printf '%s\n' "$@" > "${captureArgsPath}"
-printf '%s\n' '{"type":"result","result":"OK"}'
+printf '%s\\n' "$@" > "${captureArgsPath}"
+printf '%s\\n' '{"type":"result","result":"OK"}'
 `,
       { mode: 0o755 },
     )
@@ -493,7 +495,7 @@ printf '%s\n' '{"type":"result","result":"OK"}'
     process.env.PATH = [binDir, originalPath].filter(Boolean).join(":")
 
     const result = await ClaudeAdapter.execute(
-      { ...mockWorkcell, name: "inplace" },
+      { ...mockWorkcell, name: "inplace", directory: workcellDir },
       mockTask,
       new AbortController().signal,
     )
@@ -518,12 +520,14 @@ printf '%s\n' '{"type":"result","result":"OK"}'
     const binDir = path.join(tempDir, "bin")
     const cliPath = path.join(binDir, "claude")
     const captureArgsPath = path.join(tempDir, "claude-args.txt")
+    const workcellDir = path.join(tempDir, "workcell")
     await fs.mkdir(binDir, { recursive: true })
+    await fs.mkdir(workcellDir, { recursive: true })
     await fs.writeFile(
       cliPath,
       `#!/bin/sh
-printf '%s\n' "$@" > "${captureArgsPath}"
-printf '%s\n' '{"type":"result","result":"OK"}'
+printf '%s\\n' "$@" > "${captureArgsPath}"
+printf '%s\\n' '{"type":"result","result":"OK"}'
 `,
       { mode: 0o755 },
     )
@@ -532,7 +536,7 @@ printf '%s\n' '{"type":"result","result":"OK"}'
     process.env.PATH = [binDir, originalPath].filter(Boolean).join(":")
 
     const result = await ClaudeAdapter.execute(
-      { ...mockWorkcell, name: "wc-isolated" },
+      { ...mockWorkcell, name: "wc-isolated", directory: workcellDir },
       mockTask,
       new AbortController().signal,
     )

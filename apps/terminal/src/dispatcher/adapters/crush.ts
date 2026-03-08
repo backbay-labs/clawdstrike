@@ -10,7 +10,7 @@ import { mkdir, writeFile } from "fs/promises"
 import type { Adapter, AdapterResult } from "../index"
 import type { WorkcellInfo, TaskInput } from "../../types"
 import { callAnthropicApi, callOpenAiApi } from "./llm-api"
-import { commandExists } from "../../system"
+import { commandExists, resolveCommandPath } from "../../system"
 
 /**
  * Crush configuration
@@ -117,6 +117,15 @@ async function executeViaCli(
   signal: AbortSignal,
   startTime: number
 ): Promise<AdapterResult> {
+  const crushCli = resolveCommandPath("crush")
+  if (!crushCli) {
+    return {
+      success: false,
+      output: "",
+      error: "crush CLI not found",
+    }
+  }
+
   const metaDir = join(workcell.directory, ".clawdstrike")
   const promptPath = join(metaDir, "prompt.md")
   await mkdir(metaDir, { recursive: true })
@@ -133,7 +142,7 @@ async function executeViaCli(
   ]
 
   try {
-    const proc = Bun.spawn(["crush", ...args], {
+    const proc = Bun.spawn([crushCli, ...args], {
       cwd: workcell.directory,
       env: {
         ...process.env,
