@@ -10,10 +10,12 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Mapping
+from datetime import datetime, timezone
 from typing import Any, Protocol, runtime_checkable
 from urllib import error as urllib_error
 from urllib import parse as urllib_parse
 from urllib import request as urllib_request
+from uuid import uuid4
 
 from clawdstrike.exceptions import UnsupportedOriginFeatureError
 
@@ -148,6 +150,7 @@ class DaemonEngineBackend:
         if not parsed.scheme or not parsed.netloc:
             raise ValueError(f"invalid daemon URL {base_url!r}: expected absolute URL")
         self._check_url = f"{trimmed}/api/v1/check"
+        self._eval_url = f"{trimmed}/api/v1/eval"
         self._api_key = api_key
         self._timeout = timeout
 
@@ -198,11 +201,32 @@ class DaemonEngineBackend:
     def check_untrusted_text(
         self, source: str | None, text: str, ctx: dict[str, Any],
     ) -> dict[str, Any]:
-        return self.check_custom(
-            "untrusted_text",
-            {"source": source, "text": text},
-            ctx,
-        )
+        event: dict[str, Any] = {
+            "eventId": f"py-origin-{uuid4()}",
+            "eventType": "custom",
+            "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "data": {
+                "type": "custom",
+                "customType": "untrusted_text",
+                "text": text,
+            },
+        }
+        if source is not None:
+            event["data"]["source"] = source
+        if ctx.get("session_id") is not None:
+            event["sessionId"] = ctx["session_id"]
+
+        metadata: dict[str, Any] = {}
+        if isinstance(ctx.get("metadata"), Mapping):
+            metadata.update(dict(ctx["metadata"]))
+        if ctx.get("origin") is not None:
+            metadata["origin"] = ctx["origin"]
+        if ctx.get("agent_id") is not None:
+            metadata["endpointAgentId"] = ctx["agent_id"]
+        if metadata:
+            event["metadata"] = metadata
+
+        return self._eval(event)
 
     def check_custom(
         self, custom_type: str, custom_data: dict[str, Any], ctx: dict[str, Any],
@@ -242,7 +266,29 @@ class DaemonEngineBackend:
             if ctx.get(key) is not None:
                 request_payload[key] = ctx[key]
 
-        body = json.dumps(request_payload).encode("utf-8")
+        return self._post_report(self._check_url, request_payload)
+
+    def _eval(self, event: dict[str, Any]) -> dict[str, Any]:
+        report = self._post_json(self._eval_url, event).get("report")
+        if isinstance(report, dict) and "overall" in report and "per_guard" in report:
+            return report
+        return self._daemon_failure("Daemon returned malformed eval payload")
+
+    def _post_report(self, url: str, payload: dict[str, Any]) -> dict[str, Any]:
+        parsed = self._post_json(url, payload)
+        if "overall" in parsed and "per_guard" in parsed:
+            return parsed
+
+        return _single_result_report(
+            allowed=bool(parsed.get("allowed", False)),
+            guard=str(parsed.get("guard") or "daemon"),
+            severity=str(parsed.get("severity") or "error"),
+            message=str(parsed.get("message") or "Malformed daemon response"),
+            details=parsed.get("details"),
+        )
+
+    def _post_json(self, url: str, payload: dict[str, Any]) -> dict[str, Any]:
+        body = json.dumps(payload).encode("utf-8")
         headers = {
             "content-type": "application/json",
             "accept": "application/json",
@@ -251,7 +297,7 @@ class DaemonEngineBackend:
             headers["authorization"] = f"Bearer {self._api_key}"
 
         req = urllib_request.Request(
-            self._check_url,
+            url,
             data=body,
             headers=headers,
             method="POST",
@@ -272,18 +318,21 @@ class DaemonEngineBackend:
         try:
             parsed = json.loads(raw)
         except json.JSONDecodeError:
-            return self._daemon_failure("Daemon returned invalid JSON")
+            return {
+                "allowed": False,
+                "guard": "daemon",
+                "severity": "critical",
+                "message": "Daemon returned invalid JSON",
+            }
 
         if not isinstance(parsed, dict):
-            return self._daemon_failure("Daemon returned malformed decision payload")
-
-        return _single_result_report(
-            allowed=bool(parsed.get("allowed", False)),
-            guard=str(parsed.get("guard") or "daemon"),
-            severity=str(parsed.get("severity") or "error"),
-            message=str(parsed.get("message") or "Malformed daemon response"),
-            details=parsed.get("details"),
-        )
+            return {
+                "allowed": False,
+                "guard": "daemon",
+                "severity": "critical",
+                "message": "Daemon returned malformed decision payload",
+            }
+        return parsed
 
     def _daemon_failure(self, message: str) -> dict[str, Any]:
         return _single_result_report(

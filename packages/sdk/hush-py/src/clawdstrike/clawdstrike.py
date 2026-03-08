@@ -400,13 +400,14 @@ class ClawdstrikeSession:
         **context_kwargs: Any,
     ) -> Decision:
         ctx = {**self._context_kwargs(), **context_kwargs}
-        decision = self._cs.check_output_send(
-            text,
-            target=target,
-            mime_type=mime_type,
-            metadata=metadata,
-            **ctx,
-        )
+        payload: dict[str, Any] = {"text": text}
+        if target is not None:
+            payload["target"] = target
+        if mime_type is not None:
+            payload["mime_type"] = mime_type
+        if metadata is not None:
+            payload["metadata"] = metadata
+        decision = self._cs.check(CustomAction("origin.output_send", payload), **ctx)
         return self._track(decision, f"output_send:{target or ''}")
 
     def get_summary(self) -> SessionSummary:

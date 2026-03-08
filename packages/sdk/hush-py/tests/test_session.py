@@ -130,6 +130,23 @@ class TestClawdstrikeSession:
             "tenant_id": "T123",
         }
 
+    def test_session_check_output_send_keeps_session_metadata_separate(self) -> None:
+        backend = _RecordingBackend()
+        cs = Clawdstrike(backend)
+        session = cs.session(session_id="sess-2", metadata={"scope": "prod"})
+
+        decision = session.check_output_send(
+            "ship it",
+            metadata={"thread_id": "abc"},
+            origin={"provider": "slack"},
+        )
+
+        assert decision.allowed
+        action, args, ctx = backend.calls[-1]
+        assert action == "origin.output_send"
+        assert args[0]["metadata"] == {"thread_id": "abc"}
+        assert ctx["metadata"] == {"scope": "prod"}
+
     def test_session_check_file_allows_per_check_origin_override(self) -> None:
         backend = _RecordingBackend()
         cs = Clawdstrike(backend)
