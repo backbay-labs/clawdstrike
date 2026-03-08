@@ -30,6 +30,29 @@ Artifacts:
 - `network.txt`
 - `summary.json`
 
+## Spirit Verification Smoke
+
+Run:
+
+```bash
+scripts/huntronomer-spirit-smoke.sh
+```
+
+This focused smoke covers the hunt-spirit operator path that is already landed in tests but not yet
+fully wired into the live browser shell:
+
+1. instant `HUNT_CREATE`
+2. quick bind payload generation
+3. pinned manual rebind payload generation
+4. dock and smart-bucket identity rendering
+5. Forensics spirit actor derivation
+6. Nexus spirit companion derivation
+
+Artifacts:
+
+- `output/tests/huntronomer-spirit-smoke/<timestamp>/vitest.log`
+- `output/tests/huntronomer-spirit-smoke/<timestamp>/summary.json`
+
 ## Environment Knobs
 
 ```bash
@@ -54,12 +77,15 @@ HUNTRONOMER_SMOKE_START_DEV=0 scripts/huntronomer-playwright-smoke.sh
 Today the smoke path verifies:
 
 1. the Huntronomer page loads
-2. the first-run launch overlay renders
-3. the overlay can be dismissed with `Enter`
-4. the current Hunt Deck shell renders with `LIVE` and `REPLAY`
+2. the first-run launch overlay renders with the `Runtime security workbench` copy
+3. the `Start a hunt` CTA transitions into the shell
+4. the current Hunt Deck shell renders with `LIVE`, `REPLAY`, and `Security Scene`
 5. the command deck artifacts can be captured for regression review
 
 This is intentionally a shell-level smoke, not a complete product validation.
+
+The spirit smoke complements that shell pass by proving the landed spirit runtime and UI contracts
+from a deterministic test harness while shared shell wiring remains under `ORCH`.
 
 ## Current Expected Console Errors
 
@@ -89,6 +115,11 @@ cd apps/desktop && bun run typecheck
 cd apps/desktop && bun run test -- --run
 cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
 ```
+
+Likewise, do not treat the browser smoke as proof that `Bind Spirit` is live in the shell yet. The
+sheet implementation exists, but the shared workbench registration path is still orchestrator-owned.
+Use `scripts/huntronomer-spirit-smoke.sh` for spirit-specific verification until that live shell
+wiring lands.
 
 ## Current Product Assumption
 

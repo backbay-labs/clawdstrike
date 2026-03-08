@@ -105,10 +105,19 @@ pw screenshot --filename "$overlay_screenshot" >/dev/null
 pw eval '() => document.body.innerText.slice(0, 4000)' >"$overlay_text_file"
 
 grep -iq "huntronomer" "$overlay_text_file"
-grep -iq "open command deck" "$overlay_text_file"
-grep -iq "autonomous threat hunting command" "$overlay_text_file"
+grep -iq "runtime security workbench" "$overlay_text_file"
+grep -iq "start a hunt" "$overlay_text_file"
 
-pw press Enter >/dev/null
+pw eval '() => {
+  const button = Array.from(document.querySelectorAll("button")).find((element) =>
+    element.textContent?.toLowerCase().includes("start a hunt"),
+  );
+  if (!button) {
+    throw new Error("Start a hunt button not found");
+  }
+  button.click();
+  return true;
+}' >/dev/null
 sleep 1
 
 pw snapshot --filename "$snapshot_file" >/dev/null
@@ -117,6 +126,7 @@ pw eval '() => document.body.innerText.slice(0, 4000)' >"$deck_text_file"
 
 grep -q "LIVE" "$deck_text_file"
 grep -q "REPLAY" "$deck_text_file"
+grep -iq "hunt deck" "$deck_text_file"
 grep -iq "security scene" "$deck_text_file"
 
 pw console error >"$console_file" || true

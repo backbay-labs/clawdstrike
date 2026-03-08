@@ -29,13 +29,7 @@ const TapePanelWrapper = React.lazy(() =>
   })),
 );
 
-const WorkspaceTerminalPanel = React.lazy(() =>
-  import("@/features/workspace/terminal/WorkspaceTerminalPanel").then((m) => ({
-    default: m.WorkspaceTerminalPanel,
-  })),
-);
-
-function makePlaceholder(text: string) {
+function makePlaceholderComponent(text: string): React.FC {
   const Placeholder: React.FC = () =>
     React.createElement(
       "div",
@@ -46,8 +40,35 @@ function makePlaceholder(text: string) {
       text,
     );
   Placeholder.displayName = `PanelPlaceholder(${text})`;
+  return Placeholder;
+}
+
+function makePlaceholder(text: string) {
+  const Placeholder = makePlaceholderComponent(text);
   return React.lazy(() => Promise.resolve({ default: Placeholder }));
 }
+
+const workspaceTerminalModules = import.meta.glob<{
+  WorkspaceTerminalPanel: React.ComponentType<any>;
+}>("../../features/workspace/terminal/WorkspaceTerminalPanel.tsx");
+
+const WorkspaceTerminalFallback = makePlaceholderComponent(
+  "Workspace terminal unavailable in this build",
+);
+
+const WorkspaceTerminalPanel: React.LazyExoticComponent<React.ComponentType<any>> = React.lazy(
+  async (): Promise<{ default: React.ComponentType<any> }> => {
+  const loadTerminalPanel =
+    workspaceTerminalModules["../../features/workspace/terminal/WorkspaceTerminalPanel.tsx"];
+
+  if (!loadTerminalPanel) {
+    return { default: WorkspaceTerminalFallback };
+  }
+
+  const module = await loadTerminalPanel();
+  return { default: module.WorkspaceTerminalPanel };
+  },
+);
 
 const ReceiptsPlaceholder = makePlaceholder("Receipt browser \u2014 coming soon");
 const TasksPlaceholder = makePlaceholder("Task queue \u2014 coming soon");
