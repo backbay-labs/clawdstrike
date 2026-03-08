@@ -58,7 +58,7 @@ export const CrushAdapter: Adapter = {
   },
 
   async isAvailable(): Promise<boolean> {
-    if (commandExists("crush")) {
+    if (await commandExists("crush")) {
       return true
     }
 
@@ -78,7 +78,7 @@ export const CrushAdapter: Adapter = {
     const startTime = Date.now()
 
     // Try CLI first if available
-    const cliAvailable = commandExists("crush")
+    const cliAvailable = await commandExists("crush")
 
     if (cliAvailable) {
       return executeViaCli(workcell, task, signal, startTime)
@@ -117,7 +117,7 @@ async function executeViaCli(
   signal: AbortSignal,
   startTime: number
 ): Promise<AdapterResult> {
-  const crushCli = resolveCommandPath("crush")
+  const crushCli = await resolveCommandPath("crush")
   if (!crushCli) {
     return {
       success: false,

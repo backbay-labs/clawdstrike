@@ -66,7 +66,7 @@ async function pathExists(path: string): Promise<boolean> {
 }
 
 async function detectGitAvailability(cwd: string): Promise<boolean> {
-  if (!commandExists("git")) {
+  if (!(await commandExists("git"))) {
     return false
   }
 

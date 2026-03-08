@@ -80,7 +80,7 @@ export const OpenCodeAdapter: Adapter = {
     const startTime = Date.now()
 
     // Try CLI first if available
-    const cliAvailable = commandExists("opencode")
+    const cliAvailable = await commandExists("opencode")
 
     if (cliAvailable) {
       return executeViaCli(workcell, task, signal, startTime)
@@ -147,7 +147,7 @@ async function executeViaCli(
   signal: AbortSignal,
   startTime: number
 ): Promise<AdapterResult> {
-  const openCodeCli = resolveCommandPath("opencode")
+  const openCodeCli = await resolveCommandPath("opencode")
   if (!openCodeCli) {
     return {
       success: false,

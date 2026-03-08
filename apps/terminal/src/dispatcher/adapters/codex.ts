@@ -76,7 +76,7 @@ export function configure(newConfig: Partial<CodexConfig>): void {
 }
 
 async function checkCodexAuthStatus(): Promise<boolean> {
-  const codexCli = resolveCommandPath("codex")
+  const codexCli = await resolveCommandPath("codex")
   if (!codexCli) {
     return false
   }
@@ -114,7 +114,7 @@ export const CodexAdapter: Adapter = {
   },
 
   async isAvailable(): Promise<boolean> {
-    if (!commandExists("codex")) {
+    if (!(await commandExists("codex"))) {
       return false
     }
 
@@ -138,7 +138,7 @@ export const CodexAdapter: Adapter = {
     signal: AbortSignal
   ): Promise<AdapterResult> {
     const startTime = Date.now()
-    const codexCli = resolveCommandPath("codex")
+    const codexCli = await resolveCommandPath("codex")
     if (!codexCli) {
       return {
         success: false,

@@ -1006,6 +1006,7 @@ mod tests {
                 trigger: "user_approval".to_string(),
                 at: chrono::Utc::now().to_rfc3339(),
             }],
+            origin_runtime: None,
         };
 
         let patch = posture_state_patch(&posture).expect("patch");

@@ -19,7 +19,7 @@ afterEach(() => {
 })
 
 describe("system helpers", () => {
-  test("resolveCommandPath ignores directories in PATH", () => {
+  test("resolveCommandPath ignores directories in PATH", async () => {
     if (process.platform === "win32") {
       return
     }
@@ -33,11 +33,11 @@ describe("system helpers", () => {
 
     process.env.PATH = tempDir
 
-    expect(resolveCommandPath("codex")).toBeNull()
-    expect(commandExists("codex")).toBe(false)
+    await expect(resolveCommandPath("codex")).resolves.toBeNull()
+    await expect(commandExists("codex")).resolves.toBe(false)
   })
 
-  test("resolveCommandPath still returns executable files", () => {
+  test("resolveCommandPath still returns executable files", async () => {
     const tempDir = mkdtempSync(join(tmpdir(), "clawdstrike-system-test-"))
     tempDirs.push(tempDir)
 
@@ -47,7 +47,7 @@ describe("system helpers", () => {
 
     process.env.PATH = tempDir
 
-    expect(resolveCommandPath("codex")).toBe(fakeCommand)
-    expect(commandExists("codex")).toBe(true)
+    await expect(resolveCommandPath("codex")).resolves.toBe(fakeCommand)
+    await expect(commandExists("codex")).resolves.toBe(true)
   })
 })

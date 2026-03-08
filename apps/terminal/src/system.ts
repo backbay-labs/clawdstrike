@@ -1,4 +1,5 @@
-import { accessSync, constants, statSync } from "node:fs"
+import { constants } from "node:fs"
+import { access, stat } from "node:fs/promises"
 import { delimiter, join } from "node:path"
 
 function executableCandidates(command: string): string[] {
@@ -17,25 +18,25 @@ function executableCandidates(command: string): string[] {
   return [command, ...pathext.map((ext) => `${command}${ext.toLowerCase()}`)]
 }
 
-function isExecutable(path: string): boolean {
+async function isExecutable(path: string): Promise<boolean> {
   try {
-    if (!statSync(path).isFile()) {
+    if (!(await stat(path)).isFile()) {
       return false
     }
-    accessSync(path, constants.X_OK)
+    await access(path, constants.X_OK)
     return true
   } catch {
     return false
   }
 }
 
-export function resolveCommandPath(command: string): string | null {
+export async function resolveCommandPath(command: string): Promise<string | null> {
   if (!command) {
     return null
   }
 
   if (command.includes("/") || command.includes("\\")) {
-    return isExecutable(command) ? command : null
+    return (await isExecutable(command)) ? command : null
   }
 
   const pathValue = process.env.PATH
@@ -49,7 +50,7 @@ export function resolveCommandPath(command: string): string | null {
     }
     for (const candidate of executableCandidates(command)) {
       const resolved = join(directory, candidate)
-      if (isExecutable(resolved)) {
+      if (await isExecutable(resolved)) {
         return resolved
       }
     }
@@ -58,8 +59,8 @@ export function resolveCommandPath(command: string): string | null {
   return null
 }
 
-export function commandExists(command: string): boolean {
-  return resolveCommandPath(command) !== null
+export async function commandExists(command: string): Promise<boolean> {
+  return (await resolveCommandPath(command)) !== null
 }
 
 export function homeDirFromEnv(): string | null {

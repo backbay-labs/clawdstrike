@@ -1056,9 +1056,16 @@ impl HushEngine {
         context: &GuardContext,
         posture_state: &mut Option<PostureRuntimeState>,
     ) -> Result<PostureAwareReport> {
-        let mut origin_state = None;
-        self.check_action_report_with_runtime(action, context, posture_state, &mut origin_state)
-            .await
+        let mut origin_state = posture_state
+            .as_ref()
+            .and_then(|state| state.origin_runtime.clone());
+        let report = self
+            .check_action_report_with_runtime(action, context, posture_state, &mut origin_state)
+            .await?;
+        if let Some(state) = posture_state.as_mut() {
+            state.origin_runtime = origin_state;
+        }
+        Ok(report)
     }
 
     pub async fn check_action_report_with_runtime(
@@ -1582,6 +1589,7 @@ fn tool_matches(tool_name: &str, pattern: &str) -> bool {
     }
 }
 
+#[cfg(test)]
 fn intersect_tool_patterns(left: &str, right: &str) -> Option<String> {
     if left == right {
         return Some(left.to_string());
@@ -1612,7 +1620,7 @@ fn intersect_tool_patterns(left: &str, right: &str) -> Option<String> {
 /// Compute the intersection of two [`McpToolConfig`] instances.
 ///
 /// "Most restrictive wins": a tool is only allowed if **both** configs allow it.
-#[allow(dead_code)] // will be used in Phase 1.2+ for projected policy guards
+#[cfg(test)]
 fn intersect_mcp_configs(
     policy_mcp: &crate::guards::McpToolConfig,
     enclave_mcp: &crate::guards::McpToolConfig,
@@ -2819,6 +2827,7 @@ posture:
             entered_at: "2026-01-01T00:00:00Z".to_string(),
             transition_history: Vec::new(),
             budgets: HashMap::new(),
+            origin_runtime: None,
         });
 
         let report = engine
@@ -3833,6 +3842,7 @@ posture:
                 at: chrono::Utc::now().to_rfc3339(),
             }],
             budgets: HashMap::new(),
+            origin_runtime: None,
         });
 
         let report = engine
@@ -4318,6 +4328,70 @@ posture:
                 .map(|counter| counter.limit),
             Some(1)
         );
+    }
+
+    #[tokio::test]
+    async fn test_posture_wrapper_persists_origin_runtime_between_calls() {
+        let posture_yaml = r#"
+version: "1.2.0"
+name: "posture-origin-wrapper"
+posture:
+  initial: standard
+  states:
+    standard:
+      capabilities: [mcp_tool]
+"#;
+        let origins = OriginsConfig {
+            default_behavior: Some(OriginDefaultBehavior::Deny),
+            profiles: vec![OriginProfile {
+                id: "slack-budgeted".to_string(),
+                match_rules: OriginMatch {
+                    provider: Some(OriginProvider::Slack),
+                    ..Default::default()
+                },
+                mcp: None,
+                posture: None,
+                egress: None,
+                data: None,
+                budgets: Some(crate::policy::OriginBudgets {
+                    mcp_tool_calls: Some(1),
+                    ..Default::default()
+                }),
+                bridge_policy: None,
+                explanation: None,
+            }],
+        };
+        let engine =
+            HushEngine::with_policy(policy_with_posture_and_origins(posture_yaml, origins));
+        let args = serde_json::json!({});
+        let context = GuardContext::new().with_origin(test_slack_origin());
+        let mut posture = None;
+
+        let first = engine
+            .check_action_report_with_posture(
+                &GuardAction::McpTool("safe_tool", &args),
+                &context,
+                &mut posture,
+            )
+            .await
+            .unwrap();
+        assert!(first.guard_report.overall.allowed);
+        assert!(posture
+            .as_ref()
+            .and_then(|state| state.origin_runtime.as_ref())
+            .is_some());
+
+        let second = engine
+            .check_action_report_with_posture(
+                &GuardAction::McpTool("safe_tool", &args),
+                &context,
+                &mut posture,
+            )
+            .await
+            .unwrap();
+        assert!(!second.guard_report.overall.allowed);
+        assert_eq!(second.guard_report.overall.guard, "origin_budget");
+        assert!(second.guard_report.overall.message.contains("exhausted"));
     }
 
     #[tokio::test]
