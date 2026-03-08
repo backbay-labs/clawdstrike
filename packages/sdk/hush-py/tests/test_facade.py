@@ -1,11 +1,71 @@
 """Tests for Clawdstrike facade."""
 
+from __future__ import annotations
+
+from typing import Any
+
 import pytest
 
 from clawdstrike import Clawdstrike, Decision, DecisionStatus
-from clawdstrike.exceptions import ConfigurationError
+from clawdstrike.exceptions import ConfigurationError, UnsupportedOriginFeatureError
 from clawdstrike.native import NATIVE_AVAILABLE
 from clawdstrike.policy import Policy, PolicyEngine
+
+
+class _RecordingBackend:
+    name = "recording"
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
+
+    def _allow(self, action: str, *args: Any, ctx: dict[str, Any]) -> dict[str, Any]:
+        self.calls.append((action, args, ctx))
+        return {
+            "overall": {
+                "allowed": True,
+                "guard": action,
+                "severity": "info",
+                "message": "ok",
+                "details": None,
+            },
+            "per_guard": [],
+        }
+
+    def check_file_access(self, path: str, ctx: dict[str, Any]) -> dict[str, Any]:
+        return self._allow("file_access", path, ctx=ctx)
+
+    def check_file_write(self, path: str, content: bytes, ctx: dict[str, Any]) -> dict[str, Any]:
+        return self._allow("file_write", path, content, ctx=ctx)
+
+    def check_shell(self, command: str, ctx: dict[str, Any]) -> dict[str, Any]:
+        return self._allow("shell", command, ctx=ctx)
+
+    def check_network(self, host: str, port: int, ctx: dict[str, Any]) -> dict[str, Any]:
+        return self._allow("egress", host, port, ctx=ctx)
+
+    def check_mcp_tool(
+        self,
+        tool: str,
+        args: dict[str, Any],
+        ctx: dict[str, Any],
+    ) -> dict[str, Any]:
+        return self._allow("mcp_tool", tool, args, ctx=ctx)
+
+    def check_patch(self, path: str, diff: str, ctx: dict[str, Any]) -> dict[str, Any]:
+        return self._allow("patch", path, diff, ctx=ctx)
+
+    def check_untrusted_text(
+        self, source: str | None, text: str, ctx: dict[str, Any],
+    ) -> dict[str, Any]:
+        return self._allow("untrusted_text", source, text, ctx=ctx)
+
+    def check_custom(
+        self, custom_type: str, custom_data: dict[str, Any], ctx: dict[str, Any],
+    ) -> dict[str, Any]:
+        return self._allow(custom_type, custom_data, ctx=ctx)
+
+    def policy_yaml(self) -> str:
+        return ""
 
 
 class TestClawdstrikeWithDefaults:
@@ -67,6 +127,33 @@ class TestClawdstrikeCheckMethods:
         with pytest.raises(AttributeError):
             d.status = DecisionStatus.DENY  # type: ignore[misc]
 
+    def test_check_output_send_routes_canonical_payload_and_origin(self) -> None:
+        backend = _RecordingBackend()
+        cs = Clawdstrike(backend)
+
+        decision = cs.check_output_send(
+            "ship it",
+            target="slack://incident-room",
+            mime_type="text/plain",
+            metadata={"thread_id": "abc"},
+            origin={"provider": "slack", "tenantId": "T123", "actorRole": "owner"},
+        )
+
+        assert decision.allowed
+        action, args, ctx = backend.calls[-1]
+        assert action == "origin.output_send"
+        assert args[0] == {
+            "text": "ship it",
+            "target": "slack://incident-room",
+            "mime_type": "text/plain",
+            "metadata": {"thread_id": "abc"},
+        }
+        assert ctx["origin"] == {
+            "provider": "slack",
+            "tenant_id": "T123",
+            "actor_role": "owner",
+        }
+
 
 class TestClawdstrikeConfigure:
     def test_configure_with_default_policy(self) -> None:
@@ -107,3 +194,15 @@ class TestClawdstrikeBackendAware:
         assert cs._backend.name == "pure_python"
         d = cs.check_file("/app/safe.txt")
         assert d.allowed
+
+    def test_pure_python_backend_rejects_origin_runtime_usage(self) -> None:
+        yaml_str = 'version: "1.1.0"\nname: test\nextends: default\n'
+        policy = Policy.from_yaml_with_extends(yaml_str)
+        cs = Clawdstrike(PolicyEngine(policy))
+
+        with pytest.raises(UnsupportedOriginFeatureError, match="pure-Python backend"):
+            cs.check_command("ls -la", origin={"provider": "slack"})
+
+    def test_from_daemon_rejects_invalid_url(self) -> None:
+        with pytest.raises(ConfigurationError, match="invalid daemon URL"):
+            Clawdstrike.from_daemon("daemon")

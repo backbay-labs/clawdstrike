@@ -66,6 +66,9 @@ func (b *BaseToolInterceptor) BeforeExecute(ctx context.Context, toolName string
 	if b.secCtx != nil && b.secCtx.SessionID != "" {
 		guardCtx = guardCtx.WithSessionID(b.secCtx.SessionID)
 	}
+	if b.secCtx != nil && b.secCtx.Origin != nil {
+		guardCtx = guardCtx.WithOrigin(b.secCtx.Origin)
+	}
 	result := b.engine.CheckAction(action, guardCtx)
 
 	d := guards.DecisionFromResult(result)

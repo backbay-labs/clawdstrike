@@ -33,6 +33,7 @@ type daemonCheckRequest struct {
 	Target     string                 `json:"target"`
 	Content    string                 `json:"content,omitempty"`
 	Args       map[string]interface{} `json:"args,omitempty"`
+	Origin     *guards.OriginContext  `json:"origin,omitempty"`
 	SessionID  string                 `json:"session_id,omitempty"`
 	AgentID    string                 `json:"agent_id,omitempty"`
 }
@@ -121,6 +122,10 @@ func (d *daemonChecker) CheckAction(action guards.GuardAction, guardCtx *guards.
 		}
 	}
 	return daemonFailure(lastFailure)
+}
+
+func (d *daemonChecker) SupportsOriginRuntime() bool {
+	return true
 }
 
 func (d *daemonChecker) doRequest(requestCtx context.Context, body []byte) (guards.GuardResult, bool, string) {
@@ -224,15 +229,43 @@ func toDaemonRequest(action guards.GuardAction, ctx *guards.GuardContext) (daemo
 		req.ActionType = "patch"
 		req.Target = action.Path
 		req.Content = action.Diff
+	case "custom":
+		if action.CustomType != "origin.output_send" {
+			return daemonCheckRequest{}, fmt.Errorf("unsupported daemon custom action: %s", action.CustomType)
+		}
+		payload, err := toDaemonArgs(action.CustomData)
+		if err != nil {
+			return daemonCheckRequest{}, err
+		}
+		text, ok := payload["text"].(string)
+		if !ok || strings.TrimSpace(text) == "" {
+			return daemonCheckRequest{}, fmt.Errorf("origin.output_send requires a non-empty text field")
+		}
+		req.ActionType = "output_send"
+		req.Content = text
+		if target, ok := payload["target"].(string); ok {
+			req.Target = target
+		}
+		args := make(map[string]interface{}, 2)
+		if mimeType, ok := payload["mime_type"]; ok {
+			args["mime_type"] = mimeType
+		}
+		if metadata, ok := payload["metadata"]; ok {
+			args["metadata"] = metadata
+		}
+		if len(args) > 0 {
+			req.Args = args
+		}
 	default:
 		return daemonCheckRequest{}, fmt.Errorf("unsupported action type for daemon mode: %s", action.Type)
 	}
 
-	if req.Target == "" {
+	if req.Target == "" && req.ActionType != "output_send" {
 		return daemonCheckRequest{}, fmt.Errorf("%s requires a non-empty target", action.Type)
 	}
 
 	if ctx != nil {
+		req.Origin = ctx.Origin
 		req.SessionID = ctx.SessionID
 		req.AgentID = ctx.AgentID
 	}

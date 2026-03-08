@@ -143,6 +143,104 @@ func TestFromDaemonSessionForwardsContext(t *testing.T) {
 	}
 }
 
+func TestFromDaemonForwardsOriginContext(t *testing.T) {
+	var gotOrigin map[string]interface{}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if origin, ok := req["origin"].(map[string]interface{}); ok {
+			gotOrigin = origin
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"allowed":  true,
+			"guard":    "daemon",
+			"severity": "info",
+			"message":  "ok",
+		})
+	}))
+	defer srv.Close()
+
+	cs, err := FromDaemon(srv.URL)
+	if err != nil {
+		t.Fatalf("FromDaemon: %v", err)
+	}
+
+	decision := cs.CheckWithContext(
+		guards.McpTool("read_file", map[string]interface{}{"path": "/tmp/example.txt"}),
+		guards.NewContext().WithOrigin(
+			guards.NewOriginContext(guards.OriginProviderSlack).
+				WithTenantID("T123").
+				WithActorRole("owner"),
+		),
+	)
+
+	if decision.Status != guards.StatusAllow {
+		t.Fatalf("expected allow decision, got %s", decision.Status)
+	}
+	if gotOrigin["provider"] != "slack" {
+		t.Fatalf("expected origin provider slack, got %#v", gotOrigin["provider"])
+	}
+	if gotOrigin["tenant_id"] != "T123" {
+		t.Fatalf("expected tenant_id T123, got %#v", gotOrigin["tenant_id"])
+	}
+	if gotOrigin["actor_role"] != "owner" {
+		t.Fatalf("expected actor_role owner, got %#v", gotOrigin["actor_role"])
+	}
+}
+
+func TestFromDaemonOutputSendUsesDaemonActionType(t *testing.T) {
+	var got map[string]interface{}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"allowed":  true,
+			"guard":    "origin",
+			"severity": "warning",
+			"message":  "approval required",
+		})
+	}))
+	defer srv.Close()
+
+	cs, err := FromDaemon(srv.URL)
+	if err != nil {
+		t.Fatalf("FromDaemon: %v", err)
+	}
+
+	decision := cs.Check(
+		guards.NewOutputSendPayload("ship it").
+			WithTarget("slack://incident-room").
+			WithMimeType("text/plain").
+			WithMetadata(map[string]interface{}{"thread_id": "abc"}).
+			GuardAction(),
+	)
+
+	if decision.Status != guards.StatusWarn {
+		t.Fatalf("expected warn decision, got %s", decision.Status)
+	}
+	if got["action_type"] != "output_send" {
+		t.Fatalf("expected action_type output_send, got %#v", got["action_type"])
+	}
+	if got["target"] != "slack://incident-room" {
+		t.Fatalf("expected output target, got %#v", got["target"])
+	}
+	if got["content"] != "ship it" {
+		t.Fatalf("expected output content, got %#v", got["content"])
+	}
+	args, ok := got["args"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected args object, got %#v", got["args"])
+	}
+	if args["mime_type"] != "text/plain" {
+		t.Fatalf("expected mime_type text/plain, got %#v", args["mime_type"])
+	}
+}
+
 func TestFromDaemonNetworkEgressUsesDaemonActionType(t *testing.T) {
 	var gotActionType string
 	var gotTarget string
@@ -200,6 +298,75 @@ func TestFromDaemonFailsClosedOnTransportError(t *testing.T) {
 	}
 	if !strings.Contains(decision.Message, "Daemon check failed") {
 		t.Fatalf("expected daemon error message, got %q", decision.Message)
+	}
+}
+
+func TestSessionCheckWithContextForwardsOriginToDaemon(t *testing.T) {
+	var gotOrigin map[string]interface{}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if origin, ok := req["origin"].(map[string]interface{}); ok {
+			gotOrigin = origin
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"allowed":  true,
+			"guard":    "daemon",
+			"severity": "info",
+			"message":  "ok",
+		})
+	}))
+	defer srv.Close()
+
+	cs, err := FromDaemon(srv.URL)
+	if err != nil {
+		t.Fatalf("FromDaemon: %v", err)
+	}
+
+	session := cs.Session(SessionOptions{ID: "sess-ctx", AgentID: "agent-ctx"})
+	decision := session.CheckWithContext(
+		guards.FileAccess("/tmp/example.txt"),
+		guards.NewContext().WithOrigin(
+			guards.NewOriginContext(guards.OriginProviderGitHub).WithSpaceID("repo-1"),
+		),
+	)
+
+	if decision.Status != guards.StatusAllow {
+		t.Fatalf("expected allow decision, got %s", decision.Status)
+	}
+	if gotOrigin["provider"] != "github" {
+		t.Fatalf("expected github provider, got %#v", gotOrigin["provider"])
+	}
+	if gotOrigin["space_id"] != "repo-1" {
+		t.Fatalf("expected repo-1 space_id, got %#v", gotOrigin["space_id"])
+	}
+}
+
+func TestSessionCheckWithContextFailsClosedForLocalOriginUsage(t *testing.T) {
+	cs, err := WithDefaults("default")
+	if err != nil {
+		t.Fatalf("WithDefaults: %v", err)
+	}
+
+	session := cs.Session(SessionOptions{ID: "sess-local"})
+	decision := session.CheckWithContext(
+		guards.FileAccess("/tmp/example.txt"),
+		guards.NewContext().WithOrigin(
+			guards.NewOriginContext(guards.OriginProviderSlack),
+		),
+	)
+
+	if decision.Status != guards.StatusDeny {
+		t.Fatalf("expected deny decision, got %s", decision.Status)
+	}
+	if decision.Guard != "origin" {
+		t.Fatalf("expected origin guard, got %q", decision.Guard)
+	}
+	if !strings.Contains(decision.Message, "daemon-backed") {
+		t.Fatalf("expected daemon-backed guidance, got %q", decision.Message)
 	}
 }
 

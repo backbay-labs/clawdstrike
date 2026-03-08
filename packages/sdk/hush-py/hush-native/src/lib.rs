@@ -368,6 +368,13 @@ fn build_guard_context(ctx: Option<&Bound<'_, PyDict>>) -> PyResult<clawdstrike:
                 .map_err(|e| PyValueError::new_err(format!("Invalid metadata JSON: {}", e)))?;
             gc.metadata = Some(value);
         }
+        if let Some(v) = d.get_item("origin")? {
+            let json_mod = PyModule::import(d.py(), "json")?;
+            let json_str: String = json_mod.call_method1("dumps", (v,))?.extract()?;
+            let origin: clawdstrike::OriginContext = serde_json::from_str(&json_str)
+                .map_err(|e| PyValueError::new_err(format!("Invalid origin JSON: {}", e)))?;
+            gc = gc.with_origin(origin);
+        }
     }
     Ok(gc)
 }
