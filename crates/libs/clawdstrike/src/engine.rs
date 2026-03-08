@@ -17,7 +17,9 @@ use crate::guards::{
     CustomGuardRegistry, Guard, GuardAction, GuardContext, GuardResult, McpDefaultAction, Severity,
 };
 use crate::origin::OriginContext;
-use crate::origin_runtime::{OriginFingerprint, OriginRuntimeState};
+use crate::origin_runtime::{
+    normalize_origin_budgets, origin_budget_counters, OriginFingerprint, OriginRuntimeState,
+};
 use crate::output_sanitizer::OutputSanitizer;
 use crate::pipeline::{builtin_stage_for_guard_name, EvaluationPath, EvaluationStage};
 use crate::policy::{OriginDefaultBehavior, Policy, PolicyGuards, RuleSet};
@@ -457,10 +459,6 @@ impl HushEngine {
     ) -> Result<PreparedEvaluation> {
         let mut effective_context = context.clone();
 
-        if self.policy.origins.is_some() && effective_context.origin.is_none() {
-            effective_context.enclave = None;
-        }
-
         if let Some(origins_config) = self.policy.origins.as_ref() {
             match effective_context.origin.as_ref() {
                 Some(origin) => {
@@ -798,6 +796,9 @@ impl HushEngine {
             ));
         }
 
+        // A non-empty allow list is the primary gate. Once a tool is
+        // explicitly allowed, only block-list and confirmation checks still
+        // apply; `default_action` is only consulted when no allow list exists.
         if !enclave_mcp.allow.is_empty()
             && !enclave_mcp.allow.iter().any(|a| tool_matches(tool_name, a))
         {
@@ -1669,38 +1670,6 @@ fn origin_budget_limit(budgets: &crate::policy::OriginBudgets, key: &str) -> Opt
         "egress_calls" => budgets.egress_calls,
         "shell_commands" => budgets.shell_commands,
         _ => None,
-    }
-}
-
-fn origin_budget_counters(
-    budgets: Option<&crate::policy::OriginBudgets>,
-) -> HashMap<String, PostureBudgetCounter> {
-    let mut counters = HashMap::new();
-    let Some(budgets) = budgets else {
-        return counters;
-    };
-
-    for key in ["mcp_tool_calls", "egress_calls", "shell_commands"] {
-        if let Some(limit) = origin_budget_limit(budgets, key) {
-            counters.insert(key.to_string(), PostureBudgetCounter { used: 0, limit });
-        }
-    }
-
-    counters
-}
-
-fn normalize_origin_budgets(state: &mut OriginRuntimeState) {
-    let configured = origin_budget_counters(state.current_enclave.budgets.as_ref());
-    state.budgets.retain(|key, _| configured.contains_key(key));
-    for (key, desired) in configured {
-        let counter = state.budgets.entry(key).or_insert(PostureBudgetCounter {
-            used: 0,
-            limit: desired.limit,
-        });
-        counter.limit = desired.limit;
-        if counter.used > counter.limit {
-            counter.used = counter.limit;
-        }
     }
 }
 
@@ -3313,6 +3282,44 @@ origins:
     }
 
     #[tokio::test]
+    async fn test_pre_resolved_enclave_is_preserved_without_origin_for_minimal_profile() {
+        let policy = policy_with_origins(OriginsConfig {
+            default_behavior: Some(OriginDefaultBehavior::MinimalProfile),
+            profiles: vec![],
+        });
+        let engine = HushEngine::with_policy(policy);
+        let context = GuardContext::new().with_enclave(manual_enclave("manual-pre-set", None));
+
+        let report = engine
+            .check_action_report(&GuardAction::FileAccess("/app/src/main.rs"), &context)
+            .await
+            .unwrap();
+
+        assert!(report.overall.allowed);
+        let metadata = report.metadata.as_ref().expect("metadata");
+        let enclave = metadata.enclave.as_ref().expect("enclave metadata");
+        assert_eq!(enclave.profile_id.as_deref(), Some("manual-pre-set"));
+    }
+
+    #[tokio::test]
+    async fn test_origin_required_still_denies_without_origin_even_with_pre_resolved_enclave() {
+        let policy = policy_with_origins(OriginsConfig {
+            default_behavior: Some(OriginDefaultBehavior::Deny),
+            profiles: vec![],
+        });
+        let engine = HushEngine::with_policy(policy);
+        let context = GuardContext::new().with_enclave(manual_enclave("manual-pre-set", None));
+
+        let report = engine
+            .check_action_report(&GuardAction::FileAccess("/app/src/main.rs"), &context)
+            .await
+            .unwrap();
+
+        assert!(!report.overall.allowed);
+        assert_eq!(report.overall.guard, "origin_required");
+    }
+
+    #[tokio::test]
     async fn test_receipt_contains_origin_metadata() {
         let mcp = crate::guards::McpToolConfig {
             enabled: true,
@@ -3472,6 +3479,38 @@ origins:
             .unwrap();
         assert!(!report.overall.allowed);
         assert_eq!(report.overall.guard, "enclave");
+    }
+
+    #[tokio::test]
+    async fn test_enclave_allow_list_can_still_require_confirmation() {
+        let mcp = crate::guards::McpToolConfig {
+            enabled: true,
+            block: vec![],
+            allow: vec!["read_file".to_string()],
+            require_confirmation: vec!["read_file".to_string()],
+            default_action: Some(McpDefaultAction::Block),
+            ..Default::default()
+        };
+
+        let origins = OriginsConfig {
+            default_behavior: Some(OriginDefaultBehavior::Deny),
+            profiles: vec![slack_profile_with_mcp("slack-confirm", mcp)],
+        };
+        let policy = policy_with_origins(origins);
+        let engine = HushEngine::with_policy(policy);
+
+        let context = GuardContext::new().with_origin(test_slack_origin());
+        let args = serde_json::json!({});
+
+        let report = engine
+            .check_action_report(&GuardAction::McpTool("read_file", &args), &context)
+            .await
+            .unwrap();
+
+        assert!(!report.overall.allowed);
+        assert_eq!(report.overall.guard, "enclave");
+        assert_eq!(report.overall.severity, Severity::Warning);
+        assert!(report.overall.message.contains("requires confirmation"));
     }
 
     #[tokio::test]
