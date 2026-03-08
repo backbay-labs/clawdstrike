@@ -1,4 +1,4 @@
-import { accessSync, constants } from "node:fs"
+import { accessSync, constants, statSync } from "node:fs"
 import { delimiter, join } from "node:path"
 
 function executableCandidates(command: string): string[] {
@@ -19,6 +19,9 @@ function executableCandidates(command: string): string[] {
 
 function isExecutable(path: string): boolean {
   try {
+    if (!statSync(path).isFile()) {
+      return false
+    }
     accessSync(path, constants.X_OK)
     return true
   } catch {

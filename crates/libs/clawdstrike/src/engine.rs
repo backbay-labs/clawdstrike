@@ -587,15 +587,12 @@ impl HushEngine {
                                         return Ok(PreparedEvaluation::Complete(Box::new(report)));
                                     }
                                 }
+                                let budget_counters =
+                                    origin_budget_counters(current_enclave.budgets.as_ref());
                                 *origin_state = Some(OriginRuntimeState::new(
                                     origin,
                                     current_enclave,
-                                    origin_budget_counters(
-                                        effective_context
-                                            .enclave
-                                            .as_ref()
-                                            .and_then(|enclave| enclave.budgets.as_ref()),
-                                    ),
+                                    budget_counters,
                                 ));
                             } else if let Some(existing) = origin_state.as_mut() {
                                 existing.current_origin = origin;
@@ -604,15 +601,12 @@ impl HushEngine {
                                 normalize_origin_budgets(existing);
                             }
                         } else {
+                            let budget_counters =
+                                origin_budget_counters(current_enclave.budgets.as_ref());
                             *origin_state = Some(OriginRuntimeState::new(
                                 origin,
                                 current_enclave,
-                                origin_budget_counters(
-                                    effective_context
-                                        .enclave
-                                        .as_ref()
-                                        .and_then(|enclave| enclave.budgets.as_ref()),
-                                ),
+                                budget_counters,
                             ));
                         }
                     }
@@ -935,7 +929,16 @@ impl HushEngine {
             .and_then(|budgets| origin_budget_limit(budgets, budget_key));
         let limit = configured?;
 
-        let origin_state = origin_state?;
+        let Some(origin_state) = origin_state else {
+            return Some(GuardResult::block(
+                "origin_budget",
+                Severity::Error,
+                format!(
+                    "origin budget '{}' requires session runtime state (limit={limit})",
+                    budget_key
+                ),
+            ));
+        };
 
         let Some(runtime) = origin_state.as_ref() else {
             return Some(GuardResult::block(
@@ -3259,7 +3262,7 @@ origins:
     }
 
     #[tokio::test]
-    async fn test_origin_budget_is_skipped_on_stateless_api_path() {
+    async fn test_origin_budget_blocks_on_stateless_api_path() {
         let policy = policy_with_origins(OriginsConfig {
             default_behavior: Some(OriginDefaultBehavior::Deny),
             profiles: vec![OriginProfile {
@@ -3288,16 +3291,12 @@ origins:
             .check_action_report(&GuardAction::McpTool("safe_tool", &args), &context)
             .await
             .unwrap();
-        assert!(
-            report.overall.allowed,
-            "stateless API should skip origin budget enforcement when runtime tracking is inactive"
-        );
-
-        let second = engine
-            .check_action_report(&GuardAction::McpTool("safe_tool", &args), &context)
-            .await
-            .unwrap();
-        assert!(second.overall.allowed);
+        assert!(!report.overall.allowed);
+        assert_eq!(report.overall.guard, "origin_budget");
+        assert!(report
+            .overall
+            .message
+            .contains("requires session runtime state"));
     }
 
     #[tokio::test]
@@ -4218,6 +4217,107 @@ posture:
         let github_ctx = GuardContext::new().with_origin(test_github_origin());
         let report = check_with_origin_runtime(&engine, &github_ctx, &mut origin_state).await;
         assert!(report.overall.allowed);
+    }
+
+    #[tokio::test]
+    async fn test_cross_origin_bridge_reinitializes_budgets_from_target_enclave() {
+        let bridge = BridgePolicy {
+            allow_cross_origin: true,
+            allowed_targets: vec![BridgeTarget {
+                provider: Some(OriginProvider::GitHub),
+                space_type: None,
+                tags: vec![],
+                visibility: None,
+            }],
+            require_approval: false,
+        };
+        let origins = OriginsConfig {
+            default_behavior: Some(OriginDefaultBehavior::Deny),
+            profiles: vec![
+                OriginProfile {
+                    id: "slack-source".to_string(),
+                    match_rules: OriginMatch {
+                        provider: Some(OriginProvider::Slack),
+                        ..Default::default()
+                    },
+                    mcp: None,
+                    posture: None,
+                    egress: None,
+                    data: None,
+                    budgets: Some(crate::policy::OriginBudgets {
+                        mcp_tool_calls: Some(5),
+                        ..Default::default()
+                    }),
+                    bridge_policy: Some(bridge),
+                    explanation: None,
+                },
+                OriginProfile {
+                    id: "github-target".to_string(),
+                    match_rules: OriginMatch {
+                        provider: Some(OriginProvider::GitHub),
+                        ..Default::default()
+                    },
+                    mcp: None,
+                    posture: None,
+                    egress: None,
+                    data: None,
+                    budgets: Some(crate::policy::OriginBudgets {
+                        mcp_tool_calls: Some(1),
+                        ..Default::default()
+                    }),
+                    bridge_policy: None,
+                    explanation: None,
+                },
+            ],
+        };
+        let engine = HushEngine::with_policy(policy_with_origins(origins));
+        let args = serde_json::json!({});
+        let mut posture_state = None;
+        let mut origin_state = None;
+
+        let slack_ctx = GuardContext::new().with_origin(test_slack_origin());
+        let slack = engine
+            .check_action_report_with_runtime(
+                &GuardAction::McpTool("safe_tool", &args),
+                &slack_ctx,
+                &mut posture_state,
+                &mut origin_state,
+            )
+            .await
+            .unwrap();
+        assert!(slack.guard_report.overall.allowed);
+        assert_eq!(
+            origin_state
+                .as_ref()
+                .and_then(|state| state.budgets.get("mcp_tool_calls"))
+                .map(|counter| counter.limit),
+            Some(5)
+        );
+
+        let github_ctx = GuardContext::new().with_origin(test_github_origin());
+        let github = engine
+            .check_action_report_with_runtime(
+                &GuardAction::McpTool("safe_tool", &args),
+                &github_ctx,
+                &mut posture_state,
+                &mut origin_state,
+            )
+            .await
+            .unwrap();
+        assert!(github.guard_report.overall.allowed);
+        assert_eq!(
+            origin_state
+                .as_ref()
+                .and_then(|state| state.current_enclave.profile_id.as_deref()),
+            Some("github-target")
+        );
+        assert_eq!(
+            origin_state
+                .as_ref()
+                .and_then(|state| state.budgets.get("mcp_tool_calls"))
+                .map(|counter| counter.limit),
+            Some(1)
+        );
     }
 
     #[tokio::test]

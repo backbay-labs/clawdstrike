@@ -68,6 +68,10 @@ pub enum OriginCommands {
         #[arg(long)]
         sensitivity: Option<String>,
 
+        /// Actor role used for profile matching
+        #[arg(long)]
+        actor_role: Option<String>,
+
         /// Emit machine-readable JSON
         #[arg(long)]
         json: bool,
@@ -119,6 +123,10 @@ pub enum OriginCommands {
         #[arg(long)]
         sensitivity: Option<String>,
 
+        /// Actor role used for profile matching
+        #[arg(long)]
+        actor_role: Option<String>,
+
         /// Emit machine-readable JSON
         #[arg(long)]
         json: bool,
@@ -151,6 +159,7 @@ struct OriginArgs {
     thread_id: Option<String>,
     external_participants: Option<bool>,
     sensitivity: Option<String>,
+    actor_role: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -176,6 +185,7 @@ pub fn cmd_origin(
             external_participants,
             no_external_participants,
             sensitivity,
+            actor_role,
             json,
         } => cmd_resolve(
             &policy_path,
@@ -192,6 +202,7 @@ pub fn cmd_origin(
                     no_external_participants,
                 ),
                 sensitivity,
+                actor_role,
             },
             json,
             remote_extends,
@@ -211,6 +222,7 @@ pub fn cmd_origin(
             external_participants,
             no_external_participants,
             sensitivity,
+            actor_role,
             json,
         } => cmd_explain(
             &policy_path,
@@ -227,6 +239,7 @@ pub fn cmd_origin(
                     no_external_participants,
                 ),
                 sensitivity,
+                actor_role,
             },
             json,
             remote_extends,
@@ -275,6 +288,7 @@ fn build_origin_context(args: &OriginArgs) -> OriginContext {
         thread_id: args.thread_id.clone(),
         external_participants: args.external_participants,
         sensitivity: args.sensitivity.clone(),
+        actor_role: args.actor_role.clone(),
         ..Default::default()
     }
 }
@@ -822,14 +836,19 @@ fn evaluate_single_profile(origin: &OriginContext, profile: &OriginProfile) -> P
         });
     }
 
-    // actor_role — OriginContext never has this field, so always fails
     if let Some(ref rule_role) = rules.actor_role {
-        all_matched = false;
+        let actual = origin.actor_role.as_deref().unwrap_or("(none)");
+        let matched = origin.actor_role.as_deref() == Some(rule_role.as_str());
+        if matched {
+            specificity += 1;
+        } else {
+            all_matched = false;
+        }
         field_results.push(FieldResult {
             field: "actor_role".into(),
-            matched: false,
+            matched,
             expected: rule_role.clone(),
-            actual: "(unavailable)".into(),
+            actual: actual.into(),
         });
     }
 
@@ -1209,6 +1228,7 @@ mod tests {
             thread_id: Some("thread-42".into()),
             external_participants: Some(true),
             sensitivity: Some("high".into()),
+            actor_role: Some("incident_commander".into()),
         };
 
         let ctx = build_origin_context(&args);
@@ -1221,6 +1241,7 @@ mod tests {
         assert_eq!(ctx.thread_id.as_deref(), Some("thread-42"));
         assert_eq!(ctx.external_participants, Some(true));
         assert_eq!(ctx.sensitivity.as_deref(), Some("high"));
+        assert_eq!(ctx.actor_role.as_deref(), Some("incident_commander"));
     }
 
     #[test]
@@ -1235,6 +1256,7 @@ mod tests {
             thread_id: None,
             external_participants: None,
             sensitivity: None,
+            actor_role: None,
         };
 
         let ctx = build_origin_context(&args);
@@ -1256,6 +1278,7 @@ mod tests {
             thread_id: None,
             external_participants: Some(false),
             sensitivity: None,
+            actor_role: None,
         };
 
         let ctx = build_origin_context(&args);
@@ -1290,6 +1313,7 @@ mod tests {
             provider: OriginProvider::Slack,
             visibility: Some(Visibility::Internal),
             tags: vec!["incident".into()],
+            actor_role: Some("incident_commander".into()),
             ..Default::default()
         };
 
@@ -1299,6 +1323,7 @@ mod tests {
                 provider: Some(OriginProvider::Slack),
                 visibility: Some(Visibility::Internal),
                 tags: vec!["incident".into()],
+                actor_role: Some("incident_commander".into()),
                 ..Default::default()
             },
             posture: None,
@@ -1312,9 +1337,41 @@ mod tests {
 
         let eval = evaluate_single_profile(&origin, &profile);
         assert!(eval.matched);
-        assert_eq!(eval.specificity, 3);
-        assert_eq!(eval.field_results.len(), 3);
+        assert_eq!(eval.specificity, 4);
+        assert_eq!(eval.field_results.len(), 4);
         assert!(eval.field_results.iter().all(|r| r.matched));
+    }
+
+    #[test]
+    fn evaluate_single_profile_actor_role_mismatch() {
+        let origin = OriginContext {
+            provider: OriginProvider::Slack,
+            actor_role: Some("viewer".into()),
+            ..Default::default()
+        };
+
+        let profile = OriginProfile {
+            id: "test".into(),
+            match_rules: OriginMatch {
+                provider: Some(OriginProvider::Slack),
+                actor_role: Some("approver".into()),
+                ..Default::default()
+            },
+            posture: None,
+            mcp: None,
+            egress: None,
+            data: None,
+            budgets: None,
+            bridge_policy: None,
+            explanation: None,
+        };
+
+        let eval = evaluate_single_profile(&origin, &profile);
+        assert!(!eval.matched);
+        assert_eq!(eval.field_results.len(), 2);
+        assert_eq!(eval.field_results[1].field, "actor_role");
+        assert!(!eval.field_results[1].matched);
+        assert_eq!(eval.field_results[1].actual, "viewer");
     }
 
     #[test]
