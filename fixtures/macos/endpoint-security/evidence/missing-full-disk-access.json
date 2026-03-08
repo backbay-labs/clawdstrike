@@ -1,0 +1,5 @@
+{
+  "kind": "missing_full_disk_access",
+  "detail": "EndpointSecurity host lacks Full Disk Access, so enforcement health is degraded.",
+  "operator_action": "Grant Full Disk Access to the containing app and relaunch the host."
+}

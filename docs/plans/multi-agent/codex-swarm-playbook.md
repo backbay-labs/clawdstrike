@@ -84,6 +84,16 @@ The scripts use `.codex/swarm/lanes.tsv` and `.codex/swarm/waves.tsv` as the
 source of truth. Raw `git worktree` commands remain a fallback for debugging the
 orchestration flow itself.
 
+The `bootstrap` column in `.codex/swarm/lanes.tsv` is preset-based, not shell
+source. Keep it to reviewed preset IDs such as `cargo-fetch-locked` or
+`cargo-fetch-agent-locked` so the launcher never needs `eval`.
+
+When multiple initiatives share one `*-worktrees` directory, orchestration
+artifacts default to a swarm-specific namespace inferred from the `ORCH` lane
+metadata so stale `final.md`, `review.md`, or `run.pid` files do not collide.
+Override that namespace with `CLAWDSTRIKE_SWARM_NAMESPACE` or set an exact path
+with `CLAWDSTRIKE_SWARM_ORCH_DIR` when needed.
+
 By default they create sibling directories named after the repo, for example:
 
 - `../clawdstrike-sdks-worktrees/`
@@ -149,17 +159,21 @@ codex exec -C ../clawdstrike-sdks-p1a -p swarm-review \
 
 ## Current Seeded Initiative
 
-`.codex/swarm/lanes.tsv` and `.codex/swarm/waves.tsv` are currently seeded for the Huntronomer
-workspace-shell initiative described in:
+`.codex/swarm/lanes.tsv` and `.codex/swarm/waves.tsv` are currently seeded for the macOS
+EndpointSecurity and NetworkExtension implementation initiative described in:
 
-- `docs/plans/clawdstrike/huntronomer/workspace-shell/README.md`
-- `docs/plans/clawdstrike/huntronomer/workspace-shell/roadmap.md`
-- `docs/plans/clawdstrike/huntronomer/workspace-shell/swarm-plan.md`
-- `docs/specs/17-huntronomer-workspace-services.md`
-- `docs/specs/18-huntronomer-shell-command-model.md`
+- `docs/plans/clawdstrike/macos-es-ne/swarm-plan.md`
 
-Older dispatch and fleet-security lane maps remain valid examples, but they are not the active
-launcher target anymore.
+The current seeded wave order is deliberately serialized:
+
+- containing-app host foundation
+- policy and attestation contract freeze
+- parallel ES and NE implementation
+- packaging, signing, and notarization
+- review gates between each major write wave
+
+Older Huntronomer, dispatch, and fleet-security lane maps remain valid examples, but they are not
+the active launcher target anymore.
 
 ## Guardrails
 

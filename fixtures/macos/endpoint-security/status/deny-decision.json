@@ -1,0 +1,40 @@
+{
+  "authorization_model" : "auth_open_point_in_time",
+  "contract" : "macos_endpoint_security_auth_contract",
+  "counters" : {
+    "auth_open_allow_count" : 0,
+    "auth_open_deny_count" : 1,
+    "deadline_miss_count" : 0,
+    "dropped_event_count" : 0,
+    "notify_open_count" : 0
+  },
+  "degraded_reasons" : [
+
+  ],
+  "evidence_paths" : [
+
+  ],
+  "fail_open_possible" : true,
+  "fd_injection_equivalent" : false,
+  "host_status" : {
+    "approval" : "approved",
+    "endpoint_security" : {
+      "runtime" : {
+        "state" : "active"
+      }
+    },
+    "install_state" : "installed"
+  },
+  "provider_state" : {
+    "active" : true,
+    "approval_status" : "approved",
+    "availability" : "active",
+    "degraded_reasons" : [
+
+    ],
+    "healthy" : true,
+    "installed" : true,
+    "last_healthy_timestamp" : "2026-05-15T06:01:00Z",
+    "provider" : "endpoint_security"
+  }
+}

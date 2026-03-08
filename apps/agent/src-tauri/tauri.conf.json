@@ -28,15 +28,16 @@
     "resources": [
       "resources/*",
       "resources/**/*",
-      "icons/*"
+      "icons/*",
+      "macos/system-extension/**/*"
     ],
     "macOS": {
-      "minimumSystemVersion": "10.15",
+      "minimumSystemVersion": "13.0",
       "frameworks": [],
       "exceptionDomain": "",
       "signingIdentity": null,
       "providerShortName": null,
-      "entitlements": null
+      "entitlements": "macos/system-extension/entitlements/agent-app.entitlements"
     },
     "windows": {
       "certificateThumbprint": null,

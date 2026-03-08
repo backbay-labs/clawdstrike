@@ -70,6 +70,36 @@ jobs:
       - name: Validate version consistency
         run: scripts/release-preflight.sh "${{ needs.resolve-version.outputs.version }}"
 
+      - name: Validate macOS packaging sources are release-capable
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          required=(
+            apps/agent/src-tauri/macos/system-extension/entitlements/agent-app.entitlements
+            apps/agent/src-tauri/macos/system-extension/entitlements/combined-system-extension.entitlements
+            apps/agent/src-tauri/macos/system-extension/plists/agent-packaging-template.plist
+            apps/agent/src-tauri/macos/system-extension/plists/combined-system-extension-template.plist
+            apps/agent/src-tauri/macos/system-extension/profiles/developer-id-profile-template.plist
+          )
+
+          for path in "${required[@]}"; do
+            [[ -f "$path" ]] || {
+              echo "missing macOS packaging asset: $path" >&2
+              exit 1
+            }
+          done
+
+          if grep -R -nE "__[A-Z0-9_]+__" apps/agent/src-tauri/macos/system-extension; then
+            echo "macOS combined-system-extension packaging still contains placeholders; replace them before release." >&2
+            exit 1
+          fi
+
+          if grep -R -n "scaffold_only" apps/agent/src-tauri/macos/system-extension; then
+            echo "macOS packaging sources still declare scaffold_only state; release requires concrete source metadata plus a real embedded system extension bundle." >&2
+            exit 1
+          fi
+
       - name: Run tests
         run: cargo test --workspace
 
@@ -710,6 +740,14 @@ jobs:
     name: Build Agent DMG
     runs-on: macos-latest
     needs: preflight
+    env:
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      NOTARYTOOL_PROFILE: ${{ secrets.NOTARYTOOL_PROFILE }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      CLAWDSTRIKE_REQUIRE_CONCRETE_MACOS_PACKAGING: "1"
+      NOTARIZE_OUT_DIR: ${{ runner.temp }}/clawdstrike-notarization
     steps:
       - uses: actions/checkout@v6
 
@@ -723,9 +761,8 @@ jobs:
       - name: Install tauri-cli
         run: cargo install tauri-cli --locked --version '^2'
 
-      - name: Build agent DMG bundle
-        working-directory: apps/agent
-        run: cargo tauri build --bundles dmg
+      - name: Build and notarize agent app bundle
+        run: bash scripts/notarize-agent-macos.sh
 
       - name: Upload agent DMG artifact
         uses: actions/upload-artifact@v6
@@ -733,6 +770,14 @@ jobs:
           name: clawdstrike-agent-dmg
           path: apps/agent/src-tauri/target/release/bundle/dmg/*.dmg
           if-no-files-found: error
+
+      - name: Upload notarization evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: clawdstrike-agent-notarization
+          path: ${{ env.NOTARIZE_OUT_DIR }}/
+          if-no-files-found: ignore
 
   create-release:
     name: Create GitHub Release

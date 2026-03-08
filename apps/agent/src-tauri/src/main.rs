@@ -17,6 +17,7 @@ mod decision;
 mod enrollment;
 mod events;
 mod integrations;
+mod macos;
 mod nats_client;
 mod nats_subjects;
 mod notifications;
@@ -41,6 +42,7 @@ use daemon::{
 };
 use events::EventManager;
 use integrations::{ClaudeCodeIntegration, McpServer, OpenClawPluginIntegration};
+use macos::{start_status_collector, MacosHostService};
 use notifications::{
     show_hooks_installed_notification, show_openclaw_plugin_installed_notification,
     show_policy_reload_notification, show_startup_notification, show_toggle_notification,
@@ -72,6 +74,7 @@ struct AppState {
     policy_cache: Arc<PolicyCache>,
     audit_queue: Arc<AuditQueue>,
     updater: Arc<HushdUpdater>,
+    macos_host: Arc<MacosHostService>,
     shutdown_tx: broadcast::Sender<()>,
     agent_api_token: String,
     shutdown_complete: Arc<ShutdownComplete>,
@@ -205,6 +208,8 @@ fn main() {
     let policy_cache = Arc::new(PolicyCache::new());
     let audit_queue = Arc::new(AuditQueue::new());
     let updater = Arc::new(HushdUpdater::new(settings.clone(), daemon_manager.clone()));
+    let macos_host = Arc::new(MacosHostService::new());
+    tauri::async_runtime::block_on(macos_host.bootstrap_placeholder_state());
     let (shutdown_tx, _) = broadcast::channel::<()>(4);
     let shutdown_complete = Arc::new(ShutdownComplete::new());
 
@@ -218,6 +223,7 @@ fn main() {
         policy_cache,
         audit_queue,
         updater,
+        macos_host,
         shutdown_tx: shutdown_tx.clone(),
         agent_api_token,
         shutdown_complete: shutdown_complete.clone(),
@@ -235,6 +241,7 @@ fn main() {
         .manage(app_state.policy_cache.clone())
         .manage(app_state.audit_queue.clone())
         .manage(app_state.updater.clone())
+        .manage(app_state.macos_host.clone())
         .manage(app_state.shutdown_tx.clone())
         .manage(app_state.shutdown_complete.clone())
         .manage(AgentApiAuthToken(app_state.agent_api_token.clone()))
@@ -253,6 +260,7 @@ fn main() {
             let policy_cache = app_state.policy_cache.clone();
             let audit_queue = app_state.audit_queue.clone();
             let updater = app_state.updater.clone();
+            let macos_host = app_state.macos_host.clone();
             let settings = app_state.settings.clone();
             let shutdown_tx = app_state.shutdown_tx.clone();
             let agent_api_token = app_state.agent_api_token.clone();
@@ -269,6 +277,7 @@ fn main() {
                     policy_cache,
                     audit_queue,
                     updater,
+                    macos_host,
                     tray_manager,
                     settings,
                     shutdown_tx,
@@ -336,6 +345,7 @@ async fn run_agent<R: Runtime>(
     policy_cache: Arc<PolicyCache>,
     audit_queue: Arc<AuditQueue>,
     updater: Arc<HushdUpdater>,
+    macos_host: Arc<MacosHostService>,
     tray_manager: Arc<TrayManager<R>>,
     settings: Arc<RwLock<Settings>>,
     shutdown_tx: broadcast::Sender<()>,
@@ -351,11 +361,13 @@ async fn run_agent<R: Runtime>(
     // current session ID from shared state each tick (so daemon reconnect replacements do not
     // require restarting the loop).
     session_manager.start_heartbeat(daemon_url.clone(), api_key.clone(), shutdown_tx.subscribe());
+    start_status_collector(app.clone(), macos_host.clone(), shutdown_tx.subscribe());
     {
         let settings_for_local_hb = settings.clone();
         let session_for_local_hb = session_manager.clone();
         let policy_cache_for_local_hb = policy_cache.clone();
         let daemon_for_local_hb = daemon_manager.clone();
+        let macos_host_for_local_hb = macos_host.clone();
         let local_hb_shutdown = shutdown_tx.subscribe();
         tokio::spawn(async move {
             local_heartbeat_loop(
@@ -363,6 +375,7 @@ async fn run_agent<R: Runtime>(
                 session_for_local_hb,
                 policy_cache_for_local_hb,
                 daemon_for_local_hb,
+                macos_host_for_local_hb,
                 local_hb_shutdown,
             )
             .await;
@@ -437,7 +450,10 @@ async fn run_agent<R: Runtime>(
                     rejected = outcome.rejected,
                     "Flushed queued audit events on startup with rejected entries still queued"
                 ),
-                Ok(outcome) => tracing::info!(count = outcome.accepted, "Flushed queued audit events on startup"),
+                Ok(outcome) => tracing::info!(
+                    count = outcome.accepted,
+                    "Flushed queued audit events on startup"
+                ),
                 Err(err) => log_audit_flush_failure(&err, "Failed to flush queued audit events"),
             }
         }
@@ -678,9 +694,15 @@ async fn run_agent<R: Runtime>(
                             )
                         }
                         Ok(outcome) => {
-                            tracing::info!(count = outcome.accepted, "Flushed queued audit events after reconnect")
+                            tracing::info!(
+                                count = outcome.accepted,
+                                "Flushed queued audit events after reconnect"
+                            )
                         }
-                        Err(err) => log_audit_flush_failure(&err, "Failed to flush audit queue after reconnect"),
+                        Err(err) => log_audit_flush_failure(
+                            &err,
+                            "Failed to flush audit queue after reconnect",
+                        ),
                     }
                 }
                 if let Err(err) = policy_cache_for_daemon
@@ -921,6 +943,7 @@ async fn run_agent<R: Runtime>(
             session_manager: session_manager.clone(),
             approval_queue: approval_queue.clone(),
             audit_queue: audit_queue.clone(),
+            macos_host: macos_host.clone(),
             openclaw: openclaw_manager.clone(),
             updater: updater.clone(),
             auth_token: agent_api_token,
@@ -1133,6 +1156,7 @@ async fn local_heartbeat_loop(
     session_manager: Arc<SessionManager>,
     policy_cache: Arc<daemon::PolicyCache>,
     daemon_manager: Arc<DaemonManager>,
+    macos_host: Arc<MacosHostService>,
     mut shutdown_rx: broadcast::Receiver<()>,
 ) {
     let client = reqwest::Client::builder()
@@ -1176,6 +1200,7 @@ async fn local_heartbeat_loop(
                 let session_state = session_manager.state().await;
                 let daemon_status = daemon_manager.status().await;
                 let policy_version = policy_cache.cached_policy_version().await;
+                let macos_host_status = macos_host.snapshot().await;
                 let heartbeat_base = serde_json::json!({
                     "endpoint_agent_id": endpoint_agent_id,
                     "timestamp": chrono::Utc::now().to_rfc3339(),
@@ -1183,6 +1208,7 @@ async fn local_heartbeat_loop(
                     "posture": session_state.posture,
                     "policy_version": policy_version,
                     "daemon_version": daemon_status.version,
+                    "macos_host": macos_host_status,
                 });
 
                 let send_heartbeat = |payload: serde_json::Value| {

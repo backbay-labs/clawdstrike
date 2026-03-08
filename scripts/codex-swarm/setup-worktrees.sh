@@ -31,10 +31,16 @@ fi
 
 swarm_ensure_dirs "$repo_root"
 
+if ! git -C "$repo_root" rev-parse --verify "${base_ref}^{commit}" >/dev/null 2>&1; then
+  printf 'Invalid base ref: %s\n' "$base_ref" >&2
+  exit 1
+fi
+
 for lane in "${lanes[@]}"; do
   swarm_require_lane "$lane" "$repo_root"
   worktree_path="$(swarm_lane_worktree_path "$lane" "$repo_root")"
   branch_name="$(swarm_lane_field "$lane" branch "$repo_root")"
+  swarm_assert_safe_branch_name "$branch_name"
   mkdir -p "$(swarm_lane_orch_dir "$lane" "$repo_root")"
 
   if [[ -e "$worktree_path" ]]; then

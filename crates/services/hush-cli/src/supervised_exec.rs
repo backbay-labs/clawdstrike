@@ -20,6 +20,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use clawdstrike::sandbox::attestation::{ProviderState, SandboxRuntimeState};
 use clawdstrike::sandbox::{SupervisorStats, TimestampedDenial};
 use clawdstrike::{GuardContext, HushEngine};
 use nono::{CapabilitySet, NeverGrantChecker};
@@ -41,15 +42,13 @@ use nono::sandbox::{
 #[cfg(target_os = "linux")]
 use nono::{ApprovalBackend, ApprovalDecision, SupervisorSocket};
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", doc))]
 use crate::sandbox_nono;
 
 /// Result of supervised execution.
 pub struct SupervisedResult {
     pub exit_code: i32,
-    pub sandbox_applied: bool,
-    pub supervised_active: bool,
-    pub sandbox_error: Option<String>,
+    pub runtime: SandboxRuntimeState,
     pub stats: SupervisorStats,
     pub denials: Vec<TimestampedDenial>,
 }
@@ -73,10 +72,23 @@ pub fn spawn_supervised_child(
 ) -> anyhow::Result<SupervisedResult> {
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = (caps, command, env_overrides, engine, context, never_grant);
-        anyhow::bail!(
-            "--supervised requires Linux seccomp user notifications; refusing to fall back to static sandboxing on this platform"
-        );
+        let _ = (engine, context, never_grant);
+        let _ = (caps, command, env_overrides);
+        let runtime = SandboxRuntimeState::supervised_preflight_refused(
+            "macos_authorization_contract_unavailable",
+        )
+        .with_provider_states(macos_provider_states_for_preflight_refusal());
+
+        Ok(SupervisedResult {
+            exit_code: 126,
+            runtime,
+            stats: SupervisorStats {
+                enabled: false,
+                backend: "macos_endpoint_security_auth_contract".to_string(),
+                ..Default::default()
+            },
+            denials: Vec::new(),
+        })
     }
 
     #[cfg(target_os = "linux")]
@@ -229,9 +241,12 @@ pub fn spawn_supervised_child(
 
                 Ok(SupervisedResult {
                     exit_code: sandbox_nono::exit_code_from_status(status),
-                    sandbox_applied,
-                    supervised_active: sandbox_applied && notify_fd_received,
-                    sandbox_error,
+                    runtime: SandboxRuntimeState::supervised_mode(
+                        sandbox_applied,
+                        sandbox_applied && notify_fd_received,
+                        sandbox_error,
+                    )
+                    .with_deadline_miss_count(stats.deadline_miss_count),
                     stats,
                     denials,
                 })
@@ -335,6 +350,7 @@ fn run_linux_supervisor_loop(
                 let _ = deny_notif(notify_fd.as_raw_fd(), notif.id);
             }
             Ok(ApprovalDecision::Timeout) => {
+                stats.deadline_miss_count = stats.deadline_miss_count.saturating_add(1);
                 continue_denial(
                     &mut stats,
                     &mut denials,
@@ -360,6 +376,21 @@ fn run_linux_supervisor_loop(
     }
 
     (stats, denials)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn macos_provider_states_for_preflight_refusal() -> Vec<ProviderState> {
+    vec![
+        ProviderState::unavailable_without_approval(
+            "seatbelt",
+            "sandbox_not_invoked_due_to_supervised_preflight_refusal",
+        ),
+        ProviderState::unknown(
+            "endpoint_security",
+            "macos_authorization_contract_unavailable",
+        ),
+        ProviderState::unknown("network_extension", "provider_state_unknown"),
+    ]
 }
 
 #[cfg(target_os = "linux")]

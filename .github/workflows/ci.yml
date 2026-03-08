@@ -245,8 +245,27 @@ jobs:
       - name: Check desktop Tauri crate
         run: cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
 
-      - name: Check agent Tauri crate
-        run: cargo check --manifest-path apps/agent/src-tauri/Cargo.toml
+      - name: Check agent macOS packaging sources
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          required=(
+            apps/agent/src-tauri/macos/system-extension/entitlements/agent-app.entitlements
+            apps/agent/src-tauri/macos/system-extension/entitlements/combined-system-extension.entitlements
+            apps/agent/src-tauri/macos/system-extension/plists/agent-packaging-template.plist
+            apps/agent/src-tauri/macos/system-extension/plists/combined-system-extension-template.plist
+            apps/agent/src-tauri/macos/system-extension/profiles/developer-id-profile-template.plist
+          )
+
+          for path in "${required[@]}"; do
+            [[ -f "$path" ]] || {
+              echo "missing macOS packaging asset: $path" >&2
+              exit 1
+            }
+          done
+
+          CLAWDSTRIKE_VALIDATE_MACOS_PACKAGING=1 cargo check --manifest-path apps/agent/src-tauri/Cargo.toml
 
   desktop-frontend:
     name: Desktop Frontend

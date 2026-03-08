@@ -1,0 +1,35 @@
+{
+  "approval" : "approved",
+  "attestation_state" : {
+    "active" : false,
+    "approval_status" : "approved",
+    "availability" : "inactive",
+    "degraded_reasons" : [
+      "provider_failed"
+    ],
+    "healthy" : false,
+    "installed" : true,
+    "provider" : "network_extension"
+  },
+  "backend_hint" : "legacy_proxy_only_runtime",
+  "counters" : {
+    "dropped_verdicts" : 0,
+    "flows_blocked" : 0,
+    "flows_observed" : 0,
+    "remediation_requests" : 0
+  },
+  "host_status" : {
+    "runtime" : {
+      "state" : "inactive"
+    }
+  },
+  "install_state" : "installed",
+  "policy_synced" : false,
+  "provider_kind" : "content_filter",
+  "selection_evidence" : {
+    "backend_hint" : "legacy_proxy_only_runtime",
+    "effective_provider" : "content_filter",
+    "exception_required" : false,
+    "requested_provider" : "content_filter"
+  }
+}

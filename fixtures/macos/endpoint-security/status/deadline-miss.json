@@ -1,0 +1,46 @@
+{
+  "authorization_model" : "auth_open_point_in_time",
+  "contract" : "macos_endpoint_security_auth_contract",
+  "counters" : {
+    "auth_open_allow_count" : 0,
+    "auth_open_deny_count" : 1,
+    "deadline_miss_count" : 1,
+    "dropped_event_count" : 0,
+    "notify_open_count" : 0
+  },
+  "degraded_reasons" : [
+    "authorization_deadline_missed",
+    "live_authorization_signal_missing"
+  ],
+  "evidence_paths" : [
+    {
+      "detail" : "Synthetic over-deadline AUTH_OPEN path proving fail-open risk.",
+      "kind" : "deadline_miss",
+      "path" : "fixtures/macos/endpoint-security/evidence/deadline-miss.json"
+    }
+  ],
+  "fail_open_possible" : true,
+  "fd_injection_equivalent" : false,
+  "host_status" : {
+    "approval" : "approved",
+    "endpoint_security" : {
+      "runtime" : {
+        "reason" : "authorization_deadline_missed",
+        "state" : "degraded"
+      }
+    },
+    "install_state" : "installed"
+  },
+  "provider_state" : {
+    "active" : true,
+    "approval_status" : "approved",
+    "availability" : "degraded",
+    "degraded_reasons" : [
+      "authorization_deadline_missed",
+      "live_authorization_signal_missing"
+    ],
+    "healthy" : false,
+    "installed" : true,
+    "provider" : "endpoint_security"
+  }
+}

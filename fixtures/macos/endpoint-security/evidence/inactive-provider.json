@@ -1,0 +1,5 @@
+{
+  "kind": "inactive_provider",
+  "detail": "Combined system extension is installed but the EndpointSecurity provider is inactive.",
+  "operator_action": "Re-activate the system extension and verify the provider handshake."
+}

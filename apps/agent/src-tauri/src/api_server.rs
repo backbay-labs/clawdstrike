@@ -5,6 +5,11 @@ use crate::approval::{
     ApprovalQueue, ApprovalRequestInput, ApprovalResolveInput, ApprovalStatusResponse,
 };
 use crate::daemon::{AuditQueue, DaemonManager, DaemonStatus};
+use crate::macos::status::{
+    CombinedSystemExtensionStatus, ProviderRuntimeState, SystemExtensionApproval,
+    SystemExtensionInstallState,
+};
+use crate::macos::MacosHostService;
 use crate::openclaw::{
     GatewayDiscoverInput, GatewayRequestInput, GatewayUpsertRequest, ImportGatewayRequest,
     OpenClawManager,
@@ -77,6 +82,7 @@ pub struct AgentApiServerDeps {
     pub session_manager: Arc<SessionManager>,
     pub approval_queue: Arc<ApprovalQueue>,
     pub audit_queue: Arc<AuditQueue>,
+    pub macos_host: Arc<MacosHostService>,
     pub openclaw: OpenClawManager,
     pub updater: Arc<HushdUpdater>,
     pub auth_token: String,
@@ -89,6 +95,7 @@ struct AgentApiState {
     session_manager: Arc<SessionManager>,
     approval_queue: Arc<ApprovalQueue>,
     audit_queue: Arc<AuditQueue>,
+    macos_host: Arc<MacosHostService>,
     openclaw: OpenClawManager,
     updater: Arc<HushdUpdater>,
     auth_token: Arc<StdRwLock<String>>,
@@ -291,6 +298,7 @@ impl AgentApiServer {
                 session_manager: deps.session_manager,
                 approval_queue: deps.approval_queue,
                 audit_queue: deps.audit_queue,
+                macos_host: deps.macos_host,
                 openclaw: deps.openclaw,
                 updater: deps.updater,
                 auth_token: Arc::new(StdRwLock::new(deps.auth_token)),
@@ -1359,6 +1367,7 @@ struct AgentHealthResponse {
     status: &'static str,
     daemon: DaemonStatus,
     session: crate::session::SessionState,
+    macos_host: CombinedSystemExtensionStatus,
     openclaw: serde_json::Value,
     runtime_agents: usize,
     last_policy_version: Option<String>,
@@ -1387,6 +1396,54 @@ struct DaemonEndpointStatus {
     online: Option<bool>,
     #[serde(default)]
     drift: Option<DaemonEndpointDrift>,
+}
+
+fn macos_host_health_status(status: &CombinedSystemExtensionStatus) -> &'static str {
+    let endpoint_active = matches!(
+        status.endpoint_security.runtime,
+        ProviderRuntimeState::Active
+    );
+    let network_active = matches!(
+        status.network_extension.runtime,
+        ProviderRuntimeState::Active
+    );
+    let endpoint_unknown = matches!(
+        status.endpoint_security.runtime,
+        ProviderRuntimeState::Unknown
+    );
+    let network_unknown = matches!(
+        status.network_extension.runtime,
+        ProviderRuntimeState::Unknown
+    );
+    let endpoint_degraded = matches!(
+        status.endpoint_security.runtime,
+        ProviderRuntimeState::Degraded { .. }
+    );
+    let network_degraded = matches!(
+        status.network_extension.runtime,
+        ProviderRuntimeState::Degraded { .. }
+    );
+
+    if status.approval == SystemExtensionApproval::ApprovalBlocked
+        || endpoint_degraded
+        || network_degraded
+    {
+        "degraded"
+    } else if status.install_state == SystemExtensionInstallState::Unknown
+        || status.approval == SystemExtensionApproval::Unknown
+        || endpoint_unknown
+        || network_unknown
+    {
+        "pending"
+    } else if status.install_state == SystemExtensionInstallState::Installed
+        && status.approval == SystemExtensionApproval::Approved
+        && endpoint_active
+        && network_active
+    {
+        "ok"
+    } else {
+        "degraded"
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -1880,6 +1937,7 @@ async fn agent_health(
     let openclaw = state.openclaw.list_gateways().await;
     let runtime_agents = settings_snapshot.runtime_registry.runtimes.len();
     let last_policy_version = cached_policy_version_for_health(&state).await;
+    let macos_host = state.macos_host.snapshot().await;
     let daemon_status = fetch_daemon_endpoint_status_for_health(
         &state,
         &settings_snapshot,
@@ -1903,9 +1961,10 @@ async fn agent_health(
         };
 
     Ok(Json(AgentHealthResponse {
-        status: "ok",
+        status: macos_host_health_status(&macos_host),
         daemon,
         session,
+        macos_host,
         openclaw: serde_json::to_value(openclaw)
             .unwrap_or_else(|_| serde_json::json!({"error":"serialize_failed"})),
         runtime_agents,
@@ -3192,6 +3251,7 @@ mod tests {
             session_manager,
             approval_queue,
             audit_queue,
+            macos_host: Arc::new(MacosHostService::new()),
             openclaw,
             updater,
             auth_token: Arc::new(StdRwLock::new("test-token".to_string())),
@@ -3242,6 +3302,47 @@ mod tests {
             started + POLICY_VERSION_REFRESH_IN_FLIGHT_TIMEOUT + Duration::from_millis(1);
         assert!(cache.mark_refresh_started_if_due(after_timeout));
         assert!(cache.refresh_in_flight);
+    }
+
+    #[test]
+    fn macos_host_health_status_is_pending_for_unknown_state() {
+        assert_eq!(
+            macos_host_health_status(&CombinedSystemExtensionStatus::default()),
+            "pending"
+        );
+    }
+
+    #[test]
+    fn macos_host_health_status_is_degraded_for_blocked_or_inactive_providers() {
+        let blocked = CombinedSystemExtensionStatus {
+            approval: SystemExtensionApproval::ApprovalBlocked,
+            ..CombinedSystemExtensionStatus::default()
+        };
+        assert_eq!(macos_host_health_status(&blocked), "degraded");
+
+        let inactive = CombinedSystemExtensionStatus {
+            install_state: SystemExtensionInstallState::Installed,
+            approval: SystemExtensionApproval::Approved,
+            endpoint_security: crate::macos::status::ProviderStatus::inactive(),
+            network_extension: crate::macos::status::ProviderStatus::inactive(),
+        };
+        assert_eq!(macos_host_health_status(&inactive), "degraded");
+    }
+
+    #[test]
+    fn macos_host_health_status_is_ok_for_fully_active_extensions() {
+        let active = CombinedSystemExtensionStatus {
+            install_state: SystemExtensionInstallState::Installed,
+            approval: SystemExtensionApproval::Approved,
+            endpoint_security: crate::macos::status::ProviderStatus {
+                runtime: ProviderRuntimeState::Active,
+            },
+            network_extension: crate::macos::status::ProviderStatus {
+                runtime: ProviderRuntimeState::Active,
+            },
+        };
+
+        assert_eq!(macos_host_health_status(&active), "ok");
     }
 
     #[test]
@@ -3534,6 +3635,43 @@ mod tests {
             .await
             .unwrap_or_else(|e| panic!("request failed: {e}"));
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn agent_health_route_reports_pending_host_state() {
+        let state = Arc::new(test_state());
+        let app = Router::new()
+            .route("/api/v1/agent/health", get(agent_health))
+            .with_state(state);
+
+        let req = axum::http::Request::builder()
+            .method("GET")
+            .uri("/api/v1/agent/health")
+            .header(AUTHORIZATION, "Bearer test-token")
+            .body(axum::body::Body::empty())
+            .unwrap_or_else(|e| panic!("failed to build request: {e}"));
+        let resp = app
+            .oneshot(req)
+            .await
+            .unwrap_or_else(|e| panic!("request failed: {e}"));
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap_or_else(|e| panic!("failed to read response body: {e}"));
+        let payload: serde_json::Value = serde_json::from_slice(&body)
+            .unwrap_or_else(|e| panic!("failed to decode response body: {e}"));
+        assert_eq!(payload["status"], "pending");
+        assert_eq!(payload["macos_host"]["install_state"], "unknown");
+        assert_eq!(payload["macos_host"]["approval"], "unknown");
+        assert_eq!(
+            payload["macos_host"]["endpoint_security"]["runtime"]["state"],
+            "unknown"
+        );
+        assert_eq!(
+            payload["macos_host"]["network_extension"]["runtime"]["state"],
+            "unknown"
+        );
     }
 
     #[test]

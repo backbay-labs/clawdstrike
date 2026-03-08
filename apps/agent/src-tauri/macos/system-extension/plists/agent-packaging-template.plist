@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>dev.clawdstrike.agent</string>
+  <key>CFBundleDisplayName</key>
+  <string>ClawdStrike Agent</string>
+  <key>ClawdStrikeCombinedSystemExtensionBundleIdentifier</key>
+  <string>dev.clawdstrike.agent.system-extension</string>
+  <key>ClawdStrikePackagingState</key>
+  <string>source_assets_ready</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>13.0</string>
+</dict>
+</plist>

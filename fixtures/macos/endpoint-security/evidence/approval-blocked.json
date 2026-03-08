@@ -1,0 +1,5 @@
+{
+  "kind": "approval_blocked",
+  "detail": "System extension approval is blocked or missing for the EndpointSecurity provider.",
+  "operator_action": "Approve the system extension in System Settings and relaunch the containing app."
+}

@@ -1,7 +1,11 @@
 wave	lanes
-wave0	orch
-wave1	ws1,ws3
-wave2	ws2,ws4
-wave3	ws5,ws6
-wave4	ws7
-wave5	ws8
+wave0	ORCH
+wave1	HOST
+wave2	RHOST
+wave3	POLAT
+wave4	RPOLAT
+wave5	ESINT,NEINT
+wave6	RESINT,RNEINT
+wave7	PKG
+wave8	RPKG
+wave9	ORCH
