@@ -5,3 +5,7 @@ wave2	ws2,ws4
 wave3	ws5,ws6
 wave4	ws7
 wave5	ws8
+sdk-wave0	sdk-orch
+sdk-wave1	sdk-py1,sdk-go1
+sdk-wave2	sdk-py2,sdk-go2
+sdk-wave3	sdk-orch

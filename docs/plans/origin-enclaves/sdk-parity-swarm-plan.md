@@ -97,10 +97,10 @@ Verification:
 
 ## Swarm Metadata Note
 
-This branch intentionally does not modify `.codex/swarm/lanes.tsv` or `.codex/swarm/waves.tsv`.
+Execution now runs with dedicated SDK parity lanes appended to `.codex/swarm/lanes.tsv` and `.codex/swarm/waves.tsv`.
 
-Reason:
+Guardrails:
 
-- those global files are currently seeded for the Huntronomer workspace-shell effort
-- this follow-up only needs local planning artifacts right now
-- global swarm metadata can be added later on a dedicated execution branch if the SDK parity work is actually scheduled into swarm mode
+- the existing Huntronomer lanes remain untouched
+- SDK parity lanes are appended under `sdk-*`
+- shared contract docs and README alignment stay orchestrator-owned even when worker lanes are active
