@@ -156,16 +156,16 @@ codex exec -C ../clawdstrike-sdks-p1a -p swarm-review \
 ## Current Seeded Initiative
 
 `.codex/swarm/lanes.tsv` and `.codex/swarm/waves.tsv` are currently seeded for the Huntronomer
-workspace-shell initiative described in:
+hunt-spirits initiative described in:
 
-- `docs/plans/clawdstrike/huntronomer/workspace-shell/README.md`
-- `docs/plans/clawdstrike/huntronomer/workspace-shell/roadmap.md`
-- `docs/plans/clawdstrike/huntronomer/workspace-shell/swarm-plan.md`
-- `docs/specs/17-huntronomer-workspace-services.md`
-- `docs/specs/18-huntronomer-shell-command-model.md`
+- `docs/plans/clawdstrike/huntronomer/hunt-spirits-roadmap.md`
+- `docs/plans/clawdstrike/huntronomer/hunt-spirits-swarm-plan.md`
+- `docs/plans/clawdstrike/huntronomer/hunt-spirit-creation-flow.md`
+- `docs/plans/clawdstrike/huntronomer/hunt-spirits-3d-workspace-concept.md`
+- `docs/plans/clawdstrike/huntronomer/baia-concept-harvest.md`
 
-Older dispatch and fleet-security lane maps remain valid examples, but they are not the active
-launcher target anymore.
+Older sidebar, workspace-shell, dispatch, and fleet-security lane maps remain valid examples, but
+they are not the active launcher target anymore.
 
 ## Guardrails
 

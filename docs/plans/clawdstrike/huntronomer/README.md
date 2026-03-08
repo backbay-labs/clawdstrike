@@ -25,8 +25,26 @@ changing the product center of gravity from a multi-plugin SDR launcher to:
 
 ## Related Initiatives
 
+- [Intent Gravity Implementation](./intent-gravity-implementation.md) - predictive operator-shell
+  implementation spine for the anticipation layer, sidebar reshaping, staging shelf, and semantic
+  drop routing
+- [Hunt Spirits Concept](./hunt-spirits-concept.md) - proposed identity and behavioral layer for
+  giving hunts a durable operative posture instead of generic icons
+- [Baia Concept Harvest](./baia-concept-harvest.md) - decision filter for what to steal directly,
+  what to translate into Huntronomer, and what to leave behind from Baia
+- [Hunt Spirit Creation Flow](./hunt-spirit-creation-flow.md) - canonical user-facing flow for
+  creating a hunt first, then binding a spirit through thesis, anchors, or quick inference
+- [Hunt Spirits Roadmap](./hunt-spirits-roadmap.md) - phase-by-phase implementation roadmap with
+  ticket slices, dependencies, and acceptance gates for turning spirit into a real desktop program
+- [Hunt Spirits In The 3D Workspace](./hunt-spirits-3d-workspace-concept.md) - proposed spatial
+  architecture for making hunt spirits live in Nexus, Forensics River, and station-aware scenes
+- [Hunt Spirits Swarm Plan](./hunt-spirits-swarm-plan.md) - orchestrator/worker lane map, wave
+  order, verification matrix, and shared-file boundaries for parallel execution
+- [Sidebar Intelligence](./sidebar-intelligence/README.md) - completed/continuing initiative for
+  turning the sidebar into a native anticipatory surface with adjacent-surface reactions and
+  verification
 - [Workspace Shell](./workspace-shell/README.md) - native-backed filesystem, editor, search,
-  terminal, and git planning set for the desktop app; currently the active Codex swarm initiative
+  terminal, and git planning set for the desktop app
 
 ## Source Material
 
