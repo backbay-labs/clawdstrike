@@ -1424,7 +1424,8 @@ fn macos_host_health_status(status: &CombinedSystemExtensionStatus) -> &'static 
         ProviderRuntimeState::Degraded { .. }
     );
 
-    if status.approval == SystemExtensionApproval::ApprovalBlocked
+    if status.install_state == SystemExtensionInstallState::NotInstalled
+        || status.approval == SystemExtensionApproval::ApprovalBlocked
         || endpoint_degraded
         || network_degraded
     {
@@ -3327,6 +3328,12 @@ mod tests {
             ..CombinedSystemExtensionStatus::default()
         };
         assert_eq!(macos_host_health_status(&blocked), "degraded");
+
+        let not_installed = CombinedSystemExtensionStatus {
+            install_state: SystemExtensionInstallState::NotInstalled,
+            ..CombinedSystemExtensionStatus::default()
+        };
+        assert_eq!(macos_host_health_status(&not_installed), "degraded");
 
         let inactive = CombinedSystemExtensionStatus {
             install_state: SystemExtensionInstallState::Installed,

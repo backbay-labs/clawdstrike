@@ -207,23 +207,30 @@ fn merge_samples(
     endpoint_sample: Option<EndpointSecurityStatusSample>,
     network_sample: Option<NetworkExtensionStatusSample>,
 ) -> CombinedSystemExtensionStatus {
-    let mut combined = CombinedSystemExtensionStatus::default();
+    let install_state = match (endpoint_sample.as_ref(), network_sample.as_ref()) {
+        (Some(endpoint_sample), Some(network_sample)) => merge_install_state(
+            endpoint_sample.host_status.install_state,
+            network_sample.install_state,
+        ),
+        _ => SystemExtensionInstallState::Unknown,
+    };
+    let approval = match (endpoint_sample.as_ref(), network_sample.as_ref()) {
+        (Some(endpoint_sample), Some(network_sample)) => {
+            merge_approval_state(endpoint_sample.host_status.approval, network_sample.approval)
+        }
+        _ => SystemExtensionApproval::Unknown,
+    };
 
-    if let Some(endpoint_sample) = endpoint_sample {
-        combined.install_state =
-            merge_install_state(combined.install_state, endpoint_sample.host_status.install_state);
-        combined.approval = merge_approval_state(combined.approval, endpoint_sample.host_status.approval);
-        combined.endpoint_security = endpoint_sample.host_status.endpoint_security;
+    CombinedSystemExtensionStatus {
+        install_state,
+        approval,
+        endpoint_security: endpoint_sample
+            .map(|sample| sample.host_status.endpoint_security)
+            .unwrap_or_else(ProviderStatus::unknown),
+        network_extension: network_sample
+            .map(|sample| sample.host_status)
+            .unwrap_or_else(ProviderStatus::unknown),
     }
-
-    if let Some(network_sample) = network_sample {
-        combined.install_state =
-            merge_install_state(combined.install_state, network_sample.install_state);
-        combined.approval = merge_approval_state(combined.approval, network_sample.approval);
-        combined.network_extension = network_sample.host_status;
-    }
-
-    combined
 }
 
 fn merge_install_state(
@@ -414,6 +421,43 @@ mod tests {
             }
         );
         assert_eq!(combined.network_extension, ProviderStatus::unknown());
+    }
+
+    #[test]
+    fn merge_samples_promotes_consistent_install_and_approval_proof() {
+        let combined = merge_samples(
+            Some(EndpointSecurityStatusSample {
+                host_status: EndpointSecurityHostStatus {
+                    install_state: SystemExtensionInstallState::Installed,
+                    approval: SystemExtensionApproval::Approved,
+                    endpoint_security: ProviderStatus {
+                        runtime: ProviderRuntimeState::Active,
+                    },
+                },
+            }),
+            Some(NetworkExtensionStatusSample {
+                install_state: SystemExtensionInstallState::Installed,
+                approval: SystemExtensionApproval::Approved,
+                host_status: ProviderStatus {
+                    runtime: ProviderRuntimeState::Active,
+                },
+            }),
+        );
+
+        assert_eq!(combined.install_state, SystemExtensionInstallState::Installed);
+        assert_eq!(combined.approval, SystemExtensionApproval::Approved);
+        assert_eq!(
+            combined.endpoint_security,
+            ProviderStatus {
+                runtime: ProviderRuntimeState::Active,
+            }
+        );
+        assert_eq!(
+            combined.network_extension,
+            ProviderStatus {
+                runtime: ProviderRuntimeState::Active,
+            }
+        );
     }
 
     #[test]
