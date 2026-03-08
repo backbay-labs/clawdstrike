@@ -268,7 +268,7 @@ fn resolve_status_tool<R: Runtime>(
         if let Some(tool) = resolve_direct_built_tool(&resource_package, executable) {
             return Some(tool);
         }
-        if resource_package.join("Package.swift").is_file() {
+        if resource_package.join("Package.swift").is_file() && which::which("swift").is_ok() {
             return Some(ToolInvocation::SwiftRun {
                 package_path: resource_package,
                 executable,
