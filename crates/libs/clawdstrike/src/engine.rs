@@ -1066,8 +1066,10 @@ impl HushEngine {
         let report = self
             .check_action_report_with_runtime(action, context, posture_state, &mut origin_state)
             .await?;
-        if let Some(state) = posture_state.as_mut() {
-            state.origin_runtime = origin_state;
+        if let Some(origin_state) = origin_state {
+            let state = posture_state
+                .get_or_insert_with(|| PostureRuntimeState::new("default", HashMap::new()));
+            state.origin_runtime = Some(origin_state);
         }
         Ok(report)
     }
@@ -4402,6 +4404,63 @@ posture:
             .await
             .unwrap();
         assert!(first.guard_report.overall.allowed);
+        assert!(posture
+            .as_ref()
+            .and_then(|state| state.origin_runtime.as_ref())
+            .is_some());
+
+        let second = engine
+            .check_action_report_with_posture(
+                &GuardAction::McpTool("safe_tool", &args),
+                &context,
+                &mut posture,
+            )
+            .await
+            .unwrap();
+        assert!(!second.guard_report.overall.allowed);
+        assert_eq!(second.guard_report.overall.guard, "origin_budget");
+        assert!(second.guard_report.overall.message.contains("exhausted"));
+    }
+
+    #[tokio::test]
+    async fn test_posture_wrapper_persists_origin_runtime_without_posture_program() {
+        let engine = HushEngine::with_policy(policy_with_origins(OriginsConfig {
+            default_behavior: Some(OriginDefaultBehavior::Deny),
+            profiles: vec![OriginProfile {
+                id: "slack-budgeted".to_string(),
+                match_rules: OriginMatch {
+                    provider: Some(OriginProvider::Slack),
+                    ..Default::default()
+                },
+                mcp: None,
+                posture: None,
+                egress: None,
+                data: None,
+                budgets: Some(crate::policy::OriginBudgets {
+                    mcp_tool_calls: Some(1),
+                    ..Default::default()
+                }),
+                bridge_policy: None,
+                explanation: None,
+            }],
+        }));
+        let args = serde_json::json!({});
+        let context = GuardContext::new().with_origin(test_slack_origin());
+        let mut posture = None;
+
+        let first = engine
+            .check_action_report_with_posture(
+                &GuardAction::McpTool("safe_tool", &args),
+                &context,
+                &mut posture,
+            )
+            .await
+            .unwrap();
+        assert!(first.guard_report.overall.allowed);
+        assert_eq!(
+            posture.as_ref().map(|state| state.current_state.as_str()),
+            Some("default")
+        );
         assert!(posture
             .as_ref()
             .and_then(|state| state.origin_runtime.as_ref())
