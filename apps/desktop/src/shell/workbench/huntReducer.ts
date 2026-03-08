@@ -118,6 +118,7 @@ export function huntReducer(state: HuntStore, action: HuntAction): HuntStore {
         caseId: null,
         color: action.payload.color ?? HUNT_COLORS[huntCount % HUNT_COLORS.length],
         icon: action.payload.icon ?? HUNT_ICONS[huntCount % HUNT_ICONS.length],
+        spirit: null,
         semanticAssignments: {},
       };
       return {

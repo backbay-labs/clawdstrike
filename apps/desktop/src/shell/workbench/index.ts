@@ -24,6 +24,7 @@ export { ProofTab } from "./inspector/ProofTab";
 export { CompanionTab } from "./inspector/CompanionTab";
 export { BOTTOM_PANEL_REGISTRY, getBottomPanelEntry } from "./bottomPanelRegistry";
 export type { BottomPanelRegistryEntry } from "./bottomPanelRegistry";
+export * from "./spirit";
 
 export function isWorkbenchV2Enabled(): boolean {
   try {

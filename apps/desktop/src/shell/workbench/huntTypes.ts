@@ -4,6 +4,7 @@
  * Core entities: Hunt, Run, Artifact, Case
  * State containers: HuntDockState, HuntStore
  */
+import type { HuntSpiritState } from "./spirit";
 
 export type HuntStatus = "active" | "paused" | "completed" | "archived";
 export type RunStatus = "running" | "completed" | "failed" | "cancelled";
@@ -59,6 +60,7 @@ export interface Hunt {
   caseId: string | null;
   color: string;
   icon: string;
+  spirit: HuntSpiritState | null;
   semanticAssignments: SemanticAssignmentIndex;
 }
 
@@ -150,6 +152,7 @@ export function createInitialHuntStore(): HuntStore {
       caseId: null,
       color: "#d4a84b",
       icon: "crosshair",
+      spirit: null,
       semanticAssignments: {
         target: ["art_demo_2"],
         evidence: ["art_demo_3"],
@@ -163,6 +166,7 @@ export function createInitialHuntStore(): HuntStore {
       caseId: null,
       color: "#3dbf84",
       icon: "shield",
+      spirit: null,
       semanticAssignments: {
         evidence: ["art_demo_4"],
         target: ["art_demo_5"],
@@ -175,6 +179,7 @@ export function createInitialHuntStore(): HuntStore {
       caseId: null,
       color: "#c45c5c",
       icon: "radar",
+      spirit: null,
       semanticAssignments: {
         evidence: ["art_demo_7"],
         watch: ["art_demo_8"],

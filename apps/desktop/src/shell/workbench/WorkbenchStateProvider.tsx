@@ -15,6 +15,7 @@ import {
 } from "./workbenchState";
 import type { Hunt, HuntStore, HuntDockState, Artifact } from "./huntTypes";
 import { createInitialHuntStore } from "./huntTypes";
+import { normalizeHuntSpiritState } from "./spirit";
 
 const STORAGE_KEY = "huntronomer:workbench:state:v1";
 
@@ -43,6 +44,29 @@ interface WorkbenchContextValue {
 
 const WorkbenchContext = createContext<WorkbenchContextValue | null>(null);
 
+function hydrateHuntStore(persistedHuntStore: Partial<HuntStore>): HuntStore {
+  const seeded = createInitialHuntStore();
+  const hunts = Object.fromEntries(
+    Object.entries({
+      ...seeded.hunts,
+      ...(persistedHuntStore.hunts ?? {}),
+    }).map(([id, hunt]) => [
+      id,
+      {
+        ...hunt,
+        spirit: normalizeHuntSpiritState(hunt.spirit),
+      },
+    ]),
+  ) as Record<string, Hunt>;
+
+  return {
+    ...seeded,
+    ...persistedHuntStore,
+    hunts,
+    dock: { ...seeded.dock, ...persistedHuntStore.dock },
+  };
+}
+
 export function WorkbenchStateProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(workbenchReducer, undefined, () => {
     const persisted = loadPersistedState();
@@ -61,13 +85,7 @@ export function WorkbenchStateProvider({ children }: { children: ReactNode }) {
         case: { ...initial.shellMemory.case, bottomPanel: { ...initial.shellMemory.case.bottomPanel, ...persisted.shellMemory?.case?.bottomPanel }, inspector: { ...initial.shellMemory.case.inspector, ...persisted.shellMemory?.case?.inspector }, lens: persisted.shellMemory?.case?.lens ?? initial.shellMemory.case.lens },
       },
       tabGroups: persisted.tabGroups ?? initial.tabGroups,
-      huntStore: persisted.huntStore
-        ? {
-            ...createInitialHuntStore(),
-            ...persisted.huntStore,
-            dock: { ...createInitialHuntStore().dock, ...persisted.huntStore.dock },
-          }
-        : initial.huntStore,
+      huntStore: persisted.huntStore ? hydrateHuntStore(persisted.huntStore) : initial.huntStore,
     };
   });
 
