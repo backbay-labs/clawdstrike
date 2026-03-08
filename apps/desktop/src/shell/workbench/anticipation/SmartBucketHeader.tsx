@@ -11,6 +11,12 @@ import type { Hunt, HuntStore, ArtifactKind } from "../huntTypes";
 import { groupArtifactsByKind, formatArtifactBreakdown } from "../huntTypes";
 import type { DropRole, DropSemantic } from "./types";
 import { SemanticDropZone } from "./SemanticDropZone";
+import {
+  SpiritActionButton,
+  SpiritConsoleCard,
+  getSpiritActionLabel,
+  getSpiritSecondaryActionLabel,
+} from "../spirit/components";
 
 export interface SmartBucketHeaderProps {
   hunt: Hunt;
@@ -55,6 +61,8 @@ export function SmartBucketHeader({
 
   const caseTitle =
     hunt.caseId ? (huntStore.cases[hunt.caseId]?.title ?? null) : null;
+  const spiritPrimaryAction = getSpiritActionLabel(hunt);
+  const spiritSecondaryAction = getSpiritSecondaryActionLabel(hunt);
 
   const showDropZones = isDragOver && draggedKind !== null && dropRoles.length > 0;
 
@@ -152,6 +160,11 @@ export function SmartBucketHeader({
       {/* Expanded details — only when not showing drop zones */}
       {!collapsed && !showDropZones && (
         <div className="flex flex-col gap-0.5 px-[10px] pb-[6px]">
+          <SpiritConsoleCard
+            hunt={hunt}
+            style={{ marginBottom: 6 }}
+          />
+
           {/* Artifact breakdown */}
           <div
             className="font-mono"
@@ -197,6 +210,8 @@ export function SmartBucketHeader({
           style={{ transition: "opacity 150ms ease" }}
         >
           <QuickActionButton label="Expand" onClick={onToggleCollapse} />
+          <SpiritActionButton label={spiritPrimaryAction} disabled />
+          <SpiritActionButton label={spiritSecondaryAction} disabled />
           <QuickActionButton label="Add to case" />
           <QuickActionButton label="Share" />
         </div>

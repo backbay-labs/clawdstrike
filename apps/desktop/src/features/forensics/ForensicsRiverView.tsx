@@ -18,6 +18,12 @@ import { NexusControlStrip } from "@/features/cyber-nexus/components/NexusContro
 import type { NexusLayoutMode, Strikecell, StrikecellDomainId } from "@/features/cyber-nexus/types";
 import { AgentGlyphOverlay } from "@/features/forensics/components/AgentGlyphOverlay";
 import { AgentOrbHud } from "@/features/forensics/components/AgentOrbHud";
+import { HuntSpiritOverlay } from "@/features/forensics/components/hunt-spirit/HuntSpiritOverlay";
+import {
+  deriveHuntSpiritSceneActor,
+  detectHuntSpiritSceneCue,
+  type HuntSpiritSceneCueEvent,
+} from "@/features/forensics/components/hunt-spirit/runtime";
 import { useAgentCognitionState } from "@/features/forensics/hooks/useAgentCognitionState";
 import { isTauri, openclawGatewayProbe } from "@/services/tauri";
 import {
@@ -26,6 +32,11 @@ import {
   type ShellFocusAgentSessionDetail,
 } from "@/shell/events";
 import { useActiveSession, useSessionActions, useSessions } from "@/shell/sessions";
+import {
+  deriveHuntSpiritRuntimeState,
+  selectActiveHuntSpiritSignalSnapshot,
+} from "@/shell/workbench/spirit";
+import { useWorkbench } from "@/shell/workbench/WorkbenchStateProvider";
 
 type Agent = { id: string; label: string; color?: string };
 type RiverAction = River.RiverAction;
@@ -858,6 +869,7 @@ export function ForensicsRiverView() {
   const { sessionId } = useParams<{ sessionId?: string }>();
   const oc = useOpenClaw();
   const { status: daemonStatus } = useConnection();
+  const { state: workbenchState } = useWorkbench();
   const nexusSessions = useSessions({ appId: "nexus", archived: false });
   const activeSession = useActiveSession();
   const { setActiveSession } = useSessionActions();
@@ -1189,6 +1201,78 @@ export function ForensicsRiverView() {
   const focusedGlyph = React.useMemo(
     () => agentGlyphs.find((glyph) => glyph.isFocused) ?? null,
     [agentGlyphs],
+  );
+  const activeSpiritSnapshot = React.useMemo(
+    () => selectActiveHuntSpiritSignalSnapshot(workbenchState),
+    [workbenchState],
+  );
+  const activeSpiritRuntime = React.useMemo(() => {
+    const likelyIntent = activeSpiritSnapshot?.likelyIntent ?? null;
+    const isAttachMode =
+      likelyIntent === "attach-target" ||
+      likelyIntent === "attach-evidence" ||
+      likelyIntent === "mount" ||
+      likelyIntent === "run-input";
+
+    return deriveHuntSpiritRuntimeState(activeSpiritSnapshot?.boundSpirit ?? null, {
+      currentShell: activeSpiritSnapshot?.currentShell ?? null,
+      currentLens: activeSpiritSnapshot?.currentLens ?? null,
+      activeStationId: openAppId,
+      likelyIntent,
+      confidenceScore: activeSpiritSnapshot?.confidenceScore ?? null,
+      isAttachMode,
+      isActive: true,
+    });
+  }, [activeSpiritSnapshot, openAppId]);
+  const [activeSpiritCue, setActiveSpiritCue] = React.useState<HuntSpiritSceneCueEvent | null>(
+    null,
+  );
+  const previousSpiritSnapshotRef = React.useRef<typeof activeSpiritSnapshot>(null);
+  const previousSpiritStationRef = React.useRef<string | null>(null);
+
+  React.useEffect(() => {
+    const cue = detectHuntSpiritSceneCue({
+      runtime: activeSpiritRuntime,
+      snapshot: activeSpiritSnapshot,
+      previousSnapshot: previousSpiritSnapshotRef.current,
+      activeStationId: openAppId,
+      previousActiveStationId: previousSpiritStationRef.current,
+      nowMs: Date.now(),
+    });
+    if (cue) setActiveSpiritCue(cue);
+    previousSpiritSnapshotRef.current = activeSpiritSnapshot;
+    previousSpiritStationRef.current = openAppId;
+  }, [activeSpiritRuntime, activeSpiritSnapshot, openAppId]);
+
+  React.useEffect(() => {
+    if (!activeSpiritCue) return;
+    const remainingMs = activeSpiritCue.expiresAt - Date.now();
+    if (remainingMs <= 0) {
+      setActiveSpiritCue((current) =>
+        current?.expiresAt === activeSpiritCue.expiresAt ? null : current,
+      );
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setActiveSpiritCue((current) =>
+        current?.expiresAt === activeSpiritCue.expiresAt ? null : current,
+      );
+    }, remainingMs);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [activeSpiritCue]);
+
+  const activeSpiritActor = React.useMemo(
+    () =>
+      deriveHuntSpiritSceneActor({
+        runtime: activeSpiritRuntime,
+        snapshot: activeSpiritSnapshot,
+        activeStationId: openAppId,
+        cue: activeSpiritCue,
+      }),
+    [activeSpiritCue, activeSpiritRuntime, activeSpiritSnapshot, openAppId],
   );
 
   const handleClearFocus = React.useCallback(() => {
@@ -1615,6 +1699,7 @@ export function ForensicsRiverView() {
           showIncidents={sceneFeatureFlags.showIncidents}
         />
 
+        <HuntSpiritOverlay actor={activeSpiritActor} />
         <AgentGlyphOverlay glyphs={agentGlyphs} />
         <AgentOrbHud
           focusedGlyph={focusedGlyph}

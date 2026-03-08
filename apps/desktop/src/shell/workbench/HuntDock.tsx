@@ -24,6 +24,14 @@ import { groupArtifactsByKind, formatArtifactBreakdown } from "./huntTypes";
 import { useDropTarget, useDragState } from "./DragDropContext";
 import { useHoverAnticipation, ProximalAffordance, DRAG_ROLE_MAP, useSidebarWakeAnchor } from "./anticipation";
 import type { DropRole } from "./anticipation";
+import {
+  SpiritActionButton,
+  SpiritGlyph,
+  getSpiritActionLabel,
+  getSpiritBiasLine,
+  getSpiritDetailLine,
+  getSpiritSecondaryActionLabel,
+} from "./spirit/components";
 
 const PILL_SIZE = 32;
 const HOVER_DELAY_MS = 100;
@@ -195,6 +203,10 @@ function HuntPill({
   const activeRun = hunt.runIds
     .map((id) => huntStore.runs[id])
     .find((r) => r?.status === "running") ?? null;
+  const spiritBias = getSpiritBiasLine(hunt);
+  const spiritDetail = getSpiritDetailLine(hunt);
+  const spiritPrimaryAction = getSpiritActionLabel(hunt);
+  const spiritSecondaryAction = getSpiritSecondaryActionLabel(hunt);
 
   // Semantic drop roles for spring-loaded state
   const dropRoles: DropRole[] = (springExpanded && draggedKind)
@@ -309,7 +321,11 @@ function HuntPill({
         onPointerEnter={handleDropTargetPointerEnter}
         onPointerLeave={handleDropTargetPointerLeave}
       >
-        <HuntPillIcon icon={hunt.icon} color={hunt.color} />
+        {hunt.spirit ? (
+          <SpiritGlyph hunt={hunt} size={18} glow={isActive || hovered || isDropHighlight} />
+        ) : (
+          <HuntPillIcon icon={hunt.icon} color={hunt.color} />
+        )}
       </button>
 
       {/* Hover flyout — rendered as portal to escape overflow clipping */}
@@ -331,13 +347,16 @@ function HuntPill({
             transition: "border-color 150ms ease",
           }}
         >
-          {/* Line 1: Title */}
-          <div className="font-mono text-[11px] text-[rgba(232,230,222,0.85)]">{hunt.title}</div>
-          {/* Line 2: Artifact breakdown */}
+          <div className="flex items-center gap-2">
+            <SpiritGlyph hunt={hunt} size={18} glow={Boolean(hunt.spirit)} />
+            <div className="font-mono text-[11px] text-[rgba(232,230,222,0.85)]">{hunt.title}</div>
+          </div>
+          <div className="mt-1 font-mono text-[10px] text-[rgba(213,173,87,0.72)]">
+            {hunt.spirit ? spiritBias : spiritDetail}
+          </div>
           <div className="font-mono text-[10px] text-[rgba(182,183,193,0.5)]">
             {breakdown || `${hunt.artifactIds.length} artifacts`}
           </div>
-          {/* Line 3: Active run or status */}
           <div className="flex items-center gap-1.5 font-mono text-[10px]">
             {activeRun ? (
               <>
@@ -354,6 +373,15 @@ function HuntPill({
               <span className="text-[rgba(182,183,193,0.35)]">{hunt.status}</span>
             )}
           </div>
+          {!springExpanded && (
+            <div
+              className="mt-1.5 flex items-center gap-2 pt-1.5"
+              style={{ borderTop: "1px solid rgba(213,173,87,0.1)" }}
+            >
+              <SpiritActionButton label={spiritPrimaryAction} disabled />
+              <SpiritActionButton label={spiritSecondaryAction} disabled />
+            </div>
+          )}
 
           {/* Spring-loaded semantic drop slots — appear after 300ms drag hover */}
           {springExpanded && dropRoles.length > 0 && (

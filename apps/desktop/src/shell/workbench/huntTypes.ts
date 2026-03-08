@@ -4,7 +4,7 @@
  * Core entities: Hunt, Run, Artifact, Case
  * State containers: HuntDockState, HuntStore
  */
-import type { HuntSpiritState } from "./spirit";
+import { createHuntSpiritState, type HuntSpiritState } from "./spirit";
 
 export type HuntStatus = "active" | "paused" | "completed" | "archived";
 export type RunStatus = "running" | "completed" | "failed" | "cancelled";
@@ -152,7 +152,16 @@ export function createInitialHuntStore(): HuntStore {
       caseId: null,
       color: "#d4a84b",
       icon: "crosshair",
-      spirit: null,
+      spirit: createHuntSpiritState({
+        kind: "forge",
+        bindSource: "quick-bind",
+        bindReason: "Run-heavy hunt with mounted file inputs and active sandbox pressure.",
+        thesis: "Trace the mounted payload path through lateral movement pivots.",
+        anchorArtifactIds: ["art_demo_3", "art_demo_2"],
+        confidenceScore: 84,
+        liveMood: "pressured",
+        boundAt: now - 900_000,
+      }),
       semanticAssignments: {
         target: ["art_demo_2"],
         evidence: ["art_demo_3"],
@@ -166,7 +175,17 @@ export function createInitialHuntStore(): HuntStore {
       caseId: null,
       color: "#3dbf84",
       icon: "shield",
-      spirit: null,
+      spirit: createHuntSpiritState({
+        kind: "lantern",
+        bindSource: "thesis",
+        bindReason: "Receipt-led inquiry with proof and account pivots at the center.",
+        thesis: "Prove credential misuse through receipts and identity pivots.",
+        anchorArtifactIds: ["art_demo_4", "art_demo_5"],
+        confidenceScore: 78,
+        liveMood: "witnessing",
+        isPinned: true,
+        boundAt: now - 1_500_000,
+      }),
       semanticAssignments: {
         evidence: ["art_demo_4"],
         target: ["art_demo_5"],
@@ -179,7 +198,16 @@ export function createInitialHuntStore(): HuntStore {
       caseId: null,
       color: "#c45c5c",
       icon: "radar",
-      spirit: null,
+      spirit: createHuntSpiritState({
+        kind: "loom",
+        bindSource: "anchor-artifacts",
+        bindReason: "Beacon evidence and live watch pressure are clustering around shared infrastructure.",
+        thesis: "Weave beacon evidence into an infrastructure cluster.",
+        anchorArtifactIds: ["art_demo_7", "art_demo_8"],
+        confidenceScore: 71,
+        liveMood: "attuned",
+        boundAt: now - 2_100_000,
+      }),
       semanticAssignments: {
         evidence: ["art_demo_7"],
         watch: ["art_demo_8"],
