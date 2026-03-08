@@ -1579,6 +1579,33 @@ fn tool_matches(tool_name: &str, pattern: &str) -> bool {
     }
 }
 
+fn intersect_tool_patterns(left: &str, right: &str) -> Option<String> {
+    if left == right {
+        return Some(left.to_string());
+    }
+
+    let left_is_wildcard = left.ends_with('*');
+    let right_is_wildcard = right.ends_with('*');
+
+    match (left_is_wildcard, right_is_wildcard) {
+        (false, false) => None,
+        (true, false) => tool_matches(right, left).then(|| right.to_string()),
+        (false, true) => tool_matches(left, right).then(|| left.to_string()),
+        (true, true) => {
+            let left_prefix = left.strip_suffix('*').unwrap_or(left);
+            let right_prefix = right.strip_suffix('*').unwrap_or(right);
+
+            if left_prefix.starts_with(right_prefix) {
+                Some(left.to_string())
+            } else if right_prefix.starts_with(left_prefix) {
+                Some(right.to_string())
+            } else {
+                None
+            }
+        }
+    }
+}
+
 /// Compute the intersection of two [`McpToolConfig`] instances.
 ///
 /// "Most restrictive wins": a tool is only allowed if **both** configs allow it.
@@ -1622,16 +1649,15 @@ fn intersect_mcp_configs(
     } else if enclave_mcp.allow.is_empty() {
         policy_mcp.allow.clone()
     } else {
-        // Use tool_matches for wildcard-aware intersection: a policy entry
-        // is kept if any enclave entry matches it, and vice versa.
         let mut merged = Vec::new();
         for p in &policy_mcp.allow {
-            if enclave_mcp
-                .allow
-                .iter()
-                .any(|e| tool_matches(p, e) || tool_matches(e, p))
-            {
-                merged.push(p.clone());
+            for e in &enclave_mcp.allow {
+                let Some(intersection) = intersect_tool_patterns(p, e) else {
+                    continue;
+                };
+                if !merged.contains(&intersection) {
+                    merged.push(intersection);
+                }
             }
         }
         merged
@@ -3634,6 +3660,23 @@ origins:
         };
         let result = intersect_mcp_configs(&a, &c);
         assert_eq!(result.default_action, Some(McpDefaultAction::Block));
+    }
+
+    #[test]
+    fn test_intersect_mcp_configs_keeps_narrower_allow_pattern() {
+        use crate::guards::McpToolConfig;
+
+        let policy = McpToolConfig {
+            allow: vec!["read_*".into()],
+            ..Default::default()
+        };
+        let enclave = McpToolConfig {
+            allow: vec!["read_file".into()],
+            ..Default::default()
+        };
+
+        let result = intersect_mcp_configs(&policy, &enclave);
+        assert_eq!(result.allow, vec!["read_file".to_string()]);
     }
 
     #[tokio::test]

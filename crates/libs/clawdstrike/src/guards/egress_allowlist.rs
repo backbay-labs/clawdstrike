@@ -371,24 +371,25 @@ impl Guard for EgressAllowlistGuard {
     }
 
     fn handles(&self, action: &GuardAction<'_>) -> bool {
-        matches!(action, GuardAction::NetworkEgress(_, _))
+        self.config.enabled && matches!(action, GuardAction::NetworkEgress(_, _))
     }
 
     async fn check(&self, action: &GuardAction<'_>, context: &GuardContext) -> GuardResult {
+        if !self.config.enabled {
+            return GuardResult::allow(&self.name);
+        }
+
         let (host, port) = match action {
             GuardAction::NetworkEgress(h, p) => (*h, *p),
             _ => return GuardResult::allow(&self.name),
         };
 
-        let base_policy = self.config.enabled.then_some(&self.policy);
         let enclave_policy = enclave_egress_policy(context);
 
-        match (base_policy, enclave_policy.as_ref()) {
-            (None, None) => GuardResult::allow(&self.name),
-            (Some(policy), None) => evaluate_domain_policy(&self.name, policy, host, port),
-            (None, Some(policy)) => evaluate_domain_policy(&self.name, policy, host, port),
-            (Some(base), Some(enclave)) => {
-                evaluate_combined_domain_policies(&self.name, base, enclave, host, port)
+        match enclave_policy.as_ref() {
+            None => evaluate_domain_policy(&self.name, &self.policy, host, port),
+            Some(enclave) => {
+                evaluate_combined_domain_policies(&self.name, &self.policy, enclave, host, port)
             }
         }
     }
@@ -608,5 +609,39 @@ mod tests {
             .await;
         assert!(!result.allowed);
         assert_eq!(result.severity, Severity::Error);
+    }
+
+    #[tokio::test]
+    async fn test_disabled_guard_ignores_enclave_policy() {
+        let guard = EgressAllowlistGuard::with_config(EgressAllowlistConfig {
+            enabled: false,
+            allow: vec!["*.openai.com".to_string()],
+            default_action: Some(PolicyAction::Block),
+            ..Default::default()
+        });
+        let context = GuardContext::new().with_enclave(crate::ResolvedEnclave {
+            profile_id: Some("strict-openai".to_string()),
+            mcp: None,
+            posture: None,
+            egress: Some(EgressAllowlistConfig {
+                allow: vec!["api.openai.com".to_string()],
+                default_action: Some(PolicyAction::Block),
+                ..Default::default()
+            }),
+            data: None,
+            budgets: None,
+            bridge_policy: None,
+            explanation: None,
+            resolution_path: Vec::new(),
+        });
+
+        assert!(!guard.handles(&GuardAction::NetworkEgress("chat.openai.com", 443)));
+        let result = guard
+            .check(
+                &GuardAction::NetworkEgress("chat.openai.com", 443),
+                &context,
+            )
+            .await;
+        assert!(result.allowed);
     }
 }
