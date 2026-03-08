@@ -676,7 +676,7 @@ pub async fn cmd_run(
 
     let SandboxRunResult {
         child_status,
-        sandbox_attestation,
+        mut sandbox_attestation,
         mut sandbox_failure,
     } = sandbox_run;
 
@@ -686,6 +686,12 @@ pub async fn cmd_run(
         .as_ref()
         .map(|count| count.load(Ordering::Relaxed))
         .unwrap_or(0);
+    if let Some(attestation) = sandbox_attestation.as_mut() {
+        attestation
+            .runtime
+            .set_dropped_event_count(dropped_events as u64);
+        attestation.recompute_status();
+    }
     let (effective_sandbox_note, effective_sandbox_failure) = finalize_sandbox_contract_status(
         &sandbox_note,
         sandbox_failure.clone(),

@@ -16,8 +16,6 @@ pub struct SandboxAttestation {
     pub platform: PlatformInfo,
     pub runtime: SandboxRuntimeState,
     pub capabilities: CapabilitySnapshot,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub provider_states: Vec<ProviderState>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub supervisor: Option<SupervisorStats>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -544,7 +542,6 @@ pub fn build_attestation(
             abi_version: None,
             details: support.details,
         },
-        provider_states: runtime.provider_states.clone(),
         runtime,
         capabilities: cap_snapshot,
         supervisor: None,
@@ -557,9 +554,8 @@ pub fn build_attestation(
 
 impl SandboxAttestation {
     pub fn recompute_status(&mut self) {
-        self.provider_states = self.runtime.provider_states.clone();
         self.platform.mechanisms = platform_mechanisms(&self.runtime);
-        self.enforcement_level = effective_enforcement_level(&self.runtime, &self.provider_states);
+        self.enforcement_level = effective_enforcement_level(&self.runtime);
         self.enforced = matches!(
             self.enforcement_level,
             EnforcementLevel::Kernel | EnforcementLevel::KernelSupervised
@@ -626,10 +622,7 @@ fn push_unique_mechanism(mechanisms: &mut Vec<String>, mechanism: &str) {
     }
 }
 
-fn effective_enforcement_level(
-    runtime: &SandboxRuntimeState,
-    provider_states: &[ProviderState],
-) -> EnforcementLevel {
+fn effective_enforcement_level(runtime: &SandboxRuntimeState) -> EnforcementLevel {
     if !runtime.applied {
         return EnforcementLevel::None;
     }
@@ -637,10 +630,14 @@ fn effective_enforcement_level(
     let has_degraded_runtime = !runtime.degraded_reasons.is_empty()
         || runtime.deadline_miss_count > 0
         || runtime.dropped_event_count > 0;
-    let has_degraded_provider = provider_states.iter().any(|provider| {
+    let has_degraded_provider = runtime.provider_states.iter().any(|provider| {
         !provider.active || !provider.healthy || !provider.degraded_reasons.is_empty()
     });
     if has_degraded_runtime || has_degraded_provider {
+        return EnforcementLevel::Degraded;
+    }
+
+    if runtime.supervised_requested && !runtime.supervised_active {
         return EnforcementLevel::Degraded;
     }
 
@@ -771,6 +768,10 @@ mod tests {
             Some(expected_mechanism)
         );
         assert!(json["platform"]["mechanisms"].is_array());
+        assert!(
+            json.get("provider_states").is_none(),
+            "top-level provider_states should not be duplicated outside runtime"
+        );
         assert!(!json["capabilities"]["blocked_commands"]
             .as_array()
             .unwrap()
@@ -828,6 +829,34 @@ mod tests {
         assert_eq!(attestation.enforcement_level, EnforcementLevel::Degraded);
         assert!(!attestation.enforced);
         assert_eq!(attestation.runtime.dropped_event_count, 3);
+    }
+
+    #[test]
+    fn test_inactive_supervision_degrades_even_without_explicit_reason() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let caps = CapabilitySet::new()
+            .allow_path(tmp.path(), AccessMode::Read)
+            .unwrap();
+        let runtime = SandboxRuntimeState {
+            supported: true,
+            applied: true,
+            supervised_requested: true,
+            supervised_active: false,
+            contract: supervised_contract_name().to_string(),
+            authorization_model: supervised_authorization_model().to_string(),
+            fd_injection_equivalent: cfg!(target_os = "linux"),
+            fail_open_possible: cfg!(target_os = "macos"),
+            deadline_miss_count: 0,
+            dropped_event_count: 0,
+            degraded_reasons: Vec::new(),
+            provider_states: default_provider_states(true),
+            failure_reason: None,
+        };
+
+        let attestation = build_attestation(&caps, runtime);
+
+        assert_eq!(attestation.enforcement_level, EnforcementLevel::Degraded);
+        assert!(!attestation.enforced);
     }
 
     #[test]

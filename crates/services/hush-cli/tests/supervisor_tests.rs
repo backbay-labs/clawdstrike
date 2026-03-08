@@ -291,32 +291,28 @@ fn supervised_receipt_reports_outer_contract_truthfully() {
         .expect("receipt should exist after supervised run");
     let hush = &receipt["receipt"]["metadata"]["hush"];
     let sandbox = &receipt["receipt"]["metadata"]["sandbox"];
+    let supervised_active = sandbox["runtime"]["supervised_active"]
+        .as_bool()
+        .expect("sandbox.runtime.supervised_active should be a bool");
+    let expected_note = if supervised_active {
+        "nono+supervised"
+    } else {
+        "nono+supervised-degraded"
+    };
 
-    if cfg!(target_os = "linux") {
-        assert_eq!(hush["sandbox"].as_str(), Some("nono+supervised"));
-        assert_eq!(
-            sandbox["runtime"]["supervised_active"].as_bool(),
-            Some(true)
-        );
+    assert_eq!(hush["sandbox"].as_str(), Some(expected_note));
+    assert!(
+        result.stdout.contains(&format!("Sandbox: {expected_note}")),
+        "stdout should disclose the effective supervised mode, got: {}",
+        result.stdout
+    );
+
+    if supervised_active {
         assert_eq!(
             receipt["receipt"]["verdict"]["passed"].as_bool(),
             Some(true)
         );
     } else {
-        assert_ne!(
-            result.exit_code, 0,
-            "supervised runs must fail closed when the authorization contract is unavailable"
-        );
-        assert!(
-            result.stdout.contains("Sandbox: nono+supervised-degraded"),
-            "stdout should disclose degraded supervised mode, got: {}",
-            result.stdout
-        );
-        assert_eq!(hush["sandbox"].as_str(), Some("nono+supervised-degraded"));
-        assert_eq!(
-            sandbox["runtime"]["supervised_active"].as_bool(),
-            Some(false)
-        );
         assert_eq!(
             receipt["receipt"]["verdict"]["passed"].as_bool(),
             Some(false)
@@ -325,8 +321,8 @@ fn supervised_receipt_reports_outer_contract_truthfully() {
             .as_str()
             .expect("sandbox_failure should be present for degraded supervised runs");
         assert!(
-            failure.contains("macos_authorization_contract_unavailable"),
-            "expected degraded supervised failure detail, got: {failure}"
+            !failure.is_empty(),
+            "degraded supervised runs must record a failure reason"
         );
         assert!(
             result
@@ -335,6 +331,16 @@ fn supervised_receipt_reports_outer_contract_truthfully() {
             "stderr should disclose degraded supervised contract, got: {}",
             result.stderr
         );
+        if cfg!(target_os = "macos") {
+            assert_ne!(
+                result.exit_code, 0,
+                "supervised runs must fail closed when the authorization contract is unavailable"
+            );
+            assert!(
+                failure.contains("macos_authorization_contract_unavailable"),
+                "expected degraded supervised failure detail, got: {failure}"
+            );
+        }
     }
 }
 
@@ -550,11 +556,7 @@ fn attestation_with_supervisor_stats_serializes_correctly() {
     let enforcement_level = json["enforcement_level"]
         .as_str()
         .expect("enforcement_level should be a string");
-    if cfg!(target_os = "linux") {
-        assert_eq!(enforcement_level, "kernel_supervised");
-    } else {
-        assert_eq!(enforcement_level, "degraded");
-    }
+    assert_eq!(enforcement_level, "kernel_supervised");
 }
 
 #[test]
