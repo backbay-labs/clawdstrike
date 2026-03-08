@@ -278,6 +278,7 @@ class Clawdstrike:
         target: str | None = None,
         mime_type: str | None = None,
         metadata: dict[str, Any] | None = None,
+        context_metadata: dict[str, Any] | None = None,
         **context_kwargs: Any,
     ) -> Decision:
         """Check an origin-aware outbound send action."""
@@ -289,6 +290,8 @@ class Clawdstrike:
             payload["mime_type"] = mime_type
         if metadata is not None:
             payload["metadata"] = metadata
+        if context_metadata is not None:
+            context_kwargs = {**context_kwargs, "metadata": context_metadata}
         return self.check(CustomAction("origin.output_send", payload), **context_kwargs)
 
     def session(self, **options: Any) -> ClawdstrikeSession:
@@ -338,8 +341,18 @@ class ClawdstrikeSession:
             self._allow_count += 1
         return decision
 
+    def _merged_context_kwargs(self, **context_kwargs: Any) -> dict[str, Any]:
+        ctx = dict(context_kwargs)
+        if self._options.metadata and "metadata" not in ctx:
+            ctx["metadata"] = self._options.metadata
+        if self._options.agent_id:
+            ctx["agent_id"] = self._options.agent_id
+        if self._options.session_id:
+            ctx["session_id"] = self._options.session_id
+        return ctx
+
     def check(self, action: Action, **context_kwargs: Any) -> Decision:
-        merged = {**self._context_kwargs(), **context_kwargs}
+        merged = self._merged_context_kwargs(**context_kwargs)
         decision = self._cs.check(action, **merged)
         return self._track(decision, f"{action.action_type}")
 
@@ -352,7 +365,7 @@ class ClawdstrikeSession:
         **context_kwargs: Any,
     ) -> Decision:
         str_path = str(path)
-        ctx = {**self._context_kwargs(), **context_kwargs}
+        ctx = self._merged_context_kwargs(**context_kwargs)
         if operation == "write":
             action: Action = FileWriteAction(path=str_path, content=content or b"")
         else:
@@ -361,12 +374,12 @@ class ClawdstrikeSession:
         return self._track(decision, f"file:{path}")
 
     def check_command(self, command: str, **context_kwargs: Any) -> Decision:
-        ctx = {**self._context_kwargs(), **context_kwargs}
+        ctx = self._merged_context_kwargs(**context_kwargs)
         decision = self._cs.check(ShellCommandAction(command=command), **ctx)
         return self._track(decision, f"command:{command[:50]}")
 
     def check_network(self, host: str, port: int = 443, **context_kwargs: Any) -> Decision:
-        ctx = {**self._context_kwargs(), **context_kwargs}
+        ctx = self._merged_context_kwargs(**context_kwargs)
         decision = self._cs.check(NetworkEgressAction(host=host, port=port), **ctx)
         return self._track(decision, f"network:{host}:{port}")
 
@@ -376,7 +389,7 @@ class ClawdstrikeSession:
         diff: str,
         **context_kwargs: Any,
     ) -> Decision:
-        ctx = {**self._context_kwargs(), **context_kwargs}
+        ctx = self._merged_context_kwargs(**context_kwargs)
         decision = self._cs.check(PatchAction(path=str(path), diff=diff), **ctx)
         return self._track(decision, f"patch:{path}")
 
@@ -386,7 +399,7 @@ class ClawdstrikeSession:
         args: dict[str, Any] | None = None,
         **context_kwargs: Any,
     ) -> Decision:
-        ctx = {**self._context_kwargs(), **context_kwargs}
+        ctx = self._merged_context_kwargs(**context_kwargs)
         decision = self._cs.check(McpToolAction(tool=tool, args=args or {}), **ctx)
         return self._track(decision, f"mcp:{tool}")
 
@@ -397,9 +410,12 @@ class ClawdstrikeSession:
         target: str | None = None,
         mime_type: str | None = None,
         metadata: dict[str, Any] | None = None,
+        context_metadata: dict[str, Any] | None = None,
         **context_kwargs: Any,
     ) -> Decision:
-        ctx = {**self._context_kwargs(), **context_kwargs}
+        ctx = self._merged_context_kwargs(**context_kwargs)
+        if context_metadata is not None:
+            ctx["metadata"] = context_metadata
         payload: dict[str, Any] = {"text": text}
         if target is not None:
             payload["target"] = target

@@ -477,6 +477,51 @@ func TestSessionCheckWithContextForwardsOriginToDaemon(t *testing.T) {
 	}
 }
 
+func TestSessionCheckWithContextPinsSessionIdentity(t *testing.T) {
+	var gotSession string
+	var gotAgent string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		gotSession, _ = req["session_id"].(string)
+		gotAgent, _ = req["agent_id"].(string)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"allowed":  true,
+			"guard":    "daemon",
+			"severity": "info",
+			"message":  "ok",
+		})
+	}))
+	defer srv.Close()
+
+	cs, err := FromDaemon(srv.URL)
+	if err != nil {
+		t.Fatalf("FromDaemon: %v", err)
+	}
+
+	session := cs.Session(SessionOptions{ID: "sess-fixed", AgentID: "agent-fixed"})
+	decision := session.CheckWithContext(
+		guards.FileAccess("/tmp/example.txt"),
+		guards.NewContext().
+			WithSessionID("sess-other").
+			WithAgentID("agent-other").
+			WithOrigin(guards.NewOriginContext(guards.OriginProviderGitHub).WithSpaceID("repo-1")),
+	)
+
+	if decision.Status != guards.StatusAllow {
+		t.Fatalf("expected allow decision, got %s", decision.Status)
+	}
+	if gotSession != "sess-fixed" {
+		t.Fatalf("expected pinned session_id sess-fixed, got %q", gotSession)
+	}
+	if gotAgent != "agent-fixed" {
+		t.Fatalf("expected pinned agent_id agent-fixed, got %q", gotAgent)
+	}
+}
+
 func TestSessionCheckWithContextFailsClosedForLocalOriginUsage(t *testing.T) {
 	cs, err := WithDefaults("default")
 	if err != nil {

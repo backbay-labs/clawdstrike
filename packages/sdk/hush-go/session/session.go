@@ -149,13 +149,7 @@ func (s *ClawdstrikeSession) mergeContext(ctx *guards.GuardContext) *guards.Guar
 		merged.Metadata = metadata
 	}
 	if ctx.Origin != nil {
-		merged = merged.WithOrigin(ctx.Origin)
-	}
-	if ctx.SessionID != "" {
-		merged = merged.WithSessionID(ctx.SessionID)
-	}
-	if ctx.AgentID != "" {
-		merged = merged.WithAgentID(ctx.AgentID)
+		merged = merged.WithOrigin(ctx.Origin.Clone())
 	}
 	return merged
 }

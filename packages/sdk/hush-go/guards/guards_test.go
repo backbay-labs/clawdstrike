@@ -335,6 +335,28 @@ func TestOutputSendHelperUsesCanonicalPayload(t *testing.T) {
 	}
 }
 
+func TestOriginContextCloneDeepCopiesNestedMetadata(t *testing.T) {
+	origin := NewOriginContext(OriginProviderSlack).WithMetadata(map[string]interface{}{
+		"nested": map[string]interface{}{"channel": "C1"},
+		"tags":   []string{"sev1"},
+	})
+
+	cloned := origin.Clone()
+	nested := origin.Metadata["nested"].(map[string]interface{})
+	nested["channel"] = "mutated"
+	tags := origin.Metadata["tags"].([]string)
+	tags[0] = "mutated"
+
+	clonedNested := cloned.Metadata["nested"].(map[string]interface{})
+	if clonedNested["channel"] != "C1" {
+		t.Fatalf("expected cloned nested metadata to stay isolated, got %#v", clonedNested["channel"])
+	}
+	clonedTags := cloned.Metadata["tags"].([]string)
+	if clonedTags[0] != "sev1" {
+		t.Fatalf("expected cloned tag slice to stay isolated, got %#v", clonedTags[0])
+	}
+}
+
 // --- SecretLeak ---
 
 func TestSecretLeakDetection(t *testing.T) {

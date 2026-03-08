@@ -49,34 +49,12 @@ func (sc *SecurityContext) GetBlockedTools() []string {
 func (sc *SecurityContext) WithOrigin(origin *guards.OriginContext) *SecurityContext {
 	sc.mu.Lock()
 	defer sc.mu.Unlock()
-	sc.origin = cloneOriginContext(origin)
+	sc.origin = origin.Clone()
 	return sc
 }
 
 func (sc *SecurityContext) Origin() *guards.OriginContext {
 	sc.mu.Lock()
 	defer sc.mu.Unlock()
-	return cloneOriginContext(sc.origin)
-}
-
-func cloneOriginContext(origin *guards.OriginContext) *guards.OriginContext {
-	if origin == nil {
-		return nil
-	}
-
-	cloned := *origin
-	if origin.ExternalParticipants != nil {
-		value := *origin.ExternalParticipants
-		cloned.ExternalParticipants = &value
-	}
-	if origin.Tags != nil {
-		cloned.Tags = append([]string(nil), origin.Tags...)
-	}
-	if origin.Metadata != nil {
-		cloned.Metadata = make(map[string]interface{}, len(origin.Metadata))
-		for key, value := range origin.Metadata {
-			cloned.Metadata[key] = value
-		}
-	}
-	return &cloned
+	return sc.origin.Clone()
 }

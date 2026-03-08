@@ -154,6 +154,23 @@ class TestClawdstrikeCheckMethods:
             "actor_role": "owner",
         }
 
+    def test_check_output_send_accepts_separate_context_metadata(self) -> None:
+        backend = _RecordingBackend()
+        cs = Clawdstrike(backend)
+
+        decision = cs.check_output_send(
+            "ship it",
+            metadata={"thread_id": "abc"},
+            context_metadata={"scope": "prod"},
+            origin={"provider": "slack"},
+        )
+
+        assert decision.allowed
+        action, args, ctx = backend.calls[-1]
+        assert action == "origin.output_send"
+        assert args[0]["metadata"] == {"thread_id": "abc"}
+        assert ctx["metadata"] == {"scope": "prod"}
+
 
 class TestClawdstrikeConfigure:
     def test_configure_with_default_policy(self) -> None:

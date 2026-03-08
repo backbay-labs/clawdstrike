@@ -147,6 +147,27 @@ class TestClawdstrikeSession:
         assert args[0]["metadata"] == {"thread_id": "abc"}
         assert ctx["metadata"] == {"scope": "prod"}
 
+    def test_session_pins_session_and_agent_ids(self) -> None:
+        backend = _RecordingBackend()
+        cs = Clawdstrike(backend)
+        session = cs.session(session_id="sess-locked", agent_id="agent-locked")
+
+        decision = session.check_file(
+            "/app/safe.txt",
+            session_id="sess-other",
+            agent_id="agent-other",
+            origin={"provider": "github", "spaceId": "R1"},
+        )
+
+        assert decision.allowed
+        _, _, ctx = backend.calls[-1]
+        assert ctx["session_id"] == "sess-locked"
+        assert ctx["agent_id"] == "agent-locked"
+        assert ctx["origin"] == {
+            "provider": "github",
+            "space_id": "R1",
+        }
+
     def test_session_check_file_allows_per_check_origin_override(self) -> None:
         backend = _RecordingBackend()
         cs = Clawdstrike(backend)

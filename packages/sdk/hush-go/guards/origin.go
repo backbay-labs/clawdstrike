@@ -3,6 +3,7 @@ package guards
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 )
 
 // OriginProvider identifies the provider that produced an origin-aware event.
@@ -208,12 +209,89 @@ func (o *OriginContext) WithMetadata(metadata map[string]interface{}) *OriginCon
 		o.Metadata = nil
 		return o
 	}
+	o.Metadata = cloneOriginMetadataMap(metadata)
+	return o
+}
+
+func (o *OriginContext) Clone() *OriginContext {
+	if o == nil {
+		return nil
+	}
+
+	cloned := *o
+	if o.ExternalParticipants != nil {
+		value := *o.ExternalParticipants
+		cloned.ExternalParticipants = &value
+	}
+	if o.Tags != nil {
+		cloned.Tags = append([]string(nil), o.Tags...)
+	}
+	if o.Metadata != nil {
+		cloned.Metadata = cloneOriginMetadataMap(o.Metadata)
+	}
+	return &cloned
+}
+
+func cloneOriginMetadataMap(metadata map[string]interface{}) map[string]interface{} {
+	if metadata == nil {
+		return nil
+	}
+
 	cloned := make(map[string]interface{}, len(metadata))
 	for key, value := range metadata {
-		cloned[key] = value
+		cloned[key] = cloneOriginMetadataValue(value)
 	}
-	o.Metadata = cloned
-	return o
+	return cloned
+}
+
+func cloneOriginMetadataValue(value interface{}) interface{} {
+	switch typed := value.(type) {
+	case nil:
+		return nil
+	case map[string]interface{}:
+		return cloneOriginMetadataMap(typed)
+	case []interface{}:
+		cloned := make([]interface{}, len(typed))
+		for i, item := range typed {
+			cloned[i] = cloneOriginMetadataValue(item)
+		}
+		return cloned
+	}
+
+	rv := reflect.ValueOf(value)
+	switch rv.Kind() {
+	case reflect.Map:
+		if rv.IsNil() {
+			return value
+		}
+		cloned := reflect.MakeMapWithSize(rv.Type(), rv.Len())
+		iter := rv.MapRange()
+		for iter.Next() {
+			clonedValue := cloneOriginMetadataValue(iter.Value().Interface())
+			if clonedValue == nil {
+				cloned.SetMapIndex(iter.Key(), reflect.Zero(rv.Type().Elem()))
+			} else {
+				cloned.SetMapIndex(iter.Key(), reflect.ValueOf(clonedValue))
+			}
+		}
+		return cloned.Interface()
+	case reflect.Slice:
+		if rv.IsNil() {
+			return value
+		}
+		cloned := reflect.MakeSlice(rv.Type(), rv.Len(), rv.Len())
+		for i := 0; i < rv.Len(); i++ {
+			clonedValue := cloneOriginMetadataValue(rv.Index(i).Interface())
+			if clonedValue == nil {
+				cloned.Index(i).Set(reflect.Zero(rv.Type().Elem()))
+			} else {
+				cloned.Index(i).Set(reflect.ValueOf(clonedValue))
+			}
+		}
+		return cloned.Interface()
+	default:
+		return value
+	}
 }
 
 // UnmarshalJSON accepts canonical snake_case fields and camelCase aliases.

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal, TypeAlias, cast
@@ -98,6 +99,10 @@ def _coerce_optional_metadata(value: Any) -> dict[str, Any] | None:
         if not isinstance(key, str):
             raise TypeError("origin.metadata keys must be strings")
         metadata[key] = item
+    try:
+        json.dumps(metadata)
+    except TypeError as exc:
+        raise TypeError("origin.metadata must be JSON-serializable") from exc
     return metadata
 
 

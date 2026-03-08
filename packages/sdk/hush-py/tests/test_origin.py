@@ -101,6 +101,11 @@ def test_origin_context_direct_init_clones_mutable_fields() -> None:
     assert origin.to_dict()["metadata"] == {"source": "slash-command"}
 
 
+def test_origin_context_rejects_non_json_serializable_metadata() -> None:
+    with pytest.raises(TypeError, match="origin.metadata must be JSON-serializable"):
+        OriginContext(provider="slack", metadata={"bad": object()})
+
+
 def test_origin_context_rejects_invalid_provenance_confidence() -> None:
     with pytest.raises(ValueError, match="origin.provenance_confidence must be one of"):
         OriginContext.from_dict({

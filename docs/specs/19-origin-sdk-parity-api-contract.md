@@ -101,7 +101,7 @@ Silent ignore is not allowed on any path that accepts an origin-aware policy or 
 ### Facade and session plumbing
 
 - Extend `_ctx_dict()` in `packages/sdk/hush-py/src/clawdstrike/clawdstrike.py` to accept `origin`.
-- Preserve per-check session overrides so `ClawdstrikeSession.check(action, origin=...)` can evolve origin across a session.
+- Preserve per-check context overrides needed for origin changes while keeping the SDK session's own `session_id` and `agent_id` pinned.
 - Add `check_output_send(...)` helper on `Clawdstrike` and `ClawdstrikeSession`.
 
 ### Native binding contract
