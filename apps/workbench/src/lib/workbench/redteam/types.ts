@@ -1,6 +1,8 @@
 /**
  * Bridge types for integrating promptfoo red teaming data into the
  * ClawdStrike policy builder workbench.
+ *
+ * Types that overlap with promptfoo are documented with their source.
  */
 
 import type { GuardId, ThreatSeverity, TestScenario } from "../types.ts";
@@ -18,7 +20,10 @@ export interface RedTeamPlugin {
   guardMapping: GuardId[];
 }
 
-/** Strategy metadata (human exploitability & complexity). */
+/**
+ * Strategy metadata (human exploitability & complexity).
+ * Copied from promptfoo/src/redteam/riskScoring.ts — StrategyMetadata
+ */
 export interface RedTeamStrategy {
   id: string;
   description: string;
@@ -30,11 +35,18 @@ export interface RedTeamStrategy {
 // Risk scoring
 // ---------------------------------------------------------------------------
 
+/**
+ * Per-plugin risk score result.
+ * Mirrors promptfoo's RiskScore structure (score + level).
+ */
 export interface RedTeamRiskScore {
   score: number;
   level: "critical" | "high" | "medium" | "low" | "informational";
 }
 
+/**
+ * Extended plugin risk score with test metadata.
+ */
 export interface RedTeamPluginRiskScore {
   pluginId: string;
   severity: ThreatSeverity;
@@ -44,6 +56,10 @@ export interface RedTeamPluginRiskScore {
   passCount: number;
 }
 
+/**
+ * System-level risk aggregation.
+ * Mirrors promptfoo's SystemRiskScore structure.
+ */
 export interface RedTeamSystemRiskScore {
   score: number;
   level: string;
@@ -55,6 +71,9 @@ export interface RedTeamSystemRiskScore {
 // Grading
 // ---------------------------------------------------------------------------
 
+/**
+ * Result of grading a single red-team scenario.
+ */
 export interface RedTeamGradingResult {
   pass: boolean;
   score: number;
