@@ -25,6 +25,10 @@ import {
   IconX,
   IconArrowRight,
   IconLayersLinked,
+  IconPlugConnected,
+  IconCloudUpload,
+  IconCloudDownload,
+  IconLoader2,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { useWorkbench } from "@/lib/workbench/multi-policy-store";
@@ -47,6 +51,13 @@ import {
   validateAllLeaves,
   type HierarchyValidationIssue,
 } from "@/lib/workbench/hierarchy-engine";
+import { useFleetConnection } from "@/lib/workbench/use-fleet-connection";
+import {
+  fetchScopedPolicies,
+  createScopedPolicy,
+  fetchPolicyAssignments,
+  assignPolicyToScope,
+} from "@/lib/workbench/fleet-client";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -968,6 +979,8 @@ function RenameDialog({ node, onRename, onClose }: RenameDialogProps) {
 export function HierarchyPage() {
   const { state } = useWorkbench();
   const savedPolicies = state.savedPolicies;
+  const { connection } = useFleetConnection();
+  const fleetConnected = connection.connected;
 
   // ---------------------------------------------------------------------------
   // Hierarchy state
@@ -998,6 +1011,45 @@ export function HierarchyPage() {
   // Drag state
   const [dragSourceId, setDragSourceId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+
+  // ---------------------------------------------------------------------------
+  // Fleet sync state (P2-3)
+  // ---------------------------------------------------------------------------
+
+  const [isLiveMode, setIsLiveMode] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<{
+    type: "idle" | "pushing" | "pulling" | "success" | "error";
+    message?: string;
+  }>({ type: "idle" });
+  const syncStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /** Show a transient sync status message that auto-clears after a delay. */
+  const showSyncStatus = useCallback(
+    (type: "success" | "error", message: string) => {
+      if (syncStatusTimerRef.current) clearTimeout(syncStatusTimerRef.current);
+      setSyncStatus({ type, message });
+      syncStatusTimerRef.current = setTimeout(() => {
+        setSyncStatus({ type: "idle" });
+        syncStatusTimerRef.current = null;
+      }, 4000);
+    },
+    [],
+  );
+
+  // Clear sync status timer on unmount
+  useEffect(() => {
+    return () => {
+      if (syncStatusTimerRef.current) clearTimeout(syncStatusTimerRef.current);
+    };
+  }, []);
+
+  // Turn off live mode if fleet disconnects
+  useEffect(() => {
+    if (!fleetConnected && isLiveMode) {
+      setIsLiveMode(false);
+      showSyncStatus("error", "Fleet disconnected — switched to DEMO mode");
+    }
+  }, [fleetConnected, isLiveMode, showSyncStatus]);
 
   // Persist on change
   useEffect(() => {
@@ -1189,6 +1241,188 @@ export function HierarchyPage() {
   }, [hierarchy, savedPolicies]);
 
   // ---------------------------------------------------------------------------
+  // Fleet sync handlers (P2-3)
+  // ---------------------------------------------------------------------------
+
+  const handleToggleLiveMode = useCallback(() => {
+    if (!fleetConnected) return;
+    setIsLiveMode((prev) => !prev);
+  }, [fleetConnected]);
+
+  /**
+   * Push local hierarchy to the fleet as scoped policies.
+   * Walks all nodes and creates scoped-policy entries + policy-assignments.
+   */
+  const handlePushToFleet = useCallback(async () => {
+    if (!fleetConnected) return;
+    setSyncStatus({ type: "pushing", message: "Uploading hierarchy..." });
+
+    try {
+      const nodes = Object.values(hierarchy.nodes);
+      let successCount = 0;
+      let errorCount = 0;
+
+      for (const node of nodes) {
+        // Find the linked saved policy YAML (if any)
+        const linked = node.policyId
+          ? savedPolicies.find((sp) => sp.id === node.policyId)
+          : undefined;
+
+        // Create a scoped policy entry for each node
+        const scopedResult = await createScopedPolicy(connection, {
+          scope_type: node.type,
+          scope_id: node.id,
+          scope_name: node.name,
+          policy_yaml: linked?.yaml ?? "",
+          policy_name: linked?.policy.name ?? node.policyName,
+          parent_scope_id: node.parentId,
+          metadata: node.metadata,
+        });
+
+        if (!scopedResult.success) {
+          errorCount++;
+          continue;
+        }
+
+        // Also push the assignment structure
+        const assignResult = await assignPolicyToScope(connection, {
+          scope_id: node.id,
+          scope_name: node.name,
+          scope_type: node.type,
+          policy_id: node.policyId,
+          policy_name: node.policyName,
+          parent_scope_id: node.parentId,
+          children: node.children,
+        });
+
+        if (assignResult.success) {
+          successCount++;
+        } else {
+          errorCount++;
+        }
+      }
+
+      if (errorCount === 0) {
+        showSyncStatus("success", `Pushed ${successCount} nodes to fleet`);
+      } else {
+        showSyncStatus(
+          "error",
+          `Pushed ${successCount} nodes, ${errorCount} failed`,
+        );
+      }
+    } catch (err) {
+      showSyncStatus(
+        "error",
+        `Push failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }, [fleetConnected, hierarchy, savedPolicies, connection, showSyncStatus]);
+
+  /**
+   * Pull scoped policies from the fleet into the local hierarchy.
+   * Reconstructs the hierarchy tree from backend policy-assignments.
+   */
+  const handlePullFromFleet = useCallback(async () => {
+    if (!fleetConnected) return;
+    setSyncStatus({ type: "pulling", message: "Downloading hierarchy..." });
+
+    try {
+      const [scopedPolicies, assignments] = await Promise.all([
+        fetchScopedPolicies(connection),
+        fetchPolicyAssignments(connection),
+      ]);
+
+      if (assignments.length === 0 && scopedPolicies.length === 0) {
+        showSyncStatus("error", "No scoped policies found on fleet");
+        return;
+      }
+
+      // Use assignments if available, fall back to scoped policies
+      const source: Array<{
+        scope_id: string;
+        scope_name: string;
+        scope_type: "org" | "team" | "agent";
+        policy_id?: string;
+        policy_name?: string;
+        parent_scope_id?: string | null;
+        children?: string[];
+      }> = assignments.length > 0 ? assignments : scopedPolicies;
+
+      // Build the node map from remote data
+      const nodes: Record<string, OrgNode> = {};
+      let rootId: string | null = null;
+
+      for (const item of source) {
+        const nodeType = item.scope_type;
+        nodes[item.scope_id] = {
+          id: item.scope_id,
+          name: item.scope_name,
+          type: nodeType,
+          parentId: item.parent_scope_id ?? null,
+          policyId: item.policy_id,
+          policyName: item.policy_name,
+          children: item.children ?? [],
+          metadata: {},
+        };
+
+        if (nodeType === "org" && !item.parent_scope_id) {
+          rootId = item.scope_id;
+        }
+      }
+
+      // If children were not provided, reconstruct from parent pointers
+      const anyHasChildren = Object.values(nodes).some(
+        (n) => n.children.length > 0,
+      );
+      if (!anyHasChildren) {
+        for (const node of Object.values(nodes)) {
+          if (node.parentId && nodes[node.parentId]) {
+            nodes[node.parentId].children.push(node.id);
+          }
+        }
+      }
+
+      // Find root if we haven't yet (first org node or first node with no parent)
+      if (!rootId) {
+        const orgNode = Object.values(nodes).find(
+          (n) => n.type === "org" && !n.parentId,
+        );
+        rootId = orgNode?.id ?? Object.values(nodes).find((n) => !n.parentId)?.id ?? null;
+      }
+
+      if (!rootId || !nodes[rootId]) {
+        showSyncStatus("error", "Could not determine root node from fleet data");
+        return;
+      }
+
+      const newHierarchy: PolicyHierarchy = { nodes, rootId };
+      setHierarchy(newHierarchy);
+      setSelectedId(rootId);
+
+      // Expand all org and team nodes
+      setExpandedIds(() => {
+        const ids = new Set<string>();
+        for (const node of Object.values(newHierarchy.nodes)) {
+          if (node.type === "org" || node.type === "team") {
+            ids.add(node.id);
+          }
+        }
+        return ids;
+      });
+
+      showSyncStatus(
+        "success",
+        `Pulled ${Object.keys(nodes).length} nodes from fleet`,
+      );
+    } catch (err) {
+      showSyncStatus(
+        "error",
+        `Pull failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }, [fleetConnected, connection, showSyncStatus]);
+
+  // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
 
@@ -1201,6 +1435,96 @@ export function HierarchyPage() {
         <span className="text-[11px] font-medium text-[#ece7dc] mr-2">
           Org Hierarchy
         </span>
+
+        {/* LIVE / DEMO toggle */}
+        <button
+          onClick={handleToggleLiveMode}
+          disabled={!fleetConnected}
+          className={cn(
+            "flex items-center gap-1.5 px-2 py-1 rounded text-[9px] font-semibold uppercase tracking-wider transition-colors",
+            isLiveMode
+              ? "bg-[#3dbf84]/15 text-[#3dbf84] hover:bg-[#3dbf84]/25"
+              : "bg-[#6f7f9a]/10 text-[#6f7f9a]/60 hover:bg-[#6f7f9a]/20",
+            !fleetConnected && "opacity-40 cursor-not-allowed",
+          )}
+          title={
+            fleetConnected
+              ? isLiveMode
+                ? "Switch to DEMO mode (local-only)"
+                : "Switch to LIVE mode (fleet sync enabled)"
+              : "Connect to fleet to enable LIVE mode"
+          }
+        >
+          {isLiveMode ? "LIVE" : "DEMO"}
+        </button>
+
+        {!fleetConnected && (
+          <span className="flex items-center gap-1 text-[9px] text-[#6f7f9a]/40">
+            <IconPlugConnected size={10} stroke={1.5} />
+            Disconnected
+          </span>
+        )}
+
+        {/* Fleet sync buttons — only visible in LIVE mode */}
+        {isLiveMode && fleetConnected && (
+          <>
+            <div className="w-px h-4 bg-[#2d3240]/50" />
+            <button
+              onClick={handlePushToFleet}
+              disabled={syncStatus.type === "pushing" || syncStatus.type === "pulling"}
+              className={cn(
+                "flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[10px] font-medium transition-colors",
+                syncStatus.type === "pushing"
+                  ? "text-[#d4a84b] bg-[#d4a84b]/10"
+                  : "text-[#6f7f9a] hover:text-[#ece7dc] hover:bg-[#131721]/50",
+                (syncStatus.type === "pushing" || syncStatus.type === "pulling") && "opacity-60 cursor-not-allowed",
+              )}
+              title="Upload local hierarchy as scoped policies to fleet"
+            >
+              {syncStatus.type === "pushing" ? (
+                <IconLoader2 size={13} stroke={1.5} className="animate-spin" />
+              ) : (
+                <IconCloudUpload size={13} stroke={1.5} />
+              )}
+              Push to Fleet
+            </button>
+
+            <button
+              onClick={handlePullFromFleet}
+              disabled={syncStatus.type === "pushing" || syncStatus.type === "pulling"}
+              className={cn(
+                "flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[10px] font-medium transition-colors",
+                syncStatus.type === "pulling"
+                  ? "text-[#d4a84b] bg-[#d4a84b]/10"
+                  : "text-[#6f7f9a] hover:text-[#ece7dc] hover:bg-[#131721]/50",
+                (syncStatus.type === "pushing" || syncStatus.type === "pulling") && "opacity-60 cursor-not-allowed",
+              )}
+              title="Download scoped policies from fleet into local hierarchy"
+            >
+              {syncStatus.type === "pulling" ? (
+                <IconLoader2 size={13} stroke={1.5} className="animate-spin" />
+              ) : (
+                <IconCloudDownload size={13} stroke={1.5} />
+              )}
+              Pull from Fleet
+            </button>
+          </>
+        )}
+
+        {/* Sync status message */}
+        {syncStatus.type !== "idle" && syncStatus.message && (
+          <span
+            className={cn(
+              "text-[9px] font-medium px-2 py-0.5 rounded transition-opacity",
+              syncStatus.type === "success" && "text-[#3dbf84] bg-[#3dbf84]/10",
+              syncStatus.type === "error" && "text-[#c45c5c] bg-[#c45c5c]/10",
+              (syncStatus.type === "pushing" || syncStatus.type === "pulling") &&
+                "text-[#d4a84b] bg-[#d4a84b]/10",
+            )}
+          >
+            {syncStatus.message}
+          </span>
+        )}
 
         <div className="flex-1" />
 

@@ -14,11 +14,15 @@ import {
   IconPlugConnected,
   IconBooks,
   IconLayoutGrid,
+  IconCopy,
+  IconCheck,
 } from "@tabler/icons-react";
 import { PolicyCard } from "./policy-card";
 import { ImportExport } from "./import-export";
 import { YamlViewDialog } from "./yaml-view-dialog";
 import { CatalogBrowser } from "./catalog-browser";
+
+const MCP_LAUNCH_COMMAND = "bun run apps/workbench/mcp-server/index.ts";
 
 type LibraryTab = "my-policies" | "catalog";
 
@@ -93,8 +97,15 @@ export function LibraryGallery() {
   const { rulesets, loading, nativeAvailable } = useBuiltinRulesets();
   const [activeTab, setActiveTab] = useState<LibraryTab>("my-policies");
 
+  const [mcpCopied, setMcpCopied] = useState(false);
   const desktop = isDesktop();
   const recentFiles = desktop ? getRecentFiles() : [];
+
+  const copyMcpCommand = async () => {
+    await navigator.clipboard.writeText(MCP_LAUNCH_COMMAND);
+    setMcpCopied(true);
+    setTimeout(() => setMcpCopied(false), 2000);
+  };
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
@@ -279,13 +290,36 @@ export function LibraryGallery() {
                     <span className="text-[11px] font-mono font-medium text-[#ece7dc]">
                       MCP Server
                     </span>
+                    <span
+                      className="ml-auto flex items-center gap-1.5 text-[9px] font-mono text-[#3dbf84]"
+                      title="MCP server is available (embedded in workbench)"
+                    >
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#3dbf84] opacity-40" />
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-[#3dbf84]" />
+                      </span>
+                      available
+                    </span>
                   </div>
                   <p className="text-[10px] text-[#6f7f9a] leading-relaxed mb-2">
                     10 tools for scenario testing, policy validation, compliance scoring, and policy synthesis.
                   </p>
-                  <code className="block text-[10px] font-mono text-[#d4a84b]/80 bg-[#0b0d13] rounded px-2 py-1.5 overflow-x-auto">
-                    bun run apps/workbench/mcp-server/index.ts
-                  </code>
+                  <div className="flex items-center gap-1.5">
+                    <code className="flex-1 text-[10px] font-mono text-[#d4a84b]/80 bg-[#0b0d13] rounded px-2 py-1.5 overflow-x-auto">
+                      {MCP_LAUNCH_COMMAND}
+                    </code>
+                    <button
+                      onClick={copyMcpCommand}
+                      className="shrink-0 flex items-center justify-center w-7 h-7 rounded-md bg-[#0b0d13] border border-[#2d3240]/40 text-[#6f7f9a] hover:text-[#d4a84b] hover:border-[#d4a84b]/30 transition-colors"
+                      title="Copy MCP launch command"
+                    >
+                      {mcpCopied ? (
+                        <IconCheck size={12} className="text-[#3dbf84]" />
+                      ) : (
+                        <IconCopy size={12} />
+                      )}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="rounded-lg bg-[#131721]/50 border border-[#2d3240]/40 p-3">

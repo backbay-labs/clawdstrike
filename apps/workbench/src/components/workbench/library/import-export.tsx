@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import { useWorkbench } from "@/lib/workbench/multi-policy-store";
 import { useToast } from "@/components/ui/toast";
 import { yamlToPolicy, policyToFormat, formatExtension, formatMimeType, type ExportFormat } from "@/lib/workbench/yaml-utils";
+import { emitAuditEvent } from "@/lib/workbench/local-audit";
 import {
   Dialog,
   DialogTrigger,
@@ -43,6 +44,12 @@ export function ImportExport() {
         if (policy && errors.length === 0) {
           loadPolicy(policy);
           toast({ type: "success", title: "Policy imported", description: policy.name });
+          emitAuditEvent({
+            eventType: "policy.import.file",
+            source: "editor",
+            summary: `Imported policy "${policy.name}" from file`,
+            details: { policyName: policy.name, version: policy.version },
+          });
         } else {
           toast({
             type: "error",
@@ -67,6 +74,12 @@ export function ImportExport() {
       setPasteYaml("");
       setPasteDialogOpen(false);
       toast({ type: "success", title: "Policy imported", description: policy.name });
+      emitAuditEvent({
+        eventType: "policy.import.paste",
+        source: "editor",
+        summary: `Imported policy "${policy.name}" from paste`,
+        details: { policyName: policy.name, version: policy.version },
+      });
     } else {
       const msg = errors.join("; ") || "Invalid YAML";
       setPasteError(msg);
@@ -92,6 +105,12 @@ export function ImportExport() {
     }
     const label = exportFormat.toUpperCase();
     toast({ type: "success", title: `${label} exported` });
+    emitAuditEvent({
+      eventType: "policy.export",
+      source: "editor",
+      summary: `Exported "${state.activePolicy.name}" as ${label}`,
+      details: { format: exportFormat, policyName: state.activePolicy.name },
+    });
   }, [exportFormat, exportYaml, state.activePolicy, toast]);
 
   return (

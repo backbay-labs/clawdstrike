@@ -5,6 +5,7 @@ import { useState } from "react";
 import { IconPlugConnected, IconSettings } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { ConnectionSettings } from "./connection-settings";
+import { GeneralSettings } from "./general-settings";
 
 const TABS = [
   { id: "connection" as const, label: "Connection", icon: IconPlugConnected },
@@ -54,20 +55,9 @@ export function SettingsPage() {
       <div className="flex-1 overflow-y-auto p-6">
         <div className="max-w-lg">
           {activeTab === "connection" && <ConnectionSettings />}
-          {activeTab === "general" && <GeneralPlaceholder />}
+          {activeTab === "general" && <GeneralSettings />}
         </div>
       </div>
-    </div>
-  );
-}
-
-function GeneralPlaceholder() {
-  return (
-    <div className="flex flex-col items-center justify-center py-16 text-center">
-      <IconSettings size={32} stroke={1} className="text-[#2d3240] mb-3" />
-      <p className="text-xs text-[#6f7f9a]">
-        General settings will be available in a future release.
-      </p>
     </div>
   );
 }

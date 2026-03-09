@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { HashRouter, Routes, Route, Navigate } from "react-router-dom";
 import { MultiPolicyProvider } from "@/lib/workbench/multi-policy-store";
 import { FleetConnectionProvider } from "@/lib/workbench/use-fleet-connection";
+import { GeneralSettingsProvider } from "@/lib/workbench/use-general-settings";
 import { ToastProvider } from "@/components/ui/toast";
 import { DesktopLayout } from "@/components/desktop/desktop-layout";
 
@@ -155,36 +156,38 @@ export function App() {
   return (
     <HashRouter>
       <ToastProvider>
-        <MultiPolicyProvider>
-          <FleetConnectionProvider>
-            <Suspense fallback={<LoadingFallback />}>
-              <Routes>
-                <Route element={<DesktopLayout />}>
-                  {/* Default redirect */}
-                  <Route index element={<Navigate to="/home" replace />} />
+        <GeneralSettingsProvider>
+          <MultiPolicyProvider>
+            <FleetConnectionProvider>
+              <Suspense fallback={<LoadingFallback />}>
+                <Routes>
+                  <Route element={<DesktopLayout />}>
+                    {/* Default redirect */}
+                    <Route index element={<Navigate to="/home" replace />} />
 
-                  {/* Workbench pages */}
-                  <Route path="home" element={<HomePage />} />
-                  <Route path="editor" element={<PolicyEditor />} />
-                  <Route path="simulator" element={<SimulatorLayout />} />
-                  <Route path="compare" element={<CompareLayout />} />
-                  <Route path="compliance" element={<ComplianceDashboard />} />
-                  <Route path="receipts" element={<ReceiptInspector />} />
-                  <Route path="delegation" element={<DelegationPage />} />
-                  <Route path="approvals" element={<ApprovalQueue />} />
-                  <Route path="hierarchy" element={<HierarchyPage />} />
-                  <Route path="fleet" element={<FleetDashboard />} />
-                  <Route path="audit" element={<AuditLog />} />
-                  <Route path="library" element={<LibraryGallery />} />
-                  <Route path="settings" element={<SettingsPage />} />
+                    {/* Workbench pages */}
+                    <Route path="home" element={<HomePage />} />
+                    <Route path="editor" element={<PolicyEditor />} />
+                    <Route path="simulator" element={<SimulatorLayout />} />
+                    <Route path="compare" element={<CompareLayout />} />
+                    <Route path="compliance" element={<ComplianceDashboard />} />
+                    <Route path="receipts" element={<ReceiptInspector />} />
+                    <Route path="delegation" element={<DelegationPage />} />
+                    <Route path="approvals" element={<ApprovalQueue />} />
+                    <Route path="hierarchy" element={<HierarchyPage />} />
+                    <Route path="fleet" element={<FleetDashboard />} />
+                    <Route path="audit" element={<AuditLog />} />
+                    <Route path="library" element={<LibraryGallery />} />
+                    <Route path="settings" element={<SettingsPage />} />
 
-                  {/* Catch-all */}
-                  <Route path="*" element={<Navigate to="/home" replace />} />
-                </Route>
-              </Routes>
-            </Suspense>
-          </FleetConnectionProvider>
-        </MultiPolicyProvider>
+                    {/* Catch-all */}
+                    <Route path="*" element={<Navigate to="/home" replace />} />
+                  </Route>
+                </Routes>
+              </Suspense>
+            </FleetConnectionProvider>
+          </MultiPolicyProvider>
+        </GeneralSettingsProvider>
       </ToastProvider>
     </HashRouter>
   );

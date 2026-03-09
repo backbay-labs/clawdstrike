@@ -16,6 +16,9 @@ import {
   injectBareArrayAuditResponse,
   injectGrantsData,
   injectEmptyApprovals,
+  injectBackendShapedApprovals,
+  injectMinimalBackendApprovals,
+  MOCK_BACKEND_APPROVALS,
 } from "@/test/mock-fleet-server";
 import {
   testConnection,
@@ -424,7 +427,7 @@ describe("distributePolicy", () => {
   });
 
   it("returns error on server failure", async () => {
-    injectPostError("/_proxy/control/api/v1/policy/distribute", 500);
+    injectPostError("/_proxy/control/api/v1/policies/deploy", 500);
     const result = await distributePolicy(makeConn(), "some yaml");
     expect(result.success).toBe(false);
     expect(result.error).toBeDefined();
@@ -680,6 +683,131 @@ describe("edge cases", () => {
     const conn = makeConn({ controlApiUrl: "http://localhost:9877///" });
     const result = await fetchDelegationGraphFromApi(conn);
     expect(result).not.toBeNull();
+  });
+});
+
+// ---- Backend approval shape adapter tests (P2-1) ----
+
+describe("fetchApprovals backend shape adapter", () => {
+  it("adapts backend-shaped flat array to frontend types", async () => {
+    injectBackendShapedApprovals();
+    const result = await fetchApprovals(makeConn());
+
+    expect(result.requests).toHaveLength(MOCK_BACKEND_APPROVALS.length);
+    expect(result.requests[0].id).toBe("apr-backend-001");
+    expect(result.requests[0].toolName).toBe("shell_exec");
+    expect(result.requests[0].status).toBe("pending");
+    expect(result.requests[0].riskLevel).toBe("high");
+    expect(result.requests[0].agentId).toBe("agent-test-001");
+    expect(result.requests[0].agentName).toBe("Claude Coder");
+    expect(result.requests[0].capability).toBe("CommandExec");
+    expect(result.requests[0].enclaveId).toBe("enclave-prod");
+    expect(result.requests[0].reason).toBe("Need to restart service");
+  });
+
+  it("extracts originContext from event_data.origin_context", async () => {
+    injectBackendShapedApprovals();
+    const result = await fetchApprovals(makeConn());
+
+    const ctx = result.requests[0].originContext;
+    expect(ctx.provider).toBe("slack");
+    expect(ctx.tenant_id).toBe("T-test");
+    expect(ctx.space_id).toBe("C-general");
+    expect(ctx.space_type).toBe("channel");
+    expect(ctx.actor_id).toBe("U-alice");
+    expect(ctx.actor_name).toBe("alice");
+    expect(ctx.visibility).toBe("public");
+  });
+
+  it("extracts github origin from second request", async () => {
+    injectBackendShapedApprovals();
+    const result = await fetchApprovals(makeConn());
+
+    expect(result.requests[1].originContext.provider).toBe("github");
+    expect(result.requests[1].riskLevel).toBe("medium");
+    expect(result.requests[1].toolName).toBe("file_write");
+  });
+
+  it("derives expired status from timestamps", async () => {
+    injectBackendShapedApprovals();
+    const result = await fetchApprovals(makeConn());
+
+    // Third entry: backend status is "pending" but expires_at is in the past
+    const expiredRequest = result.requests.find((r) => r.id === "apr-backend-003");
+    expect(expiredRequest).toBeDefined();
+    expect(expiredRequest!.status).toBe("expired");
+  });
+
+  it("produces decisions for resolved backend approvals", async () => {
+    injectBackendShapedApprovals();
+    const result = await fetchApprovals(makeConn());
+
+    // Fourth entry is "approved" in backend
+    expect(result.decisions.length).toBeGreaterThan(0);
+    const approvedDecision = result.decisions.find((d) => d.requestId === "apr-backend-004");
+    expect(approvedDecision).toBeDefined();
+    expect(approvedDecision!.decision).toBe("approved");
+    expect(approvedDecision!.decidedBy).toBe("admin@acme.corp");
+    expect(approvedDecision!.reason).toBe("Approved by admin for routine maintenance");
+  });
+
+  it("uses created_at as requestedAt", async () => {
+    injectBackendShapedApprovals();
+    const result = await fetchApprovals(makeConn());
+
+    expect(result.requests[0].requestedAt).toBe(MOCK_BACKEND_APPROVALS[0].created_at);
+  });
+
+  it("gracefully handles minimal event_data with sensible defaults", async () => {
+    injectMinimalBackendApprovals();
+    const result = await fetchApprovals(makeConn());
+
+    expect(result.requests).toHaveLength(1);
+    const req = result.requests[0];
+    expect(req.id).toBe("apr-minimal-001");
+    expect(req.toolName).toBe("unknown");
+    expect(req.originContext.provider).toBe("api"); // default provider
+    expect(req.riskLevel).toBe("medium"); // default risk
+    expect(req.reason).toBe("Approval required for unknown");
+    expect(req.requestedBy).toBe("agent-minimal"); // falls back to agent_id
+    expect(req.agentId).toBe("agent-minimal");
+  });
+
+  it("still handles frontend-shaped responses via passthrough", async () => {
+    // Default mock returns { requests, decisions } in frontend shape
+    const result = await fetchApprovals(makeConn());
+
+    expect(result.requests).toHaveLength(MOCK_DATA.approvalRequests.length);
+    expect(result.requests[0].toolName).toBe("shell_exec");
+    expect(result.decisions).toHaveLength(MOCK_DATA.approvalDecisions.length);
+  });
+
+  it("handles empty object response gracefully", async () => {
+    const { http: mswHttp, HttpResponse: MswResponse } = await import("msw");
+    mockFleetServer.use(
+      mswHttp.get("/_proxy/control/api/v1/approvals", ({ request }) => {
+        const auth = request.headers.get("Authorization");
+        if (!auth) return new MswResponse(null, { status: 401 });
+        return MswResponse.json({});
+      }),
+    );
+    const result = await fetchApprovals(makeConn());
+    expect(result.requests).toEqual([]);
+    expect(result.decisions).toEqual([]);
+  });
+
+  it("handles { approvals: [...] } wrapper shape", async () => {
+    const { http: mswHttp, HttpResponse: MswResponse } = await import("msw");
+    mockFleetServer.use(
+      mswHttp.get("/_proxy/control/api/v1/approvals", ({ request }) => {
+        const auth = request.headers.get("Authorization");
+        if (!auth) return new MswResponse(null, { status: 401 });
+        return MswResponse.json({ approvals: MOCK_BACKEND_APPROVALS });
+      }),
+    );
+    const result = await fetchApprovals(makeConn());
+    expect(result.requests).toHaveLength(MOCK_BACKEND_APPROVALS.length);
+    expect(result.requests[0].id).toBe("apr-backend-001");
   });
 });
 

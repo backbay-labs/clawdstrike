@@ -6,6 +6,7 @@ import { simulatePolicy } from "@/lib/workbench/simulation-engine";
 import { PRE_BUILT_SCENARIOS } from "@/lib/workbench/pre-built-scenarios";
 import { policyToYaml } from "@/lib/workbench/yaml-utils";
 import { isDesktop } from "@/lib/tauri-bridge";
+import { emitAuditEvent } from "@/lib/workbench/local-audit";
 import {
   simulateActionNative,
   simulateWithPostureNative,
@@ -411,6 +412,20 @@ export function SimulatorLayout() {
                 title: `Probe complete — ${result.overallVerdict === "allow" ? "ACCESS GRANTED" : result.overallVerdict === "deny" ? "THREAT BLOCKED" : "ANOMALY DETECTED"}`,
                 description: `${result.guardResults.length} guard(s) evaluated (Rust engine)`,
               });
+              emitAuditEvent({
+                eventType: "simulation.run",
+                source: "simulator",
+                summary: `Scenario "${scenario.name}" — ${result.overallVerdict} (Rust engine, posture)`,
+                details: {
+                  scenarioId: scenario.id,
+                  scenarioName: scenario.name,
+                  actionType: scenario.actionType,
+                  verdict: result.overallVerdict,
+                  guardsEvaluated: result.guardResults.length,
+                  engine: "rust",
+                  posture: true,
+                },
+              });
               return result;
             }
           }
@@ -423,6 +438,19 @@ export function SimulatorLayout() {
               type: result.overallVerdict === "allow" ? "success" : "error",
               title: `Probe complete — ${result.overallVerdict === "allow" ? "ACCESS GRANTED" : result.overallVerdict === "deny" ? "THREAT BLOCKED" : "ANOMALY DETECTED"}`,
               description: `${result.guardResults.length} guard(s) evaluated (Rust engine)`,
+            });
+            emitAuditEvent({
+              eventType: "simulation.run",
+              source: "simulator",
+              summary: `Scenario "${scenario.name}" — ${result.overallVerdict} (Rust engine)`,
+              details: {
+                scenarioId: scenario.id,
+                scenarioName: scenario.name,
+                actionType: scenario.actionType,
+                verdict: result.overallVerdict,
+                guardsEvaluated: result.guardResults.length,
+                engine: "rust",
+              },
             });
             return result;
           }
@@ -443,6 +471,19 @@ export function SimulatorLayout() {
         type: result.overallVerdict === "allow" ? "success" : "error",
         title: `Probe complete — ${result.overallVerdict === "allow" ? "ACCESS GRANTED" : result.overallVerdict === "deny" ? "THREAT BLOCKED" : "ANOMALY DETECTED"}`,
         description: `${result.guardResults.length} guard(s) evaluated (JS engine)`,
+      });
+      emitAuditEvent({
+        eventType: "simulation.run",
+        source: "simulator",
+        summary: `Scenario "${scenario.name}" — ${result.overallVerdict} (JS engine)`,
+        details: {
+          scenarioId: scenario.id,
+          scenarioName: scenario.name,
+          actionType: scenario.actionType,
+          verdict: result.overallVerdict,
+          guardsEvaluated: result.guardResults.length,
+          engine: "js",
+        },
       });
       return result;
     },
@@ -511,6 +552,18 @@ export function SimulatorLayout() {
         type: "info",
         title: `Batch run complete — ${report.summary.passed}/${report.summary.total} passed`,
         description: "View or download the test report",
+      });
+      emitAuditEvent({
+        eventType: "simulation.batch",
+        source: "simulator",
+        summary: `Batch run: ${report.summary.passed}/${report.summary.total} passed`,
+        details: {
+          policyName: state.activePolicy.name,
+          total: report.summary.total,
+          passed: report.summary.passed,
+          failed: report.summary.failed,
+          scenarioCount: scenarios.length,
+        },
       });
     } finally {
       setSimulating(false);

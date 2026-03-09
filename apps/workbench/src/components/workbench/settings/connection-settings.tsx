@@ -14,6 +14,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useFleetConnection } from "@/lib/workbench/use-fleet-connection";
 import type { HealthResponse } from "@/lib/workbench/fleet-client";
+import { emitAuditEvent } from "@/lib/workbench/local-audit";
 
 /** Ensure a URL has an http(s):// prefix — normalizes bare "localhost:PORT" inputs. */
 function normalizeUrl(raw: string): string {
@@ -71,10 +72,23 @@ export function ConnectionSettings() {
     const cUrl = normalizeUrl(controlApiUrl);
     setHushdUrl(hUrl);
     setControlApiUrl(cUrl);
-    await connect(hUrl, cUrl, apiKey, controlApiToken);
+    const success = await connect(hUrl, cUrl, apiKey, controlApiToken);
+    if (success) {
+      emitAuditEvent({
+        eventType: "fleet.connected",
+        source: "settings",
+        summary: `Connected to fleet at ${hUrl}`,
+        details: { hushdUrl: hUrl, controlApiUrl: cUrl || undefined },
+      });
+    }
   }, [hushdUrl, controlApiUrl, apiKey, controlApiToken, connect]);
 
   const handleDisconnect = useCallback(() => {
+    emitAuditEvent({
+      eventType: "fleet.disconnected",
+      source: "settings",
+      summary: "Disconnected from fleet",
+    });
     disconnect();
     setTestResult(null);
   }, [disconnect]);

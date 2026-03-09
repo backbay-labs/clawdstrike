@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { isDesktop, pickSavePath, savePolicyFile } from "@/lib/tauri-bridge";
 import { exportPolicyFileNative } from "@/lib/tauri-commands";
 import { policyToFormat, formatExtension, formatMimeType, type ExportFormat } from "@/lib/workbench/yaml-utils";
+import { emitAuditEvent } from "@/lib/workbench/local-audit";
 import {
   IconFilePlus,
   IconFolderOpen,
@@ -91,6 +92,42 @@ export function WorkbenchTopbar() {
     statusColor = "bg-[#3dbf84]/10 text-[#3dbf84] border-[#3dbf84]/20";
   }
 
+  // Emit audit event when validation state changes (debounced to avoid spamming)
+  const prevValidationRef = useRef<string | null>(null);
+  useEffect(() => {
+    const key = `${errorCount}:${warningCount}:${activePolicy.name}`;
+    const isFirstRender = prevValidationRef.current === null;
+    if (prevValidationRef.current === key) return;
+    prevValidationRef.current = key;
+    // Skip the initial render — only emit on subsequent changes
+    if (isFirstRender) return;
+    const timer = setTimeout(() => {
+      if (errorCount > 0) {
+        emitAuditEvent({
+          eventType: "policy.validation.failure",
+          source: "editor",
+          summary: `Policy "${activePolicy.name}" has ${errorCount} error(s)`,
+          details: { policyName: activePolicy.name, errors: errorCount, warnings: warningCount },
+        });
+      } else if (warningCount > 0) {
+        emitAuditEvent({
+          eventType: "policy.validation.warnings",
+          source: "editor",
+          summary: `Policy "${activePolicy.name}" valid with ${warningCount} warning(s)`,
+          details: { policyName: activePolicy.name, warnings: warningCount },
+        });
+      } else {
+        emitAuditEvent({
+          eventType: "policy.validation.success",
+          source: "editor",
+          summary: `Policy "${activePolicy.name}" is valid`,
+          details: { policyName: activePolicy.name },
+        });
+      }
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [errorCount, warningCount, activePolicy.name]);
+
   const desktop = isDesktop();
 
   /** Export in the selected format (browser download or native dialog). */
@@ -108,6 +145,12 @@ export function WorkbenchTopbar() {
             dispatch({ type: "SET_FILE_PATH", path: nativeResult.path });
             dispatch({ type: "MARK_CLEAN" });
             toast({ type: "success", title: "Policy saved" });
+            emitAuditEvent({
+              eventType: "policy.export",
+              source: "editor",
+              summary: `Exported "${activePolicy.name}" as ${exportFormat.toUpperCase()} to ${nativeResult.path}`,
+              details: { format: exportFormat, path: nativeResult.path, policyName: activePolicy.name },
+            });
           } else {
             toast({ type: "error", title: "Validation failed", description: nativeResult.message });
           }
@@ -117,6 +160,12 @@ export function WorkbenchTopbar() {
           dispatch({ type: "SET_FILE_PATH", path: targetPath });
           dispatch({ type: "MARK_CLEAN" });
           toast({ type: "success", title: "Policy saved" });
+          emitAuditEvent({
+            eventType: "policy.export",
+            source: "editor",
+            summary: `Exported "${activePolicy.name}" as ${exportFormat.toUpperCase()} to ${targetPath}`,
+            details: { format: exportFormat, path: targetPath, policyName: activePolicy.name },
+          });
         }
       }
     } else {
@@ -136,6 +185,12 @@ export function WorkbenchTopbar() {
       }
       const label = exportFormat.toUpperCase();
       toast({ type: "success", title: `${label} exported` });
+      emitAuditEvent({
+        eventType: "policy.export",
+        source: "editor",
+        summary: `Exported "${activePolicy.name}" as ${label}`,
+        details: { format: exportFormat, policyName: activePolicy.name },
+      });
     }
   }
 

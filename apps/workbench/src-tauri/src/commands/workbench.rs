@@ -14,6 +14,7 @@ use clawdstrike::policy::{
 };
 use clawdstrike::posture::PostureRuntimeState;
 use clawdstrike::{GuardReport, HushEngine, PostureAwareReport};
+use hush_core::canonical::canonicalize as canonicalize_json;
 use hush_core::receipt::{Receipt, Verdict};
 use hush_core::signing::{PublicKey, Signature};
 use hush_core::{sha256, Hash, Keypair, SignedReceipt};
@@ -881,14 +882,20 @@ pub async fn sign_receipt(
 /// Verify a chain of receipts: check Ed25519 signatures, timestamp ordering,
 /// and compute a chain hash from concatenated per-receipt hashes.
 ///
-/// # Note
+/// # Dual-format signature verification (P1-4)
 ///
-/// Chain verification uses a colon-delimited canonical format
-/// (`id:timestamp:verdict:guard:policy_name`) for signature verification and
-/// hashing. This is **different** from `SignedReceipt::sign()`, which signs
-/// RFC 8785 canonical JSON of the `Receipt` struct. These are two separate
-/// integrity mechanisms — chain-level signatures must be produced against the
-/// chain canonical format, not the receipt JSON.
+/// Signature verification tries **two** canonical formats for backward
+/// compatibility:
+///
+/// 1. **Colon-delimited** (legacy chain format):
+///    `id:timestamp:verdict:guard:policy_name`
+/// 2. **RFC 8785 canonical JSON** (matching `sign_receipt` / `SignedReceipt::sign()`):
+///    A deterministic JSON object built from the receipt fields, canonicalized
+///    per RFC 8785 (JCS).
+///
+/// If the signature verifies under *either* format the receipt is accepted.
+/// The chain hash is always computed from the colon-delimited format to keep
+/// existing chain hashes stable.
 #[tauri::command]
 pub async fn verify_receipt_chain(
     receipts: Vec<ChainReceiptInput>,
@@ -933,9 +940,8 @@ pub async fn verify_receipt_chain(
 
     for (i, r) in sorted.iter().enumerate() {
         // Chain-level canonical format: "id:timestamp:verdict:guard:policy_name".
-        // Note: this differs from SignedReceipt::sign() which signs RFC 8785
-        // canonical JSON of the Receipt struct. Chain verification is a separate
-        // integrity mechanism — callers must sign the chain format explicitly.
+        // This is used for the chain hash (always) and as the *first* signature
+        // verification attempt.
         let canonical_content = format!(
             "{}:{}:{}:{}:{}",
             r.id, r.timestamp, r.verdict, r.guard, r.policy_name
@@ -962,24 +968,42 @@ pub async fn verify_receipt_chain(
             }
         };
 
-        let (sig_valid, mut sig_reason) = verify_receipt_signature(
+        // --- Dual-format signature verification (P1-4) ---
+        // Try the colon-delimited chain format first (legacy).
+        let (mut sig_valid, mut sig_reason) = verify_receipt_signature(
             &r.public_key,
             &r.signature,
             canonical_content.as_bytes(),
         );
 
-        // When a signature is parseable but doesn't verify, add a hint about
-        // the format mismatch: SignedReceipt::sign() signs RFC 8785 canonical
-        // JSON, but chain verification checks against the colon-delimited
-        // "id:timestamp:verdict:guard:policy_name" format. Receipts produced
-        // by sign_receipt (the workbench Tauri command) will always fail here
-        // unless they are re-signed over the chain canonical format.
+        // If the colon-delimited check explicitly failed (not just unparseable),
+        // fall back to RFC 8785 canonical JSON. This handles receipts produced by
+        // `sign_receipt` / `SignedReceipt::sign()`, which sign a JSON object
+        // rather than the colon-delimited string.
         if sig_valid == Some(false) {
-            sig_reason.push_str(
-                " Hint: if this receipt was created via sign_receipt, its signature covers \
-                 RFC 8785 canonical JSON — not the chain canonical format. Re-sign over the \
-                 chain format (id:timestamp:verdict:guard:policy_name) for chain verification.",
-            );
+            let json_value = serde_json::json!({
+                "id": r.id,
+                "timestamp": r.timestamp,
+                "verdict": r.verdict,
+                "guard": r.guard,
+                "policy_name": r.policy_name,
+            });
+            if let Ok(canonical_json) = canonicalize_json(&json_value) {
+                let (json_sig_valid, json_sig_reason) = verify_receipt_signature(
+                    &r.public_key,
+                    &r.signature,
+                    canonical_json.as_bytes(),
+                );
+                if json_sig_valid == Some(true) {
+                    sig_valid = json_sig_valid;
+                    sig_reason = format!(
+                        "{} (verified via RFC 8785 canonical JSON fallback)",
+                        json_sig_reason,
+                    );
+                }
+                // If the JSON fallback also failed, keep the original colon-delimited
+                // failure reason — it is more informative for chain-native receipts.
+            }
         }
 
         if sig_valid == Some(true) {
@@ -2096,5 +2120,90 @@ posture:
         let res1 = verify_receipt_chain(chain.clone()).await.unwrap();
         let res2 = verify_receipt_chain(chain).await.unwrap();
         assert_eq!(res1.chain_hash, res2.chain_hash, "chain hash should be deterministic");
+    }
+
+    /// P1-4: Receipts signed over RFC 8785 canonical JSON (as produced by
+    /// `sign_receipt` / `SignedReceipt::sign()`) should verify via the
+    /// dual-format fallback even though the primary colon-delimited check
+    /// would reject them.
+    #[tokio::test]
+    async fn verify_chain_rfc8785_json_signature_fallback() {
+        use hush_core::canonical::canonicalize as canonicalize_json;
+
+        let keypair = Keypair::generate();
+        let pk_hex = keypair.public_key().to_hex();
+
+        let id = "json-sig-receipt";
+        let timestamp = "2026-03-09T10:00:00Z";
+        let verdict = "allow";
+        let guard = "forbidden_path";
+        let policy_name = "test-policy";
+
+        // Sign over the RFC 8785 canonical JSON of the receipt fields — this
+        // is the format produced by `sign_receipt`.
+        let json_value = serde_json::json!({
+            "id": id,
+            "timestamp": timestamp,
+            "verdict": verdict,
+            "guard": guard,
+            "policy_name": policy_name,
+        });
+        let canonical_json = canonicalize_json(&json_value)
+            .expect("canonicalize should not fail for simple JSON object");
+        let sig = keypair.sign(canonical_json.as_bytes());
+
+        let r = ChainReceiptInput {
+            id: id.to_string(),
+            timestamp: timestamp.to_string(),
+            verdict: verdict.to_string(),
+            guard: guard.to_string(),
+            policy_name: policy_name.to_string(),
+            signature: sig.to_hex(),
+            public_key: pk_hex,
+            valid: true,
+        };
+
+        let res = verify_receipt_chain(vec![r]).await.unwrap();
+        assert_eq!(res.chain_length, 1);
+        assert!(
+            res.chain_intact,
+            "chain should be intact via RFC 8785 fallback"
+        );
+        assert!(res.all_signatures_valid);
+        assert_eq!(res.receipts[0].signature_valid, Some(true));
+        assert!(
+            res.receipts[0]
+                .signature_reason
+                .contains("RFC 8785 canonical JSON fallback"),
+            "reason should mention the fallback path: {}",
+            res.receipts[0].signature_reason,
+        );
+    }
+
+    /// P1-4: A receipt whose signature matches neither format should still
+    /// be reported as invalid (the fallback does not weaken verification).
+    #[tokio::test]
+    async fn verify_chain_rfc8785_fallback_does_not_weaken_verification() {
+        let keypair = Keypair::generate();
+        let pk_hex = keypair.public_key().to_hex();
+
+        // Sign completely unrelated content.
+        let sig = keypair.sign(b"totally unrelated content");
+
+        let r = ChainReceiptInput {
+            id: "neither-format".to_string(),
+            timestamp: "2026-03-09T10:00:00Z".to_string(),
+            verdict: "deny".to_string(),
+            guard: "egress_allowlist".to_string(),
+            policy_name: "test-policy".to_string(),
+            signature: sig.to_hex(),
+            public_key: pk_hex,
+            valid: true,
+        };
+
+        let res = verify_receipt_chain(vec![r]).await.unwrap();
+        assert!(!res.chain_intact);
+        assert!(!res.all_signatures_valid);
+        assert_eq!(res.receipts[0].signature_valid, Some(false));
     }
 }

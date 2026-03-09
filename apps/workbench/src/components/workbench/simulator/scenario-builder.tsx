@@ -11,11 +11,14 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Button as MovingBorderButton } from "@/components/ui/moving-border";
 import { useWorkbench } from "@/lib/workbench/multi-policy-store";
+import { useFleetConnection } from "@/lib/workbench/use-fleet-connection";
 import type {
   TestScenario,
   TestActionType,
   Verdict,
   ThreatSeverity,
+  AgentProfile,
+  AgentRuntime,
   OriginContext,
   OriginProvider,
   SpaceType,
@@ -23,7 +26,7 @@ import type {
   ProvenanceConfidence,
   ActorType,
 } from "@/lib/workbench/types";
-import { IconWorld, IconChevronDown, IconBolt, IconUser } from "@tabler/icons-react";
+import { IconWorld, IconChevronDown, IconBolt, IconUser, IconX, IconPlug } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 
 const ACTION_TYPES: { value: TestActionType; label: string }[] = [
@@ -49,6 +52,15 @@ const SEVERITY_OPTIONS: { value: ThreatSeverity | "none"; label: string }[] = [
   { value: "high", label: "High" },
   { value: "medium", label: "Medium" },
   { value: "low", label: "Low" },
+];
+
+const AGENT_RUNTIME_OPTIONS: { value: AgentRuntime; label: string }[] = [
+  { value: "claude", label: "Claude" },
+  { value: "gpt-4", label: "GPT-4" },
+  { value: "gemini", label: "Gemini" },
+  { value: "llama", label: "Llama" },
+  { value: "mistral", label: "Mistral" },
+  { value: "custom", label: "Custom" },
 ];
 
 interface ScenarioBuilderProps {
@@ -111,7 +123,10 @@ export function ScenarioBuilder({
 
       <div className="space-y-5">
         {/* Agent Profile Section */}
-        <AgentProfileSection />
+        <AgentProfileSection
+          agentProfile={scenario.agentProfile}
+          onChange={(profile) => update({ agentProfile: profile })}
+        />
 
         {/* Name */}
         <div>
@@ -268,42 +283,237 @@ export function ScenarioBuilder({
 }
 
 // ---------------------------------------------------------------------------
-// Agent Profile Section (UI-only framing)
+// Agent Profile Section (dynamic, fleet-aware)
 // ---------------------------------------------------------------------------
 
-function AgentProfileSection() {
+const DEFAULT_AGENT_PROFILE: AgentProfile = {
+  agentName: "autonomous-agent-01",
+  agentType: "claude",
+};
+
+function AgentProfileSection({
+  agentProfile,
+  onChange,
+}: {
+  agentProfile: AgentProfile | undefined;
+  onChange: (profile: AgentProfile | undefined) => void;
+}) {
+  const { connection, agents } = useFleetConnection();
+  const isConnected = connection.connected;
+  const [permissionInput, setPermissionInput] = useState("");
+
+  const profile = agentProfile ?? DEFAULT_AGENT_PROFILE;
+
+  const updateProfile = useCallback(
+    (patch: Partial<AgentProfile>) => {
+      onChange({ ...profile, ...patch });
+    },
+    [profile, onChange],
+  );
+
+  const handleFleetAgentSelect = useCallback(
+    (agentId: string | null) => {
+      if (!agentId || agentId === "__custom__") {
+        onChange({
+          agentName: "",
+          agentType: profile.agentType,
+          permissions: profile.permissions,
+        });
+        return;
+      }
+      const agent = agents.find((a) => a.endpoint_agent_id === agentId);
+      if (agent) {
+        onChange({
+          agentId: agent.endpoint_agent_id,
+          agentName: agent.endpoint_agent_id,
+          agentType: profile.agentType,
+          permissions: profile.permissions,
+        });
+      }
+    },
+    [agents, profile, onChange],
+  );
+
+  const addPermission = useCallback(
+    (tag: string) => {
+      const trimmed = tag.trim();
+      if (!trimmed) return;
+      const existing = profile.permissions ?? [];
+      if (existing.includes(trimmed)) return;
+      updateProfile({ permissions: [...existing, trimmed] });
+    },
+    [profile, updateProfile],
+  );
+
+  const removePermission = useCallback(
+    (tag: string) => {
+      const existing = profile.permissions ?? [];
+      updateProfile({ permissions: existing.filter((p) => p !== tag) });
+    },
+    [profile, updateProfile],
+  );
+
+  const handlePermissionKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === "Enter" || e.key === ",") {
+        e.preventDefault();
+        addPermission(permissionInput);
+        setPermissionInput("");
+      }
+    },
+    [permissionInput, addPermission],
+  );
+
   return (
     <div className="border border-[#2d3240] rounded-lg p-4 bg-[#0b0d13]/50">
-      <div className="flex items-center gap-2 mb-3">
-        <IconUser size={13} stroke={1.5} className="text-[#d4a84b]" />
-        <h3 className="text-xs font-mono uppercase tracking-wider text-[#6f7f9a]">
-          Agent Profile
-        </h3>
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <IconUser size={13} stroke={1.5} className="text-[#d4a84b]" />
+          <h3 className="text-xs font-mono uppercase tracking-wider text-[#6f7f9a]">
+            Agent Profile
+          </h3>
+        </div>
+        {isConnected && (
+          <div className="flex items-center gap-1">
+            <IconPlug size={10} stroke={1.5} className="text-[#3dbf84]" />
+            <span className="text-[9px] font-mono text-[#3dbf84]/70">fleet</span>
+          </div>
+        )}
       </div>
-      <div className="grid grid-cols-3 gap-3">
+
+      <div className="space-y-3">
+        {/* Agent name / fleet selector */}
         <div>
           <label className="block text-[10px] font-mono text-[#6f7f9a]/60 mb-1">
-            Agent
+            {isConnected ? "Agent" : "Agent Name"}
           </label>
-          <span className="text-[11px] font-mono text-[#ece7dc]/80">
-            autonomous-agent-01
-          </span>
+          {isConnected && agents.length > 0 ? (
+            <Select
+              value={profile.agentId ?? "__custom__"}
+              onValueChange={handleFleetAgentSelect}
+            >
+              <SelectTrigger className="bg-[#131721] border-[#2d3240] text-[#ece7dc] w-full text-xs font-mono">
+                <SelectValue placeholder="Select fleet agent..." />
+              </SelectTrigger>
+              <SelectContent className="bg-[#131721] border-[#2d3240]">
+                {agents.map((a) => (
+                  <SelectItem
+                    key={a.endpoint_agent_id}
+                    value={a.endpoint_agent_id}
+                    className="text-xs font-mono"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <span
+                        className={cn(
+                          "inline-block w-1.5 h-1.5 rounded-full",
+                          a.online ? "bg-[#3dbf84]" : "bg-[#6f7f9a]/40",
+                        )}
+                      />
+                      {a.endpoint_agent_id}
+                      {a.posture && (
+                        <span className="text-[9px] text-[#6f7f9a]/60 ml-1">
+                          [{a.posture}]
+                        </span>
+                      )}
+                    </span>
+                  </SelectItem>
+                ))}
+                <SelectItem value="__custom__" className="text-xs font-mono text-[#6f7f9a]">
+                  Custom agent...
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          ) : (
+            <Input
+              value={profile.agentName}
+              onChange={(e) => updateProfile({ agentName: e.target.value, agentId: undefined })}
+              placeholder="e.g. autonomous-agent-01"
+              className="bg-[#131721] border-[#2d3240] text-[#ece7dc] font-mono text-xs placeholder:text-[#6f7f9a]/50"
+            />
+          )}
+          {/* Show editable name field when a fleet agent is selected (since fleet ID may not be human-friendly) */}
+          {isConnected && profile.agentId && (
+            <Input
+              value={profile.agentName}
+              onChange={(e) => updateProfile({ agentName: e.target.value })}
+              placeholder="Display name"
+              className="mt-1.5 bg-[#131721] border-[#2d3240] text-[#ece7dc] font-mono text-xs placeholder:text-[#6f7f9a]/50"
+            />
+          )}
+          {/* Also show free-text name when "Custom agent..." selected while connected */}
+          {isConnected && !profile.agentId && agents.length > 0 && (
+            <Input
+              value={profile.agentName}
+              onChange={(e) => updateProfile({ agentName: e.target.value })}
+              placeholder="Agent display name"
+              className="mt-1.5 bg-[#131721] border-[#2d3240] text-[#ece7dc] font-mono text-xs placeholder:text-[#6f7f9a]/50"
+            />
+          )}
         </div>
+
+        {/* Agent type selector */}
         <div>
           <label className="block text-[10px] font-mono text-[#6f7f9a]/60 mb-1">
             Runtime
           </label>
-          <span className="text-[11px] font-mono text-[#ece7dc]/80">
-            Claude
-          </span>
+          <Select
+            value={profile.agentType}
+            onValueChange={(val) => updateProfile({ agentType: val as AgentRuntime })}
+          >
+            <SelectTrigger className="bg-[#131721] border-[#2d3240] text-[#ece7dc] w-full text-xs font-mono">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="bg-[#131721] border-[#2d3240]">
+              {AGENT_RUNTIME_OPTIONS.map((rt) => (
+                <SelectItem key={rt.value} value={rt.value} className="text-xs font-mono">
+                  {rt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
+
+        {/* Permissions / capabilities tags */}
         <div>
           <label className="block text-[10px] font-mono text-[#6f7f9a]/60 mb-1">
-            Trust Level
+            Permissions
           </label>
-          <span className="text-[11px] font-mono text-[#d4a84b]">
-            Sandboxed
-          </span>
+          {/* Tag list */}
+          {(profile.permissions ?? []).length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-1.5">
+              {(profile.permissions ?? []).map((perm) => (
+                <span
+                  key={perm}
+                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-mono text-[#ece7dc]/80 bg-[#131721] border border-[#2d3240] rounded"
+                >
+                  {perm}
+                  <button
+                    type="button"
+                    onClick={() => removePermission(perm)}
+                    className="text-[#6f7f9a] hover:text-[#c45c5c] transition-colors ml-0.5"
+                  >
+                    <IconX size={9} stroke={2} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          <Input
+            value={permissionInput}
+            onChange={(e) => setPermissionInput(e.target.value)}
+            onKeyDown={handlePermissionKeyDown}
+            onBlur={() => {
+              if (permissionInput.trim()) {
+                addPermission(permissionInput);
+                setPermissionInput("");
+              }
+            }}
+            placeholder="e.g. file_read, shell_exec (Enter to add)"
+            className="bg-[#131721] border-[#2d3240] text-[#ece7dc] font-mono text-xs placeholder:text-[#6f7f9a]/50"
+          />
+          <p className="text-[9px] text-[#6f7f9a]/50 mt-1">
+            Capabilities this agent claims. Comma or Enter to add tags.
+          </p>
         </div>
       </div>
     </div>

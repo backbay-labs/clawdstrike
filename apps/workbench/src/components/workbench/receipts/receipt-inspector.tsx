@@ -1,12 +1,14 @@
 import { useState, useCallback, useMemo } from "react";
 import { useWorkbench } from "@/lib/workbench/multi-policy-store";
-import type { Receipt, Verdict, GuardId } from "@/lib/workbench/types";
+import { usePersistedReceipts } from "@/lib/workbench/use-persisted-receipts";
+import type { Receipt, Verdict, GuardId, TestActionType } from "@/lib/workbench/types";
 import { GUARD_REGISTRY } from "@/lib/workbench/guard-registry";
 import { ReceiptTimeline } from "./receipt-timeline";
 import { ChainVerification } from "./chain-verification";
 import { cn } from "@/lib/utils";
-import { signReceiptNative } from "@/lib/tauri-commands";
+import { signReceiptNative, simulateActionNative } from "@/lib/tauri-commands";
 import { isDesktop } from "@/lib/tauri-bridge";
+import { emitAuditEvent } from "@/lib/workbench/local-audit";
 
 function randomHex(len: number): string {
   const bytes = new Uint8Array(len / 2);
@@ -67,6 +69,25 @@ function generateTestReceipt(policyName: string, guards: Record<string, unknown>
   };
 }
 
+/**
+ * Sample actions for "Generate Real Receipt". Each entry maps a user-facing
+ * action type to the native engine action_type string plus a representative target.
+ */
+const SAMPLE_ACTIONS: {
+  label: string;
+  uiType: TestActionType;
+  engineType: string;
+  target: string;
+  content?: string;
+}[] = [
+  { label: "File Read", uiType: "file_access", engineType: "file_access", target: "/home/user/.ssh/id_rsa" },
+  { label: "File Write", uiType: "file_write", engineType: "file_write", target: "/app/src/config.ts", content: "API_KEY=sk-secret-1234" },
+  { label: "Shell Command", uiType: "shell_command", engineType: "shell", target: "rm -rf /tmp/build" },
+  { label: "Network Egress", uiType: "network_egress", engineType: "network", target: "evil.example.com:443" },
+  { label: "MCP Tool Call", uiType: "mcp_tool_call", engineType: "mcp_tool", target: "execute_code" },
+  { label: "Patch Apply", uiType: "patch_apply", engineType: "patch", target: "/app/src/main.rs", content: "--- a/main.rs\n+++ b/main.rs\n@@ -1 +1 @@\n-old\n+new" },
+];
+
 const VERDICT_FILTERS: { value: "all" | Verdict; label: string }[] = [
   { value: "all", label: "All" },
   { value: "allow", label: "Allow" },
@@ -76,7 +97,7 @@ const VERDICT_FILTERS: { value: "all" | Verdict; label: string }[] = [
 
 export function ReceiptInspector() {
   const { state } = useWorkbench();
-  const [receipts, setReceipts] = useState<Receipt[]>([]);
+  const { receipts, setReceipts, clearReceipts } = usePersistedReceipts();
   const [jsonInput, setJsonInput] = useState("");
   const [importError, setImportError] = useState("");
   const [verdictFilter, setVerdictFilter] = useState<"all" | Verdict>("all");
@@ -84,6 +105,9 @@ export function ReceiptInspector() {
   const [search, setSearch] = useState("");
   const [signing, setSigning] = useState(false);
   const [showChainView, setShowChainView] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [selectedAction, setSelectedAction] = useState(0); // index into SAMPLE_ACTIONS
+  const [generateError, setGenerateError] = useState("");
 
   const handleImport = useCallback(() => {
     setImportError("");
@@ -113,6 +137,12 @@ export function ReceiptInspector() {
 
       setReceipts((prev) => [...arr, ...prev]);
       setJsonInput("");
+      emitAuditEvent({
+        eventType: "receipt.import",
+        source: "receipt",
+        summary: `Imported ${arr.length} receipt(s)`,
+        details: { count: arr.length, receiptIds: arr.map((r) => r.id) },
+      });
     } catch (e) {
       setImportError(e instanceof Error ? e.message : "Invalid JSON");
     }
@@ -124,11 +154,177 @@ export function ReceiptInspector() {
       state.activePolicy.guards as unknown as Record<string, unknown>
     );
     setReceipts((prev) => [receipt, ...prev]);
+    emitAuditEvent({
+      eventType: "receipt.generate",
+      source: "receipt",
+      summary: `Generated test receipt — ${receipt.verdict} (${receipt.guard})`,
+      details: { receiptId: receipt.id, verdict: receipt.verdict, guard: receipt.guard, policyName: receipt.policyName },
+    });
   }, [state.activePolicy]);
 
+  /**
+   * Generate a real receipt using the native Rust policy engine + Ed25519 signing.
+   *
+   * Flow:
+   * 1. simulateActionNative() evaluates the selected action against the current policy
+   * 2. signReceiptNative() creates a real Ed25519-signed receipt for the verdict
+   * 3. Both are combined into a Receipt with real verdict, signature, chain hash, and timestamp
+   *
+   * Falls back to generateTestReceipt() when not running in Tauri.
+   */
+  const handleGenerateReal = useCallback(async () => {
+    setGenerateError("");
+
+    // Fallback: if not running in desktop mode, generate a test receipt
+    if (!isDesktop()) {
+      handleGenerate();
+      return;
+    }
+
+    setGenerating(true);
+    try {
+      const sample = SAMPLE_ACTIONS[selectedAction];
+      const policyYaml = state.yaml;
+      const policyName = state.activePolicy.name;
+
+      // Step 1: Simulate the action against the current policy via the Rust engine
+      const simResp = await simulateActionNative(
+        policyYaml,
+        sample.engineType,
+        sample.target,
+        sample.content,
+      );
+
+      if (!simResp) {
+        setGenerateError("Simulation returned no response");
+        return;
+      }
+
+      // Step 2: Compute content hash for signing (SHA-256 of the simulation payload)
+      const simPayload = JSON.stringify({
+        policy: policyName,
+        action_type: sample.engineType,
+        target: sample.target,
+        allowed: simResp.allowed,
+        guard: simResp.guard,
+        timestamp: new Date().toISOString(),
+      });
+      const payloadBytes = new TextEncoder().encode(simPayload);
+      const hashBuffer = await crypto.subtle.digest("SHA-256", payloadBytes.buffer as ArrayBuffer);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      const contentHash = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+
+      // Step 3: Sign the receipt via the Rust Ed25519 crypto layer
+      const signResp = await signReceiptNative(contentHash, simResp.allowed);
+
+      if (!signResp) {
+        setGenerateError("Signing returned no response");
+        return;
+      }
+
+      // Step 4: Extract the Ed25519 signer signature
+      const signatures = signResp.signed_receipt.signatures as
+        | { signer?: unknown; cosigner?: unknown }
+        | undefined;
+      const rawSigner = signatures?.signer;
+      const extractedSignature =
+        typeof rawSigner === "string" && rawSigner.length > 0
+          ? rawSigner
+          : null;
+
+      if (!extractedSignature) {
+        console.warn(
+          "[receipt-inspector] Could not extract signer signature from signed_receipt:",
+          rawSigner,
+        );
+      }
+
+      // Step 5: Determine the verdict — map simulation results to our Verdict type
+      //   - allowed=true -> "allow"
+      //   - allowed=false with severity "warn" -> "warn"
+      //   - allowed=false otherwise -> "deny"
+      let verdict: Verdict = "allow";
+      if (!simResp.allowed) {
+        const hasWarnOnly = simResp.results.every(
+          (r) => r.allowed || r.severity === "warning" || r.severity === "warn"
+        );
+        verdict = hasWarnOnly ? "warn" : "deny";
+      }
+
+      // Step 6: Find the primary guard that drove the decision
+      const denyingGuard = simResp.results.find((r) => !r.allowed);
+      const primaryGuard = denyingGuard?.guard ?? simResp.guard ?? "aggregate";
+
+      // Step 7: Build per-guard evidence from simulation results
+      const guardEvidence: Record<string, unknown>[] = simResp.results.map((r) => ({
+        guard: r.guard,
+        allowed: r.allowed,
+        severity: r.severity,
+        message: r.message,
+        ...(r.details ? { details: r.details } : {}),
+      }));
+
+      // Step 8: Build evaluation path evidence
+      const evaluationPath = simResp.evaluation_path.map((step) => ({
+        guard: step.guard,
+        stage: step.stage,
+        duration_ms: step.stage_duration_ms,
+        result: step.result,
+      }));
+
+      const receipt: Receipt = {
+        id: crypto.randomUUID(),
+        timestamp: new Date().toISOString(),
+        verdict,
+        guard: primaryGuard,
+        policyName,
+        action: { type: sample.uiType, target: sample.target },
+        evidence: {
+          engine: "native",
+          content_hash: contentHash,
+          receipt_hash: signResp.receipt_hash,
+          signed_receipt: signResp.signed_receipt,
+          simulation_allowed: simResp.allowed,
+          simulation_message: simResp.message,
+          guard_results: guardEvidence,
+          evaluation_path: evaluationPath,
+          total_guards_evaluated: simResp.results.length,
+          ...(extractedSignature ? {} : { signature_extraction_failed: true }),
+        },
+        signature: extractedSignature ?? "unsigned",
+        publicKey: signResp.public_key,
+        valid: extractedSignature !== null,
+      };
+
+      setReceipts((prev) => [receipt, ...prev]);
+      emitAuditEvent({
+        eventType: "receipt.generate_real",
+        source: "receipt",
+        summary: `Generated real receipt — ${receipt.verdict} (${receipt.guard}) via native engine`,
+        details: {
+          receiptId: receipt.id,
+          verdict: receipt.verdict,
+          guard: receipt.guard,
+          policyName: receipt.policyName,
+          actionType: sample.engineType,
+          target: sample.target,
+          valid: receipt.valid,
+          publicKey: receipt.publicKey?.slice(0, 16) + "...",
+          guardsEvaluated: simResp.results.length,
+        },
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[receipt-inspector] generate real receipt failed:", err);
+      setGenerateError(message);
+    } finally {
+      setGenerating(false);
+    }
+  }, [state.yaml, state.activePolicy.name, selectedAction, handleGenerate]);
+
   const handleClear = useCallback(() => {
-    setReceipts([]);
-  }, []);
+    clearReceipts();
+  }, [clearReceipts]);
 
   /**
    * Sign a receipt using the Rust Ed25519 crypto layer (Tauri desktop only).
@@ -194,6 +390,19 @@ export function ReceiptInspector() {
           valid: extractedSignature !== null,
         };
         setReceipts((prev) => [receipt, ...prev]);
+        emitAuditEvent({
+          eventType: "receipt.sign",
+          source: "receipt",
+          summary: `Signed receipt — ${receipt.verdict} (${receipt.guard})`,
+          details: {
+            receiptId: receipt.id,
+            verdict: receipt.verdict,
+            guard: receipt.guard,
+            policyName: receipt.policyName,
+            valid: receipt.valid,
+            publicKey: receipt.publicKey?.slice(0, 16) + "...",
+          },
+        });
       }
     } catch (err) {
       console.error("[receipt-inspector] sign_receipt failed:", err);
@@ -250,6 +459,11 @@ export function ReceiptInspector() {
                 {importError}
               </p>
             )}
+            {generateError && (
+              <p className="text-[10px] font-mono text-[#c45c5c] mt-1">
+                Generate failed: {generateError}
+              </p>
+            )}
           </div>
           <div className="flex flex-col gap-1.5 shrink-0">
             <button
@@ -258,24 +472,54 @@ export function ReceiptInspector() {
             >
               Import
             </button>
-            <button
-              onClick={handleGenerate}
-              className="px-3 py-1.5 text-xs font-medium text-[#d4a84b] bg-[#d4a84b]/10 border border-[#d4a84b]/20 rounded-md hover:bg-[#d4a84b]/20 transition-colors"
-            >
-              Generate Test
-            </button>
-            {isDesktop() && (
+            {isDesktop() ? (
+              <>
+                {/* Action type selector + Generate Real Receipt (desktop only) */}
+                <div className="flex items-center gap-1">
+                  <select
+                    value={selectedAction}
+                    onChange={(e) => setSelectedAction(Number(e.target.value))}
+                    disabled={generating}
+                    className="h-7 flex-1 min-w-0 px-1.5 text-[10px] font-mono bg-[#131721] border border-[#2d3240] rounded-md text-[#ece7dc] outline-none focus:border-[#3dbf84]/50 disabled:opacity-50"
+                  >
+                    {SAMPLE_ACTIONS.map((sa, i) => (
+                      <option key={sa.engineType} value={i}>
+                        {sa.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  onClick={handleGenerateReal}
+                  disabled={generating}
+                  className={cn(
+                    "px-3 py-1.5 text-xs font-medium border rounded-md transition-colors",
+                    generating
+                      ? "text-[#6f7f9a] bg-[#131721] border-[#2d3240] cursor-wait"
+                      : "text-[#3dbf84] bg-[#3dbf84]/10 border-[#3dbf84]/20 hover:bg-[#3dbf84]/20"
+                  )}
+                >
+                  {generating ? "Generating..." : "Generate Real"}
+                </button>
+                <button
+                  onClick={handleSignReceipt}
+                  disabled={signing}
+                  className={cn(
+                    "px-3 py-1.5 text-xs font-medium border rounded-md transition-colors",
+                    signing
+                      ? "text-[#6f7f9a] bg-[#131721] border-[#2d3240] cursor-wait"
+                      : "text-[#6f7f9a] bg-[#131721] border-[#2d3240] hover:border-[#d4a84b]/40 hover:text-[#ece7dc]"
+                  )}
+                >
+                  {signing ? "Signing..." : "Sign Only"}
+                </button>
+              </>
+            ) : (
               <button
-                onClick={handleSignReceipt}
-                disabled={signing}
-                className={cn(
-                  "px-3 py-1.5 text-xs font-medium border rounded-md transition-colors",
-                  signing
-                    ? "text-[#6f7f9a] bg-[#131721] border-[#2d3240] cursor-wait"
-                    : "text-[#3dbf84] bg-[#3dbf84]/10 border-[#3dbf84]/20 hover:bg-[#3dbf84]/20"
-                )}
+                onClick={handleGenerate}
+                className="px-3 py-1.5 text-xs font-medium text-[#d4a84b] bg-[#d4a84b]/10 border border-[#d4a84b]/20 rounded-md hover:bg-[#d4a84b]/20 transition-colors"
               >
-                {signing ? "Signing..." : "Sign Receipt"}
+                Generate Test
               </button>
             )}
             {receipts.length >= 2 && (

@@ -1,5 +1,21 @@
-import type { ApprovalRequest, ApprovalDecision, ApprovalScope } from "./approval-types";
-import type { DelegationGraph, DelegationNode, DelegationEdge } from "./delegation-types";
+import type {
+  ApprovalRequest,
+  ApprovalDecision,
+  ApprovalScope,
+  ApprovalStatus,
+  RiskLevel,
+  OriginContext,
+  OriginProvider,
+} from "./approval-types";
+import type {
+  DelegationGraph,
+  DelegationNode,
+  DelegationEdge,
+  NodeKind,
+  TrustLevel,
+  EdgeKind,
+  Capability,
+} from "./delegation-types";
 
 const DEV = import.meta.env.DEV;
 
@@ -129,6 +145,47 @@ export interface AgentStatusResponse {
   stale_after_secs: number;
   endpoints: AgentInfo[];
   runtimes: unknown[];
+}
+
+export interface PrincipalInfo {
+  id: string;
+  name?: string;
+  kind?: string;
+  role?: string;
+  trust_level?: string;
+  capabilities?: string[];
+  metadata?: Record<string, unknown>;
+  created_at?: string;
+  updated_at?: string;
+}
+
+/** Backend delegation graph node shape from GET /api/v1/principals/{id}/delegation-graph */
+interface BackendGraphNode {
+  id: string;
+  kind: string;
+  label?: string;
+  role?: string;
+  trust_level?: string;
+  capabilities?: string[];
+  metadata?: Record<string, unknown>;
+}
+
+/** Backend delegation graph edge shape */
+interface BackendGraphEdge {
+  id: string;
+  from: string;
+  to: string;
+  kind: string;
+  capabilities?: string[];
+  metadata?: Record<string, unknown>;
+}
+
+/** Backend delegation graph snapshot response */
+interface BackendDelegationGraphResponse {
+  nodes: BackendGraphNode[];
+  edges: BackendGraphEdge[];
+  generated_at?: string;
+  principal_id?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -352,11 +409,11 @@ export async function distributePolicy(
   const ctrlUrl = stripTrailingSlash(conn.controlApiUrl);
   try {
     const res = await jsonFetch<{ success?: boolean; hash?: string }>(
-      proxyUrl(`${ctrlUrl}/api/v1/policy/distribute`, "control"),
+      proxyUrl(`${ctrlUrl}/api/v1/policies/deploy`, "control"),
       {
         method: "POST",
         headers: controlHeaders(conn),
-        body: JSON.stringify({ yaml }),
+        body: JSON.stringify({ policy_yaml: yaml }),
       },
     );
     return { success: res.success !== false, hash: res.hash };
@@ -375,20 +432,260 @@ function preferredUrl(conn: FleetConnection): { url: string; kind: "control" | "
   return { url: stripTrailingSlash(conn.hushdUrl), kind: "hushd" };
 }
 
+// ---------------------------------------------------------------------------
+// Backend approval shape adapter (P2-1)
+// ---------------------------------------------------------------------------
+
+/**
+ * Raw approval row returned by the control-api backend.
+ *
+ * The backend stores a flat DB row with an opaque `event_data` JSONB blob.
+ * The frontend expects a richer `ApprovalRequest` + `ApprovalDecision` pair.
+ * This type captures the wire format so we can adapt it cleanly.
+ */
+interface BackendApproval {
+  id: string;
+  tenant_id: string;
+  principal_id?: string | null;
+  agent_id: string;
+  request_id: string;
+  event_type: string;
+  event_data: Record<string, unknown>;
+  status: string;
+  resolved_by?: string | null;
+  resolved_at?: string | null;
+  created_at: string;
+}
+
+/** Known backend status values that map directly to frontend status. */
+const BACKEND_KNOWN_STATUSES = new Set<string>(["pending", "approved", "denied"]);
+
+/** Known provider identifiers accepted by the frontend OriginProvider type. */
+const BACKEND_KNOWN_PROVIDERS = new Set<string>(["slack", "teams", "github", "jira", "cli", "api"]);
+
+/** Known risk levels accepted by the frontend RiskLevel type. */
+const BACKEND_KNOWN_RISK_LEVELS = new Set<string>(["low", "medium", "high", "critical"]);
+
+/**
+ * Derive the frontend `ApprovalStatus` from the backend row.
+ *
+ * The backend DB only stores "pending", "approved", or "denied".
+ * The frontend also has "expired", which we derive by checking whether
+ * a still-pending request has passed its `expires_at` timestamp.
+ */
+function deriveApprovalStatus(
+  backendStatus: string,
+  expiresAt: string | undefined,
+): ApprovalStatus {
+  const normalized = backendStatus.toLowerCase();
+  if (normalized === "pending" && expiresAt) {
+    const expiresMs = new Date(expiresAt).getTime();
+    if (!Number.isNaN(expiresMs) && expiresMs < Date.now()) {
+      return "expired";
+    }
+  }
+  if (BACKEND_KNOWN_STATUSES.has(normalized)) {
+    return normalized as ApprovalStatus;
+  }
+  // Fail-closed: unknown statuses treated as denied in the UI.
+  return "denied";
+}
+
+/**
+ * Safely extract an OriginContext from the backend event_data blob.
+ * Supports both snake_case (`origin_context`) and camelCase (`originContext`) keys.
+ */
+function extractOriginContext(eventData: Record<string, unknown>): OriginContext {
+  const raw =
+    (eventData.origin_context as Record<string, unknown> | undefined) ??
+    (eventData.originContext as Record<string, unknown> | undefined);
+
+  if (!raw || typeof raw !== "object") {
+    return { provider: "api" };
+  }
+
+  const providerRaw = String(raw.provider ?? "api").toLowerCase();
+  const provider: OriginProvider = BACKEND_KNOWN_PROVIDERS.has(providerRaw)
+    ? (providerRaw as OriginProvider)
+    : "api";
+
+  return {
+    provider,
+    tenant_id: optionalString(raw.tenant_id),
+    space_id: optionalString(raw.space_id),
+    space_type: optionalString(raw.space_type),
+    actor_id: optionalString(raw.actor_id),
+    actor_name: optionalString(raw.actor_name),
+    visibility: optionalString(raw.visibility),
+  };
+}
+
+/** Safely extract a RiskLevel from the event_data blob. */
+function extractRiskLevel(eventData: Record<string, unknown>): RiskLevel {
+  const raw = optionalString(eventData.risk_level ?? eventData.riskLevel ?? eventData.severity);
+  if (raw && BACKEND_KNOWN_RISK_LEVELS.has(raw.toLowerCase())) {
+    return raw.toLowerCase() as RiskLevel;
+  }
+  return "medium";
+}
+
+/** Convert a value to a trimmed string if truthy, otherwise undefined. */
+function optionalString(value: unknown): string | undefined {
+  if (value == null) return undefined;
+  const s = String(value).trim();
+  return s.length > 0 ? s : undefined;
+}
+
+/**
+ * Default expiry: 30 minutes from the request's created_at timestamp.
+ * Used when the backend event_data does not include an `expires_at` field.
+ */
+function defaultExpiresAt(createdAt: string): string {
+  const ts = new Date(createdAt).getTime();
+  if (Number.isNaN(ts)) return new Date(Date.now() + 30 * 60_000).toISOString();
+  return new Date(ts + 30 * 60_000).toISOString();
+}
+
+/**
+ * Adapt a single backend approval row into the frontend `ApprovalRequest` shape.
+ *
+ * Fields are extracted from the opaque `event_data` JSON blob with sensible
+ * defaults for any missing values.
+ */
+function adaptBackendApproval(raw: BackendApproval): ApprovalRequest {
+  const ed = raw.event_data ?? {};
+
+  const toolName =
+    optionalString(ed.tool) ??
+    optionalString(ed.tool_name) ??
+    optionalString(ed.toolName) ??
+    optionalString(ed.resource) ??
+    "unknown";
+
+  const expiresAtRaw =
+    optionalString(ed.expires_at) ?? optionalString(ed.expiresAt);
+  const expiresAt = expiresAtRaw ?? defaultExpiresAt(raw.created_at);
+
+  const status = deriveApprovalStatus(raw.status, expiresAt);
+
+  return {
+    id: raw.request_id || raw.id,
+    originContext: extractOriginContext(ed),
+    enclaveId: optionalString(ed.enclave_id ?? ed.enclaveId),
+    toolName,
+    reason:
+      optionalString(ed.reason) ??
+      optionalString(ed.guard) ??
+      `Approval required for ${toolName}`,
+    requestedBy:
+      optionalString(ed.requested_by) ??
+      optionalString(ed.requestedBy) ??
+      optionalString(ed.actor_name) ??
+      raw.agent_id,
+    requestedAt: raw.created_at,
+    expiresAt,
+    status,
+    agentId: raw.agent_id,
+    agentName: optionalString(ed.agent_name) ?? optionalString(ed.agentName),
+    capability: optionalString(ed.capability),
+    riskLevel: extractRiskLevel(ed),
+  };
+}
+
+/**
+ * If the backend approval is resolved, produce a corresponding
+ * `ApprovalDecision` for the frontend decision map.
+ */
+function adaptBackendDecision(raw: BackendApproval): ApprovalDecision | null {
+  const normalizedStatus = raw.status.toLowerCase();
+  if (normalizedStatus !== "approved" && normalizedStatus !== "denied") {
+    return null;
+  }
+  return {
+    requestId: raw.request_id || raw.id,
+    decision: normalizedStatus as "approved" | "denied",
+    reason: optionalString(raw.event_data?.resolution_reason as unknown),
+    decidedBy: raw.resolved_by ?? "control-api",
+    decidedAt: raw.resolved_at ?? raw.created_at,
+  };
+}
+
+/**
+ * Adapt the backend response (a flat array of approval rows or a wrapped
+ * `{ requests, decisions }` object) into the frontend-expected shape.
+ *
+ * Handles three response shapes:
+ * 1. `BackendApproval[]` -- control-api returns a flat array
+ * 2. `{ requests, decisions }` -- already in frontend shape (passthrough)
+ * 3. `{ approvals: BackendApproval[] }` -- alternate wrapper
+ */
+function adaptApprovalsResponse(
+  res: unknown,
+): { requests: ApprovalRequest[]; decisions: ApprovalDecision[] } {
+  // Shape 1: flat array of backend approval rows
+  if (Array.isArray(res)) {
+    const requests: ApprovalRequest[] = [];
+    const decisions: ApprovalDecision[] = [];
+    for (const item of res) {
+      if (!item || typeof item !== "object") continue;
+      const row = item as Record<string, unknown>;
+
+      // Heuristic: if the item has `event_data` it is a backend row.
+      // If it has `toolName` or `originContext` it is already a frontend shape.
+      if ("event_data" in row) {
+        requests.push(adaptBackendApproval(row as unknown as BackendApproval));
+        const decision = adaptBackendDecision(row as unknown as BackendApproval);
+        if (decision) decisions.push(decision);
+      } else if ("toolName" in row || "originContext" in row) {
+        // Already in frontend shape -- passthrough
+        requests.push(row as unknown as ApprovalRequest);
+      }
+    }
+    return { requests, decisions };
+  }
+
+  // Shape 2 or 3: wrapped object
+  if (res && typeof res === "object") {
+    const obj = res as Record<string, unknown>;
+
+    // If it already has `requests` key, check if items need adaptation
+    if ("requests" in obj && Array.isArray(obj.requests)) {
+      const rawRequests = obj.requests as Record<string, unknown>[];
+      const needsAdaptation =
+        rawRequests.length > 0 && "event_data" in rawRequests[0];
+      if (needsAdaptation) {
+        return adaptApprovalsResponse(rawRequests);
+      }
+      return {
+        requests: rawRequests as unknown as ApprovalRequest[],
+        decisions: (Array.isArray(obj.decisions)
+          ? obj.decisions
+          : []) as ApprovalDecision[],
+      };
+    }
+
+    // Alternate wrapper: `{ approvals: [...] }`
+    if ("approvals" in obj && Array.isArray(obj.approvals)) {
+      return adaptApprovalsResponse(obj.approvals);
+    }
+  }
+
+  // Unknown shape -- return empty (fail-closed)
+  console.warn(
+    "[fleet-client] fetchApprovals: unexpected response shape, returning empty",
+  );
+  return { requests: [], decisions: [] };
+}
+
 export async function fetchApprovals(
   conn: FleetConnection,
 ): Promise<{ requests: ApprovalRequest[]; decisions: ApprovalDecision[] }> {
   const { url, kind } = preferredUrl(conn);
-  const res = await jsonFetch<{
-    requests?: ApprovalRequest[];
-    decisions?: ApprovalDecision[];
-  }>(proxyUrl(`${url}/api/v1/approvals`, kind), {
-    headers: controlHeaders(conn),
-  });
-  return {
-    requests: res.requests ?? [],
-    decisions: res.decisions ?? [],
-  };
+  const res = await jsonFetch<unknown>(
+    proxyUrl(`${url}/api/v1/approvals`, kind),
+    { headers: controlHeaders(conn) },
+  );
+  return adaptApprovalsResponse(res);
 }
 
 export async function resolveApproval(
@@ -444,6 +741,357 @@ export async function fetchDelegationGraphFromApi(
     return null;
   }
 }
+
+/** Known NodeKind values the frontend recognizes. */
+const KNOWN_NODE_KINDS = new Set<string>([
+  "Principal", "Session", "Grant", "Approval", "Event", "ResponseAction",
+]);
+
+/** Known TrustLevel values the frontend recognizes. */
+const KNOWN_TRUST_LEVELS = new Set<string>([
+  "Untrusted", "Low", "Medium", "High", "System",
+]);
+
+/** Known EdgeKind values the frontend recognizes. */
+const KNOWN_EDGE_KINDS = new Set<string>([
+  "IssuedGrant", "ReceivedGrant", "DerivedFromGrant", "SpawnedPrincipal",
+  "ApprovedBy", "RevokedBy", "ExercisedInSession", "ExercisedInEvent",
+  "TriggeredResponseAction",
+]);
+
+/** Known Capability values the frontend recognizes. */
+const KNOWN_CAPABILITIES = new Set<string>([
+  "FileRead", "FileWrite", "NetworkEgress", "CommandExec", "SecretAccess",
+  "McpTool", "DeployApproval", "AgentAdmin", "Custom",
+]);
+
+function mapNodeKind(kind: string): NodeKind {
+  return KNOWN_NODE_KINDS.has(kind) ? (kind as NodeKind) : "Principal";
+}
+
+function mapTrustLevel(level: string | undefined): TrustLevel | undefined {
+  if (!level) return undefined;
+  return KNOWN_TRUST_LEVELS.has(level) ? (level as TrustLevel) : undefined;
+}
+
+function mapEdgeKind(kind: string): EdgeKind {
+  return KNOWN_EDGE_KINDS.has(kind) ? (kind as EdgeKind) : "IssuedGrant";
+}
+
+function mapCapabilities(caps: string[] | undefined): Capability[] | undefined {
+  if (!caps || caps.length === 0) return undefined;
+  return caps
+    .filter((c) => KNOWN_CAPABILITIES.has(c))
+    .map((c) => c as Capability);
+}
+
+/**
+ * Map a backend delegation graph response to frontend DelegationGraph types.
+ * Gracefully coerces unknown `kind` / `trust_level` values to safe defaults.
+ */
+function mapBackendGraphToFrontend(backend: BackendDelegationGraphResponse): DelegationGraph {
+  const nodes: DelegationNode[] = backend.nodes.map((n) => ({
+    id: n.id,
+    kind: mapNodeKind(n.kind),
+    label: n.label ?? n.id,
+    role: n.role as DelegationNode["role"],
+    trustLevel: mapTrustLevel(n.trust_level),
+    capabilities: mapCapabilities(n.capabilities),
+    metadata: n.metadata ?? {},
+  }));
+
+  const edges: DelegationEdge[] = backend.edges.map((e) => ({
+    id: e.id,
+    from: e.from,
+    to: e.to,
+    kind: mapEdgeKind(e.kind),
+    capabilities: mapCapabilities(e.capabilities),
+    metadata: e.metadata,
+  }));
+
+  return { nodes, edges };
+}
+
+/**
+ * Fetch a full delegation graph snapshot for a given principal from the backend.
+ * Calls GET /api/v1/principals/{id}/delegation-graph on the control API.
+ * Falls back to the grants-based graph if the endpoint is unavailable.
+ */
+export async function fetchDelegationGraphSnapshot(
+  conn: FleetConnection,
+  principalId: string,
+): Promise<DelegationGraph | null> {
+  const { url, kind } = preferredUrl(conn);
+  if (!url) return null;
+
+  try {
+    const res = await jsonFetch<BackendDelegationGraphResponse>(
+      proxyUrl(`${url}/api/v1/principals/${encodeURIComponent(principalId)}/delegation-graph`, kind),
+      { headers: controlHeaders(conn) },
+    );
+    // Runtime validation
+    if (!res || !Array.isArray(res.nodes) || !Array.isArray(res.edges)) {
+      throw new Error("[fleet-client] fetchDelegationGraphSnapshot: unexpected response shape");
+    }
+    const graph = mapBackendGraphToFrontend(res);
+    return graph.nodes.length > 0 ? graph : null;
+  } catch (e) {
+    console.warn("[fleet-client] delegation-graph endpoint unavailable, falling back to grants:", e);
+    // Fallback to the older grants-based approach
+    return fetchDelegationGraphFromApi(conn);
+  }
+}
+
+/**
+ * List available principals from the control API.
+ * Calls GET /api/v1/principals on the control API.
+ */
+export async function fetchPrincipals(
+  conn: FleetConnection,
+): Promise<PrincipalInfo[]> {
+  const { url, kind } = preferredUrl(conn);
+  if (!url) return [];
+
+  try {
+    const res = await jsonFetch<unknown>(
+      proxyUrl(`${url}/api/v1/principals`, kind),
+      { headers: controlHeaders(conn) },
+    );
+    // The response may be { principals: [...] } or a bare array
+    let list: unknown[];
+    if (Array.isArray(res)) {
+      list = res;
+    } else if (res && typeof res === "object" && "principals" in res) {
+      const wrapped = res as { principals: unknown };
+      if (!Array.isArray(wrapped.principals)) {
+        throw new Error("[fleet-client] fetchPrincipals: expected principals to be an array");
+      }
+      list = wrapped.principals;
+    } else {
+      throw new Error("[fleet-client] fetchPrincipals: unexpected response shape");
+    }
+
+    // Validate and coerce each entry
+    return list.filter((p): p is PrincipalInfo => {
+      if (!p || typeof p !== "object") return false;
+      return typeof (p as Record<string, unknown>).id === "string";
+    });
+  } catch (e) {
+    console.warn("[fleet-client] fetchPrincipals failed:", e);
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Scoped Policies & Policy Assignments (P2-3: Hierarchy sync)
+// ---------------------------------------------------------------------------
+
+/**
+ * A scoped policy as stored in the backend.
+ * Represents a policy bound to a scope within the org hierarchy.
+ */
+export interface ScopedPolicy {
+  id: string;
+  scope_type: "org" | "team" | "agent";
+  scope_id: string;
+  scope_name: string;
+  policy_yaml: string;
+  policy_name?: string;
+  parent_scope_id?: string | null;
+  metadata?: Record<string, unknown>;
+  created_at?: string;
+  updated_at?: string;
+}
+
+/**
+ * Input shape for creating a new scoped policy.
+ */
+export interface ScopedPolicyInput {
+  scope_type: "org" | "team" | "agent";
+  scope_id: string;
+  scope_name: string;
+  policy_yaml: string;
+  policy_name?: string;
+  parent_scope_id?: string | null;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * A policy assignment linking a scope node to a specific policy.
+ */
+export interface PolicyAssignment {
+  id: string;
+  scope_id: string;
+  scope_name: string;
+  scope_type: "org" | "team" | "agent";
+  policy_id?: string;
+  policy_name?: string;
+  parent_scope_id?: string | null;
+  children?: string[];
+  created_at?: string;
+}
+
+/**
+ * Input shape for creating a policy assignment.
+ */
+export interface PolicyAssignmentInput {
+  scope_id: string;
+  scope_name: string;
+  scope_type: "org" | "team" | "agent";
+  policy_id?: string;
+  policy_name?: string;
+  parent_scope_id?: string | null;
+  children?: string[];
+}
+
+/**
+ * Fetch all scoped policies from the backend.
+ * Calls GET /api/v1/scoped-policies on the preferred (control-api or hushd) endpoint.
+ */
+export async function fetchScopedPolicies(
+  conn: FleetConnection,
+): Promise<ScopedPolicy[]> {
+  const { url, kind } = preferredUrl(conn);
+  if (!url) return [];
+
+  try {
+    const res = await jsonFetch<unknown>(
+      proxyUrl(`${url}/api/v1/scoped-policies`, kind),
+      { headers: controlHeaders(conn) },
+    );
+
+    // Handle wrapped or bare array responses
+    let list: unknown[];
+    if (Array.isArray(res)) {
+      list = res;
+    } else if (res && typeof res === "object" && "scoped_policies" in res) {
+      const wrapped = res as { scoped_policies: unknown };
+      if (!Array.isArray(wrapped.scoped_policies)) {
+        throw new Error("[fleet-client] fetchScopedPolicies: expected scoped_policies to be an array");
+      }
+      list = wrapped.scoped_policies;
+    } else if (res && typeof res === "object" && "policies" in res) {
+      const wrapped = res as { policies: unknown };
+      if (!Array.isArray(wrapped.policies)) {
+        throw new Error("[fleet-client] fetchScopedPolicies: expected policies to be an array");
+      }
+      list = wrapped.policies;
+    } else {
+      throw new Error("[fleet-client] fetchScopedPolicies: unexpected response shape");
+    }
+
+    return list.filter((p): p is ScopedPolicy => {
+      if (!p || typeof p !== "object") return false;
+      const obj = p as Record<string, unknown>;
+      return typeof obj.id === "string" && typeof obj.scope_id === "string";
+    });
+  } catch (e) {
+    console.warn("[fleet-client] fetchScopedPolicies failed:", e);
+    return [];
+  }
+}
+
+/**
+ * Create a new scoped policy on the backend.
+ * Calls POST /api/v1/scoped-policies.
+ */
+export async function createScopedPolicy(
+  conn: FleetConnection,
+  policy: ScopedPolicyInput,
+): Promise<{ success: boolean; id?: string; error?: string }> {
+  const { url, kind } = preferredUrl(conn);
+  if (!url) return { success: false, error: "No API URL configured" };
+
+  try {
+    const res = await jsonFetch<{ id?: string; success?: boolean }>(
+      proxyUrl(`${url}/api/v1/scoped-policies`, kind),
+      {
+        method: "POST",
+        headers: controlHeaders(conn),
+        body: JSON.stringify(policy),
+      },
+    );
+    return { success: true, id: res.id };
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+/**
+ * Fetch all policy assignments from the backend.
+ * Calls GET /api/v1/policy-assignments on the preferred endpoint.
+ */
+export async function fetchPolicyAssignments(
+  conn: FleetConnection,
+): Promise<PolicyAssignment[]> {
+  const { url, kind } = preferredUrl(conn);
+  if (!url) return [];
+
+  try {
+    const res = await jsonFetch<unknown>(
+      proxyUrl(`${url}/api/v1/policy-assignments`, kind),
+      { headers: controlHeaders(conn) },
+    );
+
+    let list: unknown[];
+    if (Array.isArray(res)) {
+      list = res;
+    } else if (res && typeof res === "object" && "assignments" in res) {
+      const wrapped = res as { assignments: unknown };
+      if (!Array.isArray(wrapped.assignments)) {
+        throw new Error("[fleet-client] fetchPolicyAssignments: expected assignments to be an array");
+      }
+      list = wrapped.assignments;
+    } else {
+      throw new Error("[fleet-client] fetchPolicyAssignments: unexpected response shape");
+    }
+
+    return list.filter((a): a is PolicyAssignment => {
+      if (!a || typeof a !== "object") return false;
+      const obj = a as Record<string, unknown>;
+      return typeof obj.id === "string" && typeof obj.scope_id === "string";
+    });
+  } catch (e) {
+    console.warn("[fleet-client] fetchPolicyAssignments failed:", e);
+    return [];
+  }
+}
+
+/**
+ * Create a policy assignment on the backend.
+ * Calls POST /api/v1/policy-assignments.
+ */
+export async function assignPolicyToScope(
+  conn: FleetConnection,
+  assignment: PolicyAssignmentInput,
+): Promise<{ success: boolean; id?: string; error?: string }> {
+  const { url, kind } = preferredUrl(conn);
+  if (!url) return { success: false, error: "No API URL configured" };
+
+  try {
+    const res = await jsonFetch<{ id?: string; success?: boolean }>(
+      proxyUrl(`${url}/api/v1/policy-assignments`, kind),
+      {
+        method: "POST",
+        headers: controlHeaders(conn),
+        body: JSON.stringify(assignment),
+      },
+    );
+    return { success: true, id: res.id };
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Grants → DelegationGraph conversion
+// ---------------------------------------------------------------------------
 
 function grantsToGraph(grants: Record<string, unknown>[]): DelegationGraph {
   const nodesMap = new Map<string, DelegationNode>();
@@ -521,6 +1169,16 @@ export const fleetClient = {
   async fetchDelegationGraph(): Promise<DelegationGraph | null> {
     const conn = savedConnection();
     return conn.controlApiUrl ? fetchDelegationGraphFromApi(conn) : null;
+  },
+
+  async fetchDelegationGraphSnapshot(principalId: string): Promise<DelegationGraph | null> {
+    const conn = savedConnection();
+    return fetchDelegationGraphSnapshot(conn, principalId);
+  },
+
+  async fetchPrincipals(): Promise<PrincipalInfo[]> {
+    const conn = savedConnection();
+    return fetchPrincipals(conn);
   },
 
   async fetchApprovals(): Promise<{ requests: ApprovalRequest[]; decisions: ApprovalDecision[] } | null> {

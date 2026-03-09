@@ -402,7 +402,7 @@ const controlApiHandlers = [
     return HttpResponse.json({ ok: true, id, decision: body.decision });
   }),
 
-  http.post("/_proxy/control/api/v1/policy/distribute", async ({ request }) => {
+  http.post("/_proxy/control/api/v1/policies/deploy", async ({ request }) => {
     return requireAuth(request) ?? HttpResponse.json({ success: true, hash: "sha256:distributed456" });
   }),
 
@@ -461,6 +461,141 @@ export function injectEmptyApprovals() {
   mockFleetServer.use(
     http.get("/_proxy/control/api/v1/approvals", ({ request }) => {
       return requireAuth(request) ?? HttpResponse.json({ requests: [], decisions: [] });
+    }),
+  );
+}
+
+/**
+ * Backend-shaped approval rows (as returned by control-api's `list_approvals`).
+ * These use the Rust `Approval` struct shape with an opaque `event_data` JSONB blob.
+ */
+export const MOCK_BACKEND_APPROVALS = [
+  {
+    id: "a1b2c3d4-0000-0000-0000-000000000001",
+    tenant_id: "t1t2t3t4-0000-0000-0000-000000000001",
+    principal_id: null,
+    agent_id: "agent-test-001",
+    request_id: "apr-backend-001",
+    event_type: "approval.request",
+    event_data: {
+      tool: "shell_exec",
+      reason: "Need to restart service",
+      severity: "high",
+      session_id: "sess-001",
+      expires_at: new Date(Date.now() + 300_000).toISOString(),
+      origin_context: {
+        provider: "slack",
+        tenant_id: "T-test",
+        space_id: "C-general",
+        space_type: "channel",
+        actor_id: "U-alice",
+        actor_name: "alice",
+        visibility: "public",
+      },
+      agent_name: "Claude Coder",
+      capability: "CommandExec",
+      risk_level: "high",
+      enclave_id: "enclave-prod",
+      requested_by: "agent-test-001",
+    },
+    status: "pending",
+    resolved_by: null,
+    resolved_at: null,
+    created_at: new Date(Date.now() - 60_000).toISOString(),
+  },
+  {
+    id: "a1b2c3d4-0000-0000-0000-000000000002",
+    tenant_id: "t1t2t3t4-0000-0000-0000-000000000001",
+    principal_id: null,
+    agent_id: "agent-test-003",
+    request_id: "apr-backend-002",
+    event_type: "approval.request",
+    event_data: {
+      tool: "file_write",
+      reason: "Write deployment config",
+      origin_context: {
+        provider: "github",
+        tenant_id: "backbay-labs",
+        space_id: "PR-42",
+        space_type: "pull_request",
+        actor_id: "U-bob",
+        actor_name: "bob",
+      },
+      risk_level: "medium",
+      expires_at: new Date(Date.now() + 600_000).toISOString(),
+    },
+    status: "pending",
+    resolved_by: null,
+    resolved_at: null,
+    created_at: new Date(Date.now() - 120_000).toISOString(),
+  },
+  {
+    id: "a1b2c3d4-0000-0000-0000-000000000003",
+    tenant_id: "t1t2t3t4-0000-0000-0000-000000000001",
+    principal_id: null,
+    agent_id: "agent-test-002",
+    request_id: "apr-backend-003",
+    event_type: "approval.request",
+    event_data: {
+      tool: "network_egress",
+      reason: "Fetch dependency from npm",
+      risk_level: "low",
+      expires_at: new Date(Date.now() - 60_000).toISOString(), // already expired
+    },
+    status: "pending", // still "pending" in DB but actually expired
+    resolved_by: null,
+    resolved_at: null,
+    created_at: new Date(Date.now() - 600_000).toISOString(),
+  },
+  {
+    id: "a1b2c3d4-0000-0000-0000-000000000004",
+    tenant_id: "t1t2t3t4-0000-0000-0000-000000000001",
+    principal_id: null,
+    agent_id: "agent-test-004",
+    request_id: "apr-backend-004",
+    event_type: "approval.request",
+    event_data: {
+      tool: "mcp_tool:database-query",
+      resolution_reason: "Approved by admin for routine maintenance",
+    },
+    status: "approved",
+    resolved_by: "admin@acme.corp",
+    resolved_at: new Date(Date.now() - 300_000).toISOString(),
+    created_at: new Date(Date.now() - 600_000).toISOString(),
+  },
+];
+
+/**
+ * Inject backend-shaped approval rows (flat array) as the response from
+ * the control-api approvals endpoint.
+ */
+export function injectBackendShapedApprovals() {
+  mockFleetServer.use(
+    http.get("/_proxy/control/api/v1/approvals", ({ request }) => {
+      return requireAuth(request) ?? HttpResponse.json(MOCK_BACKEND_APPROVALS);
+    }),
+  );
+}
+
+/**
+ * Inject a backend-shaped response with minimal/missing event_data fields
+ * to test graceful defaults.
+ */
+export function injectMinimalBackendApprovals() {
+  mockFleetServer.use(
+    http.get("/_proxy/control/api/v1/approvals", ({ request }) => {
+      return requireAuth(request) ?? HttpResponse.json([
+        {
+          id: "a1b2c3d4-0000-0000-0000-000000000099",
+          tenant_id: "t1t2t3t4-0000-0000-0000-000000000001",
+          agent_id: "agent-minimal",
+          request_id: "apr-minimal-001",
+          event_type: "approval.request",
+          event_data: {},
+          status: "pending",
+          created_at: new Date(Date.now() - 60_000).toISOString(),
+        },
+      ]);
     }),
   );
 }

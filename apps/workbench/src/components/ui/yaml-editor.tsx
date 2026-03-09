@@ -10,6 +10,7 @@ import { lintGutter, type Diagnostic, setDiagnostics } from "@codemirror/lint";
 import { autocompletion, closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
 import { cn } from "@/lib/utils";
 import { policyYamlCompletionSource } from "@/lib/workbench/yaml-schema";
+import { useGeneralSettings, type FontSize } from "@/lib/workbench/use-general-settings";
 
 // ---- Types ----
 
@@ -28,12 +29,19 @@ export interface YamlEditorProps {
 
 // ---- ClawdStrike brand theme ----
 
-const clawdTheme = EditorView.theme(
+const FONT_SIZE_MAP: Record<FontSize, string> = {
+  small: "11.5px",
+  medium: "12.5px",
+  large: "14px",
+};
+
+function createClawdTheme(fontSize: FontSize) {
+  return EditorView.theme(
   {
     "&": {
       backgroundColor: "#0b0d13",
       color: "#ece7dc",
-      fontSize: "12.5px",
+      fontSize: FONT_SIZE_MAP[fontSize],
       fontFamily: "'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace",
       height: "100%",
     },
@@ -226,7 +234,8 @@ const clawdTheme = EditorView.theme(
     },
   },
   { dark: true }
-);
+  );
+}
 
 // Syntax highlighting colors
 const clawdHighlightStyle = HighlightStyle.define([
@@ -272,15 +281,17 @@ export function YamlEditor({
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
-  // Build the list of extensions (stable across renders unless readOnly changes)
+  // Read general settings for editor customization
+  const { settings: generalSettings } = useGeneralSettings();
+  const { fontSize, showLineNumbers } = generalSettings;
+
+  // Build the list of extensions (rebuilds when readOnly, fontSize, or showLineNumbers changes)
   const extensions = useMemo<Extension[]>(() => {
     const base: Extension[] = [
       yaml(),
-      clawdTheme,
+      createClawdTheme(fontSize),
       syntaxHighlighting(clawdHighlightStyle),
-      lineNumbers(),
       highlightActiveLine(),
-      highlightActiveLineGutter(),
       highlightSpecialChars(),
       drawSelection(),
       rectangularSelection(),
@@ -304,6 +315,11 @@ export function YamlEditor({
       ]),
     ];
 
+    if (showLineNumbers) {
+      base.push(lineNumbers());
+      base.push(highlightActiveLineGutter());
+    }
+
     if (readOnly) {
       base.push(EditorState.readOnly.of(true));
       base.push(EditorView.editable.of(false));
@@ -319,7 +335,7 @@ export function YamlEditor({
     }
 
     return base;
-  }, [readOnly]);
+  }, [readOnly, fontSize, showLineNumbers]);
 
   // Create / destroy the editor view
   useEffect(() => {

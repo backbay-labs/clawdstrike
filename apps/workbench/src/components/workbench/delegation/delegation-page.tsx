@@ -24,6 +24,8 @@ import {
   IconShieldCheck,
   IconAlertTriangle,
   IconBolt,
+  IconPlugConnected,
+  IconSelector,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import type {
@@ -35,7 +37,14 @@ import type {
   Capability,
 } from "@/lib/workbench/delegation-types";
 import { DEMO_DELEGATION_GRAPH } from "@/lib/workbench/delegation-demo-data";
-import { fleetClient } from "@/lib/workbench/fleet-client";
+import {
+  fleetClient,
+  fetchDelegationGraphSnapshot as apiFetchDelegationGraphSnapshot,
+  fetchPrincipals as apiFetchPrincipals,
+  type FleetConnection,
+  type PrincipalInfo,
+} from "@/lib/workbench/fleet-client";
+import { useFleetConnection } from "@/lib/workbench/use-fleet-connection";
 import {
   computeHierarchicalLayout,
   computeFitTransform,
@@ -128,12 +137,21 @@ const CAPABILITY_SHORT: Record<Capability, string> = {
 };
 
 export function DelegationPage() {
+  const { connection } = useFleetConnection();
+  const fleetConnected = connection.connected;
+
   const containerRef = useRef<HTMLDivElement>(null);
 
   const [graph, setGraph] = useState<DelegationGraph>(DEMO_DELEGATION_GRAPH);
   const [isLiveData, setIsLiveData] = useState(false);
   const [liveAvailable, setLiveAvailable] = useState(false);
+  const [liveFetchError, setLiveFetchError] = useState<string | null>(null);
   const autoSwitchedRef = useRef(false);
+
+  // Principals list for the snapshot endpoint
+  const [principals, setPrincipals] = useState<PrincipalInfo[]>([]);
+  const [selectedPrincipalId, setSelectedPrincipalId] = useState<string | null>(null);
+  const [principalDropdownOpen, setPrincipalDropdownOpen] = useState(false);
 
   const [panX, setPanX] = useState(0);
   const [panY, setPanY] = useState(0);
@@ -149,50 +167,110 @@ export function DelegationPage() {
   const [visibleTrust, setVisibleTrust] = useState<Set<TrustLevel>>(new Set(ALL_TRUST_LEVELS));
   const [searchQuery, setSearchQuery] = useState("");
 
+  // Fetch live delegation graph — tries the snapshot endpoint first, falls back to grants
+  const fetchLiveGraph = useCallback(
+    async (conn: FleetConnection, principalId: string | null): Promise<DelegationGraph | null> => {
+      try {
+        // If we have a principal selected, try the snapshot endpoint
+        if (principalId) {
+          const snapshot = await apiFetchDelegationGraphSnapshot(conn, principalId);
+          if (snapshot && snapshot.nodes.length > 0) {
+            setLiveFetchError(null);
+            return snapshot;
+          }
+        }
+        // Fallback to the older grants-based graph
+        const grantsGraph = await fleetClient.fetchDelegationGraph();
+        if (grantsGraph && grantsGraph.nodes.length > 0) {
+          setLiveFetchError(null);
+          return grantsGraph;
+        }
+        setLiveFetchError("No delegation data returned from fleet");
+        return null;
+      } catch (e) {
+        console.warn("[delegation-page] fetchLiveGraph failed:", e);
+        setLiveFetchError("Failed to fetch delegation graph from fleet");
+        return null;
+      }
+    },
+    [],
+  );
+
   // Auto-switch to live data when fleet is connected
   useEffect(() => {
     if (autoSwitchedRef.current) return;
+    if (!fleetConnected) {
+      setLiveAvailable(false);
+      return;
+    }
     let cancelled = false;
     (async () => {
-      const healthy = await fleetClient.healthCheck();
+      setLiveAvailable(true);
+      // Load principals list
+      const principalsList = await apiFetchPrincipals(connection);
       if (cancelled) return;
-      setLiveAvailable(healthy);
-      if (healthy) {
-        const liveGraph = await fleetClient.fetchDelegationGraph();
-        if (cancelled) return;
-        if (liveGraph && liveGraph.nodes.length > 0) {
-          setGraph(liveGraph);
-          setIsLiveData(true);
-          autoSwitchedRef.current = true;
-        }
+      setPrincipals(principalsList);
+
+      // Pick the first principal as default if available
+      const defaultId = principalsList.length > 0 ? principalsList[0].id : null;
+      if (defaultId) setSelectedPrincipalId(defaultId);
+
+      // Try to fetch live graph
+      const liveGraph = await fetchLiveGraph(connection, defaultId);
+      if (cancelled) return;
+      if (liveGraph) {
+        setGraph(liveGraph);
+        setIsLiveData(true);
+        autoSwitchedRef.current = true;
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fleetConnected]);
 
   const refreshLiveData = useCallback(async () => {
-    const live = await fleetClient.fetchDelegationGraph();
-    if (live) {
-      setGraph(live);
+    if (!fleetConnected) return;
+    // Refresh principals list
+    const principalsList = await apiFetchPrincipals(connection);
+    setPrincipals(principalsList);
+
+    const liveGraph = await fetchLiveGraph(connection, selectedPrincipalId);
+    if (liveGraph) {
+      setGraph(liveGraph);
     }
-  }, []);
+  }, [fleetConnected, connection, selectedPrincipalId, fetchLiveGraph]);
+
+  // Re-fetch graph when principal selection changes (while in live mode)
+  const handlePrincipalChange = useCallback(
+    async (principalId: string) => {
+      setSelectedPrincipalId(principalId);
+      setPrincipalDropdownOpen(false);
+      if (!isLiveData || !fleetConnected) return;
+      const liveGraph = await fetchLiveGraph(connection, principalId);
+      if (liveGraph) {
+        setGraph(liveGraph);
+      }
+    },
+    [isLiveData, fleetConnected, connection, fetchLiveGraph],
+  );
 
   const toggleDataSource = useCallback(async () => {
     if (isLiveData) {
       setGraph(DEMO_DELEGATION_GRAPH);
       setIsLiveData(false);
-    } else {
-      const live = await fleetClient.fetchDelegationGraph();
-      if (live) {
-        setGraph(live);
-        setIsLiveData(true);
+      setLiveFetchError(null);
+    } else if (fleetConnected) {
+      setIsLiveData(true);
+      const liveGraph = await fetchLiveGraph(connection, selectedPrincipalId);
+      if (liveGraph) {
+        setGraph(liveGraph);
       }
     }
     setSelectedNode(null);
     setTracedPath(null);
-  }, [isLiveData]);
+  }, [isLiveData, fleetConnected, connection, selectedPrincipalId, fetchLiveGraph]);
 
   const filteredGraph = useMemo<DelegationGraph>(() => {
     const q = searchQuery.toLowerCase().trim();
@@ -466,6 +544,12 @@ export function DelegationPage() {
           >
             {isLiveData ? "LIVE" : "DEMO"}
           </span>
+          {!fleetConnected && !isLiveData && (
+            <span className="flex items-center gap-1 rounded px-2 py-0.5 text-[9px] text-[#6f7f9a]/40">
+              <IconPlugConnected size={10} />
+              Disconnected
+            </span>
+          )}
         </div>
 
         <div className="absolute left-3 top-3 z-10 flex items-center gap-0.5 rounded-md border border-[#1a1f2e] bg-[#0b0d13]/95 px-1.5 py-1 backdrop-blur-sm">
@@ -474,16 +558,29 @@ export function DelegationPage() {
             label={isLiveData ? "Live" : "Demo"}
             onClick={toggleDataSource}
             active={isLiveData}
+            disabled={!isLiveData && !fleetConnected}
           />
-          {liveAvailable && !isLiveData && (
+          {liveAvailable && !isLiveData && fleetConnected && (
             <span className="ml-0.5 h-1.5 w-1.5 rounded-full bg-[#3dbf84]" />
           )}
-          {isLiveData && (
+          {isLiveData && fleetConnected && (
             <ToolbarBtn
               icon={IconRefresh}
               label="Refresh"
               onClick={refreshLiveData}
             />
+          )}
+          {isLiveData && principals.length > 0 && (
+            <>
+              <Sep />
+              <PrincipalSelector
+                principals={principals}
+                selectedId={selectedPrincipalId}
+                isOpen={principalDropdownOpen}
+                onToggle={() => setPrincipalDropdownOpen((p) => !p)}
+                onSelect={handlePrincipalChange}
+              />
+            </>
           )}
           <Sep />
           <ToolbarBtn icon={IconFocus2} label="Fit" onClick={fitToScreen} />
@@ -500,6 +597,13 @@ export function DelegationPage() {
           <Sep />
           <ToolbarBtn icon={IconDownload} label="SVG" onClick={exportPng} />
         </div>
+
+        {isLiveData && liveFetchError && (
+          <div className="absolute bottom-3 right-3 z-10 flex items-center gap-2 rounded border border-[#2d3240] bg-[#131721]/90 px-3 py-1.5 backdrop-blur-sm">
+            <IconPlugConnected size={12} className="text-[#6f7f9a] shrink-0" />
+            <span className="text-[10px] text-[#6f7f9a]">{liveFetchError}</span>
+          </div>
+        )}
 
         <div className="absolute bottom-3 left-3 z-10 rounded border border-[#1a1f2e] bg-[#0b0d13]/90 px-2 py-0.5 text-[10px] tabular-nums text-[#6f7f9a]/60">
           {Math.round(zoom * 100)}%
@@ -835,26 +939,95 @@ function ToolbarBtn({
   label,
   onClick,
   active = false,
+  disabled = false,
 }: {
   icon: React.ComponentType<{ size?: number; stroke?: number }>;
   label: string;
   onClick: () => void;
   active?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
       title={label}
+      disabled={disabled}
       className={cn(
         "flex h-6 items-center gap-1 rounded px-1.5 text-[9px] transition-colors",
-        active
-          ? "bg-[#d4a84b]/10 text-[#d4a84b]"
-          : "text-[#6f7f9a]/60 hover:bg-[#1a1f2e] hover:text-[#ece7dc]/80",
+        disabled
+          ? "text-[#6f7f9a]/30 cursor-not-allowed"
+          : active
+            ? "bg-[#d4a84b]/10 text-[#d4a84b]"
+            : "text-[#6f7f9a]/60 hover:bg-[#1a1f2e] hover:text-[#ece7dc]/80",
       )}
     >
       <Icon size={13} stroke={1.5} />
       <span className="hidden lg:inline">{label}</span>
     </button>
+  );
+}
+
+function PrincipalSelector({
+  principals,
+  selectedId,
+  isOpen,
+  onToggle,
+  onSelect,
+}: {
+  principals: PrincipalInfo[];
+  selectedId: string | null;
+  isOpen: boolean;
+  onToggle: () => void;
+  onSelect: (id: string) => void;
+}) {
+  const selected = principals.find((p) => p.id === selectedId);
+  const displayName = selected?.name ?? selected?.id ?? "Select principal";
+
+  return (
+    <div className="relative">
+      <button
+        onClick={onToggle}
+        className="flex h-6 items-center gap-1 rounded px-1.5 text-[9px] text-[#6f7f9a]/60 transition-colors hover:bg-[#1a1f2e] hover:text-[#ece7dc]/80"
+        title="Select principal for graph"
+      >
+        <IconSelector size={13} stroke={1.5} />
+        <span className="max-w-[120px] truncate hidden lg:inline">
+          {displayName.length > 18 ? displayName.slice(0, 17) + "\u2026" : displayName}
+        </span>
+      </button>
+
+      {isOpen && (
+        <div className="absolute left-0 top-full z-30 mt-1 max-h-60 w-56 overflow-y-auto rounded-lg border border-[#1a1f2e] bg-[#0b0d13] py-1 shadow-xl">
+          {principals.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => onSelect(p.id)}
+              className={cn(
+                "flex w-full flex-col px-3 py-1.5 text-left transition-colors hover:bg-[#1a1f2e]",
+                p.id === selectedId && "bg-[#d4a84b]/8",
+              )}
+            >
+              <span className="text-[10px] font-medium text-[#ece7dc] truncate">
+                {p.name ?? p.id}
+              </span>
+              {p.name && (
+                <span className="text-[8px] font-mono text-[#6f7f9a]/50 truncate">
+                  {p.id}
+                </span>
+              )}
+              {p.role && (
+                <span className="text-[8px] text-[#6f7f9a]/40">{p.role}</span>
+              )}
+            </button>
+          ))}
+          {principals.length === 0 && (
+            <div className="px-3 py-2 text-[10px] text-[#6f7f9a]/50">
+              No principals available
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

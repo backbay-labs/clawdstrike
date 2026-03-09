@@ -3,6 +3,7 @@ import { render, type RenderOptions } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { MultiPolicyProvider as WorkbenchProvider } from "@/lib/workbench/multi-policy-store";
 import { FleetConnectionProvider } from "@/lib/workbench/use-fleet-connection";
+import { GeneralSettingsProvider } from "@/lib/workbench/use-general-settings";
 import { ToastProvider } from "@/components/ui/toast";
 
 interface ProviderOptions extends Omit<RenderOptions, "wrapper"> {
@@ -26,9 +27,11 @@ export function renderWithProviders(
     return (
       <MemoryRouter initialEntries={initialEntries}>
         <ToastProvider>
-          <FleetConnectionProvider>
-            <WorkbenchProvider>{children}</WorkbenchProvider>
-          </FleetConnectionProvider>
+          <GeneralSettingsProvider>
+            <FleetConnectionProvider>
+              <WorkbenchProvider>{children}</WorkbenchProvider>
+            </FleetConnectionProvider>
+          </GeneralSettingsProvider>
         </ToastProvider>
       </MemoryRouter>
     );

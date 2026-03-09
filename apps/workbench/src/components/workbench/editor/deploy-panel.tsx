@@ -13,6 +13,7 @@ import {
   IconShieldCheck,
   IconArrowRight,
 } from "@tabler/icons-react";
+import { emitAuditEvent } from "@/lib/workbench/local-audit";
 import {
   Dialog,
   DialogContent,
@@ -193,6 +194,16 @@ function DeployConfirmDialog({
             ? `Hash: ${result.hash.slice(0, 12)}...`
             : "Policy is now active on the fleet",
         });
+        emitAuditEvent({
+          eventType: "fleet.deploy.success",
+          source: "deploy",
+          summary: `Deployed policy to ${onlineAgents.length} agent(s)`,
+          details: {
+            policyName: state.activePolicy?.name,
+            hash: result.hash,
+            agentCount: onlineAgents.length,
+          },
+        });
         onSuccess();
       } else {
         toast({
@@ -201,11 +212,23 @@ function DeployConfirmDialog({
           description: result.error ?? "Unknown error",
           duration: 5000,
         });
+        emitAuditEvent({
+          eventType: "fleet.deploy.failure",
+          source: "deploy",
+          summary: `Deploy failed: ${result.error ?? "Unknown error"}`,
+          details: { error: result.error },
+        });
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Deploy request failed";
       setDeployResult({ success: false, error: msg });
       toast({ type: "error", title: "Deploy failed", description: msg, duration: 5000 });
+      emitAuditEvent({
+        eventType: "fleet.deploy.failure",
+        source: "deploy",
+        summary: `Deploy failed: ${msg}`,
+        details: { error: msg },
+      });
     } finally {
       setIsDeploying(false);
     }

@@ -334,6 +334,25 @@ export type TestActionType =
 
 export type ThreatSeverity = "critical" | "high" | "medium" | "low" | "informational";
 
+/** Common agent runtime types for the agent profile selector. */
+export type AgentRuntime = "claude" | "gpt-4" | "gemini" | "llama" | "mistral" | "custom";
+
+/**
+ * Agent profile attached to a test scenario.
+ * When fleet is connected, `agentId` references a real fleet agent.
+ * When disconnected, the user can provide free-text values.
+ */
+export interface AgentProfile {
+  /** Fleet agent ID (optional -- only set when selected from fleet). */
+  agentId?: string;
+  /** Display name for the agent. */
+  agentName: string;
+  /** Agent runtime type (e.g. "claude", "gpt-4", "custom"). */
+  agentType: AgentRuntime;
+  /** Optional list of permissions/capabilities the agent holds. */
+  permissions?: string[];
+}
+
 export interface TestScenario {
   id: string;
   name: string;
@@ -348,6 +367,8 @@ export interface TestScenario {
   threatRef?: string;
   /** Optional origin context for v1.4.0 origin-aware simulation. */
   originContext?: OriginContext;
+  /** Optional agent profile describing the agent executing this scenario. */
+  agentProfile?: AgentProfile;
   /** Optional promptfoo red-team plugin identifier. */
   redteamPluginId?: string;
   /** Optional promptfoo red-team strategy identifier. */
