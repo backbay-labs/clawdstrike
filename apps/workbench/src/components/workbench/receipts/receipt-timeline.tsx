@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Receipt } from "@/lib/workbench/types";
+import type { FleetConnection } from "@/lib/workbench/fleet-client";
 import { VerdictBadge } from "@/components/workbench/shared/verdict-badge";
 import { ReceiptDetail } from "./receipt-detail";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -7,6 +8,10 @@ import { cn } from "@/lib/utils";
 
 interface ReceiptTimelineProps {
   receipts: Receipt[];
+  /** Set of receipt IDs that have been synced to fleet. Undefined when fleet is disconnected. */
+  syncedIds?: Set<string>;
+  /** Fleet connection for server-side verification. Undefined when disconnected. */
+  fleetConnection?: FleetConnection;
 }
 
 const verdictDotColor: Record<string, string> = {
@@ -15,7 +20,7 @@ const verdictDotColor: Record<string, string> = {
   warn: "#d4a84b",
 };
 
-export function ReceiptTimeline({ receipts }: ReceiptTimelineProps) {
+export function ReceiptTimeline({ receipts, syncedIds, fleetConnection }: ReceiptTimelineProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   if (receipts.length === 0) {
@@ -70,7 +75,7 @@ export function ReceiptTimeline({ receipts }: ReceiptTimelineProps) {
                     >
                       Collapse
                     </button>
-                    <ReceiptDetail receipt={receipt} />
+                    <ReceiptDetail receipt={receipt} fleetConnection={fleetConnection} />
                   </div>
                 ) : (
                   <button
@@ -90,6 +95,17 @@ export function ReceiptTimeline({ receipts }: ReceiptTimelineProps) {
                     <span className="text-[10px] text-[#6f7f9a] truncate flex-1 text-right">
                       {receipt.action.type} &rarr; {receipt.action.target}
                     </span>
+                    {syncedIds && (
+                      <span
+                        className={cn(
+                          "shrink-0 w-1.5 h-1.5 rounded-full",
+                          syncedIds.has(receipt.id)
+                            ? "bg-[#3dbf84]"
+                            : "bg-[#6f7f9a]/30",
+                        )}
+                        title={syncedIds.has(receipt.id) ? "Synced to fleet" : "Local only"}
+                      />
+                    )}
                   </button>
                 )}
               </div>

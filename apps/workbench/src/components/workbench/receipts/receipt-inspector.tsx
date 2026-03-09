@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { useWorkbench } from "@/lib/workbench/multi-policy-store";
 import { usePersistedReceipts } from "@/lib/workbench/use-persisted-receipts";
 import type { Receipt, Verdict, GuardId, TestActionType } from "@/lib/workbench/types";
@@ -6,9 +6,16 @@ import { GUARD_REGISTRY } from "@/lib/workbench/guard-registry";
 import { ReceiptTimeline } from "./receipt-timeline";
 import { ChainVerification } from "./chain-verification";
 import { cn } from "@/lib/utils";
-import { signReceiptNative, simulateActionNative } from "@/lib/tauri-commands";
+import { signReceiptNative, signReceiptPersistentNative, simulateActionNative } from "@/lib/tauri-commands";
 import { isDesktop } from "@/lib/tauri-bridge";
 import { emitAuditEvent } from "@/lib/workbench/local-audit";
+import { useFleetConnection } from "@/lib/workbench/use-fleet-connection";
+import {
+  storeReceiptsBatch,
+  fetchReceipts as apiFetchReceipts,
+  type FleetReceipt,
+} from "@/lib/workbench/fleet-client";
+import { IconCloudUpload, IconCloudDownload, IconCircleDot } from "@tabler/icons-react";
 
 function randomHex(len: number): string {
   const bytes = new Uint8Array(len / 2);
@@ -95,6 +102,69 @@ const VERDICT_FILTERS: { value: "all" | Verdict; label: string }[] = [
   { value: "warn", label: "Warn" },
 ];
 
+// ---------------------------------------------------------------------------
+// Fleet sync helpers
+// ---------------------------------------------------------------------------
+
+/** Convert a local Receipt to the backend FleetReceipt wire format. */
+function receiptToFleet(r: Receipt): FleetReceipt {
+  return {
+    id: r.id,
+    timestamp: r.timestamp,
+    verdict: r.verdict,
+    guard: r.guard,
+    policy_name: r.policyName,
+    action_type: r.action.type,
+    action_target: r.action.target,
+    evidence: r.evidence,
+    signature: r.signature,
+    public_key: r.publicKey,
+    valid: r.valid,
+  };
+}
+
+/** Convert a backend FleetReceipt to the local Receipt shape. */
+function fleetToReceipt(f: FleetReceipt): Receipt {
+  return {
+    id: f.id,
+    timestamp: f.timestamp,
+    verdict: f.verdict as Verdict,
+    guard: f.guard,
+    policyName: f.policy_name,
+    action: {
+      type: f.action_type as TestActionType,
+      target: f.action_target,
+    },
+    evidence: f.evidence ?? {},
+    signature: f.signature,
+    publicKey: f.public_key,
+    valid: f.valid,
+  };
+}
+
+/** Tracking key for receipts synced to fleet (localStorage). */
+const LS_SYNCED_IDS_KEY = "clawdstrike_fleet_synced_receipt_ids";
+
+function readSyncedIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(LS_SYNCED_IDS_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(parsed as string[]);
+  } catch {
+    return new Set();
+  }
+}
+
+function writeSyncedIds(ids: Set<string>): void {
+  try {
+    localStorage.setItem(LS_SYNCED_IDS_KEY, JSON.stringify([...ids]));
+  } catch {
+    // ignore
+  }
+}
+
 export function ReceiptInspector() {
   const { state } = useWorkbench();
   const { receipts, setReceipts, clearReceipts } = usePersistedReceipts();
@@ -108,6 +178,126 @@ export function ReceiptInspector() {
   const [generating, setGenerating] = useState(false);
   const [selectedAction, setSelectedAction] = useState(0); // index into SAMPLE_ACTIONS
   const [generateError, setGenerateError] = useState("");
+
+  // Fleet sync state (P3-4)
+  const { connection } = useFleetConnection();
+  const fleetConnected = connection.connected;
+  const [syncedIds, setSyncedIds] = useState<Set<string>>(() => readSyncedIds());
+  const [syncing, setSyncing] = useState(false);
+  const [loadingFleet, setLoadingFleet] = useState(false);
+  const [fleetError, setFleetError] = useState("");
+  const prevReceiptsLenRef = useRef(receipts.length);
+
+  // Count of receipts that have not yet been synced to fleet
+  const unsyncedCount = useMemo(
+    () => receipts.filter((r) => !syncedIds.has(r.id)).length,
+    [receipts, syncedIds],
+  );
+
+  // Auto-upload newly generated receipts when fleet is connected
+  useEffect(() => {
+    if (!fleetConnected) return;
+    // Detect if a new receipt was prepended (length increased)
+    if (receipts.length > prevReceiptsLenRef.current && receipts.length > 0) {
+      const newest = receipts[0];
+      if (!syncedIds.has(newest.id)) {
+        // Fire-and-forget upload of the single new receipt
+        storeReceiptsBatch(connection, [receiptToFleet(newest)])
+          .then((res) => {
+            if (res.success) {
+              setSyncedIds((prev) => {
+                const next = new Set(prev);
+                next.add(newest.id);
+                writeSyncedIds(next);
+                return next;
+              });
+            }
+          })
+          .catch(() => {
+            // Non-critical: user can manually sync later
+          });
+      }
+    }
+    prevReceiptsLenRef.current = receipts.length;
+  }, [receipts, fleetConnected, connection, syncedIds]);
+
+  /** Batch-upload all unsynced local receipts to fleet. */
+  const handleSyncToFleet = useCallback(async () => {
+    if (!fleetConnected) return;
+    const unsynced = receipts.filter((r) => !syncedIds.has(r.id));
+    if (unsynced.length === 0) return;
+
+    setSyncing(true);
+    setFleetError("");
+    try {
+      const fleetReceipts = unsynced.map(receiptToFleet);
+      const res = await storeReceiptsBatch(connection, fleetReceipts);
+      if (res.success) {
+        const newSynced = new Set(syncedIds);
+        for (const r of unsynced) newSynced.add(r.id);
+        writeSyncedIds(newSynced);
+        setSyncedIds(newSynced);
+        emitAuditEvent({
+          eventType: "receipt.fleet_sync",
+          source: "receipt",
+          summary: `Synced ${res.stored} receipt(s) to fleet`,
+          details: { stored: res.stored, total: unsynced.length },
+        });
+      } else {
+        setFleetError(res.error ?? "Sync failed");
+      }
+    } catch (err) {
+      setFleetError(err instanceof Error ? err.message : "Sync failed");
+    } finally {
+      setSyncing(false);
+    }
+  }, [fleetConnected, connection, receipts, syncedIds]);
+
+  /** Pull receipts from the fleet backend and merge with local store. */
+  const handleLoadFromFleet = useCallback(async () => {
+    if (!fleetConnected) return;
+
+    setLoadingFleet(true);
+    setFleetError("");
+    try {
+      const res = await apiFetchReceipts(connection, { limit: 200 });
+      if (res.receipts.length === 0) {
+        setFleetError("No receipts found on fleet");
+        return;
+      }
+
+      // Merge: add fleet receipts that are not already in local store
+      const existingIds = new Set(receipts.map((r) => r.id));
+      const newReceipts = res.receipts
+        .filter((fr) => !existingIds.has(fr.id))
+        .map(fleetToReceipt);
+
+      if (newReceipts.length > 0) {
+        setReceipts((prev) => [...newReceipts, ...prev]);
+        // Mark all fleet receipts as synced
+        const newSynced = new Set(syncedIds);
+        for (const fr of res.receipts) newSynced.add(fr.id);
+        writeSyncedIds(newSynced);
+        setSyncedIds(newSynced);
+        emitAuditEvent({
+          eventType: "receipt.fleet_load",
+          source: "receipt",
+          summary: `Loaded ${newReceipts.length} new receipt(s) from fleet`,
+          details: { loaded: newReceipts.length, fleetTotal: res.total },
+        });
+      } else {
+        // All fleet receipts already exist locally — just update sync tracking
+        const newSynced = new Set(syncedIds);
+        for (const fr of res.receipts) newSynced.add(fr.id);
+        writeSyncedIds(newSynced);
+        setSyncedIds(newSynced);
+      }
+    } catch (err) {
+      setFleetError(err instanceof Error ? err.message : "Load failed");
+    } finally {
+      setLoadingFleet(false);
+    }
+  }, [fleetConnected, connection, receipts, syncedIds, setReceipts]);
 
   const handleImport = useCallback(() => {
     setImportError("");
@@ -214,8 +404,11 @@ export function ReceiptInspector() {
       const hashArray = Array.from(new Uint8Array(hashBuffer));
       const contentHash = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 
-      // Step 3: Sign the receipt via the Rust Ed25519 crypto layer
-      const signResp = await signReceiptNative(contentHash, simResp.allowed);
+      // Step 3: Sign the receipt via the Rust Ed25519 crypto layer.
+      // Prefer the persistent key (Stronghold) if available; fall back to ephemeral.
+      const signResp =
+        (await signReceiptPersistentNative(contentHash, simResp.allowed)) ??
+        (await signReceiptNative(contentHash, simResp.allowed));
 
       if (!signResp) {
         setGenerateError("Signing returned no response");
@@ -272,6 +465,8 @@ export function ReceiptInspector() {
         result: step.result,
       }));
 
+      const keyType = (signResp.key_type === "persistent" ? "persistent" : "ephemeral") as Receipt["keyType"];
+
       const receipt: Receipt = {
         id: crypto.randomUUID(),
         timestamp: new Date().toISOString(),
@@ -289,18 +484,20 @@ export function ReceiptInspector() {
           guard_results: guardEvidence,
           evaluation_path: evaluationPath,
           total_guards_evaluated: simResp.results.length,
+          key_type: keyType,
           ...(extractedSignature ? {} : { signature_extraction_failed: true }),
         },
         signature: extractedSignature ?? "unsigned",
         publicKey: signResp.public_key,
         valid: extractedSignature !== null,
+        keyType,
       };
 
       setReceipts((prev) => [receipt, ...prev]);
       emitAuditEvent({
         eventType: "receipt.generate_real",
         source: "receipt",
-        summary: `Generated real receipt — ${receipt.verdict} (${receipt.guard}) via native engine`,
+        summary: `Generated real receipt — ${receipt.verdict} (${receipt.guard}) via native engine [${keyType} key]`,
         details: {
           receiptId: receipt.id,
           verdict: receipt.verdict,
@@ -341,7 +538,10 @@ export function ReceiptInspector() {
       const contentHash = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 
       const verdictPassed = state.validation.valid && state.validation.errors.length === 0;
-      const resp = await signReceiptNative(contentHash, verdictPassed);
+      // Prefer persistent key signing; fall back to ephemeral.
+      const resp =
+        (await signReceiptPersistentNative(contentHash, verdictPassed)) ??
+        (await signReceiptNative(contentHash, verdictPassed));
 
       if (resp) {
         // Extract the signer signature from the Rust SignedReceipt shape:
@@ -367,6 +567,8 @@ export function ReceiptInspector() {
           );
         }
 
+        const keyType = (resp.key_type === "persistent" ? "persistent" : "ephemeral") as Receipt["keyType"];
+
         const receipt: Receipt = {
           id: crypto.randomUUID(),
           timestamp: new Date().toISOString(),
@@ -378,6 +580,7 @@ export function ReceiptInspector() {
             content_hash: contentHash,
             receipt_hash: resp.receipt_hash,
             signed_receipt: resp.signed_receipt,
+            key_type: keyType,
             ...(extractedSignature ? {} : { signature_extraction_failed: true }),
           },
           // Note: this signer signature was made over canonical JSON (RFC 8785),
@@ -388,18 +591,20 @@ export function ReceiptInspector() {
           // Mark as invalid if we couldn't extract a real signature — the receipt
           // data is present but the cryptographic binding is missing/unparseable.
           valid: extractedSignature !== null,
+          keyType,
         };
         setReceipts((prev) => [receipt, ...prev]);
         emitAuditEvent({
           eventType: "receipt.sign",
           source: "receipt",
-          summary: `Signed receipt — ${receipt.verdict} (${receipt.guard})`,
+          summary: `Signed receipt — ${receipt.verdict} (${receipt.guard}) [${keyType} key]`,
           details: {
             receiptId: receipt.id,
             verdict: receipt.verdict,
             guard: receipt.guard,
             policyName: receipt.policyName,
             valid: receipt.valid,
+            keyType,
             publicKey: receipt.publicKey?.slice(0, 16) + "...",
           },
         });
@@ -462,6 +667,11 @@ export function ReceiptInspector() {
             {generateError && (
               <p className="text-[10px] font-mono text-[#c45c5c] mt-1">
                 Generate failed: {generateError}
+              </p>
+            )}
+            {fleetError && (
+              <p className="text-[10px] font-mono text-[#c45c5c] mt-1">
+                Fleet: {fleetError}
               </p>
             )}
           </div>
@@ -542,6 +752,54 @@ export function ReceiptInspector() {
         </div>
       </div>
 
+      {/* Fleet sync bar (P3-4) */}
+      {fleetConnected && (
+        <div className="shrink-0 flex items-center gap-2.5 px-4 py-2 border-b border-[#2d3240] bg-[#0b0d13]">
+          <span className="flex items-center gap-1.5 text-[10px] font-mono text-[#3dbf84]">
+            <IconCircleDot size={8} stroke={2} />
+            Fleet
+          </span>
+
+          <button
+            onClick={handleSyncToFleet}
+            disabled={syncing || unsyncedCount === 0}
+            className={cn(
+              "flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-medium border rounded-md transition-colors",
+              syncing
+                ? "text-[#6f7f9a] bg-[#131721] border-[#2d3240] cursor-wait"
+                : unsyncedCount === 0
+                  ? "text-[#6f7f9a]/30 bg-transparent border-[#2d3240]/50 cursor-not-allowed"
+                  : "text-[#d4a84b] bg-[#d4a84b]/10 border-[#d4a84b]/20 hover:bg-[#d4a84b]/20",
+            )}
+          >
+            <IconCloudUpload size={12} stroke={1.5} />
+            {syncing
+              ? "Syncing..."
+              : unsyncedCount > 0
+                ? `Sync to Fleet (${unsyncedCount})`
+                : "All Synced"}
+          </button>
+
+          <button
+            onClick={handleLoadFromFleet}
+            disabled={loadingFleet}
+            className={cn(
+              "flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-medium border rounded-md transition-colors",
+              loadingFleet
+                ? "text-[#6f7f9a] bg-[#131721] border-[#2d3240] cursor-wait"
+                : "text-[#6f7f9a] bg-[#131721] border-[#2d3240] hover:border-[#d4a84b]/40 hover:text-[#ece7dc]",
+            )}
+          >
+            <IconCloudDownload size={12} stroke={1.5} />
+            {loadingFleet ? "Loading..." : "Load from Fleet"}
+          </button>
+
+          <span className="ml-auto text-[9px] font-mono text-[#6f7f9a]/40">
+            {receipts.length - unsyncedCount}/{receipts.length} synced
+          </span>
+        </div>
+      )}
+
       {/* Filter bar */}
       <div className="shrink-0 flex items-center gap-3 px-4 py-2.5 border-b border-[#2d3240] bg-[#0b0d13]">
         {/* Verdict filter */}
@@ -597,7 +855,11 @@ export function ReceiptInspector() {
 
       {/* Timeline */}
       <div className="flex-1 min-h-0 overflow-hidden">
-        <ReceiptTimeline receipts={filteredReceipts} />
+        <ReceiptTimeline
+          receipts={filteredReceipts}
+          syncedIds={fleetConnected ? syncedIds : undefined}
+          fleetConnection={fleetConnected ? connection : undefined}
+        />
       </div>
     </div>
   );

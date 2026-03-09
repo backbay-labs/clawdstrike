@@ -18,6 +18,7 @@ import {
   fetchAgentList as apiFetchAgentList,
   fetchRemotePolicy as apiFetchRemotePolicy,
   loadSavedConnection,
+  loadSavedConnectionAsync,
   saveConnectionConfig,
   clearConnectionConfig,
 } from "./fleet-client";
@@ -167,10 +168,14 @@ export function FleetConnectionProvider({ children }: { children: ReactNode }) {
   useEffect(() => stopPolling, [stopPolling]);
 
   // ---- Auto-reconnect if saved credentials exist ----
+  // Uses the async secureStore loader (Stronghold on desktop) with a
+  // synchronous localStorage fallback for initial render.
   useEffect(() => {
-    const saved = loadSavedConnection();
-    if (saved.hushdUrl) {
-      // Try to silently reconnect
+    async function attemptReconnect() {
+      // Try secureStore first (Stronghold on desktop), then localStorage.
+      const saved = await loadSavedConnectionAsync();
+      if (!saved.hushdUrl) return;
+
       const conn: FleetConnection = {
         hushdUrl: saved.hushdUrl ?? "",
         controlApiUrl: saved.controlApiUrl ?? "",
@@ -181,17 +186,18 @@ export function FleetConnectionProvider({ children }: { children: ReactNode }) {
         agentCount: 0,
       };
 
-      apiTestConnection(conn.hushdUrl, conn.apiKey)
-        .then((health) => {
-          const connected: FleetConnection = { ...conn, connected: true, hushdHealth: health };
-          setConnection(connected);
-          startPolling(connected);
-        })
-        .catch(() => {
-          // Saved creds are stale — show as disconnected but keep the URLs
-          setConnection(conn);
-        });
+      try {
+        const health = await apiTestConnection(conn.hushdUrl, conn.apiKey);
+        const connected: FleetConnection = { ...conn, connected: true, hushdHealth: health };
+        setConnection(connected);
+        startPolling(connected);
+      } catch {
+        // Saved creds are stale — show as disconnected but keep the URLs
+        setConnection(conn);
+      }
     }
+
+    attemptReconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

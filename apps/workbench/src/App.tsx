@@ -1,10 +1,11 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { HashRouter, Routes, Route, Navigate } from "react-router-dom";
 import { MultiPolicyProvider } from "@/lib/workbench/multi-policy-store";
 import { FleetConnectionProvider } from "@/lib/workbench/use-fleet-connection";
 import { GeneralSettingsProvider } from "@/lib/workbench/use-general-settings";
 import { ToastProvider } from "@/components/ui/toast";
 import { DesktopLayout } from "@/components/desktop/desktop-layout";
+import { secureStore, migrateCredentialsToStronghold } from "@/lib/workbench/secure-store";
 
 // ---------------------------------------------------------------------------
 // Lazy-loaded route components (code-split into separate chunks)
@@ -153,6 +154,11 @@ function LoadingFallback() {
  * support HTML5 history pushState).
  */
 export function App() {
+  // Initialise Stronghold vault + migrate legacy localStorage credentials on first launch.
+  useEffect(() => {
+    secureStore.init().then(() => migrateCredentialsToStronghold()).catch(() => {});
+  }, []);
+
   return (
     <HashRouter>
       <ToastProvider>

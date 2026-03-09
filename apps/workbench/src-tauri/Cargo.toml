@@ -22,6 +22,11 @@ hush-core = { path = "../../../crates/libs/hush-core" }
 clawdstrike = { path = "../../../crates/libs/clawdstrike" }
 tauri-plugin-http = "2"
 tauri-plugin-fs = "2"
+tauri-plugin-stronghold = "2"
+iota_stronghold = "2"
+hex = "0.4"
+hostname = "0.4"
+zeroize = "1"
 
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }

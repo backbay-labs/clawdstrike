@@ -3,13 +3,16 @@ pub mod alerts;
 pub mod approvals;
 pub mod billing;
 pub mod cases;
+pub mod catalog;
 pub mod compliance;
 pub mod console;
 pub mod delegation_graph;
 pub mod events;
 pub mod health;
+pub mod hierarchy;
 pub mod hunt;
 pub mod policies;
+pub mod receipts;
 pub mod response_actions;
 pub mod tenants;
 
@@ -40,6 +43,9 @@ pub fn router(state: AppState) -> Router {
         .merge(response_actions::router())
         .merge(cases::router())
         .merge(delegation_graph::router())
+        .merge(hierarchy::router())
+        .merge(receipts::router())
+        .merge(catalog::router())
         .layer(middleware::from_fn_with_state(
             state.clone(),
             auth::require_auth,

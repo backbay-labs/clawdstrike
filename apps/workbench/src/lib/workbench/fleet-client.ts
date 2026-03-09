@@ -48,8 +48,16 @@ async function httpFetch(
   return fn(input, init);
 }
 
-// SECURITY: Credentials stored in plaintext localStorage as a temporary measure.
-// TODO: Migrate to tauri-plugin-stronghold or OS keychain for production.
+import { secureStore } from "./secure-store";
+
+// Stronghold-backed secure keys used by secureStore (P4-2).
+const SS_HUSHD_URL = "hushd_url";
+const SS_CONTROL_API_URL = "control_api_url";
+const SS_API_KEY = "api_key";
+const SS_CONTROL_TOKEN = "control_api_token";
+
+// Legacy localStorage keys kept for synchronous bootstrap reads only.
+// New writes go through secureStore; these are cleared after migration.
 const LS_HUSHD_URL = "clawdstrike_hushd_url";
 const LS_CONTROL_API_URL = "clawdstrike_control_api_url";
 const LS_API_KEY = "clawdstrike_api_key";
@@ -192,6 +200,10 @@ interface BackendDelegationGraphResponse {
 // Persistence
 // ---------------------------------------------------------------------------
 
+/**
+ * Synchronous bootstrap read from localStorage (legacy).
+ * Used for initial render before Stronghold is ready.
+ */
 export function loadSavedConnection(): Partial<FleetConnection> {
   try {
     return {
@@ -206,12 +218,52 @@ export function loadSavedConnection(): Partial<FleetConnection> {
   }
 }
 
+/**
+ * Async credential load from secureStore (Stronghold on desktop).
+ * Falls back to localStorage values if Stronghold is unavailable.
+ */
+export async function loadSavedConnectionAsync(): Promise<Partial<FleetConnection>> {
+  try {
+    const [hushdUrl, controlApiUrl, apiKey, controlApiToken] = await Promise.all([
+      secureStore.get(SS_HUSHD_URL),
+      secureStore.get(SS_CONTROL_API_URL),
+      secureStore.get(SS_API_KEY),
+      secureStore.get(SS_CONTROL_TOKEN),
+    ]);
+
+    // If Stronghold had values, use them. Otherwise fall back to localStorage.
+    if (hushdUrl || apiKey) {
+      return {
+        hushdUrl: hushdUrl ?? "",
+        controlApiUrl: controlApiUrl ?? "",
+        apiKey: apiKey ?? "",
+        controlApiToken: controlApiToken ?? "",
+      };
+    }
+  } catch (e) {
+    console.warn("[fleet-client] secureStore read failed, using localStorage:", e);
+  }
+
+  return loadSavedConnection();
+}
+
+/**
+ * Save connection config to secureStore (Stronghold on desktop).
+ * Also writes to localStorage as a sync-readable cache for initial render.
+ */
 export function saveConnectionConfig(config: {
   hushdUrl: string;
   controlApiUrl: string;
   apiKey: string;
   controlApiToken: string;
 }) {
+  // Write to secureStore (async, fire-and-forget).
+  secureStore.set(SS_HUSHD_URL, config.hushdUrl).catch(() => {});
+  secureStore.set(SS_CONTROL_API_URL, config.controlApiUrl).catch(() => {});
+  secureStore.set(SS_API_KEY, config.apiKey).catch(() => {});
+  secureStore.set(SS_CONTROL_TOKEN, config.controlApiToken).catch(() => {});
+
+  // Also keep localStorage as sync-readable fallback for initial render.
   try {
     localStorage.setItem(LS_HUSHD_URL, config.hushdUrl);
     localStorage.setItem(LS_CONTROL_API_URL, config.controlApiUrl);
@@ -223,6 +275,12 @@ export function saveConnectionConfig(config: {
 }
 
 export function clearConnectionConfig() {
+  // Clear from secureStore (async, fire-and-forget).
+  secureStore.delete(SS_HUSHD_URL).catch(() => {});
+  secureStore.delete(SS_CONTROL_API_URL).catch(() => {});
+  secureStore.delete(SS_API_KEY).catch(() => {});
+  secureStore.delete(SS_CONTROL_TOKEN).catch(() => {});
+
   try {
     localStorage.removeItem(LS_HUSHD_URL);
     localStorage.removeItem(LS_CONTROL_API_URL);
@@ -235,6 +293,9 @@ export function clearConnectionConfig() {
 
 /** Clear all stored credentials. Call on disconnect / logout. */
 export function clearCredentials() {
+  secureStore.delete(SS_API_KEY).catch(() => {});
+  secureStore.delete(SS_CONTROL_TOKEN).catch(() => {});
+
   try {
     localStorage.removeItem(LS_API_KEY);
     localStorage.removeItem(LS_CONTROL_TOKEN);
@@ -1134,6 +1195,656 @@ function grantsToGraph(grants: Record<string, unknown>[]): DelegationGraph {
     nodes: Array.from(nodesMap.values()),
     edges,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Receipt Store (P3-4: Fleet Receipt Store)
+// ---------------------------------------------------------------------------
+
+/**
+ * Backend receipt shape as stored by the control-api receipt endpoints.
+ * The wire format uses snake_case; the frontend Receipt type uses camelCase.
+ */
+export interface FleetReceipt {
+  id: string;
+  timestamp: string;
+  verdict: string;
+  guard: string;
+  policy_name: string;
+  action_type: string;
+  action_target: string;
+  evidence?: Record<string, unknown>;
+  signature: string;
+  public_key: string;
+  valid: boolean;
+  metadata?: Record<string, unknown>;
+}
+
+export interface FleetReceiptListResponse {
+  receipts: FleetReceipt[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
+export interface FleetReceiptVerifyResponse {
+  receipt_id: string;
+  valid: boolean;
+  reason?: string;
+  verified_at: string;
+}
+
+/**
+ * Fetch paginated receipts from the backend receipt store.
+ * Calls GET /api/v1/receipts on the control-api.
+ */
+export async function fetchReceipts(
+  conn: FleetConnection,
+  opts?: { offset?: number; limit?: number },
+): Promise<FleetReceiptListResponse> {
+  const { url, kind } = preferredUrl(conn);
+  if (!url) return { receipts: [], total: 0, offset: 0, limit: 50 };
+
+  const params = new URLSearchParams();
+  if (opts?.offset != null) params.set("offset", String(opts.offset));
+  if (opts?.limit != null) params.set("limit", String(opts.limit));
+  const qs = params.toString();
+  const endpoint = `${url}/api/v1/receipts${qs ? `?${qs}` : ""}`;
+
+  const res = await jsonFetch<unknown>(
+    proxyUrl(endpoint, kind),
+    { headers: controlHeaders(conn) },
+  );
+
+  // Handle response shapes: { receipts, total, offset, limit } or bare array
+  if (Array.isArray(res)) {
+    const receipts = res.filter(isFleetReceipt);
+    return { receipts, total: receipts.length, offset: opts?.offset ?? 0, limit: opts?.limit ?? 50 };
+  }
+  if (res && typeof res === "object") {
+    const obj = res as Record<string, unknown>;
+    if ("receipts" in obj && Array.isArray(obj.receipts)) {
+      return {
+        receipts: (obj.receipts as unknown[]).filter(isFleetReceipt),
+        total: typeof obj.total === "number" ? obj.total : (obj.receipts as unknown[]).length,
+        offset: typeof obj.offset === "number" ? obj.offset : (opts?.offset ?? 0),
+        limit: typeof obj.limit === "number" ? obj.limit : (opts?.limit ?? 50),
+      };
+    }
+  }
+
+  throw new Error("[fleet-client] fetchReceipts: unexpected response shape");
+}
+
+/**
+ * Store a single receipt on the fleet backend.
+ * Calls POST /api/v1/receipts on the control-api.
+ */
+export async function storeReceipt(
+  conn: FleetConnection,
+  receipt: FleetReceipt,
+): Promise<{ success: boolean; id?: string; error?: string }> {
+  const { url, kind } = preferredUrl(conn);
+  if (!url) return { success: false, error: "No API URL configured" };
+
+  try {
+    const res = await jsonFetch<{ id?: string; success?: boolean }>(
+      proxyUrl(`${url}/api/v1/receipts`, kind),
+      {
+        method: "POST",
+        headers: controlHeaders(conn),
+        body: JSON.stringify(receipt),
+      },
+    );
+    return { success: true, id: res.id ?? receipt.id };
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+/**
+ * Batch-store receipts on the fleet backend.
+ * Calls POST /api/v1/receipts/batch on the control-api.
+ */
+export async function storeReceiptsBatch(
+  conn: FleetConnection,
+  receipts: FleetReceipt[],
+): Promise<{ success: boolean; stored: number; error?: string }> {
+  const { url, kind } = preferredUrl(conn);
+  if (!url) return { success: false, stored: 0, error: "No API URL configured" };
+
+  try {
+    const res = await jsonFetch<{ stored?: number; success?: boolean }>(
+      proxyUrl(`${url}/api/v1/receipts/batch`, kind),
+      {
+        method: "POST",
+        headers: controlHeaders(conn),
+        body: JSON.stringify({ receipts }),
+      },
+    );
+    return { success: true, stored: res.stored ?? receipts.length };
+  } catch (err) {
+    return {
+      success: false,
+      stored: 0,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+/**
+ * Fetch the receipt chain for a given policy name.
+ * Calls GET /api/v1/receipts/chain/{policy_name} on the control-api.
+ */
+export async function fetchReceiptChain(
+  conn: FleetConnection,
+  policyName: string,
+): Promise<FleetReceipt[]> {
+  const { url, kind } = preferredUrl(conn);
+  if (!url) return [];
+
+  try {
+    const res = await jsonFetch<unknown>(
+      proxyUrl(`${url}/api/v1/receipts/chain/${encodeURIComponent(policyName)}`, kind),
+      { headers: controlHeaders(conn) },
+    );
+
+    // Handle array or wrapped response
+    if (Array.isArray(res)) {
+      return res.filter(isFleetReceipt);
+    }
+    if (res && typeof res === "object" && "receipts" in res) {
+      const wrapped = res as { receipts: unknown };
+      if (Array.isArray(wrapped.receipts)) {
+        return (wrapped.receipts as unknown[]).filter(isFleetReceipt);
+      }
+    }
+    throw new Error("[fleet-client] fetchReceiptChain: unexpected response shape");
+  } catch (e) {
+    console.warn("[fleet-client] fetchReceiptChain failed:", e);
+    return [];
+  }
+}
+
+/**
+ * Verify a receipt server-side.
+ * Calls POST /api/v1/receipts/{id}/verify on the control-api.
+ */
+export async function verifyReceiptRemote(
+  conn: FleetConnection,
+  receiptId: string,
+): Promise<FleetReceiptVerifyResponse> {
+  const { url, kind } = preferredUrl(conn);
+  if (!url) throw new Error("No API URL configured");
+
+  return jsonFetch<FleetReceiptVerifyResponse>(
+    proxyUrl(`${url}/api/v1/receipts/${encodeURIComponent(receiptId)}/verify`, kind),
+    {
+      method: "POST",
+      headers: controlHeaders(conn),
+    },
+  );
+}
+
+/** Type guard for FleetReceipt shape. */
+function isFleetReceipt(value: unknown): value is FleetReceipt {
+  if (!value || typeof value !== "object") return false;
+  const obj = value as Record<string, unknown>;
+  return typeof obj.id === "string" && typeof obj.verdict === "string";
+}
+
+// ---------------------------------------------------------------------------
+// Catalog Registry (P3-6: Live Catalog)
+// ---------------------------------------------------------------------------
+
+/**
+ * A catalog template as returned by the control-api catalog endpoints.
+ * Wire format uses snake_case.
+ */
+export interface CatalogTemplate {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  tags: string[];
+  author: string;
+  version: string;
+  yaml: string;
+  guard_summary: string[];
+  use_cases: string[];
+  compliance: string[];
+  difficulty: string;
+  downloads: number;
+  created_at: string;
+  updated_at: string;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * A catalog category as returned by GET /api/v1/catalog/categories.
+ */
+export interface CatalogCategoryInfo {
+  id: string;
+  label: string;
+  color: string;
+  count: number;
+}
+
+/**
+ * Fetch catalog templates from the backend, optionally filtered by category or tag.
+ * Calls GET /api/v1/catalog/templates on the control-api.
+ */
+export async function fetchCatalogTemplates(
+  conn: FleetConnection,
+  opts?: { category?: string; tag?: string },
+): Promise<CatalogTemplate[]> {
+  const { url, kind } = preferredUrl(conn);
+  if (!url) return [];
+
+  const params = new URLSearchParams();
+  if (opts?.category) params.set("category", opts.category);
+  if (opts?.tag) params.set("tag", opts.tag);
+  const qs = params.toString();
+  const endpoint = `${url}/api/v1/catalog/templates${qs ? `?${qs}` : ""}`;
+
+  try {
+    const res = await jsonFetch<unknown>(
+      proxyUrl(endpoint, kind),
+      { headers: controlHeaders(conn) },
+    );
+
+    // Handle wrapped or bare array responses
+    let list: unknown[];
+    if (Array.isArray(res)) {
+      list = res;
+    } else if (res && typeof res === "object" && "templates" in res) {
+      const wrapped = res as { templates: unknown };
+      if (!Array.isArray(wrapped.templates)) {
+        throw new Error("[fleet-client] fetchCatalogTemplates: expected templates to be an array");
+      }
+      list = wrapped.templates;
+    } else {
+      throw new Error("[fleet-client] fetchCatalogTemplates: unexpected response shape");
+    }
+
+    return list.filter(isCatalogTemplate);
+  } catch (e) {
+    console.warn("[fleet-client] fetchCatalogTemplates failed:", e);
+    return [];
+  }
+}
+
+/**
+ * Fetch a single catalog template by ID.
+ * Calls GET /api/v1/catalog/templates/{id} on the control-api.
+ */
+export async function fetchCatalogTemplate(
+  conn: FleetConnection,
+  id: string,
+): Promise<CatalogTemplate | null> {
+  const { url, kind } = preferredUrl(conn);
+  if (!url) return null;
+
+  try {
+    const res = await jsonFetch<unknown>(
+      proxyUrl(`${url}/api/v1/catalog/templates/${encodeURIComponent(id)}`, kind),
+      { headers: controlHeaders(conn) },
+    );
+
+    if (res && typeof res === "object" && isCatalogTemplate(res)) {
+      return res;
+    }
+    throw new Error("[fleet-client] fetchCatalogTemplate: unexpected response shape");
+  } catch (e) {
+    console.warn("[fleet-client] fetchCatalogTemplate failed:", e);
+    return null;
+  }
+}
+
+/**
+ * Publish a new template to the catalog.
+ * Calls POST /api/v1/catalog/templates on the control-api.
+ */
+export async function publishCatalogTemplate(
+  conn: FleetConnection,
+  template: {
+    name: string;
+    description: string;
+    category: string;
+    tags: string[];
+    yaml: string;
+    difficulty?: string;
+  },
+): Promise<{ success: boolean; id?: string; error?: string }> {
+  const { url, kind } = preferredUrl(conn);
+  if (!url) return { success: false, error: "No API URL configured" };
+
+  try {
+    const res = await jsonFetch<{ id?: string; success?: boolean }>(
+      proxyUrl(`${url}/api/v1/catalog/templates`, kind),
+      {
+        method: "POST",
+        headers: controlHeaders(conn),
+        body: JSON.stringify(template),
+      },
+    );
+    return { success: true, id: res.id };
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+/**
+ * Fork a catalog template to create a personal copy.
+ * Calls POST /api/v1/catalog/templates/{id}/fork on the control-api.
+ */
+export async function forkCatalogTemplate(
+  conn: FleetConnection,
+  id: string,
+): Promise<{ success: boolean; template?: CatalogTemplate; error?: string }> {
+  const { url, kind } = preferredUrl(conn);
+  if (!url) return { success: false, error: "No API URL configured" };
+
+  try {
+    const res = await jsonFetch<unknown>(
+      proxyUrl(`${url}/api/v1/catalog/templates/${encodeURIComponent(id)}/fork`, kind),
+      {
+        method: "POST",
+        headers: controlHeaders(conn),
+      },
+    );
+
+    if (res && typeof res === "object" && isCatalogTemplate(res)) {
+      return { success: true, template: res };
+    }
+    // Some backends return { template: {...} } wrapper
+    const obj = res as Record<string, unknown>;
+    if ("template" in obj && isCatalogTemplate(obj.template)) {
+      return { success: true, template: obj.template as CatalogTemplate };
+    }
+    return { success: true };
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+/**
+ * Fetch available catalog categories.
+ * Calls GET /api/v1/catalog/categories on the control-api.
+ */
+export async function fetchCatalogCategories(
+  conn: FleetConnection,
+): Promise<CatalogCategoryInfo[]> {
+  const { url, kind } = preferredUrl(conn);
+  if (!url) return [];
+
+  try {
+    const res = await jsonFetch<unknown>(
+      proxyUrl(`${url}/api/v1/catalog/categories`, kind),
+      { headers: controlHeaders(conn) },
+    );
+
+    let list: unknown[];
+    if (Array.isArray(res)) {
+      list = res;
+    } else if (res && typeof res === "object" && "categories" in res) {
+      const wrapped = res as { categories: unknown };
+      if (!Array.isArray(wrapped.categories)) {
+        throw new Error("[fleet-client] fetchCatalogCategories: expected categories to be an array");
+      }
+      list = wrapped.categories;
+    } else {
+      throw new Error("[fleet-client] fetchCatalogCategories: unexpected response shape");
+    }
+
+    return list.filter((c): c is CatalogCategoryInfo => {
+      if (!c || typeof c !== "object") return false;
+      const obj = c as Record<string, unknown>;
+      return typeof obj.id === "string" && typeof obj.label === "string";
+    });
+  } catch (e) {
+    console.warn("[fleet-client] fetchCatalogCategories failed:", e);
+    return [];
+  }
+}
+
+/** Type guard for CatalogTemplate shape. */
+function isCatalogTemplate(value: unknown): value is CatalogTemplate {
+  if (!value || typeof value !== "object") return false;
+  const obj = value as Record<string, unknown>;
+  return typeof obj.id === "string" && typeof obj.name === "string" && typeof obj.yaml === "string";
+}
+
+// ---------------------------------------------------------------------------
+// Hierarchy CRUD API (P3-2: Fleet Hierarchy Sync)
+// ---------------------------------------------------------------------------
+
+/**
+ * Backend hierarchy node as returned by the control-api hierarchy endpoints.
+ * Uses snake_case wire format.
+ */
+export interface HierarchyNode {
+  id: string;
+  name: string;
+  node_type: string; // "org" | "team" | "project" | "agent"
+  parent_id?: string | null;
+  policy_id?: string | null;
+  policy_name?: string | null;
+  children?: HierarchyNode[];
+  metadata?: Record<string, unknown>;
+  created_at?: string;
+  updated_at?: string;
+}
+
+/**
+ * Input shape for creating a new hierarchy node via POST /api/v1/hierarchy/nodes.
+ */
+export interface HierarchyNodeInput {
+  name: string;
+  node_type: string;
+  parent_id?: string | null;
+  policy_id?: string | null;
+  policy_name?: string | null;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Input shape for updating an existing hierarchy node via PUT /api/v1/hierarchy/nodes/{id}.
+ */
+export interface HierarchyNodeUpdate {
+  name?: string;
+  node_type?: string;
+  parent_id?: string | null;
+  policy_id?: string | null;
+  policy_name?: string | null;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Full hierarchy tree response from GET /api/v1/hierarchy/tree.
+ */
+export interface HierarchyTreeResponse {
+  root_id: string;
+  nodes: HierarchyNode[];
+}
+
+/**
+ * Fetch all hierarchy nodes from the backend (flat list).
+ * Calls GET /api/v1/hierarchy/nodes on the control-api.
+ */
+export async function fetchHierarchyNodes(
+  conn: FleetConnection,
+): Promise<HierarchyNode[]> {
+  const { url, kind } = preferredUrl(conn);
+  if (!url) return [];
+
+  try {
+    const res = await jsonFetch<unknown>(
+      proxyUrl(`${url}/api/v1/hierarchy/nodes`, kind),
+      { headers: controlHeaders(conn) },
+    );
+
+    // Handle wrapped or bare array responses
+    let list: unknown[];
+    if (Array.isArray(res)) {
+      list = res;
+    } else if (res && typeof res === "object" && "nodes" in res) {
+      const wrapped = res as { nodes: unknown };
+      if (!Array.isArray(wrapped.nodes)) {
+        throw new Error("[fleet-client] fetchHierarchyNodes: expected nodes to be an array");
+      }
+      list = wrapped.nodes;
+    } else {
+      throw new Error("[fleet-client] fetchHierarchyNodes: unexpected response shape");
+    }
+
+    return list.filter(isHierarchyNode);
+  } catch (e) {
+    console.warn("[fleet-client] fetchHierarchyNodes failed:", e);
+    return [];
+  }
+}
+
+/**
+ * Fetch the full hierarchy tree (with nested children) from the backend.
+ * Calls GET /api/v1/hierarchy/tree on the control-api.
+ */
+export async function fetchHierarchyTree(
+  conn: FleetConnection,
+): Promise<HierarchyTreeResponse | null> {
+  const { url, kind } = preferredUrl(conn);
+  if (!url) return null;
+
+  try {
+    const res = await jsonFetch<unknown>(
+      proxyUrl(`${url}/api/v1/hierarchy/tree`, kind),
+      { headers: controlHeaders(conn) },
+    );
+
+    if (!res || typeof res !== "object") {
+      throw new Error("[fleet-client] fetchHierarchyTree: unexpected response shape");
+    }
+
+    const obj = res as Record<string, unknown>;
+    if (typeof obj.root_id !== "string" || !Array.isArray(obj.nodes)) {
+      throw new Error("[fleet-client] fetchHierarchyTree: expected { root_id, nodes }");
+    }
+
+    return {
+      root_id: obj.root_id,
+      nodes: (obj.nodes as unknown[]).filter(isHierarchyNode),
+    };
+  } catch (e) {
+    console.warn("[fleet-client] fetchHierarchyTree failed:", e);
+    return null;
+  }
+}
+
+/**
+ * Create a new hierarchy node on the backend.
+ * Calls POST /api/v1/hierarchy/nodes on the control-api.
+ */
+export async function createHierarchyNode(
+  conn: FleetConnection,
+  node: HierarchyNodeInput,
+): Promise<{ success: boolean; id?: string; error?: string }> {
+  const { url, kind } = preferredUrl(conn);
+  if (!url) return { success: false, error: "No API URL configured" };
+
+  try {
+    const res = await jsonFetch<{ id?: string; success?: boolean }>(
+      proxyUrl(`${url}/api/v1/hierarchy/nodes`, kind),
+      {
+        method: "POST",
+        headers: controlHeaders(conn),
+        body: JSON.stringify(node),
+      },
+    );
+    return { success: true, id: res.id };
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+/**
+ * Update an existing hierarchy node on the backend.
+ * Calls PUT /api/v1/hierarchy/nodes/{id} on the control-api.
+ */
+export async function updateHierarchyNode(
+  conn: FleetConnection,
+  id: string,
+  updates: HierarchyNodeUpdate,
+): Promise<{ success: boolean; error?: string }> {
+  const { url, kind } = preferredUrl(conn);
+  if (!url) return { success: false, error: "No API URL configured" };
+
+  try {
+    await jsonFetch<{ success?: boolean }>(
+      proxyUrl(`${url}/api/v1/hierarchy/nodes/${encodeURIComponent(id)}`, kind),
+      {
+        method: "PUT",
+        headers: controlHeaders(conn),
+        body: JSON.stringify(updates),
+      },
+    );
+    return { success: true };
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+/**
+ * Delete a hierarchy node from the backend.
+ * Calls DELETE /api/v1/hierarchy/nodes/{id}?reparent=true|false on the control-api.
+ * When reparent=true, children are moved to the deleted node's parent.
+ * When reparent=false, all descendants are also deleted.
+ */
+export async function deleteHierarchyNode(
+  conn: FleetConnection,
+  id: string,
+  reparent: boolean = false,
+): Promise<{ success: boolean; error?: string }> {
+  const { url, kind } = preferredUrl(conn);
+  if (!url) return { success: false, error: "No API URL configured" };
+
+  try {
+    const endpoint = `${url}/api/v1/hierarchy/nodes/${encodeURIComponent(id)}?reparent=${reparent}`;
+    await jsonFetch<{ success?: boolean }>(
+      proxyUrl(endpoint, kind),
+      {
+        method: "DELETE",
+        headers: controlHeaders(conn),
+      },
+    );
+    return { success: true };
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+/** Type guard for HierarchyNode shape. */
+function isHierarchyNode(value: unknown): value is HierarchyNode {
+  if (!value || typeof value !== "object") return false;
+  const obj = value as Record<string, unknown>;
+  return typeof obj.id === "string" && typeof obj.name === "string" && typeof obj.node_type === "string";
 }
 
 // ---------------------------------------------------------------------------

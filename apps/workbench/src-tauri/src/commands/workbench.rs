@@ -246,12 +246,14 @@ pub struct PostureSimulationResponse {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SignedReceiptResponse {
-    /// Hex-encoded public key of the ephemeral signer.
+    /// Hex-encoded public key of the signer.
     pub public_key: String,
     /// The signed receipt as a JSON value (for display/export).
     pub signed_receipt: serde_json::Value,
     /// Hex-encoded SHA-256 hash of the canonical receipt JSON.
     pub receipt_hash: String,
+    /// Whether the key used was "persistent" (Stronghold-stored) or "ephemeral".
+    pub key_type: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -342,9 +344,10 @@ fn validate_policy_lax(policy: &Policy) -> Result<(), PolicyValidationError> {
         .validate_with_options(PolicyValidationOptions::LAX)
         .map_err(|e| match e {
             CsError::PolicyValidation(pve) => pve,
-            other => PolicyValidationError::new(vec![
-                clawdstrike::error::PolicyFieldError::new("policy", other.to_string()),
-            ]),
+            other => PolicyValidationError::new(vec![clawdstrike::error::PolicyFieldError::new(
+                "policy",
+                other.to_string(),
+            )]),
         })
 }
 
@@ -497,27 +500,24 @@ fn verify_receipt_signature(
     let pk = match PublicKey::from_hex(public_key_hex) {
         Ok(pk) => pk,
         Err(e) => {
-            return (
-                None,
-                format!("Could not parse public key: {}", e),
-            );
+            return (None, format!("Could not parse public key: {}", e));
         }
     };
 
     let sig = match Signature::from_hex(signature_hex) {
         Ok(sig) => sig,
         Err(e) => {
-            return (
-                None,
-                format!("Could not parse signature: {}", e),
-            );
+            return (None, format!("Could not parse signature: {}", e));
         }
     };
 
     if pk.verify(message, &sig) {
         (Some(true), "Signature valid.".to_string())
     } else {
-        (Some(false), "Signature does not match public key and content.".to_string())
+        (
+            Some(false),
+            "Signature does not match public key and content.".to_string(),
+        )
     }
 }
 
@@ -760,11 +760,10 @@ pub async fn simulate_action_with_posture(
     let policy = load_policy_lax(&policy_yaml)?;
 
     let mut posture_state: Option<PostureRuntimeState> = match posture_state_json {
-        Some(json) if !json.is_empty() => {
-            Some(serde_json::from_str(&json).map_err(|e| {
-                format!("Invalid posture state JSON: {}", e)
-            })?)
-        }
+        Some(json) if !json.is_empty() => Some(
+            serde_json::from_str(&json)
+                .map_err(|e| format!("Invalid posture state JSON: {}", e))?,
+        ),
         _ => None,
     };
 
@@ -866,8 +865,8 @@ pub async fn sign_receipt(
         .map_err(|e| format!("Receipt hashing error: {}", e))?
         .to_hex();
 
-    let signed = SignedReceipt::sign(receipt, &keypair)
-        .map_err(|e| format!("Signing error: {}", e))?;
+    let signed =
+        SignedReceipt::sign(receipt, &keypair).map_err(|e| format!("Signing error: {}", e))?;
 
     let signed_json =
         serde_json::to_value(&signed).map_err(|e| format!("Serialization error: {}", e))?;
@@ -876,6 +875,63 @@ pub async fn sign_receipt(
         public_key: public_key_hex,
         signed_receipt: signed_json,
         receipt_hash,
+        key_type: "ephemeral".to_string(),
+    })
+}
+
+/// Sign a receipt using the persistent Ed25519 key stored in Stronghold.
+///
+/// Identical to `sign_receipt` but instead of generating an ephemeral keypair,
+/// it retrieves the persistent key seed from Stronghold and uses it to produce
+/// a deterministic signature. The `key_type` field in the response is set to
+/// `"persistent"`.
+///
+/// Falls back to an ephemeral key if no persistent key is available yet.
+#[tauri::command]
+pub async fn sign_receipt_persistent(
+    app: tauri::AppHandle,
+    content_hash: String,
+    verdict_passed: bool,
+) -> Result<SignedReceiptResponse, String> {
+    use tauri::Manager;
+
+    let hash =
+        Hash::from_hex(&content_hash).map_err(|e| format!("Invalid content hash hex: {}", e))?;
+
+    let verdict = if verdict_passed {
+        Verdict::pass()
+    } else {
+        Verdict::fail()
+    };
+
+    let receipt = Receipt::new(hash, verdict);
+
+    // Try to load the persistent key from Stronghold state.
+    let stronghold_state = app.state::<super::stronghold::StrongholdState>();
+    let (keypair, key_type) =
+        match super::stronghold::load_persistent_keypair_from_state(&stronghold_state) {
+            Some(kp) => (kp, "persistent"),
+            None => (Keypair::generate(), "ephemeral"),
+        };
+
+    let public_key_hex = keypair.public_key().to_hex();
+
+    let receipt_hash = receipt
+        .hash_sha256()
+        .map_err(|e| format!("Receipt hashing error: {}", e))?
+        .to_hex();
+
+    let signed =
+        SignedReceipt::sign(receipt, &keypair).map_err(|e| format!("Signing error: {}", e))?;
+
+    let signed_json =
+        serde_json::to_value(&signed).map_err(|e| format!("Serialization error: {}", e))?;
+
+    Ok(SignedReceiptResponse {
+        public_key: public_key_hex,
+        signed_receipt: signed_json,
+        receipt_hash,
+        key_type: key_type.to_string(),
     })
 }
 
@@ -970,11 +1026,8 @@ pub async fn verify_receipt_chain(
 
         // --- Dual-format signature verification (P1-4) ---
         // Try the colon-delimited chain format first (legacy).
-        let (mut sig_valid, mut sig_reason) = verify_receipt_signature(
-            &r.public_key,
-            &r.signature,
-            canonical_content.as_bytes(),
-        );
+        let (mut sig_valid, mut sig_reason) =
+            verify_receipt_signature(&r.public_key, &r.signature, canonical_content.as_bytes());
 
         // If the colon-delimited check explicitly failed (not just unparseable),
         // fall back to RFC 8785 canonical JSON. This handles receipts produced by
@@ -1098,10 +1151,10 @@ pub async fn export_policy_file(
     let fmt = format.as_deref().unwrap_or("yaml");
 
     let policy = match fmt {
-        "json" => serde_json::from_str::<Policy>(&content)
-            .map_err(|e| format!("Invalid JSON: {}", e))?,
-        "toml" => toml::from_str::<Policy>(&content)
-            .map_err(|e| format!("Invalid TOML: {}", e))?,
+        "json" => {
+            serde_json::from_str::<Policy>(&content).map_err(|e| format!("Invalid JSON: {}", e))?
+        }
+        "toml" => toml::from_str::<Policy>(&content).map_err(|e| format!("Invalid TOML: {}", e))?,
         _ => parse_policy_lax(&content).map_err(|e| format!("Invalid YAML: {}", e))?,
     };
 
@@ -1233,7 +1286,11 @@ guards:
     async fn validate_policy_valid_yaml_returns_valid_true() {
         let yaml = minimal_valid_policy();
         let res = validate_policy(yaml).await.unwrap();
-        assert!(res.valid, "expected valid: true, got errors: {:?}", res.errors);
+        assert!(
+            res.valid,
+            "expected valid: true, got errors: {:?}",
+            res.errors
+        );
         assert_eq!(res.name.as_deref(), Some("Test Policy"));
         assert_eq!(res.version.as_deref(), Some("1.1.0"));
         assert!(res.errors.is_empty());
@@ -1277,7 +1334,10 @@ guards: {}
         assert!(!res.valid);
         // Either a parse_error or validation errors should be present.
         let has_error = res.parse_error.is_some() || !res.errors.is_empty();
-        assert!(has_error, "expected error for unsupported version, got: {res:?}");
+        assert!(
+            has_error,
+            "expected error for unsupported version, got: {res:?}"
+        );
     }
 
     #[tokio::test]
@@ -1322,14 +1382,22 @@ totally_bogus_field: true
     async fn validate_policy_with_builtin_default_yaml_is_valid() {
         let yaml = load_builtin_ruleset("default".into()).await.unwrap();
         let res = validate_policy(yaml).await.unwrap();
-        assert!(res.valid, "built-in default policy should validate: {:?}", res);
+        assert!(
+            res.valid,
+            "built-in default policy should validate: {:?}",
+            res
+        );
     }
 
     #[tokio::test]
     async fn validate_policy_with_builtin_strict_yaml_is_valid() {
         let yaml = load_builtin_ruleset("strict".into()).await.unwrap();
         let res = validate_policy(yaml).await.unwrap();
-        assert!(res.valid, "built-in strict policy should validate: {:?}", res);
+        assert!(
+            res.valid,
+            "built-in strict policy should validate: {:?}",
+            res
+        );
     }
 
     // =======================================================================
@@ -1339,7 +1407,10 @@ totally_bogus_field: true
     #[tokio::test]
     async fn list_builtin_rulesets_returns_non_empty() {
         let rulesets = list_builtin_rulesets().await.unwrap();
-        assert!(!rulesets.is_empty(), "expected at least one built-in ruleset");
+        assert!(
+            !rulesets.is_empty(),
+            "expected at least one built-in ruleset"
+        );
     }
 
     #[tokio::test]
@@ -1372,7 +1443,10 @@ totally_bogus_field: true
         let yaml = load_builtin_ruleset("default".into()).await.unwrap();
         assert!(!yaml.is_empty());
         // Verify it is parseable YAML that contains a version field.
-        assert!(yaml.contains("version:"), "expected YAML to contain version field");
+        assert!(
+            yaml.contains("version:"),
+            "expected YAML to contain version field"
+        );
     }
 
     #[tokio::test]
@@ -1452,14 +1526,9 @@ totally_bogus_field: true
     #[tokio::test]
     async fn simulate_action_shell_rm_rf_root_denied() {
         let policy_yaml = load_builtin_ruleset("default".into()).await.unwrap();
-        let res = simulate_action(
-            policy_yaml,
-            "shell".into(),
-            "rm -rf /".into(),
-            None,
-        )
-        .await
-        .unwrap();
+        let res = simulate_action(policy_yaml, "shell".into(), "rm -rf /".into(), None)
+            .await
+            .unwrap();
         assert!(
             !res.allowed,
             "'rm -rf /' should be denied by shell_command guard"
@@ -1566,7 +1635,11 @@ totally_bogus_field: true
         }
 
         // Should contain at least forbidden_path and secret_leak guards.
-        let guard_names: Vec<&str> = res.evaluation_path.iter().map(|s| s.guard.as_str()).collect();
+        let guard_names: Vec<&str> = res
+            .evaluation_path
+            .iter()
+            .map(|s| s.guard.as_str())
+            .collect();
         assert!(
             guard_names.contains(&"forbidden_path"),
             "expected forbidden_path in evaluation_path, got: {:?}",
@@ -1588,10 +1661,7 @@ totally_bogus_field: true
         // 64 hex chars = 32 bytes SHA-256 hash.
         let hash = "a".repeat(64);
         let res = sign_receipt(hash, true).await.unwrap();
-        assert!(
-            !res.public_key.is_empty(),
-            "public_key should be present"
-        );
+        assert!(!res.public_key.is_empty(), "public_key should be present");
         assert!(
             !res.receipt_hash.is_empty(),
             "receipt_hash should be present"
@@ -1636,10 +1706,7 @@ totally_bogus_field: true
         );
         // The signatures field should be non-empty (at least one signature).
         let sigs = &obj["signatures"];
-        assert!(
-            !sigs.is_null(),
-            "signatures field should be non-null"
-        );
+        assert!(!sigs.is_null(), "signatures field should be non-null");
     }
 
     #[tokio::test]
@@ -1689,7 +1756,9 @@ totally_bogus_field: true
             .to_string();
 
         let yaml = minimal_valid_policy();
-        let res = export_policy_file(yaml.clone(), path.clone(), None).await.unwrap();
+        let res = export_policy_file(yaml.clone(), path.clone(), None)
+            .await
+            .unwrap();
         assert!(res.success, "export should succeed: {}", res.message);
         assert_eq!(res.path, path);
 
@@ -1813,7 +1882,11 @@ guards: {}
         }
 
         let res = import_policy_file(path.clone()).await.unwrap();
-        assert!(res.valid, "import of valid policy should be valid: {:?}", res);
+        assert!(
+            res.valid,
+            "import of valid policy should be valid: {:?}",
+            res
+        );
         assert_eq!(res.name.as_deref(), Some("Test Policy"));
         assert_eq!(res.version.as_deref(), Some("1.1.0"));
         assert!(res.errors.is_empty());
@@ -1858,7 +1931,11 @@ guards: {}
         assert!(export_res.success);
 
         let import_res = import_policy_file(path.clone()).await.unwrap();
-        assert!(import_res.valid, "round-tripped default policy should be valid: {:?}", import_res);
+        assert!(
+            import_res.valid,
+            "round-tripped default policy should be valid: {:?}",
+            import_res
+        );
         assert_eq!(import_res.name.as_deref(), Some("Default"));
 
         let _ = tokio::fs::remove_file(&path).await;
@@ -2015,7 +2092,11 @@ posture:
         assert!(res.timestamps_ordered);
         assert_eq!(res.chain_length, 3);
         for r in &res.receipts {
-            assert!(r.timestamp_order_valid, "receipt {} should have valid timestamp order", r.id);
+            assert!(
+                r.timestamp_order_valid,
+                "receipt {} should have valid timestamp order",
+                r.id
+            );
         }
     }
 
@@ -2119,7 +2200,10 @@ posture:
         ];
         let res1 = verify_receipt_chain(chain.clone()).await.unwrap();
         let res2 = verify_receipt_chain(chain).await.unwrap();
-        assert_eq!(res1.chain_hash, res2.chain_hash, "chain hash should be deterministic");
+        assert_eq!(
+            res1.chain_hash, res2.chain_hash,
+            "chain hash should be deterministic"
+        );
     }
 
     /// P1-4: Receipts signed over RFC 8785 canonical JSON (as produced by

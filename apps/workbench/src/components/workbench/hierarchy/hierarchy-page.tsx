@@ -54,9 +54,16 @@ import {
 import { useFleetConnection } from "@/lib/workbench/use-fleet-connection";
 import {
   fetchScopedPolicies,
-  createScopedPolicy,
   fetchPolicyAssignments,
-  assignPolicyToScope,
+  fetchHierarchyTree,
+  createHierarchyNode,
+  updateHierarchyNode,
+  deleteHierarchyNode,
+} from "@/lib/workbench/fleet-client";
+import type {
+  HierarchyNode,
+  HierarchyNodeInput,
+  HierarchyTreeResponse,
 } from "@/lib/workbench/fleet-client";
 
 // ---------------------------------------------------------------------------
@@ -1093,6 +1100,25 @@ export function HierarchyPage() {
     });
   }, []);
 
+  /**
+   * Fire-and-forget sync helper: runs a backend call without blocking
+   * the local UI. Logs errors but doesn't block local edits.
+   */
+  const syncToBackend = useCallback(
+    (label: string, fn: () => Promise<{ success: boolean; error?: string }>) => {
+      if (!isLiveMode || !fleetConnected) return;
+      fn().then((result) => {
+        if (!result.success) {
+          console.warn(`[hierarchy-sync] ${label} failed:`, result.error);
+          showSyncStatus("error", `Sync: ${label} failed`);
+        }
+      }).catch((err) => {
+        console.warn(`[hierarchy-sync] ${label} error:`, err);
+      });
+    },
+    [isLiveMode, fleetConnected, showSyncStatus],
+  );
+
   const handleAddChild = useCallback(
     (parentId: string, type: OrgNodeType) => {
       const defaultNames: Record<OrgNodeType, string> = {
@@ -1126,9 +1152,22 @@ export function HierarchyPage() {
         setSelectedId(newId);
         // Trigger rename immediately
         setRenameTarget(newId);
+
+        // LIVE mode: create node on backend
+        const newNode = updated.nodes[newId];
+        if (newNode) {
+          syncToBackend("create node", () =>
+            createHierarchyNode(connection, {
+              name: newNode.name,
+              node_type: newNode.type,
+              parent_id: newNode.parentId,
+              metadata: newNode.metadata,
+            }),
+          );
+        }
       }
     },
-    [hierarchy],
+    [hierarchy, syncToBackend, connection],
   );
 
   const handleRemove = useCallback(
@@ -1142,8 +1181,13 @@ export function HierarchyPage() {
       if (selectedId === id) {
         setSelectedId(node.parentId);
       }
+
+      // LIVE mode: delete node on backend (no reparent — descendants removed locally)
+      syncToBackend("delete node", () =>
+        deleteHierarchyNode(connection, id, false),
+      );
     },
-    [hierarchy, selectedId],
+    [hierarchy, selectedId, syncToBackend, connection],
   );
 
   const handleRename = useCallback((id: string) => {
@@ -1155,9 +1199,14 @@ export function HierarchyPage() {
       if (renameTarget) {
         setHierarchy((prev) => renameNode(prev, renameTarget, name));
         setRenameTarget(null);
+
+        // LIVE mode: update name on backend
+        syncToBackend("rename node", () =>
+          updateHierarchyNode(connection, renameTarget, { name }),
+        );
       }
     },
-    [renameTarget],
+    [renameTarget, syncToBackend, connection],
   );
 
   const handleAssign = useCallback(
@@ -1167,17 +1216,33 @@ export function HierarchyPage() {
           assignPolicy(prev, assignTarget, policyId, policyName),
         );
         setAssignTarget(null);
+
+        // LIVE mode: update policy assignment on backend
+        syncToBackend("assign policy", () =>
+          updateHierarchyNode(connection, assignTarget, {
+            policy_id: policyId,
+            policy_name: policyName,
+          }),
+        );
       }
     },
-    [assignTarget],
+    [assignTarget, syncToBackend, connection],
   );
 
   const handleUnassign = useCallback(() => {
     if (assignTarget) {
       setHierarchy((prev) => unassignPolicy(prev, assignTarget));
       setAssignTarget(null);
+
+      // LIVE mode: clear policy assignment on backend
+      syncToBackend("unassign policy", () =>
+        updateHierarchyNode(connection, assignTarget, {
+          policy_id: null,
+          policy_name: null,
+        }),
+      );
     }
-  }, [assignTarget]);
+  }, [assignTarget, syncToBackend, connection]);
 
   const handleDragStart = useCallback((id: string) => {
     setDragSourceId(id);
@@ -1199,13 +1264,21 @@ export function HierarchyPage() {
             (sourceNode.type === "team" && targetNode.type === "org");
           if (canDrop) {
             setHierarchy((prev) => moveNode(prev, dragSourceId, targetId));
+
+            // LIVE mode: update parent_id on backend
+            const movedId = dragSourceId;
+            syncToBackend("move node", () =>
+              updateHierarchyNode(connection, movedId, {
+                parent_id: targetId,
+              }),
+            );
           }
         }
       }
       setDragSourceId(null);
       setDragOverId(null);
     },
-    [dragSourceId, hierarchy],
+    [dragSourceId, hierarchy, syncToBackend, connection],
   );
 
   const handleResetToDemo = useCallback(() => {
@@ -1250,55 +1323,45 @@ export function HierarchyPage() {
   }, [fleetConnected]);
 
   /**
-   * Push local hierarchy to the fleet as scoped policies.
-   * Walks all nodes and creates scoped-policy entries + policy-assignments.
+   * Push local hierarchy to the fleet via the hierarchy CRUD API.
+   * Walks the tree breadth-first (parents first) so that parent nodes exist
+   * on the backend before their children are created.
    */
   const handlePushToFleet = useCallback(async () => {
     if (!fleetConnected) return;
     setSyncStatus({ type: "pushing", message: "Uploading hierarchy..." });
 
     try {
-      const nodes = Object.values(hierarchy.nodes);
+      // BFS traversal: create parents before children
+      const queue: string[] = [hierarchy.rootId];
       let successCount = 0;
       let errorCount = 0;
 
-      for (const node of nodes) {
-        // Find the linked saved policy YAML (if any)
-        const linked = node.policyId
-          ? savedPolicies.find((sp) => sp.id === node.policyId)
-          : undefined;
+      while (queue.length > 0) {
+        const nodeId = queue.shift()!;
+        const node = hierarchy.nodes[nodeId];
+        if (!node) continue;
 
-        // Create a scoped policy entry for each node
-        const scopedResult = await createScopedPolicy(connection, {
-          scope_type: node.type,
-          scope_id: node.id,
-          scope_name: node.name,
-          policy_yaml: linked?.yaml ?? "",
-          policy_name: linked?.policy.name ?? node.policyName,
-          parent_scope_id: node.parentId,
+        const input: HierarchyNodeInput = {
+          name: node.name,
+          node_type: node.type,
+          parent_id: node.parentId,
+          policy_id: node.policyId ?? null,
+          policy_name: node.policyName ?? null,
           metadata: node.metadata,
-        });
+        };
 
-        if (!scopedResult.success) {
-          errorCount++;
-          continue;
-        }
-
-        // Also push the assignment structure
-        const assignResult = await assignPolicyToScope(connection, {
-          scope_id: node.id,
-          scope_name: node.name,
-          scope_type: node.type,
-          policy_id: node.policyId,
-          policy_name: node.policyName,
-          parent_scope_id: node.parentId,
-          children: node.children,
-        });
-
-        if (assignResult.success) {
+        const result = await createHierarchyNode(connection, input);
+        if (result.success) {
           successCount++;
         } else {
+          console.warn(`[hierarchy-sync] push failed for node "${node.name}":`, result.error);
           errorCount++;
+        }
+
+        // Enqueue children
+        for (const childId of node.children) {
+          queue.push(childId);
         }
       }
 
@@ -1316,24 +1379,137 @@ export function HierarchyPage() {
         `Push failed: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
-  }, [fleetConnected, hierarchy, savedPolicies, connection, showSyncStatus]);
+  }, [fleetConnected, hierarchy, connection, showSyncStatus]);
 
   /**
-   * Pull scoped policies from the fleet into the local hierarchy.
-   * Reconstructs the hierarchy tree from backend policy-assignments.
+   * Map a backend node_type string to the frontend OrgNodeType.
+   * The backend supports "project" which the frontend does not yet have,
+   * so we map it to "team" as the closest equivalent.
+   */
+  const mapNodeType = useCallback((backendType: string): OrgNodeType => {
+    if (backendType === "org" || backendType === "team" || backendType === "agent") {
+      return backendType;
+    }
+    // "project" and any unknown types map to "team"
+    return "team";
+  }, []);
+
+  /**
+   * Recursively flatten a hierarchy tree node (with nested children) into
+   * the local OrgNode flat map format.
+   */
+  const flattenTreeNode = useCallback(
+    (
+      hNode: HierarchyNode,
+      parentId: string | null,
+      nodesOut: Record<string, OrgNode>,
+    ) => {
+      const nodeType = mapNodeType(hNode.node_type);
+      const childIds = (hNode.children ?? []).map((c) => c.id);
+
+      nodesOut[hNode.id] = {
+        id: hNode.id,
+        name: hNode.name,
+        type: nodeType,
+        parentId,
+        policyId: hNode.policy_id ?? undefined,
+        policyName: hNode.policy_name ?? undefined,
+        children: childIds,
+        metadata: (hNode.metadata as OrgNode["metadata"]) ?? {},
+      };
+
+      for (const child of hNode.children ?? []) {
+        flattenTreeNode(child, hNode.id, nodesOut);
+      }
+    },
+    [mapNodeType],
+  );
+
+  /**
+   * Pull hierarchy from the fleet via the hierarchy tree endpoint.
+   * Falls back to the older scoped-policies endpoint if the tree endpoint
+   * returns nothing.
    */
   const handlePullFromFleet = useCallback(async () => {
     if (!fleetConnected) return;
     setSyncStatus({ type: "pulling", message: "Downloading hierarchy..." });
 
     try {
+      // Try the new hierarchy tree endpoint first
+      const tree: HierarchyTreeResponse | null = await fetchHierarchyTree(connection);
+
+      if (tree && tree.nodes.length > 0) {
+        // Flatten the tree response into local OrgNode format.
+        // The tree endpoint returns nodes with nested children arrays.
+        const nodes: Record<string, OrgNode> = {};
+
+        // Find the root node in the array
+        const rootNode = tree.nodes.find((n) => n.id === tree.root_id);
+
+        if (rootNode) {
+          // If the root has nested children, flatten recursively
+          flattenTreeNode(rootNode, null, nodes);
+        } else {
+          // Fallback: nodes might be a flat list — build from parent_id pointers
+          for (const hNode of tree.nodes) {
+            const nodeType = mapNodeType(hNode.node_type);
+            nodes[hNode.id] = {
+              id: hNode.id,
+              name: hNode.name,
+              type: nodeType,
+              parentId: hNode.parent_id ?? null,
+              policyId: hNode.policy_id ?? undefined,
+              policyName: hNode.policy_name ?? undefined,
+              children: [],
+              metadata: (hNode.metadata as OrgNode["metadata"]) ?? {},
+            };
+          }
+
+          // Reconstruct children from parent pointers
+          for (const node of Object.values(nodes)) {
+            if (node.parentId && nodes[node.parentId]) {
+              nodes[node.parentId].children.push(node.id);
+            }
+          }
+        }
+
+        const rootId = tree.root_id;
+        if (!nodes[rootId]) {
+          showSyncStatus("error", "Could not find root node in fleet hierarchy");
+          return;
+        }
+
+        const newHierarchy: PolicyHierarchy = { nodes, rootId };
+        setHierarchy(newHierarchy);
+        setSelectedId(rootId);
+
+        // Expand all org and team nodes
+        setExpandedIds(() => {
+          const ids = new Set<string>();
+          for (const node of Object.values(newHierarchy.nodes)) {
+            if (node.type === "org" || node.type === "team") {
+              ids.add(node.id);
+            }
+          }
+          return ids;
+        });
+
+        showSyncStatus(
+          "success",
+          `Pulled ${Object.keys(nodes).length} nodes from fleet`,
+        );
+        return;
+      }
+
+      // Fallback: try older scoped-policies endpoint for backward compatibility
+      console.warn("[hierarchy-sync] hierarchy/tree returned empty, falling back to scoped-policies");
       const [scopedPolicies, assignments] = await Promise.all([
         fetchScopedPolicies(connection),
         fetchPolicyAssignments(connection),
       ]);
 
       if (assignments.length === 0 && scopedPolicies.length === 0) {
-        showSyncStatus("error", "No scoped policies found on fleet");
+        showSyncStatus("error", "No hierarchy data found on fleet");
         return;
       }
 
@@ -1382,7 +1558,7 @@ export function HierarchyPage() {
         }
       }
 
-      // Find root if we haven't yet (first org node or first node with no parent)
+      // Find root if we haven't yet
       if (!rootId) {
         const orgNode = Object.values(nodes).find(
           (n) => n.type === "org" && !n.parentId,
@@ -1399,7 +1575,6 @@ export function HierarchyPage() {
       setHierarchy(newHierarchy);
       setSelectedId(rootId);
 
-      // Expand all org and team nodes
       setExpandedIds(() => {
         const ids = new Set<string>();
         for (const node of Object.values(newHierarchy.nodes)) {
@@ -1412,7 +1587,7 @@ export function HierarchyPage() {
 
       showSyncStatus(
         "success",
-        `Pulled ${Object.keys(nodes).length} nodes from fleet`,
+        `Pulled ${Object.keys(nodes).length} nodes from fleet (legacy)`,
       );
     } catch (err) {
       showSyncStatus(
@@ -1420,7 +1595,7 @@ export function HierarchyPage() {
         `Pull failed: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
-  }, [fleetConnected, connection, showSyncStatus]);
+  }, [fleetConnected, connection, showSyncStatus, flattenTreeNode, mapNodeType]);
 
   // ---------------------------------------------------------------------------
   // Render

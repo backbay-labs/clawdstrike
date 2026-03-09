@@ -456,6 +456,8 @@ export interface Receipt {
   signature: string;
   publicKey: string;
   valid: boolean;
+  /** "persistent" (Stronghold-stored key) or "ephemeral" (generated per-sign). */
+  keyType?: "persistent" | "ephemeral";
 }
 
 // ---- Guard metadata (for UI rendering) ----

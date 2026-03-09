@@ -71,6 +71,10 @@ const EMBEDDED_MIGRATIONS: &[EmbeddedMigration] = &[
         name: "015_response_action_case_links.sql",
         sql: include_str!("../migrations/015_response_action_case_links.sql"),
     },
+    EmbeddedMigration {
+        name: "016_hierarchy_nodes.sql",
+        sql: include_str!("../migrations/016_hierarchy_nodes.sql"),
+    },
 ];
 
 const MIGRATION_LOCK_KEY: i64 = 0x4353_4D49_4752;

@@ -1422,6 +1422,8 @@ async fn create_tenant_rolls_back_when_nats_provisioning_fails() {
         alerter: AlerterService::new(harness.db.clone()),
         retention: RetentionService::new(harness.db.clone()),
         signing_keypair: Some(signing_keypair),
+        receipt_store: crate::routes::receipts::ReceiptStore::new(),
+        catalog: crate::services::catalog::CatalogStore::new(),
     };
     let app = routes::router(failing_state);
 
@@ -4943,6 +4945,8 @@ async fn setup_harness() -> Harness {
         alerter: AlerterService::new(db.clone()),
         retention: RetentionService::new(db.clone()),
         signing_keypair: Some(signing_keypair.clone()),
+        receipt_store: crate::routes::receipts::ReceiptStore::new(),
+        catalog: crate::services::catalog::CatalogStore::new(),
     };
     let app = routes::router(state);
 

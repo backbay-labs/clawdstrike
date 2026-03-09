@@ -20,6 +20,7 @@
     },
     {
       "identifier": "fs:default"
-    }
+    },
+    "stronghold:default"
   ]
 }

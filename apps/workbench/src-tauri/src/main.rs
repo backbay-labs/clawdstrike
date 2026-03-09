@@ -3,7 +3,9 @@
 
 mod commands;
 
-use commands::workbench;
+use commands::{stronghold as stronghold_cmds, workbench};
+use stronghold_cmds::StrongholdState;
+#[allow(unused_imports)]
 use tauri::Manager;
 
 fn main() {
@@ -12,13 +14,23 @@ fn main() {
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_fs::init())
-        .setup(|app| {
+        .plugin({
+            // Register tauri-plugin-stronghold for JS-side capabilities/permissions.
+            // The actual Stronghold instance is managed by our StrongholdState below.
+            let hostname = hostname::get()
+                .map(|h| h.to_string_lossy().into_owned())
+                .unwrap_or_else(|_| "clawdstrike-default".to_string());
+            let password = format!("clawdstrike-vault-{}", hostname);
+            tauri_plugin_stronghold::Builder::new(move |_| password.as_bytes().to_vec()).build()
+        })
+        .manage(StrongholdState::new())
+        .setup(|_app| {
             // On Windows/Linux, disable native decorations so the custom titlebar
             // is the only window chrome. On macOS, keep decorations enabled with
             // the "Overlay" titleBarStyle for native traffic-light buttons.
             #[cfg(not(target_os = "macos"))]
             {
-                if let Some(window) = app.get_webview_window("main") {
+                if let Some(window) = _app.get_webview_window("main") {
                     let _ = window.set_decorations(false);
                 }
             }
@@ -31,9 +43,18 @@ fn main() {
             workbench::simulate_action,
             workbench::simulate_action_with_posture,
             workbench::sign_receipt,
+            workbench::sign_receipt_persistent,
             workbench::verify_receipt_chain,
             workbench::export_policy_file,
             workbench::import_policy_file,
+            stronghold_cmds::init_stronghold,
+            stronghold_cmds::store_credential,
+            stronghold_cmds::get_credential,
+            stronghold_cmds::delete_credential,
+            stronghold_cmds::has_credential,
+            stronghold_cmds::generate_persistent_keypair,
+            stronghold_cmds::get_signing_public_key,
+            stronghold_cmds::sign_with_persistent_key,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

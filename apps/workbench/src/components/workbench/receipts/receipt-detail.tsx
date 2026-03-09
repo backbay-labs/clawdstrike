@@ -1,13 +1,17 @@
 import { useState, useCallback } from "react";
 import type { Receipt } from "@/lib/workbench/types";
+import type { FleetConnection } from "@/lib/workbench/fleet-client";
+import { verifyReceiptRemote } from "@/lib/workbench/fleet-client";
 import { VerdictBadge } from "@/components/workbench/shared/verdict-badge";
 import { CodeBlock } from "@/components/ui/code-block";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
-import { IconCopy, IconCheck, IconChevronDown } from "@tabler/icons-react";
+import { IconCopy, IconCheck, IconChevronDown, IconShieldCheck, IconX } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 
 interface ReceiptDetailProps {
   receipt: Receipt;
+  /** Fleet connection for server-side verification. Undefined when disconnected. */
+  fleetConnection?: FleetConnection;
 }
 
 function CopyButton({ text }: { text: string }) {
@@ -57,9 +61,35 @@ function FieldRow({
   );
 }
 
-export function ReceiptDetail({ receipt }: ReceiptDetailProps) {
+export function ReceiptDetail({ receipt, fleetConnection }: ReceiptDetailProps) {
   const [showRaw, setShowRaw] = useState(false);
   const [evidenceOpen, setEvidenceOpen] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [serverVerification, setServerVerification] = useState<{
+    valid: boolean;
+    reason?: string;
+    verified_at: string;
+  } | null>(null);
+  const [verifyError, setVerifyError] = useState("");
+
+  const handleServerVerify = useCallback(async () => {
+    if (!fleetConnection) return;
+    setVerifying(true);
+    setVerifyError("");
+    setServerVerification(null);
+    try {
+      const res = await verifyReceiptRemote(fleetConnection, receipt.id);
+      setServerVerification({
+        valid: res.valid,
+        reason: res.reason,
+        verified_at: res.verified_at,
+      });
+    } catch (err) {
+      setVerifyError(err instanceof Error ? err.message : "Verification failed");
+    } finally {
+      setVerifying(false);
+    }
+  }, [fleetConnection, receipt.id]);
 
   const rawJson = JSON.stringify(receipt, null, 2);
 
@@ -158,17 +188,74 @@ export function ReceiptDetail({ receipt }: ReceiptDetailProps) {
             <CopyButton text={receipt.publicKey} />
           </FieldRow>
 
-          <FieldRow label="Verification">
-            {receipt.valid ? (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-mono uppercase bg-[#3dbf84]/10 text-[#3dbf84] border border-[#3dbf84]/20 rounded-md">
-                <IconCheck size={10} stroke={2} />
-                Signature Valid
+          <FieldRow label="Key Type" mono>
+            {receipt.keyType === "persistent" ? (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-mono uppercase bg-[#d4a84b]/10 text-[#d4a84b] border border-[#d4a84b]/20 rounded-md">
+                Persistent (Stronghold)
+              </span>
+            ) : receipt.keyType === "ephemeral" ? (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-mono uppercase bg-[#6f7f9a]/10 text-[#6f7f9a] border border-[#6f7f9a]/20 rounded-md">
+                Ephemeral
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-mono uppercase bg-[#6f7f9a]/10 text-[#6f7f9a] border border-[#6f7f9a]/20 rounded-md">
-                Cannot Verify
-              </span>
+              <span className="text-[10px] text-[#6f7f9a]">Unknown</span>
             )}
+          </FieldRow>
+
+          <FieldRow label="Verification">
+            <div className="flex items-center gap-2 flex-wrap">
+              {receipt.valid ? (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-mono uppercase bg-[#3dbf84]/10 text-[#3dbf84] border border-[#3dbf84]/20 rounded-md">
+                  <IconCheck size={10} stroke={2} />
+                  Signature Valid
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-mono uppercase bg-[#6f7f9a]/10 text-[#6f7f9a] border border-[#6f7f9a]/20 rounded-md">
+                  Cannot Verify
+                </span>
+              )}
+
+              {/* Server-side verification (P3-4) */}
+              {fleetConnection && (
+                <>
+                  {serverVerification ? (
+                    serverVerification.valid ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-mono uppercase bg-[#3dbf84]/10 text-[#3dbf84] border border-[#3dbf84]/20 rounded-md">
+                        <IconShieldCheck size={10} stroke={2} />
+                        Server Verified
+                      </span>
+                    ) : (
+                      <span
+                        className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-mono uppercase bg-[#c45c5c]/10 text-[#c45c5c] border border-[#c45c5c]/20 rounded-md"
+                        title={serverVerification.reason}
+                      >
+                        <IconX size={10} stroke={2} />
+                        Server Rejected
+                      </span>
+                    )
+                  ) : (
+                    <button
+                      onClick={handleServerVerify}
+                      disabled={verifying}
+                      className={cn(
+                        "inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-mono uppercase border rounded-md transition-colors",
+                        verifying
+                          ? "text-[#6f7f9a] bg-[#131721] border-[#2d3240] cursor-wait"
+                          : "text-[#d4a84b] bg-[#d4a84b]/10 border-[#d4a84b]/20 hover:bg-[#d4a84b]/20",
+                      )}
+                    >
+                      <IconShieldCheck size={10} stroke={2} />
+                      {verifying ? "Verifying..." : "Verify on Server"}
+                    </button>
+                  )}
+                  {verifyError && (
+                    <span className="text-[9px] font-mono text-[#c45c5c]">
+                      {verifyError}
+                    </span>
+                  )}
+                </>
+              )}
+            </div>
           </FieldRow>
         </div>
       )}

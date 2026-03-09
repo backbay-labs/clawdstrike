@@ -85,6 +85,13 @@ export interface TauriSignedReceiptResponse {
   public_key: string;
   signed_receipt: Record<string, unknown>;
   receipt_hash: string;
+  /** "ephemeral" or "persistent" — indicates whether the signing key is stored in Stronghold. */
+  key_type: string;
+}
+
+export interface TauriGenerateKeypairResponse {
+  public_key: string;
+  newly_generated: boolean;
 }
 
 export interface TauriExportResponse {
@@ -309,6 +316,74 @@ export async function verifyReceiptChainNative(
     return await tauriInvoke<TauriChainVerificationResponse>("verify_receipt_chain", { receipts });
   } catch (err) {
     console.error("[tauri-commands] verify_receipt_chain failed:", err);
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// P4-3: Persistent signing key commands
+// ---------------------------------------------------------------------------
+
+/**
+ * Generate or retrieve a persistent Ed25519 keypair stored in Stronghold.
+ * Returns null when not running inside Tauri.
+ */
+export async function generatePersistentKeypairNative(): Promise<TauriGenerateKeypairResponse | null> {
+  if (!isDesktop()) return null;
+  try {
+    return await tauriInvoke<TauriGenerateKeypairResponse>("generate_persistent_keypair");
+  } catch (err) {
+    console.error("[tauri-commands] generate_persistent_keypair failed:", err);
+    return null;
+  }
+}
+
+/**
+ * Get the public key of the persistent signing keypair.
+ * Returns null when not running inside Tauri or if no key exists.
+ */
+export async function getSigningPublicKeyNative(): Promise<string | null> {
+  if (!isDesktop()) return null;
+  try {
+    return await tauriInvoke<string | null>("get_signing_public_key");
+  } catch (err) {
+    console.error("[tauri-commands] get_signing_public_key failed:", err);
+    return null;
+  }
+}
+
+/**
+ * Sign data with the persistent Ed25519 key.
+ * `dataHex` is a hex-encoded byte string.
+ * Returns the hex-encoded signature, or null on error.
+ */
+export async function signWithPersistentKeyNative(dataHex: string): Promise<string | null> {
+  if (!isDesktop()) return null;
+  try {
+    return await tauriInvoke<string>("sign_with_persistent_key", { dataHex });
+  } catch (err) {
+    console.error("[tauri-commands] sign_with_persistent_key failed:", err);
+    return null;
+  }
+}
+
+/**
+ * Sign a receipt using the persistent Ed25519 key stored in Stronghold.
+ * Falls back to ephemeral key if no persistent key is available.
+ * Returns null when not running inside Tauri.
+ */
+export async function signReceiptPersistentNative(
+  contentHash: string,
+  verdictPassed: boolean,
+): Promise<TauriSignedReceiptResponse | null> {
+  if (!isDesktop()) return null;
+  try {
+    return await tauriInvoke<TauriSignedReceiptResponse>("sign_receipt_persistent", {
+      contentHash,
+      verdictPassed,
+    });
+  } catch (err) {
+    console.error("[tauri-commands] sign_receipt_persistent failed:", err);
     return null;
   }
 }

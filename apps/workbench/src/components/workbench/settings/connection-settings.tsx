@@ -377,8 +377,9 @@ export function ConnectionSettings() {
           <div className="flex items-start gap-2 p-3 rounded-lg bg-[#d4a84b]/5 border border-[#d4a84b]/10">
             <IconAlertTriangle size={14} stroke={1.5} className="text-[#d4a84b] shrink-0 mt-0.5" />
             <p className="text-[10px] text-[#6f7f9a] leading-relaxed">
-              Connection credentials are stored locally in your browser. Do not use this on shared
-              or untrusted machines.
+              On desktop, credentials are encrypted at rest using Stronghold secure storage.
+              On web, credentials are stored in localStorage. Do not use the web version on
+              shared or untrusted machines.
             </p>
           </div>
         </div>

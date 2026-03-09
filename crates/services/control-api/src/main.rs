@@ -29,6 +29,7 @@ use crate::services::alerter::AlerterService;
 use crate::services::approval_request_consumer;
 use crate::services::approval_resolution_outbox;
 use crate::services::audit_consumer;
+use crate::services::catalog::{self as catalog_service, CatalogStore};
 use crate::services::metering::MeteringService;
 use crate::services::retention::RetentionService;
 use crate::services::stale_agent_detector::{self, StaleAgentConfig};
@@ -80,6 +81,11 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let alerter = AlerterService::new(pool.clone());
     let retention = RetentionService::new(pool.clone());
 
+    // Initialize catalog registry and seed with built-in rulesets.
+    let catalog = CatalogStore::new();
+    catalog.seed(catalog_service::load_builtin_rulesets()).await;
+    tracing::info!("Seeded catalog registry with built-in rulesets");
+
     let state = AppState {
         config: config.clone(),
         db: pool,
@@ -89,6 +95,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         alerter,
         retention,
         signing_keypair,
+        receipt_store: crate::routes::receipts::ReceiptStore::new(),
+        catalog,
     };
 
     // Background service shutdown channels.
