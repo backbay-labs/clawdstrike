@@ -21,6 +21,8 @@ from clawdstrike.exceptions import UnsupportedOriginFeatureError
 
 logger = logging.getLogger("clawdstrike")
 
+_UNTRUSTED_TEXT_CUSTOM_TYPES = frozenset({"untrusted_text", "hushclaw.untrusted_text"})
+
 
 @runtime_checkable
 class EngineBackend(Protocol):
@@ -201,13 +203,28 @@ class DaemonEngineBackend:
     def check_untrusted_text(
         self, source: str | None, text: str, ctx: dict[str, Any],
     ) -> dict[str, Any]:
+        return self._eval_untrusted_text_event(
+            custom_type="untrusted_text",
+            source=source,
+            text=text,
+            ctx=ctx,
+        )
+
+    def _eval_untrusted_text_event(
+        self,
+        *,
+        custom_type: str,
+        source: str | None,
+        text: str,
+        ctx: dict[str, Any],
+    ) -> dict[str, Any]:
         event: dict[str, Any] = {
             "eventId": f"py-origin-{uuid4()}",
             "eventType": "custom",
             "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "data": {
                 "type": "custom",
-                "customType": "untrusted_text",
+                "customType": custom_type,
                 "text": text,
             },
         }
@@ -231,6 +248,22 @@ class DaemonEngineBackend:
     def check_custom(
         self, custom_type: str, custom_data: dict[str, Any], ctx: dict[str, Any],
     ) -> dict[str, Any]:
+        if custom_type in _UNTRUSTED_TEXT_CUSTOM_TYPES:
+            if not isinstance(custom_data, Mapping):
+                return self._daemon_failure(f"{custom_type} payload must be a mapping")
+            text = custom_data.get("text")
+            if not isinstance(text, str):
+                return self._daemon_failure(f"{custom_type} requires a text string")
+            source = custom_data.get("source")
+            if source is not None and not isinstance(source, str):
+                return self._daemon_failure(f"{custom_type} source must be a string")
+            return self._eval_untrusted_text_event(
+                custom_type=custom_type,
+                source=source,
+                text=text,
+                ctx=ctx,
+            )
+
         if custom_type != "origin.output_send":
             return self._daemon_failure(
                 f"unsupported daemon custom action: {custom_type}",

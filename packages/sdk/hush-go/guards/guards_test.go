@@ -314,15 +314,9 @@ func TestOutputSendHelperUsesCanonicalPayload(t *testing.T) {
 	if action.Type != "custom" || action.CustomType != "origin.output_send" {
 		t.Fatalf("expected origin.output_send custom action, got %#v", action)
 	}
-
-	raw, err := json.Marshal(action.CustomData)
-	if err != nil {
-		t.Fatalf("Marshal payload: %v", err)
-	}
-
-	var payload map[string]interface{}
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		t.Fatalf("Unmarshal payload: %v", err)
+	payload, ok := action.CustomData.(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected custom payload map, got %#v", action.CustomData)
 	}
 	if payload["text"] != "ship it" {
 		t.Fatalf("expected text payload, got %#v", payload["text"])

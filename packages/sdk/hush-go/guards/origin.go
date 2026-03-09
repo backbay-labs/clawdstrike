@@ -362,16 +362,22 @@ func (p *OutputSendPayload) WithMetadata(metadata map[string]interface{}) *Outpu
 		p.Metadata = nil
 		return p
 	}
-	cloned := make(map[string]interface{}, len(metadata))
-	for key, value := range metadata {
-		cloned[key] = value
-	}
-	p.Metadata = cloned
+	p.Metadata = cloneOriginMetadataMap(metadata)
 	return p
 }
 
 func (p *OutputSendPayload) GuardAction() GuardAction {
-	return Custom("origin.output_send", *p)
+	payload := map[string]interface{}{"text": p.Text}
+	if p.Target != "" {
+		payload["target"] = p.Target
+	}
+	if p.MimeType != "" {
+		payload["mime_type"] = p.MimeType
+	}
+	if p.Metadata != nil {
+		payload["metadata"] = cloneOriginMetadataMap(p.Metadata)
+	}
+	return Custom("origin.output_send", payload)
 }
 
 // OutputSend creates the canonical origin.output_send custom action.
