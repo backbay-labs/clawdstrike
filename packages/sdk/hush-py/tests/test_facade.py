@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 
 import pytest
 
@@ -12,6 +13,11 @@ from clawdstrike.guards.base import CustomAction
 from clawdstrike.native import NATIVE_AVAILABLE
 from clawdstrike.policy import Policy, PolicyEngine
 from tests._recording_backend import RecordingBackend
+
+
+@dataclass(frozen=True)
+class UnknownAction:
+    action_type: str = "unknown"
 
 
 class TestClawdstrikeWithDefaults:
@@ -215,6 +221,14 @@ class TestClawdstrikeBackendAware:
 
         with pytest.raises(UnsupportedOriginFeatureError, match="pure-Python backend"):
             cs.check_command("ls -la", origin={"provider": "slack"})
+
+    def test_pure_python_backend_rejects_origin_on_unknown_action(self) -> None:
+        yaml_str = 'version: "1.1.0"\nname: test\nextends: default\n'
+        policy = Policy.from_yaml_with_extends(yaml_str)
+        cs = Clawdstrike(PolicyEngine(policy))
+
+        with pytest.raises(UnsupportedOriginFeatureError, match="pure-Python backend"):
+            cs.check(UnknownAction(), origin={"provider": "slack"})
 
     def test_from_daemon_rejects_invalid_url(self) -> None:
         with pytest.raises(ConfigurationError, match="invalid daemon URL"):

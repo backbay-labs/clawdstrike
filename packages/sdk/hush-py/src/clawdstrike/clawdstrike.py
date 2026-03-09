@@ -13,6 +13,7 @@ from clawdstrike.backend import (
     EngineBackend,
     NativeEngineBackend,
     PurePythonBackend,
+    _pure_python_origin_guard,
 )
 from clawdstrike.exceptions import ConfigurationError
 from clawdstrike.guards.base import (
@@ -209,6 +210,7 @@ class Clawdstrike:
             # Unknown action type — fall through to engine directly if possible
             gc = self._context(**context_kwargs)
             if isinstance(self._backend, PurePythonBackend):
+                _pure_python_origin_guard(ctx)
                 results = self._backend._engine.check(action, gc)
                 return self._decide(results)
             return Decision(status=DecisionStatus.ALLOW)
