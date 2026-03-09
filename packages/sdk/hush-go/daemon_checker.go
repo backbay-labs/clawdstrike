@@ -36,6 +36,7 @@ type daemonCheckRequest struct {
 	Origin     *guards.OriginContext  `json:"origin,omitempty"`
 	SessionID  string                 `json:"session_id,omitempty"`
 	AgentID    string                 `json:"agent_id,omitempty"`
+	Metadata   map[string]interface{} `json:"metadata,omitempty"`
 }
 
 type daemonCheckResponse struct {
@@ -111,7 +112,7 @@ func newDaemonChecker(rawURL string, cfg DaemonConfig) (*daemonChecker, error) {
 }
 
 func (d *daemonChecker) CheckAction(action guards.GuardAction, guardCtx *guards.GuardContext) guards.GuardResult {
-	if action.Type == "custom" && action.CustomType == "untrusted_text" {
+	if action.Type == "custom" && isDaemonUntrustedTextCustomType(action.CustomType) {
 		return d.checkUntrustedText(action, guardCtx)
 	}
 
@@ -163,13 +164,18 @@ func (d *daemonChecker) checkUntrustedText(
 		return daemonFailure(fmt.Sprintf("Invalid daemon request: %v", err))
 	}
 
+	customType := action.CustomType
+	if customType == "" {
+		customType = "untrusted_text"
+	}
+
 	reqBody := daemonEvalRequest{
 		EventID:   internal.CreateID("evt"),
 		EventType: "custom",
 		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
 		Data: daemonEvalCustomData{
 			Type:       "custom",
-			CustomType: "untrusted_text",
+			CustomType: customType,
 			Text:       text,
 			Source:     source,
 		},
@@ -416,6 +422,7 @@ func toDaemonRequest(action guards.GuardAction, ctx *guards.GuardContext) (daemo
 		req.Origin = ctx.Origin
 		req.SessionID = ctx.SessionID
 		req.AgentID = ctx.AgentID
+		req.Metadata = daemonCheckMetadata(ctx)
 	}
 
 	return req, nil
@@ -478,6 +485,22 @@ func extractUntrustedTextPayload(payload interface{}) (string, string, error) {
 		}
 		return extractUntrustedTextPayload(decoded)
 	}
+}
+
+func isDaemonUntrustedTextCustomType(customType string) bool {
+	return customType == "untrusted_text" || customType == "hushclaw.untrusted_text"
+}
+
+func daemonCheckMetadata(ctx *guards.GuardContext) map[string]interface{} {
+	if ctx == nil || len(ctx.Metadata) == 0 {
+		return nil
+	}
+
+	metadata := make(map[string]interface{}, len(ctx.Metadata))
+	for key, value := range ctx.Metadata {
+		metadata[key] = value
+	}
+	return metadata
 }
 
 func daemonEvalMetadata(ctx *guards.GuardContext) map[string]interface{} {

@@ -41,6 +41,10 @@ _PROVENANCE_CONFIDENCE_VALUES = frozenset(("strong", "medium", "weak", "unknown"
 ProvenanceConfidence: TypeAlias = Literal["strong", "medium", "weak", "unknown"]
 
 
+def _clone_json_value(value: Any) -> Any:
+    return json.loads(json.dumps(value))
+
+
 def _coerce_required_str(value: Any, *, field_name: str) -> str:
     if not isinstance(value, str) or not value:
         raise TypeError(f"origin.{field_name} must be a non-empty string")
@@ -100,10 +104,12 @@ def _coerce_optional_metadata(value: Any) -> dict[str, Any] | None:
             raise TypeError("origin.metadata keys must be strings")
         metadata[key] = item
     try:
-        json.dumps(metadata)
+        cloned = _clone_json_value(metadata)
     except TypeError as exc:
         raise TypeError("origin.metadata must be JSON-serializable") from exc
-    return metadata
+    if not isinstance(cloned, dict):
+        raise TypeError("origin.metadata must be a mapping")
+    return cast(dict[str, Any], cloned)
 
 
 def normalize_origin_dict(data: Mapping[str, Any]) -> dict[str, Any]:
@@ -208,7 +214,7 @@ class OriginContext:
             _coerce_optional_provenance_confidence(self.provenance_confidence),
         )
         metadata = _coerce_optional_metadata(self.metadata)
-        object.__setattr__(self, "metadata", dict(metadata) if metadata is not None else None)
+        object.__setattr__(self, "metadata", metadata)
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> OriginContext:
@@ -225,7 +231,12 @@ class OriginContext:
         for key in _CANONICAL_FIELD_ORDER:
             value = getattr(self, key)
             if value is not None:
-                result[key] = list(value) if key == "tags" else value
+                if key == "tags":
+                    result[key] = list(value)
+                elif key == "metadata":
+                    result[key] = _clone_json_value(value)
+                else:
+                    result[key] = value
         return result
 
 

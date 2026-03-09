@@ -71,7 +71,12 @@ func (b *BaseToolInterceptor) BeforeExecute(ctx context.Context, toolName string
 			guardCtx = guardCtx.WithOrigin(origin)
 		}
 	}
-	result := b.engine.CheckAction(action, guardCtx)
+	var result guards.GuardResult
+	if guards.IsOriginAwareRequest(action, guardCtx) && !guards.SupportsOriginRuntime(b.engine) {
+		result = guards.Block("origin", guards.Critical, guards.LocalOriginUnsupportedMessage)
+	} else {
+		result = b.engine.CheckAction(action, guardCtx)
+	}
 
 	d := guards.DecisionFromResult(result)
 	decision := &d

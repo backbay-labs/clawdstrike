@@ -260,7 +260,7 @@ func (g *originAwareGuard) Check(_ guards.GuardAction, ctx *guards.GuardContext)
 	return guards.Allow(g.Name())
 }
 
-func TestBeforeExecutePropagatesOriginFromSecurityContext(t *testing.T) {
+func TestBeforeExecuteFailsClosedForOriginAwareLocalChecks(t *testing.T) {
 	guard := &originAwareGuard{}
 	eng, err := engine.NewBuilder().WithGuard(guard).Build()
 	if err != nil {
@@ -275,14 +275,17 @@ func TestBeforeExecutePropagatesOriginFromSecurityContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.Proceed {
-		t.Fatal("expected proceed=true")
+	if result.Proceed {
+		t.Fatal("expected proceed=false for origin-aware local check")
 	}
-	if guard.origin == nil {
-		t.Fatal("expected origin to be forwarded to guard context")
+	if result.Decision == nil || result.Decision.Status != guards.StatusDeny {
+		t.Fatalf("expected deny decision, got %#v", result.Decision)
 	}
-	if guard.origin.TenantID != "T123" {
-		t.Fatalf("expected tenant T123, got %q", guard.origin.TenantID)
+	if result.Decision.Message != guards.LocalOriginUnsupportedMessage {
+		t.Fatalf("expected local origin unsupported message, got %q", result.Decision.Message)
+	}
+	if guard.origin != nil {
+		t.Fatal("expected local fail-closed gate to stop before invoking guards")
 	}
 }
 

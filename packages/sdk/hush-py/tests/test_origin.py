@@ -91,14 +91,27 @@ def test_origin_context_direct_init_validates_optional_fields() -> None:
 
 def test_origin_context_direct_init_clones_mutable_fields() -> None:
     tags = ["pager"]
-    metadata = {"source": "slash-command"}
+    metadata = {"source": "slash-command", "nested": {"thread": "abc"}}
     origin = OriginContext(provider="slack", tags=tags, metadata=metadata)
 
     tags.append("external")
     metadata["source"] = "mutated"
+    metadata["nested"]["thread"] = "mutated"
 
     assert origin.to_dict()["tags"] == ["pager"]
-    assert origin.to_dict()["metadata"] == {"source": "slash-command"}
+    assert origin.to_dict()["metadata"] == {
+        "source": "slash-command",
+        "nested": {"thread": "abc"},
+    }
+
+    serialized = origin.to_dict()
+    serialized["metadata"]["source"] = "serialized"
+    serialized["metadata"]["nested"]["thread"] = "serialized"
+
+    assert origin.to_dict()["metadata"] == {
+        "source": "slash-command",
+        "nested": {"thread": "abc"},
+    }
 
 
 def test_origin_context_rejects_non_json_serializable_metadata() -> None:
