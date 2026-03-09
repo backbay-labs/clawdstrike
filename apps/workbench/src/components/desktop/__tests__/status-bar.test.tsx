@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { screen } from "@testing-library/react";
 import { StatusBar } from "../status-bar";
 import { renderWithProviders } from "@/test/test-helpers";
 import { GUARD_REGISTRY } from "@/lib/workbench/guard-registry";

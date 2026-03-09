@@ -152,9 +152,12 @@ export function ReceiptInspector() {
             receipt_hash: resp.receipt_hash,
             signed_receipt: resp.signed_receipt,
           },
-          signature: (resp.signed_receipt.signatures as Record<string, unknown>[])?.[0]
-            ? JSON.stringify((resp.signed_receipt.signatures as Record<string, unknown>[])[0])
-            : randomHex(128),
+          // signatures is { signer: string, cosigner?: string }, not an array.
+          // Note: this signer signature was made over canonical JSON (RFC 8785),
+          // while verify_receipt_chain verifies against "id:timestamp:verdict:guard:policy_name".
+          // Chain signature verification will report mismatch for sign_receipt-generated receipts.
+          signature: (resp.signed_receipt.signatures as { signer?: string })?.signer
+            ?? randomHex(128),
           publicKey: resp.public_key,
           valid: true,
         };

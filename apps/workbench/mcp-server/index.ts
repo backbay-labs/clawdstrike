@@ -68,6 +68,27 @@ function jsonResult(data: unknown, isError = false) {
   return textResult(JSON.stringify(data, null, 2), isError);
 }
 
+/** Key-order-independent deep equality for parsed config values. */
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (a == null || b == null) return a === b;
+  if (typeof a !== typeof b) return false;
+  if (Array.isArray(a)) {
+    if (!Array.isArray(b) || a.length !== b.length) return false;
+    return a.every((v, i) => deepEqual(v, b[i]));
+  }
+  if (typeof a === "object") {
+    const aObj = a as Record<string, unknown>;
+    const bObj = b as Record<string, unknown>;
+    const keys = new Set([...Object.keys(aObj), ...Object.keys(bObj)]);
+    for (const k of keys) {
+      if (!deepEqual(aObj[k], bObj[k])) return false;
+    }
+    return true;
+  }
+  return false;
+}
+
 // ---------------------------------------------------------------------------
 // Tools
 // ---------------------------------------------------------------------------
@@ -571,7 +592,7 @@ server.tool(
         payload: {
           path: "/src/main.ts",
           content: Array.from(
-            { length: maxAdd + 500 },
+            { length: Math.min(maxAdd + 500, 10_000) },
             (_, i) => `+line ${i + 1}`,
           ).join("\n"),
         },
@@ -646,7 +667,7 @@ server.tool(
       for (const key of allKeys) {
         const lv = leftConfig[key];
         const rv = rightConfig[key];
-        if (JSON.stringify(lv) !== JSON.stringify(rv)) {
+        if (!deepEqual(lv, rv)) {
           changed.push({ guard: g, field: key, left: lv, right: rv });
         }
       }
@@ -664,7 +685,7 @@ server.tool(
       ...Object.keys(rightSettings),
     ]);
     for (const key of allSettingsKeys) {
-      if (JSON.stringify(leftSettings[key]) !== JSON.stringify(rightSettings[key])) {
+      if (!deepEqual(leftSettings[key], rightSettings[key])) {
         settingsChanges.push({
           field: key,
           left: leftSettings[key],

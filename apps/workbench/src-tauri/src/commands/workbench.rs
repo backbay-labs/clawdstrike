@@ -706,6 +706,10 @@ pub async fn verify_receipt_chain(
     let mut chain_hash_input = Vec::new();
 
     for (i, r) in sorted.iter().enumerate() {
+        // Chain-level canonical format: "id:timestamp:verdict:guard:policy_name".
+        // Note: this differs from SignedReceipt::sign() which signs RFC 8785
+        // canonical JSON of the Receipt struct. Chain verification is a separate
+        // integrity mechanism — callers must sign the chain format explicitly.
         let canonical_content = format!(
             "{}:{}:{}:{}:{}",
             r.id, r.timestamp, r.verdict, r.guard, r.policy_name

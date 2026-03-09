@@ -47,7 +47,7 @@ interface ResolvedBase {
 function parseExtends(ext: string | string[] | undefined): string[] {
   if (!ext) return [];
   if (Array.isArray(ext)) return ext.filter(Boolean);
-  return ext ? [ext] : [];
+  return [ext];
 }
 
 /**

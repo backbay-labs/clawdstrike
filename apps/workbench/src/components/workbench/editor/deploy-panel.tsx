@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------------------
 // Deploy Panel — deploy local policy to fleet, import from production
 // ---------------------------------------------------------------------------
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback } from "react";
 import {
   IconRocket,
   IconDownload,
@@ -39,8 +39,7 @@ const CONFIRM_TEXT = "deploy";
 
 export function DeployPanel() {
   const { connection, agents, remotePolicyInfo, refreshRemotePolicy } = useFleetConnection();
-  const { state, dispatch } = useWorkbench();
-  const { toast } = useToast();
+  const { state } = useWorkbench();
 
   const [deployOpen, setDeployOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);

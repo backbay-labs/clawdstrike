@@ -59,7 +59,7 @@ export function ShortcutProvider() {
     undo,
     redo,
   } = useWorkbench();
-  const { multiDispatch, activeTab, tabs } = useMultiPolicy();
+  const { multiDispatch, activeTab } = useMultiPolicy();
   const navigate = useNavigate();
   const [helpOpen, setHelpOpen] = useState(false);
 
