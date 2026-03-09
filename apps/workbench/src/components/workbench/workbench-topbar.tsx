@@ -2,6 +2,13 @@ import { useState, useRef, useEffect } from "react";
 import { useWorkbench } from "@/lib/workbench/multi-policy-store";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
 import { isDesktop, pickSavePath, savePolicyFile } from "@/lib/tauri-bridge";
 import { exportPolicyFileNative } from "@/lib/tauri-commands";
 import { policyToFormat, formatExtension, formatMimeType, type ExportFormat } from "@/lib/workbench/yaml-utils";
@@ -302,22 +309,22 @@ export function WorkbenchTopbar() {
         </button>
 
         {/* Export / Save As with format selector */}
-        <div className="flex items-center">
-          <select
-            value={exportFormat}
-            onChange={(e) => setExportFormat(e.target.value as ExportFormat)}
-            className="h-[30px] px-2 py-1 rounded-l-md border border-r-0 border-[#2d3240]/70 bg-[#131721] text-[#ece7dc]/80 text-xs font-medium appearance-none cursor-pointer hover:border-[#2d3240] hover:text-[#ece7dc] transition-all duration-150 outline-none"
-            title="Export format"
-          >
-            {FORMAT_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
+        <div className="flex items-center gap-1.5">
+          <Select value={exportFormat} onValueChange={(v) => { if (v !== null) setExportFormat(v as ExportFormat); }}>
+            <SelectTrigger className="h-7 text-xs bg-[#131721] border-[#2d3240] text-[#ece7dc]" title="Export format">
+              <SelectValue placeholder="Format" />
+            </SelectTrigger>
+            <SelectContent className="bg-[#131721] border-[#2d3240]">
+              {FORMAT_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value} className="text-xs text-[#ece7dc]">
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <button
             onClick={handleExport}
-            className="h-[30px] px-3 py-1.5 text-xs font-medium text-[#ece7dc]/90 bg-[#131721] border border-[#2d3240]/70 rounded-r-md hover:border-[#2d3240] hover:bg-[#1a1f2e] hover:text-[#ece7dc] transition-all duration-150 inline-flex items-center gap-1.5"
+            className="h-[30px] px-3 py-1.5 text-xs font-medium text-[#ece7dc]/90 bg-[#131721] border border-[#2d3240]/70 rounded-md hover:border-[#2d3240] hover:bg-[#1a1f2e] hover:text-[#ece7dc] transition-all duration-150 inline-flex items-center gap-1.5"
             title={desktop ? "Save As..." : `Export ${exportFormat.toUpperCase()} file`}
           >
             <IconFileExport size={14} />

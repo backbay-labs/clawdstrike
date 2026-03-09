@@ -18,6 +18,13 @@ import {
   IconPlugConnected,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
 import { fleetClient } from "@/lib/workbench/fleet-client";
 import { useFleetConnection } from "@/lib/workbench/use-fleet-connection";
 import type {
@@ -551,17 +558,18 @@ function FilterSelect({
   options: { value: string; label: string }[];
 }) {
   return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="rounded-md border border-[#2d3240] bg-[#0b0d13] px-2.5 py-1.5 text-[11px] text-[#ece7dc] outline-none focus:border-[#d4a84b]/50 [&>option]:bg-[#131721]"
-    >
-      {options.map((opt) => (
-        <option key={opt.value} value={opt.value}>
-          {opt.label}
-        </option>
-      ))}
-    </select>
+    <Select value={value} onValueChange={(v) => { if (v !== null) onChange(v); }}>
+      <SelectTrigger className="h-7 text-[11px] bg-[#131721] border-[#2d3240] text-[#ece7dc]">
+        <SelectValue placeholder="Select..." />
+      </SelectTrigger>
+      <SelectContent className="bg-[#131721] border-[#2d3240]">
+        {options.map((opt) => (
+          <SelectItem key={opt.value} value={opt.value} className="text-[11px] text-[#ece7dc]">
+            {opt.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
 

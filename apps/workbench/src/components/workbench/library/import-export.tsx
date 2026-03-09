@@ -4,6 +4,13 @@ import { useToast } from "@/components/ui/toast";
 import { yamlToPolicy, policyToFormat, formatExtension, formatMimeType, type ExportFormat } from "@/lib/workbench/yaml-utils";
 import { emitAuditEvent } from "@/lib/workbench/local-audit";
 import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
+import {
   Dialog,
   DialogTrigger,
   DialogContent,
@@ -176,21 +183,22 @@ export function ImportExport() {
       </Dialog>
 
       {/* Export format selector + export button */}
-      <div className="flex items-center">
-        <select
-          value={exportFormat}
-          onChange={(e) => setExportFormat(e.target.value as ExportFormat)}
-          className="h-[30px] px-2 py-1.5 rounded-l-md border border-r-0 border-[#d4a84b]/20 bg-[#d4a84b]/5 text-[#d4a84b] text-xs font-medium appearance-none cursor-pointer hover:bg-[#d4a84b]/10 transition-colors outline-none"
-        >
-          {FORMAT_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
+      <div className="flex items-center gap-1.5">
+        <Select value={exportFormat} onValueChange={(v) => { if (v !== null) setExportFormat(v as ExportFormat); }}>
+          <SelectTrigger className="h-7 text-xs bg-[#131721] border-[#2d3240] text-[#ece7dc]">
+            <SelectValue placeholder="Format" />
+          </SelectTrigger>
+          <SelectContent className="bg-[#131721] border-[#2d3240]">
+            {FORMAT_OPTIONS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value} className="text-xs text-[#ece7dc]">
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <button
           onClick={handleExport}
-          className="flex items-center gap-1.5 h-[30px] px-3 py-1.5 rounded-r-md bg-[#d4a84b]/10 border border-[#d4a84b]/20 text-[#d4a84b] text-xs font-medium hover:bg-[#d4a84b]/20 transition-colors"
+          className="flex items-center gap-1.5 h-[30px] px-3 py-1.5 rounded-md bg-[#d4a84b]/10 border border-[#d4a84b]/20 text-[#d4a84b] text-xs font-medium hover:bg-[#d4a84b]/20 transition-colors"
         >
           <IconDownload size={14} stroke={1.5} />
           Export

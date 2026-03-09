@@ -9,6 +9,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   IconGitCompare,
   IconArrowBackUp,
   IconPlus,
@@ -173,18 +180,25 @@ export function VersionDiffDialog({
             <label className="text-[9px] font-mono uppercase text-[#6f7f9a] mb-1 block">
               From (older)
             </label>
-            <select
-              value={fromId}
-              onChange={(e) => setFromId(e.target.value)}
-              className="w-full h-7 rounded-md bg-[#131721] border border-[#2d3240] text-[10px] font-mono text-[#ece7dc] px-2 outline-none focus:border-[#d4a84b]/50"
+            <Select
+              value={fromId || undefined}
+              onValueChange={(val) => setFromId(val as string)}
             >
-              <option value="">Select version...</option>
-              {options.map((opt) => (
-                <option key={opt.id} value={opt.id}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger className="w-full h-7 text-[10px] font-mono bg-[#131721] border-[#2d3240] text-[#ece7dc]">
+                <SelectValue placeholder="Select version..." />
+              </SelectTrigger>
+              <SelectContent className="bg-[#131721] border-[#2d3240]">
+                {options.map((opt) => (
+                  <SelectItem
+                    key={opt.id}
+                    value={opt.id}
+                    className="text-[10px] font-mono text-[#ece7dc] focus:bg-[#2d3240] focus:text-[#ece7dc]"
+                  >
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <IconArrowsExchange size={14} stroke={1.5} className="text-[#6f7f9a] mt-4 shrink-0" />
@@ -193,18 +207,25 @@ export function VersionDiffDialog({
             <label className="text-[9px] font-mono uppercase text-[#6f7f9a] mb-1 block">
               To (newer)
             </label>
-            <select
-              value={toId}
-              onChange={(e) => setToId(e.target.value)}
-              className="w-full h-7 rounded-md bg-[#131721] border border-[#2d3240] text-[10px] font-mono text-[#ece7dc] px-2 outline-none focus:border-[#d4a84b]/50"
+            <Select
+              value={toId || undefined}
+              onValueChange={(val) => setToId(val as string)}
             >
-              <option value="">Select version...</option>
-              {options.map((opt) => (
-                <option key={opt.id} value={opt.id}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger className="w-full h-7 text-[10px] font-mono bg-[#131721] border-[#2d3240] text-[#ece7dc]">
+                <SelectValue placeholder="Select version..." />
+              </SelectTrigger>
+              <SelectContent className="bg-[#131721] border-[#2d3240]">
+                {options.map((opt) => (
+                  <SelectItem
+                    key={opt.id}
+                    value={opt.id}
+                    className="text-[10px] font-mono text-[#ece7dc] focus:bg-[#2d3240] focus:text-[#ece7dc]"
+                  >
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
 

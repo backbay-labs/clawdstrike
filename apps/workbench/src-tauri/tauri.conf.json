@@ -23,7 +23,8 @@
         "hiddenTitle": true,
         "transparent": false,
         "resizable": true,
-        "center": true
+        "center": true,
+        "backgroundColor": [5, 6, 10, 255]
       }
     ],
     "security": {

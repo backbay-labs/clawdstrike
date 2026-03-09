@@ -10,6 +10,13 @@ import {
   IconDeviceDesktop,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
 import { useFleetConnection } from "@/lib/workbench/use-fleet-connection";
 import {
   fetchAuditEvents,
@@ -368,32 +375,34 @@ export function AuditLog() {
               </FilterGroup>
 
               <FilterGroup label="Action">
-                <select
-                  value={actionFilter}
-                  onChange={(e) => setActionFilter(e.target.value)}
-                  className="rounded border border-[#2d3240] bg-[#0b0d13] px-2 py-1 text-[10px] text-[#ece7dc] outline-none focus:border-[#d4a84b]/40"
-                >
-                  {ACTION_TYPES.map((at) => (
-                    <option key={at} value={at}>
-                      {at === "all" ? "All types" : at}
-                    </option>
-                  ))}
-                </select>
+                <Select value={actionFilter} onValueChange={(v) => { if (v !== null) setActionFilter(v); }}>
+                  <SelectTrigger className="h-7 text-xs bg-[#131721] border-[#2d3240] text-[#ece7dc]">
+                    <SelectValue placeholder="All types" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#131721] border-[#2d3240]">
+                    {ACTION_TYPES.map((at) => (
+                      <SelectItem key={at} value={at} className="text-xs text-[#ece7dc]">
+                        {at === "all" ? "All types" : at}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </FilterGroup>
 
               <FilterGroup label="Agent">
-                <select
-                  value={agentFilter}
-                  onChange={(e) => setAgentFilter(e.target.value)}
-                  className="rounded border border-[#2d3240] bg-[#0b0d13] px-2 py-1 text-[10px] text-[#ece7dc] outline-none focus:border-[#d4a84b]/40 max-w-[180px] truncate"
-                >
-                  <option value="all">All agents</option>
-                  {agentIds.map((id) => (
-                    <option key={id} value={id}>
-                      {id}
-                    </option>
-                  ))}
-                </select>
+                <Select value={agentFilter} onValueChange={(v) => { if (v !== null) setAgentFilter(v); }}>
+                  <SelectTrigger className="h-7 text-xs bg-[#131721] border-[#2d3240] text-[#ece7dc] max-w-[180px]">
+                    <SelectValue placeholder="All agents" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#131721] border-[#2d3240]">
+                    <SelectItem value="all" className="text-xs text-[#ece7dc]">All agents</SelectItem>
+                    {agentIds.map((id) => (
+                      <SelectItem key={id} value={id} className="text-xs text-[#ece7dc]">
+                        {id}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </FilterGroup>
             </>
           )}

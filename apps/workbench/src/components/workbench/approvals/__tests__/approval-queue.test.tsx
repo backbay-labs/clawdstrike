@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { screen, within, act } from "@testing-library/react";
+import { screen, within, act, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "@/test/test-helpers";
 import { ApprovalQueue } from "../approval-queue";
@@ -128,15 +128,21 @@ describe("ApprovalQueue", () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     renderQueue();
 
-    // Find the status filter select
+    // The shadcn Select renders a <button> trigger with role="combobox", not a native <select>.
+    // Click the trigger to open the popup, then click the desired option.
     const selects = screen.getAllByRole("combobox");
     const statusSelect = selects[0]; // first select is status filter
 
-    // Filter to "Denied" only
-    await user.selectOptions(statusSelect, "denied");
+    // Open the status filter dropdown
+    await user.click(statusSelect);
+    // Wait for the popup portal to render options
+    const option = await screen.findByRole("option", { name: /denied/i });
+    await user.click(option);
 
     // Should show the denied request (apr-008 from demo data)
-    expect(screen.getByText("Dependabot Scanner")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("Dependabot Scanner")).toBeInTheDocument();
+    });
     // Pending requests should be hidden
     expect(screen.queryByText("Infra Remediation Bot")).not.toBeInTheDocument();
   });
@@ -148,11 +154,16 @@ describe("ApprovalQueue", () => {
     const selects = screen.getAllByRole("combobox");
     const riskSelect = selects[1]; // second select is risk filter
 
-    // Filter to "Critical" only
-    await user.selectOptions(riskSelect, "critical");
+    // Open the risk filter dropdown
+    await user.click(riskSelect);
+    // Wait for the popup portal to render options
+    const option = await screen.findByRole("option", { name: /critical/i });
+    await user.click(option);
 
     // apr-005 is the only critical risk request
-    expect(screen.getByText("Production Deployer")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("Production Deployer")).toBeInTheDocument();
+    });
   });
 
   it("filters by search query", async () => {
@@ -397,8 +408,9 @@ describe("ApprovalQueue", () => {
   it("sorts pending requests before resolved ones", () => {
     renderQueue();
 
-    // Get all card elements
-    const cards = document.querySelectorAll("[class*='rounded-lg border']");
+    // Get all card elements — use the "group" class that is unique to ApprovalCard wrappers
+    // to avoid matching Select trigger buttons that also have "rounded-lg border"
+    const cards = document.querySelectorAll("[class*='group relative rounded-lg border']");
     expect(cards.length).toBeGreaterThan(0);
 
     // First cards should have Approve buttons (pending), last cards should not

@@ -25,13 +25,20 @@ fn main() {
         })
         .manage(StrongholdState::new())
         .setup(|_app| {
-            // On Windows/Linux, disable native decorations so the custom titlebar
-            // is the only window chrome. On macOS, keep decorations enabled with
-            // the "Overlay" titleBarStyle for native traffic-light buttons.
-            #[cfg(not(target_os = "macos"))]
-            {
-                if let Some(window) = _app.get_webview_window("main") {
+            if let Some(window) = _app.get_webview_window("main") {
+                #[cfg(not(target_os = "macos"))]
+                {
+                    // On Windows/Linux, disable native decorations so the custom
+                    // titlebar is the only window chrome.
                     let _ = window.set_decorations(false);
+                }
+                #[cfg(target_os = "macos")]
+                {
+                    // Ensure decorations stay enabled on macOS so the native
+                    // traffic-light buttons (close/minimize/fullscreen) are visible.
+                    // This is needed because tauri-plugin-window-state may restore
+                    // a saved state that lost decorations.
+                    let _ = window.set_decorations(true);
                 }
             }
             Ok(())

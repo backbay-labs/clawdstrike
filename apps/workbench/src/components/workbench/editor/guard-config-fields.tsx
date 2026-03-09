@@ -108,17 +108,25 @@ function SecretPatternListEditor({ patterns, onChange }: SecretPatternListProps)
               </span>
             )}
           </div>
-          <select
+          <Select
             value={p.severity}
-            onChange={(e) => updateRow(index, "severity", e.target.value)}
-            className={`h-7 rounded-md border border-[#2d3240] bg-[#131721] px-1.5 text-[10px] font-mono outline-none focus:border-[#d4a84b]/50 ${SEVERITY_COLORS[p.severity]}`}
+            onValueChange={(val) => updateRow(index, "severity", val as string)}
           >
-            {SEVERITY_OPTIONS.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger className={`h-7 min-w-[90px] bg-[#131721] border-[#2d3240] text-[10px] font-mono ${SEVERITY_COLORS[p.severity]}`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="bg-[#131721] border-[#2d3240]">
+              {SEVERITY_OPTIONS.map((s) => (
+                <SelectItem
+                  key={s}
+                  value={s}
+                  className="text-[10px] font-mono text-[#ece7dc] focus:bg-[#2d3240] focus:text-[#ece7dc]"
+                >
+                  {s}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <button
             type="button"
             onClick={() => removeRow(index)}

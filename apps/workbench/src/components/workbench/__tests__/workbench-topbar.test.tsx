@@ -52,9 +52,11 @@ describe("WorkbenchTopbar", () => {
 
     expect(screen.getByRole("button", { name: "Export" })).toBeInTheDocument();
     // Format selector should be present with YAML as default
-    const select = screen.getByTitle("Export format");
-    expect(select).toBeInTheDocument();
-    expect(select).toHaveValue("yaml");
+    // The shadcn Select renders a <button> trigger (role="combobox"), not a native <select>.
+    // The trigger displays the selected item's text; check it contains the default value.
+    const trigger = screen.getByTitle("Export format");
+    expect(trigger).toBeInTheDocument();
+    expect(trigger).toHaveTextContent(/yaml/i);
   });
 
   it("renders Copy button", () => {

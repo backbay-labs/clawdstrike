@@ -6,6 +6,13 @@ import { GUARD_REGISTRY } from "@/lib/workbench/guard-registry";
 import { ReceiptTimeline } from "./receipt-timeline";
 import { ChainVerification } from "./chain-verification";
 import { cn } from "@/lib/utils";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
 import { signReceiptNative, signReceiptPersistentNative, simulateActionNative } from "@/lib/tauri-commands";
 import { isDesktop } from "@/lib/tauri-bridge";
 import { emitAuditEvent } from "@/lib/workbench/local-audit";
@@ -686,18 +693,22 @@ export function ReceiptInspector() {
               <>
                 {/* Action type selector + Generate Real Receipt (desktop only) */}
                 <div className="flex items-center gap-1">
-                  <select
-                    value={selectedAction}
-                    onChange={(e) => setSelectedAction(Number(e.target.value))}
+                  <Select
+                    value={String(selectedAction)}
+                    onValueChange={(v) => { if (v !== null) setSelectedAction(Number(v)); }}
                     disabled={generating}
-                    className="h-7 flex-1 min-w-0 px-1.5 text-[10px] font-mono bg-[#131721] border border-[#2d3240] rounded-md text-[#ece7dc] outline-none focus:border-[#3dbf84]/50 disabled:opacity-50"
                   >
-                    {SAMPLE_ACTIONS.map((sa, i) => (
-                      <option key={sa.engineType} value={i}>
-                        {sa.label}
-                      </option>
-                    ))}
-                  </select>
+                    <SelectTrigger className="h-7 text-[10px] font-mono bg-[#131721] border-[#2d3240] text-[#ece7dc] disabled:opacity-50">
+                      <SelectValue placeholder="Action..." />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#131721] border-[#2d3240]">
+                      {SAMPLE_ACTIONS.map((sa, i) => (
+                        <SelectItem key={sa.engineType} value={String(i)} className="text-[10px] font-mono text-[#ece7dc]">
+                          {sa.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <button
                   onClick={handleGenerateReal}
@@ -822,18 +833,19 @@ export function ReceiptInspector() {
 
         {/* Guard filter */}
         {guardNames.length > 0 && (
-          <select
-            value={guardFilter}
-            onChange={(e) => setGuardFilter(e.target.value)}
-            className="h-7 px-2 text-xs font-mono bg-[#131721] border border-[#2d3240] rounded-md text-[#ece7dc] outline-none focus:border-[#d4a84b]/50"
-          >
-            <option value="">All Guards</option>
-            {guardNames.map((gn) => (
-              <option key={gn} value={gn}>
-                {gn}
-              </option>
-            ))}
-          </select>
+          <Select value={guardFilter} onValueChange={(v) => { if (v !== null) setGuardFilter(v); }}>
+            <SelectTrigger className="h-7 text-xs font-mono bg-[#131721] border-[#2d3240] text-[#ece7dc]">
+              <SelectValue placeholder="All Guards" />
+            </SelectTrigger>
+            <SelectContent className="bg-[#131721] border-[#2d3240]">
+              <SelectItem value="" className="text-xs font-mono text-[#ece7dc]">All Guards</SelectItem>
+              {guardNames.map((gn) => (
+                <SelectItem key={gn} value={gn} className="text-xs font-mono text-[#ece7dc]">
+                  {gn}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         )}
 
         {/* Search */}

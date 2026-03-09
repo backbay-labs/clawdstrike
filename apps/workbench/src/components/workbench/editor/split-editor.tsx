@@ -4,6 +4,13 @@ import {
   ResizablePanel,
   ResizableHandle,
 } from "@/components/ui/resizable";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { EditorVisualPanel } from "@/components/workbench/editor/editor-visual-panel";
 import { YamlPreviewPanel } from "@/components/workbench/editor/yaml-preview-panel";
 import { useMultiPolicy, type SplitMode } from "@/lib/workbench/multi-policy-store";
@@ -86,21 +93,26 @@ function PaneTabSelector({
 
   return (
     <div className="flex items-center px-2 py-1 bg-[#0b0d13] border-b border-[#2d3240]">
-      <select
-        value={selectedTabId ?? ""}
-        onChange={(e) => onSelect(e.target.value)}
-        className="bg-[#131721] border border-[#2d3240] rounded px-2 py-0.5 text-[10px] font-mono text-[#ece7dc] outline-none focus:border-[#d4a84b]/40 cursor-pointer"
+      <Select
+        value={selectedTabId ?? undefined}
+        onValueChange={(val) => onSelect(val as string)}
       >
-        <option value="" disabled>
-          Select policy...
-        </option>
-        {available.map((tab) => (
-          <option key={tab.id} value={tab.id}>
-            {tab.name}
-            {tab.dirty ? " *" : ""}
-          </option>
-        ))}
-      </select>
+        <SelectTrigger className="h-7 text-[10px] font-mono bg-[#131721] border-[#2d3240] text-[#ece7dc]">
+          <SelectValue placeholder="Select policy..." />
+        </SelectTrigger>
+        <SelectContent className="bg-[#131721] border-[#2d3240]">
+          {available.map((tab) => (
+            <SelectItem
+              key={tab.id}
+              value={tab.id}
+              className="text-[10px] font-mono text-[#ece7dc] focus:bg-[#2d3240] focus:text-[#ece7dc]"
+            >
+              {tab.name}
+              {tab.dirty ? " *" : ""}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   );
 }

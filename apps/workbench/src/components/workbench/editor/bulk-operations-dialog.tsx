@@ -8,6 +8,13 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useMultiPolicy, type PolicyTab, type BulkGuardUpdate } from "@/lib/workbench/multi-policy-store";
 import { GUARD_REGISTRY } from "@/lib/workbench/guard-registry";
 import type { GuardId, GuardConfigMap } from "@/lib/workbench/types";
@@ -276,20 +283,28 @@ export function BulkOperationsDialog({
             <label className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6f7f9a]">
               Guard
             </label>
-            <select
+            <Select
               value={operation.guardId}
-              onChange={(e) => {
-                setOperation({ ...operation, guardId: e.target.value as GuardId });
+              onValueChange={(val) => {
+                setOperation({ ...operation, guardId: val as GuardId });
                 setApplied(false);
               }}
-              className="bg-[#0b0d13] border border-[#2d3240] rounded px-2 py-1.5 text-[11px] font-mono text-[#ece7dc] outline-none focus:border-[#d4a84b]/40"
             >
-              {GUARD_REGISTRY.map((g) => (
-                <option key={g.id} value={g.id}>
-                  {g.name} ({g.id})
-                </option>
-              ))}
-            </select>
+              <SelectTrigger className="h-7 text-xs bg-[#131721] border-[#2d3240] text-[#ece7dc] font-mono">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="bg-[#131721] border-[#2d3240]">
+                {GUARD_REGISTRY.map((g) => (
+                  <SelectItem
+                    key={g.id}
+                    value={g.id}
+                    className="text-[11px] font-mono text-[#ece7dc] focus:bg-[#2d3240] focus:text-[#ece7dc]"
+                  >
+                    {g.name} ({g.id})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Toggle guard: enable/disable */}
@@ -333,21 +348,28 @@ export function BulkOperationsDialog({
             <div className="flex flex-col gap-2">
               {configPresets.length > 0 ? (
                 <>
-                  <select
-                    value={operation.configKey ?? ""}
-                    onChange={(e) => {
-                      setOperation({ ...operation, configKey: e.target.value });
+                  <Select
+                    value={operation.configKey || undefined}
+                    onValueChange={(val) => {
+                      setOperation({ ...operation, configKey: val as string });
                       setApplied(false);
                     }}
-                    className="bg-[#0b0d13] border border-[#2d3240] rounded px-2 py-1.5 text-[11px] font-mono text-[#ece7dc] outline-none focus:border-[#d4a84b]/40"
                   >
-                    <option value="" disabled>Select config field...</option>
-                    {configPresets.map((p) => (
-                      <option key={p.key} value={p.key}>
-                        {p.label} ({p.key})
-                      </option>
-                    ))}
-                  </select>
+                    <SelectTrigger className="h-7 text-xs bg-[#131721] border-[#2d3240] text-[#ece7dc] font-mono">
+                      <SelectValue placeholder="Select config field..." />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#131721] border-[#2d3240]">
+                      {configPresets.map((p) => (
+                        <SelectItem
+                          key={p.key}
+                          value={p.key}
+                          className="text-[11px] font-mono text-[#ece7dc] focus:bg-[#2d3240] focus:text-[#ece7dc]"
+                        >
+                          {p.label} ({p.key})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
 
                   {operation.configKey && (() => {
                     const preset = configPresets.find((p) => p.key === operation.configKey);
@@ -392,21 +414,28 @@ export function BulkOperationsDialog({
 
                     if (preset.type === "select" && preset.options) {
                       return (
-                        <select
-                          value={String(operation.configValue ?? "")}
-                          onChange={(e) => {
-                            setOperation({ ...operation, configValue: e.target.value });
+                        <Select
+                          value={operation.configValue ? String(operation.configValue) : undefined}
+                          onValueChange={(val) => {
+                            setOperation({ ...operation, configValue: val as string });
                             setApplied(false);
                           }}
-                          className="bg-[#0b0d13] border border-[#2d3240] rounded px-2 py-1.5 text-[11px] font-mono text-[#ece7dc] outline-none focus:border-[#d4a84b]/40"
                         >
-                          <option value="" disabled>Select value...</option>
-                          {preset.options.map((opt) => (
-                            <option key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </option>
-                          ))}
-                        </select>
+                          <SelectTrigger className="h-7 text-xs bg-[#131721] border-[#2d3240] text-[#ece7dc] font-mono">
+                            <SelectValue placeholder="Select value..." />
+                          </SelectTrigger>
+                          <SelectContent className="bg-[#131721] border-[#2d3240]">
+                            {preset.options.map((opt) => (
+                              <SelectItem
+                                key={opt.value}
+                                value={opt.value}
+                                className="text-[11px] font-mono text-[#ece7dc] focus:bg-[#2d3240] focus:text-[#ece7dc]"
+                              >
+                                {opt.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       );
                     }
 

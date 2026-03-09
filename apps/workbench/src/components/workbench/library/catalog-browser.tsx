@@ -1,4 +1,11 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useWorkbench } from "@/lib/workbench/multi-policy-store";
 import { yamlToPolicy, policyToYaml } from "@/lib/workbench/yaml-utils";
 import { useFleetConnection } from "@/lib/workbench/use-fleet-connection";
@@ -442,27 +449,41 @@ function PublishDialog({
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-[10px] font-mono text-[#6f7f9a] mb-1 block">Category</label>
-                <select
+                <Select
                   value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  className="w-full px-3 py-1.5 rounded-md bg-[#131721] border border-[#2d3240] text-xs text-[#ece7dc] focus:outline-none focus:border-[#d4a84b]/40"
+                  onValueChange={(val) => setCategory(val as string)}
                 >
-                  {CATALOG_CATEGORIES.map((c) => (
-                    <option key={c.id} value={c.id}>{c.label}</option>
-                  ))}
-                </select>
+                  <SelectTrigger className="w-full h-7 text-xs bg-[#131721] border-[#2d3240] text-[#ece7dc]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#131721] border-[#2d3240]">
+                    {CATALOG_CATEGORIES.map((c) => (
+                      <SelectItem
+                        key={c.id}
+                        value={c.id}
+                        className="text-xs text-[#ece7dc] focus:bg-[#2d3240] focus:text-[#ece7dc]"
+                      >
+                        {c.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <label className="text-[10px] font-mono text-[#6f7f9a] mb-1 block">Difficulty</label>
-                <select
+                <Select
                   value={difficulty}
-                  onChange={(e) => setDifficulty(e.target.value)}
-                  className="w-full px-3 py-1.5 rounded-md bg-[#131721] border border-[#2d3240] text-xs text-[#ece7dc] focus:outline-none focus:border-[#d4a84b]/40"
+                  onValueChange={(val) => setDifficulty(val as string)}
                 >
-                  <option value="beginner">Beginner</option>
-                  <option value="intermediate">Intermediate</option>
-                  <option value="advanced">Advanced</option>
-                </select>
+                  <SelectTrigger className="w-full h-7 text-xs bg-[#131721] border-[#2d3240] text-[#ece7dc]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#131721] border-[#2d3240]">
+                    <SelectItem value="beginner" className="text-xs text-[#ece7dc] focus:bg-[#2d3240] focus:text-[#ece7dc]">Beginner</SelectItem>
+                    <SelectItem value="intermediate" className="text-xs text-[#ece7dc] focus:bg-[#2d3240] focus:text-[#ece7dc]">Intermediate</SelectItem>
+                    <SelectItem value="advanced" className="text-xs text-[#ece7dc] focus:bg-[#2d3240] focus:text-[#ece7dc]">Advanced</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <div>
