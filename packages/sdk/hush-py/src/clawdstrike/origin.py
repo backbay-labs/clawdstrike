@@ -214,31 +214,9 @@ class OriginContext:
     def from_dict(cls, data: Mapping[str, Any]) -> OriginContext:
         """Create an OriginContext from canonical or camelCase field names."""
 
-        normalized = normalize_origin_dict(data)
-        return cls(
-            provider=_coerce_required_str(normalized.get("provider"), field_name="provider"),
-            tenant_id=_coerce_optional_str(normalized.get("tenant_id"), field_name="tenant_id"),
-            space_id=_coerce_optional_str(normalized.get("space_id"), field_name="space_id"),
-            space_type=_coerce_optional_str(normalized.get("space_type"), field_name="space_type"),
-            thread_id=_coerce_optional_str(normalized.get("thread_id"), field_name="thread_id"),
-            actor_id=_coerce_optional_str(normalized.get("actor_id"), field_name="actor_id"),
-            actor_type=_coerce_optional_str(normalized.get("actor_type"), field_name="actor_type"),
-            actor_role=_coerce_optional_str(normalized.get("actor_role"), field_name="actor_role"),
-            visibility=_coerce_optional_str(normalized.get("visibility"), field_name="visibility"),
-            external_participants=_coerce_optional_bool(
-                normalized.get("external_participants"),
-                field_name="external_participants",
-            ),
-            tags=_coerce_optional_tags(normalized.get("tags")),
-            sensitivity=_coerce_optional_str(
-                normalized.get("sensitivity"),
-                field_name="sensitivity",
-            ),
-            provenance_confidence=_coerce_optional_provenance_confidence(
-                normalized.get("provenance_confidence"),
-            ),
-            metadata=_coerce_optional_metadata(normalized.get("metadata")),
-        )
+        normalized = dict(normalize_origin_dict(data))
+        normalized.setdefault("provider", None)
+        return cls(**cast(dict[str, Any], normalized))
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize the origin context using canonical snake_case keys."""

@@ -200,6 +200,25 @@ class TestDaemonEngineBackend:
         assert report["overall"]["guard"] == "origin"
         assert report["overall"]["severity"] == "warning"
 
+    def test_output_send_rejects_non_mapping_payload(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        def _unexpected_urlopen(request, timeout: float = 0.0):
+            raise AssertionError("daemon request should not be sent for invalid payload")
+
+        monkeypatch.setattr("clawdstrike.backend.urllib_request.urlopen", _unexpected_urlopen)
+        backend = DaemonEngineBackend("https://daemon.example.com")
+
+        report = backend.check_custom(
+            "origin.output_send",
+            None,  # type: ignore[arg-type]
+            {},
+        )
+
+        assert report["overall"]["allowed"] is False
+        assert report["overall"]["message"] == "origin.output_send payload must be a mapping"
+
     def test_untrusted_text_uses_eval_endpoint(self, monkeypatch: pytest.MonkeyPatch) -> None:
         seen: dict[str, object] = {}
 

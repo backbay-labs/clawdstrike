@@ -269,6 +269,9 @@ class DaemonEngineBackend:
                 f"unsupported daemon custom action: {custom_type}",
             )
 
+        if not isinstance(custom_data, Mapping):
+            return self._daemon_failure("origin.output_send payload must be a mapping")
+
         text = custom_data.get("text")
         if not isinstance(text, str) or not text:
             return self._daemon_failure("origin.output_send requires a non-empty text field")
