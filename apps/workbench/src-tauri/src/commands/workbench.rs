@@ -887,11 +887,25 @@ pub async fn verify_receipt_chain(
             }
         };
 
-        let (sig_valid, sig_reason) = verify_receipt_signature(
+        let (sig_valid, mut sig_reason) = verify_receipt_signature(
             &r.public_key,
             &r.signature,
             canonical_content.as_bytes(),
         );
+
+        // When a signature is parseable but doesn't verify, add a hint about
+        // the format mismatch: SignedReceipt::sign() signs RFC 8785 canonical
+        // JSON, but chain verification checks against the colon-delimited
+        // "id:timestamp:verdict:guard:policy_name" format. Receipts produced
+        // by sign_receipt (the workbench Tauri command) will always fail here
+        // unless they are re-signed over the chain canonical format.
+        if sig_valid == Some(false) {
+            sig_reason.push_str(
+                " Hint: if this receipt was created via sign_receipt, its signature covers \
+                 RFC 8785 canonical JSON — not the chain canonical format. Re-sign over the \
+                 chain format (id:timestamp:verdict:guard:policy_name) for chain verification.",
+            );
+        }
 
         if sig_valid == Some(true) {
             any_sig_verified = true;

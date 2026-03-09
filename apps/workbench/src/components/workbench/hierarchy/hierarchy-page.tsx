@@ -23,7 +23,6 @@ import {
   IconAlertTriangle,
   IconCheck,
   IconX,
-  IconGripVertical,
   IconArrowRight,
   IconLayersLinked,
 } from "@tabler/icons-react";
@@ -1085,12 +1084,6 @@ export function HierarchyPage() {
       const node = hierarchy.nodes[id];
       if (!node) return;
 
-      // Simple confirmation
-      const descendants = getLeafAgents(hierarchy, id);
-      const desc =
-        descendants.length > 0
-          ? `This will also remove ${descendants.length} agent(s).`
-          : "";
       // In production you'd use a proper dialog, but for now we just proceed
       const updated = removeNode(hierarchy, id);
       setHierarchy(updated);

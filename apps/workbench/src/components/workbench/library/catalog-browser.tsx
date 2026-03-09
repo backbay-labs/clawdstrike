@@ -27,8 +27,6 @@ import {
   IconAdjustments,
   IconSpider,
   IconStar,
-  IconSortAscending,
-  IconSortDescending,
   IconClock,
   IconFlame,
 } from "@tabler/icons-react";

@@ -395,14 +395,14 @@ server.tool(
         met: result.met.map((r) => ({
           id: r.id,
           title: r.title,
-          citation: r.citation,
+          citation: r.citation ?? "",
         })),
         gaps: result.gaps.map((r) => ({
           id: r.id,
           title: r.title,
-          citation: r.citation,
+          citation: r.citation ?? "",
           description: r.description,
-          requiredGuards: r.guardDeps,
+          requiredGuards: r.guardDeps ?? [],
         })),
       };
     }
@@ -520,18 +520,64 @@ server.tool(
     }
 
     if (guards.secret_leak?.enabled) {
-      suggestions.push({
-        id: `suggest-sl-${suggestions.length}`,
-        name: "AWS key in file write",
-        description: "Writes content containing an AWS access key ID",
-        category: "attack",
-        actionType: "file_write",
-        payload: {
-          path: "/app/config.js",
-          content: "const key = 'AKIA1234567890ABCDEF';",
-        },
-        expectedVerdict: "deny",
-      });
+      const userPatterns = guards.secret_leak.patterns ?? [];
+
+      if (userPatterns.length > 0) {
+        // Generate scenarios from the policy's configured secret_patterns for
+        // more relevant test coverage (use up to the first 3 patterns).
+        for (const sp of userPatterns.slice(0, 3)) {
+          // Build a synthetic string that should match the configured regex.
+          // We embed the pattern name as a hint and craft a plausible match.
+          let sampleSecret: string;
+          try {
+            // Attempt to derive a plausible matching string from the pattern.
+            // For common patterns we provide realistic sample values.
+            const pat = sp.pattern;
+            if (/AKIA/i.test(pat)) {
+              sampleSecret = "AKIA1234567890ABCDEF";
+            } else if (/ghp_/i.test(pat)) {
+              sampleSecret = "ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789";
+            } else if (/sk-/i.test(pat) || /openai/i.test(sp.name)) {
+              sampleSecret = "sk-proj-abc123def456ghi789jkl012mno345pqr678";
+            } else if (/BEGIN.*PRIVATE/i.test(pat)) {
+              sampleSecret = "-----BEGIN RSA PRIVATE KEY-----\\nMIIBogIBA...";
+            } else {
+              // Fallback: use a generic secret placeholder with the pattern name
+              sampleSecret = `LEAKED_${sp.name.toUpperCase().replace(/\s+/g, "_")}_VALUE_12345`;
+            }
+          } catch {
+            sampleSecret = "LEAKED_SECRET_VALUE_12345";
+          }
+
+          suggestions.push({
+            id: `suggest-sl-pat-${suggestions.length}`,
+            name: `Secret leak: ${sp.name}`,
+            description: `Writes content matching configured pattern "${sp.name}" (severity: ${sp.severity})`,
+            category: "attack",
+            actionType: "file_write",
+            payload: {
+              path: "/app/config.js",
+              content: `const secret = '${sampleSecret}';`,
+            },
+            expectedVerdict: "deny",
+          });
+        }
+      } else {
+        // No user-configured patterns — fall back to a generic AWS key scenario
+        suggestions.push({
+          id: `suggest-sl-${suggestions.length}`,
+          name: "AWS key in file write",
+          description: "Writes content containing an AWS access key ID",
+          category: "attack",
+          actionType: "file_write",
+          payload: {
+            path: "/app/config.js",
+            content: "const key = 'AKIA1234567890ABCDEF';",
+          },
+          expectedVerdict: "deny",
+        });
+      }
+
       suggestions.push({
         id: `suggest-sl-clean-${suggestions.length}`,
         name: "Clean file write (no secrets)",
@@ -626,20 +672,30 @@ server.tool(
 
     if (guards.patch_integrity?.enabled) {
       const maxAdd = guards.patch_integrity.max_additions ?? 1000;
+      const PATCH_SAFETY_CAP = 10_000;
+      // Generate enough lines to exceed the threshold, but stay within the safety cap.
+      const lineCount = Math.min(maxAdd + 500, PATCH_SAFETY_CAP);
+      // If the safety cap prevents us from exceeding max_additions, the scenario
+      // cannot trigger a deny — adjust the expected verdict accordingly.
+      const willExceed = lineCount > maxAdd;
       suggestions.push({
         id: `suggest-pi-large-${suggestions.length}`,
-        name: `Oversized patch (${maxAdd + 500} additions)`,
-        description: `Patch exceeding the max_additions limit of ${maxAdd}`,
-        category: "attack",
+        name: willExceed
+          ? `Oversized patch (${lineCount} additions)`
+          : `Large patch at safety cap (${lineCount} additions, threshold is ${maxAdd})`,
+        description: willExceed
+          ? `Patch exceeding the max_additions limit of ${maxAdd}`
+          : `Patch capped at ${PATCH_SAFETY_CAP} lines; max_additions (${maxAdd}) is too large to exceed with safe generation`,
+        category: willExceed ? "attack" : "edge_case",
         actionType: "patch_apply",
         payload: {
           path: "/src/main.ts",
           content: Array.from(
-            { length: Math.min(maxAdd + 500, 10_000) },
+            { length: lineCount },
             (_, i) => `+line ${i + 1}`,
           ).join("\n"),
         },
-        expectedVerdict: "deny",
+        expectedVerdict: willExceed ? "deny" : "allow",
       });
     }
 

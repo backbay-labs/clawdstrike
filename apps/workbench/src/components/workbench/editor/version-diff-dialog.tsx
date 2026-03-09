@@ -14,7 +14,6 @@ import {
   IconPlus,
   IconMinus,
   IconArrowsExchange,
-  IconTag,
 } from "@tabler/icons-react";
 import { diffVersions, compactChangeSummary, type VersionDiff, type VersionChange } from "@/lib/workbench/version-diff";
 import type { PolicyVersion } from "@/lib/workbench/version-store";
@@ -59,7 +58,6 @@ function computeUnifiedDiff(linesA: string[], linesB: string[]): DiffLine[] {
     }
   }
 
-  const result: DiffLine[] = [];
   let i = m;
   let j = n;
   const temp: DiffLine[] = [];

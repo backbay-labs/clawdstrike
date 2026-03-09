@@ -46,8 +46,7 @@ interface ResolvedBase {
  */
 function parseExtends(ext: string | string[] | undefined): string[] {
   if (!ext) return [];
-  if (Array.isArray(ext)) return ext.filter(Boolean);
-  return [ext];
+  return Array.isArray(ext) ? ext.filter(Boolean) : [ext];
 }
 
 /**
@@ -84,14 +83,15 @@ function isGuardEnabled(guards: GuardConfigMap, id: GuardId): boolean {
 
 /**
  * Shallow equality check: do two guard configs differ in any key besides `enabled`?
+ *
+ * Both parameters are guaranteed non-null/non-undefined at the only call site
+ * (inside `computeProvenance`, where `inBase.config` and `currentCfg` have
+ * already been checked for truthiness).
  */
 function guardConfigDiffers(
-  base: Record<string, unknown> | undefined,
-  current: Record<string, unknown> | undefined,
+  base: Record<string, unknown>,
+  current: Record<string, unknown>,
 ): boolean {
-  if (!base && !current) return false;
-  if (!base || !current) return true;
-
   const allKeys = new Set([...Object.keys(base), ...Object.keys(current)]);
   for (const key of allKeys) {
     if (key === "enabled") continue;

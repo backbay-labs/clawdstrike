@@ -141,6 +141,29 @@ export function ReceiptInspector() {
       const resp = await signReceiptNative(contentHash, verdictPassed);
 
       if (resp) {
+        // Extract the signer signature from the Rust SignedReceipt shape:
+        // { receipt: {...}, signatures: { signer: "<hex>", cosigner?: "<hex>" } }
+        // The `signer` field is a hex-encoded Ed25519 signature string.
+        const signatures = resp.signed_receipt.signatures as
+          | { signer?: unknown; cosigner?: unknown }
+          | undefined;
+        const rawSigner = signatures?.signer;
+        const extractedSignature =
+          typeof rawSigner === "string" && rawSigner.length > 0
+            ? rawSigner
+            : null;
+
+        if (!extractedSignature) {
+          console.warn(
+            "[receipt-inspector] Could not extract signer signature from signed_receipt. " +
+              "Expected resp.signed_receipt.signatures.signer to be a non-empty string, " +
+              "got:",
+            rawSigner,
+            "Full signatures object:",
+            signatures,
+          );
+        }
+
         const receipt: Receipt = {
           id: crypto.randomUUID(),
           timestamp: new Date().toISOString(),
@@ -152,15 +175,16 @@ export function ReceiptInspector() {
             content_hash: contentHash,
             receipt_hash: resp.receipt_hash,
             signed_receipt: resp.signed_receipt,
+            ...(extractedSignature ? {} : { signature_extraction_failed: true }),
           },
-          // signatures is { signer: string, cosigner?: string }, not an array.
           // Note: this signer signature was made over canonical JSON (RFC 8785),
           // while verify_receipt_chain verifies against "id:timestamp:verdict:guard:policy_name".
           // Chain signature verification will report mismatch for sign_receipt-generated receipts.
-          signature: (resp.signed_receipt.signatures as { signer?: string })?.signer
-            ?? randomHex(128),
+          signature: extractedSignature ?? "unsigned",
           publicKey: resp.public_key,
-          valid: true,
+          // Mark as invalid if we couldn't extract a real signature — the receipt
+          // data is present but the cryptographic binding is missing/unparseable.
+          valid: extractedSignature !== null,
         };
         setReceipts((prev) => [receipt, ...prev]);
       }
