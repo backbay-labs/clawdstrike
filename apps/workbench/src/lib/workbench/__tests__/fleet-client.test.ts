@@ -640,7 +640,7 @@ describe("fleetClient convenience object", () => {
 // ---- Edge cases ----
 
 describe("edge cases", () => {
-  it("fetchAuditEvents handles response with missing events field", async () => {
+  it("fetchAuditEvents throws on response with missing events field", async () => {
     // Inject a response that returns {} (no events key, not an array)
     const { http: mswHttp, HttpResponse: MswResponse } = await import("msw");
     mockFleetServer.use(
@@ -650,8 +650,8 @@ describe("edge cases", () => {
         return MswResponse.json({});
       }),
     );
-    const events = await fetchAuditEvents(makeConn());
-    expect(events).toEqual([]);
+    // Runtime validation now rejects unexpected response shapes
+    await expect(fetchAuditEvents(makeConn())).rejects.toThrow("unexpected response shape");
   });
 
   it("fetchApprovals handles response with missing fields", async () => {

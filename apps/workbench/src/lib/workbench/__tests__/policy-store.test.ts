@@ -380,13 +380,14 @@ describe("SET_YAML", () => {
     expect(next.activePolicy).toBe(state.activePolicy);
   });
 
-  it("with YAML array still parses (arrays are typeof object in JS)", () => {
+  it("with YAML array rejects (must be a mapping/object)", () => {
     const state = makeInitialState();
     const next = reducer(state, { type: "SET_YAML", yaml: "- just\n- a\n- list" });
-    // YAML arrays are typeof "object", so yamlToPolicy succeeds with defaults
-    expect(next.activePolicy.version).toBe("1.2.0");
-    expect(next.activePolicy.name).toBe("");
-    expect(next.dirty).toBe(true);
+    // Arrays are now rejected by yamlToPolicy validation
+    expect(next.validation.valid).toBe(false);
+    expect(next.validation.errors.length).toBeGreaterThan(0);
+    // activePolicy should remain unchanged (the old one)
+    expect(next.activePolicy).toBe(state.activePolicy);
   });
 });
 
