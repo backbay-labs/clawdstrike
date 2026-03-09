@@ -148,6 +148,14 @@ function buildPayload(
  * Deterministic: same events in the same order produce the same scenarios.
  */
 export function auditEventsToScenarios(events: AuditEvent[]): TestScenario[] {
+  const MAX_EVENTS = 10_000;
+  if (events.length > MAX_EVENTS) {
+    console.warn(
+      `[traffic-replay] auditEventsToScenarios: truncating ${events.length} events to ${MAX_EVENTS}`,
+    );
+    events = events.slice(0, MAX_EVENTS);
+  }
+
   const scenarios: TestScenario[] = [];
 
   for (let i = 0; i < events.length; i++) {
@@ -202,10 +210,10 @@ export function summarizeTraffic(events: AuditEvent[]): TrafficSummary {
       byGuard[event.guard] = (byGuard[event.guard] ?? 0) + 1;
     }
 
-    // Time range
+    // Time range (use Date-based comparison to handle TZ offsets correctly)
     if (event.timestamp) {
-      if (!earliest || event.timestamp < earliest) earliest = event.timestamp;
-      if (!latest || event.timestamp > latest) latest = event.timestamp;
+      if (!earliest || new Date(event.timestamp).getTime() < new Date(earliest).getTime()) earliest = event.timestamp;
+      if (!latest || new Date(event.timestamp).getTime() > new Date(latest).getTime()) latest = event.timestamp;
     }
   }
 

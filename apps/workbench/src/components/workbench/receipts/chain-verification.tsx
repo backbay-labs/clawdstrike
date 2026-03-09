@@ -86,9 +86,9 @@ async function verifyChainClientSide(
     };
   }
 
-  // Sort by timestamp
+  // Sort by timestamp using numeric Date comparison (handles TZ offsets correctly)
   const sorted = [...receipts].sort(
-    (a, b) => a.timestamp.localeCompare(b.timestamp),
+    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
   );
 
   const results: ClientReceiptVerification[] = [];
@@ -106,7 +106,7 @@ async function verifyChainClientSide(
     let tsNote = "First receipt in chain.";
     if (i > 0) {
       const prev = sorted[i - 1];
-      if (r.timestamp >= prev.timestamp) {
+      if (new Date(r.timestamp).getTime() >= new Date(prev.timestamp).getTime()) {
         tsNote = "Timestamp >= previous.";
       } else {
         tsValid = false;

@@ -27,6 +27,9 @@ import type { RedTeamGradingResult } from "./redteam/types";
 // Regex safety helper
 // ---------------------------------------------------------------------------
 
+/** Max content size for regex testing (1 MB). Content exceeding this is not tested. */
+const MAX_REGEX_CONTENT_BYTES = 1_048_576;
+
 /** Reject regex patterns with nested quantifiers that can cause catastrophic backtracking. */
 function isSafeRegex(pattern: string): boolean {
   // Reject patterns longer than 1000 chars
@@ -35,6 +38,20 @@ function isSafeRegex(pattern: string): boolean {
   if (/(\+|\*|\{)\)?(\+|\*|\{)/.test(pattern)) return false;
   // Reject excessive alternation groups (>20)
   if ((pattern.match(/\|/g) || []).length > 20) return false;
+  // Reject duplicate alternation branches (e.g. (a|a)) — backreference-style bypass
+  const altGroups = pattern.match(/\(([^)]+)\)/g) || [];
+  for (const group of altGroups) {
+    const inner = group.slice(1, -1);
+    const branches = inner.split("|");
+    const unique = new Set(branches);
+    if (unique.size < branches.length) return false;
+  }
+  // Reject excessive repetition quantifiers {n,m} where m > 1000
+  const repMatches = pattern.matchAll(/\{(\d+)(?:,(\d+))?\}/g);
+  for (const m of repMatches) {
+    const upper = m[2] !== undefined ? parseInt(m[2], 10) : parseInt(m[1], 10);
+    if (upper > 1000) return false;
+  }
   return true;
 }
 
@@ -65,7 +82,8 @@ function globToRegex(pattern: string): RegExp {
     re = "^" + re;
   }
 
-  return new RegExp(re + "$", "i");
+  // Case-sensitive to match Rust glob::Pattern::matches() semantics
+  return new RegExp(re + "$");
 }
 
 /** Wildcard domain match (e.g. *.openai.com matches api.openai.com). */
@@ -87,7 +105,7 @@ function simulateForbiddenPath(
   scenario: TestScenario,
 ): GuardSimResult | null {
   const { actionType, payload } = scenario;
-  if (actionType !== "file_access" && actionType !== "file_write") return null;
+  if (actionType !== "file_access" && actionType !== "file_write" && actionType !== "patch_apply") return null;
 
   const path = (payload.path as string) || "";
   const patterns = config.patterns || [];
@@ -186,6 +204,17 @@ function simulateSecretLeak(
   const patterns = config.patterns || [];
   const skipPaths = config.skip_paths || [];
 
+  // Content size cap: skip regex testing and deny if content exceeds 1 MB
+  if (content.length > MAX_REGEX_CONTENT_BYTES) {
+    return {
+      guardId: "secret_leak",
+      guardName: "Secret Leak",
+      verdict: "deny",
+      message: `Content size (${content.length} bytes) exceeds 1 MB cap — denied without regex testing`,
+      evidence: { path, contentSize: content.length, cap: MAX_REGEX_CONTENT_BYTES },
+    };
+  }
+
   // Check skip paths
   for (const sp of skipPaths) {
     if (globToRegex(sp).test(path)) {
@@ -223,12 +252,24 @@ function simulateSecretLeak(
   }
 
   if (matches.length > 0) {
-    const hasCritical = matches.some((m) => m.severity === "critical" || m.severity === "error");
+    // Filter out "info" severity matches — they should not elevate the verdict
+    const actionableMatches = matches.filter((m) => m.severity !== "info");
+    if (actionableMatches.length === 0) {
+      // Only "info" severity matches remain — treat as allow
+      return {
+        guardId: "secret_leak",
+        guardName: "Secret Leak",
+        verdict: "allow",
+        message: `Detected ${matches.length} info-only match(es) — no actionable secrets: ${matches.map((m) => m.name).join(", ")}`,
+        evidence: { path, matches },
+      };
+    }
+    const hasCritical = actionableMatches.some((m) => m.severity === "critical" || m.severity === "error");
     return {
       guardId: "secret_leak",
       guardName: "Secret Leak",
       verdict: hasCritical ? "deny" : "warn",
-      message: `Detected ${matches.length} secret(s): ${matches.map((m) => m.name).join(", ")}`,
+      message: `Detected ${actionableMatches.length} secret(s): ${actionableMatches.map((m) => m.name).join(", ")}`,
       evidence: { path, matches },
     };
   }
@@ -249,6 +290,18 @@ function simulatePatchIntegrity(
   if (scenario.actionType !== "patch_apply") return null;
 
   const content = (scenario.payload.content as string) || "";
+
+  // Content size cap: skip regex testing and deny if content exceeds 1 MB
+  if (content.length > MAX_REGEX_CONTENT_BYTES) {
+    return {
+      guardId: "patch_integrity",
+      guardName: "Patch Integrity",
+      verdict: "deny",
+      message: `Patch content size (${content.length} bytes) exceeds 1 MB cap — denied without regex testing`,
+      evidence: { contentSize: content.length, cap: MAX_REGEX_CONTENT_BYTES },
+    };
+  }
+
   const lines = content.split("\n");
   const additions = lines.filter((l) => l.startsWith("+") && !l.startsWith("+++")).length;
   const deletions = lines.filter((l) => l.startsWith("-") && !l.startsWith("---")).length;
@@ -337,30 +390,31 @@ function simulatePatchIntegrity(
 function simulateShellCommand(
   config: ShellCommandConfig,
   scenario: TestScenario,
+  forbiddenPathConfig?: ForbiddenPathConfig,
 ): GuardSimResult | null {
   if (scenario.actionType !== "shell_command") return null;
 
   const command = (scenario.payload.command as string) || "";
   const forbiddenPatterns = config.forbidden_patterns || [];
 
-  // Default dangerous patterns if none configured
-  const patterns =
-    forbiddenPatterns.length > 0
-      ? forbiddenPatterns
-      : [
-          "rm\\s+-rf\\s+/",
-          "mkfs\\.",
-          "dd\\s+if=",
-          ":(){ :|:& };:",
-          ">/dev/sd",
-          "chmod\\s+777",
-          "curl.*\\|.*(?:bash|sh)",
-          "wget.*\\|.*(?:bash|sh)",
-          "nc\\s+-e",
-          "bash\\s+-i\\s+>&",
-          "/dev/tcp/",
-          "\\beval\\b.*\\bbase64\\b",
-        ];
+  // Default dangerous patterns — always included as a security baseline.
+  // Custom forbidden_patterns are merged with (appended to) these defaults,
+  // never replace them, to prevent accidental bypass of core protections.
+  const defaultPatterns = [
+    "rm\\s+-rf\\s+/",
+    "mkfs\\.",
+    "dd\\s+if=",
+    ":(){ :|:& };:",
+    ">/dev/sd",
+    "chmod\\s+777",
+    "curl.*\\|.*(?:bash|sh)",
+    "wget.*\\|.*(?:bash|sh)",
+    "nc\\s+-e",
+    "bash\\s+-i\\s+>&",
+    "/dev/tcp/",
+    "\\beval\\b.*\\bbase64\\b",
+  ];
+  const patterns = [...defaultPatterns, ...forbiddenPatterns];
 
   for (const pat of patterns) {
     if (!isSafeRegex(pat)) {
@@ -395,6 +449,31 @@ function simulateShellCommand(
     }
   }
 
+  // enforce_forbidden_paths: when enabled (default true), extract file paths from the
+  // command string and check them against ForbiddenPathConfig patterns.
+  if (config.enforce_forbidden_paths !== false && forbiddenPathConfig) {
+    const fpPatterns = forbiddenPathConfig.patterns || [];
+    const fpExceptions = forbiddenPathConfig.exceptions || [];
+    // Simple path extraction: find tokens starting with / or ~/
+    const pathTokens = command.match(/(?:~\/|\/)[^\s;|&"'`]+/g) || [];
+    for (const candidatePath of pathTokens) {
+      // Check exceptions first
+      const isExcepted = fpExceptions.some((exc) => globToRegex(exc).test(candidatePath));
+      if (isExcepted) continue;
+      for (const fpPat of fpPatterns) {
+        if (globToRegex(fpPat).test(candidatePath)) {
+          return {
+            guardId: "shell_command",
+            guardName: "Shell Command",
+            verdict: "deny",
+            message: `Command references forbidden path "${candidatePath}" (matched pattern "${fpPat}")`,
+            evidence: { command, forbiddenPath: candidatePath, matchedPattern: fpPat },
+          };
+        }
+      }
+    }
+  }
+
   return {
     guardId: "shell_command",
     guardName: "Shell Command",
@@ -417,7 +496,8 @@ function simulateMcpTool(
   const defaultAction = config.default_action || "allow";
 
   // Block takes precedence
-  if (blockList.includes(tool) || blockList.includes("*")) {
+  // Rust McpToolGuard uses HashSet::contains(tool_name) — literal match only, no wildcard "*" support
+  if (blockList.includes(tool)) {
     return {
       guardId: "mcp_tool",
       guardName: "MCP Tool",
@@ -428,7 +508,8 @@ function simulateMcpTool(
   }
 
   // Confirmation list -> warn
-  if (confirmList.includes(tool) || confirmList.includes("*")) {
+  // Rust McpToolGuard uses HashSet::contains(tool_name) — literal match only, no wildcard "*" support
+  if (confirmList.includes(tool)) {
     return {
       guardId: "mcp_tool",
       guardName: "MCP Tool",
@@ -439,8 +520,9 @@ function simulateMcpTool(
   }
 
   // Allow list
+  // Rust McpToolGuard uses HashSet::contains(tool_name) — literal match only, no wildcard "*" support
   if (allowList.length > 0) {
-    if (allowList.includes(tool) || allowList.includes("*")) {
+    if (allowList.includes(tool)) {
       return {
         guardId: "mcp_tool",
         guardName: "MCP Tool",
@@ -784,7 +866,13 @@ export function simulatePolicy(
 
     const simulator = SIMULATORS[gid];
     if (simulator) {
-      const result = simulator(config, scenario);
+      let result: GuardSimResult | null;
+      // Special-case: shell_command needs the forbidden_path config for enforce_forbidden_paths
+      if (gid === "shell_command") {
+        result = simulateShellCommand(config as ShellCommandConfig, scenario, policy.guards.forbidden_path);
+      } else {
+        result = simulator(config, scenario);
+      }
       if (result) {
         guardResults.push({ ...result, engine: "client" });
       }
@@ -794,13 +882,13 @@ export function simulatePolicy(
       if (stubSimulator) {
         guardResults.push(stubSimulator(config, scenario));
       } else {
-        // Fallback generic stub for any unknown future guard
+        // Fallback: unknown/unhandled guards default to deny (fail-closed)
         const meta = getGuardMeta(gid);
         guardResults.push({
           guardId: gid,
           guardName: meta?.name || gid,
-          verdict: "allow",
-          message: "Not simulatable client-side — defaulting to allow",
+          verdict: "deny",
+          message: `Unknown guard '${gid}' cannot be simulated — defaulting to deny (fail-closed)`,
           evidence: { note: "Requires runtime evaluation" },
           engine: "stubbed",
         });

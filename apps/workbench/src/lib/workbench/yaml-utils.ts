@@ -20,6 +20,10 @@ function buildCleanDoc(policy: WorkbenchPolicy): Record<string, unknown> {
   for (const [key, config] of Object.entries(policy.guards)) {
     if (config && typeof config === "object") {
       const cleaned = cleanObject(config as Record<string, unknown>);
+      // Redact embedding_api_key from spider_sense guard to prevent secret leakage in exports
+      if (key === "spider_sense" && "embedding_api_key" in cleaned) {
+        cleaned.embedding_api_key = "***REDACTED***";
+      }
       if (Object.keys(cleaned).length > 0) {
         guards[key] = cleaned;
       }
@@ -131,9 +135,20 @@ function tomlEscapeString(s: string): string {
   return '"' + s
     .replace(/\\/g, "\\\\")
     .replace(/"/g, '\\"')
+    .replace(/\0/g, "\\u0000")
+    .replace(/\x08/g, "\\b")
+    .replace(/\f/g, "\\f")
     .replace(/\n/g, "\\n")
     .replace(/\r/g, "\\r")
     .replace(/\t/g, "\\t") + '"';
+}
+
+/** Quote a TOML key if it contains characters outside [a-zA-Z0-9_-]. */
+function tomlQuoteKey(key: string): string {
+  if (/^[a-zA-Z0-9_-]+$/.test(key)) return key;
+  return '"' + key
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"') + '"';
 }
 
 function tomlValue(v: unknown): string {
@@ -158,7 +173,7 @@ function tomlInlineTable(obj: Record<string, unknown>): string {
   const parts: string[] = [];
   for (const [k, v] of Object.entries(obj)) {
     if (v === undefined || v === null) continue;
-    parts.push(`${k} = ${tomlValue(v)}`);
+    parts.push(`${tomlQuoteKey(k)} = ${tomlValue(v)}`);
   }
   return "{ " + parts.join(", ") + " }";
 }
@@ -184,7 +199,7 @@ function tomlSerialize(doc: Record<string, unknown>): string {
   for (const [key, value] of Object.entries(doc)) {
     if (value === undefined || value === null) continue;
     if (isTable(value) && shouldBeSection(value)) continue; // handled in second pass
-    lines.push(`${key} = ${tomlValue(value)}`);
+    lines.push(`${tomlQuoteKey(key)} = ${tomlValue(value)}`);
   }
 
   // Second pass: emit [section] tables
@@ -193,7 +208,7 @@ function tomlSerialize(doc: Record<string, unknown>): string {
     if (!isTable(value) || !shouldBeSection(value)) continue;
 
     lines.push("");
-    lines.push(`[${key}]`);
+    lines.push(`[${tomlQuoteKey(key)}]`);
     const obj = value as Record<string, unknown>;
 
     // Simple keys first (non-table, non-array-of-tables)
@@ -202,7 +217,7 @@ function tomlSerialize(doc: Record<string, unknown>): string {
       if (isTable(v)) continue; // handled below as sub-section
       // Arrays of objects are handled below as [[array-of-tables]]
       if (Array.isArray(v) && v.length > 0 && v.every((item) => isTable(item))) continue;
-      lines.push(`${k} = ${tomlValue(v)}`);
+      lines.push(`${tomlQuoteKey(k)} = ${tomlValue(v)}`);
     }
 
     // Arrays of objects as [[section.key]] (array-of-tables syntax)
@@ -212,15 +227,15 @@ function tomlSerialize(doc: Record<string, unknown>): string {
 
       for (const item of v) {
         lines.push("");
-        lines.push(`[[${key}.${k}]]`);
+        lines.push(`[[${tomlQuoteKey(key)}.${tomlQuoteKey(k)}]]`);
         const tableItem = item as Record<string, unknown>;
         for (const [ik, iv] of Object.entries(tableItem)) {
           if (iv === undefined || iv === null) continue;
           if (isTable(iv)) {
             // Depth 4+: fall back to JSON for deeply nested values
-            lines.push(`${ik} = ${JSON.stringify(iv)}`);
+            lines.push(`${tomlQuoteKey(ik)} = ${JSON.stringify(iv)}`);
           } else {
-            lines.push(`${ik} = ${tomlValue(iv)}`);
+            lines.push(`${tomlQuoteKey(ik)} = ${tomlValue(iv)}`);
           }
         }
       }
@@ -232,7 +247,7 @@ function tomlSerialize(doc: Record<string, unknown>): string {
       if (!isTable(v)) continue;
 
       lines.push("");
-      lines.push(`[${key}.${k}]`);
+      lines.push(`[${tomlQuoteKey(key)}.${tomlQuoteKey(k)}]`);
       const subObj = v as Record<string, unknown>;
 
       for (const [sk, sv] of Object.entries(subObj)) {
@@ -245,12 +260,12 @@ function tomlSerialize(doc: Record<string, unknown>): string {
           );
           if (hasDeepNesting) {
             // Depth 4+: fall back to JSON to avoid lossy serialization
-            lines.push(`${sk} = ${JSON.stringify(sv)}`);
+            lines.push(`${tomlQuoteKey(sk)} = ${JSON.stringify(sv)}`);
           } else {
-            lines.push(`${sk} = ${tomlInlineTable(nested)}`);
+            lines.push(`${tomlQuoteKey(sk)} = ${tomlInlineTable(nested)}`);
           }
         } else {
-          lines.push(`${sk} = ${tomlValue(sv)}`);
+          lines.push(`${tomlQuoteKey(sk)} = ${tomlValue(sv)}`);
         }
       }
     }
@@ -264,9 +279,12 @@ export function yamlToPolicy(
   yaml: string
 ): [WorkbenchPolicy | null, string[]] {
   try {
-    const doc = YAML.parse(yaml);
+    const doc = YAML.parse(yaml, { maxAliasCount: 10, uniqueKeys: true });
     if (!doc || typeof doc !== "object") {
       return [null, ["YAML must be a mapping/object"]];
+    }
+    if (Array.isArray(doc)) {
+      return [null, ["YAML must be a mapping/object, not an array"]];
     }
 
     const errors: string[] = [];
@@ -490,7 +508,11 @@ function cleanObject(obj: Record<string, unknown>): Record<string, unknown> {
     // Preserve empty arrays for guard config fields where [] has semantic meaning
     // (e.g., allow: [] means "nothing allowed", distinct from absent field)
     if (Array.isArray(value) && value.length === 0) {
-      const PRESERVE_EMPTY = ["allow", "block", "patterns", "forbidden_patterns", "forbidden_commands", "secret_patterns"];
+      const PRESERVE_EMPTY = [
+        "allow", "block", "patterns", "forbidden_patterns", "forbidden_commands", "secret_patterns",
+        "require_confirmation", "skip_paths", "exceptions", "file_access_allow", "file_write_allow",
+        "patch_allow", "allowed_actions", "allowed_input_types", "forbidden_suffixes",
+      ];
       if (!PRESERVE_EMPTY.includes(key)) continue;
     }
     result[key] = value;

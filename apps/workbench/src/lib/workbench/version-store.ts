@@ -52,7 +52,8 @@ export function isValidTagName(name: string): boolean {
 
 // ---- Markdown escaping ----
 
-function escapeMd(s: string): string {
+/** @internal Exported for testing. */
+export function escapeMd(s: string): string {
   return s.replace(/([#*_\[\]`|~\\>])/g, "\\$1");
 }
 
@@ -196,7 +197,21 @@ export class VersionStore {
       throw err;
     }
 
+    // Auto-prune old versions to prevent unbounded growth (#33)
+    try {
+      await this.deleteOldVersions(policyId, 50);
+    } catch (pruneErr) {
+      console.warn("[version-store] Auto-prune failed (non-fatal):", pruneErr);
+    }
+
     return version;
+  }
+
+  close(): void {
+    if (this.db) {
+      this.db.close();
+      this.db = null;
+    }
   }
 
   async getVersions(policyId: string, limit = 20, offset = 0): Promise<PolicyVersion[]> {
@@ -260,8 +275,15 @@ export class VersionStore {
     }
 
     const db = this.ensureDB();
-    const version = await this.getVersion(versionId);
-    if (!version) throw new Error(`Version ${versionId} not found`);
+
+    // Single readwrite transaction: read + modify + write to avoid TOCTOU race (#16)
+    const tx = db.transaction([VERSIONS_STORE, TAGS_STORE], "readwrite");
+    const versionReq = tx.objectStore(VERSIONS_STORE).get(versionId);
+    const version = await requestPromise(versionReq) as PolicyVersion | undefined;
+    if (!version) {
+      tx.abort();
+      throw new Error(`Version ${versionId} not found`);
+    }
 
     const now = new Date().toISOString();
     const tagEntry: VersionTag = {
@@ -275,7 +297,6 @@ export class VersionStore {
     // Update the version's tags array
     const updatedTags = version.tags.includes(tag) ? version.tags : [...version.tags, tag];
 
-    const tx = db.transaction([VERSIONS_STORE, TAGS_STORE], "readwrite");
     tx.objectStore(TAGS_STORE).put(tagEntry);
     tx.objectStore(VERSIONS_STORE).put({ ...version, tags: updatedTags });
     await txPromise(tx);
@@ -283,12 +304,15 @@ export class VersionStore {
 
   async removeTag(versionId: string, tag: string): Promise<void> {
     const db = this.ensureDB();
-    const version = await this.getVersion(versionId);
+
+    // Single readwrite transaction: read + modify + write to avoid TOCTOU race (#16)
+    const tx = db.transaction([VERSIONS_STORE, TAGS_STORE], "readwrite");
+    const versionReq = tx.objectStore(VERSIONS_STORE).get(versionId);
+    const version = await requestPromise(versionReq) as PolicyVersion | undefined;
     if (!version) return;
 
     const updatedTags = version.tags.filter((t) => t !== tag);
 
-    const tx = db.transaction([VERSIONS_STORE, TAGS_STORE], "readwrite");
     tx.objectStore(TAGS_STORE).delete([tag, version.policyId]);
     tx.objectStore(VERSIONS_STORE).put({ ...version, tags: updatedTags });
     await txPromise(tx);

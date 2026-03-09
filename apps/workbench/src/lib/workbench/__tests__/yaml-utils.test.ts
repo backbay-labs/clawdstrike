@@ -430,14 +430,11 @@ version: "1.2.0
     expect(errors.length).toBeGreaterThan(0);
   });
 
-  it("parses a YAML array as an object (arrays are typeof object in JS)", () => {
-    // YAML arrays are typeof "object" in JS, so the parser doesn't reject them.
-    // The resulting policy will have empty/default fields since array keys don't map.
+  it("rejects a YAML array (must be a mapping/object)", () => {
     const [policy, errors] = yamlToPolicy("- just\n- a\n- list");
-    expect(errors).toEqual([]);
-    expect(policy).not.toBeNull();
-    // version defaults to 1.2.0 since doc.version is undefined on an array
-    expect(policy!.version).toBe("1.2.0");
+    expect(policy).toBeNull();
+    expect(errors.length).toBeGreaterThan(0);
+    expect(errors[0]).toContain("array");
   });
 
   it("defaults version to 1.2.0 when missing", () => {

@@ -94,10 +94,17 @@ export function ReceiptInspector() {
       const arr: Receipt[] = Array.isArray(parsed) ? parsed : [parsed];
 
       // Validate all required fields
+      const VALID_VERDICTS = ["allow", "deny", "warn"] as const;
       for (const r of arr) {
         if (!r.id || typeof r.id !== "string") throw new Error("Receipt must have a string 'id'");
         if (!r.verdict || typeof r.verdict !== "string") throw new Error("Receipt must have a string 'verdict'");
+        if (!VALID_VERDICTS.includes(r.verdict)) {
+          throw new Error(`Receipt verdict must be one of ${VALID_VERDICTS.join(", ")}, got "${r.verdict}"`);
+        }
         if (!r.guard || typeof r.guard !== "string") throw new Error("Receipt must have a string 'guard'");
+        if (!r.action || typeof r.action !== "object") throw new Error("Receipt must have an 'action' object");
+        if (!r.action.type || typeof r.action.type !== "string") throw new Error("Receipt action must have a string 'type'");
+        if (!r.action.target || typeof r.action.target !== "string") throw new Error("Receipt action must have a string 'target'");
         if (!r.timestamp) r.timestamp = new Date().toISOString(); // default if missing
         if (!r.policyName) r.policyName = "unknown"; // default if missing
         if (!r.signature) r.signature = "none"; // mark as unsigned

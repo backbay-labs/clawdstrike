@@ -894,9 +894,11 @@ function BudgetsSection({
           <FieldRow label="MCP Tool Calls">
             <Input
               type="number"
+              min={0}
               value={budgets.mcp_tool_calls ?? ""}
               onChange={(e) => {
-                const v = e.target.value ? parseInt(e.target.value, 10) : undefined;
+                const parsed = parseInt(e.target.value, 10);
+                const v = Number.isNaN(parsed) ? undefined : Math.max(0, parsed);
                 onChange({ ...budgets, mcp_tool_calls: v });
               }}
               placeholder="unlimited"
@@ -906,9 +908,11 @@ function BudgetsSection({
           <FieldRow label="Egress Calls">
             <Input
               type="number"
+              min={0}
               value={budgets.egress_calls ?? ""}
               onChange={(e) => {
-                const v = e.target.value ? parseInt(e.target.value, 10) : undefined;
+                const parsed = parseInt(e.target.value, 10);
+                const v = Number.isNaN(parsed) ? undefined : Math.max(0, parsed);
                 onChange({ ...budgets, egress_calls: v });
               }}
               placeholder="unlimited"
@@ -918,9 +922,11 @@ function BudgetsSection({
           <FieldRow label="Shell Commands">
             <Input
               type="number"
+              min={0}
               value={budgets.shell_commands ?? ""}
               onChange={(e) => {
-                const v = e.target.value ? parseInt(e.target.value, 10) : undefined;
+                const parsed = parseInt(e.target.value, 10);
+                const v = Number.isNaN(parsed) ? undefined : Math.max(0, parsed);
                 onChange({ ...budgets, shell_commands: v });
               }}
               placeholder="unlimited"

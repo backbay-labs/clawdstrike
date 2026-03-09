@@ -49,7 +49,12 @@ const server = new McpServer({
 // Helpers
 // ---------------------------------------------------------------------------
 
+const MAX_POLICY_SIZE = 1_000_000; // 1MB
+
 function parsePolicy(yaml: string): WorkbenchPolicy {
+  if (yaml.length > MAX_POLICY_SIZE) {
+    throw new Error(`Policy YAML too large: ${yaml.length} bytes (max ${MAX_POLICY_SIZE})`);
+  }
   const [policy, errors] = yamlToPolicy(yaml);
   if (!policy || errors.length > 0) {
     throw new Error(`Policy parse error: ${errors.join("; ")}`);
@@ -120,6 +125,9 @@ server.tool(
     } catch {
       return textResult("Invalid JSON in payload parameter", true);
     }
+    if (typeof parsedPayload !== "object" || parsedPayload === null || Array.isArray(parsedPayload)) {
+      return textResult("Invalid payload: must be a plain JSON object (not an array or primitive)", true);
+    }
 
     const scenario: TestScenario = {
       id: `custom-${crypto.randomUUID()}`,
@@ -158,6 +166,17 @@ server.tool(
     }
     if (!scenario.payload || typeof scenario.payload !== "object") {
       return textResult("Invalid scenario: missing or invalid payload", true);
+    }
+    if (
+      scenario.expectedVerdict !== undefined &&
+      scenario.expectedVerdict !== "allow" &&
+      scenario.expectedVerdict !== "deny" &&
+      scenario.expectedVerdict !== "warn"
+    ) {
+      return textResult(
+        `Invalid scenario: expectedVerdict must be "allow", "deny", or "warn" (got "${scenario.expectedVerdict}")`,
+        true,
+      );
     }
 
     let policy: WorkbenchPolicy;
@@ -224,6 +243,17 @@ server.tool(
       }
       if (!scenario.payload || typeof scenario.payload !== "object") {
         return textResult("Invalid scenario: missing or invalid payload", true);
+      }
+      if (
+        scenario.expectedVerdict !== undefined &&
+        scenario.expectedVerdict !== "allow" &&
+        scenario.expectedVerdict !== "deny" &&
+        scenario.expectedVerdict !== "warn"
+      ) {
+        return textResult(
+          `Invalid scenario: expectedVerdict must be "allow", "deny", or "warn" (got "${scenario.expectedVerdict}")`,
+          true,
+        );
       }
     }
 
@@ -319,6 +349,10 @@ server.tool(
     name: z.string().optional().describe("Name for the synthesized policy"),
   },
   async ({ events_jsonl, base_ruleset, name: policyName }) => {
+    if (events_jsonl.length > 10_000_000) {
+      return textResult(`events_jsonl too large: ${events_jsonl.length} bytes (max 10,000,000)`, true);
+    }
+
     const lines = events_jsonl.split("\n").filter(Boolean);
     if (lines.length > 10_000) {
       return textResult("Too many events: max 10,000 lines", true);

@@ -64,6 +64,13 @@ export interface MultiPolicyState {
   };
 }
 
+export interface BulkGuardUpdate {
+  tabId: string;
+  guardId: GuardId;
+  enabled: boolean;
+  config?: Record<string, unknown>;
+}
+
 export type MultiPolicyAction =
   | { type: "NEW_TAB"; policy?: WorkbenchPolicy; filePath?: string | null }
   | { type: "CLOSE_TAB"; tabId: string }
@@ -73,6 +80,8 @@ export type MultiPolicyAction =
   | { type: "RENAME_TAB"; tabId: string; name: string }
   | { type: "REORDER_TABS"; fromIndex: number; toIndex: number }
   | { type: "DUPLICATE_TAB"; tabId: string }
+  | { type: "BULK_UPDATE_GUARDS"; updates: BulkGuardUpdate[] }
+  | { type: "NEW_TAB_OR_SWITCH"; policy: WorkbenchPolicy; filePath: string; fallbackYaml?: string }
   // Delegated to active tab — same as WorkbenchAction
   | { type: "SET_POLICY"; policy: WorkbenchPolicy }
   | { type: "SET_YAML"; yaml: string }
@@ -469,6 +478,14 @@ function multiPolicyReducer(state: MultiPolicyState, action: MultiPolicyAction):
     }
 
     case "REORDER_TABS": {
+      if (
+        action.fromIndex < 0 ||
+        action.toIndex < 0 ||
+        action.fromIndex >= state.tabs.length ||
+        action.toIndex >= state.tabs.length
+      ) {
+        return state;
+      }
       const newTabs = [...state.tabs];
       const [moved] = newTabs.splice(action.fromIndex, 1);
       newTabs.splice(action.toIndex, 0, moved);
@@ -496,6 +513,63 @@ function multiPolicyReducer(state: MultiPolicyState, action: MultiPolicyAction):
         ...state,
         tabs: newTabs,
         activeTabId: duped.id,
+      };
+    }
+
+    // Bulk guard update — applies guard changes across multiple tabs in a single
+    // reducer call, avoiding the SWITCH_TAB + TOGGLE_GUARD race (#6).
+    case "BULK_UPDATE_GUARDS": {
+      const updatesByTab = new Map<string, BulkGuardUpdate[]>();
+      for (const u of action.updates) {
+        const list = updatesByTab.get(u.tabId) ?? [];
+        list.push(u);
+        updatesByTab.set(u.tabId, list);
+      }
+
+      const newTabs = state.tabs.map((tab) => {
+        const updates = updatesByTab.get(tab.id);
+        if (!updates) return tab;
+
+        let current = tab;
+        for (const u of updates) {
+          // Apply toggle
+          const toggleAction: MultiPolicyAction = {
+            type: "TOGGLE_GUARD",
+            guardId: u.guardId,
+            enabled: u.enabled,
+          };
+          current = tabReducer(current, toggleAction);
+
+          // Apply additional config if provided
+          if (u.config && Object.keys(u.config).length > 0) {
+            const configAction: MultiPolicyAction = {
+              type: "UPDATE_GUARD",
+              guardId: u.guardId,
+              config: u.config as Partial<GuardConfigMap[GuardId]>,
+            };
+            current = tabReducer(current, configAction);
+          }
+        }
+
+        return current;
+      });
+
+      return { ...state, tabs: newTabs };
+    }
+
+    // Atomically check if a file path is already open and switch to it, or
+    // create a new tab — avoids stale closure race in async file dialogs (#31).
+    case "NEW_TAB_OR_SWITCH": {
+      const existing = state.tabs.find((t) => t.filePath === action.filePath);
+      if (existing) {
+        return { ...state, activeTabId: existing.id };
+      }
+      if (state.tabs.length >= MAX_TABS) return state;
+      const newTab = createTabFromPolicy(action.policy, action.filePath);
+      return {
+        ...state,
+        tabs: [...state.tabs, newTab],
+        activeTabId: newTab.id,
       };
     }
 
@@ -645,7 +719,13 @@ function loadPersistedTabs(): MultiPolicyState | null {
     const persisted = parsed as PersistedTabState;
     if (persisted.tabs.length === 0) return null;
 
-    const tabs: PolicyTab[] = persisted.tabs.map((pt) => {
+    // Per-entry type validation (#30): skip entries with invalid shape
+    const validPersistedTabs = persisted.tabs.filter((pt) =>
+      typeof pt.id === "string" && typeof pt.yaml === "string"
+    );
+    if (validPersistedTabs.length === 0) return null;
+
+    const tabs: PolicyTab[] = validPersistedTabs.map((pt) => {
       const [policy] = yamlToPolicy(pt.yaml);
       const pol = policy ?? DEFAULT_POLICY;
       const yaml = pt.yaml;
@@ -792,12 +872,25 @@ function getInitialState(): MultiPolicyState {
 export function MultiPolicyProvider({ children }: { children: ReactNode }) {
   const [multiState, multiDispatch] = useReducer(multiPolicyReducer, undefined, getInitialState);
 
-  // Hydrate saved policies from localStorage
+  // Hydrate saved policies from localStorage with shape validation (#17)
   useEffect(() => {
     try {
       const stored = localStorage.getItem(SAVED_POLICIES_KEY);
       if (stored) {
-        const policies: SavedPolicy[] = JSON.parse(stored);
+        const parsed: unknown = JSON.parse(stored);
+        if (!Array.isArray(parsed)) {
+          console.warn("[multi-policy-store] Saved policies is not an array, skipping hydration");
+          return;
+        }
+        const policies: SavedPolicy[] = parsed.filter((entry: unknown): entry is SavedPolicy => {
+          if (!entry || typeof entry !== "object") return false;
+          const e = entry as Record<string, unknown>;
+          return (
+            typeof e.id === "string" &&
+            typeof e.policy === "object" && e.policy !== null &&
+            typeof e.yaml === "string"
+          );
+        });
         multiDispatch({ type: "LOAD_SAVED_POLICIES", policies });
       }
     } catch (e) {
@@ -902,13 +995,8 @@ export function MultiPolicyProvider({ children }: { children: ReactNode }) {
 
       const [policy] = yamlToPolicy(result.content);
       if (policy) {
-        // Check if already open
-        const existing = multiState.tabs.find((t) => t.filePath === result.path);
-        if (existing) {
-          multiDispatch({ type: "SWITCH_TAB", tabId: existing.id });
-          return;
-        }
-        multiDispatch({ type: "NEW_TAB", policy, filePath: result.path });
+        // Atomically check-and-switch-or-create inside the reducer (#31)
+        multiDispatch({ type: "NEW_TAB_OR_SWITCH", policy, filePath: result.path });
       } else {
         // Still open but with raw yaml in current tab
         multiDispatch({ type: "SET_YAML", yaml: result.content });
@@ -919,7 +1007,7 @@ export function MultiPolicyProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       console.error("[multi-policy] Failed to open file:", err);
     }
-  }, [multiState.tabs, multiDispatch]);
+  }, [multiDispatch]);
 
   const openFileByPath = useCallback(
     async (filePath: string) => {
@@ -927,16 +1015,10 @@ export function MultiPolicyProvider({ children }: { children: ReactNode }) {
         const result = await readPolicyFileByPath(filePath);
         if (!result) return;
 
-        // Check if already open
-        const existing = multiState.tabs.find((t) => t.filePath === result.path);
-        if (existing) {
-          multiDispatch({ type: "SWITCH_TAB", tabId: existing.id });
-          return;
-        }
-
         const [policy] = yamlToPolicy(result.content);
         if (policy) {
-          multiDispatch({ type: "NEW_TAB", policy, filePath: result.path });
+          // Atomically check-and-switch-or-create inside the reducer (#31)
+          multiDispatch({ type: "NEW_TAB_OR_SWITCH", policy, filePath: result.path });
         } else {
           multiDispatch({ type: "SET_YAML", yaml: result.content });
           multiDispatch({ type: "SET_FILE_PATH", path: result.path });
@@ -947,7 +1029,7 @@ export function MultiPolicyProvider({ children }: { children: ReactNode }) {
         console.error("[multi-policy] Failed to open file by path:", err);
       }
     },
-    [multiState.tabs, multiDispatch],
+    [multiDispatch],
   );
 
   const saveFileAs = useCallback(async () => {

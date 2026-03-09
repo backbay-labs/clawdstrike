@@ -237,6 +237,10 @@ export async function fetchRemotePolicy(
   const res = await jsonFetch<PolicyResponse>(proxyUrl(`${url}/api/v1/policy`, "hushd"), {
     headers: hushdHeaders(conn.apiKey),
   });
+  // Runtime validation: ensure yaml field is a string (#18)
+  if (res.yaml !== undefined && typeof res.yaml !== "string") {
+    throw new Error("[fleet-client] fetchRemotePolicy: expected res.yaml to be a string");
+  }
   return {
     yaml: res.yaml ?? "",
     name: res.name,
@@ -299,9 +303,14 @@ export async function fetchAgentList(conn: FleetConnection): Promise<AgentInfo[]
     console.warn("[fleet-client] hushd agent list failed, trying control-api:", e);
     if (!conn.controlApiUrl) return [];
     const ctrlUrl = stripTrailingSlash(conn.controlApiUrl);
-    return jsonFetch<AgentInfo[]>(proxyUrl(`${ctrlUrl}/api/v1/agents`, "control"), {
+    const res = await jsonFetch<unknown>(proxyUrl(`${ctrlUrl}/api/v1/agents`, "control"), {
       headers: controlHeaders(conn),
     });
+    // Runtime validation: ensure response is an array (#18)
+    if (!Array.isArray(res)) {
+      throw new Error("[fleet-client] fetchAgentList: expected response to be an array");
+    }
+    return res as AgentInfo[];
   }
 }
 
@@ -322,7 +331,15 @@ export async function fetchAuditEvents(
   const res = await jsonFetch<{ events?: AuditEvent[] } | AuditEvent[]>(proxyUrl(endpoint, "hushd"), {
     headers: hushdHeaders(conn.apiKey),
   });
-  return Array.isArray(res) ? res : res.events ?? [];
+  // Runtime validation: ensure response has .events array or is itself an array (#18)
+  if (Array.isArray(res)) return res;
+  if (res && typeof res === "object" && "events" in res) {
+    if (!Array.isArray(res.events)) {
+      throw new Error("[fleet-client] fetchAuditEvents: expected res.events to be an array");
+    }
+    return res.events;
+  }
+  throw new Error("[fleet-client] fetchAuditEvents: unexpected response shape");
 }
 
 export async function distributePolicy(

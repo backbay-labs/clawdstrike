@@ -78,6 +78,7 @@ export interface RedTeamGradingResult {
   pass: boolean;
   score: number;
   reason: string;
+  skipped?: boolean;
 }
 
 // ---------------------------------------------------------------------------

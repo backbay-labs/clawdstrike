@@ -71,6 +71,7 @@ export function gradeSimulationResult(
       pass: true,
       score: 1.0,
       reason: `No expected verdict for "${scenario.name}" — grading skipped.`,
+      skipped: true,
     };
   }
 
@@ -100,6 +101,7 @@ export interface BatchGradeResult {
     total: number;
     passed: number;
     failed: number;
+    skipped: number;
     passRate: number;
   };
   perPlugin: Record<string, PluginGradeSummary>;
@@ -126,6 +128,7 @@ export function gradeBatch(
 
   let passed = 0;
   let failed = 0;
+  let skipped = 0;
 
   for (let i = 0; i < scenarios.length; i++) {
     const scenario = scenarios[i];
@@ -143,6 +146,11 @@ export function gradeBatch(
 
     const grade = gradeSimulationResult(scenario, result);
     grades.push(grade);
+
+    if (grade.skipped) {
+      skipped++;
+      continue;
+    }
 
     if (grade.pass) {
       passed++;
@@ -164,7 +172,8 @@ export function gradeBatch(
   }
 
   const total = scenarios.length;
-  const passRate = total > 0 ? passed / total : 0;
+  const gradedTotal = total - skipped;
+  const passRate = gradedTotal > 0 ? passed / gradedTotal : 1.0;
 
   // Convert accumulated counts to PluginGradeSummary with successRate
   const perPluginSummary: Record<string, PluginGradeSummary> = {};
@@ -178,7 +187,7 @@ export function gradeBatch(
 
   return {
     grades,
-    summary: { total, passed, failed, passRate },
+    summary: { total, passed, failed, skipped, passRate },
     perPlugin: perPluginSummary,
   };
 }

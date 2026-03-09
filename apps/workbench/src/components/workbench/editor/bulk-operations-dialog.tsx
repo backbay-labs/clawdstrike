@@ -8,7 +8,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { useMultiPolicy, type PolicyTab } from "@/lib/workbench/multi-policy-store";
+import { useMultiPolicy, type PolicyTab, type BulkGuardUpdate } from "@/lib/workbench/multi-policy-store";
 import { GUARD_REGISTRY } from "@/lib/workbench/guard-registry";
 import type { GuardId, GuardConfigMap } from "@/lib/workbench/types";
 import { cn } from "@/lib/utils";
@@ -179,55 +179,30 @@ export function BulkOperationsDialog({
       (t) => selectedTabIds.has(t.id) && preview.find((p) => p.tabId === t.id)?.willChange,
     );
 
-    // KNOWN LIMITATION: The multi-policy reducer delegates TOGGLE_GUARD and
-    // UPDATE_GUARD to the *active* tab only, so we must SWITCH_TAB before each
-    // mutation. React 18 batches synchronous dispatches within the same event
-    // handler, which means SWITCH_TAB + TOGGLE_GUARD pairs may not interleave
-    // correctly — the activeTabId update from SWITCH_TAB may not be visible to
-    // the subsequent TOGGLE_GUARD in the same batch.
-    //
-    // Proper fix: add a BULK_TOGGLE_GUARD / BULK_UPDATE_GUARD reducer action
-    // that accepts a list of tab IDs and applies the mutation directly, without
-    // requiring a tab switch. This avoids the batching race entirely.
-    //
-    // Current workaround: dispatches are synchronous within useReducer, and
-    // React's useReducer processes them sequentially (each dispatch sees the
-    // state returned by the previous reducer call), so the SWITCH_TAB +
-    // TOGGLE_GUARD sequence is safe within a single synchronous block.
-    // However, this relies on React implementation details.
+    // Build a single BULK_UPDATE_GUARDS dispatch that applies all guard changes
+    // across tabs atomically, avoiding the SWITCH_TAB + TOGGLE_GUARD race (#6).
+    const updates: BulkGuardUpdate[] = targetTabs.map((tab) => {
+      const update: BulkGuardUpdate = {
+        tabId: tab.id,
+        guardId: operation.guardId,
+        enabled: operation.enabled ?? true,
+      };
 
-    for (const tab of targetTabs) {
-      const wasActive = tab.id === multiState.activeTabId;
-
-      if (!wasActive) {
-        multiDispatch({ type: "SWITCH_TAB", tabId: tab.id });
+      if (operation.type === "set_config" && operation.configKey) {
+        update.config = {
+          [operation.configKey]: operation.configValue,
+        };
       }
 
-      if (operation.type === "toggle_guard") {
-        multiDispatch({
-          type: "TOGGLE_GUARD",
-          guardId: operation.guardId,
-          enabled: operation.enabled ?? true,
-        });
-      } else if (operation.type === "set_config" && operation.configKey) {
-        multiDispatch({
-          type: "UPDATE_GUARD",
-          guardId: operation.guardId,
-          config: {
-            [operation.configKey]: operation.configValue,
-          } as Partial<GuardConfigMap[GuardId]>,
-        });
-      }
-    }
+      return update;
+    });
 
-    // Switch back to original active tab
-    const originalActive = multiState.activeTabId;
-    if (targetTabs.length > 0 && targetTabs[targetTabs.length - 1].id !== originalActive) {
-      multiDispatch({ type: "SWITCH_TAB", tabId: originalActive });
+    if (updates.length > 0) {
+      multiDispatch({ type: "BULK_UPDATE_GUARDS", updates });
     }
 
     setApplied(true);
-  }, [tabs, selectedTabIds, preview, operation, multiState.activeTabId, multiDispatch]);
+  }, [tabs, selectedTabIds, preview, operation, multiDispatch]);
 
   // ---- Config presets for set_config mode ----
   const configPresets = useMemo(() => {

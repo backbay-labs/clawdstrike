@@ -21,12 +21,25 @@ use hush_core::{sha256, Hash, Keypair, SignedReceipt};
 /// Maximum allowed size for policy content (2 MiB).
 const MAX_POLICY_SIZE: usize = 2_097_152;
 
+/// Maximum allowed size for action target/content inputs (10 MiB).
+const MAX_INPUT_SIZE: usize = 10_485_760;
+
+/// Maximum number of receipts in a chain verification request.
+const MAX_CHAIN_LENGTH: usize = 10_000;
+
 /// Sensitive path prefixes and suffixes that must never be read from or written to.
 const SENSITIVE_PATTERNS: &[&str] = &[
     "/.ssh",
     "/.gnupg",
     "/.aws",
     "/etc/",
+    "/.config",
+    "/.kube",
+    "/.docker",
+    "/.netrc",
+    "/.git-credentials",
+    "/proc/",
+    "/sys/",
 ];
 
 /// Sensitive file names (matched against the final path component or suffix).
@@ -35,6 +48,9 @@ const SENSITIVE_SUFFIXES: &[&str] = &[
     ".zshrc",
     ".profile",
     ".bash_profile",
+    ".env",
+    ".pem",
+    ".key",
 ];
 
 /// Validate that a filesystem path is safe for import/export operations.
@@ -49,19 +65,29 @@ fn validate_file_path(path: &str) -> Result<(), String> {
     let p = Path::new(path);
 
     // Canonicalize the parent directory (the file itself may not exist yet for
-    // export). Fall back to the raw path if the parent doesn't exist either.
+    // export). Reject the path outright if the parent doesn't exist — falling
+    // back to the raw path would allow symlink/TOCTOU bypasses.
     let normalized = if let Some(parent) = p.parent() {
-        if parent.exists() {
+        if parent.as_os_str().is_empty() {
+            // Relative filename with no directory component (e.g. "foo.yaml").
+            // Resolve against CWD so the sensitive-path checks still fire.
+            let cwd = std::env::current_dir()
+                .map_err(|e| format!("Cannot determine working directory: {}", e))?;
+            cwd.join(p)
+        } else if parent.exists() {
             let canon_parent = parent
                 .canonicalize()
                 .map_err(|e| format!("Cannot resolve parent directory: {}", e))?;
             let file_name = p.file_name().unwrap_or_default();
             canon_parent.join(file_name)
         } else {
-            p.to_path_buf()
+            return Err(format!(
+                "Parent directory does not exist: {}",
+                parent.display()
+            ));
         }
     } else {
-        p.to_path_buf()
+        return Err("Invalid path: no parent component".into());
     };
 
     let normalized_str = normalized.to_string_lossy();
@@ -607,6 +633,22 @@ pub async fn simulate_action(
             MAX_POLICY_SIZE
         ));
     }
+    if target.len() > MAX_INPUT_SIZE {
+        return Err(format!(
+            "Target too large: {} bytes (max {})",
+            target.len(),
+            MAX_INPUT_SIZE
+        ));
+    }
+    if let Some(ref c) = content {
+        if c.len() > MAX_INPUT_SIZE {
+            return Err(format!(
+                "Content too large: {} bytes (max {})",
+                c.len(),
+                MAX_INPUT_SIZE
+            ));
+        }
+    }
 
     let policy = load_policy_lax(&policy_yaml)?;
 
@@ -678,6 +720,22 @@ pub async fn simulate_action_with_posture(
             policy_yaml.len(),
             MAX_POLICY_SIZE
         ));
+    }
+    if target.len() > MAX_INPUT_SIZE {
+        return Err(format!(
+            "Target too large: {} bytes (max {})",
+            target.len(),
+            MAX_INPUT_SIZE
+        ));
+    }
+    if let Some(ref c) = content {
+        if c.len() > MAX_INPUT_SIZE {
+            return Err(format!(
+                "Content too large: {} bytes (max {})",
+                c.len(),
+                MAX_INPUT_SIZE
+            ));
+        }
     }
     if let Some(ref psj) = posture_state_json {
         if psj.len() > MAX_POLICY_SIZE {
@@ -826,6 +884,14 @@ pub async fn sign_receipt(
 pub async fn verify_receipt_chain(
     receipts: Vec<ChainReceiptInput>,
 ) -> Result<ChainVerificationResponse, String> {
+    if receipts.len() > MAX_CHAIN_LENGTH {
+        return Err(format!(
+            "Receipt chain too long: {} receipts (max {})",
+            receipts.len(),
+            MAX_CHAIN_LENGTH
+        ));
+    }
+
     if receipts.is_empty() {
         return Ok(ChainVerificationResponse {
             receipts: vec![],
@@ -1041,6 +1107,14 @@ pub async fn import_policy_file(path: String) -> Result<ImportResponse, String> 
     let yaml = tokio::fs::read_to_string(&path)
         .await
         .map_err(|e| format!("Failed to read file: {}", e))?;
+
+    if yaml.len() > MAX_POLICY_SIZE {
+        return Err(format!(
+            "Imported file too large: {} bytes (max {})",
+            yaml.len(),
+            MAX_POLICY_SIZE
+        ));
+    }
 
     let policy = match parse_policy_lax(&yaml) {
         Ok(p) => p,

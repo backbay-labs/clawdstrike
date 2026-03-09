@@ -54,6 +54,7 @@
     "@types/react-dom": "^19.0.0",
     "@types/react-syntax-highlighter": "^15.5.13",
     "@vitejs/plugin-react": "^4.0.0",
+    "fake-indexeddb": "^6.2.5",
     "jsdom": "^28.1.0",
     "msw": "^2.12.10",
     "postcss": "^8.0.0",

@@ -365,18 +365,19 @@ describe("shell_command guard", () => {
     expect(result.overallVerdict).toBe("deny");
   });
 
-  it("custom patterns replace defaults (rm -rf / allowed if not in custom list)", () => {
+  it("custom patterns merge with defaults (rm -rf / still blocked with custom patterns)", () => {
     const customPolicy = makePolicy({
       shell_command: {
         enabled: true,
         forbidden_patterns: ["npm\\s+publish"],
       },
     });
+    // Custom patterns are appended to the default security baseline, never replace them
     const result = simulatePolicy(
       customPolicy,
       makeScenario({ actionType: "shell_command", payload: { command: "rm -rf /" } })
     );
-    expect(result.overallVerdict).toBe("allow");
+    expect(result.overallVerdict).toBe("deny");
   });
 });
 
@@ -879,5 +880,132 @@ describe("simulation result shape", () => {
     expect(result.executedAt).toBeTruthy();
     // Should be ISO date string
     expect(() => new Date(result.executedAt)).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ReDoS protection (isSafeRegex)
+// ---------------------------------------------------------------------------
+
+describe("ReDoS protection", () => {
+  it("rejects nested quantifiers like (a+)+$ — denies as unsafe regex", () => {
+    const policy = makePolicy({
+      shell_command: {
+        enabled: true,
+        forbidden_patterns: ["(a+)+$"],
+      },
+    });
+    const result = simulatePolicy(
+      policy,
+      makeScenario({ actionType: "shell_command", payload: { command: "safe command" } })
+    );
+    // isSafeRegex rejects nested quantifiers; the guard denies with "unsafe regex"
+    expect(result.overallVerdict).toBe("deny");
+    const guardResult = result.guardResults.find((r) => r.guardId === "shell_command");
+    expect(guardResult).toBeDefined();
+    expect(guardResult!.message).toContain("Unsafe regex");
+  });
+
+  it("rejects patterns longer than 1000 characters", () => {
+    const longPattern = "a".repeat(1001);
+    const policy = makePolicy({
+      patch_integrity: {
+        enabled: true,
+        forbidden_patterns: [longPattern],
+      },
+    });
+    const result = simulatePolicy(
+      policy,
+      makeScenario({ actionType: "patch_apply", payload: { content: "+safe line\n" } })
+    );
+    expect(result.overallVerdict).toBe("deny");
+    const guardResult = result.guardResults.find((r) => r.guardId === "patch_integrity");
+    expect(guardResult).toBeDefined();
+    expect(guardResult!.message).toContain("Unsafe regex");
+  });
+
+  it("rejects excessive alternation (>20 pipes)", () => {
+    // Create a pattern with 21 alternation branches
+    const branches = Array.from({ length: 22 }, (_, i) => `branch${i}`);
+    const pattern = branches.join("|");
+    const policy = makePolicy({
+      shell_command: {
+        enabled: true,
+        forbidden_patterns: [pattern],
+      },
+    });
+    const result = simulatePolicy(
+      policy,
+      makeScenario({ actionType: "shell_command", payload: { command: "safe command" } })
+    );
+    expect(result.overallVerdict).toBe("deny");
+    const guardResult = result.guardResults.find((r) => r.guardId === "shell_command");
+    expect(guardResult).toBeDefined();
+    expect(guardResult!.message).toContain("Unsafe regex");
+  });
+
+  it("completes in reasonable time even with a potentially malicious pattern", () => {
+    // (a*)*b is a classic ReDoS pattern; isSafeRegex should reject it immediately
+    const policy = makePolicy({
+      secret_leak: {
+        enabled: true,
+        patterns: [
+          { name: "redos", pattern: "(a*)*b", severity: "critical" },
+        ],
+      },
+    });
+
+    const start = performance.now();
+    const result = simulatePolicy(
+      policy,
+      makeScenario({
+        actionType: "file_write",
+        payload: {
+          path: "/app/test.txt",
+          // Input that would cause catastrophic backtracking if the regex ran
+          content: "a".repeat(30) + "c",
+        },
+      })
+    );
+    const elapsed = performance.now() - start;
+
+    // Should complete in under 100ms since the unsafe regex is rejected before execution
+    expect(elapsed).toBeLessThan(100);
+    // The skipped pattern is still recorded as a match with "skipped_unsafe_regex" severity,
+    // which is non-critical, so the verdict is "warn" (not "deny" or a hang)
+    expect(result.overallVerdict).toBe("warn");
+  });
+
+  it("allows safe patterns with moderate alternation (<=20)", () => {
+    const branches = Array.from({ length: 10 }, (_, i) => `cmd${i}`);
+    const pattern = branches.join("|");
+    const policy = makePolicy({
+      shell_command: {
+        enabled: true,
+        forbidden_patterns: [pattern],
+      },
+    });
+    const result = simulatePolicy(
+      policy,
+      makeScenario({ actionType: "shell_command", payload: { command: "cmd5 --flag" } })
+    );
+    // cmd5 matches, so it should deny
+    expect(result.overallVerdict).toBe("deny");
+  });
+
+  it("rejects patterns with excessive repetition quantifiers {n} where n > 1000", () => {
+    const policy = makePolicy({
+      shell_command: {
+        enabled: true,
+        forbidden_patterns: ["a{1001}"],
+      },
+    });
+    const result = simulatePolicy(
+      policy,
+      makeScenario({ actionType: "shell_command", payload: { command: "safe" } })
+    );
+    expect(result.overallVerdict).toBe("deny");
+    const guardResult = result.guardResults.find((r) => r.guardId === "shell_command");
+    expect(guardResult!.message).toContain("Unsafe regex");
   });
 });

@@ -56,7 +56,8 @@ function stringify(val: unknown): string {
   return JSON.stringify(val);
 }
 
-function deepEqual(a: unknown, b: unknown): boolean {
+/** @internal Exported for testing. */
+export function deepEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (a === undefined && b === undefined) return true;
   if (a === null && b === null) return true;
@@ -82,14 +83,16 @@ function deepEqual(a: unknown, b: unknown): boolean {
   return true;
 }
 
-function canonicalStringify(value: unknown): string {
+/** @internal Exported for testing. */
+export function canonicalStringify(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(canonicalStringify).join(",")}]`;
   const sorted = Object.keys(value as Record<string, unknown>).sort();
   return `{${sorted.map(k => `${JSON.stringify(k)}:${canonicalStringify((value as Record<string, unknown>)[k])}`).join(",")}}`;
 }
 
-function countArrayDiff(before: unknown[] | undefined, after: unknown[] | undefined): { added: number; removed: number } {
+/** @internal Exported for testing. */
+export function countArrayDiff(before: unknown[] | undefined, after: unknown[] | undefined): { added: number; removed: number } {
   const b = before ?? [];
   const a = after ?? [];
   const bSet = new Set(b.map((v) => canonicalStringify(v)));

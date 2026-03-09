@@ -136,7 +136,8 @@ describe("gradeBatch", () => {
     expect(batch.summary.total).toBe(0);
     expect(batch.summary.passed).toBe(0);
     expect(batch.summary.failed).toBe(0);
-    expect(batch.summary.passRate).toBe(0);
+    // 0/0 = 1.0 by convention (no testable scenarios = no failures)
+    expect(batch.summary.passRate).toBe(1);
   });
 
   it("passRate is between 0 and 1", () => {
