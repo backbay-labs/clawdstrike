@@ -41,6 +41,34 @@ vi.mock("@/components/workbench/library/library-gallery", () => ({
   LibraryGallery: () => <div data-testid="page-library">LibraryGallery</div>,
 }));
 
+vi.mock("@/components/workbench/settings/settings-page", () => ({
+  SettingsPage: () => <div data-testid="page-settings">SettingsPage</div>,
+}));
+
+vi.mock("@/components/workbench/delegation/delegation-page", () => ({
+  DelegationPage: () => <div data-testid="page-delegation">DelegationPage</div>,
+}));
+
+vi.mock("@/components/workbench/approvals/approval-queue", () => ({
+  ApprovalQueue: () => <div data-testid="page-approvals">ApprovalQueue</div>,
+}));
+
+vi.mock("@/components/workbench/hierarchy/hierarchy-page", () => ({
+  HierarchyPage: () => <div data-testid="page-hierarchy">HierarchyPage</div>,
+}));
+
+vi.mock("@/components/workbench/fleet/fleet-dashboard", () => ({
+  FleetDashboard: () => <div data-testid="page-fleet">FleetDashboard</div>,
+}));
+
+vi.mock("@/components/workbench/audit/audit-log", () => ({
+  AuditLog: () => <div data-testid="page-audit">AuditLog</div>,
+}));
+
+afterEach(() => {
+  window.location.hash = "";
+});
+
 describe("App", () => {
   it("renders the desktop layout shell", () => {
     render(<App />);

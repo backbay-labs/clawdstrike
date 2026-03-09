@@ -20,9 +20,11 @@ const NAV_ITEMS = [
   { label: "Compare", href: "/compare" },
   { label: "Compliance", href: "/compliance" },
   { label: "Receipts", href: "/receipts" },
+  { label: "Audit", href: "/audit" },
   { label: "Delegation", href: "/delegation" },
   { label: "Approvals", href: "/approvals" },
   { label: "Hierarchy", href: "/hierarchy" },
+  { label: "Fleet", href: "/fleet" },
   { label: "Library", href: "/library" },
 ] as const;
 

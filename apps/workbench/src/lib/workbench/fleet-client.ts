@@ -400,7 +400,7 @@ export async function resolveApproval(
   const { url, kind } = preferredUrl(conn);
   try {
     await jsonFetch<{ ok: boolean }>(
-      proxyUrl(`${url}/api/v1/approvals/${requestId}/resolve`, kind),
+      proxyUrl(`${url}/api/v1/approvals/${encodeURIComponent(requestId)}/resolve`, kind),
       {
         method: "POST",
         headers: controlHeaders(conn),

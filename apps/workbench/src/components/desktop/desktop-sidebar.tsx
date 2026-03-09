@@ -81,6 +81,7 @@ export function DesktopSidebar() {
 
   return (
     <aside
+      aria-label="Main navigation"
       className={cn(
         "flex flex-col bg-[#0b0d13] border-r border-[#2d324060] shrink-0 h-full",
         "transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]",
@@ -182,6 +183,7 @@ export function DesktopSidebar() {
 
       <div className="shrink-0 border-t border-[#2d324060] p-2">
         <button
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           onClick={() =>
             dispatch({ type: "SET_SIDEBAR_COLLAPSED", collapsed: !collapsed })
           }
