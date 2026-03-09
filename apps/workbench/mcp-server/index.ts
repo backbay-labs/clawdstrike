@@ -328,8 +328,8 @@ server.tool(
 
     const validation = validatePolicy(policy);
     return jsonResult({
-      valid: validation.valid,
-      parseErrors: [],
+      valid: validation.valid && parseErrors.length === 0,
+      parseErrors,
       errors: validation.errors,
       warnings: validation.warnings,
     });
@@ -500,8 +500,10 @@ server.tool(
       const patterns = guards.forbidden_path.patterns ?? [];
       for (const pat of patterns.slice(0, 3)) {
         const concretePath = pat
-          .replace(/\*\*\//g, "")
-          .replace(/\*/g, "test");
+          .replace(/\*\*/g, "")
+          .replace(/\/\//g, "/")
+          .replace(/\*/g, "test")
+          .replace(/^\./, "/home/user/.");
         suggestions.push({
           id: `suggest-fp-${suggestions.length}`,
           name: `Forbidden path: ${concretePath}`,

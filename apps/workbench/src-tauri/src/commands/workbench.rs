@@ -102,9 +102,12 @@ fn validate_file_path(path: &str) -> Result<(), String> {
         }
     }
 
+    // Normalize backslashes to forward slashes for cross-platform sensitive-path matching.
+    let check_str = normalized_str.replace('\\', "/");
+
     // Check sensitive prefixes.
     for pattern in SENSITIVE_PATTERNS {
-        if normalized_str.contains(pattern) {
+        if check_str.contains(pattern) {
             return Err(format!(
                 "Refusing to access sensitive path (matches '{}'): {}",
                 pattern, normalized_str
@@ -114,7 +117,7 @@ fn validate_file_path(path: &str) -> Result<(), String> {
 
     // Check sensitive suffixes.
     for suffix in SENSITIVE_SUFFIXES {
-        if normalized_str.ends_with(suffix) {
+        if check_str.ends_with(suffix) {
             return Err(format!(
                 "Refusing to access sensitive file (matches '*{}'): {}",
                 suffix, normalized_str

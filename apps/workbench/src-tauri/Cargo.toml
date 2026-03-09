@@ -21,6 +21,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 hush-core = { path = "../../../crates/libs/hush-core" }
 clawdstrike = { path = "../../../crates/libs/clawdstrike" }
 tauri-plugin-http = "2"
+tauri-plugin-fs = "2"
 
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }

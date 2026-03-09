@@ -3,7 +3,6 @@ import { screen, within, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "@/test/test-helpers";
 import { ApprovalQueue } from "../approval-queue";
-import type { ApprovalRequest } from "@/lib/workbench/approval-types";
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -76,33 +75,6 @@ vi.mock("@/lib/tauri-bridge", () => ({
 
 function renderQueue() {
   return renderWithProviders(<ApprovalQueue />);
-}
-
-/**
- * Build a minimal ApprovalRequest for testing, with overrides.
- */
-function makeRequest(overrides: Partial<ApprovalRequest> = {}): ApprovalRequest {
-  return {
-    id: "test-001",
-    originContext: {
-      provider: "slack",
-      tenant_id: "T-TEST",
-      space_id: "C-test",
-      space_type: "channel",
-      actor_name: "test-bot",
-    },
-    toolName: "shell_command",
-    reason: "Test reason",
-    requestedBy: "test-bot",
-    requestedAt: new Date(Date.now() - 60_000).toISOString(),
-    expiresAt: new Date(Date.now() + 600_000).toISOString(), // 10 min from now
-    status: "pending",
-    agentId: "agent-test",
-    agentName: "Test Agent",
-    capability: "CommandExec",
-    riskLevel: "medium",
-    ...overrides,
-  };
 }
 
 // ---------------------------------------------------------------------------

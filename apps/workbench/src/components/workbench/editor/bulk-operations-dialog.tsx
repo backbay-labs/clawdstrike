@@ -61,7 +61,7 @@ export function BulkOperationsDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const { multiState, multiDispatch, tabs } = useMultiPolicy();
+  const { multiDispatch, tabs } = useMultiPolicy();
   const [operation, setOperation] = useState<BulkOperation>({
     type: "toggle_guard",
     guardId: "spider_sense",
