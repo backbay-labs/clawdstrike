@@ -1,0 +1,1363 @@
+/**
+ * Org / Team / Agent Policy Hierarchy Page
+ *
+ * Full-page visualization of policy inheritance across an organization tree.
+ * Three-panel layout: tree (left), effective policy (center), merge preview (right).
+ */
+
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import {
+  IconWorld,
+  IconUsersGroup,
+  IconRobot,
+  IconChevronRight,
+  IconChevronDown,
+  IconPlus,
+  IconTrash,
+  IconPencil,
+  IconLink,
+  IconLinkOff,
+  IconRefresh,
+  IconDownload,
+  IconShieldCheck,
+  IconAlertTriangle,
+  IconCheck,
+  IconX,
+  IconGripVertical,
+  IconArrowRight,
+  IconLayersLinked,
+} from "@tabler/icons-react";
+import { cn } from "@/lib/utils";
+import { useWorkbench } from "@/lib/workbench/multi-policy-store";
+import { GUARD_REGISTRY } from "@/lib/workbench/guard-registry";
+import type { OrgNode, OrgNodeType, PolicyHierarchy, EffectivePolicy } from "@/lib/workbench/hierarchy-types";
+import {
+  createDefaultHierarchy,
+  computeEffectivePolicy,
+  addNode,
+  removeNode,
+  moveNode,
+  assignPolicy,
+  unassignPolicy,
+  renameNode,
+  saveHierarchy,
+  loadHierarchy,
+  clearHierarchy,
+  getAncestryPath,
+  getLeafAgents,
+  validateAllLeaves,
+  type HierarchyValidationIssue,
+} from "@/lib/workbench/hierarchy-engine";
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const NODE_TYPE_COLORS: Record<OrgNodeType, string> = {
+  org: "#d4a84b",
+  team: "#5b8def",
+  agent: "#3dbf84",
+};
+
+const NODE_TYPE_ICONS: Record<OrgNodeType, typeof IconWorld> = {
+  org: IconWorld,
+  team: IconUsersGroup,
+  agent: IconRobot,
+};
+
+const NODE_TYPE_LABELS: Record<OrgNodeType, string> = {
+  org: "Organization",
+  team: "Team",
+  agent: "Agent",
+};
+
+// ---------------------------------------------------------------------------
+// Tree node component
+// ---------------------------------------------------------------------------
+
+interface TreeNodeProps {
+  node: OrgNode;
+  hierarchy: PolicyHierarchy;
+  selectedId: string | null;
+  expandedIds: Set<string>;
+  ancestryIds: Set<string>;
+  depth: number;
+  onSelect: (id: string) => void;
+  onToggleExpand: (id: string) => void;
+  onAddChild: (parentId: string, type: OrgNodeType) => void;
+  onRemove: (id: string) => void;
+  onRename: (id: string) => void;
+  onDragStart: (id: string) => void;
+  onDragOver: (id: string) => void;
+  onDrop: (targetId: string) => void;
+  dragOverId: string | null;
+}
+
+function TreeNode({
+  node,
+  hierarchy,
+  selectedId,
+  expandedIds,
+  ancestryIds,
+  depth,
+  onSelect,
+  onToggleExpand,
+  onAddChild,
+  onRemove,
+  onRename,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  dragOverId,
+}: TreeNodeProps) {
+  const isExpanded = expandedIds.has(node.id);
+  const isSelected = selectedId === node.id;
+  const isAncestor = ancestryIds.has(node.id);
+  const hasChildren = node.children.length > 0;
+  const Icon = NODE_TYPE_ICONS[node.type];
+  const color = NODE_TYPE_COLORS[node.type];
+  const isDragTarget = dragOverId === node.id;
+
+  const [showActions, setShowActions] = useState(false);
+
+  // Determine what child types can be added
+  const canAddTeam = node.type === "org";
+  const canAddAgent = node.type === "team";
+  const canRemove = node.type !== "org"; // Can't remove root
+
+  return (
+    <div>
+      {/* Node row */}
+      <div
+        className={cn(
+          "group flex items-center gap-1.5 py-1.5 px-2 rounded-md cursor-pointer transition-all duration-100",
+          "hover:bg-[#131721]/60",
+          isSelected && "bg-[#131721] ring-1 ring-inset",
+          isSelected && node.type === "org" && "ring-[#d4a84b]/30",
+          isSelected && node.type === "team" && "ring-[#5b8def]/30",
+          isSelected && node.type === "agent" && "ring-[#3dbf84]/30",
+          isAncestor && !isSelected && "bg-[#131721]/30",
+          isDragTarget && "ring-2 ring-[#d4a84b]/50 bg-[#d4a84b]/5",
+        )}
+        style={{ paddingLeft: `${depth * 20 + 8}px` }}
+        onClick={() => onSelect(node.id)}
+        onMouseEnter={() => setShowActions(true)}
+        onMouseLeave={() => setShowActions(false)}
+        draggable={node.type !== "org"}
+        onDragStart={(e) => {
+          e.stopPropagation();
+          onDragStart(node.id);
+        }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onDragOver(node.id);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onDrop(node.id);
+        }}
+      >
+        {/* Expand/collapse toggle */}
+        {hasChildren ? (
+          <button
+            className="shrink-0 p-0.5 rounded hover:bg-[#2d3240]/50 text-[#6f7f9a]"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleExpand(node.id);
+            }}
+          >
+            {isExpanded ? (
+              <IconChevronDown size={12} stroke={1.5} />
+            ) : (
+              <IconChevronRight size={12} stroke={1.5} />
+            )}
+          </button>
+        ) : (
+          <span className="w-5 shrink-0" />
+        )}
+
+        {/* Type icon */}
+        <Icon
+          size={14}
+          stroke={1.5}
+          style={{ color }}
+          className="shrink-0"
+        />
+
+        {/* Name */}
+        <span
+          className={cn(
+            "text-[11.5px] font-medium truncate",
+            isSelected ? "text-[#ece7dc]" : "text-[#ece7dc]/80",
+          )}
+        >
+          {node.name}
+        </span>
+
+        {/* Policy badge */}
+        {node.policyName && (
+          <span className="ml-auto shrink-0 inline-flex items-center gap-1 px-1.5 py-0 text-[8px] font-mono bg-[#d4a84b]/10 text-[#d4a84b]/80 border border-[#d4a84b]/20 rounded">
+            <IconLink size={8} stroke={1.5} />
+            {node.policyName}
+          </span>
+        )}
+
+        {/* Metadata count */}
+        {node.metadata?.agentCount !== undefined && node.type !== "agent" && !node.policyName && (
+          <span className="ml-auto shrink-0 text-[9px] font-mono text-[#6f7f9a]/60">
+            {node.metadata.agentCount} agents
+          </span>
+        )}
+
+        {/* Hover action buttons */}
+        {showActions && (
+          <div className="flex items-center gap-0.5 ml-1 shrink-0">
+            {canAddTeam && (
+              <button
+                className="p-0.5 rounded hover:bg-[#5b8def]/20 text-[#5b8def]/60 hover:text-[#5b8def]"
+                title="Add team"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAddChild(node.id, "team");
+                }}
+              >
+                <IconPlus size={11} stroke={2} />
+              </button>
+            )}
+            {canAddAgent && (
+              <button
+                className="p-0.5 rounded hover:bg-[#3dbf84]/20 text-[#3dbf84]/60 hover:text-[#3dbf84]"
+                title="Add agent"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAddChild(node.id, "agent");
+                }}
+              >
+                <IconPlus size={11} stroke={2} />
+              </button>
+            )}
+            <button
+              className="p-0.5 rounded hover:bg-[#6f7f9a]/20 text-[#6f7f9a]/60 hover:text-[#6f7f9a]"
+              title="Rename"
+              onClick={(e) => {
+                e.stopPropagation();
+                onRename(node.id);
+              }}
+            >
+              <IconPencil size={11} stroke={1.5} />
+            </button>
+            {canRemove && (
+              <button
+                className="p-0.5 rounded hover:bg-[#c45c5c]/20 text-[#c45c5c]/60 hover:text-[#c45c5c]"
+                title="Remove"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRemove(node.id);
+                }}
+              >
+                <IconTrash size={11} stroke={1.5} />
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Children (with connector lines) */}
+      {isExpanded && hasChildren && (
+        <div className="relative">
+          {/* Vertical connector line */}
+          <div
+            className="absolute top-0 bottom-0 border-l border-[#2d3240]/60"
+            style={{ left: `${depth * 20 + 18}px` }}
+          />
+          {node.children.map((childId) => {
+            const child = hierarchy.nodes[childId];
+            if (!child) return null;
+            return (
+              <TreeNode
+                key={childId}
+                node={child}
+                hierarchy={hierarchy}
+                selectedId={selectedId}
+                expandedIds={expandedIds}
+                ancestryIds={ancestryIds}
+                depth={depth + 1}
+                onSelect={onSelect}
+                onToggleExpand={onToggleExpand}
+                onAddChild={onAddChild}
+                onRemove={onRemove}
+                onRename={onRename}
+                onDragStart={onDragStart}
+                onDragOver={onDragOver}
+                onDrop={onDrop}
+                dragOverId={dragOverId}
+              />
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Guard provenance card
+// ---------------------------------------------------------------------------
+
+interface GuardProvenanceCardProps {
+  guardId: string;
+  guardName: string;
+  entry: { value: unknown; inheritedFrom: string; overridden: boolean };
+  selectedNodeName: string;
+}
+
+function GuardProvenanceCard({
+  guardId,
+  guardName,
+  entry,
+  selectedNodeName,
+}: GuardProvenanceCardProps) {
+  const val = entry.value as Record<string, unknown> | undefined;
+  const isEnabled = val ? val.enabled !== false : false;
+  const isFromSelf = entry.inheritedFrom === selectedNodeName;
+  const meta = GUARD_REGISTRY.find((g) => g.id === guardId);
+
+  // Determine provenance style
+  let provenanceColor = "#6f7f9a"; // inherited
+  let provenanceLabel = `Inherited from ${entry.inheritedFrom}`;
+  let provenanceBg = "bg-[#6f7f9a]/10 border-[#6f7f9a]/20";
+
+  if (entry.overridden) {
+    provenanceColor = "#d4a84b";
+    provenanceLabel = `Overridden at ${entry.inheritedFrom}`;
+    provenanceBg = "bg-[#d4a84b]/10 border-[#d4a84b]/20";
+  }
+
+  if (isFromSelf && !entry.overridden) {
+    provenanceColor = "#3dbf84";
+    provenanceLabel = `Added at ${entry.inheritedFrom}`;
+    provenanceBg = "bg-[#3dbf84]/10 border-[#3dbf84]/20";
+  }
+
+  return (
+    <div className="flex items-start gap-3 p-2.5 rounded-md bg-[#131721]/50 border border-[#2d3240]/50">
+      <div className="shrink-0 mt-0.5">
+        <div
+          className="w-2 h-2 rounded-full"
+          style={{ backgroundColor: isEnabled ? provenanceColor : "#6f7f9a40" }}
+        />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span
+            className={cn(
+              "text-[11px] font-medium",
+              isEnabled ? "text-[#ece7dc]" : "text-[#6f7f9a]/60 line-through",
+            )}
+          >
+            {guardName}
+          </span>
+          <span className="text-[8px] font-mono text-[#6f7f9a]/50">
+            {guardId}
+          </span>
+        </div>
+        <div className="mt-1 flex items-center gap-1.5">
+          <span
+            className={cn(
+              "inline-flex items-center px-1.5 py-0 text-[8px] font-mono border rounded",
+              provenanceBg,
+            )}
+            style={{ color: provenanceColor }}
+          >
+            {provenanceLabel}
+          </span>
+        </div>
+        {/* Show key config values */}
+        {val && isEnabled && (
+          <div className="mt-1.5 flex flex-wrap gap-1">
+            {Object.entries(val)
+              .filter(([k]) => k !== "enabled")
+              .slice(0, 3)
+              .map(([k, v]) => (
+                <span
+                  key={k}
+                  className="inline-flex items-center px-1 py-0 text-[8px] font-mono text-[#6f7f9a]/70 bg-[#2d3240]/30 rounded"
+                >
+                  {k}:{" "}
+                  {Array.isArray(v)
+                    ? `[${v.length}]`
+                    : typeof v === "object" && v !== null
+                      ? "{...}"
+                      : String(v)}
+                </span>
+              ))}
+          </div>
+        )}
+        {meta?.description && (
+          <p className="mt-1 text-[9px] text-[#6f7f9a]/50 leading-relaxed line-clamp-1">
+            {meta.description}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Effective policy panel
+// ---------------------------------------------------------------------------
+
+interface EffectivePolicyPanelProps {
+  hierarchy: PolicyHierarchy;
+  selectedId: string;
+  effective: EffectivePolicy;
+}
+
+function EffectivePolicyPanel({
+  hierarchy,
+  selectedId,
+  effective,
+}: EffectivePolicyPanelProps) {
+  const node = hierarchy.nodes[selectedId];
+  if (!node) return null;
+
+  const guardEntries = Object.entries(effective.guards);
+  const settingEntries = Object.entries(effective.settings);
+  const hasContent = guardEntries.length > 0 || settingEntries.length > 0;
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Header with ancestry chain */}
+      <div className="shrink-0 p-4 border-b border-[#2d3240]/50">
+        <div className="flex items-center gap-2 mb-2">
+          <IconLayersLinked size={14} stroke={1.5} className="text-[#6f7f9a]" />
+          <span className="text-[10px] font-mono uppercase tracking-wider text-[#6f7f9a]">
+            Effective Policy
+          </span>
+        </div>
+
+        {/* Ancestry chain visualization */}
+        <div className="flex items-center gap-1 flex-wrap">
+          {effective.source.map((s, idx) => {
+            const color = NODE_TYPE_COLORS[s.level];
+            const hasPolicy = hierarchy.nodes[s.nodeId]?.policyId !== undefined;
+            return (
+              <span key={s.nodeId} className="flex items-center gap-1">
+                {idx > 0 && (
+                  <IconArrowRight size={8} stroke={1.5} className="text-[#6f7f9a]/40" />
+                )}
+                <span
+                  className={cn(
+                    "inline-flex items-center px-1.5 py-0.5 text-[9px] font-mono border rounded",
+                    hasPolicy
+                      ? "border-opacity-30 bg-opacity-10"
+                      : "border-[#2d3240]/30 bg-[#2d3240]/10 text-[#6f7f9a]/50",
+                  )}
+                  style={
+                    hasPolicy
+                      ? {
+                          color,
+                          borderColor: `${color}30`,
+                          backgroundColor: `${color}10`,
+                        }
+                      : undefined
+                  }
+                >
+                  {s.nodeName}
+                  {hasPolicy && (
+                    <IconLink size={7} stroke={1.5} className="ml-1 opacity-60" />
+                  )}
+                </span>
+              </span>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Guard cards */}
+      <div className="flex-1 overflow-y-auto p-4">
+        {hasContent ? (
+          <div className="flex flex-col gap-4">
+            {/* Guards */}
+            {guardEntries.length > 0 && (
+              <div>
+                <span className="text-[9px] font-mono uppercase tracking-wider text-[#6f7f9a]/60 mb-2 block">
+                  Guards ({guardEntries.length})
+                </span>
+                <div className="flex flex-col gap-1.5">
+                  {guardEntries.map(([gid, entry]) => {
+                    const meta = GUARD_REGISTRY.find((g) => g.id === gid);
+                    return (
+                      <GuardProvenanceCard
+                        key={gid}
+                        guardId={gid}
+                        guardName={meta?.name ?? gid}
+                        entry={entry}
+                        selectedNodeName={node.name}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Settings */}
+            {settingEntries.length > 0 && (
+              <div>
+                <span className="text-[9px] font-mono uppercase tracking-wider text-[#6f7f9a]/60 mb-2 block">
+                  Settings ({settingEntries.length})
+                </span>
+                <div className="flex flex-col gap-1.5">
+                  {settingEntries.map(([key, entry]) => {
+                    const isFromSelf = entry.inheritedFrom === node.name;
+                    let provenanceColor = "#6f7f9a";
+                    let provenanceBg = "bg-[#6f7f9a]/10 border-[#6f7f9a]/20";
+                    if (entry.overridden) {
+                      provenanceColor = "#d4a84b";
+                      provenanceBg = "bg-[#d4a84b]/10 border-[#d4a84b]/20";
+                    } else if (isFromSelf) {
+                      provenanceColor = "#3dbf84";
+                      provenanceBg = "bg-[#3dbf84]/10 border-[#3dbf84]/20";
+                    }
+
+                    return (
+                      <div
+                        key={key}
+                        className="flex items-center gap-3 p-2 rounded-md bg-[#131721]/50 border border-[#2d3240]/50"
+                      >
+                        <span className="text-[10px] font-mono text-[#ece7dc]/80 min-w-[140px]">
+                          {key}
+                        </span>
+                        <span className="text-[10px] font-mono text-[#d4a84b]">
+                          {String(entry.value)}
+                        </span>
+                        <span
+                          className={cn(
+                            "ml-auto inline-flex items-center px-1.5 py-0 text-[8px] font-mono border rounded",
+                            provenanceBg,
+                          )}
+                          style={{ color: provenanceColor }}
+                        >
+                          {entry.overridden
+                            ? `overridden at ${entry.inheritedFrom}`
+                            : isFromSelf
+                              ? `set at ${entry.inheritedFrom}`
+                              : `from ${entry.inheritedFrom}`}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center h-full text-center">
+            <IconShieldCheck size={28} stroke={1} className="text-[#6f7f9a]/30 mb-3" />
+            <p className="text-[11px] text-[#6f7f9a]/60 mb-1">
+              No policy assigned in the inheritance chain
+            </p>
+            <p className="text-[9px] text-[#6f7f9a]/40">
+              Assign a saved policy to this node or any ancestor to see the effective policy.
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Merge preview / impact panel
+// ---------------------------------------------------------------------------
+
+interface MergePreviewPanelProps {
+  hierarchy: PolicyHierarchy;
+  selectedId: string;
+  savedPolicies: { id: string; policy: { name: string } }[];
+}
+
+function MergePreviewPanel({
+  hierarchy,
+  selectedId,
+  savedPolicies,
+}: MergePreviewPanelProps) {
+  const node = hierarchy.nodes[selectedId];
+  if (!node) return null;
+
+  const leafAgents = getLeafAgents(hierarchy, selectedId);
+  const directChildren = node.children.length;
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="shrink-0 p-4 border-b border-[#2d3240]/50">
+        <span className="text-[10px] font-mono uppercase tracking-wider text-[#6f7f9a]">
+          Impact Preview
+        </span>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4">
+        {/* Node info */}
+        <div className="mb-4 p-3 rounded-md bg-[#131721]/50 border border-[#2d3240]/50">
+          <div className="flex items-center gap-2 mb-2">
+            {(() => {
+              const NodeIcon = NODE_TYPE_ICONS[node.type];
+              return (
+                <NodeIcon
+                  size={14}
+                  stroke={1.5}
+                  style={{ color: NODE_TYPE_COLORS[node.type] }}
+                />
+              );
+            })()}
+            <span className="text-[11px] font-medium text-[#ece7dc]">
+              {node.name}
+            </span>
+            <span
+              className="text-[8px] font-mono px-1.5 py-0 rounded border"
+              style={{
+                color: NODE_TYPE_COLORS[node.type],
+                borderColor: `${NODE_TYPE_COLORS[node.type]}30`,
+                backgroundColor: `${NODE_TYPE_COLORS[node.type]}10`,
+              }}
+            >
+              {NODE_TYPE_LABELS[node.type]}
+            </span>
+          </div>
+
+          {node.metadata?.description && (
+            <p className="text-[9px] text-[#6f7f9a]/60 mb-2">
+              {node.metadata.description}
+            </p>
+          )}
+
+          <div className="flex gap-3 text-[9px] font-mono text-[#6f7f9a]/70">
+            <span>{directChildren} direct children</span>
+            <span>{leafAgents.length} agent{leafAgents.length !== 1 ? "s" : ""}</span>
+          </div>
+        </div>
+
+        {/* Policy changes at this level affect these agents */}
+        {leafAgents.length > 0 && (
+          <div className="mb-4">
+            <span className="text-[9px] font-mono uppercase tracking-wider text-[#6f7f9a]/60 mb-2 block">
+              Affected Agents
+            </span>
+            <div className="flex flex-col gap-1">
+              {leafAgents.map((agentId) => {
+                const agent = hierarchy.nodes[agentId];
+                if (!agent) return null;
+                return (
+                  <div
+                    key={agentId}
+                    className="flex items-center gap-2 p-1.5 rounded bg-[#131721]/30"
+                  >
+                    <IconRobot size={11} stroke={1.5} className="text-[#3dbf84]/60" />
+                    <span className="text-[10px] font-mono text-[#ece7dc]/70">
+                      {agent.name}
+                    </span>
+                    {agent.policyId && (
+                      <span className="ml-auto text-[8px] font-mono text-[#d4a84b]/60">
+                        has own policy
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Assign policy section */}
+        <div>
+          <span className="text-[9px] font-mono uppercase tracking-wider text-[#6f7f9a]/60 mb-2 block">
+            Linked Policy
+          </span>
+          {node.policyId ? (
+            <div className="flex items-center gap-2 p-2 rounded bg-[#d4a84b]/5 border border-[#d4a84b]/20">
+              <IconLink size={11} stroke={1.5} className="text-[#d4a84b]" />
+              <span className="text-[10px] font-medium text-[#d4a84b]">
+                {node.policyName ?? "Unknown Policy"}
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 p-2 rounded bg-[#2d3240]/20 border border-[#2d3240]/30">
+              <IconLinkOff size={11} stroke={1.5} className="text-[#6f7f9a]/40" />
+              <span className="text-[10px] text-[#6f7f9a]/50">
+                No policy assigned
+              </span>
+            </div>
+          )}
+
+          {savedPolicies.length > 0 && (
+            <div className="mt-2 text-[9px] text-[#6f7f9a]/50">
+              {savedPolicies.length} saved polic{savedPolicies.length === 1 ? "y" : "ies"} available
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Validation results modal
+// ---------------------------------------------------------------------------
+
+interface ValidationModalProps {
+  issues: HierarchyValidationIssue[];
+  onClose: () => void;
+  onSelectNode: (nodeId: string) => void;
+}
+
+function ValidationModal({ issues, onClose, onSelectNode }: ValidationModalProps) {
+  const errors = issues.filter((i) => i.severity === "error");
+  const warnings = issues.filter((i) => i.severity === "warning");
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="w-[480px] max-h-[60vh] bg-[#0b0d13] border border-[#2d3240] rounded-lg overflow-hidden flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b border-[#2d3240]">
+          <div className="flex items-center gap-2">
+            <IconShieldCheck size={16} stroke={1.5} className="text-[#d4a84b]" />
+            <span className="text-[12px] font-medium text-[#ece7dc]">
+              Hierarchy Validation
+            </span>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1 rounded hover:bg-[#2d3240] text-[#6f7f9a] hover:text-[#ece7dc]"
+          >
+            <IconX size={14} stroke={1.5} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4">
+          {issues.length === 0 ? (
+            <div className="flex flex-col items-center py-8">
+              <IconCheck size={24} stroke={1.5} className="text-[#3dbf84] mb-2" />
+              <span className="text-[11px] text-[#3dbf84]">
+                All leaf agents have valid effective policies
+              </span>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {errors.length > 0 && (
+                <span className="text-[9px] font-mono uppercase text-[#c45c5c]/70">
+                  {errors.length} error{errors.length !== 1 ? "s" : ""}
+                </span>
+              )}
+              {warnings.length > 0 && (
+                <span className="text-[9px] font-mono uppercase text-[#d4a84b]/70">
+                  {warnings.length} warning{warnings.length !== 1 ? "s" : ""}
+                </span>
+              )}
+              {issues.map((issue, idx) => (
+                <button
+                  key={idx}
+                  className="flex items-start gap-2 p-2.5 rounded bg-[#131721]/50 border border-[#2d3240]/50 text-left hover:bg-[#131721] transition-colors"
+                  onClick={() => {
+                    onSelectNode(issue.nodeId);
+                    onClose();
+                  }}
+                >
+                  <IconAlertTriangle
+                    size={12}
+                    stroke={1.5}
+                    className={cn(
+                      "shrink-0 mt-0.5",
+                      issue.severity === "error" ? "text-[#c45c5c]" : "text-[#d4a84b]",
+                    )}
+                  />
+                  <div>
+                    <span className="text-[10px] font-medium text-[#ece7dc]">
+                      {issue.nodeName}
+                    </span>
+                    <p className="text-[9px] text-[#6f7f9a]/70 mt-0.5">
+                      {issue.message}
+                    </p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Policy assignment dialog
+// ---------------------------------------------------------------------------
+
+interface PolicyAssignDialogProps {
+  node: OrgNode;
+  savedPolicies: { id: string; policy: { name: string } }[];
+  onAssign: (policyId: string, policyName: string) => void;
+  onUnassign: () => void;
+  onClose: () => void;
+}
+
+function PolicyAssignDialog({
+  node,
+  savedPolicies,
+  onAssign,
+  onUnassign,
+  onClose,
+}: PolicyAssignDialogProps) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="w-[380px] max-h-[50vh] bg-[#0b0d13] border border-[#2d3240] rounded-lg overflow-hidden flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b border-[#2d3240]">
+          <div className="flex items-center gap-2">
+            <IconLink size={14} stroke={1.5} className="text-[#d4a84b]" />
+            <span className="text-[11px] font-medium text-[#ece7dc]">
+              Assign Policy to {node.name}
+            </span>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1 rounded hover:bg-[#2d3240] text-[#6f7f9a] hover:text-[#ece7dc]"
+          >
+            <IconX size={14} stroke={1.5} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-3">
+          {savedPolicies.length === 0 ? (
+            <div className="py-6 text-center">
+              <p className="text-[10px] text-[#6f7f9a]/60">
+                No saved policies available.
+              </p>
+              <p className="text-[9px] text-[#6f7f9a]/40 mt-1">
+                Save a policy from the Editor to assign it here.
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1">
+              {savedPolicies.map((sp) => {
+                const isActive = node.policyId === sp.id;
+                return (
+                  <button
+                    key={sp.id}
+                    className={cn(
+                      "flex items-center gap-2 p-2 rounded text-left transition-colors",
+                      isActive
+                        ? "bg-[#d4a84b]/10 border border-[#d4a84b]/30"
+                        : "hover:bg-[#131721] border border-transparent",
+                    )}
+                    onClick={() => {
+                      if (isActive) {
+                        onUnassign();
+                      } else {
+                        onAssign(sp.id, sp.policy.name);
+                      }
+                    }}
+                  >
+                    {isActive ? (
+                      <IconCheck size={12} stroke={2} className="text-[#d4a84b] shrink-0" />
+                    ) : (
+                      <div className="w-3 shrink-0" />
+                    )}
+                    <span
+                      className={cn(
+                        "text-[10px] font-medium",
+                        isActive ? "text-[#d4a84b]" : "text-[#ece7dc]/80",
+                      )}
+                    >
+                      {sp.policy.name}
+                    </span>
+                    <span className="ml-auto text-[8px] font-mono text-[#6f7f9a]/40">
+                      {sp.id.slice(0, 8)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {node.policyId && (
+          <div className="shrink-0 p-3 border-t border-[#2d3240]">
+            <button
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded text-[10px] font-medium text-[#c45c5c] hover:bg-[#c45c5c]/10 transition-colors"
+              onClick={onUnassign}
+            >
+              <IconLinkOff size={12} stroke={1.5} />
+              Remove assignment
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Rename dialog
+// ---------------------------------------------------------------------------
+
+interface RenameDialogProps {
+  node: OrgNode;
+  onRename: (name: string) => void;
+  onClose: () => void;
+}
+
+function RenameDialog({ node, onRename, onClose }: RenameDialogProps) {
+  const [name, setName] = useState(node.name);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.select();
+  }, []);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="w-[320px] bg-[#0b0d13] border border-[#2d3240] rounded-lg overflow-hidden">
+        <div className="p-4 border-b border-[#2d3240]">
+          <span className="text-[11px] font-medium text-[#ece7dc]">
+            Rename {NODE_TYPE_LABELS[node.type]}
+          </span>
+        </div>
+        <form
+          className="p-4 flex flex-col gap-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (name.trim()) {
+              onRename(name.trim());
+            }
+          }}
+        >
+          <input
+            ref={inputRef}
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full px-3 py-2 text-[11px] font-mono bg-[#131721] border border-[#2d3240] rounded text-[#ece7dc] placeholder-[#6f7f9a]/40 focus:outline-none focus:border-[#d4a84b]/50"
+            placeholder="Enter name..."
+            autoFocus
+          />
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-3 py-1.5 text-[10px] font-medium text-[#6f7f9a] hover:text-[#ece7dc] rounded hover:bg-[#2d3240]/50 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={!name.trim()}
+              className="px-3 py-1.5 text-[10px] font-medium text-[#0b0d13] bg-[#d4a84b] rounded hover:bg-[#d4a84b]/80 transition-colors disabled:opacity-40"
+            >
+              Rename
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main page component
+// ---------------------------------------------------------------------------
+
+export function HierarchyPage() {
+  const { state } = useWorkbench();
+  const savedPolicies = state.savedPolicies;
+
+  // ---------------------------------------------------------------------------
+  // Hierarchy state
+  // ---------------------------------------------------------------------------
+
+  const [hierarchy, setHierarchy] = useState<PolicyHierarchy>(() => {
+    return loadHierarchy() ?? createDefaultHierarchy();
+  });
+
+  const [selectedId, setSelectedId] = useState<string | null>(hierarchy.rootId);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => {
+    // Expand root and all team nodes by default
+    const ids = new Set<string>();
+    ids.add(hierarchy.rootId);
+    for (const node of Object.values(hierarchy.nodes)) {
+      if (node.type === "org" || node.type === "team") {
+        ids.add(node.id);
+      }
+    }
+    return ids;
+  });
+
+  // Dialog states
+  const [renameTarget, setRenameTarget] = useState<string | null>(null);
+  const [assignTarget, setAssignTarget] = useState<string | null>(null);
+  const [validationIssues, setValidationIssues] = useState<HierarchyValidationIssue[] | null>(null);
+
+  // Drag state
+  const [dragSourceId, setDragSourceId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+
+  // Persist on change
+  useEffect(() => {
+    saveHierarchy(hierarchy);
+  }, [hierarchy]);
+
+  // ---------------------------------------------------------------------------
+  // Computed values
+  // ---------------------------------------------------------------------------
+
+  const selectedNode = selectedId ? hierarchy.nodes[selectedId] : null;
+
+  const ancestryIds = useMemo(() => {
+    if (!selectedId) return new Set<string>();
+    const path = getAncestryPath(hierarchy, selectedId);
+    return new Set(path.map((n) => n.id));
+  }, [hierarchy, selectedId]);
+
+  const effective = useMemo(() => {
+    if (!selectedId) return null;
+    return computeEffectivePolicy(hierarchy, selectedId, savedPolicies);
+  }, [hierarchy, selectedId, savedPolicies]);
+
+  // ---------------------------------------------------------------------------
+  // Handlers
+  // ---------------------------------------------------------------------------
+
+  const handleSelect = useCallback((id: string) => {
+    setSelectedId(id);
+  }, []);
+
+  const handleToggleExpand = useCallback((id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleAddChild = useCallback(
+    (parentId: string, type: OrgNodeType) => {
+      const defaultNames: Record<OrgNodeType, string> = {
+        org: "New Org",
+        team: "New Team",
+        agent: `agent-new-${String(Date.now()).slice(-4)}`,
+      };
+
+      const updated = addNode(hierarchy, parentId, {
+        name: defaultNames[type],
+        type,
+        parentId,
+        metadata: {
+          description: "",
+        },
+      });
+
+      setHierarchy(updated);
+
+      // Expand parent
+      setExpandedIds((prev) => {
+        const next = new Set(prev);
+        next.add(parentId);
+        return next;
+      });
+
+      // Find the new node and select it
+      const parent = updated.nodes[parentId];
+      if (parent) {
+        const newId = parent.children[parent.children.length - 1];
+        setSelectedId(newId);
+        // Trigger rename immediately
+        setRenameTarget(newId);
+      }
+    },
+    [hierarchy],
+  );
+
+  const handleRemove = useCallback(
+    (id: string) => {
+      const node = hierarchy.nodes[id];
+      if (!node) return;
+
+      // Simple confirmation
+      const descendants = getLeafAgents(hierarchy, id);
+      const desc =
+        descendants.length > 0
+          ? `This will also remove ${descendants.length} agent(s).`
+          : "";
+      // In production you'd use a proper dialog, but for now we just proceed
+      const updated = removeNode(hierarchy, id);
+      setHierarchy(updated);
+      if (selectedId === id) {
+        setSelectedId(node.parentId);
+      }
+    },
+    [hierarchy, selectedId],
+  );
+
+  const handleRename = useCallback((id: string) => {
+    setRenameTarget(id);
+  }, []);
+
+  const handleDoRename = useCallback(
+    (name: string) => {
+      if (renameTarget) {
+        setHierarchy((prev) => renameNode(prev, renameTarget, name));
+        setRenameTarget(null);
+      }
+    },
+    [renameTarget],
+  );
+
+  const handleAssign = useCallback(
+    (policyId: string, policyName: string) => {
+      if (assignTarget) {
+        setHierarchy((prev) =>
+          assignPolicy(prev, assignTarget, policyId, policyName),
+        );
+        setAssignTarget(null);
+      }
+    },
+    [assignTarget],
+  );
+
+  const handleUnassign = useCallback(() => {
+    if (assignTarget) {
+      setHierarchy((prev) => unassignPolicy(prev, assignTarget));
+      setAssignTarget(null);
+    }
+  }, [assignTarget]);
+
+  const handleDragStart = useCallback((id: string) => {
+    setDragSourceId(id);
+  }, []);
+
+  const handleDragOver = useCallback((id: string) => {
+    setDragOverId(id);
+  }, []);
+
+  const handleDrop = useCallback(
+    (targetId: string) => {
+      if (dragSourceId && dragSourceId !== targetId) {
+        const sourceNode = hierarchy.nodes[dragSourceId];
+        const targetNode = hierarchy.nodes[targetId];
+        if (sourceNode && targetNode) {
+          // Only allow dropping agents onto teams, or teams onto org
+          const canDrop =
+            (sourceNode.type === "agent" && targetNode.type === "team") ||
+            (sourceNode.type === "team" && targetNode.type === "org");
+          if (canDrop) {
+            setHierarchy((prev) => moveNode(prev, dragSourceId, targetId));
+          }
+        }
+      }
+      setDragSourceId(null);
+      setDragOverId(null);
+    },
+    [dragSourceId, hierarchy],
+  );
+
+  const handleResetToDemo = useCallback(() => {
+    clearHierarchy();
+    const demo = createDefaultHierarchy();
+    setHierarchy(demo);
+    setSelectedId(demo.rootId);
+    setExpandedIds(() => {
+      const ids = new Set<string>();
+      for (const node of Object.values(demo.nodes)) {
+        if (node.type === "org" || node.type === "team") {
+          ids.add(node.id);
+        }
+      }
+      return ids;
+    });
+  }, []);
+
+  const handleExport = useCallback(() => {
+    const json = JSON.stringify(hierarchy, null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "policy-hierarchy.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [hierarchy]);
+
+  const handleValidateAll = useCallback(() => {
+    const issues = validateAllLeaves(hierarchy, savedPolicies);
+    setValidationIssues(issues);
+  }, [hierarchy, savedPolicies]);
+
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
+
+  const rootNode = hierarchy.nodes[hierarchy.rootId];
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Toolbar */}
+      <div className="shrink-0 flex items-center gap-2 px-4 py-2.5 border-b border-[#2d3240]/50 bg-[#0b0d13]/80">
+        <span className="text-[11px] font-medium text-[#ece7dc] mr-2">
+          Org Hierarchy
+        </span>
+
+        <div className="flex-1" />
+
+        <button
+          onClick={handleValidateAll}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[10px] font-medium text-[#6f7f9a] hover:text-[#ece7dc] hover:bg-[#131721]/50 transition-colors"
+        >
+          <IconShieldCheck size={13} stroke={1.5} />
+          Validate All
+        </button>
+
+        <button
+          onClick={handleExport}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[10px] font-medium text-[#6f7f9a] hover:text-[#ece7dc] hover:bg-[#131721]/50 transition-colors"
+        >
+          <IconDownload size={13} stroke={1.5} />
+          Export
+        </button>
+
+        <button
+          onClick={handleResetToDemo}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[10px] font-medium text-[#6f7f9a] hover:text-[#ece7dc] hover:bg-[#131721]/50 transition-colors"
+        >
+          <IconRefresh size={13} stroke={1.5} />
+          Reset to Demo
+        </button>
+      </div>
+
+      {/* Three-panel layout */}
+      <div className="flex-1 flex min-h-0">
+        {/* Left: Tree View */}
+        <div className="w-[280px] shrink-0 border-r border-[#2d3240]/50 flex flex-col">
+          <div className="shrink-0 px-3 py-2 border-b border-[#2d3240]/30">
+            <span className="text-[9px] font-mono uppercase tracking-wider text-[#6f7f9a]/60">
+              Organization Tree
+            </span>
+          </div>
+          <div className="flex-1 overflow-y-auto py-1.5">
+            {rootNode && (
+              <TreeNode
+                node={rootNode}
+                hierarchy={hierarchy}
+                selectedId={selectedId}
+                expandedIds={expandedIds}
+                ancestryIds={ancestryIds}
+                depth={0}
+                onSelect={handleSelect}
+                onToggleExpand={handleToggleExpand}
+                onAddChild={handleAddChild}
+                onRemove={handleRemove}
+                onRename={handleRename}
+                onDragStart={handleDragStart}
+                onDragOver={handleDragOver}
+                onDrop={handleDrop}
+                dragOverId={dragOverId}
+              />
+            )}
+          </div>
+
+          {/* Quick assign button at bottom of tree */}
+          {selectedNode && (
+            <div className="shrink-0 p-2 border-t border-[#2d3240]/30">
+              <button
+                onClick={() => setAssignTarget(selectedId)}
+                className={cn(
+                  "flex items-center gap-1.5 w-full px-2.5 py-2 rounded text-[10px] font-medium transition-colors",
+                  selectedNode.policyId
+                    ? "text-[#d4a84b] bg-[#d4a84b]/10 hover:bg-[#d4a84b]/15"
+                    : "text-[#6f7f9a] hover:text-[#ece7dc] hover:bg-[#131721]/50",
+                )}
+              >
+                <IconLink size={12} stroke={1.5} />
+                {selectedNode.policyId ? "Change Policy" : "Assign Policy"}
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Center: Effective Policy View */}
+        <div className="flex-1 min-w-0 border-r border-[#2d3240]/50">
+          {selectedId && effective ? (
+            <EffectivePolicyPanel
+              hierarchy={hierarchy}
+              selectedId={selectedId}
+              effective={effective}
+            />
+          ) : (
+            <div className="flex items-center justify-center h-full">
+              <p className="text-[11px] text-[#6f7f9a]/50">
+                Select a node to view its effective policy
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Right: Merge Preview / Impact */}
+        <div className="w-[260px] shrink-0">
+          {selectedId && selectedNode ? (
+            <MergePreviewPanel
+              hierarchy={hierarchy}
+              selectedId={selectedId}
+              savedPolicies={savedPolicies}
+            />
+          ) : (
+            <div className="flex items-center justify-center h-full">
+              <p className="text-[10px] text-[#6f7f9a]/40">
+                Select a node for details
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Dialogs */}
+      {renameTarget && hierarchy.nodes[renameTarget] && (
+        <RenameDialog
+          node={hierarchy.nodes[renameTarget]}
+          onRename={handleDoRename}
+          onClose={() => setRenameTarget(null)}
+        />
+      )}
+
+      {assignTarget && hierarchy.nodes[assignTarget] && (
+        <PolicyAssignDialog
+          node={hierarchy.nodes[assignTarget]}
+          savedPolicies={savedPolicies}
+          onAssign={handleAssign}
+          onUnassign={handleUnassign}
+          onClose={() => setAssignTarget(null)}
+        />
+      )}
+
+      {validationIssues !== null && (
+        <ValidationModal
+          issues={validationIssues}
+          onClose={() => setValidationIssues(null)}
+          onSelectNode={(id) => {
+            setSelectedId(id);
+            // Expand ancestry
+            const path = getAncestryPath(hierarchy, id);
+            setExpandedIds((prev) => {
+              const next = new Set(prev);
+              for (const n of path) {
+                next.add(n.id);
+              }
+              return next;
+            });
+          }}
+        />
+      )}
+    </div>
+  );
+}

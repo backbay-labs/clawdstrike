@@ -1,0 +1,226 @@
+import type { GuardMeta, GuardId } from "./types";
+
+export const GUARD_REGISTRY: GuardMeta[] = [
+  {
+    id: "forbidden_path",
+    name: "Forbidden Path",
+    technicalName: "ForbiddenPathGuard",
+    description: "Blocks access to sensitive filesystem paths — SSH keys, AWS credentials, .env files, system configs.",
+    category: "filesystem",
+    defaultVerdict: "deny",
+    icon: "IconLock",
+    configFields: [
+      { key: "enabled", label: "Enabled", type: "toggle", defaultValue: true },
+      { key: "patterns", label: "Forbidden Patterns", type: "pattern_list", description: "Glob patterns for sensitive paths to block" },
+      { key: "exceptions", label: "Exceptions", type: "string_list", description: "Paths exempted from blocking" },
+    ],
+  },
+  {
+    id: "path_allowlist",
+    name: "Path Allowlist",
+    technicalName: "PathAllowlistGuard",
+    description: "Allowlist-based file access. Only explicitly approved paths are accessible. Fail-closed when enabled.",
+    category: "filesystem",
+    defaultVerdict: "deny",
+    icon: "IconShieldCheck",
+    configFields: [
+      { key: "enabled", label: "Enabled", type: "toggle", defaultValue: false },
+      { key: "file_access_allow", label: "Read Allow Patterns", type: "pattern_list", description: "Glob patterns for allowed read access" },
+      { key: "file_write_allow", label: "Write Allow Patterns", type: "pattern_list", description: "Glob patterns for allowed write access" },
+      { key: "patch_allow", label: "Patch Allow Patterns", type: "pattern_list", description: "Glob patterns for allowed patches (defaults to write patterns)" },
+    ],
+  },
+  {
+    id: "egress_allowlist",
+    name: "Egress Control",
+    technicalName: "EgressAllowlistGuard",
+    description: "Controls network egress by domain. Block unknown endpoints, allow trusted APIs and registries.",
+    category: "network",
+    defaultVerdict: "deny",
+    icon: "IconNetwork",
+    configFields: [
+      { key: "enabled", label: "Enabled", type: "toggle", defaultValue: true },
+      { key: "allow", label: "Allowed Domains", type: "string_list", description: "Domain patterns to allow (supports wildcards like *.openai.com)" },
+      { key: "block", label: "Blocked Domains", type: "string_list", description: "Domain patterns to block (takes precedence over allow)" },
+      { key: "default_action", label: "Default Action", type: "select", defaultValue: "block", options: [{ value: "allow", label: "Allow" }, { value: "block", label: "Block" }] },
+    ],
+  },
+  {
+    id: "secret_leak",
+    name: "Secret Leak",
+    technicalName: "SecretLeakGuard",
+    description: "Detects API keys, tokens, and private keys in file writes before they leak.",
+    category: "content",
+    defaultVerdict: "deny",
+    icon: "IconEye",
+    configFields: [
+      { key: "enabled", label: "Enabled", type: "toggle", defaultValue: true },
+      { key: "patterns", label: "Detection Patterns", type: "secret_pattern_list", description: "Regex patterns for detecting leaked secrets" },
+      { key: "skip_paths", label: "Skip Paths", type: "string_list", description: "Glob patterns for paths to skip scanning (e.g. test fixtures)" },
+    ],
+  },
+  {
+    id: "patch_integrity",
+    name: "Patch Integrity",
+    technicalName: "PatchIntegrityGuard",
+    description: "Validates patch safety — limits additions/deletions, catches dangerous patterns like chmod 777.",
+    category: "content",
+    defaultVerdict: "allow",
+    icon: "IconFileCheck",
+    configFields: [
+      { key: "enabled", label: "Enabled", type: "toggle", defaultValue: true },
+      { key: "max_additions", label: "Max Additions", type: "number_slider", min: 100, max: 10000, step: 100, defaultValue: 1000 },
+      { key: "max_deletions", label: "Max Deletions", type: "number_slider", min: 50, max: 5000, step: 50, defaultValue: 500 },
+      { key: "require_balance", label: "Require Balance", type: "toggle", defaultValue: false },
+      { key: "max_imbalance_ratio", label: "Max Imbalance Ratio", type: "number_slider", min: 1, max: 50, step: 1, defaultValue: 10 },
+      { key: "forbidden_patterns", label: "Forbidden Patterns", type: "pattern_list", description: "Regex patterns for dangerous code changes" },
+    ],
+  },
+  {
+    id: "shell_command",
+    name: "Shell Command",
+    technicalName: "ShellCommandGuard",
+    description: "Blocks dangerous shell commands (rm -rf /, reverse shells) before execution.",
+    category: "tools",
+    defaultVerdict: "deny",
+    icon: "IconTerminal",
+    configFields: [
+      { key: "enabled", label: "Enabled", type: "toggle", defaultValue: true },
+      { key: "forbidden_patterns", label: "Forbidden Patterns", type: "pattern_list", description: "Regex patterns for dangerous commands" },
+      { key: "enforce_forbidden_paths", label: "Enforce Path Checks", type: "toggle", defaultValue: true, description: "Also check extracted paths against ForbiddenPathGuard" },
+    ],
+  },
+  {
+    id: "mcp_tool",
+    name: "MCP Tool",
+    technicalName: "McpToolGuard",
+    description: "Restricts MCP tool invocations with allow/block/confirm lists and max argument sizes.",
+    category: "tools",
+    defaultVerdict: "warn",
+    icon: "IconTool",
+    configFields: [
+      { key: "enabled", label: "Enabled", type: "toggle", defaultValue: true },
+      { key: "allow", label: "Allow List", type: "string_list", description: "Tools explicitly allowed" },
+      { key: "block", label: "Block List", type: "string_list", description: "Tools explicitly blocked" },
+      { key: "require_confirmation", label: "Require Confirmation", type: "string_list", description: "Tools requiring user confirmation" },
+      { key: "default_action", label: "Default Action", type: "select", defaultValue: "allow", options: [{ value: "allow", label: "Allow" }, { value: "block", label: "Block" }] },
+      { key: "max_args_size", label: "Max Args Size (bytes)", type: "number_input", min: 1024, max: 10485760, defaultValue: 1048576 },
+    ],
+  },
+  {
+    id: "prompt_injection",
+    name: "Prompt Injection",
+    technicalName: "PromptInjectionGuard",
+    description: "Detects prompt injection attempts in agent inputs with configurable thresholds.",
+    category: "detection",
+    defaultVerdict: "deny",
+    icon: "IconBrain",
+    configFields: [
+      { key: "enabled", label: "Enabled", type: "toggle", defaultValue: false },
+      { key: "warn_at_or_above", label: "Warn Level", type: "select", defaultValue: "suspicious", options: [{ value: "safe", label: "Safe" }, { value: "suspicious", label: "Suspicious" }, { value: "high", label: "High" }, { value: "critical", label: "Critical" }] },
+      { key: "block_at_or_above", label: "Block Level", type: "select", defaultValue: "high", options: [{ value: "safe", label: "Safe" }, { value: "suspicious", label: "Suspicious" }, { value: "high", label: "High" }, { value: "critical", label: "Critical" }] },
+      { key: "max_scan_bytes", label: "Max Scan Bytes", type: "number_input", min: 1000, max: 1000000, defaultValue: 200000 },
+    ],
+  },
+  {
+    id: "jailbreak",
+    name: "Jailbreak Detection",
+    technicalName: "JailbreakGuard",
+    description: "4-layer detection: heuristic + statistical + ML + optional LLM-judge for jailbreak attempts.",
+    category: "detection",
+    defaultVerdict: "deny",
+    icon: "IconSkull",
+    configFields: [
+      { key: "enabled", label: "Enabled", type: "toggle", defaultValue: false },
+      { key: "detector.block_threshold", label: "Block Threshold", type: "number_slider", min: 0, max: 100, step: 5, defaultValue: 50 },
+      { key: "detector.warn_threshold", label: "Warn Threshold", type: "number_slider", min: 0, max: 100, step: 5, defaultValue: 20 },
+      { key: "detector.max_input_bytes", label: "Max Input Bytes", type: "number_input", min: 1000, max: 1000000, defaultValue: 200000 },
+      { key: "detector.session_aggregation", label: "Session Aggregation", type: "toggle", defaultValue: true },
+    ],
+  },
+  {
+    id: "computer_use",
+    name: "Computer Use",
+    technicalName: "ComputerUseGuard",
+    description: "Controls CUA actions for remote desktop sessions — restrict mouse, keyboard, screenshots.",
+    category: "cua",
+    defaultVerdict: "warn",
+    icon: "IconDeviceDesktop",
+    configFields: [
+      { key: "enabled", label: "Enabled", type: "toggle", defaultValue: false },
+      { key: "mode", label: "Enforcement Mode", type: "select", defaultValue: "guardrail", options: [{ value: "observe", label: "Observe (log only)" }, { value: "guardrail", label: "Guardrail (warn)" }, { value: "fail_closed", label: "Fail Closed (deny)" }] },
+      { key: "allowed_actions", label: "Allowed Actions", type: "string_list", description: "CUA action types to permit" },
+    ],
+  },
+  {
+    id: "remote_desktop_side_channel",
+    name: "Remote Desktop Side-Channel",
+    technicalName: "RemoteDesktopSideChannelGuard",
+    description: "Side-channel controls for clipboard, audio, drive mapping, and file transfer.",
+    category: "cua",
+    defaultVerdict: "warn",
+    icon: "IconPlugConnected",
+    configFields: [
+      { key: "enabled", label: "Enabled", type: "toggle", defaultValue: false },
+      { key: "clipboard_enabled", label: "Clipboard", type: "toggle", defaultValue: true },
+      { key: "file_transfer_enabled", label: "File Transfer", type: "toggle", defaultValue: true },
+      { key: "audio_enabled", label: "Audio", type: "toggle", defaultValue: true },
+      { key: "drive_mapping_enabled", label: "Drive Mapping", type: "toggle", defaultValue: true },
+      { key: "printing_enabled", label: "Printing", type: "toggle", defaultValue: true },
+      { key: "session_share_enabled", label: "Session Sharing", type: "toggle", defaultValue: true },
+      { key: "max_transfer_size_bytes", label: "Max Transfer Size (bytes)", type: "number_input", min: 0, max: 1073741824, defaultValue: 0 },
+    ],
+  },
+  {
+    id: "input_injection_capability",
+    name: "Input Injection",
+    technicalName: "InputInjectionCapabilityGuard",
+    description: "Restricts input injection capabilities in CUA environments to prevent escalation.",
+    category: "cua",
+    defaultVerdict: "deny",
+    icon: "IconKeyboard",
+    configFields: [
+      { key: "enabled", label: "Enabled", type: "toggle", defaultValue: false },
+      { key: "allowed_input_types", label: "Allowed Input Types", type: "string_list", description: "e.g. keyboard, mouse, touch" },
+      { key: "require_postcondition_probe", label: "Require Postcondition Probe", type: "toggle", defaultValue: false },
+    ],
+  },
+  {
+    id: "spider_sense",
+    name: "Spider Sense",
+    technicalName: "SpiderSenseGuard",
+    description: "Hierarchical threat screening — embedding-based cosine similarity + optional LLM deep path.",
+    category: "detection",
+    defaultVerdict: "warn",
+    icon: "IconSpider",
+    configFields: [
+      { key: "enabled", label: "Enabled", type: "toggle", defaultValue: false },
+      { key: "similarity_threshold", label: "Similarity Threshold", type: "number_slider", min: 0, max: 1, step: 0.01, defaultValue: 0.85 },
+      { key: "ambiguity_band", label: "Ambiguity Band", type: "number_slider", min: 0, max: 0.5, step: 0.01, defaultValue: 0.1 },
+      { key: "top_k", label: "Top-K Matches", type: "number_input", min: 1, max: 20, defaultValue: 5 },
+      { key: "embedding_model", label: "Embedding Model", type: "select", defaultValue: "text-embedding-3-small", options: [{ value: "text-embedding-3-small", label: "text-embedding-3-small" }, { value: "text-embedding-3-large", label: "text-embedding-3-large" }] },
+      { key: "pattern_db_path", label: "Pattern DB Path", type: "select", defaultValue: "builtin:s2bench-v1", options: [{ value: "builtin:s2bench-v1", label: "Built-in (s2bench-v1)" }] },
+    ],
+  },
+];
+
+export function getGuardMeta(id: string): GuardMeta | undefined {
+  return GUARD_REGISTRY.find((g) => g.id === id);
+}
+
+/** All guard IDs in canonical order, derived from the registry. */
+export const ALL_GUARD_IDS: GuardId[] = GUARD_REGISTRY.map((g) => g.id as GuardId);
+
+/** Guard ID to display name mapping, derived from the registry. */
+export const GUARD_DISPLAY_NAMES: Record<GuardId, string> = Object.fromEntries(
+  GUARD_REGISTRY.map((g) => [g.id, g.name]),
+) as Record<GuardId, string>;
+
+export const GUARD_CATEGORIES = [
+  { id: "filesystem" as const, label: "Filesystem", guards: ["forbidden_path", "path_allowlist"] },
+  { id: "network" as const, label: "Network", guards: ["egress_allowlist"] },
+  { id: "content" as const, label: "Content", guards: ["secret_leak", "patch_integrity"] },
+  { id: "tools" as const, label: "Tools", guards: ["shell_command", "mcp_tool"] },
+  { id: "detection" as const, label: "Detection", guards: ["prompt_injection", "jailbreak", "spider_sense"] },
+  { id: "cua" as const, label: "Computer Use", guards: ["computer_use", "remote_desktop_side_channel", "input_injection_capability"] },
+];
