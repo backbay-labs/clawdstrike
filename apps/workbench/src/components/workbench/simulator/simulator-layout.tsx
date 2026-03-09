@@ -138,11 +138,11 @@ function fromRustSimulation(
   };
 }
 
-/** Convert a posture-aware Rust response into a workbench SimulationResult + PostureReport. */
+/** Convert a posture-aware Rust response into a workbench SimulationResult + PostureReport + state JSON. */
 function fromRustPostureSimulation(
   scenarioId: string,
   resp: TauriPostureSimulationResponse,
-): { result: SimulationResult; posture: PostureReport | null } {
+): { result: SimulationResult; posture: PostureReport | null; postureStateJson: string | null } {
   const guardResults: GuardSimResult[] = resp.results.map((r) => ({
     guardId: r.guard as GuardSimResult["guardId"],
     guardName: r.guard,
@@ -175,7 +175,7 @@ function fromRustPostureSimulation(
     };
   }
 
-  return { result, posture };
+  return { result, posture, postureStateJson: resp.posture_state_json ?? null };
 }
 
 /** Merge a new PostureReport into cumulative tracking (max of consumed values). */
@@ -353,6 +353,7 @@ export function SimulatorLayout() {
   const [isCreating, setIsCreating] = useState(false);
   const [simulating, setSimulating] = useState(false);
   const [cumulativePosture, setCumulativePosture] = useState<PostureReport | null>(null);
+  const [postureStateJson, setPostureStateJson] = useState<string | null>(null);
   const [reportDialogOpen, setReportDialogOpen] = useState(false);
   const [batchReport, setBatchReport] = useState<BatchTestReport | null>(null);
   const [autoScenarios, setAutoScenarios] = useState<TestScenario[]>([]);
@@ -382,6 +383,7 @@ export function SimulatorLayout() {
 
   const resetPosture = useCallback(() => {
     setCumulativePosture(null);
+    setPostureStateJson(null);
   }, []);
 
   const runScenario = useCallback(
@@ -400,10 +402,14 @@ export function SimulatorLayout() {
               rustAction,
               target,
               content,
+              postureStateJson ?? undefined,
             );
             if (resp) {
-              const { result, posture } = fromRustPostureSimulation(scenario.id, resp);
+              const { result, posture, postureStateJson: newStateJson } = fromRustPostureSimulation(scenario.id, resp);
               setResults((prev) => [result, ...prev].slice(0, 20));
+              if (newStateJson) {
+                setPostureStateJson(newStateJson);
+              }
               if (posture) {
                 setCumulativePosture((prev) => mergeCumulativePosture(prev, posture));
               }
@@ -487,12 +493,14 @@ export function SimulatorLayout() {
       });
       return result;
     },
-    [state.activePolicy, hasPostureConfig, toast],
+    [state.activePolicy, hasPostureConfig, postureStateJson, toast],
   );
 
   const runAll = useCallback(async () => {
     setSimulating(true);
     let usedFallback = false;
+    // Track posture state across the batch so each simulation builds on the last.
+    let runningPostureState = postureStateJson;
     try {
       const newResults: SimulationResult[] = [];
       for (const s of scenarios) {
@@ -511,10 +519,14 @@ export function SimulatorLayout() {
                 rustAction,
                 target,
                 content,
+                runningPostureState ?? undefined,
               );
               if (resp) {
                 const parsed = fromRustPostureSimulation(s.id, resp);
                 result = parsed.result;
+                if (parsed.postureStateJson) {
+                  runningPostureState = parsed.postureStateJson;
+                }
                 if (parsed.posture) {
                   setCumulativePosture((prev) => mergeCumulativePosture(prev, parsed.posture!));
                 }
@@ -537,6 +549,8 @@ export function SimulatorLayout() {
         }
         newResults.push(result);
       }
+      // Persist the final posture state so subsequent runs continue from here.
+      setPostureStateJson(runningPostureState);
       setResults((prev) => [...newResults, ...prev].slice(0, 50));
       if (usedFallback) {
         toast({
@@ -568,7 +582,7 @@ export function SimulatorLayout() {
     } finally {
       setSimulating(false);
     }
-  }, [scenarios, state.activePolicy, hasPostureConfig, toast]);
+  }, [scenarios, state.activePolicy, hasPostureConfig, postureStateJson, toast]);
 
   const handleSelect = useCallback(
     (id: string) => {
@@ -638,6 +652,7 @@ export function SimulatorLayout() {
     if (autoScenarios.length === 0) return;
     setSimulating(true);
     let usedFallback = false;
+    let runningPostureState = postureStateJson;
     try {
       const newResults: SimulationResult[] = [];
       for (const s of autoScenarios) {
@@ -651,10 +666,13 @@ export function SimulatorLayout() {
             const policyYaml = policyToYaml(state.activePolicy);
 
             if (hasPostureConfig) {
-              const resp = await simulateWithPostureNative(policyYaml, rustAction, target, content);
+              const resp = await simulateWithPostureNative(policyYaml, rustAction, target, content, runningPostureState ?? undefined);
               if (resp) {
                 const parsed = fromRustPostureSimulation(s.id, resp);
                 result = parsed.result;
+                if (parsed.postureStateJson) {
+                  runningPostureState = parsed.postureStateJson;
+                }
                 if (parsed.posture) {
                   setCumulativePosture((prev) => mergeCumulativePosture(prev, parsed.posture!));
                 }
@@ -677,6 +695,7 @@ export function SimulatorLayout() {
         }
         newResults.push(result);
       }
+      setPostureStateJson(runningPostureState);
       setResults((prev) => [...newResults, ...prev].slice(0, 50));
       if (usedFallback) {
         toast({
@@ -704,7 +723,7 @@ export function SimulatorLayout() {
     } finally {
       setSimulating(false);
     }
-  }, [autoScenarios, state.activePolicy, hasPostureConfig, scenarios, results, toast]);
+  }, [autoScenarios, state.activePolicy, hasPostureConfig, postureStateJson, scenarios, results, toast]);
 
   const handleViewReport = useCallback(() => {
     if (batchReport) {

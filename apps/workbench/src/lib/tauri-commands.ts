@@ -79,6 +79,8 @@ export interface TauriPostureSimulationResponse {
   guard: string;
   message: string;
   posture: TauriPostureReport | null;
+  /** Serialized PostureRuntimeState for passing into the next simulation call. */
+  posture_state_json: string | null;
 }
 
 export interface TauriSignedReceiptResponse {

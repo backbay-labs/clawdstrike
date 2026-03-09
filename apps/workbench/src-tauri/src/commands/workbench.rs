@@ -242,6 +242,10 @@ pub struct PostureSimulationResponse {
     /// Posture data (present when the policy has a posture config).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub posture: Option<PostureReport>,
+    /// Serialized `PostureRuntimeState` after evaluation, for passing into the
+    /// next simulation call to preserve cumulative budget/state tracking.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub posture_state_json: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -823,12 +827,19 @@ pub async fn simulate_action_with_posture(
         None
     };
 
+    // Serialize the mutated posture runtime state so the frontend can pass it
+    // back into the next simulation for cumulative budget/state tracking.
+    let posture_state_json = posture_state
+        .as_ref()
+        .and_then(|ps| serde_json::to_string(ps).ok());
+
     Ok(PostureSimulationResponse {
         allowed: report.guard_report.overall.allowed,
         results,
         guard: report.guard_report.overall.guard.clone(),
         message: report.guard_report.overall.message.clone(),
         posture,
+        posture_state_json,
     })
 }
 

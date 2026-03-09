@@ -51,15 +51,17 @@ const server = new McpServer({
 
 const MAX_POLICY_SIZE = 1_000_000; // 1MB
 
-function parsePolicy(yaml: string): WorkbenchPolicy {
+function parsePolicy(yaml: string): { policy: WorkbenchPolicy; warnings: string[] } {
   if (yaml.length > MAX_POLICY_SIZE) {
     throw new Error(`Policy YAML too large: ${yaml.length} bytes (max ${MAX_POLICY_SIZE})`);
   }
   const [policy, errors] = yamlToPolicy(yaml);
-  if (!policy || errors.length > 0) {
+  if (!policy) {
     throw new Error(`Policy parse error: ${errors.join("; ")}`);
   }
-  return policy;
+  // Non-fatal validation errors are returned as warnings — yamlToPolicy
+  // intentionally returns a usable policy alongside them.
+  return { policy, warnings: errors };
 }
 
 function textResult(text: string, isError = false) {
@@ -84,6 +86,7 @@ function deepEqual(a: unknown, b: unknown): boolean {
     return a.every((v, i) => deepEqual(v, b[i]));
   }
   if (typeof a === "object") {
+    if (Array.isArray(b)) return false;
     const aObj = a as Record<string, unknown>;
     const bObj = b as Record<string, unknown>;
     const keys = new Set([...Object.keys(aObj), ...Object.keys(bObj)]);
@@ -181,7 +184,7 @@ server.tool(
 
     let policy: WorkbenchPolicy;
     try {
-      policy = parsePolicy(policy_yaml);
+      ({ policy } = parsePolicy(policy_yaml));
     } catch (e) {
       return textResult(String(e), true);
     }
@@ -259,7 +262,7 @@ server.tool(
 
     let policy: WorkbenchPolicy;
     try {
-      policy = parsePolicy(policy_yaml);
+      ({ policy } = parsePolicy(policy_yaml));
     } catch (e) {
       return textResult(String(e), true);
     }
@@ -411,7 +414,7 @@ server.tool(
   async ({ policy_yaml, frameworks }) => {
     let policy: WorkbenchPolicy;
     try {
-      policy = parsePolicy(policy_yaml);
+      ({ policy } = parsePolicy(policy_yaml));
     } catch (e) {
       return textResult(String(e), true);
     }
@@ -488,7 +491,7 @@ server.tool(
   async ({ policy_yaml }) => {
     let policy: WorkbenchPolicy;
     try {
-      policy = parsePolicy(policy_yaml);
+      ({ policy } = parsePolicy(policy_yaml));
     } catch (e) {
       return textResult(String(e), true);
     }
@@ -499,11 +502,21 @@ server.tool(
     if (guards.forbidden_path?.enabled) {
       const patterns = guards.forbidden_path.patterns ?? [];
       for (const pat of patterns.slice(0, 3)) {
-        const concretePath = pat
-          .replace(/\*\*/g, "")
-          .replace(/\/\//g, "/")
+        // Convert glob pattern to a realistic concrete path for testing.
+        // Strip recursive-glob markers, replace single wildcards with a
+        // plausible segment, and ensure the path is absolute.
+        let concretePath = pat
+          .replace(/\*\*\/?/g, "")
           .replace(/\*/g, "test")
-          .replace(/^\./, "/home/user/.");
+          .replace(/\/\//g, "/");
+        // Ensure an absolute path — relative or bare segments get a sensible prefix.
+        if (!concretePath.startsWith("/")) {
+          concretePath = `/home/user/${concretePath}`;
+        }
+        // Paths ending with a directory separator get a trailing filename.
+        if (concretePath.endsWith("/")) {
+          concretePath += "id_rsa";
+        }
         suggestions.push({
           id: `suggest-fp-${suggestions.length}`,
           name: `Forbidden path: ${concretePath}`,
@@ -707,8 +720,11 @@ server.tool(
     }
 
     if (guards.patch_integrity?.enabled) {
-      const maxAdd = guards.patch_integrity.max_additions ?? 1000;
       const PATCH_SAFETY_CAP = 10_000;
+      // Cap the policy-provided max_additions to prevent unreasonable values
+      // from untrusted YAML input affecting allocation or arithmetic.
+      const rawMaxAdd = guards.patch_integrity.max_additions ?? 1000;
+      const maxAdd = Math.max(0, Math.min(rawMaxAdd, PATCH_SAFETY_CAP));
       // Generate enough lines to exceed the threshold, but stay within the safety cap.
       const lineCount = Math.min(maxAdd + 500, PATCH_SAFETY_CAP);
       // If the safety cap prevents us from exceeding max_additions, the scenario
@@ -756,12 +772,12 @@ server.tool(
     let leftPolicy: WorkbenchPolicy;
     let rightPolicy: WorkbenchPolicy;
     try {
-      leftPolicy = parsePolicy(left_yaml);
+      ({ policy: leftPolicy } = parsePolicy(left_yaml));
     } catch (e) {
       return textResult(`Left policy error: ${e}`, true);
     }
     try {
-      rightPolicy = parsePolicy(right_yaml);
+      ({ policy: rightPolicy } = parsePolicy(right_yaml));
     } catch (e) {
       return textResult(`Right policy error: ${e}`, true);
     }
@@ -858,7 +874,7 @@ server.tool(
   async ({ policy_yaml, format }) => {
     let policy: WorkbenchPolicy;
     try {
-      policy = parsePolicy(policy_yaml);
+      ({ policy } = parsePolicy(policy_yaml));
     } catch (e) {
       return textResult(String(e), true);
     }
