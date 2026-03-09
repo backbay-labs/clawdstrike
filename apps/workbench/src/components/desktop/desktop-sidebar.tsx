@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect, useRef } from "react";
 import { useLocation, Link } from "react-router-dom";
 import {
+  IconLayoutDashboard,
   IconPencil,
   IconCrosshair,
   IconColumns,
@@ -23,6 +24,7 @@ import { fleetClient } from "@/lib/workbench/fleet-client";
 import { DEMO_APPROVAL_REQUESTS } from "@/lib/workbench/approval-demo-data";
 
 const navItems = [
+  { label: "Home", icon: IconLayoutDashboard, href: "/home" },
   { label: "Editor", icon: IconPencil, href: "/editor" },
   { label: "Threat Lab", icon: IconCrosshair, href: "/simulator" },
   { label: "Compare", icon: IconColumns, href: "/compare" },

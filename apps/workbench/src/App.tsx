@@ -81,6 +81,12 @@ const AuditLog = lazy(() =>
   })),
 );
 
+const HomePage = lazy(() =>
+  import("@/components/workbench/home/home-page").then((m) => ({
+    default: m.HomePage,
+  })),
+);
+
 // ---------------------------------------------------------------------------
 // Loading fallback — dark-themed to prevent white flash in Tauri shell
 // ---------------------------------------------------------------------------
@@ -155,9 +161,10 @@ export function App() {
               <Routes>
                 <Route element={<DesktopLayout />}>
                   {/* Default redirect */}
-                  <Route index element={<Navigate to="/editor" replace />} />
+                  <Route index element={<Navigate to="/home" replace />} />
 
                   {/* Workbench pages */}
+                  <Route path="home" element={<HomePage />} />
                   <Route path="editor" element={<PolicyEditor />} />
                   <Route path="simulator" element={<SimulatorLayout />} />
                   <Route path="compare" element={<CompareLayout />} />
@@ -172,7 +179,7 @@ export function App() {
                   <Route path="settings" element={<SettingsPage />} />
 
                   {/* Catch-all */}
-                  <Route path="*" element={<Navigate to="/editor" replace />} />
+                  <Route path="*" element={<Navigate to="/home" replace />} />
                 </Route>
               </Routes>
             </Suspense>

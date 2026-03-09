@@ -14,6 +14,7 @@ vi.mock("@/lib/tauri-bridge", () => ({
 }));
 
 const NAV_ITEMS = [
+  { label: "Home", href: "/home" },
   { label: "Editor", href: "/editor" },
   { label: "Threat Lab", href: "/simulator" },
   { label: "Compare", href: "/compare" },

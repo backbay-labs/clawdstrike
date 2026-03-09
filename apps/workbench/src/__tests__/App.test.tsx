@@ -13,6 +13,10 @@ vi.mock("@/lib/tauri-bridge", () => ({
 
 // Mock page components to avoid pulling in heavy dependency trees.
 // Each mock renders a simple div with a data-testid for identification.
+vi.mock("@/components/workbench/home/home-page", () => ({
+  HomePage: () => <div data-testid="page-home">HomePage</div>,
+}));
+
 vi.mock("@/components/workbench/editor/policy-editor", () => ({
   PolicyEditor: () => <div data-testid="page-editor">PolicyEditor</div>,
 }));
@@ -46,12 +50,12 @@ describe("App", () => {
     expect(screen.getByText("Workbench")).toBeInTheDocument();
   });
 
-  it("default route redirects to /editor", async () => {
+  it("default route redirects to /home", async () => {
     render(<App />);
 
-    // The HashRouter starts at #/ which should redirect to /editor
+    // The HashRouter starts at #/ which should redirect to /home
     await waitFor(() => {
-      expect(screen.getByTestId("page-editor")).toBeInTheDocument();
+      expect(screen.getByTestId("page-home")).toBeInTheDocument();
     });
   });
 
@@ -110,12 +114,12 @@ describe("App", () => {
     });
   });
 
-  it("redirects unknown routes to /editor", async () => {
+  it("redirects unknown routes to /home", async () => {
     window.location.hash = "#/nonexistent-route";
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("page-editor")).toBeInTheDocument();
+      expect(screen.getByTestId("page-home")).toBeInTheDocument();
     });
   });
 
