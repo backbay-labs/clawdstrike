@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { useWorkbench } from "@/lib/workbench/multi-policy-store";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
-import { isDesktop, savePolicyFile } from "@/lib/tauri-bridge";
+import { isDesktop, pickSavePath, savePolicyFile } from "@/lib/tauri-bridge";
 import { exportPolicyFileNative } from "@/lib/tauri-commands";
 import { policyToFormat, formatExtension, formatMimeType, type ExportFormat } from "@/lib/workbench/yaml-utils";
 import {
@@ -98,8 +98,10 @@ export function WorkbenchTopbar() {
     if (desktop) {
       const content = policyToFormat(state.activePolicy, exportFormat);
       const ext = formatExtension(exportFormat);
-      const targetPath = await savePolicyFile(content, undefined, ext);
+      // Pick a save path first (dialog only, no write yet)
+      const targetPath = await pickSavePath(ext);
       if (targetPath) {
+        // Try native validate-then-write (validates before writing to disk)
         const nativeResult = await exportPolicyFileNative(content, targetPath, exportFormat);
         if (nativeResult) {
           if (nativeResult.success) {
@@ -110,7 +112,8 @@ export function WorkbenchTopbar() {
             toast({ type: "error", title: "Validation failed", description: nativeResult.message });
           }
         } else {
-          // Fallback: native command unavailable, file was already written by savePolicyFile
+          // Fallback: native command unavailable, write directly
+          await savePolicyFile(content, targetPath, ext);
           dispatch({ type: "SET_FILE_PATH", path: targetPath });
           dispatch({ type: "MARK_CLEAN" });
           toast({ type: "success", title: "Policy saved" });

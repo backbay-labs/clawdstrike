@@ -126,6 +126,31 @@ const FORMAT_FILTERS: Record<string, { name: string; extensions: string[]; defau
 };
 
 /**
+ * Show a native "Save As" dialog and return the chosen path (without writing).
+ *
+ * @param format - Export format used to filter extensions: "yaml", "json", or "toml".
+ * @returns The chosen file path, or null if the user cancelled.
+ */
+export async function pickSavePath(format: string = "yaml"): Promise<string | null> {
+  if (!isDesktop()) return null;
+
+  const { save } = await import("@tauri-apps/plugin-dialog");
+  const filterCfg = FORMAT_FILTERS[format] || FORMAT_FILTERS.yaml;
+  const result = await save({
+    filters: [
+      {
+        name: filterCfg.name,
+        extensions: filterCfg.extensions,
+      },
+    ],
+    title: "Save Policy File",
+    defaultPath: `policy.${filterCfg.defaultExt}`,
+  });
+
+  return result ?? null;
+}
+
+/**
  * Save policy content to disk via native dialog.
  *
  * @param content  - The serialized policy string to write
@@ -146,21 +171,8 @@ export async function savePolicyFile(
   let targetPath = filePath;
 
   if (!targetPath) {
-    const { save } = await import("@tauri-apps/plugin-dialog");
-    const filterCfg = FORMAT_FILTERS[format] || FORMAT_FILTERS.yaml;
-    const result = await save({
-      filters: [
-        {
-          name: filterCfg.name,
-          extensions: filterCfg.extensions,
-        },
-      ],
-      title: "Save Policy File",
-      defaultPath: `policy.${filterCfg.defaultExt}`,
-    });
-
-    if (!result) return null;
-    targetPath = result;
+    targetPath = await pickSavePath(format);
+    if (!targetPath) return null;
   }
 
   await writeTextFile(targetPath, content);

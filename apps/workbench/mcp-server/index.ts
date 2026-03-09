@@ -738,7 +738,7 @@ server.tool(
     return jsonResult({
       count: suggestions.length,
       enabledGuards: Object.entries(guards)
-        .filter(([, config]) => config && (config as { enabled?: boolean }).enabled !== false)
+        .filter(([, config]) => config && (config as { enabled?: boolean }).enabled)
         .map(([id]) => id),
       scenarios: suggestions,
     });

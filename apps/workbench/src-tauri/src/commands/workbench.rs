@@ -64,10 +64,16 @@ fn validate_file_path(path: &str) -> Result<(), String> {
 
     let p = Path::new(path);
 
-    // Canonicalize the parent directory (the file itself may not exist yet for
-    // export). Reject the path outright if the parent doesn't exist — falling
-    // back to the raw path would allow symlink/TOCTOU bypasses.
-    let normalized = if let Some(parent) = p.parent() {
+    // If the full path already exists, canonicalize it entirely so that
+    // file-level symlinks are resolved before the sensitive-path check.
+    // Otherwise, canonicalize the parent directory and join the filename
+    // (the file itself may not exist yet for export). Reject the path
+    // outright if the parent doesn't exist — falling back to the raw path
+    // would allow symlink/TOCTOU bypasses.
+    let normalized = if p.exists() {
+        p.canonicalize()
+            .map_err(|e| format!("Cannot resolve path: {}", e))?
+    } else if let Some(parent) = p.parent() {
         if parent.as_os_str().is_empty() {
             // Relative filename with no directory component (e.g. "foo.yaml").
             // Resolve against CWD so the sensitive-path checks still fire.
