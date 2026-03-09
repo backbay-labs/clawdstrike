@@ -7,6 +7,7 @@ import { renderWithProviders } from "@/test/test-helpers";
 // Mock tauri-bridge so the module can be imported without Tauri runtime
 vi.mock("@/lib/tauri-bridge", () => ({
   isDesktop: vi.fn(() => false),
+  isMacOS: vi.fn(() => false),
   minimizeWindow: vi.fn(),
   maximizeWindow: vi.fn(),
   closeWindow: vi.fn(),

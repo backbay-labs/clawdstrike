@@ -4,14 +4,16 @@ import userEvent from "@testing-library/user-event";
 import { Titlebar } from "../titlebar";
 import { renderWithProviders } from "@/test/test-helpers";
 
-// Import the mock so we can override isDesktop per-test
+// Import the mock so we can override isDesktop/isMacOS per-test
 const mockIsDesktop = vi.fn(() => false);
+const mockIsMacOS = vi.fn(() => false);
 const mockMinimize = vi.fn();
 const mockMaximize = vi.fn();
 const mockClose = vi.fn();
 
 vi.mock("@/lib/tauri-bridge", () => ({
   isDesktop: () => mockIsDesktop(),
+  isMacOS: () => mockIsMacOS(),
   minimizeWindow: () => mockMinimize(),
   maximizeWindow: () => mockMaximize(),
   closeWindow: () => mockClose(),
@@ -21,6 +23,7 @@ describe("Titlebar", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockIsDesktop.mockReturnValue(false);
+    mockIsMacOS.mockReturnValue(false);
   });
 
   it("renders the brand name 'Clawdstrike Workbench'", () => {
@@ -105,5 +108,15 @@ describe("Titlebar", () => {
 
     await user.click(screen.getByLabelText("Close"));
     expect(mockClose).toHaveBeenCalledOnce();
+  });
+
+  it("hides custom window controls on macOS (native traffic lights used instead)", () => {
+    mockIsDesktop.mockReturnValue(true);
+    mockIsMacOS.mockReturnValue(true);
+    renderWithProviders(<Titlebar />);
+
+    expect(screen.queryByLabelText("Minimize")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Maximize")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Close")).not.toBeInTheDocument();
   });
 });

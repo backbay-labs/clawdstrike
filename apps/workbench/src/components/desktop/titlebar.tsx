@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { ClawLogo } from "@/components/brand/claw-logo";
 import { useWorkbench } from "@/lib/workbench/multi-policy-store";
-import { minimizeWindow, maximizeWindow, closeWindow, isDesktop } from "@/lib/tauri-bridge";
+import { minimizeWindow, maximizeWindow, closeWindow, isDesktop, isMacOS } from "@/lib/tauri-bridge";
 
 export function Titlebar() {
   const { state } = useWorkbench();
@@ -29,14 +29,19 @@ export function Titlebar() {
   const handleMaximize = () => maximizeWindow();
   const handleClose = () => closeWindow();
 
+  const showNativeControls = isMacOS();
+
   return (
     <header
       data-tauri-drag-region
       className="desktop-titlebar drag-region shrink-0 select-none"
       style={{ height: 36 }}
     >
-      {/* ---- Left: brand ---- */}
-      <div className="flex items-center gap-2.5 no-drag pointer-events-none">
+      {/* ---- Left: brand (with traffic-light inset on macOS) ---- */}
+      <div
+        className="flex items-center gap-2.5 no-drag pointer-events-none"
+        style={showNativeControls ? { paddingLeft: 60 } : undefined}
+      >
         <ClawLogo size={15} />
         <span className="font-syne font-bold text-[10.5px] tracking-[0.12em] text-[#6f7f9a]/80 uppercase">
           Clawdstrike
@@ -59,8 +64,8 @@ export function Titlebar() {
         )}
       </div>
 
-      {/* ---- Right: window controls ---- */}
-      {isDesktop() && (
+      {/* ---- Right: window controls (hidden on macOS — native traffic lights handle it) ---- */}
+      {isDesktop() && !showNativeControls && (
         <div className="flex items-center gap-0 no-drag">
           {/* Minimize */}
           <button

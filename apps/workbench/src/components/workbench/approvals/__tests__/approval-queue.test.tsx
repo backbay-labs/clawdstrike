@@ -67,6 +67,7 @@ vi.mock("@/lib/workbench/use-fleet-connection", async () => {
 // Mock tauri bridge
 vi.mock("@/lib/tauri-bridge", () => ({
   isDesktop: vi.fn(() => false),
+  isMacOS: vi.fn(() => false),
 }));
 
 // ---------------------------------------------------------------------------

@@ -15,6 +15,12 @@ export function isDesktop(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
+/** Returns true when running on macOS. */
+export function isMacOS(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /Mac/i.test(navigator.platform);
+}
+
 // ---------------------------------------------------------------------------
 // Window controls
 // ---------------------------------------------------------------------------
@@ -43,6 +49,14 @@ export async function closeWindow(): Promise<void> {
   if (!isDesktop()) return;
   const win = await getWindow();
   await win.close();
+}
+
+/** Toggle native fullscreen mode. */
+export async function toggleFullscreen(): Promise<void> {
+  if (!isDesktop()) return;
+  const win = await getWindow();
+  const isFullscreen = await win.isFullscreen();
+  await win.setFullscreen(!isFullscreen);
 }
 
 // ---------------------------------------------------------------------------

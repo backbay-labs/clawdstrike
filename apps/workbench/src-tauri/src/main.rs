@@ -4,6 +4,7 @@
 mod commands;
 
 use commands::workbench;
+use tauri::Manager;
 
 fn main() {
     tauri::Builder::default()
@@ -11,6 +12,18 @@ fn main() {
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_fs::init())
+        .setup(|app| {
+            // On Windows/Linux, disable native decorations so the custom titlebar
+            // is the only window chrome. On macOS, keep decorations enabled with
+            // the "Overlay" titleBarStyle for native traffic-light buttons.
+            #[cfg(not(target_os = "macos"))]
+            {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.set_decorations(false);
+                }
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             workbench::validate_policy,
             workbench::load_builtin_ruleset,

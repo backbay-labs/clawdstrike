@@ -8,6 +8,7 @@ import { FleetConnectionProvider } from "@/lib/workbench/use-fleet-connection";
 
 vi.mock("@/lib/tauri-bridge", () => ({
   isDesktop: vi.fn(() => false),
+  isMacOS: vi.fn(() => false),
   minimizeWindow: vi.fn(),
   maximizeWindow: vi.fn(),
   closeWindow: vi.fn(),
