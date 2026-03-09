@@ -28,6 +28,13 @@ import type {
   SpiderSenseConfig,
 } from "./types";
 import { ALL_GUARD_IDS, GUARD_DISPLAY_NAMES } from "./guard-registry";
+import { generateRedTeamScenarios } from "./redteam/scenario-generator";
+
+// ---------------------------------------------------------------------------
+// Generation mode
+// ---------------------------------------------------------------------------
+
+export type ScenarioGenerationMode = "standard" | "redteam" | "combined";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -1026,8 +1033,37 @@ const GENERATORS: Record<GuardId, GeneratorFn<never>> = {
  * Analyze a policy and generate targeted test scenarios for all enabled guards.
  *
  * Deterministic: same policy always produces the same scenario set.
+ *
+ * @param mode  Generation mode (default: "standard"):
+ *   - "standard" — classic guard-boundary scenarios (original behavior)
+ *   - "redteam"  — adversarial red-team scenarios from promptfoo plugins
+ *   - "combined" — merge both standard and red-team scenarios
  */
-export function generateScenariosFromPolicy(policy: WorkbenchPolicy): GeneratedScenarioSet {
+export function generateScenariosFromPolicy(
+  policy: WorkbenchPolicy,
+  mode: ScenarioGenerationMode = "standard",
+): GeneratedScenarioSet {
+  // In pure red-team mode, delegate entirely to the red-team generator
+  if (mode === "redteam") {
+    const rtScenarios = generateRedTeamScenarios(policy);
+    const enabledGuards: GuardId[] = [];
+    const disabledGuards: GuardId[] = [];
+    for (const guardId of ALL_GUARD_IDS) {
+      if (isEnabled(policy.guards[guardId])) {
+        enabledGuards.push(guardId);
+      } else {
+        disabledGuards.push(guardId);
+      }
+    }
+    return {
+      scenarios: rtScenarios,
+      gaps: [],
+      disabledGuards,
+      coveredGuards: enabledGuards,
+    };
+  }
+
+  // Standard generation
   const scenarios: TestScenario[] = [];
   const coveredGuards: GuardId[] = [];
   const disabledGuards: GuardId[] = [];
@@ -1050,6 +1086,20 @@ export function generateScenariosFromPolicy(policy: WorkbenchPolicy): GeneratedS
     } else {
       gaps.push(guardId);
     }
+  }
+
+  // In combined mode, append red-team scenarios and merge covered guards
+  if (mode === "combined") {
+    const rtScenarios = generateRedTeamScenarios(policy);
+    scenarios.push(...rtScenarios);
+    // Red-team scenarios may cover guards that standard generation missed
+    for (const guardId of ALL_GUARD_IDS) {
+      if (isEnabled(policy.guards[guardId]) && !coveredGuards.includes(guardId)) {
+        coveredGuards.push(guardId);
+      }
+    }
+    // Clear gaps since combined mode attempts full coverage
+    gaps.length = 0;
   }
 
   return { scenarios, gaps, disabledGuards, coveredGuards };

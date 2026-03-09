@@ -20,6 +20,8 @@ import type {
   SpiderSenseConfig,
 } from "./types";
 import { getGuardMeta } from "./guard-registry";
+import { gradeSimulationResult } from "./redteam/grading";
+import type { RedTeamGradingResult } from "./redteam/types";
 
 // ---------------------------------------------------------------------------
 // Glob / wildcard helpers
@@ -731,10 +733,18 @@ export function simulatePolicy(
     overallVerdict = "warn";
   }
 
-  return {
+  const result: SimulationResult & { redteamGrade?: RedTeamGradingResult } = {
     scenarioId: scenario.id,
     overallVerdict,
     guardResults,
     executedAt: new Date().toISOString(),
   };
+
+  // If this is a red-team scenario, attach grading information
+  const rtScenario = scenario as { redteamPluginId?: string };
+  if (rtScenario.redteamPluginId) {
+    result.redteamGrade = gradeSimulationResult(scenario, result);
+  }
+
+  return result;
 }

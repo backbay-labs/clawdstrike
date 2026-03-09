@@ -38,6 +38,7 @@ const SEVERITY_STYLES: Record<ThreatSeverity, { label: string; dotClass: string;
   high: { label: "HIGH", dotClass: "bg-[#e07c4f]", textClass: "text-[#e07c4f]" },
   medium: { label: "MED", dotClass: "bg-[#d4a84b]", textClass: "text-[#d4a84b]" },
   low: { label: "LOW", dotClass: "bg-[#3dbf84]", textClass: "text-[#3dbf84]" },
+  informational: { label: "INFO", dotClass: "bg-[#1976d2]", textClass: "text-[#1976d2]" },
 };
 
 const CATEGORY_META: Record<string, {

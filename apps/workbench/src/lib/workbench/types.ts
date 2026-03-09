@@ -327,7 +327,7 @@ export type TestActionType =
   | "patch_apply"
   | "user_input";
 
-export type ThreatSeverity = "critical" | "high" | "medium" | "low";
+export type ThreatSeverity = "critical" | "high" | "medium" | "low" | "informational";
 
 export interface TestScenario {
   id: string;
@@ -343,6 +343,10 @@ export interface TestScenario {
   threatRef?: string;
   /** Optional origin context for v1.4.0 origin-aware simulation. */
   originContext?: OriginContext;
+  /** Optional promptfoo red-team plugin identifier. */
+  redteamPluginId?: string;
+  /** Optional promptfoo red-team strategy identifier. */
+  redteamStrategyId?: string;
 }
 
 export type SimulationEngine = "native" | "client" | "stubbed";
@@ -370,6 +374,10 @@ export interface SimulationResult {
   executedAt: string;
   /** Ordered evaluation path from the native engine. Empty for client-side simulations. */
   evaluationPath?: EvaluationPathStep[];
+  /** Optional red-team grading result from promptfoo evaluation. */
+  redteamGrade?: { pass: boolean; score: number; reason: string };
+  /** Optional aggregate risk score from red-team evaluation. */
+  riskScore?: { score: number; level: string };
 }
 
 // ---- Posture / Budget ----

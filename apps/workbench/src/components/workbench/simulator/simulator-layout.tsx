@@ -23,6 +23,7 @@ import { ReportDialog } from "./report-dialog";
 import { ObserveSynthPanel } from "./observe-synth-panel";
 import { ThreatMatrix } from "./threat-matrix";
 import { FleetTestingPanel } from "./fleet-testing-panel";
+import { RedTeamPanel } from "./redteam-panel";
 import { useFleetConnection } from "@/lib/workbench/use-fleet-connection";
 import {
   IconFileReport,
@@ -34,6 +35,7 @@ import {
   IconShieldCheck,
   IconCircle,
   IconRadar,
+  IconFlask,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 
@@ -41,7 +43,7 @@ import { cn } from "@/lib/utils";
 // Types
 // ---------------------------------------------------------------------------
 
-type SimulatorTab = "scenarios" | "observe-synth" | "threat-matrix" | "fleet-testing";
+type SimulatorTab = "scenarios" | "observe-synth" | "threat-matrix" | "fleet-testing" | "red-team";
 
 // ---------------------------------------------------------------------------
 // Helpers to map between the workbench TestScenario format and the Rust
@@ -251,6 +253,7 @@ function SimulatorHeader({
     { id: "scenarios", label: "Scenarios", icon: IconTestPipe },
     { id: "observe-synth", label: "Observe & Synth", icon: IconEye },
     { id: "threat-matrix", label: "Threat Matrix", icon: IconGrid3x3 },
+    { id: "red-team", label: "Red Team", icon: IconFlask },
     { id: "fleet-testing", label: "Fleet Testing", icon: IconRadar, badge: fleetConnected ? "connected" : "offline" },
   ];
 
@@ -816,6 +819,22 @@ export function SimulatorLayout() {
 
         {activeTab === "threat-matrix" && (
           <ThreatMatrix scenarios={allScenarios} results={results} />
+        )}
+
+        {activeTab === "red-team" && (
+          <RedTeamPanel
+            policy={state.activePolicy}
+            scenarios={allScenarios}
+            results={results}
+            onScenariosGenerated={(generated) => {
+              setAutoScenarios((prev) => [...prev, ...generated]);
+              toast({
+                type: "success",
+                title: `${generated.length} red team scenarios generated`,
+                description: "Switch to Scenarios tab to run them",
+              });
+            }}
+          />
         )}
 
         {activeTab === "fleet-testing" && (
