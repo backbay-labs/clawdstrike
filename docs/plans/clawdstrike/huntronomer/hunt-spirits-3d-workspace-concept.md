@@ -509,7 +509,7 @@ Make spirits real in state before making them fancy in rendering.
 
 ### Phase 2
 
-Add spirit to Forensics first.
+Land spirit embodiment in Forensics first.
 
 - render one active-hunt spirit above the river scene
 - attach receipt-witness and focus behaviors
@@ -517,7 +517,7 @@ Add spirit to Forensics first.
 
 ### Phase 3
 
-Add spirit to Nexus as a companion to strikecells.
+Land spirit embodiment in Nexus as a companion to strikecells.
 
 - anchor to active strikecell
 - bias station emphasis and focus transitions

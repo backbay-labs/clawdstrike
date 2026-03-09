@@ -1,6 +1,5 @@
 wave	lanes
 wave0	orch
-wave1	hs1,hs2
-wave2	hs3,hs5
-wave3	hs4,hs6
-wave4	hs7
+wave1	sr1,sr2,sr3
+wave2	sr4,sr5
+wave3	sr6

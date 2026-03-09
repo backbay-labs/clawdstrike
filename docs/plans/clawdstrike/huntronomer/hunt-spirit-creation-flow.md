@@ -2,7 +2,7 @@
 
 > **Status:** Proposed | **Date:** 2026-03-08
 > **Audience:** Product, design, desktop, anticipation, and 3D-scene implementers
-> **Scope:** Define how an operator should create, review, and bind a spirit to a hunt
+> **Scope:** Define how an operator should create a hunt with a default spirit, then review and configure that spirit
 
 ## Why This Exists
 
@@ -59,19 +59,20 @@ Huntronomer should borrow that structure, not Baia's mysticism, rarity, or art-t
 
 ## Core Product Decision
 
-The operator should create the hunt first and bind the spirit second.
+Every new hunt is born with a spirit immediately.
 
-Do **not** turn spirit into a blocking pre-create wizard.
+Do **not** model spirit as optional metadata that is added only when the hunt “matures.”
+Do **not** turn spirit into a blocking pre-create wizard either.
 
 The right default sequence is:
 
 1. user creates a hunt instantly
-2. Huntronomer opens a lightweight `Bind Spirit` surface for that new active hunt
-3. the system suggests a spirit from whatever context exists
-4. the operator accepts, changes, pins, or skips
-5. the spirit is released into dock, sidebar, and 3D space
+2. `HUNT_CREATE` attaches a default spirit immediately from current context, with a stable fallback
+3. Huntronomer opens a lightweight `Configure Spirit` surface for that new active hunt
+4. the operator can accept, retune, pin, or reconfigure
+5. the updated spirit is reflected in dock, sidebar, and 3D space
 
-This preserves the speed of the current `HUNT_CREATE` path while giving the hunt a real identity layer.
+This preserves the speed of the current `HUNT_CREATE` path while making spirit a first-class part of every hunt from birth.
 
 ## The Right Mental Model
 
@@ -92,11 +93,11 @@ The user is authoring or confirming the hunt's stance.
 
 ## Entry Points
 
-There should be three creation moments.
+There should be three configuration moments.
 
-### 1. First creation: immediate bind prompt
+### 1. First creation: immediate configure prompt
 
-After `HUNT_CREATE`, open a small `Bind Spirit` sheet anchored to the newly active hunt.
+After `HUNT_CREATE`, open a small `Configure Spirit` sheet anchored to the newly active hunt.
 
 This is the primary path.
 
@@ -104,30 +105,32 @@ Requirements:
 
 - non-blocking
 - dismissible
+- preloaded with the already-attached default spirit
 - one clear suggestion if confidence is high
 - able to complete in one click
 
-If the operator dismisses it, the hunt stays usable.
+If the operator dismisses it, the hunt still has its default spirit and stays fully usable.
 
-### 2. Mature hunt: add spirit later
+### 2. Existing hunt: tune or reconfigure later
 
-If a hunt is already accumulating artifacts, semantic assignments, or run history and still has no spirit, surface:
+At any later point, surface:
 
-`Add spirit`
+`Configure spirit`
 
 Good surfaces:
 
 - hunt dock hover flyout
 - smart bucket header
-- empty-state card inside the hunt lens
+- hunt settings / detail card
 
-This path should feel quieter than first creation because the hunt already exists.
+This path should feel quieter than first creation because the hunt already exists and already has a spirit.
 
 ### 3. Rebind / repin
 
 If the hunt changes shape materially, allow:
 
-- `Rebind spirit`
+- `Configure spirit`
+- `Retune spirit`
 - `Pin current spirit`
 - `Unpin and infer again`
 
@@ -138,7 +141,7 @@ This should be available from hunt settings or the spirit detail card, not from 
 Baia uses `generate`, `draw`, `hybrid`, and `upload`.
 Huntronomer should adapt that into operational modes.
 
-### Quick Bind
+### Quick Configure
 
 Default mode.
 
@@ -261,7 +264,7 @@ Show the active hunt plus one of:
 - manual spirit chooser
 
 Do not show all modes as a complex wizard.
-Use a compact mode switch with `Quick Bind` selected by default.
+Use a compact mode switch with `Quick Configure` selected by default.
 
 ### Step 2. Infer
 
@@ -309,36 +312,37 @@ Do not create an endless reroll surface.
 
 The final action is:
 
-`Bind Spirit`
+`Apply Spirit`
 
 Alternative copy:
 
 `Crystallize`
 
-`Bind Spirit` is better for v1 because it is clearer and more operational.
+`Configure Spirit` is the better surface name for v1 because the hunt already has a spirit.
+`Apply Spirit` is the better commit button because it is clear, direct, and does not imply the spirit was previously absent.
 
 ## Commit And Release
 
-Baia's best pattern is that generation and release are separate acts.
-Huntronomer should keep that separation.
+Baia's best pattern is that preview and release are separate acts.
+Huntronomer should keep that separation for spirit changes, not for initial existence.
 
-The candidate spirit exists in preview first.
-It only becomes part of the live hunt when the operator binds it.
+The hunt already has a default spirit.
+The candidate spirit exists in preview first only when the operator is affirming or changing that default.
 
-On bind:
+On apply:
 
-- the hunt record stores the spirit state
+- the hunt record stores the updated spirit state
 - the hunt dock pill updates immediately
 - the smart bucket updates immediately
 - the sidebar wake copy updates immediately
-- the active 3D workspace gets a short bind pulse or draw-in motion
+- the active 3D workspace gets a short settle pulse or draw-in motion
 
 The confirmation should last roughly `500-800ms`.
 It should feel like the spirit entered the hunt, not like a settings dialog saved.
 
 ## Surface Behavior After Binding
 
-Once bound, the spirit should immediately change three surfaces.
+Once configured, the spirit should immediately change three surfaces.
 
 ### Hunt Dock
 
@@ -377,7 +381,7 @@ the thing the operator just bound should now visibly inhabit the workspace.
 
 ### First-time path
 
-The first spirit bind can be slightly more guided.
+The first spirit configuration can be slightly more guided.
 
 Target duration:
 
@@ -390,17 +394,18 @@ For experienced operators, the flow should collapse to:
 
 1. create hunt
 2. see suggestion
-3. click `Bind Spirit`
+3. click `Apply Spirit`
 
 That is the bar.
 
 ## Guardrails
 
-- Never block hunt creation on spirit creation.
+- Never block hunt creation on spirit configuration.
 - Never require drawing, uploading, or decorative customization.
 - Never hide why a spirit was suggested.
 - Never let spirit override explicit operator actions.
 - Never turn spirit creation into lore writing.
+- Never allow a hunt to exist without a spirit.
 - Never add rarity, lootbox rerolls, or mystical spectacle.
 - Never let the ceremony take longer than the investigative value it adds.
 
@@ -423,14 +428,14 @@ This flow implies changes to the current hunt model and creation path.
 
 ### Reducer and action changes
 
-`apps/desktop/src/shell/workbench/huntReducer.ts` should keep instant hunt creation, but support a second action family such as:
+`apps/desktop/src/shell/workbench/huntReducer.ts` should keep instant hunt creation and attach a default spirit immediately, then support a follow-on action family such as:
 
-- `HUNT_BIND_SPIRIT`
-- `HUNT_REBIND_SPIRIT`
+- `HUNT_CONFIGURE_SPIRIT`
+- `HUNT_RECONFIGURE_SPIRIT`
 - `HUNT_PIN_SPIRIT`
 
-`HUNT_CREATE` should remain fast and thin.
-Spirit binding should layer on top of it.
+`HUNT_CREATE` should remain fast and thin, but it should no longer produce a spirit-less hunt.
+Configuration should layer on top of that default.
 
 ### Surface consumers
 
@@ -446,12 +451,12 @@ Spirit bind results should propagate into:
 
 If this ships in phases, v1 should be:
 
-1. instant hunt creation stays as-is
-2. `Bind Spirit` sheet appears for new hunts
-3. support `Quick Bind`, `Thesis`, and `Manual Spirit`
+1. instant hunt creation stays as-is, but every new hunt gets a default spirit
+2. `Configure Spirit` sheet appears for new hunts
+3. support `Quick Configure`, `Thesis`, and `Manual Spirit`
 4. show preview in dock + sidebar + lightweight 3D card
-5. commit with `Bind Spirit`
-6. add `Add spirit` for existing hunts later
+5. commit with `Apply Spirit`
+6. allow `Configure spirit`, `Retune spirit`, and `Pin spirit` for existing hunts from day one
 
 That is enough to prove the model without overbuilding.
 

@@ -32,8 +32,10 @@ changing the product center of gravity from a multi-plugin SDR launcher to:
   giving hunts a durable operative posture instead of generic icons
 - [Baia Concept Harvest](./baia-concept-harvest.md) - decision filter for what to steal directly,
   what to translate into Huntronomer, and what to leave behind from Baia
+- [Spirit Ritual Rewrite](./spirit-ritual/README.md) - Baia-inspired rewrite of spirit creation
+  into a multimodal artistic chamber with manifestation, release, and 3D continuity
 - [Hunt Spirit Creation Flow](./hunt-spirit-creation-flow.md) - canonical user-facing flow for
-  creating a hunt first, then binding a spirit through thesis, anchors, or quick inference
+  instant default spirit creation plus operator-led configuration and retuning over time
 - [Hunt Spirits Roadmap](./hunt-spirits-roadmap.md) - phase-by-phase implementation roadmap with
   ticket slices, dependencies, and acceptance gates for turning spirit into a real desktop program
 - [Hunt Spirits In The 3D Workspace](./hunt-spirits-3d-workspace-concept.md) - proposed spatial

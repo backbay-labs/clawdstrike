@@ -142,21 +142,19 @@ Start with a small, operational set.
 - favors notes, citations, compare, and export-adjacent surfaces
 - ideal when the hunt is assembling durable narrative and proof
 
-## Add A Spirit
+## Default Spirit At Hunt Creation
 
 This should be a real feature, but with restraint.
 
 For the concrete user-facing flow, see [Hunt Spirit Creation Flow](./hunt-spirit-creation-flow.md).
 
-When a hunt is created or matures enough, the system can offer:
+When a hunt is created, the system should attach a default spirit immediately.
 
-`Add a spirit`
+The follow-on user flow should do three things:
 
-That flow should do three things:
-
-1. infer a candidate spirit from current hunt state
+1. show the default spirit that was attached at creation
 2. explain why that spirit fits
-3. allow the operator to accept, change, or pin it
+3. allow the operator to affirm, retune, or pin it at any time
 
 The operator should never be forced to write lore or name a mascot.
 
@@ -168,7 +166,7 @@ The interaction should look more like:
 
 Optional operator controls:
 
-- accept suggested spirit
+- accept current spirit
 - choose another spirit
 - pin current spirit so inference no longer changes the base spirit
 - add a short hunt thesis line that sharpens spirit inference
@@ -386,7 +384,7 @@ Start with:
 2. a derived spirit state on each hunt
 3. a compact glyph system per spirit
 4. spirit-aware dock/sidebar/wake copy
-5. an `Add spirit` flow that lets the operator accept or pin the inferred spirit
+5. a `Configure spirit` flow that lets the operator accept, retune, or pin the inferred spirit
 
 If that lands well, then a later phase can explore richer generated glyph variants or spirit-specific orb treatment.
 

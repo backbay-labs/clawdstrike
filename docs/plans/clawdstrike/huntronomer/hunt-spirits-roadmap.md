@@ -41,8 +41,8 @@ The current desktop app has the right substrate but not the right identity model
 ### What is missing
 
 - The `Hunt` model has no first-class spirit payload.
-- `HUNT_CREATE` cannot attach thesis, anchors, bind reason, or pinned spirit state.
-- Spirit creation does not exist as a user flow.
+- `HUNT_CREATE` cannot attach a default spirit, thesis, anchors, bind reason, or pinned spirit state.
+- Spirit configuration does not exist as a user flow.
 - The dock and smart bucket still render hunts as generic icon/color containers.
 - Anticipation does not yet consume spirit as a biasing signal.
 - Forensics and Nexus have no hunt-spirit actor in scene.
@@ -52,7 +52,7 @@ The current desktop app has the right substrate but not the right identity model
 
 ## Program Principles
 
-- Keep `HUNT_CREATE` instant. Spirit binding layers on top of hunt creation; it does not block it.
+- Keep `HUNT_CREATE` instant. Every new hunt gets a default spirit immediately, and spirit configuration layers on top of that; it does not block creation.
 - Steal Baia's lifecycle, not its fantasy layer.
 - Make spirit real in state before making it loud in the UI.
 - Land 3D embodiment in Forensics first, then Nexus.
@@ -64,7 +64,7 @@ The current desktop app has the right substrate but not the right identity model
 | Phase | Goal | Exit Criteria |
 | --- | --- | --- |
 | `P0` | Contract spine | Spirit types, reducers, dependency hygiene, and shared contracts exist |
-| `P1` | Spirit binding | Operators can create a hunt, open `Bind Spirit`, preview, and bind |
+| `P1` | Spirit defaulting and configuration | Operators can create a hunt with a default spirit, open `Configure Spirit`, preview, and reconfigure |
 | `P2` | 2D propagation | Dock, smart bucket, and related hunt surfaces reflect spirit identity |
 | `P3` | Anticipation bias | Sidebar and anticipation logic respond to spirit stance and live mood |
 | `P4` | Forensics embodiment | Active hunt spirit exists as a first-class actor in Forensics |
@@ -102,12 +102,11 @@ Dependencies:
 ### `HS-P0-02` Reducer and hydration support
 
 - Extend hunt actions to support:
-  - `HUNT_BIND_SPIRIT`
-  - `HUNT_REBIND_SPIRIT`
+  - `HUNT_CONFIGURE_SPIRIT`
+  - `HUNT_RECONFIGURE_SPIRIT`
   - `HUNT_PIN_SPIRIT`
-  - `HUNT_CLEAR_SPIRIT`
 - Ensure persisted workbench state hydrates safely when spirit fields are absent.
-- Keep `HUNT_CREATE` fast and backward-compatible.
+- Keep `HUNT_CREATE` fast and backward-compatible while ensuring new hunts always receive a default spirit.
 
 Primary paths:
 
@@ -135,12 +134,12 @@ Dependencies:
 
 - `HS-P0-01`
 
-## Phase P1: Spirit Binding
+## Phase P1: Spirit Defaulting And Configuration
 
-### `HS-P1-01` Bind Spirit sheet shell
+### `HS-P1-01` Configure Spirit sheet shell
 
-- Create the non-blocking `Bind Spirit` surface that opens after `HUNT_CREATE`.
-- Support dismiss, reopen, and “skip for now” behavior.
+- Create the non-blocking `Configure Spirit` surface that opens after `HUNT_CREATE`.
+- Support dismiss, reopen, and lightweight “keep default for now” behavior.
 - Keep this anchored to the active hunt instead of making it a separate app.
 
 Primary paths:
@@ -154,10 +153,10 @@ Dependencies:
 - `HS-P0-01`
 - `HS-P0-02`
 
-### `HS-P1-02` Quick Bind and Thesis modes
+### `HS-P1-02` Quick Configure and Thesis modes
 
 - Implement the first two creation modes:
-  - `Quick Bind`
+  - `Quick Configure`
   - `Thesis`
 - Show one primary suggestion, alternates, rationale, and predicted focus surfaces.
 
@@ -185,11 +184,11 @@ Dependencies:
 
 - `HS-P1-02`
 
-### `HS-P1-04` Bind and release behavior
+### `HS-P1-04` Configure and release behavior
 
-- Finalize `Bind Spirit` as an explicit commit.
+- Finalize `Configure Spirit` as an explicit commit over the already-attached default.
 - Trigger immediate updates for dock/sidebar previews.
-- Add a restrained bind confirmation motion instead of a generic toast.
+- Add a restrained settle confirmation motion instead of a generic toast.
 
 Primary paths:
 
@@ -235,9 +234,9 @@ Dependencies:
 
 - `HS-P1-04`
 
-### `HS-P2-03` Existing-hunt add/rebind entrypoints
+### `HS-P2-03` Existing-hunt configure/rebind entrypoints
 
-- Add `Add spirit`, `Rebind spirit`, and `Pin spirit` affordances in the right places.
+- Add `Configure spirit`, `Retune spirit`, and `Pin spirit` affordances in the right places.
 - Good homes:
   - hunt dock flyout
   - smart bucket
@@ -425,7 +424,7 @@ Dependencies:
 
 ### `HS-P6-01` Tests and migration coverage
 
-- Add reducer, selector, and UI coverage for spirit creation and binding.
+- Add reducer, selector, and UI coverage for default-spirit creation and spirit configuration.
 - Add hydration coverage for existing state without spirit payloads.
 
 Primary paths:
@@ -441,8 +440,8 @@ Dependencies:
 
 - Add smoke coverage for:
   - create hunt
-  - bind spirit
-  - rebind spirit
+  - confirm default spirit
+  - reconfigure spirit
   - dock/sidebar propagation
   - Forensics presence
   - Nexus presence
@@ -485,11 +484,11 @@ See [Hunt Spirits Swarm Plan](./hunt-spirits-swarm-plan.md) for the concrete lan
 
 The program is done only when:
 
-- a new hunt can be created and bound to a spirit without blocking hunt creation
+- a new hunt is created with a default spirit immediately and can be reconfigured without blocking hunt creation
 - spirit identity is visible and coherent across dock, smart bucket, tabs, and anticipation copy
 - spirit stance biases anticipation without overriding explicit operator action
 - the active hunt has a readable first-class presence in Forensics and Nexus
-- binding, rebinding, and pinning are all explainable and reversible
+- configuration, rebinding, and pinning are all explainable and reversible
 - the desktop verification gate passes from one clean run
 
 ## Reading Order
