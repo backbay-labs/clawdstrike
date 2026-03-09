@@ -473,13 +473,14 @@ public enum NetworkExtensionStateProjector {
         }
 
         if !inputs.policySynced {
+            let reasons = uniqueReasons(degradedReasons + ["policy_not_synced"])
             return DerivedHealth(
                 installed: true,
                 approvalStatus: approvalStatus,
                 active: true,
                 healthy: false,
                 availability: .degraded,
-                degradedReasons: degradedReasons + ["policy_not_synced"],
+                degradedReasons: reasons,
                 hostRuntime: .degraded(reason: "policy_not_synced"),
                 lastHealthyTimestamp: lastHealthyTimestamp(from: inputs.lastHealthyAt)
             )

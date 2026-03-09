@@ -233,40 +233,6 @@ impl ProviderState {
     }
 
     #[must_use]
-    pub fn inactive_missing_approval(
-        provider: impl Into<String>,
-        reason: impl Into<String>,
-    ) -> Self {
-        Self {
-            provider: provider.into(),
-            installed: true,
-            approval_status: ProviderApprovalStatus::Missing,
-            active: false,
-            healthy: false,
-            availability: ProviderAvailability::Inactive,
-            degraded_reasons: vec![reason.into()],
-            last_healthy_timestamp: None,
-        }
-    }
-
-    #[must_use]
-    pub fn inactive_blocked_approval(
-        provider: impl Into<String>,
-        reason: impl Into<String>,
-    ) -> Self {
-        Self {
-            provider: provider.into(),
-            installed: true,
-            approval_status: ProviderApprovalStatus::Blocked,
-            active: false,
-            healthy: false,
-            availability: ProviderAvailability::Inactive,
-            degraded_reasons: vec![reason.into()],
-            last_healthy_timestamp: None,
-        }
-    }
-
-    #[must_use]
     pub fn degraded(provider: impl Into<String>, reason: impl Into<String>) -> Self {
         Self {
             provider: provider.into(),

@@ -104,6 +104,7 @@ swarm_namespace() {
   local orch_branch
   repo_root="$(swarm_repo_root "${1:-$(pwd)}")"
   if [[ -n "${CLAWDSTRIKE_SWARM_NAMESPACE:-}" ]]; then
+    swarm_assert_safe_namespace_name "$CLAWDSTRIKE_SWARM_NAMESPACE"
     printf '%s\n' "$CLAWDSTRIKE_SWARM_NAMESPACE"
     return
   fi
@@ -122,13 +123,16 @@ swarm_namespace() {
     ' "$(swarm_lane_table "$repo_root")"
   )"
   if [[ -n "$namespace" ]]; then
+    swarm_assert_safe_namespace_name "$namespace"
     printf '%s\n' "$namespace"
     return
   fi
   orch_lane="$(swarm_orchestrator_lane "$repo_root")"
   orch_worktree="$(swarm_lane_field "$orch_lane" worktree "$repo_root")"
   if [[ "$orch_worktree" == *-orch ]]; then
-    printf '%s\n' "${orch_worktree%-orch}"
+    namespace="${orch_worktree%-orch}"
+    swarm_assert_safe_namespace_name "$namespace"
+    printf '%s\n' "$namespace"
     return
   fi
   orch_branch="$(swarm_lane_field "$orch_lane" branch "$repo_root")"
@@ -137,11 +141,14 @@ swarm_namespace() {
     namespace="${namespace%-orchestrator}"
     namespace="${namespace%-orch}"
     if [[ -n "$namespace" ]] && [[ "${namespace,,}" != "orch" ]]; then
+      swarm_assert_safe_namespace_name "$namespace"
       printf '%s\n' "$namespace"
       return
     fi
   fi
-  swarm_repo_name "$repo_root"
+  namespace="$(swarm_repo_name "$repo_root")"
+  swarm_assert_safe_namespace_name "$namespace"
+  printf '%s\n' "$namespace"
 }
 
 swarm_worktrees_dir() {
@@ -251,6 +258,14 @@ swarm_assert_safe_worktree_name() {
   local worktree="$1"
   if [[ -z "$worktree" || "$worktree" == /* || "$worktree" == *..* || "$worktree" =~ [[:space:]] || ! "$worktree" =~ ^[A-Za-z0-9._-]+$ ]]; then
     printf 'Unsafe worktree name: %s\n' "$worktree" >&2
+    exit 1
+  fi
+}
+
+swarm_assert_safe_namespace_name() {
+  local namespace="$1"
+  if [[ -z "$namespace" || "$namespace" == /* || "$namespace" == *..* || "$namespace" =~ [[:space:]] || ! "$namespace" =~ ^[A-Za-z0-9._-]+$ ]]; then
+    printf 'Unsafe swarm namespace: %s\n' "$namespace" >&2
     exit 1
   fi
 }

@@ -73,7 +73,7 @@ fn validate_macos_packaging() -> Result<(), String> {
             .filter_map(|relative_path| {
                 fs::read_to_string(manifest_dir.join(relative_path))
                     .ok()
-                    .filter(|contents| contents.contains("__"))
+                    .filter(|contents| contains_release_placeholder(contents))
                     .map(|_| (*relative_path).to_string())
             })
             .collect::<Vec<_>>();
@@ -108,4 +108,40 @@ fn manifest_dir() -> Result<PathBuf, String> {
     env::var("CARGO_MANIFEST_DIR")
         .map(PathBuf::from)
         .map_err(|error| format!("missing CARGO_MANIFEST_DIR: {error}"))
+}
+
+fn contains_release_placeholder(contents: &str) -> bool {
+    let bytes = contents.as_bytes();
+    let mut start = 0usize;
+
+    while start + 3 < bytes.len() {
+        if bytes[start] != b'_' || bytes[start + 1] != b'_' {
+            start += 1;
+            continue;
+        }
+
+        let mut cursor = start + 2;
+        let mut saw_placeholder_body = false;
+        while cursor < bytes.len() {
+            match bytes[cursor] {
+                b'A'..=b'Z' | b'0'..=b'9' | b'_' => {
+                    saw_placeholder_body = true;
+                    cursor += 1;
+                }
+                _ => break,
+            }
+        }
+
+        if saw_placeholder_body
+            && cursor + 1 < bytes.len()
+            && bytes[cursor] == b'_'
+            && bytes[cursor + 1] == b'_'
+        {
+            return true;
+        }
+
+        start += 1;
+    }
+
+    false
 }
