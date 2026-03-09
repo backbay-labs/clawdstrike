@@ -140,23 +140,27 @@ export function ApprovalQueue() {
   const [denyReason, setDenyReason] = useState("");
   const [scopeDropdownOpen, setScopeDropdownOpen] = useState<string | null>(null);
 
-  // Drives per-second countdown re-renders
-  const [, setTick] = useState(0);
+  // Drives per-second countdown re-renders + auto-expires pending requests
+  const [tick, setTick] = useState(0);
   useEffect(() => {
     const interval = setInterval(() => setTick((t) => t + 1), 1000);
     return () => clearInterval(interval);
   }, []);
 
-  // Auto-expire pending requests client-side
   useEffect(() => {
-    setRequests((prev) =>
-      prev.map((r) =>
-        r.status === "pending" && new Date(r.expiresAt).getTime() <= Date.now()
-          ? { ...r, status: "expired" as const }
-          : r,
-      ),
-    );
-  });
+    const now = Date.now();
+    setRequests((prev) => {
+      let changed = false;
+      const updated = prev.map((r) => {
+        if (r.status === "pending" && new Date(r.expiresAt).getTime() <= now) {
+          changed = true;
+          return { ...r, status: "expired" as const };
+        }
+        return r;
+      });
+      return changed ? updated : prev;
+    });
+  }, [tick]);
 
   useEffect(() => {
     let cancelled = false;
