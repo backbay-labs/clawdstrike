@@ -8,6 +8,20 @@ This guide walks through configuring and operating origin-aware policy enforceme
 - A policy file with schema version `1.4.0` or later
 - Familiarity with [policies](../concepts/policies.md) and [postures](../concepts/postures.md)
 
+## SDK support
+
+Origin-aware enforcement support depends on which SDK backend is actually evaluating the policy:
+
+| Surface | Origin-aware status |
+|--------|----------------------|
+| Rust engine / `hushd` | Full support |
+| TypeScript | Use Rust bridges or `hushd` |
+| Python native backend | Full support |
+| Python daemon backend | Full support |
+| Python pure-Python backend | Fails closed for `policy.origins`, `origin`, and `origin.output_send` |
+| Go daemon backend | Full support |
+| Go local engine | Fails closed for `origin` and `origin.output_send` |
+
 ## Writing an Origins Policy
 
 Add an `origins` block to your policy YAML:
@@ -193,6 +207,38 @@ let result = engine.check_action(&action, &context).await?;
 ```
 
 In TypeScript adapters, origin data flows from the inbound message hook through the `SecurityContext`.
+
+Python can pass either an `OriginContext` object or a mapping with canonical snake_case keys:
+
+```python
+from clawdstrike import Clawdstrike
+
+cs = Clawdstrike.from_daemon("https://hushd.example.com", api_key="dev-token")
+
+decision = cs.check_mcp_tool(
+    "read_file",
+    {"path": "/srv/runbook.md"},
+    origin={
+        "provider": "slack",
+        "tenant_id": "T123",
+        "space_id": "C456",
+        "actor_role": "incident_commander",
+    },
+)
+```
+
+Go origin-aware requests currently go through the daemon-backed SDK:
+
+```go
+origin := guards.NewOriginContext(guards.OriginProviderSlack).
+	WithTenantID("T123").
+	WithSpaceID("C456")
+
+decision := cs.CheckWithContext(
+	guards.McpTool("read_file", map[string]interface{}{"path": "/srv/runbook.md"}),
+	guards.NewContext().WithOrigin(origin),
+)
+```
 
 ## Operational Notes
 

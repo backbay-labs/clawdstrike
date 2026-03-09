@@ -6,10 +6,11 @@ It provides:
 
 - `Clawdstrike` facade with built-in rulesets and typed check methods
 - `Decision` return type aggregating per-guard results
-- 10 pure-Python guards (ForbiddenPath, PathAllowlist, EgressAllowlist, SecretLeak, PatchIntegrity, ShellCommand, McpTool, PromptInjection, Jailbreak, SpiderSense)
-- bundled native Rust engine on supported platforms (pure-Python fallback elsewhere) with all 13 guards
+- pure-Python fallback with a core guard set, including Spider-Sense
+- bundled native Rust engine on supported platforms (pure-Python fallback elsewhere) for the full Rust guard surface
 - crypto + receipt signing/verification compatible with `hush-core`
 - stateful sessions via `ClawdstrikeSession`
+- origin-aware checks on the native and daemon-backed backends
 
 ## Installation
 
@@ -77,9 +78,71 @@ print(f"Denied: {summary.deny_count}")
 print(f"Blocked: {summary.blocked_actions}")
 ```
 
+Session checks keep the session's own `session_id` and `agent_id` pinned. Per-check `origin`,
+`cwd`, request metadata, and `context_metadata` for outbound sends can still vary.
+
+## Origin-aware checks
+
+Current backend support is:
+
+- native backend: supports `policy.origins`, `origin`, and `origin.output_send`
+- daemon backend: supports `policy.origins`, `origin`, and `origin.output_send`
+- pure-Python backend: fails closed with `UnsupportedOriginFeatureError` if you load an origin-aware policy or pass origin-aware request context
+
+```python
+from clawdstrike import Clawdstrike
+
+origin = {
+    "provider": "slack",
+    "tenant_id": "T123",
+    "space_id": "C456",
+    "actor_role": "incident_commander",
+}
+
+cs = Clawdstrike.from_daemon("https://hushd.example.com", api_key="dev-token")
+
+decision = cs.check_mcp_tool(
+    "read_file",
+    {"path": "/srv/runbook.md"},
+    origin=origin,
+)
+
+send_decision = cs.check_output_send(
+    "Posting sanitized status update",
+    target="slack://incident-room",
+    mime_type="text/plain",
+    metadata={"thread_id": "1712502451.000100"},
+    origin=origin,
+)
+```
+
+Session origin changes work too:
+
+```python
+session = cs.session(session_id="sess-123", agent_id="triage-bot")
+
+session.check_file(
+    "/srv/runbook.md",
+    origin={"provider": "github", "space_id": "repo-1"},
+)
+
+session.check_output_send(
+    "Ready for review",
+    target="slack://incident-room",
+    origin={"provider": "slack", "space_id": "C456"},
+    context_metadata={"ticket_id": "INC-2042"},
+)
+```
+
+Wire behavior:
+
+- canonical outbound origin fields are snake_case
+- mapping inputs accept camelCase aliases such as `tenantId`, `spaceId`, and `actorRole`
+- `check_output_send(...)` maps to hushd `action_type: "output_send"`
+
 ## Native Engine
 
-On supported platforms, the SDK auto-selects the bundled native Rust engine for evaluation. All 12 guards run in Rust with full detection capabilities. On unsupported platforms, it falls back to pure Python with 9 guards.
+On supported platforms, the SDK auto-selects the bundled native Rust engine for evaluation. On unsupported platforms, it falls back to pure Python.
 
 Native wheels are published for:
 
@@ -126,3 +189,4 @@ print(all(r.allowed for r in results))
 ## See also
 
 - [Quick Start (Python)](../../getting-started/quick-start-python.md)
+- [Origin Enclaves](../../guides/origin-enclaves.md)
