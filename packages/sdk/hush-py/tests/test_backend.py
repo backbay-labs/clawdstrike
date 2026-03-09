@@ -104,8 +104,11 @@ class TestPurePythonBackend:
 
 
 class _FakeHTTPResponse:
-    def __init__(self, payload: dict[str, object]) -> None:
-        self._payload = json.dumps(payload).encode("utf-8")
+    def __init__(self, payload: object, *, raw: bool = False) -> None:
+        if raw:
+            self._payload = str(payload).encode("utf-8")
+        else:
+            self._payload = json.dumps(payload).encode("utf-8")
 
     def read(self) -> bytes:
         return self._payload
@@ -218,6 +221,44 @@ class TestDaemonEngineBackend:
 
         assert report["overall"]["allowed"] is False
         assert report["overall"]["message"] == "origin.output_send payload must be a mapping"
+
+    def test_post_json_returns_single_result_report_for_invalid_json(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        def _fake_urlopen(request, timeout: float = 0.0):
+            return _FakeHTTPResponse("{not-json", raw=True)
+
+        monkeypatch.setattr("clawdstrike.backend.urllib_request.urlopen", _fake_urlopen)
+        backend = DaemonEngineBackend("https://daemon.example.com")
+
+        parsed = backend._post_json(
+            "https://daemon.example.com/api/v1/check",
+            {"action_type": "shell"},
+        )
+
+        assert parsed["overall"]["allowed"] is False
+        assert parsed["overall"]["guard"] == "daemon"
+        assert parsed["overall"]["message"] == "Daemon returned invalid JSON"
+
+    def test_post_json_returns_single_result_report_for_non_dict_payload(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        def _fake_urlopen(request, timeout: float = 0.0):
+            return _FakeHTTPResponse(["not", "a", "dict"])
+
+        monkeypatch.setattr("clawdstrike.backend.urllib_request.urlopen", _fake_urlopen)
+        backend = DaemonEngineBackend("https://daemon.example.com")
+
+        parsed = backend._post_json(
+            "https://daemon.example.com/api/v1/check",
+            {"action_type": "shell"},
+        )
+
+        assert parsed["overall"]["allowed"] is False
+        assert parsed["overall"]["guard"] == "daemon"
+        assert parsed["overall"]["message"] == "Daemon returned malformed decision payload"
 
     def test_untrusted_text_uses_eval_endpoint(self, monkeypatch: pytest.MonkeyPatch) -> None:
         seen: dict[str, object] = {}

@@ -362,20 +362,10 @@ class DaemonEngineBackend:
         try:
             parsed = json.loads(raw)
         except json.JSONDecodeError:
-            return {
-                "allowed": False,
-                "guard": "daemon",
-                "severity": "critical",
-                "message": "Daemon returned invalid JSON",
-            }
+            return self._daemon_failure("Daemon returned invalid JSON")
 
         if not isinstance(parsed, dict):
-            return {
-                "allowed": False,
-                "guard": "daemon",
-                "severity": "critical",
-                "message": "Daemon returned malformed decision payload",
-            }
+            return self._daemon_failure("Daemon returned malformed decision payload")
         return parsed
 
     def _daemon_failure(self, message: str) -> dict[str, Any]:
