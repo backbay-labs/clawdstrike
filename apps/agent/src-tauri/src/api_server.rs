@@ -1415,6 +1415,14 @@ fn macos_host_health_status(status: &CombinedSystemExtensionStatus) -> &'static 
         status.network_extension.runtime,
         ProviderRuntimeState::Unknown
     );
+    let endpoint_inactive = matches!(
+        status.endpoint_security.runtime,
+        ProviderRuntimeState::Inactive
+    );
+    let network_inactive = matches!(
+        status.network_extension.runtime,
+        ProviderRuntimeState::Inactive
+    );
     let endpoint_degraded = matches!(
         status.endpoint_security.runtime,
         ProviderRuntimeState::Degraded { .. }
@@ -1434,6 +1442,8 @@ fn macos_host_health_status(status: &CombinedSystemExtensionStatus) -> &'static 
         || status.approval == SystemExtensionApproval::Unknown
         || endpoint_unknown
         || network_unknown
+        || endpoint_inactive
+        || network_inactive
     {
         "pending"
     } else if status.install_state == SystemExtensionInstallState::Installed
@@ -3322,7 +3332,7 @@ mod tests {
     }
 
     #[test]
-    fn macos_host_health_status_is_degraded_for_blocked_or_inactive_providers() {
+    fn macos_host_health_status_is_degraded_for_blocked_or_missing_extensions() {
         let blocked = CombinedSystemExtensionStatus {
             approval: SystemExtensionApproval::ApprovalBlocked,
             ..CombinedSystemExtensionStatus::default()
@@ -3334,14 +3344,17 @@ mod tests {
             ..CombinedSystemExtensionStatus::default()
         };
         assert_eq!(macos_host_health_status(&not_installed), "degraded");
+    }
 
+    #[test]
+    fn macos_host_health_status_is_pending_for_inactive_extensions() {
         let inactive = CombinedSystemExtensionStatus {
             install_state: SystemExtensionInstallState::Installed,
             approval: SystemExtensionApproval::Approved,
             endpoint_security: crate::macos::status::ProviderStatus::inactive(),
             network_extension: crate::macos::status::ProviderStatus::inactive(),
         };
-        assert_eq!(macos_host_health_status(&inactive), "degraded");
+        assert_eq!(macos_host_health_status(&inactive), "pending");
     }
 
     #[test]

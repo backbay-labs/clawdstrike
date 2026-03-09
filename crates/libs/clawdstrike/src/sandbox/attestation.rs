@@ -706,6 +706,26 @@ mod tests {
     }
 
     #[test]
+    fn test_static_mode_with_default_provider_state_stays_kernel() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let caps = CapabilitySet::new()
+            .allow_path(tmp.path(), AccessMode::Read)
+            .unwrap();
+
+        let attestation = build_attestation(&caps, SandboxRuntimeState::static_mode(true, None));
+
+        assert_eq!(attestation.enforcement_level, EnforcementLevel::Kernel);
+        assert!(attestation.enforced);
+        #[cfg(target_os = "macos")]
+        {
+            assert_eq!(attestation.runtime.provider_states.len(), 1);
+            assert_eq!(attestation.runtime.provider_states[0].provider, "seatbelt");
+            assert!(attestation.runtime.provider_states[0].active);
+            assert!(attestation.runtime.provider_states[0].healthy);
+        }
+    }
+
+    #[test]
     fn test_build_attestation_supervised() {
         let tmp = tempfile::TempDir::new().unwrap();
         let caps = CapabilitySet::new()
