@@ -24,8 +24,6 @@ const (
 	StatusDeny  = guards.StatusDeny
 )
 
-const localOriginUnsupportedMessage = "origin-aware evaluation is not supported by the local Go engine; use a daemon-backed Clawdstrike instance"
-
 // Clawdstrike is the main entry point for the SDK. It wraps a HushEngine
 // and exposes convenience methods for common security checks.
 type Clawdstrike struct {
@@ -35,10 +33,6 @@ type Clawdstrike struct {
 
 type checker interface {
 	CheckAction(action guards.GuardAction, ctx *guards.GuardContext) guards.GuardResult
-}
-
-type originRuntimeCapable interface {
-	SupportsOriginRuntime() bool
 }
 
 // DaemonConfig configures daemon-backed policy evaluation.
@@ -132,7 +126,7 @@ func (c *Clawdstrike) Check(action guards.GuardAction) Decision {
 
 func (c *Clawdstrike) CheckWithContext(action guards.GuardAction, ctx *guards.GuardContext) Decision {
 	checker := c.effectiveChecker()
-	if originAwareRequest(action, ctx) && !checkerSupportsOriginRuntime(checker) {
+	if guards.IsOriginAwareRequest(action, ctx) && !guards.SupportsOriginRuntime(checker) {
 		return guards.DecisionFromResult(localUnsupportedOriginResult())
 	}
 	result := checker.CheckAction(action, ctx)
@@ -192,15 +186,5 @@ func (c *Clawdstrike) effectiveChecker() checker {
 }
 
 func localUnsupportedOriginResult() guards.GuardResult {
-	return guards.Block("origin", guards.Critical, localOriginUnsupportedMessage)
-}
-
-func originAwareRequest(action guards.GuardAction, ctx *guards.GuardContext) bool {
-	return (ctx != nil && ctx.Origin != nil) ||
-		(action.Type == "custom" && action.CustomType == "origin.output_send")
-}
-
-func checkerSupportsOriginRuntime(checker checker) bool {
-	capable, ok := checker.(originRuntimeCapable)
-	return ok && capable.SupportsOriginRuntime()
+	return guards.Block("origin", guards.Critical, guards.LocalOriginUnsupportedMessage)
 }

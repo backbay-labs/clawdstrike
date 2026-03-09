@@ -40,12 +40,6 @@ type ClawdstrikeSession struct {
 	blockedActions []string
 }
 
-const localOriginUnsupportedMessage = "origin-aware evaluation is not supported by the local Go engine; use a daemon-backed Clawdstrike instance"
-
-type originRuntimeCapable interface {
-	SupportsOriginRuntime() bool
-}
-
 func NewSession(eng Engine, opts Options) *ClawdstrikeSession {
 	id := opts.ID
 	if id == "" {
@@ -75,8 +69,8 @@ func (s *ClawdstrikeSession) CheckWithContext(action guards.GuardAction, ctx *gu
 	s.checkCount.Add(1)
 
 	var result guards.GuardResult
-	if originAwareRequest(action, merged) && !sessionEngineSupportsOrigin(s.engine) {
-		result = guards.Block("origin", guards.Critical, localOriginUnsupportedMessage)
+	if guards.IsOriginAwareRequest(action, merged) && !guards.SupportsOriginRuntime(s.engine) {
+		result = guards.Block("origin", guards.Critical, guards.LocalOriginUnsupportedMessage)
 	} else {
 		result = s.engine.CheckAction(action, merged)
 	}
@@ -152,14 +146,4 @@ func (s *ClawdstrikeSession) mergeContext(ctx *guards.GuardContext) *guards.Guar
 		merged = merged.WithOrigin(ctx.Origin.Clone())
 	}
 	return merged
-}
-
-func originAwareRequest(action guards.GuardAction, ctx *guards.GuardContext) bool {
-	return (ctx != nil && ctx.Origin != nil) ||
-		(action.Type == "custom" && action.CustomType == "origin.output_send")
-}
-
-func sessionEngineSupportsOrigin(eng Engine) bool {
-	capable, ok := eng.(originRuntimeCapable)
-	return ok && capable.SupportsOriginRuntime()
 }
