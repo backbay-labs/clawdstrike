@@ -73,6 +73,9 @@ function buildCleanDoc(policy: WorkbenchPolicy): Record<string, unknown> {
 export function policyToYaml(policy: WorkbenchPolicy): string {
   const doc = buildCleanDoc(policy);
 
+  // NOTE: QUOTE_DOUBLE is intentionally kept over PLAIN to avoid ambiguity with
+  // values that YAML would otherwise interpret as non-strings (e.g., "true", "null",
+  // "1.0", bare timestamps). PLAIN would be more idiomatic but riskier for round-trips.
   return YAML.stringify(doc, {
     indent: 2,
     lineWidth: 120,
@@ -168,6 +171,12 @@ function shouldBeSection(v: unknown): boolean {
   return isTable(v);
 }
 
+/**
+ * Best-effort TOML serializer. Handles up to 3 levels of nesting using TOML
+ * sections and sub-sections. Arrays of objects use [[section.key]] array-of-tables
+ * syntax where possible. For deeply nested values beyond 3 levels, falls back to
+ * JSON representation. A proper TOML library (e.g., @iarna/toml) would be more robust.
+ */
 function tomlSerialize(doc: Record<string, unknown>): string {
   const lines: string[] = [];
 
@@ -187,11 +196,34 @@ function tomlSerialize(doc: Record<string, unknown>): string {
     lines.push(`[${key}]`);
     const obj = value as Record<string, unknown>;
 
-    // Simple keys first
+    // Simple keys first (non-table, non-array-of-tables)
     for (const [k, v] of Object.entries(obj)) {
       if (v === undefined || v === null) continue;
       if (isTable(v)) continue; // handled below as sub-section
+      // Arrays of objects are handled below as [[array-of-tables]]
+      if (Array.isArray(v) && v.length > 0 && v.every((item) => isTable(item))) continue;
       lines.push(`${k} = ${tomlValue(v)}`);
+    }
+
+    // Arrays of objects as [[section.key]] (array-of-tables syntax)
+    for (const [k, v] of Object.entries(obj)) {
+      if (v === undefined || v === null) continue;
+      if (!Array.isArray(v) || v.length === 0 || !v.every((item) => isTable(item))) continue;
+
+      for (const item of v) {
+        lines.push("");
+        lines.push(`[[${key}.${k}]]`);
+        const tableItem = item as Record<string, unknown>;
+        for (const [ik, iv] of Object.entries(tableItem)) {
+          if (iv === undefined || iv === null) continue;
+          if (isTable(iv)) {
+            // Depth 4+: fall back to JSON for deeply nested values
+            lines.push(`${ik} = ${JSON.stringify(iv)}`);
+          } else {
+            lines.push(`${ik} = ${tomlValue(iv)}`);
+          }
+        }
+      }
     }
 
     // Sub-tables as [section.subsection]
@@ -206,8 +238,17 @@ function tomlSerialize(doc: Record<string, unknown>): string {
       for (const [sk, sv] of Object.entries(subObj)) {
         if (sv === undefined || sv === null) continue;
         if (isTable(sv)) {
-          // Third level: inline table
-          lines.push(`${sk} = ${tomlInlineTable(sv as Record<string, unknown>)}`);
+          // Third level: inline table for simple objects, JSON fallback for deep nesting
+          const nested = sv as Record<string, unknown>;
+          const hasDeepNesting = Object.values(nested).some(
+            (nv) => isTable(nv) || (Array.isArray(nv) && nv.some((item) => isTable(item)))
+          );
+          if (hasDeepNesting) {
+            // Depth 4+: fall back to JSON to avoid lossy serialization
+            lines.push(`${sk} = ${JSON.stringify(sv)}`);
+          } else {
+            lines.push(`${sk} = ${tomlInlineTable(nested)}`);
+          }
         } else {
           lines.push(`${sk} = ${tomlValue(sv)}`);
         }
@@ -228,6 +269,32 @@ export function yamlToPolicy(
       return [null, ["YAML must be a mapping/object"]];
     }
 
+    const errors: string[] = [];
+
+    // Runtime validation: ensure guard configs are objects, not primitives
+    if (doc.guards && typeof doc.guards === "object") {
+      for (const [guardId, config] of Object.entries(doc.guards)) {
+        if (config !== null && typeof config !== "object") {
+          errors.push(`Guard "${guardId}" config must be an object, got ${typeof config}`);
+        }
+        if (config && typeof config === "object") {
+          const cfg = config as Record<string, unknown>;
+          // Validate array fields are actually arrays
+          for (const arrayField of ["patterns", "allow", "block", "forbidden_patterns", "forbidden_commands", "secret_patterns"]) {
+            if (arrayField in cfg && cfg[arrayField] !== undefined && !Array.isArray(cfg[arrayField])) {
+              errors.push(`Guard "${guardId}.${arrayField}" must be an array, got ${typeof cfg[arrayField]}`);
+            }
+          }
+          // Validate string fields are actually strings
+          for (const stringField of ["default_action", "mode"]) {
+            if (stringField in cfg && cfg[stringField] !== undefined && typeof cfg[stringField] !== "string") {
+              errors.push(`Guard "${guardId}.${stringField}" must be a string, got ${typeof cfg[stringField]}`);
+            }
+          }
+        }
+      }
+    }
+
     const policy: WorkbenchPolicy = {
       version: doc.version || "1.2.0",
       name: doc.name || "",
@@ -239,7 +306,8 @@ export function yamlToPolicy(
       origins: doc.origins || undefined,
     };
 
-    return [policy, []];
+    // Return policy even with validation errors (for display purposes)
+    return [policy, errors];
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Invalid YAML";
     return [null, [msg]];
@@ -419,7 +487,12 @@ function cleanObject(obj: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(obj)) {
     if (value === undefined || value === null) continue;
-    if (Array.isArray(value) && value.length === 0) continue;
+    // Preserve empty arrays for guard config fields where [] has semantic meaning
+    // (e.g., allow: [] means "nothing allowed", distinct from absent field)
+    if (Array.isArray(value) && value.length === 0) {
+      const PRESERVE_EMPTY = ["allow", "block", "patterns", "forbidden_patterns", "forbidden_commands", "secret_patterns"];
+      if (!PRESERVE_EMPTY.includes(key)) continue;
+    }
     result[key] = value;
   }
   return result;

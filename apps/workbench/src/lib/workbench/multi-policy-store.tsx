@@ -4,6 +4,7 @@ import React, {
   useReducer,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   type ReactNode,
 } from "react";
@@ -626,8 +627,8 @@ function persistTabs(state: MultiPolicyState): void {
       activeTabId: state.activeTabId,
     };
     localStorage.setItem(TABS_STORAGE_KEY, JSON.stringify(persisted));
-  } catch {
-    // ignore
+  } catch (e) {
+    console.warn("[multi-policy-store] persistTabs localStorage operation failed:", e);
   }
 }
 
@@ -635,8 +636,14 @@ function loadPersistedTabs(): MultiPolicyState | null {
   try {
     const raw = localStorage.getItem(TABS_STORAGE_KEY);
     if (!raw) return null;
-    const persisted: PersistedTabState = JSON.parse(raw);
-    if (!persisted.tabs || persisted.tabs.length === 0) return null;
+    const parsed = JSON.parse(raw);
+    // Validate persisted data shape
+    if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.tabs)) {
+      console.warn("[multi-policy-store] Invalid persisted tab data, using defaults");
+      return null;
+    }
+    const persisted = parsed as PersistedTabState;
+    if (persisted.tabs.length === 0) return null;
 
     const tabs: PolicyTab[] = persisted.tabs.map((pt) => {
       const [policy] = yamlToPolicy(pt.yaml);
@@ -674,7 +681,8 @@ function loadPersistedTabs(): MultiPolicyState | null {
         editorSyncDirection: null,
       },
     };
-  } catch {
+  } catch (e) {
+    console.warn("[multi-policy-store] loadPersistedTabs failed:", e);
     return null;
   }
 }
@@ -682,11 +690,12 @@ function loadPersistedTabs(): MultiPolicyState | null {
 function pushRecentFile(filePath: string): void {
   try {
     const stored = localStorage.getItem(RECENT_FILES_KEY);
-    const existing: string[] = stored ? JSON.parse(stored) : [];
-    const updated = [filePath, ...existing.filter((p) => p !== filePath)].slice(0, MAX_RECENT_FILES);
+    const parsed = stored ? JSON.parse(stored) : [];
+    const files = Array.isArray(parsed) ? parsed.filter((f): f is string => typeof f === "string") : [];
+    const updated = [filePath, ...files.filter((p) => p !== filePath)].slice(0, MAX_RECENT_FILES);
     localStorage.setItem(RECENT_FILES_KEY, JSON.stringify(updated));
-  } catch {
-    // ignore
+  } catch (e) {
+    console.warn("[multi-policy-store] pushRecentFile localStorage operation failed:", e);
   }
 }
 
@@ -791,8 +800,8 @@ export function MultiPolicyProvider({ children }: { children: ReactNode }) {
         const policies: SavedPolicy[] = JSON.parse(stored);
         multiDispatch({ type: "LOAD_SAVED_POLICIES", policies });
       }
-    } catch {
-      // ignore
+    } catch (e) {
+      console.warn("[multi-policy-store] hydrate saved policies failed:", e);
     }
   }, []);
 
@@ -800,8 +809,8 @@ export function MultiPolicyProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     try {
       localStorage.setItem(SAVED_POLICIES_KEY, JSON.stringify(multiState.savedPolicies));
-    } catch {
-      // ignore
+    } catch (e) {
+      console.warn("[multi-policy-store] persist saved policies failed:", e);
     }
   }, [multiState.savedPolicies]);
 
@@ -817,9 +826,26 @@ export function MultiPolicyProvider({ children }: { children: ReactNode }) {
     };
   }, [multiState.tabs, multiState.activeTabId]);
 
-  // Compute backward-compatible WorkbenchState
-  const workbenchState = toWorkbenchState(multiState);
   const currentTab = activeTab(multiState);
+
+  // Compute backward-compatible WorkbenchState, memoized to avoid creating a
+  // new reference on every render when the inputs haven't changed.
+  const workbenchState = useMemo(
+    () => toWorkbenchState(multiState),
+    [
+      currentTab?.policy,
+      currentTab?.yaml,
+      currentTab?.validation,
+      currentTab?.nativeValidation,
+      currentTab?.filePath,
+      currentTab?.dirty,
+      currentTab?._undoPast,
+      currentTab?._undoFuture,
+      currentTab?._cleanSnapshot,
+      multiState.savedPolicies,
+      multiState.ui,
+    ],
+  );
 
   // Bridge dispatch: WorkbenchAction -> MultiPolicyAction
   // The type sets are identical, so we can forward directly

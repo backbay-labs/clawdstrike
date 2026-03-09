@@ -95,7 +95,8 @@ function normalizeDecision(raw: string): Verdict {
   if (lower === "allow" || lower === "allowed" || lower === "pass") return "allow";
   if (lower === "deny" || lower === "denied" || lower === "blocked" || lower === "block") return "deny";
   if (lower === "warn" || lower === "warning") return "warn";
-  return "allow";
+  // Fail-closed: unknown decisions default to deny
+  return "deny";
 }
 
 /** Derive category from decision. */

@@ -71,6 +71,7 @@ function jsonResult(data: unknown, isError = false) {
 /** Key-order-independent deep equality for parsed config values. */
 function deepEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true;
+  if (typeof a === "number" && typeof b === "number" && Number.isNaN(a) && Number.isNaN(b)) return true;
   if (a == null || b == null) return a === b;
   if (typeof a !== typeof b) return false;
   if (Array.isArray(a)) {
@@ -121,7 +122,7 @@ server.tool(
     }
 
     const scenario: TestScenario = {
-      id: `custom-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      id: `custom-${crypto.randomUUID()}`,
       name,
       description,
       category,
@@ -147,6 +148,16 @@ server.tool(
       scenario = JSON.parse(scenario_json);
     } catch {
       return textResult("Invalid JSON in scenario_json parameter", true);
+    }
+
+    if (!scenario || typeof scenario !== "object") {
+      return textResult("Invalid scenario: must be a JSON object", true);
+    }
+    if (!scenario.actionType || typeof scenario.actionType !== "string") {
+      return textResult("Invalid scenario: missing or invalid actionType", true);
+    }
+    if (!scenario.payload || typeof scenario.payload !== "object") {
+      return textResult("Invalid scenario: missing or invalid payload", true);
     }
 
     let policy: WorkbenchPolicy;
@@ -185,12 +196,35 @@ server.tool(
     policy_yaml: z.string().describe("Policy YAML string to evaluate against"),
   },
   async ({ scenarios_json, policy_yaml }) => {
+    const MAX_BATCH_SIZE = 500;
+    const MAX_PAYLOAD_SIZE = 1_000_000; // 1MB total
+
+    if (scenarios_json.length > MAX_PAYLOAD_SIZE) {
+      return textResult(`Scenario batch too large: ${scenarios_json.length} bytes (max ${MAX_PAYLOAD_SIZE})`, true);
+    }
+
     let scenarios: TestScenario[];
     try {
       scenarios = JSON.parse(scenarios_json);
       if (!Array.isArray(scenarios)) throw new Error("Expected array");
     } catch {
       return textResult("Invalid JSON array in scenarios_json parameter", true);
+    }
+
+    if (scenarios.length > MAX_BATCH_SIZE) {
+      return textResult(`Too many scenarios: ${scenarios.length} (max ${MAX_BATCH_SIZE})`, true);
+    }
+
+    for (const scenario of scenarios) {
+      if (!scenario || typeof scenario !== "object") {
+        return textResult("Invalid scenario: must be a JSON object", true);
+      }
+      if (!scenario.actionType || typeof scenario.actionType !== "string") {
+        return textResult("Invalid scenario: missing or invalid actionType", true);
+      }
+      if (!scenario.payload || typeof scenario.payload !== "object") {
+        return textResult("Invalid scenario: missing or invalid payload", true);
+      }
     }
 
     let policy: WorkbenchPolicy;
@@ -277,10 +311,19 @@ server.tool(
   "Synthesize a candidate security policy from JSONL agent activity events. Each event line needs action_type and target fields.",
   {
     events_jsonl: z.string().describe("JSONL string — one JSON event per line with action_type, target, and optional content"),
-    base_ruleset: z.string().optional().describe("Base ruleset to extend (default, strict, permissive, ai-agent)"),
+    base_ruleset: z.enum([
+      "default", "strict", "permissive", "ai-agent", "cicd",
+      "ai-agent-posture", "remote-desktop", "remote-desktop-permissive",
+      "remote-desktop-strict", "spider-sense"
+    ]).optional().describe("Built-in ruleset to extend from"),
     name: z.string().optional().describe("Name for the synthesized policy"),
   },
   async ({ events_jsonl, base_ruleset, name: policyName }) => {
+    const lines = events_jsonl.split("\n").filter(Boolean);
+    if (lines.length > 10_000) {
+      return textResult("Too many events: max 10,000 lines", true);
+    }
+
     const [events, parseErrors] = parseEventLog(events_jsonl);
 
     if (events.length === 0) {

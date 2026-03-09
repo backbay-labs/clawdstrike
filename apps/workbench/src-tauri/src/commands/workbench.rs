@@ -3,6 +3,8 @@
 //! These commands integrate directly with the `clawdstrike` and `hush-core` crates
 //! without requiring a running daemon. All evaluation happens in-process.
 
+use std::path::Path;
+
 use serde::{Deserialize, Serialize};
 
 use clawdstrike::error::{Error as CsError, PolicyValidationError};
@@ -15,6 +17,87 @@ use clawdstrike::{GuardReport, HushEngine, PostureAwareReport};
 use hush_core::receipt::{Receipt, Verdict};
 use hush_core::signing::{PublicKey, Signature};
 use hush_core::{sha256, Hash, Keypair, SignedReceipt};
+
+/// Maximum allowed size for policy content (2 MiB).
+const MAX_POLICY_SIZE: usize = 2_097_152;
+
+/// Sensitive path prefixes and suffixes that must never be read from or written to.
+const SENSITIVE_PATTERNS: &[&str] = &[
+    "/.ssh",
+    "/.gnupg",
+    "/.aws",
+    "/etc/",
+];
+
+/// Sensitive file names (matched against the final path component or suffix).
+const SENSITIVE_SUFFIXES: &[&str] = &[
+    ".bashrc",
+    ".zshrc",
+    ".profile",
+    ".bash_profile",
+];
+
+/// Validate that a filesystem path is safe for import/export operations.
+///
+/// Rejects paths with `..` segments after normalization and paths that target
+/// sensitive directories or files.
+fn validate_file_path(path: &str) -> Result<(), String> {
+    if path.is_empty() {
+        return Err("Empty file path".into());
+    }
+
+    let p = Path::new(path);
+
+    // Canonicalize the parent directory (the file itself may not exist yet for
+    // export). Fall back to the raw path if the parent doesn't exist either.
+    let normalized = if let Some(parent) = p.parent() {
+        if parent.exists() {
+            let canon_parent = parent
+                .canonicalize()
+                .map_err(|e| format!("Cannot resolve parent directory: {}", e))?;
+            let file_name = p.file_name().unwrap_or_default();
+            canon_parent.join(file_name)
+        } else {
+            p.to_path_buf()
+        }
+    } else {
+        p.to_path_buf()
+    };
+
+    let normalized_str = normalized.to_string_lossy();
+
+    // Reject paths that still contain ".." after normalization.
+    for component in normalized.components() {
+        if let std::path::Component::ParentDir = component {
+            return Err(format!(
+                "Path traversal detected: path contains '..' segment after normalization: {}",
+                normalized_str
+            ));
+        }
+    }
+
+    // Check sensitive prefixes.
+    for pattern in SENSITIVE_PATTERNS {
+        if normalized_str.contains(pattern) {
+            return Err(format!(
+                "Refusing to access sensitive path (matches '{}'): {}",
+                pattern, normalized_str
+            ));
+        }
+    }
+
+    // Check sensitive suffixes.
+    for suffix in SENSITIVE_SUFFIXES {
+        if normalized_str.ends_with(suffix) {
+            return Err(format!(
+                "Refusing to access sensitive file (matches '*{}'): {}",
+                suffix, normalized_str
+            ));
+        }
+    }
+
+    Ok(())
+}
 
 // ---------------------------------------------------------------------------
 // Response types
@@ -157,7 +240,7 @@ pub struct ImportResponse {
 
 /// Input receipt for chain verification (matches the frontend Receipt type).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ChainReceiptInput {
     pub id: String,
     pub timestamp: String,
@@ -283,6 +366,9 @@ fn build_evaluation_path(report: &GuardReport) -> Vec<EvaluationPathStep> {
 
 /// Parse a "host:port" string, defaulting to port 443 when omitted.
 fn parse_host_port(target: &str) -> Result<(&str, u16), String> {
+    if target.is_empty() {
+        return Err("Empty target".into());
+    }
     if let Some((h, p)) = target.rsplit_once(':') {
         let port: u16 = p.parse().map_err(|_| format!("Invalid port: {}", p))?;
         Ok((h, port))
@@ -357,6 +443,13 @@ fn posture_report_from_aware(
     }
 }
 
+/// Check whether a timestamp string has the basic ISO 8601 UTC structure
+/// required for reliable lexicographic comparison (`*T*Z`, at least 20 chars).
+fn is_valid_utc_timestamp(ts: &str) -> bool {
+    // Must end with Z and have the basic ISO 8601 structure
+    ts.ends_with('Z') && ts.len() >= 20 && ts.contains('T')
+}
+
 /// Try to verify an Ed25519 signature. Returns `(Some(bool), reason)` if
 /// verification was attempted, or `(None, reason)` if the inputs could not be
 /// parsed (verification skipped).
@@ -399,6 +492,14 @@ fn verify_receipt_signature(
 /// Parse and validate policy YAML, returning structured results.
 #[tauri::command]
 pub async fn validate_policy(yaml: String) -> Result<ValidationResponse, String> {
+    if yaml.len() > MAX_POLICY_SIZE {
+        return Err(format!(
+            "Input too large: {} bytes (max {})",
+            yaml.len(),
+            MAX_POLICY_SIZE
+        ));
+    }
+
     let policy = match parse_policy_lax(&yaml) {
         Ok(p) => p,
         Err(parse_err) => {
@@ -499,6 +600,14 @@ pub async fn simulate_action(
     target: String,
     content: Option<String>,
 ) -> Result<SimulationResponse, String> {
+    if policy_yaml.len() > MAX_POLICY_SIZE {
+        return Err(format!(
+            "Input too large: {} bytes (max {})",
+            policy_yaml.len(),
+            MAX_POLICY_SIZE
+        ));
+    }
+
     let policy = load_policy_lax(&policy_yaml)?;
 
     let engine = HushEngine::with_policy(policy);
@@ -563,6 +672,23 @@ pub async fn simulate_action_with_posture(
     content: Option<String>,
     posture_state_json: Option<String>,
 ) -> Result<PostureSimulationResponse, String> {
+    if policy_yaml.len() > MAX_POLICY_SIZE {
+        return Err(format!(
+            "Input too large: {} bytes (max {})",
+            policy_yaml.len(),
+            MAX_POLICY_SIZE
+        ));
+    }
+    if let Some(ref psj) = posture_state_json {
+        if psj.len() > MAX_POLICY_SIZE {
+            return Err(format!(
+                "Posture state too large: {} bytes (max {})",
+                psj.len(),
+                MAX_POLICY_SIZE
+            ));
+        }
+    }
+
     let policy = load_policy_lax(&policy_yaml)?;
 
     let mut posture_state: Option<PostureRuntimeState> = match posture_state_json {
@@ -641,6 +767,13 @@ pub async fn simulate_action_with_posture(
 
 /// Generate an ephemeral keypair, create a receipt for the given content hash
 /// and verdict, sign it, and return the result.
+///
+/// # Security Note
+///
+/// This command generates a fresh ephemeral Ed25519 keypair per invocation.
+/// The private key is dropped when the function returns. This is suitable for
+/// workbench demonstration and testing only — NOT for production signing.
+/// For production use, keys should be loaded from a keystore or HSM.
 #[tauri::command]
 pub async fn sign_receipt(
     content_hash: String,
@@ -680,6 +813,15 @@ pub async fn sign_receipt(
 
 /// Verify a chain of receipts: check Ed25519 signatures, timestamp ordering,
 /// and compute a chain hash from concatenated per-receipt hashes.
+///
+/// # Note
+///
+/// Chain verification uses a colon-delimited canonical format
+/// (`id:timestamp:verdict:guard:policy_name`) for signature verification and
+/// hashing. This is **different** from `SignedReceipt::sign()`, which signs
+/// RFC 8785 canonical JSON of the `Receipt` struct. These are two separate
+/// integrity mechanisms — chain-level signatures must be produced against the
+/// chain canonical format, not the receipt JSON.
 #[tauri::command]
 pub async fn verify_receipt_chain(
     receipts: Vec<ChainReceiptInput>,
@@ -700,8 +842,17 @@ pub async fn verify_receipt_chain(
     let mut sorted = receipts.clone();
     sorted.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
 
+    // Validate that all timestamps conform to ISO 8601 with Z suffix so that
+    // lexicographic comparison is correct (Fix #19).
+    let non_conforming_timestamps: Vec<&str> = sorted
+        .iter()
+        .filter(|r| !is_valid_utc_timestamp(&r.timestamp))
+        .map(|r| r.timestamp.as_str())
+        .collect();
+
     let mut per_receipt: Vec<ChainReceiptVerification> = Vec::with_capacity(sorted.len());
     let mut any_sig_failed = false;
+    let mut any_sig_verified = false;
     let mut timestamps_ordered = true;
     let mut chain_hash_input = Vec::new();
 
@@ -742,6 +893,9 @@ pub async fn verify_receipt_chain(
             canonical_content.as_bytes(),
         );
 
+        if sig_valid == Some(true) {
+            any_sig_verified = true;
+        }
         if sig_valid == Some(false) {
             any_sig_failed = true;
         }
@@ -757,9 +911,13 @@ pub async fn verify_receipt_chain(
     }
 
     let chain_hash = sha256(&chain_hash_input).to_hex();
-    let chain_intact = !any_sig_failed && timestamps_ordered;
+    // Chain is intact only when no signatures explicitly failed, timestamps are
+    // ordered, and at least one signature was positively verified (or the chain
+    // is empty). Unparseable signatures alone no longer count as "valid". (#20)
+    let chain_intact =
+        !any_sig_failed && timestamps_ordered && (any_sig_verified || sorted.is_empty());
 
-    let summary = if chain_intact {
+    let mut summary = if chain_intact {
         format!(
             "Chain of {} receipt(s) verified successfully.",
             sorted.len()
@@ -768,6 +926,9 @@ pub async fn verify_receipt_chain(
         let mut issues = Vec::new();
         if any_sig_failed {
             issues.push("signature verification failure(s)");
+        }
+        if !any_sig_verified && !sorted.is_empty() {
+            issues.push("no signatures could be positively verified");
         }
         if !timestamps_ordered {
             issues.push("timestamp ordering violation(s)");
@@ -778,6 +939,15 @@ pub async fn verify_receipt_chain(
             issues.join(", ")
         )
     };
+
+    // Append a warning if any timestamps don't conform to the expected format.
+    if !non_conforming_timestamps.is_empty() {
+        summary.push_str(&format!(
+            " Warning: {} timestamp(s) do not conform to ISO 8601 UTC format (expected *T*Z); \
+             lexicographic ordering may be unreliable.",
+            non_conforming_timestamps.len()
+        ));
+    }
 
     Ok(ChainVerificationResponse {
         receipts: per_receipt,
@@ -802,6 +972,16 @@ pub async fn export_policy_file(
     path: String,
     format: Option<String>,
 ) -> Result<ExportResponse, String> {
+    if content.len() > MAX_POLICY_SIZE {
+        return Err(format!(
+            "Input too large: {} bytes (max {})",
+            content.len(),
+            MAX_POLICY_SIZE
+        ));
+    }
+
+    validate_file_path(&path)?;
+
     let fmt = format.as_deref().unwrap_or("yaml");
 
     let policy = match fmt {
@@ -825,7 +1005,7 @@ pub async fn export_policy_file(
             .map_err(|e| format!("JSON serialization error: {}", e))?,
         "toml" => toml::to_string_pretty(&policy)
             .map_err(|e| format!("TOML serialization error: {}", e))?,
-        _ => content.clone(),
+        _ => content,
     };
 
     tokio::fs::write(&path, output.as_bytes())
@@ -842,6 +1022,8 @@ pub async fn export_policy_file(
 /// Read a YAML file from disk, parse and validate it, and return structured results.
 #[tauri::command]
 pub async fn import_policy_file(path: String) -> Result<ImportResponse, String> {
+    validate_file_path(&path)?;
+
     let yaml = tokio::fs::read_to_string(&path)
         .await
         .map_err(|e| format!("Failed to read file: {}", e))?;
@@ -1802,8 +1984,9 @@ posture:
         };
 
         let res = verify_receipt_chain(vec![r]).await.unwrap();
-        // Skipped sigs don't break chain integrity.
-        assert!(res.chain_intact);
+        // Unparseable signatures are not positively verified, so the chain is
+        // not considered intact (no signature was verified). (#20)
+        assert!(!res.chain_intact);
         assert_eq!(res.receipts[0].signature_valid, None);
     }
 

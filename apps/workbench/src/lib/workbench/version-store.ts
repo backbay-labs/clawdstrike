@@ -50,6 +50,12 @@ export function isValidTagName(name: string): boolean {
   return TAG_RE.test(name);
 }
 
+// ---- Markdown escaping ----
+
+function escapeMd(s: string): string {
+  return s.replace(/([#*_\[\]`|~\\>])/g, "\\$1");
+}
+
 // ---- IndexedDB wrapper ----
 
 function openDB(): Promise<IDBDatabase> {
@@ -142,8 +148,22 @@ export class VersionStore {
     const db = this.ensureDB();
     const hash = await sha256Hex(yaml);
 
-    // Check for dedup: if latest version has the same hash, skip
-    const latest = await this.getLatestVersion(policyId);
+    // Single readwrite transaction: dedup-check + insert atomically
+    const tx = db.transaction(VERSIONS_STORE, "readwrite");
+    const store = tx.objectStore(VERSIONS_STORE);
+    const index = store.index("policyId_version");
+    const range = IDBKeyRange.bound([policyId, 0], [policyId, Number.MAX_SAFE_INTEGER]);
+    const cursorReq = index.openCursor(range, "prev");
+
+    const latest = await new Promise<PolicyVersion | null>((resolve, reject) => {
+      cursorReq.onsuccess = () => {
+        const cursor = cursorReq.result;
+        resolve(cursor ? (cursor.value as PolicyVersion) : null);
+      };
+      cursorReq.onerror = () => reject(cursorReq.error);
+    });
+
+    // Dedup: if latest version has the same hash, skip
     if (latest && latest.hash === hash) {
       return latest;
     }
@@ -164,9 +184,17 @@ export class VersionStore {
       hash,
     };
 
-    const tx = db.transaction(VERSIONS_STORE, "readwrite");
-    tx.objectStore(VERSIONS_STORE).add(version);
-    await txPromise(tx);
+    try {
+      store.add(version);
+      await txPromise(tx);
+    } catch (err) {
+      // Handle ConstraintError gracefully (e.g. duplicate key from concurrent save)
+      if (err instanceof DOMException && err.name === "ConstraintError") {
+        console.warn("[version-store] ConstraintError on save, returning latest version");
+        return latest ?? version;
+      }
+      throw err;
+    }
 
     return version;
   }
@@ -310,13 +338,12 @@ export class VersionStore {
   async deleteOldVersions(policyId: string, keepCount: number): Promise<void> {
     const db = this.ensureDB();
 
-    // Get all versions for this policy, newest first
+    // Single readwrite transaction: delete inline during cursor walk
     const tx = db.transaction([VERSIONS_STORE, TAGS_STORE], "readwrite");
     const index = tx.objectStore(VERSIONS_STORE).index("policyId_version");
     const range = IDBKeyRange.bound([policyId, 0], [policyId, Number.MAX_SAFE_INTEGER]);
     const req = index.openCursor(range, "prev");
 
-    const toDelete: string[] = [];
     let kept = 0;
 
     await new Promise<void>((resolve, reject) => {
@@ -330,9 +357,9 @@ export class VersionStore {
         if (kept < keepCount) {
           kept++;
         } else {
-          // Only delete untagged versions
+          // Only delete untagged versions — delete within the same transaction
           if (version.tags.length === 0) {
-            toDelete.push(version.id);
+            cursor.delete();
           }
         }
         cursor.continue();
@@ -340,15 +367,7 @@ export class VersionStore {
       req.onerror = () => reject(req.error);
     });
 
-    // Delete in a new transaction
-    if (toDelete.length > 0) {
-      const deleteTx = db.transaction(VERSIONS_STORE, "readwrite");
-      const store = deleteTx.objectStore(VERSIONS_STORE);
-      for (const id of toDelete) {
-        store.delete(id);
-      }
-      await txPromise(deleteTx);
-    }
+    await txPromise(tx);
   }
 
   async getVersionCount(policyId: string): Promise<number> {
@@ -370,7 +389,7 @@ export class VersionStore {
     const policyName = versions[0]?.policy.name ?? "Policy";
 
     const lines: string[] = [
-      `# Changelog: ${policyName}`,
+      `# Changelog: ${escapeMd(policyName)}`,
       "",
       `Generated: ${new Date().toISOString()}`,
       "",
@@ -389,14 +408,14 @@ export class VersionStore {
 
       let heading = `## v${v.version} - ${date}`;
       if (v.tags.length > 0) {
-        heading += ` [${v.tags.join(", ")}]`;
+        heading += ` [${v.tags.map(escapeMd).join(", ")}]`;
       }
 
       lines.push(heading);
       lines.push("");
 
       if (v.message) {
-        lines.push(v.message);
+        lines.push(escapeMd(v.message));
         lines.push("");
       }
 

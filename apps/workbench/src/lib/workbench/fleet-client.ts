@@ -9,7 +9,8 @@ function proxyUrl(absoluteUrl: string, kind: "hushd" | "control"): string {
   try {
     const u = new URL(absoluteUrl);
     return `/_proxy/${kind}${u.pathname}${u.search}`;
-  } catch {
+  } catch (e) {
+    console.warn("[fleet-client] URL parse failed for proxy rewrite:", e);
     return absoluteUrl;
   }
 }
@@ -31,6 +32,8 @@ async function httpFetch(
   return fn(input, init);
 }
 
+// SECURITY: Credentials stored in plaintext localStorage as a temporary measure.
+// TODO: Migrate to tauri-plugin-stronghold or OS keychain for production.
 const LS_HUSHD_URL = "clawdstrike_hushd_url";
 const LS_CONTROL_API_URL = "clawdstrike_control_api_url";
 const LS_API_KEY = "clawdstrike_api_key";
@@ -140,7 +143,8 @@ export function loadSavedConnection(): Partial<FleetConnection> {
       apiKey: localStorage.getItem(LS_API_KEY) ?? "",
       controlApiToken: localStorage.getItem(LS_CONTROL_TOKEN) ?? "",
     };
-  } catch {
+  } catch (e) {
+    console.warn("[fleet-client] localStorage read failed:", e);
     return { hushdUrl: "", controlApiUrl: "", apiKey: "", controlApiToken: "" };
   }
 }
@@ -156,7 +160,9 @@ export function saveConnectionConfig(config: {
     localStorage.setItem(LS_CONTROL_API_URL, config.controlApiUrl);
     localStorage.setItem(LS_API_KEY, config.apiKey);
     localStorage.setItem(LS_CONTROL_TOKEN, config.controlApiToken);
-  } catch { /* ignore in test env */ }
+  } catch (e) {
+    console.warn("[fleet-client] localStorage write failed:", e);
+  }
 }
 
 export function clearConnectionConfig() {
@@ -165,7 +171,19 @@ export function clearConnectionConfig() {
     localStorage.removeItem(LS_CONTROL_API_URL);
     localStorage.removeItem(LS_API_KEY);
     localStorage.removeItem(LS_CONTROL_TOKEN);
-  } catch { /* ignore in test env */ }
+  } catch (e) {
+    console.warn("[fleet-client] localStorage removeItem failed:", e);
+  }
+}
+
+/** Clear all stored credentials. Call on disconnect / logout. */
+export function clearCredentials() {
+  try {
+    localStorage.removeItem(LS_API_KEY);
+    localStorage.removeItem(LS_CONTROL_TOKEN);
+  } catch (e) {
+    console.warn("[fleet-client] localStorage credential removal failed:", e);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -262,7 +280,8 @@ export async function validateRemotely(
 export async function fetchAgentCount(conn: FleetConnection): Promise<number> {
   try {
     return (await fetchAgentList(conn)).length;
-  } catch {
+  } catch (e) {
+    console.warn("[fleet-client] fetchAgentCount failed:", e);
     return 0;
   }
 }
@@ -276,7 +295,8 @@ export async function fetchAgentList(conn: FleetConnection): Promise<AgentInfo[]
       { headers: hushdHeaders(conn.apiKey) },
     );
     return res.endpoints ?? [];
-  } catch {
+  } catch (e) {
+    console.warn("[fleet-client] hushd agent list failed, trying control-api:", e);
     if (!conn.controlApiUrl) return [];
     const ctrlUrl = stripTrailingSlash(conn.controlApiUrl);
     return jsonFetch<AgentInfo[]>(proxyUrl(`${ctrlUrl}/api/v1/agents`, "control"), {
@@ -390,31 +410,40 @@ export async function fetchDelegationGraphFromApi(
   if (!conn.controlApiUrl) return null;
   const url = stripTrailingSlash(conn.controlApiUrl);
   try {
-    const grants = await jsonFetch<any[]>(proxyUrl(`${url}/api/v1/grants`, "control"), {
+    const grants = await jsonFetch<unknown[]>(proxyUrl(`${url}/api/v1/grants`, "control"), {
       headers: controlHeaders(conn),
     });
-    return grants.length > 0 ? grantsToGraph(grants) : null;
-  } catch {
+    // Validate grant shape before processing
+    const validGrants = (grants as unknown[]).filter((g): g is Record<string, unknown> => {
+      if (!g || typeof g !== "object") return false;
+      const obj = g as Record<string, unknown>;
+      return typeof obj.id === "string"
+        && typeof obj.issuer_principal_id === "string"
+        && typeof obj.subject_principal_id === "string";
+    });
+    return validGrants.length > 0 ? grantsToGraph(validGrants) : null;
+  } catch (e) {
+    console.warn("[fleet-client] Failed to fetch delegation graph:", e);
     return null;
   }
 }
 
-function grantsToGraph(grants: any[]): DelegationGraph {
+function grantsToGraph(grants: Record<string, unknown>[]): DelegationGraph {
   const nodesMap = new Map<string, DelegationNode>();
   const edges: DelegationEdge[] = [];
 
   for (const g of grants) {
-    for (const pid of [g.issuer_principal_id, g.subject_principal_id]) {
+    for (const pid of [g.issuer_principal_id as string, g.subject_principal_id as string]) {
       if (!nodesMap.has(pid)) {
         nodesMap.set(pid, { id: pid, kind: "Principal", label: pid, metadata: {} });
       }
     }
 
-    const grantId = `grant-${g.id}`;
+    const grantId = `grant-${g.id as string}`;
     nodesMap.set(grantId, {
       id: grantId,
       kind: "Grant",
-      label: g.grant_type || "delegation",
+      label: (g.grant_type as string) || "delegation",
       metadata: {
         depth: g.delegation_depth,
         status: g.status,
@@ -423,15 +452,15 @@ function grantsToGraph(grants: any[]): DelegationGraph {
       },
     });
     edges.push({
-      id: `edge-issued-${g.id}`,
-      from: g.issuer_principal_id,
+      id: `edge-issued-${g.id as string}`,
+      from: g.issuer_principal_id as string,
       to: grantId,
       kind: "IssuedGrant",
     });
     edges.push({
-      id: `edge-received-${g.id}`,
+      id: `edge-received-${g.id as string}`,
       from: grantId,
-      to: g.subject_principal_id,
+      to: g.subject_principal_id as string,
       kind: "ReceivedGrant",
     });
   }
@@ -466,7 +495,8 @@ export const fleetClient = {
     try {
       await testConnection(conn.hushdUrl, conn.apiKey);
       return true;
-    } catch {
+    } catch (e) {
+      console.warn("[fleet-client] healthCheck failed:", e);
       return false;
     }
   },
@@ -481,7 +511,8 @@ export const fleetClient = {
     if (!conn.controlApiUrl && !conn.hushdUrl) return null;
     try {
       return await fetchApprovals(conn);
-    } catch {
+    } catch (e) {
+      console.warn("[fleet-client] fetchApprovals failed:", e);
       return null;
     }
   },

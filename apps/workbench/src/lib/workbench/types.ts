@@ -120,6 +120,11 @@ export interface InputInjectionCapabilityConfig {
 export interface SpiderSenseConfig {
   enabled?: boolean;
   embedding_api_url?: string;
+  /**
+   * API key for embedding service.
+   * WARNING: This value is included in YAML exports and localStorage persistence.
+   * Do not use production API keys in the workbench.
+   */
   embedding_api_key?: string;
   embedding_model?: string;
   similarity_threshold?: number;

@@ -124,6 +124,12 @@ export function useNativeValidation(
             valid,
           },
         });
+      }).catch((err) => {
+        console.error("[native-validation] IPC call failed:", err);
+        dispatch({
+          type: "SET_NATIVE_VALIDATION",
+          payload: { guardErrors: {}, topLevelErrors: [], loading: false, valid: null },
+        });
       });
     }, DEBOUNCE_MS);
 

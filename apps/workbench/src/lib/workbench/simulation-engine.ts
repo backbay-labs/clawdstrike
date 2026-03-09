@@ -24,6 +24,21 @@ import { gradeSimulationResult } from "./redteam/grading";
 import type { RedTeamGradingResult } from "./redteam/types";
 
 // ---------------------------------------------------------------------------
+// Regex safety helper
+// ---------------------------------------------------------------------------
+
+/** Reject regex patterns with nested quantifiers that can cause catastrophic backtracking. */
+function isSafeRegex(pattern: string): boolean {
+  // Reject patterns longer than 1000 chars
+  if (pattern.length > 1000) return false;
+  // Reject nested quantifiers: (x+)+, (x*)+, (x+)*, etc.
+  if (/(\+|\*|\{)\)?(\+|\*|\{)/.test(pattern)) return false;
+  // Reject excessive alternation groups (>20)
+  if ((pattern.match(/\|/g) || []).length > 20) return false;
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 // Glob / wildcard helpers
 // ---------------------------------------------------------------------------
 
@@ -43,6 +58,11 @@ function globToRegex(pattern: string): RegExp {
   // If pattern doesn't start with / or ~, treat as suffix match
   if (!pattern.startsWith("/") && !pattern.startsWith("~")) {
     re = "(?:^|/)" + re;
+  }
+
+  // Anchor patterns that start with / or ~ so they only match from the beginning
+  if (pattern.startsWith("/") || pattern.startsWith("~")) {
+    re = "^" + re;
   }
 
   return new RegExp(re + "$", "i");
@@ -181,13 +201,24 @@ function simulateSecretLeak(
 
   const matches: Array<{ name: string; pattern: string; severity: string }> = [];
   for (const sp of patterns) {
+    if (!isSafeRegex(sp.pattern)) {
+      matches.push({ name: sp.name, pattern: sp.pattern, severity: "skipped_unsafe_regex" });
+      continue;
+    }
     try {
       const re = new RegExp(sp.pattern);
       if (re.test(content)) {
         matches.push({ name: sp.name, pattern: sp.pattern, severity: sp.severity });
       }
-    } catch {
-      // Skip invalid regex
+    } catch (e) {
+      // Fail closed: invalid regex patterns deny access
+      return {
+        guardId: "secret_leak",
+        guardName: "Secret Leak",
+        verdict: "deny" as const,
+        message: `Invalid pattern: ${e instanceof Error ? e.message : String(e)}`,
+        evidence: { error: "invalid_regex_pattern" },
+      };
     }
   }
 
@@ -247,6 +278,15 @@ function simulatePatchIntegrity(
   }
 
   for (const pat of forbiddenPatterns) {
+    if (!isSafeRegex(pat)) {
+      return {
+        guardId: "patch_integrity",
+        guardName: "Patch Integrity",
+        verdict: "deny",
+        message: `Unsafe regex pattern rejected: "${pat}"`,
+        evidence: { additions, deletions, matchedPattern: pat, reason: "unsafe_regex" },
+      };
+    }
     try {
       const re = new RegExp(pat);
       if (re.test(content)) {
@@ -258,8 +298,15 @@ function simulatePatchIntegrity(
           evidence: { additions, deletions, matchedPattern: pat },
         };
       }
-    } catch {
-      // Skip invalid regex
+    } catch (e) {
+      // Fail closed: invalid regex patterns deny access
+      return {
+        guardId: "patch_integrity",
+        guardName: "Patch Integrity",
+        verdict: "deny" as const,
+        message: `Invalid pattern: ${e instanceof Error ? e.message : String(e)}`,
+        evidence: { error: "invalid_regex_pattern" },
+      };
     }
   }
 
@@ -316,6 +363,15 @@ function simulateShellCommand(
         ];
 
   for (const pat of patterns) {
+    if (!isSafeRegex(pat)) {
+      return {
+        guardId: "shell_command",
+        guardName: "Shell Command",
+        verdict: "deny",
+        message: `Unsafe regex pattern rejected: "${pat}"`,
+        evidence: { command, matchedPattern: pat, reason: "unsafe_regex" },
+      };
+    }
     try {
       const re = new RegExp(pat, "i");
       if (re.test(command)) {
@@ -327,8 +383,15 @@ function simulateShellCommand(
           evidence: { command, matchedPattern: pat },
         };
       }
-    } catch {
-      // Skip invalid regex
+    } catch (e) {
+      // Fail closed: invalid regex patterns deny access
+      return {
+        guardId: "shell_command",
+        guardName: "Shell Command",
+        verdict: "deny" as const,
+        message: `Invalid pattern: ${e instanceof Error ? e.message : String(e)}`,
+        evidence: { error: "invalid_regex_pattern" },
+      };
     }
   }
 
@@ -386,7 +449,14 @@ function simulateMcpTool(
         evidence: { tool, allowList },
       };
     }
-    // If allow list is non-empty and tool isn't in it, fall through to default
+    // Non-empty allowlist acts as implicit deny — matches Rust McpToolGuard semantics
+    return {
+      guardId: "mcp_tool",
+      guardName: "MCP Tool",
+      verdict: "deny",
+      message: `Tool "${tool}" not in allow list [${allowList.join(", ")}]`,
+      evidence: { tool, reason: "not_in_allowlist" },
+    };
   }
 
   const verdict: Verdict = defaultAction === "allow" ? "allow" : "deny";
@@ -461,7 +531,13 @@ function simulatePromptInjection(
       matchedKeywords.length > 0
         ? `Detected ${matchedKeywords.length} injection keyword(s) — level: ${levelName}`
         : "No injection keywords detected",
-    evidence: { text: text.slice(0, 200), matchedKeywords, level: levelName },
+    evidence: {
+      text: text.slice(0, 200),
+      matchedKeywords,
+      level: levelName,
+      engine: "approximate",
+      note: "Client-side keyword matching only; production guard uses deeper analysis",
+    },
   };
 }
 
@@ -518,7 +594,14 @@ function simulateJailbreak(
       matched.length > 0
         ? `Jailbreak score: ${score}/100 (matched ${matched.length} indicator(s))`
         : `Jailbreak score: ${score}/100 — no indicators found`,
-    evidence: { score, blockThreshold, warnThreshold, matched },
+    evidence: {
+      score,
+      blockThreshold,
+      warnThreshold,
+      matched,
+      engine: "approximate",
+      note: "Client-side keyword matching only; production guard uses deeper analysis",
+    },
   };
 }
 

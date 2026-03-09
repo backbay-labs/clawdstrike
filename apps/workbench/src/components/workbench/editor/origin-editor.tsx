@@ -89,7 +89,7 @@ const DEFAULT_BEHAVIOR_OPTIONS: { value: OriginDefaultBehavior; label: string }[
 
 function createEmptyProfile(): OriginProfile {
   return {
-    id: `profile-${Date.now().toString(36)}`,
+    id: `profile-${crypto.randomUUID()}`,
     match_rules: {},
     explanation: "",
   };

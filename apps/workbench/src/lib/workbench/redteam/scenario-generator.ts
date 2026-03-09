@@ -539,27 +539,6 @@ const ATTACK_TEMPLATES: Record<string, AttackTemplate[]> = {
 };
 
 // ---------------------------------------------------------------------------
-// Guard-to-plugin mapping (which plugins test which guards)
-// ---------------------------------------------------------------------------
-
-/** Default guard-to-plugin mapping when the plugin-registry module is unavailable. */
-const DEFAULT_GUARD_TO_PLUGINS: Record<GuardId, string[]> = {
-  forbidden_path: ["path-traversal", "shell-injection"],
-  path_allowlist: ["path-traversal", "rbac"],
-  egress_allowlist: ["ssrf", "secret-exfiltration"],
-  secret_leak: ["pii", "secret-exfiltration"],
-  patch_integrity: ["shell-injection"],
-  shell_command: ["shell-injection"],
-  mcp_tool: ["excessive-agency", "rbac"],
-  prompt_injection: ["prompt-extraction", "indirect-prompt-injection", "hijacking"],
-  jailbreak: ["hijacking", "harmful"],
-  computer_use: ["computer-use-abuse"],
-  remote_desktop_side_channel: ["side-channel"],
-  input_injection_capability: ["computer-use-abuse"],
-  spider_sense: ["indirect-prompt-injection", "harmful"],
-};
-
-// ---------------------------------------------------------------------------
 // Severity ordering
 // ---------------------------------------------------------------------------
 
@@ -585,21 +564,7 @@ function isGuardEnabled(
 }
 
 function resolveGuardPlugins(guardId: GuardId): string[] {
-  // Prefer the canonical plugin registry when available, fall back to default
-  let mapping: Record<string, string[]>;
-  try {
-    mapping = GUARD_TO_PLUGINS;
-  } catch {
-    mapping = DEFAULT_GUARD_TO_PLUGINS;
-  }
-  return mapping[guardId] ?? DEFAULT_GUARD_TO_PLUGINS[guardId] ?? [];
-}
-
-let scenarioCounter = 0;
-
-function makeRedTeamId(pluginId: string, strategyId: string): string {
-  scenarioCounter++;
-  return `rt-${pluginId}-${strategyId}-${scenarioCounter}`;
+  return GUARD_TO_PLUGINS[guardId] ?? [];
 }
 
 // ---------------------------------------------------------------------------
@@ -634,8 +599,13 @@ export function generateRedTeamScenarios(
     severityFilter,
   } = options ?? {};
 
-  // Reset counter for deterministic IDs within a generation pass
-  scenarioCounter = 0;
+  // Local counter for deterministic IDs within this generation pass
+  let scenarioCounter = 0;
+
+  function makeRedTeamId(pluginId: string, strategyId: string): string {
+    scenarioCounter++;
+    return `rt-${pluginId}-${strategyId}-${scenarioCounter}`;
+  }
 
   const sevSet = severityFilter
     ? new Set(severityFilter)

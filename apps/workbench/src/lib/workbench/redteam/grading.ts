@@ -18,6 +18,9 @@ const VERDICT_SEVERITY: Record<Verdict, number> = {
   allow: 0,
 };
 
+// Note: scenario names are embedded in reason strings. React auto-escapes these
+// in JSX, but consumers rendering as raw HTML must escape manually.
+
 /**
  * Score a simulation result against the scenario's expected verdict.
  *
@@ -55,7 +58,7 @@ function buildReason(
 /**
  * Grade a single simulation result against its source scenario.
  *
- * Returns a RedTeamGradingResult with pass (score >= 0.5), numeric score, and
+ * Returns a RedTeamGradingResult with pass (score >= 1.0), numeric score, and
  * a human-readable reason.
  */
 export function gradeSimulationResult(
@@ -73,7 +76,9 @@ export function gradeSimulationResult(
 
   const actual = result.overallVerdict;
   const score = computeScore(expected, actual);
-  const pass = score >= 0.5;
+  // Strict threshold: only a full match (deny→deny, allow→allow) counts as pass.
+  // A warn when deny was expected means the attack was detected but not blocked.
+  const pass = score >= 1.0;
   const reason = buildReason(expected, actual, score, scenario.name);
 
   return { pass, score, reason };
@@ -112,6 +117,10 @@ export function gradeBatch(
   scenarios: TestScenario[],
   results: SimulationResult[],
 ): BatchGradeResult {
+  if (scenarios.length !== results.length) {
+    throw new Error(`gradeBatch: scenarios (${scenarios.length}) and results (${results.length}) must have same length`);
+  }
+
   const grades: RedTeamGradingResult[] = [];
   const perPlugin: Record<string, { passed: number; failed: number }> = {};
 

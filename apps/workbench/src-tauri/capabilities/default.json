@@ -13,8 +13,6 @@
     "core:window:allow-start-dragging",
     "core:window:allow-set-title",
     "dialog:default",
-    "fs:default",
-    "shell:default",
     "window-state:default",
     "http:default"
   ]

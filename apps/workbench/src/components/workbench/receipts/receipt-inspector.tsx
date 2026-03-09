@@ -9,12 +9,9 @@ import { signReceiptNative } from "@/lib/tauri-commands";
 import { isDesktop } from "@/lib/tauri-bridge";
 
 function randomHex(len: number): string {
-  const chars = "0123456789abcdef";
-  let out = "";
-  for (let i = 0; i < len; i++) {
-    out += chars[Math.floor(Math.random() * 16)];
-  }
-  return out;
+  const bytes = new Uint8Array(len / 2);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 function generateTestReceipt(policyName: string, guards: Record<string, unknown>): Receipt {
@@ -96,11 +93,15 @@ export function ReceiptInspector() {
       const parsed = JSON.parse(jsonInput.trim());
       const arr: Receipt[] = Array.isArray(parsed) ? parsed : [parsed];
 
-      // Basic validation
+      // Validate all required fields
       for (const r of arr) {
-        if (!r.id || !r.verdict || !r.guard) {
-          throw new Error("Receipt must have id, verdict, and guard fields");
-        }
+        if (!r.id || typeof r.id !== "string") throw new Error("Receipt must have a string 'id'");
+        if (!r.verdict || typeof r.verdict !== "string") throw new Error("Receipt must have a string 'verdict'");
+        if (!r.guard || typeof r.guard !== "string") throw new Error("Receipt must have a string 'guard'");
+        if (!r.timestamp) r.timestamp = new Date().toISOString(); // default if missing
+        if (!r.policyName) r.policyName = "unknown"; // default if missing
+        if (!r.signature) r.signature = "none"; // mark as unsigned
+        if (!r.publicKey) r.publicKey = ""; // mark as no key
       }
 
       setReceipts((prev) => [...arr, ...prev]);

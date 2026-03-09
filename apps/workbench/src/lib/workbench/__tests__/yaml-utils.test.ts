@@ -87,7 +87,7 @@ describe("policyToYaml", () => {
     expect(yaml).toContain(".ssh");
   });
 
-  it("omits guards with empty config after cleaning", () => {
+  it("preserves guards with semantic empty arrays after cleaning", () => {
     const policy = makeMinimalPolicy({
       guards: {
         forbidden_path: {
@@ -97,8 +97,9 @@ describe("policyToYaml", () => {
       },
     });
     const yaml = policyToYaml(policy);
-    // Both fields are removed by cleanObject (undefined + empty array), so guard is omitted
-    expect(yaml).not.toContain("forbidden_path");
+    // patterns: [] is a semantic field (explicit empty allowlist), so it is preserved
+    expect(yaml).toContain("forbidden_path");
+    expect(yaml).toContain("patterns");
   });
 
   it("includes extends field when present", () => {

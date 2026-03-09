@@ -17,33 +17,11 @@ import { GUARD_TO_PLUGINS } from "./plugin-registry";
 import { generateRedTeamScenarios } from "./scenario-generator";
 
 // ---------------------------------------------------------------------------
-// Guard → suggested plugin mapping (consistent with scenario-generator)
+// Guard → suggested plugin mapping
 // ---------------------------------------------------------------------------
 
-const DEFAULT_GUARD_PLUGINS: Record<GuardId, string[]> = {
-  forbidden_path: ["path-traversal", "shell-injection"],
-  path_allowlist: ["path-traversal", "rbac"],
-  egress_allowlist: ["ssrf", "secret-exfiltration"],
-  secret_leak: ["pii", "secret-exfiltration"],
-  patch_integrity: ["shell-injection"],
-  shell_command: ["shell-injection"],
-  mcp_tool: ["excessive-agency", "rbac"],
-  prompt_injection: ["prompt-extraction", "indirect-prompt-injection", "hijacking"],
-  jailbreak: ["hijacking", "harmful"],
-  computer_use: ["computer-use-abuse"],
-  remote_desktop_side_channel: ["side-channel"],
-  input_injection_capability: ["computer-use-abuse"],
-  spider_sense: ["indirect-prompt-injection", "harmful"],
-};
-
 function pluginsForGuard(guardId: GuardId): string[] {
-  let mapping: Record<string, string[]>;
-  try {
-    mapping = GUARD_TO_PLUGINS;
-  } catch {
-    mapping = DEFAULT_GUARD_PLUGINS;
-  }
-  return mapping[guardId] ?? DEFAULT_GUARD_PLUGINS[guardId] ?? [];
+  return GUARD_TO_PLUGINS[guardId] ?? [];
 }
 
 // ---------------------------------------------------------------------------
@@ -167,7 +145,16 @@ export function computeRedTeamCoverage(
 
     for (const pid of plugins) {
       allPluginIds.add(pid);
-      if (coveredPluginIds.has(pid)) {
+      // Use prefix matching to bridge canonical IDs (e.g. "pii:direct") with
+      // scenario-template-local IDs (e.g. "pii"). "pii" matches "pii:direct",
+      // and "pii:direct" matches "pii".
+      const isCovered = [...coveredPluginIds].some(
+        (covId) =>
+          covId === pid ||
+          covId.startsWith(pid + ":") ||
+          pid.startsWith(covId + ":"),
+      );
+      if (isCovered) {
         covered++;
         allCoveredPluginIds.add(pid);
       }

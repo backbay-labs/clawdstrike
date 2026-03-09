@@ -179,9 +179,24 @@ export function BulkOperationsDialog({
       (t) => selectedTabIds.has(t.id) && preview.find((p) => p.tabId === t.id)?.willChange,
     );
 
+    // KNOWN LIMITATION: The multi-policy reducer delegates TOGGLE_GUARD and
+    // UPDATE_GUARD to the *active* tab only, so we must SWITCH_TAB before each
+    // mutation. React 18 batches synchronous dispatches within the same event
+    // handler, which means SWITCH_TAB + TOGGLE_GUARD pairs may not interleave
+    // correctly — the activeTabId update from SWITCH_TAB may not be visible to
+    // the subsequent TOGGLE_GUARD in the same batch.
+    //
+    // Proper fix: add a BULK_TOGGLE_GUARD / BULK_UPDATE_GUARD reducer action
+    // that accepts a list of tab IDs and applies the mutation directly, without
+    // requiring a tab switch. This avoids the batching race entirely.
+    //
+    // Current workaround: dispatches are synchronous within useReducer, and
+    // React's useReducer processes them sequentially (each dispatch sees the
+    // state returned by the previous reducer call), so the SWITCH_TAB +
+    // TOGGLE_GUARD sequence is safe within a single synchronous block.
+    // However, this relies on React implementation details.
+
     for (const tab of targetTabs) {
-      // We need to switch to each tab, dispatch the action, then switch back.
-      // This is because the delegated actions always target the active tab.
       const wasActive = tab.id === multiState.activeTabId;
 
       if (!wasActive) {

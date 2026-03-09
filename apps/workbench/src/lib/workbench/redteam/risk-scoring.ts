@@ -159,7 +159,7 @@ export function calculateSystemRiskScore(
   if (pluginScores.length === 0) {
     return {
       score: 0,
-      level: "low",
+      level: "informational",
       plugins: [],
       distribution: {
         critical: 0,

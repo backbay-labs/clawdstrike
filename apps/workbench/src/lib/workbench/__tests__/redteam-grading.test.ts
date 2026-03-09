@@ -66,8 +66,8 @@ describe("gradeSimulationResult with expected=deny", () => {
     });
     const result = gradeSimulationResult(scenario, makeSimResult("warn"));
     expect(result.score).toBe(0.5);
-    // pass is true because score >= 0.5
-    expect(result.pass).toBe(true);
+    // pass is false: strict threshold requires score >= 1.0 (warn ≠ deny)
+    expect(result.pass).toBe(false);
   });
 });
 
