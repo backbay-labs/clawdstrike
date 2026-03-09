@@ -29,6 +29,23 @@ The orchestrator owns:
 
 Worker lanes must not edit those files.
 
+## Shared Runtime Contract
+
+Every lane in this swarm is rewriting the front-end ritual, not renegotiating the spirit spine.
+
+That means all workers must assume the following are already true and must remain true unless `ORCH`
+changes them explicitly:
+
+- `HUNT_CREATE` still attaches a default spirit immediately
+- reducer action names and hydration semantics stay under orchestrator ownership
+- `spirit-bind` remains the public launch surface until `ORCH` switches the shared entrypoint
+- worker lanes may add ritual-specific draft, preview, and view modules, but final registration and
+  package-manifest wiring stay with `ORCH`
+- every worker handoff must state the exact import points and shared-file edits it expects `ORCH`
+  to make during integration
+
+Workers should target additive, integration-ready modules and avoid speculative shared-file edits.
+
 ## Lanes
 
 | Lane | Focus | Owned Paths | Tickets | Verification |
@@ -78,4 +95,3 @@ The swarm is complete only when:
 - release into the workspace is visible and materially better than the old sheet
 - dock/sidebar/3D all reflect the released spirit coherently
 - tests, build, and live dogfood pass from one integrated run
-
