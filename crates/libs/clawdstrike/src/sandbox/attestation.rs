@@ -486,7 +486,9 @@ pub struct SupervisorStats {
     pub requests_total: u64,
     pub requests_granted: u64,
     pub requests_denied: u64,
+    #[serde(default)]
     pub deadline_miss_count: u64,
+    #[serde(default)]
     pub dropped_event_count: u64,
     pub never_grant_blocks: u64,
     pub rate_limit_blocks: u64,
@@ -787,6 +789,37 @@ mod tests {
     }
 
     #[test]
+    fn test_platform_info_deserializes_legacy_mechanism_only() {
+        let parsed: PlatformInfo = serde_json::from_value(serde_json::json!({
+            "name": "macos",
+            "mechanism": "seatbelt",
+            "details": "legacy seatbelt sandbox"
+        }))
+        .unwrap();
+
+        assert_eq!(parsed.mechanisms, vec!["seatbelt".to_string()]);
+    }
+
+    #[test]
+    fn test_platform_info_inserts_legacy_mechanism_ahead_of_mechanism_list() {
+        let parsed: PlatformInfo = serde_json::from_value(serde_json::json!({
+            "name": "macos",
+            "mechanism": "seatbelt",
+            "mechanisms": ["endpoint_security_contract"],
+            "details": "combined sandbox"
+        }))
+        .unwrap();
+
+        assert_eq!(
+            parsed.mechanisms,
+            vec![
+                "seatbelt".to_string(),
+                "endpoint_security_contract".to_string()
+            ]
+        );
+    }
+
+    #[test]
     fn test_attestation_metadata_path() {
         // Verify the structure matches what is_kernel_enforced() expects
         let tmp = tempfile::TempDir::new().unwrap();
@@ -914,6 +947,23 @@ mod tests {
     }
 
     #[test]
+    fn test_legacy_supervisor_stats_default_new_counters() {
+        let parsed: SupervisorStats = serde_json::from_value(serde_json::json!({
+            "enabled": true,
+            "backend": "seccomp_notify",
+            "requests_total": 4,
+            "requests_granted": 3,
+            "requests_denied": 1,
+            "never_grant_blocks": 0,
+            "rate_limit_blocks": 0
+        }))
+        .expect("legacy supervisor stats should deserialize");
+
+        assert_eq!(parsed.deadline_miss_count, 0);
+        assert_eq!(parsed.dropped_event_count, 0);
+    }
+
+    #[test]
     fn test_platform_mechanisms_only_include_active_supervised_contracts() {
         let tmp = tempfile::TempDir::new().unwrap();
         let caps = CapabilitySet::new()
@@ -929,7 +979,8 @@ mod tests {
         let attestation = build_attestation(&caps, runtime);
         let mechanisms = &attestation.platform.mechanisms;
 
-        if cfg!(target_os = "macos") {
+        #[cfg(target_os = "macos")]
+        {
             assert!(mechanisms.iter().any(|value| value == "seatbelt"));
             assert_eq!(
                 mechanisms
@@ -944,6 +995,14 @@ mod tests {
             assert!(!mechanisms
                 .iter()
                 .any(|value| value == "network_extension_contract"));
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            assert_eq!(
+                mechanisms,
+                &vec!["landlock".to_string(), "seccomp_notify".to_string()]
+            );
         }
     }
 }

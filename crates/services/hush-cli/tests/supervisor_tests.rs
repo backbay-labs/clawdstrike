@@ -27,14 +27,14 @@ fn resolve_hush_binary() -> PathBuf {
     if let Ok(path) = std::env::var("CARGO_BIN_EXE_hush") {
         return PathBuf::from(path);
     }
+    if let Some(path) = resolve_hush_binary_from_current_target() {
+        return path;
+    }
+
     let candidate = workspace_root()
         .join("target")
         .join("debug")
         .join(if cfg!(windows) { "hush.exe" } else { "hush" });
-
-    if candidate.exists() {
-        return candidate;
-    }
 
     let status = Command::new("cargo")
         .current_dir(workspace_root())
@@ -50,6 +50,13 @@ fn resolve_hush_binary() -> PathBuf {
         "failed to build hush binary for supervisor tests"
     );
     candidate
+}
+
+fn resolve_hush_binary_from_current_target() -> Option<PathBuf> {
+    let current_exe = std::env::current_exe().ok()?;
+    let target_dir = current_exe.parent()?.parent()?;
+    let candidate = target_dir.join(if cfg!(windows) { "hush.exe" } else { "hush" });
+    candidate.is_file().then_some(candidate)
 }
 
 fn create_temp_dir(prefix: &str) -> PathBuf {

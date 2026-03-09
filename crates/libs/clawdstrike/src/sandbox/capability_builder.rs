@@ -224,17 +224,19 @@ impl CapabilityBuilder {
 
         // 7. EgressAllowlistGuard -> NetworkMode
         self.apply_network_mode(&mut caps);
-        if cfg!(target_os = "macos")
-            && self.proxy_port.is_some()
-            && matches!(caps.network_mode(), NetworkMode::ProxyOnly { .. })
+        #[cfg(target_os = "macos")]
         {
-            warnings.push(TranslationWarning {
-                guard: "EgressAllowlistGuard".into(),
-                message:
-                    "macOS uses a provider-agnostic mediated-egress contract; ProxyOnly is retained only as the current runtime backend hint until NetworkExtension content-filter integration lands"
-                        .into(),
-                severity: WarningSeverity::Warning,
-            });
+            if self.proxy_port.is_some()
+                && matches!(caps.network_mode(), NetworkMode::ProxyOnly { .. })
+            {
+                warnings.push(TranslationWarning {
+                    guard: "EgressAllowlistGuard".into(),
+                    message:
+                        "macOS uses a provider-agnostic mediated-egress contract; ProxyOnly is retained only as the current runtime backend hint until NetworkExtension content-filter integration lands"
+                            .into(),
+                    severity: WarningSeverity::Warning,
+                });
+            }
         }
 
         // 8. ShellCommandGuard -> blocked commands (defense in depth)
@@ -1082,13 +1084,27 @@ mod tests {
             "egress Block with proxy port should yield ProxyOnly mode"
         );
 
-        if cfg!(target_os = "macos") {
+        #[cfg(target_os = "macos")]
+        {
             assert!(
                 warnings.iter().any(|warning| {
                     warning.guard == "EgressAllowlistGuard"
                         && warning.message.contains("provider-agnostic mediated-egress contract")
                 }),
                 "macOS should emit a diagnostic that ProxyOnly is only a legacy runtime backend hint"
+            );
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            assert!(
+                !warnings.iter().any(|warning| {
+                    warning.guard == "EgressAllowlistGuard"
+                        && warning
+                            .message
+                            .contains("provider-agnostic mediated-egress contract")
+                }),
+                "non-macOS builds should not emit the macOS-only provider contract warning"
             );
         }
     }
