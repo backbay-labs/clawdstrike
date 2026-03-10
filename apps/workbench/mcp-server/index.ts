@@ -66,6 +66,27 @@ export function parsePolicy(yaml: string): { policy: WorkbenchPolicy; warnings: 
   return { policy: parsedPolicy, warnings: diagnostics };
 }
 
+export function validatePolicyYaml(policyYaml: string) {
+  try {
+    const { policy, warnings: parseErrors } = parsePolicy(policyYaml);
+    const validation = validatePolicy(policy);
+    return {
+      valid: validation.valid && parseErrors.length === 0,
+      parseErrors,
+      errors: validation.errors,
+      warnings: validation.warnings,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Policy validation failed";
+    return {
+      valid: false,
+      parseErrors: [message],
+      errors: [],
+      warnings: [],
+    };
+  }
+}
+
 function textResult(text: string, isError = false) {
   return {
     content: [{ type: "text" as const, text }],
@@ -623,25 +644,7 @@ server.tool(
   {
     policy_yaml: z.string().describe("Policy YAML string to validate"),
   },
-  async ({ policy_yaml }) => {
-    const [policy, parseErrors] = yamlToPolicy(policy_yaml);
-    if (!policy) {
-      return jsonResult({
-        valid: false,
-        parseErrors,
-        errors: [],
-        warnings: [],
-      });
-    }
-
-    const validation = validatePolicy(policy);
-    return jsonResult({
-      valid: validation.valid && parseErrors.length === 0,
-      parseErrors,
-      errors: validation.errors,
-      warnings: validation.warnings,
-    });
-  },
+  async ({ policy_yaml }) => jsonResult(validatePolicyYaml(policy_yaml)),
 );
 
 server.tool(

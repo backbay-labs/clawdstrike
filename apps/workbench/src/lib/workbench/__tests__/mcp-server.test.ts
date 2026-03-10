@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import type { WorkbenchPolicy } from "../types";
-import { deepEqual, parsePolicy, suggestScenariosFromPolicy } from "../../../../mcp-server/index.ts";
+import {
+  deepEqual,
+  parsePolicy,
+  suggestScenariosFromPolicy,
+  validatePolicyYaml,
+} from "../../../../mcp-server/index.ts";
 
 function makePolicy(
   guards: WorkbenchPolicy["guards"],
@@ -37,6 +42,18 @@ guards:
   it("treats arrays and plain objects as different in both directions", () => {
     expect(deepEqual([], {})).toBe(false);
     expect(deepEqual({}, [])).toBe(false);
+  });
+
+  it("enforces the shared policy size limit in validatePolicyYaml", () => {
+    const oversizedYaml = "a".repeat(1_000_001);
+    const result = validatePolicyYaml(oversizedYaml);
+
+    expect(result.valid).toBe(false);
+    expect(result.parseErrors).toEqual([
+      "Policy YAML too large: 1000001 bytes (max 1000000)",
+    ]);
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
   });
 
   it("does not assume egress default_action is block when the field is absent", () => {
