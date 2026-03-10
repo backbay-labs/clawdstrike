@@ -15,6 +15,7 @@ import {
   injectPostError,
   injectBareArrayAuditResponse,
   injectGrantsData,
+  injectHierarchyTreeResponse,
   injectEmptyApprovals,
   injectBackendShapedApprovals,
   injectMinimalBackendApprovals,
@@ -37,7 +38,9 @@ import {
   resolveApproval,
   distributePolicy,
   fetchDelegationGraphFromApi,
+  fetchPrincipals,
   fetchReceipts,
+  fetchHierarchyTree,
   storeReceiptsBatch,
   verifyReceiptRemote,
   fleetClient,
@@ -643,6 +646,66 @@ describe("fetchDelegationGraphFromApi", () => {
     const conn = makeConn({ apiKey: "", controlApiToken: "" });
     const result = await fetchDelegationGraphFromApi(conn);
     expect(result).toBeNull();
+  });
+});
+
+describe("fetchPrincipals", () => {
+  it("prefers the console principals endpoint when both routes exist", async () => {
+    const principals = await fetchPrincipals(makeConn());
+
+    expect(principals).toHaveLength(MOCK_DATA.principals.length);
+    expect(principals[0]).toMatchObject({
+      id: "principal-root",
+      name: "Root Operator",
+      kind: "operator",
+      role: "operator",
+      trust_level: "high",
+      capabilities: ["DelegationAdmin", "PolicyWrite"],
+    });
+  });
+
+  it("falls back to the alternate principals route when the console route is unavailable", async () => {
+    const { http: mswHttp, HttpResponse: MswResponse } = await import("msw");
+
+    mockFleetServer.use(
+      mswHttp.get("/_proxy/control/api/v1/console/principals", ({ request }) => {
+        const auth = request.headers.get("Authorization");
+        if (!auth) return new MswResponse(null, { status: 401 });
+        return new MswResponse(JSON.stringify({ error: "route not found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }),
+      mswHttp.get("/_proxy/control/api/v1/principals", ({ request }) => {
+        const auth = request.headers.get("Authorization");
+        if (!auth) return new MswResponse(null, { status: 401 });
+        return MswResponse.json(MOCK_DATA.principals);
+      }),
+    );
+
+    const principals = await fetchPrincipals(makeConn());
+
+    expect(principals).toHaveLength(MOCK_DATA.principals.length);
+    expect(principals[0]?.id).toBe("principal-root");
+  });
+
+  it("returns an empty list when no control API URL is configured", async () => {
+    const principals = await fetchPrincipals(makeConn({ controlApiUrl: "" }));
+    expect(principals).toEqual([]);
+  });
+});
+
+describe("fetchHierarchyTree", () => {
+  it("accepts an empty live tree with a null root_id", async () => {
+    injectHierarchyTreeResponse({
+      root_id: null,
+      nodes: [],
+    });
+
+    await expect(fetchHierarchyTree(makeConn())).resolves.toEqual({
+      root_id: null,
+      nodes: [],
+    });
   });
 });
 

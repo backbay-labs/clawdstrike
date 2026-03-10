@@ -43,13 +43,13 @@ function relativeTime(isoDate: string): string {
 }
 
 function agentStatus(agent: AgentInfo): "online" | "stale" | "offline" {
-  if (!agent.online) return "offline";
   if (agent.drift.stale) return "stale";
   if (
     agent.seconds_since_heartbeat !== undefined &&
     agent.seconds_since_heartbeat > STALE_THRESHOLD_SECS
   )
     return "stale";
+  if (!agent.online) return "offline";
   return "online";
 }
 

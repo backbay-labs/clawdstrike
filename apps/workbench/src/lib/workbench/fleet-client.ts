@@ -202,7 +202,7 @@ interface BackendDelegationGraphResponse {
 // ---------------------------------------------------------------------------
 
 /**
- * Synchronous bootstrap read from localStorage (legacy).
+ * Synchronous bootstrap read from localStorage in the web runtime.
  * Used for initial render before Stronghold is ready.
  */
 export function loadSavedConnection(): Partial<FleetConnection> {
@@ -1085,7 +1085,8 @@ function mapBackendGraphToFrontend(backend: BackendDelegationGraphResponse): Del
 /**
  * Fetch a full delegation graph snapshot for a given principal from the backend.
  * Calls GET /api/v1/principals/{id}/delegation-graph on the control API.
- * Falls back to the grants-based graph if the endpoint is unavailable.
+ * Falls back to the grants-based graph if the direct delegation-graph route
+ * is not exposed by the current deployment.
  */
 export async function fetchDelegationGraphSnapshot(
   conn: FleetConnection,
@@ -1107,14 +1108,15 @@ export async function fetchDelegationGraphSnapshot(
     return graph.nodes.length > 0 ? graph : null;
   } catch (e) {
     console.warn("[fleet-client] delegation-graph endpoint unavailable, falling back to grants:", e);
-    // Fallback to the older grants-based approach
+    // Fallback to the alternate grants-based graph path.
     return fetchDelegationGraphFromApi(conn);
   }
 }
 
 /**
  * List available principals from the control API.
- * Calls GET /api/v1/principals on the control API.
+ * Prefers the console principals endpoint and falls back to GET
+ * /api/v1/principals when that route is the one exposed by the deployment.
  */
 export async function fetchPrincipals(
   conn: FleetConnection,
@@ -1122,34 +1124,80 @@ export async function fetchPrincipals(
   const { url, kind } = preferredUrl(conn);
   if (!url) return [];
 
-  try {
-    const res = await jsonFetch<unknown>(
-      proxyUrl(`${url}/api/v1/principals`, kind),
-      { headers: controlHeaders(conn) },
-    );
-    // The response may be { principals: [...] } or a bare array
-    let list: unknown[];
-    if (Array.isArray(res)) {
-      list = res;
-    } else if (res && typeof res === "object" && "principals" in res) {
-      const wrapped = res as { principals: unknown };
-      if (!Array.isArray(wrapped.principals)) {
-        throw new Error("[fleet-client] fetchPrincipals: expected principals to be an array");
-      }
-      list = wrapped.principals;
-    } else {
-      throw new Error("[fleet-client] fetchPrincipals: unexpected response shape");
-    }
+  const principalPaths = [
+    `${url}/api/v1/console/principals`,
+    `${url}/api/v1/principals`,
+  ];
 
-    // Validate and coerce each entry
-    return list.filter((p): p is PrincipalInfo => {
-      if (!p || typeof p !== "object") return false;
-      return typeof (p as Record<string, unknown>).id === "string";
-    });
-  } catch (e) {
-    console.warn("[fleet-client] fetchPrincipals failed:", e);
-    return [];
+  for (const path of principalPaths) {
+    try {
+      const res = await jsonFetch<unknown>(proxyUrl(path, kind), {
+        headers: controlHeaders(conn),
+      });
+      const list = extractPrincipalList(res);
+      if (list.length > 0) {
+        return list;
+      }
+    } catch (e) {
+      console.warn(`[fleet-client] fetchPrincipals failed for ${path}:`, e);
+    }
   }
+
+  return [];
+}
+
+function mapPrincipalInfo(value: unknown): PrincipalInfo | null {
+  if (!isRecord(value)) return null;
+
+  const directId = readString(value.id);
+  if (directId) {
+    return {
+      id: directId,
+      name: readString(value.name),
+      kind: readString(value.kind),
+      role: readString(value.role),
+      trust_level: readString(value.trust_level),
+      capabilities: readStringArray(value.capabilities),
+      metadata: isRecord(value.metadata) ? value.metadata : undefined,
+      created_at: readString(value.created_at),
+      updated_at: readString(value.updated_at),
+    };
+  }
+
+  const consoleId = readString(value.principalId);
+  if (!consoleId) return null;
+
+  const principalType = readString(value.principalType);
+  return {
+    id: consoleId,
+    name: readString(value.displayName) ?? readString(value.stableRef) ?? consoleId,
+    kind: principalType,
+    role: principalType,
+    trust_level: readString(value.trustLevel),
+    capabilities: readStringArray(value.capabilityGroupNames),
+    metadata: {
+      lifecycle_state: readString(value.lifecycleState),
+      liveness_state: readString(value.livenessState),
+      endpoint_posture: readString(value.endpointPosture),
+      stable_ref: readString(value.stableRef),
+    },
+    updated_at: readString(value.lastHeartbeatAt),
+  };
+}
+
+function extractPrincipalList(res: unknown): PrincipalInfo[] {
+  let list: unknown[];
+  if (Array.isArray(res)) {
+    list = res;
+  } else if (isRecord(res) && "principals" in res && Array.isArray(res.principals)) {
+    list = res.principals;
+  } else {
+    throw new Error("[fleet-client] fetchPrincipals: unexpected response shape");
+  }
+
+  return list
+    .map(mapPrincipalInfo)
+    .filter((principal): principal is PrincipalInfo => principal !== null);
 }
 
 // ---------------------------------------------------------------------------
@@ -1914,8 +1962,11 @@ export async function fetchCatalogCategories(
 
 /**
  * Backend hierarchy node as returned by the control-api hierarchy endpoints.
- * Uses snake_case wire format.
+ * Uses snake_case wire format. Depending on the endpoint, `children` may be
+ * nested nodes or a list of child ids.
  */
+export type HierarchyNodeChild = HierarchyNode | string;
+
 export interface HierarchyNode {
   id: string;
   name: string;
@@ -1923,7 +1974,7 @@ export interface HierarchyNode {
   parent_id?: string | null;
   policy_id?: string | null;
   policy_name?: string | null;
-  children?: HierarchyNode[];
+  children?: HierarchyNodeChild[];
   metadata?: Record<string, unknown>;
   created_at?: string;
   updated_at?: string;
@@ -1957,7 +2008,7 @@ export interface HierarchyNodeUpdate {
  * Full hierarchy tree response from GET /api/v1/hierarchy/tree.
  */
 export interface HierarchyTreeResponse {
-  root_id: string;
+  root_id: string | null;
   nodes: HierarchyNode[];
 }
 
@@ -1999,7 +2050,7 @@ export async function fetchHierarchyNodes(
 }
 
 /**
- * Fetch the full hierarchy tree (with nested children) from the backend.
+ * Fetch the full hierarchy tree from the backend.
  * Calls GET /api/v1/hierarchy/tree on the control-api.
  */
 export async function fetchHierarchyTree(
@@ -2019,12 +2070,16 @@ export async function fetchHierarchyTree(
     }
 
     const obj = res as Record<string, unknown>;
-    if (typeof obj.root_id !== "string" || !Array.isArray(obj.nodes)) {
+    const rootId = obj.root_id;
+    if (
+      (typeof rootId !== "string" && rootId !== null) ||
+      !Array.isArray(obj.nodes)
+    ) {
       throw new Error("[fleet-client] fetchHierarchyTree: expected { root_id, nodes }");
     }
 
     return {
-      root_id: obj.root_id,
+      root_id: rootId,
       nodes: (obj.nodes as unknown[]).filter(isHierarchyNode),
     };
   } catch (e) {

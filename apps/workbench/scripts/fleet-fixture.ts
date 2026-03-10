@@ -7,6 +7,7 @@
  *   bun run scripts/fleet-fixture.ts --seed-only    # seed and exit
  *   bun run scripts/fleet-fixture.ts --heartbeat-only  # heartbeat loop only
  *   bun run scripts/fleet-fixture.ts --cleanup      # delete test agents
+ *   bun run scripts/fleet-fixture.ts --print-auth-json # emit derived live auth/env JSON
  */
 
 import { createHmac, generateKeyPairSync } from "crypto";
@@ -102,6 +103,14 @@ async function controlGet(path: string, jwt: string): Promise<Response> {
     method: "GET",
     headers: { Authorization: `Bearer ${jwt}` },
   });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
 }
 
 interface AgentDef {
@@ -261,6 +270,59 @@ const AUDIT_CHECKS: AuditCheck[] = [
   { action_type: "mcp_tool", target: "execute_code", agent_id: "agent-tester-004", session_id: "sess-test-010", description: "MCP execute_code (allowed)", expect: "allow" },
 ];
 
+type HierarchyNodeType = "org" | "team" | "agent";
+
+interface FixtureHierarchyNode {
+  stable_key: string;
+  name: string;
+  node_type: HierarchyNodeType;
+  parent_key?: string;
+}
+
+interface RemoteHierarchyNode {
+  id: string;
+  name: string;
+  node_type: string;
+  parent_id?: string | null;
+  metadata?: Record<string, unknown>;
+}
+
+const HIERARCHY_FIXTURE_TAG = "fleet-fixture";
+
+const FIXTURE_HIERARCHY: FixtureHierarchyNode[] = [
+  { stable_key: "fixture-root", name: "Fleet Fixture Org", node_type: "org" },
+  {
+    stable_key: "fixture-eng",
+    name: "Fixture Engineering",
+    node_type: "team",
+    parent_key: "fixture-root",
+  },
+  {
+    stable_key: "fixture-sec",
+    name: "Fixture Security",
+    node_type: "team",
+    parent_key: "fixture-root",
+  },
+  {
+    stable_key: "fixture-agent-coder",
+    name: "agent-coder-003",
+    node_type: "agent",
+    parent_key: "fixture-eng",
+  },
+  {
+    stable_key: "fixture-agent-tester",
+    name: "agent-tester-004",
+    node_type: "agent",
+    parent_key: "fixture-eng",
+  },
+  {
+    stable_key: "fixture-agent-monitor",
+    name: "agent-monitor-007",
+    node_type: "agent",
+    parent_key: "fixture-sec",
+  },
+];
+
 // -- Phases --
 
 async function registerAgents(jwt: string): Promise<void> {
@@ -383,6 +445,98 @@ async function generateAuditEvents(): Promise<void> {
   );
 }
 
+function toHierarchyNodes(payload: unknown): RemoteHierarchyNode[] {
+  const list = Array.isArray(payload)
+    ? payload
+    : isRecord(payload) && Array.isArray(payload.nodes)
+      ? payload.nodes
+      : [];
+
+  return list
+    .filter(isRecord)
+    .map((node) => ({
+      id: readString(node.id) ?? "",
+      name: readString(node.name) ?? "",
+      node_type: readString(node.node_type) ?? "",
+      parent_id: readString(node.parent_id) ?? null,
+      metadata: isRecord(node.metadata) ? node.metadata : undefined,
+    }))
+    .filter((node) => node.id && node.name && node.node_type);
+}
+
+async function listHierarchyNodes(jwt: string): Promise<RemoteHierarchyNode[]> {
+  try {
+    const res = await controlGet("/api/v1/hierarchy/nodes", jwt);
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      log(`  FAIL list hierarchy -- ${res.status} ${text}`);
+      return [];
+    }
+
+    const payload = await res.json();
+    return toHierarchyNodes(payload);
+  } catch (err) {
+    log(`  FAIL list hierarchy -- ${(err as Error).message}`);
+    return [];
+  }
+}
+
+async function seedHierarchy(jwt: string): Promise<void> {
+  log("Seeding fixture hierarchy...");
+
+  const existing = await listHierarchyNodes(jwt);
+  const stableIndex = new Map<string, string>();
+  for (const node of existing) {
+    const stableKey = readString(node.metadata?.stable_key);
+    const fixtureTag = readString(node.metadata?.fixture);
+    if (fixtureTag === HIERARCHY_FIXTURE_TAG && stableKey) {
+      stableIndex.set(stableKey, node.id);
+    }
+  }
+
+  let created = 0;
+  let skipped = 0;
+  let failed = 0;
+
+  for (const spec of FIXTURE_HIERARCHY) {
+    if (stableIndex.has(spec.stable_key)) {
+      skipped++;
+      continue;
+    }
+
+    const parentId = spec.parent_key ? stableIndex.get(spec.parent_key) ?? null : null;
+    try {
+      const res = await controlPost("/api/v1/hierarchy/nodes", jwt, {
+        name: spec.name,
+        node_type: spec.node_type,
+        parent_id: parentId,
+        metadata: {
+          fixture: HIERARCHY_FIXTURE_TAG,
+          stable_key: spec.stable_key,
+        },
+      });
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        log(`  FAIL hierarchy ${spec.stable_key} -- ${res.status} ${text}`);
+        failed++;
+        continue;
+      }
+
+      const node = (await res.json()) as { id?: string };
+      if (typeof node.id === "string") {
+        stableIndex.set(spec.stable_key, node.id);
+      }
+      created++;
+    } catch (err) {
+      log(`  FAIL hierarchy ${spec.stable_key} -- ${(err as Error).message}`);
+      failed++;
+    }
+  }
+
+  log(`  hierarchy: created=${created} skipped=${skipped} failed=${failed}`);
+}
+
 async function cleanup(jwt: string): Promise<void> {
   log("Cleaning up test agents...");
   let deleted = 0;
@@ -428,6 +582,54 @@ async function cleanup(jwt: string): Promise<void> {
   }
 
   log(`  deleted=${deleted} failed=${failed}`);
+
+  log("Cleaning up fixture hierarchy...");
+  const hierarchyNodes = await listHierarchyNodes(jwt);
+  const fixtureNodes = hierarchyNodes.filter(
+    (node) => readString(node.metadata?.fixture) === HIERARCHY_FIXTURE_TAG,
+  );
+  const nodeIndex = new Map(fixtureNodes.map((node) => [node.id, node]));
+  const depthFor = (node: RemoteHierarchyNode): number => {
+    let depth = 0;
+    let cursor = node.parent_id ? nodeIndex.get(node.parent_id) : undefined;
+    while (cursor) {
+      depth++;
+      cursor = cursor.parent_id ? nodeIndex.get(cursor.parent_id) : undefined;
+    }
+    return depth;
+  };
+
+  fixtureNodes.sort((a, b) => depthFor(b) - depthFor(a));
+
+  let hierarchyDeleted = 0;
+  let hierarchyFailed = 0;
+  for (const node of fixtureNodes) {
+    try {
+      const res = await controlDelete(`/api/v1/hierarchy/nodes/${node.id}?reparent=false`, jwt);
+      if (res.ok) {
+        hierarchyDeleted++;
+      } else if (res.status !== 404) {
+        const text = await res.text().catch(() => "");
+        log(`  FAIL hierarchy ${node.name} -- ${res.status} ${text}`);
+        hierarchyFailed++;
+      }
+    } catch (err) {
+      log(`  FAIL hierarchy ${node.name} -- ${(err as Error).message}`);
+      hierarchyFailed++;
+    }
+  }
+
+  log(`  hierarchy deleted=${hierarchyDeleted} failed=${hierarchyFailed}`);
+}
+
+function printAuthJson(jwt: string): void {
+  console.log(JSON.stringify({
+    hushdUrl: HUSHD_URL,
+    controlApiUrl: CONTROL_API_URL,
+    hushdApiKey: HUSHD_API_KEY,
+    controlApiToken: jwt,
+    tenantId: TENANT_ID,
+  }));
 }
 
 function startHeartbeatLoop(): void {
@@ -455,8 +657,14 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const mode = args[0] ?? "";
 
-  log(`JWT generated for tenant ${TENANT_ID.slice(0, 8)}...`);
   const jwt = makeJwt();
+
+  if (mode === "--print-auth-json") {
+    printAuthJson(jwt);
+    return;
+  }
+
+  log(`JWT generated for tenant ${TENANT_ID.slice(0, 8)}...`);
 
   if (mode === "--cleanup") {
     await cleanup(jwt);
@@ -474,6 +682,7 @@ async function main(): Promise<void> {
     await sendHeartbeats();
     await deployPolicy(jwt);
     await generateAuditEvents();
+    await seedHierarchy(jwt);
   }
 
   if (mode === "--seed-only") {
@@ -488,7 +697,7 @@ async function main(): Promise<void> {
 
   console.error(`Unknown mode: ${mode}`);
   console.error(
-    "Usage: bun run scripts/fleet-fixture.ts [--seed-only | --heartbeat-only | --cleanup]",
+    "Usage: bun run scripts/fleet-fixture.ts [--seed-only | --heartbeat-only | --cleanup | --print-auth-json]",
   );
   process.exit(1);
 }

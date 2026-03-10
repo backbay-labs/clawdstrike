@@ -350,6 +350,33 @@ const MOCK_GRANTS = [
   },
 ];
 
+const MOCK_PRINCIPALS = [
+  {
+    principalId: "principal-root",
+    principalType: "operator",
+    displayName: "Root Operator",
+    stableRef: "root-operator",
+    lifecycleState: "active",
+    livenessState: "online",
+    endpointPosture: "strict",
+    trustLevel: "high",
+    capabilityGroupNames: ["DelegationAdmin", "PolicyWrite"],
+    lastHeartbeatAt: new Date().toISOString(),
+  },
+  {
+    principalId: "principal-agent-001",
+    principalType: "agent",
+    displayName: "Build Agent",
+    stableRef: "build-agent-001",
+    lifecycleState: "active",
+    livenessState: "online",
+    endpointPosture: "default",
+    trustLevel: "medium",
+    capabilityGroupNames: ["CommandExec"],
+    lastHeartbeatAt: new Date(Date.now() - 30_000).toISOString(),
+  },
+];
+
 // -- Handler helpers --
 
 function requireAuth(request: Request): HttpResponse<null> | null {
@@ -446,6 +473,21 @@ const controlApiHandlers = [
     return requireAuth(request) ?? HttpResponse.json([]);
   }),
 
+  http.get("/_proxy/control/api/v1/principals", ({ request }) => {
+    const err = requireAuth(request);
+    if (err) return err;
+    return new HttpResponse(
+      JSON.stringify({ error: "route not found" }),
+      { status: 404, headers: { "Content-Type": "application/json" } },
+    );
+  }),
+
+  http.get("/_proxy/control/api/v1/console/principals", ({ request }) => {
+    const err = requireAuth(request);
+    if (err) return err;
+    return HttpResponse.json(MOCK_PRINCIPALS);
+  }),
+
   http.get("/_proxy/control/api/v1/catalog/templates", ({ request }) => {
     const err = requireAuth(request);
     if (err) return err;
@@ -529,6 +571,7 @@ export const MOCK_DATA = {
   approvalRequests: MOCK_APPROVAL_REQUESTS,
   approvalDecisions: MOCK_APPROVAL_DECISIONS,
   grants: MOCK_GRANTS,
+  principals: MOCK_PRINCIPALS,
 };
 
 export function injectError(endpoint: string, status: number) {
@@ -555,6 +598,17 @@ export function injectGrantsData() {
   mockFleetServer.use(
     http.get("/_proxy/control/api/v1/grants", ({ request }) => {
       return requireAuth(request) ?? HttpResponse.json(MOCK_GRANTS);
+    }),
+  );
+}
+
+export function injectHierarchyTreeResponse(response: {
+  root_id: string | null;
+  nodes: unknown[];
+}) {
+  mockFleetServer.use(
+    http.get("/_proxy/control/api/v1/hierarchy/tree", ({ request }) => {
+      return requireAuth(request) ?? HttpResponse.json(response);
     }),
   );
 }

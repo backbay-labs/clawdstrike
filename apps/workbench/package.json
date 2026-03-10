@@ -12,7 +12,8 @@
     "tauri:build": "tauri build",
     "test": "vitest --passWithNoTests",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src/"
+    "lint": "eslint src/",
+    "dogfood:live": "bash ../../scripts/workbench-live-dogfood.sh"
   },
   "dependencies": {
     "@base-ui/react": "^1.2.0",

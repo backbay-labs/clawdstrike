@@ -127,10 +127,11 @@ function TreeNode({
   onDrop,
   dragOverId,
 }: TreeNodeProps) {
+  const childIds = [...new Set(node.children)];
   const isExpanded = expandedIds.has(node.id);
   const isSelected = selectedId === node.id;
   const isAncestor = ancestryIds.has(node.id);
-  const hasChildren = node.children.length > 0;
+  const hasChildren = childIds.length > 0;
   const Icon = NODE_TYPE_ICONS[node.type];
   const color = NODE_TYPE_COLORS[node.type];
   const isDragTarget = dragOverId === node.id;
@@ -289,7 +290,7 @@ function TreeNode({
             className="absolute top-0 bottom-0 border-l border-[#2d3240]/60"
             style={{ left: `${depth * 20 + 18}px` }}
           />
-          {node.children.map((childId) => {
+          {childIds.map((childId) => {
             const child = hierarchy.nodes[childId];
             if (!child) return null;
             return (
@@ -1024,6 +1025,7 @@ export function HierarchyPage() {
   // ---------------------------------------------------------------------------
 
   const [isLiveMode, setIsLiveMode] = useState(false);
+  const [hasPulledFleetHierarchy, setHasPulledFleetHierarchy] = useState(false);
   const [syncStatus, setSyncStatus] = useState<{
     type: "idle" | "pushing" | "pulling" | "success" | "error";
     message?: string;
@@ -1054,6 +1056,7 @@ export function HierarchyPage() {
   useEffect(() => {
     if (!fleetConnected && isLiveMode) {
       setIsLiveMode(false);
+      setHasPulledFleetHierarchy(false);
       showSyncStatus("error", "Fleet disconnected — switched to DEMO mode");
     }
   }, [fleetConnected, isLiveMode, showSyncStatus]);
@@ -1285,6 +1288,7 @@ export function HierarchyPage() {
     clearHierarchy();
     const demo = createDefaultHierarchy();
     setHierarchy(demo);
+    setHasPulledFleetHierarchy(false);
     setSelectedId(demo.rootId);
     setExpandedIds(() => {
       const ids = new Set<string>();
@@ -1319,6 +1323,7 @@ export function HierarchyPage() {
 
   const handleToggleLiveMode = useCallback(() => {
     if (!fleetConnected) return;
+    setHasPulledFleetHierarchy(false);
     setIsLiveMode((prev) => !prev);
   }, [fleetConnected]);
 
@@ -1405,7 +1410,10 @@ export function HierarchyPage() {
       nodesOut: Record<string, OrgNode>,
     ) => {
       const nodeType = mapNodeType(hNode.node_type);
-      const childIds = (hNode.children ?? []).map((c) => c.id);
+      const nestedChildren = (hNode.children ?? []).filter(
+        (child): child is HierarchyNode => typeof child === "object" && child !== null,
+      );
+      const childIds = [...new Set(nestedChildren.map((child) => child.id))];
 
       nodesOut[hNode.id] = {
         id: hNode.id,
@@ -1418,7 +1426,7 @@ export function HierarchyPage() {
         metadata: (hNode.metadata as OrgNode["metadata"]) ?? {},
       };
 
-      for (const child of hNode.children ?? []) {
+      for (const child of nestedChildren) {
         flattenTreeNode(child, hNode.id, nodesOut);
       }
     },
@@ -1427,8 +1435,8 @@ export function HierarchyPage() {
 
   /**
    * Pull hierarchy from the fleet via the hierarchy tree endpoint.
-   * Falls back to the older scoped-policies endpoint if the tree endpoint
-   * returns nothing.
+   * Falls back to the older scoped-policies endpoint only when the tree
+   * endpoint is unavailable. An empty tree is a valid live response.
    */
   const handlePullFromFleet = useCallback(async () => {
     if (!fleetConnected) return;
@@ -1438,19 +1446,27 @@ export function HierarchyPage() {
       // Try the new hierarchy tree endpoint first
       const tree: HierarchyTreeResponse | null = await fetchHierarchyTree(connection);
 
-      if (tree && tree.nodes.length > 0) {
+      if (tree) {
+        if (tree.nodes.length === 0) {
+          setHasPulledFleetHierarchy(false);
+          showSyncStatus("success", "Fleet hierarchy is empty — keeping local draft");
+          return;
+        }
+
         // Flatten the tree response into local OrgNode format.
         // The tree endpoint returns nodes with nested children arrays.
         const nodes: Record<string, OrgNode> = {};
 
         // Find the root node in the array
         const rootNode = tree.nodes.find((n) => n.id === tree.root_id);
+        const rootHasNestedChildren = Array.isArray(rootNode?.children)
+          && rootNode.children.some((child) => typeof child === "object" && child !== null);
 
-        if (rootNode) {
+        if (rootNode && rootHasNestedChildren) {
           // If the root has nested children, flatten recursively
           flattenTreeNode(rootNode, null, nodes);
         } else {
-          // Fallback: nodes might be a flat list — build from parent_id pointers
+          // Fallback: the tree response may be a flat list with child ids.
           for (const hNode of tree.nodes) {
             const nodeType = mapNodeType(hNode.node_type);
             nodes[hNode.id] = {
@@ -1467,14 +1483,24 @@ export function HierarchyPage() {
 
           // Reconstruct children from parent pointers
           for (const node of Object.values(nodes)) {
-            if (node.parentId && nodes[node.parentId]) {
+            if (
+              node.parentId &&
+              nodes[node.parentId] &&
+              !nodes[node.parentId].children.includes(node.id)
+            ) {
               nodes[node.parentId].children.push(node.id);
             }
           }
         }
 
         const rootId = tree.root_id;
+        if (!rootId) {
+          setHasPulledFleetHierarchy(false);
+          showSyncStatus("error", "Fleet hierarchy did not include a root node");
+          return;
+        }
         if (!nodes[rootId]) {
+          setHasPulledFleetHierarchy(false);
           showSyncStatus("error", "Could not find root node in fleet hierarchy");
           return;
         }
@@ -1493,6 +1519,7 @@ export function HierarchyPage() {
           }
           return ids;
         });
+        setHasPulledFleetHierarchy(true);
 
         showSyncStatus(
           "success",
@@ -1502,13 +1529,14 @@ export function HierarchyPage() {
       }
 
       // Fallback: try older scoped-policies endpoint for backward compatibility
-      console.warn("[hierarchy-sync] hierarchy/tree returned empty, falling back to scoped-policies");
+      console.warn("[hierarchy-sync] hierarchy/tree unavailable, falling back to scoped-policies");
       const [scopedPolicies, assignments] = await Promise.all([
         fetchScopedPolicies(connection),
         fetchPolicyAssignments(connection),
       ]);
 
       if (assignments.length === 0 && scopedPolicies.length === 0) {
+        setHasPulledFleetHierarchy(false);
         showSyncStatus("error", "No hierarchy data found on fleet");
         return;
       }
@@ -1552,7 +1580,11 @@ export function HierarchyPage() {
       );
       if (!anyHasChildren) {
         for (const node of Object.values(nodes)) {
-          if (node.parentId && nodes[node.parentId]) {
+          if (
+            node.parentId &&
+            nodes[node.parentId] &&
+            !nodes[node.parentId].children.includes(node.id)
+          ) {
             nodes[node.parentId].children.push(node.id);
           }
         }
@@ -1567,6 +1599,7 @@ export function HierarchyPage() {
       }
 
       if (!rootId || !nodes[rootId]) {
+        setHasPulledFleetHierarchy(false);
         showSyncStatus("error", "Could not determine root node from fleet data");
         return;
       }
@@ -1584,6 +1617,7 @@ export function HierarchyPage() {
         }
         return ids;
       });
+      setHasPulledFleetHierarchy(true);
 
       showSyncStatus(
         "success",
@@ -1595,7 +1629,13 @@ export function HierarchyPage() {
         `Pull failed: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
-  }, [fleetConnected, connection, showSyncStatus, flattenTreeNode, mapNodeType]);
+  }, [
+    fleetConnected,
+    connection,
+    showSyncStatus,
+    flattenTreeNode,
+    mapNodeType,
+  ]);
 
   // ---------------------------------------------------------------------------
   // Render
@@ -1637,6 +1677,24 @@ export function HierarchyPage() {
           <span className="flex items-center gap-1 text-[9px] text-[#6f7f9a]/40">
             <IconPlugConnected size={10} stroke={1.5} />
             Disconnected
+          </span>
+        )}
+
+        {isLiveMode && (
+          <span
+            className={cn(
+              "text-[9px] font-medium px-2 py-0.5 rounded",
+              hasPulledFleetHierarchy
+                ? "text-[#3dbf84] bg-[#3dbf84]/10"
+                : "text-[#d4a84b] bg-[#d4a84b]/10",
+            )}
+            title={
+              hasPulledFleetHierarchy
+                ? "Currently rendering the last hierarchy snapshot fetched from fleet"
+                : "Currently rendering the local draft; pull from fleet to replace it"
+            }
+          >
+            {hasPulledFleetHierarchy ? "Fleet Snapshot" : "Local Draft"}
           </span>
         )}
 
