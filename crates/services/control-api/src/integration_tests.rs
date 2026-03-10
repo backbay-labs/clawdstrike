@@ -5246,6 +5246,8 @@ async fn hierarchy_routes_support_crud_tree_and_clearable_fields() {
                     .any(|child| child.as_str() == Some(project_id.as_str()))
         }));
 
+    // Clear policy_id, policy_name, and metadata while keeping parent_id
+    // (non-org nodes must always have a parent).
     let update_resp = request_json(
         &harness.app,
         Method::PUT,
@@ -5253,7 +5255,6 @@ async fn hierarchy_routes_support_crud_tree_and_clearable_fields() {
         Some(&harness.api_key),
         Some(serde_json::json!({
             "name": "Project Alpha Renamed",
-            "parent_id": null,
             "policy_id": null,
             "policy_name": null,
             "metadata": null
@@ -5262,7 +5263,8 @@ async fn hierarchy_routes_support_crud_tree_and_clearable_fields() {
     .await;
     assert_eq!(update_resp.0, StatusCode::OK);
     assert_eq!(update_resp.1["name"], "Project Alpha Renamed");
-    assert!(update_resp.1["parent_id"].is_null());
+    // parent_id is omitted from the update, so it stays as the root.
+    assert_eq!(update_resp.1["parent_id"], root_id);
     assert!(update_resp.1["policy_id"].is_null());
     assert!(update_resp.1["policy_name"].is_null());
     assert_eq!(update_resp.1["metadata"], serde_json::json!({}));
