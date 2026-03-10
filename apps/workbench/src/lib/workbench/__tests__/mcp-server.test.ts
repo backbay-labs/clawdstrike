@@ -72,4 +72,23 @@ guards:
       result.scenarios.some((scenario) => scenario.name === "Unknown domain egress (should block)"),
     ).toBe(false);
   });
+
+  it("reports only explicitly enabled guards in metadata", () => {
+    const result = suggestScenariosFromPolicy(
+      makePolicy({
+        forbidden_path: {
+          patterns: ["/tmp/secret.txt"],
+        },
+        egress_allowlist: {
+          enabled: true,
+          allow: ["*.example.com"],
+        },
+      }),
+    );
+
+    expect(result.enabledGuards).toEqual(["egress_allowlist"]);
+    expect(
+      result.scenarios.some((scenario) => scenario.name.startsWith("Forbidden path:")),
+    ).toBe(false);
+  });
 });

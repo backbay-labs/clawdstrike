@@ -84,6 +84,12 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return proto === Object.prototype || proto === null;
 }
 
+function isGuardEnabled<T extends { enabled?: boolean }>(
+  config: T | null | undefined,
+): config is T & { enabled: true } {
+  return config?.enabled === true;
+}
+
 export function deepEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (typeof a === "number" && typeof b === "number" && Number.isNaN(a) && Number.isNaN(b)) return true;
@@ -115,9 +121,17 @@ export function deepEqual(a: unknown, b: unknown): boolean {
 export function suggestScenariosFromPolicy(policy: WorkbenchPolicy) {
   const suggestions: TestScenario[] = [];
   const guards = policy.guards;
+  const forbiddenPath = guards.forbidden_path;
+  const egressAllowlist = guards.egress_allowlist;
+  const secretLeak = guards.secret_leak;
+  const shellCommand = guards.shell_command;
+  const mcpTool = guards.mcp_tool;
+  const promptInjection = guards.prompt_injection;
+  const jailbreak = guards.jailbreak;
+  const patchIntegrity = guards.patch_integrity;
 
-  if (guards.forbidden_path?.enabled) {
-    const patterns = guards.forbidden_path.patterns ?? [];
+  if (isGuardEnabled(forbiddenPath)) {
+    const patterns = forbiddenPath.patterns ?? [];
     for (const pat of patterns.slice(0, 3)) {
       // Convert glob pattern to a realistic concrete path for testing.
       // Strip recursive-glob markers, replace single wildcards with a
@@ -155,9 +169,9 @@ export function suggestScenariosFromPolicy(policy: WorkbenchPolicy) {
     });
   }
 
-  if (guards.egress_allowlist?.enabled) {
-    const allowed = guards.egress_allowlist.allow ?? [];
-    const defaultAction = guards.egress_allowlist.default_action;
+  if (isGuardEnabled(egressAllowlist)) {
+    const allowed = egressAllowlist.allow ?? [];
+    const defaultAction = egressAllowlist.default_action;
 
     if (allowed.length > 0) {
       const domain = allowed[0].replace("*.", "api.");
@@ -197,8 +211,8 @@ export function suggestScenariosFromPolicy(policy: WorkbenchPolicy) {
     }
   }
 
-  if (guards.secret_leak?.enabled) {
-    const userPatterns = guards.secret_leak.patterns ?? [];
+  if (isGuardEnabled(secretLeak)) {
+    const userPatterns = secretLeak.patterns ?? [];
 
     if (userPatterns.length > 0) {
       // Generate scenarios from the policy's configured secret_patterns for
@@ -270,7 +284,7 @@ export function suggestScenariosFromPolicy(policy: WorkbenchPolicy) {
     });
   }
 
-  if (guards.shell_command?.enabled) {
+  if (isGuardEnabled(shellCommand)) {
     suggestions.push({
       id: `suggest-sh-attack-${suggestions.length}`,
       name: "Reverse shell attempt",
@@ -291,9 +305,9 @@ export function suggestScenariosFromPolicy(policy: WorkbenchPolicy) {
     });
   }
 
-  if (guards.mcp_tool?.enabled) {
-    const blocked = guards.mcp_tool.block ?? [];
-    const allowed = guards.mcp_tool.allow ?? [];
+  if (isGuardEnabled(mcpTool)) {
+    const blocked = mcpTool.block ?? [];
+    const allowed = mcpTool.allow ?? [];
 
     if (blocked.length > 0) {
       suggestions.push({
@@ -320,7 +334,7 @@ export function suggestScenariosFromPolicy(policy: WorkbenchPolicy) {
     }
   }
 
-  if (guards.prompt_injection?.enabled) {
+  if (isGuardEnabled(promptInjection)) {
     suggestions.push({
       id: `suggest-pi-${suggestions.length}`,
       name: "Prompt injection attempt",
@@ -334,7 +348,7 @@ export function suggestScenariosFromPolicy(policy: WorkbenchPolicy) {
     });
   }
 
-  if (guards.jailbreak?.enabled) {
+  if (isGuardEnabled(jailbreak)) {
     suggestions.push({
       id: `suggest-jb-${suggestions.length}`,
       name: "DAN jailbreak attempt",
@@ -348,11 +362,11 @@ export function suggestScenariosFromPolicy(policy: WorkbenchPolicy) {
     });
   }
 
-  if (guards.patch_integrity?.enabled) {
+  if (isGuardEnabled(patchIntegrity)) {
     const PATCH_SAFETY_CAP = 10_000;
     // Cap the policy-provided max_additions to prevent unreasonable values
     // from untrusted YAML input affecting allocation or arithmetic.
-    const rawMaxAdd = guards.patch_integrity.max_additions ?? 1000;
+    const rawMaxAdd = patchIntegrity.max_additions ?? 1000;
     const maxAdd = Math.max(0, Math.min(rawMaxAdd, PATCH_SAFETY_CAP));
     // Generate enough lines to exceed the threshold, but stay within the safety cap.
     const lineCount = Math.min(maxAdd + 500, PATCH_SAFETY_CAP);
@@ -383,7 +397,7 @@ export function suggestScenariosFromPolicy(policy: WorkbenchPolicy) {
   return {
     count: suggestions.length,
     enabledGuards: Object.entries(guards)
-      .filter(([, config]) => config && (config as { enabled?: boolean }).enabled)
+      .filter(([, config]) => isGuardEnabled(config as { enabled?: boolean } | null | undefined))
       .map(([id]) => id),
     scenarios: suggestions,
   };

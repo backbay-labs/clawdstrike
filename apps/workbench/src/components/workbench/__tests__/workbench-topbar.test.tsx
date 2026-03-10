@@ -207,4 +207,30 @@ describe("WorkbenchTopbar", () => {
     });
     expect(tauriBridgeMocks.savePolicyFile.mock.calls[0]).toHaveLength(1);
   });
+
+  it("desktop export does not write through savePolicyFile before native validation", async () => {
+    const user = userEvent.setup();
+    tauriBridgeMocks.isDesktop.mockReturnValue(true);
+    tauriBridgeMocks.pickSavePath.mockResolvedValue("/tmp/existing-policy.json");
+    tauriCommandMocks.exportPolicyFileNative.mockResolvedValue({
+      success: false,
+      path: "/tmp/existing-policy.json",
+      message: "Policy validation failed",
+    });
+
+    renderWithProviders(<WorkbenchTopbar />);
+
+    await user.click(screen.getByTitle("Export format"));
+    await user.click(await screen.findByRole("option", { name: "JSON" }));
+    await user.click(screen.getByRole("button", { name: "Save As" }));
+
+    await waitFor(() => {
+      expect(tauriCommandMocks.exportPolicyFileNative).toHaveBeenCalledWith(
+        expect.any(String),
+        "/tmp/existing-policy.json",
+        "json",
+      );
+    });
+    expect(tauriBridgeMocks.savePolicyFile).not.toHaveBeenCalled();
+  });
 });
