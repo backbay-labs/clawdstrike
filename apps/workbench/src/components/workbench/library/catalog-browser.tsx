@@ -753,13 +753,14 @@ export function CatalogBrowser() {
 
   const totalLocal = POLICY_CATALOG.length;
   const totalRemote = catalogTemplates.length;
+  const liveCatalogReady = isConnected && !catalogError;
 
   return (
     <div>
       {/* Fleet connection status bar + Publish button */}
       <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
         <div className="flex items-center gap-2">
-          {isConnected ? (
+          {liveCatalogReady ? (
             <span className="flex items-center gap-1.5 text-[10px] font-mono text-[#3dbf84]">
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#3dbf84] opacity-40" />
@@ -771,6 +772,11 @@ export function CatalogBrowser() {
                   ({totalRemote} remote template{totalRemote !== 1 ? "s" : ""})
                 </span>
               )}
+            </span>
+          ) : isConnected ? (
+            <span className="flex items-center gap-1.5 text-[10px] font-mono text-[#d4a84b]">
+              <span className="inline-flex rounded-full h-2 w-2 bg-[#d4a84b]" />
+              Live catalog unavailable
             </span>
           ) : (
             <span className="flex items-center gap-1.5 text-[10px] font-mono text-[#6f7f9a]">

@@ -16,6 +16,7 @@ import type {
   EdgeKind,
   Capability,
 } from "./delegation-types";
+import { yamlToPolicy } from "./yaml-utils";
 
 const DEV = import.meta.env.DEV;
 
@@ -338,6 +339,214 @@ function stripTrailingSlash(url: string): string {
   return url.replace(/\/+$/, "");
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function readStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function readNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function readBoolean(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function secondsSince(isoDate?: string | null): number | undefined {
+  if (!isoDate) return undefined;
+  const ts = new Date(isoDate).getTime();
+  if (Number.isNaN(ts)) return undefined;
+  return Math.max(0, Math.floor((Date.now() - ts) / 1000));
+}
+
+const FALLBACK_STALE_AFTER_SECS = 90;
+
+function toAgentInfo(value: unknown): AgentInfo {
+  if (!isRecord(value)) {
+    throw new Error("[fleet-client] fetchAgentList: expected each agent row to be an object");
+  }
+
+  if (typeof value.endpoint_agent_id === "string" && typeof value.last_heartbeat_at === "string") {
+    return {
+      endpoint_agent_id: value.endpoint_agent_id,
+      last_heartbeat_at: value.last_heartbeat_at,
+      last_seen_ip: readString(value.last_seen_ip),
+      last_session_id: readString(value.last_session_id),
+      posture: readString(value.posture),
+      policy_version: readString(value.policy_version),
+      daemon_version: readString(value.daemon_version),
+      runtime_count: readNumber(value.runtime_count),
+      seconds_since_heartbeat: readNumber(value.seconds_since_heartbeat),
+      online: value.online === true,
+      drift: isRecord(value.drift)
+        ? {
+            policy_drift: value.drift.policy_drift === true,
+            daemon_drift: value.drift.daemon_drift === true,
+            stale: value.drift.stale === true,
+          }
+        : { policy_drift: false, daemon_drift: false, stale: false },
+    };
+  }
+
+  const agentId = readString(value.agent_id);
+  if (!agentId) {
+    throw new Error("[fleet-client] fetchAgentList: expected control-api agent rows to include agent_id");
+  }
+
+  const metadata = isRecord(value.metadata) ? value.metadata : {};
+  const lastHeartbeat =
+    readString(value.last_heartbeat_at) ?? readString(value.created_at) ?? new Date(0).toISOString();
+  const since = secondsSince(lastHeartbeat);
+  const status = (readString(value.status) ?? "").toLowerCase();
+  const stale =
+    readBoolean(metadata.stale) ??
+    (status === "stale" ||
+      status === "offline" ||
+      status === "inactive" ||
+      status === "dead" ||
+      (since !== undefined && since > FALLBACK_STALE_AFTER_SECS));
+  const online = !["stale", "offline", "inactive", "dead"].includes(status);
+
+  return {
+    endpoint_agent_id: agentId,
+    last_heartbeat_at: lastHeartbeat,
+    last_seen_ip: readString(metadata.last_seen_ip),
+    last_session_id: readString(metadata.session_id) ?? readString(metadata.last_session_id),
+    posture: readString(metadata.posture),
+    policy_version:
+      readString(metadata.policy_version) ??
+      readString(metadata.active_policy_version) ??
+      readString(metadata.policy_hash),
+    daemon_version: readString(metadata.daemon_version),
+    runtime_count: readNumber(metadata.runtime_count),
+    seconds_since_heartbeat: since,
+    online,
+    drift: {
+      policy_drift: readBoolean(metadata.policy_drift) ?? false,
+      daemon_drift: readBoolean(metadata.daemon_drift) ?? false,
+      stale,
+    },
+  };
+}
+
+function deriveCatalogDifficulty(tags: string[]): string {
+  const value = tags.find((tag) => tag.startsWith("difficulty:"))?.slice("difficulty:".length);
+  return value === "beginner" || value === "intermediate" || value === "advanced"
+    ? value
+    : "intermediate";
+}
+
+function deriveCatalogCompliance(tags: string[]): string[] {
+  const normalized = new Set(tags.map((tag) => tag.toLowerCase()));
+  const compliance: string[] = [];
+  if (normalized.has("hipaa")) compliance.push("HIPAA");
+  if (normalized.has("soc2")) compliance.push("SOC2");
+  if (normalized.has("pci-dss") || normalized.has("pci_dss")) compliance.push("PCI-DSS");
+  return compliance;
+}
+
+function deriveCatalogGuardSummary(policyYaml: string): string[] {
+  const [policy] = yamlToPolicy(policyYaml);
+  if (!policy) return [];
+
+  return Object.entries(policy.guards)
+    .filter(([, config]) => isRecord(config) && config.enabled !== false)
+    .map(([guard]) => guard)
+    .sort();
+}
+
+function normalizeCatalogTags(tags: string[], difficulty?: string): string[] {
+  const base = tags.filter((tag) => !tag.startsWith("difficulty:"));
+  if (difficulty) base.push(`difficulty:${difficulty}`);
+  return Array.from(new Set(base));
+}
+
+function toCatalogTemplate(value: unknown): CatalogTemplate {
+  if (!isRecord(value) || typeof value.id !== "string" || typeof value.name !== "string") {
+    throw new Error("[fleet-client] catalog template response shape is invalid");
+  }
+
+  if (typeof value.yaml === "string") {
+    const tags = readStringArray(value.tags);
+    return {
+      id: value.id,
+      name: value.name,
+      description: readString(value.description) ?? "",
+      category: readString(value.category) ?? "general",
+      tags,
+      author: readString(value.author) ?? "Unknown",
+      version: readString(value.version) ?? "1.0.0",
+      yaml: value.yaml,
+      guard_summary: readStringArray(value.guard_summary),
+      use_cases: readStringArray(value.use_cases),
+      compliance: readStringArray(value.compliance),
+      difficulty: readString(value.difficulty) ?? deriveCatalogDifficulty(tags),
+      downloads: readNumber(value.downloads) ?? 0,
+      created_at: readString(value.created_at) ?? new Date(0).toISOString(),
+      updated_at: readString(value.updated_at) ?? new Date(0).toISOString(),
+      metadata: isRecord(value.metadata) ? value.metadata : undefined,
+    };
+  }
+
+  if (typeof value.policy_yaml !== "string") {
+    throw new Error("[fleet-client] catalog template response is missing policy_yaml");
+  }
+
+  const tags = readStringArray(value.tags);
+  const policyYaml = value.policy_yaml;
+  return {
+    id: value.id,
+    name: value.name,
+    description: readString(value.description) ?? "",
+    category: readString(value.category) ?? "general",
+    tags,
+    author: readString(value.author) ?? "Unknown",
+    version: readString(value.version) ?? "1.0.0",
+    yaml: policyYaml,
+    guard_summary: deriveCatalogGuardSummary(policyYaml),
+    use_cases: [],
+    compliance: deriveCatalogCompliance(tags),
+    difficulty: deriveCatalogDifficulty(tags),
+    downloads: readNumber(value.downloads) ?? 0,
+    created_at: readString(value.created_at) ?? new Date(0).toISOString(),
+    updated_at: readString(value.updated_at) ?? new Date(0).toISOString(),
+    metadata: isRecord(value.metadata) ? value.metadata : undefined,
+  };
+}
+
+function toCatalogCategory(value: unknown): CatalogCategoryInfo {
+  if (!isRecord(value) || typeof value.id !== "string") {
+    throw new Error("[fleet-client] catalog category response shape is invalid");
+  }
+
+  const label = readString(value.label) ?? readString(value.name);
+  if (!label) {
+    throw new Error("[fleet-client] catalog category response is missing label/name");
+  }
+
+  return {
+    id: value.id,
+    label,
+    color: readString(value.color) ?? "#6f7f9a",
+    count: readNumber(value.count) ?? readNumber(value.template_count) ?? 0,
+  };
+}
+
+function normalizeCatalogFetchError(error: unknown): Error {
+  const message = error instanceof Error ? error.message : String(error);
+  if (message.includes("HTTP 404")) {
+    return new Error("Catalog endpoints are unavailable on the configured control API");
+  }
+  return error instanceof Error ? error : new Error(message);
+}
+
 export async function testConnection(
   hushdUrl: string,
   apiKey: string,
@@ -428,7 +637,7 @@ export async function fetchAgentList(conn: FleetConnection): Promise<AgentInfo[]
     if (!Array.isArray(res)) {
       throw new Error("[fleet-client] fetchAgentList: expected response to be an array");
     }
-    return res as AgentInfo[];
+    return res.map(toAgentInfo);
   }
 }
 
@@ -1555,10 +1764,9 @@ export async function fetchCatalogTemplates(
       throw new Error("[fleet-client] fetchCatalogTemplates: unexpected response shape");
     }
 
-    return list.filter(isCatalogTemplate);
+    return list.map(toCatalogTemplate);
   } catch (e) {
-    console.warn("[fleet-client] fetchCatalogTemplates failed:", e);
-    return [];
+    throw normalizeCatalogFetchError(e);
   }
 }
 
@@ -1579,10 +1787,10 @@ export async function fetchCatalogTemplate(
       { headers: controlHeaders(conn) },
     );
 
-    if (res && typeof res === "object" && isCatalogTemplate(res)) {
-      return res;
+    if (isRecord(res) && "template" in res) {
+      return toCatalogTemplate(res.template);
     }
-    throw new Error("[fleet-client] fetchCatalogTemplate: unexpected response shape");
+    return toCatalogTemplate(res);
   } catch (e) {
     console.warn("[fleet-client] fetchCatalogTemplate failed:", e);
     return null;
@@ -1608,12 +1816,20 @@ export async function publishCatalogTemplate(
   if (!url) return { success: false, error: "No API URL configured" };
 
   try {
+    const [policy] = yamlToPolicy(template.yaml);
     const res = await jsonFetch<{ id?: string; success?: boolean }>(
       proxyUrl(`${url}/api/v1/catalog/templates`, kind),
       {
         method: "POST",
         headers: controlHeaders(conn),
-        body: JSON.stringify(template),
+        body: JSON.stringify({
+          name: template.name,
+          description: template.description,
+          category: template.category,
+          tags: normalizeCatalogTags(template.tags, template.difficulty),
+          policy_yaml: template.yaml,
+          version: policy?.version,
+        }),
       },
     );
     return { success: true, id: res.id };
@@ -1645,15 +1861,10 @@ export async function forkCatalogTemplate(
       },
     );
 
-    if (res && typeof res === "object" && isCatalogTemplate(res)) {
-      return { success: true, template: res };
+    if (isRecord(res) && "template" in res) {
+      return { success: true, template: toCatalogTemplate(res.template) };
     }
-    // Some backends return { template: {...} } wrapper
-    const obj = res as Record<string, unknown>;
-    if ("template" in obj && isCatalogTemplate(obj.template)) {
-      return { success: true, template: obj.template as CatalogTemplate };
-    }
-    return { success: true };
+    return { success: true, template: toCatalogTemplate(res) };
   } catch (err) {
     return {
       success: false,
@@ -1691,22 +1902,10 @@ export async function fetchCatalogCategories(
       throw new Error("[fleet-client] fetchCatalogCategories: unexpected response shape");
     }
 
-    return list.filter((c): c is CatalogCategoryInfo => {
-      if (!c || typeof c !== "object") return false;
-      const obj = c as Record<string, unknown>;
-      return typeof obj.id === "string" && typeof obj.label === "string";
-    });
+    return list.map(toCatalogCategory);
   } catch (e) {
-    console.warn("[fleet-client] fetchCatalogCategories failed:", e);
-    return [];
+    throw normalizeCatalogFetchError(e);
   }
-}
-
-/** Type guard for CatalogTemplate shape. */
-function isCatalogTemplate(value: unknown): value is CatalogTemplate {
-  if (!value || typeof value !== "object") return false;
-  const obj = value as Record<string, unknown>;
-  return typeof obj.id === "string" && typeof obj.name === "string" && typeof obj.yaml === "string";
 }
 
 // ---------------------------------------------------------------------------

@@ -24,11 +24,16 @@ import {
   testConnection,
   fetchAgentList,
   fetchAuditEvents,
+  fetchCatalogCategories,
+  fetchCatalogTemplate,
+  fetchCatalogTemplates,
   deployPolicy,
   validateRemotely,
   fetchRemotePolicy,
   fetchAgentCount,
+  forkCatalogTemplate,
   fetchApprovals,
+  publishCatalogTemplate,
   resolveApproval,
   distributePolicy,
   fetchDelegationGraphFromApi,
@@ -137,6 +142,24 @@ describe("fetchAgentList", () => {
     expect(agents).toHaveLength(MOCK_DATA.agents.endpoints.length);
   });
 
+  it("maps the control-api fallback rows into dashboard-safe agent info", async () => {
+    injectError("/_proxy/hushd/api/v1/agents/status", 500);
+
+    const agents = await fetchAgentList(makeConn());
+
+    expect(agents[0]).toMatchObject({
+      endpoint_agent_id: "agent-test-001",
+      online: true,
+      drift: {
+        policy_drift: false,
+        daemon_drift: false,
+        stale: false,
+      },
+    });
+    expect(typeof agents[0].last_heartbeat_at).toBe("string");
+    expect(typeof agents[0].seconds_since_heartbeat).toBe("number");
+  });
+
   it("returns empty array when hushd fails and no control-api configured", async () => {
     injectError("/_proxy/hushd/api/v1/agents/status", 500);
 
@@ -218,6 +241,100 @@ describe("fetchAuditEvents", () => {
   it("throws on auth failure", async () => {
     const conn = makeConn({ apiKey: "" });
     await expect(fetchAuditEvents(conn)).rejects.toThrow();
+  });
+});
+
+describe("catalog APIs", () => {
+  it("maps control-api catalog templates into the workbench shape", async () => {
+    const templates = await fetchCatalogTemplates(makeConn());
+
+    expect(templates).toHaveLength(MOCK_DATA.catalogTemplates.length);
+    expect(templates[0]).toMatchObject({
+      id: MOCK_DATA.catalogTemplates[0].id,
+      name: "Remote AI Agent Policy",
+      yaml: expect.stringContaining('name: "remote-ai-agent"'),
+      difficulty: "advanced",
+    });
+    expect(templates[0].guard_summary).toEqual(["forbidden_path", "shell_command"]);
+    expect(templates[0].compliance).toEqual(["SOC2"]);
+  });
+
+  it("maps control-api catalog categories into the workbench shape", async () => {
+    const categories = await fetchCatalogCategories(makeConn());
+
+    expect(categories).toEqual([
+      expect.objectContaining({
+        id: "ai-agent",
+        label: "AI Agent",
+        count: MOCK_DATA.catalogCategories[0].template_count,
+      }),
+    ]);
+  });
+
+  it("fetches a single catalog template from the control-api shape", async () => {
+    const template = await fetchCatalogTemplate(makeConn(), MOCK_DATA.catalogTemplates[0].id);
+
+    expect(template).not.toBeNull();
+    expect(template?.yaml).toContain("guards:");
+    expect(template?.difficulty).toBe("advanced");
+  });
+
+  it("publishes with control-api field names and difficulty encoded in tags", async () => {
+    const { http: mswHttp, HttpResponse: MswResponse } = await import("msw");
+    let seenBody: unknown = null;
+
+    mockFleetServer.use(
+      mswHttp.post("/_proxy/control/api/v1/catalog/templates", async ({ request }) => {
+        seenBody = await request.json();
+        return MswResponse.json({ id: "catalog-new-001" });
+      }),
+    );
+
+    const result = await publishCatalogTemplate(makeConn(), {
+      name: "Published Template",
+      description: "Created from the workbench",
+      category: "general",
+      tags: ["remote", "soc2"],
+      yaml: `version: "1.2.0"
+name: "published-template"
+description: "Created from the workbench"
+guards:
+  forbidden_path:
+    enabled: true
+`,
+      difficulty: "beginner",
+    });
+
+    expect(result).toEqual({ success: true, id: "catalog-new-001" });
+    expect(seenBody).toMatchObject({
+      name: "Published Template",
+      description: "Created from the workbench",
+      category: "general",
+      policy_yaml: expect.stringContaining('name: "published-template"'),
+      version: "1.2.0",
+    });
+    expect(seenBody).not.toHaveProperty("yaml");
+    expect(seenBody).not.toHaveProperty("difficulty");
+    expect((seenBody as { tags: string[] }).tags).toContain("difficulty:beginner");
+  });
+
+  it("normalizes fork responses from the control-api shape", async () => {
+    const result = await forkCatalogTemplate(makeConn(), MOCK_DATA.catalogTemplates[0].id);
+
+    expect(result.success).toBe(true);
+    expect(result.template).toMatchObject({
+      name: "Remote AI Agent Policy (fork)",
+      yaml: expect.stringContaining('name: "remote-ai-agent"'),
+      difficulty: "advanced",
+    });
+  });
+
+  it("surfaces unsupported catalog endpoints instead of silently falling back", async () => {
+    injectError("/_proxy/control/api/v1/catalog/templates", 404);
+
+    await expect(fetchCatalogTemplates(makeConn())).rejects.toThrow(
+      "Catalog endpoints are unavailable on the configured control API",
+    );
   });
 });
 

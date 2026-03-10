@@ -235,6 +235,42 @@ const MOCK_AUDIT_EVENTS = [
   },
 ];
 
+const MOCK_CATALOG_TEMPLATES = [
+  {
+    id: "a7f6fe4d-1111-4444-8888-aaaaaaaaaaaa",
+    name: "Remote AI Agent Policy",
+    description: "Catalog template served by the control-api schema",
+    category: "ai-agent",
+    tags: ["remote", "ai-agent", "soc2", "difficulty:advanced"],
+    policy_yaml: `version: "1.2.0"
+name: "remote-ai-agent"
+description: "Remote AI agent policy"
+guards:
+  forbidden_path:
+    enabled: true
+    patterns:
+      - "/etc/shadow"
+  shell_command:
+    enabled: true
+`,
+    author: "Clawdstrike Team",
+    version: "2026.03",
+    created_at: new Date(Date.now() - 86_400_000).toISOString(),
+    updated_at: new Date().toISOString(),
+    downloads: 12,
+    forked_from: null,
+  },
+];
+
+const MOCK_CATALOG_CATEGORIES = [
+  {
+    id: "ai-agent",
+    name: "AI Agent",
+    description: "Policies optimized for AI coding assistants",
+    template_count: MOCK_CATALOG_TEMPLATES.length,
+  },
+];
+
 const MOCK_APPROVAL_REQUESTS = [
   {
     id: "apr-001",
@@ -409,6 +445,70 @@ const controlApiHandlers = [
   http.get("/_proxy/control/api/v1/grants", ({ request }) => {
     return requireAuth(request) ?? HttpResponse.json([]);
   }),
+
+  http.get("/_proxy/control/api/v1/catalog/templates", ({ request }) => {
+    const err = requireAuth(request);
+    if (err) return err;
+    return HttpResponse.json(MOCK_CATALOG_TEMPLATES);
+  }),
+
+  http.get("/_proxy/control/api/v1/catalog/categories", ({ request }) => {
+    const err = requireAuth(request);
+    if (err) return err;
+    return HttpResponse.json(MOCK_CATALOG_CATEGORIES);
+  }),
+
+  http.get("/_proxy/control/api/v1/catalog/templates/:id", ({ request, params }) => {
+    const err = requireAuth(request);
+    if (err) return err;
+    const template = MOCK_CATALOG_TEMPLATES.find((item) => item.id === params.id);
+    return template
+      ? HttpResponse.json(template)
+      : new HttpResponse(JSON.stringify({ error: "Not found" }), { status: 404 });
+  }),
+
+  http.post("/_proxy/control/api/v1/catalog/templates", async ({ request }) => {
+    const err = requireAuth(request);
+    if (err) return err;
+    const body = (await request.json()) as {
+      name: string;
+      description: string;
+      category: string;
+      tags?: string[];
+      policy_yaml: string;
+      version?: string;
+    };
+    return HttpResponse.json({
+      id: "a7f6fe4d-2222-4444-8888-bbbbbbbbbbbb",
+      name: body.name,
+      description: body.description,
+      category: body.category,
+      tags: body.tags ?? [],
+      policy_yaml: body.policy_yaml,
+      author: "Workbench",
+      version: body.version ?? "1.2.0",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      downloads: 0,
+      forked_from: null,
+    });
+  }),
+
+  http.post("/_proxy/control/api/v1/catalog/templates/:id/fork", ({ request, params }) => {
+    const err = requireAuth(request);
+    if (err) return err;
+    const source = MOCK_CATALOG_TEMPLATES.find((item) => item.id === params.id);
+    if (!source) {
+      return new HttpResponse(JSON.stringify({ error: "Not found" }), { status: 404 });
+    }
+    return HttpResponse.json({
+      ...source,
+      id: "a7f6fe4d-3333-4444-8888-cccccccccccc",
+      name: `${source.name} (fork)`,
+      downloads: 0,
+      forked_from: source.id,
+    });
+  }),
 ];
 
 // -- Server setup --
@@ -424,6 +524,8 @@ export const MOCK_DATA = {
   agents: MOCK_AGENTS,
   policy: MOCK_POLICY,
   auditEvents: MOCK_AUDIT_EVENTS,
+  catalogTemplates: MOCK_CATALOG_TEMPLATES,
+  catalogCategories: MOCK_CATALOG_CATEGORIES,
   approvalRequests: MOCK_APPROVAL_REQUESTS,
   approvalDecisions: MOCK_APPROVAL_DECISIONS,
   grants: MOCK_GRANTS,
