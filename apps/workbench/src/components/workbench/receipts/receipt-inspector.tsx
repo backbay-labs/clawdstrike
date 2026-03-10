@@ -307,7 +307,9 @@ export function ReceiptInspector() {
     // Detect if a new receipt was prepended (length increased)
     if (receipts.length > prevReceiptsLenRef.current && receipts.length > 0) {
       const newest = receipts[0];
-      if (!syncedIds.has(newest.id)) {
+      // Finding 7: Never auto-sync imported receipts to fleet (may be unsigned/forged)
+      const isImported = (newest as Receipt & { imported?: boolean }).imported === true;
+      if (!syncedIds.has(newest.id) && !isImported) {
         // Fire-and-forget upload of the single new receipt
         storeReceiptsBatch(connection, [receiptToFleet(newest)])
           .then((res) => {
@@ -432,7 +434,10 @@ export function ReceiptInspector() {
         if (!r.publicKey) r.publicKey = ""; // mark as no key
       }
 
-      setReceipts((prev) => [...arr, ...prev]);
+      // Finding 7: Mark imported receipts so they are excluded from fleet sync.
+      // This prevents unsigned/forged receipts from entering the fleet store.
+      const markedArr = arr.map((r) => ({ ...r, imported: true as const }));
+      setReceipts((prev) => [...markedArr, ...prev]);
       setJsonInput("");
       emitAuditEvent({
         eventType: "receipt.import",

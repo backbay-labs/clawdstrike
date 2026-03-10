@@ -4,6 +4,8 @@
 //! without requiring a running daemon. All evaluation happens in-process.
 
 use std::path::Path;
+use std::sync::Mutex;
+use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 
@@ -28,21 +30,31 @@ const MAX_INPUT_SIZE: usize = 10_485_760;
 const MAX_CHAIN_LENGTH: usize = 10_000;
 
 /// Sensitive path prefixes and suffixes that must never be read from or written to.
+/// All comparisons are case-insensitive (paths are lowercased before matching).
 const SENSITIVE_PATTERNS: &[&str] = &[
     "/.ssh",
-    "/.gnupg",
+    "/.gnupg/",
     "/.aws",
-    "/etc/",
+    "/.config/gcloud/",
+    "/.azure/",
+    "/library/keychains/",
+    "/.password-store/",
     "/.config",
     "/.kube",
-    "/.docker",
+    "/.docker/config.json",
+    "/.docker/",
     "/.netrc",
     "/.git-credentials",
+    "/etc/passwd",
+    "/etc/shadow",
+    "/etc/sudoers",
+    "/etc/ssh/",
     "/proc/",
     "/sys/",
 ];
 
 /// Sensitive file names (matched against the final path component or suffix).
+/// All comparisons are case-insensitive (paths are lowercased before matching).
 const SENSITIVE_SUFFIXES: &[&str] = &[
     ".bashrc",
     ".zshrc",
@@ -51,7 +63,60 @@ const SENSITIVE_SUFFIXES: &[&str] = &[
     ".env",
     ".pem",
     ".key",
+    "/.vault-token",
+    "/.npmrc",
+    "/.pypirc",
 ];
+
+// ---------------------------------------------------------------------------
+// L3: Rate limiting for signing commands
+// ---------------------------------------------------------------------------
+
+/// Minimum interval between signing operations (50 ms).
+const SIGN_RATE_LIMIT_MS: u128 = 50;
+
+/// Global timestamp of the last signing operation.
+static LAST_SIGN_TIME: Mutex<Option<Instant>> = Mutex::new(None);
+
+/// Check the signing rate limit. Returns an error if called faster than
+/// `SIGN_RATE_LIMIT_MS` milliseconds since the last signing operation.
+fn check_sign_rate_limit() -> Result<(), String> {
+    let mut guard = LAST_SIGN_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(last) = *guard {
+        let elapsed = last.elapsed().as_millis();
+        if elapsed < SIGN_RATE_LIMIT_MS {
+            return Err("Signing rate limit exceeded. Please wait before signing again.".into());
+        }
+    }
+    *guard = Some(Instant::now());
+    Ok(())
+}
+
+/// Reset the signing rate limiter (test-only).
+#[cfg(test)]
+fn reset_sign_rate_limit() {
+    let mut guard = LAST_SIGN_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    *guard = None;
+}
+
+/// Check a normalized, lowercased path string against the sensitive patterns.
+fn check_sensitive_path(check_str: &str) -> Result<(), String> {
+    // Check sensitive prefixes.
+    for pattern in SENSITIVE_PATTERNS {
+        if check_str.contains(pattern) {
+            return Err("Refusing to access sensitive path".to_string());
+        }
+    }
+
+    // Check sensitive suffixes.
+    for suffix in SENSITIVE_SUFFIXES {
+        if check_str.ends_with(suffix) {
+            return Err("Refusing to access sensitive file".to_string());
+        }
+    }
+
+    Ok(())
+}
 
 /// Validate that a filesystem path is safe for import/export operations.
 ///
@@ -71,26 +136,28 @@ fn validate_file_path(path: &str) -> Result<(), String> {
     // outright if the parent doesn't exist — falling back to the raw path
     // would allow symlink/TOCTOU bypasses.
     let normalized = if p.exists() {
-        p.canonicalize()
-            .map_err(|e| format!("Cannot resolve path: {}", e))?
+        p.canonicalize().map_err(|e| {
+            eprintln!("[workbench] cannot resolve path: {e}");
+            "Cannot resolve path".to_string()
+        })?
     } else if let Some(parent) = p.parent() {
         if parent.as_os_str().is_empty() {
             // Relative filename with no directory component (e.g. "foo.yaml").
             // Resolve against CWD so the sensitive-path checks still fire.
-            let cwd = std::env::current_dir()
-                .map_err(|e| format!("Cannot determine working directory: {}", e))?;
+            let cwd = std::env::current_dir().map_err(|e| {
+                eprintln!("[workbench] cannot determine working directory: {e}");
+                "Cannot determine working directory".to_string()
+            })?;
             cwd.join(p)
         } else if parent.exists() {
-            let canon_parent = parent
-                .canonicalize()
-                .map_err(|e| format!("Cannot resolve parent directory: {}", e))?;
+            let canon_parent = parent.canonicalize().map_err(|e| {
+                eprintln!("[workbench] cannot resolve parent directory: {e}");
+                "Cannot resolve parent directory".to_string()
+            })?;
             let file_name = p.file_name().unwrap_or_default();
             canon_parent.join(file_name)
         } else {
-            return Err(format!(
-                "Parent directory does not exist: {}",
-                parent.display()
-            ));
+            return Err("Parent directory does not exist".to_string());
         }
     } else {
         return Err("Invalid path: no parent component".into());
@@ -101,37 +168,15 @@ fn validate_file_path(path: &str) -> Result<(), String> {
     // Reject paths that still contain ".." after normalization.
     for component in normalized.components() {
         if let std::path::Component::ParentDir = component {
-            return Err(format!(
-                "Path traversal detected: path contains '..' segment after normalization: {}",
-                normalized_str
-            ));
+            return Err("Path traversal detected".to_string());
         }
     }
 
-    // Normalize backslashes to forward slashes for cross-platform sensitive-path matching.
-    let check_str = normalized_str.replace('\\', "/");
+    // Normalize backslashes to forward slashes and lowercase for cross-platform
+    // case-insensitive sensitive-path matching.
+    let check_str = normalized_str.replace('\\', "/").to_lowercase();
 
-    // Check sensitive prefixes.
-    for pattern in SENSITIVE_PATTERNS {
-        if check_str.contains(pattern) {
-            return Err(format!(
-                "Refusing to access sensitive path (matches '{}'): {}",
-                pattern, normalized_str
-            ));
-        }
-    }
-
-    // Check sensitive suffixes.
-    for suffix in SENSITIVE_SUFFIXES {
-        if check_str.ends_with(suffix) {
-            return Err(format!(
-                "Refusing to access sensitive file (matches '*{}'): {}",
-                suffix, normalized_str
-            ));
-        }
-    }
-
-    Ok(())
+    check_sensitive_path(&check_str)
 }
 
 // ---------------------------------------------------------------------------
@@ -430,7 +475,10 @@ fn load_policy_lax(yaml: &str) -> Result<Policy, String> {
         &LocalPolicyResolver::new(),
         PolicyValidationOptions::LAX,
     )
-    .map_err(|e| format!("Policy load error: {}", e))
+    .map_err(|e| {
+        eprintln!("[workbench] policy load error: {e}");
+        "Policy load error: invalid or unsupported policy format".to_string()
+    })
 }
 
 /// Build a `PostureReport` from a `PostureAwareReport`.
@@ -716,7 +764,7 @@ pub async fn simulate_action(
             serde_json::Value::Object(serde_json::Map::new())
         } else {
             serde_json::from_str(content_str)
-                .map_err(|e| format!("Invalid JSON for MCP args: {}", e))?
+                .map_err(|e| { eprintln!("[workbench] JSON parse error: {e}"); "Invalid JSON for MCP args".to_string() })?
         }
     } else {
         serde_json::Value::Null // unused
@@ -743,7 +791,7 @@ pub async fn simulate_action(
     let report: GuardReport = engine
         .check_action_report(&action, &context)
         .await
-        .map_err(|e| format!("Evaluation error: {}", e))?;
+        .map_err(|e| { eprintln!("[workbench] evaluation error: {e}"); "Policy evaluation failed".to_string() })?;
 
     let results: Vec<GuardResultEntry> =
         report.per_guard.iter().map(guard_result_to_entry).collect();
@@ -806,7 +854,7 @@ pub async fn simulate_action_with_posture(
     let mut posture_state: Option<PostureRuntimeState> = match posture_state_json {
         Some(json) if !json.is_empty() => Some(
             serde_json::from_str(&json)
-                .map_err(|e| format!("Invalid posture state JSON: {}", e))?,
+                .map_err(|e| { eprintln!("[workbench] posture state parse error: {e}"); "Invalid posture state JSON".to_string() })?,
         ),
         _ => None,
     };
@@ -821,7 +869,7 @@ pub async fn simulate_action_with_posture(
             serde_json::Value::Object(serde_json::Map::new())
         } else {
             serde_json::from_str(content_str)
-                .map_err(|e| format!("Invalid JSON for MCP args: {}", e))?
+                .map_err(|e| { eprintln!("[workbench] JSON parse error: {e}"); "Invalid JSON for MCP args".to_string() })?
         }
     } else {
         serde_json::Value::Null // unused
@@ -848,7 +896,7 @@ pub async fn simulate_action_with_posture(
     let report: PostureAwareReport = engine
         .check_action_report_with_posture(&action, &context, &mut posture_state)
         .await
-        .map_err(|e| format!("Evaluation error: {}", e))?;
+        .map_err(|e| { eprintln!("[workbench] evaluation error: {e}"); "Policy evaluation failed".to_string() })?;
 
     let results: Vec<GuardResultEntry> = report
         .guard_report
@@ -897,8 +945,12 @@ pub async fn sign_receipt(
     content_hash: String,
     verdict_passed: bool,
 ) -> Result<SignedReceiptResponse, String> {
-    let hash =
-        Hash::from_hex(&content_hash).map_err(|e| format!("Invalid content hash hex: {}", e))?;
+    check_sign_rate_limit()?;
+
+    let hash = Hash::from_hex(&content_hash).map_err(|e| {
+        eprintln!("[workbench] invalid content hash hex: {e}");
+        "Invalid content hash".to_string()
+    })?;
 
     let verdict = if verdict_passed {
         Verdict::pass()
@@ -913,14 +965,21 @@ pub async fn sign_receipt(
 
     let receipt_hash = receipt
         .hash_sha256()
-        .map_err(|e| format!("Receipt hashing error: {}", e))?
+        .map_err(|e| {
+            eprintln!("[workbench] receipt hashing error: {e}");
+            "Receipt hashing failed".to_string()
+        })?
         .to_hex();
 
-    let signed =
-        SignedReceipt::sign(receipt, &keypair).map_err(|e| format!("Signing error: {}", e))?;
+    let signed = SignedReceipt::sign(receipt, &keypair).map_err(|e| {
+        eprintln!("[workbench] signing error: {e}");
+        "Signing failed".to_string()
+    })?;
 
-    let signed_json =
-        serde_json::to_value(&signed).map_err(|e| format!("Serialization error: {}", e))?;
+    let signed_json = serde_json::to_value(&signed).map_err(|e| {
+        eprintln!("[workbench] serialization error: {e}");
+        "Serialization failed".to_string()
+    })?;
 
     Ok(SignedReceiptResponse {
         public_key: public_key_hex,
@@ -946,8 +1005,12 @@ pub async fn sign_receipt_persistent(
 ) -> Result<SignedReceiptResponse, String> {
     use tauri::Manager;
 
-    let hash =
-        Hash::from_hex(&content_hash).map_err(|e| format!("Invalid content hash hex: {}", e))?;
+    check_sign_rate_limit()?;
+
+    let hash = Hash::from_hex(&content_hash).map_err(|e| {
+        eprintln!("[workbench] invalid content hash hex: {e}");
+        "Invalid content hash".to_string()
+    })?;
 
     let verdict = if verdict_passed {
         Verdict::pass()
@@ -969,14 +1032,21 @@ pub async fn sign_receipt_persistent(
 
     let receipt_hash = receipt
         .hash_sha256()
-        .map_err(|e| format!("Receipt hashing error: {}", e))?
+        .map_err(|e| {
+            eprintln!("[workbench] receipt hashing error: {e}");
+            "Receipt hashing failed".to_string()
+        })?
         .to_hex();
 
-    let signed =
-        SignedReceipt::sign(receipt, &keypair).map_err(|e| format!("Signing error: {}", e))?;
+    let signed = SignedReceipt::sign(receipt, &keypair).map_err(|e| {
+        eprintln!("[workbench] signing error: {e}");
+        "Signing failed".to_string()
+    })?;
 
-    let signed_json =
-        serde_json::to_value(&signed).map_err(|e| format!("Serialization error: {}", e))?;
+    let signed_json = serde_json::to_value(&signed).map_err(|e| {
+        eprintln!("[workbench] serialization error: {e}");
+        "Serialization failed".to_string()
+    })?;
 
     Ok(SignedReceiptResponse {
         public_key: public_key_hex,
@@ -1191,10 +1261,19 @@ pub async fn export_policy_file(
 
     let policy = match fmt {
         "json" => {
-            serde_json::from_str::<Policy>(&content).map_err(|e| format!("Invalid JSON: {}", e))?
+            serde_json::from_str::<Policy>(&content).map_err(|e| {
+                eprintln!("[workbench] invalid JSON: {e}");
+                "Invalid JSON input".to_string()
+            })?
         }
-        "toml" => toml::from_str::<Policy>(&content).map_err(|e| format!("Invalid TOML: {}", e))?,
-        _ => parse_policy_lax(&content).map_err(|e| format!("Invalid YAML: {}", e))?,
+        "toml" => toml::from_str::<Policy>(&content).map_err(|e| {
+            eprintln!("[workbench] invalid TOML: {e}");
+            "Invalid TOML input".to_string()
+        })?,
+        _ => parse_policy_lax(&content).map_err(|e| {
+            eprintln!("[workbench] invalid YAML: {e}");
+            "Invalid YAML input".to_string()
+        })?,
     };
 
     if let Err(pve) = validate_policy_lax(&policy) {
@@ -1206,16 +1285,41 @@ pub async fn export_policy_file(
     }
 
     let output = match fmt {
-        "json" => serde_json::to_string_pretty(&policy)
-            .map_err(|e| format!("JSON serialization error: {}", e))?,
-        "toml" => toml::to_string_pretty(&policy)
-            .map_err(|e| format!("TOML serialization error: {}", e))?,
+        "json" => serde_json::to_string_pretty(&policy).map_err(|e| {
+            eprintln!("[workbench] JSON serialization error: {e}");
+            "Failed to serialize policy as JSON".to_string()
+        })?,
+        "toml" => toml::to_string_pretty(&policy).map_err(|e| {
+            eprintln!("[workbench] TOML serialization error: {e}");
+            "Failed to serialize policy as TOML".to_string()
+        })?,
         _ => content,
     };
 
+    // Re-validate the canonical path just before I/O to minimize the TOCTOU window.
+    validate_file_path(&path)?;
+
     tokio::fs::write(&path, output.as_bytes())
         .await
-        .map_err(|e| format!("File write error: {}", e))?;
+        .map_err(|e| {
+            eprintln!("[workbench] file write error: {e}");
+            "Failed to write file".to_string()
+        })?;
+
+    // Post-write verification: re-canonicalize the written file and re-check
+    // sensitive path patterns on the resolved path.
+    let written = Path::new(&path);
+    if written.exists() {
+        if let Ok(canon) = written.canonicalize() {
+            let canon_check = canon.to_string_lossy().replace('\\', "/").to_lowercase();
+            if check_sensitive_path(&canon_check).is_err() {
+                // The file was written to a sensitive location (e.g. via symlink race).
+                // Remove it and return an error.
+                let _ = tokio::fs::remove_file(&path).await;
+                return Err("File resolved to a sensitive path after write; removed".to_string());
+            }
+        }
+    }
 
     Ok(ExportResponse {
         success: true,
@@ -1229,9 +1333,22 @@ pub async fn export_policy_file(
 pub async fn import_policy_file(path: String) -> Result<ImportResponse, String> {
     validate_file_path(&path)?;
 
+    // Re-validate just before I/O to minimize TOCTOU window.
     let yaml = tokio::fs::read_to_string(&path)
         .await
-        .map_err(|e| format!("Failed to read file: {}", e))?;
+        .map_err(|e| {
+            eprintln!("[workbench] file read error: {e}");
+            "Failed to read file".to_string()
+        })?;
+
+    // Post-open re-canonicalize and check the resolved path.
+    let opened = Path::new(&path);
+    if opened.exists() {
+        if let Ok(canon) = opened.canonicalize() {
+            let canon_check = canon.to_string_lossy().replace('\\', "/").to_lowercase();
+            check_sensitive_path(&canon_check)?;
+        }
+    }
 
     if yaml.len() > MAX_POLICY_SIZE {
         return Err(format!(
@@ -1698,6 +1815,7 @@ totally_bogus_field: true
 
     #[tokio::test]
     async fn sign_receipt_returns_valid_structure() {
+        reset_sign_rate_limit();
         // 64 hex chars = 32 bytes SHA-256 hash.
         let hash = "a".repeat(64);
         let res = sign_receipt(hash, true).await.unwrap();
@@ -1715,6 +1833,7 @@ totally_bogus_field: true
 
     #[tokio::test]
     async fn sign_receipt_public_key_is_hex() {
+        reset_sign_rate_limit();
         let hash = "b".repeat(64);
         let res = sign_receipt(hash, false).await.unwrap();
         // Public key should be valid hex (64 hex chars = 32 bytes).
@@ -1731,6 +1850,7 @@ totally_bogus_field: true
 
     #[tokio::test]
     async fn sign_receipt_signature_present_in_response() {
+        reset_sign_rate_limit();
         let hash = "c".repeat(64);
         let res = sign_receipt(hash, true).await.unwrap();
         let obj = res.signed_receipt.as_object().unwrap();
@@ -1751,12 +1871,14 @@ totally_bogus_field: true
 
     #[tokio::test]
     async fn sign_receipt_invalid_hash_returns_error() {
+        reset_sign_rate_limit();
         let result = sign_receipt("not-valid-hex".into(), true).await;
         assert!(result.is_err(), "expected error for invalid hex hash");
     }
 
     #[tokio::test]
     async fn sign_receipt_wrong_length_hash_returns_error() {
+        reset_sign_rate_limit();
         // Too short: only 10 hex chars (5 bytes).
         let result = sign_receipt("abcdef1234".into(), true).await;
         assert!(result.is_err(), "expected error for wrong-length hash");
@@ -1765,7 +1887,9 @@ totally_bogus_field: true
     #[tokio::test]
     async fn sign_receipt_pass_vs_fail_verdict() {
         let hash = "d".repeat(64);
+        reset_sign_rate_limit();
         let pass = sign_receipt(hash.clone(), true).await.unwrap();
+        reset_sign_rate_limit();
         let fail = sign_receipt(hash, false).await.unwrap();
         // Both should succeed with different receipt hashes (different verdicts).
         assert_ne!(

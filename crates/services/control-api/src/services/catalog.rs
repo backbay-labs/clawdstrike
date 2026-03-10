@@ -11,6 +11,12 @@ use crate::models::catalog::{
     UpdateCatalogTemplateRequest,
 };
 
+/// Maximum number of templates per tenant before creates are rejected.
+const MAX_TEMPLATES_PER_TENANT: usize = 1_000;
+
+/// Maximum size (in bytes) for the policy_yaml field.
+const MAX_POLICY_YAML_BYTES: usize = 1_048_576; // 1 MB
+
 /// In-memory catalog registry for policy templates.
 #[derive(Debug, Clone)]
 pub struct CatalogStore {
@@ -184,6 +190,13 @@ impl CatalogStore {
         tenant_id: Uuid,
         req: CreateCatalogTemplateRequest,
     ) -> Result<CatalogTemplate, ApiError> {
+        // Validate policy_yaml size.
+        if req.policy_yaml.len() > MAX_POLICY_YAML_BYTES {
+            return Err(ApiError::BadRequest(format!(
+                "policy_yaml exceeds maximum size ({MAX_POLICY_YAML_BYTES} bytes)"
+            )));
+        }
+
         // Validate that the policy YAML is parseable.
         serde_yaml::from_str::<serde_json::Value>(&req.policy_yaml)
             .map_err(|e| ApiError::BadRequest(format!("invalid policy YAML: {e}")))?;
@@ -206,6 +219,19 @@ impl CatalogStore {
         };
 
         let mut inner = self.inner.write().await;
+
+        // Enforce per-tenant template limit.
+        let tenant_count = inner
+            .templates
+            .values()
+            .filter(|s| s.owner_tenant_id == Some(tenant_id))
+            .count();
+        if tenant_count >= MAX_TEMPLATES_PER_TENANT {
+            return Err(ApiError::Conflict(format!(
+                "tenant template limit reached ({MAX_TEMPLATES_PER_TENANT})"
+            )));
+        }
+
         inner.templates.insert(
             id,
             StoredTemplate {
@@ -271,19 +297,21 @@ impl CatalogStore {
     }
 
     /// Fork a template: create a copy with a new ID and a reference to the original.
+    ///
+    /// The source read and fork insert are performed under a single write lock
+    /// to prevent TOCTOU races (the source being deleted between read and insert).
     pub async fn fork_template(
         &self,
         tenant_id: Uuid,
         id: Uuid,
     ) -> Result<CatalogTemplate, ApiError> {
-        let inner = self.inner.read().await;
+        let mut inner = self.inner.write().await;
         let source = inner
             .templates
             .get(&id)
             .filter(|stored| is_visible_to_tenant(stored, tenant_id))
             .cloned()
             .ok_or(ApiError::NotFound)?;
-        drop(inner);
 
         let now = Utc::now();
         let new_id = Uuid::new_v4();
@@ -302,7 +330,6 @@ impl CatalogStore {
             forked_from: Some(id),
         };
 
-        let mut inner = self.inner.write().await;
         inner.templates.insert(
             new_id,
             StoredTemplate {

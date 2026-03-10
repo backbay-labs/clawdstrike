@@ -55,6 +55,7 @@ impl std::fmt::Display for HierarchyNodeType {
 #[derive(Debug, Clone, Serialize)]
 pub struct HierarchyNode {
     pub id: Uuid,
+    #[serde(skip_serializing)]
     pub tenant_id: Uuid,
     pub name: String,
     pub node_type: String,
@@ -198,6 +199,9 @@ pub struct DeleteHierarchyNodeQuery {
 pub struct DeleteHierarchyNodeResponse {
     pub deleted_count: i64,
     pub reparented_count: i64,
+    /// Number of descendant nodes that were cascade-deleted (excluded from `deleted_count`
+    /// which includes the target node itself).
+    pub descendant_count: i64,
 }
 
 #[cfg(test)]

@@ -24,12 +24,21 @@ function normalizeUrl(raw: string): string {
   return `http://${trimmed}`;
 }
 
-const LOCAL_STACK_PRESET = {
-  hushdUrl: "http://localhost:9876",
-  controlApiUrl: "http://localhost:8090",
-  apiKey: "clawdstrike-local-admin",
-  controlApiToken: "cs_local_dev_key",
-} as const;
+// Finding M5: Only include dev credentials in development mode.
+// In production, only pre-fill URLs (no secrets).
+const LOCAL_STACK_PRESET = import.meta.env.DEV
+  ? ({
+      hushdUrl: "http://localhost:9876",
+      controlApiUrl: "http://localhost:8090",
+      apiKey: "clawdstrike-local-admin",
+      controlApiToken: "cs_local_dev_key",
+    } as const)
+  : ({
+      hushdUrl: "http://localhost:9876",
+      controlApiUrl: "http://localhost:8090",
+      apiKey: "",
+      controlApiToken: "",
+    } as const);
 
 export function ConnectionSettings() {
   const {
@@ -52,7 +61,7 @@ export function ConnectionSettings() {
   const [showControlToken, setShowControlToken] = useState(false);
 
   const [testResult, setTestResult] = useState<
-    { ok: true; health: HealthResponse } | { ok: false; error: string } | null
+    { ok: true; health: HealthResponse & { tlsWarning?: string } } | { ok: false; error: string } | null
   >(null);
   const [isTesting, setIsTesting] = useState(false);
 
@@ -224,6 +233,7 @@ export function ConnectionSettings() {
 
       {!connection.connected && (
         <div className="flex flex-col gap-4">
+          {import.meta.env.DEV && (
           <div className="flex items-start justify-between gap-3 p-3 rounded-lg border border-[#2d3240] bg-[#131721]/60">
             <div className="min-w-0">
               <p className="text-xs font-medium text-[#ece7dc]">Local Stack</p>
@@ -243,6 +253,7 @@ export function ConnectionSettings() {
               Use Local Stack
             </button>
           </div>
+          )}
 
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-[#ece7dc]">hushd URL</label>
@@ -278,29 +289,37 @@ export function ConnectionSettings() {
             </div>
 
             {testResult && (
-              <div
-                className={cn(
-                  "flex items-center gap-1.5 text-[10px] mt-0.5",
-                  testResult.ok ? "text-[#3dbf84]" : "text-[#c45c5c]",
-                )}
-              >
-                {testResult.ok ? (
-                  <>
-                    <IconCheck size={11} stroke={2} />
-                    <span>
-                      Connected &mdash; hushd {testResult.health.version ?? "unknown"}
-                      {testResult.health.policy_hash && (
-                        <span className="text-[#6f7f9a]">
-                          {" "}(policy: {testResult.health.policy_hash.slice(0, 8)}...)
-                        </span>
-                      )}
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <IconX size={11} stroke={2} />
-                    <span>{testResult.error}</span>
-                  </>
+              <div className="flex flex-col gap-1 mt-0.5">
+                <div
+                  className={cn(
+                    "flex items-center gap-1.5 text-[10px]",
+                    testResult.ok ? "text-[#3dbf84]" : "text-[#c45c5c]",
+                  )}
+                >
+                  {testResult.ok ? (
+                    <>
+                      <IconCheck size={11} stroke={2} />
+                      <span>
+                        Connected &mdash; hushd {testResult.health.version ?? "unknown"}
+                        {testResult.health.policy_hash && (
+                          <span className="text-[#6f7f9a]">
+                            {" "}(policy: {testResult.health.policy_hash.slice(0, 8)}...)
+                          </span>
+                        )}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <IconX size={11} stroke={2} />
+                      <span>{testResult.error}</span>
+                    </>
+                  )}
+                </div>
+                {testResult.ok && testResult.health.tlsWarning && (
+                  <div className="flex items-center gap-1.5 text-[10px] text-[#d4a84b]">
+                    <IconAlertTriangle size={11} stroke={2} />
+                    <span>{testResult.health.tlsWarning}</span>
+                  </div>
                 )}
               </div>
             )}
@@ -413,8 +432,8 @@ export function ConnectionSettings() {
             <IconAlertTriangle size={14} stroke={1.5} className="text-[#d4a84b] shrink-0 mt-0.5" />
             <p className="text-[10px] text-[#6f7f9a] leading-relaxed">
               On desktop, credentials are encrypted at rest using Stronghold secure storage.
-              On web, credentials are stored in localStorage. Do not use the web version on
-              shared or untrusted machines.
+              On web, credentials are stored in session storage and cleared when the tab
+              closes. Do not use the web version on shared or untrusted machines.
             </p>
           </div>
         </div>

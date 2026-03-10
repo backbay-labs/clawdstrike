@@ -37,14 +37,22 @@ pub struct UpdateNodeParams<'a> {
 // List all nodes
 // ---------------------------------------------------------------------------
 
-pub async fn list_nodes(db: &PgPool, tenant_id: Uuid) -> Result<Vec<HierarchyNode>, ApiError> {
+pub async fn list_nodes(
+    db: &PgPool,
+    tenant_id: Uuid,
+    offset: i64,
+    limit: i64,
+) -> Result<Vec<HierarchyNode>, ApiError> {
     let rows = sqlx::query::query(
         r#"SELECT *
            FROM hierarchy_nodes
            WHERE tenant_id = $1
-           ORDER BY created_at ASC"#,
+           ORDER BY created_at ASC
+           LIMIT $2 OFFSET $3"#,
     )
     .bind(tenant_id)
+    .bind(limit)
+    .bind(offset)
     .fetch_all(db)
     .await
     .map_err(ApiError::Database)?;
@@ -144,6 +152,9 @@ pub async fn update_node(
     let next_parent_id = resolved_parent_id(params.parent_id, current_node.parent_id);
     ensure_parentless_node_allowed(next_node_type, next_parent_id)?;
 
+    // Use a transaction so that the cycle check and the UPDATE are atomic.
+    let mut tx = db.begin().await.map_err(ApiError::Database)?;
+
     // Validate parent_id if provided — prevent self-parenting and cross-tenant refs
     if let NullableField::Set(pid) = params.parent_id {
         if pid == params.node_id {
@@ -156,7 +167,7 @@ pub async fn update_node(
             sqlx::query::query("SELECT 1 FROM hierarchy_nodes WHERE id = $1 AND tenant_id = $2")
                 .bind(pid)
                 .bind(params.tenant_id)
-                .fetch_optional(db)
+                .fetch_optional(tx.as_mut())
                 .await
                 .map_err(ApiError::Database)?;
 
@@ -167,7 +178,7 @@ pub async fn update_node(
         }
 
         // Prevent cycles: ensure the proposed parent is not a descendant of this node.
-        if is_descendant(db, params.tenant_id, pid, params.node_id).await? {
+        if is_descendant_tx(tx.as_mut(), params.tenant_id, pid, params.node_id).await? {
             return Err(ApiError::BadRequest(
                 "cannot set parent: would create a cycle in the hierarchy".to_string(),
             ));
@@ -200,12 +211,14 @@ pub async fn update_node(
     .bind(params.policy_name.into_option())
     .bind(!matches!(params.metadata, NullableField::Missing))
     .bind(metadata_update)
-    .fetch_optional(db)
+    .fetch_optional(tx.as_mut())
     .await
     .map_err(map_root_conflict)?
     .ok_or(ApiError::NotFound)?;
 
-    HierarchyNode::from_row(row).map_err(ApiError::Database)
+    let node = HierarchyNode::from_row(row).map_err(ApiError::Database)?;
+    tx.commit().await.map_err(ApiError::Database)?;
+    Ok(node)
 }
 
 fn normalized_metadata_update(
@@ -288,6 +301,7 @@ pub async fn delete_node(
 
     let mut reparented_count = 0_i64;
     let mut deleted_count = 0_i64;
+    let mut descendant_count = 0_i64;
 
     if reparent {
         // Move children to the deleted node's parent
@@ -326,7 +340,8 @@ pub async fn delete_node(
         .await
         .map_err(ApiError::Database)?;
 
-        deleted_count += result.rows_affected() as i64;
+        descendant_count = result.rows_affected() as i64;
+        deleted_count += descendant_count;
     }
 
     // Delete the node itself
@@ -339,11 +354,21 @@ pub async fn delete_node(
 
     deleted_count += result.rows_affected() as i64;
 
+    tracing::info!(
+        node_id = %node_id,
+        tenant_id = %tenant_id,
+        deleted_count,
+        descendant_count,
+        reparented_count,
+        "Hierarchy node deleted with descendants"
+    );
+
     tx.commit().await.map_err(ApiError::Database)?;
 
     Ok(DeleteHierarchyNodeResponse {
         deleted_count,
         reparented_count,
+        descendant_count,
     })
 }
 
@@ -429,6 +454,8 @@ fn select_root_id(nodes: &[HierarchyNode]) -> Option<Uuid> {
 // ---------------------------------------------------------------------------
 
 /// Returns true if `candidate_descendant_id` is a descendant of `ancestor_id`.
+/// Uses a pool connection (for standalone checks).
+#[allow(dead_code)]
 async fn is_descendant(
     db: &PgPool,
     tenant_id: Uuid,
@@ -453,6 +480,38 @@ async fn is_descendant(
     .bind(ancestor_id)
     .bind(tenant_id)
     .fetch_one(db)
+    .await
+    .map_err(ApiError::Database)?;
+
+    Ok(result)
+}
+
+/// Returns true if `candidate_descendant_id` is a descendant of `ancestor_id`.
+/// Runs within an existing transaction to avoid TOCTOU races.
+async fn is_descendant_tx(
+    conn: &mut sqlx_postgres::PgConnection,
+    tenant_id: Uuid,
+    candidate_descendant_id: Uuid,
+    ancestor_id: Uuid,
+) -> Result<bool, ApiError> {
+    let result = sqlx::query_scalar::query_scalar::<_, bool>(
+        r#"WITH RECURSIVE ancestors AS (
+               SELECT id, parent_id FROM hierarchy_nodes
+               WHERE id = $1 AND tenant_id = $3
+               UNION ALL
+               SELECT hn.id, hn.parent_id
+               FROM hierarchy_nodes hn
+               JOIN ancestors a ON hn.id = a.parent_id
+               WHERE hn.tenant_id = $3
+           )
+           SELECT EXISTS (
+               SELECT 1 FROM ancestors WHERE id = $2
+           )"#,
+    )
+    .bind(candidate_descendant_id)
+    .bind(ancestor_id)
+    .bind(tenant_id)
+    .fetch_one(&mut *conn)
     .await
     .map_err(ApiError::Database)?;
 

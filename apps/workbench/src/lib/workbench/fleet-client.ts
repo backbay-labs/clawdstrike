@@ -20,14 +20,73 @@ import { yamlToPolicy } from "./yaml-utils";
 
 const DEV = import.meta.env.DEV;
 
+// ---------------------------------------------------------------------------
+// URL validation (Finding 3: SSRF prevention)
+// ---------------------------------------------------------------------------
+
+/** Private/loopback IP patterns that should be blocked in production. */
+const PRIVATE_IP_PATTERNS = [
+  /^127\./,
+  /^10\./,
+  /^172\.(1[6-9]|2\d|3[01])\./,
+  /^192\.168\./,
+  /^169\.254\./,
+  /^0\.0\.0\.0$/,
+  /^\[::1\]$/,
+  /^::1$/,
+];
+
+export function validateFleetUrl(url: string): { valid: true; tlsWarning?: string } | { valid: false; reason: string } {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return { valid: false, reason: "Invalid URL format" };
+  }
+
+  // Only allow http and https schemes
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    return { valid: false, reason: `Unsupported URL scheme "${parsed.protocol}" — only http: and https: are allowed` };
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+
+  // In production, reject private/loopback addresses (SSRF prevention)
+  if (!import.meta.env.DEV) {
+    if (hostname === "localhost") {
+      return { valid: false, reason: "localhost URLs are not allowed in production" };
+    }
+    for (const pattern of PRIVATE_IP_PATTERNS) {
+      if (pattern.test(hostname)) {
+        return { valid: false, reason: `Private/loopback IP addresses are not allowed in production` };
+      }
+    }
+  }
+
+  // TLS warning (Finding M4): warn about http in non-localhost contexts
+  if (parsed.protocol === "http:" && hostname !== "localhost" && hostname !== "127.0.0.1") {
+    return { valid: true, tlsWarning: "Connection is using unencrypted HTTP. Use HTTPS in production to protect credentials in transit." };
+  }
+
+  return { valid: true };
+}
+
 /** Rewrite absolute URLs to Vite dev proxy paths; passthrough in production. */
 function proxyUrl(absoluteUrl: string, kind: "hushd" | "control"): string {
   if (!DEV) return absoluteUrl;
+
+  // Validate URL before proxy rewrite (Finding 3)
+  const validation = validateFleetUrl(absoluteUrl);
+  if (!validation.valid) {
+    throw new Error(`[fleet-client] Invalid fleet URL: ${validation.reason}`);
+  }
+
   try {
     const u = new URL(absoluteUrl);
     return `/_proxy/${kind}${u.pathname}${u.search}`;
-  } catch (e) {
-    console.warn("[fleet-client] URL parse failed for proxy rewrite:", e);
+  } catch {
+    // Don't log the raw URL to avoid credential leakage (Finding M3)
+    console.warn("[fleet-client] Invalid URL format for proxy rewrite");
     return absoluteUrl;
   }
 }
@@ -204,14 +263,16 @@ interface BackendDelegationGraphResponse {
 /**
  * Synchronous bootstrap read from localStorage in the web runtime.
  * Used for initial render before Stronghold is ready.
+ * Only reads URL fields from localStorage; secrets are read exclusively
+ * from secureStore via loadSavedConnectionAsync(). (Finding 2)
  */
 export function loadSavedConnection(): Partial<FleetConnection> {
   try {
     return {
       hushdUrl: localStorage.getItem(LS_HUSHD_URL) ?? "",
       controlApiUrl: localStorage.getItem(LS_CONTROL_API_URL) ?? "",
-      apiKey: localStorage.getItem(LS_API_KEY) ?? "",
-      controlApiToken: localStorage.getItem(LS_CONTROL_TOKEN) ?? "",
+      apiKey: "",
+      controlApiToken: "",
     };
   } catch (e) {
     console.warn("[fleet-client] localStorage read failed:", e);
@@ -250,26 +311,35 @@ export async function loadSavedConnectionAsync(): Promise<Partial<FleetConnectio
 
 /**
  * Save connection config to secureStore (Stronghold on desktop).
- * Also writes to localStorage as a sync-readable cache for initial render.
+ * Only non-secret fields (URLs) are written to localStorage for sync bootstrap.
+ * Secret fields (apiKey, controlApiToken) are only written to secureStore.
+ * (Finding 2: never write secrets to plaintext localStorage.)
  */
-export function saveConnectionConfig(config: {
+export async function saveConnectionConfig(config: {
   hushdUrl: string;
   controlApiUrl: string;
   apiKey: string;
   controlApiToken: string;
-}) {
-  // Write to secureStore (async, fire-and-forget).
-  secureStore.set(SS_HUSHD_URL, config.hushdUrl).catch(() => {});
-  secureStore.set(SS_CONTROL_API_URL, config.controlApiUrl).catch(() => {});
-  secureStore.set(SS_API_KEY, config.apiKey).catch(() => {});
-  secureStore.set(SS_CONTROL_TOKEN, config.controlApiToken).catch(() => {});
+}): Promise<void> {
+  // Write all fields to secureStore (Stronghold on desktop, sessionStorage fallback on web).
+  // Finding M6: await the writes instead of fire-and-forget.
+  try {
+    await Promise.all([
+      secureStore.set(SS_HUSHD_URL, config.hushdUrl),
+      secureStore.set(SS_CONTROL_API_URL, config.controlApiUrl),
+      secureStore.set(SS_API_KEY, config.apiKey),
+      secureStore.set(SS_CONTROL_TOKEN, config.controlApiToken),
+    ]);
+  } catch (e) {
+    console.warn("[fleet-client] secureStore write failed — credentials may not be persisted securely:", e);
+    throw new Error("Failed to persist credentials securely");
+  }
 
-  // Also keep localStorage as sync-readable fallback for initial render.
+  // Only write non-secret URL fields to localStorage for sync-readable bootstrap.
+  // Never write apiKey or controlApiToken to localStorage.
   try {
     localStorage.setItem(LS_HUSHD_URL, config.hushdUrl);
     localStorage.setItem(LS_CONTROL_API_URL, config.controlApiUrl);
-    localStorage.setItem(LS_API_KEY, config.apiKey);
-    localStorage.setItem(LS_CONTROL_TOKEN, config.controlApiToken);
   } catch (e) {
     console.warn("[fleet-client] localStorage write failed:", e);
   }
@@ -282,9 +352,11 @@ export function clearConnectionConfig() {
   secureStore.delete(SS_API_KEY).catch(() => {});
   secureStore.delete(SS_CONTROL_TOKEN).catch(() => {});
 
+  // Only URL fields are in localStorage (secrets are never written there).
   try {
     localStorage.removeItem(LS_HUSHD_URL);
     localStorage.removeItem(LS_CONTROL_API_URL);
+    // Also clean up any legacy secret keys that may exist from before Finding 2 fix
     localStorage.removeItem(LS_API_KEY);
     localStorage.removeItem(LS_CONTROL_TOKEN);
   } catch (e) {
@@ -297,6 +369,7 @@ export function clearCredentials() {
   secureStore.delete(SS_API_KEY).catch(() => {});
   secureStore.delete(SS_CONTROL_TOKEN).catch(() => {});
 
+  // Clean up any legacy secret keys from localStorage
   try {
     localStorage.removeItem(LS_API_KEY);
     localStorage.removeItem(LS_CONTROL_TOKEN);
@@ -322,12 +395,31 @@ function controlHeaders(conn: FleetConnection): Record<string, string> {
   return h;
 }
 
+/** Max response size accepted by jsonFetch (10 MB). */
+const MAX_RESPONSE_BYTES = 10_485_760;
+
+/** Redact Bearer tokens and API key-like patterns from error messages. (Finding M3) */
+function redactSecrets(text: string): string {
+  return text.replace(/Bearer\s+[^\s]+/gi, "Bearer [REDACTED]");
+}
+
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await httpFetch(url, { ...init, signal: init?.signal ?? AbortSignal.timeout(10_000) });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
-    throw new Error(body || `HTTP ${res.status}`);
+    // Finding M3: truncate error body and strip secrets
+    const sanitized = redactSecrets(body.slice(0, 200));
+    throw new Error(sanitized || `HTTP ${res.status}`);
   }
+
+  // Finding L9: check Content-Length before parsing
+  const contentLength = res.headers.get("Content-Length");
+  if (contentLength && parseInt(contentLength, 10) > MAX_RESPONSE_BYTES) {
+    throw new Error(`Response too large (${contentLength} bytes exceeds ${MAX_RESPONSE_BYTES} limit)`);
+  }
+  // Note: if no Content-Length header is present, we proceed without size checks.
+  // Streaming-based size limits would require reading the body differently.
+
   return res.json() as Promise<T>;
 }
 
@@ -550,11 +642,24 @@ function normalizeCatalogFetchError(error: unknown): Error {
 export async function testConnection(
   hushdUrl: string,
   apiKey: string,
-): Promise<HealthResponse> {
+): Promise<HealthResponse & { tlsWarning?: string }> {
+  // Finding 3: validate URL before making any fetch
+  const validation = validateFleetUrl(hushdUrl);
+  if (!validation.valid) {
+    throw new Error(`Invalid fleet URL: ${validation.reason}`);
+  }
+
   const url = stripTrailingSlash(hushdUrl);
-  return jsonFetch<HealthResponse>(proxyUrl(`${url}/health`, "hushd"), {
+  const health = await jsonFetch<HealthResponse>(proxyUrl(`${url}/health`, "hushd"), {
     headers: hushdHeaders(apiKey),
   });
+
+  // Finding M4: surface TLS warning if applicable
+  if (validation.valid && validation.tlsWarning) {
+    return { ...health, tlsWarning: validation.tlsWarning };
+  }
+
+  return health;
 }
 
 export async function fetchRemotePolicy(
@@ -2197,11 +2302,11 @@ function isHierarchyNode(value: unknown): value is HierarchyNode {
 }
 
 // ---------------------------------------------------------------------------
-// Convenience client (reads saved credentials from localStorage)
+// Convenience client (reads saved credentials from secureStore + localStorage)
 // ---------------------------------------------------------------------------
 
-function savedConnection(): FleetConnection {
-  const saved = loadSavedConnection();
+async function savedConnectionAsync(): Promise<FleetConnection> {
+  const saved = await loadSavedConnectionAsync();
   return {
     hushdUrl: saved.hushdUrl ?? "",
     controlApiUrl: saved.controlApiUrl ?? "",
@@ -2215,7 +2320,7 @@ function savedConnection(): FleetConnection {
 
 export const fleetClient = {
   async healthCheck(): Promise<boolean> {
-    const conn = savedConnection();
+    const conn = await savedConnectionAsync();
     if (!conn.hushdUrl) return false;
     try {
       await testConnection(conn.hushdUrl, conn.apiKey);
@@ -2227,22 +2332,22 @@ export const fleetClient = {
   },
 
   async fetchDelegationGraph(): Promise<DelegationGraph | null> {
-    const conn = savedConnection();
+    const conn = await savedConnectionAsync();
     return conn.controlApiUrl ? fetchDelegationGraphFromApi(conn) : null;
   },
 
   async fetchDelegationGraphSnapshot(principalId: string): Promise<DelegationGraph | null> {
-    const conn = savedConnection();
+    const conn = await savedConnectionAsync();
     return fetchDelegationGraphSnapshot(conn, principalId);
   },
 
   async fetchPrincipals(): Promise<PrincipalInfo[]> {
-    const conn = savedConnection();
+    const conn = await savedConnectionAsync();
     return fetchPrincipals(conn);
   },
 
   async fetchApprovals(): Promise<{ requests: ApprovalRequest[]; decisions: ApprovalDecision[] } | null> {
-    const conn = savedConnection();
+    const conn = await savedConnectionAsync();
     if (!conn.controlApiUrl && !conn.hushdUrl) return null;
     try {
       return await fetchApprovals(conn);
@@ -2257,6 +2362,7 @@ export const fleetClient = {
     decision: "approved" | "denied",
     opts?: { scope?: ApprovalScope; reason?: string },
   ): Promise<{ success: boolean; error?: string }> {
-    return resolveApproval(savedConnection(), requestId, decision, opts);
+    const conn = await savedConnectionAsync();
+    return resolveApproval(conn, requestId, decision, opts);
   },
 };

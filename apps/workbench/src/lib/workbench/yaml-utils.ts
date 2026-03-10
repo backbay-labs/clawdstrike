@@ -279,7 +279,7 @@ export function yamlToPolicy(
   yaml: string
 ): [WorkbenchPolicy | null, string[]] {
   try {
-    const doc = YAML.parse(yaml, { maxAliasCount: 10, uniqueKeys: true });
+    const doc = YAML.parse(yaml, { maxAliasCount: 0, uniqueKeys: true });
     if (!doc || typeof doc !== "object") {
       return [null, ["YAML must be a mapping/object"]];
     }

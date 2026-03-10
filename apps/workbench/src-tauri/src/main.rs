@@ -16,11 +16,13 @@ fn main() {
         .plugin({
             // Register tauri-plugin-stronghold for JS-side capabilities/permissions.
             // The actual Stronghold instance is managed by our StrongholdState below.
-            let hostname = hostname::get()
-                .map(|h| h.to_string_lossy().into_owned())
-                .unwrap_or_else(|_| "clawdstrike-default".to_string());
-            let password = format!("clawdstrike-vault-{}", hostname);
-            tauri_plugin_stronghold::Builder::new(move |_| password.as_bytes().to_vec()).build()
+            // Use the same machine-derived password as our StrongholdState.
+            let data_dir = dirs_next::data_dir()
+                .unwrap_or_else(std::env::temp_dir)
+                .join("com.clawdstrike.workbench");
+            let _ = std::fs::create_dir_all(&data_dir);
+            let password = stronghold_cmds::derive_machine_password(&data_dir);
+            tauri_plugin_stronghold::Builder::new(move |_| password.to_vec()).build()
         })
         .manage(StrongholdState::new())
         .setup(|_app| {

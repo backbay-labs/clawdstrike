@@ -1,6 +1,7 @@
 use axum::extract::{Path, Query, State};
 use axum::routing::get;
 use axum::{Json, Router};
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::auth::AuthenticatedTenant;
@@ -12,6 +13,14 @@ use crate::models::hierarchy::{
 use crate::services::hierarchy as hierarchy_service;
 use crate::state::AppState;
 
+/// Query parameters for listing hierarchy nodes.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ListNodesQuery {
+    offset: Option<i64>,
+    limit: Option<i64>,
+}
+
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/hierarchy/nodes", get(list_nodes).post(create_node))
@@ -22,12 +31,15 @@ pub fn router() -> Router<AppState> {
         .route("/hierarchy/tree", get(get_tree))
 }
 
-/// GET /api/v1/hierarchy/nodes — list all hierarchy nodes for the tenant.
+/// GET /api/v1/hierarchy/nodes — list hierarchy nodes for the tenant (paginated).
 async fn list_nodes(
     State(state): State<AppState>,
     auth: AuthenticatedTenant,
+    Query(query): Query<ListNodesQuery>,
 ) -> Result<Json<Vec<HierarchyNode>>, ApiError> {
-    let nodes = hierarchy_service::list_nodes(&state.db, auth.tenant_id).await?;
+    let offset = query.offset.unwrap_or(0).max(0);
+    let limit = query.limit.unwrap_or(100).clamp(1, 500);
+    let nodes = hierarchy_service::list_nodes(&state.db, auth.tenant_id, offset, limit).await?;
     Ok(Json(nodes))
 }
 

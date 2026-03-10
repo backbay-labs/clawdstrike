@@ -1178,7 +1178,19 @@ export function HierarchyPage() {
       const node = hierarchy.nodes[id];
       if (!node) return;
 
-      // In production you'd use a proper dialog, but for now we just proceed
+      // Finding M18: Confirm before deleting, showing descendant count
+      const childIds = Object.values(hierarchy.nodes).filter((n) => n.parentId === id);
+      const descendantCount = (function countDescendants(nodeId: string): number {
+        const children = Object.values(hierarchy.nodes).filter((n) => n.parentId === nodeId);
+        return children.reduce((sum, child) => sum + 1 + countDescendants(child.id), 0);
+      })(id);
+
+      const message = descendantCount > 0
+        ? `Delete node "${node.name}" and all ${descendantCount} descendant(s)? This cannot be undone.`
+        : `Delete node "${node.name}"? This cannot be undone.`;
+
+      if (!window.confirm(message)) return;
+
       const updated = removeNode(hierarchy, id);
       setHierarchy(updated);
       if (selectedId === id) {

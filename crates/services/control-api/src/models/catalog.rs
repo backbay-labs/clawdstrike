@@ -55,6 +55,7 @@ pub struct UpdateCatalogTemplateRequest {
 
 /// Query parameters for listing catalog templates.
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CatalogTemplateListQuery {
     pub category: Option<String>,
     pub tag: Option<String>,

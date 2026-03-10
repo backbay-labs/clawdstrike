@@ -32,10 +32,22 @@ const MAX_REGEX_CONTENT_BYTES = 1_048_576;
 
 /** Reject regex patterns with nested quantifiers that can cause catastrophic backtracking. */
 function isSafeRegex(pattern: string): boolean {
-  // Reject patterns longer than 1000 chars
-  if (pattern.length > 1000) return false;
+  // Reject patterns longer than 500 chars (Finding M14: reduced from 1000)
+  if (pattern.length > 500) return false;
   // Reject nested quantifiers: (x+)+, (x*)+, (x+)*, etc.
   if (/(\+|\*|\{)\)?(\+|\*|\{)/.test(pattern)) return false;
+  // Reject backreferences (\1, \2, etc.) (Finding M14)
+  if (/\\[1-9]/.test(pattern)) return false;
+  // Reject lookahead/lookbehind containing quantifiers (Finding M14)
+  if (/\(\?[=!<][^)]*[+*{]/.test(pattern)) return false;
+  // Reject deeply nested groups (>10 levels) (Finding M14)
+  let maxDepth = 0;
+  let depth = 0;
+  for (const ch of pattern) {
+    if (ch === "(") { depth++; maxDepth = Math.max(maxDepth, depth); }
+    else if (ch === ")") { depth = Math.max(0, depth - 1); }
+  }
+  if (maxDepth > 10) return false;
   // Reject excessive alternation groups (>20)
   if ((pattern.match(/\|/g) || []).length > 20) return false;
   // Reject duplicate alternation branches (e.g. (a|a)) — backreference-style bypass

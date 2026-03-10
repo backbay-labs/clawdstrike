@@ -1,5 +1,7 @@
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
+
+use tokio::sync::RwLock;
 
 use axum::extract::{Path, Query, State};
 use axum::routing::{get, post};
@@ -11,6 +13,16 @@ use uuid::Uuid;
 use crate::auth::AuthenticatedTenant;
 use crate::error::ApiError;
 use crate::state::AppState;
+
+// ---------------------------------------------------------------------------
+// Size limits for in-memory stores
+// ---------------------------------------------------------------------------
+
+/// Maximum number of receipts per tenant before inserts are rejected.
+const MAX_RECEIPTS_PER_TENANT: usize = 10_000;
+
+/// Maximum serialized size (in bytes) for evidence, metadata, or signed_receipt fields.
+const MAX_RECEIPT_PAYLOAD_BYTES: usize = 1_048_576; // 1 MB
 
 // ---------------------------------------------------------------------------
 // In-memory receipt store
@@ -41,15 +53,27 @@ impl ReceiptStore {
         Self::default()
     }
 
-    fn insert(&self, tenant_id: Uuid, receipt: StoredReceipt) -> Result<StoredReceipt, ApiError> {
-        let mut store = self
-            .inner
-            .write()
-            .map_err(|_| ApiError::Internal("receipt store lock poisoned".to_string()))?;
+    async fn insert(
+        &self,
+        tenant_id: Uuid,
+        receipt: StoredReceipt,
+    ) -> Result<StoredReceipt, ApiError> {
+        // Validate payload sizes before acquiring lock.
+        Self::validate_payload_size(&receipt)?;
+
+        let mut store = self.inner.write().await;
 
         let id = receipt.id;
         if store.by_id.contains_key(&id) {
             return Err(ApiError::Conflict(format!("receipt '{id}' already exists")));
+        }
+
+        // Enforce per-tenant receipt limit.
+        let tenant_count = store.by_tenant.get(&tenant_id).map_or(0, Vec::len);
+        if tenant_count >= MAX_RECEIPTS_PER_TENANT {
+            return Err(ApiError::Conflict(format!(
+                "tenant receipt limit reached ({MAX_RECEIPTS_PER_TENANT})"
+            )));
         }
 
         // Update chain index.
@@ -63,11 +87,43 @@ impl ReceiptStore {
         Ok(receipt)
     }
 
-    fn get(&self, tenant_id: Uuid, id: Uuid) -> Result<Option<StoredReceipt>, ApiError> {
-        let store = self
-            .inner
-            .read()
-            .map_err(|_| ApiError::Internal("receipt store lock poisoned".to_string()))?;
+    /// Validate that individual JSON payload fields do not exceed the size limit.
+    fn validate_payload_size(receipt: &StoredReceipt) -> Result<(), ApiError> {
+        if let Some(ref evidence) = receipt.evidence {
+            let size = serde_json::to_string(evidence)
+                .map(|s| s.len())
+                .unwrap_or(0);
+            if size > MAX_RECEIPT_PAYLOAD_BYTES {
+                return Err(ApiError::BadRequest(format!(
+                    "evidence field exceeds maximum size ({MAX_RECEIPT_PAYLOAD_BYTES} bytes)"
+                )));
+            }
+        }
+        if let Some(ref metadata) = receipt.metadata {
+            let size = serde_json::to_string(metadata)
+                .map(|s| s.len())
+                .unwrap_or(0);
+            if size > MAX_RECEIPT_PAYLOAD_BYTES {
+                return Err(ApiError::BadRequest(format!(
+                    "metadata field exceeds maximum size ({MAX_RECEIPT_PAYLOAD_BYTES} bytes)"
+                )));
+            }
+        }
+        if let Some(ref signed_receipt) = receipt.signed_receipt {
+            let size = serde_json::to_string(signed_receipt)
+                .map(|s| s.len())
+                .unwrap_or(0);
+            if size > MAX_RECEIPT_PAYLOAD_BYTES {
+                return Err(ApiError::BadRequest(format!(
+                    "signed_receipt field exceeds maximum size ({MAX_RECEIPT_PAYLOAD_BYTES} bytes)"
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    async fn get(&self, tenant_id: Uuid, id: Uuid) -> Result<Option<StoredReceipt>, ApiError> {
+        let store = self.inner.read().await;
 
         let receipt = store.by_id.get(&id).cloned();
         // Ensure tenant isolation.
@@ -78,16 +134,13 @@ impl ReceiptStore {
         }
     }
 
-    fn list(
+    async fn list(
         &self,
         tenant_id: Uuid,
         offset: usize,
         limit: usize,
     ) -> Result<(Vec<StoredReceipt>, usize), ApiError> {
-        let store = self
-            .inner
-            .read()
-            .map_err(|_| ApiError::Internal("receipt store lock poisoned".to_string()))?;
+        let store = self.inner.read().await;
 
         let ids = store.by_tenant.get(&tenant_id);
         let total = ids.map_or(0, Vec::len);
@@ -106,24 +159,30 @@ impl ReceiptStore {
         Ok((items, total))
     }
 
-    fn chain(&self, tenant_id: Uuid, policy_name: &str) -> Result<Vec<StoredReceipt>, ApiError> {
-        let store = self
-            .inner
-            .read()
-            .map_err(|_| ApiError::Internal("receipt store lock poisoned".to_string()))?;
+    async fn chain(
+        &self,
+        tenant_id: Uuid,
+        policy_name: &str,
+        offset: usize,
+        limit: usize,
+    ) -> Result<(Vec<StoredReceipt>, usize), ApiError> {
+        let store = self.inner.read().await;
 
         let chain_key = (tenant_id, policy_name.to_string());
-        let receipts = store
-            .by_chain
-            .get(&chain_key)
+        let ids = store.by_chain.get(&chain_key);
+        let total = ids.map_or(0, Vec::len);
+
+        let items: Vec<StoredReceipt> = ids
             .map(|ids| {
                 ids.iter()
+                    .skip(offset)
+                    .take(limit)
                     .filter_map(|id| store.by_id.get(id).cloned())
                     .collect()
             })
             .unwrap_or_default();
 
-        Ok(receipts)
+        Ok((items, total))
     }
 }
 
@@ -136,7 +195,8 @@ impl ReceiptStore {
 pub struct StoredReceipt {
     /// Server-assigned unique ID.
     pub id: Uuid,
-    /// Owning tenant.
+    /// Owning tenant (excluded from API responses).
+    #[serde(skip_serializing)]
     pub tenant_id: Uuid,
     /// ISO-8601 timestamp from the original receipt.
     pub timestamp: String,
@@ -177,6 +237,14 @@ pub struct PaginatedResponse<T: Serialize> {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ListReceiptsQuery {
+    pub offset: Option<usize>,
+    pub limit: Option<usize>,
+}
+
+/// Query parameters for the receipt chain endpoint.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChainReceiptsQuery {
     pub offset: Option<usize>,
     pub limit: Option<usize>,
 }
@@ -230,6 +298,9 @@ pub struct VerifyReceiptResponse {
     pub valid: bool,
     pub signer_valid: bool,
     pub receipt_id: Uuid,
+    /// Indicates whether the public key used for verification matches the stored key.
+    /// `false` when a caller-supplied public key override differs from the stored key.
+    pub key_matches_stored: bool,
     pub errors: Vec<String>,
 }
 
@@ -260,7 +331,7 @@ async fn list_receipts(
     let offset = query.offset.unwrap_or(0);
     let limit = query.limit.unwrap_or(50).min(500);
 
-    let (items, total) = state.receipt_store.list(auth.tenant_id, offset, limit)?;
+    let (items, total) = state.receipt_store.list(auth.tenant_id, offset, limit).await?;
 
     Ok(Json(PaginatedResponse {
         items,
@@ -278,7 +349,8 @@ async fn get_receipt(
 ) -> Result<Json<StoredReceipt>, ApiError> {
     state
         .receipt_store
-        .get(auth.tenant_id, id)?
+        .get(auth.tenant_id, id)
+        .await?
         .map(Json)
         .ok_or(ApiError::NotFound)
 }
@@ -293,7 +365,7 @@ async fn store_receipt(
     validate_store_request(&req)?;
 
     let receipt = stored_receipt_from_request(auth.tenant_id, req);
-    let stored = state.receipt_store.insert(auth.tenant_id, receipt)?;
+    let stored = state.receipt_store.insert(auth.tenant_id, receipt).await?;
 
     tracing::info!(
         receipt_id = %stored.id,
@@ -333,7 +405,7 @@ async fn batch_store_receipts(
     let mut stored = Vec::with_capacity(req.receipts.len());
     for r in req.receipts {
         let receipt = stored_receipt_from_request(auth.tenant_id, r);
-        let s = state.receipt_store.insert(auth.tenant_id, receipt)?;
+        let s = state.receipt_store.insert(auth.tenant_id, receipt).await?;
         stored.push(s);
     }
 
@@ -348,15 +420,27 @@ async fn batch_store_receipts(
     Ok(Json(BatchStoreReceiptsResponse { stored, count }))
 }
 
-/// GET /api/v1/receipts/chain/{policy_name}
+/// GET /api/v1/receipts/chain/{policy_name}?offset=0&limit=100
 async fn get_receipt_chain(
     State(state): State<AppState>,
     auth: AuthenticatedTenant,
     Path(policy_name): Path<String>,
-) -> Result<Json<Vec<StoredReceipt>>, ApiError> {
-    let chain = state.receipt_store.chain(auth.tenant_id, &policy_name)?;
+    Query(query): Query<ChainReceiptsQuery>,
+) -> Result<Json<PaginatedResponse<StoredReceipt>>, ApiError> {
+    let offset = query.offset.unwrap_or(0);
+    let limit = query.limit.unwrap_or(100).min(500);
 
-    Ok(Json(chain))
+    let (items, total) = state
+        .receipt_store
+        .chain(auth.tenant_id, &policy_name, offset, limit)
+        .await?;
+
+    Ok(Json(PaginatedResponse {
+        items,
+        total,
+        offset,
+        limit,
+    }))
 }
 
 /// POST /api/v1/receipts/{id}/verify
@@ -368,10 +452,12 @@ async fn verify_receipt(
 ) -> Result<Json<VerifyReceiptResponse>, ApiError> {
     let receipt = state
         .receipt_store
-        .get(auth.tenant_id, id)?
+        .get(auth.tenant_id, id)
+        .await?
         .ok_or(ApiError::NotFound)?;
 
     let public_key_hex = req.public_key.as_deref().unwrap_or(&receipt.public_key);
+    let key_matches_stored = public_key_hex == receipt.public_key;
 
     let public_key = hush_core::PublicKey::from_hex(public_key_hex)
         .map_err(|_| ApiError::BadRequest("invalid public key hex".to_string()))?;
@@ -382,6 +468,7 @@ async fn verify_receipt(
         valid: verification.valid,
         signer_valid: verification.signer_valid,
         receipt_id: id,
+        key_matches_stored,
         errors: verification.errors,
     }))
 }
@@ -390,8 +477,12 @@ async fn verify_receipt(
 // Helpers
 // ---------------------------------------------------------------------------
 
+fn has_write_access(auth: &AuthenticatedTenant) -> bool {
+    matches!(auth.role.as_str(), "member" | "admin" | "owner")
+}
+
 fn ensure_write_access(auth: &AuthenticatedTenant) -> Result<(), ApiError> {
-    if auth.role == "viewer" {
+    if !has_write_access(auth) {
         return Err(ApiError::Forbidden);
     }
 
@@ -409,11 +500,6 @@ fn validate_store_request(req: &StoreReceiptRequest) -> Result<(), ApiError> {
             "public_key must not be empty".to_string(),
         ));
     }
-    if req.verdict.is_empty() {
-        return Err(ApiError::BadRequest(
-            "verdict must not be empty".to_string(),
-        ));
-    }
     if req.guard.is_empty() {
         return Err(ApiError::BadRequest("guard must not be empty".to_string()));
     }
@@ -422,6 +508,18 @@ fn validate_store_request(req: &StoreReceiptRequest) -> Result<(), ApiError> {
             "policy_name must not be empty".to_string(),
         ));
     }
+
+    // Validate verdict against an allow-list.
+    if !matches!(req.verdict.as_str(), "allow" | "deny") {
+        return Err(ApiError::BadRequest(
+            "verdict must be one of: allow, deny".to_string(),
+        ));
+    }
+
+    // Validate timestamp as RFC 3339.
+    chrono::DateTime::parse_from_rfc3339(&req.timestamp).map_err(|_| {
+        ApiError::BadRequest("timestamp must be a valid RFC 3339 datetime".to_string())
+    })?;
 
     // Validate that the public key is valid hex-encoded Ed25519.
     hush_core::PublicKey::from_hex(&req.public_key).map_err(|_| {
@@ -551,97 +649,100 @@ mod tests {
         }
     }
 
-    #[test]
-    fn insert_and_get_receipt() {
+    #[tokio::test]
+    async fn insert_and_get_receipt() {
         let store = make_store();
         let tenant = Uuid::new_v4();
         let receipt = make_receipt(tenant, "default");
         let id = receipt.id;
 
-        store.insert(tenant, receipt).unwrap();
-        let fetched = store.get(tenant, id).unwrap().unwrap();
+        store.insert(tenant, receipt).await.unwrap();
+        let fetched = store.get(tenant, id).await.unwrap().unwrap();
         assert_eq!(fetched.id, id);
         assert_eq!(fetched.policy_name, "default");
     }
 
-    #[test]
-    fn tenant_isolation() {
+    #[tokio::test]
+    async fn tenant_isolation() {
         let store = make_store();
         let tenant_a = Uuid::new_v4();
         let tenant_b = Uuid::new_v4();
         let receipt = make_receipt(tenant_a, "default");
         let id = receipt.id;
 
-        store.insert(tenant_a, receipt).unwrap();
+        store.insert(tenant_a, receipt).await.unwrap();
 
         // Tenant B cannot see tenant A's receipt.
-        assert!(store.get(tenant_b, id).unwrap().is_none());
+        assert!(store.get(tenant_b, id).await.unwrap().is_none());
     }
 
-    #[test]
-    fn duplicate_id_rejected() {
+    #[tokio::test]
+    async fn duplicate_id_rejected() {
         let store = make_store();
         let tenant = Uuid::new_v4();
         let receipt = make_receipt(tenant, "default");
         let dup = receipt.clone();
 
-        store.insert(tenant, receipt).unwrap();
-        let err = store.insert(tenant, dup).unwrap_err();
+        store.insert(tenant, receipt).await.unwrap();
+        let err = store.insert(tenant, dup).await.unwrap_err();
         assert!(matches!(err, ApiError::Conflict(_)));
     }
 
-    #[test]
-    fn list_with_pagination() {
+    #[tokio::test]
+    async fn list_with_pagination() {
         let store = make_store();
         let tenant = Uuid::new_v4();
 
         for _ in 0..5 {
             let r = make_receipt(tenant, "default");
-            store.insert(tenant, r).unwrap();
+            store.insert(tenant, r).await.unwrap();
         }
 
-        let (items, total) = store.list(tenant, 0, 3).unwrap();
+        let (items, total) = store.list(tenant, 0, 3).await.unwrap();
         assert_eq!(total, 5);
         assert_eq!(items.len(), 3);
 
-        let (items, total) = store.list(tenant, 3, 10).unwrap();
+        let (items, total) = store.list(tenant, 3, 10).await.unwrap();
         assert_eq!(total, 5);
         assert_eq!(items.len(), 2);
     }
 
-    #[test]
-    fn chain_by_policy() {
+    #[tokio::test]
+    async fn chain_by_policy() {
         let store = make_store();
         let tenant = Uuid::new_v4();
 
         for _ in 0..3 {
             store
                 .insert(tenant, make_receipt(tenant, "strict"))
+                .await
                 .unwrap();
         }
         store
             .insert(tenant, make_receipt(tenant, "permissive"))
+            .await
             .unwrap();
 
-        let chain = store.chain(tenant, "strict").unwrap();
+        let (chain, _) = store.chain(tenant, "strict", 0, 500).await.unwrap();
         assert_eq!(chain.len(), 3);
         assert!(chain.iter().all(|r| r.policy_name == "strict"));
 
-        let chain = store.chain(tenant, "permissive").unwrap();
+        let (chain, _) = store.chain(tenant, "permissive", 0, 500).await.unwrap();
         assert_eq!(chain.len(), 1);
     }
 
-    #[test]
-    fn empty_store_returns_empty() {
+    #[tokio::test]
+    async fn empty_store_returns_empty() {
         let store = make_store();
         let tenant = Uuid::new_v4();
 
-        let (items, total) = store.list(tenant, 0, 10).unwrap();
+        let (items, total) = store.list(tenant, 0, 10).await.unwrap();
         assert!(items.is_empty());
         assert_eq!(total, 0);
 
-        let chain = store.chain(tenant, "missing").unwrap();
+        let (chain, total) = store.chain(tenant, "missing", 0, 100).await.unwrap();
         assert!(chain.is_empty());
+        assert_eq!(total, 0);
     }
 
     #[test]
@@ -720,6 +821,14 @@ mod tests {
     fn write_access_rejects_viewer() {
         assert!(matches!(
             ensure_write_access(&make_auth("viewer")),
+            Err(ApiError::Forbidden)
+        ));
+    }
+
+    #[test]
+    fn write_access_rejects_unknown_role() {
+        assert!(matches!(
+            ensure_write_access(&make_auth("superuser")),
             Err(ApiError::Forbidden)
         ));
     }

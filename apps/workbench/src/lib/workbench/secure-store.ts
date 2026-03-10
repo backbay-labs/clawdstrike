@@ -60,13 +60,10 @@ export const secureStore = {
       }
     }
 
-    // Fallback: localStorage
-    if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
-      console.warn(
-        "[secure-store] Using localStorage (insecure) for key:",
-        key,
-      );
-      localStorage.setItem(`clawdstrike_${key}`, value);
+    // Fallback: sessionStorage (credentials cleared when tab closes)
+    if (typeof window !== "undefined" && typeof sessionStorage !== "undefined") {
+      console.warn("[secure-store] Using session storage (insecure fallback)");
+      sessionStorage.setItem(`clawdstrike_${key}`, value);
     }
   },
 
@@ -82,9 +79,9 @@ export const secureStore = {
       }
     }
 
-    // Fallback: localStorage
-    if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
-      return localStorage.getItem(`clawdstrike_${key}`);
+    // Fallback: sessionStorage
+    if (typeof window !== "undefined" && typeof sessionStorage !== "undefined") {
+      return sessionStorage.getItem(`clawdstrike_${key}`);
     }
     return null;
   },
@@ -101,9 +98,9 @@ export const secureStore = {
       }
     }
 
-    // Fallback: localStorage
-    if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
-      localStorage.removeItem(`clawdstrike_${key}`);
+    // Fallback: sessionStorage
+    if (typeof window !== "undefined" && typeof sessionStorage !== "undefined") {
+      sessionStorage.removeItem(`clawdstrike_${key}`);
     }
   },
 
@@ -118,9 +115,9 @@ export const secureStore = {
       }
     }
 
-    // Fallback: localStorage
-    if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
-      return localStorage.getItem(`clawdstrike_${key}`) !== null;
+    // Fallback: sessionStorage
+    if (typeof window !== "undefined" && typeof sessionStorage !== "undefined") {
+      return sessionStorage.getItem(`clawdstrike_${key}`) !== null;
     }
     return false;
   },

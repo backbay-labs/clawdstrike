@@ -481,13 +481,27 @@ function getInitialState(): WorkbenchState {
 export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, undefined, getInitialState);
 
-  // Hydrate from localStorage
+  // Hydrate from localStorage with schema validation (Finding M13)
   useEffect(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
-        const policies: SavedPolicy[] = JSON.parse(stored);
-        dispatch({ type: "LOAD_SAVED_POLICIES", policies });
+        const parsed: unknown = JSON.parse(stored);
+        if (!Array.isArray(parsed)) {
+          console.warn("[policy-store] Saved policies is not an array, skipping hydration");
+        } else {
+          // Validate each entry has the expected shape before loading
+          const policies: SavedPolicy[] = parsed.filter((entry: unknown): entry is SavedPolicy => {
+            if (!entry || typeof entry !== "object") return false;
+            const e = entry as Record<string, unknown>;
+            return (
+              typeof e.id === "string" &&
+              typeof e.yaml === "string" &&
+              typeof e.policy === "object" && e.policy !== null
+            );
+          });
+          dispatch({ type: "LOAD_SAVED_POLICIES", policies });
+        }
       }
       const activeYaml = localStorage.getItem(ACTIVE_KEY);
       if (activeYaml) {

@@ -46,11 +46,17 @@ async fn create_template(
     auth: AuthenticatedTenant,
     Json(req): Json<CreateCatalogTemplateRequest>,
 ) -> Result<Json<CatalogTemplate>, ApiError> {
-    if auth.role == "viewer" {
-        return Err(ApiError::Forbidden);
-    }
+    ensure_write_access(&auth)?;
 
     let template = state.catalog.create_template(auth.tenant_id, req).await?;
+
+    tracing::info!(
+        tenant = %auth.slug,
+        template_id = %template.id,
+        operation = "create",
+        "Catalog template created"
+    );
+
     Ok(Json(template))
 }
 
@@ -60,14 +66,20 @@ async fn update_template(
     Path(id): Path<Uuid>,
     Json(req): Json<UpdateCatalogTemplateRequest>,
 ) -> Result<Json<CatalogTemplate>, ApiError> {
-    if auth.role == "viewer" {
-        return Err(ApiError::Forbidden);
-    }
+    ensure_write_access(&auth)?;
 
     let template = state
         .catalog
         .update_template(auth.tenant_id, id, req)
         .await?;
+
+    tracing::info!(
+        tenant = %auth.slug,
+        template_id = %id,
+        operation = "update",
+        "Catalog template updated"
+    );
+
     Ok(Json(template))
 }
 
@@ -76,11 +88,17 @@ async fn delete_template(
     auth: AuthenticatedTenant,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    if auth.role == "viewer" || auth.role == "member" {
-        return Err(ApiError::Forbidden);
-    }
+    ensure_admin_access(&auth)?;
 
     state.catalog.delete_template(auth.tenant_id, id).await?;
+
+    tracing::info!(
+        tenant = %auth.slug,
+        template_id = %id,
+        operation = "delete",
+        "Catalog template deleted"
+    );
+
     Ok(Json(json!({ "deleted": true })))
 }
 
@@ -89,11 +107,18 @@ async fn fork_template(
     auth: AuthenticatedTenant,
     Path(id): Path<Uuid>,
 ) -> Result<Json<CatalogTemplate>, ApiError> {
-    if auth.role == "viewer" {
-        return Err(ApiError::Forbidden);
-    }
+    ensure_write_access(&auth)?;
 
     let forked = state.catalog.fork_template(auth.tenant_id, id).await?;
+
+    tracing::info!(
+        tenant = %auth.slug,
+        template_id = %forked.id,
+        source_template_id = %id,
+        operation = "fork",
+        "Catalog template forked"
+    );
+
     Ok(Json(forked))
 }
 
@@ -103,4 +128,20 @@ async fn list_categories(
 ) -> Result<Json<Vec<CatalogCategory>>, ApiError> {
     let categories = state.catalog.list_categories(auth.tenant_id).await;
     Ok(Json(categories))
+}
+
+/// Allow-list check: member, admin, and owner may write.
+fn ensure_write_access(auth: &AuthenticatedTenant) -> Result<(), ApiError> {
+    if !matches!(auth.role.as_str(), "member" | "admin" | "owner") {
+        return Err(ApiError::Forbidden);
+    }
+    Ok(())
+}
+
+/// Admin-only operations (e.g., catalog delete).
+fn ensure_admin_access(auth: &AuthenticatedTenant) -> Result<(), ApiError> {
+    if !matches!(auth.role.as_str(), "admin" | "owner") {
+        return Err(ApiError::Forbidden);
+    }
+    Ok(())
 }

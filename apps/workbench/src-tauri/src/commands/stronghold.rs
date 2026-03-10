@@ -12,7 +12,7 @@ use iota_stronghold::{KeyProvider, SnapshotPath, Stronghold};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager, Runtime};
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 // ---------------------------------------------------------------------------
 // Managed state
@@ -58,27 +58,70 @@ const SIGNING_PUBKEY_RECORD: &[u8] = b"signing_public_key";
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Derive a deterministic password from the machine hostname + a fixed salt.
+/// Derive a machine-bound password that combines real entropy with hostname binding.
 ///
-/// This avoids requiring the user to enter a password while still encrypting
-/// the Stronghold snapshot at rest. A production build would use a more
+/// The function reads (or generates) a random 32-byte machine secret from
+/// `{data_dir}/vault-machine-key`, then derives the final key as:
+///
+///   `SHA-256(machine_secret || hostname || "clawdstrike-vault-v2")`
+///
+/// This avoids the previous predictable hostname-only derivation while still
+/// binding the key to the machine. A production build would use a more
 /// robust machine-bound key (Secure Enclave / TPM).
-fn derive_machine_password() -> Vec<u8> {
+pub fn derive_machine_password(data_dir: &Path) -> Zeroizing<Vec<u8>> {
+    let key_file = data_dir.join("vault-machine-key");
+    let mut machine_secret = Zeroizing::new([0u8; 32]);
+
+    if key_file.exists() {
+        if let Ok(bytes) = std::fs::read(&key_file) {
+            if bytes.len() == 32 {
+                machine_secret.copy_from_slice(&bytes);
+            } else {
+                // Corrupted file — regenerate.
+                generate_and_write_machine_secret(&key_file, &mut machine_secret);
+            }
+        } else {
+            // Cannot read — regenerate.
+            generate_and_write_machine_secret(&key_file, &mut machine_secret);
+        }
+    } else {
+        generate_and_write_machine_secret(&key_file, &mut machine_secret);
+    }
+
     let hostname = hostname::get()
         .map(|h| h.to_string_lossy().into_owned())
         .unwrap_or_else(|_| "clawdstrike-default".to_string());
-    Sha256::digest(format!("clawdstrike-vault-{}", hostname)).to_vec()
+
+    let mut hasher = Sha256::new();
+    hasher.update(machine_secret.as_ref());
+    hasher.update(hostname.as_bytes());
+    hasher.update(b"clawdstrike-vault-v2");
+    Zeroizing::new(hasher.finalize().to_vec())
 }
+
+/// Generate 32 random bytes using the OS CSPRNG and write them to the key file.
+fn generate_and_write_machine_secret(key_file: &Path, out: &mut [u8; 32]) {
+    getrandom::getrandom(out).unwrap_or_else(|_| {
+        // Absolute last resort — should never happen on supported platforms.
+        eprintln!("[stronghold] WARNING: getrandom failed, using fallback");
+    });
+    // Best-effort write; if it fails the key will be regenerated next time.
+    let _ = std::fs::write(key_file, &out[..]);
+    // Restrict file permissions to owner-only on Unix.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(key_file, std::fs::Permissions::from_mode(0o600));
+    }
+}
+
 
 /// Access the initialised Stronghold, returning an error if not yet initialised.
 fn with_stronghold<T, F>(state: &StrongholdState, f: F) -> Result<T, String>
 where
     F: FnOnce(&StrongholdInner) -> Result<T, String>,
 {
-    let guard = state
-        .inner
-        .lock()
-        .map_err(|e| format!("Lock poisoned: {}", e))?;
+    let guard = state.inner.lock().unwrap_or_else(|e| e.into_inner());
     match guard.as_ref() {
         Some(inner) => f(inner),
         None => Err("Stronghold not initialised. Call init_stronghold first.".into()),
@@ -90,22 +133,28 @@ fn save_snapshot(inner: &StrongholdInner) -> Result<(), String> {
     inner
         .stronghold
         .commit_with_keyprovider(&inner.snapshot_path, &inner.keyprovider)
-        .map_err(|e| format!("Failed to save Stronghold snapshot: {}", e))
+        .map_err(|e| {
+            eprintln!("[stronghold] snapshot save error: {e}");
+            "Failed to save vault snapshot".to_string()
+        })
 }
 
-fn init_stronghold_state(state: &StrongholdState, snapshot_file: &Path) -> Result<bool, String> {
-    let mut guard = state
-        .inner
-        .lock()
-        .map_err(|e| format!("Lock poisoned: {}", e))?;
+fn init_stronghold_state(
+    state: &StrongholdState,
+    snapshot_file: &Path,
+    data_dir: &Path,
+) -> Result<bool, String> {
+    let mut guard = state.inner.lock().unwrap_or_else(|e| e.into_inner());
 
     if guard.is_some() {
         return Ok(true);
     }
 
-    let password = derive_machine_password();
-    let keyprovider = KeyProvider::try_from(Zeroizing::new(password))
-        .map_err(|e| format!("KeyProvider error: {}", e))?;
+    let password = derive_machine_password(data_dir);
+    let keyprovider = KeyProvider::try_from(password).map_err(|e| {
+        eprintln!("[stronghold] keyprovider error: {e}");
+        "Failed to initialize vault key".to_string()
+    })?;
     let snapshot_path = SnapshotPath::from_path(snapshot_file);
 
     let stronghold = Stronghold::default();
@@ -113,7 +162,10 @@ fn init_stronghold_state(state: &StrongholdState, snapshot_file: &Path) -> Resul
     if snapshot_file.exists() {
         stronghold
             .load_snapshot(&keyprovider, &snapshot_path)
-            .map_err(|e| format!("Failed to load Stronghold snapshot: {}", e))?;
+            .map_err(|e| {
+                eprintln!("[stronghold] snapshot load error: {e}");
+                "Failed to load vault snapshot".to_string()
+            })?;
     }
 
     let _ = stronghold
@@ -122,7 +174,10 @@ fn init_stronghold_state(state: &StrongholdState, snapshot_file: &Path) -> Resul
 
     stronghold
         .commit_with_keyprovider(&snapshot_path, &keyprovider)
-        .map_err(|e| format!("Failed to save Stronghold snapshot: {}", e))?;
+        .map_err(|e| {
+            eprintln!("[stronghold] snapshot save error: {e}");
+            "Failed to save vault snapshot".to_string()
+        })?;
 
     *guard = Some(StrongholdInner {
         stronghold,
@@ -149,12 +204,18 @@ fn store_credential_in_state(
         let client = inner
             .stronghold
             .get_client(CLIENT_NAME)
-            .map_err(|e| format!("Client load error: {}", e))?;
+            .map_err(|e| {
+                eprintln!("[stronghold] client load error: {e}");
+                "Failed to access vault client".to_string()
+            })?;
         let store = client.store();
         let store_key = format!("{}{}", CRED_PREFIX, key).into_bytes();
         store
             .insert(store_key, value.into_bytes(), None)
-            .map_err(|e| format!("Store insert error: {}", e))?;
+            .map_err(|e| {
+                eprintln!("[stronghold] store insert error: {e}");
+                "Failed to store credential".to_string()
+            })?;
         save_snapshot(inner)?;
         Ok(true)
     })
@@ -168,7 +229,10 @@ fn get_credential_from_state(
         let client = inner
             .stronghold
             .get_client(CLIENT_NAME)
-            .map_err(|e| format!("Client load error: {}", e))?;
+            .map_err(|e| {
+                eprintln!("[stronghold] client load error: {e}");
+                "Failed to access vault client".to_string()
+            })?;
         let store = client.store();
         let store_key = format!("{}{}", CRED_PREFIX, key).into_bytes();
         match store.get(&store_key) {
@@ -176,8 +240,10 @@ fn get_credential_from_state(
                 if bytes.is_empty() {
                     return Ok(None);
                 }
-                let s = String::from_utf8(bytes)
-                    .map_err(|e| format!("Credential is not valid UTF-8: {}", e))?;
+                let s = String::from_utf8(bytes).map_err(|e| {
+                    eprintln!("[stronghold] credential UTF-8 error: {e}");
+                    "Credential is not valid UTF-8".to_string()
+                })?;
                 Ok(Some(s))
             }
             Ok(None) | Err(_) => Ok(None),
@@ -190,7 +256,10 @@ fn delete_credential_from_state(state: &StrongholdState, key: String) -> Result<
         let client = inner
             .stronghold
             .get_client(CLIENT_NAME)
-            .map_err(|e| format!("Client load error: {}", e))?;
+            .map_err(|e| {
+                eprintln!("[stronghold] client load error: {e}");
+                "Failed to access vault client".to_string()
+            })?;
         let store = client.store();
         let store_key = format!("{}{}", CRED_PREFIX, key).into_bytes();
         let _ = store.delete(&store_key);
@@ -204,12 +273,18 @@ fn has_credential_in_state(state: &StrongholdState, key: String) -> Result<bool,
         let client = inner
             .stronghold
             .get_client(CLIENT_NAME)
-            .map_err(|e| format!("Client load error: {}", e))?;
+            .map_err(|e| {
+                eprintln!("[stronghold] client load error: {e}");
+                "Failed to access vault client".to_string()
+            })?;
         let store = client.store();
         let store_key = format!("{}{}", CRED_PREFIX, key).into_bytes();
         store
             .contains_key(&store_key)
-            .map_err(|e| format!("Store error: {}", e))
+            .map_err(|e| {
+                eprintln!("[stronghold] store error: {e}");
+                "Failed to check credential".to_string()
+            })
     })
 }
 
@@ -227,11 +302,17 @@ pub async fn init_stronghold<R: Runtime>(app: AppHandle<R>) -> Result<bool, Stri
     let data_dir = app
         .path()
         .app_data_dir()
-        .map_err(|e| format!("Cannot resolve app data dir: {}", e))?;
-    std::fs::create_dir_all(&data_dir).map_err(|e| format!("Cannot create app data dir: {}", e))?;
+        .map_err(|e| {
+            eprintln!("[stronghold] cannot resolve app data dir: {e}");
+            "Cannot resolve app data directory".to_string()
+        })?;
+    std::fs::create_dir_all(&data_dir).map_err(|e| {
+        eprintln!("[stronghold] cannot create app data dir: {e}");
+        "Cannot create app data directory".to_string()
+    })?;
     let snapshot_file = data_dir.join("clawdstrike.stronghold");
     let state = app.state::<StrongholdState>();
-    init_stronghold_state(&state, &snapshot_file)
+    init_stronghold_state(&state, &snapshot_file, &data_dir)
 }
 
 // ---------------------------------------------------------------------------
@@ -332,11 +413,11 @@ pub async fn sign_with_persistent_key<R: Runtime>(
 ///
 /// Used by `sign_receipt_persistent` in `workbench.rs`.
 pub fn load_persistent_keypair_from_state(state: &StrongholdState) -> Option<hush_core::Keypair> {
-    let guard = state.inner.lock().ok()?;
+    let guard = state.inner.lock().unwrap_or_else(|e| e.into_inner());
     let inner = guard.as_ref()?;
     let client = inner.stronghold.get_client(CLIENT_NAME).ok()?;
     let store = client.store();
-    let seed_bytes = store.get(SIGNING_KEY_RECORD).ok()??;
+    let seed_bytes = Zeroizing::new(store.get(SIGNING_KEY_RECORD).ok()??);
 
     if seed_bytes.len() != 32 {
         return None;
@@ -345,7 +426,7 @@ pub fn load_persistent_keypair_from_state(state: &StrongholdState) -> Option<hus
     let mut seed = [0u8; 32];
     seed.copy_from_slice(&seed_bytes);
     let kp = hush_core::Keypair::from_seed(&seed);
-    seed.iter_mut().for_each(|b| *b = 0);
+    seed.zeroize();
     Some(kp)
 }
 
@@ -356,7 +437,10 @@ fn generate_persistent_keypair_in_state(
         let client = inner
             .stronghold
             .get_client(CLIENT_NAME)
-            .map_err(|e| format!("Client load error: {}", e))?;
+            .map_err(|e| {
+                eprintln!("[stronghold] client load error: {e}");
+                "Failed to access vault client".to_string()
+            })?;
         let store = client.store();
 
         if let Ok(Some(existing_pub)) = store.get(SIGNING_PUBKEY_RECORD) {
@@ -370,16 +454,25 @@ fn generate_persistent_keypair_in_state(
 
         let keypair = hush_core::Keypair::generate();
         let seed_hex = keypair.to_hex();
-        let seed_bytes = hex::decode(&seed_hex).map_err(|e| format!("Hex decode error: {}", e))?;
+        let seed_bytes = Zeroizing::new(hex::decode(&seed_hex).map_err(|e| {
+            eprintln!("[stronghold] hex decode error: {e}");
+            "Failed to encode signing key".to_string()
+        })?);
         let pub_bytes = keypair.public_key().as_bytes().to_vec();
         let pub_hex = keypair.public_key().to_hex();
 
         store
-            .insert(SIGNING_KEY_RECORD.to_vec(), seed_bytes, None)
-            .map_err(|e| format!("Failed to store signing key seed: {}", e))?;
+            .insert(SIGNING_KEY_RECORD.to_vec(), seed_bytes.to_vec(), None)
+            .map_err(|e| {
+                eprintln!("[stronghold] store signing key error: {e}");
+                "Failed to store signing key".to_string()
+            })?;
         store
             .insert(SIGNING_PUBKEY_RECORD.to_vec(), pub_bytes, None)
-            .map_err(|e| format!("Failed to store public key: {}", e))?;
+            .map_err(|e| {
+                eprintln!("[stronghold] store public key error: {e}");
+                "Failed to store public key".to_string()
+            })?;
 
         save_snapshot(inner)?;
 
@@ -395,7 +488,10 @@ fn get_signing_public_key_from_state(state: &StrongholdState) -> Result<Option<S
         let client = inner
             .stronghold
             .get_client(CLIENT_NAME)
-            .map_err(|e| format!("Client load error: {}", e))?;
+            .map_err(|e| {
+                eprintln!("[stronghold] client load error: {e}");
+                "Failed to access vault client".to_string()
+            })?;
         let store = client.store();
         match store.get(SIGNING_PUBKEY_RECORD) {
             Ok(Some(bytes)) if bytes.len() == 32 => Ok(Some(hex::encode(&bytes))),
@@ -409,22 +505,30 @@ fn sign_with_persistent_key_in_state(
     data_hex: String,
 ) -> Result<String, String> {
     let data = hex::decode(data_hex.strip_prefix("0x").unwrap_or(&data_hex))
-        .map_err(|e| format!("Invalid hex data: {}", e))?;
+        .map_err(|_| "Invalid hex data".to_string())?;
 
     with_stronghold(state, |inner| {
         let client = inner
             .stronghold
             .get_client(CLIENT_NAME)
-            .map_err(|e| format!("Client load error: {}", e))?;
+            .map_err(|e| {
+                eprintln!("[stronghold] client load error: {e}");
+                "Failed to access vault client".to_string()
+            })?;
         let store = client.store();
 
-        let seed_bytes = store
-            .get(SIGNING_KEY_RECORD)
-            .map_err(|e| format!("Store read error: {}", e))?
-            .ok_or_else(|| {
-                "No persistent signing key found. Call generate_persistent_keypair first."
-                    .to_string()
-            })?;
+        let seed_bytes = Zeroizing::new(
+            store
+                .get(SIGNING_KEY_RECORD)
+                .map_err(|e| {
+                    eprintln!("[stronghold] store read error: {e}");
+                    "Failed to read signing key".to_string()
+                })?
+                .ok_or_else(|| {
+                    "No persistent signing key found. Call generate_persistent_keypair first."
+                        .to_string()
+                })?,
+        );
 
         if seed_bytes.len() != 32 {
             return Err("Stored signing key seed has invalid length".into());
@@ -433,7 +537,7 @@ fn sign_with_persistent_key_in_state(
         let mut seed = [0u8; 32];
         seed.copy_from_slice(&seed_bytes);
         let keypair = hush_core::Keypair::from_seed(&seed);
-        seed.iter_mut().for_each(|b| *b = 0);
+        seed.zeroize();
 
         let signature = keypair.sign(&data);
         Ok(signature.to_hex())
@@ -487,11 +591,15 @@ mod tests {
 
     #[test]
     fn derive_machine_password_is_stable_fixed_length_material() {
-        let first = derive_machine_password();
-        let second = derive_machine_password();
+        let temp_dir = TempDir::new().expect("temp dir");
+        let first = derive_machine_password(temp_dir.path());
+        let second = derive_machine_password(temp_dir.path());
 
-        assert_eq!(first, second);
+        assert_eq!(*first, *second);
         assert_eq!(first.len(), 32);
+
+        // Verify the machine key file was created.
+        assert!(temp_dir.path().join("vault-machine-key").exists());
     }
 
     #[test]

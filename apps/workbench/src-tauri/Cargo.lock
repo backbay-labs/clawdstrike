@@ -616,6 +616,8 @@ name = "clawdstrike-workbench"
 version = "0.1.0"
 dependencies = [
  "clawdstrike",
+ "dirs-next",
+ "getrandom 0.2.17",
  "hex",
  "hostname",
  "hush-core",

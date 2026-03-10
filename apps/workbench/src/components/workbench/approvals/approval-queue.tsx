@@ -122,9 +122,12 @@ function formatRelativeTime(iso: string): string {
   return `${days}d ago`;
 }
 
-export function ApprovalQueue() {
+export function ApprovalQueue({ currentUser }: { currentUser?: string } = {}) {
   const { connection } = useFleetConnection();
   const fleetConnected = connection.connected;
+  // Finding M17: Use provided currentUser or fall back to anonymous.
+  // TODO: This should come from a proper auth context once authentication is implemented.
+  const decidedByUser = currentUser || "workbench-anonymous";
 
   const [requests, setRequests] = useState<ApprovalRequest[]>(DEMO_APPROVAL_REQUESTS);
   const [decisions, setDecisions] = useState<ApprovalDecision[]>(DEMO_APPROVAL_DECISIONS);
@@ -312,7 +315,7 @@ export function ApprovalQueue() {
           requestId: confirmAction.requestId,
           decision: "approved",
           scope: confirmAction.scope,
-          decidedBy: "workbench-user",
+          decidedBy: decidedByUser,
           decidedAt: now,
         },
       ]);
@@ -328,7 +331,7 @@ export function ApprovalQueue() {
           requestId: confirmAction.requestId,
           decision: "denied",
           reason: denyReason || undefined,
-          decidedBy: "workbench-user",
+          decidedBy: decidedByUser,
           decidedAt: now,
         },
       ]);

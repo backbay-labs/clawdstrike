@@ -853,9 +853,10 @@ describe("receipt store adapters", () => {
 });
 
 describe("fleetClient convenience object", () => {
-  // The fleetClient methods use savedConnection() which reads localStorage,
-  // so we need the localStorage mock here too.
+  // The fleetClient methods use savedConnection() which reads URLs from
+  // localStorage and secrets from secureStore (sessionStorage fallback on web).
   let fleetLsStore: Record<string, string>;
+  let fleetSsStore: Record<string, string>;
 
   const fleetLocalStorageMock = {
     getItem: (key: string) => fleetLsStore[key] ?? null,
@@ -866,16 +867,32 @@ describe("fleetClient convenience object", () => {
     key: (index: number) => Object.keys(fleetLsStore)[index] ?? null,
   };
 
+  const fleetSessionStorageMock = {
+    getItem: (key: string) => fleetSsStore[key] ?? null,
+    setItem: (key: string, value: string) => { fleetSsStore[key] = value; },
+    removeItem: (key: string) => { delete fleetSsStore[key]; },
+    clear: () => { fleetSsStore = {}; },
+    get length() { return Object.keys(fleetSsStore).length; },
+    key: (index: number) => Object.keys(fleetSsStore)[index] ?? null,
+  };
+
   function seedLocalStorage() {
+    // URLs go to localStorage (sync-readable bootstrap)
     fleetLsStore["clawdstrike_hushd_url"] = "http://localhost:9876";
     fleetLsStore["clawdstrike_control_api_url"] = "http://localhost:9877";
-    fleetLsStore["clawdstrike_api_key"] = "test-api-key";
-    fleetLsStore["clawdstrike_control_api_token"] = "test-control-token";
+    // All credentials go to sessionStorage (secureStore web fallback)
+    // secureStore uses "clawdstrike_" prefix for the key name
+    fleetSsStore["clawdstrike_hushd_url"] = "http://localhost:9876";
+    fleetSsStore["clawdstrike_control_api_url"] = "http://localhost:9877";
+    fleetSsStore["clawdstrike_api_key"] = "test-api-key";
+    fleetSsStore["clawdstrike_control_api_token"] = "test-control-token";
   }
 
   beforeEach(() => {
     fleetLsStore = {};
+    fleetSsStore = {};
     vi.stubGlobal("localStorage", fleetLocalStorageMock);
+    vi.stubGlobal("sessionStorage", fleetSessionStorageMock);
   });
 
   afterEach(() => {
@@ -1141,6 +1158,7 @@ describe("fetchApprovals backend shape adapter", () => {
 // ---- localStorage mock (jsdom in this project doesn't provide full localStorage) ----
 
 let lsStore: Record<string, string>;
+let ssStore: Record<string, string>;
 
 const localStorageMock = {
   getItem: (key: string) => lsStore[key] ?? null,
@@ -1151,37 +1169,53 @@ const localStorageMock = {
   key: (index: number) => Object.keys(lsStore)[index] ?? null,
 };
 
+const sessionStorageMock = {
+  getItem: (key: string) => ssStore[key] ?? null,
+  setItem: (key: string, value: string) => { ssStore[key] = value; },
+  removeItem: (key: string) => { delete ssStore[key]; },
+  clear: () => { ssStore = {}; },
+  get length() { return Object.keys(ssStore).length; },
+  key: (index: number) => Object.keys(ssStore)[index] ?? null,
+};
+
 describe("persistence helpers", () => {
   beforeEach(() => {
     lsStore = {};
+    ssStore = {};
     vi.stubGlobal("localStorage", localStorageMock);
+    vi.stubGlobal("sessionStorage", sessionStorageMock);
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it("saveConnectionConfig persists to localStorage", () => {
-    saveConnectionConfig({
+  it("saveConnectionConfig persists URLs to localStorage and secrets to secureStore", async () => {
+    await saveConnectionConfig({
       hushdUrl: "http://localhost:9876",
       controlApiUrl: "http://localhost:9877",
       apiKey: "my-key",
       controlApiToken: "my-token",
     });
 
+    // URLs go to localStorage for sync-readable bootstrap
     expect(localStorage.getItem("clawdstrike_hushd_url")).toBe(
       "http://localhost:9876",
     );
-    expect(localStorage.getItem("clawdstrike_api_key")).toBe("my-key");
+    // Secrets should NOT be in localStorage (Finding 2)
+    expect(localStorage.getItem("clawdstrike_api_key")).toBeNull();
+    // Secrets go to sessionStorage (secureStore web fallback)
+    expect(sessionStorage.getItem("clawdstrike_api_key")).toBe("my-key");
   });
 
-  it("loadSavedConnection reads from localStorage", () => {
+  it("loadSavedConnection reads only URLs from localStorage", () => {
     localStorage.setItem("clawdstrike_hushd_url", "http://saved:9876");
     localStorage.setItem("clawdstrike_api_key", "saved-key");
 
     const saved = loadSavedConnection();
     expect(saved.hushdUrl).toBe("http://saved:9876");
-    expect(saved.apiKey).toBe("saved-key");
+    // Secrets are no longer read from localStorage (Finding 2)
+    expect(saved.apiKey).toBe("");
   });
 
   it("loadSavedConnection returns empty strings when nothing saved", () => {
@@ -1190,8 +1224,8 @@ describe("persistence helpers", () => {
     expect(saved.apiKey).toBe("");
   });
 
-  it("clearConnectionConfig removes all keys", () => {
-    saveConnectionConfig({
+  it("clearConnectionConfig removes all keys", async () => {
+    await saveConnectionConfig({
       hushdUrl: "http://localhost:9876",
       controlApiUrl: "http://localhost:9877",
       apiKey: "key",
@@ -1200,8 +1234,9 @@ describe("persistence helpers", () => {
     clearConnectionConfig();
 
     expect(localStorage.getItem("clawdstrike_hushd_url")).toBeNull();
-    expect(localStorage.getItem("clawdstrike_api_key")).toBeNull();
     expect(localStorage.getItem("clawdstrike_control_api_url")).toBeNull();
+    // Legacy keys should also be cleaned up
+    expect(localStorage.getItem("clawdstrike_api_key")).toBeNull();
     expect(localStorage.getItem("clawdstrike_control_api_token")).toBeNull();
   });
 });

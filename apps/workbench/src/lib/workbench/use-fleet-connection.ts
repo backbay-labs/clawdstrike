@@ -97,6 +97,13 @@ export function FleetConnectionProvider({ children }: { children: ReactNode }) {
   const healthTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const agentTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Finding L8: Use a ref to hold the current connection state so interval
+  // callbacks always read the latest value instead of a stale closure capture.
+  const connectionRef = useRef(connection);
+  useEffect(() => {
+    connectionRef.current = connection;
+  }, [connection]);
+
   // ---- Internal: poll health ----
   const pollHealth = useCallback(async (conn: FleetConnection) => {
     if (!conn.connected || !conn.hushdUrl) return;
@@ -147,8 +154,10 @@ export function FleetConnectionProvider({ children }: { children: ReactNode }) {
       pollAgents(conn);
       fetchRemoteInfo(conn);
 
-      healthTimerRef.current = setInterval(() => pollHealth(conn), HEALTH_POLL_MS);
-      agentTimerRef.current = setInterval(() => pollAgents(conn), AGENT_POLL_MS);
+      // Finding L8: Read from connectionRef inside interval callbacks to avoid
+      // stale closure captures of the initial `conn` value.
+      healthTimerRef.current = setInterval(() => pollHealth(connectionRef.current), HEALTH_POLL_MS);
+      agentTimerRef.current = setInterval(() => pollAgents(connectionRef.current), AGENT_POLL_MS);
     },
     [pollHealth, pollAgents, fetchRemoteInfo],
   );
@@ -170,34 +179,51 @@ export function FleetConnectionProvider({ children }: { children: ReactNode }) {
   // ---- Auto-reconnect if saved credentials exist ----
   // Uses the async secureStore loader (Stronghold on desktop) with a
   // synchronous localStorage fallback for initial render.
-  useEffect(() => {
-    async function attemptReconnect() {
-      // Try secureStore first (Stronghold on desktop), then localStorage.
-      const saved = await loadSavedConnectionAsync();
-      if (!saved.hushdUrl) return;
+  // Finding M19: Use isMounted flag and reconnect lock to prevent races.
+  const reconnectLockRef = useRef(false);
 
-      const conn: FleetConnection = {
-        hushdUrl: saved.hushdUrl ?? "",
-        controlApiUrl: saved.controlApiUrl ?? "",
-        apiKey: saved.apiKey ?? "",
-        controlApiToken: saved.controlApiToken ?? "",
-        connected: false,
-        hushdHealth: null,
-        agentCount: 0,
-      };
+  useEffect(() => {
+    let isMounted = true;
+
+    async function attemptReconnect() {
+      // Prevent concurrent reconnection attempts (Finding M19)
+      if (reconnectLockRef.current) return;
+      reconnectLockRef.current = true;
 
       try {
-        const health = await apiTestConnection(conn.hushdUrl, conn.apiKey);
-        const connected: FleetConnection = { ...conn, connected: true, hushdHealth: health };
-        setConnection(connected);
-        startPolling(connected);
-      } catch {
-        // Saved creds are stale — show as disconnected but keep the URLs
-        setConnection(conn);
+        // Try secureStore first (Stronghold on desktop), then localStorage.
+        const saved = await loadSavedConnectionAsync();
+        if (!isMounted) return;
+        if (!saved.hushdUrl) return;
+
+        const conn: FleetConnection = {
+          hushdUrl: saved.hushdUrl ?? "",
+          controlApiUrl: saved.controlApiUrl ?? "",
+          apiKey: saved.apiKey ?? "",
+          controlApiToken: saved.controlApiToken ?? "",
+          connected: false,
+          hushdHealth: null,
+          agentCount: 0,
+        };
+
+        try {
+          const health = await apiTestConnection(conn.hushdUrl, conn.apiKey);
+          if (!isMounted) return;
+          const connected: FleetConnection = { ...conn, connected: true, hushdHealth: health };
+          setConnection(connected);
+          startPolling(connected);
+        } catch {
+          if (!isMounted) return;
+          // Saved creds are stale — show as disconnected but keep the URLs
+          setConnection(conn);
+        }
+      } finally {
+        reconnectLockRef.current = false;
       }
     }
 
     attemptReconnect();
+    return () => { isMounted = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -220,7 +246,7 @@ export function FleetConnectionProvider({ children }: { children: ReactNode }) {
           agentCount: 0,
         };
 
-        saveConnectionConfig({ hushdUrl, controlApiUrl, apiKey, controlApiToken: controlApiToken ?? "" });
+        await saveConnectionConfig({ hushdUrl, controlApiUrl, apiKey, controlApiToken: controlApiToken ?? "" });
         setConnection(conn);
         startPolling(conn);
         setIsConnecting(false);
