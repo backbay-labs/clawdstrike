@@ -250,6 +250,11 @@ impl CatalogStore {
         req: UpdateCatalogTemplateRequest,
     ) -> Result<CatalogTemplate, ApiError> {
         if let Some(ref yaml) = req.policy_yaml {
+            if yaml.len() > MAX_POLICY_YAML_BYTES {
+                return Err(ApiError::BadRequest(format!(
+                    "policy_yaml exceeds maximum size ({MAX_POLICY_YAML_BYTES} bytes)"
+                )));
+            }
             serde_yaml::from_str::<serde_json::Value>(yaml)
                 .map_err(|e| ApiError::BadRequest(format!("invalid policy YAML: {e}")))?;
         }
@@ -312,6 +317,18 @@ impl CatalogStore {
             .filter(|stored| is_visible_to_tenant(stored, tenant_id))
             .cloned()
             .ok_or(ApiError::NotFound)?;
+
+        // Enforce per-tenant template limit (same as create_template).
+        let tenant_count = inner
+            .templates
+            .values()
+            .filter(|s| s.owner_tenant_id == Some(tenant_id))
+            .count();
+        if tenant_count >= MAX_TEMPLATES_PER_TENANT {
+            return Err(ApiError::Conflict(format!(
+                "tenant template limit reached ({MAX_TEMPLATES_PER_TENANT})"
+            )));
+        }
 
         let now = Utc::now();
         let new_id = Uuid::new_v4();

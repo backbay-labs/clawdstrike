@@ -73,12 +73,26 @@ export function parsePolicy(yaml: string): { policy: WorkbenchPolicy; warnings: 
 }
 
 export function validatePolicyYaml(policyYaml: string) {
+  // Enforce size limit before any parsing — this mirrors the check in
+  // parsePolicy but guards against callers that might refactor around it.
+  if (policyYaml.length > MAX_POLICY_SIZE) {
+    return {
+      valid: false,
+      parseErrors: [`Policy YAML too large: ${policyYaml.length} bytes (max ${MAX_POLICY_SIZE})`],
+      errors: [],
+      warnings: [],
+    };
+  }
+
   try {
-    const { policy, warnings: parseErrors } = parsePolicy(policyYaml);
+    const { policy, warnings: parseWarnings } = parsePolicy(policyYaml);
     const validation = validatePolicy(policy);
+    // `valid` depends solely on structural/semantic validation errors, NOT on
+    // non-fatal parse warnings (parseWarnings). Warnings are informational
+    // diagnostics (e.g. deprecated fields) and must not invalidate a policy.
     return {
       valid: validation.valid,
-      parseErrors,
+      parseErrors: parseWarnings,
       errors: validation.errors,
       warnings: validation.warnings,
     };
@@ -190,17 +204,21 @@ export function suggestScenariosFromPolicy(policy: WorkbenchPolicy) {
         // wildcards with a plausible segment, and ensure the path is absolute.
         concretePath = pat
           .replace(/\*\*\/?/g, "")
-          .replace(/\*/g, "test")
+          .replace(/\*/g, "example")
           .replace(/\/\//g, "/");
         if (!concretePath.startsWith("/")) {
           concretePath = `/home/user/${concretePath}`;
         }
-        if (concretePath.endsWith("/")) {
-          concretePath += "id_rsa";
-        }
-        // If only a bare filename remains (e.g., pattern was "**"), give it a directory.
-        if (concretePath === "/home/user/") {
-          concretePath = "/home/user/id_rsa";
+        // If the result is empty, just a directory, or looks nonsensical
+        // (e.g. repeated stub segments like "exampleexample"), fall back to
+        // a sensible concrete path.
+        if (
+          concretePath.endsWith("/") ||
+          concretePath === "/home/user/" ||
+          concretePath === "/home/user" ||
+          /example{2,}|\/example$/.test(concretePath)
+        ) {
+          concretePath = "/home/user/sensitive-file.conf";
         }
       }
       suggestions.push({
@@ -791,14 +809,14 @@ server.tool(
         met: result.met.map((r) => ({
           id: r.id,
           title: r.title,
-          citation: r.citation ?? "",
+          citation: r.citation,
         })),
         gaps: result.gaps.map((r) => ({
           id: r.id,
           title: r.title,
-          citation: r.citation ?? "",
+          citation: r.citation,
           description: r.description,
-          requiredGuards: r.guardDeps ?? [],
+          requiredGuards: r.guardDeps,
         })),
       };
     }

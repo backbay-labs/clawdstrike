@@ -437,6 +437,11 @@ export function SimulatorLayout() {
             }
           }
 
+          // Posture-aware path returned null — fall back to non-posture simulation.
+          // Posture state (postureStateJson) is maintained via the runScenario closure's
+          // captured state and React setState; it is not updated here because the non-posture
+          // engine does not produce posture output. The existing posture state remains valid
+          // for subsequent posture-aware calls.
           const resp = await simulateActionNative(policyYaml, rustAction, target, content);
           if (resp) {
             const result = fromRustSimulation(scenario.id, resp);
@@ -535,6 +540,9 @@ export function SimulatorLayout() {
             }
 
             if (!result) {
+              // Posture state is preserved from the last successful posture-aware evaluation.
+              // This scenario's result won't update posture budgets, but subsequent posture-
+              // aware evaluations will still have the correct cumulative state.
               const resp = await simulateActionNative(policyYaml, rustAction, target, content);
               if (resp) {
                 result = fromRustSimulation(s.id, resp);
@@ -546,6 +554,9 @@ export function SimulatorLayout() {
         }
 
         if (!result) {
+          // Posture state is preserved from the last successful posture-aware evaluation.
+          // This scenario's result won't update posture budgets, but subsequent posture-
+          // aware evaluations will still have the correct cumulative state.
           result = simulatePolicy(state.activePolicy, s);
         }
         newResults.push(result);

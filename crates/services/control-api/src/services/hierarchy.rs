@@ -304,6 +304,25 @@ pub async fn delete_node(
     let mut descendant_count = 0_i64;
 
     if reparent {
+        // If the deleted node is a root (parent_id IS NULL), reparenting would
+        // make its children root nodes.  Only org nodes may be roots.
+        if node_parent_id.is_none() {
+            let non_org_children = sqlx::query_scalar::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM hierarchy_nodes WHERE parent_id = $1 AND node_type != 'org' AND tenant_id = $2",
+            )
+            .bind(node_id)
+            .bind(tenant_id)
+            .fetch_one(tx.as_mut())
+            .await
+            .map_err(ApiError::Database)?;
+
+            if non_org_children > 0 {
+                return Err(ApiError::BadRequest(
+                    "cannot reparent: non-org children would become root nodes".to_string(),
+                ));
+            }
+        }
+
         // Move children to the deleted node's parent
         let result = sqlx::query::query(
             r#"UPDATE hierarchy_nodes

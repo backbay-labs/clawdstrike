@@ -391,7 +391,12 @@ function hushdHeaders(apiKey: string): Record<string, string> {
 function controlHeaders(conn: FleetConnection): Record<string, string> {
   const h: Record<string, string> = { "Content-Type": "application/json" };
   const token = conn.controlApiToken || conn.apiKey;
-  if (token) h["Authorization"] = `Bearer ${token}`;
+  if (token) {
+    // Send as both Bearer (for JWTs) and x-api-key (for raw API keys).
+    // The server tries Bearer auth first, then falls back to x-api-key.
+    h["Authorization"] = `Bearer ${token}`;
+    h["x-api-key"] = token;
+  }
   return h;
 }
 
