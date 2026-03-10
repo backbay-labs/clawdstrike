@@ -410,27 +410,31 @@ export function LibraryGallery() {
                 </div>
                 <div>
                   <p className="text-[13px] font-medium text-[#ece7dc] mb-1">
-                    Claude Code Workbench Plugin
+                    ClawdStrike MCP Server
                   </p>
                   <p className="text-[11px] text-[#6f7f9a] leading-relaxed">
-                    Use AI coding assistants to build test scenarios, run policy simulations,
-                    check compliance, and tighten security — all from your terminal.
+                    {desktop
+                      ? "The desktop app includes a secure MCP sidecar that auto-starts on launch with per-session token auth. Connect Claude Code by copying the config below into your project\u2019s .mcp.json."
+                      : "Connect Claude Code to the workbench\u2019s MCP server for AI-assisted policy building. Add the config below to your project\u2019s .mcp.json to get started."}
+                  </p>
+                  <p className="text-[10px] text-[#6f7f9a]/60 mt-1">
+                    14 tools \u00b7 5 prompts \u00b7 3 resources \u2014 scenario testing, validation, compliance scoring, hardening, and synthesis
                   </p>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-                {/* MCP Server card — shows live status in desktop, manual command in web */}
+                {/* Left card — MCP Server status & management */}
                 <div className="rounded-lg bg-[#131721]/50 border border-[#2d3240]/40 p-3">
                   <div className="flex items-center gap-2 mb-2">
                     <IconPlugConnected size={13} className="text-[#d4a84b]" />
                     <span className="text-[11px] font-mono font-medium text-[#ece7dc]">
-                      MCP Server
+                      {desktop ? "Embedded Sidecar" : "MCP Server"}
                     </span>
                     {mcpStatus?.running ? (
                       <span
                         className="ml-auto flex items-center gap-1.5 text-[9px] font-mono text-[#3dbf84]"
-                        title="MCP sidecar server is running"
+                        title="MCP sidecar server is running — auto-started on app launch"
                       >
                         <span className="relative flex h-2 w-2">
                           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#3dbf84] opacity-40" />
@@ -441,32 +445,23 @@ export function LibraryGallery() {
                     ) : desktop ? (
                       <span
                         className="ml-auto flex items-center gap-1.5 text-[9px] font-mono text-[#c45c5c]"
-                        title="MCP sidecar server is not running"
+                        title="MCP sidecar is not running — click Start to restart"
                       >
                         <span className="relative flex h-2 w-2">
                           <span className="relative inline-flex rounded-full h-2 w-2 bg-[#c45c5c]" />
                         </span>
                         stopped
                       </span>
-                    ) : (
-                      <span
-                        className="ml-auto flex items-center gap-1.5 text-[9px] font-mono text-[#6f7f9a]"
-                        title="MCP server is available via CLI"
-                      >
-                        <span className="relative flex h-2 w-2">
-                          <span className="relative inline-flex rounded-full h-2 w-2 bg-[#6f7f9a]" />
-                        </span>
-                        manual
-                      </span>
-                    )}
+                    ) : null}
                   </div>
-                  <p className="text-[10px] text-[#6f7f9a] leading-relaxed mb-2">
-                    14 tools, 5 prompts, and 3 resources for scenario testing, policy validation, compliance scoring, hardening, and synthesis.
-                  </p>
 
                   {mcpStatus?.running ? (
                     /* ---- Live sidecar: show connection details ---- */
                     <div className="flex flex-col gap-2">
+                      <p className="text-[10px] text-[#6f7f9a] leading-relaxed">
+                        SSE transport with bearer-token auth. Token rotates each session.
+                      </p>
+
                       {/* Endpoint URL */}
                       <div className="flex items-center gap-1.5">
                         <span className="text-[9px] text-[#6f7f9a] shrink-0 w-14">Endpoint</span>
@@ -514,57 +509,6 @@ export function LibraryGallery() {
                         </button>
                       </div>
 
-                      {/* Claude Code config snippet */}
-                      <div className="mt-1">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-[9px] text-[#6f7f9a]">Claude Code config (.mcp.json)</span>
-                          <button
-                            onClick={() => {
-                              const config = JSON.stringify(
-                                {
-                                  mcpServers: {
-                                    "clawdstrike-workbench": {
-                                      url: mcpStatus.url,
-                                      headers: {
-                                        Authorization: `Bearer ${mcpStatus.token}`,
-                                      },
-                                    },
-                                  },
-                                },
-                                null,
-                                2,
-                              );
-                              copyToClipboard(config, "config");
-                            }}
-                            className="flex items-center gap-1 text-[9px] text-[#6f7f9a] hover:text-[#d4a84b] transition-colors"
-                          >
-                            {mcpCopied === "config" ? (
-                              <>
-                                <IconCheck size={9} className="text-[#3dbf84]" />
-                                <span className="text-[#3dbf84]">Copied</span>
-                              </>
-                            ) : (
-                              <>
-                                <IconCopy size={9} />
-                                Copy
-                              </>
-                            )}
-                          </button>
-                        </div>
-                        <pre className="text-[9px] font-mono text-[#6f7f9a]/70 bg-[#0b0d13] rounded px-2 py-1.5 overflow-x-auto leading-relaxed whitespace-pre">
-{`{
-  "mcpServers": {
-    "clawdstrike-workbench": {
-      "url": "${mcpStatus.url}",
-      "headers": {
-        "Authorization": "Bearer ${showToken ? mcpStatus.token : mcpStatus.token.slice(0, 8) + "..."}"
-      }
-    }
-  }
-}`}
-                        </pre>
-                      </div>
-
                       {/* Restart button */}
                       <button
                         onClick={mcpRestart}
@@ -584,28 +528,36 @@ export function LibraryGallery() {
                         {mcpRestarting ? "Restarting..." : "Restart Server"}
                       </button>
                     </div>
-                  ) : (
-                    /* ---- Fallback: manual command (web mode or spawn failed) ---- */
+                  ) : desktop ? (
+                    /* ---- Desktop but sidecar stopped ---- */
                     <div className="flex flex-col gap-2">
-                      {desktop && (
-                        <button
-                          onClick={mcpRestart}
-                          disabled={mcpRestarting}
-                          className={cn(
-                            "flex items-center justify-center gap-1.5 h-7 rounded-md text-[10px] font-medium border transition-colors mb-1",
-                            mcpRestarting
-                              ? "text-[#6f7f9a] border-[#2d3240] bg-[#131721] cursor-wait"
-                              : "text-[#ece7dc] border-[#2d3240] bg-[#131721] hover:border-[#d4a84b]/40 hover:text-[#d4a84b]",
-                          )}
-                        >
-                          {mcpRestarting ? (
-                            <IconLoader2 size={11} stroke={1.5} className="animate-spin" />
-                          ) : (
-                            <IconRefresh size={11} stroke={1.5} />
-                          )}
-                          {mcpRestarting ? "Starting..." : "Start Server"}
-                        </button>
-                      )}
+                      <p className="text-[10px] text-[#6f7f9a] leading-relaxed">
+                        Sidecar normally auto-starts on app launch. Click below to restart it.
+                      </p>
+                      <button
+                        onClick={mcpRestart}
+                        disabled={mcpRestarting}
+                        className={cn(
+                          "flex items-center justify-center gap-1.5 h-7 rounded-md text-[10px] font-medium border transition-colors",
+                          mcpRestarting
+                            ? "text-[#6f7f9a] border-[#2d3240] bg-[#131721] cursor-wait"
+                            : "text-[#ece7dc] border-[#2d3240] bg-[#131721] hover:border-[#d4a84b]/40 hover:text-[#d4a84b]",
+                        )}
+                      >
+                        {mcpRestarting ? (
+                          <IconLoader2 size={11} stroke={1.5} className="animate-spin" />
+                        ) : (
+                          <IconRefresh size={11} stroke={1.5} />
+                        )}
+                        {mcpRestarting ? "Starting..." : "Start Server"}
+                      </button>
+                    </div>
+                  ) : (
+                    /* ---- Web mode: standalone run instructions ---- */
+                    <div className="flex flex-col gap-2">
+                      <p className="text-[10px] text-[#6f7f9a] leading-relaxed">
+                        Run the MCP server standalone, or use the stdio config to let Claude Code spawn it automatically.
+                      </p>
                       <div className="flex items-center gap-1.5">
                         <code className="flex-1 text-[10px] font-mono text-[#d4a84b]/80 bg-[#0b0d13] rounded px-2 py-1.5 overflow-x-auto">
                           {MCP_LAUNCH_COMMAND}
@@ -626,53 +578,112 @@ export function LibraryGallery() {
                   )}
                 </div>
 
+                {/* Right card — .mcp.json config for Claude Code */}
                 <div className="rounded-lg bg-[#131721]/50 border border-[#2d3240]/40 p-3">
                   <div className="flex items-center gap-2 mb-2">
                     <IconTerminal size={13} className="text-[#3dbf84]" />
                     <span className="text-[11px] font-mono font-medium text-[#ece7dc]">
-                      Stdio Setup
+                      Connect Claude Code
                     </span>
                   </div>
                   <p className="text-[10px] text-[#6f7f9a] leading-relaxed mb-2">
-                    Add to your <code className="text-[#d4a84b]/70">.mcp.json</code> to connect Claude Code via stdio (no sidecar needed).
+                    {mcpStatus?.running
+                      ? <>Add this to your project&apos;s <code className="text-[#d4a84b]/70">.mcp.json</code> to connect via the running sidecar (SSE + auth).</>
+                      : <>Add this to your project&apos;s <code className="text-[#d4a84b]/70">.mcp.json</code> — Claude Code will spawn the server via stdio automatically.</>}
                   </p>
                   <div className="relative">
-                    <pre className="text-[9px] font-mono text-[#6f7f9a]/70 bg-[#0b0d13] rounded px-2 py-1.5 overflow-x-auto leading-relaxed whitespace-pre">
+                    {mcpStatus?.running ? (
+                      /* SSE config pointing to the live sidecar */
+                      <>
+                        <pre className="text-[9px] font-mono text-[#6f7f9a]/70 bg-[#0b0d13] rounded px-2 py-1.5 overflow-x-auto leading-relaxed whitespace-pre">
+{`{
+  "mcpServers": {
+    "clawdstrike-workbench": {
+      "url": "${mcpStatus.url}",
+      "headers": {
+        "Authorization": "Bearer ${showToken ? mcpStatus.token : mcpStatus.token.slice(0, 8) + "..."}"
+      }
+    }
+  }
+}`}
+                        </pre>
+                        <button
+                          onClick={() => {
+                            const config = JSON.stringify(
+                              {
+                                mcpServers: {
+                                  "clawdstrike-workbench": {
+                                    url: mcpStatus.url,
+                                    headers: {
+                                      Authorization: `Bearer ${mcpStatus.token}`,
+                                    },
+                                  },
+                                },
+                              },
+                              null,
+                              2,
+                            );
+                            copyToClipboard(config, "config");
+                          }}
+                          className="absolute top-1.5 right-1.5 flex items-center justify-center w-6 h-6 rounded-md bg-[#131721]/80 border border-[#2d3240]/40 text-[#6f7f9a] hover:text-[#3dbf84] hover:border-[#3dbf84]/30 transition-colors"
+                          title="Copy SSE config for .mcp.json"
+                        >
+                          {mcpCopied === "config" ? (
+                            <IconCheck size={10} className="text-[#3dbf84]" />
+                          ) : (
+                            <IconCopy size={10} />
+                          )}
+                        </button>
+                      </>
+                    ) : (
+                      /* Stdio config — Claude Code spawns the process */
+                      <>
+                        <pre className="text-[9px] font-mono text-[#6f7f9a]/70 bg-[#0b0d13] rounded px-2 py-1.5 overflow-x-auto leading-relaxed whitespace-pre">
 {`{
   "mcpServers": {
     "clawdstrike-workbench": {
       "command": "bun",
-      "args": ["run", "apps/workbench/mcp-server/index.ts"]
+      "args": [
+        "run",
+        "apps/workbench/mcp-server/index.ts"
+      ]
     }
   }
 }`}
-                    </pre>
-                    <button
-                      onClick={() => {
-                        const config = JSON.stringify(
-                          {
-                            mcpServers: {
-                              "clawdstrike-workbench": {
-                                command: "bun",
-                                args: ["run", "apps/workbench/mcp-server/index.ts"],
+                        </pre>
+                        <button
+                          onClick={() => {
+                            const config = JSON.stringify(
+                              {
+                                mcpServers: {
+                                  "clawdstrike-workbench": {
+                                    command: "bun",
+                                    args: ["run", "apps/workbench/mcp-server/index.ts"],
+                                  },
+                                },
                               },
-                            },
-                          },
-                          null,
-                          2,
-                        );
-                        copyToClipboard(config, "stdio");
-                      }}
-                      className="absolute top-1.5 right-1.5 flex items-center justify-center w-6 h-6 rounded-md bg-[#131721]/80 border border-[#2d3240]/40 text-[#6f7f9a] hover:text-[#3dbf84] hover:border-[#3dbf84]/30 transition-colors"
-                      title="Copy stdio config"
-                    >
-                      {mcpCopied === "stdio" ? (
-                        <IconCheck size={10} className="text-[#3dbf84]" />
-                      ) : (
-                        <IconCopy size={10} />
-                      )}
-                    </button>
+                              null,
+                              2,
+                            );
+                            copyToClipboard(config, "stdio");
+                          }}
+                          className="absolute top-1.5 right-1.5 flex items-center justify-center w-6 h-6 rounded-md bg-[#131721]/80 border border-[#2d3240]/40 text-[#6f7f9a] hover:text-[#3dbf84] hover:border-[#3dbf84]/30 transition-colors"
+                          title="Copy stdio config for .mcp.json"
+                        >
+                          {mcpCopied === "stdio" ? (
+                            <IconCheck size={10} className="text-[#3dbf84]" />
+                          ) : (
+                            <IconCopy size={10} />
+                          )}
+                        </button>
+                      </>
+                    )}
                   </div>
+                  {mcpStatus?.running && (
+                    <p className="text-[9px] text-[#6f7f9a]/50 mt-2 leading-relaxed">
+                      Token rotates on each app restart. Update your .mcp.json when you see auth errors.
+                    </p>
+                  )}
                 </div>
               </div>
 
