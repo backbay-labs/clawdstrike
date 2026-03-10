@@ -418,7 +418,7 @@ export function LibraryGallery() {
                       : "Connect Claude Code to the workbench\u2019s MCP server for AI-assisted policy building. Add the config below to your project\u2019s .mcp.json to get started."}
                   </p>
                   <p className="text-[10px] text-[#6f7f9a]/60 mt-1">
-                    14 tools \u00b7 5 prompts \u00b7 3 resources \u2014 scenario testing, validation, compliance scoring, hardening, and synthesis
+                    14 tools · 5 prompts · 3 resources — scenario testing, validation, compliance scoring, hardening, and synthesis
                   </p>
                 </div>
               </div>

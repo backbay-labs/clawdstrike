@@ -91,21 +91,80 @@ fn resolve_script_path() -> String {
     "mcp-server/index.ts".to_string()
 }
 
-/// Try to find a working JS runtime. Returns `(command, args_prefix)`.
-/// Tries `bun` first, then `npx tsx`.
-fn find_runtime() -> (String, Vec<String>) {
-    // Check if `bun` is on PATH
-    if std::process::Command::new("bun")
+/// Common locations for JS runtimes on macOS/Linux that may not be on the
+/// restricted PATH inherited by GUI apps launched from Finder/Dock.
+const EXTRA_PATHS: &[&str] = &[
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+];
+
+/// Resolve an absolute path for `name` by checking PATH first, then common
+/// install locations. Returns `None` if the binary cannot be found anywhere.
+fn resolve_binary(name: &str) -> Option<String> {
+    // Try the ambient PATH first (works when launched from a terminal).
+    if std::process::Command::new(name)
         .arg("--version")
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
         .is_ok()
     {
-        return ("bun".to_string(), vec!["run".to_string()]);
+        return Some(name.to_string());
     }
-    // Fallback to npx tsx
+    // Check the user's home-local bin (e.g. ~/.local/bin/bun, ~/.bun/bin/bun).
+    if let Some(home) = dirs_next::home_dir() {
+        for subdir in &[".local/bin", ".bun/bin", "bin"] {
+            let candidate = home.join(subdir).join(name);
+            if candidate.exists() {
+                return Some(candidate.to_string_lossy().to_string());
+            }
+        }
+    }
+    // Check well-known system paths.
+    for dir in EXTRA_PATHS {
+        let candidate = std::path::PathBuf::from(dir).join(name);
+        if candidate.exists() {
+            return Some(candidate.to_string_lossy().to_string());
+        }
+    }
+    None
+}
+
+/// Try to find a working JS runtime. Returns `(command, args_prefix)`.
+/// Tries `bun` first, then `npx tsx`.
+fn find_runtime() -> (String, Vec<String>) {
+    if let Some(bun) = resolve_binary("bun") {
+        return (bun, vec!["run".to_string()]);
+    }
+    if let Some(npx) = resolve_binary("npx") {
+        return (npx, vec!["tsx".to_string()]);
+    }
+    // Last resort — caller will get a clear spawn error.
     ("npx".to_string(), vec!["tsx".to_string()])
+}
+
+/// Build an enriched PATH that includes common runtime locations.
+/// macOS GUI apps inherit a minimal PATH from launchd (`/usr/bin:/bin:/usr/sbin:/sbin`),
+/// so runtimes installed via Homebrew, bun, or nvm won't be found without this.
+fn enriched_path() -> String {
+    let mut dirs: Vec<String> = Vec::new();
+    if let Some(home) = dirs_next::home_dir() {
+        let home = home.to_string_lossy().to_string();
+        dirs.push(format!("{home}/.local/bin"));
+        dirs.push(format!("{home}/.bun/bin"));
+        dirs.push(format!("{home}/.nvm/current/bin"));
+        dirs.push(format!("{home}/bin"));
+    }
+    for extra in EXTRA_PATHS {
+        dirs.push(extra.to_string());
+    }
+    // Append the existing PATH so we don't lose anything.
+    if let Ok(existing) = std::env::var("PATH") {
+        dirs.push(existing);
+    } else {
+        dirs.push("/usr/bin:/bin:/usr/sbin:/sbin".to_string());
+    }
+    dirs.join(":")
 }
 
 /// Spawn the MCP server process. Returns the connection info on success.
@@ -127,11 +186,20 @@ pub async fn spawn_mcp_server(state: &McpState) -> Result<McpStatusResponse, Str
     let script_path = resolve_script_path();
     let (runtime_cmd, mut args) = find_runtime();
 
+    eprintln!(
+        "[mcp-sidecar] spawning: {} {} (script: {}, port: {})",
+        runtime_cmd,
+        args.join(" "),
+        script_path,
+        port,
+    );
+
     args.push(script_path.clone());
     args.push("--sse".to_string());
 
-    let child = tokio::process::Command::new(&runtime_cmd)
+    let mut child = tokio::process::Command::new(&runtime_cmd)
         .args(&args)
+        .env("PATH", enriched_path())
         .env("MCP_TRANSPORT", "sse")
         .env("MCP_PORT", port.to_string())
         .env("MCP_AUTH_TOKEN", &token)
@@ -140,6 +208,37 @@ pub async fn spawn_mcp_server(state: &McpState) -> Result<McpStatusResponse, Str
         .kill_on_drop(true)
         .spawn()
         .map_err(|e| format!("Failed to spawn MCP server ({runtime_cmd}): {e}"))?;
+
+    // Give the server a moment to bind.
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+
+    // Verify the child is still alive — it may have crashed immediately.
+    match child.try_wait() {
+        Ok(Some(exit_status)) => {
+            // Child already exited — collect stderr for diagnostics.
+            let stderr_msg = if let Some(stderr) = child.stderr.take() {
+                use tokio::io::AsyncReadExt;
+                let mut buf = Vec::new();
+                let mut reader = stderr;
+                let _ = reader.read_to_end(&mut buf).await;
+                String::from_utf8_lossy(&buf).to_string()
+            } else {
+                String::new()
+            };
+            let msg = format!(
+                "MCP server exited immediately (status: {exit_status}). stderr: {}",
+                if stderr_msg.is_empty() { "(empty)" } else { stderr_msg.trim() },
+            );
+            eprintln!("[mcp-sidecar] {msg}");
+            return Err(msg);
+        }
+        Ok(None) => {
+            // Still running — good.
+        }
+        Err(e) => {
+            eprintln!("[mcp-sidecar] try_wait error: {e}");
+        }
+    }
 
     let url = format!("http://localhost:{port}/sse");
     let response = McpStatusResponse {
@@ -160,9 +259,6 @@ pub async fn spawn_mcp_server(state: &McpState) -> Result<McpStatusResponse, Str
         inner.runtime_cmd = runtime_cmd;
         inner.script_path = script_path;
     }
-
-    // Give the server a moment to bind, then verify the health endpoint.
-    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
 
     Ok(response)
 }
@@ -187,10 +283,27 @@ pub fn kill_mcp_server(state: &McpState) {
 pub async fn get_mcp_status(
     state: tauri::State<'_, McpState>,
 ) -> Result<McpStatusResponse, String> {
-    let inner = state
+    let mut inner = state
         .inner
         .lock()
         .map_err(|_| "McpState lock poisoned".to_string())?;
+    // Check if the child process is still alive — it may have crashed since last check.
+    if inner.running {
+        if let Some(ref mut child) = inner.child {
+            match child.try_wait() {
+                Ok(Some(_exit_status)) => {
+                    // Child exited — update state.
+                    inner.running = false;
+                    inner.child = None;
+                }
+                Ok(None) => { /* still running */ }
+                Err(_) => {
+                    inner.running = false;
+                    inner.child = None;
+                }
+            }
+        }
+    }
     Ok(McpStatusResponse {
         url: if inner.running {
             format!("http://localhost:{}/sse", inner.port)
