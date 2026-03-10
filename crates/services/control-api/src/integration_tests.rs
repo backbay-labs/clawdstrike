@@ -5471,6 +5471,141 @@ async fn hierarchy_routes_enforce_permissions_and_delete_modes() {
     assert_eq!(missing_leaf_resp.0, StatusCode::NOT_FOUND);
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn hierarchy_tree_prefers_org_root_over_other_top_level_nodes() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+
+    let project_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/hierarchy/nodes".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "name": "Orphan Project",
+            "node_type": "project"
+        })),
+    )
+    .await;
+    assert_eq!(project_resp.0, StatusCode::OK);
+
+    let root_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/hierarchy/nodes".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "name": "Canonical Org",
+            "node_type": "org"
+        })),
+    )
+    .await;
+    assert_eq!(root_resp.0, StatusCode::OK);
+    let root_id = root_resp.1["id"].as_str().expect("root id").to_string();
+
+    let tree_resp = request_json(
+        &harness.app,
+        Method::GET,
+        "/api/v1/hierarchy/tree".to_string(),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(tree_resp.0, StatusCode::OK);
+    assert_eq!(tree_resp.1["root_id"], root_id);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn receipt_ingest_rejects_viewer_but_allows_member() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let viewer_key = "cs_it_receipts_viewer_key";
+    let member_key = "cs_it_receipts_member_key";
+
+    insert_api_key_for_tenant(
+        &harness.db,
+        harness.tenant_id,
+        viewer_key,
+        "receipt-viewer",
+        &["viewer"],
+    )
+    .await;
+    insert_api_key_for_tenant(
+        &harness.db,
+        harness.tenant_id,
+        member_key,
+        "receipt-member",
+        &["write"],
+    )
+    .await;
+
+    let public_key = hush_core::Keypair::generate().public_key().to_hex();
+    let receipt_payload = serde_json::json!({
+        "timestamp": "2026-03-10T15:00:00Z",
+        "verdict": "allow",
+        "guard": "policy_validation",
+        "policy_name": "strict",
+        "signature": "abcd",
+        "public_key": public_key,
+        "metadata": {
+            "client_receipt_id": "local-001"
+        }
+    });
+
+    let viewer_store_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/receipts".to_string(),
+        Some(viewer_key),
+        Some(receipt_payload.clone()),
+    )
+    .await;
+    assert_eq!(viewer_store_resp.0, StatusCode::FORBIDDEN);
+
+    let viewer_batch_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/receipts/batch".to_string(),
+        Some(viewer_key),
+        Some(serde_json::json!({
+            "receipts": [receipt_payload.clone()]
+        })),
+    )
+    .await;
+    assert_eq!(viewer_batch_resp.0, StatusCode::FORBIDDEN);
+
+    let member_store_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/receipts".to_string(),
+        Some(member_key),
+        Some(receipt_payload.clone()),
+    )
+    .await;
+    assert_eq!(member_store_resp.0, StatusCode::OK);
+
+    let member_batch_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/receipts/batch".to_string(),
+        Some(member_key),
+        Some(serde_json::json!({
+            "receipts": [receipt_payload]
+        })),
+    )
+    .await;
+    assert_eq!(member_batch_resp.0, StatusCode::OK);
+    assert_eq!(member_batch_resp.1["count"], 1);
+}
+
 async fn setup_harness() -> Harness {
     let postgres = run_container(&[
         "run",

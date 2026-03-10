@@ -289,6 +289,7 @@ async fn store_receipt(
     auth: AuthenticatedTenant,
     Json(req): Json<StoreReceiptRequest>,
 ) -> Result<Json<StoredReceipt>, ApiError> {
+    ensure_write_access(&auth)?;
     validate_store_request(&req)?;
 
     let receipt = stored_receipt_from_request(auth.tenant_id, req);
@@ -311,6 +312,8 @@ async fn batch_store_receipts(
     auth: AuthenticatedTenant,
     Json(req): Json<BatchStoreReceiptsRequest>,
 ) -> Result<Json<BatchStoreReceiptsResponse>, ApiError> {
+    ensure_write_access(&auth)?;
+
     if req.receipts.is_empty() {
         return Err(ApiError::BadRequest(
             "receipts array must not be empty".to_string(),
@@ -386,6 +389,14 @@ async fn verify_receipt(
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+fn ensure_write_access(auth: &AuthenticatedTenant) -> Result<(), ApiError> {
+    if auth.role == "viewer" {
+        return Err(ApiError::Forbidden);
+    }
+
+    Ok(())
+}
 
 fn validate_store_request(req: &StoreReceiptRequest) -> Result<(), ApiError> {
     if req.signature.is_empty() {
@@ -505,6 +516,19 @@ fn verify_exact_signed_receipt(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn make_auth(role: &str) -> AuthenticatedTenant {
+        AuthenticatedTenant {
+            tenant_id: Uuid::new_v4(),
+            slug: "test-tenant".to_string(),
+            plan: "enterprise".to_string(),
+            agent_limit: 100,
+            user_id: None,
+            api_key_id: None,
+            role: role.to_string(),
+            auth_source: crate::auth::AuthSource::Jwt,
+        }
+    }
 
     fn make_store() -> ReceiptStore {
         ReceiptStore::new()
@@ -683,6 +707,21 @@ mod tests {
             signed_receipt: None,
         };
         assert!(validate_store_request(&req).is_err());
+    }
+
+    #[test]
+    fn write_access_allows_member_admin_and_owner() {
+        assert!(ensure_write_access(&make_auth("member")).is_ok());
+        assert!(ensure_write_access(&make_auth("admin")).is_ok());
+        assert!(ensure_write_access(&make_auth("owner")).is_ok());
+    }
+
+    #[test]
+    fn write_access_rejects_viewer() {
+        assert!(matches!(
+            ensure_write_access(&make_auth("viewer")),
+            Err(ApiError::Forbidden)
+        ));
     }
 
     #[test]

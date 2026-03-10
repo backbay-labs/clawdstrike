@@ -339,17 +339,15 @@ pub async fn get_tree(db: &PgPool, tenant_id: Uuid) -> Result<HierarchyTreeRespo
         .collect::<Result<_, _>>()
         .map_err(ApiError::Database)?;
 
+    let root_id = select_root_id(&nodes);
+
     // Build a map of parent_id -> ordered children IDs
     let mut children_map: std::collections::HashMap<Uuid, Vec<Uuid>> =
         std::collections::HashMap::new();
-    let mut root_id: Option<Uuid> = None;
 
     for node in &nodes {
         if let Some(pid) = node.parent_id {
             children_map.entry(pid).or_default().push(node.id);
-        } else {
-            // Root node (no parent)
-            root_id = Some(node.id);
         }
     }
 
@@ -376,6 +374,24 @@ pub async fn get_tree(db: &PgPool, tenant_id: Uuid) -> Result<HierarchyTreeRespo
         root_id,
         nodes: tree_nodes,
     })
+}
+
+fn select_root_id(nodes: &[HierarchyNode]) -> Option<Uuid> {
+    let mut first_top_level = None;
+
+    for node in nodes {
+        if node.parent_id.is_some() {
+            continue;
+        }
+
+        first_top_level.get_or_insert(node.id);
+
+        if node.node_type == HierarchyNodeType::Org.as_str() {
+            return Some(node.id);
+        }
+    }
+
+    first_top_level
 }
 
 // ---------------------------------------------------------------------------
@@ -416,6 +432,8 @@ async fn is_descendant(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Utc;
+    use uuid::Uuid;
 
     #[test]
     fn normalized_metadata_update_preserves_explicit_value() {
@@ -438,5 +456,52 @@ mod tests {
     #[test]
     fn normalized_metadata_update_skips_missing_field() {
         assert_eq!(normalized_metadata_update(NullableField::Missing), None);
+    }
+
+    fn make_node(
+        node_type: HierarchyNodeType,
+        parent_id: Option<Uuid>,
+        created_at: chrono::DateTime<Utc>,
+    ) -> HierarchyNode {
+        HierarchyNode {
+            id: Uuid::new_v4(),
+            tenant_id: Uuid::new_v4(),
+            name: format!("{node_type} node"),
+            node_type: node_type.as_str().to_string(),
+            parent_id,
+            policy_id: None,
+            policy_name: None,
+            metadata: serde_json::json!({}),
+            created_at,
+            updated_at: created_at,
+        }
+    }
+
+    #[test]
+    fn select_root_id_prefers_top_level_org_node() {
+        let now = Utc::now();
+        let orphan_project = make_node(HierarchyNodeType::Project, None, now);
+        let org_root = make_node(
+            HierarchyNodeType::Org,
+            None,
+            now + chrono::TimeDelta::seconds(1),
+        );
+
+        let selected = select_root_id(&[orphan_project, org_root.clone()]);
+        assert_eq!(selected, Some(org_root.id));
+    }
+
+    #[test]
+    fn select_root_id_falls_back_to_first_top_level_node() {
+        let now = Utc::now();
+        let project_root = make_node(HierarchyNodeType::Project, None, now);
+        let team_root = make_node(
+            HierarchyNodeType::Team,
+            None,
+            now + chrono::TimeDelta::seconds(1),
+        );
+
+        let selected = select_root_id(&[project_root.clone(), team_root]);
+        assert_eq!(selected, Some(project_root.id));
     }
 }
