@@ -1274,6 +1274,7 @@ mod tests {
 
     use super::*;
     use std::io::Write as _;
+    use tempfile::NamedTempFile;
 
     /// A minimal valid policy YAML string for testing.
     fn minimal_valid_policy() -> String {
@@ -1881,16 +1882,11 @@ guards: {}
 
     #[tokio::test]
     async fn import_policy_file_valid_yaml_returns_parsed_info() {
-        let path = std::env::temp_dir()
-            .join("clawdstrike_test_import_valid.yaml")
-            .to_string_lossy()
-            .to_string();
-
         let yaml = minimal_valid_policy();
-        {
-            let mut f = std::fs::File::create(&path).unwrap();
-            f.write_all(yaml.as_bytes()).unwrap();
-        }
+        let mut file = NamedTempFile::new().unwrap();
+        file.write_all(yaml.as_bytes()).unwrap();
+        file.flush().unwrap();
+        let path = file.path().to_string_lossy().to_string();
 
         let res = import_policy_file(path.clone()).await.unwrap();
         assert!(
@@ -1903,8 +1899,6 @@ guards: {}
         assert!(res.errors.is_empty());
         assert!(res.parse_error.is_none());
         assert!(!res.yaml.is_empty());
-
-        let _ = std::fs::remove_file(&path);
     }
 
     #[tokio::test]

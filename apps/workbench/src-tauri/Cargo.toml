@@ -21,15 +21,16 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 hush-core = { path = "../../../crates/libs/hush-core" }
 clawdstrike = { path = "../../../crates/libs/clawdstrike" }
 tauri-plugin-http = "2"
-tauri-plugin-fs = "2"
 tauri-plugin-stronghold = "2"
 iota_stronghold = "2"
 hex = "0.4"
 hostname = "0.4"
+sha2 = "0.10"
 zeroize = "1"
 
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }
+tempfile = "3"
 
 [features]
 default = ["custom-protocol"]

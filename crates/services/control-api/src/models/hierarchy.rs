@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use serde::de::Deserializer;
 use serde::{Deserialize, Serialize};
 use sqlx::row::Row;
 use uuid::Uuid;
@@ -125,10 +126,68 @@ pub struct CreateHierarchyNodeRequest {
 pub struct UpdateHierarchyNodeRequest {
     pub name: Option<String>,
     pub node_type: Option<String>,
-    pub parent_id: Option<Uuid>,
-    pub policy_id: Option<Uuid>,
-    pub policy_name: Option<String>,
-    pub metadata: Option<serde_json::Value>,
+    #[serde(default)]
+    pub parent_id: NullableField<Uuid>,
+    #[serde(default)]
+    pub policy_id: NullableField<Uuid>,
+    #[serde(default)]
+    pub policy_name: NullableField<String>,
+    #[serde(default)]
+    pub metadata: NullableField<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum NullableField<T> {
+    Missing,
+    Set(T),
+    Clear,
+}
+
+impl<T> NullableField<T> {
+    pub fn as_ref(&self) -> NullableField<&T> {
+        match self {
+            Self::Missing => NullableField::Missing,
+            Self::Set(value) => NullableField::Set(value),
+            Self::Clear => NullableField::Clear,
+        }
+    }
+
+    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> NullableField<U> {
+        match self {
+            Self::Missing => NullableField::Missing,
+            Self::Set(value) => NullableField::Set(f(value)),
+            Self::Clear => NullableField::Clear,
+        }
+    }
+
+    pub fn into_option(self) -> Option<T> {
+        match self {
+            Self::Missing => None,
+            Self::Set(value) => Some(value),
+            Self::Clear => None,
+        }
+    }
+}
+
+impl<T> Default for NullableField<T> {
+    fn default() -> Self {
+        Self::Missing
+    }
+}
+
+impl<'de, T> Deserialize<'de> for NullableField<T>
+where
+    T: Deserialize<'de>,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        match Option::<T>::deserialize(deserializer)? {
+            Some(value) => Ok(Self::Set(value)),
+            None => Ok(Self::Clear),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -188,6 +247,42 @@ mod tests {
         let json = r#"{"name":"x","extra":1}"#;
         let result = serde_json::from_str::<UpdateHierarchyNodeRequest>(json);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn update_request_distinguishes_missing_and_null_for_clearable_fields() {
+        let missing: UpdateHierarchyNodeRequest = serde_json::from_str("{}").expect("parse");
+        assert_eq!(missing.parent_id, NullableField::Missing);
+        assert_eq!(missing.policy_id, NullableField::Missing);
+        assert_eq!(missing.policy_name, NullableField::Missing);
+        assert_eq!(missing.metadata, NullableField::Missing);
+
+        let explicit_null: UpdateHierarchyNodeRequest = serde_json::from_str(
+            r#"{"parent_id":null,"policy_id":null,"policy_name":null,"metadata":null}"#,
+        )
+        .expect("parse");
+        assert_eq!(explicit_null.parent_id, NullableField::Clear);
+        assert_eq!(explicit_null.policy_id, NullableField::Clear);
+        assert_eq!(explicit_null.policy_name, NullableField::Clear);
+        assert_eq!(explicit_null.metadata, NullableField::Clear);
+    }
+
+    #[test]
+    fn update_request_preserves_values_for_clearable_fields() {
+        let policy_id = Uuid::new_v4();
+        let parent_id = Uuid::new_v4();
+        let req: UpdateHierarchyNodeRequest = serde_json::from_str(&format!(
+            r#"{{"parent_id":"{parent_id}","policy_id":"{policy_id}","policy_name":"strict","metadata":{{"tier":"prod"}}}}"#,
+        ))
+        .expect("parse");
+
+        assert_eq!(req.parent_id, NullableField::Set(parent_id));
+        assert_eq!(req.policy_id, NullableField::Set(policy_id));
+        assert_eq!(req.policy_name, NullableField::Set("strict".to_string()));
+        assert_eq!(
+            req.metadata,
+            NullableField::Set(serde_json::json!({ "tier": "prod" }))
+        );
     }
 
     #[test]

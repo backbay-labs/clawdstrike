@@ -26,3 +26,15 @@ pub struct AppState {
     /// In-memory catalog registry for policy templates.
     pub catalog: CatalogStore,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::AppState;
+
+    #[test]
+    fn app_state_is_cloneable() {
+        fn assert_clone<T: Clone>() {}
+
+        assert_clone::<AppState>();
+    }
+}

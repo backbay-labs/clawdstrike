@@ -18,15 +18,6 @@
       "identifier": "http:default",
       "allow": [{ "url": "http://localhost:*/*" }, { "url": "https://localhost:*/*" }]
     },
-    {
-      "identifier": "fs:default"
-    },
-    "fs:allow-read-text-file",
-    "fs:allow-write-text-file",
-    {
-      "identifier": "fs:scope",
-      "allow": ["$HOME/**", "$DOCUMENT/**", "$DESKTOP/**", "$DOWNLOAD/**"]
-    },
     "stronghold:default"
   ]
 }

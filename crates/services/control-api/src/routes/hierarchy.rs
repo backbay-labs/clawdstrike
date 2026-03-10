@@ -104,7 +104,7 @@ async fn update_node(
             node_type: req.node_type.as_deref(),
             parent_id: req.parent_id,
             policy_id: req.policy_id,
-            policy_name: req.policy_name.as_deref(),
+            policy_name: req.policy_name.as_ref().map(|name| name.as_str()),
             metadata: req.metadata.as_ref(),
         },
     )

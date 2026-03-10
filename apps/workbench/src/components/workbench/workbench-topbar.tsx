@@ -9,7 +9,7 @@ import {
   SelectContent,
   SelectItem,
 } from "@/components/ui/select";
-import { isDesktop, pickSavePath, savePolicyFile } from "@/lib/tauri-bridge";
+import { isDesktop, pickSavePath } from "@/lib/tauri-bridge";
 import { exportPolicyFileNative } from "@/lib/tauri-commands";
 import { policyToFormat, formatExtension, formatMimeType, type ExportFormat } from "@/lib/workbench/yaml-utils";
 import { emitAuditEvent } from "@/lib/workbench/local-audit";
@@ -140,6 +140,11 @@ export function WorkbenchTopbar() {
   /** Export in the selected format (browser download or native dialog). */
   async function handleExport() {
     if (desktop) {
+      if (exportFormat === "yaml") {
+        await saveFileAs();
+        return;
+      }
+
       const content = policyToFormat(state.activePolicy, exportFormat);
       const ext = formatExtension(exportFormat);
       // Pick a save path first (dialog only, no write yet)
@@ -149,9 +154,7 @@ export function WorkbenchTopbar() {
         const nativeResult = await exportPolicyFileNative(content, targetPath, exportFormat);
         if (nativeResult) {
           if (nativeResult.success) {
-            dispatch({ type: "SET_FILE_PATH", path: nativeResult.path });
-            dispatch({ type: "MARK_CLEAN" });
-            toast({ type: "success", title: "Policy saved" });
+            toast({ type: "success", title: `${exportFormat.toUpperCase()} exported` });
             emitAuditEvent({
               eventType: "policy.export",
               source: "editor",
@@ -162,16 +165,10 @@ export function WorkbenchTopbar() {
             toast({ type: "error", title: "Validation failed", description: nativeResult.message });
           }
         } else {
-          // Fallback: native command unavailable, write directly
-          await savePolicyFile(content, targetPath, ext);
-          dispatch({ type: "SET_FILE_PATH", path: targetPath });
-          dispatch({ type: "MARK_CLEAN" });
-          toast({ type: "success", title: "Policy saved" });
-          emitAuditEvent({
-            eventType: "policy.export",
-            source: "editor",
-            summary: `Exported "${activePolicy.name}" as ${exportFormat.toUpperCase()} to ${targetPath}`,
-            details: { format: exportFormat, path: targetPath, policyName: activePolicy.name },
+          toast({
+            type: "error",
+            title: "Export failed",
+            description: "Native export command unavailable.",
           });
         }
       }

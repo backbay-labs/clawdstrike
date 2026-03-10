@@ -19,9 +19,15 @@ pub struct CatalogStore {
 
 #[derive(Debug)]
 struct CatalogStoreInner {
-    templates: HashMap<Uuid, CatalogTemplate>,
+    templates: HashMap<Uuid, StoredTemplate>,
     /// Known categories with their metadata.
     categories: HashMap<String, CategoryMeta>,
+}
+
+#[derive(Debug, Clone)]
+struct StoredTemplate {
+    template: CatalogTemplate,
+    owner_tenant_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone)]
@@ -113,17 +119,31 @@ impl CatalogStore {
                 downloads: 0,
                 forked_from: None,
             };
-            inner.templates.insert(id, template);
+            inner.templates.insert(
+                id,
+                StoredTemplate {
+                    template,
+                    owner_tenant_id: None,
+                },
+            );
         }
     }
 
     /// List all templates, optionally filtered by category and/or tag.
-    pub async fn list_templates(&self, query: &CatalogTemplateListQuery) -> Vec<CatalogTemplate> {
+    pub async fn list_templates(
+        &self,
+        tenant_id: Uuid,
+        query: &CatalogTemplateListQuery,
+    ) -> Vec<CatalogTemplate> {
         let inner = self.inner.read().await;
         let mut results: Vec<CatalogTemplate> = inner
             .templates
             .values()
-            .filter(|t| {
+            .filter(|stored| {
+                if !is_visible_to_tenant(stored, tenant_id) {
+                    return false;
+                }
+                let t = &stored.template;
                 if let Some(ref category) = query.category {
                     if t.category != *category {
                         return false;
@@ -136,7 +156,7 @@ impl CatalogStore {
                 }
                 true
             })
-            .cloned()
+            .map(|stored| stored.template.clone())
             .collect();
 
         results.sort_by(|a, b| a.name.cmp(&b.name));
@@ -144,14 +164,24 @@ impl CatalogStore {
     }
 
     /// Get a single template by ID.
-    pub async fn get_template(&self, id: Uuid) -> Result<CatalogTemplate, ApiError> {
+    pub async fn get_template(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+    ) -> Result<CatalogTemplate, ApiError> {
         let inner = self.inner.read().await;
-        inner.templates.get(&id).cloned().ok_or(ApiError::NotFound)
+        inner
+            .templates
+            .get(&id)
+            .filter(|stored| is_visible_to_tenant(stored, tenant_id))
+            .map(|stored| stored.template.clone())
+            .ok_or(ApiError::NotFound)
     }
 
     /// Create a new template from a request.
     pub async fn create_template(
         &self,
+        tenant_id: Uuid,
         req: CreateCatalogTemplateRequest,
     ) -> Result<CatalogTemplate, ApiError> {
         // Validate that the policy YAML is parseable.
@@ -176,13 +206,20 @@ impl CatalogStore {
         };
 
         let mut inner = self.inner.write().await;
-        inner.templates.insert(id, template.clone());
+        inner.templates.insert(
+            id,
+            StoredTemplate {
+                template: template.clone(),
+                owner_tenant_id: Some(tenant_id),
+            },
+        );
         Ok(template)
     }
 
     /// Update an existing template.
     pub async fn update_template(
         &self,
+        tenant_id: Uuid,
         id: Uuid,
         req: UpdateCatalogTemplateRequest,
     ) -> Result<CatalogTemplate, ApiError> {
@@ -192,7 +229,11 @@ impl CatalogStore {
         }
 
         let mut inner = self.inner.write().await;
-        let template = inner.templates.get_mut(&id).ok_or(ApiError::NotFound)?;
+        let stored = inner.templates.get_mut(&id).ok_or(ApiError::NotFound)?;
+        if stored.owner_tenant_id != Some(tenant_id) {
+            return Err(ApiError::NotFound);
+        }
+        let template = &mut stored.template;
 
         if let Some(name) = req.name {
             template.name = name;
@@ -218,21 +259,28 @@ impl CatalogStore {
     }
 
     /// Delete a template by ID.
-    pub async fn delete_template(&self, id: Uuid) -> Result<(), ApiError> {
+    pub async fn delete_template(&self, tenant_id: Uuid, id: Uuid) -> Result<(), ApiError> {
         let mut inner = self.inner.write().await;
-        inner
-            .templates
-            .remove(&id)
-            .map(|_| ())
-            .ok_or(ApiError::NotFound)
+        match inner.templates.get(&id) {
+            Some(stored) if stored.owner_tenant_id == Some(tenant_id) => {
+                inner.templates.remove(&id);
+                Ok(())
+            }
+            _ => Err(ApiError::NotFound),
+        }
     }
 
     /// Fork a template: create a copy with a new ID and a reference to the original.
-    pub async fn fork_template(&self, id: Uuid) -> Result<CatalogTemplate, ApiError> {
+    pub async fn fork_template(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+    ) -> Result<CatalogTemplate, ApiError> {
         let inner = self.inner.read().await;
         let source = inner
             .templates
             .get(&id)
+            .filter(|stored| is_visible_to_tenant(stored, tenant_id))
             .cloned()
             .ok_or(ApiError::NotFound)?;
         drop(inner);
@@ -241,13 +289,13 @@ impl CatalogStore {
         let new_id = Uuid::new_v4();
         let forked = CatalogTemplate {
             id: new_id,
-            name: format!("{} (fork)", source.name),
-            description: source.description.clone(),
-            category: source.category.clone(),
-            tags: source.tags.clone(),
-            policy_yaml: source.policy_yaml.clone(),
-            author: source.author.clone(),
-            version: source.version.clone(),
+            name: format!("{} (fork)", source.template.name),
+            description: source.template.description.clone(),
+            category: source.template.category.clone(),
+            tags: source.template.tags.clone(),
+            policy_yaml: source.template.policy_yaml.clone(),
+            author: source.template.author.clone(),
+            version: source.template.version.clone(),
             created_at: now,
             updated_at: now,
             downloads: 0,
@@ -255,18 +303,26 @@ impl CatalogStore {
         };
 
         let mut inner = self.inner.write().await;
-        inner.templates.insert(new_id, forked.clone());
+        inner.templates.insert(
+            new_id,
+            StoredTemplate {
+                template: forked.clone(),
+                owner_tenant_id: Some(tenant_id),
+            },
+        );
         Ok(forked)
     }
 
     /// List categories with computed template counts.
-    pub async fn list_categories(&self) -> Vec<CatalogCategory> {
+    pub async fn list_categories(&self, tenant_id: Uuid) -> Vec<CatalogCategory> {
         let inner = self.inner.read().await;
 
         // Count templates per category.
         let mut counts: HashMap<String, u64> = HashMap::new();
-        for template in inner.templates.values() {
-            *counts.entry(template.category.clone()).or_default() += 1;
+        for stored in inner.templates.values() {
+            if is_visible_to_tenant(stored, tenant_id) {
+                *counts.entry(stored.template.category.clone()).or_default() += 1;
+            }
         }
 
         let mut categories: Vec<CatalogCategory> = inner
@@ -283,6 +339,10 @@ impl CatalogStore {
         categories.sort_by(|a, b| a.name.cmp(&b.name));
         categories
     }
+}
+
+fn is_visible_to_tenant(template: &StoredTemplate, tenant_id: Uuid) -> bool {
+    template.owner_tenant_id.is_none() || template.owner_tenant_id == Some(tenant_id)
 }
 
 /// Load built-in rulesets from the embedded YAML files and return seed entries.
@@ -401,10 +461,13 @@ mod tests {
         store.seed(entries).await;
 
         let all = store
-            .list_templates(&CatalogTemplateListQuery {
-                category: None,
-                tag: None,
-            })
+            .list_templates(
+                Uuid::new_v4(),
+                &CatalogTemplateListQuery {
+                    category: None,
+                    tag: None,
+                },
+            )
             .await;
         assert_eq!(all.len(), count);
     }
@@ -415,10 +478,13 @@ mod tests {
         store.seed(load_builtin_rulesets()).await;
 
         let ai_templates = store
-            .list_templates(&CatalogTemplateListQuery {
-                category: Some("ai-agent".to_string()),
-                tag: None,
-            })
+            .list_templates(
+                Uuid::new_v4(),
+                &CatalogTemplateListQuery {
+                    category: Some("ai-agent".to_string()),
+                    tag: None,
+                },
+            )
             .await;
         assert!(
             ai_templates.len() >= 2,
@@ -436,10 +502,13 @@ mod tests {
         store.seed(load_builtin_rulesets()).await;
 
         let strict_templates = store
-            .list_templates(&CatalogTemplateListQuery {
-                category: None,
-                tag: Some("strict".to_string()),
-            })
+            .list_templates(
+                Uuid::new_v4(),
+                &CatalogTemplateListQuery {
+                    category: None,
+                    tag: Some("strict".to_string()),
+                },
+            )
             .await;
         assert!(
             !strict_templates.is_empty(),
@@ -453,40 +522,87 @@ mod tests {
     #[tokio::test]
     async fn create_and_get_template() {
         let store = CatalogStore::new();
+        let tenant = Uuid::new_v4();
         let created = store
-            .create_template(CreateCatalogTemplateRequest {
-                name: "test".to_string(),
-                description: "test template".to_string(),
-                category: "general".to_string(),
-                tags: Some(vec!["test".to_string()]),
-                policy_yaml: "version: \"1.1.0\"\nname: test\n".to_string(),
-                author: Some("tester".to_string()),
-                version: Some("0.1.0".to_string()),
-            })
+            .create_template(
+                tenant,
+                CreateCatalogTemplateRequest {
+                    name: "test".to_string(),
+                    description: "test template".to_string(),
+                    category: "general".to_string(),
+                    tags: Some(vec!["test".to_string()]),
+                    policy_yaml: "version: \"1.1.0\"\nname: test\n".to_string(),
+                    author: Some("tester".to_string()),
+                    version: Some("0.1.0".to_string()),
+                },
+            )
             .await
             .expect("create should succeed");
 
         let fetched = store
-            .get_template(created.id)
+            .get_template(tenant, created.id)
             .await
             .expect("get should succeed");
         assert_eq!(fetched.name, "test");
         assert_eq!(fetched.author, "tester");
+
+        assert!(matches!(
+            store.get_template(Uuid::new_v4(), created.id).await,
+            Err(ApiError::NotFound)
+        ));
+    }
+
+    #[tokio::test]
+    async fn tenant_created_templates_are_isolated() {
+        let store = CatalogStore::new();
+        let tenant_a = Uuid::new_v4();
+        let tenant_b = Uuid::new_v4();
+
+        let created = store
+            .create_template(
+                tenant_a,
+                CreateCatalogTemplateRequest {
+                    name: "test".to_string(),
+                    description: "test template".to_string(),
+                    category: "general".to_string(),
+                    tags: Some(vec!["test".to_string()]),
+                    policy_yaml: "version: \"1.1.0\"\nname: test\n".to_string(),
+                    author: Some("tester".to_string()),
+                    version: Some("0.1.0".to_string()),
+                },
+            )
+            .await
+            .expect("create should succeed");
+
+        let fetched = store
+            .get_template(tenant_a, created.id)
+            .await
+            .expect("owner should be able to read");
+        assert_eq!(fetched.name, "test");
+        assert_eq!(fetched.author, "tester");
+
+        assert!(matches!(
+            store.get_template(tenant_b, created.id).await,
+            Err(ApiError::NotFound)
+        ));
     }
 
     #[tokio::test]
     async fn create_rejects_invalid_yaml() {
         let store = CatalogStore::new();
         let result = store
-            .create_template(CreateCatalogTemplateRequest {
-                name: "bad".to_string(),
-                description: "bad template".to_string(),
-                category: "general".to_string(),
-                tags: None,
-                policy_yaml: "not: valid: yaml: [".to_string(),
-                author: None,
-                version: None,
-            })
+            .create_template(
+                Uuid::new_v4(),
+                CreateCatalogTemplateRequest {
+                    name: "bad".to_string(),
+                    description: "bad template".to_string(),
+                    category: "general".to_string(),
+                    tags: None,
+                    policy_yaml: "not: valid: yaml: [".to_string(),
+                    author: None,
+                    version: None,
+                },
+            )
             .await;
         assert!(result.is_err());
     }
@@ -495,20 +611,57 @@ mod tests {
     async fn update_template_applies_partial_fields() {
         let store = CatalogStore::new();
         let created = store
-            .create_template(CreateCatalogTemplateRequest {
-                name: "original".to_string(),
-                description: "original desc".to_string(),
-                category: "general".to_string(),
-                tags: None,
-                policy_yaml: "version: \"1.1.0\"\nname: original\n".to_string(),
-                author: None,
-                version: None,
-            })
+            .create_template(
+                Uuid::new_v4(),
+                CreateCatalogTemplateRequest {
+                    name: "original".to_string(),
+                    description: "original desc".to_string(),
+                    category: "general".to_string(),
+                    tags: None,
+                    policy_yaml: "version: \"1.1.0\"\nname: original\n".to_string(),
+                    author: None,
+                    version: None,
+                },
+            )
             .await
             .expect("create should succeed");
 
         let updated = store
             .update_template(
+                Uuid::new_v4(),
+                created.id,
+                UpdateCatalogTemplateRequest {
+                    name: Some("updated".to_string()),
+                    description: None,
+                    category: None,
+                    tags: None,
+                    policy_yaml: None,
+                    version: None,
+                },
+            )
+            .await;
+        assert!(matches!(updated, Err(ApiError::NotFound)));
+
+        let tenant = Uuid::new_v4();
+        let created = store
+            .create_template(
+                tenant,
+                CreateCatalogTemplateRequest {
+                    name: "original".to_string(),
+                    description: "original desc".to_string(),
+                    category: "general".to_string(),
+                    tags: None,
+                    policy_yaml: "version: \"1.1.0\"\nname: original\n".to_string(),
+                    author: None,
+                    version: None,
+                },
+            )
+            .await
+            .expect("create should succeed");
+
+        let updated = store
+            .update_template(
+                tenant,
                 created.id,
                 UpdateCatalogTemplateRequest {
                     name: Some("updated".to_string()),
@@ -529,52 +682,60 @@ mod tests {
     #[tokio::test]
     async fn delete_template_removes_it() {
         let store = CatalogStore::new();
+        let tenant = Uuid::new_v4();
         let created = store
-            .create_template(CreateCatalogTemplateRequest {
-                name: "to-delete".to_string(),
-                description: "will be deleted".to_string(),
-                category: "general".to_string(),
-                tags: None,
-                policy_yaml: "version: \"1.1.0\"\nname: delete-me\n".to_string(),
-                author: None,
-                version: None,
-            })
+            .create_template(
+                tenant,
+                CreateCatalogTemplateRequest {
+                    name: "to-delete".to_string(),
+                    description: "will be deleted".to_string(),
+                    category: "general".to_string(),
+                    tags: None,
+                    policy_yaml: "version: \"1.1.0\"\nname: delete-me\n".to_string(),
+                    author: None,
+                    version: None,
+                },
+            )
             .await
             .expect("create should succeed");
 
         store
-            .delete_template(created.id)
+            .delete_template(tenant, created.id)
             .await
             .expect("delete should succeed");
 
-        assert!(store.get_template(created.id).await.is_err());
+        assert!(store.get_template(tenant, created.id).await.is_err());
     }
 
     #[tokio::test]
     async fn delete_nonexistent_returns_not_found() {
         let store = CatalogStore::new();
-        let result = store.delete_template(Uuid::new_v4()).await;
+        let result = store.delete_template(Uuid::new_v4(), Uuid::new_v4()).await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn fork_template_creates_copy_with_reference() {
         let store = CatalogStore::new();
+        let tenant = Uuid::new_v4();
         let original = store
-            .create_template(CreateCatalogTemplateRequest {
-                name: "original".to_string(),
-                description: "the original".to_string(),
-                category: "general".to_string(),
-                tags: Some(vec!["source".to_string()]),
-                policy_yaml: "version: \"1.1.0\"\nname: original\n".to_string(),
-                author: Some("author".to_string()),
-                version: Some("1.0.0".to_string()),
-            })
+            .create_template(
+                tenant,
+                CreateCatalogTemplateRequest {
+                    name: "original".to_string(),
+                    description: "the original".to_string(),
+                    category: "general".to_string(),
+                    tags: Some(vec!["source".to_string()]),
+                    policy_yaml: "version: \"1.1.0\"\nname: original\n".to_string(),
+                    author: Some("author".to_string()),
+                    version: Some("1.0.0".to_string()),
+                },
+            )
             .await
             .expect("create should succeed");
 
         let forked = store
-            .fork_template(original.id)
+            .fork_template(tenant, original.id)
             .await
             .expect("fork should succeed");
 
@@ -588,7 +749,7 @@ mod tests {
     #[tokio::test]
     async fn fork_nonexistent_returns_not_found() {
         let store = CatalogStore::new();
-        let result = store.fork_template(Uuid::new_v4()).await;
+        let result = store.fork_template(Uuid::new_v4(), Uuid::new_v4()).await;
         assert!(result.is_err());
     }
 
@@ -597,7 +758,7 @@ mod tests {
         let store = CatalogStore::new();
         store.seed(load_builtin_rulesets()).await;
 
-        let categories = store.list_categories().await;
+        let categories = store.list_categories(Uuid::new_v4()).await;
         assert!(!categories.is_empty());
 
         // The general category should have at least default, permissive, strict.
@@ -618,5 +779,49 @@ mod tests {
                 entry.name
             );
         }
+    }
+
+    #[tokio::test]
+    async fn builtins_are_visible_to_every_tenant_but_mutations_are_tenant_scoped() {
+        let store = CatalogStore::new();
+        store.seed(load_builtin_rulesets()).await;
+
+        let tenant_a = Uuid::new_v4();
+        let tenant_b = Uuid::new_v4();
+        let builtin = store
+            .list_templates(
+                tenant_a,
+                &CatalogTemplateListQuery {
+                    category: None,
+                    tag: None,
+                },
+            )
+            .await
+            .into_iter()
+            .next()
+            .expect("expected builtin template");
+
+        assert!(store.get_template(tenant_b, builtin.id).await.is_ok());
+        assert!(matches!(
+            store
+                .update_template(
+                    tenant_a,
+                    builtin.id,
+                    UpdateCatalogTemplateRequest {
+                        name: Some("nope".to_string()),
+                        description: None,
+                        category: None,
+                        tags: None,
+                        policy_yaml: None,
+                        version: None,
+                    },
+                )
+                .await,
+            Err(ApiError::NotFound)
+        ));
+        assert!(matches!(
+            store.delete_template(tenant_a, builtin.id).await,
+            Err(ApiError::NotFound)
+        ));
     }
 }

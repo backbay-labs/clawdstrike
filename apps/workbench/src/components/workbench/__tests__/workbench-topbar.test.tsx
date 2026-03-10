@@ -1,16 +1,44 @@
-import { describe, it, expect, vi } from "vitest";
-import { screen } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { WorkbenchTopbar } from "../workbench-topbar";
+import type { TauriExportResponse } from "@/lib/tauri-commands";
+import type { OpenFileResult } from "@/lib/tauri-bridge";
 import { renderWithProviders } from "@/test/test-helpers";
 
-vi.mock("@/lib/tauri-bridge", () => ({
+const tauriBridgeMocks = vi.hoisted(() => ({
   isDesktop: vi.fn(() => false),
   isMacOS: vi.fn(() => false),
-  minimizeWindow: vi.fn(),
-  maximizeWindow: vi.fn(),
-  closeWindow: vi.fn(),
+  minimizeWindow: vi.fn<() => Promise<void>>(),
+  maximizeWindow: vi.fn<() => Promise<void>>(),
+  closeWindow: vi.fn<() => Promise<void>>(),
+  openPolicyFile: vi.fn<() => Promise<OpenFileResult | null>>(),
+  readPolicyFileByPath: vi.fn<(filePath: string) => Promise<OpenFileResult | null>>(),
+  pickSavePath: vi.fn<(format?: string) => Promise<string | null>>(),
+  savePolicyFile: vi.fn<
+    (content: string, filePath?: string | null, format?: string) => Promise<string | null>
+  >(),
 }));
+
+const tauriCommandMocks = vi.hoisted(() => ({
+  exportPolicyFileNative: vi.fn<
+    (content: string, path: string, format?: string) => Promise<TauriExportResponse | null>
+  >(),
+}));
+
+vi.mock("@/lib/tauri-bridge", () => tauriBridgeMocks);
+vi.mock("@/lib/tauri-commands", () => tauriCommandMocks);
+vi.mock("@/lib/workbench/local-audit", () => ({
+  emitAuditEvent: vi.fn(),
+}));
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  tauriBridgeMocks.isDesktop.mockReturnValue(false);
+  tauriBridgeMocks.pickSavePath.mockResolvedValue(null);
+  tauriBridgeMocks.savePolicyFile.mockResolvedValue(null);
+  tauriCommandMocks.exportPolicyFileNative.mockResolvedValue(null);
+});
 
 describe("WorkbenchTopbar", () => {
   it("shows the policy name", () => {
@@ -140,5 +168,43 @@ describe("WorkbenchTopbar", () => {
 
     const header = screen.getByRole("banner");
     expect(header).toBeInTheDocument();
+  });
+
+  it("desktop JSON export does not change the active save target", async () => {
+    const user = userEvent.setup();
+    tauriBridgeMocks.isDesktop.mockReturnValue(true);
+    tauriBridgeMocks.pickSavePath.mockResolvedValue("/tmp/exported-policy.json");
+    tauriBridgeMocks.savePolicyFile.mockResolvedValue("/tmp/saved-policy.yaml");
+    tauriCommandMocks.exportPolicyFileNative.mockResolvedValue({
+      success: true,
+      path: "/tmp/exported-policy.json",
+      message: "Policy exported as JSON successfully",
+    });
+
+    renderWithProviders(<WorkbenchTopbar />);
+
+    const saveButton = screen.getByRole("button", { name: "Save" });
+    expect(saveButton).toHaveAttribute("title", "Save policy");
+
+    await user.click(screen.getByTitle("Export format"));
+    await user.click(await screen.findByRole("option", { name: "JSON" }));
+    await user.click(screen.getByRole("button", { name: "Save As" }));
+
+    await waitFor(() => {
+      expect(tauriCommandMocks.exportPolicyFileNative).toHaveBeenCalledWith(
+        expect.any(String),
+        "/tmp/exported-policy.json",
+        "json",
+      );
+    });
+
+    expect(saveButton).toHaveAttribute("title", "Save policy");
+
+    await user.click(saveButton);
+
+    await waitFor(() => {
+      expect(tauriBridgeMocks.savePolicyFile).toHaveBeenCalledTimes(1);
+    });
+    expect(tauriBridgeMocks.savePolicyFile.mock.calls[0]).toHaveLength(1);
   });
 });

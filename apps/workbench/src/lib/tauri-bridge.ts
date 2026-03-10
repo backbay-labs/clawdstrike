@@ -78,7 +78,6 @@ export async function openPolicyFile(): Promise<OpenFileResult | null> {
   if (!isDesktop()) return null;
 
   const { open } = await import("@tauri-apps/plugin-dialog");
-  const { readTextFile } = await import("@tauri-apps/plugin-fs");
 
   const selected = await open({
     multiple: false,
@@ -97,8 +96,13 @@ export async function openPolicyFile(): Promise<OpenFileResult | null> {
   const filePath = typeof selected === "string" ? selected : selected[0];
   if (!filePath) return null;
 
-  const content = await readTextFile(filePath);
-  return { content, path: filePath };
+  const { importPolicyFileNative } = await import("./tauri-commands");
+  const result = await importPolicyFileNative(filePath);
+  if (!result) {
+    throw new Error("Native import command unavailable");
+  }
+
+  return { content: result.yaml, path: filePath };
 }
 
 /**
@@ -109,9 +113,10 @@ export async function readPolicyFileByPath(filePath: string): Promise<OpenFileRe
   if (!isDesktop()) return null;
 
   try {
-    const { readTextFile } = await import("@tauri-apps/plugin-fs");
-    const content = await readTextFile(filePath);
-    return { content, path: filePath };
+    const { importPolicyFileNative } = await import("./tauri-commands");
+    const result = await importPolicyFileNative(filePath);
+    if (!result) return null;
+    return { content: result.yaml, path: filePath };
   } catch (err) {
     console.error("[tauri-bridge] Failed to read file:", filePath, err);
     return null;
@@ -166,8 +171,6 @@ export async function savePolicyFile(
 ): Promise<string | null> {
   if (!isDesktop()) return null;
 
-  const { writeTextFile } = await import("@tauri-apps/plugin-fs");
-
   let targetPath = filePath;
 
   if (!targetPath) {
@@ -175,6 +178,14 @@ export async function savePolicyFile(
     if (!targetPath) return null;
   }
 
-  await writeTextFile(targetPath, content);
-  return targetPath;
+  const { exportPolicyFileNative } = await import("./tauri-commands");
+  const result = await exportPolicyFileNative(content, targetPath, format);
+  if (!result) {
+    throw new Error("Native export command unavailable");
+  }
+  if (!result.success) {
+    throw new Error(result.message);
+  }
+
+  return result.path;
 }

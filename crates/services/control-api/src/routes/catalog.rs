@@ -25,19 +25,19 @@ pub fn router() -> Router<AppState> {
 
 async fn list_templates(
     State(state): State<AppState>,
-    _auth: AuthenticatedTenant,
+    auth: AuthenticatedTenant,
     Query(query): Query<CatalogTemplateListQuery>,
 ) -> Result<Json<Vec<CatalogTemplate>>, ApiError> {
-    let templates = state.catalog.list_templates(&query).await;
+    let templates = state.catalog.list_templates(auth.tenant_id, &query).await;
     Ok(Json(templates))
 }
 
 async fn get_template(
     State(state): State<AppState>,
-    _auth: AuthenticatedTenant,
+    auth: AuthenticatedTenant,
     Path(id): Path<Uuid>,
 ) -> Result<Json<CatalogTemplate>, ApiError> {
-    let template = state.catalog.get_template(id).await?;
+    let template = state.catalog.get_template(auth.tenant_id, id).await?;
     Ok(Json(template))
 }
 
@@ -50,7 +50,7 @@ async fn create_template(
         return Err(ApiError::Forbidden);
     }
 
-    let template = state.catalog.create_template(req).await?;
+    let template = state.catalog.create_template(auth.tenant_id, req).await?;
     Ok(Json(template))
 }
 
@@ -64,7 +64,10 @@ async fn update_template(
         return Err(ApiError::Forbidden);
     }
 
-    let template = state.catalog.update_template(id, req).await?;
+    let template = state
+        .catalog
+        .update_template(auth.tenant_id, id, req)
+        .await?;
     Ok(Json(template))
 }
 
@@ -77,7 +80,7 @@ async fn delete_template(
         return Err(ApiError::Forbidden);
     }
 
-    state.catalog.delete_template(id).await?;
+    state.catalog.delete_template(auth.tenant_id, id).await?;
     Ok(Json(json!({ "deleted": true })))
 }
 
@@ -90,14 +93,14 @@ async fn fork_template(
         return Err(ApiError::Forbidden);
     }
 
-    let forked = state.catalog.fork_template(id).await?;
+    let forked = state.catalog.fork_template(auth.tenant_id, id).await?;
     Ok(Json(forked))
 }
 
 async fn list_categories(
     State(state): State<AppState>,
-    _auth: AuthenticatedTenant,
+    auth: AuthenticatedTenant,
 ) -> Result<Json<Vec<CatalogCategory>>, ApiError> {
-    let categories = state.catalog.list_categories().await;
+    let categories = state.catalog.list_categories(auth.tenant_id).await;
     Ok(Json(categories))
 }

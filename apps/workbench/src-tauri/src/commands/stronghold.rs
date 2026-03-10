@@ -5,10 +5,12 @@
 //! machine-derived key so no user password is required.
 
 use std::convert::TryFrom;
+use std::path::Path;
 use std::sync::Mutex;
 
 use iota_stronghold::{KeyProvider, SnapshotPath, Stronghold};
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager, Runtime};
 use zeroize::Zeroizing;
 
@@ -65,7 +67,7 @@ fn derive_machine_password() -> Vec<u8> {
     let hostname = hostname::get()
         .map(|h| h.to_string_lossy().into_owned())
         .unwrap_or_else(|_| "clawdstrike-default".to_string());
-    format!("clawdstrike-vault-{}", hostname).into_bytes()
+    Sha256::digest(format!("clawdstrike-vault-{}", hostname)).to_vec()
 }
 
 /// Access the initialised Stronghold, returning an error if not yet initialised.
@@ -91,17 +93,7 @@ fn save_snapshot(inner: &StrongholdInner) -> Result<(), String> {
         .map_err(|e| format!("Failed to save Stronghold snapshot: {}", e))
 }
 
-// ---------------------------------------------------------------------------
-// P4-1: Stronghold initialisation
-// ---------------------------------------------------------------------------
-
-/// Initialise the Stronghold vault. Called once at app startup from the
-/// frontend. Subsequent calls are no-ops returning `true`.
-///
-/// The snapshot file is stored in the Tauri app data directory.
-#[tauri::command]
-pub async fn init_stronghold<R: Runtime>(app: AppHandle<R>) -> Result<bool, String> {
-    let state = app.state::<StrongholdState>();
+fn init_stronghold_state(state: &StrongholdState, snapshot_file: &Path) -> Result<bool, String> {
     let mut guard = state
         .inner
         .lock()
@@ -111,34 +103,23 @@ pub async fn init_stronghold<R: Runtime>(app: AppHandle<R>) -> Result<bool, Stri
         return Ok(true);
     }
 
-    // Resolve snapshot path inside the Tauri app data directory.
-    let data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("Cannot resolve app data dir: {}", e))?;
-    std::fs::create_dir_all(&data_dir).map_err(|e| format!("Cannot create app data dir: {}", e))?;
-    let snapshot_file = data_dir.join("clawdstrike.stronghold");
-
     let password = derive_machine_password();
     let keyprovider = KeyProvider::try_from(Zeroizing::new(password))
         .map_err(|e| format!("KeyProvider error: {}", e))?;
-    let snapshot_path = SnapshotPath::from_path(&snapshot_file);
+    let snapshot_path = SnapshotPath::from_path(snapshot_file);
 
     let stronghold = Stronghold::default();
 
-    // Load existing snapshot if it exists.
     if snapshot_file.exists() {
         stronghold
             .load_snapshot(&keyprovider, &snapshot_path)
             .map_err(|e| format!("Failed to load Stronghold snapshot: {}", e))?;
     }
 
-    // Ensure the default client exists.
     let _ = stronghold
         .create_client(CLIENT_NAME)
         .or_else(|_| stronghold.load_client(CLIENT_NAME));
 
-    // Persist immediately.
     stronghold
         .commit_with_keyprovider(&snapshot_path, &keyprovider)
         .map_err(|e| format!("Failed to save Stronghold snapshot: {}", e))?;
@@ -152,14 +133,8 @@ pub async fn init_stronghold<R: Runtime>(app: AppHandle<R>) -> Result<bool, Stri
     Ok(true)
 }
 
-// ---------------------------------------------------------------------------
-// P4-2: Credential storage
-// ---------------------------------------------------------------------------
-
-/// Store a credential value in the Stronghold vault.
-#[tauri::command]
-pub async fn store_credential<R: Runtime>(
-    app: AppHandle<R>,
+fn store_credential_in_state(
+    state: &StrongholdState,
     key: String,
     value: String,
 ) -> Result<bool, String> {
@@ -170,11 +145,10 @@ pub async fn store_credential<R: Runtime>(
         return Err("Credential value too large (max 1 MiB)".into());
     }
 
-    let state = app.state::<StrongholdState>();
-    with_stronghold(&state, |inner| {
+    with_stronghold(state, |inner| {
         let client = inner
             .stronghold
-            .load_client(CLIENT_NAME)
+            .get_client(CLIENT_NAME)
             .map_err(|e| format!("Client load error: {}", e))?;
         let store = client.store();
         let store_key = format!("{}{}", CRED_PREFIX, key).into_bytes();
@@ -186,18 +160,14 @@ pub async fn store_credential<R: Runtime>(
     })
 }
 
-/// Retrieve a credential value from the Stronghold vault.
-/// Returns `null` if the key does not exist.
-#[tauri::command]
-pub async fn get_credential<R: Runtime>(
-    app: AppHandle<R>,
+fn get_credential_from_state(
+    state: &StrongholdState,
     key: String,
 ) -> Result<Option<String>, String> {
-    let state = app.state::<StrongholdState>();
-    with_stronghold(&state, |inner| {
+    with_stronghold(state, |inner| {
         let client = inner
             .stronghold
-            .load_client(CLIENT_NAME)
+            .get_client(CLIENT_NAME)
             .map_err(|e| format!("Client load error: {}", e))?;
         let store = client.store();
         let store_key = format!("{}{}", CRED_PREFIX, key).into_bytes();
@@ -215,14 +185,11 @@ pub async fn get_credential<R: Runtime>(
     })
 }
 
-/// Delete a credential from the Stronghold vault.
-#[tauri::command]
-pub async fn delete_credential<R: Runtime>(app: AppHandle<R>, key: String) -> Result<bool, String> {
-    let state = app.state::<StrongholdState>();
-    with_stronghold(&state, |inner| {
+fn delete_credential_from_state(state: &StrongholdState, key: String) -> Result<bool, String> {
+    with_stronghold(state, |inner| {
         let client = inner
             .stronghold
-            .load_client(CLIENT_NAME)
+            .get_client(CLIENT_NAME)
             .map_err(|e| format!("Client load error: {}", e))?;
         let store = client.store();
         let store_key = format!("{}{}", CRED_PREFIX, key).into_bytes();
@@ -232,14 +199,11 @@ pub async fn delete_credential<R: Runtime>(app: AppHandle<R>, key: String) -> Re
     })
 }
 
-/// Check whether a credential exists in the Stronghold vault.
-#[tauri::command]
-pub async fn has_credential<R: Runtime>(app: AppHandle<R>, key: String) -> Result<bool, String> {
-    let state = app.state::<StrongholdState>();
-    with_stronghold(&state, |inner| {
+fn has_credential_in_state(state: &StrongholdState, key: String) -> Result<bool, String> {
+    with_stronghold(state, |inner| {
         let client = inner
             .stronghold
-            .load_client(CLIENT_NAME)
+            .get_client(CLIENT_NAME)
             .map_err(|e| format!("Client load error: {}", e))?;
         let store = client.store();
         let store_key = format!("{}{}", CRED_PREFIX, key).into_bytes();
@@ -247,6 +211,67 @@ pub async fn has_credential<R: Runtime>(app: AppHandle<R>, key: String) -> Resul
             .contains_key(&store_key)
             .map_err(|e| format!("Store error: {}", e))
     })
+}
+
+// ---------------------------------------------------------------------------
+// P4-1: Stronghold initialisation
+// ---------------------------------------------------------------------------
+
+/// Initialise the Stronghold vault. Called once at app startup from the
+/// frontend. Subsequent calls are no-ops returning `true`.
+///
+/// The snapshot file is stored in the Tauri app data directory.
+#[tauri::command]
+pub async fn init_stronghold<R: Runtime>(app: AppHandle<R>) -> Result<bool, String> {
+    // Resolve snapshot path inside the Tauri app data directory.
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Cannot resolve app data dir: {}", e))?;
+    std::fs::create_dir_all(&data_dir).map_err(|e| format!("Cannot create app data dir: {}", e))?;
+    let snapshot_file = data_dir.join("clawdstrike.stronghold");
+    let state = app.state::<StrongholdState>();
+    init_stronghold_state(&state, &snapshot_file)
+}
+
+// ---------------------------------------------------------------------------
+// P4-2: Credential storage
+// ---------------------------------------------------------------------------
+
+/// Store a credential value in the Stronghold vault.
+#[tauri::command]
+pub async fn store_credential<R: Runtime>(
+    app: AppHandle<R>,
+    key: String,
+    value: String,
+) -> Result<bool, String> {
+    let state = app.state::<StrongholdState>();
+    store_credential_in_state(&state, key, value)
+}
+
+/// Retrieve a credential value from the Stronghold vault.
+/// Returns `null` if the key does not exist.
+#[tauri::command]
+pub async fn get_credential<R: Runtime>(
+    app: AppHandle<R>,
+    key: String,
+) -> Result<Option<String>, String> {
+    let state = app.state::<StrongholdState>();
+    get_credential_from_state(&state, key)
+}
+
+/// Delete a credential from the Stronghold vault.
+#[tauri::command]
+pub async fn delete_credential<R: Runtime>(app: AppHandle<R>, key: String) -> Result<bool, String> {
+    let state = app.state::<StrongholdState>();
+    delete_credential_from_state(&state, key)
+}
+
+/// Check whether a credential exists in the Stronghold vault.
+#[tauri::command]
+pub async fn has_credential<R: Runtime>(app: AppHandle<R>, key: String) -> Result<bool, String> {
+    let state = app.state::<StrongholdState>();
+    has_credential_in_state(&state, key)
 }
 
 // ---------------------------------------------------------------------------
@@ -272,14 +297,68 @@ pub async fn generate_persistent_keypair<R: Runtime>(
     app: AppHandle<R>,
 ) -> Result<GenerateKeypairResponse, String> {
     let state = app.state::<StrongholdState>();
-    with_stronghold(&state, |inner| {
+    generate_persistent_keypair_in_state(&state)
+}
+
+/// Retrieve the public key of the persistent signing keypair.
+/// Returns `null` if no keypair has been generated yet.
+#[tauri::command]
+pub async fn get_signing_public_key<R: Runtime>(
+    app: AppHandle<R>,
+) -> Result<Option<String>, String> {
+    let state = app.state::<StrongholdState>();
+    get_signing_public_key_from_state(&state)
+}
+
+/// Sign arbitrary data with the persistent Ed25519 key.
+///
+/// `data_hex` is a hex-encoded byte string to sign.
+/// Returns the hex-encoded Ed25519 signature (128 hex chars = 64 bytes).
+#[tauri::command]
+pub async fn sign_with_persistent_key<R: Runtime>(
+    app: AppHandle<R>,
+    data_hex: String,
+) -> Result<String, String> {
+    let state = app.state::<StrongholdState>();
+    sign_with_persistent_key_in_state(&state, data_hex)
+}
+
+// ---------------------------------------------------------------------------
+// Public helper for workbench commands (P4-3: persistent key signing)
+// ---------------------------------------------------------------------------
+
+/// Attempt to load the persistent Ed25519 keypair from Stronghold state.
+/// Returns `None` if Stronghold is not initialised or no key exists.
+///
+/// Used by `sign_receipt_persistent` in `workbench.rs`.
+pub fn load_persistent_keypair_from_state(state: &StrongholdState) -> Option<hush_core::Keypair> {
+    let guard = state.inner.lock().ok()?;
+    let inner = guard.as_ref()?;
+    let client = inner.stronghold.get_client(CLIENT_NAME).ok()?;
+    let store = client.store();
+    let seed_bytes = store.get(SIGNING_KEY_RECORD).ok()??;
+
+    if seed_bytes.len() != 32 {
+        return None;
+    }
+
+    let mut seed = [0u8; 32];
+    seed.copy_from_slice(&seed_bytes);
+    let kp = hush_core::Keypair::from_seed(&seed);
+    seed.iter_mut().for_each(|b| *b = 0);
+    Some(kp)
+}
+
+fn generate_persistent_keypair_in_state(
+    state: &StrongholdState,
+) -> Result<GenerateKeypairResponse, String> {
+    with_stronghold(state, |inner| {
         let client = inner
             .stronghold
-            .load_client(CLIENT_NAME)
+            .get_client(CLIENT_NAME)
             .map_err(|e| format!("Client load error: {}", e))?;
         let store = client.store();
 
-        // Check if we already have a cached public key.
         if let Ok(Some(existing_pub)) = store.get(SIGNING_PUBKEY_RECORD) {
             if existing_pub.len() == 32 {
                 return Ok(GenerateKeypairResponse {
@@ -289,19 +368,15 @@ pub async fn generate_persistent_keypair<R: Runtime>(
             }
         }
 
-        // Generate a new Ed25519 keypair using hush-core.
         let keypair = hush_core::Keypair::generate();
         let seed_hex = keypair.to_hex();
         let seed_bytes = hex::decode(&seed_hex).map_err(|e| format!("Hex decode error: {}", e))?;
         let pub_bytes = keypair.public_key().as_bytes().to_vec();
         let pub_hex = keypair.public_key().to_hex();
 
-        // Store seed in the Stronghold store.
         store
             .insert(SIGNING_KEY_RECORD.to_vec(), seed_bytes, None)
             .map_err(|e| format!("Failed to store signing key seed: {}", e))?;
-
-        // Cache the public key for quick retrieval.
         store
             .insert(SIGNING_PUBKEY_RECORD.to_vec(), pub_bytes, None)
             .map_err(|e| format!("Failed to store public key: {}", e))?;
@@ -315,17 +390,11 @@ pub async fn generate_persistent_keypair<R: Runtime>(
     })
 }
 
-/// Retrieve the public key of the persistent signing keypair.
-/// Returns `null` if no keypair has been generated yet.
-#[tauri::command]
-pub async fn get_signing_public_key<R: Runtime>(
-    app: AppHandle<R>,
-) -> Result<Option<String>, String> {
-    let state = app.state::<StrongholdState>();
-    with_stronghold(&state, |inner| {
+fn get_signing_public_key_from_state(state: &StrongholdState) -> Result<Option<String>, String> {
+    with_stronghold(state, |inner| {
         let client = inner
             .stronghold
-            .load_client(CLIENT_NAME)
+            .get_client(CLIENT_NAME)
             .map_err(|e| format!("Client load error: {}", e))?;
         let store = client.store();
         match store.get(SIGNING_PUBKEY_RECORD) {
@@ -335,23 +404,17 @@ pub async fn get_signing_public_key<R: Runtime>(
     })
 }
 
-/// Sign arbitrary data with the persistent Ed25519 key.
-///
-/// `data_hex` is a hex-encoded byte string to sign.
-/// Returns the hex-encoded Ed25519 signature (128 hex chars = 64 bytes).
-#[tauri::command]
-pub async fn sign_with_persistent_key<R: Runtime>(
-    app: AppHandle<R>,
+fn sign_with_persistent_key_in_state(
+    state: &StrongholdState,
     data_hex: String,
 ) -> Result<String, String> {
     let data = hex::decode(data_hex.strip_prefix("0x").unwrap_or(&data_hex))
         .map_err(|e| format!("Invalid hex data: {}", e))?;
 
-    let state = app.state::<StrongholdState>();
-    with_stronghold(&state, |inner| {
+    with_stronghold(state, |inner| {
         let client = inner
             .stronghold
-            .load_client(CLIENT_NAME)
+            .get_client(CLIENT_NAME)
             .map_err(|e| format!("Client load error: {}", e))?;
         let store = client.store();
 
@@ -370,8 +433,6 @@ pub async fn sign_with_persistent_key<R: Runtime>(
         let mut seed = [0u8; 32];
         seed.copy_from_slice(&seed_bytes);
         let keypair = hush_core::Keypair::from_seed(&seed);
-
-        // Zeroize seed from stack.
         seed.iter_mut().for_each(|b| *b = 0);
 
         let signature = keypair.sign(&data);
@@ -379,28 +440,167 @@ pub async fn sign_with_persistent_key<R: Runtime>(
     })
 }
 
-// ---------------------------------------------------------------------------
-// Public helper for workbench commands (P4-3: persistent key signing)
-// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
 
-/// Attempt to load the persistent Ed25519 keypair from Stronghold state.
-/// Returns `None` if Stronghold is not initialised or no key exists.
-///
-/// Used by `sign_receipt_persistent` in `workbench.rs`.
-pub fn load_persistent_keypair_from_state(state: &StrongholdState) -> Option<hush_core::Keypair> {
-    let guard = state.inner.lock().ok()?;
-    let inner = guard.as_ref()?;
-    let client = inner.stronghold.load_client(CLIENT_NAME).ok()?;
-    let store = client.store();
-    let seed_bytes = store.get(SIGNING_KEY_RECORD).ok()??;
+    fn init_state() -> (StrongholdState, TempDir) {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let snapshot = temp_dir.path().join("clawdstrike.stronghold");
+        let keyprovider =
+            KeyProvider::try_from(Zeroizing::new(vec![7u8; 32])).expect("test keyprovider");
+        let snapshot_path = SnapshotPath::from_path(&snapshot);
+        let stronghold = Stronghold::default();
+        let _ = stronghold
+            .create_client(CLIENT_NAME)
+            .or_else(|_| stronghold.load_client(CLIENT_NAME));
+        stronghold
+            .commit_with_keyprovider(&snapshot_path, &keyprovider)
+            .expect("commit snapshot");
 
-    if seed_bytes.len() != 32 {
-        return None;
+        let state = StrongholdState {
+            inner: Mutex::new(Some(StrongholdInner {
+                stronghold,
+                snapshot_path,
+                keyprovider,
+            })),
+        };
+        (state, temp_dir)
     }
 
-    let mut seed = [0u8; 32];
-    seed.copy_from_slice(&seed_bytes);
-    let kp = hush_core::Keypair::from_seed(&seed);
-    seed.iter_mut().for_each(|b| *b = 0);
-    Some(kp)
+    fn insert_raw_record(state: &StrongholdState, record: &[u8], value: Vec<u8>) {
+        with_stronghold(state, |inner| {
+            let client = inner
+                .stronghold
+                .get_client(CLIENT_NAME)
+                .map_err(|e| format!("Client load error: {}", e))?;
+            client
+                .store()
+                .insert(record.to_vec(), value, None)
+                .map_err(|e| format!("Store insert error: {}", e))?;
+            save_snapshot(inner)?;
+            Ok(())
+        })
+        .expect("insert raw record");
+    }
+
+    #[test]
+    fn derive_machine_password_is_stable_fixed_length_material() {
+        let first = derive_machine_password();
+        let second = derive_machine_password();
+
+        assert_eq!(first, second);
+        assert_eq!(first.len(), 32);
+    }
+
+    #[test]
+    fn initialized_test_state_persists_snapshot() {
+        let (state, temp_dir) = init_state();
+        let snapshot = temp_dir.path().join("clawdstrike.stronghold");
+
+        assert!(snapshot.exists());
+        assert!(
+            store_credential_in_state(&state, "fleet".into(), "token".into())
+                .expect("store credential")
+        );
+        assert!(snapshot.exists());
+    }
+
+    #[test]
+    fn credential_helpers_require_initialized_state() {
+        let state = StrongholdState::new();
+        let err = store_credential_in_state(&state, "fleet".into(), "token".into())
+            .expect_err("uninitialized state should fail");
+        assert!(err.contains("Stronghold not initialised"));
+    }
+
+    #[test]
+    fn credential_round_trip_validates_inputs() {
+        let (state, _temp_dir) = init_state();
+
+        let empty_key_err = store_credential_in_state(&state, String::new(), "token".into())
+            .expect_err("empty key should fail");
+        assert!(empty_key_err.contains("must not be empty"));
+
+        let oversized_err =
+            store_credential_in_state(&state, "fleet".into(), "x".repeat(1_048_577))
+                .expect_err("oversized value should fail");
+        assert!(oversized_err.contains("too large"));
+
+        assert!(
+            store_credential_in_state(&state, "fleet".into(), "token".into())
+                .expect("store credential")
+        );
+        assert!(has_credential_in_state(&state, "fleet".into()).expect("has credential"));
+        assert_eq!(
+            get_credential_from_state(&state, "fleet".into()).expect("get credential"),
+            Some("token".to_string())
+        );
+        assert!(delete_credential_from_state(&state, "fleet".into()).expect("delete credential"));
+        assert!(!has_credential_in_state(&state, "fleet".into()).expect("missing credential"));
+        assert_eq!(
+            get_credential_from_state(&state, "fleet".into()).expect("get deleted credential"),
+            None
+        );
+    }
+
+    #[test]
+    fn persistent_keypair_round_trip_signs_data() {
+        let (state, _temp_dir) = init_state();
+
+        assert_eq!(
+            get_signing_public_key_from_state(&state).expect("empty public key"),
+            None
+        );
+
+        let generated =
+            generate_persistent_keypair_in_state(&state).expect("generate persistent keypair");
+        assert!(generated.newly_generated);
+        assert_eq!(generated.public_key.len(), 64);
+
+        let cached =
+            generate_persistent_keypair_in_state(&state).expect("reuse persistent keypair");
+        assert!(!cached.newly_generated);
+        assert_eq!(cached.public_key, generated.public_key);
+        assert_eq!(
+            get_signing_public_key_from_state(&state).expect("get public key"),
+            Some(generated.public_key.clone())
+        );
+
+        let keypair = load_persistent_keypair_from_state(&state).expect("load keypair");
+        assert_eq!(keypair.public_key().to_hex(), generated.public_key);
+
+        let signature =
+            sign_with_persistent_key_in_state(&state, "0x68656c6c6f".into()).expect("sign data");
+        assert_eq!(signature.len(), 128);
+    }
+
+    #[test]
+    fn persistent_key_helpers_cover_error_paths() {
+        let (state, _temp_dir) = init_state();
+
+        let missing_key_err = sign_with_persistent_key_in_state(&state, "6869".into())
+            .expect_err("missing keypair should fail");
+        assert!(missing_key_err.contains("Call generate_persistent_keypair first"));
+
+        let invalid_hex_err = sign_with_persistent_key_in_state(&state, "not-hex".into())
+            .expect_err("invalid hex should fail");
+        assert!(invalid_hex_err.contains("Invalid hex data"));
+
+        insert_raw_record(&state, SIGNING_PUBKEY_RECORD, vec![7u8; 31]);
+        assert_eq!(
+            get_signing_public_key_from_state(&state).expect("invalid public key cache"),
+            None
+        );
+
+        insert_raw_record(&state, SIGNING_KEY_RECORD, vec![9u8; 31]);
+        assert!(
+            load_persistent_keypair_from_state(&state).is_none(),
+            "invalid stored seed length should be rejected"
+        );
+        let invalid_seed_err = sign_with_persistent_key_in_state(&state, "6869".into())
+            .expect_err("invalid seed should fail");
+        assert!(invalid_seed_err.contains("invalid length"));
+    }
 }

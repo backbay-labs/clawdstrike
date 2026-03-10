@@ -16,6 +16,7 @@ vi.mock("@/lib/workbench/fleet-client", () => ({
     resolveApproval: vi.fn().mockResolvedValue({ success: true }),
   },
   loadSavedConnection: vi.fn().mockReturnValue({}),
+  loadSavedConnectionAsync: vi.fn().mockResolvedValue({}),
   saveConnectionConfig: vi.fn(),
   clearConnectionConfig: vi.fn(),
   clearCredentials: vi.fn(),

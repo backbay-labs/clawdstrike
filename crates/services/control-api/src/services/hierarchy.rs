@@ -5,7 +5,7 @@ use crate::db::PgPool;
 use crate::error::ApiError;
 use crate::models::hierarchy::{
     DeleteHierarchyNodeResponse, HierarchyNode, HierarchyNodeType, HierarchyTreeNode,
-    HierarchyTreeResponse,
+    HierarchyTreeResponse, NullableField,
 };
 
 // ---------------------------------------------------------------------------
@@ -27,10 +27,10 @@ pub struct UpdateNodeParams<'a> {
     pub node_id: Uuid,
     pub name: Option<&'a str>,
     pub node_type: Option<&'a str>,
-    pub parent_id: Option<Uuid>,
-    pub policy_id: Option<Uuid>,
-    pub policy_name: Option<&'a str>,
-    pub metadata: Option<&'a serde_json::Value>,
+    pub parent_id: NullableField<Uuid>,
+    pub policy_id: NullableField<Uuid>,
+    pub policy_name: NullableField<&'a str>,
+    pub metadata: NullableField<&'a serde_json::Value>,
 }
 
 // ---------------------------------------------------------------------------
@@ -157,7 +157,7 @@ pub async fn update_node(
     }
 
     // Validate parent_id if provided — prevent self-parenting and cross-tenant refs
-    if let Some(pid) = params.parent_id {
+    if let NullableField::Set(pid) = params.parent_id {
         if pid == params.node_id {
             return Err(ApiError::BadRequest(
                 "a node cannot be its own parent".to_string(),
@@ -186,14 +186,16 @@ pub async fn update_node(
         }
     }
 
+    let metadata_update = normalized_metadata_update(params.metadata);
+
     let row = sqlx::query::query(
         r#"UPDATE hierarchy_nodes
            SET name = COALESCE($3, name),
                node_type = COALESCE($4, node_type),
-               parent_id = COALESCE($5, parent_id),
-               policy_id = COALESCE($6, policy_id),
-               policy_name = COALESCE($7, policy_name),
-               metadata = COALESCE($8, metadata),
+               parent_id = CASE WHEN $5 THEN $6 ELSE parent_id END,
+               policy_id = CASE WHEN $7 THEN $8 ELSE policy_id END,
+               policy_name = CASE WHEN $9 THEN $10 ELSE policy_name END,
+               metadata = CASE WHEN $11 THEN $12 ELSE metadata END,
                updated_at = now()
            WHERE id = $1 AND tenant_id = $2
            RETURNING *"#,
@@ -202,16 +204,31 @@ pub async fn update_node(
     .bind(params.tenant_id)
     .bind(params.name)
     .bind(params.node_type)
-    .bind(params.parent_id)
-    .bind(params.policy_id)
-    .bind(params.policy_name)
-    .bind(params.metadata)
+    .bind(!matches!(params.parent_id, NullableField::Missing))
+    .bind(params.parent_id.into_option())
+    .bind(!matches!(params.policy_id, NullableField::Missing))
+    .bind(params.policy_id.into_option())
+    .bind(!matches!(params.policy_name, NullableField::Missing))
+    .bind(params.policy_name.into_option())
+    .bind(!matches!(params.metadata, NullableField::Missing))
+    .bind(metadata_update)
     .fetch_optional(db)
     .await
     .map_err(ApiError::Database)?
     .ok_or(ApiError::NotFound)?;
 
     HierarchyNode::from_row(row).map_err(ApiError::Database)
+}
+
+fn normalized_metadata_update(
+    metadata: NullableField<&serde_json::Value>,
+) -> Option<serde_json::Value> {
+    match metadata {
+        NullableField::Set(value) => Some(value.clone()),
+        // `metadata` is stored as NOT NULL JSONB with `{}` as its empty-state value.
+        NullableField::Clear => Some(serde_json::json!({})),
+        NullableField::Missing => None,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -394,4 +411,32 @@ async fn is_descendant(
     .map_err(ApiError::Database)?;
 
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalized_metadata_update_preserves_explicit_value() {
+        let metadata = serde_json::json!({ "tier": "prod" });
+
+        assert_eq!(
+            normalized_metadata_update(NullableField::Set(&metadata)),
+            Some(metadata)
+        );
+    }
+
+    #[test]
+    fn normalized_metadata_update_clears_to_empty_object() {
+        assert_eq!(
+            normalized_metadata_update(NullableField::Clear),
+            Some(serde_json::json!({}))
+        );
+    }
+
+    #[test]
+    fn normalized_metadata_update_skips_missing_field() {
+        assert_eq!(normalized_metadata_update(NullableField::Missing), None);
+    }
 }
