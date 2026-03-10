@@ -529,6 +529,26 @@ button:active:not(:disabled) {
   letter-spacing: -0.02em;
 }
 
+/* Trustprint screening pulse */
+@keyframes trustprint-scan {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+.trustprint-scanning {
+  animation: trustprint-scan 1.2s ease-in-out infinite;
+}
+
+@keyframes trustprint-score-enter {
+  0% { transform: scaleX(0); opacity: 0; }
+  100% { transform: scaleX(1); opacity: 1; }
+}
+
+.trustprint-score-bar {
+  transform-origin: left;
+  animation: trustprint-score-enter 400ms ease-out;
+}
+
 /* Keyboard shortcut badge */
 .kbd-shortcut {
   display: inline-flex;

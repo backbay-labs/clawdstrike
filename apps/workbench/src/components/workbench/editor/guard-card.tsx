@@ -7,6 +7,10 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { VerdictBadge } from "@/components/workbench/shared/verdict-badge";
 import { GuardConfigFields } from "@/components/workbench/editor/guard-config-fields";
+import { TrustprintThresholdTuner } from "@/components/workbench/editor/trustprint-threshold-tuner";
+import { TrustprintPatternExplorer } from "@/components/workbench/editor/trustprint-pattern-explorer";
+import { TrustprintProviderWizard } from "@/components/workbench/editor/trustprint-provider-wizard";
+import { S2BENCH_PATTERNS } from "@/lib/workbench/trustprint-patterns";
 import { useGuardProvenance } from "@/components/workbench/editor/inheritance-chain";
 import { useWorkbench } from "@/lib/workbench/multi-policy-store";
 import { GUARD_REGISTRY } from "@/lib/workbench/guard-registry";
@@ -26,6 +30,7 @@ import {
   IconPlugConnected,
   IconKeyboard,
   IconSpider,
+  IconFingerprint,
   IconChevronDown,
   IconChevronUp,
   IconAlertTriangle,
@@ -46,6 +51,7 @@ const ICON_MAP: Record<string, typeof IconLock> = {
   IconPlugConnected,
   IconKeyboard,
   IconSpider,
+  IconFingerprint,
 };
 
 function getGuardSummary(guardId: GuardId, config: Record<string, unknown>): string {
@@ -345,11 +351,48 @@ export function GuardCard({
             <p className="text-[10px] text-[#6f7f9a] pt-2 pb-1">
               {meta.description}
             </p>
-            <GuardConfigFields
-              guardId={guardId}
-              config={guardConfig}
-              onChange={handleConfigChange}
-            />
+            {guardId === "spider_sense" ? (
+              <div className="flex flex-col gap-4 pt-2">
+                {/* Trustprint Threshold Tuner */}
+                <TrustprintThresholdTuner
+                  threshold={(guardConfig.similarity_threshold as number) ?? 0.85}
+                  ambiguityBand={(guardConfig.ambiguity_band as number) ?? 0.1}
+                  onThresholdChange={(v) => handleConfigChange("similarity_threshold", v)}
+                  onAmbiguityBandChange={(v) => handleConfigChange("ambiguity_band", v)}
+                />
+                {/* Embedding Provider Setup */}
+                <TrustprintProviderWizard
+                  config={{
+                    embedding_api_url: guardConfig.embedding_api_url as string | undefined,
+                    embedding_api_key: guardConfig.embedding_api_key as string | undefined,
+                    embedding_model: guardConfig.embedding_model as string | undefined,
+                  }}
+                  onChange={(updates) => {
+                    for (const [k, v] of Object.entries(updates)) {
+                      handleConfigChange(k, v);
+                    }
+                  }}
+                  compact
+                />
+                {/* Pattern DB Explorer (compact) */}
+                <TrustprintPatternExplorer
+                  patterns={S2BENCH_PATTERNS}
+                  compact
+                />
+                {/* Remaining config fields (top_k, etc.) */}
+                <GuardConfigFields
+                  guardId={guardId}
+                  config={guardConfig}
+                  onChange={handleConfigChange}
+                />
+              </div>
+            ) : (
+              <GuardConfigFields
+                guardId={guardId}
+                config={guardConfig}
+                onChange={handleConfigChange}
+              />
+            )}
           </div>
         </CollapsibleContent>
       </div>
