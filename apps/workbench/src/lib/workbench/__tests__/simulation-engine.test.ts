@@ -1009,3 +1009,101 @@ describe("ReDoS protection", () => {
     expect(guardResult!.message).toContain("Unsafe regex");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Path normalization (tested indirectly through forbidden_path guard)
+// ---------------------------------------------------------------------------
+
+describe("path normalization in forbidden_path", () => {
+  const policy = makePolicy({
+    forbidden_path: {
+      enabled: true,
+      patterns: ["**/.ssh/**", "**/.env", "/etc/shadow", "/etc/passwd"],
+    },
+  });
+
+  it("resolves parent traversal (../) before matching", () => {
+    const result = simulatePolicy(
+      policy,
+      makeScenario({ actionType: "file_access", payload: { path: "/app/../etc/shadow" } })
+    );
+    expect(result.overallVerdict).toBe("deny");
+    expect(result.guardResults[0].verdict).toBe("deny");
+  });
+
+  it("resolves dot segments (./) before matching", () => {
+    const result = simulatePolicy(
+      policy,
+      makeScenario({ actionType: "file_access", payload: { path: "/home/user/./.ssh/./id_rsa" } })
+    );
+    expect(result.overallVerdict).toBe("deny");
+  });
+
+  it("normalizes relative paths to absolute for matching", () => {
+    const result = simulatePolicy(
+      policy,
+      makeScenario({ actionType: "file_write", payload: { path: ".env" } })
+    );
+    // .env becomes /workspace/.env which matches **/.env
+    expect(result.overallVerdict).toBe("deny");
+  });
+
+  it("normalizes ../../etc/passwd traversal", () => {
+    const result = simulatePolicy(
+      policy,
+      makeScenario({ actionType: "file_access", payload: { path: "../../etc/passwd" } })
+    );
+    expect(result.overallVerdict).toBe("deny");
+  });
+
+  it("collapses multiple slashes", () => {
+    const result = simulatePolicy(
+      policy,
+      makeScenario({ actionType: "file_access", payload: { path: "/home//user//.ssh//id_rsa" } })
+    );
+    expect(result.overallVerdict).toBe("deny");
+  });
+
+  it("still allows safe relative paths", () => {
+    const result = simulatePolicy(
+      policy,
+      makeScenario({ actionType: "file_access", payload: { path: "src/main.ts" } })
+    );
+    expect(result.overallVerdict).toBe("allow");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Unknown guard names (fail-closed)
+// ---------------------------------------------------------------------------
+
+describe("unknown guard handling", () => {
+  it("unknown guard names default to deny (fail-closed)", () => {
+    const policy = makePolicy({
+      // @ts-expect-error -- intentionally using an unknown guard name
+      totally_fake_guard: { enabled: true, some_config: true },
+    });
+    const result = simulatePolicy(
+      policy,
+      makeScenario({ actionType: "file_access", payload: { path: "/safe/file.txt" } })
+    );
+    expect(result.overallVerdict).toBe("deny");
+    const guardResult = result.guardResults.find((r) => r.guardId === "totally_fake_guard");
+    expect(guardResult).toBeDefined();
+    expect(guardResult!.verdict).toBe("deny");
+    expect(guardResult!.message).toContain("Unknown guard");
+  });
+
+  it("disabled unknown guards are skipped", () => {
+    const policy = makePolicy({
+      // @ts-expect-error -- intentionally using an unknown guard name
+      totally_fake_guard: { enabled: false },
+    });
+    const result = simulatePolicy(
+      policy,
+      makeScenario({ actionType: "file_access", payload: { path: "/safe/file.txt" } })
+    );
+    expect(result.guardResults).toHaveLength(0);
+    expect(result.overallVerdict).toBe("allow");
+  });
+});

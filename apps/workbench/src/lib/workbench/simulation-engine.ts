@@ -68,6 +68,57 @@ function isSafeRegex(pattern: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Path normalization
+// ---------------------------------------------------------------------------
+
+/**
+ * Normalize a filesystem path by resolving `.` and `..` segments and collapsing
+ * multiple slashes. Relative paths are anchored under `/workspace/` so they
+ * can be tested against absolute glob patterns.
+ */
+function normalizePath(p: string): string {
+  if (!p) return p;
+
+  // Collapse multiple slashes
+  let cleaned = p.replace(/\/\/+/g, "/");
+
+  // Resolve . and .. segments
+  const parts = cleaned.split("/");
+  const resolved: string[] = [];
+  for (const part of parts) {
+    if (part === "." || part === "") {
+      // Skip empty segments (from leading `/`) unless it's the first one
+      if (resolved.length === 0 && cleaned.startsWith("/")) resolved.push("");
+      continue;
+    }
+    if (part === "..") {
+      // Don't pop past root
+      if (resolved.length > 1 || (resolved.length === 1 && resolved[0] !== "")) {
+        resolved.pop();
+      }
+      continue;
+    }
+    resolved.push(part);
+  }
+
+  let result = resolved.join("/") || "/";
+
+  // Ensure we preserve the leading slash
+  if (cleaned.startsWith("/") && !result.startsWith("/")) {
+    result = "/" + result;
+  }
+
+  // If the path is still relative, anchor it so glob patterns can match.
+  // Paths starting with parent traversal (../) indicate an attempt to reach
+  // paths above the working directory — treat them as rooted at /.
+  if (!result.startsWith("/") && !result.startsWith("~")) {
+    result = "/" + result;
+  }
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
 // Glob / wildcard helpers
 // ---------------------------------------------------------------------------
 
@@ -119,7 +170,7 @@ function simulateForbiddenPath(
   const { actionType, payload } = scenario;
   if (actionType !== "file_access" && actionType !== "file_write" && actionType !== "patch_apply") return null;
 
-  const path = (payload.path as string) || "";
+  const path = normalizePath((payload.path as string) || "");
   const patterns = config.patterns || [];
   const exceptions = config.exceptions || [];
 
@@ -212,7 +263,7 @@ function simulateSecretLeak(
   if (scenario.actionType !== "file_write") return null;
 
   const content = (scenario.payload.content as string) || "";
-  const path = (scenario.payload.path as string) || "";
+  const path = normalizePath((scenario.payload.path as string) || "");
   const patterns = config.patterns || [];
   const skipPaths = config.skip_paths || [];
 
@@ -467,7 +518,8 @@ function simulateShellCommand(
     const fpPatterns = forbiddenPathConfig.patterns || [];
     const fpExceptions = forbiddenPathConfig.exceptions || [];
     // Simple path extraction: find tokens starting with / or ~/
-    const pathTokens = command.match(/(?:~\/|\/)[^\s;|&"'`]+/g) || [];
+    const rawTokens = command.match(/(?:~\/|\/)[^\s;|&"'`]+/g) || [];
+    const pathTokens = rawTokens.map(normalizePath);
     for (const candidatePath of pathTokens) {
       // Check exceptions first
       const isExcepted = fpExceptions.some((exc) => globToRegex(exc).test(candidatePath));
@@ -708,7 +760,7 @@ function stubPathAllowlist(
   scenario: TestScenario,
 ): GuardSimResult {
   const { actionType, payload } = scenario;
-  const path = (payload.path as string) || "";
+  const path = normalizePath((payload.path as string) || "");
 
   let allowedPaths: string[] = [];
   if (actionType === "file_access") {
