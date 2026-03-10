@@ -11,6 +11,7 @@ import {
   IconShieldLock,
   IconCreditCard,
 } from "@tabler/icons-react";
+import { ClaudeCodeHint } from "@/components/workbench/shared/claude-code-hint";
 
 const frameworkIcons: Record<ComplianceFramework, typeof IconHeartbeat> = {
   hipaa: IconHeartbeat,
@@ -183,6 +184,11 @@ export function ComplianceDashboard() {
           Evaluate your active policy against industry compliance frameworks.
           Click a framework to see detailed requirement coverage.
         </p>
+        <ClaudeCodeHint
+          hint="Check compliance scores with Claude Code"
+          prompt="Use workbench_compliance_check on my policy against HIPAA, SOC2, and PCI-DSS, then tell me exactly which guards to enable to close the compliance gaps"
+          className="mt-3"
+        />
       </div>
 
       {/* Framework cards */}

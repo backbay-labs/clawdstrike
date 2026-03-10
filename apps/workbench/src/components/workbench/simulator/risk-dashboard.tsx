@@ -10,6 +10,7 @@ import {
   IconCheck,
   IconX,
 } from "@tabler/icons-react";
+import { ClaudeCodeHint } from "@/components/workbench/shared/claude-code-hint";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -177,7 +178,12 @@ export function RiskDashboard({ systemScore, pluginScores }: RiskDashboardProps)
     return (
       <div className="flex flex-col items-center justify-center h-full text-[#6f7f9a] px-8">
         <IconShieldExclamation size={24} stroke={1.2} className="mb-3" />
-        <span className="text-[12px]">Run red team scenarios to see risk analysis</span>
+        <span className="text-[12px] mb-5">Run red team scenarios to see risk analysis</span>
+        <ClaudeCodeHint
+          hint="Ask Claude Code to assess your risk posture"
+          prompt="Use workbench_guard_coverage on my policy to identify disabled guards, then run workbench_compliance_check and tell me my overall risk level with specific remediation steps"
+          className="max-w-md w-full"
+        />
       </div>
     );
   }

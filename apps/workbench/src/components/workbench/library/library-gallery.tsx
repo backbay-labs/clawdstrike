@@ -550,19 +550,55 @@ export function LibraryGallery() {
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {[
-                  { cmd: "/workbench:build-scenario", label: "Build Scenarios", icon: IconShieldCheck },
-                  { cmd: "/workbench:tighten-policy", label: "Tighten Policy", icon: IconShieldCheck },
-                  { cmd: "/workbench:security-audit", label: "Security Audit", icon: IconShieldCheck },
-                  { cmd: "/workbench:observe-analyze", label: "Observe & Analyze", icon: IconShieldCheck },
-                ].map(({ cmd, label }) => (
-                  <div
-                    key={cmd}
-                    className="rounded-md bg-[#0b0d13]/50 border border-[#2d3240]/30 px-2.5 py-2 text-center"
-                  >
-                    <p className="text-[10px] font-mono text-[#8b5cf6]/80 truncate">{cmd}</p>
-                    <p className="text-[9px] text-[#6f7f9a] mt-0.5">{label}</p>
-                  </div>
-                ))}
+                  {
+                    label: "Audit My Policy",
+                    prompt: "Run a comprehensive security audit on my policy: validate it, check compliance against HIPAA/SOC2/PCI-DSS, suggest and run test scenarios, and give me a prioritized fix list",
+                  },
+                  {
+                    label: "Build Test Suite",
+                    prompt: "Suggest test scenarios for my policy with workbench_suggest_scenarios, then create 5 more custom edge-case scenarios with workbench_create_scenario targeting boundary conditions",
+                  },
+                  {
+                    label: "Harden Policy",
+                    prompt: "Analyze my policy with workbench_validate_policy and workbench_compliance_check, then use workbench_harden_policy to generate a tightened version that closes all compliance gaps",
+                  },
+                  {
+                    label: "Compare Versions",
+                    prompt: "Use workbench_diff_policies to compare my current policy against the strict built-in ruleset and show me exactly what's different",
+                  },
+                ].map(({ label, prompt: cardPrompt }) => {
+                  const CopyableCard = () => {
+                    const [cardCopied, setCardCopied] = useState(false);
+                    return (
+                      <button
+                        key={label}
+                        onClick={async () => {
+                          await navigator.clipboard.writeText(cardPrompt);
+                          setCardCopied(true);
+                          setTimeout(() => setCardCopied(false), 2000);
+                        }}
+                        className="rounded-md bg-[#0b0d13]/50 border border-[#8b5cf6]/15 hover:border-[#8b5cf6]/30 hover:bg-[#8b5cf6]/[0.04] px-2.5 py-2 text-center transition-colors group"
+                        title={cardPrompt}
+                      >
+                        <p className="text-[10px] font-mono text-[#8b5cf6]/80 truncate">{label}</p>
+                        <p className="text-[9px] text-[#6f7f9a] mt-0.5 flex items-center justify-center gap-1">
+                          {cardCopied ? (
+                            <>
+                              <IconCheck size={9} className="text-[#3dbf84]" />
+                              <span className="text-[#3dbf84]">Copied!</span>
+                            </>
+                          ) : (
+                            <>
+                              <IconCopy size={9} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+                              Copy prompt
+                            </>
+                          )}
+                        </p>
+                      </button>
+                    );
+                  };
+                  return <CopyableCard key={label} />;
+                })}
               </div>
             </div>
           </section>

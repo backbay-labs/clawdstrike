@@ -39,6 +39,7 @@ import {
   IconFlask,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import { ClaudeCodeHint } from "@/components/workbench/shared/claude-code-hint";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -803,9 +804,14 @@ export function SimulatorLayout() {
                     <IconCrosshair size={24} stroke={1.2} className="empty-state-icon text-[#6f7f9a]" />
                   </div>
                   <span className="text-[14px] font-medium text-[#6f7f9a] mb-1.5">No probe selected</span>
-                  <span className="text-[12px] text-[#6f7f9a]/60 text-center leading-relaxed max-w-[280px]">
+                  <span className="text-[12px] text-[#6f7f9a]/60 text-center leading-relaxed max-w-[280px] mb-5">
                     Select a scenario from the threat library or create a custom probe to begin testing
                   </span>
+                  <ClaudeCodeHint
+                    hint="Generate attack scenarios with Claude Code"
+                    prompt="Use workbench_suggest_scenarios on my policy to generate targeted test cases, then run them all with workbench_run_all_scenarios and report which ones pass and fail"
+                    className="max-w-md w-full"
+                  />
                 </div>
               )}
             </div>

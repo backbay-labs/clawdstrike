@@ -9,6 +9,7 @@ import {
   IconBooks,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import { ClaudeCodeHint } from "@/components/workbench/shared/claude-code-hint";
 import { useWorkbench, useMultiPolicy } from "@/lib/workbench/multi-policy-store";
 import { useFleetConnection } from "@/lib/workbench/use-fleet-connection";
 import { GUARD_REGISTRY } from "@/lib/workbench/guard-registry";
@@ -297,6 +298,14 @@ export function HomePage() {
             ))}
           </div>
         </div>
+
+        {/* ================================================================ */}
+        {/* Claude Code Hint                                                   */}
+        {/* ================================================================ */}
+        <ClaudeCodeHint
+          hint="Ask Claude Code to audit your policy and find security gaps"
+          prompt="Use the security-audit prompt to run a full audit on my current policy — validate it, check compliance, run test scenarios, and give me prioritized recommendations"
+        />
 
         {/* ================================================================ */}
         {/* Navigation Cards                                                  */}

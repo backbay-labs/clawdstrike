@@ -41,6 +41,7 @@ import type {
   Verdict,
   WorkbenchPolicy,
   ComplianceFramework,
+  GuardConfigMap,
 } from "../src/lib/workbench/types.ts";
 
 // ---------------------------------------------------------------------------
@@ -981,6 +982,644 @@ server.tool(
   },
 );
 
+server.tool(
+  "workbench_harden_policy",
+  "Analyze a policy and return a hardened version with tighter settings, additional guards, and stricter thresholds.",
+  {
+    policy_yaml: z.string().describe("Policy YAML to harden"),
+    level: z
+      .enum(["moderate", "aggressive"])
+      .optional()
+      .describe("How aggressively to tighten (default: moderate)"),
+  },
+  async ({ policy_yaml, level }) => {
+    const hardenLevel = level ?? "moderate";
+
+    let policy: WorkbenchPolicy;
+    try {
+      ({ policy } = parsePolicy(policy_yaml));
+    } catch (e) {
+      return textResult(String(e), true);
+    }
+
+    const changes: string[] = [];
+    const originalGuardCount = Object.keys(policy.guards).length;
+
+    // Deep-clone guards so we don't mutate the original.
+    const guards: Record<string, Record<string, unknown>> = JSON.parse(
+      JSON.stringify(policy.guards),
+    );
+
+    // ---- Ensure forbidden_path is present and populated ----
+    if (!guards.forbidden_path) {
+      guards.forbidden_path = {
+        enabled: true,
+        patterns: [
+          "**/.ssh/**",
+          "**/.aws/**",
+          "**/.env",
+          "**/.env.*",
+          "**/.git-credentials",
+          "**/.gnupg/**",
+          "/etc/shadow",
+          "/etc/passwd",
+        ],
+      };
+      changes.push("Added forbidden_path guard with default sensitive patterns");
+    } else if (guards.forbidden_path.enabled === false) {
+      guards.forbidden_path.enabled = true;
+      changes.push("Enabled forbidden_path guard (was disabled)");
+    } else {
+      const patterns = (guards.forbidden_path.patterns as string[] | undefined) ?? [];
+      const essentialPatterns = ["**/.ssh/**", "**/.aws/**", "**/.env", "/etc/shadow"];
+      const missing = essentialPatterns.filter((p) => !patterns.includes(p));
+      if (missing.length > 0) {
+        guards.forbidden_path.patterns = [...patterns, ...missing];
+        changes.push(`Added missing forbidden_path patterns: ${missing.join(", ")}`);
+      }
+    }
+
+    // ---- Ensure egress_allowlist is present and block by default ----
+    if (!guards.egress_allowlist) {
+      guards.egress_allowlist = {
+        enabled: true,
+        allow: [
+          "*.openai.com",
+          "*.anthropic.com",
+          "api.github.com",
+          "registry.npmjs.org",
+        ],
+        default_action: "block",
+      };
+      changes.push("Added egress_allowlist guard with default allow list and block default");
+    } else if (guards.egress_allowlist.enabled === false) {
+      guards.egress_allowlist.enabled = true;
+      changes.push("Enabled egress_allowlist guard (was disabled)");
+    } else if (guards.egress_allowlist.default_action === "allow") {
+      guards.egress_allowlist.default_action = "block";
+      changes.push("Changed egress_allowlist default_action from allow to block");
+    }
+
+    // ---- Ensure secret_leak is present ----
+    if (!guards.secret_leak) {
+      guards.secret_leak = {
+        enabled: true,
+        patterns: [
+          { name: "aws_access_key", pattern: "AKIA[0-9A-Z]{16}", severity: "critical" },
+          { name: "github_token", pattern: "gh[ps]_[A-Za-z0-9]{36}", severity: "critical" },
+          {
+            name: "private_key",
+            pattern: "-----BEGIN\\\\s+(RSA\\\\s+)?PRIVATE\\\\s+KEY-----",
+            severity: "critical",
+          },
+        ],
+      };
+      changes.push("Added secret_leak guard with default patterns");
+    } else if (guards.secret_leak.enabled === false) {
+      guards.secret_leak.enabled = true;
+      changes.push("Enabled secret_leak guard (was disabled)");
+    }
+
+    // ---- Ensure shell_command is present ----
+    if (!guards.shell_command) {
+      guards.shell_command = { enabled: true };
+      changes.push("Added shell_command guard");
+    } else if (guards.shell_command.enabled === false) {
+      guards.shell_command.enabled = true;
+      changes.push("Enabled shell_command guard (was disabled)");
+    }
+
+    // ---- Ensure patch_integrity is present ----
+    if (!guards.patch_integrity) {
+      guards.patch_integrity = {
+        enabled: true,
+        max_additions: hardenLevel === "aggressive" ? 500 : 1000,
+        max_deletions: hardenLevel === "aggressive" ? 200 : 500,
+      };
+      changes.push(
+        `Added patch_integrity guard (max_additions: ${guards.patch_integrity.max_additions})`,
+      );
+    } else if (guards.patch_integrity.enabled === false) {
+      guards.patch_integrity.enabled = true;
+      changes.push("Enabled patch_integrity guard (was disabled)");
+    }
+
+    // ---- Ensure mcp_tool is present ----
+    if (!guards.mcp_tool) {
+      guards.mcp_tool = {
+        enabled: true,
+        default_action: "block",
+        allow: ["read_file", "list_files", "search_files"],
+        require_confirmation: ["write_file", "execute_command"],
+      };
+      changes.push("Added mcp_tool guard with default allow/confirm lists");
+    } else if (guards.mcp_tool.enabled === false) {
+      guards.mcp_tool.enabled = true;
+      changes.push("Enabled mcp_tool guard (was disabled)");
+    }
+
+    // ---- Aggressive-only hardening ----
+    if (hardenLevel === "aggressive") {
+      // Ensure prompt_injection is present
+      if (!guards.prompt_injection) {
+        guards.prompt_injection = {
+          enabled: true,
+          warn_at_or_above: "suspicious",
+          block_at_or_above: "high",
+        };
+        changes.push("Added prompt_injection guard (aggressive)");
+      } else if (guards.prompt_injection.enabled === false) {
+        guards.prompt_injection.enabled = true;
+        changes.push("Enabled prompt_injection guard (aggressive)");
+      }
+
+      // Ensure jailbreak is present
+      if (!guards.jailbreak) {
+        guards.jailbreak = {
+          enabled: true,
+          detector: { block_threshold: 40, warn_threshold: 15 },
+        };
+        changes.push("Added jailbreak guard (aggressive)");
+      } else if (guards.jailbreak.enabled === false) {
+        guards.jailbreak.enabled = true;
+        changes.push("Enabled jailbreak guard (aggressive)");
+      }
+
+      // Tighten patch_integrity thresholds
+      if (
+        guards.patch_integrity &&
+        typeof guards.patch_integrity.max_additions === "number" &&
+        guards.patch_integrity.max_additions > 500
+      ) {
+        guards.patch_integrity.max_additions = 500;
+        changes.push("Lowered patch_integrity max_additions to 500 (aggressive)");
+      }
+      if (
+        guards.patch_integrity &&
+        typeof guards.patch_integrity.max_deletions === "number" &&
+        guards.patch_integrity.max_deletions > 200
+      ) {
+        guards.patch_integrity.max_deletions = 200;
+        changes.push("Lowered patch_integrity max_deletions to 200 (aggressive)");
+      }
+
+      // Add more forbidden_path patterns for aggressive mode
+      if (guards.forbidden_path) {
+        const patterns = (guards.forbidden_path.patterns as string[] | undefined) ?? [];
+        const aggressivePatterns = [
+          "**/.kube/**",
+          "**/.docker/**",
+          "**/credentials*",
+          "**/*.pem",
+          "**/*.key",
+        ];
+        const missing = aggressivePatterns.filter((p) => !patterns.includes(p));
+        if (missing.length > 0) {
+          guards.forbidden_path.patterns = [...patterns, ...missing];
+          changes.push(`Added aggressive forbidden_path patterns: ${missing.join(", ")}`);
+        }
+      }
+
+      // Add path_allowlist if not present
+      if (!guards.path_allowlist) {
+        guards.path_allowlist = {
+          enabled: true,
+          file_access_allow: ["/workspace/**"],
+          file_write_allow: ["/workspace/src/**", "/workspace/tests/**"],
+        };
+        changes.push("Added path_allowlist guard (aggressive)");
+      }
+
+      // Enable spider_sense if not present
+      if (!guards.spider_sense) {
+        guards.spider_sense = {
+          enabled: true,
+          similarity_threshold: 0.85,
+          ambiguity_band: 0.1,
+          top_k: 5,
+          pattern_db_path: "builtin:s2bench-v1",
+        };
+        changes.push("Added spider_sense guard (aggressive)");
+      } else if (guards.spider_sense.enabled === false) {
+        guards.spider_sense.enabled = true;
+        changes.push("Enabled spider_sense guard (aggressive)");
+      }
+    }
+
+    // ---- Settings hardening ----
+    const settings = { ...policy.settings };
+    if (hardenLevel === "aggressive" && !settings.fail_fast) {
+      settings.fail_fast = true;
+      changes.push("Set fail_fast: true (aggressive)");
+    }
+    if (hardenLevel === "aggressive" && !settings.verbose_logging) {
+      settings.verbose_logging = true;
+      changes.push("Set verbose_logging: true (aggressive)");
+    }
+    if (
+      hardenLevel === "aggressive" &&
+      (settings.session_timeout_secs === undefined || settings.session_timeout_secs > 1800)
+    ) {
+      settings.session_timeout_secs = 1800;
+      changes.push("Lowered session_timeout_secs to 1800 (aggressive)");
+    }
+
+    const hardenedPolicy: WorkbenchPolicy = {
+      ...policy,
+      guards: guards as unknown as GuardConfigMap,
+      settings,
+    };
+
+    const hardenedYaml = policyToYaml(hardenedPolicy);
+    const newGuardCount = Object.keys(guards).length;
+
+    return jsonResult({
+      hardened_yaml: hardenedYaml,
+      level: hardenLevel,
+      changes,
+      summary: {
+        original_guard_count: originalGuardCount,
+        hardened_guard_count: newGuardCount,
+        guards_added: newGuardCount - originalGuardCount,
+        total_changes: changes.length,
+      },
+    });
+  },
+);
+
+server.tool(
+  "workbench_guard_coverage",
+  "Analyze guard coverage for a policy. Returns enabled/disabled/missing guards, coverage percentage, and risk areas.",
+  {
+    policy_yaml: z.string().describe("Policy YAML to analyze"),
+  },
+  async ({ policy_yaml }) => {
+    let policy: WorkbenchPolicy;
+    try {
+      ({ policy } = parsePolicy(policy_yaml));
+    } catch (e) {
+      return textResult(String(e), true);
+    }
+
+    const guardStatus: Array<{
+      id: string;
+      name: string;
+      category: string;
+      status: "enabled" | "disabled" | "missing";
+    }> = [];
+
+    for (const meta of GUARD_REGISTRY) {
+      const config = (policy.guards as Record<string, Record<string, unknown> | undefined>)[
+        meta.id
+      ];
+      let status: "enabled" | "disabled" | "missing";
+      if (config === undefined) {
+        status = "missing";
+      } else if (config.enabled === false) {
+        status = "disabled";
+      } else {
+        status = "enabled";
+      }
+      guardStatus.push({
+        id: meta.id,
+        name: meta.name,
+        category: meta.category,
+        status,
+      });
+    }
+
+    const categoryReport = GUARD_CATEGORIES.map((cat) => {
+      const guards = guardStatus.filter((g) => g.category === cat.id);
+      const enabled = guards.filter((g) => g.status === "enabled").length;
+      const total = guards.length;
+      const coverage = total > 0 ? Math.round((enabled / total) * 100) : 0;
+      return {
+        category: cat.id,
+        label: cat.label,
+        enabled,
+        total,
+        coverage: `${coverage}%`,
+        guards: guards.map((g) => ({ id: g.id, name: g.name, status: g.status })),
+      };
+    });
+
+    const totalEnabled = guardStatus.filter((g) => g.status === "enabled").length;
+    const totalGuards = guardStatus.length;
+    const overallCoverage = Math.round((totalEnabled / totalGuards) * 100);
+
+    const riskAreas = categoryReport
+      .filter((c) => c.enabled === 0)
+      .map((c) => ({
+        category: c.label,
+        risk: `No ${c.label.toLowerCase()} guards are enabled — this category is entirely unprotected`,
+      }));
+
+    const missingGuards = guardStatus
+      .filter((g) => g.status === "missing")
+      .map((g) => g.id);
+    const disabledGuards = guardStatus
+      .filter((g) => g.status === "disabled")
+      .map((g) => g.id);
+
+    return jsonResult({
+      overall: {
+        enabled: totalEnabled,
+        disabled: disabledGuards.length,
+        missing: missingGuards.length,
+        total: totalGuards,
+        coverage: `${overallCoverage}%`,
+      },
+      categories: categoryReport,
+      risk_areas: riskAreas,
+      missing_guards: missingGuards,
+      disabled_guards: disabledGuards,
+    });
+  },
+);
+
+server.tool(
+  "workbench_list_rulesets",
+  "List all available built-in rulesets with their names, descriptions, and YAML content.",
+  {},
+  async () => {
+    const rulesets = BUILTIN_RULESETS.map((r) => ({
+      id: r.id,
+      name: r.name,
+      description: r.description,
+      yaml: r.yaml,
+    }));
+
+    return jsonResult({ count: rulesets.length, rulesets });
+  },
+);
+
+server.tool(
+  "workbench_generate_policy",
+  "Generate a starter policy from a natural language description of the use case.",
+  {
+    description: z
+      .string()
+      .describe(
+        'Natural language description like "CI/CD pipeline for a healthcare app" or "AI coding assistant with filesystem access"',
+      ),
+    base_ruleset: z
+      .enum([
+        "default",
+        "strict",
+        "permissive",
+        "ai-agent",
+        "cicd",
+        "ai-agent-posture",
+        "remote-desktop",
+        "remote-desktop-permissive",
+        "remote-desktop-strict",
+        "spider-sense",
+      ])
+      .optional()
+      .describe("Built-in ruleset to extend from (auto-detected if omitted)"),
+  },
+  async ({ description: desc, base_ruleset }) => {
+    const lower = desc.toLowerCase();
+    const notes: string[] = [];
+    const guards: Record<string, Record<string, unknown>> = {};
+
+    // ---- Keyword detection ----
+    const keywords = {
+      filesystem: /\b(file|filesystem|path|directory|folder|read|write)\b/i.test(lower),
+      network: /\b(network|egress|api|http|https|endpoint|domain|url)\b/i.test(lower),
+      secret: /\b(secret|credential|key|token|password|api.?key)\b/i.test(lower),
+      shell: /\b(shell|command|bash|exec|terminal|script)\b/i.test(lower),
+      mcp: /\b(mcp|tool|function.?call|plugin)\b/i.test(lower),
+      promptInjection: /\b(prompt|injection)\b/i.test(lower),
+      jailbreak: /\b(jailbreak|dan|bypass)\b/i.test(lower),
+      patch: /\b(patch|diff|code|commit|pr|pull.?request)\b/i.test(lower),
+      healthcare: /\b(healthcare|hipaa|medical|patient|phi|health)\b/i.test(lower),
+      finance: /\b(finance|pci|payment|banking|financial|credit.?card)\b/i.test(lower),
+      desktop: /\b(desktop|remote|cua|rdp|vnc|computer.?use)\b/i.test(lower),
+      cicd: /\b(ci\/?cd|pipeline|build|deploy|continuous|github.?action|jenkins)\b/i.test(lower),
+      agent: /\b(agent|autonomous|ai.?agent|llm|assistant|bot)\b/i.test(lower),
+      coding: /\b(coding|code|developer|ide|editor|copilot)\b/i.test(lower),
+    };
+
+    // ---- Auto-detect base ruleset ----
+    let selectedRuleset = base_ruleset;
+    if (!selectedRuleset) {
+      if (keywords.desktop) {
+        selectedRuleset = "remote-desktop";
+        notes.push("Auto-selected remote-desktop ruleset based on desktop/CUA keywords");
+      } else if (keywords.cicd) {
+        selectedRuleset = "cicd";
+        notes.push("Auto-selected cicd ruleset based on CI/CD keywords");
+      } else if (keywords.healthcare || keywords.finance) {
+        selectedRuleset = "strict";
+        notes.push(
+          "Auto-selected strict ruleset based on healthcare/finance compliance keywords",
+        );
+      } else if (keywords.agent) {
+        selectedRuleset = "ai-agent";
+        notes.push("Auto-selected ai-agent ruleset based on agent keywords");
+      } else {
+        selectedRuleset = "default";
+        notes.push("Auto-selected default ruleset (no strong domain keywords detected)");
+      }
+    }
+
+    // ---- Build guards based on keywords ----
+    if (keywords.filesystem || keywords.coding) {
+      guards.forbidden_path = {
+        enabled: true,
+        patterns: [
+          "**/.ssh/**",
+          "**/.aws/**",
+          "**/.env",
+          "**/.env.*",
+          "**/.git-credentials",
+          "**/.gnupg/**",
+          "/etc/shadow",
+          "/etc/passwd",
+        ],
+      };
+      notes.push("Enabled forbidden_path: filesystem access detected in description");
+    }
+
+    if (keywords.filesystem || keywords.coding) {
+      guards.path_allowlist = {
+        enabled: true,
+        file_access_allow: ["/workspace/**"],
+        file_write_allow: ["/workspace/src/**", "/workspace/tests/**"],
+      };
+      notes.push("Enabled path_allowlist: restricting filesystem to /workspace");
+    }
+
+    if (keywords.network) {
+      guards.egress_allowlist = {
+        enabled: true,
+        allow: [
+          "*.openai.com",
+          "*.anthropic.com",
+          "api.github.com",
+          "registry.npmjs.org",
+        ],
+        default_action: "block",
+      };
+      notes.push("Enabled egress_allowlist: network access detected in description");
+    }
+
+    if (keywords.secret || keywords.healthcare || keywords.finance) {
+      guards.secret_leak = {
+        enabled: true,
+        patterns: [
+          { name: "aws_access_key", pattern: "AKIA[0-9A-Z]{16}", severity: "critical" },
+          { name: "github_token", pattern: "gh[ps]_[A-Za-z0-9]{36}", severity: "critical" },
+          {
+            name: "private_key",
+            pattern: "-----BEGIN\\\\s+(RSA\\\\s+)?PRIVATE\\\\s+KEY-----",
+            severity: "critical",
+          },
+        ],
+      };
+      notes.push("Enabled secret_leak: secret/credential keywords detected");
+    }
+
+    if (keywords.shell || keywords.coding || keywords.cicd) {
+      guards.shell_command = { enabled: true };
+      notes.push("Enabled shell_command: shell/command execution detected in description");
+    }
+
+    if (keywords.mcp || keywords.agent) {
+      guards.mcp_tool = {
+        enabled: true,
+        default_action: "block",
+        allow: ["read_file", "list_files", "search_files"],
+        require_confirmation: ["write_file", "execute_command", "run_terminal_command"],
+        block: ["shell_exec", "eval"],
+      };
+      notes.push("Enabled mcp_tool: MCP/tool/agent keywords detected");
+    }
+
+    if (keywords.promptInjection || keywords.healthcare || keywords.agent) {
+      guards.prompt_injection = {
+        enabled: true,
+        warn_at_or_above: "suspicious",
+        block_at_or_above: "high",
+      };
+      notes.push("Enabled prompt_injection: prompt injection or agent/compliance keywords detected");
+    }
+
+    if (keywords.jailbreak || keywords.healthcare || keywords.agent) {
+      guards.jailbreak = {
+        enabled: true,
+        detector: { block_threshold: 50, warn_threshold: 20 },
+      };
+      notes.push("Enabled jailbreak: jailbreak or agent/compliance keywords detected");
+    }
+
+    if (keywords.patch || keywords.coding) {
+      guards.patch_integrity = {
+        enabled: true,
+        max_additions: keywords.healthcare || keywords.finance ? 500 : 1000,
+        max_deletions: keywords.healthcare || keywords.finance ? 200 : 500,
+      };
+      notes.push("Enabled patch_integrity: patch/code keywords detected");
+    }
+
+    if (keywords.desktop) {
+      guards.computer_use = {
+        enabled: true,
+        mode: "guardrail",
+        allowed_actions: ["screenshot", "mouse_click", "keyboard_type", "scroll"],
+      };
+      guards.remote_desktop_side_channel = {
+        enabled: true,
+        clipboard_enabled: true,
+        file_transfer_enabled: false,
+        audio_enabled: true,
+        drive_mapping_enabled: false,
+        printing_enabled: false,
+      };
+      guards.input_injection_capability = {
+        enabled: true,
+        allowed_input_types: ["keyboard", "mouse"],
+        require_postcondition_probe: true,
+      };
+      notes.push("Enabled CUA guards: desktop/remote/CUA keywords detected");
+    }
+
+    // For healthcare/finance, add all detection guards if not already added
+    if (keywords.healthcare || keywords.finance) {
+      if (!guards.prompt_injection) {
+        guards.prompt_injection = {
+          enabled: true,
+          warn_at_or_above: "suspicious",
+          block_at_or_above: "high",
+        };
+        notes.push("Enabled prompt_injection: compliance requirement");
+      }
+      if (!guards.jailbreak) {
+        guards.jailbreak = {
+          enabled: true,
+          detector: { block_threshold: 40, warn_threshold: 15 },
+        };
+        notes.push("Enabled jailbreak: compliance requirement (tighter thresholds)");
+      }
+      if (!guards.spider_sense) {
+        guards.spider_sense = {
+          enabled: true,
+          similarity_threshold: 0.85,
+          ambiguity_band: 0.1,
+          top_k: 5,
+          pattern_db_path: "builtin:s2bench-v1",
+        };
+        notes.push("Enabled spider_sense: compliance requirement for threat screening");
+      }
+    }
+
+    // Finance-specific: tighten secret_leak patterns
+    if (keywords.finance) {
+      const existing = (guards.secret_leak?.patterns as Array<Record<string, unknown>>) ?? [];
+      const hasCcPattern = existing.some(
+        (p) => typeof p.name === "string" && /credit.?card/i.test(p.name),
+      );
+      if (!hasCcPattern) {
+        existing.push({
+          name: "credit_card",
+          pattern: "\\\\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14})\\\\b",
+          severity: "critical",
+        });
+        if (!guards.secret_leak) {
+          guards.secret_leak = { enabled: true, patterns: existing };
+        } else {
+          guards.secret_leak.patterns = existing;
+        }
+        notes.push("Added credit card detection pattern for PCI compliance");
+      }
+    }
+
+    const isCompliance = keywords.healthcare || keywords.finance;
+    const generatedPolicy: WorkbenchPolicy = {
+      version: "1.2.0",
+      name: `generated-${selectedRuleset}`,
+      description: `Generated policy for: ${desc}`,
+      extends: selectedRuleset !== "default" ? selectedRuleset : undefined,
+      guards: guards as unknown as GuardConfigMap,
+      settings: {
+        fail_fast: isCompliance,
+        verbose_logging: isCompliance,
+        session_timeout_secs: isCompliance ? 1800 : 3600,
+      },
+    };
+
+    const yaml = policyToYaml(generatedPolicy);
+
+    return jsonResult({
+      yaml,
+      base_ruleset: selectedRuleset,
+      guards_configured: Object.keys(guards),
+      notes,
+    });
+  },
+);
+
 // ---------------------------------------------------------------------------
 // Resources
 // ---------------------------------------------------------------------------
@@ -1127,6 +1766,134 @@ server.prompt(
             "   - Lower thresholds for detection guards",
             "   - Add forbidden patterns for observed risky behaviors",
             "6. **Compliance** — Run workbench_compliance_check and suggest further tightening for compliance gaps.",
+          ].join("\n"),
+        },
+      },
+    ],
+  }),
+);
+
+server.prompt(
+  "tighten-policy",
+  "Analyze a policy's weaknesses and generate a hardened version with specific improvement recommendations.",
+  {
+    policy_yaml: z.string().describe("The policy YAML to tighten"),
+  },
+  ({ policy_yaml }) => ({
+    messages: [
+      {
+        role: "user" as const,
+        content: {
+          type: "text" as const,
+          text: [
+            "Analyze this policy for weaknesses and generate a hardened version:",
+            "",
+            "```yaml",
+            policy_yaml,
+            "```",
+            "",
+            "Follow this workflow:",
+            "",
+            "1. **Validate** — Use workbench_validate_policy to check for schema errors and warnings.",
+            "2. **Guard Coverage** — Use workbench_guard_coverage to identify enabled, disabled, and missing guards across all categories.",
+            "3. **Compliance Check** — Use workbench_compliance_check against all frameworks (HIPAA, SOC2, PCI-DSS) to find compliance gaps.",
+            "4. **Harden (moderate)** — Use workbench_harden_policy with level 'moderate' to get a first-pass hardened version.",
+            "5. **Harden (aggressive)** — Use workbench_harden_policy with level 'aggressive' to see the maximum security version.",
+            "6. **Diff** — Use workbench_diff_policies to compare the original against the aggressive hardened version.",
+            "7. **Summarize** — Provide a report with:",
+            "   - Before/after guard counts",
+            "   - Before/after coverage percentages",
+            "   - List of all changes made and why each matters",
+            "   - Compliance gaps that were addressed",
+            "   - Recommended hardening level (moderate vs aggressive) with rationale",
+            "   - The final recommended policy YAML",
+          ].join("\n"),
+        },
+      },
+    ],
+  }),
+);
+
+server.prompt(
+  "red-team-scenarios",
+  "Generate adversarial red team scenarios designed to find weaknesses in a policy.",
+  {
+    policy_yaml: z.string().describe("The policy YAML to red team"),
+  },
+  ({ policy_yaml }) => ({
+    messages: [
+      {
+        role: "user" as const,
+        content: {
+          type: "text" as const,
+          text: [
+            "Generate adversarial red team scenarios to find weaknesses in this policy:",
+            "",
+            "```yaml",
+            policy_yaml,
+            "```",
+            "",
+            "Follow this workflow:",
+            "",
+            "1. **Inventory** — Use workbench_guard_coverage to list all guards and their status (enabled/disabled/missing).",
+            "2. **Per-Guard Attacks** — For each enabled guard, use workbench_create_scenario to create targeted attack scenarios:",
+            "   - **forbidden_path**: path traversal (../../etc/shadow), encoded paths (%2e%2e), symlink-style paths, case variations",
+            "   - **egress_allowlist**: subdomain abuse (evil.openai.com vs *.openai.com), IP-based bypass, uncommon ports",
+            "   - **secret_leak**: partial key patterns, base64-encoded secrets, split across lines, Unicode homoglyphs",
+            "   - **shell_command**: command chaining (;, &&, ||), encoded commands, alias abuse, heredoc injection",
+            "   - **mcp_tool**: tool name case variations, tools not on any list, oversized arguments",
+            "   - **prompt_injection**: multi-language injection, role-play, instruction overrides embedded in data",
+            "   - **jailbreak**: DAN variants, crescendo attacks, context manipulation",
+            "   - **patch_integrity**: patches just under the threshold, chmod 777, .bashrc modifications",
+            "3. **Missing Guard Exploits** — For each missing/disabled guard, create scenarios that would be blocked if the guard were enabled.",
+            "4. **Run All** — Use workbench_run_all_scenarios to execute all red team scenarios against the policy.",
+            "5. **Analysis** — Report which attacks succeeded and recommend specific fixes:",
+            "   - Which guards need tighter configuration",
+            "   - Which missing guards should be enabled",
+            "   - Specific pattern additions for detected bypasses",
+            "   - Use workbench_harden_policy if many weaknesses are found",
+          ].join("\n"),
+        },
+      },
+    ],
+  }),
+);
+
+server.prompt(
+  "build-test-suite",
+  "Build a comprehensive test suite for a policy with positive, negative, and edge-case scenarios.",
+  {
+    policy_yaml: z.string().describe("The policy YAML to build tests for"),
+  },
+  ({ policy_yaml }) => ({
+    messages: [
+      {
+        role: "user" as const,
+        content: {
+          type: "text" as const,
+          text: [
+            "Build a comprehensive test suite for this policy:",
+            "",
+            "```yaml",
+            policy_yaml,
+            "```",
+            "",
+            "Follow this workflow:",
+            "",
+            "1. **Analyze** — Use workbench_guard_coverage to identify all enabled guards and their categories.",
+            "2. **Generate Scenarios** — For each enabled guard, use workbench_create_scenario to create:",
+            "   - **2 benign scenarios** (should allow) — normal, legitimate operations that the guard should permit",
+            "   - **2 attack scenarios** (should deny) — malicious operations that the guard should block",
+            "   - **1 edge case** — boundary conditions (e.g., paths just inside/outside allowlists, payloads at threshold limits, ambiguous inputs)",
+            "3. **Include Built-in Scenarios** — Also use workbench_suggest_scenarios to get policy-specific suggestions and add them to the suite.",
+            "4. **Run All** — Use workbench_run_all_scenarios to execute the complete test suite.",
+            "5. **Coverage Report** — Summarize results:",
+            "   - Total scenarios by category (benign / attack / edge_case)",
+            "   - Pass/fail rate overall and per guard",
+            "   - Any unexpected results (benign blocked or attack allowed)",
+            "   - Guards with no test coverage",
+            "   - Recommendations for additional test scenarios if gaps exist",
+            "6. **Output** — Provide the full test suite as a JSON array that can be saved and re-run later with workbench_run_all_scenarios.",
           ].join("\n"),
         },
       },

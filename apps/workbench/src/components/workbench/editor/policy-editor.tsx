@@ -13,6 +13,7 @@ import { useAutoVersion } from "@/lib/workbench/use-auto-version";
 import type { PolicyVersion } from "@/lib/workbench/version-store";
 import { IconWand, IconHistory } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import { ClaudeCodeHint } from "@/components/workbench/shared/claude-code-hint";
 
 export function PolicyEditor() {
   const { tabs, activeTab } = useMultiPolicy();
@@ -82,6 +83,13 @@ export function PolicyEditor() {
           </button>
         </div>
       </div>
+
+      {/* Claude Code hint strip */}
+      <ClaudeCodeHint
+        hint="Validate & tighten this policy with Claude Code"
+        prompt="Use workbench_validate_policy on my current policy YAML, then use workbench_suggest_scenarios to generate test cases, run them with workbench_run_all_scenarios, and suggest improvements"
+        className="mx-2 mt-1.5 mb-0.5"
+      />
 
       {/* Editor content + optional version history sidebar */}
       <div className="flex-1 min-h-0 flex">

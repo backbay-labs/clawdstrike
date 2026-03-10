@@ -38,6 +38,7 @@ import {
   IconInfoCircle,
 } from "@tabler/icons-react";
 import type { TestActionType } from "@/lib/workbench/types";
+import { ClaudeCodeHint } from "@/components/workbench/shared/claude-code-hint";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -536,6 +537,13 @@ export function ObserveSynthPanel() {
                 </div>
               </div>
             </div>
+
+            {/* Claude Code hint */}
+            <ClaudeCodeHint
+              hint="Synthesize a policy from agent logs with Claude Code"
+              prompt="Use the observe-synth-tighten prompt to analyze my agent activity logs, synthesize a security policy, and iteratively tighten it"
+              className="mt-4"
+            />
           </div>
         </div>
       </div>
