@@ -8,6 +8,7 @@ COPY Cargo.toml Cargo.lock ./
 COPY crates crates
 COPY packages/sdk/hush-py/hush-native packages/sdk/hush-py/hush-native
 COPY infra/vendor/nono infra/vendor/nono
+COPY rulesets rulesets
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/build/target \
