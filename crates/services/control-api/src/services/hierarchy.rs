@@ -84,12 +84,8 @@ pub async fn create_node(
     params: &CreateNodeParams<'_>,
 ) -> Result<HierarchyNode, ApiError> {
     // Validate node_type
-    HierarchyNodeType::from_str(params.node_type).ok_or_else(|| {
-        ApiError::BadRequest(format!(
-            "invalid node_type '{}': must be one of org, team, project, agent",
-            params.node_type
-        ))
-    })?;
+    let node_type = parse_node_type(params.node_type)?;
+    ensure_parentless_node_allowed(node_type, params.parent_id)?;
 
     // If a parent_id is provided, ensure it exists in the same tenant
     if let Some(pid) = params.parent_id {
@@ -124,17 +120,7 @@ pub async fn create_node(
     .bind(params.metadata)
     .fetch_one(db)
     .await
-    .map_err(|err| {
-        // Unique constraint on root org per tenant
-        if let sqlx::error::Error::Database(ref db_err) = err {
-            if db_err.code().as_deref() == Some("23505") {
-                return ApiError::Conflict(
-                    "a root org node already exists for this tenant".to_string(),
-                );
-            }
-        }
-        ApiError::Database(err)
-    })?;
+    .map_err(map_root_conflict)?;
 
     HierarchyNode::from_row(row).map_err(ApiError::Database)
 }
@@ -147,14 +133,16 @@ pub async fn update_node(
     db: &PgPool,
     params: &UpdateNodeParams<'_>,
 ) -> Result<HierarchyNode, ApiError> {
+    let current_node = get_node(db, params.tenant_id, params.node_id).await?;
+
     // Validate node_type if provided
-    if let Some(nt) = params.node_type {
-        HierarchyNodeType::from_str(nt).ok_or_else(|| {
-            ApiError::BadRequest(format!(
-                "invalid node_type '{nt}': must be one of org, team, project, agent"
-            ))
-        })?;
-    }
+    let current_node_type = parse_node_type(&current_node.node_type)?;
+    let next_node_type = match params.node_type {
+        Some(node_type) => parse_node_type(node_type)?,
+        None => current_node_type,
+    };
+    let next_parent_id = resolved_parent_id(params.parent_id, current_node.parent_id);
+    ensure_parentless_node_allowed(next_node_type, next_parent_id)?;
 
     // Validate parent_id if provided — prevent self-parenting and cross-tenant refs
     if let NullableField::Set(pid) = params.parent_id {
@@ -214,7 +202,7 @@ pub async fn update_node(
     .bind(metadata_update)
     .fetch_optional(db)
     .await
-    .map_err(ApiError::Database)?
+    .map_err(map_root_conflict)?
     .ok_or(ApiError::NotFound)?;
 
     HierarchyNode::from_row(row).map_err(ApiError::Database)
@@ -229,6 +217,48 @@ fn normalized_metadata_update(
         NullableField::Clear => Some(serde_json::json!({})),
         NullableField::Missing => None,
     }
+}
+
+fn parse_node_type(node_type: &str) -> Result<HierarchyNodeType, ApiError> {
+    HierarchyNodeType::from_str(node_type).ok_or_else(|| {
+        ApiError::BadRequest(format!(
+            "invalid node_type '{node_type}': must be one of org, team, project, agent"
+        ))
+    })
+}
+
+fn ensure_parentless_node_allowed(
+    node_type: HierarchyNodeType,
+    parent_id: Option<Uuid>,
+) -> Result<(), ApiError> {
+    if parent_id.is_none() && node_type != HierarchyNodeType::Org {
+        return Err(ApiError::BadRequest(format!(
+            "{node_type} nodes must specify a parent_id"
+        )));
+    }
+    Ok(())
+}
+
+fn resolved_parent_id(
+    parent_id: NullableField<Uuid>,
+    current_parent_id: Option<Uuid>,
+) -> Option<Uuid> {
+    match parent_id {
+        NullableField::Missing => current_parent_id,
+        NullableField::Set(parent_id) => Some(parent_id),
+        NullableField::Clear => None,
+    }
+}
+
+fn map_root_conflict(err: sqlx::error::Error) -> ApiError {
+    if let sqlx::error::Error::Database(ref db_err) = err {
+        if db_err.code().as_deref() == Some("23505") {
+            return ApiError::Conflict(
+                "a root org node already exists for this tenant".to_string(),
+            );
+        }
+    }
+    ApiError::Database(err)
 }
 
 // ---------------------------------------------------------------------------
@@ -456,6 +486,19 @@ mod tests {
     #[test]
     fn normalized_metadata_update_skips_missing_field() {
         assert_eq!(normalized_metadata_update(NullableField::Missing), None);
+    }
+
+    #[test]
+    fn ensure_parentless_node_allowed_rejects_non_org_roots() {
+        assert!(matches!(
+            ensure_parentless_node_allowed(HierarchyNodeType::Team, None),
+            Err(ApiError::BadRequest(message)) if message == "team nodes must specify a parent_id"
+        ));
+    }
+
+    #[test]
+    fn ensure_parentless_node_allowed_accepts_org_root() {
+        assert!(ensure_parentless_node_allowed(HierarchyNodeType::Org, None).is_ok());
     }
 
     fn make_node(

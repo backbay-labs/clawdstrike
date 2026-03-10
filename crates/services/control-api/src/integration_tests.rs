@@ -5314,6 +5314,23 @@ async fn hierarchy_routes_enforce_permissions_and_delete_modes() {
     assert_eq!(root_resp.0, StatusCode::OK);
     let root_id = root_resp.1["id"].as_str().expect("root id").to_string();
 
+    let orphan_team_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/hierarchy/nodes".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "name": "Orphan Team",
+            "node_type": "team"
+        })),
+    )
+    .await;
+    assert_eq!(orphan_team_resp.0, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        orphan_team_resp.1["error"],
+        "team nodes must specify a parent_id"
+    );
+
     let team_resp = request_json(
         &harness.app,
         Method::POST,
@@ -5377,6 +5394,22 @@ async fn hierarchy_routes_enforce_permissions_and_delete_modes() {
         .as_str()
         .expect("cycle error")
         .contains("cycle"));
+
+    let detach_team_resp = request_json(
+        &harness.app,
+        Method::PUT,
+        format!("/api/v1/hierarchy/nodes/{team_id}"),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "parent_id": null
+        })),
+    )
+    .await;
+    assert_eq!(detach_team_resp.0, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        detach_team_resp.1["error"],
+        "team nodes must specify a parent_id"
+    );
 
     let delete_reparent_resp = request_json(
         &harness.app,
@@ -5480,18 +5513,17 @@ async fn hierarchy_tree_prefers_org_root_over_other_top_level_nodes() {
 
     let harness = setup_harness().await;
 
-    let project_resp = request_json(
-        &harness.app,
-        Method::POST,
-        "/api/v1/hierarchy/nodes".to_string(),
-        Some(&harness.api_key),
-        Some(serde_json::json!({
-            "name": "Orphan Project",
-            "node_type": "project"
-        })),
+    sqlx::query::query(
+        r#"INSERT INTO hierarchy_nodes (tenant_id, name, node_type, metadata)
+           VALUES ($1, $2, $3, $4)"#,
     )
-    .await;
-    assert_eq!(project_resp.0, StatusCode::OK);
+    .bind(harness.tenant_id)
+    .bind("Orphan Project")
+    .bind("project")
+    .bind(serde_json::json!({ "source": "integration-test" }))
+    .execute(&harness.db)
+    .await
+    .expect("insert orphan project");
 
     let root_resp = request_json(
         &harness.app,

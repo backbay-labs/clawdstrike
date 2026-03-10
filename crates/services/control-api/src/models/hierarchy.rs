@@ -136,8 +136,9 @@ pub struct UpdateHierarchyNodeRequest {
     pub metadata: NullableField<serde_json::Value>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum NullableField<T> {
+    #[default]
     Missing,
     Set(T),
     Clear,
@@ -166,12 +167,6 @@ impl<T> NullableField<T> {
             Self::Set(value) => Some(value),
             Self::Clear => None,
         }
-    }
-}
-
-impl<T> Default for NullableField<T> {
-    fn default() -> Self {
-        Self::Missing
     }
 }
 
