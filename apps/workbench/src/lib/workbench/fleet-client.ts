@@ -405,7 +405,9 @@ const MAX_RESPONSE_BYTES = 10_485_760;
 
 /** Redact Bearer tokens and API key-like patterns from error messages. (Finding M3) */
 function redactSecrets(text: string): string {
-  return text.replace(/Bearer\s+[^\s]+/gi, "Bearer [REDACTED]");
+  return text
+    .replace(/Bearer\s+[^\s]+/gi, "Bearer [REDACTED]")
+    .replace(/x-api-key[:\s]+[^\s,;}]+/gi, "x-api-key: [REDACTED]");
 }
 
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {

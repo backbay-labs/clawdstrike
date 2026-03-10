@@ -50,7 +50,7 @@ impl McpState {
     }
 }
 
-/// Generate a 32-character hex token using `getrandom`.
+/// Generate a 36-character token (mcp_ prefix + 32 hex chars) using `getrandom`.
 fn generate_token() -> String {
     let mut buf = [0u8; 16];
     getrandom::getrandom(&mut buf).expect("getrandom failed");
@@ -110,6 +110,16 @@ fn find_runtime() -> (String, Vec<String>) {
 
 /// Spawn the MCP server process. Returns the connection info on success.
 pub async fn spawn_mcp_server(state: &McpState) -> Result<McpStatusResponse, String> {
+    // Kill any existing child process before spawning a new one
+    {
+        let mut inner = state.inner.lock().map_err(|_| "McpState lock poisoned".to_string())?;
+        if let Some(ref mut child) = inner.child {
+            let _ = child.start_kill();
+        }
+        inner.child = None;
+        inner.running = false;
+    }
+
     let token = generate_token();
     let port = find_available_port()
         .await

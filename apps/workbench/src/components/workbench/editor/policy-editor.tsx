@@ -87,7 +87,7 @@ export function PolicyEditor() {
       {/* Claude Code hint strip */}
       <ClaudeCodeHint
         hint="Validate & tighten this policy with Claude Code"
-        prompt="Use workbench_validate_policy on my current policy YAML, then use workbench_suggest_scenarios to generate test cases, run them with workbench_run_all_scenarios, and suggest improvements"
+        prompt="Read the policy YAML I'm editing. Call workbench_validate_policy and fix any errors. Then call workbench_harden_policy with level 'moderate' and show me a diff of what changed. For each change, explain why it improves security."
         className="mx-2 mt-1.5 mb-0.5"
       />
 

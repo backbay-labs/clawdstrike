@@ -1087,7 +1087,7 @@ server.tool(
           { name: "github_token", pattern: "gh[ps]_[A-Za-z0-9]{36}", severity: "critical" },
           {
             name: "private_key",
-            pattern: "-----BEGIN\\\\s+(RSA\\\\s+)?PRIVATE\\\\s+KEY-----",
+            pattern: "-----BEGIN\\s+(RSA\\s+)?PRIVATE\\s+KEY-----",
             severity: "critical",
           },
         ],
@@ -1377,6 +1377,7 @@ server.tool(
   {
     description: z
       .string()
+      .min(1, "Description must not be empty")
       .describe(
         'Natural language description like "CI/CD pipeline for a healthcare app" or "AI coding assistant with filesystem access"',
       ),
@@ -1403,11 +1404,11 @@ server.tool(
 
     // ---- Keyword detection ----
     const keywords = {
-      filesystem: /\b(file|filesystem|path|directory|folder|read|write)\b/i.test(lower),
-      network: /\b(network|egress|api|http|https|endpoint|domain|url)\b/i.test(lower),
-      secret: /\b(secret|credential|key|token|password|api.?key)\b/i.test(lower),
-      shell: /\b(shell|command|bash|exec|terminal|script)\b/i.test(lower),
-      mcp: /\b(mcp|tool|function.?call|plugin)\b/i.test(lower),
+      filesystem: /\b(files?|filesystems?|paths?|director(?:y|ies)|folders?|read|write|accessing|access)\b/i.test(lower),
+      network: /\b(networks?|egress|api|http|https|endpoints?|domains?|urls?)\b/i.test(lower),
+      secret: /\b(secrets?|credentials?|keys?|tokens?|passwords?|api.?keys?)\b/i.test(lower),
+      shell: /\b(shell|commands?|bash|exec|terminal|scripts?)\b/i.test(lower),
+      mcp: /\b(mcp|tools?|function.?calls?|plugins?)\b/i.test(lower),
       promptInjection: /\b(prompt|injection)\b/i.test(lower),
       jailbreak: /\b(jailbreak|dan|bypass)\b/i.test(lower),
       patch: /\b(patch|diff|code|commit|pr|pull.?request)\b/i.test(lower),
@@ -1491,7 +1492,7 @@ server.tool(
           { name: "github_token", pattern: "gh[ps]_[A-Za-z0-9]{36}", severity: "critical" },
           {
             name: "private_key",
-            pattern: "-----BEGIN\\\\s+(RSA\\\\s+)?PRIVATE\\\\s+KEY-----",
+            pattern: "-----BEGIN\\s+(RSA\\s+)?PRIVATE\\s+KEY-----",
             severity: "critical",
           },
         ],
@@ -1601,7 +1602,7 @@ server.tool(
       if (!hasCcPattern) {
         existing.push({
           name: "credit_card",
-          pattern: "\\\\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14})\\\\b",
+          pattern: "\\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14})\\b",
           severity: "critical",
         });
         if (!guards.secret_leak) {
@@ -1974,6 +1975,12 @@ if (isMainModule()) {
         transport.onclose = () => {
           sessions.delete(transport.sessionId);
         };
+        // Close any existing connection before accepting new one
+        try {
+          await server.close();
+        } catch {
+          // Ignore close errors (no previous connection)
+        }
         await server.connect(transport);
         return;
       }

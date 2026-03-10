@@ -552,19 +552,19 @@ export function LibraryGallery() {
                 {[
                   {
                     label: "Audit My Policy",
-                    prompt: "Run a comprehensive security audit on my policy: validate it, check compliance against HIPAA/SOC2/PCI-DSS, suggest and run test scenarios, and give me a prioritized fix list",
+                    prompt: "Read my active policy YAML. Run this full audit: 1) workbench_validate_policy for errors 2) workbench_guard_coverage for coverage gaps 3) workbench_compliance_check against HIPAA, SOC2, PCI-DSS 4) workbench_suggest_scenarios + workbench_run_all_scenarios for testing. Output a security report with scores, test results, and a prioritized fix list.",
                   },
                   {
                     label: "Build Test Suite",
-                    prompt: "Suggest test scenarios for my policy with workbench_suggest_scenarios, then create 5 more custom edge-case scenarios with workbench_create_scenario targeting boundary conditions",
+                    prompt: "Read my policy YAML. Call workbench_suggest_scenarios for auto-generated tests. Then use workbench_create_scenario to build 5 additional edge cases: 1) symlink traversal to /etc/shadow, 2) DNS rebinding egress to internal IP, 3) base64-encoded AWS key in file write, 4) chained shell command with pipe to nc, 5) MCP tool call with injected args. Run all with workbench_run_all_scenarios and output the full test suite as JSON I can save.",
                   },
                   {
                     label: "Harden Policy",
-                    prompt: "Analyze my policy with workbench_validate_policy and workbench_compliance_check, then use workbench_harden_policy to generate a tightened version that closes all compliance gaps",
+                    prompt: "Read my policy YAML. Call workbench_harden_policy with level 'aggressive'. Then call workbench_diff_policies comparing my original against the hardened version. For each change, explain the security improvement. Run workbench_compliance_check on both versions and show the score improvement. Output the hardened YAML.",
                   },
                   {
                     label: "Compare Versions",
-                    prompt: "Use workbench_diff_policies to compare my current policy against the strict built-in ruleset and show me exactly what's different",
+                    prompt: "Call workbench_list_rulesets to show available built-in policies. Then read my policy YAML and call workbench_diff_policies comparing it against the 'strict' ruleset. Show exactly which guards I'm missing and which settings are weaker. Suggest the minimum changes to match strict-level security.",
                   },
                 ].map(({ label, prompt: cardPrompt }) => {
                   const CopyableCard = () => {

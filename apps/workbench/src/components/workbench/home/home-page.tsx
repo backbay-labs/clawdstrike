@@ -304,7 +304,7 @@ export function HomePage() {
         {/* ================================================================ */}
         <ClaudeCodeHint
           hint="Ask Claude Code to audit your policy and find security gaps"
-          prompt="Use the security-audit prompt to run a full audit on my current policy — validate it, check compliance, run test scenarios, and give me prioritized recommendations"
+          prompt="Read my active policy YAML file. Then: 1) Call workbench_validate_policy to check for errors. 2) Call workbench_guard_coverage to identify disabled guards. 3) Call workbench_compliance_check against all frameworks. 4) Call workbench_suggest_scenarios and run them with workbench_run_all_scenarios. Summarize: validation status, guard coverage %, compliance scores, test pass rate, and top 5 recommended fixes ranked by impact."
         />
 
         {/* ================================================================ */}

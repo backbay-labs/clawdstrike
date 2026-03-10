@@ -12,9 +12,13 @@ export function ClaudeCodeHint({ hint, prompt, className }: ClaudeCodeHintProps)
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(async () => {
-    await navigator.clipboard.writeText(prompt);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(prompt);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard API may fail if document is not focused
+    }
   }, [prompt]);
 
   return (
