@@ -109,44 +109,125 @@ const VERDICT_FILTERS: { value: "all" | Verdict; label: string }[] = [
   { value: "warn", label: "Warn" },
 ];
 
+const RECEIPT_ACTION_TYPES: readonly TestActionType[] = [
+  "file_access",
+  "file_write",
+  "network_egress",
+  "shell_command",
+  "mcp_tool_call",
+  "patch_apply",
+  "user_input",
+];
+
 // ---------------------------------------------------------------------------
 // Fleet sync helpers
 // ---------------------------------------------------------------------------
 
 /** Convert a local Receipt to the backend FleetReceipt wire format. */
 function receiptToFleet(r: Receipt): FleetReceipt {
+  const metadata: Record<string, unknown> = {
+    client_receipt_id: r.id,
+    action_type: r.action.type,
+    action_target: r.action.target,
+    valid: r.valid,
+  };
+  if (r.keyType) metadata.key_type = r.keyType;
+
   return {
     id: r.id,
     timestamp: r.timestamp,
     verdict: r.verdict,
     guard: r.guard,
     policy_name: r.policyName,
-    action_type: r.action.type,
-    action_target: r.action.target,
     evidence: r.evidence,
     signature: r.signature,
     public_key: r.publicKey,
+    action_type: r.action.type,
+    action_target: r.action.target,
     valid: r.valid,
+    metadata,
   };
 }
 
 /** Convert a backend FleetReceipt to the local Receipt shape. */
 function fleetToReceipt(f: FleetReceipt): Receipt {
+  const metadata = fleetReceiptMetadata(f);
+  const actionType = receiptActionTypeFromFleet(f, metadata);
+  const actionTarget = receiptActionTargetFromFleet(f, metadata);
+  const keyType = receiptKeyTypeFromFleet(metadata);
+
   return {
-    id: f.id,
+    id: fleetReceiptId(f),
     timestamp: f.timestamp,
     verdict: f.verdict as Verdict,
     guard: f.guard,
     policyName: f.policy_name,
     action: {
-      type: f.action_type as TestActionType,
-      target: f.action_target,
+      type: actionType,
+      target: actionTarget,
     },
     evidence: f.evidence ?? {},
     signature: f.signature,
     publicKey: f.public_key,
-    valid: f.valid,
+    valid: receiptValidityFromFleet(f, metadata),
+    ...(keyType ? { keyType } : {}),
   };
+}
+
+function fleetReceiptMetadata(f: FleetReceipt): Record<string, unknown> {
+  return f.metadata && typeof f.metadata === "object" && !Array.isArray(f.metadata)
+    ? f.metadata
+    : {};
+}
+
+function fleetReceiptId(f: FleetReceipt): string {
+  const metadata = fleetReceiptMetadata(f);
+  const clientReceiptId = metadata.client_receipt_id;
+  return typeof clientReceiptId === "string" && clientReceiptId.trim().length > 0
+    ? clientReceiptId
+    : f.id;
+}
+
+function receiptActionTypeFromFleet(
+  f: FleetReceipt,
+  metadata: Record<string, unknown>,
+): TestActionType {
+  const candidate = typeof f.action_type === "string" ? f.action_type : metadata.action_type;
+  return typeof candidate === "string" && RECEIPT_ACTION_TYPES.includes(candidate as TestActionType)
+    ? (candidate as TestActionType)
+    : "file_access";
+}
+
+function receiptActionTargetFromFleet(
+  f: FleetReceipt,
+  metadata: Record<string, unknown>,
+): string {
+  const candidate =
+    typeof f.action_target === "string"
+      ? f.action_target
+      : typeof metadata.action_target === "string"
+        ? metadata.action_target
+        : typeof f.evidence?.matched_pattern === "string"
+          ? f.evidence.matched_pattern
+          : "fleet receipt";
+
+  return candidate;
+}
+
+function receiptValidityFromFleet(
+  f: FleetReceipt,
+  metadata: Record<string, unknown>,
+): boolean {
+  if (typeof f.valid === "boolean") return f.valid;
+  if (typeof metadata.valid === "boolean") return metadata.valid;
+  return f.signature.length > 0 && f.signature !== "unsigned" && f.public_key.length > 0;
+}
+
+function receiptKeyTypeFromFleet(
+  metadata: Record<string, unknown>,
+): Receipt["keyType"] | undefined {
+  const value = metadata.key_type;
+  return value === "persistent" || value === "ephemeral" ? value : undefined;
 }
 
 /** Tracking key for receipts synced to fleet (localStorage). */
@@ -276,14 +357,14 @@ export function ReceiptInspector() {
       // Merge: add fleet receipts that are not already in local store
       const existingIds = new Set(receipts.map((r) => r.id));
       const newReceipts = res.receipts
-        .filter((fr) => !existingIds.has(fr.id))
+        .filter((fr) => !existingIds.has(fleetReceiptId(fr)))
         .map(fleetToReceipt);
 
       if (newReceipts.length > 0) {
         setReceipts((prev) => [...newReceipts, ...prev]);
         // Mark all fleet receipts as synced
         const newSynced = new Set(syncedIds);
-        for (const fr of res.receipts) newSynced.add(fr.id);
+        for (const fr of res.receipts) newSynced.add(fleetReceiptId(fr));
         writeSyncedIds(newSynced);
         setSyncedIds(newSynced);
         emitAuditEvent({
@@ -295,7 +376,7 @@ export function ReceiptInspector() {
       } else {
         // All fleet receipts already exist locally — just update sync tracking
         const newSynced = new Set(syncedIds);
-        for (const fr of res.receipts) newSynced.add(fr.id);
+        for (const fr of res.receipts) newSynced.add(fleetReceiptId(fr));
         writeSyncedIds(newSynced);
         setSyncedIds(newSynced);
       }

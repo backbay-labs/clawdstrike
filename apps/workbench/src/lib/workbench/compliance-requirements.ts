@@ -4,7 +4,7 @@ import type {
   GuardId,
   ComplianceFramework,
 } from "./types";
-import frameworkData from "@/data/compliance-frameworks.json";
+import frameworkData from "../../data/compliance-frameworks.json";
 
 export interface ComplianceRequirementDef {
   id: string;

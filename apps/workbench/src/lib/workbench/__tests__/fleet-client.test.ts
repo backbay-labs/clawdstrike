@@ -32,11 +32,15 @@ import {
   resolveApproval,
   distributePolicy,
   fetchDelegationGraphFromApi,
+  fetchReceipts,
+  storeReceiptsBatch,
+  verifyReceiptRemote,
   fleetClient,
   loadSavedConnection,
   saveConnectionConfig,
   clearConnectionConfig,
   type FleetConnection,
+  type FleetReceipt,
 } from "../fleet-client";
 
 // ---- MSW lifecycle ----
@@ -522,6 +526,133 @@ describe("fetchDelegationGraphFromApi", () => {
     const conn = makeConn({ apiKey: "", controlApiToken: "" });
     const result = await fetchDelegationGraphFromApi(conn);
     expect(result).toBeNull();
+  });
+});
+
+describe("receipt store adapters", () => {
+  const sampleReceipt: FleetReceipt = {
+    id: "local-receipt-001",
+    timestamp: "2026-03-09T23:50:00.000Z",
+    verdict: "deny",
+    guard: "ForbiddenPathGuard",
+    policy_name: "test-policy",
+    signature: "a".repeat(128),
+    public_key: "b".repeat(64),
+    evidence: { matched_pattern: "/etc/shadow" },
+    action_type: "file_access",
+    action_target: "/etc/shadow",
+    valid: true,
+    metadata: { source: "receipt-inspector" },
+  };
+
+  it("parses control-api paginated receipt lists from items", async () => {
+    const { http: mswHttp, HttpResponse: MswResponse } = await import("msw");
+    mockFleetServer.use(
+      mswHttp.get("/_proxy/control/api/v1/receipts", ({ request }) => {
+        const auth = request.headers.get("Authorization");
+        if (!auth) return new MswResponse(null, { status: 401 });
+        return MswResponse.json({
+          items: [
+            {
+              id: "server-receipt-001",
+              timestamp: sampleReceipt.timestamp,
+              verdict: sampleReceipt.verdict,
+              guard: sampleReceipt.guard,
+              policy_name: sampleReceipt.policy_name,
+              signature: sampleReceipt.signature,
+              public_key: sampleReceipt.public_key,
+              evidence: sampleReceipt.evidence,
+              metadata: {
+                client_receipt_id: sampleReceipt.id,
+                action_type: sampleReceipt.action_type,
+                action_target: sampleReceipt.action_target,
+                valid: sampleReceipt.valid,
+              },
+            },
+          ],
+          total: 1,
+          offset: 0,
+          limit: 50,
+        });
+      }),
+    );
+
+    const result = await fetchReceipts(makeConn(), { limit: 50 });
+    expect(result.total).toBe(1);
+    expect(result.offset).toBe(0);
+    expect(result.limit).toBe(50);
+    expect(result.receipts).toHaveLength(1);
+    expect(result.receipts[0].metadata?.client_receipt_id).toBe(sampleReceipt.id);
+  });
+
+  it("stores batch receipts using the backend StoreReceiptRequest shape", async () => {
+    const { http: mswHttp, HttpResponse: MswResponse } = await import("msw");
+    let capturedBody: unknown;
+
+    mockFleetServer.use(
+      mswHttp.post("/_proxy/control/api/v1/receipts/batch", async ({ request }) => {
+        const auth = request.headers.get("Authorization");
+        if (!auth) return new MswResponse(null, { status: 401 });
+        capturedBody = await request.json();
+        return MswResponse.json({
+          count: 1,
+          stored: [{ id: "server-receipt-001" }],
+        });
+      }),
+    );
+
+    const result = await storeReceiptsBatch(makeConn(), [sampleReceipt]);
+    expect(result.success).toBe(true);
+    expect(result.stored).toBe(1);
+
+    expect(capturedBody).toEqual({
+      receipts: [
+        {
+          timestamp: sampleReceipt.timestamp,
+          verdict: sampleReceipt.verdict,
+          guard: sampleReceipt.guard,
+          policy_name: sampleReceipt.policy_name,
+          signature: sampleReceipt.signature,
+          public_key: sampleReceipt.public_key,
+          evidence: sampleReceipt.evidence,
+          metadata: {
+            source: "receipt-inspector",
+            client_receipt_id: sampleReceipt.id,
+            action_type: sampleReceipt.action_type,
+            action_target: sampleReceipt.action_target,
+            valid: true,
+          },
+        },
+      ],
+    });
+  });
+
+  it("sends the required verify request body and maps backend errors", async () => {
+    const { http: mswHttp, HttpResponse: MswResponse } = await import("msw");
+    let capturedBody: unknown;
+
+    mockFleetServer.use(
+      mswHttp.post("/_proxy/control/api/v1/receipts/receipt-123/verify", async ({ request }) => {
+        const auth = request.headers.get("Authorization");
+        if (!auth) return new MswResponse(null, { status: 401 });
+        capturedBody = await request.json();
+        return MswResponse.json({
+          receipt_id: "receipt-123",
+          valid: false,
+          signer_valid: false,
+          errors: ["signature mismatch"],
+        });
+      }),
+    );
+
+    const result = await verifyReceiptRemote(makeConn(), "receipt-123");
+    expect(capturedBody).toEqual({});
+    expect(result.receipt_id).toBe("receipt-123");
+    expect(result.valid).toBe(false);
+    expect(result.signer_valid).toBe(false);
+    expect(result.reason).toContain("signature mismatch");
+    expect(Array.isArray(result.errors)).toBe(true);
+    expect(result.verified_at).toBeTruthy();
   });
 });
 

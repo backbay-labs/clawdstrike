@@ -1211,13 +1211,14 @@ export interface FleetReceipt {
   verdict: string;
   guard: string;
   policy_name: string;
-  action_type: string;
-  action_target: string;
   evidence?: Record<string, unknown>;
   signature: string;
   public_key: string;
-  valid: boolean;
+  chain_hash?: string;
   metadata?: Record<string, unknown>;
+  action_type?: string;
+  action_target?: string;
+  valid?: boolean;
 }
 
 export interface FleetReceiptListResponse {
@@ -1230,8 +1231,22 @@ export interface FleetReceiptListResponse {
 export interface FleetReceiptVerifyResponse {
   receipt_id: string;
   valid: boolean;
+  signer_valid?: boolean;
+  errors?: string[];
   reason?: string;
   verified_at: string;
+}
+
+interface StoreReceiptPayload {
+  timestamp: string;
+  verdict: string;
+  guard: string;
+  policy_name: string;
+  signature: string;
+  public_key: string;
+  chain_hash?: string;
+  evidence?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -1256,17 +1271,23 @@ export async function fetchReceipts(
     { headers: controlHeaders(conn) },
   );
 
-  // Handle response shapes: { receipts, total, offset, limit } or bare array
+  // Handle response shapes: { items, total, offset, limit }, { receipts, ... }, or bare array.
   if (Array.isArray(res)) {
     const receipts = res.filter(isFleetReceipt);
     return { receipts, total: receipts.length, offset: opts?.offset ?? 0, limit: opts?.limit ?? 50 };
   }
   if (res && typeof res === "object") {
     const obj = res as Record<string, unknown>;
-    if ("receipts" in obj && Array.isArray(obj.receipts)) {
+    const items =
+      "items" in obj && Array.isArray(obj.items)
+        ? obj.items
+        : "receipts" in obj && Array.isArray(obj.receipts)
+          ? obj.receipts
+          : null;
+    if (items) {
       return {
-        receipts: (obj.receipts as unknown[]).filter(isFleetReceipt),
-        total: typeof obj.total === "number" ? obj.total : (obj.receipts as unknown[]).length,
+        receipts: items.filter(isFleetReceipt),
+        total: typeof obj.total === "number" ? obj.total : items.length,
         offset: typeof obj.offset === "number" ? obj.offset : (opts?.offset ?? 0),
         limit: typeof obj.limit === "number" ? obj.limit : (opts?.limit ?? 50),
       };
@@ -1288,15 +1309,19 @@ export async function storeReceipt(
   if (!url) return { success: false, error: "No API URL configured" };
 
   try {
-    const res = await jsonFetch<{ id?: string; success?: boolean }>(
+    const res = await jsonFetch<unknown>(
       proxyUrl(`${url}/api/v1/receipts`, kind),
       {
         method: "POST",
         headers: controlHeaders(conn),
-        body: JSON.stringify(receipt),
+        body: JSON.stringify(toStoreReceiptPayload(receipt)),
       },
     );
-    return { success: true, id: res.id ?? receipt.id };
+    const storedId =
+      res && typeof res === "object" && typeof (res as Record<string, unknown>).id === "string"
+        ? ((res as Record<string, unknown>).id as string)
+        : receipt.id;
+    return { success: true, id: storedId };
   } catch (err) {
     return {
       success: false,
@@ -1317,15 +1342,22 @@ export async function storeReceiptsBatch(
   if (!url) return { success: false, stored: 0, error: "No API URL configured" };
 
   try {
-    const res = await jsonFetch<{ stored?: number; success?: boolean }>(
+    const res = await jsonFetch<unknown>(
       proxyUrl(`${url}/api/v1/receipts/batch`, kind),
       {
         method: "POST",
         headers: controlHeaders(conn),
-        body: JSON.stringify({ receipts }),
+        body: JSON.stringify({ receipts: receipts.map(toStoreReceiptPayload) }),
       },
     );
-    return { success: true, stored: res.stored ?? receipts.length };
+    const response = res as Record<string, unknown>;
+    const storedCount =
+      typeof response?.count === "number"
+        ? response.count
+        : Array.isArray(response?.stored)
+          ? response.stored.length
+          : receipts.length;
+    return { success: true, stored: storedCount };
   } catch (err) {
     return {
       success: false,
@@ -1380,20 +1412,73 @@ export async function verifyReceiptRemote(
   const { url, kind } = preferredUrl(conn);
   if (!url) throw new Error("No API URL configured");
 
-  return jsonFetch<FleetReceiptVerifyResponse>(
+  const res = await jsonFetch<unknown>(
     proxyUrl(`${url}/api/v1/receipts/${encodeURIComponent(receiptId)}/verify`, kind),
     {
       method: "POST",
       headers: controlHeaders(conn),
+      body: JSON.stringify({}),
     },
   );
+
+  if (!res || typeof res !== "object") {
+    throw new Error("[fleet-client] verifyReceiptRemote: unexpected response shape");
+  }
+
+  const obj = res as Record<string, unknown>;
+  const errors = Array.isArray(obj.errors)
+    ? obj.errors.filter((value): value is string => typeof value === "string")
+    : [];
+  const valid = typeof obj.valid === "boolean" ? obj.valid : false;
+  const signerValid = typeof obj.signer_valid === "boolean" ? obj.signer_valid : valid;
+
+  return {
+    receipt_id: typeof obj.receipt_id === "string" ? obj.receipt_id : receiptId,
+    valid,
+    signer_valid: signerValid,
+    errors,
+    reason: errors.length > 0 ? errors.join("; ") : undefined,
+    verified_at: new Date().toISOString(),
+  };
 }
 
 /** Type guard for FleetReceipt shape. */
 function isFleetReceipt(value: unknown): value is FleetReceipt {
   if (!value || typeof value !== "object") return false;
   const obj = value as Record<string, unknown>;
-  return typeof obj.id === "string" && typeof obj.verdict === "string";
+  return (
+    typeof obj.id === "string" &&
+    typeof obj.timestamp === "string" &&
+    typeof obj.verdict === "string" &&
+    typeof obj.guard === "string" &&
+    typeof obj.policy_name === "string" &&
+    typeof obj.signature === "string" &&
+    typeof obj.public_key === "string"
+  );
+}
+
+function toStoreReceiptPayload(receipt: FleetReceipt): StoreReceiptPayload {
+  const metadata: Record<string, unknown> = { ...(receipt.metadata ?? {}) };
+
+  metadata.client_receipt_id = receipt.id;
+  if (receipt.action_type) metadata.action_type = receipt.action_type;
+  if (receipt.action_target) metadata.action_target = receipt.action_target;
+  if (typeof receipt.valid === "boolean") metadata.valid = receipt.valid;
+
+  const payload: StoreReceiptPayload = {
+    timestamp: receipt.timestamp,
+    verdict: receipt.verdict,
+    guard: receipt.guard,
+    policy_name: receipt.policy_name,
+    signature: receipt.signature,
+    public_key: receipt.public_key,
+  };
+
+  if (receipt.chain_hash) payload.chain_hash = receipt.chain_hash;
+  if (receipt.evidence) payload.evidence = receipt.evidence;
+  if (Object.keys(metadata).length > 0) payload.metadata = metadata;
+
+  return payload;
 }
 
 // ---------------------------------------------------------------------------

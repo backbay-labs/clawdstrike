@@ -5,10 +5,11 @@
   "type": "module",
   "scripts": {
     "start": "bun run index.ts",
-    "start:node": "npx tsx index.ts"
+    "start:node": "tsx index.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
+    "tsx": "^4.20.6",
     "yaml": "^2.7.0",
     "zod": "^3.24.0"
   },
