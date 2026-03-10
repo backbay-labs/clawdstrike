@@ -11,6 +11,7 @@ import {
 } from "@/lib/tauri-commands";
 import { isDesktop } from "@/lib/tauri-bridge";
 import { cn } from "@/lib/utils";
+import { useHintSettingsSafe, type HintId } from "@/lib/workbench/use-hint-settings";
 import {
   IconFile,
   IconFolderOpen,
@@ -129,6 +130,96 @@ function useMcpStatus() {
   }, []);
 
   return { status, isRestarting, refresh, handleRestart };
+}
+
+// ---------------------------------------------------------------------------
+// Library prompt cards — read from hint settings store
+// ---------------------------------------------------------------------------
+
+const LIBRARY_PROMPT_CARDS: { hintId: HintId; fallbackLabel: string; fallbackPrompt: string }[] = [
+  {
+    hintId: "library.audit",
+    fallbackLabel: "Audit My Policy",
+    fallbackPrompt:
+      "Read my active policy YAML. Run this full audit: 1) workbench_validate_policy for errors 2) workbench_guard_coverage for coverage gaps 3) workbench_compliance_check against HIPAA, SOC2, PCI-DSS 4) workbench_suggest_scenarios + workbench_run_all_scenarios for testing. Output a security report with scores, test results, and a prioritized fix list.",
+  },
+  {
+    hintId: "library.testSuite",
+    fallbackLabel: "Build Test Suite",
+    fallbackPrompt:
+      "Read my policy YAML. Call workbench_suggest_scenarios for auto-generated tests. Then use workbench_create_scenario to build 5 additional edge cases: 1) symlink traversal to /etc/shadow, 2) DNS rebinding egress to internal IP, 3) base64-encoded AWS key in file write, 4) chained shell command with pipe to nc, 5) MCP tool call with injected args. Run all with workbench_run_all_scenarios and output the full test suite as JSON I can save.",
+  },
+  {
+    hintId: "library.harden",
+    fallbackLabel: "Harden Policy",
+    fallbackPrompt:
+      "Read my policy YAML. Call workbench_harden_policy with level 'aggressive'. Then call workbench_diff_policies comparing my original against the hardened version. For each change, explain the security improvement. Run workbench_compliance_check on both versions and show the score improvement. Output the hardened YAML.",
+  },
+  {
+    hintId: "library.compare",
+    fallbackLabel: "Compare Versions",
+    fallbackPrompt:
+      "Call workbench_list_rulesets to show available built-in policies. Then read my policy YAML and call workbench_diff_policies comparing it against the 'strict' ruleset. Show exactly which guards I'm missing and which settings are weaker. Suggest the minimum changes to match strict-level security.",
+  },
+];
+
+function LibraryPromptCards() {
+  const hintCtx = useHintSettingsSafe();
+
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+      {LIBRARY_PROMPT_CARDS.map((card) => {
+        const resolved = hintCtx
+          ? hintCtx.getHint(card.hintId)
+          : { hint: card.fallbackLabel, prompt: card.fallbackPrompt };
+        return (
+          <LibraryCopyableCard
+            key={card.hintId}
+            label={resolved.hint}
+            prompt={resolved.prompt}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function LibraryCopyableCard({ label, prompt }: { label: string; prompt: string }) {
+  const [cardCopied, setCardCopied] = useState(false);
+
+  return (
+    <button
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(prompt);
+          setCardCopied(true);
+          setTimeout(() => setCardCopied(false), 2000);
+        } catch {
+          // Clipboard API may fail
+        }
+      }}
+      className="rounded-md bg-[#0b0d13]/50 border border-[#8b5cf6]/15 hover:border-[#8b5cf6]/30 hover:bg-[#8b5cf6]/[0.04] px-2.5 py-2 text-center transition-colors group"
+      title={prompt}
+    >
+      <p className="text-[10px] font-mono text-[#8b5cf6]/80 truncate">{label}</p>
+      <p className="text-[9px] text-[#6f7f9a] mt-0.5 flex items-center justify-center gap-1">
+        {cardCopied ? (
+          <>
+            <IconCheck size={9} className="text-[#3dbf84]" />
+            <span className="text-[#3dbf84]">Copied!</span>
+          </>
+        ) : (
+          <>
+            <IconCopy
+              size={9}
+              className="opacity-0 group-hover:opacity-100 transition-opacity"
+            />
+            Copy prompt
+          </>
+        )}
+      </p>
+    </button>
+  );
 }
 
 export function LibraryGallery() {
@@ -548,58 +639,7 @@ export function LibraryGallery() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {[
-                  {
-                    label: "Audit My Policy",
-                    prompt: "Read my active policy YAML. Run this full audit: 1) workbench_validate_policy for errors 2) workbench_guard_coverage for coverage gaps 3) workbench_compliance_check against HIPAA, SOC2, PCI-DSS 4) workbench_suggest_scenarios + workbench_run_all_scenarios for testing. Output a security report with scores, test results, and a prioritized fix list.",
-                  },
-                  {
-                    label: "Build Test Suite",
-                    prompt: "Read my policy YAML. Call workbench_suggest_scenarios for auto-generated tests. Then use workbench_create_scenario to build 5 additional edge cases: 1) symlink traversal to /etc/shadow, 2) DNS rebinding egress to internal IP, 3) base64-encoded AWS key in file write, 4) chained shell command with pipe to nc, 5) MCP tool call with injected args. Run all with workbench_run_all_scenarios and output the full test suite as JSON I can save.",
-                  },
-                  {
-                    label: "Harden Policy",
-                    prompt: "Read my policy YAML. Call workbench_harden_policy with level 'aggressive'. Then call workbench_diff_policies comparing my original against the hardened version. For each change, explain the security improvement. Run workbench_compliance_check on both versions and show the score improvement. Output the hardened YAML.",
-                  },
-                  {
-                    label: "Compare Versions",
-                    prompt: "Call workbench_list_rulesets to show available built-in policies. Then read my policy YAML and call workbench_diff_policies comparing it against the 'strict' ruleset. Show exactly which guards I'm missing and which settings are weaker. Suggest the minimum changes to match strict-level security.",
-                  },
-                ].map(({ label, prompt: cardPrompt }) => {
-                  const CopyableCard = () => {
-                    const [cardCopied, setCardCopied] = useState(false);
-                    return (
-                      <button
-                        key={label}
-                        onClick={async () => {
-                          await navigator.clipboard.writeText(cardPrompt);
-                          setCardCopied(true);
-                          setTimeout(() => setCardCopied(false), 2000);
-                        }}
-                        className="rounded-md bg-[#0b0d13]/50 border border-[#8b5cf6]/15 hover:border-[#8b5cf6]/30 hover:bg-[#8b5cf6]/[0.04] px-2.5 py-2 text-center transition-colors group"
-                        title={cardPrompt}
-                      >
-                        <p className="text-[10px] font-mono text-[#8b5cf6]/80 truncate">{label}</p>
-                        <p className="text-[9px] text-[#6f7f9a] mt-0.5 flex items-center justify-center gap-1">
-                          {cardCopied ? (
-                            <>
-                              <IconCheck size={9} className="text-[#3dbf84]" />
-                              <span className="text-[#3dbf84]">Copied!</span>
-                            </>
-                          ) : (
-                            <>
-                              <IconCopy size={9} className="opacity-0 group-hover:opacity-100 transition-opacity" />
-                              Copy prompt
-                            </>
-                          )}
-                        </p>
-                      </button>
-                    );
-                  };
-                  return <CopyableCard key={label} />;
-                })}
-              </div>
+              <LibraryPromptCards />
             </div>
           </section>
         </>

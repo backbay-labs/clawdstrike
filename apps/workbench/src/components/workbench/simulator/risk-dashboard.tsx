@@ -180,8 +180,7 @@ export function RiskDashboard({ systemScore, pluginScores }: RiskDashboardProps)
         <IconShieldExclamation size={24} stroke={1.2} className="mb-3" />
         <span className="text-[12px] mb-5">Run red team scenarios to see risk analysis</span>
         <ClaudeCodeHint
-          hint="Ask Claude Code to assess your risk posture"
-          prompt="Read my policy YAML. Call workbench_guard_coverage and workbench_compliance_check against all frameworks. Calculate an overall risk score: (guard_coverage% + avg_compliance%) / 2. List every disabled guard with its risk category. For each compliance gap, show the specific guard config change needed. Output a prioritized remediation plan."
+          hintId="risk.assess"
           className="max-w-md w-full"
         />
       </div>

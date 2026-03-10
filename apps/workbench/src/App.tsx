@@ -3,6 +3,7 @@ import { HashRouter, Routes, Route, Navigate } from "react-router-dom";
 import { MultiPolicyProvider } from "@/lib/workbench/multi-policy-store";
 import { FleetConnectionProvider } from "@/lib/workbench/use-fleet-connection";
 import { GeneralSettingsProvider } from "@/lib/workbench/use-general-settings";
+import { HintSettingsProvider } from "@/lib/workbench/use-hint-settings";
 import { ToastProvider } from "@/components/ui/toast";
 import { DesktopLayout } from "@/components/desktop/desktop-layout";
 import { secureStore, migrateCredentialsToStronghold } from "@/lib/workbench/secure-store";
@@ -163,6 +164,7 @@ export function App() {
     <HashRouter>
       <ToastProvider>
         <GeneralSettingsProvider>
+          <HintSettingsProvider>
           <MultiPolicyProvider>
             <FleetConnectionProvider>
               <Suspense fallback={<LoadingFallback />}>
@@ -193,6 +195,7 @@ export function App() {
               </Suspense>
             </FleetConnectionProvider>
           </MultiPolicyProvider>
+          </HintSettingsProvider>
         </GeneralSettingsProvider>
       </ToastProvider>
     </HashRouter>

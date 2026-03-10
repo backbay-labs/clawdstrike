@@ -2,14 +2,16 @@
 // Settings Page — tabbed layout for app-level configuration
 // ---------------------------------------------------------------------------
 import { useState } from "react";
-import { IconPlugConnected, IconSettings } from "@tabler/icons-react";
+import { IconPlugConnected, IconSettings, IconBrain } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { ConnectionSettings } from "./connection-settings";
 import { GeneralSettings } from "./general-settings";
+import { HintSettings } from "./hint-settings";
 
 const TABS = [
   { id: "connection" as const, label: "Connection", icon: IconPlugConnected },
   { id: "general" as const, label: "General", icon: IconSettings },
+  { id: "hints" as const, label: "Claude Code", icon: IconBrain },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -53,9 +55,10 @@ export function SettingsPage() {
 
       {/* ---- Content ---- */}
       <div className="flex-1 overflow-y-auto p-6">
-        <div className="max-w-lg">
+        <div className={activeTab === "hints" ? "max-w-2xl" : "max-w-lg"}>
           {activeTab === "connection" && <ConnectionSettings />}
           {activeTab === "general" && <GeneralSettings />}
+          {activeTab === "hints" && <HintSettings />}
         </div>
       </div>
     </div>

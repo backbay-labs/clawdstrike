@@ -1,25 +1,44 @@
 import { useState, useCallback } from "react";
 import { IconTerminal, IconCopy, IconCheck } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import { useHintSettingsSafe, type HintId } from "@/lib/workbench/use-hint-settings";
 
 interface ClaudeCodeHintProps {
-  hint: string;
-  prompt: string;
+  hintId?: HintId;
+  hint?: string;
+  prompt?: string;
   className?: string;
 }
 
-export function ClaudeCodeHint({ hint, prompt, className }: ClaudeCodeHintProps) {
+export function ClaudeCodeHint({ hintId, hint, prompt, className }: ClaudeCodeHintProps) {
   const [copied, setCopied] = useState(false);
+  const ctx = useHintSettingsSafe();
+
+  // Resolve final hint and prompt values
+  let resolvedHint = hint ?? "";
+  let resolvedPrompt = prompt ?? "";
+
+  if (hintId && ctx) {
+    const storeHint = ctx.getHint(hintId);
+    // Explicit props override store values
+    resolvedHint = hint ?? storeHint.hint;
+    resolvedPrompt = prompt ?? storeHint.prompt;
+
+    // When hintId is used and showHints is off, hide the hint
+    if (!ctx.showHints) return null;
+  }
 
   const handleCopy = useCallback(async () => {
     try {
-      await navigator.clipboard.writeText(prompt);
+      await navigator.clipboard.writeText(resolvedPrompt);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
       // Clipboard API may fail if document is not focused
     }
-  }, [prompt]);
+  }, [resolvedPrompt]);
+
+  if (!resolvedHint && !resolvedPrompt) return null;
 
   return (
     <div
@@ -34,7 +53,7 @@ export function ClaudeCodeHint({ hint, prompt, className }: ClaudeCodeHintProps)
         className="text-[#8b5cf6]/70 shrink-0"
       />
       <span className="text-[11px] text-[#6f7f9a] truncate min-w-0">
-        {hint}
+        {resolvedHint}
       </span>
       <button
         onClick={handleCopy}

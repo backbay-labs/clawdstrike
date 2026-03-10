@@ -540,8 +540,7 @@ export function ObserveSynthPanel() {
 
             {/* Claude Code hint */}
             <ClaudeCodeHint
-              hint="Synthesize a policy from agent logs with Claude Code"
-              prompt="I'll paste agent activity logs below as JSONL. Call workbench_synth_policy to generate a policy from these events. Then call workbench_validate_policy on the result and workbench_guard_coverage to check coverage. If coverage is below 70%, call workbench_harden_policy to strengthen it. Show me the final policy YAML with annotations explaining each guard's purpose."
+              hintId="observe.synth"
               className="mt-4"
             />
           </div>

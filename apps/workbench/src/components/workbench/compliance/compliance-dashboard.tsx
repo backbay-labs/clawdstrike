@@ -185,8 +185,7 @@ export function ComplianceDashboard() {
           Click a framework to see detailed requirement coverage.
         </p>
         <ClaudeCodeHint
-          hint="Check compliance scores with Claude Code"
-          prompt="Read my policy YAML. Call workbench_compliance_check against HIPAA, SOC2, and PCI-DSS. For each gap found, call workbench_harden_policy with level 'aggressive' to generate a fix. Show me a table: framework | current score | gap count | specific guards to enable. Then output the hardened YAML."
+          hintId="compliance.check"
           className="mt-3"
         />
       </div>

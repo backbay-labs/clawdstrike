@@ -819,8 +819,7 @@ export function SimulatorLayout() {
                     Select a scenario from the threat library or create a custom probe to begin testing
                   </span>
                   <ClaudeCodeHint
-                    hint="Generate attack scenarios with Claude Code"
-                    prompt="Read my policy YAML. Call workbench_suggest_scenarios to generate test cases for every enabled guard. Then call workbench_create_scenario to add 3 edge cases: a path traversal attempt (../../etc/passwd), a base64-encoded secret in a file write, and a curl command piped to bash. Run everything with workbench_run_all_scenarios. Show a pass/fail table and flag any unexpected results."
+                    hintId="simulator.scenarios"
                     className="max-w-md w-full"
                   />
                 </div>
