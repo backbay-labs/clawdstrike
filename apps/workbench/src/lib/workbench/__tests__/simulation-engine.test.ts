@@ -1088,7 +1088,7 @@ describe("unknown guard handling", () => {
       makeScenario({ actionType: "file_access", payload: { path: "/safe/file.txt" } })
     );
     expect(result.overallVerdict).toBe("deny");
-    const guardResult = result.guardResults.find((r) => r.guardId === "totally_fake_guard");
+    const guardResult = result.guardResults.find((r) => (r.guardId as string) === "totally_fake_guard");
     expect(guardResult).toBeDefined();
     expect(guardResult!.verdict).toBe("deny");
     expect(guardResult!.message).toContain("Unknown guard");

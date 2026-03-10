@@ -160,7 +160,7 @@ describe("HintSettings", () => {
 
     // Verify updateHint was called with the correct hint ID and a hint field
     const calls = mockUpdateHint.mock.calls.filter(
-      ([id]: [string]) => id === "home.audit",
+      ([id]) => id === "home.audit",
     );
     expect(calls.length).toBeGreaterThan(0);
     const lastCall = calls[calls.length - 1];
@@ -179,7 +179,7 @@ describe("HintSettings", () => {
     await user.type(textarea, "Z");
 
     const calls = mockUpdateHint.mock.calls.filter(
-      ([id]: [string]) => id === "editor.validate",
+      ([id]) => id === "editor.validate",
     );
     expect(calls.length).toBeGreaterThan(0);
     const lastCall = calls[calls.length - 1];
