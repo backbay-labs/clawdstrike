@@ -390,3 +390,43 @@ export async function signReceiptPersistentNative(
     return null;
   }
 }
+
+// ---------------------------------------------------------------------------
+// MCP sidecar commands
+// ---------------------------------------------------------------------------
+
+export interface TauriMcpStatusResponse {
+  url: string;
+  token: string;
+  running: boolean;
+}
+
+/**
+ * Get the status of the embedded MCP sidecar server.
+ * Returns connection details (URL + auth token) when running.
+ * Returns null when not running inside Tauri.
+ */
+export async function getMcpStatus(): Promise<TauriMcpStatusResponse | null> {
+  if (!isDesktop()) return null;
+  try {
+    return await tauriInvoke<TauriMcpStatusResponse>("get_mcp_status");
+  } catch (err) {
+    console.error("[tauri-commands] get_mcp_status failed:", err);
+    return null;
+  }
+}
+
+/**
+ * Restart the embedded MCP sidecar server.
+ * Generates a new auth token and may bind to a different port.
+ * Returns null when not running inside Tauri.
+ */
+export async function restartMcpServer(): Promise<TauriMcpStatusResponse | null> {
+  if (!isDesktop()) return null;
+  try {
+    return await tauriInvoke<TauriMcpStatusResponse>("restart_mcp_server");
+  } catch (err) {
+    console.error("[tauri-commands] restart_mcp_server failed:", err);
+    return null;
+  }
+}

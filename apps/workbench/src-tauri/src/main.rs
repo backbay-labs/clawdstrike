@@ -3,7 +3,8 @@
 
 mod commands;
 
-use commands::{stronghold as stronghold_cmds, workbench};
+use commands::{mcp_sidecar, stronghold as stronghold_cmds, workbench};
+use mcp_sidecar::McpState;
 use stronghold_cmds::StrongholdState;
 #[allow(unused_imports)]
 use tauri::Manager;
@@ -26,6 +27,7 @@ fn main() {
             tauri_plugin_stronghold::Builder::new(move |_| password.to_vec()).build()
         })
         .manage(StrongholdState::new())
+        .manage(McpState::new())
         .setup(|_app| {
             if let Some(window) = _app.get_webview_window("main") {
                 #[cfg(not(target_os = "macos"))]
@@ -43,6 +45,24 @@ fn main() {
                     let _ = window.set_decorations(true);
                 }
             }
+
+            // Spawn the embedded MCP server as a sidecar process.
+            let mcp_state: McpState = (*_app.state::<McpState>()).clone();
+            tauri::async_runtime::spawn(async move {
+                match mcp_sidecar::spawn_mcp_server(&mcp_state).await {
+                    Ok(info) => {
+                        eprintln!(
+                            "[workbench] MCP sidecar started at {} (token: {}...)",
+                            info.url,
+                            &info.token[..std::cmp::min(12, info.token.len())]
+                        );
+                    }
+                    Err(e) => {
+                        eprintln!("[workbench] MCP sidecar failed to start: {e}");
+                    }
+                }
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -64,7 +84,16 @@ fn main() {
             stronghold_cmds::generate_persistent_keypair,
             stronghold_cmds::get_signing_public_key,
             stronghold_cmds::sign_with_persistent_key,
+            mcp_sidecar::get_mcp_status,
+            mcp_sidecar::restart_mcp_server,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                // Clean up the MCP sidecar child process on exit.
+                let state = app.state::<McpState>();
+                mcp_sidecar::kill_mcp_server(&state);
+            }
+        });
 }

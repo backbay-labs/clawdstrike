@@ -1,8 +1,14 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useWorkbench } from "@/lib/workbench/multi-policy-store";
 import { getRecentFiles } from "@/lib/workbench/policy-store";
 import { BUILTIN_RULESETS, type BuiltinRuleset } from "@/lib/workbench/builtin-rulesets";
-import { listBuiltinRulesets, loadBuiltinRuleset } from "@/lib/tauri-commands";
+import {
+  listBuiltinRulesets,
+  loadBuiltinRuleset,
+  getMcpStatus,
+  restartMcpServer,
+  type TauriMcpStatusResponse,
+} from "@/lib/tauri-commands";
 import { isDesktop } from "@/lib/tauri-bridge";
 import { cn } from "@/lib/utils";
 import {
@@ -16,6 +22,10 @@ import {
   IconLayoutGrid,
   IconCopy,
   IconCheck,
+  IconEye,
+  IconEyeOff,
+  IconRefresh,
+  IconLoader2,
 } from "@tabler/icons-react";
 import { PolicyCard } from "./policy-card";
 import { ImportExport } from "./import-export";
@@ -91,20 +101,52 @@ function useBuiltinRulesets() {
   return { rulesets, loading, nativeAvailable };
 }
 
+/** Hook to poll the embedded MCP sidecar status from the Tauri backend. */
+function useMcpStatus() {
+  const [status, setStatus] = useState<TauriMcpStatusResponse | null>(null);
+  const [isRestarting, setIsRestarting] = useState(false);
+
+  const refresh = useCallback(async () => {
+    const s = await getMcpStatus();
+    setStatus(s);
+  }, []);
+
+  useEffect(() => {
+    // Initial fetch + periodic poll every 5s
+    refresh();
+    const id = setInterval(refresh, 5000);
+    return () => clearInterval(id);
+  }, [refresh]);
+
+  const handleRestart = useCallback(async () => {
+    setIsRestarting(true);
+    try {
+      const s = await restartMcpServer();
+      setStatus(s);
+    } finally {
+      setIsRestarting(false);
+    }
+  }, []);
+
+  return { status, isRestarting, refresh, handleRestart };
+}
+
 export function LibraryGallery() {
   const { state, openFile, openFileByPath } = useWorkbench();
   const [viewYaml, setViewYaml] = useState<{ name: string; yaml: string } | null>(null);
   const { rulesets, loading, nativeAvailable } = useBuiltinRulesets();
   const [activeTab, setActiveTab] = useState<LibraryTab>("my-policies");
 
-  const [mcpCopied, setMcpCopied] = useState(false);
+  const [mcpCopied, setMcpCopied] = useState<string | null>(null);
+  const [showToken, setShowToken] = useState(false);
   const desktop = isDesktop();
   const recentFiles = desktop ? getRecentFiles() : [];
+  const { status: mcpStatus, isRestarting: mcpRestarting, handleRestart: mcpRestart } = useMcpStatus();
 
-  const copyMcpCommand = async () => {
-    await navigator.clipboard.writeText(MCP_LAUNCH_COMMAND);
-    setMcpCopied(true);
-    setTimeout(() => setMcpCopied(false), 2000);
+  const copyToClipboard = async (text: string, label: string) => {
+    await navigator.clipboard.writeText(text);
+    setMcpCopied(label);
+    setTimeout(() => setMcpCopied(null), 2000);
   };
 
   return (
@@ -284,42 +326,210 @@ export function LibraryGallery() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                {/* MCP Server card — shows live status in desktop, manual command in web */}
                 <div className="rounded-lg bg-[#131721]/50 border border-[#2d3240]/40 p-3">
                   <div className="flex items-center gap-2 mb-2">
                     <IconPlugConnected size={13} className="text-[#d4a84b]" />
                     <span className="text-[11px] font-mono font-medium text-[#ece7dc]">
                       MCP Server
                     </span>
-                    <span
-                      className="ml-auto flex items-center gap-1.5 text-[9px] font-mono text-[#3dbf84]"
-                      title="MCP server is available (embedded in workbench)"
-                    >
-                      <span className="relative flex h-2 w-2">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#3dbf84] opacity-40" />
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-[#3dbf84]" />
+                    {mcpStatus?.running ? (
+                      <span
+                        className="ml-auto flex items-center gap-1.5 text-[9px] font-mono text-[#3dbf84]"
+                        title="MCP sidecar server is running"
+                      >
+                        <span className="relative flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#3dbf84] opacity-40" />
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-[#3dbf84]" />
+                        </span>
+                        running
                       </span>
-                      available
-                    </span>
+                    ) : desktop ? (
+                      <span
+                        className="ml-auto flex items-center gap-1.5 text-[9px] font-mono text-[#c45c5c]"
+                        title="MCP sidecar server is not running"
+                      >
+                        <span className="relative flex h-2 w-2">
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-[#c45c5c]" />
+                        </span>
+                        stopped
+                      </span>
+                    ) : (
+                      <span
+                        className="ml-auto flex items-center gap-1.5 text-[9px] font-mono text-[#6f7f9a]"
+                        title="MCP server is available via CLI"
+                      >
+                        <span className="relative flex h-2 w-2">
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-[#6f7f9a]" />
+                        </span>
+                        manual
+                      </span>
+                    )}
                   </div>
                   <p className="text-[10px] text-[#6f7f9a] leading-relaxed mb-2">
                     10 tools for scenario testing, policy validation, compliance scoring, and policy synthesis.
                   </p>
-                  <div className="flex items-center gap-1.5">
-                    <code className="flex-1 text-[10px] font-mono text-[#d4a84b]/80 bg-[#0b0d13] rounded px-2 py-1.5 overflow-x-auto">
-                      {MCP_LAUNCH_COMMAND}
-                    </code>
-                    <button
-                      onClick={copyMcpCommand}
-                      className="shrink-0 flex items-center justify-center w-7 h-7 rounded-md bg-[#0b0d13] border border-[#2d3240]/40 text-[#6f7f9a] hover:text-[#d4a84b] hover:border-[#d4a84b]/30 transition-colors"
-                      title="Copy MCP launch command"
-                    >
-                      {mcpCopied ? (
-                        <IconCheck size={12} className="text-[#3dbf84]" />
-                      ) : (
-                        <IconCopy size={12} />
+
+                  {mcpStatus?.running ? (
+                    /* ---- Live sidecar: show connection details ---- */
+                    <div className="flex flex-col gap-2">
+                      {/* Endpoint URL */}
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[9px] text-[#6f7f9a] shrink-0 w-14">Endpoint</span>
+                        <code className="flex-1 text-[10px] font-mono text-[#d4a84b]/80 bg-[#0b0d13] rounded px-2 py-1 truncate">
+                          {mcpStatus.url}
+                        </code>
+                        <button
+                          onClick={() => copyToClipboard(mcpStatus.url, "url")}
+                          className="shrink-0 flex items-center justify-center w-6 h-6 rounded-md bg-[#0b0d13] border border-[#2d3240]/40 text-[#6f7f9a] hover:text-[#d4a84b] hover:border-[#d4a84b]/30 transition-colors"
+                          title="Copy endpoint URL"
+                        >
+                          {mcpCopied === "url" ? (
+                            <IconCheck size={10} className="text-[#3dbf84]" />
+                          ) : (
+                            <IconCopy size={10} />
+                          )}
+                        </button>
+                      </div>
+
+                      {/* Auth Token */}
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[9px] text-[#6f7f9a] shrink-0 w-14">Token</span>
+                        <code className="flex-1 text-[10px] font-mono text-[#d4a84b]/80 bg-[#0b0d13] rounded px-2 py-1 truncate">
+                          {showToken
+                            ? mcpStatus.token
+                            : `${mcpStatus.token.slice(0, 8)}${"*".repeat(20)}`}
+                        </code>
+                        <button
+                          onClick={() => setShowToken((v) => !v)}
+                          className="shrink-0 flex items-center justify-center w-6 h-6 rounded-md bg-[#0b0d13] border border-[#2d3240]/40 text-[#6f7f9a] hover:text-[#ece7dc] transition-colors"
+                          title={showToken ? "Hide token" : "Reveal token"}
+                        >
+                          {showToken ? <IconEyeOff size={10} /> : <IconEye size={10} />}
+                        </button>
+                        <button
+                          onClick={() => copyToClipboard(mcpStatus.token, "token")}
+                          className="shrink-0 flex items-center justify-center w-6 h-6 rounded-md bg-[#0b0d13] border border-[#2d3240]/40 text-[#6f7f9a] hover:text-[#d4a84b] hover:border-[#d4a84b]/30 transition-colors"
+                          title="Copy auth token"
+                        >
+                          {mcpCopied === "token" ? (
+                            <IconCheck size={10} className="text-[#3dbf84]" />
+                          ) : (
+                            <IconCopy size={10} />
+                          )}
+                        </button>
+                      </div>
+
+                      {/* Claude Code config snippet */}
+                      <div className="mt-1">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[9px] text-[#6f7f9a]">Claude Code config (.mcp.json)</span>
+                          <button
+                            onClick={() => {
+                              const config = JSON.stringify(
+                                {
+                                  mcpServers: {
+                                    "clawdstrike-workbench": {
+                                      url: mcpStatus.url,
+                                      headers: {
+                                        Authorization: `Bearer ${mcpStatus.token}`,
+                                      },
+                                    },
+                                  },
+                                },
+                                null,
+                                2,
+                              );
+                              copyToClipboard(config, "config");
+                            }}
+                            className="flex items-center gap-1 text-[9px] text-[#6f7f9a] hover:text-[#d4a84b] transition-colors"
+                          >
+                            {mcpCopied === "config" ? (
+                              <>
+                                <IconCheck size={9} className="text-[#3dbf84]" />
+                                <span className="text-[#3dbf84]">Copied</span>
+                              </>
+                            ) : (
+                              <>
+                                <IconCopy size={9} />
+                                Copy
+                              </>
+                            )}
+                          </button>
+                        </div>
+                        <pre className="text-[9px] font-mono text-[#6f7f9a]/70 bg-[#0b0d13] rounded px-2 py-1.5 overflow-x-auto leading-relaxed whitespace-pre">
+{`{
+  "mcpServers": {
+    "clawdstrike-workbench": {
+      "url": "${mcpStatus.url}",
+      "headers": {
+        "Authorization": "Bearer ${showToken ? mcpStatus.token : mcpStatus.token.slice(0, 8) + "..."}"
+      }
+    }
+  }
+}`}
+                        </pre>
+                      </div>
+
+                      {/* Restart button */}
+                      <button
+                        onClick={mcpRestart}
+                        disabled={mcpRestarting}
+                        className={cn(
+                          "mt-1 flex items-center justify-center gap-1.5 h-7 rounded-md text-[10px] font-medium border transition-colors",
+                          mcpRestarting
+                            ? "text-[#6f7f9a] border-[#2d3240] bg-[#131721] cursor-wait"
+                            : "text-[#ece7dc] border-[#2d3240] bg-[#131721] hover:border-[#d4a84b]/40 hover:text-[#d4a84b]",
+                        )}
+                      >
+                        {mcpRestarting ? (
+                          <IconLoader2 size={11} stroke={1.5} className="animate-spin" />
+                        ) : (
+                          <IconRefresh size={11} stroke={1.5} />
+                        )}
+                        {mcpRestarting ? "Restarting..." : "Restart Server"}
+                      </button>
+                    </div>
+                  ) : (
+                    /* ---- Fallback: manual command (web mode or spawn failed) ---- */
+                    <div className="flex flex-col gap-2">
+                      {desktop && (
+                        <button
+                          onClick={mcpRestart}
+                          disabled={mcpRestarting}
+                          className={cn(
+                            "flex items-center justify-center gap-1.5 h-7 rounded-md text-[10px] font-medium border transition-colors mb-1",
+                            mcpRestarting
+                              ? "text-[#6f7f9a] border-[#2d3240] bg-[#131721] cursor-wait"
+                              : "text-[#ece7dc] border-[#2d3240] bg-[#131721] hover:border-[#d4a84b]/40 hover:text-[#d4a84b]",
+                          )}
+                        >
+                          {mcpRestarting ? (
+                            <IconLoader2 size={11} stroke={1.5} className="animate-spin" />
+                          ) : (
+                            <IconRefresh size={11} stroke={1.5} />
+                          )}
+                          {mcpRestarting ? "Starting..." : "Start Server"}
+                        </button>
                       )}
-                    </button>
-                  </div>
+                      <div className="flex items-center gap-1.5">
+                        <code className="flex-1 text-[10px] font-mono text-[#d4a84b]/80 bg-[#0b0d13] rounded px-2 py-1.5 overflow-x-auto">
+                          {MCP_LAUNCH_COMMAND}
+                        </code>
+                        <button
+                          onClick={() => copyToClipboard(MCP_LAUNCH_COMMAND, "cmd")}
+                          className="shrink-0 flex items-center justify-center w-7 h-7 rounded-md bg-[#0b0d13] border border-[#2d3240]/40 text-[#6f7f9a] hover:text-[#d4a84b] hover:border-[#d4a84b]/30 transition-colors"
+                          title="Copy MCP launch command"
+                        >
+                          {mcpCopied === "cmd" ? (
+                            <IconCheck size={12} className="text-[#3dbf84]" />
+                          ) : (
+                            <IconCopy size={12} />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="rounded-lg bg-[#131721]/50 border border-[#2d3240]/40 p-3">

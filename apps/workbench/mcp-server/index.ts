@@ -1,15 +1,20 @@
 /**
  * ClawdStrike Workbench MCP Server
  *
- * Stdio-based MCP server for the policy workbench. Imports the workbench
- * TypeScript libraries directly (no Tauri required) and exposes them as
- * MCP tools, resources, and prompts.
+ * MCP server for the policy workbench. Supports two transports:
+ *   - **stdio** (default): for CLI usage (`bun run index.ts`)
+ *   - **SSE**:  for embedded use inside the Tauri desktop app
+ *     Activated via `--sse` CLI flag or `MCP_TRANSPORT=sse` env var.
+ *     Listens on `MCP_PORT` (default 9877) with bearer token auth from
+ *     `MCP_AUTH_TOKEN`.
  */
 
 import { pathToFileURL } from "node:url";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { z } from "zod";
 
 import { simulatePolicy } from "../src/lib/workbench/simulation-engine.ts";
@@ -1139,7 +1144,82 @@ function isMainModule() {
   return import.meta.url === pathToFileURL(entry).href;
 }
 
+/** Detect whether SSE transport was requested. */
+function wantsSse(): boolean {
+  if (process.argv.includes("--sse")) return true;
+  if ((process.env.MCP_TRANSPORT ?? "").toLowerCase() === "sse") return true;
+  return false;
+}
+
 if (isMainModule()) {
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
+  if (wantsSse()) {
+    // -----------------------------------------------------------------------
+    // SSE transport — HTTP server with bearer-token auth
+    // -----------------------------------------------------------------------
+    const port = Number(process.env.MCP_PORT) || 9877;
+    const authToken = process.env.MCP_AUTH_TOKEN ?? "";
+
+    // Track active SSE transports by session ID for message routing.
+    const sessions = new Map<string, SSEServerTransport>();
+
+    const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
+      const url = new URL(req.url ?? "/", `http://localhost:${port}`);
+
+      // ---- Health (unauthenticated) ----
+      if (url.pathname === "/health" && req.method === "GET") {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ status: "ok" }));
+        return;
+      }
+
+      // ---- Bearer token check for all other endpoints ----
+      if (authToken) {
+        const authorization = req.headers.authorization ?? "";
+        if (authorization !== `Bearer ${authToken}`) {
+          res.writeHead(401, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "unauthorized" }));
+          return;
+        }
+      }
+
+      // ---- SSE connection (GET /sse) ----
+      if (url.pathname === "/sse" && req.method === "GET") {
+        const transport = new SSEServerTransport("/message", res);
+        sessions.set(transport.sessionId, transport);
+        transport.onclose = () => {
+          sessions.delete(transport.sessionId);
+        };
+        await server.connect(transport);
+        return;
+      }
+
+      // ---- Message endpoint (POST /message?sessionId=xxx) ----
+      if (url.pathname === "/message" && req.method === "POST") {
+        const sessionId = url.searchParams.get("sessionId") ?? "";
+        const transport = sessions.get(sessionId);
+        if (!transport) {
+          res.writeHead(404, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "session not found" }));
+          return;
+        }
+        await transport.handlePostMessage(req, res);
+        return;
+      }
+
+      // ---- Fallback ----
+      res.writeHead(404, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "not found" }));
+    });
+
+    httpServer.listen(port, () => {
+      // Print to stderr so it doesn't interfere with any pipe/stdout usage.
+      process.stderr.write(`[mcp-server] SSE listening on http://localhost:${port}/sse\n`);
+    });
+  } else {
+    // -----------------------------------------------------------------------
+    // Stdio transport (default — backward-compatible)
+    // -----------------------------------------------------------------------
+    const transport = new StdioServerTransport();
+    await server.connect(transport);
+  }
 }
