@@ -97,6 +97,13 @@ async function controlDelete(
   });
 }
 
+async function controlGet(path: string, jwt: string): Promise<Response> {
+  return fetch(`${CONTROL_API_URL}${path}`, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${jwt}` },
+  });
+}
+
 interface AgentDef {
   agent_id: string;
   name: string;
@@ -380,13 +387,31 @@ async function cleanup(jwt: string): Promise<void> {
   log("Cleaning up test agents...");
   let deleted = 0;
   let failed = 0;
+  let agentIndex = new Map<string, string>();
+
+  try {
+    const res = await controlGet("/api/v1/agents", jwt);
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      log(`  FAIL list agents -- ${res.status} ${text}`);
+      return;
+    }
+
+    const agents = (await res.json()) as Array<{ id: string; agent_id: string }>;
+    agentIndex = new Map(agents.map((agent) => [agent.agent_id, agent.id]));
+  } catch (err) {
+    log(`  FAIL list agents -- ${(err as Error).message}`);
+    return;
+  }
 
   for (const agent of AGENTS) {
+    const agentUuid = agentIndex.get(agent.agent_id);
+    if (!agentUuid) {
+      continue;
+    }
+
     try {
-      const res = await controlDelete(
-        `/api/v1/agents/${agent.agent_id}`,
-        jwt,
-      );
+      const res = await controlDelete(`/api/v1/agents/${agentUuid}`, jwt);
       if (res.ok) {
         deleted++;
       } else if (res.status === 404) {

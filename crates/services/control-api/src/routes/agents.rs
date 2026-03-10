@@ -1,8 +1,9 @@
 use axum::extract::{Path, State};
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use chrono::Utc;
 use serde::Serialize;
+use serde_json::json;
 use sha2::{Digest, Sha256};
 use sqlx::row::Row;
 use sqlx::transaction::Transaction;
@@ -51,6 +52,7 @@ pub fn router() -> Router<AppState> {
         .route("/agents", post(register_agent))
         .route("/agents", get(list_agents))
         .route("/agents/{id}", get(get_agent))
+        .route("/agents/{id}", delete(delete_agent))
         .route(
             "/agents/{id}/effective-policy",
             get(get_agent_effective_policy),
@@ -206,6 +208,48 @@ async fn get_agent(
 
     let agent = Agent::from_row(row).map_err(ApiError::Database)?;
     Ok(Json(agent))
+}
+
+async fn delete_agent(
+    State(state): State<AppState>,
+    auth: AuthenticatedTenant,
+    Path(id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    if auth.role == "viewer" {
+        return Err(ApiError::Forbidden);
+    }
+
+    let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
+    let row = sqlx::query::query(
+        r#"SELECT principal_id
+           FROM agents
+           WHERE id = $1
+             AND tenant_id = $2"#,
+    )
+    .bind(id)
+    .bind(auth.tenant_id)
+    .fetch_optional(tx.as_mut())
+    .await
+    .map_err(ApiError::Database)?
+    .ok_or(ApiError::NotFound)?;
+
+    let principal_id = row
+        .try_get::<Option<Uuid>, _>("principal_id")
+        .map_err(ApiError::Database)?;
+
+    sqlx::query::query("DELETE FROM agents WHERE id = $1")
+        .bind(id)
+        .execute(tx.as_mut())
+        .await
+        .map_err(ApiError::Database)?;
+
+    if let Some(principal_id) = principal_id {
+        delete_principal_if_unreferenced(&mut tx, principal_id).await?;
+    }
+
+    tx.commit().await.map_err(ApiError::Database)?;
+
+    Ok(Json(json!({ "deleted": true })))
 }
 
 async fn get_agent_effective_policy(

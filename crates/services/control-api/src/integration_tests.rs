@@ -408,6 +408,90 @@ async fn register_agent_creates_and_links_endpoint_principal() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delete_agent_removes_linked_endpoint_principal() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let keypair = hush_core::Keypair::generate();
+    let register_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/agents".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "agent_id": "agent-directory-delete-int-1",
+            "name": "Delete Agent",
+            "public_key": keypair.public_key().to_hex()
+        })),
+    )
+    .await;
+    assert_eq!(register_resp.0, StatusCode::OK);
+
+    let agent_uuid = Uuid::parse_str(
+        register_resp.1["id"]
+            .as_str()
+            .expect("agent id missing from register response"),
+    )
+    .expect("parse agent uuid");
+
+    let agent_row = sqlx::query::query(
+        r#"SELECT principal_id
+           FROM agents
+           WHERE tenant_id = $1
+             AND id = $2"#,
+    )
+    .bind(harness.tenant_id)
+    .bind(agent_uuid)
+    .fetch_one(&harness.db)
+    .await
+    .expect("fetch agent principal");
+    let principal_id: Uuid = agent_row
+        .try_get::<Option<Uuid>, _>("principal_id")
+        .expect("principal_id")
+        .expect("principal should be linked");
+
+    let delete_resp = request_json(
+        &harness.app,
+        Method::DELETE,
+        format!("/api/v1/agents/{agent_uuid}"),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(delete_resp.0, StatusCode::OK);
+    assert_eq!(delete_resp.1["deleted"], true);
+
+    let deleted_agent = sqlx::query::query(
+        r#"SELECT 1
+           FROM agents
+           WHERE tenant_id = $1
+             AND id = $2"#,
+    )
+    .bind(harness.tenant_id)
+    .bind(agent_uuid)
+    .fetch_optional(&harness.db)
+    .await
+    .expect("query deleted agent");
+    assert!(deleted_agent.is_none());
+
+    let deleted_principal = sqlx::query::query(
+        r#"SELECT 1
+           FROM principals
+           WHERE tenant_id = $1
+             AND id = $2"#,
+    )
+    .bind(harness.tenant_id)
+    .bind(principal_id)
+    .fetch_optional(&harness.db)
+    .await
+    .expect("query deleted principal");
+    assert!(deleted_principal.is_none());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn agent_effective_policy_resolves_directory_attachments_in_precedence_order() {
     if !docker_available() {
         eprintln!("Skipping integration test: docker is unavailable");
