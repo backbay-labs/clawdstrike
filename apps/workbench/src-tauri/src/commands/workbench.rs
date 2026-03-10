@@ -1059,17 +1059,18 @@ pub async fn sign_receipt_persistent(
 /// Verify a chain of receipts: check Ed25519 signatures, timestamp ordering,
 /// and compute a chain hash from concatenated per-receipt hashes.
 ///
-/// # Exact signature verification fallback (P1-4)
+/// # Signature verification strategy (P1-1 / P1-4)
 ///
-/// Signature verification tries the chain-native colon-delimited payload first:
+/// When an embedded `signed_receipt` is present, signature verification tries
+/// the RFC 8785 canonical JSON payload first — this matches what
+/// `SignedReceipt::sign()` actually signs. If that fails, it falls back to
+/// the legacy colon-delimited format `id:timestamp:verdict:guard:policy_name`.
 ///
-/// 1. `id:timestamp:verdict:guard:policy_name`
+/// When no `signed_receipt` is provided, only the colon-delimited format is
+/// attempted.
 ///
-/// If that fails and the input includes an embedded `signed_receipt`, it falls
-/// back to the exact RFC 8785 canonical JSON bytes of
-/// `signed_receipt.receipt`, which is what `SignedReceipt::sign()` actually
-/// signs. The chain hash is still computed from the colon-delimited format to
-/// keep existing chain hashes stable.
+/// The chain hash is always computed from the colon-delimited format to keep
+/// existing chain hashes stable.
 #[tauri::command]
 pub async fn verify_receipt_chain(
     receipts: Vec<ChainReceiptInput>,
@@ -1142,31 +1143,41 @@ pub async fn verify_receipt_chain(
             }
         };
 
-        // Try the chain-native colon-delimited payload first.
-        let (mut sig_valid, mut sig_reason) =
-            verify_receipt_signature(&r.public_key, &r.signature, canonical_content.as_bytes());
-
-        // If that fails and we have the original signed receipt payload, retry
-        // against the exact canonical JSON bytes that were originally signed.
-        if sig_valid == Some(false) {
-            if let Some(signed_receipt) = &r.signed_receipt {
-                let (json_sig_valid, json_sig_reason) = verify_signed_receipt_signature(
+        // Try the canonical JSON payload first (matches what SignedReceipt::sign()
+        // actually signs — RFC 8785 canonical JSON of the receipt). Fall back to the
+        // legacy colon-delimited format for backward compatibility with older chains.
+        let (sig_valid, sig_reason) = if let Some(signed_receipt) = &r.signed_receipt {
+            let (json_sig_valid, json_sig_reason) = verify_signed_receipt_signature(
+                &r.public_key,
+                &r.signature,
+                signed_receipt,
+            );
+            if json_sig_valid == Some(true) {
+                (
+                    json_sig_valid,
+                    format!(
+                        "{} (verified via canonical JSON payload)",
+                        json_sig_reason,
+                    ),
+                )
+            } else {
+                // Canonical JSON failed — fall back to colon-delimited format.
+                let (colon_valid, colon_reason) = verify_receipt_signature(
                     &r.public_key,
                     &r.signature,
-                    signed_receipt,
+                    canonical_content.as_bytes(),
                 );
-                if json_sig_valid == Some(true) {
-                    sig_valid = json_sig_valid;
-                    sig_reason = format!(
-                        "{} (verified via embedded signed_receipt canonical payload)",
-                        json_sig_reason,
-                    );
-                } else if json_sig_valid == Some(false) {
-                    sig_valid = json_sig_valid;
-                    sig_reason = json_sig_reason;
+                if colon_valid == Some(true) {
+                    (colon_valid, colon_reason)
+                } else {
+                    // Both failed — report the canonical JSON failure as primary.
+                    (json_sig_valid, json_sig_reason)
                 }
             }
-        }
+        } else {
+            // No embedded signed_receipt — use the legacy colon-delimited payload.
+            verify_receipt_signature(&r.public_key, &r.signature, canonical_content.as_bytes())
+        };
 
         if sig_valid == Some(true) {
             any_sig_verified = true;

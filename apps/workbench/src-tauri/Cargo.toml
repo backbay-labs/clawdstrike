@@ -20,6 +20,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 # Local crates
 hush-core = { path = "../../../crates/libs/hush-core" }
 clawdstrike = { path = "../../../crates/libs/clawdstrike" }
+tauri-plugin-fs = "2"
 tauri-plugin-http = "2"
 tauri-plugin-stronghold = "2"
 iota_stronghold = "2"

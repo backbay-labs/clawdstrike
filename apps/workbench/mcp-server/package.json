@@ -7,6 +7,7 @@
     "start": "bun run index.ts",
     "start:node": "tsx index.ts"
   },
+  "comment:dependencies": "This server imports from ../src/lib/workbench/ via relative paths. Transitive runtime dependencies (e.g., yaml) are resolved from the parent apps/workbench/package.json workspace. Only MCP-server-specific deps need to be listed here.",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",
     "tsx": "^4.20.6",

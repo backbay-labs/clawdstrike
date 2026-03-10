@@ -105,10 +105,17 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return proto === Object.prototype || proto === null;
 }
 
+/**
+ * Check whether a guard config object represents an enabled guard.
+ * ClawdStrike treats guards as enabled by default when they are present in
+ * the policy — `enabled` only matters when explicitly set to `false`.
+ * We mirror that convention: undefined / missing → enabled.
+ */
 function isGuardEnabled<T extends { enabled?: boolean }>(
   config: T | null | undefined,
-): config is T & { enabled: true } {
-  return config?.enabled === true;
+): config is T {
+  if (config == null) return false;
+  return config.enabled !== false;
 }
 
 export function deepEqual(a: unknown, b: unknown): boolean {
@@ -155,19 +162,40 @@ export function suggestScenariosFromPolicy(policy: WorkbenchPolicy) {
     const patterns = forbiddenPath.patterns ?? [];
     for (const pat of patterns.slice(0, 3)) {
       // Convert glob pattern to a realistic concrete path for testing.
-      // Strip recursive-glob markers, replace single wildcards with a
-      // plausible segment, and ensure the path is absolute.
-      let concretePath = pat
-        .replace(/\*\*\/?/g, "")
-        .replace(/\*/g, "test")
-        .replace(/\/\//g, "/");
-      // Ensure an absolute path — relative or bare segments get a sensible prefix.
-      if (!concretePath.startsWith("/")) {
-        concretePath = `/home/user/${concretePath}`;
-      }
-      // Paths ending with a directory separator get a trailing filename.
-      if (concretePath.endsWith("/")) {
-        concretePath += "id_rsa";
+      // We handle well-known patterns explicitly for better fidelity, then
+      // fall back to a generic substitution for unknown globs.
+      let concretePath: string;
+      if (/\.ssh/i.test(pat)) {
+        concretePath = "/home/user/.ssh/id_rsa";
+      } else if (/\.aws/i.test(pat)) {
+        concretePath = "/home/user/.aws/credentials";
+      } else if (/\.env/i.test(pat)) {
+        concretePath = "/app/.env";
+      } else if (/\.pem$/i.test(pat)) {
+        concretePath = "/tmp/server.pem";
+      } else if (/\.key$/i.test(pat)) {
+        concretePath = "/etc/ssl/private/server.key";
+      } else if (/etc\/passwd/i.test(pat)) {
+        concretePath = "/etc/passwd";
+      } else if (/etc\/shadow/i.test(pat)) {
+        concretePath = "/etc/shadow";
+      } else {
+        // Generic fallback: strip recursive-glob markers, replace single
+        // wildcards with a plausible segment, and ensure the path is absolute.
+        concretePath = pat
+          .replace(/\*\*\/?/g, "")
+          .replace(/\*/g, "test")
+          .replace(/\/\//g, "/");
+        if (!concretePath.startsWith("/")) {
+          concretePath = `/home/user/${concretePath}`;
+        }
+        if (concretePath.endsWith("/")) {
+          concretePath += "id_rsa";
+        }
+        // If only a bare filename remains (e.g., pattern was "**"), give it a directory.
+        if (concretePath === "/home/user/") {
+          concretePath = "/home/user/id_rsa";
+        }
       }
       suggestions.push({
         id: `suggest-fp-${suggestions.length}`,
@@ -228,6 +256,23 @@ export function suggestScenariosFromPolicy(policy: WorkbenchPolicy) {
         actionType: "network_egress",
         payload: { host: "unknown.example.com", port: 443 },
         expectedVerdict: "allow",
+      });
+    }
+
+    // When default_action is not explicitly set, ClawdStrike's Rust egress
+    // guard defaults to "block" (PolicyAction::Block is the #[default]).
+    // The TS simulation engine mirrors this (config.default_action || "block").
+    // Generate a scenario so the user sees the implicit blocking behaviour.
+    if (defaultAction === undefined) {
+      suggestions.push({
+        id: `suggest-eg-implicit-block-${suggestions.length}`,
+        name: "Unknown domain egress (implicit block)",
+        description:
+          "Network call to an unlisted domain; default_action is unset, so ClawdStrike defaults to block",
+        category: "attack",
+        actionType: "network_egress",
+        payload: { host: "unknown.malicious.example.com", port: 443 },
+        expectedVerdict: "deny",
       });
     }
   }

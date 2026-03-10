@@ -1748,14 +1748,20 @@ export async function fetchReceiptChain(
       { headers: controlHeaders(conn) },
     );
 
-    // Handle array or wrapped response
+    // Handle array, PaginatedResponse { items }, or wrapped { receipts } response
     if (Array.isArray(res)) {
       return res.filter(isFleetReceipt);
     }
-    if (res && typeof res === "object" && "receipts" in res) {
-      const wrapped = res as { receipts: unknown };
-      if (Array.isArray(wrapped.receipts)) {
-        return (wrapped.receipts as unknown[]).filter(isFleetReceipt);
+    if (res && typeof res === "object") {
+      const obj = res as Record<string, unknown>;
+      const items =
+        "items" in obj && Array.isArray(obj.items)
+          ? obj.items
+          : "receipts" in obj && Array.isArray(obj.receipts)
+            ? obj.receipts
+            : null;
+      if (items) {
+        return (items as unknown[]).filter(isFleetReceipt);
       }
     }
     throw new Error("[fleet-client] fetchReceiptChain: unexpected response shape");

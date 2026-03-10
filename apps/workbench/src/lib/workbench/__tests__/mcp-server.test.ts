@@ -110,10 +110,33 @@ guards:
     ).toBe(false);
   });
 
-  it("reports only explicitly enabled guards in metadata", () => {
+  it("treats guards without explicit enabled field as enabled (ClawdStrike default)", () => {
     const result = suggestScenariosFromPolicy(
       makePolicy({
         forbidden_path: {
+          patterns: ["/tmp/secret.txt"],
+        },
+        egress_allowlist: {
+          enabled: true,
+          allow: ["*.example.com"],
+        },
+      }),
+    );
+
+    // Both guards should be reported as enabled — ClawdStrike treats
+    // a guard as enabled whenever enabled !== false (undefined → enabled).
+    expect(result.enabledGuards).toContain("forbidden_path");
+    expect(result.enabledGuards).toContain("egress_allowlist");
+    expect(
+      result.scenarios.some((scenario) => scenario.name.startsWith("Forbidden path:")),
+    ).toBe(true);
+  });
+
+  it("excludes guards that are explicitly disabled", () => {
+    const result = suggestScenariosFromPolicy(
+      makePolicy({
+        forbidden_path: {
+          enabled: false,
           patterns: ["/tmp/secret.txt"],
         },
         egress_allowlist: {
