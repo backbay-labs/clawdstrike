@@ -461,7 +461,7 @@ export function LibraryGallery() {
                     )}
                   </div>
                   <p className="text-[10px] text-[#6f7f9a] leading-relaxed mb-2">
-                    10 tools for scenario testing, policy validation, compliance scoring, and policy synthesis.
+                    14 tools, 5 prompts, and 3 resources for scenario testing, policy validation, compliance scoring, hardening, and synthesis.
                   </p>
 
                   {mcpStatus?.running ? (
@@ -630,15 +630,49 @@ export function LibraryGallery() {
                   <div className="flex items-center gap-2 mb-2">
                     <IconTerminal size={13} className="text-[#3dbf84]" />
                     <span className="text-[11px] font-mono font-medium text-[#ece7dc]">
-                      Plugin Install
+                      Stdio Setup
                     </span>
                   </div>
                   <p className="text-[10px] text-[#6f7f9a] leading-relaxed mb-2">
-                    Install the plugin in Claude Code for skills and auto-validation hooks.
+                    Add to your <code className="text-[#d4a84b]/70">.mcp.json</code> to connect Claude Code via stdio (no sidecar needed).
                   </p>
-                  <code className="block text-[10px] font-mono text-[#3dbf84]/80 bg-[#0b0d13] rounded px-2 py-1.5 overflow-x-auto">
-                    claude plugin add ./workbench-plugin
-                  </code>
+                  <div className="relative">
+                    <pre className="text-[9px] font-mono text-[#6f7f9a]/70 bg-[#0b0d13] rounded px-2 py-1.5 overflow-x-auto leading-relaxed whitespace-pre">
+{`{
+  "mcpServers": {
+    "clawdstrike-workbench": {
+      "command": "bun",
+      "args": ["run", "apps/workbench/mcp-server/index.ts"]
+    }
+  }
+}`}
+                    </pre>
+                    <button
+                      onClick={() => {
+                        const config = JSON.stringify(
+                          {
+                            mcpServers: {
+                              "clawdstrike-workbench": {
+                                command: "bun",
+                                args: ["run", "apps/workbench/mcp-server/index.ts"],
+                              },
+                            },
+                          },
+                          null,
+                          2,
+                        );
+                        copyToClipboard(config, "stdio");
+                      }}
+                      className="absolute top-1.5 right-1.5 flex items-center justify-center w-6 h-6 rounded-md bg-[#131721]/80 border border-[#2d3240]/40 text-[#6f7f9a] hover:text-[#3dbf84] hover:border-[#3dbf84]/30 transition-colors"
+                      title="Copy stdio config"
+                    >
+                      {mcpCopied === "stdio" ? (
+                        <IconCheck size={10} className="text-[#3dbf84]" />
+                      ) : (
+                        <IconCopy size={10} />
+                      )}
+                    </button>
+                  </div>
                 </div>
               </div>
 
