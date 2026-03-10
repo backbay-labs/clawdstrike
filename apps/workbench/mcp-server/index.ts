@@ -71,7 +71,7 @@ export function validatePolicyYaml(policyYaml: string) {
     const { policy, warnings: parseErrors } = parsePolicy(policyYaml);
     const validation = validatePolicy(policy);
     return {
-      valid: validation.valid && parseErrors.length === 0,
+      valid: validation.valid,
       parseErrors,
       errors: validation.errors,
       warnings: validation.warnings,

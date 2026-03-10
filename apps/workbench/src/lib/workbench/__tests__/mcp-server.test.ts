@@ -56,6 +56,26 @@ guards:
     expect(result.warnings).toEqual([]);
   });
 
+  it("keeps valid true when parsePolicy returns only non-fatal diagnostics", () => {
+    const yaml = `
+version: "1.2.0"
+name: "warn-policy"
+guards:
+  egress_allowlist:
+    enabled: true
+    allow: "not-an-array"
+`;
+
+    const result = validatePolicyYaml(yaml);
+
+    expect(result.valid).toBe(true);
+    expect(result.parseErrors.length).toBeGreaterThan(0);
+    expect(
+      result.parseErrors.some((warning) => warning.includes("egress_allowlist.allow")),
+    ).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+
   it("does not assume egress default_action is block when the field is absent", () => {
     const result = suggestScenariosFromPolicy(
       makePolicy({
