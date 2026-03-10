@@ -64,6 +64,10 @@
 
 ---
 
+<p align="center">
+  <img src="assets/promo-reel.gif" alt="Clawdstrike Workbench" width="960" />
+</p>
+
 ## The Problem
 
 Google's 2026 Cybersecurity Forecast calls it the **"Shadow Agent" crisis**: employees and teams spinning up AI agents without corporate oversight, creating invisible pipelines that exfiltrate sensitive data, violate compliance, and leak IP. No one sanctioned them. No one is watching them. And your security stack wasn't built for this.
