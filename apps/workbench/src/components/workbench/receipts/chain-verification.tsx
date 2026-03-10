@@ -142,6 +142,13 @@ async function verifyChainClientSide(
   };
 }
 
+function extractSignedReceipt(receipt: Receipt): Record<string, unknown> | undefined {
+  const signedReceipt = receipt.evidence?.signed_receipt;
+  return signedReceipt && typeof signedReceipt === "object" && !Array.isArray(signedReceipt)
+    ? (signedReceipt as Record<string, unknown>)
+    : undefined;
+}
+
 // ---------------------------------------------------------------------------
 // Normalisation helpers
 // ---------------------------------------------------------------------------
@@ -342,6 +349,7 @@ export function ChainVerification({ receipts, onClose }: ChainVerificationProps)
           signature: r.signature,
           publicKey: r.publicKey,
           valid: r.valid,
+          signedReceipt: extractSignedReceipt(r),
         }));
 
         const native = await verifyReceiptChainNative(input);

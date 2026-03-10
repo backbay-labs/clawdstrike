@@ -14,7 +14,6 @@ use clawdstrike::policy::{
 };
 use clawdstrike::posture::PostureRuntimeState;
 use clawdstrike::{GuardReport, HushEngine, PostureAwareReport};
-use hush_core::canonical::canonicalize as canonicalize_json;
 use hush_core::receipt::{Receipt, Verdict};
 use hush_core::signing::{PublicKey, Signature};
 use hush_core::{sha256, Hash, Keypair, SignedReceipt};
@@ -292,6 +291,8 @@ pub struct ChainReceiptInput {
     pub signature: String,
     pub public_key: String,
     pub valid: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signed_receipt: Option<serde_json::Value>,
 }
 
 /// Per-receipt verification result in a chain.
@@ -523,6 +524,45 @@ fn verify_receipt_signature(
             "Signature does not match public key and content.".to_string(),
         )
     }
+}
+
+fn verify_signed_receipt_signature(
+    public_key_hex: &str,
+    signature_hex: &str,
+    signed_receipt_json: &serde_json::Value,
+) -> (Option<bool>, String) {
+    let signed_receipt: SignedReceipt = match serde_json::from_value(signed_receipt_json.clone()) {
+        Ok(signed_receipt) => signed_receipt,
+        Err(e) => {
+            return (
+                Some(false),
+                format!("Embedded signed_receipt is invalid: {}", e),
+            );
+        }
+    };
+
+    let embedded_signature = signed_receipt.signatures.signer.to_hex();
+    if embedded_signature != signature_hex {
+        return (
+            Some(false),
+            "Provided signature does not match signed_receipt.signatures.signer.".to_string(),
+        );
+    }
+
+    let canonical_receipt = match signed_receipt.receipt.to_canonical_json() {
+        Ok(canonical_receipt) => canonical_receipt,
+        Err(e) => {
+            return (
+                Some(false),
+                format!(
+                    "Could not canonicalize embedded signed_receipt payload: {}",
+                    e
+                ),
+            );
+        }
+    };
+
+    verify_receipt_signature(public_key_hex, signature_hex, canonical_receipt.as_bytes())
 }
 
 // ---------------------------------------------------------------------------
@@ -949,20 +989,17 @@ pub async fn sign_receipt_persistent(
 /// Verify a chain of receipts: check Ed25519 signatures, timestamp ordering,
 /// and compute a chain hash from concatenated per-receipt hashes.
 ///
-/// # Dual-format signature verification (P1-4)
+/// # Exact signature verification fallback (P1-4)
 ///
-/// Signature verification tries **two** canonical formats for backward
-/// compatibility:
+/// Signature verification tries the chain-native colon-delimited payload first:
 ///
-/// 1. **Colon-delimited** (legacy chain format):
-///    `id:timestamp:verdict:guard:policy_name`
-/// 2. **RFC 8785 canonical JSON** (matching `sign_receipt` / `SignedReceipt::sign()`):
-///    A deterministic JSON object built from the receipt fields, canonicalized
-///    per RFC 8785 (JCS).
+/// 1. `id:timestamp:verdict:guard:policy_name`
 ///
-/// If the signature verifies under *either* format the receipt is accepted.
-/// The chain hash is always computed from the colon-delimited format to keep
-/// existing chain hashes stable.
+/// If that fails and the input includes an embedded `signed_receipt`, it falls
+/// back to the exact RFC 8785 canonical JSON bytes of
+/// `signed_receipt.receipt`, which is what `SignedReceipt::sign()` actually
+/// signs. The chain hash is still computed from the colon-delimited format to
+/// keep existing chain hashes stable.
 #[tauri::command]
 pub async fn verify_receipt_chain(
     receipts: Vec<ChainReceiptInput>,
@@ -1035,38 +1072,29 @@ pub async fn verify_receipt_chain(
             }
         };
 
-        // --- Dual-format signature verification (P1-4) ---
-        // Try the colon-delimited chain format first (legacy).
+        // Try the chain-native colon-delimited payload first.
         let (mut sig_valid, mut sig_reason) =
             verify_receipt_signature(&r.public_key, &r.signature, canonical_content.as_bytes());
 
-        // If the colon-delimited check explicitly failed (not just unparseable),
-        // fall back to RFC 8785 canonical JSON. This handles receipts produced by
-        // `sign_receipt` / `SignedReceipt::sign()`, which sign a JSON object
-        // rather than the colon-delimited string.
+        // If that fails and we have the original signed receipt payload, retry
+        // against the exact canonical JSON bytes that were originally signed.
         if sig_valid == Some(false) {
-            let json_value = serde_json::json!({
-                "id": r.id,
-                "timestamp": r.timestamp,
-                "verdict": r.verdict,
-                "guard": r.guard,
-                "policy_name": r.policy_name,
-            });
-            if let Ok(canonical_json) = canonicalize_json(&json_value) {
-                let (json_sig_valid, json_sig_reason) = verify_receipt_signature(
+            if let Some(signed_receipt) = &r.signed_receipt {
+                let (json_sig_valid, json_sig_reason) = verify_signed_receipt_signature(
                     &r.public_key,
                     &r.signature,
-                    canonical_json.as_bytes(),
+                    signed_receipt,
                 );
                 if json_sig_valid == Some(true) {
                     sig_valid = json_sig_valid;
                     sig_reason = format!(
-                        "{} (verified via RFC 8785 canonical JSON fallback)",
+                        "{} (verified via embedded signed_receipt canonical payload)",
                         json_sig_reason,
                     );
+                } else if json_sig_valid == Some(false) {
+                    sig_valid = json_sig_valid;
+                    sig_reason = json_sig_reason;
                 }
-                // If the JSON fallback also failed, keep the original colon-delimited
-                // failure reason — it is more informative for chain-native receipts.
             }
         }
 
@@ -2063,6 +2091,7 @@ posture:
             signature: "a".repeat(128), // fake 64-byte hex sig
             public_key: "b".repeat(64), // fake 32-byte hex pubkey
             valid: true,
+            signed_receipt: None,
         }
     }
 
@@ -2143,6 +2172,7 @@ posture:
             signature: sig.to_hex(),
             public_key: pk_hex,
             valid: true,
+            signed_receipt: None,
         };
 
         let res = verify_receipt_chain(vec![r]).await.unwrap();
@@ -2169,6 +2199,7 @@ posture:
             signature: sig.to_hex(),
             public_key: pk_hex,
             valid: true,
+            signed_receipt: None,
         };
 
         let res = verify_receipt_chain(vec![r]).await.unwrap();
@@ -2188,6 +2219,7 @@ posture:
             signature: "not-hex-at-all".to_string(),
             public_key: "also-not-hex".to_string(),
             valid: true,
+            signed_receipt: None,
         };
 
         let res = verify_receipt_chain(vec![r]).await.unwrap();
@@ -2211,72 +2243,71 @@ posture:
         );
     }
 
-    /// P1-4: Receipts signed over RFC 8785 canonical JSON (as produced by
-    /// `sign_receipt` / `SignedReceipt::sign()`) should verify via the
-    /// dual-format fallback even though the primary colon-delimited check
-    /// would reject them.
+    /// P1-4: Receipts signed over the exact canonical hush-core payload should
+    /// verify via the embedded `signed_receipt` fallback even though the
+    /// primary colon-delimited check would reject them.
     #[tokio::test]
-    async fn verify_chain_rfc8785_json_signature_fallback() {
-        use hush_core::canonical::canonicalize as canonicalize_json;
-
+    async fn verify_chain_signed_receipt_payload_fallback() {
         let keypair = Keypair::generate();
         let pk_hex = keypair.public_key().to_hex();
 
         let id = "json-sig-receipt";
         let timestamp = "2026-03-09T10:00:00Z";
-        let verdict = "allow";
+        let verdict = Verdict::pass();
         let guard = "forbidden_path";
         let policy_name = "test-policy";
 
-        // Sign over the RFC 8785 canonical JSON of the receipt fields — this
-        // is the format produced by `sign_receipt`.
-        let json_value = serde_json::json!({
-            "id": id,
-            "timestamp": timestamp,
-            "verdict": verdict,
-            "guard": guard,
-            "policy_name": policy_name,
-        });
-        let canonical_json = canonicalize_json(&json_value)
-            .expect("canonicalize should not fail for simple JSON object");
-        let sig = keypair.sign(canonical_json.as_bytes());
+        let signed_receipt = SignedReceipt::sign(
+            Receipt::new(Hash::zero(), verdict).with_id(id.to_string()),
+            &keypair,
+        )
+        .expect("signing should succeed");
+        let sig = signed_receipt.signatures.signer.to_hex();
+        let signed_receipt_json =
+            serde_json::to_value(&signed_receipt).expect("serialization should succeed");
 
         let r = ChainReceiptInput {
             id: id.to_string(),
             timestamp: timestamp.to_string(),
-            verdict: verdict.to_string(),
+            verdict: "allow".to_string(),
             guard: guard.to_string(),
             policy_name: policy_name.to_string(),
-            signature: sig.to_hex(),
+            signature: sig,
             public_key: pk_hex,
             valid: true,
+            signed_receipt: Some(signed_receipt_json),
         };
 
         let res = verify_receipt_chain(vec![r]).await.unwrap();
         assert_eq!(res.chain_length, 1);
         assert!(
             res.chain_intact,
-            "chain should be intact via RFC 8785 fallback"
+            "chain should be intact via exact signed_receipt fallback"
         );
         assert!(res.all_signatures_valid);
         assert_eq!(res.receipts[0].signature_valid, Some(true));
         assert!(
             res.receipts[0]
                 .signature_reason
-                .contains("RFC 8785 canonical JSON fallback"),
+                .contains("embedded signed_receipt canonical payload"),
             "reason should mention the fallback path: {}",
             res.receipts[0].signature_reason,
         );
     }
 
-    /// P1-4: A receipt whose signature matches neither format should still
-    /// be reported as invalid (the fallback does not weaken verification).
+    /// P1-4: A receipt whose signature matches neither the chain-native payload
+    /// nor the embedded signed receipt should still be reported as invalid.
     #[tokio::test]
-    async fn verify_chain_rfc8785_fallback_does_not_weaken_verification() {
+    async fn verify_chain_signed_receipt_fallback_does_not_weaken_verification() {
         let keypair = Keypair::generate();
         let pk_hex = keypair.public_key().to_hex();
 
-        // Sign completely unrelated content.
+        let unrelated_signed_receipt = SignedReceipt::sign(Receipt::new(Hash::zero(), Verdict::pass()), &keypair)
+            .expect("signing should succeed");
+        let signed_receipt_json = serde_json::to_value(&unrelated_signed_receipt)
+            .expect("serialization should succeed");
+
+        // Sign completely unrelated content so neither payload matches.
         let sig = keypair.sign(b"totally unrelated content");
 
         let r = ChainReceiptInput {
@@ -2288,6 +2319,7 @@ posture:
             signature: sig.to_hex(),
             public_key: pk_hex,
             valid: true,
+            signed_receipt: Some(signed_receipt_json),
         };
 
         let res = verify_receipt_chain(vec![r]).await.unwrap();

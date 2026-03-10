@@ -1473,6 +1473,7 @@ export interface FleetReceipt {
   public_key: string;
   chain_hash?: string;
   metadata?: Record<string, unknown>;
+  signed_receipt?: Record<string, unknown>;
   action_type?: string;
   action_target?: string;
   valid?: boolean;
@@ -1504,6 +1505,7 @@ interface StoreReceiptPayload {
   chain_hash?: string;
   evidence?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
+  signed_receipt?: Record<string, unknown>;
 }
 
 /**
@@ -1716,6 +1718,13 @@ function isFleetReceipt(value: unknown): value is FleetReceipt {
 
 function toStoreReceiptPayload(receipt: FleetReceipt): StoreReceiptPayload {
   const metadata: Record<string, unknown> = { ...(receipt.metadata ?? {}) };
+  const signedReceipt =
+    receipt.signed_receipt ??
+    (receipt.evidence?.signed_receipt &&
+    typeof receipt.evidence.signed_receipt === "object" &&
+    !Array.isArray(receipt.evidence.signed_receipt)
+      ? (receipt.evidence.signed_receipt as Record<string, unknown>)
+      : undefined);
 
   metadata.client_receipt_id = receipt.id;
   if (receipt.action_type) metadata.action_type = receipt.action_type;
@@ -1734,6 +1743,7 @@ function toStoreReceiptPayload(receipt: FleetReceipt): StoreReceiptPayload {
   if (receipt.chain_hash) payload.chain_hash = receipt.chain_hash;
   if (receipt.evidence) payload.evidence = receipt.evidence;
   if (Object.keys(metadata).length > 0) payload.metadata = metadata;
+  if (signedReceipt) payload.signed_receipt = signedReceipt;
 
   return payload;
 }

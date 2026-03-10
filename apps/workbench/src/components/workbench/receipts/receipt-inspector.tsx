@@ -131,6 +131,12 @@ function receiptToFleet(r: Receipt): FleetReceipt {
     action_target: r.action.target,
     valid: r.valid,
   };
+  const signedReceipt =
+    r.evidence?.signed_receipt &&
+    typeof r.evidence.signed_receipt === "object" &&
+    !Array.isArray(r.evidence.signed_receipt)
+      ? (r.evidence.signed_receipt as Record<string, unknown>)
+      : undefined;
   if (r.keyType) metadata.key_type = r.keyType;
 
   return {
@@ -142,6 +148,7 @@ function receiptToFleet(r: Receipt): FleetReceipt {
     evidence: r.evidence,
     signature: r.signature,
     public_key: r.publicKey,
+    ...(signedReceipt ? { signed_receipt: signedReceipt } : {}),
     action_type: r.action.type,
     action_target: r.action.target,
     valid: r.valid,
@@ -155,6 +162,10 @@ function fleetToReceipt(f: FleetReceipt): Receipt {
   const actionType = receiptActionTypeFromFleet(f, metadata);
   const actionTarget = receiptActionTargetFromFleet(f, metadata);
   const keyType = receiptKeyTypeFromFleet(metadata);
+  const evidence = {
+    ...(f.evidence ?? {}),
+    ...(f.signed_receipt ? { signed_receipt: f.signed_receipt } : {}),
+  };
 
   return {
     id: fleetReceiptId(f),
@@ -166,7 +177,7 @@ function fleetToReceipt(f: FleetReceipt): Receipt {
       type: actionType,
       target: actionTarget,
     },
-    evidence: f.evidence ?? {},
+    evidence,
     signature: f.signature,
     publicKey: f.public_key,
     valid: receiptValidityFromFleet(f, metadata),
@@ -178,6 +189,14 @@ function fleetReceiptMetadata(f: FleetReceipt): Record<string, unknown> {
   return f.metadata && typeof f.metadata === "object" && !Array.isArray(f.metadata)
     ? f.metadata
     : {};
+}
+
+function signedReceiptTimestamp(value: unknown): string | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const receipt = (value as Record<string, unknown>).receipt;
+  if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)) return null;
+  const timestamp = (receipt as Record<string, unknown>).timestamp;
+  return typeof timestamp === "string" ? timestamp : null;
 }
 
 function fleetReceiptId(f: FleetReceipt): string {
@@ -555,12 +574,12 @@ export function ReceiptInspector() {
 
       const keyType = (signResp.key_type === "persistent" ? "persistent" : "ephemeral") as Receipt["keyType"];
 
-      const receipt: Receipt = {
-        id: crypto.randomUUID(),
-        timestamp: new Date().toISOString(),
-        verdict,
-        guard: primaryGuard,
-        policyName,
+        const receipt: Receipt = {
+          id: crypto.randomUUID(),
+          timestamp: signedReceiptTimestamp(signResp.signed_receipt) ?? new Date().toISOString(),
+          verdict,
+          guard: primaryGuard,
+          policyName,
         action: { type: sample.uiType, target: sample.target },
         evidence: {
           engine: "native",
@@ -659,7 +678,7 @@ export function ReceiptInspector() {
 
         const receipt: Receipt = {
           id: crypto.randomUUID(),
-          timestamp: new Date().toISOString(),
+          timestamp: signedReceiptTimestamp(resp.signed_receipt) ?? new Date().toISOString(),
           verdict: verdictPassed ? "allow" : "deny",
           guard: "policy_validation",
           policyName: state.activePolicy.name,
@@ -671,9 +690,6 @@ export function ReceiptInspector() {
             key_type: keyType,
             ...(extractedSignature ? {} : { signature_extraction_failed: true }),
           },
-          // Note: this signer signature was made over canonical JSON (RFC 8785),
-          // while verify_receipt_chain verifies against "id:timestamp:verdict:guard:policy_name".
-          // Chain signature verification will report mismatch for sign_receipt-generated receipts.
           signature: extractedSignature ?? "unsigned",
           publicKey: resp.public_key,
           // Mark as invalid if we couldn't extract a real signature — the receipt

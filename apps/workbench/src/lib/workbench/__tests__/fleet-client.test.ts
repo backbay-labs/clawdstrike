@@ -718,7 +718,20 @@ describe("receipt store adapters", () => {
     policy_name: "test-policy",
     signature: "a".repeat(128),
     public_key: "b".repeat(64),
-    evidence: { matched_pattern: "/etc/shadow" },
+    evidence: {
+      matched_pattern: "/etc/shadow",
+      signed_receipt: {
+        receipt: {
+          version: "1.0.0",
+          timestamp: "2026-03-09T23:50:00.000Z",
+          content_hash: "0".repeat(64),
+          verdict: { passed: false },
+        },
+        signatures: {
+          signer: "a".repeat(128),
+        },
+      },
+    },
     action_type: "file_access",
     action_target: "/etc/shadow",
     valid: true,
@@ -742,6 +755,7 @@ describe("receipt store adapters", () => {
               signature: sampleReceipt.signature,
               public_key: sampleReceipt.public_key,
               evidence: sampleReceipt.evidence,
+              signed_receipt: sampleReceipt.evidence?.signed_receipt,
               metadata: {
                 client_receipt_id: sampleReceipt.id,
                 action_type: sampleReceipt.action_type,
@@ -763,6 +777,7 @@ describe("receipt store adapters", () => {
     expect(result.limit).toBe(50);
     expect(result.receipts).toHaveLength(1);
     expect(result.receipts[0].metadata?.client_receipt_id).toBe(sampleReceipt.id);
+    expect(result.receipts[0].signed_receipt).toEqual(sampleReceipt.evidence?.signed_receipt);
   });
 
   it("stores batch receipts using the backend StoreReceiptRequest shape", async () => {
@@ -795,6 +810,7 @@ describe("receipt store adapters", () => {
           signature: sampleReceipt.signature,
           public_key: sampleReceipt.public_key,
           evidence: sampleReceipt.evidence,
+          signed_receipt: sampleReceipt.evidence?.signed_receipt,
           metadata: {
             source: "receipt-inspector",
             client_receipt_id: sampleReceipt.id,

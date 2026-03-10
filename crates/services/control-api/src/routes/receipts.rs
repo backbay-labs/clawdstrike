@@ -4,6 +4,7 @@ use std::sync::{Arc, RwLock};
 use axum::extract::{Path, Query, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use hush_core::receipt::{PublicKeySet, VerificationResult};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -158,6 +159,9 @@ pub struct StoredReceipt {
     /// Arbitrary metadata.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
+    /// Original signed receipt payload used for exact verification.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signed_receipt: Option<serde_json::Value>,
 }
 
 /// Paginated response wrapper.
@@ -193,6 +197,8 @@ pub struct StoreReceiptRequest {
     pub evidence: Option<serde_json::Value>,
     #[serde(default)]
     pub metadata: Option<serde_json::Value>,
+    #[serde(default)]
+    pub signed_receipt: Option<serde_json::Value>,
 }
 
 /// Request body for storing multiple receipts at once.
@@ -367,35 +373,13 @@ async fn verify_receipt(
     let public_key = hush_core::PublicKey::from_hex(public_key_hex)
         .map_err(|_| ApiError::BadRequest("invalid public key hex".to_string()))?;
 
-    let signature = hush_core::Signature::from_hex(&receipt.signature)
-        .map_err(|_| ApiError::BadRequest("receipt has invalid signature hex".to_string()))?;
-
-    // Reconstruct a minimal hush-core Receipt for canonical JSON generation.
-    let core_receipt = hush_core::Receipt::new(
-        hush_core::hashing::Hash::zero(), // placeholder; we verify against raw canonical
-        hush_core::Verdict::pass(),       // placeholder
-    );
-
-    // For proper verification we need the canonical JSON that was originally signed.
-    // Since we store the signature and public key but not the original canonical payload,
-    // we reconstruct verification by checking the signature against a canonical
-    // representation of the stored data.
-    let canonical_payload = build_verification_payload(&receipt);
-    let sig_valid =
-        hush_core::signing::verify_signature(&public_key, canonical_payload.as_bytes(), &signature);
-    // Also suppress unused variable warning for core_receipt
-    let _ = core_receipt;
-
-    let mut errors = Vec::new();
-    if !sig_valid {
-        errors.push("signature verification failed".to_string());
-    }
+    let verification = verify_exact_signed_receipt(&receipt, public_key);
 
     Ok(Json(VerifyReceiptResponse {
-        valid: sig_valid,
-        signer_valid: sig_valid,
+        valid: verification.valid,
+        signer_valid: verification.signer_valid,
         receipt_id: id,
-        errors,
+        errors: verification.errors,
     }))
 }
 
@@ -433,6 +417,18 @@ fn validate_store_request(req: &StoreReceiptRequest) -> Result<(), ApiError> {
         ApiError::BadRequest("invalid public_key: not a valid Ed25519 public key hex".to_string())
     })?;
 
+    if let Some(signed_receipt_json) = &req.signed_receipt {
+        let signed_receipt: hush_core::SignedReceipt =
+            serde_json::from_value(signed_receipt_json.clone())
+                .map_err(|e| ApiError::BadRequest(format!("invalid signed_receipt: {}", e)))?;
+
+        if signed_receipt.signatures.signer.to_hex() != req.signature {
+            return Err(ApiError::BadRequest(
+                "signed_receipt.signatures.signer must match signature".to_string(),
+            ));
+        }
+    }
+
     Ok(())
 }
 
@@ -449,43 +445,57 @@ fn stored_receipt_from_request(tenant_id: Uuid, req: StoreReceiptRequest) -> Sto
         chain_hash: req.chain_hash,
         evidence: req.evidence,
         metadata: req.metadata,
+        signed_receipt: req.signed_receipt,
     }
 }
 
-/// Build a canonical JSON payload for signature verification.
-///
-/// This reconstructs the signable payload from stored fields. In practice, the
-/// agent-side signer should use the same canonical form. For now we produce a
-/// deterministic JSON object sorted by key (RFC 8785 / JCS style).
-fn build_verification_payload(receipt: &StoredReceipt) -> String {
-    // Build a sorted JSON object of the signed fields.
-    let mut map = serde_json::Map::new();
-    if let Some(ref chain_hash) = receipt.chain_hash {
-        map.insert("chain_hash".to_string(), serde_json::json!(chain_hash));
-    }
-    if let Some(ref evidence) = receipt.evidence {
-        map.insert("evidence".to_string(), evidence.clone());
-    }
-    map.insert("guard".to_string(), serde_json::json!(receipt.guard));
-    if let Some(ref metadata) = receipt.metadata {
-        map.insert("metadata".to_string(), metadata.clone());
-    }
-    map.insert(
-        "policy_name".to_string(),
-        serde_json::json!(receipt.policy_name),
-    );
-    map.insert(
-        "public_key".to_string(),
-        serde_json::json!(receipt.public_key),
-    );
-    map.insert(
-        "timestamp".to_string(),
-        serde_json::json!(receipt.timestamp),
-    );
-    map.insert("verdict".to_string(), serde_json::json!(receipt.verdict));
+fn verify_exact_signed_receipt(
+    receipt: &StoredReceipt,
+    public_key: hush_core::PublicKey,
+) -> VerificationResult {
+    let Some(signed_receipt_json) = &receipt.signed_receipt else {
+        return VerificationResult {
+            valid: false,
+            signer_valid: false,
+            cosigner_valid: None,
+            errors: vec![
+                "receipt does not include signed_receipt; exact payload unavailable".to_string(),
+            ],
+            error_codes: vec!["VFY_RECEIPT_PAYLOAD_MISSING".to_string()],
+            policy_subcode: None,
+        };
+    };
 
-    // serde_json::Map preserves insertion order; keys inserted alphabetically above.
-    serde_json::to_string(&serde_json::Value::Object(map)).unwrap_or_default()
+    let signed_receipt: hush_core::SignedReceipt =
+        match serde_json::from_value(signed_receipt_json.clone()) {
+            Ok(signed_receipt) => signed_receipt,
+            Err(e) => {
+                return VerificationResult {
+                    valid: false,
+                    signer_valid: false,
+                    cosigner_valid: None,
+                    errors: vec![format!("stored signed_receipt is invalid: {}", e)],
+                    error_codes: vec!["VFY_RECEIPT_PAYLOAD_INVALID".to_string()],
+                    policy_subcode: None,
+                };
+            }
+        };
+
+    if signed_receipt.signatures.signer.to_hex() != receipt.signature {
+        return VerificationResult {
+            valid: false,
+            signer_valid: false,
+            cosigner_valid: None,
+            errors: vec![
+                "stored signature field does not match signed_receipt.signatures.signer"
+                    .to_string(),
+            ],
+            error_codes: vec!["VFY_RECEIPT_SIGNATURE_MISMATCH".to_string()],
+            policy_subcode: None,
+        };
+    }
+
+    signed_receipt.verify(&PublicKeySet::new(public_key))
 }
 
 // ---------------------------------------------------------------------------
@@ -513,6 +523,7 @@ mod tests {
             chain_hash: None,
             evidence: None,
             metadata: None,
+            signed_receipt: None,
         }
     }
 
@@ -610,28 +621,51 @@ mod tests {
     }
 
     #[test]
-    fn verification_payload_is_deterministic() {
+    fn exact_verification_uses_stored_signed_receipt() {
         let tenant = Uuid::new_v4();
-        let receipt = make_receipt(tenant, "default");
-        let p1 = build_verification_payload(&receipt);
-        let p2 = build_verification_payload(&receipt);
-        assert_eq!(p1, p2);
+        let keypair = hush_core::Keypair::generate();
+        let signed_receipt = hush_core::SignedReceipt::sign(
+            hush_core::Receipt::new(hush_core::Hash::zero(), hush_core::Verdict::pass()),
+            &keypair,
+        )
+        .unwrap();
+        let public_key = keypair.public_key();
+
+        let mut receipt = make_receipt(tenant, "default");
+        receipt.signature = signed_receipt.signatures.signer.to_hex();
+        receipt.signed_receipt = Some(serde_json::to_value(&signed_receipt).unwrap());
+
+        let verification = verify_exact_signed_receipt(&receipt, public_key);
+        assert!(verification.valid);
+        assert!(verification.signer_valid);
+        assert!(verification.errors.is_empty());
     }
 
     #[test]
-    fn verification_payload_keys_are_sorted() {
+    fn exact_verification_rejects_signature_mismatch() {
         let tenant = Uuid::new_v4();
-        let mut receipt = make_receipt(tenant, "default");
-        receipt.evidence = Some(serde_json::json!({"path": "/etc/passwd"}));
-        receipt.chain_hash = Some("aabbccdd".to_string());
+        let keypair = hush_core::Keypair::generate();
+        let other_keypair = hush_core::Keypair::generate();
+        let signed_receipt = hush_core::SignedReceipt::sign(
+            hush_core::Receipt::new(hush_core::Hash::zero(), hush_core::Verdict::pass()),
+            &keypair,
+        )
+        .unwrap();
 
-        let payload = build_verification_payload(&receipt);
-        let parsed: serde_json::Value = serde_json::from_str(&payload).unwrap();
-        let obj = parsed.as_object().unwrap();
-        let keys: Vec<&String> = obj.keys().collect();
-        let mut sorted = keys.clone();
-        sorted.sort();
-        assert_eq!(keys, sorted, "payload keys must be in sorted order");
+        let mut receipt = make_receipt(tenant, "default");
+        receipt.signature = other_keypair.sign(b"wrong").to_hex();
+        receipt.signed_receipt = Some(serde_json::to_value(&signed_receipt).unwrap());
+
+        let verification = verify_exact_signed_receipt(&receipt, keypair.public_key());
+        assert!(!verification.valid);
+        assert!(!verification.signer_valid);
+        assert_eq!(
+            verification.errors,
+            vec![
+                "stored signature field does not match signed_receipt.signatures.signer"
+                    .to_string()
+            ]
+        );
     }
 
     #[test]
@@ -646,6 +680,7 @@ mod tests {
             chain_hash: None,
             evidence: None,
             metadata: None,
+            signed_receipt: None,
         };
         assert!(validate_store_request(&req).is_err());
     }

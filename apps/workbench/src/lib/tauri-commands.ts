@@ -120,6 +120,7 @@ export interface TauriChainReceiptInput {
   signature: string;
   publicKey: string;
   valid: boolean;
+  signedReceipt?: Record<string, unknown>;
 }
 
 export interface TauriChainReceiptVerification {
