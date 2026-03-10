@@ -166,6 +166,9 @@ const LIBRARY_PROMPT_CARDS: { hintId: HintId; fallbackLabel: string; fallbackPro
 function LibraryPromptCards() {
   const hintCtx = useHintSettingsSafe();
 
+  // Respect the master toggle — when hints are disabled, hide the cards
+  if (hintCtx && !hintCtx.showHints) return null;
+
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
       {LIBRARY_PROMPT_CARDS.map((card) => {

@@ -2,7 +2,7 @@
 // Hint Settings — configurable Claude Code hint text and visibility
 // Persisted to localStorage independently of the policy store.
 // ---------------------------------------------------------------------------
-import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, useMemo, type ReactNode } from "react";
 import React from "react";
 
 // ---------------------------------------------------------------------------
@@ -102,7 +102,7 @@ export const DEFAULT_HINTS: Record<HintId, HintConfig> = {
 
 interface HintSettingsState {
   showHints: boolean;           // Master toggle -- show/hide all hints
-  overrides: Record<string, Partial<HintConfig>>; // Only non-default values stored
+  overrides: Partial<Record<HintId, Partial<HintConfig>>>; // Only non-default values stored
 }
 
 const DEFAULT_STATE: HintSettingsState = {
@@ -131,14 +131,14 @@ function loadState(): HintSettingsState {
         : DEFAULT_STATE.overrides;
 
     // Validate overrides: each value must be an object with optional hint/prompt strings
-    const validOverrides: Record<string, Partial<HintConfig>> = {};
+    const validOverrides: Partial<Record<HintId, Partial<HintConfig>>> = {};
     for (const [key, val] of Object.entries(overrides)) {
       if (typeof val !== "object" || val === null) continue;
       const patch: Partial<HintConfig> = {};
       const v = val as Record<string, unknown>;
       if (typeof v.hint === "string" && v.hint.length > 0) patch.hint = v.hint;
       if (typeof v.prompt === "string" && v.prompt.length > 0) patch.prompt = v.prompt;
-      if (Object.keys(patch).length > 0) validOverrides[key] = patch;
+      if (Object.keys(patch).length > 0) validOverrides[key as HintId] = patch;
     }
 
     return { showHints, overrides: validOverrides };
@@ -266,15 +266,18 @@ export function HintSettingsProvider({ children }: { children: ReactNode }) {
     [state.overrides],
   );
 
-  const value: HintSettingsContextValue = {
-    showHints: state.showHints,
-    setShowHints,
-    getHint,
-    updateHint,
-    resetHint,
-    resetAll,
-    isCustomized,
-  };
+  const value: HintSettingsContextValue = useMemo(
+    () => ({
+      showHints: state.showHints,
+      setShowHints,
+      getHint,
+      updateHint,
+      resetHint,
+      resetAll,
+      isCustomized,
+    }),
+    [state.showHints, setShowHints, getHint, updateHint, resetHint, resetAll, isCustomized],
+  );
 
   return React.createElement(HintSettingsContext.Provider, { value }, children);
 }

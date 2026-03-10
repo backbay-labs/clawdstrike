@@ -127,16 +127,10 @@ describe("HintSettings", () => {
     // that has the switch indicator. The toggle is inside the header area.
     // The switch is the span with rounded-full classes. We can find the toggle button
     // by its role.
-    const toggleButtons = screen.getAllByRole("button");
-    // The first button in the header area is the toggle
-    // Look for the button that contains the toggle visual (not Reset All)
-    const toggleButton = toggleButtons.find((btn) => {
-      // Toggle button does not have text content like "Reset All"
-      return !btn.textContent?.includes("Reset");
-    });
-    expect(toggleButton).toBeDefined();
+    const toggleButton = screen.getByRole("switch", { name: "Show Claude Code Hints" });
+    expect(toggleButton).toHaveAttribute("aria-checked", "true");
 
-    await user.click(toggleButton!);
+    await user.click(toggleButton);
     expect(mockSetShowHints).toHaveBeenCalledWith(false);
   });
 
@@ -145,12 +139,10 @@ describe("HintSettings", () => {
     const user = userEvent.setup();
     render(<HintSettings />);
 
-    const toggleButtons = screen.getAllByRole("button");
-    const toggleButton = toggleButtons.find((btn) => {
-      return !btn.textContent?.includes("Reset");
-    });
+    const toggleButton = screen.getByRole("switch", { name: "Show Claude Code Hints" });
+    expect(toggleButton).toHaveAttribute("aria-checked", "false");
 
-    await user.click(toggleButton!);
+    await user.click(toggleButton);
     expect(mockSetShowHints).toHaveBeenCalledWith(true);
   });
 

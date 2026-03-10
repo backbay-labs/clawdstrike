@@ -94,6 +94,9 @@ export function HintSettings() {
           )}
           <button
             onClick={() => setShowHints(!showHints)}
+            role="switch"
+            aria-checked={showHints}
+            aria-label="Show Claude Code Hints"
             className="flex items-center gap-2.5 group"
           >
             <span
