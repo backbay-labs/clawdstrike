@@ -290,7 +290,10 @@ wait_for_text "Connected — hushd"
 
 click_text "Connect to Fleet"
 wait_for_text "FLEET SUMMARY"
-pw eval '() => ({ apiKey: localStorage.getItem("clawdstrike_api_key"), controlApiToken: localStorage.getItem("clawdstrike_control_api_token") })' >"$auth_storage_file"
+pw eval '() => ({
+  apiKey: sessionStorage.getItem("clawdstrike_api_key") ?? localStorage.getItem("clawdstrike_api_key"),
+  controlApiToken: sessionStorage.getItem("clawdstrike_control_api_token") ?? localStorage.getItem("clawdstrike_control_api_token"),
+})' >"$auth_storage_file"
 grep -Fq "$HUSHD_API_KEY" "$auth_storage_file"
 grep -Fq "$control_api_token" "$auth_storage_file"
 capture_page "settings-connected"

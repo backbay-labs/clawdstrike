@@ -119,6 +119,31 @@ const RECEIPT_ACTION_TYPES: readonly TestActionType[] = [
   "user_input",
 ];
 
+function getSignedReceiptPayload(receipt: Receipt): Record<string, unknown> | undefined {
+  const signedReceipt = receipt.evidence?.signed_receipt;
+  return signedReceipt && typeof signedReceipt === "object" && !Array.isArray(signedReceipt)
+    ? (signedReceipt as Record<string, unknown>)
+    : undefined;
+}
+
+function isFixedHex(value: string, byteLength: number): boolean {
+  const normalized = value.startsWith("0x") ? value.slice(2) : value;
+  return normalized.length === byteLength * 2 && /^[0-9a-f]+$/i.test(normalized);
+}
+
+function receiptSyncSkipReason(receipt: Receipt): string | null {
+  if (receipt.imported) return "imported";
+  if (!receipt.valid) return "marked invalid";
+  if (!isFixedHex(receipt.signature, 64)) return "missing valid Ed25519 signature";
+  if (!isFixedHex(receipt.publicKey, 32)) return "missing valid Ed25519 public key";
+  if (!getSignedReceiptPayload(receipt)) return "missing signed receipt payload";
+  return null;
+}
+
+function isFleetSyncEligible(receipt: Receipt): boolean {
+  return receiptSyncSkipReason(receipt) === null;
+}
+
 // ---------------------------------------------------------------------------
 // Fleet sync helpers
 // ---------------------------------------------------------------------------
@@ -131,13 +156,9 @@ function receiptToFleet(r: Receipt): FleetReceipt {
     action_target: r.action.target,
     valid: r.valid,
   };
-  const signedReceipt =
-    r.evidence?.signed_receipt &&
-    typeof r.evidence.signed_receipt === "object" &&
-    !Array.isArray(r.evidence.signed_receipt)
-      ? (r.evidence.signed_receipt as Record<string, unknown>)
-      : undefined;
+  const signedReceipt = getSignedReceiptPayload(r);
   if (r.keyType) metadata.key_type = r.keyType;
+  if (r.imported) metadata.imported = true;
 
   return {
     id: r.id,
@@ -294,12 +315,17 @@ export function ReceiptInspector() {
   const [loadingFleet, setLoadingFleet] = useState(false);
   const [fleetError, setFleetError] = useState("");
   const prevReceiptsLenRef = useRef(receipts.length);
+  const eligibleReceiptCount = useMemo(
+    () => receipts.filter(isFleetSyncEligible).length,
+    [receipts],
+  );
 
   // Count of receipts that have not yet been synced to fleet
   const unsyncedCount = useMemo(
-    () => receipts.filter((r) => !syncedIds.has(r.id)).length,
+    () => receipts.filter((r) => !syncedIds.has(r.id) && isFleetSyncEligible(r)).length,
     [receipts, syncedIds],
   );
+  const syncedEligibleCount = eligibleReceiptCount - unsyncedCount;
 
   // Auto-upload newly generated receipts when fleet is connected
   useEffect(() => {
@@ -307,9 +333,7 @@ export function ReceiptInspector() {
     // Detect if a new receipt was prepended (length increased)
     if (receipts.length > prevReceiptsLenRef.current && receipts.length > 0) {
       const newest = receipts[0];
-      // Finding 7: Never auto-sync imported receipts to fleet (may be unsigned/forged)
-      const isImported = (newest as Receipt & { imported?: boolean }).imported === true;
-      if (!syncedIds.has(newest.id) && !isImported) {
+      if (!syncedIds.has(newest.id) && isFleetSyncEligible(newest)) {
         // Fire-and-forget upload of the single new receipt
         storeReceiptsBatch(connection, [receiptToFleet(newest)])
           .then((res) => {
@@ -333,24 +357,38 @@ export function ReceiptInspector() {
   /** Batch-upload all unsynced local receipts to fleet. */
   const handleSyncToFleet = useCallback(async () => {
     if (!fleetConnected) return;
-    const unsynced = receipts.filter((r) => !syncedIds.has(r.id));
-    if (unsynced.length === 0) return;
+    const pendingReceipts = receipts.filter((r) => !syncedIds.has(r.id));
+    const eligible = pendingReceipts.filter(isFleetSyncEligible);
+    const skipped = pendingReceipts.length - eligible.length;
+    if (eligible.length === 0) {
+      if (pendingReceipts.length > 0) {
+        setFleetError(
+          "No pending receipts are eligible for fleet sync. Imported, unsigned, or unverifiable receipts stay local.",
+        );
+      }
+      return;
+    }
 
     setSyncing(true);
     setFleetError("");
     try {
-      const fleetReceipts = unsynced.map(receiptToFleet);
+      const fleetReceipts = eligible.map(receiptToFleet);
       const res = await storeReceiptsBatch(connection, fleetReceipts);
       if (res.success) {
         const newSynced = new Set(syncedIds);
-        for (const r of unsynced) newSynced.add(r.id);
+        for (const r of eligible) newSynced.add(r.id);
         writeSyncedIds(newSynced);
         setSyncedIds(newSynced);
+        if (skipped > 0) {
+          setFleetError(
+            `Synced ${eligible.length} receipt(s); skipped ${skipped} imported or unverifiable receipt(s).`,
+          );
+        }
         emitAuditEvent({
           eventType: "receipt.fleet_sync",
           source: "receipt",
           summary: `Synced ${res.stored} receipt(s) to fleet`,
-          details: { stored: res.stored, total: unsynced.length },
+          details: { stored: res.stored, total: eligible.length, skipped },
         });
       } else {
         setFleetError(res.error ?? "Sync failed");
@@ -908,7 +946,7 @@ export function ReceiptInspector() {
           </button>
 
           <span className="ml-auto text-[9px] font-mono text-[#6f7f9a]/40">
-            {receipts.length - unsyncedCount}/{receipts.length} synced
+            {syncedEligibleCount}/{eligibleReceiptCount} eligible synced
           </span>
         </div>
       )}

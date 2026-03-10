@@ -41,7 +41,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 FROM debian:bookworm-slim
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ca-certificates libssl3 tini wget && \
+    apt-get install -y --no-install-recommends ca-certificates libssl3 tini && \
     rm -rf /var/lib/apt/lists/*
 
 # Create non-root user

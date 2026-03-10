@@ -16,7 +16,7 @@ services:
       - CLAWDSTRIKE_LOG_LEVEL=info
       - CLAWDSTRIKE_API_KEY=${CLAWDSTRIKE_API_KEY:-changeme}
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:8080/health || exit 1"]
+      test: ["CMD-SHELL", "hushd status http://127.0.0.1:8080 >/dev/null 2>&1 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3

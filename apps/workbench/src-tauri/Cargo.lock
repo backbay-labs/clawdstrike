@@ -622,6 +622,7 @@ dependencies = [
  "hostname",
  "hush-core",
  "iota_stronghold",
+ "libc",
  "serde",
  "serde_json",
  "serde_yaml",

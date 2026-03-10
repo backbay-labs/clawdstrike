@@ -3,9 +3,15 @@
 //! These commands integrate directly with the `clawdstrike` and `hush-core` crates
 //! without requiring a running daemon. All evaluation happens in-process.
 
-use std::path::Path;
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::Instant;
+
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
+#[cfg(windows)]
+use std::os::windows::fs::OpenOptionsExt;
 
 use serde::{Deserialize, Serialize};
 
@@ -122,7 +128,7 @@ fn check_sensitive_path(check_str: &str) -> Result<(), String> {
 ///
 /// Rejects paths with `..` segments after normalization and paths that target
 /// sensitive directories or files.
-fn validate_file_path(path: &str) -> Result<(), String> {
+fn validate_file_path(path: &str) -> Result<PathBuf, String> {
     if path.is_empty() {
         return Err("Empty file path".into());
     }
@@ -176,7 +182,75 @@ fn validate_file_path(path: &str) -> Result<(), String> {
     // case-insensitive sensitive-path matching.
     let check_str = normalized_str.replace('\\', "/").to_lowercase();
 
-    check_sensitive_path(&check_str)
+    check_sensitive_path(&check_str)?;
+    Ok(normalized)
+}
+
+#[cfg(windows)]
+const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+
+fn open_file_read_no_follow(path: &Path) -> Result<std::fs::File, String> {
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    options.custom_flags(libc::O_NOFOLLOW);
+    #[cfg(windows)]
+    options.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
+    options.open(path).map_err(|e| {
+        eprintln!("[workbench] file open error: {e}");
+        "Failed to read file".to_string()
+    })
+}
+
+fn open_file_write_no_follow(path: &Path) -> Result<std::fs::File, String> {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    options.custom_flags(libc::O_NOFOLLOW);
+    #[cfg(windows)]
+    options.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
+    options.open(path).map_err(|e| {
+        eprintln!("[workbench] file open error: {e}");
+        "Failed to write file".to_string()
+    })
+}
+
+async fn read_text_file_secure(path: PathBuf) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        let mut file = open_file_read_no_follow(&path)?;
+        let mut yaml = String::new();
+        file.read_to_string(&mut yaml).map_err(|e| {
+            eprintln!("[workbench] file read error: {e}");
+            "Failed to read file".to_string()
+        })?;
+        Ok(yaml)
+    })
+    .await
+    .map_err(|e| {
+        eprintln!("[workbench] file read task join error: {e}");
+        "Failed to read file".to_string()
+    })?
+}
+
+async fn write_text_file_secure(path: PathBuf, output: String) -> Result<(), String> {
+    let bytes = output.into_bytes();
+    tokio::task::spawn_blocking(move || {
+        let mut file = open_file_write_no_follow(&path)?;
+        file.write_all(&bytes).map_err(|e| {
+            eprintln!("[workbench] file write error: {e}");
+            "Failed to write file".to_string()
+        })?;
+        file.sync_all().map_err(|e| {
+            eprintln!("[workbench] file sync error: {e}");
+            "Failed to write file".to_string()
+        })?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| {
+        eprintln!("[workbench] file write task join error: {e}");
+        "Failed to write file".to_string()
+    })?
 }
 
 // ---------------------------------------------------------------------------
@@ -1266,7 +1340,7 @@ pub async fn export_policy_file(
         ));
     }
 
-    validate_file_path(&path)?;
+    let _export_path = validate_file_path(&path)?;
 
     let fmt = format.as_deref().unwrap_or("yaml");
 
@@ -1308,25 +1382,20 @@ pub async fn export_policy_file(
     };
 
     // Re-validate the canonical path just before I/O to minimize the TOCTOU window.
-    validate_file_path(&path)?;
+    let export_path = validate_file_path(&path)?;
 
-    tokio::fs::write(&path, output.as_bytes())
-        .await
-        .map_err(|e| {
-            eprintln!("[workbench] file write error: {e}");
-            "Failed to write file".to_string()
-        })?;
+    write_text_file_secure(export_path.clone(), output).await?;
 
     // Post-write verification: re-canonicalize the written file and re-check
     // sensitive path patterns on the resolved path.
-    let written = Path::new(&path);
+    let written = export_path.as_path();
     if written.exists() {
         if let Ok(canon) = written.canonicalize() {
             let canon_check = canon.to_string_lossy().replace('\\', "/").to_lowercase();
             if check_sensitive_path(&canon_check).is_err() {
                 // The file was written to a sensitive location (e.g. via symlink race).
                 // Remove it and return an error.
-                let _ = tokio::fs::remove_file(&path).await;
+                let _ = tokio::fs::remove_file(&export_path).await;
                 return Err("File resolved to a sensitive path after write; removed".to_string());
             }
         }
@@ -1342,18 +1411,14 @@ pub async fn export_policy_file(
 /// Read a YAML file from disk, parse and validate it, and return structured results.
 #[tauri::command]
 pub async fn import_policy_file(path: String) -> Result<ImportResponse, String> {
-    validate_file_path(&path)?;
-
-    // Re-validate just before I/O to minimize TOCTOU window.
-    let yaml = tokio::fs::read_to_string(&path)
-        .await
-        .map_err(|e| {
-            eprintln!("[workbench] file read error: {e}");
-            "Failed to read file".to_string()
-        })?;
+    // Resolve the canonical safe path up front and read that resolved target
+    // directly. The final open uses no-follow semantics so a last-moment
+    // symlink swap cannot redirect the read to another file.
+    let import_path = validate_file_path(&path)?;
+    let yaml = read_text_file_secure(import_path.clone()).await?;
 
     // Post-open re-canonicalize and check the resolved path.
-    let opened = Path::new(&path);
+    let opened = import_path.as_path();
     if opened.exists() {
         if let Ok(canon) = opened.canonicalize() {
             let canon_check = canon.to_string_lossy().replace('\\', "/").to_lowercase();
@@ -1429,7 +1494,6 @@ mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used)]
 
     use super::*;
-    use std::io::Write as _;
     use tempfile::NamedTempFile;
 
     /// A minimal valid policy YAML string for testing.
@@ -2424,7 +2488,8 @@ posture:
         assert!(
             res.receipts[0]
                 .signature_reason
-                .contains("embedded signed_receipt canonical payload"),
+                .as_str()
+                .contains("canonical JSON payload"),
             "reason should mention the fallback path: {}",
             res.receipts[0].signature_reason,
         );

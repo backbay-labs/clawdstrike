@@ -458,6 +458,8 @@ export interface Receipt {
   valid: boolean;
   /** "persistent" (Stronghold-stored key) or "ephemeral" (generated per-sign). */
   keyType?: "persistent" | "ephemeral";
+  /** Imported receipts stay local and are never eligible for fleet sync. */
+  imported?: boolean;
 }
 
 // ---- Guard metadata (for UI rendering) ----

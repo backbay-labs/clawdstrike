@@ -21,6 +21,7 @@ import {
   loadSavedConnectionAsync,
   saveConnectionConfig,
   clearConnectionConfig,
+  validateFleetUrl,
 } from "./fleet-client";
 
 // ---- Types ----
@@ -69,6 +70,13 @@ export function useFleetConnection(): FleetConnectionHook {
 
 const HEALTH_POLL_MS = 30_000;
 const AGENT_POLL_MS = 60_000;
+
+function assertValidFleetUrl(url: string, fieldName: string) {
+  const validation = validateFleetUrl(url);
+  if (!validation.valid) {
+    throw new Error(`Invalid ${fieldName}: ${validation.reason}`);
+  }
+}
 
 // ---- Default connection ----
 
@@ -235,6 +243,10 @@ export function FleetConnectionProvider({ children }: { children: ReactNode }) {
       setError(null);
 
       try {
+        assertValidFleetUrl(hushdUrl, "hushd URL");
+        if (controlApiUrl) {
+          assertValidFleetUrl(controlApiUrl, "control API URL");
+        }
         const health = await apiTestConnection(hushdUrl, apiKey);
         const conn: FleetConnection = {
           hushdUrl,

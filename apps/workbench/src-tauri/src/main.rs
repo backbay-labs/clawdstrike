@@ -28,8 +28,8 @@ fn main() {
         })
         .manage(StrongholdState::new())
         .manage(McpState::new())
-        .setup(|_app| {
-            if let Some(window) = _app.get_webview_window("main") {
+        .setup(|app| {
+            if let Some(window) = app.get_webview_window("main") {
                 #[cfg(not(target_os = "macos"))]
                 {
                     // On Windows/Linux, disable native decorations so the custom
@@ -47,9 +47,10 @@ fn main() {
             }
 
             // Spawn the embedded MCP server as a sidecar process.
-            let mcp_state: McpState = (*_app.state::<McpState>()).clone();
+            let mcp_state: McpState = (*app.state::<McpState>()).clone();
+            let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                match mcp_sidecar::spawn_mcp_server(&mcp_state).await {
+                match mcp_sidecar::spawn_mcp_server(&app_handle, &mcp_state).await {
                     Ok(info) => {
                         eprintln!(
                             "[workbench] MCP sidecar started at {} (token: {}...)",

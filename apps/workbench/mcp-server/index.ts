@@ -1945,8 +1945,12 @@ if (isMainModule()) {
     const port = Number(process.env.MCP_PORT) || 9877;
     const authToken = process.env.MCP_AUTH_TOKEN ?? "";
 
-    // Track active SSE transports by session ID for message routing.
+    // The MCP SDK only supports one active transport per McpServer instance.
+    // Keep SSE single-session so we never route POSTs to a transport before
+    // `server.connect()` finishes or force-close a live protocol instance.
     const sessions = new Map<string, SSEServerTransport>();
+    let activeSessionId: string | null = null;
+    let connectingSessionId: string | null = null;
 
     const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
       const url = new URL(req.url ?? "/", `http://localhost:${port}`);
@@ -1970,18 +1974,43 @@ if (isMainModule()) {
 
       // ---- SSE connection (GET /sse) ----
       if (url.pathname === "/sse" && req.method === "GET") {
+        if (activeSessionId || connectingSessionId) {
+          res.writeHead(409, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "SSE session already active" }));
+          return;
+        }
+
         const transport = new SSEServerTransport("/message", res);
-        sessions.set(transport.sessionId, transport);
+        connectingSessionId = transport.sessionId;
         transport.onclose = () => {
           sessions.delete(transport.sessionId);
+          if (activeSessionId === transport.sessionId) {
+            activeSessionId = null;
+          }
+          if (connectingSessionId === transport.sessionId) {
+            connectingSessionId = null;
+          }
         };
-        // Close any existing connection before accepting new one
+
         try {
-          await server.close();
-        } catch {
-          // Ignore close errors (no previous connection)
+          await server.connect(transport);
+          if (connectingSessionId === transport.sessionId) {
+            sessions.set(transport.sessionId, transport);
+            activeSessionId = transport.sessionId;
+            connectingSessionId = null;
+          }
+        } catch (error) {
+          if (connectingSessionId === transport.sessionId) {
+            connectingSessionId = null;
+          }
+          if (!res.headersSent) {
+            res.writeHead(500, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "failed to establish SSE session" }));
+          }
+          process.stderr.write(
+            `[mcp-server] SSE session bootstrap failed: ${error instanceof Error ? error.message : String(error)}\n`,
+          );
         }
-        await server.connect(transport);
         return;
       }
 

@@ -71,6 +71,26 @@ export function validateFleetUrl(url: string): { valid: true; tlsWarning?: strin
   return { valid: true };
 }
 
+function normalizedValidatedFleetUrl(url: string, fieldName: string): string {
+  const normalized = stripTrailingSlash(url.trim());
+  const validation = validateFleetUrl(normalized);
+  if (!validation.valid) {
+    throw new Error(`Invalid ${fieldName}: ${validation.reason}`);
+  }
+  return normalized;
+}
+
+function sanitizeStoredFleetUrl(url: string | null | undefined, fieldName: string): string {
+  if (!url) return "";
+  try {
+    return normalizedValidatedFleetUrl(url, fieldName);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`[fleet-client] ignoring invalid ${fieldName} from storage: ${message}`);
+    return "";
+  }
+}
+
 /** Rewrite absolute URLs to Vite dev proxy paths; passthrough in production. */
 function proxyUrl(absoluteUrl: string, kind: "hushd" | "control"): string {
   if (!DEV) return absoluteUrl;
@@ -269,8 +289,11 @@ interface BackendDelegationGraphResponse {
 export function loadSavedConnection(): Partial<FleetConnection> {
   try {
     return {
-      hushdUrl: localStorage.getItem(LS_HUSHD_URL) ?? "",
-      controlApiUrl: localStorage.getItem(LS_CONTROL_API_URL) ?? "",
+      hushdUrl: sanitizeStoredFleetUrl(localStorage.getItem(LS_HUSHD_URL), "hushd URL"),
+      controlApiUrl: sanitizeStoredFleetUrl(
+        localStorage.getItem(LS_CONTROL_API_URL),
+        "control API URL",
+      ),
       apiKey: "",
       controlApiToken: "",
     };
@@ -296,8 +319,8 @@ export async function loadSavedConnectionAsync(): Promise<Partial<FleetConnectio
     // If Stronghold had values, use them. Otherwise fall back to localStorage.
     if (hushdUrl || apiKey) {
       return {
-        hushdUrl: hushdUrl ?? "",
-        controlApiUrl: controlApiUrl ?? "",
+        hushdUrl: sanitizeStoredFleetUrl(hushdUrl, "hushd URL"),
+        controlApiUrl: sanitizeStoredFleetUrl(controlApiUrl, "control API URL"),
         apiKey: apiKey ?? "",
         controlApiToken: controlApiToken ?? "",
       };
@@ -321,12 +344,19 @@ export async function saveConnectionConfig(config: {
   apiKey: string;
   controlApiToken: string;
 }): Promise<void> {
+  const hushdUrl = config.hushdUrl
+    ? normalizedValidatedFleetUrl(config.hushdUrl, "hushd URL")
+    : "";
+  const controlApiUrl = config.controlApiUrl
+    ? normalizedValidatedFleetUrl(config.controlApiUrl, "control API URL")
+    : "";
+
   // Write all fields to secureStore (Stronghold on desktop, sessionStorage fallback on web).
   // Finding M6: await the writes instead of fire-and-forget.
   try {
     await Promise.all([
-      secureStore.set(SS_HUSHD_URL, config.hushdUrl),
-      secureStore.set(SS_CONTROL_API_URL, config.controlApiUrl),
+      secureStore.set(SS_HUSHD_URL, hushdUrl),
+      secureStore.set(SS_CONTROL_API_URL, controlApiUrl),
       secureStore.set(SS_API_KEY, config.apiKey),
       secureStore.set(SS_CONTROL_TOKEN, config.controlApiToken),
     ]);
@@ -338,8 +368,8 @@ export async function saveConnectionConfig(config: {
   // Only write non-secret URL fields to localStorage for sync-readable bootstrap.
   // Never write apiKey or controlApiToken to localStorage.
   try {
-    localStorage.setItem(LS_HUSHD_URL, config.hushdUrl);
-    localStorage.setItem(LS_CONTROL_API_URL, config.controlApiUrl);
+    localStorage.setItem(LS_HUSHD_URL, hushdUrl);
+    localStorage.setItem(LS_CONTROL_API_URL, controlApiUrl);
   } catch (e) {
     console.warn("[fleet-client] localStorage write failed:", e);
   }
@@ -388,20 +418,30 @@ function hushdHeaders(apiKey: string): Record<string, string> {
   return h;
 }
 
+function isJwtLikeToken(token: string): boolean {
+  const parts = token.split(".");
+  return (
+    parts.length === 3 &&
+    parts.every((part) => part.length > 0 && /^[A-Za-z0-9_-]+$/.test(part))
+  );
+}
+
 function controlHeaders(conn: FleetConnection): Record<string, string> {
   const h: Record<string, string> = { "Content-Type": "application/json" };
   const token = conn.controlApiToken || conn.apiKey;
   if (token) {
-    // Send as both Bearer (for JWTs) and x-api-key (for raw API keys).
-    // The server tries Bearer auth first, then falls back to x-api-key.
-    h["Authorization"] = `Bearer ${token}`;
-    h["x-api-key"] = token;
+    if (isJwtLikeToken(token)) {
+      h["Authorization"] = `Bearer ${token}`;
+    } else {
+      h["x-api-key"] = token;
+    }
   }
   return h;
 }
 
 /** Max response size accepted by jsonFetch (10 MB). */
 const MAX_RESPONSE_BYTES = 10_485_760;
+const MAX_ERROR_RESPONSE_BYTES = 2_048;
 
 /** Redact Bearer tokens and API key-like patterns from error messages. (Finding M3) */
 function redactSecrets(text: string): string {
@@ -410,10 +450,40 @@ function redactSecrets(text: string): string {
     .replace(/x-api-key[:\s]+[^\s,;}]+/gi, "x-api-key: [REDACTED]");
 }
 
+async function readResponseTextWithLimit(res: Response, maxBytes: number): Promise<string> {
+  const reader = res.body?.getReader();
+  if (!reader) {
+    const body = await res.arrayBuffer();
+    if (body.byteLength > maxBytes) {
+      throw new Error(`Response too large (${body.byteLength} bytes exceeds ${maxBytes} limit)`);
+    }
+    return new TextDecoder().decode(body);
+  }
+
+  const decoder = new TextDecoder();
+  let total = 0;
+  let text = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => {});
+      throw new Error(`Response too large (${total} bytes exceeds ${maxBytes} limit)`);
+    }
+    text += decoder.decode(value, { stream: true });
+  }
+
+  text += decoder.decode();
+  return text;
+}
+
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await httpFetch(url, { ...init, signal: init?.signal ?? AbortSignal.timeout(10_000) });
   if (!res.ok) {
-    const body = await res.text().catch(() => "");
+    const body = await readResponseTextWithLimit(res, MAX_ERROR_RESPONSE_BYTES).catch(() => "");
     // Finding M3: truncate error body and strip secrets
     const sanitized = redactSecrets(body.slice(0, 200));
     throw new Error(sanitized || `HTTP ${res.status}`);
@@ -424,10 +494,13 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   if (contentLength && parseInt(contentLength, 10) > MAX_RESPONSE_BYTES) {
     throw new Error(`Response too large (${contentLength} bytes exceeds ${MAX_RESPONSE_BYTES} limit)`);
   }
-  // Note: if no Content-Length header is present, we proceed without size checks.
-  // Streaming-based size limits would require reading the body differently.
-
-  return res.json() as Promise<T>;
+  const bodyText = await readResponseTextWithLimit(res, MAX_RESPONSE_BYTES);
+  try {
+    return JSON.parse(bodyText) as T;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Invalid JSON";
+    throw new Error(`Invalid JSON response: ${message}`);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -741,7 +814,7 @@ export async function fetchAgentList(conn: FleetConnection): Promise<AgentInfo[]
   } catch (e) {
     console.warn("[fleet-client] hushd agent list failed, trying control-api:", e);
     if (!conn.controlApiUrl) return [];
-    const ctrlUrl = stripTrailingSlash(conn.controlApiUrl);
+    const ctrlUrl = normalizedValidatedFleetUrl(conn.controlApiUrl, "control API URL");
     const res = await jsonFetch<unknown>(proxyUrl(`${ctrlUrl}/api/v1/agents`, "control"), {
       headers: controlHeaders(conn),
     });
@@ -788,8 +861,8 @@ export async function distributePolicy(
   if (!conn.controlApiUrl) {
     return { success: false, error: "Control API URL not configured" };
   }
-  const ctrlUrl = stripTrailingSlash(conn.controlApiUrl);
   try {
+    const ctrlUrl = normalizedValidatedFleetUrl(conn.controlApiUrl, "control API URL");
     const res = await jsonFetch<{ success?: boolean; hash?: string }>(
       proxyUrl(`${ctrlUrl}/api/v1/policies/deploy`, "control"),
       {
@@ -809,9 +882,12 @@ export async function distributePolicy(
 
 function preferredUrl(conn: FleetConnection): { url: string; kind: "control" | "hushd" } {
   if (conn.controlApiUrl) {
-    return { url: stripTrailingSlash(conn.controlApiUrl), kind: "control" };
+    return {
+      url: normalizedValidatedFleetUrl(conn.controlApiUrl, "control API URL"),
+      kind: "control",
+    };
   }
-  return { url: stripTrailingSlash(conn.hushdUrl), kind: "hushd" };
+  return { url: normalizedValidatedFleetUrl(conn.hushdUrl, "hushd URL"), kind: "hushd" };
 }
 
 // ---------------------------------------------------------------------------
@@ -1104,8 +1180,8 @@ export async function fetchDelegationGraphFromApi(
   conn: FleetConnection,
 ): Promise<DelegationGraph | null> {
   if (!conn.controlApiUrl) return null;
-  const url = stripTrailingSlash(conn.controlApiUrl);
   try {
+    const url = normalizedValidatedFleetUrl(conn.controlApiUrl, "control API URL");
     const grants = await jsonFetch<unknown[]>(proxyUrl(`${url}/api/v1/grants`, "control"), {
       headers: controlHeaders(conn),
     });

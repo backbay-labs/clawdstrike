@@ -15,7 +15,7 @@ services:
       - CLAWDSTRIKE_ADMIN_KEY=${CLAWDSTRIKE_ADMIN_KEY:-admin}
       - CLAWDSTRIKE_POLICY_BUNDLE_PUBKEY=${CLAWDSTRIKE_POLICY_BUNDLE_PUBKEY:-}
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:8080/health || exit 1"]
+      test: ["CMD-SHELL", "hushd status http://127.0.0.1:8080 >/dev/null 2>&1 || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 20

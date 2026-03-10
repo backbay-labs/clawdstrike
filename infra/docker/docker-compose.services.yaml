@@ -132,7 +132,7 @@ services:
       CLAWDSTRIKE_ADMIN_KEY: ${CLAWDSTRIKE_ADMIN_KEY:-clawdstrike-local-admin}
       CLAWDSTRIKE_AUTH_PEPPER: ${CLAWDSTRIKE_AUTH_PEPPER:-clawdstrike-local-pepper}
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:9876/health || exit 1"]
+      test: ["CMD-SHELL", "hushd status http://127.0.0.1:9876 >/dev/null 2>&1 || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 10

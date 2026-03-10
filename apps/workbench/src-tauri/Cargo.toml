@@ -30,6 +30,7 @@ sha2 = "0.10"
 zeroize = { version = "1", features = ["zeroize_derive"] }
 getrandom = "0.2"
 dirs-next = "2"
+libc = "0.2"
 
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }

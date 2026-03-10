@@ -151,6 +151,28 @@ async fn policies_deploy_and_enroll_backfills_policy_kv_bucket() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn api_key_auth_survives_invalid_bearer_header() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let list_resp = request_json_dual_auth(
+        &harness.app,
+        Method::GET,
+        "/api/v1/agents".to_string(),
+        Some("not-a-jwt"),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+
+    assert_eq!(list_resp.0, StatusCode::OK);
+    assert!(list_resp.1.as_array().is_some());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn run_migrations_is_safe_under_concurrent_startup() {
     if !docker_available() {
         eprintln!("Skipping integration test: docker is unavailable");
@@ -5581,14 +5603,23 @@ async fn receipt_ingest_rejects_viewer_but_allows_member() {
     )
     .await;
 
-    let public_key = hush_core::Keypair::generate().public_key().to_hex();
+    let keypair = hush_core::Keypair::generate();
+    let signed_receipt = hush_core::SignedReceipt::sign(
+        hush_core::Receipt::new(hush_core::Hash::zero(), hush_core::Verdict::pass()),
+        &keypair,
+    )
+    .unwrap();
+    let receipt_timestamp = signed_receipt.receipt.timestamp.clone();
+    let receipt_signature = signed_receipt.signatures.signer.to_hex();
+    let signed_receipt_json = serde_json::to_value(&signed_receipt).unwrap();
     let receipt_payload = serde_json::json!({
-        "timestamp": "2026-03-10T15:00:00Z",
+        "timestamp": receipt_timestamp,
         "verdict": "allow",
         "guard": "policy_validation",
         "policy_name": "strict",
-        "signature": "abcd",
-        "public_key": public_key,
+        "signature": receipt_signature,
+        "public_key": keypair.public_key().to_hex(),
+        "signed_receipt": signed_receipt_json,
         "metadata": {
             "client_receipt_id": "local-001"
         }
@@ -6939,6 +6970,43 @@ async fn request_json_bearer(
     }
     if let Some(key) = api_key {
         builder = builder.header("authorization", format!("Bearer {key}"));
+    }
+    let request = builder.body(body).expect("build request");
+
+    let response = app.clone().oneshot(request).await.expect("router request");
+    let status = response.status();
+    let bytes = to_bytes(response.into_body(), 2 * 1024 * 1024)
+        .await
+        .expect("read response body");
+    let body = if bytes.is_empty() {
+        serde_json::json!({})
+    } else {
+        serde_json::from_slice::<Value>(&bytes).expect("response json")
+    };
+    (status, body)
+}
+
+async fn request_json_dual_auth(
+    app: &axum::Router,
+    method: Method,
+    path: String,
+    bearer: Option<&str>,
+    api_key: Option<&str>,
+    json_body: Option<Value>,
+) -> (StatusCode, Value) {
+    let body = match &json_body {
+        Some(value) => Body::from(serde_json::to_vec(value).expect("serialize body")),
+        None => Body::empty(),
+    };
+    let mut builder = Request::builder().method(method).uri(path);
+    if json_body.is_some() {
+        builder = builder.header("content-type", "application/json");
+    }
+    if let Some(token) = bearer {
+        builder = builder.header("authorization", format!("Bearer {token}"));
+    }
+    if let Some(key) = api_key {
+        builder = builder.header("x-api-key", key);
     }
     let request = builder.body(body).expect("build request");
 

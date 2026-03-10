@@ -7,6 +7,7 @@ use axum::extract::{Path, Query, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use hush_core::receipt::{PublicKeySet, VerificationResult};
+use hush_core::{PublicKey, Signature, SignedReceipt};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -200,7 +201,7 @@ pub struct StoredReceipt {
     pub tenant_id: Uuid,
     /// ISO-8601 timestamp from the original receipt.
     pub timestamp: String,
-    /// Overall verdict: "allow" or "deny".
+    /// Overall verdict: "allow", "deny", or "warn".
     pub verdict: String,
     /// Guard that produced this receipt (e.g., "ForbiddenPathGuard").
     pub guard: String,
@@ -331,7 +332,10 @@ async fn list_receipts(
     let offset = query.offset.unwrap_or(0);
     let limit = query.limit.unwrap_or(50).min(500);
 
-    let (items, total) = state.receipt_store.list(auth.tenant_id, offset, limit).await?;
+    let (items, total) = state
+        .receipt_store
+        .list(auth.tenant_id, offset, limit)
+        .await?;
 
     Ok(Json(PaginatedResponse {
         items,
@@ -510,9 +514,9 @@ fn validate_store_request(req: &StoreReceiptRequest) -> Result<(), ApiError> {
     }
 
     // Validate verdict against an allow-list.
-    if !matches!(req.verdict.as_str(), "allow" | "deny") {
+    if !matches!(req.verdict.as_str(), "allow" | "deny" | "warn") {
         return Err(ApiError::BadRequest(
-            "verdict must be one of: allow, deny".to_string(),
+            "verdict must be one of: allow, deny, warn".to_string(),
         ));
     }
 
@@ -521,21 +525,44 @@ fn validate_store_request(req: &StoreReceiptRequest) -> Result<(), ApiError> {
         ApiError::BadRequest("timestamp must be a valid RFC 3339 datetime".to_string())
     })?;
 
-    // Validate that the public key is valid hex-encoded Ed25519.
-    hush_core::PublicKey::from_hex(&req.public_key).map_err(|_| {
+    let public_key = PublicKey::from_hex(&req.public_key).map_err(|_| {
         ApiError::BadRequest("invalid public_key: not a valid Ed25519 public key hex".to_string())
     })?;
+    Signature::from_hex(&req.signature).map_err(|_| {
+        ApiError::BadRequest("invalid signature: not a valid Ed25519 signature hex".to_string())
+    })?;
 
-    if let Some(signed_receipt_json) = &req.signed_receipt {
-        let signed_receipt: hush_core::SignedReceipt =
-            serde_json::from_value(signed_receipt_json.clone())
-                .map_err(|e| ApiError::BadRequest(format!("invalid signed_receipt: {}", e)))?;
+    let signed_receipt_json = req.signed_receipt.as_ref().ok_or_else(|| {
+        ApiError::BadRequest("signed_receipt is required for receipt storage".to_string())
+    })?;
+    let signed_receipt: SignedReceipt = serde_json::from_value(signed_receipt_json.clone())
+        .map_err(|e| ApiError::BadRequest(format!("invalid signed_receipt: {}", e)))?;
 
-        if signed_receipt.signatures.signer.to_hex() != req.signature {
-            return Err(ApiError::BadRequest(
-                "signed_receipt.signatures.signer must match signature".to_string(),
-            ));
-        }
+    if signed_receipt.signatures.signer.to_hex() != req.signature {
+        return Err(ApiError::BadRequest(
+            "signed_receipt.signatures.signer must match signature".to_string(),
+        ));
+    }
+
+    if signed_receipt.receipt.timestamp != req.timestamp {
+        return Err(ApiError::BadRequest(
+            "signed_receipt.receipt.timestamp must match timestamp".to_string(),
+        ));
+    }
+
+    let expected_passed = matches!(req.verdict.as_str(), "allow");
+    if signed_receipt.receipt.verdict.passed != expected_passed {
+        return Err(ApiError::BadRequest(
+            "signed_receipt.receipt.verdict must match verdict".to_string(),
+        ));
+    }
+
+    let verification = signed_receipt.verify(&PublicKeySet::new(public_key));
+    if !verification.valid {
+        return Err(ApiError::BadRequest(format!(
+            "signed_receipt failed verification: {}",
+            verification.errors.join("; ")
+        )));
     }
 
     Ok(())
@@ -808,6 +835,55 @@ mod tests {
             signed_receipt: None,
         };
         assert!(validate_store_request(&req).is_err());
+    }
+
+    fn make_signed_store_request(verdict: &str) -> StoreReceiptRequest {
+        let keypair = hush_core::Keypair::generate();
+        let receipt_verdict = if verdict == "allow" {
+            hush_core::Verdict::pass()
+        } else {
+            hush_core::Verdict::fail()
+        };
+        let signed_receipt = hush_core::SignedReceipt::sign(
+            hush_core::Receipt::new(hush_core::Hash::zero(), receipt_verdict),
+            &keypair,
+        )
+        .unwrap();
+
+        StoreReceiptRequest {
+            timestamp: signed_receipt.receipt.timestamp.clone(),
+            verdict: verdict.to_string(),
+            guard: "TestGuard".to_string(),
+            policy_name: "default".to_string(),
+            signature: signed_receipt.signatures.signer.to_hex(),
+            public_key: keypair.public_key().to_hex(),
+            chain_hash: None,
+            evidence: None,
+            metadata: None,
+            signed_receipt: Some(serde_json::to_value(&signed_receipt).unwrap()),
+        }
+    }
+
+    #[test]
+    fn validate_accepts_warn_verdict_with_signed_receipt() {
+        let req = make_signed_store_request("warn");
+        assert!(validate_store_request(&req).is_ok());
+    }
+
+    #[test]
+    fn validate_requires_signed_receipt() {
+        let mut req = make_signed_store_request("allow");
+        req.signed_receipt = None;
+        let err = validate_store_request(&req).unwrap_err();
+        assert!(matches!(err, ApiError::BadRequest(_)));
+    }
+
+    #[test]
+    fn validate_rejects_invalid_signed_receipt_signature() {
+        let mut req = make_signed_store_request("deny");
+        req.signature = "00".repeat(64);
+        let err = validate_store_request(&req).unwrap_err();
+        assert!(matches!(err, ApiError::BadRequest(_)));
     }
 
     #[test]

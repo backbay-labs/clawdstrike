@@ -60,12 +60,14 @@ afterAll(() => mockFleetServer.close());
 // ---- Helpers ----
 
 /** A standard FleetConnection pointing to our mock hushd + control-api. */
+const TEST_CONTROL_API_JWT = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.signature";
+
 function makeConn(overrides?: Partial<FleetConnection>): FleetConnection {
   return {
     hushdUrl: "http://localhost:9876",
     controlApiUrl: "http://localhost:9877",
     apiKey: "test-api-key",
-    controlApiToken: "test-control-token",
+    controlApiToken: TEST_CONTROL_API_JWT,
     connected: true,
     hushdHealth: null,
     agentCount: 0,
@@ -823,6 +825,52 @@ describe("receipt store adapters", () => {
     });
   });
 
+  it("sends raw control API keys via x-api-key instead of Authorization", async () => {
+    const { http: mswHttp, HttpResponse: MswResponse } = await import("msw");
+    let authHeader: string | null = null;
+    let apiKeyHeader: string | null = null;
+
+    mockFleetServer.use(
+      mswHttp.post("/_proxy/control/api/v1/receipts/batch", async ({ request }) => {
+        authHeader = request.headers.get("Authorization");
+        apiKeyHeader = request.headers.get("x-api-key");
+        await request.json();
+        return MswResponse.json({ count: 1, stored: [{ id: "server-receipt-001" }] });
+      }),
+    );
+
+    const result = await storeReceiptsBatch(
+      makeConn({ controlApiToken: "cs_local_dev_key" }),
+      [sampleReceipt],
+    );
+    expect(result.success).toBe(true);
+    expect(authHeader).toBeNull();
+    expect(apiKeyHeader).toBe("cs_local_dev_key");
+  });
+
+  it("rejects oversized JSON responses without relying on Content-Length", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(new Uint8Array(10_485_761));
+            controller.close();
+          },
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+
+    await expect(fetchReceipts(makeConn(), { limit: 50 })).rejects.toThrow(
+      /Response too large/,
+    );
+
+    fetchSpy.mockRestore();
+  });
+
   it("sends the required verify request body and maps backend errors", async () => {
     const { http: mswHttp, HttpResponse: MswResponse } = await import("msw");
     let capturedBody: unknown;
@@ -885,7 +933,7 @@ describe("fleetClient convenience object", () => {
     fleetSsStore["clawdstrike_hushd_url"] = "http://localhost:9876";
     fleetSsStore["clawdstrike_control_api_url"] = "http://localhost:9877";
     fleetSsStore["clawdstrike_api_key"] = "test-api-key";
-    fleetSsStore["clawdstrike_control_api_token"] = "test-control-token";
+    fleetSsStore["clawdstrike_control_api_token"] = TEST_CONTROL_API_JWT;
   }
 
   beforeEach(() => {
@@ -1222,6 +1270,26 @@ describe("persistence helpers", () => {
     const saved = loadSavedConnection();
     expect(saved.hushdUrl).toBe("");
     expect(saved.apiKey).toBe("");
+  });
+
+  it("loadSavedConnection drops invalid stored control API URLs", () => {
+    localStorage.setItem("clawdstrike_hushd_url", "http://localhost:9876");
+    localStorage.setItem("clawdstrike_control_api_url", "file:///etc/passwd");
+
+    const saved = loadSavedConnection();
+    expect(saved.hushdUrl).toBe("http://localhost:9876");
+    expect(saved.controlApiUrl).toBe("");
+  });
+
+  it("saveConnectionConfig rejects invalid control API URLs", async () => {
+    await expect(
+      saveConnectionConfig({
+        hushdUrl: "http://localhost:9876",
+        controlApiUrl: "file:///etc/passwd",
+        apiKey: "key",
+        controlApiToken: "token",
+      }),
+    ).rejects.toThrow(/Invalid control API URL/);
   });
 
   it("clearConnectionConfig removes all keys", async () => {
