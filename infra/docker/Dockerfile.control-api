@@ -4,6 +4,9 @@ FROM rust:1.93-bookworm AS builder
 
 WORKDIR /build
 
+ARG CARGO_PROFILE=release
+ARG CARGO_BUILD_JOBS=2
+
 COPY Cargo.toml Cargo.lock ./
 COPY crates crates
 COPY packages/sdk/hush-py/hush-native packages/sdk/hush-py/hush-native
@@ -12,13 +15,20 @@ COPY rulesets rulesets
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/build/target \
-    cargo build --release --bin clawdstrike-control-api && \
-    cp /build/target/release/clawdstrike-control-api /usr/local/bin/clawdstrike-control-api
+    set -eux; \
+    profile_dir="release"; \
+    profile_flag="--release"; \
+    if [ "$CARGO_PROFILE" = "dev" ]; then \
+      profile_dir="debug"; \
+      profile_flag=""; \
+    fi; \
+    cargo build ${profile_flag} --jobs "${CARGO_BUILD_JOBS}" --bin clawdstrike-control-api; \
+    cp "/build/target/${profile_dir}/clawdstrike-control-api" /usr/local/bin/clawdstrike-control-api
 
 FROM debian:bookworm-slim
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ca-certificates libssl3 tini && \
+    apt-get install -y --no-install-recommends ca-certificates libssl3 tini wget && \
     rm -rf /var/lib/apt/lists/*
 
 RUN groupadd -g 1000 controlapi && \

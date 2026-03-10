@@ -24,6 +24,13 @@ function normalizeUrl(raw: string): string {
   return `http://${trimmed}`;
 }
 
+const LOCAL_STACK_PRESET = {
+  hushdUrl: "http://localhost:9876",
+  controlApiUrl: "http://localhost:8090",
+  apiKey: "clawdstrike-local-admin",
+  controlApiToken: "cs_local_dev_key",
+} as const;
+
 export function ConnectionSettings() {
   const {
     connection,
@@ -82,6 +89,14 @@ export function ConnectionSettings() {
       });
     }
   }, [hushdUrl, controlApiUrl, apiKey, controlApiToken, connect]);
+
+  const handleApplyLocalStack = useCallback(() => {
+    setHushdUrl(LOCAL_STACK_PRESET.hushdUrl);
+    setControlApiUrl(LOCAL_STACK_PRESET.controlApiUrl);
+    setApiKey(LOCAL_STACK_PRESET.apiKey);
+    setControlApiToken(LOCAL_STACK_PRESET.controlApiToken);
+    setTestResult(null);
+  }, []);
 
   const handleDisconnect = useCallback(() => {
     emitAuditEvent({
@@ -209,6 +224,26 @@ export function ConnectionSettings() {
 
       {!connection.connected && (
         <div className="flex flex-col gap-4">
+          <div className="flex items-start justify-between gap-3 p-3 rounded-lg border border-[#2d3240] bg-[#131721]/60">
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-[#ece7dc]">Local Stack</p>
+              <p className="text-[10px] text-[#6f7f9a] mt-1 leading-relaxed">
+                Prefill the local Docker Compose defaults for hushd, control-api, and the
+                seeded development keys.
+              </p>
+              <p className="text-[10px] text-[#6f7f9a] mt-1 font-mono">
+                hushd :9876 &middot; control-api :8090
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleApplyLocalStack}
+              className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-medium border border-[#2d3240] bg-[#131721] text-[#ece7dc] hover:border-[#d4a84b]/40 hover:text-[#d4a84b] transition-colors"
+            >
+              Use Local Stack
+            </button>
+          </div>
+
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-[#ece7dc]">hushd URL</label>
             <div className="flex items-center gap-2">
@@ -284,7 +319,7 @@ export function ConnectionSettings() {
               type="url"
               value={controlApiUrl}
               onChange={(e) => setControlApiUrl(e.target.value)}
-              placeholder="http://localhost:9091"
+              placeholder={LOCAL_STACK_PRESET.controlApiUrl}
               className="h-8 px-2.5 rounded-lg border border-[#2d3240] bg-[#131721] text-xs text-[#ece7dc] font-mono placeholder:text-[#6f7f9a]/40 focus:border-[#d4a84b]/50 focus:outline-none focus:ring-1 focus:ring-[#d4a84b]/20 transition-colors"
             />
             <span className="text-[10px] text-[#6f7f9a]">
