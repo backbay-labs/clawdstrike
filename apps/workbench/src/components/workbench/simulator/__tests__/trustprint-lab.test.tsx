@@ -300,7 +300,7 @@ describe("screenAction", () => {
       text: "hello world",
       actionType: "user_input",
     });
-    expect(result.threshold).toBe(0.70);
+    expect(result.threshold).toBe(0.85);
     expect(result.ambiguityBand).toBe(0.10);
   });
 

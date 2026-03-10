@@ -13,6 +13,7 @@ import {
   type ScreeningHistoryEntry,
   type PatternMatch,
 } from "@/lib/workbench/trustprint-screening";
+import { TrustprintRadar, type StageScores } from "./trustprint-radar";
 import type { SpiderSenseConfig, TestActionType } from "@/lib/workbench/types";
 import {
   IconShieldCheck,
@@ -74,6 +75,18 @@ const VERDICT_CONFIG = {
     textClass: "text-[#d4a84b]",
   },
 } as const;
+
+/** Aggregate per-stage top scores from screening matches for the radar chart. */
+function computeStageScores(matches: PatternMatch[]): StageScores {
+  const scores: StageScores = { perception: 0, cognition: 0, action: 0, feedback: 0 };
+  for (const m of matches) {
+    const stage = m.stage as keyof StageScores;
+    if (stage in scores && m.score > scores[stage]) {
+      scores[stage] = m.score;
+    }
+  }
+  return scores;
+}
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -230,10 +243,10 @@ function MatchCard({ match, rank }: { match: PatternMatch; rank: number }) {
               backgroundColor: `${categoryColor}10`,
             }}
           >
-            {CATEGORY_LABELS[match.category] ?? match.category}
+            {(CATEGORY_LABELS as Record<string, string>)[match.category] ?? match.category}
           </span>
           <span className="text-[8px] font-mono uppercase px-1 py-0 rounded border text-[#6f7f9a]/70 border-[#2d3240] bg-[#0b0d13]">
-            {STAGE_LABELS[match.stage] ?? match.stage}
+            {(STAGE_LABELS as Record<string, string>)[match.stage] ?? match.stage}
           </span>
         </div>
       </div>
@@ -432,6 +445,7 @@ export function TrustprintLab() {
 
   // Result state
   const [currentResult, setCurrentResult] = useState<ScreeningResult | null>(null);
+  const [previousStageScores, setPreviousStageScores] = useState<StageScores | undefined>(undefined);
   const [history, setHistory] = useState<ScreeningHistoryEntry[]>([]);
   const [screening, setScreening] = useState(false);
 
@@ -473,11 +487,17 @@ export function TrustprintLab() {
         }
 
         if (lastResult) {
+          if (currentResult) {
+            setPreviousStageScores(computeStageScores(currentResult.topMatches));
+          }
           setCurrentResult(lastResult);
         }
         setHistory((prev) => [...newEntries.reverse(), ...prev].slice(0, MAX_HISTORY));
       } else {
         const result = screenAction({ text, actionType }, spiderSenseConfig);
+        if (currentResult) {
+          setPreviousStageScores(computeStageScores(currentResult.topMatches));
+        }
         setCurrentResult(result);
 
         setHistory((prev) => [
@@ -642,8 +662,18 @@ export function TrustprintLab() {
         <ScrollArea className="flex-1">
           {currentResult ? (
             <div className="py-2">
-              {/* Verdict Badge */}
-              <VerdictDisplay result={currentResult} />
+              {/* Verdict Badge + Radar side by side */}
+              <div className="flex items-center justify-center gap-6 py-2 px-4">
+                <VerdictDisplay result={currentResult} />
+                <TrustprintRadar
+                  scores={computeStageScores(currentResult.topMatches)}
+                  threshold={currentResult.threshold}
+                  ambiguityBand={currentResult.ambiguityBand}
+                  previousScores={previousStageScores}
+                  size="sm"
+                  animated
+                />
+              </div>
 
               {/* Score Bar */}
               <ScoreBar result={currentResult} />
