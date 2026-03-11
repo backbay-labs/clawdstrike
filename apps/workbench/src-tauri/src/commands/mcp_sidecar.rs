@@ -529,13 +529,9 @@ pub async fn stop_mcp_server(
     state: tauri::State<'_, McpState>,
 ) -> Result<McpStatusResponse, String> {
     kill_mcp_server(&state);
-    let inner = state
-        .inner
-        .lock()
-        .map_err(|_| "McpState lock poisoned".to_string())?;
     Ok(McpStatusResponse {
         url: String::new(),
-        token: inner.token.clone(),
+        token: String::new(),
         running: false,
         error: None,
     })
