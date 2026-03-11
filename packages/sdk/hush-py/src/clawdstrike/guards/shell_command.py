@@ -31,7 +31,7 @@ DEFAULT_BLOCKED_COMMANDS: list[str] = [
 @dataclass
 class ShellCommandConfig:
     """Configuration for ShellCommandGuard."""
-    blocked_patterns: list[str] = field(default_factory=lambda: list(DEFAULT_BLOCKED_COMMANDS))
+    forbidden_patterns: list[str] = field(default_factory=lambda: list(DEFAULT_BLOCKED_COMMANDS))
     additional_blocked: list[str] = field(default_factory=list)
     allowed_commands: list[str] = field(default_factory=list)
     enabled: bool = True
@@ -42,7 +42,7 @@ class ShellCommandGuard(Guard):
 
     def __init__(self, config: ShellCommandConfig | None = None) -> None:
         self._config = config or ShellCommandConfig()
-        all_patterns = self._config.blocked_patterns + self._config.additional_blocked
+        all_patterns = self._config.forbidden_patterns + self._config.additional_blocked
         self._compiled: list[tuple[str, re.Pattern[str]]] = []
         for pattern in all_patterns:
             try:

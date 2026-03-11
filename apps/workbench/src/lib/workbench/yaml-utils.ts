@@ -15,6 +15,10 @@ function buildCleanDoc(policy: WorkbenchPolicy): Record<string, unknown> {
     doc.extends = policy.extends;
   }
 
+  if (policy.merge_strategy && policy.merge_strategy !== "deep_merge") {
+    doc.merge_strategy = policy.merge_strategy;
+  }
+
   // Build guards object, omitting disabled/empty guards
   const guards: Record<string, unknown> = {};
   for (const [key, config] of Object.entries(policy.guards)) {
@@ -31,6 +35,11 @@ function buildCleanDoc(policy: WorkbenchPolicy): Record<string, unknown> {
   }
   if (Object.keys(guards).length > 0) {
     doc.guards = guards;
+  }
+
+  // Custom guards (plugin-shaped)
+  if (policy.custom_guards && policy.custom_guards.length > 0) {
+    doc.custom_guards = policy.custom_guards;
   }
 
   // Settings
@@ -318,7 +327,9 @@ export function yamlToPolicy(
       name: doc.name || "",
       description: doc.description || "",
       extends: doc.extends || undefined,
+      merge_strategy: doc.merge_strategy || undefined,
       guards: (doc.guards || {}) as GuardConfigMap,
+      custom_guards: Array.isArray(doc.custom_guards) ? doc.custom_guards : undefined,
       settings: doc.settings || {},
       posture: doc.posture || undefined,
       origins: doc.origins || undefined,
@@ -353,6 +364,44 @@ export function validatePolicy(policy: WorkbenchPolicy): ValidationResult {
       message: "Policy name is empty",
       severity: "warning",
     });
+  }
+
+  // Circular / invalid extends check
+  if (policy.extends) {
+    const BUILTIN_RULESETS = new Set([
+      "permissive",
+      "default",
+      "strict",
+      "ai-agent",
+      "cicd",
+      "ai-agent-posture",
+      "remote-desktop",
+      "remote-desktop-permissive",
+      "remote-desktop-strict",
+      "spider-sense",
+    ]);
+
+    const extendsValue = policy.extends;
+    // Self-reference check
+    if (policy.name && extendsValue === policy.name) {
+      warnings.push({
+        path: "extends",
+        message: `Policy extends itself ("${extendsValue}") — this will cause circular inheritance`,
+        severity: "warning",
+      });
+    }
+    // If extends is not a built-in, URL, or file path, warn about potential circular reference
+    const isBuiltin = BUILTIN_RULESETS.has(extendsValue);
+    const isUrl = /^https?:\/\//.test(extendsValue);
+    const isFilePath = extendsValue.includes("/") || extendsValue.includes("\\") || extendsValue.endsWith(".yaml") || extendsValue.endsWith(".yml");
+    const isGitRef = extendsValue.includes("@") || extendsValue.startsWith("git:");
+    if (!isBuiltin && !isUrl && !isFilePath && !isGitRef && extendsValue !== policy.name) {
+      warnings.push({
+        path: "extends",
+        message: `"${extendsValue}" is not a recognized built-in ruleset — verify it exists to avoid circular inheritance`,
+        severity: "warning",
+      });
+    }
   }
 
   // Validate guard configs
@@ -460,11 +509,12 @@ export function validatePolicy(policy: WorkbenchPolicy): ValidationResult {
     });
   }
 
-  // Origins requires v1.4.0
-  if (policy.origins && policy.version !== "1.4.0") {
+  // Origins requires v1.4.0+
+  const originsSupportedVersions = ["1.4.0"];
+  if (policy.origins && !originsSupportedVersions.includes(policy.version)) {
     errors.push({
       path: "origins",
-      message: "Origin-aware enforcement requires schema version 1.4.0",
+      message: "Origin-aware enforcement requires schema version 1.4.0 or later",
       severity: "error",
     });
   }

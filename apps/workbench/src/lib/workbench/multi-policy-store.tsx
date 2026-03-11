@@ -44,6 +44,7 @@ export interface PolicyTab {
   yaml: string;
   validation: ValidationResult;
   nativeValidation: NativeValidationState;
+  testSuiteYaml?: string;
   _undoPast: PolicySnapshot[];
   _undoFuture: PolicySnapshot[];
   _cleanSnapshot: PolicySnapshot | null;
@@ -82,6 +83,7 @@ export type MultiPolicyAction =
   | { type: "DUPLICATE_TAB"; tabId: string }
   | { type: "BULK_UPDATE_GUARDS"; updates: BulkGuardUpdate[] }
   | { type: "NEW_TAB_OR_SWITCH"; policy: WorkbenchPolicy; filePath: string; fallbackYaml?: string }
+  | { type: "SET_TAB_TEST_SUITE"; tabId: string; yaml: string }
   // Delegated to active tab — same as WorkbenchAction
   | { type: "SET_POLICY"; policy: WorkbenchPolicy }
   | { type: "SET_YAML"; yaml: string }
@@ -599,6 +601,15 @@ function multiPolicyReducer(state: MultiPolicyState, action: MultiPolicyAction):
       return { ...state, ui: { ...state.ui, activeEditorTab: action.tab } };
     }
 
+    case "SET_TAB_TEST_SUITE": {
+      return {
+        ...state,
+        tabs: state.tabs.map((t) =>
+          t.id === action.tabId ? { ...t, testSuiteYaml: action.yaml } : t
+        ),
+      };
+    }
+
     // SET_COMPARISON is a no-op in multi-policy mode (comparison lives in /compare route)
     case "SET_COMPARISON":
       return state;
@@ -682,11 +693,46 @@ interface PersistedTab {
   name: string;
   filePath: string | null;
   yaml: string;
+  testSuiteYaml?: string;
 }
 
 interface PersistedTabState {
   tabs: PersistedTab[];
   activeTabId: string;
+}
+
+/** Fields that must never be persisted to localStorage. */
+const SENSITIVE_GUARD_FIELDS = new Set(["embedding_api_key"]);
+
+/**
+ * Strip sensitive fields from spider_sense (and any future guard) config
+ * entries before the YAML is written to localStorage.
+ */
+function sanitizeYamlForStorage(yaml: string): string {
+  // Quick-path: if the yaml doesn't mention any sensitive field, return as-is
+  let hasSensitive = false;
+  for (const field of SENSITIVE_GUARD_FIELDS) {
+    if (yaml.includes(field)) {
+      hasSensitive = true;
+      break;
+    }
+  }
+  if (!hasSensitive) return yaml;
+
+  // Remove lines that contain sensitive keys (YAML key: value lines).
+  // This is intentionally line-based so we don't need a full YAML
+  // round-trip which could reformat the document.
+  const lines = yaml.split("\n");
+  const filtered = lines.filter((line) => {
+    const trimmed = line.trimStart();
+    for (const field of SENSITIVE_GUARD_FIELDS) {
+      if (trimmed.startsWith(`${field}:`) || trimmed.startsWith(`${field} :`)) {
+        return false;
+      }
+    }
+    return true;
+  });
+  return filtered.join("\n");
 }
 
 function persistTabs(state: MultiPolicyState): void {
@@ -696,7 +742,8 @@ function persistTabs(state: MultiPolicyState): void {
         id: t.id,
         name: t.name,
         filePath: t.filePath,
-        yaml: t.yaml,
+        yaml: sanitizeYamlForStorage(t.yaml),
+        testSuiteYaml: t.testSuiteYaml,
       })),
       activeTabId: state.activeTabId,
     };
@@ -739,6 +786,7 @@ function loadPersistedTabs(): MultiPolicyState | null {
         yaml,
         validation,
         nativeValidation: { guardErrors: {}, topLevelErrors: [], loading: false, valid: null },
+        testSuiteYaml: pt.testSuiteYaml,
         _undoPast: [],
         _undoFuture: [],
         _cleanSnapshot: { activePolicy: pol, yaml, validation },

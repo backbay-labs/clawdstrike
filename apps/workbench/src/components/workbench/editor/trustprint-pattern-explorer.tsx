@@ -96,6 +96,27 @@ function comparePatterns(a: PatternEntry, b: PatternEntry, key: SortKey, dir: So
 // Compact heatmap
 // ---------------------------------------------------------------------------
 
+/** Short 1-letter stage labels for compact grid header */
+const STAGE_INITIALS: Record<PatternStage, string> = {
+  perception: "P",
+  cognition: "C",
+  action: "A",
+  feedback: "F",
+};
+
+/** Abbreviated category labels for compact grid rows */
+const CATEGORY_ABBR: Record<PatternCategory, string> = {
+  prompt_injection: "PI",
+  jailbreak: "JB",
+  social_engineering: "SE",
+  data_poisoning: "DP",
+  evasion: "EV",
+  reconnaissance: "RC",
+  supply_chain: "SC",
+  data_exfiltration: "DE",
+  privilege_escalation: "PE",
+};
+
 function CompactHeatmap({
   patterns,
 }: {
@@ -103,51 +124,199 @@ function CompactHeatmap({
 }) {
   const heatmap = useMemo(() => buildHeatmap(patterns), [patterns]);
   const stats = useMemo(() => computeCoverageStats(patterns), [patterns]);
+  const [selectedCell, setSelectedCell] = useState<{
+    stage: PatternStage;
+    category: PatternCategory;
+  } | null>(null);
+  const [expanded, setExpanded] = useState(false);
+
+  // Patterns matching the selected cell
+  const cellPatterns = useMemo(() => {
+    if (!selectedCell) return [];
+    return patterns.filter(
+      (p) => p.stage === selectedCell.stage && p.category === selectedCell.category,
+    );
+  }, [patterns, selectedCell]);
+
+  const handleCellClick = useCallback(
+    (stage: PatternStage, category: PatternCategory) => {
+      if (selectedCell?.stage === stage && selectedCell?.category === category) {
+        setSelectedCell(null);
+      } else {
+        setSelectedCell({ stage, category });
+      }
+    },
+    [selectedCell],
+  );
+
+  if (expanded) {
+    return (
+      <div className="flex flex-col gap-2">
+        <FullExplorer patterns={patterns} />
+        <button
+          type="button"
+          className="self-start text-[9px] font-mono text-[#6f7f9a] hover:text-[#d4a84b] transition-colors"
+          onClick={() => setExpanded(false)}
+        >
+          ← Collapse
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-1.5">
-      <div
-        className="grid gap-px"
-        style={{
-          gridTemplateColumns: `repeat(${ALL_STAGES.length}, 1fr)`,
-          width: "200px",
-        }}
-        role="grid"
-        aria-label="Pattern coverage heatmap"
-      >
-        {ALL_CATEGORIES.map((category, catIdx) =>
-          ALL_STAGES.map((stage) => {
-            const cell = heatmap.find(
-              (c) => c.category === category && c.stage === stage,
-            );
-            const count = cell?.count ?? 0;
-            return (
-              <div
-                key={`${category}-${stage}`}
-                role="gridcell"
-                className={cn(
-                  "h-4 rounded-sm transition-colors",
-                  count === 0 && "border border-dashed border-[#c45c5c]/40",
-                )}
-                style={{
-                  backgroundColor: getCellBackground(count, catIdx),
-                }}
-                title={`${STAGE_LABELS[stage]} + ${CATEGORY_LABELS[category]}: ${count} pattern${count !== 1 ? "s" : ""}`}
-              />
-            );
-          }),
-        )}
+      {/* Grid with row/column labels */}
+      <div className="flex gap-0">
+        {/* Category row labels */}
+        <div className="flex flex-col gap-px mr-1 pt-[14px]">
+          {ALL_CATEGORIES.map((cat) => (
+            <div
+              key={cat}
+              className="h-5 flex items-center justify-end"
+              title={CATEGORY_LABELS[cat]}
+            >
+              <span className={cn(
+                "text-[7px] font-mono leading-none transition-colors",
+                selectedCell?.category === cat ? "text-[#d4a84b]" : "text-[#6f7f9a]/40",
+              )}>
+                {CATEGORY_ABBR[cat]}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex flex-col gap-0">
+          {/* Stage column headers */}
+          <div
+            className="grid gap-px mb-0.5"
+            style={{
+              gridTemplateColumns: `repeat(${ALL_STAGES.length}, 1fr)`,
+              width: "200px",
+            }}
+          >
+            {ALL_STAGES.map((stage) => (
+              <div key={stage} className="flex items-center justify-center" title={STAGE_LABELS[stage]}>
+                <span className={cn(
+                  "text-[7px] font-mono transition-colors",
+                  selectedCell?.stage === stage ? "text-[#d4a84b]" : "text-[#6f7f9a]/40",
+                )}>{STAGE_INITIALS[stage]}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Heatmap cells */}
+          <div
+            className="grid gap-px"
+            style={{
+              gridTemplateColumns: `repeat(${ALL_STAGES.length}, 1fr)`,
+              width: "200px",
+            }}
+            role="grid"
+            aria-label="Pattern coverage heatmap"
+          >
+            {ALL_CATEGORIES.map((category, catIdx) =>
+              ALL_STAGES.map((stage) => {
+                const cell = heatmap.find(
+                  (c) => c.category === category && c.stage === stage,
+                );
+                const count = cell?.count ?? 0;
+                const isSelected =
+                  selectedCell?.stage === stage && selectedCell?.category === category;
+
+                return (
+                  <button
+                    key={`${category}-${stage}`}
+                    type="button"
+                    role="gridcell"
+                    className={cn(
+                      "h-5 rounded-sm transition-all cursor-pointer flex items-center justify-center text-[8px] font-mono font-medium",
+                      count === 0
+                        ? "border border-dashed border-[#c45c5c]/40 text-[#c45c5c]/40 hover:border-[#c45c5c]/60"
+                        : "text-[#ece7dc]/70 hover:brightness-125",
+                      isSelected && "ring-1 ring-[#d4a84b] ring-offset-1 ring-offset-[#0b0d13]",
+                    )}
+                    style={{
+                      backgroundColor: getCellBackground(count, catIdx),
+                    }}
+                    title={`${STAGE_LABELS[stage]} + ${CATEGORY_LABELS[category]}: ${count} pattern${count !== 1 ? "s" : ""}`}
+                    onClick={() => handleCellClick(stage, category)}
+                  >
+                    {count}
+                  </button>
+                );
+              }),
+            )}
+          </div>
+        </div>
       </div>
-      <span
-        className={cn(
-          "text-[9px] font-mono",
-          stats.gapCount === 0 ? "text-[#3dbf84]" : "text-[#6f7f9a]",
-        )}
-        data-testid="compact-coverage-badge"
-      >
-        {stats.coveredCells}/{stats.totalCells} cells covered
-        {stats.gapCount > 0 && ` (${stats.gapCount} gap${stats.gapCount !== 1 ? "s" : ""})`}
-      </span>
+
+      {/* Cell detail panel */}
+      {selectedCell && (
+        <div className="mt-1 border border-[#2d3240] rounded-md bg-[#131721]/60 overflow-hidden">
+          <div className="flex items-center justify-between px-2 py-1.5 border-b border-[#2d3240]/50">
+            <span className="text-[9px] font-mono text-[#d4a84b]">
+              {(STAGE_LABELS as Record<string, string>)[selectedCell.stage]} ×{" "}
+              {(CATEGORY_LABELS as Record<string, string>)[selectedCell.category]}
+            </span>
+            <button
+              type="button"
+              className="text-[#6f7f9a] hover:text-[#ece7dc] transition-colors"
+              onClick={() => setSelectedCell(null)}
+              aria-label="Close detail panel"
+            >
+              <IconX size={10} stroke={2} />
+            </button>
+          </div>
+          {cellPatterns.length === 0 ? (
+            <div className="px-2 py-2.5 flex items-center gap-1.5">
+              <IconAlertTriangle size={10} stroke={1.5} className="text-[#c45c5c]/60 shrink-0" />
+              <span className="text-[9px] font-mono text-[#c45c5c]/80">
+                Coverage gap — no patterns defined for this cell
+              </span>
+            </div>
+          ) : (
+            <div className="flex flex-col">
+              {cellPatterns.map((p, i) => (
+                <div
+                  key={p.id}
+                  className={cn(
+                    "flex items-start gap-2 px-2 py-1.5 text-[9px]",
+                    i < cellPatterns.length - 1 && "border-b border-[#2d3240]/30",
+                  )}
+                >
+                  <span className="font-mono text-[#6f7f9a]/50 shrink-0 mt-px">{p.id}</span>
+                  <span className="text-[#ece7dc] leading-snug">{p.label}</span>
+                  <span className="font-mono text-[#6f7f9a]/40 shrink-0 ml-auto whitespace-nowrap">
+                    {p.embedding.length}d
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Footer: coverage badge + explore link */}
+      <div className="flex items-center justify-between">
+        <span
+          className={cn(
+            "text-[9px] font-mono",
+            stats.gapCount === 0 ? "text-[#3dbf84]" : "text-[#6f7f9a]",
+          )}
+          data-testid="compact-coverage-badge"
+        >
+          {stats.coveredCells}/{stats.totalCells} cells covered
+          {stats.gapCount > 0 && ` (${stats.gapCount} gap${stats.gapCount !== 1 ? "s" : ""})`}
+        </span>
+        <button
+          type="button"
+          className="text-[9px] font-mono text-[#6f7f9a] hover:text-[#d4a84b] transition-colors"
+          onClick={() => setExpanded(true)}
+        >
+          Explore database →
+        </button>
+      </div>
     </div>
   );
 }

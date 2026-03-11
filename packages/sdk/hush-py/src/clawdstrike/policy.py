@@ -166,7 +166,7 @@ _GUARD_MERGE_SPECS: dict[str, dict[str, _MergeMode]] = {
         "session_aggregation": _MergeMode.OVERRIDE,
     },
     "shell_command": {
-        "blocked_patterns": _MergeMode.MERGE_LIST,
+        "forbidden_patterns": _MergeMode.MERGE_LIST,
         "additional_blocked": _MergeMode.MERGE_LIST,
         "allowed_commands": _MergeMode.MERGE_LIST,
         "enabled": _MergeMode.OVERRIDE,
@@ -795,7 +795,7 @@ class Policy:
             }
         if self.guards.shell_command:
             data["guards"]["shell_command"] = {
-                "blocked_patterns": self.guards.shell_command.blocked_patterns,
+                "forbidden_patterns": self.guards.shell_command.forbidden_patterns,
                 "additional_blocked": self.guards.shell_command.additional_blocked,
                 "allowed_commands": self.guards.shell_command.allowed_commands,
                 "enabled": self.guards.shell_command.enabled,

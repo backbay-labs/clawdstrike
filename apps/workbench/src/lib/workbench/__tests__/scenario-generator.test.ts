@@ -369,7 +369,7 @@ describe("each guard generator produces at least 2 scenarios when enabled", () =
 describe("guardDisplayName", () => {
   it("returns a human-readable name for known guards", () => {
     expect(guardDisplayName("forbidden_path")).toBe("Forbidden Path");
-    expect(guardDisplayName("spider_sense")).toBe("Spider Sense");
+    expect(guardDisplayName("spider_sense")).toBe("Trustprint");
     expect(guardDisplayName("egress_allowlist")).toBe("Egress Control");
   });
 

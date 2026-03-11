@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useState, useEffect } from "react";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import {
@@ -17,6 +17,8 @@ interface GuardConfigFieldsProps {
   guardId: GuardId;
   config: Record<string, unknown>;
   onChange: (key: string, value: unknown) => void;
+  /** Keys to exclude from rendering (handled by custom UI elsewhere). */
+  excludeKeys?: Set<string>;
 }
 
 /** Get a nested value from an object by dot-separated key */
@@ -39,6 +41,15 @@ function isValidRegex(pattern: string): boolean {
   }
 }
 
+function getRegexError(pattern: string): string {
+  try {
+    new RegExp(pattern);
+    return "";
+  } catch (e) {
+    return e instanceof SyntaxError ? e.message : "Invalid regex";
+  }
+}
+
 // ---- Secret pattern list editor ----
 
 interface SecretPatternListProps {
@@ -55,12 +66,28 @@ const SEVERITY_COLORS: Record<string, string> = {
 };
 
 function SecretPatternListEditor({ patterns, onChange }: SecretPatternListProps) {
+  const [regexErrors, setRegexErrors] = useState<Record<number, string>>({});
+
   const addRow = useCallback(() => {
     onChange([...patterns, { name: "", pattern: "", severity: "critical" }]);
   }, [patterns, onChange]);
 
   const updateRow = useCallback(
     (index: number, field: keyof SecretPattern, value: string) => {
+      // Issue #8: Validate regex before saving to policy
+      if (field === "pattern" && value !== "") {
+        if (!isValidRegex(value)) {
+          // Allow typing but mark the error — don't persist invalid regex
+          setRegexErrors((prev) => ({ ...prev, [index]: `Invalid regex: ${getRegexError(value)}` }));
+          return;
+        }
+      }
+      // Clear any existing error for this row
+      setRegexErrors((prev) => {
+        const next = { ...prev };
+        delete next[index];
+        return next;
+      });
       const updated = patterns.map((p, i) =>
         i === index ? { ...p, [field]: value } : p
       );
@@ -71,6 +98,11 @@ function SecretPatternListEditor({ patterns, onChange }: SecretPatternListProps)
 
   const removeRow = useCallback(
     (index: number) => {
+      setRegexErrors((prev) => {
+        const next = { ...prev };
+        delete next[index];
+        return next;
+      });
       onChange(patterns.filter((_, i) => i !== index));
     },
     [patterns, onChange]
@@ -79,61 +111,79 @@ function SecretPatternListEditor({ patterns, onChange }: SecretPatternListProps)
   return (
     <div className="flex flex-col gap-2">
       {patterns.map((p, index) => (
-        <div
-          key={index}
-          className="grid grid-cols-[1fr_1.5fr_auto_auto] gap-2 items-center"
-        >
-          <input
-            type="text"
-            value={p.name}
-            onChange={(e) => updateRow(index, "name", e.target.value)}
-            placeholder="name"
-            className="h-7 rounded-md border border-[#2d3240] bg-[#131721] px-2 text-xs font-mono text-[#ece7dc] placeholder:text-[#6f7f9a]/50 outline-none focus:border-[#d4a84b]/50"
-          />
-          <div className="relative">
+        <div key={index} className="flex flex-col gap-0.5">
+          <div className="grid grid-cols-[1fr_1.5fr_auto_auto] gap-2 items-center">
             <input
               type="text"
-              value={p.pattern}
-              onChange={(e) => updateRow(index, "pattern", e.target.value)}
-              placeholder="regex"
-              className="h-7 w-full rounded-md border border-[#2d3240] bg-[#131721] px-2 pr-6 text-xs font-mono text-[#ece7dc] placeholder:text-[#6f7f9a]/50 outline-none focus:border-[#d4a84b]/50"
+              value={p.name}
+              onChange={(e) => updateRow(index, "name", e.target.value)}
+              placeholder="name"
+              className="h-7 rounded-md border border-[#2d3240] bg-[#131721] px-2 text-xs font-mono text-[#ece7dc] placeholder:text-[#6f7f9a]/50 outline-none focus:border-[#d4a84b]/50"
             />
-            {p.pattern && (
-              <span className="absolute right-1.5 top-1/2 -translate-y-1/2">
-                {isValidRegex(p.pattern) ? (
-                  <IconCheck size={12} className="text-[#3dbf84]" />
-                ) : (
-                  <IconAlertTriangle size={12} className="text-[#c45c5c]" />
-                )}
-              </span>
-            )}
+            <div className="relative">
+              <input
+                type="text"
+                value={p.pattern}
+                onChange={(e) => {
+                  // Allow typing freely — validate on blur/commit, show live indicator
+                  const val = e.target.value;
+                  // Clear error when user starts editing
+                  if (regexErrors[index]) {
+                    setRegexErrors((prev) => {
+                      const next = { ...prev };
+                      delete next[index];
+                      return next;
+                    });
+                  }
+                  updateRow(index, "pattern", val);
+                }}
+                placeholder="regex"
+                className={`h-7 w-full rounded-md border bg-[#131721] px-2 pr-6 text-xs font-mono text-[#ece7dc] placeholder:text-[#6f7f9a]/50 outline-none focus:border-[#d4a84b]/50 ${
+                  regexErrors[index] ? "border-[#c45c5c]" : "border-[#2d3240]"
+                }`}
+              />
+              {p.pattern && (
+                <span className="absolute right-1.5 top-1/2 -translate-y-1/2">
+                  {isValidRegex(p.pattern) ? (
+                    <IconCheck size={12} className="text-[#3dbf84]" />
+                  ) : (
+                    <IconAlertTriangle size={12} className="text-[#c45c5c]" />
+                  )}
+                </span>
+              )}
+            </div>
+            <Select
+              value={p.severity}
+              onValueChange={(val) => updateRow(index, "severity", val as string)}
+            >
+              <SelectTrigger className={`h-7 min-w-[90px] bg-[#131721] border-[#2d3240] text-[10px] font-mono ${SEVERITY_COLORS[p.severity]}`}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="bg-[#131721] border-[#2d3240]">
+                {SEVERITY_OPTIONS.map((s) => (
+                  <SelectItem
+                    key={s}
+                    value={s}
+                    className="text-[10px] font-mono text-[#ece7dc] focus:bg-[#2d3240] focus:text-[#ece7dc]"
+                  >
+                    {s}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <button
+              type="button"
+              onClick={() => removeRow(index)}
+              className="h-7 w-7 flex items-center justify-center rounded-md text-[#6f7f9a] hover:text-[#c45c5c] hover:bg-[#c45c5c]/10 transition-colors"
+            >
+              &times;
+            </button>
           </div>
-          <Select
-            value={p.severity}
-            onValueChange={(val) => updateRow(index, "severity", val as string)}
-          >
-            <SelectTrigger className={`h-7 min-w-[90px] bg-[#131721] border-[#2d3240] text-[10px] font-mono ${SEVERITY_COLORS[p.severity]}`}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="bg-[#131721] border-[#2d3240]">
-              {SEVERITY_OPTIONS.map((s) => (
-                <SelectItem
-                  key={s}
-                  value={s}
-                  className="text-[10px] font-mono text-[#ece7dc] focus:bg-[#2d3240] focus:text-[#ece7dc]"
-                >
-                  {s}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <button
-            type="button"
-            onClick={() => removeRow(index)}
-            className="h-7 w-7 flex items-center justify-center rounded-md text-[#6f7f9a] hover:text-[#c45c5c] hover:bg-[#c45c5c]/10 transition-colors"
-          >
-            &times;
-          </button>
+          {regexErrors[index] && (
+            <span className="text-[9px] font-mono text-[#c45c5c] pl-1">
+              {regexErrors[index]}
+            </span>
+          )}
         </div>
       ))}
       <button
@@ -156,6 +206,15 @@ interface PatternListProps {
 }
 
 function PatternList({ items, onChange, placeholder }: PatternListProps) {
+  const [inputError, setInputError] = useState<string | null>(null);
+
+  // Auto-clear error after 3 seconds
+  useEffect(() => {
+    if (!inputError) return;
+    const timer = setTimeout(() => setInputError(null), 3000);
+    return () => clearTimeout(timer);
+  }, [inputError]);
+
   return (
     <div className="flex flex-col gap-2">
       {items.length > 0 && (
@@ -185,30 +244,53 @@ function PatternList({ items, onChange, placeholder }: PatternListProps) {
       <input
         type="text"
         placeholder={placeholder ?? "Add pattern..."}
-        className="h-8 w-full rounded-md border border-[#2d3240] bg-[#131721] px-2.5 py-1 text-xs font-mono text-[#ece7dc] placeholder:text-[#6f7f9a]/50 outline-none focus:border-[#d4a84b]/50 transition-colors"
+        className={`h-8 w-full rounded-md border bg-[#131721] px-2.5 py-1 text-xs font-mono text-[#ece7dc] placeholder:text-[#6f7f9a]/50 outline-none focus:border-[#d4a84b]/50 transition-colors ${
+          inputError ? "border-[#c45c5c]" : "border-[#2d3240]"
+        }`}
         onKeyDown={(e) => {
           if (e.key === "Enter") {
             e.preventDefault();
             const val = (e.target as HTMLInputElement).value.trim();
-            if (val && !items.includes(val)) {
-              onChange([...items, val]);
-              (e.target as HTMLInputElement).value = "";
+            if (!val) return;
+
+            // Issue #15: Check for duplicates
+            if (items.includes(val)) {
+              setInputError("Duplicate pattern — already in list");
+              return;
             }
+
+            // Issue #8: Validate regex before adding
+            if (!isValidRegex(val)) {
+              setInputError(`Invalid regex: ${getRegexError(val)}`);
+              return;
+            }
+
+            setInputError(null);
+            onChange([...items, val]);
+            (e.target as HTMLInputElement).value = "";
           }
         }}
       />
+      {inputError && (
+        <span className="text-[9px] font-mono text-[#c45c5c]">
+          {inputError}
+        </span>
+      )}
     </div>
   );
 }
 
 // ---- Main component ----
 
-export function GuardConfigFields({ guardId, config, onChange }: GuardConfigFieldsProps) {
+export function GuardConfigFields({ guardId, config, onChange, excludeKeys }: GuardConfigFieldsProps) {
   const meta = GUARD_REGISTRY.find((g) => g.id === guardId);
   if (!meta) return null;
 
-  // Filter out the "enabled" toggle since that is handled in the card header
-  const fields = meta.configFields.filter((f) => f.key !== "enabled");
+  // Filter out the "enabled" toggle since that is handled in the card header,
+  // plus any keys explicitly excluded by the caller.
+  const fields = meta.configFields.filter(
+    (f) => f.key !== "enabled" && !excludeKeys?.has(f.key),
+  );
 
   return (
     <div className="flex flex-col gap-4 pt-3">

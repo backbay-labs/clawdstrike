@@ -28,6 +28,8 @@ struct McpInner {
     runtime_cmd: String,
     /// The resolved path to the MCP server entry point.
     script_path: String,
+    /// Last error message from a failed spawn attempt, if any.
+    last_error: Option<String>,
 }
 
 #[derive(Serialize, Clone)]
@@ -35,6 +37,9 @@ pub struct McpStatusResponse {
     pub url: String,
     pub token: String,
     pub running: bool,
+    /// If the sidecar failed to start, this contains the error message.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_error: Option<String>,
 }
 
 impl McpState {
@@ -47,7 +52,15 @@ impl McpState {
                 child: None,
                 runtime_cmd: String::new(),
                 script_path: String::new(),
+                last_error: None,
             })),
+        }
+    }
+
+    /// Record a startup error so the frontend can discover it via `get_mcp_status`.
+    pub fn set_last_error(&self, error: String) {
+        if let Ok(mut inner) = self.inner.lock() {
+            inner.last_error = Some(error);
         }
     }
 }
@@ -317,6 +330,7 @@ pub async fn spawn_mcp_server<R: Runtime>(
         url: url.clone(),
         token: token.clone(),
         running: true,
+        last_error: None,
     };
 
     {
@@ -330,6 +344,7 @@ pub async fn spawn_mcp_server<R: Runtime>(
         inner.child = Some(child);
         inner.runtime_cmd = launch.runtime_label;
         inner.script_path = launch.entry_label;
+        inner.last_error = None;
     }
 
     Ok(response)
@@ -384,6 +399,7 @@ pub async fn get_mcp_status(
         },
         token: inner.token.clone(),
         running: inner.running,
+        last_error: inner.last_error.clone(),
     })
 }
 

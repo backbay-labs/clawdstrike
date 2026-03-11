@@ -8,6 +8,7 @@ import {
   IconCopy,
   IconEdit,
   IconTrash,
+  IconHome,
 } from "@tabler/icons-react";
 
 // ---------------------------------------------------------------------------
@@ -248,7 +249,13 @@ function TabItem({
 // PolicyTabBar
 // ---------------------------------------------------------------------------
 
-export function PolicyTabBar() {
+interface PolicyTabBarProps {
+  isHomeActive?: boolean;
+  onHomeClick?: () => void;
+  onTabSwitch?: () => void;
+}
+
+export function PolicyTabBar({ isHomeActive, onHomeClick, onTabSwitch }: PolicyTabBarProps = {}) {
   const { multiState, multiDispatch, tabs, canAddTab } = useMultiPolicy();
   const { activeTabId, splitTabId } = multiState;
 
@@ -256,41 +263,52 @@ export function PolicyTabBar() {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{ tabId: string; position: "left" | "right" } | null>(null);
+  const [confirmingClose, setConfirmingClose] = useState<string | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Auto-cancel close confirmation after 3 seconds
+  useEffect(() => {
+    if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+    if (confirmingClose) {
+      confirmTimerRef.current = setTimeout(() => setConfirmingClose(null), 3000);
+    }
+    return () => {
+      if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current);
+    };
+  }, [confirmingClose]);
 
   // ---- Handlers ----
 
   const handleSwitch = useCallback(
     (tabId: string) => {
       multiDispatch({ type: "SWITCH_TAB", tabId });
+      onTabSwitch?.();
     },
-    [multiDispatch],
+    [multiDispatch, onTabSwitch],
   );
 
   const handleClose = useCallback(
     (tabId: string) => {
       const tab = tabs.find((t) => t.id === tabId);
-      if (tab?.dirty) {
-        const confirmed = window.confirm(
-          `"${tab.name}" has unsaved changes. Close anyway?`,
-        );
-        if (!confirmed) return;
+      if (tab?.dirty && confirmingClose !== tabId) {
+        // First click on a dirty tab: show inline confirmation
+        setConfirmingClose(tabId);
+        return;
       }
+      setConfirmingClose(null);
       multiDispatch({ type: "CLOSE_TAB", tabId });
     },
-    [tabs, multiDispatch],
+    [tabs, multiDispatch, confirmingClose],
   );
+
+  const handleCancelClose = useCallback(() => {
+    setConfirmingClose(null);
+  }, []);
 
   const handleCloseOthers = useCallback(
     (tabId: string) => {
-      const dirtyOthers = tabs.filter((t) => t.id !== tabId && t.dirty);
-      if (dirtyOthers.length > 0) {
-        const confirmed = window.confirm(
-          `${dirtyOthers.length} other tab(s) have unsaved changes. Close them?`,
-        );
-        if (!confirmed) return;
-      }
       const toClose = tabs.filter((t) => t.id !== tabId).map((t) => t.id);
       for (const id of toClose) {
         multiDispatch({ type: "CLOSE_TAB", tabId: id });
@@ -300,13 +318,6 @@ export function PolicyTabBar() {
   );
 
   const handleCloseAll = useCallback(() => {
-    const dirtyTabs = tabs.filter((t) => t.dirty);
-    if (dirtyTabs.length > 0) {
-      const confirmed = window.confirm(
-        `${dirtyTabs.length} tab(s) have unsaved changes. Close all?`,
-      );
-      if (!confirmed) return;
-    }
     for (const tab of tabs) {
       multiDispatch({ type: "CLOSE_TAB", tabId: tab.id });
     }
@@ -403,6 +414,21 @@ export function PolicyTabBar() {
   return (
     <>
       <div className="flex items-center bg-[#0b0d13] shrink-0">
+        {/* Home tab button */}
+        <button
+          type="button"
+          onClick={() => onHomeClick?.()}
+          className={cn(
+            "shrink-0 flex items-center justify-center w-8 h-full border-r border-[#2d3240] transition-colors",
+            isHomeActive
+              ? "bg-[#131721] text-[#d4a84b]"
+              : "text-[#6f7f9a] hover:text-[#ece7dc] hover:bg-[#131721]/50",
+          )}
+          title="Policy workspace"
+        >
+          <IconHome size={14} stroke={1.5} />
+        </button>
+
         {/* Scrollable tab list */}
         <div
           ref={scrollRef}
@@ -410,7 +436,7 @@ export function PolicyTabBar() {
           onDragOver={(e) => e.preventDefault()}
         >
           {tabs.map((tab) => (
-            <div key={tab.id} onContextMenu={handleContextMenu(tab.id)}>
+            <div key={tab.id} className="relative" onContextMenu={handleContextMenu(tab.id)}>
               <TabItem
                 tab={tab}
                 isActive={tab.id === activeTabId}
@@ -428,6 +454,32 @@ export function PolicyTabBar() {
                 onDragEnd={handleDragEnd}
                 onRename={handleRenameDone}
               />
+              {/* Inline close confirmation for dirty tabs */}
+              {confirmingClose === tab.id && (
+                <div className="absolute top-full left-0 z-50 mt-0.5 flex items-center gap-1.5 px-2.5 py-1.5 bg-[#0b0d13] border border-[#2d3240] rounded-md shadow-lg shadow-black/40 whitespace-nowrap">
+                  <span className="text-[10px] font-mono text-[#6f7f9a]">Unsaved changes</span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleClose(tab.id);
+                    }}
+                    className="px-2 py-0.5 text-[10px] font-mono font-medium text-[#c45c5c] bg-[#c45c5c]/10 border border-[#c45c5c]/20 rounded hover:bg-[#c45c5c]/20 transition-colors"
+                  >
+                    Discard
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleCancelClose();
+                    }}
+                    className="px-2 py-0.5 text-[10px] font-mono text-[#6f7f9a] bg-[#131721] border border-[#2d3240] rounded hover:text-[#ece7dc] transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
             </div>
           ))}
         </div>

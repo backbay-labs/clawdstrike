@@ -77,7 +77,7 @@ function isSafeRegex(pattern: string): boolean {
  * can be tested against absolute glob patterns.
  */
 function normalizePath(p: string): string {
-  if (!p) return p;
+  if (!p || p.trim() === "") return "/";
 
   // Collapse multiple slashes
   let cleaned = p.replace(/\/\/+/g, "/");
@@ -713,8 +713,8 @@ function simulateJailbreak(
 
   const text = ((scenario.payload.text as string) || "").toLowerCase();
   const detector = config.detector || {};
-  const blockThreshold = detector.block_threshold ?? 50;
-  const warnThreshold = detector.warn_threshold ?? 20;
+  const blockThreshold = detector.block_threshold ?? 70;
+  const warnThreshold = detector.warn_threshold ?? 30;
 
   let score = 0;
   const matched: string[] = [];
@@ -818,16 +818,104 @@ function stubPathAllowlist(
   };
 }
 
+/** Obvious threat keywords for the Spider Sense heuristic fallback. */
+const SPIDER_SENSE_THREAT_KEYWORDS = [
+  "ignore previous",
+  "ignore all instructions",
+  "jailbreak",
+  "system prompt",
+  "override",
+  "unlimited mode",
+  "no restrictions",
+  "bypass safety",
+  "bypass security",
+  "reveal your instructions",
+  "act as root",
+  "sudo rm",
+  "exfiltrate",
+  "data exfiltration",
+  "reverse shell",
+  "disable firewall",
+  "drop table",
+  "eval(atob(",
+];
+
+/** Ambiguous / lower-confidence patterns for the Spider Sense heuristic fallback. */
+const SPIDER_SENSE_AMBIGUOUS_KEYWORDS = [
+  "pretend",
+  "hypothetical",
+  "for educational purposes",
+  "roleplay",
+  "developer mode",
+  "act as",
+  "simulate",
+];
+
 function stubSpiderSense(
   _config: SpiderSenseConfig,
-  _scenario: TestScenario,
+  scenario: TestScenario,
 ): GuardSimResult {
+  // Extract text from the scenario payload for keyword screening
+  const text = (
+    (scenario.payload.text as string) ||
+    (scenario.payload.command as string) ||
+    (scenario.payload.content as string) ||
+    ""
+  ).toLowerCase();
+
+  if (!text) {
+    return {
+      guardId: "spider_sense",
+      guardName: "Spider Sense",
+      verdict: "allow",
+      message: "No text content to screen (heuristic fallback — run in desktop mode for full embedding-based evaluation)",
+      evidence: { note: "Heuristic keyword fallback; embedding-based cosine similarity requires runtime" },
+      engine: "stubbed",
+    };
+  }
+
+  const matchedThreats: string[] = [];
+  for (const kw of SPIDER_SENSE_THREAT_KEYWORDS) {
+    if (text.includes(kw)) {
+      matchedThreats.push(kw);
+    }
+  }
+
+  const matchedAmbiguous: string[] = [];
+  for (const kw of SPIDER_SENSE_AMBIGUOUS_KEYWORDS) {
+    if (text.includes(kw)) {
+      matchedAmbiguous.push(kw);
+    }
+  }
+
+  if (matchedThreats.length > 0) {
+    return {
+      guardId: "spider_sense",
+      guardName: "Spider Sense",
+      verdict: "deny",
+      message: `Heuristic: ${matchedThreats.length} threat keyword(s) detected — "${matchedThreats.join('", "')}" (heuristic fallback; run in desktop mode for full evaluation)`,
+      evidence: { matchedThreats, matchedAmbiguous, engine: "heuristic_keyword_fallback" },
+      engine: "stubbed",
+    };
+  }
+
+  if (matchedAmbiguous.length > 0) {
+    return {
+      guardId: "spider_sense",
+      guardName: "Spider Sense",
+      verdict: "warn",
+      message: `Heuristic: ${matchedAmbiguous.length} ambiguous keyword(s) detected — "${matchedAmbiguous.join('", "')}" (heuristic fallback; run in desktop mode for full evaluation)`,
+      evidence: { matchedThreats, matchedAmbiguous, engine: "heuristic_keyword_fallback" },
+      engine: "stubbed",
+    };
+  }
+
   return {
     guardId: "spider_sense",
     guardName: "Spider Sense",
-    verdict: "warn",
-    message: "Spider Sense requires embedding API — run in desktop mode for full evaluation",
-    evidence: { note: "Embedding-based cosine similarity cannot run client-side" },
+    verdict: "allow",
+    message: "No threat keywords detected (heuristic fallback — run in desktop mode for full embedding-based evaluation)",
+    evidence: { matchedThreats: [], matchedAmbiguous: [], engine: "heuristic_keyword_fallback" },
     engine: "stubbed",
   };
 }

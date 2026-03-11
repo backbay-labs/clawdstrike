@@ -24,7 +24,7 @@ export const GUARD_REGISTRY: GuardMeta[] = [
     defaultVerdict: "deny",
     icon: "IconShieldCheck",
     configFields: [
-      { key: "enabled", label: "Enabled", type: "toggle", defaultValue: false },
+      { key: "enabled", label: "Enabled", type: "toggle", defaultValue: true },
       { key: "file_access_allow", label: "Read Allow Patterns", type: "pattern_list", description: "Glob patterns for allowed read access" },
       { key: "file_write_allow", label: "Write Allow Patterns", type: "pattern_list", description: "Glob patterns for allowed write access" },
       { key: "patch_allow", label: "Patch Allow Patterns", type: "pattern_list", description: "Glob patterns for allowed patches (defaults to write patterns)" },
@@ -42,7 +42,7 @@ export const GUARD_REGISTRY: GuardMeta[] = [
       { key: "enabled", label: "Enabled", type: "toggle", defaultValue: true },
       { key: "allow", label: "Allowed Domains", type: "string_list", description: "Domain patterns to allow (supports wildcards like *.openai.com)" },
       { key: "block", label: "Blocked Domains", type: "string_list", description: "Domain patterns to block (takes precedence over allow)" },
-      { key: "default_action", label: "Default Action", type: "select", defaultValue: "block", options: [{ value: "allow", label: "Allow" }, { value: "block", label: "Block" }] },
+      { key: "default_action", label: "Default Action", type: "select", defaultValue: "block", options: [{ value: "allow", label: "Allow" }, { value: "block", label: "Block" }, { value: "log", label: "Log" }] },
     ],
   },
   {
@@ -55,6 +55,8 @@ export const GUARD_REGISTRY: GuardMeta[] = [
     icon: "IconEye",
     configFields: [
       { key: "enabled", label: "Enabled", type: "toggle", defaultValue: true },
+      { key: "redact", label: "Redact Secrets", type: "toggle", defaultValue: true, description: "Redact matched secret values in logs and audit details" },
+      { key: "severity_threshold", label: "Severity Threshold", type: "select", defaultValue: "error", options: [{ value: "info", label: "Info" }, { value: "warning", label: "Warning" }, { value: "error", label: "Error" }, { value: "critical", label: "Critical" }], description: "Block when matched severity is at or above this level" },
       { key: "patterns", label: "Detection Patterns", type: "secret_pattern_list", description: "Regex patterns for detecting leaked secrets" },
       { key: "skip_paths", label: "Skip Paths", type: "string_list", description: "Glob patterns for paths to skip scanning (e.g. test fixtures)" },
     ],
@@ -116,7 +118,7 @@ export const GUARD_REGISTRY: GuardMeta[] = [
     defaultVerdict: "deny",
     icon: "IconBrain",
     configFields: [
-      { key: "enabled", label: "Enabled", type: "toggle", defaultValue: false },
+      { key: "enabled", label: "Enabled", type: "toggle", defaultValue: true },
       { key: "warn_at_or_above", label: "Warn Level", type: "select", defaultValue: "suspicious", options: [{ value: "safe", label: "Safe" }, { value: "suspicious", label: "Suspicious" }, { value: "high", label: "High" }, { value: "critical", label: "Critical" }] },
       { key: "block_at_or_above", label: "Block Level", type: "select", defaultValue: "high", options: [{ value: "safe", label: "Safe" }, { value: "suspicious", label: "Suspicious" }, { value: "high", label: "High" }, { value: "critical", label: "Critical" }] },
       { key: "max_scan_bytes", label: "Max Scan Bytes", type: "number_input", min: 1000, max: 1000000, defaultValue: 200000 },
@@ -131,11 +133,21 @@ export const GUARD_REGISTRY: GuardMeta[] = [
     defaultVerdict: "deny",
     icon: "IconSkull",
     configFields: [
-      { key: "enabled", label: "Enabled", type: "toggle", defaultValue: false },
-      { key: "detector.block_threshold", label: "Block Threshold", type: "number_slider", min: 0, max: 100, step: 5, defaultValue: 50 },
-      { key: "detector.warn_threshold", label: "Warn Threshold", type: "number_slider", min: 0, max: 100, step: 5, defaultValue: 20 },
-      { key: "detector.max_input_bytes", label: "Max Input Bytes", type: "number_input", min: 1000, max: 1000000, defaultValue: 200000 },
-      { key: "detector.session_aggregation", label: "Session Aggregation", type: "toggle", defaultValue: true },
+      { key: "enabled", label: "Enabled", type: "toggle", defaultValue: true },
+      // --- Detection layers ---
+      { key: "detector.layers.heuristic", label: "Heuristic Layer", type: "toggle", defaultValue: true, description: "Pattern-based detection using regex signals (role changes, prompt extraction, policy override)" },
+      { key: "detector.layers.statistical", label: "Statistical Layer", type: "toggle", defaultValue: true, description: "Entropy analysis, punctuation ratio, and symbol-run detection" },
+      { key: "detector.layers.ml", label: "ML Layer", type: "toggle", defaultValue: true, description: "Lightweight linear model combining heuristic + statistical features" },
+      { key: "detector.layers.llm_judge", label: "LLM Judge Layer", type: "toggle", defaultValue: false, description: "Optional LLM-based deep reasoning for ambiguous cases (requires API)" },
+      // --- Thresholds ---
+      { key: "detector.block_threshold", label: "Block Threshold", type: "number_slider", min: 0, max: 100, step: 5, defaultValue: 70, description: "Risk score at or above this value triggers a block verdict" },
+      { key: "detector.warn_threshold", label: "Warn Threshold", type: "number_slider", min: 0, max: 100, step: 5, defaultValue: 30, description: "Risk score at or above this value triggers a warning" },
+      { key: "detector.max_input_bytes", label: "Max Input Bytes", type: "number_input", min: 1000, max: 1000000, defaultValue: 100000, description: "Inputs exceeding this are truncated before analysis" },
+      // --- Session tracking ---
+      { key: "detector.session_aggregation", label: "Session Aggregation", type: "toggle", defaultValue: true, description: "Track risk across messages in the same session" },
+      { key: "detector.session_max_entries", label: "Session Max Entries", type: "number_input", min: 1, max: 100000, defaultValue: 1024, description: "Maximum concurrent sessions retained in memory (LRU eviction)" },
+      { key: "detector.session_ttl_seconds", label: "Session TTL (seconds)", type: "number_input", min: 60, max: 86400, defaultValue: 3600, description: "Sessions expire after this many seconds of inactivity" },
+      { key: "detector.session_half_life_seconds", label: "Risk Decay Half-Life (seconds)", type: "number_input", min: 0, max: 86400, defaultValue: 900, description: "Rolling risk score decays with this half-life. Set to 0 to disable decay." },
     ],
   },
   {
@@ -147,7 +159,7 @@ export const GUARD_REGISTRY: GuardMeta[] = [
     defaultVerdict: "warn",
     icon: "IconDeviceDesktop",
     configFields: [
-      { key: "enabled", label: "Enabled", type: "toggle", defaultValue: false },
+      { key: "enabled", label: "Enabled", type: "toggle", defaultValue: true },
       { key: "mode", label: "Enforcement Mode", type: "select", defaultValue: "guardrail", options: [{ value: "observe", label: "Observe (log only)" }, { value: "guardrail", label: "Guardrail (warn)" }, { value: "fail_closed", label: "Fail Closed (deny)" }] },
       { key: "allowed_actions", label: "Allowed Actions", type: "string_list", description: "CUA action types to permit" },
     ],
@@ -161,14 +173,14 @@ export const GUARD_REGISTRY: GuardMeta[] = [
     defaultVerdict: "warn",
     icon: "IconPlugConnected",
     configFields: [
-      { key: "enabled", label: "Enabled", type: "toggle", defaultValue: false },
+      { key: "enabled", label: "Enabled", type: "toggle", defaultValue: true },
       { key: "clipboard_enabled", label: "Clipboard", type: "toggle", defaultValue: true },
       { key: "file_transfer_enabled", label: "File Transfer", type: "toggle", defaultValue: true },
       { key: "audio_enabled", label: "Audio", type: "toggle", defaultValue: true },
       { key: "drive_mapping_enabled", label: "Drive Mapping", type: "toggle", defaultValue: true },
       { key: "printing_enabled", label: "Printing", type: "toggle", defaultValue: true },
       { key: "session_share_enabled", label: "Session Sharing", type: "toggle", defaultValue: true },
-      { key: "max_transfer_size_bytes", label: "Max Transfer Size (bytes)", type: "number_input", min: 0, max: 1073741824, defaultValue: 0 },
+      { key: "max_transfer_size_bytes", label: "Max Transfer Size (bytes)", type: "number_input", min: 0, max: 1073741824, description: "0 or empty = unlimited" },
     ],
   },
   {
@@ -180,7 +192,7 @@ export const GUARD_REGISTRY: GuardMeta[] = [
     defaultVerdict: "deny",
     icon: "IconKeyboard",
     configFields: [
-      { key: "enabled", label: "Enabled", type: "toggle", defaultValue: false },
+      { key: "enabled", label: "Enabled", type: "toggle", defaultValue: true },
       { key: "allowed_input_types", label: "Allowed Input Types", type: "string_list", description: "e.g. keyboard, mouse, touch" },
       { key: "require_postcondition_probe", label: "Require Postcondition Probe", type: "toggle", defaultValue: false },
     ],

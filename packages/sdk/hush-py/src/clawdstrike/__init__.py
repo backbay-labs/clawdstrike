@@ -92,6 +92,15 @@ from clawdstrike.receipt import (
     ViolationRef,
     validate_receipt_version,
 )
+from clawdstrike.testing import (
+    DiffReport,
+    Scenario,
+    ScenarioResult,
+    ScenarioRunner,
+    ScenarioSuite,
+    SuiteReport,
+    diff_policies,
+)
 from clawdstrike.types import Decision, DecisionStatus, SessionOptions, SessionSummary
 
 __version__ = "0.2.5"
@@ -206,4 +215,12 @@ __all__ = [
     "EngineBackend",
     "NativeEngineBackend",
     "PurePythonBackend",
+    # Testing
+    "Scenario",
+    "ScenarioResult",
+    "ScenarioRunner",
+    "ScenarioSuite",
+    "SuiteReport",
+    "DiffReport",
+    "diff_policies",
 ]

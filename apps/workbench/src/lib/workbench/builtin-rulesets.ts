@@ -207,8 +207,8 @@ guards:
   jailbreak:
     enabled: true
     detector:
-      block_threshold: 50
-      warn_threshold: 20
+      block_threshold: 70
+      warn_threshold: 30
 
 settings:
   fail_fast: false

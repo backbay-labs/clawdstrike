@@ -38,7 +38,7 @@ export interface EgressAllowlistConfig {
   enabled?: boolean;
   allow?: string[];
   block?: string[];
-  default_action?: "allow" | "block";
+  default_action?: "allow" | "block" | "log";
 }
 
 export interface SecretPattern {
@@ -49,6 +49,8 @@ export interface SecretPattern {
 
 export interface SecretLeakConfig {
   enabled?: boolean;
+  redact?: boolean;
+  severity_threshold?: "info" | "warning" | "error" | "critical";
   patterns?: SecretPattern[];
   skip_paths?: string[];
 }
@@ -87,10 +89,19 @@ export interface PromptInjectionConfig {
 export interface JailbreakConfig {
   enabled?: boolean;
   detector?: {
+    layers?: {
+      heuristic?: boolean;
+      statistical?: boolean;
+      ml?: boolean;
+      llm_judge?: boolean;
+    };
     block_threshold?: number;
     warn_threshold?: number;
     max_input_bytes?: number;
     session_aggregation?: boolean;
+    session_max_entries?: number;
+    session_ttl_seconds?: number;
+    session_half_life_seconds?: number;
   };
 }
 
@@ -286,12 +297,22 @@ export interface OriginContext {
 
 // ---- Top-level policy ----
 
+export type MergeStrategy = "replace" | "merge" | "deep_merge";
+
+export interface PolicyCustomGuardSpec {
+  id: string;
+  enabled?: boolean;
+  config?: Record<string, unknown>;
+}
+
 export interface WorkbenchPolicy {
   version: PolicySchemaVersion;
   name: string;
   description: string;
   extends?: string;
+  merge_strategy?: MergeStrategy;
   guards: GuardConfigMap;
+  custom_guards?: PolicyCustomGuardSpec[];
   settings: PolicySettings;
   posture?: PostureConfig;
   origins?: OriginsConfig;

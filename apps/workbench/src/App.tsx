@@ -1,4 +1,5 @@
-import { lazy, Suspense, useEffect } from "react";
+import { Component, lazy, Suspense, useEffect } from "react";
+import type { ErrorInfo, ReactNode } from "react";
 import { HashRouter, Routes, Route, Navigate } from "react-router-dom";
 import { MultiPolicyProvider } from "@/lib/workbench/multi-policy-store";
 import { FleetConnectionProvider } from "@/lib/workbench/use-fleet-connection";
@@ -145,6 +146,103 @@ function LoadingFallback() {
 }
 
 // ---------------------------------------------------------------------------
+// Error boundary — prevents white-screen-of-death on unhandled errors (#3)
+// ---------------------------------------------------------------------------
+
+interface ErrorBoundaryState {
+  error: Error | null;
+}
+
+class ErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryState> {
+  state: ErrorBoundaryState = { error: null };
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("[error-boundary]", error, info.componentStack);
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            height: "100vh",
+            width: "100vw",
+            backgroundColor: "#05060a",
+            color: "#ece7dc",
+            fontFamily:
+              '"JetBrains Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace',
+            padding: 32,
+            textAlign: "center",
+          }}
+        >
+          <div
+            style={{
+              width: 48,
+              height: 3,
+              backgroundColor: "#e74c3c",
+              borderRadius: 2,
+              marginBottom: 24,
+            }}
+          />
+          <h1
+            style={{
+              fontSize: "1.1rem",
+              fontWeight: 600,
+              marginBottom: 12,
+              letterSpacing: "0.04em",
+              textTransform: "uppercase",
+              color: "#e74c3c",
+            }}
+          >
+            Something went wrong
+          </h1>
+          <p
+            style={{
+              fontSize: "0.8rem",
+              color: "#6f7f9a",
+              marginBottom: 24,
+              maxWidth: 480,
+              lineHeight: 1.6,
+              wordBreak: "break-word",
+            }}
+          >
+            {this.state.error.message || "An unexpected error occurred."}
+          </p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            style={{
+              padding: "8px 24px",
+              fontSize: "0.75rem",
+              fontFamily: "inherit",
+              fontWeight: 600,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: "#05060a",
+              backgroundColor: "#d4a84b",
+              border: "none",
+              borderRadius: 4,
+              cursor: "pointer",
+            }}
+          >
+            Reload
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // App root
 // ---------------------------------------------------------------------------
 
@@ -157,7 +255,9 @@ function LoadingFallback() {
 export function App() {
   // Initialise Stronghold vault + migrate legacy localStorage credentials on first launch.
   useEffect(() => {
-    secureStore.init().then(() => migrateCredentialsToStronghold()).catch(() => {});
+    secureStore.init().then(() => migrateCredentialsToStronghold()).catch((err) => {
+      console.warn("[secure-store] Stronghold init failed:", err);
+    });
   }, []);
 
   return (
@@ -167,6 +267,7 @@ export function App() {
           <HintSettingsProvider>
           <MultiPolicyProvider>
             <FleetConnectionProvider>
+              <ErrorBoundary>
               <Suspense fallback={<LoadingFallback />}>
                 <Routes>
                   <Route element={<DesktopLayout />}>
@@ -193,6 +294,7 @@ export function App() {
                   </Route>
                 </Routes>
               </Suspense>
+              </ErrorBoundary>
             </FleetConnectionProvider>
           </MultiPolicyProvider>
           </HintSettingsProvider>
