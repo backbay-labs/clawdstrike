@@ -27,7 +27,7 @@ describe("live-agent hushd monitor helpers", () => {
         "http://localhost:8080",
         "secret-token",
       ),
-    ).toEqual({ Authorization: "Bearer secret-token" });
+    ).toEqual({});
 
     expect(
       buildHushdAuthHeaders(
@@ -38,9 +38,10 @@ describe("live-agent hushd monitor helpers", () => {
     ).toEqual({});
   });
 
-  it("recognizes equivalent loopback hushd URLs for auth scope matching", () => {
-    expect(endpointsShareAuthScope("http://127.0.0.1:9000", "http://localhost:9000")).toBe(true);
-    expect(endpointsShareAuthScope("http://127.0.0.1:9000", "http://localhost:9001")).toBe(false);
+  it("requires exact hushd origin matching for auth scope checks", () => {
+    expect(endpointsShareAuthScope("http://127.0.0.1:9000", "http://127.0.0.1:9000")).toBe(true);
+    expect(endpointsShareAuthScope("http://127.0.0.1:9000", "http://localhost:9000")).toBe(false);
+    expect(endpointsShareAuthScope("http://127.0.0.1:9000", "http://127.0.0.1:9001")).toBe(false);
   });
 
   it("parses named SSE messages and preserves trailing partial data", () => {

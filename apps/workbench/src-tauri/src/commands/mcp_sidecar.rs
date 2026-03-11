@@ -489,6 +489,7 @@ const SIDECAR_STARTUP_TIMEOUT_MS: u64 = 5_000;
 const SIDECAR_READY_POLL_MS: u64 = 150;
 const SIDECAR_HEALTHCHECK_TIMEOUT_MS: u64 = 250;
 const STARTUP_STDERR_CAPTURE_LIMIT: usize = 8_192;
+const SIDECAR_STARTING_MESSAGE: &str = "Embedded MCP sidecar is starting...";
 
 async fn sidecar_healthcheck_ready(port: u16) -> bool {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -685,6 +686,7 @@ pub async fn spawn_mcp_server<R: Runtime>(
             let _ = child.start_kill();
         }
         clear_runtime_state(&mut inner);
+        inner.last_error = Some(SIDECAR_STARTING_MESSAGE.to_string());
     }
 
     let token = generate_token();
@@ -970,5 +972,24 @@ mod tests {
             .iter()
             .all(|byte| *byte == b'a'));
         assert_eq!(&buffer[STARTUP_STDERR_CAPTURE_LIMIT - 4..], b"bbbb");
+    }
+
+    #[test]
+    fn current_status_surfaces_starting_message_when_sidecar_is_booting() {
+        let inner = McpInner {
+            port: 0,
+            token: String::new(),
+            running: false,
+            last_error: Some(SIDECAR_STARTING_MESSAGE.to_string()),
+            child: None,
+            stderr_task: None,
+            runtime_cmd: String::new(),
+            script_path: String::new(),
+        };
+
+        let status = current_status(&inner);
+
+        assert!(!status.running);
+        assert_eq!(status.error.as_deref(), Some(SIDECAR_STARTING_MESSAGE));
     }
 }

@@ -346,18 +346,11 @@ function normalizeMonitorEndpoint(raw: string): string {
   return raw.trim().replace(/\/+$/, "");
 }
 
-function isLoopbackHost(hostname: string): boolean {
-  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]";
-}
-
 export function endpointsShareAuthScope(endpoint: string, hushdUrl: string): boolean {
   try {
     const left = new URL(normalizeMonitorEndpoint(endpoint));
     const right = new URL(normalizeMonitorEndpoint(hushdUrl));
-    const sameHost =
-      left.hostname === right.hostname ||
-      (isLoopbackHost(left.hostname) && isLoopbackHost(right.hostname));
-    return sameHost && left.port === right.port && left.protocol === right.protocol;
+    return left.origin === right.origin;
   } catch {
     return false;
   }

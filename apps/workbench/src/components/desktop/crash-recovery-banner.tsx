@@ -20,14 +20,14 @@ export function CrashRecoveryBanner({
   const policyNames = Array.from(
     new Set(entries.map((entry) => entry.policyName).filter(Boolean)),
   );
-  const namedEntryCount = entries.filter((entry) => entry.policyName.trim().length > 0).length;
+  const allEntriesNamed = entries.every((entry) => entry.policyName.trim().length > 0);
   const summaryLabel =
     entries.length === 1
       ? policyNames[0] || "an unnamed tab"
       : `${entries.length} tabs`;
   const policySummary =
     entries.length > 1 && policyNames.length > 0
-      ? namedEntryCount === entries.length
+      ? allEntriesNamed && policyNames.length > 1
         ? policyNames.slice(0, 3).join(", ") + (policyNames.length > 3 ? ", ..." : "")
         : `including ${policyNames.slice(0, 3).join(", ")}${policyNames.length > 3 ? ", ..." : ""}`
       : null;
