@@ -385,10 +385,9 @@ async fn spawn_child_for_launch(launch: &LaunchConfig, port: u16, token: &str) -
         Ok(Some(exit_status)) => {
             let stderr_msg = if let Some(stderr) = child.stderr.take() {
                 use tokio::io::AsyncReadExt;
-                let mut buf = vec![0u8; 8192];
-                let mut reader = stderr;
-                let n = reader.read(&mut buf).await.unwrap_or(0);
-                buf.truncate(n);
+                let mut buf = Vec::with_capacity(8192);
+                let mut reader = stderr.take(8192);
+                let _ = reader.read_to_end(&mut buf).await;
                 String::from_utf8_lossy(&buf).to_string()
             } else {
                 String::new()

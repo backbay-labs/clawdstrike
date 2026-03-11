@@ -154,7 +154,7 @@ const ICON_MAP: Record<string, typeof IconLock> = {
 
 const TEST_STATUS_DOT: Record<string, { color: string; tip: string }> = {
   pass: { color: "#3dbf84", tip: "All tests pass" },
-  fail: { color: "#c45c5c", tip: "1 test failing" },
+  fail: { color: "#c45c5c", tip: "Tests failing" },
   warn: { color: "#d4a84b", tip: "Tests have warnings" },
 };
 

@@ -1942,8 +1942,15 @@ function wantsSse(): boolean {
 function secureTokenCompare(a: string, b: string): boolean {
   const bufA = Buffer.from(a);
   const bufB = Buffer.from(b);
-  if (bufA.length !== bufB.length) return false;
-  return timingSafeEqual(bufA, bufB);
+  // Pad shorter buffer to match length — avoids leaking token length via timing
+  const maxLen = Math.max(bufA.length, bufB.length);
+  const padA = Buffer.alloc(maxLen);
+  const padB = Buffer.alloc(maxLen);
+  bufA.copy(padA);
+  bufB.copy(padB);
+  // Always run timingSafeEqual even if lengths differ
+  const equal = timingSafeEqual(padA, padB);
+  return equal && bufA.length === bufB.length;
 }
 
 if (isMainModule()) {
