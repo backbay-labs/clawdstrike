@@ -36,10 +36,19 @@ const PRIVATE_IP_PATTERNS = [
   /^::1$/,
 ];
 
+function normalizeFleetUrlInput(url: string): string {
+  return url.trim();
+}
+
 export function validateFleetUrl(url: string): { valid: true; tlsWarning?: string } | { valid: false; reason: string } {
+  const normalizedUrl = normalizeFleetUrlInput(url);
+  if (!normalizedUrl) {
+    return { valid: false, reason: "URL must not be empty" };
+  }
+
   let parsed: URL;
   try {
-    parsed = new URL(url);
+    parsed = new URL(normalizedUrl);
   } catch {
     return { valid: false, reason: "Invalid URL format" };
   }
@@ -47,6 +56,10 @@ export function validateFleetUrl(url: string): { valid: true; tlsWarning?: strin
   // Only allow http and https schemes
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     return { valid: false, reason: `Unsupported URL scheme "${parsed.protocol}" — only http: and https: are allowed` };
+  }
+
+  if (parsed.username || parsed.password) {
+    return { valid: false, reason: "URLs must not include embedded credentials" };
   }
 
   const hostname = parsed.hostname.toLowerCase();
@@ -72,7 +85,7 @@ export function validateFleetUrl(url: string): { valid: true; tlsWarning?: strin
 }
 
 function normalizedValidatedFleetUrl(url: string, fieldName: string): string {
-  const normalized = stripTrailingSlash(url.trim());
+  const normalized = stripTrailingSlash(normalizeFleetUrlInput(url));
   const validation = validateFleetUrl(normalized);
   if (!validation.valid) {
     throw new Error(`Invalid ${fieldName}: ${validation.reason}`);
@@ -93,21 +106,22 @@ function sanitizeStoredFleetUrl(url: string | null | undefined, fieldName: strin
 
 /** Rewrite absolute URLs to Vite dev proxy paths; passthrough in production. */
 function proxyUrl(absoluteUrl: string, kind: "hushd" | "control"): string {
-  if (!DEV) return absoluteUrl;
+  const normalizedUrl = normalizeFleetUrlInput(absoluteUrl);
+  if (!DEV) return normalizedUrl;
 
   // Validate URL before proxy rewrite (Finding 3)
-  const validation = validateFleetUrl(absoluteUrl);
+  const validation = validateFleetUrl(normalizedUrl);
   if (!validation.valid) {
     throw new Error(`[fleet-client] Invalid fleet URL: ${validation.reason}`);
   }
 
   try {
-    const u = new URL(absoluteUrl);
+    const u = new URL(normalizedUrl);
     return `/_proxy/${kind}${u.pathname}${u.search}`;
   } catch {
     // Don't log the raw URL to avoid credential leakage (Finding M3)
     console.warn("[fleet-client] Invalid URL format for proxy rewrite");
-    return absoluteUrl;
+    return normalizedUrl;
   }
 }
 
@@ -317,7 +331,7 @@ export async function loadSavedConnectionAsync(): Promise<Partial<FleetConnectio
     ]);
 
     // If Stronghold had values, use them. Otherwise fall back to localStorage.
-    if (hushdUrl || apiKey) {
+    if (hushdUrl || controlApiUrl || apiKey || controlApiToken) {
       return {
         hushdUrl: sanitizeStoredFleetUrl(hushdUrl, "hushd URL"),
         controlApiUrl: sanitizeStoredFleetUrl(controlApiUrl, "control API URL"),
@@ -723,13 +737,8 @@ export async function testConnection(
   hushdUrl: string,
   apiKey: string,
 ): Promise<HealthResponse & { tlsWarning?: string }> {
-  // Finding 3: validate URL before making any fetch
-  const validation = validateFleetUrl(hushdUrl);
-  if (!validation.valid) {
-    throw new Error(`Invalid fleet URL: ${validation.reason}`);
-  }
-
-  const url = stripTrailingSlash(hushdUrl);
+  const url = normalizedValidatedFleetUrl(hushdUrl, "fleet URL");
+  const validation = validateFleetUrl(url);
   const health = await jsonFetch<HealthResponse>(proxyUrl(`${url}/health`, "hushd"), {
     headers: hushdHeaders(apiKey),
   });

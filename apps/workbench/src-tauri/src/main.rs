@@ -63,9 +63,7 @@ fn main() {
                         eprintln!("[workbench] WARNING: MCP sidecar failed to start!");
                         eprintln!("[workbench] MCP features will be unavailable: {e}");
                         eprintln!("[workbench] ============================================");
-                        // Store the error in managed state so the frontend can
-                        // discover the failure via get_mcp_status.
-                        mcp_state.set_last_error(e);
+                        // last_error is set internally by spawn_mcp_server
                     }
                 }
             });

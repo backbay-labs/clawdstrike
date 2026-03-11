@@ -154,7 +154,11 @@ fn validate_file_path(path: &str) -> Result<PathBuf, String> {
                 eprintln!("[workbench] cannot determine working directory: {e}");
                 "Cannot determine working directory".to_string()
             })?;
-            cwd.join(p)
+            let canon_cwd = cwd.canonicalize().map_err(|e| {
+                eprintln!("[workbench] cannot resolve working directory: {e}");
+                "Cannot resolve working directory".to_string()
+            })?;
+            canon_cwd.join(p)
         } else if parent.exists() {
             let canon_parent = parent.canonicalize().map_err(|e| {
                 eprintln!("[workbench] cannot resolve parent directory: {e}");
@@ -2171,6 +2175,29 @@ guards: {}
         assert_eq!(import_res.name.as_deref(), Some("Default"));
 
         let _ = tokio::fs::remove_file(&path).await;
+    }
+
+    #[test]
+    fn validate_file_path_rejects_sensitive_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let sensitive_dir = dir.path().join(".ssh");
+        std::fs::create_dir_all(&sensitive_dir).unwrap();
+        let path = sensitive_dir.join("policy.yaml").to_string_lossy().to_string();
+
+        let err = validate_file_path(&path).unwrap_err();
+        assert_eq!(err, "Refusing to access sensitive path");
+    }
+
+    #[test]
+    fn validate_file_path_rejects_sensitive_suffix() {
+        let path = std::env::temp_dir()
+            .join("policy.env")
+            .with_file_name(".env")
+            .to_string_lossy()
+            .to_string();
+
+        let err = validate_file_path(&path).unwrap_err();
+        assert_eq!(err, "Refusing to access sensitive file");
     }
 
     // =======================================================================

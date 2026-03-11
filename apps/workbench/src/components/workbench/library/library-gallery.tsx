@@ -123,7 +123,11 @@ function useMcpStatus() {
     setIsRestarting(true);
     try {
       const s = await restartMcpServer();
-      setStatus(s);
+      if (s) {
+        setStatus(s);
+      } else {
+        setStatus(await getMcpStatus());
+      }
     } finally {
       setIsRestarting(false);
     }
@@ -534,6 +538,16 @@ export function LibraryGallery() {
                       <p className="text-[10px] text-[#6f7f9a] leading-relaxed">
                         Sidecar normally auto-starts on app launch. Click below to restart it.
                       </p>
+                      {mcpStatus?.error ? (
+                        <div className="rounded-md border border-[#c45c5c]/30 bg-[#2a1416]/60 px-2.5 py-2">
+                          <p className="text-[10px] font-medium text-[#f0b7b7]">
+                            Start failed
+                          </p>
+                          <p className="mt-1 text-[10px] leading-relaxed text-[#d7b0b0]">
+                            {mcpStatus.error}
+                          </p>
+                        </div>
+                      ) : null}
                       <button
                         onClick={mcpRestart}
                         disabled={mcpRestarting}

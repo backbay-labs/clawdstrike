@@ -887,6 +887,28 @@ mod tests {
     }
 
     #[test]
+    fn validate_rejects_timestamp_mismatch_between_request_and_signed_receipt() {
+        let mut req = make_signed_store_request("allow");
+        req.timestamp = "2026-03-10T00:00:00Z".to_string();
+
+        let err = validate_store_request(&req).unwrap_err();
+        assert!(
+            matches!(err, ApiError::BadRequest(message) if message.contains("timestamp must match"))
+        );
+    }
+
+    #[test]
+    fn validate_rejects_verdict_mismatch_between_request_and_signed_receipt() {
+        let mut req = make_signed_store_request("allow");
+        req.verdict = "warn".to_string();
+
+        let err = validate_store_request(&req).unwrap_err();
+        assert!(
+            matches!(err, ApiError::BadRequest(message) if message.contains("verdict must match"))
+        );
+    }
+
+    #[test]
     fn write_access_allows_member_admin_and_owner() {
         assert!(ensure_write_access(&make_auth("member")).is_ok());
         assert!(ensure_write_access(&make_auth("admin")).is_ok());

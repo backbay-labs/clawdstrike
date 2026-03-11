@@ -399,6 +399,7 @@ export interface TauriMcpStatusResponse {
   url: string;
   token: string;
   running: boolean;
+  error?: string;
 }
 
 /**
