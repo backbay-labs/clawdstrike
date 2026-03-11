@@ -72,7 +72,7 @@ function RunButtonGroup({
   } | null>(null);
   const runMenuRef = useRef<HTMLDivElement>(null);
 
-  // Close dropdown on outside click or Escape
+  // Close dropdown on outside click or Escape; arrow key navigation
   useEffect(() => {
     if (!runMenuOpen) return;
     function handleClickOutside(e: MouseEvent) {
@@ -80,14 +80,32 @@ function RunButtonGroup({
         setRunMenuOpen(false);
       }
     }
-    function handleEsc(e: KeyboardEvent) {
-      if (e.key === "Escape") setRunMenuOpen(false);
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setRunMenuOpen(false);
+        return;
+      }
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const menu = runMenuRef.current?.querySelector('[role="menu"]');
+        if (!menu) return;
+        const items = Array.from(menu.querySelectorAll('[role="menuitem"]')) as HTMLElement[];
+        if (items.length === 0) return;
+        const currentIndex = items.findIndex((item) => item === document.activeElement);
+        let nextIndex: number;
+        if (e.key === "ArrowDown") {
+          nextIndex = currentIndex < items.length - 1 ? currentIndex + 1 : 0;
+        } else {
+          nextIndex = currentIndex > 0 ? currentIndex - 1 : items.length - 1;
+        }
+        items[nextIndex].focus();
+      }
     }
     document.addEventListener("mousedown", handleClickOutside);
-    document.addEventListener("keydown", handleEsc);
+    document.addEventListener("keydown", handleKeyDown);
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
-      document.removeEventListener("keydown", handleEsc);
+      document.removeEventListener("keydown", handleKeyDown);
     };
   }, [runMenuOpen]);
 
@@ -114,20 +132,37 @@ function RunButtonGroup({
         setTestRunnerOpen(true);
       }
 
-      // Run quick simulation inline
+      // Run quick simulation inline — build payload based on action type
+      const payload: Record<string, string> = {};
+      switch (qt.action) {
+        case "file_access":
+        case "file_write":
+          payload.path = qt.target;
+          break;
+        case "shell_command":
+          payload.command = qt.target;
+          break;
+        case "network_egress":
+          payload.host = qt.target;
+          break;
+        case "mcp_tool_call":
+          payload.tool = qt.target;
+          break;
+        default:
+          payload.path = qt.target;
+          payload.command = qt.target;
+          payload.host = qt.target;
+          payload.tool = qt.target;
+          payload.text = qt.target;
+          break;
+      }
       const sim = simulatePolicy(state.activePolicy, {
         id: crypto.randomUUID(),
         name: qt.label,
         description: "",
         category: "benign",
         actionType: qt.action,
-        payload: {
-          path: qt.target,
-          command: qt.target,
-          host: qt.target,
-          tool: qt.target,
-          text: qt.target,
-        },
+        payload,
       });
 
       // Show flash result
@@ -207,10 +242,11 @@ function RunButtonGroup({
 
       {/* Dropdown menu */}
       {runMenuOpen && (
-        <div className="absolute top-full right-0 mt-1 w-52 bg-[#131721] border border-[#2d3240] rounded shadow-lg z-50 overflow-hidden">
+        <div role="menu" className="absolute top-full right-0 mt-1 w-52 bg-[#131721] border border-[#2d3240] rounded shadow-lg z-50 overflow-hidden">
           {/* Run suite / open test runner */}
           <button
             type="button"
+            role="menuitem"
             className="flex items-center gap-2 w-full px-3 py-1.5 text-[9px] font-mono text-[#ece7dc] hover:bg-[#2d3240]/50 hover:text-[#d4a84b] transition-colors text-left"
             onClick={() => {
               setRunMenuOpen(false);
@@ -222,6 +258,7 @@ function RunButtonGroup({
           </button>
           <button
             type="button"
+            role="menuitem"
             className="flex items-center gap-2 w-full px-3 py-1.5 text-[9px] font-mono text-[#ece7dc] hover:bg-[#2d3240]/50 hover:text-[#d4a84b] transition-colors text-left"
             onClick={() => {
               setRunMenuOpen(false);
@@ -242,6 +279,7 @@ function RunButtonGroup({
               <button
                 key={qt.label}
                 type="button"
+                role="menuitem"
                 className="flex items-center gap-2 w-full px-3 py-1.5 text-[9px] font-mono text-[#ece7dc] hover:bg-[#2d3240]/50 hover:text-[#d4a84b] transition-colors text-left"
                 onClick={() => handleQuickTest(qt)}
               >

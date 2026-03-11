@@ -178,3 +178,7 @@ export const testHistoryStore: TestHistoryStore = (() => {
   }
   return _instance;
 })();
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', () => { _instance?.close(); });
+}

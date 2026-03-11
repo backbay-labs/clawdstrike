@@ -272,6 +272,12 @@ class PolicyResolver:
         else:
             extends_path = Path(reference)
 
+        # Prevent path traversal escaping the base directory
+        if from_path is not None:
+            resolved = extends_path.resolve()
+            if not str(resolved).startswith(str(base_dir.resolve())):
+                raise PolicyError(f"Policy extends path escapes base directory: {reference}")
+
         if extends_path.exists():
             yaml_content = extends_path.read_text()
             canonical = str(extends_path.resolve())

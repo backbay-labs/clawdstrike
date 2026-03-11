@@ -131,6 +131,8 @@ function testRunnerReducer(state: TestRunnerState, action: TestRunnerAction): Te
     }
 
     case "SET_RUNNING": {
+      // Prevent concurrent runs at the store level
+      if (action.running && state.isRunning) return state;
       return { ...state, isRunning: action.running };
     }
 

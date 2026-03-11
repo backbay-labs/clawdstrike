@@ -353,11 +353,9 @@ export function VersionHistoryPanel({
       <ScrollArea className="flex-1">
         <div className="p-3">
           {versions.length === 0 && !loading && (
-            <div className="flex flex-col items-center justify-center py-8 text-center">
-              <p className="text-[10px] text-[#6f7f9a]">No versions yet</p>
-              <p className="text-[9px] text-[#6f7f9a]/60 mt-1">
-                Save a version to start tracking changes
-              </p>
+            <div className="flex flex-col items-center justify-center h-32 text-[#6f7f9a] text-xs font-mono gap-2">
+              <IconHistory size={24} stroke={1} className="opacity-40" />
+              <span>Save a version to start tracking history</span>
             </div>
           )}
 

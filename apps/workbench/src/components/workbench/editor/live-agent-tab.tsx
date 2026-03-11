@@ -711,12 +711,12 @@ function HushdMonitorPanel() {
       <div className="flex-1 overflow-auto" style={{ backgroundColor: "#0a0a0a" }}>
         <div className="px-3 py-2">
           {filteredEvents.length === 0 && (
-            <div className="text-[9px] font-mono text-[#6f7f9a]/30 text-center py-8">
+            <div className="flex flex-col items-center justify-center h-32 text-[#6f7f9a] text-xs font-mono gap-2">
               {connected
-                ? "Waiting for events..."
+                ? <span>Waiting for events...</span>
                 : reconnecting
-                  ? "Reconnecting to daemon..."
-                  : "Connect to stream live events from hushd"}
+                  ? <span>Reconnecting to daemon...</span>
+                  : <span>Connect to a hushd instance to see live events</span>}
             </div>
           )}
           {filteredEvents.map((evt) => (

@@ -76,6 +76,7 @@ export function useAutoSave() {
   }, []);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastWriteRef = useRef(0);
 
   useEffect(() => {
     if (!dirty) return;
@@ -91,6 +92,7 @@ export function useAutoSave() {
         timestamp: Date.now(),
         policyName: activePolicy.name,
       });
+      lastWriteRef.current = Date.now();
     }, DEBOUNCE_DELAY_MS);
 
     return () => {
@@ -101,9 +103,10 @@ export function useAutoSave() {
     };
   }, [yaml, dirty, filePath, activePolicy.name]);
 
-  // Periodic auto-save
+  // Periodic auto-save — skip if a debounce write happened recently to avoid races
   useEffect(() => {
     const interval = setInterval(() => {
+      if (Date.now() - lastWriteRef.current < 5000) return;
       if (dirty) {
         writeAutosave({
           yaml,
@@ -111,6 +114,7 @@ export function useAutoSave() {
           timestamp: Date.now(),
           policyName: activePolicy.name,
         });
+        lastWriteRef.current = Date.now();
       }
     }, PERIODIC_INTERVAL_MS);
 

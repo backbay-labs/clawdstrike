@@ -118,6 +118,7 @@ function SecretPatternListEditor({ patterns, onChange }: SecretPatternListProps)
               value={p.name}
               onChange={(e) => updateRow(index, "name", e.target.value)}
               placeholder="name"
+              aria-label="Pattern name"
               className="h-7 rounded-md border border-[#2d3240] bg-[#131721] px-2 text-xs font-mono text-[#ece7dc] placeholder:text-[#6f7f9a]/50 outline-none focus:border-[#d4a84b]/50"
             />
             <div className="relative">
@@ -138,6 +139,7 @@ function SecretPatternListEditor({ patterns, onChange }: SecretPatternListProps)
                   updateRow(index, "pattern", val);
                 }}
                 placeholder="regex"
+                aria-label="Regex pattern"
                 className={`h-7 w-full rounded-md border bg-[#131721] px-2 pr-6 text-xs font-mono text-[#ece7dc] placeholder:text-[#6f7f9a]/50 outline-none focus:border-[#d4a84b]/50 ${
                   regexErrors[index] ? "border-[#c45c5c]" : "border-[#2d3240]"
                 }`}
@@ -244,6 +246,7 @@ function PatternList({ items, onChange, placeholder }: PatternListProps) {
       <input
         type="text"
         placeholder={placeholder ?? "Add pattern..."}
+        aria-label={placeholder ?? "Add pattern"}
         className={`h-8 w-full rounded-md border bg-[#131721] px-2.5 py-1 text-xs font-mono text-[#ece7dc] placeholder:text-[#6f7f9a]/50 outline-none focus:border-[#d4a84b]/50 transition-colors ${
           inputError ? "border-[#c45c5c]" : "border-[#2d3240]"
         }`}
@@ -406,6 +409,7 @@ function FieldRenderer({ field, value, onChange }: FieldRendererProps) {
             min={field.min}
             max={field.max}
             step={field.step}
+            aria-label="Threshold value"
             onChange={(e) => {
               const num = e.target.value === "" ? undefined : Number(e.target.value);
               onChange(num);

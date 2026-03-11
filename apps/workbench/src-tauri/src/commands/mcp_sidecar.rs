@@ -63,10 +63,14 @@ fn generate_token() -> String {
     let mut buf = [0u8; 16];
     getrandom::getrandom(&mut buf).expect("getrandom failed");
     // Prefix with mcp_ for recognizability
-    format!("mcp_{}", hex::encode(buf))
+    let token = format!("mcp_{}", hex::encode(buf));
+    debug_assert!(token.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'), "Token contains unexpected characters");
+    token
 }
 
-/// Check if a TCP port is available by attempting to bind to it.
+/// Check if a port is available by attempting to bind.
+/// NOTE: TOCTOU risk — port may be claimed between check and actual use.
+/// Mitigated by trying multiple ports in range 9877-9899.
 async fn port_available(port: u16) -> bool {
     tokio::net::TcpListener::bind(("127.0.0.1", port))
         .await
@@ -80,12 +84,14 @@ async fn find_available_port() -> Option<u16> {
             return Some(port);
         }
     }
+    eprintln!("[mcp-sidecar] All ports 9877-9899 are occupied. Check for orphaned MCP processes or conflicting services.");
     None
 }
 
-/// Resolve the path to the MCP server `index.ts` relative to the Tauri
-/// project root (src-tauri). In dev mode the script lives at
-/// `../mcp-server/index.ts` relative to `CARGO_MANIFEST_DIR`.
+/// Resolve the dev-mode MCP server script path.
+/// SECURITY NOTE: canonicalize() follows symlinks. In dev mode, this resolves
+/// relative to CARGO_MANIFEST_DIR (compile-time constant). Symlink attacks
+/// require write access to the source tree, which implies full compromise.
 fn resolve_dev_script_path() -> Option<String> {
     let dev_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../mcp-server/index.ts");
     if dev_path.exists() {
@@ -155,6 +161,9 @@ fn resolve_binary(name: &str) -> Option<String> {
         return Some(name.to_string());
     }
     // Check the user's home-local bin (e.g. ~/.local/bin/bun, ~/.bun/bin/bun).
+    // SECURITY NOTE: .exists() follows symlinks. An attacker with write access
+    // to ~/.bun/bin/ etc. could point to a malicious binary. Mitigated by
+    // running with user privileges (no escalation possible).
     if let Some(home) = dirs_next::home_dir() {
         for subdir in HOME_BIN_SUBDIRS {
             let candidate = home.join(subdir).join(name);
@@ -376,9 +385,10 @@ async fn spawn_child_for_launch(launch: &LaunchConfig, port: u16, token: &str) -
         Ok(Some(exit_status)) => {
             let stderr_msg = if let Some(stderr) = child.stderr.take() {
                 use tokio::io::AsyncReadExt;
-                let mut buf = Vec::new();
+                let mut buf = vec![0u8; 8192];
                 let mut reader = stderr;
-                let _ = reader.read_to_end(&mut buf).await;
+                let n = reader.read(&mut buf).await.unwrap_or(0);
+                buf.truncate(n);
                 String::from_utf8_lossy(&buf).to_string()
             } else {
                 String::new()
@@ -392,6 +402,20 @@ async fn spawn_child_for_launch(launch: &LaunchConfig, port: u16, token: &str) -
                 },
             );
             eprintln!("[mcp-sidecar] {msg}");
+            #[cfg(unix)]
+            {
+                use std::os::unix::process::ExitStatusExt;
+                if let Some(signal) = exit_status.signal() {
+                    let sig_name = match signal {
+                        11 => "SIGSEGV",
+                        6 => "SIGABRT",
+                        9 => "SIGKILL",
+                        15 => "SIGTERM",
+                        _ => "unknown",
+                    };
+                    eprintln!("[mcp-sidecar] MCP server killed by signal {signal} ({sig_name})");
+                }
+            }
             Err(msg)
         }
         Ok(None) => Ok(child),

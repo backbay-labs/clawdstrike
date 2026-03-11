@@ -15,6 +15,11 @@ export interface PolicyVersion {
   hash: string;
 }
 
+/**
+ * A tag attached to a specific policy version.
+ * Tag names should be unique per policy — adding a tag that already exists
+ * on the same policy will move/reassign it rather than create a duplicate.
+ */
 export interface VersionTag {
   name: string;
   versionId: string;
@@ -344,6 +349,11 @@ export class VersionStore {
     return versions;
   }
 
+  /**
+   * Find a version by tag name. Tags are unique per policy — if multiple
+   * versions share a tag name, only the first match is returned.
+   * Consider using getVersionsForPolicy() and filtering if you need all matches.
+   */
   async findByTag(tag: string): Promise<PolicyVersion | null> {
     const db = this.ensureDB();
     const tx = db.transaction([TAGS_STORE, VERSIONS_STORE], "readonly");
@@ -470,4 +480,8 @@ export function getVersionStore(): VersionStore {
     _instance = new VersionStore();
   }
   return _instance;
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', () => { _instance?.close(); });
 }

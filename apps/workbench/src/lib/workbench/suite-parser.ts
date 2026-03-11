@@ -25,6 +25,20 @@ export interface ParsedSuite {
 }
 
 // ---------------------------------------------------------------------------
+// Deterministic ID generation
+// ---------------------------------------------------------------------------
+
+function deterministicId(name: string, index: number): string {
+  // Simple deterministic ID from scenario name + index
+  let hash = 0;
+  const str = `${name}::${index}`;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
+  }
+  return `sc-${(hash >>> 0).toString(16).padStart(8, '0')}`;
+}
+
+// ---------------------------------------------------------------------------
 // Parse
 // ---------------------------------------------------------------------------
 
@@ -96,7 +110,7 @@ export function parseSuiteYaml(yamlStr: string): ParsedSuite {
     }
 
     const scenario: SuiteScenario = {
-      id: crypto.randomUUID(),
+      id: deterministicId(String(entry.name).trim(), i),
       name: String(entry.name).trim(),
       action: String(entry.action).trim(),
       target: String(entry.target).trim(),

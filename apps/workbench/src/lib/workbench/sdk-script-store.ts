@@ -509,18 +509,23 @@ try {
 
 export class SdkScriptStore {
   private db: IDBDatabase | null = null;
+  private initFailed = false;
 
   async init(): Promise<void> {
     if (this.db) return;
     try {
       this.db = await openDB();
     } catch (err) {
+      this.initFailed = true;
       console.error("[sdk-script-store] Failed to open IndexedDB:", err);
       // Graceful degradation: store stays null, all operations become no-ops or return empty
     }
   }
 
   private ensureDB(): IDBDatabase {
+    if (this.initFailed) {
+      throw new Error("SdkScriptStore initialization failed. IndexedDB may be unavailable.");
+    }
     if (!this.db) throw new Error("SdkScriptStore not initialized. Call init() first.");
     return this.db;
   }
@@ -599,3 +604,7 @@ export const sdkScriptStore: SdkScriptStore = (() => {
   }
   return _instance;
 })();
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', () => { _instance?.close(); });
+}

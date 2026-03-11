@@ -159,6 +159,36 @@ function fromRustSim(id: string, resp: TauriSimulationResponse): QuickTestResult
   };
 }
 
+/** Build payload based on action type so we don't set all fields to `target`. */
+function buildPayload(actionType: TestActionType, target: string, content?: string): Record<string, string> {
+  const payload: Record<string, string> = {};
+  if (content) payload.content = content;
+  switch (actionType) {
+    case "file_access":
+    case "file_write":
+      payload.path = target;
+      if (content) payload.content = content;
+      break;
+    case "shell_command":
+      payload.command = target;
+      break;
+    case "network_egress":
+      payload.host = target;
+      break;
+    case "mcp_tool_call":
+      payload.tool = target;
+      break;
+    default:
+      payload.path = target;
+      payload.command = target;
+      payload.host = target;
+      payload.tool = target;
+      payload.text = target;
+      break;
+  }
+  return payload;
+}
+
 /** Run a single scenario through the JS simulation engine. */
 function runJsSimulation(
   policy: Parameters<typeof simulatePolicy>[0],
@@ -171,14 +201,7 @@ function runJsSimulation(
     description: "",
     category: "benign",
     actionType,
-    payload: {
-      path: scenario.target,
-      command: scenario.target,
-      host: scenario.target,
-      tool: scenario.target,
-      text: scenario.target,
-      content: scenario.content,
-    },
+    payload: buildPayload(actionType, scenario.target, scenario.content),
   });
   return {
     verdict: sim.overallVerdict,
@@ -303,7 +326,7 @@ function QuickTestTab() {
             description: "",
             category: "benign" as const,
             actionType: entry.action,
-            payload: { path: entry.target, command: entry.target, host: entry.target, tool: entry.target, text: entry.target, content: entry.content },
+            payload: buildPayload(entry.action, entry.target, entry.content),
             expectedVerdict: entry.expect,
           };
           const sim = simulatePolicy(state.activePolicy, scenario);
@@ -1215,11 +1238,18 @@ function TestSuiteTab() {
         </div>
 
         <div className="flex-1 overflow-auto">
-          {suiteResults.length === 0 ? (
-            <div className="flex items-center justify-center h-full text-[#6f7f9a]/40 text-[11px] font-mono">
-              Run the suite to see results
+          {suiteResults.length === 0 && !running && (
+            <div className="flex flex-col items-center justify-center h-32 text-[#6f7f9a] text-xs font-mono gap-2">
+              <IconTestPipe size={24} stroke={1} className="opacity-40" />
+              <span>Run a test suite to see results</span>
             </div>
-          ) : (
+          )}
+          {suiteResults.length === 0 && running && (
+            <div className="flex items-center justify-center h-full text-[#6f7f9a]/40 text-[11px] font-mono">
+              Running...
+            </div>
+          )}
+          {suiteResults.length > 0 && (
             <div className="divide-y divide-[#2d3240]/50">
               {suiteResults.map((r, i) => (
                 <div

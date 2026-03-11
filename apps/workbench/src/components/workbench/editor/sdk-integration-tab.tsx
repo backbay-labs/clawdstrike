@@ -960,7 +960,7 @@ export function SdkIntegrationTab() {
               </button>
             </div>
             {/* Terminal body */}
-            <div className="flex-1 min-h-0 overflow-auto p-3 font-mono text-[10px] leading-[1.6]">
+            <div role="log" aria-live="polite" aria-label="Dry-run output" className="flex-1 min-h-0 overflow-auto p-3 font-mono text-[10px] leading-[1.6]">
               {dryRunOutput.terminalOutput.split("\n").map((line, i) => {
                 let lineColor = "text-[#6f7f9a]";
                 if (line.includes("\u2713")) lineColor = "text-[#3dbf84]";

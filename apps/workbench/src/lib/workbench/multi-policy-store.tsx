@@ -749,7 +749,8 @@ function persistTabs(state: MultiPolicyState): void {
     };
     localStorage.setItem(TABS_STORAGE_KEY, JSON.stringify(persisted));
   } catch (e) {
-    console.warn("[multi-policy-store] persistTabs localStorage operation failed:", e);
+    // TODO: surface via toast when toast system is available outside React components
+    console.error("[multi-policy-store] persistTabs failed — changes may be lost on reload:", e);
   }
 }
 
@@ -951,7 +952,8 @@ export function MultiPolicyProvider({ children }: { children: ReactNode }) {
     try {
       localStorage.setItem(SAVED_POLICIES_KEY, JSON.stringify(multiState.savedPolicies));
     } catch (e) {
-      console.warn("[multi-policy-store] persist saved policies failed:", e);
+      // TODO: surface via toast when toast system is available outside React components
+      console.error("[multi-policy-store] persist saved policies failed — changes may be lost on reload:", e);
     }
   }, [multiState.savedPolicies]);
 

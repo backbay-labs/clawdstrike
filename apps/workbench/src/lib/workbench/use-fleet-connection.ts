@@ -140,8 +140,8 @@ export function FleetConnectionProvider({ children }: { children: ReactNode }) {
       const list = await apiFetchAgentList(conn);
       setAgents(list);
       setConnection((prev) => ({ ...prev, agentCount: list.length }));
-    } catch {
-      // silently continue — stale data is better than no data
+    } catch (err) {
+      console.warn("[fleet] agent poll failed:", err);
     }
   }, []);
 
@@ -235,7 +235,10 @@ export function FleetConnectionProvider({ children }: { children: ReactNode }) {
     }
 
     attemptReconnect();
-    return () => { isMounted = false; };
+    return () => {
+      isMounted = false;
+      reconnectLockRef.current = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

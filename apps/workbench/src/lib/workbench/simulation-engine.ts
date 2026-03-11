@@ -24,6 +24,26 @@ import { gradeSimulationResult } from "./redteam/grading";
 import type { RedTeamGradingResult } from "./redteam/types";
 
 // ---------------------------------------------------------------------------
+// Regex cache (module-scoped)
+// ---------------------------------------------------------------------------
+
+const regexCache = new Map<string, RegExp>();
+function cachedRegex(pattern: string, flags?: string): RegExp {
+  const key = `${pattern}::${flags ?? ''}`;
+  let re = regexCache.get(key);
+  if (!re) {
+    re = new RegExp(pattern, flags);
+    regexCache.set(key, re);
+    // Cap cache at 500 entries to prevent unbounded growth
+    if (regexCache.size > 500) {
+      const firstKey = regexCache.keys().next().value;
+      if (firstKey !== undefined) regexCache.delete(firstKey);
+    }
+  }
+  return re;
+}
+
+// ---------------------------------------------------------------------------
 // Regex safety helper
 // ---------------------------------------------------------------------------
 
@@ -146,7 +166,7 @@ function globToRegex(pattern: string): RegExp {
   }
 
   // Case-sensitive to match Rust glob::Pattern::matches() semantics
-  return new RegExp(re + "$");
+  return cachedRegex(re + "$");
 }
 
 /** Wildcard domain match (e.g. *.openai.com matches api.openai.com). */
@@ -298,7 +318,7 @@ function simulateSecretLeak(
       continue;
     }
     try {
-      const re = new RegExp(sp.pattern);
+      const re = cachedRegex(sp.pattern);
       if (re.test(content)) {
         matches.push({ name: sp.name, pattern: sp.pattern, severity: sp.severity });
       }
@@ -404,7 +424,7 @@ function simulatePatchIntegrity(
       };
     }
     try {
-      const re = new RegExp(pat);
+      const re = cachedRegex(pat);
       if (re.test(content)) {
         return {
           guardId: "patch_integrity",
@@ -490,7 +510,7 @@ function simulateShellCommand(
       };
     }
     try {
-      const re = new RegExp(pat, "i");
+      const re = cachedRegex(pat, "i");
       if (re.test(command)) {
         return {
           guardId: "shell_command",

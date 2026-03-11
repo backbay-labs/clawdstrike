@@ -14,15 +14,15 @@ DEFAULT_BLOCKED_COMMANDS: list[str] = [
     r"rm\s+-rf\s+~",           # rm -rf ~
     r":\(\)\{\s*:\|:&\s*\};:", # fork bomb
     r"mkfs\.",                  # format filesystem
-    r"dd\s+if=.*of=/dev/",     # overwrite device
+    r"dd\s+if=.*?of=/dev/",    # overwrite device
     r">\s*/dev/sd[a-z]",       # redirect to device
     r"chmod\s+-R\s+777\s+/",   # chmod 777 /
-    r"curl\s+.*\|\s*sh",       # pipe curl to sh
-    r"wget\s+.*\|\s*sh",       # pipe wget to sh
-    r"curl\s+.*\|\s*bash",     # pipe curl to bash
-    r"wget\s+.*\|\s*bash",     # pipe wget to bash
+    r"curl\s+.*?\|\s*sh",      # pipe curl to sh
+    r"wget\s+.*?\|\s*sh",      # pipe wget to sh
+    r"curl\s+.*?\|\s*bash",    # pipe curl to bash
+    r"wget\s+.*?\|\s*bash",    # pipe wget to bash
     r"eval\s*\(",              # eval
-    r"python\s+-c\s+.*exec\(",  # python exec
+    r"python\s+-c\s+.*?exec\(",  # python exec
     r"nc\s+-l",                # netcat listen
     r"ncat\s+-l",              # ncat listen
 ]

@@ -455,6 +455,8 @@ export function GuardCard({
       >
         {/* Header */}
         <CollapsibleTrigger
+          aria-expanded={open}
+          aria-label={`${open ? 'Collapse' : 'Expand'} ${meta.name} configuration`}
           className="flex items-center gap-3 w-full px-3 py-3 text-left cursor-pointer hover:bg-[#131721]/50 transition-colors rounded-t-lg"
         >
           {/* Drag handle — only in custom reorder mode */}
@@ -557,6 +559,7 @@ export function GuardCard({
                     : "text-[#6f7f9a] hover:text-[#d4a84b] hover:bg-[#d4a84b]/10"
                 )}
                 title="Move up"
+                aria-label="Move guard up"
               >
                 <IconChevronUp size={12} stroke={1.5} />
               </button>
@@ -571,6 +574,7 @@ export function GuardCard({
                     : "text-[#6f7f9a] hover:text-[#d4a84b] hover:bg-[#d4a84b]/10"
                 )}
                 title="Move down"
+                aria-label="Move guard down"
               >
                 <IconChevronDown size={12} stroke={1.5} />
               </button>
@@ -715,11 +719,13 @@ export function GuardCard({
       {/* Context menu */}
       {contextMenu && (
         <div
+          role="menu"
           className="fixed z-50 min-w-[180px] rounded-md border border-[#2d3240] bg-[#131721] py-1 shadow-lg shadow-black/40"
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
           <button
             type="button"
+            role="menuitem"
             className="flex w-full items-center gap-2 px-3 py-1.5 text-[10px] font-mono text-[#ece7dc] hover:bg-[#2d3240] transition-colors text-left"
             onClick={handleGenerateTests}
             disabled={!testRunner}
@@ -730,6 +736,7 @@ export function GuardCard({
           </button>
           <button
             type="button"
+            role="menuitem"
             className="flex w-full items-center gap-2 px-3 py-1.5 text-[10px] font-mono text-[#ece7dc] hover:bg-[#2d3240] transition-colors text-left"
             onClick={handleViewResults}
             disabled={testStatus === "none"}

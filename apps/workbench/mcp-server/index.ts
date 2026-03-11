@@ -9,6 +9,7 @@
  *     `MCP_AUTH_TOKEN`.
  */
 
+import { timingSafeEqual } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 
@@ -1937,6 +1938,14 @@ function wantsSse(): boolean {
   return false;
 }
 
+/** Constant-time string comparison to prevent timing attacks on bearer tokens. */
+function secureTokenCompare(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return timingSafeEqual(bufA, bufB);
+}
+
 if (isMainModule()) {
   if (wantsSse()) {
     // -----------------------------------------------------------------------
@@ -1965,7 +1974,7 @@ if (isMainModule()) {
       // ---- Bearer token check for all other endpoints ----
       if (authToken) {
         const authorization = req.headers.authorization ?? "";
-        if (authorization !== `Bearer ${authToken}`) {
+        if (!secureTokenCompare(authorization, `Bearer ${authToken}`)) {
           res.writeHead(401, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "unauthorized" }));
           return;
