@@ -90,6 +90,7 @@ fn main() {
             stronghold_cmds::get_signing_public_key,
             stronghold_cmds::sign_with_persistent_key,
             mcp_sidecar::get_mcp_status,
+            mcp_sidecar::stop_mcp_server,
             mcp_sidecar::restart_mcp_server,
         ])
         .build(tauri::generate_context!())

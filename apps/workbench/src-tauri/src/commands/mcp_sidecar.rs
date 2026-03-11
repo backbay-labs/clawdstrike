@@ -525,6 +525,23 @@ pub fn kill_mcp_server(state: &McpState) {
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
+pub async fn stop_mcp_server(
+    state: tauri::State<'_, McpState>,
+) -> Result<McpStatusResponse, String> {
+    kill_mcp_server(&state);
+    let inner = state
+        .inner
+        .lock()
+        .map_err(|_| "McpState lock poisoned".to_string())?;
+    Ok(McpStatusResponse {
+        url: String::new(),
+        token: inner.token.clone(),
+        running: false,
+        error: None,
+    })
+}
+
+#[tauri::command]
 pub async fn get_mcp_status(
     state: tauri::State<'_, McpState>,
 ) -> Result<McpStatusResponse, String> {

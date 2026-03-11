@@ -418,6 +418,20 @@ export async function getMcpStatus(): Promise<TauriMcpStatusResponse | null> {
 }
 
 /**
+ * Stop the embedded MCP sidecar server.
+ * Returns null when not running inside Tauri.
+ */
+export async function stopMcpServer(): Promise<TauriMcpStatusResponse | null> {
+  if (!isDesktop()) return null;
+  try {
+    return await tauriInvoke<TauriMcpStatusResponse>("stop_mcp_server");
+  } catch (err) {
+    console.error("[tauri-commands] stop_mcp_server failed:", err);
+    return null;
+  }
+}
+
+/**
  * Restart the embedded MCP sidecar server.
  * Generates a new auth token and may bind to a different port.
  * Returns null when not running inside Tauri.
