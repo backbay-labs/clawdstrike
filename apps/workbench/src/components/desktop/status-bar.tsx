@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useWorkbench, useMultiPolicy } from "@/lib/workbench/multi-policy-store";
 import { useFleetConnection } from "@/lib/workbench/use-fleet-connection";
-import { useMcpStatus } from "@/components/workbench/library/library-gallery";
+import { useMcpStatus } from "@/lib/workbench/use-mcp-status";
 import { isDesktop } from "@/lib/tauri-bridge";
 import { GUARD_REGISTRY } from "@/lib/workbench/guard-registry";
 import type { GuardId } from "@/lib/workbench/types";

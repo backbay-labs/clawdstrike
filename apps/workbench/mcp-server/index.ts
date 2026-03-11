@@ -1957,6 +1957,13 @@ if (isMainModule()) {
     const port = Number(process.env.MCP_PORT) || 9877;
     const authToken = process.env.MCP_AUTH_TOKEN ?? "";
 
+    if (!authToken) {
+      console.warn(
+        "[mcp-server] WARNING: MCP_AUTH_TOKEN is not set — all endpoints are unauthenticated. " +
+        "Set MCP_AUTH_TOKEN to enable bearer-token auth (the Tauri sidecar sets this automatically).",
+      );
+    }
+
     // The MCP SDK only supports one active transport per McpServer instance.
     // Keep SSE single-session so we never route POSTs to a transport before
     // `server.connect()` finishes or force-close a live protocol instance.

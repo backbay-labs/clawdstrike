@@ -264,7 +264,7 @@ export function EditorHomeTab({
                   onClick={() => handleLoadTemplate(template)}
                   className={cn(
                     "group flex items-center gap-2 px-3 py-2 rounded cursor-pointer transition-all bg-[#131721] border border-[#2d3240] hover:border-[#d4a84b]/30",
-                    !canAddTab && "opacity-40 cursor-not-allowed",
+                    !canAddTab && "opacity-40 cursor-not-allowed pointer-events-none",
                   )}
                 >
                   <IconTemplate size={13} stroke={1.5} className="text-[#d4a84b]/60 shrink-0" />
