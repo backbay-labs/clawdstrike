@@ -289,7 +289,7 @@ describe("secret_leak guard", () => {
     expect(result.guardResults[0].evidence?.severityThreshold).toBe("critical");
   });
 
-  it("redacts matched secret values in evidence when redact is enabled", () => {
+  it("does not echo matched secret values in evidence when redact is enabled", () => {
     const redactPolicy = makePolicy({
       secret_leak: {
         enabled: true,
@@ -307,9 +307,10 @@ describe("secret_leak guard", () => {
       })
     );
 
-    const match = (result.guardResults[0].evidence?.matches as Array<{ redacted: string }>)[0];
-    expect(match.redacted).not.toBe("AKIAIOSFODNN7EXAMPLE");
-    expect(match.redacted.startsWith("AKIA")).toBe(true);
+    const match = (result.guardResults[0].evidence?.matches as Array<{ matchLength: number } | undefined>)[0];
+    expect(match?.matchLength).toBe("AKIAIOSFODNN7EXAMPLE".length);
+    expect(JSON.stringify(result.guardResults[0].evidence)).not.toContain("AKIAIOSFODNN7EXAMPLE");
+    expect(result.guardResults[0].evidence?.redactionRequested).toBe(true);
   });
 
   it("allows clean content", () => {

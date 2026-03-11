@@ -86,12 +86,10 @@ export class SecretLeakGuard implements Guard {
     // Check for any secret in the output
     for (const secret of this.secrets) {
       if (text.includes(secret)) {
-        // Create hint (first 4 chars + "...")
-        const hint = secret.length > 4 ? secret.slice(0, 4) + "..." : secret.slice(0, 2) + "...";
-        const secretValue = this.redact ? this.redactValue(secret) : secret;
         return this.resultForSeverity(Severity.CRITICAL, "Secret value exposed in output").withDetails({
-          secret_hint: hint,
-          redacted: secretValue,
+          secret_hint: "configured_secret",
+          redaction_requested: this.redact,
+          match_length: secret.length,
           action_type: action.customType ?? action.actionType,
         });
       }
@@ -106,7 +104,8 @@ export class SecretLeakGuard implements Guard {
         const baseResult = this.resultForSeverity(entry.severity, "Secret pattern matched in output");
         return baseResult.withDetails({
           secret_hint: hint,
-          redacted: this.redact ? this.redactValue(matchedValue) : matchedValue,
+          redaction_requested: this.redact,
+          match_length: matchedValue.length,
           severity_threshold: this.severityThreshold,
           action_type: action.customType ?? action.actionType,
         });
@@ -150,12 +149,6 @@ export class SecretLeakGuard implements Guard {
     }
 
     return GuardResult.warn(this.name, message);
-  }
-
-  private redactValue(value: string): string {
-    if (value.length === 0) return "";
-    if (value.length <= 8) return "*".repeat(value.length);
-    return `${value.slice(0, 4)}${"*".repeat(value.length - 8)}${value.slice(-4)}`;
   }
 
   private extractText(action: GuardAction): string {

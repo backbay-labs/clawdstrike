@@ -290,8 +290,11 @@ class PolicyResolver:
         else:
             extends_path = Path(reference)
 
-        # Prevent path traversal escaping the base directory
-        if from_path is not None:
+        # Prevent path traversal escaping an explicitly provided base directory.
+        # File-based policies may legitimately extend siblings or parents
+        # (e.g. nested/service.yaml -> ../base.yaml), so only enforce this
+        # boundary when the caller passed a directory root.
+        if from_path is not None and from_path.exists() and from_path.is_dir():
             resolved = extends_path.resolve()
             if not resolved.is_relative_to(base_dir.resolve()):
                 raise PolicyError(f"Policy extends path escapes base directory: {reference}")

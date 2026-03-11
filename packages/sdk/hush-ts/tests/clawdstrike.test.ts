@@ -435,9 +435,13 @@ guards:
       content: new TextEncoder().encode("api_key = abcdefghijklmnopqrstuvwxyz123456"),
     });
     expect(secretDecision.status).toBe("warn");
-    const details = secretDecision.details as { redacted?: string };
-    expect(details.redacted).toBeDefined();
-    expect(details.redacted).not.toBe("api_key = abcdefghijklmnopqrstuvwxyz123456");
+    const details = secretDecision.details as {
+      redaction_requested?: boolean;
+      match_length?: number;
+    };
+    expect(details.redaction_requested).toBe(true);
+    expect(details.match_length).toBeGreaterThan(0);
+    expect(JSON.stringify(details)).not.toContain("abcdefghijklmnopqrstuvwxyz123456");
   });
 
   it("skips prompt_injection guard when WASM is unavailable instead of fail-closing checks", async () => {

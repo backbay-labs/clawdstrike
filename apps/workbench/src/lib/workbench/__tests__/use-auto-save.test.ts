@@ -1,6 +1,7 @@
 import React from "react";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import YAML from "yaml";
 import { MultiPolicyProvider, useMultiPolicy } from "../multi-policy-store";
 import {
   clearAutosave,
@@ -186,6 +187,42 @@ describe("readAutosave", () => {
     expect(readAutosaves()).toEqual([second, first]);
     expect(readAutosave()).toEqual(second);
   });
+
+  it("scrubs multiline sensitive YAML blocks from legacy autosaves before restore", () => {
+    const entry = makeEntry({
+      yaml: `version: "1.4.0"
+name: "Sensitive Policy"
+guards:
+  spider_sense:
+    enabled: true
+    embedding_api_key: |
+      line-one
+      line-two
+
+    threshold: 0.8
+`,
+      filePath: "/tmp/sensitive.yaml",
+    });
+    localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(entry));
+
+    const result = readAutosave();
+
+    expect(result).not.toBeNull();
+    expect(result!.yaml).not.toContain("embedding_api_key");
+    expect(result!.yaml).not.toContain("line-one");
+    expect(result!.filePath).toBeNull();
+    expect(result!.sensitiveFieldsStripped).toBe(true);
+    expect(YAML.parse(result!.yaml)).toEqual({
+      version: "1.4.0",
+      name: "Sensitive Policy",
+      guards: {
+        spider_sense: {
+          enabled: true,
+          threshold: 0.8,
+        },
+      },
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -305,5 +342,7 @@ describe("useAutoSave", () => {
     expect(autosave).not.toBeNull();
     expect(autosave!.yaml).not.toContain("embedding_api_key");
     expect(autosave!.yaml).not.toContain("super-secret");
+    expect(autosave!.filePath).toBeNull();
+    expect(autosave!.sensitiveFieldsStripped).toBe(true);
   });
 });

@@ -41,6 +41,6 @@ describe("CoverageStrip", () => {
     );
 
     expect(screen.getByText("67%")).toBeInTheDocument();
-    expect(screen.queryByText(/66\\.666/)).toBeNull();
+    expect(screen.queryByText(/66\.666/)).toBeNull();
   });
 });

@@ -110,6 +110,31 @@ describe("saveVersion", () => {
     const count = await store.getVersionCount("pol-prune");
     expect(count).toBe(50);
   });
+
+  it("sanitizes sensitive fields before writing versions to IndexedDB", async () => {
+    const yaml = `version: "1.4.0"
+name: "Sensitive Policy"
+guards:
+  spider_sense:
+    enabled: true
+    embedding_api_key: "super-secret"
+`;
+    const policy = makePolicy({
+      name: "Sensitive Policy",
+      guards: {
+        spider_sense: {
+          enabled: true,
+          embedding_api_key: "super-secret",
+        },
+      },
+    });
+
+    const version = await store.saveVersion("pol-sensitive", yaml, policy);
+
+    expect(version.yaml).not.toContain("embedding_api_key");
+    expect(JSON.stringify(version.policy)).not.toContain("super-secret");
+    expect(version.sensitiveFieldsStripped).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------

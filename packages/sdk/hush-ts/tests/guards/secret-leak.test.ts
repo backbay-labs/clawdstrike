@@ -82,7 +82,7 @@ describe("SecretLeakGuard", () => {
     ).toBe(false);
   });
 
-  it("provides secret hint in details", () => {
+  it("reports a generic hint for configured secret matches", () => {
     const config: SecretLeakConfig = {
       secrets: ["super-secret-key"],
     };
@@ -90,7 +90,8 @@ describe("SecretLeakGuard", () => {
     const action = GuardAction.custom("output", { content: "super-secret-key" });
     const result = guard.check(action, new GuardContext());
 
-    expect(result.details?.secret_hint).toBe("supe...");
+    expect(result.details?.secret_hint).toBe("configured_secret");
+    expect(result.details?.match_length).toBe("super-secret-key".length);
   });
 
   it("respects enabled flag", () => {
@@ -168,7 +169,7 @@ describe("SecretLeakGuard", () => {
     expect(result.details?.severity_threshold).toBe(Severity.CRITICAL);
   });
 
-  it("redacts matched values in details by default", () => {
+  it("does not echo matched secret material in details", () => {
     const config: SecretLeakConfig = {
       secrets: ["super-secret-key-12345"],
     };
@@ -178,8 +179,9 @@ describe("SecretLeakGuard", () => {
     });
     const result = guard.check(action, new GuardContext());
 
-    expect(result.details?.redacted).not.toBe("super-secret-key-12345");
-    expect(String(result.details?.redacted).startsWith("supe")).toBe(true);
+    expect(result.details?.redaction_requested).toBe(true);
+    expect(result.details?.match_length).toBe("super-secret-key-12345".length);
+    expect(JSON.stringify(result.details)).not.toContain("super-secret-key-12345");
   });
 
   it("supports inline regex flags in pattern definitions", () => {

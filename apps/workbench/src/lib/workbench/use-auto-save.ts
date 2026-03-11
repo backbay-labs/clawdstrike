@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMultiPolicy } from "./multi-policy-store";
-import { sanitizeYamlForStorage } from "./storage-sanitizer";
+import { sanitizeYamlForStorageWithMetadata } from "./storage-sanitizer";
 
 const AUTOSAVE_KEY = "clawdstrike_workbench_autosave";
 const PERIODIC_INTERVAL_MS = 30_000;
@@ -12,6 +12,7 @@ export interface AutosaveEntry {
   filePath: string | null;
   timestamp: number;
   policyName: string;
+  sensitiveFieldsStripped?: boolean;
 }
 
 interface AutosavePayload {
@@ -23,9 +24,13 @@ function isAutosaveEntry(value: unknown): value is AutosaveEntry {
 
   const entry = value as Record<string, unknown>;
   const hasValidTabId = entry.tabId === undefined || typeof entry.tabId === "string";
+  const hasValidSensitiveFlag =
+    entry.sensitiveFieldsStripped === undefined ||
+    typeof entry.sensitiveFieldsStripped === "boolean";
 
   return (
     hasValidTabId &&
+    hasValidSensitiveFlag &&
     typeof entry.yaml === "string" &&
     typeof entry.timestamp === "number" &&
     typeof entry.policyName === "string" &&
@@ -36,10 +41,17 @@ function isAutosaveEntry(value: unknown): value is AutosaveEntry {
 function writeAutosaves(entries: AutosaveEntry[]): void {
   try {
     const payload: AutosavePayload = {
-      entries: entries.map((entry) => ({
-        ...entry,
-        yaml: sanitizeYamlForStorage(entry.yaml),
-      })),
+      entries: entries.map((entry) => {
+        const sanitized = sanitizeYamlForStorageWithMetadata(entry.yaml);
+        const sensitiveFieldsStripped =
+          entry.sensitiveFieldsStripped === true || sanitized.sensitiveFieldsStripped;
+        return {
+          ...entry,
+          yaml: sanitized.yaml,
+          filePath: sensitiveFieldsStripped ? null : entry.filePath,
+          sensitiveFieldsStripped: sensitiveFieldsStripped || undefined,
+        };
+      }),
     };
     localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(payload));
   } catch {
@@ -55,9 +67,14 @@ export function readAutosaves(): AutosaveEntry[] {
     const parsed = JSON.parse(raw) as unknown;
 
     if (isAutosaveEntry(parsed)) {
+      const sanitized = sanitizeYamlForStorageWithMetadata(parsed.yaml);
+      const sensitiveFieldsStripped =
+        parsed.sensitiveFieldsStripped === true || sanitized.sensitiveFieldsStripped;
       const entry = {
         ...parsed,
-        yaml: sanitizeYamlForStorage(parsed.yaml),
+        yaml: sanitized.yaml,
+        filePath: sensitiveFieldsStripped ? null : parsed.filePath,
+        sensitiveFieldsStripped: sensitiveFieldsStripped || undefined,
       };
       writeAutosaves([entry]);
       return [entry];
@@ -70,10 +87,17 @@ export function readAutosaves(): AutosaveEntry[] {
     ) {
       const entries = (parsed as { entries: unknown[] }).entries
         .filter(isAutosaveEntry)
-        .map((entry) => ({
-          ...entry,
-          yaml: sanitizeYamlForStorage(entry.yaml),
-        }))
+        .map((entry) => {
+          const sanitized = sanitizeYamlForStorageWithMetadata(entry.yaml);
+          const sensitiveFieldsStripped =
+            entry.sensitiveFieldsStripped === true || sanitized.sensitiveFieldsStripped;
+          return {
+            ...entry,
+            yaml: sanitized.yaml,
+            filePath: sensitiveFieldsStripped ? null : entry.filePath,
+            sensitiveFieldsStripped: sensitiveFieldsStripped || undefined,
+          };
+        })
         .sort((a, b) => b.timestamp - a.timestamp);
 
       writeAutosaves(entries);

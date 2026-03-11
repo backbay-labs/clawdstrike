@@ -115,7 +115,6 @@ fn generate_and_write_machine_secret(key_file: &Path, out: &mut [u8; 32]) {
     }
 }
 
-
 /// Access the initialised Stronghold, returning an error if not yet initialised.
 fn with_stronghold<T, F>(state: &StrongholdState, f: F) -> Result<T, String>
 where
@@ -201,13 +200,10 @@ fn store_credential_in_state(
     }
 
     with_stronghold(state, |inner| {
-        let client = inner
-            .stronghold
-            .get_client(CLIENT_NAME)
-            .map_err(|e| {
-                eprintln!("[stronghold] client load error: {e}");
-                "Failed to access vault client".to_string()
-            })?;
+        let client = inner.stronghold.get_client(CLIENT_NAME).map_err(|e| {
+            eprintln!("[stronghold] client load error: {e}");
+            "Failed to access vault client".to_string()
+        })?;
         let store = client.store();
         let store_key = format!("{}{}", CRED_PREFIX, key).into_bytes();
         store
@@ -226,13 +222,10 @@ fn get_credential_from_state(
     key: String,
 ) -> Result<Option<String>, String> {
     with_stronghold(state, |inner| {
-        let client = inner
-            .stronghold
-            .get_client(CLIENT_NAME)
-            .map_err(|e| {
-                eprintln!("[stronghold] client load error: {e}");
-                "Failed to access vault client".to_string()
-            })?;
+        let client = inner.stronghold.get_client(CLIENT_NAME).map_err(|e| {
+            eprintln!("[stronghold] client load error: {e}");
+            "Failed to access vault client".to_string()
+        })?;
         let store = client.store();
         let store_key = format!("{}{}", CRED_PREFIX, key).into_bytes();
         match store.get(&store_key) {
@@ -253,13 +246,10 @@ fn get_credential_from_state(
 
 fn delete_credential_from_state(state: &StrongholdState, key: String) -> Result<bool, String> {
     with_stronghold(state, |inner| {
-        let client = inner
-            .stronghold
-            .get_client(CLIENT_NAME)
-            .map_err(|e| {
-                eprintln!("[stronghold] client load error: {e}");
-                "Failed to access vault client".to_string()
-            })?;
+        let client = inner.stronghold.get_client(CLIENT_NAME).map_err(|e| {
+            eprintln!("[stronghold] client load error: {e}");
+            "Failed to access vault client".to_string()
+        })?;
         let store = client.store();
         let store_key = format!("{}{}", CRED_PREFIX, key).into_bytes();
         let _ = store.delete(&store_key);
@@ -270,21 +260,16 @@ fn delete_credential_from_state(state: &StrongholdState, key: String) -> Result<
 
 fn has_credential_in_state(state: &StrongholdState, key: String) -> Result<bool, String> {
     with_stronghold(state, |inner| {
-        let client = inner
-            .stronghold
-            .get_client(CLIENT_NAME)
-            .map_err(|e| {
-                eprintln!("[stronghold] client load error: {e}");
-                "Failed to access vault client".to_string()
-            })?;
+        let client = inner.stronghold.get_client(CLIENT_NAME).map_err(|e| {
+            eprintln!("[stronghold] client load error: {e}");
+            "Failed to access vault client".to_string()
+        })?;
         let store = client.store();
         let store_key = format!("{}{}", CRED_PREFIX, key).into_bytes();
-        store
-            .contains_key(&store_key)
-            .map_err(|e| {
-                eprintln!("[stronghold] store error: {e}");
-                "Failed to check credential".to_string()
-            })
+        store.contains_key(&store_key).map_err(|e| {
+            eprintln!("[stronghold] store error: {e}");
+            "Failed to check credential".to_string()
+        })
     })
 }
 
@@ -299,13 +284,10 @@ fn has_credential_in_state(state: &StrongholdState, key: String) -> Result<bool,
 #[tauri::command]
 pub async fn init_stronghold<R: Runtime>(app: AppHandle<R>) -> Result<bool, String> {
     // Resolve snapshot path inside the Tauri app data directory.
-    let data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| {
-            eprintln!("[stronghold] cannot resolve app data dir: {e}");
-            "Cannot resolve app data directory".to_string()
-        })?;
+    let data_dir = app.path().app_data_dir().map_err(|e| {
+        eprintln!("[stronghold] cannot resolve app data dir: {e}");
+        "Cannot resolve app data directory".to_string()
+    })?;
     std::fs::create_dir_all(&data_dir).map_err(|e| {
         eprintln!("[stronghold] cannot create app data dir: {e}");
         "Cannot create app data directory".to_string()
@@ -434,13 +416,10 @@ fn generate_persistent_keypair_in_state(
     state: &StrongholdState,
 ) -> Result<GenerateKeypairResponse, String> {
     with_stronghold(state, |inner| {
-        let client = inner
-            .stronghold
-            .get_client(CLIENT_NAME)
-            .map_err(|e| {
-                eprintln!("[stronghold] client load error: {e}");
-                "Failed to access vault client".to_string()
-            })?;
+        let client = inner.stronghold.get_client(CLIENT_NAME).map_err(|e| {
+            eprintln!("[stronghold] client load error: {e}");
+            "Failed to access vault client".to_string()
+        })?;
         let store = client.store();
 
         if let Ok(Some(existing_pub)) = store.get(SIGNING_PUBKEY_RECORD) {
@@ -485,13 +464,10 @@ fn generate_persistent_keypair_in_state(
 
 fn get_signing_public_key_from_state(state: &StrongholdState) -> Result<Option<String>, String> {
     with_stronghold(state, |inner| {
-        let client = inner
-            .stronghold
-            .get_client(CLIENT_NAME)
-            .map_err(|e| {
-                eprintln!("[stronghold] client load error: {e}");
-                "Failed to access vault client".to_string()
-            })?;
+        let client = inner.stronghold.get_client(CLIENT_NAME).map_err(|e| {
+            eprintln!("[stronghold] client load error: {e}");
+            "Failed to access vault client".to_string()
+        })?;
         let store = client.store();
         match store.get(SIGNING_PUBKEY_RECORD) {
             Ok(Some(bytes)) if bytes.len() == 32 => Ok(Some(hex::encode(&bytes))),
@@ -508,13 +484,10 @@ fn sign_with_persistent_key_in_state(
         .map_err(|_| "Invalid hex data".to_string())?;
 
     with_stronghold(state, |inner| {
-        let client = inner
-            .stronghold
-            .get_client(CLIENT_NAME)
-            .map_err(|e| {
-                eprintln!("[stronghold] client load error: {e}");
-                "Failed to access vault client".to_string()
-            })?;
+        let client = inner.stronghold.get_client(CLIENT_NAME).map_err(|e| {
+            eprintln!("[stronghold] client load error: {e}");
+            "Failed to access vault client".to_string()
+        })?;
         let store = client.store();
 
         let seed_bytes = Zeroizing::new(

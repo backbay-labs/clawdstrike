@@ -24,7 +24,7 @@ import {
   type NativeValidationState,
 } from "./policy-store";
 import { policyToYaml, yamlToPolicy, validatePolicy } from "./yaml-utils";
-import { sanitizeYamlForStorage } from "./storage-sanitizer";
+import { sanitizeYamlForStorageWithMetadata } from "./storage-sanitizer";
 import {
   isDesktop,
   openPolicyFile,
@@ -829,6 +829,7 @@ interface PersistedTab {
   filePath: string | null;
   yaml: string;
   testSuiteYaml?: string;
+  sensitiveFieldsStripped?: boolean;
 }
 
 interface PersistedTabState {
@@ -839,13 +840,18 @@ interface PersistedTabState {
 function persistTabs(state: MultiPolicyState): void {
   try {
     const persisted: PersistedTabState = {
-      tabs: state.tabs.map((t) => ({
-        id: t.id,
-        name: t.name,
-        filePath: t.filePath,
-        yaml: sanitizeYamlForStorage(t.yaml),
-        testSuiteYaml: t.testSuiteYaml,
-      })),
+      tabs: state.tabs.map((t) => {
+        const sanitized = sanitizeYamlForStorageWithMetadata(t.yaml);
+        const sensitiveFieldsStripped = sanitized.sensitiveFieldsStripped;
+        return {
+          id: t.id,
+          name: t.name,
+          filePath: sensitiveFieldsStripped ? null : t.filePath,
+          yaml: sanitized.yaml,
+          testSuiteYaml: t.testSuiteYaml,
+          sensitiveFieldsStripped: sensitiveFieldsStripped || undefined,
+        };
+      }),
       activeTabId: state.activeTabId,
     };
     localStorage.setItem(TABS_STORAGE_KEY, JSON.stringify(persisted));
@@ -879,11 +885,12 @@ function loadPersistedTabs(): MultiPolicyState | null {
       const pol = policy ?? DEFAULT_POLICY;
       const yaml = pt.yaml;
       const validation = validatePolicy(pol);
+      const sensitiveFieldsStripped = pt.sensitiveFieldsStripped === true;
       return {
         id: pt.id,
         name: pt.name || pol.name || "Untitled",
-        filePath: pt.filePath,
-        dirty: false,
+        filePath: sensitiveFieldsStripped ? null : pt.filePath,
+        dirty: sensitiveFieldsStripped,
         policy: pol,
         yaml,
         validation,
@@ -891,7 +898,9 @@ function loadPersistedTabs(): MultiPolicyState | null {
         testSuiteYaml: pt.testSuiteYaml,
         _undoPast: [],
         _undoFuture: [],
-        _cleanSnapshot: { activePolicy: pol, yaml, validation },
+        _cleanSnapshot: sensitiveFieldsStripped
+          ? null
+          : { activePolicy: pol, yaml, validation },
       };
     });
 
@@ -927,6 +936,22 @@ function pushRecentFile(filePath: string): void {
   } catch (e) {
     console.warn("[multi-policy-store] pushRecentFile localStorage operation failed:", e);
   }
+}
+
+function sanitizeSavedPolicy(savedPolicy: SavedPolicy): SavedPolicy {
+  const sanitized = sanitizeYamlForStorageWithMetadata(savedPolicy.yaml);
+  const [parsedPolicy, errors] = yamlToPolicy(sanitized.yaml);
+  const storedPolicy =
+    sanitized.sensitiveFieldsStripped && parsedPolicy && errors.length === 0
+      ? parsedPolicy
+      : savedPolicy.policy;
+
+  return {
+    ...savedPolicy,
+    yaml: sanitized.yaml,
+    policy: storedPolicy,
+    sensitiveFieldsStripped: sanitized.sensitiveFieldsStripped || undefined,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1040,7 +1065,7 @@ export function MultiPolicyProvider({ children }: { children: ReactNode }) {
             typeof e.policy === "object" && e.policy !== null &&
             typeof e.yaml === "string"
           );
-        });
+        }).map(sanitizeSavedPolicy);
         multiDispatch({ type: "LOAD_SAVED_POLICIES", policies });
       }
     } catch (e) {
@@ -1051,7 +1076,10 @@ export function MultiPolicyProvider({ children }: { children: ReactNode }) {
   // Persist saved policies
   useEffect(() => {
     try {
-      localStorage.setItem(SAVED_POLICIES_KEY, JSON.stringify(multiState.savedPolicies));
+      localStorage.setItem(
+        SAVED_POLICIES_KEY,
+        JSON.stringify(multiState.savedPolicies.map(sanitizeSavedPolicy)),
+      );
     } catch (e) {
       // TODO: surface via toast when toast system is available outside React components
       console.error("[multi-policy-store] persist saved policies failed — changes may be lost on reload:", e);
@@ -1106,13 +1134,13 @@ export function MultiPolicyProvider({ children }: { children: ReactNode }) {
     if (!currentTab) return;
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
-    const savedPolicy: SavedPolicy = {
+    const savedPolicy = sanitizeSavedPolicy({
       id,
       policy: currentTab.policy,
       yaml: currentTab.yaml,
       createdAt: now,
       updatedAt: now,
-    };
+    });
     multiDispatch({ type: "SAVE_POLICY", savedPolicy });
   }, [currentTab, multiDispatch]);
 

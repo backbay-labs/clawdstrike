@@ -58,4 +58,27 @@ describe("CrashRecoveryBanner", () => {
     expect(screen.getByText("an unnamed tab")).toBeInTheDocument();
     expect(screen.queryByText(/the current tab/i)).toBeNull();
   });
+
+  it("warns when sensitive fields were omitted from recovery storage", () => {
+    render(
+      <CrashRecoveryBanner
+        entries={[
+          {
+            tabId: "tab-1",
+            policyName: "sensitive-policy",
+            yaml: "version: '1.4.0'\nname: sensitive-policy\n",
+            filePath: null,
+            timestamp: Date.UTC(2026, 2, 11, 12, 0, 0),
+            sensitiveFieldsStripped: true,
+          },
+        ]}
+        onRestore={vi.fn()}
+        onDismiss={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByText(/Sensitive fields were omitted from recovery/i),
+    ).toBeInTheDocument();
+  });
 });

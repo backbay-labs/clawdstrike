@@ -190,7 +190,9 @@ const HOME_BIN_SUBDIRS: &[&[&str]] = &[
 ];
 
 fn home_bin_path(home: &std::path::Path, subdir: &[&str]) -> PathBuf {
-    subdir.iter().fold(home.to_path_buf(), |path, segment| path.join(segment))
+    subdir
+        .iter()
+        .fold(home.to_path_buf(), |path, segment| path.join(segment))
 }
 
 #[cfg(windows)]
@@ -471,6 +473,45 @@ fn resolve_launch_configs<R: Runtime>(
     Ok(configs)
 }
 
+const SIDECAR_STARTUP_TIMEOUT_MS: u64 = 5_000;
+const SIDECAR_READY_POLL_MS: u64 = 150;
+const SIDECAR_HEALTHCHECK_TIMEOUT_MS: u64 = 250;
+const STARTUP_STDERR_CAPTURE_LIMIT: usize = 8_192;
+
+async fn sidecar_healthcheck_ready(port: u16) -> bool {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let connect = tokio::time::timeout(
+        std::time::Duration::from_millis(SIDECAR_HEALTHCHECK_TIMEOUT_MS),
+        tokio::net::TcpStream::connect(("127.0.0.1", port)),
+    )
+    .await;
+    let mut stream = match connect {
+        Ok(Ok(stream)) => stream,
+        _ => return false,
+    };
+
+    let request =
+        format!("GET /health HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n");
+    if stream.write_all(request.as_bytes()).await.is_err() {
+        return false;
+    }
+
+    let mut buf = [0u8; 128];
+    match tokio::time::timeout(
+        std::time::Duration::from_millis(SIDECAR_HEALTHCHECK_TIMEOUT_MS),
+        stream.read(&mut buf),
+    )
+    .await
+    {
+        Ok(Ok(n)) if n > 0 => {
+            let response = String::from_utf8_lossy(&buf[..n]);
+            response.starts_with("HTTP/1.1 200") || response.starts_with("HTTP/1.0 200")
+        }
+        _ => false,
+    }
+}
+
 async fn spawn_child_for_launch(
     launch: &LaunchConfig,
     port: u16,
@@ -487,53 +528,127 @@ async fn spawn_child_for_launch(
         .kill_on_drop(true)
         .spawn()
         .map_err(|e| format!("Failed to spawn MCP server ({}): {e}", launch.runtime_label))?;
+    let stderr_buffer = Arc::new(Mutex::new(Vec::new()));
+    if let Some(stderr) = child.stderr.take() {
+        let stderr_buffer_for_task = Arc::clone(&stderr_buffer);
+        tauri::async_runtime::spawn(async move {
+            drain_child_stderr(stderr, stderr_buffer_for_task).await;
+        });
+    }
 
-    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+    let startup_deadline =
+        tokio::time::Instant::now() + std::time::Duration::from_millis(SIDECAR_STARTUP_TIMEOUT_MS);
 
-    match child.try_wait() {
-        Ok(Some(exit_status)) => {
-            let stderr_msg = if let Some(stderr) = child.stderr.take() {
-                use tokio::io::AsyncReadExt;
-                let mut buf = Vec::new();
-                let mut reader = stderr.take(8192);
-                let _ = reader.read_to_end(&mut buf).await;
-                String::from_utf8_lossy(&buf).to_string()
-            } else {
-                String::new()
-            };
-            let msg = format!(
-                "MCP server exited immediately (status: {exit_status}). stderr: {}",
-                if stderr_msg.is_empty() {
-                    "(empty)"
-                } else {
-                    stderr_msg.trim()
-                },
-            );
-            eprintln!("[mcp-sidecar] {msg}");
-            #[cfg(unix)]
-            {
-                use std::os::unix::process::ExitStatusExt;
-                if let Some(signal) = exit_status.signal() {
-                    let sig_name = match signal {
-                        11 => "SIGSEGV",
-                        6 => "SIGABRT",
-                        9 => "SIGKILL",
-                        15 => "SIGTERM",
-                        _ => "unknown",
-                    };
-                    eprintln!("[mcp-sidecar] MCP server killed by signal {signal} ({sig_name})");
+    loop {
+        match child.try_wait() {
+            Ok(Some(exit_status)) => {
+                let stderr_msg = snapshot_stderr_buffer(&stderr_buffer);
+                let msg = format!(
+                    "MCP server exited immediately (status: {exit_status}). stderr: {}",
+                    if stderr_msg.is_empty() {
+                        "(empty)"
+                    } else {
+                        stderr_msg.trim()
+                    },
+                );
+                eprintln!("[mcp-sidecar] {msg}");
+                #[cfg(unix)]
+                {
+                    use std::os::unix::process::ExitStatusExt;
+                    if let Some(signal) = exit_status.signal() {
+                        let sig_name = match signal {
+                            11 => "SIGSEGV",
+                            6 => "SIGABRT",
+                            9 => "SIGKILL",
+                            15 => "SIGTERM",
+                            _ => "unknown",
+                        };
+                        eprintln!(
+                            "[mcp-sidecar] MCP server killed by signal {signal} ({sig_name})"
+                        );
+                    }
+                }
+                return Err(msg);
+            }
+            Ok(None) => {
+                if sidecar_healthcheck_ready(port).await {
+                    return Ok(child);
                 }
             }
-            Err(msg)
+            Err(e) => {
+                let msg = format!(
+                    "Failed to inspect MCP sidecar process ({}): {e}",
+                    launch.runtime_label
+                );
+                eprintln!("[mcp-sidecar] {msg}");
+                return Err(msg);
+            }
         }
-        Ok(None) => Ok(child),
-        Err(e) => {
-            let msg = format!(
-                "Failed to inspect MCP sidecar process ({}): {e}",
-                launch.runtime_label
-            );
-            eprintln!("[mcp-sidecar] {msg}");
-            Err(msg)
+
+        if tokio::time::Instant::now() >= startup_deadline {
+            let _ = child.start_kill();
+            let stderr_msg = snapshot_stderr_buffer(&stderr_buffer);
+            return Err(if stderr_msg.is_empty() {
+                format!(
+                    "MCP server failed to become ready on /health within {}ms",
+                    SIDECAR_STARTUP_TIMEOUT_MS
+                )
+            } else {
+                format!(
+                    "MCP server failed to become ready on /health within {}ms. stderr: {}",
+                    SIDECAR_STARTUP_TIMEOUT_MS,
+                    stderr_msg.trim()
+                )
+            });
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(SIDECAR_READY_POLL_MS)).await;
+    }
+}
+
+fn append_capped_stderr(buffer: &mut Vec<u8>, chunk: &[u8]) {
+    if chunk.len() >= STARTUP_STDERR_CAPTURE_LIMIT {
+        buffer.clear();
+        buffer.extend_from_slice(&chunk[chunk.len() - STARTUP_STDERR_CAPTURE_LIMIT..]);
+        return;
+    }
+
+    let overflow = buffer
+        .len()
+        .saturating_add(chunk.len())
+        .saturating_sub(STARTUP_STDERR_CAPTURE_LIMIT);
+    if overflow > 0 {
+        buffer.drain(0..overflow);
+    }
+    buffer.extend_from_slice(chunk);
+}
+
+fn snapshot_stderr_buffer(buffer: &Arc<Mutex<Vec<u8>>>) -> String {
+    match buffer.lock() {
+        Ok(bytes) => String::from_utf8_lossy(&bytes).to_string(),
+        Err(_) => String::new(),
+    }
+}
+
+async fn drain_child_stderr(
+    mut stderr: tokio::process::ChildStderr,
+    stderr_buffer: Arc<Mutex<Vec<u8>>>,
+) {
+    use tokio::io::AsyncReadExt;
+
+    let mut buf = [0u8; 4096];
+    loop {
+        match stderr.read(&mut buf).await {
+            Ok(0) => break,
+            Ok(n) => {
+                if let Ok(mut captured) = stderr_buffer.lock() {
+                    append_capped_stderr(&mut captured, &buf[..n]);
+                }
+            }
+            Err(err) => {
+                eprintln!("[mcp-sidecar] stderr drain failed: {err}");
+                break;
+            }
         }
     }
 }
@@ -754,8 +869,12 @@ mod tests {
 
         #[cfg(windows)]
         {
-            assert!(candidates.iter().any(|candidate| candidate.ends_with("bun.exe")));
-            assert!(candidates.iter().any(|candidate| candidate.ends_with("bun.cmd")));
+            assert!(candidates
+                .iter()
+                .any(|candidate| candidate.ends_with("bun.exe")));
+            assert!(candidates
+                .iter()
+                .any(|candidate| candidate.ends_with("bun.cmd")));
         }
     }
 

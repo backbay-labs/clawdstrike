@@ -133,8 +133,9 @@ export interface SpiderSenseConfig {
   embedding_api_url?: string;
   /**
    * API key for embedding service.
-   * WARNING: This value is included in YAML exports and localStorage persistence.
-   * Do not use production API keys in the workbench.
+   * WARNING: This value is included in YAML exports.
+   * Browser storage strips it before persisting local recovery state, so
+   * production keys should still be managed outside the workbench when possible.
    */
   embedding_api_key?: string;
   embedding_model?: string;
@@ -326,6 +327,7 @@ export interface SavedPolicy {
   yaml: string;
   createdAt: string;
   updatedAt: string;
+  sensitiveFieldsStripped?: boolean;
 }
 
 // ---- Validation ----

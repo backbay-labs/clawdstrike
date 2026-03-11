@@ -25,6 +25,9 @@ export function CrashRecoveryBanner({
       ? policyNames[0] || "an unnamed tab"
       : `${entries.length} tabs`;
   const showPolicyList = entries.length > 1 && policyNames.length > 0;
+  const omittedSensitiveFields = entries.some(
+    (entry) => entry.sensitiveFieldsStripped,
+  );
 
   const formattedTime = formatTimestamp(latestTimestamp);
 
@@ -48,6 +51,14 @@ export function CrashRecoveryBanner({
         ) : null}
         {" "}
         <span className="text-[#6f7f9a]/70">({formattedTime})</span>
+        {omittedSensitiveFields ? (
+          <>
+            {" "}
+            <span className="text-[#d4a84b]/80">
+              Sensitive fields were omitted from recovery and must be re-entered.
+            </span>
+          </>
+        ) : null}
       </span>
 
       {/* Spacer */}
