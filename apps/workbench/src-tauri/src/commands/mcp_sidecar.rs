@@ -27,6 +27,7 @@ struct McpInner {
     running: bool,
     last_error: Option<String>,
     child: Option<tokio::process::Child>,
+    stderr_task: Option<tauri::async_runtime::JoinHandle<()>>,
     /// The resolved runtime command (e.g. "bun" or "npx").
     runtime_cmd: String,
     /// The resolved path to the MCP server entry point.
@@ -51,6 +52,7 @@ impl McpState {
                 running: false,
                 last_error: None,
                 child: None,
+                stderr_task: None,
                 runtime_cmd: String::new(),
                 script_path: String::new(),
             })),
@@ -59,12 +61,21 @@ impl McpState {
 }
 
 fn clear_runtime_state(inner: &mut McpInner) {
+    if let Some(stderr_task) = inner.stderr_task.take() {
+        stderr_task.abort();
+    }
     inner.port = 0;
     inner.token.clear();
     inner.running = false;
+    inner.last_error = None;
     inner.child = None;
     inner.runtime_cmd.clear();
     inner.script_path.clear();
+}
+
+fn set_runtime_error(inner: &mut McpInner, error: impl Into<String>) {
+    clear_runtime_state(inner);
+    inner.last_error = Some(error.into());
 }
 
 fn current_status(inner: &McpInner) -> McpStatusResponse {
@@ -516,7 +527,7 @@ async fn spawn_child_for_launch(
     launch: &LaunchConfig,
     port: u16,
     token: &str,
-) -> Result<tokio::process::Child, String> {
+) -> Result<SpawnedChild, String> {
     let mut child = tokio::process::Command::new(&launch.command_path)
         .args(&launch.args)
         .env("PATH", enriched_path())
@@ -529,11 +540,12 @@ async fn spawn_child_for_launch(
         .spawn()
         .map_err(|e| format!("Failed to spawn MCP server ({}): {e}", launch.runtime_label))?;
     let stderr_buffer = Arc::new(Mutex::new(Vec::new()));
+    let mut stderr_task = None;
     if let Some(stderr) = child.stderr.take() {
         let stderr_buffer_for_task = Arc::clone(&stderr_buffer);
-        tauri::async_runtime::spawn(async move {
+        stderr_task = Some(tauri::async_runtime::spawn(async move {
             drain_child_stderr(stderr, stderr_buffer_for_task).await;
-        });
+        }));
     }
 
     let startup_deadline =
@@ -568,11 +580,14 @@ async fn spawn_child_for_launch(
                         );
                     }
                 }
+                if let Some(task) = stderr_task.take() {
+                    task.abort();
+                }
                 return Err(msg);
             }
             Ok(None) => {
                 if sidecar_healthcheck_ready(port).await {
-                    return Ok(child);
+                    return Ok(SpawnedChild { child, stderr_task });
                 }
             }
             Err(e) => {
@@ -581,6 +596,9 @@ async fn spawn_child_for_launch(
                     launch.runtime_label
                 );
                 eprintln!("[mcp-sidecar] {msg}");
+                if let Some(task) = stderr_task.take() {
+                    task.abort();
+                }
                 return Err(msg);
             }
         }
@@ -588,6 +606,9 @@ async fn spawn_child_for_launch(
         if tokio::time::Instant::now() >= startup_deadline {
             let _ = child.start_kill();
             let stderr_msg = snapshot_stderr_buffer(&stderr_buffer);
+            if let Some(task) = stderr_task.take() {
+                task.abort();
+            }
             return Err(if stderr_msg.is_empty() {
                 format!(
                     "MCP server failed to become ready on /health within {}ms",
@@ -604,6 +625,11 @@ async fn spawn_child_for_launch(
 
         tokio::time::sleep(std::time::Duration::from_millis(SIDECAR_READY_POLL_MS)).await;
     }
+}
+
+struct SpawnedChild {
+    child: tokio::process::Child,
+    stderr_task: Option<tauri::async_runtime::JoinHandle<()>>,
 }
 
 fn append_capped_stderr(buffer: &mut Vec<u8>, chunk: &[u8]) {
@@ -668,7 +694,6 @@ pub async fn spawn_mcp_server<R: Runtime>(
             let _ = child.start_kill();
         }
         clear_runtime_state(&mut inner);
-        inner.last_error = None;
     }
 
     let token = generate_token();
@@ -676,8 +701,7 @@ pub async fn spawn_mcp_server<R: Runtime>(
         Ok(configs) => configs,
         Err(error) => {
             if let Ok(mut inner) = state.inner.lock() {
-                clear_runtime_state(&mut inner);
-                inner.last_error = Some(error.clone());
+                set_runtime_error(&mut inner, error.clone());
             }
             return Err(error);
         }
@@ -700,7 +724,7 @@ pub async fn spawn_mcp_server<R: Runtime>(
         );
 
         match spawn_child_for_launch(&launch, port, &token).await {
-            Ok(child) => {
+            Ok(spawned) => {
                 let url = format!("http://localhost:{port}/sse");
                 let response = McpStatusResponse {
                     url: url.clone(),
@@ -718,7 +742,8 @@ pub async fn spawn_mcp_server<R: Runtime>(
                     inner.token = token;
                     inner.running = true;
                     inner.last_error = None;
-                    inner.child = Some(child);
+                    inner.child = Some(spawned.child);
+                    inner.stderr_task = spawned.stderr_task;
                     inner.runtime_cmd = launch.runtime_label;
                     inner.script_path = launch.entry_label;
                 }
@@ -736,8 +761,7 @@ pub async fn spawn_mcp_server<R: Runtime>(
         launch_errors.join(" | ")
     );
     if let Ok(mut inner) = state.inner.lock() {
-        clear_runtime_state(&mut inner);
-        inner.last_error = Some(combined_error.clone());
+        set_runtime_error(&mut inner, combined_error.clone());
     }
     Err(combined_error)
 }
@@ -750,7 +774,6 @@ pub fn kill_mcp_server(state: &McpState) {
             let _ = child.start_kill();
         }
         clear_runtime_state(&mut inner);
-        inner.last_error = None;
     }
 }
 
@@ -785,14 +808,11 @@ pub async fn get_mcp_status(
             match child.try_wait() {
                 Ok(Some(_exit_status)) => {
                     // Child exited — update state.
-                    clear_runtime_state(&mut inner);
-                    inner.last_error = Some("Embedded MCP sidecar exited unexpectedly".to_string());
+                    set_runtime_error(&mut inner, "Embedded MCP sidecar exited unexpectedly");
                 }
                 Ok(None) => { /* still running */ }
                 Err(_) => {
-                    clear_runtime_state(&mut inner);
-                    inner.last_error =
-                        Some("Failed to inspect embedded MCP sidecar status".to_string());
+                    set_runtime_error(&mut inner, "Failed to inspect embedded MCP sidecar status");
                 }
             }
         }
@@ -898,6 +918,7 @@ mod tests {
             running: true,
             last_error: Some("boom".to_string()),
             child: None,
+            stderr_task: None,
             runtime_cmd: "bun".to_string(),
             script_path: "server.ts".to_string(),
         };
@@ -908,9 +929,10 @@ mod tests {
         assert!(inner.token.is_empty());
         assert!(!inner.running);
         assert!(inner.child.is_none());
+        assert!(inner.stderr_task.is_none());
         assert!(inner.runtime_cmd.is_empty());
         assert!(inner.script_path.is_empty());
-        assert_eq!(inner.last_error.as_deref(), Some("boom"));
+        assert!(inner.last_error.is_none());
     }
 
     #[test]
@@ -921,6 +943,7 @@ mod tests {
             running: false,
             last_error: Some("sidecar stopped".to_string()),
             child: None,
+            stderr_task: None,
             runtime_cmd: "bun".to_string(),
             script_path: "server.ts".to_string(),
         };
