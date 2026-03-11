@@ -1,4 +1,3 @@
-import { useCallback } from "react";
 import { IconAlertTriangle, IconRestore, IconX } from "@tabler/icons-react";
 import type { AutosaveEntry } from "@/lib/workbench/use-auto-save";
 
@@ -29,12 +28,6 @@ export function CrashRecoveryBanner({
 
   const formattedTime = formatTimestamp(latestTimestamp);
 
-  const handleRestore = useCallback(() => {
-    onRestore();
-  }, [onRestore]);
-
-  const handleDiscard = onDismiss;
-
   return (
     <div className="shrink-0 flex items-center gap-3 px-4 py-2 bg-[#0f1118] border-b border-[#2d3240]">
       {/* Icon */}
@@ -62,7 +55,7 @@ export function CrashRecoveryBanner({
 
       {/* Restore */}
       <button
-        onClick={handleRestore}
+        onClick={onRestore}
         className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-[#d4a84b]/15 text-[#d4a84b] hover:bg-[#d4a84b]/25 transition-colors"
       >
         <IconRestore size={13} stroke={2} />
@@ -71,7 +64,7 @@ export function CrashRecoveryBanner({
 
       {/* Discard */}
       <button
-        onClick={handleDiscard}
+        onClick={onDismiss}
         className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs text-[#6f7f9a] hover:text-[#ece7dc] hover:bg-[#1a1d2a] transition-colors"
       >
         <IconX size={13} stroke={2} />
