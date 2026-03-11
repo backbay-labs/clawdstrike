@@ -35,7 +35,7 @@ export function DesktopLayout() {
       <Titlebar />
 
       {/* Crash recovery banner (shown when autosave detected on startup) */}
-      {pendingRecovery && (
+      {pendingRecovery && pendingRecovery.length > 0 && (
         <CrashRecoveryBanner
           entries={pendingRecovery}
           onRestore={restoreRecovery}

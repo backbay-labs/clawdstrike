@@ -13,6 +13,10 @@ export function CrashRecoveryBanner({
   onRestore,
   onDismiss,
 }: CrashRecoveryBannerProps) {
+  if (entries.length === 0) {
+    return null;
+  }
+
   const latestTimestamp = Math.max(...entries.map((entry) => entry.timestamp));
   const policyNames = Array.from(
     new Set(entries.map((entry) => entry.policyName).filter(Boolean)),
