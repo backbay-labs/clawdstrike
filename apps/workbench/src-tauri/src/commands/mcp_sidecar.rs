@@ -677,8 +677,8 @@ mod tests {
         );
         let entries: Vec<PathBuf> = std::env::split_paths(&enriched).collect();
 
-        assert!(entries.contains(&test_home_dir().join(".local/bin")));
-        assert!(entries.contains(&test_home_dir().join(".bun/bin")));
+        assert!(entries.contains(&home_bin_path(&test_home_dir(), HOME_BIN_SUBDIRS[0])));
+        assert!(entries.contains(&home_bin_path(&test_home_dir(), HOME_BIN_SUBDIRS[1])));
         assert!(entries.contains(&test_existing_path()));
     }
 

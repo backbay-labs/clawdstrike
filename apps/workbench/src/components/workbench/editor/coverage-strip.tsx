@@ -43,6 +43,8 @@ export function CoverageStrip({ report, onGenerateForGuard }: CoverageStripProps
     );
   }
 
+  const displayCoveragePercent = Math.round(report.coveragePercent);
+
   return (
     <div className="px-3 py-1.5 bg-[#0b0d13]/50">
       {/* Overall coverage bar */}
@@ -64,7 +66,7 @@ export function CoverageStrip({ report, onGenerateForGuard }: CoverageStripProps
           className="text-[9px] font-mono font-bold shrink-0"
           style={{ color: progressColor(report.coveragePercent) }}
         >
-          {report.coveragePercent}%
+          {displayCoveragePercent}%
         </span>
       </div>
 
