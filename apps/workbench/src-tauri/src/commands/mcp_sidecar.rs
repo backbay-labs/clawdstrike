@@ -193,6 +193,59 @@ fn home_bin_path(home: &std::path::Path, subdir: &[&str]) -> PathBuf {
     subdir.iter().fold(home.to_path_buf(), |path, segment| path.join(segment))
 }
 
+#[cfg(windows)]
+fn executable_suffixes() -> Vec<String> {
+    let from_env = std::env::var("PATHEXT")
+        .ok()
+        .map(|value| {
+            value
+                .split(';')
+                .filter_map(|suffix| {
+                    let trimmed = suffix.trim();
+                    if trimmed.is_empty() {
+                        return None;
+                    }
+                    let normalized = if trimmed.starts_with('.') {
+                        trimmed.to_ascii_lowercase()
+                    } else {
+                        format!(".{}", trimmed.to_ascii_lowercase())
+                    };
+                    Some(normalized)
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    if from_env.is_empty() {
+        vec![
+            ".com".to_string(),
+            ".exe".to_string(),
+            ".bat".to_string(),
+            ".cmd".to_string(),
+        ]
+    } else {
+        from_env
+    }
+}
+
+fn binary_path_candidates(base: &Path) -> Vec<PathBuf> {
+    #[cfg(windows)]
+    let mut candidates = vec![base.to_path_buf()];
+    #[cfg(not(windows))]
+    let candidates = vec![base.to_path_buf()];
+
+    #[cfg(windows)]
+    {
+        if base.extension().is_none() {
+            for suffix in executable_suffixes() {
+                candidates.push(base.with_extension(suffix.trim_start_matches('.')));
+            }
+        }
+    }
+
+    candidates
+}
+
 /// Resolve an absolute path for `name` by checking PATH first, then common
 /// install locations. Returns `None` if the binary cannot be found anywhere.
 fn resolve_binary(name: &str) -> Option<String> {
@@ -212,17 +265,19 @@ fn resolve_binary(name: &str) -> Option<String> {
     // running with user privileges (no escalation possible).
     if let Some(home) = dirs_next::home_dir() {
         for subdir in HOME_BIN_SUBDIRS {
-            let candidate = home_bin_path(&home, subdir).join(name);
-            if candidate.exists() {
-                return Some(candidate.to_string_lossy().to_string());
+            for candidate in binary_path_candidates(&home_bin_path(&home, subdir).join(name)) {
+                if candidate.exists() {
+                    return Some(candidate.to_string_lossy().to_string());
+                }
             }
         }
     }
     // Check well-known system paths.
     for dir in EXTRA_PATHS {
-        let candidate = std::path::PathBuf::from(dir).join(name);
-        if candidate.exists() {
-            return Some(candidate.to_string_lossy().to_string());
+        for candidate in binary_path_candidates(&std::path::PathBuf::from(dir).join(name)) {
+            if candidate.exists() {
+                return Some(candidate.to_string_lossy().to_string());
+            }
         }
     }
     None
@@ -497,13 +552,21 @@ pub async fn spawn_mcp_server<R: Runtime>(
         if let Some(ref mut child) = inner.child {
             let _ = child.start_kill();
         }
-        inner.child = None;
-        inner.running = false;
+        clear_runtime_state(&mut inner);
         inner.last_error = None;
     }
 
     let token = generate_token();
-    let launch_configs = resolve_launch_configs(app)?;
+    let launch_configs = match resolve_launch_configs(app) {
+        Ok(configs) => configs,
+        Err(error) => {
+            if let Ok(mut inner) = state.inner.lock() {
+                clear_runtime_state(&mut inner);
+                inner.last_error = Some(error.clone());
+            }
+            return Err(error);
+        }
+    };
     let mut launch_errors = Vec::new();
 
     for launch in launch_configs {
@@ -680,6 +743,20 @@ mod tests {
         assert!(entries.contains(&home_bin_path(&test_home_dir(), HOME_BIN_SUBDIRS[0])));
         assert!(entries.contains(&home_bin_path(&test_home_dir(), HOME_BIN_SUBDIRS[1])));
         assert!(entries.contains(&test_existing_path()));
+    }
+
+    #[test]
+    fn binary_path_candidates_include_platform_executable_suffixes() {
+        let base = PathBuf::from("/tmp/bun");
+        let candidates = binary_path_candidates(&base);
+
+        assert!(candidates.contains(&base));
+
+        #[cfg(windows)]
+        {
+            assert!(candidates.iter().any(|candidate| candidate.ends_with("bun.exe")));
+            assert!(candidates.iter().any(|candidate| candidate.ends_with("bun.cmd")));
+        }
     }
 
     #[test]
