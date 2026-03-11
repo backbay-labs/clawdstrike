@@ -19,6 +19,7 @@
   "dependencies": {
     "@base-ui/react": "^1.2.0",
     "@codemirror/autocomplete": "^6.20.1",
+    "@codemirror/lang-javascript": "^6.2.2",
     "@codemirror/lang-python": "^6.2.1",
     "@codemirror/lang-yaml": "^6.1.2",
     "@codemirror/language": "^6.12.2",
