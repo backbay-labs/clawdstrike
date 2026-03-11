@@ -110,4 +110,49 @@ describe("CrashRecoveryBanner", () => {
     expect(screen.getByText(/\(including prod-policy\)/)).toBeInTheDocument();
     expect(screen.queryByText(/\(prod-policy\)/)).toBeNull();
   });
+
+  it("uses unique named policies in mixed recovery summaries", () => {
+    render(
+      <CrashRecoveryBanner
+        entries={[
+          {
+            tabId: "tab-1",
+            policyName: "prod-policy",
+            yaml: "version: '1.2.0'\nname: prod-policy\n",
+            filePath: null,
+            timestamp: Date.UTC(2026, 2, 11, 12, 0, 0),
+          },
+          {
+            tabId: "tab-2",
+            policyName: "prod-policy",
+            yaml: "version: '1.2.0'\nname: prod-policy\n",
+            filePath: null,
+            timestamp: Date.UTC(2026, 2, 11, 12, 1, 0),
+          },
+          {
+            tabId: "tab-3",
+            policyName: "staging-policy",
+            yaml: "version: '1.2.0'\nname: staging-policy\n",
+            filePath: null,
+            timestamp: Date.UTC(2026, 2, 11, 12, 2, 0),
+          },
+          {
+            tabId: "tab-4",
+            policyName: "",
+            yaml: "version: '1.2.0'\n",
+            filePath: null,
+            timestamp: Date.UTC(2026, 2, 11, 12, 3, 0),
+          },
+        ]}
+        onRestore={vi.fn()}
+        onDismiss={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("4 tabs")).toBeInTheDocument();
+    expect(
+      screen.getByText(/\(including prod-policy, staging-policy\)/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/3 named:/)).toBeNull();
+  });
 });

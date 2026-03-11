@@ -29,9 +29,7 @@ export function CrashRecoveryBanner({
     entries.length > 1 && policyNames.length > 0
       ? namedEntryCount === entries.length
         ? policyNames.slice(0, 3).join(", ") + (policyNames.length > 3 ? ", ..." : "")
-        : policyNames.length === 1
-          ? `including ${policyNames[0]}`
-          : `${namedEntryCount} named: ${policyNames.slice(0, 3).join(", ")}${policyNames.length > 3 ? ", ..." : ""}`
+        : `including ${policyNames.slice(0, 3).join(", ")}${policyNames.length > 3 ? ", ..." : ""}`
       : null;
   const omittedSensitiveFields = entries.some(
     (entry) => entry.sensitiveFieldsStripped,

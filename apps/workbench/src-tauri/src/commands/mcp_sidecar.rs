@@ -634,20 +634,13 @@ struct SpawnedChild {
 }
 
 fn append_capped_stderr(buffer: &mut Vec<u8>, chunk: &[u8]) {
-    if chunk.len() >= STARTUP_STDERR_CAPTURE_LIMIT {
-        buffer.clear();
-        buffer.extend_from_slice(&chunk[chunk.len() - STARTUP_STDERR_CAPTURE_LIMIT..]);
+    if buffer.len() >= STARTUP_STDERR_CAPTURE_LIMIT {
         return;
     }
 
-    let overflow = buffer
-        .len()
-        .saturating_add(chunk.len())
-        .saturating_sub(STARTUP_STDERR_CAPTURE_LIMIT);
-    if overflow > 0 {
-        buffer.drain(0..overflow);
-    }
-    buffer.extend_from_slice(chunk);
+    let remaining = STARTUP_STDERR_CAPTURE_LIMIT - buffer.len();
+    let take_len = remaining.min(chunk.len());
+    buffer.extend_from_slice(&chunk[..take_len]);
 }
 
 async fn snapshot_stderr_buffer(buffer: &Arc<AsyncMutex<Vec<u8>>>) -> String {
@@ -952,5 +945,30 @@ mod tests {
         assert!(status.token.is_empty());
         assert!(!status.running);
         assert_eq!(status.error.as_deref(), Some("sidecar stopped"));
+    }
+
+    #[test]
+    fn append_capped_stderr_keeps_earliest_bytes_from_large_chunk() {
+        let mut buffer = Vec::new();
+        let mut chunk = vec![b'a'; STARTUP_STDERR_CAPTURE_LIMIT];
+        chunk.extend_from_slice(b"trailer");
+
+        append_capped_stderr(&mut buffer, &chunk);
+
+        assert_eq!(buffer.len(), STARTUP_STDERR_CAPTURE_LIMIT);
+        assert!(buffer.iter().all(|byte| *byte == b'a'));
+    }
+
+    #[test]
+    fn append_capped_stderr_stops_appending_after_capacity() {
+        let mut buffer = vec![b'a'; STARTUP_STDERR_CAPTURE_LIMIT - 4];
+
+        append_capped_stderr(&mut buffer, b"bbbbbbbb");
+
+        assert_eq!(buffer.len(), STARTUP_STDERR_CAPTURE_LIMIT);
+        assert!(buffer[..STARTUP_STDERR_CAPTURE_LIMIT - 4]
+            .iter()
+            .all(|byte| *byte == b'a'));
+        assert_eq!(&buffer[STARTUP_STDERR_CAPTURE_LIMIT - 4..], b"bbbb");
     }
 }
