@@ -325,8 +325,9 @@ function resolveProxyBase(raw: string): string {
     if (!isLocal) return cleaned;
 
     if (u.port === "9876") return "/_proxy/hushd";
-    // Any other local port → use the control proxy (configured for 8080)
-    return "/_proxy/control";
+    if (u.port === "8080") return "/_proxy/control";
+    // Non-standard local port — pass through directly (may hit CORS in dev)
+    return cleaned;
   } catch {
     return cleaned;
   }

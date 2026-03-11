@@ -536,16 +536,16 @@ class TestScenarioAssertionLogic:
         assert "Expected allow" in result.mismatch
 
     def test_invalid_expect_value_no_crash(self, runner: ScenarioRunner) -> None:
-        """An invalid expect value should not crash (the scenario just passes)."""
+        """An invalid expect value should fail the scenario (not crash)."""
         result = runner.check(
             "invalid expect",
             "file_access",
             "/tmp/test.txt",
             expect="invalid_status",
         )
-        # Invalid expect value cannot be converted to DecisionStatus,
-        # so expected is None and the comparison is skipped -> passes
-        assert result.passed is True
+        # Invalid expect value is now treated as a test failure
+        assert result.passed is False
+        assert "Invalid expect value" in (result.mismatch or "")
 
 
 # ---------------------------------------------------------------------------

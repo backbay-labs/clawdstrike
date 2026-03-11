@@ -87,10 +87,16 @@ function TrustprintProfileCard({
               </span>
             )}
           </div>
-          <p className="text-[9px] text-[#6f7f9a]/70 mt-0.5 leading-relaxed">
-            Research baseline covering 9 attack categories across 4 agent lifecycle stages.
-            Based on the S2Bench threat taxonomy (Yu et al. 2026).
-          </p>
+          {isBuiltin ? (
+            <p className="text-[9px] text-[#6f7f9a]/70 mt-0.5 leading-relaxed">
+              Research baseline covering 9 attack categories across 4 agent lifecycle stages.
+              Based on the S2Bench threat taxonomy (Yu et al. 2026).
+            </p>
+          ) : (
+            <p className="text-[9px] text-[#6f7f9a]/70 mt-0.5 leading-relaxed">
+              Custom pattern database loaded from local path.
+            </p>
+          )}
         </div>
       </div>
 
