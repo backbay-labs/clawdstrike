@@ -482,23 +482,23 @@ export function PolicyTabBar({ isHomeActive, onHomeClick, onTabSwitch }: PolicyT
               )}
             </div>
           ))}
-        </div>
 
-        {/* New tab button */}
-        <button
-          type="button"
-          onClick={handleNewTab}
-          disabled={!canAddTab}
-          className={cn(
-            "shrink-0 p-2 transition-colors",
-            canAddTab
-              ? "text-[#6f7f9a] hover:text-[#d4a84b] hover:bg-[#d4a84b]/10"
-              : "text-[#6f7f9a]/30 cursor-not-allowed",
-          )}
-          title={canAddTab ? "New tab" : "Maximum tabs reached (10)"}
-        >
-          <IconPlus size={14} stroke={1.5} />
-        </button>
+          {/* New tab button — inline with tabs, matches tab item padding */}
+          <button
+            type="button"
+            onClick={handleNewTab}
+            disabled={!canAddTab}
+            className={cn(
+              "shrink-0 flex items-center justify-center px-2.5 py-1.5 transition-colors",
+              canAddTab
+                ? "text-[#6f7f9a] hover:text-[#d4a84b] hover:bg-[#d4a84b]/10"
+                : "text-[#6f7f9a]/30 cursor-not-allowed",
+            )}
+            title={canAddTab ? "New tab" : "Maximum tabs reached (10)"}
+          >
+            <IconPlus size={13} stroke={1.5} />
+          </button>
+        </div>
       </div>
 
       {/* Context menu */}

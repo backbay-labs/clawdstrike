@@ -2,9 +2,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { PolicyTabBar } from "@/components/workbench/editor/policy-tab-bar";
 import { SplitEditor, SplitModeToggle } from "@/components/workbench/editor/split-editor";
 import { EditorHomeTab } from "@/components/workbench/editor/editor-home-tab";
-import {
-  BulkOperationsDialog,
-} from "@/components/workbench/editor/bulk-operations-dialog";
+import { PolicyCommandCenter } from "@/components/workbench/editor/policy-command-center";
 import { VersionHistoryPanel } from "@/components/workbench/editor/version-history-panel";
 import { VersionDiffDialog } from "@/components/workbench/editor/version-diff-dialog";
 import { TestRunnerPanel } from "@/components/workbench/editor/test-runner-panel";
@@ -200,7 +198,7 @@ function RunButtonGroup({
           onClick={handleRunSuite}
           disabled={isRunning}
           className={cn(
-            "inline-flex items-center gap-1 px-2 py-1 text-[9px] font-mono font-semibold rounded-l transition-colors",
+            "inline-flex items-center justify-center gap-1 px-2.5 h-6 text-[9px] font-mono font-semibold rounded-l transition-colors",
             isRunning
               ? "bg-[#d4a84b]/50 text-[#0b0d13]/60 cursor-wait"
               : "bg-[#d4a84b] text-[#0b0d13] hover:bg-[#e0b85c]",
@@ -215,7 +213,7 @@ function RunButtonGroup({
           type="button"
           onClick={() => setRunMenuOpen((prev) => !prev)}
           className={cn(
-            "inline-flex items-center px-1.5 py-1 text-[9px] rounded-r border-l border-[#0b0d13]/20 transition-colors",
+            "inline-flex items-center justify-center w-6 h-6 text-[9px] rounded-r border-l border-[#0b0d13]/20 transition-colors",
             isRunning
               ? "bg-[#d4a84b]/50 text-[#0b0d13]/60 cursor-wait"
               : "bg-[#d4a84b] text-[#0b0d13] hover:bg-[#e0b85c]",
@@ -301,7 +299,7 @@ function RunButtonGroup({
 export function PolicyEditor() {
   const { tabs, activeTab } = useMultiPolicy();
   const { state, dispatch } = useWorkbench();
-  const [bulkOpen, setBulkOpen] = useState(false);
+  const [showCommandCenter, setShowCommandCenter] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [testRunnerOpen, setTestRunnerOpen] = useState(false);
   const [diffDialogOpen, setDiffDialogOpen] = useState(false);
@@ -342,8 +340,8 @@ export function PolicyEditor() {
         <div className="flex-1 min-w-0">
           <PolicyTabBar
             isHomeActive={showHome}
-            onHomeClick={() => setShowHome(true)}
-            onTabSwitch={() => setShowHome(false)}
+            onHomeClick={() => { setShowHome(true); setShowCommandCenter(false); }}
+            onTabSwitch={() => { setShowHome(false); setShowCommandCenter(false); }}
           />
         </div>
         <div className="flex items-center gap-1 px-2 shrink-0">
@@ -352,17 +350,15 @@ export function PolicyEditor() {
             setTestRunnerOpen={setTestRunnerOpen}
           />
           <SplitModeToggle />
-          {tabs.length >= 2 && (
-            <button
-              type="button"
-              onClick={() => setBulkOpen(true)}
-              className="inline-flex items-center gap-1 px-2 py-1 text-[9px] font-mono text-[#6f7f9a] hover:text-[#d4a84b] border border-transparent hover:border-[#2d3240] rounded transition-colors"
-              title="Bulk operations across policies"
-              aria-label="Bulk operations"
-            >
-              <IconWand size={12} stroke={1.5} />
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => { setShowCommandCenter(true); setShowHome(false); }}
+            className="inline-flex items-center gap-1 px-2 py-1 text-[9px] font-mono text-[#6f7f9a] hover:text-[#d4a84b] border border-transparent hover:border-[#2d3240] rounded transition-colors"
+            title="Policy command center"
+            aria-label="Policy command center"
+          >
+            <IconWand size={12} stroke={1.5} />
+          </button>
           <button
             type="button"
             onClick={() => setTestRunnerOpen((prev) => !prev)}
@@ -403,7 +399,9 @@ export function PolicyEditor() {
       {/* Editor content + optional test runner + version history sidebar */}
       <div className="flex-1 min-h-0 flex">
         <div className="flex-1 min-w-0">
-          {showHome ? (
+          {showCommandCenter ? (
+            <PolicyCommandCenter onClose={() => setShowCommandCenter(false)} />
+          ) : showHome ? (
             <EditorHomeTab onNavigateToTab={() => setShowHome(false)} />
           ) : testRunnerOpen ? (
             <ResizablePanelGroup direction="vertical" className="h-full">
@@ -436,9 +434,6 @@ export function PolicyEditor() {
           </div>
         )}
       </div>
-
-      {/* Bulk operations dialog */}
-      <BulkOperationsDialog open={bulkOpen} onOpenChange={setBulkOpen} />
 
       {/* Version diff dialog */}
       <VersionDiffDialog
