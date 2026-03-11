@@ -81,4 +81,33 @@ describe("CrashRecoveryBanner", () => {
       screen.getByText(/Sensitive fields were omitted from recovery/i),
     ).toBeInTheDocument();
   });
+
+  it("describes mixed named and unnamed recoveries without implying only one tab recovered", () => {
+    render(
+      <CrashRecoveryBanner
+        entries={[
+          {
+            tabId: "tab-1",
+            policyName: "prod-policy",
+            yaml: "version: '1.2.0'\nname: prod-policy\n",
+            filePath: null,
+            timestamp: Date.UTC(2026, 2, 11, 12, 0, 0),
+          },
+          {
+            tabId: "tab-2",
+            policyName: "",
+            yaml: "version: '1.2.0'\n",
+            filePath: null,
+            timestamp: Date.UTC(2026, 2, 11, 12, 1, 0),
+          },
+        ]}
+        onRestore={vi.fn()}
+        onDismiss={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("2 tabs")).toBeInTheDocument();
+    expect(screen.getByText(/\(including prod-policy\)/)).toBeInTheDocument();
+    expect(screen.queryByText(/\(prod-policy\)/)).toBeNull();
+  });
 });

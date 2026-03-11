@@ -20,11 +20,19 @@ export function CrashRecoveryBanner({
   const policyNames = Array.from(
     new Set(entries.map((entry) => entry.policyName).filter(Boolean)),
   );
+  const namedEntryCount = entries.filter((entry) => entry.policyName.trim().length > 0).length;
   const summaryLabel =
     entries.length === 1
       ? policyNames[0] || "an unnamed tab"
       : `${entries.length} tabs`;
-  const showPolicyList = entries.length > 1 && policyNames.length > 0;
+  const policySummary =
+    entries.length > 1 && policyNames.length > 0
+      ? namedEntryCount === entries.length
+        ? policyNames.slice(0, 3).join(", ") + (policyNames.length > 3 ? ", ..." : "")
+        : policyNames.length === 1
+          ? `including ${policyNames[0]}`
+          : `${namedEntryCount} named: ${policyNames.slice(0, 3).join(", ")}${policyNames.length > 3 ? ", ..." : ""}`
+      : null;
   const omittedSensitiveFields = entries.some(
     (entry) => entry.sensitiveFieldsStripped,
   );
@@ -40,12 +48,11 @@ export function CrashRecoveryBanner({
       <span className="text-xs text-[#6f7f9a] leading-tight min-w-0">
         Recovered unsaved changes from{" "}
         <span className="text-[#ece7dc] font-medium">{summaryLabel}</span>
-        {showPolicyList ? (
+        {policySummary ? (
           <>
             {" "}
             <span className="text-[#6f7f9a]/70">
-              ({policyNames.slice(0, 3).join(", ")}
-              {policyNames.length > 3 ? ", ..." : ""})
+              ({policySummary})
             </span>
           </>
         ) : null}
