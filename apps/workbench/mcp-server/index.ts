@@ -9,7 +9,7 @@
  *     `MCP_AUTH_TOKEN`.
  */
 
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 
@@ -1940,21 +1940,13 @@ function wantsSse(): boolean {
 
 /** Constant-time string comparison to prevent timing attacks on bearer tokens.
  *
- * Uses a fixed 256-byte buffer so allocation and comparison time are identical
- * regardless of input length, preventing length-leaking side channels.
+ * Hashes both inputs with SHA-256 so the comparison is always over fixed 32-byte
+ * digests — no length leaking, no truncation risk regardless of input size.
  */
 function secureTokenCompare(a: string, b: string): boolean {
-  const FIXED_LEN = 256;
-  const bufA = Buffer.alloc(FIXED_LEN);
-  const bufB = Buffer.alloc(FIXED_LEN);
-  const bytesA = Buffer.from(a);
-  const bytesB = Buffer.from(b);
-  bytesA.copy(bufA, 0, 0, Math.min(bytesA.length, FIXED_LEN));
-  bytesB.copy(bufB, 0, 0, Math.min(bytesB.length, FIXED_LEN));
-  const equal = timingSafeEqual(bufA, bufB);
-  // Length comparison uses bitwise OR to avoid branching
-  const sameLen = bytesA.length === bytesB.length;
-  return equal && sameLen;
+  const hashA = createHash("sha256").update(a).digest();
+  const hashB = createHash("sha256").update(b).digest();
+  return timingSafeEqual(hashA, hashB);
 }
 
 if (isMainModule()) {

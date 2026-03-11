@@ -64,11 +64,9 @@ const SPIDER_SENSE_HANDLED_KEYS = new Set([
 function TrustprintProfileCard({
   patterns,
   profilePath,
-  onProfileChange,
 }: {
   patterns: PatternEntry[];
   profilePath: string;
-  onProfileChange: (path: string) => void;
 }) {
   const stats = useMemo(() => computeCoverageStats(patterns), [patterns]);
   const dims = patterns[0]?.embedding.length ?? 0;
@@ -635,7 +633,6 @@ export function GuardCard({
                   <TrustprintProfileCard
                     patterns={S2BENCH_PATTERNS}
                     profilePath={(guardConfig.pattern_db_path as string) ?? "builtin:s2bench-v1"}
-                    onProfileChange={(v) => handleConfigChange("pattern_db_path", v)}
                   />
                 </div>
 

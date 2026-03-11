@@ -74,20 +74,25 @@ function SecretPatternListEditor({ patterns, onChange }: SecretPatternListProps)
 
   const updateRow = useCallback(
     (index: number, field: keyof SecretPattern, value: string) => {
-      // Issue #8: Validate regex before saving to policy
+      // Always persist the value so typing intermediate states works.
+      // Validate regex on each keystroke but only as a visual warning — never block input.
       if (field === "pattern" && value !== "") {
         if (!isValidRegex(value)) {
-          // Allow typing but mark the error — don't persist invalid regex
           setRegexErrors((prev) => ({ ...prev, [index]: `Invalid regex: ${getRegexError(value)}` }));
-          return;
+        } else {
+          setRegexErrors((prev) => {
+            const next = { ...prev };
+            delete next[index];
+            return next;
+          });
         }
+      } else {
+        setRegexErrors((prev) => {
+          const next = { ...prev };
+          delete next[index];
+          return next;
+        });
       }
-      // Clear any existing error for this row
-      setRegexErrors((prev) => {
-        const next = { ...prev };
-        delete next[index];
-        return next;
-      });
       const updated = patterns.map((p, i) =>
         i === index ? { ...p, [field]: value } : p
       );
@@ -259,12 +264,6 @@ function PatternList({ items, onChange, placeholder }: PatternListProps) {
             // Issue #15: Check for duplicates
             if (items.includes(val)) {
               setInputError("Duplicate pattern — already in list");
-              return;
-            }
-
-            // Issue #8: Validate regex before adding
-            if (!isValidRegex(val)) {
-              setInputError(`Invalid regex: ${getRegexError(val)}`);
               return;
             }
 
