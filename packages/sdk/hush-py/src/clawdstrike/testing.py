@@ -360,6 +360,12 @@ class ScenarioRunner:
             try:
                 expected = DecisionStatus(scenario.expect)
             except ValueError:
+                import logging
+                logging.getLogger("clawdstrike.testing").warning(
+                    "Invalid expect value %r in scenario %r; treating as no expectation",
+                    scenario.expect,
+                    scenario.name,
+                )
                 expected = None
             if expected and decision.status != expected:
                 passed = False

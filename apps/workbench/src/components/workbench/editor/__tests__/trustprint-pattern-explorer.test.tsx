@@ -7,7 +7,6 @@ import {
   ALL_STAGES,
   ALL_CATEGORIES,
   STAGE_LABELS,
-  CATEGORY_LABELS,
   type PatternEntry,
 } from "@/lib/workbench/trustprint-patterns";
 

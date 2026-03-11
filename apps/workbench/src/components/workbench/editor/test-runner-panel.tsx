@@ -31,7 +31,6 @@ import {
   IconFileCode,
   IconRefresh,
   IconHistory,
-  IconShieldCheck,
   IconArrowsExchange,
   IconPlugConnected,
 } from "@tabler/icons-react";

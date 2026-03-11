@@ -275,7 +275,7 @@ class PolicyResolver:
         # Prevent path traversal escaping the base directory
         if from_path is not None:
             resolved = extends_path.resolve()
-            if not str(resolved).startswith(str(base_dir.resolve())):
+            if not resolved.is_relative_to(base_dir.resolve()):
                 raise PolicyError(f"Policy extends path escapes base directory: {reference}")
 
         if extends_path.exists():

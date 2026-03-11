@@ -52,19 +52,12 @@ function txPromise<T>(tx: IDBTransaction, resultFn?: () => T): Promise<T | undef
   });
 }
 
-function requestPromise<T>(req: IDBRequest<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
 function cursorCollect<T>(req: IDBRequest<IDBCursorWithValue | null>, limit?: number): Promise<T[]> {
   return new Promise((resolve, reject) => {
     const results: T[] = [];
     req.onsuccess = () => {
       const cursor = req.result;
-      if (!cursor || (limit !== undefined && results.length >= limit)) {
+      if (!cursor || (limit != null && results.length >= limit)) {
         resolve(results);
         return;
       }
