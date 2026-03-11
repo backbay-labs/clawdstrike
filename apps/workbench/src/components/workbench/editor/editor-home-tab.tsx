@@ -117,7 +117,7 @@ export function EditorHomeTab({
   // ---- Guard count helper ----
   function guardCount(tab: PolicyTab): number {
     return Object.keys(tab.policy.guards).filter(
-      (k) => (tab.policy.guards as Record<string, { enabled?: boolean }>)[k]?.enabled !== false,
+      (k) => (tab.policy.guards as Record<string, { enabled?: boolean }>)[k]?.enabled === true,
     ).length;
   }
 

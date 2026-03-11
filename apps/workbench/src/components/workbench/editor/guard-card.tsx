@@ -28,7 +28,6 @@ import {
   IconShieldCheck,
   IconNetwork,
   IconEye,
-  IconEyeOff,
   IconFileCheck,
   IconTerminal,
   IconTool,
@@ -222,49 +221,6 @@ function getGuardSummary(guardId: GuardId, config: Record<string, unknown>): str
 }
 
 // ---------------------------------------------------------------------------
-// Masked API key input with show/hide toggle (Issue #14)
-// ---------------------------------------------------------------------------
-
-function ApiKeyField({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  const [showKey, setShowKey] = useState(false);
-
-  return (
-    <div className="flex flex-col gap-1 mt-2.5">
-      <label className="text-[10px] font-mono text-[#6f7f9a]">API Key</label>
-      <div className="relative">
-        <input
-          type={showKey ? "text" : "password"}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder="sk-..."
-          className="h-7 w-full rounded-md border border-[#2d3240] bg-[#131721] px-2 pr-8 text-xs font-mono text-[#ece7dc] placeholder:text-[#6f7f9a]/50 outline-none focus:border-[#d4a84b]/50 transition-colors"
-        />
-        <button
-          type="button"
-          onClick={() => setShowKey((p) => !p)}
-          className="absolute right-2 top-1/2 -translate-y-1/2 text-[#6f7f9a] hover:text-[#ece7dc] transition-colors"
-          title={showKey ? "Hide key" : "Show key"}
-        >
-          {showKey ? (
-            <IconEyeOff size={13} stroke={1.5} />
-          ) : (
-            <IconEye size={13} stroke={1.5} />
-          )}
-        </button>
-      </div>
-      <span className="text-[8px] font-mono text-[#6f7f9a]/50">
-        Session-only. Not persisted to localStorage.
-      </span>
-    </div>
-  );
-}
-
 interface GuardCardProps {
   guardId: GuardId;
   /** Enable reorder controls (up/down buttons, drag handle). Only shown in custom view. */
@@ -689,11 +645,6 @@ export function GuardCard({
                     compact
                   />
 
-                  {/* Inline API key field — always masked by default (Issue #14) */}
-                  <ApiKeyField
-                    value={(guardConfig.embedding_api_key as string | undefined) ?? ""}
-                    onChange={(v) => handleConfigChange("embedding_api_key", v)}
-                  />
                 </div>
 
                 {/* --- Advanced Config (filtered) --- */}
