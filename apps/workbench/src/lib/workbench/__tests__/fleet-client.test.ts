@@ -1312,6 +1312,18 @@ describe("persistence helpers", () => {
     expect(saved.controlApiToken).toBe("secure-token");
   });
 
+  it("loadSavedConnectionAsync backfills missing secure-store URLs from local bootstrap storage", async () => {
+    localStorage.setItem("clawdstrike_hushd_url", "http://localhost:9876");
+    sessionStorage.setItem("clawdstrike_control_api_url", "http://localhost:9877");
+    sessionStorage.setItem("clawdstrike_control_api_token", "secure-token");
+
+    const saved = await loadSavedConnectionAsync();
+
+    expect(saved.hushdUrl).toBe("http://localhost:9876");
+    expect(saved.controlApiUrl).toBe("http://localhost:9877");
+    expect(saved.controlApiToken).toBe("secure-token");
+  });
+
   it("saveConnectionConfig rejects invalid control API URLs", async () => {
     await expect(
       saveConnectionConfig({

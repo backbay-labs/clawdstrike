@@ -161,21 +161,37 @@ fn resolve_bundled_binary_path<R: Runtime>(app: &tauri::AppHandle<R>) -> Option<
 
 /// Common locations for JS runtimes on macOS/Linux that may not be on the
 /// restricted PATH inherited by GUI apps launched from Finder/Dock.
+#[cfg(windows)]
+const EXTRA_PATHS: &[&str] = &[r"C:\Program Files\nodejs", r"C:\Program Files\Git\cmd"];
+#[cfg(not(windows))]
 const EXTRA_PATHS: &[&str] = &["/opt/homebrew/bin", "/usr/local/bin"];
 
-const HOME_BIN_SUBDIRS: &[&str] = &[
-    ".local/bin",
-    ".bun/bin",
-    ".nvm/current/bin",
-    "bin",
-    ".local/share/mise/shims",
-    ".asdf/shims",
-    ".proto/shims",
-    ".proto/bin",
-    ".cargo/bin",
-    ".nix-profile/bin",
-    ".pyenv/shims",
+#[cfg(windows)]
+const HOME_BIN_SUBDIRS: &[&[&str]] = &[
+    &["AppData", "Local", "Microsoft", "WindowsApps"],
+    &["AppData", "Local", "bun", "bin"],
+    &["bin"],
+    &[".cargo", "bin"],
 ];
+
+#[cfg(not(windows))]
+const HOME_BIN_SUBDIRS: &[&[&str]] = &[
+    &[".local", "bin"],
+    &[".bun", "bin"],
+    &[".nvm", "current", "bin"],
+    &["bin"],
+    &[".local", "share", "mise", "shims"],
+    &[".asdf", "shims"],
+    &[".proto", "shims"],
+    &[".proto", "bin"],
+    &[".cargo", "bin"],
+    &[".nix-profile", "bin"],
+    &[".pyenv", "shims"],
+];
+
+fn home_bin_path(home: &std::path::Path, subdir: &[&str]) -> PathBuf {
+    subdir.iter().fold(home.to_path_buf(), |path, segment| path.join(segment))
+}
 
 /// Resolve an absolute path for `name` by checking PATH first, then common
 /// install locations. Returns `None` if the binary cannot be found anywhere.
@@ -196,7 +212,7 @@ fn resolve_binary(name: &str) -> Option<String> {
     // running with user privileges (no escalation possible).
     if let Some(home) = dirs_next::home_dir() {
         for subdir in HOME_BIN_SUBDIRS {
-            let candidate = home.join(subdir).join(name);
+            let candidate = home_bin_path(&home, subdir).join(name);
             if candidate.exists() {
                 return Some(candidate.to_string_lossy().to_string());
             }
@@ -282,7 +298,7 @@ fn build_enriched_path(existing_path: Option<OsString>, home_dir: Option<PathBuf
     let mut dirs: Vec<PathBuf> = Vec::new();
     if let Some(home) = home_dir {
         for subdir in HOME_BIN_SUBDIRS {
-            dirs.push(home.join(subdir));
+            dirs.push(home_bin_path(&home, subdir));
         }
     }
     dirs.extend(EXTRA_PATHS.iter().map(PathBuf::from));
