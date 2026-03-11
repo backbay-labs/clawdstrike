@@ -263,6 +263,10 @@ fn build_enriched_path(existing_path: Option<OsString>, home_dir: Option<PathBuf
         dirs.extend(default_path_entries());
     }
 
+    // Deduplicate while preserving order (first occurrence wins)
+    let mut seen = std::collections::HashSet::new();
+    dirs.retain(|d| seen.insert(d.clone()));
+
     std::env::join_paths(dirs)
         .unwrap_or_else(|_| OsString::from(std::env::var("PATH").unwrap_or_default()))
 }
@@ -443,13 +447,16 @@ pub async fn spawn_mcp_server<R: Runtime>(
     }
 
     let token = generate_token();
-    let port = find_available_port()
-        .await
-        .ok_or_else(|| "No available port in range 9877-9899".to_string())?;
     let launch_configs = resolve_launch_configs(app)?;
     let mut launch_errors = Vec::new();
 
     for launch in launch_configs {
+        // Find a fresh port for each attempt — a previous failed spawn may have
+        // left the port in TIME_WAIT or another process may have claimed it.
+        let port = find_available_port()
+            .await
+            .ok_or_else(|| "No available port in range 9877-9899".to_string())?;
+
         eprintln!(
             "[mcp-sidecar] spawning: {} {} (script: {}, port: {})",
             launch.runtime_label,

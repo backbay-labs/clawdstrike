@@ -152,10 +152,11 @@ const ICON_MAP: Record<string, typeof IconLock> = {
 // Regression dot colors / tooltips
 // ---------------------------------------------------------------------------
 
-const TEST_STATUS_DOT: Record<string, { color: string; tip: string }> = {
+const TEST_STATUS_DOT: Record<string, { color: string; tip: string } | null> = {
   pass: { color: "#3dbf84", tip: "All tests pass" },
   fail: { color: "#c45c5c", tip: "Tests failing" },
   warn: { color: "#d4a84b", tip: "Tests have warnings" },
+  none: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -334,8 +335,17 @@ export function GuardCard({
   useEffect(() => {
     if (!contextMenu) return;
     const close = () => setContextMenu(null);
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
     window.addEventListener("click", close);
-    return () => window.removeEventListener("click", close);
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("scroll", close, true);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("scroll", close, true);
+    };
   }, [contextMenu]);
 
   const meta = GUARD_REGISTRY.find((g) => g.id === guardId);

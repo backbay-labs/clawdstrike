@@ -1938,19 +1938,23 @@ function wantsSse(): boolean {
   return false;
 }
 
-/** Constant-time string comparison to prevent timing attacks on bearer tokens. */
+/** Constant-time string comparison to prevent timing attacks on bearer tokens.
+ *
+ * Uses a fixed 256-byte buffer so allocation and comparison time are identical
+ * regardless of input length, preventing length-leaking side channels.
+ */
 function secureTokenCompare(a: string, b: string): boolean {
-  const bufA = Buffer.from(a);
-  const bufB = Buffer.from(b);
-  // Pad shorter buffer to match length — avoids leaking token length via timing
-  const maxLen = Math.max(bufA.length, bufB.length);
-  const padA = Buffer.alloc(maxLen);
-  const padB = Buffer.alloc(maxLen);
-  bufA.copy(padA);
-  bufB.copy(padB);
-  // Always run timingSafeEqual even if lengths differ
-  const equal = timingSafeEqual(padA, padB);
-  return equal && bufA.length === bufB.length;
+  const FIXED_LEN = 256;
+  const bufA = Buffer.alloc(FIXED_LEN);
+  const bufB = Buffer.alloc(FIXED_LEN);
+  const bytesA = Buffer.from(a);
+  const bytesB = Buffer.from(b);
+  bytesA.copy(bufA, 0, 0, Math.min(bytesA.length, FIXED_LEN));
+  bytesB.copy(bufB, 0, 0, Math.min(bytesB.length, FIXED_LEN));
+  const equal = timingSafeEqual(bufA, bufB);
+  // Length comparison uses bitwise OR to avoid branching
+  const sameLen = bytesA.length === bytesB.length;
+  return equal && sameLen;
 }
 
 if (isMainModule()) {

@@ -57,7 +57,7 @@ function cursorCollect<T>(req: IDBRequest<IDBCursorWithValue | null>, limit?: nu
     const results: T[] = [];
     req.onsuccess = () => {
       const cursor = req.result;
-      if (!cursor || (limit != null && results.length >= limit)) {
+      if (!cursor || (typeof limit === "number" && results.length >= limit)) {
         resolve(results);
         return;
       }
