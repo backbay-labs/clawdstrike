@@ -84,6 +84,16 @@ export type MultiPolicyAction =
   | { type: "BULK_UPDATE_GUARDS"; updates: BulkGuardUpdate[] }
   | { type: "NEW_TAB_OR_SWITCH"; policy: WorkbenchPolicy; filePath: string; fallbackYaml?: string }
   | { type: "SET_TAB_TEST_SUITE"; tabId: string; yaml: string }
+  | {
+    type: "RESTORE_AUTOSAVE_ENTRIES";
+    entries: Array<{
+      tabId?: string;
+      yaml: string;
+      filePath: string | null;
+      timestamp: number;
+      policyName: string;
+    }>;
+  }
   // Delegated to active tab — same as WorkbenchAction
   | { type: "SET_POLICY"; policy: WorkbenchPolicy }
   | { type: "SET_YAML"; yaml: string }
@@ -196,6 +206,49 @@ function revalidate(policy: WorkbenchPolicy, yaml?: string): { yaml: string; val
   };
 }
 
+function applyYamlToTab(
+  tab: PolicyTab,
+  yaml: string,
+  options?: {
+    dirty?: boolean;
+    filePath?: string | null;
+    nameFallback?: string;
+  },
+): PolicyTab {
+  const nextDirty = options?.dirty ?? tab.dirty;
+  const nextFilePath = options?.filePath !== undefined ? options.filePath : tab.filePath;
+  const [policy, errors] = yamlToPolicy(yaml);
+
+  if (policy && errors.length === 0) {
+    return {
+      ...tab,
+      policy,
+      name: policy.name || options?.nameFallback || tab.name,
+      yaml,
+      filePath: nextFilePath,
+      dirty: nextDirty,
+      validation: validatePolicy(policy),
+    };
+  }
+
+  return {
+    ...tab,
+    name: options?.nameFallback || tab.name,
+    yaml,
+    filePath: nextFilePath,
+    dirty: nextDirty,
+    validation: {
+      valid: false,
+      errors: errors.map((msg) => ({
+        path: "yaml",
+        message: msg,
+        severity: "error" as const,
+      })),
+      warnings: [],
+    },
+  };
+}
+
 /** Actions that modify the policy and should be tracked by undo/redo. */
 const POLICY_MODIFYING_ACTIONS = new Set([
   "SET_POLICY",
@@ -241,27 +294,7 @@ function tabCoreReducer(tab: PolicyTab, action: MultiPolicyAction): PolicyTab {
     }
 
     case "SET_YAML": {
-      const [policy, errors] = yamlToPolicy(action.yaml);
-      if (policy && errors.length === 0) {
-        return {
-          ...tab,
-          policy,
-          name: policy.name || tab.name,
-          yaml: action.yaml,
-          dirty: true,
-          validation: validatePolicy(policy),
-        };
-      }
-      return {
-        ...tab,
-        yaml: action.yaml,
-        dirty: true,
-        validation: {
-          valid: false,
-          errors: errors.map((msg) => ({ path: "yaml", message: msg, severity: "error" as const })),
-          warnings: [],
-        },
-      };
+      return applyYamlToTab(tab, action.yaml, { dirty: true });
     }
 
     case "UPDATE_GUARD": {
@@ -607,6 +640,61 @@ function multiPolicyReducer(state: MultiPolicyState, action: MultiPolicyAction):
         tabs: state.tabs.map((t) =>
           t.id === action.tabId ? { ...t, testSuiteYaml: action.yaml } : t
         ),
+      };
+    }
+
+    case "RESTORE_AUTOSAVE_ENTRIES": {
+      if (action.entries.length === 0) return state;
+
+      let nextTabs = [...state.tabs];
+      let nextActiveTabId = state.activeTabId;
+
+      for (const entry of action.entries) {
+        const existingIndex = nextTabs.findIndex((tab) => {
+          if (entry.tabId && tab.id === entry.tabId) return true;
+          return entry.filePath !== null && tab.filePath === entry.filePath;
+        });
+
+        if (existingIndex >= 0) {
+          const existing = nextTabs[existingIndex];
+          nextTabs[existingIndex] = {
+            ...applyYamlToTab(existing, entry.yaml, {
+              dirty: true,
+              filePath: entry.filePath,
+              nameFallback: entry.policyName || existing.name,
+            }),
+            _undoPast: [],
+            _undoFuture: [],
+          };
+          nextActiveTabId = nextTabs[existingIndex].id;
+          continue;
+        }
+
+        if (nextTabs.length >= MAX_TABS) {
+          break;
+        }
+
+        const restored = applyYamlToTab(createDefaultTab(entry.tabId), entry.yaml, {
+          dirty: true,
+          filePath: entry.filePath,
+          nameFallback: entry.policyName || "Recovered Policy",
+        });
+        nextTabs = [
+          ...nextTabs,
+          {
+            ...restored,
+            _undoPast: [],
+            _undoFuture: [],
+            _cleanSnapshot: null,
+          },
+        ];
+        nextActiveTabId = restored.id;
+      }
+
+      return {
+        ...state,
+        tabs: nextTabs,
+        activeTabId: nextActiveTabId,
       };
     }
 

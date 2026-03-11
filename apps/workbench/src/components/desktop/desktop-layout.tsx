@@ -5,24 +5,26 @@ import { StatusBar } from "@/components/desktop/status-bar";
 import { DesktopSidebar } from "@/components/desktop/desktop-sidebar";
 import { ShortcutProvider } from "@/components/desktop/shortcut-provider";
 import { CrashRecoveryBanner } from "@/components/desktop/crash-recovery-banner";
-import { useWorkbench } from "@/lib/workbench/multi-policy-store";
+import { useMultiPolicy } from "@/lib/workbench/multi-policy-store";
 import { useAutoSave } from "@/lib/workbench/use-auto-save";
 
 export function DesktopLayout() {
-  const { state } = useWorkbench();
-  const { pendingRecovery, dismissRecovery } = useAutoSave();
+  const { tabs } = useMultiPolicy();
+  const { pendingRecovery, dismissRecovery, restoreRecovery } = useAutoSave();
   const location = useLocation();
+  const hasDirtyTabs = tabs.some((tab) => tab.dirty);
 
   // Warn on window close / reload when there are unsaved changes
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
-      if (state.dirty) {
+      if (hasDirtyTabs) {
         e.preventDefault();
+        e.returnValue = "";
       }
     };
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
-  }, [state.dirty]);
+  }, [hasDirtyTabs]);
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#05060a]">
@@ -35,7 +37,8 @@ export function DesktopLayout() {
       {/* Crash recovery banner (shown when autosave detected on startup) */}
       {pendingRecovery && (
         <CrashRecoveryBanner
-          entry={pendingRecovery}
+          entries={pendingRecovery}
+          onRestore={restoreRecovery}
           onDismiss={dismissRecovery}
         />
       )}

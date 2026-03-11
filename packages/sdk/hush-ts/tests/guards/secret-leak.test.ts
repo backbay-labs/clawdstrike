@@ -138,7 +138,7 @@ describe("SecretLeakGuard", () => {
     const result = guard.check(action, new GuardContext());
 
     expect(result.allowed).toBe(true);
-    expect(result.severity).toBe(Severity.INFO);
+    expect(result.severity).toBe(Severity.WARNING);
   });
 
   it("treats warning-severity pattern matches as warnings", () => {
@@ -152,6 +152,34 @@ describe("SecretLeakGuard", () => {
     expect(result.allowed).toBe(true);
     expect(result.severity).toBe(Severity.WARNING);
     expect(result.message).toContain("Secret pattern matched");
+  });
+
+  it("respects severityThreshold when deciding to block", () => {
+    const config: SecretLeakConfig = {
+      severityThreshold: "critical",
+      patterns: [{ name: "warn", pattern: "sk-[A-Za-z0-9]{10}", severity: "warning" }],
+    };
+    const guard = new SecretLeakGuard(config);
+    const action = GuardAction.custom("output", { content: "token sk-ABC123DEF4 leaked" });
+    const result = guard.check(action, new GuardContext());
+
+    expect(result.allowed).toBe(true);
+    expect(result.severity).toBe(Severity.WARNING);
+    expect(result.details?.severity_threshold).toBe(Severity.CRITICAL);
+  });
+
+  it("redacts matched values in details by default", () => {
+    const config: SecretLeakConfig = {
+      secrets: ["super-secret-key-12345"],
+    };
+    const guard = new SecretLeakGuard(config);
+    const action = GuardAction.custom("output", {
+      content: "Found: super-secret-key-12345",
+    });
+    const result = guard.check(action, new GuardContext());
+
+    expect(result.details?.redacted).not.toBe("super-secret-key-12345");
+    expect(String(result.details?.redacted).startsWith("supe")).toBe(true);
   });
 
   it("supports inline regex flags in pattern definitions", () => {

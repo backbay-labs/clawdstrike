@@ -24,10 +24,6 @@ function buildCleanDoc(policy: WorkbenchPolicy): Record<string, unknown> {
   for (const [key, config] of Object.entries(policy.guards)) {
     if (config && typeof config === "object") {
       const cleaned = cleanObject(config as Record<string, unknown>);
-      // Redact embedding_api_key from spider_sense guard to prevent secret leakage in exports
-      if (key === "spider_sense" && "embedding_api_key" in cleaned) {
-        cleaned.embedding_api_key = "***REDACTED***";
-      }
       if (Object.keys(cleaned).length > 0) {
         guards[key] = cleaned;
       }

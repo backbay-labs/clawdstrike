@@ -1,44 +1,75 @@
-import { useEffect, useRef, useCallback, useState } from "react";
-import { useWorkbench } from "./multi-policy-store";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useMultiPolicy } from "./multi-policy-store";
 
 const AUTOSAVE_KEY = "clawdstrike_workbench_autosave";
-const PERIODIC_INTERVAL_MS = 30_000; // 30 seconds
-const DEBOUNCE_DELAY_MS = 2_000; // 2 seconds after last edit
+const PERIODIC_INTERVAL_MS = 30_000;
+const DEBOUNCE_DELAY_MS = 2_000;
 
 export interface AutosaveEntry {
+  tabId?: string;
   yaml: string;
   filePath: string | null;
   timestamp: number;
   policyName: string;
 }
 
-function writeAutosave(entry: AutosaveEntry): void {
+interface AutosavePayload {
+  entries: AutosaveEntry[];
+}
+
+function isAutosaveEntry(value: unknown): value is AutosaveEntry {
+  if (typeof value !== "object" || value === null) return false;
+
+  const entry = value as Record<string, unknown>;
+  const hasValidTabId = entry.tabId === undefined || typeof entry.tabId === "string";
+
+  return (
+    hasValidTabId &&
+    typeof entry.yaml === "string" &&
+    typeof entry.timestamp === "number" &&
+    typeof entry.policyName === "string" &&
+    (entry.filePath === null || typeof entry.filePath === "string")
+  );
+}
+
+function writeAutosaves(entries: AutosaveEntry[]): void {
   try {
-    localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(entry));
+    const payload: AutosavePayload = { entries };
+    localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(payload));
   } catch {
     // Storage full or unavailable — ignore
   }
 }
 
-export function readAutosave(): AutosaveEntry | null {
+export function readAutosaves(): AutosaveEntry[] {
   try {
     const raw = localStorage.getItem(AUTOSAVE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    // Basic shape validation
+    if (!raw) return [];
+
+    const parsed = JSON.parse(raw) as unknown;
+
+    if (isAutosaveEntry(parsed)) {
+      return [parsed];
+    }
+
     if (
       typeof parsed === "object" &&
       parsed !== null &&
-      typeof parsed.yaml === "string" &&
-      typeof parsed.timestamp === "number" &&
-      typeof parsed.policyName === "string"
+      Array.isArray((parsed as { entries?: unknown[] }).entries)
     ) {
-      return parsed as AutosaveEntry;
+      return (parsed as { entries: unknown[] }).entries
+        .filter(isAutosaveEntry)
+        .sort((a, b) => b.timestamp - a.timestamp);
     }
-    return null;
+
+    return [];
   } catch {
-    return null;
+    return [];
   }
+}
+
+export function readAutosave(): AutosaveEntry | null {
+  return readAutosaves()[0] ?? null;
 }
 
 export function clearAutosave(): void {
@@ -50,49 +81,51 @@ export function clearAutosave(): void {
 }
 
 export function useAutoSave() {
-  const { state } = useWorkbench();
-  const { yaml, dirty, filePath, activePolicy } = state;
+  const { tabs, multiDispatch } = useMultiPolicy();
+  const dirtyTabs = tabs.filter((tab) => tab.dirty);
 
-  const [pendingRecovery, setPendingRecovery] = useState<AutosaveEntry | null>(
+  const [pendingRecovery, setPendingRecovery] = useState<AutosaveEntry[] | null>(
     null,
   );
 
-  // Check for recoverable autosave on mount (once)
   const checkedRef = useRef(false);
   useEffect(() => {
     if (checkedRef.current) return;
     checkedRef.current = true;
 
-    const entry = readAutosave();
-    if (!entry) return;
-
-    // Only offer recovery if the autosave is newer than what we just loaded.
-    // The ACTIVE_KEY is always written on yaml change, so if we're loading from
-    // it the autosave is only meaningful if it was written *after* the last
-    // explicit save (i.e., the user crashed while dirty).
-    // Heuristic: if the entry exists at all, the previous session ended without
-    // a clean save (because explicit save clears it). Offer recovery.
-    setPendingRecovery(entry);
+    const entries = readAutosaves();
+    if (entries.length === 0) return;
+    setPendingRecovery(entries);
   }, []);
 
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastWriteRef = useRef(0);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const persistDirtyTabs = useCallback(() => {
+    if (dirtyTabs.length === 0) return;
+
+    const timestamp = Date.now();
+    writeAutosaves(
+      dirtyTabs.map((tab) => ({
+        tabId: tab.id,
+        yaml: tab.yaml,
+        filePath: tab.filePath,
+        timestamp,
+        policyName: tab.policy.name || tab.name,
+      })),
+    );
+    lastWriteRef.current = timestamp;
+  }, [dirtyTabs]);
 
   useEffect(() => {
-    if (!dirty) return;
+    if (dirtyTabs.length === 0) return;
 
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
     }
 
     debounceRef.current = setTimeout(() => {
-      writeAutosave({
-        yaml,
-        filePath,
-        timestamp: Date.now(),
-        policyName: activePolicy.name,
-      });
-      lastWriteRef.current = Date.now();
+      persistDirtyTabs();
     }, DEBOUNCE_DELAY_MS);
 
     return () => {
@@ -101,47 +134,44 @@ export function useAutoSave() {
         debounceRef.current = null;
       }
     };
-  }, [yaml, dirty, filePath, activePolicy.name]);
+  }, [dirtyTabs, persistDirtyTabs]);
 
-  // Periodic auto-save — skip if a debounce write happened recently to avoid races
   useEffect(() => {
     const interval = setInterval(() => {
       if (Date.now() - lastWriteRef.current < 5000) return;
-      if (dirty) {
-        writeAutosave({
-          yaml,
-          filePath,
-          timestamp: Date.now(),
-          policyName: activePolicy.name,
-        });
-        lastWriteRef.current = Date.now();
+      if (dirtyTabs.length > 0) {
+        persistDirtyTabs();
       }
     }, PERIODIC_INTERVAL_MS);
 
     return () => clearInterval(interval);
-  }, [yaml, dirty, filePath, activePolicy.name]);
+  }, [dirtyTabs.length, persistDirtyTabs]);
 
-  // Clear autosave when state becomes clean (explicit save)
-  const wasDirtyRef = useRef(dirty);
+  const hadDirtyTabsRef = useRef(dirtyTabs.length > 0);
   useEffect(() => {
-    // Detect transition from dirty → clean (explicit save happened)
-    if (wasDirtyRef.current && !dirty) {
+    const hasDirtyTabs = dirtyTabs.length > 0;
+    if (hadDirtyTabsRef.current && !hasDirtyTabs) {
       clearAutosave();
-      // Also dismiss any pending recovery banner since the user just saved
       setPendingRecovery(null);
     }
-    wasDirtyRef.current = dirty;
-  }, [dirty]);
+    hadDirtyTabsRef.current = hasDirtyTabs;
+  }, [dirtyTabs.length]);
 
   const dismissRecovery = useCallback(() => {
     clearAutosave();
     setPendingRecovery(null);
   }, []);
 
+  const restoreRecovery = useCallback(() => {
+    if (!pendingRecovery || pendingRecovery.length === 0) return;
+    multiDispatch({ type: "RESTORE_AUTOSAVE_ENTRIES", entries: pendingRecovery });
+    clearAutosave();
+    setPendingRecovery(null);
+  }, [multiDispatch, pendingRecovery]);
+
   return {
-    /** Non-null when a recoverable autosave was found on startup. */
     pendingRecovery,
-    /** Call after restoring the autosaved YAML into the editor. */
     dismissRecovery,
+    restoreRecovery,
   };
 }

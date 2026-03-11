@@ -61,6 +61,55 @@ class TestPolicy:
         assert restored.version == original.version
         assert restored.name == original.name
 
+    def test_policy_accepts_shell_command_blocked_patterns_alias(self) -> None:
+        policy = Policy.from_yaml(
+            """\
+version: "1.2.0"
+name: shell-alias
+guards:
+  shell_command:
+    blocked_patterns:
+      - 'rm\\s+-rf'
+settings:
+  fail_fast: false
+"""
+        )
+        assert policy.guards.shell_command is not None
+        assert policy.guards.shell_command.forbidden_patterns == [r"rm\s+-rf"]
+
+    def test_shell_command_blocked_patterns_alias_merges_with_extends(
+        self, tmp_path
+    ) -> None:
+        base = tmp_path / "shell-base.yaml"
+        base.write_text(
+            """\
+version: "1.2.0"
+name: base
+guards:
+  shell_command:
+    forbidden_patterns:
+      - 'curl\\s+.*\\|\\s*sh'
+"""
+        )
+        policy = Policy.from_yaml_with_extends(
+            f"""\
+version: "1.2.0"
+name: child
+extends: {base.name}
+guards:
+  shell_command:
+    blocked_patterns:
+      - 'rm\\s+-rf'
+""",
+            base_path=tmp_path,
+        )
+
+        assert policy.guards.shell_command is not None
+        assert policy.guards.shell_command.forbidden_patterns == [
+            r"curl\s+.*\|\s*sh",
+            r"rm\s+-rf",
+        ]
+
     def test_policy_rejects_invalid_semver_version(self) -> None:
         with pytest.raises(PolicyError):
             Policy.from_yaml('version: "1.0"\nname: test\n')

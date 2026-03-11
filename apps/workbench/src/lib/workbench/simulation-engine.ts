@@ -266,7 +266,12 @@ function simulateEgressAllowlist(
   }
 
   // Default action
-  const verdict: Verdict = defaultAction === "allow" ? "allow" : "deny";
+  const verdict: Verdict =
+    defaultAction === "allow"
+      ? "allow"
+      : defaultAction === "log"
+      ? "warn"
+      : "deny";
   return {
     guardId: "egress_allowlist",
     guardName: "Egress Control",
@@ -274,6 +279,27 @@ function simulateEgressAllowlist(
     message: `Host "${host}" not matched; default action: ${defaultAction}`,
     evidence: { host, defaultAction },
   };
+}
+
+function secretSeverityRank(severity: string): number {
+  switch (severity) {
+    case "info":
+      return 0;
+    case "warning":
+      return 1;
+    case "error":
+      return 2;
+    case "critical":
+      return 3;
+    default:
+      return -1;
+  }
+}
+
+function maskSecretValue(value: string): string {
+  if (value.length === 0) return "";
+  if (value.length <= 8) return "*".repeat(value.length);
+  return `${value.slice(0, 4)}${"*".repeat(value.length - 8)}${value.slice(-4)}`;
 }
 
 function simulateSecretLeak(
@@ -286,6 +312,8 @@ function simulateSecretLeak(
   const path = normalizePath((scenario.payload.path as string) || "");
   const patterns = config.patterns || [];
   const skipPaths = config.skip_paths || [];
+  const shouldRedact = config.redact !== false;
+  const severityThreshold = config.severity_threshold || "error";
 
   // Content size cap: skip regex testing and deny if content exceeds 1 MB
   if (content.length > MAX_REGEX_CONTENT_BYTES) {
@@ -311,16 +339,33 @@ function simulateSecretLeak(
     }
   }
 
-  const matches: Array<{ name: string; pattern: string; severity: string }> = [];
+  const matches: Array<{
+    name: string;
+    pattern: string;
+    severity: string;
+    redacted: string;
+  }> = [];
+  const skippedPatterns: Array<{ name: string; pattern: string; reason: string }> = [];
   for (const sp of patterns) {
     if (!isSafeRegex(sp.pattern)) {
-      matches.push({ name: sp.name, pattern: sp.pattern, severity: "skipped_unsafe_regex" });
+      skippedPatterns.push({
+        name: sp.name,
+        pattern: sp.pattern,
+        reason: "skipped_unsafe_regex",
+      });
       continue;
     }
     try {
       const re = cachedRegex(sp.pattern);
-      if (re.test(content)) {
-        matches.push({ name: sp.name, pattern: sp.pattern, severity: sp.severity });
+      const match = re.exec(content);
+      if (match) {
+        const matchedValue = match[0] ?? "";
+        matches.push({
+          name: sp.name,
+          pattern: sp.pattern,
+          severity: sp.severity,
+          redacted: shouldRedact ? maskSecretValue(matchedValue) : matchedValue,
+        });
       }
     } catch (e) {
       // Fail closed: invalid regex patterns deny access
@@ -335,34 +380,42 @@ function simulateSecretLeak(
   }
 
   if (matches.length > 0) {
-    // Filter out "info" severity matches — they should not elevate the verdict
-    const actionableMatches = matches.filter((m) => m.severity !== "info");
-    if (actionableMatches.length === 0) {
-      // Only "info" severity matches remain — treat as allow
-      return {
-        guardId: "secret_leak",
-        guardName: "Secret Leak",
-        verdict: "allow",
-        message: `Detected ${matches.length} info-only match(es) — no actionable secrets: ${matches.map((m) => m.name).join(", ")}`,
-        evidence: { path, matches },
-      };
-    }
-    const hasCritical = actionableMatches.some((m) => m.severity === "critical" || m.severity === "error");
+    const maxSeverity = matches.reduce<string>(
+      (currentMax, match) =>
+        secretSeverityRank(match.severity) > secretSeverityRank(currentMax)
+          ? match.severity
+          : currentMax,
+      matches[0].severity,
+    );
+    const shouldBlock =
+      secretSeverityRank(maxSeverity) >= secretSeverityRank(severityThreshold);
+
     return {
       guardId: "secret_leak",
       guardName: "Secret Leak",
-      verdict: hasCritical ? "deny" : "warn",
-      message: `Detected ${actionableMatches.length} secret(s): ${actionableMatches.map((m) => m.name).join(", ")}`,
-      evidence: { path, matches },
+      verdict: shouldBlock ? "deny" : "warn",
+      message: shouldBlock
+        ? `Detected ${matches.length} secret(s): ${matches.map((m) => m.name).join(", ")}`
+        : `Detected ${matches.length} secret(s) below block threshold ${severityThreshold}: ${matches.map((m) => m.name).join(", ")}`,
+      evidence: {
+        path,
+        redact: shouldRedact,
+        severityThreshold,
+        matches,
+        skippedPatterns,
+      },
     };
   }
 
   return {
     guardId: "secret_leak",
     guardName: "Secret Leak",
-    verdict: "allow",
-    message: "No secrets detected in content",
-    evidence: { path },
+    verdict: skippedPatterns.length > 0 ? "warn" : "allow",
+    message:
+      skippedPatterns.length > 0
+        ? "Skipped one or more unsafe secret detection patterns"
+        : "No secrets detected in content",
+    evidence: { path, skippedPatterns },
   };
 }
 

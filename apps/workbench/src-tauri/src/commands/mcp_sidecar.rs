@@ -7,8 +7,8 @@
 //!      TypeScript server (`bun run` / `npx tsx`) during local development.
 //!   4. Stores connection details in [`McpState`] for the frontend to query.
 
-use std::ffi::OsString;
 use std::collections::HashSet;
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -58,13 +58,44 @@ impl McpState {
     }
 }
 
+fn clear_runtime_state(inner: &mut McpInner) {
+    inner.port = 0;
+    inner.token.clear();
+    inner.running = false;
+    inner.child = None;
+}
+
+fn current_status(inner: &McpInner) -> McpStatusResponse {
+    McpStatusResponse {
+        url: if inner.running {
+            format!("http://localhost:{}/sse", inner.port)
+        } else {
+            String::new()
+        },
+        token: if inner.running {
+            inner.token.clone()
+        } else {
+            String::new()
+        },
+        running: inner.running,
+        error: if inner.running {
+            None
+        } else {
+            inner.last_error.clone()
+        },
+    }
+}
+
 /// Generate a 36-character token (mcp_ prefix + 32 hex chars) using `getrandom`.
 fn generate_token() -> String {
     let mut buf = [0u8; 16];
     getrandom::getrandom(&mut buf).expect("getrandom failed");
     // Prefix with mcp_ for recognizability
     let token = format!("mcp_{}", hex::encode(buf));
-    debug_assert!(token.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'), "Token contains unexpected characters");
+    debug_assert!(
+        token.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'),
+        "Token contains unexpected characters"
+    );
     token
 }
 
@@ -97,10 +128,10 @@ fn resolve_dev_script_path() -> Option<String> {
     if dev_path.exists() {
         return Some(
             dev_path
-            .canonicalize()
-            .unwrap_or_else(|_| dev_path.clone())
-            .to_string_lossy()
-            .to_string(),
+                .canonicalize()
+                .unwrap_or_else(|_| dev_path.clone())
+                .to_string_lossy()
+                .to_string(),
         );
     }
     None
@@ -128,10 +159,7 @@ fn resolve_bundled_binary_path<R: Runtime>(app: &tauri::AppHandle<R>) -> Option<
 
 /// Common locations for JS runtimes on macOS/Linux that may not be on the
 /// restricted PATH inherited by GUI apps launched from Finder/Dock.
-const EXTRA_PATHS: &[&str] = &[
-    "/opt/homebrew/bin",
-    "/usr/local/bin",
-];
+const EXTRA_PATHS: &[&str] = &["/opt/homebrew/bin", "/usr/local/bin"];
 
 const HOME_BIN_SUBDIRS: &[&str] = &[
     ".local/bin",
@@ -301,7 +329,9 @@ fn push_launch_config(
     }
 }
 
-fn resolve_launch_configs<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<Vec<LaunchConfig>, String> {
+fn resolve_launch_configs<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+) -> Result<Vec<LaunchConfig>, String> {
     let mut configs = Vec::new();
     let mut seen = HashSet::new();
 
@@ -370,7 +400,11 @@ fn resolve_launch_configs<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<Vec<L
     Ok(configs)
 }
 
-async fn spawn_child_for_launch(launch: &LaunchConfig, port: u16, token: &str) -> Result<tokio::process::Child, String> {
+async fn spawn_child_for_launch(
+    launch: &LaunchConfig,
+    port: u16,
+    token: &str,
+) -> Result<tokio::process::Child, String> {
     let mut child = tokio::process::Command::new(&launch.command_path)
         .args(&launch.args)
         .env("PATH", enriched_path())
@@ -423,7 +457,10 @@ async fn spawn_child_for_launch(launch: &LaunchConfig, port: u16, token: &str) -
         }
         Ok(None) => Ok(child),
         Err(e) => {
-            let msg = format!("Failed to inspect MCP sidecar process ({}): {e}", launch.runtime_label);
+            let msg = format!(
+                "Failed to inspect MCP sidecar process ({}): {e}",
+                launch.runtime_label
+            );
             eprintln!("[mcp-sidecar] {msg}");
             Err(msg)
         }
@@ -437,7 +474,10 @@ pub async fn spawn_mcp_server<R: Runtime>(
 ) -> Result<McpStatusResponse, String> {
     // Kill any existing child process before spawning a new one
     {
-        let mut inner = state.inner.lock().map_err(|_| "McpState lock poisoned".to_string())?;
+        let mut inner = state
+            .inner
+            .lock()
+            .map_err(|_| "McpState lock poisoned".to_string())?;
         if let Some(ref mut child) = inner.child {
             let _ = child.start_kill();
         }
@@ -502,7 +542,7 @@ pub async fn spawn_mcp_server<R: Runtime>(
         launch_errors.join(" | ")
     );
     if let Ok(mut inner) = state.inner.lock() {
-        inner.running = false;
+        clear_runtime_state(&mut inner);
         inner.last_error = Some(combined_error.clone());
     }
     Err(combined_error)
@@ -515,8 +555,8 @@ pub fn kill_mcp_server(state: &McpState) {
             // best-effort kill
             let _ = child.start_kill();
         }
-        inner.child = None;
-        inner.running = false;
+        clear_runtime_state(&mut inner);
+        inner.last_error = None;
     }
 }
 
@@ -551,34 +591,19 @@ pub async fn get_mcp_status(
             match child.try_wait() {
                 Ok(Some(_exit_status)) => {
                     // Child exited — update state.
-                    inner.running = false;
+                    clear_runtime_state(&mut inner);
                     inner.last_error = Some("Embedded MCP sidecar exited unexpectedly".to_string());
-                    inner.child = None;
                 }
                 Ok(None) => { /* still running */ }
                 Err(_) => {
-                    inner.running = false;
+                    clear_runtime_state(&mut inner);
                     inner.last_error =
                         Some("Failed to inspect embedded MCP sidecar status".to_string());
-                    inner.child = None;
                 }
             }
         }
     }
-    Ok(McpStatusResponse {
-        url: if inner.running {
-            format!("http://localhost:{}/sse", inner.port)
-        } else {
-            String::new()
-        },
-        token: inner.token.clone(),
-        running: inner.running,
-        error: if inner.running {
-            None
-        } else {
-            inner.last_error.clone()
-        },
-    })
+    Ok(current_status(&inner))
 }
 
 #[tauri::command]
@@ -645,15 +670,52 @@ mod tests {
     fn runtime_candidates_include_bare_command_fallbacks() {
         let candidates = runtime_candidates();
 
-        assert!(
-            candidates
-                .iter()
-                .any(|(command, args)| command == "bun" && args == &vec!["run".to_string()])
-        );
-        assert!(
-            candidates
-                .iter()
-                .any(|(command, args)| command == "npx" && args == &vec!["tsx".to_string()])
-        );
+        assert!(candidates
+            .iter()
+            .any(|(command, args)| command == "bun" && args == &vec!["run".to_string()]));
+        assert!(candidates
+            .iter()
+            .any(|(command, args)| command == "npx" && args == &vec!["tsx".to_string()]));
+    }
+
+    #[test]
+    fn clear_runtime_state_scrubs_cached_token_and_port() {
+        let mut inner = McpInner {
+            port: 9877,
+            token: "mcp_secret".to_string(),
+            running: true,
+            last_error: Some("boom".to_string()),
+            child: None,
+            runtime_cmd: "bun".to_string(),
+            script_path: "server.ts".to_string(),
+        };
+
+        clear_runtime_state(&mut inner);
+
+        assert_eq!(inner.port, 0);
+        assert!(inner.token.is_empty());
+        assert!(!inner.running);
+        assert!(inner.child.is_none());
+        assert_eq!(inner.last_error.as_deref(), Some("boom"));
+    }
+
+    #[test]
+    fn current_status_hides_token_when_sidecar_is_stopped() {
+        let inner = McpInner {
+            port: 9877,
+            token: "mcp_secret".to_string(),
+            running: false,
+            last_error: Some("sidecar stopped".to_string()),
+            child: None,
+            runtime_cmd: "bun".to_string(),
+            script_path: "server.ts".to_string(),
+        };
+
+        let status = current_status(&inner);
+
+        assert!(status.url.is_empty());
+        assert!(status.token.is_empty());
+        assert!(!status.running);
+        assert_eq!(status.error.as_deref(), Some("sidecar stopped"));
     }
 }

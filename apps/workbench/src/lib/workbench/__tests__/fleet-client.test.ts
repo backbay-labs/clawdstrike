@@ -48,6 +48,7 @@ import {
   loadSavedConnectionAsync,
   saveConnectionConfig,
   clearConnectionConfig,
+  isPrivateOrLoopbackFleetHostname,
   validateFleetUrl,
   type FleetConnection,
   type FleetReceipt,
@@ -1356,5 +1357,23 @@ describe("validateFleetUrl", () => {
       valid: false,
       reason: "URLs must not include embedded credentials",
     });
+  });
+});
+
+describe("isPrivateOrLoopbackFleetHostname", () => {
+  it("detects IPv6 loopback, unique-local, and link-local hosts", () => {
+    expect(isPrivateOrLoopbackFleetHostname("[::1]")).toBe(true);
+    expect(isPrivateOrLoopbackFleetHostname("[fd00::1]")).toBe(true);
+    expect(isPrivateOrLoopbackFleetHostname("[fe80::1]")).toBe(true);
+  });
+
+  it("detects IPv4-mapped private and loopback IPv6 hosts", () => {
+    expect(isPrivateOrLoopbackFleetHostname("[::ffff:127.0.0.1]")).toBe(true);
+    expect(isPrivateOrLoopbackFleetHostname("[::ffff:7f00:1]")).toBe(true);
+    expect(isPrivateOrLoopbackFleetHostname("[::ffff:192.168.1.10]")).toBe(true);
+  });
+
+  it("does not flag public IPv6 hosts", () => {
+    expect(isPrivateOrLoopbackFleetHostname("[2606:4700:4700::1111]")).toBe(false);
   });
 });

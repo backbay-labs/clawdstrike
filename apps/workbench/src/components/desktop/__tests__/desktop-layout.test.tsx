@@ -1,9 +1,10 @@
+import { useEffect } from "react";
 import { describe, it, expect, vi } from "vitest";
 import { screen } from "@testing-library/react";
 import { render } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { DesktopLayout } from "../desktop-layout";
-import { MultiPolicyProvider as WorkbenchProvider } from "@/lib/workbench/multi-policy-store";
+import { MultiPolicyProvider as WorkbenchProvider, useMultiPolicy } from "@/lib/workbench/multi-policy-store";
 import { FleetConnectionProvider } from "@/lib/workbench/use-fleet-connection";
 
 vi.mock("@/lib/tauri-bridge", () => ({
@@ -14,11 +15,23 @@ vi.mock("@/lib/tauri-bridge", () => ({
   closeWindow: vi.fn(),
 }));
 
-function renderLayout(route = "/editor") {
+function DirtyBackgroundTabBootstrap() {
+  const { multiDispatch } = useMultiPolicy();
+
+  useEffect(() => {
+    multiDispatch({ type: "UPDATE_META", name: "dirty-background-tab" });
+    multiDispatch({ type: "NEW_TAB" });
+  }, [multiDispatch]);
+
+  return null;
+}
+
+function renderLayout(route = "/editor", withDirtyBackgroundTab = false) {
   return render(
     <MemoryRouter initialEntries={[route]}>
       <FleetConnectionProvider>
         <WorkbenchProvider>
+          {withDirtyBackgroundTab ? <DirtyBackgroundTabBootstrap /> : null}
           <Routes>
             <Route element={<DesktopLayout />}>
               <Route path="editor" element={<div data-testid="editor-page">Editor Page</div>} />
@@ -87,5 +100,16 @@ describe("DesktopLayout", () => {
     expect(flexRow).toBeInTheDocument();
     expect(flexRow!.className).toContain("flex");
     expect(flexRow!.className).toContain("flex-1");
+  });
+
+  it("warns before unload when a background tab is dirty", () => {
+    renderLayout("/editor", true);
+
+    const event = new Event("beforeunload", { cancelable: true });
+    const preventDefault = vi.spyOn(event, "preventDefault");
+
+    window.dispatchEvent(event);
+
+    expect(preventDefault).toHaveBeenCalled();
   });
 });

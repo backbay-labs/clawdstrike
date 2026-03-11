@@ -17,6 +17,7 @@ Usage::
 from __future__ import annotations
 
 import json
+import logging
 import sys
 import time
 import uuid
@@ -27,8 +28,10 @@ from typing import Any, TextIO
 import yaml
 
 from clawdstrike.clawdstrike import Clawdstrike
-from clawdstrike.guards.base import CustomAction
+from clawdstrike.guards.base import CustomAction, Severity
 from clawdstrike.types import Decision, DecisionStatus
+
+LOGGER = logging.getLogger("clawdstrike.testing")
 
 
 # ---------------------------------------------------------------------------
@@ -239,8 +242,35 @@ class ScenarioSuite:
     def _from_dict(cls, data: dict[str, Any]) -> ScenarioSuite:
         policy_ref = data.get("policy")
         name = data.get("name")
+        raw_scenarios = data.get("scenarios", [])
+        if raw_scenarios is None:
+            raw_scenarios = []
+        if not isinstance(raw_scenarios, list):
+            raise ValueError("Scenario suite 'scenarios' must be a list")
+
         scenarios: list[Scenario] = []
-        for s in data.get("scenarios", []):
+        for index, s in enumerate(raw_scenarios):
+            if not isinstance(s, dict):
+                raise ValueError(f"Scenario at index {index} must be a mapping")
+            if not isinstance(s.get("name"), str) or not s["name"].strip():
+                raise ValueError(f"Scenario at index {index} must define a non-empty name")
+            if not isinstance(s.get("action"), str) or not s["action"].strip():
+                raise ValueError(
+                    f"Scenario {s['name']!r} must define a non-empty action"
+                )
+            payload = s.get("payload", {})
+            if payload is None:
+                payload = {}
+            if not isinstance(payload, dict):
+                raise ValueError(f"Scenario {s['name']!r} payload must be a mapping")
+            tags = s.get("tags", [])
+            if tags is None:
+                tags = []
+            if not isinstance(tags, list) or not all(
+                isinstance(tag, str) for tag in tags
+            ):
+                raise ValueError(f"Scenario {s['name']!r} tags must be a list of strings")
+
             scenarios.append(
                 Scenario(
                     name=s["name"],
@@ -249,9 +279,9 @@ class ScenarioSuite:
                     expect=s.get("expect"),
                     expect_guard=s.get("expect_guard"),
                     content=s.get("content"),
-                    payload=s.get("payload", {}),
+                    payload=payload,
                     description=s.get("description"),
-                    tags=s.get("tags", []),
+                    tags=tags,
                     id=s.get("id", uuid.uuid4().hex[:8]),
                 )
             )
@@ -350,18 +380,32 @@ class ScenarioRunner:
     def run_scenario(self, scenario: Scenario) -> ScenarioResult:
         """Run a single scenario and return the result."""
         start = time.monotonic()
-        decision = self._execute(scenario)
+        execution_error: str | None = None
+        try:
+            decision = self._execute(scenario)
+        except Exception as exc:
+            execution_error = f"Scenario execution failed: {exc}"
+            LOGGER.warning(
+                "Scenario %r failed to execute; denying by default: %s",
+                scenario.name,
+                exc,
+            )
+            decision = Decision(
+                status=DecisionStatus.DENY,
+                guard="scenario_runner",
+                severity=Severity.ERROR,
+                message=execution_error,
+            )
         elapsed_ms = (time.monotonic() - start) * 1000
 
-        passed = True
-        mismatch = None
+        passed = execution_error is None
+        mismatch = execution_error
 
-        if scenario.expect is not None:
+        if execution_error is None and scenario.expect is not None:
             try:
                 expected = DecisionStatus(scenario.expect)
             except ValueError:
-                import logging
-                logging.getLogger("clawdstrike.testing").warning(
+                LOGGER.warning(
                     "Invalid expect value %r in scenario %r; failing scenario",
                     scenario.expect,
                     scenario.name,
@@ -373,13 +417,16 @@ class ScenarioRunner:
                 passed = False
                 mismatch = f"Expected {scenario.expect}, got {decision.status.value}"
 
-        if passed and scenario.expect_guard is not None:
-            if decision.guard != scenario.expect_guard:
-                passed = False
-                mismatch = (
-                    f"Expected guard '{scenario.expect_guard}', "
-                    f"got '{decision.guard}'"
-                )
+        if (
+            passed
+            and scenario.expect_guard is not None
+            and decision.guard != scenario.expect_guard
+        ):
+            passed = False
+            mismatch = (
+                f"Expected guard '{scenario.expect_guard}', "
+                f"got '{decision.guard}'"
+            )
 
         return ScenarioResult(
             scenario=scenario,
@@ -426,7 +473,13 @@ class ScenarioRunner:
                 else None,
             )
         elif action == "network_egress":
-            port = int(payload.get("port", 443))
+            port_raw = payload.get("port", 443)
+            try:
+                port = int(port_raw)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"Invalid network_egress port: {port_raw!r}"
+                ) from exc
             return self._cs.check_network(target, port=port)
         elif action == "shell_command":
             return self._cs.check_command(target)
@@ -437,10 +490,14 @@ class ScenarioRunner:
             diff = content or payload.get("diff", "")
             return self._cs.check_patch(target, diff)
         elif action in ("user_input", "untrusted_text"):
-            text = target or payload.get("text", "")
-            return self._cs.check(
-                CustomAction(custom_type=action, custom_data={"text": text})
-            )
+            custom_data: dict[str, Any] = {}
+            if target:
+                custom_data["text"] = target
+            else:
+                payload_text = payload.get("text")
+                if isinstance(payload_text, str):
+                    custom_data["text"] = payload_text
+            return self._cs.check(CustomAction(custom_type=action, custom_data=custom_data))
         else:
             # Generic custom action
             return self._cs.check(
@@ -524,7 +581,7 @@ def diff_policies(
     changed: list[DiffEntry] = []
     unchanged = 0
 
-    for ra, rb in zip(report_a.results, report_b.results):
+    for ra, rb in zip(report_a.results, report_b.results, strict=True):
         if ra.decision.status != rb.decision.status:
             changed.append(
                 DiffEntry(

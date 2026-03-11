@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import io
 import json
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -31,7 +30,6 @@ from clawdstrike.testing import (
     diff_policies,
 )
 from clawdstrike.types import DecisionStatus
-
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -151,7 +149,7 @@ class TestScenarioSuiteYaml:
         yaml_out = suite.to_yaml()
         reparsed = ScenarioSuite.from_yaml(yaml_out)
         assert len(reparsed.scenarios) == len(suite.scenarios)
-        for orig, rt in zip(suite.scenarios, reparsed.scenarios):
+        for orig, rt in zip(suite.scenarios, reparsed.scenarios, strict=True):
             assert orig.name == rt.name
             assert orig.action == rt.action
             assert orig.target == rt.target
@@ -443,7 +441,9 @@ class TestSuiteReport:
         assert d["total"] == 6
         assert isinstance(d["results"], list)
 
-    def test_save_to_file(self, runner: ScenarioRunner, suite: ScenarioSuite, tmp_path: Path) -> None:
+    def test_save_to_file(
+        self, runner: ScenarioRunner, suite: ScenarioSuite, tmp_path: Path
+    ) -> None:
         report = runner.run(suite)
         out_file = tmp_path / "report.json"
         report.save(out_file)
@@ -795,3 +795,43 @@ class TestEdgeCases:
             payload={"args": {"path": "/tmp/x"}},
         )
         assert isinstance(result, ScenarioResult)
+
+    def test_invalid_network_port_fails_closed_without_aborting_suite(
+        self, runner: ScenarioRunner
+    ) -> None:
+        suite = ScenarioSuite.from_yaml(
+            """\
+scenarios:
+  - name: malformed port
+    action: network_egress
+    target: api.example.com
+    payload:
+      port: abc
+  - name: safe write
+    action: file_write
+    target: /tmp/output.json
+    content: "{}"
+    expect: allow
+"""
+        )
+
+        report = runner.run(suite)
+
+        assert report.total == 2
+        assert report.failed == 1
+        assert report.results[0].decision.status == DecisionStatus.DENY
+        assert report.results[0].passed is False
+        assert report.results[0].mismatch is not None
+        assert "Invalid network_egress port" in report.results[0].mismatch
+        assert report.results[1].passed is True
+
+    def test_missing_user_input_text_fails_closed(self, runner: ScenarioRunner) -> None:
+        result = runner.check(
+            "missing text",
+            "user_input",
+            expect="deny",
+        )
+
+        assert result.decision.status == DecisionStatus.DENY
+        assert result.passed is True
+        assert result.decision.message == "Invalid user_input payload: missing text field"

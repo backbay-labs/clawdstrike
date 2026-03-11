@@ -179,6 +179,23 @@ describe("egress_allowlist guard", () => {
     );
     expect(result.overallVerdict).toBe("allow");
   });
+
+  it("treats default_action=log as a warning instead of a deny", () => {
+    const logDefault = makePolicy({
+      egress_allowlist: {
+        enabled: true,
+        allow: [],
+        default_action: "log",
+      },
+    });
+    const result = simulatePolicy(
+      logDefault,
+      makeScenario({ actionType: "network_egress", payload: { host: "unknown.example.com" } })
+    );
+
+    expect(result.overallVerdict).toBe("warn");
+    expect(result.guardResults[0].verdict).toBe("warn");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -248,6 +265,51 @@ describe("secret_leak guard", () => {
     );
     // "warning" severity is not "critical" or "error", so verdict is "warn"
     expect(result.overallVerdict).toBe("warn");
+  });
+
+  it("respects severity_threshold when deciding whether to block", () => {
+    const thresholdPolicy = makePolicy({
+      secret_leak: {
+        enabled: true,
+        severity_threshold: "critical",
+        patterns: [
+          { name: "generic_api_key", pattern: "api[_-]?key[\\s=:]+[\\w]{20,}", severity: "warning" },
+        ],
+      },
+    });
+    const result = simulatePolicy(
+      thresholdPolicy,
+      makeScenario({
+        actionType: "file_write",
+        payload: { path: "/app/config.ts", content: "api_key = abcdefghijklmnopqrstuvwxyz" },
+      })
+    );
+
+    expect(result.overallVerdict).toBe("warn");
+    expect(result.guardResults[0].evidence?.severityThreshold).toBe("critical");
+  });
+
+  it("redacts matched secret values in evidence when redact is enabled", () => {
+    const redactPolicy = makePolicy({
+      secret_leak: {
+        enabled: true,
+        redact: true,
+        patterns: [
+          { name: "aws_access_key", pattern: "AKIA[0-9A-Z]{16}", severity: "critical" },
+        ],
+      },
+    });
+    const result = simulatePolicy(
+      redactPolicy,
+      makeScenario({
+        actionType: "file_write",
+        payload: { path: "/app/config.ts", content: "const key = 'AKIAIOSFODNN7EXAMPLE'" },
+      })
+    );
+
+    const match = (result.guardResults[0].evidence?.matches as Array<{ redacted: string }>)[0];
+    expect(match.redacted).not.toBe("AKIAIOSFODNN7EXAMPLE");
+    expect(match.redacted.startsWith("AKIA")).toBe(true);
   });
 
   it("allows clean content", () => {

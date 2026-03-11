@@ -1,28 +1,32 @@
 import { useCallback } from "react";
 import { IconAlertTriangle, IconRestore, IconX } from "@tabler/icons-react";
-import { useWorkbench } from "@/lib/workbench/multi-policy-store";
 import type { AutosaveEntry } from "@/lib/workbench/use-auto-save";
 
 interface CrashRecoveryBannerProps {
-  entry: AutosaveEntry;
+  entries: AutosaveEntry[];
+  onRestore: () => void;
   onDismiss: () => void;
 }
 
 export function CrashRecoveryBanner({
-  entry,
+  entries,
+  onRestore,
   onDismiss,
 }: CrashRecoveryBannerProps) {
-  const { dispatch } = useWorkbench();
+  const latestTimestamp = Math.max(...entries.map((entry) => entry.timestamp));
+  const policyNames = Array.from(
+    new Set(entries.map((entry) => entry.policyName).filter(Boolean)),
+  );
+  const summaryLabel =
+    entries.length === 1
+      ? policyNames[0] || "the current tab"
+      : `${entries.length} tabs`;
 
-  const formattedTime = formatTimestamp(entry.timestamp);
+  const formattedTime = formatTimestamp(latestTimestamp);
 
   const handleRestore = useCallback(() => {
-    dispatch({ type: "SET_YAML", yaml: entry.yaml });
-    if (entry.filePath) {
-      dispatch({ type: "SET_FILE_PATH", path: entry.filePath });
-    }
-    onDismiss();
-  }, [dispatch, entry, onDismiss]);
+    onRestore();
+  }, [onRestore]);
 
   const handleDiscard = onDismiss;
 
@@ -33,11 +37,15 @@ export function CrashRecoveryBanner({
 
       {/* Message */}
       <span className="text-xs text-[#6f7f9a] leading-tight min-w-0">
-        Recovered unsaved changes
-        {entry.policyName ? (
+        Recovered unsaved changes from{" "}
+        <span className="text-[#ece7dc] font-medium">{summaryLabel}</span>
+        {entries.length === 1 && policyNames[0] ? null : policyNames.length > 0 ? (
           <>
-            {" "}from{" "}
-            <span className="text-[#ece7dc] font-medium">{entry.policyName}</span>
+            {" "}
+            <span className="text-[#6f7f9a]/70">
+              ({policyNames.slice(0, 3).join(", ")}
+              {policyNames.length > 3 ? ", ..." : ""})
+            </span>
           </>
         ) : null}
         {" "}

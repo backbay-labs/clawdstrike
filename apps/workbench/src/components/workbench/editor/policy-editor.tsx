@@ -333,7 +333,7 @@ export function PolicyEditor() {
   );
 
   return (
-    <TestRunnerProvider>
+    <TestRunnerProvider key={activeTab?.id ?? "no-active-tab"}>
     <div className="h-full w-full flex flex-col">
       {/* Tab bar + toolbar */}
       <div className="flex items-center bg-[#0b0d13] border-b border-[#2d3240]">

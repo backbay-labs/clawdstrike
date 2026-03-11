@@ -111,6 +111,24 @@ def _parse_extends(value: Any, *, path: str) -> list[str]:
     raise PolicyError(f"Expected string or list for {path}, got {type(value).__name__}")
 
 
+def _normalize_guard_aliases(data: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(data)
+
+    shell_command = normalized.get("shell_command")
+    if isinstance(shell_command, dict) and "blocked_patterns" in shell_command:
+        if "forbidden_patterns" in shell_command:
+            raise PolicyError(
+                "guards.shell_command cannot define both blocked_patterns and forbidden_patterns"
+            )
+        shell_command_data = dict(shell_command)
+        shell_command_data["forbidden_patterns"] = shell_command_data.pop(
+            "blocked_patterns"
+        )
+        normalized["shell_command"] = shell_command_data
+
+    return normalized
+
+
 class _MergeMode(_Enum):
     OVERRIDE = "override"
     MERGE_LIST = "merge_list"
@@ -403,6 +421,7 @@ class GuardConfigs:
             "spider_sense",
         }
         _reject_unknown_keys(data, allowed, path="guards")
+        data = _normalize_guard_aliases(data)
 
         def parse_guard_config(
             config_type: Any, value: Any, *, path: str
@@ -596,7 +615,7 @@ class Policy:
             guards=GuardConfigs.from_dict(guards_data) if guards_data else GuardConfigs(),
             settings=PolicySettings(**settings_data) if settings_data else PolicySettings(),
             posture=posture,
-            _raw_guards=dict(guards_data) if guards_data else {},
+            _raw_guards=_normalize_guard_aliases(guards_data) if guards_data else {},
             _raw_settings=dict(settings_data) if settings_data else {},
         )
 

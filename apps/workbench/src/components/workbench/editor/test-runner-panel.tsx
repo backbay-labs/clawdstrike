@@ -640,14 +640,14 @@ function TestSuiteTab() {
   // Initialize suite YAML from store or default
   const suiteYaml = testState.suiteYaml || EXAMPLE_SUITE;
 
-  // Gap 3: Load persisted suite on mount/tab switch
+  // Keep suite state tab-scoped by always loading the active tab's persisted suite
+  // (or the default example) on tab switches.
   useEffect(() => {
-    if (multiActiveTab?.testSuiteYaml) {
-      testDispatch({ type: "SET_SUITE_YAML", yaml: multiActiveTab.testSuiteYaml });
-    } else if (!testState.suiteYaml) {
-      testDispatch({ type: "SET_SUITE_YAML", yaml: EXAMPLE_SUITE });
-    }
-  }, [multiActiveTab?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    testDispatch({
+      type: "SET_SUITE_YAML",
+      yaml: multiActiveTab?.testSuiteYaml || EXAMPLE_SUITE,
+    });
+  }, [multiActiveTab?.id, multiActiveTab?.testSuiteYaml, testDispatch]);
 
   // Gap 3: Auto-save suite YAML to multi-policy tab (debounced 1s)
   const autoSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -659,7 +659,7 @@ function TestSuiteTab() {
       multiDispatch({ type: "SET_TAB_TEST_SUITE", tabId: multiActiveTab.id, yaml: testState.suiteYaml });
     }, 1000);
     return () => { if (autoSaveRef.current) clearTimeout(autoSaveRef.current); };
-  }, [testState.suiteYaml, multiActiveTab?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [multiDispatch, testState.suiteYaml, multiActiveTab?.id]);
 
   const handleYamlChange = useCallback(
     (value: string) => {

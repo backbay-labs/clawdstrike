@@ -149,6 +149,25 @@ describe("policyToYaml", () => {
     expect(yaml).toContain("prompt_injection");
     expect(yaml).toContain("jailbreak");
   });
+
+  it("preserves spider_sense embedding_api_key during serialization", () => {
+    const policy = makeMinimalPolicy({
+      guards: {
+        spider_sense: {
+          enabled: true,
+          embedding_api_url: "https://embeddings.example.com",
+          embedding_api_key: "live-secret-key",
+          embedding_model: "text-embedding-3-small",
+        },
+      },
+    });
+
+    const yaml = policyToYaml(policy);
+
+    expect(yaml).toContain("embedding_api_key");
+    expect(yaml).toContain("live-secret-key");
+    expect(yaml).not.toContain("***REDACTED***");
+  });
 });
 
 // ---------------------------------------------------------------------------
