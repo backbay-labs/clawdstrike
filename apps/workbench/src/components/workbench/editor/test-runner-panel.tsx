@@ -888,9 +888,10 @@ function TestSuiteTab() {
     // Persist to IndexedDB (best-effort but visible on failure)
     try {
       await testHistoryStore.init();
+      const historyPolicyId = multiActiveTab?.id ?? state.activePolicy.name;
       const storedRun: StoredTestRun = {
         id: crypto.randomUUID(),
-        policyId: state.activePolicy.name,
+        policyId: historyPolicyId,
         timestamp: runTimestamp,
         total,
         passed,
@@ -939,7 +940,7 @@ function TestSuiteTab() {
       title: `Suite complete: ${passed}/${total} passed`,
       description: failed > 0 ? `${failed} scenario(s) failed` : "All scenarios passed",
     });
-  }, [suiteYaml, scenarios, state.activePolicy, state.dirty, state.yaml, hasPostureConfig, testDispatch, toast]);
+  }, [multiActiveTab?.id, suiteYaml, scenarios, state.activePolicy, state.dirty, state.yaml, hasPostureConfig, testDispatch, toast]);
 
   // Auto-rerun effect: watches policy YAML and re-runs suite on changes
   const autoRerun = testState.autoRerun;
@@ -1308,9 +1309,14 @@ function TestSuiteTab() {
 function HistoryTab() {
   const { state: testState, dispatch: testDispatch } = useTestRunner();
   const { state } = useWorkbench();
+  const { activeTab } = useMultiPolicy();
   const [storedRuns, setStoredRuns] = useState<StoredTestRun[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [historyLoadError, setHistoryLoadError] = useState<string | null>(null);
+  const historyPolicyIds = useMemo(
+    () => Array.from(new Set([activeTab?.id, state.activePolicy.name].filter(Boolean) as string[])),
+    [activeTab?.id, state.activePolicy.name],
+  );
 
   // Load history from IndexedDB on mount
   useEffect(() => {
@@ -1318,7 +1324,7 @@ function HistoryTab() {
     async function loadHistory() {
       try {
         await testHistoryStore.init();
-        const runs = await testHistoryStore.getRunsForPolicy(state.activePolicy.name);
+        const runs = await testHistoryStore.getRunsForPolicies(historyPolicyIds);
         if (!cancelled) {
           setStoredRuns(runs);
           setHistoryLoadError(null);
@@ -1336,18 +1342,18 @@ function HistoryTab() {
     }
     void loadHistory();
     return () => { cancelled = true; };
-  }, [state.activePolicy.name, testState.runHistory.length]);
+  }, [historyPolicyIds, testState.runHistory.length]);
 
   const clearHistory = useCallback(async () => {
     testDispatch({ type: "CLEAR_RESULTS" });
     try {
       await testHistoryStore.init();
-      await testHistoryStore.clearRunsForPolicy(state.activePolicy.name);
+      await testHistoryStore.clearRunsForPolicies(historyPolicyIds);
       setStoredRuns([]);
     } catch {
       // Best effort
     }
-  }, [testDispatch, state.activePolicy.name]);
+  }, [historyPolicyIds, testDispatch]);
 
   // Combine in-memory history with stored runs (deduplicated by timestamp)
   const allRuns = useMemo(() => {

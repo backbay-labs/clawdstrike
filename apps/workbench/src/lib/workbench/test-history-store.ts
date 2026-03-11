@@ -75,6 +75,10 @@ export function selectLatestRuns(runs: StoredTestRun[], limit = MAX_RECENT_RUNS)
     .slice(0, limit);
 }
 
+function normalizePolicyIds(policyIds: string[]): string[] {
+  return Array.from(new Set(policyIds.map((id) => id.trim()).filter(Boolean)));
+}
+
 // ---------------------------------------------------------------------------
 // TestHistoryStore
 // ---------------------------------------------------------------------------
@@ -109,13 +113,24 @@ export class TestHistoryStore {
    * Limited to the most recent 50 entries.
    */
   async getRunsForPolicy(policyId: string): Promise<StoredTestRun[]> {
-    const db = this.ensureDB();
-    const tx = db.transaction(RUNS_STORE, "readonly");
-    const store = tx.objectStore(RUNS_STORE);
-    const index = store.index("policyId");
-    const req = index.openCursor(policyId, "prev");
+    return this.getRunsForPolicies([policyId]);
+  }
 
-    const runs = await cursorCollect<StoredTestRun>(req);
+  async getRunsForPolicies(policyIds: string[]): Promise<StoredTestRun[]> {
+    const normalizedIds = normalizePolicyIds(policyIds);
+    if (normalizedIds.length === 0) return [];
+
+    const db = this.ensureDB();
+    const runs: StoredTestRun[] = [];
+
+    for (const policyId of normalizedIds) {
+      const tx = db.transaction(RUNS_STORE, "readonly");
+      const store = tx.objectStore(RUNS_STORE);
+      const index = store.index("policyId");
+      const req = index.openCursor(policyId, "prev");
+      runs.push(...(await cursorCollect<StoredTestRun>(req)));
+    }
+
     return selectLatestRuns(runs);
   }
 
@@ -139,26 +154,35 @@ export class TestHistoryStore {
 
   /** Clear all test runs for a specific policy. */
   async clearRunsForPolicy(policyId: string): Promise<void> {
+    await this.clearRunsForPolicies([policyId]);
+  }
+
+  async clearRunsForPolicies(policyIds: string[]): Promise<void> {
+    const normalizedIds = normalizePolicyIds(policyIds);
+    if (normalizedIds.length === 0) return;
+
     const db = this.ensureDB();
-    const tx = db.transaction(RUNS_STORE, "readwrite");
-    const store = tx.objectStore(RUNS_STORE);
-    const index = store.index("policyId");
-    const req = index.openCursor(policyId);
 
-    await new Promise<void>((resolve, reject) => {
-      req.onsuccess = () => {
-        const cursor = req.result;
-        if (!cursor) {
-          resolve();
-          return;
-        }
-        cursor.delete();
-        cursor.continue();
-      };
-      req.onerror = () => reject(req.error);
-    });
+    for (const policyId of normalizedIds) {
+      const tx = db.transaction(RUNS_STORE, "readwrite");
+      const store = tx.objectStore(RUNS_STORE);
+      const index = store.index("policyId");
+      const req = index.openCursor(policyId);
 
-    await txPromise(tx);
+      await new Promise<void>((resolve, reject) => {
+        req.onsuccess = () => {
+          const cursor = req.result;
+          if (!cursor) {
+            resolve();
+            return;
+          }
+          cursor.delete();
+          cursor.continue();
+        };
+        req.onerror = () => reject(req.error);
+      });
+      await txPromise(tx);
+    }
   }
 }
 

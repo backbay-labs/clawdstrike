@@ -82,6 +82,24 @@ function AutosaveHarness() {
       },
       "new-tab",
     ),
+    React.createElement(
+      "button",
+      {
+        type: "button",
+        onClick: () =>
+          multiDispatch({
+            type: "SET_YAML",
+            yaml: `version: "1.4.0"
+name: "spider"
+guards:
+  spider_sense:
+    enabled: true
+    embedding_api_key: "super-secret"
+`,
+          }),
+      },
+      "dirty-sensitive",
+    ),
   );
 }
 
@@ -264,5 +282,28 @@ describe("useAutoSave", () => {
     const autosaves = readAutosaves();
     expect(autosaves).toHaveLength(2);
     expect(autosaves.map((entry) => entry.policyName).sort()).toEqual(["dirty-1", "dirty-2"]);
+  });
+
+  it("strips sensitive spider_sense credentials before autosave persistence", () => {
+    vi.useFakeTimers();
+
+    render(
+      React.createElement(
+        MultiPolicyProvider,
+        null,
+        React.createElement(AutosaveHarness),
+      ),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "dirty-sensitive" }));
+
+    act(() => {
+      vi.advanceTimersByTime(2_100);
+    });
+
+    const autosave = readAutosave();
+    expect(autosave).not.toBeNull();
+    expect(autosave!.yaml).not.toContain("embedding_api_key");
+    expect(autosave!.yaml).not.toContain("super-secret");
   });
 });

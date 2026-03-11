@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMultiPolicy } from "./multi-policy-store";
+import { sanitizeYamlForStorage } from "./storage-sanitizer";
 
 const AUTOSAVE_KEY = "clawdstrike_workbench_autosave";
 const PERIODIC_INTERVAL_MS = 30_000;
@@ -34,7 +35,12 @@ function isAutosaveEntry(value: unknown): value is AutosaveEntry {
 
 function writeAutosaves(entries: AutosaveEntry[]): void {
   try {
-    const payload: AutosavePayload = { entries };
+    const payload: AutosavePayload = {
+      entries: entries.map((entry) => ({
+        ...entry,
+        yaml: sanitizeYamlForStorage(entry.yaml),
+      })),
+    };
     localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(payload));
   } catch {
     // Storage full or unavailable — ignore
@@ -49,7 +55,12 @@ export function readAutosaves(): AutosaveEntry[] {
     const parsed = JSON.parse(raw) as unknown;
 
     if (isAutosaveEntry(parsed)) {
-      return [parsed];
+      const entry = {
+        ...parsed,
+        yaml: sanitizeYamlForStorage(parsed.yaml),
+      };
+      writeAutosaves([entry]);
+      return [entry];
     }
 
     if (
@@ -57,9 +68,16 @@ export function readAutosaves(): AutosaveEntry[] {
       parsed !== null &&
       Array.isArray((parsed as { entries?: unknown[] }).entries)
     ) {
-      return (parsed as { entries: unknown[] }).entries
+      const entries = (parsed as { entries: unknown[] }).entries
         .filter(isAutosaveEntry)
+        .map((entry) => ({
+          ...entry,
+          yaml: sanitizeYamlForStorage(entry.yaml),
+        }))
         .sort((a, b) => b.timestamp - a.timestamp);
+
+      writeAutosaves(entries);
+      return entries;
     }
 
     return [];

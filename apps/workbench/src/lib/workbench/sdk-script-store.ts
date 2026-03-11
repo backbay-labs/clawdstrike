@@ -76,6 +76,10 @@ function cursorCollect<T>(req: IDBRequest<IDBCursorWithValue | null>): Promise<T
   });
 }
 
+function normalizePolicyIds(policyIds: string[]): string[] {
+  return Array.from(new Set(policyIds.map((id) => id.trim()).filter(Boolean)));
+}
+
 // ---------------------------------------------------------------------------
 // Default scripts
 // ---------------------------------------------------------------------------
@@ -541,18 +545,28 @@ export class SdkScriptStore {
    * Get all scripts for a specific policy, sorted by updatedAt descending.
    */
   async getScriptsForPolicy(policyId: string): Promise<StoredScript[]> {
-    const db = this.ensureDB();
-    const tx = db.transaction(SCRIPTS_STORE, "readonly");
-    const store = tx.objectStore(SCRIPTS_STORE);
-    const index = store.index("policyId");
-    const req = index.openCursor(policyId);
+    return this.getScriptsForPolicies([policyId]);
+  }
 
-    const scripts = await cursorCollect<StoredScript>(req);
+  async getScriptsForPolicies(policyIds: string[]): Promise<StoredScript[]> {
+    const normalizedIds = normalizePolicyIds(policyIds);
+    if (normalizedIds.length === 0) return [];
+
+    const db = this.ensureDB();
+    const scripts: StoredScript[] = [];
+
+    for (const policyId of normalizedIds) {
+      const tx = db.transaction(SCRIPTS_STORE, "readonly");
+      const store = tx.objectStore(SCRIPTS_STORE);
+      const index = store.index("policyId");
+      const req = index.openCursor(policyId);
+      scripts.push(...(await cursorCollect<StoredScript>(req)));
+    }
 
     // Sort by updatedAt descending
     scripts.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 
-    return scripts;
+    return Array.from(new Map(scripts.map((script) => [script.id, script])).values());
   }
 
   /**
@@ -562,8 +576,15 @@ export class SdkScriptStore {
     policyId: string,
     framework: SdkFramework,
   ): Promise<StoredScript[]> {
+    return this.getScriptsByFrameworkForPolicies([policyId], framework);
+  }
+
+  async getScriptsByFrameworkForPolicies(
+    policyIds: string[],
+    framework: SdkFramework,
+  ): Promise<StoredScript[]> {
     // Use policyId index and filter in memory (compound index not needed for this volume)
-    const all = await this.getScriptsForPolicy(policyId);
+    const all = await this.getScriptsForPolicies(policyIds);
     return all.filter((s) => s.framework === framework);
   }
 

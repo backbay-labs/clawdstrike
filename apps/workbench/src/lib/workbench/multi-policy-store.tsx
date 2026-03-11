@@ -24,6 +24,7 @@ import {
   type NativeValidationState,
 } from "./policy-store";
 import { policyToYaml, yamlToPolicy, validatePolicy } from "./yaml-utils";
+import { sanitizeYamlForStorage } from "./storage-sanitizer";
 import {
   isDesktop,
   openPolicyFile,
@@ -177,6 +178,39 @@ function createTabFromPolicy(policy: WorkbenchPolicy, filePath?: string | null):
       activePolicy: policy,
       yaml,
       validation: validatePolicy(policy),
+    },
+  };
+}
+
+function replaceTabFromOpenedFile(
+  tab: PolicyTab,
+  policy: WorkbenchPolicy,
+  filePath: string,
+  yamlFromDisk?: string,
+): PolicyTab {
+  const yaml = yamlFromDisk ?? policyToYaml(policy);
+  const validation = validatePolicy(policy);
+
+  return {
+    ...tab,
+    name: policy.name || "Untitled",
+    filePath,
+    yaml,
+    policy,
+    dirty: false,
+    validation,
+    nativeValidation: {
+      guardErrors: {},
+      topLevelErrors: [],
+      loading: false,
+      valid: null,
+    },
+    _undoPast: [],
+    _undoFuture: [],
+    _cleanSnapshot: {
+      activePolicy: policy,
+      yaml,
+      validation,
     },
   };
 }
@@ -597,10 +631,23 @@ function multiPolicyReducer(state: MultiPolicyState, action: MultiPolicyAction):
     case "NEW_TAB_OR_SWITCH": {
       const existing = state.tabs.find((t) => t.filePath === action.filePath);
       if (existing) {
-        return { ...state, activeTabId: existing.id };
+        return {
+          ...state,
+          tabs: state.tabs.map((tab) =>
+            tab.id === existing.id
+              ? replaceTabFromOpenedFile(tab, action.policy, action.filePath, action.fallbackYaml)
+              : tab,
+          ),
+          activeTabId: existing.id,
+        };
       }
       if (state.tabs.length >= MAX_TABS) return state;
-      const newTab = createTabFromPolicy(action.policy, action.filePath);
+      const newTab = replaceTabFromOpenedFile(
+        createTabFromPolicy(action.policy, action.filePath),
+        action.policy,
+        action.filePath,
+        action.fallbackYaml,
+      );
       return {
         ...state,
         tabs: [...state.tabs, newTab],
@@ -787,40 +834,6 @@ interface PersistedTab {
 interface PersistedTabState {
   tabs: PersistedTab[];
   activeTabId: string;
-}
-
-/** Fields that must never be persisted to localStorage. */
-const SENSITIVE_GUARD_FIELDS = new Set(["embedding_api_key"]);
-
-/**
- * Strip sensitive fields from spider_sense (and any future guard) config
- * entries before the YAML is written to localStorage.
- */
-function sanitizeYamlForStorage(yaml: string): string {
-  // Quick-path: if the yaml doesn't mention any sensitive field, return as-is
-  let hasSensitive = false;
-  for (const field of SENSITIVE_GUARD_FIELDS) {
-    if (yaml.includes(field)) {
-      hasSensitive = true;
-      break;
-    }
-  }
-  if (!hasSensitive) return yaml;
-
-  // Remove lines that contain sensitive keys (YAML key: value lines).
-  // This is intentionally line-based so we don't need a full YAML
-  // round-trip which could reformat the document.
-  const lines = yaml.split("\n");
-  const filtered = lines.filter((line) => {
-    const trimmed = line.trimStart();
-    for (const field of SENSITIVE_GUARD_FIELDS) {
-      if (trimmed.startsWith(`${field}:`) || trimmed.startsWith(`${field} :`)) {
-        return false;
-      }
-    }
-    return true;
-  });
-  return filtered.join("\n");
 }
 
 function persistTabs(state: MultiPolicyState): void {
@@ -1134,7 +1147,12 @@ export function MultiPolicyProvider({ children }: { children: ReactNode }) {
       const [policy] = yamlToPolicy(result.content);
       if (policy) {
         // Atomically check-and-switch-or-create inside the reducer (#31)
-        multiDispatch({ type: "NEW_TAB_OR_SWITCH", policy, filePath: result.path });
+        multiDispatch({
+          type: "NEW_TAB_OR_SWITCH",
+          policy,
+          filePath: result.path,
+          fallbackYaml: result.content,
+        });
       } else {
         // Still open but with raw yaml in current tab
         multiDispatch({ type: "SET_YAML", yaml: result.content });
@@ -1156,7 +1174,12 @@ export function MultiPolicyProvider({ children }: { children: ReactNode }) {
         const [policy] = yamlToPolicy(result.content);
         if (policy) {
           // Atomically check-and-switch-or-create inside the reducer (#31)
-          multiDispatch({ type: "NEW_TAB_OR_SWITCH", policy, filePath: result.path });
+          multiDispatch({
+            type: "NEW_TAB_OR_SWITCH",
+            policy,
+            filePath: result.path,
+            fallbackYaml: result.content,
+          });
         } else {
           multiDispatch({ type: "SET_YAML", yaml: result.content });
           multiDispatch({ type: "SET_FILE_PATH", path: result.path });
