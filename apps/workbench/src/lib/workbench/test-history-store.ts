@@ -21,6 +21,7 @@ export interface StoredTestRun {
 const DB_NAME = "clawdstrike_test_history";
 const DB_VERSION = 1;
 const RUNS_STORE = "runs";
+const MAX_RECENT_RUNS = 50;
 
 // ---------------------------------------------------------------------------
 // IndexedDB helpers
@@ -68,6 +69,12 @@ function cursorCollect<T>(req: IDBRequest<IDBCursorWithValue | null>, limit?: nu
   });
 }
 
+export function selectLatestRuns(runs: StoredTestRun[], limit = MAX_RECENT_RUNS): StoredTestRun[] {
+  return [...runs]
+    .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+    .slice(0, limit);
+}
+
 // ---------------------------------------------------------------------------
 // TestHistoryStore
 // ---------------------------------------------------------------------------
@@ -108,12 +115,8 @@ export class TestHistoryStore {
     const index = store.index("policyId");
     const req = index.openCursor(policyId, "prev");
 
-    const runs = await cursorCollect<StoredTestRun>(req, 50);
-
-    // Sort by timestamp descending (cursor order is by key, not timestamp)
-    runs.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-
-    return runs;
+    const runs = await cursorCollect<StoredTestRun>(req);
+    return selectLatestRuns(runs);
   }
 
   /** Add a test run to the store. */

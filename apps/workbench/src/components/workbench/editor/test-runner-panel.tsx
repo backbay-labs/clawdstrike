@@ -41,6 +41,10 @@ import { ScenarioGraph, type ScenarioGraphScenario } from "@/components/workbenc
 import { PRE_BUILT_SCENARIOS } from "@/lib/workbench/pre-built-scenarios";
 import { analyzeCoverage, type CoverageReport } from "@/lib/workbench/coverage-analyzer";
 import { testHistoryStore, type StoredTestRun } from "@/lib/workbench/test-history-store";
+import {
+  verdictFromNativeGuardResult,
+  verdictFromNativeSimulation,
+} from "@/lib/workbench/native-simulation";
 import { LiveAgentTab } from "@/components/workbench/editor/live-agent-tab";
 import { SdkIntegrationTab } from "@/components/workbench/editor/sdk-integration-tab";
 import { CoverageStrip } from "@/components/workbench/editor/coverage-strip";
@@ -142,7 +146,7 @@ function fromRustSim(id: string, resp: TauriSimulationResponse): QuickTestResult
   const guardResults: GuardSimResult[] = resp.results.map((r) => ({
     guardId: r.guard as GuardSimResult["guardId"],
     guardName: r.guard,
-    verdict: (r.allowed ? "allow" : "deny") as Verdict,
+    verdict: verdictFromNativeGuardResult(r),
     message: r.message,
     evidence: r.details ? (r.details as Record<string, unknown>) : undefined,
     engine: "native" as const,
@@ -150,7 +154,7 @@ function fromRustSim(id: string, resp: TauriSimulationResponse): QuickTestResult
 
   return {
     entryId: id,
-    verdict: resp.allowed ? "allow" : "deny",
+    verdict: verdictFromNativeSimulation(resp),
     guard: resp.guard || null,
     guardResults,
     durationMs: 0,
@@ -756,11 +760,11 @@ function TestSuiteTab() {
               postureStateJson ?? undefined,
             );
             if (resp) {
-              verdict = resp.allowed ? "allow" : "deny";
+              verdict = verdictFromNativeSimulation(resp);
               guard = resp.guard || null;
               guardResults = resp.results.map((r) => ({
                 guard: r.guard,
-                verdict: r.allowed ? "allow" : "deny",
+                verdict: verdictFromNativeGuardResult(r),
                 message: r.message,
               }));
               if (resp.posture_state_json) {
@@ -782,11 +786,11 @@ function TestSuiteTab() {
               scenario.content
             );
             if (resp) {
-              verdict = resp.allowed ? "allow" : "deny";
+              verdict = verdictFromNativeSimulation(resp);
               guard = resp.guard || null;
               guardResults = resp.results.map((r) => ({
                 guard: r.guard,
-                verdict: r.allowed ? "allow" : "deny",
+                verdict: verdictFromNativeGuardResult(r),
                 message: r.message,
               }));
             }

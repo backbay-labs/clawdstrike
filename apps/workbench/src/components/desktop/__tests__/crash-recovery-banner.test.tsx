@@ -37,4 +37,25 @@ describe("CrashRecoveryBanner", () => {
     expect(screen.getByText("prod-policy")).toBeInTheDocument();
     expect(screen.queryByText(/\(prod-policy/)).toBeNull();
   });
+
+  it("avoids implying a single unnamed recovery belongs to the current tab", () => {
+    render(
+      <CrashRecoveryBanner
+        entries={[
+          {
+            tabId: "tab-1",
+            policyName: "",
+            yaml: "version: '1.2.0'\n",
+            filePath: null,
+            timestamp: Date.UTC(2026, 2, 11, 12, 0, 0),
+          },
+        ]}
+        onRestore={vi.fn()}
+        onDismiss={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("an unnamed tab")).toBeInTheDocument();
+    expect(screen.queryByText(/the current tab/i)).toBeNull();
+  });
 });

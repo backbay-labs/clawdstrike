@@ -457,7 +457,7 @@ function FullExplorer({
     <div className="flex flex-col gap-4">
       {/* Stats line */}
       <div className="text-[11px] font-mono text-[#6f7f9a]" data-testid="stats-line">
-        {patterns.length} patterns across {ALL_STAGES.length} stages, {ALL_CATEGORIES.length} categories.{" "}
+        {patterns.length} pattern{patterns.length !== 1 ? "s" : ""} across {ALL_STAGES.length} stages, {ALL_CATEGORIES.length} categories.{" "}
         {stats.gapCount === 0 ? (
           <span className="text-[#3dbf84]">0 gaps.</span>
         ) : (

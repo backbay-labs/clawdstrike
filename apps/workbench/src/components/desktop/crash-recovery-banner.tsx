@@ -22,7 +22,7 @@ export function CrashRecoveryBanner({
   );
   const summaryLabel =
     entries.length === 1
-      ? policyNames[0] || "the current tab"
+      ? policyNames[0] || "an unnamed tab"
       : `${entries.length} tabs`;
   const showPolicyList = entries.length > 1 && policyNames.length > 0;
 

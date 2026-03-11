@@ -13,6 +13,10 @@ import {
   type TauriSimulationResponse,
   type TauriPostureSimulationResponse,
 } from "@/lib/tauri-commands";
+import {
+  verdictFromNativeGuardResult,
+  verdictFromNativeSimulation,
+} from "@/lib/workbench/native-simulation";
 import { generateBatchReport, downloadReport, type BatchTestReport } from "@/lib/workbench/report-generator";
 import { generateScenariosFromPolicy } from "@/lib/workbench/scenario-generator";
 import { analyzeCoverage, type CoverageReport } from "@/lib/workbench/coverage-analyzer";
@@ -116,7 +120,7 @@ function fromRustSimulation(
   const guardResults: GuardSimResult[] = resp.results.map((r) => ({
     guardId: r.guard as GuardSimResult["guardId"],
     guardName: r.guard,
-    verdict: (r.allowed ? "allow" : "deny") as Verdict,
+    verdict: verdictFromNativeGuardResult(r),
     message: r.message,
     evidence: r.details ? (r.details as Record<string, unknown>) : undefined,
     engine: "native" as const,
@@ -134,7 +138,7 @@ function fromRustSimulation(
 
   return {
     scenarioId,
-    overallVerdict: resp.allowed ? "allow" : "deny",
+    overallVerdict: verdictFromNativeSimulation(resp),
     guardResults,
     executedAt: new Date().toISOString(),
     evaluationPath,
@@ -149,7 +153,7 @@ function fromRustPostureSimulation(
   const guardResults: GuardSimResult[] = resp.results.map((r) => ({
     guardId: r.guard as GuardSimResult["guardId"],
     guardName: r.guard,
-    verdict: (r.allowed ? "allow" : "deny") as Verdict,
+    verdict: verdictFromNativeGuardResult(r),
     message: r.message,
     evidence: r.details ? (r.details as Record<string, unknown>) : undefined,
     engine: "native" as const,
@@ -157,7 +161,7 @@ function fromRustPostureSimulation(
 
   const result: SimulationResult = {
     scenarioId,
-    overallVerdict: resp.allowed ? "allow" : "deny",
+    overallVerdict: verdictFromNativeSimulation(resp),
     guardResults,
     executedAt: new Date().toISOString(),
   };

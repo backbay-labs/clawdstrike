@@ -557,7 +557,7 @@ describe("TrustprintPatternExplorer - Edge cases", () => {
     render(<TrustprintPatternExplorer patterns={patterns} />);
 
     const stats = screen.getByTestId("stats-line");
-    expect(stats).toHaveTextContent("1 patterns across 4 stages, 9 categories.");
+    expect(stats).toHaveTextContent("1 pattern across 4 stages, 9 categories.");
     expect(stats).toHaveTextContent("35 gaps.");
   });
 });

@@ -22,7 +22,6 @@ describe("GuardConfigFields pattern list editor", () => {
   });
 
   it("preserves intermediate invalid regex states for regex-backed pattern lists", async () => {
-    const user = userEvent.setup();
     const onChange = vi.fn();
 
     render(
