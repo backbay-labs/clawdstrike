@@ -25,6 +25,7 @@ export function CrashRecoveryBanner({
     entries.length === 1
       ? policyNames[0] || "the current tab"
       : `${entries.length} tabs`;
+  const showPolicyList = entries.length > 1 && policyNames.length > 0;
 
   const formattedTime = formatTimestamp(latestTimestamp);
 
@@ -43,7 +44,7 @@ export function CrashRecoveryBanner({
       <span className="text-xs text-[#6f7f9a] leading-tight min-w-0">
         Recovered unsaved changes from{" "}
         <span className="text-[#ece7dc] font-medium">{summaryLabel}</span>
-        {entries.length === 1 && policyNames[0] ? null : policyNames.length > 0 ? (
+        {showPolicyList ? (
           <>
             {" "}
             <span className="text-[#6f7f9a]/70">

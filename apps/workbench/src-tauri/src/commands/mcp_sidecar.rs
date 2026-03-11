@@ -63,6 +63,8 @@ fn clear_runtime_state(inner: &mut McpInner) {
     inner.token.clear();
     inner.running = false;
     inner.child = None;
+    inner.runtime_cmd.clear();
+    inner.script_path.clear();
 }
 
 fn current_status(inner: &McpInner) -> McpStatusResponse {
@@ -299,10 +301,8 @@ fn build_enriched_path(existing_path: Option<OsString>, home_dir: Option<PathBuf
         .unwrap_or_else(|_| OsString::from(std::env::var("PATH").unwrap_or_default()))
 }
 
-fn enriched_path() -> String {
+fn enriched_path() -> OsString {
     build_enriched_path(std::env::var_os("PATH"), dirs_next::home_dir())
-        .to_string_lossy()
-        .to_string()
 }
 
 struct LaunchConfig {
@@ -696,6 +696,8 @@ mod tests {
         assert!(inner.token.is_empty());
         assert!(!inner.running);
         assert!(inner.child.is_none());
+        assert!(inner.runtime_cmd.is_empty());
+        assert!(inner.script_path.is_empty());
         assert_eq!(inner.last_error.as_deref(), Some("boom"));
     }
 
