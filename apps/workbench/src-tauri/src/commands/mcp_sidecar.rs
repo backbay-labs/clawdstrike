@@ -14,6 +14,7 @@ use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 use tauri::{Manager, Runtime};
+use tokio::sync::Mutex as AsyncMutex;
 
 /// Shared state for the MCP sidecar, managed by Tauri.
 #[derive(Clone)]
@@ -539,7 +540,7 @@ async fn spawn_child_for_launch(
         .kill_on_drop(true)
         .spawn()
         .map_err(|e| format!("Failed to spawn MCP server ({}): {e}", launch.runtime_label))?;
-    let stderr_buffer = Arc::new(Mutex::new(Vec::new()));
+    let stderr_buffer = Arc::new(AsyncMutex::new(Vec::new()));
     let mut stderr_task = None;
     if let Some(stderr) = child.stderr.take() {
         let stderr_buffer_for_task = Arc::clone(&stderr_buffer);
@@ -554,7 +555,7 @@ async fn spawn_child_for_launch(
     loop {
         match child.try_wait() {
             Ok(Some(exit_status)) => {
-                let stderr_msg = snapshot_stderr_buffer(&stderr_buffer);
+                let stderr_msg = snapshot_stderr_buffer(&stderr_buffer).await;
                 let msg = format!(
                     "MCP server exited immediately (status: {exit_status}). stderr: {}",
                     if stderr_msg.is_empty() {
@@ -605,7 +606,7 @@ async fn spawn_child_for_launch(
 
         if tokio::time::Instant::now() >= startup_deadline {
             let _ = child.start_kill();
-            let stderr_msg = snapshot_stderr_buffer(&stderr_buffer);
+            let stderr_msg = snapshot_stderr_buffer(&stderr_buffer).await;
             if let Some(task) = stderr_task.take() {
                 task.abort();
             }
@@ -649,16 +650,14 @@ fn append_capped_stderr(buffer: &mut Vec<u8>, chunk: &[u8]) {
     buffer.extend_from_slice(chunk);
 }
 
-fn snapshot_stderr_buffer(buffer: &Arc<Mutex<Vec<u8>>>) -> String {
-    match buffer.lock() {
-        Ok(bytes) => String::from_utf8_lossy(&bytes).to_string(),
-        Err(_) => String::new(),
-    }
+async fn snapshot_stderr_buffer(buffer: &Arc<AsyncMutex<Vec<u8>>>) -> String {
+    let bytes = buffer.lock().await;
+    String::from_utf8_lossy(&bytes).to_string()
 }
 
 async fn drain_child_stderr(
     mut stderr: tokio::process::ChildStderr,
-    stderr_buffer: Arc<Mutex<Vec<u8>>>,
+    stderr_buffer: Arc<AsyncMutex<Vec<u8>>>,
 ) {
     use tokio::io::AsyncReadExt;
 
@@ -667,9 +666,8 @@ async fn drain_child_stderr(
         match stderr.read(&mut buf).await {
             Ok(0) => break,
             Ok(n) => {
-                if let Ok(mut captured) = stderr_buffer.lock() {
-                    append_capped_stderr(&mut captured, &buf[..n]);
-                }
+                let mut captured = stderr_buffer.lock().await;
+                append_capped_stderr(&mut captured, &buf[..n]);
             }
             Err(err) => {
                 eprintln!("[mcp-sidecar] stderr drain failed: {err}");
