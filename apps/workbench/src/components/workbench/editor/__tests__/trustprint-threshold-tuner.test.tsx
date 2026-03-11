@@ -134,10 +134,10 @@ describe("TrustprintThresholdTuner", () => {
       />,
     );
 
-    // Click "Permissive" -> threshold 0.90, band 0.05
+    // Click "Permissive" -> threshold 0.70, band 0.15
     await user.click(screen.getByTestId("preset-permissive"));
-    expect(onThresholdChange).toHaveBeenCalledWith(0.9);
-    expect(onAmbiguityBandChange).toHaveBeenCalledWith(0.05);
+    expect(onThresholdChange).toHaveBeenCalledWith(0.7);
+    expect(onAmbiguityBandChange).toHaveBeenCalledWith(0.15);
 
     onThresholdChange.mockClear();
     onAmbiguityBandChange.mockClear();
@@ -150,10 +150,10 @@ describe("TrustprintThresholdTuner", () => {
     onThresholdChange.mockClear();
     onAmbiguityBandChange.mockClear();
 
-    // Click "Strict" -> threshold 0.80, band 0.15
+    // Click "Strict" -> threshold 0.95, band 0.05
     await user.click(screen.getByTestId("preset-strict"));
-    expect(onThresholdChange).toHaveBeenCalledWith(0.8);
-    expect(onAmbiguityBandChange).toHaveBeenCalledWith(0.15);
+    expect(onThresholdChange).toHaveBeenCalledWith(0.95);
+    expect(onAmbiguityBandChange).toHaveBeenCalledWith(0.05);
   });
 
   it("highlights the active preset", () => {
@@ -167,6 +167,48 @@ describe("TrustprintThresholdTuner", () => {
     const permissive = screen.getByTestId("preset-permissive");
     // Inactive preset should NOT have gold background
     expect(permissive.className).not.toContain("bg-[#d4a84b]/15");
+  });
+
+  it("orders presets from most permissive to most strict", async () => {
+    const user = userEvent.setup();
+    const seen: Array<{ threshold: number; band: number }> = [];
+    render(
+      <TrustprintThresholdTuner
+        threshold={0.5}
+        ambiguityBand={0.05}
+        onThresholdChange={(threshold) => {
+          const last = seen[seen.length - 1];
+          if (last && last.band === 0) {
+            last.threshold = threshold;
+            return;
+          }
+          seen.push({ threshold, band: 0 });
+        }}
+        onAmbiguityBandChange={(band) => {
+          const last = seen[seen.length - 1];
+          if (last) last.band = band;
+        }}
+      />,
+    );
+
+    await user.click(screen.getByTestId("preset-permissive"));
+    await user.click(screen.getByTestId("preset-balanced"));
+    await user.click(screen.getByTestId("preset-strict"));
+
+    const permissive = seen[0];
+    const balanced = seen[1];
+    const strict = seen[2];
+
+    expect(permissive.threshold).toBeLessThan(balanced.threshold);
+    expect(balanced.threshold).toBeLessThan(strict.threshold);
+    expect(permissive.band).toBeGreaterThan(balanced.band);
+    expect(balanced.band).toBeGreaterThan(strict.band);
+    expect(permissive.threshold + permissive.band).toBeLessThan(
+      balanced.threshold + balanced.band,
+    );
+    expect(balanced.threshold + balanced.band).toBeLessThan(
+      strict.threshold + strict.band,
+    );
   });
 
   // -----------------------------------------------------------------------

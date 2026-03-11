@@ -870,10 +870,11 @@ function TestSuiteTab() {
     const passed = results.filter((r) => r.passed === true).length;
     const failed = results.filter((r) => r.passed === false).length;
     const total = results.length;
+    const runTimestamp = new Date().toISOString();
     testDispatch({
       type: "ADD_HISTORY_ENTRY",
       entry: {
-        timestamp: new Date().toISOString(),
+        timestamp: runTimestamp,
         total,
         passed,
         failed,
@@ -886,7 +887,7 @@ function TestSuiteTab() {
       const storedRun: StoredTestRun = {
         id: crypto.randomUUID(),
         policyId: state.activePolicy.name,
-        timestamp: new Date().toISOString(),
+        timestamp: runTimestamp,
         total,
         passed,
         failed,

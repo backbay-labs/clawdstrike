@@ -1943,10 +1943,14 @@ function wantsSse(): boolean {
  * Hashes both inputs with SHA-256 so the comparison is always over fixed 32-byte
  * digests — no length leaking, no truncation risk regardless of input size.
  */
-function secureTokenCompare(a: string, b: string): boolean {
+export function secureTokenCompare(a: string, b: string): boolean {
   const hashA = createHash("sha256").update(a).digest();
   const hashB = createHash("sha256").update(b).digest();
   return timingSafeEqual(hashA, hashB);
+}
+
+export function hasConfiguredSseAuthToken(authToken: string): boolean {
+  return authToken.trim().length > 0;
 }
 
 if (isMainModule()) {
@@ -1955,13 +1959,14 @@ if (isMainModule()) {
     // SSE transport — HTTP server with bearer-token auth
     // -----------------------------------------------------------------------
     const port = Number(process.env.MCP_PORT) || 9877;
-    const authToken = process.env.MCP_AUTH_TOKEN ?? "";
+    const authToken = (process.env.MCP_AUTH_TOKEN ?? "").trim();
 
-    if (!authToken) {
-      console.warn(
-        "[mcp-server] WARNING: MCP_AUTH_TOKEN is not set — all endpoints are unauthenticated. " +
-        "Set MCP_AUTH_TOKEN to enable bearer-token auth (the Tauri sidecar sets this automatically).",
+    if (!hasConfiguredSseAuthToken(authToken)) {
+      console.error(
+        "[mcp-server] ERROR: MCP_AUTH_TOKEN is required for SSE mode. " +
+        "Refusing to start an unauthenticated SSE endpoint.",
       );
+      process.exit(1);
     }
 
     // The MCP SDK only supports one active transport per McpServer instance.
@@ -1982,13 +1987,11 @@ if (isMainModule()) {
       }
 
       // ---- Bearer token check for all other endpoints ----
-      if (authToken) {
-        const authorization = req.headers.authorization ?? "";
-        if (!secureTokenCompare(authorization, `Bearer ${authToken}`)) {
-          res.writeHead(401, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: "unauthorized" }));
-          return;
-        }
+      const authorization = req.headers.authorization ?? "";
+      if (!secureTokenCompare(authorization, `Bearer ${authToken}`)) {
+        res.writeHead(401, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "unauthorized" }));
+        return;
       }
 
       // ---- SSE connection (GET /sse) ----

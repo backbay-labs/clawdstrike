@@ -100,8 +100,6 @@ function useBuiltinRulesets() {
   return { rulesets, loading, nativeAvailable };
 }
 
-// Re-export for backward compat — hook now lives in @/lib/workbench/use-mcp-status
-export { useMcpStatus } from "@/lib/workbench/use-mcp-status";
 import { useMcpStatus } from "@/lib/workbench/use-mcp-status";
 
 // ---------------------------------------------------------------------------

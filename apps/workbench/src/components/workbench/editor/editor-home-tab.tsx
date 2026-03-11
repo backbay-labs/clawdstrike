@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { useMultiPolicy, useWorkbench } from "@/lib/workbench/multi-policy-store";
 import type { PolicyTab } from "@/lib/workbench/multi-policy-store";
 import { getRecentFiles } from "@/lib/workbench/policy-store";
@@ -47,7 +47,10 @@ export function EditorHomeTab({
   const { openFile, openFileByPath } = useWorkbench();
   const templatesRef = useRef<HTMLDivElement>(null);
   const desktop = isDesktop();
-  const recentFiles = desktop ? getRecentFiles() : [];
+  const recentFiles = useMemo(
+    () => (desktop ? getRecentFiles() : []),
+    [desktop, tabs.length],
+  );
 
   // ---- Handlers ----
 
@@ -259,12 +262,14 @@ export function EditorHomeTab({
             </h2>
             <div className="space-y-1.5">
               {TEMPLATES.map((template) => (
-                <div
+                <button
                   key={template.name}
+                  type="button"
                   onClick={() => handleLoadTemplate(template)}
+                  disabled={!canAddTab}
                   className={cn(
-                    "group flex items-center gap-2 px-3 py-2 rounded cursor-pointer transition-all bg-[#131721] border border-[#2d3240] hover:border-[#d4a84b]/30",
-                    !canAddTab && "opacity-40 cursor-not-allowed pointer-events-none",
+                    "group flex w-full items-center gap-2 px-3 py-2 rounded text-left transition-all bg-[#131721] border border-[#2d3240] hover:border-[#d4a84b]/30",
+                    canAddTab ? "cursor-pointer" : "opacity-40 cursor-not-allowed",
                   )}
                 >
                   <IconTemplate size={13} stroke={1.5} className="text-[#d4a84b]/60 shrink-0" />
@@ -281,7 +286,7 @@ export function EditorHomeTab({
                     stroke={1.5}
                     className="text-[#6f7f9a]/0 group-hover:text-[#6f7f9a] transition-colors shrink-0"
                   />
-                </div>
+                </button>
               ))}
             </div>
           </section>

@@ -34,6 +34,32 @@ from clawdstrike.types import Decision, DecisionStatus
 LOGGER = logging.getLogger("clawdstrike.testing")
 
 
+def _normalize_expected_status(
+    raw_expect: str | None,
+    *,
+    scenario_name: str,
+) -> str | None:
+    if raw_expect is None:
+        return None
+    if not isinstance(raw_expect, str):
+        raise ValueError(
+            f"Scenario {scenario_name!r} expect must be one of allow, warn, or deny"
+        )
+
+    normalized = raw_expect.strip().lower()
+    if not normalized:
+        raise ValueError(
+            f"Scenario {scenario_name!r} expect must be one of allow, warn, or deny"
+        )
+
+    try:
+        return DecisionStatus(normalized).value
+    except ValueError as exc:
+        raise ValueError(
+            f"Scenario {scenario_name!r} expect must be one of allow, warn, or deny"
+        ) from exc
+
+
 # ---------------------------------------------------------------------------
 # Scenario
 # ---------------------------------------------------------------------------
@@ -258,6 +284,10 @@ class ScenarioSuite:
                 raise ValueError(
                     f"Scenario {s['name']!r} must define a non-empty action"
                 )
+            expect = _normalize_expected_status(
+                s.get("expect"),
+                scenario_name=s["name"],
+            )
             payload = s.get("payload", {})
             if payload is None:
                 payload = {}
@@ -276,7 +306,7 @@ class ScenarioSuite:
                     name=s["name"],
                     action=s["action"],
                     target=s.get("target", ""),
-                    expect=s.get("expect"),
+                    expect=expect,
                     expect_guard=s.get("expect_guard"),
                     content=s.get("content"),
                     payload=payload,
@@ -403,15 +433,20 @@ class ScenarioRunner:
 
         if execution_error is None and scenario.expect is not None:
             try:
-                expected = DecisionStatus(scenario.expect)
-            except ValueError:
+                expected = DecisionStatus(
+                    _normalize_expected_status(
+                        scenario.expect,
+                        scenario_name=scenario.name,
+                    )
+                )
+            except ValueError as exc:
                 LOGGER.warning(
                     "Invalid expect value %r in scenario %r; failing scenario",
                     scenario.expect,
                     scenario.name,
                 )
                 passed = False
-                mismatch = f"Invalid expect value: {scenario.expect!r}"
+                mismatch = str(exc)
                 expected = None
             if expected and decision.status != expected:
                 passed = False
@@ -460,7 +495,14 @@ class ScenarioRunner:
         action = scenario.action
         target = scenario.target
         content = scenario.content
-        payload = scenario.payload or {}
+        if scenario.payload is None:
+            payload: dict[str, Any] = {}
+        elif isinstance(scenario.payload, dict):
+            payload = scenario.payload
+        else:
+            raise ValueError(
+                f"Scenario {scenario.name!r} payload must be a mapping"
+            )
 
         if action == "file_access":
             return self._cs.check_file(target, operation="read")

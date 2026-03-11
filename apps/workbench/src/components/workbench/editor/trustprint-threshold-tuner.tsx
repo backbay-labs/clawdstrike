@@ -35,9 +35,12 @@ const COLORS = {
 } as const;
 
 const PRESETS: { label: string; threshold: number; band: number }[] = [
-  { label: "Permissive", threshold: 0.9, band: 0.05 },
+  // Higher thresholds are stricter in the screening engine: a score must climb
+  // further before it crosses into the deny zone, and a smaller band reduces
+  // the amount of "ambiguous" review surface.
+  { label: "Permissive", threshold: 0.7, band: 0.15 },
   { label: "Balanced", threshold: 0.85, band: 0.1 },
-  { label: "Strict", threshold: 0.8, band: 0.15 },
+  { label: "Strict", threshold: 0.95, band: 0.05 },
 ];
 
 // Full-mode layout constants

@@ -223,6 +223,23 @@ extends: nonexistent_ruleset
         with pytest.raises(PolicyError, match="Unknown ruleset"):
             Policy.from_yaml_with_extends(yaml_str)
 
+    def test_extends_path_must_stay_within_base_directory(self, tmp_path) -> None:
+        base_dir = tmp_path / "base"
+        base_dir.mkdir()
+        sibling_dir = tmp_path / "base_evil"
+        sibling_dir.mkdir()
+        outside_policy = sibling_dir / "outside.yaml"
+        outside_policy.write_text('version: "1.2.0"\nname: outside\n')
+
+        with pytest.raises(
+            PolicyError,
+            match="Policy extends path escapes base directory",
+        ):
+            Policy.from_yaml_with_extends(
+                'version: "1.2.0"\nname: child\nextends: ../base_evil/outside.yaml\n',
+                base_path=base_dir,
+            )
+
     def test_from_yaml_file_with_path_object(self, tmp_path) -> None:
         p = tmp_path / "policy.yaml"
         p.write_text('version: "1.1.0"\nname: path-test\n')

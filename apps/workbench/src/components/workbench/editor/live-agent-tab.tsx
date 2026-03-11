@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useMemo, useEffect } from "react";
 import { useWorkbench } from "@/lib/workbench/multi-policy-store";
+import { useFleetConnection } from "@/lib/workbench/use-fleet-connection";
 import { useToast } from "@/components/ui/toast";
 import { policyToYaml } from "@/lib/workbench/yaml-utils";
 import { isDesktop, savePolicyFile } from "@/lib/tauri-bridge";
@@ -21,7 +22,8 @@ import {
 import type { HushdEvent as BaseHushdEvent } from "@/lib/workbench/hushd-event-simulator";
 
 /** Extend HushdEvent with source tracking so the UI can distinguish live vs simulated */
-interface HushdEvent extends BaseHushdEvent {
+interface HushdEvent extends Omit<BaseHushdEvent, "verdict"> {
+  verdict: "ALLOW" | "DENY" | "WARN" | "INFO";
   /** The raw event_id from the daemon SSE stream */
   sourceEventId?: string;
   /** The SSE event type that carried this event (e.g. "check", "violation") */
@@ -236,14 +238,15 @@ function ScriptRunnerPanel() {
 // hushd Monitor sub-panel
 // ---------------------------------------------------------------------------
 
-type VerdictFilter = "ALL" | "DENY" | "ALLOW" | "WARN";
+type VerdictFilter = "ALL" | HushdEvent["verdict"];
 
 const MAX_EVENTS = 200;
 
-function verdictColor(v: "DENY" | "ALLOW" | "WARN"): string {
+function verdictColor(v: HushdEvent["verdict"]): string {
   if (v === "ALLOW") return "#3dbf84";
   if (v === "DENY") return "#c45c5c";
-  return "#d4a84b";
+  if (v === "WARN") return "#d4a84b";
+  return "#6f7f9a";
 }
 
 function formatTimestamp(iso: string): string {
@@ -259,7 +262,7 @@ function formatTimestamp(iso: string): string {
  *     message, policy_hash, session_id, endpoint_agent_id, agent_id,
  *     runtime_agent_id, runtime_agent_kind }
  */
-function parseHushdSseEvent(
+export function parseHushdSseEvent(
   data: Record<string, unknown>,
   sseEventType?: string,
 ): HushdEvent | null {
@@ -267,7 +270,7 @@ function parseHushdSseEvent(
   // WARN = allowed:true + severity:"warning"
   // ALLOW = allowed:true + severity:"info"
   // DENY = allowed:false (any severity)
-  let verdict: "ALLOW" | "DENY" | "WARN";
+  let verdict: HushdEvent["verdict"];
   if (typeof data.allowed === "boolean") {
     if (!data.allowed) {
       verdict = "DENY";
@@ -276,11 +279,16 @@ function parseHushdSseEvent(
       verdict = severity === "warning" ? "WARN" : "ALLOW";
     }
   } else {
-    // Fallback for other event types (policy_reload, etc.)
-    const decision = String(data.decision ?? data.verdict ?? "deny").toLowerCase();
-    if (decision === "allowed" || decision === "allow") verdict = "ALLOW";
-    else if (decision === "warn") verdict = "WARN";
-    else verdict = "DENY";
+    const rawDecision = data.decision ?? data.verdict;
+    if (rawDecision == null) {
+      verdict = "INFO";
+    } else {
+      const decision = String(rawDecision).toLowerCase();
+      if (decision === "allowed" || decision === "allow") verdict = "ALLOW";
+      else if (decision === "warn" || decision === "warning") verdict = "WARN";
+      else if (decision === "deny" || decision === "denied" || decision === "block") verdict = "DENY";
+      else verdict = "INFO";
+    }
   }
 
   const rawEventId = data.event_id ?? data.id;
@@ -289,10 +297,10 @@ function parseHushdSseEvent(
     id: String(rawEventId ?? `sse-${Date.now()}-${Math.random()}`),
     timestamp: String(data.timestamp ?? new Date().toISOString()),
     verdict,
-    guard: String(data.guard ?? "unknown"),
-    action: String(data.action_type ?? "check"),
-    target: String(data.target ?? ""),
-    agent: String(data.endpoint_agent_id ?? data.agent_id ?? "remote"),
+    guard: String(data.guard ?? sseEventType ?? "system"),
+    action: String(data.action_type ?? sseEventType ?? "event"),
+    target: String(data.target ?? data.message ?? data.policy_hash ?? ""),
+    agent: String(data.endpoint_agent_id ?? data.agent_id ?? data.runtime_agent_id ?? "remote"),
     durationMs: typeof data.duration_ms === "number" ? data.duration_ms : 0,
     sourceEventId: rawEventId ? String(rawEventId) : undefined,
     sseEventType: sseEventType ?? undefined,
@@ -310,17 +318,18 @@ function parseHushdSseEvent(
  * In production (Tauri desktop) the app is served from the same origin or
  * has relaxed security, so we use the URL directly.
  */
-function resolveProxyBase(raw: string): string {
+export function resolveProxyBase(raw: string, isDev = import.meta.env.DEV): string {
   const cleaned = raw.replace(/\/+$/, "");
 
   // Only proxy in dev (Vite dev server)
-  if (!import.meta.env.DEV) return cleaned;
+  if (!isDev) return cleaned;
 
   try {
     const u = new URL(cleaned);
     const isLocal =
       u.hostname === "localhost" ||
       u.hostname === "127.0.0.1" ||
+      u.hostname === "::1" ||
       u.hostname === "[::1]";
     if (!isLocal) return cleaned;
 
@@ -333,9 +342,80 @@ function resolveProxyBase(raw: string): string {
   }
 }
 
+function normalizeMonitorEndpoint(raw: string): string {
+  return raw.trim().replace(/\/+$/, "");
+}
+
+function isLoopbackHost(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]";
+}
+
+export function endpointsShareAuthScope(endpoint: string, hushdUrl: string): boolean {
+  try {
+    const left = new URL(normalizeMonitorEndpoint(endpoint));
+    const right = new URL(normalizeMonitorEndpoint(hushdUrl));
+    const sameHost =
+      left.hostname === right.hostname ||
+      (isLoopbackHost(left.hostname) && isLoopbackHost(right.hostname));
+    return sameHost && left.port === right.port && left.protocol === right.protocol;
+  } catch {
+    return false;
+  }
+}
+
+export function buildHushdAuthHeaders(
+  endpoint: string,
+  hushdUrl: string,
+  apiKey: string,
+): Record<string, string> {
+  const trimmed = apiKey.trim();
+  if (!trimmed || !hushdUrl.trim() || !endpointsShareAuthScope(endpoint, hushdUrl)) {
+    return {};
+  }
+  return { Authorization: `Bearer ${trimmed}` };
+}
+
+export interface ParsedSseMessage {
+  eventType: string;
+  data: string;
+}
+
+export function consumeSseMessages(buffer: string): {
+  messages: ParsedSseMessage[];
+  remainder: string;
+} {
+  const normalized = buffer.replace(/\r\n/g, "\n");
+  const blocks = normalized.split("\n\n");
+  const remainder = blocks.pop() ?? "";
+  const messages: ParsedSseMessage[] = [];
+
+  for (const block of blocks) {
+    if (!block.trim()) continue;
+    let eventType = "message";
+    const dataLines: string[] = [];
+
+    for (const rawLine of block.split("\n")) {
+      const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
+      if (line.startsWith(":")) continue;
+      if (line.startsWith("event:")) {
+        eventType = line.slice(6).trim() || "message";
+      } else if (line.startsWith("data:")) {
+        dataLines.push(line.slice(5).trimStart());
+      }
+    }
+
+    if (dataLines.length > 0) {
+      messages.push({ eventType, data: dataLines.join("\n") });
+    }
+  }
+
+  return { messages, remainder };
+}
+
 function HushdMonitorPanel() {
+  const { connection } = useFleetConnection();
   const { toast } = useToast();
-  const [endpoint, setEndpoint] = useState("http://127.0.0.1:8080");
+  const [endpoint, setEndpoint] = useState(connection.hushdUrl || "http://127.0.0.1:8080");
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
@@ -343,6 +423,7 @@ function HushdMonitorPanel() {
   const [events, setEvents] = useState<HushdEvent[]>([]);
   const [verdictFilter, setVerdictFilter] = useState<VerdictFilter>("ALL");
   const eventSourceRef = useRef<EventSource | null>(null);
+  const streamAbortRef = useRef<AbortController | null>(null);
   /** Track named-event listener refs so they can be removed before close */
   const listenersRef = useRef<Map<string, EventListener>>(new Map());
   /** Track reconnection attempts for exponential backoff (max 5) */
@@ -351,10 +432,23 @@ function HushdMonitorPanel() {
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Timer ID for CONNECTING-state stall detection */
   const connectingStallTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  /** Proxy base URL resolved for the current connection (persisted across reconnects) */
-  const proxyBaseRef = useRef<string>("");
-
   const MAX_RECONNECT_ATTEMPTS = 5;
+
+  useEffect(() => {
+    if (!connection.hushdUrl) return;
+    setEndpoint((current) =>
+      current === "http://127.0.0.1:8080" || current.trim() === ""
+        ? connection.hushdUrl
+        : current,
+    );
+  }, [connection.hushdUrl]);
+
+  useEffect(() => {
+    if (!connection.hushdUrl) return;
+    if (endpoint === "http://127.0.0.1:8080") {
+      setEndpoint(connection.hushdUrl);
+    }
+  }, [connection.hushdUrl, endpoint]);
 
   // --- SSE streaming ---
   // hushd emits *named* SSE events ("check", "violation", "policy_reload"),
@@ -390,6 +484,10 @@ function HushdMonitorPanel() {
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
       eventSourceRef.current = null;
+    }
+    if (streamAbortRef.current) {
+      streamAbortRef.current.abort();
+      streamAbortRef.current = null;
     }
     reconnectAttemptsRef.current = 0;
     setReconnecting(false);
@@ -430,17 +528,110 @@ function HushdMonitorPanel() {
 
   const startSse = useCallback(
     (proxyBase: string) => {
+      const authHeaders = buildHushdAuthHeaders(endpoint, connection.hushdUrl, connection.apiKey);
+
       // Clean up any prior EventSource before opening a new one
       removeListeners();
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
         eventSourceRef.current = null;
       }
+      if (streamAbortRef.current) {
+        streamAbortRef.current.abort();
+        streamAbortRef.current = null;
+      }
 
       const url = `${proxyBase}/api/v1/events`;
+      if (Object.keys(authHeaders).length > 0) {
+        const controller = new AbortController();
+        streamAbortRef.current = controller;
+
+        void (async () => {
+          try {
+            const response = await fetch(url, {
+              headers: {
+                Accept: "text/event-stream",
+                ...authHeaders,
+              },
+              signal: controller.signal,
+            });
+
+            if (connectingStallTimerRef.current !== null) {
+              clearTimeout(connectingStallTimerRef.current);
+              connectingStallTimerRef.current = null;
+            }
+
+            if (!response.ok || !response.body) {
+              setConnected(false);
+              setReconnecting(false);
+              if (response.status === 401 || response.status === 403) {
+                setConnectionError(
+                  "Unauthorized — update your fleet API token or connect this endpoint in Settings before streaming hushd events.",
+                );
+                return;
+              }
+              setConnectionError(`SSE request failed (${response.status}). Reconnecting...`);
+              scheduleReconnect(proxyBase, startSse);
+              return;
+            }
+
+            reconnectAttemptsRef.current = 0;
+            setConnected(true);
+            setReconnecting(false);
+            setConnectionError(null);
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = "";
+
+            try {
+              while (!controller.signal.aborted) {
+                const { done, value } = await reader.read();
+                if (done) {
+                  break;
+                }
+                buffer += decoder.decode(value, { stream: true });
+                const parsed = consumeSseMessages(buffer);
+                buffer = parsed.remainder;
+
+                for (const message of parsed.messages) {
+                  if (message.data === "ping") continue;
+                  try {
+                    const data = JSON.parse(message.data) as Record<string, unknown>;
+                    const evt = parseHushdSseEvent(data, message.eventType);
+                    if (!evt) continue;
+                    reconnectAttemptsRef.current = 0;
+                    setEvents((prev) => [evt, ...prev].slice(0, MAX_EVENTS));
+                  } catch {
+                    // Skip malformed payloads without tearing down the stream.
+                  }
+                }
+              }
+            } finally {
+              reader.releaseLock();
+            }
+
+            if (!controller.signal.aborted) {
+              setConnected(false);
+              setConnectionError("SSE stream closed. Attempting to reconnect...");
+              scheduleReconnect(proxyBase, startSse);
+            }
+          } catch (error) {
+            if (controller.signal.aborted) {
+              return;
+            }
+            const message = error instanceof Error ? error.message : String(error);
+            setConnected(false);
+            setConnectionError(`SSE connection failed: ${message}`);
+            scheduleReconnect(proxyBase, startSse);
+          }
+        })();
+
+        return;
+      }
+
       const es = new EventSource(url);
       eventSourceRef.current = es;
-      proxyBaseRef.current = proxyBase;
 
       const makeHandler = (eventType: string) => (e: Event) => {
         const me = e as MessageEvent;
@@ -448,7 +639,6 @@ function HushdMonitorPanel() {
           const data = JSON.parse(me.data) as Record<string, unknown>;
           const evt = parseHushdSseEvent(data, eventType);
           if (evt) {
-            // Successful event receipt — reset reconnect counter and confirm connected
             reconnectAttemptsRef.current = 0;
             setReconnecting(false);
             setConnected(true);
@@ -460,7 +650,6 @@ function HushdMonitorPanel() {
         }
       };
 
-      // Listen for named event types emitted by hushd
       const eventTypes = [
         "check",
         "violation",
@@ -475,7 +664,6 @@ function HushdMonitorPanel() {
       }
 
       es.onopen = () => {
-        // Clear any stall timer — we got an open event
         if (connectingStallTimerRef.current !== null) {
           clearTimeout(connectingStallTimerRef.current);
           connectingStallTimerRef.current = null;
@@ -486,14 +674,12 @@ function HushdMonitorPanel() {
       };
 
       es.onerror = () => {
-        // Clear stall timer if set
         if (connectingStallTimerRef.current !== null) {
           clearTimeout(connectingStallTimerRef.current);
           connectingStallTimerRef.current = null;
         }
 
         if (es.readyState === EventSource.CLOSED) {
-          // Stream fully closed — clean up and attempt reconnect
           removeListeners();
           es.close();
           eventSourceRef.current = null;
@@ -501,8 +687,6 @@ function HushdMonitorPanel() {
           setConnectionError("SSE stream closed. Attempting to reconnect...");
           scheduleReconnect(proxyBase, startSse);
         } else if (es.readyState === EventSource.CONNECTING) {
-          // The browser may keep retrying on its own, but if it stalls in
-          // CONNECTING for 10 seconds we take over and reconnect ourselves.
           setConnected(false);
           setReconnecting(true);
           setConnectionError("Connection interrupted. Reconnecting...");
@@ -512,7 +696,6 @@ function HushdMonitorPanel() {
               eventSourceRef.current &&
               eventSourceRef.current.readyState === EventSource.CONNECTING
             ) {
-              // Still stuck — tear down and reconnect manually
               removeListeners();
               eventSourceRef.current.close();
               eventSourceRef.current = null;
@@ -522,7 +705,7 @@ function HushdMonitorPanel() {
         }
       };
     },
-    [removeListeners, scheduleReconnect],
+    [connection.apiKey, connection.hushdUrl, endpoint, removeListeners, scheduleReconnect],
   );
 
   // --- Connect: probe /health first, then open SSE ---
@@ -530,9 +713,13 @@ function HushdMonitorPanel() {
     setConnecting(true);
     setConnectionError(null);
     const proxyBase = resolveProxyBase(endpoint);
+    const authHeaders = buildHushdAuthHeaders(endpoint, connection.hushdUrl, connection.apiKey);
 
     try {
-      const resp = await fetch(`${proxyBase}/health`, { signal: AbortSignal.timeout(3000) });
+      const resp = await fetch(`${proxyBase}/health`, {
+        headers: authHeaders,
+        signal: AbortSignal.timeout(3000),
+      });
       if (!resp.ok) {
         const body = await resp.text().catch(() => "");
         throw new Error(`Health check returned ${resp.status}${body ? `: ${body}` : ""}`);
@@ -546,21 +733,26 @@ function HushdMonitorPanel() {
     } catch (err) {
       setConnecting(false);
       const msg = err instanceof Error ? err.message : String(err);
+      const isUnauthorized = msg.includes("401") || msg.includes("403");
       const isNetwork = msg.includes("fetch") || msg.includes("network") || msg.includes("abort") || msg.includes("Failed");
       setConnectionError(
-        isNetwork
+        isUnauthorized
+          ? "Unauthorized — update your fleet API token in Settings before opening Live Monitor."
+          : isNetwork
           ? `Cannot reach ${endpoint} — is the daemon running? Start it with: clawdstrike daemon start --port 8080`
           : `Connection failed: ${msg}`,
       );
       toast({
         type: "error",
         title: "Connection failed",
-        description: isNetwork
+        description: isUnauthorized
+          ? "Authenticated hushd endpoints require a valid API token from Settings."
+          : isNetwork
           ? "Daemon unreachable. Make sure hushd is running."
           : msg,
       });
     }
-  }, [endpoint, startSse, toast]);
+  }, [connection.apiKey, endpoint, startSse, toast]);
 
   const handleDisconnect = useCallback(() => {
     stopSse();
@@ -585,7 +777,7 @@ function HushdMonitorPanel() {
     [events, verdictFilter],
   );
 
-  const FILTER_OPTIONS: VerdictFilter[] = ["ALL", "DENY", "ALLOW", "WARN"];
+  const FILTER_OPTIONS: VerdictFilter[] = ["ALL", "DENY", "ALLOW", "WARN", "INFO"];
 
   return (
     <div className="h-full flex flex-col">
@@ -661,6 +853,11 @@ function HushdMonitorPanel() {
             </button>
           )}
         </div>
+        <p className="mt-1.5 text-[8px] font-mono text-[#6f7f9a]/50">
+          {connection.apiKey.trim()
+            ? "Uses the configured hushd API key from Settings for health checks and authenticated event streaming."
+            : "No hushd API key configured. Authenticated hushd deployments will reject the live stream until you add one in Settings."}
+        </p>
       </div>
 
       {/* Connection error banner */}
@@ -684,9 +881,11 @@ function HushdMonitorPanel() {
                     ? "bg-[#2d3240] text-[#ece7dc]"
                     : f === "DENY"
                       ? "bg-[#c45c5c]/20 text-[#c45c5c]"
-                      : f === "ALLOW"
+                    : f === "ALLOW"
                         ? "bg-[#3dbf84]/20 text-[#3dbf84]"
-                        : "bg-[#d4a84b]/20 text-[#d4a84b]"
+                        : f === "WARN"
+                          ? "bg-[#d4a84b]/20 text-[#d4a84b]"
+                          : "bg-[#6f7f9a]/20 text-[#6f7f9a]"
                   : "text-[#6f7f9a]/60 hover:text-[#ece7dc]",
               )}
             >

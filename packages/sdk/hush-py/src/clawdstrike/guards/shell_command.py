@@ -28,13 +28,37 @@ DEFAULT_BLOCKED_COMMANDS: list[str] = [
 ]
 
 
-@dataclass
+@dataclass(init=False)
 class ShellCommandConfig:
     """Configuration for ShellCommandGuard."""
     forbidden_patterns: list[str] = field(default_factory=lambda: list(DEFAULT_BLOCKED_COMMANDS))
     additional_blocked: list[str] = field(default_factory=list)
     allowed_commands: list[str] = field(default_factory=list)
     enabled: bool = True
+
+    def __init__(
+        self,
+        *,
+        forbidden_patterns: list[str] | None = None,
+        blocked_patterns: list[str] | None = None,
+        additional_blocked: list[str] | None = None,
+        allowed_commands: list[str] | None = None,
+        enabled: bool = True,
+    ) -> None:
+        if forbidden_patterns is not None and blocked_patterns is not None:
+            msg = "shell_command cannot define both blocked_patterns and forbidden_patterns"
+            raise ConfigurationError(msg)
+
+        pattern_source = forbidden_patterns
+        if pattern_source is None:
+            pattern_source = blocked_patterns
+
+        self.forbidden_patterns = list(
+            DEFAULT_BLOCKED_COMMANDS if pattern_source is None else pattern_source
+        )
+        self.additional_blocked = list(additional_blocked or [])
+        self.allowed_commands = list(allowed_commands or [])
+        self.enabled = enabled
 
 
 class ShellCommandGuard(Guard):

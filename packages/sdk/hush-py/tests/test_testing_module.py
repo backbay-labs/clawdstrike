@@ -545,7 +545,7 @@ class TestScenarioAssertionLogic:
         )
         # Invalid expect value is now treated as a test failure
         assert result.passed is False
-        assert "Invalid expect value" in (result.mismatch or "")
+        assert "must be one of allow, warn, or deny" in (result.mismatch or "")
 
 
 # ---------------------------------------------------------------------------
@@ -835,3 +835,45 @@ scenarios:
         assert result.decision.status == DecisionStatus.DENY
         assert result.passed is True
         assert result.decision.message == "Invalid user_input payload: missing text field"
+
+    def test_invalid_expect_rejected_during_suite_load(self) -> None:
+        with pytest.raises(
+            ValueError,
+            match=r"Scenario 'bad expect' expect must be one of allow, warn, or deny",
+        ):
+            ScenarioSuite.from_yaml(
+                """\
+scenarios:
+  - name: bad expect
+    action: file_access
+    target: /tmp/test.txt
+    expect: invalid_status
+"""
+            )
+
+    def test_non_mapping_runtime_payload_fails_scenario_without_aborting_suite(
+        self, runner: ScenarioRunner
+    ) -> None:
+        report = runner.run_scenarios(
+            [
+                Scenario(
+                    name="bad payload",
+                    action="network_egress",
+                    target="api.example.com",
+                    payload=["443"],  # type: ignore[arg-type]
+                ),
+                Scenario(
+                    name="good payload",
+                    action="file_access",
+                    target="/tmp/test.txt",
+                    expect="allow",
+                ),
+            ]
+        )
+
+        assert report.total == 2
+        assert report.failed == 1
+        assert report.results[0].passed is False
+        assert report.results[0].decision.status == DecisionStatus.DENY
+        assert "payload must be a mapping" in (report.results[0].mismatch or "")
+        assert report.results[1].passed is True
