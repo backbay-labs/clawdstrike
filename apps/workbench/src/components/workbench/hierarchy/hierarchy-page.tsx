@@ -1798,6 +1798,17 @@ export function HierarchyPage() {
         }
       }
 
+      // Older scoped-policies payloads may only encode the tree through children arrays.
+      // Recover missing parent links before normalization so those nodes stay connected.
+      for (const node of Object.values(nodes)) {
+        for (const childId of node.children) {
+          const child = nodes[childId];
+          if (child && child.parentId == null) {
+            child.parentId = node.id;
+          }
+        }
+      }
+
       // If children were not provided, reconstruct from parent pointers
       const anyHasChildren = Object.values(nodes).some(
         (n) => n.children.length > 0,

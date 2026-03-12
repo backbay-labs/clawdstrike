@@ -290,41 +290,66 @@ interface OriginProfileCardProps {
 
 function OriginProfileCard({ profile, index, onUpdate, onRemove }: OriginProfileCardProps) {
   const [open, setOpen] = useState(false);
+  const serializedMetadata = profile.metadata
+    ? JSON.stringify(profile.metadata, null, 2)
+    : "";
   const [metadataText, setMetadataText] = useState(() =>
-    profile.metadata ? JSON.stringify(profile.metadata, null, 2) : "",
+    serializedMetadata,
   );
   const [metadataError, setMetadataError] = useState(false);
   const [customProviderMode, setCustomProviderMode] = useState(() =>
     isCustomChoice(profile.match_rules.provider, PROVIDERS),
   );
+  const [customProviderDraft, setCustomProviderDraft] = useState(
+    () => profile.match_rules.provider ?? "",
+  );
   const [customSpaceTypeMode, setCustomSpaceTypeMode] = useState(() =>
     isCustomChoice(profile.match_rules.space_type, SPACE_TYPES),
   );
+  const [customSpaceTypeDraft, setCustomSpaceTypeDraft] = useState(
+    () => profile.match_rules.space_type ?? "",
+  );
 
   useEffect(() => {
-    setMetadataText(
-      profile.metadata ? JSON.stringify(profile.metadata, null, 2) : "",
-    );
+    setMetadataText(serializedMetadata);
     setMetadataError(false);
-  }, [profile.metadata]);
+  }, [serializedMetadata]);
 
   useEffect(() => {
-    if (profile.match_rules.provider === undefined) {
+    if (isCustomChoice(profile.match_rules.provider, PROVIDERS)) {
+      setCustomProviderMode(true);
+      setCustomProviderDraft(profile.match_rules.provider ?? "");
+      return;
+    }
+
+    if (profile.match_rules.provider !== undefined) {
       setCustomProviderMode(false);
+      setCustomProviderDraft(profile.match_rules.provider);
       return;
     }
-    setCustomProviderMode(isCustomChoice(profile.match_rules.provider, PROVIDERS));
-  }, [profile.match_rules.provider]);
+
+    if (!customProviderMode) {
+      setCustomProviderDraft("");
+    }
+  }, [profile.match_rules.provider, customProviderMode]);
 
   useEffect(() => {
-    if (profile.match_rules.space_type === undefined) {
-      setCustomSpaceTypeMode(false);
+    if (isCustomChoice(profile.match_rules.space_type, SPACE_TYPES)) {
+      setCustomSpaceTypeMode(true);
+      setCustomSpaceTypeDraft(profile.match_rules.space_type ?? "");
       return;
     }
-    setCustomSpaceTypeMode(
-      isCustomChoice(profile.match_rules.space_type, SPACE_TYPES),
-    );
-  }, [profile.match_rules.space_type]);
+
+    if (profile.match_rules.space_type !== undefined) {
+      setCustomSpaceTypeMode(false);
+      setCustomSpaceTypeDraft(profile.match_rules.space_type);
+      return;
+    }
+
+    if (!customSpaceTypeMode) {
+      setCustomSpaceTypeDraft("");
+    }
+  }, [profile.match_rules.space_type, customSpaceTypeMode]);
 
   const updateMatchRules = useCallback(
     (patch: Partial<OriginMatch>) => {
@@ -453,12 +478,14 @@ function OriginProfileCard({ profile, index, onUpdate, onRemove }: OriginProfile
                           onValueChange={(val) => {
                             if (val === "__none__") {
                               setCustomProviderMode(false);
+                              setCustomProviderDraft("");
                               updateMatchRules({ provider: undefined });
                             } else if (val === "__custom__") {
                               setCustomProviderMode(true);
-                              updateMatchRules({ provider: currentVal ?? "" });
+                              setCustomProviderDraft(currentVal ?? "");
                             } else {
                               setCustomProviderMode(false);
+                              setCustomProviderDraft(val);
                               updateMatchRules({ provider: val as OriginProvider });
                             }
                           }}
@@ -486,10 +513,14 @@ function OriginProfileCard({ profile, index, onUpdate, onRemove }: OriginProfile
                         </Select>
                         {isCustom && (
                           <Input
-                            value={currentVal ?? ""}
+                            value={customProviderDraft}
                             onChange={(e) => {
+                              const nextValue = e.target.value;
                               setCustomProviderMode(true);
-                              updateMatchRules({ provider: e.target.value });
+                              setCustomProviderDraft(nextValue);
+                              updateMatchRules({
+                                provider: nextValue || undefined,
+                              });
                             }}
                             placeholder="e.g. my-custom-provider"
                             className="bg-[#131721] border-[#2d3240] text-[#ece7dc] font-mono text-xs placeholder:text-[#6f7f9a]/50"
@@ -522,12 +553,14 @@ function OriginProfileCard({ profile, index, onUpdate, onRemove }: OriginProfile
                           onValueChange={(val) => {
                             if (val === "__none__") {
                               setCustomSpaceTypeMode(false);
+                              setCustomSpaceTypeDraft("");
                               updateMatchRules({ space_type: undefined });
                             } else if (val === "__custom__") {
                               setCustomSpaceTypeMode(true);
-                              updateMatchRules({ space_type: currentVal ?? "" });
+                              setCustomSpaceTypeDraft(currentVal ?? "");
                             } else {
                               setCustomSpaceTypeMode(false);
+                              setCustomSpaceTypeDraft(val);
                               updateMatchRules({ space_type: val as SpaceType });
                             }
                           }}
@@ -555,10 +588,14 @@ function OriginProfileCard({ profile, index, onUpdate, onRemove }: OriginProfile
                         </Select>
                         {isCustom && (
                           <Input
-                            value={currentVal ?? ""}
+                            value={customSpaceTypeDraft}
                             onChange={(e) => {
+                              const nextValue = e.target.value;
                               setCustomSpaceTypeMode(true);
-                              updateMatchRules({ space_type: e.target.value });
+                              setCustomSpaceTypeDraft(nextValue);
+                              updateMatchRules({
+                                space_type: nextValue || undefined,
+                              });
                             }}
                             placeholder="e.g. my-custom-space"
                             className="bg-[#131721] border-[#2d3240] text-[#ece7dc] font-mono text-xs placeholder:text-[#6f7f9a]/50"

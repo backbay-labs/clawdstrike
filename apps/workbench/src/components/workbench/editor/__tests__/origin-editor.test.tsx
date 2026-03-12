@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -78,6 +78,35 @@ describe("OriginEditor", () => {
     });
   });
 
+  it("preserves in-progress metadata edits across unrelated profile updates", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<OriginEditor />);
+
+    await user.click(screen.getByText("profile-alpha"));
+
+    const textarea = await screen.findByPlaceholderText('{"key": "value"}');
+    fireEvent.change(textarea, {
+      target: { value: '{\n  "region": "draft"\n}' },
+    });
+
+    activePolicy = {
+      ...activePolicy,
+      origins: {
+        ...activePolicy.origins,
+        profiles: [
+          {
+            ...activePolicy.origins.profiles[0],
+            explanation: "updated elsewhere",
+          },
+        ],
+      },
+    };
+
+    rerender(<OriginEditor />);
+
+    expect(textarea).toHaveValue('{\n  "region": "draft"\n}');
+  });
+
   it("keeps custom provider inputs in custom mode when cleared", async () => {
     const user = userEvent.setup();
     activePolicy = {
@@ -88,7 +117,7 @@ describe("OriginEditor", () => {
       },
     };
 
-    render(<OriginEditor />);
+    const { rerender } = render(<OriginEditor />);
 
     await user.click(screen.getByText("profile-alpha"));
 
@@ -96,6 +125,7 @@ describe("OriginEditor", () => {
       "e.g. my-custom-provider",
     );
     await user.clear(providerInput);
+    expect(providerInput).toHaveValue("");
 
     expect(dispatch).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -103,12 +133,26 @@ describe("OriginEditor", () => {
         origins: expect.objectContaining({
           profiles: [
             expect.objectContaining({
-              match_rules: expect.objectContaining({ provider: "" }),
+              match_rules: expect.not.objectContaining({ provider: expect.anything() }),
             }),
           ],
         }),
       }),
     );
+
+    activePolicy = {
+      ...activePolicy,
+      origins: {
+        ...activePolicy.origins,
+        profiles: [makeProfile(undefined, {})],
+      },
+    };
+
+    rerender(<OriginEditor />);
+
+    expect(
+      await screen.findByPlaceholderText("e.g. my-custom-provider"),
+    ).toHaveValue("");
   });
 
   it("keeps custom space type inputs in custom mode when cleared", async () => {
@@ -121,7 +165,7 @@ describe("OriginEditor", () => {
       },
     };
 
-    render(<OriginEditor />);
+    const { rerender } = render(<OriginEditor />);
 
     await user.click(screen.getByText("profile-alpha"));
 
@@ -129,6 +173,7 @@ describe("OriginEditor", () => {
       "e.g. my-custom-space",
     );
     await user.clear(spaceTypeInput);
+    expect(spaceTypeInput).toHaveValue("");
 
     expect(dispatch).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -136,11 +181,25 @@ describe("OriginEditor", () => {
         origins: expect.objectContaining({
           profiles: [
             expect.objectContaining({
-              match_rules: expect.objectContaining({ space_type: "" }),
+              match_rules: expect.not.objectContaining({ space_type: expect.anything() }),
             }),
           ],
         }),
       }),
     );
+
+    activePolicy = {
+      ...activePolicy,
+      origins: {
+        ...activePolicy.origins,
+        profiles: [makeProfile(undefined, {})],
+      },
+    };
+
+    rerender(<OriginEditor />);
+
+    expect(
+      await screen.findByPlaceholderText("e.g. my-custom-space"),
+    ).toHaveValue("");
   });
 });

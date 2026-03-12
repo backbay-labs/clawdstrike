@@ -365,6 +365,48 @@ describe("HierarchyPage", () => {
     expect(screen.getByText("Runtime Agent")).toBeInTheDocument();
   });
 
+  it("preserves child-only links when legacy scoped-policy pulls omit parent ids", async () => {
+    const user = userEvent.setup();
+
+    fleetClientMocks.fetchHierarchyTree.mockResolvedValue(null);
+    fleetClientMocks.fetchScopedPolicies.mockResolvedValue([
+      {
+        scope_id: "root-1",
+        scope_name: "Fleet Fixture Org",
+        scope_type: "org",
+        parent_scope_id: null,
+        children: ["team-1"],
+      },
+      {
+        scope_id: "team-1",
+        scope_name: "Platform Team",
+        scope_type: "team",
+        parent_scope_id: null,
+        children: ["agent-1"],
+      },
+      {
+        scope_id: "agent-1",
+        scope_name: "Legacy Agent",
+        scope_type: "agent",
+        parent_scope_id: null,
+        children: [],
+      },
+    ]);
+
+    renderWithProviders(<HierarchyPage />);
+
+    await user.click(screen.getByRole("button", { name: "DEMO" }));
+    await user.click(screen.getByRole("button", { name: "Pull from Fleet" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Fleet Snapshot")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("Platform Team")).toBeInTheDocument();
+    expect(screen.getAllByText("Legacy Agent").length).toBeGreaterThan(0);
+    expect(screen.getByText("1 leaf node")).toBeInTheDocument();
+  });
+
   it("preserves external ids when a live hierarchy pull is pushed back to fleet", async () => {
     const user = userEvent.setup();
 
