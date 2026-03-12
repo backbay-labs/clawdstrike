@@ -7,16 +7,10 @@ export type ApprovalStatus = "pending" | "approved" | "denied" | "expired";
 
 export type RiskLevel = "low" | "medium" | "high" | "critical";
 
-/**
- * Extends the canonical OriginProvider with backend-specific providers
- * ("cli" and "api") that are used in approval workflows but not part
- * of the external origin provider set.
- */
-export type OriginProvider = CanonicalOriginProvider | "cli" | "api";
+export type OriginProvider = CanonicalOriginProvider;
 
 /**
  * Extends the canonical OriginContext with approval-specific fields.
- * - `provider` is widened to include backend-specific providers ("cli", "api").
  * - `actor_name` is an approval-specific display name for the actor.
  */
 export interface OriginContext extends Omit<CanonicalOriginContext, "provider"> {

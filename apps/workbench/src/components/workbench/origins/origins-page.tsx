@@ -898,7 +898,7 @@ function MatchRulesEditor({
           </div>
         ) : (
           <Select
-            value={customProviderMode ? "__custom__" : match.provider ?? "__none__"}
+            value={match.provider ?? "__none__"}
             onValueChange={(val: string | null) => {
               if (val === "__custom__") {
                 setCustomProviderMode(true);
@@ -976,7 +976,7 @@ function MatchRulesEditor({
           </div>
         ) : (
           <Select
-            value={customSpaceTypeMode ? "__custom__" : match.space_type ?? "__none__"}
+            value={match.space_type ?? "__none__"}
             onValueChange={(val: string | null) => {
               if (val === "__custom__") {
                 setCustomSpaceTypeMode(true);
@@ -1735,27 +1735,40 @@ function MetadataEditor({
   metadata: Record<string, unknown> | undefined;
   onChange: (updated: Record<string, unknown> | undefined) => void;
 }) {
-  const [raw, setRaw] = useState(() =>
+  const serializedMetadata =
     metadata && Object.keys(metadata).length > 0
       ? JSON.stringify(metadata, null, 2)
-      : "",
+      : "";
+  const [raw, setRaw] = useState(() =>
+    serializedMetadata,
   );
   const [error, setError] = useState<string | null>(null);
+  const lastCommittedSerializedRef = useRef(serializedMetadata);
+  const skipOwnCommitSyncRef = useRef(false);
 
   // Sync external changes
   useEffect(() => {
-    const next =
-      metadata && Object.keys(metadata).length > 0
-        ? JSON.stringify(metadata, null, 2)
-        : "";
-    setRaw(next);
+    if (
+      skipOwnCommitSyncRef.current &&
+      serializedMetadata === lastCommittedSerializedRef.current
+    ) {
+      skipOwnCommitSyncRef.current = false;
+      setError(null);
+      return;
+    }
+
+    skipOwnCommitSyncRef.current = false;
+    lastCommittedSerializedRef.current = serializedMetadata;
+    setRaw(serializedMetadata);
     setError(null);
-  }, [metadata]);
+  }, [serializedMetadata]);
 
   const handleBlur = useCallback(() => {
     const trimmed = raw.trim();
     if (!trimmed) {
       setError(null);
+      lastCommittedSerializedRef.current = "";
+      skipOwnCommitSyncRef.current = true;
       onChange(undefined);
       return;
     }
@@ -1766,6 +1779,8 @@ function MetadataEditor({
         return;
       }
       setError(null);
+      lastCommittedSerializedRef.current = JSON.stringify(parsed, null, 2);
+      skipOwnCommitSyncRef.current = true;
       onChange(parsed as Record<string, unknown>);
     } catch {
       setError("Invalid JSON");

@@ -51,6 +51,8 @@ const PROVIDERS: { value: OriginProvider; label: string }[] = [
   { value: "email", label: "Email" },
   { value: "discord", label: "Discord" },
   { value: "webhook", label: "Webhook" },
+  { value: "cli", label: "CLI" },
+  { value: "api", label: "API" },
 ];
 
 const SPACE_TYPES: { value: SpaceType; label: string }[] = [
@@ -485,7 +487,7 @@ function OriginProfileCard({ profile, index, onUpdate, onRemove }: OriginProfile
                               setCustomProviderDraft(currentVal ?? "");
                             } else {
                               setCustomProviderMode(false);
-                              setCustomProviderDraft(val);
+                              setCustomProviderDraft(val ?? "");
                               updateMatchRules({ provider: val as OriginProvider });
                             }
                           }}
@@ -560,7 +562,7 @@ function OriginProfileCard({ profile, index, onUpdate, onRemove }: OriginProfile
                               setCustomSpaceTypeDraft(currentVal ?? "");
                             } else {
                               setCustomSpaceTypeMode(false);
-                              setCustomSpaceTypeDraft(val);
+                              setCustomSpaceTypeDraft(val ?? "");
                               updateMatchRules({ space_type: val as SpaceType });
                             }
                           }}

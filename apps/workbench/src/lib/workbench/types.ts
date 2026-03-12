@@ -199,7 +199,9 @@ export type OriginProvider =
   | "jira"
   | "email"
   | "discord"
-  | "webhook";
+  | "webhook"
+  | "cli"
+  | "api";
 
 export type SpaceType =
   | "channel"
