@@ -48,6 +48,7 @@ import {
   loadHierarchy,
   clearHierarchy,
   getAncestryPath,
+  getDescendants,
   getLeafAgents,
   validateAllLeaves,
   type HierarchyValidationIssue,
@@ -1250,9 +1251,10 @@ export function HierarchyPage() {
             );
             if (newNode.parentId) {
               if (!parentId) {
+                const parentName = updated.nodes[newNode.parentId]?.name ?? newNode.parentId;
                 return {
                   success: false,
-                  error: `Parent node "${newNode.name}" is missing a fleet id`,
+                  error: `Parent node "${parentName}" is missing a fleet id`,
                 } satisfies HierarchySyncResult;
               }
             }
@@ -1304,10 +1306,7 @@ export function HierarchyPage() {
 
       // Finding M18: Confirm before deleting, showing descendant count
       const childIds = Object.values(hierarchy.nodes).filter((n) => n.parentId === id);
-      const descendantCount = (function countDescendants(nodeId: string): number {
-        const children = Object.values(hierarchy.nodes).filter((n) => n.parentId === nodeId);
-        return children.reduce((sum, child) => sum + 1 + countDescendants(child.id), 0);
-      })(id);
+      const descendantCount = getDescendants(hierarchy, id).length - 1;
 
       const message = descendantCount > 0
         ? `Delete node "${node.name}" and all ${descendantCount} descendant(s)? This cannot be undone.`
@@ -1482,11 +1481,8 @@ export function HierarchyPage() {
       let skippedCount = 0;
       let incompleteCount = 0;
       let rootIncomplete = false;
-      const countDescendants = (nodeId: string): number => {
-        const node = hierarchy.nodes[nodeId];
-        if (!node) return 0;
-        return node.children.reduce((total, childId) => total + 1 + countDescendants(childId), 0);
-      };
+      const countDescendants = (nodeId: string): number =>
+        Math.max(0, getDescendants(hierarchy, nodeId).length - 1);
 
       while (queue.length > 0) {
         const nodeId = queue.shift()!;
