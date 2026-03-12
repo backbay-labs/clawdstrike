@@ -600,6 +600,7 @@ describe("HierarchyPage", () => {
         },
       ],
     });
+    fleetClientMocks.createHierarchyNode.mockReset();
     fleetClientMocks.createHierarchyNode
       .mockResolvedValueOnce({ success: true, id: "remote-root" })
       .mockResolvedValueOnce({ success: false, error: "boom" });
@@ -613,7 +614,7 @@ describe("HierarchyPage", () => {
       expect(screen.getByText("Fleet Snapshot")).toBeInTheDocument();
     });
 
-    fleetClientMocks.createHierarchyNode.mockClear();
+    fleetClientMocks.createHierarchyNode.mockReset();
     fleetClientMocks.createHierarchyNode
       .mockResolvedValueOnce({ success: true, id: "remote-root" })
       .mockResolvedValueOnce({ success: false, error: "boom" });
@@ -622,6 +623,82 @@ describe("HierarchyPage", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Pushed 1 nodes, 1 failed, 1 skipped")).toBeInTheDocument();
+    });
+  });
+
+  it("counts queued siblings when a parent is created without returning an id", async () => {
+    const user = userEvent.setup();
+
+    fleetClientMocks.fetchHierarchyTree.mockResolvedValue({
+      root_id: "local-root",
+      nodes: [
+        {
+          id: "local-root",
+          name: "Fleet Fixture Org",
+          node_type: "org",
+          parent_id: null,
+          policy_id: null,
+          policy_name: null,
+          metadata: {},
+          children: ["local-team-a", "local-team-b"],
+        },
+        {
+          id: "local-team-a",
+          name: "Platform Team",
+          node_type: "team",
+          parent_id: "local-root",
+          policy_id: null,
+          policy_name: null,
+          metadata: {},
+          children: ["local-endpoint"],
+        },
+        {
+          id: "local-endpoint",
+          name: "CI Endpoint",
+          node_type: "endpoint",
+          parent_id: "local-team-a",
+          policy_id: null,
+          policy_name: null,
+          metadata: {},
+          children: [],
+        },
+        {
+          id: "local-team-b",
+          name: "Ops Team",
+          node_type: "team",
+          parent_id: "local-root",
+          policy_id: null,
+          policy_name: null,
+          metadata: {},
+          children: [],
+        },
+      ],
+    });
+    fleetClientMocks.createHierarchyNode.mockReset();
+    fleetClientMocks.createHierarchyNode
+      .mockResolvedValueOnce({ success: true, id: "remote-root" })
+      .mockResolvedValueOnce({ success: true });
+
+    renderWithProviders(<HierarchyPage />);
+
+    await user.click(screen.getByRole("button", { name: "DEMO" }));
+    await user.click(screen.getByRole("button", { name: "Pull from Fleet" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Fleet Snapshot")).toBeInTheDocument();
+    });
+
+    fleetClientMocks.createHierarchyNode.mockReset();
+    fleetClientMocks.createHierarchyNode
+      .mockResolvedValueOnce({ success: true, id: "remote-root" })
+      .mockResolvedValueOnce({ success: true });
+
+    await user.click(screen.getByRole("button", { name: "Push to Fleet" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Node "Platform Team" was created without an id, so 2 nodes could not be pushed'),
+      ).toBeInTheDocument();
     });
   });
 });

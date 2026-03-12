@@ -108,6 +108,24 @@ describe("sanitizeDelegationSvgForExport", () => {
     expect(sanitized.querySelector("pattern")).not.toBeNull();
   });
 
+  it("drops feImage filter primitives from exported SVGs", () => {
+    const input = makeSvg(`
+      <svg xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <filter id="fx">
+            <feImage href="https://evil.example/payload.png" />
+            <feGaussianBlur stdDeviation="2" />
+          </filter>
+        </defs>
+      </svg>
+    `);
+
+    const sanitized = sanitizeDelegationSvgForExport(input);
+
+    expect(sanitized.querySelector("feImage")).toBeNull();
+    expect(sanitized.querySelector("feGaussianBlur")).not.toBeNull();
+  });
+
   it("removes unsafe parent subtrees without disturbing safe siblings", () => {
     const input = makeSvg(`
       <svg xmlns="http://www.w3.org/2000/svg">

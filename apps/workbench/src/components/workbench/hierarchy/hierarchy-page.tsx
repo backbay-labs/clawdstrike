@@ -1443,6 +1443,8 @@ export function HierarchyPage() {
         if (!node) return 0;
         return node.children.reduce((total, childId) => total + 1 + countDescendants(childId), 0);
       };
+      const countQueuedNodes = (queuedIds: string[]): number =>
+        queuedIds.reduce((total, queuedId) => total + 1 + countDescendants(queuedId), 0);
 
       while (queue.length > 0) {
         const nodeId = queue.shift()!;
@@ -1476,6 +1478,7 @@ export function HierarchyPage() {
           idMap.set(nodeId, result.id);
         } else if (node.children.length > 0) {
           missingParentIdNode = node;
+          skippedCount += countDescendants(nodeId) + countQueuedNodes(queue);
           console.warn(
             `[hierarchy-sync] push incomplete for node "${node.name}": backend created the node without returning an id, so its descendants cannot be uploaded`,
           );
@@ -1491,7 +1494,7 @@ export function HierarchyPage() {
       if (missingParentIdNode) {
         showSyncStatus(
           "error",
-          `Node "${missingParentIdNode.name}" was created without an id, so its descendants could not be pushed`,
+          `Node "${missingParentIdNode.name}" was created without an id, so ${skippedCount} nodes could not be pushed`,
         );
       } else if (errorCount === 0) {
         showSyncStatus("success", `Pushed ${successCount} nodes to fleet`);

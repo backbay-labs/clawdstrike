@@ -18,7 +18,6 @@ const SAFE_SVG_TAGS = new Set([
   "fefuncg",
   "fefuncr",
   "fegaussianblur",
-  "feimage",
   "femerge",
   "femergenode",
   "femorphology",
