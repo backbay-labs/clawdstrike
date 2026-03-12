@@ -108,6 +108,32 @@ describe("sanitizeDelegationSvgForExport", () => {
     expect(sanitized.querySelector("pattern")).not.toBeNull();
   });
 
+  it("keeps parsing style declarations when url() values contain semicolons", () => {
+    const input = makeSvg(`
+      <svg xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <pattern id="grid" width="4" height="4" patternUnits="userSpaceOnUse">
+            <path d="M 4 0 L 0 0 0 4" fill="none" stroke="#333" stroke-width="1" />
+          </pattern>
+        </defs>
+        <rect
+          id="semicolon-style"
+          style='background-image: url("data:image/svg+xml;base64,PHN2Zz47PC9zdmc+"); fill: url(#grid); opacity: 0.8'
+          width="10"
+          height="10"
+        />
+      </svg>
+    `);
+
+    const sanitized = sanitizeDelegationSvgForExport(input);
+    const rect = sanitized.querySelector("#semicolon-style");
+    const style = rect?.getAttribute("style") ?? "";
+
+    expect(style).toContain("fill: url(#grid)");
+    expect(style).toContain("opacity: 0.8");
+    expect(style).not.toContain("data:image/svg+xml");
+  });
+
   it("drops feImage filter primitives from exported SVGs", () => {
     const input = makeSvg(`
       <svg xmlns="http://www.w3.org/2000/svg">

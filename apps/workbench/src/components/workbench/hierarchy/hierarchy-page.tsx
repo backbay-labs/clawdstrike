@@ -114,6 +114,22 @@ interface TreeNodeProps {
   dragOverId: string | null;
 }
 
+export async function resolvePendingHierarchyParentId(
+  parentId: string | null,
+  pendingCreateIds: ReadonlyMap<string, Promise<string | null>>,
+): Promise<string | null> {
+  if (!parentId) {
+    return null;
+  }
+
+  const pendingParentId = pendingCreateIds.get(parentId);
+  if (pendingParentId) {
+    return await pendingParentId;
+  }
+
+  return parentId;
+}
+
 function TreeNode({
   node,
   hierarchy,
@@ -139,9 +155,7 @@ function TreeNode({
   const Icon = NODE_TYPE_ICONS[node.type];
   const color = NODE_TYPE_COLORS[node.type];
   const isDragTarget = dragOverId === node.id;
-  const metadataLeafLabel = node.type === "endpoint"
-    ? { singular: "runtime", plural: "runtimes" }
-    : { singular: "enforcement target", plural: "enforcement targets" };
+  const metadataLeafLabel = { singular: "enforcement target", plural: "enforcement targets" };
 
   const [showActions, setShowActions] = useState(false);
 
@@ -1060,6 +1074,7 @@ export function HierarchyPage() {
     message?: string;
   }>({ type: "idle" });
   const syncStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingCreateIdsRef = useRef(new Map<string, Promise<string | null>>());
 
   /** Show a transient sync status message that auto-clears after a delay. */
   const showSyncStatus = useCallback(
@@ -1222,16 +1237,36 @@ export function HierarchyPage() {
         const newNode = updated.nodes[newId];
         if (newNode) {
           const localId = newId;
-          const resultPromise = syncToBackend("create node", () =>
-            createHierarchyNode(connection, {
+          let resolveCreatedId!: (value: string | null) => void;
+          const pendingCreatedId = new Promise<string | null>((resolve) => {
+            resolveCreatedId = resolve;
+          });
+          pendingCreateIdsRef.current.set(localId, pendingCreatedId);
+
+          const resultPromise = syncToBackend("create node", async () => {
+            const parentId = await resolvePendingHierarchyParentId(
+              newNode.parentId,
+              pendingCreateIdsRef.current,
+            );
+            if (newNode.parentId) {
+              if (!parentId) {
+                return {
+                  success: false,
+                  error: `Parent node "${newNode.name}" is missing a fleet id`,
+                } satisfies HierarchySyncResult;
+              }
+            }
+
+            return createHierarchyNode(connection, {
               name: newNode.name,
               node_type: newNode.type,
               external_id: newNode.externalId ?? null,
-              parent_id: newNode.parentId,
+              parent_id: parentId,
               metadata: newNode.metadata,
-            }),
-          );
+            });
+          });
           resultPromise?.then((result) => {
+            resolveCreatedId(result.success && result.id ? result.id : null);
             if (result.success && result.id && result.id !== localId) {
               const serverId = result.id;
               setHierarchy((prev) => remapNodeId(prev, localId, serverId));
@@ -1247,6 +1282,8 @@ export function HierarchyPage() {
                 return next;
               });
             }
+          }).catch(() => {
+            resolveCreatedId(null);
           });
         }
       }

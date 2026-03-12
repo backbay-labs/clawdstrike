@@ -12,7 +12,7 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "test": "vitest --passWithNoTests",
-    "typecheck": "node --max-old-space-size=8192 ../../node_modules/typescript/bin/tsc --noEmit",
+    "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
     "dogfood:live": "bash ../../scripts/workbench-live-dogfood.sh"
   },

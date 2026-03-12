@@ -78,9 +78,70 @@ function hasOnlySafeLocalStyleReferences(value: string): boolean {
   return references !== null && references.every((reference) => isSafeLocalReference(reference));
 }
 
+function splitStyleDeclarations(styleText: string): string[] {
+  const declarations: string[] = [];
+  let current = "";
+  let quote: '"' | "'" | null = null;
+  let parenthesisDepth = 0;
+  let escaped = false;
+
+  for (const char of styleText) {
+    if (escaped) {
+      current += char;
+      escaped = false;
+      continue;
+    }
+
+    if (quote) {
+      current += char;
+      if (char === "\\") {
+        escaped = true;
+      } else if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      quote = char;
+      current += char;
+      continue;
+    }
+
+    if (char === "(") {
+      parenthesisDepth += 1;
+      current += char;
+      continue;
+    }
+
+    if (char === ")" && parenthesisDepth > 0) {
+      parenthesisDepth -= 1;
+      current += char;
+      continue;
+    }
+
+    if (char === ";" && parenthesisDepth === 0) {
+      const declaration = current.trim();
+      if (declaration) {
+        declarations.push(declaration);
+      }
+      current = "";
+      continue;
+    }
+
+    current += char;
+  }
+
+  const trailingDeclaration = current.trim();
+  if (trailingDeclaration) {
+    declarations.push(trailingDeclaration);
+  }
+
+  return declarations;
+}
+
 function sanitizeStyle(styleText: string): string | null {
-  const safeDeclarations = styleText
-    .split(";")
+  const safeDeclarations = splitStyleDeclarations(styleText)
     .map((declaration) => declaration.trim())
     .filter(Boolean)
     .flatMap((declaration) => {

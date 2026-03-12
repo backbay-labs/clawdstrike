@@ -61,7 +61,7 @@ vi.mock("@/lib/workbench/use-fleet-connection", async () => {
   };
 });
 
-import { HierarchyPage } from "../hierarchy-page";
+import { HierarchyPage, resolvePendingHierarchyParentId } from "../hierarchy-page";
 
 describe("HierarchyPage", () => {
   let localStorageState: Record<string, string>;
@@ -560,6 +560,30 @@ describe("HierarchyPage", () => {
     expect(createInputs[0].parent_id).toBeNull();
     expect(createInputs[1].parent_id).toBe("remote-root");
     expect(createInputs[2].parent_id).toBe("remote-team");
+  });
+
+  it("waits for pending parent ids to resolve before using them", async () => {
+    let resolveParentId!: (value: string | null) => void;
+    const pendingParentId = new Promise<string | null>((resolve) => {
+      resolveParentId = resolve;
+    });
+
+    const resolvedParentIdPromise = resolvePendingHierarchyParentId(
+      "local-endpoint",
+      new Map([["local-endpoint", pendingParentId]]),
+    );
+
+    let settled = false;
+    resolvedParentIdPromise.then(() => {
+      settled = true;
+    });
+
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    resolveParentId("remote-endpoint");
+
+    await expect(resolvedParentIdPromise).resolves.toBe("remote-endpoint");
   });
 
   it("reports skipped descendants when a parent node fails during push", async () => {
