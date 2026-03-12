@@ -118,6 +118,38 @@ const EDGE_COLORS: Record<string, string> = {
   TriggeredResponseAction: "#f59e0b",
 };
 
+const MAX_GRAPH_SIZE = 5000;
+
+function validateGraph(raw: DelegationGraph): {
+  graph: DelegationGraph;
+  truncationMessage: string | null;
+} {
+  const validNodes = raw.nodes.filter(
+    (n) => typeof n.id === "string" && typeof n.kind === "string" && typeof n.label === "string",
+  );
+
+  if (validNodes.length > MAX_GRAPH_SIZE) {
+    const truncated = validNodes.slice(0, MAX_GRAPH_SIZE);
+    const ids = new Set(truncated.map((n) => n.id));
+    return {
+      graph: {
+        nodes: truncated,
+        edges: raw.edges.filter((e) => ids.has(e.from) && ids.has(e.to)),
+      },
+      truncationMessage: `Graph truncated: ${validNodes.length} nodes exceeds max of ${MAX_GRAPH_SIZE}`,
+    };
+  }
+
+  const nodeIds = new Set(validNodes.map((n) => n.id));
+  return {
+    graph: {
+      nodes: validNodes,
+      edges: raw.edges.filter((e) => nodeIds.has(e.from) && nodeIds.has(e.to)),
+    },
+    truncationMessage: null,
+  };
+}
+
 const DASHED_EDGES = new Set([
   "DerivedFromGrant",
   "RevokedBy",
@@ -141,6 +173,7 @@ export function DelegationPage() {
   const fleetConnected = connection.connected;
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const [containerElement, setContainerElement] = useState<HTMLDivElement | null>(null);
 
   const [graph, setGraph] = useState<DelegationGraph>(DEMO_DELEGATION_GRAPH);
   const [isLiveData, setIsLiveData] = useState(false);
@@ -169,43 +202,16 @@ export function DelegationPage() {
   const [visibleTrust, setVisibleTrust] = useState<Set<TrustLevel>>(new Set(ALL_TRUST_LEVELS));
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
+  const handleContainerRef = useCallback((node: HTMLDivElement | null) => {
+    containerRef.current = node;
+    setContainerElement(node);
+  }, []);
 
   // Debounce search input (300ms)
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearchQuery(searchQuery), 300);
     return () => clearTimeout(timer);
   }, [searchQuery]);
-
-  const MAX_GRAPH_SIZE = 5000;
-
-  // Validate and size-gate a graph from live data
-  const validateGraph = useCallback(
-    (raw: DelegationGraph): DelegationGraph => {
-      // Validate required fields on each node
-      const validNodes = raw.nodes.filter(
-        (n) => typeof n.id === "string" && typeof n.kind === "string" && typeof n.label === "string",
-      );
-
-      if (validNodes.length > MAX_GRAPH_SIZE) {
-        setLiveFetchError(
-          `Graph truncated: ${validNodes.length} nodes exceeds max of ${MAX_GRAPH_SIZE}`,
-        );
-        const truncated = validNodes.slice(0, MAX_GRAPH_SIZE);
-        const ids = new Set(truncated.map((n) => n.id));
-        return {
-          nodes: truncated,
-          edges: raw.edges.filter((e) => ids.has(e.from) && ids.has(e.to)),
-        };
-      }
-
-      const nodeIds = new Set(validNodes.map((n) => n.id));
-      return {
-        nodes: validNodes,
-        edges: raw.edges.filter((e) => nodeIds.has(e.from) && nodeIds.has(e.to)),
-      };
-    },
-    [],
-  );
 
   // Fetch live delegation graph — tries the snapshot endpoint first, falls back to grants
   const fetchLiveGraph = useCallback(
@@ -215,15 +221,17 @@ export function DelegationPage() {
         if (principalId) {
           const snapshot = await apiFetchDelegationGraphSnapshot(conn, principalId);
           if (snapshot && snapshot.nodes.length > 0) {
-            setLiveFetchError(null);
-            return validateGraph(snapshot);
+            const validated = validateGraph(snapshot);
+            setLiveFetchError(validated.truncationMessage);
+            return validated.graph;
           }
         }
         // Fallback to the older grants-based graph
         const grantsGraph = await fleetClient.fetchDelegationGraph();
         if (grantsGraph && grantsGraph.nodes.length > 0) {
-          setLiveFetchError(null);
-          return validateGraph(grantsGraph);
+          const validated = validateGraph(grantsGraph);
+          setLiveFetchError(validated.truncationMessage);
+          return validated.graph;
         }
         setLiveFetchError("No delegation data returned from fleet");
         return null;
@@ -233,7 +241,7 @@ export function DelegationPage() {
         return null;
       }
     },
-    [validateGraph],
+    [setLiveFetchError],
   );
 
   // Auto-switch to live data when fleet is connected
@@ -413,8 +421,8 @@ export function DelegationPage() {
 
   // Native wheel listener with { passive: false } so we can preventDefault
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
+    if (!containerElement) return;
+    const container = containerElement;
     const handler = (e: WheelEvent) => {
       e.preventDefault();
       e.stopPropagation();
@@ -434,7 +442,7 @@ export function DelegationPage() {
     };
     container.addEventListener("wheel", handler, { passive: false });
     return () => container.removeEventListener("wheel", handler);
-  }, []);
+  }, [containerElement]);
 
   const onBackgroundClick = useCallback((e: ReactMouseEvent) => {
     if ((e.target as HTMLElement).closest("[data-node]")) return;
@@ -636,7 +644,7 @@ export function DelegationPage() {
       </div>
 
       <div
-        ref={containerRef}
+        ref={handleContainerRef}
         className="relative flex-1 cursor-grab active:cursor-grabbing"
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}

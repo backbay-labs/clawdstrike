@@ -78,4 +78,42 @@ describe("ActivityStream", () => {
       expect(screen.getByTestId("activity-stream-visible-count")).toHaveTextContent("1");
     });
   });
+
+  it("renders anomaly cluster separators before the first event in each cluster", () => {
+    const events = [
+      makeEvent({
+        id: "evt-cluster-1",
+        target: "/tmp/cluster-1",
+        sessionId: "cluster-session",
+        anomalyScore: 0.9,
+      }),
+      makeEvent({
+        id: "evt-cluster-2",
+        target: "/tmp/cluster-2",
+        sessionId: "cluster-session",
+        anomalyScore: 0.92,
+      }),
+      makeEvent({
+        id: "evt-cluster-3",
+        target: "/tmp/cluster-3",
+        sessionId: "cluster-session",
+        anomalyScore: 0.95,
+      }),
+      makeEvent({
+        id: "evt-follow-up",
+        target: "/tmp/other",
+        sessionId: "other-session",
+        anomalyScore: 0.1,
+      }),
+    ];
+
+    render(<ActivityStreamHarness events={events} />);
+
+    const clusterSeparator = screen.getByText(/anomaly cluster:/i);
+    const firstClusterTarget = screen.getByText("/tmp/cluster-1");
+
+    expect(
+      clusterSeparator.compareDocumentPosition(firstClusterTarget) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
 });

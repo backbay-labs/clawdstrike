@@ -148,12 +148,11 @@ interface AnomalyCluster {
   agentName: string;
   sessionId: string;
   eventIds: string[];
-  startIndex: number; // index in the filtered events list where cluster ends (last event)
 }
 
 /**
  * Detect consecutive runs of 3+ flagged events from the same session.
- * Returns cluster markers keyed by the index of the last event in the run.
+ * Returns cluster markers keyed by the index of the first event in the run.
  */
 function detectAnomalyClusters(events: AgentEvent[]): Map<number, AnomalyCluster> {
   const clusters = new Map<number, AnomalyCluster>();
@@ -177,7 +176,6 @@ function detectAnomalyClusters(events: AgentEvent[]): Map<number, AnomalyCluster
           agentName: runAgent,
           sessionId: runSession,
           eventIds: runIds,
-          startIndex: runStart,
         });
       }
       runStart = i;
@@ -191,7 +189,6 @@ function detectAnomalyClusters(events: AgentEvent[]): Map<number, AnomalyCluster
           agentName: runAgent,
           sessionId: runSession,
           eventIds: runIds,
-          startIndex: runStart,
         });
       }
       runStart = -1;
@@ -207,7 +204,6 @@ function detectAnomalyClusters(events: AgentEvent[]): Map<number, AnomalyCluster
       agentName: runAgent,
       sessionId: runSession,
       eventIds: runIds,
-      startIndex: runStart,
     });
   }
 
