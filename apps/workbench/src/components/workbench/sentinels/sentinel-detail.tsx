@@ -1,7 +1,6 @@
 import { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  IconEye,
   IconArrowLeft,
   IconPlayerPlay,
   IconPlayerPause,

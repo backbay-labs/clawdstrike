@@ -305,6 +305,7 @@ export function PolicyEditor() {
   const { tabs, activeTab } = useMultiPolicy();
   const { state, dispatch } = useWorkbench();
   const [searchParams] = useSearchParams();
+  const panelParam = searchParams.get("panel");
   const [showCommandCenter, setShowCommandCenter] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [testRunnerOpen, setTestRunnerOpen] = useState(false);
@@ -317,19 +318,18 @@ export function PolicyEditor() {
 
   // Activate panels based on URL search params on mount
   useEffect(() => {
-    const panel = searchParams.get("panel");
-    if (panel === "guards") {
+    if (panelParam === "guards") {
       setShowGuards(true);
       setShowHome(false);
       setShowCommandCenter(false);
       setShowCompare(false);
-    } else if (panel === "compare") {
+    } else if (panelParam === "compare") {
       setShowCompare(true);
       setShowHome(false);
       setShowCommandCenter(false);
       setShowGuards(false);
     }
-  }, [searchParams]);
+  }, [panelParam]);
 
   // Use the active tab's ID as the policyId for version tracking
   const policyId = activeTab?.id;
