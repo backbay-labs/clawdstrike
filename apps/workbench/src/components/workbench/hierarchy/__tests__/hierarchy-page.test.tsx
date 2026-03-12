@@ -554,7 +554,7 @@ describe("HierarchyPage", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText(/was created without an id, so 3 descendant nodes/),
+        screen.getByText(/was created without an id, so 9 remaining nodes/),
       ).toBeInTheDocument();
     });
     expect(fleetClientMocks.createHierarchyNode).toHaveBeenCalledTimes(2);

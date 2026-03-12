@@ -1556,6 +1556,7 @@ export function HierarchyPage() {
       let errorCount = 0;
 
       let missingParentIdNode: OrgNode | null = null;
+      let missingParentSkippedNodeCount = 0;
 
       while (queue.length > 0) {
         const nodeId = queue.shift()!;
@@ -1596,6 +1597,15 @@ export function HierarchyPage() {
           idMap.set(nodeId, result.id);
         } else if (node.children.length > 0) {
           missingParentIdNode = node;
+          missingParentSkippedNodeCount =
+            Math.max(0, getDescendants(hierarchySnapshot, node.id).length - 1)
+            + queue.reduce((count, queuedNodeId) => {
+              const queuedNode = hierarchySnapshot.nodes[queuedNodeId];
+              if (!queuedNode) {
+                return count;
+              }
+              return count + getDescendants(hierarchySnapshot, queuedNode.id).length;
+            }, 0);
           console.warn(
             `[hierarchy-sync] push incomplete for node "${node.name}": backend created the node without returning an id, so its descendants cannot be uploaded`,
           );
@@ -1633,11 +1643,9 @@ export function HierarchyPage() {
       }
 
       if (missingParentIdNode) {
-        const descendantCount =
-          getDescendants(hierarchySnapshot, missingParentIdNode.id).length - 1;
         showSyncStatus(
           "error",
-          `Push incomplete: "${missingParentIdNode.name}" was created without an id, so ${descendantCount} descendant node${descendantCount === 1 ? "" : "s"} could not be uploaded`,
+          `Push incomplete: "${missingParentIdNode.name}" was created without an id, so ${missingParentSkippedNodeCount} remaining node${missingParentSkippedNodeCount === 1 ? "" : "s"} could not be uploaded`,
         );
       } else if (errorCount === 0) {
         showSyncStatus("success", `Pushed ${successCount} nodes to fleet`);
