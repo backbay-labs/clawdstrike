@@ -79,6 +79,14 @@ fn set_runtime_error(inner: &mut McpInner, error: impl Into<String>) {
     inner.last_error = Some(error.into());
 }
 
+fn persist_runtime_error(state: &McpState, error: impl Into<String>) -> String {
+    let error = error.into();
+    if let Ok(mut inner) = state.inner.lock() {
+        set_runtime_error(&mut inner, error.clone());
+    }
+    error
+}
+
 fn current_status(inner: &McpInner) -> McpStatusResponse {
     McpStatusResponse {
         url: if inner.running {
@@ -692,21 +700,22 @@ pub async fn spawn_mcp_server<R: Runtime>(
     let token = generate_token();
     let launch_configs = match resolve_launch_configs(app) {
         Ok(configs) => configs,
-        Err(error) => {
-            if let Ok(mut inner) = state.inner.lock() {
-                set_runtime_error(&mut inner, error.clone());
-            }
-            return Err(error);
-        }
+        Err(error) => return Err(persist_runtime_error(state, error)),
     };
     let mut launch_errors = Vec::new();
 
     for launch in launch_configs {
         // Find a fresh port for each attempt — a previous failed spawn may have
         // left the port in TIME_WAIT or another process may have claimed it.
-        let port = find_available_port()
-            .await
-            .ok_or_else(|| "No available port in range 9877-9899".to_string())?;
+        let port = match find_available_port().await {
+            Some(port) => port,
+            None => {
+                return Err(persist_runtime_error(
+                    state,
+                    "No available port in range 9877-9899",
+                ));
+            }
+        };
 
         eprintln!(
             "[mcp-sidecar] spawning: {} {} (script: {}, port: {})",
@@ -753,10 +762,7 @@ pub async fn spawn_mcp_server<R: Runtime>(
         "Failed to start embedded MCP sidecar. Launch attempts: {}",
         launch_errors.join(" | ")
     );
-    if let Ok(mut inner) = state.inner.lock() {
-        set_runtime_error(&mut inner, combined_error.clone());
-    }
-    Err(combined_error)
+    Err(persist_runtime_error(state, combined_error))
 }
 
 /// Kill the running MCP server child process if any.
@@ -991,5 +997,40 @@ mod tests {
 
         assert!(!status.running);
         assert_eq!(status.error.as_deref(), Some(SIDECAR_STARTING_MESSAGE));
+    }
+
+    #[test]
+    fn persist_runtime_error_replaces_starting_message() {
+        let state = McpState::new();
+        {
+            let mut inner = match state.inner.lock() {
+                Ok(inner) => inner,
+                Err(_) => panic!("McpState lock poisoned"),
+            };
+            inner.port = 9877;
+            inner.token = "mcp_secret".to_string();
+            inner.running = true;
+            inner.last_error = Some(SIDECAR_STARTING_MESSAGE.to_string());
+            inner.runtime_cmd = "bun".to_string();
+            inner.script_path = "server.ts".to_string();
+        }
+
+        let error = persist_runtime_error(&state, "No available port in range 9877-9899");
+
+        assert_eq!(error, "No available port in range 9877-9899");
+
+        let inner = match state.inner.lock() {
+            Ok(inner) => inner,
+            Err(_) => panic!("McpState lock poisoned"),
+        };
+        assert_eq!(
+            inner.last_error.as_deref(),
+            Some("No available port in range 9877-9899")
+        );
+        assert_eq!(inner.port, 0);
+        assert!(inner.token.is_empty());
+        assert!(!inner.running);
+        assert!(inner.runtime_cmd.is_empty());
+        assert!(inner.script_path.is_empty());
     }
 }
