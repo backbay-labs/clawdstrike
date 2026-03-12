@@ -561,4 +561,67 @@ describe("HierarchyPage", () => {
     expect(createInputs[1].parent_id).toBe("remote-root");
     expect(createInputs[2].parent_id).toBe("remote-team");
   });
+
+  it("reports skipped descendants when a parent node fails during push", async () => {
+    const user = userEvent.setup();
+
+    fleetClientMocks.fetchHierarchyTree.mockResolvedValue({
+      root_id: "local-root",
+      nodes: [
+        {
+          id: "local-root",
+          name: "Fleet Fixture Org",
+          node_type: "org",
+          parent_id: null,
+          policy_id: null,
+          policy_name: null,
+          metadata: {},
+          children: ["local-team"],
+        },
+        {
+          id: "local-team",
+          name: "Platform Team",
+          node_type: "team",
+          parent_id: "local-root",
+          policy_id: null,
+          policy_name: null,
+          metadata: {},
+          children: ["local-endpoint"],
+        },
+        {
+          id: "local-endpoint",
+          name: "CI Endpoint",
+          node_type: "endpoint",
+          parent_id: "local-team",
+          policy_id: null,
+          policy_name: null,
+          metadata: {},
+          children: [],
+        },
+      ],
+    });
+    fleetClientMocks.createHierarchyNode
+      .mockResolvedValueOnce({ success: true, id: "remote-root" })
+      .mockResolvedValueOnce({ success: false, error: "boom" });
+
+    renderWithProviders(<HierarchyPage />);
+
+    await user.click(screen.getByRole("button", { name: "DEMO" }));
+    await user.click(screen.getByRole("button", { name: "Pull from Fleet" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Fleet Snapshot")).toBeInTheDocument();
+    });
+
+    fleetClientMocks.createHierarchyNode.mockClear();
+    fleetClientMocks.createHierarchyNode
+      .mockResolvedValueOnce({ success: true, id: "remote-root" })
+      .mockResolvedValueOnce({ success: false, error: "boom" });
+
+    await user.click(screen.getByRole("button", { name: "Push to Fleet" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Pushed 1 nodes, 1 failed, 1 skipped")).toBeInTheDocument();
+    });
+  });
 });

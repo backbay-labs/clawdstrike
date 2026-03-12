@@ -70,13 +70,9 @@ function isSafeLocalReference(value: string): boolean {
   return /^url\(\s*#[^)]+\s*\)$/i.test(value.trim());
 }
 
-function hasOnlySafeLocalStyleReferences(property: string, value: string): boolean {
+function hasOnlySafeLocalStyleReferences(value: string): boolean {
   if (!value.toLowerCase().includes("url(")) {
     return true;
-  }
-
-  if (!LOCAL_REFERENCE_ATTRS.has(property)) {
-    return false;
   }
 
   const references = value.match(/url\(([^)]+)\)/gi);
@@ -94,18 +90,18 @@ function sanitizeStyle(styleText: string): string | null {
         return [];
       }
 
-      const property = declaration.slice(0, separatorIndex).trim();
       const value = declaration.slice(separatorIndex + 1).trim();
       const normalizedValue = value.toLowerCase();
 
       if (
         containsBlockedProtocol(value) ||
-        !hasOnlySafeLocalStyleReferences(property, value) ||
+        !hasOnlySafeLocalStyleReferences(value) ||
         normalizedValue.includes("expression(")
       ) {
         return [];
       }
 
+      const property = declaration.slice(0, separatorIndex).trim();
       return [`${property}: ${value}`];
     });
 

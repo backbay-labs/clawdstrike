@@ -83,6 +83,31 @@ describe("sanitizeDelegationSvgForExport", () => {
     expect(sanitized.querySelector("feGaussianBlur")).not.toBeNull();
   });
 
+  it("preserves safe local url() references for non-presentation style properties", () => {
+    const input = makeSvg(`
+      <svg xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <pattern id="grid" width="4" height="4" patternUnits="userSpaceOnUse">
+            <path d="M 4 0 L 0 0 0 4" fill="none" stroke="#333" stroke-width="1" />
+          </pattern>
+        </defs>
+        <rect
+          id="safe-background"
+          style="background-image: url(#grid); fill: url(https://evil.example/fill.svg)"
+          width="10"
+          height="10"
+        />
+      </svg>
+    `);
+
+    const sanitized = sanitizeDelegationSvgForExport(input);
+    const rect = sanitized.querySelector("#safe-background");
+
+    expect(rect?.getAttribute("style")).toContain("background-image: url(#grid)");
+    expect(rect?.getAttribute("style")).not.toContain("https://evil.example");
+    expect(sanitized.querySelector("pattern")).not.toBeNull();
+  });
+
   it("removes unsafe parent subtrees without disturbing safe siblings", () => {
     const input = makeSvg(`
       <svg xmlns="http://www.w3.org/2000/svg">

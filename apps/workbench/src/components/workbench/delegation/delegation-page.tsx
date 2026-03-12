@@ -241,7 +241,7 @@ export function DelegationPage() {
         return null;
       }
     },
-    [setLiveFetchError],
+    [],
   );
 
   // Auto-switch to live data when fleet is connected
