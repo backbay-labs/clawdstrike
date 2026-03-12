@@ -149,14 +149,14 @@ export function OriginEditor() {
     if (!origins) return;
     updateOrigins({
       ...origins,
-      profiles: [...origins.profiles, createEmptyProfile()],
+      profiles: [...(origins.profiles ?? []), createEmptyProfile()],
     });
   }, [origins, updateOrigins]);
 
   const handleRemoveProfile = useCallback(
     (index: number) => {
       if (!origins) return;
-      const profiles = origins.profiles.filter((_, i) => i !== index);
+      const profiles = (origins.profiles ?? []).filter((_, i) => i !== index);
       updateOrigins({ ...origins, profiles });
     },
     [origins, updateOrigins],
@@ -165,7 +165,7 @@ export function OriginEditor() {
   const handleUpdateProfile = useCallback(
     (index: number, updated: OriginProfile) => {
       if (!origins) return;
-      const profiles = [...origins.profiles];
+      const profiles = [...(origins.profiles ?? [])];
       profiles[index] = updated;
       updateOrigins({ ...origins, profiles });
     },
@@ -226,7 +226,7 @@ export function OriginEditor() {
 
           {/* Profile cards */}
           <div className="flex flex-col gap-2">
-            {origins.profiles.map((profile, idx) => (
+            {(origins.profiles ?? []).map((profile, idx) => (
               <OriginProfileCard
                 key={profile.id}
                 profile={profile}

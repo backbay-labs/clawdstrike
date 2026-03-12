@@ -2,11 +2,17 @@ import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import {
   IconPencil,
-  IconCrosshair,
   IconShieldCheck,
   IconGavel,
   IconServer,
   IconBooks,
+  IconRadar,
+  IconAlertTriangle,
+  IconNetwork,
+  IconFlask,
+  IconFileAnalytics,
+  IconCertificate,
+  IconSitemap,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { ClaudeCodeHint } from "@/components/workbench/shared/claude-code-hint";
@@ -174,6 +180,160 @@ function NavCard({
 }
 
 // ---------------------------------------------------------------------------
+// Severity colors for findings breakdown
+// ---------------------------------------------------------------------------
+
+const SEVERITY_COLORS: Record<string, string> = {
+  critical: "#c45c5c",
+  high: "#d47b4b",
+  medium: "#d4a84b",
+  low: "#6f7f9a",
+};
+
+// ---------------------------------------------------------------------------
+// Sentinel Summary Card — shows total, active/paused/retired, mini sigils
+// ---------------------------------------------------------------------------
+
+function SentinelSummaryCard({
+  total,
+  active,
+  paused,
+  retired,
+}: {
+  total: number;
+  active: number;
+  paused: number;
+  retired: number;
+}) {
+  return (
+    <div className="rounded-lg border border-[#2d3240]/40 bg-[#0b0d13]/60 px-5 py-4">
+      <div className="flex items-center gap-2 mb-3">
+        <IconRadar size={15} stroke={1.5} className="text-[#8b5555]" />
+        <span className="text-[10px] font-mono font-semibold text-[#8b5555] uppercase tracking-[0.12em]">
+          Sentinels
+        </span>
+      </div>
+      <div className="flex items-baseline gap-3">
+        <span className="text-2xl font-syne font-bold text-[#ece7dc] leading-none">
+          {total}
+        </span>
+        <span className="text-[10px] font-mono text-[#6f7f9a]">total</span>
+      </div>
+      <div className="flex items-center gap-3 mt-2 text-[10px] font-mono">
+        <span className="flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#3dbf84]" />
+          <span className="text-[#ece7dc]">{active}</span>
+          <span className="text-[#6f7f9a]">active</span>
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#d4a84b]" />
+          <span className="text-[#ece7dc]">{paused}</span>
+          <span className="text-[#6f7f9a]">paused</span>
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#6f7f9a]/40" />
+          <span className="text-[#ece7dc]">{retired}</span>
+          <span className="text-[#6f7f9a]">retired</span>
+        </span>
+      </div>
+      {/* Mini sigil placeholders for active sentinels */}
+      {active > 0 && (
+        <div className="flex items-center gap-1.5 mt-3">
+          {Array.from({ length: Math.min(active, 8) }).map((_, i) => (
+            <div
+              key={i}
+              className="w-5 h-5 rounded-full bg-[#131721] border border-[#2d3240]/60 flex items-center justify-center"
+            >
+              <span className="text-[7px] font-mono text-[#6f7f9a]">
+                {String.fromCharCode(65 + i)}
+              </span>
+            </div>
+          ))}
+          {active > 8 && (
+            <span className="text-[9px] font-mono text-[#6f7f9a]">
+              +{active - 8}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Findings Summary Card — emerging (highlighted), confirmed, total, severity bars
+// ---------------------------------------------------------------------------
+
+function FindingsSummaryCard({
+  emerging,
+  confirmed,
+  total,
+  severityCounts,
+}: {
+  emerging: number;
+  confirmed: number;
+  total: number;
+  severityCounts: Record<string, number>;
+}) {
+  const maxSeverity = Math.max(1, ...Object.values(severityCounts));
+
+  return (
+    <div className="rounded-lg border border-[#2d3240]/40 bg-[#0b0d13]/60 px-5 py-4">
+      <div className="flex items-center gap-2 mb-3">
+        <IconAlertTriangle size={15} stroke={1.5} className="text-[#d4a84b]" />
+        <span className="text-[10px] font-mono font-semibold text-[#d4a84b] uppercase tracking-[0.12em]">
+          Findings
+        </span>
+      </div>
+      <div className="flex items-baseline gap-3">
+        <span className="text-2xl font-syne font-bold text-[#ece7dc] leading-none">
+          {total}
+        </span>
+        <span className="text-[10px] font-mono text-[#6f7f9a]">total</span>
+      </div>
+      <div className="flex items-center gap-3 mt-2 text-[10px] font-mono">
+        <span className="flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#d4a84b] animate-pulse" />
+          <span className="text-[#d4a84b] font-semibold">{emerging}</span>
+          <span className="text-[#d4a84b]">emerging</span>
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#3dbf84]" />
+          <span className="text-[#ece7dc]">{confirmed}</span>
+          <span className="text-[#6f7f9a]">confirmed</span>
+        </span>
+      </div>
+      {/* Severity breakdown mini-bars */}
+      <div className="flex items-end gap-1 mt-3 h-5">
+        {(["critical", "high", "medium", "low"] as const).map((sev) => {
+          const count = severityCounts[sev] ?? 0;
+          const heightPct = maxSeverity > 0 ? (count / maxSeverity) * 100 : 0;
+          return (
+            <div
+              key={sev}
+              className="flex flex-col items-center gap-0.5"
+              title={`${sev}: ${count}`}
+            >
+              <div
+                className="w-3 rounded-sm transition-all duration-500"
+                style={{
+                  height: `${Math.max(heightPct, 8)}%`,
+                  backgroundColor: SEVERITY_COLORS[sev] ?? "#6f7f9a",
+                  opacity: count > 0 ? 1 : 0.2,
+                }}
+              />
+            </div>
+          );
+        })}
+        <span className="text-[8px] font-mono text-[#6f7f9a] ml-1.5 leading-none self-end">
+          severity
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Home Page
 // ---------------------------------------------------------------------------
 
@@ -239,6 +399,15 @@ export function HomePage() {
 
   const savedCount = state.savedPolicies?.length ?? 0;
 
+  // ---- Sentinel & findings placeholders (wired to providers in Phase 1) ----
+  const sentinelStats = { total: 0, active: 0, paused: 0, retired: 0 };
+  const findingsStats = {
+    emerging: 0,
+    confirmed: 0,
+    total: 0,
+    severityCounts: { critical: 0, high: 0, medium: 0, low: 0 } as Record<string, number>,
+  };
+
   return (
     <div className="h-full w-full flex flex-col bg-[#05060a] overflow-auto page-transition-enter">
       <div className="max-w-4xl w-full mx-auto px-8 py-8 flex flex-col gap-8">
@@ -272,6 +441,14 @@ export function HomePage() {
               </p>
             )}
           </div>
+        </div>
+
+        {/* ================================================================ */}
+        {/* Sentinel & Findings Summary Cards                                */}
+        {/* ================================================================ */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <SentinelSummaryCard {...sentinelStats} />
+          <FindingsSummaryCard {...findingsStats} />
         </div>
 
         {/* ================================================================ */}
@@ -313,17 +490,42 @@ export function HomePage() {
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
             <NavCard
+              icon={<IconRadar size={16} stroke={1.5} />}
+              label="Sentinels"
+              detail={`${sentinelStats.active} active sentinel${sentinelStats.active !== 1 ? "s" : ""}`}
+              href="/sentinels"
+            />
+            <NavCard
+              icon={<IconAlertTriangle size={16} stroke={1.5} />}
+              label="Findings & Intel"
+              detail={`${findingsStats.emerging} emerging · ${findingsStats.total} total findings & intel`}
+              href="/findings"
+              accent={findingsStats.emerging > 0 ? "text-[#d4a84b]" : undefined}
+            />
+            <NavCard
+              icon={<IconFlask size={16} stroke={1.5} />}
+              label="Lab"
+              detail="Simulate and hunt threats"
+              href="/lab"
+            />
+            <NavCard
+              icon={<IconNetwork size={16} stroke={1.5} />}
+              label="Swarms"
+              detail="Trust network coordination"
+              href="/swarms"
+            />
+            <NavCard
               icon={<IconPencil size={16} stroke={1.5} />}
-              label="Policy Editor"
+              label="Editor"
               detail={tabDetail}
               href="/editor"
               accent={dirty ? "text-[#d4a84b]" : undefined}
             />
             <NavCard
-              icon={<IconCrosshair size={16} stroke={1.5} />}
-              label="Threat Lab"
-              detail="Simulate attack scenarios"
-              href="/simulator"
+              icon={<IconBooks size={16} stroke={1.5} />}
+              label="Library"
+              detail={`${savedCount} saved polic${savedCount !== 1 ? "ies" : "y"}`}
+              href="/library"
             />
             <NavCard
               icon={<IconShieldCheck size={16} stroke={1.5} />}
@@ -338,6 +540,18 @@ export function HomePage() {
               href="/approvals"
             />
             <NavCard
+              icon={<IconFileAnalytics size={16} stroke={1.5} />}
+              label="Audit"
+              detail="Decision audit trail"
+              href="/audit"
+            />
+            <NavCard
+              icon={<IconCertificate size={16} stroke={1.5} />}
+              label="Receipts"
+              detail="Signed attestations"
+              href="/receipts"
+            />
+            <NavCard
               icon={<IconServer size={16} stroke={1.5} />}
               label="Fleet"
               detail={fleetDetail}
@@ -345,10 +559,10 @@ export function HomePage() {
               accent={connection.connected ? "text-[#3dbf84]" : undefined}
             />
             <NavCard
-              icon={<IconBooks size={16} stroke={1.5} />}
-              label="Library"
-              detail={`${savedCount} saved polic${savedCount !== 1 ? "ies" : "y"}`}
-              href="/library"
+              icon={<IconSitemap size={16} stroke={1.5} />}
+              label="Topology"
+              detail="Delegation & hierarchy graphs"
+              href="/topology"
             />
           </div>
         </div>

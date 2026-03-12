@@ -537,7 +537,12 @@ function GuardDetailPanel({
 // Main page
 // ---------------------------------------------------------------------------
 
-export function GuardsPage() {
+interface GuardsPageProps {
+  /** Override the default "navigate to editor" behavior (e.g. when embedded as a panel). */
+  onNavigateToEditor?: () => void;
+}
+
+export function GuardsPage({ onNavigateToEditor: onNavigateToEditorProp }: GuardsPageProps = {}) {
   const { state, dispatch } = useWorkbench();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -627,8 +632,12 @@ export function GuardsPage() {
   );
 
   const handleNavigateToEditor = useCallback(() => {
-    navigate("/editor");
-  }, [navigate]);
+    if (onNavigateToEditorProp) {
+      onNavigateToEditorProp();
+    } else {
+      navigate("/editor");
+    }
+  }, [navigate, onNavigateToEditorProp]);
 
   const handleGenerateTests = useCallback(
     (guard: GuardMeta) => {

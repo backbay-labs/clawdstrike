@@ -1,0 +1,717 @@
+/**
+ * Sentinel Manager — CRUD, lifecycle, scheduling, memory, identity, stats.
+ *
+ * Pure-function module for managing Sentinel objects. No side effects, no
+ * React hooks, no network I/O. Takes state in, returns new state out.
+ *
+ * Follows the standalone-function pattern from hunt-engine.ts.
+ */
+
+import type { AgentBaseline, PatternStep } from "./hunt-types";
+import type {
+  Sentinel,
+  SentinelMode,
+  SentinelStatus,
+  SentinelIdentity,
+  SentinelMemory,
+  SentinelStats,
+  SentinelGoal,
+  Severity,
+  SwarmRole,
+  SwarmMembership,
+  PolicyRef,
+  DataSource,
+  PatternRef,
+  EscalationPolicy,
+  MemoryPattern,
+} from "./sentinel-types";
+
+// Re-export types so existing consumers of sentinel-manager continue to work.
+export type {
+  Sentinel,
+  SentinelMode,
+  SentinelStatus,
+  SentinelIdentity,
+  SentinelMemory,
+  SentinelStats,
+  SentinelGoal,
+  Severity,
+  SwarmRole,
+  SwarmMembership,
+  PolicyRef,
+  DataSource,
+  PatternRef,
+  EscalationPolicy,
+  MemoryPattern,
+};
+
+// ---------------------------------------------------------------------------
+// Sigil System (8 sigil types from @backbay/speakeasy)
+// ---------------------------------------------------------------------------
+
+export type SigilType = "diamond" | "eye" | "wave" | "crown" | "spiral" | "key" | "star" | "moon";
+
+export const SIGILS: readonly SigilType[] = [
+  "diamond",
+  "eye",
+  "wave",
+  "crown",
+  "spiral",
+  "key",
+  "star",
+  "moon",
+] as const;
+
+/**
+ * Derive sigil type from a fingerprint string.
+ * Uses the numeric value of the first byte (2 hex chars) mod 8.
+ */
+export function deriveSigil(fingerprint: string): SigilType {
+  const firstByte = parseInt(fingerprint.slice(0, 2), 16);
+  return SIGILS[firstByte % SIGILS.length];
+}
+
+/**
+ * Derive an HSL color from fingerprint bytes 4-7 (hex chars 8-15).
+ * Returns a CSS `hsl()` string for consistent sentinel-specific coloring.
+ */
+export function deriveSigilColor(fingerprint: string): string {
+  // Bytes 4-7 of the fingerprint (hex chars at positions 8-15)
+  const byte4 = parseInt(fingerprint.slice(8, 10), 16);
+  const byte5 = parseInt(fingerprint.slice(10, 12), 16);
+  const byte6 = parseInt(fingerprint.slice(12, 14), 16);
+  const byte7 = parseInt(fingerprint.slice(14, 16), 16);
+
+  // Hue: full 0-360 range from bytes 4+5
+  const hue = ((byte4 << 8) | byte5) % 360;
+  // Saturation: 50-90% range from byte 6
+  const saturation = 50 + (byte6 % 41);
+  // Lightness: 40-65% range from byte 7
+  const lightness = 40 + (byte7 % 26);
+
+  return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+}
+
+// ---------------------------------------------------------------------------
+// Sentinel mode capabilities
+// ---------------------------------------------------------------------------
+
+export interface SentinelCapabilities {
+  /** Can generate signals from continuous monitoring. */
+  canMonitor: boolean;
+  /** Can run exploratory hunts (on-demand or scheduled). */
+  canHunt: boolean;
+  /** Can group signals and write finding summaries. */
+  canCurate: boolean;
+  /** Can participate in swarms/speakeasies and exchange intel. */
+  canLiaison: boolean;
+  /** Can promote findings to intel artifacts. */
+  canPromoteIntel: boolean;
+  /** Can compute and update baselines. */
+  canUpdateBaselines: boolean;
+  /** Supports cron scheduling. */
+  supportsSchedule: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Configuration for creating a sentinel
+// ---------------------------------------------------------------------------
+
+export interface CreateSentinelConfig {
+  name: string;
+  mode: SentinelMode;
+  owner: string;
+  policy: PolicyRef;
+  goals?: SentinelGoal[];
+  schedule?: string | null;
+  fleetAgentId?: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Stats event types
+// ---------------------------------------------------------------------------
+
+export type StatsEvent =
+  | { type: "signal_generated" }
+  | { type: "finding_created" }
+  | { type: "intel_produced" }
+  | { type: "false_positive_suppressed" }
+  | { type: "swarm_intel_consumed" }
+  | { type: "active_tick"; elapsedMs: number };
+
+// ---------------------------------------------------------------------------
+// ID Generation (DATA-MODEL.md section 10)
+// ---------------------------------------------------------------------------
+
+/**
+ * Generate a sentinel ID with the `sen_` prefix.
+ * Uses a ULID-like format: timestamp + random component.
+ */
+function generateSentinelId(): string {
+  const timestamp = Date.now().toString(36);
+  const random = Array.from(crypto.getRandomValues(new Uint8Array(10)))
+    .map((b) => b.toString(36).padStart(2, "0"))
+    .join("")
+    .slice(0, 16);
+  return `sen_${timestamp}${random}`;
+}
+
+// ---------------------------------------------------------------------------
+// Identity Creation
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert a Uint8Array to a hex string.
+ */
+function toHex(bytes: Uint8Array): string {
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/**
+ * Generate a sentinel identity with Ed25519-compatible structure.
+ *
+ * Since we cannot import @backbay/speakeasy directly (different repo),
+ * this generates a placeholder identity that is structurally compatible.
+ * Uses crypto.getRandomValues() for the keypair placeholder and
+ * crypto.subtle.digest('SHA-256', ...) for fingerprint derivation.
+ *
+ * The identity includes:
+ * - publicKey: 32-byte hex (64 chars) from random bytes
+ * - fingerprint: 16-char hex from SHA-256 of publicKey bytes
+ * - sigil: derived from fingerprint byte 0 mod 8
+ * - nickname: derived from sentinel name
+ */
+export async function generateSentinelIdentity(name: string): Promise<SentinelIdentity> {
+  // Generate 32 random bytes as a placeholder Ed25519 public key
+  const publicKeyBytes = crypto.getRandomValues(new Uint8Array(32));
+  const publicKey = toHex(publicKeyBytes);
+
+  // Derive fingerprint: SHA-256 of publicKey bytes, truncated to 16 hex chars (8 bytes)
+  const fingerprintHash = await crypto.subtle.digest("SHA-256", publicKeyBytes);
+  const fingerprintBytes = new Uint8Array(fingerprintHash);
+  const fingerprint = toHex(fingerprintBytes).slice(0, 16);
+
+  // Derive sigil from fingerprint
+  const sigil = deriveSigil(fingerprint);
+
+  // Derive nickname from sentinel name: lowercase, collapse whitespace, max 24 chars
+  const nickname = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .slice(0, 24);
+
+  return { publicKey, fingerprint, sigil, nickname };
+}
+
+// ---------------------------------------------------------------------------
+// Stats Tracking
+// ---------------------------------------------------------------------------
+
+/**
+ * Create a zeroed SentinelStats object.
+ */
+export function createInitialStats(): SentinelStats {
+  return {
+    signalsGenerated: 0,
+    findingsCreated: 0,
+    intelProduced: 0,
+    falsePositivesSuppressed: 0,
+    swarmIntelConsumed: 0,
+    uptimeMs: 0,
+    lastActiveAt: Date.now(),
+  };
+}
+
+/**
+ * Update stats by applying a stats event. Returns a new stats object.
+ */
+export function updateStats(stats: SentinelStats, event: StatsEvent): SentinelStats {
+  const now = Date.now();
+  switch (event.type) {
+    case "signal_generated":
+      return { ...stats, signalsGenerated: stats.signalsGenerated + 1, lastActiveAt: now };
+    case "finding_created":
+      return { ...stats, findingsCreated: stats.findingsCreated + 1, lastActiveAt: now };
+    case "intel_produced":
+      return { ...stats, intelProduced: stats.intelProduced + 1, lastActiveAt: now };
+    case "false_positive_suppressed":
+      return {
+        ...stats,
+        falsePositivesSuppressed: stats.falsePositivesSuppressed + 1,
+        lastActiveAt: now,
+      };
+    case "swarm_intel_consumed":
+      return { ...stats, swarmIntelConsumed: stats.swarmIntelConsumed + 1, lastActiveAt: now };
+    case "active_tick":
+      return { ...stats, uptimeMs: stats.uptimeMs + event.elapsedMs, lastActiveAt: now };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// CRUD Operations
+// ---------------------------------------------------------------------------
+
+/**
+ * Create a new Sentinel with a generated ID, identity, and empty memory.
+ * Returns the created Sentinel.
+ */
+export async function createSentinel(config: CreateSentinelConfig): Promise<Sentinel> {
+  const now = Date.now();
+  const id = generateSentinelId();
+  const identity = await generateSentinelIdentity(config.name);
+
+  const sentinel: Sentinel = {
+    id,
+    name: config.name,
+    mode: config.mode,
+    owner: config.owner,
+    identity,
+    policy: config.policy,
+    goals: config.goals ?? [],
+    memory: {
+      knownPatterns: [],
+      baselineProfiles: [],
+      falsePositiveHashes: [],
+      lastUpdated: now,
+    },
+    schedule: config.schedule ?? null,
+    status: "paused",
+    swarms: [],
+    stats: createInitialStats(),
+    fleetAgentId: config.fleetAgentId ?? null,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  return sentinel;
+}
+
+/**
+ * Update mutable fields on a sentinel. Returns a new Sentinel with the
+ * patch applied and updatedAt bumped.
+ */
+export function updateSentinel(
+  sentinel: Sentinel,
+  patch: Partial<Pick<Sentinel, "name" | "goals" | "schedule" | "status" | "policy" | "mode">>,
+): Sentinel {
+  return {
+    ...sentinel,
+    ...patch,
+    updatedAt: Date.now(),
+  };
+}
+
+/**
+ * Remove a sentinel from a list by ID. Returns the new array.
+ */
+export function deleteSentinel(sentinelId: string, sentinels: readonly Sentinel[]): Sentinel[] {
+  return sentinels.filter((s) => s.id !== sentinelId);
+}
+
+/**
+ * Look up a sentinel by ID. Returns the sentinel or undefined.
+ */
+export function getSentinel(
+  sentinelId: string,
+  sentinels: readonly Sentinel[],
+): Sentinel | undefined {
+  return sentinels.find((s) => s.id === sentinelId);
+}
+
+// ---------------------------------------------------------------------------
+// Lifecycle Management
+// ---------------------------------------------------------------------------
+
+/**
+ * Valid status transitions:
+ *
+ *   paused  -> active
+ *   active  -> paused
+ *   active  -> retired
+ *   paused  -> retired
+ *
+ * "retired" is terminal — no transitions out.
+ */
+const VALID_TRANSITIONS: ReadonlyMap<SentinelStatus, readonly SentinelStatus[]> = new Map([
+  ["paused", ["active", "retired"]],
+  ["active", ["paused", "retired"]],
+  ["retired", []],
+]);
+
+/**
+ * Check whether a status transition is valid.
+ */
+export function validateStatusTransition(from: SentinelStatus, to: SentinelStatus): boolean {
+  const allowed = VALID_TRANSITIONS.get(from);
+  return allowed !== undefined && allowed.includes(to);
+}
+
+/**
+ * Activate a sentinel. Returns a new Sentinel with status "active".
+ * Throws if the transition is invalid.
+ */
+export function activateSentinel(sentinel: Sentinel): Sentinel {
+  if (!validateStatusTransition(sentinel.status, "active")) {
+    throw new Error(
+      `Cannot activate sentinel: invalid transition from "${sentinel.status}" to "active"`,
+    );
+  }
+  return { ...sentinel, status: "active", updatedAt: Date.now() };
+}
+
+/**
+ * Pause a sentinel. Returns a new Sentinel with status "paused".
+ * Throws if the transition is invalid.
+ */
+export function pauseSentinel(sentinel: Sentinel): Sentinel {
+  if (!validateStatusTransition(sentinel.status, "paused")) {
+    throw new Error(
+      `Cannot pause sentinel: invalid transition from "${sentinel.status}" to "paused"`,
+    );
+  }
+  return { ...sentinel, status: "paused", updatedAt: Date.now() };
+}
+
+/**
+ * Retire a sentinel (terminal state). Returns a new Sentinel with status "retired".
+ * Throws if the transition is invalid.
+ */
+export function retireSentinel(sentinel: Sentinel): Sentinel {
+  if (!validateStatusTransition(sentinel.status, "retired")) {
+    throw new Error(
+      `Cannot retire sentinel: invalid transition from "${sentinel.status}" to "retired"`,
+    );
+  }
+  return { ...sentinel, status: "retired", updatedAt: Date.now() };
+}
+
+// ---------------------------------------------------------------------------
+// Memory Management
+// ---------------------------------------------------------------------------
+
+/**
+ * Add a MemoryPattern to sentinel memory. Deduplicates by pattern ID.
+ * Returns a new SentinelMemory.
+ */
+export function addPattern(memory: SentinelMemory, pattern: MemoryPattern): SentinelMemory {
+  // Check if pattern with the same ID already exists
+  const exists = memory.knownPatterns.some((p) => p.id === pattern.id);
+  if (exists) {
+    // Update existing pattern in place (bump match count, refresh timestamp)
+    return {
+      ...memory,
+      knownPatterns: memory.knownPatterns.map((p) =>
+        p.id === pattern.id
+          ? { ...pattern, localMatchCount: p.localMatchCount + pattern.localMatchCount }
+          : p,
+      ),
+      lastUpdated: Date.now(),
+    };
+  }
+
+  return {
+    ...memory,
+    knownPatterns: [...memory.knownPatterns, pattern],
+    lastUpdated: Date.now(),
+  };
+}
+
+/**
+ * Add a false-positive hash to sentinel memory. Deduplicates.
+ * Returns a new SentinelMemory.
+ */
+export function addFalsePositiveHash(memory: SentinelMemory, hash: string): SentinelMemory {
+  if (memory.falsePositiveHashes.includes(hash)) {
+    return memory; // Already present, no change
+  }
+
+  return {
+    ...memory,
+    falsePositiveHashes: [...memory.falsePositiveHashes, hash],
+    lastUpdated: Date.now(),
+  };
+}
+
+/**
+ * Prune memory to stay within limits. Evicts oldest patterns and oldest
+ * false-positive hashes first.
+ * Returns a new SentinelMemory.
+ */
+export function pruneMemory(
+  memory: SentinelMemory,
+  maxPatterns: number = 500,
+  maxFPHashes: number = 10_000,
+): SentinelMemory {
+  let knownPatterns = memory.knownPatterns;
+  let falsePositiveHashes = memory.falsePositiveHashes;
+
+  if (knownPatterns.length > maxPatterns) {
+    // Keep the most recently added patterns
+    knownPatterns = [...knownPatterns]
+      .sort((a, b) => b.addedAt - a.addedAt)
+      .slice(0, maxPatterns);
+  }
+
+  if (falsePositiveHashes.length > maxFPHashes) {
+    // FP hashes are appended in order — keep the most recent (tail)
+    falsePositiveHashes = falsePositiveHashes.slice(-maxFPHashes);
+  }
+
+  if (
+    knownPatterns === memory.knownPatterns &&
+    falsePositiveHashes === memory.falsePositiveHashes
+  ) {
+    return memory; // No change needed
+  }
+
+  return {
+    ...memory,
+    knownPatterns,
+    falsePositiveHashes,
+    lastUpdated: Date.now(),
+  };
+}
+
+/**
+ * Merge a swarm-sourced pattern into sentinel memory.
+ * Only ingests patterns from peers with reputation above the minimum threshold.
+ *
+ * See SIGNAL-PIPELINE.md section 7.2 for the full pattern:
+ *   - Check peer reputation >= minReputation
+ *   - Add to memory as an "imported_intel" source
+ */
+export function mergeSwarmPattern(
+  memory: SentinelMemory,
+  intelPattern: MemoryPattern,
+  peerReputation: number,
+  minReputation: number = 0.3,
+): SentinelMemory {
+  // Fail-closed: reject patterns from untrusted peers
+  if (peerReputation < minReputation) {
+    return memory;
+  }
+
+  // Mark the pattern as imported from swarm intel
+  const importedPattern: MemoryPattern = {
+    ...intelPattern,
+    source: "imported_intel",
+    localMatchCount: 0, // Reset — local matches not yet observed
+    addedAt: Date.now(),
+  };
+
+  return addPattern(memory, importedPattern);
+}
+
+// ---------------------------------------------------------------------------
+// Scheduling
+// ---------------------------------------------------------------------------
+
+/**
+ * Simple interval-based schedule check. Parses a cron-like schedule
+ * string and determines whether the sentinel should run.
+ *
+ * For simplicity, supports a subset of cron:
+ * - Standard 5-field cron: only checks the minute and hour fields
+ * - Special strings: "@hourly", "@daily", "@weekly"
+ *
+ * For a full cron parser, use a dedicated library. This is a lightweight
+ * approximation for the workbench client-side scheduler.
+ */
+export function isScheduleDue(sentinel: Sentinel, now: Date = new Date()): boolean {
+  // Only active, scheduled hunters need schedule checks
+  if (sentinel.status !== "active") return false;
+  if (!sentinel.schedule) return false;
+
+  const schedule = sentinel.schedule.trim();
+
+  // Handle special strings
+  if (schedule === "@hourly") {
+    return now.getMinutes() === 0;
+  }
+  if (schedule === "@daily") {
+    return now.getHours() === 0 && now.getMinutes() === 0;
+  }
+  if (schedule === "@weekly") {
+    return now.getDay() === 0 && now.getHours() === 0 && now.getMinutes() === 0;
+  }
+
+  // Parse standard 5-field cron: minute hour day month weekday
+  const parts = schedule.split(/\s+/);
+  if (parts.length < 2) return false;
+
+  const [minuteField, hourField] = parts;
+
+  const minuteMatch = matchCronField(minuteField, now.getMinutes());
+  const hourMatch = matchCronField(hourField, now.getHours());
+
+  return minuteMatch && hourMatch;
+}
+
+/**
+ * Match a single cron field value against the current value.
+ * Supports: "*", specific number, and step expressions ("*​/N").
+ */
+function matchCronField(field: string, value: number): boolean {
+  if (field === "*") return true;
+
+  // Step expression: */N
+  if (field.startsWith("*/")) {
+    const step = parseInt(field.slice(2), 10);
+    if (Number.isNaN(step) || step <= 0) return false;
+    return value % step === 0;
+  }
+
+  // Comma-separated values: 0,15,30,45
+  if (field.includes(",")) {
+    return field.split(",").some((v) => parseInt(v, 10) === value);
+  }
+
+  // Range: 1-5
+  if (field.includes("-")) {
+    const [start, end] = field.split("-").map((v) => parseInt(v, 10));
+    if (Number.isNaN(start) || Number.isNaN(end)) return false;
+    return value >= start && value <= end;
+  }
+
+  // Exact match
+  const exact = parseInt(field, 10);
+  return !Number.isNaN(exact) && exact === value;
+}
+
+/**
+ * Calculate the next time a scheduled sentinel should run.
+ * Returns a Date or null if the sentinel is not scheduled.
+ *
+ * This is a simplified calculation — walks forward minute by minute
+ * up to 7 days. For production use, replace with a proper cron library.
+ */
+export function getNextRunTime(sentinel: Sentinel, from: Date = new Date()): Date | null {
+  if (!sentinel.schedule) return null;
+
+  // Walk forward minute by minute, up to 7 days (10080 minutes)
+  const maxMinutes = 7 * 24 * 60;
+  const candidate = new Date(from.getTime());
+  // Start from the next minute
+  candidate.setSeconds(0, 0);
+  candidate.setMinutes(candidate.getMinutes() + 1);
+
+  for (let i = 0; i < maxMinutes; i++) {
+    if (isScheduleDue({ ...sentinel, status: "active" }, candidate)) {
+      return candidate;
+    }
+    candidate.setMinutes(candidate.getMinutes() + 1);
+  }
+
+  return null; // No match within 7 days
+}
+
+// ---------------------------------------------------------------------------
+// Sentinel Mode Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Get the capabilities for a given sentinel mode.
+ *
+ * From INDEX.md section 1:
+ * - Watcher:  continuous monitoring/detection
+ * - Hunter:   exploratory or recurring threat hunts
+ * - Curator:  groups signals, writes summaries, promotes patterns
+ * - Liaison:  participates in swarms/speakeasies and exchanges intel
+ */
+export function getSentinelCapabilities(mode: SentinelMode): SentinelCapabilities {
+  switch (mode) {
+    case "watcher":
+      return {
+        canMonitor: true,
+        canHunt: false,
+        canCurate: false,
+        canLiaison: false,
+        canPromoteIntel: false,
+        canUpdateBaselines: true,
+        supportsSchedule: false,
+      };
+    case "hunter":
+      return {
+        canMonitor: false,
+        canHunt: true,
+        canCurate: false,
+        canLiaison: false,
+        canPromoteIntel: false,
+        canUpdateBaselines: true,
+        supportsSchedule: true,
+      };
+    case "curator":
+      return {
+        canMonitor: true,
+        canHunt: false,
+        canCurate: true,
+        canLiaison: false,
+        canPromoteIntel: true,
+        canUpdateBaselines: false,
+        supportsSchedule: false,
+      };
+    case "liaison":
+      return {
+        canMonitor: false,
+        canHunt: false,
+        canCurate: false,
+        canLiaison: true,
+        canPromoteIntel: true,
+        canUpdateBaselines: false,
+        supportsSchedule: false,
+      };
+  }
+}
+
+/**
+ * Validate that a set of goals is compatible with a sentinel mode.
+ *
+ * Rules:
+ * - "detect" goals require canMonitor
+ * - "hunt" goals require canHunt
+ * - "monitor" goals require canMonitor
+ * - "enrich" goals require canCurate or canLiaison
+ *
+ * Returns an array of validation error messages. Empty array = valid.
+ */
+export function validateGoalsForMode(mode: SentinelMode, goals: SentinelGoal[]): string[] {
+  const caps = getSentinelCapabilities(mode);
+  const errors: string[] = [];
+
+  for (const goal of goals) {
+    switch (goal.type) {
+      case "detect":
+        if (!caps.canMonitor) {
+          errors.push(
+            `Goal type "detect" is not supported by mode "${mode}". Use "watcher" or "curator" mode.`,
+          );
+        }
+        break;
+      case "hunt":
+        if (!caps.canHunt) {
+          errors.push(`Goal type "hunt" is not supported by mode "${mode}". Use "hunter" mode.`);
+        }
+        break;
+      case "monitor":
+        if (!caps.canMonitor) {
+          errors.push(
+            `Goal type "monitor" is not supported by mode "${mode}". Use "watcher" or "curator" mode.`,
+          );
+        }
+        break;
+      case "enrich":
+        if (!caps.canCurate && !caps.canLiaison) {
+          errors.push(
+            `Goal type "enrich" is not supported by mode "${mode}". Use "curator" or "liaison" mode.`,
+          );
+        }
+        break;
+    }
+  }
+
+  return errors;
+}
