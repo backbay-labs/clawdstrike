@@ -947,6 +947,12 @@ interface RenameDialogProps {
   onClose: () => void;
 }
 
+type HierarchySyncResult = {
+  success: boolean;
+  error?: string;
+  id?: string;
+};
+
 function RenameDialog({ node, onRename, onClose }: RenameDialogProps) {
   const [name, setName] = useState(node.name);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -1131,19 +1137,51 @@ export function HierarchyPage() {
    * the local UI. Logs errors but doesn't block local edits.
    */
   const syncToBackend = useCallback(
-    (label: string, fn: () => Promise<{ success: boolean; error?: string }>) => {
+    (label: string, fn: () => Promise<HierarchySyncResult>) => {
       if (!isLiveMode || !fleetConnected) return;
-      fn().then((result) => {
+      return fn().then((result) => {
         if (!result.success) {
           console.warn(`[hierarchy-sync] ${label} failed:`, result.error);
           showSyncStatus("error", `Sync: ${label} failed`);
         }
+        return result;
       }).catch((err) => {
         console.warn(`[hierarchy-sync] ${label} error:`, err);
+        return { success: false, error: String(err) } satisfies HierarchySyncResult;
       });
     },
     [isLiveMode, fleetConnected, showSyncStatus],
   );
+
+  const remapNodeId = useCallback((current: PolicyHierarchy, oldId: string, newId: string): PolicyHierarchy => {
+    if (oldId === newId || !current.nodes[oldId]) {
+      return current;
+    }
+
+    const nodes = { ...current.nodes };
+    const node = { ...nodes[oldId], id: newId };
+    delete nodes[oldId];
+    nodes[newId] = node;
+
+    if (node.parentId && nodes[node.parentId]) {
+      nodes[node.parentId] = {
+        ...nodes[node.parentId],
+        children: nodes[node.parentId].children.map((childId) => (childId === oldId ? newId : childId)),
+      };
+    }
+
+    for (const childId of node.children) {
+      if (nodes[childId]) {
+        nodes[childId] = { ...nodes[childId], parentId: newId };
+      }
+    }
+
+    return {
+      ...current,
+      rootId: current.rootId === oldId ? newId : current.rootId,
+      nodes,
+    };
+  }, []);
 
   const handleAddChild = useCallback(
     (parentId: string, type: OrgNodeType) => {
@@ -1183,7 +1221,8 @@ export function HierarchyPage() {
         // LIVE mode: create node on backend
         const newNode = updated.nodes[newId];
         if (newNode) {
-          syncToBackend("create node", () =>
+          const localId = newId;
+          const resultPromise = syncToBackend("create node", () =>
             createHierarchyNode(connection, {
               name: newNode.name,
               node_type: newNode.type,
@@ -1192,10 +1231,27 @@ export function HierarchyPage() {
               metadata: newNode.metadata,
             }),
           );
+          resultPromise?.then((result) => {
+            if (result.success && result.id && result.id !== localId) {
+              const serverId = result.id;
+              setHierarchy((prev) => remapNodeId(prev, localId, serverId));
+              setSelectedId((prev) => (prev === localId ? serverId : prev));
+              setRenameTarget((prev) => (prev === localId ? serverId : prev));
+              setExpandedIds((prev) => {
+                if (!prev.has(localId)) {
+                  return prev;
+                }
+                const next = new Set(prev);
+                next.delete(localId);
+                next.add(serverId);
+                return next;
+              });
+            }
+          });
         }
       }
     },
-    [hierarchy, syncToBackend, connection],
+    [hierarchy, remapNodeId, syncToBackend, connection],
   );
 
   const handleRemove = useCallback(
@@ -1377,30 +1433,46 @@ export function HierarchyPage() {
     try {
       // BFS traversal: create parents before children
       const queue: string[] = [hierarchy.rootId];
+      const idMap = new Map<string, string>();
       let successCount = 0;
       let errorCount = 0;
+      let missingParentIdNode: OrgNode | null = null;
 
       while (queue.length > 0) {
         const nodeId = queue.shift()!;
         const node = hierarchy.nodes[nodeId];
         if (!node) continue;
 
+        const resolvedParentId = node.parentId
+          ? idMap.get(node.parentId) ?? node.parentId
+          : null;
+
         const input: HierarchyNodeInput = {
           name: node.name,
           node_type: node.type,
           external_id: node.externalId ?? null,
-          parent_id: node.parentId,
+          parent_id: resolvedParentId,
           policy_id: node.policyId ?? null,
           policy_name: node.policyName ?? null,
           metadata: node.metadata,
         };
 
         const result = await createHierarchyNode(connection, input);
-        if (result.success) {
-          successCount++;
-        } else {
+        if (!result.success) {
           console.warn(`[hierarchy-sync] push failed for node "${node.name}":`, result.error);
           errorCount++;
+          continue;
+        }
+
+        successCount++;
+        if (result.id) {
+          idMap.set(nodeId, result.id);
+        } else if (node.children.length > 0) {
+          missingParentIdNode = node;
+          console.warn(
+            `[hierarchy-sync] push incomplete for node "${node.name}": backend created the node without returning an id, so its descendants cannot be uploaded`,
+          );
+          break;
         }
 
         // Enqueue children
@@ -1409,7 +1481,12 @@ export function HierarchyPage() {
         }
       }
 
-      if (errorCount === 0) {
+      if (missingParentIdNode) {
+        showSyncStatus(
+          "error",
+          `Node "${missingParentIdNode.name}" was created without an id, so its descendants could not be pushed`,
+        );
+      } else if (errorCount === 0) {
         showSyncStatus("success", `Pushed ${successCount} nodes to fleet`);
       } else {
         showSyncStatus(

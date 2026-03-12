@@ -474,6 +474,11 @@ describe("HierarchyPage", () => {
     });
 
     fleetClientMocks.createHierarchyNode.mockClear();
+    fleetClientMocks.createHierarchyNode
+      .mockResolvedValueOnce({ success: true, id: "server-root" })
+      .mockResolvedValueOnce({ success: true, id: "server-team" })
+      .mockResolvedValueOnce({ success: true, id: "server-endpoint" })
+      .mockResolvedValueOnce({ success: true, id: "server-runtime" });
     await user.click(screen.getByRole("button", { name: "Push to Fleet" }));
 
     await waitFor(() => {
@@ -490,5 +495,70 @@ describe("HierarchyPage", () => {
         }),
       ]),
     );
+  });
+
+  it("uses server-assigned parent ids when pushing a local hierarchy to fleet", async () => {
+    const user = userEvent.setup();
+
+    fleetClientMocks.fetchHierarchyTree.mockResolvedValue({
+      root_id: "local-root",
+      nodes: [
+        {
+          id: "local-root",
+          name: "Fleet Fixture Org",
+          node_type: "org",
+          parent_id: null,
+          policy_id: null,
+          policy_name: null,
+          metadata: {},
+          children: ["local-team"],
+        },
+        {
+          id: "local-team",
+          name: "Platform Team",
+          node_type: "team",
+          parent_id: "local-root",
+          policy_id: null,
+          policy_name: null,
+          metadata: {},
+          children: ["local-endpoint"],
+        },
+        {
+          id: "local-endpoint",
+          name: "CI Endpoint",
+          node_type: "endpoint",
+          parent_id: "local-team",
+          policy_id: null,
+          policy_name: null,
+          metadata: {},
+          children: [],
+        },
+      ],
+    });
+    fleetClientMocks.createHierarchyNode
+      .mockResolvedValueOnce({ success: true, id: "remote-root" })
+      .mockResolvedValueOnce({ success: true, id: "remote-team" })
+      .mockResolvedValueOnce({ success: true, id: "remote-endpoint" });
+
+    renderWithProviders(<HierarchyPage />);
+
+    await user.click(screen.getByRole("button", { name: "DEMO" }));
+    await user.click(screen.getByRole("button", { name: "Pull from Fleet" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Fleet Snapshot")).toBeInTheDocument();
+    });
+
+    fleetClientMocks.createHierarchyNode.mockClear();
+    await user.click(screen.getByRole("button", { name: "Push to Fleet" }));
+
+    await waitFor(() => {
+      expect(fleetClientMocks.createHierarchyNode).toHaveBeenCalledTimes(3);
+    });
+
+    const createInputs = fleetClientMocks.createHierarchyNode.mock.calls.map(([, input]) => input);
+    expect(createInputs[0].parent_id).toBeNull();
+    expect(createInputs[1].parent_id).toBe("remote-root");
+    expect(createInputs[2].parent_id).toBe("remote-team");
   });
 });
