@@ -8,13 +8,20 @@ use crate::auth::{AuthSource, AuthenticatedTenant};
 use crate::error::ApiError;
 use crate::state::AppState;
 
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum AudienceClaim {
+    Single(String),
+    Multiple(Vec<String>),
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
     pub sub: Uuid,
     pub tenant_id: Uuid,
     pub role: String,
     pub iss: String,
-    pub aud: String,
+    pub aud: AudienceClaim,
     pub exp: i64,
     pub iat: i64,
 }
@@ -82,7 +89,7 @@ mod tests {
             tenant_id: Uuid::new_v4(),
             role: "owner".to_string(),
             iss: iss.to_string(),
-            aud: aud.to_string(),
+            aud: AudienceClaim::Single(aud.to_string()),
             exp,
             iat: now,
         };
@@ -110,7 +117,49 @@ mod tests {
         )
         .expect("claims should decode");
         assert_eq!(claims.iss, "https://issuer.example");
-        assert_eq!(claims.aud, "control-api-clients");
+        assert_eq!(
+            claims.aud,
+            AudienceClaim::Single("control-api-clients".to_string())
+        );
+    }
+
+    #[test]
+    fn decode_claims_accepts_array_audience_containing_expected_value() {
+        let now = Utc::now().timestamp();
+        let claims = Claims {
+            sub: Uuid::new_v4(),
+            tenant_id: Uuid::new_v4(),
+            role: "owner".to_string(),
+            iss: "https://issuer.example".to_string(),
+            aud: AudienceClaim::Multiple(vec![
+                "control-api-clients".to_string(),
+                "other-audience".to_string(),
+            ]),
+            exp: now + 60,
+            iat: now,
+        };
+        let token = encode(
+            &Header::new(Algorithm::HS256),
+            &claims,
+            &EncodingKey::from_secret("jwt-secret".as_bytes()),
+        )
+        .expect("encode jwt");
+
+        let decoded = decode_claims(
+            &token,
+            "jwt-secret",
+            "https://issuer.example",
+            "control-api-clients",
+        )
+        .expect("claims should decode");
+        assert_eq!(decoded.iss, "https://issuer.example");
+        assert_eq!(
+            decoded.aud,
+            AudienceClaim::Multiple(vec![
+                "control-api-clients".to_string(),
+                "other-audience".to_string(),
+            ])
+        );
     }
 
     #[test]
