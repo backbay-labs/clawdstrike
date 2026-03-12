@@ -1678,12 +1678,12 @@ export function HierarchyPage() {
    */
   const handlePullFromFleet = useCallback(async () => {
     if (!fleetConnected) return;
-    if (!window.confirm("Replace local hierarchy with fleet data? Unsaved local changes will be lost.")) return;
     if (syncInProgressRef.current) {
       console.warn("[hierarchy-sync] pull skipped: another sync operation is in progress");
       showSyncStatus("error", "Another sync operation is already in progress");
       return;
     }
+    if (!window.confirm("Replace local hierarchy with fleet data? Unsaved local changes will be lost.")) return;
     syncInProgressRef.current = true;
     setSyncStatus({ type: "pulling", message: "Downloading hierarchy..." });
 
