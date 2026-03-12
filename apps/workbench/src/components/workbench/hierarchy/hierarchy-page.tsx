@@ -1436,7 +1436,13 @@ export function HierarchyPage() {
       const idMap = new Map<string, string>();
       let successCount = 0;
       let errorCount = 0;
+      let skippedCount = 0;
       let missingParentIdNode: OrgNode | null = null;
+      const countDescendants = (nodeId: string): number => {
+        const node = hierarchy.nodes[nodeId];
+        if (!node) return 0;
+        return node.children.reduce((total, childId) => total + 1 + countDescendants(childId), 0);
+      };
 
       while (queue.length > 0) {
         const nodeId = queue.shift()!;
@@ -1461,6 +1467,7 @@ export function HierarchyPage() {
         if (!result.success) {
           console.warn(`[hierarchy-sync] push failed for node "${node.name}":`, result.error);
           errorCount++;
+          skippedCount += countDescendants(nodeId);
           continue;
         }
 
@@ -1491,7 +1498,9 @@ export function HierarchyPage() {
       } else {
         showSyncStatus(
           "error",
-          `Pushed ${successCount} nodes, ${errorCount} failed`,
+          skippedCount > 0
+            ? `Pushed ${successCount} nodes, ${errorCount} failed, ${skippedCount} skipped`
+            : `Pushed ${successCount} nodes, ${errorCount} failed`,
         );
       }
     } catch (err) {
