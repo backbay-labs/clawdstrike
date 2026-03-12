@@ -171,12 +171,12 @@ export function HuntLayout() {
     }
   }, [connected, connection]);
 
-  // Initial fetch + auto-poll every 30 seconds
+  // Initial fetch + auto-poll every 30 seconds while the stream is live
   useEffect(() => {
     if (pollRef.current) clearInterval(pollRef.current);
     pollRef.current = null;
 
-    if (!connected) {
+    if (!connected || !streamLive) {
       return;
     }
 
@@ -185,7 +185,7 @@ export function HuntLayout() {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
-  }, [connected, fetchEvents]);
+  }, [connected, fetchEvents, streamLive]);
 
   // Derived: open investigations count
   const openInvestigations = useMemo(
