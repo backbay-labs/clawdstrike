@@ -5,6 +5,11 @@ export interface SanitizedStorageYaml {
   sensitiveFieldsStripped: boolean;
 }
 
+export interface SanitizedStorageValue<T> {
+  value: T;
+  sensitiveFieldsStripped: boolean;
+}
+
 /**
  * Strip sensitive fields from YAML before writing it to browser storage.
  *
@@ -55,6 +60,18 @@ export function sanitizeYamlForStorageWithMetadata(yaml: string): SanitizedStora
   };
 }
 
+export function sanitizeObjectForStorage<T>(value: T): T {
+  return sanitizeObjectForStorageWithMetadata(value).value;
+}
+
+export function sanitizeObjectForStorageWithMetadata<T>(value: T): SanitizedStorageValue<T> {
+  const sanitized = sanitizeValue(value);
+  return {
+    value: sanitized.value as T,
+    sensitiveFieldsStripped: sanitized.sensitiveFieldsStripped,
+  };
+}
+
 function matchSensitiveField(line: string): { keyIndent: number; value: string } | null {
   for (const field of SENSITIVE_GUARD_FIELDS) {
     const escapedField = field.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -101,4 +118,45 @@ function skipIndentedScalar(lines: string[], startIndex: number, keyIndent: numb
   }
 
   return index;
+}
+
+function sanitizeValue(value: unknown): SanitizedStorageValue<unknown> {
+  if (Array.isArray(value)) {
+    let sensitiveFieldsStripped = false;
+    const sanitizedItems = value.map((item) => {
+      const sanitized = sanitizeValue(item);
+      sensitiveFieldsStripped ||= sanitized.sensitiveFieldsStripped;
+      return sanitized.value;
+    });
+    return {
+      value: sanitizedItems,
+      sensitiveFieldsStripped,
+    };
+  }
+
+  if (typeof value !== "object" || value === null) {
+    return {
+      value,
+      sensitiveFieldsStripped: false,
+    };
+  }
+
+  let sensitiveFieldsStripped = false;
+  const sanitizedObject: Record<string, unknown> = {};
+
+  for (const [key, nestedValue] of Object.entries(value)) {
+    if (SENSITIVE_GUARD_FIELDS.has(key)) {
+      sensitiveFieldsStripped = true;
+      continue;
+    }
+
+    const sanitized = sanitizeValue(nestedValue);
+    sanitizedObject[key] = sanitized.value;
+    sensitiveFieldsStripped ||= sanitized.sensitiveFieldsStripped;
+  }
+
+  return {
+    value: sanitizedObject,
+    sensitiveFieldsStripped,
+  };
 }

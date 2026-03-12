@@ -24,7 +24,10 @@ import {
   type NativeValidationState,
 } from "./policy-store";
 import { policyToYaml, yamlToPolicy, validatePolicy } from "./yaml-utils";
-import { sanitizeYamlForStorageWithMetadata } from "./storage-sanitizer";
+import {
+  sanitizeObjectForStorageWithMetadata,
+  sanitizeYamlForStorageWithMetadata,
+} from "./storage-sanitizer";
 import {
   isDesktop,
   openPolicyFile,
@@ -828,7 +831,6 @@ interface PersistedTab {
   name: string;
   filePath: string | null;
   yaml: string;
-  testSuiteYaml?: string;
   sensitiveFieldsStripped?: boolean;
 }
 
@@ -848,7 +850,6 @@ function persistTabs(state: MultiPolicyState): void {
           name: t.name,
           filePath: sensitiveFieldsStripped ? null : t.filePath,
           yaml: sanitized.yaml,
-          testSuiteYaml: t.testSuiteYaml,
           sensitiveFieldsStripped: sensitiveFieldsStripped || undefined,
         };
       }),
@@ -895,7 +896,6 @@ function loadPersistedTabs(): MultiPolicyState | null {
         yaml,
         validation,
         nativeValidation: { guardErrors: {}, topLevelErrors: [], loading: false, valid: null },
-        testSuiteYaml: pt.testSuiteYaml,
         _undoPast: [],
         _undoFuture: [],
         _cleanSnapshot: sensitiveFieldsStripped
@@ -940,17 +940,20 @@ function pushRecentFile(filePath: string): void {
 
 function sanitizeSavedPolicy(savedPolicy: SavedPolicy): SavedPolicy {
   const sanitized = sanitizeYamlForStorageWithMetadata(savedPolicy.yaml);
+  const sanitizedPolicy = sanitizeObjectForStorageWithMetadata(savedPolicy.policy);
   const [parsedPolicy, errors] = yamlToPolicy(sanitized.yaml);
+  const sensitiveFieldsStripped =
+    sanitized.sensitiveFieldsStripped || sanitizedPolicy.sensitiveFieldsStripped;
   const storedPolicy =
-    sanitized.sensitiveFieldsStripped && parsedPolicy && errors.length === 0
+    sensitiveFieldsStripped && parsedPolicy && errors.length === 0
       ? parsedPolicy
-      : savedPolicy.policy;
+      : sanitizedPolicy.value;
 
   return {
     ...savedPolicy,
     yaml: sanitized.yaml,
     policy: storedPolicy,
-    sensitiveFieldsStripped: sanitized.sensitiveFieldsStripped || undefined,
+    sensitiveFieldsStripped: sensitiveFieldsStripped || undefined,
   };
 }
 

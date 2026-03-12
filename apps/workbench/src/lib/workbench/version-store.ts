@@ -1,5 +1,8 @@
 import type { WorkbenchPolicy } from "./types";
-import { sanitizeYamlForStorageWithMetadata } from "./storage-sanitizer";
+import {
+  sanitizeObjectForStorageWithMetadata,
+  sanitizeYamlForStorageWithMetadata,
+} from "./storage-sanitizer";
 import { yamlToPolicy } from "./yaml-utils";
 
 // ---- Types ----
@@ -156,12 +159,15 @@ export class VersionStore {
   ): Promise<PolicyVersion> {
     const db = this.ensureDB();
     const sanitized = sanitizeYamlForStorageWithMetadata(yaml);
+    const sanitizedPolicy = sanitizeObjectForStorageWithMetadata(policy);
     const [parsedPolicy, errors] = yamlToPolicy(sanitized.yaml);
     const storedYaml = sanitized.yaml;
+    const sensitiveFieldsStripped =
+      sanitized.sensitiveFieldsStripped || sanitizedPolicy.sensitiveFieldsStripped;
     const storedPolicy =
-      sanitized.sensitiveFieldsStripped && parsedPolicy && errors.length === 0
+      sensitiveFieldsStripped && parsedPolicy && errors.length === 0
         ? parsedPolicy
-        : policy;
+        : sanitizedPolicy.value;
     const hash = await sha256Hex(storedYaml);
 
     // Single readwrite transaction: dedup-check + insert atomically
@@ -198,7 +204,7 @@ export class VersionStore {
       tags: [],
       parentId: latest?.id ?? null,
       hash,
-      sensitiveFieldsStripped: sanitized.sensitiveFieldsStripped || undefined,
+      sensitiveFieldsStripped: sensitiveFieldsStripped || undefined,
     };
 
     try {
