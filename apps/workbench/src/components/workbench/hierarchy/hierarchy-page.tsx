@@ -1186,18 +1186,30 @@ export function HierarchyPage() {
       return fn().then((result) => {
         if (!result.success) {
           console.warn(`[hierarchy-sync] ${label} failed:`, result.error);
-          if (hierarchyVersionRef.current === capturedVersion) {
+          const reverted = hierarchyVersionRef.current === capturedVersion;
+          if (reverted) {
             restoreHierarchyChange(prevHierarchy, Math.max(capturedVersion - 1, 0));
           }
-          showSyncStatus("error", `Sync: ${label} failed — reverted`);
+          showSyncStatus(
+            "error",
+            reverted
+              ? `Sync: ${label} failed — reverted`
+              : `Sync: ${label} failed — newer local changes were kept`,
+          );
         }
         return result;
       }).catch((err) => {
         console.warn(`[hierarchy-sync] ${label} error:`, err);
-        if (hierarchyVersionRef.current === capturedVersion) {
+        const reverted = hierarchyVersionRef.current === capturedVersion;
+        if (reverted) {
           restoreHierarchyChange(prevHierarchy, Math.max(capturedVersion - 1, 0));
         }
-        showSyncStatus("error", `Sync: ${label} error — reverted`);
+        showSyncStatus(
+          "error",
+          reverted
+            ? `Sync: ${label} error — reverted`
+            : `Sync: ${label} error — newer local changes were kept`,
+        );
         return { success: false, error: String(err) };
       });
     },
