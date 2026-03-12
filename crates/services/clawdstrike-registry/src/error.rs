@@ -21,7 +21,7 @@ pub enum RegistryError {
     Unauthorized(String),
 
     #[error("database error: {0}")]
-    Database(rusqlite::Error),
+    Database(#[source] rusqlite::Error),
 
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
