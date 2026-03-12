@@ -2156,7 +2156,7 @@ mod tests {
             .unwrap();
 
         let err = db.get_package("bad-pkg").unwrap_err();
-        assert!(matches!(err, RegistryError::Integrity(_)));
+        assert!(matches!(err, RegistryError::Database(_)));
     }
 
     #[test]
@@ -2192,7 +2192,7 @@ mod tests {
             .unwrap();
 
         let err = db.list_versions("bad-version-pkg").unwrap_err();
-        assert!(matches!(err, RegistryError::Integrity(_)));
+        assert!(matches!(err, RegistryError::Database(_)));
     }
 
     #[test]

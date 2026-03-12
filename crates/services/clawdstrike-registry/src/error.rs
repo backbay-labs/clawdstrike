@@ -21,7 +21,7 @@ pub enum RegistryError {
     Unauthorized(String),
 
     #[error("database error: {0}")]
-    Database(#[source] rusqlite::Error),
+    Database(#[from] rusqlite::Error),
 
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
@@ -31,17 +31,6 @@ pub enum RegistryError {
 
     #[error("internal error: {0}")]
     Internal(String),
-}
-
-impl From<rusqlite::Error> for RegistryError {
-    fn from(err: rusqlite::Error) -> Self {
-        match err {
-            rusqlite::Error::FromSqlConversionFailure(_, _, source) => {
-                RegistryError::Integrity(source.to_string())
-            }
-            other => RegistryError::Database(other),
-        }
-    }
 }
 
 #[derive(Serialize)]
