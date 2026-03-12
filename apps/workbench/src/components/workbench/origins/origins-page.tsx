@@ -123,21 +123,19 @@ function useProfileLibrary() {
 
   const clone = useCallback(
     (id: string) => {
-      let newId: string | undefined;
-      persist((prev) => {
-        const src = prev.find((p) => p.id === id);
-        if (!src) return prev;
-        const baseId = src.id.replace(/-copy-[a-f0-9]{6}$/, "");
-        const cloned: OriginProfile = {
-          ...structuredClone(src),
-          id: `${baseId}-copy-${crypto.randomUUID().slice(0, 6)}`,
-        };
-        newId = cloned.id;
-        return [...prev, cloned];
-      });
-      return newId;
+      const src = profiles.find((profile) => profile.id === id);
+      if (!src) return undefined;
+
+      const baseId = src.id.replace(/-copy-[a-f0-9]{6}$/, "");
+      const cloned: OriginProfile = {
+        ...structuredClone(src),
+        id: `${baseId}-copy-${crypto.randomUUID().slice(0, 6)}`,
+      };
+
+      persist((prev) => [...prev, cloned]);
+      return cloned.id;
     },
-    [persist],
+    [persist, profiles],
   );
 
   const reorder = useCallback(
@@ -212,6 +210,18 @@ const PROVIDER_META: Record<
     color: "#6f7f9a",
     desc: "External webhook integrations and API calls",
   },
+  cli: {
+    label: "CLI",
+    icon: IconCode,
+    color: "#5b8def",
+    desc: "Local terminal and command-line initiated actions",
+  },
+  api: {
+    label: "API",
+    icon: IconNetwork,
+    color: "#3dbf84",
+    desc: "Direct API clients and service integrations",
+  },
 };
 
 function getProviderMeta(provider: OriginProvider | string | undefined) {
@@ -227,6 +237,13 @@ function getProviderColor(provider: OriginProvider | string | undefined) {
   return getProviderMeta(provider)?.color ?? "#6f7f9a";
 }
 
+function isCustomChoice<
+  T extends string,
+  O extends ReadonlyArray<{ value: T }>
+>(value: string | undefined, options: O): boolean {
+  return value !== undefined && !options.some((option) => option.value === value);
+}
+
 // ---------------------------------------------------------------------------
 // Select option constants
 // ---------------------------------------------------------------------------
@@ -239,6 +256,8 @@ const PROVIDERS: { value: OriginProvider; label: string }[] = [
   { value: "email", label: "Email" },
   { value: "discord", label: "Discord" },
   { value: "webhook", label: "Webhook" },
+  { value: "cli", label: "CLI" },
+  { value: "api", label: "API" },
 ];
 
 const SPACE_TYPES: { value: SpaceType; label: string }[] = [
@@ -791,14 +810,54 @@ function MatchRulesEditor({
   );
 
   // C7: Track custom mode for provider and space_type dropdowns
-  const knownProviders = PROVIDERS.map((p) => p.value as string);
-  const knownSpaceTypes = SPACE_TYPES.map((st) => st.value as string);
-  const isCustomProvider =
-    !!match.provider && !knownProviders.includes(match.provider);
-  const isCustomSpaceType =
-    !!match.space_type && !knownSpaceTypes.includes(match.space_type);
-  const [customProviderMode, setCustomProviderMode] = useState(isCustomProvider);
-  const [customSpaceTypeMode, setCustomSpaceTypeMode] = useState(isCustomSpaceType);
+  const [customProviderMode, setCustomProviderMode] = useState(() =>
+    isCustomChoice(match.provider, PROVIDERS),
+  );
+  const [customProviderDraft, setCustomProviderDraft] = useState(
+    () => match.provider ?? "",
+  );
+  const [customSpaceTypeMode, setCustomSpaceTypeMode] = useState(() =>
+    isCustomChoice(match.space_type, SPACE_TYPES),
+  );
+  const [customSpaceTypeDraft, setCustomSpaceTypeDraft] = useState(
+    () => match.space_type ?? "",
+  );
+
+  useEffect(() => {
+    if (isCustomChoice(match.provider, PROVIDERS)) {
+      setCustomProviderMode(true);
+      setCustomProviderDraft(match.provider ?? "");
+      return;
+    }
+
+    if (match.provider !== undefined) {
+      setCustomProviderMode(false);
+      setCustomProviderDraft(match.provider);
+      return;
+    }
+
+    if (!customProviderMode) {
+      setCustomProviderDraft("");
+    }
+  }, [match.provider, customProviderMode]);
+
+  useEffect(() => {
+    if (isCustomChoice(match.space_type, SPACE_TYPES)) {
+      setCustomSpaceTypeMode(true);
+      setCustomSpaceTypeDraft(match.space_type ?? "");
+      return;
+    }
+
+    if (match.space_type !== undefined) {
+      setCustomSpaceTypeMode(false);
+      setCustomSpaceTypeDraft(match.space_type);
+      return;
+    }
+
+    if (!customSpaceTypeMode) {
+      setCustomSpaceTypeDraft("");
+    }
+  }, [match.space_type, customSpaceTypeMode]);
 
   const selectClass =
     "bg-[#131721] border-[#2d3240] text-[#ece7dc] text-xs font-mono w-full";
@@ -815,8 +874,12 @@ function MatchRulesEditor({
         {customProviderMode ? (
           <div className="flex items-center gap-1.5">
             <Input
-              value={match.provider ?? ""}
-              onChange={(e) => patch({ provider: e.target.value || undefined })}
+              value={customProviderDraft}
+              onChange={(e) => {
+                const nextValue = e.target.value;
+                setCustomProviderDraft(nextValue);
+                patch({ provider: nextValue || undefined });
+              }}
               placeholder="custom provider name"
               className={inputClass}
               autoFocus
@@ -824,6 +887,7 @@ function MatchRulesEditor({
             <button
               onClick={() => {
                 setCustomProviderMode(false);
+                setCustomProviderDraft("");
                 patch({ provider: undefined });
               }}
               className="p-1 rounded text-[#6f7f9a] hover:text-[#ece7dc] hover:bg-[#2d3240] transition-colors shrink-0"
@@ -834,12 +898,16 @@ function MatchRulesEditor({
           </div>
         ) : (
           <Select
-            value={match.provider ?? "__none__"}
+            value={customProviderMode ? "__custom__" : match.provider ?? "__none__"}
             onValueChange={(val: string | null) => {
               if (val === "__custom__") {
                 setCustomProviderMode(true);
-                patch({ provider: "" });
+                setCustomProviderDraft(match.provider ?? "");
               } else {
+                setCustomProviderMode(false);
+                setCustomProviderDraft(
+                  val === "__none__" || val == null ? "" : val,
+                );
                 patch({
                   provider:
                     val === "__none__" || val == null
@@ -884,8 +952,12 @@ function MatchRulesEditor({
         {customSpaceTypeMode ? (
           <div className="flex items-center gap-1.5">
             <Input
-              value={match.space_type ?? ""}
-              onChange={(e) => patch({ space_type: e.target.value || undefined })}
+              value={customSpaceTypeDraft}
+              onChange={(e) => {
+                const nextValue = e.target.value;
+                setCustomSpaceTypeDraft(nextValue);
+                patch({ space_type: nextValue || undefined });
+              }}
               placeholder="custom space type"
               className={inputClass}
               autoFocus
@@ -893,6 +965,7 @@ function MatchRulesEditor({
             <button
               onClick={() => {
                 setCustomSpaceTypeMode(false);
+                setCustomSpaceTypeDraft("");
                 patch({ space_type: undefined });
               }}
               className="p-1 rounded text-[#6f7f9a] hover:text-[#ece7dc] hover:bg-[#2d3240] transition-colors shrink-0"
@@ -903,12 +976,16 @@ function MatchRulesEditor({
           </div>
         ) : (
           <Select
-            value={match.space_type ?? "__none__"}
+            value={customSpaceTypeMode ? "__custom__" : match.space_type ?? "__none__"}
             onValueChange={(val: string | null) => {
               if (val === "__custom__") {
                 setCustomSpaceTypeMode(true);
-                patch({ space_type: "" });
+                setCustomSpaceTypeDraft(match.space_type ?? "");
               } else {
+                setCustomSpaceTypeMode(false);
+                setCustomSpaceTypeDraft(
+                  val === "__none__" || val == null ? "" : val,
+                );
                 patch({
                   space_type:
                     val === "__none__" || val == null
@@ -1101,10 +1178,8 @@ function MatchRulesEditor({
       {/* C4: Actor ID */}
       <FieldRow label="Actor ID">
         <Input
-          value={(match as OriginMatch & Record<string, unknown>).actor_id as string ?? ""}
-          onChange={(e) =>
-            patch({ actor_id: e.target.value || undefined } as Partial<OriginMatch>)
-          }
+          value={match.actor_id ?? ""}
+          onChange={(e) => patch({ actor_id: e.target.value || undefined })}
           placeholder="e.g. U12345"
           className={inputClass}
         />
@@ -1113,11 +1188,12 @@ function MatchRulesEditor({
       {/* C4: Actor Type */}
       <FieldRow label="Actor Type">
         <Select
-          value={(match as OriginMatch & Record<string, unknown>).actor_type as string ?? "__none__"}
+          value={match.actor_type ?? "__none__"}
           onValueChange={(val: string | null) =>
             patch({
-              actor_type: val === "__none__" || val == null ? undefined : val,
-            } as Partial<OriginMatch>)
+              actor_type:
+                val === "__none__" || val == null ? undefined : (val as ActorType),
+            })
           }
         >
           <SelectTrigger className={selectClass}>
@@ -2313,10 +2389,13 @@ export function OriginsPage() {
   const handleProfileUpdate = useCallback(
     (updated: OriginProfile) => {
       if (!selectedProfileId) return;
+      const normalizedId = updated.id.trim();
+      const normalizedProfile =
+        updated.id === normalizedId ? updated : { ...updated, id: normalizedId };
 
       // Validate ID changes
-      if (updated.id !== selectedProfileId) {
-        if (updated.id.trim() === "") {
+      if (normalizedProfile.id !== selectedProfileId) {
+        if (normalizedProfile.id === "") {
           toast({
             type: "warning",
             title: "Invalid profile ID",
@@ -2327,24 +2406,24 @@ export function OriginsPage() {
         if (
           library.profiles.some(
             (p) =>
-              p.id.toLowerCase() === updated.id.toLowerCase() &&
+              p.id.trim().toLowerCase() === normalizedProfile.id.toLowerCase() &&
               p.id !== selectedProfileId,
           )
         ) {
           toast({
             type: "warning",
             title: "Duplicate profile ID",
-            description: `A profile with ID "${updated.id}" already exists.`,
+            description: `A profile with ID "${normalizedProfile.id}" already exists.`,
           });
           return;
         }
       }
 
-      library.update(selectedProfileId, updated);
+      library.update(selectedProfileId, normalizedProfile);
       // Track ID changes — mark as an ID edit so the stable key doesn't bump
-      if (updated.id !== selectedProfileId) {
+      if (normalizedProfile.id !== selectedProfileId) {
         const oldId = selectedProfileId;
-        const newId = updated.id;
+        const newId = normalizedProfile.id;
         const updatedAt = new Date().toISOString();
         isIdEditRef.current = true;
         setSelectedProfileId(newId);

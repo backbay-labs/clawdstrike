@@ -1045,6 +1045,7 @@ export function HierarchyPage() {
   // Version counter to prevent stale optimistic rollbacks on concurrent mutations
   const [, setHierarchyVersion] = useState(0);
   const hierarchyVersionRef = useRef(0);
+  const hierarchyRef = useRef(hierarchy);
 
   const [selectedId, setSelectedId] = useState<string | null>(hierarchy.rootId);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => {
@@ -1067,6 +1068,10 @@ export function HierarchyPage() {
   // Drag state
   const [dragSourceId, setDragSourceId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+
+  useEffect(() => {
+    hierarchyRef.current = hierarchy;
+  }, [hierarchy]);
 
   // ---------------------------------------------------------------------------
   // Fleet sync state (P2-3)
@@ -1331,8 +1336,9 @@ export function HierarchyPage() {
   const handleDoRename = useCallback(
     (name: string) => {
       if (renameTarget) {
-        const prevHierarchy = hierarchy;
-        setHierarchy((prev) => renameNode(prev, renameTarget, name));
+        const prevHierarchy = hierarchyRef.current;
+        const updated = renameNode(prevHierarchy, renameTarget, name);
+        setHierarchy(updated);
         setHierarchyVersion((v) => v + 1);
         hierarchyVersionRef.current += 1;
         setRenameTarget(null);
@@ -1344,16 +1350,20 @@ export function HierarchyPage() {
         );
       }
     },
-    [renameTarget, hierarchy, syncToBackend, connection],
+    [renameTarget, syncToBackend, connection],
   );
 
   const handleAssign = useCallback(
     (policyId: string, policyName: string) => {
       if (assignTarget) {
-        const prevHierarchy = hierarchy;
-        setHierarchy((prev) =>
-          assignPolicy(prev, assignTarget, policyId, policyName),
+        const prevHierarchy = hierarchyRef.current;
+        const updated = assignPolicy(
+          prevHierarchy,
+          assignTarget,
+          policyId,
+          policyName,
         );
+        setHierarchy(updated);
         setHierarchyVersion((v) => v + 1);
         hierarchyVersionRef.current += 1;
         setAssignTarget(null);
@@ -1368,13 +1378,14 @@ export function HierarchyPage() {
         );
       }
     },
-    [assignTarget, hierarchy, syncToBackend, connection],
+    [assignTarget, syncToBackend, connection],
   );
 
   const handleUnassign = useCallback(() => {
     if (assignTarget) {
-      const prevHierarchy = hierarchy;
-      setHierarchy((prev) => unassignPolicy(prev, assignTarget));
+      const prevHierarchy = hierarchyRef.current;
+      const updated = unassignPolicy(prevHierarchy, assignTarget);
+      setHierarchy(updated);
       setHierarchyVersion((v) => v + 1);
       hierarchyVersionRef.current += 1;
       setAssignTarget(null);
@@ -1388,7 +1399,7 @@ export function HierarchyPage() {
         prevHierarchy,
       );
     }
-  }, [assignTarget, hierarchy, syncToBackend, connection]);
+  }, [assignTarget, syncToBackend, connection]);
 
   const handleDragStart = useCallback((id: string) => {
     setDragSourceId(id);
