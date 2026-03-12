@@ -816,12 +816,22 @@ function MatchRulesEditor({
   const [customProviderDraft, setCustomProviderDraft] = useState(
     () => match.provider ?? "",
   );
+  const customProviderModeRef = useRef(customProviderMode);
   const [customSpaceTypeMode, setCustomSpaceTypeMode] = useState(() =>
     isCustomChoice(match.space_type, SPACE_TYPES),
   );
   const [customSpaceTypeDraft, setCustomSpaceTypeDraft] = useState(
     () => match.space_type ?? "",
   );
+  const customSpaceTypeModeRef = useRef(customSpaceTypeMode);
+
+  useEffect(() => {
+    customProviderModeRef.current = customProviderMode;
+  }, [customProviderMode]);
+
+  useEffect(() => {
+    customSpaceTypeModeRef.current = customSpaceTypeMode;
+  }, [customSpaceTypeMode]);
 
   useEffect(() => {
     if (isCustomChoice(match.provider, PROVIDERS)) {
@@ -836,7 +846,7 @@ function MatchRulesEditor({
       return;
     }
 
-    if (!customProviderMode) {
+    if (!customProviderModeRef.current) {
       setCustomProviderDraft("");
     }
   }, [match.provider]);
@@ -854,7 +864,7 @@ function MatchRulesEditor({
       return;
     }
 
-    if (!customSpaceTypeMode) {
+    if (!customSpaceTypeModeRef.current) {
       setCustomSpaceTypeDraft("");
     }
   }, [match.space_type]);

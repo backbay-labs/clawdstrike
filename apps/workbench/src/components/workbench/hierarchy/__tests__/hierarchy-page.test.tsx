@@ -508,6 +508,21 @@ describe("HierarchyPage", () => {
     expect(fleetClientMocks.createHierarchyNode).toHaveBeenCalledTimes(2);
   });
 
+  it("confirms before push when leaf validation reports warnings", async () => {
+    const user = userEvent.setup();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValueOnce(false);
+
+    renderWithProviders(<HierarchyPage />);
+
+    await user.click(screen.getByRole("button", { name: "DEMO" }));
+    await user.click(screen.getByRole("button", { name: "Push to Fleet" }));
+
+    expect(confirmSpy).toHaveBeenCalledWith(
+      expect.stringContaining("validation warning(s)"),
+    );
+    expect(fleetClientMocks.createHierarchyNode).not.toHaveBeenCalled();
+  });
+
   it("still allows dragging legacy agent leaves onto teams", async () => {
     const user = userEvent.setup();
 

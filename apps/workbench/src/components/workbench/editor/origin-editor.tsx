@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import {
   Collapsible,
   CollapsibleTrigger,
@@ -305,17 +305,27 @@ function OriginProfileCard({ profile, index, onUpdate, onRemove }: OriginProfile
   const [customProviderDraft, setCustomProviderDraft] = useState(
     () => profile.match_rules.provider ?? "",
   );
+  const customProviderModeRef = useRef(customProviderMode);
   const [customSpaceTypeMode, setCustomSpaceTypeMode] = useState(() =>
     isCustomChoice(profile.match_rules.space_type, SPACE_TYPES),
   );
   const [customSpaceTypeDraft, setCustomSpaceTypeDraft] = useState(
     () => profile.match_rules.space_type ?? "",
   );
+  const customSpaceTypeModeRef = useRef(customSpaceTypeMode);
 
   useEffect(() => {
     setMetadataText(serializedMetadata);
     setMetadataError(false);
   }, [serializedMetadata]);
+
+  useEffect(() => {
+    customProviderModeRef.current = customProviderMode;
+  }, [customProviderMode]);
+
+  useEffect(() => {
+    customSpaceTypeModeRef.current = customSpaceTypeMode;
+  }, [customSpaceTypeMode]);
 
   useEffect(() => {
     if (isCustomChoice(profile.match_rules.provider, PROVIDERS)) {
@@ -330,7 +340,7 @@ function OriginProfileCard({ profile, index, onUpdate, onRemove }: OriginProfile
       return;
     }
 
-    if (!customProviderMode) {
+    if (!customProviderModeRef.current) {
       setCustomProviderDraft("");
     }
   }, [profile.match_rules.provider]);
@@ -348,7 +358,7 @@ function OriginProfileCard({ profile, index, onUpdate, onRemove }: OriginProfile
       return;
     }
 
-    if (!customSpaceTypeMode) {
+    if (!customSpaceTypeModeRef.current) {
       setCustomSpaceTypeDraft("");
     }
   }, [profile.match_rules.space_type]);

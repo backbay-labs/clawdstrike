@@ -1516,12 +1516,14 @@ export function HierarchyPage() {
       return;
     }
 
-    // Issue #5: Validate before push — warn on errors
+    // Issue #5: Validate before push and require confirmation for any leaf warnings/errors
     const issues = validateAllLeaves(hierarchy, savedPolicies);
-    const errors = issues.filter((i) => i.severity === "error");
-    if (errors.length > 0) {
+    if (issues.length > 0) {
+      const errorCount = issues.filter((i) => i.severity === "error").length;
+      const issueCount = errorCount > 0 ? errorCount : issues.length;
+      const issueLabel = errorCount > 0 ? "error" : "warning";
       const proceed = window.confirm(
-        `There are ${errors.length} validation error(s) in the hierarchy. Push anyway?`,
+        `There are ${issueCount} validation ${issueLabel}(s) in the hierarchy. Push anyway?`,
       );
       if (!proceed) return;
     }
