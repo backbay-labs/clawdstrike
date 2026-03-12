@@ -1,6 +1,7 @@
 import {
   useRef,
   useEffect,
+  useLayoutEffect,
   useState,
   useCallback,
   useMemo,
@@ -411,13 +412,11 @@ export function DelegationPage() {
     isPanningRef.current = false;
   }, []);
 
-  // Zoom state refs for the native wheel listener (avoids stale closures)
-  const zoomRef = useRef(zoom);
-  const panXRef = useRef(panX);
-  const panYRef = useRef(panY);
-  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
-  useEffect(() => { panXRef.current = panX; }, [panX]);
-  useEffect(() => { panYRef.current = panY; }, [panY]);
+  // Keep wheel zoom/pan reads on one coherent snapshot between renders.
+  const viewportRef = useRef({ zoom, panX, panY });
+  useLayoutEffect(() => {
+    viewportRef.current = { zoom, panX, panY };
+  }, [zoom, panX, panY]);
 
   // Native wheel listener with { passive: false } so we can preventDefault
   useEffect(() => {
@@ -430,9 +429,7 @@ export function DelegationPage() {
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
       const factor = e.deltaY < 0 ? 1.1 : 0.9;
-      const curZoom = zoomRef.current;
-      const curPanX = panXRef.current;
-      const curPanY = panYRef.current;
+      const { zoom: curZoom, panX: curPanX, panY: curPanY } = viewportRef.current;
       const newZoom = Math.min(Math.max(curZoom * factor, 0.15), 4);
       const wx = (x - curPanX) / curZoom;
       const wy = (y - curPanY) / curZoom;
