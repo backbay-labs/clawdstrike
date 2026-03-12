@@ -14,6 +14,7 @@ use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 use tauri::{Manager, Runtime};
+use tokio::sync::Mutex as AsyncMutex;
 
 /// Shared state for the MCP sidecar, managed by Tauri.
 #[derive(Clone)]
@@ -27,6 +28,7 @@ struct McpInner {
     running: bool,
     last_error: Option<String>,
     child: Option<tokio::process::Child>,
+    stderr_task: Option<tauri::async_runtime::JoinHandle<()>>,
     /// The resolved runtime command (e.g. "bun" or "npx").
     runtime_cmd: String,
     /// The resolved path to the MCP server entry point.
@@ -51,6 +53,7 @@ impl McpState {
                 running: false,
                 last_error: None,
                 child: None,
+                stderr_task: None,
                 runtime_cmd: String::new(),
                 script_path: String::new(),
             })),
@@ -59,12 +62,29 @@ impl McpState {
 }
 
 fn clear_runtime_state(inner: &mut McpInner) {
+    if let Some(stderr_task) = inner.stderr_task.take() {
+        stderr_task.abort();
+    }
     inner.port = 0;
     inner.token.clear();
     inner.running = false;
+    inner.last_error = None;
     inner.child = None;
     inner.runtime_cmd.clear();
     inner.script_path.clear();
+}
+
+fn set_runtime_error(inner: &mut McpInner, error: impl Into<String>) {
+    clear_runtime_state(inner);
+    inner.last_error = Some(error.into());
+}
+
+fn persist_runtime_error(state: &McpState, error: impl Into<String>) -> String {
+    let error = error.into();
+    if let Ok(mut inner) = state.inner.lock() {
+        set_runtime_error(&mut inner, error.clone());
+    }
+    error
 }
 
 fn current_status(inner: &McpInner) -> McpStatusResponse {
@@ -161,21 +181,92 @@ fn resolve_bundled_binary_path<R: Runtime>(app: &tauri::AppHandle<R>) -> Option<
 
 /// Common locations for JS runtimes on macOS/Linux that may not be on the
 /// restricted PATH inherited by GUI apps launched from Finder/Dock.
+#[cfg(windows)]
+const EXTRA_PATHS: &[&str] = &[r"C:\Program Files\nodejs", r"C:\Program Files\Git\cmd"];
+#[cfg(not(windows))]
 const EXTRA_PATHS: &[&str] = &["/opt/homebrew/bin", "/usr/local/bin"];
 
-const HOME_BIN_SUBDIRS: &[&str] = &[
-    ".local/bin",
-    ".bun/bin",
-    ".nvm/current/bin",
-    "bin",
-    ".local/share/mise/shims",
-    ".asdf/shims",
-    ".proto/shims",
-    ".proto/bin",
-    ".cargo/bin",
-    ".nix-profile/bin",
-    ".pyenv/shims",
+#[cfg(windows)]
+const HOME_BIN_SUBDIRS: &[&[&str]] = &[
+    &["AppData", "Local", "Microsoft", "WindowsApps"],
+    &["AppData", "Local", "bun", "bin"],
+    &["bin"],
+    &[".cargo", "bin"],
 ];
+
+#[cfg(not(windows))]
+const HOME_BIN_SUBDIRS: &[&[&str]] = &[
+    &[".local", "bin"],
+    &[".bun", "bin"],
+    &[".nvm", "current", "bin"],
+    &["bin"],
+    &[".local", "share", "mise", "shims"],
+    &[".asdf", "shims"],
+    &[".proto", "shims"],
+    &[".proto", "bin"],
+    &[".cargo", "bin"],
+    &[".nix-profile", "bin"],
+    &[".pyenv", "shims"],
+];
+
+fn home_bin_path(home: &std::path::Path, subdir: &[&str]) -> PathBuf {
+    subdir
+        .iter()
+        .fold(home.to_path_buf(), |path, segment| path.join(segment))
+}
+
+#[cfg(windows)]
+fn executable_suffixes() -> Vec<String> {
+    let from_env = std::env::var("PATHEXT")
+        .ok()
+        .map(|value| {
+            value
+                .split(';')
+                .filter_map(|suffix| {
+                    let trimmed = suffix.trim();
+                    if trimmed.is_empty() {
+                        return None;
+                    }
+                    let normalized = if trimmed.starts_with('.') {
+                        trimmed.to_ascii_lowercase()
+                    } else {
+                        format!(".{}", trimmed.to_ascii_lowercase())
+                    };
+                    Some(normalized)
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    if from_env.is_empty() {
+        vec![
+            ".com".to_string(),
+            ".exe".to_string(),
+            ".bat".to_string(),
+            ".cmd".to_string(),
+        ]
+    } else {
+        from_env
+    }
+}
+
+fn binary_path_candidates(base: &Path) -> Vec<PathBuf> {
+    #[cfg(windows)]
+    let mut candidates = vec![base.to_path_buf()];
+    #[cfg(not(windows))]
+    let candidates = vec![base.to_path_buf()];
+
+    #[cfg(windows)]
+    {
+        if base.extension().is_none() {
+            for suffix in executable_suffixes() {
+                candidates.push(base.with_extension(suffix.trim_start_matches('.')));
+            }
+        }
+    }
+
+    candidates
+}
 
 /// Resolve an absolute path for `name` by checking PATH first, then common
 /// install locations. Returns `None` if the binary cannot be found anywhere.
@@ -196,17 +287,19 @@ fn resolve_binary(name: &str) -> Option<String> {
     // running with user privileges (no escalation possible).
     if let Some(home) = dirs_next::home_dir() {
         for subdir in HOME_BIN_SUBDIRS {
-            let candidate = home.join(subdir).join(name);
-            if candidate.exists() {
-                return Some(candidate.to_string_lossy().to_string());
+            for candidate in binary_path_candidates(&home_bin_path(&home, subdir).join(name)) {
+                if candidate.exists() {
+                    return Some(candidate.to_string_lossy().to_string());
+                }
             }
         }
     }
     // Check well-known system paths.
     for dir in EXTRA_PATHS {
-        let candidate = std::path::PathBuf::from(dir).join(name);
-        if candidate.exists() {
-            return Some(candidate.to_string_lossy().to_string());
+        for candidate in binary_path_candidates(&std::path::PathBuf::from(dir).join(name)) {
+            if candidate.exists() {
+                return Some(candidate.to_string_lossy().to_string());
+            }
         }
     }
     None
@@ -282,7 +375,7 @@ fn build_enriched_path(existing_path: Option<OsString>, home_dir: Option<PathBuf
     let mut dirs: Vec<PathBuf> = Vec::new();
     if let Some(home) = home_dir {
         for subdir in HOME_BIN_SUBDIRS {
-            dirs.push(home.join(subdir));
+            dirs.push(home_bin_path(&home, subdir));
         }
     }
     dirs.extend(EXTRA_PATHS.iter().map(PathBuf::from));
@@ -400,11 +493,51 @@ fn resolve_launch_configs<R: Runtime>(
     Ok(configs)
 }
 
+const SIDECAR_STARTUP_TIMEOUT_MS: u64 = 5_000;
+const SIDECAR_READY_POLL_MS: u64 = 150;
+const SIDECAR_HEALTHCHECK_TIMEOUT_MS: u64 = 250;
+const STARTUP_STDERR_CAPTURE_LIMIT: usize = 8_192;
+const SIDECAR_STARTING_MESSAGE: &str = "Embedded MCP sidecar is starting...";
+
+async fn sidecar_healthcheck_ready(port: u16) -> bool {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let connect = tokio::time::timeout(
+        std::time::Duration::from_millis(SIDECAR_HEALTHCHECK_TIMEOUT_MS),
+        tokio::net::TcpStream::connect(("127.0.0.1", port)),
+    )
+    .await;
+    let mut stream = match connect {
+        Ok(Ok(stream)) => stream,
+        _ => return false,
+    };
+
+    let request =
+        format!("GET /health HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n");
+    if stream.write_all(request.as_bytes()).await.is_err() {
+        return false;
+    }
+
+    let mut buf = [0u8; 128];
+    match tokio::time::timeout(
+        std::time::Duration::from_millis(SIDECAR_HEALTHCHECK_TIMEOUT_MS),
+        stream.read(&mut buf),
+    )
+    .await
+    {
+        Ok(Ok(n)) if n > 0 => {
+            let response = String::from_utf8_lossy(&buf[..n]);
+            response.starts_with("HTTP/1.1 200") || response.starts_with("HTTP/1.0 200")
+        }
+        _ => false,
+    }
+}
+
 async fn spawn_child_for_launch(
     launch: &LaunchConfig,
     port: u16,
     token: &str,
-) -> Result<tokio::process::Child, String> {
+) -> Result<SpawnedChild, String> {
     let mut child = tokio::process::Command::new(&launch.command_path)
         .args(&launch.args)
         .env("PATH", enriched_path())
@@ -416,53 +549,132 @@ async fn spawn_child_for_launch(
         .kill_on_drop(true)
         .spawn()
         .map_err(|e| format!("Failed to spawn MCP server ({}): {e}", launch.runtime_label))?;
+    let stderr_buffer = Arc::new(AsyncMutex::new(Vec::new()));
+    let mut stderr_task = None;
+    if let Some(stderr) = child.stderr.take() {
+        let stderr_buffer_for_task = Arc::clone(&stderr_buffer);
+        stderr_task = Some(tauri::async_runtime::spawn(async move {
+            drain_child_stderr(stderr, stderr_buffer_for_task).await;
+        }));
+    }
 
-    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+    let startup_deadline =
+        tokio::time::Instant::now() + std::time::Duration::from_millis(SIDECAR_STARTUP_TIMEOUT_MS);
 
-    match child.try_wait() {
-        Ok(Some(exit_status)) => {
-            let stderr_msg = if let Some(stderr) = child.stderr.take() {
-                use tokio::io::AsyncReadExt;
-                let mut buf = Vec::new();
-                let mut reader = stderr.take(8192);
-                let _ = reader.read_to_end(&mut buf).await;
-                String::from_utf8_lossy(&buf).to_string()
-            } else {
-                String::new()
-            };
-            let msg = format!(
-                "MCP server exited immediately (status: {exit_status}). stderr: {}",
-                if stderr_msg.is_empty() {
-                    "(empty)"
-                } else {
-                    stderr_msg.trim()
-                },
-            );
-            eprintln!("[mcp-sidecar] {msg}");
-            #[cfg(unix)]
-            {
-                use std::os::unix::process::ExitStatusExt;
-                if let Some(signal) = exit_status.signal() {
-                    let sig_name = match signal {
-                        11 => "SIGSEGV",
-                        6 => "SIGABRT",
-                        9 => "SIGKILL",
-                        15 => "SIGTERM",
-                        _ => "unknown",
-                    };
-                    eprintln!("[mcp-sidecar] MCP server killed by signal {signal} ({sig_name})");
+    loop {
+        match child.try_wait() {
+            Ok(Some(exit_status)) => {
+                let stderr_msg = snapshot_stderr_buffer(&stderr_buffer).await;
+                let msg = format!(
+                    "MCP server exited immediately (status: {exit_status}). stderr: {}",
+                    if stderr_msg.is_empty() {
+                        "(empty)"
+                    } else {
+                        stderr_msg.trim()
+                    },
+                );
+                eprintln!("[mcp-sidecar] {msg}");
+                #[cfg(unix)]
+                {
+                    use std::os::unix::process::ExitStatusExt;
+                    if let Some(signal) = exit_status.signal() {
+                        let sig_name = match signal {
+                            11 => "SIGSEGV",
+                            6 => "SIGABRT",
+                            9 => "SIGKILL",
+                            15 => "SIGTERM",
+                            _ => "unknown",
+                        };
+                        eprintln!(
+                            "[mcp-sidecar] MCP server killed by signal {signal} ({sig_name})"
+                        );
+                    }
+                }
+                if let Some(task) = stderr_task.take() {
+                    task.abort();
+                }
+                return Err(msg);
+            }
+            Ok(None) => {
+                if sidecar_healthcheck_ready(port).await {
+                    return Ok(SpawnedChild { child, stderr_task });
                 }
             }
-            Err(msg)
+            Err(e) => {
+                let msg = format!(
+                    "Failed to inspect MCP sidecar process ({}): {e}",
+                    launch.runtime_label
+                );
+                eprintln!("[mcp-sidecar] {msg}");
+                if let Some(task) = stderr_task.take() {
+                    task.abort();
+                }
+                return Err(msg);
+            }
         }
-        Ok(None) => Ok(child),
-        Err(e) => {
-            let msg = format!(
-                "Failed to inspect MCP sidecar process ({}): {e}",
-                launch.runtime_label
-            );
-            eprintln!("[mcp-sidecar] {msg}");
-            Err(msg)
+
+        if tokio::time::Instant::now() >= startup_deadline {
+            let _ = child.start_kill();
+            let stderr_msg = snapshot_stderr_buffer(&stderr_buffer).await;
+            if let Some(task) = stderr_task.take() {
+                task.abort();
+            }
+            return Err(if stderr_msg.is_empty() {
+                format!(
+                    "MCP server failed to become ready on /health within {}ms",
+                    SIDECAR_STARTUP_TIMEOUT_MS
+                )
+            } else {
+                format!(
+                    "MCP server failed to become ready on /health within {}ms. stderr: {}",
+                    SIDECAR_STARTUP_TIMEOUT_MS,
+                    stderr_msg.trim()
+                )
+            });
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(SIDECAR_READY_POLL_MS)).await;
+    }
+}
+
+struct SpawnedChild {
+    child: tokio::process::Child,
+    stderr_task: Option<tauri::async_runtime::JoinHandle<()>>,
+}
+
+fn append_capped_stderr(buffer: &mut Vec<u8>, chunk: &[u8]) {
+    if buffer.len() >= STARTUP_STDERR_CAPTURE_LIMIT {
+        return;
+    }
+
+    let remaining = STARTUP_STDERR_CAPTURE_LIMIT - buffer.len();
+    let take_len = remaining.min(chunk.len());
+    buffer.extend_from_slice(&chunk[..take_len]);
+}
+
+async fn snapshot_stderr_buffer(buffer: &Arc<AsyncMutex<Vec<u8>>>) -> String {
+    let bytes = buffer.lock().await;
+    String::from_utf8_lossy(&bytes).to_string()
+}
+
+async fn drain_child_stderr(
+    mut stderr: tokio::process::ChildStderr,
+    stderr_buffer: Arc<AsyncMutex<Vec<u8>>>,
+) {
+    use tokio::io::AsyncReadExt;
+
+    let mut buf = [0u8; 4096];
+    loop {
+        match stderr.read(&mut buf).await {
+            Ok(0) => break,
+            Ok(n) => {
+                let mut captured = stderr_buffer.lock().await;
+                append_capped_stderr(&mut captured, &buf[..n]);
+            }
+            Err(err) => {
+                eprintln!("[mcp-sidecar] stderr drain failed: {err}");
+                break;
+            }
         }
     }
 }
@@ -481,21 +693,29 @@ pub async fn spawn_mcp_server<R: Runtime>(
         if let Some(ref mut child) = inner.child {
             let _ = child.start_kill();
         }
-        inner.child = None;
-        inner.running = false;
-        inner.last_error = None;
+        clear_runtime_state(&mut inner);
+        inner.last_error = Some(SIDECAR_STARTING_MESSAGE.to_string());
     }
 
     let token = generate_token();
-    let launch_configs = resolve_launch_configs(app)?;
+    let launch_configs = match resolve_launch_configs(app) {
+        Ok(configs) => configs,
+        Err(error) => return Err(persist_runtime_error(state, error)),
+    };
     let mut launch_errors = Vec::new();
 
     for launch in launch_configs {
         // Find a fresh port for each attempt — a previous failed spawn may have
         // left the port in TIME_WAIT or another process may have claimed it.
-        let port = find_available_port()
-            .await
-            .ok_or_else(|| "No available port in range 9877-9899".to_string())?;
+        let port = match find_available_port().await {
+            Some(port) => port,
+            None => {
+                return Err(persist_runtime_error(
+                    state,
+                    "No available port in range 9877-9899",
+                ));
+            }
+        };
 
         eprintln!(
             "[mcp-sidecar] spawning: {} {} (script: {}, port: {})",
@@ -506,7 +726,7 @@ pub async fn spawn_mcp_server<R: Runtime>(
         );
 
         match spawn_child_for_launch(&launch, port, &token).await {
-            Ok(child) => {
+            Ok(spawned) => {
                 let url = format!("http://localhost:{port}/sse");
                 let response = McpStatusResponse {
                     url: url.clone(),
@@ -524,7 +744,8 @@ pub async fn spawn_mcp_server<R: Runtime>(
                     inner.token = token;
                     inner.running = true;
                     inner.last_error = None;
-                    inner.child = Some(child);
+                    inner.child = Some(spawned.child);
+                    inner.stderr_task = spawned.stderr_task;
                     inner.runtime_cmd = launch.runtime_label;
                     inner.script_path = launch.entry_label;
                 }
@@ -541,11 +762,7 @@ pub async fn spawn_mcp_server<R: Runtime>(
         "Failed to start embedded MCP sidecar. Launch attempts: {}",
         launch_errors.join(" | ")
     );
-    if let Ok(mut inner) = state.inner.lock() {
-        clear_runtime_state(&mut inner);
-        inner.last_error = Some(combined_error.clone());
-    }
-    Err(combined_error)
+    Err(persist_runtime_error(state, combined_error))
 }
 
 /// Kill the running MCP server child process if any.
@@ -556,7 +773,6 @@ pub fn kill_mcp_server(state: &McpState) {
             let _ = child.start_kill();
         }
         clear_runtime_state(&mut inner);
-        inner.last_error = None;
     }
 }
 
@@ -591,14 +807,11 @@ pub async fn get_mcp_status(
             match child.try_wait() {
                 Ok(Some(_exit_status)) => {
                     // Child exited — update state.
-                    clear_runtime_state(&mut inner);
-                    inner.last_error = Some("Embedded MCP sidecar exited unexpectedly".to_string());
+                    set_runtime_error(&mut inner, "Embedded MCP sidecar exited unexpectedly");
                 }
                 Ok(None) => { /* still running */ }
                 Err(_) => {
-                    clear_runtime_state(&mut inner);
-                    inner.last_error =
-                        Some("Failed to inspect embedded MCP sidecar status".to_string());
+                    set_runtime_error(&mut inner, "Failed to inspect embedded MCP sidecar status");
                 }
             }
         }
@@ -661,9 +874,27 @@ mod tests {
         );
         let entries: Vec<PathBuf> = std::env::split_paths(&enriched).collect();
 
-        assert!(entries.contains(&test_home_dir().join(".local/bin")));
-        assert!(entries.contains(&test_home_dir().join(".bun/bin")));
+        assert!(entries.contains(&home_bin_path(&test_home_dir(), HOME_BIN_SUBDIRS[0])));
+        assert!(entries.contains(&home_bin_path(&test_home_dir(), HOME_BIN_SUBDIRS[1])));
         assert!(entries.contains(&test_existing_path()));
+    }
+
+    #[test]
+    fn binary_path_candidates_include_platform_executable_suffixes() {
+        let base = PathBuf::from("/tmp/bun");
+        let candidates = binary_path_candidates(&base);
+
+        assert!(candidates.contains(&base));
+
+        #[cfg(windows)]
+        {
+            assert!(candidates
+                .iter()
+                .any(|candidate| candidate.ends_with("bun.exe")));
+            assert!(candidates
+                .iter()
+                .any(|candidate| candidate.ends_with("bun.cmd")));
+        }
     }
 
     #[test]
@@ -686,6 +917,7 @@ mod tests {
             running: true,
             last_error: Some("boom".to_string()),
             child: None,
+            stderr_task: None,
             runtime_cmd: "bun".to_string(),
             script_path: "server.ts".to_string(),
         };
@@ -696,9 +928,10 @@ mod tests {
         assert!(inner.token.is_empty());
         assert!(!inner.running);
         assert!(inner.child.is_none());
+        assert!(inner.stderr_task.is_none());
         assert!(inner.runtime_cmd.is_empty());
         assert!(inner.script_path.is_empty());
-        assert_eq!(inner.last_error.as_deref(), Some("boom"));
+        assert!(inner.last_error.is_none());
     }
 
     #[test]
@@ -709,6 +942,7 @@ mod tests {
             running: false,
             last_error: Some("sidecar stopped".to_string()),
             child: None,
+            stderr_task: None,
             runtime_cmd: "bun".to_string(),
             script_path: "server.ts".to_string(),
         };
@@ -719,5 +953,84 @@ mod tests {
         assert!(status.token.is_empty());
         assert!(!status.running);
         assert_eq!(status.error.as_deref(), Some("sidecar stopped"));
+    }
+
+    #[test]
+    fn append_capped_stderr_keeps_earliest_bytes_from_large_chunk() {
+        let mut buffer = Vec::new();
+        let mut chunk = vec![b'a'; STARTUP_STDERR_CAPTURE_LIMIT];
+        chunk.extend_from_slice(b"trailer");
+
+        append_capped_stderr(&mut buffer, &chunk);
+
+        assert_eq!(buffer.len(), STARTUP_STDERR_CAPTURE_LIMIT);
+        assert!(buffer.iter().all(|byte| *byte == b'a'));
+    }
+
+    #[test]
+    fn append_capped_stderr_stops_appending_after_capacity() {
+        let mut buffer = vec![b'a'; STARTUP_STDERR_CAPTURE_LIMIT - 4];
+
+        append_capped_stderr(&mut buffer, b"bbbbbbbb");
+
+        assert_eq!(buffer.len(), STARTUP_STDERR_CAPTURE_LIMIT);
+        assert!(buffer[..STARTUP_STDERR_CAPTURE_LIMIT - 4]
+            .iter()
+            .all(|byte| *byte == b'a'));
+        assert_eq!(&buffer[STARTUP_STDERR_CAPTURE_LIMIT - 4..], b"bbbb");
+    }
+
+    #[test]
+    fn current_status_surfaces_starting_message_when_sidecar_is_booting() {
+        let inner = McpInner {
+            port: 0,
+            token: String::new(),
+            running: false,
+            last_error: Some(SIDECAR_STARTING_MESSAGE.to_string()),
+            child: None,
+            stderr_task: None,
+            runtime_cmd: String::new(),
+            script_path: String::new(),
+        };
+
+        let status = current_status(&inner);
+
+        assert!(!status.running);
+        assert_eq!(status.error.as_deref(), Some(SIDECAR_STARTING_MESSAGE));
+    }
+
+    #[test]
+    fn persist_runtime_error_replaces_starting_message() {
+        let state = McpState::new();
+        {
+            let mut inner = match state.inner.lock() {
+                Ok(inner) => inner,
+                Err(_) => panic!("McpState lock poisoned"),
+            };
+            inner.port = 9877;
+            inner.token = "mcp_secret".to_string();
+            inner.running = true;
+            inner.last_error = Some(SIDECAR_STARTING_MESSAGE.to_string());
+            inner.runtime_cmd = "bun".to_string();
+            inner.script_path = "server.ts".to_string();
+        }
+
+        let error = persist_runtime_error(&state, "No available port in range 9877-9899");
+
+        assert_eq!(error, "No available port in range 9877-9899");
+
+        let inner = match state.inner.lock() {
+            Ok(inner) => inner,
+            Err(_) => panic!("McpState lock poisoned"),
+        };
+        assert_eq!(
+            inner.last_error.as_deref(),
+            Some("No available port in range 9877-9899")
+        );
+        assert_eq!(inner.port, 0);
+        assert!(inner.token.is_empty());
+        assert!(!inner.running);
+        assert!(inner.runtime_cmd.is_empty());
+        assert!(inner.script_path.is_empty());
     }
 }

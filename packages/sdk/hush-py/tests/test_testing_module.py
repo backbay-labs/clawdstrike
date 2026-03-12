@@ -671,6 +671,38 @@ scenarios:
         output = buf.getvalue()
         assert "ALLOW -> DENY" in output
 
+    def test_diff_detects_guard_change_when_verdict_stays_the_same(self) -> None:
+        baseline_yaml = """\
+version: "1.2.0"
+name: baseline
+guards:
+  forbidden_path:
+    patterns:
+      - /etc/secret.txt
+"""
+        candidate_yaml = """\
+version: "1.2.0"
+name: candidate
+guards:
+  path_allowlist:
+    allowed_paths:
+      - /tmp/**
+"""
+        suite = ScenarioSuite.from_yaml("""\
+scenarios:
+  - name: Secret file
+    action: file_access
+    target: /etc/secret.txt
+""")
+
+        report = diff_policies(baseline_yaml, candidate_yaml, suite)
+
+        assert len(report.changed) == 1
+        assert report.changed[0].baseline_verdict == "deny"
+        assert report.changed[0].candidate_verdict == "deny"
+        assert report.changed[0].baseline_guard == "forbidden_path"
+        assert report.changed[0].candidate_guard == "path_allowlist"
+
 
 # ---------------------------------------------------------------------------
 # 7. Edge cases

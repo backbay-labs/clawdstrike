@@ -21,6 +21,7 @@ export interface StoredTestRun {
 const DB_NAME = "clawdstrike_test_history";
 const DB_VERSION = 1;
 const RUNS_STORE = "runs";
+const MAX_RECENT_RUNS = 50;
 
 // ---------------------------------------------------------------------------
 // IndexedDB helpers
@@ -68,6 +69,16 @@ function cursorCollect<T>(req: IDBRequest<IDBCursorWithValue | null>, limit?: nu
   });
 }
 
+export function selectLatestRuns(runs: StoredTestRun[], limit = MAX_RECENT_RUNS): StoredTestRun[] {
+  return [...runs]
+    .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+    .slice(0, limit);
+}
+
+function normalizePolicyIds(policyIds: string[]): string[] {
+  return Array.from(new Set(policyIds.map((id) => id.trim()).filter(Boolean)));
+}
+
 // ---------------------------------------------------------------------------
 // TestHistoryStore
 // ---------------------------------------------------------------------------
@@ -102,18 +113,25 @@ export class TestHistoryStore {
    * Limited to the most recent 50 entries.
    */
   async getRunsForPolicy(policyId: string): Promise<StoredTestRun[]> {
+    return this.getRunsForPolicies([policyId]);
+  }
+
+  async getRunsForPolicies(policyIds: string[]): Promise<StoredTestRun[]> {
+    const normalizedIds = normalizePolicyIds(policyIds);
+    if (normalizedIds.length === 0) return [];
+
     const db = this.ensureDB();
-    const tx = db.transaction(RUNS_STORE, "readonly");
-    const store = tx.objectStore(RUNS_STORE);
-    const index = store.index("policyId");
-    const req = index.openCursor(policyId, "prev");
+    const runs: StoredTestRun[] = [];
 
-    const runs = await cursorCollect<StoredTestRun>(req, 50);
+    for (const policyId of normalizedIds) {
+      const tx = db.transaction(RUNS_STORE, "readonly");
+      const store = tx.objectStore(RUNS_STORE);
+      const index = store.index("policyId");
+      const req = index.openCursor(policyId, "prev");
+      runs.push(...(await cursorCollect<StoredTestRun>(req)));
+    }
 
-    // Sort by timestamp descending (cursor order is by key, not timestamp)
-    runs.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-
-    return runs;
+    return selectLatestRuns(runs);
   }
 
   /** Add a test run to the store. */
@@ -136,26 +154,35 @@ export class TestHistoryStore {
 
   /** Clear all test runs for a specific policy. */
   async clearRunsForPolicy(policyId: string): Promise<void> {
+    await this.clearRunsForPolicies([policyId]);
+  }
+
+  async clearRunsForPolicies(policyIds: string[]): Promise<void> {
+    const normalizedIds = normalizePolicyIds(policyIds);
+    if (normalizedIds.length === 0) return;
+
     const db = this.ensureDB();
-    const tx = db.transaction(RUNS_STORE, "readwrite");
-    const store = tx.objectStore(RUNS_STORE);
-    const index = store.index("policyId");
-    const req = index.openCursor(policyId);
 
-    await new Promise<void>((resolve, reject) => {
-      req.onsuccess = () => {
-        const cursor = req.result;
-        if (!cursor) {
-          resolve();
-          return;
-        }
-        cursor.delete();
-        cursor.continue();
-      };
-      req.onerror = () => reject(req.error);
-    });
+    for (const policyId of normalizedIds) {
+      const tx = db.transaction(RUNS_STORE, "readwrite");
+      const store = tx.objectStore(RUNS_STORE);
+      const index = store.index("policyId");
+      const req = index.openCursor(policyId);
 
-    await txPromise(tx);
+      await new Promise<void>((resolve, reject) => {
+        req.onsuccess = () => {
+          const cursor = req.result;
+          if (!cursor) {
+            resolve();
+            return;
+          }
+          cursor.delete();
+          cursor.continue();
+        };
+        req.onerror = () => reject(req.error);
+      });
+      await txPromise(tx);
+    }
   }
 }
 

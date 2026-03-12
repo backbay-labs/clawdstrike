@@ -17,14 +17,34 @@ export function CrashRecoveryBanner({
   }
 
   const latestTimestamp = Math.max(...entries.map((entry) => entry.timestamp));
+  const normalizedPolicyName = (name: string) => name.trim();
   const policyNames = Array.from(
-    new Set(entries.map((entry) => entry.policyName).filter(Boolean)),
+    new Set(
+      entries
+        .map((entry) => normalizedPolicyName(entry.policyName))
+        .filter((name) => name.length > 0),
+    ),
   );
+  const allEntriesNamed = entries.every(
+    (entry) => normalizedPolicyName(entry.policyName).length > 0,
+  );
+  const listedPolicyNames =
+    policyNames.slice(0, 3).join(", ") + (policyNames.length > 3 ? ", ..." : "");
   const summaryLabel =
     entries.length === 1
-      ? policyNames[0] || "the current tab"
+      ? policyNames[0] || "an unnamed tab"
       : `${entries.length} tabs`;
-  const showPolicyList = entries.length > 1 && policyNames.length > 0;
+  const policySummary =
+    entries.length > 1 && policyNames.length > 0
+      ? allEntriesNamed
+        ? policyNames.length === 1
+          ? `all named ${policyNames[0]}`
+          : `named ${listedPolicyNames}`
+        : `including ${listedPolicyNames}`
+      : null;
+  const omittedSensitiveFields = entries.some(
+    (entry) => entry.sensitiveFieldsStripped,
+  );
 
   const formattedTime = formatTimestamp(latestTimestamp);
 
@@ -37,17 +57,24 @@ export function CrashRecoveryBanner({
       <span className="text-xs text-[#6f7f9a] leading-tight min-w-0">
         Recovered unsaved changes from{" "}
         <span className="text-[#ece7dc] font-medium">{summaryLabel}</span>
-        {showPolicyList ? (
+        {policySummary ? (
           <>
             {" "}
             <span className="text-[#6f7f9a]/70">
-              ({policyNames.slice(0, 3).join(", ")}
-              {policyNames.length > 3 ? ", ..." : ""})
+              ({policySummary})
             </span>
           </>
         ) : null}
         {" "}
         <span className="text-[#6f7f9a]/70">({formattedTime})</span>
+        {omittedSensitiveFields ? (
+          <>
+            {" "}
+            <span className="text-[#d4a84b]/80">
+              Sensitive fields were omitted from recovery and must be re-entered.
+            </span>
+          </>
+        ) : null}
       </span>
 
       {/* Spacer */}

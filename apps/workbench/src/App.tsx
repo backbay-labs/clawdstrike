@@ -262,44 +262,44 @@ export function App() {
 
   return (
     <HashRouter>
-      <ToastProvider>
-        <GeneralSettingsProvider>
-          <HintSettingsProvider>
-          <MultiPolicyProvider>
-            <FleetConnectionProvider>
-              <ErrorBoundary>
-              <Suspense fallback={<LoadingFallback />}>
-                <Routes>
-                  <Route element={<DesktopLayout />}>
-                    {/* Default redirect */}
-                    <Route index element={<Navigate to="/home" replace />} />
+      <ErrorBoundary>
+        <ToastProvider>
+          <GeneralSettingsProvider>
+            <HintSettingsProvider>
+              <MultiPolicyProvider>
+                <FleetConnectionProvider>
+                  <Suspense fallback={<LoadingFallback />}>
+                    <Routes>
+                      <Route element={<DesktopLayout />}>
+                        {/* Default redirect */}
+                        <Route index element={<Navigate to="/home" replace />} />
 
-                    {/* Workbench pages */}
-                    <Route path="home" element={<HomePage />} />
-                    <Route path="editor" element={<PolicyEditor />} />
-                    <Route path="simulator" element={<SimulatorLayout />} />
-                    <Route path="compare" element={<CompareLayout />} />
-                    <Route path="compliance" element={<ComplianceDashboard />} />
-                    <Route path="receipts" element={<ReceiptInspector />} />
-                    <Route path="delegation" element={<DelegationPage />} />
-                    <Route path="approvals" element={<ApprovalQueue />} />
-                    <Route path="hierarchy" element={<HierarchyPage />} />
-                    <Route path="fleet" element={<FleetDashboard />} />
-                    <Route path="audit" element={<AuditLog />} />
-                    <Route path="library" element={<LibraryGallery />} />
-                    <Route path="settings" element={<SettingsPage />} />
+                        {/* Workbench pages */}
+                        <Route path="home" element={<HomePage />} />
+                        <Route path="editor" element={<PolicyEditor />} />
+                        <Route path="simulator" element={<SimulatorLayout />} />
+                        <Route path="compare" element={<CompareLayout />} />
+                        <Route path="compliance" element={<ComplianceDashboard />} />
+                        <Route path="receipts" element={<ReceiptInspector />} />
+                        <Route path="delegation" element={<DelegationPage />} />
+                        <Route path="approvals" element={<ApprovalQueue />} />
+                        <Route path="hierarchy" element={<HierarchyPage />} />
+                        <Route path="fleet" element={<FleetDashboard />} />
+                        <Route path="audit" element={<AuditLog />} />
+                        <Route path="library" element={<LibraryGallery />} />
+                        <Route path="settings" element={<SettingsPage />} />
 
-                    {/* Catch-all */}
-                    <Route path="*" element={<Navigate to="/home" replace />} />
-                  </Route>
-                </Routes>
-              </Suspense>
-              </ErrorBoundary>
-            </FleetConnectionProvider>
-          </MultiPolicyProvider>
-          </HintSettingsProvider>
-        </GeneralSettingsProvider>
-      </ToastProvider>
+                        {/* Catch-all */}
+                        <Route path="*" element={<Navigate to="/home" replace />} />
+                      </Route>
+                    </Routes>
+                  </Suspense>
+                </FleetConnectionProvider>
+              </MultiPolicyProvider>
+            </HintSettingsProvider>
+          </GeneralSettingsProvider>
+        </ToastProvider>
+      </ErrorBoundary>
     </HashRouter>
   );
 }

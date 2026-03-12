@@ -25,6 +25,10 @@ import {
 } from "./policy-store";
 import { policyToYaml, yamlToPolicy, validatePolicy } from "./yaml-utils";
 import {
+  sanitizeObjectForStorageWithMetadata,
+  sanitizeYamlForStorageWithMetadata,
+} from "./storage-sanitizer";
+import {
   isDesktop,
   openPolicyFile,
   savePolicyFile,
@@ -177,6 +181,39 @@ function createTabFromPolicy(policy: WorkbenchPolicy, filePath?: string | null):
       activePolicy: policy,
       yaml,
       validation: validatePolicy(policy),
+    },
+  };
+}
+
+function replaceTabFromOpenedFile(
+  tab: PolicyTab,
+  policy: WorkbenchPolicy,
+  filePath: string,
+  yamlFromDisk?: string,
+): PolicyTab {
+  const yaml = yamlFromDisk ?? policyToYaml(policy);
+  const validation = validatePolicy(policy);
+
+  return {
+    ...tab,
+    name: policy.name || "Untitled",
+    filePath,
+    yaml,
+    policy,
+    dirty: false,
+    validation,
+    nativeValidation: {
+      guardErrors: {},
+      topLevelErrors: [],
+      loading: false,
+      valid: null,
+    },
+    _undoPast: [],
+    _undoFuture: [],
+    _cleanSnapshot: {
+      activePolicy: policy,
+      yaml,
+      validation,
     },
   };
 }
@@ -597,10 +634,23 @@ function multiPolicyReducer(state: MultiPolicyState, action: MultiPolicyAction):
     case "NEW_TAB_OR_SWITCH": {
       const existing = state.tabs.find((t) => t.filePath === action.filePath);
       if (existing) {
-        return { ...state, activeTabId: existing.id };
+        return {
+          ...state,
+          tabs: state.tabs.map((tab) =>
+            tab.id === existing.id
+              ? replaceTabFromOpenedFile(tab, action.policy, action.filePath, action.fallbackYaml)
+              : tab,
+          ),
+          activeTabId: existing.id,
+        };
       }
       if (state.tabs.length >= MAX_TABS) return state;
-      const newTab = createTabFromPolicy(action.policy, action.filePath);
+      const newTab = replaceTabFromOpenedFile(
+        createTabFromPolicy(action.policy, action.filePath),
+        action.policy,
+        action.filePath,
+        action.fallbackYaml,
+      );
       return {
         ...state,
         tabs: [...state.tabs, newTab],
@@ -782,6 +832,7 @@ interface PersistedTab {
   filePath: string | null;
   yaml: string;
   testSuiteYaml?: string;
+  sensitiveFieldsStripped?: boolean;
 }
 
 interface PersistedTabState {
@@ -826,13 +877,18 @@ function sanitizeYamlForStorage(yaml: string): string {
 function persistTabs(state: MultiPolicyState): void {
   try {
     const persisted: PersistedTabState = {
-      tabs: state.tabs.map((t) => ({
-        id: t.id,
-        name: t.name,
-        filePath: t.filePath,
-        yaml: sanitizeYamlForStorage(t.yaml),
-        testSuiteYaml: t.testSuiteYaml,
-      })),
+      tabs: state.tabs.map((t) => {
+        const sanitized = sanitizeYamlForStorageWithMetadata(t.yaml);
+        const sensitiveFieldsStripped = sanitized.sensitiveFieldsStripped;
+        return {
+          id: t.id,
+          name: t.name,
+          filePath: sensitiveFieldsStripped ? null : t.filePath,
+          yaml: sanitized.yaml,
+          testSuiteYaml: t.testSuiteYaml,
+          sensitiveFieldsStripped: sensitiveFieldsStripped || undefined,
+        };
+      }),
       activeTabId: state.activeTabId,
     };
     localStorage.setItem(TABS_STORAGE_KEY, JSON.stringify(persisted));
@@ -866,11 +922,12 @@ function loadPersistedTabs(): MultiPolicyState | null {
       const pol = policy ?? DEFAULT_POLICY;
       const yaml = pt.yaml;
       const validation = validatePolicy(pol);
+      const sensitiveFieldsStripped = pt.sensitiveFieldsStripped === true;
       return {
         id: pt.id,
         name: pt.name || pol.name || "Untitled",
-        filePath: pt.filePath,
-        dirty: false,
+        filePath: sensitiveFieldsStripped ? null : pt.filePath,
+        dirty: sensitiveFieldsStripped,
         policy: pol,
         yaml,
         validation,
@@ -878,7 +935,9 @@ function loadPersistedTabs(): MultiPolicyState | null {
         testSuiteYaml: pt.testSuiteYaml,
         _undoPast: [],
         _undoFuture: [],
-        _cleanSnapshot: { activePolicy: pol, yaml, validation },
+        _cleanSnapshot: sensitiveFieldsStripped
+          ? null
+          : { activePolicy: pol, yaml, validation },
       };
     });
 
@@ -914,6 +973,25 @@ function pushRecentFile(filePath: string): void {
   } catch (e) {
     console.warn("[multi-policy-store] pushRecentFile localStorage operation failed:", e);
   }
+}
+
+function sanitizeSavedPolicy(savedPolicy: SavedPolicy): SavedPolicy {
+  const sanitized = sanitizeYamlForStorageWithMetadata(savedPolicy.yaml);
+  const sanitizedPolicy = sanitizeObjectForStorageWithMetadata(savedPolicy.policy);
+  const [parsedPolicy, errors] = yamlToPolicy(sanitized.yaml);
+  const sensitiveFieldsStripped =
+    sanitized.sensitiveFieldsStripped || sanitizedPolicy.sensitiveFieldsStripped;
+  const storedPolicy =
+    sensitiveFieldsStripped && parsedPolicy && errors.length === 0
+      ? parsedPolicy
+      : sanitizedPolicy.value;
+
+  return {
+    ...savedPolicy,
+    yaml: sanitized.yaml,
+    policy: storedPolicy,
+    sensitiveFieldsStripped: sensitiveFieldsStripped || undefined,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1027,7 +1105,7 @@ export function MultiPolicyProvider({ children }: { children: ReactNode }) {
             typeof e.policy === "object" && e.policy !== null &&
             typeof e.yaml === "string"
           );
-        });
+        }).map(sanitizeSavedPolicy);
         multiDispatch({ type: "LOAD_SAVED_POLICIES", policies });
       }
     } catch (e) {
@@ -1038,7 +1116,10 @@ export function MultiPolicyProvider({ children }: { children: ReactNode }) {
   // Persist saved policies
   useEffect(() => {
     try {
-      localStorage.setItem(SAVED_POLICIES_KEY, JSON.stringify(multiState.savedPolicies));
+      localStorage.setItem(
+        SAVED_POLICIES_KEY,
+        JSON.stringify(multiState.savedPolicies.map(sanitizeSavedPolicy)),
+      );
     } catch (e) {
       // TODO: surface via toast when toast system is available outside React components
       console.error("[multi-policy-store] persist saved policies failed — changes may be lost on reload:", e);
@@ -1093,13 +1174,13 @@ export function MultiPolicyProvider({ children }: { children: ReactNode }) {
     if (!currentTab) return;
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
-    const savedPolicy: SavedPolicy = {
+    const savedPolicy = sanitizeSavedPolicy({
       id,
       policy: currentTab.policy,
       yaml: currentTab.yaml,
       createdAt: now,
       updatedAt: now,
-    };
+    });
     multiDispatch({ type: "SAVE_POLICY", savedPolicy });
   }, [currentTab, multiDispatch]);
 
@@ -1134,7 +1215,12 @@ export function MultiPolicyProvider({ children }: { children: ReactNode }) {
       const [policy] = yamlToPolicy(result.content);
       if (policy) {
         // Atomically check-and-switch-or-create inside the reducer (#31)
-        multiDispatch({ type: "NEW_TAB_OR_SWITCH", policy, filePath: result.path });
+        multiDispatch({
+          type: "NEW_TAB_OR_SWITCH",
+          policy,
+          filePath: result.path,
+          fallbackYaml: result.content,
+        });
       } else {
         // Still open but with raw yaml in current tab
         multiDispatch({ type: "SET_YAML", yaml: result.content });
@@ -1156,7 +1242,12 @@ export function MultiPolicyProvider({ children }: { children: ReactNode }) {
         const [policy] = yamlToPolicy(result.content);
         if (policy) {
           // Atomically check-and-switch-or-create inside the reducer (#31)
-          multiDispatch({ type: "NEW_TAB_OR_SWITCH", policy, filePath: result.path });
+          multiDispatch({
+            type: "NEW_TAB_OR_SWITCH",
+            policy,
+            filePath: result.path,
+            fallbackYaml: result.content,
+          });
         } else {
           multiDispatch({ type: "SET_YAML", yaml: result.content });
           multiDispatch({ type: "SET_FILE_PATH", path: result.path });

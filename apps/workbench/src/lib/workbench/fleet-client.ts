@@ -415,6 +415,8 @@ export function loadSavedConnection(): Partial<FleetConnection> {
  * Falls back to localStorage values if Stronghold is unavailable.
  */
 export async function loadSavedConnectionAsync(): Promise<Partial<FleetConnection>> {
+  const bootstrap = loadSavedConnection();
+
   try {
     const [hushdUrl, controlApiUrl, apiKey, controlApiToken] = await Promise.all([
       secureStore.get(SS_HUSHD_URL),
@@ -426,8 +428,12 @@ export async function loadSavedConnectionAsync(): Promise<Partial<FleetConnectio
     // If Stronghold had values, use them. Otherwise fall back to localStorage.
     if (hushdUrl || controlApiUrl || apiKey || controlApiToken) {
       return {
-        hushdUrl: sanitizeStoredFleetUrl(hushdUrl, "hushd URL"),
-        controlApiUrl: sanitizeStoredFleetUrl(controlApiUrl, "control API URL"),
+        hushdUrl:
+          sanitizeStoredFleetUrl(hushdUrl, "hushd URL") || bootstrap.hushdUrl || "",
+        controlApiUrl:
+          sanitizeStoredFleetUrl(controlApiUrl, "control API URL") ||
+          bootstrap.controlApiUrl ||
+          "",
         apiKey: apiKey ?? "",
         controlApiToken: controlApiToken ?? "",
       };
@@ -436,7 +442,7 @@ export async function loadSavedConnectionAsync(): Promise<Partial<FleetConnectio
     console.warn("[fleet-client] secureStore read failed, using localStorage:", e);
   }
 
-  return loadSavedConnection();
+  return bootstrap;
 }
 
 /**

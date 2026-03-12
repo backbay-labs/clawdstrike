@@ -53,9 +53,8 @@ fn main() {
                 match mcp_sidecar::spawn_mcp_server(&app_handle, &mcp_state).await {
                     Ok(info) => {
                         eprintln!(
-                            "[workbench] MCP sidecar started at {} (token: {}...)",
+                            "[workbench] MCP sidecar started at {} (token: [redacted])",
                             info.url,
-                            &info.token[..std::cmp::min(12, info.token.len())]
                         );
                     }
                     Err(e) => {

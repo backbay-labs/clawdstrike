@@ -841,8 +841,10 @@ pub async fn simulate_action(
         if content_str.is_empty() {
             serde_json::Value::Object(serde_json::Map::new())
         } else {
-            serde_json::from_str(content_str)
-                .map_err(|e| { eprintln!("[workbench] JSON parse error: {e}"); "Invalid JSON for MCP args".to_string() })?
+            serde_json::from_str(content_str).map_err(|e| {
+                eprintln!("[workbench] JSON parse error: {e}");
+                "Invalid JSON for MCP args".to_string()
+            })?
         }
     } else {
         serde_json::Value::Null // unused
@@ -869,7 +871,10 @@ pub async fn simulate_action(
     let report: GuardReport = engine
         .check_action_report(&action, &context)
         .await
-        .map_err(|e| { eprintln!("[workbench] evaluation error: {e}"); "Policy evaluation failed".to_string() })?;
+        .map_err(|e| {
+            eprintln!("[workbench] evaluation error: {e}");
+            "Policy evaluation failed".to_string()
+        })?;
 
     let results: Vec<GuardResultEntry> =
         report.per_guard.iter().map(guard_result_to_entry).collect();
@@ -930,10 +935,10 @@ pub async fn simulate_action_with_posture(
     let policy = load_policy_lax(&policy_yaml)?;
 
     let mut posture_state: Option<PostureRuntimeState> = match posture_state_json {
-        Some(json) if !json.is_empty() => Some(
-            serde_json::from_str(&json)
-                .map_err(|e| { eprintln!("[workbench] posture state parse error: {e}"); "Invalid posture state JSON".to_string() })?,
-        ),
+        Some(json) if !json.is_empty() => Some(serde_json::from_str(&json).map_err(|e| {
+            eprintln!("[workbench] posture state parse error: {e}");
+            "Invalid posture state JSON".to_string()
+        })?),
         _ => None,
     };
 
@@ -946,8 +951,10 @@ pub async fn simulate_action_with_posture(
         if content_str.is_empty() {
             serde_json::Value::Object(serde_json::Map::new())
         } else {
-            serde_json::from_str(content_str)
-                .map_err(|e| { eprintln!("[workbench] JSON parse error: {e}"); "Invalid JSON for MCP args".to_string() })?
+            serde_json::from_str(content_str).map_err(|e| {
+                eprintln!("[workbench] JSON parse error: {e}");
+                "Invalid JSON for MCP args".to_string()
+            })?
         }
     } else {
         serde_json::Value::Null // unused
@@ -974,7 +981,10 @@ pub async fn simulate_action_with_posture(
     let report: PostureAwareReport = engine
         .check_action_report_with_posture(&action, &context, &mut posture_state)
         .await
-        .map_err(|e| { eprintln!("[workbench] evaluation error: {e}"); "Policy evaluation failed".to_string() })?;
+        .map_err(|e| {
+            eprintln!("[workbench] evaluation error: {e}");
+            "Policy evaluation failed".to_string()
+        })?;
 
     let results: Vec<GuardResultEntry> = report
         .guard_report
@@ -1225,18 +1235,12 @@ pub async fn verify_receipt_chain(
         // actually signs — RFC 8785 canonical JSON of the receipt). Fall back to the
         // legacy colon-delimited format for backward compatibility with older chains.
         let (sig_valid, sig_reason) = if let Some(signed_receipt) = &r.signed_receipt {
-            let (json_sig_valid, json_sig_reason) = verify_signed_receipt_signature(
-                &r.public_key,
-                &r.signature,
-                signed_receipt,
-            );
+            let (json_sig_valid, json_sig_reason) =
+                verify_signed_receipt_signature(&r.public_key, &r.signature, signed_receipt);
             if json_sig_valid == Some(true) {
                 (
                     json_sig_valid,
-                    format!(
-                        "{} (verified via canonical JSON payload)",
-                        json_sig_reason,
-                    ),
+                    format!("{} (verified via canonical JSON payload)", json_sig_reason,),
                 )
             } else {
                 // Canonical JSON failed — fall back to colon-delimited format.
@@ -1349,12 +1353,10 @@ pub async fn export_policy_file(
     let fmt = format.as_deref().unwrap_or("yaml");
 
     let policy = match fmt {
-        "json" => {
-            serde_json::from_str::<Policy>(&content).map_err(|e| {
-                eprintln!("[workbench] invalid JSON: {e}");
-                "Invalid JSON input".to_string()
-            })?
-        }
+        "json" => serde_json::from_str::<Policy>(&content).map_err(|e| {
+            eprintln!("[workbench] invalid JSON: {e}");
+            "Invalid JSON input".to_string()
+        })?,
         "toml" => toml::from_str::<Policy>(&content).map_err(|e| {
             eprintln!("[workbench] invalid TOML: {e}");
             "Invalid TOML input".to_string()
@@ -2182,7 +2184,10 @@ guards: {}
         let dir = tempfile::tempdir().unwrap();
         let sensitive_dir = dir.path().join(".ssh");
         std::fs::create_dir_all(&sensitive_dir).unwrap();
-        let path = sensitive_dir.join("policy.yaml").to_string_lossy().to_string();
+        let path = sensitive_dir
+            .join("policy.yaml")
+            .to_string_lossy()
+            .to_string();
 
         let err = validate_file_path(&path).unwrap_err();
         assert_eq!(err, "Refusing to access sensitive path");
@@ -2529,10 +2534,11 @@ posture:
         let keypair = Keypair::generate();
         let pk_hex = keypair.public_key().to_hex();
 
-        let unrelated_signed_receipt = SignedReceipt::sign(Receipt::new(Hash::zero(), Verdict::pass()), &keypair)
-            .expect("signing should succeed");
-        let signed_receipt_json = serde_json::to_value(&unrelated_signed_receipt)
-            .expect("serialization should succeed");
+        let unrelated_signed_receipt =
+            SignedReceipt::sign(Receipt::new(Hash::zero(), Verdict::pass()), &keypair)
+                .expect("signing should succeed");
+        let signed_receipt_json =
+            serde_json::to_value(&unrelated_signed_receipt).expect("serialization should succeed");
 
         // Sign completely unrelated content so neither payload matches.
         let sig = keypair.sign(b"totally unrelated content");

@@ -346,18 +346,11 @@ function normalizeMonitorEndpoint(raw: string): string {
   return raw.trim().replace(/\/+$/, "");
 }
 
-function isLoopbackHost(hostname: string): boolean {
-  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]";
-}
-
 export function endpointsShareAuthScope(endpoint: string, hushdUrl: string): boolean {
   try {
     const left = new URL(normalizeMonitorEndpoint(endpoint));
     const right = new URL(normalizeMonitorEndpoint(hushdUrl));
-    const sameHost =
-      left.hostname === right.hostname ||
-      (isLoopbackHost(left.hostname) && isLoopbackHost(right.hostname));
-    return sameHost && left.port === right.port && left.protocol === right.protocol;
+    return left.origin === right.origin;
   } catch {
     return false;
   }
@@ -373,6 +366,22 @@ export function buildHushdAuthHeaders(
     return {};
   }
   return { Authorization: `Bearer ${trimmed}` };
+}
+
+export function describeHushdAuthScopeMismatch(
+  endpoint: string,
+  hushdUrl: string,
+  apiKey: string,
+): string | null {
+  const trimmedApiKey = apiKey.trim();
+  const normalizedHushdUrl = normalizeMonitorEndpoint(hushdUrl);
+  if (!trimmedApiKey || !normalizedHushdUrl) {
+    return null;
+  }
+  if (endpointsShareAuthScope(endpoint, normalizedHushdUrl)) {
+    return null;
+  }
+  return `Saved hushd credentials are only sent to the configured hushd URL (${normalizedHushdUrl}). Use that exact URL here or reconnect this endpoint in Settings.`;
 }
 
 export interface ParsedSseMessage {
@@ -528,6 +537,18 @@ function HushdMonitorPanel() {
 
   const startSse = useCallback(
     (proxyBase: string) => {
+      const authScopeMismatch = describeHushdAuthScopeMismatch(
+        endpoint,
+        connection.hushdUrl,
+        connection.apiKey,
+      );
+      if (authScopeMismatch) {
+        setConnected(false);
+        setReconnecting(false);
+        setConnectionError(authScopeMismatch);
+        return;
+      }
+
       const authHeaders = buildHushdAuthHeaders(endpoint, connection.hushdUrl, connection.apiKey);
 
       // Clean up any prior EventSource before opening a new one
@@ -713,6 +734,23 @@ function HushdMonitorPanel() {
     setConnecting(true);
     setConnectionError(null);
     const proxyBase = resolveProxyBase(endpoint);
+    const authScopeMismatch = describeHushdAuthScopeMismatch(
+      endpoint,
+      connection.hushdUrl,
+      connection.apiKey,
+    );
+    if (authScopeMismatch) {
+      setConnecting(false);
+      setConnectionError(authScopeMismatch);
+      toast({
+        type: "error",
+        title: "Auth scope mismatch",
+        description:
+          "Saved hushd credentials are only sent to the configured hushd URL. Use that exact URL here or reconnect this endpoint in Settings.",
+      });
+      return;
+    }
+
     const authHeaders = buildHushdAuthHeaders(endpoint, connection.hushdUrl, connection.apiKey);
 
     try {

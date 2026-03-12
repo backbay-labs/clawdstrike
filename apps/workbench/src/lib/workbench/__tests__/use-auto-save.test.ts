@@ -1,6 +1,7 @@
 import React from "react";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import YAML from "yaml";
 import { MultiPolicyProvider, useMultiPolicy } from "../multi-policy-store";
 import {
   clearAutosave,
@@ -81,6 +82,24 @@ function AutosaveHarness() {
         onClick: () => multiDispatch({ type: "NEW_TAB" }),
       },
       "new-tab",
+    ),
+    React.createElement(
+      "button",
+      {
+        type: "button",
+        onClick: () =>
+          multiDispatch({
+            type: "SET_YAML",
+            yaml: `version: "1.4.0"
+name: "spider"
+guards:
+  spider_sense:
+    enabled: true
+    embedding_api_key: "super-secret"
+`,
+          }),
+      },
+      "dirty-sensitive",
     ),
   );
 }
@@ -167,6 +186,42 @@ describe("readAutosave", () => {
 
     expect(readAutosaves()).toEqual([second, first]);
     expect(readAutosave()).toEqual(second);
+  });
+
+  it("scrubs multiline sensitive YAML blocks from legacy autosaves before restore", () => {
+    const entry = makeEntry({
+      yaml: `version: "1.4.0"
+name: "Sensitive Policy"
+guards:
+  spider_sense:
+    enabled: true
+    embedding_api_key: |
+      line-one
+      line-two
+
+    threshold: 0.8
+`,
+      filePath: "/tmp/sensitive.yaml",
+    });
+    localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(entry));
+
+    const result = readAutosave();
+
+    expect(result).not.toBeNull();
+    expect(result!.yaml).not.toContain("embedding_api_key");
+    expect(result!.yaml).not.toContain("line-one");
+    expect(result!.filePath).toBeNull();
+    expect(result!.sensitiveFieldsStripped).toBe(true);
+    expect(YAML.parse(result!.yaml)).toEqual({
+      version: "1.4.0",
+      name: "Sensitive Policy",
+      guards: {
+        spider_sense: {
+          enabled: true,
+          threshold: 0.8,
+        },
+      },
+    });
   });
 });
 
@@ -264,5 +319,30 @@ describe("useAutoSave", () => {
     const autosaves = readAutosaves();
     expect(autosaves).toHaveLength(2);
     expect(autosaves.map((entry) => entry.policyName).sort()).toEqual(["dirty-1", "dirty-2"]);
+  });
+
+  it("strips sensitive spider_sense credentials before autosave persistence", () => {
+    vi.useFakeTimers();
+
+    render(
+      React.createElement(
+        MultiPolicyProvider,
+        null,
+        React.createElement(AutosaveHarness),
+      ),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "dirty-sensitive" }));
+
+    act(() => {
+      vi.advanceTimersByTime(2_100);
+    });
+
+    const autosave = readAutosave();
+    expect(autosave).not.toBeNull();
+    expect(autosave!.yaml).not.toContain("embedding_api_key");
+    expect(autosave!.yaml).not.toContain("super-secret");
+    expect(autosave!.filePath).toBeNull();
+    expect(autosave!.sensitiveFieldsStripped).toBe(true);
   });
 });

@@ -22,6 +22,10 @@ import {
   fetchReceipts as apiFetchReceipts,
   type FleetReceipt,
 } from "@/lib/workbench/fleet-client";
+import {
+  verdictFromNativeGuardResult,
+  verdictFromNativeSimulation,
+} from "@/lib/workbench/native-simulation";
 import { IconCloudUpload, IconCloudDownload, IconCircleDot } from "@tabler/icons-react";
 
 function randomHex(len: number): string {
@@ -582,17 +586,8 @@ export function ReceiptInspector() {
         );
       }
 
-      // Step 5: Determine the verdict — map simulation results to our Verdict type
-      //   - allowed=true -> "allow"
-      //   - allowed=false with severity "warn" -> "warn"
-      //   - allowed=false otherwise -> "deny"
-      let verdict: Verdict = "allow";
-      if (!simResp.allowed) {
-        const hasWarnOnly = simResp.results.every(
-          (r) => r.allowed || r.severity === "warning" || r.severity === "warn"
-        );
-        verdict = hasWarnOnly ? "warn" : "deny";
-      }
+      // Step 5: Preserve advisory warnings from native simulation responses.
+      const verdict: Verdict = verdictFromNativeSimulation(simResp);
 
       // Step 6: Find the primary guard that drove the decision
       const denyingGuard = simResp.results.find((r) => !r.allowed);
@@ -602,6 +597,7 @@ export function ReceiptInspector() {
       const guardEvidence: Record<string, unknown>[] = simResp.results.map((r) => ({
         guard: r.guard,
         allowed: r.allowed,
+        verdict: verdictFromNativeGuardResult(r),
         severity: r.severity,
         message: r.message,
         ...(r.details ? { details: r.details } : {}),

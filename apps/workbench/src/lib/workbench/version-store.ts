@@ -1,4 +1,9 @@
 import type { WorkbenchPolicy } from "./types";
+import {
+  sanitizeObjectForStorageWithMetadata,
+  sanitizeYamlForStorageWithMetadata,
+} from "./storage-sanitizer";
+import { yamlToPolicy } from "./yaml-utils";
 
 // ---- Types ----
 
@@ -13,6 +18,7 @@ export interface PolicyVersion {
   tags: string[];
   parentId: string | null;
   hash: string;
+  sensitiveFieldsStripped?: boolean;
 }
 
 /**
@@ -152,7 +158,17 @@ export class VersionStore {
     message?: string,
   ): Promise<PolicyVersion> {
     const db = this.ensureDB();
-    const hash = await sha256Hex(yaml);
+    const sanitized = sanitizeYamlForStorageWithMetadata(yaml);
+    const sanitizedPolicy = sanitizeObjectForStorageWithMetadata(policy);
+    const [parsedPolicy, errors] = yamlToPolicy(sanitized.yaml);
+    const storedYaml = sanitized.yaml;
+    const sensitiveFieldsStripped =
+      sanitized.sensitiveFieldsStripped || sanitizedPolicy.sensitiveFieldsStripped;
+    const storedPolicy =
+      sensitiveFieldsStripped && parsedPolicy && errors.length === 0
+        ? parsedPolicy
+        : sanitizedPolicy.value;
+    const hash = await sha256Hex(storedYaml);
 
     // Single readwrite transaction: dedup-check + insert atomically
     const tx = db.transaction(VERSIONS_STORE, "readwrite");
@@ -181,13 +197,14 @@ export class VersionStore {
       id: crypto.randomUUID(),
       policyId,
       version: nextVersion,
-      yaml,
-      policy,
+      yaml: storedYaml,
+      policy: storedPolicy,
       createdAt: now,
       message: message || undefined,
       tags: [],
       parentId: latest?.id ?? null,
       hash,
+      sensitiveFieldsStripped: sensitiveFieldsStripped || undefined,
     };
 
     try {

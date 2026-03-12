@@ -624,7 +624,10 @@ def diff_policies(
     unchanged = 0
 
     for ra, rb in zip(report_a.results, report_b.results, strict=True):
-        if ra.decision.status != rb.decision.status:
+        if (
+            ra.decision.status != rb.decision.status
+            or ra.decision.guard != rb.decision.guard
+        ):
             changed.append(
                 DiffEntry(
                     scenario_name=ra.scenario.name,

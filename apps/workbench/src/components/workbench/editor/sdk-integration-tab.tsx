@@ -13,7 +13,7 @@ import { tags } from "@lezer/highlight";
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import { python } from "@codemirror/lang-python";
 import { javascript } from "@codemirror/lang-javascript";
-import { useWorkbench } from "@/lib/workbench/multi-policy-store";
+import { useWorkbench, useMultiPolicy } from "@/lib/workbench/multi-policy-store";
 import { useToast } from "@/components/ui/toast";
 import { policyToYaml } from "@/lib/workbench/yaml-utils";
 import { isDesktop, savePolicyFile } from "@/lib/tauri-bridge";
@@ -374,6 +374,7 @@ function useCodeEditor(
 
 export function SdkIntegrationTab() {
   const { state } = useWorkbench();
+  const { activeTab } = useMultiPolicy();
   const { toast } = useToast();
 
   // Framework tab state
@@ -405,7 +406,12 @@ export function SdkIntegrationTab() {
   const editorContainerRef = useRef<HTMLDivElement>(null);
 
   // Get policy ID for script storage
-  const policyId = state.activePolicy.name || "default";
+  const policyId = activeTab?.id || state.activePolicy.name || "default";
+  const legacyPolicyId = state.activePolicy.name || "";
+  const policyStorageIds = useMemo(
+    () => Array.from(new Set([policyId, legacyPolicyId].filter(Boolean))),
+    [legacyPolicyId, policyId],
+  );
 
   // ---- Initialize IndexedDB store ----
   useEffect(() => {
@@ -432,8 +438,8 @@ export function SdkIntegrationTab() {
     let cancelled = false;
     async function loadScripts() {
       try {
-        const scripts = await sdkScriptStore.getScriptsByFramework(
-          policyId,
+        const scripts = await sdkScriptStore.getScriptsByFrameworkForPolicies(
+          policyStorageIds,
           activeFramework,
         );
         if (!cancelled) {
@@ -447,7 +453,7 @@ export function SdkIntegrationTab() {
     return () => {
       cancelled = true;
     };
-  }, [storeReady, policyId, activeFramework]);
+  }, [storeReady, policyStorageIds, activeFramework]);
 
   // ---- Reset content when framework changes ----
   useEffect(() => {

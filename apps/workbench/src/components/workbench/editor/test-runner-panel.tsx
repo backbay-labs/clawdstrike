@@ -41,6 +41,10 @@ import { ScenarioGraph, type ScenarioGraphScenario } from "@/components/workbenc
 import { PRE_BUILT_SCENARIOS } from "@/lib/workbench/pre-built-scenarios";
 import { analyzeCoverage, type CoverageReport } from "@/lib/workbench/coverage-analyzer";
 import { testHistoryStore, type StoredTestRun } from "@/lib/workbench/test-history-store";
+import {
+  verdictFromNativeGuardResult,
+  verdictFromNativeSimulation,
+} from "@/lib/workbench/native-simulation";
 import { LiveAgentTab } from "@/components/workbench/editor/live-agent-tab";
 import { SdkIntegrationTab } from "@/components/workbench/editor/sdk-integration-tab";
 import { CoverageStrip } from "@/components/workbench/editor/coverage-strip";
@@ -142,7 +146,7 @@ function fromRustSim(id: string, resp: TauriSimulationResponse): QuickTestResult
   const guardResults: GuardSimResult[] = resp.results.map((r) => ({
     guardId: r.guard as GuardSimResult["guardId"],
     guardName: r.guard,
-    verdict: (r.allowed ? "allow" : "deny") as Verdict,
+    verdict: verdictFromNativeGuardResult(r),
     message: r.message,
     evidence: r.details ? (r.details as Record<string, unknown>) : undefined,
     engine: "native" as const,
@@ -150,7 +154,7 @@ function fromRustSim(id: string, resp: TauriSimulationResponse): QuickTestResult
 
   return {
     entryId: id,
-    verdict: resp.allowed ? "allow" : "deny",
+    verdict: verdictFromNativeSimulation(resp),
     guard: resp.guard || null,
     guardResults,
     durationMs: 0,
@@ -756,11 +760,11 @@ function TestSuiteTab() {
               postureStateJson ?? undefined,
             );
             if (resp) {
-              verdict = resp.allowed ? "allow" : "deny";
+              verdict = verdictFromNativeSimulation(resp);
               guard = resp.guard || null;
               guardResults = resp.results.map((r) => ({
                 guard: r.guard,
-                verdict: r.allowed ? "allow" : "deny",
+                verdict: verdictFromNativeGuardResult(r),
                 message: r.message,
               }));
               if (resp.posture_state_json) {
@@ -782,11 +786,11 @@ function TestSuiteTab() {
               scenario.content
             );
             if (resp) {
-              verdict = resp.allowed ? "allow" : "deny";
+              verdict = verdictFromNativeSimulation(resp);
               guard = resp.guard || null;
               guardResults = resp.results.map((r) => ({
                 guard: r.guard,
-                verdict: r.allowed ? "allow" : "deny",
+                verdict: verdictFromNativeGuardResult(r),
                 message: r.message,
               }));
             }
@@ -884,9 +888,10 @@ function TestSuiteTab() {
     // Persist to IndexedDB (best-effort but visible on failure)
     try {
       await testHistoryStore.init();
+      const historyPolicyId = multiActiveTab?.id ?? state.activePolicy.name;
       const storedRun: StoredTestRun = {
         id: crypto.randomUUID(),
-        policyId: state.activePolicy.name,
+        policyId: historyPolicyId,
         timestamp: runTimestamp,
         total,
         passed,
@@ -935,7 +940,7 @@ function TestSuiteTab() {
       title: `Suite complete: ${passed}/${total} passed`,
       description: failed > 0 ? `${failed} scenario(s) failed` : "All scenarios passed",
     });
-  }, [suiteYaml, scenarios, state.activePolicy, state.dirty, state.yaml, hasPostureConfig, testDispatch, toast]);
+  }, [multiActiveTab?.id, suiteYaml, scenarios, state.activePolicy, state.dirty, state.yaml, hasPostureConfig, testDispatch, toast]);
 
   // Auto-rerun effect: watches policy YAML and re-runs suite on changes
   const autoRerun = testState.autoRerun;
@@ -1304,9 +1309,14 @@ function TestSuiteTab() {
 function HistoryTab() {
   const { state: testState, dispatch: testDispatch } = useTestRunner();
   const { state } = useWorkbench();
+  const { activeTab } = useMultiPolicy();
   const [storedRuns, setStoredRuns] = useState<StoredTestRun[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [historyLoadError, setHistoryLoadError] = useState<string | null>(null);
+  const historyPolicyIds = useMemo(
+    () => Array.from(new Set([activeTab?.id, state.activePolicy.name].filter(Boolean) as string[])),
+    [activeTab?.id, state.activePolicy.name],
+  );
 
   // Load history from IndexedDB on mount
   useEffect(() => {
@@ -1314,7 +1324,7 @@ function HistoryTab() {
     async function loadHistory() {
       try {
         await testHistoryStore.init();
-        const runs = await testHistoryStore.getRunsForPolicy(state.activePolicy.name);
+        const runs = await testHistoryStore.getRunsForPolicies(historyPolicyIds);
         if (!cancelled) {
           setStoredRuns(runs);
           setHistoryLoadError(null);
@@ -1332,18 +1342,18 @@ function HistoryTab() {
     }
     void loadHistory();
     return () => { cancelled = true; };
-  }, [state.activePolicy.name, testState.runHistory.length]);
+  }, [historyPolicyIds, testState.runHistory.length]);
 
   const clearHistory = useCallback(async () => {
     testDispatch({ type: "CLEAR_RESULTS" });
     try {
       await testHistoryStore.init();
-      await testHistoryStore.clearRunsForPolicy(state.activePolicy.name);
+      await testHistoryStore.clearRunsForPolicies(historyPolicyIds);
       setStoredRuns([]);
     } catch {
       // Best effort
     }
-  }, [testDispatch, state.activePolicy.name]);
+  }, [historyPolicyIds, testDispatch]);
 
   // Combine in-memory history with stored runs (deduplicated by timestamp)
   const allRuns = useMemo(() => {

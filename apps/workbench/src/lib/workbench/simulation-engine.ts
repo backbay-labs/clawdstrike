@@ -296,12 +296,6 @@ function secretSeverityRank(severity: string): number {
   }
 }
 
-function maskSecretValue(value: string): string {
-  if (value.length === 0) return "";
-  if (value.length <= 8) return "*".repeat(value.length);
-  return `${value.slice(0, 4)}${"*".repeat(value.length - 8)}${value.slice(-4)}`;
-}
-
 function simulateSecretLeak(
   config: SecretLeakConfig,
   scenario: TestScenario,
@@ -343,7 +337,7 @@ function simulateSecretLeak(
     name: string;
     pattern: string;
     severity: string;
-    redacted: string;
+    matchLength: number;
   }> = [];
   const skippedPatterns: Array<{ name: string; pattern: string; reason: string }> = [];
   for (const sp of patterns) {
@@ -364,7 +358,7 @@ function simulateSecretLeak(
           name: sp.name,
           pattern: sp.pattern,
           severity: sp.severity,
-          redacted: shouldRedact ? maskSecretValue(matchedValue) : matchedValue,
+          matchLength: matchedValue.length,
         });
       }
     } catch (e) {
@@ -399,7 +393,7 @@ function simulateSecretLeak(
         : `Detected ${matches.length} secret(s) below block threshold ${severityThreshold}: ${matches.map((m) => m.name).join(", ")}`,
       evidence: {
         path,
-        redact: shouldRedact,
+        redactionRequested: shouldRedact,
         severityThreshold,
         matches,
         skippedPatterns,

@@ -240,6 +240,38 @@ extends: nonexistent_ruleset
                 base_path=base_dir,
             )
 
+    def test_extends_from_yaml_file_allows_parent_relative_policy(self, tmp_path) -> None:
+        repo_root = tmp_path / "repo"
+        services_dir = repo_root / "services"
+        services_dir.mkdir(parents=True)
+
+        base = repo_root / "base.yaml"
+        base.write_text(
+            'version: "1.2.0"\n'
+            'name: base\n'
+            "guards:\n"
+            "  forbidden_path:\n"
+            "    patterns:\n"
+            '      - "**/.ssh/**"\n'
+        )
+
+        child = services_dir / "child.yaml"
+        child.write_text(
+            'version: "1.2.0"\n'
+            "name: child\n"
+            "extends: ../base.yaml\n"
+            "guards:\n"
+            "  shell_command:\n"
+            "    forbidden_patterns:\n"
+            '      - "rm -rf"\n'
+        )
+
+        policy = Policy.from_yaml_file_with_extends(child)
+
+        assert policy.name == "child"
+        assert policy.guards.forbidden_path is not None
+        assert policy.guards.shell_command is not None
+
     def test_from_yaml_file_with_path_object(self, tmp_path) -> None:
         p = tmp_path / "policy.yaml"
         p.write_text('version: "1.1.0"\nname: path-test\n')
