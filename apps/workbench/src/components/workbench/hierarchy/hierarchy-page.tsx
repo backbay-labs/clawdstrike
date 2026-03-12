@@ -151,6 +151,7 @@ function TreeNode({
 
   // Determine what child types can be added
   const canAddTeam = node.type === "org";
+  const canAddAgent = node.type === "team";
   const canAddEndpoint = node.type === "team";
   const canAddRuntime = node.type === "endpoint";
   const canRemove = node.type !== "org"; // Can't remove root
@@ -268,6 +269,18 @@ function TreeNode({
                 onClick={(e) => {
                   e.stopPropagation();
                   onAddChild(node.id, "endpoint");
+                }}
+              >
+                <IconPlus size={11} stroke={2} />
+              </button>
+            )}
+            {canAddAgent && (
+              <button
+                className="p-0.5 rounded hover:bg-[#3dbf84]/20 text-[#3dbf84]/60 hover:text-[#3dbf84]"
+                title="Add Agent"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAddChild(node.id, "agent");
                 }}
               >
                 <IconPlus size={11} stroke={2} />
@@ -1073,15 +1086,7 @@ export function HierarchyPage() {
     hierarchyRef.current = hierarchy;
   }, [hierarchy]);
 
-  const commitHierarchyChange = useCallback((next: PolicyHierarchy) => {
-    const nextVersion = hierarchyVersionRef.current + 1;
-    hierarchyRef.current = next;
-    hierarchyVersionRef.current = nextVersion;
-    setHierarchy(next);
-    setHierarchyVersion(nextVersion);
-  }, []);
-
-  const restoreHierarchyChange = useCallback((next: PolicyHierarchy) => {
+  const applyHierarchyChange = useCallback((next: PolicyHierarchy) => {
     const nextVersion = hierarchyVersionRef.current + 1;
     hierarchyRef.current = next;
     hierarchyVersionRef.current = nextVersion;
@@ -1190,7 +1195,7 @@ export function HierarchyPage() {
           console.warn(`[hierarchy-sync] ${label} failed:`, result.error);
           const reverted = hierarchyVersionRef.current === capturedVersion;
           if (reverted) {
-            restoreHierarchyChange(prevHierarchy);
+            applyHierarchyChange(prevHierarchy);
           }
           showSyncStatus(
             "error",
@@ -1204,7 +1209,7 @@ export function HierarchyPage() {
         console.warn(`[hierarchy-sync] ${label} error:`, err);
         const reverted = hierarchyVersionRef.current === capturedVersion;
         if (reverted) {
-          restoreHierarchyChange(prevHierarchy);
+          applyHierarchyChange(prevHierarchy);
         }
         showSyncStatus(
           "error",
@@ -1215,7 +1220,7 @@ export function HierarchyPage() {
         return { success: false, error: String(err) };
       });
     },
-    [isLiveMode, fleetConnected, restoreHierarchyChange, showSyncStatus],
+    [isLiveMode, fleetConnected, applyHierarchyChange, showSyncStatus],
   );
 
   /**
@@ -1273,7 +1278,7 @@ export function HierarchyPage() {
         },
       });
 
-      commitHierarchyChange(updated);
+      applyHierarchyChange(updated);
 
       // Expand parent
       setExpandedIds((prev) => {
@@ -1309,7 +1314,7 @@ export function HierarchyPage() {
               if (result.success && "id" in result && result.id && result.id !== localId) {
                 const serverId = result.id;
                 const remapped = remapNodeId(hierarchyRef.current, localId, serverId);
-                commitHierarchyChange(remapped);
+                applyHierarchyChange(remapped);
                 // Update selected and rename targets if they reference the old ID
                 setSelectedId((prev) => (prev === localId ? serverId : prev));
                 setRenameTarget((prev) => (prev === localId ? serverId : prev));
@@ -1319,7 +1324,7 @@ export function HierarchyPage() {
         }
       }
     },
-    [hierarchy, syncToBackend, connection, remapNodeId, commitHierarchyChange],
+    [hierarchy, syncToBackend, connection, remapNodeId, applyHierarchyChange],
   );
 
   const handleRemove = useCallback(
@@ -1338,7 +1343,7 @@ export function HierarchyPage() {
 
       const prevHierarchy = hierarchy;
       const updated = removeNode(hierarchy, id);
-      commitHierarchyChange(updated);
+      applyHierarchyChange(updated);
       if (selectedId === id) {
         setSelectedId(node.parentId);
       }
@@ -1349,7 +1354,7 @@ export function HierarchyPage() {
         prevHierarchy,
       );
     },
-    [hierarchy, selectedId, syncToBackend, connection, commitHierarchyChange],
+    [hierarchy, selectedId, syncToBackend, connection, applyHierarchyChange],
   );
 
   const handleRename = useCallback((id: string) => {
@@ -1361,7 +1366,7 @@ export function HierarchyPage() {
       if (renameTarget) {
         const prevHierarchy = hierarchyRef.current;
         const updated = renameNode(prevHierarchy, renameTarget, name);
-        commitHierarchyChange(updated);
+        applyHierarchyChange(updated);
         setRenameTarget(null);
 
         // LIVE mode: update name on backend
@@ -1371,7 +1376,7 @@ export function HierarchyPage() {
         );
       }
     },
-    [renameTarget, syncToBackend, connection, commitHierarchyChange],
+    [renameTarget, syncToBackend, connection, applyHierarchyChange],
   );
 
   const handleAssign = useCallback(
@@ -1384,7 +1389,7 @@ export function HierarchyPage() {
           policyId,
           policyName,
         );
-        commitHierarchyChange(updated);
+        applyHierarchyChange(updated);
         setAssignTarget(null);
 
         // LIVE mode: update policy assignment on backend
@@ -1397,14 +1402,14 @@ export function HierarchyPage() {
         );
       }
     },
-    [assignTarget, syncToBackend, connection, commitHierarchyChange],
+    [assignTarget, syncToBackend, connection, applyHierarchyChange],
   );
 
   const handleUnassign = useCallback(() => {
     if (assignTarget) {
       const prevHierarchy = hierarchyRef.current;
       const updated = unassignPolicy(prevHierarchy, assignTarget);
-      commitHierarchyChange(updated);
+      applyHierarchyChange(updated);
       setAssignTarget(null);
 
       // LIVE mode: clear policy assignment on backend
@@ -1416,7 +1421,7 @@ export function HierarchyPage() {
         prevHierarchy,
       );
     }
-  }, [assignTarget, syncToBackend, connection, commitHierarchyChange]);
+  }, [assignTarget, syncToBackend, connection, applyHierarchyChange]);
 
   const handleDragStart = useCallback((id: string) => {
     setDragSourceId(id);
@@ -1442,7 +1447,7 @@ export function HierarchyPage() {
           if (canDrop) {
             const prevHierarchy = currentHierarchy;
             const updated = moveNode(currentHierarchy, dragSourceId, targetId);
-            commitHierarchyChange(updated);
+            applyHierarchyChange(updated);
 
             // LIVE mode: update parent_id on backend
             const movedId = dragSourceId;
@@ -1458,14 +1463,14 @@ export function HierarchyPage() {
       setDragSourceId(null);
       setDragOverId(null);
     },
-    [dragSourceId, syncToBackend, connection, commitHierarchyChange],
+    [dragSourceId, syncToBackend, connection, applyHierarchyChange],
   );
 
   const handleResetToDemo = useCallback(() => {
     if (!window.confirm("Reset hierarchy to demo data? All current changes will be lost.")) return;
     clearHierarchy();
     const demo = createDefaultHierarchy();
-    commitHierarchyChange(demo);
+    applyHierarchyChange(demo);
     setHasPulledFleetHierarchy(false);
     setSelectedId(demo.rootId);
     setExpandedIds(() => {
@@ -1477,7 +1482,7 @@ export function HierarchyPage() {
       }
       return ids;
     });
-  }, [commitHierarchyChange]);
+  }, [applyHierarchyChange]);
 
   const handleExport = useCallback(() => {
     const json = JSON.stringify(hierarchy, null, 2);
@@ -1756,7 +1761,7 @@ export function HierarchyPage() {
         }
 
         const newHierarchy: PolicyHierarchy = normalizeHierarchy({ nodes, rootId });
-        commitHierarchyChange(newHierarchy);
+        applyHierarchyChange(newHierarchy);
         setSelectedId(rootId);
 
         // Expand all org and team nodes
@@ -1868,7 +1873,7 @@ export function HierarchyPage() {
       }
 
       const newHierarchy: PolicyHierarchy = normalizeHierarchy({ nodes, rootId });
-      commitHierarchyChange(newHierarchy);
+      applyHierarchyChange(newHierarchy);
       setSelectedId(rootId);
 
       setExpandedIds(() => {
@@ -1900,7 +1905,7 @@ export function HierarchyPage() {
     showSyncStatus,
     flattenTreeNode,
     mapNodeType,
-    commitHierarchyChange,
+    applyHierarchyChange,
   ]);
 
   // ---------------------------------------------------------------------------

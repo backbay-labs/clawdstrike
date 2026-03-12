@@ -547,6 +547,39 @@ describe("HierarchyPage", () => {
     });
   });
 
+  it("still allows creating legacy agent leaves under teams", async () => {
+    const user = userEvent.setup();
+
+    renderWithProviders(<HierarchyPage />);
+
+    await user.click(screen.getByRole("button", { name: "DEMO" }));
+
+    const teamLabel = screen.getAllByText("Engineering")[0];
+    const teamRow = teamLabel.closest("div[draggable='true']");
+    expect(teamRow).not.toBeNull();
+
+    fireEvent.mouseEnter(teamRow!);
+    await user.click(screen.getByTitle("Add Agent"));
+
+    await waitFor(() => {
+      const storedHierarchy = JSON.parse(localStorageState.clawdstrike_policy_hierarchy) as {
+        nodes: Record<string, { id: string; name: string; parentId: string | null; type: string }>;
+      };
+      const engineeringId = Object.values(storedHierarchy.nodes).find(
+        (node) => node.name === "Engineering",
+      )?.id;
+      expect(engineeringId).toBeDefined();
+      expect(
+        Object.values(storedHierarchy.nodes).some(
+          (node) =>
+            node.type === "agent" &&
+            node.parentId === engineeringId &&
+            node.name.startsWith("agent-new-"),
+        ),
+      ).toBe(true);
+    });
+  });
+
   it("keeps the green selection ring for legacy agent nodes", async () => {
     const user = userEvent.setup();
 
