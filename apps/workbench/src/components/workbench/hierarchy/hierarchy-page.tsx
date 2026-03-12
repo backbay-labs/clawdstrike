@@ -232,7 +232,7 @@ function TreeNode({
         )}
 
         {/* Metadata count */}
-        {node.metadata?.agentCount !== undefined && node.type !== "runtime" && !node.policyName && (
+        {node.metadata?.agentCount !== undefined && node.type !== "runtime" && node.type !== "endpoint" && !node.policyName && (
           <span className="ml-auto shrink-0 text-[9px] font-mono text-[#6f7f9a]/60">
             {node.metadata.agentCount} {node.metadata.agentCount === 1
               ? metadataLeafLabel.singular

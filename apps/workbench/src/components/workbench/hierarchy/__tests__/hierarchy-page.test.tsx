@@ -316,7 +316,7 @@ describe("HierarchyPage", () => {
     expect(screen.getByText("Runtime")).toBeInTheDocument();
   });
 
-  it("labels endpoint metadata counts as runtimes", async () => {
+  it("hides endpoint metadata counts when the endpoint row is already visible", async () => {
     const user = userEvent.setup();
 
     fleetClientMocks.fetchHierarchyTree.mockResolvedValue({
@@ -364,7 +364,7 @@ describe("HierarchyPage", () => {
       expect(screen.getByText("Fleet Snapshot")).toBeInTheDocument();
     });
 
-    expect(screen.getByText("2 runtimes")).toBeInTheDocument();
+    expect(screen.queryByText("2 runtimes")).not.toBeInTheDocument();
     expect(screen.queryByText("2 agents")).not.toBeInTheDocument();
   });
 

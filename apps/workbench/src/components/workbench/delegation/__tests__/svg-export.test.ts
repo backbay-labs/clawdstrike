@@ -59,10 +59,13 @@ describe("sanitizeDelegationSvgForExport", () => {
             <stop offset="0%" stop-color="#fff" />
             <stop offset="100%" stop-color="#000" />
           </linearGradient>
+          <filter id="glow">
+            <feGaussianBlur stdDeviation="2" />
+          </filter>
         </defs>
         <rect
           id="safe-fill"
-          style="fill: url(#gradient); stroke: url(https://evil.example/stroke.svg); opacity: 0.8"
+          style="fill: url(#gradient); filter: url(#glow); stroke: url(https://evil.example/stroke.svg); opacity: 0.8"
           width="10"
           height="10"
         />
@@ -73,8 +76,11 @@ describe("sanitizeDelegationSvgForExport", () => {
     const rect = sanitized.querySelector("#safe-fill");
 
     expect(rect?.getAttribute("style")).toContain("fill: url(#gradient)");
+    expect(rect?.getAttribute("style")).toContain("filter: url(#glow)");
     expect(rect?.getAttribute("style")).toContain("opacity: 0.8");
     expect(rect?.getAttribute("style")).not.toContain("https://evil.example");
+    expect(sanitized.querySelector("linearGradient")).not.toBeNull();
+    expect(sanitized.querySelector("feGaussianBlur")).not.toBeNull();
   });
 
   it("removes unsafe parent subtrees without disturbing safe siblings", () => {
