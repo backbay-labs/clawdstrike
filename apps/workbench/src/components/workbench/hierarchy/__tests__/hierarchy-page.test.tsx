@@ -368,6 +368,49 @@ describe("HierarchyPage", () => {
     expect(screen.queryByText("2 agents")).not.toBeInTheDocument();
   });
 
+  it("labels org and team metadata counts as leaf nodes", async () => {
+    const user = userEvent.setup();
+
+    fleetClientMocks.fetchHierarchyTree.mockResolvedValue({
+      root_id: "root-1",
+      nodes: [
+        {
+          id: "root-1",
+          name: "Fleet Fixture Org",
+          node_type: "org",
+          parent_id: null,
+          policy_id: null,
+          policy_name: null,
+          metadata: { agentCount: 3 },
+          children: ["team-1"],
+        },
+        {
+          id: "team-1",
+          name: "Platform Team",
+          node_type: "team",
+          parent_id: "root-1",
+          policy_id: null,
+          policy_name: null,
+          metadata: { agentCount: 1 },
+          children: [],
+        },
+      ],
+    });
+
+    renderWithProviders(<HierarchyPage />);
+
+    await user.click(screen.getByRole("button", { name: "DEMO" }));
+    await user.click(screen.getByRole("button", { name: "Pull from Fleet" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Fleet Snapshot")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("3 leaf nodes")).toBeInTheDocument();
+    expect(screen.getByText("1 leaf node")).toBeInTheDocument();
+    expect(screen.queryByText("3 agents")).not.toBeInTheDocument();
+  });
+
   it("preserves external ids when a live hierarchy pull is pushed back to fleet", async () => {
     const user = userEvent.setup();
 

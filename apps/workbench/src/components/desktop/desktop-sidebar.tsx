@@ -82,14 +82,6 @@ const navSections: readonly NavSection[] = [
   },
 ] as const;
 
-// Build a lookup: href -> section title (for collapsed tooltips)
-const sectionByHref: Record<string, string> = {};
-for (const s of navSections) {
-  for (const item of s.items) {
-    sectionByHref[item.href] = s.title;
-  }
-}
-
 // ---- Component ----
 
 export function DesktopSidebar() {

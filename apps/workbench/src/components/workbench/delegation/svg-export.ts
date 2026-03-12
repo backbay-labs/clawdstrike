@@ -69,11 +69,11 @@ function sanitizeStyle(styleText: string): string | null {
   return safeDeclarations.length > 0 ? safeDeclarations.join("; ") : null;
 }
 
-function sanitizeSvgElement(element: Element) {
+function sanitizeSvgElement(element: Element): boolean {
   const tagName = element.tagName.toLowerCase();
   if (!SAFE_SVG_TAGS.has(tagName)) {
     element.remove();
-    return;
+    return false;
   }
 
   for (const attribute of Array.from(element.attributes)) {
@@ -109,14 +109,23 @@ function sanitizeSvgElement(element: Element) {
       }
     }
   }
+
+  return true;
+}
+
+function sanitizeSvgSubtree(element: Element) {
+  if (!sanitizeSvgElement(element)) {
+    return;
+  }
+
+  for (const child of Array.from(element.children)) {
+    sanitizeSvgSubtree(child);
+  }
 }
 
 export function sanitizeDelegationSvgForExport(svgElement: SVGSVGElement): SVGSVGElement {
   const sanitized = svgElement.cloneNode(true) as SVGSVGElement;
-
-  for (const element of [sanitized, ...Array.from(sanitized.querySelectorAll("*"))]) {
-    sanitizeSvgElement(element);
-  }
+  sanitizeSvgSubtree(sanitized);
 
   return sanitized;
 }

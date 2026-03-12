@@ -50,4 +50,26 @@ describe("sanitizeDelegationSvgForExport", () => {
     expect(sanitized.outerHTML.toLowerCase()).not.toContain("javascript:");
     expect(sanitized.outerHTML.toLowerCase()).not.toContain("onclick");
   });
+
+  it("removes unsafe parent subtrees without disturbing safe siblings", () => {
+    const input = makeSvg(`
+      <svg xmlns="http://www.w3.org/2000/svg">
+        <g id="safe-sibling">
+          <path id="safe-path" d="M0 0 L10 10" />
+        </g>
+        <foreignObject id="unsafe-parent">
+          <div xmlns="http://www.w3.org/1999/xhtml">
+            <span id="unsafe-child">bad</span>
+          </div>
+        </foreignObject>
+      </svg>
+    `);
+
+    const sanitized = sanitizeDelegationSvgForExport(input);
+
+    expect(sanitized.querySelector("#safe-sibling")).not.toBeNull();
+    expect(sanitized.querySelector("#safe-path")).not.toBeNull();
+    expect(sanitized.querySelector("#unsafe-parent")).toBeNull();
+    expect(sanitized.querySelector("#unsafe-child")).toBeNull();
+  });
 });

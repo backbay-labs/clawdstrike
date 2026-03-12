@@ -7137,21 +7137,69 @@ fn docker_available() -> bool {
         .unwrap_or(false)
 }
 
+fn is_retryable_docker_run_error(stderr: &str) -> bool {
+    let normalized = stderr.to_lowercase();
+    [
+        "bad gateway",
+        "service unavailable",
+        "client.timeout exceeded while awaiting headers",
+        "tls handshake timeout",
+        "connection reset by peer",
+        "unexpected eof",
+        "i/o timeout",
+        "temporary failure in name resolution",
+        "toomanyrequests",
+    ]
+    .iter()
+    .any(|needle| normalized.contains(needle))
+}
+
 fn run_container(args: &[&str]) -> DockerContainer {
-    let output = Command::new("docker")
-        .args(args)
-        .output()
-        .expect("docker run should execute");
-    assert!(
-        output.status.success(),
-        "docker run failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let id = String::from_utf8(output.stdout)
-        .expect("container id utf8")
-        .trim()
-        .to_string();
-    DockerContainer { id }
+    const MAX_ATTEMPTS: usize = 4;
+
+    for attempt in 1..=MAX_ATTEMPTS {
+        let output = Command::new("docker")
+            .args(args)
+            .output()
+            .expect("docker run should execute");
+        if output.status.success() {
+            let id = String::from_utf8(output.stdout)
+                .expect("container id utf8")
+                .trim()
+                .to_string();
+            return DockerContainer { id };
+        }
+
+        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+        if attempt < MAX_ATTEMPTS && is_retryable_docker_run_error(&stderr) {
+            eprintln!(
+                "docker run attempt {attempt}/{MAX_ATTEMPTS} failed with a transient registry/network error; retrying: {stderr}"
+            );
+            std::thread::sleep(Duration::from_millis(750 * attempt as u64));
+            continue;
+        }
+
+        panic!("docker run failed after {attempt} attempt(s): {stderr}");
+    }
+
+    unreachable!("docker run should return or panic");
+}
+
+#[test]
+fn retryable_docker_run_error_matches_transient_registry_failures() {
+    assert!(is_retryable_docker_run_error(
+        "docker: Error response from daemon: Head \"https://registry-1.docker.io/v2/library/postgres/manifests/16-alpine\": received unexpected HTTP status: 502 Bad Gateway"
+    ));
+    assert!(is_retryable_docker_run_error(
+        "docker: Error response from daemon: Head \"https://registry-1.docker.io/v2/library/nats/manifests/2.10-alpine\": net/http: request canceled (Client.Timeout exceeded while awaiting headers)"
+    ));
+}
+
+#[test]
+fn retryable_docker_run_error_ignores_permanent_container_failures() {
+    assert!(!is_retryable_docker_run_error(
+        "docker: Error response from daemon: manifest for does-not-exist:latest not found"
+    ));
 }
 
 fn container_host_port(container: &DockerContainer, container_port: u16) -> u16 {
