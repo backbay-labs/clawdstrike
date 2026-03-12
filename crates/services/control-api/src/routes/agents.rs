@@ -175,7 +175,7 @@ async fn register_agent(
     {
         Ok(creds) => creds,
         Err(err) => {
-            rollback_failed_agent_creation(&state.db, agent.id, auth.tenant_id)
+            rollback_failed_agent_creation(&state.db, agent.id, auth.tenant_id, &req.agent_id)
                 .await
                 .map_err(ApiError::Database)?;
             return Err(ApiError::Nats(err.to_string()));
@@ -746,9 +746,14 @@ async fn enroll_agent(
     {
         Ok(creds) => creds,
         Err(err) => {
-            if let Err(cleanup_err) =
-                rollback_failed_enrollment(&state.db, agent.id, enrollment_token_id, tenant_id)
-                    .await
+            if let Err(cleanup_err) = rollback_failed_enrollment(
+                &state.db,
+                agent.id,
+                enrollment_token_id,
+                tenant_id,
+                &agent_id,
+            )
+            .await
             {
                 tracing::error!(
                     error = %cleanup_err,
@@ -876,13 +881,21 @@ async fn register_runtime(
     // Validate the Ed25519 public key.
     hush_core::PublicKey::from_hex(&req.public_key).map_err(|_| ApiError::InvalidPublicKey)?;
 
-    // 1. Verify the endpoint agent exists and belongs to the tenant.
+    let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
+
+    // 1. Verify the endpoint agent exists and belongs to the tenant inside the
+    //    registration transaction so endpoint deletion cannot race this flow
+    //    after a stale pre-check.
     let endpoint_row = sqlx::query::query(
-        "SELECT agent_id, name, principal_id, trust_level FROM agents WHERE id = $1 AND tenant_id = $2",
+        r#"SELECT agent_id, name, principal_id, trust_level
+           FROM agents
+           WHERE id = $1
+             AND tenant_id = $2
+           FOR UPDATE"#,
     )
     .bind(agent_uuid)
     .bind(auth.tenant_id)
-    .fetch_optional(&state.db)
+    .fetch_optional(tx.as_mut())
     .await
     .map_err(ApiError::Database)?
     .ok_or(ApiError::NotFound)?;
@@ -907,8 +920,6 @@ async fn register_runtime(
     // Encode the endpoint/runtime pair so different inputs cannot collide on
     // the same stable_ref via crafted delimiter injection.
     let runtime_stable_ref = build_runtime_stable_ref(&endpoint_agent_id, &req.name);
-
-    let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
 
     // 2. Upsert the runtime_agent principal.
     let runtime_principal_id = upsert_runtime_principal(
@@ -1266,6 +1277,7 @@ async fn rollback_failed_enrollment(
     agent_uuid: Uuid,
     enrollment_token_id: Uuid,
     tenant_id: Uuid,
+    agent_id: &str,
 ) -> Result<(), sqlx::error::Error> {
     let mut tx = db.begin().await?;
 
@@ -1289,6 +1301,8 @@ async fn rollback_failed_enrollment(
     if let Some(principal_id) = principal_id {
         delete_principal_if_unreferenced(&mut tx, principal_id, tenant_id).await?;
     }
+
+    unlink_endpoint_hierarchy_nodes(&mut tx, tenant_id, agent_id).await?;
 
     sqlx::query::query(
         r#"UPDATE tenant_enrollment_tokens
@@ -1307,6 +1321,7 @@ async fn rollback_failed_agent_creation(
     db: &crate::db::PgPool,
     agent_uuid: Uuid,
     tenant_id: Uuid,
+    agent_id: &str,
 ) -> Result<(), sqlx::error::Error> {
     let mut tx = db.begin().await?;
 
@@ -1331,7 +1346,30 @@ async fn rollback_failed_agent_creation(
         delete_principal_if_unreferenced(&mut tx, principal_id, tenant_id).await?;
     }
 
+    unlink_endpoint_hierarchy_nodes(&mut tx, tenant_id, agent_id).await?;
+
     tx.commit().await?;
+    Ok(())
+}
+
+async fn unlink_endpoint_hierarchy_nodes(
+    tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
+    tenant_id: Uuid,
+    agent_id: &str,
+) -> Result<(), sqlx::error::Error> {
+    sqlx::query::query(
+        r#"UPDATE hierarchy_nodes
+           SET external_id = NULL,
+               updated_at = now()
+           WHERE tenant_id = $1
+             AND node_type IN ('endpoint', 'agent')
+             AND external_id = $2"#,
+    )
+    .bind(tenant_id)
+    .bind(agent_id)
+    .execute(tx.as_mut())
+    .await?;
+
     Ok(())
 }
 

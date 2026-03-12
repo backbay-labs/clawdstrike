@@ -7340,6 +7340,139 @@ async fn insert_endpoint_hierarchy_node(
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn register_agent_rollback_clears_endpoint_hierarchy_link_on_provision_failure() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let endpoint_node_id = Uuid::new_v4();
+    insert_endpoint_hierarchy_node(
+        &harness.db,
+        harness.tenant_id,
+        endpoint_node_id,
+        "Rollback Endpoint",
+        None,
+    )
+    .await;
+
+    let failing_provisioner = TenantProvisioner::new(
+        harness.db.clone(),
+        harness.nats_url.clone(),
+        "external",
+        Some("http://127.0.0.1:9".to_string()),
+        None,
+        false,
+    )
+    .expect("failing provisioner should construct");
+    let failing_state = AppState {
+        config: Config {
+            listen_addr: "127.0.0.1:0".parse().expect("listen addr"),
+            database_url: "postgres://unused".to_string(),
+            nats_url: harness.nats_url.clone(),
+            agent_nats_url: harness.nats_url.clone(),
+            nats_provisioning_mode: "external".to_string(),
+            nats_provisioner_base_url: Some("http://127.0.0.1:9".to_string()),
+            nats_provisioner_api_token: None,
+            nats_allow_insecure_mock_provisioner: false,
+            jwt_secret: "jwt-secret".to_string(),
+            stripe_secret_key: "stripe-key".to_string(),
+            stripe_webhook_secret: "stripe-webhook".to_string(),
+            approval_signing_enabled: true,
+            approval_signing_keypair_path: None,
+            approval_resolution_outbox_enabled: true,
+            approval_resolution_outbox_poll_interval_secs: 5,
+            audit_consumer_enabled: false,
+            audit_subject_filter: "tenant-*.>".to_string(),
+            audit_stream_name: "audit".to_string(),
+            audit_consumer_name: "audit-consumer".to_string(),
+            approval_consumer_enabled: false,
+            approval_subject_filter: "tenant-*.>".to_string(),
+            approval_stream_name: "approval".to_string(),
+            approval_consumer_name: "approval-consumer".to_string(),
+            heartbeat_consumer_enabled: false,
+            heartbeat_subject_filter: "tenant-*.>".to_string(),
+            heartbeat_stream_name: "heartbeat".to_string(),
+            heartbeat_consumer_name: "heartbeat-consumer".to_string(),
+            stale_detector_enabled: false,
+            stale_check_interval_secs: 60,
+            stale_threshold_secs: 120,
+            dead_threshold_secs: 300,
+        },
+        db: harness.db.clone(),
+        nats: harness.nats.clone(),
+        provisioner: failing_provisioner,
+        metering: MeteringService::new(harness.db.clone()),
+        alerter: AlerterService::new(harness.db.clone()),
+        retention: RetentionService::new(harness.db.clone()),
+        signing_keypair: Some(harness.signing_keypair.clone()),
+        receipt_store: crate::routes::receipts::ReceiptStore::new(),
+        catalog: crate::services::catalog::CatalogStore::new(),
+    };
+    let app = routes::router(failing_state);
+
+    let keypair = hush_core::Keypair::generate();
+    let create_resp = request_json(
+        &app,
+        Method::POST,
+        "/api/v1/agents".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "agent_id": "rollback-endpoint",
+            "name": "Rollback Endpoint",
+            "public_key": keypair.public_key().to_hex(),
+            "role": "coder",
+            "trust_level": "high"
+        })),
+    )
+    .await;
+    assert_eq!(create_resp.0, StatusCode::INTERNAL_SERVER_ERROR);
+
+    let agent_row = sqlx::query::query(
+        r#"SELECT id
+           FROM agents
+           WHERE tenant_id = $1
+             AND agent_id = 'rollback-endpoint'"#,
+    )
+    .bind(harness.tenant_id)
+    .fetch_optional(&harness.db)
+    .await
+    .expect("agent lookup should succeed");
+    assert!(agent_row.is_none(), "agent row should be rolled back");
+
+    let principal_row = sqlx::query::query(
+        r#"SELECT id
+           FROM principals
+           WHERE tenant_id = $1
+             AND principal_type = 'endpoint_agent'
+             AND stable_ref = 'rollback-endpoint'"#,
+    )
+    .bind(harness.tenant_id)
+    .fetch_optional(&harness.db)
+    .await
+    .expect("principal lookup should succeed");
+    assert!(
+        principal_row.is_none(),
+        "principal row should be rolled back"
+    );
+
+    let hierarchy_row = sqlx::query::query(
+        r#"SELECT external_id
+           FROM hierarchy_nodes
+           WHERE tenant_id = $1
+             AND id = $2"#,
+    )
+    .bind(harness.tenant_id)
+    .bind(endpoint_node_id)
+    .fetch_one(&harness.db)
+    .await
+    .expect("fetch hierarchy node");
+    let external_id: Option<String> = hierarchy_row.try_get("external_id").expect("external_id");
+    assert_eq!(external_id, None);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn register_runtime_creates_hierarchy_node_and_principal() {
     if !docker_available() {
         eprintln!("Skipping integration test: docker is unavailable");

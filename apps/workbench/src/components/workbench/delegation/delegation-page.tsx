@@ -473,15 +473,17 @@ export function DelegationPage() {
     // Add metadata desc element
     const desc = document.createElementNS("http://www.w3.org/2000/svg", "desc");
     const ts = new Date().toISOString();
-    const pid = selectedPrincipalId ?? "demo";
-    desc.textContent = `Delegation graph for principal ${pid} exported at ${ts}`;
+    const pid = selectedPrincipalId;
+    desc.textContent = pid
+      ? `Delegation graph for principal ${pid} exported at ${ts}`
+      : `Delegation graph for the current view exported at ${ts}`;
     clone.insertBefore(desc, clone.firstChild);
 
     const data = new XMLSerializer().serializeToString(clone);
     const blob = new Blob([data], { type: "image/svg+xml" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    const safePid = pid.replace(/[^a-zA-Z0-9_-]/g, "_");
+    const safePid = pid ? pid.replace(/[^a-zA-Z0-9_-]/g, "_") : "current-view";
     link.download = `delegation-graph-${safePid}.svg`;
     link.href = url;
     link.click();
