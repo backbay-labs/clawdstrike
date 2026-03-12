@@ -1274,6 +1274,7 @@ export function HierarchyPage() {
           });
           if (!resultPromise) {
             resolveCreatedId(null);
+            pendingCreateIdsRef.current.delete(localId);
           } else {
             resultPromise
               .then((result) => {
