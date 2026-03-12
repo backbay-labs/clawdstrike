@@ -554,10 +554,26 @@ describe("HierarchyPage", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText(/was created without an id, so 9 remaining nodes/),
+        screen.getByText(/was created without an id, so 3 descendant nodes/),
       ).toBeInTheDocument();
     });
-    expect(fleetClientMocks.createHierarchyNode).toHaveBeenCalledTimes(2);
+    expect(fleetClientMocks.createHierarchyNode).toHaveBeenCalledTimes(8);
+    const pushedNames = fleetClientMocks.createHierarchyNode.mock.calls.map(([, input]) => input.name);
+    expect(pushedNames).toEqual(
+      expect.arrayContaining([
+        "Security",
+        "Customer Support",
+        "agent-scanner-01",
+        "agent-support-02",
+      ]),
+    );
+    expect(pushedNames).not.toEqual(
+      expect.arrayContaining([
+        "agent-coder-01",
+        "agent-reviewer-01",
+        "agent-deployer-01",
+      ]),
+    );
   });
 
   it("confirms before push when leaf validation reports warnings", async () => {
@@ -663,6 +679,7 @@ describe("HierarchyPage", () => {
     renderWithProviders(<HierarchyPage />);
 
     await user.click(screen.getByRole("button", { name: "DEMO" }));
+    expect(screen.getByRole("button", { name: "LIVE" })).toBeInTheDocument();
 
     const source = screen
       .getAllByText("agent-coder-01")[0]

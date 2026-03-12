@@ -1555,7 +1555,8 @@ export function HierarchyPage() {
       let successCount = 0;
       let errorCount = 0;
 
-      let missingParentIdNode: OrgNode | null = null;
+      let firstMissingParentIdNodeName: string | null = null;
+      let missingParentIdNodeCount = 0;
       let missingParentSkippedNodeCount = 0;
 
       while (queue.length > 0) {
@@ -1596,20 +1597,16 @@ export function HierarchyPage() {
         if (result.id) {
           idMap.set(nodeId, result.id);
         } else if (node.children.length > 0) {
-          missingParentIdNode = node;
-          missingParentSkippedNodeCount =
-            Math.max(0, getDescendants(hierarchySnapshot, node.id).length - 1)
-            + queue.reduce((count, queuedNodeId) => {
-              const queuedNode = hierarchySnapshot.nodes[queuedNodeId];
-              if (!queuedNode) {
-                return count;
-              }
-              return count + getDescendants(hierarchySnapshot, queuedNode.id).length;
-            }, 0);
+          firstMissingParentIdNodeName ??= node.name;
+          missingParentIdNodeCount++;
+          missingParentSkippedNodeCount += Math.max(
+            0,
+            getDescendants(hierarchySnapshot, node.id).length - 1,
+          );
           console.warn(
             `[hierarchy-sync] push incomplete for node "${node.name}": backend created the node without returning an id, so its descendants cannot be uploaded`,
           );
-          break;
+          continue;
         }
 
         // Enqueue children
@@ -1642,10 +1639,12 @@ export function HierarchyPage() {
         });
       }
 
-      if (missingParentIdNode) {
+      if (missingParentIdNodeCount > 0) {
         showSyncStatus(
           "error",
-          `Push incomplete: "${missingParentIdNode.name}" was created without an id, so ${missingParentSkippedNodeCount} remaining node${missingParentSkippedNodeCount === 1 ? "" : "s"} could not be uploaded`,
+          missingParentIdNodeCount === 1
+            ? `Push incomplete: "${firstMissingParentIdNodeName}" was created without an id, so ${missingParentSkippedNodeCount} descendant node${missingParentSkippedNodeCount === 1 ? "" : "s"} could not be uploaded`
+            : `Push incomplete: ${missingParentIdNodeCount} nodes were created without ids, so ${missingParentSkippedNodeCount} descendant nodes could not be uploaded`,
         );
       } else if (errorCount === 0) {
         showSyncStatus("success", `Pushed ${successCount} nodes to fleet`);
