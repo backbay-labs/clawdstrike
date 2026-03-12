@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildHushdAuthHeaders,
   consumeSseMessages,
+  describeHushdAuthScopeMismatch,
   endpointsShareAuthScope,
   parseHushdSseEvent,
   resolveProxyBase,
@@ -36,12 +37,45 @@ describe("live-agent hushd monitor helpers", () => {
         "secret-token",
       ),
     ).toEqual({});
+
+    expect(
+      buildHushdAuthHeaders(
+        "http://localhost:8080",
+        "http://localhost:8080",
+        "secret-token",
+      ),
+    ).toEqual({ Authorization: "Bearer secret-token" });
   });
 
   it("requires exact hushd origin matching for auth scope checks", () => {
     expect(endpointsShareAuthScope("http://127.0.0.1:9000", "http://127.0.0.1:9000")).toBe(true);
     expect(endpointsShareAuthScope("http://127.0.0.1:9000", "http://localhost:9000")).toBe(false);
     expect(endpointsShareAuthScope("http://127.0.0.1:9000", "http://127.0.0.1:9001")).toBe(false);
+  });
+
+  it("explains exact-origin auth scope mismatches instead of looking like a bad token", () => {
+    expect(
+      describeHushdAuthScopeMismatch(
+        "http://127.0.0.1:8080",
+        "http://localhost:8080",
+        "secret-token",
+      ),
+    ).toContain("configured hushd URL (http://localhost:8080)");
+
+    expect(
+      describeHushdAuthScopeMismatch(
+        "http://localhost:8080",
+        "http://localhost:8080",
+        "secret-token",
+      ),
+    ).toBeNull();
+    expect(
+      describeHushdAuthScopeMismatch(
+        "http://127.0.0.1:8080",
+        "http://localhost:8080",
+        "   ",
+      ),
+    ).toBeNull();
   });
 
   it("parses named SSE messages and preserves trailing partial data", () => {

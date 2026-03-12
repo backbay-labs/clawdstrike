@@ -17,10 +17,17 @@ export function CrashRecoveryBanner({
   }
 
   const latestTimestamp = Math.max(...entries.map((entry) => entry.timestamp));
+  const normalizedPolicyName = (name: string) => name.trim();
   const policyNames = Array.from(
-    new Set(entries.map((entry) => entry.policyName).filter(Boolean)),
+    new Set(
+      entries
+        .map((entry) => normalizedPolicyName(entry.policyName))
+        .filter((name) => name.length > 0),
+    ),
   );
-  const allEntriesNamed = entries.every((entry) => entry.policyName.trim().length > 0);
+  const allEntriesNamed = entries.every(
+    (entry) => normalizedPolicyName(entry.policyName).length > 0,
+  );
   const listedPolicyNames =
     policyNames.slice(0, 3).join(", ") + (policyNames.length > 3 ? ", ..." : "");
   const summaryLabel =
@@ -32,7 +39,7 @@ export function CrashRecoveryBanner({
       ? allEntriesNamed
         ? policyNames.length === 1
           ? `all named ${policyNames[0]}`
-          : listedPolicyNames
+          : `named ${listedPolicyNames}`
         : `including ${listedPolicyNames}`
       : null;
   const omittedSensitiveFields = entries.some(

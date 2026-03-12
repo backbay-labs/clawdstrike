@@ -184,4 +184,62 @@ describe("CrashRecoveryBanner", () => {
     expect(screen.getByText(/\(all named prod-policy\)/)).toBeInTheDocument();
     expect(screen.queryByText(/\(including prod-policy\)/)).toBeNull();
   });
+
+  it("adds context when all recovered tabs are named but have different policy names", () => {
+    render(
+      <CrashRecoveryBanner
+        entries={[
+          {
+            tabId: "tab-1",
+            policyName: "prod-policy",
+            yaml: "version: '1.2.0'\nname: prod-policy\n",
+            filePath: null,
+            timestamp: Date.UTC(2026, 2, 11, 12, 0, 0),
+          },
+          {
+            tabId: "tab-2",
+            policyName: "staging-policy",
+            yaml: "version: '1.2.0'\nname: staging-policy\n",
+            filePath: null,
+            timestamp: Date.UTC(2026, 2, 11, 12, 1, 0),
+          },
+        ]}
+        onRestore={vi.fn()}
+        onDismiss={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("2 tabs")).toBeInTheDocument();
+    expect(screen.getByText(/\(named prod-policy, staging-policy\)/)).toBeInTheDocument();
+    expect(screen.queryByText(/\(including prod-policy, staging-policy\)/)).toBeNull();
+  });
+
+  it("treats whitespace-only recovery names as unnamed tabs", () => {
+    render(
+      <CrashRecoveryBanner
+        entries={[
+          {
+            tabId: "tab-1",
+            policyName: "   ",
+            yaml: "version: '1.2.0'\n",
+            filePath: null,
+            timestamp: Date.UTC(2026, 2, 11, 12, 0, 0),
+          },
+          {
+            tabId: "tab-2",
+            policyName: "prod-policy",
+            yaml: "version: '1.2.0'\nname: prod-policy\n",
+            filePath: null,
+            timestamp: Date.UTC(2026, 2, 11, 12, 1, 0),
+          },
+        ]}
+        onRestore={vi.fn()}
+        onDismiss={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("2 tabs")).toBeInTheDocument();
+    expect(screen.getByText(/\(including prod-policy\)/)).toBeInTheDocument();
+    expect(screen.queryByText(/\(including\s+\)/)).toBeNull();
+  });
 });

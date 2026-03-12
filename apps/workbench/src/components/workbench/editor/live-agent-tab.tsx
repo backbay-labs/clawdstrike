@@ -368,6 +368,22 @@ export function buildHushdAuthHeaders(
   return { Authorization: `Bearer ${trimmed}` };
 }
 
+export function describeHushdAuthScopeMismatch(
+  endpoint: string,
+  hushdUrl: string,
+  apiKey: string,
+): string | null {
+  const trimmedApiKey = apiKey.trim();
+  const normalizedHushdUrl = normalizeMonitorEndpoint(hushdUrl);
+  if (!trimmedApiKey || !normalizedHushdUrl) {
+    return null;
+  }
+  if (endpointsShareAuthScope(endpoint, normalizedHushdUrl)) {
+    return null;
+  }
+  return `Saved hushd credentials are only sent to the configured hushd URL (${normalizedHushdUrl}). Use that exact URL here or reconnect this endpoint in Settings.`;
+}
+
 export interface ParsedSseMessage {
   eventType: string;
   data: string;
@@ -521,6 +537,18 @@ function HushdMonitorPanel() {
 
   const startSse = useCallback(
     (proxyBase: string) => {
+      const authScopeMismatch = describeHushdAuthScopeMismatch(
+        endpoint,
+        connection.hushdUrl,
+        connection.apiKey,
+      );
+      if (authScopeMismatch) {
+        setConnected(false);
+        setReconnecting(false);
+        setConnectionError(authScopeMismatch);
+        return;
+      }
+
       const authHeaders = buildHushdAuthHeaders(endpoint, connection.hushdUrl, connection.apiKey);
 
       // Clean up any prior EventSource before opening a new one
@@ -706,6 +734,23 @@ function HushdMonitorPanel() {
     setConnecting(true);
     setConnectionError(null);
     const proxyBase = resolveProxyBase(endpoint);
+    const authScopeMismatch = describeHushdAuthScopeMismatch(
+      endpoint,
+      connection.hushdUrl,
+      connection.apiKey,
+    );
+    if (authScopeMismatch) {
+      setConnecting(false);
+      setConnectionError(authScopeMismatch);
+      toast({
+        type: "error",
+        title: "Auth scope mismatch",
+        description:
+          "Saved hushd credentials are only sent to the configured hushd URL. Use that exact URL here or reconnect this endpoint in Settings.",
+      });
+      return;
+    }
+
     const authHeaders = buildHushdAuthHeaders(endpoint, connection.hushdUrl, connection.apiKey);
 
     try {
