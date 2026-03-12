@@ -51,6 +51,32 @@ describe("sanitizeDelegationSvgForExport", () => {
     expect(sanitized.outerHTML.toLowerCase()).not.toContain("onclick");
   });
 
+  it("preserves safe local url() references inside inline styles", () => {
+    const input = makeSvg(`
+      <svg xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="gradient">
+            <stop offset="0%" stop-color="#fff" />
+            <stop offset="100%" stop-color="#000" />
+          </linearGradient>
+        </defs>
+        <rect
+          id="safe-fill"
+          style="fill: url(#gradient); stroke: url(https://evil.example/stroke.svg); opacity: 0.8"
+          width="10"
+          height="10"
+        />
+      </svg>
+    `);
+
+    const sanitized = sanitizeDelegationSvgForExport(input);
+    const rect = sanitized.querySelector("#safe-fill");
+
+    expect(rect?.getAttribute("style")).toContain("fill: url(#gradient)");
+    expect(rect?.getAttribute("style")).toContain("opacity: 0.8");
+    expect(rect?.getAttribute("style")).not.toContain("https://evil.example");
+  });
+
   it("removes unsafe parent subtrees without disturbing safe siblings", () => {
     const input = makeSvg(`
       <svg xmlns="http://www.w3.org/2000/svg">

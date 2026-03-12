@@ -498,8 +498,6 @@ export function suggestScenariosFromPolicy(policy: WorkbenchPolicy) {
 // Tools
 // ---------------------------------------------------------------------------
 
-type ToolSchema = Record<string, z.ZodTypeAny>;
-
 type RunScenarioArgs = {
   scenario_json: string;
   policy_yaml: string;
@@ -535,7 +533,7 @@ const scenarioActionTypeSchema = z.enum([
 ]);
 const scenarioVerdictSchema = z.enum(["allow", "deny", "warn"]);
 
-const createScenarioSchema: ToolSchema = {
+const createScenarioSchema = {
   name: z.string().describe("Scenario name (e.g. 'SSH Key Exfiltration')"),
   description: z.string().describe("What this scenario tests"),
   category: scenarioCategorySchema.describe("Scenario category"),
@@ -546,7 +544,7 @@ const createScenarioSchema: ToolSchema = {
   expected_verdict: scenarioVerdictSchema.optional().describe("Expected verdict for pass/fail checking"),
 };
 
-const synthPolicySchema: ToolSchema = {
+const synthPolicySchema = {
   events_jsonl: z
     .string()
     .describe("JSONL string — one JSON event per line with action_type, target, and optional content"),
@@ -568,7 +566,7 @@ const synthPolicySchema: ToolSchema = {
   name: z.string().optional().describe("Name for the synthesized policy"),
 };
 
-const complianceCheckSchema: ToolSchema = {
+const complianceCheckSchema = {
   policy_yaml: z
     .string()
     .describe("Policy YAML string to check compliance for"),
@@ -578,12 +576,12 @@ const complianceCheckSchema: ToolSchema = {
     .describe("Specific frameworks to check (default: all)"),
 };
 
-const exportPolicySchema: ToolSchema = {
+const exportPolicySchema = {
   policy_yaml: z.string().describe("Policy YAML string to convert"),
   format: z.enum(["json", "toml", "yaml"]).describe("Target format"),
 };
 
-const hardenPolicySchema: ToolSchema = {
+const hardenPolicySchema = {
   policy_yaml: z.string().describe("Policy YAML to harden"),
   level: z
     .enum(["moderate", "aggressive"])
@@ -591,7 +589,7 @@ const hardenPolicySchema: ToolSchema = {
     .describe("How aggressively to tighten (default: moderate)"),
 };
 
-const generatePolicySchema: ToolSchema = {
+const generatePolicySchema = {
   description: z
     .string()
     .min(1, "Description must not be empty")
@@ -615,23 +613,23 @@ const generatePolicySchema: ToolSchema = {
     .describe("Built-in ruleset to extend from (auto-detected if omitted)"),
 };
 
-const handleCreateScenario = async (input: unknown) => {
-  const {
-    name,
-    description,
-    category,
-    action_type,
-    payload,
-    expected_verdict,
-  } = input as {
-    name: string;
-    description: string;
-    category: "attack" | "benign" | "edge_case";
-    action_type: TestActionType;
-    payload: string;
-    expected_verdict?: Verdict;
-  };
+type CreateScenarioArgs = {
+  name: string;
+  description: string;
+  category: "attack" | "benign" | "edge_case";
+  action_type: TestActionType;
+  payload: string;
+  expected_verdict?: Verdict;
+};
 
+const handleCreateScenario = async ({
+  name,
+  description,
+  category,
+  action_type,
+  payload,
+  expected_verdict,
+}: CreateScenarioArgs) => {
   let parsedPayload: Record<string, unknown>;
   try {
     parsedPayload = JSON.parse(payload);
@@ -655,7 +653,7 @@ const handleCreateScenario = async (input: unknown) => {
   return jsonResult(scenario);
 };
 
-// @ts-expect-error TS2589: this schema/callback pair hits TypeScript's depth limit even though the call is valid.
+// @ts-expect-error TS2589: the MCP SDK's raw-shape overload hits TypeScript's depth limit on this extracted schema.
 server.tool(
   "workbench_create_scenario",
   "Create a test scenario with name, action type, target, payload, and expected verdict. Returns the scenario object as JSON.",
@@ -838,6 +836,7 @@ server.tool(
   async ({ policy_yaml }: PolicyYamlArgs) => jsonResult(validatePolicyYaml(policy_yaml)),
 );
 
+// @ts-expect-error TS2589: the MCP SDK's raw-shape overload hits TypeScript's depth limit on this extracted schema.
 server.tool(
   "workbench_synth_policy",
   "Synthesize a candidate security policy from JSONL agent activity events. Each event line needs action_type and target fields.",
@@ -895,6 +894,7 @@ server.tool(
   },
 );
 
+// @ts-expect-error TS2589: the MCP SDK's raw-shape overload hits TypeScript's depth limit on this extracted schema.
 server.tool(
   "workbench_compliance_check",
   "Score a policy against HIPAA, SOC2, and PCI-DSS compliance frameworks. Returns per-framework scores, met requirements, and gaps.",
@@ -1091,6 +1091,7 @@ server.tool(
   },
 );
 
+// @ts-expect-error TS2589: the MCP SDK's raw-shape overload hits TypeScript's depth limit on this extracted schema.
 server.tool(
   "workbench_export_policy",
   "Convert a policy YAML to JSON or TOML format.",
@@ -1108,6 +1109,7 @@ server.tool(
   },
 );
 
+// @ts-expect-error TS2589: the MCP SDK's raw-shape overload hits TypeScript's depth limit on this extracted schema.
 server.tool(
   "workbench_harden_policy",
   "Analyze a policy and return a hardened version with tighter settings, additional guards, and stricter thresholds.",
