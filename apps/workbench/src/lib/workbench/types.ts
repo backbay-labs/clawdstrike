@@ -77,6 +77,10 @@ export interface McpToolConfig {
   require_confirmation?: string[];
   default_action?: "allow" | "block";
   max_args_size?: number;
+  additional_allow?: string[];
+  additional_block?: string[];
+  remove_allow?: string[];
+  remove_block?: string[];
 }
 
 export interface PromptInjectionConfig {
@@ -211,6 +215,8 @@ export type Visibility =
   | "internal"
   | "public"
   | "external_shared"
+  | "restricted"
+  | "external"
   | "unknown";
 
 export type ProvenanceConfidence = "strong" | "medium" | "weak" | "unknown";
@@ -229,6 +235,8 @@ export interface OriginMatch {
   external_participants?: boolean;
   tags?: string[];
   sensitivity?: string;
+  actor_id?: string;
+  actor_type?: ActorType;
   actor_role?: string;
   provenance_confidence?: ProvenanceConfidence;
 }
@@ -268,6 +276,7 @@ export interface OriginProfile {
   budgets?: OriginBudgets;
   bridge_policy?: BridgePolicy;
   explanation?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface OriginsConfig {
@@ -293,6 +302,7 @@ export interface OriginContext {
   tags?: string[];
   sensitivity?: string;
   provenance_confidence?: ProvenanceConfidence;
+  metadata?: Record<string, unknown>;
 }
 
 // ---- Top-level policy ----
