@@ -747,6 +747,66 @@ describe("HierarchyPage", () => {
       expect(screen.getByText("Pushed 0 nodes, 1 incomplete")).toBeInTheDocument();
     });
 
-    expect(screen.getByText("Pushed 0 nodes, 1 incomplete")).toHaveClass("text-[#3dbf84]");
+    expect(screen.getByText("Pushed 0 nodes, 1 incomplete")).toHaveClass("text-[#c45c5c]");
+  });
+
+  it("surfaces root responses without ids as an error when descendants are skipped", async () => {
+    const user = userEvent.setup();
+
+    fleetClientMocks.fetchHierarchyTree.mockResolvedValue({
+      root_id: "local-root",
+      nodes: [
+        {
+          id: "local-root",
+          name: "Fleet Fixture Org",
+          node_type: "org",
+          parent_id: null,
+          policy_id: null,
+          policy_name: null,
+          metadata: {},
+          children: ["local-team"],
+        },
+        {
+          id: "local-team",
+          name: "Platform Team",
+          node_type: "team",
+          parent_id: "local-root",
+          policy_id: null,
+          policy_name: null,
+          metadata: {},
+          children: [],
+        },
+      ],
+    });
+    fleetClientMocks.createHierarchyNode.mockReset();
+    fleetClientMocks.createHierarchyNode.mockResolvedValueOnce({ success: true });
+
+    renderWithProviders(<HierarchyPage />);
+
+    await user.click(screen.getByRole("button", { name: "DEMO" }));
+    await user.click(screen.getByRole("button", { name: "Pull from Fleet" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Fleet Snapshot")).toBeInTheDocument();
+    });
+
+    fleetClientMocks.createHierarchyNode.mockReset();
+    fleetClientMocks.createHierarchyNode.mockResolvedValueOnce({ success: true });
+
+    await user.click(screen.getByRole("button", { name: "Push to Fleet" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          "Pushed 0 nodes, 1 incomplete, 1 skipped (root response omitted an id, descendants skipped)",
+        ),
+      ).toBeInTheDocument();
+    });
+
+    expect(
+      screen.getByText(
+        "Pushed 0 nodes, 1 incomplete, 1 skipped (root response omitted an id, descendants skipped)",
+      ),
+    ).toHaveClass("text-[#c45c5c]");
   });
 });

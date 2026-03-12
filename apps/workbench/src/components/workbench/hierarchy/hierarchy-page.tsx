@@ -1438,6 +1438,7 @@ export function HierarchyPage() {
       let errorCount = 0;
       let skippedCount = 0;
       let incompleteCount = 0;
+      let rootIncomplete = false;
       const countDescendants = (nodeId: string): number => {
         const node = hierarchy.nodes[nodeId];
         if (!node) return 0;
@@ -1451,14 +1452,15 @@ export function HierarchyPage() {
 
         let resolvedParentId: string | null = null;
         if (node.parentId) {
-          resolvedParentId = idMap.get(node.parentId) ?? null;
-          if (!resolvedParentId) {
+          const mappedParentId = idMap.get(node.parentId);
+          if (mappedParentId === undefined) {
             skippedCount += 1 + countDescendants(nodeId);
             console.warn(
               `[hierarchy-sync] skipping node "${node.name}": parent "${node.parentId}" has no fleet id`,
             );
             continue;
           }
+          resolvedParentId = mappedParentId;
         }
 
         const input: HierarchyNodeInput = {
@@ -1484,6 +1486,9 @@ export function HierarchyPage() {
           idMap.set(nodeId, result.id);
         } else {
           incompleteCount++;
+          if (node.parentId == null) {
+            rootIncomplete = true;
+          }
           if (node.children.length > 0) {
             skippedCount += countDescendants(nodeId);
             console.warn(
@@ -1510,9 +1515,14 @@ export function HierarchyPage() {
         if (skippedCount > 0) {
           statusParts.push(`${skippedCount} skipped`);
         }
+        const statusMessage = rootIncomplete && skippedCount > 0
+          ? `${statusParts.join(", ")} (root response omitted an id, descendants skipped)`
+          : statusParts.join(", ");
         showSyncStatus(
-          errorCount > 0 ? "error" : "success",
-          statusParts.join(", "),
+          errorCount > 0 || (completedCount === 0 && (incompleteCount > 0 || skippedCount > 0))
+            ? "error"
+            : "success",
+          statusMessage,
         );
       } else {
         showSyncStatus("success", `Pushed ${completedCount} nodes to fleet`);
