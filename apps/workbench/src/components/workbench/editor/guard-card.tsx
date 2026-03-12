@@ -428,6 +428,8 @@ export function GuardCard({
           aria-expanded={open}
           aria-label={`${open ? 'Collapse' : 'Expand'} ${meta.name} configuration`}
           className="flex items-center gap-3 w-full px-3 py-3 text-left cursor-pointer hover:bg-[#131721]/50 transition-colors rounded-t-lg"
+          render={<div role="button" tabIndex={0} />}
+          nativeButton={false}
         >
           {/* Drag handle — only in custom reorder mode */}
           {reorderable && (

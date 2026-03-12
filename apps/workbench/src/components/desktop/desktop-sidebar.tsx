@@ -16,6 +16,9 @@ import {
   IconChevronsRight,
   IconServer,
   IconFileAnalytics,
+  IconSearch,
+  IconShield,
+  IconRoute,
 } from "@tabler/icons-react";
 import { useWorkbench } from "@/lib/workbench/multi-policy-store";
 import { useFleetConnection } from "@/lib/workbench/use-fleet-connection";
@@ -23,20 +26,73 @@ import { cn } from "@/lib/utils";
 import { fleetClient } from "@/lib/workbench/fleet-client";
 import { DEMO_APPROVAL_REQUESTS } from "@/lib/workbench/approval-demo-data";
 
-const navItems = [
-  { label: "Home", icon: IconLayoutDashboard, href: "/home" },
-  { label: "Editor", icon: IconPencil, href: "/editor" },
-  { label: "Threat Lab", icon: IconCrosshair, href: "/simulator" },
-  { label: "Compare", icon: IconColumns, href: "/compare" },
-  { label: "Compliance", icon: IconShieldCheck, href: "/compliance" },
-  { label: "Receipts", icon: IconCertificate, href: "/receipts" },
-  { label: "Audit", icon: IconFileAnalytics, href: "/audit" },
-  { label: "Delegation", icon: IconBinaryTree2, href: "/delegation" },
-  { label: "Approvals", icon: IconGavel, href: "/approvals", badge: true },
-  { label: "Hierarchy", icon: IconSitemap, href: "/hierarchy" },
-  { label: "Fleet", icon: IconServer, href: "/fleet" },
-  { label: "Library", icon: IconBooks, href: "/library" },
+// ---- Data ----
+
+const homeItem = { label: "Home", icon: IconLayoutDashboard, href: "/home" } as const;
+
+interface NavItem {
+  readonly label: string;
+  readonly icon: typeof IconPencil;
+  readonly href: string;
+  readonly badge?: boolean;
+}
+
+interface NavSection {
+  readonly title: string;
+  readonly accent: string; // muted tint for left bar + header text
+  readonly items: readonly NavItem[];
+}
+
+const navSections: readonly NavSection[] = [
+  {
+    title: "Policy",
+    accent: "#8b7355", // warm amber
+    items: [
+      { label: "Editor", icon: IconPencil, href: "/editor" },
+      { label: "Library", icon: IconBooks, href: "/library" },
+      { label: "Guards", icon: IconShield, href: "/guards" },
+      { label: "Origins", icon: IconRoute, href: "/origins" },
+      { label: "Compare", icon: IconColumns, href: "/compare" },
+    ],
+  },
+  {
+    title: "Ops",
+    accent: "#6b7b55", // sage green
+    items: [
+      { label: "Threat Lab", icon: IconCrosshair, href: "/simulator" },
+      { label: "Hunt Lab", icon: IconSearch, href: "/hunt" },
+    ],
+  },
+  {
+    title: "Governance",
+    accent: "#7b6b8b", // muted purple
+    items: [
+      { label: "Compliance", icon: IconShieldCheck, href: "/compliance" },
+      { label: "Receipts", icon: IconCertificate, href: "/receipts" },
+      { label: "Audit", icon: IconFileAnalytics, href: "/audit" },
+      { label: "Approvals", icon: IconGavel, href: "/approvals", badge: true },
+    ],
+  },
+  {
+    title: "Infrastructure",
+    accent: "#557b8b", // steel blue
+    items: [
+      { label: "Delegation", icon: IconBinaryTree2, href: "/delegation" },
+      { label: "Hierarchy", icon: IconSitemap, href: "/hierarchy" },
+      { label: "Fleet", icon: IconServer, href: "/fleet" },
+    ],
+  },
 ] as const;
+
+// Build a lookup: href -> section title (for collapsed tooltips)
+const sectionByHref: Record<string, string> = {};
+for (const s of navSections) {
+  for (const item of s.items) {
+    sectionByHref[item.href] = s.title;
+  }
+}
+
+// ---- Component ----
 
 export function DesktopSidebar() {
   const pathname = useLocation().pathname;
@@ -88,82 +144,151 @@ export function DesktopSidebar() {
         collapsed ? "w-[52px]" : "w-[200px]",
       )}
     >
-      <nav className="flex-1 py-3 flex flex-col gap-0.5 overflow-y-auto">
-        {navItems.map((item) => {
-          const active = pathname === item.href || pathname.startsWith(item.href + "/");
-          const Icon = item.icon;
-          const showBadge = "badge" in item && item.badge && pendingApprovalCount > 0;
-
+      <nav className="flex-1 py-3 flex flex-col overflow-y-auto">
+        {/* ---- Home (standalone) ---- */}
+        {(() => {
+          const active = pathname === homeItem.href || pathname.startsWith(homeItem.href + "/");
+          const Icon = homeItem.icon;
           return (
             <Link
-              key={item.href}
-              to={item.href}
+              to={homeItem.href}
+              title={collapsed ? homeItem.label : undefined}
               className={cn(
-                "sidebar-link relative flex items-center gap-2.5 mx-2 rounded-lg transition-all duration-150",
-                collapsed ? "justify-center px-0 py-2.5" : "px-3 py-2.5",
+                "sidebar-link relative flex items-center gap-2.5 mx-2 rounded-lg",
+                "transition-all duration-150",
+                collapsed ? "justify-center px-0 py-2" : "px-3 py-2",
                 active
-                  ? "bg-[#131721] text-[#ece7dc]"
-                  : "text-[#6f7f9a] hover:text-[#ece7dc] hover:bg-[#131721]/40",
+                  ? "bg-[#131721] text-[#ece7dc] shadow-[0_0_8px_rgba(212,168,75,0.08)]"
+                  : "text-[#6f7f9a] hover:text-[#ece7dc] hover:bg-[#131721]/40 hover:translate-x-px",
               )}
             >
               {active && (
-                <span className="sidebar-accent-bar absolute left-0 top-2 bottom-2 w-[2.5px] rounded-r-full bg-[#d4a84b]" />
+                <span className="sidebar-accent-bar absolute left-0 top-1.5 bottom-1.5 w-[2.5px] rounded-r-full bg-[#d4a84b]" />
               )}
-              <span className="relative shrink-0">
-                <Icon
-                  size={17}
-                  stroke={1.5}
-                  className={cn(
-                    "transition-colors duration-150",
-                    active ? "text-[#d4a84b]" : "",
-                  )}
-                />
-                {showBadge && collapsed && (
-                  <span
-                    className={cn(
-                      "absolute -right-1 -top-1 h-2 w-2 rounded-full animate-pulse",
-                      isLiveBadge ? "bg-[#d4a84b]" : "bg-[#6f7f9a]",
-                    )}
-                  />
-                )}
-              </span>
+              <Icon
+                size={17}
+                stroke={1.5}
+                className={cn("shrink-0 transition-colors duration-150", active ? "text-[#d4a84b]" : "")}
+              />
               {!collapsed && (
-                <>
-                  <span className="text-[12.5px] font-medium tracking-[-0.01em] truncate">
-                    {item.label}
-                  </span>
-                  {showBadge && (
-                    <span
-                      className={cn(
-                        "ml-auto flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[9px] font-semibold animate-pulse",
-                        isLiveBadge
-                          ? "bg-[#d4a84b]/20 text-[#d4a84b]"
-                          : "bg-[#6f7f9a]/20 text-[#6f7f9a]",
-                      )}
-                    >
-                      {pendingApprovalCount}
-                    </span>
-                  )}
-                </>
+                <span className="text-[12.5px] font-medium tracking-[-0.01em] truncate">
+                  {homeItem.label}
+                </span>
               )}
             </Link>
           );
-        })}
+        })()}
+
+        {/* ---- Grouped sections ---- */}
+        {navSections.map((section, idx) => (
+          <div key={section.title} className={cn("flex flex-col gap-px", idx === 0 ? "mt-2" : "mt-3")}>
+            {/* Section header */}
+            {collapsed ? (
+              <div className="mx-3 my-1.5 h-px bg-[#2d324060]" />
+            ) : (
+              <div
+                className={cn(
+                  "flex items-center gap-2 mx-3 mb-1",
+                  "transition-opacity duration-200 ease-out",
+                )}
+              >
+                <span
+                  className="w-[2px] h-2.5 rounded-full shrink-0"
+                  style={{ backgroundColor: section.accent }}
+                />
+                <span
+                  className="text-[8.5px] font-semibold uppercase tracking-[0.12em] select-none whitespace-nowrap"
+                  style={{ color: section.accent }}
+                >
+                  {section.title}
+                </span>
+              </div>
+            )}
+
+            {section.items.map((item) => {
+              const active = pathname === item.href || pathname.startsWith(item.href + "/");
+              const Icon = item.icon;
+              const showBadge = item.badge && pendingApprovalCount > 0;
+              const tooltip = collapsed
+                ? `${section.title}: ${item.label}`
+                : undefined;
+
+              return (
+                <Link
+                  key={item.href}
+                  to={item.href}
+                  title={tooltip}
+                  className={cn(
+                    "sidebar-link relative flex items-center gap-2.5 mx-2 rounded-lg",
+                    "transition-all duration-150",
+                    collapsed ? "justify-center px-0 py-2" : "px-3 py-2",
+                    active
+                      ? "bg-[#131721] text-[#ece7dc] shadow-[0_0_8px_rgba(212,168,75,0.08)]"
+                      : "text-[#6f7f9a] hover:text-[#ece7dc] hover:bg-[#131721]/40 hover:translate-x-px",
+                  )}
+                >
+                  {active && (
+                    <span className="sidebar-accent-bar absolute left-0 top-1.5 bottom-1.5 w-[2.5px] rounded-r-full bg-[#d4a84b]" />
+                  )}
+                  <span className="relative shrink-0">
+                    <Icon
+                      size={17}
+                      stroke={1.5}
+                      className={cn(
+                        "transition-colors duration-150",
+                        active ? "text-[#d4a84b]" : "",
+                      )}
+                    />
+                    {showBadge && collapsed && (
+                      <span
+                        className={cn(
+                          "absolute -right-1 -top-1 h-2 w-2 rounded-full animate-pulse",
+                          isLiveBadge ? "bg-[#d4a84b]" : "bg-[#6f7f9a]",
+                        )}
+                      />
+                    )}
+                  </span>
+                  {!collapsed && (
+                    <>
+                      <span className="text-[12.5px] font-medium tracking-[-0.01em] truncate">
+                        {item.label}
+                      </span>
+                      {showBadge && (
+                        <span
+                          className={cn(
+                            "ml-auto flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[9px] font-semibold animate-pulse",
+                            isLiveBadge
+                              ? "bg-[#d4a84b]/20 text-[#d4a84b]"
+                              : "bg-[#6f7f9a]/20 text-[#6f7f9a]",
+                          )}
+                        >
+                          {pendingApprovalCount}
+                        </span>
+                      )}
+                    </>
+                  )}
+                </Link>
+              );
+            })}
+          </div>
+        ))}
       </nav>
 
       <div className="shrink-0 px-2 pb-1">
         <Link
           to="/settings"
+          title={collapsed ? "Settings" : undefined}
           className={cn(
-            "sidebar-link relative flex items-center gap-2.5 rounded-lg transition-all duration-150",
-            collapsed ? "justify-center px-0 py-2.5" : "px-3 py-2.5",
+            "sidebar-link relative flex items-center gap-2.5 rounded-lg",
+            "transition-all duration-150",
+            collapsed ? "justify-center px-0 py-2" : "px-3 py-2",
             settingsActive
-              ? "bg-[#131721] text-[#ece7dc]"
-              : "text-[#6f7f9a] hover:text-[#ece7dc] hover:bg-[#131721]/40",
+              ? "bg-[#131721] text-[#ece7dc] shadow-[0_0_8px_rgba(212,168,75,0.08)]"
+              : "text-[#6f7f9a] hover:text-[#ece7dc] hover:bg-[#131721]/40 hover:translate-x-px",
           )}
         >
           {settingsActive && (
-            <span className="sidebar-accent-bar absolute left-0 top-2 bottom-2 w-[2.5px] rounded-r-full bg-[#d4a84b]" />
+            <span className="sidebar-accent-bar absolute left-0 top-1.5 bottom-1.5 w-[2.5px] rounded-r-full bg-[#d4a84b]" />
           )}
           <IconSettings
             size={17}

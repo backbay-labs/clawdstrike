@@ -26,6 +26,8 @@ vi.mock("@/lib/workbench/use-fleet-connection", () => ({
     },
     isConnecting: false,
     error: null,
+    pollError: null,
+    secureStorageWarning: false,
     agents: [],
     remotePolicyInfo: null,
     connect: useFleetConnectionMock.connect,

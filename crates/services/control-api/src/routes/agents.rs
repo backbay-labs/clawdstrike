@@ -19,6 +19,7 @@ use crate::models::agent::{
 };
 use crate::services::policy_distribution;
 use crate::state::AppState;
+use crate::validation;
 
 const HEARTBEAT_UPDATE_SQL: &str = r#"UPDATE agents
            SET last_heartbeat_at = now(),
@@ -57,6 +58,10 @@ pub fn router() -> Router<AppState> {
             "/agents/{id}/effective-policy",
             get(get_agent_effective_policy),
         )
+        .route(
+            "/agents/{id}/runtimes",
+            get(list_runtimes).post(register_runtime),
+        )
         .route("/agents/heartbeat", post(heartbeat))
 }
 
@@ -72,19 +77,12 @@ async fn register_agent(
 ) -> Result<Json<RegisterAgentResponse>, ApiError> {
     ensure_write_access(&auth)?;
 
-    // Check agent limit
-    let count_row = sqlx::query::query(
-        "SELECT COUNT(*)::bigint as cnt FROM agents WHERE tenant_id = $1 AND status = 'active'",
-    )
-    .bind(auth.tenant_id)
-    .fetch_one(&state.db)
-    .await
-    .map_err(ApiError::Database)?;
-    let count: i64 = count_row.try_get("cnt").map_err(ApiError::Database)?;
-
-    if count >= i64::from(auth.agent_limit) {
-        return Err(ApiError::AgentLimitReached);
-    }
+    // Input length validation
+    validation::validate_agent_id(&req.agent_id)?;
+    validation::validate_name(&req.name)?;
+    validation::validate_public_key_length(&req.public_key)?;
+    validation::validate_trust_level(req.trust_level.as_deref())?;
+    validation::validate_metadata(req.metadata.as_ref())?;
 
     // Validate Ed25519 public key using hush-core
     hush_core::PublicKey::from_hex(&req.public_key).map_err(|_| ApiError::InvalidPublicKey)?;
@@ -93,6 +91,20 @@ async fn register_agent(
     let trust_level = req.trust_level.as_deref().unwrap_or("medium");
     let metadata = req.metadata.clone().unwrap_or(serde_json::json!({}));
     let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
+
+    // Check agent limit inside the transaction to prevent TOCTOU races.
+    let count_row = sqlx::query::query(
+        "SELECT COUNT(*)::bigint as cnt FROM agents WHERE tenant_id = $1 AND status = 'active'",
+    )
+    .bind(auth.tenant_id)
+    .fetch_one(tx.as_mut())
+    .await
+    .map_err(ApiError::Database)?;
+    let count: i64 = count_row.try_get("cnt").map_err(ApiError::Database)?;
+
+    if count >= i64::from(auth.agent_limit) {
+        return Err(ApiError::AgentLimitReached);
+    }
     let principal_id = upsert_endpoint_principal(
         &mut tx,
         EndpointPrincipalUpsert {
@@ -151,7 +163,7 @@ async fn register_agent(
     {
         Ok(creds) => creds,
         Err(err) => {
-            rollback_failed_agent_creation(&state.db, agent.id)
+            rollback_failed_agent_creation(&state.db, agent.id, auth.tenant_id)
                 .await
                 .map_err(ApiError::Database)?;
             return Err(ApiError::Nats(err.to_string()));
@@ -232,7 +244,7 @@ async fn delete_agent(
 
     let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
     let row = sqlx::query::query(
-        r#"SELECT principal_id
+        r#"SELECT principal_id, name
            FROM agents
            WHERE id = $1
              AND tenant_id = $2"#,
@@ -247,15 +259,107 @@ async fn delete_agent(
     let principal_id = row
         .try_get::<Option<Uuid>, _>("principal_id")
         .map_err(ApiError::Database)?;
+    let agent_name: String = row.try_get("name").map_err(ApiError::Database)?;
 
-    sqlx::query::query("DELETE FROM agents WHERE id = $1")
+    if let Some(principal_id) = principal_id {
+        // Clean up runtime principals and their memberships that are linked
+        // to this endpoint.  Without this, deleting an endpoint would leave
+        // runtime principals and their `principal_memberships` rows
+        // permanently orphaned.
+
+        // 1. Collect runtime principal IDs linked via memberships to this
+        //    endpoint (scoped by tenant_id for tenant isolation).
+        let runtime_rows = sqlx::query::query(
+            r#"SELECT pm.principal_id
+               FROM principal_memberships AS pm
+               JOIN principals AS p
+                 ON p.id = pm.principal_id
+                AND p.tenant_id = pm.tenant_id
+               WHERE pm.tenant_id = $1
+                 AND pm.target_kind = 'endpoint'
+                 AND pm.target_id = $2
+                 AND p.principal_type = 'runtime_agent'"#,
+        )
+        .bind(auth.tenant_id)
+        .bind(principal_id)
+        .fetch_all(tx.as_mut())
+        .await
+        .map_err(ApiError::Database)?;
+
+        let runtime_principal_ids: Vec<Uuid> = runtime_rows
+            .iter()
+            .map(|row| row.try_get("principal_id"))
+            .collect::<Result<_, _>>()
+            .map_err(ApiError::Database)?;
+
+        if !runtime_principal_ids.is_empty() {
+            // 2. Delete principal_memberships rows for the runtime principals.
+            sqlx::query::query(
+                r#"DELETE FROM principal_memberships
+                   WHERE tenant_id = $1
+                     AND principal_id = ANY($2)"#,
+            )
+            .bind(auth.tenant_id)
+            .bind(&runtime_principal_ids)
+            .execute(tx.as_mut())
+            .await
+            .map_err(ApiError::Database)?;
+
+            // 3. Delete the runtime principal rows themselves.
+            sqlx::query::query(
+                r#"DELETE FROM principals
+                   WHERE tenant_id = $1
+                     AND id = ANY($2)
+                     AND principal_type = 'runtime_agent'"#,
+            )
+            .bind(auth.tenant_id)
+            .bind(&runtime_principal_ids)
+            .execute(tx.as_mut())
+            .await
+            .map_err(ApiError::Database)?;
+
+            tracing::info!(
+                tenant_id = %auth.tenant_id,
+                endpoint_principal_id = %principal_id,
+                runtime_count = runtime_principal_ids.len(),
+                "Cleaned up orphaned runtime principals during endpoint deletion"
+            );
+        }
+
+        // 4. Delete hierarchy_nodes of type "runtime" that are children of the
+        //    endpoint's hierarchy node.  We look up the endpoint node by
+        //    tenant_id + node_type + name (matching the agent name) since the
+        //    agent row is still present at this point.
+        sqlx::query::query(
+            r#"DELETE FROM hierarchy_nodes
+               WHERE tenant_id = $1
+                 AND node_type = 'runtime'
+                 AND parent_id IN (
+                     SELECT id
+                     FROM hierarchy_nodes
+                     WHERE tenant_id = $1
+                       AND node_type IN ('endpoint', 'agent')
+                       AND name = $2
+                 )"#,
+        )
+        .bind(auth.tenant_id)
+        .bind(&agent_name)
+        .execute(tx.as_mut())
+        .await
+        .map_err(ApiError::Database)?;
+    }
+
+    // Delete the agent row.
+    sqlx::query::query("DELETE FROM agents WHERE id = $1 AND tenant_id = $2")
         .bind(id)
+        .bind(auth.tenant_id)
         .execute(tx.as_mut())
         .await
         .map_err(ApiError::Database)?;
 
+    // Clean up the endpoint principal if no other references remain.
     if let Some(principal_id) = principal_id {
-        delete_principal_if_unreferenced(&mut tx, principal_id).await?;
+        delete_principal_if_unreferenced(&mut tx, principal_id, auth.tenant_id).await?;
     }
 
     tx.commit().await.map_err(ApiError::Database)?;
@@ -438,6 +542,10 @@ async fn heartbeat(
     auth: AuthenticatedTenant,
     Json(req): Json<HeartbeatRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    // Input length validation
+    validation::validate_agent_id(&req.agent_id)?;
+    validation::validate_metadata(req.metadata.as_ref())?;
+
     let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
     let row = sqlx::query::query(HEARTBEAT_UPDATE_SQL)
         .bind(auth.tenant_id)
@@ -454,7 +562,7 @@ async fn heartbeat(
     let principal_id = row
         .try_get::<Option<Uuid>, _>("principal_id")
         .map_err(ApiError::Database)?;
-    set_principal_liveness_state(&mut tx, principal_id, "active").await?;
+    set_principal_liveness_state(&mut tx, principal_id, auth.tenant_id, "active").await?;
     tx.commit().await.map_err(ApiError::Database)?;
 
     // Reconciliation path: if a tenant-level active policy exists, ensure this
@@ -499,6 +607,11 @@ async fn enroll_agent(
     State(state): State<AppState>,
     Json(req): Json<EnrollmentRequest>,
 ) -> Result<Json<EnrollmentResponse>, ApiError> {
+    // Input length validation
+    validation::validate_public_key_length(&req.public_key)?;
+    validation::validate_hostname(&req.hostname)?;
+    validation::validate_version(&req.version)?;
+
     // Validate the Ed25519 public key.
     hush_core::PublicKey::from_hex(&req.public_key).map_err(|_| ApiError::InvalidPublicKey)?;
     let approval_response_trusted_issuer = state
@@ -620,7 +733,7 @@ async fn enroll_agent(
         Ok(creds) => creds,
         Err(err) => {
             if let Err(cleanup_err) =
-                rollback_failed_enrollment(&state.db, agent.id, enrollment_token_id).await
+                rollback_failed_enrollment(&state.db, agent.id, enrollment_token_id, tenant_id).await
             {
                 tracing::error!(
                     error = %cleanup_err,
@@ -681,29 +794,371 @@ async fn enroll_agent(
     }))
 }
 
+// ---------------------------------------------------------------------------
+// Runtime registration — endpoint/runtime two-level hierarchy
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RegisterRuntimeRequest {
+    /// A human-readable name for the runtime (e.g. "claude-code-main").
+    name: String,
+    /// Ed25519 public key (hex-encoded) for the runtime identity.
+    public_key: String,
+    /// Trust level override; defaults to the endpoint's trust level.
+    trust_level: Option<String>,
+    /// Arbitrary metadata to attach to the runtime principal.
+    #[serde(default)]
+    metadata: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Serialize)]
+struct RegisterRuntimeResponse {
+    runtime_principal_id: Uuid,
+    endpoint_principal_id: Uuid,
+    hierarchy_node_id: Option<Uuid>,
+}
+
+#[derive(Debug, Serialize)]
+struct RuntimeEntry {
+    principal_id: Uuid,
+    stable_ref: String,
+    display_name: String,
+    trust_level: String,
+    lifecycle_state: String,
+    liveness_state: Option<String>,
+    metadata: serde_json::Value,
+    created_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// POST /api/v1/agents/{id}/runtimes — register a runtime under an endpoint.
+async fn register_runtime(
+    State(state): State<AppState>,
+    auth: AuthenticatedTenant,
+    Path(agent_uuid): Path<Uuid>,
+    Json(req): Json<RegisterRuntimeRequest>,
+) -> Result<Json<RegisterRuntimeResponse>, ApiError> {
+    ensure_write_access(&auth)?;
+
+    if req.name.trim().is_empty() {
+        return Err(ApiError::BadRequest("name must not be empty".to_string()));
+    }
+
+    // Input length validation
+    validation::validate_runtime_name(&req.name)?;
+    validation::validate_public_key_length(&req.public_key)?;
+    validation::validate_trust_level(req.trust_level.as_deref())?;
+    validation::validate_metadata(req.metadata.as_ref())?;
+
+    // Validate the Ed25519 public key.
+    hush_core::PublicKey::from_hex(&req.public_key).map_err(|_| ApiError::InvalidPublicKey)?;
+
+    // 1. Verify the endpoint agent exists and belongs to the tenant.
+    let endpoint_row = sqlx::query::query(
+        "SELECT agent_id, principal_id, trust_level FROM agents WHERE id = $1 AND tenant_id = $2",
+    )
+    .bind(agent_uuid)
+    .bind(auth.tenant_id)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(ApiError::Database)?
+    .ok_or(ApiError::NotFound)?;
+
+    let endpoint_agent_id: String = endpoint_row
+        .try_get("agent_id")
+        .map_err(ApiError::Database)?;
+    let endpoint_principal_id: Option<Uuid> = endpoint_row
+        .try_get("principal_id")
+        .map_err(ApiError::Database)?;
+    let endpoint_principal_id = endpoint_principal_id.ok_or_else(|| {
+        ApiError::BadRequest("endpoint agent is not linked to a directory principal".to_string())
+    })?;
+    let endpoint_trust_level: String = endpoint_row
+        .try_get("trust_level")
+        .map_err(ApiError::Database)?;
+
+    let trust_level = req.trust_level.as_deref().unwrap_or(&endpoint_trust_level);
+    let metadata = req.metadata.unwrap_or(serde_json::json!({}));
+
+    // Generate a stable_ref for the runtime principal scoped to the endpoint.
+    let runtime_stable_ref = format!("{endpoint_agent_id}/runtime/{}", req.name);
+
+    let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
+
+    // 2. Upsert the runtime_agent principal.
+    let runtime_principal_id = upsert_runtime_principal(
+        &mut tx,
+        RuntimePrincipalUpsert {
+            tenant_id: auth.tenant_id,
+            stable_ref: &runtime_stable_ref,
+            display_name: &req.name,
+            public_key: &req.public_key,
+            trust_level,
+            lifecycle_state: "active",
+            liveness_state: Some("active"),
+            metadata: &metadata,
+        },
+    )
+    .await?;
+
+    // 3. Create a principal_membership linking runtime to endpoint.
+    sqlx::query::query(
+        r#"INSERT INTO principal_memberships (
+               tenant_id, principal_id, target_kind, target_id
+           )
+           VALUES ($1, $2, 'endpoint', $3)
+           ON CONFLICT (tenant_id, principal_id, target_kind, target_id)
+           DO NOTHING"#,
+    )
+    .bind(auth.tenant_id)
+    .bind(runtime_principal_id)
+    .bind(endpoint_principal_id)
+    .execute(tx.as_mut())
+    .await
+    .map_err(ApiError::Database)?;
+
+    // 4. Optionally create a hierarchy_node of type "runtime" under the
+    //    endpoint's hierarchy node (if one exists).
+    let hierarchy_node_id =
+        create_runtime_hierarchy_node(&mut tx, auth.tenant_id, endpoint_principal_id, &req.name)
+            .await?;
+
+    tx.commit().await.map_err(ApiError::Database)?;
+
+    tracing::info!(
+        tenant = %auth.slug,
+        endpoint_agent_id = %endpoint_agent_id,
+        runtime_principal_id = %runtime_principal_id,
+        runtime_name = %req.name,
+        "Runtime registered under endpoint"
+    );
+
+    Ok(Json(RegisterRuntimeResponse {
+        runtime_principal_id,
+        endpoint_principal_id,
+        hierarchy_node_id,
+    }))
+}
+
+/// Query parameters for listing runtimes under an endpoint.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ListRuntimesQuery {
+    offset: Option<i64>,
+    limit: Option<i64>,
+}
+
+/// GET /api/v1/agents/{id}/runtimes — list runtimes registered under an endpoint.
+async fn list_runtimes(
+    State(state): State<AppState>,
+    auth: AuthenticatedTenant,
+    Path(agent_uuid): Path<Uuid>,
+    Query(query): Query<ListRuntimesQuery>,
+) -> Result<Json<Vec<RuntimeEntry>>, ApiError> {
+    let offset = query.offset.unwrap_or(0).max(0);
+    let limit = query.limit.unwrap_or(100).clamp(1, 1000);
+    // Verify the endpoint agent exists and get its principal_id.
+    let endpoint_row =
+        sqlx::query::query("SELECT principal_id FROM agents WHERE id = $1 AND tenant_id = $2")
+            .bind(agent_uuid)
+            .bind(auth.tenant_id)
+            .fetch_optional(&state.db)
+            .await
+            .map_err(ApiError::Database)?
+            .ok_or(ApiError::NotFound)?;
+
+    let endpoint_principal_id: Option<Uuid> = endpoint_row
+        .try_get("principal_id")
+        .map_err(ApiError::Database)?;
+    let endpoint_principal_id = endpoint_principal_id.ok_or_else(|| {
+        ApiError::BadRequest("endpoint agent is not linked to a directory principal".to_string())
+    })?;
+
+    // Query principal_memberships for runtimes linked to this endpoint, then
+    // join against principals to get full details.
+    let rows = sqlx::query::query(
+        r#"SELECT p.id AS principal_id,
+                  p.stable_ref,
+                  p.display_name,
+                  p.trust_level,
+                  p.lifecycle_state,
+                  p.liveness_state,
+                  p.metadata,
+                  p.created_at
+           FROM principal_memberships AS pm
+           JOIN principals AS p
+             ON p.id = pm.principal_id
+            AND p.tenant_id = pm.tenant_id
+           WHERE pm.tenant_id = $1
+             AND pm.target_kind = 'endpoint'
+             AND pm.target_id = $2
+             AND p.principal_type = 'runtime_agent'
+           ORDER BY p.created_at ASC
+           LIMIT $3 OFFSET $4"#,
+    )
+    .bind(auth.tenant_id)
+    .bind(endpoint_principal_id)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(&state.db)
+    .await
+    .map_err(ApiError::Database)?;
+
+    let runtimes: Vec<RuntimeEntry> = rows
+        .into_iter()
+        .map(|row| {
+            Ok(RuntimeEntry {
+                principal_id: row.try_get("principal_id")?,
+                stable_ref: row.try_get("stable_ref")?,
+                display_name: row.try_get("display_name")?,
+                trust_level: row.try_get("trust_level")?,
+                lifecycle_state: row.try_get("lifecycle_state")?,
+                liveness_state: row.try_get("liveness_state")?,
+                metadata: row.try_get("metadata")?,
+                created_at: row.try_get("created_at")?,
+            })
+        })
+        .collect::<Result<_, sqlx::error::Error>>()
+        .map_err(ApiError::Database)?;
+
+    Ok(Json(runtimes))
+}
+
+async fn upsert_runtime_principal(
+    tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
+    principal: RuntimePrincipalUpsert<'_>,
+) -> Result<Uuid, ApiError> {
+    let row = sqlx::query::query(
+        r#"INSERT INTO principals (
+               tenant_id,
+               principal_type,
+               stable_ref,
+               display_name,
+               trust_level,
+               lifecycle_state,
+               liveness_state,
+               public_key,
+               metadata
+           )
+           VALUES ($1, 'runtime_agent', $2, $3, $4, $5, $6, $7, $8)
+           ON CONFLICT (tenant_id, principal_type, stable_ref) DO UPDATE
+           SET display_name = EXCLUDED.display_name,
+               trust_level = EXCLUDED.trust_level,
+               lifecycle_state = EXCLUDED.lifecycle_state,
+               liveness_state = EXCLUDED.liveness_state,
+               public_key = EXCLUDED.public_key,
+               metadata = EXCLUDED.metadata,
+               updated_at = now()
+           RETURNING id"#,
+    )
+    .bind(principal.tenant_id)
+    .bind(principal.stable_ref)
+    .bind(principal.display_name)
+    .bind(principal.trust_level)
+    .bind(principal.lifecycle_state)
+    .bind(principal.liveness_state)
+    .bind(principal.public_key)
+    .bind(principal.metadata)
+    .fetch_one(tx.as_mut())
+    .await
+    .map_err(ApiError::Database)?;
+
+    row.try_get("id").map_err(ApiError::Database)
+}
+
+struct RuntimePrincipalUpsert<'a> {
+    tenant_id: Uuid,
+    stable_ref: &'a str,
+    display_name: &'a str,
+    public_key: &'a str,
+    trust_level: &'a str,
+    lifecycle_state: &'a str,
+    liveness_state: Option<&'a str>,
+    metadata: &'a serde_json::Value,
+}
+
+/// If the endpoint has a hierarchy node, create a "runtime" child node under it.
+/// Returns `Some(node_id)` if a node was created, `None` if no parent node exists.
+async fn create_runtime_hierarchy_node(
+    tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
+    tenant_id: Uuid,
+    endpoint_principal_id: Uuid,
+    runtime_name: &str,
+) -> Result<Option<Uuid>, ApiError> {
+    // Find the endpoint's hierarchy node by looking for an endpoint node
+    // whose metadata contains a reference to this principal, or by matching
+    // on the agents table.  We use the agents table link as the canonical path.
+    let parent_row = sqlx::query::query(
+        r#"SELECT hn.id
+           FROM hierarchy_nodes AS hn
+           JOIN agents AS a
+             ON a.tenant_id = hn.tenant_id
+           WHERE a.principal_id = $1
+             AND a.tenant_id = $2
+             AND hn.node_type IN ('endpoint', 'agent')
+             AND hn.name = a.name
+           LIMIT 1"#,
+    )
+    .bind(endpoint_principal_id)
+    .bind(tenant_id)
+    .fetch_optional(tx.as_mut())
+    .await
+    .map_err(ApiError::Database)?;
+
+    let Some(parent_row) = parent_row else {
+        return Ok(None);
+    };
+
+    let parent_node_id: Uuid = parent_row.try_get("id").map_err(ApiError::Database)?;
+
+    let row = sqlx::query::query(
+        r#"INSERT INTO hierarchy_nodes (
+               tenant_id, name, node_type, parent_id, metadata
+           )
+           VALUES ($1, $2, 'runtime', $3, '{}')
+           ON CONFLICT DO NOTHING
+           RETURNING id"#,
+    )
+    .bind(tenant_id)
+    .bind(runtime_name)
+    .bind(parent_node_id)
+    .fetch_optional(tx.as_mut())
+    .await
+    .map_err(ApiError::Database)?;
+
+    row.map(|r| r.try_get("id"))
+        .transpose()
+        .map_err(ApiError::Database)
+}
+
 async fn rollback_failed_enrollment(
     db: &crate::db::PgPool,
     agent_uuid: Uuid,
     enrollment_token_id: Uuid,
+    tenant_id: Uuid,
 ) -> Result<(), sqlx::error::Error> {
     let mut tx = db.begin().await?;
 
-    let principal_row = sqlx::query::query("SELECT principal_id FROM agents WHERE id = $1")
-        .bind(agent_uuid)
-        .fetch_optional(&mut *tx)
-        .await?;
+    let principal_row = sqlx::query::query(
+        "SELECT principal_id FROM agents WHERE id = $1 AND tenant_id = $2",
+    )
+    .bind(agent_uuid)
+    .bind(tenant_id)
+    .fetch_optional(&mut *tx)
+    .await?;
     let principal_id = principal_row
         .as_ref()
         .and_then(|row| row.try_get::<Option<Uuid>, _>("principal_id").ok())
         .flatten();
 
-    sqlx::query::query("DELETE FROM agents WHERE id = $1")
+    sqlx::query::query("DELETE FROM agents WHERE id = $1 AND tenant_id = $2")
         .bind(agent_uuid)
+        .bind(tenant_id)
         .execute(&mut *tx)
         .await?;
 
     if let Some(principal_id) = principal_id {
-        delete_principal_if_unreferenced(&mut tx, principal_id).await?;
+        delete_principal_if_unreferenced(&mut tx, principal_id, tenant_id).await?;
     }
 
     sqlx::query::query(
@@ -722,25 +1177,30 @@ async fn rollback_failed_enrollment(
 async fn rollback_failed_agent_creation(
     db: &crate::db::PgPool,
     agent_uuid: Uuid,
+    tenant_id: Uuid,
 ) -> Result<(), sqlx::error::Error> {
     let mut tx = db.begin().await?;
 
-    let principal_row = sqlx::query::query("SELECT principal_id FROM agents WHERE id = $1")
-        .bind(agent_uuid)
-        .fetch_optional(&mut *tx)
-        .await?;
+    let principal_row = sqlx::query::query(
+        "SELECT principal_id FROM agents WHERE id = $1 AND tenant_id = $2",
+    )
+    .bind(agent_uuid)
+    .bind(tenant_id)
+    .fetch_optional(&mut *tx)
+    .await?;
     let principal_id = principal_row
         .as_ref()
         .and_then(|row| row.try_get::<Option<Uuid>, _>("principal_id").ok())
         .flatten();
 
-    sqlx::query::query("DELETE FROM agents WHERE id = $1")
+    sqlx::query::query("DELETE FROM agents WHERE id = $1 AND tenant_id = $2")
         .bind(agent_uuid)
+        .bind(tenant_id)
         .execute(&mut *tx)
         .await?;
 
     if let Some(principal_id) = principal_id {
-        delete_principal_if_unreferenced(&mut tx, principal_id).await?;
+        delete_principal_if_unreferenced(&mut tx, principal_id, tenant_id).await?;
     }
 
     tx.commit().await?;
@@ -792,6 +1252,7 @@ async fn upsert_endpoint_principal(
 async fn set_principal_liveness_state(
     tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
     principal_id: Option<Uuid>,
+    tenant_id: Uuid,
     liveness_state: &str,
 ) -> Result<(), ApiError> {
     let Some(principal_id) = principal_id else {
@@ -802,10 +1263,12 @@ async fn set_principal_liveness_state(
         r#"UPDATE principals
            SET liveness_state = $2,
                updated_at = now()
-           WHERE id = $1"#,
+           WHERE id = $1
+             AND tenant_id = $3"#,
     )
     .bind(principal_id)
     .bind(liveness_state)
+    .bind(tenant_id)
     .execute(tx.as_mut())
     .await
     .map_err(ApiError::Database)?;
@@ -816,10 +1279,12 @@ async fn set_principal_liveness_state(
 async fn delete_principal_if_unreferenced(
     tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
     principal_id: Uuid,
+    tenant_id: Uuid,
 ) -> Result<(), sqlx::error::Error> {
     sqlx::query::query(
         r#"DELETE FROM principals AS p
            WHERE p.id = $1
+             AND p.tenant_id = $2
              AND NOT EXISTS (
                  SELECT 1
                  FROM agents AS a
@@ -855,6 +1320,7 @@ async fn delete_principal_if_unreferenced(
              )"#,
     )
     .bind(principal_id)
+    .bind(tenant_id)
     .execute(tx.as_mut())
     .await?;
 

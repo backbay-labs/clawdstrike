@@ -5414,10 +5414,13 @@ async fn hierarchy_routes_enforce_permissions_and_delete_modes() {
     )
     .await;
     assert_eq!(cycle_resp.0, StatusCode::BAD_REQUEST);
-    assert!(cycle_resp.1["error"]
+    let cycle_err = cycle_resp.1["error"]
         .as_str()
-        .expect("cycle error")
-        .contains("cycle"));
+        .expect("cycle or type error");
+    assert!(
+        cycle_err.contains("cycle") || cycle_err.contains("cannot be a child of"),
+        "expected cycle or type validation error, got: {cycle_err}"
+    );
 
     let detach_team_resp = request_json(
         &harness.app,
@@ -5435,6 +5438,8 @@ async fn hierarchy_routes_enforce_permissions_and_delete_modes() {
         "team nodes must specify a parent_id"
     );
 
+    // Reparenting team's children (endpoint + project) to org should fail because
+    // endpoint nodes cannot be direct children of org nodes.
     let delete_reparent_resp = request_json(
         &harness.app,
         Method::DELETE,
@@ -5443,10 +5448,28 @@ async fn hierarchy_routes_enforce_permissions_and_delete_modes() {
         None,
     )
     .await;
-    assert_eq!(delete_reparent_resp.0, StatusCode::OK);
-    assert_eq!(delete_reparent_resp.1["deleted_count"], 1);
-    assert_eq!(delete_reparent_resp.1["reparented_count"], 2);
+    assert_eq!(delete_reparent_resp.0, StatusCode::BAD_REQUEST);
+    assert!(
+        delete_reparent_resp.1["error"]
+            .as_str()
+            .expect("reparent error")
+            .contains("cannot reparent"),
+        "expected reparent type validation error, got: {}",
+        delete_reparent_resp.1["error"]
+    );
 
+    // Delete without reparent (cascade) should still work.
+    let delete_cascade_resp = request_json(
+        &harness.app,
+        Method::DELETE,
+        format!("/api/v1/hierarchy/nodes/{team_id}"),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(delete_cascade_resp.0, StatusCode::OK);
+
+    // Agent and project should be gone (cascade deleted).
     let agent_after_resp = request_json(
         &harness.app,
         Method::GET,
@@ -5455,8 +5478,7 @@ async fn hierarchy_routes_enforce_permissions_and_delete_modes() {
         None,
     )
     .await;
-    assert_eq!(agent_after_resp.0, StatusCode::OK);
-    assert_eq!(agent_after_resp.1["parent_id"], root_id);
+    assert_eq!(agent_after_resp.0, StatusCode::NOT_FOUND);
 
     let project_after_resp = request_json(
         &harness.app,
@@ -5466,8 +5488,7 @@ async fn hierarchy_routes_enforce_permissions_and_delete_modes() {
         None,
     )
     .await;
-    assert_eq!(project_after_resp.0, StatusCode::OK);
-    assert_eq!(project_after_resp.1["parent_id"], root_id);
+    assert_eq!(project_after_resp.0, StatusCode::NOT_FOUND);
 
     let temp_team_resp = request_json(
         &harness.app,
@@ -7108,6 +7129,396 @@ async fn wait_for_nats(nats_url: &str) {
         }
     }
     panic!("timed out waiting for nats");
+}
+
+// ---------------------------------------------------------------------------
+// Runtime registration integration tests
+// ---------------------------------------------------------------------------
+
+/// Helper: register an endpoint agent via POST /api/v1/agents and return its
+/// row UUID (the `id` field in the response).
+async fn register_endpoint_agent(
+    app: &axum::Router,
+    api_key: &str,
+    agent_id: &str,
+    name: &str,
+) -> Uuid {
+    let keypair = hush_core::Keypair::generate();
+    let resp = request_json(
+        app,
+        Method::POST,
+        "/api/v1/agents".to_string(),
+        Some(api_key),
+        Some(serde_json::json!({
+            "agent_id": agent_id,
+            "name": name,
+            "public_key": keypair.public_key().to_hex(),
+            "role": "coder",
+            "trust_level": "high"
+        })),
+    )
+    .await;
+    assert_eq!(resp.0, StatusCode::OK, "register_endpoint_agent failed");
+    Uuid::parse_str(resp.1["id"].as_str().expect("agent id")).expect("parse agent uuid")
+}
+
+/// Helper: register a runtime under an endpoint agent via POST
+/// /api/v1/agents/{id}/runtimes and return the parsed response body.
+async fn register_runtime(
+    app: &axum::Router,
+    api_key: &str,
+    agent_uuid: Uuid,
+    runtime_name: &str,
+) -> (StatusCode, Value) {
+    let keypair = hush_core::Keypair::generate();
+    request_json(
+        app,
+        Method::POST,
+        format!("/api/v1/agents/{agent_uuid}/runtimes"),
+        Some(api_key),
+        Some(serde_json::json!({
+            "name": runtime_name,
+            "public_key": keypair.public_key().to_hex()
+        })),
+    )
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn register_runtime_creates_hierarchy_node_and_principal() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+
+    // Register an endpoint agent first.
+    let agent_uuid =
+        register_endpoint_agent(&harness.app, &harness.api_key, "rt-ep-1", "RT Endpoint 1")
+            .await;
+
+    // Register a runtime under that endpoint.
+    let (status, body) =
+        register_runtime(&harness.app, &harness.api_key, agent_uuid, "claude-code-main").await;
+    assert_eq!(status, StatusCode::OK);
+
+    let runtime_principal_id = Uuid::parse_str(
+        body["runtime_principal_id"]
+            .as_str()
+            .expect("runtime_principal_id missing"),
+    )
+    .expect("parse runtime principal uuid");
+    let endpoint_principal_id = Uuid::parse_str(
+        body["endpoint_principal_id"]
+            .as_str()
+            .expect("endpoint_principal_id missing"),
+    )
+    .expect("parse endpoint principal uuid");
+
+    assert_ne!(runtime_principal_id, Uuid::nil());
+    assert_ne!(endpoint_principal_id, Uuid::nil());
+
+    // Verify the principal was created with the correct type and stable_ref.
+    let principal_row = sqlx::query::query(
+        r#"SELECT principal_type, stable_ref, display_name, trust_level, lifecycle_state
+           FROM principals
+           WHERE tenant_id = $1 AND id = $2"#,
+    )
+    .bind(harness.tenant_id)
+    .bind(runtime_principal_id)
+    .fetch_one(&harness.db)
+    .await
+    .expect("fetch runtime principal");
+
+    let principal_type: String = principal_row
+        .try_get("principal_type")
+        .expect("principal_type");
+    let stable_ref: String = principal_row.try_get("stable_ref").expect("stable_ref");
+    let display_name: String = principal_row
+        .try_get("display_name")
+        .expect("display_name");
+    let trust_level: String = principal_row.try_get("trust_level").expect("trust_level");
+    let lifecycle_state: String = principal_row
+        .try_get("lifecycle_state")
+        .expect("lifecycle_state");
+
+    assert_eq!(principal_type, "runtime_agent");
+    assert_eq!(stable_ref, "rt-ep-1/runtime/claude-code-main");
+    assert_eq!(display_name, "claude-code-main");
+    assert_eq!(trust_level, "high"); // inherits endpoint trust_level
+    assert_eq!(lifecycle_state, "active");
+
+    // Verify the principal_membership linking runtime → endpoint exists.
+    let membership_row = sqlx::query::query(
+        r#"SELECT target_kind, target_id
+           FROM principal_memberships
+           WHERE tenant_id = $1 AND principal_id = $2"#,
+    )
+    .bind(harness.tenant_id)
+    .bind(runtime_principal_id)
+    .fetch_one(&harness.db)
+    .await
+    .expect("fetch runtime membership");
+
+    let target_kind: String = membership_row.try_get("target_kind").expect("target_kind");
+    let target_id: Uuid = membership_row.try_get("target_id").expect("target_id");
+    assert_eq!(target_kind, "endpoint");
+    assert_eq!(target_id, endpoint_principal_id);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn register_runtime_rejects_nonexistent_endpoint() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+
+    let fake_uuid = Uuid::new_v4();
+    let (status, _body) =
+        register_runtime(&harness.app, &harness.api_key, fake_uuid, "orphan-runtime").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn register_runtime_is_idempotent() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let agent_uuid =
+        register_endpoint_agent(&harness.app, &harness.api_key, "rt-ep-idem", "Idem Endpoint")
+            .await;
+
+    let keypair = hush_core::Keypair::generate();
+    let payload = serde_json::json!({
+        "name": "idempotent-runtime",
+        "public_key": keypair.public_key().to_hex()
+    });
+
+    let resp1 = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/agents/{agent_uuid}/runtimes"),
+        Some(&harness.api_key),
+        Some(payload.clone()),
+    )
+    .await;
+    assert_eq!(resp1.0, StatusCode::OK);
+
+    let resp2 = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/agents/{agent_uuid}/runtimes"),
+        Some(&harness.api_key),
+        Some(payload.clone()),
+    )
+    .await;
+    assert_eq!(resp2.0, StatusCode::OK);
+
+    // Both calls should return the same runtime principal id.
+    assert_eq!(
+        resp1.1["runtime_principal_id"], resp2.1["runtime_principal_id"],
+        "idempotent registration should return the same runtime_principal_id"
+    );
+
+    // Verify only one principal_memberships row exists.
+    let membership_count: i64 = sqlx::query::query(
+        r#"SELECT COUNT(*)::bigint AS cnt
+           FROM principal_memberships
+           WHERE tenant_id = $1
+             AND principal_id = $2
+             AND target_kind = 'endpoint'"#,
+    )
+    .bind(harness.tenant_id)
+    .bind(
+        Uuid::parse_str(resp1.1["runtime_principal_id"].as_str().expect("pid"))
+            .expect("parse pid"),
+    )
+    .fetch_one(&harness.db)
+    .await
+    .expect("count memberships")
+    .try_get("cnt")
+    .expect("cnt");
+    assert_eq!(membership_count, 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn list_runtimes_returns_registered_runtimes() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let agent_uuid =
+        register_endpoint_agent(&harness.app, &harness.api_key, "rt-ep-list", "List Endpoint")
+            .await;
+
+    // Register three runtimes.
+    let names = ["runtime-alpha", "runtime-beta", "runtime-gamma"];
+    for name in &names {
+        let (status, _) =
+            register_runtime(&harness.app, &harness.api_key, agent_uuid, name).await;
+        assert_eq!(status, StatusCode::OK, "register runtime {name} failed");
+    }
+
+    // List runtimes.
+    let list_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/agents/{agent_uuid}/runtimes"),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(list_resp.0, StatusCode::OK);
+
+    let runtimes = list_resp.1.as_array().expect("runtimes array");
+    assert_eq!(runtimes.len(), 3);
+
+    let returned_names: Vec<&str> = runtimes
+        .iter()
+        .map(|r| r["display_name"].as_str().expect("display_name"))
+        .collect();
+    for name in &names {
+        assert!(
+            returned_names.contains(name),
+            "expected runtime {name} in list, got {returned_names:?}"
+        );
+    }
+
+    // Verify each entry has the expected fields populated.
+    for runtime in runtimes {
+        assert!(runtime["principal_id"].is_string());
+        assert!(runtime["stable_ref"].is_string());
+        assert_eq!(runtime["trust_level"], "high");
+        assert_eq!(runtime["lifecycle_state"], "active");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn list_runtimes_enforces_tenant_isolation() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+
+    // Register an endpoint and runtimes under tenant A (the harness tenant).
+    let agent_uuid = register_endpoint_agent(
+        &harness.app,
+        &harness.api_key,
+        "rt-ep-iso",
+        "Isolation Endpoint",
+    )
+    .await;
+    let (status, _) =
+        register_runtime(&harness.app, &harness.api_key, agent_uuid, "iso-runtime-1").await;
+    assert_eq!(status, StatusCode::OK);
+
+    // Tenant A can list its runtimes.
+    let list_a = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/agents/{agent_uuid}/runtimes"),
+        Some(&harness.api_key),
+        None,
+    )
+    .await;
+    assert_eq!(list_a.0, StatusCode::OK);
+    assert_eq!(
+        list_a.1.as_array().expect("runtimes array").len(),
+        1,
+        "tenant A should see its runtime"
+    );
+
+    // Create tenant B with its own API key.
+    let tenant_b_id = seed_tenant(&harness.db, "globex-iso", "Globex Isolation").await;
+    let tenant_b_key = "cs_it_tenant_b_key";
+    insert_api_key_for_tenant(&harness.db, tenant_b_id, tenant_b_key, "tenant-b-admin", &["admin"])
+        .await;
+
+    // Tenant B trying to access tenant A's agent should get 404 (agent not found
+    // for that tenant).
+    let list_b = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/agents/{agent_uuid}/runtimes"),
+        Some(tenant_b_key),
+        None,
+    )
+    .await;
+    assert_eq!(
+        list_b.0,
+        StatusCode::NOT_FOUND,
+        "tenant B must not see tenant A's agent runtimes"
+    );
+
+    // Tenant B trying to register a runtime under tenant A's agent should also
+    // fail with 404.
+    let (reg_status, _) =
+        register_runtime(&harness.app, tenant_b_key, agent_uuid, "cross-tenant-runtime").await;
+    assert_eq!(
+        reg_status,
+        StatusCode::NOT_FOUND,
+        "tenant B must not register runtimes under tenant A's agent"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn register_runtime_rejects_viewer_role() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+
+    // Register an endpoint agent using the admin key.
+    let agent_uuid =
+        register_endpoint_agent(&harness.app, &harness.api_key, "rt-ep-viewer", "Viewer Endpoint")
+            .await;
+
+    // Create a viewer API key (no admin/write scopes → role = "viewer").
+    let viewer_key = "cs_it_runtime_viewer_key";
+    insert_api_key_for_tenant(
+        &harness.db,
+        harness.tenant_id,
+        viewer_key,
+        "runtime-viewer",
+        &["viewer"],
+    )
+    .await;
+
+    // Viewer should be forbidden from registering runtimes.
+    let (status, _) =
+        register_runtime(&harness.app, viewer_key, agent_uuid, "viewer-runtime").await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "viewer role must not be able to register runtimes"
+    );
+
+    // Viewer should still be able to list runtimes (read-only).
+    let list_resp = request_json(
+        &harness.app,
+        Method::GET,
+        format!("/api/v1/agents/{agent_uuid}/runtimes"),
+        Some(viewer_key),
+        None,
+    )
+    .await;
+    assert_eq!(
+        list_resp.0,
+        StatusCode::OK,
+        "viewer role should be able to list runtimes"
+    );
 }
 
 #[test]

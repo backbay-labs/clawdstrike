@@ -10,14 +10,22 @@ use crate::db::PgRow;
 // Node type enum
 // ---------------------------------------------------------------------------
 
-/// The kind of hierarchy node: org, team, project, or agent.
+/// The kind of hierarchy node: org, team, project, endpoint, or runtime.
+///
+/// The `Agent` variant is kept for backward-compatible deserialization of data
+/// written before the endpoint/runtime split.  New code should use `Endpoint`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HierarchyNodeType {
     Org,
     Team,
     Project,
+    /// Legacy alias — kept so old rows deserialize correctly.
     Agent,
+    /// A hushd daemon instance (replaces the old "agent" concept).
+    Endpoint,
+    /// An AI agent runtime, always a child of an Endpoint.
+    Runtime,
 }
 
 impl HierarchyNodeType {
@@ -27,15 +35,24 @@ impl HierarchyNodeType {
             Self::Team => "team",
             Self::Project => "project",
             Self::Agent => "agent",
+            Self::Endpoint => "endpoint",
+            Self::Runtime => "runtime",
         }
     }
 
+    /// Parse a node type string.
+    ///
+    /// `"agent"` maps to `Endpoint` for backward compatibility — callers that
+    /// need to distinguish truly-old `Agent` rows should match the raw DB
+    /// string instead.
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "org" => Some(Self::Org),
             "team" => Some(Self::Team),
             "project" => Some(Self::Project),
-            "agent" => Some(Self::Agent),
+            "agent" => Some(Self::Endpoint),
+            "endpoint" => Some(Self::Endpoint),
+            "runtime" => Some(Self::Runtime),
             _ => None,
         }
     }
@@ -44,6 +61,14 @@ impl HierarchyNodeType {
 impl std::fmt::Display for HierarchyNodeType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
+    }
+}
+
+impl HierarchyNodeType {
+    /// Returns true if this variant represents the legacy "agent" type that was
+    /// superseded by `Endpoint`.
+    pub fn is_legacy_agent(self) -> bool {
+        matches!(self, Self::Agent)
     }
 }
 
@@ -60,6 +85,7 @@ pub struct HierarchyNode {
     pub name: String,
     pub node_type: String,
     pub parent_id: Option<Uuid>,
+    pub external_id: Option<String>,
     pub policy_id: Option<Uuid>,
     pub policy_name: Option<String>,
     pub metadata: serde_json::Value,
@@ -75,6 +101,7 @@ impl HierarchyNode {
             name: row.try_get("name")?,
             node_type: row.try_get("node_type")?,
             parent_id: row.try_get("parent_id")?,
+            external_id: row.try_get("external_id")?,
             policy_id: row.try_get("policy_id")?,
             policy_name: row.try_get("policy_name")?,
             metadata: row.try_get("metadata")?,
@@ -91,6 +118,7 @@ pub struct HierarchyTreeNode {
     pub name: String,
     pub node_type: String,
     pub parent_id: Option<Uuid>,
+    pub external_id: Option<String>,
     pub policy_id: Option<Uuid>,
     pub policy_name: Option<String>,
     pub metadata: serde_json::Value,
@@ -116,6 +144,7 @@ pub struct CreateHierarchyNodeRequest {
     pub name: String,
     pub node_type: String,
     pub parent_id: Option<Uuid>,
+    pub external_id: Option<String>,
     pub policy_id: Option<Uuid>,
     pub policy_name: Option<String>,
     #[serde(default)]
@@ -129,6 +158,8 @@ pub struct UpdateHierarchyNodeRequest {
     pub node_type: Option<String>,
     #[serde(default)]
     pub parent_id: NullableField<Uuid>,
+    #[serde(default)]
+    pub external_id: NullableField<String>,
     #[serde(default)]
     pub policy_id: NullableField<Uuid>,
     #[serde(default)]
@@ -210,14 +241,27 @@ mod tests {
 
     #[test]
     fn node_type_round_trip() {
+        // Endpoint and Runtime round-trip through their canonical string forms.
         for nt in [
             HierarchyNodeType::Org,
             HierarchyNodeType::Team,
             HierarchyNodeType::Project,
-            HierarchyNodeType::Agent,
+            HierarchyNodeType::Endpoint,
+            HierarchyNodeType::Runtime,
         ] {
             assert_eq!(HierarchyNodeType::from_str(nt.as_str()), Some(nt));
         }
+    }
+
+    #[test]
+    fn node_type_agent_backward_compat() {
+        // "agent" in from_str maps to Endpoint for backward compatibility.
+        assert_eq!(
+            HierarchyNodeType::from_str("agent"),
+            Some(HierarchyNodeType::Endpoint)
+        );
+        // The Agent variant still serializes as "agent".
+        assert_eq!(HierarchyNodeType::Agent.as_str(), "agent");
     }
 
     #[test]
@@ -232,6 +276,36 @@ mod tests {
         assert_eq!(json, "\"project\"");
         let deserialized: HierarchyNodeType = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(deserialized, HierarchyNodeType::Project);
+    }
+
+    #[test]
+    fn node_type_serde_endpoint_and_runtime() {
+        let endpoint_json = serde_json::to_string(&HierarchyNodeType::Endpoint).expect("serialize");
+        assert_eq!(endpoint_json, "\"endpoint\"");
+        let deserialized: HierarchyNodeType =
+            serde_json::from_str(&endpoint_json).expect("deserialize");
+        assert_eq!(deserialized, HierarchyNodeType::Endpoint);
+
+        let runtime_json = serde_json::to_string(&HierarchyNodeType::Runtime).expect("serialize");
+        assert_eq!(runtime_json, "\"runtime\"");
+        let deserialized: HierarchyNodeType =
+            serde_json::from_str(&runtime_json).expect("deserialize");
+        assert_eq!(deserialized, HierarchyNodeType::Runtime);
+    }
+
+    #[test]
+    fn node_type_serde_deserializes_legacy_agent() {
+        // Old data stored as "agent" should still deserialize via serde.
+        let deserialized: HierarchyNodeType =
+            serde_json::from_str("\"agent\"").expect("deserialize");
+        assert_eq!(deserialized, HierarchyNodeType::Agent);
+    }
+
+    #[test]
+    fn is_legacy_agent() {
+        assert!(HierarchyNodeType::Agent.is_legacy_agent());
+        assert!(!HierarchyNodeType::Endpoint.is_legacy_agent());
+        assert!(!HierarchyNodeType::Runtime.is_legacy_agent());
     }
 
     #[test]

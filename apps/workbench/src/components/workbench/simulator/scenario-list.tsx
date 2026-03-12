@@ -1,3 +1,4 @@
+import { useState, useCallback } from "react";
 import {
   IconFile,
   IconFileText,
@@ -16,12 +17,16 @@ import {
   IconCircleCheck,
   IconCircleX,
   IconCircleDashed,
+  IconFlask,
+  IconSparkles,
+  IconTestPipe,
 } from "@tabler/icons-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { VerdictBadge } from "@/components/workbench/shared/verdict-badge";
 import { cn } from "@/lib/utils";
-import type { TestScenario, TestActionType, ThreatSeverity } from "@/lib/workbench/types";
+import type { TestScenario, TestActionType, ThreatSeverity, WorkbenchPolicy } from "@/lib/workbench/types";
 import type { CoverageReport, GuardCoverageStatus } from "@/lib/workbench/coverage-analyzer";
+import { useRedTeamPlugins, PluginCategoryGroup, CoverageIndicator } from "./redteam-panel";
 
 const ACTION_TYPE_ICONS: Record<TestActionType, typeof IconFile> = {
   file_access: IconFile,
@@ -142,6 +147,12 @@ const COVERAGE_STATUS_ICONS: Record<
   disabled: { Icon: IconCircleDashed, className: "text-[#6f7f9a]/40" },
 };
 
+// ---------------------------------------------------------------------------
+// Source mode toggle
+// ---------------------------------------------------------------------------
+
+export type ScenarioSource = "library" | "redteam";
+
 interface ScenarioListProps {
   scenarios: TestScenario[];
   autoScenarios?: TestScenario[];
@@ -151,7 +162,9 @@ interface ScenarioListProps {
   onRunAll: () => void;
   onGenerate?: () => void;
   onRunAutoScenarios?: () => void;
+  onScenariosGenerated?: (scenarios: TestScenario[]) => void;
   coverageReport?: CoverageReport | null;
+  policy?: WorkbenchPolicy;
   horizontal?: boolean;
 }
 
@@ -164,9 +177,13 @@ export function ScenarioList({
   onRunAll,
   onGenerate,
   onRunAutoScenarios,
+  onScenariosGenerated,
   coverageReport,
+  policy,
   horizontal,
 }: ScenarioListProps) {
+  const [source, setSource] = useState<ScenarioSource>("library");
+
   const attacks = scenarios.filter((s) => s.category === "attack");
   const benign = scenarios.filter((s) => s.category === "benign");
   const edgeCases = scenarios.filter((s) => s.category === "edge_case");
@@ -176,6 +193,15 @@ export function ScenarioList({
   const autoBenign = autoScenarios?.filter((s) => s.category === "benign") ?? [];
   const autoEdgeCases = autoScenarios?.filter((s) => s.category === "edge_case") ?? [];
   const hasAutoScenarios = (autoScenarios?.length ?? 0) > 0;
+
+  // Wrap onScenariosGenerated to auto-switch back to library after generation
+  const handleRedTeamGenerated = useCallback(
+    (generated: TestScenario[]) => {
+      onScenariosGenerated?.(generated);
+      setSource("library");
+    },
+    [onScenariosGenerated],
+  );
 
   if (horizontal) {
     return (
@@ -280,6 +306,102 @@ export function ScenarioList({
         </div>
       </div>
 
+      {/* Source mode toggle */}
+      <div className="flex items-center gap-1 px-3 py-2 border-b border-[#2d3240] shrink-0 bg-[#0b0d13]">
+        <button
+          onClick={() => setSource("library")}
+          className={cn(
+            "flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-[11px] font-medium transition-colors",
+            source === "library"
+              ? "bg-[#131721] text-[#ece7dc] border border-[#2d3240]"
+              : "text-[#6f7f9a] hover:text-[#ece7dc] hover:bg-[#131721]/40",
+          )}
+        >
+          <IconTestPipe size={12} stroke={1.5} />
+          Library
+        </button>
+        <button
+          onClick={() => setSource("redteam")}
+          className={cn(
+            "flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-[11px] font-medium transition-colors",
+            source === "redteam"
+              ? "bg-[#d4a84b]/10 text-[#d4a84b] border border-[#d4a84b]/25"
+              : "text-[#6f7f9a] hover:text-[#d4a84b] hover:bg-[#d4a84b]/5",
+          )}
+        >
+          <IconFlask size={12} stroke={1.5} />
+          Red Team
+        </button>
+      </div>
+
+      {source === "library" ? (
+        <LibraryContent
+          scenarios={scenarios}
+          autoScenarios={autoScenarios}
+          attacks={attacks}
+          benign={benign}
+          edgeCases={edgeCases}
+          autoAttacks={autoAttacks}
+          autoBenign={autoBenign}
+          autoEdgeCases={autoEdgeCases}
+          hasAutoScenarios={hasAutoScenarios}
+          selectedId={selectedId}
+          onSelect={onSelect}
+          onGenerate={onGenerate}
+          onRunAutoScenarios={onRunAutoScenarios}
+          coverageReport={coverageReport}
+        />
+      ) : (
+        policy && onScenariosGenerated ? (
+          <RedTeamContent
+            policy={policy}
+            scenarios={scenarios}
+            autoScenarios={autoScenarios}
+            onScenariosGenerated={handleRedTeamGenerated}
+          />
+        ) : null
+      )}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Library content (existing scenario groups)
+// ---------------------------------------------------------------------------
+
+function LibraryContent({
+  scenarios,
+  autoScenarios,
+  attacks,
+  benign,
+  edgeCases,
+  autoAttacks,
+  autoBenign,
+  autoEdgeCases,
+  hasAutoScenarios,
+  selectedId,
+  onSelect,
+  onGenerate,
+  onRunAutoScenarios,
+  coverageReport,
+}: {
+  scenarios: TestScenario[];
+  autoScenarios?: TestScenario[];
+  attacks: TestScenario[];
+  benign: TestScenario[];
+  edgeCases: TestScenario[];
+  autoAttacks: TestScenario[];
+  autoBenign: TestScenario[];
+  autoEdgeCases: TestScenario[];
+  hasAutoScenarios: boolean;
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  onGenerate?: () => void;
+  onRunAutoScenarios?: () => void;
+  coverageReport?: CoverageReport | null;
+}) {
+  return (
+    <>
       {/* Threat posture summary */}
       <ThreatPostureSummary scenarios={scenarios} />
 
@@ -391,6 +513,102 @@ export function ScenarioList({
           </div>
         </div>
       </ScrollArea>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Red Team content (plugin selector embedded in sidebar)
+// ---------------------------------------------------------------------------
+
+function RedTeamContent({
+  policy,
+  scenarios,
+  autoScenarios,
+  onScenariosGenerated,
+}: {
+  policy: WorkbenchPolicy;
+  scenarios: TestScenario[];
+  autoScenarios?: TestScenario[];
+  onScenariosGenerated: (scenarios: TestScenario[]) => void;
+}) {
+  const allScenarios = [...scenarios, ...(autoScenarios ?? [])];
+
+  const {
+    enabledPlugins,
+    togglePlugin,
+    grouped,
+    categoryOrder,
+    coverage,
+    generating,
+    handleGenerate,
+    handleFillGaps,
+  } = useRedTeamPlugins(policy, allScenarios, onScenariosGenerated);
+
+  return (
+    <>
+      {/* Plugin header */}
+      <div className="px-4 py-2.5 border-b border-[#2d3240] bg-[#0b0d13] shrink-0">
+        <div className="flex items-center gap-2 mb-1">
+          <IconFlask size={12} stroke={1.5} className="text-[#d4a84b]" />
+          <span className="text-[10px] font-mono uppercase tracking-wider text-[#d4a84b]">
+            Attack Plugins
+          </span>
+        </div>
+        <p className="text-[9px] text-[#6f7f9a] leading-relaxed">
+          Select plugins to generate adversarial test scenarios against your policy.
+        </p>
+      </div>
+
+      {/* Plugin category list */}
+      <ScrollArea className="flex-1 overflow-y-auto">
+        <div className="p-3 space-y-2">
+          {categoryOrder.map((cat) => (
+            <PluginCategoryGroup
+              key={cat}
+              category={cat}
+              plugins={grouped[cat]}
+              enabledPlugins={enabledPlugins}
+              onTogglePlugin={togglePlugin}
+            />
+          ))}
+        </div>
+      </ScrollArea>
+
+      {/* Actions */}
+      <div className="px-3 py-3 border-t border-[#2d3240] shrink-0 space-y-2">
+        <CoverageIndicator covered={coverage.covered} total={coverage.total} />
+
+        <button
+          onClick={handleGenerate}
+          disabled={enabledPlugins.size === 0 || generating}
+          className={cn(
+            "w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-[11px] font-medium transition-colors",
+            enabledPlugins.size > 0 && !generating
+              ? "bg-[#d4a84b]/10 text-[#d4a84b] hover:bg-[#d4a84b]/20"
+              : "bg-[#131721] text-[#6f7f9a]/40 cursor-not-allowed",
+          )}
+        >
+          <IconPlayerPlay size={13} stroke={1.5} />
+          {generating ? "Generating..." : `Generate ${enabledPlugins.size} Scenarios`}
+        </button>
+
+        {coverage.uncoveredPlugins.length > 0 && (
+          <button
+            onClick={handleFillGaps}
+            disabled={generating}
+            className={cn(
+              "w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-medium transition-colors",
+              !generating
+                ? "bg-[#c45c5c]/10 text-[#c45c5c] hover:bg-[#c45c5c]/20"
+                : "bg-[#131721] text-[#6f7f9a]/40 cursor-not-allowed",
+            )}
+          >
+            <IconSparkles size={13} stroke={1.5} />
+            Fill {coverage.uncoveredPlugins.length} Gaps
+          </button>
+        )}
+      </div>
     </>
   );
 }

@@ -13,6 +13,17 @@
 import type { DelegationGraph, DelegationNode, DelegationEdge } from "./delegation-types";
 
 // ---------------------------------------------------------------------------
+// Dynamic date helpers — keep demo data from appearing expired
+// ---------------------------------------------------------------------------
+
+function isoRelative(daysFromNow: number, hours = 0): string {
+  const d = new Date();
+  d.setDate(d.getDate() + daysFromNow);
+  d.setHours(hours, 0, 0, 0);
+  return d.toISOString();
+}
+
+// ---------------------------------------------------------------------------
 // Nodes (~18)
 // ---------------------------------------------------------------------------
 
@@ -109,28 +120,28 @@ const nodes: DelegationNode[] = [
     kind: "Grant",
     label: "Planner Delegation",
     capabilities: ["FileRead", "NetworkEgress", "McpTool", "AgentAdmin"],
-    metadata: { expires: "2026-03-10T00:00:00Z" },
+    metadata: { expires: isoRelative(1) },
   },
   {
     id: "g-coder-grant",
     kind: "Grant",
     label: "Coder Delegation",
     capabilities: ["FileRead", "FileWrite", "CommandExec", "McpTool"],
-    metadata: { expires: "2026-03-10T00:00:00Z" },
+    metadata: { expires: isoRelative(1) },
   },
   {
     id: "g-reviewer-grant",
     kind: "Grant",
     label: "Review Grant",
     capabilities: ["FileRead"],
-    metadata: { expires: "2026-03-09T12:00:00Z", scope: "PR #42 only" },
+    metadata: { expires: isoRelative(0, 12), scope: "PR #42 only" },
   },
   {
     id: "g-research-grant",
     kind: "Grant",
     label: "Research Grant",
     capabilities: ["FileRead", "NetworkEgress"],
-    metadata: { expires: "2026-03-09T06:00:00Z" },
+    metadata: { expires: isoRelative(-1, 6) },
   },
 
   // --- Approval ---
@@ -138,7 +149,7 @@ const nodes: DelegationNode[] = [
     id: "a-deploy-approval",
     kind: "Approval",
     label: "Deploy Approval v2.1.0",
-    metadata: { approver: "ops-team", timestamp: "2026-03-09T08:15:00Z" },
+    metadata: { approver: "ops-team", timestamp: isoRelative(0, 8) },
   },
 
   // --- Sessions ---
@@ -146,13 +157,13 @@ const nodes: DelegationNode[] = [
     id: "s-coder-session",
     kind: "Session",
     label: "Coder Session #7a3f",
-    metadata: { startedAt: "2026-03-09T07:00:00Z", status: "active" },
+    metadata: { startedAt: isoRelative(0, 7), status: "active" },
   },
   {
     id: "s-tester-session",
     kind: "Session",
     label: "Tester Session #b2c1",
-    metadata: { startedAt: "2026-03-09T07:30:00Z", status: "active" },
+    metadata: { startedAt: isoRelative(0, 7), status: "active" },
   },
 
   // --- Events ---
@@ -164,7 +175,7 @@ const nodes: DelegationNode[] = [
       guard: "SecretLeakGuard",
       action: "file_write",
       path: "/app/config/.env",
-      timestamp: "2026-03-09T07:45:00Z",
+      timestamp: isoRelative(0, 7),
     },
   },
   {
@@ -174,7 +185,7 @@ const nodes: DelegationNode[] = [
     metadata: {
       reason: "Anomalous egress detected",
       target: "Research Agent B",
-      timestamp: "2026-03-09T08:00:00Z",
+      timestamp: isoRelative(0, 8),
     },
   },
 
@@ -186,7 +197,7 @@ const nodes: DelegationNode[] = [
     metadata: {
       action: "isolate_principal",
       triggered_by: "e-revocation",
-      timestamp: "2026-03-09T08:00:01Z",
+      timestamp: isoRelative(0, 8),
     },
   },
 ];

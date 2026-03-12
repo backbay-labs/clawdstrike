@@ -75,6 +75,14 @@ const EMBEDDED_MIGRATIONS: &[EmbeddedMigration] = &[
         name: "016_hierarchy_nodes.sql",
         sql: include_str!("../migrations/016_hierarchy_nodes.sql"),
     },
+    EmbeddedMigration {
+        name: "017_endpoint_runtime_hierarchy.sql",
+        sql: include_str!("../migrations/017_endpoint_runtime_hierarchy.sql"),
+    },
+    EmbeddedMigration {
+        name: "018_runtime_unique_constraint.sql",
+        sql: include_str!("../migrations/018_runtime_unique_constraint.sql"),
+    },
 ];
 
 const MIGRATION_LOCK_KEY: i64 = 0x4353_4D49_4752;

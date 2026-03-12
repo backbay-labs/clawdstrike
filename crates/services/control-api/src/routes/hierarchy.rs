@@ -8,10 +8,11 @@ use crate::auth::AuthenticatedTenant;
 use crate::error::ApiError;
 use crate::models::hierarchy::{
     CreateHierarchyNodeRequest, DeleteHierarchyNodeQuery, DeleteHierarchyNodeResponse,
-    HierarchyNode, HierarchyTreeResponse, UpdateHierarchyNodeRequest,
+    HierarchyNode, HierarchyTreeResponse, NullableField, UpdateHierarchyNodeRequest,
 };
 use crate::services::hierarchy as hierarchy_service;
 use crate::state::AppState;
+use crate::validation;
 
 /// Query parameters for listing hierarchy nodes.
 #[derive(Debug, Deserialize)]
@@ -65,6 +66,13 @@ async fn create_node(
         return Err(ApiError::BadRequest("name must not be empty".to_string()));
     }
 
+    // Input length validation
+    validation::validate_name(&req.name)?;
+    validation::validate_string_length("node_type", &req.node_type, 32)?;
+    validation::validate_external_id(req.external_id.as_deref())?;
+    validation::validate_policy_name(req.policy_name.as_deref())?;
+    validation::validate_metadata(req.metadata.as_ref())?;
+
     let metadata = req.metadata.unwrap_or(serde_json::json!({}));
 
     let node = hierarchy_service::create_node(
@@ -74,6 +82,7 @@ async fn create_node(
             name: &req.name,
             node_type: &req.node_type,
             parent_id: req.parent_id,
+            external_id: req.external_id.as_deref(),
             policy_id: req.policy_id,
             policy_name: req.policy_name.as_deref(),
             metadata: &metadata,
@@ -105,6 +114,23 @@ async fn update_node(
         if name.trim().is_empty() {
             return Err(ApiError::BadRequest("name must not be empty".to_string()));
         }
+        validation::validate_name(name)?;
+    }
+
+    // Validate node_type length if provided
+    if let Some(ref nt) = req.node_type {
+        validation::validate_string_length("node_type", nt, 32)?;
+    }
+
+    // Input length validation for optional/nullable fields
+    if let NullableField::Set(ref external_id) = req.external_id {
+        validation::validate_external_id(Some(external_id.as_str()))?;
+    }
+    if let NullableField::Set(ref policy_name) = req.policy_name {
+        validation::validate_policy_name(Some(policy_name.as_str()))?;
+    }
+    if let NullableField::Set(ref metadata) = req.metadata {
+        validation::validate_metadata(Some(metadata))?;
     }
 
     let node = hierarchy_service::update_node(
@@ -115,6 +141,7 @@ async fn update_node(
             name: req.name.as_deref(),
             node_type: req.node_type.as_deref(),
             parent_id: req.parent_id,
+            external_id: req.external_id.as_ref().map(|s| s.as_str()),
             policy_id: req.policy_id,
             policy_name: req.policy_name.as_ref().map(|name| name.as_str()),
             metadata: req.metadata.as_ref(),

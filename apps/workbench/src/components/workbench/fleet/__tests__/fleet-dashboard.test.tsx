@@ -50,6 +50,8 @@ vi.mock("@/lib/workbench/use-fleet-connection", async () => {
         },
       ],
       refreshAgents: useFleetConnectionMock.refreshAgents,
+      pollError: null,
+      secureStorageWarning: false,
     }),
   };
 });

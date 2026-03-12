@@ -94,6 +94,28 @@ describe("DesktopSidebar", () => {
     expect(screen.getByText("Collapse")).toBeInTheDocument();
   });
 
+  it("renders section group headers", () => {
+    renderWithProviders(<DesktopSidebar />);
+
+    for (const title of ["Policy", "Testing", "Governance", "Infrastructure"]) {
+      expect(screen.getByText(title)).toBeInTheDocument();
+    }
+  });
+
+  it("hides section headers when collapsed and shows divider lines instead", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<DesktopSidebar />);
+
+    const collapseBtn = screen.getByText("Collapse").closest("button")!;
+    await user.click(collapseBtn);
+
+    // Section headers should be hidden
+    expect(screen.queryByText("Policy")).not.toBeInTheDocument();
+    expect(screen.queryByText("Testing")).not.toBeInTheDocument();
+    expect(screen.queryByText("Governance")).not.toBeInTheDocument();
+    expect(screen.queryByText("Infrastructure")).not.toBeInTheDocument();
+  });
+
   it("toggles sidebar collapsed state when collapse button is clicked", async () => {
     const user = userEvent.setup();
     renderWithProviders(<DesktopSidebar />);

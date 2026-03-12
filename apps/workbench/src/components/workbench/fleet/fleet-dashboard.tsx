@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo } from "react";
 import {
   IconServer,
   IconRefresh,
   IconChevronDown,
   IconChevronRight,
   IconArrowsSort,
+  IconAlertTriangle,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { useFleetConnection } from "@/lib/workbench/use-fleet-connection";
@@ -12,7 +13,6 @@ import type { AgentInfo } from "@/lib/workbench/fleet-client";
 import { Link } from "react-router-dom";
 
 const STALE_THRESHOLD_SECS = 90;
-const AUTO_REFRESH_MS = 60_000;
 
 type StatusFilter = "all" | "online" | "stale" | "drift";
 type SortColumn =
@@ -60,7 +60,7 @@ const STATUS_DOT_COLORS: Record<string, string> = {
 };
 
 export function FleetDashboard() {
-  const { connection, agents, refreshAgents } = useFleetConnection();
+  const { connection, agents, refreshAgents, pollError, secureStorageWarning } = useFleetConnection();
 
   const [filter, setFilter] = useState<StatusFilter>("all");
   const [sortCol, setSortCol] = useState<SortColumn>("agent_id");
@@ -68,18 +68,12 @@ export function FleetDashboard() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  useEffect(() => {
-    if (!connection.connected) return;
-    const timer = setInterval(() => {
-      refreshAgents();
-    }, AUTO_REFRESH_MS);
-    return () => clearInterval(timer);
-  }, [connection.connected, refreshAgents]);
+  // Polling is handled by FleetConnectionProvider — no duplicate timer here.
+  // Only the manual refresh button triggers on-demand fetches.
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
-    await refreshAgents();
-    setIsRefreshing(false);
+    try { await refreshAgents(); } finally { setIsRefreshing(false); }
   }, [refreshAgents]);
 
   const counts = useMemo(() => {
@@ -231,6 +225,24 @@ export function FleetDashboard() {
           </button>
         </div>
       </div>
+
+      {/* Warning banners */}
+      {secureStorageWarning && (
+        <div className="shrink-0 border-b border-[#d4a84b]/20 bg-[#d4a84b]/5 px-6 py-2 flex items-center gap-2">
+          <IconAlertTriangle size={13} stroke={1.5} className="text-[#d4a84b] shrink-0" />
+          <span className="text-[10px] text-[#d4a84b]">
+            Credentials stored in browser session only — use desktop app for secure storage.
+          </span>
+        </div>
+      )}
+      {pollError && (
+        <div className="shrink-0 border-b border-[#c45c5c]/20 bg-[#c45c5c]/5 px-6 py-2 flex items-center gap-2">
+          <IconAlertTriangle size={13} stroke={1.5} className="text-[#c45c5c] shrink-0" />
+          <span className="text-[10px] text-[#c45c5c]">
+            {pollError}
+          </span>
+        </div>
+      )}
 
       {/* Summary cards */}
       <div className="shrink-0 border-b border-[#2d3240]/60 px-6 py-4">

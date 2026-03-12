@@ -25,12 +25,9 @@ import { ScenarioBuilder } from "./scenario-builder";
 import { ResultsPanel } from "./results-panel";
 import { PosturePanel } from "./posture-panel";
 import { ReportDialog } from "./report-dialog";
-import { ObserveSynthPanel } from "./observe-synth-panel";
+import { ObservePanel } from "./observe-panel";
 import { ThreatMatrix } from "./threat-matrix";
-import { FleetTestingPanel } from "./fleet-testing-panel";
-import { RedTeamPanel } from "./redteam-panel";
 import { TrustprintLab } from "./trustprint-lab";
-import { useFleetConnection } from "@/lib/workbench/use-fleet-connection";
 import {
   IconFileReport,
   IconDownload,
@@ -40,8 +37,6 @@ import {
   IconGrid3x3,
   IconShieldCheck,
   IconCircle,
-  IconRadar,
-  IconFlask,
   IconFingerprint,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
@@ -51,7 +46,7 @@ import { ClaudeCodeHint } from "@/components/workbench/shared/claude-code-hint";
 // Types
 // ---------------------------------------------------------------------------
 
-type SimulatorTab = "scenarios" | "observe-synth" | "threat-matrix" | "fleet-testing" | "red-team" | "trustprint-lab";
+type SimulatorTab = "scenarios" | "trustprint-lab" | "observe" | "coverage";
 
 // ---------------------------------------------------------------------------
 // Helpers to map between the workbench TestScenario format and the Rust
@@ -249,21 +244,17 @@ function SimulatorHeader({
   onTabChange,
   threatLevel,
   engineConnected,
-  fleetConnected,
 }: {
   activeTab: SimulatorTab;
   onTabChange: (tab: SimulatorTab) => void;
   threatLevel: { color: string; label: string };
   engineConnected: boolean;
-  fleetConnected: boolean;
 }) {
-  const tabs: { id: SimulatorTab; label: string; icon: typeof IconTestPipe; badge?: string }[] = [
+  const tabs: { id: SimulatorTab; label: string; icon: typeof IconTestPipe }[] = [
     { id: "scenarios", label: "Scenarios", icon: IconTestPipe },
-    { id: "trustprint-lab", label: "Trustprint Lab", icon: IconFingerprint },
-    { id: "observe-synth", label: "Observe & Synth", icon: IconEye },
-    { id: "threat-matrix", label: "Threat Matrix", icon: IconGrid3x3 },
-    { id: "red-team", label: "Red Team", icon: IconFlask },
-    { id: "fleet-testing", label: "Fleet Testing", icon: IconRadar, badge: fleetConnected ? "connected" : "offline" },
+    { id: "trustprint-lab", label: "Trustprint", icon: IconFingerprint },
+    { id: "observe", label: "Observe", icon: IconEye },
+    { id: "coverage", label: "Coverage", icon: IconGrid3x3 },
   ];
 
   return (
@@ -286,18 +277,6 @@ function SimulatorHeader({
             >
               <Icon size={14} stroke={1.5} />
               {tab.label}
-              {tab.badge && (
-                <span
-                  className={cn(
-                    "text-[8px] font-mono uppercase px-1 py-0 rounded border ml-0.5",
-                    tab.badge === "connected"
-                      ? "text-[#3dbf84]/70 border-[#3dbf84]/20 bg-[#3dbf84]/5"
-                      : "text-[#6f7f9a]/50 border-[#2d3240] bg-[#131721]/50",
-                  )}
-                >
-                  {tab.badge}
-                </span>
-              )}
             </button>
           );
         })}
@@ -352,7 +331,6 @@ function SimulatorHeader({
 export function SimulatorLayout() {
   const { state } = useWorkbench();
   const { toast } = useToast();
-  const { connection } = useFleetConnection();
   const [activeTab, setActiveTab] = useState<SimulatorTab>("scenarios");
   const [scenarios, setScenarios] = useState<TestScenario[]>(PRE_BUILT_SCENARIOS);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -769,7 +747,6 @@ export function SimulatorLayout() {
         onTabChange={setActiveTab}
         threatLevel={threatLevel}
         engineConnected={engineConnected}
-        fleetConnected={connection.connected}
       />
 
       {/* Tab content */}
@@ -788,6 +765,15 @@ export function SimulatorLayout() {
                 onGenerate={handleGenerate}
                 onRunAutoScenarios={handleRunAutoScenarios}
                 coverageReport={coverageReport}
+                policy={state.activePolicy}
+                onScenariosGenerated={(generated) => {
+                  setAutoScenarios((prev) => [...prev, ...generated]);
+                  toast({
+                    type: "success",
+                    title: `${generated.length} red team scenarios generated`,
+                    description: "View them in the Library",
+                  });
+                }}
               />
             </div>
 
@@ -805,6 +791,15 @@ export function SimulatorLayout() {
                   onGenerate={handleGenerate}
                   onRunAutoScenarios={handleRunAutoScenarios}
                   coverageReport={coverageReport}
+                  policy={state.activePolicy}
+                  onScenariosGenerated={(generated) => {
+                    setAutoScenarios((prev) => [...prev, ...generated]);
+                    toast({
+                      type: "success",
+                      title: `${generated.length} red team scenarios generated`,
+                      description: "View them in the Library",
+                    });
+                  }}
                   horizontal
                 />
               </div>
@@ -912,32 +907,12 @@ export function SimulatorLayout() {
           <TrustprintLab />
         )}
 
-        {activeTab === "observe-synth" && (
-          <ObserveSynthPanel />
+        {activeTab === "observe" && (
+          <ObservePanel />
         )}
 
-        {activeTab === "threat-matrix" && (
+        {activeTab === "coverage" && (
           <ThreatMatrix scenarios={allScenarios} results={results} />
-        )}
-
-        {activeTab === "red-team" && (
-          <RedTeamPanel
-            policy={state.activePolicy}
-            scenarios={allScenarios}
-            results={results}
-            onScenariosGenerated={(generated) => {
-              setAutoScenarios((prev) => [...prev, ...generated]);
-              toast({
-                type: "success",
-                title: `${generated.length} red team scenarios generated`,
-                description: "Switch to Scenarios tab to run them",
-              });
-            }}
-          />
-        )}
-
-        {activeTab === "fleet-testing" && (
-          <FleetTestingPanel />
         )}
       </div>
 

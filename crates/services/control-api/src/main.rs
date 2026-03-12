@@ -13,6 +13,7 @@ mod models;
 mod routes;
 mod services;
 mod state;
+mod validation;
 
 use std::process::ExitCode;
 use std::sync::Arc;

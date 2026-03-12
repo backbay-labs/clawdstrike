@@ -163,7 +163,7 @@ function computeSystemRisk(
 // Plugin Category Group
 // ---------------------------------------------------------------------------
 
-function PluginCategoryGroup({
+export function PluginCategoryGroup({
   category,
   plugins,
   enabledPlugins,
@@ -246,7 +246,7 @@ function PluginCategoryGroup({
 // Coverage Indicator
 // ---------------------------------------------------------------------------
 
-function CoverageIndicator({
+export function CoverageIndicator({
   covered,
   total,
 }: {
@@ -283,22 +283,25 @@ function CoverageIndicator({
 }
 
 // ---------------------------------------------------------------------------
-// Main Component
+// useRedTeamPlugins hook
 // ---------------------------------------------------------------------------
 
-interface RedTeamPanelProps {
-  policy: WorkbenchPolicy;
-  scenarios: TestScenario[];
-  results: SimulationResult[];
-  onScenariosGenerated: (scenarios: TestScenario[]) => void;
+export interface UseRedTeamPluginsResult {
+  enabledPlugins: Set<string>;
+  togglePlugin: (id: string) => void;
+  grouped: Record<string, RedTeamPlugin[]>;
+  categoryOrder: string[];
+  coverage: { covered: number; total: number; uncoveredPlugins: string[] };
+  generating: boolean;
+  handleGenerate: () => Promise<void>;
+  handleFillGaps: () => Promise<void>;
 }
 
-export function RedTeamPanel({
-  policy,
-  scenarios,
-  results,
-  onScenariosGenerated,
-}: RedTeamPanelProps) {
+export function useRedTeamPlugins(
+  policy: WorkbenchPolicy,
+  scenarios: TestScenario[],
+  onScenariosGenerated: (scenarios: TestScenario[]) => void,
+): UseRedTeamPluginsResult {
   const [enabledPlugins, setEnabledPlugins] = useState<Set<string>>(() => {
     const initial = new Set<string>();
     const enabledGuards: GuardId[] = [];
@@ -326,16 +329,6 @@ export function RedTeamPanel({
   const coverage = useMemo(
     () => computeCoverage(enabledPlugins, scenarios),
     [enabledPlugins, scenarios],
-  );
-
-  const systemRisk = useMemo(
-    () => computeSystemRisk(enabledPlugins, scenarios, results),
-    [enabledPlugins, scenarios, results],
-  );
-
-  const pluginScores = useMemo(
-    () => systemRisk?.plugins ?? [],
-    [systemRisk],
   );
 
   const togglePlugin = useCallback((id: string) => {
@@ -413,11 +406,65 @@ export function RedTeamPanel({
     }
   }, [coverage.uncoveredPlugins, onScenariosGenerated]);
 
-  const categoryOrder = Object.keys(grouped).sort((a, b) => {
-    const aLabel = CATEGORY_LABELS[a] ?? a;
-    const bLabel = CATEGORY_LABELS[b] ?? b;
-    return aLabel.localeCompare(bLabel);
-  });
+  const categoryOrder = useMemo(
+    () =>
+      Object.keys(grouped).sort((a, b) => {
+        const aLabel = CATEGORY_LABELS[a] ?? a;
+        const bLabel = CATEGORY_LABELS[b] ?? b;
+        return aLabel.localeCompare(bLabel);
+      }),
+    [grouped],
+  );
+
+  return {
+    enabledPlugins,
+    togglePlugin,
+    grouped,
+    categoryOrder,
+    coverage,
+    generating,
+    handleGenerate,
+    handleFillGaps,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Main Component
+// ---------------------------------------------------------------------------
+
+interface RedTeamPanelProps {
+  policy: WorkbenchPolicy;
+  scenarios: TestScenario[];
+  results: SimulationResult[];
+  onScenariosGenerated: (scenarios: TestScenario[]) => void;
+}
+
+export function RedTeamPanel({
+  policy,
+  scenarios,
+  results,
+  onScenariosGenerated,
+}: RedTeamPanelProps) {
+  const {
+    enabledPlugins,
+    togglePlugin,
+    grouped,
+    categoryOrder,
+    coverage,
+    generating,
+    handleGenerate,
+    handleFillGaps,
+  } = useRedTeamPlugins(policy, scenarios, onScenariosGenerated);
+
+  const systemRisk = useMemo(
+    () => computeSystemRisk(enabledPlugins, scenarios, results),
+    [enabledPlugins, scenarios, results],
+  );
+
+  const pluginScores = useMemo(
+    () => systemRisk?.plugins ?? [],
+    [systemRisk],
+  );
 
   return (
     <div className="flex h-full min-h-0">

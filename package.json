@@ -19,6 +19,7 @@
     "packages/adapters/clawdstrike-hush-cli-engine",
     "packages/adapters/clawdstrike-hushd-engine",
     "apps/control-console",
+    "apps/workbench",
     "packages/sdk/clawdstrike-hunt"
   ],
   "devDependencies": {

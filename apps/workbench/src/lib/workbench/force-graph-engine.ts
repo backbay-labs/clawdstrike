@@ -13,7 +13,6 @@
 
 import type {
   DelegationGraph,
-  DelegationNode,
   DelegationEdge,
 } from "./delegation-types";
 
@@ -82,7 +81,6 @@ export function computeHierarchicalLayout(
   // Build adjacency
   const children = new Map<string, string[]>();
   const parents = new Map<string, string[]>();
-  const edgeByKey = new Map<string, DelegationEdge>();
 
   for (const n of graph.nodes) {
     children.set(n.id, []);
@@ -92,28 +90,49 @@ export function computeHierarchicalLayout(
   const nodeIds = new Set(graph.nodes.map((n) => n.id));
   const backEdgeIds = new Set<string>();
 
+  // Step 1: Detect back-edges via DFS
+  // Pre-build outgoing adjacency list so DFS is O(V+E) not O(V×E)
+  const outgoing = new Map<string, DelegationEdge[]>();
+  for (const n of graph.nodes) outgoing.set(n.id, []);
   for (const e of graph.edges) {
-    if (!nodeIds.has(e.from) || !nodeIds.has(e.to)) continue;
-    edgeByKey.set(`${e.from}->${e.to}`, e);
+    if (nodeIds.has(e.from) && nodeIds.has(e.to)) {
+      outgoing.get(e.from)!.push(e);
+    }
   }
 
-  // Step 1: Detect back-edges via DFS
   const visited = new Set<string>();
   const inStack = new Set<string>();
   const forwardEdges: DelegationEdge[] = [];
 
-  function dfs(nodeId: string) {
-    visited.add(nodeId);
-    inStack.add(nodeId);
-    for (const e of graph.edges) {
-      if (e.from !== nodeId || !nodeIds.has(e.to)) continue;
-      if (inStack.has(e.to)) {
-        backEdgeIds.add(e.id);
-      } else if (!visited.has(e.to)) {
-        dfs(e.to);
+  function dfs(startId: string) {
+    // Iterative DFS with explicit stack to avoid stack overflow on deep chains.
+    // Each frame tracks: the node id, its outgoing edges, and the current index
+    // into those edges. When all edges are exhausted we "return" (pop + remove
+    // from inStack), exactly mirroring the recursive version.
+    const stack: { nodeId: string; edges: DelegationEdge[]; idx: number }[] = [];
+
+    visited.add(startId);
+    inStack.add(startId);
+    stack.push({ nodeId: startId, edges: outgoing.get(startId) ?? [], idx: 0 });
+
+    while (stack.length > 0) {
+      const frame = stack[stack.length - 1];
+
+      if (frame.idx < frame.edges.length) {
+        const e = frame.edges[frame.idx++];
+        if (inStack.has(e.to)) {
+          backEdgeIds.add(e.id);
+        } else if (!visited.has(e.to)) {
+          visited.add(e.to);
+          inStack.add(e.to);
+          stack.push({ nodeId: e.to, edges: outgoing.get(e.to) ?? [], idx: 0 });
+        }
+      } else {
+        // All edges explored — backtrack
+        inStack.delete(frame.nodeId);
+        stack.pop();
       }
     }
-    inStack.delete(nodeId);
   }
 
   // Find roots (no incoming edges) to start DFS
@@ -168,8 +187,11 @@ export function computeHierarchicalLayout(
     if ((inDegree.get(n.id) ?? 0) === 0) queue.push(n.id);
   }
 
-  while (queue.length > 0) {
-    const cur = queue.shift()!;
+  const processed = new Set<string>();
+  let qi = 0;
+  while (qi < queue.length) {
+    const cur = queue[qi++];
+    processed.add(cur);
     const curLayer = layers.get(cur) ?? 0;
     for (const child of children.get(cur) ?? []) {
       const newLayer = curLayer + 1;
@@ -182,8 +204,38 @@ export function computeHierarchicalLayout(
     }
   }
 
+  // Handle disconnected components or residual cycles: treat unprocessed
+  // nodes as additional roots and re-run Kahn's from them.
+  if (processed.size < graph.nodes.length) {
+    const queue2: string[] = [];
+    for (const n of graph.nodes) {
+      if (!processed.has(n.id)) {
+        queue2.push(n.id);
+      }
+    }
+    let qi2 = 0;
+    while (qi2 < queue2.length) {
+      const cur = queue2[qi2++];
+      if (processed.has(cur)) continue;
+      processed.add(cur);
+      const curLayer = layers.get(cur) ?? 0;
+      for (const child of children.get(cur) ?? []) {
+        const newLayer = curLayer + 1;
+        if (newLayer > (layers.get(child) ?? 0)) {
+          layers.set(child, newLayer);
+        }
+        if (!processed.has(child)) {
+          queue2.push(child);
+        }
+      }
+    }
+  }
+
   // Group nodes by layer
-  const maxLayer = Math.max(...layers.values(), 0);
+  let maxLayer = 0;
+  for (const v of layers.values()) {
+    if (v > maxLayer) maxLayer = v;
+  }
   const layerBuckets: string[][] = Array.from({ length: maxLayer + 1 }, () => []);
   for (const n of graph.nodes) {
     layerBuckets[layers.get(n.id) ?? 0].push(n.id);
@@ -230,9 +282,11 @@ export function computeHierarchicalLayout(
   const layoutNodes = new Map<string, LayoutNode>();
 
   // Find the widest layer for centering
-  const maxBucketWidth = Math.max(
-    ...layerBuckets.map((b) => b.length * (nodeWidth + nodeGap) - nodeGap),
-  );
+  let maxBucketWidth = 0;
+  for (const b of layerBuckets) {
+    const w = b.length * (nodeWidth + nodeGap) - nodeGap;
+    if (w > maxBucketWidth) maxBucketWidth = w;
+  }
   const totalWidth = maxBucketWidth + padding * 2;
   const totalHeight = (maxLayer + 1) * (nodeHeight + layerGap) - layerGap + padding * 2;
 
@@ -345,8 +399,9 @@ export function tracePath(
   const queue = [rootId];
   visited.add(rootId);
 
-  while (queue.length > 0) {
-    const current = queue.shift()!;
+  let qi = 0;
+  while (qi < queue.length) {
+    const current = queue[qi++];
     if (current === targetId) break;
     for (const { neighbor, edgeId } of adj.get(current) ?? []) {
       if (!visited.has(neighbor)) {
@@ -363,13 +418,15 @@ export function tracePath(
   const edgeIds: string[] = [];
   let cur = targetId;
   while (cur !== rootId) {
-    nodeIds.unshift(cur);
+    nodeIds.push(cur);
     const p = parent.get(cur);
     if (!p) break;
-    edgeIds.unshift(p.edgeId);
+    edgeIds.push(p.edgeId);
     cur = p.from;
   }
-  nodeIds.unshift(rootId);
+  nodeIds.push(rootId);
+  nodeIds.reverse();
+  edgeIds.reverse();
 
   return { nodeIds, edgeIds };
 }
