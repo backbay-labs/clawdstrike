@@ -479,14 +479,12 @@ function BaselineDetail({
       .map((m) => {
         // Re-classify significance based on sensitivity
         const absChange = Math.abs(m.percentChange);
-        let sig: DriftMetric["significance"] = "normal";
-        if (sensitivity === "high") {
-          sig = absChange > 100 ? "alert" : absChange > 50 ? "notable" : "normal";
-        } else if (sensitivity === "medium") {
-          sig = absChange > 200 ? "alert" : absChange > 100 ? "notable" : "normal";
-        } else {
-          sig = absChange > 500 ? "alert" : absChange > 300 ? "notable" : "normal";
-        }
+        const sig: DriftMetric["significance"] =
+          sensitivity === "high"
+            ? absChange > 100 ? "alert" : absChange > 50 ? "notable" : "normal"
+            : sensitivity === "medium"
+              ? absChange > 200 ? "alert" : absChange > 100 ? "notable" : "normal"
+              : absChange > 500 ? "alert" : absChange > 300 ? "notable" : "normal";
         return { ...m, significance: sig };
       })
       .filter((m) => Math.abs(m.percentChange) >= threshold || m.significance !== "normal")

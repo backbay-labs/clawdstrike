@@ -19,7 +19,6 @@ import {
   IconCircleDot,
   IconCircleHalf2,
   IconCircleX,
-  IconClock,
   IconUser,
   IconNote,
   IconCheck,

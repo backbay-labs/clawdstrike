@@ -327,23 +327,26 @@ async fn delete_agent(
         }
 
         // 4. Delete hierarchy_nodes of type "runtime" that are children of the
-        //    endpoint's hierarchy node.  We look up the endpoint node by
-        //    tenant_id + node_type + name (matching the agent name) since the
-        //    agent row is still present at this point.
+        //    endpoint's hierarchy node.  We resolve the endpoint node via
+        //    principal_id → agents → hierarchy_nodes join so we match the
+        //    exact endpoint (names are not unique per tenant).
         sqlx::query::query(
             r#"DELETE FROM hierarchy_nodes
                WHERE tenant_id = $1
                  AND node_type = 'runtime'
                  AND parent_id IN (
-                     SELECT id
-                     FROM hierarchy_nodes
-                     WHERE tenant_id = $1
-                       AND node_type IN ('endpoint', 'agent')
-                       AND name = $2
+                     SELECT hn.id
+                     FROM hierarchy_nodes AS hn
+                     JOIN agents AS a
+                       ON a.tenant_id = hn.tenant_id
+                      AND a.name = hn.name
+                     WHERE a.id = $2
+                       AND hn.tenant_id = $1
+                       AND hn.node_type IN ('endpoint', 'agent')
                  )"#,
         )
         .bind(auth.tenant_id)
-        .bind(&agent_name)
+        .bind(id)
         .execute(tx.as_mut())
         .await
         .map_err(ApiError::Database)?;
@@ -1111,17 +1114,24 @@ async fn create_runtime_hierarchy_node(
 
     let parent_node_id: Uuid = parent_row.try_get("id").map_err(ApiError::Database)?;
 
+    // Use runtime_name as external_id to leverage the partial unique index
+    // (tenant_id, parent_id, external_id) WHERE node_type = 'runtime'.
+    // This makes the insert truly idempotent — a duplicate registration
+    // hits the conflict and returns the existing node's id.
     let row = sqlx::query::query(
         r#"INSERT INTO hierarchy_nodes (
-               tenant_id, name, node_type, parent_id, metadata
+               tenant_id, name, node_type, parent_id, metadata, external_id
            )
-           VALUES ($1, $2, 'runtime', $3, '{}')
-           ON CONFLICT DO NOTHING
+           VALUES ($1, $2, 'runtime', $3, '{}', $4)
+           ON CONFLICT (tenant_id, parent_id, external_id)
+               WHERE node_type = 'runtime'
+           DO UPDATE SET name = EXCLUDED.name
            RETURNING id"#,
     )
     .bind(tenant_id)
     .bind(runtime_name)
     .bind(parent_node_id)
+    .bind(runtime_name)
     .fetch_optional(tx.as_mut())
     .await
     .map_err(ApiError::Database)?;
