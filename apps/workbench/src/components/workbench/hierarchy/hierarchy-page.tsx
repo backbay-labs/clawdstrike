@@ -165,6 +165,7 @@ function TreeNode({
           isSelected && "bg-[#131721] ring-1 ring-inset",
           isSelected && node.type === "org" && "ring-[#d4a84b]/30",
           isSelected && node.type === "team" && "ring-[#5b8def]/30",
+          isSelected && node.type === "agent" && "ring-[#3dbf84]/30",
           isSelected && node.type === "endpoint" && "ring-[#6bc5a0]/30",
           isSelected && node.type === "runtime" && "ring-[#3dbf84]/30",
           isAncestor && !isSelected && "bg-[#131721]/30",

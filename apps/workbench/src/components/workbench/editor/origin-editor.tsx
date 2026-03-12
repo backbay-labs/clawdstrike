@@ -97,6 +97,13 @@ const DEFAULT_BEHAVIOR_OPTIONS: { value: OriginDefaultBehavior; label: string }[
 // Helpers
 // ---------------------------------------------------------------------------
 
+function isCustomChoice<
+  T extends string,
+  O extends ReadonlyArray<{ value: T }>
+>(value: string | undefined, options: O): boolean {
+  return value !== undefined && !options.some((option) => option.value === value);
+}
+
 function createEmptyProfile(): OriginProfile {
   return {
     id: `profile-${crypto.randomUUID()}`,
@@ -287,6 +294,12 @@ function OriginProfileCard({ profile, index, onUpdate, onRemove }: OriginProfile
     profile.metadata ? JSON.stringify(profile.metadata, null, 2) : "",
   );
   const [metadataError, setMetadataError] = useState(false);
+  const [customProviderMode, setCustomProviderMode] = useState(() =>
+    isCustomChoice(profile.match_rules.provider, PROVIDERS),
+  );
+  const [customSpaceTypeMode, setCustomSpaceTypeMode] = useState(() =>
+    isCustomChoice(profile.match_rules.space_type, SPACE_TYPES),
+  );
 
   useEffect(() => {
     setMetadataText(
@@ -294,6 +307,24 @@ function OriginProfileCard({ profile, index, onUpdate, onRemove }: OriginProfile
     );
     setMetadataError(false);
   }, [profile.metadata]);
+
+  useEffect(() => {
+    if (profile.match_rules.provider === undefined) {
+      setCustomProviderMode(false);
+      return;
+    }
+    setCustomProviderMode(isCustomChoice(profile.match_rules.provider, PROVIDERS));
+  }, [profile.match_rules.provider]);
+
+  useEffect(() => {
+    if (profile.match_rules.space_type === undefined) {
+      setCustomSpaceTypeMode(false);
+      return;
+    }
+    setCustomSpaceTypeMode(
+      isCustomChoice(profile.match_rules.space_type, SPACE_TYPES),
+    );
+  }, [profile.match_rules.space_type]);
 
   const updateMatchRules = useCallback(
     (patch: Partial<OriginMatch>) => {
@@ -404,18 +435,30 @@ function OriginProfileCard({ profile, index, onUpdate, onRemove }: OriginProfile
                 <FieldRow label="Provider">
                   {(() => {
                     const currentVal = profile.match_rules.provider;
-                    const isCustom = currentVal !== undefined && !PROVIDERS.some((p) => p.value === currentVal);
-                    const selectVal = currentVal === undefined ? "__none__" : isCustom ? "__custom__" : currentVal;
+                    const isCustom =
+                      customProviderMode ||
+                      isCustomChoice(currentVal, PROVIDERS);
+                    const selectVal =
+                      currentVal === undefined
+                        ? isCustom
+                          ? "__custom__"
+                          : "__none__"
+                        : isCustom
+                          ? "__custom__"
+                          : currentVal;
                     return (
                       <div className="flex flex-col gap-1.5">
                         <Select
                           value={selectVal}
                           onValueChange={(val) => {
                             if (val === "__none__") {
+                              setCustomProviderMode(false);
                               updateMatchRules({ provider: undefined });
                             } else if (val === "__custom__") {
-                              updateMatchRules({ provider: isCustom ? currentVal : "" });
+                              setCustomProviderMode(true);
+                              updateMatchRules({ provider: currentVal ?? "" });
                             } else {
+                              setCustomProviderMode(false);
                               updateMatchRules({ provider: val as OriginProvider });
                             }
                           }}
@@ -444,7 +487,10 @@ function OriginProfileCard({ profile, index, onUpdate, onRemove }: OriginProfile
                         {isCustom && (
                           <Input
                             value={currentVal ?? ""}
-                            onChange={(e) => updateMatchRules({ provider: e.target.value || undefined })}
+                            onChange={(e) => {
+                              setCustomProviderMode(true);
+                              updateMatchRules({ provider: e.target.value });
+                            }}
                             placeholder="e.g. my-custom-provider"
                             className="bg-[#131721] border-[#2d3240] text-[#ece7dc] font-mono text-xs placeholder:text-[#6f7f9a]/50"
                           />
@@ -458,18 +504,30 @@ function OriginProfileCard({ profile, index, onUpdate, onRemove }: OriginProfile
                 <FieldRow label="Space Type">
                   {(() => {
                     const currentVal = profile.match_rules.space_type;
-                    const isCustom = currentVal !== undefined && !SPACE_TYPES.some((st) => st.value === currentVal);
-                    const selectVal = currentVal === undefined ? "__none__" : isCustom ? "__custom__" : currentVal;
+                    const isCustom =
+                      customSpaceTypeMode ||
+                      isCustomChoice(currentVal, SPACE_TYPES);
+                    const selectVal =
+                      currentVal === undefined
+                        ? isCustom
+                          ? "__custom__"
+                          : "__none__"
+                        : isCustom
+                          ? "__custom__"
+                          : currentVal;
                     return (
                       <div className="flex flex-col gap-1.5">
                         <Select
                           value={selectVal}
                           onValueChange={(val) => {
                             if (val === "__none__") {
+                              setCustomSpaceTypeMode(false);
                               updateMatchRules({ space_type: undefined });
                             } else if (val === "__custom__") {
-                              updateMatchRules({ space_type: isCustom ? currentVal : "" });
+                              setCustomSpaceTypeMode(true);
+                              updateMatchRules({ space_type: currentVal ?? "" });
                             } else {
+                              setCustomSpaceTypeMode(false);
                               updateMatchRules({ space_type: val as SpaceType });
                             }
                           }}
@@ -498,7 +556,10 @@ function OriginProfileCard({ profile, index, onUpdate, onRemove }: OriginProfile
                         {isCustom && (
                           <Input
                             value={currentVal ?? ""}
-                            onChange={(e) => updateMatchRules({ space_type: e.target.value || undefined })}
+                            onChange={(e) => {
+                              setCustomSpaceTypeMode(true);
+                              updateMatchRules({ space_type: e.target.value });
+                            }}
                             placeholder="e.g. my-custom-space"
                             className="bg-[#131721] border-[#2d3240] text-[#ece7dc] font-mono text-xs placeholder:text-[#6f7f9a]/50"
                           />

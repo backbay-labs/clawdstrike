@@ -489,4 +489,21 @@ describe("HierarchyPage", () => {
       expect(fleetClientMocks.updateHierarchyNode).toHaveBeenCalledTimes(1);
     });
   });
+
+  it("keeps the green selection ring for legacy agent nodes", async () => {
+    const user = userEvent.setup();
+
+    renderWithProviders(<HierarchyPage />);
+
+    await user.click(screen.getByRole("button", { name: "DEMO" }));
+
+    const agentLabel = screen.getAllByText("agent-coder-01")[0];
+    const agentRow = agentLabel.closest("div[draggable='true']");
+
+    expect(agentRow).not.toBeNull();
+
+    await user.click(agentLabel);
+
+    expect(agentRow?.className).toContain("ring-[#3dbf84]/30");
+  });
 });
