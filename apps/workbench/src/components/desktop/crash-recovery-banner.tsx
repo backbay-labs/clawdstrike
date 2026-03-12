@@ -21,15 +21,19 @@ export function CrashRecoveryBanner({
     new Set(entries.map((entry) => entry.policyName).filter(Boolean)),
   );
   const allEntriesNamed = entries.every((entry) => entry.policyName.trim().length > 0);
+  const listedPolicyNames =
+    policyNames.slice(0, 3).join(", ") + (policyNames.length > 3 ? ", ..." : "");
   const summaryLabel =
     entries.length === 1
       ? policyNames[0] || "an unnamed tab"
       : `${entries.length} tabs`;
   const policySummary =
     entries.length > 1 && policyNames.length > 0
-      ? allEntriesNamed && policyNames.length > 1
-        ? policyNames.slice(0, 3).join(", ") + (policyNames.length > 3 ? ", ..." : "")
-        : `including ${policyNames.slice(0, 3).join(", ")}${policyNames.length > 3 ? ", ..." : ""}`
+      ? allEntriesNamed
+        ? policyNames.length === 1
+          ? `all named ${policyNames[0]}`
+          : listedPolicyNames
+        : `including ${listedPolicyNames}`
       : null;
   const omittedSensitiveFields = entries.some(
     (entry) => entry.sensitiveFieldsStripped,

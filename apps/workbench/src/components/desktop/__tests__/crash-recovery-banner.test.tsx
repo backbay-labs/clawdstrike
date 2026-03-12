@@ -155,4 +155,33 @@ describe("CrashRecoveryBanner", () => {
     ).toBeInTheDocument();
     expect(screen.queryByText(/3 named:/)).toBeNull();
   });
+
+  it("describes duplicate named recoveries without implying unnamed tabs", () => {
+    render(
+      <CrashRecoveryBanner
+        entries={[
+          {
+            tabId: "tab-1",
+            policyName: "prod-policy",
+            yaml: "version: '1.2.0'\nname: prod-policy\n",
+            filePath: null,
+            timestamp: Date.UTC(2026, 2, 11, 12, 0, 0),
+          },
+          {
+            tabId: "tab-2",
+            policyName: "prod-policy",
+            yaml: "version: '1.2.0'\nname: prod-policy\n",
+            filePath: null,
+            timestamp: Date.UTC(2026, 2, 11, 12, 1, 0),
+          },
+        ]}
+        onRestore={vi.fn()}
+        onDismiss={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("2 tabs")).toBeInTheDocument();
+    expect(screen.getByText(/\(all named prod-policy\)/)).toBeInTheDocument();
+    expect(screen.queryByText(/\(including prod-policy\)/)).toBeNull();
+  });
 });
