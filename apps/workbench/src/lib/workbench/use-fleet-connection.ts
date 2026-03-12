@@ -365,12 +365,12 @@ export function FleetConnectionProvider({ children }: { children: ReactNode }) {
   );
 
   const refreshAgents = useCallback(async () => {
-    await pollAgents(connection);
-  }, [pollAgents, connection]);
+    await pollAgents(connectionRef.current);
+  }, [pollAgents]);
 
   const refreshRemotePolicy = useCallback(async () => {
-    await fetchRemoteInfo(connection);
-  }, [fetchRemoteInfo, connection]);
+    await fetchRemoteInfo(connectionRef.current);
+  }, [fetchRemoteInfo]);
 
   const value: FleetConnectionHook = {
     connection,

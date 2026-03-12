@@ -696,6 +696,7 @@ export function DelegationPage() {
                 selectedId={selectedPrincipalId}
                 isOpen={principalDropdownOpen}
                 onToggle={() => setPrincipalDropdownOpen((p) => !p)}
+                onClose={() => setPrincipalDropdownOpen(false)}
                 onSelect={handlePrincipalChange}
                 disabled={isLoadingPrincipal}
               />
@@ -1102,6 +1103,7 @@ function PrincipalSelector({
   selectedId,
   isOpen,
   onToggle,
+  onClose,
   onSelect,
   disabled = false,
 }: {
@@ -1109,6 +1111,7 @@ function PrincipalSelector({
   selectedId: string | null;
   isOpen: boolean;
   onToggle: () => void;
+  onClose: () => void;
   onSelect: (id: string) => void;
   disabled?: boolean;
 }) {
@@ -1121,12 +1124,12 @@ function PrincipalSelector({
     if (!isOpen) return;
     const handler = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        onToggle();
+        onClose();
       }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [isOpen, onToggle]);
+  }, [isOpen, onClose]);
 
   return (
     <div ref={dropdownRef} className="relative">
