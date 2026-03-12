@@ -241,7 +241,7 @@ function TreeNode({
         {/* Metadata count */}
         {node.metadata?.agentCount !== undefined && node.type !== "runtime" && !node.policyName && (
           <span className="ml-auto shrink-0 text-[9px] font-mono text-[#6f7f9a]/60">
-            {node.metadata.agentCount} runtime{node.metadata.agentCount !== 1 ? "s" : ""}
+            {node.metadata.agentCount} leaf{node.metadata.agentCount !== 1 ? "s" : ""}
           </span>
         )}
 
@@ -634,7 +634,7 @@ function MergePreviewPanel({
   const node = hierarchy.nodes[selectedId];
   if (!node) return null;
 
-  const leafAgents = getLeafAgents(hierarchy, selectedId);
+  const leafTargets = getLeafAgents(hierarchy, selectedId);
   const directChildren = node.children.length;
 
   return (
@@ -682,30 +682,35 @@ function MergePreviewPanel({
 
           <div className="flex gap-3 text-[9px] font-mono text-[#6f7f9a]/70">
             <span>{directChildren} direct children</span>
-            <span>{leafAgents.length} runtime{leafAgents.length !== 1 ? "s" : ""}</span>
+            <span>{leafTargets.length} leaf node{leafTargets.length !== 1 ? "s" : ""}</span>
           </div>
         </div>
 
-        {/* Policy changes at this level affect these runtimes */}
-        {leafAgents.length > 0 && (
+        {/* Policy changes at this level affect these leaf nodes */}
+        {leafTargets.length > 0 && (
           <div className="mb-4">
             <span className="text-[9px] font-mono uppercase tracking-wider text-[#6f7f9a]/60 mb-2 block">
-              Affected Runtimes
+              Affected Leaves
             </span>
             <div className="flex flex-col gap-1">
-              {leafAgents.map((agentId) => {
-                const agent = hierarchy.nodes[agentId];
-                if (!agent) return null;
+              {leafTargets.map((leafId) => {
+                const leaf = hierarchy.nodes[leafId];
+                if (!leaf) return null;
+                const LeafIcon = NODE_TYPE_ICONS[leaf.type];
                 return (
                   <div
-                    key={agentId}
+                    key={leafId}
                     className="flex items-center gap-2 p-1.5 rounded bg-[#131721]/30"
                   >
-                    <IconRobot size={11} stroke={1.5} className="text-[#3dbf84]/60" />
+                    <LeafIcon
+                      size={11}
+                      stroke={1.5}
+                      style={{ color: `${NODE_TYPE_COLORS[leaf.type]}99` }}
+                    />
                     <span className="text-[10px] font-mono text-[#ece7dc]/70">
-                      {agent.name}
+                      {leaf.name}
                     </span>
-                    {agent.policyId && (
+                    {leaf.policyId && (
                       <span className="ml-auto text-[8px] font-mono text-[#d4a84b]/60">
                         has own policy
                       </span>
@@ -786,7 +791,7 @@ function ValidationModal({ issues, onClose, onSelectNode }: ValidationModalProps
             <div className="flex flex-col items-center py-8">
               <IconCheck size={24} stroke={1.5} className="text-[#3dbf84] mb-2" />
               <span className="text-[11px] text-[#3dbf84]">
-                All runtimes have valid effective policies
+                All leaf nodes have valid effective policies
               </span>
             </div>
           ) : (
@@ -1261,6 +1266,7 @@ export function HierarchyPage() {
             createHierarchyNode(connection, {
               name: newNode.name,
               node_type: newNode.type,
+              external_id: newNode.externalId ?? null,
               parent_id: newNode.parentId,
               metadata: newNode.metadata,
             }),
@@ -1521,6 +1527,7 @@ export function HierarchyPage() {
         const input: HierarchyNodeInput = {
           name: node.name,
           node_type: node.type,
+          external_id: node.externalId ?? null,
           parent_id: resolvedParentId,
           policy_id: node.policyId ?? null,
           policy_name: node.policyName ?? null,
@@ -1568,10 +1575,15 @@ export function HierarchyPage() {
    * so we map it to "team" as the closest equivalent.
    */
   const mapNodeType = useCallback((backendType: string): OrgNodeType => {
-    if (backendType === "org" || backendType === "team" || backendType === "endpoint" || backendType === "runtime") {
+    if (
+      backendType === "org" ||
+      backendType === "team" ||
+      backendType === "agent" ||
+      backendType === "endpoint" ||
+      backendType === "runtime"
+    ) {
       return backendType;
     }
-    if (backendType === "agent") return "endpoint"; // backward compat
     return "team"; // "project" and unknown
   }, []);
 
@@ -1596,6 +1608,7 @@ export function HierarchyPage() {
         name: hNode.name,
         type: nodeType,
         parentId,
+        externalId: hNode.external_id ?? undefined,
         policyId: hNode.policy_id ?? undefined,
         policyName: hNode.policy_name ?? undefined,
         children: childIds,
@@ -1657,6 +1670,7 @@ export function HierarchyPage() {
               name: hNode.name,
               type: nodeType,
               parentId: hNode.parent_id ?? null,
+              externalId: hNode.external_id ?? undefined,
               policyId: hNode.policy_id ?? undefined,
               policyName: hNode.policy_name ?? undefined,
               children: [],
@@ -1731,6 +1745,7 @@ export function HierarchyPage() {
         scope_id: string;
         scope_name: string;
         scope_type: string;
+        external_id?: string | null;
         policy_id?: string;
         policy_name?: string;
         parent_scope_id?: string | null;
@@ -1748,6 +1763,7 @@ export function HierarchyPage() {
           name: item.scope_name,
           type: nodeType,
           parentId: item.parent_scope_id ?? null,
+          externalId: item.external_id ?? undefined,
           policyId: item.policy_id,
           policyName: item.policy_name,
           children: item.children ?? [],

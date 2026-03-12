@@ -199,7 +199,10 @@ export function getDescendants(
 }
 
 /**
- * Returns all leaf (agent) node IDs under a given node.
+ * Returns all leaf enforcement node IDs under a given node.
+ *
+ * Endpoint nodes with no runtime children are also treated as leaves so a live
+ * hierarchy still validates correctly before runtimes are attached.
  */
 export function getLeafAgents(
   hierarchy: PolicyHierarchy,
@@ -207,8 +210,10 @@ export function getLeafAgents(
 ): string[] {
   return getDescendants(hierarchy, nodeId).filter(
     (id) => {
-      const type = hierarchy.nodes[id]?.type;
-      return type === "agent" || type === "runtime";
+      const node = hierarchy.nodes[id];
+      if (!node) return false;
+      if (node.type === "agent" || node.type === "runtime") return true;
+      return node.type === "endpoint" && node.children.length === 0;
     },
   );
 }
@@ -570,8 +575,8 @@ export interface HierarchyValidationIssue {
 }
 
 /**
- * Validates all leaf (agent and runtime) nodes in the hierarchy, checking
- * that their effective policies have at least one guard enabled.
+ * Validates all leaf enforcement nodes in the hierarchy, checking that their
+ * effective policies have at least one guard enabled.
  */
 export function validateAllLeaves(
   hierarchy: PolicyHierarchy,

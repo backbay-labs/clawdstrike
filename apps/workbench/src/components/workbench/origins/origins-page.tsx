@@ -1,6 +1,10 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { useWorkbench } from "@/lib/workbench/multi-policy-store";
 import { useToast } from "@/components/ui/toast";
+import {
+  renameOriginProfileIdInPolicy,
+  renameOriginProfileIdInSavedPolicy,
+} from "@/lib/workbench/origin-profile-utils";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -2339,43 +2343,33 @@ export function OriginsPage() {
       if (updated.id !== selectedProfileId) {
         const oldId = selectedProfileId;
         const newId = updated.id;
+        const updatedAt = new Date().toISOString();
         isIdEditRef.current = true;
         setSelectedProfileId(newId);
 
         // B1+B3: Cascade the ID rename to any saved or active policy that references the old ID
         for (const sp of state.savedPolicies) {
-          const profiles = sp.policy.origins?.profiles;
-          if (profiles?.some((p) => p.id === oldId)) {
-            const updatedProfiles = profiles.map((p) =>
-              p.id === oldId ? { ...p, id: newId } : p,
-            );
-            const updatedSavedPolicy = {
-              ...sp,
-              policy: {
-                ...sp.policy,
-                origins: {
-                  ...sp.policy.origins!,
-                  profiles: updatedProfiles,
-                },
-              },
-              updatedAt: new Date().toISOString(),
-            };
+          const updatedSavedPolicy = renameOriginProfileIdInSavedPolicy(
+            sp,
+            oldId,
+            newId,
+            updatedAt,
+          );
+          if (updatedSavedPolicy) {
             dispatch({ type: "SAVE_POLICY", savedPolicy: updatedSavedPolicy });
           }
         }
 
         // Also update the active policy if it references the old ID
-        const activeProfiles = state.activePolicy.origins?.profiles;
-        if (activeProfiles?.some((p) => p.id === oldId)) {
-          const updatedActiveProfiles = activeProfiles.map((p) =>
-            p.id === oldId ? { ...p, id: newId } : p,
-          );
+        const updatedActivePolicy = renameOriginProfileIdInPolicy(
+          state.activePolicy,
+          oldId,
+          newId,
+        );
+        if (updatedActivePolicy?.origins) {
           dispatch({
             type: "UPDATE_ORIGINS",
-            origins: {
-              ...state.activePolicy.origins!,
-              profiles: updatedActiveProfiles,
-            },
+            origins: updatedActivePolicy.origins,
           });
         }
       }

@@ -68,6 +68,7 @@ function buildCleanDoc(policy: WorkbenchPolicy): Record<string, unknown> {
         if (profile.budgets) p.budgets = cleanObject(profile.budgets as unknown as Record<string, unknown>);
         if (profile.bridge_policy) p.bridge_policy = cleanObject(profile.bridge_policy as unknown as Record<string, unknown>);
         if (profile.explanation) p.explanation = profile.explanation;
+        if (profile.metadata) p.metadata = cleanObject(profile.metadata);
         return p;
       });
     }

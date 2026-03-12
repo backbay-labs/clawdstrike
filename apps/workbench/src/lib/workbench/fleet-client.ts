@@ -1767,165 +1767,6 @@ export async function assignPolicyToScope(
 }
 
 // ---------------------------------------------------------------------------
-// Policy Attachments & Runtime API (Phase 3: Endpoint/Runtime hierarchy)
-// ---------------------------------------------------------------------------
-
-/**
- * Create a policy attachment binding a policy to a hierarchy target.
- * Calls POST /api/v1/policy-attachments on the control-api.
- *
- * The `target_kind` maps to the control-api resource hierarchy:
- * - "tenant"           → org-level
- * - "swarm"            → team-level
- * - "project"          → project-level
- * - "capability_group" → endpoint-level
- * - "principal"        → runtime/agent-level
- */
-export async function createPolicyAttachment(
-  conn: FleetConnection,
-  params: {
-    target_kind: "tenant" | "swarm" | "project" | "capability_group" | "principal";
-    target_id: string;
-    policy_yaml?: string;
-    policy_ref?: string;
-    priority?: number;
-    metadata?: Record<string, unknown>;
-  },
-): Promise<{ success: boolean; id?: string; error?: string }> {
-  const { url, kind } = preferredUrl(conn);
-  if (!url) return { success: false, error: "No control API URL configured" };
-  try {
-    const res = await jsonFetch<{ id?: string }>(
-      proxyUrl(`${url}/api/v1/policy-attachments`, kind),
-      {
-        method: "POST",
-        headers: controlHeaders(conn),
-        body: JSON.stringify(params),
-      },
-    );
-    return { success: true, id: res.id };
-  } catch (err) {
-    return { success: false, error: err instanceof Error ? err.message : String(err) };
-  }
-}
-
-/**
- * Fetch runtimes registered on a specific endpoint agent.
- * Calls GET /api/v1/agents/{id}/runtimes on the control-api.
- * Returns null on failure.
- */
-export async function fetchRuntimesForEndpoint(
-  conn: FleetConnection,
-  endpointAgentId: string,
-): Promise<Array<{ id: string; runtime_id: string; name: string; trust_level?: string; principal_id?: string }> | null> {
-  const { url, kind } = preferredUrl(conn);
-  if (!url) return null;
-
-  try {
-    const res = await jsonFetch<unknown>(
-      proxyUrl(`${url}/api/v1/agents/${encodeURIComponent(endpointAgentId)}/runtimes`, kind),
-      { headers: controlHeaders(conn) },
-    );
-
-    // Handle wrapped or bare array responses
-    let list: unknown[];
-    if (Array.isArray(res)) {
-      list = res;
-    } else if (res && typeof res === "object" && "runtimes" in res) {
-      const wrapped = res as { runtimes: unknown };
-      if (!Array.isArray(wrapped.runtimes)) {
-        throw new Error("[fleet-client] fetchRuntimesForEndpoint: expected runtimes to be an array");
-      }
-      list = wrapped.runtimes;
-    } else {
-      throw new Error("[fleet-client] fetchRuntimesForEndpoint: unexpected response shape");
-    }
-
-    return list
-      .filter((item): item is Record<string, unknown> => isRecord(item) && typeof item.runtime_id === "string")
-      .map((item) => ({
-        id: readString(item.id) ?? readString(item.runtime_id) ?? "",
-        runtime_id: item.runtime_id as string,
-        name: readString(item.name) ?? readString(item.runtime_id) ?? "",
-        trust_level: readString(item.trust_level),
-        principal_id: readString(item.principal_id),
-      }));
-  } catch (e) {
-    console.warn("[fleet-client] fetchRuntimesForEndpoint failed:", e);
-    return null;
-  }
-}
-
-/**
- * Fetch the effective (compiled) policy for a specific runtime on an endpoint.
- * Calls GET /api/v1/agents/{id}/runtimes/{runtime_id}/effective-policy on the control-api.
- * Returns null on failure.
- */
-export async function fetchRuntimeEffectivePolicy(
-  conn: FleetConnection,
-  endpointAgentId: string,
-  runtimeId: string,
-): Promise<{ compiled_policy_yaml: string; source_attachments: unknown[] } | null> {
-  const { url, kind } = preferredUrl(conn);
-  if (!url) return null;
-
-  try {
-    const res = await jsonFetch<unknown>(
-      proxyUrl(
-        `${url}/api/v1/agents/${encodeURIComponent(endpointAgentId)}/runtimes/${encodeURIComponent(runtimeId)}/effective-policy`,
-        kind,
-      ),
-      { headers: controlHeaders(conn) },
-    );
-
-    if (!res || typeof res !== "object") {
-      throw new Error("[fleet-client] fetchRuntimeEffectivePolicy: unexpected response shape");
-    }
-
-    const obj = res as Record<string, unknown>;
-    return {
-      compiled_policy_yaml: typeof obj.compiled_policy_yaml === "string" ? obj.compiled_policy_yaml : "",
-      source_attachments: Array.isArray(obj.source_attachments) ? obj.source_attachments : [],
-    };
-  } catch (e) {
-    console.warn("[fleet-client] fetchRuntimeEffectivePolicy failed:", e);
-    return null;
-  }
-}
-
-/**
- * Register a new runtime on an endpoint agent.
- * Calls POST /api/v1/agents/{id}/runtimes on the control-api.
- */
-export async function registerRuntime(
-  conn: FleetConnection,
-  endpointAgentId: string,
-  params: {
-    runtime_id: string;
-    name: string;
-    trust_level?: string;
-    metadata?: Record<string, unknown>;
-  },
-): Promise<{ success: boolean; principal_id?: string; error?: string }> {
-  const { url, kind } = preferredUrl(conn);
-  if (!url) return { success: false, error: "No control API URL configured" };
-
-  try {
-    const res = await jsonFetch<{ principal_id?: string }>(
-      proxyUrl(`${url}/api/v1/agents/${encodeURIComponent(endpointAgentId)}/runtimes`, kind),
-      {
-        method: "POST",
-        headers: controlHeaders(conn),
-        body: JSON.stringify(params),
-      },
-    );
-    return { success: true, principal_id: res.principal_id };
-  } catch (err) {
-    return { success: false, error: err instanceof Error ? err.message : String(err) };
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Grants → DelegationGraph conversion
 // ---------------------------------------------------------------------------
 
@@ -2505,6 +2346,7 @@ export interface HierarchyNode {
   id: string;
   name: string;
   node_type: string; // "org" | "team" | "project" | "agent"
+  external_id?: string | null;
   parent_id?: string | null;
   policy_id?: string | null;
   policy_name?: string | null;
@@ -2520,6 +2362,7 @@ export interface HierarchyNode {
 export interface HierarchyNodeInput {
   name: string;
   node_type: string;
+  external_id?: string | null;
   parent_id?: string | null;
   policy_id?: string | null;
   policy_name?: string | null;
@@ -2532,6 +2375,7 @@ export interface HierarchyNodeInput {
 export interface HierarchyNodeUpdate {
   name?: string;
   node_type?: string;
+  external_id?: string | null;
   parent_id?: string | null;
   policy_id?: string | null;
   policy_name?: string | null;

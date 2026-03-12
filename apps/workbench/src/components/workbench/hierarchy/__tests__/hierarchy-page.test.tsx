@@ -85,18 +85,23 @@ describe("HierarchyPage", () => {
     vi.clearAllMocks();
     localStorageState = {};
     vi.stubGlobal("localStorage", localStorageMock);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
     fleetClientMocks.fetchHierarchyTree.mockResolvedValue({
       root_id: null,
       nodes: [],
     });
     fleetClientMocks.fetchScopedPolicies.mockResolvedValue([]);
     fleetClientMocks.fetchPolicyAssignments.mockResolvedValue([]);
-    fleetClientMocks.createHierarchyNode.mockResolvedValue({ success: true });
+    fleetClientMocks.createHierarchyNode.mockImplementation(async (_connection, input) => ({
+      success: true,
+      id: `server-${input.name.toLowerCase().replace(/\s+/g, "-")}`,
+    }));
     fleetClientMocks.updateHierarchyNode.mockResolvedValue({ success: true });
     fleetClientMocks.deleteHierarchyNode.mockResolvedValue({ success: true });
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
@@ -242,5 +247,202 @@ describe("HierarchyPage", () => {
     } finally {
       consoleError.mockRestore();
     }
+  });
+
+  it("keeps legacy agent nodes as validation leaves after a live hierarchy pull", async () => {
+    const user = userEvent.setup();
+
+    fleetClientMocks.fetchHierarchyTree.mockResolvedValue({
+      root_id: "root-1",
+      nodes: [
+        {
+          id: "root-1",
+          name: "Fleet Fixture Org",
+          node_type: "org",
+          parent_id: null,
+          policy_id: null,
+          policy_name: null,
+          metadata: {},
+          children: ["team-1"],
+        },
+        {
+          id: "team-1",
+          name: "Platform Team",
+          node_type: "team",
+          parent_id: "root-1",
+          policy_id: null,
+          policy_name: null,
+          metadata: {},
+          children: ["agent-1"],
+        },
+        {
+          id: "agent-1",
+          name: "Legacy Agent",
+          node_type: "agent",
+          parent_id: "team-1",
+          policy_id: null,
+          policy_name: null,
+          metadata: {},
+          children: [],
+        },
+      ],
+    });
+
+    renderWithProviders(<HierarchyPage />);
+
+    await user.click(screen.getByRole("button", { name: "DEMO" }));
+    await user.click(screen.getByRole("button", { name: "Pull from Fleet" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Fleet Snapshot")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("1 leaf node")).toBeInTheDocument();
+    await user.click(screen.getAllByText("Legacy Agent")[0]);
+    expect(screen.getByText("Agent")).toBeInTheDocument();
+  });
+
+  it("counts runtime nodes as leaves after a live hierarchy pull", async () => {
+    const user = userEvent.setup();
+
+    fleetClientMocks.fetchHierarchyTree.mockResolvedValue({
+      root_id: "root-1",
+      nodes: [
+        {
+          id: "root-1",
+          name: "Fleet Fixture Org",
+          node_type: "org",
+          parent_id: null,
+          policy_id: null,
+          policy_name: null,
+          metadata: {},
+          children: ["team-1"],
+        },
+        {
+          id: "team-1",
+          name: "Platform Team",
+          node_type: "team",
+          parent_id: "root-1",
+          policy_id: null,
+          policy_name: null,
+          metadata: {},
+          children: ["endpoint-1"],
+        },
+        {
+          id: "endpoint-1",
+          name: "Builder Host",
+          node_type: "endpoint",
+          parent_id: "team-1",
+          policy_id: null,
+          policy_name: null,
+          metadata: {},
+          children: ["runtime-1"],
+        },
+        {
+          id: "runtime-1",
+          name: "Claude Runtime",
+          node_type: "runtime",
+          parent_id: "endpoint-1",
+          policy_id: null,
+          policy_name: null,
+          metadata: {},
+          children: [],
+        },
+      ],
+    });
+
+    renderWithProviders(<HierarchyPage />);
+
+    await user.click(screen.getByRole("button", { name: "DEMO" }));
+    await user.click(screen.getByRole("button", { name: "Pull from Fleet" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Fleet Snapshot")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("1 leaf node")).toBeInTheDocument();
+    await user.click(screen.getAllByText("Claude Runtime")[0]);
+    expect(screen.getByText("Runtime Agent")).toBeInTheDocument();
+  });
+
+  it("preserves external ids when a live hierarchy pull is pushed back to fleet", async () => {
+    const user = userEvent.setup();
+
+    fleetClientMocks.fetchHierarchyTree.mockResolvedValue({
+      root_id: "root-1",
+      nodes: [
+        {
+          id: "root-1",
+          name: "Fleet Fixture Org",
+          node_type: "org",
+          external_id: "org-1",
+          parent_id: null,
+          policy_id: null,
+          policy_name: null,
+          metadata: {},
+          children: ["team-1"],
+        },
+        {
+          id: "team-1",
+          name: "Platform Team",
+          node_type: "team",
+          external_id: "team-1-ext",
+          parent_id: "root-1",
+          policy_id: null,
+          policy_name: null,
+          metadata: {},
+          children: ["endpoint-1"],
+        },
+        {
+          id: "endpoint-1",
+          name: "Builder Host",
+          node_type: "endpoint",
+          external_id: "agent-123",
+          parent_id: "team-1",
+          policy_id: null,
+          policy_name: null,
+          metadata: {},
+          children: ["runtime-1"],
+        },
+        {
+          id: "runtime-1",
+          name: "Claude Runtime",
+          node_type: "runtime",
+          external_id: "agent-123/runtime/claude",
+          parent_id: "endpoint-1",
+          policy_id: null,
+          policy_name: null,
+          metadata: {},
+          children: [],
+        },
+      ],
+    });
+
+    renderWithProviders(<HierarchyPage />);
+
+    await user.click(screen.getByRole("button", { name: "DEMO" }));
+    await user.click(screen.getByRole("button", { name: "Pull from Fleet" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Fleet Snapshot")).toBeInTheDocument();
+    });
+
+    fleetClientMocks.createHierarchyNode.mockClear();
+    await user.click(screen.getByRole("button", { name: "Push to Fleet" }));
+
+    await waitFor(() => {
+      expect(fleetClientMocks.createHierarchyNode).toHaveBeenCalledTimes(4);
+    });
+
+    const createInputs = fleetClientMocks.createHierarchyNode.mock.calls.map(([, input]) => input);
+    expect(createInputs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "Builder Host", external_id: "agent-123" }),
+        expect.objectContaining({
+          name: "Claude Runtime",
+          external_id: "agent-123/runtime/claude",
+        }),
+      ]),
+    );
   });
 });

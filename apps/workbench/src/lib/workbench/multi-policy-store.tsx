@@ -840,10 +840,6 @@ interface PersistedTabState {
   activeTabId: string;
 }
 
-/** Fields that must never be persisted to localStorage. */
-const SENSITIVE_GUARD_FIELDS = new Set(["embedding_api_key"]);
-
-
 function persistTabs(state: MultiPolicyState): void {
   try {
     const persisted: PersistedTabState = {
