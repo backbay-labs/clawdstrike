@@ -369,6 +369,10 @@ async fn delete_agent(
         .await
         .map_err(ApiError::Database)?;
 
+    unlink_endpoint_hierarchy_nodes(&mut tx, auth.tenant_id, &agent_id)
+        .await
+        .map_err(ApiError::Database)?;
+
     // Clean up the endpoint principal if no other references remain.
     if let Some(principal_id) = principal_id {
         delete_principal_if_unreferenced(&mut tx, principal_id, auth.tenant_id).await?;
@@ -914,7 +918,8 @@ async fn register_runtime(
         .try_get("trust_level")
         .map_err(ApiError::Database)?;
 
-    let trust_level = req.trust_level.as_deref().unwrap_or(&endpoint_trust_level);
+    let inherited_trust_level = validation::sanitize_trust_level(&endpoint_trust_level);
+    let trust_level = req.trust_level.as_deref().unwrap_or(inherited_trust_level);
     let metadata = req.metadata.unwrap_or(serde_json::json!({}));
 
     // Encode the endpoint/runtime pair so different inputs cannot collide on

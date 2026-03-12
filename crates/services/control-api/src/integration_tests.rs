@@ -438,6 +438,15 @@ async fn delete_agent_removes_linked_endpoint_principal() {
 
     let harness = setup_harness().await;
     let keypair = hush_core::Keypair::generate();
+    let endpoint_node_id = Uuid::new_v4();
+    insert_endpoint_hierarchy_node(
+        &harness.db,
+        harness.tenant_id,
+        endpoint_node_id,
+        "Delete Agent",
+        Some("agent-directory-delete-int-1"),
+    )
+    .await;
     let register_resp = request_json(
         &harness.app,
         Method::POST,
@@ -511,6 +520,21 @@ async fn delete_agent_removes_linked_endpoint_principal() {
     .await
     .expect("query deleted principal");
     assert!(deleted_principal.is_none());
+
+    let hierarchy_row = sqlx::query::query(
+        r#"SELECT external_id
+           FROM hierarchy_nodes
+           WHERE tenant_id = $1
+             AND id = $2"#,
+    )
+    .bind(harness.tenant_id)
+    .bind(endpoint_node_id)
+    .fetch_one(&harness.db)
+    .await
+    .expect("fetch hierarchy node");
+    let endpoint_external_id: Option<String> =
+        hierarchy_row.try_get("external_id").expect("external_id");
+    assert_eq!(endpoint_external_id, None);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -7613,6 +7637,70 @@ async fn register_runtime_creates_hierarchy_node_and_principal() {
             hex::encode("claude-code-main".as_bytes()),
         ),
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn register_runtime_sanitizes_legacy_endpoint_trust_levels_when_request_omits_override() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let agent_uuid = register_endpoint_agent(
+        &harness.app,
+        &harness.api_key,
+        "rt-legacy-trust",
+        "Legacy Trust Endpoint",
+    )
+    .await;
+
+    sqlx::query::query(
+        r#"UPDATE agents
+           SET trust_level = 'verified'
+           WHERE tenant_id = $1
+             AND id = $2"#,
+    )
+    .bind(harness.tenant_id)
+    .bind(agent_uuid)
+    .execute(&harness.db)
+    .await
+    .expect("downgrade endpoint trust level to legacy value");
+
+    let keypair = hush_core::Keypair::generate();
+    let resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/agents/{agent_uuid}/runtimes"),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "name": "legacy-runtime",
+            "public_key": keypair.public_key().to_hex()
+        })),
+    )
+    .await;
+    assert_eq!(resp.0, StatusCode::OK);
+
+    let runtime_principal_id = Uuid::parse_str(
+        resp.1["runtime_principal_id"]
+            .as_str()
+            .expect("runtime_principal_id missing"),
+    )
+    .expect("parse runtime principal id");
+
+    let principal_row = sqlx::query::query(
+        r#"SELECT trust_level
+           FROM principals
+           WHERE tenant_id = $1
+             AND id = $2"#,
+    )
+    .bind(harness.tenant_id)
+    .bind(runtime_principal_id)
+    .fetch_one(&harness.db)
+    .await
+    .expect("fetch runtime principal");
+    let trust_level: String = principal_row.try_get("trust_level").expect("trust_level");
+    assert_eq!(trust_level, "medium");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
