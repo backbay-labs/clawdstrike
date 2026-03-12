@@ -1489,20 +1489,24 @@ export function HierarchyPage() {
         }
       }
 
-      if (incompleteCount > 0) {
+      const completedCount = successCount - incompleteCount;
+      if (incompleteCount > 0 || errorCount > 0) {
+        const statusParts = [`Pushed ${completedCount} nodes`];
+        if (incompleteCount > 0) {
+          statusParts.push(`${incompleteCount} incomplete`);
+        }
+        if (errorCount > 0) {
+          statusParts.push(`${errorCount} failed`);
+        }
+        if (skippedCount > 0) {
+          statusParts.push(`${skippedCount} skipped`);
+        }
         showSyncStatus(
           "error",
-          `Pushed ${successCount} nodes, ${incompleteCount} incomplete, ${skippedCount} skipped`,
+          statusParts.join(", "),
         );
-      } else if (errorCount === 0) {
-        showSyncStatus("success", `Pushed ${successCount} nodes to fleet`);
       } else {
-        showSyncStatus(
-          "error",
-          skippedCount > 0
-            ? `Pushed ${successCount} nodes, ${errorCount} failed, ${skippedCount} skipped`
-            : `Pushed ${successCount} nodes, ${errorCount} failed`,
-        );
+        showSyncStatus("success", `Pushed ${successCount} nodes to fleet`);
       }
     } catch (err) {
       showSyncStatus(

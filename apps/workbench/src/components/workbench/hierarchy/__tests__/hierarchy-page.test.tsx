@@ -699,7 +699,7 @@ describe("HierarchyPage", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText("Pushed 3 nodes, 1 incomplete, 1 skipped"),
+        screen.getByText("Pushed 2 nodes, 1 incomplete, 1 skipped"),
       ).toBeInTheDocument();
     });
   });
