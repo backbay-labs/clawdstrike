@@ -586,6 +586,15 @@ describe("HierarchyPage", () => {
     await expect(resolvedParentIdPromise).resolves.toBe("remote-endpoint");
   });
 
+  it("returns null for pending parent ids that never got a fleet id", async () => {
+    await expect(
+      resolvePendingHierarchyParentId(
+        "local-endpoint",
+        new Map([["local-endpoint", Promise.resolve(null)]]),
+      ),
+    ).resolves.toBeNull();
+  });
+
   it("reports skipped descendants when a parent node fails during push", async () => {
     const user = userEvent.setup();
 
@@ -833,4 +842,5 @@ describe("HierarchyPage", () => {
       ),
     ).toHaveClass("text-[#c45c5c]");
   });
+
 });

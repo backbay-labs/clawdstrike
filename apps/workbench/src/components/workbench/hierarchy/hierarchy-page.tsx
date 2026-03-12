@@ -1265,26 +1265,32 @@ export function HierarchyPage() {
               metadata: newNode.metadata,
             });
           });
-          resultPromise?.then((result) => {
-            resolveCreatedId(result.success && result.id ? result.id : null);
-            if (result.success && result.id && result.id !== localId) {
-              const serverId = result.id;
-              setHierarchy((prev) => remapNodeId(prev, localId, serverId));
-              setSelectedId((prev) => (prev === localId ? serverId : prev));
-              setRenameTarget((prev) => (prev === localId ? serverId : prev));
-              setExpandedIds((prev) => {
-                if (!prev.has(localId)) {
-                  return prev;
-                }
-                const next = new Set(prev);
-                next.delete(localId);
-                next.add(serverId);
-                return next;
-              });
-            }
-          }).catch(() => {
+          if (!resultPromise) {
             resolveCreatedId(null);
-          });
+          } else {
+            resultPromise
+              .then((result) => {
+                resolveCreatedId(result.success && result.id ? result.id : null);
+                if (result.success && result.id && result.id !== localId) {
+                  const serverId = result.id;
+                  setHierarchy((prev) => remapNodeId(prev, localId, serverId));
+                  setSelectedId((prev) => (prev === localId ? serverId : prev));
+                  setRenameTarget((prev) => (prev === localId ? serverId : prev));
+                  setExpandedIds((prev) => {
+                    if (!prev.has(localId)) {
+                      return prev;
+                    }
+                    const next = new Set(prev);
+                    next.delete(localId);
+                    next.add(serverId);
+                    return next;
+                  });
+                }
+              })
+              .catch(() => {
+                resolveCreatedId(null);
+              });
+          }
         }
       }
     },
