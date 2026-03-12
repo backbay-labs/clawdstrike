@@ -88,6 +88,11 @@ const MAX_VISIBLE_EVENTS = 500;
 // Helpers
 // ---------------------------------------------------------------------------
 
+interface AgentFilterOption {
+  id: string;
+  name: string;
+}
+
 function formatTime(iso: string): string {
   try {
     const d = new Date(iso);
@@ -121,13 +126,18 @@ function getAnomalyColor(score: number): string {
   return "#3dbf84";
 }
 
-/** Unique agent names from the event list, sorted alphabetically. */
-function extractAgentNames(events: AgentEvent[]): string[] {
-  const names = new Set<string>();
+/** Stable agent filter options keyed by agent ID and labeled by agent name. */
+function extractAgentOptions(events: AgentEvent[]): AgentFilterOption[] {
+  const options = new Map<string, string>();
   for (const e of events) {
-    names.add(e.agentName);
+    if (!options.has(e.agentId)) {
+      options.set(e.agentId, e.agentName);
+    }
   }
-  return Array.from(names).sort();
+  return Array.from(options, ([id, name]) => ({ id, name })).sort((a, b) => {
+    const nameOrder = a.name.localeCompare(b.name);
+    return nameOrder !== 0 ? nameOrder : a.id.localeCompare(b.id);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -261,7 +271,7 @@ export function ActivityStream({
   const scrollRef = useRef<HTMLDivElement>(null);
   const wasAtBottomRef = useRef(true);
 
-  const agentNames = useMemo(() => extractAgentNames(events), [events]);
+  const agentOptions = useMemo(() => extractAgentOptions(events), [events]);
 
   const filteredEvents = useMemo(
     () => applyFilters(events, filters).slice(0, MAX_VISIBLE_EVENTS),
@@ -322,7 +332,10 @@ export function ActivityStream({
             <span className="text-sm font-semibold text-[#ece7dc] tracking-[-0.01em]">
               Activity Stream
             </span>
-            <span className="rounded-md bg-[#131721] px-2 py-0.5 font-mono text-[10px] text-[#6f7f9a]">
+            <span
+              data-testid="activity-stream-visible-count"
+              className="rounded-md bg-[#131721] px-2 py-0.5 font-mono text-[10px] text-[#6f7f9a]"
+            >
               {filteredEvents.length.toLocaleString()}
             </span>
 
@@ -356,16 +369,23 @@ export function ActivityStream({
                   if (v !== null) updateFilter("agentId", v === "__all__" ? undefined : v);
                 }}
               >
-                <SelectTrigger className="h-6 text-[10px] bg-[#131721] border-[#2d3240] text-[#ece7dc] min-w-[100px]">
+                <SelectTrigger
+                  data-testid="activity-stream-agent-filter"
+                  className="h-6 text-[10px] bg-[#131721] border-[#2d3240] text-[#ece7dc] min-w-[100px]"
+                >
                   <SelectValue placeholder="All agents" />
                 </SelectTrigger>
                 <SelectContent className="bg-[#131721] border-[#2d3240]">
                   <SelectItem value="__all__" className="text-[10px] text-[#ece7dc]">
                     All agents
                   </SelectItem>
-                  {agentNames.map((name) => (
-                    <SelectItem key={name} value={name} className="text-[10px] text-[#ece7dc]">
-                      {name}
+                  {agentOptions.map((agent) => (
+                    <SelectItem
+                      key={agent.id}
+                      value={agent.id}
+                      className="text-[10px] text-[#ece7dc]"
+                    >
+                      {agent.name}
                     </SelectItem>
                   ))}
                 </SelectContent>

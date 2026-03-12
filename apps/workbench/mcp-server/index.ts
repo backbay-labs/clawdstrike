@@ -498,14 +498,77 @@ export function suggestScenariosFromPolicy(policy: WorkbenchPolicy) {
 // Tools
 // ---------------------------------------------------------------------------
 
-server.tool(
-  "workbench_create_scenario",
-  "Create a test scenario with name, action type, target, payload, and expected verdict. Returns the scenario object as JSON.",
-  {
-    name: z.string().describe("Scenario name (e.g. 'SSH Key Exfiltration')"),
-    description: z.string().describe("What this scenario tests"),
-    category: z.enum(["attack", "benign", "edge_case"]).describe("Scenario category"),
-    action_type: z.enum([
+type ToolSchema = Record<string, z.ZodTypeAny>;
+
+type CreateScenarioArgs = {
+  name: string;
+  description: string;
+  category: "attack" | "benign" | "edge_case";
+  action_type: TestActionType;
+  payload: string;
+  expected_verdict?: Verdict;
+};
+
+type SynthPolicyArgs = {
+  events_jsonl: string;
+  base_ruleset?: string;
+  name?: string;
+};
+
+type ComplianceCheckArgs = {
+  policy_yaml: string;
+  frameworks?: ComplianceFramework[];
+};
+
+type ExportPolicyArgs = {
+  policy_yaml: string;
+  format: "json" | "toml" | "yaml";
+};
+
+type HardenPolicyArgs = {
+  policy_yaml: string;
+  level?: "moderate" | "aggressive";
+};
+
+type GeneratePolicyArgs = {
+  description: string;
+  base_ruleset?: string;
+};
+
+const registerTool = server.tool.bind(server) as (...args: any[]) => void;
+const registerPrompt = server.prompt.bind(server) as (...args: any[]) => void;
+
+type RunScenarioArgs = {
+  scenario_json: string;
+  policy_yaml: string;
+};
+
+type RunAllScenariosArgs = {
+  scenarios_json: string;
+  policy_yaml: string;
+};
+
+type PolicyYamlArgs = {
+  policy_yaml: string;
+};
+
+type DiffPoliciesArgs = {
+  left_yaml: string;
+  right_yaml: string;
+};
+
+type EventsJsonlArgs = {
+  events_jsonl: string;
+};
+
+const createScenarioSchema: ToolSchema = {
+  name: z.string().describe("Scenario name (e.g. 'SSH Key Exfiltration')"),
+  description: z.string().describe("What this scenario tests"),
+  category: z
+    .enum(["attack", "benign", "edge_case"])
+    .describe("Scenario category"),
+  action_type: z
+    .enum([
       "file_access",
       "file_write",
       "network_egress",
@@ -513,11 +576,100 @@ server.tool(
       "mcp_tool_call",
       "patch_apply",
       "user_input",
-    ]).describe("Action type to simulate"),
-    payload: z.string().describe("JSON object with action-specific fields (path, host, command, tool, content, text, etc.)"),
-    expected_verdict: z.enum(["allow", "deny", "warn"]).optional().describe("Expected verdict for pass/fail checking"),
-  },
-  async ({ name, description, category, action_type, payload, expected_verdict }) => {
+    ])
+    .describe("Action type to simulate"),
+  payload: z
+    .string()
+    .describe("JSON object with action-specific fields (path, host, command, tool, content, text, etc.)"),
+  expected_verdict: z
+    .enum(["allow", "deny", "warn"])
+    .optional()
+    .describe("Expected verdict for pass/fail checking"),
+};
+
+const synthPolicySchema: ToolSchema = {
+  events_jsonl: z
+    .string()
+    .describe("JSONL string — one JSON event per line with action_type, target, and optional content"),
+  base_ruleset: z
+    .enum([
+      "default",
+      "strict",
+      "permissive",
+      "ai-agent",
+      "cicd",
+      "ai-agent-posture",
+      "remote-desktop",
+      "remote-desktop-permissive",
+      "remote-desktop-strict",
+      "spider-sense",
+    ])
+    .optional()
+    .describe("Built-in ruleset to extend from"),
+  name: z.string().optional().describe("Name for the synthesized policy"),
+};
+
+const complianceCheckSchema: ToolSchema = {
+  policy_yaml: z
+    .string()
+    .describe("Policy YAML string to check compliance for"),
+  frameworks: z
+    .array(z.enum(["hipaa", "soc2", "pci-dss"]))
+    .optional()
+    .describe("Specific frameworks to check (default: all)"),
+};
+
+const exportPolicySchema: ToolSchema = {
+  policy_yaml: z.string().describe("Policy YAML string to convert"),
+  format: z.enum(["json", "toml", "yaml"]).describe("Target format"),
+};
+
+const hardenPolicySchema: ToolSchema = {
+  policy_yaml: z.string().describe("Policy YAML to harden"),
+  level: z
+    .enum(["moderate", "aggressive"])
+    .optional()
+    .describe("How aggressively to tighten (default: moderate)"),
+};
+
+const generatePolicySchema: ToolSchema = {
+  description: z
+    .string()
+    .min(1, "Description must not be empty")
+    .describe(
+      'Natural language description like "CI/CD pipeline for a healthcare app" or "AI coding assistant with filesystem access"',
+    ),
+  base_ruleset: z
+    .enum([
+      "default",
+      "strict",
+      "permissive",
+      "ai-agent",
+      "cicd",
+      "ai-agent-posture",
+      "remote-desktop",
+      "remote-desktop-permissive",
+      "remote-desktop-strict",
+      "spider-sense",
+    ])
+    .optional()
+    .describe("Built-in ruleset to extend from (auto-detected if omitted)"),
+};
+
+registerTool(
+  "workbench_create_scenario",
+  "Create a test scenario with name, action type, target, payload, and expected verdict. Returns the scenario object as JSON.",
+  createScenarioSchema,
+  async (input: CreateScenarioArgs) => {
+    const {
+      name,
+      description,
+      category,
+      action_type,
+      payload,
+      expected_verdict,
+    } = input;
+
     let parsedPayload: Record<string, unknown>;
     try {
       parsedPayload = JSON.parse(payload);
@@ -542,14 +694,14 @@ server.tool(
   },
 );
 
-server.tool(
+registerTool(
   "workbench_run_scenario",
   "Run a single test scenario against a policy YAML. Returns the verdict and per-guard results.",
   {
     scenario_json: z.string().describe("JSON string of the TestScenario object"),
     policy_yaml: z.string().describe("Policy YAML string to evaluate against"),
   },
-  async ({ scenario_json, policy_yaml }) => {
+  async ({ scenario_json, policy_yaml }: RunScenarioArgs) => {
     let scenario: TestScenario;
     try {
       scenario = JSON.parse(scenario_json);
@@ -606,14 +758,14 @@ server.tool(
   },
 );
 
-server.tool(
+registerTool(
   "workbench_run_all_scenarios",
   "Run a batch of scenarios against a policy YAML. Returns a summary report with per-scenario verdicts.",
   {
     scenarios_json: z.string().describe("JSON array of TestScenario objects"),
     policy_yaml: z.string().describe("Policy YAML string to evaluate against"),
   },
-  async ({ scenarios_json, policy_yaml }) => {
+  async ({ scenarios_json, policy_yaml }: RunAllScenariosArgs) => {
     const MAX_BATCH_SIZE = 500;
     const MAX_PAYLOAD_SIZE = 1_000_000; // 1MB total
 
@@ -708,28 +860,20 @@ server.tool(
   },
 );
 
-server.tool(
+registerTool(
   "workbench_validate_policy",
   "Validate a policy YAML string for schema errors and warnings. Returns structured diagnostics.",
   {
     policy_yaml: z.string().describe("Policy YAML string to validate"),
   },
-  async ({ policy_yaml }) => jsonResult(validatePolicyYaml(policy_yaml)),
+  async ({ policy_yaml }: PolicyYamlArgs) => jsonResult(validatePolicyYaml(policy_yaml)),
 );
 
-server.tool(
+registerTool(
   "workbench_synth_policy",
   "Synthesize a candidate security policy from JSONL agent activity events. Each event line needs action_type and target fields.",
-  {
-    events_jsonl: z.string().describe("JSONL string — one JSON event per line with action_type, target, and optional content"),
-    base_ruleset: z.enum([
-      "default", "strict", "permissive", "ai-agent", "cicd",
-      "ai-agent-posture", "remote-desktop", "remote-desktop-permissive",
-      "remote-desktop-strict", "spider-sense"
-    ]).optional().describe("Built-in ruleset to extend from"),
-    name: z.string().optional().describe("Name for the synthesized policy"),
-  },
-  async ({ events_jsonl, base_ruleset, name: policyName }) => {
+  synthPolicySchema,
+  async ({ events_jsonl, base_ruleset, name: policyName }: SynthPolicyArgs) => {
     if (events_jsonl.length > 10_000_000) {
       return textResult(`events_jsonl too large: ${events_jsonl.length} bytes (max 10,000,000)`, true);
     }
@@ -782,14 +926,11 @@ server.tool(
   },
 );
 
-server.tool(
+registerTool(
   "workbench_compliance_check",
   "Score a policy against HIPAA, SOC2, and PCI-DSS compliance frameworks. Returns per-framework scores, met requirements, and gaps.",
-  {
-    policy_yaml: z.string().describe("Policy YAML string to check compliance for"),
-    frameworks: z.array(z.enum(["hipaa", "soc2", "pci-dss"])).optional().describe("Specific frameworks to check (default: all)"),
-  },
-  async ({ policy_yaml, frameworks }) => {
+  complianceCheckSchema,
+  async ({ policy_yaml, frameworks }: ComplianceCheckArgs) => {
     let policy: WorkbenchPolicy;
     try {
       ({ policy } = parsePolicy(policy_yaml));
@@ -826,7 +967,7 @@ server.tool(
   },
 );
 
-server.tool(
+registerTool(
   "workbench_list_guards",
   "List all 13 built-in guards with descriptions, categories, and configuration schemas.",
   {},
@@ -860,13 +1001,13 @@ server.tool(
   },
 );
 
-server.tool(
+registerTool(
   "workbench_suggest_scenarios",
   "Given a policy YAML, suggest test scenarios that exercise the configured guards. Returns an array of scenario objects.",
   {
     policy_yaml: z.string().describe("Policy YAML to analyze for scenario suggestions"),
   },
-  async ({ policy_yaml }) => {
+  async ({ policy_yaml }: PolicyYamlArgs) => {
     let policy: WorkbenchPolicy;
     try {
       ({ policy } = parsePolicy(policy_yaml));
@@ -878,14 +1019,14 @@ server.tool(
   },
 );
 
-server.tool(
+registerTool(
   "workbench_diff_policies",
   "Compare two policy YAML strings semantically. Returns added, removed, and changed guards with details.",
   {
     left_yaml: z.string().describe("First policy YAML (baseline)"),
     right_yaml: z.string().describe("Second policy YAML (comparison)"),
   },
-  async ({ left_yaml, right_yaml }) => {
+  async ({ left_yaml, right_yaml }: DiffPoliciesArgs) => {
     let leftPolicy: WorkbenchPolicy;
     let rightPolicy: WorkbenchPolicy;
     try {
@@ -981,14 +1122,11 @@ server.tool(
   },
 );
 
-server.tool(
+registerTool(
   "workbench_export_policy",
   "Convert a policy YAML to JSON or TOML format.",
-  {
-    policy_yaml: z.string().describe("Policy YAML string to convert"),
-    format: z.enum(["json", "toml", "yaml"]).describe("Target format"),
-  },
-  async ({ policy_yaml, format }) => {
+  exportPolicySchema,
+  async ({ policy_yaml, format }: ExportPolicyArgs) => {
     let policy: WorkbenchPolicy;
     try {
       ({ policy } = parsePolicy(policy_yaml));
@@ -1001,17 +1139,11 @@ server.tool(
   },
 );
 
-server.tool(
+registerTool(
   "workbench_harden_policy",
   "Analyze a policy and return a hardened version with tighter settings, additional guards, and stricter thresholds.",
-  {
-    policy_yaml: z.string().describe("Policy YAML to harden"),
-    level: z
-      .enum(["moderate", "aggressive"])
-      .optional()
-      .describe("How aggressively to tighten (default: moderate)"),
-  },
-  async ({ policy_yaml, level }) => {
+  hardenPolicySchema,
+  async ({ policy_yaml, level }: HardenPolicyArgs) => {
     const hardenLevel = level ?? "moderate";
 
     let policy: WorkbenchPolicy;
@@ -1266,13 +1398,13 @@ server.tool(
   },
 );
 
-server.tool(
+registerTool(
   "workbench_guard_coverage",
   "Analyze guard coverage for a policy. Returns enabled/disabled/missing guards, coverage percentage, and risk areas.",
   {
     policy_yaml: z.string().describe("Policy YAML to analyze"),
   },
-  async ({ policy_yaml }) => {
+  async ({ policy_yaml }: PolicyYamlArgs) => {
     let policy: WorkbenchPolicy;
     try {
       ({ policy } = parsePolicy(policy_yaml));
@@ -1356,7 +1488,7 @@ server.tool(
   },
 );
 
-server.tool(
+registerTool(
   "workbench_list_rulesets",
   "List all available built-in rulesets with their names, descriptions, and YAML content.",
   {},
@@ -1372,33 +1504,12 @@ server.tool(
   },
 );
 
-server.tool(
+registerTool(
   "workbench_generate_policy",
   "Generate a starter policy from a natural language description of the use case.",
-  {
-    description: z
-      .string()
-      .min(1, "Description must not be empty")
-      .describe(
-        'Natural language description like "CI/CD pipeline for a healthcare app" or "AI coding assistant with filesystem access"',
-      ),
-    base_ruleset: z
-      .enum([
-        "default",
-        "strict",
-        "permissive",
-        "ai-agent",
-        "cicd",
-        "ai-agent-posture",
-        "remote-desktop",
-        "remote-desktop-permissive",
-        "remote-desktop-strict",
-        "spider-sense",
-      ])
-      .optional()
-      .describe("Built-in ruleset to extend from (auto-detected if omitted)"),
-  },
-  async ({ description: desc, base_ruleset }) => {
+  generatePolicySchema,
+  async (input: GeneratePolicyArgs) => {
+    const { description: desc, base_ruleset } = input;
     const lower = desc.toLowerCase();
     const notes: string[] = [];
     const guards: Record<string, Record<string, unknown>> = {};
@@ -1716,13 +1827,13 @@ server.resource(
 // Prompts
 // ---------------------------------------------------------------------------
 
-server.prompt(
+registerPrompt(
   "security-audit",
   "Run a comprehensive security audit: validate policy, check compliance, run scenarios, and generate improvement report.",
   {
     policy_yaml: z.string().describe("Policy YAML to audit"),
   },
-  ({ policy_yaml }) => ({
+  ({ policy_yaml }: PolicyYamlArgs) => ({
     messages: [
       {
         role: "user" as const,
@@ -1755,13 +1866,13 @@ server.prompt(
   }),
 );
 
-server.prompt(
+registerPrompt(
   "observe-synth-tighten",
   "Import agent activity logs, analyze patterns, synthesize policy, and iteratively tighten it.",
   {
     events_jsonl: z.string().describe("JSONL agent activity log to analyze"),
   },
-  ({ events_jsonl }) => ({
+  ({ events_jsonl }: EventsJsonlArgs) => ({
     messages: [
       {
         role: "user" as const,
@@ -1793,13 +1904,13 @@ server.prompt(
   }),
 );
 
-server.prompt(
+registerPrompt(
   "tighten-policy",
   "Analyze a policy's weaknesses and generate a hardened version with specific improvement recommendations.",
   {
     policy_yaml: z.string().describe("The policy YAML to tighten"),
   },
-  ({ policy_yaml }) => ({
+  ({ policy_yaml }: PolicyYamlArgs) => ({
     messages: [
       {
         role: "user" as const,
@@ -1834,13 +1945,13 @@ server.prompt(
   }),
 );
 
-server.prompt(
+registerPrompt(
   "red-team-scenarios",
   "Generate adversarial red team scenarios designed to find weaknesses in a policy.",
   {
     policy_yaml: z.string().describe("The policy YAML to red team"),
   },
-  ({ policy_yaml }) => ({
+  ({ policy_yaml }: PolicyYamlArgs) => ({
     messages: [
       {
         role: "user" as const,
@@ -1879,13 +1990,13 @@ server.prompt(
   }),
 );
 
-server.prompt(
+registerPrompt(
   "build-test-suite",
   "Build a comprehensive test suite for a policy with positive, negative, and edge-case scenarios.",
   {
     policy_yaml: z.string().describe("The policy YAML to build tests for"),
   },
-  ({ policy_yaml }) => ({
+  ({ policy_yaml }: PolicyYamlArgs) => ({
     messages: [
       {
         role: "user" as const,

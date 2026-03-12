@@ -18,7 +18,6 @@ const NAV_ITEMS = [
   { label: "Editor", href: "/editor" },
   { label: "Library", href: "/library" },
   { label: "Guards", href: "/guards" },
-  { label: "Origins", href: "/origins" },
   { label: "Compare", href: "/compare" },
   { label: "Threat Lab", href: "/simulator" },
   { label: "Hunt Lab", href: "/hunt" },

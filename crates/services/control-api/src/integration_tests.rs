@@ -5548,6 +5548,93 @@ async fn hierarchy_routes_enforce_permissions_and_delete_modes() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn hierarchy_routes_reject_node_type_changes_that_strand_invalid_children() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+
+    let root_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/hierarchy/nodes".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "name": "Root Org",
+            "node_type": "org"
+        })),
+    )
+    .await;
+    assert_eq!(root_resp.0, StatusCode::OK);
+    let root_id = root_resp.1["id"].as_str().expect("root id").to_string();
+
+    let team_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/hierarchy/nodes".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "name": "Team One",
+            "node_type": "team",
+            "parent_id": root_id.clone()
+        })),
+    )
+    .await;
+    assert_eq!(team_resp.0, StatusCode::OK);
+    let team_id = team_resp.1["id"].as_str().expect("team id").to_string();
+
+    let endpoint_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/hierarchy/nodes".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "name": "Builder Host",
+            "node_type": "endpoint",
+            "parent_id": team_id.clone()
+        })),
+    )
+    .await;
+    assert_eq!(endpoint_resp.0, StatusCode::OK);
+    let endpoint_id = endpoint_resp.1["id"]
+        .as_str()
+        .expect("endpoint id")
+        .to_string();
+
+    let runtime_resp = request_json(
+        &harness.app,
+        Method::POST,
+        "/api/v1/hierarchy/nodes".to_string(),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "name": "Claude Runtime",
+            "node_type": "runtime",
+            "parent_id": endpoint_id.clone()
+        })),
+    )
+    .await;
+    assert_eq!(runtime_resp.0, StatusCode::OK);
+
+    let update_resp = request_json(
+        &harness.app,
+        Method::PUT,
+        format!("/api/v1/hierarchy/nodes/{endpoint_id}"),
+        Some(&harness.api_key),
+        Some(serde_json::json!({
+            "node_type": "project"
+        })),
+    )
+    .await;
+    assert_eq!(update_resp.0, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        update_resp.1["error"],
+        "cannot change node_type: children of type [runtime] are not allowed under a project node"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn hierarchy_tree_prefers_org_root_over_other_top_level_nodes() {
     if !docker_available() {
         eprintln!("Skipping integration test: docker is unavailable");

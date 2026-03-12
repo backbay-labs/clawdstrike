@@ -18,7 +18,6 @@ import {
   IconFileAnalytics,
   IconSearch,
   IconShield,
-  IconRoute,
 } from "@tabler/icons-react";
 import { useWorkbench } from "@/lib/workbench/multi-policy-store";
 import { useFleetConnection } from "@/lib/workbench/use-fleet-connection";
@@ -51,7 +50,6 @@ const navSections: readonly NavSection[] = [
       { label: "Editor", icon: IconPencil, href: "/editor" },
       { label: "Library", icon: IconBooks, href: "/library" },
       { label: "Guards", icon: IconShield, href: "/guards" },
-      { label: "Origins", icon: IconRoute, href: "/origins" },
       { label: "Compare", icon: IconColumns, href: "/compare" },
     ],
   },

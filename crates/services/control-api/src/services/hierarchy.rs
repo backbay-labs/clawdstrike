@@ -251,6 +251,16 @@ pub async fn update_node(
         }
     }
 
+    if params.node_type.is_some() {
+        validate_existing_children_for_node_type(
+            &mut tx,
+            params.tenant_id,
+            params.node_id,
+            next_node_type,
+        )
+        .await?;
+    }
+
     let metadata_update = normalized_metadata_update(params.metadata);
 
     let row = sqlx::query::query(
@@ -377,6 +387,43 @@ fn resolved_parent_id(
         NullableField::Set(parent_id) => Some(parent_id),
         NullableField::Clear => None,
     }
+}
+
+async fn validate_existing_children_for_node_type(
+    tx: &mut sqlx::transaction::Transaction<'_, sqlx_postgres::Postgres>,
+    tenant_id: Uuid,
+    node_id: Uuid,
+    node_type: HierarchyNodeType,
+) -> Result<(), ApiError> {
+    let child_rows = sqlx::query::query(
+        "SELECT node_type FROM hierarchy_nodes WHERE parent_id = $1 AND tenant_id = $2",
+    )
+    .bind(node_id)
+    .bind(tenant_id)
+    .fetch_all(tx.as_mut())
+    .await
+    .map_err(ApiError::Database)?;
+
+    let mut invalid_types = Vec::new();
+    for child_row in &child_rows {
+        let child_type_str: String = child_row.try_get("node_type").map_err(ApiError::Database)?;
+        if let Some(child_type) = HierarchyNodeType::from_str(&child_type_str) {
+            if validate_parent_child_types(node_type, child_type).is_err() {
+                invalid_types.push(child_type_str);
+            }
+        }
+    }
+
+    if !invalid_types.is_empty() {
+        invalid_types.sort();
+        invalid_types.dedup();
+        return Err(ApiError::BadRequest(format!(
+            "cannot change node_type: children of type [{}] are not allowed under a {node_type} node",
+            invalid_types.join(", ")
+        )));
+    }
+
+    Ok(())
 }
 
 fn map_unique_violation(err: sqlx::error::Error) -> ApiError {
