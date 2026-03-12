@@ -1449,9 +1449,17 @@ export function HierarchyPage() {
         const node = hierarchy.nodes[nodeId];
         if (!node) continue;
 
-        const resolvedParentId = node.parentId
-          ? idMap.get(node.parentId) ?? node.parentId
-          : null;
+        let resolvedParentId: string | null = null;
+        if (node.parentId) {
+          resolvedParentId = idMap.get(node.parentId) ?? null;
+          if (!resolvedParentId) {
+            skippedCount += 1 + countDescendants(nodeId);
+            console.warn(
+              `[hierarchy-sync] skipping node "${node.name}": parent "${node.parentId}" has no fleet id`,
+            );
+            continue;
+          }
+        }
 
         const input: HierarchyNodeInput = {
           name: node.name,
