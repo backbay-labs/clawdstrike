@@ -155,6 +155,36 @@ describe("OriginEditor", () => {
     ).toHaveValue("");
   });
 
+  it("clears the stored provider when switching an existing provider to custom mode", async () => {
+    const user = userEvent.setup();
+    render(<OriginEditor />);
+
+    await user.click(screen.getByText("profile-alpha"));
+    await user.click(screen.getAllByRole("combobox")[1]);
+    await user.click(screen.getByRole("option", { name: "Custom..." }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByPlaceholderText("e.g. my-custom-provider"),
+      ).toHaveValue("slack");
+    });
+
+    expect(dispatch).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        type: "UPDATE_ORIGINS",
+        origins: expect.objectContaining({
+          profiles: [
+            expect.objectContaining({
+              match_rules: expect.not.objectContaining({
+                provider: expect.anything(),
+              }),
+            }),
+          ],
+        }),
+      }),
+    );
+  });
+
   it("keeps custom space type inputs in custom mode when cleared", async () => {
     const user = userEvent.setup();
     activePolicy = {
@@ -201,5 +231,43 @@ describe("OriginEditor", () => {
     expect(
       await screen.findByPlaceholderText("e.g. my-custom-space"),
     ).toHaveValue("");
+  });
+
+  it("clears the stored space type when switching an existing space type to custom mode", async () => {
+    const user = userEvent.setup();
+    activePolicy = {
+      ...activePolicy,
+      origins: {
+        ...activePolicy.origins,
+        profiles: [makeProfile(undefined, { provider: "slack", space_type: "channel" })],
+      },
+    };
+
+    render(<OriginEditor />);
+
+    await user.click(screen.getByText("profile-alpha"));
+    await user.click(screen.getAllByRole("combobox")[2]);
+    await user.click(screen.getByRole("option", { name: "Custom..." }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByPlaceholderText("e.g. my-custom-space"),
+      ).toHaveValue("channel");
+    });
+
+    expect(dispatch).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        type: "UPDATE_ORIGINS",
+        origins: expect.objectContaining({
+          profiles: [
+            expect.objectContaining({
+              match_rules: expect.not.objectContaining({
+                space_type: expect.anything(),
+              }),
+            }),
+          ],
+        }),
+      }),
+    );
   });
 });

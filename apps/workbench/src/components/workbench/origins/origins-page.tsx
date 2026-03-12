@@ -5,6 +5,14 @@ import {
   renameOriginProfileIdInPolicy,
   renameOriginProfileIdInSavedPolicy,
 } from "@/lib/workbench/origin-profile-utils";
+import {
+  ORIGIN_ACTOR_TYPE_OPTIONS as ACTOR_TYPE_OPTIONS,
+  ORIGIN_PROVENANCE_OPTIONS as PROVENANCE_OPTIONS,
+  ORIGIN_PROVIDER_OPTIONS as PROVIDERS,
+  ORIGIN_SPACE_TYPE_OPTIONS as SPACE_TYPES,
+  ORIGIN_VISIBILITY_OPTIONS as VISIBILITY_OPTIONS,
+  isCustomOriginChoice as isCustomChoice,
+} from "@/lib/workbench/origin-options";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -236,64 +244,6 @@ function getProviderIcon(provider: OriginProvider | string | undefined) {
 function getProviderColor(provider: OriginProvider | string | undefined) {
   return getProviderMeta(provider)?.color ?? "#6f7f9a";
 }
-
-function isCustomChoice<
-  T extends string,
-  O extends ReadonlyArray<{ value: T }>
->(value: string | undefined, options: O): boolean {
-  return value !== undefined && !options.some((option) => option.value === value);
-}
-
-// ---------------------------------------------------------------------------
-// Select option constants
-// ---------------------------------------------------------------------------
-
-const PROVIDERS: { value: OriginProvider; label: string }[] = [
-  { value: "slack", label: "Slack" },
-  { value: "teams", label: "Teams" },
-  { value: "github", label: "GitHub" },
-  { value: "jira", label: "Jira" },
-  { value: "email", label: "Email" },
-  { value: "discord", label: "Discord" },
-  { value: "webhook", label: "Webhook" },
-  { value: "cli", label: "CLI" },
-  { value: "api", label: "API" },
-];
-
-const SPACE_TYPES: { value: SpaceType; label: string }[] = [
-  { value: "channel", label: "Channel" },
-  { value: "group", label: "Group" },
-  { value: "dm", label: "DM" },
-  { value: "thread", label: "Thread" },
-  { value: "issue", label: "Issue" },
-  { value: "ticket", label: "Ticket" },
-  { value: "pull_request", label: "Pull Request" },
-  { value: "email_thread", label: "Email Thread" },
-];
-
-const VISIBILITY_OPTIONS: { value: Visibility; label: string }[] = [
-  { value: "private", label: "Private" },
-  { value: "internal", label: "Internal" },
-  { value: "restricted", label: "Restricted" },
-  { value: "public", label: "Public" },
-  { value: "external", label: "External" },
-  { value: "external_shared", label: "External Shared" },
-  { value: "unknown", label: "Unknown" },
-];
-
-const PROVENANCE_OPTIONS: { value: ProvenanceConfidence; label: string }[] = [
-  { value: "strong", label: "Strong" },
-  { value: "medium", label: "Medium" },
-  { value: "weak", label: "Weak" },
-  { value: "unknown", label: "Unknown" },
-];
-
-const ACTOR_TYPE_OPTIONS: { value: ActorType; label: string }[] = [
-  { value: "human", label: "Human" },
-  { value: "bot", label: "Bot" },
-  { value: "service", label: "Service" },
-  { value: "unknown", label: "Unknown" },
-];
 
 // ---------------------------------------------------------------------------
 // Template blueprints
@@ -913,6 +863,7 @@ function MatchRulesEditor({
               if (val === "__custom__") {
                 setCustomProviderMode(true);
                 setCustomProviderDraft(match.provider ?? "");
+                patch({ provider: undefined });
               } else {
                 setCustomProviderMode(false);
                 setCustomProviderDraft(
@@ -991,6 +942,7 @@ function MatchRulesEditor({
               if (val === "__custom__") {
                 setCustomSpaceTypeMode(true);
                 setCustomSpaceTypeDraft(match.space_type ?? "");
+                patch({ space_type: undefined });
               } else {
                 setCustomSpaceTypeMode(false);
                 setCustomSpaceTypeDraft(
