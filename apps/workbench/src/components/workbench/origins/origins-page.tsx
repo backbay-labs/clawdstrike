@@ -255,7 +255,9 @@ const SPACE_TYPES: { value: SpaceType; label: string }[] = [
 const VISIBILITY_OPTIONS: { value: Visibility; label: string }[] = [
   { value: "private", label: "Private" },
   { value: "internal", label: "Internal" },
+  { value: "restricted", label: "Restricted" },
   { value: "public", label: "Public" },
+  { value: "external", label: "External" },
   { value: "external_shared", label: "External Shared" },
   { value: "unknown", label: "Unknown" },
 ];
@@ -2535,7 +2537,7 @@ export function OriginsPage() {
                 );
                 return (
                   <ProfileListItem
-                    key={idx}
+                    key={profile.id}
                     profile={profile}
                     isSelected={profile.id === selectedProfileId}
                     onSelect={() => setSelectedProfileId(profile.id)}

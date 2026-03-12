@@ -831,7 +831,6 @@ interface PersistedTab {
   name: string;
   filePath: string | null;
   yaml: string;
-  testSuiteYaml?: string;
   sensitiveFieldsStripped?: boolean;
 }
 
@@ -851,7 +850,6 @@ function persistTabs(state: MultiPolicyState): void {
           name: t.name,
           filePath: sensitiveFieldsStripped ? null : t.filePath,
           yaml: sanitized.yaml,
-          testSuiteYaml: t.testSuiteYaml,
           sensitiveFieldsStripped: sensitiveFieldsStripped || undefined,
         };
       }),
@@ -898,7 +896,6 @@ function loadPersistedTabs(): MultiPolicyState | null {
         yaml,
         validation,
         nativeValidation: { guardErrors: {}, topLevelErrors: [], loading: false, valid: null },
-        testSuiteYaml: pt.testSuiteYaml,
         _undoPast: [],
         _undoFuture: [],
         _cleanSnapshot: sensitiveFieldsStripped

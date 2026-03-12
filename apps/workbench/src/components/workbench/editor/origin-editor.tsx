@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   Collapsible,
   CollapsibleTrigger,
@@ -67,7 +67,9 @@ const SPACE_TYPES: { value: SpaceType; label: string }[] = [
 const VISIBILITY_OPTIONS: { value: Visibility; label: string }[] = [
   { value: "private", label: "Private" },
   { value: "internal", label: "Internal" },
+  { value: "restricted", label: "Restricted" },
   { value: "public", label: "Public" },
+  { value: "external", label: "External" },
   { value: "external_shared", label: "External Shared" },
   { value: "unknown", label: "Unknown" },
 ];
@@ -285,6 +287,13 @@ function OriginProfileCard({ profile, index, onUpdate, onRemove }: OriginProfile
     profile.metadata ? JSON.stringify(profile.metadata, null, 2) : "",
   );
   const [metadataError, setMetadataError] = useState(false);
+
+  useEffect(() => {
+    setMetadataText(
+      profile.metadata ? JSON.stringify(profile.metadata, null, 2) : "",
+    );
+    setMetadataError(false);
+  }, [profile.metadata]);
 
   const updateMatchRules = useCallback(
     (patch: Partial<OriginMatch>) => {

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { renderWithProviders } from "@/test/test-helpers";
@@ -444,5 +444,49 @@ describe("HierarchyPage", () => {
         }),
       ]),
     );
+  });
+
+  it("surfaces an incomplete push when a parent create succeeds without returning an id", async () => {
+    const user = userEvent.setup();
+
+    fleetClientMocks.createHierarchyNode
+      .mockResolvedValueOnce({ success: true, id: "server-root" })
+      .mockResolvedValueOnce({ success: true });
+
+    renderWithProviders(<HierarchyPage />);
+
+    await user.click(screen.getByRole("button", { name: "DEMO" }));
+    await user.click(screen.getByRole("button", { name: "Push to Fleet" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/was created without an id, so 3 descendant nodes/),
+      ).toBeInTheDocument();
+    });
+    expect(fleetClientMocks.createHierarchyNode).toHaveBeenCalledTimes(2);
+  });
+
+  it("still allows dragging legacy agent leaves onto teams", async () => {
+    const user = userEvent.setup();
+
+    renderWithProviders(<HierarchyPage />);
+
+    await user.click(screen.getByRole("button", { name: "DEMO" }));
+
+    const source = screen
+      .getAllByText("agent-coder-01")[0]
+      .closest("div[draggable='true']");
+    const target = screen.getAllByText("Security")[0].closest("div");
+
+    expect(source).not.toBeNull();
+    expect(target).not.toBeNull();
+
+    fireEvent.dragStart(source!);
+    fireEvent.dragOver(target!);
+    fireEvent.drop(target!);
+
+    await waitFor(() => {
+      expect(fleetClientMocks.updateHierarchyNode).toHaveBeenCalledTimes(1);
+    });
   });
 });

@@ -1403,9 +1403,10 @@ export function HierarchyPage() {
         const sourceNode = hierarchy.nodes[dragSourceId];
         const targetNode = hierarchy.nodes[targetId];
         if (sourceNode && targetNode) {
-          // Only allow dropping runtimes onto endpoints, endpoints onto teams, or teams onto org
+          // Preserve legacy agent leaf moves while enforcing the new endpoint/runtime hierarchy.
           const canDrop =
             (sourceNode.type === "runtime" && targetNode.type === "endpoint") ||
+            (sourceNode.type === "agent" && targetNode.type === "team") ||
             (sourceNode.type === "endpoint" && targetNode.type === "team") ||
             (sourceNode.type === "team" && targetNode.type === "org");
           if (canDrop) {
@@ -1512,6 +1513,8 @@ export function HierarchyPage() {
       let successCount = 0;
       let errorCount = 0;
 
+      let missingParentIdNode: OrgNode | null = null;
+
       while (queue.length > 0) {
         const nodeId = queue.shift()!;
         const node = hierarchy.nodes[nodeId];
@@ -1535,14 +1538,26 @@ export function HierarchyPage() {
         };
 
         const result = await createHierarchyNode(connection, input);
-        if (result.success && result.id) {
-          idMap.set(nodeId, result.id);
-          successCount++;
-        } else {
-          console.warn(`[hierarchy-sync] push failed for node "${node.name}":`, result.error);
+        if (!result.success) {
+          console.warn(
+            `[hierarchy-sync] push failed for node "${node.name}":`,
+            result.error,
+          );
           errorCount++;
           // Skip children — parent failed so they would reference an invalid ID
           continue;
+        }
+
+        successCount++;
+
+        if (result.id) {
+          idMap.set(nodeId, result.id);
+        } else if (node.children.length > 0) {
+          missingParentIdNode = node;
+          console.warn(
+            `[hierarchy-sync] push incomplete for node "${node.name}": backend created the node without returning an id, so its descendants cannot be uploaded`,
+          );
+          break;
         }
 
         // Enqueue children
@@ -1551,7 +1566,14 @@ export function HierarchyPage() {
         }
       }
 
-      if (errorCount === 0) {
+      if (missingParentIdNode) {
+        const descendantCount =
+          getDescendants(hierarchy, missingParentIdNode.id).length - 1;
+        showSyncStatus(
+          "error",
+          `Push incomplete: "${missingParentIdNode.name}" was created without an id, so ${descendantCount} descendant node${descendantCount === 1 ? "" : "s"} could not be uploaded`,
+        );
+      } else if (errorCount === 0) {
         showSyncStatus("success", `Pushed ${successCount} nodes to fleet`);
       } else {
         showSyncStatus(
