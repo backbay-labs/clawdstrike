@@ -1080,6 +1080,13 @@ export function HierarchyPage() {
     hierarchyVersionRef.current += 1;
   }, []);
 
+  const restoreHierarchyChange = useCallback((next: PolicyHierarchy, version: number) => {
+    hierarchyRef.current = next;
+    setHierarchy(next);
+    setHierarchyVersion(version);
+    hierarchyVersionRef.current = version;
+  }, []);
+
   // ---------------------------------------------------------------------------
   // Fleet sync state (P2-3)
   // ---------------------------------------------------------------------------
@@ -1180,8 +1187,7 @@ export function HierarchyPage() {
         if (!result.success) {
           console.warn(`[hierarchy-sync] ${label} failed:`, result.error);
           if (hierarchyVersionRef.current === capturedVersion) {
-            hierarchyRef.current = prevHierarchy;
-            setHierarchy(prevHierarchy);
+            restoreHierarchyChange(prevHierarchy, Math.max(capturedVersion - 1, 0));
           }
           showSyncStatus("error", `Sync: ${label} failed — reverted`);
         }
@@ -1189,14 +1195,13 @@ export function HierarchyPage() {
       }).catch((err) => {
         console.warn(`[hierarchy-sync] ${label} error:`, err);
         if (hierarchyVersionRef.current === capturedVersion) {
-          hierarchyRef.current = prevHierarchy;
-          setHierarchy(prevHierarchy);
+          restoreHierarchyChange(prevHierarchy, Math.max(capturedVersion - 1, 0));
         }
         showSyncStatus("error", `Sync: ${label} error — reverted`);
         return { success: false, error: String(err) };
       });
     },
-    [isLiveMode, fleetConnected, showSyncStatus],
+    [isLiveMode, fleetConnected, restoreHierarchyChange, showSyncStatus],
   );
 
   /**

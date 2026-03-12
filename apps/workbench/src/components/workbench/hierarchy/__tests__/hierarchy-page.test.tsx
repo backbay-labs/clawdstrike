@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { renderWithProviders } from "@/test/test-helpers";
@@ -547,5 +547,91 @@ describe("HierarchyPage", () => {
     await user.click(agentLabel);
 
     expect(agentRow?.className).toContain("ring-[#3dbf84]/30");
+  });
+
+  it("rolls back optimistic hierarchy versions in order when live sync failures resolve out of order", async () => {
+    const user = userEvent.setup();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const createDeferred = () => {
+      let resolve!: (value: { success: boolean; error?: string }) => void;
+      const promise = new Promise<{ success: boolean; error?: string }>((res) => {
+        resolve = res;
+      });
+      return { promise, resolve };
+    };
+
+    const firstUpdate = createDeferred();
+    const secondUpdate = createDeferred();
+    fleetClientMocks.updateHierarchyNode
+      .mockImplementationOnce(() => firstUpdate.promise)
+      .mockImplementationOnce(() => secondUpdate.promise);
+
+    const getAgentParentName = () => {
+      const raw = localStorageState.clawdstrike_policy_hierarchy;
+      expect(raw).toBeDefined();
+      const hierarchy = JSON.parse(raw!);
+      const agentEntry = Object.values(hierarchy.nodes).find(
+        (node) =>
+          typeof node === "object" &&
+          node !== null &&
+          "name" in node &&
+          node.name === "agent-coder-01",
+      ) as { parentId: string };
+      const parent = hierarchy.nodes[agentEntry.parentId] as { name: string };
+      return parent.name;
+    };
+
+    const moveAgent = (targetTeamName: string) => {
+      const source = screen
+        .getAllByText("agent-coder-01")[0]
+        .closest("div[draggable='true']");
+      const target = screen.getAllByText(targetTeamName)[0].closest("div");
+
+      expect(source).not.toBeNull();
+      expect(target).not.toBeNull();
+
+      fireEvent.dragStart(source!);
+      fireEvent.dragOver(target!);
+      fireEvent.drop(target!);
+    };
+
+    try {
+      renderWithProviders(<HierarchyPage />);
+
+      await user.click(screen.getByRole("button", { name: "DEMO" }));
+
+      moveAgent("Security");
+      await waitFor(() => {
+        expect(fleetClientMocks.updateHierarchyNode).toHaveBeenCalledTimes(1);
+        expect(getAgentParentName()).toBe("Security");
+      });
+
+      moveAgent("Customer Support");
+      await waitFor(() => {
+        expect(fleetClientMocks.updateHierarchyNode).toHaveBeenCalledTimes(2);
+        expect(getAgentParentName()).toBe("Customer Support");
+      });
+
+      await act(async () => {
+        secondUpdate.resolve({ success: false, error: "second failure" });
+        await secondUpdate.promise;
+      });
+
+      await waitFor(() => {
+        expect(getAgentParentName()).toBe("Security");
+      });
+
+      await act(async () => {
+        firstUpdate.resolve({ success: false, error: "first failure" });
+        await firstUpdate.promise;
+      });
+
+      await waitFor(() => {
+        expect(getAgentParentName()).toBe("Engineering");
+      });
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });

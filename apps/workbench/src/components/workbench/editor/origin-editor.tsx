@@ -333,7 +333,7 @@ function OriginProfileCard({ profile, index, onUpdate, onRemove }: OriginProfile
     if (!customProviderMode) {
       setCustomProviderDraft("");
     }
-  }, [profile.match_rules.provider, customProviderMode]);
+  }, [profile.match_rules.provider]);
 
   useEffect(() => {
     if (isCustomChoice(profile.match_rules.space_type, SPACE_TYPES)) {
@@ -351,7 +351,7 @@ function OriginProfileCard({ profile, index, onUpdate, onRemove }: OriginProfile
     if (!customSpaceTypeMode) {
       setCustomSpaceTypeDraft("");
     }
-  }, [profile.match_rules.space_type, customSpaceTypeMode]);
+  }, [profile.match_rules.space_type]);
 
   const updateMatchRules = useCallback(
     (patch: Partial<OriginMatch>) => {

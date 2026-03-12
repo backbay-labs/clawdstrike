@@ -194,6 +194,33 @@ describe("policyToYaml", () => {
     expect(yaml).toContain("eng-alerts");
     expect(yaml).toContain("escalation");
   });
+
+  it("preserves intentionally empty origin metadata collections", () => {
+    const policy = makeMinimalPolicy({
+      version: "1.4.0",
+      origins: {
+        default_behavior: "deny",
+        profiles: [
+          {
+            id: "slack-prod",
+            match_rules: { provider: "slack" },
+            metadata: {
+              tags: [],
+              nested: {
+                labels: [],
+              },
+            },
+          },
+        ],
+      },
+    });
+
+    const yaml = policyToYaml(policy);
+
+    expect(yaml).toContain("metadata");
+    expect(yaml).toContain("tags: []");
+    expect(yaml).toContain("labels: []");
+  });
 });
 
 // ---------------------------------------------------------------------------

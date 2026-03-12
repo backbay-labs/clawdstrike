@@ -839,7 +839,7 @@ function MatchRulesEditor({
     if (!customProviderMode) {
       setCustomProviderDraft("");
     }
-  }, [match.provider, customProviderMode]);
+  }, [match.provider]);
 
   useEffect(() => {
     if (isCustomChoice(match.space_type, SPACE_TYPES)) {
@@ -857,7 +857,7 @@ function MatchRulesEditor({
     if (!customSpaceTypeMode) {
       setCustomSpaceTypeDraft("");
     }
-  }, [match.space_type, customSpaceTypeMode]);
+  }, [match.space_type]);
 
   const selectClass =
     "bg-[#131721] border-[#2d3240] text-[#ece7dc] text-xs font-mono w-full";
@@ -1919,6 +1919,17 @@ function ProfileDetail({
   const ProviderIcon = getProviderIcon(profile.match_rules?.provider);
   const providerColor = getProviderColor(profile.match_rules?.provider);
   const providerMeta = getProviderMeta(profile.match_rules?.provider);
+  const [profileIdDraft, setProfileIdDraft] = useState(profile.id);
+
+  useEffect(() => {
+    setProfileIdDraft(profile.id);
+  }, [profile.id]);
+
+  const commitProfileId = useCallback(() => {
+    if (profileIdDraft !== profile.id) {
+      onUpdate({ ...profile, id: profileIdDraft });
+    }
+  }, [onUpdate, profile, profile.id, profileIdDraft]);
 
   return (
     <div className="p-6 space-y-6 max-w-3xl mx-auto">
@@ -1933,8 +1944,14 @@ function ProfileDetail({
           </div>
           <div className="min-w-0 flex-1">
             <Input
-              value={profile.id}
-              onChange={(e) => onUpdate({ ...profile, id: e.target.value })}
+              value={profileIdDraft}
+              onChange={(e) => setProfileIdDraft(e.target.value)}
+              onBlur={commitProfileId}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.currentTarget.blur();
+                }
+              }}
               maxLength={128}
               className="bg-transparent border-transparent hover:border-[#2d3240] focus:border-[#d4a84b]/40 text-base font-semibold text-[#ece7dc] font-mono h-auto py-0.5 px-1.5 -ml-1.5 transition-colors"
             />
