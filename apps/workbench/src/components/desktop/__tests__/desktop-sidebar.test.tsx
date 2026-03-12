@@ -16,8 +16,12 @@ vi.mock("@/lib/tauri-bridge", () => ({
 const NAV_ITEMS = [
   { label: "Home", href: "/home" },
   { label: "Editor", href: "/editor" },
-  { label: "Threat Lab", href: "/simulator" },
+  { label: "Library", href: "/library" },
+  { label: "Guards", href: "/guards" },
+  { label: "Origins", href: "/origins" },
   { label: "Compare", href: "/compare" },
+  { label: "Threat Lab", href: "/simulator" },
+  { label: "Hunt Lab", href: "/hunt" },
   { label: "Compliance", href: "/compliance" },
   { label: "Receipts", href: "/receipts" },
   { label: "Audit", href: "/audit" },
@@ -25,7 +29,6 @@ const NAV_ITEMS = [
   { label: "Approvals", href: "/approvals" },
   { label: "Hierarchy", href: "/hierarchy" },
   { label: "Fleet", href: "/fleet" },
-  { label: "Library", href: "/library" },
 ] as const;
 
 describe("DesktopSidebar", () => {
@@ -97,7 +100,7 @@ describe("DesktopSidebar", () => {
   it("renders section group headers", () => {
     renderWithProviders(<DesktopSidebar />);
 
-    for (const title of ["Policy", "Testing", "Governance", "Infrastructure"]) {
+    for (const title of ["Policy", "Ops", "Governance", "Infrastructure"]) {
       expect(screen.getByText(title)).toBeInTheDocument();
     }
   });
@@ -111,7 +114,7 @@ describe("DesktopSidebar", () => {
 
     // Section headers should be hidden
     expect(screen.queryByText("Policy")).not.toBeInTheDocument();
-    expect(screen.queryByText("Testing")).not.toBeInTheDocument();
+    expect(screen.queryByText("Ops")).not.toBeInTheDocument();
     expect(screen.queryByText("Governance")).not.toBeInTheDocument();
     expect(screen.queryByText("Infrastructure")).not.toBeInTheDocument();
   });

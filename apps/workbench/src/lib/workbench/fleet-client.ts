@@ -2282,7 +2282,8 @@ export type HierarchyNodeChild = HierarchyNode | string;
 export interface HierarchyNode {
   id: string;
   name: string;
-  node_type: string; // "org" | "team" | "project" | "agent"
+  node_type: string; // "org" | "team" | "project" | "agent" | "endpoint" | "runtime"
+  external_id?: string | null;
   parent_id?: string | null;
   policy_id?: string | null;
   policy_name?: string | null;
@@ -2298,6 +2299,7 @@ export interface HierarchyNode {
 export interface HierarchyNodeInput {
   name: string;
   node_type: string;
+  external_id?: string | null;
   parent_id?: string | null;
   policy_id?: string | null;
   policy_name?: string | null;
@@ -2310,6 +2312,7 @@ export interface HierarchyNodeInput {
 export interface HierarchyNodeUpdate {
   name?: string;
   node_type?: string;
+  external_id?: string | null;
   parent_id?: string | null;
   policy_id?: string | null;
   policy_name?: string | null;

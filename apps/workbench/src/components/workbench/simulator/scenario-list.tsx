@@ -193,6 +193,7 @@ export function ScenarioList({
   const autoBenign = autoScenarios?.filter((s) => s.category === "benign") ?? [];
   const autoEdgeCases = autoScenarios?.filter((s) => s.category === "edge_case") ?? [];
   const hasAutoScenarios = (autoScenarios?.length ?? 0) > 0;
+  const canUseRedTeamSource = Boolean(policy && onScenariosGenerated);
 
   // Wrap onScenariosGenerated to auto-switch back to library after generation
   const handleRedTeamGenerated = useCallback(
@@ -203,78 +204,140 @@ export function ScenarioList({
     [onScenariosGenerated],
   );
 
+  const renderSourceToggle = (className?: string) => {
+    if (!canUseRedTeamSource) return null;
+
+    return (
+      <div className={cn("flex items-center gap-1 bg-[#0b0d13]", className)}>
+        <button
+          onClick={() => setSource("library")}
+          className={cn(
+            "flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-[11px] font-medium transition-colors",
+            source === "library"
+              ? "bg-[#131721] text-[#ece7dc] border border-[#2d3240]"
+              : "text-[#6f7f9a] hover:text-[#ece7dc] hover:bg-[#131721]/40",
+          )}
+        >
+          <IconTestPipe size={12} stroke={1.5} />
+          Library
+        </button>
+        <button
+          onClick={() => setSource("redteam")}
+          className={cn(
+            "flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-[11px] font-medium transition-colors",
+            source === "redteam"
+              ? "bg-[#d4a84b]/10 text-[#d4a84b] border border-[#d4a84b]/25"
+              : "text-[#6f7f9a] hover:text-[#d4a84b] hover:bg-[#d4a84b]/5",
+          )}
+        >
+          <IconFlask size={12} stroke={1.5} />
+          Red Team
+        </button>
+      </div>
+    );
+  };
+
+  const renderHorizontalLibraryContent = () => (
+    <div className="flex items-center gap-2 p-3 overflow-x-auto">
+      {scenarios.map((s) => {
+        const Icon = ACTION_TYPE_ICONS[s.actionType];
+        const active = s.id === selectedId;
+        return (
+          <button
+            key={s.id}
+            onClick={() => onSelect(s.id)}
+            className={cn(
+              "shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs transition-colors",
+              active
+                ? "bg-[#131721] text-[#ece7dc]"
+                : "text-[#6f7f9a] hover:text-[#ece7dc] hover:bg-[#131721]/50",
+            )}
+          >
+            <Icon size={13} stroke={1.5} />
+            <span className="truncate max-w-[120px]">{s.name}</span>
+            {s.severity && <SeverityIndicator severity={s.severity} />}
+          </button>
+        );
+      })}
+      {hasAutoScenarios && (
+        <>
+          <div className="w-px h-6 bg-[#7c5cbf]/30 shrink-0" />
+          {autoScenarios!.map((s) => {
+            const Icon = ACTION_TYPE_ICONS[s.actionType];
+            const active = s.id === selectedId;
+            return (
+              <button
+                key={s.id}
+                onClick={() => onSelect(s.id)}
+                className={cn(
+                  "shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs transition-colors",
+                  active
+                    ? "bg-[#7c5cbf]/20 text-[#ece7dc]"
+                    : "text-[#6f7f9a] hover:text-[#ece7dc] hover:bg-[#7c5cbf]/10",
+                )}
+              >
+                <Icon size={13} stroke={1.5} />
+                <span className="truncate max-w-[120px]">{s.name}</span>
+              </button>
+            );
+          })}
+        </>
+      )}
+    </div>
+  );
+
+  const renderRedTeamContent = () => {
+    if (!policy || !onScenariosGenerated) return null;
+
+    return (
+      <RedTeamContent
+        policy={policy}
+        scenarios={scenarios}
+        autoScenarios={autoScenarios}
+        onScenariosGenerated={handleRedTeamGenerated}
+      />
+    );
+  };
+
   if (horizontal) {
     return (
-      <div className="flex items-center gap-2 p-3 overflow-x-auto">
-        <button
-          onClick={onRunAll}
-          className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#d4a84b]/10 text-[#d4a84b] text-xs font-medium hover:bg-[#d4a84b]/20 transition-colors"
-          title="Execute all probes (Ctrl+Shift+Enter)"
-        >
-          <IconPlayerPlay size={14} stroke={1.5} />
-          Execute All
-        </button>
-        {onGenerate && (
+      <div className="bg-[#0b0d13]">
+        <div className="flex items-center gap-2 p-3 overflow-x-auto border-b border-[#2d3240]">
           <button
-            onClick={onGenerate}
-            className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#7c5cbf]/10 text-[#a78bda] text-xs font-medium hover:bg-[#7c5cbf]/20 transition-colors"
-            title="Generate smart scenarios from policy"
+            onClick={onRunAll}
+            className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#d4a84b]/10 text-[#d4a84b] text-xs font-medium hover:bg-[#d4a84b]/20 transition-colors"
+            title="Execute all probes (Ctrl+Shift+Enter)"
           >
-            <IconWand size={14} stroke={1.5} />
-            Smart
+            <IconPlayerPlay size={14} stroke={1.5} />
+            Execute All
           </button>
-        )}
-        <button
-          onClick={onAdd}
-          className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#131721] text-[#6f7f9a] text-xs font-medium hover:text-[#ece7dc] transition-colors"
-        >
-          <IconPlus size={14} stroke={1.5} />
-          Add
-        </button>
-        <div className="w-px h-6 bg-[#2d3240] shrink-0" />
-        {scenarios.map((s) => {
-          const Icon = ACTION_TYPE_ICONS[s.actionType];
-          const active = s.id === selectedId;
-          return (
+          {onGenerate && (
             <button
-              key={s.id}
-              onClick={() => onSelect(s.id)}
-              className={cn(
-                "shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs transition-colors",
-                active
-                  ? "bg-[#131721] text-[#ece7dc]"
-                  : "text-[#6f7f9a] hover:text-[#ece7dc] hover:bg-[#131721]/50",
-              )}
+              onClick={onGenerate}
+              className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#7c5cbf]/10 text-[#a78bda] text-xs font-medium hover:bg-[#7c5cbf]/20 transition-colors"
+              title="Generate smart scenarios from policy"
             >
-              <Icon size={13} stroke={1.5} />
-              <span className="truncate max-w-[120px]">{s.name}</span>
-              {s.severity && <SeverityIndicator severity={s.severity} />}
+              <IconWand size={14} stroke={1.5} />
+              Smart
             </button>
-          );
-        })}
-        {hasAutoScenarios && (
-          <>
-            <div className="w-px h-6 bg-[#7c5cbf]/30 shrink-0" />
-            {autoScenarios!.map((s) => {
-              const Icon = ACTION_TYPE_ICONS[s.actionType];
-              const active = s.id === selectedId;
-              return (
-                <button
-                  key={s.id}
-                  onClick={() => onSelect(s.id)}
-                  className={cn(
-                    "shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs transition-colors",
-                    active
-                      ? "bg-[#7c5cbf]/20 text-[#ece7dc]"
-                      : "text-[#6f7f9a] hover:text-[#ece7dc] hover:bg-[#7c5cbf]/10",
-                  )}
-                >
-                  <Icon size={13} stroke={1.5} />
-                  <span className="truncate max-w-[120px]">{s.name}</span>
-                </button>
-              );
-            })}
-          </>
+          )}
+          <button
+            onClick={onAdd}
+            className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#131721] text-[#6f7f9a] text-xs font-medium hover:text-[#ece7dc] transition-colors"
+          >
+            <IconPlus size={14} stroke={1.5} />
+            Add
+          </button>
+        </div>
+
+        {renderSourceToggle("px-3 py-2 border-b border-[#2d3240]")}
+
+        {source === "redteam" && canUseRedTeamSource ? (
+          <div className="flex flex-col h-[24rem]">
+            {renderRedTeamContent()}
+          </div>
+        ) : (
+          renderHorizontalLibraryContent()
         )}
       </div>
     );
@@ -307,34 +370,9 @@ export function ScenarioList({
       </div>
 
       {/* Source mode toggle */}
-      <div className="flex items-center gap-1 px-3 py-2 border-b border-[#2d3240] shrink-0 bg-[#0b0d13]">
-        <button
-          onClick={() => setSource("library")}
-          className={cn(
-            "flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-[11px] font-medium transition-colors",
-            source === "library"
-              ? "bg-[#131721] text-[#ece7dc] border border-[#2d3240]"
-              : "text-[#6f7f9a] hover:text-[#ece7dc] hover:bg-[#131721]/40",
-          )}
-        >
-          <IconTestPipe size={12} stroke={1.5} />
-          Library
-        </button>
-        <button
-          onClick={() => setSource("redteam")}
-          className={cn(
-            "flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-[11px] font-medium transition-colors",
-            source === "redteam"
-              ? "bg-[#d4a84b]/10 text-[#d4a84b] border border-[#d4a84b]/25"
-              : "text-[#6f7f9a] hover:text-[#d4a84b] hover:bg-[#d4a84b]/5",
-          )}
-        >
-          <IconFlask size={12} stroke={1.5} />
-          Red Team
-        </button>
-      </div>
+      {renderSourceToggle("px-3 py-2 border-b border-[#2d3240] shrink-0")}
 
-      {source === "library" ? (
+      {!canUseRedTeamSource || source === "library" ? (
         <LibraryContent
           scenarios={scenarios}
           autoScenarios={autoScenarios}
@@ -351,16 +389,7 @@ export function ScenarioList({
           onRunAutoScenarios={onRunAutoScenarios}
           coverageReport={coverageReport}
         />
-      ) : (
-        policy && onScenariosGenerated ? (
-          <RedTeamContent
-            policy={policy}
-            scenarios={scenarios}
-            autoScenarios={autoScenarios}
-            onScenariosGenerated={handleRedTeamGenerated}
-          />
-        ) : null
-      )}
+      ) : renderRedTeamContent()}
     </>
   );
 }

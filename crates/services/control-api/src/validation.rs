@@ -20,10 +20,14 @@ const MAX_TRUST_LEVEL_LEN: usize = 32;
 const MAX_METADATA_BYTES: usize = 65_536;
 
 /// Known valid trust level values.
-const KNOWN_TRUST_LEVELS: &[&str] = &["high", "standard", "medium", "low"];
+const KNOWN_TRUST_LEVELS: &[&str] = &["untrusted", "low", "medium", "high", "system"];
 
 /// Validate that a required string field does not exceed `max_len` bytes.
-pub fn validate_string_length(field_name: &str, value: &str, max_len: usize) -> Result<(), ApiError> {
+pub fn validate_string_length(
+    field_name: &str,
+    value: &str,
+    max_len: usize,
+) -> Result<(), ApiError> {
     if value.len() > max_len {
         return Err(ApiError::BadRequest(format!(
             "{field_name} exceeds maximum length of {max_len} characters"
@@ -163,10 +167,11 @@ mod tests {
 
     #[test]
     fn validate_trust_level_accepts_known_values() {
-        assert!(validate_trust_level(Some("high")).is_ok());
-        assert!(validate_trust_level(Some("standard")).is_ok());
-        assert!(validate_trust_level(Some("medium")).is_ok());
+        assert!(validate_trust_level(Some("untrusted")).is_ok());
         assert!(validate_trust_level(Some("low")).is_ok());
+        assert!(validate_trust_level(Some("medium")).is_ok());
+        assert!(validate_trust_level(Some("high")).is_ok());
+        assert!(validate_trust_level(Some("system")).is_ok());
         assert!(validate_trust_level(None).is_ok());
     }
 
@@ -174,6 +179,7 @@ mod tests {
     fn validate_trust_level_rejects_unknown_values() {
         let err = validate_trust_level(Some("ultra")).unwrap_err();
         assert!(matches!(err, ApiError::BadRequest(msg) if msg.contains("trust_level")));
+        assert!(validate_trust_level(Some("standard")).is_err());
     }
 
     #[test]

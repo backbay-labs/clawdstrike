@@ -210,9 +210,7 @@ pub async fn update_node(
         .map_err(ApiError::Database)?;
 
         let parent_row = parent_row.ok_or_else(|| {
-            ApiError::BadRequest(format!(
-                "parent node {pid} does not exist in this tenant"
-            ))
+            ApiError::BadRequest(format!("parent node {pid} does not exist in this tenant"))
         })?;
 
         // Validate parent-child type compatibility with the new parent.
@@ -478,9 +476,8 @@ pub async fn delete_node(
 
                     let mut invalid_types = Vec::new();
                     for child_row in &child_rows {
-                        let child_type_str: String = child_row
-                            .try_get("node_type")
-                            .map_err(ApiError::Database)?;
+                        let child_type_str: String =
+                            child_row.try_get("node_type").map_err(ApiError::Database)?;
                         if let Some(child_type) = HierarchyNodeType::from_str(&child_type_str) {
                             if validate_parent_child_types(grandparent_type, child_type).is_err() {
                                 invalid_types.push(child_type_str);

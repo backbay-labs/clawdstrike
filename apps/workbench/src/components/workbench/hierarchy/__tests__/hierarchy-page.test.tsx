@@ -245,4 +245,155 @@ describe("HierarchyPage", () => {
       consoleError.mockRestore();
     }
   });
+
+  it("preserves endpoint and runtime node types from live hierarchy pulls", async () => {
+    const user = userEvent.setup();
+
+    fleetClientMocks.fetchHierarchyTree.mockResolvedValue({
+      root_id: "root-1",
+      nodes: [
+        {
+          id: "root-1",
+          name: "Fleet Fixture Org",
+          node_type: "org",
+          parent_id: null,
+          policy_id: null,
+          policy_name: null,
+          metadata: {},
+          children: ["team-1"],
+        },
+        {
+          id: "team-1",
+          name: "Platform Team",
+          node_type: "team",
+          parent_id: "root-1",
+          policy_id: null,
+          policy_name: null,
+          metadata: {},
+          children: ["endpoint-1"],
+        },
+        {
+          id: "endpoint-1",
+          name: "CI Endpoint",
+          node_type: "endpoint",
+          parent_id: "team-1",
+          policy_id: null,
+          policy_name: null,
+          metadata: {},
+          children: ["runtime-1"],
+        },
+        {
+          id: "runtime-1",
+          name: "Worker Runtime",
+          node_type: "runtime",
+          parent_id: "endpoint-1",
+          policy_id: null,
+          policy_name: null,
+          metadata: {},
+          children: [],
+        },
+      ],
+    });
+
+    renderWithProviders(<HierarchyPage />);
+
+    await user.click(screen.getByRole("button", { name: "DEMO" }));
+    await user.click(screen.getByRole("button", { name: "Pull from Fleet" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Fleet Snapshot")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByText("CI Endpoint"));
+    expect(screen.getByText("Endpoint")).toBeInTheDocument();
+    expect(screen.getByText("1 runtime")).toBeInTheDocument();
+
+    const runtimeRow = screen.getAllByText("Worker Runtime").find((element) =>
+      element.closest("[draggable='true']"),
+    );
+    expect(runtimeRow).toBeTruthy();
+    await user.click(runtimeRow!);
+    expect(screen.getByText("Runtime")).toBeInTheDocument();
+  });
+
+  it("preserves external ids when a live hierarchy pull is pushed back to fleet", async () => {
+    const user = userEvent.setup();
+
+    fleetClientMocks.fetchHierarchyTree.mockResolvedValue({
+      root_id: "root-1",
+      nodes: [
+        {
+          id: "root-1",
+          name: "Fleet Fixture Org",
+          node_type: "org",
+          external_id: "org-1",
+          parent_id: null,
+          policy_id: null,
+          policy_name: null,
+          metadata: {},
+          children: ["team-1"],
+        },
+        {
+          id: "team-1",
+          name: "Platform Team",
+          node_type: "team",
+          external_id: "team-1-ext",
+          parent_id: "root-1",
+          policy_id: null,
+          policy_name: null,
+          metadata: {},
+          children: ["endpoint-1"],
+        },
+        {
+          id: "endpoint-1",
+          name: "CI Endpoint",
+          node_type: "endpoint",
+          external_id: "agent-123",
+          parent_id: "team-1",
+          policy_id: null,
+          policy_name: null,
+          metadata: {},
+          children: ["runtime-1"],
+        },
+        {
+          id: "runtime-1",
+          name: "Worker Runtime",
+          node_type: "runtime",
+          external_id: "agent-123/runtime/worker",
+          parent_id: "endpoint-1",
+          policy_id: null,
+          policy_name: null,
+          metadata: {},
+          children: [],
+        },
+      ],
+    });
+
+    renderWithProviders(<HierarchyPage />);
+
+    await user.click(screen.getByRole("button", { name: "DEMO" }));
+    await user.click(screen.getByRole("button", { name: "Pull from Fleet" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Fleet Snapshot")).toBeInTheDocument();
+    });
+
+    fleetClientMocks.createHierarchyNode.mockClear();
+    await user.click(screen.getByRole("button", { name: "Push to Fleet" }));
+
+    await waitFor(() => {
+      expect(fleetClientMocks.createHierarchyNode).toHaveBeenCalledTimes(4);
+    });
+
+    const createInputs = fleetClientMocks.createHierarchyNode.mock.calls.map(([, input]) => input);
+    expect(createInputs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "CI Endpoint", external_id: "agent-123" }),
+        expect.objectContaining({
+          name: "Worker Runtime",
+          external_id: "agent-123/runtime/worker",
+        }),
+      ]),
+    );
+  });
 });

@@ -1,5 +1,5 @@
 /**
- * Org / Team / Agent Policy Hierarchy Page
+ * Org / Team / Endpoint / Runtime Policy Hierarchy Page
  *
  * Full-page visualization of policy inheritance across an organization tree.
  * Three-panel layout: tree (left), effective policy (center), merge preview (right).
@@ -10,6 +10,7 @@ import {
   IconWorld,
   IconUsersGroup,
   IconRobot,
+  IconServer,
   IconChevronRight,
   IconChevronDown,
   IconPlus,
@@ -73,19 +74,22 @@ import type {
 const NODE_TYPE_COLORS: Record<OrgNodeType, string> = {
   org: "#d4a84b",
   team: "#5b8def",
-  agent: "#3dbf84",
+  endpoint: "#3dbf84",
+  runtime: "#7b6b8b",
 };
 
 const NODE_TYPE_ICONS: Record<OrgNodeType, typeof IconWorld> = {
   org: IconWorld,
   team: IconUsersGroup,
-  agent: IconRobot,
+  endpoint: IconServer,
+  runtime: IconRobot,
 };
 
 const NODE_TYPE_LABELS: Record<OrgNodeType, string> = {
   org: "Organization",
   team: "Team",
-  agent: "Agent",
+  endpoint: "Endpoint",
+  runtime: "Runtime",
 };
 
 // ---------------------------------------------------------------------------
@@ -140,7 +144,8 @@ function TreeNode({
 
   // Determine what child types can be added
   const canAddTeam = node.type === "org";
-  const canAddAgent = node.type === "team";
+  const canAddEndpoint = node.type === "team";
+  const canAddRuntime = node.type === "endpoint";
   const canRemove = node.type !== "org"; // Can't remove root
 
   return (
@@ -153,7 +158,8 @@ function TreeNode({
           isSelected && "bg-[#131721] ring-1 ring-inset",
           isSelected && node.type === "org" && "ring-[#d4a84b]/30",
           isSelected && node.type === "team" && "ring-[#5b8def]/30",
-          isSelected && node.type === "agent" && "ring-[#3dbf84]/30",
+          isSelected && node.type === "endpoint" && "ring-[#3dbf84]/30",
+          isSelected && node.type === "runtime" && "ring-[#7b6b8b]/30",
           isAncestor && !isSelected && "bg-[#131721]/30",
           isDragTarget && "ring-2 ring-[#d4a84b]/50 bg-[#d4a84b]/5",
         )}
@@ -223,7 +229,7 @@ function TreeNode({
         )}
 
         {/* Metadata count */}
-        {node.metadata?.agentCount !== undefined && node.type !== "agent" && !node.policyName && (
+        {node.metadata?.agentCount !== undefined && node.type !== "runtime" && !node.policyName && (
           <span className="ml-auto shrink-0 text-[9px] font-mono text-[#6f7f9a]/60">
             {node.metadata.agentCount} agents
           </span>
@@ -244,13 +250,25 @@ function TreeNode({
                 <IconPlus size={11} stroke={2} />
               </button>
             )}
-            {canAddAgent && (
+            {canAddEndpoint && (
               <button
                 className="p-0.5 rounded hover:bg-[#3dbf84]/20 text-[#3dbf84]/60 hover:text-[#3dbf84]"
-                title="Add agent"
+                title="Add endpoint"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onAddChild(node.id, "agent");
+                  onAddChild(node.id, "endpoint");
+                }}
+              >
+                <IconPlus size={11} stroke={2} />
+              </button>
+            )}
+            {canAddRuntime && (
+              <button
+                className="p-0.5 rounded hover:bg-[#7b6b8b]/20 text-[#7b6b8b]/60 hover:text-[#7b6b8b]"
+                title="Add runtime"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAddChild(node.id, "runtime");
                 }}
               >
                 <IconPlus size={11} stroke={2} />
@@ -605,7 +623,7 @@ function MergePreviewPanel({
   const node = hierarchy.nodes[selectedId];
   if (!node) return null;
 
-  const leafAgents = getLeafAgents(hierarchy, selectedId);
+  const leafRuntimes = getLeafAgents(hierarchy, selectedId);
   const directChildren = node.children.length;
 
   return (
@@ -653,30 +671,30 @@ function MergePreviewPanel({
 
           <div className="flex gap-3 text-[9px] font-mono text-[#6f7f9a]/70">
             <span>{directChildren} direct children</span>
-            <span>{leafAgents.length} agent{leafAgents.length !== 1 ? "s" : ""}</span>
+            <span>{leafRuntimes.length} runtime{leafRuntimes.length !== 1 ? "s" : ""}</span>
           </div>
         </div>
 
-        {/* Policy changes at this level affect these agents */}
-        {leafAgents.length > 0 && (
+        {/* Policy changes at this level affect these runtimes */}
+        {leafRuntimes.length > 0 && (
           <div className="mb-4">
             <span className="text-[9px] font-mono uppercase tracking-wider text-[#6f7f9a]/60 mb-2 block">
-              Affected Agents
+              Affected Runtimes
             </span>
             <div className="flex flex-col gap-1">
-              {leafAgents.map((agentId) => {
-                const agent = hierarchy.nodes[agentId];
-                if (!agent) return null;
+              {leafRuntimes.map((runtimeId) => {
+                const runtime = hierarchy.nodes[runtimeId];
+                if (!runtime) return null;
                 return (
                   <div
-                    key={agentId}
+                    key={runtimeId}
                     className="flex items-center gap-2 p-1.5 rounded bg-[#131721]/30"
                   >
-                    <IconRobot size={11} stroke={1.5} className="text-[#3dbf84]/60" />
+                    <IconRobot size={11} stroke={1.5} className="text-[#7b6b8b]/60" />
                     <span className="text-[10px] font-mono text-[#ece7dc]/70">
-                      {agent.name}
+                      {runtime.name}
                     </span>
-                    {agent.policyId && (
+                    {runtime.policyId && (
                       <span className="ml-auto text-[8px] font-mono text-[#d4a84b]/60">
                         has own policy
                       </span>
@@ -757,7 +775,7 @@ function ValidationModal({ issues, onClose, onSelectNode }: ValidationModalProps
             <div className="flex flex-col items-center py-8">
               <IconCheck size={24} stroke={1.5} className="text-[#3dbf84] mb-2" />
               <span className="text-[11px] text-[#3dbf84]">
-                All leaf agents have valid effective policies
+                All runtimes have valid effective policies
               </span>
             </div>
           ) : (
@@ -1000,11 +1018,11 @@ export function HierarchyPage() {
 
   const [selectedId, setSelectedId] = useState<string | null>(hierarchy.rootId);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => {
-    // Expand root and all team nodes by default
+    // Expand the structural layers by default so runtime leaves are visible.
     const ids = new Set<string>();
     ids.add(hierarchy.rootId);
     for (const node of Object.values(hierarchy.nodes)) {
-      if (node.type === "org" || node.type === "team") {
+      if (node.type === "org" || node.type === "team" || node.type === "endpoint") {
         ids.add(node.id);
       }
     }
@@ -1127,7 +1145,8 @@ export function HierarchyPage() {
       const defaultNames: Record<OrgNodeType, string> = {
         org: "New Org",
         team: "New Team",
-        agent: `agent-new-${String(Date.now()).slice(-4)}`,
+        endpoint: `endpoint-new-${String(Date.now()).slice(-4)}`,
+        runtime: `runtime-new-${String(Date.now()).slice(-4)}`,
       };
 
       const updated = addNode(hierarchy, parentId, {
@@ -1163,6 +1182,7 @@ export function HierarchyPage() {
             createHierarchyNode(connection, {
               name: newNode.name,
               node_type: newNode.type,
+              external_id: newNode.externalId ?? null,
               parent_id: newNode.parentId,
               metadata: newNode.metadata,
             }),
@@ -1273,9 +1293,10 @@ export function HierarchyPage() {
         const sourceNode = hierarchy.nodes[dragSourceId];
         const targetNode = hierarchy.nodes[targetId];
         if (sourceNode && targetNode) {
-          // Only allow dropping agents onto teams, or teams onto org
+          // Only allow direct parent/child drops in the supported hierarchy.
           const canDrop =
-            (sourceNode.type === "agent" && targetNode.type === "team") ||
+            (sourceNode.type === "runtime" && targetNode.type === "endpoint") ||
+            (sourceNode.type === "endpoint" && targetNode.type === "team") ||
             (sourceNode.type === "team" && targetNode.type === "org");
           if (canDrop) {
             setHierarchy((prev) => moveNode(prev, dragSourceId, targetId));
@@ -1305,7 +1326,7 @@ export function HierarchyPage() {
     setExpandedIds(() => {
       const ids = new Set<string>();
       for (const node of Object.values(demo.nodes)) {
-        if (node.type === "org" || node.type === "team") {
+        if (node.type === "org" || node.type === "team" || node.type === "endpoint") {
           ids.add(node.id);
         }
       }
@@ -1362,6 +1383,7 @@ export function HierarchyPage() {
         const input: HierarchyNodeInput = {
           name: node.name,
           node_type: node.type,
+          external_id: node.externalId ?? null,
           parent_id: node.parentId,
           policy_id: node.policyId ?? null,
           policy_name: node.policyName ?? null,
@@ -1401,11 +1423,20 @@ export function HierarchyPage() {
   /**
    * Map a backend node_type string to the frontend OrgNodeType.
    * The backend supports "project" which the frontend does not yet have,
-   * so we map it to "team" as the closest equivalent.
+   * so we map it to "team" as the closest equivalent. Legacy "agent" maps
+   * to "endpoint" after the endpoint/runtime split.
    */
   const mapNodeType = useCallback((backendType: string): OrgNodeType => {
-    if (backendType === "org" || backendType === "team" || backendType === "agent") {
+    if (
+      backendType === "org" ||
+      backendType === "team" ||
+      backendType === "endpoint" ||
+      backendType === "runtime"
+    ) {
       return backendType;
+    }
+    if (backendType === "agent") {
+      return "endpoint";
     }
     // "project" and any unknown types map to "team"
     return "team";
@@ -1432,6 +1463,7 @@ export function HierarchyPage() {
         name: hNode.name,
         type: nodeType,
         parentId,
+        externalId: hNode.external_id ?? undefined,
         policyId: hNode.policy_id ?? undefined,
         policyName: hNode.policy_name ?? undefined,
         children: childIds,
@@ -1486,6 +1518,7 @@ export function HierarchyPage() {
               name: hNode.name,
               type: nodeType,
               parentId: hNode.parent_id ?? null,
+              externalId: hNode.external_id ?? undefined,
               policyId: hNode.policy_id ?? undefined,
               policyName: hNode.policy_name ?? undefined,
               children: [],
@@ -1525,7 +1558,7 @@ export function HierarchyPage() {
         setExpandedIds(() => {
           const ids = new Set<string>();
           for (const node of Object.values(newHierarchy.nodes)) {
-            if (node.type === "org" || node.type === "team") {
+            if (node.type === "org" || node.type === "team" || node.type === "endpoint") {
               ids.add(node.id);
             }
           }
@@ -1557,7 +1590,8 @@ export function HierarchyPage() {
       const source: Array<{
         scope_id: string;
         scope_name: string;
-        scope_type: "org" | "team" | "agent";
+        scope_type: string;
+        external_id?: string | null;
         policy_id?: string;
         policy_name?: string;
         parent_scope_id?: string | null;
@@ -1569,12 +1603,13 @@ export function HierarchyPage() {
       let rootId: string | null = null;
 
       for (const item of source) {
-        const nodeType = item.scope_type;
+        const nodeType = mapNodeType(item.scope_type);
         nodes[item.scope_id] = {
           id: item.scope_id,
           name: item.scope_name,
           type: nodeType,
           parentId: item.parent_scope_id ?? null,
+          externalId: item.external_id ?? undefined,
           policyId: item.policy_id,
           policyName: item.policy_name,
           children: item.children ?? [],
@@ -1623,7 +1658,7 @@ export function HierarchyPage() {
       setExpandedIds(() => {
         const ids = new Set<string>();
         for (const node of Object.values(newHierarchy.nodes)) {
-          if (node.type === "org" || node.type === "team") {
+          if (node.type === "org" || node.type === "team" || node.type === "endpoint") {
             ids.add(node.id);
           }
         }

@@ -92,7 +92,17 @@ async fn register_agent(
     let metadata = req.metadata.clone().unwrap_or(serde_json::json!({}));
     let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
 
-    // Check agent limit inside the transaction to prevent TOCTOU races.
+    // Lock the tenant row so concurrent registrations for the same tenant
+    // serialize around the agent-limit check.
+    let tenant_row = sqlx::query::query("SELECT agent_limit FROM tenants WHERE id = $1 FOR UPDATE")
+        .bind(auth.tenant_id)
+        .fetch_one(tx.as_mut())
+        .await
+        .map_err(ApiError::Database)?;
+    let tenant_agent_limit: i32 = tenant_row
+        .try_get("agent_limit")
+        .map_err(ApiError::Database)?;
+
     let count_row = sqlx::query::query(
         "SELECT COUNT(*)::bigint as cnt FROM agents WHERE tenant_id = $1 AND status = 'active'",
     )
@@ -102,7 +112,7 @@ async fn register_agent(
     .map_err(ApiError::Database)?;
     let count: i64 = count_row.try_get("cnt").map_err(ApiError::Database)?;
 
-    if count >= i64::from(auth.agent_limit) {
+    if count >= i64::from(tenant_agent_limit) {
         return Err(ApiError::AgentLimitReached);
     }
     let principal_id = upsert_endpoint_principal(
@@ -153,6 +163,8 @@ async fn register_agent(
     })?;
 
     let agent = Agent::from_row(row).map_err(ApiError::Database)?;
+    link_endpoint_hierarchy_node_if_unambiguous(&mut tx, auth.tenant_id, &req.agent_id, &req.name)
+        .await?;
     tx.commit().await.map_err(ApiError::Database)?;
 
     // Generate NATS credentials for this agent
@@ -244,7 +256,7 @@ async fn delete_agent(
 
     let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
     let row = sqlx::query::query(
-        r#"SELECT principal_id, name
+        r#"SELECT principal_id, agent_id, name
            FROM agents
            WHERE id = $1
              AND tenant_id = $2"#,
@@ -259,6 +271,7 @@ async fn delete_agent(
     let principal_id = row
         .try_get::<Option<Uuid>, _>("principal_id")
         .map_err(ApiError::Database)?;
+    let agent_id: String = row.try_get("agent_id").map_err(ApiError::Database)?;
     let agent_name: String = row.try_get("name").map_err(ApiError::Database)?;
 
     if let Some(principal_id) = principal_id {
@@ -326,30 +339,26 @@ async fn delete_agent(
             );
         }
 
-        // 4. Delete hierarchy_nodes of type "runtime" that are children of the
-        //    endpoint's hierarchy node.  We resolve the endpoint node via
-        //    principal_id → agents → hierarchy_nodes join so we match the
-        //    exact endpoint (names are not unique per tenant).
-        sqlx::query::query(
-            r#"DELETE FROM hierarchy_nodes
-               WHERE tenant_id = $1
-                 AND node_type = 'runtime'
-                 AND parent_id IN (
-                     SELECT hn.id
-                     FROM hierarchy_nodes AS hn
-                     JOIN agents AS a
-                       ON a.tenant_id = hn.tenant_id
-                      AND a.name = hn.name
-                     WHERE a.id = $2
-                       AND hn.tenant_id = $1
-                       AND hn.node_type IN ('endpoint', 'agent')
-                 )"#,
+        if let Some(parent_node_id) = resolve_endpoint_hierarchy_node_id(
+            &mut tx,
+            auth.tenant_id,
+            &agent_id,
+            Some(&agent_name),
         )
-        .bind(auth.tenant_id)
-        .bind(id)
-        .execute(tx.as_mut())
-        .await
-        .map_err(ApiError::Database)?;
+        .await?
+        {
+            sqlx::query::query(
+                r#"DELETE FROM hierarchy_nodes
+                   WHERE tenant_id = $1
+                     AND node_type = 'runtime'
+                     AND parent_id = $2"#,
+            )
+            .bind(auth.tenant_id)
+            .bind(parent_node_id)
+            .execute(tx.as_mut())
+            .await
+            .map_err(ApiError::Database)?;
+        }
     }
 
     // Delete the agent row.
@@ -710,6 +719,8 @@ async fn enroll_agent(
     .map_err(ApiError::Database)?;
 
     let agent = Agent::from_row(row).map_err(ApiError::Database)?;
+    link_endpoint_hierarchy_node_if_unambiguous(&mut tx, tenant_id, &agent_id, &req.hostname)
+        .await?;
 
     // Invalidate the enrollment token so it cannot be reused.
     let token_consumed = sqlx::query::query(ENROLL_TOKEN_CONSUME_SQL)
@@ -736,7 +747,8 @@ async fn enroll_agent(
         Ok(creds) => creds,
         Err(err) => {
             if let Err(cleanup_err) =
-                rollback_failed_enrollment(&state.db, agent.id, enrollment_token_id, tenant_id).await
+                rollback_failed_enrollment(&state.db, agent.id, enrollment_token_id, tenant_id)
+                    .await
             {
                 tracing::error!(
                     error = %cleanup_err,
@@ -858,7 +870,7 @@ async fn register_runtime(
 
     // 1. Verify the endpoint agent exists and belongs to the tenant.
     let endpoint_row = sqlx::query::query(
-        "SELECT agent_id, principal_id, trust_level FROM agents WHERE id = $1 AND tenant_id = $2",
+        "SELECT agent_id, name, principal_id, trust_level FROM agents WHERE id = $1 AND tenant_id = $2",
     )
     .bind(agent_uuid)
     .bind(auth.tenant_id)
@@ -870,6 +882,7 @@ async fn register_runtime(
     let endpoint_agent_id: String = endpoint_row
         .try_get("agent_id")
         .map_err(ApiError::Database)?;
+    let endpoint_name: String = endpoint_row.try_get("name").map_err(ApiError::Database)?;
     let endpoint_principal_id: Option<Uuid> = endpoint_row
         .try_get("principal_id")
         .map_err(ApiError::Database)?;
@@ -922,9 +935,14 @@ async fn register_runtime(
 
     // 4. Optionally create a hierarchy_node of type "runtime" under the
     //    endpoint's hierarchy node (if one exists).
-    let hierarchy_node_id =
-        create_runtime_hierarchy_node(&mut tx, auth.tenant_id, endpoint_principal_id, &req.name)
-            .await?;
+    let hierarchy_node_id = create_runtime_hierarchy_node(
+        &mut tx,
+        auth.tenant_id,
+        &endpoint_agent_id,
+        &endpoint_name,
+        &req.name,
+    )
+    .await?;
 
     tx.commit().await.map_err(ApiError::Database)?;
 
@@ -1085,34 +1103,16 @@ struct RuntimePrincipalUpsert<'a> {
 async fn create_runtime_hierarchy_node(
     tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
     tenant_id: Uuid,
-    endpoint_principal_id: Uuid,
+    endpoint_agent_id: &str,
+    endpoint_name: &str,
     runtime_name: &str,
 ) -> Result<Option<Uuid>, ApiError> {
-    // Find the endpoint's hierarchy node by looking for an endpoint node
-    // whose metadata contains a reference to this principal, or by matching
-    // on the agents table.  We use the agents table link as the canonical path.
-    let parent_row = sqlx::query::query(
-        r#"SELECT hn.id
-           FROM hierarchy_nodes AS hn
-           JOIN agents AS a
-             ON a.tenant_id = hn.tenant_id
-           WHERE a.principal_id = $1
-             AND a.tenant_id = $2
-             AND hn.node_type IN ('endpoint', 'agent')
-             AND hn.name = a.name
-           LIMIT 1"#,
-    )
-    .bind(endpoint_principal_id)
-    .bind(tenant_id)
-    .fetch_optional(tx.as_mut())
-    .await
-    .map_err(ApiError::Database)?;
-
-    let Some(parent_row) = parent_row else {
+    let Some(parent_node_id) =
+        resolve_endpoint_hierarchy_node_id(tx, tenant_id, endpoint_agent_id, Some(endpoint_name))
+            .await?
+    else {
         return Ok(None);
     };
-
-    let parent_node_id: Uuid = parent_row.try_get("id").map_err(ApiError::Database)?;
 
     // Use runtime_name as external_id to leverage the partial unique index
     // (tenant_id, parent_id, external_id) WHERE node_type = 'runtime'.
@@ -1141,6 +1141,117 @@ async fn create_runtime_hierarchy_node(
         .map_err(ApiError::Database)
 }
 
+/// Link an endpoint hierarchy node to its stable endpoint agent id when that
+/// mapping can be established unambiguously.
+async fn link_endpoint_hierarchy_node_if_unambiguous(
+    tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
+    tenant_id: Uuid,
+    endpoint_agent_id: &str,
+    endpoint_name: &str,
+) -> Result<(), ApiError> {
+    let _ =
+        resolve_endpoint_hierarchy_node_id(tx, tenant_id, endpoint_agent_id, Some(endpoint_name))
+            .await?;
+    Ok(())
+}
+
+/// Resolve the hierarchy node that represents an endpoint.
+///
+/// The stable link uses `hierarchy_nodes.external_id = agents.agent_id`. If no
+/// explicit link exists yet, we only backfill it when there is exactly one
+/// unlinked endpoint node matching the endpoint's display name; otherwise we
+/// leave the hierarchy untouched rather than guessing and corrupting another
+/// endpoint's subtree.
+async fn resolve_endpoint_hierarchy_node_id(
+    tx: &mut Transaction<'_, sqlx_postgres::Postgres>,
+    tenant_id: Uuid,
+    endpoint_agent_id: &str,
+    endpoint_name: Option<&str>,
+) -> Result<Option<Uuid>, ApiError> {
+    let linked_rows = sqlx::query::query(
+        r#"SELECT id
+           FROM hierarchy_nodes
+           WHERE tenant_id = $1
+             AND node_type IN ('endpoint', 'agent')
+             AND external_id = $2
+           ORDER BY created_at ASC
+           LIMIT 2"#,
+    )
+    .bind(tenant_id)
+    .bind(endpoint_agent_id)
+    .fetch_all(tx.as_mut())
+    .await
+    .map_err(ApiError::Database)?;
+
+    match linked_rows.as_slice() {
+        [row] => {
+            let node_id: Uuid = row.try_get("id").map_err(ApiError::Database)?;
+            return Ok(Some(node_id));
+        }
+        [] => {}
+        _ => {
+            tracing::warn!(
+                tenant_id = %tenant_id,
+                endpoint_agent_id,
+                "multiple endpoint hierarchy nodes share the same external_id; skipping hierarchy linkage"
+            );
+            return Ok(None);
+        }
+    }
+
+    let Some(endpoint_name) = endpoint_name else {
+        return Ok(None);
+    };
+
+    let candidate_rows = sqlx::query::query(
+        r#"SELECT id
+           FROM hierarchy_nodes
+           WHERE tenant_id = $1
+             AND node_type IN ('endpoint', 'agent')
+             AND external_id IS NULL
+             AND name = $2
+           ORDER BY created_at ASC
+           LIMIT 2
+           FOR UPDATE"#,
+    )
+    .bind(tenant_id)
+    .bind(endpoint_name)
+    .fetch_all(tx.as_mut())
+    .await
+    .map_err(ApiError::Database)?;
+
+    match candidate_rows.as_slice() {
+        [row] => {
+            let node_id: Uuid = row.try_get("id").map_err(ApiError::Database)?;
+            sqlx::query::query(
+                r#"UPDATE hierarchy_nodes
+                   SET external_id = $3,
+                       updated_at = now()
+                   WHERE tenant_id = $1
+                     AND id = $2
+                     AND external_id IS NULL"#,
+            )
+            .bind(tenant_id)
+            .bind(node_id)
+            .bind(endpoint_agent_id)
+            .execute(tx.as_mut())
+            .await
+            .map_err(ApiError::Database)?;
+            Ok(Some(node_id))
+        }
+        [] => Ok(None),
+        _ => {
+            tracing::warn!(
+                tenant_id = %tenant_id,
+                endpoint_agent_id,
+                endpoint_name,
+                "multiple unlinked endpoint hierarchy nodes matched by name; refusing ambiguous linkage"
+            );
+            Ok(None)
+        }
+    }
+}
+
 async fn rollback_failed_enrollment(
     db: &crate::db::PgPool,
     agent_uuid: Uuid,
@@ -1149,13 +1260,12 @@ async fn rollback_failed_enrollment(
 ) -> Result<(), sqlx::error::Error> {
     let mut tx = db.begin().await?;
 
-    let principal_row = sqlx::query::query(
-        "SELECT principal_id FROM agents WHERE id = $1 AND tenant_id = $2",
-    )
-    .bind(agent_uuid)
-    .bind(tenant_id)
-    .fetch_optional(&mut *tx)
-    .await?;
+    let principal_row =
+        sqlx::query::query("SELECT principal_id FROM agents WHERE id = $1 AND tenant_id = $2")
+            .bind(agent_uuid)
+            .bind(tenant_id)
+            .fetch_optional(&mut *tx)
+            .await?;
     let principal_id = principal_row
         .as_ref()
         .and_then(|row| row.try_get::<Option<Uuid>, _>("principal_id").ok())
@@ -1191,13 +1301,12 @@ async fn rollback_failed_agent_creation(
 ) -> Result<(), sqlx::error::Error> {
     let mut tx = db.begin().await?;
 
-    let principal_row = sqlx::query::query(
-        "SELECT principal_id FROM agents WHERE id = $1 AND tenant_id = $2",
-    )
-    .bind(agent_uuid)
-    .bind(tenant_id)
-    .fetch_optional(&mut *tx)
-    .await?;
+    let principal_row =
+        sqlx::query::query("SELECT principal_id FROM agents WHERE id = $1 AND tenant_id = $2")
+            .bind(agent_uuid)
+            .bind(tenant_id)
+            .fetch_optional(&mut *tx)
+            .await?;
     let principal_id = principal_row
         .as_ref()
         .and_then(|row| row.try_get::<Option<Uuid>, _>("principal_id").ok())
