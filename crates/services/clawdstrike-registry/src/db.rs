@@ -193,7 +193,14 @@ fn execute_add_column_if_missing(conn: &Connection, sql: &str) -> Result<(), Reg
 
 fn sqlite_i64_to_u64(value: i64, field: &str) -> Result<u64, RegistryError> {
     u64::try_from(value).map_err(|_| {
-        RegistryError::Integrity(format!("invalid negative value for {field}: {value}"))
+        RegistryError::Database(SqliteError::FromSqlConversionFailure(
+            0,
+            rusqlite::types::Type::Integer,
+            Box::new(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("invalid negative value for {field}: {value}"),
+            )),
+        ))
     })
 }
 
@@ -2156,6 +2163,12 @@ mod tests {
             .unwrap();
 
         let err = db.get_package("bad-pkg").unwrap_err();
+        assert!(matches!(err, RegistryError::Database(_)));
+    }
+
+    #[test]
+    fn sqlite_i64_to_u64_maps_negative_values_to_database_error() {
+        let err = sqlite_i64_to_u64(-1, "search.count").unwrap_err();
         assert!(matches!(err, RegistryError::Database(_)));
     }
 
