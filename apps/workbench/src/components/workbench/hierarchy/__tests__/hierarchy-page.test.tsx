@@ -302,6 +302,57 @@ describe("HierarchyPage", () => {
     expect(screen.getByText("Agent")).toBeInTheDocument();
   });
 
+  it("does not render metadata leaf badges on legacy agent leaves", async () => {
+    const user = userEvent.setup();
+
+    fleetClientMocks.fetchHierarchyTree.mockResolvedValue({
+      root_id: "root-1",
+      nodes: [
+        {
+          id: "root-1",
+          name: "Fleet Fixture Org",
+          node_type: "org",
+          parent_id: null,
+          policy_id: null,
+          policy_name: null,
+          metadata: {},
+          children: ["team-1"],
+        },
+        {
+          id: "team-1",
+          name: "Platform Team",
+          node_type: "team",
+          parent_id: "root-1",
+          policy_id: null,
+          policy_name: null,
+          metadata: {},
+          children: ["agent-1"],
+        },
+        {
+          id: "agent-1",
+          name: "Legacy Agent",
+          node_type: "agent",
+          parent_id: "team-1",
+          policy_id: null,
+          policy_name: null,
+          metadata: { agentCount: 1 },
+          children: [],
+        },
+      ],
+    });
+
+    renderWithProviders(<HierarchyPage />);
+
+    await user.click(screen.getByRole("button", { name: "DEMO" }));
+    await user.click(screen.getByRole("button", { name: "Pull from Fleet" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Fleet Snapshot")).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText(/^1 leaf$/)).not.toBeInTheDocument();
+  });
+
   it("counts runtime nodes as leaves after a live hierarchy pull", async () => {
     const user = userEvent.setup();
 
