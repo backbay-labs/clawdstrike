@@ -1074,17 +1074,19 @@ export function HierarchyPage() {
   }, [hierarchy]);
 
   const commitHierarchyChange = useCallback((next: PolicyHierarchy) => {
+    const nextVersion = hierarchyVersionRef.current + 1;
     hierarchyRef.current = next;
+    hierarchyVersionRef.current = nextVersion;
     setHierarchy(next);
-    setHierarchyVersion((v) => v + 1);
-    hierarchyVersionRef.current += 1;
+    setHierarchyVersion(nextVersion);
   }, []);
 
-  const restoreHierarchyChange = useCallback((next: PolicyHierarchy, version: number) => {
+  const restoreHierarchyChange = useCallback((next: PolicyHierarchy) => {
+    const nextVersion = hierarchyVersionRef.current + 1;
     hierarchyRef.current = next;
+    hierarchyVersionRef.current = nextVersion;
     setHierarchy(next);
-    setHierarchyVersion(version);
-    hierarchyVersionRef.current = version;
+    setHierarchyVersion(nextVersion);
   }, []);
 
   // ---------------------------------------------------------------------------
@@ -1188,7 +1190,7 @@ export function HierarchyPage() {
           console.warn(`[hierarchy-sync] ${label} failed:`, result.error);
           const reverted = hierarchyVersionRef.current === capturedVersion;
           if (reverted) {
-            restoreHierarchyChange(prevHierarchy, Math.max(capturedVersion - 1, 0));
+            restoreHierarchyChange(prevHierarchy);
           }
           showSyncStatus(
             "error",
@@ -1202,7 +1204,7 @@ export function HierarchyPage() {
         console.warn(`[hierarchy-sync] ${label} error:`, err);
         const reverted = hierarchyVersionRef.current === capturedVersion;
         if (reverted) {
-          restoreHierarchyChange(prevHierarchy, Math.max(capturedVersion - 1, 0));
+          restoreHierarchyChange(prevHierarchy);
         }
         showSyncStatus(
           "error",
@@ -1516,8 +1518,10 @@ export function HierarchyPage() {
       return;
     }
 
+    const hierarchySnapshot = hierarchyRef.current;
+
     // Issue #5: Validate before push and require confirmation for any leaf warnings/errors
-    const issues = validateAllLeaves(hierarchy, savedPolicies);
+    const issues = validateAllLeaves(hierarchySnapshot, savedPolicies);
     if (issues.length > 0) {
       const errorCount = issues.filter((i) => i.severity === "error").length;
       const issueCount = errorCount > 0 ? errorCount : issues.length;
@@ -1535,7 +1539,7 @@ export function HierarchyPage() {
       // BFS traversal: create parents before children.
       // Build an idMap (localId -> serverId) so that child nodes reference
       // their parent's server-assigned ID rather than the local UUID.
-      const queue: string[] = [hierarchy.rootId];
+      const queue: string[] = [hierarchySnapshot.rootId];
       const idMap = new Map<string, string>(); // localId -> serverId
       let successCount = 0;
       let errorCount = 0;
@@ -1544,7 +1548,7 @@ export function HierarchyPage() {
 
       while (queue.length > 0) {
         const nodeId = queue.shift()!;
-        const node = hierarchy.nodes[nodeId];
+        const node = hierarchySnapshot.nodes[nodeId];
         if (!node) continue;
 
         // Resolve parent_id: if the parent was already created, use its
@@ -1595,7 +1599,7 @@ export function HierarchyPage() {
 
       if (missingParentIdNode) {
         const descendantCount =
-          getDescendants(hierarchy, missingParentIdNode.id).length - 1;
+          getDescendants(hierarchySnapshot, missingParentIdNode.id).length - 1;
         showSyncStatus(
           "error",
           `Push incomplete: "${missingParentIdNode.name}" was created without an id, so ${descendantCount} descendant node${descendantCount === 1 ? "" : "s"} could not be uploaded`,
@@ -1616,7 +1620,7 @@ export function HierarchyPage() {
     } finally {
       syncInProgressRef.current = false;
     }
-  }, [fleetConnected, hierarchy, connection, showSyncStatus, savedPolicies]);
+  }, [fleetConnected, connection, showSyncStatus, savedPolicies]);
 
   /**
    * Map a backend node_type string to the frontend OrgNodeType.

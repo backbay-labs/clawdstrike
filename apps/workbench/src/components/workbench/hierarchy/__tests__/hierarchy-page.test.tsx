@@ -564,7 +564,7 @@ describe("HierarchyPage", () => {
     expect(agentRow?.className).toContain("ring-[#3dbf84]/30");
   });
 
-  it("rolls back optimistic hierarchy versions in order when live sync failures resolve out of order", async () => {
+  it("keeps the latest rollback when live sync failures resolve out of order", async () => {
     const user = userEvent.setup();
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
@@ -643,7 +643,7 @@ describe("HierarchyPage", () => {
       });
 
       await waitFor(() => {
-        expect(getAgentParentName()).toBe("Engineering");
+        expect(getAgentParentName()).toBe("Security");
       });
     } finally {
       warnSpy.mockRestore();
