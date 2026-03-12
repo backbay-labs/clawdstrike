@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
+import * as hierarchyEngine from "@/lib/workbench/hierarchy-engine";
 import { renderWithProviders } from "@/test/test-helpers";
 
 const fleetClientMocks = vi.hoisted(() => ({
@@ -572,6 +573,80 @@ describe("HierarchyPage", () => {
       expect.stringContaining("validation warning(s)"),
     );
     expect(fleetClientMocks.createHierarchyNode).not.toHaveBeenCalled();
+  });
+
+  it("counts both errors and warnings in the push confirmation message", async () => {
+    const user = userEvent.setup();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValueOnce(false);
+    const validateAllLeavesSpy = vi
+      .spyOn(hierarchyEngine, "validateAllLeaves")
+      .mockReturnValue([
+        {
+          nodeId: "node-1",
+          nodeName: "Leaf 1",
+          message: "bad",
+          severity: "error",
+        },
+        {
+          nodeId: "node-2",
+          nodeName: "Leaf 2",
+          message: "warn",
+          severity: "warning",
+        },
+        {
+          nodeId: "node-3",
+          nodeName: "Leaf 3",
+          message: "warn",
+          severity: "warning",
+        },
+      ]);
+
+    try {
+      renderWithProviders(<HierarchyPage />);
+
+      await user.click(screen.getByRole("button", { name: "DEMO" }));
+      await user.click(screen.getByRole("button", { name: "Push to Fleet" }));
+
+      expect(validateAllLeavesSpy).toHaveBeenCalled();
+      expect(confirmSpy).toHaveBeenCalledWith(
+        "There are 3 validation issue(s) in the hierarchy (1 error(s), 2 warning(s)). Push anyway?",
+      );
+      expect(fleetClientMocks.createHierarchyNode).not.toHaveBeenCalled();
+    } finally {
+      validateAllLeavesSpy.mockRestore();
+    }
+  });
+
+  it("remaps local hierarchy ids to server-assigned ids after a successful push", async () => {
+    const user = userEvent.setup();
+
+    renderWithProviders(<HierarchyPage />);
+
+    await user.click(screen.getByRole("button", { name: "DEMO" }));
+
+    const beforePush = JSON.parse(localStorageState.clawdstrike_policy_hierarchy) as {
+      rootId: string;
+      nodes: Record<string, { id: string; parentId: string | null }>;
+    };
+    const localRootId = beforePush.rootId;
+
+    await user.click(screen.getByRole("button", { name: "Push to Fleet" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Pushed 11 nodes to fleet")).toBeInTheDocument();
+    });
+
+    await waitFor(() => {
+      const afterPush = JSON.parse(localStorageState.clawdstrike_policy_hierarchy) as {
+        rootId: string;
+        nodes: Record<string, { id: string; parentId: string | null }>;
+      };
+
+      expect(afterPush.rootId).toBe("server-acme-corp");
+      expect(afterPush.nodes[localRootId]).toBeUndefined();
+      expect(afterPush.nodes["server-engineering"]?.parentId).toBe("server-acme-corp");
+      expect(afterPush.nodes["server-agent-coder-01"]?.parentId).toBe("server-engineering");
+    });
   });
 
   it("still allows dragging legacy agent leaves onto teams", async () => {

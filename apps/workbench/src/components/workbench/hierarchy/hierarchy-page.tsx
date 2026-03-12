@@ -1532,10 +1532,13 @@ export function HierarchyPage() {
     const issues = validateAllLeaves(hierarchySnapshot, savedPolicies);
     if (issues.length > 0) {
       const errorCount = issues.filter((i) => i.severity === "error").length;
-      const issueCount = errorCount > 0 ? errorCount : issues.length;
-      const issueLabel = errorCount > 0 ? "error" : "warning";
+      const warningCount = issues.length - errorCount;
+      const message =
+        errorCount > 0 && warningCount > 0
+          ? `There are ${issues.length} validation issue(s) in the hierarchy (${errorCount} error(s), ${warningCount} warning(s)). Push anyway?`
+          : `There are ${issues.length} validation ${errorCount > 0 ? "error" : "warning"}(s) in the hierarchy. Push anyway?`;
       const proceed = window.confirm(
-        `There are ${issueCount} validation ${issueLabel}(s) in the hierarchy. Push anyway?`,
+        message,
       );
       if (!proceed) return;
     }
@@ -1605,6 +1608,30 @@ export function HierarchyPage() {
         }
       }
 
+      const remappedHierarchy = Array.from(idMap.entries()).reduce(
+        (currentHierarchy, [localId, serverId]) =>
+          remapNodeId(currentHierarchy, localId, serverId),
+        hierarchyRef.current,
+      );
+
+      if (remappedHierarchy !== hierarchyRef.current) {
+        applyHierarchyChange(remappedHierarchy);
+        setSelectedId((prev) => (prev ? idMap.get(prev) ?? prev : prev));
+        setRenameTarget((prev) => (prev ? idMap.get(prev) ?? prev : prev));
+        setExpandedIds((prev) => {
+          let changed = false;
+          const next = new Set<string>();
+          for (const id of prev) {
+            const mappedId = idMap.get(id) ?? id;
+            if (mappedId !== id) {
+              changed = true;
+            }
+            next.add(mappedId);
+          }
+          return changed ? next : prev;
+        });
+      }
+
       if (missingParentIdNode) {
         const descendantCount =
           getDescendants(hierarchySnapshot, missingParentIdNode.id).length - 1;
@@ -1628,7 +1655,7 @@ export function HierarchyPage() {
     } finally {
       syncInProgressRef.current = false;
     }
-  }, [fleetConnected, connection, showSyncStatus, savedPolicies]);
+  }, [fleetConnected, connection, showSyncStatus, savedPolicies, remapNodeId, applyHierarchyChange]);
 
   /**
    * Map a backend node_type string to the frontend OrgNodeType.
