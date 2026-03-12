@@ -876,13 +876,18 @@ async fn register_runtime(
     // Validate the Ed25519 public key.
     hush_core::PublicKey::from_hex(&req.public_key).map_err(|_| ApiError::InvalidPublicKey)?;
 
+    let metadata = req.metadata.unwrap_or(serde_json::json!({}));
+
+    let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
+
     // 1. Verify the endpoint agent exists and belongs to the tenant.
+    //    Locked with FOR UPDATE to serialize against concurrent DELETEs.
     let endpoint_row = sqlx::query::query(
-        "SELECT agent_id, name, principal_id, trust_level FROM agents WHERE id = $1 AND tenant_id = $2",
+        "SELECT agent_id, name, principal_id, trust_level FROM agents WHERE id = $1 AND tenant_id = $2 FOR UPDATE",
     )
     .bind(agent_uuid)
     .bind(auth.tenant_id)
-    .fetch_optional(&state.db)
+    .fetch_optional(tx.as_mut())
     .await
     .map_err(ApiError::Database)?
     .ok_or(ApiError::NotFound)?;
@@ -902,13 +907,10 @@ async fn register_runtime(
         .map_err(ApiError::Database)?;
 
     let trust_level = req.trust_level.as_deref().unwrap_or(&endpoint_trust_level);
-    let metadata = req.metadata.unwrap_or(serde_json::json!({}));
 
     // Encode the endpoint/runtime pair so different inputs cannot collide on
     // the same stable_ref via crafted delimiter injection.
     let runtime_stable_ref = build_runtime_stable_ref(&endpoint_agent_id, &req.name);
-
-    let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
 
     // 2. Upsert the runtime_agent principal.
     let runtime_principal_id = upsert_runtime_principal(
