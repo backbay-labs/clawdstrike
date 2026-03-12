@@ -3713,6 +3713,16 @@ async fn grant_exercise_requires_verified_event_and_active_grant() {
     )
     .await;
     assert_eq!(revoked_resp.0, StatusCode::CONFLICT);
+
+    let revoked_missing_event_resp = request_json(
+        &harness.app,
+        Method::POST,
+        format!("/api/v1/grants/{}/exercise", fixture.grant_id),
+        Some(&harness.api_key),
+        Some(serde_json::json!({})),
+    )
+    .await;
+    assert_eq!(revoked_missing_event_resp.0, StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

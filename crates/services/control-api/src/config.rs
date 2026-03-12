@@ -676,10 +676,10 @@ mod tests {
             &[
                 ("DATABASE_URL", "postgres://localhost/test"),
                 ("JWT_SECRET", "s"),
-                ("STRIPE_SECRET_KEY", "sk"),
-                ("STRIPE_WEBHOOK_SECRET", "wh"),
                 ("JWT_ISSUER", "https://issuer.example.test"),
                 ("JWT_AUDIENCE", "control-api-clients"),
+                ("STRIPE_SECRET_KEY", "sk"),
+                ("STRIPE_WEBHOOK_SECRET", "wh"),
             ],
             &[],
             || {

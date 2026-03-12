@@ -8,7 +8,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyModule};
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::{Mutex, OnceLock};
 
 mod policy_lab;
@@ -234,9 +234,51 @@ fn sanitize_output_native(
     json_value_to_py(py, &v)
 }
 
-static WATERMARKERS: OnceLock<
-    Mutex<HashMap<String, std::sync::Arc<clawdstrike::PromptWatermarker>>>,
-> = OnceLock::new();
+const MAX_WATERMARKER_CACHE_ENTRIES: usize = 128;
+
+struct WatermarkerCache {
+    entries: HashMap<String, std::sync::Arc<clawdstrike::PromptWatermarker>>,
+    order: VecDeque<String>,
+}
+
+impl WatermarkerCache {
+    fn new() -> Self {
+        Self {
+            entries: HashMap::new(),
+            order: VecDeque::new(),
+        }
+    }
+
+    fn get(&mut self, key: &str) -> Option<std::sync::Arc<clawdstrike::PromptWatermarker>> {
+        let value = self.entries.get(key).cloned()?;
+        self.touch(key);
+        Some(value)
+    }
+
+    fn insert(&mut self, key: String, value: std::sync::Arc<clawdstrike::PromptWatermarker>) {
+        if self.entries.contains_key(&key) {
+            self.entries.insert(key.clone(), value);
+            self.touch(&key);
+            return;
+        }
+        if self.entries.len() >= MAX_WATERMARKER_CACHE_ENTRIES {
+            if let Some(oldest) = self.order.pop_front() {
+                self.entries.remove(&oldest);
+            }
+        }
+        self.order.push_back(key.clone());
+        self.entries.insert(key, value);
+    }
+
+    fn touch(&mut self, key: &str) {
+        if let Some(idx) = self.order.iter().position(|entry| entry == key) {
+            self.order.remove(idx);
+        }
+        self.order.push_back(key.to_string());
+    }
+}
+
+static WATERMARKERS: OnceLock<Mutex<WatermarkerCache>> = OnceLock::new();
 
 fn watermark_key(config_json: &str) -> Result<String, String> {
     let v: serde_json::Value =
@@ -251,19 +293,34 @@ fn get_or_create_watermarker(
     let cfg: clawdstrike::WatermarkConfig =
         serde_json::from_str(config_json).map_err(|e| format!("invalid WatermarkConfig: {}", e))?;
 
-    let map = WATERMARKERS.get_or_init(|| Mutex::new(HashMap::new()));
-    let mut guard = map
+    let cache = WATERMARKERS.get_or_init(|| Mutex::new(WatermarkerCache::new()));
+    let mut guard = cache
         .lock()
         .map_err(|_| "watermarker lock poisoned".to_string())?;
-    if !guard.contains_key(&key) {
-        let wm = clawdstrike::PromptWatermarker::new(cfg).map_err(|e| format!("{:?}", e))?;
-        guard.insert(key.clone(), std::sync::Arc::new(wm));
+    if let Some(existing) = guard.get(&key) {
+        return Ok(existing);
     }
+    let wm = std::sync::Arc::new(
+        clawdstrike::PromptWatermarker::new(cfg).map_err(|e| format!("{:?}", e))?,
+    );
+    guard.insert(key, std::sync::Arc::clone(&wm));
+    Ok(wm)
+}
 
-    guard
-        .get(&key)
-        .cloned()
-        .ok_or_else(|| "watermarker missing".to_string())
+#[cfg(test)]
+fn clear_watermarker_cache() {
+    if let Some(cache) = WATERMARKERS.get() {
+        let mut guard = cache.lock().expect("watermarker cache lock");
+        guard.entries.clear();
+        guard.order.clear();
+    }
+}
+
+#[cfg(test)]
+fn watermarker_cache_len() -> usize {
+    let cache = WATERMARKERS.get_or_init(|| Mutex::new(WatermarkerCache::new()));
+    let guard = cache.lock().expect("watermarker cache lock");
+    guard.entries.len()
 }
 
 /// Return the public key hex for a watermark configuration.
@@ -618,4 +675,21 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(generate_keypair_native, m)?)?;
     m.add_function(wrap_pyfunction!(sign_message_native, m)?)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn watermarker_cache_is_bounded() {
+        clear_watermarker_cache();
+        for idx in 0..(MAX_WATERMARKER_CACHE_ENTRIES + 16) {
+            let cfg = format!(r#"{{"custom_metadata":{{"cache_key":"{idx}"}}}}"#);
+            let wm = get_or_create_watermarker(&cfg).expect("watermarker should initialize");
+            assert!(!wm.public_key().is_empty());
+        }
+        assert_eq!(watermarker_cache_len(), MAX_WATERMARKER_CACHE_ENTRIES);
+        clear_watermarker_cache();
+    }
 }

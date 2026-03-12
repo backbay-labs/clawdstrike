@@ -19,6 +19,8 @@ const HUSHD_API_KEY =
 const JWT_SECRET =
   process.env.JWT_SECRET ??
   "Y0mxbIqhVY8AW73p02sIyRLITcSWUTg4lE-6XdtpEe9AlJC0XfhD0CJDm2-9Iaz5";
+const JWT_ISSUER = process.env.JWT_ISSUER ?? "clawdstrike-control-api";
+const JWT_AUDIENCE = process.env.JWT_AUDIENCE ?? "clawdstrike-control-api";
 const TENANT_ID =
   process.env.TENANT_ID ?? "874d572c-709c-49b7-8ecf-64b569e16710";
 
@@ -49,6 +51,8 @@ function makeJwt(): string {
       sub: "00000000-0000-0000-0000-000000000001",
       tenant_id: TENANT_ID,
       role: "owner",
+      iss: JWT_ISSUER,
+      aud: JWT_AUDIENCE,
       iat: now,
       exp: now + 86400,
     },
