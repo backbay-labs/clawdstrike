@@ -139,6 +139,7 @@ function TreeNode({
   const Icon = NODE_TYPE_ICONS[node.type];
   const color = NODE_TYPE_COLORS[node.type];
   const isDragTarget = dragOverId === node.id;
+  const metadataLeafLabel = node.type === "endpoint" ? "runtime" : "agent";
 
   const [showActions, setShowActions] = useState(false);
 
@@ -231,7 +232,8 @@ function TreeNode({
         {/* Metadata count */}
         {node.metadata?.agentCount !== undefined && node.type !== "runtime" && !node.policyName && (
           <span className="ml-auto shrink-0 text-[9px] font-mono text-[#6f7f9a]/60">
-            {node.metadata.agentCount} agents
+            {node.metadata.agentCount} {metadataLeafLabel}
+            {node.metadata.agentCount === 1 ? "" : "s"}
           </span>
         )}
 

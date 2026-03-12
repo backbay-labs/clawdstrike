@@ -7384,7 +7384,6 @@ async fn register_runtime_creates_hierarchy_node_and_principal() {
         .expect("lifecycle_state");
 
     assert_eq!(principal_type, "runtime_agent");
-    assert_eq!(stable_ref, "rt-ep-1/runtime/claude-code-main");
     assert_eq!(display_name, "claude-code-main");
     assert_eq!(trust_level, "high"); // inherits endpoint trust_level
     assert_eq!(lifecycle_state, "active");
@@ -7425,6 +7424,109 @@ async fn register_runtime_creates_hierarchy_node_and_principal() {
     assert_eq!(node_type, "runtime");
     assert_eq!(external_id.as_deref(), Some("claude-code-main"));
     assert_eq!(name, "claude-code-main");
+    assert_eq!(
+        stable_ref,
+        format!(
+            "runtime:endpoint:{}:name:{}",
+            hex::encode("rt-ep-1".as_bytes()),
+            hex::encode("claude-code-main".as_bytes()),
+        ),
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn register_runtime_uses_collision_safe_stable_refs() {
+    if !docker_available() {
+        eprintln!("Skipping integration test: docker is unavailable");
+        return;
+    }
+
+    let harness = setup_harness().await;
+    let endpoint_agent_id_a = "alpha/runtime/bravo";
+    let endpoint_agent_id_b = "alpha";
+    let runtime_name_a = "charlie";
+    let runtime_name_b = "bravo/runtime/charlie";
+
+    let legacy_stable_ref_a = format!("{endpoint_agent_id_a}/runtime/{runtime_name_a}");
+    let legacy_stable_ref_b = format!("{endpoint_agent_id_b}/runtime/{runtime_name_b}");
+    assert_eq!(legacy_stable_ref_a, legacy_stable_ref_b);
+
+    let agent_a = register_endpoint_agent(
+        &harness.app,
+        &harness.api_key,
+        endpoint_agent_id_a,
+        "Collision Endpoint A",
+    )
+    .await;
+    let agent_b = register_endpoint_agent(
+        &harness.app,
+        &harness.api_key,
+        endpoint_agent_id_b,
+        "Collision Endpoint B",
+    )
+    .await;
+
+    let runtime_a = register_runtime(&harness.app, &harness.api_key, agent_a, runtime_name_a).await;
+    assert_eq!(runtime_a.0, StatusCode::OK);
+    let runtime_b = register_runtime(&harness.app, &harness.api_key, agent_b, runtime_name_b).await;
+    assert_eq!(runtime_b.0, StatusCode::OK);
+
+    let runtime_a_principal_id = Uuid::parse_str(
+        runtime_a.1["runtime_principal_id"]
+            .as_str()
+            .expect("runtime_a principal id"),
+    )
+    .expect("parse runtime_a principal id");
+    let runtime_b_principal_id = Uuid::parse_str(
+        runtime_b.1["runtime_principal_id"]
+            .as_str()
+            .expect("runtime_b principal id"),
+    )
+    .expect("parse runtime_b principal id");
+    assert_ne!(runtime_a_principal_id, runtime_b_principal_id);
+
+    let runtime_a_row = sqlx::query::query(
+        r#"SELECT stable_ref
+           FROM principals
+           WHERE tenant_id = $1
+             AND id = $2"#,
+    )
+    .bind(harness.tenant_id)
+    .bind(runtime_a_principal_id)
+    .fetch_one(&harness.db)
+    .await
+    .expect("fetch runtime_a principal");
+    let runtime_b_row = sqlx::query::query(
+        r#"SELECT stable_ref
+           FROM principals
+           WHERE tenant_id = $1
+             AND id = $2"#,
+    )
+    .bind(harness.tenant_id)
+    .bind(runtime_b_principal_id)
+    .fetch_one(&harness.db)
+    .await
+    .expect("fetch runtime_b principal");
+
+    let runtime_a_stable_ref: String = runtime_a_row.try_get("stable_ref").expect("stable_ref");
+    let runtime_b_stable_ref: String = runtime_b_row.try_get("stable_ref").expect("stable_ref");
+    assert_ne!(runtime_a_stable_ref, runtime_b_stable_ref);
+    assert_eq!(
+        runtime_a_stable_ref,
+        format!(
+            "runtime:endpoint:{}:name:{}",
+            hex::encode(endpoint_agent_id_a.as_bytes()),
+            hex::encode(runtime_name_a.as_bytes()),
+        ),
+    );
+    assert_eq!(
+        runtime_b_stable_ref,
+        format!(
+            "runtime:endpoint:{}:name:{}",
+            hex::encode(endpoint_agent_id_b.as_bytes()),
+            hex::encode(runtime_name_b.as_bytes()),
+        ),
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

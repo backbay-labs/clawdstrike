@@ -846,6 +846,14 @@ struct RuntimeEntry {
     created_at: chrono::DateTime<chrono::Utc>,
 }
 
+fn build_runtime_stable_ref(endpoint_agent_id: &str, runtime_name: &str) -> String {
+    format!(
+        "runtime:endpoint:{}:name:{}",
+        hex::encode(endpoint_agent_id.as_bytes()),
+        hex::encode(runtime_name.as_bytes()),
+    )
+}
+
 /// POST /api/v1/agents/{id}/runtimes — register a runtime under an endpoint.
 async fn register_runtime(
     State(state): State<AppState>,
@@ -896,8 +904,9 @@ async fn register_runtime(
     let trust_level = req.trust_level.as_deref().unwrap_or(&endpoint_trust_level);
     let metadata = req.metadata.unwrap_or(serde_json::json!({}));
 
-    // Generate a stable_ref for the runtime principal scoped to the endpoint.
-    let runtime_stable_ref = format!("{endpoint_agent_id}/runtime/{}", req.name);
+    // Encode the endpoint/runtime pair so different inputs cannot collide on
+    // the same stable_ref via crafted delimiter injection.
+    let runtime_stable_ref = build_runtime_stable_ref(&endpoint_agent_id, &req.name);
 
     let mut tx = state.db.begin().await.map_err(ApiError::Database)?;
 

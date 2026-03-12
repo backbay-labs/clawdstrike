@@ -316,6 +316,58 @@ describe("HierarchyPage", () => {
     expect(screen.getByText("Runtime")).toBeInTheDocument();
   });
 
+  it("labels endpoint metadata counts as runtimes", async () => {
+    const user = userEvent.setup();
+
+    fleetClientMocks.fetchHierarchyTree.mockResolvedValue({
+      root_id: "root-1",
+      nodes: [
+        {
+          id: "root-1",
+          name: "Fleet Fixture Org",
+          node_type: "org",
+          parent_id: null,
+          policy_id: null,
+          policy_name: null,
+          metadata: {},
+          children: ["team-1"],
+        },
+        {
+          id: "team-1",
+          name: "Platform Team",
+          node_type: "team",
+          parent_id: "root-1",
+          policy_id: null,
+          policy_name: null,
+          metadata: {},
+          children: ["endpoint-1"],
+        },
+        {
+          id: "endpoint-1",
+          name: "CI Endpoint",
+          node_type: "endpoint",
+          parent_id: "team-1",
+          policy_id: null,
+          policy_name: null,
+          metadata: { agentCount: 2 },
+          children: [],
+        },
+      ],
+    });
+
+    renderWithProviders(<HierarchyPage />);
+
+    await user.click(screen.getByRole("button", { name: "DEMO" }));
+    await user.click(screen.getByRole("button", { name: "Pull from Fleet" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Fleet Snapshot")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("2 runtimes")).toBeInTheDocument();
+    expect(screen.queryByText("2 agents")).not.toBeInTheDocument();
+  });
+
   it("preserves external ids when a live hierarchy pull is pushed back to fleet", async () => {
     const user = userEvent.setup();
 

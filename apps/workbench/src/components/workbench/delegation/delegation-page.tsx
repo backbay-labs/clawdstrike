@@ -51,6 +51,7 @@ import {
   type GraphLayoutResult,
   type TracedPath,
 } from "@/lib/workbench/force-graph-engine";
+import { sanitizeDelegationSvgForExport } from "./svg-export";
 
 const ALL_NODE_KINDS: NodeKind[] = [
   "Principal",
@@ -456,7 +457,7 @@ export function DelegationPage() {
     if (!container) return;
     const svgEl = container.querySelector("svg");
     if (!svgEl) return;
-    const clone = svgEl.cloneNode(true) as SVGSVGElement;
+    const clone = sanitizeDelegationSvgForExport(svgEl);
     clone.setAttribute("width", String(layout.width));
     clone.setAttribute("height", String(layout.height));
     clone.querySelector("[data-viewport]")?.setAttribute("transform", "");
@@ -468,17 +469,7 @@ export function DelegationPage() {
     desc.textContent = `Delegation graph for principal ${pid} exported at ${ts}`;
     clone.insertBefore(desc, clone.firstChild);
 
-    let data = new XMLSerializer().serializeToString(clone);
-
-    // Sanitize SVG to prevent XSS from untrusted fleet data
-    // Strip <script> tags and their content
-    data = data.replace(/<script[\s\S]*?<\/script>/gi, "");
-    data = data.replace(/<script[^>]*\/>/gi, "");
-    // Strip event handler attributes (onload, onclick, onerror, etc.)
-    data = data.replace(/\s+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "");
-    // Strip javascript: URIs in href/xlink:href/src attributes
-    data = data.replace(/(href|src)\s*=\s*(?:"javascript:[^"]*"|'javascript:[^']*')/gi, "$1=\"\"");
-
+    const data = new XMLSerializer().serializeToString(clone);
     const blob = new Blob([data], { type: "image/svg+xml" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
