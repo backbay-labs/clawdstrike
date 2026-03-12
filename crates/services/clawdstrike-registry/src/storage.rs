@@ -117,13 +117,16 @@ impl BlobStorage {
         fs::write(&tmp_path, data)?;
         match fs::rename(&tmp_path, blob_path) {
             Ok(()) => Ok(()),
-            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
-                let _ = fs::remove_file(&tmp_path);
-                Ok(())
-            }
             Err(err) => {
                 let _ = fs::remove_file(&tmp_path);
-                Err(RegistryError::Io(err))
+
+                // Another writer may have committed the same hash between our
+                // pre-check and rename; hash-addressed paths make this safe.
+                if blob_path.exists() {
+                    Ok(())
+                } else {
+                    Err(RegistryError::Io(err))
+                }
             }
         }
     }
