@@ -1090,12 +1090,17 @@ export function HierarchyPage() {
     [],
   );
 
+  const clearPendingCreateIds = useCallback(() => {
+    pendingCreateIdsRef.current.clear();
+  }, []);
+
   // Clear sync status timer on unmount
   useEffect(() => {
     return () => {
       if (syncStatusTimerRef.current) clearTimeout(syncStatusTimerRef.current);
+      clearPendingCreateIds();
     };
-  }, []);
+  }, [clearPendingCreateIds]);
 
   // Turn off live mode if fleet disconnects
   useEffect(() => {
@@ -1291,6 +1296,9 @@ export function HierarchyPage() {
               })
               .catch(() => {
                 resolveCreatedId(null);
+              })
+              .finally(() => {
+                pendingCreateIdsRef.current.delete(localId);
               });
           }
         }
@@ -1406,11 +1414,27 @@ export function HierarchyPage() {
 
             // LIVE mode: update parent_id on backend
             const movedId = dragSourceId;
-            syncToBackend("move node", () =>
-              updateHierarchyNode(connection, movedId, {
-                parent_id: targetId,
-              }),
-            );
+            syncToBackend("move node", async () => {
+              const [resolvedMovedId, resolvedTargetId] = await Promise.all([
+                resolvePendingHierarchyParentId(movedId, pendingCreateIdsRef.current),
+                resolvePendingHierarchyParentId(targetId, pendingCreateIdsRef.current),
+              ]);
+              if (!resolvedMovedId) {
+                return {
+                  success: false,
+                  error: `Node "${sourceNode.name}" is missing a fleet id`,
+                } satisfies HierarchySyncResult;
+              }
+              if (!resolvedTargetId) {
+                return {
+                  success: false,
+                  error: `Parent node "${targetNode.name}" is missing a fleet id`,
+                } satisfies HierarchySyncResult;
+              }
+              return updateHierarchyNode(connection, resolvedMovedId, {
+                parent_id: resolvedTargetId,
+              });
+            });
           }
         }
       }
@@ -1421,6 +1445,7 @@ export function HierarchyPage() {
   );
 
   const handleResetToDemo = useCallback(() => {
+    clearPendingCreateIds();
     clearHierarchy();
     const demo = createDefaultHierarchy();
     setHierarchy(demo);
@@ -1435,7 +1460,7 @@ export function HierarchyPage() {
       }
       return ids;
     });
-  }, []);
+  }, [clearPendingCreateIds]);
 
   const handleExport = useCallback(() => {
     const json = JSON.stringify(hierarchy, null, 2);
@@ -1705,6 +1730,7 @@ export function HierarchyPage() {
         }
 
         const newHierarchy: PolicyHierarchy = { nodes, rootId };
+        clearPendingCreateIds();
         setHierarchy(newHierarchy);
         setSelectedId(rootId);
 
@@ -1806,6 +1832,7 @@ export function HierarchyPage() {
       }
 
       const newHierarchy: PolicyHierarchy = { nodes, rootId };
+      clearPendingCreateIds();
       setHierarchy(newHierarchy);
       setSelectedId(rootId);
 
@@ -1833,6 +1860,7 @@ export function HierarchyPage() {
   }, [
     fleetConnected,
     connection,
+    clearPendingCreateIds,
     showSyncStatus,
     flattenTreeNode,
     mapNodeType,

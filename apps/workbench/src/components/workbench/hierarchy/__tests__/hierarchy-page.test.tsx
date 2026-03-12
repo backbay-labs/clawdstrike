@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { renderWithProviders } from "@/test/test-helpers";
@@ -593,6 +593,108 @@ describe("HierarchyPage", () => {
         new Map([["local-endpoint", Promise.resolve(null)]]),
       ),
     ).resolves.toBeNull();
+  });
+
+  it("waits for pending backend ids before syncing drag-drop moves", async () => {
+    const user = userEvent.setup();
+    let resolveCreate!: (value: { success: boolean; id?: string }) => void;
+    const pendingCreate = new Promise<{ success: boolean; id?: string }>((resolve) => {
+      resolveCreate = resolve;
+    });
+
+    fleetClientMocks.fetchHierarchyTree.mockResolvedValue({
+      root_id: "root-1",
+      nodes: [
+        {
+          id: "root-1",
+          name: "Fleet Fixture Org",
+          node_type: "org",
+          parent_id: null,
+          policy_id: null,
+          policy_name: null,
+          metadata: {},
+          children: ["team-1"],
+        },
+        {
+          id: "team-1",
+          name: "Platform Team",
+          node_type: "team",
+          parent_id: "root-1",
+          policy_id: null,
+          policy_name: null,
+          metadata: {},
+          children: ["endpoint-1"],
+        },
+        {
+          id: "endpoint-1",
+          name: "CI Endpoint",
+          node_type: "endpoint",
+          parent_id: "team-1",
+          policy_id: null,
+          policy_name: null,
+          metadata: {},
+          children: ["runtime-1"],
+        },
+        {
+          id: "runtime-1",
+          name: "Worker Runtime",
+          node_type: "runtime",
+          parent_id: "endpoint-1",
+          policy_id: null,
+          policy_name: null,
+          metadata: {},
+          children: [],
+        },
+      ],
+    });
+
+    renderWithProviders(<HierarchyPage />);
+
+    await user.click(screen.getByRole("button", { name: "DEMO" }));
+    await user.click(screen.getByRole("button", { name: "Pull from Fleet" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Fleet Snapshot")).toBeInTheDocument();
+    });
+
+    fleetClientMocks.createHierarchyNode.mockReset();
+    fleetClientMocks.createHierarchyNode.mockImplementationOnce(() => pendingCreate);
+
+    const teamRow = screen.getAllByText("Platform Team").find((element) =>
+      element.closest("[draggable='true']"),
+    );
+    expect(teamRow).toBeTruthy();
+    const teamRowContainer = teamRow!.closest("[draggable='true']") as HTMLElement;
+
+    await user.hover(teamRowContainer);
+    fireEvent.click(within(teamRowContainer).getByTitle("Add endpoint"));
+    await user.click(await screen.findByRole("button", { name: "Cancel" }));
+
+    const runtimeRow = screen.getAllByText("Worker Runtime").find((element) =>
+      element.closest("[draggable='true']"),
+    );
+    const newEndpointRow = screen.getAllByText(/endpoint-new-/).find((element) =>
+      element.closest("[draggable='true']"),
+    );
+
+    expect(runtimeRow).toBeTruthy();
+    expect(newEndpointRow).toBeTruthy();
+
+    fireEvent.dragStart(runtimeRow!.closest("[draggable='true']") ?? runtimeRow!);
+    fireEvent.dragOver(newEndpointRow!.closest("[draggable='true']") ?? newEndpointRow!);
+    fireEvent.drop(newEndpointRow!.closest("[draggable='true']") ?? newEndpointRow!);
+
+    expect(fleetClientMocks.updateHierarchyNode).not.toHaveBeenCalled();
+
+    resolveCreate({ success: true, id: "remote-endpoint-2" });
+
+    await waitFor(() => {
+      expect(fleetClientMocks.updateHierarchyNode).toHaveBeenCalledWith(
+        expect.objectContaining({ controlApiUrl: "http://localhost:9877" }),
+        "runtime-1",
+        { parent_id: "remote-endpoint-2" },
+      );
+    });
   });
 
   it("reports skipped descendants when a parent node fails during push", async () => {
