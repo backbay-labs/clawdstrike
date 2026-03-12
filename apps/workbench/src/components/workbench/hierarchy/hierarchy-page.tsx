@@ -1434,7 +1434,7 @@ export function HierarchyPage() {
       // BFS traversal: create parents before children
       const queue: string[] = [hierarchy.rootId];
       const idMap = new Map<string, string>();
-      let successCount = 0;
+      let completedCount = 0;
       let errorCount = 0;
       let skippedCount = 0;
       let incompleteCount = 0;
@@ -1479,16 +1479,18 @@ export function HierarchyPage() {
           continue;
         }
 
-        successCount++;
         if (result.id) {
+          completedCount++;
           idMap.set(nodeId, result.id);
-        } else if (node.children.length > 0) {
+        } else {
           incompleteCount++;
-          skippedCount += countDescendants(nodeId);
-          console.warn(
-            `[hierarchy-sync] push incomplete for node "${node.name}": backend created the node without returning an id, so its descendants cannot be uploaded`,
-          );
-          continue;
+          if (node.children.length > 0) {
+            skippedCount += countDescendants(nodeId);
+            console.warn(
+              `[hierarchy-sync] push incomplete for node "${node.name}": backend created the node without returning an id, so its descendants cannot be uploaded`,
+            );
+            continue;
+          }
         }
 
         // Enqueue children
@@ -1497,8 +1499,7 @@ export function HierarchyPage() {
         }
       }
 
-      const completedCount = successCount - incompleteCount;
-      if (incompleteCount > 0 || errorCount > 0) {
+      if (incompleteCount > 0 || errorCount > 0 || skippedCount > 0) {
         const statusParts = [`Pushed ${completedCount} nodes`];
         if (incompleteCount > 0) {
           statusParts.push(`${incompleteCount} incomplete`);
@@ -1510,11 +1511,11 @@ export function HierarchyPage() {
           statusParts.push(`${skippedCount} skipped`);
         }
         showSyncStatus(
-          "error",
+          errorCount > 0 ? "error" : "success",
           statusParts.join(", "),
         );
       } else {
-        showSyncStatus("success", `Pushed ${successCount} nodes to fleet`);
+        showSyncStatus("success", `Pushed ${completedCount} nodes to fleet`);
       }
     } catch (err) {
       showSyncStatus(
