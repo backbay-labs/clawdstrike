@@ -562,7 +562,11 @@ describe("HierarchyPage", () => {
 
   it("confirms before push when leaf validation reports warnings", async () => {
     const user = userEvent.setup();
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValueOnce(false);
+    localStorageState.clawdstrike_policy_hierarchy = JSON.stringify(
+      hierarchyEngine.createDefaultHierarchy(),
+    );
+    const confirmSpy = vi.mocked(window.confirm);
+    confirmSpy.mockReturnValueOnce(false);
 
     renderWithProviders(<HierarchyPage />);
 
@@ -577,7 +581,11 @@ describe("HierarchyPage", () => {
 
   it("counts both errors and warnings in the push confirmation message", async () => {
     const user = userEvent.setup();
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValueOnce(false);
+    localStorageState.clawdstrike_policy_hierarchy = JSON.stringify(
+      hierarchyEngine.createDefaultHierarchy(),
+    );
+    const confirmSpy = vi.mocked(window.confirm);
+    confirmSpy.mockReturnValueOnce(false);
     const validateAllLeavesSpy = vi
       .spyOn(hierarchyEngine, "validateAllLeaves")
       .mockReturnValue([
