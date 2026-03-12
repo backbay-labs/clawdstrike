@@ -90,14 +90,6 @@ function relativeTime(epochMs: number): string {
   return `${Math.floor(diffSecs / 86400)}d ago`;
 }
 
-function formatUptime(ms: number): string {
-  const hours = Math.floor(ms / (1000 * 60 * 60));
-  if (hours < 24) return `${hours}h`;
-  const days = Math.floor(hours / 24);
-  const remainHours = hours % 24;
-  return `${days}d ${remainHours}h`;
-}
-
 // ---------------------------------------------------------------------------
 // Sigil Avatar
 // ---------------------------------------------------------------------------

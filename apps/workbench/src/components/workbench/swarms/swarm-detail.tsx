@@ -40,16 +40,13 @@ import {
   IconZoomIn,
   IconZoomOut,
   IconFocus2,
-  IconDownload,
   IconX,
   IconLock,
   IconUsersGroup,
   IconWorld,
   IconToggleLeft,
   IconToggleRight,
-  IconPlus,
   IconClock,
-  IconBrain,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { useSwarms } from "@/lib/workbench/swarm-store";

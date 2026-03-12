@@ -336,7 +336,7 @@ export function SpeakeasyPanel({
         onClick={handleBackdropClick}
         className={cn(
           "fixed inset-0 z-40 transition-opacity duration-200",
-          isOpen ? "bg-black/20 opacity-100" : "opacity-0 pointer-events-none",
+          "bg-black/20 opacity-100",
         )}
       />
 
@@ -346,7 +346,7 @@ export function SpeakeasyPanel({
           "fixed top-0 right-0 bottom-0 z-50 w-96 flex flex-col",
           "bg-zinc-950 border-l border-[#2d3240] shadow-2xl shadow-black/50",
           "transition-transform duration-300 ease-out",
-          isOpen ? "translate-x-0" : "translate-x-full",
+          "translate-x-0",
         )}
       >
         {!room ? (

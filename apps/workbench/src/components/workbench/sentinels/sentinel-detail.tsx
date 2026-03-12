@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   IconEye,
@@ -23,8 +23,6 @@ import {
   IconEyeCheck,
   IconCopy,
   IconCheck,
-  IconPlus,
-  IconTrash,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import {
@@ -693,7 +691,6 @@ export function SentinelDetail({
   const [activeTab, setActiveTab] = useState<DetailTab>("signals");
 
   const modeColor = MODE_COLORS[sentinel.mode];
-  const ModeIcon = MODE_ICONS[sentinel.mode];
   const statusDot = STATUS_DOT_COLORS[sentinel.status];
 
   const canActivate = validateStatusTransition(sentinel.status, "active");

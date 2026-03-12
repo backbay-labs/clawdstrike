@@ -16,7 +16,6 @@ import { SentinelDetail } from "./sentinels/sentinel-detail";
 import { FindingsIntelPage } from "./findings/findings-intel-page";
 import { FindingDetail } from "./findings/finding-detail";
 import { IntelPage } from "./intel/intel-page";
-import { IntelDetail } from "./intel/intel-detail";
 import type { Sentinel, Intel } from "@/lib/workbench/sentinel-types";
 
 // ---------------------------------------------------------------------------
@@ -40,7 +39,6 @@ export function SentinelCreatePage() {
 export function SentinelDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { sentinels, updateSentinel } = useSentinels();
-  const navigate = useNavigate();
   const sentinel = sentinels.find((s) => s.id === id);
 
   const handleUpdate = useCallback(

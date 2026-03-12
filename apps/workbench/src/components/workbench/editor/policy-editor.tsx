@@ -329,9 +329,7 @@ export function PolicyEditor() {
       setShowCommandCenter(false);
       setShowGuards(false);
     }
-    // Only run on mount
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [searchParams]);
 
   // Use the active tab's ID as the policyId for version tracking
   const policyId = activeTab?.id;

@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useRef } from "react";
+import { useMemo, useState, useEffect, useRef, useId } from "react";
 import { useLocation, Link } from "react-router-dom";
 import {
   IconChevronsLeft,
@@ -108,6 +108,14 @@ const POSTURE_BREATH: Record<SystemPosture, number> = {
 };
 
 function SystemHeartbeat({ collapsed, active }: { collapsed: boolean; active: boolean }) {
+  const uid = useId();
+  const glowId = `hb-glow${uid}`;
+  const sweepId = `hb-sweep${uid}`;
+  const domeId = `hb-dome${uid}`;
+  const glowUrl = `url(#${glowId})`;
+  const sweepUrl = `url(#${sweepId})`;
+  const domeUrl = `url(#${domeId})`;
+
   const { sentinels } = useSentinels();
   const { findings } = useFindings();
   const { connection } = useFleetConnection();
@@ -170,13 +178,13 @@ function SystemHeartbeat({ collapsed, active }: { collapsed: boolean; active: bo
       style={{ filter: `drop-shadow(0 0 8px ${ring.glow})` }}
     >
       <defs>
-        <filter id="hb-glow" x="-50%" y="-50%" width="200%" height="200%">
+        <filter id={glowId} x="-50%" y="-50%" width="200%" height="200%">
           <feGaussianBlur stdDeviation="3" />
         </filter>
-        <filter id="hb-sweep-blur" x="-50%" y="-50%" width="200%" height="200%">
+        <filter id={sweepId} x="-50%" y="-50%" width="200%" height="200%">
           <feGaussianBlur stdDeviation="2.5" />
         </filter>
-        <radialGradient id="hb-dome">
+        <radialGradient id={domeId}>
           <stop offset="0%" stopColor="rgba(255,255,255,0.015)" />
           <stop offset="100%" stopColor="transparent" />
         </radialGradient>
@@ -189,7 +197,7 @@ function SystemHeartbeat({ collapsed, active }: { collapsed: boolean; active: bo
         stroke={ring.color}
         strokeWidth={1.5}
         opacity={0.1}
-        style={{ filter: "url(#hb-glow)", animation: anim("hb-glow") }}
+        style={{ filter: glowUrl, animation: anim("hb-glow") }}
       />
 
       {/* L2 — Outer ring */}
@@ -203,7 +211,7 @@ function SystemHeartbeat({ collapsed, active }: { collapsed: boolean; active: bo
       />
 
       {/* L2 — Glass dome (subtle inner radial gradient) */}
-      <circle cx={50} cy={50} r={43} fill="url(#hb-dome)" />
+      <circle cx={50} cy={50} r={43} fill={domeUrl} />
 
       {/* L2 — Compass ticks (cardinal reference marks) */}
       <g stroke={ring.color} strokeWidth={1.2} opacity={0.2}>
@@ -245,7 +253,7 @@ function SystemHeartbeat({ collapsed, active }: { collapsed: boolean; active: bo
           strokeDasharray={`${SWEEP_ARC} ${CIRC - SWEEP_ARC}`}
           opacity={0.35}
           style={{
-            filter: "url(#hb-sweep-blur)",
+            filter: sweepUrl,
             transformOrigin: "50px 50px",
             animation: `hb-sweep ${sweepSec}s linear infinite`,
           }}
@@ -257,7 +265,7 @@ function SystemHeartbeat({ collapsed, active }: { collapsed: boolean; active: bo
         d="M50 28 L68 50 L50 72 L32 50Z"
         fill={ring.color}
         opacity={0.06}
-        style={{ filter: "url(#hb-glow)" }}
+        style={{ filter: glowUrl }}
       />
 
       {/* L5 — Diamond: main outline */}
@@ -414,8 +422,8 @@ export function DesktopSidebar() {
   );
   const pendingApprovalCount = isLiveBadge ? liveApprovalCount : demoPendingCount;
 
-  // Placeholder for emerging findings count — will be wired to FindingProvider in Phase 1
-  const emergingFindingsCount = 0;
+  const { findings } = useFindings();
+  const emergingFindingsCount = findings.filter((f) => f.status === "emerging").length;
 
   /** Resolve the badge count for a given nav item. */
   const getBadgeCount = (item: NavItem): number => {
@@ -428,7 +436,7 @@ export function DesktopSidebar() {
   /** Whether a badge item is backed by live fleet data (vs demo). */
   const isBadgeLive = (item: NavItem): boolean => {
     if (item.href === "/approvals") return isLiveBadge;
-    // Findings will be live once wired to a real store
+    // Findings badge reflects local store, not fleet-backed
     return false;
   };
 
