@@ -368,7 +368,7 @@ describe("HierarchyPage", () => {
     expect(screen.queryByText("2 agents")).not.toBeInTheDocument();
   });
 
-  it("labels org and team metadata counts as leaf nodes", async () => {
+  it("labels org and team metadata counts as enforcement targets", async () => {
     const user = userEvent.setup();
 
     fleetClientMocks.fetchHierarchyTree.mockResolvedValue({
@@ -406,8 +406,8 @@ describe("HierarchyPage", () => {
       expect(screen.getByText("Fleet Snapshot")).toBeInTheDocument();
     });
 
-    expect(screen.getByText("3 leaf nodes")).toBeInTheDocument();
-    expect(screen.getByText("1 leaf node")).toBeInTheDocument();
+    expect(screen.getByText("3 enforcement targets")).toBeInTheDocument();
+    expect(screen.getByText("1 enforcement target")).toBeInTheDocument();
     expect(screen.queryByText("3 agents")).not.toBeInTheDocument();
   });
 
@@ -626,7 +626,7 @@ describe("HierarchyPage", () => {
     });
   });
 
-  it("counts queued siblings when a parent is created without returning an id", async () => {
+  it("continues pushing independent sibling branches when a parent is created without returning an id", async () => {
     const user = userEvent.setup();
 
     fleetClientMocks.fetchHierarchyTree.mockResolvedValue({
@@ -677,7 +677,8 @@ describe("HierarchyPage", () => {
     fleetClientMocks.createHierarchyNode.mockReset();
     fleetClientMocks.createHierarchyNode
       .mockResolvedValueOnce({ success: true, id: "remote-root" })
-      .mockResolvedValueOnce({ success: true });
+      .mockResolvedValueOnce({ success: true })
+      .mockResolvedValueOnce({ success: true, id: "remote-ops-team" });
 
     renderWithProviders(<HierarchyPage />);
 
@@ -691,13 +692,14 @@ describe("HierarchyPage", () => {
     fleetClientMocks.createHierarchyNode.mockReset();
     fleetClientMocks.createHierarchyNode
       .mockResolvedValueOnce({ success: true, id: "remote-root" })
-      .mockResolvedValueOnce({ success: true });
+      .mockResolvedValueOnce({ success: true })
+      .mockResolvedValueOnce({ success: true, id: "remote-ops-team" });
 
     await user.click(screen.getByRole("button", { name: "Push to Fleet" }));
 
     await waitFor(() => {
       expect(
-        screen.getByText('Node "Platform Team" was created without an id, so 2 nodes could not be pushed'),
+        screen.getByText("Pushed 3 nodes, 1 incomplete, 1 skipped"),
       ).toBeInTheDocument();
     });
   });

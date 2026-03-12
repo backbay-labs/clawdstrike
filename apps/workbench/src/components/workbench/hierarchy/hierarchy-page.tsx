@@ -141,7 +141,7 @@ function TreeNode({
   const isDragTarget = dragOverId === node.id;
   const metadataLeafLabel = node.type === "endpoint"
     ? { singular: "runtime", plural: "runtimes" }
-    : { singular: "leaf node", plural: "leaf nodes" };
+    : { singular: "enforcement target", plural: "enforcement targets" };
 
   const [showActions, setShowActions] = useState(false);
 
@@ -1437,14 +1437,12 @@ export function HierarchyPage() {
       let successCount = 0;
       let errorCount = 0;
       let skippedCount = 0;
-      let missingParentIdNode: OrgNode | null = null;
+      let incompleteCount = 0;
       const countDescendants = (nodeId: string): number => {
         const node = hierarchy.nodes[nodeId];
         if (!node) return 0;
         return node.children.reduce((total, childId) => total + 1 + countDescendants(childId), 0);
       };
-      const countQueuedNodes = (queuedIds: string[]): number =>
-        queuedIds.reduce((total, queuedId) => total + 1 + countDescendants(queuedId), 0);
 
       while (queue.length > 0) {
         const nodeId = queue.shift()!;
@@ -1477,12 +1475,12 @@ export function HierarchyPage() {
         if (result.id) {
           idMap.set(nodeId, result.id);
         } else if (node.children.length > 0) {
-          missingParentIdNode = node;
-          skippedCount += countDescendants(nodeId) + countQueuedNodes(queue);
+          incompleteCount++;
+          skippedCount += countDescendants(nodeId);
           console.warn(
             `[hierarchy-sync] push incomplete for node "${node.name}": backend created the node without returning an id, so its descendants cannot be uploaded`,
           );
-          break;
+          continue;
         }
 
         // Enqueue children
@@ -1491,10 +1489,10 @@ export function HierarchyPage() {
         }
       }
 
-      if (missingParentIdNode) {
+      if (incompleteCount > 0) {
         showSyncStatus(
           "error",
-          `Node "${missingParentIdNode.name}" was created without an id, so ${skippedCount} nodes could not be pushed`,
+          `Pushed ${successCount} nodes, ${incompleteCount} incomplete, ${skippedCount} skipped`,
         );
       } else if (errorCount === 0) {
         showSyncStatus("success", `Pushed ${successCount} nodes to fleet`);
