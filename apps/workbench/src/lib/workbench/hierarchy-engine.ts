@@ -206,7 +206,10 @@ export function getLeafAgents(
   nodeId: string,
 ): string[] {
   return getDescendants(hierarchy, nodeId).filter(
-    (id) => hierarchy.nodes[id]?.type === "agent",
+    (id) => {
+      const type = hierarchy.nodes[id]?.type;
+      return type === "agent" || type === "runtime";
+    },
   );
 }
 
@@ -526,6 +529,36 @@ export function clearHierarchy(): void {
 }
 
 // ---------------------------------------------------------------------------
+// Normalization
+// ---------------------------------------------------------------------------
+
+/**
+ * Ensures a PolicyHierarchy has consistent parent↔child relationships.
+ * Rebuilds children arrays from parentId pointers so that loaded/pulled
+ * data is always structurally sound.
+ */
+export function normalizeHierarchy(hierarchy: PolicyHierarchy): PolicyHierarchy {
+  const nodes = { ...hierarchy.nodes };
+
+  // Reset children arrays
+  for (const id of Object.keys(nodes)) {
+    nodes[id] = { ...nodes[id], children: [] };
+  }
+
+  // Rebuild from parentId pointers
+  for (const node of Object.values(nodes)) {
+    if (node.parentId && nodes[node.parentId]) {
+      nodes[node.parentId] = {
+        ...nodes[node.parentId],
+        children: [...nodes[node.parentId].children, node.id],
+      };
+    }
+  }
+
+  return { nodes, rootId: hierarchy.rootId };
+}
+
+// ---------------------------------------------------------------------------
 // Validation
 // ---------------------------------------------------------------------------
 
@@ -537,8 +570,8 @@ export interface HierarchyValidationIssue {
 }
 
 /**
- * Validates all leaf (agent) nodes in the hierarchy, checking that their
- * effective policies have at least one guard enabled.
+ * Validates all leaf (agent and runtime) nodes in the hierarchy, checking
+ * that their effective policies have at least one guard enabled.
  */
 export function validateAllLeaves(
   hierarchy: PolicyHierarchy,

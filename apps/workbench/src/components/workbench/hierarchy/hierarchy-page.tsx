@@ -76,6 +76,7 @@ import type {
 const NODE_TYPE_COLORS: Record<OrgNodeType, string> = {
   org: "#d4a84b",
   team: "#5b8def",
+  agent: "#3dbf84",
   endpoint: "#6bc5a0",    // teal-green for machines
   runtime: "#3dbf84",     // bright green for AI agents
 };
@@ -83,6 +84,7 @@ const NODE_TYPE_COLORS: Record<OrgNodeType, string> = {
 const NODE_TYPE_ICONS: Record<OrgNodeType, typeof IconWorld> = {
   org: IconWorld,
   team: IconUsersGroup,
+  agent: IconRobot,
   endpoint: IconServer,    // server icon
   runtime: IconRobot,      // robot icon
 };
@@ -90,6 +92,7 @@ const NODE_TYPE_ICONS: Record<OrgNodeType, typeof IconWorld> = {
 const NODE_TYPE_LABELS: Record<OrgNodeType, string> = {
   org: "Organization",
   team: "Team",
+  agent: "Agent",
   endpoint: "Endpoint",
   runtime: "Runtime Agent",
 };
@@ -1216,6 +1219,7 @@ export function HierarchyPage() {
       const defaultNames: Record<OrgNodeType, string> = {
         org: "New Org",
         team: "New Team",
+        agent: `agent-new-${String(Date.now()).slice(-4)}`,
         endpoint: `endpoint-${String(Date.now()).slice(-4)}`,
         runtime: `runtime-${String(Date.now()).slice(-4)}`,
       };
