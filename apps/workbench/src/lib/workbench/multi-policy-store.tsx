@@ -843,36 +843,6 @@ interface PersistedTabState {
 /** Fields that must never be persisted to localStorage. */
 const SENSITIVE_GUARD_FIELDS = new Set(["embedding_api_key"]);
 
-/**
- * Strip sensitive fields from spider_sense (and any future guard) config
- * entries before the YAML is written to localStorage.
- */
-function sanitizeYamlForStorage(yaml: string): string {
-  // Quick-path: if the yaml doesn't mention any sensitive field, return as-is
-  let hasSensitive = false;
-  for (const field of SENSITIVE_GUARD_FIELDS) {
-    if (yaml.includes(field)) {
-      hasSensitive = true;
-      break;
-    }
-  }
-  if (!hasSensitive) return yaml;
-
-  // Remove lines that contain sensitive keys (YAML key: value lines).
-  // This is intentionally line-based so we don't need a full YAML
-  // round-trip which could reformat the document.
-  const lines = yaml.split("\n");
-  const filtered = lines.filter((line) => {
-    const trimmed = line.trimStart();
-    for (const field of SENSITIVE_GUARD_FIELDS) {
-      if (trimmed.startsWith(`${field}:`) || trimmed.startsWith(`${field} :`)) {
-        return false;
-      }
-    }
-    return true;
-  });
-  return filtered.join("\n");
-}
 
 function persistTabs(state: MultiPolicyState): void {
   try {

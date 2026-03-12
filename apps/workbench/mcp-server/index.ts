@@ -1943,13 +1943,13 @@ function wantsSse(): boolean {
  * Hashes both inputs with SHA-256 so the comparison is always over fixed 32-byte
  * digests — no length leaking, no truncation risk regardless of input size.
  */
-function secureTokenCompare(a: string, b: string): boolean {
+export function secureTokenCompare(a: string, b: string): boolean {
   const hashA = createHash("sha256").update(a).digest();
   const hashB = createHash("sha256").update(b).digest();
   return timingSafeEqual(hashA, hashB);
 }
 
-function hasConfiguredSseAuthToken(authToken: string): boolean {
+export function hasConfiguredSseAuthToken(authToken: string): boolean {
   return authToken.trim().length > 0;
 }
 
