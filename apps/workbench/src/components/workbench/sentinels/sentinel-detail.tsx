@@ -2,9 +2,6 @@ import { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   IconEye,
-  IconSearch,
-  IconBrain,
-  IconUsers,
   IconArrowLeft,
   IconPlayerPlay,
   IconPlayerPause,
@@ -49,13 +46,6 @@ const MODE_COLORS: Record<SentinelMode, string> = {
   hunter: "#d4784b",
   curator: "#8b7355",
   liaison: "#7b6b8b",
-};
-
-const MODE_ICONS: Record<SentinelMode, typeof IconEye> = {
-  watcher: IconEye,
-  hunter: IconSearch,
-  curator: IconBrain,
-  liaison: IconUsers,
 };
 
 const MODE_LABELS: Record<SentinelMode, string> = {

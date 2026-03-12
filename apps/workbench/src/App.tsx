@@ -282,6 +282,28 @@ class ErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryStat
   }
 }
 
+function AppProviders({ children }: { children: ReactNode }) {
+  return (
+    <ToastProvider>
+      <GeneralSettingsProvider>
+        <HintSettingsProvider>
+          <MultiPolicyProvider>
+            <SentinelProvider>
+              <FindingProvider>
+                <SignalProvider>
+                  <SwarmProvider>
+                    <FleetConnectionProvider>{children}</FleetConnectionProvider>
+                  </SwarmProvider>
+                </SignalProvider>
+              </FindingProvider>
+            </SentinelProvider>
+          </MultiPolicyProvider>
+        </HintSettingsProvider>
+      </GeneralSettingsProvider>
+    </ToastProvider>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // App root
 // ---------------------------------------------------------------------------
@@ -303,70 +325,107 @@ export function App() {
   return (
     <HashRouter>
       <ErrorBoundary>
-        <ToastProvider>
-          <GeneralSettingsProvider>
-            <HintSettingsProvider>
-              <MultiPolicyProvider>
-                <SentinelProvider>
-                <FindingProvider>
-                <SignalProvider>
-                <SwarmProvider>
-                <FleetConnectionProvider>
-                  <Suspense fallback={<LoadingFallback />}>
-                    <Routes>
-                      <Route element={<DesktopLayout />}>
-                        {/* Default redirect */}
-                        <Route index element={<Navigate to="/home" replace />} />
+        <AppProviders>
+          <Suspense fallback={<LoadingFallback />}>
+            <Routes>
+              <Route element={<DesktopLayout />}>
+                {/* Default redirect */}
+                <Route index element={<Navigate to="/home" replace />} />
 
-                        {/* Core pages */}
-                        <Route path="home" element={<HomePage />} />
-                        <Route path="editor" element={<PolicyEditor />} />
-                        <Route path="compliance" element={<ComplianceDashboard />} />
-                        <Route path="receipts" element={<ReceiptInspector />} />
-                        <Route path="library" element={<LibraryGallery />} />
-                        <Route path="settings" element={<SettingsPage />} />
-                        <Route path="approvals" element={<ApprovalQueue />} />
-                        <Route path="fleet" element={<FleetDashboard />} />
-                        <Route path="audit" element={<AuditLog />} />
+                {/* Core pages */}
+                <Route path="home" element={<HomePage />} />
+                <Route path="editor" element={<PolicyEditor />} />
+                <Route path="compliance" element={<ComplianceDashboard />} />
+                <Route path="receipts" element={<ReceiptInspector />} />
+                <Route path="library" element={<LibraryGallery />} />
+                <Route path="settings" element={<SettingsPage />} />
+                <Route path="approvals" element={<ApprovalQueue />} />
+                <Route path="fleet" element={<FleetDashboard />} />
+                <Route path="audit" element={<AuditLog />} />
 
-                        {/* Sentinel Swarm pages */}
-                        <Route path="sentinels" element={<SentinelsPage />} />
-                        <Route path="sentinels/create" element={<SentinelCreatePage />} />
-                        <Route path="sentinels/:id" element={<SentinelDetailPage />} />
-                        <Route path="findings" element={<FindingsPage />} />
-                        <Route path="findings/:id" element={<FindingDetailPage />} />
-                        <Route path="intel/:id" element={<IntelDetailPage />} />
-                        <Route path="swarms" element={<SwarmPage />} />
-                        <Route path="swarms/:id" element={<SwarmDetail />} />
+                {/* Sentinel Swarm pages */}
+                <Route path="sentinels" element={<SentinelsPage />} />
+                <Route path="sentinels/create" element={<SentinelCreatePage />} />
+                <Route path="sentinels/:id" element={<SentinelDetailPage />} />
+                <Route path="findings" element={<FindingsPage />} />
+                <Route path="findings/:id" element={<FindingDetailPage />} />
+                <Route path="intel/:id" element={<IntelDetailPage />} />
+                <Route path="swarms" element={<SwarmPage />} />
+                <Route path="swarms/:id" element={<SwarmDetail />} />
 
-                        {/* Merged pages */}
-                        <Route path="lab" element={<LabLayout />} />
-                        <Route path="topology" element={<TopologyLayout />} />
+                {/* Merged pages */}
+                <Route path="lab" element={<LabLayout />} />
+                <Route path="topology" element={<TopologyLayout />} />
 
-                        {/* Redirects for bookmark compatibility */}
-                        <Route path="intel" element={<Navigate to="/findings?tab=intel" replace />} />
-                        <Route path="hunt" element={<Navigate to="/lab?tab=hunt" replace />} />
-                        <Route path="simulator" element={<Navigate to="/lab?tab=simulate" replace />} />
-                        <Route path="guards" element={<Navigate to="/editor?panel=guards" replace />} />
-                        <Route path="compare" element={<Navigate to="/editor?panel=compare" replace />} />
-                        <Route path="delegation" element={<Navigate to="/topology?tab=delegation" replace />} />
-                        <Route path="hierarchy" element={<Navigate to="/topology?tab=hierarchy" replace />} />
-                        <Route path="overview" element={<Navigate to="/home" replace />} />
+                {/* Redirects for bookmark compatibility */}
+                <Route
+                  path="intel"
+                  element={
+                    <Navigate
+                      to={{ pathname: "/findings", search: "?tab=intel" }}
+                      replace
+                    />
+                  }
+                />
+                <Route
+                  path="hunt"
+                  element={
+                    <Navigate to={{ pathname: "/lab", search: "?tab=hunt" }} replace />
+                  }
+                />
+                <Route
+                  path="simulator"
+                  element={
+                    <Navigate
+                      to={{ pathname: "/lab", search: "?tab=simulate" }}
+                      replace
+                    />
+                  }
+                />
+                <Route
+                  path="guards"
+                  element={
+                    <Navigate
+                      to={{ pathname: "/editor", search: "?panel=guards" }}
+                      replace
+                    />
+                  }
+                />
+                <Route
+                  path="compare"
+                  element={
+                    <Navigate
+                      to={{ pathname: "/editor", search: "?panel=compare" }}
+                      replace
+                    />
+                  }
+                />
+                <Route
+                  path="delegation"
+                  element={
+                    <Navigate
+                      to={{ pathname: "/topology", search: "?tab=delegation" }}
+                      replace
+                    />
+                  }
+                />
+                <Route
+                  path="hierarchy"
+                  element={
+                    <Navigate
+                      to={{ pathname: "/topology", search: "?tab=hierarchy" }}
+                      replace
+                    />
+                  }
+                />
+                <Route path="overview" element={<Navigate to="/home" replace />} />
 
-                        {/* Catch-all */}
-                        <Route path="*" element={<Navigate to="/home" replace />} />
-                      </Route>
-                    </Routes>
-                  </Suspense>
-                </FleetConnectionProvider>
-                </SwarmProvider>
-                </SignalProvider>
-                </FindingProvider>
-                </SentinelProvider>
-              </MultiPolicyProvider>
-            </HintSettingsProvider>
-          </GeneralSettingsProvider>
-        </ToastProvider>
+                {/* Catch-all */}
+                <Route path="*" element={<Navigate to="/home" replace />} />
+              </Route>
+            </Routes>
+          </Suspense>
+        </AppProviders>
       </ErrorBoundary>
     </HashRouter>
   );

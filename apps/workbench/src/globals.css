@@ -220,6 +220,41 @@
   50% { opacity: 0.85; }
 }
 
+@keyframes hb-glow {
+  0%, 100% { opacity: 0.08; }
+  50% { opacity: 0.2; }
+}
+
+@keyframes hb-ring {
+  0%, 100% { opacity: 0.25; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(1.015); }
+}
+
+@keyframes hb-seg {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 0.85; }
+}
+
+@keyframes hb-sweep {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes hb-diamond {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 0.95; }
+}
+
+@keyframes hb-facets {
+  0%, 100% { opacity: 0.15; }
+  50% { opacity: 0.4; }
+}
+
+@keyframes hb-core {
+  0%, 100% { opacity: 0.06; }
+  50% { opacity: 0.18; }
+}
+
 /* ==========================================================================
    Tauri Desktop Chrome
    ========================================================================== */

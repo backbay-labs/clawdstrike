@@ -21,12 +21,12 @@ vi.mock("@/components/workbench/editor/policy-editor", () => ({
   PolicyEditor: () => <div data-testid="page-editor">PolicyEditor</div>,
 }));
 
-vi.mock("@/components/workbench/simulator/simulator-layout", () => ({
-  SimulatorLayout: () => <div data-testid="page-simulator">SimulatorLayout</div>,
+vi.mock("@/components/workbench/lab/lab-layout", () => ({
+  LabLayout: () => <div data-testid="page-lab">LabLayout</div>,
 }));
 
-vi.mock("@/components/workbench/compare/compare-layout", () => ({
-  CompareLayout: () => <div data-testid="page-compare">CompareLayout</div>,
+vi.mock("@/components/workbench/topology/topology-layout", () => ({
+  TopologyLayout: () => <div data-testid="page-topology">TopologyLayout</div>,
 }));
 
 vi.mock("@/components/workbench/compliance/compliance-dashboard", () => ({
@@ -45,16 +45,8 @@ vi.mock("@/components/workbench/settings/settings-page", () => ({
   SettingsPage: () => <div data-testid="page-settings">SettingsPage</div>,
 }));
 
-vi.mock("@/components/workbench/delegation/delegation-page", () => ({
-  DelegationPage: () => <div data-testid="page-delegation">DelegationPage</div>,
-}));
-
 vi.mock("@/components/workbench/approvals/approval-queue", () => ({
   ApprovalQueue: () => <div data-testid="page-approvals">ApprovalQueue</div>,
-}));
-
-vi.mock("@/components/workbench/hierarchy/hierarchy-page", () => ({
-  HierarchyPage: () => <div data-testid="page-hierarchy">HierarchyPage</div>,
 }));
 
 vi.mock("@/components/workbench/fleet/fleet-dashboard", () => ({
@@ -97,21 +89,23 @@ describe("App", () => {
     });
   });
 
-  it("renders the simulator route", async () => {
+  it("redirects simulator legacy route to /lab?tab=simulate", async () => {
     window.location.hash = "#/simulator";
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("page-simulator")).toBeInTheDocument();
+      expect(screen.getByTestId("page-lab")).toBeInTheDocument();
+      expect(window.location.hash).toContain("/lab?tab=simulate");
     });
   });
 
-  it("renders the compare route", async () => {
+  it("redirects compare legacy route to /editor?panel=compare", async () => {
     window.location.hash = "#/compare";
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("page-compare")).toBeInTheDocument();
+      expect(screen.getByTestId("page-editor")).toBeInTheDocument();
+      expect(window.location.hash).toContain("/editor?panel=compare");
     });
   });
 
@@ -158,7 +152,7 @@ describe("App", () => {
     // The sidebar nav items prove the context is available.
     await waitFor(() => {
       expect(screen.getByText("Editor")).toBeInTheDocument();
-      expect(screen.getByText("Threat Lab")).toBeInTheDocument();
+      expect(screen.getByText("Lab")).toBeInTheDocument();
     });
   });
 });

@@ -93,6 +93,7 @@ const ALL_STATUSES: FindingStatus[] = [
   "promoted",
   "dismissed",
   "false_positive",
+  "archived",
 ];
 
 const ALL_SEVERITIES: Severity[] = ["critical", "high", "medium", "low", "info"];

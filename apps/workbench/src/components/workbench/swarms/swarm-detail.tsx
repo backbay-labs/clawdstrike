@@ -59,7 +59,6 @@ import type {
   DetectionRef,
   SpeakeasyRef,
   SpeakeasyPurpose,
-  SpeakeasyClassification,
 } from "@/lib/workbench/sentinel-types";
 import type { TrustLevel } from "@/lib/workbench/delegation-types";
 
@@ -95,12 +94,6 @@ const PURPOSE_COLORS: Record<SpeakeasyPurpose, string> = {
   incident: "#c45c5c",
   coordination: "#3dbf84",
   mentoring: "#55788b",
-};
-
-const CLASSIFICATION_COLORS: Record<SpeakeasyClassification, string> = {
-  routine: "#6f7f9a",
-  sensitive: "#d4a84b",
-  restricted: "#c45c5c",
 };
 
 const TRUST_COLORS: Record<TrustLevel, string> = {
