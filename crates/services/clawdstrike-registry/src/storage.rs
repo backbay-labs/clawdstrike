@@ -1,6 +1,7 @@
 //! Content-addressed blob storage for .cpkg archives.
 
 use std::fs;
+use std::path::Path;
 use std::path::PathBuf;
 
 use crate::error::RegistryError;
@@ -25,10 +26,7 @@ impl BlobStorage {
         let blob_path = self.blob_path(&hash);
 
         if !blob_path.exists() {
-            // Write to a temporary file first, then rename for atomicity.
-            let tmp_path = self.root.join(format!(".tmp-{}", uuid::Uuid::new_v4()));
-            fs::write(&tmp_path, data)?;
-            fs::rename(&tmp_path, &blob_path)?;
+            self.write_blob_if_missing(&blob_path, data)?;
         }
 
         Ok(hash)
@@ -108,12 +106,26 @@ impl BlobStorage {
         let blob_path = self.blob_path(&canonical);
 
         if !blob_path.exists() {
-            let tmp_path = self.root.join(format!(".tmp-{}", uuid::Uuid::new_v4()));
-            fs::write(&tmp_path, data)?;
-            fs::rename(&tmp_path, &blob_path)?;
+            self.write_blob_if_missing(&blob_path, data)?;
         }
 
         Ok(())
+    }
+
+    fn write_blob_if_missing(&self, blob_path: &Path, data: &[u8]) -> Result<(), RegistryError> {
+        let tmp_path = self.root.join(format!(".tmp-{}", uuid::Uuid::new_v4()));
+        fs::write(&tmp_path, data)?;
+        match fs::rename(&tmp_path, blob_path) {
+            Ok(()) => Ok(()),
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+                let _ = fs::remove_file(&tmp_path);
+                Ok(())
+            }
+            Err(err) => {
+                let _ = fs::remove_file(&tmp_path);
+                Err(RegistryError::Io(err))
+            }
+        }
     }
 
     /// Delete a blob by hash if it exists.
@@ -140,6 +152,8 @@ impl BlobStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Arc, Barrier};
+    use std::thread;
 
     #[test]
     fn store_and_load() {
@@ -257,5 +271,34 @@ mod tests {
 
         assert!(expected_path.exists());
         assert!(!root.join("0x").join(&hash).exists());
+    }
+
+    #[test]
+    fn concurrent_store_with_hash_is_idempotent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let storage = Arc::new(BlobStorage::new(tmp.path().join("blobs")).unwrap());
+        let payload = b"parallel-content".to_vec();
+        let hash = hush_core::sha256_hex(&payload);
+        let workers = 8usize;
+        let barrier = Arc::new(Barrier::new(workers));
+
+        let mut handles = Vec::with_capacity(workers);
+        for _ in 0..workers {
+            let storage = Arc::clone(&storage);
+            let barrier = Arc::clone(&barrier);
+            let payload = payload.clone();
+            let hash = hash.clone();
+            handles.push(thread::spawn(move || {
+                barrier.wait();
+                storage.store_with_hash(&payload, &hash)
+            }));
+        }
+
+        for handle in handles {
+            handle.join().unwrap().unwrap();
+        }
+
+        assert!(storage.exists(&hash));
+        assert_eq!(storage.load(&hash).unwrap(), payload);
     }
 }
