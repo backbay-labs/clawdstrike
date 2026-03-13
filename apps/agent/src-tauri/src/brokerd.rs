@@ -437,7 +437,7 @@ pub fn prepare_managed_brokerd_binary() -> Result<Option<PathBuf>> {
     };
 
     let managed_path = managed_brokerd_path();
-    let copy_needed = !managed_path.is_file();
+    let copy_needed = managed_brokerd_needs_copy(&source_path, &managed_path)?;
 
     if copy_needed {
         if let Some(parent) = managed_path.parent() {
@@ -490,6 +490,36 @@ pub fn prepare_managed_brokerd_binary() -> Result<Option<PathBuf>> {
     }
 
     Ok(Some(managed_path))
+}
+
+fn managed_brokerd_needs_copy(source_path: &PathBuf, managed_path: &PathBuf) -> Result<bool> {
+    if !managed_path.is_file() {
+        return Ok(true);
+    }
+    let source_meta = std::fs::metadata(source_path).with_context(|| {
+        format!(
+            "Failed to stat bundled brokerd candidate at {:?}",
+            source_path
+        )
+    })?;
+    let managed_meta = std::fs::metadata(managed_path).with_context(|| {
+        format!(
+            "Failed to stat managed brokerd at {:?}",
+            managed_path
+        )
+    })?;
+    if source_meta.len() != managed_meta.len() {
+        return Ok(true);
+    }
+
+    let source_modified = source_meta
+        .modified()
+        .with_context(|| "Failed to read bundled brokerd mtime")?;
+    let managed_modified = managed_meta
+        .modified()
+        .with_context(|| "Failed to read managed brokerd mtime")?;
+
+    Ok(source_modified > managed_modified)
 }
 
 pub fn find_brokerd_binary() -> Option<PathBuf> {

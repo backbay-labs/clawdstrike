@@ -584,6 +584,98 @@ broker:
 }
 
 #[tokio::test]
+async fn preview_body_hash_is_bound_to_capability_requests() {
+    let daemon = broker_daemon_with_policy(
+        r#"
+version: "1.5.0"
+name: "broker-preview-hash-binding"
+guards:
+  egress_allowlist:
+    enabled: true
+    allow:
+      - "127.0.0.1"
+broker:
+  enabled: true
+  providers:
+    - name: "openai"
+      host: "127.0.0.1"
+      port: 8443
+      exact_paths: ["/v1/responses"]
+      methods: ["POST"]
+      secret_ref: "openai/dev"
+      allowed_headers: ["content-type"]
+      require_body_sha256: true
+      require_intent_preview: true
+      approval_required_risk_levels: ["high"]
+"#,
+    );
+    let client = reqwest::Client::new();
+
+    let preview_response = client
+        .post(format!("{}/api/v1/broker/previews", daemon.url))
+        .json(&serde_json::json!({
+            "provider": "openai",
+            "url": "http://127.0.0.1:8443/v1/responses",
+            "method": "POST",
+            "secret_ref": "openai/dev",
+            "body": r#"{"model":"gpt-4.1-mini","tools":[{"type":"function","name":"tool"}]}"#,
+            "body_sha256": "abc123"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert!(preview_response.status().is_success());
+    let preview_payload: serde_json::Value = preview_response.json().await.unwrap();
+    let preview = &preview_payload["preview"];
+    assert_eq!(preview["approval_required"], true);
+    assert_eq!(preview["approval_state"], "pending");
+    assert_eq!(preview["body_sha256"], "abc123");
+    let preview_id = preview["preview_id"].as_str().unwrap();
+
+    let approve_response = client
+        .post(format!(
+            "{}/api/v1/broker/previews/{preview_id}/approve",
+            daemon.url
+        ))
+        .json(&serde_json::json!({ "approver": "test-user" }))
+        .send()
+        .await
+        .unwrap();
+    assert!(approve_response.status().is_success());
+
+    let mut issue_request = serde_json::json!({
+        "provider": "openai",
+        "url": "http://127.0.0.1:8443/v1/responses",
+        "method": "POST",
+        "secret_ref": "openai/dev",
+        "body_sha256": "abc123",
+        "preview_id": preview_id,
+        "proof_binding": {
+            "mode": "loopback",
+            "binding_sha256": "deadbeef"
+        }
+    });
+    let first_issue = client
+        .post(format!("{}/api/v1/broker/capabilities", daemon.url))
+        .json(&issue_request)
+        .send()
+        .await
+        .unwrap();
+    assert!(first_issue.status().is_success());
+
+    issue_request["body_sha256"] = serde_json::json!("mismatch");
+    let mismatch_issue = client
+        .post(format!("{}/api/v1/broker/capabilities", daemon.url))
+        .json(&issue_request)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(mismatch_issue.status(), reqwest::StatusCode::FORBIDDEN);
+    let payload: serde_json::Value = mismatch_issue.json().await.unwrap();
+    assert_eq!(payload["error"]["code"], "BROKER_PREVIEW_MISMATCH");
+}
+
+#[tokio::test]
 async fn revokes_and_freezes_broker_capabilities() {
     let daemon = broker_daemon();
     let client = reqwest::Client::new();

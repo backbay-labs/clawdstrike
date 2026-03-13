@@ -114,6 +114,10 @@ function downloadBundle(capabilityId: string, payload: BrokerCompletionBundleRes
 export function BrokerMissionControl(_props: { windowId?: string }) {
   const initialized = useRef(false);
   const { events } = useSharedSSE();
+  const latestSelection = useRef<{ capabilityId: string | null; previewId: string | null }>({
+    capabilityId: null,
+    previewId: null,
+  });
   const latestBrokerEventId = useMemo(
     () => events.find((event) => event.event_type.startsWith("broker_"))?._id ?? 0,
     [events],
@@ -133,8 +137,15 @@ export function BrokerMissionControl(_props: { windowId?: string }) {
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  useEffect(() => {
+    latestSelection.current = {
+      capabilityId: selectedCapabilityId,
+      previewId: selectedPreviewId,
+    };
+  }, [selectedCapabilityId, selectedPreviewId]);
 
   const loadMission = useCallback(async () => {
+    const selection = latestSelection.current;
     const [capabilityResponse, previewResponse, frozenResponse] = await Promise.all([
       fetchBrokerCapabilities({ limit: 200 }),
       fetchBrokerPreviews({ limit: 200 }),
@@ -152,9 +163,9 @@ export function BrokerMissionControl(_props: { windowId?: string }) {
     setPreviews(nextPreviews);
     setFrozenProviders(frozenResponse.frozen_providers);
     const nextSelectedCapabilityId =
-      selectedCapabilityId &&
-      nextCapabilities.some((capability) => capability.capability_id === selectedCapabilityId)
-        ? selectedCapabilityId
+      selection.capabilityId &&
+      nextCapabilities.some((capability) => capability.capability_id === selection.capabilityId)
+        ? selection.capabilityId
         : nextCapabilities[0]?.capability_id ?? null;
     const pendingPreview = nextPreviews.find(
       (preview) => preview.approval_required && preview.approval_state === "pending",
@@ -162,8 +173,8 @@ export function BrokerMissionControl(_props: { windowId?: string }) {
     const attachedPreview = nextCapabilities.find((capability) => capability.intent_preview)
       ?.intent_preview?.preview_id;
     const nextSelectedPreviewId =
-      selectedPreviewId && nextPreviews.some((preview) => preview.preview_id === selectedPreviewId)
-        ? selectedPreviewId
+      selection.previewId && nextPreviews.some((preview) => preview.preview_id === selection.previewId)
+        ? selection.previewId
         : pendingPreview?.preview_id ?? attachedPreview ?? nextPreviews[0]?.preview_id ?? null;
     setSelectedCapabilityId(nextSelectedCapabilityId);
     setSelectedPreviewId(nextSelectedPreviewId);
@@ -171,7 +182,7 @@ export function BrokerMissionControl(_props: { windowId?: string }) {
       capabilityId: nextSelectedCapabilityId,
       previewId: nextSelectedPreviewId,
     };
-  }, [selectedCapabilityId, selectedPreviewId]);
+  }, []);
 
   const loadDetail = useCallback(async (capabilityId: string) => {
     setDetailLoading(true);

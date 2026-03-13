@@ -686,6 +686,7 @@ fn build_intent_preview_record(
         approval_state: clawdstrike_broker_protocol::BrokerApprovalState::NotRequired,
         approved_at: None,
         approver: None,
+        body_sha256: request.body_sha256.clone(),
     };
     if preview_requires_approval(provider_policy, &preview) {
         preview.approval_required = true;
@@ -711,10 +712,11 @@ fn validate_preview_matches_request(
         || record.method != request.method
         || record.secret_ref_id != request.secret_ref
         || record.policy_hash != policy_hash
+        || record.preview.body_sha256 != request.body_sha256
     {
         return Err(V1Error::forbidden(
             "BROKER_PREVIEW_MISMATCH",
-            "preview does not match the requested provider, destination, secret, or resolved policy",
+            "preview does not match the requested provider, destination, secret, policy, or body hash",
         ));
     }
 

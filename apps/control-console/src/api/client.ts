@@ -84,6 +84,7 @@ export interface BrokerIntentPreview {
   approval_state: BrokerApprovalState;
   approved_at?: string;
   approver?: string;
+  body_sha256?: string;
 }
 
 export interface BrokerDelegationLineage {
