@@ -1510,7 +1510,8 @@ export function HierarchyPage() {
           const canDrop =
             (sourceNode.type === "runtime" && targetNode.type === "endpoint") ||
             (sourceNode.type === "endpoint" && targetNode.type === "team") ||
-            (sourceNode.type === "team" && targetNode.type === "org");
+            (sourceNode.type === "team" && targetNode.type === "org") ||
+            (sourceNode.type === "agent" && targetNode.type === "team");
           if (canDrop) {
             const prevHierarchy = currentHierarchy;
             const updated = moveNode(currentHierarchy, dragSourceId, targetId);
