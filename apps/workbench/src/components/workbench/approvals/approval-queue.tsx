@@ -42,7 +42,7 @@ import {
 
 const ALL_STATUSES: ApprovalStatus[] = ["pending", "approved", "denied", "expired"];
 const ALL_RISK_LEVELS: RiskLevel[] = ["critical", "high", "medium", "low"];
-const ALL_PROVIDERS: OriginProvider[] = ["slack", "teams", "github", "jira", "cli", "api"];
+const ALL_PROVIDERS: OriginProvider[] = ["slack", "teams", "github", "jira", "email", "discord", "webhook", "cli", "api"];
 
 const STATUS_CONFIG: Record<ApprovalStatus, { label: string; color: string; bg: string }> = {
   pending: { label: "Pending", color: "#d4a84b", bg: "#d4a84b20" },
@@ -63,6 +63,9 @@ const PROVIDER_CONFIG: Record<OriginProvider, { label: string; color: string; ab
   teams: { label: "Teams", color: "#6264A7", abbr: "T" },
   github: { label: "GitHub", color: "#8b949e", abbr: "G" },
   jira: { label: "Jira", color: "#0052CC", abbr: "J" },
+  email: { label: "Email", color: "#D44638", abbr: "E" },
+  discord: { label: "Discord", color: "#5865F2", abbr: "D" },
+  webhook: { label: "Webhook", color: "#FF6B35", abbr: "W" },
   cli: { label: "CLI", color: "#6f7f9a", abbr: "C" },
   api: { label: "API", color: "#5b8def", abbr: "A" },
 };

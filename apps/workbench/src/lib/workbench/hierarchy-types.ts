@@ -1,8 +1,8 @@
 // ---------------------------------------------------------------------------
-// Org/Team/Endpoint/Runtime hierarchy types for policy inheritance visualization
+// Org/Team/Agent/Endpoint/Runtime hierarchy types for policy inheritance visualization
 // ---------------------------------------------------------------------------
 
-export type OrgNodeType = "org" | "team" | "endpoint" | "runtime";
+export type OrgNodeType = "org" | "team" | "agent" | "endpoint" | "runtime";
 
 export interface OrgNode {
   id: string;
