@@ -80,6 +80,17 @@ export function SigilSwarms(p: SigilProps) {
   );
 }
 
+/** Missions — routed objective marker with waypoint rails */
+export function SigilMission(p: SigilProps) {
+  return (
+    <svg {...base(p)}>
+      <path d="M6 4 L18 4 L14 10 L18 16 L6 16 Z" />
+      <line x1="6" y1="4" x2="6" y2="21" />
+      <path d="M10 8 L12 10 L10 12" />
+    </svg>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Author & Test
 // ---------------------------------------------------------------------------

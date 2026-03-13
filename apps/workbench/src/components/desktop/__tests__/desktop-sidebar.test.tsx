@@ -15,6 +15,7 @@ vi.mock("@/lib/tauri-bridge", () => ({
 
 const NAV_ITEMS = [
   { label: "Sentinels", href: "/sentinels" },
+  { label: "Mission Control", href: "/missions" },
   { label: "Findings & Intel", href: "/findings" },
   { label: "Lab", href: "/lab" },
   { label: "Swarms", href: "/swarms" },
@@ -39,7 +40,7 @@ describe("DesktopSidebar", () => {
     renderWithProviders(<DesktopSidebar />);
 
     for (const item of NAV_ITEMS) {
-      expect(screen.getByText(item.label)).toBeInTheDocument();
+      expect(screen.getByText(item.label)).toBeTruthy();
     }
   });
 
@@ -49,8 +50,8 @@ describe("DesktopSidebar", () => {
     for (const item of NAV_ITEMS) {
       const label = screen.getByText(item.label);
       const link = label.closest("a");
-      expect(link).toBeInTheDocument();
-      expect(link).toHaveAttribute("href", item.href);
+      expect(link).toBeTruthy();
+      expect(link?.getAttribute("href")).toBe(item.href);
     }
   });
 
@@ -69,7 +70,7 @@ describe("DesktopSidebar", () => {
 
     const editorLink = screen.getByRole("link", { name: "Editor" });
     const accentBar = editorLink.querySelector("span.bg-\\[\\#d4a84b\\]");
-    expect(accentBar).toBeInTheDocument();
+    expect(accentBar).toBeTruthy();
 
     const labLink = screen.getByRole("link", { name: "Lab" });
     const noAccent = labLink.querySelector("span.bg-\\[\\#d4a84b\\]");
@@ -83,20 +84,20 @@ describe("DesktopSidebar", () => {
       const label = screen.getByText(item.label);
       const link = label.closest("a")!;
       const svg = link.querySelector("svg");
-      expect(svg).toBeInTheDocument();
+      expect(svg).toBeTruthy();
     }
   });
 
   it("renders a collapse button", () => {
     renderWithProviders(<DesktopSidebar />);
-    expect(screen.getByText("Collapse")).toBeInTheDocument();
+    expect(screen.getByText("Collapse")).toBeTruthy();
   });
 
   it("renders section group headers", () => {
     renderWithProviders(<DesktopSidebar />);
 
     for (const title of SECTION_HEADERS) {
-      expect(screen.getByText(title)).toBeInTheDocument();
+      expect(screen.getByText(title)).toBeTruthy();
     }
   });
 
@@ -108,7 +109,7 @@ describe("DesktopSidebar", () => {
     await user.click(collapseBtn);
 
     for (const title of SECTION_HEADERS) {
-      expect(screen.queryByText(title)).not.toBeInTheDocument();
+      expect(screen.queryByText(title)).toBeNull();
     }
   });
 
@@ -123,7 +124,7 @@ describe("DesktopSidebar", () => {
     await user.click(collapseBtn);
 
     expect(sidebar.className).toContain("w-[52px]");
-    expect(screen.queryByText("Collapse")).not.toBeInTheDocument();
-    expect(screen.queryByText("Editor")).not.toBeInTheDocument();
+    expect(screen.queryByText("Collapse")).toBeNull();
+    expect(screen.queryByText("Editor")).toBeNull();
   });
 });

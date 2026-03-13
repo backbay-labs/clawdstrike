@@ -466,12 +466,11 @@ describe("fetchApprovals", () => {
     expect(result.decisions).toEqual([]);
   });
 
-  it("falls back to hushd URL when controlApiUrl is not set", async () => {
-    // When controlApiUrl is empty, fetchApprovals uses hushdUrl with kind "hushd"
-    // Our mock doesn't have a hushd approvals endpoint, so this will throw.
-    // This tests the fallback URL selection logic.
+  it("returns an empty result when controlApiUrl is not set", async () => {
     const conn = makeConn({ controlApiUrl: "" });
-    await expect(fetchApprovals(conn)).rejects.toThrow();
+    const result = await fetchApprovals(conn);
+    expect(result.requests).toEqual([]);
+    expect(result.decisions).toEqual([]);
   });
 
   it("throws on auth failure", async () => {
@@ -527,11 +526,10 @@ describe("resolveApproval", () => {
   });
 
   it("falls back to hushd URL when controlApiUrl is not set", async () => {
-    // Without controlApiUrl, resolve uses hushdUrl — no mock handler for that
     const conn = makeConn({ controlApiUrl: "" });
     const result = await resolveApproval(conn, "apr-001", "approved");
     expect(result.success).toBe(false);
-    expect(result.error).toBeDefined();
+    expect(result.error).toBe("Control API URL is not configured");
   });
 });
 
@@ -998,6 +996,14 @@ describe("fleetClient convenience object", () => {
   describe("fetchApprovals", () => {
     it("returns null when no connection URLs are saved", async () => {
       // localStorage is empty
+      const result = await fleetClient.fetchApprovals();
+      expect(result).toBeNull();
+    });
+
+    it("returns null when the saved connection has no control API URL", async () => {
+      localStorage.setItem("clawdstrike_hushd_url", "http://localhost:9876");
+      localStorage.setItem("clawdstrike_api_key", "test-key");
+
       const result = await fleetClient.fetchApprovals();
       expect(result).toBeNull();
     });

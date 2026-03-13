@@ -7,6 +7,7 @@ import {
 import {
   SigilSentinel,
   SigilFindings,
+  SigilMission,
   SigilLab,
   SigilSwarms,
   SigilEditor,
@@ -21,12 +22,26 @@ import {
   type SigilProps,
 } from "./sidebar-icons";
 import { useWorkbench } from "@/lib/workbench/multi-policy-store";
+import { useOperator } from "@/lib/workbench/operator-store";
 import { useFleetConnection } from "@/lib/workbench/use-fleet-connection";
 import { useSentinels } from "@/lib/workbench/sentinel-store";
 import { useFindings } from "@/lib/workbench/finding-store";
 import { cn } from "@/lib/utils";
 import { fleetClient } from "@/lib/workbench/fleet-client";
 import { DEMO_APPROVAL_REQUESTS } from "@/lib/workbench/approval-demo-data";
+
+// ---- Sigil symbols ----
+
+const SIGIL_SYMBOLS: Record<string, string> = {
+  diamond: "\u25C7",
+  eye: "\u25C9",
+  wave: "\u223F",
+  crown: "\u2655",
+  spiral: "\u058D",
+  key: "\u2638",
+  star: "\u2729",
+  moon: "\u263E",
+};
 
 // ---- Data ----
 
@@ -49,6 +64,7 @@ const navSections: readonly NavSection[] = [
     accent: "#8b5555",
     items: [
       { label: "Sentinels", icon: SigilSentinel, href: "/sentinels" },
+      { label: "Mission Control", icon: SigilMission, href: "/missions" },
       { label: "Findings & Intel", icon: SigilFindings, href: "/findings", badge: true },
       { label: "Lab", icon: SigilLab, href: "/lab" },
       { label: "Swarms", icon: SigilSwarms, href: "/swarms" },
@@ -107,7 +123,17 @@ const POSTURE_BREATH: Record<SystemPosture, number> = {
   offline: 0, // no breathing when offline
 };
 
-function SystemHeartbeat({ collapsed, active }: { collapsed: boolean; active: boolean }) {
+function SystemHeartbeat({
+  collapsed,
+  active,
+  fleetOnline,
+  pendingApprovals,
+}: {
+  collapsed: boolean;
+  active: boolean;
+  fleetOnline: boolean;
+  pendingApprovals: number;
+}) {
   const uid = useId();
   const glowId = `hb-glow${uid}`;
   const sweepId = `hb-sweep${uid}`;
@@ -118,15 +144,12 @@ function SystemHeartbeat({ collapsed, active }: { collapsed: boolean; active: bo
 
   const { sentinels } = useSentinels();
   const { findings } = useFindings();
-  const { connection } = useFleetConnection();
 
   const activeSentinels = sentinels.filter((s) => s.status === "active").length;
   const emergingFindings = findings.filter((f) => f.status === "emerging").length;
   const criticalFindings = findings.filter(
     (f) => f.status === "emerging" && f.severity === "critical",
   ).length;
-  const pendingApprovals = DEMO_APPROVAL_REQUESTS.filter((r) => r.status === "pending").length;
-  const fleetOnline = connection.connected;
 
   const posture = derivePosture(activeSentinels, emergingFindings, criticalFindings, fleetOnline);
   const ring = POSTURE_RING[posture];
@@ -356,8 +379,10 @@ export function DesktopSidebar() {
   const pathname = useLocation().pathname;
   const { state, dispatch } = useWorkbench();
   const collapsed = state.ui.sidebarCollapsed;
+  const { currentOperator } = useOperator();
   const { connection } = useFleetConnection();
   const fleetConnected = connection.connected;
+  const approvalsConnected = fleetConnected && connection.controlApiUrl.trim().length > 0;
 
   const [liveApprovalCount, setLiveApprovalCount] = useState<number | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -366,7 +391,7 @@ export function DesktopSidebar() {
     if (pollRef.current) clearInterval(pollRef.current);
     pollRef.current = null;
 
-    if (!fleetConnected) {
+    if (!approvalsConnected) {
       setLiveApprovalCount(null);
       return;
     }
@@ -383,14 +408,18 @@ export function DesktopSidebar() {
     fetchCount();
     pollRef.current = setInterval(fetchCount, 30_000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [fleetConnected]);
+  }, [approvalsConnected]);
 
-  const isLiveBadge = fleetConnected && liveApprovalCount !== null;
+  const isLiveBadge = approvalsConnected && liveApprovalCount !== null;
   const demoPendingCount = useMemo(
     () => DEMO_APPROVAL_REQUESTS.filter((r) => r.status === "pending").length,
     [],
   );
-  const pendingApprovalCount = isLiveBadge ? liveApprovalCount : demoPendingCount;
+  const pendingApprovalCount = isLiveBadge
+    ? liveApprovalCount
+    : fleetConnected
+      ? 0
+      : demoPendingCount;
 
   const { findings } = useFindings();
   const emergingFindingsCount = findings.filter((f) => f.status === "emerging").length;
@@ -426,6 +455,8 @@ export function DesktopSidebar() {
         <SystemHeartbeat
           collapsed={collapsed}
           active={pathname === "/home" || pathname === "/"}
+          fleetOnline={fleetConnected}
+          pendingApprovals={pendingApprovalCount}
         />
 
         {/* Sigil divider */}
@@ -582,6 +613,23 @@ export function DesktopSidebar() {
           )}
         </Link>
       </div>
+
+      {currentOperator && (
+        <div
+          className={cn(
+            "shrink-0 flex items-center text-[11px] text-[#6f7f9a] border-t border-[#2d324060]/50",
+            collapsed ? "justify-center px-1 py-2" : "gap-2 px-3 py-2",
+          )}
+          title={currentOperator.displayName || currentOperator.fingerprint}
+        >
+          <span className="text-sm shrink-0">{SIGIL_SYMBOLS[currentOperator.sigil] ?? currentOperator.sigil}</span>
+          {!collapsed && (
+            <span className="truncate text-[11px]">
+              {currentOperator.displayName || currentOperator.fingerprint.slice(0, 8)}
+            </span>
+          )}
+        </div>
+      )}
 
       <div className="shrink-0 border-t border-[#2d324060]/50 p-2">
         <button

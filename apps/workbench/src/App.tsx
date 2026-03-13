@@ -9,8 +9,12 @@ import { SwarmProvider } from "@/lib/workbench/swarm-store";
 import { SentinelProvider } from "@/lib/workbench/sentinel-store";
 import { FindingProvider } from "@/lib/workbench/finding-store";
 import { SignalProvider } from "@/lib/workbench/signal-store";
+import { MissionProvider } from "@/lib/workbench/mission-store";
+import { OperatorProvider } from "@/lib/workbench/operator-store";
+import { ReputationProvider } from "@/lib/workbench/reputation-store";
 import { ToastProvider } from "@/components/ui/toast";
 import { DesktopLayout } from "@/components/desktop/desktop-layout";
+import { IdentityPrompt } from "@/components/workbench/identity/identity-prompt";
 import { secureStore, migrateCredentialsToStronghold } from "@/lib/workbench/secure-store";
 
 // ---------------------------------------------------------------------------
@@ -128,6 +132,12 @@ const SwarmPage = lazy(() =>
 const SwarmDetail = lazy(() =>
   import("@/components/workbench/swarms/swarm-detail").then((m) => ({
     default: m.SwarmDetail,
+  })),
+);
+
+const MissionControlPage = lazy(() =>
+  import("@/components/workbench/missions/mission-control-page").then((m) => ({
+    default: m.MissionControlPage,
   })),
 );
 
@@ -284,23 +294,29 @@ class ErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryStat
 
 function AppProviders({ children }: { children: ReactNode }) {
   return (
-    <ToastProvider>
-      <GeneralSettingsProvider>
-        <HintSettingsProvider>
-          <MultiPolicyProvider>
-            <SentinelProvider>
-              <FindingProvider>
-                <SignalProvider>
-                  <SwarmProvider>
-                    <FleetConnectionProvider>{children}</FleetConnectionProvider>
-                  </SwarmProvider>
-                </SignalProvider>
-              </FindingProvider>
-            </SentinelProvider>
-          </MultiPolicyProvider>
-        </HintSettingsProvider>
-      </GeneralSettingsProvider>
-    </ToastProvider>
+    <OperatorProvider>
+      <ReputationProvider>
+        <ToastProvider>
+          <GeneralSettingsProvider>
+            <HintSettingsProvider>
+              <MultiPolicyProvider>
+                <SentinelProvider>
+                  <FindingProvider>
+                    <SignalProvider>
+                      <MissionProvider>
+                        <SwarmProvider>
+                          <FleetConnectionProvider>{children}</FleetConnectionProvider>
+                        </SwarmProvider>
+                      </MissionProvider>
+                    </SignalProvider>
+                  </FindingProvider>
+                </SentinelProvider>
+              </MultiPolicyProvider>
+            </HintSettingsProvider>
+          </GeneralSettingsProvider>
+        </ToastProvider>
+      </ReputationProvider>
+    </OperatorProvider>
   );
 }
 
@@ -326,6 +342,7 @@ export function App() {
     <HashRouter>
       <ErrorBoundary>
         <AppProviders>
+          <IdentityPrompt />
           <Suspense fallback={<LoadingFallback />}>
             <Routes>
               <Route element={<DesktopLayout />}>
@@ -350,6 +367,7 @@ export function App() {
                 <Route path="findings" element={<FindingsPage />} />
                 <Route path="findings/:id" element={<FindingDetailPage />} />
                 <Route path="intel/:id" element={<IntelDetailPage />} />
+                <Route path="missions" element={<MissionControlPage />} />
                 <Route path="swarms" element={<SwarmPage />} />
                 <Route path="swarms/:id" element={<SwarmDetail />} />
 

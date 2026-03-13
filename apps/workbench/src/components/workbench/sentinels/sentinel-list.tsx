@@ -22,7 +22,11 @@ import type {
   SentinelMode,
   SentinelStatus,
 } from "@/lib/workbench/sentinel-manager";
-import { deriveSigilColor } from "@/lib/workbench/sentinel-manager";
+import {
+  deriveSigilColor,
+  getSentinelDriverDefinition,
+  getSentinelExecutionModeConfig,
+} from "@/lib/workbench/sentinel-manager";
 import type { SigilType } from "@/lib/workbench/sentinel-manager";
 
 // ---------------------------------------------------------------------------
@@ -128,6 +132,8 @@ function SentinelCard({ sentinel }: { sentinel: Sentinel }) {
   const modeColor = MODE_COLORS[sentinel.mode];
   const ModeIcon = MODE_ICONS[sentinel.mode];
   const statusDot = STATUS_DOT_COLORS[sentinel.status];
+  const driver = getSentinelDriverDefinition(sentinel.runtime.driver);
+  const executionMode = getSentinelExecutionModeConfig(sentinel.runtime.executionMode);
 
   return (
     <Link
@@ -173,6 +179,14 @@ function SentinelCard({ sentinel }: { sentinel: Sentinel }) {
                 {STATUS_LABELS[sentinel.status]}
               </span>
             </div>
+            <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+              <span className="rounded-full border border-[#2d3240]/40 bg-[#131721] px-2 py-0.5 text-[8px] font-medium uppercase tracking-[0.08em] text-[#ece7dc]/65">
+                {driver.label}
+              </span>
+              <span className="rounded-full border border-[#2d3240]/40 bg-[#131721] px-2 py-0.5 text-[8px] font-medium uppercase tracking-[0.08em] text-[#6f7f9a]/60">
+                {executionMode.label} · Tier {sentinel.runtime.enforcementTier}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -189,6 +203,15 @@ function SentinelCard({ sentinel }: { sentinel: Sentinel }) {
             <span className="text-[9px] text-[#6f7f9a]/40 uppercase tracking-wider">Schedule</span>
             <span className="text-[10px] font-mono text-[#ece7dc]/50">
               {sentinel.schedule}
+            </span>
+          </div>
+        )}
+
+        {!sentinel.schedule && sentinel.runtime.targetRef && (
+          <div className="flex items-center gap-1.5">
+            <span className="text-[9px] text-[#6f7f9a]/40 uppercase tracking-wider">Target</span>
+            <span className="text-[10px] font-mono text-[#ece7dc]/50 truncate">
+              {sentinel.runtime.targetRef}
             </span>
           </div>
         )}

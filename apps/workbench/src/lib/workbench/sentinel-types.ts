@@ -30,6 +30,23 @@ export type SentinelMode = "watcher" | "hunter" | "curator" | "liaison";
 /** Sentinel lifecycle status. */
 export type SentinelStatus = "active" | "paused" | "retired";
 
+/** Runtime backend bound to a sentinel. */
+export type SentinelDriverKind =
+  | "claude_code"
+  | "openclaw"
+  | "hushd_agent"
+  | "openai_agent"
+  | "mcp_worker";
+
+/** Product-facing runtime posture. */
+export type SentinelExecutionMode = "observe" | "assist" | "enforce";
+
+/** Where the runtime lives. */
+export type SentinelRuntimeEndpointType = "local" | "fleet" | "gateway" | "remote";
+
+/** Current runtime health or bind status. */
+export type SentinelRuntimeHealth = "planned" | "ready" | "degraded" | "offline";
+
 /** Signal type discriminator. */
 export type SignalType =
   | "anomaly"           // Behavioral deviation from baseline
@@ -102,6 +119,8 @@ export type SignalProvenance =
   | "pattern_match"       // Produced by hunt pattern matching
   | "correlation_rule"    // Produced by hunt-correlate engine
   | "spider_sense"        // Produced by Spider Sense screening
+  | "runtime_event"       // Produced by a bound runtime/tool session
+  | "tool_receipt"        // Produced from a runtime receipt or transcript
   | "external_feed"       // Ingested from external threat feed
   | "swarm_intel"         // Received from a swarm peer
   | "manual";             // Manually created by operator
@@ -133,7 +152,7 @@ export const SWARM_MESSAGE_DEFAULT_TTL = 10;
 // ---------------------------------------------------------------------------
 
 /** Valid ID prefixes for Sentinel Swarm objects. */
-export type IdPrefix = "sen" | "sig" | "fnd" | "int" | "swm" | "spk" | "enr";
+export type IdPrefix = "sen" | "sig" | "fnd" | "int" | "swm" | "spk" | "enr" | "msn";
 
 /** Crockford Base32 encoding alphabet. */
 const CROCKFORD_BASE32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
@@ -246,6 +265,8 @@ export interface Sentinel {
   status: SentinelStatus;
   /** Swarms this sentinel participates in. Empty for solo operation. */
   swarms: SwarmMembership[];
+  /** Runtime binding for execution, sessions, health, and receipts. */
+  runtime: SentinelRuntimeBinding;
   /** Lifetime performance metrics. */
   stats: SentinelStats;
   /**
@@ -254,10 +275,55 @@ export interface Sentinel {
    * Null for local-only sentinels (no fleet connection).
    */
   fleetAgentId: string | null;
+  /**
+   * Operator public key of the owner (64-char hex).
+   * Present when the sentinel was created by an authenticated operator.
+   */
+  ownerPublicKey?: string;
+  /**
+   * Ed25519 signature proving the owner controls the operator keypair.
+   * Created via signOwnershipProof(sentinel.identity.publicKey, operatorSecretKey).
+   */
+  ownershipProof?: string | null;
   /** Creation timestamp (Unix ms). */
   createdAt: number;
   /** Last update timestamp (Unix ms). */
   updatedAt: number;
+}
+
+/**
+ * Runtime binding for a sentinel.
+ *
+ * This keeps the workbench local-first while exposing enough structure for:
+ * - runtime registration in control-api
+ * - mission assignment to concrete runtimes
+ * - signal/finding receipt traceability
+ */
+export interface SentinelRuntimeBinding {
+  /** Runtime backend this sentinel uses for execution. */
+  driver: SentinelDriverKind;
+  /** Operator-facing posture. */
+  executionMode: SentinelExecutionMode;
+  /** Contract-facing enforcement tier from enforcement-tiers.md. */
+  enforcementTier: 0 | 1 | 2 | 3;
+  /** Where the runtime is hosted. */
+  endpointType: SentinelRuntimeEndpointType;
+  /** Freeform runtime target reference (repo, gateway/node, fleet agent, etc). */
+  targetRef: string | null;
+  /** Runtime principal or registration ID from the control plane. */
+  runtimeRef: string | null;
+  /** Active session identifier when one exists. */
+  sessionRef: string | null;
+  /** Current runtime health. */
+  health: SentinelRuntimeHealth;
+  /** Whether this runtime emits receipts that can be attached to evidence. */
+  receiptsEnabled: boolean;
+  /** Whether tool/runtime activity should be promoted into signals. */
+  emitsSignals: boolean;
+  /** Last heartbeat timestamp, if reported by the runtime. */
+  lastHeartbeatAt: number | null;
+  /** Optional operator note about the binding target or constraints. */
+  notes?: string;
 }
 
 /**
@@ -1039,6 +1105,15 @@ export interface SwarmMember {
    * Null for operator members.
    */
   sentinelId: string | null;
+  /**
+   * Fingerprint of the operator who invited this member.
+   * Null for founding members or self-joined.
+   */
+  invitedBy?: string | null;
+  /**
+   * Depth in the invitation chain (0 = direct invite from admin).
+   */
+  invitationDepth?: number;
 }
 
 /**

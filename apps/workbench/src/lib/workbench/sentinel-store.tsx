@@ -16,13 +16,11 @@ import React, {
 import type {
   Sentinel,
   SentinelMemory,
-  SentinelStats,
-  SentinelMode,
-  SentinelStatus,
 } from "./sentinel-types";
-import type { CreateSentinelConfig, StatsEvent } from "./sentinel-manager";
+import type { CreateSentinelConfig, StatsEvent, SentinelMutablePatch } from "./sentinel-manager";
 import {
   createSentinel as engineCreateSentinel,
+  createDefaultRuntimeBinding,
   updateSentinel as engineUpdateSentinel,
   deleteSentinel as engineDeleteSentinel,
   activateSentinel as engineActivateSentinel,
@@ -47,7 +45,7 @@ export interface SentinelState {
 
 export type SentinelAction =
   | { type: "CREATE"; sentinel: Sentinel }
-  | { type: "UPDATE"; sentinelId: string; patch: Partial<Pick<Sentinel, "name" | "goals" | "schedule" | "status" | "policy" | "mode">> }
+  | { type: "UPDATE"; sentinelId: string; patch: SentinelMutablePatch }
   | { type: "DELETE"; sentinelId: string }
   | { type: "SET_ACTIVE"; sentinelId: string | null }
   | { type: "ACTIVATE"; sentinelId: string }
@@ -224,14 +222,23 @@ function loadPersistedSentinels(): SentinelState | null {
 
     if (validSentinels.length === 0) return null;
 
+    const normalizedSentinels = validSentinels.map((sentinel) => ({
+      ...sentinel,
+      runtime: createDefaultRuntimeBinding(
+        sentinel.mode,
+        sentinel.runtime,
+        sentinel.fleetAgentId,
+      ),
+    }));
+
     const activeSentinelId =
       typeof parsed.activeSentinelId === "string" &&
-      validSentinels.some((s) => s.id === parsed.activeSentinelId)
+      normalizedSentinels.some((s) => s.id === parsed.activeSentinelId)
         ? parsed.activeSentinelId
-        : validSentinels[0].id;
+        : normalizedSentinels[0].id;
 
     return {
-      sentinels: validSentinels,
+      sentinels: normalizedSentinels,
       activeSentinelId,
       loading: false,
     };
@@ -265,7 +272,7 @@ interface SentinelContextValue {
   activeSentinel: Sentinel | undefined;
   loading: boolean;
   createSentinel: (config: CreateSentinelConfig) => Promise<Sentinel>;
-  updateSentinel: (sentinelId: string, patch: Partial<Pick<Sentinel, "name" | "goals" | "schedule" | "status" | "policy" | "mode">>) => void;
+  updateSentinel: (sentinelId: string, patch: SentinelMutablePatch) => void;
   deleteSentinel: (sentinelId: string) => void;
   setActiveSentinel: (sentinelId: string | null) => void;
   activateSentinel: (sentinelId: string) => void;
@@ -321,10 +328,7 @@ export function SentinelProvider({ children }: { children: ReactNode }) {
   );
 
   const updateSentinelAction = useCallback(
-    (
-      sentinelId: string,
-      patch: Partial<Pick<Sentinel, "name" | "goals" | "schedule" | "status" | "policy" | "mode">>,
-    ) => {
+    (sentinelId: string, patch: SentinelMutablePatch) => {
       dispatch({ type: "UPDATE", sentinelId, patch });
     },
     [],

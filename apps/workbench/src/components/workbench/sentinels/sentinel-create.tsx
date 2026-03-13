@@ -13,13 +13,23 @@ import {
   IconSparkles,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import { useOperator } from "@/lib/workbench/operator-store";
 import {
   createSentinel,
   getSentinelCapabilities,
+  getSentinelDriverDefinition,
+  getSentinelDriverDefinitions,
+  getSentinelExecutionModeConfig,
+  getSentinelExecutionModes,
+  getRecommendedDriverForMode,
+  getRecommendedGoalTypeForMode,
+  deriveEnforcementTier,
   validateGoalsForMode,
 } from "@/lib/workbench/sentinel-manager";
 import type {
   SentinelMode,
+  SentinelDriverKind,
+  SentinelExecutionMode,
   SentinelGoal,
   PolicyRef,
   DataSource,
@@ -98,9 +108,20 @@ const SOURCE_TYPE_LABELS: Record<string, string> = {
 const STEPS = [
   { label: "Mode", number: 1 },
   { label: "Identity & Goals", number: 2 },
-  { label: "Policy & Schedule", number: 3 },
+  { label: "Runtime & Policy", number: 3 },
   { label: "Review", number: 4 },
 ] as const;
+
+const DRIVER_DEFINITIONS = getSentinelDriverDefinitions();
+const EXECUTION_MODE_DEFINITIONS = getSentinelExecutionModes();
+
+const RUNTIME_TARGET_PLACEHOLDERS: Record<SentinelDriverKind, string> = {
+  claude_code: "Local repo or workspace path",
+  openclaw: "Gateway URL, node ID, or node label",
+  hushd_agent: "Fleet agent ID or runtime target",
+  openai_agent: "Remote agent session or endpoint",
+  mcp_worker: "MCP server or worker identifier",
+};
 
 // ---------------------------------------------------------------------------
 // Step Indicator
@@ -284,7 +305,7 @@ function IdentityGoalsStep({
     onGoalsChange([
       ...goals,
       {
-        type: "detect",
+        type: getRecommendedGoalTypeForMode(mode),
         description: "",
         sourceType: "fleet_audit",
         sourceIdentifier: "",
@@ -487,6 +508,12 @@ function IdentityGoalsStep({
 // ---------------------------------------------------------------------------
 
 function PolicyScheduleStep({
+  driver,
+  onDriverChange,
+  executionMode,
+  onExecutionModeChange,
+  runtimeTarget,
+  onRuntimeTargetChange,
   policyName,
   onPolicyNameChange,
   policyRuleset,
@@ -499,6 +526,12 @@ function PolicyScheduleStep({
   requireHumanConfirmation,
   onRequireHumanConfirmationChange,
 }: {
+  driver: SentinelDriverKind;
+  onDriverChange: (v: SentinelDriverKind) => void;
+  executionMode: SentinelExecutionMode;
+  onExecutionModeChange: (v: SentinelExecutionMode) => void;
+  runtimeTarget: string;
+  onRuntimeTargetChange: (v: string) => void;
   policyName: string;
   onPolicyNameChange: (v: string) => void;
   policyRuleset: string;
@@ -512,6 +545,9 @@ function PolicyScheduleStep({
   onRequireHumanConfirmationChange: (v: boolean) => void;
 }) {
   const caps = getSentinelCapabilities(mode);
+  const selectedDriver = getSentinelDriverDefinition(driver);
+  const selectedExecutionMode = getSentinelExecutionModeConfig(executionMode);
+  const enforcementTier = deriveEnforcementTier(driver, executionMode);
 
   const RULESETS = [
     "permissive",
@@ -538,10 +574,121 @@ function PolicyScheduleStep({
     <div className="flex flex-col gap-5">
       <div>
         <h2 className="text-[13px] font-semibold text-[#ece7dc] mb-1">
-          Policy & Schedule
+          Runtime, Policy & Schedule
         </h2>
         <p className="text-[11px] text-[#6f7f9a]/60 mb-5">
-          Assign a security policy and configure operational parameters.
+          Bind this sentinel to a runtime, then assign its policy and operating cadence.
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-lg border border-[#2d3240]/60 bg-[#0b0d13]/60 p-4">
+        <h3 className="text-[10px] font-medium uppercase tracking-wider text-[#6f7f9a]/50">
+          Runtime Driver
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {DRIVER_DEFINITIONS.map((definition) => {
+            const isSelected = driver === definition.kind;
+            const isRecommended = definition.recommendedModes.includes(mode);
+            return (
+              <button
+                key={definition.kind}
+                onClick={() => onDriverChange(definition.kind)}
+                className={cn(
+                  "rounded-lg border px-3 py-3 text-left transition-colors",
+                  isSelected
+                    ? "border-[#d4a84b] bg-[#d4a84b]/5"
+                    : "border-[#2d3240]/50 bg-[#131721]/30 hover:border-[#2d3240]",
+                )}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className={cn(
+                    "text-[11px] font-semibold",
+                    isSelected ? "text-[#d4a84b]" : "text-[#ece7dc]",
+                  )}>
+                    {definition.label}
+                  </span>
+                  {isRecommended && (
+                    <span className="rounded-full border border-[#3dbf84]/20 bg-[#3dbf84]/10 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.08em] text-[#3dbf84]">
+                      Recommended
+                    </span>
+                  )}
+                </div>
+                <p className="mt-1 text-[10px] text-[#6f7f9a]/60 leading-relaxed">
+                  {definition.description}
+                </p>
+                <div className="mt-2 flex flex-wrap gap-1">
+                  <span className="rounded-full border border-[#2d3240]/40 bg-[#131721] px-2 py-0.5 text-[8px] font-medium uppercase tracking-[0.08em] text-[#6f7f9a]/60">
+                    {definition.endpointType}
+                  </span>
+                  <span className="rounded-full border border-[#2d3240]/40 bg-[#131721] px-2 py-0.5 text-[8px] font-medium uppercase tracking-[0.08em] text-[#6f7f9a]/60">
+                    Tier {definition.maxEnforcementTier} max
+                  </span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-lg border border-[#2d3240]/60 bg-[#0b0d13]/60 p-4">
+        <h3 className="text-[10px] font-medium uppercase tracking-wider text-[#6f7f9a]/50">
+          Execution Mode
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          {EXECUTION_MODE_DEFINITIONS.map((candidate) => {
+            const isSelected = executionMode === candidate.mode;
+            const tierPreview = deriveEnforcementTier(driver, candidate.mode);
+            return (
+              <button
+                key={candidate.mode}
+                onClick={() => onExecutionModeChange(candidate.mode)}
+                className={cn(
+                  "rounded-lg border px-3 py-3 text-left transition-colors",
+                  isSelected
+                    ? "border-[#d4a84b] bg-[#d4a84b]/5"
+                    : "border-[#2d3240]/50 bg-[#131721]/30 hover:border-[#2d3240]",
+                )}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className={cn(
+                    "text-[11px] font-semibold",
+                    isSelected ? "text-[#d4a84b]" : "text-[#ece7dc]",
+                  )}>
+                    {candidate.label}
+                  </span>
+                  <span className="rounded-full border border-[#2d3240]/40 bg-[#131721] px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.08em] text-[#6f7f9a]/60">
+                    Tier {tierPreview}
+                  </span>
+                </div>
+                <p className="mt-1 text-[10px] text-[#6f7f9a]/60 leading-relaxed">
+                  {candidate.description}
+                </p>
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-[10px] text-[#6f7f9a]/55">
+          {selectedDriver.label} is currently configured for{" "}
+          <span className="text-[#ece7dc]/70">{selectedExecutionMode.label.toLowerCase()}</span>{" "}
+          with an expected enforcement tier of{" "}
+          <span className="text-[#ece7dc]/70">Tier {enforcementTier}</span>.
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <label className="text-[10px] font-medium uppercase tracking-wider text-[#6f7f9a]/50">
+          Runtime Target (optional)
+        </label>
+        <input
+          type="text"
+          value={runtimeTarget}
+          onChange={(e) => onRuntimeTargetChange(e.target.value)}
+          placeholder={RUNTIME_TARGET_PLACEHOLDERS[driver]}
+          className="rounded-md border border-[#2d3240]/60 bg-[#0b0d13] px-3 py-2 text-[12px] text-[#ece7dc] placeholder-[#6f7f9a]/30 outline-none focus:border-[#d4a84b]/40 transition-colors"
+        />
+        <p className="text-[10px] text-[#6f7f9a]/45">
+          Use this to pre-bind the sentinel to a workspace, gateway/node, fleet
+          agent, or remote runtime identifier.
         </p>
       </div>
 
@@ -685,6 +832,9 @@ function ReviewStep({
   name,
   description,
   goals,
+  driver,
+  executionMode,
+  runtimeTarget,
   policyRuleset,
   policyName,
   schedule,
@@ -696,6 +846,9 @@ function ReviewStep({
   name: string;
   description: string;
   goals: GoalDraft[];
+  driver: SentinelDriverKind;
+  executionMode: SentinelExecutionMode;
+  runtimeTarget: string;
   policyRuleset: string;
   policyName: string;
   schedule: string;
@@ -706,6 +859,9 @@ function ReviewStep({
   const modeConfig = MODE_CONFIGS.find((m) => m.mode === mode);
   const ModeIcon = modeConfig?.icon ?? IconEye;
   const modeColor = modeConfig?.color ?? "#6f7f9a";
+  const driverDefinition = getSentinelDriverDefinition(driver);
+  const executionModeConfig = getSentinelExecutionModeConfig(executionMode);
+  const enforcementTier = deriveEnforcementTier(driver, executionMode);
 
   return (
     <div className="flex flex-col gap-5">
@@ -762,6 +918,12 @@ function ReviewStep({
 
         {/* Details */}
         <div className="px-4 py-3 flex flex-col gap-2.5">
+          <ReviewRow label="Driver" value={driverDefinition.label} />
+          <ReviewRow
+            label="Execution"
+            value={`${executionModeConfig.label} (Tier ${enforcementTier})`}
+          />
+          {runtimeTarget && <ReviewRow label="Target" value={runtimeTarget} mono />}
           <ReviewRow label="Policy" value={policyName || policyRuleset} />
           {schedule && <ReviewRow label="Schedule" value={schedule} mono />}
           <ReviewRow
@@ -853,6 +1015,7 @@ export function SentinelCreate({
   createFn?: (config: CreateSentinelConfig) => Promise<Sentinel>;
 }) {
   const navigate = useNavigate();
+  const { currentOperator, getSecretKey } = useOperator();
   const [step, setStep] = useState(1);
   const [isCreating, setIsCreating] = useState(false);
 
@@ -865,11 +1028,21 @@ export function SentinelCreate({
   const [goals, setGoals] = useState<GoalDraft[]>([]);
 
   // Step 3: Policy & Schedule
+  const [driver, setDriver] = useState<SentinelDriverKind>("hushd_agent");
+  const [executionMode, setExecutionMode] = useState<SentinelExecutionMode>("assist");
+  const [runtimeTarget, setRuntimeTarget] = useState("");
   const [policyName, setPolicyName] = useState("");
   const [policyRuleset, setPolicyRuleset] = useState("default");
   const [schedule, setSchedule] = useState("");
   const [escalationMinSeverity, setEscalationMinSeverity] = useState("medium");
   const [requireHumanConfirmation, setRequireHumanConfirmation] = useState(true);
+
+  const handleModeSelect = useCallback((nextMode: SentinelMode) => {
+    setMode(nextMode);
+    const recommendedDriver = getRecommendedDriverForMode(nextMode);
+    setDriver(recommendedDriver);
+    setExecutionMode(getSentinelDriverDefinition(recommendedDriver).defaultExecutionMode);
+  }, []);
 
   // Validation
   const goalValidationErrors = useMemo(() => {
@@ -947,13 +1120,25 @@ export function SentinelCreate({
         ruleset: policyRuleset,
       };
 
+      const targetRef = runtimeTarget.trim();
+
+      const secretKey = currentOperator ? await getSecretKey() : null;
+
       const config: CreateSentinelConfig = {
         name: name.trim(),
         mode,
-        owner: "workbench-user",
+        owner: currentOperator?.fingerprint ?? "workbench-anonymous",
         policy,
         goals: sentinelGoals,
         schedule: schedule || null,
+        fleetAgentId: driver === "hushd_agent" ? targetRef || null : null,
+        runtime: {
+          driver,
+          executionMode,
+          targetRef: targetRef || null,
+        },
+        operatorPublicKey: currentOperator?.publicKey,
+        operatorSecretKey: secretKey ?? undefined,
       };
 
       const doCreate = createFn ?? createSentinel;
@@ -972,11 +1157,16 @@ export function SentinelCreate({
     policyName,
     policyRuleset,
     schedule,
+    driver,
+    executionMode,
+    runtimeTarget,
     escalationMinSeverity,
     requireHumanConfirmation,
     onCreated,
     createFn,
     navigate,
+    currentOperator,
+    getSecretKey,
   ]);
 
   return (
@@ -1007,7 +1197,7 @@ export function SentinelCreate({
       <div className="flex-1 overflow-auto">
         <div className="max-w-2xl mx-auto px-6 py-6">
           {step === 1 && (
-            <ModeSelectionStep selected={mode} onSelect={setMode} />
+            <ModeSelectionStep selected={mode} onSelect={handleModeSelect} />
           )}
           {step === 2 && mode && (
             <IdentityGoalsStep
@@ -1023,6 +1213,12 @@ export function SentinelCreate({
           )}
           {step === 3 && mode && (
             <PolicyScheduleStep
+              driver={driver}
+              onDriverChange={setDriver}
+              executionMode={executionMode}
+              onExecutionModeChange={setExecutionMode}
+              runtimeTarget={runtimeTarget}
+              onRuntimeTargetChange={setRuntimeTarget}
               policyName={policyName}
               onPolicyNameChange={setPolicyName}
               policyRuleset={policyRuleset}
@@ -1042,6 +1238,9 @@ export function SentinelCreate({
               name={name}
               description={description}
               goals={goals}
+              driver={driver}
+              executionMode={executionMode}
+              runtimeTarget={runtimeTarget}
               policyRuleset={policyRuleset}
               policyName={policyName}
               schedule={schedule}

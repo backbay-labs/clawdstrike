@@ -34,6 +34,7 @@ export interface SwarmState {
   swarms: Swarm[];
   activeSwarmId: string | null;
   loading: boolean;
+  invitationTracking: Record<string, { active: string[]; used: string[]; revoked: string[] }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -58,6 +59,9 @@ export type SwarmAction =
   | { type: "ADD_TRUST_EDGE"; swarmId: string; edge: TrustEdge }
   | { type: "REMOVE_TRUST_EDGE"; swarmId: string; from: string; to: string }
   | { type: "UPDATE_STATS"; swarmId: string; stats: Partial<SwarmStats> }
+  | { type: "ADD_INVITATION"; swarmId: string; jti: string }
+  | { type: "REVOKE_INVITATION"; swarmId: string; jti: string }
+  | { type: "MARK_INVITATION_USED"; swarmId: string; jti: string }
   | { type: "LOAD"; swarms: Swarm[] };
 
 // ---------------------------------------------------------------------------
@@ -322,6 +326,55 @@ function swarmReducer(state: SwarmState, action: SwarmAction): SwarmState {
       };
     }
 
+    case "ADD_INVITATION": {
+      const tracking = state.invitationTracking[action.swarmId] ?? { active: [], used: [], revoked: [] };
+      if (tracking.active.includes(action.jti) || tracking.used.includes(action.jti) || tracking.revoked.includes(action.jti)) {
+        return state;
+      }
+      return {
+        ...state,
+        invitationTracking: {
+          ...state.invitationTracking,
+          [action.swarmId]: {
+            ...tracking,
+            active: [...tracking.active, action.jti],
+          },
+        },
+      };
+    }
+
+    case "REVOKE_INVITATION": {
+      const tracking = state.invitationTracking[action.swarmId] ?? { active: [], used: [], revoked: [] };
+      if (tracking.revoked.includes(action.jti)) return state;
+      return {
+        ...state,
+        invitationTracking: {
+          ...state.invitationTracking,
+          [action.swarmId]: {
+            ...tracking,
+            active: tracking.active.filter((j) => j !== action.jti),
+            revoked: [...tracking.revoked, action.jti],
+          },
+        },
+      };
+    }
+
+    case "MARK_INVITATION_USED": {
+      const tracking = state.invitationTracking[action.swarmId] ?? { active: [], used: [], revoked: [] };
+      if (tracking.used.includes(action.jti)) return state;
+      return {
+        ...state,
+        invitationTracking: {
+          ...state.invitationTracking,
+          [action.swarmId]: {
+            ...tracking,
+            active: tracking.active.filter((j) => j !== action.jti),
+            used: [...tracking.used, action.jti],
+          },
+        },
+      };
+    }
+
     case "LOAD": {
       const activeId =
         state.activeSwarmId && action.swarms.some((s) => s.id === state.activeSwarmId)
@@ -351,6 +404,7 @@ function persistSwarms(state: SwarmState): void {
     const persisted = {
       swarms: state.swarms,
       activeSwarmId: state.activeSwarmId,
+      invitationTracking: state.invitationTracking,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
   } catch (e) {
@@ -387,10 +441,26 @@ function loadPersistedSwarms(): SwarmState | null {
         ? parsed.activeSwarmId
         : validSwarms[0].id;
 
+    const rawTracking =
+      parsed.invitationTracking &&
+      typeof parsed.invitationTracking === "object"
+        ? (parsed.invitationTracking as Record<string, { active?: string[]; used: string[]; revoked: string[] }>)
+        : {};
+    // Migrate old entries that lack `active`
+    const invitationTracking: Record<string, { active: string[]; used: string[]; revoked: string[] }> = {};
+    for (const [key, val] of Object.entries(rawTracking)) {
+      invitationTracking[key] = {
+        active: val.active ?? [],
+        used: val.used ?? [],
+        revoked: val.revoked ?? [],
+      };
+    }
+
     return {
       swarms: validSwarms,
       activeSwarmId,
       loading: false,
+      invitationTracking,
     };
   } catch (e) {
     console.warn("[swarm-store] loadPersistedSwarms failed:", e);
@@ -410,6 +480,7 @@ function getInitialState(): SwarmState {
     swarms: [],
     activeSwarmId: null,
     loading: false,
+    invitationTracking: {},
   };
 }
 
@@ -499,6 +570,10 @@ interface SwarmContextValue {
   addTrustEdge: (swarmId: string, edge: TrustEdge) => void;
   removeTrustEdge: (swarmId: string, from: string, to: string) => void;
   updateStats: (swarmId: string, stats: Partial<SwarmStats>) => void;
+  addInvitation: (swarmId: string, jti: string) => void;
+  revokeInvitation: (swarmId: string, jti: string) => void;
+  markInvitationUsed: (swarmId: string, jti: string) => void;
+  invitationTracking: Record<string, { active: string[]; used: string[]; revoked: string[] }>;
 }
 
 const SwarmContext = createContext<SwarmContextValue | null>(null);
@@ -530,7 +605,7 @@ export function SwarmProvider({ children }: { children: ReactNode }) {
     return () => {
       if (persistRef.current) clearTimeout(persistRef.current);
     };
-  }, [state.swarms, state.activeSwarmId]);
+  }, [state.swarms, state.activeSwarmId, state.invitationTracking]);
 
   // Derive active swarm
   const activeSwarm = state.swarms.find((s) => s.id === state.activeSwarmId);
@@ -652,6 +727,27 @@ export function SwarmProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const addInvitation = useCallback(
+    (swarmId: string, jti: string) => {
+      dispatch({ type: "ADD_INVITATION", swarmId, jti });
+    },
+    [],
+  );
+
+  const revokeInvitation = useCallback(
+    (swarmId: string, jti: string) => {
+      dispatch({ type: "REVOKE_INVITATION", swarmId, jti });
+    },
+    [],
+  );
+
+  const markInvitationUsed = useCallback(
+    (swarmId: string, jti: string) => {
+      dispatch({ type: "MARK_INVITATION_USED", swarmId, jti });
+    },
+    [],
+  );
+
   const value: SwarmContextValue = {
     swarms: state.swarms,
     activeSwarm,
@@ -673,6 +769,10 @@ export function SwarmProvider({ children }: { children: ReactNode }) {
     addTrustEdge,
     removeTrustEdge,
     updateStats: updateStatsAction,
+    addInvitation,
+    revokeInvitation,
+    markInvitationUsed,
+    invitationTracking: state.invitationTracking,
   };
 
   return (

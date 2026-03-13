@@ -47,6 +47,7 @@ import {
   IconToggleLeft,
   IconToggleRight,
   IconClock,
+  IconMail,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { useSwarms } from "@/lib/workbench/swarm-store";
@@ -61,18 +62,20 @@ import type {
   SpeakeasyPurpose,
 } from "@/lib/workbench/sentinel-types";
 import type { TrustLevel } from "@/lib/workbench/delegation-types";
+import { SwarmInvite } from "./swarm-invite";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-type DetailTab = "members" | "detections" | "trust" | "speakeasies" | "settings";
+type DetailTab = "members" | "detections" | "trust" | "speakeasies" | "invite" | "settings";
 
 const TABS: { id: DetailTab; label: string; icon: typeof IconUsers }[] = [
   { id: "members", label: "Members", icon: IconUsers },
   { id: "detections", label: "Shared Detections", icon: IconShieldCheck },
   { id: "trust", label: "Trust Graph", icon: IconTopologyRing },
   { id: "speakeasies", label: "Speakeasies", icon: IconMessage },
+  { id: "invite", label: "Invite", icon: IconMail },
   { id: "settings", label: "Settings", icon: IconSettings },
 ];
 
@@ -231,6 +234,11 @@ export function SwarmDetail() {
         {activeTab === "detections" && <DetectionsTab swarm={swarm} />}
         {activeTab === "trust" && <TrustGraphTab swarm={swarm} />}
         {activeTab === "speakeasies" && <SpeakeasiesTab swarm={swarm} />}
+        {activeTab === "invite" && (
+          <div className="h-full overflow-auto px-6 py-4">
+            <SwarmInvite swarmId={swarm.id} />
+          </div>
+        )}
         {activeTab === "settings" && <SettingsTab swarm={swarm} />}
       </div>
     </div>

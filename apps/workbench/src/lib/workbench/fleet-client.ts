@@ -998,6 +998,11 @@ function preferredUrl(conn: FleetConnection): { url: string; kind: "control" | "
   return { url: normalizedValidatedFleetUrl(conn.hushdUrl, "hushd URL"), kind: "hushd" };
 }
 
+function preferredControlUrl(conn: FleetConnection): string | null {
+  if (!conn.controlApiUrl.trim()) return null;
+  return normalizedValidatedFleetUrl(conn.controlApiUrl, "control API URL");
+}
+
 // ---------------------------------------------------------------------------
 // Backend approval shape adapter (P2-1)
 // ---------------------------------------------------------------------------
@@ -1246,9 +1251,12 @@ function adaptApprovalsResponse(
 export async function fetchApprovals(
   conn: FleetConnection,
 ): Promise<{ requests: ApprovalRequest[]; decisions: ApprovalDecision[] }> {
-  const { url, kind } = preferredUrl(conn);
+  const url = preferredControlUrl(conn);
+  if (!url) {
+    return { requests: [], decisions: [] };
+  }
   const res = await jsonFetch<unknown>(
-    proxyUrl(`${url}/api/v1/approvals`, kind),
+    proxyUrl(`${url}/api/v1/approvals`, "control"),
     { headers: controlHeaders(conn) },
   );
   return adaptApprovalsResponse(res);
@@ -1258,12 +1266,18 @@ export async function resolveApproval(
   conn: FleetConnection,
   requestId: string,
   decision: "approved" | "denied",
-  opts?: { scope?: ApprovalScope; reason?: string },
+  opts?: { scope?: ApprovalScope; reason?: string; decidedBy?: string },
 ): Promise<{ success: boolean; error?: string }> {
-  const { url, kind } = preferredUrl(conn);
+  const url = preferredControlUrl(conn);
+  if (!url) {
+    return {
+      success: false,
+      error: "Control API URL is not configured",
+    };
+  }
   try {
     await jsonFetch<{ ok: boolean }>(
-      proxyUrl(`${url}/api/v1/approvals/${encodeURIComponent(requestId)}/resolve`, kind),
+      proxyUrl(`${url}/api/v1/approvals/${encodeURIComponent(requestId)}/resolve`, "control"),
       {
         method: "POST",
         headers: controlHeaders(conn),
@@ -1271,7 +1285,7 @@ export async function resolveApproval(
           decision,
           scope: opts?.scope,
           reason: opts?.reason,
-          decided_by: "workbench-user",
+          decided_by: opts?.decidedBy ?? "workbench-user",
         }),
       },
     );
@@ -1388,12 +1402,12 @@ export async function fetchDelegationGraphSnapshot(
   conn: FleetConnection,
   principalId: string,
 ): Promise<DelegationGraph | null> {
-  const { url, kind } = preferredUrl(conn);
+  const url = preferredControlUrl(conn);
   if (!url) return null;
 
   try {
     const res = await jsonFetch<BackendDelegationGraphResponse>(
-      proxyUrl(`${url}/api/v1/principals/${encodeURIComponent(principalId)}/delegation-graph`, kind),
+      proxyUrl(`${url}/api/v1/principals/${encodeURIComponent(principalId)}/delegation-graph`, "control"),
       { headers: controlHeaders(conn) },
     );
     // Runtime validation
@@ -1417,7 +1431,7 @@ export async function fetchDelegationGraphSnapshot(
 export async function fetchPrincipals(
   conn: FleetConnection,
 ): Promise<PrincipalInfo[]> {
-  const { url, kind } = preferredUrl(conn);
+  const url = preferredControlUrl(conn);
   if (!url) return [];
 
   const principalPaths = [
@@ -1427,7 +1441,7 @@ export async function fetchPrincipals(
 
   for (const path of principalPaths) {
     try {
-      const res = await jsonFetch<unknown>(proxyUrl(path, kind), {
+      const res = await jsonFetch<unknown>(proxyUrl(path, "control"), {
         headers: controlHeaders(conn),
       });
       const list = extractPrincipalList(res);
@@ -2548,7 +2562,7 @@ export const fleetClient = {
 
   async fetchApprovals(): Promise<{ requests: ApprovalRequest[]; decisions: ApprovalDecision[] } | null> {
     const conn = await savedConnectionAsync();
-    if (!conn.controlApiUrl && !conn.hushdUrl) return null;
+    if (!conn.controlApiUrl.trim()) return null;
     try {
       return await fetchApprovals(conn);
     } catch (e) {
@@ -2560,7 +2574,7 @@ export const fleetClient = {
   async resolveApproval(
     requestId: string,
     decision: "approved" | "denied",
-    opts?: { scope?: ApprovalScope; reason?: string },
+    opts?: { scope?: ApprovalScope; reason?: string; decidedBy?: string },
   ): Promise<{ success: boolean; error?: string }> {
     const conn = await savedConnectionAsync();
     return resolveApproval(conn, requestId, decision, opts);

@@ -10,6 +10,7 @@ import {
   IconRadar,
   IconAlertTriangle,
   IconNetwork,
+  IconFlag3,
   IconFlask,
   IconGavel,
   IconFileAnalytics,
@@ -38,6 +39,7 @@ const navSections: readonly NavSection[] = [
     accent: "#8b5555",
     items: [
       { label: "Sentinels", icon: IconRadar, href: "/sentinels" },
+      { label: "Mission Control", icon: IconFlag3, href: "/missions" },
       { label: "Findings & Intel", icon: IconAlertTriangle, href: "/findings" },
       { label: "Lab", icon: IconFlask, href: "/lab" },
       { label: "Swarms", icon: IconNetwork, href: "/swarms" },

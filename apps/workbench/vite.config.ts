@@ -3,6 +3,14 @@ import { resolve } from "path";
 import { defineConfig } from "vite";
 
 const host = process.env.TAURI_DEV_HOST;
+const hushdProxyTarget =
+  process.env.WORKBENCH_HUSHD_PROXY_TARGET ??
+  process.env.HUSHD_URL ??
+  "http://localhost:9876";
+const controlProxyTarget =
+  process.env.WORKBENCH_CONTROL_PROXY_TARGET ??
+  process.env.CONTROL_API_URL ??
+  "http://localhost:8090";
 
 export default defineConfig({
   plugins: [react()],
@@ -24,12 +32,12 @@ export default defineConfig({
       // Proxy fleet API requests to avoid CORS in dev mode.
       // The fleet-client rewrites URLs to use these prefixes.
       "/_proxy/hushd": {
-        target: "http://localhost:9876",
+        target: hushdProxyTarget,
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/_proxy\/hushd/, ""),
       },
       "/_proxy/control": {
-        target: "http://localhost:8080",
+        target: controlProxyTarget,
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/_proxy\/control/, ""),
       },

@@ -7,6 +7,7 @@ import { GeneralSettingsProvider } from "@/lib/workbench/use-general-settings";
 import { HintSettingsProvider } from "@/lib/workbench/use-hint-settings";
 import { SentinelProvider } from "@/lib/workbench/sentinel-store";
 import { FindingProvider } from "@/lib/workbench/finding-store";
+import { OperatorProvider } from "@/lib/workbench/operator-store";
 import { ToastProvider } from "@/components/ui/toast";
 
 interface ProviderOptions extends Omit<RenderOptions, "wrapper"> {
@@ -29,19 +30,21 @@ export function renderWithProviders(
   function Wrapper({ children }: { children: React.ReactNode }) {
     return (
       <MemoryRouter initialEntries={initialEntries}>
-        <ToastProvider>
-          <GeneralSettingsProvider>
-            <HintSettingsProvider>
-              <FleetConnectionProvider>
-                <WorkbenchProvider>
-                  <SentinelProvider>
-                    <FindingProvider>{children}</FindingProvider>
-                  </SentinelProvider>
-                </WorkbenchProvider>
-              </FleetConnectionProvider>
-            </HintSettingsProvider>
-          </GeneralSettingsProvider>
-        </ToastProvider>
+        <OperatorProvider>
+          <ToastProvider>
+            <GeneralSettingsProvider>
+              <HintSettingsProvider>
+                <FleetConnectionProvider>
+                  <WorkbenchProvider>
+                    <SentinelProvider>
+                      <FindingProvider>{children}</FindingProvider>
+                    </SentinelProvider>
+                  </WorkbenchProvider>
+                </FleetConnectionProvider>
+              </HintSettingsProvider>
+            </GeneralSettingsProvider>
+          </ToastProvider>
+        </OperatorProvider>
       </MemoryRouter>
     );
   }

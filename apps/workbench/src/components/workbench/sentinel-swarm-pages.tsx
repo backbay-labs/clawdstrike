@@ -10,6 +10,7 @@ import { useState, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useSentinels } from "@/lib/workbench/sentinel-store";
 import { useFindings } from "@/lib/workbench/finding-store";
+import type { SentinelMutablePatch } from "@/lib/workbench/sentinel-manager";
 import { SentinelList } from "./sentinels/sentinel-list";
 import { SentinelCreate } from "./sentinels/sentinel-create";
 import { SentinelDetail } from "./sentinels/sentinel-detail";
@@ -43,12 +44,17 @@ export function SentinelDetailPage() {
 
   const handleUpdate = useCallback(
     (updated: Sentinel) => {
-      updateSentinel(updated.id, {
+      const patch: SentinelMutablePatch = {
         name: updated.name,
-        goals: updated.goals as Parameters<typeof updateSentinel>[1]["goals"],
+        goals: updated.goals,
+        schedule: updated.schedule,
         status: updated.status,
+        policy: updated.policy,
         mode: updated.mode,
-      });
+        runtime: updated.runtime,
+        fleetAgentId: updated.fleetAgentId,
+      };
+      updateSentinel(updated.id, patch);
     },
     [updateSentinel],
   );

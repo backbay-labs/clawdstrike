@@ -46,6 +46,7 @@ export interface FindingState {
 // ---------------------------------------------------------------------------
 
 export type FindingAction =
+  | { type: "CREATE"; finding: Finding }
   | { type: "CREATE_FROM_CLUSTER"; cluster: SignalCluster; signals: Signal[]; createdBy: string }
   | { type: "CONFIRM"; findingId: string; actor: string }
   | { type: "DISMISS"; findingId: string; actor: string; reason?: string }
@@ -64,6 +65,14 @@ export type FindingAction =
 
 function findingReducer(state: FindingState, action: FindingAction): FindingState {
   switch (action.type) {
+    case "CREATE": {
+      return {
+        ...state,
+        findings: [...state.findings, action.finding],
+        activeFindingId: action.finding.id,
+      };
+    }
+
     case "CREATE_FROM_CLUSTER": {
       const finding = engineCreateFromCluster(
         action.cluster,
@@ -273,7 +282,11 @@ function getInitialState(): FindingState {
 interface FindingContextValue {
   findings: Finding[];
   activeFinding: Finding | undefined;
-  createFromCluster: (cluster: SignalCluster, signals: Signal[], createdBy: string) => void;
+  createFromCluster: (
+    cluster: SignalCluster,
+    signals: Signal[],
+    createdBy: string,
+  ) => Finding | null;
   confirm: (findingId: string, actor: string) => void;
   dismiss: (findingId: string, actor: string, reason?: string) => void;
   markFalsePositive: (findingId: string, actor: string, reason?: string) => void;
@@ -323,7 +336,10 @@ export function FindingProvider({ children }: { children: ReactNode }) {
 
   const createFromCluster = useCallback(
     (cluster: SignalCluster, signals: Signal[], createdBy: string) => {
-      dispatch({ type: "CREATE_FROM_CLUSTER", cluster, signals, createdBy });
+      const finding = engineCreateFromCluster(cluster, signals, createdBy);
+      if (!finding) return null;
+      dispatch({ type: "CREATE", finding });
+      return finding;
     },
     [],
   );

@@ -26,6 +26,8 @@ import type {
   Sentinel,
 } from "./sentinel-types";
 import { canonicalizeJson } from "./intel-forge";
+import { signData } from "./operator-crypto";
+import type { OperatorIdentity } from "./operator-types";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -90,6 +92,27 @@ const TIMESTAMP_TOLERANCE_MS = 5 * 60_000;
 
 /** Nonce byte length (128-bit). */
 const NONCE_BYTES = 16;
+
+// ---------------------------------------------------------------------------
+// Identity Converters
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert an OperatorIdentity to a SpeakeasyMember for use in speakeasy rooms.
+ */
+export function operatorIdentityToBayChatIdentity(
+  operator: OperatorIdentity,
+  role: "moderator" | "participant" | "observer" = "participant",
+): SpeakeasyMember {
+  return {
+    type: "operator",
+    fingerprint: operator.fingerprint,
+    displayName: operator.displayName,
+    sigil: operator.sigil as SpeakeasyMember["sigil"],
+    role,
+    joinedAt: Date.now(),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // 1. Message Type Interfaces
@@ -486,14 +509,9 @@ export async function signClawdstrikeMessage<T>(
     message as Omit<ClawdstrikeBaseMessage, "signature" | "id"> & Record<string, unknown>,
   );
 
-  // Ed25519 signature placeholder.
-  // In production, this calls: ed.signAsync(hexToBytes(hash), hexToBytes(secretKeyHex).slice(0, 32))
-  // For now, we produce a deterministic placeholder from SHA-256(hash + secretKey)
-  // that is structurally valid (128 hex chars = 64 bytes).
-  const signatureInput = hash + secretKeyHex;
-  const signatureHash = await sha256Hex(signatureInput);
-  // Pad to 128 hex chars (64 bytes) to match Ed25519 signature length
-  const signature = (signatureHash + signatureHash).slice(0, 128);
+  // Sign the message hash with real Ed25519 via operator-crypto.
+  const hashBytes = new TextEncoder().encode(hash);
+  const signature = await signData(hashBytes, secretKeyHex);
 
   return {
     ...message,

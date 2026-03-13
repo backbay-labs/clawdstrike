@@ -7,7 +7,7 @@ fixture_script="$workbench_dir/scripts/fleet-fixture.ts"
 
 base_url="${WORKBENCH_DOGFOOD_URL:-http://127.0.0.1:1421}"
 hushd_url="${HUSHD_URL:-http://127.0.0.1:9876}"
-control_api_url="${CONTROL_API_URL:-http://127.0.0.1:8080}"
+control_api_url="${CONTROL_API_URL:-http://127.0.0.1:8090}"
 tenant_id="${TENANT_ID:-874d572c-709c-49b7-8ecf-64b569e16710}"
 
 namespace="${WORKBENCH_DOGFOOD_NAMESPACE:-clawdstrike}"
@@ -204,7 +204,9 @@ cleanup() {
 trap cleanup EXIT
 
 require_cmd curl
-require_cmd kubectl
+if [[ "$start_port_forward" == "1" ]]; then
+  require_cmd kubectl
+fi
 require_cmd npx
 require_cmd npm
 require_cmd bun
@@ -278,7 +280,7 @@ pw eval "$(cat <<EOF
   };
 
   setInput("http://localhost:9876", $(js_string "$hushd_url"));
-  setInput("http://localhost:9091", $(js_string "$control_api_url"));
+  setInput("http://localhost:8090", $(js_string "$control_api_url"));
   setInput("eyJhbGci...", $(js_string "$control_api_token"));
   setInput("hush_...", $(js_string "${HUSHD_API_KEY:-}"));
 }

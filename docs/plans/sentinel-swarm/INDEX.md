@@ -3,7 +3,7 @@
 > Brainstorming, planning, and architecture design for evolving the Clawdstrike Workbench
 > into a sentinel-swarm model with Speakeasy-backed trust coordination.
 
-**Status:** Research & design phase
+**Status:** Design complete, phase 1 execution in progress
 **Date:** 2026-03-12
 **Branch:** `feat/sentinel-swarm`
 
@@ -21,6 +21,7 @@
 8. [Phased Implementation Plan](#8-phased-implementation-plan)
 9. [Key File Reference](#9-key-file-reference)
 10. [Open Questions](#10-open-questions)
+11. [Next-Wave Plans](#11-next-wave-plans)
 
 ---
 
@@ -748,3 +749,20 @@ Intel
 - Reputation: how to prevent Sybil attacks in federated swarms? (Proof-of-work? Invitation chains? Stake?)
 - Compartmentalization: what classification levels for Speakeasy rooms? How does intel downgrade/sanitize for sharing?
 - Share summaries by default: what's the redaction policy for raw evidence in shared intel?
+
+---
+
+## 11. Next-Wave Plans
+
+The first sentinel-swarm PR established the ontology and core workbench surfaces.
+The next wave turns those objects into runtime-backed principals with execution,
+evidence, and federation.
+
+- [NEXT-WAVE-ROADMAP.md](./NEXT-WAVE-ROADMAP.md) - sequencing, dependencies, milestones, and execution order for the full wave.
+- [SENTINEL-RUNTIME.md](./SENTINEL-RUNTIME.md) - Sentinel Drivers, Claude Code Sentinel, OpenClaw Hunt Pod, runtime binding, and execution-mode contract.
+- [MISSION-EVIDENCE-LOOP.md](./MISSION-EVIDENCE-LOOP.md) - Swarm Mission Control, Evidence-Native Signal Ingestion, and Policy Forge.
+- [FEDERATED-INTEL.md](./FEDERATED-INTEL.md) - signed intel envelopes, reputation, witness/notary provenance, and swarm federation rollout.
+
+Phase 1 execution on this branch starts with the shared sentinel runtime
+contract in the workbench model and UI: driver selection, execution mode,
+runtime targeting, and enforcement-tier visibility.

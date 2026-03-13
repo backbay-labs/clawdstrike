@@ -19,19 +19,24 @@ import {
   IconEyeCheck,
   IconCopy,
   IconCheck,
+  IconFlag3,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import { useOperator } from "@/lib/workbench/operator-store";
 import {
   activateSentinel,
   pauseSentinel,
   retireSentinel,
   validateStatusTransition,
   deriveSigilColor,
+  getSentinelDriverDefinition,
+  getSentinelExecutionModeConfig,
 } from "@/lib/workbench/sentinel-manager";
 import type {
   Sentinel,
   SentinelMode,
   SentinelStatus,
+  SentinelRuntimeHealth,
   SentinelGoal,
   SigilType,
 } from "@/lib/workbench/sentinel-manager";
@@ -64,6 +69,20 @@ const STATUS_LABELS: Record<SentinelStatus, string> = {
   active: "Active",
   paused: "Paused",
   retired: "Retired",
+};
+
+const RUNTIME_HEALTH_COLORS: Record<SentinelRuntimeHealth, string> = {
+  planned: "#6f7f9a",
+  ready: "#3dbf84",
+  degraded: "#d4a84b",
+  offline: "#c45c5c",
+};
+
+const RUNTIME_HEALTH_LABELS: Record<SentinelRuntimeHealth, string> = {
+  planned: "Planned",
+  ready: "Ready",
+  degraded: "Degraded",
+  offline: "Offline",
 };
 
 const SIGIL_ICONS: Record<SigilType, typeof IconDiamond> = {
@@ -185,6 +204,9 @@ function CopyableText({ text, truncate = true }: { text: string; truncate?: bool
 // ---------------------------------------------------------------------------
 
 function StatsSidebar({ sentinel }: { sentinel: Sentinel }) {
+  const runtimeDriver = getSentinelDriverDefinition(sentinel.runtime.driver);
+  const executionMode = getSentinelExecutionModeConfig(sentinel.runtime.executionMode);
+
   return (
     <div className="flex flex-col gap-5 h-full overflow-auto">
       {/* Lifetime stats */}
@@ -210,6 +232,24 @@ function StatsSidebar({ sentinel }: { sentinel: Sentinel }) {
           label="FP Suppressed"
           value={sentinel.stats.falsePositivesSuppressed.toLocaleString()}
           mono
+        />
+      </StatsSection>
+
+      <StatsSection title="Runtime">
+        <StatRow label="Driver" value={runtimeDriver.label} />
+        <StatRow label="Execution" value={executionMode.label} />
+        <StatRow label="Tier" value={`Tier ${sentinel.runtime.enforcementTier}`} />
+        <StatRow label="Health" value={RUNTIME_HEALTH_LABELS[sentinel.runtime.health]} />
+        {sentinel.runtime.targetRef && (
+          <StatRow label="Target" value={sentinel.runtime.targetRef} mono />
+        )}
+        <StatRow
+          label="Heartbeat"
+          value={
+            sentinel.runtime.lastHeartbeatAt
+              ? relativeTime(sentinel.runtime.lastHeartbeatAt)
+              : "not yet reported"
+          }
         />
       </StatsSection>
 
@@ -569,6 +609,14 @@ function MemoryTab({ sentinel }: { sentinel: Sentinel }) {
 // ---------------------------------------------------------------------------
 
 function ConfigTab({ sentinel }: { sentinel: Sentinel }) {
+  const { currentOperator } = useOperator();
+  const runtimeDriver = getSentinelDriverDefinition(sentinel.runtime.driver);
+  const executionMode = getSentinelExecutionModeConfig(sentinel.runtime.executionMode);
+  const isOwnedByCurrentOperator =
+    sentinel.ownerPublicKey != null &&
+    currentOperator != null &&
+    sentinel.ownerPublicKey === currentOperator.publicKey;
+
   return (
     <div className="flex flex-col gap-6 py-4">
       {/* Policy */}
@@ -594,6 +642,37 @@ function ConfigTab({ sentinel }: { sentinel: Sentinel }) {
         />
       </ConfigSection>
 
+      <ConfigSection title="Runtime">
+        <ConfigRow label="Driver" value={runtimeDriver.label} />
+        <ConfigRow label="Execution" value={executionMode.label} />
+        <ConfigRow label="Tier" value={`Tier ${sentinel.runtime.enforcementTier}`} />
+        <ConfigRow label="Health" value={RUNTIME_HEALTH_LABELS[sentinel.runtime.health]} />
+        <ConfigRow label="Endpoint" value={sentinel.runtime.endpointType} />
+        <ConfigRow
+          label="Receipts"
+          value={sentinel.runtime.receiptsEnabled ? "Enabled" : "Disabled"}
+        />
+        <ConfigRow
+          label="Signal Emission"
+          value={sentinel.runtime.emitsSignals ? "Enabled" : "Disabled"}
+        />
+        {sentinel.runtime.targetRef && (
+          <ConfigRow label="Target" value={sentinel.runtime.targetRef} mono />
+        )}
+        {sentinel.runtime.runtimeRef && (
+          <ConfigRow label="Runtime Ref" value={sentinel.runtime.runtimeRef} mono />
+        )}
+        {sentinel.runtime.sessionRef && (
+          <ConfigRow label="Session Ref" value={sentinel.runtime.sessionRef} mono />
+        )}
+        {sentinel.runtime.lastHeartbeatAt && (
+          <ConfigRow
+            label="Last Heartbeat"
+            value={relativeTime(sentinel.runtime.lastHeartbeatAt)}
+          />
+        )}
+      </ConfigSection>
+
       {/* Identity */}
       <ConfigSection title="Identity">
         <div className="flex items-baseline justify-between text-[10px]">
@@ -612,7 +691,18 @@ function ConfigTab({ sentinel }: { sentinel: Sentinel }) {
       <ConfigSection title="Status">
         <ConfigRow label="Mode" value={MODE_LABELS[sentinel.mode]} />
         <ConfigRow label="Status" value={STATUS_LABELS[sentinel.status]} />
-        <ConfigRow label="Owner" value={sentinel.owner} />
+        <div className="flex items-baseline justify-between text-[10px]">
+          <span className="text-[#6f7f9a]/50">Owner</span>
+          <span className="flex items-center gap-1.5 text-[#ece7dc]/70">
+            {isOwnedByCurrentOperator && currentOperator?.sigil && (
+              <span className="text-sm">{currentOperator.sigil}</span>
+            )}
+            {sentinel.owner}
+            {isOwnedByCurrentOperator && (
+              <span className="text-[9px] text-[#d4a84b]/70">(You)</span>
+            )}
+          </span>
+        </div>
         {sentinel.fleetAgentId && (
           <ConfigRow label="Fleet Agent" value={sentinel.fleetAgentId} mono />
         )}
@@ -681,6 +771,11 @@ export function SentinelDetail({
 
   const modeColor = MODE_COLORS[sentinel.mode];
   const statusDot = STATUS_DOT_COLORS[sentinel.status];
+  const runtimeDriver = getSentinelDriverDefinition(sentinel.runtime.driver);
+  const executionMode = getSentinelExecutionModeConfig(sentinel.runtime.executionMode);
+  const runtimeHealthDot = RUNTIME_HEALTH_COLORS[sentinel.runtime.health];
+  const canLaunchMission =
+    sentinel.runtime.driver === "claude_code" || sentinel.runtime.driver === "openclaw";
 
   const canActivate = validateStatusTransition(sentinel.status, "active");
   const canPause = validateStatusTransition(sentinel.status, "paused");
@@ -756,6 +851,16 @@ export function SentinelDetail({
               <span className="text-[10px] text-[#6f7f9a]/50 capitalize">
                 {STATUS_LABELS[sentinel.status]}
               </span>
+              <span className="rounded border border-[#2d3240]/40 bg-[#131721]/70 px-1.5 py-0.5 text-[9px] font-medium text-[#ece7dc]/70">
+                {runtimeDriver.label}
+              </span>
+              <span className="inline-flex items-center gap-1 text-[10px] text-[#6f7f9a]/50">
+                <span
+                  className="inline-block h-1.5 w-1.5 rounded-full shrink-0"
+                  style={{ backgroundColor: runtimeHealthDot }}
+                />
+                {executionMode.label} · Tier {sentinel.runtime.enforcementTier}
+              </span>
               <span className="text-[10px] font-mono text-[#6f7f9a]/30">
                 {sentinel.identity.fingerprint.slice(0, 8)}...{sentinel.identity.fingerprint.slice(-4)}
               </span>
@@ -764,6 +869,15 @@ export function SentinelDetail({
 
           {/* Status controls */}
           <div className="flex items-center gap-1.5 shrink-0">
+            {canLaunchMission && (
+              <button
+                onClick={() => navigate(`/missions?sentinel=${sentinel.id}`)}
+                className="flex items-center gap-1 rounded-md border border-[#55788b]/20 bg-[#55788b]/5 px-2.5 py-1.5 text-[10px] font-medium text-[#7ea6bb] hover:bg-[#55788b]/10 transition-colors"
+              >
+                <IconFlag3 size={12} stroke={1.5} />
+                Mission
+              </button>
+            )}
             {canActivate && (
               <button
                 onClick={handleActivate}

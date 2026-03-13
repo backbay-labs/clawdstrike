@@ -7,11 +7,24 @@
  * Follows the standalone-function pattern from hunt-engine.ts.
  */
 
+import {
+  generateOperatorKeypair,
+  deriveFingerprint,
+  toHex,
+  deriveSigil,
+  SIGILS,
+  type SigilType,
+} from "./operator-crypto";
 import type { AgentBaseline, PatternStep } from "./hunt-types";
 import type {
   Sentinel,
   SentinelMode,
   SentinelStatus,
+  SentinelDriverKind,
+  SentinelExecutionMode,
+  SentinelRuntimeBinding,
+  SentinelRuntimeEndpointType,
+  SentinelRuntimeHealth,
   SentinelIdentity,
   SentinelMemory,
   SentinelStats,
@@ -31,6 +44,11 @@ export type {
   Sentinel,
   SentinelMode,
   SentinelStatus,
+  SentinelDriverKind,
+  SentinelExecutionMode,
+  SentinelRuntimeBinding,
+  SentinelRuntimeEndpointType,
+  SentinelRuntimeHealth,
   SentinelIdentity,
   SentinelMemory,
   SentinelStats,
@@ -44,32 +62,6 @@ export type {
   EscalationPolicy,
   MemoryPattern,
 };
-
-// ---------------------------------------------------------------------------
-// Sigil System (8 sigil types from @backbay/speakeasy)
-// ---------------------------------------------------------------------------
-
-export type SigilType = "diamond" | "eye" | "wave" | "crown" | "spiral" | "key" | "star" | "moon";
-
-export const SIGILS: readonly SigilType[] = [
-  "diamond",
-  "eye",
-  "wave",
-  "crown",
-  "spiral",
-  "key",
-  "star",
-  "moon",
-] as const;
-
-/**
- * Derive sigil type from a fingerprint string.
- * Uses the numeric value of the first byte (2 hex chars) mod 8.
- */
-export function deriveSigil(fingerprint: string): SigilType {
-  const firstByte = parseInt(fingerprint.slice(0, 2), 16);
-  return SIGILS[firstByte % SIGILS.length];
-}
 
 /**
  * Derive an HSL color from fingerprint bytes 4-7 (hex chars 8-15).
@@ -125,6 +117,197 @@ export interface CreateSentinelConfig {
   goals?: SentinelGoal[];
   schedule?: string | null;
   fleetAgentId?: string | null;
+  runtime?: Partial<SentinelRuntimeBinding>;
+  operatorPublicKey?: string;
+  operatorSecretKey?: string;
+}
+
+export interface SentinelMutablePatch extends Partial<Pick<
+  Sentinel,
+  "name" | "goals" | "schedule" | "status" | "policy" | "mode" | "fleetAgentId"
+>> {
+  runtime?: Partial<SentinelRuntimeBinding>;
+}
+
+// ---------------------------------------------------------------------------
+// Runtime Drivers and Execution Modes
+// ---------------------------------------------------------------------------
+
+export interface SentinelDriverDefinition {
+  kind: SentinelDriverKind;
+  label: string;
+  description: string;
+  endpointType: SentinelRuntimeEndpointType;
+  recommendedModes: SentinelMode[];
+  defaultExecutionMode: SentinelExecutionMode;
+  maxEnforcementTier: 0 | 1 | 2 | 3;
+}
+
+export interface SentinelExecutionModeConfig {
+  mode: SentinelExecutionMode;
+  label: string;
+  description: string;
+}
+
+const DRIVER_DEFINITIONS: readonly SentinelDriverDefinition[] = [
+  {
+    kind: "claude_code",
+    label: "Claude Code",
+    description: "Repo-native code agent sessions with tool receipts and checks.",
+    endpointType: "local",
+    recommendedModes: ["curator", "liaison"],
+    defaultExecutionMode: "assist",
+    maxEnforcementTier: 1,
+  },
+  {
+    kind: "openclaw",
+    label: "OpenClaw Hunt Pod",
+    description: "Browser and computer-use runtime on a gateway or node target.",
+    endpointType: "gateway",
+    recommendedModes: ["hunter", "watcher"],
+    defaultExecutionMode: "enforce",
+    maxEnforcementTier: 2,
+  },
+  {
+    kind: "hushd_agent",
+    label: "Hushd Agent",
+    description: "Fleet-backed watcher or hunter runtime with policy-aware telemetry.",
+    endpointType: "fleet",
+    recommendedModes: ["watcher", "hunter"],
+    defaultExecutionMode: "assist",
+    maxEnforcementTier: 1,
+  },
+  {
+    kind: "openai_agent",
+    label: "OpenAI Agent",
+    description: "Remote model-backed agent runtime with mediated tool execution.",
+    endpointType: "remote",
+    recommendedModes: ["curator", "liaison"],
+    defaultExecutionMode: "assist",
+    maxEnforcementTier: 1,
+  },
+  {
+    kind: "mcp_worker",
+    label: "MCP Worker",
+    description: "Local or remote worker reachable through an MCP tool surface.",
+    endpointType: "local",
+    recommendedModes: ["liaison", "curator"],
+    defaultExecutionMode: "enforce",
+    maxEnforcementTier: 2,
+  },
+] as const;
+
+const EXECUTION_MODE_CONFIGS: readonly SentinelExecutionModeConfig[] = [
+  {
+    mode: "observe",
+    label: "Observe",
+    description: "Capture receipts and emit signals without mediating side effects.",
+  },
+  {
+    mode: "assist",
+    label: "Assist",
+    description: "Advisory or operator-mediated execution at the tool boundary.",
+  },
+  {
+    mode: "enforce",
+    label: "Enforce",
+    description: "Runtime mediates side effects when the selected driver can do so safely.",
+  },
+] as const;
+
+export function getSentinelDriverDefinitions(): readonly SentinelDriverDefinition[] {
+  return DRIVER_DEFINITIONS;
+}
+
+export function getSentinelDriverDefinition(driver: SentinelDriverKind): SentinelDriverDefinition {
+  const definition = DRIVER_DEFINITIONS.find((candidate) => candidate.kind === driver);
+  if (!definition) {
+    throw new Error(`Unknown sentinel driver: ${driver}`);
+  }
+  return definition;
+}
+
+export function getSentinelExecutionModes(): readonly SentinelExecutionModeConfig[] {
+  return EXECUTION_MODE_CONFIGS;
+}
+
+export function getSentinelExecutionModeConfig(
+  mode: SentinelExecutionMode,
+): SentinelExecutionModeConfig {
+  const config = EXECUTION_MODE_CONFIGS.find((candidate) => candidate.mode === mode);
+  if (!config) {
+    throw new Error(`Unknown sentinel execution mode: ${mode}`);
+  }
+  return config;
+}
+
+export function getRecommendedDriverForMode(mode: SentinelMode): SentinelDriverKind {
+  switch (mode) {
+    case "watcher":
+      return "hushd_agent";
+    case "hunter":
+      return "openclaw";
+    case "curator":
+      return "claude_code";
+    case "liaison":
+      return "mcp_worker";
+  }
+}
+
+export function getRecommendedGoalTypeForMode(mode: SentinelMode): SentinelGoal["type"] {
+  switch (mode) {
+    case "watcher":
+      return "detect";
+    case "hunter":
+      return "hunt";
+    case "curator":
+      return "enrich";
+    case "liaison":
+      return "enrich";
+  }
+}
+
+export function deriveEnforcementTier(
+  driver: SentinelDriverKind,
+  executionMode: SentinelExecutionMode,
+): 0 | 1 | 2 | 3 {
+  if (executionMode === "observe") return 0;
+  if (executionMode === "assist") return 1;
+
+  switch (driver) {
+    case "openclaw":
+    case "mcp_worker":
+      return 2;
+    case "claude_code":
+    case "hushd_agent":
+    case "openai_agent":
+      return 1;
+  }
+}
+
+export function createDefaultRuntimeBinding(
+  mode: SentinelMode,
+  runtime?: Partial<SentinelRuntimeBinding>,
+  fleetAgentId?: string | null,
+): SentinelRuntimeBinding {
+  const driver = runtime?.driver ?? getRecommendedDriverForMode(mode);
+  const definition = getSentinelDriverDefinition(driver);
+  const executionMode = runtime?.executionMode ?? definition.defaultExecutionMode;
+
+  return {
+    driver,
+    executionMode,
+    enforcementTier: runtime?.enforcementTier ?? deriveEnforcementTier(driver, executionMode),
+    endpointType: runtime?.endpointType ?? definition.endpointType,
+    targetRef: runtime?.targetRef ?? fleetAgentId ?? null,
+    runtimeRef: runtime?.runtimeRef ?? null,
+    sessionRef: runtime?.sessionRef ?? null,
+    health: runtime?.health ?? "planned",
+    receiptsEnabled: runtime?.receiptsEnabled ?? true,
+    emitsSignals: runtime?.emitsSignals ?? true,
+    lastHeartbeatAt: runtime?.lastHeartbeatAt ?? null,
+    notes: runtime?.notes,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -160,43 +343,23 @@ function generateSentinelId(): string {
 // Identity Creation
 // ---------------------------------------------------------------------------
 
-/**
- * Convert a Uint8Array to a hex string.
- */
-function toHex(bytes: Uint8Array): string {
-  return Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
+// Re-export from operator-crypto for backward compatibility.
+export { toHex, deriveSigil, SIGILS, type SigilType };
 
 /**
- * Generate a sentinel identity with Ed25519-compatible structure.
+ * Generate a sentinel identity with a real Ed25519 keypair.
  *
- * Since we cannot import @backbay/speakeasy directly (different repo),
- * this generates a placeholder identity that is structurally compatible.
- * Uses crypto.getRandomValues() for the keypair placeholder and
- * crypto.subtle.digest('SHA-256', ...) for fingerprint derivation.
+ * Uses generateOperatorKeypair() from operator-crypto for proper Ed25519
+ * key generation and deriveFingerprint() for SHA-256-based fingerprinting.
  *
- * The identity includes:
- * - publicKey: 32-byte hex (64 chars) from random bytes
- * - fingerprint: 16-char hex from SHA-256 of publicKey bytes
- * - sigil: derived from fingerprint byte 0 mod 8
- * - nickname: derived from sentinel name
+ * The secret key from this keygen is not stored — sentinel identity is
+ * separate from operator identity. The ownershipProof links the sentinel
+ * to the operator.
  */
 export async function generateSentinelIdentity(name: string): Promise<SentinelIdentity> {
-  // Generate 32 random bytes as a placeholder Ed25519 public key
-  const publicKeyBytes = crypto.getRandomValues(new Uint8Array(32));
-  const publicKey = toHex(publicKeyBytes);
-
-  // Derive fingerprint: SHA-256 of publicKey bytes, truncated to 16 hex chars (8 bytes)
-  const fingerprintHash = await crypto.subtle.digest("SHA-256", publicKeyBytes);
-  const fingerprintBytes = new Uint8Array(fingerprintHash);
-  const fingerprint = toHex(fingerprintBytes).slice(0, 16);
-
-  // Derive sigil from fingerprint
+  const { publicKeyHex } = await generateOperatorKeypair();
+  const fingerprint = await deriveFingerprint(publicKeyHex);
   const sigil = deriveSigil(fingerprint);
-
-  // Derive nickname from sentinel name: lowercase, collapse whitespace, max 24 chars
   const nickname = name
     .trim()
     .toLowerCase()
@@ -204,7 +367,7 @@ export async function generateSentinelIdentity(name: string): Promise<SentinelId
     .replace(/\s+/g, "-")
     .slice(0, 24);
 
-  return { publicKey, fingerprint, sigil, nickname };
+  return { publicKey: publicKeyHex, fingerprint, sigil, nickname };
 }
 
 // ---------------------------------------------------------------------------
@@ -263,6 +426,13 @@ export async function createSentinel(config: CreateSentinelConfig): Promise<Sent
   const now = Date.now();
   const id = generateSentinelId();
   const identity = await generateSentinelIdentity(config.name);
+  const runtime = createDefaultRuntimeBinding(config.mode, config.runtime, config.fleetAgentId);
+
+  let ownershipProof: string | null = null;
+  if (config.operatorSecretKey) {
+    const { signOwnershipProof } = await import("./operator-crypto");
+    ownershipProof = await signOwnershipProof(identity.publicKey, config.operatorSecretKey);
+  }
 
   const sentinel: Sentinel = {
     id,
@@ -281,8 +451,11 @@ export async function createSentinel(config: CreateSentinelConfig): Promise<Sent
     schedule: config.schedule ?? null,
     status: "paused",
     swarms: [],
+    runtime,
     stats: createInitialStats(),
     fleetAgentId: config.fleetAgentId ?? null,
+    ownerPublicKey: config.operatorPublicKey,
+    ownershipProof,
     createdAt: now,
     updatedAt: now,
   };
@@ -296,11 +469,50 @@ export async function createSentinel(config: CreateSentinelConfig): Promise<Sent
  */
 export function updateSentinel(
   sentinel: Sentinel,
-  patch: Partial<Pick<Sentinel, "name" | "goals" | "schedule" | "status" | "policy" | "mode">>,
+  patch: SentinelMutablePatch,
 ): Sentinel {
+  const nextMode = patch.mode ?? sentinel.mode;
+  const nextFleetAgentId =
+    patch.fleetAgentId === undefined ? sentinel.fleetAgentId : patch.fleetAgentId;
+  const runtimeNeedsNormalization =
+    patch.mode !== undefined || patch.runtime !== undefined || patch.fleetAgentId !== undefined;
+  const runtimeInput: Partial<SentinelRuntimeBinding> | undefined = runtimeNeedsNormalization
+    ? { ...sentinel.runtime, ...patch.runtime }
+    : undefined;
+
+  if (runtimeInput) {
+    if (patch.runtime?.driver !== undefined) {
+      if (patch.runtime.endpointType === undefined) runtimeInput.endpointType = undefined;
+      if (patch.runtime.enforcementTier === undefined) runtimeInput.enforcementTier = undefined;
+      if (patch.runtime.runtimeRef === undefined) runtimeInput.runtimeRef = undefined;
+      if (patch.runtime.sessionRef === undefined) runtimeInput.sessionRef = undefined;
+      if (patch.runtime.lastHeartbeatAt === undefined) runtimeInput.lastHeartbeatAt = undefined;
+      if (patch.runtime.health === undefined) runtimeInput.health = undefined;
+    } else if (
+      patch.runtime?.executionMode !== undefined &&
+      patch.runtime.enforcementTier === undefined
+    ) {
+      runtimeInput.enforcementTier = undefined;
+    }
+
+    if (patch.fleetAgentId !== undefined && patch.runtime?.targetRef === undefined) {
+      runtimeInput.targetRef = undefined;
+    }
+  }
+
+  const runtime = runtimeNeedsNormalization
+    ? createDefaultRuntimeBinding(
+        nextMode,
+        runtimeInput,
+        nextFleetAgentId,
+      )
+    : sentinel.runtime;
+
   return {
     ...sentinel,
     ...patch,
+    runtime,
+    fleetAgentId: nextFleetAgentId,
     updatedAt: Date.now(),
   };
 }
