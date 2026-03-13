@@ -35,7 +35,6 @@ import type {
   SignalContext,
 } from "./signal-pipeline";
 
-import { deriveSeverity } from "./signal-pipeline";
 
 // Re-export canonical types so downstream consumers (finding-store, etc.) still work.
 export type {

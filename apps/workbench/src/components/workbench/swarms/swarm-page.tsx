@@ -21,7 +21,6 @@ import {
   IconWorld,
   IconChevronRight,
   IconMessage,
-  IconEye,
   IconToggleLeft,
   IconToggleRight,
 } from "@tabler/icons-react";
@@ -87,7 +86,7 @@ export function SwarmPage() {
   );
 
   // Empty state
-  if (swarms.length === 0 && !showCreate) {
+  if (swarms.length === 0) {
     return (
       <div className="flex h-full w-full flex-col items-center justify-center bg-[#05060a] px-8">
         <div className="w-12 h-12 rounded-xl bg-[#55788b]/10 border border-[#55788b]/20 flex items-center justify-center mb-4">

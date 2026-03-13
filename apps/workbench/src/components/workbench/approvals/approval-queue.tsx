@@ -389,7 +389,7 @@ export function ApprovalQueue({ currentUser }: { currentUser?: string } = {}) {
 
           <div className="flex-1" />
 
-          {isLiveData && fleetConnected && (
+          {isLiveData && liveApprovalsReady && (
             <button
               onClick={fetchLiveApprovals}
               className="flex h-7 items-center gap-1 rounded-md bg-[#2d3240]/50 px-2 text-[10px] text-[#6f7f9a] transition-colors hover:text-[#ece7dc] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]"
