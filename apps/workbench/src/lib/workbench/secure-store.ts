@@ -41,7 +41,11 @@ async function ensureStronghold(): Promise<boolean> {
           resolve(false);
         }, 5000);
       }),
-    ]).catch((err) => {
+    ]).then((result) => {
+      // If timed out (false), clear cache so next call retries
+      if (!result) strongholdReady = null;
+      return result;
+    }).catch((err) => {
       console.error("[secure-store] Stronghold init failed:", err);
       strongholdReady = null; // allow retry
       return false;

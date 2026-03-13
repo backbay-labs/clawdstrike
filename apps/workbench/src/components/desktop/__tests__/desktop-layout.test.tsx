@@ -8,6 +8,7 @@ import { MultiPolicyProvider as WorkbenchProvider, useMultiPolicy } from "@/lib/
 import { FleetConnectionProvider } from "@/lib/workbench/use-fleet-connection";
 import { SentinelProvider } from "@/lib/workbench/sentinel-store";
 import { FindingProvider } from "@/lib/workbench/finding-store";
+import { OperatorProvider } from "@/lib/workbench/operator-store";
 
 vi.mock("@/lib/tauri-bridge", () => ({
   isDesktop: vi.fn(() => false),
@@ -33,6 +34,7 @@ function renderLayout(route = "/editor", withDirtyBackgroundTab = false) {
     <MemoryRouter initialEntries={[route]}>
       <FleetConnectionProvider>
         <WorkbenchProvider>
+          <OperatorProvider>
           <SentinelProvider>
             <FindingProvider>
               {withDirtyBackgroundTab ? <DirtyBackgroundTabBootstrap /> : null}
@@ -44,6 +46,7 @@ function renderLayout(route = "/editor", withDirtyBackgroundTab = false) {
               </Routes>
             </FindingProvider>
           </SentinelProvider>
+          </OperatorProvider>
         </WorkbenchProvider>
       </FleetConnectionProvider>
     </MemoryRouter>,

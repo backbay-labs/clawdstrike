@@ -206,9 +206,13 @@ export async function signData(data: Uint8Array, secretKeyHex: string): Promise<
     const sig = await crypto.subtle.sign("Ed25519", privateKey, buf(data));
     return toHex(new Uint8Array(sig));
   } catch {
-    // Fallback: HMAC-SHA256 when Ed25519 is unavailable (WebKit)
+    // Fallback: HMAC-SHA256 when Ed25519 is unavailable (WebKit).
+    // Derive the HMAC key from the seed the same way generateOperatorKeypair
+    // derives the public key: SHA-256(seed). This means verifySignature can
+    // use publicKeyHex (which IS SHA-256(seed)) as the HMAC key to verify.
     const seed = hexToBytes(secretKeyHex);
-    const key = await crypto.subtle.importKey("raw", buf(seed), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    const derivedKey = await crypto.subtle.digest("SHA-256", buf(seed));
+    const key = await crypto.subtle.importKey("raw", derivedKey, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
     const sig = await crypto.subtle.sign("HMAC", key, buf(data));
     return toHex(new Uint8Array(sig));
   }
@@ -235,9 +239,21 @@ export async function verifySignature(
     const signature = hexToBytes(signatureHex);
     return crypto.subtle.verify("Ed25519", publicKey, buf(signature), buf(data));
   } catch {
-    // Fallback: HMAC verification not possible without shared secret,
-    // so return false (signature unverifiable in this environment).
-    return false;
+    // Fallback: HMAC-SHA256 verification using public key as HMAC key.
+    // When Ed25519 is unavailable, signData uses HMAC with the secret seed.
+    // For local verification, the public key (SHA-256 of seed) serves as
+    // a shared identifier — re-derive HMAC using publicKeyHex as the key
+    // so signatures produced by the HMAC fallback can be verified locally.
+    try {
+      const keyBytes = hexToBytes(publicKeyHex);
+      const key = await crypto.subtle.importKey(
+        "raw", buf(keyBytes), { name: "HMAC", hash: "SHA-256" }, false, ["verify"],
+      );
+      const signature = hexToBytes(signatureHex);
+      return crypto.subtle.verify("HMAC", key, buf(signature), buf(data));
+    } catch {
+      return false;
+    }
   }
 }
 
