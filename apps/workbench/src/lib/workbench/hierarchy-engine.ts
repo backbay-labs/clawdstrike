@@ -539,8 +539,9 @@ export function clearHierarchy(): void {
 
 /**
  * Ensures a PolicyHierarchy has consistent parent↔child relationships.
- * Rebuilds children arrays from parentId pointers so that loaded/pulled
- * data is always structurally sound.
+ * Preserves the original explicit child ordering where possible, then
+ * backfills any missing parent↔child links from parentId pointers so
+ * loaded/pulled data is always structurally sound.
  */
 export function normalizeHierarchy(hierarchy: PolicyHierarchy): PolicyHierarchy {
   const nodes = { ...hierarchy.nodes };
@@ -550,9 +551,35 @@ export function normalizeHierarchy(hierarchy: PolicyHierarchy): PolicyHierarchy 
     nodes[id] = { ...nodes[id], children: [] };
   }
 
-  // Rebuild from parentId pointers
+  // Preserve explicit child ordering and recover missing parent links when
+  // an existing children array is more authoritative than a missing parentId.
+  for (const originalNode of Object.values(hierarchy.nodes)) {
+    if (!nodes[originalNode.id]) {
+      continue;
+    }
+    for (const childId of originalNode.children) {
+      const child = nodes[childId];
+      if (!child) {
+        continue;
+      }
+      if (child.parentId == null || child.parentId === originalNode.id) {
+        if (child.parentId !== originalNode.id) {
+          nodes[childId] = { ...child, parentId: originalNode.id };
+        }
+        if (!nodes[originalNode.id].children.includes(childId)) {
+          nodes[originalNode.id] = {
+            ...nodes[originalNode.id],
+            children: [...nodes[originalNode.id].children, childId],
+          };
+        }
+      }
+    }
+  }
+
+  // Rebuild any missing child links from parentId pointers without disturbing
+  // the preserved explicit ordering above.
   for (const node of Object.values(nodes)) {
-    if (node.parentId && nodes[node.parentId]) {
+    if (node.parentId && nodes[node.parentId] && !nodes[node.parentId].children.includes(node.id)) {
       nodes[node.parentId] = {
         ...nodes[node.parentId],
         children: [...nodes[node.parentId].children, node.id],

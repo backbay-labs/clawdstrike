@@ -106,6 +106,40 @@ describe("HierarchyPage", () => {
     vi.unstubAllGlobals();
   });
 
+  it("preserves explicit child order when normalizing a hierarchy", () => {
+    const normalized = hierarchyEngine.normalizeHierarchy({
+      rootId: "root",
+      nodes: {
+        root: {
+          id: "root",
+          name: "Root",
+          type: "org",
+          parentId: null,
+          children: ["child-b", "child-a"],
+          metadata: {},
+        },
+        "child-a": {
+          id: "child-a",
+          name: "Child A",
+          type: "team",
+          parentId: "root",
+          children: [],
+          metadata: {},
+        },
+        "child-b": {
+          id: "child-b",
+          name: "Child B",
+          type: "team",
+          parentId: "root",
+          children: [],
+          metadata: {},
+        },
+      },
+    });
+
+    expect(normalized.nodes.root.children).toEqual(["child-b", "child-a"]);
+  });
+
   it("keeps the local draft when the live hierarchy is empty", async () => {
     const user = userEvent.setup();
 
