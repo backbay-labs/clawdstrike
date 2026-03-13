@@ -74,6 +74,7 @@ export interface SecureToolSetOptions {
   context?: SecurityContext;
   getContext?: (toolName: string, input: unknown) => SecurityContext;
   translateToolCall?: AdapterConfig["translateToolCall"];
+  broker?: AdapterConfig["broker"];
 }
 
 export function secureToolSet<TTools extends Record<string, ExecuteOrCallToolLike>>(
@@ -82,8 +83,13 @@ export function secureToolSet<TTools extends Record<string, ExecuteOrCallToolLik
   options: SecureToolSetOptions,
 ): TTools {
   const resolverConfig =
-    options.translateToolCall !== undefined
-      ? ({ translateToolCall: options.translateToolCall } satisfies AdapterConfig)
+    options.translateToolCall !== undefined || options.broker !== undefined
+      ? ({
+          ...(options.translateToolCall !== undefined
+            ? { translateToolCall: options.translateToolCall }
+            : {}),
+          ...(options.broker !== undefined ? { broker: options.broker } : {}),
+        } satisfies AdapterConfig)
       : undefined;
   const interceptor = resolveInterceptor(source, resolverConfig);
 

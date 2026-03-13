@@ -125,7 +125,7 @@ class TestGuardedAsync:
         async def async_add(a: int, b: int) -> int:
             return a + b
 
-        result = asyncio.get_event_loop().run_until_complete(async_add(2, 3))
+        result = asyncio.run(async_add(2, 3))
         assert result == 5
 
     def test_async_return_value_preserved(self) -> None:
@@ -133,7 +133,7 @@ class TestGuardedAsync:
         async def get_obj_async() -> dict:
             return {"key": "value"}
 
-        result = asyncio.get_event_loop().run_until_complete(get_obj_async())
+        result = asyncio.run(get_obj_async())
         assert result == {"key": "value"}
 
 

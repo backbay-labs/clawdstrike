@@ -5,6 +5,7 @@ A lightweight system tray application that provides security policy enforcement 
 ## Features
 
 - **Daemon Management**: Automatically spawns and manages the hushd daemon
+- **Broker Sidecar**: Optionally bundles and supervises `clawdstrike-brokerd` for local secret-broker execution
 - **System Tray**: Shows status (running/stopped) and recent events
 - **Desktop Notifications**: Alerts when actions are blocked
 - **Claude Code Integration**: Auto-installs hooks for policy checking
@@ -18,8 +19,8 @@ A lightweight system tray application that provides security policy enforcement 
 - macOS 10.15+ (Linux support planned)
 - For Claude Code: Claude Code CLI installed
 
-The packaged app bundles `hushd` and manages it automatically. A separate
-`hushd` install is only needed for advanced external-daemon setups.
+The packaged app bundles `hushd` and can also bundle `clawdstrike-brokerd`.
+Separate installs are only needed for advanced external-daemon or remote-broker setups.
 
 ## Installation
 
@@ -30,7 +31,7 @@ cd apps/agent
 cargo tauri build
 ```
 
-The build step compiles and bundles `hushd` into the app automatically.
+The build step compiles and bundles `hushd` and `clawdstrike-brokerd` into the app automatically.
 The built app will be in `src-tauri/target/release/bundle/`.
 
 ### Development
@@ -43,7 +44,8 @@ cargo tauri dev
 
 1. Launch the Clawdstrike Agent app
 2. The agent will automatically start the hushd daemon on port 9876
-3. A tray icon will appear showing the current status
+3. If `brokerd.enabled` is set in agent settings, the agent will also start `clawdstrike-brokerd` on port 9889 after hushd is healthy
+4. A tray icon will appear showing the current status
 
 ### Tray Menu
 
@@ -115,6 +117,22 @@ Settings are stored in `~/.config/clawdstrike/agent.json`:
   "ota_last_check_at": null,
   "ota_last_result": null,
   "ota_current_hushd_version": null,
+  "brokerd": {
+    "enabled": false,
+    "port": 9889,
+    "binary_path": null,
+    "allow_http_loopback": false,
+    "allow_private_upstream_hosts": false,
+    "allow_invalid_upstream_tls": false,
+    "secret_backend": {
+      "kind": "file",
+      "file_path": "~/.config/clawdstrike/broker-secrets.json",
+      "env_prefix": "CLAWDSTRIKE_SECRET_",
+      "http_base_url": null,
+      "http_bearer_token": null,
+      "http_path_prefix": "/v1/secrets"
+    }
+  },
   "openclaw": {
     "gateways": [],
     "active_gateway_id": null
@@ -125,6 +143,15 @@ Settings are stored in `~/.config/clawdstrike/agent.json`:
 ### Default Policy
 
 The agent bundles a default policy at `resources/default-policy.yaml` that will be copied to `~/.config/clawdstrike/policy.yaml` on first run.
+
+### Local broker mode
+
+When `brokerd.enabled` is `true`, the agent:
+
+- copies the bundled `clawdstrike-brokerd` binary into `~/.config/clawdstrike/bin/`
+- keeps a persistent local hushd signing key under `~/.config/clawdstrike/runtime/`
+- fetches hushd's broker signing public key and injects it into brokerd on startup
+- starts brokerd with the configured `file`, `env`, or managed `http` secret backend
 
 ### Signed hushd OTA updates
 

@@ -13,6 +13,7 @@ use hush_core::{Keypair, PublicKey};
 use crate::audit::forward::AuditForwarder;
 use crate::audit::{AuditEvent, AuditLedger};
 use crate::auth::AuthStore;
+use crate::broker_state::BrokerStateStore;
 use crate::config::{Config, SiemPrivacyConfig};
 use crate::control_db::ControlDb;
 use crate::identity::oidc::OidcValidator;
@@ -116,6 +117,8 @@ pub struct AppState {
     pub spine_publisher: Option<Arc<SpinePublisher>>,
     /// Shutdown notifier (used for API-triggered shutdown)
     pub shutdown: Arc<Notify>,
+    /// In-memory broker capability lifecycle state.
+    pub broker_state: Arc<BrokerStateStore>,
 }
 
 #[derive(Clone)]
@@ -490,6 +493,7 @@ impl AppState {
             siem_manager: Arc::new(Mutex::new(siem_manager)),
             spine_publisher,
             shutdown: Arc::new(Notify::new()),
+            broker_state: Arc::new(BrokerStateStore::new()),
         };
 
         // Record session start (after forwarder is initialized).

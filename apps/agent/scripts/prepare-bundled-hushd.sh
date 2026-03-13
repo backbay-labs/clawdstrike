@@ -6,28 +6,36 @@ script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(CDPATH= cd -- "${script_dir}/../../.." && pwd)
 src_tauri_dir=$(CDPATH= cd -- "${script_dir}/../src-tauri" && pwd)
 control_console_dir="${repo_root}/apps/control-console"
-bin_name="hushd"
-
 case "${OS:-}" in
   Windows_NT)
-    bin_name="hushd.exe"
+    hushd_bin="hushd.exe"
+    brokerd_bin="clawdstrike-brokerd.exe"
+    ;;
+  *)
+    hushd_bin="hushd"
+    brokerd_bin="clawdstrike-brokerd"
     ;;
 esac
 
 case "$(uname -s 2>/dev/null || true)" in
   MINGW*|MSYS*|CYGWIN*)
-    bin_name="hushd.exe"
+    hushd_bin="hushd.exe"
+    brokerd_bin="clawdstrike-brokerd.exe"
     ;;
 esac
 
 case "$profile" in
   dev)
     cargo build -p hushd --manifest-path "${repo_root}/Cargo.toml"
-    src_bin="${repo_root}/target/debug/${bin_name}"
+    cargo build -p clawdstrike-brokerd --manifest-path "${repo_root}/Cargo.toml"
+    hushd_src_bin="${repo_root}/target/debug/${hushd_bin}"
+    brokerd_src_bin="${repo_root}/target/debug/${brokerd_bin}"
     ;;
   release)
     cargo build -p hushd --release --manifest-path "${repo_root}/Cargo.toml"
-    src_bin="${repo_root}/target/release/${bin_name}"
+    cargo build -p clawdstrike-brokerd --release --manifest-path "${repo_root}/Cargo.toml"
+    hushd_src_bin="${repo_root}/target/release/${hushd_bin}"
+    brokerd_src_bin="${repo_root}/target/release/${brokerd_bin}"
     ;;
   *)
     echo "Unsupported profile '${profile}'. Use 'dev' or 'release'." >&2
@@ -35,10 +43,14 @@ case "$profile" in
     ;;
 esac
 
-dst_bin="${src_tauri_dir}/resources/bin/${bin_name}"
-mkdir -p "$(dirname "${dst_bin}")"
-install -m 0755 "${src_bin}" "${dst_bin}"
-echo "Prepared bundled hushd at ${dst_bin}"
+resources_bin_dir="${src_tauri_dir}/resources/bin"
+mkdir -p "${resources_bin_dir}"
+
+install -m 0755 "${hushd_src_bin}" "${resources_bin_dir}/${hushd_bin}"
+echo "Prepared bundled hushd at ${resources_bin_dir}/${hushd_bin}"
+
+install -m 0755 "${brokerd_src_bin}" "${resources_bin_dir}/${brokerd_bin}"
+echo "Prepared bundled brokerd at ${resources_bin_dir}/${brokerd_bin}"
 
 if [ ! -d "${control_console_dir}/node_modules" ]; then
   npm --prefix "${control_console_dir}" ci

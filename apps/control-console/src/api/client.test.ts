@@ -1,13 +1,25 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  approveBrokerPreview,
+  exportBrokerCompletionBundle,
+  fetchBrokerPreview,
+  fetchBrokerPreviews,
+  fetchBrokerCapabilities,
+  fetchBrokerCapability,
+  fetchFrozenBrokerProviders,
   fetchAgentStatus,
   fetchAuditEvents,
   fetchAuditStats,
   fetchHealth,
   fetchIntegrationSettings,
   fetchPolicy,
+  freezeBrokerProvider,
+  replayBrokerCapability,
+  revokeAllBrokerCapabilities,
+  revokeBrokerCapability,
   saveIntegrationSettings,
   testIntegrationDelivery,
+  unfreezeBrokerProvider,
 } from "./client";
 
 const mockFetch = vi.fn();
@@ -100,6 +112,252 @@ describe("fetchAgentStatus", () => {
     expect(url).toContain("endpoint_agent_id=endpoint-1");
     expect(url).toContain("include_stale=true");
     expect(url).toContain("limit=25");
+  });
+});
+
+describe("broker control-plane client helpers", () => {
+  it("queries broker capabilities with filters", async () => {
+    mockFetch.mockReturnValue(jsonResponse({ capabilities: [] }));
+
+    await fetchBrokerCapabilities({ state: "active", provider: "github", limit: 25 });
+
+    const url = mockFetch.mock.calls[0][0] as string;
+    expect(url).toContain("/api/v1/broker/capabilities");
+    expect(url).toContain("state=active");
+    expect(url).toContain("provider=github");
+    expect(url).toContain("limit=25");
+  });
+
+  it("fetches a single broker capability detail envelope", async () => {
+    mockFetch.mockReturnValue(
+      jsonResponse({
+        capability: {
+          capability_id: "cap-1",
+          provider: "openai",
+          state: "active",
+          issued_at: "2026-03-12T00:00:00Z",
+          expires_at: "2026-03-12T00:01:00Z",
+          policy_hash: "hash-1",
+          secret_ref_id: "openai/dev",
+          url: "https://api.openai.com/v1/responses",
+          method: "POST",
+          execution_count: 0,
+        },
+        executions: [
+          {
+            execution_id: "exec-1",
+            capability_id: "cap-1",
+            provider: "openai",
+            phase: "completed",
+            executed_at: "2026-03-12T00:00:30Z",
+            secret_ref_id: "openai/dev",
+            url: "https://api.openai.com/v1/responses",
+            method: "POST",
+            bytes_sent: 12,
+            bytes_received: 24,
+          },
+        ],
+      }),
+    );
+
+    const result = await fetchBrokerCapability("cap-1");
+    expect(result.capability.capability_id).toBe("cap-1");
+    expect(result.executions).toHaveLength(1);
+    expect(mockFetch.mock.calls[0][0]).toBe("/api/v1/broker/capabilities/cap-1");
+  });
+
+  it("queries broker previews with filters and fetches a single preview", async () => {
+    mockFetch
+      .mockReturnValueOnce(
+        jsonResponse({
+          previews: [
+            {
+              preview_id: "preview-1",
+              provider: "github",
+              operation: "issues.create",
+              summary: "Create incident issue in production repo",
+              created_at: "2026-03-12T00:00:00Z",
+              risk_level: "high",
+              data_classes: ["code", "secrets"],
+              resources: [{ kind: "repo", value: "acme/api" }],
+              egress_host: "api.github.com",
+              approval_required: true,
+              approval_state: "pending",
+            },
+          ],
+        }),
+      )
+      .mockReturnValueOnce(
+        jsonResponse({
+          preview: {
+            preview_id: "preview-1",
+            provider: "github",
+            operation: "issues.create",
+            summary: "Create incident issue in production repo",
+            created_at: "2026-03-12T00:00:00Z",
+            risk_level: "high",
+            data_classes: ["code", "secrets"],
+            resources: [{ kind: "repo", value: "acme/api" }],
+            egress_host: "api.github.com",
+            approval_required: true,
+            approval_state: "pending",
+          },
+        }),
+      );
+
+    const previews = await fetchBrokerPreviews({ provider: "github", limit: 10 });
+    const preview = await fetchBrokerPreview("preview-1");
+
+    expect(previews.previews).toHaveLength(1);
+    expect(preview.preview.preview_id).toBe("preview-1");
+    expect(mockFetch.mock.calls[0][0]).toContain("/api/v1/broker/previews");
+    expect(mockFetch.mock.calls[0][0]).toContain("provider=github");
+    expect(mockFetch.mock.calls[0][0]).toContain("limit=10");
+    expect(mockFetch.mock.calls[1][0]).toBe("/api/v1/broker/previews/preview-1");
+  });
+
+  it("posts broker preview approval requests", async () => {
+    mockFetch.mockReturnValue(
+      jsonResponse({
+        preview: {
+          preview_id: "preview-approve-1",
+          provider: "slack",
+          operation: "messages.post",
+          summary: "Post incident update to on-call channel",
+          created_at: "2026-03-12T00:00:00Z",
+          risk_level: "medium",
+          data_classes: ["incident_context"],
+          resources: [{ kind: "channel", value: "#on-call" }],
+          egress_host: "slack.com",
+          approval_required: true,
+          approval_state: "approved",
+          approver: "operator@example.com",
+          approved_at: "2026-03-12T00:01:00Z",
+        },
+      }),
+    );
+
+    const result = await approveBrokerPreview("preview-approve-1", "operator@example.com");
+    expect(result.approval_state).toBe("approved");
+    expect(mockFetch.mock.calls[0][0]).toBe("/api/v1/broker/previews/preview-approve-1/approve");
+    expect(mockFetch.mock.calls[0][1].method).toBe("POST");
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body).approver).toBe("operator@example.com");
+  });
+
+  it("posts capability revocation requests", async () => {
+    mockFetch.mockReturnValue(
+      jsonResponse({
+        capability: {
+          capability_id: "cap-2",
+          provider: "github",
+          state: "revoked",
+          issued_at: "2026-03-12T00:00:00Z",
+          expires_at: "2026-03-12T00:01:00Z",
+          policy_hash: "hash-2",
+          secret_ref_id: "github/prod",
+          url: "https://api.github.com/repos/acme/repo/issues",
+          method: "POST",
+          execution_count: 1,
+        },
+      }),
+    );
+
+    const result = await revokeBrokerCapability("cap-2", "panic revoke");
+    expect(result.state).toBe("revoked");
+    expect(mockFetch.mock.calls[0][0]).toBe("/api/v1/broker/capabilities/cap-2/revoke");
+    expect(mockFetch.mock.calls[0][1].method).toBe("POST");
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body).reason).toBe("panic revoke");
+  });
+
+  it("fetches and mutates provider freeze state", async () => {
+    mockFetch
+      .mockReturnValueOnce(jsonResponse({ frozen_providers: [] }))
+      .mockReturnValueOnce(jsonResponse({ frozen_providers: [{ provider: "slack" }] }))
+      .mockReturnValueOnce(jsonResponse({ frozen_providers: [] }));
+
+    await fetchFrozenBrokerProviders();
+    await freezeBrokerProvider("slack", "incident response");
+    await unfreezeBrokerProvider("slack");
+
+    expect(mockFetch.mock.calls[0][0]).toBe("/api/v1/broker/providers/freeze");
+    expect(mockFetch.mock.calls[1][0]).toBe("/api/v1/broker/providers/slack/freeze");
+    expect(mockFetch.mock.calls[1][1].method).toBe("POST");
+    expect(JSON.parse(mockFetch.mock.calls[1][1].body).reason).toBe("incident response");
+    expect(mockFetch.mock.calls[2][1].method).toBe("DELETE");
+  });
+
+  it("posts broker replay requests", async () => {
+    mockFetch.mockReturnValue(
+      jsonResponse({
+        capability_id: "cap-3",
+        current_policy_hash: "hash-3",
+        current_state: "active",
+        provider_frozen: false,
+        egress_allowed: true,
+        provider_allowed: true,
+        policy_changed: true,
+        approval_required: true,
+        preview_still_approved: false,
+        delegated_subject: "runtime:agent-7",
+        minted_identity_kind: "github_app_installation",
+        would_allow: true,
+        reason: "current policy would still authorize this capability",
+        diffs: [
+          {
+            field: "preview_approval",
+            previous: "approved",
+            current: "missing",
+          },
+        ],
+      }),
+    );
+
+    const result = await replayBrokerCapability("cap-3");
+    expect(result.would_allow).toBe(true);
+    expect(result.policy_changed).toBe(true);
+    expect(result.diffs?.[0]?.field).toBe("preview_approval");
+    expect(mockFetch.mock.calls[0][0]).toBe("/api/v1/broker/capabilities/cap-3/replay");
+    expect(mockFetch.mock.calls[0][1].method).toBe("POST");
+  });
+
+  it("exports completion bundles for a capability", async () => {
+    mockFetch.mockReturnValue(
+      jsonResponse({
+        envelope: "signed-bundle-envelope",
+        bundle: {
+          generated_at: "2026-03-12T00:02:00Z",
+          capability: {
+            capability_id: "cap-4",
+            provider: "openai",
+            state: "active",
+            issued_at: "2026-03-12T00:00:00Z",
+            expires_at: "2026-03-12T00:30:00Z",
+            policy_hash: "hash-4",
+            secret_ref_id: "openai/prod",
+            url: "https://api.openai.com/v1/responses",
+            method: "POST",
+            execution_count: 2,
+          },
+          executions: [],
+        },
+      }),
+    );
+
+    const result = await exportBrokerCompletionBundle("cap-4");
+    expect(result.envelope).toBe("signed-bundle-envelope");
+    expect(result.bundle.capability.capability_id).toBe("cap-4");
+    expect(mockFetch.mock.calls[0][0]).toBe("/api/v1/broker/capabilities/cap-4/bundle");
+    expect(mockFetch.mock.calls[0][1].headers["Content-Type"]).toBe("application/json");
+  });
+
+  it("posts panic revoke requests", async () => {
+    mockFetch.mockReturnValue(jsonResponse({ revoked_count: 7 }));
+
+    const result = await revokeAllBrokerCapabilities("incident drill");
+    expect(result.revoked_count).toBe(7);
+    expect(mockFetch.mock.calls[0][0]).toBe("/api/v1/broker/capabilities/revoke-all");
+    expect(mockFetch.mock.calls[0][1].method).toBe("POST");
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body).reason).toBe("incident drill");
   });
 });
 

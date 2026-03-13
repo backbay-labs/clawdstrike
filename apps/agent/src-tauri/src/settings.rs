@@ -211,6 +211,69 @@ pub struct EnrollmentState {
     pub enrollment_in_progress: bool,
 }
 
+/// Local brokerd secret backend settings.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BrokerdSecretBackendSettings {
+    #[serde(default = "default_broker_secret_backend_kind")]
+    pub kind: String,
+    #[serde(default = "default_broker_secret_file_path")]
+    pub file_path: PathBuf,
+    #[serde(default = "default_broker_secret_env_prefix")]
+    pub env_prefix: String,
+    #[serde(default)]
+    pub http_base_url: Option<String>,
+    #[serde(default)]
+    pub http_bearer_token: Option<String>,
+    #[serde(default = "default_broker_secret_http_path_prefix")]
+    pub http_path_prefix: String,
+}
+
+impl Default for BrokerdSecretBackendSettings {
+    fn default() -> Self {
+        Self {
+            kind: default_broker_secret_backend_kind(),
+            file_path: default_broker_secret_file_path(),
+            env_prefix: default_broker_secret_env_prefix(),
+            http_base_url: None,
+            http_bearer_token: None,
+            http_path_prefix: default_broker_secret_http_path_prefix(),
+        }
+    }
+}
+
+/// Local brokerd lifecycle and transport settings.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BrokerdSettings {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_broker_port")]
+    pub port: u16,
+    #[serde(default)]
+    pub binary_path: Option<PathBuf>,
+    #[serde(default)]
+    pub allow_http_loopback: bool,
+    #[serde(default)]
+    pub allow_private_upstream_hosts: bool,
+    #[serde(default)]
+    pub allow_invalid_upstream_tls: bool,
+    #[serde(default)]
+    pub secret_backend: BrokerdSecretBackendSettings,
+}
+
+impl Default for BrokerdSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            port: default_broker_port(),
+            binary_path: None,
+            allow_http_loopback: false,
+            allow_private_upstream_hosts: false,
+            allow_invalid_upstream_tls: false,
+            secret_backend: BrokerdSecretBackendSettings::default(),
+        }
+    }
+}
+
 /// Agent settings persisted to disk.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
@@ -263,6 +326,10 @@ pub struct Settings {
     /// API key for hushd (if authentication is enabled).
     #[serde(default)]
     pub api_key: Option<String>,
+
+    /// Local brokerd runtime settings.
+    #[serde(default)]
+    pub brokerd: BrokerdSettings,
 
     /// Non-secret OpenClaw metadata.
     #[serde(default)]
@@ -369,6 +436,10 @@ fn default_local_api_mtls_port() -> u16 {
     9880
 }
 
+fn default_broker_port() -> u16 {
+    9889
+}
+
 fn default_enabled() -> bool {
     true
 }
@@ -391,6 +462,22 @@ fn default_dashboard_url() -> String {
 
 fn default_dashboard_url_for_port(agent_api_port: u16) -> String {
     format!("http://127.0.0.1:{}/ui", agent_api_port)
+}
+
+fn default_broker_secret_backend_kind() -> String {
+    "file".to_string()
+}
+
+fn default_broker_secret_file_path() -> PathBuf {
+    get_config_dir().join("broker-secrets.json")
+}
+
+fn default_broker_secret_env_prefix() -> String {
+    "CLAWDSTRIKE_SECRET_".to_string()
+}
+
+fn default_broker_secret_http_path_prefix() -> String {
+    "/v1/secrets".to_string()
 }
 
 fn default_ota_enabled() -> bool {
@@ -424,6 +511,7 @@ impl Default for Settings {
             debug_include_daemon_error_body: false,
             hushd_binary_path: None,
             api_key: None,
+            brokerd: BrokerdSettings::default(),
             openclaw: OpenClawSettings::default(),
             dashboard_url: default_dashboard_url(),
             local_agent_id: None,
