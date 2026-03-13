@@ -107,7 +107,6 @@ export function OriginEditor() {
 
   const handleAddProfile = useCallback(() => {
     if (!origins) return;
-    const currentProfiles = origins.profiles ?? [];
     updateOrigins({
       ...origins,
       profiles: [...(origins.profiles ?? []), createEmptyProfile()],

@@ -94,7 +94,7 @@ const NODE_TYPE_LABELS: Record<OrgNodeType, string> = {
   team: "Team",
   agent: "Agent",
   endpoint: "Endpoint",
-  runtime: "Runtime",
+  runtime: "Runtime Agent",
 };
 
 // ---------------------------------------------------------------------------
@@ -185,6 +185,7 @@ function TreeNode({
           isSelected && "bg-[#131721] ring-1 ring-inset",
           isSelected && node.type === "org" && "ring-[#d4a84b]/30",
           isSelected && node.type === "team" && "ring-[#5b8def]/30",
+          isSelected && node.type === "agent" && "ring-[#3dbf84]/30",
           isSelected && node.type === "endpoint" && "ring-[#3dbf84]/30",
           isSelected && node.type === "runtime" && "ring-[#7b6b8b]/30",
           isAncestor && !isSelected && "bg-[#131721]/30",
@@ -259,7 +260,7 @@ function TreeNode({
         )}
 
         {/* Metadata count */}
-        {node.metadata?.agentCount !== undefined && node.type !== "runtime" && !node.policyName && (
+        {node.metadata?.agentCount !== undefined && node.type !== "runtime" && node.type !== "agent" && !node.policyName && (
           <span className="ml-auto shrink-0 text-[9px] font-mono text-[#6f7f9a]/60">
             {node.metadata.agentCount} {node.metadata.agentCount === 1
               ? metadataLeafLabel.singular
@@ -282,10 +283,22 @@ function TreeNode({
                 <IconPlus size={11} stroke={2} />
               </button>
             )}
+            {canAddAgent && (
+              <button
+                className="p-0.5 rounded hover:bg-[#3dbf84]/20 text-[#3dbf84]/60 hover:text-[#3dbf84]"
+                title="Add Agent"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAddChild(node.id, "agent");
+                }}
+              >
+                <IconPlus size={11} stroke={2} />
+              </button>
+            )}
             {canAddEndpoint && (
               <button
                 className="p-0.5 rounded hover:bg-[#3dbf84]/20 text-[#3dbf84]/60 hover:text-[#3dbf84]"
-                title="Add endpoint"
+                title="Add Endpoint"
                 onClick={(e) => {
                   e.stopPropagation();
                   onAddChild(node.id, "endpoint");
@@ -297,18 +310,6 @@ function TreeNode({
             {canAddRuntime && (
               <button
                 className="p-0.5 rounded hover:bg-[#7b6b8b]/20 text-[#7b6b8b]/60 hover:text-[#7b6b8b]"
-                title="Add runtime"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onAddChild(node.id, "runtime");
-                }}
-              >
-                <IconPlus size={11} stroke={2} />
-              </button>
-            )}
-            {canAddRuntime && (
-              <button
-                className="p-0.5 rounded hover:bg-[#3dbf84]/20 text-[#3dbf84]/60 hover:text-[#3dbf84]"
                 title="Add Runtime"
                 onClick={(e) => {
                   e.stopPropagation();
@@ -716,7 +717,7 @@ function MergePreviewPanel({
 
           <div className="flex gap-3 text-[9px] font-mono text-[#6f7f9a]/70">
             <span>{directChildren} direct children</span>
-            <span>{leafRuntimes.length} runtime{leafRuntimes.length !== 1 ? "s" : ""}</span>
+            <span>{leafRuntimes.length} leaf node{leafRuntimes.length !== 1 ? "s" : ""}</span>
           </div>
         </div>
 

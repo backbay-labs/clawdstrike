@@ -14,20 +14,19 @@ vi.mock("@/lib/tauri-bridge", () => ({
 }));
 
 const NAV_ITEMS = [
-  { label: "Home", href: "/home" },
+  { label: "Sentinels", href: "/sentinels" },
+  { label: "Mission Control", href: "/missions" },
+  { label: "Findings & Intel", href: "/findings" },
+  { label: "Lab", href: "/lab" },
+  { label: "Swarms", href: "/swarms" },
   { label: "Editor", href: "/editor" },
   { label: "Library", href: "/library" },
-  { label: "Guards", href: "/guards" },
-  { label: "Compare", href: "/compare" },
-  { label: "Threat Lab", href: "/simulator" },
-  { label: "Hunt Lab", href: "/hunt" },
   { label: "Compliance", href: "/compliance" },
-  { label: "Receipts", href: "/receipts" },
-  { label: "Audit", href: "/audit" },
-  { label: "Delegation", href: "/delegation" },
   { label: "Approvals", href: "/approvals" },
-  { label: "Hierarchy", href: "/hierarchy" },
+  { label: "Audit", href: "/audit" },
+  { label: "Receipts", href: "/receipts" },
   { label: "Fleet", href: "/fleet" },
+  { label: "Topology", href: "/topology" },
 ] as const;
 
 describe("DesktopSidebar", () => {
@@ -52,11 +51,10 @@ describe("DesktopSidebar", () => {
   });
 
   it("highlights the active route with active styling", () => {
-    renderWithProviders(<DesktopSidebar />, { route: "/simulator" });
+    renderWithProviders(<DesktopSidebar />, { route: "/lab" });
 
-    const activeLink = screen.getByRole("link", { name: "Threat Lab" });
-    // Active link gets text-[#ece7dc] and bg-[#131721]
-    expect(activeLink.className).toContain("bg-[#131721]");
+    const activeLink = screen.getByRole("link", { name: "Lab" });
+    // Active link gets text-[#ece7dc]
     expect(activeLink.className).toContain("text-[#ece7dc]");
 
     // Non-active link gets text-[#6f7f9a]
@@ -69,12 +67,12 @@ describe("DesktopSidebar", () => {
 
     const editorLink = screen.getByRole("link", { name: "Editor" });
     // The active link has a child span with the gold accent
-    const accentBar = editorLink.querySelector("span.bg-\\[\\#d4a84b\\]");
+    const accentBar = editorLink.querySelector(".sidebar-accent-bar");
     expect(accentBar).toBeInTheDocument();
 
     // Inactive link should not have the accent bar
-    const simulatorLink = screen.getByRole("link", { name: "Threat Lab" });
-    const noAccent = simulatorLink.querySelector("span.bg-\\[\\#d4a84b\\]");
+    const labLink = screen.getByRole("link", { name: "Lab" });
+    const noAccent = labLink.querySelector(".sidebar-accent-bar");
     expect(noAccent).toBeNull();
   });
 
@@ -99,7 +97,7 @@ describe("DesktopSidebar", () => {
   it("renders section group headers", () => {
     renderWithProviders(<DesktopSidebar />);
 
-    for (const title of ["Policy", "Ops", "Governance", "Infrastructure"]) {
+    for (const title of ["Detect & Respond", "Author & Test", "Platform"]) {
       expect(screen.getByText(title)).toBeInTheDocument();
     }
   });
@@ -112,10 +110,9 @@ describe("DesktopSidebar", () => {
     await user.click(collapseBtn);
 
     // Section headers should be hidden
-    expect(screen.queryByText("Policy")).not.toBeInTheDocument();
-    expect(screen.queryByText("Ops")).not.toBeInTheDocument();
-    expect(screen.queryByText("Governance")).not.toBeInTheDocument();
-    expect(screen.queryByText("Infrastructure")).not.toBeInTheDocument();
+    expect(screen.queryByText("Detect & Respond")).not.toBeInTheDocument();
+    expect(screen.queryByText("Author & Test")).not.toBeInTheDocument();
+    expect(screen.queryByText("Platform")).not.toBeInTheDocument();
   });
 
   it("toggles sidebar collapsed state when collapse button is clicked", async () => {

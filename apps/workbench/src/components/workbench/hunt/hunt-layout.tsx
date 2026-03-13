@@ -19,7 +19,6 @@ import {
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { SubTabBar, type SubTab } from "../shared/sub-tab-bar";
-import { SkeletonTable } from "../shared/skeleton-loader";
 import { ActivityStream } from "./activity-stream";
 import { Baselines } from "./baselines";
 import { InvestigationWorkbench } from "./investigation";
@@ -114,7 +113,6 @@ export function HuntLayout() {
   const [streamFilters, setStreamFilters] = useState<StreamFilters>({ timeRange: "24h" });
   const [streamLive, setStreamLive] = useState(true);
   const [sensitivity, setSensitivity] = useState<"low" | "medium" | "high">("medium");
-  const [isLoading, setIsLoading] = useState(true);
 
   const { connection } = useFleetConnection();
   const connected = connection.connected;
@@ -124,7 +122,6 @@ export function HuntLayout() {
   const fetchEvents = useCallback(async () => {
     if (!connected) return;
 
-    setIsLoading(true);
     try {
       const since = timeRangeToSince("24h");
       const auditEvents = await fetchAuditEvents(connection, { since, limit: 500 });
@@ -146,12 +143,16 @@ export function HuntLayout() {
       setEvents(enriched);
     } catch (err) {
       console.warn("[hunt-layout] Failed to fetch events:", err);
-    } finally {
-      setIsLoading(false);
     }
   }, [connected, connection]);
 
-  // Initial fetch + auto-poll every 30 seconds while the stream is live
+  // Keep a stable ref to the latest fetchEvents so the polling effect only
+  // re-runs when `connected` or `streamLive` change, not when the callback
+  // identity changes due to closure captures (e.g. connection object).
+  const fetchEventsRef = useRef(fetchEvents);
+  fetchEventsRef.current = fetchEvents;
+
+  // Initial fetch + auto-poll every 30 seconds while the stream is live.
   useEffect(() => {
     if (pollRef.current) clearInterval(pollRef.current);
     pollRef.current = null;
@@ -160,12 +161,13 @@ export function HuntLayout() {
       return;
     }
 
-    fetchEvents();
-    pollRef.current = setInterval(fetchEvents, 30_000);
+    fetchEventsRef.current();
+    pollRef.current = setInterval(() => fetchEventsRef.current(), 30_000);
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
+      pollRef.current = null;
     };
-  }, [connected, fetchEvents, streamLive]);
+  }, [connected, streamLive]);
 
   // Derived: open investigations count
   const openInvestigations = useMemo(
@@ -211,7 +213,7 @@ export function HuntLayout() {
       {/* Tab content */}
       <div className="flex-1 min-h-0">
         {activeTab === "stream" && (
-          isLoading ? <SkeletonTable rows={12} /> : <ActivityStream
+          <ActivityStream
             events={events}
             filters={streamFilters}
             onFilterChange={setStreamFilters}

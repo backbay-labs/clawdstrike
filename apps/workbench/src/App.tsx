@@ -153,18 +153,6 @@ const GuardsPage = lazy(() =>
   })),
 );
 
-const SimulatorLayout = lazy(() =>
-  import("@/components/workbench/simulator/simulator-layout").then((m) => ({
-    default: m.SimulatorLayout,
-  })),
-);
-
-const CompareLayout = lazy(() =>
-  import("@/components/workbench/compare/compare-layout").then((m) => ({
-    default: m.CompareLayout,
-  })),
-);
-
 const DelegationPage = lazy(() =>
   import("@/components/workbench/delegation/delegation-page").then((m) => ({
     default: m.DelegationPage,
@@ -388,9 +376,9 @@ export function App() {
                 {/* Workbench pages */}
                 <Route path="home" element={<HomePage />} />
                 <Route path="editor" element={<PolicyEditor />} />
-                <Route path="simulator" element={<SimulatorLayout />} />
+                <Route path="simulator" element={<Navigate to="/lab?tab=simulate" replace />} />
                 <Route path="hunt" element={<HuntLayout />} />
-                <Route path="compare" element={<CompareLayout />} />
+                <Route path="compare" element={<Navigate to="/editor?panel=compare" replace />} />
                 <Route path="compliance" element={<ComplianceDashboard />} />
                 <Route path="receipts" element={<ReceiptInspector />} />
                 <Route path="delegation" element={<DelegationPage />} />
