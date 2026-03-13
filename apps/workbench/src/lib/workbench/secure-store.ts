@@ -26,13 +26,22 @@ let strongholdReady: Promise<boolean> | null = null;
 
 /**
  * Ensure the Stronghold vault is initialised. Safe to call multiple times;
- * only the first call does real work.
+ * only the first call does real work. Times out after 5 seconds to prevent
+ * hanging in environments where the Tauri IPC stalls.
  */
 async function ensureStronghold(): Promise<boolean> {
   if (!isDesktop()) return false;
 
   if (!strongholdReady) {
-    strongholdReady = tauriInvoke<boolean>("init_stronghold").catch((err) => {
+    strongholdReady = Promise.race([
+      tauriInvoke<boolean>("init_stronghold"),
+      new Promise<boolean>((resolve) => {
+        setTimeout(() => {
+          console.warn("[secure-store] Stronghold init timed out after 5s, falling back to session storage");
+          resolve(false);
+        }, 5000);
+      }),
+    ]).catch((err) => {
       console.error("[secure-store] Stronghold init failed:", err);
       strongholdReady = null; // allow retry
       return false;

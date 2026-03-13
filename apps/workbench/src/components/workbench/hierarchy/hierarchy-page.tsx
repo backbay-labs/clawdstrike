@@ -156,7 +156,7 @@ function TreeNode({
       {/* Node row */}
       <div
         className={cn(
-          "group flex items-center gap-1.5 py-1.5 px-2 rounded-md cursor-pointer transition-all duration-100",
+          "group flex items-center gap-1.5 py-1.5 px-2 rounded-md cursor-pointer transition-all duration-150",
           "hover:bg-[#131721]/60",
           isSelected && "bg-[#131721] ring-1 ring-inset",
           isSelected && node.type === "org" && "ring-[#d4a84b]/30",

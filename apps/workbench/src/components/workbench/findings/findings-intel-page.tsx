@@ -12,14 +12,14 @@
 import { useCallback, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { IconAlertTriangle, IconBrain } from "@tabler/icons-react";
-import { cn } from "@/lib/utils";
 import { useFindings } from "@/lib/workbench/finding-store";
+import { SegmentedControl, type SegmentedTab } from "../shared/segmented-control";
 import { FindingsList } from "./findings-list";
 import { IntelPage } from "../intel/intel-page";
 import type { Intel } from "@/lib/workbench/sentinel-types";
 
 // ---------------------------------------------------------------------------
-// Tab type
+// Tab definitions
 // ---------------------------------------------------------------------------
 
 type Tab = "findings" | "intel";
@@ -27,6 +27,11 @@ type Tab = "findings" | "intel";
 function resolveTab(raw: string | null): Tab {
   return raw === "intel" ? "intel" : "findings";
 }
+
+const TABS: SegmentedTab[] = [
+  { id: "findings", label: "Findings", icon: IconAlertTriangle },
+  { id: "intel", label: "Intel", icon: IconBrain },
+];
 
 // ---------------------------------------------------------------------------
 // Main Component
@@ -46,7 +51,7 @@ export function FindingsIntelPage() {
 
   // --- Tab switching ---
   const setTab = useCallback(
-    (tab: Tab) => {
+    (tab: string) => {
       setSearchParams(tab === "findings" ? {} : { tab }, { replace: true });
     },
     [setSearchParams],
@@ -54,39 +59,14 @@ export function FindingsIntelPage() {
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
-      {/* ----------------------------------------------------------------- */}
-      {/* Tab bar                                                           */}
-      {/* ----------------------------------------------------------------- */}
-      <div className="border-b border-[#2d3240] bg-[#0b0d13] px-5 py-0 flex items-center gap-0 shrink-0">
-        <button
-          onClick={() => setTab("findings")}
-          className={cn(
-            "px-4 py-2.5 text-[11px] font-mono uppercase tracking-wider flex items-center border-b-2 transition-colors",
-            activeTab === "findings"
-              ? "text-[#ece7dc] border-[#d4a84b]"
-              : "text-[#6f7f9a] hover:text-[#ece7dc]/70 border-transparent",
-          )}
-        >
-          <IconAlertTriangle size={14} stroke={1.5} className="mr-1.5" />
-          Findings
-        </button>
-        <button
-          onClick={() => setTab("intel")}
-          className={cn(
-            "px-4 py-2.5 text-[11px] font-mono uppercase tracking-wider flex items-center border-b-2 transition-colors",
-            activeTab === "intel"
-              ? "text-[#ece7dc] border-[#d4a84b]"
-              : "text-[#6f7f9a] hover:text-[#ece7dc]/70 border-transparent",
-          )}
-        >
-          <IconBrain size={14} stroke={1.5} className="mr-1.5" />
-          Intel
-        </button>
-      </div>
+      {/* Segmented control for page-level mode switching */}
+      <SegmentedControl
+        tabs={TABS}
+        activeTab={activeTab}
+        onTabChange={setTab}
+      />
 
-      {/* ----------------------------------------------------------------- */}
-      {/* Tab content — only the active tab is mounted                      */}
-      {/* ----------------------------------------------------------------- */}
+      {/* Tab content — only the active tab is mounted */}
       <div className="flex-1 overflow-hidden">
         {activeTab === "findings" ? (
           <FindingsList

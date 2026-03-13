@@ -712,7 +712,7 @@ export function TrustGraph({
         <div className="w-12 h-12 rounded-xl bg-[#55788b]/10 border border-[#55788b]/20 flex items-center justify-center mb-4">
           <IconNetwork size={24} stroke={1.5} className="text-[#55788b]" />
         </div>
-        <h2 className="text-sm font-semibold text-[#ece7dc] mb-1">
+        <h2 className="font-syne text-sm font-semibold text-[#ece7dc] mb-1">
           {members.length === 0
             ? "No swarm members"
             : "Not enough members for a trust graph"}
@@ -1141,7 +1141,7 @@ function LegendSection({
 }) {
   return (
     <div className="mb-2 last:mb-0">
-      <h4 className="mb-1 text-[8px] font-semibold uppercase tracking-[0.1em] text-[#6f7f9a]/50">
+      <h4 className="font-syne mb-1 text-[8px] font-semibold uppercase tracking-wider text-[#6f7f9a]/50">
         {title}
       </h4>
       <div className="flex flex-col gap-1">{children}</div>

@@ -27,6 +27,7 @@ import {
 } from "@tabler/icons-react";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
+import { PageHeader } from "../shared/page-header";
 import { useSwarms, type CreateSwarmConfig } from "@/lib/workbench/swarm-store";
 import type { Swarm, SwarmType } from "@/lib/workbench/sentinel-types";
 
@@ -126,63 +127,52 @@ export function SwarmPage() {
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-[#05060a]">
-      {/* Header */}
-      <div className="shrink-0 border-b border-[#2d3240]/60 px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <IconNetwork size={18} className="text-[#55788b]" stroke={1.5} />
-            <div>
-              <h1 className="text-sm font-semibold text-[#ece7dc] tracking-[-0.01em]">
-                Swarms
-              </h1>
-              <p className="text-[11px] text-[#6f7f9a] mt-0.5">
-                {counts.total} swarm{counts.total !== 1 ? "s" : ""} active
-              </p>
+      {/* Header with summary + filters merged */}
+      <PageHeader
+        title="Swarms"
+        subtitle={<>{counts.total} swarm{counts.total !== 1 ? "s" : ""} active</>}
+        icon={IconNetwork}
+        iconColor="#55788b"
+        below={
+          <div className="flex items-center justify-between gap-4">
+            {/* Summary badges inline */}
+            <div className="flex items-center gap-3">
+              <SummaryCard label="Total" value={counts.total} />
+              <SummaryCard label="Personal" value={counts.personal} dotColor="#55788b" />
+              <SummaryCard label="Trusted" value={counts.trusted} dotColor="#d4a84b" />
+              <SummaryCard label="Federated" value={counts.federated} dotColor="#8b5cf6" />
+            </div>
+            {/* Filter chips */}
+            <div className="flex items-center gap-1.5">
+              {(["all", "personal", "trusted", "federated"] as TypeFilter[]).map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setFilter(f)}
+                  className={cn(
+                    "rounded-md px-2.5 py-1 text-[10px] font-medium capitalize transition-colors",
+                    filter === f
+                      ? "bg-[#d4a84b]/10 text-[#d4a84b]"
+                      : "text-[#6f7f9a]/60 hover:text-[#ece7dc] hover:bg-[#131721]/40",
+                  )}
+                >
+                  {f}
+                </button>
+              ))}
+              <span className="ml-2 text-[10px] text-[#6f7f9a]/40">
+                {filteredSwarms.length} result{filteredSwarms.length !== 1 ? "s" : ""}
+              </span>
             </div>
           </div>
-          <button
-            onClick={() => setShowCreate(true)}
-            className="flex items-center gap-1.5 rounded-md border border-[#d4a84b]/30 bg-[#d4a84b]/5 px-3 py-1.5 text-[11px] font-medium text-[#d4a84b] transition-colors hover:bg-[#d4a84b]/10 hover:border-[#d4a84b]/50"
-          >
-            <IconPlus size={13} stroke={1.5} />
-            Create Swarm
-          </button>
-        </div>
-      </div>
-
-      {/* Summary cards */}
-      <div className="shrink-0 border-b border-[#2d3240]/60 px-6 py-4">
-        <div className="flex items-stretch gap-3">
-          <SummaryCard label="Total" value={counts.total} />
-          <SummaryCard label="Personal" value={counts.personal} dotColor="#55788b" />
-          <SummaryCard label="Trusted" value={counts.trusted} dotColor="#d4a84b" />
-          <SummaryCard label="Federated" value={counts.federated} dotColor="#8b5cf6" />
-        </div>
-      </div>
-
-      {/* Filter bar */}
-      <div className="shrink-0 border-b border-[#2d3240]/60 px-6 py-2.5 flex items-center gap-2">
-        <span className="text-[10px] uppercase tracking-[0.08em] text-[#6f7f9a]/50 mr-1">
-          Filter
-        </span>
-        {(["all", "personal", "trusted", "federated"] as TypeFilter[]).map((f) => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={cn(
-              "rounded-md px-2.5 py-1 text-[10px] font-medium capitalize transition-colors",
-              filter === f
-                ? "bg-[#d4a84b]/10 text-[#d4a84b]"
-                : "text-[#6f7f9a]/60 hover:text-[#ece7dc] hover:bg-[#131721]/40",
-            )}
-          >
-            {f}
-          </button>
-        ))}
-        <span className="ml-auto text-[10px] text-[#6f7f9a]/40">
-          {filteredSwarms.length} result{filteredSwarms.length !== 1 ? "s" : ""}
-        </span>
-      </div>
+        }
+      >
+        <button
+          onClick={() => setShowCreate(true)}
+          className="flex items-center gap-1.5 rounded-md border border-[#d4a84b]/30 bg-[#d4a84b]/5 px-3 py-1.5 text-[11px] font-medium text-[#d4a84b] transition-colors hover:bg-[#d4a84b]/10 hover:border-[#d4a84b]/50"
+        >
+          <IconPlus size={13} stroke={1.5} />
+          Create Swarm
+        </button>
+      </PageHeader>
 
       {/* Swarm cards */}
       <div className="flex-1 overflow-auto px-6 py-4">
@@ -285,7 +275,7 @@ function SwarmCard({ swarm, onClick }: { swarm: Swarm; onClick: () => void }) {
         <div className="grid grid-cols-3 gap-4 mt-2 pt-3 border-t border-[#2d3240]/40">
           {/* Members preview */}
           <div>
-            <span className="text-[8px] uppercase tracking-[0.08em] text-[#6f7f9a]/40 font-semibold">
+            <span className="text-[8px] uppercase tracking-wider text-[#6f7f9a]/40 font-semibold">
               Members
             </span>
             <div className="flex flex-col gap-1 mt-1.5">
@@ -307,7 +297,7 @@ function SwarmCard({ swarm, onClick }: { swarm: Swarm; onClick: () => void }) {
 
           {/* Intel preview */}
           <div>
-            <span className="text-[8px] uppercase tracking-[0.08em] text-[#6f7f9a]/40 font-semibold">
+            <span className="text-[8px] uppercase tracking-wider text-[#6f7f9a]/40 font-semibold">
               Recent Intel
             </span>
             <div className="flex flex-col gap-1 mt-1.5">
@@ -332,7 +322,7 @@ function SwarmCard({ swarm, onClick }: { swarm: Swarm; onClick: () => void }) {
 
           {/* Speakeasies preview */}
           <div>
-            <span className="text-[8px] uppercase tracking-[0.08em] text-[#6f7f9a]/40 font-semibold">
+            <span className="text-[8px] uppercase tracking-wider text-[#6f7f9a]/40 font-semibold">
               Speakeasies
             </span>
             <div className="flex flex-col gap-1 mt-1.5">
@@ -429,7 +419,7 @@ function CreateSwarmModal({
         <div className="px-6 py-5 flex flex-col gap-5">
           {/* Name */}
           <div>
-            <label className="text-[10px] uppercase tracking-[0.08em] text-[#6f7f9a]/60 font-semibold">
+            <label className="text-[10px] uppercase tracking-wider text-[#6f7f9a]/60 font-semibold">
               Swarm Name
             </label>
             <input
@@ -448,7 +438,7 @@ function CreateSwarmModal({
 
           {/* Type selection */}
           <div>
-            <label className="text-[10px] uppercase tracking-[0.08em] text-[#6f7f9a]/60 font-semibold">
+            <label className="text-[10px] uppercase tracking-wider text-[#6f7f9a]/60 font-semibold">
               Swarm Type
             </label>
             <div className="mt-2 grid grid-cols-3 gap-2">
@@ -491,7 +481,7 @@ function CreateSwarmModal({
 
           {/* Governance policies */}
           <div>
-            <label className="text-[10px] uppercase tracking-[0.08em] text-[#6f7f9a]/60 font-semibold">
+            <label className="text-[10px] uppercase tracking-wider text-[#6f7f9a]/60 font-semibold">
               Governance Policies
             </label>
             <div className="mt-2 flex flex-col gap-2.5">
@@ -576,7 +566,7 @@ function SummaryCard({
 }) {
   return (
     <div className="flex flex-col rounded-lg border border-[#2d3240]/60 bg-[#0b0d13] px-4 py-3 min-w-[120px]">
-      <span className="text-[9px] uppercase tracking-[0.08em] text-[#6f7f9a]/50">
+      <span className="text-[9px] uppercase tracking-wider text-[#6f7f9a]/50">
         {label}
       </span>
       <div className="mt-1.5 flex items-center gap-2">

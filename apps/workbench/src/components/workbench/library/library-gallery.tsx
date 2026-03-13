@@ -8,6 +8,7 @@ import {
 } from "@/lib/tauri-commands";
 import { isDesktop } from "@/lib/tauri-bridge";
 import { cn } from "@/lib/utils";
+import { SubTabBar, type SubTab } from "../shared/sub-tab-bar";
 import { useHintSettingsSafe, type HintId } from "@/lib/workbench/use-hint-settings";
 import {
   IconFile,
@@ -229,31 +230,15 @@ export function LibraryGallery() {
       </div>
 
       {/* Tab switcher */}
-      <div className="flex items-center gap-1 mb-6 border-b border-[#2d3240]/40 pb-px">
-        <button
-          onClick={() => setActiveTab("my-policies")}
-          className={cn(
-            "flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-t-md transition-colors -mb-px border-b-2",
-            activeTab === "my-policies"
-              ? "text-[#ece7dc] border-[#d4a84b] bg-[#131721]/30"
-              : "text-[#6f7f9a] border-transparent hover:text-[#ece7dc] hover:bg-[#131721]/20",
-          )}
-        >
-          <IconBooks size={15} stroke={1.5} />
-          My Policies
-        </button>
-        <button
-          onClick={() => setActiveTab("catalog")}
-          className={cn(
-            "flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-t-md transition-colors -mb-px border-b-2",
-            activeTab === "catalog"
-              ? "text-[#ece7dc] border-[#d4a84b] bg-[#131721]/30"
-              : "text-[#6f7f9a] border-transparent hover:text-[#ece7dc] hover:bg-[#131721]/20",
-          )}
-        >
-          <IconLayoutGrid size={15} stroke={1.5} />
-          Catalog
-        </button>
+      <div className="mb-6">
+        <SubTabBar
+          tabs={[
+            { id: "my-policies", label: "My Policies", icon: IconBooks },
+            { id: "catalog", label: "Catalog", icon: IconLayoutGrid },
+          ] satisfies SubTab[]}
+          activeTab={activeTab}
+          onTabChange={(id) => setActiveTab(id as LibraryTab)}
+        />
       </div>
 
       {/* Tab content */}

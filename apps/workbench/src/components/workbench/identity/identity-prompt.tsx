@@ -29,7 +29,7 @@ export function IdentityPrompt() {
           className="mx-auto mb-6 h-1 w-12 rounded-full bg-[#d4a84b]"
           style={{ boxShadow: "0 0 12px rgba(212,168,75,0.3)" }}
         />
-        <h2 className="text-center text-base font-semibold text-[#ece7dc] tracking-[-0.01em]">
+        <h2 className="font-syne text-center text-base font-semibold text-[#ece7dc] tracking-[-0.01em]">
           Create Your Operator Identity
         </h2>
         <p className="mt-2 text-center text-[11px] text-[#6f7f9a]/70 leading-relaxed">
@@ -37,7 +37,7 @@ export function IdentityPrompt() {
           sentinels, and signed artifacts. Your private key is stored locally.
         </p>
         <div className="mt-6">
-          <label className="text-[10px] uppercase tracking-[0.08em] text-[#6f7f9a]/60 font-semibold">
+          <label className="text-[10px] uppercase tracking-wider text-[#6f7f9a]/60 font-semibold">
             Display Name
           </label>
           <input

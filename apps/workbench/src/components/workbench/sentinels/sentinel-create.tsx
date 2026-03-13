@@ -198,7 +198,7 @@ function ModeSelectionStep({
 }) {
   return (
     <div>
-      <h2 className="text-[13px] font-semibold text-[#ece7dc] mb-1">
+      <h2 className="font-syne text-[13px] font-semibold text-[#ece7dc] mb-1">
         Choose a Mode
       </h2>
       <p className="text-[11px] text-[#6f7f9a]/60 mb-5">
@@ -232,7 +232,7 @@ function ModeSelectionStep({
                 <div>
                   <h3
                     className={cn(
-                      "text-[12px] font-semibold",
+                      "font-syne text-[12px] font-semibold",
                       isSelected ? "text-[#d4a84b]" : "text-[#ece7dc]",
                     )}
                   >
@@ -325,7 +325,7 @@ function IdentityGoalsStep({
   return (
     <div className="flex flex-col gap-5">
       <div>
-        <h2 className="text-[13px] font-semibold text-[#ece7dc] mb-1">
+        <h2 className="font-syne text-[13px] font-semibold text-[#ece7dc] mb-1">
           Identity & Goals
         </h2>
         <p className="text-[11px] text-[#6f7f9a]/60 mb-5">
@@ -573,7 +573,7 @@ function PolicyScheduleStep({
   return (
     <div className="flex flex-col gap-5">
       <div>
-        <h2 className="text-[13px] font-semibold text-[#ece7dc] mb-1">
+        <h2 className="font-syne text-[13px] font-semibold text-[#ece7dc] mb-1">
           Runtime, Policy & Schedule
         </h2>
         <p className="text-[11px] text-[#6f7f9a]/60 mb-5">
@@ -582,7 +582,7 @@ function PolicyScheduleStep({
       </div>
 
       <div className="flex flex-col gap-3 rounded-lg border border-[#2d3240]/60 bg-[#0b0d13]/60 p-4">
-        <h3 className="text-[10px] font-medium uppercase tracking-wider text-[#6f7f9a]/50">
+        <h3 className="font-syne text-[10px] font-medium uppercase tracking-wider text-[#6f7f9a]/50">
           Runtime Driver
         </h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -608,7 +608,7 @@ function PolicyScheduleStep({
                     {definition.label}
                   </span>
                   {isRecommended && (
-                    <span className="rounded-full border border-[#3dbf84]/20 bg-[#3dbf84]/10 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.08em] text-[#3dbf84]">
+                    <span className="rounded-full border border-[#3dbf84]/20 bg-[#3dbf84]/10 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wider text-[#3dbf84]">
                       Recommended
                     </span>
                   )}
@@ -617,10 +617,10 @@ function PolicyScheduleStep({
                   {definition.description}
                 </p>
                 <div className="mt-2 flex flex-wrap gap-1">
-                  <span className="rounded-full border border-[#2d3240]/40 bg-[#131721] px-2 py-0.5 text-[8px] font-medium uppercase tracking-[0.08em] text-[#6f7f9a]/60">
+                  <span className="rounded-full border border-[#2d3240]/40 bg-[#131721] px-2 py-0.5 text-[8px] font-medium uppercase tracking-wider text-[#6f7f9a]/60">
                     {definition.endpointType}
                   </span>
-                  <span className="rounded-full border border-[#2d3240]/40 bg-[#131721] px-2 py-0.5 text-[8px] font-medium uppercase tracking-[0.08em] text-[#6f7f9a]/60">
+                  <span className="rounded-full border border-[#2d3240]/40 bg-[#131721] px-2 py-0.5 text-[8px] font-medium uppercase tracking-wider text-[#6f7f9a]/60">
                     Tier {definition.maxEnforcementTier} max
                   </span>
                 </div>
@@ -631,7 +631,7 @@ function PolicyScheduleStep({
       </div>
 
       <div className="flex flex-col gap-3 rounded-lg border border-[#2d3240]/60 bg-[#0b0d13]/60 p-4">
-        <h3 className="text-[10px] font-medium uppercase tracking-wider text-[#6f7f9a]/50">
+        <h3 className="font-syne text-[10px] font-medium uppercase tracking-wider text-[#6f7f9a]/50">
           Execution Mode
         </h3>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -656,7 +656,7 @@ function PolicyScheduleStep({
                   )}>
                     {candidate.label}
                   </span>
-                  <span className="rounded-full border border-[#2d3240]/40 bg-[#131721] px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.08em] text-[#6f7f9a]/60">
+                  <span className="rounded-full border border-[#2d3240]/40 bg-[#131721] px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wider text-[#6f7f9a]/60">
                     Tier {tierPreview}
                   </span>
                 </div>
@@ -766,7 +766,7 @@ function PolicyScheduleStep({
 
       {/* Escalation thresholds */}
       <div className="flex flex-col gap-3 rounded-lg border border-[#2d3240]/60 bg-[#0b0d13]/60 p-4">
-        <h3 className="text-[10px] font-medium uppercase tracking-wider text-[#6f7f9a]/50">
+        <h3 className="font-syne text-[10px] font-medium uppercase tracking-wider text-[#6f7f9a]/50">
           Escalation Thresholds
         </h3>
 
@@ -866,7 +866,7 @@ function ReviewStep({
   return (
     <div className="flex flex-col gap-5">
       <div>
-        <h2 className="text-[13px] font-semibold text-[#ece7dc] mb-1">
+        <h2 className="font-syne text-[13px] font-semibold text-[#ece7dc] mb-1">
           Review & Create
         </h2>
         <p className="text-[11px] text-[#6f7f9a]/60 mb-5">
@@ -884,7 +884,7 @@ function ReviewStep({
             <ModeIcon size={20} stroke={1.5} style={{ color: modeColor }} />
           </div>
           <div>
-            <h3 className="text-[13px] font-semibold text-[#ece7dc]">
+            <h3 className="font-syne text-[13px] font-semibold text-[#ece7dc]">
               {name || "(unnamed)"}
             </h3>
             <div className="flex items-center gap-2 mt-0.5">
@@ -943,7 +943,7 @@ function ReviewStep({
         {/* Goal list */}
         {goals.length > 0 && (
           <div className="border-t border-[#2d3240]/40 px-4 py-3">
-            <span className="text-[9px] font-semibold uppercase tracking-[0.1em] text-[#6f7f9a]/50">
+            <span className="text-[9px] font-semibold uppercase tracking-wider text-[#6f7f9a]/50">
               Goal Summary
             </span>
             <div className="mt-2 flex flex-col gap-1.5">
@@ -1181,7 +1181,7 @@ export function SentinelCreate({
               stroke={1.5}
             />
             <div>
-              <h1 className="text-sm font-semibold text-[#ece7dc] tracking-[-0.01em]">
+              <h1 className="font-syne text-sm font-semibold text-[#ece7dc] tracking-[-0.01em]">
                 Create Sentinel
               </h1>
               <p className="text-[11px] text-[#6f7f9a] mt-0.5">

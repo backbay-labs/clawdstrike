@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo, useEffect } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import {
   Collapsible,
   CollapsibleTrigger,
@@ -556,7 +557,7 @@ export function GuardCard({
             size={14}
             stroke={1.5}
             className={cn(
-              "shrink-0 text-[#6f7f9a] transition-transform duration-200",
+              "shrink-0 text-[#6f7f9a] transition-transform duration-150",
               open && "rotate-180"
             )}
           />
@@ -579,6 +580,13 @@ export function GuardCard({
 
         {/* Body */}
         <CollapsibleContent>
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
           <div className="px-3 pb-3 border-t border-[#2d3240]/50">
             <p className="text-[10px] text-[#6f7f9a] pt-2 pb-1">
               {meta.description}
@@ -674,6 +682,7 @@ export function GuardCard({
               />
             )}
           </div>
+          </motion.div>
         </CollapsibleContent>
       </div>
     </Collapsible>

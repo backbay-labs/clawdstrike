@@ -147,7 +147,7 @@ export function EditorHomeTab({
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-8">
           {/* Open Tabs */}
           <section>
-            <h2 className="text-[10px] font-mono uppercase tracking-wider text-[#6f7f9a] mb-2">
+            <h2 className="font-syne text-[10px] font-semibold uppercase tracking-wider text-[#6f7f9a] mb-2">
               Open Tabs
             </h2>
             <div className="space-y-1.5">
@@ -219,7 +219,7 @@ export function EditorHomeTab({
           {/* Recent Files */}
           {desktop && (
             <section>
-              <h2 className="text-[10px] font-mono uppercase tracking-wider text-[#6f7f9a] mb-2">
+              <h2 className="font-syne text-[10px] font-semibold uppercase tracking-wider text-[#6f7f9a] mb-2">
                 Recent Files
               </h2>
               <div className="space-y-1.5">
@@ -257,7 +257,7 @@ export function EditorHomeTab({
 
           {/* Templates */}
           <section ref={templatesRef}>
-            <h2 className="text-[10px] font-mono uppercase tracking-wider text-[#6f7f9a] mb-2">
+            <h2 className="font-syne text-[10px] font-semibold uppercase tracking-wider text-[#6f7f9a] mb-2">
               Templates
             </h2>
             <div className="space-y-1.5">
@@ -294,7 +294,7 @@ export function EditorHomeTab({
 
         {/* Quick Actions */}
         <section>
-          <h2 className="text-[10px] font-mono uppercase tracking-wider text-[#6f7f9a] mb-2">
+          <h2 className="font-syne text-[10px] font-semibold uppercase tracking-wider text-[#6f7f9a] mb-2">
             Quick Actions
           </h2>
           <div className="flex items-center gap-2 flex-wrap">

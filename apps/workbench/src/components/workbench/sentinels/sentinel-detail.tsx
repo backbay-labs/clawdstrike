@@ -318,7 +318,7 @@ function StatsSection({
 }) {
   return (
     <div className="flex flex-col gap-2">
-      <h4 className="text-[9px] font-semibold uppercase tracking-[0.1em] text-[#6f7f9a]/50">
+      <h4 className="font-syne text-[9px] font-semibold uppercase tracking-wider text-[#6f7f9a]/50">
         {title}
       </h4>
       <div className="flex flex-col gap-1.5">{children}</div>
@@ -494,7 +494,7 @@ function MemoryTab({ sentinel }: { sentinel: Sentinel }) {
     <div className="flex flex-col gap-6 py-4">
       {/* Known Patterns */}
       <div>
-        <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6f7f9a]/50 mb-2">
+        <h3 className="font-syne text-[10px] font-semibold uppercase tracking-wider text-[#6f7f9a]/50 mb-2">
           Known Patterns ({memory.knownPatterns.length})
         </h3>
         {memory.knownPatterns.length === 0 ? (
@@ -548,7 +548,7 @@ function MemoryTab({ sentinel }: { sentinel: Sentinel }) {
 
       {/* Baseline Profiles */}
       <div>
-        <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6f7f9a]/50 mb-2">
+        <h3 className="font-syne text-[10px] font-semibold uppercase tracking-wider text-[#6f7f9a]/50 mb-2">
           Baseline Profiles ({memory.baselineProfiles.length})
         </h3>
         {memory.baselineProfiles.length === 0 ? (
@@ -577,7 +577,7 @@ function MemoryTab({ sentinel }: { sentinel: Sentinel }) {
 
       {/* False Positive Hashes */}
       <div>
-        <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6f7f9a]/50 mb-2">
+        <h3 className="font-syne text-[10px] font-semibold uppercase tracking-wider text-[#6f7f9a]/50 mb-2">
           False Positive Hashes ({memory.falsePositiveHashes.length})
         </h3>
         {memory.falsePositiveHashes.length === 0 ? (
@@ -727,7 +727,7 @@ function ConfigSection({
   return (
     <div className="rounded-lg border border-[#2d3240]/60 bg-[#0b0d13]/60 overflow-hidden">
       <div className="px-4 py-2 border-b border-[#2d3240]/40">
-        <h3 className="text-[9px] font-semibold uppercase tracking-[0.1em] text-[#6f7f9a]/50">
+        <h3 className="font-syne text-[9px] font-semibold uppercase tracking-wider text-[#6f7f9a]/50">
           {title}
         </h3>
       </div>
@@ -831,7 +831,7 @@ export function SentinelDetail({
           />
 
           <div className="min-w-0 flex-1">
-            <h1 className="text-sm font-semibold text-[#ece7dc] tracking-[-0.01em] truncate">
+            <h1 className="font-syne text-sm font-semibold text-[#ece7dc] tracking-[-0.01em] truncate">
               {sentinel.name}
             </h1>
             <div className="flex items-center gap-2 mt-0.5">

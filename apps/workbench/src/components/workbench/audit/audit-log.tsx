@@ -10,6 +10,8 @@ import {
   IconDeviceDesktop,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import { PageHeader } from "../shared/page-header";
+import { SkeletonTable } from "../shared/skeleton-loader";
 import {
   Select,
   SelectTrigger,
@@ -81,7 +83,7 @@ const LOCAL_EVENT_TYPE_COLORS: Record<string, string> = {
 };
 
 const TH =
-  "px-3 py-2.5 text-left text-[9px] uppercase tracking-[0.08em] font-semibold text-[#6f7f9a]/50";
+  "px-3 py-2.5 text-left text-[9px] uppercase tracking-[0.08em] font-semibold text-[#6f7f9a]/80";
 
 function formatTimestamp(iso: string): string {
   try {
@@ -250,100 +252,86 @@ export function AuditLog() {
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-[#05060a]">
       {/* Header */}
-      <div className="shrink-0 border-b border-[#2d3240]/60 px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <IconFileAnalytics
-              size={18}
-              className="text-[#d4a84b]"
-              stroke={1.5}
-            />
-            <div>
-              <h1 className="text-sm font-semibold text-[#ece7dc] tracking-[-0.01em]">
-                Audit Log
-              </h1>
-              <p className="text-[11px] text-[#6f7f9a] mt-0.5">
-                {showFleet
-                  ? "Policy evaluation events from the fleet"
-                  : "Local workbench activity events"}
-              </p>
-            </div>
-
-            {/* Source mode indicator */}
-            <SourceBadge
-              mode={showFleet ? "fleet" : "local"}
-              connected={connection.connected}
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            {/* Source selector */}
-            <div className="flex items-center rounded-md border border-[#2d3240] overflow-hidden">
-              {(["auto", "local", "fleet"] as EventSourceMode[]).map((mode) => (
-                <button
-                  key={mode}
-                  onClick={() => setSourceMode(mode)}
-                  disabled={mode === "fleet" && !connection.connected}
-                  className={cn(
-                    "px-2.5 py-1 text-[10px] font-medium capitalize transition-colors",
-                    sourceMode === mode
-                      ? "bg-[#d4a84b]/10 text-[#d4a84b]"
-                      : mode === "fleet" && !connection.connected
-                        ? "text-[#6f7f9a]/20 cursor-not-allowed"
-                        : "text-[#6f7f9a]/50 hover:text-[#ece7dc] hover:bg-[#131721]/40",
-                  )}
-                >
-                  {mode}
-                </button>
-              ))}
-            </div>
-
-            {/* Clear local events */}
-            {showLocal && localEvents.length > 0 && (
-              <button
-                onClick={clearLocalEvents}
-                className="flex items-center gap-1.5 rounded-md border border-[#2d3240] px-3 py-1.5 text-[11px] text-[#6f7f9a] hover:text-[#c45c5c] hover:border-[#c45c5c]/30 transition-colors"
-              >
-                <IconTrash size={13} stroke={1.5} />
-                Clear
-              </button>
-            )}
-
+      <PageHeader
+        title="Audit Log"
+        subtitle={<>
+          {showFleet
+            ? "Policy evaluation events from the fleet"
+            : "Local workbench activity events"}
+          {" "}
+          <SourceBadge
+            mode={showFleet ? "fleet" : "local"}
+            connected={connection.connected}
+          />
+        </>}
+        icon={IconFileAnalytics}
+      >
+        {/* Source selector */}
+        <div className="flex items-center rounded-md border border-[#2d3240] overflow-hidden">
+          {(["auto", "local", "fleet"] as EventSourceMode[]).map((mode) => (
             <button
-              onClick={handleExport}
-              disabled={unifiedEvents.length === 0}
+              key={mode}
+              onClick={() => setSourceMode(mode)}
+              disabled={mode === "fleet" && !connection.connected}
               className={cn(
-                "flex items-center gap-1.5 rounded-md border border-[#2d3240] px-3 py-1.5 text-[11px] transition-colors",
-                unifiedEvents.length === 0
-                  ? "text-[#6f7f9a]/20 cursor-not-allowed"
-                  : "text-[#6f7f9a] hover:text-[#ece7dc] hover:border-[#d4a84b]/30",
+                "px-2.5 py-1 text-[10px] font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]",
+                sourceMode === mode
+                  ? "bg-[#d4a84b]/10 text-[#d4a84b]"
+                  : mode === "fleet" && !connection.connected
+                    ? "text-[#6f7f9a]/20 cursor-not-allowed"
+                    : "text-[#6f7f9a]/50 hover:text-[#ece7dc] hover:bg-[#131721]/40",
               )}
             >
-              <IconDownload size={13} stroke={1.5} />
-              Export
+              {mode}
             </button>
-
-            {showFleet && (
-              <button
-                onClick={loadFleetEvents}
-                disabled={isLoading || !connection.connected}
-                className={cn(
-                  "flex items-center gap-1.5 rounded-md border border-[#2d3240] px-3 py-1.5 text-[11px] transition-colors",
-                  isLoading || !connection.connected
-                    ? "text-[#6f7f9a]/40 cursor-not-allowed"
-                    : "text-[#6f7f9a] hover:text-[#ece7dc] hover:border-[#d4a84b]/30",
-                )}
-              >
-                <IconRefresh
-                  size={13}
-                  stroke={1.5}
-                  className={isLoading ? "animate-spin" : ""}
-                />
-                Fetch
-              </button>
-            )}
-          </div>
+          ))}
         </div>
-      </div>
+
+        {/* Clear local events */}
+        {showLocal && localEvents.length > 0 && (
+          <button
+            onClick={clearLocalEvents}
+            className="flex items-center gap-1.5 rounded-md border border-[#2d3240] px-3 py-1.5 text-[11px] text-[#6f7f9a] hover:text-[#c45c5c] hover:border-[#c45c5c]/30 transition-colors active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]"
+          >
+            <IconTrash size={13} stroke={1.5} />
+            Clear
+          </button>
+        )}
+
+        <button
+          onClick={handleExport}
+          disabled={unifiedEvents.length === 0}
+          className={cn(
+            "flex items-center gap-1.5 rounded-md border border-[#2d3240] px-3 py-1.5 text-[11px] transition-colors active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]",
+            unifiedEvents.length === 0
+              ? "text-[#6f7f9a]/20 cursor-not-allowed"
+              : "text-[#6f7f9a] hover:text-[#ece7dc] hover:border-[#d4a84b]/30",
+          )}
+        >
+          <IconDownload size={13} stroke={1.5} />
+          Export
+        </button>
+
+        {showFleet && (
+          <button
+            onClick={loadFleetEvents}
+            disabled={isLoading || !connection.connected}
+            className={cn(
+              "flex items-center gap-1.5 rounded-md border border-[#2d3240] px-3 py-1.5 text-[11px] transition-colors active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]",
+              isLoading || !connection.connected
+                ? "text-[#6f7f9a]/40 cursor-not-allowed"
+                : "text-[#6f7f9a] hover:text-[#ece7dc] hover:border-[#d4a84b]/30",
+            )}
+          >
+            <IconRefresh
+              size={13}
+              stroke={1.5}
+              className={isLoading ? "animate-spin" : ""}
+            />
+            Fetch
+          </button>
+        )}
+      </PageHeader>
 
       {/* Filter bar */}
       <div className="shrink-0 border-b border-[#2d3240]/60 px-6 py-3">
@@ -445,17 +433,7 @@ export function AuditLog() {
       {/* Event table */}
       <div className="flex-1 overflow-auto">
         {isLoading && showFleet && unifiedEvents.length === 0 ? (
-          <div className="flex h-full items-center justify-center">
-            <div className="flex flex-col items-center gap-3">
-              <IconRefresh
-                size={20}
-                className="text-[#6f7f9a]/30 animate-spin"
-              />
-              <span className="text-[11px] text-[#6f7f9a]/40">
-                Loading audit events...
-              </span>
-            </div>
-          </div>
+          <SkeletonTable rows={12} />
         ) : unifiedEvents.length === 0 ? (
           <div className="flex h-full items-center justify-center">
             <div className="flex flex-col items-center gap-3">
@@ -481,7 +459,7 @@ export function AuditLog() {
           </div>
         ) : showFleet ? (
           <table className="w-full min-w-[800px]">
-            <thead className="sticky top-0 z-10 bg-[#0b0d13]">
+            <thead className="sticky top-0 z-10 bg-[#0b0d13]/60">
               <tr className="border-b border-[#2d3240]/60">
                 <th className={cn(TH, "w-8")} />
                 <th className={TH}>Timestamp</th>
@@ -512,7 +490,7 @@ export function AuditLog() {
           </table>
         ) : (
           <table className="w-full min-w-[700px]">
-            <thead className="sticky top-0 z-10 bg-[#0b0d13]">
+            <thead className="sticky top-0 z-10 bg-[#0b0d13]/60">
               <tr className="border-b border-[#2d3240]/60">
                 <th className={cn(TH, "w-8")} />
                 <th className={TH}>Timestamp</th>
@@ -606,7 +584,7 @@ function FilterPill({
     <button
       onClick={onClick}
       className={cn(
-        "rounded-md px-2 py-1 text-[10px] font-medium capitalize transition-colors",
+        "rounded-md px-2 py-1 text-[10px] font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]",
         active
           ? "bg-[#d4a84b]/10 text-[#d4a84b]"
           : "text-[#6f7f9a]/50 hover:text-[#ece7dc] hover:bg-[#131721]/40",

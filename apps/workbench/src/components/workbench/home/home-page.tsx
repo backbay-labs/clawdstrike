@@ -13,6 +13,7 @@ import {
   IconFileAnalytics,
   IconCertificate,
   IconSitemap,
+  IconInfoCircle,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { ClaudeCodeHint } from "@/components/workbench/shared/claude-code-hint";
@@ -119,7 +120,7 @@ function GuardTile({
   return (
     <div
       className={cn(
-        "flex items-center gap-2 px-3 py-2 rounded-md transition-all duration-200",
+        "flex items-center gap-2 px-3 py-2 rounded-md transition-all duration-150",
         enabled ? "bg-[#131721]/80" : "bg-transparent",
       )}
     >
@@ -162,7 +163,7 @@ function NavCard({
   return (
     <Link
       to={href}
-      className="group flex items-center gap-3.5 px-4 py-3.5 rounded-lg border border-[#2d3240]/40 bg-[#0b0d13]/40 hover:border-[#2d3240] hover:bg-[#0b0d13] transition-all duration-200"
+      className="group flex items-center gap-3.5 px-4 py-3.5 rounded-lg border border-[#2d3240]/40 bg-[#0b0d13]/40 hover:border-[#2d3240] hover:bg-[#0b0d13] transition-all duration-150"
     >
       <div className="w-8 h-8 rounded-md bg-[#131721] flex items-center justify-center text-[#6f7f9a] group-hover:text-[#d4a84b] transition-colors shrink-0">
         {icon}
@@ -209,7 +210,7 @@ function SentinelSummaryCard({
     <div className="rounded-lg border border-[#2d3240]/40 bg-[#0b0d13]/60 px-5 py-4">
       <div className="flex items-center gap-2 mb-3">
         <IconRadar size={15} stroke={1.5} className="text-[#8b5555]" />
-        <span className="text-[10px] font-mono font-semibold text-[#8b5555] uppercase tracking-[0.12em]">
+        <span className="text-[10px] font-mono font-semibold text-[#8b5555] uppercase tracking-wider">
           Sentinels
         </span>
       </div>
@@ -281,7 +282,7 @@ function FindingsSummaryCard({
     <div className="rounded-lg border border-[#2d3240]/40 bg-[#0b0d13]/60 px-5 py-4">
       <div className="flex items-center gap-2 mb-3">
         <IconAlertTriangle size={15} stroke={1.5} className="text-[#d4a84b]" />
-        <span className="text-[10px] font-mono font-semibold text-[#d4a84b] uppercase tracking-[0.12em]">
+        <span className="text-[10px] font-mono font-semibold text-[#d4a84b] uppercase tracking-wider">
           Findings
         </span>
       </div>
@@ -451,11 +452,20 @@ export function HomePage() {
           <FindingsSummaryCard {...findingsStats} />
         </div>
 
+        {sentinelStats.total === 0 && findingsStats.total === 0 && (
+          <div className="mx-6 mt-4 rounded-lg border border-[#2d3240]/40 bg-[#131721]/30 px-4 py-3 flex items-center gap-3">
+            <IconInfoCircle size={16} stroke={1.5} className="text-[#6f7f9a]/50 shrink-0" />
+            <p className="text-[11px] text-[#6f7f9a]/60">
+              Deploy a sentinel or connect to fleet to see live stats here.
+            </p>
+          </div>
+        )}
+
         {/* ================================================================ */}
         {/* Guard Coverage Matrix                                             */}
         {/* ================================================================ */}
         <div>
-          <h2 className="text-[10px] font-mono font-semibold text-[#d4a84b] uppercase tracking-[0.15em] mb-3">
+          <h2 className="font-syne text-[10px] font-semibold text-[#d4a84b] uppercase tracking-wider mb-3">
             Guard Coverage
           </h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-5">
@@ -485,7 +495,7 @@ export function HomePage() {
         {/* Navigation Cards                                                  */}
         {/* ================================================================ */}
         <div>
-          <h2 className="text-[10px] font-mono font-semibold text-[#d4a84b] uppercase tracking-[0.15em] mb-3">
+          <h2 className="font-syne text-[10px] font-semibold text-[#d4a84b] uppercase tracking-wider mb-3">
             Navigate
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">

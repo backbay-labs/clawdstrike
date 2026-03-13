@@ -87,7 +87,7 @@ export function EnrichmentSidebar({
       {/* Header */}
       <div className="shrink-0 px-4 py-3 border-b border-[#2d3240]/60">
         <div className="flex items-center justify-between">
-          <h2 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6f7f9a]/50">
+          <h2 className="font-syne text-[10px] font-semibold uppercase tracking-wider text-[#6f7f9a]/50">
             Enrichment
           </h2>
           {onRunEnrichment && (
@@ -176,7 +176,7 @@ function EnrichmentSection({
           className="shrink-0"
         />
         <span
-          className="text-[10px] font-semibold uppercase tracking-[0.04em]"
+          className="text-[10px] font-semibold uppercase tracking-wider"
           style={{ color: config.color }}
         >
           {config.label}

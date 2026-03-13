@@ -552,7 +552,7 @@ export function DelegationPage() {
     <div className="flex h-full w-full overflow-hidden bg-[#05060a]">
       <div className="flex w-52 shrink-0 flex-col border-r border-[#1a1f2e] bg-[#0b0d13]">
         <div className="border-b border-[#1a1f2e] px-4 py-3">
-          <h2 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6f7f9a]">
+          <h2 className="font-syne text-[10px] font-semibold uppercase tracking-wider text-[#6f7f9a]">
             Filters
           </h2>
         </div>
@@ -574,7 +574,7 @@ export function DelegationPage() {
         </div>
 
         <div className="border-b border-[#1a1f2e] px-4 py-3">
-          <h3 className="mb-2.5 text-[9px] font-semibold uppercase tracking-[0.1em] text-[#6f7f9a]/70">
+          <h3 className="font-syne mb-2.5 text-[9px] font-semibold uppercase tracking-wider text-[#6f7f9a]/70">
             Node Kind
           </h3>
           <div className="flex flex-col gap-2">
@@ -600,7 +600,7 @@ export function DelegationPage() {
         </div>
 
         <div className="border-b border-[#1a1f2e] px-4 py-3">
-          <h3 className="mb-2.5 text-[9px] font-semibold uppercase tracking-[0.1em] text-[#6f7f9a]/70">
+          <h3 className="font-syne mb-2.5 text-[9px] font-semibold uppercase tracking-wider text-[#6f7f9a]/70">
             Trust Level
           </h3>
           <div className="flex flex-col gap-2">
@@ -805,7 +805,7 @@ export function DelegationPage() {
                         ? "url(#arrow-gold)"
                         : "url(#arrow)"
                   }
-                  className="transition-opacity duration-200"
+                  className="transition-opacity duration-150"
                 />
               );
             })}
@@ -827,7 +827,7 @@ export function DelegationPage() {
                   data-node={node.id}
                   transform={`translate(${ln.x},${ln.y})`}
                   opacity={isDimmed ? 0.12 : 1}
-                  className="cursor-pointer transition-opacity duration-200"
+                  className="cursor-pointer transition-opacity duration-150"
                   onMouseEnter={() => setHoveredNodeId(node.id)}
                   onMouseLeave={() => setHoveredNodeId(null)}
                   onClick={(e) => {
@@ -918,7 +918,7 @@ export function DelegationPage() {
       {selectedNode && (
         <div className="flex w-64 shrink-0 flex-col border-l border-[#1a1f2e] bg-[#0b0d13]">
           <div className="flex items-center justify-between border-b border-[#1a1f2e] px-4 py-3">
-            <h2 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6f7f9a]">
+            <h2 className="font-syne text-[10px] font-semibold uppercase tracking-wider text-[#6f7f9a]">
               Details
             </h2>
             <button
@@ -1189,7 +1189,7 @@ function Sep() {
 
 function SectionLabel({ text }: { text: string }) {
   return (
-    <h3 className="mb-2 text-[9px] font-semibold uppercase tracking-[0.1em] text-[#6f7f9a]/50">
+    <h3 className="font-syne mb-2 text-[9px] font-semibold uppercase tracking-wider text-[#6f7f9a]/50">
       {text}
     </h3>
   );

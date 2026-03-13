@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from "react";
+import { motion } from "motion/react";
 import {
   IconPlus,
   IconFileAnalytics,
@@ -352,7 +353,7 @@ export function InvestigationWorkbench({
           {/* Header */}
           <div className="shrink-0 px-3 py-3 border-b border-[#2d3240]/60">
             <div className="flex items-center justify-between">
-              <span className="text-[9px] font-semibold uppercase tracking-[0.1em] text-[#6f7f9a]/50">
+              <span className="text-[9px] font-semibold uppercase tracking-wider text-[#6f7f9a]/50">
                 Cases
               </span>
               <button
@@ -500,7 +501,7 @@ export function InvestigationWorkbench({
                   <div className="shrink-0 px-5 py-3 border-b border-[#2d3240]/60 bg-[#0b0d13]">
                     <div className="flex items-center justify-between">
                       <div>
-                        <h2 className="text-[11px] font-semibold text-[#ece7dc] tracking-[-0.01em]">
+                        <h2 className="font-syne text-[11px] font-semibold text-[#ece7dc] tracking-[-0.01em]">
                           Session Timeline
                         </h2>
                         <div className="flex items-center gap-2 mt-0.5">
@@ -689,7 +690,7 @@ export function InvestigationWorkbench({
             <div className="w-72 shrink-0 border-l border-[#2d3240]/60 flex flex-col bg-[#0b0d13]">
               {/* Header */}
               <div className="shrink-0 px-4 py-3 border-b border-[#2d3240]/60">
-                <span className="text-[9px] font-semibold uppercase tracking-[0.1em] text-[#6f7f9a]/50">
+                <span className="text-[9px] font-semibold uppercase tracking-wider text-[#6f7f9a]/50">
                   Receipt Inspector
                 </span>
               </div>
@@ -697,7 +698,13 @@ export function InvestigationWorkbench({
               {/* Content */}
               <div className="flex-1 overflow-y-auto px-4 py-3">
                 {selectedEvent ? (
-                  <div className="space-y-4">
+                  <motion.div
+                    key={selectedEvent.id}
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.15 }}
+                    className="space-y-4"
+                  >
                     {/* Event metadata */}
                     <section>
                       <SectionHeading>Event Metadata</SectionHeading>
@@ -936,7 +943,7 @@ export function InvestigationWorkbench({
                         </div>
                       </section>
                     )}
-                  </div>
+                  </motion.div>
                 ) : (
                   <div className="flex h-full items-center justify-center">
                     <div className="flex flex-col items-center gap-2">
@@ -968,7 +975,7 @@ export function InvestigationWorkbench({
               <div className="shrink-0 px-4 py-1.5 flex items-center justify-between border-b border-[#2d3240]/40">
                 <button
                   onClick={() => setAnnotationsExpanded((v) => !v)}
-                  className="flex items-center gap-1.5 text-[9px] font-semibold uppercase tracking-[0.1em] text-[#6f7f9a]/50 hover:text-[#ece7dc] transition-colors"
+                  className="flex items-center gap-1.5 text-[9px] font-semibold uppercase tracking-wider text-[#6f7f9a]/50 hover:text-[#ece7dc] transition-colors"
                 >
                   {annotationsExpanded ? (
                     <IconChevronDown size={10} stroke={2} />
@@ -1046,7 +1053,7 @@ export function InvestigationWorkbench({
                   <div className="shrink-0 px-4 py-2 border-t border-[#2d3240]/40 flex items-center gap-3">
                     {/* Verdict dropdown */}
                     <div className="flex items-center gap-1.5">
-                      <span className="text-[9px] uppercase tracking-[0.08em] text-[#6f7f9a]/40">
+                      <span className="text-[9px] uppercase tracking-wider text-[#6f7f9a]/40">
                         Verdict
                       </span>
                       <select
@@ -1202,7 +1209,7 @@ function AnnotationRow({ annotation }: { annotation: Annotation }) {
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return (
-    <h3 className="text-[9px] font-semibold uppercase tracking-[0.1em] text-[#6f7f9a]/50">
+    <h3 className="font-syne text-[9px] font-semibold uppercase tracking-wider text-[#6f7f9a]/50">
       {children}
     </h3>
   );

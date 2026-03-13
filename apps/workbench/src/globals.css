@@ -64,7 +64,24 @@
   --color-verdict-allow: #3dbf84;
   --color-verdict-deny: #c45c5c;
   --color-verdict-warn: #d4a84b;
+  --color-border-subtle: #2d3240;
+  --color-surface-hover: #131721;
+  --color-deny: #c45c5c;
+  --color-allow: #3dbf84;
 }
+
+/* ==========================================================================
+   Type Scale (reference — normalize toward these values)
+   ==========================================================================
+   Display:    font-syne text-xl    (20px) — page titles, hero text
+   Heading:    font-syne text-base  (16px) — section headings
+   Heading-sm: font-syne text-sm    (14px) — subsection headings
+   Body:       text-sm              (14px) — default body text
+   Body-sm:    text-xs              (12px) — secondary body text
+   Label:      text-[11px]          (11px) — form labels, metadata
+   Caption:    text-[10px]          (10px) — timestamps, badges, filters
+   Micro:      text-[9px]           (9px)  — status indicators only
+   ========================================================================== */
 
 /* ==========================================================================
    CSS Custom Properties (design tokens)

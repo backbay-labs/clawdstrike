@@ -246,8 +246,11 @@ export function OperatorProvider({ children }: { children: ReactNode }) {
 
   const createIdentity = useCallback(
     async (displayName: string): Promise<OperatorIdentity> => {
+      console.info("[operator-store] createIdentity: generating keypair…");
       const { identity, secretKeyHex } = await createOperatorIdentity(displayName);
+      console.info("[operator-store] createIdentity: keypair ready, storing secret…");
       await secureStore.set(SECRET_KEY_STORE_KEY, secretKeyHex);
+      console.info("[operator-store] createIdentity: stored, dispatching…");
       dispatch({ type: "CREATE", operator: identity });
       return identity;
     },

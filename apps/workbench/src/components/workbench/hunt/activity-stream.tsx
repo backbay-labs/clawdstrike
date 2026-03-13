@@ -594,7 +594,7 @@ export function ActivityStream({
 // ---------------------------------------------------------------------------
 
 const TH_CELL =
-  "text-[9px] uppercase tracking-[0.08em] font-semibold text-[#6f7f9a]/50 select-none";
+  "text-[9px] uppercase tracking-wider font-semibold text-[#6f7f9a]/50 select-none";
 
 // ---------------------------------------------------------------------------
 // Event Row
@@ -929,7 +929,7 @@ function FilterGroup({
 }) {
   return (
     <div className="flex items-center gap-1.5 shrink-0">
-      <span className="text-[9px] uppercase tracking-[0.08em] text-[#6f7f9a]/40 mr-0.5">
+      <span className="text-[9px] uppercase tracking-wider text-[#6f7f9a]/40 mr-0.5">
         {label}
       </span>
       {children}
@@ -939,7 +939,7 @@ function FilterGroup({
 
 function DetailSectionHeader({ children }: { children: React.ReactNode }) {
   return (
-    <h4 className="text-[9px] font-semibold uppercase tracking-[0.1em] text-[#6f7f9a]/50 mb-2">
+    <h4 className="text-[9px] font-semibold uppercase tracking-wider text-[#6f7f9a]/50 mb-2">
       {children}
     </h4>
   );

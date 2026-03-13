@@ -17,6 +17,7 @@ import {
   IconEyeCheck,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import { PageHeader } from "../shared/page-header";
 import type {
   Sentinel,
   SentinelMode,
@@ -180,10 +181,10 @@ function SentinelCard({ sentinel }: { sentinel: Sentinel }) {
               </span>
             </div>
             <div className="mt-1 flex items-center gap-1.5 flex-wrap">
-              <span className="rounded-full border border-[#2d3240]/40 bg-[#131721] px-2 py-0.5 text-[8px] font-medium uppercase tracking-[0.08em] text-[#ece7dc]/65">
+              <span className="rounded-full border border-[#2d3240]/40 bg-[#131721] px-2 py-0.5 text-[8px] font-medium uppercase tracking-wider text-[#ece7dc]/65">
                 {driver.label}
               </span>
-              <span className="rounded-full border border-[#2d3240]/40 bg-[#131721] px-2 py-0.5 text-[8px] font-medium uppercase tracking-[0.08em] text-[#6f7f9a]/60">
+              <span className="rounded-full border border-[#2d3240]/40 bg-[#131721] px-2 py-0.5 text-[8px] font-medium uppercase tracking-wider text-[#6f7f9a]/60">
                 {executionMode.label} · Tier {sentinel.runtime.enforcementTier}
               </span>
             </div>
@@ -351,36 +352,29 @@ export function SentinelList({ sentinels }: { sentinels: Sentinel[] }) {
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-[#05060a]">
       {/* Header */}
-      <div className="shrink-0 border-b border-[#2d3240]/60 px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <IconEye size={18} className="text-[#d4a84b]" stroke={1.5} />
-            <div>
-              <h1 className="text-sm font-semibold text-[#ece7dc] tracking-[-0.01em]">
-                Sentinels
-              </h1>
-              <p className="text-[11px] text-[#6f7f9a] mt-0.5">
-                {counts.active} active
-                {counts.paused > 0 && ` \u00b7 ${counts.paused} paused`}
-                {counts.retired > 0 && ` \u00b7 ${counts.retired} retired`}
-              </p>
-            </div>
-          </div>
-          <Link
-            to="/sentinels/create"
-            className="flex items-center gap-1.5 rounded-md bg-[#d4a84b]/10 border border-[#d4a84b]/20 px-3 py-1.5 text-[11px] font-medium text-[#d4a84b] hover:bg-[#d4a84b]/20 transition-colors"
-          >
-            <IconPlus size={13} stroke={1.5} />
-            Create Sentinel
-          </Link>
-        </div>
-      </div>
+      <PageHeader
+        title="Sentinels"
+        subtitle={<>
+          {counts.active} active
+          {counts.paused > 0 && ` \u00b7 ${counts.paused} paused`}
+          {counts.retired > 0 && ` \u00b7 ${counts.retired} retired`}
+        </>}
+        icon={IconEye}
+      >
+        <Link
+          to="/sentinels/create"
+          className="flex items-center gap-1.5 rounded-md bg-[#d4a84b]/10 border border-[#d4a84b]/20 px-3 py-1.5 text-[11px] font-medium text-[#d4a84b] hover:bg-[#d4a84b]/20 transition-colors"
+        >
+          <IconPlus size={13} stroke={1.5} />
+          Create Sentinel
+        </Link>
+      </PageHeader>
 
       {/* Filter bar */}
       <div className="shrink-0 border-b border-[#2d3240]/60 px-6 py-2.5 flex items-center gap-4">
         <div className="flex items-center gap-2">
           <IconFilter size={12} stroke={1.5} className="text-[#6f7f9a]/40" />
-          <span className="text-[10px] uppercase tracking-[0.08em] text-[#6f7f9a]/50">
+          <span className="text-[10px] uppercase tracking-wider text-[#6f7f9a]/50">
             Mode
           </span>
           <div className="flex items-center gap-1">
@@ -406,7 +400,7 @@ export function SentinelList({ sentinels }: { sentinels: Sentinel[] }) {
         <div className="h-4 w-px bg-[#2d3240]/40" />
 
         <div className="flex items-center gap-2">
-          <span className="text-[10px] uppercase tracking-[0.08em] text-[#6f7f9a]/50">
+          <span className="text-[10px] uppercase tracking-wider text-[#6f7f9a]/50">
             Status
           </span>
           <div className="flex items-center gap-1">

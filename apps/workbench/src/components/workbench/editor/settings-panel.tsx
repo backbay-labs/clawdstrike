@@ -26,7 +26,7 @@ export function SettingsPanel() {
 
   return (
     <div className="flex flex-col gap-4 p-4 border-t border-[#2d3240]/60">
-      <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6f7f9a]">
+      <h3 className="text-[10px] font-semibold uppercase tracking-wider text-[#6f7f9a]">
         Policy Settings
       </h3>
 

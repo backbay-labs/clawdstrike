@@ -8,6 +8,7 @@ import {
   IconAlertTriangle,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import { PageHeader } from "../shared/page-header";
 import { useFleetConnection } from "@/lib/workbench/use-fleet-connection";
 import type { AgentInfo } from "@/lib/workbench/fleet-client";
 import { Link } from "react-router-dom";
@@ -193,38 +194,29 @@ export function FleetDashboard() {
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-[#05060a]">
       {/* Header */}
-      <div className="shrink-0 border-b border-[#2d3240]/60 px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <IconServer size={18} className="text-[#d4a84b]" stroke={1.5} />
-            <div>
-              <h1 className="text-sm font-semibold text-[#ece7dc] tracking-[-0.01em]">
-                Fleet Dashboard
-              </h1>
-              <p className="text-[11px] text-[#6f7f9a] mt-0.5">
-                {counts.total} agent{counts.total !== 1 ? "s" : ""} registered
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={handleRefresh}
-            disabled={isRefreshing}
-            className={cn(
-              "flex items-center gap-1.5 rounded-md border border-[#2d3240] px-3 py-1.5 text-[11px] transition-colors",
-              isRefreshing
-                ? "text-[#6f7f9a]/40 cursor-not-allowed"
-                : "text-[#6f7f9a] hover:text-[#ece7dc] hover:border-[#d4a84b]/30",
-            )}
-          >
-            <IconRefresh
-              size={13}
-              stroke={1.5}
-              className={isRefreshing ? "animate-spin" : ""}
-            />
-            Refresh
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title="Fleet Dashboard"
+        subtitle={<>{counts.total} agent{counts.total !== 1 ? "s" : ""} registered</>}
+        icon={IconServer}
+      >
+        <button
+          onClick={handleRefresh}
+          disabled={isRefreshing}
+          className={cn(
+            "flex items-center gap-1.5 rounded-md border border-[#2d3240] px-3 py-1.5 text-[11px] transition-colors active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]",
+            isRefreshing
+              ? "text-[#6f7f9a]/40 cursor-not-allowed"
+              : "text-[#6f7f9a] hover:text-[#ece7dc] hover:border-[#d4a84b]/30",
+          )}
+        >
+          <IconRefresh
+            size={13}
+            stroke={1.5}
+            className={isRefreshing ? "animate-spin" : ""}
+          />
+          Refresh
+        </button>
+      </PageHeader>
 
       {/* Warning banners */}
       {secureStorageWarning && (
@@ -273,7 +265,7 @@ export function FleetDashboard() {
 
       {/* Filter bar */}
       <div className="shrink-0 border-b border-[#2d3240]/60 px-6 py-2.5 flex items-center gap-2">
-        <span className="text-[10px] uppercase tracking-[0.08em] text-[#6f7f9a]/50 mr-1">
+        <span className="text-[10px] uppercase tracking-wider text-[#6f7f9a]/50 mr-1">
           Filter
         </span>
         {(["all", "online", "stale", "drift"] as StatusFilter[]).map((f) => (
@@ -281,7 +273,7 @@ export function FleetDashboard() {
             key={f}
             onClick={() => setFilter(f)}
             className={cn(
-              "rounded-md px-2.5 py-1 text-[10px] font-medium capitalize transition-colors",
+              "rounded-md px-2.5 py-1 text-[10px] font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]",
               filter === f
                 ? "bg-[#d4a84b]/10 text-[#d4a84b]"
                 : "text-[#6f7f9a]/60 hover:text-[#ece7dc] hover:bg-[#131721]/40",
@@ -298,7 +290,7 @@ export function FleetDashboard() {
       {/* Agent table */}
       <div className="flex-1 overflow-auto">
         <table className="w-full min-w-[900px]">
-          <thead className="sticky top-0 z-10 bg-[#0b0d13]">
+          <thead className="sticky top-0 z-10 bg-[#0b0d13]/60">
             <tr className="border-b border-[#2d3240]/60">
               <SortableHeader
                 label=""
@@ -408,7 +400,7 @@ function SummaryCard({
 }) {
   return (
     <div className="flex flex-col rounded-lg border border-[#2d3240]/60 bg-[#0b0d13] px-4 py-3 min-w-[120px]">
-      <span className="text-[9px] uppercase tracking-[0.08em] text-[#6f7f9a]/50">
+      <span className="text-[9px] uppercase tracking-wider text-[#6f7f9a]/50">
         {label}
       </span>
       <div className="mt-1.5 flex items-center gap-2">
@@ -452,7 +444,7 @@ function SortableHeader({
     <th
       className={cn(
         "px-3 py-2.5 text-left text-[9px] uppercase tracking-[0.08em] font-semibold select-none cursor-pointer transition-colors",
-        active ? "text-[#d4a84b]" : "text-[#6f7f9a]/50 hover:text-[#6f7f9a]",
+        active ? "text-[#d4a84b]" : "text-[#6f7f9a]/80 hover:text-[#6f7f9a]",
         className,
       )}
       onClick={() => onSort(column)}
@@ -643,7 +635,7 @@ function DriftBadge({ label, color }: { label: string; color: string }) {
 
 function DetailSectionLabel({ text }: { text: string }) {
   return (
-    <h4 className="text-[9px] font-semibold uppercase tracking-[0.1em] text-[#6f7f9a]/50 mb-1">
+    <h4 className="text-[9px] font-semibold uppercase tracking-wider text-[#6f7f9a]/50 mb-1">
       {text}
     </h4>
   );

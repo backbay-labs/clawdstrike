@@ -168,7 +168,7 @@ export function EditorVisualPanel() {
         <div className="flex items-center justify-between px-4 pt-4 pb-1">
           <div className="flex items-center gap-1.5">
             <IconArrowsSort size={12} stroke={1.5} className="text-[#6f7f9a]/70" />
-            <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6f7f9a]">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-[#6f7f9a]">
               Guards
             </span>
           </div>
@@ -219,7 +219,7 @@ export function EditorVisualPanel() {
           <div className="flex flex-col gap-6 p-4 pt-2">
             {GUARD_CATEGORIES.map((category) => (
               <section key={category.id} className="flex flex-col gap-2">
-                <h2 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6f7f9a]/80 px-1">
+                <h2 className="font-syne text-[10px] font-semibold uppercase tracking-wider text-[#6f7f9a]/80 px-1">
                   {category.label}
                 </h2>
                 <div className="flex flex-col gap-2">

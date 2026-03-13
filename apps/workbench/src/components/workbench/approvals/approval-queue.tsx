@@ -388,7 +388,7 @@ export function ApprovalQueue({ currentUser }: { currentUser?: string } = {}) {
           {isLiveData && fleetConnected && (
             <button
               onClick={fetchLiveApprovals}
-              className="flex h-7 items-center gap-1 rounded-md bg-[#2d3240]/50 px-2 text-[10px] text-[#6f7f9a] transition-colors hover:text-[#ece7dc]"
+              className="flex h-7 items-center gap-1 rounded-md bg-[#2d3240]/50 px-2 text-[10px] text-[#6f7f9a] transition-colors hover:text-[#ece7dc] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]"
               title="Refresh live approvals"
             >
               <IconRefresh size={13} stroke={1.5} />
@@ -399,7 +399,7 @@ export function ApprovalQueue({ currentUser }: { currentUser?: string } = {}) {
             onClick={toggleDataSource}
             disabled={!isLiveData && !liveApprovalsReady}
             className={cn(
-              "flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[10px] font-medium transition-colors",
+              "flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[10px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]",
               isLiveData
                 ? "bg-[#3dbf84]/15 text-[#3dbf84]"
                 : !liveApprovalsReady
@@ -537,15 +537,31 @@ function SummaryBadge({
   color: string;
   pulse?: boolean;
 }) {
+  const isPending = pulse && count > 0;
+
   return (
-    <div className="flex items-center gap-2">
-      <span className="text-[10px] font-medium uppercase tracking-wider text-[#6f7f9a]">
+    <div
+      className={cn(
+        "flex items-center gap-2 rounded-md px-2.5 py-1.5 transition-colors",
+        isPending
+          ? "border border-[#d4a84b]/40 bg-[#d4a84b]/[0.06] shadow-[0_0_8px_rgba(212,168,75,0.10)]"
+          : "border border-transparent",
+      )}
+    >
+      <span
+        className={cn(
+          "text-[10px] font-medium uppercase tracking-wider",
+          isPending ? "text-[#d4a84b]" : "text-[#6f7f9a]",
+        )}
+      >
         {label}
       </span>
       <span
         className={cn(
-          "inline-flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] font-semibold",
-          pulse && count > 0 && "animate-pulse",
+          "inline-flex items-center justify-center rounded-full",
+          isPending
+            ? "h-6 min-w-[24px] px-2 text-[12px] font-bold animate-pulse"
+            : "h-5 min-w-[20px] px-1.5 text-[10px] font-semibold",
         )}
         style={{ backgroundColor: color + "20", color }}
       >
@@ -751,7 +767,7 @@ function ApprovalCard({
                 <button
                   onClick={(e) => { e.stopPropagation(); onConfirm(); }}
                   className={cn(
-                    "flex h-7 items-center gap-1 rounded-md px-3 text-[11px] font-medium transition-colors",
+                    "flex h-7 items-center gap-1 rounded-md px-3 text-[11px] font-medium transition-colors active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]",
                     confirmAction.type === "approve"
                       ? "bg-[#3dbf84]/15 text-[#3dbf84] hover:bg-[#3dbf84]/25"
                       : "bg-[#c45c5c]/15 text-[#c45c5c] hover:bg-[#c45c5c]/25",
@@ -762,7 +778,7 @@ function ApprovalCard({
                 </button>
                 <button
                   onClick={(e) => { e.stopPropagation(); onCancel(); }}
-                  className="flex h-7 items-center gap-1 rounded-md bg-[#2d3240]/50 px-3 text-[11px] text-[#6f7f9a] transition-colors hover:text-[#ece7dc]"
+                  className="flex h-7 items-center gap-1 rounded-md bg-[#2d3240]/50 px-3 text-[11px] text-[#6f7f9a] transition-colors hover:text-[#ece7dc] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]"
                 >
                   Cancel
                 </button>
@@ -773,7 +789,7 @@ function ApprovalCard({
               <div className="relative">
                 <button
                   onClick={(e) => { e.stopPropagation(); onToggleScopeDropdown(); }}
-                  className="flex h-7 items-center gap-1 rounded-md bg-[#3dbf84]/10 px-3 text-[11px] font-medium text-[#3dbf84] transition-colors hover:bg-[#3dbf84]/20"
+                  className="flex h-7 items-center gap-1 rounded-md bg-[#3dbf84]/10 px-3 text-[11px] font-medium text-[#3dbf84] transition-colors hover:bg-[#3dbf84]/20 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]"
                 >
                   <IconCheck size={13} />
                   Approve
@@ -786,7 +802,7 @@ function ApprovalCard({
                       <button
                         key={preset.label}
                         onClick={(e) => { e.stopPropagation(); onApprove(preset.scope); }}
-                        className="flex w-full flex-col px-3 py-2 text-left transition-colors hover:bg-[#2d3240]/50"
+                        className="flex w-full flex-col px-3 py-2 text-left transition-colors hover:bg-[#2d3240]/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]"
                       >
                         <span className="text-xs font-medium text-[#ece7dc]">
                           {preset.label}
@@ -802,7 +818,7 @@ function ApprovalCard({
 
               <button
                 onClick={(e) => { e.stopPropagation(); onDeny(); }}
-                className="flex h-7 items-center gap-1 rounded-md bg-[#c45c5c]/10 px-3 text-[11px] font-medium text-[#c45c5c] transition-colors hover:bg-[#c45c5c]/20"
+                className="flex h-7 items-center gap-1 rounded-md bg-[#c45c5c]/10 px-3 text-[11px] font-medium text-[#c45c5c] transition-colors hover:bg-[#c45c5c]/20 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]"
               >
                 <IconBan size={13} />
                 Deny
@@ -842,12 +858,12 @@ function DetailDrawer({
   return (
     <div className="flex w-80 flex-col border-l border-[#2d3240] bg-[#131721]/80 backdrop-blur-md">
       <div className="flex items-center justify-between border-b border-[#2d3240] px-4 py-3">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-[#6f7f9a]">
+        <h2 className="font-syne text-xs font-semibold uppercase tracking-wider text-[#6f7f9a]">
           Request Details
         </h2>
         <button
           onClick={onClose}
-          className="text-[#6f7f9a] transition-colors hover:text-[#ece7dc]"
+          className="text-[#6f7f9a] transition-colors hover:text-[#ece7dc] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]"
         >
           <IconX size={14} />
         </button>
@@ -878,7 +894,7 @@ function DetailDrawer({
         </div>
 
         <div className="border-b border-[#2d3240] px-4 py-3">
-          <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[#6f7f9a]">
+          <h3 className="font-syne mb-2 text-[10px] font-semibold uppercase tracking-wider text-[#6f7f9a]">
             Origin Context
           </h3>
           <div className="flex flex-col gap-1.5">
@@ -915,7 +931,7 @@ function DetailDrawer({
         </div>
 
         <div className="border-b border-[#2d3240] px-4 py-3">
-          <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[#6f7f9a]">
+          <h3 className="font-syne mb-2 text-[10px] font-semibold uppercase tracking-wider text-[#6f7f9a]">
             Agent Identity
           </h3>
           <div className="flex flex-col gap-1.5">
@@ -939,7 +955,7 @@ function DetailDrawer({
         </div>
 
         <div className="border-b border-[#2d3240] px-4 py-3">
-          <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[#6f7f9a]">
+          <h3 className="font-syne mb-2 text-[10px] font-semibold uppercase tracking-wider text-[#6f7f9a]">
             Timeline
           </h3>
           <div className="flex flex-col gap-2">
@@ -980,7 +996,7 @@ function DetailDrawer({
 
         {decision && (
           <div className="border-b border-[#2d3240] px-4 py-3">
-            <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[#6f7f9a]">
+            <h3 className="font-syne mb-2 text-[10px] font-semibold uppercase tracking-wider text-[#6f7f9a]">
               Decision
             </h3>
             <div className="flex flex-col gap-1.5">
@@ -1015,7 +1031,7 @@ function DetailDrawer({
 
         {relatedRequests.length > 0 && (
           <div className="px-4 py-3">
-            <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[#6f7f9a]">
+            <h3 className="font-syne mb-2 text-[10px] font-semibold uppercase tracking-wider text-[#6f7f9a]">
               Related ({relatedRequests.length})
             </h3>
             <div className="flex flex-col gap-1.5">

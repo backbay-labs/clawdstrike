@@ -292,7 +292,7 @@ function PatternRow({
     <button
       onClick={onSelect}
       className={cn(
-        "w-full flex items-center gap-2 px-3 py-2.5 text-left transition-all duration-100",
+        "w-full flex items-center gap-2 px-3 py-2.5 text-left transition-all duration-150",
         isSelected
           ? "bg-[#131721] border-l-2 border-l-[#d4a84b]"
           : "border-l-2 border-l-transparent hover:bg-[#131721]/50",
@@ -498,7 +498,7 @@ function ExampleSessions({
             )
           }
           className={cn(
-            "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg border text-left transition-all duration-100",
+            "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg border text-left transition-all duration-150",
             selectedSession === s.sessionId
               ? "bg-[#d4a84b]/5 border-[#d4a84b]/20"
               : "bg-[#131721] border-[#2d3240]/40 hover:border-[#2d3240]",

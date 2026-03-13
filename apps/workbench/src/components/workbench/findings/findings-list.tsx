@@ -477,7 +477,7 @@ export function FindingsList({
 // ---------------------------------------------------------------------------
 
 const TH_CELL =
-  "text-[9px] uppercase tracking-[0.08em] font-semibold text-[#6f7f9a]/50 select-none";
+  "text-[9px] uppercase tracking-wider font-semibold text-[#6f7f9a]/50 select-none";
 
 // ---------------------------------------------------------------------------
 // Finding Row

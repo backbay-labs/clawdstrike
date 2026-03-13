@@ -108,7 +108,7 @@ export function WorkbenchSidebar() {
                   style={{ backgroundColor: section.accent }}
                 />
                 <span
-                  className="text-[8.5px] font-semibold uppercase tracking-[0.12em] select-none whitespace-nowrap"
+                  className="text-[8.5px] font-semibold uppercase tracking-wider select-none whitespace-nowrap"
                   style={{ color: section.accent }}
                 >
                   {section.title}
@@ -155,7 +155,7 @@ export function WorkbenchSidebar() {
             dispatch({ type: "SET_SIDEBAR_COLLAPSED", collapsed: !collapsed })
           }
           className={cn(
-            "flex items-center justify-center w-full rounded-md py-2 text-[#6f7f9a] hover:text-[#ece7dc] hover:bg-[#131721]/50 transition-colors",
+            "flex items-center justify-center w-full rounded-md py-2 text-[#6f7f9a] hover:text-[#ece7dc] hover:bg-[#131721]/50 transition-colors active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]",
             collapsed ? "px-0" : "gap-2 px-3"
           )}
         >

@@ -151,7 +151,7 @@ function CreateTab({ swarmId }: { swarmId: string }) {
     <div className="flex flex-col gap-4">
       {/* Role selector */}
       <div>
-        <label className="text-[10px] uppercase tracking-[0.08em] text-[#6f7f9a]/60 font-semibold">
+        <label className="text-[10px] uppercase tracking-wider text-[#6f7f9a]/60 font-semibold">
           Granted Role
         </label>
         <div className="mt-1.5 flex items-center gap-1.5">
@@ -174,7 +174,7 @@ function CreateTab({ swarmId }: { swarmId: string }) {
 
       {/* Expiry picker */}
       <div>
-        <label className="text-[10px] uppercase tracking-[0.08em] text-[#6f7f9a]/60 font-semibold">
+        <label className="text-[10px] uppercase tracking-wider text-[#6f7f9a]/60 font-semibold">
           Expiry
         </label>
         <div className="mt-1.5 flex items-center gap-1.5">
@@ -197,7 +197,7 @@ function CreateTab({ swarmId }: { swarmId: string }) {
 
       {/* Message */}
       <div>
-        <label className="text-[10px] uppercase tracking-[0.08em] text-[#6f7f9a]/60 font-semibold">
+        <label className="text-[10px] uppercase tracking-wider text-[#6f7f9a]/60 font-semibold">
           Message (optional)
         </label>
         <textarea
@@ -236,7 +236,7 @@ function CreateTab({ swarmId }: { swarmId: string }) {
       {/* Result */}
       {result && (
         <div className="flex flex-col gap-2">
-          <label className="text-[10px] uppercase tracking-[0.08em] text-[#3dbf84]/60 font-semibold flex items-center gap-1.5">
+          <label className="text-[10px] uppercase tracking-wider text-[#3dbf84]/60 font-semibold flex items-center gap-1.5">
             <IconCheck size={11} stroke={2} />
             Invitation Token
           </label>
@@ -365,7 +365,7 @@ function AcceptTab({ swarmId }: { swarmId: string }) {
     <div className="flex flex-col gap-4">
       {/* Paste field */}
       <div>
-        <label className="text-[10px] uppercase tracking-[0.08em] text-[#6f7f9a]/60 font-semibold">
+        <label className="text-[10px] uppercase tracking-wider text-[#6f7f9a]/60 font-semibold">
           Invitation Token
         </label>
         <textarea

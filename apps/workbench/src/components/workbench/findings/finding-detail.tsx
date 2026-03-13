@@ -185,7 +185,7 @@ export function FindingDetail({
             )}
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2.5 flex-wrap">
-                <h1 className="text-sm font-semibold text-[#ece7dc] tracking-[-0.01em]">
+                <h1 className="font-syne text-sm font-semibold text-[#ece7dc] tracking-[-0.01em]">
                   {finding.title}
                 </h1>
 
@@ -574,7 +574,7 @@ function SectionHeader({
   return (
     <div className="flex items-center gap-2 mb-3">
       <Icon size={14} stroke={1.5} className="text-[#d4a84b]" />
-      <h3 className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[#ece7dc]/80">
+      <h3 className="font-syne text-[11px] font-semibold uppercase tracking-wider text-[#ece7dc]/80">
         {title}
       </h3>
       {badge && (
@@ -630,7 +630,7 @@ function ActionButton({
 function ScopeItem({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center gap-1.5">
-      <span className="text-[9px] uppercase tracking-[0.08em] text-[#6f7f9a]/40">
+      <span className="text-[9px] uppercase tracking-wider text-[#6f7f9a]/40">
         {label}
       </span>
       <span className="text-[10px] font-mono text-[#ece7dc]/60">{value}</span>

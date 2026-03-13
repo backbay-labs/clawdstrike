@@ -157,7 +157,7 @@ export function SwarmDetail() {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-sm font-semibold text-[#ece7dc] tracking-[-0.01em]">
+                <h1 className="font-syne text-sm font-semibold text-[#ece7dc] tracking-[-0.01em]">
                   {swarm.name}
                 </h1>
                 <span
@@ -313,7 +313,7 @@ function MembersTab({ swarm }: { swarm: Swarm }) {
             <MemberSortHeader label="Role" col="role" current={sortCol} asc={sortAsc} onSort={handleSort} />
             <MemberSortHeader label="Reputation" col="reputation" current={sortCol} asc={sortAsc} onSort={handleSort} />
             <MemberSortHeader label="Joined" col="joined" current={sortCol} asc={sortAsc} onSort={handleSort} />
-            <th className="px-3 py-2.5 text-left text-[9px] uppercase tracking-[0.08em] font-semibold text-[#6f7f9a]/50">
+            <th className="px-3 py-2.5 text-left text-[9px] uppercase tracking-wider font-semibold text-[#6f7f9a]/50">
               Actions
             </th>
           </tr>
@@ -365,7 +365,7 @@ function MemberSortHeader({
   return (
     <th
       className={cn(
-        "px-3 py-2.5 text-left text-[9px] uppercase tracking-[0.08em] font-semibold select-none cursor-pointer transition-colors",
+        "px-3 py-2.5 text-left text-[9px] uppercase tracking-wider font-semibold select-none cursor-pointer transition-colors",
         active ? "text-[#d4a84b]" : "text-[#6f7f9a]/50 hover:text-[#6f7f9a]",
         className,
       )}
@@ -1016,7 +1016,7 @@ function TrustGraphTab({ swarm }: { swarm: Swarm }) {
       {selectedNode && (
         <div className="flex w-56 shrink-0 flex-col border-l border-[#1a1f2e] bg-[#0b0d13]">
           <div className="flex items-center justify-between border-b border-[#1a1f2e] px-4 py-3">
-            <h2 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6f7f9a]">
+            <h2 className="font-syne text-[10px] font-semibold uppercase tracking-wider text-[#6f7f9a]">
               Member
             </h2>
             <button
@@ -1041,7 +1041,7 @@ function TrustGraphTab({ swarm }: { swarm: Swarm }) {
 
             <div className="flex flex-col gap-3">
               <div>
-                <span className="text-[8px] uppercase tracking-[0.08em] text-[#6f7f9a]/40 font-semibold">
+                <span className="text-[8px] uppercase tracking-wider text-[#6f7f9a]/40 font-semibold">
                   Info
                 </span>
                 <div className="flex flex-col gap-1 mt-1">
@@ -1052,7 +1052,7 @@ function TrustGraphTab({ swarm }: { swarm: Swarm }) {
               </div>
 
               <div>
-                <span className="text-[8px] uppercase tracking-[0.08em] text-[#6f7f9a]/40 font-semibold">
+                <span className="text-[8px] uppercase tracking-wider text-[#6f7f9a]/40 font-semibold">
                   Reputation
                 </span>
                 <div className="flex flex-col gap-1 mt-1">
@@ -1072,7 +1072,7 @@ function TrustGraphTab({ swarm }: { swarm: Swarm }) {
               </div>
 
               <div>
-                <span className="text-[8px] uppercase tracking-[0.08em] text-[#6f7f9a]/40 font-semibold">
+                <span className="text-[8px] uppercase tracking-wider text-[#6f7f9a]/40 font-semibold">
                   Trust Connections
                 </span>
                 <div className="flex flex-col gap-1 mt-1">
@@ -1206,7 +1206,7 @@ function SettingsTab({ swarm }: { swarm: Swarm }) {
     <div className="h-full overflow-auto px-6 py-6">
       <div className="max-w-lg">
         {/* Governance */}
-        <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6f7f9a]/60 mb-4">
+        <h3 className="font-syne text-[11px] font-semibold uppercase tracking-wider text-[#6f7f9a]/60 mb-4">
           Governance Policies
         </h3>
 
@@ -1257,7 +1257,7 @@ function SettingsTab({ swarm }: { swarm: Swarm }) {
         </div>
 
         {/* Danger zone */}
-        <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#c45c5c]/60 mb-4">
+        <h3 className="font-syne text-[11px] font-semibold uppercase tracking-wider text-[#c45c5c]/60 mb-4">
           Danger Zone
         </h3>
         <div className="flex flex-col gap-2 rounded-lg border border-[#c45c5c]/20 bg-[#c45c5c]/5 p-4">
@@ -1383,7 +1383,7 @@ function reputationColor(score: number): string {
 
 function DetailSectionLabel({ text }: { text: string }) {
   return (
-    <h4 className="text-[9px] font-semibold uppercase tracking-[0.1em] text-[#6f7f9a]/50 mb-1">
+    <h4 className="font-syne text-[9px] font-semibold uppercase tracking-wider text-[#6f7f9a]/50 mb-1">
       {text}
     </h4>
   );
