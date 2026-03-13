@@ -705,7 +705,7 @@ export function FleetTestingPanel() {
                     {runningWhatIf && (
                       <div className="h-1.5 rounded-full bg-[#131721] border border-[#2d3240]/50 overflow-hidden">
                         <div
-                          className="h-full rounded-full bg-[#3dbf84] transition-all duration-150"
+                          className="h-full rounded-full bg-[#3dbf84] transition-all duration-200"
                           style={{ width: `${simulationProgress}%` }}
                         />
                       </div>

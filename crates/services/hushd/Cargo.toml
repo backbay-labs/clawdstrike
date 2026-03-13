@@ -88,10 +88,10 @@ reqwest = { workspace = true, features = ["blocking"] }
 jsonwebtoken.workspace = true
 flate2.workspace = true
 url.workspace = true
+tempfile = "3"
 
 [dev-dependencies]
 reqwest = { workspace = true, features = ["blocking", "stream"] }
-tempfile = "3"
 rcgen = { version = "0.14", default-features = false, features = ["ring", "pem"] }
 
 [features]

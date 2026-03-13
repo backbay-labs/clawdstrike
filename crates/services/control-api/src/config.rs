@@ -13,6 +13,8 @@ pub struct Config {
     pub nats_provisioner_api_token: Option<String>,
     pub nats_allow_insecure_mock_provisioner: bool,
     pub jwt_secret: String,
+    pub jwt_issuer: String,
+    pub jwt_audience: String,
     pub stripe_secret_key: String,
     pub stripe_webhook_secret: String,
     pub approval_signing_enabled: bool,
@@ -87,6 +89,10 @@ impl Config {
         }
         let jwt_secret = std::env::var("JWT_SECRET")
             .map_err(|_| ConfigError::MissingVar("JWT_SECRET".into()))?;
+        let jwt_issuer =
+            std::env::var("JWT_ISSUER").unwrap_or_else(|_| "clawdstrike-control-api".to_string());
+        let jwt_audience =
+            std::env::var("JWT_AUDIENCE").unwrap_or_else(|_| "clawdstrike-control-api".to_string());
         let stripe_secret_key = std::env::var("STRIPE_SECRET_KEY")
             .map_err(|_| ConfigError::MissingVar("STRIPE_SECRET_KEY".into()))?;
         let stripe_webhook_secret = std::env::var("STRIPE_WEBHOOK_SECRET")
@@ -178,6 +184,8 @@ impl Config {
             nats_provisioner_api_token,
             nats_allow_insecure_mock_provisioner,
             jwt_secret,
+            jwt_issuer,
+            jwt_audience,
             stripe_secret_key,
             stripe_webhook_secret,
             approval_signing_enabled,
@@ -519,6 +527,8 @@ mod tests {
             "NATS_PROVISIONER_API_TOKEN",
             "NATS_ALLOW_INSECURE_MOCK_PROVISIONER",
             "JWT_SECRET",
+            "JWT_ISSUER",
+            "JWT_AUDIENCE",
             "STRIPE_SECRET_KEY",
             "STRIPE_WEBHOOK_SECRET",
             "APPROVAL_SIGNING_ENABLED",
@@ -558,6 +568,8 @@ mod tests {
                 assert_eq!(config.agent_nats_url, "nats://localhost:4222");
                 assert_eq!(config.nats_provisioning_mode, "external");
                 assert!(!config.nats_allow_insecure_mock_provisioner);
+                assert_eq!(config.jwt_issuer, "clawdstrike-control-api");
+                assert_eq!(config.jwt_audience, "clawdstrike-control-api");
                 assert!(config.approval_signing_enabled);
                 assert!(config.approval_resolution_outbox_enabled);
                 assert!(!config.audit_consumer_enabled);
@@ -654,6 +666,26 @@ mod tests {
                 let config = Config::from_env().expect("should parse");
                 assert_eq!(config.nats_url, "nats://internal-nats:4222");
                 assert_eq!(config.agent_nats_url, "nats://public-nats.example.com:4222");
+            },
+        );
+    }
+
+    #[test]
+    fn from_env_uses_explicit_jwt_issuer_and_audience_when_set() {
+        with_env_vars(
+            &[
+                ("DATABASE_URL", "postgres://localhost/test"),
+                ("JWT_SECRET", "s"),
+                ("JWT_ISSUER", "https://issuer.example.test"),
+                ("JWT_AUDIENCE", "control-api-clients"),
+                ("STRIPE_SECRET_KEY", "sk"),
+                ("STRIPE_WEBHOOK_SECRET", "wh"),
+            ],
+            &[],
+            || {
+                let config = Config::from_env().expect("should parse");
+                assert_eq!(config.jwt_issuer, "https://issuer.example.test");
+                assert_eq!(config.jwt_audience, "control-api-clients");
             },
         );
     }

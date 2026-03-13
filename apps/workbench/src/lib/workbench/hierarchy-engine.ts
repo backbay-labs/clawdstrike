@@ -32,28 +32,18 @@ function uid(): string {
 // ---------------------------------------------------------------------------
 
 export function createDefaultHierarchy(): PolicyHierarchy {
-  // Org
   const orgId = uid();
-
-  // Teams
   const engId = uid();
   const secId = uid();
   const csId = uid();
 
-  // Endpoints
-  const buildServer01 = uid();
-  const buildServer02 = uid();
-  const scannerHost = uid();
-  const supportServer01 = uid();
-
-  // Runtimes
-  const plannerAgent = uid();
-  const coderAgent = uid();
-  const deployAgent = uid();
-  const vulnScanner = uid();
-  const penTestAgent = uid();
-  const supportAgent01 = uid();
-  const supportAgent02 = uid();
+  const agentCoder = uid();
+  const agentReviewer = uid();
+  const agentDeployer = uid();
+  const agentScanner = uid();
+  const agentMonitor = uid();
+  const agentSupport1 = uid();
+  const agentSupport2 = uid();
 
   const nodes: Record<string, OrgNode> = {
     [orgId]: {
@@ -68,141 +58,95 @@ export function createDefaultHierarchy(): PolicyHierarchy {
         agentCount: 7,
       },
     },
-
-    // --- Engineering team ---
     [engId]: {
       id: engId,
       name: "Engineering",
       type: "team",
       parentId: orgId,
-      children: [buildServer01, buildServer02],
+      children: [agentCoder, agentReviewer, agentDeployer],
       metadata: {
         description: "Core engineering team",
         memberCount: 45,
         agentCount: 3,
       },
     },
-    [buildServer01]: {
-      id: buildServer01,
-      name: "build-server-01",
-      type: "endpoint",
-      parentId: engId,
-      children: [plannerAgent, coderAgent],
-      metadata: {
-        description: "Primary CI/CD build server",
-      },
-    },
-    [plannerAgent]: {
-      id: plannerAgent,
-      name: "planner-agent",
-      type: "runtime",
-      parentId: buildServer01,
-      children: [],
-      metadata: { description: "Task planning and decomposition agent" },
-    },
-    [coderAgent]: {
-      id: coderAgent,
-      name: "coder-agent",
-      type: "runtime",
-      parentId: buildServer01,
-      children: [],
-      metadata: { description: "Autonomous coding agent" },
-    },
-    [buildServer02]: {
-      id: buildServer02,
-      name: "build-server-02",
-      type: "endpoint",
-      parentId: engId,
-      children: [deployAgent],
-      metadata: {
-        description: "Secondary build server for deployments",
-      },
-    },
-    [deployAgent]: {
-      id: deployAgent,
-      name: "deploy-agent",
-      type: "runtime",
-      parentId: buildServer02,
-      children: [],
-      metadata: { description: "Deployment pipeline agent" },
-    },
-
-    // --- Security team ---
     [secId]: {
       id: secId,
       name: "Security",
       type: "team",
       parentId: orgId,
-      children: [scannerHost],
+      children: [agentScanner, agentMonitor],
       metadata: {
         description: "Security operations team",
         memberCount: 15,
         agentCount: 2,
       },
     },
-    [scannerHost]: {
-      id: scannerHost,
-      name: "scanner-host",
-      type: "endpoint",
-      parentId: secId,
-      children: [vulnScanner, penTestAgent],
-      metadata: {
-        description: "Dedicated security scanning host",
-      },
-    },
-    [vulnScanner]: {
-      id: vulnScanner,
-      name: "vuln-scanner",
-      type: "runtime",
-      parentId: scannerHost,
-      children: [],
-      metadata: { description: "Vulnerability scanner agent" },
-    },
-    [penTestAgent]: {
-      id: penTestAgent,
-      name: "pen-test-agent",
-      type: "runtime",
-      parentId: scannerHost,
-      children: [],
-      metadata: { description: "Automated penetration testing agent" },
-    },
-
-    // --- Customer Support team ---
     [csId]: {
       id: csId,
       name: "Customer Support",
       type: "team",
       parentId: orgId,
-      children: [supportServer01],
+      children: [agentSupport1, agentSupport2],
       metadata: {
         description: "Customer-facing support team",
         memberCount: 30,
         agentCount: 2,
       },
     },
-    [supportServer01]: {
-      id: supportServer01,
-      name: "support-server-01",
-      type: "endpoint",
-      parentId: csId,
-      children: [supportAgent01, supportAgent02],
-      metadata: {
-        description: "Support automation server",
-      },
+    [agentCoder]: {
+      id: agentCoder,
+      name: "agent-coder-01",
+      type: "agent",
+      parentId: engId,
+      children: [],
+      metadata: { description: "Autonomous coding agent" },
     },
-    [supportAgent01]: {
-      id: supportAgent01,
-      name: "support-agent-01",
-      type: "runtime",
-      parentId: supportServer01,
+    [agentReviewer]: {
+      id: agentReviewer,
+      name: "agent-reviewer-01",
+      type: "agent",
+      parentId: engId,
+      children: [],
+      metadata: { description: "Code review agent" },
+    },
+    [agentDeployer]: {
+      id: agentDeployer,
+      name: "agent-deployer-01",
+      type: "agent",
+      parentId: engId,
+      children: [],
+      metadata: { description: "Deployment pipeline agent" },
+    },
+    [agentScanner]: {
+      id: agentScanner,
+      name: "agent-scanner-01",
+      type: "agent",
+      parentId: secId,
+      children: [],
+      metadata: { description: "Vulnerability scanner agent" },
+    },
+    [agentMonitor]: {
+      id: agentMonitor,
+      name: "agent-monitor-01",
+      type: "agent",
+      parentId: secId,
+      children: [],
+      metadata: { description: "Security monitoring agent" },
+    },
+    [agentSupport1]: {
+      id: agentSupport1,
+      name: "agent-support-01",
+      type: "agent",
+      parentId: csId,
       children: [],
       metadata: { description: "Tier-1 support agent" },
     },
-    [supportAgent02]: {
-      id: supportAgent02,
-      name: "support-agent-02",
-      type: "runtime",
-      parentId: supportServer01,
+    [agentSupport2]: {
+      id: agentSupport2,
+      name: "agent-support-02",
+      type: "agent",
+      parentId: csId,
       children: [],
       metadata: { description: "Tier-2 support agent" },
     },
@@ -223,16 +167,8 @@ export function getAncestryPath(
   nodeId: string,
 ): OrgNode[] {
   const path: OrgNode[] = [];
-  const visited = new Set<string>();
   let current = hierarchy.nodes[nodeId];
   while (current) {
-    if (visited.has(current.id)) {
-      console.warn(
-        `[hierarchy-engine] Cycle detected in ancestry path at node "${current.id}" ("${current.name}"). Breaking.`,
-      );
-      break;
-    }
-    visited.add(current.id);
     path.unshift(current);
     current = current.parentId ? hierarchy.nodes[current.parentId] : undefined!;
   }
@@ -247,17 +183,9 @@ export function getDescendants(
   nodeId: string,
 ): string[] {
   const result: string[] = [];
-  const visited = new Set<string>();
   const stack = [nodeId];
   while (stack.length > 0) {
     const id = stack.pop()!;
-    if (visited.has(id)) {
-      console.warn(
-        `[hierarchy-engine] Cycle detected in descendants traversal at node "${id}". Skipping.`,
-      );
-      continue;
-    }
-    visited.add(id);
     result.push(id);
     const node = hierarchy.nodes[id];
     if (node) {
@@ -271,14 +199,22 @@ export function getDescendants(
 }
 
 /**
- * Returns all leaf (runtime) node IDs under a given node.
+ * Returns all leaf enforcement node IDs under a given node.
+ *
+ * Endpoint nodes with no runtime children are also treated as leaves so a live
+ * hierarchy still validates correctly before runtimes are attached.
  */
 export function getLeafAgents(
   hierarchy: PolicyHierarchy,
   nodeId: string,
 ): string[] {
   return getDescendants(hierarchy, nodeId).filter(
-    (id) => hierarchy.nodes[id]?.type === "runtime",
+    (id) => {
+      const node = hierarchy.nodes[id];
+      if (!node) return false;
+      if (node.type === "agent" || node.type === "runtime") return true;
+      return node.type === "endpoint" && node.children.length === 0;
+    },
   );
 }
 
@@ -308,10 +244,12 @@ function mergeGuardConfigs(
   const result: GuardConfigMap = { ...parent };
   for (const key of Object.keys(child) as (keyof GuardConfigMap)[]) {
     const childVal = child[key];
-    if (childVal !== undefined && childVal !== null) {
-      // Child fully replaces parent at the guard level — deep-clone to
-      // prevent downstream mutation from corrupting the source policy.
-      (result as Record<string, unknown>)[key] = structuredClone(childVal);
+    if (childVal !== undefined) {
+      // Child overrides at the guard level (shallow merge within the guard)
+      (result as Record<string, unknown>)[key] = {
+        ...((parent[key] as Record<string, unknown>) ?? {}),
+        ...(childVal as Record<string, unknown>),
+      };
     }
   }
   return result;
@@ -413,47 +351,8 @@ export function computeEffectivePolicy(
 }
 
 // ---------------------------------------------------------------------------
-// Name validation
-// ---------------------------------------------------------------------------
-
-const MAX_NODE_NAME_LENGTH = 128;
-
-/**
- * Sanitizes and validates a node name. Returns the cleaned name, or `null`
- * if the name is invalid (empty after trim, exceeds length limit).
- */
-function sanitizeNodeName(raw: string): string | null {
-  // Strip control characters (U+0000-U+001F except U+0020 space, U+007F-U+009F)
-  // eslint-disable-next-line no-control-regex
-  const stripped = raw.replace(/[\x00-\x1F\x7F-\x9F]/g, "");
-  const trimmed = stripped.trim();
-
-  if (trimmed.length === 0) {
-    console.warn("[hierarchy-engine] Node name is empty after sanitization.");
-    return null;
-  }
-
-  if (trimmed.length > MAX_NODE_NAME_LENGTH) {
-    console.warn(
-      `[hierarchy-engine] Node name exceeds ${MAX_NODE_NAME_LENGTH} characters (got ${trimmed.length}). Rejecting.`,
-    );
-    return null;
-  }
-
-  return trimmed;
-}
-
-// ---------------------------------------------------------------------------
 // CRUD mutations (all pure — return a new hierarchy)
 // ---------------------------------------------------------------------------
-
-/** Valid parent type for each child node type. */
-const VALID_PARENT_TYPE: Record<OrgNodeType, OrgNodeType | null> = {
-  org: null, // org has no parent
-  team: "org",
-  endpoint: "team",
-  runtime: "endpoint",
-};
 
 export function addNode(
   hierarchy: PolicyHierarchy,
@@ -463,16 +362,8 @@ export function addNode(
   const parent = hierarchy.nodes[parentId];
   if (!parent) return hierarchy;
 
-  // Validate node name
-  const cleanName = sanitizeNodeName(node.name);
-  if (cleanName === null) return hierarchy;
-
-  // Validate parent-child type relationship
-  const requiredParentType = VALID_PARENT_TYPE[node.type];
-  if (requiredParentType !== parent.type) return hierarchy;
-
   const id = uid();
-  const newNode: OrgNode = { ...node, id, name: cleanName, children: [] };
+  const newNode: OrgNode = { ...node, id, children: [] };
 
   return {
     ...hierarchy,
@@ -529,16 +420,7 @@ export function moveNode(
 
   const oldParent = node.parentId ? hierarchy.nodes[node.parentId] : undefined;
   const newParent = hierarchy.nodes[newParentId];
-  if (!newParent) {
-    console.warn(
-      `[hierarchy-engine] moveNode: target parent "${newParentId}" does not exist. Move aborted.`,
-    );
-    return hierarchy;
-  }
-
-  // Validate parent-child type relationship
-  const requiredParentType = VALID_PARENT_TYPE[node.type];
-  if (requiredParentType !== newParent.type) return hierarchy;
+  if (!newParent) return hierarchy;
 
   const newNodes = { ...hierarchy.nodes };
 
@@ -608,262 +490,13 @@ export function renameNode(
   const node = hierarchy.nodes[nodeId];
   if (!node) return hierarchy;
 
-  // Validate and sanitize the new name
-  const cleanName = sanitizeNodeName(name);
-  if (cleanName === null) return hierarchy;
-
   return {
     ...hierarchy,
     nodes: {
       ...hierarchy.nodes,
-      [nodeId]: { ...node, name: cleanName },
+      [nodeId]: { ...node, name },
     },
   };
-}
-
-// ---------------------------------------------------------------------------
-// Normalization
-// ---------------------------------------------------------------------------
-
-/**
- * Deduplicates `children` arrays across all nodes and migrates legacy
- * `type: "agent"` nodes to `type: "endpoint"`. Should be called after
- * loading from localStorage or after pulling from fleet data.
- */
-export function normalizeHierarchy(
-  hierarchy: PolicyHierarchy,
-): PolicyHierarchy {
-  const nodes: Record<string, OrgNode> = {};
-  for (const [id, node] of Object.entries(hierarchy.nodes)) {
-    const deduped = [...new Set(node.children)];
-    // Migrate legacy "agent" type to "endpoint" for backward compat
-    const type =
-      (node.type as string) === "agent" ? ("endpoint" as OrgNodeType) : node.type;
-    const needsUpdate =
-      deduped.length !== node.children.length || type !== node.type;
-    if (needsUpdate) {
-      nodes[id] = { ...node, children: deduped, type };
-    } else {
-      nodes[id] = node;
-    }
-  }
-
-  // Remove orphan nodes — collect all reachable IDs from rootId
-  const reachable = new Set<string>();
-  const stack = [hierarchy.rootId];
-  while (stack.length > 0) {
-    const id = stack.pop()!;
-    if (reachable.has(id)) continue;
-    reachable.add(id);
-    const node = nodes[id];
-    if (node) {
-      for (const childId of node.children) {
-        stack.push(childId);
-      }
-    }
-  }
-
-  const allIds = Object.keys(nodes);
-  const orphanIds = allIds.filter((id) => !reachable.has(id));
-  if (orphanIds.length > 0) {
-    console.warn(
-      `[hierarchy-engine] normalizeHierarchy: removing ${orphanIds.length} orphan node(s): ${orphanIds.join(", ")}`,
-    );
-    for (const orphanId of orphanIds) {
-      delete nodes[orphanId];
-    }
-  }
-
-  // Validate parent-child type constraints and remove violating nodes
-  let removedViolators = true;
-  while (removedViolators) {
-    removedViolators = false;
-    for (const [id, node] of Object.entries(nodes)) {
-      if (id === hierarchy.rootId) continue;
-      if (!node.parentId) continue;
-      const parent = nodes[node.parentId];
-      if (!parent) continue;
-
-      const requiredParentType = VALID_PARENT_TYPE[node.type];
-      if (requiredParentType !== parent.type) {
-        console.warn(
-          `[hierarchy-engine] normalizeHierarchy: node "${node.name}" (${node.type}) has invalid parent type "${parent.type}" (expected "${String(requiredParentType)}")` +
-            `. Removing node and its descendants.`,
-        );
-        // Collect descendants of violating node to remove them all
-        const toRemove = new Set<string>();
-        const descStack = [id];
-        while (descStack.length > 0) {
-          const descId = descStack.pop()!;
-          if (toRemove.has(descId)) continue;
-          toRemove.add(descId);
-          const descNode = nodes[descId];
-          if (descNode) {
-            for (const childId of descNode.children) {
-              descStack.push(childId);
-            }
-          }
-        }
-        // Remove violating node from parent's children list
-        nodes[node.parentId] = {
-          ...parent,
-          children: parent.children.filter((c) => c !== id),
-        };
-        // Remove all collected nodes
-        for (const removeId of toRemove) {
-          delete nodes[removeId];
-        }
-        removedViolators = true;
-        break; // Restart scan since we mutated the map
-      }
-    }
-  }
-
-  return { ...hierarchy, nodes };
-}
-
-// ---------------------------------------------------------------------------
-// Schema validation
-// ---------------------------------------------------------------------------
-
-const VALID_NODE_TYPES = new Set<string>(["org", "team", "endpoint", "runtime"]);
-
-/**
- * Validates the structural integrity of a parsed PolicyHierarchy object.
- * Returns the hierarchy if valid, or `null` if any check fails.
- * Logs `console.error` for every violation detected.
- */
-export function validateHierarchyStructure(
-  parsed: unknown,
-): PolicyHierarchy | null {
-  if (!parsed || typeof parsed !== "object") {
-    console.error("[hierarchy-engine] validateHierarchyStructure: input is not an object.");
-    return null;
-  }
-
-  const obj = parsed as Record<string, unknown>;
-
-  // rootId must be a string
-  if (typeof obj.rootId !== "string") {
-    console.error("[hierarchy-engine] validateHierarchyStructure: rootId is not a string.");
-    return null;
-  }
-
-  // nodes must be a non-null object
-  if (!obj.nodes || typeof obj.nodes !== "object" || Array.isArray(obj.nodes)) {
-    console.error("[hierarchy-engine] validateHierarchyStructure: nodes is not a non-null object.");
-    return null;
-  }
-
-  const rootId = obj.rootId as string;
-  const nodes = obj.nodes as Record<string, unknown>;
-
-  // root node must exist
-  if (!nodes[rootId]) {
-    console.error(
-      `[hierarchy-engine] validateHierarchyStructure: root node "${rootId}" not found in nodes.`,
-    );
-    return null;
-  }
-
-  // Validate every node
-  for (const [key, raw] of Object.entries(nodes)) {
-    if (!raw || typeof raw !== "object") {
-      console.error(
-        `[hierarchy-engine] validateHierarchyStructure: node "${key}" is not a valid object.`,
-      );
-      return null;
-    }
-    const node = raw as Record<string, unknown>;
-
-    // id must be a string
-    if (typeof node.id !== "string") {
-      console.error(
-        `[hierarchy-engine] validateHierarchyStructure: node "${key}" has non-string id.`,
-      );
-      return null;
-    }
-
-    // id must match the map key
-    if (node.id !== key) {
-      console.error(
-        `[hierarchy-engine] validateHierarchyStructure: node map key "${key}" does not match node.id "${String(node.id)}".`,
-      );
-      return null;
-    }
-
-    // type must be a valid OrgNodeType
-    if (typeof node.type !== "string" || !VALID_NODE_TYPES.has(node.type)) {
-      console.error(
-        `[hierarchy-engine] validateHierarchyStructure: node "${key}" has invalid type "${String(node.type)}".`,
-      );
-      return null;
-    }
-
-    // children must be an array of strings
-    if (!Array.isArray(node.children)) {
-      console.error(
-        `[hierarchy-engine] validateHierarchyStructure: node "${key}" has non-array children.`,
-      );
-      return null;
-    }
-    for (const child of node.children) {
-      if (typeof child !== "string") {
-        console.error(
-          `[hierarchy-engine] validateHierarchyStructure: node "${key}" has non-string child entry.`,
-        );
-        return null;
-      }
-      if (!nodes[child]) {
-        console.error(
-          `[hierarchy-engine] validateHierarchyStructure: node "${key}" references non-existent child "${child}".`,
-        );
-        return null;
-      }
-    }
-
-    // parentId must be null or reference an existing node
-    if (node.parentId !== null && node.parentId !== undefined) {
-      if (typeof node.parentId !== "string") {
-        console.error(
-          `[hierarchy-engine] validateHierarchyStructure: node "${key}" has non-string parentId.`,
-        );
-        return null;
-      }
-      if (!nodes[node.parentId]) {
-        console.error(
-          `[hierarchy-engine] validateHierarchyStructure: node "${key}" references non-existent parent "${node.parentId}".`,
-        );
-        return null;
-      }
-    }
-  }
-
-  // Check for orphan nodes — every node must be reachable from rootId
-  const reachable = new Set<string>();
-  const stack = [rootId];
-  while (stack.length > 0) {
-    const id = stack.pop()!;
-    if (reachable.has(id)) continue;
-    reachable.add(id);
-    const node = nodes[id] as Record<string, unknown> | undefined;
-    if (node && Array.isArray(node.children)) {
-      for (const child of node.children as string[]) {
-        stack.push(child);
-      }
-    }
-  }
-
-  const allIds = Object.keys(nodes);
-  const orphans = allIds.filter((id) => !reachable.has(id));
-  if (orphans.length > 0) {
-    console.error(
-      `[hierarchy-engine] validateHierarchyStructure: ${orphans.length} orphan node(s) not reachable from root: ${orphans.join(", ")}`,
-    );
-    return null;
-  }
-
-  return parsed as PolicyHierarchy;
 }
 
 // ---------------------------------------------------------------------------
@@ -882,24 +515,11 @@ export function loadHierarchy(): PolicyHierarchy | null {
   try {
     const raw = localStorage.getItem(HIERARCHY_STORAGE_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as unknown;
-
-    // Migrate legacy "agent" type to "endpoint" before validation
-    if (parsed && typeof parsed === "object" && (parsed as Record<string, unknown>).nodes) {
-      const nodes = (parsed as Record<string, unknown>).nodes as Record<string, Record<string, unknown>>;
-      for (const node of Object.values(nodes)) {
-        if (node && typeof node === "object" && (node as Record<string, unknown>).type === "agent") {
-          (node as Record<string, unknown>).type = "endpoint";
-        }
-      }
-    }
-
-    const validated = validateHierarchyStructure(parsed);
-    if (!validated) {
-      console.error("[hierarchy-engine] loadHierarchy: stored hierarchy failed validation, falling back to demo data.");
+    const parsed = JSON.parse(raw) as PolicyHierarchy;
+    if (!parsed.rootId || !parsed.nodes || !parsed.nodes[parsed.rootId]) {
       return null;
     }
-    return validated;
+    return parsed;
   } catch {
     return null;
   }
@@ -914,6 +534,63 @@ export function clearHierarchy(): void {
 }
 
 // ---------------------------------------------------------------------------
+// Normalization
+// ---------------------------------------------------------------------------
+
+/**
+ * Ensures a PolicyHierarchy has consistent parent↔child relationships.
+ * Preserves the original explicit child ordering where possible, then
+ * backfills any missing parent↔child links from parentId pointers so
+ * loaded/pulled data is always structurally sound.
+ */
+export function normalizeHierarchy(hierarchy: PolicyHierarchy): PolicyHierarchy {
+  const nodes = { ...hierarchy.nodes };
+
+  // Reset children arrays
+  for (const id of Object.keys(nodes)) {
+    nodes[id] = { ...nodes[id], children: [] };
+  }
+
+  // Preserve explicit child ordering and recover missing parent links when
+  // an existing children array is more authoritative than a missing parentId.
+  for (const originalNode of Object.values(hierarchy.nodes)) {
+    if (!nodes[originalNode.id]) {
+      continue;
+    }
+    for (const childId of originalNode.children) {
+      const child = nodes[childId];
+      if (!child) {
+        continue;
+      }
+      if (child.parentId == null || child.parentId === originalNode.id) {
+        if (child.parentId !== originalNode.id) {
+          nodes[childId] = { ...child, parentId: originalNode.id };
+        }
+        if (!nodes[originalNode.id].children.includes(childId)) {
+          nodes[originalNode.id] = {
+            ...nodes[originalNode.id],
+            children: [...nodes[originalNode.id].children, childId],
+          };
+        }
+      }
+    }
+  }
+
+  // Rebuild any missing child links from parentId pointers without disturbing
+  // the preserved explicit ordering above.
+  for (const node of Object.values(nodes)) {
+    if (node.parentId && nodes[node.parentId] && !nodes[node.parentId].children.includes(node.id)) {
+      nodes[node.parentId] = {
+        ...nodes[node.parentId],
+        children: [...nodes[node.parentId].children, node.id],
+      };
+    }
+  }
+
+  return { nodes, rootId: hierarchy.rootId };
+}
+
+// ---------------------------------------------------------------------------
 // Validation
 // ---------------------------------------------------------------------------
 
@@ -925,32 +602,14 @@ export interface HierarchyValidationIssue {
 }
 
 /**
- * Validates all runtime (leaf) nodes and endpoints in the hierarchy,
- * checking effective policies and structural requirements.
+ * Validates all leaf enforcement nodes in the hierarchy, checking that their
+ * effective policies have at least one guard enabled.
  */
 export function validateAllLeaves(
   hierarchy: PolicyHierarchy,
   savedPolicies: SavedPolicy[],
 ): HierarchyValidationIssue[] {
   const issues: HierarchyValidationIssue[] = [];
-
-  // Validate endpoints: each must have at least one runtime child
-  for (const node of Object.values(hierarchy.nodes)) {
-    if (node.type !== "endpoint") continue;
-    const runtimeChildren = node.children.filter(
-      (cid) => hierarchy.nodes[cid]?.type === "runtime",
-    );
-    if (runtimeChildren.length === 0) {
-      issues.push({
-        nodeId: node.id,
-        nodeName: node.name,
-        message: "Endpoint has no runtime agents",
-        severity: "warning",
-      });
-    }
-  }
-
-  // Validate runtimes (leaf nodes)
   const leaves = getLeafAgents(hierarchy, hierarchy.rootId);
 
   for (const leafId of leaves) {
@@ -973,7 +632,7 @@ export function validateAllLeaves(
           nodeId: leafId,
           nodeName: node.name,
           message: "No policy assigned in the inheritance chain",
-          severity: "error",
+          severity: "warning",
         });
       } else {
         issues.push({
@@ -985,10 +644,7 @@ export function validateAllLeaves(
       }
     }
 
-    // Check: guards that are explicitly disabled — this is a deliberate
-    // operator choice (e.g. disabling a guard for a specific runtime), so
-    // flag as "warning" rather than "error".  True errors are reserved for
-    // broken configurations like missing policies entirely.
+    // Check: enabled guards that are explicitly disabled
     for (const [gid, entry] of Object.entries(effective.guards)) {
       const val = entry.value as Record<string, unknown> | undefined;
       if (val && val.enabled === false) {

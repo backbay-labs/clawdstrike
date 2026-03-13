@@ -3,6 +3,8 @@
 Thank you for your interest in contributing to ClawdStrike! This document provides guidelines for contributing to the project.
 
 Please read our [Code of Conduct](CODE_OF_CONDUCT.md) before contributing. For security vulnerabilities, see [SECURITY.md](SECURITY.md). For project governance and decision-making, see [GOVERNANCE.md](GOVERNANCE.md).
+If you’d like to discuss ideas, ask questions`, or coordinate work, you are very welcome to join our Discord server: [clawdstrike Discord](https://discord.gg/tWKSGCvq).
+
 
 ## Developer Certificate of Origin (DCO)
 

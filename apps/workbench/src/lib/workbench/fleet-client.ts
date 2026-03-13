@@ -563,7 +563,7 @@ function redactSecrets(text: string): string {
     .replace(/x-api-key[:\s]+[^\s,;}]+/gi, "x-api-key: [REDACTED]");
 }
 
-async function readResponseTextWithLimit(res: Response, maxBytes: number): Promise<string> {
+async function readResponseTextWithLimit(res: Response, maxBytes: number, signal?: AbortSignal | null): Promise<string> {
   const reader = res.body?.getReader();
   if (!reader) {
     const body = await res.arrayBuffer();
@@ -577,16 +577,30 @@ async function readResponseTextWithLimit(res: Response, maxBytes: number): Promi
   let total = 0;
   let text = "";
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (!value) continue;
-    total += value.byteLength;
-    if (total > maxBytes) {
-      await reader.cancel().catch(() => {});
-      throw new Error(`Response too large (${total} bytes exceeds ${maxBytes} limit)`);
+  try {
+    while (true) {
+      // Check the abort signal before each read to enforce the total request deadline
+      if (signal?.aborted) {
+        await reader.cancel().catch(() => {});
+        throw new DOMException("The operation was aborted.", "AbortError");
+      }
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => {});
+        throw new Error(`Response too large (${total} bytes exceeds ${maxBytes} limit)`);
+      }
+      text += decoder.decode(value, { stream: true });
     }
-    text += decoder.decode(value, { stream: true });
+  } catch (err) {
+    // If the signal was aborted mid-read, ensure the reader is cancelled
+    if (signal?.aborted) {
+      await reader.cancel().catch(() => {});
+      throw new DOMException("The operation was aborted.", "AbortError");
+    }
+    throw err;
   }
 
   text += decoder.decode();
@@ -594,9 +608,10 @@ async function readResponseTextWithLimit(res: Response, maxBytes: number): Promi
 }
 
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await httpFetch(url, { ...init, signal: init?.signal ?? AbortSignal.timeout(10_000) });
+  const signal = init?.signal ?? AbortSignal.timeout(10_000);
+  const res = await httpFetch(url, { ...init, signal });
   if (!res.ok) {
-    const body = await readResponseTextWithLimit(res, MAX_ERROR_RESPONSE_BYTES).catch(() => "");
+    const body = await readResponseTextWithLimit(res, MAX_ERROR_RESPONSE_BYTES, signal).catch(() => "");
     // Finding M3: truncate error body and strip secrets
     const sanitized = redactSecrets(body.slice(0, 200));
     throw new Error(sanitized || `HTTP ${res.status}`);
@@ -607,7 +622,7 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   if (contentLength && parseInt(contentLength, 10) > MAX_RESPONSE_BYTES) {
     throw new Error(`Response too large (${contentLength} bytes exceeds ${MAX_RESPONSE_BYTES} limit)`);
   }
-  const bodyText = await readResponseTextWithLimit(res, MAX_RESPONSE_BYTES);
+  const bodyText = await readResponseTextWithLimit(res, MAX_RESPONSE_BYTES, signal);
   try {
     return JSON.parse(bodyText) as T;
   } catch (error) {
@@ -934,6 +949,17 @@ export async function fetchAgentList(conn: FleetConnection): Promise<AgentInfo[]
   }
 }
 
+/** Validate that an audit event has the required fields with correct types. */
+function validateAuditEvent(event: unknown): event is AuditEvent {
+  if (!event || typeof event !== "object") return false;
+  const e = event as Record<string, unknown>;
+  if (typeof e.id !== "string" || !e.id) return false;
+  if (typeof e.timestamp !== "string" || !e.timestamp) return false;
+  if (typeof e.action_type !== "string" || !e.action_type) return false;
+  if (typeof e.decision !== "string" || !e.decision) return false;
+  return true;
+}
+
 export async function fetchAuditEvents(
   conn: FleetConnection,
   filters?: AuditFilters,
@@ -952,14 +978,27 @@ export async function fetchAuditEvents(
     headers: hushdHeaders(conn.apiKey),
   });
   // Runtime validation: ensure response has .events array or is itself an array (#18)
-  if (Array.isArray(res)) return res;
-  if (res && typeof res === "object" && "events" in res) {
+  let raw: unknown[];
+  if (Array.isArray(res)) {
+    raw = res;
+  } else if (res && typeof res === "object" && "events" in res) {
     if (!Array.isArray(res.events)) {
       throw new Error("[fleet-client] fetchAuditEvents: expected res.events to be an array");
     }
-    return res.events;
+    raw = res.events;
+  } else {
+    throw new Error("[fleet-client] fetchAuditEvents: unexpected response shape");
   }
-  throw new Error("[fleet-client] fetchAuditEvents: unexpected response shape");
+  // Validate individual events and filter out malformed entries
+  const valid: AuditEvent[] = [];
+  for (const item of raw) {
+    if (validateAuditEvent(item)) {
+      valid.push(item);
+    } else {
+      console.warn("[fleet-client] fetchAuditEvents: dropping invalid audit event", item);
+    }
+  }
+  return valid;
 }
 
 export async function distributePolicy(
@@ -1032,7 +1071,7 @@ interface BackendApproval {
 const BACKEND_KNOWN_STATUSES = new Set<string>(["pending", "approved", "denied"]);
 
 /** Known provider identifiers accepted by the frontend OriginProvider type. */
-const BACKEND_KNOWN_PROVIDERS = new Set<string>(["slack", "teams", "github", "jira", "cli", "api"]);
+const BACKEND_KNOWN_PROVIDERS = new Set<string>(["slack", "teams", "github", "jira", "email", "discord", "webhook", "cli", "api"]);
 
 /** Known risk levels accepted by the frontend RiskLevel type. */
 const BACKEND_KNOWN_RISK_LEVELS = new Set<string>(["low", "medium", "high", "critical"]);
@@ -1043,6 +1082,14 @@ const BACKEND_KNOWN_RISK_LEVELS = new Set<string>(["low", "medium", "high", "cri
  * The backend DB only stores "pending", "approved", or "denied".
  * The frontend also has "expired", which we derive by checking whether
  * a still-pending request has passed its `expires_at` timestamp.
+ *
+ * **Limitation:** This derivation runs once at fetch time. If the fetched
+ * data sits in memory without being re-fetched, a "pending" approval that
+ * passes its `expires_at` will still show as "pending" until the next
+ * fetch cycle. Consumers that display approvals should either re-fetch on
+ * a reasonable interval (the approval queue polls every 30s) or re-derive
+ * the status client-side based on the current time (the approval-queue
+ * component does this via its per-second `tick` effect).
  */
 function deriveApprovalStatus(
   backendStatus: string,
@@ -1085,9 +1132,25 @@ function extractOriginContext(eventData: Record<string, unknown>): OriginContext
     tenant_id: optionalString(raw.tenant_id),
     space_id: optionalString(raw.space_id),
     space_type: optionalString(raw.space_type),
+    thread_id: optionalString(raw.thread_id),
     actor_id: optionalString(raw.actor_id),
+    actor_type: optionalString(raw.actor_type) as OriginContext["actor_type"],
+    actor_role: optionalString(raw.actor_role),
     actor_name: optionalString(raw.actor_name),
-    visibility: optionalString(raw.visibility),
+    visibility: optionalString(raw.visibility) as OriginContext["visibility"],
+    external_participants:
+      typeof raw.external_participants === "boolean"
+        ? raw.external_participants
+        : undefined,
+    tags: Array.isArray(raw.tags)
+      ? (raw.tags as unknown[]).map(String)
+      : undefined,
+    sensitivity: optionalString(raw.sensitivity),
+    provenance_confidence: optionalString(raw.provenance_confidence) as OriginContext["provenance_confidence"],
+    metadata:
+      raw.metadata != null && typeof raw.metadata === "object" && !Array.isArray(raw.metadata)
+        ? (raw.metadata as Record<string, unknown>)
+        : undefined,
   };
 }
 
@@ -1520,7 +1583,7 @@ function extractPrincipalList(res: unknown): PrincipalInfo[] {
  */
 export interface ScopedPolicy {
   id: string;
-  scope_type: "org" | "team" | "agent";
+  scope_type: "org" | "team" | "agent" | "endpoint" | "runtime";
   scope_id: string;
   scope_name: string;
   policy_yaml: string;
@@ -1535,7 +1598,7 @@ export interface ScopedPolicy {
  * Input shape for creating a new scoped policy.
  */
 export interface ScopedPolicyInput {
-  scope_type: "org" | "team" | "agent";
+  scope_type: "org" | "team" | "agent" | "endpoint" | "runtime";
   scope_id: string;
   scope_name: string;
   policy_yaml: string;
@@ -1551,7 +1614,7 @@ export interface PolicyAssignment {
   id: string;
   scope_id: string;
   scope_name: string;
-  scope_type: "org" | "team" | "agent";
+  scope_type: "org" | "team" | "agent" | "endpoint" | "runtime";
   policy_id?: string;
   policy_name?: string;
   parent_scope_id?: string | null;
@@ -1565,7 +1628,7 @@ export interface PolicyAssignment {
 export interface PolicyAssignmentInput {
   scope_id: string;
   scope_name: string;
-  scope_type: "org" | "team" | "agent";
+  scope_type: "org" | "team" | "agent" | "endpoint" | "runtime";
   policy_id?: string;
   policy_name?: string;
   parent_scope_id?: string | null;

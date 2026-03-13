@@ -3,6 +3,24 @@ import type { WorkbenchPolicy, ValidationResult, ValidationIssue, GuardConfigMap
 
 export type ExportFormat = "yaml" | "json" | "toml";
 
+function cloneMetadataValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => cloneMetadataValue(item))
+      .filter((item) => item !== undefined);
+  }
+
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .map(([key, entry]) => [key, cloneMetadataValue(entry)])
+        .filter(([, entry]) => entry !== undefined),
+    );
+  }
+
+  return value;
+}
+
 /** Build a clean document object from a WorkbenchPolicy, omitting empty fields. */
 function buildCleanDoc(policy: WorkbenchPolicy): Record<string, unknown> {
   const doc: Record<string, unknown> = {
@@ -68,6 +86,9 @@ function buildCleanDoc(policy: WorkbenchPolicy): Record<string, unknown> {
         if (profile.budgets) p.budgets = cleanObject(profile.budgets as unknown as Record<string, unknown>);
         if (profile.bridge_policy) p.bridge_policy = cleanObject(profile.bridge_policy as unknown as Record<string, unknown>);
         if (profile.explanation) p.explanation = profile.explanation;
+        if (profile.metadata !== undefined) {
+          p.metadata = cloneMetadataValue(profile.metadata);
+        }
         return p;
       });
     }

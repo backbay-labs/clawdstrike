@@ -9,7 +9,7 @@ import {
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "../shared/page-header";
-import { useFleetConnection } from "@/lib/workbench/use-fleet-connection";
+import { AGENT_POLL_MS, useFleetConnection } from "@/lib/workbench/use-fleet-connection";
 import type { AgentInfo } from "@/lib/workbench/fleet-client";
 import { Link } from "react-router-dom";
 
@@ -196,7 +196,7 @@ export function FleetDashboard() {
       {/* Header */}
       <PageHeader
         title="Fleet Dashboard"
-        subtitle={<>{counts.total} agent{counts.total !== 1 ? "s" : ""} registered</>}
+        subtitle={<>{counts.total} agent{counts.total !== 1 ? "s" : ""} registered{" · "}auto-refresh every {AGENT_POLL_MS / 1000}s</>}
         icon={IconServer}
         sectionAccent="#7b6b8b"
       >
@@ -236,7 +236,6 @@ export function FleetDashboard() {
           </span>
         </div>
       )}
-
       {/* Summary cards */}
       <div className="shrink-0 border-b border-[#2d3240]/60 px-6 py-4">
         <div className="flex items-stretch gap-3">

@@ -2,9 +2,10 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useWorkbench } from "@/lib/workbench/multi-policy-store";
 import { GUARD_REGISTRY, GUARD_CATEGORIES } from "@/lib/workbench/guard-registry";
-import type { GuardMeta, GuardCategory, GuardId, Verdict } from "@/lib/workbench/types";
+import type { GuardMeta, GuardCategory, GuardId } from "@/lib/workbench/types";
 import { useToast } from "@/components/ui/toast";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { VerdictBadge } from "@/components/workbench/shared/verdict-badge";
 import { cn } from "@/lib/utils";
 import {
   IconLock,
@@ -137,23 +138,6 @@ const FILTER_OPTIONS: { id: CategoryFilter; label: string }[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// Verdict badge
-// ---------------------------------------------------------------------------
-
-function VerdictPill({ verdict }: { verdict: Verdict }) {
-  const colors: Record<Verdict, { bg: string; text: string; label: string }> = {
-    allow: { bg: "bg-[#3dbf84]/15", text: "text-[#3dbf84]", label: "ALLOW" },
-    deny: { bg: "bg-[#c45c5c]/15", text: "text-[#c45c5c]", label: "DENY" },
-    warn: { bg: "bg-[#d4a84b]/15", text: "text-[#d4a84b]", label: "WARN" },
-  };
-  const c = colors[verdict];
-  return (
-    <span className={cn("px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider", c.bg, c.text)}>
-      {c.label}
-    </span>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Category badge
 // ---------------------------------------------------------------------------
@@ -226,7 +210,7 @@ function GuardGridCard({
           </h3>
           <div className="flex items-center gap-1.5 mt-1">
             <CategoryBadge category={guard.category} />
-            <VerdictPill verdict={guard.defaultVerdict} />
+            <VerdictBadge verdict={guard.defaultVerdict} className="text-[9px]" />
           </div>
         </div>
       </div>
@@ -306,7 +290,7 @@ function GuardListRow({
       <CategoryBadge category={guard.category} />
 
       {/* Verdict */}
-      <VerdictPill verdict={guard.defaultVerdict} />
+      <VerdictBadge verdict={guard.defaultVerdict} className="text-[9px]" />
 
       {/* Description */}
       <span className="text-[11px] text-[#6f7f9a] truncate flex-1 min-w-0">
@@ -371,7 +355,7 @@ function GuardDetailPanel({
             </p>
             <div className="flex items-center gap-2 mt-2">
               <CategoryBadge category={guard.category} />
-              <VerdictPill verdict={guard.defaultVerdict} />
+              <VerdictBadge verdict={guard.defaultVerdict} className="text-[9px]" />
               <span
                 className={cn(
                   "flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium",
