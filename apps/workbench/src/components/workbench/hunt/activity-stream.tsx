@@ -627,7 +627,9 @@ function EventRow({
         onClick={onToggle}
         className={cn(
           "flex w-full items-center gap-0 px-3 py-2 text-left border-b border-[#2d3240]/20 cursor-pointer transition-colors",
-          isExpanded ? "bg-[#131721]" : "hover:bg-[#0b0d13]",
+          isExpanded
+            ? "bg-[#131721] border-l-2 border-l-[#d4a84b]"
+            : "hover:bg-[#131721] border-l-2 border-l-transparent",
         )}
       >
         {/* Timestamp */}

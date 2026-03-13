@@ -46,7 +46,7 @@ export function PolicyCard({
   if (isBuiltin) {
     return (
       <WobbleCard
-        containerClassName="bg-[#0b0d13] border border-[#2d3240] min-h-[160px]"
+        containerClassName="bg-[#0b0d13] border border-[#2d3240] min-h-[160px] card-shadow"
         className="!p-4 !py-4 flex flex-col justify-between h-full"
       >
         <div>
@@ -91,7 +91,7 @@ export function PolicyCard({
 
   // User policy card — regular styling
   return (
-    <div className="flex flex-col justify-between rounded-xl border border-[#2d3240]/60 bg-[#0b0d13] p-4 min-h-[160px] guard-card-hover hover:border-[#2d3240]">
+    <div className="flex flex-col justify-between rounded-xl border border-[#2d3240]/60 bg-[#0b0d13] p-4 min-h-[160px] guard-card-hover hover:border-[#2d3240] card-shadow">
       <div>
         <div className="flex items-start justify-between gap-2 mb-2">
           <h3 className="font-syne font-bold text-sm text-[#ece7dc]">

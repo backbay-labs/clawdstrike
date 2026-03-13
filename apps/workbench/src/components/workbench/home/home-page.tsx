@@ -167,7 +167,7 @@ function NavCard({
   return (
     <Link
       to={href}
-      className="group flex items-center gap-3.5 px-4 py-3.5 rounded-lg border border-[#2d3240]/40 bg-[#0b0d13]/40 hover:border-[#2d3240] hover:bg-[#0b0d13] transition-all duration-150"
+      className="group flex items-center gap-3.5 px-4 py-3.5 rounded-lg border border-[#2d3240]/40 bg-[#0b0d13]/40 hover:border-[#2d3240] hover:bg-[#0b0d13] transition-all duration-150 card-shadow"
     >
       <div className="w-8 h-8 rounded-md bg-[#131721] flex items-center justify-center text-[#6f7f9a] group-hover:text-[#d4a84b] transition-colors shrink-0">
         {icon}
@@ -325,7 +325,7 @@ function SentinelSummaryCard({
   retired: number;
 }) {
   return (
-    <div className="rounded-lg border border-[#2d3240]/40 bg-[#0b0d13]/60 px-5 py-4">
+    <div className="rounded-lg border border-[#2d3240]/40 bg-[#0b0d13]/60 p-4">
       <div className="flex items-center gap-2 mb-3">
         <IconRadar size={15} stroke={1.5} className="text-[#8b5555]" />
         <span className="text-[10px] font-mono font-semibold text-[#8b5555] uppercase tracking-wider">
@@ -397,7 +397,7 @@ function FindingsSummaryCard({
   const maxSeverity = Math.max(1, ...Object.values(severityCounts));
 
   return (
-    <div className="rounded-lg border border-[#2d3240]/40 bg-[#0b0d13]/60 px-5 py-4">
+    <div className="rounded-lg border border-[#2d3240]/40 bg-[#0b0d13]/60 p-4">
       <div className="flex items-center gap-2 mb-3">
         <IconAlertTriangle size={15} stroke={1.5} className="text-[#d4a84b]" />
         <span className="text-[10px] font-mono font-semibold text-[#d4a84b] uppercase tracking-wider">
@@ -529,7 +529,7 @@ export function HomePage() {
 
   return (
     <div className="h-full w-full flex flex-col bg-[#05060a] overflow-auto page-transition-enter">
-      <div className="max-w-4xl w-full mx-auto px-8 py-8 flex flex-col gap-8">
+      <div className="max-w-4xl w-full mx-auto px-6 py-6 flex flex-col gap-8">
         {/* ================================================================ */}
         {/* Policy Identity + Health Ring                                     */}
         {/* ================================================================ */}
@@ -625,7 +625,7 @@ export function HomePage() {
           <h2 className="font-syne text-[10px] font-semibold text-[#d4a84b] uppercase tracking-wider mb-3">
             Navigate
           </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <NavCard
               icon={<IconRadar size={16} stroke={1.5} />}
               label="Sentinels"

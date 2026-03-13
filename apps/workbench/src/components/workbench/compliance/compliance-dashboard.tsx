@@ -99,7 +99,7 @@ function FrameworkCard({
   return (
     <button
       onClick={onClick}
-      className="flex flex-col items-center gap-4 p-6 rounded-xl border border-[#2d3240]/60 bg-[#0b0d13] hover:border-[#2d3240] hover:bg-[#0d0f17] transition-all duration-150 text-left group guard-card-hover"
+      className="flex flex-col items-center gap-4 p-5 rounded-xl border border-[#2d3240]/60 bg-[#0b0d13] hover:border-[#2d3240] hover:bg-[#0d0f17] transition-all duration-150 text-left group guard-card-hover card-shadow"
     >
       {/* Icon + Name */}
       <div className="flex items-center gap-3 w-full">

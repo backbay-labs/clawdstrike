@@ -505,7 +505,7 @@ export function AuditLog() {
               </tr>
             </thead>
             <tbody>
-              {unifiedEvents.map((event) => {
+              {unifiedEvents.map((event, index) => {
                 const isExpanded = expandedId === event.id;
 
                 return (
@@ -513,6 +513,7 @@ export function AuditLog() {
                     key={event.id}
                     event={event}
                     isExpanded={isExpanded}
+                    index={index}
                     onToggle={() =>
                       setExpandedId(isExpanded ? null : event.id)
                     }
@@ -533,7 +534,7 @@ export function AuditLog() {
               </tr>
             </thead>
             <tbody>
-              {unifiedEvents.map((event) => {
+              {unifiedEvents.map((event, index) => {
                 const isExpanded = expandedId === event.id;
 
                 return (
@@ -541,6 +542,7 @@ export function AuditLog() {
                     key={event.id}
                     event={event}
                     isExpanded={isExpanded}
+                    index={index}
                     onToggle={() =>
                       setExpandedId(isExpanded ? null : event.id)
                     }
@@ -658,10 +660,12 @@ function StatBadge({
 function FleetEventRow({
   event,
   isExpanded,
+  index,
   onToggle,
 }: {
   event: UnifiedAuditEvent;
   isExpanded: boolean;
+  index: number;
   onToggle: () => void;
 }) {
   const decisionColor =
@@ -673,7 +677,10 @@ function FleetEventRow({
         onClick={onToggle}
         className={cn(
           "border-b border-[#2d3240]/30 cursor-pointer transition-colors",
-          isExpanded ? "bg-[#131721]" : "hover:bg-[#0b0d13]",
+          isExpanded
+            ? "bg-[#131721] border-l-2 border-l-[#d4a84b]"
+            : "hover:bg-[#131721] border-l-2 border-l-transparent",
+          !isExpanded && (index % 2 === 0 ? "bg-[#05060a]" : "bg-[#0b0d13]/40"),
         )}
       >
         <td className="px-3 py-2">
@@ -753,10 +760,12 @@ const SOURCE_COLORS: Record<string, string> = {
 function LocalEventRow({
   event,
   isExpanded,
+  index,
   onToggle,
 }: {
   event: UnifiedAuditEvent;
   isExpanded: boolean;
+  index: number;
   onToggle: () => void;
 }) {
   const sourceColor = SOURCE_COLORS[event.source ?? ""] ?? "#6f7f9a";
@@ -768,7 +777,10 @@ function LocalEventRow({
         onClick={onToggle}
         className={cn(
           "border-b border-[#2d3240]/30 cursor-pointer transition-colors",
-          isExpanded ? "bg-[#131721]" : "hover:bg-[#0b0d13]",
+          isExpanded
+            ? "bg-[#131721] border-l-2 border-l-[#d4a84b]"
+            : "hover:bg-[#131721] border-l-2 border-l-transparent",
+          !isExpanded && (index % 2 === 0 ? "bg-[#05060a]" : "bg-[#0b0d13]/40"),
         )}
       >
         <td className="px-3 py-2">

@@ -141,14 +141,11 @@ export function SwarmDetail() {
     <div className="flex h-full w-full flex-col overflow-hidden bg-[#05060a]">
       {/* Header */}
       <div className="shrink-0 border-b border-[#2d3240]/60 px-6 py-4">
+        <button onClick={() => navigate("/swarms")} className="flex items-center gap-1 text-[11px] text-[#6f7f9a] hover:text-[#ece7dc] transition-colors mb-3">
+          <IconArrowLeft size={12} /> Back to Swarms
+        </button>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => navigate("/swarms")}
-              className="text-[#6f7f9a]/50 hover:text-[#ece7dc] transition-colors"
-            >
-              <IconArrowLeft size={16} stroke={1.5} />
-            </button>
             <div
               className="w-8 h-8 rounded-lg flex items-center justify-center"
               style={{ backgroundColor: badge.color + "15" }}

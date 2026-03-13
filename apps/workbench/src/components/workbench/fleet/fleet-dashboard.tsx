@@ -353,7 +353,7 @@ export function FleetDashboard() {
             </tr>
           </thead>
           <tbody>
-            {filteredAgents.map((agent) => {
+            {filteredAgents.map((agent, index) => {
               const status = agentStatus(agent);
               const isExpanded = expandedId === agent.endpoint_agent_id;
 
@@ -363,6 +363,7 @@ export function FleetDashboard() {
                   agent={agent}
                   status={status}
                   isExpanded={isExpanded}
+                  index={index}
                   onToggle={() =>
                     setExpandedId(
                       isExpanded ? null : agent.endpoint_agent_id,
@@ -470,11 +471,13 @@ function AgentRow({
   agent,
   status,
   isExpanded,
+  index,
   onToggle,
 }: {
   agent: AgentInfo;
   status: "online" | "stale" | "offline";
   isExpanded: boolean;
+  index: number;
   onToggle: () => void;
 }) {
   const dotColor = STATUS_DOT_COLORS[status];
@@ -488,8 +491,9 @@ function AgentRow({
         className={cn(
           "border-b border-[#2d3240]/30 cursor-pointer transition-colors",
           isExpanded
-            ? "bg-[#131721]"
-            : "hover:bg-[#0b0d13]",
+            ? "bg-[#131721] border-l-2 border-l-[#d4a84b]"
+            : "hover:bg-[#131721] border-l-2 border-l-transparent",
+          !isExpanded && (index % 2 === 0 ? "bg-[#05060a]" : "bg-[#0b0d13]/40"),
         )}
       >
         <td className="px-3 py-2.5 text-center">

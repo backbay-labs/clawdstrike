@@ -516,7 +516,7 @@ function FindingRow({
         "flex items-center gap-0 px-5 py-2.5 border-b border-[#2d3240]/20 cursor-pointer transition-colors group",
         isSelected
           ? "bg-[#131721] border-l-2 border-l-[#d4a84b]"
-          : "hover:bg-[#0b0d13] border-l-2 border-l-transparent",
+          : "hover:bg-[#131721] border-l-2 border-l-transparent",
       )}
     >
       {/* Batch checkbox */}

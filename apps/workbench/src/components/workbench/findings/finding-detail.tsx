@@ -1,8 +1,10 @@
 import { useState, useMemo, useCallback } from "react";
+import { useNavigate, Link } from "react-router-dom";
 import {
   IconCheck,
   IconBan,
   IconArrowUpRight,
+  IconArrowLeft,
   IconX,
   IconChevronDown,
   IconChevronRight,
@@ -146,6 +148,8 @@ export function FindingDetail({
   onRunEnrichment,
   onBack,
 }: FindingDetailProps) {
+  const navigate = useNavigate();
+  const handleBack = onBack ?? (() => navigate(-1));
   const [annotationText, setAnnotationText] = useState("");
   const [expandedEntryId, setExpandedEntryId] = useState<string | null>(null);
 
@@ -173,16 +177,12 @@ export function FindingDetail({
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
         {/* Header */}
         <div className="shrink-0 border-b border-[#2d3240]/60 px-6 py-4">
-          {/* Back + Title row */}
+          {/* Back button */}
+          <button onClick={handleBack} className="flex items-center gap-1 text-[11px] text-[#6f7f9a] hover:text-[#ece7dc] transition-colors mb-3">
+            <IconArrowLeft size={12} /> Back
+          </button>
+          {/* Title row */}
           <div className="flex items-start gap-3">
-            {onBack && (
-              <button
-                onClick={onBack}
-                className="mt-0.5 text-[#6f7f9a] hover:text-[#ece7dc] transition-colors shrink-0"
-              >
-                <IconChevronRight size={14} className="rotate-180" stroke={1.5} />
-              </button>
-            )}
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2.5 flex-wrap">
                 <h1 className="font-syne text-sm font-semibold text-[#ece7dc] tracking-[-0.01em]">
@@ -237,8 +237,11 @@ export function FindingDetail({
 
               {/* Meta line: sentinel, signal count, time range */}
               <div className="mt-1.5 flex items-center gap-3 text-[10px] text-[#6f7f9a]">
-                <span>
+                <span className="inline-flex items-center gap-1.5">
                   Sentinel: <span className="text-[#ece7dc]/60">{finding.createdBy}</span>
+                  <Link to={`/sentinels/${finding.createdBy}`} className="text-[#d4a84b] hover:underline text-[11px]">
+                    View Sentinel &rarr;
+                  </Link>
                 </span>
                 <span className="text-[#2d3240]">|</span>
                 <span>

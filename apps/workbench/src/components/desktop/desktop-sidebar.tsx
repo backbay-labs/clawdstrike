@@ -454,7 +454,7 @@ export function DesktopSidebar() {
     <aside
       aria-label="Main navigation"
       className={cn(
-        "flex flex-col bg-[#0b0d13] border-r border-[#2d324060] shrink-0 h-full",
+        "relative flex flex-col bg-[#0b0d13] border-r border-[#2d324060] shrink-0 h-full noise-overlay",
         "transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]",
         collapsed ? "w-[52px]" : "w-[200px]",
       )}

@@ -818,13 +818,10 @@ export function SentinelDetail({
     <div className="flex h-full w-full flex-col overflow-hidden bg-[#05060a]">
       {/* Header */}
       <div className="shrink-0 border-b border-[#2d3240]/60 px-6 py-4">
+        <button onClick={() => navigate("/sentinels")} className="flex items-center gap-1 text-[11px] text-[#6f7f9a] hover:text-[#ece7dc] transition-colors mb-3">
+          <IconArrowLeft size={12} /> Back to Sentinels
+        </button>
         <div className="flex items-center gap-4">
-          <button
-            onClick={() => navigate("/sentinels")}
-            className="text-[#6f7f9a]/50 hover:text-[#ece7dc] transition-colors shrink-0"
-          >
-            <IconArrowLeft size={16} stroke={1.5} />
-          </button>
 
           <SigilAvatar
             sigil={sentinel.identity.sigil}

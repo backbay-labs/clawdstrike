@@ -176,7 +176,7 @@ function GuardGridCard({
     <button
       onClick={onSelect}
       className={cn(
-        "relative text-left rounded-xl border p-4 transition-all duration-150 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]",
+        "relative text-left rounded-xl border p-4 transition-all duration-150 group card-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]",
         "hover:shadow-[0_0_16px_rgba(212,168,75,0.06)]",
         isSelected
           ? "bg-[#131721] border-[#d4a84b]/40 shadow-[0_0_16px_rgba(212,168,75,0.08)]"
@@ -392,9 +392,9 @@ function GuardDetailPanel({
               <IconSettings size={12} stroke={1.5} className="text-[#d4a84b]" />
               Configuration Schema
             </h3>
-            <div className="rounded-lg border border-[#2d3240]/60 bg-[#131721]/30 divide-y divide-[#2d3240]/30">
+            <div className="rounded-lg border border-[#2d3240]/60 bg-[#131721]/30 space-y-3 p-3">
               {nonEnabledFields.map((field) => (
-                <div key={field.key} className="px-3 py-2.5 flex items-start gap-3">
+                <div key={field.key} className="flex items-start gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-[11.5px] font-medium text-[#ece7dc]">
@@ -638,7 +638,7 @@ export function GuardsPage({ onNavigateToEditor: onNavigateToEditorProp }: Guard
   return (
     <div className="flex flex-col h-full bg-[#05060a]">
       {/* Header bar */}
-      <div className="shrink-0 border-b border-[#2d3240]/60 bg-[#0b0d13]/50">
+      <div className="relative shrink-0 border-b border-[#2d3240]/60 bg-[#0b0d13]/50 noise-overlay">
         <div className="flex items-center justify-between gap-4 px-6 py-4">
           {/* Left: title */}
           <div className="shrink-0">
@@ -759,7 +759,7 @@ export function GuardsPage({ onNavigateToEditor: onNavigateToEditorProp }: Guard
             <div className="space-y-6">
               {/* Grid / List */}
               {viewMode === "grid" ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                   {filteredGuards.map((guard) => (
                     <GuardGridCard
                       key={guard.id}

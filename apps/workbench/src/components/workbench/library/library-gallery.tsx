@@ -217,7 +217,7 @@ export function LibraryGallery() {
   return (
     <div className="p-6 max-w-6xl mx-auto">
       {/* Header + Import/Export */}
-      <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
+      <div className="flex items-start justify-between gap-4 mb-8 flex-wrap">
         <div>
           <h1 className="font-syne font-bold text-xl text-[#ece7dc] mb-1">
             Policy Library
@@ -230,7 +230,7 @@ export function LibraryGallery() {
       </div>
 
       {/* Tab switcher */}
-      <div className="mb-6">
+      <div className="mb-8">
         <SubTabBar
           tabs={[
             { id: "my-policies", label: "My Policies", icon: IconBooks },
@@ -248,7 +248,7 @@ export function LibraryGallery() {
         <>
           {/* Recent files (desktop only) */}
           {desktop && recentFiles.length > 0 && (
-            <section className="mb-10">
+            <section className="mb-8">
               <h2 className="font-syne font-bold text-sm text-[#ece7dc] mb-4 flex items-center gap-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-[#3dbf84]" />
                 Recent Files
@@ -283,7 +283,7 @@ export function LibraryGallery() {
           )}
 
           {/* Built-in rulesets */}
-          <section className="mb-10">
+          <section className="mb-8">
             <h2 className="font-syne font-bold text-sm text-[#ece7dc] mb-4 flex items-center gap-2">
               <span className="w-1.5 h-1.5 rounded-full bg-[#d4a84b]" />
               Built-in Rulesets
@@ -353,7 +353,7 @@ export function LibraryGallery() {
           </section>
 
           {/* AI Integrations */}
-          <section className="mt-10">
+          <section className="mt-8">
             <h2 className="font-syne font-bold text-sm text-[#ece7dc] mb-4 flex items-center gap-2">
               <span className="w-1.5 h-1.5 rounded-full bg-[#8b5cf6]" />
               AI Integrations

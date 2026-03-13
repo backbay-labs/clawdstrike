@@ -5,6 +5,7 @@ import { Titlebar } from "@/components/desktop/titlebar";
 import { StatusBar } from "@/components/desktop/status-bar";
 import { DesktopSidebar } from "@/components/desktop/desktop-sidebar";
 import { ShortcutProvider } from "@/components/desktop/shortcut-provider";
+import { CommandPalette } from "@/components/desktop/command-palette";
 import { CrashRecoveryBanner } from "@/components/desktop/crash-recovery-banner";
 import { useMultiPolicy } from "@/lib/workbench/multi-policy-store";
 import { useAutoSave } from "@/lib/workbench/use-auto-save";
@@ -31,6 +32,7 @@ export function DesktopLayout() {
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#05060a]">
       {/* Global keyboard shortcuts */}
       <ShortcutProvider />
+      <CommandPalette />
 
       {/* Top: custom titlebar */}
       <Titlebar />
