@@ -273,6 +273,35 @@ jobs:
         working-directory: apps/desktop
         run: bun run build
 
+  workbench-frontend:
+    name: Workbench Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: apps/workbench/package-lock.json
+
+      - name: Install dependencies
+        working-directory: apps/workbench
+        run: npm ci
+
+      - name: Type check
+        working-directory: apps/workbench
+        run: npm run typecheck
+
+      - name: Unit tests
+        working-directory: apps/workbench
+        run: npm test -- --run
+
+      - name: Build
+        working-directory: apps/workbench
+        run: npm run build
+
   control-console:
     name: Control Console
     runs-on: ubuntu-latest
@@ -454,6 +483,7 @@ jobs:
 
           cargo audit --deny warnings "${audit_ignores[@]}"
           cargo audit --deny warnings --file apps/desktop/src-tauri/Cargo.lock "${audit_ignores[@]}"
+          cargo audit --deny warnings --file apps/workbench/src-tauri/Cargo.lock "${audit_ignores[@]}"
 
   license-check:
     name: License Check
@@ -508,9 +538,19 @@ jobs:
       - name: Generate desktop Tauri coverage report
         run: cargo llvm-cov --manifest-path apps/desktop/src-tauri/Cargo.toml --lcov --output-path lcov.desktop.info
 
+      - name: Generate workbench Tauri coverage report
+        run: cargo llvm-cov --manifest-path apps/workbench/src-tauri/Cargo.toml --lcov --output-path lcov.workbench.info
+
       - name: Combine coverage reports
         run: |
-          cat lcov.workspace.info lcov.desktop.info > lcov.info
+          {
+            cat lcov.workspace.info
+            printf '\n'
+            cat lcov.desktop.info
+            printf '\n'
+            cat lcov.workbench.info
+            printf '\n'
+          } > lcov.info
 
       - name: Enforce changed-file Rust coverage floor
         env:
@@ -538,17 +578,19 @@ jobs:
             exit 0
           fi
 
-          # This job merges coverage from the root Rust workspace and the
-          # desktop Tauri crate. Keep generating desktop LCOV, but exclude the
-          # long-lived Tauri surface from the changed-line floor until it has a
+          # This job merges coverage from the root Rust workspace plus the
+          # desktop and workbench Tauri crates. Keep excluding the long-lived
+          # desktop Tauri surface from the changed-line floor until it has a
           # dedicated changed-line gate instead of inheriting legacy branch
           # churn. Also exclude standalone crates still outside the combined
           # coverage set and test-only Rust sources that do not emit stable
           # LCOV entries in this job.
           grep -v '^apps/agent/src-tauri/' changed_rust_files.txt \
             | grep -v '^apps/desktop/src-tauri/' \
+            | grep -v '^apps/workbench/src-tauri/' \
             | grep -v '^crates/bridges/hush-go-native/' \
             | grep -v '^packages/sdk/hush-py/hush-native/' \
+            | grep -Ev '(^|/)build\.rs$' \
             | grep -Ev '(^|/)tests/|_test\.rs$|_tests\.rs$|integration_tests\.rs$' \
             | grep -Ev '^crates/libs/hunt-(correlate|query|scan)/src/(lib|error)\.rs$' \
             | grep -Ev '^crates/libs/(hush-core|clawdstrike)/src/lib\.rs$' \

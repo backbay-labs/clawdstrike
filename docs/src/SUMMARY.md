@@ -113,6 +113,7 @@
   - [Rust](reference/api/rust.md)
   - [TypeScript](reference/api/typescript.md)
   - [Python](reference/api/python.md)
+  - [Go](reference/api/go.md)
   - [CLI](reference/api/cli.md)
 - [Benchmarks](reference/benchmarks.md)
 

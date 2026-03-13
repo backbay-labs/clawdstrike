@@ -2,6 +2,7 @@
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -106,6 +107,13 @@ class TestNativeAvailabilityFlag:
         """CLAWDSTRIKE_DISABLE_NATIVE=1 should force pure-Python fallback."""
         env = os.environ.copy()
         env["CLAWDSTRIKE_DISABLE_NATIVE"] = "1"
+        src_dir = Path(__file__).resolve().parents[1] / "src"
+        pythonpath = env.get("PYTHONPATH")
+        env["PYTHONPATH"] = (
+            os.pathsep.join((str(src_dir), pythonpath))
+            if pythonpath
+            else str(src_dir)
+        )
         proc = subprocess.run(
             [
                 sys.executable,

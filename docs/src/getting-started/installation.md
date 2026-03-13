@@ -70,6 +70,37 @@ decision = cs.check_file("/etc/shadow")
 print(decision.denied)  # True
 ```
 
+Origin-aware policies work on the native Python backend and through `hushd`. The pure-Python
+fallback rejects origin-aware usage fail-closed.
+
+## Go SDK
+
+```bash
+go get github.com/backbay-labs/clawdstrike-go
+```
+
+```go
+package main
+
+import (
+	"fmt"
+
+	clawdstrike "github.com/backbay-labs/clawdstrike-go"
+)
+
+func main() {
+	cs, err := clawdstrike.WithDefaults("strict")
+	if err != nil {
+		panic(err)
+	}
+
+	decision := cs.CheckFileAccess("/etc/shadow")
+	fmt.Println(decision.Status, decision.Message)
+}
+```
+
+For origin-aware policies in Go, use `clawdstrike.FromDaemon(...)` against `hushd`.
+
 ## Requirements
 
 - Rust `1.93+` (workspace `rust-version`)

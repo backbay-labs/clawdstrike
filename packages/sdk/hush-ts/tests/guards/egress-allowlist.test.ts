@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { EgressAllowlistGuard, EgressAllowlistConfig } from "../../src/guards/egress-allowlist";
-import { GuardAction, GuardContext } from "../../src/guards/types";
+import { GuardAction, GuardContext, Severity } from "../../src/guards/types";
 
 describe("EgressAllowlistGuard", () => {
   it("has correct name", () => {
@@ -91,6 +91,18 @@ describe("EgressAllowlistGuard", () => {
     const guard = new EgressAllowlistGuard(config);
 
     expect(guard.check(GuardAction.networkEgress("any.host.com", 443), new GuardContext()).allowed).toBe(true);
+  });
+
+  it("treats defaultAction=log as a warning while allowing the request", () => {
+    const guard = new EgressAllowlistGuard({ defaultAction: "log" });
+    const result = guard.check(
+      GuardAction.networkEgress("any.host.com", 443),
+      new GuardContext(),
+    );
+
+    expect(result.allowed).toBe(true);
+    expect(result.severity).toBe(Severity.WARNING);
+    expect(result.details?.defaultAction).toBe("log");
   });
 
   it("includes details on block", () => {

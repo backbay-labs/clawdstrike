@@ -1,6 +1,7 @@
 package guards
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -181,6 +182,172 @@ func TestEgressAllowAll(t *testing.T) {
 	result := g.Check(NetworkEgress("anything.example.com", 443), ctx)
 	if !result.Allowed {
 		t.Error("expected * wildcard to allow all domains")
+	}
+}
+
+func TestOriginContextMarshalUsesCanonicalSnakeCase(t *testing.T) {
+	origin := NewOriginContext(OriginProviderGitHub).
+		WithTenantID("tenant-1").
+		WithSpaceID("repo-1").
+		WithSpaceType(SpaceTypeIssue).
+		WithThreadID("thread-7").
+		WithActorID("user-9").
+		WithActorType(ActorTypeHuman).
+		WithActorRole("maintainer").
+		WithVisibility(VisibilityInternal).
+		WithExternalParticipants(false).
+		WithTags("prod", "security").
+		WithSensitivity("restricted").
+		WithProvenanceConfidence(ProvenanceConfidenceStrong).
+		WithMetadata(map[string]interface{}{"source": "webhook"})
+
+	raw, err := json.Marshal(origin)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("Unmarshal canonical JSON: %v", err)
+	}
+
+	if _, ok := decoded["tenant_id"]; !ok {
+		t.Fatal("expected tenant_id in canonical JSON")
+	}
+	if _, ok := decoded["tenantId"]; ok {
+		t.Fatal("did not expect tenantId alias in canonical JSON")
+	}
+	if got := decoded["actor_role"]; got != "maintainer" {
+		t.Fatalf("expected actor_role maintainer, got %#v", got)
+	}
+	if got := decoded["external_participants"]; got != false {
+		t.Fatalf("expected external_participants false, got %#v", got)
+	}
+}
+
+func TestOriginContextUnmarshalAcceptsCamelCaseAliases(t *testing.T) {
+	raw := []byte(`{
+		"provider": "slack",
+		"tenantId": "T123",
+		"spaceId": "C999",
+		"spaceType": "channel",
+		"threadId": "thread-1",
+		"actorId": "U123",
+		"actorType": "human",
+		"actorRole": "owner",
+		"visibility": "internal",
+		"externalParticipants": true,
+		"tags": ["prod", "security"],
+		"sensitivity": "restricted",
+		"provenanceConfidence": "medium",
+		"metadata": {"source": "slash-command"}
+	}`)
+
+	var origin OriginContext
+	if err := json.Unmarshal(raw, &origin); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+
+	if origin.Provider != OriginProviderSlack {
+		t.Fatalf("expected provider slack, got %q", origin.Provider)
+	}
+	if origin.TenantID != "T123" || origin.SpaceID != "C999" || origin.ThreadID != "thread-1" {
+		t.Fatalf("unexpected context IDs: %#v", origin)
+	}
+	if origin.ActorRole != "owner" {
+		t.Fatalf("expected actor_role owner, got %q", origin.ActorRole)
+	}
+	if origin.ExternalParticipants == nil || !*origin.ExternalParticipants {
+		t.Fatalf("expected external_participants true, got %#v", origin.ExternalParticipants)
+	}
+	if origin.ProvenanceConfidence != ProvenanceConfidenceMedium {
+		t.Fatalf("expected provenance medium, got %q", origin.ProvenanceConfidence)
+	}
+	if origin.Metadata["source"] != "slash-command" {
+		t.Fatalf("expected metadata source, got %#v", origin.Metadata)
+	}
+}
+
+func TestOriginContextUnmarshalRejectsUnknownFields(t *testing.T) {
+	raw := []byte(`{"provider":"github","mystery":"value"}`)
+	var origin OriginContext
+	err := json.Unmarshal(raw, &origin)
+	if err == nil {
+		t.Fatal("expected unknown origin field to be rejected")
+	}
+	if !strings.Contains(err.Error(), "unknown origin field") {
+		t.Fatalf("expected unknown field error, got %v", err)
+	}
+}
+
+func TestOriginContextUnmarshalRequiresProvider(t *testing.T) {
+	raw := []byte(`{"tenantId":"T123"}`)
+	var origin OriginContext
+	err := json.Unmarshal(raw, &origin)
+	if err == nil {
+		t.Fatal("expected missing provider to be rejected")
+	}
+	if !strings.Contains(err.Error(), "origin provider is required") {
+		t.Fatalf("expected missing provider error, got %v", err)
+	}
+}
+
+func TestGuardContextWithOrigin(t *testing.T) {
+	origin := NewOriginContext(OriginProviderGitHub).WithActorRole("reviewer")
+	ctx := NewContext().WithOrigin(origin)
+
+	if ctx.Origin == nil {
+		t.Fatal("expected origin to be stored on GuardContext")
+	}
+	if ctx.Origin.ActorRole != "reviewer" {
+		t.Fatalf("expected actor_role reviewer, got %q", ctx.Origin.ActorRole)
+	}
+}
+
+func TestOutputSendHelperUsesCanonicalPayload(t *testing.T) {
+	action := NewOutputSendPayload("ship it").
+		WithTarget("slack://incident-room").
+		WithMimeType("text/plain").
+		WithMetadata(map[string]interface{}{"thread_id": "T-1"}).
+		GuardAction()
+
+	if action.Type != "custom" || action.CustomType != "origin.output_send" {
+		t.Fatalf("expected origin.output_send custom action, got %#v", action)
+	}
+	payload, ok := action.CustomData.(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected custom payload map, got %#v", action.CustomData)
+	}
+	if payload["text"] != "ship it" {
+		t.Fatalf("expected text payload, got %#v", payload["text"])
+	}
+	if payload["mime_type"] != "text/plain" {
+		t.Fatalf("expected mime_type payload, got %#v", payload["mime_type"])
+	}
+	if payload["target"] != "slack://incident-room" {
+		t.Fatalf("expected target payload, got %#v", payload["target"])
+	}
+}
+
+func TestOriginContextCloneDeepCopiesNestedMetadata(t *testing.T) {
+	origin := NewOriginContext(OriginProviderSlack).WithMetadata(map[string]interface{}{
+		"nested": map[string]interface{}{"channel": "C1"},
+		"tags":   []string{"sev1"},
+	})
+
+	cloned := origin.Clone()
+	nested := origin.Metadata["nested"].(map[string]interface{})
+	nested["channel"] = "mutated"
+	tags := origin.Metadata["tags"].([]string)
+	tags[0] = "mutated"
+
+	clonedNested := cloned.Metadata["nested"].(map[string]interface{})
+	if clonedNested["channel"] != "C1" {
+		t.Fatalf("expected cloned nested metadata to stay isolated, got %#v", clonedNested["channel"])
+	}
+	clonedTags := cloned.Metadata["tags"].([]string)
+	if clonedTags[0] != "sev1" {
+		t.Fatalf("expected cloned tag slice to stay isolated, got %#v", clonedTags[0])
 	}
 }
 

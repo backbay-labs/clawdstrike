@@ -4,6 +4,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/backbay-labs/clawdstrike-go/guards"
 	"github.com/backbay-labs/clawdstrike-go/internal"
 )
 
@@ -11,6 +12,7 @@ import (
 type SecurityContext struct {
 	ID             string
 	SessionID      string
+	origin         *guards.OriginContext
 	CheckCount     atomic.Int64
 	ViolationCount atomic.Int64
 
@@ -42,4 +44,17 @@ func (sc *SecurityContext) GetBlockedTools() []string {
 	result := make([]string, len(sc.blockedTools))
 	copy(result, sc.blockedTools)
 	return result
+}
+
+func (sc *SecurityContext) WithOrigin(origin *guards.OriginContext) *SecurityContext {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	sc.origin = origin.Clone()
+	return sc
+}
+
+func (sc *SecurityContext) Origin() *guards.OriginContext {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	return sc.origin.Clone()
 }

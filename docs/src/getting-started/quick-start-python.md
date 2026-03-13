@@ -4,8 +4,7 @@ The Python SDK (`clawdstrike`) provides:
 
 - a `Clawdstrike` facade with built-in rulesets and typed check methods
 - a `Decision` return type with `.allowed`, `.denied`, `.status`, `.guard`, `.message`
-- 9 pure-Python guards (ForbiddenPath, PathAllowlist, EgressAllowlist, SecretLeak, PatchIntegrity, ShellCommand, McpTool, PromptInjection, Jailbreak)
-- bundled native Rust engine on supported platforms (with pure-Python fallback elsewhere) with all 12 guards
+- a pure-Python fallback plus a bundled native Rust engine on supported platforms
 - crypto + receipts (signing/verification)
 - stateful sessions for tracking checks
 
@@ -58,7 +57,29 @@ summary = session.get_summary()
 print(f"Checks: {summary.check_count}, Denied: {summary.deny_count}")
 ```
 
+## Origin-aware checks
+
+If your policy uses `policy.origins`, use either:
+
+- the bundled native backend on a supported platform, or
+- `Clawdstrike.from_daemon(...)` against `hushd`
+
+The pure-Python backend rejects origin-aware usage fail-closed.
+
+```python
+from clawdstrike import Clawdstrike
+
+cs = Clawdstrike.from_daemon("https://hushd.example.com", api_key="dev-token")
+
+decision = cs.check_mcp_tool(
+    "read_file",
+    {"path": "/srv/runbook.md"},
+    origin={"provider": "slack", "space_id": "C456"},
+)
+```
+
 ## Next steps
 
 - [Policy Schema](../reference/policy-schema.md)
 - [API Reference (Python)](../reference/api/python.md)
+- [Origin Enclaves](../guides/origin-enclaves.md)

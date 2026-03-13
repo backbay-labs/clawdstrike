@@ -42,6 +42,7 @@ exclude = [
     "examples/delegated-pipeline",
     "apps/desktop/src-tauri",
     "apps/agent/src-tauri",
+    "apps/workbench/src-tauri",
 ]
 
 [workspace.package]

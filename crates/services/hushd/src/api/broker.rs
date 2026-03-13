@@ -1258,7 +1258,7 @@ pub async fn issue_capability(
             host: host.to_string(),
             port,
             method: request.method.clone(),
-            exact_paths: provider_policy.exact_paths.clone(),
+            exact_paths: vec![path.to_string()],
         },
         request_constraints: BrokerRequestConstraints {
             allowed_headers: provider_policy.allowed_headers.clone(),

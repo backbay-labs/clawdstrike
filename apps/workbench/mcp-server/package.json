@@ -1,0 +1,21 @@
+{
+  "name": "@clawdstrike/workbench-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for the ClawdStrike Policy Workbench",
+  "type": "module",
+  "scripts": {
+    "start": "bun run index.ts",
+    "start:node": "tsx index.ts"
+  },
+  "comment:dependencies": "This server imports from ../src/lib/workbench/ via relative paths. Transitive runtime dependencies (e.g., yaml) are resolved from the parent apps/workbench/package.json workspace. Only MCP-server-specific deps need to be listed here.",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "tsx": "^4.20.6",
+    "yaml": "^2.7.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.7.0"
+  }
+}

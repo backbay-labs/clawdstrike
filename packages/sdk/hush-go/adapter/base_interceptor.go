@@ -66,7 +66,17 @@ func (b *BaseToolInterceptor) BeforeExecute(ctx context.Context, toolName string
 	if b.secCtx != nil && b.secCtx.SessionID != "" {
 		guardCtx = guardCtx.WithSessionID(b.secCtx.SessionID)
 	}
-	result := b.engine.CheckAction(action, guardCtx)
+	if b.secCtx != nil {
+		if origin := b.secCtx.Origin(); origin != nil {
+			guardCtx = guardCtx.WithOrigin(origin)
+		}
+	}
+	var result guards.GuardResult
+	if guards.IsOriginAwareRequest(action, guardCtx) && !guards.SupportsOriginRuntime(b.engine) {
+		result = guards.Block("origin", guards.Critical, guards.LocalOriginUnsupportedMessage)
+	} else {
+		result = b.engine.CheckAction(action, guardCtx)
+	}
 
 	d := guards.DecisionFromResult(result)
 	decision := &d

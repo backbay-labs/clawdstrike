@@ -1,6 +1,28 @@
 // Package policy implements Clawdstrike policy loading, validation, and resolution.
 package policy
 
+// OriginsConfig is the public schema entry point for origin-aware policies.
+// The local Go engine does not enforce these policies yet; the policy loader
+// keeps the typed shape so it can reject origin-aware usage explicitly.
+type OriginsConfig struct {
+	DefaultBehavior string                `yaml:"default_behavior,omitempty" json:"default_behavior,omitempty"`
+	MinimalProfile  string                `yaml:"minimal_profile,omitempty" json:"minimal_profile,omitempty"`
+	Profiles        []OriginProfileConfig `yaml:"profiles,omitempty" json:"profiles,omitempty"`
+}
+
+// OriginProfileConfig is a minimal public schema holder for origin profiles.
+// Nested sections remain loose until local Go origin enforcement exists.
+type OriginProfileConfig struct {
+	ID          string                 `yaml:"id,omitempty" json:"id,omitempty"`
+	Description string                 `yaml:"description,omitempty" json:"description,omitempty"`
+	Match       map[string]interface{} `yaml:"match,omitempty" json:"match,omitempty"`
+	Bridge      map[string]interface{} `yaml:"bridge,omitempty" json:"bridge,omitempty"`
+	Egress      map[string]interface{} `yaml:"egress,omitempty" json:"egress,omitempty"`
+	Data        map[string]interface{} `yaml:"data,omitempty" json:"data,omitempty"`
+	Budgets     map[string]interface{} `yaml:"budgets,omitempty" json:"budgets,omitempty"`
+	Posture     map[string]interface{} `yaml:"posture,omitempty" json:"posture,omitempty"`
+}
+
 // PatternEntryConfig is a policy-level pattern entry for inline pattern databases.
 type PatternEntryConfig struct {
 	ID        string    `yaml:"id" json:"id"`

@@ -8,7 +8,8 @@ Rust is the reference implementation for Clawdstrike policy evaluation. Other la
 |----------|------------|----------------------|
 | **Rust** | `clawdstrike`, `hush-core`, `hush-cli`, `clawdstriked` | Full policy engine + guards + prompt-security |
 | **TypeScript** | `@clawdstrike/sdk` | Crypto + receipts + guards + prompt-security utilities (no policy engine) |
-| **Python** | `clawdstrike` | Facade API + 9 guards + receipts/crypto; bundled native Rust engine on supported platforms with all 12 guards |
+| **Python** | `clawdstrike` | Facade API + pure-Python fallback + bundled native Rust backend; native and daemon backends support origin-aware enforcement |
+| **Go** | `clawdstrike-go` | Facade API + local Rust-backed checks + hushd transport; origin-aware enforcement currently routes through hushd |
 | **WebAssembly** | `@clawdstrike/wasm` | Crypto + receipt verification |
 
 ## TypeScript
@@ -37,7 +38,7 @@ console.log(r.riskScore, r.signals.map(s => s.id));
 
 ## Python
 
-Python provides a `Clawdstrike` facade with built-in rulesets, typed check methods, and a `Decision` return type. On supported platforms, evaluation runs in Rust with all 12 guards via the bundled native extension.
+Python provides a `Clawdstrike` facade with built-in rulesets, typed check methods, and a `Decision` return type. On supported platforms, evaluation runs in Rust via the bundled native extension.
 
 ```python
 from clawdstrike import Clawdstrike
@@ -47,6 +48,41 @@ decision = cs.check_file("/home/user/.ssh/id_rsa")
 print(decision.denied)   # True
 print(decision.message)  # "Access to forbidden path: ..."
 ```
+
+For origin-aware policies, Python supports:
+
+- native backend: full `origin` and `origin.output_send`
+- `hushd`: full `origin` and `origin.output_send`
+- pure-Python backend: fail-closed rejection for origin-aware usage
+
+## Go
+
+Go provides a `Clawdstrike` facade plus typed `guards` helpers and session support:
+
+```go
+package main
+
+import (
+	"fmt"
+
+	clawdstrike "github.com/backbay-labs/clawdstrike-go"
+)
+
+func main() {
+	cs, err := clawdstrike.WithDefaults("strict")
+	if err != nil {
+		panic(err)
+	}
+
+	decision := cs.CheckFileAccess("/etc/shadow")
+	fmt.Println(decision.Status, decision.Message)
+}
+```
+
+For origin-aware policies, Go currently supports:
+
+- `hushd`: full `origin` and `origin.output_send`
+- local Go engine: fail-closed rejection for origin-aware usage until local-engine parity exists
 
 ## WebAssembly
 
@@ -70,3 +106,7 @@ This repo also ships integration packages:
 
 - **Receipts + crypto** are designed to be compatible across Rust/TS/Python/WASM.
 - **Policy evaluation** is authoritative in Rust (`clawdstrike` / `clawdstriked`). The non-Rust SDKs do not currently guarantee full policy-schema parity.
+- **Origin-aware enforcement** is backend-specific outside Rust:
+  - TypeScript uses Rust bridges / `hushd`
+  - Python uses the native backend or `hushd`
+  - Go uses `hushd`

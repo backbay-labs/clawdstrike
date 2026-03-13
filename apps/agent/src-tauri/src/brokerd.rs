@@ -68,7 +68,7 @@ impl BrokerdManager {
         self.shutdown_requested.store(false, Ordering::SeqCst);
 
         if self.is_healthy().await {
-            self.ensure_monitor_loop();
+            self.ensure_monitor_loop().await;
             return Ok(());
         }
 
@@ -77,11 +77,13 @@ impl BrokerdManager {
         }
 
         self.spawn_with_fresh_trust().await?;
-        self.ensure_monitor_loop();
+        self.ensure_monitor_loop().await;
         Ok(())
     }
 
     pub async fn stop(&self) -> Result<()> {
+        let _guard = self.lifecycle_lock.lock().await;
+
         self.shutdown_requested.store(true, Ordering::SeqCst);
 
         if let Some(task) = self.monitor_task.lock().await.take() {
@@ -105,47 +107,14 @@ impl BrokerdManager {
     }
 
     async fn spawn_with_fresh_trust(&self) -> Result<()> {
-        let hushd_public_key = self.fetch_hushd_public_key().await?;
+        let hushd_public_key = fetch_hushd_public_key(&self.http_client, &self.config).await?;
         let mut child = spawn_brokerd_process(&self.config, &hushd_public_key).await?;
         attach_child_logs(&mut child);
         *self.child.write().await = Some(child);
         wait_until_ready(&self.http_client, &self.config).await
     }
 
-    async fn fetch_hushd_public_key(&self) -> Result<String> {
-        let mut request = self.http_client.get(format!(
-            "{}/api/v1/broker/public-key",
-            self.config.hushd_base_url.trim_end_matches('/')
-        ));
-        if let Some(token) = &self.config.hushd_token {
-            request = request.bearer_auth(token);
-        }
-
-        let response = request
-            .send()
-            .await
-            .with_context(|| "Failed to fetch hushd broker signing public key")?;
-        if !response.status().is_success() {
-            anyhow::bail!(
-                "hushd broker public-key endpoint returned {}",
-                response.status()
-            );
-        }
-        let payload: serde_json::Value = response
-            .json()
-            .await
-            .with_context(|| "Failed to parse hushd broker public key response")?;
-        let public_key = payload
-            .get("public_key")
-            .and_then(serde_json::Value::as_str)
-            .filter(|value| !value.trim().is_empty())
-            .ok_or_else(|| {
-                anyhow::anyhow!("hushd broker public key response was missing public_key")
-            })?;
-        Ok(public_key.to_string())
-    }
-
-    fn ensure_monitor_loop(&self) {
+    async fn ensure_monitor_loop(&self) {
         if self
             .monitor_started
             .swap(true, std::sync::atomic::Ordering::SeqCst)
@@ -228,9 +197,7 @@ impl BrokerdManager {
             *monitor_task_for_loop.lock().await = None;
         });
 
-        tauri::async_runtime::spawn(async move {
-            *monitor_task.lock().await = Some(task);
-        });
+        *monitor_task.lock().await = Some(task);
     }
 }
 

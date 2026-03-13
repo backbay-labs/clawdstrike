@@ -152,6 +152,8 @@ The Control API enables the core adaptive workers by default. Make these setting
 | Environment variable | Default | Notes |
 |----------------------|---------|-------|
 | `NATS_PROVISIONING_MODE` | `external` | Control API starts without a provisioner URL, but tenant/agent provisioning calls fail until `NATS_PROVISIONER_BASE_URL` is set. |
+| `JWT_ISSUER` | `clawdstrike-control-api` | Expected `iss` claim for Control API JWT bearer tokens. |
+| `JWT_AUDIENCE` | `clawdstrike-control-api` | Expected `aud` claim for Control API JWT bearer tokens. |
 | `APPROVAL_SIGNING_ENABLED` | `true` | Signed approval responses are enabled by default. |
 | `APPROVAL_SIGNING_KEYPAIR_PATH` | unset | Optional but recommended. If unset or unreadable while signing is enabled, Control API falls back to an ephemeral keypair and logs a warning. |
 | `APPROVAL_CONSUMER_ENABLED` | `true` | Ingests agent approval requests from NATS into the Control API database. |

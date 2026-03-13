@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::Instant;
 
-use jsonwebtoken::{decode, decode_header, jwk::JwkSet, DecodingKey, Validation};
+use jsonwebtoken::{decode, decode_header, jwk::JwkSet, Algorithm, DecodingKey, Validation};
 use serde::{Deserialize, Serialize};
 
 use crate::db::TrustedPublisher;
@@ -16,6 +16,8 @@ const GITLAB_ISSUER: &str = "https://gitlab.com";
 const GITLAB_JWKS_URL: &str = "https://gitlab.com/-/jwks";
 const JWKS_CACHE_DURATION_SECS: u64 = 3600;
 const DEFAULT_OIDC_AUDIENCE: &str = "clawdstrike-registry";
+const GITHUB_ALLOWED_ALGORITHMS: &[Algorithm] = &[Algorithm::RS256];
+const GITLAB_ALLOWED_ALGORITHMS: &[Algorithm] = &[Algorithm::RS256];
 
 // ---------------------------------------------------------------------------
 // Claims
@@ -162,6 +164,14 @@ impl JwksCache {
 // Token validation
 // ---------------------------------------------------------------------------
 
+fn algorithm_allowed_for_provider(provider: &str, algorithm: Algorithm) -> bool {
+    match provider.to_ascii_lowercase().as_str() {
+        "github" => GITHUB_ALLOWED_ALGORITHMS.contains(&algorithm),
+        "gitlab" => GITLAB_ALLOWED_ALGORITHMS.contains(&algorithm),
+        _ => false,
+    }
+}
+
 /// Validate an OIDC token from a CI/CD provider.
 ///
 /// Uses the `provider` hint (`"github"` or `"gitlab"`) to select the correct
@@ -226,6 +236,11 @@ pub async fn validate_oidc_token(
         .map_err(|e| RegistryError::Unauthorized(format!("failed to build decoding key: {e}")))?;
 
     let algorithm = header.alg;
+    if !algorithm_allowed_for_provider(provider, algorithm) {
+        return Err(RegistryError::Unauthorized(format!(
+            "unsupported OIDC signing algorithm '{algorithm:?}' for provider '{provider}'"
+        )));
+    }
     let mut validation = Validation::new(algorithm);
     validation.set_issuer(&[issuer]);
     let allowed_audiences = configured_allowed_audiences(provider);
@@ -641,5 +656,25 @@ mod tests {
 
         assert!(super::validate_token_audience(None, &allowed).is_err());
         assert!(super::validate_token_audience(Some(&disallowed), &allowed).is_err());
+    }
+
+    #[test]
+    fn provider_algorithm_allowlist_is_enforced() {
+        assert!(super::algorithm_allowed_for_provider(
+            "github",
+            Algorithm::RS256
+        ));
+        assert!(super::algorithm_allowed_for_provider(
+            "gitlab",
+            Algorithm::RS256
+        ));
+        assert!(!super::algorithm_allowed_for_provider(
+            "github",
+            Algorithm::HS256
+        ));
+        assert!(!super::algorithm_allowed_for_provider(
+            "gitlab",
+            Algorithm::ES256
+        ));
     }
 }

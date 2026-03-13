@@ -159,6 +159,7 @@ type GuardContext struct {
 	AgentID   string                 `json:"agent_id,omitempty"`
 	Context   context.Context        `json:"-"`
 	Metadata  map[string]interface{} `json:"metadata,omitempty"`
+	Origin    *OriginContext         `json:"origin,omitempty"`
 }
 
 func NewContext() *GuardContext {
@@ -184,6 +185,11 @@ func (c *GuardContext) WithAgentID(id string) *GuardContext {
 
 func (c *GuardContext) WithContext(ctx context.Context) *GuardContext {
 	c.Context = ctx
+	return c
+}
+
+func (c *GuardContext) WithOrigin(origin *OriginContext) *GuardContext {
+	c.Origin = origin
 	return c
 }
 

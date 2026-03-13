@@ -8,7 +8,13 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from clawdstrike.backend import EngineBackend, NativeEngineBackend, PurePythonBackend
+from clawdstrike.backend import (
+    DaemonEngineBackend,
+    EngineBackend,
+    NativeEngineBackend,
+    PurePythonBackend,
+    _pure_python_origin_guard,
+)
 from clawdstrike.exceptions import ConfigurationError
 from clawdstrike.guards.base import (
     Action,
@@ -22,6 +28,7 @@ from clawdstrike.guards.base import (
     PatchAction,
     ShellCommandAction,
 )
+from clawdstrike.origin import normalize_origin_input
 from clawdstrike.policy import Policy, PolicyEngine
 from clawdstrike.types import Decision, DecisionStatus, SessionOptions, SessionSummary
 
@@ -111,6 +118,23 @@ class Clawdstrike:
         return cls(PurePythonBackend(PolicyEngine(policy)), cwd=cwd)
 
     @classmethod
+    def from_daemon(
+        cls,
+        url: str,
+        *,
+        api_key: str | None = None,
+        timeout: float = 10.0,
+        cwd: str | None = None,
+    ) -> Clawdstrike:
+        """Create a daemon-backed facade that evaluates checks via hushd."""
+
+        try:
+            backend = DaemonEngineBackend(url, api_key=api_key, timeout=timeout)
+        except ValueError as exc:
+            raise ConfigurationError(str(exc)) from exc
+        return cls(backend, cwd=cwd)
+
+    @classmethod
     def configure(
         cls,
         *,
@@ -141,6 +165,8 @@ class Clawdstrike:
         for k in ("session_id", "agent_id", "metadata"):
             if k in kwargs and kwargs[k] is not None:
                 ctx[k] = kwargs[k]
+        if "origin" in kwargs and kwargs["origin"] is not None:
+            ctx["origin"] = normalize_origin_input(kwargs["origin"]).to_dict()
         return ctx
 
     def _decide_from_report(self, report: dict) -> Decision:
@@ -161,7 +187,7 @@ class Clawdstrike:
 
         Args:
             action: The action to check (any typed Action variant)
-            **context_kwargs: Additional context (session_id, agent_id, metadata)
+            **context_kwargs: Additional context (session_id, agent_id, metadata, origin)
         """
         ctx = self._ctx_dict(**context_kwargs)
         if isinstance(action, FileAccessAction):
@@ -184,6 +210,7 @@ class Clawdstrike:
             # Unknown action type — fall through to engine directly if possible
             gc = self._context(**context_kwargs)
             if isinstance(self._backend, PurePythonBackend):
+                _pure_python_origin_guard(ctx)
                 results = self._backend._engine.check(action, gc)
                 return self._decide(results)
             return Decision(status=DecisionStatus.ALLOW)
@@ -195,6 +222,7 @@ class Clawdstrike:
         operation: str = "read",
         *,
         content: bytes | None = None,
+        **context_kwargs: Any,
     ) -> Decision:
         """Check file access.
 
@@ -204,36 +232,69 @@ class Clawdstrike:
             content: File content for write operations (used by content-aware guards)
         """
         str_path = str(path)
-        ctx = self._ctx_dict()
+        ctx = self._ctx_dict(**context_kwargs)
         if operation == "write":
             report = self._backend.check_file_write(str_path, content or b"", ctx)
         else:
             report = self._backend.check_file_access(str_path, ctx)
         return self._decide_from_report(report)
 
-    def check_command(self, command: str) -> Decision:
+    def check_command(self, command: str, **context_kwargs: Any) -> Decision:
         """Check a shell command."""
-        ctx = self._ctx_dict()
+        ctx = self._ctx_dict(**context_kwargs)
         report = self._backend.check_shell(command, ctx)
         return self._decide_from_report(report)
 
-    def check_network(self, host: str, port: int = 443) -> Decision:
+    def check_network(self, host: str, port: int = 443, **context_kwargs: Any) -> Decision:
         """Check network egress."""
-        ctx = self._ctx_dict()
+        ctx = self._ctx_dict(**context_kwargs)
         report = self._backend.check_network(host, port, ctx)
         return self._decide_from_report(report)
 
-    def check_patch(self, path: str | os.PathLike[str], diff: str) -> Decision:
+    def check_patch(
+        self,
+        path: str | os.PathLike[str],
+        diff: str,
+        **context_kwargs: Any,
+    ) -> Decision:
         """Check a code patch."""
-        ctx = self._ctx_dict()
+        ctx = self._ctx_dict(**context_kwargs)
         report = self._backend.check_patch(str(path), diff, ctx)
         return self._decide_from_report(report)
 
-    def check_mcp_tool(self, tool: str, args: dict[str, Any] | None = None) -> Decision:
+    def check_mcp_tool(
+        self,
+        tool: str,
+        args: dict[str, Any] | None = None,
+        **context_kwargs: Any,
+    ) -> Decision:
         """Check an MCP tool invocation."""
-        ctx = self._ctx_dict()
+        ctx = self._ctx_dict(**context_kwargs)
         report = self._backend.check_mcp_tool(tool, args or {}, ctx)
         return self._decide_from_report(report)
+
+    def check_output_send(
+        self,
+        text: str,
+        *,
+        target: str | None = None,
+        mime_type: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        context_metadata: dict[str, Any] | None = None,
+        **context_kwargs: Any,
+    ) -> Decision:
+        """Check an origin-aware outbound send action."""
+
+        payload: dict[str, Any] = {"text": text}
+        if target is not None:
+            payload["target"] = target
+        if mime_type is not None:
+            payload["mime_type"] = mime_type
+        if metadata is not None:
+            payload["metadata"] = metadata
+        if context_metadata is not None:
+            context_kwargs = {**context_kwargs, "metadata": context_metadata}
+        return self.check(CustomAction("origin.output_send", payload), **context_kwargs)
 
     def session(self, **options: Any) -> ClawdstrikeSession:
         """Create a stateful session for tracking checks.
@@ -261,16 +322,6 @@ class ClawdstrikeSession:
         self._deny_count = 0
         self._blocked_actions: list[str] = []
 
-    def _context_kwargs(self) -> dict[str, Any]:
-        kwargs: dict[str, Any] = {}
-        if self._options.session_id:
-            kwargs["session_id"] = self._options.session_id
-        if self._options.agent_id:
-            kwargs["agent_id"] = self._options.agent_id
-        if self._options.metadata:
-            kwargs["metadata"] = self._options.metadata
-        return kwargs
-
     def _track(self, decision: Decision, action_desc: str) -> Decision:
         self._check_count += 1
         if decision.status == DecisionStatus.DENY:
@@ -282,8 +333,18 @@ class ClawdstrikeSession:
             self._allow_count += 1
         return decision
 
+    def _merged_context_kwargs(self, **context_kwargs: Any) -> dict[str, Any]:
+        ctx = dict(context_kwargs)
+        if self._options.metadata and "metadata" not in ctx:
+            ctx["metadata"] = self._options.metadata
+        if self._options.agent_id:
+            ctx["agent_id"] = self._options.agent_id
+        if self._options.session_id:
+            ctx["session_id"] = self._options.session_id
+        return ctx
+
     def check(self, action: Action, **context_kwargs: Any) -> Decision:
-        merged = {**self._context_kwargs(), **context_kwargs}
+        merged = self._merged_context_kwargs(**context_kwargs)
         decision = self._cs.check(action, **merged)
         return self._track(decision, f"{action.action_type}")
 
@@ -293,9 +354,10 @@ class ClawdstrikeSession:
         operation: str = "read",
         *,
         content: bytes | None = None,
+        **context_kwargs: Any,
     ) -> Decision:
         str_path = str(path)
-        ctx = self._context_kwargs()
+        ctx = self._merged_context_kwargs(**context_kwargs)
         if operation == "write":
             action: Action = FileWriteAction(path=str_path, content=content or b"")
         else:
@@ -303,25 +365,58 @@ class ClawdstrikeSession:
         decision = self._cs.check(action, **ctx)
         return self._track(decision, f"file:{path}")
 
-    def check_command(self, command: str) -> Decision:
-        ctx = self._context_kwargs()
+    def check_command(self, command: str, **context_kwargs: Any) -> Decision:
+        ctx = self._merged_context_kwargs(**context_kwargs)
         decision = self._cs.check(ShellCommandAction(command=command), **ctx)
         return self._track(decision, f"command:{command[:50]}")
 
-    def check_network(self, host: str, port: int = 443) -> Decision:
-        ctx = self._context_kwargs()
+    def check_network(self, host: str, port: int = 443, **context_kwargs: Any) -> Decision:
+        ctx = self._merged_context_kwargs(**context_kwargs)
         decision = self._cs.check(NetworkEgressAction(host=host, port=port), **ctx)
         return self._track(decision, f"network:{host}:{port}")
 
-    def check_patch(self, path: str | os.PathLike[str], diff: str) -> Decision:
-        ctx = self._context_kwargs()
+    def check_patch(
+        self,
+        path: str | os.PathLike[str],
+        diff: str,
+        **context_kwargs: Any,
+    ) -> Decision:
+        ctx = self._merged_context_kwargs(**context_kwargs)
         decision = self._cs.check(PatchAction(path=str(path), diff=diff), **ctx)
         return self._track(decision, f"patch:{path}")
 
-    def check_mcp_tool(self, tool: str, args: dict[str, Any] | None = None) -> Decision:
-        ctx = self._context_kwargs()
+    def check_mcp_tool(
+        self,
+        tool: str,
+        args: dict[str, Any] | None = None,
+        **context_kwargs: Any,
+    ) -> Decision:
+        ctx = self._merged_context_kwargs(**context_kwargs)
         decision = self._cs.check(McpToolAction(tool=tool, args=args or {}), **ctx)
         return self._track(decision, f"mcp:{tool}")
+
+    def check_output_send(
+        self,
+        text: str,
+        *,
+        target: str | None = None,
+        mime_type: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        context_metadata: dict[str, Any] | None = None,
+        **context_kwargs: Any,
+    ) -> Decision:
+        ctx = self._merged_context_kwargs(**context_kwargs)
+        if context_metadata is not None:
+            ctx["metadata"] = context_metadata
+        payload: dict[str, Any] = {"text": text}
+        if target is not None:
+            payload["target"] = target
+        if mime_type is not None:
+            payload["mime_type"] = mime_type
+        if metadata is not None:
+            payload["metadata"] = metadata
+        decision = self._cs.check(CustomAction("origin.output_send", payload), **ctx)
+        return self._track(decision, f"output_send:{target or ''}")
 
     def get_summary(self) -> SessionSummary:
         return SessionSummary(

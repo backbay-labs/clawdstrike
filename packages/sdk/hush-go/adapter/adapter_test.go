@@ -245,6 +245,50 @@ func TestBeforeExecutePropagatesContextToGuards(t *testing.T) {
 	}
 }
 
+type originAwareGuard struct {
+	origin *guards.OriginContext
+}
+
+func (g *originAwareGuard) Name() string { return "origin_aware" }
+
+func (g *originAwareGuard) Handles(_ guards.GuardAction) bool { return true }
+
+func (g *originAwareGuard) Check(_ guards.GuardAction, ctx *guards.GuardContext) guards.GuardResult {
+	if ctx != nil {
+		g.origin = ctx.Origin
+	}
+	return guards.Allow(g.Name())
+}
+
+func TestBeforeExecuteFailsClosedForOriginAwareLocalChecks(t *testing.T) {
+	guard := &originAwareGuard{}
+	eng, err := engine.NewBuilder().WithGuard(guard).Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	origin := guards.NewOriginContext(guards.OriginProviderSlack).WithTenantID("T123")
+	secCtx := NewSecurityContext("test-session").WithOrigin(origin)
+	interceptor := NewBaseToolInterceptor(eng, nil, secCtx)
+
+	result, err := interceptor.BeforeExecute(context.Background(), "read_file", map[string]interface{}{"path": "/tmp/test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Proceed {
+		t.Fatal("expected proceed=false for origin-aware local check")
+	}
+	if result.Decision == nil || result.Decision.Status != guards.StatusDeny {
+		t.Fatalf("expected deny decision, got %#v", result.Decision)
+	}
+	if result.Decision.Message != guards.LocalOriginUnsupportedMessage {
+		t.Fatalf("expected local origin unsupported message, got %q", result.Decision.Message)
+	}
+	if guard.origin != nil {
+		t.Fatal("expected local fail-closed gate to stop before invoking guards")
+	}
+}
+
 func TestSecurityContextThreadSafety(t *testing.T) {
 	secCtx := NewSecurityContext("test")
 	done := make(chan struct{})

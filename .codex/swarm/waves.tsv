@@ -15,3 +15,7 @@ sb-wave6	sb10,sb11
 sb-wave7	sb12,sb13
 sb-wave8	sb14,sb15
 sb-wave9	sb16,sb17
+sdk-wave0	sdk-orch
+sdk-wave1	sdk-py1,sdk-go1
+sdk-wave2	sdk-py2,sdk-go2
+sdk-wave3	sdk-orch

@@ -1,17 +1,22 @@
 """Tests for hush.policy module."""
 
+from pathlib import Path
+
 import pytest
-from clawdstrike.exceptions import PolicyError
+
+from clawdstrike.exceptions import PolicyError, UnsupportedOriginFeatureError
 from clawdstrike.policy import (
+    GuardConfigs,
     Policy,
     PolicyEngine,
     PolicySettings,
-    GuardConfigs,
     PostureConfig,
 )
 
 
 class TestPolicy:
+    _fixtures_dir = Path(__file__).resolve().parent / "fixtures"
+
     def test_default_policy(self) -> None:
         policy = Policy()
         assert policy.version == "1.2.0"
@@ -56,6 +61,55 @@ class TestPolicy:
         assert restored.version == original.version
         assert restored.name == original.name
 
+    def test_policy_accepts_shell_command_blocked_patterns_alias(self) -> None:
+        policy = Policy.from_yaml(
+            """\
+version: "1.2.0"
+name: shell-alias
+guards:
+  shell_command:
+    blocked_patterns:
+      - 'rm\\s+-rf'
+settings:
+  fail_fast: false
+"""
+        )
+        assert policy.guards.shell_command is not None
+        assert policy.guards.shell_command.forbidden_patterns == [r"rm\s+-rf"]
+
+    def test_shell_command_blocked_patterns_alias_merges_with_extends(
+        self, tmp_path
+    ) -> None:
+        base = tmp_path / "shell-base.yaml"
+        base.write_text(
+            """\
+version: "1.2.0"
+name: base
+guards:
+  shell_command:
+    forbidden_patterns:
+      - 'curl\\s+.*\\|\\s*sh'
+"""
+        )
+        policy = Policy.from_yaml_with_extends(
+            f"""\
+version: "1.2.0"
+name: child
+extends: {base.name}
+guards:
+  shell_command:
+    blocked_patterns:
+      - 'rm\\s+-rf'
+""",
+            base_path=tmp_path,
+        )
+
+        assert policy.guards.shell_command is not None
+        assert policy.guards.shell_command.forbidden_patterns == [
+            r"curl\s+.*\|\s*sh",
+            r"rm\s+-rf",
+        ]
+
     def test_policy_rejects_invalid_semver_version(self) -> None:
         with pytest.raises(PolicyError):
             Policy.from_yaml('version: "1.0"\nname: test\n')
@@ -63,6 +117,28 @@ class TestPolicy:
     def test_policy_rejects_unsupported_version(self) -> None:
         with pytest.raises(PolicyError):
             Policy.from_yaml('version: "2.0.0"\nname: test\n')
+
+    def test_policy_rejects_origin_aware_policy_with_explicit_error(self) -> None:
+        yaml_str = """
+version: "1.4.0"
+name: origin-policy
+origins:
+  default_behavior: deny
+  profiles: []
+"""
+        with pytest.raises(
+            UnsupportedOriginFeatureError,
+            match="Origin-aware policies are not supported by the pure-Python backend",
+        ):
+            Policy.from_yaml(yaml_str)
+
+    def test_policy_rejects_origin_aware_base_policy_during_extends_resolution(self) -> None:
+        yaml_str = 'version: "1.1.0"\nname: child\nextends: origin-base.yaml\n'
+        with pytest.raises(
+            UnsupportedOriginFeatureError,
+            match="Use the native or daemon-backed backend for origin enforcement",
+        ):
+            Policy.from_yaml_with_extends(yaml_str, base_path=self._fixtures_dir)
 
     def test_policy_rejects_unknown_top_level_keys(self) -> None:
         with pytest.raises(PolicyError):
@@ -146,6 +222,55 @@ extends: nonexistent_ruleset
 """
         with pytest.raises(PolicyError, match="Unknown ruleset"):
             Policy.from_yaml_with_extends(yaml_str)
+
+    def test_extends_path_must_stay_within_base_directory(self, tmp_path) -> None:
+        base_dir = tmp_path / "base"
+        base_dir.mkdir()
+        sibling_dir = tmp_path / "base_evil"
+        sibling_dir.mkdir()
+        outside_policy = sibling_dir / "outside.yaml"
+        outside_policy.write_text('version: "1.2.0"\nname: outside\n')
+
+        with pytest.raises(
+            PolicyError,
+            match="Policy extends path escapes base directory",
+        ):
+            Policy.from_yaml_with_extends(
+                'version: "1.2.0"\nname: child\nextends: ../base_evil/outside.yaml\n',
+                base_path=base_dir,
+            )
+
+    def test_extends_from_yaml_file_allows_parent_relative_policy(self, tmp_path) -> None:
+        repo_root = tmp_path / "repo"
+        services_dir = repo_root / "services"
+        services_dir.mkdir(parents=True)
+
+        base = repo_root / "base.yaml"
+        base.write_text(
+            'version: "1.2.0"\n'
+            'name: base\n'
+            "guards:\n"
+            "  forbidden_path:\n"
+            "    patterns:\n"
+            '      - "**/.ssh/**"\n'
+        )
+
+        child = services_dir / "child.yaml"
+        child.write_text(
+            'version: "1.2.0"\n'
+            "name: child\n"
+            "extends: ../base.yaml\n"
+            "guards:\n"
+            "  shell_command:\n"
+            "    forbidden_patterns:\n"
+            '      - "rm -rf"\n'
+        )
+
+        policy = Policy.from_yaml_file_with_extends(child)
+
+        assert policy.name == "child"
+        assert policy.guards.forbidden_path is not None
+        assert policy.guards.shell_command is not None
 
     def test_from_yaml_file_with_path_object(self, tmp_path) -> None:
         p = tmp_path / "policy.yaml"
@@ -248,7 +373,10 @@ class TestGuardConfigs:
         assert configs.spider_sense.async_config == {"timeout_ms": 5000}
         assert configs.spider_sense.pattern_db_signature_key_id == "abcd1234"
         assert configs.spider_sense.pattern_db_manifest_path == "/tmp/spider/manifest.json"
-        assert configs.spider_sense.llm_prompt_template_id == "spider_sense.deep_path.json_classifier"
+        assert (
+            configs.spider_sense.llm_prompt_template_id
+            == "spider_sense.deep_path.json_classifier"
+        )
         assert configs.spider_sense.llm_timeout_ms == 1200
 
     def test_from_dict_spider_sense_bool_rejected(self) -> None:
@@ -279,7 +407,7 @@ class TestPolicyEngine:
         assert len(engine.guards) == 9
 
     def test_check_allowed_action(self, sample_policy_yaml: str) -> None:
-        from clawdstrike.guards.base import FileAccessAction, NetworkEgressAction, GuardContext
+        from clawdstrike.guards.base import FileAccessAction, GuardContext
 
         policy = Policy.from_yaml(sample_policy_yaml)
         engine = PolicyEngine(policy)
@@ -294,7 +422,7 @@ class TestPolicyEngine:
         assert all(r.allowed for r in results)
 
     def test_check_forbidden_action(self, sample_policy_yaml: str) -> None:
-        from clawdstrike.guards.base import FileAccessAction, NetworkEgressAction, GuardContext
+        from clawdstrike.guards.base import FileAccessAction, GuardContext
 
         policy = Policy.from_yaml(sample_policy_yaml)
         engine = PolicyEngine(policy)
@@ -309,7 +437,7 @@ class TestPolicyEngine:
         assert any(not r.allowed for r in results)
 
     def test_fail_fast_mode(self, sample_policy_yaml: str) -> None:
-        from clawdstrike.guards.base import FileAccessAction, NetworkEgressAction, GuardContext
+        from clawdstrike.guards.base import FileAccessAction, GuardContext
 
         policy = Policy.from_yaml(sample_policy_yaml)
         policy.settings.fail_fast = True

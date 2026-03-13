@@ -194,9 +194,9 @@ guards:
       customData: { content: "token sk-ABC123DEF4 exposed" },
     });
 
-    expect(decision.status).toBe("allow");
+    expect(decision.status).toBe("warn");
     expect(decision.guard).toBe("secret_leak");
-    expect(decision.severity).toBe(Severity.INFO);
+    expect(decision.severity).toBe(Severity.WARNING);
     expect(decision.message).toContain("Secret pattern matched");
   });
 
@@ -403,6 +403,45 @@ guards:
     const cs = await Clawdstrike.fromPolicy(policy);
     const decision = await cs.checkNetwork("api.example.com:0");
     expect(decision.status).toBe("allow");
+  });
+
+  it("fromPolicy preserves egress log defaults and secret leak thresholds", async () => {
+    const policy = `
+version: "1.2.0"
+name: "semantic parity"
+guards:
+  egress_allowlist:
+    enabled: true
+    default_action: log
+    allow: []
+    block: []
+  secret_leak:
+    enabled: true
+    redact: true
+    severity_threshold: critical
+    patterns:
+      - name: generic_api_key
+        pattern: "(?i)(api[_\\\\-]?key|apikey)[\\\"']?\\\\s*[:=]\\\\s*[\\\"']?[A-Za-z0-9]{32,}"
+        severity: warning
+`;
+
+    const cs = await Clawdstrike.fromPolicy(policy);
+
+    const egressDecision = await cs.checkNetwork("unknown.example.com:443");
+    expect(egressDecision.status).toBe("warn");
+
+    const secretDecision = await cs.check("file_write", {
+      path: "/tmp/config.ts",
+      content: new TextEncoder().encode("api_key = abcdefghijklmnopqrstuvwxyz123456"),
+    });
+    expect(secretDecision.status).toBe("warn");
+    const details = secretDecision.details as {
+      redaction_requested?: boolean;
+      match_length?: number;
+    };
+    expect(details.redaction_requested).toBe(true);
+    expect(details.match_length).toBeGreaterThan(0);
+    expect(JSON.stringify(details)).not.toContain("abcdefghijklmnopqrstuvwxyz123456");
   });
 
   it("skips prompt_injection guard when WASM is unavailable instead of fail-closing checks", async () => {

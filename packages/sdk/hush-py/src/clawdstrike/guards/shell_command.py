@@ -14,27 +14,51 @@ DEFAULT_BLOCKED_COMMANDS: list[str] = [
     r"rm\s+-rf\s+~",           # rm -rf ~
     r":\(\)\{\s*:\|:&\s*\};:", # fork bomb
     r"mkfs\.",                  # format filesystem
-    r"dd\s+if=.*of=/dev/",     # overwrite device
+    r"dd\s+if=.*?of=/dev/",    # overwrite device
     r">\s*/dev/sd[a-z]",       # redirect to device
     r"chmod\s+-R\s+777\s+/",   # chmod 777 /
-    r"curl\s+.*\|\s*sh",       # pipe curl to sh
-    r"wget\s+.*\|\s*sh",       # pipe wget to sh
-    r"curl\s+.*\|\s*bash",     # pipe curl to bash
-    r"wget\s+.*\|\s*bash",     # pipe wget to bash
+    r"curl\s+.*?\|\s*sh",      # pipe curl to sh
+    r"wget\s+.*?\|\s*sh",      # pipe wget to sh
+    r"curl\s+.*?\|\s*bash",    # pipe curl to bash
+    r"wget\s+.*?\|\s*bash",    # pipe wget to bash
     r"eval\s*\(",              # eval
-    r"python\s+-c\s+.*exec\(",  # python exec
+    r"python\s+-c\s+.*?exec\(",  # python exec
     r"nc\s+-l",                # netcat listen
     r"ncat\s+-l",              # ncat listen
 ]
 
 
-@dataclass
+@dataclass(init=False)
 class ShellCommandConfig:
     """Configuration for ShellCommandGuard."""
-    blocked_patterns: list[str] = field(default_factory=lambda: list(DEFAULT_BLOCKED_COMMANDS))
+    forbidden_patterns: list[str] = field(default_factory=lambda: list(DEFAULT_BLOCKED_COMMANDS))
     additional_blocked: list[str] = field(default_factory=list)
     allowed_commands: list[str] = field(default_factory=list)
     enabled: bool = True
+
+    def __init__(
+        self,
+        *,
+        forbidden_patterns: list[str] | None = None,
+        blocked_patterns: list[str] | None = None,
+        additional_blocked: list[str] | None = None,
+        allowed_commands: list[str] | None = None,
+        enabled: bool = True,
+    ) -> None:
+        if forbidden_patterns is not None and blocked_patterns is not None:
+            msg = "shell_command cannot define both blocked_patterns and forbidden_patterns"
+            raise ConfigurationError(msg)
+
+        pattern_source = forbidden_patterns
+        if pattern_source is None:
+            pattern_source = blocked_patterns
+
+        self.forbidden_patterns = list(
+            DEFAULT_BLOCKED_COMMANDS if pattern_source is None else pattern_source
+        )
+        self.additional_blocked = list(additional_blocked or [])
+        self.allowed_commands = list(allowed_commands or [])
+        self.enabled = enabled
 
 
 class ShellCommandGuard(Guard):
@@ -42,7 +66,7 @@ class ShellCommandGuard(Guard):
 
     def __init__(self, config: ShellCommandConfig | None = None) -> None:
         self._config = config or ShellCommandConfig()
-        all_patterns = self._config.blocked_patterns + self._config.additional_blocked
+        all_patterns = self._config.forbidden_patterns + self._config.additional_blocked
         self._compiled: list[tuple[str, re.Pattern[str]]] = []
         for pattern in all_patterns:
             try:

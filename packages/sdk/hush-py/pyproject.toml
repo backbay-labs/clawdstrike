@@ -37,6 +37,7 @@ dev = [
     "ruff>=0.1",
     "types-PyYAML>=6.0",
     "httpx>=0.25",
+    "openai-agents>=0.0.7",
 ]
 
 [build-system]

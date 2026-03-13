@@ -358,17 +358,21 @@ swarm_write_lane_prompt() {
   local brief_id
   local description
   local docs_block
+  local profile
+  local role
 
   swarm_require_lane "$lane" "$repo_root"
   brief_id="$(swarm_lane_field "$lane" brief_id "$repo_root")"
   description="$(swarm_lane_field "$lane" description "$repo_root")"
   docs_block="$(swarm_prompt_docs_block "$lane" "$repo_root")"
+  profile="$(swarm_lane_field "$lane" profile "$repo_root")"
+  role="$(swarm_lane_field "$lane" role "$repo_root")"
 
-  if [[ "$lane" == "orch" ]]; then
+  if [[ "$profile" == "swarm-orchestrator" || "$role" == "workstream_orchestrator" ]]; then
     cat > "$prompt_file" <<EOF_PROMPT
 Use \$clawdstrike-swarm-supervisor.
 
-Current lane: ORCH.
+Current lane: ${brief_id}.
 Lane purpose: ${description}
 
 Read these docs first:

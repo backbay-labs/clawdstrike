@@ -2831,6 +2831,11 @@ fn cmd_daemon(command: DaemonCommands, stdout: &mut dyn Write, stderr: &mut dyn 
             match cmd.spawn() {
                 Ok(_) => {
                     let _ = writeln!(stdout, "Daemon started");
+                    let _ = writeln!(
+                        stdout,
+                        "The daemon is running as a background process.\n\
+                         To stop it, run: clawdstrike daemon stop"
+                    );
                     ExitCode::Ok
                 }
                 Err(e) => {
