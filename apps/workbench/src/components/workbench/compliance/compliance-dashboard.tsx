@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { motion } from "motion/react";
 import { useWorkbench } from "@/lib/workbench/multi-policy-store";
 import {
   scoreFramework,
@@ -46,8 +47,8 @@ function ScoreRing({
           stroke="#2d3240"
           strokeWidth={strokeWidth}
         />
-        {/* Score arc */}
-        <circle
+        {/* Score arc — stroke-draw animation */}
+        <motion.circle
           cx={size / 2}
           cy={size / 2}
           r={radius}
@@ -56,8 +57,9 @@ function ScoreRing({
           strokeWidth={strokeWidth}
           strokeLinecap="round"
           strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          className="transition-all duration-700"
+          initial={{ strokeDashoffset: circumference }}
+          animate={{ strokeDashoffset: offset }}
+          transition={{ duration: 1, ease: "easeOut" }}
         />
       </svg>
       <div className="absolute inset-0 flex items-center justify-center">
@@ -192,7 +194,7 @@ export function ComplianceDashboard() {
 
       {/* Framework cards */}
       <div className="flex-1 p-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-4xl">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 max-w-4xl">
           {COMPLIANCE_FRAMEWORKS.map((fw) => (
             <FrameworkCard
               key={fw.id}

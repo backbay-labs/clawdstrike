@@ -98,7 +98,7 @@ function ThreatPostureSummary({ scenarios }: { scenarios: TestScenario[] }) {
   return (
     <div className="px-4 py-2.5 border-b border-[#2d3240] bg-[#0b0d13]">
       <div className="flex items-center justify-between mb-1.5">
-        <span className="text-[10px] font-mono uppercase tracking-wider text-[#6f7f9a]">
+        <span className="text-[10px] font-mono uppercase tracking-wider text-[#6f7f9a]" title="Resource usage limits and automated state transitions for agent capabilities">
           Threat Posture
         </span>
         <span className="text-[10px] font-mono text-[#d4a84b]">

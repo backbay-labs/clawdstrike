@@ -71,7 +71,7 @@ const STATUS_CONFIG: Record<FindingStatus, { label: string; color: string; bg: s
 
 const TIMELINE_TYPE_CONFIG: Record<
   TimelineEntry["type"],
-  { icon: typeof IconActivity; color: string; label: string }
+  { icon: typeof IconActivity; color: string; label: string; title?: string }
 > = {
   signal_added: { icon: IconActivity, color: "#d4a84b", label: "Signal" },
   enrichment_added: { icon: IconChartBar, color: "#6ea8d9", label: "Enrichment" },
@@ -80,7 +80,7 @@ const TIMELINE_TYPE_CONFIG: Record<
   verdict_set: { icon: IconShieldCheck, color: "#3dbf84", label: "Verdict" },
   action_taken: { icon: IconCheck, color: "#d4a84b", label: "Action" },
   promoted: { icon: IconArrowUpRight, color: "#3dbf84", label: "Promoted" },
-  speakeasy_opened: { icon: IconMessage, color: "#d4a84b", label: "Speakeasy" },
+  speakeasy_opened: { icon: IconMessage, color: "#d4a84b", label: "Speakeasy", title: "Encrypted inter-sentinel communication channel for sharing threat intelligence" },
 };
 
 // ---------------------------------------------------------------------------
@@ -354,6 +354,7 @@ export function FindingDetail({
                             <span
                               className="text-[9px] font-semibold uppercase"
                               style={{ color: config.color }}
+                              title={config.title}
                             >
                               {config.label}
                             </span>

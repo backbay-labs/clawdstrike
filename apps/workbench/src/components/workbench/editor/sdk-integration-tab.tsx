@@ -891,7 +891,7 @@ export function SdkIntegrationTab() {
             value={scriptName}
             onChange={(e) => setScriptName(e.target.value)}
             className="bg-[#131721] text-[#ece7dc] border border-[#2d3240] rounded px-2 py-0.5 text-[9px] font-mono w-40 focus:border-[#d4a84b] outline-none transition-colors"
-            placeholder="Script name"
+            placeholder="e.g., file-guard-setup"
           />
         )}
 

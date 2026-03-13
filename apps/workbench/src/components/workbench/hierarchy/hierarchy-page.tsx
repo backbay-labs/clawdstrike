@@ -332,7 +332,7 @@ function TreeNode({
             {canRemove && (
               <button
                 className="p-0.5 rounded hover:bg-[#c45c5c]/20 text-[#c45c5c]/60 hover:text-[#c45c5c]"
-                title="Remove"
+                title="Delete node"
                 onClick={(e) => {
                   e.stopPropagation();
                   onRemove(node.id);
@@ -1033,7 +1033,7 @@ function RenameDialog({ node, onRename, onClose }: RenameDialogProps) {
             value={name}
             onChange={(e) => setName(e.target.value)}
             className="w-full px-3 py-2 text-[11px] font-mono bg-[#131721] border border-[#2d3240] rounded text-[#ece7dc] placeholder-[#6f7f9a]/40 focus:outline-none focus:border-[#d4a84b]/50"
-            placeholder="Enter name..."
+            placeholder="e.g., prod-us-east"
             autoFocus
           />
           <div className="flex justify-end gap-2">
@@ -1404,8 +1404,8 @@ export function HierarchyPage() {
       const descendantCount = getDescendants(hierarchy, id).length - 1;
 
       const message = descendantCount > 0
-        ? `Delete node "${node.name}" and all ${descendantCount} descendant(s)? This cannot be undone.`
-        : `Delete node "${node.name}"? This cannot be undone.`;
+        ? `Delete "${node.name}" and all ${descendantCount} child node(s)?\n\nThis removes them from the hierarchy permanently. Policy assignments on deleted nodes will be lost.`
+        : `Delete "${node.name}"?\n\nThis removes the node from the hierarchy permanently. Any policy assignment on this node will be lost.`;
 
       if (!window.confirm(message)) return;
 
@@ -1552,7 +1552,7 @@ export function HierarchyPage() {
   );
 
   const handleResetToDemo = useCallback(() => {
-    if (!window.confirm("Reset hierarchy to demo data? All current changes will be lost.")) return;
+    if (!window.confirm("Reset to demo data?\n\nYour current hierarchy and all node configurations will be replaced. Saved policies in the library are not affected.")) return;
     clearPendingCreateIds();
     clearHierarchy();
     const demo = createDefaultHierarchy();
@@ -1618,8 +1618,8 @@ export function HierarchyPage() {
       const warningCount = issues.length - errorCount;
       const message =
         errorCount > 0 && warningCount > 0
-          ? `There are ${issues.length} validation issue(s) in the hierarchy (${errorCount} error(s), ${warningCount} warning(s)). Push anyway?`
-          : `There are ${issues.length} validation ${errorCount > 0 ? "error" : "warning"}(s) in the hierarchy. Push anyway?`;
+          ? `Push hierarchy with ${issues.length} validation issue(s)?\n\n${errorCount} error(s) and ${warningCount} warning(s) detected. Agents will receive this hierarchy as-is, which may cause unexpected enforcement behavior.`
+          : `Push hierarchy with ${issues.length} validation ${errorCount > 0 ? "error" : "warning"}(s)?\n\n${errorCount > 0 ? "Errors may cause unexpected enforcement behavior on receiving agents." : "Warnings indicate potential configuration issues that may affect enforcement."}`;
       const proceed = window.confirm(
         message,
       );
@@ -1814,7 +1814,7 @@ export function HierarchyPage() {
       showSyncStatus("error", "Another sync operation is already in progress");
       return;
     }
-    if (!window.confirm("Replace local hierarchy with fleet data? Unsaved local changes will be lost.")) return;
+    if (!window.confirm("Replace local hierarchy with fleet data?\n\nAll unsaved local changes to the hierarchy will be overwritten. Saved policies in the library are not affected.")) return;
     syncInProgressRef.current = true;
     setSyncStatus({ type: "pulling", message: "Downloading hierarchy..." });
 
@@ -2252,7 +2252,7 @@ export function HierarchyPage() {
         </div>
 
         {/* Right: Merge Preview / Impact */}
-        <div className="w-[260px] shrink-0">
+        <div className="w-[260px] shrink-0 max-lg:hidden">
           {selectedId && selectedNode ? (
             <MergePreviewPanel
               hierarchy={hierarchy}

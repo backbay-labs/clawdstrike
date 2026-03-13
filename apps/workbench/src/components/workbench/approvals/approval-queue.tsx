@@ -881,7 +881,7 @@ function DetailDrawer({
   const status = STATUS_CONFIG[request.status];
 
   return (
-    <div className="flex w-80 flex-col border-l border-[#2d3240] bg-[#131721]/80 backdrop-blur-md">
+    <div className="flex w-80 flex-col border-l border-[#2d3240] bg-[#131721]/80 backdrop-blur-md max-lg:hidden">
       <div className="flex items-center justify-between border-b border-[#2d3240] px-4 py-3">
         <h2 className="font-syne text-xs font-semibold uppercase tracking-wider text-[#6f7f9a]">
           Request Details

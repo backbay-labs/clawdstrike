@@ -17,6 +17,7 @@ export interface SubTab {
   id: string;
   label: string;
   icon?: TablerIcon;
+  title?: string;
 }
 
 interface SubTabBarProps {
@@ -53,6 +54,7 @@ export function SubTabBar({
             <button
               key={tab.id}
               onClick={() => onTabChange(tab.id)}
+              title={tab.title}
               className={cn(
                 "relative flex flex-col items-center px-3 pt-2 pb-2.5",
                 "text-[10px] font-mono font-medium uppercase tracking-wider",

@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
+import { motion } from "motion/react";
 import {
   IconPencil,
   IconShieldCheck,
@@ -14,6 +15,8 @@ import {
   IconCertificate,
   IconSitemap,
   IconInfoCircle,
+  IconCheck,
+  IconArrowRight,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { ClaudeCodeHint } from "@/components/workbench/shared/claude-code-hint";
@@ -78,8 +81,8 @@ function HealthRing({
           stroke="#2d3240"
           strokeWidth="3.5"
         />
-        {/* Active arc */}
-        <circle
+        {/* Active arc — stroke-draw animation */}
+        <motion.circle
           cx="40"
           cy="40"
           r={radius}
@@ -88,8 +91,9 @@ function HealthRing({
           strokeWidth="3.5"
           strokeLinecap="round"
           strokeDasharray={circumference}
-          strokeDashoffset={dashOffset}
-          className="transition-all duration-1000 ease-out"
+          initial={{ strokeDashoffset: circumference }}
+          animate={{ strokeDashoffset: dashOffset }}
+          transition={{ duration: 1, ease: "easeOut" }}
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
@@ -177,6 +181,120 @@ function NavCard({
         </div>
       </div>
     </Link>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Quick Start Guide — shown until the user has made meaningful progress
+// ---------------------------------------------------------------------------
+
+function QuickStartGuide({
+  fleetConnected,
+  sentinelCount,
+  findingsCount,
+}: {
+  fleetConnected: boolean;
+  sentinelCount: number;
+  findingsCount: number;
+}) {
+  // Hide once all three milestones are met
+  if (sentinelCount > 0 && findingsCount > 0 && fleetConnected) return null;
+
+  const steps = [
+    {
+      num: 1,
+      title: "Connect to Fleet",
+      desc: "Link your hushd daemon to enable live enforcement",
+      done: fleetConnected,
+      href: "/settings",
+    },
+    {
+      num: 2,
+      title: "Deploy a Sentinel",
+      desc: "Create an autonomous security monitor for your agents",
+      done: sentinelCount > 0,
+      href: "/fleet",
+    },
+    {
+      num: 3,
+      title: "Review Findings",
+      desc: "Investigate threats detected by your sentinels",
+      done: findingsCount > 0,
+      href: "/audit",
+    },
+  ];
+
+  // Determine the first incomplete step so we can accent it
+  const nextStepIdx = steps.findIndex((s) => !s.done);
+
+  return (
+    <div>
+      <h2 className="text-[10px] font-mono font-semibold text-[#d4a84b] uppercase tracking-[0.15em] mb-3">
+        Quick Start
+      </h2>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {steps.map((step, idx) => {
+          const isNext = idx === nextStepIdx;
+          return (
+            <Link
+              key={step.num}
+              to={step.href}
+              className={cn(
+                "group relative flex items-start gap-3 px-4 py-4 rounded-lg border transition-all duration-200",
+                step.done
+                  ? "border-[#3dbf84]/20 bg-[#3dbf84]/[0.03]"
+                  : isNext
+                    ? "border-[#d4a84b]/30 bg-[#d4a84b]/[0.04] hover:border-[#d4a84b]/50"
+                    : "border-[#2d3240]/40 bg-[#0b0d13]/40 hover:border-[#2d3240]",
+              )}
+            >
+              {/* Step number or checkmark */}
+              <div
+                className={cn(
+                  "w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-xs font-bold transition-colors",
+                  step.done
+                    ? "bg-[#3dbf84]/15 text-[#3dbf84]"
+                    : isNext
+                      ? "bg-[#d4a84b]/15 text-[#d4a84b] ring-1 ring-[#d4a84b]/30"
+                      : "bg-[#2d3240]/40 text-[#6f7f9a]/60",
+                )}
+              >
+                {step.done ? (
+                  <IconCheck size={14} stroke={2.5} />
+                ) : (
+                  step.num
+                )}
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <div
+                  className={cn(
+                    "text-xs font-medium",
+                    step.done
+                      ? "text-[#3dbf84]/80"
+                      : "text-[#ece7dc]",
+                  )}
+                >
+                  {step.title}
+                </div>
+                <div className="text-[10px] text-[#6f7f9a] mt-0.5 leading-relaxed">
+                  {step.desc}
+                </div>
+              </div>
+
+              {/* Arrow hint for the active step */}
+              {isNext && !step.done && (
+                <IconArrowRight
+                  size={14}
+                  stroke={1.5}
+                  className="text-[#d4a84b]/40 group-hover:text-[#d4a84b] transition-colors shrink-0 mt-1.5"
+                />
+              )}
+            </Link>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -452,6 +570,15 @@ export function HomePage() {
           <FindingsSummaryCard {...findingsStats} />
         </div>
 
+        {/* ================================================================ */}
+        {/* Quick Start Guide                                                */}
+        {/* ================================================================ */}
+        <QuickStartGuide
+          fleetConnected={connection.connected}
+          sentinelCount={connection.agentCount}
+          findingsCount={enabledCount}
+        />
+
         {sentinelStats.total === 0 && findingsStats.total === 0 && (
           <div className="mx-6 mt-4 rounded-lg border border-[#2d3240]/40 bg-[#131721]/30 px-4 py-3 flex items-center gap-3">
             <IconInfoCircle size={16} stroke={1.5} className="text-[#6f7f9a]/50 shrink-0" />
@@ -468,7 +595,7 @@ export function HomePage() {
           <h2 className="font-syne text-[10px] font-semibold text-[#d4a84b] uppercase tracking-wider mb-3">
             Guard Coverage
           </h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-5">
             {CATEGORY_ORDER.filter(
               (cat) => guardsByCategory[cat]?.length,
             ).map((cat) => (

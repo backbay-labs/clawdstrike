@@ -377,7 +377,7 @@ export function InvestigationWorkbench({
                   if (e.key === "Enter") handleCreateInvestigation();
                   if (e.key === "Escape") setShowNewCaseForm(false);
                 }}
-                placeholder="Investigation title..."
+                placeholder="e.g., Suspicious egress to unknown domain"
                 autoFocus
                 className="w-full rounded-md border border-[#2d3240] bg-[#05060a] px-2 py-1.5 text-[11px] text-[#ece7dc] placeholder:text-[#6f7f9a]/40 outline-none focus:border-[#d4a84b]/50 transition-colors"
               />
@@ -687,7 +687,7 @@ export function InvestigationWorkbench({
             {/* ------------------------------------------------------------- */}
             {/* RIGHT COLUMN: Receipt Inspector */}
             {/* ------------------------------------------------------------- */}
-            <div className="w-72 shrink-0 border-l border-[#2d3240]/60 flex flex-col bg-[#0b0d13]">
+            <div className="w-72 shrink-0 border-l border-[#2d3240]/60 flex flex-col bg-[#0b0d13] max-lg:hidden">
               {/* Header */}
               <div className="shrink-0 px-4 py-3 border-b border-[#2d3240]/60">
                 <span className="text-[9px] font-semibold uppercase tracking-wider text-[#6f7f9a]/50">

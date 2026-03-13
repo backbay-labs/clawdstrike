@@ -193,7 +193,7 @@ export function IdentitySettings() {
             {/* Metadata */}
             <div className="flex items-center gap-4 mt-2 text-[9px] text-[#6f7f9a]/40">
               <span>Created {new Date(currentOperator.createdAt).toLocaleDateString()}</span>
-              <span>Sigil: {sigil}</span>
+              <span title="Unique visual identifier derived from an operator's cryptographic fingerprint">Sigil: {sigil}</span>
               <span>{currentOperator.devices.length} device{currentOperator.devices.length !== 1 ? "s" : ""}</span>
             </div>
           </div>

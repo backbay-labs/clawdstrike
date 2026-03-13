@@ -844,7 +844,7 @@ function ProfileOverrides({
       </h4>
       <div className="space-y-4">
         {/* Posture state */}
-        <FieldRow label="Posture State">
+        <FieldRow label="Posture State" title="Resource usage limits and automated state transitions for agent capabilities">
           <Input
             value={profile.posture ?? ""}
             onChange={(e) =>
@@ -1312,13 +1312,15 @@ function BridgePolicySection({
 function FieldRow({
   label,
   children,
+  title,
 }: {
   label: string;
   children: React.ReactNode;
+  title?: string;
 }) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <label className="text-xs text-[#ece7dc] whitespace-nowrap">{label}</label>
+      <label className="text-xs text-[#ece7dc] whitespace-nowrap" title={title}>{label}</label>
       <div className="flex-1 max-w-[200px]">{children}</div>
     </div>
   );

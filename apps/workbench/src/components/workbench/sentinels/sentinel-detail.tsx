@@ -683,7 +683,7 @@ function ConfigTab({ sentinel }: { sentinel: Sentinel }) {
           <span className="text-[#6f7f9a]/50">Public Key</span>
           <CopyableText text={sentinel.identity.publicKey} />
         </div>
-        <ConfigRow label="Sigil" value={sentinel.identity.sigil} />
+        <ConfigRow label="Sigil" value={sentinel.identity.sigil} title="Unique visual identifier derived from an operator's cryptographic fingerprint" />
         <ConfigRow label="Nickname" value={sentinel.identity.nickname} />
       </ConfigSection>
 
@@ -740,14 +740,16 @@ function ConfigRow({
   label,
   value,
   mono,
+  title,
 }: {
   label: string;
   value: string;
   mono?: boolean;
+  title?: string;
 }) {
   return (
     <div className="flex items-baseline justify-between text-[10px]">
-      <span className="text-[#6f7f9a]/50">{label}</span>
+      <span className="text-[#6f7f9a]/50" title={title}>{label}</span>
       <span className={cn("text-[#ece7dc]/70", mono && "font-mono")}>
         {value}
       </span>

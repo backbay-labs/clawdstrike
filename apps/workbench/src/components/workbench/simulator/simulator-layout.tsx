@@ -242,7 +242,7 @@ function computeThreatLevel(results: SimulationResult[], scenarios: TestScenario
 
 const SIMULATOR_TABS: SubTab[] = [
   { id: "scenarios", label: "Scenarios", icon: IconTestPipe },
-  { id: "trustprint-lab", label: "Trustprint", icon: IconFingerprint },
+  { id: "trustprint-lab", label: "Trustprint", icon: IconFingerprint, title: "Embedding-based threat screening using vector similarity against known patterns" },
   { id: "observe", label: "Observe", icon: IconEye },
   { id: "coverage", label: "Coverage", icon: IconGrid3x3 },
 ];

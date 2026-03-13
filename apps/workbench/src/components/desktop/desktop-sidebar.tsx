@@ -3,6 +3,7 @@ import { useLocation, Link } from "react-router-dom";
 import {
   IconChevronsLeft,
   IconChevronsRight,
+  IconX,
 } from "@tabler/icons-react";
 import {
   SigilSentinel,
@@ -384,6 +385,14 @@ export function DesktopSidebar() {
   const fleetConnected = connection.connected;
   const approvalsConnected = fleetConnected && connection.controlApiUrl.trim().length > 0;
 
+  const [showShortcutHint, setShowShortcutHint] = useState(() => {
+    return localStorage.getItem("clawdstrike_shortcut_hint_dismissed") !== "1";
+  });
+  const dismissHint = () => {
+    setShowShortcutHint(false);
+    localStorage.setItem("clawdstrike_shortcut_hint_dismissed", "1");
+  };
+
   const [liveApprovalCount, setLiveApprovalCount] = useState<number | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -628,6 +637,26 @@ export function DesktopSidebar() {
               {currentOperator.displayName || currentOperator.fingerprint.slice(0, 8)}
             </span>
           )}
+        </div>
+      )}
+
+      {showShortcutHint && !collapsed && (
+        <div className="mx-2 mb-2 rounded-lg border border-[#d4a84b]/20 bg-[#d4a84b]/5 px-3 py-2 flex items-center gap-2">
+          <span className="text-[10px] text-[#d4a84b]/80 flex-1">
+            Press{" "}
+            <kbd className="inline-block rounded border border-[#d4a84b]/30 bg-[#d4a84b]/10 px-1 py-0.5 font-mono text-[9px] text-[#d4a84b]">
+              ⌘?
+            </kbd>{" "}
+            for shortcuts
+          </span>
+          <button
+            type="button"
+            onClick={dismissHint}
+            className="text-[#6f7f9a]/40 hover:text-[#6f7f9a] transition-colors shrink-0"
+            aria-label="Dismiss shortcut hint"
+          >
+            <IconX size={12} stroke={1.5} />
+          </button>
         </div>
       )}
 

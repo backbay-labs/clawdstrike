@@ -21,17 +21,18 @@ import {
 interface TemplateEntry {
   name: string;
   description: string;
+  hint: string;
 }
 
 const TEMPLATES: TemplateEntry[] = [
-  { name: "strict", description: "Maximum security \u2014 blocks most operations by default" },
-  { name: "permissive", description: "Minimal restrictions \u2014 allows most operations" },
-  { name: "default", description: "Balanced security for general use" },
-  { name: "ai-agent", description: "Tailored for AI agent tool boundaries" },
-  { name: "cicd", description: "Optimized for CI/CD pipeline security" },
-  { name: "ai-agent-posture", description: "Posture-aware AI agent enforcement" },
-  { name: "remote-desktop", description: "Controls for remote desktop/CUA sessions" },
-  { name: "spider-sense", description: "Hierarchical threat screening with pattern matching" },
+  { name: "ai-agent", description: "Tailored for LLM tool boundaries \u2014 recommended starting point", hint: "Best for: ChatGPT, Claude, and custom agent tool calls" },
+  { name: "strict", description: "Maximum restriction \u2014 blocks most actions by default", hint: "Best for: high-security environments and compliance-critical workloads" },
+  { name: "default", description: "Balanced protection with sensible defaults", hint: "Best for: general-purpose agent deployments" },
+  { name: "permissive", description: "Minimal restrictions \u2014 allows most actions", hint: "Best for: development and testing environments" },
+  { name: "cicd", description: "Optimized for CI/CD pipeline security", hint: "Best for: GitHub Actions, GitLab CI, and build pipelines" },
+  { name: "ai-agent-posture", description: "Posture-aware AI agent enforcement", hint: "Best for: multi-tenant agent fleets with varying trust levels" },
+  { name: "remote-desktop", description: "Controls for remote desktop/CUA sessions", hint: "Best for: computer-use agents and remote desktop automation" },
+  { name: "spider-sense", description: "Hierarchical threat screening with pattern matching", hint: "Best for: embedding-based threat detection and anomaly screening" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -279,6 +280,9 @@ export function EditorHomeTab({
                     </div>
                     <div className="text-[9px] text-[#6f7f9a] font-mono leading-snug">
                       {template.description}
+                    </div>
+                    <div className="text-[8px] text-[#6f7f9a]/50 font-mono mt-0.5 italic">
+                      {template.hint}
                     </div>
                   </div>
                   <IconArrowRight

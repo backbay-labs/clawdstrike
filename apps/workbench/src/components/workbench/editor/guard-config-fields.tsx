@@ -122,7 +122,7 @@ function SecretPatternListEditor({ patterns, onChange }: SecretPatternListProps)
               type="text"
               value={p.name}
               onChange={(e) => updateRow(index, "name", e.target.value)}
-              placeholder="name"
+              placeholder="e.g., ssh_key_access"
               aria-label="Pattern name"
               className="h-7 rounded-md border border-[#2d3240] bg-[#131721] px-2 text-xs font-mono text-[#ece7dc] placeholder:text-[#6f7f9a]/50 outline-none focus:border-[#d4a84b]/50"
             />
@@ -143,7 +143,7 @@ function SecretPatternListEditor({ patterns, onChange }: SecretPatternListProps)
                   }
                   updateRow(index, "pattern", val);
                 }}
-                placeholder="regex"
+                placeholder="e.g., ^/etc/passwd$"
                 aria-label="Regex pattern"
                 className={`h-7 w-full rounded-md border bg-[#131721] px-2 pr-6 text-xs font-mono text-[#ece7dc] placeholder:text-[#6f7f9a]/50 outline-none focus:border-[#d4a84b]/50 ${
                   regexErrors[index] ? "border-[#c45c5c]" : "border-[#2d3240]"

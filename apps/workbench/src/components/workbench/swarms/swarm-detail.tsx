@@ -191,7 +191,7 @@ export function SwarmDetail() {
             </button>
             <button
               onClick={() => {
-                if (confirm(`Delete swarm "${swarm.name}"? This cannot be undone.`)) {
+                if (confirm(`Delete swarm "${swarm.name}"?\n\nAll shared policies, trust relationships, and member data will be permanently destroyed. This action is irreversible.`)) {
                   deleteSwarm(swarm.id);
                   navigate("/swarms");
                 }
@@ -516,7 +516,7 @@ function MemberRow({
             <button
               onClick={onRemove}
               className="rounded p-1 text-[#6f7f9a]/30 hover:text-[#c45c5c] transition-colors"
-              title="Remove member"
+              title="Remove from swarm"
             >
               <IconTrash size={11} stroke={1.5} />
             </button>
@@ -1270,7 +1270,7 @@ function SettingsTab({ swarm }: { swarm: Swarm }) {
             </div>
             <button
               onClick={() => {
-                if (confirm(`Delete swarm "${swarm.name}"? This action cannot be undone.`)) {
+                if (confirm(`Delete swarm "${swarm.name}"?\n\nAll shared policies, trust relationships, and member data will be permanently destroyed. This action is irreversible.`)) {
                   deleteSwarm(swarm.id);
                   navigate("/swarms");
                 }

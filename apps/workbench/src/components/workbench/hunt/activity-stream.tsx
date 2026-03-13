@@ -728,6 +728,7 @@ function EventDetail({ event }: { event: AgentEvent }) {
               label="Trustprint"
               value={event.trustprintScore.toFixed(4)}
               mono
+              title="Embedding-based threat screening using vector similarity against known patterns"
             />
           )}
         </div>
@@ -957,14 +958,16 @@ function DetailRow({
   label,
   value,
   mono,
+  title,
 }: {
   label: string;
   value: string;
   mono?: boolean;
+  title?: string;
 }) {
   return (
     <div className="flex items-baseline gap-3 text-[10px]">
-      <span className="text-[#6f7f9a]/50 shrink-0 w-[90px]">{label}</span>
+      <span className="text-[#6f7f9a]/50 shrink-0 w-[90px]" title={title}>{label}</span>
       <span
         className={cn(
           "text-[#ece7dc]/70 break-all",

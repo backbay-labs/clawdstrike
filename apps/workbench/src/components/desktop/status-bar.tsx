@@ -114,6 +114,15 @@ export function StatusBar() {
 
       {/* ---- Right ---- */}
       <div className="flex items-center gap-3 min-w-0">
+        {/* Evaluation count — live from fleet when connected */}
+        <span className="text-[#6f7f9a]/70 font-mono text-[10px]" title={connection.connected ? "Total evaluations processed by fleet" : "Not connected to fleet"}>
+          {connection.connected
+            ? `${connection.hushdHealth?.total_evaluations != null ? connection.hushdHealth.total_evaluations.toLocaleString() : "..."} evals`
+            : "\u2014"}
+        </span>
+
+        <span className="w-px h-3 bg-[#2d3240]/60" />
+
         {/* Tab count */}
         {tabs.length > 1 && (
           <>
@@ -125,9 +134,11 @@ export function StatusBar() {
         )}
 
         {/* Active policy name + dirty indicator */}
-        <span className="text-[#ece7dc]/70 truncate max-w-[200px]">
-          {currentTab?.name || activePolicy.name}
-          {state.dirty && <span className="text-[#d4a84b] ml-1">*</span>}
+        <span className="flex items-center gap-1 text-[#ece7dc]/70 truncate max-w-[200px]" title={`Active policy: ${currentTab?.name || activePolicy.name}${state.dirty ? " (unsaved changes)" : ""}`}>
+          {state.dirty && (
+            <span className="inline-block w-[6px] h-[6px] rounded-full bg-[#d4a84b] shrink-0" />
+          )}
+          <span className="truncate">{currentTab?.name || activePolicy.name}</span>
         </span>
 
         <span className="w-px h-3 bg-[#2d3240]/60" />

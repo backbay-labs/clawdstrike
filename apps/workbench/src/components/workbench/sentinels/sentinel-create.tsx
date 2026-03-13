@@ -105,6 +105,10 @@ const SOURCE_TYPE_LABELS: Record<string, string> = {
   speakeasy_topic: "Speakeasy Topic",
 };
 
+const SOURCE_TYPE_TOOLTIPS: Record<string, string> = {
+  speakeasy_topic: "Encrypted inter-sentinel communication channel for sharing threat intelligence",
+};
+
 const STEPS = [
   { label: "Mode", number: 1 },
   { label: "Identity & Goals", number: 2 },
@@ -396,6 +400,7 @@ function IdentityGoalsStep({
               <button
                 onClick={() => removeGoal(idx)}
                 className="text-[#6f7f9a]/40 hover:text-[#c45c5c] transition-colors"
+                title="Remove goal"
               >
                 <IconTrash size={12} stroke={1.5} />
               </button>
@@ -450,6 +455,7 @@ function IdentityGoalsStep({
                   <button
                     key={st}
                     onClick={() => updateGoal(idx, { sourceType: st })}
+                    title={SOURCE_TYPE_TOOLTIPS[st]}
                     className={cn(
                       "rounded-md px-2 py-1 text-[9px] font-medium transition-colors",
                       goal.sourceType === st
@@ -958,7 +964,7 @@ function ReviewStep({
                   <span className="text-[#ece7dc]/70 truncate">
                     {goal.description || "(no description)"}
                   </span>
-                  <span className="ml-auto text-[#6f7f9a]/40 font-mono shrink-0">
+                  <span className="ml-auto text-[#6f7f9a]/40 font-mono shrink-0" title={SOURCE_TYPE_TOOLTIPS[goal.sourceType]}>
                     {SOURCE_TYPE_LABELS[goal.sourceType]}
                   </span>
                 </div>

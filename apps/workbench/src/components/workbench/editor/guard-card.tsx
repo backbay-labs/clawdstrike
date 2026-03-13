@@ -596,7 +596,7 @@ export function GuardCard({
                 {/* --- Trustprint Profile --- */}
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-[10px] font-mono font-medium text-[#ece7dc]">Trustprint Profile</span>
+                    <span className="text-[10px] font-mono font-medium text-[#ece7dc]" title="Embedding-based threat screening using vector similarity against known patterns">Trustprint Profile</span>
                   </div>
                   <p className="text-[9px] text-[#6f7f9a]/60 mb-2.5 leading-relaxed">
                     A Trustprint profile is the threat pattern database that this guard screens actions against.

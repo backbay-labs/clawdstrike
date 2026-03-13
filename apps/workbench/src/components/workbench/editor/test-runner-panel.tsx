@@ -567,7 +567,7 @@ function QuickTestTab() {
                         <button
                           onClick={() => removeEntry(entry.id)}
                           className="p-0.5 text-[#6f7f9a] hover:text-[#c45c5c] transition-colors"
-                          title="Remove"
+                          title="Remove test entry"
                         >
                           <IconTrash size={11} stroke={1.5} />
                         </button>

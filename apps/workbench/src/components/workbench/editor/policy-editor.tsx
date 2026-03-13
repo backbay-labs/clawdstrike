@@ -489,7 +489,7 @@ export function PolicyEditor() {
 
         {/* Version history panel (collapsible right sidebar) */}
         {historyOpen && !showHome && (
-          <div className="w-[280px] shrink-0">
+          <div className="w-[280px] shrink-0 max-lg:hidden">
             <VersionHistoryPanel
               policyId={policyId}
               currentYaml={state.yaml}

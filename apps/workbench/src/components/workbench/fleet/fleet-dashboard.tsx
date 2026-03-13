@@ -289,7 +289,7 @@ export function FleetDashboard() {
 
       {/* Agent table */}
       <div className="flex-1 overflow-auto">
-        <table className="w-full min-w-[900px]">
+        <table className="w-full min-w-[700px]">
           <thead className="sticky top-0 z-10 bg-[#0b0d13]/60">
             <tr className="border-b border-[#2d3240]/60">
               <SortableHeader
@@ -313,6 +313,7 @@ export function FleetDashboard() {
                 currentSort={sortCol}
                 asc={sortAsc}
                 onSort={handleSort}
+                title="Resource usage limits and automated state transitions for agent capabilities"
               />
               <SortableHeader
                 label="Policy"
@@ -430,6 +431,7 @@ function SortableHeader({
   asc,
   onSort,
   className,
+  title,
 }: {
   label: string;
   column: SortColumn;
@@ -437,6 +439,7 @@ function SortableHeader({
   asc: boolean;
   onSort: (col: SortColumn) => void;
   className?: string;
+  title?: string;
 }) {
   const active = currentSort === column;
 
@@ -448,6 +451,7 @@ function SortableHeader({
         className,
       )}
       onClick={() => onSort(column)}
+      title={title}
     >
       <span className="flex items-center gap-1">
         {label}
@@ -502,7 +506,7 @@ function AgentRow({
             ) : (
               <IconChevronRight size={11} className="text-[#6f7f9a]/40 shrink-0" />
             )}
-            <span className="font-mono text-[11px] text-[#ece7dc]/80 truncate max-w-[200px]">
+            <span className="font-mono text-[11px] text-[#ece7dc]/80 truncate max-w-[180px] inline-block">
               {agent.endpoint_agent_id}
             </span>
           </div>
@@ -524,11 +528,11 @@ function AgentRow({
           )}
         </td>
 
-        <td className="px-3 py-2.5 font-mono text-[10px] text-[#ece7dc]/50">
+        <td className="px-3 py-2.5 font-mono text-[10px] text-[#ece7dc]/50 max-w-[120px] truncate">
           {agent.policy_version ?? "---"}
         </td>
 
-        <td className="px-3 py-2.5 font-mono text-[10px] text-[#ece7dc]/50">
+        <td className="px-3 py-2.5 font-mono text-[10px] text-[#ece7dc]/50 max-w-[120px] truncate">
           {agent.daemon_version ?? "---"}
         </td>
 
@@ -579,7 +583,7 @@ function AgentDetail({ agent }: { agent: AgentInfo }) {
       <div className="flex flex-col gap-2 min-w-[240px]">
         <DetailSectionLabel text="Agent Info" />
         <DetailRow label="Agent ID" value={agent.endpoint_agent_id} mono />
-        <DetailRow label="Posture" value={agent.posture ?? "---"} />
+        <DetailRow label="Posture" value={agent.posture ?? "---"} title="Resource usage limits and automated state transitions for agent capabilities" />
         <DetailRow label="Policy Version" value={agent.policy_version ?? "---"} mono />
         <DetailRow label="Daemon Version" value={agent.daemon_version ?? "---"} mono />
         <DetailRow label="Session ID" value={agent.last_session_id ?? "---"} mono />
@@ -646,15 +650,17 @@ function DetailRow({
   value,
   mono,
   valueColor,
+  title,
 }: {
   label: string;
   value: string;
   mono?: boolean;
   valueColor?: string;
+  title?: string;
 }) {
   return (
     <div className="flex items-baseline gap-3 text-[10px]">
-      <span className="text-[#6f7f9a]/50 shrink-0 w-[100px]">{label}</span>
+      <span className="text-[#6f7f9a]/50 shrink-0 w-[100px]" title={title}>{label}</span>
       <span
         className={cn(
           "text-[#ece7dc]/70 truncate",
