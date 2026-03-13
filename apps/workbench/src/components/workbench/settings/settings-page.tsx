@@ -29,6 +29,7 @@ export function SettingsPage() {
         subtitle="Configure connections, preferences, and integrations"
         icon={IconSettings}
         iconColor="#6f7f9a"
+        sectionAccent="#7b6b8b"
       />
 
       <SubTabBar

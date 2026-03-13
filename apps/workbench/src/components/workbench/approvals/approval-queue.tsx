@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { motion } from "motion/react";
 import {
   IconSearch,
   IconDatabase,
@@ -489,25 +490,31 @@ export function ApprovalQueue({ currentUser }: { currentUser?: string } = {}) {
             </div>
           ) : (
             <div className="flex flex-col gap-2">
-              {filteredRequests.map((request) => (
-                <ApprovalCard
+              {filteredRequests.map((request, index) => (
+                <motion.div
                   key={request.id}
-                  request={request}
-                  decision={decisionMap.get(request.id)}
-                  isSelected={selectedRequest?.id === request.id}
-                  confirmAction={confirmAction?.requestId === request.id ? confirmAction : null}
-                  denyReason={denyReason}
-                  scopeDropdownOpen={scopeDropdownOpen === request.id}
-                  onSelect={() => setSelectedRequest(request)}
-                  onApprove={(scope) => handleApprove(request.id, scope)}
-                  onDeny={() => handleDenyInit(request.id)}
-                  onConfirm={executeAction}
-                  onCancel={cancelAction}
-                  onDenyReasonChange={setDenyReason}
-                  onToggleScopeDropdown={() =>
-                    setScopeDropdownOpen((prev) => (prev === request.id ? null : request.id))
-                  }
-                />
+                  initial={{ opacity: 0, x: -12 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.25, delay: Math.min(index * 0.03, 0.3) }}
+                >
+                  <ApprovalCard
+                    request={request}
+                    decision={decisionMap.get(request.id)}
+                    isSelected={selectedRequest?.id === request.id}
+                    confirmAction={confirmAction?.requestId === request.id ? confirmAction : null}
+                    denyReason={denyReason}
+                    scopeDropdownOpen={scopeDropdownOpen === request.id}
+                    onSelect={() => setSelectedRequest(request)}
+                    onApprove={(scope) => handleApprove(request.id, scope)}
+                    onDeny={() => handleDenyInit(request.id)}
+                    onConfirm={executeAction}
+                    onCancel={cancelAction}
+                    onDenyReasonChange={setDenyReason}
+                    onToggleScopeDropdown={() =>
+                      setScopeDropdownOpen((prev) => (prev === request.id ? null : request.id))
+                    }
+                  />
+                </motion.div>
               ))}
             </div>
           )}
@@ -515,12 +522,19 @@ export function ApprovalQueue({ currentUser }: { currentUser?: string } = {}) {
       </div>
 
       {selectedRequest && (
-        <DetailDrawer
-          request={selectedRequest}
-          decision={decisionMap.get(selectedRequest.id)}
-          relatedRequests={relatedRequests}
-          onClose={() => setSelectedRequest(null)}
-        />
+        <motion.div
+          key={selectedRequest.id}
+          initial={{ x: 40, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          transition={{ type: "spring", bounce: 0.08, duration: 0.35 }}
+        >
+          <DetailDrawer
+            request={selectedRequest}
+            decision={decisionMap.get(selectedRequest.id)}
+            relatedRequests={relatedRequests}
+            onClose={() => setSelectedRequest(null)}
+          />
+        </motion.div>
       )}
     </div>
   );
@@ -764,10 +778,12 @@ function ApprovalCard({
                 </div>
               )}
               <div className="flex items-center gap-1.5 ml-auto">
-                <button
+                <motion.button
+                  whileTap={{ scale: 0.92 }}
+                  transition={{ type: "spring", bounce: 0.4, duration: 0.2 }}
                   onClick={(e) => { e.stopPropagation(); onConfirm(); }}
                   className={cn(
-                    "flex h-7 items-center gap-1 rounded-md px-3 text-[11px] font-medium transition-colors active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]",
+                    "flex h-7 items-center gap-1 rounded-md px-3 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]",
                     confirmAction.type === "approve"
                       ? "bg-[#3dbf84]/15 text-[#3dbf84] hover:bg-[#3dbf84]/25"
                       : "bg-[#c45c5c]/15 text-[#c45c5c] hover:bg-[#c45c5c]/25",
@@ -775,26 +791,30 @@ function ApprovalCard({
                 >
                   <IconCheck size={13} />
                   Confirm
-                </button>
-                <button
+                </motion.button>
+                <motion.button
+                  whileTap={{ scale: 0.92 }}
+                  transition={{ type: "spring", bounce: 0.4, duration: 0.2 }}
                   onClick={(e) => { e.stopPropagation(); onCancel(); }}
-                  className="flex h-7 items-center gap-1 rounded-md bg-[#2d3240]/50 px-3 text-[11px] text-[#6f7f9a] transition-colors hover:text-[#ece7dc] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]"
+                  className="flex h-7 items-center gap-1 rounded-md bg-[#2d3240]/50 px-3 text-[11px] text-[#6f7f9a] transition-colors hover:text-[#ece7dc] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]"
                 >
                   Cancel
-                </button>
+                </motion.button>
               </div>
             </div>
           ) : (
             <>
               <div className="relative">
-                <button
+                <motion.button
+                  whileTap={{ scale: 0.92 }}
+                  transition={{ type: "spring", bounce: 0.4, duration: 0.2 }}
                   onClick={(e) => { e.stopPropagation(); onToggleScopeDropdown(); }}
-                  className="flex h-7 items-center gap-1 rounded-md bg-[#3dbf84]/10 px-3 text-[11px] font-medium text-[#3dbf84] transition-colors hover:bg-[#3dbf84]/20 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]"
+                  className="flex h-7 items-center gap-1 rounded-md bg-[#3dbf84]/10 px-3 text-[11px] font-medium text-[#3dbf84] transition-colors hover:bg-[#3dbf84]/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]"
                 >
                   <IconCheck size={13} />
                   Approve
                   <IconChevronDown size={11} />
-                </button>
+                </motion.button>
 
                 {scopeDropdownOpen && (
                   <div className="absolute left-0 top-full z-30 mt-1 w-56 rounded-lg border border-[#2d3240] bg-[#131721] py-1 shadow-xl">
@@ -816,13 +836,15 @@ function ApprovalCard({
                 )}
               </div>
 
-              <button
+              <motion.button
+                whileTap={{ scale: 0.92 }}
+                transition={{ type: "spring", bounce: 0.4, duration: 0.2 }}
                 onClick={(e) => { e.stopPropagation(); onDeny(); }}
-                className="flex h-7 items-center gap-1 rounded-md bg-[#c45c5c]/10 px-3 text-[11px] font-medium text-[#c45c5c] transition-colors hover:bg-[#c45c5c]/20 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]"
+                className="flex h-7 items-center gap-1 rounded-md bg-[#c45c5c]/10 px-3 text-[11px] font-medium text-[#c45c5c] transition-colors hover:bg-[#c45c5c]/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]"
               >
                 <IconBan size={13} />
                 Deny
-              </button>
+              </motion.button>
 
               <div className="flex-1" />
 

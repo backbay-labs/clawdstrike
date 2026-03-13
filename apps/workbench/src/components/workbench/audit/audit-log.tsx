@@ -8,6 +8,7 @@ import {
   IconTrash,
   IconCircleDot,
   IconDeviceDesktop,
+  IconFilter,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "../shared/page-header";
@@ -157,6 +158,13 @@ export function AuditLog() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [showFilters, setShowFilters] = useState(false);
+
+  const activeFilterCount =
+    (timeRange !== "24h" ? 1 : 0) +
+    (decisionFilter !== "all" ? 1 : 0) +
+    (actionFilter !== "all" ? 1 : 0) +
+    (agentFilter !== "all" ? 1 : 0);
 
   const agentIds = useMemo(
     () => agents.map((a) => a.endpoint_agent_id),
@@ -265,6 +273,7 @@ export function AuditLog() {
           />
         </>}
         icon={IconFileAnalytics}
+        sectionAccent="#7b6b8b"
       >
         {/* Source selector */}
         <div className="flex items-center rounded-md border border-[#2d3240] overflow-hidden">
@@ -278,7 +287,7 @@ export function AuditLog() {
                 sourceMode === mode
                   ? "bg-[#d4a84b]/10 text-[#d4a84b]"
                   : mode === "fleet" && !connection.connected
-                    ? "text-[#6f7f9a]/20 cursor-not-allowed"
+                    ? "text-[#6f7f9a]/50 cursor-not-allowed"
                     : "text-[#6f7f9a]/50 hover:text-[#ece7dc] hover:bg-[#131721]/40",
               )}
             >
@@ -304,7 +313,7 @@ export function AuditLog() {
           className={cn(
             "flex items-center gap-1.5 rounded-md border border-[#2d3240] px-3 py-1.5 text-[11px] transition-colors active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]",
             unifiedEvents.length === 0
-              ? "text-[#6f7f9a]/20 cursor-not-allowed"
+              ? "text-[#6f7f9a]/50 cursor-not-allowed"
               : "text-[#6f7f9a] hover:text-[#ece7dc] hover:border-[#d4a84b]/30",
           )}
         >
@@ -333,72 +342,96 @@ export function AuditLog() {
         )}
       </PageHeader>
 
-      {/* Filter bar */}
-      <div className="shrink-0 border-b border-[#2d3240]/60 px-6 py-3">
-        <div className="flex flex-wrap items-center gap-4">
-          <FilterGroup label="Time">
-            {(["1h", "24h", "7d", "30d"] as TimeRange[]).map((tr) => (
-              <FilterPill
-                key={tr}
-                label={tr}
-                active={timeRange === tr}
-                onClick={() => setTimeRange(tr)}
-              />
-            ))}
-          </FilterGroup>
-
-          {showFleet && (
-            <>
-              <FilterGroup label="Decision">
-                {(["all", "allow", "deny", "warn"] as DecisionFilter[]).map(
-                  (d) => (
+      {/* Filter bar + summary stats (collapsed) */}
+      <div className="shrink-0 border-b border-[#2d3240]/60 px-6 py-2 flex items-center gap-3">
+        {/* Filters dropdown button */}
+        <div className="relative">
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className="flex items-center gap-1.5 rounded-md border border-[#2d3240] px-3 py-1.5 text-[11px] text-[#6f7f9a] hover:text-[#ece7dc] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]"
+          >
+            <IconFilter size={13} stroke={1.5} />
+            Filters
+            {activeFilterCount > 0 && (
+              <span className="ml-1 rounded-full bg-[#d4a84b]/15 text-[#d4a84b] px-1.5 text-[9px] font-semibold">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
+          {showFilters && (
+            <div className="absolute left-0 top-full mt-1 z-50 rounded-lg border border-[#2d3240] bg-[#131721] p-4 shadow-xl min-w-[400px]">
+              {/* Time range row */}
+              <div className="mb-3">
+                <FilterGroup label="Time">
+                  {(["1h", "24h", "7d", "30d"] as TimeRange[]).map((tr) => (
                     <FilterPill
-                      key={d}
-                      label={d}
-                      active={decisionFilter === d}
-                      onClick={() => setDecisionFilter(d)}
+                      key={tr}
+                      label={tr}
+                      active={timeRange === tr}
+                      onClick={() => setTimeRange(tr)}
                     />
-                  ),
-                )}
-              </FilterGroup>
+                  ))}
+                </FilterGroup>
+              </div>
 
-              <FilterGroup label="Action">
-                <Select value={actionFilter} onValueChange={(v) => { if (v !== null) setActionFilter(v); }}>
-                  <SelectTrigger className="h-7 text-xs bg-[#131721] border-[#2d3240] text-[#ece7dc]">
-                    <SelectValue placeholder="All types" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-[#131721] border-[#2d3240]">
-                    {ACTION_TYPES.map((at) => (
-                      <SelectItem key={at} value={at} className="text-xs text-[#ece7dc]">
-                        {at === "all" ? "All types" : at}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </FilterGroup>
+              {showFleet && (
+                <>
+                  {/* Decision row */}
+                  <div className="mb-3">
+                    <FilterGroup label="Decision">
+                      {(["all", "allow", "deny", "warn"] as DecisionFilter[]).map(
+                        (d) => (
+                          <FilterPill
+                            key={d}
+                            label={d}
+                            active={decisionFilter === d}
+                            onClick={() => setDecisionFilter(d)}
+                          />
+                        ),
+                      )}
+                    </FilterGroup>
+                  </div>
 
-              <FilterGroup label="Agent">
-                <Select value={agentFilter} onValueChange={(v) => { if (v !== null) setAgentFilter(v); }}>
-                  <SelectTrigger className="h-7 text-xs bg-[#131721] border-[#2d3240] text-[#ece7dc] max-w-[180px]">
-                    <SelectValue placeholder="All agents" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-[#131721] border-[#2d3240]">
-                    <SelectItem value="all" className="text-xs text-[#ece7dc]">All agents</SelectItem>
-                    {agentIds.map((id) => (
-                      <SelectItem key={id} value={id} className="text-xs text-[#ece7dc]">
-                        {id}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </FilterGroup>
-            </>
+                  {/* Action type + Agent row */}
+                  <div className="flex items-center gap-4">
+                    <FilterGroup label="Action">
+                      <Select value={actionFilter} onValueChange={(v) => { if (v !== null) setActionFilter(v); }}>
+                        <SelectTrigger className="h-7 text-xs bg-[#0b0d13] border-[#2d3240] text-[#ece7dc]">
+                          <SelectValue placeholder="All types" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-[#131721] border-[#2d3240]">
+                          {ACTION_TYPES.map((at) => (
+                            <SelectItem key={at} value={at} className="text-xs text-[#ece7dc]">
+                              {at === "all" ? "All types" : at}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FilterGroup>
+
+                    <FilterGroup label="Agent">
+                      <Select value={agentFilter} onValueChange={(v) => { if (v !== null) setAgentFilter(v); }}>
+                        <SelectTrigger className="h-7 text-xs bg-[#0b0d13] border-[#2d3240] text-[#ece7dc] max-w-[180px]">
+                          <SelectValue placeholder="All agents" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-[#131721] border-[#2d3240]">
+                          <SelectItem value="all" className="text-xs text-[#ece7dc]">All agents</SelectItem>
+                          {agentIds.map((id) => (
+                            <SelectItem key={id} value={id} className="text-xs text-[#ece7dc]">
+                              {id}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FilterGroup>
+                  </div>
+                </>
+              )}
+            </div>
           )}
         </div>
-      </div>
 
-      {/* Summary stats */}
-      <div className="shrink-0 border-b border-[#2d3240]/60 px-6 py-2 flex items-center gap-3">
+        {/* Inline summary stats */}
         <StatBadge label="Total" count={counts.total} />
         {showFleet ? (
           <>
@@ -437,7 +470,7 @@ export function AuditLog() {
         ) : unifiedEvents.length === 0 ? (
           <div className="flex h-full items-center justify-center">
             <div className="flex flex-col items-center gap-3">
-              <IconFileAnalytics size={24} className="text-[#6f7f9a]/20" />
+              <IconFileAnalytics size={24} className="text-[#6f7f9a]/50" />
               <span className="text-[12px] text-[#6f7f9a]/40">
                 {showLocal
                   ? "No local events recorded yet. Events are captured as you use the workbench."
@@ -689,7 +722,7 @@ function FleetEventRow({
           {event.severity ? (
             <SeverityBadge severity={event.severity} />
           ) : (
-            <span className="text-[10px] text-[#6f7f9a]/20">---</span>
+            <span className="text-[10px] text-[#6f7f9a]/50">---</span>
           )}
         </td>
       </tr>

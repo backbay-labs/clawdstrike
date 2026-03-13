@@ -995,7 +995,7 @@ function HushdMonitorPanel() {
               </span>
               {/* Show daemon event_id on hover */}
               {evt.sourceEventId && (
-                <span className="text-[#6f7f9a]/20 shrink-0 text-[8px] hidden group-hover:inline truncate max-w-[120px]" title={evt.sourceEventId}>
+                <span className="text-[#6f7f9a]/50 shrink-0 text-[8px] hidden group-hover:inline truncate max-w-[120px]" title={evt.sourceEventId}>
                   {evt.sourceEventId.length > 12
                     ? `${evt.sourceEventId.slice(0, 8)}…`
                     : evt.sourceEventId}
@@ -1016,7 +1016,7 @@ function HushdMonitorPanel() {
                 Live SSE stream:
               </span>{" "}
               <code className="text-[#3dbf84]/60">{endpoint}/api/v1/events</code>
-              <span className="ml-2 text-[#6f7f9a]/25">
+              <span className="ml-2 text-[#6f7f9a]/50">
                 Hover events to see daemon event IDs
               </span>
             </>
@@ -1027,7 +1027,7 @@ function HushdMonitorPanel() {
                 Reconnecting to
               </span>{" "}
               <code className="text-[#d4a84b]/60">{endpoint}/api/v1/events</code>
-              <span className="ml-2 text-[#6f7f9a]/25">
+              <span className="ml-2 text-[#6f7f9a]/50">
                 Attempt {reconnectAttemptsRef.current} of {MAX_RECONNECT_ATTEMPTS}
               </span>
             </>

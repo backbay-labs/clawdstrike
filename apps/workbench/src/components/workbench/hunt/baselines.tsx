@@ -428,7 +428,7 @@ export function Baselines({
         ) : (
           <div className="flex h-full items-center justify-center">
             <div className="flex flex-col items-center gap-3">
-              <IconActivity size={24} className="text-[#6f7f9a]/20" />
+              <IconActivity size={24} className="text-[#6f7f9a]/50" />
               <span className="text-[12px] text-[#6f7f9a]/40">
                 Select an agent to view their behavioral baseline
               </span>

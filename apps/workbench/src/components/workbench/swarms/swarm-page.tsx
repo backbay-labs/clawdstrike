@@ -133,6 +133,7 @@ export function SwarmPage() {
         subtitle={<>{counts.total} swarm{counts.total !== 1 ? "s" : ""} active</>}
         icon={IconNetwork}
         iconColor="#55788b"
+        sectionAccent="#8b5555"
         below={
           <div className="flex items-center justify-between gap-4">
             {/* Summary badges inline */}

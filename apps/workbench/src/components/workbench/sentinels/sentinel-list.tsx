@@ -360,6 +360,7 @@ export function SentinelList({ sentinels }: { sentinels: Sentinel[] }) {
           {counts.retired > 0 && ` \u00b7 ${counts.retired} retired`}
         </>}
         icon={IconEye}
+        sectionAccent="#8b5555"
       >
         <Link
           to="/sentinels/create"

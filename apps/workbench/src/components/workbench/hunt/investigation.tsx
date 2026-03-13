@@ -415,7 +415,7 @@ export function InvestigationWorkbench({
               <div className="px-4 py-8 text-center">
                 <IconFileAnalytics
                   size={20}
-                  className="mx-auto mb-2 text-[#6f7f9a]/20"
+                  className="mx-auto mb-2 text-[#6f7f9a]/50"
                 />
                 <p className="text-[10px] text-[#6f7f9a]/40 leading-relaxed">
                   No investigations yet. Escalate suspicious activity from the
@@ -524,7 +524,7 @@ export function InvestigationWorkbench({
                             className={cn(
                               "flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium transition-colors",
                               sessionIndex === 0
-                                ? "text-[#6f7f9a]/20 cursor-not-allowed"
+                                ? "text-[#6f7f9a]/50 cursor-not-allowed"
                                 : "text-[#6f7f9a] hover:text-[#ece7dc] hover:bg-[#131721]",
                             )}
                           >
@@ -540,7 +540,7 @@ export function InvestigationWorkbench({
                             className={cn(
                               "flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium transition-colors",
                               sessionIndex >= sessionIds.length - 1
-                                ? "text-[#6f7f9a]/20 cursor-not-allowed"
+                                ? "text-[#6f7f9a]/50 cursor-not-allowed"
                                 : "text-[#6f7f9a] hover:text-[#ece7dc] hover:bg-[#131721]",
                             )}
                           >
@@ -559,7 +559,7 @@ export function InvestigationWorkbench({
                         <div className="flex flex-col items-center gap-3">
                           <IconAlertTriangle
                             size={20}
-                            className="text-[#6f7f9a]/20"
+                            className="text-[#6f7f9a]/50"
                           />
                           <p className="text-[11px] text-[#6f7f9a]/40 max-w-[260px] text-center">
                             No events in scope. Add events from the Activity
@@ -1198,7 +1198,7 @@ function AnnotationRow({ annotation }: { annotation: Annotation }) {
           <span className="text-[8px] text-[#6f7f9a]/30">
             {annotation.createdBy}
           </span>
-          <span className="text-[8px] text-[#6f7f9a]/20 font-mono">
+          <span className="text-[8px] text-[#6f7f9a]/50 font-mono">
             {formatTimestamp(annotation.createdAt)}
           </span>
         </div>

@@ -563,7 +563,7 @@ function DetectionsTab({ swarm }: { swarm: Swarm }) {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="text-center">
-          <IconShieldCheck size={24} className="text-[#6f7f9a]/20 mx-auto mb-3" />
+          <IconShieldCheck size={24} className="text-[#6f7f9a]/50 mx-auto mb-3" />
           <p className="text-[12px] text-[#6f7f9a]/40">No shared detections yet</p>
           <p className="text-[10px] text-[#6f7f9a]/30 mt-1">
             Publish intel artifacts as detection rules to distribute to swarm members
@@ -845,7 +845,7 @@ function TrustGraphTab({ swarm }: { swarm: Swarm }) {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="text-center">
-          <IconTopologyRing size={24} className="text-[#6f7f9a]/20 mx-auto mb-3" />
+          <IconTopologyRing size={24} className="text-[#6f7f9a]/50 mx-auto mb-3" />
           <p className="text-[12px] text-[#6f7f9a]/40">No members to visualize</p>
         </div>
       </div>
@@ -1122,7 +1122,7 @@ function SpeakeasiesTab({ swarm }: { swarm: Swarm }) {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="text-center">
-          <IconMessage size={24} className="text-[#6f7f9a]/20 mx-auto mb-3" />
+          <IconMessage size={24} className="text-[#6f7f9a]/50 mx-auto mb-3" />
           <p className="text-[12px] text-[#6f7f9a]/40">No speakeasy rooms yet</p>
           <p className="text-[10px] text-[#6f7f9a]/30 mt-1">
             Private signed rooms for sensitive collaboration and intel exchange

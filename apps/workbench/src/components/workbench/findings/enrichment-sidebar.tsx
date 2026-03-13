@@ -33,13 +33,13 @@ const ENRICHMENT_TYPE_CONFIG: Record<
   { icon: typeof IconTarget; color: string; label: string }
 > = {
   mitre_attack: { icon: IconTarget, color: "#c45c5c", label: "MITRE ATT&CK" },
-  ioc_extraction: { icon: IconBug, color: "#d4784b", label: "IOC Extraction" },
+  ioc_extraction: { icon: IconBug, color: "#d4a84b", label: "IOC Extraction" },
   spider_sense: { icon: IconSpider, color: "#d4a84b", label: "Spider Sense" },
-  external_feed: { icon: IconRss, color: "#6ea8d9", label: "External Feed" },
+  external_feed: { icon: IconRss, color: "#557b8b", label: "External Feed" },
   swarm_corroboration: { icon: IconUsers, color: "#3dbf84", label: "Swarm Corroboration" },
-  reputation: { icon: IconShieldCheck, color: "#6b9b8b", label: "Reputation" },
-  geolocation: { icon: IconMapPin, color: "#a78bfa", label: "Geolocation" },
-  whois: { icon: IconWorld, color: "#8b9dc3", label: "WHOIS" },
+  reputation: { icon: IconShieldCheck, color: "#3dbf84", label: "Reputation" },
+  geolocation: { icon: IconMapPin, color: "#7b6b8b", label: "Geolocation" },
+  whois: { icon: IconWorld, color: "#6f7f9a", label: "WHOIS" },
   custom: { icon: IconInfoCircle, color: "#6f7f9a", label: "Custom" },
 };
 
@@ -47,11 +47,11 @@ const IOC_TYPE_COLORS: Record<string, string> = {
   sha256: "#c45c5c",
   sha1: "#c45c5c",
   md5: "#c45c5c",
-  domain: "#6ea8d9",
-  ip: "#d4784b",
+  domain: "#557b8b",
+  ip: "#d4a84b",
   url: "#d4a84b",
-  email: "#a78bfa",
-  filepath: "#6b9b8b",
+  email: "#7b6b8b",
+  filepath: "#3dbf84",
 };
 
 const SPIDER_SENSE_VERDICT_CONFIG: Record<
@@ -64,9 +64,9 @@ const SPIDER_SENSE_VERDICT_CONFIG: Record<
 };
 
 const KILL_CHAIN_DEPTH_LABELS: Record<number, { label: string; color: string }> = {
-  1: { label: "Initial", color: "#6b9b8b" },
+  1: { label: "Initial", color: "#3dbf84" },
   2: { label: "Establishing", color: "#d4a84b" },
-  3: { label: "Expanding", color: "#d4784b" },
+  3: { label: "Expanding", color: "#d4a84b" },
   4: { label: "Deep", color: "#c45c5c" },
   5: { label: "Full Chain", color: "#c45c5c" },
 };
@@ -196,7 +196,7 @@ function EnrichmentSection({
                 <span className="text-[8px] text-[#6f7f9a]/30">
                   {formatEnrichmentTime(enrichment.addedAt)}
                 </span>
-                <span className="text-[8px] text-[#6f7f9a]/20">via {enrichment.source}</span>
+                <span className="text-[8px] text-[#6f7f9a]/50">via {enrichment.source}</span>
               </div>
             </div>
           ))}
@@ -459,7 +459,7 @@ function ExternalFeedContent({
   return (
     <div className="rounded-lg border border-[#2d3240]/40 bg-[#131721] p-3">
       <div className="flex items-center gap-2 mb-1.5">
-        <IconRss size={12} className="text-[#6ea8d9] shrink-0" stroke={1.5} />
+        <IconRss size={12} className="text-[#557b8b] shrink-0" stroke={1.5} />
         <span className="text-[10px] font-medium text-[#ece7dc]/70">
           {feedName}
         </span>

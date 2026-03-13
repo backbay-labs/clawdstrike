@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import { motion } from "motion/react";
 import {
   IconActivity,
   IconChevronDown,
@@ -507,7 +508,7 @@ export function ActivityStream({
         {filteredEvents.length === 0 ? (
           <div className="flex h-full items-center justify-center">
             <div className="flex flex-col items-center gap-3">
-              <IconActivity size={24} className="text-[#6f7f9a]/20" />
+              <IconActivity size={24} className="text-[#6f7f9a]/50" />
               <span className="text-[12px] text-[#6f7f9a]/40">
                 No events match the current filters
               </span>
@@ -531,7 +532,12 @@ export function ActivityStream({
               const cluster = clusters.get(idx);
 
               return (
-                <div key={event.id}>
+                <motion.div
+                  key={event.id}
+                  initial={{ opacity: 0, x: -12 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.25, delay: Math.min(idx * 0.03, 0.3) }}
+                >
                   {/* Cluster separator - shown before the first event in a cluster */}
                   {cluster && (
                     <ClusterSeparator
@@ -546,7 +552,7 @@ export function ActivityStream({
                       setExpandedId(expandedId === event.id ? null : event.id)
                     }
                   />
-                </div>
+                </motion.div>
               );
             })}
           </div>
@@ -850,7 +856,9 @@ function ClusterSeparator({
       <span className="text-[9px] text-[#c45c5c]/50">
         {cluster.eventIds.length} flagged events
       </span>
-      <button
+      <motion.button
+        whileTap={{ scale: 0.92 }}
+        transition={{ type: "spring", bounce: 0.4, duration: 0.2 }}
         onClick={(e) => {
           e.stopPropagation();
           onInvestigate(cluster);
@@ -859,7 +867,7 @@ function ClusterSeparator({
       >
         Investigate
         <IconChevronRight size={11} stroke={1.5} />
-      </button>
+      </motion.button>
     </div>
   );
 }

@@ -198,6 +198,7 @@ export function FleetDashboard() {
         title="Fleet Dashboard"
         subtitle={<>{counts.total} agent{counts.total !== 1 ? "s" : ""} registered</>}
         icon={IconServer}
+        sectionAccent="#7b6b8b"
       >
         <button
           onClick={handleRefresh}
@@ -554,7 +555,7 @@ function AgentRow({
             {!agent.drift.policy_drift &&
               !agent.drift.daemon_drift &&
               !agent.drift.stale && (
-                <span className="text-[10px] text-[#6f7f9a]/20">---</span>
+                <span className="text-[10px] text-[#6f7f9a]/50">---</span>
               )}
           </div>
         </td>

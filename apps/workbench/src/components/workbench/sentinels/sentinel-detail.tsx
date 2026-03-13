@@ -354,7 +354,7 @@ function SignalsTab({ sentinel }: { sentinel: Sentinel }) {
   // For now we show a placeholder that communicates the design intent.
   return (
     <div className="flex flex-col items-center justify-center py-16 gap-3">
-      <IconActivity size={28} stroke={1} className="text-[#6f7f9a]/20" />
+      <IconActivity size={28} stroke={1} className="text-[#6f7f9a]/50" />
       <p className="text-[12px] text-[#6f7f9a]/50">
         Signal stream for{" "}
         <span className="font-semibold text-[#ece7dc]/60">
@@ -390,7 +390,7 @@ function GoalsTab({
   if (goals.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 gap-3">
-        <IconTarget size={28} stroke={1} className="text-[#6f7f9a]/20" />
+        <IconTarget size={28} stroke={1} className="text-[#6f7f9a]/50" />
         <p className="text-[12px] text-[#6f7f9a]/50">
           No goals configured
         </p>

@@ -27,6 +27,8 @@ interface PageHeaderProps {
   below?: ReactNode;
   /** Additional className on the outer container. */
   className?: string;
+  /** Optional 2px left-border accent color matching the sidebar section group. */
+  sectionAccent?: string;
 }
 
 export function PageHeader({
@@ -37,6 +39,7 @@ export function PageHeader({
   children,
   below,
   className,
+  sectionAccent,
 }: PageHeaderProps) {
   return (
     <div
@@ -48,6 +51,9 @@ export function PageHeader({
         background:
           "linear-gradient(180deg, rgba(11,13,19,0.8) 0%, rgba(5,6,10,0) 100%)",
         borderBottom: "1px solid rgba(45,50,64,0.35)",
+        ...(sectionAccent
+          ? { borderLeft: `2px solid ${sectionAccent}` }
+          : {}),
       }}
     >
       <div className="flex items-center justify-between gap-4">
