@@ -214,6 +214,7 @@ export function ApprovalQueue({ currentUser }: { currentUser?: string } = {}) {
     if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     pollTimerRef.current = null;
     if (isLiveData && liveApprovalsReady) {
+      void fetchLiveApprovals();
       pollTimerRef.current = setInterval(fetchLiveApprovals, 30_000);
     }
     return () => { if (pollTimerRef.current) clearInterval(pollTimerRef.current); };
@@ -226,12 +227,13 @@ export function ApprovalQueue({ currentUser }: { currentUser?: string } = {}) {
       setIsLiveData(false);
       setLiveFetchError(null);
     } else if (liveApprovalsReady) {
+      // Set live mode first — the useEffect on isLiveData will trigger
+      // fetchLiveApprovals on the next render with the correct closure.
       setIsLiveData(true);
-      await fetchLiveApprovals();
     }
     setSelectedRequest(null);
     setConfirmAction(null);
-  }, [fetchLiveApprovals, isLiveData, liveApprovalsReady]);
+  }, [isLiveData, liveApprovalsReady]);
 
   const filteredRequests = useMemo(() => {
     let list = [...requests];

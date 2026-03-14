@@ -108,7 +108,7 @@ export function FindingDetail({
   const confidencePct = Math.round(finding.confidence * 100);
 
   const sortedTimeline = useMemo(
-    () => [...finding.timeline].sort((a, b) => a.timestamp - b.timestamp),
+    () => [...finding.timeline].sort((a, b) => b.timestamp - a.timestamp),
     [finding.timeline],
   );
 

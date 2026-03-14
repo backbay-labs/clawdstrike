@@ -21,6 +21,7 @@ import { useFleetConnection } from "@/lib/workbench/use-fleet-connection";
 import { useSentinels } from "@/lib/workbench/sentinel-store";
 import { useFindings } from "@/lib/workbench/finding-store";
 import { GUARD_REGISTRY } from "@/lib/workbench/guard-registry";
+import { SEVERITY_COLORS } from "@/lib/workbench/finding-constants";
 import type { GuardId } from "@/lib/workbench/types";
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -165,12 +166,6 @@ function NavCard({
   );
 }
 
-const SEVERITY_COLORS: Record<string, string> = {
-  critical: "#c45c5c",
-  high: "#d4784b",
-  medium: "#d4a84b",
-  low: "#6f7f9a",
-};
 
 function SentinelSummaryCard({
   total,
@@ -388,7 +383,8 @@ export function HomePage() {
     for (const f of findings) {
       if (f.status === "emerging") emerging++;
       else if (f.status === "confirmed") confirmed++;
-      if (f.severity in severityCounts) {
+      // Only count severity for active findings (emerging + confirmed)
+      if ((f.status === "emerging" || f.status === "confirmed") && f.severity in severityCounts) {
         severityCounts[f.severity]++;
       }
     }
