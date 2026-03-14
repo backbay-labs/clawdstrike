@@ -103,6 +103,46 @@ fn detect_git_branch(cwd: &str) -> Option<String> {
     }
 }
 
+/// Environment variable names that must not be overridden by callers.
+///
+/// These can be used for library injection (`LD_PRELOAD`, `DYLD_INSERT_LIBRARIES`),
+/// path hijacking (`PATH`), or identity spoofing (`HOME`, `USER`). We use an
+/// allowlist-style check: only env vars prefixed with `CLAWDSTRIKE_` or `SWARM_`
+/// are allowed through unconditionally; everything else is checked against this
+/// blocklist. The comparison is case-insensitive to cover platform differences.
+const BLOCKED_ENV_VARS: &[&str] = &[
+    "LD_PRELOAD",
+    "LD_LIBRARY_PATH",
+    "DYLD_INSERT_LIBRARIES",
+    "DYLD_LIBRARY_PATH",
+    "DYLD_FRAMEWORK_PATH",
+    "PATH",
+    "HOME",
+    "USER",
+    "SHELL",
+    "TERM",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "http_proxy",
+    "https_proxy",
+];
+
+/// Returns `true` if `key` should be blocked from caller-supplied env overrides.
+///
+/// Keys prefixed with `CLAWDSTRIKE_` or `SWARM_` are always allowed (these are
+/// the application's own configuration variables). All other keys are checked
+/// against [`BLOCKED_ENV_VARS`] (case-insensitive).
+fn is_blocked_env_var(key: &str) -> bool {
+    let upper = key.to_uppercase();
+    // Always allow our own namespaced variables
+    if upper.starts_with("CLAWDSTRIKE_") || upper.starts_with("SWARM_") {
+        return false;
+    }
+    BLOCKED_ENV_VARS
+        .iter()
+        .any(|blocked| blocked.eq_ignore_ascii_case(key))
+}
+
 /// Determine the default shell for the current user.
 ///
 /// Prefers the `SHELL` environment variable. On Unix-like systems, falls back
@@ -287,9 +327,13 @@ pub async fn terminal_create<R: Runtime>(
     // Set TERM for colour support
     cmd.env("TERM", "xterm-256color");
 
-    // Merge caller-supplied environment variables
+    // Merge caller-supplied environment variables, filtering out dangerous
+    // keys that could be used for privilege escalation or library injection.
     if let Some(extra_env) = env {
         for (key, value) in extra_env {
+            if is_blocked_env_var(&key) {
+                continue;
+            }
             cmd.env(key, value);
         }
     }

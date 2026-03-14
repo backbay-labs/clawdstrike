@@ -190,10 +190,18 @@ pub async fn worktree_remove(repo_root: String, worktree_path: String) -> Result
         // Directory does not exist on disk — validate using lexical path
         // comparison. Resolve the worktree_path relative to repo_root if
         // it isn't absolute, then check it starts with the expected base.
+        //
+        // Symlink-based traversal is not a concern here: since the path
+        // does not exist on disk (canonicalize already failed), there are
+        // no symlinks to resolve. The real backstop is that
+        // `git worktree remove` itself validates the target is a
+        // registered worktree — it will refuse to act on arbitrary paths.
         let wt_path = std::path::Path::new(&worktree_path);
 
         // Reject paths containing parent-directory components (`..`) that
         // could bypass the `starts_with` check on a non-canonicalized path.
+        // Uses `Component::ParentDir` matching rather than string comparison
+        // to correctly handle all platform path representations.
         for component in wt_path.components() {
             if matches!(component, std::path::Component::ParentDir) {
                 return Err(

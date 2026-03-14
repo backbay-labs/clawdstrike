@@ -75,6 +75,12 @@ export function CommandPalette() {
     );
   }, [query]);
 
+  // Reset selectedIndex when filtered results change so we never reference
+  // an out-of-bounds index after the list shrinks.
+  useEffect(() => {
+    setSelectedIndex(i => (filtered.length === 0 ? 0 : Math.min(i, filtered.length - 1)));
+  }, [filtered]);
+
   // Keyboard navigation
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown") {
@@ -83,9 +89,10 @@ export function CommandPalette() {
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setSelectedIndex(i => Math.max(i - 1, 0));
-    } else if (e.key === "Enter" && filtered[selectedIndex]) {
-      const item = filtered[selectedIndex];
-      if (item.href) navigate(item.href);
+    } else if (e.key === "Enter") {
+      const clamped = Math.min(selectedIndex, filtered.length - 1);
+      const item = filtered[clamped];
+      if (item?.href) navigate(item.href);
       setOpen(false);
     }
   }, [filtered, selectedIndex, navigate]);

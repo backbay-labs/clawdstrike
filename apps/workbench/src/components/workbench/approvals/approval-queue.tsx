@@ -183,6 +183,11 @@ export function ApprovalQueue({ currentUser }: { currentUser?: string } = {}) {
   }, [tick]);
 
   const fetchLiveApprovals = useCallback(async () => {
+    // Guard: only clear/fetch when actually in live mode. In demo mode the
+    // callback can still fire (e.g. via the poll timer race) and would
+    // otherwise wipe the demo data.
+    if (!isLiveData) return;
+
     if (!liveApprovalsReady) {
       setRequests([]);
       setDecisions([]);
@@ -205,7 +210,7 @@ export function ApprovalQueue({ currentUser }: { currentUser?: string } = {}) {
       setRequests([]);
       setDecisions([]);
     }
-  }, [liveApprovalsHint, liveApprovalsReady]);
+  }, [isLiveData, liveApprovalsHint, liveApprovalsReady]);
 
   useEffect(() => {
     if (pollTimerRef.current) clearInterval(pollTimerRef.current);
