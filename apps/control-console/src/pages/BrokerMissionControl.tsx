@@ -93,6 +93,7 @@ export function BrokerMissionControl(_props: { windowId?: string }) {
   const [replay, setReplay] = useState<BrokerReplayResponse | null>(null);
   const [bundle, setBundle] = useState<BrokerCompletionBundleResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const loadingRef = useRef(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
@@ -173,6 +174,7 @@ export function BrokerMissionControl(_props: { windowId?: string }) {
 
   const refresh = useCallback(async () => {
     setLoading(true);
+    loadingRef.current = true;
     try {
       const prev = latestSelection.current;
       const selection = await loadMission();
@@ -189,6 +191,7 @@ export function BrokerMissionControl(_props: { windowId?: string }) {
       setError(cause instanceof Error ? cause.message : "Failed to load broker mission state");
     } finally {
       setLoading(false);
+      loadingRef.current = false;
     }
   }, [loadDetail, loadMission, loadPreview]);
 
@@ -244,9 +247,9 @@ export function BrokerMissionControl(_props: { windowId?: string }) {
   }, [detail?.capability.intent_preview?.preview_id]);
 
   useEffect(() => {
-    if (!latestBrokerEventId || loading) return;
+    if (!latestBrokerEventId || loadingRef.current) return;
     void refresh();
-  }, [latestBrokerEventId, loading, refresh]);
+  }, [latestBrokerEventId, refresh]);
 
   const selectedCapability =
     (detail?.capability.capability_id === selectedCapabilityId ? detail.capability : null) ??
