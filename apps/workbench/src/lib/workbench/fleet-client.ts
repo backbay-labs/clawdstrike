@@ -34,10 +34,6 @@ export { isPrivateOrLoopbackFleetHostname, validateFleetUrl } from "./fleet-url-
 
 const DEV = import.meta.env.DEV;
 
-// ---------------------------------------------------------------------------
-// URL validation (Finding 3: SSRF prevention)
-// ---------------------------------------------------------------------------
-
 function normalizeFleetUrlInput(url: string): string {
   return url.trim();
 }
@@ -62,7 +58,6 @@ function sanitizeStoredFleetUrl(url: string | null | undefined, fieldName: strin
   }
 }
 
-/** Rewrite absolute URLs to Vite dev proxy paths; passthrough in production. */
 function proxyUrl(absoluteUrl: string, kind: "hushd" | "control"): string {
   const normalizedUrl = normalizeFleetUrlInput(absoluteUrl);
   if (!DEV) return normalizedUrl;
@@ -97,10 +92,6 @@ const LS_HUSHD_URL = "clawdstrike_hushd_url";
 const LS_CONTROL_API_URL = "clawdstrike_control_api_url";
 const LS_API_KEY = "clawdstrike_api_key";
 const LS_CONTROL_TOKEN = "clawdstrike_control_api_token";
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 export interface AuditEvent {
   id: string;
@@ -202,7 +193,6 @@ export interface PrincipalInfo {
   updated_at?: string;
 }
 
-/** Backend delegation graph node shape from GET /api/v1/principals/{id}/delegation-graph */
 interface BackendGraphNode {
   id: string;
   kind: string;
@@ -213,7 +203,6 @@ interface BackendGraphNode {
   metadata?: Record<string, unknown>;
 }
 
-/** Backend delegation graph edge shape */
 interface BackendGraphEdge {
   id: string;
   from: string;
@@ -223,17 +212,12 @@ interface BackendGraphEdge {
   metadata?: Record<string, unknown>;
 }
 
-/** Backend delegation graph snapshot response */
 interface BackendDelegationGraphResponse {
   nodes: BackendGraphNode[];
   edges: BackendGraphEdge[];
   generated_at?: string;
   principal_id?: string;
 }
-
-// ---------------------------------------------------------------------------
-// Persistence
-// ---------------------------------------------------------------------------
 
 /**
  * Synchronous bootstrap read from localStorage in the web runtime.
@@ -355,7 +339,6 @@ export function clearConnectionConfig() {
   }
 }
 
-/** Clear all stored credentials. Call on disconnect / logout. */
 export function clearCredentials() {
   secureStore.delete(SS_API_KEY).catch(() => {});
   secureStore.delete(SS_CONTROL_TOKEN).catch(() => {});
@@ -368,10 +351,6 @@ export function clearCredentials() {
     console.warn("[fleet-client] localStorage credential removal failed:", e);
   }
 }
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function hushdHeaders(apiKey: string): Record<string, string> {
   const h: Record<string, string> = { "Content-Type": "application/json" };
@@ -400,11 +379,9 @@ function controlHeaders(conn: FleetConnection): Record<string, string> {
   return h;
 }
 
-/** Max response size accepted by jsonFetch (10 MB). */
 const MAX_RESPONSE_BYTES = 10_485_760;
 const MAX_ERROR_RESPONSE_BYTES = 2_048;
 
-/** Redact Bearer tokens and API key-like patterns from error messages. (Finding M3) */
 function redactSecrets(text: string): string {
   return text
     .replace(/Bearer\s+[^\s]+/gi, "Bearer [REDACTED]")
@@ -480,10 +457,6 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
     throw new Error(`Invalid JSON response: ${message}`);
   }
 }
-
-// ---------------------------------------------------------------------------
-// API functions
-// ---------------------------------------------------------------------------
 
 function stripTrailingSlash(url: string): string {
   return url.replace(/\/+$/, "");
@@ -855,7 +828,6 @@ export async function fetchAgentCount(conn: FleetConnection): Promise<number> {
   }
 }
 
-/** Falls back to control-api /api/v1/agents if hushd endpoint is unavailable. */
 export async function fetchAgentList(conn: FleetConnection): Promise<AgentInfo[]> {
   const url = stripTrailingSlash(conn.hushdUrl);
   try {
@@ -879,7 +851,6 @@ export async function fetchAgentList(conn: FleetConnection): Promise<AgentInfo[]
   }
 }
 
-/** Validate that an audit event has the required fields with correct types. */
 function validateAuditEvent(event: unknown): event is AuditEvent {
   if (!event || typeof event !== "object") return false;
   const e = event as Record<string, unknown>;
@@ -972,10 +943,6 @@ function preferredControlUrl(conn: FleetConnection): string | null {
   return normalizedValidatedFleetUrl(conn.controlApiUrl, "control API URL");
 }
 
-// ---------------------------------------------------------------------------
-// Backend approval shape adapter (P2-1)
-// ---------------------------------------------------------------------------
-
 /**
  * Raw approval row returned by the control-api backend.
  *
@@ -997,13 +964,10 @@ interface BackendApproval {
   created_at: string;
 }
 
-/** Known backend status values that map directly to frontend status. */
 const BACKEND_KNOWN_STATUSES = new Set<string>(["pending", "approved", "denied"]);
 
-/** Known provider identifiers accepted by the frontend OriginProvider type. */
 const BACKEND_KNOWN_PROVIDERS = new Set<string>(["slack", "teams", "github", "jira", "email", "discord", "webhook", "cli", "api"]);
 
-/** Known risk levels accepted by the frontend RiskLevel type. */
 const BACKEND_KNOWN_RISK_LEVELS = new Set<string>(["low", "medium", "high", "critical"]);
 
 /**
@@ -1084,7 +1048,6 @@ function extractOriginContext(eventData: Record<string, unknown>): OriginContext
   };
 }
 
-/** Safely extract a RiskLevel from the event_data blob. */
 function extractRiskLevel(eventData: Record<string, unknown>): RiskLevel {
   const raw = optionalString(eventData.risk_level ?? eventData.riskLevel ?? eventData.severity);
   if (raw && BACKEND_KNOWN_RISK_LEVELS.has(raw.toLowerCase())) {
@@ -1093,7 +1056,6 @@ function extractRiskLevel(eventData: Record<string, unknown>): RiskLevel {
   return "medium";
 }
 
-/** Convert a value to a trimmed string if truthy, otherwise undefined. */
 function optionalString(value: unknown): string | undefined {
   if (value == null) return undefined;
   const s = String(value).trim();
@@ -1110,12 +1072,6 @@ function defaultExpiresAt(createdAt: string): string {
   return new Date(ts + 30 * 60_000).toISOString();
 }
 
-/**
- * Adapt a single backend approval row into the frontend `ApprovalRequest` shape.
- *
- * Fields are extracted from the opaque `event_data` JSON blob with sensible
- * defaults for any missing values.
- */
 function adaptBackendApproval(raw: BackendApproval): ApprovalRequest {
   const ed = raw.event_data ?? {};
 
@@ -1156,10 +1112,6 @@ function adaptBackendApproval(raw: BackendApproval): ApprovalRequest {
   };
 }
 
-/**
- * If the backend approval is resolved, produce a corresponding
- * `ApprovalDecision` for the frontend decision map.
- */
 function adaptBackendDecision(raw: BackendApproval): ApprovalDecision | null {
   const normalizedStatus = raw.status.toLowerCase();
   if (normalizedStatus !== "approved" && normalizedStatus !== "denied") {
@@ -1174,15 +1126,6 @@ function adaptBackendDecision(raw: BackendApproval): ApprovalDecision | null {
   };
 }
 
-/**
- * Adapt the backend response (a flat array of approval rows or a wrapped
- * `{ requests, decisions }` object) into the frontend-expected shape.
- *
- * Handles three response shapes:
- * 1. `BackendApproval[]` -- control-api returns a flat array
- * 2. `{ requests, decisions }` -- already in frontend shape (passthrough)
- * 3. `{ approvals: BackendApproval[] }` -- alternate wrapper
- */
 function adaptApprovalsResponse(
   res: unknown,
 ): { requests: ApprovalRequest[]; decisions: ApprovalDecision[] } {
@@ -1315,24 +1258,20 @@ export async function fetchDelegationGraphFromApi(
   }
 }
 
-/** Known NodeKind values the frontend recognizes. */
 const KNOWN_NODE_KINDS = new Set<string>([
   "Principal", "Session", "Grant", "Approval", "Event", "ResponseAction",
 ]);
 
-/** Known TrustLevel values the frontend recognizes. */
 const KNOWN_TRUST_LEVELS = new Set<string>([
   "Untrusted", "Low", "Medium", "High", "System",
 ]);
 
-/** Known EdgeKind values the frontend recognizes. */
 const KNOWN_EDGE_KINDS = new Set<string>([
   "IssuedGrant", "ReceivedGrant", "DerivedFromGrant", "SpawnedPrincipal",
   "ApprovedBy", "RevokedBy", "ExercisedInSession", "ExercisedInEvent",
   "TriggeredResponseAction",
 ]);
 
-/** Known Capability values the frontend recognizes. */
 const KNOWN_CAPABILITIES = new Set<string>([
   "FileRead", "FileWrite", "NetworkEgress", "CommandExec", "SecretAccess",
   "McpTool", "DeployApproval", "AgentAdmin", "Custom",
@@ -1358,10 +1297,6 @@ function mapCapabilities(caps: string[] | undefined): Capability[] | undefined {
     .map((c) => c as Capability);
 }
 
-/**
- * Map a backend delegation graph response to frontend DelegationGraph types.
- * Gracefully coerces unknown `kind` / `trust_level` values to safe defaults.
- */
 function mapBackendGraphToFrontend(backend: BackendDelegationGraphResponse): DelegationGraph {
   const nodes: DelegationNode[] = backend.nodes.map((n) => ({
     id: n.id,
@@ -1385,12 +1320,7 @@ function mapBackendGraphToFrontend(backend: BackendDelegationGraphResponse): Del
   return { nodes, edges };
 }
 
-/**
- * Fetch a full delegation graph snapshot for a given principal from the backend.
- * Calls GET /api/v1/principals/{id}/delegation-graph on the control API.
- * Falls back to the grants-based graph if the direct delegation-graph route
- * is not exposed by the current deployment.
- */
+/** Falls back to grants-based graph if the delegation-graph route is unavailable. */
 export async function fetchDelegationGraphSnapshot(
   conn: FleetConnection,
   principalId: string,
@@ -1416,11 +1346,6 @@ export async function fetchDelegationGraphSnapshot(
   }
 }
 
-/**
- * List available principals from the control API.
- * Prefers the console principals endpoint and falls back to GET
- * /api/v1/principals when that route is the one exposed by the deployment.
- */
 export async function fetchPrincipals(
   conn: FleetConnection,
 ): Promise<PrincipalInfo[]> {
@@ -1503,14 +1428,7 @@ function extractPrincipalList(res: unknown): PrincipalInfo[] {
     .filter((principal): principal is PrincipalInfo => principal !== null);
 }
 
-// ---------------------------------------------------------------------------
-// Scoped Policies & Policy Assignments (P2-3: Hierarchy sync)
-// ---------------------------------------------------------------------------
-
-/**
- * A scoped policy as stored in the backend.
- * Represents a policy bound to a scope within the org hierarchy.
- */
+/** A scoped policy bound to a scope within the org hierarchy. */
 export interface ScopedPolicy {
   id: string;
   scope_type: "org" | "team" | "agent" | "endpoint" | "runtime";
@@ -1524,9 +1442,6 @@ export interface ScopedPolicy {
   updated_at?: string;
 }
 
-/**
- * Input shape for creating a new scoped policy.
- */
 export interface ScopedPolicyInput {
   scope_type: "org" | "team" | "agent" | "endpoint" | "runtime";
   scope_id: string;
@@ -1537,9 +1452,6 @@ export interface ScopedPolicyInput {
   metadata?: Record<string, unknown>;
 }
 
-/**
- * A policy assignment linking a scope node to a specific policy.
- */
 export interface PolicyAssignment {
   id: string;
   scope_id: string;
@@ -1552,9 +1464,6 @@ export interface PolicyAssignment {
   created_at?: string;
 }
 
-/**
- * Input shape for creating a policy assignment.
- */
 export interface PolicyAssignmentInput {
   scope_id: string;
   scope_name: string;
@@ -1565,10 +1474,6 @@ export interface PolicyAssignmentInput {
   children?: string[];
 }
 
-/**
- * Fetch all scoped policies from the backend.
- * Calls GET /api/v1/scoped-policies on the preferred (control-api or hushd) endpoint.
- */
 export async function fetchScopedPolicies(
   conn: FleetConnection,
 ): Promise<ScopedPolicy[]> {
@@ -1612,10 +1517,6 @@ export async function fetchScopedPolicies(
   }
 }
 
-/**
- * Create a new scoped policy on the backend.
- * Calls POST /api/v1/scoped-policies.
- */
 export async function createScopedPolicy(
   conn: FleetConnection,
   policy: ScopedPolicyInput,
@@ -1641,10 +1542,6 @@ export async function createScopedPolicy(
   }
 }
 
-/**
- * Fetch all policy assignments from the backend.
- * Calls GET /api/v1/policy-assignments on the preferred endpoint.
- */
 export async function fetchPolicyAssignments(
   conn: FleetConnection,
 ): Promise<PolicyAssignment[]> {
@@ -1681,10 +1578,6 @@ export async function fetchPolicyAssignments(
   }
 }
 
-/**
- * Create a policy assignment on the backend.
- * Calls POST /api/v1/policy-assignments.
- */
 export async function assignPolicyToScope(
   conn: FleetConnection,
   assignment: PolicyAssignmentInput,
@@ -1709,10 +1602,6 @@ export async function assignPolicyToScope(
     };
   }
 }
-
-// ---------------------------------------------------------------------------
-// Grants → DelegationGraph conversion
-// ---------------------------------------------------------------------------
 
 function grantsToGraph(grants: Record<string, unknown>[]): DelegationGraph {
   const nodesMap = new Map<string, DelegationNode>();
@@ -1757,14 +1646,7 @@ function grantsToGraph(grants: Record<string, unknown>[]): DelegationGraph {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Receipt Store (P3-4: Fleet Receipt Store)
-// ---------------------------------------------------------------------------
-
-/**
- * Backend receipt shape as stored by the control-api receipt endpoints.
- * The wire format uses snake_case; the frontend Receipt type uses camelCase.
- */
+/** Backend receipt shape (snake_case wire format). */
 export interface FleetReceipt {
   id: string;
   timestamp: string;
@@ -1811,10 +1693,6 @@ interface StoreReceiptPayload {
   signed_receipt?: Record<string, unknown>;
 }
 
-/**
- * Fetch paginated receipts from the backend receipt store.
- * Calls GET /api/v1/receipts on the control-api.
- */
 export async function fetchReceipts(
   conn: FleetConnection,
   opts?: { offset?: number; limit?: number },
@@ -1859,10 +1737,6 @@ export async function fetchReceipts(
   throw new Error("[fleet-client] fetchReceipts: unexpected response shape");
 }
 
-/**
- * Store a single receipt on the fleet backend.
- * Calls POST /api/v1/receipts on the control-api.
- */
 export async function storeReceipt(
   conn: FleetConnection,
   receipt: FleetReceipt,
@@ -1892,10 +1766,6 @@ export async function storeReceipt(
   }
 }
 
-/**
- * Batch-store receipts on the fleet backend.
- * Calls POST /api/v1/receipts/batch on the control-api.
- */
 export async function storeReceiptsBatch(
   conn: FleetConnection,
   receipts: FleetReceipt[],
@@ -1929,10 +1799,6 @@ export async function storeReceiptsBatch(
   }
 }
 
-/**
- * Fetch the receipt chain for a given policy name.
- * Calls GET /api/v1/receipts/chain/{policy_name} on the control-api.
- */
 export async function fetchReceiptChain(
   conn: FleetConnection,
   policyName: string,
@@ -1969,10 +1835,6 @@ export async function fetchReceiptChain(
   }
 }
 
-/**
- * Verify a receipt server-side.
- * Calls POST /api/v1/receipts/{id}/verify on the control-api.
- */
 export async function verifyReceiptRemote(
   conn: FleetConnection,
   receiptId: string,
@@ -2010,7 +1872,6 @@ export async function verifyReceiptRemote(
   };
 }
 
-/** Type guard for FleetReceipt shape. */
 function isFleetReceipt(value: unknown): value is FleetReceipt {
   if (!value || typeof value !== "object") return false;
   const obj = value as Record<string, unknown>;
@@ -2057,14 +1918,7 @@ function toStoreReceiptPayload(receipt: FleetReceipt): StoreReceiptPayload {
   return payload;
 }
 
-// ---------------------------------------------------------------------------
-// Catalog Registry (P3-6: Live Catalog)
-// ---------------------------------------------------------------------------
-
-/**
- * A catalog template as returned by the control-api catalog endpoints.
- * Wire format uses snake_case.
- */
+/** Catalog template (snake_case wire format). */
 export interface CatalogTemplate {
   id: string;
   name: string;
@@ -2084,9 +1938,6 @@ export interface CatalogTemplate {
   metadata?: Record<string, unknown>;
 }
 
-/**
- * A catalog category as returned by GET /api/v1/catalog/categories.
- */
 export interface CatalogCategoryInfo {
   id: string;
   label: string;
@@ -2094,10 +1945,6 @@ export interface CatalogCategoryInfo {
   count: number;
 }
 
-/**
- * Fetch catalog templates from the backend, optionally filtered by category or tag.
- * Calls GET /api/v1/catalog/templates on the control-api.
- */
 export async function fetchCatalogTemplates(
   conn: FleetConnection,
   opts?: { category?: string; tag?: string },
@@ -2137,10 +1984,6 @@ export async function fetchCatalogTemplates(
   }
 }
 
-/**
- * Fetch a single catalog template by ID.
- * Calls GET /api/v1/catalog/templates/{id} on the control-api.
- */
 export async function fetchCatalogTemplate(
   conn: FleetConnection,
   id: string,
@@ -2164,10 +2007,6 @@ export async function fetchCatalogTemplate(
   }
 }
 
-/**
- * Publish a new template to the catalog.
- * Calls POST /api/v1/catalog/templates on the control-api.
- */
 export async function publishCatalogTemplate(
   conn: FleetConnection,
   template: {
@@ -2208,10 +2047,6 @@ export async function publishCatalogTemplate(
   }
 }
 
-/**
- * Fork a catalog template to create a personal copy.
- * Calls POST /api/v1/catalog/templates/{id}/fork on the control-api.
- */
 export async function forkCatalogTemplate(
   conn: FleetConnection,
   id: string,
@@ -2240,10 +2075,6 @@ export async function forkCatalogTemplate(
   }
 }
 
-/**
- * Fetch available catalog categories.
- * Calls GET /api/v1/catalog/categories on the control-api.
- */
 export async function fetchCatalogCategories(
   conn: FleetConnection,
 ): Promise<CatalogCategoryInfo[]> {
@@ -2275,15 +2106,7 @@ export async function fetchCatalogCategories(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Hierarchy CRUD API (P3-2: Fleet Hierarchy Sync)
-// ---------------------------------------------------------------------------
-
-/**
- * Backend hierarchy node as returned by the control-api hierarchy endpoints.
- * Uses snake_case wire format. Depending on the endpoint, `children` may be
- * nested nodes or a list of child ids.
- */
+/** Backend hierarchy node (snake_case wire format). Children may be nested nodes or child ids. */
 export type HierarchyNodeChild = HierarchyNode | string;
 
 export interface HierarchyNode {
@@ -2300,9 +2123,6 @@ export interface HierarchyNode {
   updated_at?: string;
 }
 
-/**
- * Input shape for creating a new hierarchy node via POST /api/v1/hierarchy/nodes.
- */
 export interface HierarchyNodeInput {
   name: string;
   node_type: string;
@@ -2313,9 +2133,6 @@ export interface HierarchyNodeInput {
   metadata?: Record<string, unknown>;
 }
 
-/**
- * Input shape for updating an existing hierarchy node via PUT /api/v1/hierarchy/nodes/{id}.
- */
 export interface HierarchyNodeUpdate {
   name?: string;
   node_type?: string;
@@ -2326,18 +2143,11 @@ export interface HierarchyNodeUpdate {
   metadata?: Record<string, unknown>;
 }
 
-/**
- * Full hierarchy tree response from GET /api/v1/hierarchy/tree.
- */
 export interface HierarchyTreeResponse {
   root_id: string | null;
   nodes: HierarchyNode[];
 }
 
-/**
- * Fetch all hierarchy nodes from the backend (flat list).
- * Calls GET /api/v1/hierarchy/nodes on the control-api.
- */
 export async function fetchHierarchyNodes(
   conn: FleetConnection,
 ): Promise<HierarchyNode[]> {
@@ -2371,10 +2181,6 @@ export async function fetchHierarchyNodes(
   }
 }
 
-/**
- * Fetch the full hierarchy tree from the backend.
- * Calls GET /api/v1/hierarchy/tree on the control-api.
- */
 export async function fetchHierarchyTree(
   conn: FleetConnection,
 ): Promise<HierarchyTreeResponse | null> {
@@ -2410,10 +2216,6 @@ export async function fetchHierarchyTree(
   }
 }
 
-/**
- * Create a new hierarchy node on the backend.
- * Calls POST /api/v1/hierarchy/nodes on the control-api.
- */
 export async function createHierarchyNode(
   conn: FleetConnection,
   node: HierarchyNodeInput,
@@ -2439,10 +2241,6 @@ export async function createHierarchyNode(
   }
 }
 
-/**
- * Update an existing hierarchy node on the backend.
- * Calls PUT /api/v1/hierarchy/nodes/{id} on the control-api.
- */
 export async function updateHierarchyNode(
   conn: FleetConnection,
   id: string,
@@ -2470,8 +2268,6 @@ export async function updateHierarchyNode(
 }
 
 /**
- * Delete a hierarchy node from the backend.
- * Calls DELETE /api/v1/hierarchy/nodes/{id}?reparent=true|false on the control-api.
  * When reparent=true, children are moved to the deleted node's parent.
  * When reparent=false, all descendants are also deleted.
  */
@@ -2501,16 +2297,11 @@ export async function deleteHierarchyNode(
   }
 }
 
-/** Type guard for HierarchyNode shape. */
 function isHierarchyNode(value: unknown): value is HierarchyNode {
   if (!value || typeof value !== "object") return false;
   const obj = value as Record<string, unknown>;
   return typeof obj.id === "string" && typeof obj.name === "string" && typeof obj.node_type === "string";
 }
-
-// ---------------------------------------------------------------------------
-// Convenience client (reads saved credentials from secureStore + localStorage)
-// ---------------------------------------------------------------------------
 
 async function savedConnectionAsync(): Promise<FleetConnection> {
   const saved = await loadSavedConnectionAsync();
