@@ -139,10 +139,7 @@ impl CommandCapabilityManager {
 
 fn ensure_trusted_window<R: Runtime>(window: &tauri::Window<R>) -> Result<(), String> {
     if window.label() != TRUSTED_WINDOW_LABEL {
-        return Err(format!(
-            "Rejecting command from unexpected window label: {}",
-            window.label()
-        ));
+        return Err("Rejecting command from untrusted window".to_string());
     }
     Ok(())
 }
@@ -267,10 +264,33 @@ pub async fn authorize_sensitive_command<R: Runtime>(
         manager.pending_prompts.insert(prompt_key);
     }
 
-    let prompt_result = prompt_for_native_approval(window, &policy).await;
+    // Guard ensures pending_prompts is cleaned up even if this future is
+    // cancelled (e.g. by Tauri shutting down or the caller dropping the
+    // future). Uses try_lock to avoid blocking in the Drop path.
     let prompt_key = (window.label().to_string(), policy.scope);
+    struct PendingPromptGuard {
+        state: CommandCapabilityState,
+        key: Option<(String, AuthorizationScope)>,
+    }
+    impl Drop for PendingPromptGuard {
+        fn drop(&mut self) {
+            if let Some(key) = self.key.take() {
+                if let Ok(mut manager) = self.state.try_lock() {
+                    manager.pending_prompts.remove(&key);
+                }
+            }
+        }
+    }
+    let mut guard = PendingPromptGuard {
+        state: Arc::clone(state),
+        key: Some(prompt_key.clone()),
+    };
+
+    let prompt_result = prompt_for_native_approval(window, &policy).await;
     let mut manager = state.lock().await;
     manager.pending_prompts.remove(&prompt_key);
+    // Defuse the guard — explicit cleanup succeeded.
+    guard.key = None;
 
     let approved = prompt_result?;
     if !approved {

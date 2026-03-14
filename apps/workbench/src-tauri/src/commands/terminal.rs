@@ -169,7 +169,13 @@ fn normalize_shell(shell: &str) -> Option<String> {
     // Extract the base name from the path.
     let file_name = path.file_name()?.to_string_lossy();
     let file_name = if cfg!(target_os = "windows") {
-        file_name.trim_end_matches(".exe")
+        // Case-insensitive .exe trim for Windows (e.g. CMD.EXE → CMD).
+        let s = file_name.as_ref();
+        if s.len() > 4 && s[s.len() - 4..].eq_ignore_ascii_case(".exe") {
+            &s[..s.len() - 4]
+        } else {
+            s
+        }
     } else {
         file_name.as_ref()
     };

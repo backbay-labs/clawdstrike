@@ -31,10 +31,7 @@ vi.mock("@/lib/workbench/fleet-client", () => ({
   deployPolicy: vi.fn().mockResolvedValue({ success: false }),
   validateRemotely: vi.fn().mockResolvedValue({ valid: false }),
   distributePolicy: vi.fn().mockResolvedValue({ success: false }),
-  fetchApprovals: vi.fn().mockResolvedValue({ requests: [], decisions: [] }),
-  resolveApproval: vi.fn().mockResolvedValue({ success: true }),
   fetchDelegationGraphFromApi: vi.fn().mockResolvedValue(null),
-  redactFleetConnection: vi.fn().mockReturnValue({}),
 }));
 
 // Mock use-fleet-connection to provide a disconnected state by default
