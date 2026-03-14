@@ -39,7 +39,7 @@ import { useToast } from "@/components/ui/toast";
 const CONFIRM_TEXT = "deploy";
 
 export function DeployPanel() {
-  const { connection, agents, remotePolicyInfo, refreshRemotePolicy, getAuthenticatedConnection } = useFleetConnection();
+  const { connection, agents, remotePolicyInfo, refreshRemotePolicy } = useFleetConnection();
   const { state } = useWorkbench();
 
   const [deployOpen, setDeployOpen] = useState(false);

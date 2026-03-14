@@ -595,7 +595,7 @@ export function IntelDetailPage() {
     getLatestFindingSeq,
     setTrustPolicy,
   } = useSwarmFeed();
-  const { connection, getCredentials: getCredsForDetail, getAuthenticatedConnection } = useFleetConnection();
+  const { connection, getAuthenticatedConnection } = useFleetConnection();
   const { currentOperator, getSecretKey } = useOperator();
   const navigate = useNavigate();
   const [hubTrustHydrationByConnection, setHubTrustHydrationByConnection] = useState<
