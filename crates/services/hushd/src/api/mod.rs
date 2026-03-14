@@ -26,7 +26,7 @@ use axum::{
     routing::{delete, get, patch, post, put},
     Router,
 };
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::trace::TraceLayer;
 
@@ -66,10 +66,30 @@ pub use shutdown::ShutdownResponse;
 pub fn create_router(state: AppState) -> Router {
     let cors_enabled = state.config.cors_enabled;
     let metrics = state.metrics.clone();
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
+    let cors = {
+        let origin_layer = if state.config.allowed_origins.is_empty() {
+            if cors_enabled {
+                tracing::warn!(
+                    "CORS is enabled but no allowed_origins configured — \
+                     all cross-origin requests will be blocked"
+                );
+            }
+            // Fail-closed: no origins are allowed.
+            AllowOrigin::list(std::iter::empty::<axum::http::HeaderValue>())
+        } else {
+            let origins: Vec<axum::http::HeaderValue> = state
+                .config
+                .allowed_origins
+                .iter()
+                .filter_map(|o| o.parse().ok())
+                .collect();
+            AllowOrigin::list(origins)
+        };
+        CorsLayer::new()
+            .allow_origin(origin_layer)
+            .allow_methods(Any)
+            .allow_headers(Any)
+    };
 
     // Public routes - no auth required
     let public_routes = Router::new()

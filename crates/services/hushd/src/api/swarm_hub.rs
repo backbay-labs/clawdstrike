@@ -446,9 +446,12 @@ pub async fn put_swarm_hub_trust_policy(
     )?;
 
     validate_hub_trust_policy(&trust_policy)
-        .map_err(|message| invalid_trust_policy(message))?;
+        .map_err(invalid_trust_policy)?;
     let serialized = serde_json::to_string(&trust_policy)
-        .map_err(|err| V1Error::internal("SWARM_SERIALIZATION_ERROR", err.to_string()))?;
+        .map_err(|err| {
+            tracing::error!(error = %err, "failed to serialize trust policy");
+            V1Error::internal("SWARM_SERIALIZATION_ERROR", "internal serialization error")
+        })?;
     state
         .control_db
         .set_control_metadata(SWARM_HUB_TRUST_POLICY_KEY.to_string(), serialized)
@@ -491,7 +494,10 @@ pub async fn publish_finding(
 
     let envelope_hash = hash_finding_envelope_for_head(&finding)?;
     let envelope_json = serde_json::to_string(&finding)
-        .map_err(|err| V1Error::internal("SWARM_SERIALIZATION_ERROR", err.to_string()))?;
+        .map_err(|err| {
+            tracing::error!(error = %err, "failed to serialize finding envelope");
+            V1Error::internal("SWARM_SERIALIZATION_ERROR", "internal serialization error")
+        })?;
     let blob_refs = finding
         .blob_refs
         .iter()
@@ -502,7 +508,8 @@ pub async fn publish_finding(
                 .map(serde_json::to_string)
                 .transpose()
                 .map_err(|err| {
-                    V1Error::internal("SWARM_SERIALIZATION_ERROR", err.to_string())
+                    tracing::error!(error = %err, "failed to serialize blob ref publish metadata");
+                    V1Error::internal("SWARM_SERIALIZATION_ERROR", "internal serialization error")
                 })?;
             Ok(SwarmBlobRefInput {
                 blob_id: blob_ref.blob_id.clone(),
@@ -569,7 +576,10 @@ pub async fn publish_revocation(
 
     let envelope_hash = hash_revocation_envelope_for_head(&revocation)?;
     let envelope_json = serde_json::to_string(&revocation)
-        .map_err(|err| V1Error::internal("SWARM_SERIALIZATION_ERROR", err.to_string()))?;
+        .map_err(|err| {
+            tracing::error!(error = %err, "failed to serialize revocation envelope");
+            V1Error::internal("SWARM_SERIALIZATION_ERROR", "internal serialization error")
+        })?;
 
     let outcome = state
         .control_db
@@ -722,7 +732,8 @@ pub async fn replay_swarm_feed(
         .into_iter()
         .map(|record| {
             serde_json::from_str::<FindingEnvelope>(&record.envelope_json).map_err(|err| {
-                V1Error::internal("SWARM_REPLAY_DESERIALIZATION_ERROR", err.to_string())
+                tracing::error!(error = %err, "failed to deserialize stored finding envelope");
+                V1Error::internal("SWARM_REPLAY_DESERIALIZATION_ERROR", "internal deserialization error")
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -809,7 +820,8 @@ pub async fn replay_swarm_revocations(
         .into_iter()
         .map(|record| {
             serde_json::from_str::<RevocationEnvelope>(&record.envelope_json).map_err(|err| {
-                V1Error::internal("SWARM_REPLAY_DESERIALIZATION_ERROR", err.to_string())
+                tracing::error!(error = %err, "failed to deserialize stored revocation envelope");
+                V1Error::internal("SWARM_REPLAY_DESERIALIZATION_ERROR", "internal deserialization error")
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -864,7 +876,8 @@ pub async fn get_swarm_blob_refs(
                 .map(serde_json::from_str::<DurablePublishMetadata>)
                 .transpose()
                 .map_err(|err| {
-                    V1Error::internal("SWARM_BLOB_DESERIALIZATION_ERROR", err.to_string())
+                    tracing::error!(error = %err, "failed to deserialize blob publish metadata");
+                    V1Error::internal("SWARM_BLOB_DESERIALIZATION_ERROR", "internal deserialization error")
                 })?;
             Ok(BlobLookupRef {
                 blob_id: record.blob_id,
@@ -917,7 +930,10 @@ pub async fn pin_swarm_blob(
         "note": note.clone(),
         "actor": actor_label.clone(),
     }))
-    .map_err(|err| V1Error::internal("SWARM_SERIALIZATION_ERROR", err.to_string()))?;
+    .map_err(|err| {
+        tracing::error!(error = %err, "failed to serialize blob pin request");
+        V1Error::internal("SWARM_SERIALIZATION_ERROR", "internal serialization error")
+    })?;
     let record = state
         .control_db
         .record_swarm_blob_pin_request(
@@ -963,7 +979,10 @@ async fn load_hub_trust_policy(state: &AppState) -> Result<HubTrustPolicy, V1Err
         .map_err(map_swarm_store_error)?;
     let trust_policy = match stored {
         Some(raw) => serde_json::from_str::<HubTrustPolicy>(&raw)
-            .map_err(|err| V1Error::internal("SWARM_STATE_INCONSISTENT", err.to_string()))?,
+            .map_err(|err| {
+                tracing::error!(error = %err, "failed to deserialize stored hub trust policy");
+                V1Error::internal("SWARM_STATE_INCONSISTENT", "internal state error")
+            })?,
         None => default_hub_trust_policy(),
     };
     validate_hub_trust_policy(&trust_policy)
@@ -1052,7 +1071,10 @@ fn requires_verified_attestation(trust_policy: &HubTrustPolicy) -> bool {
 
 fn hash_finding_attestation_payload(finding: &FindingEnvelope) -> Result<String, V1Error> {
     let mut value = serde_json::to_value(finding)
-        .map_err(|err| V1Error::internal("SWARM_SERIALIZATION_ERROR", err.to_string()))?;
+        .map_err(|err| {
+            tracing::error!(error = %err, "failed to serialize finding for attestation hash");
+            V1Error::internal("SWARM_SERIALIZATION_ERROR", "internal serialization error")
+        })?;
     let value_map = value.as_object_mut().ok_or_else(|| {
         V1Error::internal(
             "SWARM_SERIALIZATION_ERROR",
@@ -1069,7 +1091,10 @@ fn hash_finding_attestation_payload(finding: &FindingEnvelope) -> Result<String,
         }
     }
     let canonical = canonicalize(&value)
-        .map_err(|err| V1Error::internal("SWARM_HASH_ERROR", err.to_string()))?;
+        .map_err(|err| {
+            tracing::error!(error = %err, "failed to canonicalize finding for attestation hash");
+            V1Error::internal("SWARM_HASH_ERROR", "internal hash error")
+        })?;
     Ok(sha256_hex(canonical.as_bytes()))
 }
 
@@ -1089,7 +1114,10 @@ fn verify_finding_attestation(finding: &FindingEnvelope) -> Result<bool, V1Error
 
 fn hash_revocation_attestation_payload(revocation: &RevocationEnvelope) -> Result<String, V1Error> {
     let mut value = serde_json::to_value(revocation)
-        .map_err(|err| V1Error::internal("SWARM_SERIALIZATION_ERROR", err.to_string()))?;
+        .map_err(|err| {
+            tracing::error!(error = %err, "failed to serialize revocation for attestation hash");
+            V1Error::internal("SWARM_SERIALIZATION_ERROR", "internal serialization error")
+        })?;
     let value_map = value.as_object_mut().ok_or_else(|| {
         V1Error::internal(
             "SWARM_SERIALIZATION_ERROR",
@@ -1099,7 +1127,10 @@ fn hash_revocation_attestation_payload(revocation: &RevocationEnvelope) -> Resul
     value_map.remove("attestation");
     value_map.remove("publish");
     let canonical = canonicalize(&value)
-        .map_err(|err| V1Error::internal("SWARM_HASH_ERROR", err.to_string()))?;
+        .map_err(|err| {
+            tracing::error!(error = %err, "failed to canonicalize revocation for attestation hash");
+            V1Error::internal("SWARM_HASH_ERROR", "internal hash error")
+        })?;
     Ok(sha256_hex(canonical.as_bytes()))
 }
 
@@ -1245,13 +1276,18 @@ fn map_swarm_store_error(err: ControlDbError) -> V1Error {
         ControlDbError::Conflict(message) => {
             V1Error::conflict("SWARM_SEQ_CONFLICT", message)
         }
-        ControlDbError::Invariant(message) => {
-            V1Error::internal("SWARM_STATE_INCONSISTENT", message)
+        ControlDbError::Invariant(_) => {
+            tracing::error!(error = %err, "swarm state inconsistency");
+            V1Error::internal("SWARM_STATE_INCONSISTENT", "internal state error")
         }
-        ControlDbError::Database(err) => {
-            V1Error::internal("SWARM_STORE_ERROR", err.to_string())
+        ControlDbError::Database(ref db_err) => {
+            tracing::error!(error = %db_err, "swarm store database error");
+            V1Error::internal("SWARM_STORE_ERROR", "internal store error")
         }
-        ControlDbError::Io(err) => V1Error::internal("SWARM_STORE_ERROR", err.to_string()),
+        ControlDbError::Io(ref io_err) => {
+            tracing::error!(error = %io_err, "swarm store I/O error");
+            V1Error::internal("SWARM_STORE_ERROR", "internal store error")
+        }
     }
 }
 
@@ -1756,7 +1792,10 @@ fn is_lower_hex(value: &str, expected_len: usize) -> bool {
 
 fn hash_finding_envelope_for_head(finding: &FindingEnvelope) -> Result<String, V1Error> {
     let mut value = serde_json::to_value(finding)
-        .map_err(|err| V1Error::internal("SWARM_SERIALIZATION_ERROR", err.to_string()))?;
+        .map_err(|err| {
+            tracing::error!(error = %err, "failed to serialize finding for head hash");
+            V1Error::internal("SWARM_SERIALIZATION_ERROR", "internal serialization error")
+        })?;
     let value_map = value.as_object_mut().ok_or_else(|| {
         V1Error::internal(
             "SWARM_SERIALIZATION_ERROR",
@@ -1772,13 +1811,19 @@ fn hash_finding_envelope_for_head(finding: &FindingEnvelope) -> Result<String, V
         }
     }
     let canonical = canonicalize(&value)
-        .map_err(|err| V1Error::internal("SWARM_HASH_ERROR", err.to_string()))?;
+        .map_err(|err| {
+            tracing::error!(error = %err, "failed to canonicalize finding for head hash");
+            V1Error::internal("SWARM_HASH_ERROR", "internal hash error")
+        })?;
     Ok(sha256_hex(canonical.as_bytes()))
 }
 
 fn hash_revocation_envelope_for_head(revocation: &RevocationEnvelope) -> Result<String, V1Error> {
     let mut value = serde_json::to_value(revocation)
-        .map_err(|err| V1Error::internal("SWARM_SERIALIZATION_ERROR", err.to_string()))?;
+        .map_err(|err| {
+            tracing::error!(error = %err, "failed to serialize revocation for head hash");
+            V1Error::internal("SWARM_SERIALIZATION_ERROR", "internal serialization error")
+        })?;
     let value_map = value.as_object_mut().ok_or_else(|| {
         V1Error::internal(
             "SWARM_SERIALIZATION_ERROR",
@@ -1787,6 +1832,9 @@ fn hash_revocation_envelope_for_head(revocation: &RevocationEnvelope) -> Result<
     })?;
     value_map.remove("publish");
     let canonical = canonicalize(&value)
-        .map_err(|err| V1Error::internal("SWARM_HASH_ERROR", err.to_string()))?;
+        .map_err(|err| {
+            tracing::error!(error = %err, "failed to canonicalize revocation for head hash");
+            V1Error::internal("SWARM_HASH_ERROR", "internal hash error")
+        })?;
     Ok(sha256_hex(canonical.as_bytes()))
 }

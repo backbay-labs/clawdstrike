@@ -302,6 +302,7 @@ impl ControlDb {
                 FROM swarm_blob_refs
                 WHERE digest = ?1
                 ORDER BY feed_id ASC, issuer_id ASC, feed_seq ASC, blob_id ASC
+                LIMIT 200
                 "#,
             )?;
             let mut rows = stmt.query(params![digest])?;

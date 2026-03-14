@@ -1012,6 +1012,14 @@ pub struct Config {
     #[serde(default = "default_cors")]
     pub cors_enabled: bool,
 
+    /// Allowed CORS origins (e.g., `["https://app.example.com"]`).
+    ///
+    /// When `cors_enabled` is true but this list is empty, all cross-origin
+    /// requests are blocked (fail-closed). Use `Any` origin only by explicitly
+    /// adding `"*"` — but prefer specific origins in production.
+    #[serde(default)]
+    pub allowed_origins: Vec<String>,
+
     /// Maximum request body size in bytes (default: 1 MiB, 0 = no limit)
     #[serde(default = "default_max_request_body_bytes")]
     pub max_request_body_bytes: usize,
@@ -1107,6 +1115,7 @@ impl Default for Config {
             signing_key: None,
             policy_bundle_trusted_pubkeys: Vec::new(),
             cors_enabled: default_cors(),
+            allowed_origins: Vec::new(),
             max_request_body_bytes: default_max_request_body_bytes(),
             max_audit_entries: 0,
             audit: AuditConfig::default(),
