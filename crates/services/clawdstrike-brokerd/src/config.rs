@@ -362,7 +362,6 @@ mod tests {
             keypair.public_key().to_hex(),
         );
         std::env::set_var("CLAWDSTRIKE_BROKERD_SECRET_BACKEND", "http");
-        // No HTTP URL set.
 
         let err = Config::from_env().unwrap_err();
         assert!(err
@@ -395,7 +394,6 @@ mod tests {
             keypair.public_key().to_hex(),
         );
         std::env::set_var("CLAWDSTRIKE_BROKERD_SECRET_BACKEND", "file");
-        // No SECRET_FILE set.
 
         let err = Config::from_env().unwrap_err();
         assert!(err.to_string().contains("CLAWDSTRIKE_BROKERD_SECRET_FILE"));
@@ -406,7 +404,6 @@ mod tests {
         let _lock = ENV_LOCK.lock().unwrap();
         clear_env();
         std::env::set_var("CLAWDSTRIKE_BROKERD_SECRET_FILE", "/tmp/test-secrets.json");
-        // No HUSHD_PUBKEYS set.
 
         let err = Config::from_env().unwrap_err();
         assert!(err

@@ -214,7 +214,6 @@ pub fn validate_execute_request(
     Ok((capability, parsed))
 }
 
-/// Validates a DPoP proof binding against the capability constraints.
 fn validate_dpop_binding(
     binding: &clawdstrike_broker_protocol::ProofBinding,
     request: &BrokerExecuteRequest,

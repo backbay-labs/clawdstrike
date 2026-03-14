@@ -176,41 +176,29 @@ pub enum MergeStrategy {
     DeepMerge,
 }
 
-/// Complete policy configuration
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Policy {
-    /// Policy version
     #[serde(default = "default_version")]
     pub version: String,
-    /// Policy name
     #[serde(default)]
     pub name: String,
-    /// Policy description
     #[serde(default)]
     pub description: String,
-    /// Base policy to extend (ruleset name or file path)
     #[serde(default)]
     pub extends: Option<String>,
-    /// Strategy for merging with base policy
     #[serde(default)]
     pub merge_strategy: MergeStrategy,
-    /// Guard configurations
     #[serde(default)]
     pub guards: GuardConfigs,
-    /// Policy-driven custom guards (resolved by runtimes via a registry).
     #[serde(default)]
     pub custom_guards: Vec<PolicyCustomGuardSpec>,
-    /// Global settings
     #[serde(default)]
     pub settings: PolicySettings,
-    /// Optional dynamic posture model (schema v1.2.0+).
     #[serde(default)]
     pub posture: Option<PostureConfig>,
-    /// Optional origin-aware enforcement (schema v1.4.0+).
     #[serde(default)]
     pub origins: Option<OriginsConfig>,
-    /// Optional brokered egress execution policy (schema v1.5.0+).
     #[serde(default)]
     pub broker: Option<BrokerConfig>,
 }
@@ -237,47 +225,33 @@ impl Default for Policy {
     }
 }
 
-/// Configuration for all guards
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GuardConfigs {
-    /// Forbidden path guard config
     #[serde(default)]
     pub forbidden_path: Option<ForbiddenPathConfig>,
-    /// Path allowlist guard config
     #[serde(default)]
     pub path_allowlist: Option<PathAllowlistConfig>,
-    /// Egress allowlist guard config
     #[serde(default)]
     pub egress_allowlist: Option<EgressAllowlistConfig>,
-    /// Secret leak guard config
     #[serde(default)]
     pub secret_leak: Option<SecretLeakConfig>,
-    /// Patch integrity guard config
     #[serde(default)]
     pub patch_integrity: Option<PatchIntegrityConfig>,
-    /// Shell command guard config
     #[serde(default)]
     pub shell_command: Option<ShellCommandConfig>,
-    /// MCP tool guard config
     #[serde(default)]
     pub mcp_tool: Option<McpToolConfig>,
-    /// Prompt injection guard config
     #[serde(default)]
     pub prompt_injection: Option<PromptInjectionConfig>,
-    /// Jailbreak detection guard config
     #[serde(default)]
     pub jailbreak: Option<JailbreakConfig>,
-    /// Computer use (CUA) guard config
     #[serde(default)]
     pub computer_use: Option<ComputerUseConfig>,
-    /// Remote desktop side channel guard config
     #[serde(default)]
     pub remote_desktop_side_channel: Option<RemoteDesktopSideChannelConfig>,
-    /// Input injection capability guard config
     #[serde(default)]
     pub input_injection_capability: Option<InputInjectionCapabilityConfig>,
-    /// Spider-Sense hierarchical screening guard config
     #[cfg(feature = "full")]
     #[serde(default)]
     pub spider_sense: Option<crate::async_guards::threat_intel::SpiderSensePolicyConfig>,
@@ -303,7 +277,6 @@ pub struct GuardConfigs {
 }
 
 impl GuardConfigs {
-    /// Merge with another GuardConfigs (child overrides base)
     pub fn merge_with(&self, child: &Self) -> Self {
         Self {
             forbidden_path: match (&self.forbidden_path, &child.forbidden_path) {
@@ -498,17 +471,13 @@ pub struct CustomGuardSpec {
     pub async_config: Option<AsyncGuardPolicyConfig>,
 }
 
-/// Global policy settings
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PolicySettings {
-    /// Whether to fail fast on first violation
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fail_fast: Option<bool>,
-    /// Whether to log all actions (not just violations)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verbose_logging: Option<bool>,
-    /// Session timeout in seconds
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_timeout_secs: Option<u64>,
 }
