@@ -1301,7 +1301,8 @@ async fn proxy_daemon_mutation(
     let body = axum::body::to_bytes(request.into_body(), max_bytes)
         .await
         .map_err(|err| internal_error(err.into()))?;
-    let response = send_daemon_request(&state, &headers, method, &uri, Some(body.to_vec())).await?;
+    let body = if body.is_empty() { None } else { Some(body.to_vec()) };
+    let response = send_daemon_request(&state, &headers, method, &uri, body).await?;
     proxy_http_response(response).await
 }
 
