@@ -1341,6 +1341,18 @@ pub async fn ingest_evidence(
         ));
     }
 
+    if state
+        .broker_state
+        .get_capability_status(&evidence.capability_id)
+        .await
+        .is_none()
+    {
+        return Err(V1Error::not_found(
+            "BROKER_CAPABILITY_NOT_FOUND",
+            "evidence references a capability that was not issued by this authority",
+        ));
+    }
+
     let message = if matches!(evidence.phase, BrokerExecutionPhase::Started) {
         "broker execution start evidence recorded"
     } else if evidence.suspicion_reason.is_some() {

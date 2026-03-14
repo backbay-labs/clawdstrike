@@ -179,12 +179,23 @@ pub fn validate_execute_request(
         }
     }
 
+    const FORBIDDEN_HEADERS: &[&str] = &[
+        "authorization",
+        "proxy-authorization",
+        "host",
+        "cookie",
+        "transfer-encoding",
+        "te",
+        "connection",
+        "upgrade",
+    ];
+
     for header_name in request.request.headers.keys() {
         let normalized = normalize_header_name(header_name);
-        if normalized == "authorization" {
+        if FORBIDDEN_HEADERS.contains(&normalized.as_str()) {
             return Err(ApiError::forbidden(
                 "BROKER_HEADER_FORBIDDEN",
-                "authorization header injection is not allowed",
+                format!("'{normalized}' header injection is not allowed"),
             ));
         }
         if !capability

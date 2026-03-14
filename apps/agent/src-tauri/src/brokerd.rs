@@ -113,7 +113,11 @@ impl BrokerdManager {
         let mut child = spawn_brokerd_process(&self.config, &hushd_public_key).await?;
         attach_child_logs(&mut child);
         *self.child.write().await = Some(child);
-        wait_until_ready(&self.http_client, &self.config).await
+        if let Err(error) = wait_until_ready(&self.http_client, &self.config).await {
+            terminate_child_slot(&self.child).await;
+            return Err(error);
+        }
+        Ok(())
     }
 
     async fn ensure_monitor_loop(&self) {

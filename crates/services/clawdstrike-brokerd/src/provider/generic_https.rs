@@ -76,7 +76,7 @@ async fn execute_generic_https_request(
     request: &BrokerRequest,
     secret: &str,
 ) -> Result<(reqwest::Response, BTreeMap<String, String>), ApiError> {
-    validate_generic_target(state, &request.url).await?;
+    let pinned_addr = validate_generic_target(state, &request.url).await?;
     let auth = parse_secret(secret)?;
     let mut provider_metadata = BTreeMap::from([
         ("operation".to_string(), "generic_https".to_string()),
@@ -88,9 +88,26 @@ async fn execute_generic_https_request(
         }
     }
 
-    let mut builder = state
-        .upstream_client
-        .request(map_method(&request.method), request.url.as_str());
+    // When a pinned address is available (DNS was resolved during validation),
+    // build a one-shot client that resolves the hostname to that address,
+    // preventing DNS rebinding between validation and execution.
+    let client = match pinned_addr {
+        Some(addr) => {
+            let parsed = Url::parse(&request.url).map_err(|error| {
+                ApiError::bad_request("BROKER_REQUEST_URL_INVALID", error.to_string())
+            })?;
+            let host = parsed.host_str().unwrap_or_default().to_string();
+            reqwest::Client::builder()
+                .resolve(&host, addr)
+                .build()
+                .map_err(|error| {
+                    ApiError::internal("BROKER_CLIENT_BUILD_FAILED", error.to_string())
+                })?
+        }
+        None => state.upstream_client.clone(),
+    };
+
+    let mut builder = client.request(map_method(&request.method), request.url.as_str());
 
     for (name, value) in &request.headers {
         builder = builder.header(name, value);
@@ -142,9 +159,16 @@ fn build_bearer_header(secret: &str) -> Result<InjectedHeader, ApiError> {
     })
 }
 
-async fn validate_generic_target(state: &AppState, request_url: &str) -> Result<(), ApiError> {
+/// Validates the target URL is not a restricted IP. Returns a pinned
+/// `SocketAddr` when DNS resolution was performed, so the caller can
+/// bind the outbound request to the same address (preventing DNS
+/// rebinding between validation and execution).
+async fn validate_generic_target(
+    state: &AppState,
+    request_url: &str,
+) -> Result<Option<std::net::SocketAddr>, ApiError> {
     if state.config.allow_private_upstream_hosts {
-        return Ok(());
+        return Ok(None);
     }
 
     let parsed = Url::parse(request_url)
@@ -163,17 +187,22 @@ async fn validate_generic_target(state: &AppState, request_url: &str) -> Result<
                 "generic https execution does not allow private, link-local, or loopback targets",
             ));
         }
-        return Ok(());
+        return Ok(Some(std::net::SocketAddr::new(ip, port)));
     }
 
-    let resolved = tokio::net::lookup_host((host, port))
+    let resolved: Vec<std::net::SocketAddr> = tokio::net::lookup_host((host, port))
         .await
-        .map_err(|error| {
-            ApiError::bad_gateway("BROKER_DNS_RESOLUTION_FAILED", error.to_string())
-        })?;
-    let mut saw_address = false;
-    for addr in resolved {
-        saw_address = true;
+        .map_err(|error| ApiError::bad_gateway("BROKER_DNS_RESOLUTION_FAILED", error.to_string()))?
+        .collect();
+
+    if resolved.is_empty() {
+        return Err(ApiError::bad_gateway(
+            "BROKER_DNS_RESOLUTION_FAILED",
+            "generic https execution could not resolve the upstream host",
+        ));
+    }
+
+    for addr in &resolved {
         if is_restricted_ip(addr.ip()) {
             return Err(ApiError::forbidden(
                 "BROKER_TARGET_RESTRICTED",
@@ -182,14 +211,7 @@ async fn validate_generic_target(state: &AppState, request_url: &str) -> Result<
         }
     }
 
-    if !saw_address {
-        return Err(ApiError::bad_gateway(
-            "BROKER_DNS_RESOLUTION_FAILED",
-            "generic https execution could not resolve the upstream host",
-        ));
-    }
-
-    Ok(())
+    Ok(Some(resolved[0]))
 }
 
 fn is_restricted_ip(ip: IpAddr) -> bool {
@@ -211,10 +233,15 @@ fn is_restricted_ip(ip: IpAddr) -> bool {
 }
 
 fn is_restricted_ipv4(ip: std::net::Ipv4Addr) -> bool {
+    let octets = ip.octets();
     ip.is_private()
         || ip.is_loopback()
         || ip.is_link_local()
         || ip.is_multicast()
         || ip.is_unspecified()
         || ip.is_documentation()
+        // Carrier-grade NAT / shared address space (RFC 6598)
+        || (octets[0] == 100 && (64..128).contains(&octets[1]))
+        // Benchmarking (RFC 2544)
+        || (octets[0] == 198 && (octets[1] == 18 || octets[1] == 19))
 }

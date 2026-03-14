@@ -564,7 +564,7 @@ impl BrokerConfig {
         }
 
         Self {
-            enabled: child.enabled || self.enabled,
+            enabled: child.enabled,
             providers,
         }
     }
