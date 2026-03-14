@@ -659,7 +659,7 @@ create_swarm_via_ui() {
   fi
   wait_for_text "Swarm Name"
   set_input_placeholder "e.g., SecOps Collective" "$swarm_name"
-  click_text "Trusted"
+  click_text_exact "Trusted"
   click_last_text "Create Swarm"
   wait_for_text "$swarm_name"
   capture_page "swarm-created"
@@ -713,7 +713,7 @@ launch_claude_mission() {
   click_text "Launch Blocked Mission"
   wait_for_text "$claude_mission_title"
   wait_for_text "Launch Posture"
-  wait_for_text "Blocked"
+  wait_for_launch_state "blocked"
   capture_page "missions-claude-blocked"
 }
 
@@ -728,7 +728,7 @@ launch_openclaw_mission() {
     "Describe what the sentinel should verify, collect, or harden." \
     "Walk the suspicious login flow, collect runtime evidence, and promote a finding if the broker blocks risky behavior."
   capture_page "missions-openclaw-ready"
-  click_text "Launch Mission"
+  click_text_exact "Launch Mission"
   wait_for_text "$openclaw_mission_title"
   wait_for_text "Brokered Download Block"
   wait_for_text "Findings"
@@ -761,8 +761,8 @@ promote_openclaw_finding_to_intel() {
 
   capture_page "findings-ready"
   click_finding_action "$openclaw_finding_title" "Promote"
-  capture_page "finding-promoted"
   wait_for_first_local_intel_id
+  capture_page "finding-promoted"
 }
 
 share_intel_to_swarm() {
@@ -867,6 +867,7 @@ fi
 pw open "${open_args[@]}" >/dev/null
 wait_for_text "CLAWDSTRIKE"
 clear_browser_state
+sleep 2
 wait_for_text "CLAWDSTRIKE"
 ensure_operator_identity
 
@@ -896,15 +897,29 @@ log "Collecting artifacts and summary"
 capture_playwright_report "$console_file" console error
 capture_playwright_report "$network_file" network
 
+set_hash "#/missions" 2>/dev/null || true
+sleep 2
+
 if claude_launch_state="$(
   pw_eval_result "$(cat <<'EOF'
 () => {
-  const text = document.body.innerText.toLowerCase();
-  return text.includes("blocked") ? "blocked" : text;
+  const label = [...document.querySelectorAll("span")]
+    .find((el) => (el.textContent ?? "").trim() === "Launch Posture");
+  const row = label?.parentElement?.parentElement;
+  const stateText = row
+    ? ([...row.querySelectorAll("span")].at(-1)?.textContent ?? "").trim().toLowerCase()
+    : "";
+  if (stateText.includes("blocked")) return "blocked";
+  if (stateText.includes("ready")) return "ready";
+  if (stateText.includes("degraded")) return "degraded";
+  return "unknown";
 }
 EOF
 )" 2>/dev/null
 )"; then true; else claude_launch_state="unknown"; fi
+
+set_hash "#/findings" 2>/dev/null || true
+sleep 1
 
 if openclaw_finding_links="$(
   pw_eval_result "$(cat <<'EOF'
