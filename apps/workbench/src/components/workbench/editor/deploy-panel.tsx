@@ -171,7 +171,7 @@ function DeployConfirmDialog({
     } finally {
       setIsValidating(false);
     }
-  }, [connection, state.yaml]);
+  }, [getAuthedConn, state.yaml]);
 
   // ---- Deploy ----
   const handleDeploy = useCallback(async () => {
@@ -226,7 +226,7 @@ function DeployConfirmDialog({
     } finally {
       setIsDeploying(false);
     }
-  }, [connection, state.yaml, toast, onSuccess]);
+  }, [getAuthedConn, state.yaml, toast, onSuccess]);
 
   return (
     <DialogContent
@@ -424,7 +424,7 @@ function ImportConfirmDialog({ onClose }: { onClose: () => void }) {
     } finally {
       setIsImporting(false);
     }
-  }, [connection, dispatch, toast, onClose]);
+  }, [getAuthedImport, dispatch, toast, onClose]);
 
   return (
     <DialogContent

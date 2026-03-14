@@ -170,8 +170,8 @@ const CAPABILITY_SHORT: Record<Capability, string> = {
 };
 
 export function DelegationPage() {
-  const { connection, getAuthenticatedConnection } = useFleetConnection();
-  const fleetConnected = connection.connected;
+  const { connection: connInfo, getAuthenticatedConnection } = useFleetConnection();
+  const fleetConnected = connInfo.connected;
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerElement, setContainerElement] = useState<HTMLDivElement | null>(null);
@@ -309,7 +309,7 @@ export function DelegationPage() {
     } finally {
       setIsLoadingGraph(false);
     }
-  }, [fleetConnected, connection, selectedPrincipalId, fetchLiveGraph]);
+  }, [fleetConnected, getAuthenticatedConnection, selectedPrincipalId, fetchLiveGraph]);
 
   // Re-fetch graph when principal selection changes (while in live mode)
   const handlePrincipalChange = useCallback(
@@ -334,7 +334,7 @@ export function DelegationPage() {
         setIsLoadingPrincipal(false);
       }
     },
-    [isLiveData, fleetConnected, connection, fetchLiveGraph],
+    [isLiveData, fleetConnected, getAuthenticatedConnection, fetchLiveGraph],
   );
 
   const toggleDataSource = useCallback(async () => {
@@ -351,7 +351,7 @@ export function DelegationPage() {
     }
     setSelectedNode(null);
     setTracedPath(null);
-  }, [isLiveData, fleetConnected, connection, selectedPrincipalId, fetchLiveGraph]);
+  }, [isLiveData, fleetConnected, getAuthenticatedConnection, selectedPrincipalId, fetchLiveGraph]);
 
   const filteredGraph = useMemo<DelegationGraph>(() => {
     const q = debouncedSearchQuery.toLowerCase().trim();
