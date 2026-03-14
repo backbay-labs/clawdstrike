@@ -25,6 +25,11 @@ import type {
   TimelineEntry,
 } from "@/lib/workbench/finding-engine";
 import type { Severity, Annotation } from "@/lib/workbench/hunt-types";
+import {
+  SEVERITY_COLORS,
+  SEVERITY_LABELS,
+  STATUS_CONFIG,
+} from "@/lib/workbench/finding-constants";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -40,35 +45,6 @@ interface FindingDetailProps {
   onRunEnrichment?: (findingId: string) => void;
   onBack?: () => void;
 }
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-const SEVERITY_COLORS: Record<Severity, string> = {
-  critical: "#c45c5c",
-  high: "#d4784b",
-  medium: "#d4a84b",
-  low: "#6b9b8b",
-  info: "#6f7f9a",
-};
-
-const SEVERITY_LABELS: Record<Severity, string> = {
-  critical: "CRITICAL",
-  high: "HIGH",
-  medium: "MEDIUM",
-  low: "LOW",
-  info: "INFO",
-};
-
-const STATUS_CONFIG: Record<FindingStatus, { label: string; color: string; bg: string }> = {
-  emerging: { label: "Emerging", color: "#d4a84b", bg: "#d4a84b20" },
-  confirmed: { label: "Confirmed", color: "#d4784b", bg: "#d4784b20" },
-  promoted: { label: "Promoted", color: "#3dbf84", bg: "#3dbf8420" },
-  dismissed: { label: "Dismissed", color: "#6f7f9a", bg: "#6f7f9a20" },
-  false_positive: { label: "False Positive", color: "#6f7f9a", bg: "#6f7f9a20" },
-  archived: { label: "Archived", color: "#6f7f9a", bg: "#6f7f9a15" },
-};
 
 const TIMELINE_TYPE_CONFIG: Record<
   TimelineEntry["type"],

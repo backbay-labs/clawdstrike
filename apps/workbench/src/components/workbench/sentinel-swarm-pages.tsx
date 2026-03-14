@@ -862,7 +862,7 @@ export function IntelDetailPage() {
     <div className="space-y-6 pb-6">
       <IntelDetail
         intel={intel}
-        onBack={() => navigate("/intel")}
+        onBack={() => navigate("/findings?tab=intel")}
         onNavigateToFinding={(findingId: string) => navigate(`/findings/${findingId}`)}
         onChangeShareability={editableLocalIntel ? handleChangeShareability : undefined}
         onShareToSwarm={canShareToSwarm && !isPublishing ? handleShareToSwarm : undefined}

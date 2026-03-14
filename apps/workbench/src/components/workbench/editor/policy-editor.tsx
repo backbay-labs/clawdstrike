@@ -328,6 +328,9 @@ export function PolicyEditor() {
       setShowHome(false);
       setShowCommandCenter(false);
       setShowGuards(false);
+    } else if (panelParam === null) {
+      setShowGuards(false);
+      setShowCompare(false);
     }
   }, [panelParam]);
 

@@ -348,8 +348,8 @@ export function App() {
     <HashRouter>
       <ErrorBoundary>
         <AppProviders>
-          <IdentityPrompt />
           <Suspense fallback={<LoadingFallback />}>
+            <IdentityPrompt />
             <Routes>
               <Route element={<DesktopLayout />}>
                 {/* Default redirect */}

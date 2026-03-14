@@ -405,9 +405,7 @@ export function DesktopSidebar() {
   );
   const pendingApprovalCount = isLiveBadge
     ? liveApprovalCount
-    : fleetConnected
-      ? 0
-      : demoPendingCount;
+    : demoPendingCount;
 
   const { findings } = useFindings();
   const emergingFindingsCount = findings.filter((f) => f.status === "emerging").length;
