@@ -15,6 +15,7 @@ import {
   ReactFlowProvider,
   MiniMap,
   useReactFlow,
+  type Node,
   type OnConnect,
   type OnNodesChange,
   type OnEdgesChange,
@@ -39,7 +40,6 @@ import { SwarmBoardToolbar } from "./swarm-board-toolbar";
 import { SwarmBoardLeftRail } from "./swarm-board-left-rail";
 import { SwarmBoardInspector } from "./swarm-board-inspector";
 import type { SwarmBoardNodeData, SwarmNodeType } from "@/lib/workbench/swarm-board-types";
-import type { Node } from "@xyflow/react";
 
 // ---------------------------------------------------------------------------
 // Styles

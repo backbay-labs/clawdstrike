@@ -104,12 +104,17 @@ fn detect_git_branch(cwd: &str) -> Option<String> {
 }
 
 /// Determine the default shell for the current user.
+///
+/// Prefers the `SHELL` environment variable. On Unix-like systems, falls back
+/// through `/bin/bash` then `/bin/sh` rather than assuming zsh is installed.
 fn default_shell() -> String {
     std::env::var("SHELL").unwrap_or_else(|_| {
         if cfg!(target_os = "windows") {
             "cmd.exe".to_string()
+        } else if std::path::Path::new("/bin/bash").exists() {
+            "/bin/bash".to_string()
         } else {
-            "/bin/zsh".to_string()
+            "/bin/sh".to_string()
         }
     })
 }

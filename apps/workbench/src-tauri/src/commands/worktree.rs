@@ -77,14 +77,15 @@ fn sanitise_branch_name(branch: &str) -> Result<String, String> {
         ['/', '\\', ' ', ':', '*', '?', '"', '<', '>', '|', '.'],
         "-",
     );
-    // Reject empty or pure-separator results
-    let trimmed = sanitised.trim_matches('-');
+    // Reject empty or pure-separator results, and return the trimmed version
+    // so that directory names don't start or end with dashes.
+    let trimmed = sanitised.trim_matches('-').to_string();
     if trimmed.is_empty() {
         return Err(format!(
             "Branch name '{branch}' produces an empty directory name after sanitisation"
         ));
     }
-    Ok(sanitised)
+    Ok(trimmed)
 }
 
 // ---------------------------------------------------------------------------
@@ -334,9 +335,11 @@ pub async fn worktree_status(worktree_path: String) -> Result<WorktreeStatus, St
 
                 // Otherwise it's a file line: "path/to/file | 10 +++---"
                 if let Some(pipe_idx) = trimmed.find('|') {
-                    let file_path = trimmed[..pipe_idx].trim().to_string();
-                    if !file_path.is_empty() && !files.contains(&file_path) {
-                        files.push(file_path);
+                    if let Some(file_part) = trimmed.get(..pipe_idx) {
+                        let file_path = file_part.trim().to_string();
+                        if !file_path.is_empty() && !files.contains(&file_path) {
+                            files.push(file_path);
+                        }
                     }
                 }
             }
@@ -354,8 +357,8 @@ pub async fn worktree_status(worktree_path: String) -> Result<WorktreeStatus, St
     // multi-byte UTF-8 filenames.
     let status_output = run_git(&worktree_path, &["status", "--porcelain"]).unwrap_or_default();
     for line in status_output.lines() {
-        if line.len() >= 4 {
-            let file_path = line[3..].trim().to_string();
+        if let Some(rest) = line.get(3..) {
+            let file_path = rest.trim().to_string();
             if !file_path.is_empty() && !changed_files.contains(&file_path) {
                 changed_files.push(file_path);
             }

@@ -10,12 +10,28 @@
  * Uses React Flow's BaseEdge + getSmoothStepPath.
  */
 
+import { useEffect } from "react";
 import {
   BaseEdge,
   EdgeLabelRenderer,
   getSmoothStepPath,
   type EdgeProps,
 } from "@xyflow/react";
+
+// Inject the keyframe animation once into the document head, not per-edge
+let keyframeInjected = false;
+function ensureKeyframes() {
+  if (keyframeInjected) return;
+  keyframeInjected = true;
+  const style = document.createElement("style");
+  style.textContent = `
+    @keyframes swarmEdgePulse {
+      0%, 100% { opacity: 0.15; }
+      50% { opacity: 0.35; }
+    }
+  `;
+  document.head.appendChild(style);
+}
 
 // ---------------------------------------------------------------------------
 // Edge type visual config
@@ -28,7 +44,6 @@ interface EdgeStyleConfig {
   strokeWidth: number;
   strokeDasharray?: string;
   animated: boolean;
-  label: string;
 }
 
 const EDGE_STYLES: Record<SwarmEdgeType, EdgeStyleConfig> = {
@@ -36,28 +51,24 @@ const EDGE_STYLES: Record<SwarmEdgeType, EdgeStyleConfig> = {
     color: "#d4a84b",
     strokeWidth: 1.5,
     animated: false,
-    label: "handoff",
   },
   spawned: {
     color: "#5b8def",
     strokeWidth: 1,
     strokeDasharray: "6 4",
     animated: true,
-    label: "spawned",
   },
   artifact: {
     color: "#3dbf84",
     strokeWidth: 1,
     strokeDasharray: "2 4",
     animated: false,
-    label: "artifact",
   },
   receipt: {
     color: "#6f7f9a",
     strokeWidth: 0.75,
     strokeDasharray: "2 5",
     animated: false,
-    label: "receipt",
   },
 };
 
@@ -65,7 +76,6 @@ const DEFAULT_STYLE: EdgeStyleConfig = {
   color: "#1a1f2e",
   strokeWidth: 1,
   animated: false,
-  label: "",
 };
 
 // ---------------------------------------------------------------------------
@@ -86,6 +96,9 @@ export function SwarmEdge({
   markerEnd,
   selected,
 }: EdgeProps) {
+  // Ensure keyframe animation is injected once
+  useEffect(() => { ensureKeyframes(); }, []);
+
   // Resolve edge type from data or fall back to label heuristic
   const edgeType = (data?.edgeType as SwarmEdgeType) ?? undefined;
   const config = edgeType ? EDGE_STYLES[edgeType] : DEFAULT_STYLE;
@@ -157,15 +170,6 @@ export function SwarmEdge({
         </EdgeLabelRenderer>
       )}
 
-      {/* CSS keyframe for spawned edge pulse */}
-      {config.animated && (
-        <style>{`
-          @keyframes swarmEdgePulse {
-            0%, 100% { opacity: 0.15; }
-            50% { opacity: 0.35; }
-          }
-        `}</style>
-      )}
     </>
   );
 }

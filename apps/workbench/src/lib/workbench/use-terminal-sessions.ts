@@ -7,7 +7,7 @@
  * friendlier API surface for toolbar/UI consumers.
  */
 
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import {
   useSwarmBoard,
   type SpawnSessionOptions,
@@ -109,10 +109,13 @@ export function useTerminalSessions() {
   // -----------------------------------------------------------------------
 
   /** Count of currently active (running/blocked) sessions. */
-  const activeSessionCount = state.nodes.filter((n) => {
-    const d = n.data as SwarmBoardNodeData;
-    return d.sessionId && (d.status === "running" || d.status === "blocked");
-  }).length;
+  const activeSessionCount = useMemo(
+    () => state.nodes.filter((n) => {
+      const d = n.data as SwarmBoardNodeData;
+      return d.sessionId && (d.status === "running" || d.status === "blocked");
+    }).length,
+    [state.nodes],
+  );
 
   /** Whether we can spawn more sessions (below the limit). */
   const canSpawnMore = activeSessionCount < 8;

@@ -83,6 +83,7 @@ export function SwarmBoardLeftRail() {
           onClick={toggle}
           className="p-1 rounded hover:bg-[#ffffff06] text-[#3d4250] hover:text-[#6f7f9a] transition-colors"
           title="Expand panel"
+          aria-label="Expand explorer panel"
         >
           <IconChevronRight size={13} stroke={1.5} />
         </button>
@@ -108,6 +109,7 @@ export function SwarmBoardLeftRail() {
           onClick={toggle}
           className="p-0.5 rounded hover:bg-[#ffffff06] text-[#3d4250] hover:text-[#6f7f9a] transition-colors"
           title="Collapse panel"
+          aria-label="Collapse explorer panel"
         >
           <IconChevronLeft size={13} stroke={1.5} />
         </button>

@@ -30,15 +30,16 @@ function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
       new Error(`Tauri runtime not available (command: ${cmd}). Run the desktop app with "npm run tauri:dev".`),
     );
   }
+  let timer: ReturnType<typeof setTimeout>;
   return Promise.race([
     tauriInvoke<T>(cmd, args),
-    new Promise<never>((_, reject) =>
-      setTimeout(
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(
         () => reject(new Error(`Tauri invoke timed out after ${INVOKE_TIMEOUT_MS / 1000}s: ${cmd}`)),
         INVOKE_TIMEOUT_MS,
-      ),
-    ),
-  ]);
+      );
+    }),
+  ]).finally(() => clearTimeout(timer));
 }
 
 // ---------------------------------------------------------------------------
