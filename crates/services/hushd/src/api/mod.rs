@@ -76,6 +76,10 @@ pub fn create_router(state: AppState) -> Router {
             }
             // Fail-closed: no origins are allowed.
             AllowOrigin::list(std::iter::empty::<axum::http::HeaderValue>())
+        } else if state.config.allowed_origins.iter().any(|o| o == "*") {
+            // Wildcard origin — tower-http panics if "*" is passed to
+            // AllowOrigin::list, so use the dedicated Any variant.
+            AllowOrigin::any()
         } else {
             let origins: Vec<axum::http::HeaderValue> = state
                 .config
