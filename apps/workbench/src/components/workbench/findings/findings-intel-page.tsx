@@ -1,14 +1,3 @@
-/**
- * Findings & Intel — Merged tabbed page.
- *
- * Two tabs:
- * - Findings: renders FindingsList with store-connected props.
- * - Intel: renders IntelPage with store-connected props.
- *
- * Tab state is driven by the URL search param `?tab=intel`.
- * Default tab is "findings".
- */
-
 import { useCallback } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { IconAlertTriangle, IconBrain } from "@tabler/icons-react";
@@ -19,26 +8,17 @@ import { promoteToIntel } from "@/lib/workbench/intel-forge";
 import { FindingsList } from "./findings-list";
 import { IntelPage } from "../intel/intel-page";
 
-// ---------------------------------------------------------------------------
-// Tab type
-// ---------------------------------------------------------------------------
-
 type Tab = "findings" | "intel";
 
 function resolveTab(raw: string | null): Tab {
   return raw === "intel" ? "intel" : "findings";
 }
 
-// ---------------------------------------------------------------------------
-// Main Component
-// ---------------------------------------------------------------------------
-
 export function FindingsIntelPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const activeTab = resolveTab(searchParams.get("tab"));
 
-  // --- Findings store ---
   const { findings, confirm, dismiss, markFalsePositive, promote } = useFindings();
   const { localIntel, swarmIntel, upsertLocalIntel } = useIntel();
 
@@ -58,7 +38,6 @@ export function FindingsIntelPage() {
     [findings, promote, upsertLocalIntel],
   );
 
-  // --- Tab switching ---
   const setTab = useCallback(
     (tab: Tab) => {
       setSearchParams(tab === "findings" ? {} : { tab }, { replace: true });
@@ -68,9 +47,6 @@ export function FindingsIntelPage() {
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
-      {/* ----------------------------------------------------------------- */}
-      {/* Tab bar                                                           */}
-      {/* ----------------------------------------------------------------- */}
       <div className="border-b border-[#2d3240] bg-[#0b0d13] px-5 py-0 flex items-center gap-0 shrink-0">
         <button
           onClick={() => setTab("findings")}
@@ -98,9 +74,6 @@ export function FindingsIntelPage() {
         </button>
       </div>
 
-      {/* ----------------------------------------------------------------- */}
-      {/* Tab content — only the active tab is mounted                      */}
-      {/* ----------------------------------------------------------------- */}
       <div className="flex-1 overflow-hidden">
         {activeTab === "findings" ? (
           <FindingsList

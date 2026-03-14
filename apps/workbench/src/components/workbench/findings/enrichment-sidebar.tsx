@@ -16,18 +16,10 @@ import {
 } from "@tabler/icons-react";
 import type { Enrichment } from "@/lib/workbench/finding-engine";
 
-// ---------------------------------------------------------------------------
-// Props
-// ---------------------------------------------------------------------------
-
 interface EnrichmentSidebarProps {
   enrichments: Enrichment[];
   onRunEnrichment?: () => void;
 }
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 const ENRICHMENT_TYPE_CONFIG: Record<
   string,
@@ -72,20 +64,14 @@ const KILL_CHAIN_DEPTH_LABELS: Record<number, { label: string; color: string }> 
   5: { label: "Full Chain", color: "#c45c5c" },
 };
 
-// ---------------------------------------------------------------------------
-// Main Component
-// ---------------------------------------------------------------------------
-
 export function EnrichmentSidebar({
   enrichments,
   onRunEnrichment,
 }: EnrichmentSidebarProps) {
-  // Group enrichments by type
   const grouped = groupByType(enrichments);
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
       <div className="shrink-0 px-4 py-3 border-b border-[#2d3240]/60">
         <div className="flex items-center justify-between">
           <h2 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6f7f9a]/50">
@@ -108,7 +94,6 @@ export function EnrichmentSidebar({
         )}
       </div>
 
-      {/* Enrichment sections */}
       <div className="flex-1 overflow-y-auto">
         {enrichments.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-48 px-4">
@@ -130,10 +115,6 @@ export function EnrichmentSidebar({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 function groupByType(enrichments: Enrichment[]): Record<string, Enrichment[]> {
   const groups: Record<string, Enrichment[]> = {};
   for (const e of enrichments) {
@@ -142,10 +123,6 @@ function groupByType(enrichments: Enrichment[]): Record<string, Enrichment[]> {
   }
   return groups;
 }
-
-// ---------------------------------------------------------------------------
-// Enrichment Section (collapsible)
-// ---------------------------------------------------------------------------
 
 function EnrichmentSection({
   type,
@@ -160,7 +137,6 @@ function EnrichmentSection({
 
   return (
     <div className="border-b border-[#2d3240]/40">
-      {/* Section header */}
       <button
         onClick={() => setCollapsed(!collapsed)}
         className="flex items-center gap-2 w-full px-4 py-2.5 text-left hover:bg-[#131721]/40 transition-colors"
@@ -187,7 +163,6 @@ function EnrichmentSection({
         </span>
       </button>
 
-      {/* Section content */}
       {!collapsed && (
         <div className="px-4 pb-3">
           {enrichments.map((enrichment) => (
@@ -195,7 +170,7 @@ function EnrichmentSection({
               <EnrichmentContent enrichment={enrichment} />
               <div className="mt-1 flex items-center gap-2">
                 <span className="text-[8px] text-[#6f7f9a]/30">
-                  {formatEnrichmentTime(enrichment.addedAt)}
+                  {formatRelativeTime(enrichment.addedAt)}
                 </span>
                 <span className="text-[8px] text-[#6f7f9a]/20">via {enrichment.source}</span>
               </div>
@@ -206,10 +181,6 @@ function EnrichmentSection({
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Enrichment Content (type-specific rendering)
-// ---------------------------------------------------------------------------
 
 function EnrichmentContent({ enrichment }: { enrichment: Enrichment }) {
   switch (enrichment.type) {
@@ -228,10 +199,6 @@ function EnrichmentContent({ enrichment }: { enrichment: Enrichment }) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// MITRE ATT&CK
-// ---------------------------------------------------------------------------
-
 function MitreAttackContent({ data }: { data: Record<string, unknown> }) {
   const techniques = (data.techniques ?? []) as Array<{
     id: string;
@@ -246,7 +213,6 @@ function MitreAttackContent({ data }: { data: Record<string, unknown> }) {
 
   return (
     <div className="rounded-lg border border-[#2d3240]/40 bg-[#131721] p-3">
-      {/* Kill chain depth badge */}
       {killChainDepth > 0 && (
         <div className="flex items-center gap-2 mb-2">
           <span className="text-[9px] text-[#6f7f9a]/40">Kill-chain depth:</span>
@@ -263,7 +229,6 @@ function MitreAttackContent({ data }: { data: Record<string, unknown> }) {
         </div>
       )}
 
-      {/* Technique list */}
       <div className="flex flex-col gap-1.5">
         {techniques.map((tech) => (
           <div
@@ -286,7 +251,6 @@ function MitreAttackContent({ data }: { data: Record<string, unknown> }) {
         ))}
       </div>
 
-      {/* Tactics */}
       {tactics.length > 0 && (
         <div className="flex flex-wrap gap-1 mt-2 pt-2 border-t border-[#2d3240]/30">
           {tactics.map((tactic) => (
@@ -302,10 +266,6 @@ function MitreAttackContent({ data }: { data: Record<string, unknown> }) {
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// IOC Extraction
-// ---------------------------------------------------------------------------
 
 function IocExtractionContent({ data }: { data: Record<string, unknown> }) {
   const indicators = (data.indicators ?? []) as Array<{
@@ -324,7 +284,6 @@ function IocExtractionContent({ data }: { data: Record<string, unknown> }) {
               key={`${ioc.indicator}-${idx}`}
               className="flex items-center gap-2"
             >
-              {/* Type badge */}
               <span
                 className="shrink-0 rounded px-1.5 py-0.5 text-[8px] font-semibold uppercase border"
                 style={{
@@ -336,7 +295,6 @@ function IocExtractionContent({ data }: { data: Record<string, unknown> }) {
                 {ioc.iocType}
               </span>
 
-              {/* Indicator value */}
               <span className="font-mono text-[10px] text-[#ece7dc]/60 truncate flex-1 min-w-0">
                 {ioc.indicator}
               </span>
@@ -355,10 +313,6 @@ function IocExtractionContent({ data }: { data: Record<string, unknown> }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Spider Sense
-// ---------------------------------------------------------------------------
-
 function SpiderSenseContent({ data }: { data: Record<string, unknown> }) {
   const verdict = (data.verdict ?? "allow") as string;
   const topScore = (data.topScore ?? 0) as number;
@@ -374,7 +328,6 @@ function SpiderSenseContent({ data }: { data: Record<string, unknown> }) {
 
   return (
     <div className="rounded-lg border border-[#2d3240]/40 bg-[#131721] p-3">
-      {/* Verdict + score */}
       <div className="flex items-center gap-2 mb-2">
         <span
           className="rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase border"
@@ -394,15 +347,12 @@ function SpiderSenseContent({ data }: { data: Record<string, unknown> }) {
         </span>
       </div>
 
-      {/* Score bar */}
       <div className="mb-2.5">
         <div className="w-full h-2 rounded-full bg-[#2d3240]/30 overflow-hidden relative">
-          {/* Threshold marker */}
           <div
             className="absolute top-0 bottom-0 w-px bg-[#6f7f9a]/40"
             style={{ left: `${threshold * 100}%` }}
           />
-          {/* Score fill */}
           <div
             className="h-full rounded-full transition-all duration-300"
             style={{
@@ -413,7 +363,6 @@ function SpiderSenseContent({ data }: { data: Record<string, unknown> }) {
         </div>
       </div>
 
-      {/* Top matches */}
       {topMatches.length > 0 && (
         <div className="flex flex-col gap-1">
           <span className="text-[9px] text-[#6f7f9a]/40 mb-0.5">
@@ -440,10 +389,6 @@ function SpiderSenseContent({ data }: { data: Record<string, unknown> }) {
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// External Feed
-// ---------------------------------------------------------------------------
 
 function ExternalFeedContent({
   data,
@@ -478,10 +423,6 @@ function ExternalFeedContent({
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Swarm Corroboration
-// ---------------------------------------------------------------------------
 
 function SwarmCorroborationContent({ data }: { data: Record<string, unknown> }) {
   const peerFingerprint = (data.peerFingerprint ?? "") as string;
@@ -520,10 +461,6 @@ function SwarmCorroborationContent({ data }: { data: Record<string, unknown> }) 
   );
 }
 
-// ---------------------------------------------------------------------------
-// Generic Content (key-value display)
-// ---------------------------------------------------------------------------
-
 function GenericContent({
   data,
   label,
@@ -558,12 +495,6 @@ function GenericContent({
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Formatting Helpers
-// ---------------------------------------------------------------------------
-
-const formatEnrichmentTime = formatRelativeTime;
 
 function formatValue(value: unknown): string {
   if (value === null || value === undefined) return "-";

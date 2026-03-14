@@ -1,11 +1,3 @@
-/**
- * Sentinel Swarm — Connected route-level page components.
- *
- * These wrappers read from React Context stores (SentinelProvider,
- * FindingProvider) and pass props to the presentational components.
- * Each page is exported for lazy-loading in App.tsx.
- */
-
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { fetchSwarmHubConfig, publishSwarmFinding } from "@/lib/workbench/fleet-client";
@@ -469,10 +461,6 @@ function SwarmArtifactsPanel({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Sentinel Pages
-// ---------------------------------------------------------------------------
-
 export function SentinelsPage() {
   const { sentinels } = useSentinels();
   return <SentinelList sentinels={sentinels} />;
@@ -524,10 +512,6 @@ export function SentinelDetailPage() {
     />
   );
 }
-
-// ---------------------------------------------------------------------------
-// Finding Pages
-// ---------------------------------------------------------------------------
 
 export function FindingsPage() {
   return <FindingsIntelPage />;
@@ -593,10 +577,6 @@ export function FindingDetailPage() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Intel Pages
-// ---------------------------------------------------------------------------
-
 export function IntelPageConnected() {
   const { localIntel, swarmIntel } = useIntel();
   const navigate = useNavigate();
@@ -647,28 +627,26 @@ export function IntelDetailPage() {
 
     return `${targetSwarm.id}:${connection.hushdUrl}`;
   }, [connection.hushdUrl, targetSwarm?.id]);
-  const liveHubTrustHydrationKey = hubTrustConnectionKey;
-  const requiresLiveHubTrustHydration = liveHubTrustHydrationKey !== null;
-  const liveHubTrustHydrationStatus = liveHubTrustHydrationKey
-    ? hubTrustHydrationByConnection[liveHubTrustHydrationKey] ?? "idle"
+  const hubTrustHydrationStatus = hubTrustConnectionKey
+    ? hubTrustHydrationByConnection[hubTrustConnectionKey] ?? "idle"
     : "success";
   const canShareToSwarm =
     Boolean(targetSwarm) &&
     (Boolean(intel?.signerPublicKey && intel.signature) || currentOperator !== null) &&
-    (!requiresLiveHubTrustHydration || liveHubTrustHydrationStatus === "success");
+    hubTrustHydrationStatus === "success";
 
   useEffect(() => {
-    if (!targetSwarm?.id || !liveHubTrustHydrationKey) {
+    if (!targetSwarm?.id || !hubTrustConnectionKey) {
       return;
     }
 
     let cancelled = false;
     setHubTrustHydrationByConnection((current) =>
-      current[liveHubTrustHydrationKey] === "pending"
+      current[hubTrustConnectionKey] === "pending"
         ? current
         : {
             ...current,
-            [liveHubTrustHydrationKey]: "pending",
+            [hubTrustConnectionKey]: "pending",
           },
     );
     setTrustPolicy(targetSwarm.id, FAIL_CLOSED_HUB_TRUST_POLICY);
@@ -682,7 +660,7 @@ export function IntelDetailPage() {
         setTrustPolicy(targetSwarm.id, hubConfig.trustPolicy);
         setHubTrustHydrationByConnection((current) => ({
           ...current,
-          [liveHubTrustHydrationKey]: "success",
+          [hubTrustConnectionKey]: "success",
         }));
       } catch (error) {
         if (cancelled) {
@@ -691,7 +669,7 @@ export function IntelDetailPage() {
         setTrustPolicy(targetSwarm.id, FAIL_CLOSED_HUB_TRUST_POLICY);
         setHubTrustHydrationByConnection((current) => ({
           ...current,
-          [liveHubTrustHydrationKey]: "error",
+          [hubTrustConnectionKey]: "error",
         }));
         console.warn("[sentinel-swarm-pages] failed to hydrate swarm trust policy:", error);
       }
@@ -703,7 +681,7 @@ export function IntelDetailPage() {
   }, [
     connection.apiKey,
     connection.hushdUrl,
-    liveHubTrustHydrationKey,
+    hubTrustConnectionKey,
     setTrustPolicy,
     targetSwarm?.id,
   ]);
@@ -727,7 +705,7 @@ export function IntelDetailPage() {
       if (!targetSwarm || isPublishing) {
         return;
       }
-      if (requiresLiveHubTrustHydration && liveHubTrustHydrationStatus !== "success") {
+      if (hubTrustConnectionKey !== null && hubTrustHydrationStatus !== "success") {
         setTrustPolicy(targetSwarm.id, FAIL_CLOSED_HUB_TRUST_POLICY);
         return;
       }
@@ -842,8 +820,8 @@ export function IntelDetailPage() {
       ingestHeadAnnouncement,
       ingestSwarmIntel,
       isPublishing,
-      liveHubTrustHydrationStatus,
-      requiresLiveHubTrustHydration,
+      hubTrustHydrationStatus,
+      hubTrustConnectionKey,
       setTrustPolicy,
       targetSwarm,
       upsertLocalIntel,

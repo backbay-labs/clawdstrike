@@ -38,10 +38,6 @@ import {
   STATUS_CONFIG,
 } from "@/lib/workbench/finding-constants";
 
-// ---------------------------------------------------------------------------
-// Props
-// ---------------------------------------------------------------------------
-
 interface FindingsListProps {
   findings: Finding[];
   onSelect: (findingId: string) => void;
@@ -56,10 +52,6 @@ interface FindingsListProps {
 type BulkAction = "confirm" | "dismiss" | "false_positive";
 
 type SortField = "newest" | "severity" | "confidence";
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 const ALL_STATUSES: FindingStatus[] = [
   "emerging",
@@ -78,18 +70,9 @@ const SORT_OPTIONS: { value: SortField; label: string }[] = [
   { value: "confidence", label: "Confidence" },
 ];
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-
 function isActionableStatus(status: FindingStatus): boolean {
   return status === "emerging" || status === "confirmed";
 }
-
-// ---------------------------------------------------------------------------
-// Main Component
-// ---------------------------------------------------------------------------
 
 export function FindingsList({
   findings,
@@ -107,7 +90,6 @@ export function FindingsList({
   const [sortField, setSortField] = useState<SortField>("newest");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  // Status counts for summary badges
   const statusCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const status of ALL_STATUSES) {
@@ -116,7 +98,6 @@ export function FindingsList({
     return counts;
   }, [findings]);
 
-  // Filtered and sorted findings
   const filteredFindings = useMemo(() => {
     let list = [...findings];
 
@@ -138,7 +119,6 @@ export function FindingsList({
       );
     }
 
-    // Sort
     switch (sortField) {
       case "newest":
         list.sort((a, b) => b.createdAt - a.createdAt);
@@ -200,9 +180,6 @@ export function FindingsList({
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-[#05060a]">
-      {/* ----------------------------------------------------------------- */}
-      {/* Header with status summary badges                                */}
-      {/* ----------------------------------------------------------------- */}
       <div className="shrink-0 border-b border-[#2d3240]/60 px-5 py-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -249,13 +226,9 @@ export function FindingsList({
         </div>
       </div>
 
-      {/* ----------------------------------------------------------------- */}
-      {/* Filter bar                                                        */}
-      {/* ----------------------------------------------------------------- */}
       <div className="shrink-0 flex flex-wrap items-center gap-2 border-b border-[#2d3240]/60 bg-[#0b0d13] px-5 py-2.5">
         <IconFilter size={13} className="text-[#6f7f9a]" stroke={1.5} />
 
-        {/* Severity dropdown */}
         <Select
           value={severityFilter}
           onValueChange={(v) => {
@@ -283,7 +256,6 @@ export function FindingsList({
           </SelectContent>
         </Select>
 
-        {/* Sort dropdown */}
         <Select
           value={sortField}
           onValueChange={(v) => {
@@ -305,7 +277,6 @@ export function FindingsList({
 
         <div className="flex-1" />
 
-        {/* Search */}
         <div className="relative">
           <IconSearch
             size={13}
@@ -321,15 +292,11 @@ export function FindingsList({
           />
         </div>
 
-        {/* Count */}
         <span className="text-[10px] font-mono text-[#6f7f9a]/40 shrink-0">
           {filteredFindings.length} finding{filteredFindings.length !== 1 ? "s" : ""}
         </span>
       </div>
 
-      {/* ----------------------------------------------------------------- */}
-      {/* Bulk action bar (visible when items selected)                     */}
-      {/* ----------------------------------------------------------------- */}
       {selectedIds.size > 0 && onBulkAction && (
         <div className="shrink-0 flex items-center gap-3 border-b border-[#d4a84b]/20 bg-[#d4a84b]/5 px-5 py-2">
           <button
@@ -378,9 +345,6 @@ export function FindingsList({
         </div>
       )}
 
-      {/* ----------------------------------------------------------------- */}
-      {/* Column headers                                                    */}
-      {/* ----------------------------------------------------------------- */}
       <div className="shrink-0 flex items-center gap-0 bg-[#0b0d13] border-b border-[#2d3240]/60 px-5 py-2">
         {onBulkAction && (
           <span className="w-7 shrink-0">
@@ -406,9 +370,6 @@ export function FindingsList({
         <span className={cn(TH_CELL, "w-[200px] text-right")}>Actions</span>
       </div>
 
-      {/* ----------------------------------------------------------------- */}
-      {/* Finding rows                                                      */}
-      {/* ----------------------------------------------------------------- */}
       <div className="flex-1 overflow-y-auto">
         {filteredFindings.length === 0 ? (
           <EmptyState hasFilters={statusFilter !== "all" || severityFilter !== "all" || searchQuery.length > 0} />
@@ -436,16 +397,8 @@ export function FindingsList({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Table header cell style
-// ---------------------------------------------------------------------------
-
 const TH_CELL =
   "text-[9px] uppercase tracking-[0.08em] font-semibold text-[#6f7f9a]/50 select-none";
-
-// ---------------------------------------------------------------------------
-// Finding Row
-// ---------------------------------------------------------------------------
 
 function FindingRow({
   finding,
@@ -483,7 +436,6 @@ function FindingRow({
           : "hover:bg-[#0b0d13] border-l-2 border-l-transparent",
       )}
     >
-      {/* Batch checkbox */}
       {showCheckbox && (
         <span className="w-7 shrink-0">
           <button
@@ -507,7 +459,6 @@ function FindingRow({
         </span>
       )}
 
-      {/* Severity dot + label */}
       <button
         type="button"
         onClick={onSelect}
@@ -525,7 +476,6 @@ function FindingRow({
         </span>
       </button>
 
-      {/* Title */}
       <button
         type="button"
         onClick={onSelect}
@@ -536,7 +486,6 @@ function FindingRow({
         </span>
       </button>
 
-      {/* Status badge */}
       <button
         type="button"
         onClick={onSelect}
@@ -555,7 +504,6 @@ function FindingRow({
         </span>
       </button>
 
-      {/* Signal count */}
       <button
         type="button"
         onClick={onSelect}
@@ -566,7 +514,6 @@ function FindingRow({
         </span>
       </button>
 
-      {/* Confidence bar */}
       <button
         type="button"
         onClick={onSelect}
@@ -586,7 +533,6 @@ function FindingRow({
         </span>
       </button>
 
-      {/* Age */}
       <button
         type="button"
         onClick={onSelect}
@@ -597,7 +543,6 @@ function FindingRow({
         </span>
       </button>
 
-      {/* Sentinel source */}
       <button
         type="button"
         onClick={onSelect}
@@ -608,7 +553,6 @@ function FindingRow({
         </span>
       </button>
 
-      {/* Inline triage actions */}
       <div className="w-[200px] shrink-0 flex items-center justify-end gap-1.5">
         {finding.status === "emerging" && (
           <>
@@ -663,10 +607,6 @@ function FindingRow({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Status Icon
-// ---------------------------------------------------------------------------
-
 function StatusIcon({ status }: { status: FindingStatus }) {
   switch (status) {
     case "emerging":
@@ -685,10 +625,6 @@ function StatusIcon({ status }: { status: FindingStatus }) {
       return <IconCircleDot size={9} stroke={2} />;
   }
 }
-
-// ---------------------------------------------------------------------------
-// Inline Action Button
-// ---------------------------------------------------------------------------
 
 function InlineAction({
   label,
@@ -725,10 +661,6 @@ function InlineAction({
     </button>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Empty State
-// ---------------------------------------------------------------------------
 
 function EmptyState({ hasFilters }: { hasFilters: boolean }) {
   return (
