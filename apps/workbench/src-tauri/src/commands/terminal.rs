@@ -20,7 +20,8 @@ use tauri::{AppHandle, Emitter, Runtime};
 use tokio::sync::{Mutex, OwnedSemaphorePermit, Semaphore};
 use uuid::Uuid;
 
-use crate::commands::capability::{validate_command_capability, CommandCapabilityState};
+use crate::commands::capability::{authorize_sensitive_command, CommandCapabilityState};
+use crate::commands::repo_roots;
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -191,20 +192,9 @@ fn normalize_cwd(cwd: &str) -> Result<String, String> {
     if !canonical.is_dir() {
         return Err(format!("Working directory is not a directory: {cwd}"));
     }
+    repo_roots::ensure_path_within_approved_repo(&canonical)?;
 
-    let canonical_str = canonical.to_string_lossy().to_string();
-    let git_probe = std::process::Command::new("git")
-        .args(["rev-parse", "--is-inside-work-tree"])
-        .current_dir(&canonical_str)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .output()
-        .map_err(|e| format!("Failed to validate git worktree for {canonical_str}: {e}"))?;
-    if !git_probe.status.success() || String::from_utf8_lossy(&git_probe.stdout).trim() != "true" {
-        return Err("Working directory must be inside a git worktree".to_string());
-    }
-
-    Ok(canonical_str)
+    Ok(canonical.to_string_lossy().to_string())
 }
 
 fn validate_session_id(session_id: &str) -> Result<(), String> {
@@ -380,15 +370,15 @@ pub async fn terminal_create<R: Runtime>(
     cwd: String,
     shell: Option<String>,
     env: Option<HashMap<String, String>>,
-    capability: String,
 ) -> Result<SessionInfo, String> {
-    validate_command_capability(
-        &window,
-        &capability_state,
-        &capability,
-        "terminal_create",
-    )
-    .await?;
+    // Validate cwd exists
+    let cwd = normalize_cwd(&cwd)?;
+    let shell_path = match shell.as_deref() {
+        Some(requested) => normalize_shell(requested)
+            .ok_or_else(|| format!("Requested shell is not allowed: {requested}"))?,
+        None => default_shell(),
+    };
+    authorize_sensitive_command(&window, &capability_state, "terminal_create").await?;
     // Reserve capacity up front so concurrent creates cannot pass a racy
     // sessions.len()-style pre-check.
     let session_permit = session_limiter().try_acquire_owned().map_err(|_| {
@@ -398,18 +388,11 @@ pub async fn terminal_create<R: Runtime>(
         )
     })?;
 
-    // Validate cwd exists
-    let cwd = normalize_cwd(&cwd)?;
-
     let session_id = Uuid::new_v4().to_string();
-    let shell_path = match shell.as_deref() {
-        Some(requested) => normalize_shell(requested)
-            .ok_or_else(|| format!("Requested shell is not allowed: {requested}"))?,
-        None => default_shell(),
-    };
     let branch = detect_git_branch(&cwd);
     let created_at = Utc::now().to_rfc3339();
     let session_alive = Arc::new(AtomicBool::new(true));
+    let session_alive_for_reader = Arc::clone(&session_alive);
 
     // Create the PTY pair
     let pty_system = native_pty_system();
@@ -481,11 +464,41 @@ pub async fn terminal_create<R: Runtime>(
     // Set up the shared ring buffer
     let shared_buf = insert_ring_buffer(&session_id);
 
+    // Build + store session before starting the reader task so natural-exit
+    // cleanup always has a map entry to prune.
+    let session = TerminalSession {
+        id: session_id.clone(),
+        master: pty_pair.master,
+        child,
+        writer,
+        cwd: cwd.clone(),
+        branch: branch.clone(),
+        created_at: created_at.clone(),
+        alive: session_alive,
+        _session_permit: session_permit,
+        reader_task: None,
+    };
+
+    let info = SessionInfo {
+        id: session_id.clone(),
+        cwd,
+        branch,
+        created_at,
+        alive: true,
+        exit_code: None,
+        line_count: 0,
+    };
+
+    // Store the session first to avoid create/exit races.
+    {
+        let mut manager = state.lock().await;
+        manager.sessions.insert(session_id.clone(), session);
+    }
+
     // Spawn a background thread (not async — the PTY reader is blocking I/O)
     // that reads output, populates the ring buffer, and emits Tauri events.
     let event_session_id = session_id.clone();
     let app_handle = app.clone();
-    let session_alive_for_reader = Arc::clone(&session_alive);
     let buf_for_task = Arc::clone(&shared_buf);
     // Clone the TerminalState Arc so the reader thread can check exit code after EOF.
     let state_for_reader: TerminalState = (*state).clone();
@@ -559,34 +572,20 @@ pub async fn terminal_create<R: Runtime>(
         }
     });
 
-    // Build the session
-    let session = TerminalSession {
-        id: session_id.clone(),
-        master: pty_pair.master,
-        child,
-        writer,
-        cwd: cwd.clone(),
-        branch: branch.clone(),
-        created_at: created_at.clone(),
-        alive: session_alive,
-        _session_permit: session_permit,
-        reader_task: Some(reader_task),
-    };
-
-    let info = SessionInfo {
-        id: session_id.clone(),
-        cwd,
-        branch,
-        created_at,
-        alive: true,
-        exit_code: None,
-        line_count: 0,
-    };
-
-    // Store the session
+    // Attach task after spawn. If the session disappeared in the tiny window
+    // (e.g. immediate natural exit + cleanup), abort the task and fail create.
+    let mut pending_reader_task = Some(reader_task);
     {
         let mut manager = state.lock().await;
-        manager.sessions.insert(session_id, session);
+        if let Some(session) = manager.sessions.get_mut(&session_id) {
+            session.reader_task = pending_reader_task.take();
+        }
+    }
+    if let Some(task) = pending_reader_task {
+        task.abort();
+        let _ = task.await;
+        remove_ring_buffer(&session_id);
+        return Err("Terminal session terminated during initialization".to_string());
     }
 
     Ok(info)
@@ -600,16 +599,9 @@ pub async fn terminal_write<R: Runtime>(
     state: tauri::State<'_, TerminalState>,
     session_id: String,
     data: String,
-    capability: String,
 ) -> Result<(), String> {
-    validate_command_capability(
-        &window,
-        &capability_state,
-        &capability,
-        "terminal_write",
-    )
-    .await?;
     validate_session_id(&session_id)?;
+    authorize_sensitive_command(&window, &capability_state, "terminal_write").await?;
     if data.len() > MAX_WRITE_BYTES {
         return Err(format!(
             "Write payload too large ({} bytes, max {})",
@@ -645,16 +637,9 @@ pub async fn terminal_resize<R: Runtime>(
     session_id: String,
     cols: u16,
     rows: u16,
-    capability: String,
 ) -> Result<(), String> {
-    validate_command_capability(
-        &window,
-        &capability_state,
-        &capability,
-        "terminal_resize",
-    )
-    .await?;
     validate_session_id(&session_id)?;
+    authorize_sensitive_command(&window, &capability_state, "terminal_resize").await?;
 
     let manager = state.lock().await;
     let session = manager
@@ -689,16 +674,9 @@ pub async fn terminal_kill<R: Runtime>(
     capability_state: tauri::State<'_, CommandCapabilityState>,
     state: tauri::State<'_, TerminalState>,
     session_id: String,
-    capability: String,
 ) -> Result<(), String> {
-    validate_command_capability(
-        &window,
-        &capability_state,
-        &capability,
-        "terminal_kill",
-    )
-    .await?;
     validate_session_id(&session_id)?;
+    authorize_sensitive_command(&window, &capability_state, "terminal_kill").await?;
 
     // Extract the session and signal termination, then drop the lock before
     // waiting on the reader task (the reader may need try_lock() on the
@@ -742,15 +720,8 @@ pub async fn terminal_list<R: Runtime>(
     window: tauri::Window<R>,
     capability_state: tauri::State<'_, CommandCapabilityState>,
     state: tauri::State<'_, TerminalState>,
-    capability: String,
 ) -> Result<Vec<SessionInfo>, String> {
-    validate_command_capability(
-        &window,
-        &capability_state,
-        &capability,
-        "terminal_list",
-    )
-    .await?;
+    authorize_sensitive_command(&window, &capability_state, "terminal_list").await?;
 
     let mut manager = state.lock().await;
     let mut infos = Vec::with_capacity(manager.sessions.len());
@@ -773,16 +744,9 @@ pub async fn terminal_preview<R: Runtime>(
     state: tauri::State<'_, TerminalState>,
     session_id: String,
     lines: Option<usize>,
-    capability: String,
 ) -> Result<Vec<String>, String> {
-    validate_command_capability(
-        &window,
-        &capability_state,
-        &capability,
-        "terminal_preview",
-    )
-    .await?;
     validate_session_id(&session_id)?;
+    authorize_sensitive_command(&window, &capability_state, "terminal_preview").await?;
 
     // Verify the session exists
     {
@@ -808,9 +772,8 @@ pub async fn terminal_preview<R: Runtime>(
 pub async fn get_cwd<R: Runtime>(
     window: tauri::Window<R>,
     capability_state: tauri::State<'_, CommandCapabilityState>,
-    capability: String,
 ) -> Result<String, String> {
-    validate_command_capability(&window, &capability_state, &capability, "get_cwd").await?;
+    authorize_sensitive_command(&window, &capability_state, "get_cwd").await?;
     std::env::current_dir()
         .map(|p| p.to_string_lossy().to_string())
         .map_err(|e| e.to_string())

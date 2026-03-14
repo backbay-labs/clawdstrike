@@ -3,7 +3,10 @@
 
 mod commands;
 
-use commands::{capability, mcp_sidecar, stronghold as stronghold_cmds, terminal, workbench, worktree};
+use commands::{
+    capability, mcp_sidecar, repo_roots, stronghold as stronghold_cmds, terminal, workbench,
+    worktree,
+};
 use capability::CommandCapabilityState;
 use mcp_sidecar::McpState;
 use stronghold_cmds::StrongholdState;
@@ -77,6 +80,13 @@ fn main() {
                 }
             });
 
+            if let Err(err) = repo_roots::init_approved_repo_roots(app.handle()) {
+                eprintln!(
+                    "[workbench] WARNING: failed to initialize approved repo roots registry: {}",
+                    err
+                );
+            }
+
             Ok(())
         })
         // ------------------------------------------------------------------
@@ -88,8 +98,9 @@ fn main() {
         // cannot invoke these handlers.
         //
         // Additional defence-in-depth:
-        //  - Sensitive terminal/worktree commands require backend-minted,
-        //    short-lived capability tokens bound to the trusted window label.
+        //  - Sensitive terminal/worktree commands require a backend-held
+        //    native approval grant; the renderer does not receive reusable
+        //    auth material for these operations.
         //  - Terminal commands validate shell paths against an allowlist,
         //    sanitise environment variables via an allowlist, and
         //    canonicalise working directories.
@@ -123,7 +134,6 @@ fn main() {
             mcp_sidecar::get_mcp_status,
             mcp_sidecar::stop_mcp_server,
             mcp_sidecar::restart_mcp_server,
-            capability::acquire_command_capability,
             terminal::terminal_create,
             terminal::terminal_write,
             terminal::terminal_resize,

@@ -19,8 +19,6 @@ function isTauri(): boolean {
 }
 
 const INVOKE_TIMEOUT_MS = 15_000;
-const commandCapabilities = new Map<string, string>();
-const commandCapabilityInFlight = new Map<string, Promise<string>>();
 
 /**
  * Wrapper around Tauri's `invoke` that rejects immediately when not running
@@ -44,44 +42,8 @@ function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   ]).finally(() => clearTimeout(timer));
 }
 
-function isCapabilityError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  const lowered = message.toLowerCase();
-  return lowered.includes("command capability") || lowered.includes("missing command capability");
-}
-
-async function getCommandCapability(command: string): Promise<string> {
-  const cached = commandCapabilities.get(command);
-  if (cached) return cached;
-  const existingInFlight = commandCapabilityInFlight.get(command);
-  if (existingInFlight) return existingInFlight;
-
-  const inFlight = invoke<string>("acquire_command_capability", { command })
-    .then((token) => {
-      commandCapabilities.set(command, token);
-      return token;
-    })
-    .finally(() => {
-      commandCapabilityInFlight.delete(command);
-    });
-  commandCapabilityInFlight.set(command, inFlight);
-
-  return inFlight;
-}
-
 async function invokeSensitive<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  if (!isTauri()) {
-    return invoke<T>(cmd, args);
-  }
-  const capability = await getCommandCapability(cmd);
-  try {
-    return await invoke<T>(cmd, { ...(args ?? {}), capability });
-  } catch (error) {
-    if (!isCapabilityError(error)) throw error;
-    commandCapabilities.delete(cmd);
-    const refreshedCapability = await getCommandCapability(cmd);
-    return invoke<T>(cmd, { ...(args ?? {}), capability: refreshedCapability });
-  }
+  return invoke<T>(cmd, args);
 }
 
 // ---------------------------------------------------------------------------
@@ -119,7 +81,7 @@ export const terminalService = {
    * Create a new PTY session in the given working directory.
    *
    * @param cwd      - Working directory for the shell.
-   * @param shell    - Shell binary (defaults to $SHELL or /bin/zsh).
+   * @param shell    - Shell binary (defaults to a platform-safe backend default).
    * @param env      - Extra environment variables to set.
    * @returns        - Session metadata including the generated session ID.
    */
@@ -212,7 +174,8 @@ export const worktreeService = {
   /**
    * Create a new git worktree for the given branch.
    *
-   * The worktree is created at `{repoRoot}/.swarm-worktrees/{branch}`.
+   * The worktree is created under `{repoRoot}/.swarm-worktrees/` using a
+   * backend-safe directory name derived from the branch.
    * If the branch doesn't exist, it is created from HEAD.
    */
   create: (repoRoot: string, branchName: string): Promise<WorktreeInfo> =>

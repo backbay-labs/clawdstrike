@@ -9,7 +9,8 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tauri::Runtime;
 
-use crate::commands::capability::{validate_command_capability, CommandCapabilityState};
+use crate::commands::capability::{authorize_sensitive_command, CommandCapabilityState};
+use crate::commands::repo_roots;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -76,22 +77,11 @@ fn get_head_commit(worktree_path: &str) -> String {
         .unwrap_or_default()
 }
 
-/// Sanitise a branch name to be a valid directory name component.
-/// Replaces path-unsafe characters and rejects traversal sequences.
-fn sanitise_branch_name(branch: &str) -> Result<String, String> {
-    let sanitised = branch.replace(
-        ['/', '\\', ' ', ':', '*', '?', '"', '<', '>', '|', '.'],
-        "-",
-    );
-    // Reject empty or pure-separator results, and return the trimmed version
-    // so that directory names don't start or end with dashes.
-    let trimmed = sanitised.trim_matches('-').to_string();
-    if trimmed.is_empty() {
-        return Err(format!(
-            "Branch name '{branch}' produces an empty directory name after sanitisation"
-        ));
-    }
-    Ok(trimmed)
+/// Encode a branch name into a reversible filesystem-safe directory component.
+///
+/// Hex encoding avoids collisions that lossy sanitization can introduce.
+fn branch_dir_name(branch: &str) -> String {
+    format!("branch-{}", hex::encode(branch.as_bytes()))
 }
 
 async fn run_blocking_with_timeout<T, F>(operation: F) -> Result<T, String>
@@ -119,7 +109,7 @@ fn canonical_repo_root(repo_root: &str) -> Result<PathBuf, String> {
             "Repository root is not a git work tree: {repo_root}"
         ));
     }
-    Ok(canonical)
+    repo_roots::ensure_repo_root_approved(&canonical)
 }
 
 fn normalize_branch_name(repo_root: &str, branch_name: &str) -> Result<String, String> {
@@ -202,7 +192,7 @@ fn is_registered_worktree(repo_root: &str, target: &Path) -> Result<bool, String
 
 /// Create a new git worktree for the given branch.
 ///
-/// The worktree is created at `{repo_root}/.swarm-worktrees/{sanitised_branch}`.
+/// The worktree is created at `{repo_root}/.swarm-worktrees/{encoded_branch}`.
 /// If the branch does not exist, it is created from HEAD.
 #[tauri::command]
 pub async fn worktree_create<R: Runtime>(
@@ -210,15 +200,8 @@ pub async fn worktree_create<R: Runtime>(
     capability_state: tauri::State<'_, CommandCapabilityState>,
     repo_root: String,
     branch_name: String,
-    capability: String,
 ) -> Result<WorktreeInfo, String> {
-    validate_command_capability(
-        &window,
-        &capability_state,
-        &capability,
-        "worktree_create",
-    )
-    .await?;
+    authorize_sensitive_command(&window, &capability_state, "worktree_create").await?;
     run_blocking_with_timeout(move || {
         let canonical_root = canonical_repo_root(&repo_root)?;
         let canonical_root_str = canonical_root.to_string_lossy().to_string();
@@ -232,7 +215,7 @@ pub async fn worktree_create<R: Runtime>(
             )
         })?;
 
-        let dir_name = sanitise_branch_name(&normalized_branch)?;
+        let dir_name = branch_dir_name(&normalized_branch);
         let worktree_path = worktree_base.join(&dir_name);
         let worktree_path_str = worktree_path.to_string_lossy().to_string();
 
@@ -290,15 +273,8 @@ pub async fn worktree_remove<R: Runtime>(
     capability_state: tauri::State<'_, CommandCapabilityState>,
     repo_root: String,
     worktree_path: String,
-    capability: String,
 ) -> Result<(), String> {
-    validate_command_capability(
-        &window,
-        &capability_state,
-        &capability,
-        "worktree_remove",
-    )
-    .await?;
+    authorize_sensitive_command(&window, &capability_state, "worktree_remove").await?;
     run_blocking_with_timeout(move || {
         let canonical_root = canonical_repo_root(&repo_root)?;
         let canonical_root_str = canonical_root.to_string_lossy().to_string();
@@ -332,15 +308,8 @@ pub async fn worktree_list<R: Runtime>(
     window: tauri::Window<R>,
     capability_state: tauri::State<'_, CommandCapabilityState>,
     repo_root: String,
-    capability: String,
 ) -> Result<Vec<WorktreeInfo>, String> {
-    validate_command_capability(
-        &window,
-        &capability_state,
-        &capability,
-        "worktree_list",
-    )
-    .await?;
+    authorize_sensitive_command(&window, &capability_state, "worktree_list").await?;
     run_blocking_with_timeout(move || {
         let canonical_root = canonical_repo_root(&repo_root)?;
         let canonical_root_str = canonical_root.to_string_lossy().to_string();
@@ -397,15 +366,8 @@ pub async fn worktree_status<R: Runtime>(
     capability_state: tauri::State<'_, CommandCapabilityState>,
     repo_root: String,
     worktree_path: String,
-    capability: String,
 ) -> Result<WorktreeStatus, String> {
-    validate_command_capability(
-        &window,
-        &capability_state,
-        &capability,
-        "worktree_status",
-    )
-    .await?;
+    authorize_sensitive_command(&window, &capability_state, "worktree_status").await?;
     run_blocking_with_timeout(move || {
         let canonical_root = canonical_repo_root(&repo_root)?;
         let canonical_root_str = canonical_root.to_string_lossy().to_string();

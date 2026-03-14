@@ -1,48 +1,57 @@
-//! Backend-minted capability tokens for sensitive IPC commands.
+//! Backend-held authorization for sensitive IPC commands.
 //!
-//! The trusted window label check alone is not sufficient for high-impact
-//! command surfaces. This module adds a deny-by-default capability layer:
-//! sensitive commands require a short-lived token minted by Rust and bound to
-//! the trusted window label.
+//! The renderer must not hold reusable auth material for terminal/worktree
+//! control. Instead, sensitive commands are gated by short-lived backend grants
+//! that can only be established after native user approval.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use chrono::Utc;
-use tauri::Runtime;
+use tauri::{Manager, Runtime};
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tokio::sync::Mutex;
-use uuid::Uuid;
 
 const TRUSTED_WINDOW_LABEL: &str = "main";
-const CAPABILITY_TTL_SECS: i64 = 5 * 60;
-const CAPABILITY_MAX_USES: u32 = 512;
-const MAX_TRACKED_CAPABILITIES: usize = 64;
-const ALLOWED_SENSITIVE_COMMANDS: &[&str] = &[
-    "terminal_create",
-    "terminal_write",
-    "terminal_resize",
-    "terminal_kill",
-    "terminal_list",
-    "terminal_preview",
-    "get_cwd",
-    "worktree_create",
-    "worktree_remove",
-    "worktree_list",
-    "worktree_status",
-];
+const TERMINAL_READ_TTL_SECS: i64 = 60;
+const TERMINAL_READ_MAX_USES: u32 = 128;
+const TERMINAL_LIFECYCLE_TTL_SECS: i64 = 30;
+const TERMINAL_LIFECYCLE_MAX_USES: u32 = 8;
+const TERMINAL_WRITE_TTL_SECS: i64 = 30;
+const TERMINAL_WRITE_MAX_USES: u32 = 256;
+const REPO_READ_TTL_SECS: i64 = 60;
+const REPO_READ_MAX_USES: u32 = 128;
+const WORKTREE_WRITE_TTL_SECS: i64 = 15;
+const WORKTREE_WRITE_MAX_USES: u32 = 1;
+const DENIAL_COOLDOWN_SECS: i64 = 5;
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum AuthorizationScope {
+    TerminalRead,
+    TerminalLifecycle,
+    TerminalWrite,
+    RepoRead,
+    WorktreeWrite,
+}
+
+struct ScopePolicy {
+    scope: AuthorizationScope,
+    ttl_secs: i64,
+    max_uses: u32,
+    title: &'static str,
+    message: &'static str,
+}
 
 #[derive(Clone)]
-struct CapabilityRecord {
-    window_label: String,
-    command: String,
-    issued_at_epoch: i64,
-    last_used_epoch: i64,
+struct AuthorizationGrant {
+    expires_at_epoch: i64,
     remaining_uses: u32,
 }
 
 pub struct CommandCapabilityManager {
-    by_window_command: HashMap<(String, String), String>,
-    records: HashMap<String, CapabilityRecord>,
+    grants: HashMap<(String, AuthorizationScope), AuthorizationGrant>,
+    pending_prompts: HashSet<(String, AuthorizationScope)>,
+    denial_cooldowns: HashMap<(String, AuthorizationScope), i64>,
 }
 
 pub type CommandCapabilityState = Arc<Mutex<CommandCapabilityManager>>;
@@ -50,126 +59,84 @@ pub type CommandCapabilityState = Arc<Mutex<CommandCapabilityManager>>;
 impl CommandCapabilityManager {
     pub fn new() -> Self {
         Self {
-            by_window_command: HashMap::new(),
-            records: HashMap::new(),
+            grants: HashMap::new(),
+            pending_prompts: HashSet::new(),
+            denial_cooldowns: HashMap::new(),
         }
-    }
-
-    fn revoke_token(&mut self, token: &str) {
-        self.records.remove(token);
-        self.by_window_command
-            .retain(|_, existing| existing != token);
     }
 
     fn prune_expired(&mut self, now_epoch: i64) {
-        let expired: Vec<String> = self
-            .records
-            .iter()
-            .filter_map(|(token, record)| {
-                let age = now_epoch.saturating_sub(record.issued_at_epoch);
-                (age >= CAPABILITY_TTL_SECS).then_some(token.clone())
-            })
-            .collect();
-        for token in expired {
-            self.revoke_token(&token);
+        self.grants
+            .retain(|_, grant| grant.expires_at_epoch > now_epoch && grant.remaining_uses > 0);
+        self.denial_cooldowns
+            .retain(|_, &mut expires_at| expires_at > now_epoch);
+    }
+
+    fn is_denial_cooled_down(
+        &self,
+        window_label: &str,
+        scope: AuthorizationScope,
+        now_epoch: i64,
+    ) -> bool {
+        let key = (window_label.to_string(), scope);
+        match self.denial_cooldowns.get(&key) {
+            Some(&expires_at) => now_epoch >= expires_at,
+            None => true,
         }
     }
 
-    fn enforce_capacity(&mut self) {
-        while self.records.len() >= MAX_TRACKED_CAPABILITIES {
-            let oldest = self
-                .records
-                .iter()
-                .min_by_key(|(_, record)| (record.last_used_epoch, record.issued_at_epoch))
-                .map(|(token, _)| token.clone());
-            if let Some(token) = oldest {
-                self.revoke_token(&token);
-            } else {
-                break;
-            }
-        }
+    fn record_denial(&mut self, window_label: &str, scope: AuthorizationScope, now_epoch: i64) {
+        let key = (window_label.to_string(), scope);
+        self.denial_cooldowns
+            .insert(key, now_epoch.saturating_add(DENIAL_COOLDOWN_SECS));
     }
 
-    fn issue_for_window(&mut self, window_label: &str, command: &str, now_epoch: i64) -> String {
-        self.prune_expired(now_epoch);
-        let scope_key = (window_label.to_string(), command.to_string());
-
-        if let Some(existing_token) = self.by_window_command.get(&scope_key).cloned() {
-            if let Some(record) = self.records.get_mut(&existing_token) {
-                let age = now_epoch.saturating_sub(record.issued_at_epoch);
-                if age < CAPABILITY_TTL_SECS && record.remaining_uses > 0 {
-                    record.last_used_epoch = now_epoch;
-                    return existing_token;
-                }
-            }
-            self.revoke_token(&existing_token);
-        }
-
-        self.enforce_capacity();
-
-        let token = format!("cap_{}_{}", Uuid::new_v4(), Uuid::new_v4());
-        self.by_window_command.insert(scope_key, token.clone());
-        self.records.insert(
-            token.clone(),
-            CapabilityRecord {
-                window_label: window_label.to_string(),
-                command: command.to_string(),
-                issued_at_epoch: now_epoch,
-                last_used_epoch: now_epoch,
-                remaining_uses: CAPABILITY_MAX_USES,
-            },
-        );
-        token
-    }
-
-    fn validate_for_window(
+    fn consume_active_grant(
         &mut self,
         window_label: &str,
-        capability: &str,
-        command: &str,
+        scope: AuthorizationScope,
         now_epoch: i64,
-    ) -> Result<(), String> {
+    ) -> bool {
         self.prune_expired(now_epoch);
-
-        let Some(record) = self.records.get_mut(capability) else {
-            return Err("Invalid or expired command capability".to_string());
+        let key = (window_label.to_string(), scope);
+        let Some(grant) = self.grants.get_mut(&key) else {
+            return false;
         };
-        if record.window_label != window_label {
-            return Err("Command capability does not match active window context".to_string());
-        }
-        if record.command != command {
-            return Err("Command capability does not match requested operation".to_string());
+
+        if grant.expires_at_epoch <= now_epoch || grant.remaining_uses == 0 {
+            self.grants.remove(&key);
+            return false;
         }
 
-        let age = now_epoch.saturating_sub(record.issued_at_epoch);
-        if age >= CAPABILITY_TTL_SECS {
-            self.revoke_token(capability);
-            return Err("Command capability expired".to_string());
+        grant.remaining_uses = grant.remaining_uses.saturating_sub(1);
+        if grant.remaining_uses == 0 {
+            self.grants.remove(&key);
         }
-        if record.remaining_uses == 0 {
-            self.revoke_token(capability);
-            return Err("Command capability exhausted".to_string());
+        true
+    }
+
+    fn issue_grant(
+        &mut self,
+        window_label: &str,
+        scope: AuthorizationScope,
+        now_epoch: i64,
+        ttl_secs: i64,
+        max_uses: u32,
+    ) {
+        let remaining_uses = max_uses.saturating_sub(1);
+        if remaining_uses == 0 {
+            self.grants.remove(&(window_label.to_string(), scope));
+            return;
         }
 
-        record.last_used_epoch = now_epoch;
-        record.remaining_uses = record.remaining_uses.saturating_sub(1);
-        let revoke_after_use = record.remaining_uses == 0;
-        if revoke_after_use {
-            self.revoke_token(capability);
-        }
-        Ok(())
+        self.grants.insert(
+            (window_label.to_string(), scope),
+            AuthorizationGrant {
+                expires_at_epoch: now_epoch.saturating_add(ttl_secs),
+                remaining_uses,
+            },
+        );
     }
-}
-
-fn normalize_sensitive_command(command: &str) -> Result<String, String> {
-    let command = command.trim();
-    if command.is_empty() {
-        return Err("Missing sensitive command name for capability issuance".to_string());
-    }
-    if !ALLOWED_SENSITIVE_COMMANDS.contains(&command) {
-        return Err("Unsupported sensitive command for capability issuance".to_string());
-    }
-    Ok(command.to_string())
 }
 
 fn ensure_trusted_window<R: Runtime>(window: &tauri::Window<R>) -> Result<(), String> {
@@ -182,35 +149,150 @@ fn ensure_trusted_window<R: Runtime>(window: &tauri::Window<R>) -> Result<(), St
     Ok(())
 }
 
-#[tauri::command]
-pub async fn acquire_command_capability<R: Runtime>(
-    window: tauri::Window<R>,
-    state: tauri::State<'_, CommandCapabilityState>,
-    command: String,
-) -> Result<String, String> {
-    ensure_trusted_window(&window)?;
-    let command = normalize_sensitive_command(&command)?;
-
-    let now_epoch = Utc::now().timestamp();
-    let mut manager = state.lock().await;
-    Ok(manager.issue_for_window(window.label(), &command, now_epoch))
+fn policy_for_command(command: &str) -> Result<ScopePolicy, String> {
+    match command.trim() {
+        "terminal_list" | "terminal_preview" => Ok(ScopePolicy {
+            scope: AuthorizationScope::TerminalRead,
+            ttl_secs: TERMINAL_READ_TTL_SECS,
+            max_uses: TERMINAL_READ_MAX_USES,
+            title: "Approve Terminal Inspection",
+            message:
+                "Allow this window to list and preview terminal sessions for the next 60 seconds?",
+        }),
+        "terminal_create" | "terminal_kill" | "terminal_resize" => Ok(ScopePolicy {
+            scope: AuthorizationScope::TerminalLifecycle,
+            ttl_secs: TERMINAL_LIFECYCLE_TTL_SECS,
+            max_uses: TERMINAL_LIFECYCLE_MAX_USES,
+            title: "Approve Terminal Lifecycle",
+            message:
+                "Allow this window to create, resize, or kill terminal sessions for the next 30 seconds?",
+        }),
+        "terminal_write" => Ok(ScopePolicy {
+            scope: AuthorizationScope::TerminalWrite,
+            ttl_secs: TERMINAL_WRITE_TTL_SECS,
+            max_uses: TERMINAL_WRITE_MAX_USES,
+            title: "Approve Terminal Input",
+            message:
+                "Allow this window to send input to running terminal sessions for the next 30 seconds?",
+        }),
+        "get_cwd" | "worktree_list" | "worktree_status" => Ok(ScopePolicy {
+            scope: AuthorizationScope::RepoRead,
+            ttl_secs: REPO_READ_TTL_SECS,
+            max_uses: REPO_READ_MAX_USES,
+            title: "Approve Repository Inspection",
+            message:
+                "Allow this window to inspect local repository metadata for the next 60 seconds?",
+        }),
+        "worktree_create" | "worktree_remove" => Ok(ScopePolicy {
+            scope: AuthorizationScope::WorktreeWrite,
+            ttl_secs: WORKTREE_WRITE_TTL_SECS,
+            max_uses: WORKTREE_WRITE_MAX_USES,
+            title: "Approve Worktree Mutation",
+            message:
+                "Allow this window to create or remove a git worktree? This approval is single-use.",
+        }),
+        _ => Err("Unsupported sensitive command".to_string()),
+    }
 }
 
-pub async fn validate_command_capability<R: Runtime>(
+async fn prompt_for_native_approval<R: Runtime>(
+    window: &tauri::Window<R>,
+    policy: &ScopePolicy,
+) -> Result<bool, String> {
+    let app_handle = window.app_handle().clone();
+    let title = policy.title.to_string();
+    let message = policy.message.to_string();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        Ok::<bool, String>(
+            app_handle
+                .dialog()
+                .message(message)
+                .title(title)
+                .kind(MessageDialogKind::Warning)
+                .buttons(MessageDialogButtons::OkCancelCustom(
+                    "Allow".to_string(),
+                    "Deny".to_string(),
+                ))
+                .blocking_show(),
+        )
+    })
+    .await
+    .map_err(|e| format!("Failed to wait for native approval dialog: {e}"))?
+}
+
+pub async fn authorize_sensitive_command<R: Runtime>(
     window: &tauri::Window<R>,
     state: &tauri::State<'_, CommandCapabilityState>,
-    capability: &str,
     command: &str,
 ) -> Result<(), String> {
     ensure_trusted_window(window)?;
-    let command = normalize_sensitive_command(command)?;
+    let policy = policy_for_command(command)?;
+    let now_epoch = Utc::now().timestamp();
 
-    let capability = capability.trim();
-    if capability.is_empty() {
-        return Err("Missing command capability".to_string());
+    {
+        let mut manager = state.lock().await;
+        if manager.consume_active_grant(window.label(), policy.scope, now_epoch) {
+            return Ok(());
+        }
+    }
+
+    if !window
+        .is_visible()
+        .map_err(|e| format!("Failed to inspect window visibility: {e}"))?
+    {
+        return Err("Sensitive command requires a visible trusted window".to_string());
+    }
+    if !window
+        .is_focused()
+        .map_err(|e| format!("Failed to inspect window focus: {e}"))?
+    {
+        return Err("Sensitive command requires the trusted window to be focused".to_string());
+    }
+
+    {
+        let mut manager = state.lock().await;
+        let now = Utc::now().timestamp();
+        let prompt_key = (window.label().to_string(), policy.scope);
+        if manager.consume_active_grant(window.label(), policy.scope, now) {
+            return Ok(());
+        }
+        if !manager.is_denial_cooled_down(window.label(), policy.scope, now) {
+            return Err(format!(
+                "Sensitive command '{}' denied — approval cooldown active, try again shortly",
+                command.trim()
+            ));
+        }
+        if manager.pending_prompts.contains(&prompt_key) {
+            return Err(format!(
+                "Sensitive command approval already pending for '{}'",
+                command.trim()
+            ));
+        }
+        manager.pending_prompts.insert(prompt_key);
+    }
+
+    let prompt_result = prompt_for_native_approval(window, &policy).await;
+    let prompt_key = (window.label().to_string(), policy.scope);
+    let mut manager = state.lock().await;
+    manager.pending_prompts.remove(&prompt_key);
+
+    let approved = prompt_result?;
+    if !approved {
+        manager.record_denial(window.label(), policy.scope, Utc::now().timestamp());
+        return Err(format!(
+            "Sensitive command '{}' denied by native user approval",
+            command.trim()
+        ));
     }
 
     let now_epoch = Utc::now().timestamp();
-    let mut manager = state.lock().await;
-    manager.validate_for_window(window.label(), capability, &command, now_epoch)
+    manager.issue_grant(
+        window.label(),
+        policy.scope,
+        now_epoch,
+        policy.ttl_secs,
+        policy.max_uses,
+    );
+    Ok(())
 }
