@@ -837,7 +837,9 @@ export function SwarmBoardProvider({ children }: { children: ReactNode }) {
           status,
           exitCode: exitCode ?? undefined,
         });
-        // Clean up listener
+        // Clean up listener — call unlisten() before removing from the map
+        const unlisten = exitListenersRef.current.get(sessionId);
+        if (unlisten) unlisten();
         exitListenersRef.current.delete(sessionId);
       }).then((unlisten) => {
         exitListenersRef.current.set(sessionId, unlisten);

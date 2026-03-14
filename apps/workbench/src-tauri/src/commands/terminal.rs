@@ -143,6 +143,30 @@ fn is_blocked_env_var(key: &str) -> bool {
         .any(|blocked| blocked.eq_ignore_ascii_case(key))
 }
 
+/// Allowlist of safe shell paths. Shells not on this list are rejected to
+/// prevent arbitrary binary execution through the `shell` parameter.
+const ALLOWED_SHELLS: &[&str] = &[
+    "/bin/bash",
+    "/bin/sh",
+    "/bin/zsh",
+    "/usr/bin/bash",
+    "/usr/bin/zsh",
+    "/usr/bin/sh",
+    "/usr/local/bin/bash",
+    "/usr/local/bin/zsh",
+    "/usr/local/bin/fish",
+    "/opt/homebrew/bin/bash",
+    "/opt/homebrew/bin/zsh",
+    "/opt/homebrew/bin/fish",
+    "cmd.exe",
+    "powershell.exe",
+];
+
+/// Returns `true` if the given shell path is in the [`ALLOWED_SHELLS`] allowlist.
+fn is_allowed_shell(shell: &str) -> bool {
+    ALLOWED_SHELLS.contains(&shell)
+}
+
 /// Determine the default shell for the current user.
 ///
 /// Prefers the `SHELL` environment variable. On Unix-like systems, falls back
@@ -305,7 +329,17 @@ pub async fn terminal_create<R: Runtime>(
     }
 
     let session_id = Uuid::new_v4().to_string();
-    let shell_path = shell.unwrap_or_else(default_shell);
+    let shell_path = match shell {
+        Some(ref s) if is_allowed_shell(s) => s.clone(),
+        Some(ref s) => {
+            eprintln!(
+                "[terminal] Requested shell {:?} is not in the allowlist; falling back to default",
+                s
+            );
+            default_shell()
+        }
+        None => default_shell(),
+    };
     let branch = detect_git_branch(&cwd);
     let created_at = Utc::now().to_rfc3339();
 

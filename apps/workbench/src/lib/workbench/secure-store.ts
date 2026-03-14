@@ -10,19 +10,23 @@ async function ensureStronghold(): Promise<boolean> {
   if (!isDesktop()) return false;
 
   if (!strongholdReady) {
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
     strongholdReady = Promise.race([
       tauriInvoke<boolean>("init_stronghold"),
       new Promise<boolean>((resolve) => {
-        setTimeout(() => {
+        timeoutId = setTimeout(() => {
           console.warn("[secure-store] Stronghold init timed out after 5s, falling back to session storage");
           resolve(false);
         }, 5000);
       }),
     ]).then((result) => {
+      // Cancel the timeout if init resolved before it fired
+      if (timeoutId !== null) clearTimeout(timeoutId);
       // If timed out (false), clear cache so next call retries
       if (!result) strongholdReady = null;
       return result;
     }).catch((err) => {
+      if (timeoutId !== null) clearTimeout(timeoutId);
       console.error("[secure-store] Stronghold init failed:", err);
       strongholdReady = null;
       return false;

@@ -129,28 +129,30 @@ pub async fn worktree_create(
         ));
     }
 
+    // Use refs/heads/ prefix for rev-parse to prevent flag injection
+    // (a branch named "--git-dir=..." would be interpreted as a flag without the prefix).
+    let qualified_ref = format!("refs/heads/{branch_name}");
+
     // Check if the branch exists locally
     let branch_exists = run_git(
         &repo_root,
-        &[
-            "rev-parse",
-            "--verify",
-            &format!("refs/heads/{branch_name}"),
-        ],
+        &["rev-parse", "--verify", &qualified_ref],
     )
     .is_ok();
 
     if branch_exists {
-        // Add worktree using the existing branch
+        // Add worktree using the existing branch.
+        // The `--` separator prevents the branch name from being interpreted as a flag.
         run_git(
             &repo_root,
-            &["worktree", "add", &worktree_path_str, &branch_name],
+            &["worktree", "add", &worktree_path_str, "--", &branch_name],
         )?;
     } else {
-        // Create a new branch from HEAD
+        // Create a new branch from HEAD.
+        // The `--` separator prevents the branch name from being interpreted as a flag.
         run_git(
             &repo_root,
-            &["worktree", "add", "-b", &branch_name, &worktree_path_str],
+            &["worktree", "add", "-b", &branch_name, "--", &worktree_path_str],
         )?;
     }
 
