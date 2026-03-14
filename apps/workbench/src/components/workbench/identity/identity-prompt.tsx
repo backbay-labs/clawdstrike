@@ -7,12 +7,15 @@ export function IdentityPrompt() {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
+  const submittingRef = useRef(false);
   useEffect(() => () => { mountedRef.current = false; }, []);
 
   if (!initialized || currentOperator !== null) return null;
 
   const handleCreate = async () => {
     if (!name.trim()) return;
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setCreating(true);
     setError(null);
     try {
@@ -22,6 +25,7 @@ export function IdentityPrompt() {
         setError(e instanceof Error ? e.message : "Failed to create identity");
       }
     } finally {
+      submittingRef.current = false;
       if (mountedRef.current) {
         setCreating(false);
       }

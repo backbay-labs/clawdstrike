@@ -193,7 +193,8 @@ export async function verifyAcceptedInvitation(
 /** Serialize an invitation to a base64url string for sharing. */
 export function serializeInvitation(signed: SignedInvitation): string {
   const json = JSON.stringify(signed);
-  return btoa(json)
+  // UTF-8 encode before btoa to avoid DataCloneError on non-Latin-1 chars
+  return btoa(Array.from(new TextEncoder().encode(json), b => String.fromCharCode(b)).join(""))
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=+$/, "");
@@ -202,7 +203,8 @@ export function serializeInvitation(signed: SignedInvitation): string {
 /** Deserialize a base64url string back into a SignedInvitation. */
 export function deserializeInvitation(encoded: string): SignedInvitation {
   const base64 = encoded.replace(/-/g, "+").replace(/_/g, "/");
-  const json = atob(base64);
+  // Decode base64 to bytes then UTF-8 decode (reverse of serializeInvitation)
+  const json = new TextDecoder().decode(Uint8Array.from(atob(base64), c => c.charCodeAt(0)));
   const parsed = JSON.parse(json);
 
   // Structural validation — ensure required fields exist and have correct types

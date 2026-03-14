@@ -111,11 +111,13 @@ function SystemHeartbeat({
   active,
   fleetOnline,
   pendingApprovals,
+  emergingFindingsCount,
 }: {
   collapsed: boolean;
   active: boolean;
   fleetOnline: boolean;
   pendingApprovals: number;
+  emergingFindingsCount?: number;
 }) {
   const uid = useId();
   const glowId = `hb-glow${uid}`;
@@ -126,10 +128,12 @@ function SystemHeartbeat({
   const domeUrl = `url(#${domeId})`;
 
   const { sentinels } = useSentinels();
-  const { findings } = useFindings();
+  // Use prop when provided; fall back to independent hook for backwards compat
+  const findingsStore = useFindings();
+  const findings = findingsStore.findings;
 
   const activeSentinels = sentinels.filter((s) => s.status === "active").length;
-  const emergingFindings = findings.filter((f) => f.status === "emerging").length;
+  const emergingFindings = emergingFindingsCount ?? findings.filter((f) => f.status === "emerging").length;
   const criticalFindings = findings.filter(
     (f) => f.status === "emerging" && f.severity === "critical",
   ).length;
@@ -430,6 +434,7 @@ export function DesktopSidebar() {
           active={pathname === "/home" || pathname === "/"}
           fleetOnline={fleetConnected}
           pendingApprovals={pendingApprovalCount}
+          emergingFindingsCount={emergingFindingsCount}
         />
 
         {/* Sigil divider */}

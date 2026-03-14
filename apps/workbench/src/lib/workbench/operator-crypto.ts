@@ -93,7 +93,9 @@ export async function generateOperatorKeypair(): Promise<{
 
 export async function deriveFingerprint(publicKeyHex: string): Promise<string> {
   const bytes = hexToBytes(publicKeyHex);
-  const hash = await crypto.subtle.digest("SHA-256", buf(bytes));
+  // Uint8Array is a valid BufferSource at runtime; the cast avoids a TS 5.x
+  // strictness issue with ArrayBufferLike vs ArrayBuffer without copying bytes.
+  const hash = await crypto.subtle.digest("SHA-256", bytes as BufferSource);
   return toHex(new Uint8Array(hash)).slice(0, 16);
 }
 

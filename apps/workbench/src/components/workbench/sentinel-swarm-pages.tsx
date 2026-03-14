@@ -31,7 +31,6 @@ import { SentinelCreate } from "./sentinels/sentinel-create";
 import { SentinelDetail } from "./sentinels/sentinel-detail";
 import { FindingsIntelPage } from "./findings/findings-intel-page";
 import { FindingDetail } from "./findings/finding-detail";
-import { IntelPage } from "./intel/intel-page";
 import { IntelDetail } from "./intel/intel-detail";
 import type {
   Intel,
@@ -575,19 +574,6 @@ export function FindingDetailPage() {
         })
       }
       onBack={() => navigate("/findings")}
-    />
-  );
-}
-
-export function IntelPageConnected() {
-  const { localIntel, swarmIntel } = useIntel();
-  const navigate = useNavigate();
-
-  return (
-    <IntelPage
-      localIntel={localIntel}
-      swarmIntel={swarmIntel}
-      onSelectIntel={(intelId: string) => navigate(`/intel/${intelId}`)}
     />
   );
 }

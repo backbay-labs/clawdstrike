@@ -22,6 +22,11 @@ export function FindingsIntelPage() {
   const { findings, confirm, dismiss, markFalsePositive, promote } = useFindings();
   const { localIntel, swarmIntel, upsertLocalIntel } = useIntel();
 
+  // NOTE: This callback is intentionally duplicated from sentinel-swarm-pages.tsx
+  // FindingDetailPage. The two call sites live in different component trees with
+  // different hook deps (this one uses the findings-list view; the other the
+  // single-finding detail view). Extracting to a shared hook would couple their
+  // lifecycles without meaningful DRY benefit.
   const promoteFinding = useCallback(
     (findingId: string) => {
       const finding = findings.find((entry) => entry.id === findingId);
