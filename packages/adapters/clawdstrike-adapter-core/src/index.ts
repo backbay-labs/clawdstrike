@@ -24,6 +24,12 @@ export type {
 export type { AuditEvent, AuditEventType, AuditLogger } from "./audit.js";
 export { InMemoryAuditLogger } from "./audit.js";
 export { BaseToolInterceptor } from "./base-tool-interceptor.js";
+export type {
+  BrokerConfig,
+  BrokerExecutionContext,
+  BrokerExecutionResult,
+  BrokerExecutor,
+} from "./broker-types.js";
 export type { ContextSummary, SecurityContext } from "./context.js";
 export { createSecurityContext, DefaultSecurityContext } from "./context.js";
 export { DefaultOutputSanitizer } from "./default-output-sanitizer.js";

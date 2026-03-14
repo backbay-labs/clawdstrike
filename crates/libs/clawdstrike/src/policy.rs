@@ -26,8 +26,9 @@ use crate::posture::{validate_posture_config, PostureConfig};
 ///
 /// This is a schema compatibility boundary (not the crate version). Runtimes should fail closed on
 /// unsupported versions to prevent silent drift.
-pub const POLICY_SCHEMA_VERSION: &str = "1.2.0";
-pub const POLICY_SUPPORTED_SCHEMA_VERSIONS: &[&str] = &["1.1.0", "1.2.0", "1.3.0", "1.4.0"];
+pub const POLICY_SCHEMA_VERSION: &str = "1.5.0";
+pub const POLICY_SUPPORTED_SCHEMA_VERSIONS: &[&str] =
+    &["1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0"];
 const MAX_POLICY_EXTENDS_DEPTH: usize = 32;
 
 fn default_true() -> bool {
@@ -175,40 +176,31 @@ pub enum MergeStrategy {
     DeepMerge,
 }
 
-/// Complete policy configuration
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Policy {
-    /// Policy version
     #[serde(default = "default_version")]
     pub version: String,
-    /// Policy name
     #[serde(default)]
     pub name: String,
-    /// Policy description
     #[serde(default)]
     pub description: String,
-    /// Base policy to extend (ruleset name or file path)
     #[serde(default)]
     pub extends: Option<String>,
-    /// Strategy for merging with base policy
     #[serde(default)]
     pub merge_strategy: MergeStrategy,
-    /// Guard configurations
     #[serde(default)]
     pub guards: GuardConfigs,
-    /// Policy-driven custom guards (resolved by runtimes via a registry).
     #[serde(default)]
     pub custom_guards: Vec<PolicyCustomGuardSpec>,
-    /// Global settings
     #[serde(default)]
     pub settings: PolicySettings,
-    /// Optional dynamic posture model (schema v1.2.0+).
     #[serde(default)]
     pub posture: Option<PostureConfig>,
-    /// Optional origin-aware enforcement (schema v1.4.0+).
     #[serde(default)]
     pub origins: Option<OriginsConfig>,
+    #[serde(default)]
+    pub broker: Option<BrokerConfig>,
 }
 
 fn default_version() -> String {
@@ -228,51 +220,38 @@ impl Default for Policy {
             settings: PolicySettings::default(),
             posture: None,
             origins: None,
+            broker: None,
         }
     }
 }
 
-/// Configuration for all guards
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GuardConfigs {
-    /// Forbidden path guard config
     #[serde(default)]
     pub forbidden_path: Option<ForbiddenPathConfig>,
-    /// Path allowlist guard config
     #[serde(default)]
     pub path_allowlist: Option<PathAllowlistConfig>,
-    /// Egress allowlist guard config
     #[serde(default)]
     pub egress_allowlist: Option<EgressAllowlistConfig>,
-    /// Secret leak guard config
     #[serde(default)]
     pub secret_leak: Option<SecretLeakConfig>,
-    /// Patch integrity guard config
     #[serde(default)]
     pub patch_integrity: Option<PatchIntegrityConfig>,
-    /// Shell command guard config
     #[serde(default)]
     pub shell_command: Option<ShellCommandConfig>,
-    /// MCP tool guard config
     #[serde(default)]
     pub mcp_tool: Option<McpToolConfig>,
-    /// Prompt injection guard config
     #[serde(default)]
     pub prompt_injection: Option<PromptInjectionConfig>,
-    /// Jailbreak detection guard config
     #[serde(default)]
     pub jailbreak: Option<JailbreakConfig>,
-    /// Computer use (CUA) guard config
     #[serde(default)]
     pub computer_use: Option<ComputerUseConfig>,
-    /// Remote desktop side channel guard config
     #[serde(default)]
     pub remote_desktop_side_channel: Option<RemoteDesktopSideChannelConfig>,
-    /// Input injection capability guard config
     #[serde(default)]
     pub input_injection_capability: Option<InputInjectionCapabilityConfig>,
-    /// Spider-Sense hierarchical screening guard config
     #[cfg(feature = "full")]
     #[serde(default)]
     pub spider_sense: Option<crate::async_guards::threat_intel::SpiderSensePolicyConfig>,
@@ -298,7 +277,6 @@ pub struct GuardConfigs {
 }
 
 impl GuardConfigs {
-    /// Merge with another GuardConfigs (child overrides base)
     pub fn merge_with(&self, child: &Self) -> Self {
         Self {
             forbidden_path: match (&self.forbidden_path, &child.forbidden_path) {
@@ -493,17 +471,13 @@ pub struct CustomGuardSpec {
     pub async_config: Option<AsyncGuardPolicyConfig>,
 }
 
-/// Global policy settings
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PolicySettings {
-    /// Whether to fail fast on first violation
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fail_fast: Option<bool>,
-    /// Whether to log all actions (not just violations)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verbose_logging: Option<bool>,
-    /// Session timeout in seconds
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_timeout_secs: Option<u64>,
 }
@@ -524,6 +498,75 @@ impl PolicySettings {
     pub fn effective_session_timeout_secs(&self) -> u64 {
         self.session_timeout_secs.unwrap_or(default_timeout())
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BrokerMethod {
+    GET,
+    POST,
+    PUT,
+    PATCH,
+    DELETE,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BrokerConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub providers: Vec<BrokerProviderPolicy>,
+}
+
+impl BrokerConfig {
+    pub fn merge_with(&self, child: &Self) -> Self {
+        let mut providers = self.providers.clone();
+        for child_provider in &child.providers {
+            if let Some(position) = providers
+                .iter()
+                .position(|provider| provider.name == child_provider.name)
+            {
+                providers[position] = child_provider.clone();
+            } else {
+                providers.push(child_provider.clone());
+            }
+        }
+
+        Self {
+            enabled: child.enabled,
+            providers,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BrokerProviderPolicy {
+    pub name: String,
+    pub host: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
+    #[serde(default)]
+    pub exact_paths: Vec<String>,
+    #[serde(default)]
+    pub methods: Vec<BrokerMethod>,
+    pub secret_ref: String,
+    #[serde(default)]
+    pub allowed_headers: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_body_bytes: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub require_body_sha256: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stream_response: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub require_intent_preview: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_executions: Option<u32>,
+    #[serde(default)]
+    pub approval_required_risk_levels: Vec<String>,
+    #[serde(default)]
+    pub approval_required_data_classes: Vec<String>,
 }
 
 /// Default behavior when no origin profile matches.
@@ -792,6 +835,79 @@ impl Policy {
                     self.version
                 ),
             ));
+        }
+
+        if self.broker.is_some() && !policy_version_supports_broker(&self.version) {
+            errors.push(PolicyFieldError::new(
+                "broker",
+                format!(
+                    "broker block requires schema version >= 1.5.0, got {}",
+                    self.version
+                ),
+            ));
+        }
+
+        if let Some(ref broker) = self.broker {
+            if broker.enabled && broker.providers.is_empty() {
+                errors.push(PolicyFieldError::new(
+                    "broker.providers",
+                    "broker.providers must contain at least one provider when broker is enabled"
+                        .to_string(),
+                ));
+            }
+
+            let mut seen_provider_names = std::collections::HashSet::new();
+            for (index, provider) in broker.providers.iter().enumerate() {
+                let prefix = format!("broker.providers[{index}]");
+                if provider.name.trim().is_empty() {
+                    errors.push(PolicyFieldError::new(
+                        format!("{prefix}.name"),
+                        "provider name must be non-empty".to_string(),
+                    ));
+                } else if !seen_provider_names.insert(provider.name.as_str()) {
+                    errors.push(PolicyFieldError::new(
+                        format!("{prefix}.name"),
+                        format!("duplicate broker provider name: {}", provider.name),
+                    ));
+                }
+
+                if provider.host.trim().is_empty() {
+                    errors.push(PolicyFieldError::new(
+                        format!("{prefix}.host"),
+                        "provider host must be non-empty".to_string(),
+                    ));
+                }
+
+                if provider.secret_ref.trim().is_empty() {
+                    errors.push(PolicyFieldError::new(
+                        format!("{prefix}.secret_ref"),
+                        "provider secret_ref must be non-empty".to_string(),
+                    ));
+                }
+
+                if provider.exact_paths.is_empty() {
+                    errors.push(PolicyFieldError::new(
+                        format!("{prefix}.exact_paths"),
+                        "provider exact_paths must contain at least one path".to_string(),
+                    ));
+                }
+
+                if provider.methods.is_empty() {
+                    errors.push(PolicyFieldError::new(
+                        format!("{prefix}.methods"),
+                        "provider methods must contain at least one method".to_string(),
+                    ));
+                }
+
+                for (path_index, path) in provider.exact_paths.iter().enumerate() {
+                    if !path.starts_with('/') {
+                        errors.push(PolicyFieldError::new(
+                            format!("{prefix}.exact_paths[{path_index}]"),
+                            "broker exact path must start with '/'".to_string(),
+                        ));
+                    }
+                }
+            }
         }
 
         if let Some(ref origins) = self.origins {
@@ -1214,6 +1330,7 @@ impl Policy {
                 },
                 posture: child.posture.clone().or_else(|| self.posture.clone()),
                 origins: child.origins.clone().or_else(|| self.origins.clone()),
+                broker: child.broker.clone().or_else(|| self.broker.clone()),
             },
             MergeStrategy::DeepMerge => Self {
                 version: if child.version != self.version {
@@ -1253,6 +1370,12 @@ impl Policy {
                     (None, None) => None,
                 },
                 origins: match (&self.origins, &child.origins) {
+                    (Some(base), Some(child_cfg)) => Some(base.merge_with(child_cfg)),
+                    (Some(base), None) => Some(base.clone()),
+                    (None, Some(child_cfg)) => Some(child_cfg.clone()),
+                    (None, None) => None,
+                },
+                broker: match (&self.broker, &child.broker) {
                     (Some(base), Some(child_cfg)) => Some(base.merge_with(child_cfg)),
                     (Some(base), None) => Some(base.clone()),
                     (None, Some(child_cfg)) => Some(child_cfg.clone()),
@@ -1520,6 +1643,11 @@ fn policy_version_supports_posture(version: &str) -> bool {
 /// Returns true if the given schema version supports origin-aware enforcement.
 pub fn policy_version_supports_origins(version: &str) -> bool {
     semver_at_least(version, (1, 4, 0))
+}
+
+/// Returns true if the given schema version supports brokered egress policy.
+pub fn policy_version_supports_broker(version: &str) -> bool {
+    semver_at_least(version, (1, 5, 0))
 }
 
 fn parse_semver_part(part: &str) -> Option<u64> {
@@ -2030,7 +2158,7 @@ mod tests {
     #[test]
     fn test_default_policy() {
         let policy = Policy::new();
-        assert_eq!(policy.version, "1.2.0");
+        assert_eq!(policy.version, "1.5.0");
     }
 
     #[test]
@@ -2324,6 +2452,71 @@ name: Test
 
         let policy = Policy::from_yaml(yaml).unwrap();
         assert_eq!(policy.version, "1.3.0");
+    }
+
+    #[test]
+    fn test_policy_version_accepts_1_5_0() {
+        let yaml = r#"
+version: "1.5.0"
+name: Test
+"#;
+
+        let policy = Policy::from_yaml(yaml).unwrap();
+        assert_eq!(policy.version, "1.5.0");
+    }
+
+    #[test]
+    fn test_broker_version_gating_rejects_1_4_policy() {
+        let yaml = r#"
+version: "1.4.0"
+name: broker-old
+broker:
+  enabled: true
+  providers:
+    - name: "openai"
+      host: "api.openai.com"
+      exact_paths: ["/v1/responses"]
+      methods: ["POST"]
+      secret_ref: "openai/dev"
+"#;
+
+        let err = Policy::from_yaml(yaml).unwrap_err();
+        match err {
+            Error::PolicyValidation(e) => {
+                assert!(e.errors.iter().any(|fe| fe.path == "broker"
+                    && fe
+                        .message
+                        .contains("broker block requires schema version >= 1.5.0")));
+            }
+            other => panic!("expected policy validation error, got: {}", other),
+        }
+    }
+
+    #[test]
+    fn test_broker_policy_parses_on_1_5() {
+        let yaml = r#"
+version: "1.5.0"
+name: broker-new
+broker:
+  enabled: true
+  providers:
+    - name: "openai"
+      host: "api.openai.com"
+      port: 443
+      exact_paths: ["/v1/responses"]
+      methods: ["POST"]
+      secret_ref: "openai/dev"
+      allowed_headers: ["content-type"]
+      require_body_sha256: true
+"#;
+
+        let policy = Policy::from_yaml(yaml).unwrap();
+        let broker = policy.broker.expect("broker config");
+        assert!(broker.enabled);
+        assert_eq!(broker.providers.len(), 1);
+        assert_eq!(broker.providers[0].name, "openai");
+        assert_eq!(broker.providers[0].port, Some(443));
+        assert_eq!(broker.providers[0].methods, vec![BrokerMethod::POST]);
     }
 
     #[cfg(feature = "full")]
@@ -3463,6 +3656,13 @@ name: Test
         assert!(!policy_version_supports_origins("1.2.0"));
         assert!(!policy_version_supports_origins("1.3.0"));
         assert!(policy_version_supports_origins("1.4.0"));
+    }
+
+    #[test]
+    fn test_policy_version_supports_broker_function() {
+        assert!(!policy_version_supports_broker("1.1.0"));
+        assert!(!policy_version_supports_broker("1.4.0"));
+        assert!(policy_version_supports_broker("1.5.0"));
     }
 
     #[test]

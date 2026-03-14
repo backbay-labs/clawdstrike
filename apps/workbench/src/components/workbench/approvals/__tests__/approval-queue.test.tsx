@@ -14,6 +14,10 @@ vi.mock("@/lib/workbench/fleet-client", () => ({
     fetchApprovals: vi.fn().mockResolvedValue({ requests: [], decisions: [] }),
     resolveApproval: vi.fn().mockResolvedValue({ success: true }),
   },
+  redactFleetConnection: vi.fn((conn: Record<string, unknown>) => {
+    const { apiKey: _, controlApiToken: __, ...info } = conn;
+    return info;
+  }),
   loadSavedConnection: vi.fn().mockReturnValue({}),
   loadSavedConnectionAsync: vi.fn().mockResolvedValue({}),
   saveConnectionConfig: vi.fn(),

@@ -1704,6 +1704,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "clawdstrike-broker-protocol"
+version = "0.2.5"
+dependencies = [
+ "chrono",
+ "hush-core",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "clawdstrike-brokerd"
+version = "0.2.5"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "chrono",
+ "clawdstrike-broker-protocol",
+ "futures",
+ "hush-core",
+ "reqwest 0.13.2",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "tokio",
+ "tokio-stream",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "clawdstrike-control-api"
 version = "0.2.5"
 dependencies = [
@@ -3822,6 +3857,7 @@ dependencies = [
  "chrono-tz",
  "clap",
  "clawdstrike",
+ "clawdstrike-broker-protocol",
  "clawdstrike-ocsf",
  "clawdstrike-policy-event",
  "dashmap",
@@ -3833,6 +3869,7 @@ dependencies = [
  "hex",
  "hush-certification",
  "hush-core",
+ "hush-multi-agent",
  "hush-proxy",
  "hush-spine",
  "jsonwebtoken",

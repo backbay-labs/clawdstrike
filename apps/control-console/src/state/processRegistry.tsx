@@ -28,6 +28,15 @@ const ReplayMode = lazy(() =>
   import("../pages/ReplayMode").then((m) => ({ default: m.ReplayMode })),
 );
 const AgentChat = lazy(() => import("../pages/AgentChat").then((m) => ({ default: m.AgentChat })));
+const BrokerMissionControl = lazy(() =>
+  import("../pages/BrokerMissionControl").then((m) => ({ default: m.BrokerMissionControl })),
+);
+const BrokerWallet = lazy(() =>
+  import("../pages/BrokerWallet").then((m) => ({ default: m.BrokerWallet })),
+);
+const BrokerTheater = lazy(() =>
+  import("../pages/BrokerTheater").then((m) => ({ default: m.BrokerTheater })),
+);
 
 /* ── Artifact OS SVG Sigils ── */
 
@@ -280,6 +289,65 @@ function AgentChatSigil() {
   );
 }
 
+function BrokerWalletSigil() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={20}
+      height={20}
+      fill="none"
+      stroke="var(--gold)"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x={3} y={6} width={18} height={12} rx={2} />
+      <path d="M16 12h3" opacity={0.5} />
+      <circle cx={8} cy={12} r={1.5} fill="var(--gold)" stroke="none" opacity={0.6} />
+    </svg>
+  );
+}
+
+function BrokerMissionControlSigil() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={20}
+      height={20}
+      fill="none"
+      stroke="var(--gold)"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx={12} cy={12} r={8} />
+      <path d="M12 4v4M12 16v4M4 12h4M16 12h4" opacity={0.35} />
+      <path d="M12 12l4-3" stroke="var(--teal)" />
+      <circle cx={12} cy={12} r={1.5} fill="var(--gold)" stroke="none" opacity={0.65} />
+    </svg>
+  );
+}
+
+function BrokerTheaterSigil() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={20}
+      height={20}
+      fill="none"
+      stroke="var(--teal)"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M4 6h16" opacity={0.35} />
+      <path d="M4 12h10" />
+      <path d="M4 18h16" opacity={0.35} />
+      <circle cx={17} cy={12} r={3} fill="none" />
+    </svg>
+  );
+}
+
 /** Map processId → sigil component for use in taskbar & desktop */
 export const PROCESS_ICONS: Record<string, React.ReactNode> = {
   monitor: <MonitorSigil />,
@@ -295,6 +363,9 @@ export const PROCESS_ICONS: Record<string, React.ReactNode> = {
   "compliance-report": <ComplianceSigil />,
   "replay-mode": <ReplaySigil />,
   "agent-chat": <AgentChatSigil />,
+  "broker-mission-control": <BrokerMissionControlSigil />,
+  "broker-wallet": <BrokerWalletSigil />,
+  "broker-theater": <BrokerTheaterSigil />,
 };
 
 export const processes: ProcessDefinition[] = [
@@ -420,6 +491,39 @@ export const processes: ProcessDefinition[] = [
     description: "Generate compliance reports",
   },
   {
+    id: "broker-mission-control",
+    name: "Broker Mission Control",
+    icon: <BrokerMissionControlSigil />,
+    component: BrokerMissionControl,
+    defaultSize: { width: 1180, height: 760 },
+    minSize: { width: 900, height: 620 },
+    singleton: true,
+    category: "security",
+    description: "Wave 5 operator surface for previews, lineage, and bundles",
+  },
+  {
+    id: "broker-wallet",
+    name: "Broker Wallet",
+    icon: <BrokerWalletSigil />,
+    component: BrokerWallet,
+    defaultSize: { width: 1080, height: 720 },
+    minSize: { width: 820, height: 560 },
+    singleton: true,
+    category: "security",
+    description: "Inspect and control live broker capabilities",
+  },
+  {
+    id: "broker-theater",
+    name: "Broker Theater",
+    icon: <BrokerTheaterSigil />,
+    component: BrokerTheater,
+    defaultSize: { width: 980, height: 700 },
+    minSize: { width: 760, height: 540 },
+    singleton: true,
+    category: "security",
+    description: "Watch live broker timeline and freeze state",
+  },
+  {
     id: "replay-mode",
     name: "Replay",
     icon: <ReplaySigil />,
@@ -463,6 +567,14 @@ export const desktopIcons: DesktopIconConfig[] = [
   { id: "agent-explorer", processId: "agent-explorer", label: "Agent Explorer", group: "core" },
   { id: "event-stream", processId: "event-stream", label: "Event Stream", group: "core" },
   { id: "audit", processId: "audit", label: "Audit Log", group: "core" },
+  {
+    id: "broker-mission-control",
+    processId: "broker-mission-control",
+    label: "Mission Control",
+    group: "core",
+  },
+  { id: "broker-wallet", processId: "broker-wallet", label: "Broker Wallet", group: "core" },
+  { id: "broker-theater", processId: "broker-theater", label: "Broker Theater", group: "core" },
   { id: "policy", processId: "policy", label: "Policies", group: "policy-ops" },
   { id: "policy-editor", processId: "policy-editor", label: "Policy Editor", group: "policy-ops" },
   { id: "guard-playground", processId: "guard-playground", label: "Guard Lab", group: "policy-ops" },
@@ -492,10 +604,20 @@ export const allApps = desktopIcons;
 
 export const startMenuDefaultPinnedIds = [
   "monitor",
+  "broker-mission-control",
+  "broker-wallet",
   "agent-explorer",
   "audit",
   "event-stream",
   "settings",
 ];
 
-export const pinnedAppIds = ["monitor", "agent-explorer", "audit", "event-stream", "settings"];
+export const pinnedAppIds = [
+  "monitor",
+  "broker-mission-control",
+  "broker-wallet",
+  "agent-explorer",
+  "audit",
+  "event-stream",
+  "settings",
+];

@@ -84,4 +84,30 @@ describe("OpenAIToolBoundary", () => {
 
     expect(boundary.getAuditEvents().some((e) => e.type === "tool_call_blocked")).toBe(true);
   });
+
+  it("fails closed when broker mode errors and does not dispatch directly", async () => {
+    const engine: PolicyEngineLike = {
+      evaluate: () => ({ status: "allow" as const }),
+    };
+
+    const boundary = new OpenAIToolBoundary({
+      engine,
+      broker: {
+        secretRef: "openai/dev",
+        client: {
+          execute: async () => {
+            throw new Error("broker offline");
+          },
+        },
+      },
+    });
+    const dispatch = vi.fn(async () => "direct");
+    const wrapped = wrapOpenAIToolDispatcher(boundary, dispatch);
+
+    await expect(
+      wrapped("responses.create", { body: { model: "gpt-4.1-mini", input: "hello" } }, "run-2"),
+    ).rejects.toBeInstanceOf(ClawdstrikeBlockedError);
+
+    expect(dispatch).not.toHaveBeenCalled();
+  });
 });

@@ -1,4 +1,5 @@
 import type { AuditEvent, AuditEventType, AuditLogger } from "./audit.js";
+import type { BrokerConfig } from "./broker-types.js";
 import type { SecurityContext } from "./context.js";
 import type { PolicyEngineLike } from "./engine.js";
 import type { InterceptResult, ProcessedOutput } from "./interceptor.js";
@@ -35,6 +36,7 @@ export interface AdapterConfig extends ClawdstrikeConfig {
   injectSecurityPrompt?: boolean;
   normalizeToolName?: (name: string) => string;
   translateToolCall?: ToolCallTranslator;
+  broker?: BrokerConfig;
   inbound?: InboundConfig;
   excludedTools?: string[];
   audit?: AuditConfig;

@@ -179,6 +179,31 @@ fn default_validate_saml_conditions() -> bool {
     true
 }
 
+fn default_broker_capability_ttl_secs() -> u64 {
+    60
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BrokerApiConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_broker_capability_ttl_secs")]
+    pub capability_ttl_secs: u64,
+    #[serde(default)]
+    pub allow_http_loopback: bool,
+}
+
+impl Default for BrokerApiConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            capability_ttl_secs: default_broker_capability_ttl_secs(),
+            allow_http_loopback: false,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SamlAttributeMapping {
@@ -1075,6 +1100,10 @@ pub struct Config {
     /// Spine attestation log configuration (NATS JetStream).
     #[serde(default)]
     pub spine: SpineConfig,
+
+    /// Secret broker capability issuance configuration.
+    #[serde(default)]
+    pub broker: BrokerApiConfig,
 }
 
 fn default_listen() -> String {
@@ -1130,6 +1159,7 @@ impl Default for Config {
             siem: SiemSoarConfig::default(),
             remote_extends: RemoteExtendsConfig::default(),
             spine: SpineConfig::default(),
+            broker: BrokerApiConfig::default(),
         }
     }
 }
@@ -1274,6 +1304,12 @@ impl Config {
                     }
                 }
             }
+        }
+
+        if self.broker.enabled && self.broker.capability_ttl_secs == 0 {
+            return Err(anyhow::anyhow!(
+                "broker.capability_ttl_secs must be > 0 when broker is enabled"
+            ));
         }
         Ok(())
     }

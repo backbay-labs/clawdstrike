@@ -194,7 +194,9 @@ Without a bridge policy, cross-origin transitions are denied by default.
 
 Framework adapters (OpenClaw, Vercel AI, LangChain, etc.) can pass origin context through `GuardContext`:
 
-```rust
+```rust,ignore
+use clawdstrike::{GuardContext, OriginContext, OriginProvider, Visibility};
+
 let origin = OriginContext {
     provider: OriginProvider::Slack,
     space_id: Some("C0123ABC".into()),
@@ -203,8 +205,11 @@ let origin = OriginContext {
 };
 
 let context = GuardContext::new().with_origin(origin);
-let result = engine.check_action(&action, &context).await?;
+assert!(context.origin.is_some());
 ```
+
+Pass that `context` into `engine.check_action(...)` or `engine.check_action_report(...)`
+inside the adapter boundary that is already holding the action and engine instance.
 
 In TypeScript adapters, origin data flows from the inbound message hook through the `SecurityContext`.
 

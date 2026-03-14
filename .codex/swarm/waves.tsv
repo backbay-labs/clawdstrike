@@ -5,6 +5,16 @@ wave2	ws2,ws4
 wave3	ws5,ws6
 wave4	ws7
 wave5	ws8
+sb-wave0	sb0
+sb-wave1	sb1,sb2,sb3
+sb-wave2	sb5
+sb-wave3	sb4
+sb-wave4	sb6,sb7
+sb-wave5	sb8,sb9
+sb-wave6	sb10,sb11
+sb-wave7	sb12,sb13
+sb-wave8	sb14,sb15
+sb-wave9	sb16,sb17
 sdk-wave0	sdk-orch
 sdk-wave1	sdk-py1,sdk-go1
 sdk-wave2	sdk-py2,sdk-go2

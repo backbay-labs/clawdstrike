@@ -4,11 +4,14 @@ import {
   type SecuritySource,
 } from "@clawdstrike/adapter-core";
 
+import type { OpenAIBrokerOptions } from "./broker.js";
+import { createOpenAIBrokerExecutor } from "./broker.js";
 import { openAICuaTranslator } from "./openai-cua-translator.js";
 
 export interface SecureToolsOptions {
   context?: SecurityContext;
   getContext?: (toolName: string, input: unknown) => SecurityContext;
+  broker?: OpenAIBrokerOptions;
 }
 
 type OpenAIToolLike<TInput = unknown, TOutput = unknown> = {
@@ -26,5 +29,6 @@ export function secureTools<TTools extends Record<string, OpenAIToolLike>>(
     translateToolCall: openAICuaTranslator,
     context: options?.context,
     getContext: options?.getContext,
+    broker: options?.broker ? { executor: createOpenAIBrokerExecutor(options.broker) } : undefined,
   });
 }
