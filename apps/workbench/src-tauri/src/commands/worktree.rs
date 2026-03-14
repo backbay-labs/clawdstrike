@@ -107,6 +107,20 @@ fn canonical_repo_root(repo_root: &str) -> Result<PathBuf, String> {
     if !canonical.is_dir() {
         return Err(format!("Repository root is not a directory: {repo_root}"));
     }
+    let base_dir = std::env::current_dir()
+        .map_err(|e| format!("Failed to resolve application base directory: {e}"))?;
+    let base_canonical = std::fs::canonicalize(&base_dir).map_err(|e| {
+        format!(
+            "Failed to canonicalize application base directory {}: {e}",
+            base_dir.display()
+        )
+    })?;
+    if !canonical.starts_with(&base_canonical) {
+        return Err(format!(
+            "Repository root must be under application base directory: {}",
+            base_canonical.display()
+        ));
+    }
     let canonical_str = canonical.to_string_lossy().to_string();
     let inside = run_git(&canonical_str, &["rev-parse", "--is-inside-work-tree"])?;
     if inside.trim() != "true" {
@@ -356,36 +370,16 @@ pub async fn worktree_list<R: Runtime>(
 #[tauri::command]
 pub async fn worktree_status<R: Runtime>(
     window: tauri::Window<R>,
+    repo_root: String,
     worktree_path: String,
 ) -> Result<WorktreeStatus, String> {
     ensure_trusted_window(&window)?;
-    let canonical_wt = std::fs::canonicalize(&worktree_path)
-        .map_err(|e| format!("Worktree path does not exist or is not resolvable: {e}"))?;
-    if !canonical_wt.is_dir() {
-        return Err(format!(
-            "Worktree path is not a directory: {}",
-            canonical_wt.display()
-        ));
-    }
-
-    // Verify that WORKTREE_DIR appears as a proper parent directory in the
-    // canonicalized path — not merely as an arbitrary path component (e.g. a
-    // file or sibling directory that happens to contain the name). We walk the
-    // ancestors and check that one of them ends with WORKTREE_DIR and that the
-    // canonical worktree path is strictly beneath it.
-    let has_worktree_parent = canonical_wt.ancestors().any(|ancestor| {
-        ancestor
-            .file_name()
-            .map(|name| name == WORKTREE_DIR)
-            .unwrap_or(false)
-            && canonical_wt.starts_with(ancestor)
-            && canonical_wt != ancestor
-    });
-    if !has_worktree_parent {
-        return Err(format!(
-            "Refusing status for path outside {} namespace",
-            WORKTREE_DIR
-        ));
+    let canonical_root = canonical_repo_root(&repo_root)?;
+    let canonical_root_str = canonical_root.to_string_lossy().to_string();
+    let expected_base = canonical_root.join(WORKTREE_DIR);
+    let canonical_wt = canonicalize_worktree_path(&worktree_path, &expected_base)?;
+    if !is_registered_worktree(&canonical_root_str, &canonical_wt)? {
+        return Err("Target path is not a registered git worktree".to_string());
     }
     let worktree_path = canonical_wt.to_string_lossy().to_string();
 

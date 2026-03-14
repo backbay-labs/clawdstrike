@@ -92,8 +92,9 @@ fn main() {
         //    reject path traversal, and verify paths are registered worktrees
         //    before removal.
         //
-        // No additional privilege escalation checks are required because the
-        // Tauri IPC surface is not reachable from untrusted origins.
+        // Renderer compromise is still an in-scope desktop risk; do not load
+        // remote/untrusted content in this webview, and keep adding backend
+        // guardrails for high-impact commands.
         // ------------------------------------------------------------------
         .invoke_handler(tauri::generate_handler![
             workbench::validate_policy,

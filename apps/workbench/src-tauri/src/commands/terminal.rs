@@ -39,6 +39,9 @@ const READ_CHUNK_SIZE: usize = 4096;
 const MAX_EXTRA_ENV_VARS: usize = 64;
 const MAX_ENV_KEY_LEN: usize = 128;
 const MAX_ENV_VALUE_LEN: usize = 8192;
+const MAX_ACTIVE_SESSIONS: usize = 32;
+const MAX_WRITE_BYTES: usize = 64 * 1024;
+const MAX_PREVIEW_LINES: usize = 200;
 
 /// Trusted window label for local command handlers.
 const TRUSTED_WINDOW_LABEL: &str = "main";
@@ -161,9 +164,12 @@ fn normalize_shell(shell: &str) -> Option<String> {
     }
 
     let path = Path::new(shell);
+    if path.is_absolute() || path.components().count() != 1 {
+        eprintln!("[terminal] Rejected path-like shell value: {:?}", shell);
+        return None;
+    }
 
-    // Extract the base name from the path (handles both absolute paths like
-    // `/bin/zsh` and bare names like `zsh`).
+    // Extract the base name from the path (bare command names only).
     let file_name = path.file_name()?.to_string_lossy();
     let file_name = if cfg!(target_os = "windows") {
         file_name.trim_end_matches(".exe")
@@ -171,20 +177,12 @@ fn normalize_shell(shell: &str) -> Option<String> {
         file_name.as_ref()
     };
 
-    // Check the base name against the allowlist. If the input is an absolute
-    // path whose basename is allowed, return the ORIGINAL absolute path (not
-    // the bare name) to avoid PATH-dependent resolution to a different binary.
-    let is_allowed = ALLOWED_SHELLS
+    let allowed = ALLOWED_SHELLS
         .iter()
-        .any(|allowed| file_name.eq_ignore_ascii_case(allowed));
+        .find(|allowed| file_name.eq_ignore_ascii_case(allowed));
 
-    if is_allowed {
-        if path.is_absolute() {
-            Some(shell.to_string())
-        } else {
-            // Bare name like "zsh" — return as-is, resolved via PATH
-            Some(file_name.to_string())
-        }
+    if let Some(allowed) = allowed {
+        Some((*allowed).to_string())
     } else {
         eprintln!("[terminal] Rejected shell not in allowlist: {:?}", shell);
         None
@@ -200,7 +198,37 @@ fn normalize_cwd(cwd: &str) -> Result<String, String> {
     if !canonical.is_dir() {
         return Err(format!("Working directory is not a directory: {cwd}"));
     }
-    Ok(canonical.to_string_lossy().to_string())
+    let base_dir = std::env::current_dir()
+        .map_err(|e| format!("Failed to resolve application base directory: {e}"))?;
+    let base_canonical = std::fs::canonicalize(&base_dir).map_err(|e| {
+        format!(
+            "Failed to canonicalize application base directory {}: {e}",
+            base_dir.display()
+        )
+    })?;
+    if !canonical.starts_with(&base_canonical) {
+        return Err(format!(
+            "Working directory must be under application base directory: {}",
+            base_canonical.display()
+        ));
+    }
+
+    let canonical_str = canonical.to_string_lossy().to_string();
+    let git_probe = std::process::Command::new("git")
+        .args(["rev-parse", "--is-inside-work-tree"])
+        .current_dir(&canonical_str)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .map_err(|e| format!("Failed to validate git worktree for {canonical_str}: {e}"))?;
+    if !git_probe.status.success() || String::from_utf8_lossy(&git_probe.stdout).trim() != "true" {
+        return Err(format!(
+            "Working directory must be inside a git worktree under {}",
+            base_canonical.display()
+        ));
+    }
+
+    Ok(canonical_str)
 }
 
 fn ensure_trusted_window<R: tauri::Runtime>(window: &tauri::Window<R>) -> Result<(), String> {
@@ -380,6 +408,15 @@ pub async fn terminal_create<R: Runtime>(
     env: Option<HashMap<String, String>>,
 ) -> Result<SessionInfo, String> {
     ensure_trusted_window(&window)?;
+    {
+        let manager = state.lock().await;
+        if manager.sessions.len() >= MAX_ACTIVE_SESSIONS {
+            return Err(format!(
+                "Too many active terminal sessions (max {})",
+                MAX_ACTIVE_SESSIONS
+            ));
+        }
+    }
 
     // Validate cwd exists
     let cwd = normalize_cwd(&cwd)?;
@@ -513,6 +550,7 @@ pub async fn terminal_create<R: Runtime>(
         // Use try_lock() instead of block_on(lock().await) to avoid
         // deadlocking: we're inside spawn_blocking and must not block on
         // the async Mutex via the tokio runtime handle.
+        let natural_exit = session_alive_for_reader.load(Ordering::Acquire);
         let exit_code: Option<i32> = state_for_reader.try_lock().ok().and_then(|mut manager| {
             if let Some(session) = manager.sessions.get_mut(&event_session_id) {
                 match session.child.try_wait() {
@@ -524,9 +562,29 @@ pub async fn terminal_create<R: Runtime>(
             }
         });
 
-        if session_alive_for_reader.load(Ordering::Acquire) {
+        if natural_exit {
             let exit_event = format!("terminal:exit:{}", event_session_id);
             let _ = app_handle.emit(&exit_event, exit_code);
+
+            // Best-effort backend cleanup for naturally exited sessions.
+            // This avoids stale in-memory session/ring-buffer state when the
+            // frontend does not explicitly call `terminal_kill`.
+            let mut pruned = false;
+            for _ in 0..20 {
+                if let Ok(mut manager) = state_for_reader.try_lock() {
+                    manager.sessions.remove(&event_session_id);
+                    pruned = true;
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            if !pruned {
+                eprintln!(
+                    "[terminal] failed to prune session {} after natural exit",
+                    event_session_id
+                );
+            }
+            remove_ring_buffer(&event_session_id);
         }
     });
 
@@ -572,6 +630,13 @@ pub async fn terminal_write<R: Runtime>(
 ) -> Result<(), String> {
     ensure_trusted_window(&window)?;
     validate_session_id(&session_id)?;
+    if data.len() > MAX_WRITE_BYTES {
+        return Err(format!(
+            "Write payload too large ({} bytes, max {})",
+            data.len(),
+            MAX_WRITE_BYTES
+        ));
+    }
 
     let mut manager = state.lock().await;
     let session = manager
@@ -713,7 +778,7 @@ pub async fn terminal_preview<R: Runtime>(
         }
     }
 
-    let n = lines.unwrap_or(DEFAULT_PREVIEW_LINES);
+    let n = lines.unwrap_or(DEFAULT_PREVIEW_LINES).min(MAX_PREVIEW_LINES);
 
     let buf = get_ring_buffer(&session_id)
         .ok_or_else(|| format!("Ring buffer not found for session: {session_id}"))?;

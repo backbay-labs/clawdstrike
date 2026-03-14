@@ -38,6 +38,10 @@ const EXPLICIT_SENSITIVE_KEYS = new Set<string>([
   "private_key",
   "signing_key",
 ]);
+const SESSION_STORAGE_FALLBACK_KEYS = new Set<string>([
+  "hushd_url",
+  "control_api_url",
+]);
 
 function isSessionStorageAvailable(): boolean {
   return typeof window !== "undefined" && typeof sessionStorage !== "undefined";
@@ -56,17 +60,27 @@ function isSensitiveKey(key: string): boolean {
   );
 }
 
+function canUseSessionStorageFallback(key: string): boolean {
+  return SESSION_STORAGE_FALLBACK_KEYS.has(key.toLowerCase());
+}
+
 function storageKey(key: string): string {
   return `clawdstrike_${key}`;
 }
 
-function warnSensitiveFallback(key: string): void {
+function warnInMemoryFallback(key: string, sensitive: boolean): void {
   if (warnedFallback.has(key)) return;
   warnedFallback.add(key);
-  console.warn(
-    `[secure-store] Stronghold unavailable; sensitive key "${key}" is using in-memory fallback (not persisted). ` +
-    `The value will be lost when this tab closes.`,
-  );
+  if (sensitive) {
+    console.warn(
+      `[secure-store] Stronghold unavailable; sensitive key "${key}" is using in-memory fallback (not persisted). ` +
+      `The value will be lost when this tab closes.`,
+    );
+  } else {
+    console.warn(
+      `[secure-store] Stronghold unavailable; key "${key}" is using in-memory fallback (not persisted).`,
+    );
+  }
 }
 
 function warnSessionStorageFallback(key: string): void {
@@ -118,19 +132,22 @@ export const secureStore = {
       }
     }
 
-    // Sensitive keys (tokens, passwords, private keys) must never be written
-    // to sessionStorage.  Use an ephemeral in-memory map instead.
-    if (isSensitiveKey(key)) {
-      warnSensitiveFallback(key);
+    const sensitive = isSensitiveKey(key);
+    // Deny-by-default fallback model: only explicitly allowlisted keys may use
+    // sessionStorage. All others stay in ephemeral memory.
+    if (!canUseSessionStorageFallback(key)) {
+      warnInMemoryFallback(key, sensitive);
       IN_MEMORY_FALLBACK.set(key, value);
       return;
     }
 
-    // Non-sensitive keys fall back to sessionStorage (plaintext).
     if (isSessionStorageAvailable()) {
       warnSessionStorageFallback(key);
       sessionStorage.setItem(storageKey(key), value);
+      return;
     }
+    warnInMemoryFallback(key, sensitive);
+    IN_MEMORY_FALLBACK.set(key, value);
   },
 
   async get(key: string): Promise<string | null> {
@@ -141,15 +158,14 @@ export const secureStore = {
       }
     }
 
-    // Sensitive keys are only stored in-memory; never check sessionStorage.
-    if (isSensitiveKey(key)) {
+    if (!canUseSessionStorageFallback(key)) {
       return IN_MEMORY_FALLBACK.get(key) ?? null;
     }
 
     if (isSessionStorageAvailable()) {
       return sessionStorage.getItem(storageKey(key));
     }
-    return null;
+    return IN_MEMORY_FALLBACK.get(key) ?? null;
   },
 
   async delete(key: string): Promise<void> {
@@ -163,7 +179,7 @@ export const secureStore = {
 
     IN_MEMORY_FALLBACK.delete(key);
 
-    if (!isSensitiveKey(key) && isSessionStorageAvailable()) {
+    if (canUseSessionStorageFallback(key) && isSessionStorageAvailable()) {
       sessionStorage.removeItem(storageKey(key));
     }
   },
@@ -176,14 +192,14 @@ export const secureStore = {
       }
     }
 
-    if (isSensitiveKey(key)) {
+    if (!canUseSessionStorageFallback(key)) {
       return IN_MEMORY_FALLBACK.has(key);
     }
 
     if (isSessionStorageAvailable()) {
       return sessionStorage.getItem(storageKey(key)) !== null;
     }
-    return false;
+    return IN_MEMORY_FALLBACK.has(key);
   },
 
   async isSecure(): Promise<boolean> {

@@ -191,6 +191,6 @@ export const worktreeService = {
   /**
    * Get the diff status of a worktree (changed files, insertions, deletions).
    */
-  status: (worktreePath: string): Promise<WorktreeStatus> =>
-    invoke<WorktreeStatus>("worktree_status", { worktreePath }),
+  status: (repoRoot: string, worktreePath: string): Promise<WorktreeStatus> =>
+    invoke<WorktreeStatus>("worktree_status", { repoRoot, worktreePath }),
 };
