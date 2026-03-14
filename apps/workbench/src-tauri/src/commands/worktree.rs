@@ -243,31 +243,18 @@ pub async fn worktree_create<R: Runtime>(
     .is_ok();
 
     if branch_exists {
-        // Add worktree using the existing branch.
-        // The `--` separator prevents the branch name from being interpreted as a flag.
+        // Syntax: git worktree add <path> <branch>
+        // normalize_branch_name already rejects names starting with `-`,
+        // containing `..`, or with shell metacharacters.
         run_git(
             &canonical_root_str,
-            &[
-                "worktree",
-                "add",
-                &worktree_path_str,
-                "--",
-                &normalized_branch,
-            ],
+            &["worktree", "add", &worktree_path_str, &normalized_branch],
         )?;
     } else {
-        // Create a new branch from HEAD.
-        // The `--` separator prevents the branch name from being interpreted as a flag.
+        // Syntax: git worktree add -b <new-branch> <path>
         run_git(
             &canonical_root_str,
-            &[
-                "worktree",
-                "add",
-                "-b",
-                &normalized_branch,
-                "--",
-                &worktree_path_str,
-            ],
+            &["worktree", "add", "-b", &normalized_branch, &worktree_path_str],
         )?;
     }
 

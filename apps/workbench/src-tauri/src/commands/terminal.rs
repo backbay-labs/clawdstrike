@@ -171,19 +171,24 @@ fn normalize_shell(shell: &str) -> Option<String> {
         file_name.as_ref()
     };
 
-    // Check the base name against the allowlist. This accepts absolute paths
-    // (e.g. $SHELL = "/bin/zsh") as long as the final component is allowed,
-    // while still rejecting unknown or multi-component relative paths.
-    let result = ALLOWED_SHELLS
+    // Check the base name against the allowlist. If the input is an absolute
+    // path whose basename is allowed, return the ORIGINAL absolute path (not
+    // the bare name) to avoid PATH-dependent resolution to a different binary.
+    let is_allowed = ALLOWED_SHELLS
         .iter()
-        .find(|allowed| file_name.eq_ignore_ascii_case(allowed))
-        .map(|allowed| (*allowed).to_string());
+        .any(|allowed| file_name.eq_ignore_ascii_case(allowed));
 
-    if result.is_none() {
+    if is_allowed {
+        if path.is_absolute() {
+            Some(shell.to_string())
+        } else {
+            // Bare name like "zsh" — return as-is, resolved via PATH
+            Some(file_name.to_string())
+        }
+    } else {
         eprintln!("[terminal] Rejected shell not in allowlist: {:?}", shell);
+        None
     }
-
-    result
 }
 
 fn normalize_cwd(cwd: &str) -> Result<String, String> {
