@@ -27,21 +27,9 @@ import { useFleetConnection } from "@/lib/workbench/use-fleet-connection";
 import { useSentinels } from "@/lib/workbench/sentinel-store";
 import { useFindings } from "@/lib/workbench/finding-store";
 import { cn } from "@/lib/utils";
+import { SIGIL_SYMBOLS } from "@/components/workbench/settings/identity-settings";
 import { fleetClient } from "@/lib/workbench/fleet-client";
 import { DEMO_APPROVAL_REQUESTS } from "@/lib/workbench/approval-demo-data";
-
-// ---- Sigil symbols ----
-
-const SIGIL_SYMBOLS: Record<string, string> = {
-  diamond: "\u25C7",
-  eye: "\u25C9",
-  wave: "\u223F",
-  crown: "\u2655",
-  spiral: "\u058D",
-  key: "\u2638",
-  star: "\u2729",
-  moon: "\u263E",
-};
 
 // ---- Data ----
 
@@ -622,7 +610,7 @@ export function DesktopSidebar() {
           )}
           title={currentOperator.displayName || currentOperator.fingerprint}
         >
-          <span className="text-sm shrink-0">{SIGIL_SYMBOLS[currentOperator.sigil] ?? currentOperator.sigil}</span>
+          <span className="text-sm shrink-0">{SIGIL_SYMBOLS[currentOperator.sigil as keyof typeof SIGIL_SYMBOLS] ?? currentOperator.sigil}</span>
           {!collapsed && (
             <span className="truncate text-[11px]">
               {currentOperator.displayName || currentOperator.fingerprint.slice(0, 8)}

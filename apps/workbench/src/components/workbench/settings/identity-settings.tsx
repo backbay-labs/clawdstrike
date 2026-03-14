@@ -22,7 +22,7 @@ import type { SigilType } from "@/lib/workbench/sentinel-manager";
 // Sigil renderer (matches existing pattern from swarm-detail)
 // ---------------------------------------------------------------------------
 
-const SIGIL_SYMBOLS: Record<SigilType, string> = {
+export const SIGIL_SYMBOLS: Record<SigilType, string> = {
   diamond: "\u25C6",
   eye: "\u25C9",
   wave: "\u223F",

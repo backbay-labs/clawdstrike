@@ -8,6 +8,7 @@ import { MultiPolicyProvider as WorkbenchProvider, useMultiPolicy } from "@/lib/
 import { FleetConnectionProvider } from "@/lib/workbench/use-fleet-connection";
 import { SentinelProvider } from "@/lib/workbench/sentinel-store";
 import { FindingProvider } from "@/lib/workbench/finding-store";
+import { OperatorProvider } from "@/lib/workbench/operator-store";
 
 vi.mock("@/lib/tauri-bridge", () => ({
   isDesktop: vi.fn(() => false),
@@ -31,21 +32,23 @@ function DirtyBackgroundTabBootstrap() {
 function renderLayout(route = "/editor", withDirtyBackgroundTab = false) {
   return render(
     <MemoryRouter initialEntries={[route]}>
-      <FleetConnectionProvider>
-        <WorkbenchProvider>
-          <SentinelProvider>
-            <FindingProvider>
-              {withDirtyBackgroundTab ? <DirtyBackgroundTabBootstrap /> : null}
-              <Routes>
-                <Route element={<DesktopLayout />}>
-                  <Route path="editor" element={<div data-testid="editor-page">Editor Page</div>} />
-                  <Route path="simulator" element={<div data-testid="simulator-page">Simulator Page</div>} />
-                </Route>
-              </Routes>
-            </FindingProvider>
-          </SentinelProvider>
-        </WorkbenchProvider>
-      </FleetConnectionProvider>
+      <OperatorProvider>
+        <FleetConnectionProvider>
+          <WorkbenchProvider>
+            <SentinelProvider>
+              <FindingProvider>
+                {withDirtyBackgroundTab ? <DirtyBackgroundTabBootstrap /> : null}
+                <Routes>
+                  <Route element={<DesktopLayout />}>
+                    <Route path="editor" element={<div data-testid="editor-page">Editor Page</div>} />
+                    <Route path="simulator" element={<div data-testid="simulator-page">Simulator Page</div>} />
+                  </Route>
+                </Routes>
+              </FindingProvider>
+            </SentinelProvider>
+          </WorkbenchProvider>
+        </FleetConnectionProvider>
+      </OperatorProvider>
     </MemoryRouter>,
   );
 }
