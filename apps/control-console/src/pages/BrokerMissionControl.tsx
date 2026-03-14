@@ -321,6 +321,8 @@ export function BrokerMissionControl(_props: { windowId?: string }) {
           sortNewest(
             current.map((preview) => (preview.preview_id === previewId ? updated : preview)),
             (preview) => preview.created_at,
+          ).sort((a, b) =>
+            (a.approval_state === "pending" ? 0 : 1) - (b.approval_state === "pending" ? 0 : 1),
           ),
         );
         setPreviewDetail(updated);
