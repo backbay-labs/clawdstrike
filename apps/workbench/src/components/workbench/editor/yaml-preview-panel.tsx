@@ -3,10 +3,15 @@ import { useWorkbench } from "@/lib/workbench/multi-policy-store";
 import { useToast } from "@/components/ui/toast";
 import { YamlEditor, type YamlEditorError } from "@/components/ui/yaml-editor";
 import { cn } from "@/lib/utils";
+import type { FileType } from "@/lib/workbench/file-type-registry";
 
 type Tab = "preview" | "edit";
 
-export function YamlPreviewPanel() {
+interface YamlPreviewPanelProps {
+  fileType?: FileType;
+}
+
+export function YamlPreviewPanel({ fileType }: YamlPreviewPanelProps) {
   const { state, dispatch } = useWorkbench();
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<Tab>("preview");
@@ -139,12 +144,14 @@ export function YamlPreviewPanel() {
             value={state.yaml}
             onChange={() => {}}
             readOnly
+            fileType={fileType}
           />
         ) : (
           <YamlEditor
             value={localYaml}
             onChange={handleYamlChange}
             errors={editorErrors}
+            fileType={fileType}
           />
         )}
       </div>

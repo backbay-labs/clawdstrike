@@ -2,6 +2,9 @@ import { useCallback, useMemo, useRef } from "react";
 import { useMultiPolicy, useWorkbench } from "@/lib/workbench/multi-policy-store";
 import type { PolicyTab } from "@/lib/workbench/multi-policy-store";
 import { getRecentFiles } from "@/lib/workbench/policy-store";
+import { FILE_TYPE_REGISTRY } from "@/lib/workbench/file-type-registry";
+import { SIGMA_TEMPLATES } from "@/lib/workbench/sigma-templates";
+import type { SigmaTemplate } from "@/lib/workbench/sigma-templates";
 import { isDesktop } from "@/lib/tauri-bridge";
 import { cn } from "@/lib/utils";
 import {
@@ -12,6 +15,7 @@ import {
   IconFileText,
   IconShieldCheck,
   IconArrowRight,
+  IconRadar,
 } from "@tabler/icons-react";
 
 
@@ -101,6 +105,19 @@ export function EditorHomeTab({
           guards: {},
           settings: { fail_fast: false, verbose_logging: false, session_timeout_secs: 3600 },
         },
+      });
+      onNavigateToTab();
+    },
+    [canAddTab, multiDispatch, onNavigateToTab],
+  );
+
+  const handleLoadSigmaTemplate = useCallback(
+    (template: SigmaTemplate) => {
+      if (!canAddTab) return;
+      multiDispatch({
+        type: "NEW_TAB",
+        fileType: "sigma_rule",
+        yaml: template.content,
       });
       onNavigateToTab();
     },
@@ -285,6 +302,63 @@ export function EditorHomeTab({
             </div>
           </section>
         </div>
+
+        {/* Sigma Templates */}
+        <section className="mb-8">
+          <h2 className="text-[10px] font-mono uppercase tracking-wider text-[#6f7f9a] mb-2 flex items-center gap-1.5">
+            <span
+              className="inline-block w-2 h-2 rounded-full"
+              style={{ backgroundColor: FILE_TYPE_REGISTRY.sigma_rule.iconColor }}
+            />
+            Sigma Detection Templates
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            {SIGMA_TEMPLATES.map((template) => (
+              <button
+                key={template.id}
+                type="button"
+                onClick={() => handleLoadSigmaTemplate(template)}
+                disabled={!canAddTab}
+                className={cn(
+                  "group flex w-full items-center gap-2 px-3 py-2 rounded text-left transition-all bg-[#131721] border border-[#2d3240] hover:border-[#7c9aef]/30",
+                  canAddTab ? "cursor-pointer" : "opacity-40 cursor-not-allowed",
+                )}
+              >
+                <IconRadar size={13} stroke={1.5} className="text-[#7c9aef]/60 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-[11px] font-mono text-[#ece7dc] truncate">
+                    {template.name}
+                  </div>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-[9px] text-[#7c9aef]/70 font-mono">
+                      {template.category}
+                    </span>
+                    <span className="text-[9px] text-[#6f7f9a]/50 font-mono">
+                      {template.logsourceProduct}
+                    </span>
+                    <span
+                      className={cn(
+                        "text-[9px] font-mono",
+                        template.level === "high"
+                          ? "text-[#c45c5c]"
+                          : template.level === "medium"
+                          ? "text-[#d4a84b]"
+                          : "text-[#6f7f9a]",
+                      )}
+                    >
+                      {template.level}
+                    </span>
+                  </div>
+                </div>
+                <IconArrowRight
+                  size={11}
+                  stroke={1.5}
+                  className="text-[#6f7f9a]/0 group-hover:text-[#6f7f9a] transition-colors shrink-0"
+                />
+              </button>
+            ))}
+          </div>
+        </section>
 
         {/* Quick Actions */}
         <section>

@@ -28,7 +28,7 @@ import {
   sanitizeObjectForStorageWithMetadata,
   sanitizeYamlForStorageWithMetadata,
 } from "./storage-sanitizer";
-import type { FileType } from "./file-type-registry";
+import { FILE_TYPE_REGISTRY, type FileType } from "./file-type-registry";
 import {
   isDesktop,
   openPolicyFile,
@@ -76,7 +76,7 @@ export interface BulkGuardUpdate {
 }
 
 export type MultiPolicyAction =
-  | { type: "NEW_TAB"; policy?: WorkbenchPolicy; filePath?: string | null; fileType?: FileType }
+  | { type: "NEW_TAB"; policy?: WorkbenchPolicy; filePath?: string | null; fileType?: FileType; yaml?: string }
   | { type: "CLOSE_TAB"; tabId: string }
   | { type: "SWITCH_TAB"; tabId: string }
   | { type: "SET_SPLIT_MODE"; mode: SplitMode }
@@ -465,9 +465,27 @@ function multiPolicyReducer(state: MultiPolicyState, action: MultiPolicyAction):
   switch (action.type) {
     case "NEW_TAB": {
       if (state.tabs.length >= MAX_TABS) return state;
-      const newTab = action.policy
-        ? createTabFromPolicy(action.policy, action.filePath, action.fileType)
-        : createDefaultTab(undefined, action.fileType);
+      let newTab: PolicyTab;
+      if (action.policy) {
+        newTab = createTabFromPolicy(action.policy, action.filePath, action.fileType);
+      } else if (action.yaml) {
+        // Non-policy file types with raw YAML/content — extract a
+        // sensible tab name from a "title:" YAML field when present
+        // (e.g. Sigma rules), otherwise fall back to the registry label.
+        newTab = createDefaultTab(undefined, action.fileType);
+        const titleMatch = action.yaml.match(/^title:\s*(.+)$/m);
+        const fallbackName = titleMatch?.[1]?.trim()
+          || (action.fileType
+            ? FILE_TYPE_REGISTRY[action.fileType].label
+            : newTab.name);
+        newTab = applyYamlToTab(newTab, action.yaml, {
+          dirty: false,
+          nameFallback: fallbackName,
+        });
+        newTab._cleanSnapshot = takeTabSnapshot(newTab);
+      } else {
+        newTab = createDefaultTab(undefined, action.fileType);
+      }
       return {
         ...state,
         tabs: [...state.tabs, newTab],

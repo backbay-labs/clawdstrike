@@ -11,6 +11,7 @@ import { lintGutter, type Diagnostic, setDiagnostics } from "@codemirror/lint";
 import { autocompletion, closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
 import { cn } from "@/lib/utils";
 import { policyYamlCompletionSource } from "@/lib/workbench/yaml-schema";
+import { sigmaYamlCompletionSource } from "@/lib/workbench/sigma-schema";
 import type { FileType } from "@/lib/workbench/file-type-registry";
 import { useGeneralSettings, type FontSize } from "@/lib/workbench/use-general-settings";
 
@@ -291,8 +292,10 @@ function getLanguageExtension(fileType?: FileType): Extension {
 function getCompletionSource(fileType?: FileType): Extension {
   switch (fileType) {
     case "sigma_rule":
-      // Phase 1 TODO: sigmaYamlCompletionSource
-      return autocompletion({ override: [] });
+      return autocompletion({
+        override: [sigmaYamlCompletionSource],
+        icons: false,
+      });
     case "yara_rule":
       // Phase 3 TODO: yaraCompletionSource
       return autocompletion({ override: [] });

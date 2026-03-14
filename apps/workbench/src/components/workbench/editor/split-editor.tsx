@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { EditorVisualPanel } from "@/components/workbench/editor/editor-visual-panel";
+import { SigmaVisualPanel } from "@/components/workbench/editor/sigma-visual-panel";
 import { YamlPreviewPanel } from "@/components/workbench/editor/yaml-preview-panel";
 import { useMultiPolicy, type SplitMode } from "@/lib/workbench/multi-policy-store";
 import { cn } from "@/lib/utils";
@@ -89,7 +90,7 @@ function PaneTabSelector({
     <div className="flex items-center px-2 py-1 bg-[#0b0d13] border-b border-[#2d3240]">
       <Select
         value={selectedTabId ?? undefined}
-        onValueChange={(val) => onSelect(val as string)}
+        onValueChange={(val: string) => onSelect(val)}
       >
         <SelectTrigger className="h-7 text-[10px] font-mono bg-[#131721] border-[#2d3240] text-[#ece7dc]">
           <SelectValue placeholder="Select policy..." />
@@ -113,17 +114,27 @@ function PaneTabSelector({
 
 
 function EditorPane() {
+  const { activeTab, multiDispatch } = useMultiPolicy();
+  const isSigma = activeTab?.fileType === "sigma_rule";
+
   return (
     <ResizablePanelGroup direction="horizontal" className="h-full">
       <ResizablePanel defaultSize={55} minSize={30}>
-        <EditorVisualPanel />
+        {isSigma ? (
+          <SigmaVisualPanel
+            yaml={activeTab.yaml}
+            onYamlChange={(yaml) => multiDispatch({ type: "SET_YAML", yaml })}
+          />
+        ) : (
+          <EditorVisualPanel />
+        )}
       </ResizablePanel>
       <ResizableHandle
         className="bg-[#2d3240] hover:bg-[#d4a84b]/40 transition-colors data-[resize-handle-active]:bg-[#d4a84b]"
         withHandle
       />
       <ResizablePanel defaultSize={45} minSize={25}>
-        <YamlPreviewPanel />
+        <YamlPreviewPanel fileType={activeTab?.fileType} />
       </ResizablePanel>
     </ResizablePanelGroup>
   );
