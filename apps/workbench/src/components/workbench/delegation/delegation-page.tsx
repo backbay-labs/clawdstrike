@@ -307,7 +307,7 @@ export function DelegationPage() {
     } finally {
       setIsLoadingGraph(false);
     }
-  }, [fleetConnected, connection, selectedPrincipalId, fetchLiveGraph]);
+  }, [fleetConnected, getAuthenticatedConnection, selectedPrincipalId, fetchLiveGraph]);
 
   // Re-fetch graph when principal selection changes (while in live mode)
   const handlePrincipalChange = useCallback(
@@ -332,7 +332,7 @@ export function DelegationPage() {
         setIsLoadingPrincipal(false);
       }
     },
-    [isLiveData, fleetConnected, connection, fetchLiveGraph],
+    [isLiveData, fleetConnected, getAuthenticatedConnection, fetchLiveGraph],
   );
 
   const toggleDataSource = useCallback(async () => {
@@ -349,7 +349,7 @@ export function DelegationPage() {
     }
     setSelectedNode(null);
     setTracedPath(null);
-  }, [isLiveData, fleetConnected, connection, selectedPrincipalId, fetchLiveGraph]);
+  }, [isLiveData, fleetConnected, getAuthenticatedConnection, selectedPrincipalId, fetchLiveGraph]);
 
   const filteredGraph = useMemo<DelegationGraph>(() => {
     const q = debouncedSearchQuery.toLowerCase().trim();

@@ -191,20 +191,6 @@ fn normalize_cwd(cwd: &str) -> Result<String, String> {
     if !canonical.is_dir() {
         return Err(format!("Working directory is not a directory: {cwd}"));
     }
-    let base_dir = std::env::current_dir()
-        .map_err(|e| format!("Failed to resolve application base directory: {e}"))?;
-    let base_canonical = std::fs::canonicalize(&base_dir).map_err(|e| {
-        format!(
-            "Failed to canonicalize application base directory {}: {e}",
-            base_dir.display()
-        )
-    })?;
-    if !canonical.starts_with(&base_canonical) {
-        return Err(format!(
-            "Working directory must be under application base directory: {}",
-            base_canonical.display()
-        ));
-    }
 
     let canonical_str = canonical.to_string_lossy().to_string();
     let git_probe = std::process::Command::new("git")
@@ -215,10 +201,7 @@ fn normalize_cwd(cwd: &str) -> Result<String, String> {
         .output()
         .map_err(|e| format!("Failed to validate git worktree for {canonical_str}: {e}"))?;
     if !git_probe.status.success() || String::from_utf8_lossy(&git_probe.stdout).trim() != "true" {
-        return Err(format!(
-            "Working directory must be inside a git worktree under {}",
-            base_canonical.display()
-        ));
+        return Err("Working directory must be inside a git worktree".to_string());
     }
 
     Ok(canonical_str)
@@ -399,7 +382,15 @@ pub async fn terminal_create<R: Runtime>(
     env: Option<HashMap<String, String>>,
     capability: String,
 ) -> Result<SessionInfo, String> {
-    validate_command_capability(&window, &capability_state, &capability).await?;
+    validate_command_capability(
+        &window,
+        &capability_state,
+        &capability,
+        "terminal_create",
+    )
+    .await?;
+    // Reserve capacity up front so concurrent creates cannot pass a racy
+    // sessions.len()-style pre-check.
     let session_permit = session_limiter().try_acquire_owned().map_err(|_| {
         format!(
             "Too many active terminal sessions (max {})",
@@ -611,7 +602,13 @@ pub async fn terminal_write<R: Runtime>(
     data: String,
     capability: String,
 ) -> Result<(), String> {
-    validate_command_capability(&window, &capability_state, &capability).await?;
+    validate_command_capability(
+        &window,
+        &capability_state,
+        &capability,
+        "terminal_write",
+    )
+    .await?;
     validate_session_id(&session_id)?;
     if data.len() > MAX_WRITE_BYTES {
         return Err(format!(
@@ -650,7 +647,13 @@ pub async fn terminal_resize<R: Runtime>(
     rows: u16,
     capability: String,
 ) -> Result<(), String> {
-    validate_command_capability(&window, &capability_state, &capability).await?;
+    validate_command_capability(
+        &window,
+        &capability_state,
+        &capability,
+        "terminal_resize",
+    )
+    .await?;
     validate_session_id(&session_id)?;
 
     let manager = state.lock().await;
@@ -688,28 +691,36 @@ pub async fn terminal_kill<R: Runtime>(
     session_id: String,
     capability: String,
 ) -> Result<(), String> {
-    validate_command_capability(&window, &capability_state, &capability).await?;
+    validate_command_capability(
+        &window,
+        &capability_state,
+        &capability,
+        "terminal_kill",
+    )
+    .await?;
     validate_session_id(&session_id)?;
 
     // Extract the session and signal termination, then drop the lock before
     // waiting on the reader task (the reader may need try_lock() on the
     // manager to read exit status).
-    let (reader_task, sid) = {
+    let extracted = {
         let mut manager = state.lock().await;
-        let mut session = manager
-            .sessions
-            .remove(&session_id)
-            .ok_or_else(|| format!("Session not found: {session_id}"))?;
+        manager.sessions.remove(&session_id).map(|mut session| {
+            // 1. Signal the reader to stop
+            session.alive.store(false, Ordering::SeqCst);
 
-        // 1. Signal the reader to stop
-        session.alive.store(false, Ordering::SeqCst);
+            // 2. Kill the child process (best-effort; also causes reader EOF)
+            let _ = session.child.kill();
 
-        // 2. Kill the child process (best-effort; also causes reader EOF)
-        let _ = session.child.kill();
-
-        (session.reader_task.take(), session.id.clone())
+            (session.reader_task.take(), session.id.clone())
+        })
     };
     // Manager lock is dropped here.
+    let Some((reader_task, sid)) = extracted else {
+        // Session may have already naturally exited and been pruned asynchronously.
+        remove_ring_buffer(&session_id);
+        return Ok(());
+    };
 
     // 3. Wait for the reader task to finish so no more events/ring-buffer
     //    writes can occur after this point.
@@ -733,7 +744,13 @@ pub async fn terminal_list<R: Runtime>(
     state: tauri::State<'_, TerminalState>,
     capability: String,
 ) -> Result<Vec<SessionInfo>, String> {
-    validate_command_capability(&window, &capability_state, &capability).await?;
+    validate_command_capability(
+        &window,
+        &capability_state,
+        &capability,
+        "terminal_list",
+    )
+    .await?;
 
     let mut manager = state.lock().await;
     let mut infos = Vec::with_capacity(manager.sessions.len());
@@ -758,7 +775,13 @@ pub async fn terminal_preview<R: Runtime>(
     lines: Option<usize>,
     capability: String,
 ) -> Result<Vec<String>, String> {
-    validate_command_capability(&window, &capability_state, &capability).await?;
+    validate_command_capability(
+        &window,
+        &capability_state,
+        &capability,
+        "terminal_preview",
+    )
+    .await?;
     validate_session_id(&session_id)?;
 
     // Verify the session exists
@@ -787,7 +810,7 @@ pub async fn get_cwd<R: Runtime>(
     capability_state: tauri::State<'_, CommandCapabilityState>,
     capability: String,
 ) -> Result<String, String> {
-    validate_command_capability(&window, &capability_state, &capability).await?;
+    validate_command_capability(&window, &capability_state, &capability, "get_cwd").await?;
     std::env::current_dir()
         .map(|p| p.to_string_lossy().to_string())
         .map_err(|e| e.to_string())

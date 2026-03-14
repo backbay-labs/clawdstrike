@@ -1898,3 +1898,139 @@ fn hash_revocation_envelope_for_head(revocation: &RevocationEnvelope) -> Result<
     })?;
     Ok(sha256_hex(canonical.as_bytes()))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::StatusCode;
+    use serde_json::json;
+
+    fn valid_issuer_id() -> String {
+        format!("{ISSUER_ID_PREFIX}{}", "b".repeat(64))
+    }
+
+    fn sample_finding_value() -> Value {
+        json!({
+            "schema": FINDING_ENVELOPE_SCHEMA,
+            "findingId": "finding-1",
+            "issuerId": valid_issuer_id(),
+            "feedId": "feed-1",
+            "feedSeq": 1,
+            "publishedAt": 1,
+            "title": "title",
+            "summary": "summary",
+            "severity": "high",
+            "confidence": 0.9,
+            "status": "confirmed",
+            "signalCount": 1,
+            "tags": ["tag-1"],
+            "relatedFindingIds": [],
+            "blobRefs": []
+        })
+    }
+
+    fn sample_revocation_value(action: &str, include_replacement: bool) -> Value {
+        let mut value = json!({
+            "schema": REVOCATION_ENVELOPE_SCHEMA,
+            "revocationId": "rev-1",
+            "issuerId": valid_issuer_id(),
+            "feedId": "feed-1",
+            "feedSeq": 1,
+            "issuedAt": 1,
+            "action": action,
+            "target": {
+                "schema": FINDING_ENVELOPE_SCHEMA,
+                "id": "finding-1",
+                "digest": format!("0x{}", "a".repeat(64)),
+            },
+            "reason": "test-reason"
+        });
+        if include_replacement {
+            value["replacement"] = json!({
+                "schema": FINDING_ENVELOPE_SCHEMA,
+                "id": "finding-2",
+                "digest": format!("0x{}", "c".repeat(64)),
+            });
+        }
+        value
+    }
+
+    #[test]
+    fn validate_hub_trust_policy_rejects_unsupported_schemas() {
+        let mut trust_policy = default_hub_trust_policy();
+        trust_policy
+            .allowed_schemas
+            .push("clawdstrike.swarm.unknown.v1".to_string());
+        let err = validate_hub_trust_policy(&trust_policy).expect_err("unsupported schema");
+        assert!(err.contains("unsupported schema"));
+    }
+
+    #[test]
+    fn map_swarm_store_error_maps_gap_and_conflict() {
+        let gap = map_swarm_store_error(ControlDbError::Gap("missing seq".to_string()));
+        assert_eq!(gap.status, StatusCode::CONFLICT);
+        assert_eq!(gap.code, "SWARM_SEQ_GAP");
+
+        let conflict = map_swarm_store_error(ControlDbError::Conflict("duplicate".to_string()));
+        assert_eq!(conflict.status, StatusCode::CONFLICT);
+        assert_eq!(conflict.code, "SWARM_SEQ_CONFLICT");
+    }
+
+    #[test]
+    fn parse_required_query_u64_requires_unsigned_integer() {
+        assert_eq!(
+            parse_required_query_u64(Some("42".to_string()), "fromSeq").expect("valid value"),
+            42
+        );
+
+        let empty = parse_required_query_u64(Some(String::new()), "fromSeq")
+            .expect_err("empty value should fail");
+        assert_eq!(empty.code, "INVALID_SWARM_REQUEST");
+
+        let invalid = parse_required_query_u64(Some("abc".to_string()), "fromSeq")
+            .expect_err("non-numeric value should fail");
+        assert_eq!(invalid.code, "INVALID_REPLAY_QUERY");
+    }
+
+    #[test]
+    fn parse_revocation_envelope_enforces_replacement_action_rules() {
+        let missing_replacement =
+            parse_revocation_envelope(sample_revocation_value("supersede", false))
+                .expect_err("supersede should require replacement");
+        assert_eq!(missing_replacement.code, "INVALID_REVOCATION_ENVELOPE");
+        assert!(missing_replacement.message.contains("replacement is required"));
+
+        let replacement_with_revoke =
+            parse_revocation_envelope(sample_revocation_value("revoke", true))
+                .expect_err("revoke should reject replacement");
+        assert_eq!(replacement_with_revoke.code, "INVALID_REVOCATION_ENVELOPE");
+        assert!(replacement_with_revoke.message.contains("must be omitted"));
+
+        let valid =
+            parse_revocation_envelope(sample_revocation_value("supersede", true)).expect("valid");
+        assert_eq!(valid.action.as_str(), "supersede");
+    }
+
+    #[test]
+    fn finding_validation_accepts_minimal_payload_and_rejects_unknown_fields() {
+        let valid = sample_finding_value();
+        assert!(validate_finding_envelope(&valid).is_ok());
+
+        let mut invalid = sample_finding_value();
+        invalid["unexpected"] = json!("field");
+        let err = validate_finding_envelope(&invalid).expect_err("unknown field should fail");
+        assert_eq!(err.code, "INVALID_FINDING_ENVELOPE");
+        assert!(err.message.contains("unknown field"));
+    }
+
+    #[test]
+    fn normalize_digest_message_requires_prefixed_lower_hex() {
+        let digest = format!("0x{}", "a".repeat(64));
+        assert_eq!(
+            normalize_digest_message(&digest).expect("valid digest"),
+            digest
+        );
+        assert!(normalize_digest_message("ABC").is_err());
+        assert!(normalize_digest_message("0xABC").is_err());
+    }
+}

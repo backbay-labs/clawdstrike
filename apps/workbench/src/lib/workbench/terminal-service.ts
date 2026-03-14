@@ -19,8 +19,8 @@ function isTauri(): boolean {
 }
 
 const INVOKE_TIMEOUT_MS = 15_000;
-let commandCapability: string | null = null;
-let commandCapabilityInFlight: Promise<string> | null = null;
+const commandCapabilities = new Map<string, string>();
+const commandCapabilityInFlight = new Map<string, Promise<string>>();
 
 /**
  * Wrapper around Tauri's `invoke` that rejects immediately when not running
@@ -50,33 +50,36 @@ function isCapabilityError(error: unknown): boolean {
   return lowered.includes("command capability") || lowered.includes("missing command capability");
 }
 
-async function getCommandCapability(): Promise<string> {
-  if (commandCapability) return commandCapability;
-  if (commandCapabilityInFlight) return commandCapabilityInFlight;
+async function getCommandCapability(command: string): Promise<string> {
+  const cached = commandCapabilities.get(command);
+  if (cached) return cached;
+  const existingInFlight = commandCapabilityInFlight.get(command);
+  if (existingInFlight) return existingInFlight;
 
-  commandCapabilityInFlight = invoke<string>("acquire_command_capability")
+  const inFlight = invoke<string>("acquire_command_capability", { command })
     .then((token) => {
-      commandCapability = token;
+      commandCapabilities.set(command, token);
       return token;
     })
     .finally(() => {
-      commandCapabilityInFlight = null;
+      commandCapabilityInFlight.delete(command);
     });
+  commandCapabilityInFlight.set(command, inFlight);
 
-  return commandCapabilityInFlight;
+  return inFlight;
 }
 
 async function invokeSensitive<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (!isTauri()) {
     return invoke<T>(cmd, args);
   }
-  const capability = await getCommandCapability();
+  const capability = await getCommandCapability(cmd);
   try {
     return await invoke<T>(cmd, { ...(args ?? {}), capability });
   } catch (error) {
     if (!isCapabilityError(error)) throw error;
-    commandCapability = null;
-    const refreshedCapability = await getCommandCapability();
+    commandCapabilities.delete(cmd);
+    const refreshedCapability = await getCommandCapability(cmd);
     return invoke<T>(cmd, { ...(args ?? {}), capability: refreshedCapability });
   }
 }

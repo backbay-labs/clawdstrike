@@ -1172,4 +1172,43 @@ mod tests {
             resolve_request_origin_enclave(&request, &policy).expect("origin should resolve");
         assert!(!origin_budget_session_required(&request, Some(&enclave)));
     }
+
+    #[test]
+    fn parse_egress_target_supports_host_port_and_ipv6() {
+        assert_eq!(
+            parse_egress_target("api.example.com").expect("default port"),
+            ("api.example.com".to_string(), 443)
+        );
+        assert_eq!(
+            parse_egress_target("api.example.com:8443").expect("custom port"),
+            ("api.example.com".to_string(), 8443)
+        );
+        assert_eq!(
+            parse_egress_target("[2001:db8::1]:9443").expect("ipv6 literal"),
+            ("2001:db8::1".to_string(), 9443)
+        );
+        assert!(parse_egress_target("[2001:db8::1").is_err());
+    }
+
+    #[test]
+    fn normalize_and_validate_agent_identity_enforces_pairing_rules() {
+        let missing_kind = normalize_and_validate_agent_identity(None, Some("runtime"), None)
+            .expect_err("runtime id without kind should fail");
+        assert_eq!(missing_kind.code, "INVALID_AGENT_IDENTITY");
+
+        let missing_endpoint =
+            normalize_and_validate_agent_identity(None, Some("runtime"), Some("claude_code"))
+                .expect_err("runtime attribution requires endpoint id");
+        assert_eq!(missing_endpoint.code, "INVALID_AGENT_IDENTITY");
+
+        let (endpoint, runtime_id, runtime_kind) = normalize_and_validate_agent_identity(
+            Some(" endpoint-1 "),
+            Some(" runtime-1 "),
+            Some(" Claude_Code "),
+        )
+        .expect("valid identity tuple");
+        assert_eq!(endpoint.as_deref(), Some("endpoint-1"));
+        assert_eq!(runtime_id.as_deref(), Some("runtime-1"));
+        assert_eq!(runtime_kind.as_deref(), Some("claude_code"));
+    }
 }

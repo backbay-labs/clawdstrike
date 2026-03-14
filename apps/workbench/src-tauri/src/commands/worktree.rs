@@ -112,20 +112,6 @@ fn canonical_repo_root(repo_root: &str) -> Result<PathBuf, String> {
     if !canonical.is_dir() {
         return Err(format!("Repository root is not a directory: {repo_root}"));
     }
-    let base_dir = std::env::current_dir()
-        .map_err(|e| format!("Failed to resolve application base directory: {e}"))?;
-    let base_canonical = std::fs::canonicalize(&base_dir).map_err(|e| {
-        format!(
-            "Failed to canonicalize application base directory {}: {e}",
-            base_dir.display()
-        )
-    })?;
-    if !canonical.starts_with(&base_canonical) {
-        return Err(format!(
-            "Repository root must be under application base directory: {}",
-            base_canonical.display()
-        ));
-    }
     let canonical_str = canonical.to_string_lossy().to_string();
     let inside = run_git(&canonical_str, &["rev-parse", "--is-inside-work-tree"])?;
     if inside.trim() != "true" {
@@ -226,7 +212,13 @@ pub async fn worktree_create<R: Runtime>(
     branch_name: String,
     capability: String,
 ) -> Result<WorktreeInfo, String> {
-    validate_command_capability(&window, &capability_state, &capability).await?;
+    validate_command_capability(
+        &window,
+        &capability_state,
+        &capability,
+        "worktree_create",
+    )
+    .await?;
     run_blocking_with_timeout(move || {
         let canonical_root = canonical_repo_root(&repo_root)?;
         let canonical_root_str = canonical_root.to_string_lossy().to_string();
@@ -300,7 +292,13 @@ pub async fn worktree_remove<R: Runtime>(
     worktree_path: String,
     capability: String,
 ) -> Result<(), String> {
-    validate_command_capability(&window, &capability_state, &capability).await?;
+    validate_command_capability(
+        &window,
+        &capability_state,
+        &capability,
+        "worktree_remove",
+    )
+    .await?;
     run_blocking_with_timeout(move || {
         let canonical_root = canonical_repo_root(&repo_root)?;
         let canonical_root_str = canonical_root.to_string_lossy().to_string();
@@ -336,7 +334,13 @@ pub async fn worktree_list<R: Runtime>(
     repo_root: String,
     capability: String,
 ) -> Result<Vec<WorktreeInfo>, String> {
-    validate_command_capability(&window, &capability_state, &capability).await?;
+    validate_command_capability(
+        &window,
+        &capability_state,
+        &capability,
+        "worktree_list",
+    )
+    .await?;
     run_blocking_with_timeout(move || {
         let canonical_root = canonical_repo_root(&repo_root)?;
         let canonical_root_str = canonical_root.to_string_lossy().to_string();
@@ -395,7 +399,13 @@ pub async fn worktree_status<R: Runtime>(
     worktree_path: String,
     capability: String,
 ) -> Result<WorktreeStatus, String> {
-    validate_command_capability(&window, &capability_state, &capability).await?;
+    validate_command_capability(
+        &window,
+        &capability_state,
+        &capability,
+        "worktree_status",
+    )
+    .await?;
     run_blocking_with_timeout(move || {
         let canonical_root = canonical_repo_root(&repo_root)?;
         let canonical_root_str = canonical_root.to_string_lossy().to_string();

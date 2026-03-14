@@ -291,6 +291,9 @@ fn find_string_field(value: &serde_json::Value, keys: &[&str]) -> Option<String>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::{
+        Auth0Config, Auth0LogStreamConfig, Config, IdentityConfig, OktaConfig, OktaWebhookConfig,
+    };
     use axum::http::{header, HeaderMap, HeaderValue};
 
     #[test]
@@ -349,5 +352,87 @@ mod tests {
     fn timing_safe_eq_rejects_different_lengths() {
         assert!(timing_safe_eq("abc", "abc"));
         assert!(!timing_safe_eq("abc", "ab"));
+    }
+
+    #[tokio::test]
+    async fn okta_webhook_handles_verification_challenge() {
+        let test_dir = std::env::temp_dir().join(format!(
+            "hushd-okta-webhook-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&test_dir).expect("create temp dir");
+
+        let config = Config {
+            cors_enabled: false,
+            audit_db: test_dir.join("audit.db"),
+            control_db: Some(test_dir.join("control.db")),
+            identity: IdentityConfig {
+                okta: Some(OktaConfig {
+                    webhooks: Some(OktaWebhookConfig {
+                        verification_key: "okta-secret".to_string(),
+                    }),
+                }),
+                auth0: None,
+                oidc: None,
+                saml: None,
+            },
+            ..Default::default()
+        };
+        let state = crate::state::AppState::new(config).await.expect("state");
+
+        let response = okta_webhook(
+            axum::extract::State(state),
+            HeaderMap::new(),
+            r#"{"verification":"challenge-token"}"#.to_string(),
+        )
+        .await
+        .expect("verification challenge should succeed");
+
+        assert_eq!(response.0["verification"], "challenge-token");
+        let _ = std::fs::remove_dir_all(&test_dir);
+    }
+
+    #[tokio::test]
+    async fn auth0_webhook_accepts_bearer_authorization() {
+        let test_dir = std::env::temp_dir().join(format!(
+            "hushd-auth0-webhook-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&test_dir).expect("create temp dir");
+
+        let config = Config {
+            cors_enabled: false,
+            audit_db: test_dir.join("audit.db"),
+            control_db: Some(test_dir.join("control.db")),
+            identity: IdentityConfig {
+                okta: None,
+                auth0: Some(Auth0Config {
+                    log_stream: Some(Auth0LogStreamConfig {
+                        authorization: "auth0-secret".to_string(),
+                    }),
+                }),
+                oidc: None,
+                saml: None,
+            },
+            ..Default::default()
+        };
+        let state = crate::state::AppState::new(config).await.expect("state");
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::AUTHORIZATION,
+            HeaderValue::from_static("Bearer auth0-secret"),
+        );
+
+        let response = auth0_webhook(
+            axum::extract::State(state),
+            headers,
+            r#"[{"type":"slo","user_id":"auth0|user-1"}]"#.to_string(),
+        )
+        .await
+        .expect("auth0 webhook should succeed");
+
+        assert_eq!(response.0["ok"], true);
+        let _ = std::fs::remove_dir_all(&test_dir);
     }
 }

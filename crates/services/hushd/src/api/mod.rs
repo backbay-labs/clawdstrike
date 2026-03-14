@@ -428,3 +428,62 @@ pub fn create_router(state: AppState) -> Router {
         app
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode},
+    };
+    use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn create_router_registers_swarm_routes() {
+        let test_dir = std::env::temp_dir().join(format!(
+            "hushd-api-router-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&test_dir).expect("create temp dir");
+
+        let config = crate::config::Config {
+            cors_enabled: false,
+            audit_db: test_dir.join("audit.db"),
+            control_db: Some(test_dir.join("control.db")),
+            ..Default::default()
+        };
+        let state = crate::state::AppState::new(config).await.expect("state");
+        let app = create_router(state);
+
+        let health_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/health")
+                    .body(Body::empty())
+                    .expect("build health request"),
+            )
+            .await
+            .expect("health response");
+        assert_eq!(health_response.status(), StatusCode::OK);
+
+        let swarm_response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/v1/swarm/hub/config")
+                    .body(Body::empty())
+                    .expect("build swarm request"),
+            )
+            .await
+            .expect("swarm response");
+        assert_ne!(
+            swarm_response.status(),
+            StatusCode::NOT_FOUND,
+            "swarm hub route should be registered"
+        );
+
+        let _ = std::fs::remove_dir_all(&test_dir);
+    }
+}

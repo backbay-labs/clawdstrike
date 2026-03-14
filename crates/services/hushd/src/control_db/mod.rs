@@ -1137,4 +1137,74 @@ mod tests {
         assert_eq!(second.head.head_seq, 2);
         assert_eq!(second.head.entry_count, 2);
     }
+
+    #[tokio::test]
+    async fn control_db_spawn_blocking_helpers_execute_queries() {
+        let db = Arc::new(ControlDb::in_memory().expect("db"));
+
+        let one = db
+            .spawn_blocking(|conn| {
+                conn.query_row("SELECT 1", [], |row| row.get::<_, i64>(0))
+                    .map_err(ControlDbError::from)
+            })
+            .await
+            .expect("select one");
+        assert_eq!(one, 1);
+
+        db.spawn_blocking_mut(|conn| {
+            conn.execute("CREATE TABLE spawn_blocking_smoke (id INTEGER NOT NULL)", [])?;
+            conn.execute("INSERT INTO spawn_blocking_smoke (id) VALUES (7)", [])?;
+            Ok(())
+        })
+        .await
+        .expect("insert via spawn_blocking_mut");
+
+        let id = db
+            .spawn_blocking(|conn| {
+                conn.query_row("SELECT id FROM spawn_blocking_smoke LIMIT 1", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .map_err(ControlDbError::from)
+            })
+            .await
+            .expect("read inserted id");
+        assert_eq!(id, 7);
+    }
+
+    #[tokio::test]
+    async fn control_db_pin_request_deduplicates_and_metadata_roundtrips() {
+        let db = Arc::new(ControlDb::in_memory().expect("db"));
+        let digest = format!("0x{}", "a".repeat(64));
+
+        let first = db
+            .record_swarm_blob_pin_request(
+                digest.clone(),
+                Some("actor-1".to_string()),
+                Some("initial request".to_string()),
+                r#"{"digest":"test"}"#.to_string(),
+            )
+            .await
+            .expect("first pin request");
+        let second = db
+            .record_swarm_blob_pin_request(
+                digest,
+                Some("actor-1".to_string()),
+                None,
+                r#"{"digest":"test-2"}"#.to_string(),
+            )
+            .await
+            .expect("second pin request");
+
+        assert_eq!(second.request_id, first.request_id);
+        assert_eq!(second.status, "deduplicated");
+
+        db.set_control_metadata("hub_mode".to_string(), "strict".to_string())
+            .await
+            .expect("set metadata");
+        let metadata = db
+            .get_control_metadata("hub_mode".to_string())
+            .await
+            .expect("get metadata");
+        assert_eq!(metadata.as_deref(), Some("strict"));
+    }
 }
