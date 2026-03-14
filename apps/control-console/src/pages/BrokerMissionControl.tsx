@@ -244,9 +244,9 @@ export function BrokerMissionControl(_props: { windowId?: string }) {
   }, [detail?.capability.intent_preview?.preview_id]);
 
   useEffect(() => {
-    if (!latestBrokerEventId) return;
+    if (!latestBrokerEventId || loading) return;
     void refresh();
-  }, [latestBrokerEventId, refresh]);
+  }, [latestBrokerEventId, loading, refresh]);
 
   const selectedCapability =
     (detail?.capability.capability_id === selectedCapabilityId ? detail.capability : null) ??
@@ -327,8 +327,9 @@ export function BrokerMissionControl(_props: { windowId?: string }) {
         );
         setPreviewDetail(updated);
         setStatusMessage(`Preview ${previewId} approved.`);
+        const prev = latestSelection.current;
         const selection = await loadMission();
-        if (selection.capabilityId) {
+        if (selection.capabilityId && selection.capabilityId === prev.capabilityId) {
           await loadDetail(selection.capabilityId);
         }
       });

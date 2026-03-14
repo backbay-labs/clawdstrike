@@ -140,6 +140,7 @@ async fn brokerd_executes_openai_request_and_persists_evidence() {
         allow_http_loopback: true,
         allow_private_upstream_hosts: false,
         allow_invalid_upstream_tls: false,
+        admin_token: None,
     })
     .unwrap();
     let router = create_router(state);
@@ -329,6 +330,7 @@ async fn brokerd_records_minted_identity_from_github_app_secret_descriptor() {
         allow_http_loopback: true,
         allow_private_upstream_hosts: false,
         allow_invalid_upstream_tls: false,
+        admin_token: None,
     })
     .unwrap();
     let router = create_router(state);
@@ -476,6 +478,7 @@ async fn brokerd_freezes_when_tripwire_secret_is_touched() {
         allow_http_loopback: true,
         allow_private_upstream_hosts: false,
         allow_invalid_upstream_tls: false,
+        admin_token: None,
     })
     .unwrap();
     let router = create_router(state);
@@ -669,6 +672,7 @@ async fn brokerd_executes_github_issue_create_requests() {
         allow_http_loopback: true,
         allow_private_upstream_hosts: false,
         allow_invalid_upstream_tls: false,
+        admin_token: None,
     })
     .unwrap();
     let router = create_router(state);
@@ -853,6 +857,7 @@ async fn brokerd_executes_slack_post_message_requests() {
         allow_http_loopback: true,
         allow_private_upstream_hosts: false,
         allow_invalid_upstream_tls: false,
+        admin_token: None,
     })
     .unwrap();
     let router = create_router(state);
@@ -975,6 +980,7 @@ async fn brokerd_rejects_expired_capability() {
         allow_http_loopback: true,
         allow_private_upstream_hosts: false,
         allow_invalid_upstream_tls: false,
+        admin_token: None,
     })
     .unwrap();
     let router = create_router(state);
@@ -1090,6 +1096,7 @@ async fn brokerd_rejects_revoked_capability_from_hushd_status() {
         allow_http_loopback: true,
         allow_private_upstream_hosts: false,
         allow_invalid_upstream_tls: false,
+        admin_token: None,
     })
     .unwrap();
     let router = create_router(state);
@@ -1231,6 +1238,7 @@ async fn brokerd_accepts_dpop_binding_with_env_secret_backend() {
         allow_http_loopback: true,
         allow_private_upstream_hosts: false,
         allow_invalid_upstream_tls: false,
+        admin_token: None,
     })
     .unwrap();
     let router = create_router(state);
@@ -1402,6 +1410,7 @@ async fn brokerd_rejects_openai_stream_requests() {
         allow_http_loopback: true,
         allow_private_upstream_hosts: false,
         allow_invalid_upstream_tls: false,
+        admin_token: None,
     })
     .unwrap();
     let router = create_router(state);
@@ -1572,6 +1581,7 @@ async fn brokerd_resolves_secret_from_managed_http_backend() {
         allow_http_loopback: true,
         allow_private_upstream_hosts: false,
         allow_invalid_upstream_tls: false,
+        admin_token: None,
     })
     .unwrap();
     let router = create_router(state);
@@ -1737,6 +1747,7 @@ async fn brokerd_executes_generic_https_requests_with_header_secret() {
         allow_http_loopback: true,
         allow_private_upstream_hosts: true,
         allow_invalid_upstream_tls: false,
+        admin_token: None,
     })
     .unwrap();
     let router = create_router(state);
@@ -1914,6 +1925,7 @@ async fn brokerd_executes_github_issue_requests() {
         allow_http_loopback: true,
         allow_private_upstream_hosts: false,
         allow_invalid_upstream_tls: false,
+        admin_token: None,
     })
     .unwrap();
     let router = create_router(state);
@@ -2096,6 +2108,7 @@ async fn brokerd_executes_slack_message_requests() {
         allow_http_loopback: true,
         allow_private_upstream_hosts: false,
         allow_invalid_upstream_tls: false,
+        admin_token: None,
     })
     .unwrap();
     let router = create_router(state);
@@ -2278,6 +2291,7 @@ async fn brokerd_streams_openai_responses_and_records_start_completion_evidence(
         allow_http_loopback: true,
         allow_private_upstream_hosts: false,
         allow_invalid_upstream_tls: false,
+        admin_token: None,
     })
     .unwrap();
     let router = create_router(state);
@@ -2480,6 +2494,7 @@ async fn brokerd_executes_github_issue_comment_requests() {
         allow_http_loopback: true,
         allow_private_upstream_hosts: false,
         allow_invalid_upstream_tls: false,
+        admin_token: None,
     })
     .unwrap();
     let router = create_router(state);
@@ -2671,6 +2686,7 @@ async fn brokerd_executes_slack_chat_post_message_requests() {
         allow_http_loopback: true,
         allow_private_upstream_hosts: false,
         allow_invalid_upstream_tls: false,
+        admin_token: None,
     })
     .unwrap();
     let router = create_router(state);
@@ -2797,6 +2813,7 @@ async fn brokerd_local_freeze_blocks_execution_and_tracks_capability() {
         allow_http_loopback: true,
         allow_private_upstream_hosts: false,
         allow_invalid_upstream_tls: false,
+        admin_token: None,
     })
     .unwrap();
     let router = create_router(state);
@@ -2984,6 +3001,7 @@ async fn brokerd_executes_typed_github_and_slack_requests() {
         allow_http_loopback: true,
         allow_private_upstream_hosts: false,
         allow_invalid_upstream_tls: false,
+        admin_token: None,
     })
     .unwrap();
     let router = create_router(state);
@@ -3229,6 +3247,7 @@ async fn brokerd_operator_apis_expose_wallet_and_enforce_revoke_freeze() {
         allow_http_loopback: true,
         allow_private_upstream_hosts: false,
         allow_invalid_upstream_tls: false,
+        admin_token: None,
     })
     .unwrap();
     let router = create_router(state);
