@@ -73,7 +73,7 @@ function downloadBundle(capabilityId: string, payload: BrokerCompletionBundleRes
 }
 
 export function BrokerMissionControl(_props: { windowId?: string }) {
-  const initialized = useRef(false);
+
   const { events } = useSharedSSE();
   const latestSelection = useRef<{ capabilityId: string | null; previewId: string | null }>({
     capabilityId: null,
@@ -193,8 +193,6 @@ export function BrokerMissionControl(_props: { windowId?: string }) {
   }, [loadDetail, loadMission, loadPreview]);
 
   useEffect(() => {
-    if (initialized.current) return;
-    initialized.current = true;
     let cancelled = false;
     const run = async () => {
       setLoading(true);
@@ -518,12 +516,14 @@ export function BrokerMissionControl(_props: { windowId?: string }) {
                                 : "approval not required"}
                           </div>
                           {actionable && (
-                            <GlassButton
-                              onClick={() => void handleApprovePreview(preview.preview_id)}
-                              disabled={actionBusy !== null}
-                            >
-                              Approve
-                            </GlassButton>
+                            <span onClick={(e) => e.stopPropagation()}>
+                              <GlassButton
+                                onClick={() => void handleApprovePreview(preview.preview_id)}
+                                disabled={actionBusy !== null}
+                              >
+                                Approve
+                              </GlassButton>
+                            </span>
                           )}
                         </div>
                       </div>
