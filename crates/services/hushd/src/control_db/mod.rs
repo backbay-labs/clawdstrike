@@ -7,7 +7,6 @@ use std::sync::Mutex;
 
 use rusqlite::{params, Connection, OptionalExtension};
 
-/// Error type for control DB operations.
 #[derive(Debug, thiserror::Error)]
 pub enum ControlDbError {
     #[error("database error: {0}")]

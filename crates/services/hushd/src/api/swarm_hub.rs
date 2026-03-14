@@ -415,7 +415,6 @@ pub struct ReplayQueryRaw {
     to_seq: Option<String>,
 }
 
-/// GET /api/v1/swarm/hub/config
 pub async fn get_swarm_hub_config(
     State(state): State<AppState>,
     actor: Option<axum::extract::Extension<AuthenticatedActor>>,
@@ -431,7 +430,6 @@ pub async fn get_swarm_hub_config(
     Ok(Json(build_hub_config(&state).await?))
 }
 
-/// PUT /api/v1/swarm/hub/config/trust-policy
 pub async fn put_swarm_hub_trust_policy(
     State(state): State<AppState>,
     actor: Option<axum::extract::Extension<AuthenticatedActor>>,
@@ -464,7 +462,6 @@ pub async fn put_swarm_hub_trust_policy(
     )))
 }
 
-/// POST /api/v1/swarm/feeds/{feedId}/findings
 pub async fn publish_finding(
     State(state): State<AppState>,
     Path(feed_id): Path<String>,
@@ -486,7 +483,7 @@ pub async fn publish_finding(
 
     if finding.feed_id != feed_id {
         return Err(invalid_finding(
-            "path feedId must match finding envelope feedId".to_string(),
+            "path feedId must match finding envelope feedId",
         ));
     }
     let trust_policy = load_hub_trust_policy(&state).await?;
@@ -548,7 +545,6 @@ pub async fn publish_finding(
     }))
 }
 
-/// POST /api/v1/swarm/feeds/{feedId}/revocations
 pub async fn publish_revocation(
     State(state): State<AppState>,
     Path(feed_id): Path<String>,
@@ -568,7 +564,7 @@ pub async fn publish_revocation(
 
     if revocation.feed_id != feed_id {
         return Err(invalid_revocation(
-            "path feedId must match revocation envelope feedId".to_string(),
+            "path feedId must match revocation envelope feedId",
         ));
     }
     let trust_policy = load_hub_trust_policy(&state).await?;
@@ -613,7 +609,6 @@ pub async fn publish_revocation(
     }))
 }
 
-/// GET /api/v1/swarm/feeds/{feedId}/head?issuerId=...
 pub async fn get_swarm_feed_head(
     State(state): State<AppState>,
     Path(feed_id): Path<String>,
@@ -632,7 +627,7 @@ pub async fn get_swarm_feed_head(
     let issuer_id = parse_issuer_query(query.issuer_id)?;
     let head = state
         .control_db
-        .get_swarm_head(feed_id.clone(), issuer_id.clone())
+        .get_swarm_head(feed_id, issuer_id)
         .await
         .map_err(map_swarm_store_error)?
         .ok_or_else(|| V1Error::not_found("SWARM_HEAD_NOT_FOUND", "swarm_head_not_found"))?;
@@ -640,7 +635,6 @@ pub async fn get_swarm_feed_head(
     Ok(Json(synthesize_head_announcement(&head)))
 }
 
-/// GET /api/v1/swarm/feeds/{feedId}/revocations/head?issuerId=...
 pub async fn get_swarm_revocation_head(
     State(state): State<AppState>,
     Path(feed_id): Path<String>,
@@ -659,7 +653,7 @@ pub async fn get_swarm_revocation_head(
     let issuer_id = parse_issuer_query(query.issuer_id)?;
     let head = state
         .control_db
-        .get_swarm_revocation_head(feed_id.clone(), issuer_id.clone())
+        .get_swarm_revocation_head(feed_id, issuer_id)
         .await
         .map_err(map_swarm_store_error)?
         .ok_or_else(|| {
@@ -669,7 +663,6 @@ pub async fn get_swarm_revocation_head(
     Ok(Json(synthesize_head_announcement(&head)))
 }
 
-/// GET /api/v1/swarm/feeds/{feedId}/replay?issuerId=...&fromSeq=...&toSeq=...
 pub async fn replay_swarm_feed(
     State(state): State<AppState>,
     Path(feed_id): Path<String>,
@@ -740,7 +733,7 @@ pub async fn replay_swarm_feed(
     if envelopes.len() as u64 != range {
         return Err(V1Error::internal(
             "SWARM_REPLAY_INCONSISTENT",
-            "requested replay range is not fully stored".to_string(),
+            "requested replay range is not fully stored",
         ));
     }
 
@@ -755,7 +748,6 @@ pub async fn replay_swarm_feed(
     }))
 }
 
-/// GET /api/v1/swarm/feeds/{feedId}/revocations/replay?issuerId=...&fromSeq=...&toSeq=...
 pub async fn replay_swarm_revocations(
     State(state): State<AppState>,
     Path(feed_id): Path<String>,
@@ -828,7 +820,7 @@ pub async fn replay_swarm_revocations(
     if envelopes.len() as u64 != range {
         return Err(V1Error::internal(
             "SWARM_REPLAY_INCONSISTENT",
-            "requested replay range is not fully stored".to_string(),
+            "requested replay range is not fully stored",
         ));
     }
 
@@ -843,7 +835,6 @@ pub async fn replay_swarm_revocations(
     }))
 }
 
-/// GET /api/v1/swarm/blobs/{digest}
 pub async fn get_swarm_blob_refs(
     State(state): State<AppState>,
     Path(digest): Path<String>,
@@ -900,7 +891,6 @@ pub async fn get_swarm_blob_refs(
     }))
 }
 
-/// POST /api/v1/swarm/blobs/pin
 pub async fn pin_swarm_blob(
     State(state): State<AppState>,
     actor: Option<axum::extract::Extension<AuthenticatedActor>>,
@@ -926,7 +916,7 @@ pub async fn pin_swarm_blob(
     });
     let request_json = serde_json::to_string(&serde_json::json!({
         "digest": digest.clone(),
-        "requestedBy": requested_by.clone(),
+        "requestedBy": requested_by,
         "note": note.clone(),
         "actor": actor_label.clone(),
     }))
@@ -1031,10 +1021,12 @@ fn build_hub_config_with_trust_policy(state: &AppState, trust_policy: HubTrustPo
 
 fn validate_hub_trust_policy(trust_policy: &HubTrustPolicy) -> std::result::Result<(), String> {
     for issuer in &trust_policy.trusted_issuers {
-        validate_issuer_id(issuer).map_err(|err| format!("invalid trusted issuer: {}", err.message))?;
+        validate_issuer_id_message(issuer)
+            .map_err(|msg| format!("invalid trusted issuer: {msg}"))?;
     }
     for issuer in &trust_policy.blocked_issuers {
-        validate_issuer_id(issuer).map_err(|err| format!("invalid blocked issuer: {}", err.message))?;
+        validate_issuer_id_message(issuer)
+            .map_err(|msg| format!("invalid blocked issuer: {msg}"))?;
     }
     for schema in &trust_policy.allowed_schemas {
         if !ALLOWED_TRUST_POLICY_SCHEMAS.contains(&schema.as_str()) {
@@ -1046,9 +1038,8 @@ fn validate_hub_trust_policy(trust_policy: &HubTrustPolicy) -> std::result::Resu
 
 fn has_witness_proofs(publish: Option<&DurablePublishMetadata>) -> bool {
     publish
-        .and_then(|value| value.witness_proofs.as_ref())
-        .map(|entries| !entries.is_empty())
-        .unwrap_or(false)
+        .and_then(|p| p.witness_proofs.as_deref())
+        .is_some_and(|entries| !entries.is_empty())
 }
 
 fn finding_has_witness_proofs(finding: &FindingEnvelope) -> bool {
@@ -1148,55 +1139,61 @@ fn verify_revocation_attestation(revocation: &RevocationEnvelope) -> Result<bool
     Ok(public_key.verify(digest.as_bytes(), &signature))
 }
 
-fn enforce_finding_trust_policy(
+/// Shared issuer/schema checks used by both finding and revocation trust enforcement.
+fn enforce_common_trust_policy(
     trust_policy: &HubTrustPolicy,
-    finding: &FindingEnvelope,
+    issuer_id: &str,
+    schema: &str,
 ) -> Result<(), V1Error> {
     if trust_policy
         .blocked_issuers
         .iter()
-        .any(|issuer| issuer == &finding.issuer_id)
+        .any(|issuer| issuer == issuer_id)
     {
         return Err(trust_policy_rejection(format!(
-            "issuer `{}` is blocked by hub trust policy",
-            finding.issuer_id
+            "issuer `{issuer_id}` is blocked by hub trust policy",
         )));
     }
     if !trust_policy.trusted_issuers.is_empty()
         && !trust_policy
             .trusted_issuers
             .iter()
-            .any(|issuer| issuer == &finding.issuer_id)
+            .any(|issuer| issuer == issuer_id)
     {
         return Err(trust_policy_rejection(format!(
-            "issuer `{}` is not in the trusted issuer allowlist",
-            finding.issuer_id
+            "issuer `{issuer_id}` is not in the trusted issuer allowlist",
         )));
     }
     if !trust_policy
         .allowed_schemas
         .iter()
-        .any(|schema| schema == &finding.schema)
+        .any(|s| s == schema)
     {
         return Err(trust_policy_rejection(format!(
-            "schema `{}` is not allowed by hub trust policy",
-            finding.schema
+            "schema `{schema}` is not allowed by hub trust policy",
         )));
     }
+    Ok(())
+}
+
+fn enforce_finding_trust_policy(
+    trust_policy: &HubTrustPolicy,
+    finding: &FindingEnvelope,
+) -> Result<(), V1Error> {
+    enforce_common_trust_policy(trust_policy, &finding.issuer_id, &finding.schema)?;
     if requires_verified_attestation(trust_policy) && finding.attestation.is_none() {
         return Err(trust_policy_rejection(
-            "finding attestation is required by hub trust policy".to_string(),
+            "finding attestation is required by hub trust policy",
         ));
     }
     if trust_policy.require_witness_proofs && !finding_has_witness_proofs(finding) {
         return Err(trust_policy_rejection(
-            "witness proofs are required by hub trust policy".to_string(),
+            "witness proofs are required by hub trust policy",
         ));
     }
     if requires_verified_attestation(trust_policy) && !verify_finding_attestation(finding)? {
         return Err(trust_policy_rejection(
-            "finding attestation must verify against the canonical signable finding payload"
-                .to_string(),
+            "finding attestation must verify against the canonical signable finding payload",
         ));
     }
     Ok(())
@@ -1206,51 +1203,20 @@ fn enforce_revocation_trust_policy(
     trust_policy: &HubTrustPolicy,
     revocation: &RevocationEnvelope,
 ) -> Result<(), V1Error> {
-    if trust_policy
-        .blocked_issuers
-        .iter()
-        .any(|issuer| issuer == &revocation.issuer_id)
-    {
-        return Err(trust_policy_rejection(format!(
-            "issuer `{}` is blocked by hub trust policy",
-            revocation.issuer_id
-        )));
-    }
-    if !trust_policy.trusted_issuers.is_empty()
-        && !trust_policy
-            .trusted_issuers
-            .iter()
-            .any(|issuer| issuer == &revocation.issuer_id)
-    {
-        return Err(trust_policy_rejection(format!(
-            "issuer `{}` is not in the trusted issuer allowlist",
-            revocation.issuer_id
-        )));
-    }
-    if !trust_policy
-        .allowed_schemas
-        .iter()
-        .any(|schema| schema == &revocation.schema)
-    {
-        return Err(trust_policy_rejection(format!(
-            "schema `{}` is not allowed by hub trust policy",
-            revocation.schema
-        )));
-    }
+    enforce_common_trust_policy(trust_policy, &revocation.issuer_id, &revocation.schema)?;
     if requires_verified_attestation(trust_policy) && revocation.attestation.is_none() {
         return Err(trust_policy_rejection(
-            "revocation attestation is required by hub trust policy".to_string(),
+            "revocation attestation is required by hub trust policy",
         ));
     }
     if trust_policy.require_witness_proofs && !revocation_has_witness_proofs(revocation) {
         return Err(trust_policy_rejection(
-            "witness proofs are required by hub trust policy".to_string(),
+            "witness proofs are required by hub trust policy",
         ));
     }
     if requires_verified_attestation(trust_policy) && !verify_revocation_attestation(revocation)? {
         return Err(trust_policy_rejection(
-            "revocation attestation must verify against the canonical signable revocation payload"
-                .to_string(),
+            "revocation attestation must verify against the canonical signable revocation payload",
         ));
     }
     Ok(())
@@ -1273,9 +1239,7 @@ fn synthesize_head_announcement(head: &SwarmHeadRecord) -> HeadAnnouncement {
 fn map_swarm_store_error(err: ControlDbError) -> V1Error {
     match err {
         ControlDbError::Gap(message) => V1Error::conflict("SWARM_SEQ_GAP", message),
-        ControlDbError::Conflict(message) => {
-            V1Error::conflict("SWARM_SEQ_CONFLICT", message)
-        }
+        ControlDbError::Conflict(message) => V1Error::conflict("SWARM_SEQ_CONFLICT", message),
         ControlDbError::Invariant(_) => {
             tracing::error!(error = %err, "swarm state inconsistency");
             V1Error::internal("SWARM_STATE_INCONSISTENT", "internal state error")
