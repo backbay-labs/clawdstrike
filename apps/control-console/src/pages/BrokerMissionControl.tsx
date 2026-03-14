@@ -10,7 +10,6 @@ import {
   replayBrokerCapability,
   type BrokerApprovalState,
   type BrokerCapabilityDetailResponse,
-  type BrokerCapabilityState,
   type BrokerCapabilityStatus,
   type BrokerCompletionBundleResponse,
   type BrokerDelegationLineage,
@@ -24,8 +23,14 @@ import {
 } from "../api/client";
 import { GlassButton, NoiseGrain, Stamp } from "../components/ui";
 import { useSharedSSE } from "../context/SSEContext";
-
-const KNOWN_PROVIDERS: BrokerProvider[] = ["openai", "github", "slack", "generic_https"];
+import {
+  DetailItem,
+  formatDateTime,
+  formatRelative,
+  replayVariant,
+  statusVariant,
+  uniqueProviders,
+} from "./broker-utils";
 
 function sortNewest<T>(items: T[], select: (item: T) => string | undefined): T[] {
   return [...items].sort((left, right) => {
@@ -33,21 +38,6 @@ function sortNewest<T>(items: T[], select: (item: T) => string | undefined): T[]
     const rightTime = select(right) ? new Date(select(right) as string).getTime() : 0;
     return rightTime - leftTime;
   });
-}
-
-function formatDateTime(value?: string): string {
-  if (!value) return "-";
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
-}
-
-function formatRelative(value?: string): string {
-  if (!value) return "-";
-  const deltaMs = new Date(value).getTime() - Date.now();
-  const deltaMin = Math.round(deltaMs / 60_000);
-  if (Math.abs(deltaMin) < 1) return "now";
-  if (deltaMin > 0) return `in ${deltaMin}m`;
-  return `${Math.abs(deltaMin)}m ago`;
 }
 
 function formatCost(value?: number): string {
@@ -61,12 +51,6 @@ function shortValue(value?: string, edge = 12): string {
   return `${value.slice(0, edge)}...${value.slice(-edge)}`;
 }
 
-function statusVariant(state: BrokerCapabilityState): "allowed" | "blocked" | "warn" {
-  if (state === "active") return "allowed";
-  if (state === "frozen") return "warn";
-  return "blocked";
-}
-
 function approvalVariant(state: BrokerApprovalState): "allowed" | "blocked" | "warn" {
   if (state === "approved" || state === "not_required") return "allowed";
   if (state === "pending") return "warn";
@@ -77,26 +61,6 @@ function riskVariant(level: BrokerIntentRiskLevel): "allowed" | "blocked" | "war
   if (level === "low") return "allowed";
   if (level === "medium") return "warn";
   return "blocked";
-}
-
-function replayVariant(result: BrokerReplayResponse | null): "allowed" | "blocked" | "warn" {
-  if (!result) return "warn";
-  return result.would_allow ? "allowed" : "blocked";
-}
-
-function uniqueProviders(
-  capabilities: BrokerCapabilityStatus[],
-  frozenProviders: BrokerFrozenProviderStatus[],
-  previews: BrokerIntentPreview[],
-): BrokerProvider[] {
-  return Array.from(
-    new Set<BrokerProvider>([
-      ...KNOWN_PROVIDERS,
-      ...capabilities.map((capability) => capability.provider),
-      ...frozenProviders.map((provider) => provider.provider),
-      ...previews.map((preview) => preview.provider),
-    ]),
-  );
 }
 
 function downloadBundle(capabilityId: string, payload: BrokerCompletionBundleResponse): void {
@@ -1025,23 +989,6 @@ function Stack({ label, children }: { label: string; children: ReactNode }) {
         {label}
       </div>
       <div className="mt-2 flex flex-wrap gap-2">{children}</div>
-    </div>
-  );
-}
-
-function DetailItem({
-  label,
-  children,
-}: {
-  label: string;
-  children: ReactNode;
-}) {
-  return (
-    <div>
-      <div className="font-mono text-[11px]" style={{ color: "rgba(154,167,181,0.72)" }}>
-        {label}
-      </div>
-      <div className="mt-1">{children}</div>
     </div>
   );
 }

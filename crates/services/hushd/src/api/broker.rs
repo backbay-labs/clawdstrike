@@ -1896,3 +1896,621 @@ pub async fn public_key(
 
     Ok(Json(BrokerPublicKeyResponse { public_key }))
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
+    use super::*;
+    use clawdstrike_broker_protocol::BrokerApprovalState;
+
+    #[test]
+    fn parse_provider_known_variants() {
+        assert!(matches!(
+            parse_provider("openai"),
+            Ok(BrokerProvider::Openai)
+        ));
+        assert!(matches!(
+            parse_provider("github"),
+            Ok(BrokerProvider::Github)
+        ));
+        assert!(matches!(parse_provider("slack"), Ok(BrokerProvider::Slack)));
+        assert!(matches!(
+            parse_provider("generic_https"),
+            Ok(BrokerProvider::GenericHttps)
+        ));
+        assert!(matches!(
+            parse_provider("generic-https"),
+            Ok(BrokerProvider::GenericHttps)
+        ));
+    }
+
+    #[test]
+    fn parse_provider_case_insensitive() {
+        assert!(matches!(
+            parse_provider("OpenAI"),
+            Ok(BrokerProvider::Openai)
+        ));
+        assert!(matches!(
+            parse_provider("GITHUB"),
+            Ok(BrokerProvider::Github)
+        ));
+        assert!(matches!(parse_provider("Slack"), Ok(BrokerProvider::Slack)));
+    }
+
+    #[test]
+    fn parse_provider_rejects_unknown() {
+        assert!(parse_provider("anthropic").is_err());
+        assert!(parse_provider("").is_err());
+    }
+
+    #[test]
+    fn is_loopback_host_ipv4() {
+        assert!(is_loopback_host("127.0.0.1"));
+        assert!(is_loopback_host("localhost"));
+        assert!(!is_loopback_host("192.168.1.1"));
+        assert!(!is_loopback_host("10.0.0.1"));
+        assert!(!is_loopback_host("example.com"));
+    }
+
+    #[test]
+    fn is_loopback_host_ipv6() {
+        assert!(is_loopback_host("::1"));
+        assert!(!is_loopback_host("::"));
+        assert!(!is_loopback_host("fe80::1"));
+    }
+
+    #[test]
+    fn is_loopback_host_case_insensitive() {
+        assert!(is_loopback_host("LOCALHOST"));
+        assert!(is_loopback_host("Localhost"));
+    }
+
+    #[test]
+    fn policy_method_matches_all_verbs() {
+        use clawdstrike::policy::BrokerMethod as PolicyBrokerMethod;
+
+        let methods = vec![PolicyBrokerMethod::GET, PolicyBrokerMethod::POST];
+        assert!(policy_method_matches(&methods, &HttpMethod::GET));
+        assert!(policy_method_matches(&methods, &HttpMethod::POST));
+        assert!(!policy_method_matches(&methods, &HttpMethod::PUT));
+        assert!(!policy_method_matches(&methods, &HttpMethod::DELETE));
+
+        let all = vec![
+            PolicyBrokerMethod::GET,
+            PolicyBrokerMethod::POST,
+            PolicyBrokerMethod::PUT,
+            PolicyBrokerMethod::PATCH,
+            PolicyBrokerMethod::DELETE,
+        ];
+        assert!(policy_method_matches(&all, &HttpMethod::GET));
+        assert!(policy_method_matches(&all, &HttpMethod::PUT));
+        assert!(policy_method_matches(&all, &HttpMethod::PATCH));
+        assert!(policy_method_matches(&all, &HttpMethod::DELETE));
+    }
+
+    #[test]
+    fn policy_method_matches_empty_rejects_all() {
+        assert!(!policy_method_matches(&[], &HttpMethod::GET));
+        assert!(!policy_method_matches(&[], &HttpMethod::POST));
+    }
+
+    #[test]
+    fn provider_name_round_trip() {
+        assert_eq!(provider_name(&BrokerProvider::Openai), "openai");
+        assert_eq!(provider_name(&BrokerProvider::Github), "github");
+        assert_eq!(provider_name(&BrokerProvider::Slack), "slack");
+        assert_eq!(
+            provider_name(&BrokerProvider::GenericHttps),
+            "generic_https"
+        );
+    }
+
+    #[test]
+    fn normalize_identity_empty_and_whitespace() {
+        assert_eq!(normalize_identity_component(None), None);
+        assert_eq!(normalize_identity_component(Some("")), None);
+        assert_eq!(normalize_identity_component(Some("  ")), None);
+        assert_eq!(
+            normalize_identity_component(Some("  agent:foo  ")),
+            Some("agent:foo".to_string())
+        );
+    }
+
+    #[test]
+    fn validate_agent_identity_valid_combinations() {
+        let result = normalize_and_validate_agent_identity(None, None, None);
+        assert!(result.is_ok());
+        let (endpoint, runtime, kind) = result.unwrap();
+        assert!(endpoint.is_none());
+        assert!(runtime.is_none());
+        assert!(kind.is_none());
+
+        let result = normalize_and_validate_agent_identity(Some("agent:endpoint"), None, None);
+        assert!(result.is_ok());
+        let (endpoint, runtime, kind) = result.unwrap();
+        assert_eq!(endpoint.as_deref(), Some("agent:endpoint"));
+        assert!(runtime.is_none());
+        assert!(kind.is_none());
+
+        let result = normalize_and_validate_agent_identity(
+            Some("agent:endpoint"),
+            Some("agent:runner"),
+            Some("Delegate"),
+        );
+        assert!(result.is_ok());
+        let (_, _, kind) = result.unwrap();
+        assert_eq!(kind.as_deref(), Some("delegate"));
+    }
+
+    #[test]
+    fn validate_agent_identity_rejects_runtime_without_kind() {
+        let result = normalize_and_validate_agent_identity(
+            Some("agent:endpoint"),
+            Some("agent:runner"),
+            None,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn validate_agent_identity_rejects_kind_without_runtime() {
+        let result =
+            normalize_and_validate_agent_identity(Some("agent:endpoint"), None, Some("delegate"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn validate_agent_identity_rejects_runtime_without_endpoint() {
+        let result =
+            normalize_and_validate_agent_identity(None, Some("agent:runner"), Some("delegate"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_request_body_json_valid() {
+        let result = parse_request_body_json(Some(r#"{"key":"value"}"#), "TEST");
+        assert!(result.is_ok());
+        let value = result.unwrap().unwrap();
+        assert_eq!(value["key"], "value");
+    }
+
+    #[test]
+    fn parse_request_body_json_none() {
+        let result = parse_request_body_json(None, "TEST");
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+    }
+
+    #[test]
+    fn parse_request_body_json_empty() {
+        let result = parse_request_body_json(Some(""), "TEST");
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+
+        let result = parse_request_body_json(Some("   "), "TEST");
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+    }
+
+    #[test]
+    fn parse_request_body_json_invalid() {
+        let result = parse_request_body_json(Some("not json"), "TEST");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn body_cost_micros_calculation() {
+        assert_eq!(body_cost_micros(None), None);
+        assert_eq!(body_cost_micros(Some("")), Some(0));
+        assert_eq!(body_cost_micros(Some("hello")), Some(125));
+    }
+
+    #[test]
+    fn preview_requires_approval_risk_match() {
+        let policy = BrokerProviderPolicy {
+            name: "openai".to_string(),
+            host: "api.openai.com".to_string(),
+            port: None,
+            exact_paths: vec!["/v1/responses".to_string()],
+            methods: vec![],
+            secret_ref: "openai/dev".to_string(),
+            allowed_headers: vec![],
+            max_body_bytes: None,
+            require_body_sha256: None,
+            stream_response: None,
+            require_intent_preview: None,
+            approval_required_risk_levels: vec!["high".to_string()],
+            approval_required_data_classes: vec![],
+        };
+        let high_preview = BrokerIntentPreview {
+            preview_id: "p1".to_string(),
+            provider: BrokerProvider::Openai,
+            operation: "test".to_string(),
+            summary: "test".to_string(),
+            created_at: Utc::now(),
+            risk_level: BrokerIntentRiskLevel::High,
+            data_classes: vec![],
+            resources: vec![],
+            egress_host: "api.openai.com".to_string(),
+            estimated_cost_usd_micros: None,
+            approval_required: false,
+            approval_state: BrokerApprovalState::NotRequired,
+            approved_at: None,
+            approver: None,
+            body_sha256: None,
+        };
+        assert!(preview_requires_approval(&policy, &high_preview));
+
+        let low_preview = BrokerIntentPreview {
+            risk_level: BrokerIntentRiskLevel::Low,
+            ..high_preview.clone()
+        };
+        assert!(!preview_requires_approval(&policy, &low_preview));
+    }
+
+    #[test]
+    fn preview_requires_approval_data_class_match() {
+        let policy = BrokerProviderPolicy {
+            name: "openai".to_string(),
+            host: "api.openai.com".to_string(),
+            port: None,
+            exact_paths: vec!["/v1/responses".to_string()],
+            methods: vec![],
+            secret_ref: "openai/dev".to_string(),
+            allowed_headers: vec![],
+            max_body_bytes: None,
+            require_body_sha256: None,
+            stream_response: None,
+            require_intent_preview: None,
+            approval_required_risk_levels: vec![],
+            approval_required_data_classes: vec!["pii".to_string()],
+        };
+        let preview_with_pii = BrokerIntentPreview {
+            preview_id: "p2".to_string(),
+            provider: BrokerProvider::Openai,
+            operation: "test".to_string(),
+            summary: "test".to_string(),
+            created_at: Utc::now(),
+            risk_level: BrokerIntentRiskLevel::Low,
+            data_classes: vec!["pii".to_string()],
+            resources: vec![],
+            egress_host: "api.openai.com".to_string(),
+            estimated_cost_usd_micros: None,
+            approval_required: false,
+            approval_state: BrokerApprovalState::NotRequired,
+            approved_at: None,
+            approver: None,
+            body_sha256: None,
+        };
+        assert!(preview_requires_approval(&policy, &preview_with_pii));
+
+        let preview_no_pii = BrokerIntentPreview {
+            data_classes: vec!["analytics".to_string()],
+            ..preview_with_pii
+        };
+        assert!(!preview_requires_approval(&policy, &preview_no_pii));
+    }
+
+    #[test]
+    fn policy_match_finds_matching_provider() {
+        use clawdstrike::policy::{
+            BrokerConfig as PolicyBrokerConfig, BrokerMethod as PolicyBrokerMethod,
+        };
+        let broker = PolicyBrokerConfig {
+            enabled: true,
+            providers: vec![BrokerProviderPolicy {
+                name: "openai".to_string(),
+                host: "api.openai.com".to_string(),
+                port: None,
+                exact_paths: vec![
+                    "/v1/responses".to_string(),
+                    "/v1/chat/completions".to_string(),
+                ],
+                methods: vec![PolicyBrokerMethod::POST],
+                secret_ref: "openai/prod".to_string(),
+                allowed_headers: vec![],
+                max_body_bytes: None,
+                require_body_sha256: None,
+                stream_response: None,
+                require_intent_preview: None,
+                approval_required_risk_levels: vec![],
+                approval_required_data_classes: vec![],
+            }],
+        };
+
+        let result = policy_match(
+            &broker,
+            &BrokerProvider::Openai,
+            "api.openai.com",
+            None,
+            "/v1/responses",
+            &HttpMethod::POST,
+            "openai/prod",
+        );
+        assert!(result.is_some());
+
+        let result = policy_match(
+            &broker,
+            &BrokerProvider::Openai,
+            "api.openai.com",
+            None,
+            "/v1/chat/completions",
+            &HttpMethod::POST,
+            "openai/prod",
+        );
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn policy_match_rejects_wrong_path() {
+        use clawdstrike::policy::{
+            BrokerConfig as PolicyBrokerConfig, BrokerMethod as PolicyBrokerMethod,
+        };
+        let broker = PolicyBrokerConfig {
+            enabled: true,
+            providers: vec![BrokerProviderPolicy {
+                name: "openai".to_string(),
+                host: "api.openai.com".to_string(),
+                port: None,
+                exact_paths: vec!["/v1/responses".to_string()],
+                methods: vec![PolicyBrokerMethod::POST],
+                secret_ref: "openai/prod".to_string(),
+                allowed_headers: vec![],
+                max_body_bytes: None,
+                require_body_sha256: None,
+                stream_response: None,
+                require_intent_preview: None,
+                approval_required_risk_levels: vec![],
+                approval_required_data_classes: vec![],
+            }],
+        };
+
+        let result = policy_match(
+            &broker,
+            &BrokerProvider::Openai,
+            "api.openai.com",
+            None,
+            "/v1/images/generations",
+            &HttpMethod::POST,
+            "openai/prod",
+        );
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn policy_match_rejects_wrong_method() {
+        use clawdstrike::policy::{
+            BrokerConfig as PolicyBrokerConfig, BrokerMethod as PolicyBrokerMethod,
+        };
+        let broker = PolicyBrokerConfig {
+            enabled: true,
+            providers: vec![BrokerProviderPolicy {
+                name: "openai".to_string(),
+                host: "api.openai.com".to_string(),
+                port: None,
+                exact_paths: vec!["/v1/responses".to_string()],
+                methods: vec![PolicyBrokerMethod::POST],
+                secret_ref: "openai/prod".to_string(),
+                allowed_headers: vec![],
+                max_body_bytes: None,
+                require_body_sha256: None,
+                stream_response: None,
+                require_intent_preview: None,
+                approval_required_risk_levels: vec![],
+                approval_required_data_classes: vec![],
+            }],
+        };
+
+        let result = policy_match(
+            &broker,
+            &BrokerProvider::Openai,
+            "api.openai.com",
+            None,
+            "/v1/responses",
+            &HttpMethod::GET,
+            "openai/prod",
+        );
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn policy_match_disabled_broker_returns_none() {
+        use clawdstrike::policy::BrokerConfig as PolicyBrokerConfig;
+        let broker = PolicyBrokerConfig {
+            enabled: false,
+            providers: vec![],
+        };
+        let result = policy_match(
+            &broker,
+            &BrokerProvider::Openai,
+            "api.openai.com",
+            None,
+            "/v1/responses",
+            &HttpMethod::POST,
+            "openai/prod",
+        );
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn policy_match_wrong_secret_ref() {
+        use clawdstrike::policy::{
+            BrokerConfig as PolicyBrokerConfig, BrokerMethod as PolicyBrokerMethod,
+        };
+        let broker = PolicyBrokerConfig {
+            enabled: true,
+            providers: vec![BrokerProviderPolicy {
+                name: "openai".to_string(),
+                host: "api.openai.com".to_string(),
+                port: None,
+                exact_paths: vec!["/v1/responses".to_string()],
+                methods: vec![PolicyBrokerMethod::POST],
+                secret_ref: "openai/prod".to_string(),
+                allowed_headers: vec![],
+                max_body_bytes: None,
+                require_body_sha256: None,
+                stream_response: None,
+                require_intent_preview: None,
+                approval_required_risk_levels: vec![],
+                approval_required_data_classes: vec![],
+            }],
+        };
+
+        let result = policy_match(
+            &broker,
+            &BrokerProvider::Openai,
+            "api.openai.com",
+            None,
+            "/v1/responses",
+            &HttpMethod::POST,
+            "openai/wrong-ref",
+        );
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn validate_preview_matches_request_success() {
+        let record = BrokerPreviewRecord {
+            preview: BrokerIntentPreview {
+                preview_id: "p1".to_string(),
+                provider: BrokerProvider::Openai,
+                operation: "test".to_string(),
+                summary: "test".to_string(),
+                created_at: Utc::now(),
+                risk_level: BrokerIntentRiskLevel::Low,
+                data_classes: vec![],
+                resources: vec![],
+                egress_host: "api.openai.com".to_string(),
+                estimated_cost_usd_micros: None,
+                approval_required: false,
+                approval_state: BrokerApprovalState::NotRequired,
+                approved_at: None,
+                approver: None,
+                body_sha256: Some("abc123".to_string()),
+            },
+            url: "https://api.openai.com/v1/responses".to_string(),
+            method: HttpMethod::POST,
+            secret_ref_id: "openai/dev".to_string(),
+            policy_hash: "hash1".to_string(),
+        };
+        let request = BrokerCapabilityIssueRequest {
+            provider: BrokerProvider::Openai,
+            url: "https://api.openai.com/v1/responses".to_string(),
+            method: HttpMethod::POST,
+            secret_ref: "openai/dev".to_string(),
+            body_sha256: Some("abc123".to_string()),
+            preview_id: Some("p1".to_string()),
+            proof_binding: None,
+            session_id: None,
+            endpoint_agent_id: None,
+            runtime_agent_id: None,
+            runtime_agent_kind: None,
+            origin_fingerprint: None,
+            delegation_token: None,
+        };
+        assert!(validate_preview_matches_request(&record, &request, "hash1").is_ok());
+    }
+
+    #[test]
+    fn validate_preview_mismatch_url() {
+        let record = BrokerPreviewRecord {
+            preview: BrokerIntentPreview {
+                preview_id: "p1".to_string(),
+                provider: BrokerProvider::Openai,
+                operation: "test".to_string(),
+                summary: "test".to_string(),
+                created_at: Utc::now(),
+                risk_level: BrokerIntentRiskLevel::Low,
+                data_classes: vec![],
+                resources: vec![],
+                egress_host: "api.openai.com".to_string(),
+                estimated_cost_usd_micros: None,
+                approval_required: false,
+                approval_state: BrokerApprovalState::NotRequired,
+                approved_at: None,
+                approver: None,
+                body_sha256: Some("abc123".to_string()),
+            },
+            url: "https://api.openai.com/v1/responses".to_string(),
+            method: HttpMethod::POST,
+            secret_ref_id: "openai/dev".to_string(),
+            policy_hash: "hash1".to_string(),
+        };
+        let request = BrokerCapabilityIssueRequest {
+            provider: BrokerProvider::Openai,
+            url: "https://api.openai.com/v1/chat/completions".to_string(),
+            method: HttpMethod::POST,
+            secret_ref: "openai/dev".to_string(),
+            body_sha256: Some("abc123".to_string()),
+            preview_id: Some("p1".to_string()),
+            proof_binding: None,
+            session_id: None,
+            endpoint_agent_id: None,
+            runtime_agent_id: None,
+            runtime_agent_kind: None,
+            origin_fingerprint: None,
+            delegation_token: None,
+        };
+        assert!(validate_preview_matches_request(&record, &request, "hash1").is_err());
+    }
+
+    #[test]
+    fn validate_preview_mismatch_body_hash() {
+        let record = BrokerPreviewRecord {
+            preview: BrokerIntentPreview {
+                preview_id: "p1".to_string(),
+                provider: BrokerProvider::Openai,
+                operation: "test".to_string(),
+                summary: "test".to_string(),
+                created_at: Utc::now(),
+                risk_level: BrokerIntentRiskLevel::Low,
+                data_classes: vec![],
+                resources: vec![],
+                egress_host: "api.openai.com".to_string(),
+                estimated_cost_usd_micros: None,
+                approval_required: false,
+                approval_state: BrokerApprovalState::NotRequired,
+                approved_at: None,
+                approver: None,
+                body_sha256: Some("abc123".to_string()),
+            },
+            url: "https://api.openai.com/v1/responses".to_string(),
+            method: HttpMethod::POST,
+            secret_ref_id: "openai/dev".to_string(),
+            policy_hash: "hash1".to_string(),
+        };
+        let request = BrokerCapabilityIssueRequest {
+            provider: BrokerProvider::Openai,
+            url: "https://api.openai.com/v1/responses".to_string(),
+            method: HttpMethod::POST,
+            secret_ref: "openai/dev".to_string(),
+            body_sha256: Some("mismatch".to_string()),
+            preview_id: Some("p1".to_string()),
+            proof_binding: None,
+            session_id: None,
+            endpoint_agent_id: None,
+            runtime_agent_id: None,
+            runtime_agent_kind: None,
+            origin_fingerprint: None,
+            delegation_token: None,
+        };
+        assert!(validate_preview_matches_request(&record, &request, "hash1").is_err());
+    }
+
+    #[test]
+    fn actor_label_formats_correctly() {
+        use crate::auth::types::{ApiKey, Scope};
+        let api_key = ApiKey {
+            name: "my-key".to_string(),
+            id: "key-123".to_string(),
+            key_hash: String::new(),
+            tier: None,
+            scopes: [Scope::Check].into_iter().collect(),
+            created_at: Utc::now(),
+            expires_at: None,
+        };
+        let api_key_actor = AuthenticatedActor::ApiKey(api_key);
+        let ext = axum::extract::Extension(api_key_actor);
+        assert_eq!(actor_label(Some(&ext)), Some("api_key:my-key".to_string()));
+    }
+}

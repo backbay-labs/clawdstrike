@@ -28,9 +28,9 @@ use crate::state::AppState;
 
 #[derive(Debug)]
 pub struct ApiError {
-    status: StatusCode,
-    code: String,
-    message: String,
+    pub(crate) status: StatusCode,
+    pub(crate) code: String,
+    pub(crate) message: String,
 }
 
 impl ApiError {
@@ -386,7 +386,12 @@ pub async fn execute(
             suspicion_reason: None,
         },
     );
-    record_and_submit_evidence(&state, &evidence).await?;
+    if let Err(evidence_error) = record_and_submit_evidence(&state, &evidence).await {
+        tracing::error!(
+            error = %evidence_error.message,
+            "failed to submit broker execution completion evidence; upstream call already succeeded"
+        );
+    }
 
     Ok(Json(BrokerExecuteResponse {
         execution_id,
@@ -481,7 +486,12 @@ pub async fn execute_stream(
             suspicion_reason: None,
         },
     );
-    record_and_submit_evidence(&state, &started_evidence).await?;
+    if let Err(evidence_error) = record_and_submit_evidence(&state, &started_evidence).await {
+        tracing::error!(
+            error = %evidence_error.message,
+            "failed to submit broker stream start evidence; upstream stream already initiated"
+        );
+    }
 
     let status = response.status;
     let headers = response.headers.clone();

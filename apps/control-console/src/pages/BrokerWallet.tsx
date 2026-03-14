@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   fetchBrokerCapabilities,
   fetchBrokerCapability,
@@ -8,7 +8,6 @@ import {
   revokeAllBrokerCapabilities,
   revokeBrokerCapability,
   type BrokerCapabilityDetailResponse,
-  type BrokerCapabilityState,
   type BrokerCapabilityStatus,
   type BrokerExecutionEvidence,
   type BrokerFrozenProviderStatus,
@@ -18,47 +17,14 @@ import {
 } from "../api/client";
 import { GlassButton, NoiseGrain, Stamp } from "../components/ui";
 import { useSharedSSE } from "../context/SSEContext";
-
-const KNOWN_PROVIDERS: BrokerProvider[] = ["openai", "github", "slack", "generic_https"];
-
-function statusVariant(state: BrokerCapabilityState): "allowed" | "blocked" | "warn" {
-  if (state === "active") return "allowed";
-  if (state === "frozen") return "warn";
-  return "blocked";
-}
-
-function replayVariant(result: BrokerReplayResponse | null): "allowed" | "blocked" | "warn" {
-  if (!result) return "warn";
-  return result.would_allow ? "allowed" : "blocked";
-}
-
-function formatDateTime(value?: string): string {
-  if (!value) return "-";
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
-}
-
-function formatRelative(value?: string): string {
-  if (!value) return "-";
-  const deltaMs = new Date(value).getTime() - Date.now();
-  const deltaMin = Math.round(deltaMs / 60_000);
-  if (Math.abs(deltaMin) < 1) return "now";
-  if (deltaMin > 0) return `in ${deltaMin}m`;
-  return `${Math.abs(deltaMin)}m ago`;
-}
-
-function uniqueProviders(
-  capabilities: BrokerCapabilityStatus[],
-  frozenProviders: BrokerFrozenProviderStatus[],
-): BrokerProvider[] {
-  return Array.from(
-    new Set<BrokerProvider>([
-      ...KNOWN_PROVIDERS,
-      ...capabilities.map((capability) => capability.provider),
-      ...frozenProviders.map((provider) => provider.provider),
-    ]),
-  );
-}
+import {
+  DetailItem,
+  formatDateTime,
+  formatRelative,
+  replayVariant,
+  statusVariant,
+  uniqueProviders,
+} from "./broker-utils";
 
 export function BrokerWallet(_props: { windowId?: string }) {
   const { events } = useSharedSSE();
@@ -629,19 +595,3 @@ export function BrokerWallet(_props: { windowId?: string }) {
   );
 }
 
-function DetailItem({
-  label,
-  children,
-}: {
-  label: string;
-  children: ReactNode;
-}) {
-  return (
-    <div>
-      <div className="font-mono text-[11px]" style={{ color: "rgba(154,167,181,0.7)" }}>
-        {label}
-      </div>
-      <div className="mt-1">{children}</div>
-    </div>
-  );
-}
