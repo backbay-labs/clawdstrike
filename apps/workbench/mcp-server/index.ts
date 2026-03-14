@@ -535,8 +535,27 @@ type GeneratePolicyArgs = {
   base_ruleset?: string;
 };
 
-const registerTool = server.tool.bind(server) as (...args: any[]) => void;
-const registerPrompt = server.prompt.bind(server) as (...args: any[]) => void;
+// Typed wrappers — the MCP SDK's generic overloads trigger TS2589 (excessively deep
+// type instantiation) with complex Zod schemas, so we cast to the concrete overload
+// signatures used in this file rather than the unconstrained `any`.
+type ToolResult = { content: { type: string; text: string }[]; isError?: boolean };
+type PromptResult = { messages: { role: "user" | "assistant"; content: { type: string; text: string } }[] };
+
+const registerTool = server.tool.bind(server) as (
+  name: string,
+  description: string,
+  schema: Record<string, z.ZodTypeAny>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  cb: (input: any) => Promise<ToolResult>,
+) => void;
+
+const registerPrompt = server.prompt.bind(server) as (
+  name: string,
+  description: string,
+  schema: Record<string, z.ZodTypeAny>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  cb: (input: any) => PromptResult,
+) => void;
 
 type RunScenarioArgs = {
   scenario_json: string;

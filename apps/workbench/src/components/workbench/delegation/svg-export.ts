@@ -55,11 +55,12 @@ function sanitizeStyle(styleText: string): string | null {
       const value = declaration.slice(separatorIndex + 1).trim();
       const normalizedValue = value.toLowerCase();
 
-      if (
-        containsBlockedProtocol(value) ||
-        normalizedValue.includes("url(") ||
-        normalizedValue.includes("expression(")
-      ) {
+      if (containsBlockedProtocol(value) || normalizedValue.includes("expression(")) {
+        return [];
+      }
+
+      // Allow safe local references like url(#gradient) but block external URLs
+      if (normalizedValue.includes("url(") && !isSafeLocalReference(value)) {
         return [];
       }
 
