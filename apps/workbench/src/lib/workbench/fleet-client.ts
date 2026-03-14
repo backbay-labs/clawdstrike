@@ -442,7 +442,13 @@ async function readResponseTextWithLimit(res: Response, maxBytes: number): Promi
 }
 
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await httpFetch(url, { ...init, signal: init?.signal ?? AbortSignal.timeout(10_000) });
+  // Finding M3: block redirects so Bearer tokens / API keys are never
+  // forwarded to a different host via an HTTP 3xx redirect.
+  const res = await httpFetch(url, {
+    ...init,
+    redirect: "error",
+    signal: init?.signal ?? AbortSignal.timeout(10_000),
+  });
   if (!res.ok) {
     const body = await readResponseTextWithLimit(res, MAX_ERROR_RESPONSE_BYTES).catch(() => "");
     // Finding M3: truncate error body and strip secrets
@@ -746,6 +752,8 @@ export async function fetchRemotePolicy(
 }
 
 export async function fetchSwarmHubConfig(conn: FleetConnection): Promise<HubConfig> {
+  // Finding M1: re-validate URL at call site for defense-in-depth
+  normalizedValidatedFleetUrl(conn.hushdUrl, "hushd URL");
   const url = stripTrailingSlash(conn.hushdUrl);
   const res = await jsonFetch<unknown>(proxyUrl(`${url}/api/v1/swarm/hub/config`, "hushd"), {
     headers: hushdHeaders(conn.apiKey),
@@ -760,6 +768,8 @@ export async function publishSwarmFinding(
   conn: FleetConnection,
   envelope: FindingEnvelope,
 ): Promise<SwarmFindingPublishResponse> {
+  // Finding M1: re-validate URL at call site for defense-in-depth
+  normalizedValidatedFleetUrl(conn.hushdUrl, "hushd URL");
   const url = stripTrailingSlash(conn.hushdUrl);
   const res = await jsonFetch<unknown>(
     proxyUrl(`${url}/api/v1/swarm/feeds/${encodeURIComponent(envelope.feedId)}/findings`, "hushd"),
@@ -1011,7 +1021,7 @@ function extractOriginContext(eventData: Record<string, unknown>): OriginContext
     space_type: optionalString(raw.space_type),
     actor_id: optionalString(raw.actor_id),
     actor_name: optionalString(raw.actor_name),
-    visibility: optionalString(raw.visibility),
+    visibility: optionalString(raw.visibility) as OriginContext["visibility"],
   };
 }
 
