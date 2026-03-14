@@ -14,20 +14,25 @@ vi.mock("@/lib/tauri-bridge", () => ({
 }));
 
 const NAV_ITEMS = [
-  { label: "Home", href: "/home" },
+  { label: "Sentinels", href: "/sentinels" },
+  { label: "Mission Control", href: "/missions" },
+  { label: "Findings & Intel", href: "/findings" },
+  { label: "Lab", href: "/lab" },
+  { label: "Swarms", href: "/swarms" },
   { label: "Editor", href: "/editor" },
   { label: "Library", href: "/library" },
-  { label: "Guards", href: "/guards" },
-  { label: "Compare", href: "/compare" },
-  { label: "Threat Lab", href: "/simulator" },
-  { label: "Hunt Lab", href: "/hunt" },
   { label: "Compliance", href: "/compliance" },
-  { label: "Receipts", href: "/receipts" },
-  { label: "Audit", href: "/audit" },
-  { label: "Delegation", href: "/delegation" },
   { label: "Approvals", href: "/approvals" },
-  { label: "Hierarchy", href: "/hierarchy" },
+  { label: "Audit", href: "/audit" },
+  { label: "Receipts", href: "/receipts" },
   { label: "Fleet", href: "/fleet" },
+  { label: "Topology", href: "/topology" },
+] as const;
+
+const SECTION_HEADERS = [
+  "Detect & Respond",
+  "Author & Test",
+  "Platform",
 ] as const;
 
 describe("DesktopSidebar", () => {
@@ -35,32 +40,28 @@ describe("DesktopSidebar", () => {
     renderWithProviders(<DesktopSidebar />);
 
     for (const item of NAV_ITEMS) {
-      expect(screen.getByText(item.label)).toBeInTheDocument();
+      expect(screen.getByText(item.label)).toBeTruthy();
     }
   });
 
-  it("renders each nav item as a link with the correct path (no /workbench prefix)", () => {
+  it("renders each nav item as a link with the correct path", () => {
     renderWithProviders(<DesktopSidebar />);
 
     for (const item of NAV_ITEMS) {
-      // Use getByText + closest("a") because badge content can affect accessible name
       const label = screen.getByText(item.label);
       const link = label.closest("a");
-      expect(link).toBeInTheDocument();
-      expect(link).toHaveAttribute("href", item.href);
+      expect(link).toBeTruthy();
+      expect(link?.getAttribute("href")).toBe(item.href);
     }
   });
 
   it("highlights the active route with active styling", () => {
-    renderWithProviders(<DesktopSidebar />, { route: "/simulator" });
+    renderWithProviders(<DesktopSidebar />, { route: "/editor" });
 
-    const activeLink = screen.getByRole("link", { name: "Threat Lab" });
-    // Active link gets text-[#ece7dc] and bg-[#131721]
-    expect(activeLink.className).toContain("bg-[#131721]");
+    const activeLink = screen.getByRole("link", { name: "Editor" });
     expect(activeLink.className).toContain("text-[#ece7dc]");
 
-    // Non-active link gets text-[#6f7f9a]
-    const inactiveLink = screen.getByRole("link", { name: "Editor" });
+    const inactiveLink = screen.getByRole("link", { name: "Lab" });
     expect(inactiveLink.className).toContain("text-[#6f7f9a]");
   });
 
@@ -68,13 +69,11 @@ describe("DesktopSidebar", () => {
     renderWithProviders(<DesktopSidebar />, { route: "/editor" });
 
     const editorLink = screen.getByRole("link", { name: "Editor" });
-    // The active link has a child span with the gold accent
     const accentBar = editorLink.querySelector("span.bg-\\[\\#d4a84b\\]");
-    expect(accentBar).toBeInTheDocument();
+    expect(accentBar).toBeTruthy();
 
-    // Inactive link should not have the accent bar
-    const simulatorLink = screen.getByRole("link", { name: "Threat Lab" });
-    const noAccent = simulatorLink.querySelector("span.bg-\\[\\#d4a84b\\]");
+    const labLink = screen.getByRole("link", { name: "Lab" });
+    const noAccent = labLink.querySelector("span.bg-\\[\\#d4a84b\\]");
     expect(noAccent).toBeNull();
   });
 
@@ -85,22 +84,20 @@ describe("DesktopSidebar", () => {
       const label = screen.getByText(item.label);
       const link = label.closest("a")!;
       const svg = link.querySelector("svg");
-      expect(svg).toBeInTheDocument();
+      expect(svg).toBeTruthy();
     }
   });
 
   it("renders a collapse button", () => {
     renderWithProviders(<DesktopSidebar />);
-
-    // When expanded, the collapse button shows "Collapse" text
-    expect(screen.getByText("Collapse")).toBeInTheDocument();
+    expect(screen.getByText("Collapse")).toBeTruthy();
   });
 
   it("renders section group headers", () => {
     renderWithProviders(<DesktopSidebar />);
 
-    for (const title of ["Policy", "Ops", "Governance", "Infrastructure"]) {
-      expect(screen.getByText(title)).toBeInTheDocument();
+    for (const title of SECTION_HEADERS) {
+      expect(screen.getByText(title)).toBeTruthy();
     }
   });
 
@@ -111,29 +108,23 @@ describe("DesktopSidebar", () => {
     const collapseBtn = screen.getByText("Collapse").closest("button")!;
     await user.click(collapseBtn);
 
-    // Section headers should be hidden
-    expect(screen.queryByText("Policy")).not.toBeInTheDocument();
-    expect(screen.queryByText("Ops")).not.toBeInTheDocument();
-    expect(screen.queryByText("Governance")).not.toBeInTheDocument();
-    expect(screen.queryByText("Infrastructure")).not.toBeInTheDocument();
+    for (const title of SECTION_HEADERS) {
+      expect(screen.queryByText(title)).toBeNull();
+    }
   });
 
   it("toggles sidebar collapsed state when collapse button is clicked", async () => {
     const user = userEvent.setup();
     renderWithProviders(<DesktopSidebar />);
 
-    const sidebar = screen.getByRole("complementary"); // <aside> has complementary role
-    // Expanded: width class w-[200px]
+    const sidebar = screen.getByRole("complementary");
     expect(sidebar.className).toContain("w-[200px]");
 
-    // Click collapse
     const collapseBtn = screen.getByText("Collapse").closest("button")!;
     await user.click(collapseBtn);
 
-    // After collapse: width class w-[52px], labels hidden
     expect(sidebar.className).toContain("w-[52px]");
-    expect(screen.queryByText("Collapse")).not.toBeInTheDocument();
-    // Nav labels should also be hidden
-    expect(screen.queryByText("Editor")).not.toBeInTheDocument();
+    expect(screen.queryByText("Collapse")).toBeNull();
+    expect(screen.queryByText("Editor")).toBeNull();
   });
 });

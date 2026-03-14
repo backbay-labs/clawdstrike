@@ -35,9 +35,6 @@ import type {
 } from "@/lib/workbench/hunt-types";
 import type { Verdict, TestActionType } from "@/lib/workbench/types";
 
-// ---------------------------------------------------------------------------
-// Props
-// ---------------------------------------------------------------------------
 
 interface InvestigationWorkbenchProps {
   investigations: Investigation[];
@@ -47,9 +44,6 @@ interface InvestigationWorkbenchProps {
   onAddAnnotation: (investigationId: string, text: string) => void;
 }
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 const SEVERITY_COLORS: Record<Severity, string> = {
   critical: "#c45c5c",
@@ -99,9 +93,6 @@ const VERDICT_STYLES: Record<Verdict, { color: string; label: string }> = {
 
 const SEVERITIES: Severity[] = ["critical", "high", "medium", "low", "info"];
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function formatTime(iso: string): string {
   try {
@@ -182,9 +173,6 @@ function eventHaloColor(event: AgentEvent): string | null {
   return null;
 }
 
-// ---------------------------------------------------------------------------
-// Main Component
-// ---------------------------------------------------------------------------
 
 export function InvestigationWorkbench({
   investigations,
@@ -1113,9 +1101,6 @@ export function InvestigationWorkbench({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
 
 function CaseCard({
   investigation,

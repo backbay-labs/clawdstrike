@@ -56,9 +56,6 @@ const SPIDER_SENSE_HANDLED_KEYS = new Set([
   "embedding_api_key",
 ]);
 
-// ---------------------------------------------------------------------------
-// Trustprint Profile Card
-// ---------------------------------------------------------------------------
 
 function TrustprintProfileCard({
   patterns,
@@ -151,9 +148,6 @@ const ICON_MAP: Record<string, typeof IconLock> = {
   IconFingerprint,
 };
 
-// ---------------------------------------------------------------------------
-// Regression dot colors / tooltips
-// ---------------------------------------------------------------------------
 
 const TEST_STATUS_DOT: Record<string, { color: string; tip: string } | null> = {
   pass: { color: "#3dbf84", tip: "All tests pass" },
@@ -162,9 +156,6 @@ const TEST_STATUS_DOT: Record<string, { color: string; tip: string } | null> = {
   none: null,
 };
 
-// ---------------------------------------------------------------------------
-// TestScenario -> SuiteScenario conversion
-// ---------------------------------------------------------------------------
 
 function extractTarget(s: TestScenario): string {
   const p = s.payload;
@@ -226,7 +217,6 @@ function getGuardSummary(guardId: GuardId, config: Record<string, unknown>): str
   return parts.length > 0 ? parts.join(", ") : "default configuration";
 }
 
-// ---------------------------------------------------------------------------
 interface GuardCardProps {
   guardId: GuardId;
   /** Enable reorder controls (up/down buttons, drag handle). Only shown in custom view. */

@@ -5,9 +5,6 @@
  * each with 3-dimensional demo embeddings.
  */
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 export interface PatternEntry {
   id: string;
@@ -34,9 +31,6 @@ export type PatternStage =
   | "action"
   | "feedback";
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 export const ALL_STAGES: PatternStage[] = [
   "perception",
@@ -88,9 +82,6 @@ export const CATEGORY_SHORT_LABELS: Record<PatternCategory, string> = {
   privilege_escalation: "Priv Esc",
 };
 
-// ---------------------------------------------------------------------------
-// S2Bench v1 demo data (mirrors rulesets/patterns/s2bench-v1.json)
-// ---------------------------------------------------------------------------
 
 export const S2BENCH_PATTERNS: PatternEntry[] = [
   // Perception stage
@@ -138,9 +129,6 @@ export const S2BENCH_PATTERNS: PatternEntry[] = [
   { id: "s2b-feedback-privilege_escalation", category: "privilege_escalation", stage: "feedback", label: "Incremental privilege gain via feedback", embedding: [0.25, 0.40, 0.40] },
 ];
 
-// ---------------------------------------------------------------------------
-// Analysis helpers
-// ---------------------------------------------------------------------------
 
 export interface HeatmapCell {
   stage: PatternStage;

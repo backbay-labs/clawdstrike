@@ -21,9 +21,6 @@ import {
   type ScenarioGraphLayout,
 } from "@/lib/workbench/scenario-graph-engine";
 
-// ---------------------------------------------------------------------------
-// Action type color accent for left bar
-// ---------------------------------------------------------------------------
 
 const ACTION_ACCENT: Record<string, string> = {
   file_access: "#3dbf84",
@@ -51,9 +48,6 @@ const ACTION_OPTIONS = [
   { value: "user_input", label: "User Input" },
 ];
 
-// ---------------------------------------------------------------------------
-// Props
-// ---------------------------------------------------------------------------
 
 export interface ScenarioGraphScenario {
   name: string;
@@ -70,9 +64,6 @@ interface ScenarioGraphProps {
   className?: string;
 }
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
 
 export function ScenarioGraph({ scenarios, results, onUpdate, className }: ScenarioGraphProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -422,9 +413,6 @@ export function ScenarioGraph({ scenarios, results, onUpdate, className }: Scena
   );
 }
 
-// ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
 
 function PillNode({ node }: { node: ScenarioNode }) {
   return (
@@ -628,9 +616,6 @@ function ScenarioNodeEl({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Toolbar pieces (matching delegation-page.tsx style)
-// ---------------------------------------------------------------------------
 
 function ToolbarBtn({
   icon: Icon,

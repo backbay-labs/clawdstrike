@@ -6,11 +6,9 @@ import type {
   GuardId,
 } from "../types";
 
-// ---------------------------------------------------------------------------
 // Since the reducer and DEFAULT_POLICY are exported from a .tsx file that uses
 // React, we import them directly. The reducer is a pure function so it can be
 // tested without rendering any components.
-// ---------------------------------------------------------------------------
 
 // We replicate the state type and import the reducer + defaults.
 import { DEFAULT_POLICY, type WorkbenchState, type WorkbenchAction, type PolicySnapshot } from "../policy-store";
@@ -226,9 +224,6 @@ function reducer(state: WorkbenchState, action: WorkbenchAction): WorkbenchState
   return coreReducer(state, action);
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function makeInitialState(overrides?: Partial<WorkbenchState>): WorkbenchState {
   const yaml = policyToYaml(DEFAULT_POLICY);
@@ -276,9 +271,6 @@ function makeSavedPolicy(id: string, name?: string): SavedPolicy {
   };
 }
 
-// ---------------------------------------------------------------------------
-// DEFAULT_POLICY
-// ---------------------------------------------------------------------------
 
 describe("DEFAULT_POLICY", () => {
   it("is a valid policy", () => {
@@ -317,9 +309,6 @@ describe("DEFAULT_POLICY", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// SET_POLICY action
-// ---------------------------------------------------------------------------
 
 describe("SET_POLICY", () => {
   it("updates activePolicy and revalidates", () => {
@@ -354,9 +343,6 @@ describe("SET_POLICY", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// SET_YAML action
-// ---------------------------------------------------------------------------
 
 describe("SET_YAML", () => {
   it("with valid YAML updates both policy and yaml", () => {
@@ -391,9 +377,6 @@ describe("SET_YAML", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// UPDATE_GUARD action
-// ---------------------------------------------------------------------------
 
 describe("UPDATE_GUARD", () => {
   it("merges config into existing guard", () => {
@@ -434,9 +417,6 @@ describe("UPDATE_GUARD", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// TOGGLE_GUARD action
-// ---------------------------------------------------------------------------
 
 describe("TOGGLE_GUARD", () => {
   it("enables a guard", () => {
@@ -484,9 +464,6 @@ describe("TOGGLE_GUARD", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// UPDATE_SETTINGS action
-// ---------------------------------------------------------------------------
 
 describe("UPDATE_SETTINGS", () => {
   it("merges settings correctly", () => {
@@ -519,9 +496,6 @@ describe("UPDATE_SETTINGS", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// UPDATE_META action
-// ---------------------------------------------------------------------------
 
 describe("UPDATE_META", () => {
   it("updates name", () => {
@@ -564,9 +538,6 @@ describe("UPDATE_META", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// SAVE_POLICY action
-// ---------------------------------------------------------------------------
 
 describe("SAVE_POLICY", () => {
   it("adds to savedPolicies", () => {
@@ -602,9 +573,6 @@ describe("SAVE_POLICY", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// DELETE_SAVED_POLICY action
-// ---------------------------------------------------------------------------
 
 describe("DELETE_SAVED_POLICY", () => {
   it("removes the correct policy", () => {
@@ -629,9 +597,6 @@ describe("DELETE_SAVED_POLICY", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// SET_COMPARISON action
-// ---------------------------------------------------------------------------
 
 describe("SET_COMPARISON", () => {
   it("sets comparison policy", () => {
@@ -680,9 +645,6 @@ describe("SET_COMPARISON", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Other actions
-// ---------------------------------------------------------------------------
 
 describe("other actions", () => {
   it("SET_SIDEBAR_COLLAPSED toggles sidebar", () => {
@@ -729,9 +691,6 @@ describe("other actions", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// UNDO / REDO
-// ---------------------------------------------------------------------------
 
 describe("UNDO", () => {
   it("no-ops when history is empty", () => {

@@ -8,9 +8,6 @@ import { analyzeCoverage } from "../coverage-analyzer";
 import type { WorkbenchPolicy, GuardConfigMap, GuardId, TestScenario } from "../types";
 import type { RedTeamScenario } from "../redteam/types";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function makePolicy(guards: GuardConfigMap): WorkbenchPolicy {
   return {
@@ -46,9 +43,6 @@ function makeRedTeamScenario(guardId: GuardId, pluginId: string, index = 0): Red
   };
 }
 
-// ---------------------------------------------------------------------------
-// identifyRedTeamGaps
-// ---------------------------------------------------------------------------
 
 describe("identifyRedTeamGaps", () => {
   it("returns gaps for uncovered guards", () => {
@@ -107,9 +101,6 @@ describe("identifyRedTeamGaps", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// generateGapFillingScenarios
-// ---------------------------------------------------------------------------
 
 describe("generateGapFillingScenarios", () => {
   it("produces scenarios for each gap", () => {
@@ -134,9 +125,6 @@ describe("generateGapFillingScenarios", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// computeRedTeamCoverage
-// ---------------------------------------------------------------------------
 
 describe("computeRedTeamCoverage", () => {
   it("returns 0% for empty scenarios", () => {

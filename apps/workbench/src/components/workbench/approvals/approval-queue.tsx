@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/select";
 import { fleetClient } from "@/lib/workbench/fleet-client";
 import { useFleetConnection } from "@/lib/workbench/use-fleet-connection";
+import { useOperator } from "@/lib/workbench/operator-store";
 import type {
   ApprovalRequest,
   ApprovalDecision,
@@ -127,15 +128,20 @@ function formatRelativeTime(iso: string): string {
 
 export function ApprovalQueue({ currentUser }: { currentUser?: string } = {}) {
   const { connection } = useFleetConnection();
+  const { currentOperator } = useOperator();
   const fleetConnected = connection.connected;
-  // Finding M17: Use provided currentUser or fall back to anonymous.
-  // TODO: This should come from a proper auth context once authentication is implemented.
-  const decidedByUser = currentUser || "workbench-anonymous";
+  const controlApiConfigured = connection.controlApiUrl.trim().length > 0;
+  const liveApprovalsReady = fleetConnected && controlApiConfigured;
+  const liveApprovalsHint = !fleetConnected
+    ? "Connect to fleet in Settings to view live approvals"
+    : !controlApiConfigured
+      ? "Configure control-api in Settings to view live approvals"
+      : null;
+  const decidedByUser = currentOperator?.fingerprint ?? currentUser ?? "workbench-anonymous";
 
   const [requests, setRequests] = useState<ApprovalRequest[]>(DEMO_APPROVAL_REQUESTS);
   const [decisions, setDecisions] = useState<ApprovalDecision[]>(DEMO_APPROVAL_DECISIONS);
   const [isLiveData, setIsLiveData] = useState(false);
-  const [liveAvailable, setLiveAvailable] = useState(false);
   const [liveFetchError, setLiveFetchError] = useState<string | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -153,8 +159,7 @@ export function ApprovalQueue({ currentUser }: { currentUser?: string } = {}) {
   const [denyReason, setDenyReason] = useState("");
   const [scopeDropdownOpen, setScopeDropdownOpen] = useState<string | null>(null);
 
-  // Drives per-second countdown re-renders + auto-expires pending requests
-  const [tick, setTick] = useState(0);
+    const [tick, setTick] = useState(0);
   useEffect(() => {
     const interval = setInterval(() => setTick((t) => t + 1), 1000);
     return () => clearInterval(interval);
@@ -175,16 +180,15 @@ export function ApprovalQueue({ currentUser }: { currentUser?: string } = {}) {
     });
   }, [tick]);
 
-  useEffect(() => {
-    let cancelled = false;
-    fleetClient.healthCheck().then((ok) => {
-      if (!cancelled) setLiveAvailable(ok);
-    });
-    return () => { cancelled = true; };
-  }, []);
-
   const fetchLiveApprovals = useCallback(async () => {
-    if (!fleetConnected) return;
+    if (!liveApprovalsReady) {
+            if (isLiveData) {
+        setRequests([]);
+        setDecisions([]);
+      }
+      setLiveFetchError(liveApprovalsHint);
+      return;
+    }
     try {
       const result = await fleetClient.fetchApprovals();
       if (result && result.requests.length > 0) {
@@ -201,16 +205,17 @@ export function ApprovalQueue({ currentUser }: { currentUser?: string } = {}) {
       setRequests([]);
       setDecisions([]);
     }
-  }, [fleetConnected]);
+  }, [isLiveData, liveApprovalsHint, liveApprovalsReady]);
 
   useEffect(() => {
     if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     pollTimerRef.current = null;
-    if (isLiveData && fleetConnected) {
+    if (isLiveData && liveApprovalsReady) {
+      void fetchLiveApprovals();
       pollTimerRef.current = setInterval(fetchLiveApprovals, 30_000);
     }
     return () => { if (pollTimerRef.current) clearInterval(pollTimerRef.current); };
-  }, [isLiveData, fleetConnected, fetchLiveApprovals]);
+  }, [isLiveData, liveApprovalsReady, fetchLiveApprovals]);
 
   const toggleDataSource = useCallback(async () => {
     if (isLiveData) {
@@ -218,13 +223,12 @@ export function ApprovalQueue({ currentUser }: { currentUser?: string } = {}) {
       setDecisions(DEMO_APPROVAL_DECISIONS);
       setIsLiveData(false);
       setLiveFetchError(null);
-    } else if (fleetConnected) {
-      setIsLiveData(true);
-      await fetchLiveApprovals();
+    } else if (liveApprovalsReady) {
+            setIsLiveData(true);
     }
     setSelectedRequest(null);
     setConfirmAction(null);
-  }, [isLiveData, fleetConnected, fetchLiveApprovals]);
+  }, [isLiveData, liveApprovalsReady]);
 
   const filteredRequests = useMemo(() => {
     let list = [...requests];
@@ -290,13 +294,14 @@ export function ApprovalQueue({ currentUser }: { currentUser?: string } = {}) {
     const decision: "approved" | "denied" =
       confirmAction.type === "approve" ? "approved" : "denied";
 
-    if (isLiveData && fleetConnected) {
+    if (isLiveData && liveApprovalsReady) {
       const result = await fleetClient.resolveApproval(
         confirmAction.requestId,
         decision,
         {
           scope: confirmAction.scope,
           reason: confirmAction.type === "deny" ? denyReason || undefined : undefined,
+          decidedBy: decidedByUser,
         },
       );
       if (!result.success) {
@@ -350,7 +355,7 @@ export function ApprovalQueue({ currentUser }: { currentUser?: string } = {}) {
 
     setConfirmAction(null);
     setDenyReason("");
-  }, [confirmAction, denyReason, selectedRequest, isLiveData, fleetConnected]);
+  }, [confirmAction, decidedByUser, denyReason, isLiveData, liveApprovalsReady, selectedRequest]);
 
   const cancelAction = useCallback(() => {
     setConfirmAction(null);
@@ -396,20 +401,20 @@ export function ApprovalQueue({ currentUser }: { currentUser?: string } = {}) {
 
           <button
             onClick={toggleDataSource}
-            disabled={!isLiveData && !fleetConnected}
+            disabled={!isLiveData && !liveApprovalsReady}
             className={cn(
               "flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[10px] font-medium transition-colors",
               isLiveData
                 ? "bg-[#3dbf84]/15 text-[#3dbf84]"
-                : !fleetConnected
+                : !liveApprovalsReady
                   ? "bg-[#2d3240]/30 text-[#6f7f9a]/40 cursor-not-allowed"
                   : "bg-[#2d3240]/50 text-[#6f7f9a] hover:text-[#ece7dc]",
             )}
-            title={!fleetConnected && !isLiveData ? "Connect to fleet in Settings to view live approvals" : undefined}
+            title={!isLiveData ? liveApprovalsHint ?? undefined : undefined}
           >
             {isLiveData ? <IconDatabase size={13} stroke={1.5} /> : <IconTestPipe size={13} stroke={1.5} />}
             {isLiveData ? "Live" : "Demo"}
-            {liveAvailable && !isLiveData && fleetConnected && (
+            {liveApprovalsReady && !isLiveData && (
               <span className="ml-1 h-1.5 w-1.5 rounded-full bg-[#3dbf84]" title="Live data available" />
             )}
           </button>
@@ -469,11 +474,11 @@ export function ApprovalQueue({ currentUser }: { currentUser?: string } = {}) {
               <span className="text-[11px] text-[#6f7f9a]">{liveFetchError}</span>
             </div>
           )}
-          {!isLiveData && !fleetConnected && liveAvailable === false && (
+          {!isLiveData && liveApprovalsHint && (
             <div className="mb-3 flex items-center gap-2 rounded-md border border-[#2d3240] bg-[#131721]/40 px-4 py-2.5">
               <IconPlugConnected size={14} className="text-[#6f7f9a]/50 shrink-0" />
               <span className="text-[11px] text-[#6f7f9a]/60">
-                Connect to fleet in Settings to view live approvals
+                {liveApprovalsHint}
               </span>
             </div>
           )}

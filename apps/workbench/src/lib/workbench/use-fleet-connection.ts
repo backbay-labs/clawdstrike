@@ -1,6 +1,3 @@
-// ---------------------------------------------------------------------------
-// Fleet Connection Hook & React Context
-// ---------------------------------------------------------------------------
 import {
   createContext,
   useContext,
@@ -11,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { createElement } from "react";
-import type { FleetConnection, HealthResponse, AgentInfo } from "./fleet-client";
+import type { FleetConnection, FleetConnectionInfo, HealthResponse, AgentInfo } from "./fleet-client";
 import {
   testConnection as apiTestConnection,
   fetchAgentCount as apiFetchAgentCount,
@@ -22,6 +19,7 @@ import {
   saveConnectionConfig,
   clearConnectionConfig,
   validateFleetUrl,
+  redactFleetConnection,
 } from "./fleet-client";
 import { secureStore } from "./secure-store";
 
@@ -35,7 +33,11 @@ export interface RemotePolicyInfo {
 }
 
 export interface FleetConnectionState {
-  connection: FleetConnection;
+  /**
+   * Credential-free connection info. Credentials are NOT included here — use
+   * `getCredentials()` to obtain them when needed for API calls.
+   */
+  connection: FleetConnectionInfo;
   isConnecting: boolean;
   error: string | null;
   /** Warning surfaced after 3+ consecutive poll failures. */
@@ -44,6 +46,11 @@ export interface FleetConnectionState {
   secureStorageWarning: boolean;
   agents: AgentInfo[];
   remotePolicyInfo: RemotePolicyInfo | null;
+}
+
+export interface FleetCredentials {
+  apiKey: string;
+  controlApiToken: string;
 }
 
 export interface FleetConnectionActions {
@@ -57,6 +64,18 @@ export interface FleetConnectionActions {
   refreshAgents: () => Promise<void>;
   /** Force refresh remote policy info. */
   refreshRemotePolicy: () => Promise<void>;
+  /**
+   * Retrieve credentials from the internal store. Credentials are never
+   * included in the `connection` state object; call this method when you
+   * need them for an API call.
+   */
+  getCredentials: () => FleetCredentials;
+  /**
+   * Build a full FleetConnection (with credentials) for passing to fleet-client
+   * API functions. This merges the credential-free connection info with the
+   * stored credentials.
+   */
+  getAuthenticatedConnection: () => FleetConnection;
 }
 
 export type FleetConnectionHook = FleetConnectionState & FleetConnectionActions;
@@ -372,8 +391,17 @@ export function FleetConnectionProvider({ children }: { children: ReactNode }) {
     await fetchRemoteInfo(connectionRef.current);
   }, [fetchRemoteInfo]);
 
+  const getCredentials = useCallback((): FleetCredentials => {
+    const conn = connectionRef.current;
+    return { apiKey: conn.apiKey, controlApiToken: conn.controlApiToken };
+  }, []);
+
+  const getAuthenticatedConnection = useCallback((): FleetConnection => {
+    return connectionRef.current;
+  }, []);
+
   const value: FleetConnectionHook = {
-    connection,
+    connection: redactFleetConnection(connection),
     isConnecting,
     error,
     pollError,
@@ -385,6 +413,8 @@ export function FleetConnectionProvider({ children }: { children: ReactNode }) {
     testConnection: testConn,
     refreshAgents,
     refreshRemotePolicy,
+    getCredentials,
+    getAuthenticatedConnection,
   };
 
   return createElement(FleetContext.Provider, { value }, children);

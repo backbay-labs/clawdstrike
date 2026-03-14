@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { PolicyTabBar } from "@/components/workbench/editor/policy-tab-bar";
 import { SplitEditor, SplitModeToggle } from "@/components/workbench/editor/split-editor";
 import { EditorHomeTab } from "@/components/workbench/editor/editor-home-tab";
@@ -6,6 +7,8 @@ import { PolicyCommandCenter } from "@/components/workbench/editor/policy-comman
 import { VersionHistoryPanel } from "@/components/workbench/editor/version-history-panel";
 import { VersionDiffDialog } from "@/components/workbench/editor/version-diff-dialog";
 import { TestRunnerPanel } from "@/components/workbench/editor/test-runner-panel";
+import { GuardsPage } from "@/components/workbench/guards/guards-page";
+import { CompareLayout } from "@/components/workbench/compare/compare-layout";
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -26,6 +29,8 @@ import {
   IconShieldCheck,
   IconTerminal2,
   IconWorld,
+  IconShield,
+  IconColumns,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { ClaudeCodeHint } from "@/components/workbench/shared/claude-code-hint";
@@ -33,9 +38,6 @@ import { TestRunnerProvider, useTestRunnerOptional } from "@/lib/workbench/test-
 import { simulatePolicy } from "@/lib/workbench/simulation-engine";
 import type { TestActionType, Verdict } from "@/lib/workbench/types";
 
-// ---------------------------------------------------------------------------
-// Quick test definitions for the Run dropdown
-// ---------------------------------------------------------------------------
 
 interface QuickTest {
   label: string;
@@ -50,9 +52,6 @@ const QUICK_TESTS: QuickTest[] = [
   { label: "Quick Test: Network Egress", icon: IconWorld, action: "network_egress", target: "evil-exfil.com" },
 ];
 
-// ---------------------------------------------------------------------------
-// Run Button (with dropdown) -- must live inside TestRunnerProvider
-// ---------------------------------------------------------------------------
 
 function RunButtonGroup({
   testRunnerOpen,
@@ -292,13 +291,12 @@ function RunButtonGroup({
   );
 }
 
-// ---------------------------------------------------------------------------
-// PolicyEditor
-// ---------------------------------------------------------------------------
 
 export function PolicyEditor() {
   const { tabs, activeTab } = useMultiPolicy();
   const { state, dispatch } = useWorkbench();
+  const [searchParams] = useSearchParams();
+  const panelParam = searchParams.get("panel");
   const [showCommandCenter, setShowCommandCenter] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [testRunnerOpen, setTestRunnerOpen] = useState(false);
@@ -306,6 +304,26 @@ export function PolicyEditor() {
   const [diffFromId, setDiffFromId] = useState<string | undefined>();
   const [diffToId, setDiffToId] = useState<string | undefined>();
   const [showHome, setShowHome] = useState(false);
+  const [showGuards, setShowGuards] = useState(false);
+  const [showCompare, setShowCompare] = useState(false);
+
+  // Activate panels based on URL search params on mount
+  useEffect(() => {
+    if (panelParam === "guards") {
+      setShowGuards(true);
+      setShowHome(false);
+      setShowCommandCenter(false);
+      setShowCompare(false);
+    } else if (panelParam === "compare") {
+      setShowCompare(true);
+      setShowHome(false);
+      setShowCommandCenter(false);
+      setShowGuards(false);
+    } else if (panelParam === null) {
+      setShowGuards(false);
+      setShowCompare(false);
+    }
+  }, [panelParam]);
 
   // Use the active tab's ID as the policyId for version tracking
   const policyId = activeTab?.id;
@@ -340,8 +358,8 @@ export function PolicyEditor() {
         <div className="flex-1 min-w-0">
           <PolicyTabBar
             isHomeActive={showHome}
-            onHomeClick={() => { setShowHome(true); setShowCommandCenter(false); }}
-            onTabSwitch={() => { setShowHome(false); setShowCommandCenter(false); }}
+            onHomeClick={() => { setShowHome(true); setShowCommandCenter(false); setShowGuards(false); setShowCompare(false); }}
+            onTabSwitch={() => { setShowHome(false); setShowCommandCenter(false); setShowGuards(false); setShowCompare(false); }}
           />
         </div>
         <div className="flex items-center gap-1 px-2 shrink-0">
@@ -352,12 +370,50 @@ export function PolicyEditor() {
           <SplitModeToggle />
           <button
             type="button"
-            onClick={() => { setShowCommandCenter(true); setShowHome(false); }}
+            onClick={() => { setShowCommandCenter(true); setShowHome(false); setShowGuards(false); setShowCompare(false); }}
             className="inline-flex items-center gap-1 px-2 py-1 text-[9px] font-mono text-[#6f7f9a] hover:text-[#d4a84b] border border-transparent hover:border-[#2d3240] rounded transition-colors"
             title="Policy command center"
             aria-label="Policy command center"
           >
             <IconWand size={12} stroke={1.5} />
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setShowGuards((prev) => {
+                if (!prev) { setShowHome(false); setShowCommandCenter(false); setShowCompare(false); }
+                return !prev;
+              });
+            }}
+            className={cn(
+              "inline-flex items-center gap-1 px-2 py-1 text-[9px] font-mono rounded transition-colors",
+              showGuards
+                ? "bg-[#d4a84b]/15 text-[#d4a84b] border border-[#d4a84b]/30"
+                : "text-[#6f7f9a] hover:text-[#ece7dc] border border-transparent hover:border-[#2d3240]",
+            )}
+            title="Guards"
+            aria-label="Guards"
+          >
+            <IconShield size={12} stroke={1.5} />
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setShowCompare((prev) => {
+                if (!prev) { setShowHome(false); setShowCommandCenter(false); setShowGuards(false); }
+                return !prev;
+              });
+            }}
+            className={cn(
+              "inline-flex items-center gap-1 px-2 py-1 text-[9px] font-mono rounded transition-colors",
+              showCompare
+                ? "bg-[#d4a84b]/15 text-[#d4a84b] border border-[#d4a84b]/30"
+                : "text-[#6f7f9a] hover:text-[#ece7dc] border border-transparent hover:border-[#2d3240]",
+            )}
+            title="Compare"
+            aria-label="Compare"
+          >
+            <IconColumns size={12} stroke={1.5} />
           </button>
           <button
             type="button"
@@ -403,6 +459,10 @@ export function PolicyEditor() {
             <PolicyCommandCenter onClose={() => setShowCommandCenter(false)} />
           ) : showHome ? (
             <EditorHomeTab onNavigateToTab={() => setShowHome(false)} />
+          ) : showGuards ? (
+            <GuardsPage onNavigateToEditor={() => setShowGuards(false)} />
+          ) : showCompare ? (
+            <CompareLayout />
           ) : testRunnerOpen ? (
             <ResizablePanelGroup direction="vertical" className="h-full">
               <ResizablePanel defaultSize={65} minSize={30}>

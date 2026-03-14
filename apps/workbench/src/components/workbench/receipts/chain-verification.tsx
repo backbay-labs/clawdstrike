@@ -11,9 +11,6 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { IconCheck, IconX, IconCopy } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 
-// ---------------------------------------------------------------------------
-// Types for client-side fallback verification
-// ---------------------------------------------------------------------------
 
 interface ClientReceiptVerification {
   id: string;
@@ -34,9 +31,6 @@ interface ClientChainVerification {
   summary: string;
 }
 
-// ---------------------------------------------------------------------------
-// Normalised result type used by the UI (same shape regardless of source)
-// ---------------------------------------------------------------------------
 
 interface NormalisedReceiptResult {
   id: string;
@@ -58,9 +52,6 @@ interface NormalisedChainResult {
   source: "native" | "client";
 }
 
-// ---------------------------------------------------------------------------
-// Client-side fallback using Web Crypto API
-// ---------------------------------------------------------------------------
 
 async function sha256Hex(data: string): Promise<string> {
   const encoded = new TextEncoder().encode(data);
@@ -149,9 +140,6 @@ function extractSignedReceipt(receipt: Receipt): Record<string, unknown> | undef
     : undefined;
 }
 
-// ---------------------------------------------------------------------------
-// Normalisation helpers
-// ---------------------------------------------------------------------------
 
 function normaliseNative(resp: TauriChainVerificationResponse): NormalisedChainResult {
   return {
@@ -193,9 +181,6 @@ function normaliseClient(resp: ClientChainVerification): NormalisedChainResult {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
 
 function StatusIcon({ valid }: { valid: boolean | null }) {
   if (valid === true) {
@@ -321,9 +306,6 @@ function ReceiptCard({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Main component
-// ---------------------------------------------------------------------------
 
 interface ChainVerificationProps {
   receipts: Receipt[];

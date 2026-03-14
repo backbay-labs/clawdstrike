@@ -2,18 +2,12 @@ import type { CoverageReport } from "@/lib/workbench/coverage-analyzer";
 import { cn } from "@/lib/utils";
 import { IconShieldCheck, IconPlus } from "@tabler/icons-react";
 
-// ---------------------------------------------------------------------------
-// Props
-// ---------------------------------------------------------------------------
 
 interface CoverageStripProps {
   report: CoverageReport | null;
   onGenerateForGuard?: (guardId: string) => void;
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function progressColor(percent: number): string {
   if (percent >= 80) return "#3dbf84";
@@ -27,9 +21,6 @@ function statusDot(status: "covered" | "uncovered" | "disabled"): string {
   return "bg-[#6f7f9a]/30";
 }
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
 
 export function CoverageStrip({ report, onGenerateForGuard }: CoverageStripProps) {
   if (!report) {

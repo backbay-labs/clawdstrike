@@ -7,9 +7,6 @@ import {
 } from "../version-store";
 import type { WorkbenchPolicy } from "../types";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function makePolicy(overrides?: Partial<WorkbenchPolicy>): WorkbenchPolicy {
   return {
@@ -22,9 +19,6 @@ function makePolicy(overrides?: Partial<WorkbenchPolicy>): WorkbenchPolicy {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Setup / teardown
-// ---------------------------------------------------------------------------
 
 let store: VersionStore;
 
@@ -45,9 +39,6 @@ afterEach(() => {
   store.close();
 });
 
-// ---------------------------------------------------------------------------
-// saveVersion
-// ---------------------------------------------------------------------------
 
 describe("saveVersion", () => {
   it("creates a version with version number 1 for a new policy", async () => {
@@ -163,9 +154,6 @@ guards:
   });
 });
 
-// ---------------------------------------------------------------------------
-// getVersion
-// ---------------------------------------------------------------------------
 
 describe("getVersion", () => {
   it("returns a saved version by ID", async () => {
@@ -184,9 +172,6 @@ describe("getVersion", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// getVersions (getVersionsForPolicy)
-// ---------------------------------------------------------------------------
 
 describe("getVersions", () => {
   it("returns versions for a specific policy sorted by version desc", async () => {
@@ -238,9 +223,6 @@ describe("getVersions", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// addTag / removeTag
-// ---------------------------------------------------------------------------
 
 describe("addTag", () => {
   it("adds a tag to a version", async () => {
@@ -305,9 +287,6 @@ describe("removeTag", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// deleteOldVersions
-// ---------------------------------------------------------------------------
 
 describe("deleteOldVersions", () => {
   it("keeps recent versions and deletes old untagged ones", async () => {
@@ -350,9 +329,6 @@ describe("deleteOldVersions", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// exportChangelog
-// ---------------------------------------------------------------------------
 
 describe("exportChangelog", () => {
   it("returns placeholder when no versions exist", async () => {
@@ -397,9 +373,6 @@ describe("exportChangelog", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// escapeMd
-// ---------------------------------------------------------------------------
 
 describe("escapeMd", () => {
   it("escapes markdown special characters", () => {
@@ -427,9 +400,6 @@ describe("escapeMd", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// isValidTagName
-// ---------------------------------------------------------------------------
 
 describe("isValidTagName", () => {
   it("accepts valid alphanumeric tags", () => {
@@ -462,9 +432,6 @@ describe("isValidTagName", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Error: not initialized
-// ---------------------------------------------------------------------------
 
 describe("VersionStore not initialized", () => {
   it("throws when calling methods before init", async () => {

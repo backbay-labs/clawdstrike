@@ -4,9 +4,6 @@ import userEvent from "@testing-library/user-event";
 
 import { HintSettings } from "../hint-settings";
 
-// ---------------------------------------------------------------------------
-// Mock the hint settings hook
-// ---------------------------------------------------------------------------
 
 const mockSetShowHints = vi.hoisted(() => vi.fn());
 const mockUpdateHint = vi.hoisted(() => vi.fn());
@@ -37,9 +34,6 @@ vi.mock("@/lib/workbench/use-hint-settings", async () => {
 // Re-import the actual constants after mocking (they are passed through)
 import { DEFAULT_HINTS, HINT_LABELS, type HintId } from "@/lib/workbench/use-hint-settings";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 const ALL_HINT_IDS: HintId[] = [
   "home.audit",
@@ -60,9 +54,6 @@ function setupDefaultMocks() {
   mockGetHint.mockImplementation((id: HintId) => ({ ...DEFAULT_HINTS[id] }));
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 describe("HintSettings", () => {
   beforeEach(() => {
@@ -70,9 +61,6 @@ describe("HintSettings", () => {
     setupDefaultMocks();
   });
 
-  // -------------------------------------------------------------------------
-  // Rendering
-  // -------------------------------------------------------------------------
 
   it("renders all 10 hint labels", () => {
     render(<HintSettings />);
@@ -115,9 +103,6 @@ describe("HintSettings", () => {
     }
   });
 
-  // -------------------------------------------------------------------------
-  // Master toggle
-  // -------------------------------------------------------------------------
 
   it("clicking the master toggle calls setShowHints with the opposite value", async () => {
     const user = userEvent.setup();
@@ -146,9 +131,6 @@ describe("HintSettings", () => {
     expect(mockSetShowHints).toHaveBeenCalledWith(true);
   });
 
-  // -------------------------------------------------------------------------
-  // Editing hints
-  // -------------------------------------------------------------------------
 
   it("editing a description calls updateHint with correct ID", async () => {
     const user = userEvent.setup();
@@ -188,9 +170,6 @@ describe("HintSettings", () => {
     expect(lastCall[1].prompt).toBe(DEFAULT_HINTS["editor.validate"].prompt + "Z");
   });
 
-  // -------------------------------------------------------------------------
-  // Customized badge and per-hint Reset
-  // -------------------------------------------------------------------------
 
   it("customized hints show a 'customized' badge", () => {
     mockIsCustomized.mockImplementation((id: HintId) => id === "home.audit");
@@ -222,9 +201,6 @@ describe("HintSettings", () => {
     expect(mockResetHint).toHaveBeenCalledWith("home.audit");
   });
 
-  // -------------------------------------------------------------------------
-  // Reset All
-  // -------------------------------------------------------------------------
 
   it("'Reset All' button is hidden when no hints are customized", () => {
     mockIsCustomized.mockImplementation(() => false);
@@ -257,9 +233,6 @@ describe("HintSettings", () => {
     expect(mockResetAll).toHaveBeenCalledOnce();
   });
 
-  // -------------------------------------------------------------------------
-  // Hint groups
-  // -------------------------------------------------------------------------
 
   it("hints are grouped by section", () => {
     render(<HintSettings />);
@@ -304,9 +277,6 @@ describe("HintSettings", () => {
     }
   });
 
-  // -------------------------------------------------------------------------
-  // Multiple customized hints
-  // -------------------------------------------------------------------------
 
   it("shows customized badge on multiple hints", () => {
     mockIsCustomized.mockImplementation(

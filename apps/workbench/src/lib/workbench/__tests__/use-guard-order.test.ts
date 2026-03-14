@@ -1,13 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { GUARD_REGISTRY, GUARD_CATEGORIES } from "../guard-registry";
 
-// ---------------------------------------------------------------------------
 // The useGuardOrder hook relies on localStorage and React useState. We test
 // the underlying logic by re-implementing the pure helper functions that
 // the hook uses internally: getDefaultGuardOrder, loadPreference,
 // savePreference. These are module-private, so we replicate their logic
 // here and verify correctness against the actual GUARD_REGISTRY.
-// ---------------------------------------------------------------------------
 
 const STORAGE_KEY = "clawdstrike_workbench_guard_order";
 
@@ -104,9 +102,6 @@ function moveGuardToIndex(order: string[], sourceId: string, targetIndex: number
   return next;
 }
 
-// ---------------------------------------------------------------------------
-// localStorage mock (jsdom in this project doesn't provide full localStorage)
-// ---------------------------------------------------------------------------
 
 let store: Record<string, string>;
 
@@ -119,9 +114,6 @@ const localStorageMock = {
   key: (index: number) => Object.keys(store)[index] ?? null,
 };
 
-// ---------------------------------------------------------------------------
-// Setup / teardown
-// ---------------------------------------------------------------------------
 
 beforeEach(() => {
   store = {};
@@ -132,9 +124,6 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-// ---------------------------------------------------------------------------
-// getDefaultGuardOrder tests
-// ---------------------------------------------------------------------------
 
 describe("getDefaultGuardOrder", () => {
   it("returns all 13 guard IDs", () => {
@@ -162,9 +151,6 @@ describe("getDefaultGuardOrder", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// loadPreference tests
-// ---------------------------------------------------------------------------
 
 describe("loadPreference", () => {
   it("returns default when nothing is stored", () => {
@@ -232,9 +218,6 @@ describe("loadPreference", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// savePreference tests
-// ---------------------------------------------------------------------------
 
 describe("savePreference", () => {
   it("persists to localStorage", () => {
@@ -257,9 +240,6 @@ describe("savePreference", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// moveGuardUp tests
-// ---------------------------------------------------------------------------
 
 describe("moveGuardUp", () => {
   it("moves a guard up by one position", () => {
@@ -287,9 +267,6 @@ describe("moveGuardUp", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// moveGuardDown tests
-// ---------------------------------------------------------------------------
 
 describe("moveGuardDown", () => {
   it("moves a guard down by one position", () => {
@@ -317,9 +294,6 @@ describe("moveGuardDown", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// reorderGuard tests
-// ---------------------------------------------------------------------------
 
 describe("reorderGuard", () => {
   it("moves source before target", () => {
@@ -353,9 +327,6 @@ describe("reorderGuard", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// moveGuardToIndex tests
-// ---------------------------------------------------------------------------
 
 describe("moveGuardToIndex", () => {
   it("moves a guard to a specific index", () => {

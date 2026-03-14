@@ -9,10 +9,8 @@ import {
   type HintId,
 } from "../use-hint-settings";
 
-// ---------------------------------------------------------------------------
 // The setup.ts file already provides a localStorage mock that resets between
 // tests (beforeEach → localStorage.clear()), so we can read/write directly.
-// ---------------------------------------------------------------------------
 
 const STORAGE_KEY = "clawdstrike_hint_settings";
 
@@ -24,9 +22,6 @@ function renderHintSettings() {
   });
 }
 
-// ---------------------------------------------------------------------------
-// loadState (tested indirectly through the provider reading localStorage)
-// ---------------------------------------------------------------------------
 
 describe("loadState / initial state", () => {
   it("returns defaults when localStorage is empty", () => {
@@ -144,9 +139,6 @@ describe("loadState / initial state", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// persistState (tested indirectly through mutations)
-// ---------------------------------------------------------------------------
 
 describe("persistState / setShowHints", () => {
   it("persistState writes to localStorage when showHints changes", () => {
@@ -182,9 +174,6 @@ describe("persistState / setShowHints", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// getHint
-// ---------------------------------------------------------------------------
 
 describe("getHint", () => {
   it("returns default when no override exists", () => {
@@ -242,9 +231,6 @@ describe("getHint", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// updateHint
-// ---------------------------------------------------------------------------
 
 describe("updateHint", () => {
   it("persists to localStorage", () => {
@@ -314,9 +300,6 @@ describe("updateHint", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// resetHint
-// ---------------------------------------------------------------------------
 
 describe("resetHint", () => {
   it("removes the override for one hint", () => {
@@ -366,9 +349,6 @@ describe("resetHint", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// resetAll
-// ---------------------------------------------------------------------------
 
 describe("resetAll", () => {
   it("removes all overrides", () => {
@@ -422,9 +402,6 @@ describe("resetAll", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// isCustomized
-// ---------------------------------------------------------------------------
 
 describe("isCustomized", () => {
   it("returns false for defaults", () => {
@@ -476,9 +453,6 @@ describe("isCustomized", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// HINT_LABELS / DEFAULT_HINTS coverage
-// ---------------------------------------------------------------------------
 
 describe("HINT_LABELS and DEFAULT_HINTS", () => {
   it("all 10 hint IDs have labels", () => {
@@ -505,9 +479,6 @@ describe("HINT_LABELS and DEFAULT_HINTS", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// useHintSettings outside provider
-// ---------------------------------------------------------------------------
 
 describe("useHintSettings outside provider", () => {
   it("throws when used outside HintSettingsProvider", () => {

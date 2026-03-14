@@ -8,9 +8,6 @@ import {
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 interface GuardResult {
   guard: string;
@@ -42,9 +39,6 @@ interface ChangedScenario {
   guardDiffs: GuardDiff[];
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function verdictColor(v: string): string {
   if (v === "allow") return "#3dbf84";
@@ -77,9 +71,6 @@ function changeDirectionColor(oldV: string, newV: string): string {
   return "#d4a84b";
 }
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
 
 export function TestDiffPanel({
   baselineResults,

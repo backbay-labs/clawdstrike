@@ -3,9 +3,6 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { TrustprintThresholdTuner } from "../trustprint-threshold-tuner";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function defaultProps(overrides: Partial<React.ComponentProps<typeof TrustprintThresholdTuner>> = {}) {
   return {
@@ -52,14 +49,8 @@ beforeEach(() => {
   vi.stubGlobal("ResizeObserver", MockResizeObserver);
 });
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 describe("TrustprintThresholdTuner", () => {
-  // -----------------------------------------------------------------------
-  // Rendering — zone proportions
-  // -----------------------------------------------------------------------
 
   it("renders three zones with correct proportions", () => {
     const props = defaultProps({ threshold: 0.85, ambiguityBand: 0.1 });
@@ -108,9 +99,6 @@ describe("TrustprintThresholdTuner", () => {
     expect(screen.getByTestId("label-upper")).toHaveTextContent("0.95");
   });
 
-  // -----------------------------------------------------------------------
-  // Preset buttons
-  // -----------------------------------------------------------------------
 
   it("renders preset buttons", () => {
     const props = defaultProps();
@@ -211,9 +199,6 @@ describe("TrustprintThresholdTuner", () => {
     );
   });
 
-  // -----------------------------------------------------------------------
-  // Boundary clamping
-  // -----------------------------------------------------------------------
 
   it("clamps zone boundaries to valid range", () => {
     // threshold 0.95 + band 0.10 would put upper at 1.05, which must clamp to 1.0
@@ -239,9 +224,6 @@ describe("TrustprintThresholdTuner", () => {
     expect(allowW).toBeLessThanOrEqual(1);
   });
 
-  // -----------------------------------------------------------------------
-  // Compact mode
-  // -----------------------------------------------------------------------
 
   it("compact mode renders smaller SVG", () => {
     const props = defaultProps({ compact: true });
@@ -286,9 +268,6 @@ describe("TrustprintThresholdTuner", () => {
     expect(svg?.getAttribute("height")).toBe("120");
   });
 
-  // -----------------------------------------------------------------------
-  // Highlight score marker
-  // -----------------------------------------------------------------------
 
   it("renders highlight score marker at correct position", () => {
     const props = defaultProps({ highlightScore: 0.6 });
@@ -318,9 +297,6 @@ describe("TrustprintThresholdTuner", () => {
     expect(screen.queryByTestId("highlight-marker")).not.toBeInTheDocument();
   });
 
-  // -----------------------------------------------------------------------
-  // Pattern scores
-  // -----------------------------------------------------------------------
 
   it("renders pattern score dots when patternScores provided", () => {
     const props = defaultProps({ patternScores: [0.2, 0.5, 0.9] });
@@ -340,9 +316,6 @@ describe("TrustprintThresholdTuner", () => {
     expect(screen.queryByTestId("pattern-scores")).not.toBeInTheDocument();
   });
 
-  // -----------------------------------------------------------------------
-  // Keyboard interaction (accessibility)
-  // -----------------------------------------------------------------------
 
   it("supports arrow key navigation on threshold handle", () => {
     const props = defaultProps({ threshold: 0.50, ambiguityBand: 0.10 });
@@ -375,9 +348,6 @@ describe("TrustprintThresholdTuner", () => {
     expect(props.onAmbiguityBandChange).toHaveBeenCalledWith(0.11);
   });
 
-  // -----------------------------------------------------------------------
-  // Slider ARIA attributes
-  // -----------------------------------------------------------------------
 
   it("renders accessible slider roles", () => {
     const props = defaultProps({ threshold: 0.85, ambiguityBand: 0.10 });
@@ -396,9 +366,6 @@ describe("TrustprintThresholdTuner", () => {
     expect(upperSlider).toBeInTheDocument();
   });
 
-  // -----------------------------------------------------------------------
-  // Edge cases
-  // -----------------------------------------------------------------------
 
   it("handles threshold at 0.0", () => {
     const props = defaultProps({ threshold: 0.0, ambiguityBand: 0.0 });

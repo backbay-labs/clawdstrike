@@ -2,25 +2,69 @@ import { useLocation } from "react-router-dom";
 import { Link } from "react-router-dom";
 import {
   IconPencil,
-  IconCrosshair,
-  IconColumns,
   IconShieldCheck,
   IconCertificate,
   IconBooks,
   IconChevronsLeft,
   IconChevronsRight,
+  IconRadar,
+  IconAlertTriangle,
+  IconNetwork,
+  IconFlag3,
+  IconFlask,
+  IconGavel,
+  IconFileAnalytics,
+  IconServer,
+  IconSitemap,
 } from "@tabler/icons-react";
 import { ClawLogo } from "@/components/brand/claw-logo";
 import { useWorkbench } from "@/lib/workbench/multi-policy-store";
 import { cn } from "@/lib/utils";
 
-const navItems = [
-  { label: "Editor", icon: IconPencil, href: "/workbench/editor" },
-  { label: "Threat Lab", icon: IconCrosshair, href: "/workbench/simulator" },
-  { label: "Compare", icon: IconColumns, href: "/workbench/compare" },
-  { label: "Compliance", icon: IconShieldCheck, href: "/workbench/compliance" },
-  { label: "Receipts", icon: IconCertificate, href: "/workbench/receipts" },
-  { label: "Library", icon: IconBooks, href: "/workbench/library" },
+interface NavItem {
+  readonly label: string;
+  readonly icon: typeof IconPencil;
+  readonly href: string;
+}
+
+interface NavSection {
+  readonly title: string;
+  readonly accent: string;
+  readonly items: readonly NavItem[];
+}
+
+const navSections: readonly NavSection[] = [
+  {
+    title: "Detect & Respond",
+    accent: "#8b5555",
+    items: [
+      { label: "Sentinels", icon: IconRadar, href: "/sentinels" },
+      { label: "Mission Control", icon: IconFlag3, href: "/missions" },
+      { label: "Findings & Intel", icon: IconAlertTriangle, href: "/findings" },
+      { label: "Lab", icon: IconFlask, href: "/lab" },
+      { label: "Swarms", icon: IconNetwork, href: "/swarms" },
+    ],
+  },
+  {
+    title: "Author & Test",
+    accent: "#8b7355",
+    items: [
+      { label: "Editor", icon: IconPencil, href: "/editor" },
+      { label: "Library", icon: IconBooks, href: "/library" },
+    ],
+  },
+  {
+    title: "Platform",
+    accent: "#7b6b8b",
+    items: [
+      { label: "Compliance", icon: IconShieldCheck, href: "/compliance" },
+      { label: "Approvals", icon: IconGavel, href: "/approvals" },
+      { label: "Audit", icon: IconFileAnalytics, href: "/audit" },
+      { label: "Receipts", icon: IconCertificate, href: "/receipts" },
+      { label: "Fleet", icon: IconServer, href: "/fleet" },
+      { label: "Topology", icon: IconSitemap, href: "/topology" },
+    ],
+  },
 ] as const;
 
 export function WorkbenchSidebar() {
@@ -52,35 +96,55 @@ export function WorkbenchSidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 py-3 flex flex-col gap-0.5 overflow-y-auto">
-        {navItems.map((item) => {
-          const active = pathname.startsWith(item.href);
-          const Icon = item.icon;
-
-          return (
-            <Link
-              key={item.href}
-              to={item.href}
-              className={cn(
-                "relative flex items-center gap-3 mx-2 rounded-md transition-colors duration-150",
-                collapsed ? "justify-center px-0 py-2.5" : "px-3 py-2.5",
-                active
-                  ? "bg-[#131721] text-[#ece7dc]"
-                  : "text-[#6f7f9a] hover:text-[#ece7dc] hover:bg-[#131721]/50"
-              )}
-            >
-              {/* Gold left border for active */}
-              {active && (
-                <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-r-sm bg-[#d4a84b]" />
-              )}
-              <Icon size={18} stroke={1.5} className="shrink-0" />
-              {!collapsed && (
-                <span className="text-sm font-medium truncate">
-                  {item.label}
+        {navSections.map((section, idx) => (
+          <div key={section.title} className={idx > 0 ? "mt-2" : undefined}>
+                        {collapsed ? (
+              idx > 0 ? <div className="mx-3 my-1.5 h-px bg-[#2d324060]" /> : null
+            ) : (
+              <div className="flex items-center gap-2 mx-3 mb-1">
+                <span
+                  className="w-[2px] h-2.5 rounded-full shrink-0"
+                  style={{ backgroundColor: section.accent }}
+                />
+                <span
+                  className="text-[8.5px] font-semibold uppercase tracking-[0.12em] select-none whitespace-nowrap"
+                  style={{ color: section.accent }}
+                >
+                  {section.title}
                 </span>
-              )}
-            </Link>
-          );
-        })}
+              </div>
+            )}
+
+            {section.items.map((item) => {
+              const active = pathname.startsWith(item.href);
+              const Icon = item.icon;
+
+              return (
+                <Link
+                  key={item.href}
+                  to={item.href}
+                  className={cn(
+                    "relative flex items-center gap-3 mx-2 rounded-md transition-colors duration-150",
+                    collapsed ? "justify-center px-0 py-2.5" : "px-3 py-2.5",
+                    active
+                      ? "bg-[#131721] text-[#ece7dc]"
+                      : "text-[#6f7f9a] hover:text-[#ece7dc] hover:bg-[#131721]/50"
+                  )}
+                >
+                  {active && (
+                    <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-r-sm bg-[#d4a84b]" />
+                  )}
+                  <Icon size={18} stroke={1.5} className="shrink-0" />
+                  {!collapsed && (
+                    <span className="text-sm font-medium truncate">
+                      {item.label}
+                    </span>
+                  )}
+                </Link>
+              );
+            })}
+          </div>
+        ))}
       </nav>
 
       {/* Collapse toggle */}

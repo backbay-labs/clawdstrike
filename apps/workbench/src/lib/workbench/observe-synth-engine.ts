@@ -13,9 +13,6 @@ import type {
   TestActionType,
 } from "./types";
 
-// ---------------------------------------------------------------------------
-// PolicyEvent types — mirrors the JSONL format from `clawdstrike policy observe`
-// ---------------------------------------------------------------------------
 
 export interface PolicyEvent {
   action_type: string;
@@ -40,9 +37,6 @@ export interface ParsedEvent extends PolicyEvent {
   lineIndex: number;
 }
 
-// ---------------------------------------------------------------------------
-// Synthesized policy output
-// ---------------------------------------------------------------------------
 
 export interface SynthResult {
   /** The synthesized guard configuration. */
@@ -75,9 +69,6 @@ export interface EventCoverage {
   reason: string;
 }
 
-// ---------------------------------------------------------------------------
-// Parsing
-// ---------------------------------------------------------------------------
 
 /** Map common action_type strings from JSONL to TestActionType. */
 function normalizeActionType(raw: string): TestActionType | null {
@@ -172,9 +163,6 @@ export function parseEventLog(input: string): [ParsedEvent[], string[]] {
   return [events, errors];
 }
 
-// ---------------------------------------------------------------------------
-// Synthesis
-// ---------------------------------------------------------------------------
 
 /** Known sensitive path patterns. */
 const SENSITIVE_PATH_PATTERNS = [

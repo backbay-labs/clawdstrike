@@ -2,19 +2,14 @@ import { describe, it, expect } from "vitest";
 import { GUARD_REGISTRY } from "../guard-registry";
 import { BUILTIN_RULESETS } from "../builtin-rulesets";
 
-// ---------------------------------------------------------------------------
 // We cannot directly import the private functions (getCursorContext,
 // resolveSchemaNode) because they are module-private. However, we CAN test
 // the public completion source. To also cover the internal helpers we use
 // a trick: we import the module and call its exported CompletionSource with
 // a minimal CompletionContext mock.
-// ---------------------------------------------------------------------------
 
 import { policyYamlCompletionSource } from "../yaml-schema";
 
-// ---------------------------------------------------------------------------
-// CodeMirror mock helpers
-// ---------------------------------------------------------------------------
 
 /** Build a minimal Text-like object from a raw string. */
 function mockDoc(text: string) {
@@ -77,9 +72,6 @@ function complete(text: string, pos: number, explicit = true) {
     | null;
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 describe("policyYamlCompletionSource", () => {
   // ---- Top-level completions ----

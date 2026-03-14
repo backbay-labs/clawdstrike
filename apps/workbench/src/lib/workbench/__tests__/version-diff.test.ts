@@ -9,9 +9,6 @@ import {
 } from "../version-diff";
 import type { WorkbenchPolicy } from "../types";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function makePolicy(overrides?: Partial<WorkbenchPolicy>): WorkbenchPolicy {
   return {
@@ -24,9 +21,6 @@ function makePolicy(overrides?: Partial<WorkbenchPolicy>): WorkbenchPolicy {
   };
 }
 
-// ---------------------------------------------------------------------------
-// deepEqual
-// ---------------------------------------------------------------------------
 
 describe("deepEqual", () => {
   it("returns true for identical primitives", () => {
@@ -102,9 +96,6 @@ describe("deepEqual", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// countArrayDiff
-// ---------------------------------------------------------------------------
 
 describe("countArrayDiff", () => {
   it("returns zero diffs for identical arrays", () => {
@@ -152,9 +143,6 @@ describe("countArrayDiff", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// canonicalStringify
-// ---------------------------------------------------------------------------
 
 describe("canonicalStringify", () => {
   it("sorts object keys alphabetically", () => {
@@ -200,9 +188,6 @@ describe("canonicalStringify", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// diffVersions — guard added
-// ---------------------------------------------------------------------------
 
 describe("diffVersions", () => {
   it("detects guard added", () => {
@@ -424,9 +409,6 @@ describe("diffVersions", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// generateChangeSummary
-// ---------------------------------------------------------------------------
 
 describe("generateChangeSummary", () => {
   it("returns 'No changes' for empty changes", () => {
@@ -454,9 +436,6 @@ describe("generateChangeSummary", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// compactChangeSummary
-// ---------------------------------------------------------------------------
 
 describe("compactChangeSummary", () => {
   it("returns empty string for empty changes", () => {

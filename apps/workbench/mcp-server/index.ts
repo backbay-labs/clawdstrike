@@ -45,18 +45,14 @@ import type {
   GuardConfigMap,
 } from "../src/lib/workbench/types.ts";
 
-// ---------------------------------------------------------------------------
 // Server
-// ---------------------------------------------------------------------------
 
 const server = new McpServer({
   name: "clawdstrike-workbench",
   version: "0.1.0",
 });
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 const MAX_POLICY_SIZE = 1_000_000; // 1MB
 
@@ -537,9 +533,7 @@ export function suggestScenariosFromPolicy(policy: WorkbenchPolicy) {
   };
 }
 
-// ---------------------------------------------------------------------------
 // Tools
-// ---------------------------------------------------------------------------
 
 type RunScenarioArgs = {
   scenario_json: string;
@@ -1795,9 +1789,7 @@ registerTypedRawTool(
   },
 );
 
-// ---------------------------------------------------------------------------
 // Resources
-// ---------------------------------------------------------------------------
 
 server.resource(
   "builtin-scenarios",
@@ -1867,9 +1859,7 @@ server.resource(
   }),
 );
 
-// ---------------------------------------------------------------------------
 // Prompts
-// ---------------------------------------------------------------------------
 
 registerTypedPrompt(
   "security-audit",
@@ -2076,9 +2066,7 @@ registerTypedPrompt(
   }),
 );
 
-// ---------------------------------------------------------------------------
 // Start
-// ---------------------------------------------------------------------------
 
 function isMainModule() {
   const entry = process.argv[1];
@@ -2110,9 +2098,7 @@ export function hasConfiguredSseAuthToken(authToken: string): boolean {
 
 if (isMainModule()) {
   if (wantsSse()) {
-    // -----------------------------------------------------------------------
     // SSE transport — HTTP server with bearer-token auth
-    // -----------------------------------------------------------------------
     const port = Number(process.env.MCP_PORT) || 9877;
     const authToken = (process.env.MCP_AUTH_TOKEN ?? "").trim();
 
@@ -2217,9 +2203,7 @@ if (isMainModule()) {
       process.stderr.write(`[mcp-server] SSE listening on http://localhost:${port}/sse\n`);
     });
   } else {
-    // -----------------------------------------------------------------------
     // Stdio transport (default — backward-compatible)
-    // -----------------------------------------------------------------------
     const transport = new StdioServerTransport();
     await server.connect(transport);
   }

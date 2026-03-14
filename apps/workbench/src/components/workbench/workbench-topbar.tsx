@@ -82,8 +82,7 @@ export function WorkbenchTopbar() {
     setEditing(false);
   }
 
-  // Derive validation status
-  const errorCount = validation.errors.length;
+    const errorCount = validation.errors.length;
   const warningCount = validation.warnings.length;
 
   let statusLabel: string;

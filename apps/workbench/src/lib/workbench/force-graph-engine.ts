@@ -16,9 +16,6 @@ import type {
   DelegationEdge,
 } from "./delegation-types";
 
-// ---------------------------------------------------------------------------
-// Layout types
-// ---------------------------------------------------------------------------
 
 export interface LayoutNode {
   id: string;
@@ -63,9 +60,6 @@ const DEFAULTS: Required<LayoutOptions> = {
   padding: 60,
 };
 
-// ---------------------------------------------------------------------------
-// Main layout function
-// ---------------------------------------------------------------------------
 
 export function computeHierarchicalLayout(
   graph: DelegationGraph,
@@ -365,9 +359,6 @@ export function computeHierarchicalLayout(
   };
 }
 
-// ---------------------------------------------------------------------------
-// BFS path tracing (kept from previous implementation)
-// ---------------------------------------------------------------------------
 
 export interface TracedPath {
   nodeIds: string[];
@@ -431,9 +422,6 @@ export function tracePath(
   return { nodeIds, edgeIds };
 }
 
-// ---------------------------------------------------------------------------
-// Fit-to-viewport helper
-// ---------------------------------------------------------------------------
 
 export function computeFitTransform(
   layout: GraphLayoutResult,

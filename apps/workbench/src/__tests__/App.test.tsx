@@ -21,12 +21,12 @@ vi.mock("@/components/workbench/editor/policy-editor", () => ({
   PolicyEditor: () => <div data-testid="page-editor">PolicyEditor</div>,
 }));
 
-vi.mock("@/components/workbench/simulator/simulator-layout", () => ({
-  SimulatorLayout: () => <div data-testid="page-simulator">SimulatorLayout</div>,
+vi.mock("@/components/workbench/lab/lab-layout", () => ({
+  LabLayout: () => <div data-testid="page-lab">LabLayout</div>,
 }));
 
-vi.mock("@/components/workbench/compare/compare-layout", () => ({
-  CompareLayout: () => <div data-testid="page-compare">CompareLayout</div>,
+vi.mock("@/components/workbench/topology/topology-layout", () => ({
+  TopologyLayout: () => <div data-testid="page-topology">TopologyLayout</div>,
 }));
 
 vi.mock("@/components/workbench/compliance/compliance-dashboard", () => ({
@@ -45,16 +45,8 @@ vi.mock("@/components/workbench/settings/settings-page", () => ({
   SettingsPage: () => <div data-testid="page-settings">SettingsPage</div>,
 }));
 
-vi.mock("@/components/workbench/delegation/delegation-page", () => ({
-  DelegationPage: () => <div data-testid="page-delegation">DelegationPage</div>,
-}));
-
 vi.mock("@/components/workbench/approvals/approval-queue", () => ({
   ApprovalQueue: () => <div data-testid="page-approvals">ApprovalQueue</div>,
-}));
-
-vi.mock("@/components/workbench/hierarchy/hierarchy-page", () => ({
-  HierarchyPage: () => <div data-testid="page-hierarchy">HierarchyPage</div>,
 }));
 
 vi.mock("@/components/workbench/fleet/fleet-dashboard", () => ({
@@ -63,6 +55,10 @@ vi.mock("@/components/workbench/fleet/fleet-dashboard", () => ({
 
 vi.mock("@/components/workbench/audit/audit-log", () => ({
   AuditLog: () => <div data-testid="page-audit">AuditLog</div>,
+}));
+
+vi.mock("@/components/workbench/missions/mission-control-page", () => ({
+  MissionControlPage: () => <div data-testid="page-missions">MissionControlPage</div>,
 }));
 
 afterEach(() => {
@@ -74,8 +70,8 @@ describe("App", () => {
     render(<App />);
 
     // Brand should be visible in the titlebar (split into two spans)
-    expect(screen.getByText("Clawdstrike")).toBeInTheDocument();
-    expect(screen.getByText("Workbench")).toBeInTheDocument();
+    expect(screen.getByText("Clawdstrike")).toBeTruthy();
+    expect(screen.getByText("Workbench")).toBeTruthy();
   });
 
   it("default route redirects to /home", async () => {
@@ -83,7 +79,7 @@ describe("App", () => {
 
     // The HashRouter starts at #/ which should redirect to /home
     await waitFor(() => {
-      expect(screen.getByTestId("page-home")).toBeInTheDocument();
+      expect(screen.getByTestId("page-home")).toBeTruthy();
     });
   });
 
@@ -93,25 +89,27 @@ describe("App", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("page-editor")).toBeInTheDocument();
+      expect(screen.getByTestId("page-editor")).toBeTruthy();
     });
   });
 
-  it("renders the simulator route", async () => {
+  it("redirects simulator legacy route to /lab?tab=simulate", async () => {
     window.location.hash = "#/simulator";
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("page-simulator")).toBeInTheDocument();
+      expect(screen.getByTestId("page-lab")).toBeTruthy();
+      expect(window.location.hash).toContain("/lab?tab=simulate");
     });
   });
 
-  it("renders the compare route", async () => {
+  it("redirects compare legacy route to /editor?panel=compare", async () => {
     window.location.hash = "#/compare";
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("page-compare")).toBeInTheDocument();
+      expect(screen.getByTestId("page-editor")).toBeTruthy();
+      expect(window.location.hash).toContain("/editor?panel=compare");
     });
   });
 
@@ -120,7 +118,7 @@ describe("App", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("page-compliance")).toBeInTheDocument();
+      expect(screen.getByTestId("page-compliance")).toBeTruthy();
     });
   });
 
@@ -129,7 +127,7 @@ describe("App", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("page-receipts")).toBeInTheDocument();
+      expect(screen.getByTestId("page-receipts")).toBeTruthy();
     });
   });
 
@@ -138,7 +136,16 @@ describe("App", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("page-library")).toBeInTheDocument();
+      expect(screen.getByTestId("page-library")).toBeTruthy();
+    });
+  });
+
+  it("renders the mission control route", async () => {
+    window.location.hash = "#/missions";
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("page-missions")).toBeTruthy();
     });
   });
 
@@ -147,7 +154,7 @@ describe("App", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("page-home")).toBeInTheDocument();
+      expect(screen.getByTestId("page-home")).toBeTruthy();
     });
   });
 
@@ -157,8 +164,9 @@ describe("App", () => {
     // If WorkbenchProvider is missing, the sidebar would throw.
     // The sidebar nav items prove the context is available.
     await waitFor(() => {
-      expect(screen.getByText("Editor")).toBeInTheDocument();
-      expect(screen.getByText("Threat Lab")).toBeInTheDocument();
+      expect(screen.getByText("Editor")).toBeTruthy();
+      expect(screen.getByText("Lab")).toBeTruthy();
+      expect(screen.getByText("Mission Control")).toBeTruthy();
     });
   });
 });

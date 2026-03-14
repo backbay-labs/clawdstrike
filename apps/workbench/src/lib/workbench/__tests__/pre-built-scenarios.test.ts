@@ -2,9 +2,6 @@ import { describe, it, expect } from "vitest";
 import { PRE_BUILT_SCENARIOS } from "../pre-built-scenarios";
 import type { TestActionType, Verdict, ThreatSeverity } from "../types";
 
-// ---------------------------------------------------------------------------
-// Tests for PRE_BUILT_SCENARIOS — the curated set of probe scenarios
-// ---------------------------------------------------------------------------
 
 const VALID_ACTION_TYPES: TestActionType[] = [
   "file_access",
@@ -69,9 +66,6 @@ describe("PRE_BUILT_SCENARIOS", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Category distribution
-// ---------------------------------------------------------------------------
 
 describe("scenario category distribution", () => {
   it("has attack scenarios", () => {
@@ -90,9 +84,6 @@ describe("scenario category distribution", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Action type coverage
-// ---------------------------------------------------------------------------
 
 describe("action type coverage", () => {
   it("includes file_access scenarios", () => {
@@ -124,9 +115,6 @@ describe("action type coverage", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Payload validation per action type
-// ---------------------------------------------------------------------------
 
 describe("payload structure by action type", () => {
   it("file_access scenarios have a path in payload", () => {
@@ -186,9 +174,6 @@ describe("payload structure by action type", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Specific scenario smoke checks
-// ---------------------------------------------------------------------------
 
 describe("specific scenario integrity", () => {
   it("SSH key exfiltration scenario targets .ssh path", () => {

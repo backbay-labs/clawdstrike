@@ -6,6 +6,9 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { DesktopLayout } from "../desktop-layout";
 import { MultiPolicyProvider as WorkbenchProvider, useMultiPolicy } from "@/lib/workbench/multi-policy-store";
 import { FleetConnectionProvider } from "@/lib/workbench/use-fleet-connection";
+import { SentinelProvider } from "@/lib/workbench/sentinel-store";
+import { FindingProvider } from "@/lib/workbench/finding-store";
+import { OperatorProvider } from "@/lib/workbench/operator-store";
 
 vi.mock("@/lib/tauri-bridge", () => ({
   isDesktop: vi.fn(() => false),
@@ -29,17 +32,23 @@ function DirtyBackgroundTabBootstrap() {
 function renderLayout(route = "/editor", withDirtyBackgroundTab = false) {
   return render(
     <MemoryRouter initialEntries={[route]}>
-      <FleetConnectionProvider>
-        <WorkbenchProvider>
-          {withDirtyBackgroundTab ? <DirtyBackgroundTabBootstrap /> : null}
-          <Routes>
-            <Route element={<DesktopLayout />}>
-              <Route path="editor" element={<div data-testid="editor-page">Editor Page</div>} />
-              <Route path="simulator" element={<div data-testid="simulator-page">Simulator Page</div>} />
-            </Route>
-          </Routes>
-        </WorkbenchProvider>
-      </FleetConnectionProvider>
+      <OperatorProvider>
+        <FleetConnectionProvider>
+          <WorkbenchProvider>
+            <SentinelProvider>
+              <FindingProvider>
+                {withDirtyBackgroundTab ? <DirtyBackgroundTabBootstrap /> : null}
+                <Routes>
+                  <Route element={<DesktopLayout />}>
+                    <Route path="editor" element={<div data-testid="editor-page">Editor Page</div>} />
+                    <Route path="simulator" element={<div data-testid="simulator-page">Simulator Page</div>} />
+                  </Route>
+                </Routes>
+              </FindingProvider>
+            </SentinelProvider>
+          </WorkbenchProvider>
+        </FleetConnectionProvider>
+      </OperatorProvider>
     </MemoryRouter>,
   );
 }
@@ -59,7 +68,7 @@ describe("DesktopLayout", () => {
     // Sidebar renders navigation items
     expect(screen.getByRole("complementary")).toBeInTheDocument();
     expect(screen.getByText("Editor")).toBeInTheDocument();
-    expect(screen.getByText("Threat Lab")).toBeInTheDocument();
+    expect(screen.getByText("Lab")).toBeInTheDocument();
   });
 
   it("renders the status bar", () => {

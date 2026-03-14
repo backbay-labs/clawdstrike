@@ -1,8 +1,5 @@
 import YAML from "yaml";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 export interface SuiteScenario {
   id: string;
@@ -24,9 +21,6 @@ export interface ParsedSuite {
   errors: string[];
 }
 
-// ---------------------------------------------------------------------------
-// Deterministic ID generation
-// ---------------------------------------------------------------------------
 
 function deterministicId(name: string, index: number): string {
   // Simple deterministic ID from scenario name + index
@@ -38,9 +32,6 @@ function deterministicId(name: string, index: number): string {
   return `sc-${(hash >>> 0).toString(16).padStart(8, '0')}`;
 }
 
-// ---------------------------------------------------------------------------
-// Parse
-// ---------------------------------------------------------------------------
 
 /**
  * Parse a scenario suite YAML string into typed objects.
@@ -141,9 +132,6 @@ export function parseSuiteYaml(yamlStr: string): ParsedSuite {
   return { scenarios, name, policy, errors };
 }
 
-// ---------------------------------------------------------------------------
-// Serialize
-// ---------------------------------------------------------------------------
 
 /**
  * Serialize an array of SuiteScenario objects back to YAML.

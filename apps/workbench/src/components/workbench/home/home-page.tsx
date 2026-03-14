@@ -2,22 +2,27 @@ import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import {
   IconPencil,
-  IconCrosshair,
   IconShieldCheck,
   IconGavel,
   IconServer,
   IconBooks,
+  IconRadar,
+  IconAlertTriangle,
+  IconNetwork,
+  IconFlask,
+  IconFileAnalytics,
+  IconCertificate,
+  IconSitemap,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { ClaudeCodeHint } from "@/components/workbench/shared/claude-code-hint";
 import { useWorkbench, useMultiPolicy } from "@/lib/workbench/multi-policy-store";
 import { useFleetConnection } from "@/lib/workbench/use-fleet-connection";
+import { useSentinels } from "@/lib/workbench/sentinel-store";
+import { useFindings } from "@/lib/workbench/finding-store";
 import { GUARD_REGISTRY } from "@/lib/workbench/guard-registry";
+import { SEVERITY_COLORS } from "@/lib/workbench/finding-constants";
 import type { GuardId } from "@/lib/workbench/types";
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 const CATEGORY_LABELS: Record<string, string> = {
   filesystem: "Filesystem",
@@ -43,10 +48,6 @@ const VERDICT_COLORS: Record<string, string> = {
   warn: "#d4a84b",
 };
 
-// ---------------------------------------------------------------------------
-// Health Ring — SVG arc showing enabled/total guard coverage
-// ---------------------------------------------------------------------------
-
 function HealthRing({
   enabled,
   total,
@@ -62,8 +63,7 @@ function HealthRing({
   return (
     <div className="relative w-[76px] h-[76px] shrink-0">
       <svg viewBox="0 0 80 80" className="w-full h-full -rotate-90">
-        {/* Track */}
-        <circle
+                <circle
           cx="40"
           cy="40"
           r={radius}
@@ -71,8 +71,7 @@ function HealthRing({
           stroke="#2d3240"
           strokeWidth="3.5"
         />
-        {/* Active arc */}
-        <circle
+                <circle
           cx="40"
           cy="40"
           r={radius}
@@ -94,10 +93,6 @@ function HealthRing({
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Guard tile — compact indicator in the coverage matrix
-// ---------------------------------------------------------------------------
 
 function GuardTile({
   name,
@@ -136,10 +131,6 @@ function GuardTile({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Navigation card — contextual link with live state indicator
-// ---------------------------------------------------------------------------
-
 function NavCard({
   icon,
   label,
@@ -173,9 +164,139 @@ function NavCard({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Home Page
-// ---------------------------------------------------------------------------
+
+function SentinelSummaryCard({
+  total,
+  active,
+  paused,
+  retired,
+}: {
+  total: number;
+  active: number;
+  paused: number;
+  retired: number;
+}) {
+  return (
+    <div className="rounded-lg border border-[#2d3240]/40 bg-[#0b0d13]/60 px-5 py-4">
+      <div className="flex items-center gap-2 mb-3">
+        <IconRadar size={15} stroke={1.5} className="text-[#8b5555]" />
+        <span className="text-[10px] font-mono font-semibold text-[#8b5555] uppercase tracking-[0.12em]">
+          Sentinels
+        </span>
+      </div>
+      <div className="flex items-baseline gap-3">
+        <span className="text-2xl font-syne font-bold text-[#ece7dc] leading-none">
+          {total}
+        </span>
+        <span className="text-[10px] font-mono text-[#6f7f9a]">total</span>
+      </div>
+      <div className="flex items-center gap-3 mt-2 text-[10px] font-mono">
+        <span className="flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#3dbf84]" />
+          <span className="text-[#ece7dc]">{active}</span>
+          <span className="text-[#6f7f9a]">active</span>
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#d4a84b]" />
+          <span className="text-[#ece7dc]">{paused}</span>
+          <span className="text-[#6f7f9a]">paused</span>
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#6f7f9a]/40" />
+          <span className="text-[#ece7dc]">{retired}</span>
+          <span className="text-[#6f7f9a]">retired</span>
+        </span>
+      </div>
+      {active > 0 && (
+        <div className="flex items-center gap-1.5 mt-3">
+          {Array.from({ length: Math.min(active, 8) }).map((_, i) => (
+            <div
+              key={i}
+              className="w-5 h-5 rounded-full bg-[#131721] border border-[#2d3240]/60 flex items-center justify-center"
+            >
+              <span className="text-[7px] font-mono text-[#6f7f9a]">
+                {String.fromCharCode(65 + i)}
+              </span>
+            </div>
+          ))}
+          {active > 8 && (
+            <span className="text-[9px] font-mono text-[#6f7f9a]">
+              +{active - 8}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FindingsSummaryCard({
+  emerging,
+  confirmed,
+  total,
+  severityCounts,
+}: {
+  emerging: number;
+  confirmed: number;
+  total: number;
+  severityCounts: Record<string, number>;
+}) {
+  const maxSeverity = Math.max(1, ...Object.values(severityCounts));
+
+  return (
+    <div className="rounded-lg border border-[#2d3240]/40 bg-[#0b0d13]/60 px-5 py-4">
+      <div className="flex items-center gap-2 mb-3">
+        <IconAlertTriangle size={15} stroke={1.5} className="text-[#d4a84b]" />
+        <span className="text-[10px] font-mono font-semibold text-[#d4a84b] uppercase tracking-[0.12em]">
+          Findings
+        </span>
+      </div>
+      <div className="flex items-baseline gap-3">
+        <span className="text-2xl font-syne font-bold text-[#ece7dc] leading-none">
+          {total}
+        </span>
+        <span className="text-[10px] font-mono text-[#6f7f9a]">total</span>
+      </div>
+      <div className="flex items-center gap-3 mt-2 text-[10px] font-mono">
+        <span className="flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#d4a84b] animate-pulse" />
+          <span className="text-[#d4a84b] font-semibold">{emerging}</span>
+          <span className="text-[#d4a84b]">emerging</span>
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#3dbf84]" />
+          <span className="text-[#ece7dc]">{confirmed}</span>
+          <span className="text-[#6f7f9a]">confirmed</span>
+        </span>
+      </div>
+      <div className="flex items-end gap-1 mt-3 h-5">
+        {(["critical", "high", "medium", "low"] as const).map((sev) => {
+          const count = severityCounts[sev] ?? 0;
+          const heightPct = maxSeverity > 0 ? (count / maxSeverity) * 100 : 0;
+          return (
+            <div
+              key={sev}
+              className="flex flex-col items-center gap-0.5"
+              title={`${sev}: ${count}`}
+            >
+              <div
+                className="w-3 rounded-sm transition-all duration-500"
+                style={{
+                  height: `${Math.max(heightPct, 8)}%`,
+                  backgroundColor: SEVERITY_COLORS[sev] ?? "#6f7f9a",
+                  opacity: count > 0 ? 1 : 0.2,
+                }}
+              />
+            </div>
+          );
+        })}
+        <span className="text-[8px] font-mono text-[#6f7f9a] ml-1.5 leading-none self-end">
+          severity
+        </span>
+      </div>
+    </div>
+  );
+}
 
 export function HomePage() {
   const { state } = useWorkbench();
@@ -183,7 +304,6 @@ export function HomePage() {
   const { connection } = useFleetConnection();
   const { activePolicy, validation, dirty } = state;
 
-  // ---- Guard analysis ----
   const { enabledCount, totalCount, guardsByCategory } = useMemo(() => {
     let enabled = 0;
     const byCategory: Record<
@@ -212,7 +332,6 @@ export function HomePage() {
     };
   }, [activePolicy]);
 
-  // ---- Validation status ----
   const errorCount = validation.errors.length;
   const warningCount = validation.warnings.length;
   let validationText: string;
@@ -229,7 +348,6 @@ export function HomePage() {
     validationColor = "#3dbf84";
   }
 
-  // ---- Derived details for nav cards ----
   const tabCount = tabs.length;
   const tabDetail = `${tabCount} tab${tabCount !== 1 ? "s" : ""}${dirty ? " · unsaved" : ""}`;
 
@@ -239,12 +357,38 @@ export function HomePage() {
 
   const savedCount = state.savedPolicies?.length ?? 0;
 
+  const { sentinels } = useSentinels();
+  const { findings } = useFindings();
+
+  const sentinelStats = useMemo(() => {
+    let active = 0;
+    let paused = 0;
+    let retired = 0;
+    for (const s of sentinels) {
+      if (s.status === "active") active++;
+      else if (s.status === "paused") paused++;
+      else if (s.status === "retired") retired++;
+    }
+    return { total: sentinels.length, active, paused, retired };
+  }, [sentinels]);
+
+  const findingsStats = useMemo(() => {
+    let emerging = 0;
+    let confirmed = 0;
+    const severityCounts: Record<string, number> = { critical: 0, high: 0, medium: 0, low: 0 };
+    for (const f of findings) {
+      if (f.status === "emerging") emerging++;
+      else if (f.status === "confirmed") confirmed++;
+      if ((f.status === "emerging" || f.status === "confirmed") && f.severity in severityCounts) {
+        severityCounts[f.severity]++;
+      }
+    }
+    return { emerging, confirmed, total: findings.length, severityCounts };
+  }, [findings]);
+
   return (
     <div className="h-full w-full flex flex-col bg-[#05060a] overflow-auto page-transition-enter">
       <div className="max-w-4xl w-full mx-auto px-8 py-8 flex flex-col gap-8">
-        {/* ================================================================ */}
-        {/* Policy Identity + Health Ring                                     */}
-        {/* ================================================================ */}
         <div className="flex items-center gap-6">
           <HealthRing enabled={enabledCount} total={totalCount} />
           <div className="min-w-0">
@@ -274,9 +418,11 @@ export function HomePage() {
           </div>
         </div>
 
-        {/* ================================================================ */}
-        {/* Guard Coverage Matrix                                             */}
-        {/* ================================================================ */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <SentinelSummaryCard {...sentinelStats} />
+          <FindingsSummaryCard {...findingsStats} />
+        </div>
+
         <div>
           <h2 className="text-[10px] font-mono font-semibold text-[#d4a84b] uppercase tracking-[0.15em] mb-3">
             Guard Coverage
@@ -299,31 +445,50 @@ export function HomePage() {
           </div>
         </div>
 
-        {/* ================================================================ */}
-        {/* Claude Code Hint                                                   */}
-        {/* ================================================================ */}
         <ClaudeCodeHint hintId="home.audit" />
 
-        {/* ================================================================ */}
-        {/* Navigation Cards                                                  */}
-        {/* ================================================================ */}
         <div>
           <h2 className="text-[10px] font-mono font-semibold text-[#d4a84b] uppercase tracking-[0.15em] mb-3">
             Navigate
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
             <NavCard
+              icon={<IconRadar size={16} stroke={1.5} />}
+              label="Sentinels"
+              detail={`${sentinelStats.active} active sentinel${sentinelStats.active !== 1 ? "s" : ""}`}
+              href="/sentinels"
+            />
+            <NavCard
+              icon={<IconAlertTriangle size={16} stroke={1.5} />}
+              label="Findings & Intel"
+              detail={`${findingsStats.emerging} emerging · ${findingsStats.total} total findings & intel`}
+              href="/findings"
+              accent={findingsStats.emerging > 0 ? "text-[#d4a84b]" : undefined}
+            />
+            <NavCard
+              icon={<IconFlask size={16} stroke={1.5} />}
+              label="Lab"
+              detail="Simulate and hunt threats"
+              href="/lab"
+            />
+            <NavCard
+              icon={<IconNetwork size={16} stroke={1.5} />}
+              label="Swarms"
+              detail="Trust network coordination"
+              href="/swarms"
+            />
+            <NavCard
               icon={<IconPencil size={16} stroke={1.5} />}
-              label="Policy Editor"
+              label="Editor"
               detail={tabDetail}
               href="/editor"
               accent={dirty ? "text-[#d4a84b]" : undefined}
             />
             <NavCard
-              icon={<IconCrosshair size={16} stroke={1.5} />}
-              label="Threat Lab"
-              detail="Simulate attack scenarios"
-              href="/simulator"
+              icon={<IconBooks size={16} stroke={1.5} />}
+              label="Library"
+              detail={`${savedCount} saved polic${savedCount !== 1 ? "ies" : "y"}`}
+              href="/library"
             />
             <NavCard
               icon={<IconShieldCheck size={16} stroke={1.5} />}
@@ -338,6 +503,18 @@ export function HomePage() {
               href="/approvals"
             />
             <NavCard
+              icon={<IconFileAnalytics size={16} stroke={1.5} />}
+              label="Audit"
+              detail="Decision audit trail"
+              href="/audit"
+            />
+            <NavCard
+              icon={<IconCertificate size={16} stroke={1.5} />}
+              label="Receipts"
+              detail="Signed attestations"
+              href="/receipts"
+            />
+            <NavCard
               icon={<IconServer size={16} stroke={1.5} />}
               label="Fleet"
               detail={fleetDetail}
@@ -345,10 +522,10 @@ export function HomePage() {
               accent={connection.connected ? "text-[#3dbf84]" : undefined}
             />
             <NavCard
-              icon={<IconBooks size={16} stroke={1.5} />}
-              label="Library"
-              detail={`${savedCount} saved polic${savedCount !== 1 ? "ies" : "y"}`}
-              href="/library"
+              icon={<IconSitemap size={16} stroke={1.5} />}
+              label="Topology"
+              detail="Delegation & hierarchy graphs"
+              href="/topology"
             />
           </div>
         </div>

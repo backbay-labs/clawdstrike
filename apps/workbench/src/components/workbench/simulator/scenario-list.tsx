@@ -134,9 +134,6 @@ function ThreatPostureSummary({ scenarios }: { scenarios: TestScenario[] }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Coverage status icon helper
-// ---------------------------------------------------------------------------
 
 const COVERAGE_STATUS_ICONS: Record<
   GuardCoverageStatus,
@@ -147,9 +144,6 @@ const COVERAGE_STATUS_ICONS: Record<
   disabled: { Icon: IconCircleDashed, className: "text-[#6f7f9a]/40" },
 };
 
-// ---------------------------------------------------------------------------
-// Source mode toggle
-// ---------------------------------------------------------------------------
 
 export type ScenarioSource = "library" | "redteam";
 
@@ -394,9 +388,6 @@ export function ScenarioList({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Library content (existing scenario groups)
-// ---------------------------------------------------------------------------
 
 function LibraryContent({
   scenarios,
@@ -546,9 +537,6 @@ function LibraryContent({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Red Team content (plugin selector embedded in sidebar)
-// ---------------------------------------------------------------------------
 
 function RedTeamContent({
   policy,
@@ -717,9 +705,6 @@ function ScenarioGroup({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Smart Scenarios sub-components
-// ---------------------------------------------------------------------------
 
 function CoverageBadge({ report }: { report: CoverageReport }) {
   const pct = report.coveragePercent;

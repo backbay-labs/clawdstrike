@@ -7,9 +7,6 @@ import type {
   GuardSimResult,
 } from "../types";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function makePolicy(overrides?: Partial<WorkbenchPolicy>): WorkbenchPolicy {
   return {
@@ -57,9 +54,6 @@ function makeGuardResult(overrides?: Partial<GuardSimResult>): GuardSimResult {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Fixed date for deterministic tests
-// ---------------------------------------------------------------------------
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -70,9 +64,6 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 describe("generateBatchReport", () => {
   // ---- Structure ----
@@ -442,9 +433,6 @@ describe("generateBatchReport", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// reportToJson
-// ---------------------------------------------------------------------------
 
 describe("reportToJson", () => {
   it("produces valid JSON string", () => {

@@ -338,7 +338,10 @@ pub async fn check_action(
         let validation = state
             .sessions
             .validate_session(&session_id)
-            .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
+            .map_err(|e| {
+                tracing::error!(error = %e, "session validation failed");
+                V1Error::internal("INTERNAL_ERROR", "internal server error")
+            })?;
 
         if !validation.valid {
             return Err(V1Error::forbidden(
@@ -412,7 +415,10 @@ pub async fn check_action(
             let perms = state
                 .rbac
                 .effective_permission_strings_for_roles(&roles)
-                .map_err(|e| V1Error::internal("RBAC_RESOLUTION_ERROR", e.to_string()))?;
+                .map_err(|e| {
+                    tracing::error!(error = %e, "RBAC permission resolution failed");
+                    V1Error::internal("RBAC_RESOLUTION_ERROR", "internal server error")
+                })?;
             principal_for_audit = Some(principal.clone());
             roles_for_audit = Some(roles.clone());
             permissions_for_audit = Some(perms.clone());
@@ -456,7 +462,10 @@ pub async fn check_action(
                     format!("identity_rate_limited_retry_after_secs={retry_after_secs}"),
                 )
                 .with_retry_after(retry_after_secs)),
-                other => Err(V1Error::internal("INTERNAL_ERROR", other.to_string())),
+                other => {
+                    tracing::error!(error = %other, "identity rate limit check failed");
+                    Err(V1Error::internal("INTERNAL_ERROR", "internal server error"))
+                }
             };
         }
     }
@@ -465,12 +474,18 @@ pub async fn check_action(
     let resolved = state
         .policy_resolver
         .resolve_policy(&default_policy, &context)
-        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
+        .map_err(|e| {
+            tracing::error!(error = %e, "policy resolution failed");
+            V1Error::internal("INTERNAL_ERROR", "internal server error")
+        })?;
 
     let resolved_yaml = resolved
         .policy
         .to_yaml()
-        .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
+        .map_err(|e| {
+            tracing::error!(error = %e, "policy YAML serialization failed");
+            V1Error::internal("INTERNAL_ERROR", "internal server error")
+        })?;
     let policy_hash = hush_core::sha256(resolved_yaml.as_bytes()).to_hex();
 
     let resolved_origin_enclave = resolve_request_origin_enclave(&request, &resolved.policy);
@@ -612,7 +627,10 @@ pub async fn check_action(
             ));
         }
     }
-    .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
+    .map_err(|e| {
+        tracing::error!(error = %e, "guard evaluation failed");
+        V1Error::internal("INTERNAL_ERROR", "internal server error")
+    })?;
 
     let result = posture_report.guard_report.overall.clone();
     let mut response_posture: Option<PostureInfo> = posture_runtime
@@ -624,13 +642,19 @@ pub async fn check_action(
         if let Some(posture) = posture_runtime.as_ref() {
             combined_patch.extend(
                 posture_state_patch(posture)
-                    .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?,
+                    .map_err(|e| {
+                        tracing::error!(error = %e, "posture state patch failed");
+                        V1Error::internal("INTERNAL_ERROR", "internal server error")
+                    })?,
             );
         }
         if let Some(origin) = origin_runtime.as_ref() {
             combined_patch.extend(
                 origin_state_patch(origin)
-                    .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?,
+                    .map_err(|e| {
+                        tracing::error!(error = %e, "origin state patch failed");
+                        V1Error::internal("INTERNAL_ERROR", "internal server error")
+                    })?,
             );
         }
 
@@ -638,7 +662,10 @@ pub async fn check_action(
             let updated = state
                 .sessions
                 .merge_state(session_id, combined_patch)
-                .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
+                .map_err(|e| {
+                    tracing::error!(error = %e, "session state merge failed");
+                    V1Error::internal("INTERNAL_ERROR", "internal server error")
+                })?;
 
             let updated_session = updated.ok_or_else(|| {
                 V1Error::not_found(
@@ -658,7 +685,10 @@ pub async fn check_action(
         state
             .sessions
             .touch_session(session_id)
-            .map_err(|e| V1Error::internal("INTERNAL_ERROR", e.to_string()))?;
+            .map_err(|e| {
+                tracing::error!(error = %e, "session touch failed");
+                V1Error::internal("INTERNAL_ERROR", "internal server error")
+            })?;
     }
     drop(session_lock);
 

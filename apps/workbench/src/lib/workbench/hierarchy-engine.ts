@@ -1,6 +1,3 @@
-// ---------------------------------------------------------------------------
-// Hierarchy engine — CRUD operations and effective-policy merge logic
-// ---------------------------------------------------------------------------
 
 import type {
   OrgNode,
@@ -13,23 +10,14 @@ import type {
 import type { SavedPolicy, GuardConfigMap, PolicySettings } from "./types";
 import { GUARD_REGISTRY } from "./guard-registry";
 
-// ---------------------------------------------------------------------------
-// localStorage persistence key
-// ---------------------------------------------------------------------------
 
 const HIERARCHY_STORAGE_KEY = "clawdstrike_policy_hierarchy";
 
-// ---------------------------------------------------------------------------
-// ID generation
-// ---------------------------------------------------------------------------
 
 function uid(): string {
   return crypto.randomUUID();
 }
 
-// ---------------------------------------------------------------------------
-// Default / demo hierarchy
-// ---------------------------------------------------------------------------
 
 export function createDefaultHierarchy(): PolicyHierarchy {
   const orgId = uid();
@@ -155,9 +143,6 @@ export function createDefaultHierarchy(): PolicyHierarchy {
   return { nodes, rootId: orgId };
 }
 
-// ---------------------------------------------------------------------------
-// Path helpers
-// ---------------------------------------------------------------------------
 
 /**
  * Returns the ordered ancestry path from root to the given node (inclusive).
@@ -218,9 +203,6 @@ export function getLeafAgents(
   );
 }
 
-// ---------------------------------------------------------------------------
-// Effective policy computation
-// ---------------------------------------------------------------------------
 
 /**
  * Resolves the linked SavedPolicy for a node, if any.
@@ -350,9 +332,6 @@ export function computeEffectivePolicy(
   return { source, guards, settings };
 }
 
-// ---------------------------------------------------------------------------
-// CRUD mutations (all pure — return a new hierarchy)
-// ---------------------------------------------------------------------------
 
 export function addNode(
   hierarchy: PolicyHierarchy,
@@ -499,9 +478,6 @@ export function renameNode(
   };
 }
 
-// ---------------------------------------------------------------------------
-// Persistence
-// ---------------------------------------------------------------------------
 
 export function saveHierarchy(hierarchy: PolicyHierarchy): void {
   try {
@@ -533,9 +509,6 @@ export function clearHierarchy(): void {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Normalization
-// ---------------------------------------------------------------------------
 
 /**
  * Ensures a PolicyHierarchy has consistent parent↔child relationships.
@@ -590,9 +563,6 @@ export function normalizeHierarchy(hierarchy: PolicyHierarchy): PolicyHierarchy 
   return { nodes, rootId: hierarchy.rootId };
 }
 
-// ---------------------------------------------------------------------------
-// Validation
-// ---------------------------------------------------------------------------
 
 export interface HierarchyValidationIssue {
   nodeId: string;

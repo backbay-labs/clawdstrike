@@ -12,9 +12,10 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "test": "vitest --passWithNoTests",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "NODE_OPTIONS=--max-old-space-size=8192 npm exec tsc -- --noEmit",
     "lint": "eslint src/",
-    "dogfood:live": "bash ../../scripts/workbench-live-dogfood.sh"
+    "dogfood:live": "bash ../../scripts/workbench-live-dogfood.sh",
+    "dogfood:missions": "bash ../../scripts/workbench-mission-control-dogfood.sh"
   },
   "dependencies": {
     "@base-ui/react": "^1.2.0",

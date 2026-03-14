@@ -1,8 +1,5 @@
 import type { TestResult } from "./test-store";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 export interface StoredTestRun {
   id: string;
@@ -14,18 +11,12 @@ export interface StoredTestRun {
   results: TestResult[];
 }
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 const DB_NAME = "clawdstrike_test_history";
 const DB_VERSION = 1;
 const RUNS_STORE = "runs";
 const MAX_RECENT_RUNS = 50;
 
-// ---------------------------------------------------------------------------
-// IndexedDB helpers
-// ---------------------------------------------------------------------------
 
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -79,9 +70,6 @@ function normalizePolicyIds(policyIds: string[]): string[] {
   return Array.from(new Set(policyIds.map((id) => id.trim()).filter(Boolean)));
 }
 
-// ---------------------------------------------------------------------------
-// TestHistoryStore
-// ---------------------------------------------------------------------------
 
 export class TestHistoryStore {
   private db: IDBDatabase | null = null;
@@ -186,9 +174,6 @@ export class TestHistoryStore {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Singleton
-// ---------------------------------------------------------------------------
 
 let _instance: TestHistoryStore | null = null;
 

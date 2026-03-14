@@ -2,9 +2,6 @@ import { describe, it, expect } from "vitest";
 import { simulatePolicy } from "../simulation-engine";
 import type { WorkbenchPolicy, TestScenario } from "../types";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function makePolicy(guards: WorkbenchPolicy["guards"]): WorkbenchPolicy {
   return {
@@ -28,9 +25,6 @@ function makeScenario(
   };
 }
 
-// ---------------------------------------------------------------------------
-// Forbidden Path
-// ---------------------------------------------------------------------------
 
 describe("forbidden_path guard", () => {
   const policy = makePolicy({
@@ -103,9 +97,6 @@ describe("forbidden_path guard", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Egress Allowlist
-// ---------------------------------------------------------------------------
 
 describe("egress_allowlist guard", () => {
   const policy = makePolicy({
@@ -198,9 +189,6 @@ describe("egress_allowlist guard", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Secret Leak
-// ---------------------------------------------------------------------------
 
 describe("secret_leak guard", () => {
   const policy = makePolicy({
@@ -349,9 +337,6 @@ describe("secret_leak guard", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Shell Command
-// ---------------------------------------------------------------------------
 
 describe("shell_command guard", () => {
   const policy = makePolicy({
@@ -444,9 +429,6 @@ describe("shell_command guard", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Patch Integrity
-// ---------------------------------------------------------------------------
 
 describe("patch_integrity guard", () => {
   it("allows patches within limits", () => {
@@ -546,9 +528,6 @@ describe("patch_integrity guard", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Combined guards
-// ---------------------------------------------------------------------------
 
 describe("combined guards", () => {
   it("evaluates multiple guards and aggregates to deny if any denies", () => {
@@ -608,9 +587,6 @@ describe("combined guards", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Disabled guards
-// ---------------------------------------------------------------------------
 
 describe("disabled guards", () => {
   it("skips guards with enabled: false", () => {
@@ -632,9 +608,6 @@ describe("disabled guards", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Empty policy
-// ---------------------------------------------------------------------------
 
 describe("empty policy", () => {
   it("passes everything when no guards are configured", () => {
@@ -648,9 +621,6 @@ describe("empty policy", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// MCP Tool guard
-// ---------------------------------------------------------------------------
 
 describe("mcp_tool guard", () => {
   it("blocks tools in block list", () => {
@@ -698,9 +668,6 @@ describe("mcp_tool guard", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Prompt Injection guard
-// ---------------------------------------------------------------------------
 
 describe("prompt_injection guard", () => {
   it("allows normal input", () => {
@@ -741,9 +708,6 @@ describe("prompt_injection guard", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Jailbreak guard
-// ---------------------------------------------------------------------------
 
 describe("jailbreak guard", () => {
   it("allows clean input", () => {
@@ -789,9 +753,6 @@ describe("jailbreak guard", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Non-simulatable guards
-// ---------------------------------------------------------------------------
 
 describe("non-simulatable guards", () => {
   it("returns stub allow result for computer_use guard", () => {
@@ -908,9 +869,6 @@ describe("non-simulatable guards", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Engine markers
-// ---------------------------------------------------------------------------
 
 describe("engine markers", () => {
   it("tags fully-simulated guards with engine: client", () => {
@@ -939,9 +897,6 @@ describe("engine markers", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Simulation result shape
-// ---------------------------------------------------------------------------
 
 describe("simulation result shape", () => {
   it("includes scenarioId and executedAt", () => {
@@ -957,9 +912,6 @@ describe("simulation result shape", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// ReDoS protection (isSafeRegex)
-// ---------------------------------------------------------------------------
 
 describe("ReDoS protection", () => {
   it("rejects nested quantifiers like (a+)+$ — denies as unsafe regex", () => {
@@ -1084,9 +1036,6 @@ describe("ReDoS protection", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Path normalization (tested indirectly through forbidden_path guard)
-// ---------------------------------------------------------------------------
 
 describe("path normalization in forbidden_path", () => {
   const policy = makePolicy({
@@ -1147,9 +1096,6 @@ describe("path normalization in forbidden_path", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Unknown guard names (fail-closed)
-// ---------------------------------------------------------------------------
 
 describe("unknown guard handling", () => {
   it("unknown guard names default to deny (fail-closed)", () => {

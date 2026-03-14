@@ -24,9 +24,6 @@ import {
   IconBulb,
 } from "@tabler/icons-react";
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 const COVERAGE_COLORS: Record<CoverageLevel, { bg: string; text: string; border: string }> = {
   full: { bg: "bg-[#3dbf84]", text: "text-[#3dbf84]", border: "border-[#3dbf84]/30" },
@@ -35,9 +32,6 @@ const COVERAGE_COLORS: Record<CoverageLevel, { bg: string; text: string; border:
   na: { bg: "bg-[#2d3240]", text: "text-[#6f7f9a]/30", border: "border-[#2d3240]" },
 };
 
-// ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
 
 function ScoreGauge({ score }: { score: number }) {
   const color = score >= 80 ? "#3dbf84" : score >= 50 ? "#d4a84b" : "#c45c5c";
@@ -246,9 +240,6 @@ function CellDrillDown({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Matrix grid
-// ---------------------------------------------------------------------------
 
 function MatrixGrid({
   matrix,
@@ -337,9 +328,6 @@ function MatrixGrid({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Main Component
-// ---------------------------------------------------------------------------
 
 interface ThreatMatrixProps {
   scenarios: TestScenario[];

@@ -7,7 +7,7 @@ fixture_script="$workbench_dir/scripts/fleet-fixture.ts"
 
 base_url="${WORKBENCH_DOGFOOD_URL:-http://127.0.0.1:1421}"
 hushd_url="${HUSHD_URL:-http://127.0.0.1:9876}"
-control_api_url="${CONTROL_API_URL:-http://127.0.0.1:8080}"
+control_api_url="${CONTROL_API_URL:-http://127.0.0.1:8090}"
 tenant_id="${TENANT_ID:-874d572c-709c-49b7-8ecf-64b569e16710}"
 
 namespace="${WORKBENCH_DOGFOOD_NAMESPACE:-clawdstrike}"
@@ -27,6 +27,7 @@ timeout_secs="${WORKBENCH_DOGFOOD_TIMEOUT_SECS:-45}"
 
 run_id="$(date -u +%Y%m%dT%H%M%SZ)"
 session="wbdog-$$-$(date -u +%H%M%S)"
+operator_name="${WORKBENCH_DOGFOOD_OPERATOR_NAME:-Live Dogfood ${run_id}}"
 output_dir="$repo_root/output/playwright/workbench-live-dogfood/$run_id"
 mkdir -p "$output_dir"
 
@@ -57,6 +58,32 @@ require_cmd() {
 
 pw() {
   PLAYWRIGHT_CLI_SESSION="$session" npx --yes --package @playwright/cli playwright-cli "$@"
+}
+
+pw_eval_result() {
+  pw eval "$1" | python3 -c '
+import json
+import re
+import sys
+
+raw = sys.stdin.read()
+match = re.search(r"^### Result[ \t]*\n(.*?)(?:\n### |\Z)", raw, re.S | re.M)
+result = (match.group(1) if match else raw).strip()
+
+try:
+    value = json.loads(result)
+except Exception:
+    sys.stdout.write(result)
+else:
+    if isinstance(value, str):
+        sys.stdout.write(value)
+    elif value is None:
+        sys.stdout.write("")
+    elif isinstance(value, (int, float)) and not isinstance(value, bool):
+        sys.stdout.write(str(value))
+    else:
+        sys.stdout.write(json.dumps(value))
+'
 }
 
 js_string() {
@@ -125,6 +152,70 @@ EOF
 )" >/dev/null
 }
 
+set_input_placeholder() {
+  local placeholder="$1"
+  local value="$2"
+  pw eval "$(cat <<EOF
+() => {
+  const targetPlaceholder = $(js_string "$placeholder");
+  const nextValue = $(js_string "$value");
+  const input = document.querySelector(\`input[placeholder="\${targetPlaceholder}"]\`);
+  if (!(input instanceof HTMLInputElement)) {
+    throw new Error("Missing input with placeholder: " + targetPlaceholder);
+  }
+  const descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
+  if (!descriptor?.set) {
+    throw new Error("Missing native input setter");
+  }
+  input.focus();
+  descriptor.set.call(input, nextValue);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+  input.blur();
+}
+EOF
+)" >/dev/null
+}
+
+wait_for_identity_prompt_gone() {
+  local elapsed=0
+
+  while (( elapsed < timeout_secs )); do
+    local prompt_state
+    prompt_state="$(
+      pw_eval_result "$(cat <<'EOF'
+() => document.querySelector('input[placeholder="Your name or callsign"]') ? "present" : "missing"
+EOF
+)"
+    )"
+    if [[ "$prompt_state" == "missing" ]]; then
+      return 0
+    fi
+    sleep 1
+    elapsed=$((elapsed + 1))
+  done
+
+  echo "error: timed out waiting for operator identity prompt to close" >&2
+  return 1
+}
+
+ensure_operator_identity() {
+  local prompt_state
+  prompt_state="$(
+    pw_eval_result "$(cat <<'EOF'
+() => document.querySelector('input[placeholder="Your name or callsign"]') ? "present" : "missing"
+EOF
+)"
+  )"
+  if [[ "$prompt_state" == "missing" ]]; then
+    return 0
+  fi
+
+  set_input_placeholder "Your name or callsign" "$operator_name"
+  click_text "Create Identity"
+  wait_for_identity_prompt_gone
+}
+
 capture_page() {
   local name="$1"
   pw eval '() => document.body.innerText.slice(0, 20000)' >"$output_dir/$name.txt"
@@ -149,7 +240,7 @@ start_port_forwards() {
   fi
 
   if ! wait_for_url "$control_api_url/api/v1/health"; then
-    kubectl port-forward -n "$namespace" "svc/$control_api_service" 8080:8080 >"$control_pf_log" 2>&1 &
+    kubectl port-forward -n "$namespace" "svc/$control_api_service" 8090:8080 >"$control_pf_log" 2>&1 &
     control_pf_pid=$!
     wait_for_url "$control_api_url/api/v1/health"
   fi
@@ -162,7 +253,11 @@ start_vite() {
 
   (
     cd "$workbench_dir"
-    npm run dev -- --host 127.0.0.1 --port 1421
+    HUSHD_URL="$hushd_url" \
+    HUSHD_API_KEY="${HUSHD_API_KEY:-}" \
+    CONTROL_API_URL="$control_api_url" \
+    WORKBENCH_CONTROL_PROXY_TOKEN="$control_api_token" \
+      npm run dev -- --host 127.0.0.1 --port 1421
   ) >"$vite_log" 2>&1 &
   dev_pid=$!
   wait_for_url "$base_url"
@@ -204,7 +299,9 @@ cleanup() {
 trap cleanup EXIT
 
 require_cmd curl
-require_cmd kubectl
+if [[ "$start_port_forward" == "1" ]]; then
+  require_cmd kubectl
+fi
 require_cmd npx
 require_cmd npm
 require_cmd bun
@@ -254,6 +351,7 @@ fi
 
 pw open "${open_args[@]}" >/dev/null
 wait_for_text "CLAWDSTRIKE"
+ensure_operator_identity
 
 set_hash "#/settings"
 wait_for_text "Configure connections, preferences, and integrations"
@@ -278,7 +376,7 @@ pw eval "$(cat <<EOF
   };
 
   setInput("http://localhost:9876", $(js_string "$hushd_url"));
-  setInput("http://localhost:9091", $(js_string "$control_api_url"));
+  setInput("http://localhost:8090", $(js_string "$control_api_url"));
   setInput("eyJhbGci...", $(js_string "$control_api_token"));
   setInput("hush_...", $(js_string "${HUSHD_API_KEY:-}"));
 }

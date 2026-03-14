@@ -7,9 +7,6 @@
  * between rows.
  */
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 export interface ScenarioNode {
   id: string;
@@ -42,9 +39,6 @@ export interface ScenarioGraphLayout {
   height: number;
 }
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 const NODE_W = 200;
 const NODE_H = 56;
@@ -55,9 +49,6 @@ const GAP_Y = 24;
 const MAX_PER_ROW = 3;
 const PADDING = 40;
 
-// ---------------------------------------------------------------------------
-// Layout
-// ---------------------------------------------------------------------------
 
 export function layoutScenarioGraph(
   scenarios: Array<{
@@ -262,9 +253,6 @@ export function layoutScenarioGraph(
   return { nodes, edges, width: totalWidth, height: totalHeight };
 }
 
-// ---------------------------------------------------------------------------
-// Edge path builders
-// ---------------------------------------------------------------------------
 
 function buildHorizontalEdge(from: ScenarioNode, to: ScenarioNode): string {
   const fromCy = from.y + from.height / 2;

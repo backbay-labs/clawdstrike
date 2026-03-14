@@ -11,9 +11,6 @@
 
 import { isDesktop } from "./tauri-bridge";
 
-// ---------------------------------------------------------------------------
-// Response types — mirrors the Rust structs in commands/workbench.rs
-// ---------------------------------------------------------------------------
 
 export interface TauriValidationError {
   path: string;
@@ -142,18 +139,12 @@ export interface TauriChainVerificationResponse {
   summary: string;
 }
 
-// ---------------------------------------------------------------------------
-// Lazy invoke helper
-// ---------------------------------------------------------------------------
 
 async function tauriInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke<T>(cmd, args);
 }
 
-// ---------------------------------------------------------------------------
-// Command wrappers
-// ---------------------------------------------------------------------------
 
 /**
  * Validate policy YAML via the Rust policy engine.
@@ -323,9 +314,6 @@ export async function verifyReceiptChainNative(
   }
 }
 
-// ---------------------------------------------------------------------------
-// P4-3: Persistent signing key commands
-// ---------------------------------------------------------------------------
 
 /**
  * Generate or retrieve a persistent Ed25519 keypair stored in Stronghold.
@@ -391,9 +379,6 @@ export async function signReceiptPersistentNative(
   }
 }
 
-// ---------------------------------------------------------------------------
-// MCP sidecar commands
-// ---------------------------------------------------------------------------
 
 export interface TauriMcpStatusResponse {
   url: string;

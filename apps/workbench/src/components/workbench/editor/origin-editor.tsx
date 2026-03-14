@@ -63,9 +63,6 @@ function createEmptyOriginsConfig(): OriginsConfig {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Main component
-// ---------------------------------------------------------------------------
 
 export function OriginEditor() {
   const { state, dispatch } = useWorkbench();
@@ -144,8 +141,7 @@ export function OriginEditor() {
 
   return (
     <div className="flex flex-col gap-4 p-4 border-t border-[#2d3240]">
-      {/* Section header */}
-      <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <IconWorld size={14} stroke={1.5} className="text-[#d4a84b]" />
           <h3 className="text-[10px] font-mono uppercase tracking-wider text-[#6f7f9a]">
@@ -221,9 +217,6 @@ export function OriginEditor() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Profile card
-// ---------------------------------------------------------------------------
 
 interface OriginProfileCardProps {
   profile: OriginProfile;
@@ -827,9 +820,6 @@ function OriginProfileCard({ profile, index, onUpdate, onRemove }: OriginProfile
   );
 }
 
-// ---------------------------------------------------------------------------
-// Profile overrides (guard/egress/data/budgets/bridge)
-// ---------------------------------------------------------------------------
 
 function ProfileOverrides({
   profile,
@@ -890,9 +880,6 @@ function ProfileOverrides({
   );
 }
 
-// ---------------------------------------------------------------------------
-// MCP override section
-// ---------------------------------------------------------------------------
 
 function McpOverrideSection({
   mcp,
@@ -1042,9 +1029,6 @@ function McpOverrideSection({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Egress override section
-// ---------------------------------------------------------------------------
 
 function EgressOverrideSection({
   egress,
@@ -1117,9 +1101,6 @@ function EgressOverrideSection({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Data policy section
-// ---------------------------------------------------------------------------
 
 function DataPolicySection({
   data,
@@ -1174,9 +1155,6 @@ function DataPolicySection({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Budgets section
-// ---------------------------------------------------------------------------
 
 function BudgetsSection({
   budgets,
@@ -1254,9 +1232,6 @@ function BudgetsSection({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Bridge policy section
-// ---------------------------------------------------------------------------
 
 function BridgePolicySection({
   bridgePolicy,
@@ -1306,9 +1281,6 @@ function BridgePolicySection({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Shared micro-components
-// ---------------------------------------------------------------------------
 
 function FieldRow({
   label,

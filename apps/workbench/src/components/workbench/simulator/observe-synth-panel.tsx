@@ -40,9 +40,6 @@ import {
 import type { TestActionType } from "@/lib/workbench/types";
 import { ClaudeCodeHint } from "@/components/workbench/shared/claude-code-hint";
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 const ACTION_ICONS: Record<string, typeof IconFile> = {
   file_access: IconFile,
@@ -63,9 +60,6 @@ const RISK_STYLES: Record<EventRiskLevel, { bg: string; border: string; text: st
 type FilterActionType = TestActionType | "all";
 type FilterRiskLevel = EventRiskLevel | "all";
 
-// ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
 
 function RiskBadge({ level }: { level: EventRiskLevel }) {
   const style = RISK_STYLES[level];
@@ -272,9 +266,6 @@ function SynthGuardConfig({ synth }: { synth: SynthResult }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Main Panel
-// ---------------------------------------------------------------------------
 
 export function ObserveSynthPanel() {
   const { state, dispatch } = useWorkbench();
@@ -423,9 +414,6 @@ export function ObserveSynthPanel() {
     return { safe, suspicious, blocked };
   }, [events]);
 
-  // ---------------------------------------------------------------------------
-  // Render: Empty state
-  // ---------------------------------------------------------------------------
   if (events.length === 0) {
     return (
       <div className="flex flex-col h-full">
@@ -549,9 +537,6 @@ export function ObserveSynthPanel() {
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // Render: Events loaded
-  // ---------------------------------------------------------------------------
   return (
     <div className="flex flex-col h-full">
       {/* Toolbar */}

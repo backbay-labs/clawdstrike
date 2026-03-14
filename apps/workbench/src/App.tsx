@@ -5,13 +5,20 @@ import { MultiPolicyProvider } from "@/lib/workbench/multi-policy-store";
 import { FleetConnectionProvider } from "@/lib/workbench/use-fleet-connection";
 import { GeneralSettingsProvider } from "@/lib/workbench/use-general-settings";
 import { HintSettingsProvider } from "@/lib/workbench/use-hint-settings";
+import { SwarmProvider } from "@/lib/workbench/swarm-store";
+import { SentinelProvider } from "@/lib/workbench/sentinel-store";
+import { FindingProvider } from "@/lib/workbench/finding-store";
+import { SignalProvider } from "@/lib/workbench/signal-store";
+import { IntelProvider } from "@/lib/workbench/intel-store";
+import { MissionProvider } from "@/lib/workbench/mission-store";
+import { OperatorProvider } from "@/lib/workbench/operator-store";
+import { ReputationProvider } from "@/lib/workbench/reputation-store";
+import { SwarmFeedProvider } from "@/lib/workbench/swarm-feed-store";
 import { ToastProvider } from "@/components/ui/toast";
 import { DesktopLayout } from "@/components/desktop/desktop-layout";
+import { IdentityPrompt } from "@/components/workbench/identity/identity-prompt";
 import { secureStore, migrateCredentialsToStronghold } from "@/lib/workbench/secure-store";
 
-// ---------------------------------------------------------------------------
-// Lazy-loaded route components (code-split into separate chunks)
-// ---------------------------------------------------------------------------
 
 const PolicyEditor = lazy(() =>
   import("@/components/workbench/editor/policy-editor").then((m) => ({
@@ -19,15 +26,15 @@ const PolicyEditor = lazy(() =>
   })),
 );
 
-const SimulatorLayout = lazy(() =>
-  import("@/components/workbench/simulator/simulator-layout").then((m) => ({
-    default: m.SimulatorLayout,
+const LabLayout = lazy(() =>
+  import("@/components/workbench/lab/lab-layout").then((m) => ({
+    default: m.LabLayout,
   })),
 );
 
-const CompareLayout = lazy(() =>
-  import("@/components/workbench/compare/compare-layout").then((m) => ({
-    default: m.CompareLayout,
+const TopologyLayout = lazy(() =>
+  import("@/components/workbench/topology/topology-layout").then((m) => ({
+    default: m.TopologyLayout,
   })),
 );
 
@@ -55,21 +62,9 @@ const SettingsPage = lazy(() =>
   })),
 );
 
-const DelegationPage = lazy(() =>
-  import("@/components/workbench/delegation/delegation-page").then((m) => ({
-    default: m.DelegationPage,
-  })),
-);
-
 const ApprovalQueue = lazy(() =>
   import("@/components/workbench/approvals/approval-queue").then((m) => ({
     default: m.ApprovalQueue,
-  })),
-);
-
-const HierarchyPage = lazy(() =>
-  import("@/components/workbench/hierarchy/hierarchy-page").then((m) => ({
-    default: m.HierarchyPage,
   })),
 );
 
@@ -91,21 +86,60 @@ const HomePage = lazy(() =>
   })),
 );
 
-const HuntLayout = lazy(() =>
-  import("@/components/workbench/hunt/hunt-layout").then((m) => ({
-    default: m.HuntLayout,
+const SentinelsPage = lazy(() =>
+  import("@/components/workbench/sentinel-swarm-pages").then((m) => ({
+    default: m.SentinelsPage,
   })),
 );
 
-const GuardsPage = lazy(() =>
-  import("@/components/workbench/guards/guards-page").then((m) => ({
-    default: m.GuardsPage,
+const SentinelCreatePage = lazy(() =>
+  import("@/components/workbench/sentinel-swarm-pages").then((m) => ({
+    default: m.SentinelCreatePage,
   })),
 );
 
-// ---------------------------------------------------------------------------
-// Loading fallback — dark-themed to prevent white flash in Tauri shell
-// ---------------------------------------------------------------------------
+const SentinelDetailPage = lazy(() =>
+  import("@/components/workbench/sentinel-swarm-pages").then((m) => ({
+    default: m.SentinelDetailPage,
+  })),
+);
+
+const FindingsPage = lazy(() =>
+  import("@/components/workbench/sentinel-swarm-pages").then((m) => ({
+    default: m.FindingsPage,
+  })),
+);
+
+const FindingDetailPage = lazy(() =>
+  import("@/components/workbench/sentinel-swarm-pages").then((m) => ({
+    default: m.FindingDetailPage,
+  })),
+);
+
+const IntelDetailPage = lazy(() =>
+  import("@/components/workbench/sentinel-swarm-pages").then((m) => ({
+    default: m.IntelDetailPage,
+  })),
+);
+
+const SwarmPage = lazy(() =>
+  import("@/components/workbench/swarms/swarm-page").then((m) => ({
+    default: m.SwarmPage,
+  })),
+);
+
+const SwarmDetail = lazy(() =>
+  import("@/components/workbench/swarms/swarm-detail").then((m) => ({
+    default: m.SwarmDetail,
+  })),
+);
+
+const MissionControlPage = lazy(() =>
+  import("@/components/workbench/missions/mission-control-page").then((m) => ({
+    default: m.MissionControlPage,
+  })),
+);
+
 
 function LoadingFallback() {
   return (
@@ -157,9 +191,6 @@ function LoadingFallback() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Error boundary — prevents white-screen-of-death on unhandled errors (#3)
-// ---------------------------------------------------------------------------
 
 interface ErrorBoundaryState {
   error: Error | null;
@@ -254,9 +285,38 @@ class ErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryStat
   }
 }
 
-// ---------------------------------------------------------------------------
-// App root
-// ---------------------------------------------------------------------------
+function AppProviders({ children }: { children: ReactNode }) {
+  return (
+    <OperatorProvider>
+      <ReputationProvider>
+        <ToastProvider>
+          <GeneralSettingsProvider>
+            <HintSettingsProvider>
+              <MultiPolicyProvider>
+                <SentinelProvider>
+                  <FindingProvider>
+                    <SignalProvider>
+                      <IntelProvider>
+                        <MissionProvider>
+                          <SwarmFeedProvider>
+                            <SwarmProvider>
+                              <FleetConnectionProvider>{children}</FleetConnectionProvider>
+                            </SwarmProvider>
+                          </SwarmFeedProvider>
+                        </MissionProvider>
+                      </IntelProvider>
+                    </SignalProvider>
+                  </FindingProvider>
+                </SentinelProvider>
+              </MultiPolicyProvider>
+            </HintSettingsProvider>
+          </GeneralSettingsProvider>
+        </ToastProvider>
+      </ReputationProvider>
+    </OperatorProvider>
+  );
+}
+
 
 /**
  * Root application component for the Tauri desktop workbench.
@@ -275,44 +335,109 @@ export function App() {
   return (
     <HashRouter>
       <ErrorBoundary>
-        <ToastProvider>
-          <GeneralSettingsProvider>
-            <HintSettingsProvider>
-              <MultiPolicyProvider>
-                <FleetConnectionProvider>
-                  <Suspense fallback={<LoadingFallback />}>
-                    <Routes>
-                      <Route element={<DesktopLayout />}>
-                        {/* Default redirect */}
-                        <Route index element={<Navigate to="/home" replace />} />
+        <AppProviders>
+          <Suspense fallback={<LoadingFallback />}>
+            <IdentityPrompt />
+            <Routes>
+              <Route element={<DesktopLayout />}>
+                {/* Default redirect */}
+                <Route index element={<Navigate to="/home" replace />} />
 
-                        {/* Workbench pages */}
-                        <Route path="home" element={<HomePage />} />
-                        <Route path="editor" element={<PolicyEditor />} />
-                        <Route path="simulator" element={<SimulatorLayout />} />
-                        <Route path="hunt" element={<HuntLayout />} />
-                        <Route path="compare" element={<CompareLayout />} />
-                        <Route path="compliance" element={<ComplianceDashboard />} />
-                        <Route path="receipts" element={<ReceiptInspector />} />
-                        <Route path="delegation" element={<DelegationPage />} />
-                        <Route path="approvals" element={<ApprovalQueue />} />
-                        <Route path="hierarchy" element={<HierarchyPage />} />
-                        <Route path="fleet" element={<FleetDashboard />} />
-                        <Route path="audit" element={<AuditLog />} />
-                        <Route path="guards" element={<GuardsPage />} />
-                        <Route path="library" element={<LibraryGallery />} />
-                        <Route path="settings" element={<SettingsPage />} />
+                {/* Core pages */}
+                <Route path="home" element={<HomePage />} />
+                <Route path="editor" element={<PolicyEditor />} />
+                <Route path="compliance" element={<ComplianceDashboard />} />
+                <Route path="receipts" element={<ReceiptInspector />} />
+                <Route path="library" element={<LibraryGallery />} />
+                <Route path="settings" element={<SettingsPage />} />
+                <Route path="approvals" element={<ApprovalQueue />} />
+                <Route path="fleet" element={<FleetDashboard />} />
+                <Route path="audit" element={<AuditLog />} />
 
-                        {/* Catch-all */}
-                        <Route path="*" element={<Navigate to="/home" replace />} />
-                      </Route>
-                    </Routes>
-                  </Suspense>
-                </FleetConnectionProvider>
-              </MultiPolicyProvider>
-            </HintSettingsProvider>
-          </GeneralSettingsProvider>
-        </ToastProvider>
+                {/* Sentinel Swarm pages */}
+                <Route path="sentinels" element={<SentinelsPage />} />
+                <Route path="sentinels/create" element={<SentinelCreatePage />} />
+                <Route path="sentinels/:id" element={<SentinelDetailPage />} />
+                <Route path="findings" element={<FindingsPage />} />
+                <Route path="findings/:id" element={<FindingDetailPage />} />
+                <Route path="intel/:id" element={<IntelDetailPage />} />
+                <Route path="missions" element={<MissionControlPage />} />
+                <Route path="swarms" element={<SwarmPage />} />
+                <Route path="swarms/:id" element={<SwarmDetail />} />
+
+                {/* Merged pages */}
+                <Route path="lab" element={<LabLayout />} />
+                <Route path="topology" element={<TopologyLayout />} />
+
+                {/* Redirects for bookmark compatibility */}
+                <Route
+                  path="intel"
+                  element={
+                    <Navigate
+                      to={{ pathname: "/findings", search: "?tab=intel" }}
+                      replace
+                    />
+                  }
+                />
+                <Route
+                  path="hunt"
+                  element={
+                    <Navigate to={{ pathname: "/lab", search: "?tab=hunt" }} replace />
+                  }
+                />
+                <Route
+                  path="simulator"
+                  element={
+                    <Navigate
+                      to={{ pathname: "/lab", search: "?tab=simulate" }}
+                      replace
+                    />
+                  }
+                />
+                <Route
+                  path="guards"
+                  element={
+                    <Navigate
+                      to={{ pathname: "/editor", search: "?panel=guards" }}
+                      replace
+                    />
+                  }
+                />
+                <Route
+                  path="compare"
+                  element={
+                    <Navigate
+                      to={{ pathname: "/editor", search: "?panel=compare" }}
+                      replace
+                    />
+                  }
+                />
+                <Route
+                  path="delegation"
+                  element={
+                    <Navigate
+                      to={{ pathname: "/topology", search: "?tab=delegation" }}
+                      replace
+                    />
+                  }
+                />
+                <Route
+                  path="hierarchy"
+                  element={
+                    <Navigate
+                      to={{ pathname: "/topology", search: "?tab=hierarchy" }}
+                      replace
+                    />
+                  }
+                />
+                <Route path="overview" element={<Navigate to="/home" replace />} />
+
+                {/* Catch-all */}
+                <Route path="*" element={<Navigate to="/home" replace />} />
+              </Route>
+            </Routes>
+          </Suspense>
+        </AppProviders>
       </ErrorBoundary>
     </HashRouter>
   );

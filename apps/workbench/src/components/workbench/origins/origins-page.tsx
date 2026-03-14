@@ -73,9 +73,6 @@ import {
   IconCode,
 } from "@tabler/icons-react";
 
-// ---------------------------------------------------------------------------
-// Local profile library — stored in localStorage, independent of any policy
-// ---------------------------------------------------------------------------
 
 const STORAGE_KEY = "clawdstrike:origin-profile-library";
 
@@ -168,9 +165,6 @@ function useProfileLibrary() {
   return { profiles, add, update, remove, clone, reorder };
 }
 
-// ---------------------------------------------------------------------------
-// Provider metadata
-// ---------------------------------------------------------------------------
 
 const PROVIDER_META: Record<
   OriginProvider,
@@ -245,9 +239,6 @@ function getProviderColor(provider: OriginProvider | string | undefined) {
   return getProviderMeta(provider)?.color ?? "#6f7f9a";
 }
 
-// ---------------------------------------------------------------------------
-// Template blueprints
-// ---------------------------------------------------------------------------
 
 interface ProfileBlueprint {
   name: string;
@@ -426,9 +417,6 @@ const BLUEPRINTS: ProfileBlueprint[] = [
   },
 ];
 
-// ---------------------------------------------------------------------------
-// Utility: count overrides on a profile
-// ---------------------------------------------------------------------------
 
 function countOverrides(profile: OriginProfile): number {
   let n = 0;
@@ -451,9 +439,6 @@ function buildMatchSummary(match: OriginMatch | undefined): string {
   return parts.length > 0 ? parts.join(" · ") : "Catch-all (no filters)";
 }
 
-// ---------------------------------------------------------------------------
-// Sidebar profile card
-// ---------------------------------------------------------------------------
 
 function ProfileListItem({
   profile,
@@ -567,9 +552,6 @@ function ProfileListItem({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Blueprint card (templates)
-// ---------------------------------------------------------------------------
 
 function BlueprintCard({
   blueprint,
@@ -617,9 +599,6 @@ function BlueprintCard({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Info callout
-// ---------------------------------------------------------------------------
 
 function InfoCallout({
   title,
@@ -649,9 +628,6 @@ function InfoCallout({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Section wrapper for detail view
-// ---------------------------------------------------------------------------
 
 function DetailSection({
   icon: Icon,
@@ -702,9 +678,6 @@ function DetailSection({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Shared micro-components for field editing
-// ---------------------------------------------------------------------------
 
 function FieldRow({
   label,
@@ -743,9 +716,6 @@ function ToggleRow({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Match rules editor
-// ---------------------------------------------------------------------------
 
 function MatchRulesEditor({
   match,
@@ -1177,9 +1147,6 @@ function MatchRulesEditor({
   );
 }
 
-// ---------------------------------------------------------------------------
-// MCP tool editor
-// ---------------------------------------------------------------------------
 
 function McpEditor({
   mcp,
@@ -1319,9 +1286,6 @@ function McpEditor({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Egress editor
-// ---------------------------------------------------------------------------
 
 function EgressEditor({
   egress,
@@ -1399,9 +1363,6 @@ function EgressEditor({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Data policy editor
-// ---------------------------------------------------------------------------
 
 function DataPolicyEditor({
   data,
@@ -1431,9 +1392,6 @@ function DataPolicyEditor({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Budgets editor
-// ---------------------------------------------------------------------------
 
 function BudgetsEditor({
   budgets,
@@ -1486,9 +1444,6 @@ function BudgetsEditor({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Bridge policy editor
-// ---------------------------------------------------------------------------
 
 function BridgeEditor({
   bridge,
@@ -1686,9 +1641,6 @@ function BridgeEditor({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Metadata editor — simple JSON textarea
-// ---------------------------------------------------------------------------
 
 function MetadataEditor({
   metadata,
@@ -1768,9 +1720,6 @@ function MetadataEditor({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Policies-using-this-profile section
-// ---------------------------------------------------------------------------
 
 function AppliedPoliciesSection({
   profile,
@@ -1857,9 +1806,6 @@ function AppliedPoliciesSection({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Profile detail view (editable)
-// ---------------------------------------------------------------------------
 
 function ProfileDetail({
   profile,
@@ -2178,9 +2124,6 @@ function ProfileDetail({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Onboarding / intro panel (shown when no profiles exist or none selected)
-// ---------------------------------------------------------------------------
 
 function OriginsIntro() {
   return (
@@ -2218,9 +2161,6 @@ function OriginsIntro() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Main page
-// ---------------------------------------------------------------------------
 
 export function OriginsPage() {
   const { state, dispatch } = useWorkbench();

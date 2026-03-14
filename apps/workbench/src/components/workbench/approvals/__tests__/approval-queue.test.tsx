@@ -1,12 +1,11 @@
+import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { screen, within, act, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "@/test/test-helpers";
+import { fleetClient } from "@/lib/workbench/fleet-client";
 import { ApprovalQueue } from "../approval-queue";
 
-// ---------------------------------------------------------------------------
-// Mocks
-// ---------------------------------------------------------------------------
 
 // Mock fleet-client so no real HTTP calls happen
 vi.mock("@/lib/workbench/fleet-client", () => ({
@@ -38,10 +37,13 @@ const mockConnection = {
   connected: false,
   hushdUrl: "",
   controlApiUrl: "",
-  apiKey: "",
-  controlApiToken: "",
   hushdHealth: null,
   agentCount: 0,
+};
+
+const mockCredentials = {
+  apiKey: "",
+  controlApiToken: "",
 };
 
 vi.mock("@/lib/workbench/use-fleet-connection", async () => {
@@ -63,6 +65,8 @@ vi.mock("@/lib/workbench/use-fleet-connection", async () => {
       testConnection: vi.fn(),
       refreshAgents: vi.fn(),
       refreshRemotePolicy: vi.fn(),
+      getCredentials: () => mockCredentials,
+      getAuthenticatedConnection: () => ({ ...mockConnection, ...mockCredentials }),
     }),
   };
 });
@@ -73,31 +77,48 @@ vi.mock("@/lib/tauri-bridge", () => ({
   isMacOS: vi.fn(() => false),
 }));
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function renderQueue() {
   return renderWithProviders(<ApprovalQueue />);
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+function expectPresent(node: unknown) {
+  expect(node).not.toBeNull();
+  expect(node).not.toBeUndefined();
+}
+
+function expectAbsent(node: unknown) {
+  expect(node).toBeNull();
+}
+
+function expectDisabled(node: Element | null) {
+  expect(node).not.toBeNull();
+  expect((node as HTMLButtonElement).disabled).toBe(true);
+}
+
+function expectEnabled(node: Element | null) {
+  expect(node).not.toBeNull();
+  expect((node as HTMLButtonElement).disabled).toBe(false);
+}
+
 
 describe("ApprovalQueue", () => {
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     vi.clearAllMocks();
+    mockConnection.connected = false;
+    mockConnection.hushdUrl = "";
+    mockConnection.controlApiUrl = "";
+    mockConnection.hushdHealth = null;
+    mockConnection.agentCount = 0;
+    mockCredentials.apiKey = "";
+    mockCredentials.controlApiToken = "";
   });
 
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  // -----------------------------------------------------------------------
-  // Rendering
-  // -----------------------------------------------------------------------
 
   it("renders with demo data by default", () => {
     renderQueue();
@@ -113,7 +134,7 @@ describe("ApprovalQueue", () => {
 
   it("shows demo mode button", () => {
     renderQueue();
-    expect(screen.getByText("Demo")).toBeInTheDocument();
+    expectPresent(screen.getByText("Demo"));
   });
 
   it("renders pending request count badge", () => {
@@ -123,9 +144,6 @@ describe("ApprovalQueue", () => {
     expect(pendingBadges.length).toBeGreaterThan(0);
   });
 
-  // -----------------------------------------------------------------------
-  // Filtering
-  // -----------------------------------------------------------------------
 
   it("filters by status", async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
@@ -144,10 +162,10 @@ describe("ApprovalQueue", () => {
 
     // Should show the denied request (apr-008 from demo data)
     await waitFor(() => {
-      expect(screen.getByText("Dependabot Scanner")).toBeInTheDocument();
+      expectPresent(screen.getByText("Dependabot Scanner"));
     });
     // Pending requests should be hidden
-    expect(screen.queryByText("Infra Remediation Bot")).not.toBeInTheDocument();
+    expectAbsent(screen.queryByText("Infra Remediation Bot"));
   });
 
   it("filters by risk level", async () => {
@@ -165,7 +183,7 @@ describe("ApprovalQueue", () => {
 
     // apr-005 is the only critical risk request
     await waitFor(() => {
-      expect(screen.getByText("Production Deployer")).toBeInTheDocument();
+      expectPresent(screen.getByText("Production Deployer"));
     });
   });
 
@@ -177,9 +195,9 @@ describe("ApprovalQueue", () => {
     await user.type(searchInput, "kubectl");
 
     // apr-001 mentions kubectl in reason
-    expect(screen.getByText("Infra Remediation Bot")).toBeInTheDocument();
+    expectPresent(screen.getByText("Infra Remediation Bot"));
     // Others should be filtered out
-    expect(screen.queryByText("NPM Publish Agent")).not.toBeInTheDocument();
+    expectAbsent(screen.queryByText("NPM Publish Agent"));
   });
 
   it("shows empty state when no results match", async () => {
@@ -189,12 +207,9 @@ describe("ApprovalQueue", () => {
     const searchInput = screen.getByPlaceholderText("Search tool, agent, reason...");
     await user.type(searchInput, "zzz-nonexistent-query-zzz");
 
-    expect(screen.getByText("No approval requests match your filters.")).toBeInTheDocument();
+    expectPresent(screen.getByText("No approval requests match your filters."));
   });
 
-  // -----------------------------------------------------------------------
-  // Approval Actions
-  // -----------------------------------------------------------------------
 
   it("shows approve dropdown with scope presets", async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
@@ -205,9 +220,9 @@ describe("ApprovalQueue", () => {
     await user.click(approveButtons[0]);
 
     // Scope presets should appear
-    expect(screen.getByText("Allow Once")).toBeInTheDocument();
-    expect(screen.getByText("Allow for Session")).toBeInTheDocument();
-    expect(screen.getByText("Allow Always")).toBeInTheDocument();
+    expectPresent(screen.getByText("Allow Once"));
+    expectPresent(screen.getByText("Allow for Session"));
+    expectPresent(screen.getByText("Allow Always"));
   });
 
   it("shows confirm dialog after selecting approval scope", async () => {
@@ -222,8 +237,8 @@ describe("ApprovalQueue", () => {
     await user.click(screen.getByText("Allow Once"));
 
     // Confirmation should appear
-    expect(screen.getByText("Confirm")).toBeInTheDocument();
-    expect(screen.getByText("Cancel")).toBeInTheDocument();
+    expectPresent(screen.getByText("Confirm"));
+    expectPresent(screen.getByText("Cancel"));
   });
 
   it("shows deny confirmation with reason input", async () => {
@@ -235,9 +250,9 @@ describe("ApprovalQueue", () => {
     await user.click(denyButtons[0]);
 
     // Should show deny confirmation UI
-    expect(screen.getByText("Deny this request?")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("Reason (optional)...")).toBeInTheDocument();
-    expect(screen.getByText("Confirm")).toBeInTheDocument();
+    expectPresent(screen.getByText("Deny this request?"));
+    expectPresent(screen.getByPlaceholderText("Reason (optional)..."));
+    expectPresent(screen.getByText("Confirm"));
   });
 
   it("executes approve action and updates status", async () => {
@@ -275,9 +290,6 @@ describe("ApprovalQueue", () => {
     expect(screen.getAllByText("Approve").length).toBeGreaterThan(0);
   });
 
-  // -----------------------------------------------------------------------
-  // Detail Drawer
-  // -----------------------------------------------------------------------
 
   it("opens detail drawer when clicking a request", async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
@@ -287,9 +299,9 @@ describe("ApprovalQueue", () => {
     await user.click(screen.getByText("Infra Remediation Bot"));
 
     // Detail drawer should appear
-    expect(screen.getByText("Request Details")).toBeInTheDocument();
-    expect(screen.getByText("Origin Context")).toBeInTheDocument();
-    expect(screen.getByText("Agent Identity")).toBeInTheDocument();
+    expectPresent(screen.getByText("Request Details"));
+    expectPresent(screen.getByText("Origin Context"));
+    expectPresent(screen.getByText("Agent Identity"));
   });
 
   it("closes detail drawer", async () => {
@@ -298,7 +310,7 @@ describe("ApprovalQueue", () => {
 
     // Open drawer
     await user.click(screen.getByText("Infra Remediation Bot"));
-    expect(screen.getByText("Request Details")).toBeInTheDocument();
+    expectPresent(screen.getByText("Request Details"));
 
     // Close button (IconX)
     const closeButton = screen.getByText("Request Details").parentElement?.querySelector("button");
@@ -306,12 +318,9 @@ describe("ApprovalQueue", () => {
       await user.click(closeButton);
     }
 
-    expect(screen.queryByText("Request Details")).not.toBeInTheDocument();
+    expectAbsent(screen.queryByText("Request Details"));
   });
 
-  // -----------------------------------------------------------------------
-  // Auto-expire (the bug we fixed)
-  // -----------------------------------------------------------------------
 
   it("does not cause infinite re-render loop (no maximum update depth exceeded)", () => {
     // This is the regression test for the infinite loop bug.
@@ -354,21 +363,44 @@ describe("ApprovalQueue", () => {
     expect(expiredCount2.length).toBe(expiredCount1.length);
   });
 
-  // -----------------------------------------------------------------------
-  // Data source toggle
-  // -----------------------------------------------------------------------
 
   it("disables live toggle when fleet is not connected", () => {
     renderQueue();
 
     // The Demo button should be present but live toggle should be disabled
     const demoButton = screen.getByText("Demo").closest("button");
-    expect(demoButton).toBeDisabled();
+    expectDisabled(demoButton);
   });
 
-  // -----------------------------------------------------------------------
-  // Countdown formatting
-  // -----------------------------------------------------------------------
+  it("explains that control-api is required for live approvals", () => {
+    mockConnection.connected = true;
+    mockConnection.hushdUrl = "http://localhost:9876";
+
+    renderQueue();
+
+    expectPresent(screen.getByText("Configure control-api in Settings to view live approvals"));
+    expectDisabled(screen.getByText("Demo").closest("button"));
+  });
+
+  it("enables live approvals when control-api is configured", () => {
+    mockConnection.connected = true;
+    mockConnection.hushdUrl = "http://localhost:9876";
+    mockConnection.controlApiUrl = "http://localhost:8090";
+
+    renderQueue();
+
+    expectEnabled(screen.getByText("Demo").closest("button"));
+  });
+
+  it("does not fetch live approvals when control-api is missing", () => {
+    mockConnection.connected = true;
+    mockConnection.hushdUrl = "http://localhost:9876";
+
+    renderQueue();
+
+    expect(vi.mocked(fleetClient.fetchApprovals)).not.toHaveBeenCalled();
+  });
+
 
   it("displays countdown timers for pending requests", () => {
     renderQueue();
@@ -379,9 +411,6 @@ describe("ApprovalQueue", () => {
     expect(timerElements.length).toBeGreaterThan(0);
   });
 
-  // -----------------------------------------------------------------------
-  // Provider badges
-  // -----------------------------------------------------------------------
 
   it("renders provider abbreviation badges", () => {
     renderQueue();
@@ -391,9 +420,6 @@ describe("ApprovalQueue", () => {
     expect(screen.getAllByText("G").length).toBeGreaterThan(0); // GitHub
   });
 
-  // -----------------------------------------------------------------------
-  // Risk level badges
-  // -----------------------------------------------------------------------
 
   it("renders risk level badges on cards", () => {
     renderQueue();
@@ -404,9 +430,6 @@ describe("ApprovalQueue", () => {
     expect(screen.getAllByText("Low").length).toBeGreaterThan(0);
   });
 
-  // -----------------------------------------------------------------------
-  // Sort order
-  // -----------------------------------------------------------------------
 
   it("sorts pending requests before resolved ones", () => {
     renderQueue();
@@ -420,7 +443,7 @@ describe("ApprovalQueue", () => {
     const firstCard = cards[0];
     const lastCard = cards[cards.length - 1];
 
-    expect(within(firstCard as HTMLElement).queryByText("Approve")).toBeInTheDocument();
-    expect(within(lastCard as HTMLElement).queryByText("Approve")).not.toBeInTheDocument();
+    expectPresent(within(firstCard as HTMLElement).queryByText("Approve"));
+    expectAbsent(within(lastCard as HTMLElement).queryByText("Approve"));
   });
 });

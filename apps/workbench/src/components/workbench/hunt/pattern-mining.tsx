@@ -27,9 +27,6 @@ import {
   IconCalendar,
 } from "@tabler/icons-react";
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 const STATUS_CONFIG: Record<
   PatternStatus,
@@ -51,9 +48,6 @@ const ACTION_ICONS: Record<string, typeof IconFile> = {
   user_input: IconMessageCircle,
 };
 
-// ---------------------------------------------------------------------------
-// Hashing utility for pseudo-scatter positioning
-// ---------------------------------------------------------------------------
 
 function hashString(str: string): number {
   let hash = 0;
@@ -90,9 +84,6 @@ function formatDateTime(iso: string): string {
   });
 }
 
-// ---------------------------------------------------------------------------
-// Embedding Cluster Scatter Plot
-// ---------------------------------------------------------------------------
 
 function EmbeddingScatter({ events }: { events: AgentEvent[] }) {
   const WIDTH = 264;
@@ -114,8 +105,7 @@ function EmbeddingScatter({ events }: { events: AgentEvent[] }) {
       return { x, y, isAnomaly, isCluster, id: e.id };
     });
 
-    // Derive cluster centers from clustered points
-    const clustered = points.filter((p) => p.isCluster || p.isAnomaly);
+        const clustered = points.filter((p) => p.isCluster || p.isAnomaly);
     const centers: { cx: number; cy: number }[] = [];
     if (clustered.length > 0) {
       // Simple k-means-like bucketing: divide space into grid cells
@@ -273,9 +263,6 @@ function EmbeddingScatter({ events }: { events: AgentEvent[] }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Pattern List Item
-// ---------------------------------------------------------------------------
 
 function PatternRow({
   pattern,
@@ -322,9 +309,6 @@ function PatternRow({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Sequence Visualization
-// ---------------------------------------------------------------------------
 
 function SequenceStep({
   step,
@@ -389,9 +373,6 @@ function SequenceVisualization({ steps }: { steps: PatternStep[] }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Evidence Section
-// ---------------------------------------------------------------------------
 
 function EvidenceSection({ pattern, events }: { pattern: HuntPattern; events: AgentEvent[] }) {
   const agentCount = pattern.agentIds.length;
@@ -457,9 +438,6 @@ function EvidenceSection({ pattern, events }: { pattern: HuntPattern; events: Ag
   );
 }
 
-// ---------------------------------------------------------------------------
-// Example Sessions
-// ---------------------------------------------------------------------------
 
 function ExampleSessions({
   pattern,
@@ -529,9 +507,6 @@ function ExampleSessions({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Pattern Detail (Right Panel)
-// ---------------------------------------------------------------------------
 
 function PatternDetail({
   pattern,
@@ -702,9 +677,6 @@ function PatternDetail({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Empty Detail State
-// ---------------------------------------------------------------------------
 
 function EmptyDetail({ onDiscover }: { onDiscover: () => void }) {
   return (
@@ -730,9 +702,6 @@ function EmptyDetail({ onDiscover }: { onDiscover: () => void }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Main Component
-// ---------------------------------------------------------------------------
 
 interface PatternMiningProps {
   patterns: HuntPattern[];

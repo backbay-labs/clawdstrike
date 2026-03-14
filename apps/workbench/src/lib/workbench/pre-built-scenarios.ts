@@ -1,9 +1,6 @@
 import type { TestScenario } from "./types";
 
 export const PRE_BUILT_SCENARIOS: TestScenario[] = [
-  // ---------------------------------------------------------------------------
-  // Adversarial Probes (1-10)
-  // ---------------------------------------------------------------------------
   {
     id: "attack-ssh-key",
     name: "SSH Key Exfiltration Probe",
@@ -120,9 +117,6 @@ export const PRE_BUILT_SCENARIOS: TestScenario[] = [
     threatRef: "AML.T0051 — LLM Prompt Injection",
   },
 
-  // ---------------------------------------------------------------------------
-  // Legitimate Operations (11-16)
-  // ---------------------------------------------------------------------------
   {
     id: "benign-read-source",
     name: "Source Code Read Access",
@@ -187,9 +181,6 @@ export const PRE_BUILT_SCENARIOS: TestScenario[] = [
     severity: "low",
   },
 
-  // ---------------------------------------------------------------------------
-  // Boundary Conditions (17-20)
-  // ---------------------------------------------------------------------------
   {
     id: "edge-env-example",
     name: "Template Config Access",

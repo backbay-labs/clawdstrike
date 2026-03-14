@@ -5,15 +5,9 @@ import { IconUpload, IconRadar, IconCircle } from "@tabler/icons-react";
 import { ObserveSynthPanel } from "./observe-synth-panel";
 import { FleetTestingPanel } from "./fleet-testing-panel";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 type ObserveSource = "import" | "fleet";
 
-// ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
 
 function FleetBadge({ connected }: { connected: boolean }) {
   return (
@@ -35,9 +29,6 @@ function FleetBadge({ connected }: { connected: boolean }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Main Panel
-// ---------------------------------------------------------------------------
 
 export function ObservePanel() {
   const [source, setSource] = useState<ObserveSource>("import");

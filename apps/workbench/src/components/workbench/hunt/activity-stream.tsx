@@ -30,9 +30,6 @@ import type {
 } from "@/lib/workbench/hunt-types";
 import type { TestActionType, Verdict } from "@/lib/workbench/types";
 
-// ---------------------------------------------------------------------------
-// Props
-// ---------------------------------------------------------------------------
 
 interface ActivityStreamProps {
   events: AgentEvent[];
@@ -44,9 +41,6 @@ interface ActivityStreamProps {
   onToggleLive: () => void;
 }
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 const ACTION_TYPE_ICONS: Record<TestActionType, typeof IconFile> = {
   file_access: IconFile,
@@ -84,9 +78,6 @@ const TIME_RANGES = ["1h", "6h", "24h", "7d"] as const;
 
 const MAX_VISIBLE_EVENTS = 500;
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 interface AgentFilterOption {
   id: string;
@@ -140,9 +131,6 @@ function extractAgentOptions(events: AgentEvent[]): AgentFilterOption[] {
   });
 }
 
-// ---------------------------------------------------------------------------
-// Anomaly Cluster Detection
-// ---------------------------------------------------------------------------
 
 interface AnomalyCluster {
   agentName: string;
@@ -210,9 +198,6 @@ function detectAnomalyClusters(events: AgentEvent[]): Map<number, AnomalyCluster
   return clusters;
 }
 
-// ---------------------------------------------------------------------------
-// Client-side filtering
-// ---------------------------------------------------------------------------
 
 function applyFilters(events: AgentEvent[], filters: StreamFilters): AgentEvent[] {
   let result = events;
@@ -250,9 +235,6 @@ function applyFilters(events: AgentEvent[], filters: StreamFilters): AgentEvent[
   return result;
 }
 
-// ---------------------------------------------------------------------------
-// Main Component
-// ---------------------------------------------------------------------------
 
 export function ActivityStream({
   events,
@@ -589,16 +571,10 @@ export function ActivityStream({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Table header cell style
-// ---------------------------------------------------------------------------
 
 const TH_CELL =
   "text-[9px] uppercase tracking-[0.08em] font-semibold text-[#6f7f9a]/50 select-none";
 
-// ---------------------------------------------------------------------------
-// Event Row
-// ---------------------------------------------------------------------------
 
 function EventRow({
   event,
@@ -686,9 +662,6 @@ function EventRow({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Event Detail (inline expansion)
-// ---------------------------------------------------------------------------
 
 function EventDetail({ event }: { event: AgentEvent }) {
   return (
@@ -776,9 +749,6 @@ function EventDetail({ event }: { event: AgentEvent }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Flag Badge
-// ---------------------------------------------------------------------------
 
 function FlagBadge({ flag }: { flag: EventFlag }) {
   switch (flag.type) {
@@ -829,9 +799,6 @@ function FlagBadge({ flag }: { flag: EventFlag }) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Cluster Separator
-// ---------------------------------------------------------------------------
 
 function ClusterSeparator({
   cluster,
@@ -864,9 +831,6 @@ function ClusterSeparator({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Bottom Stat Card
-// ---------------------------------------------------------------------------
 
 function BottomStatCard({
   label,
@@ -916,9 +880,6 @@ function BottomStatCard({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Shared sub-components
-// ---------------------------------------------------------------------------
 
 function FilterGroup({
   label,

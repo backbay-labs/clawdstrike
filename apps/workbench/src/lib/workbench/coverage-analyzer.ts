@@ -13,9 +13,6 @@ import type {
 } from "./types";
 import { ALL_GUARD_IDS, GUARD_DISPLAY_NAMES } from "./guard-registry";
 
-// ---------------------------------------------------------------------------
-// Public types
-// ---------------------------------------------------------------------------
 
 export type GuardCoverageStatus = "covered" | "uncovered" | "disabled";
 
@@ -44,9 +41,6 @@ export interface CoverageReport {
   gaps: GuardId[];
 }
 
-// ---------------------------------------------------------------------------
-// Action type to guard mapping
-// ---------------------------------------------------------------------------
 
 /**
  * Maps an action type to the guards it could potentially exercise.
@@ -104,9 +98,6 @@ export function guardsExercisedByScenario(scenario: TestScenario): GuardId[] {
   return guardsForActionType(scenario.actionType);
 }
 
-// ---------------------------------------------------------------------------
-// Main analyzer
-// ---------------------------------------------------------------------------
 
 /**
  * Compute coverage metrics for the given scenarios against the policy's guard

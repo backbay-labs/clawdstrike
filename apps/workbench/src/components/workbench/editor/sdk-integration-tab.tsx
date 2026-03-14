@@ -44,9 +44,6 @@ import {
   type DryRunOutput,
 } from "@/lib/workbench/script-dry-runner";
 
-// ---------------------------------------------------------------------------
-// Framework metadata
-// ---------------------------------------------------------------------------
 
 interface FrameworkMeta {
   label: string;
@@ -117,9 +114,6 @@ const FRAMEWORK_ORDER: SdkFramework[] = [
   "typescript-sdk",
 ];
 
-// ---------------------------------------------------------------------------
-// CodeMirror theme (matches ClawdStrike dark theme from yaml-editor.tsx)
-// ---------------------------------------------------------------------------
 
 const clawdCodeTheme = EditorView.theme(
   {
@@ -268,9 +262,6 @@ const clawdCodeHighlightStyle = HighlightStyle.define([
   { tag: tags.className, color: "#d4a84b" },
 ]);
 
-// ---------------------------------------------------------------------------
-// useCodeEditor hook
-// ---------------------------------------------------------------------------
 
 function useCodeEditor(
   containerRef: React.RefObject<HTMLDivElement | null>,
@@ -368,9 +359,6 @@ function useCodeEditor(
   return viewRef.current;
 }
 
-// ---------------------------------------------------------------------------
-// SdkIntegrationTab
-// ---------------------------------------------------------------------------
 
 export function SdkIntegrationTab() {
   const { state } = useWorkbench();

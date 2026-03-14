@@ -10,9 +10,6 @@ import {
   IconTrendingUp,
 } from "@tabler/icons-react";
 
-// ---------------------------------------------------------------------------
-// Budget bar component with sparkline
-// ---------------------------------------------------------------------------
 
 function budgetPercent(budget: PostureBudget): number {
   if (budget.limit === 0) return 0;
@@ -91,9 +88,6 @@ function BudgetBar({ budget, history }: { budget: PostureBudget; history?: numbe
   );
 }
 
-// ---------------------------------------------------------------------------
-// Risk velocity indicator
-// ---------------------------------------------------------------------------
 
 function RiskVelocityIndicator({ budgets }: { budgets: PostureBudget[] }) {
   const avgConsumption = useMemo(() => {
@@ -126,9 +120,6 @@ function RiskVelocityIndicator({ budgets }: { budgets: PostureBudget[] }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// State badge
-// ---------------------------------------------------------------------------
 
 function StateBadge({ state, transitioned }: { state: string; transitioned?: boolean }) {
   const isRestricted = /restrict|quarantine|locked|deny/i.test(state);
@@ -154,9 +145,6 @@ function StateBadge({ state, transitioned }: { state: string; transitioned?: boo
   );
 }
 
-// ---------------------------------------------------------------------------
-// Main panel
-// ---------------------------------------------------------------------------
 
 interface PosturePanelProps {
   /** Current cumulative posture report (null = no posture config). */

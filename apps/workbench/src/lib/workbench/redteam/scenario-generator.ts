@@ -18,9 +18,6 @@ import type {
 import type { RedTeamScenario } from "./types";
 import { GUARD_TO_PLUGINS } from "./plugin-registry";
 
-// ---------------------------------------------------------------------------
-// Static attack templates per plugin
-// ---------------------------------------------------------------------------
 
 interface AttackTemplate {
   pluginId: string;
@@ -538,9 +535,6 @@ const ATTACK_TEMPLATES: Record<string, AttackTemplate[]> = {
   ],
 };
 
-// ---------------------------------------------------------------------------
-// Severity ordering
-// ---------------------------------------------------------------------------
 
 const SEVERITY_RANK: Record<ThreatSeverity, number> = {
   critical: 0,
@@ -550,9 +544,6 @@ const SEVERITY_RANK: Record<ThreatSeverity, number> = {
   informational: 4,
 };
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function isGuardEnabled(
   policy: WorkbenchPolicy,
@@ -567,9 +558,6 @@ function resolveGuardPlugins(guardId: GuardId): string[] {
   return GUARD_TO_PLUGINS[guardId] ?? [];
 }
 
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
 
 export interface RedTeamGeneratorOptions {
   /** Only generate scenarios for these guards (default: all enabled). */

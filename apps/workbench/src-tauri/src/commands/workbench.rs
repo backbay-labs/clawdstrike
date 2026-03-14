@@ -74,9 +74,7 @@ const SENSITIVE_SUFFIXES: &[&str] = &[
     "/.pypirc",
 ];
 
-// ---------------------------------------------------------------------------
 // L3: Rate limiting for signing commands
-// ---------------------------------------------------------------------------
 
 /// Minimum interval between signing operations (50 ms).
 const SIGN_RATE_LIMIT_MS: u128 = 50;
@@ -257,9 +255,7 @@ async fn write_text_file_secure(path: PathBuf, output: String) -> Result<(), Str
     })?
 }
 
-// ---------------------------------------------------------------------------
 // Response types
-// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ValidationError {
@@ -454,9 +450,7 @@ pub struct ChainVerificationResponse {
     pub summary: String,
 }
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 /// Try to parse YAML into a `Policy` without validation so we can extract
 /// metadata even when validation fails.
@@ -691,9 +685,7 @@ fn verify_signed_receipt_signature(
     verify_receipt_signature(public_key_hex, signature_hex, canonical_receipt.as_bytes())
 }
 
-// ---------------------------------------------------------------------------
 // Tauri commands
-// ---------------------------------------------------------------------------
 
 /// Parse and validate policy YAML, returning structured results.
 #[tauri::command]
@@ -1491,9 +1483,7 @@ pub async fn import_policy_file(path: String) -> Result<ImportResponse, String> 
     }
 }
 
-// ---------------------------------------------------------------------------
 // Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {

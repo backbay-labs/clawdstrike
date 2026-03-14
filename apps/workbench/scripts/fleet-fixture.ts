@@ -13,7 +13,7 @@
 import { createHmac, generateKeyPairSync } from "crypto";
 
 const HUSHD_URL = process.env.HUSHD_URL ?? "http://localhost:9876";
-const CONTROL_API_URL = process.env.CONTROL_API_URL ?? "http://localhost:8080";
+const CONTROL_API_URL = process.env.CONTROL_API_URL ?? "http://localhost:8090";
 const HUSHD_API_KEY =
   process.env.HUSHD_API_KEY ?? "3cg5Q2lAY-Xnf9N_-D3L90d-QYbIsBhd8g9b8Iur3Pw";
 const JWT_SECRET =
@@ -327,8 +327,6 @@ const FIXTURE_HIERARCHY: FixtureHierarchyNode[] = [
   },
 ];
 
-// -- Phases --
-
 async function registerAgents(jwt: string): Promise<void> {
   log("Registering 8 agents...");
   let registered = 0;
@@ -436,7 +434,6 @@ async function generateAuditEvents(): Promise<void> {
         agent_id: check.agent_id,
         session_id: check.session_id,
       });
-      // Both 2xx and non-2xx responses generate audit records.
       sent++;
     } catch (err) {
       log(`  FAIL check "${check.description}" -- ${(err as Error).message}`);
@@ -573,7 +570,7 @@ async function cleanup(jwt: string): Promise<void> {
       if (res.ok) {
         deleted++;
       } else if (res.status === 404) {
-        // already gone
+        // no-op
       } else {
         const text = await res.text().catch(() => "");
         log(`  FAIL ${agent.agent_id} -- ${res.status} ${text}`);

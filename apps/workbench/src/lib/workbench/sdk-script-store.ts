@@ -1,6 +1,3 @@
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 export type SdkFramework =
   | "python-sdk"
@@ -21,17 +18,11 @@ export interface StoredScript {
   updatedAt: string;
 }
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 const DB_NAME = "clawdstrike_sdk_scripts";
 const DB_VERSION = 1;
 const SCRIPTS_STORE = "scripts";
 
-// ---------------------------------------------------------------------------
-// IndexedDB helpers
-// ---------------------------------------------------------------------------
 
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -80,9 +71,6 @@ function normalizePolicyIds(policyIds: string[]): string[] {
   return Array.from(new Set(policyIds.map((id) => id.trim()).filter(Boolean)));
 }
 
-// ---------------------------------------------------------------------------
-// Default scripts
-// ---------------------------------------------------------------------------
 
 export const DEFAULT_SCRIPTS: Record<
   SdkFramework,
@@ -507,9 +495,6 @@ try {
   },
 };
 
-// ---------------------------------------------------------------------------
-// SdkScriptStore
-// ---------------------------------------------------------------------------
 
 export class SdkScriptStore {
   private db: IDBDatabase | null = null;
@@ -613,9 +598,6 @@ export class SdkScriptStore {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Singleton
-// ---------------------------------------------------------------------------
 
 let _instance: SdkScriptStore | null = null;
 
