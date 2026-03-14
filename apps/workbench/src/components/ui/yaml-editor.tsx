@@ -2,6 +2,7 @@ import { useRef, useEffect, useMemo } from "react";
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightSpecialChars, drawSelection, rectangularSelection, highlightActiveLineGutter, type ViewUpdate } from "@codemirror/view";
 import { EditorState, type Extension } from "@codemirror/state";
 import { yaml } from "@codemirror/lang-yaml";
+import { json } from "@codemirror/lang-json";
 import { syntaxHighlighting, HighlightStyle, foldGutter, bracketMatching, indentOnInput, foldKeymap } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
@@ -10,6 +11,7 @@ import { lintGutter, type Diagnostic, setDiagnostics } from "@codemirror/lint";
 import { autocompletion, closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
 import { cn } from "@/lib/utils";
 import { policyYamlCompletionSource } from "@/lib/workbench/yaml-schema";
+import type { FileType } from "@/lib/workbench/file-type-registry";
 import { useGeneralSettings, type FontSize } from "@/lib/workbench/use-general-settings";
 
 // ---- Types ----
@@ -25,6 +27,7 @@ export interface YamlEditorProps {
   readOnly?: boolean;
   errors?: YamlEditorError[];
   className?: string;
+  fileType?: FileType;
 }
 
 // ---- ClawdStrike brand theme ----
@@ -266,6 +269,45 @@ const clawdHighlightStyle = HighlightStyle.define([
   { tag: tags.meta, color: "#6f7f9a" },
 ]);
 
+// ---- Language & completion helpers ----
+
+function getLanguageExtension(fileType?: FileType): Extension {
+  switch (fileType) {
+    case "yara_rule":
+      // Phase 3 TODO: Custom YARA StreamLanguage
+      // For now, use basic setup without YAML parsing
+      return [];
+    case "ocsf_event":
+      return json();
+    case "sigma_rule":
+      // Sigma is YAML - same language, different completions (Phase 1)
+      return yaml();
+    case "clawdstrike_policy":
+    default:
+      return yaml();
+  }
+}
+
+function getCompletionSource(fileType?: FileType): Extension {
+  switch (fileType) {
+    case "sigma_rule":
+      // Phase 1 TODO: sigmaYamlCompletionSource
+      return autocompletion({ override: [] });
+    case "yara_rule":
+      // Phase 3 TODO: yaraCompletionSource
+      return autocompletion({ override: [] });
+    case "ocsf_event":
+      // Phase 2 TODO: ocsfJsonCompletionSource
+      return autocompletion({ override: [] });
+    case "clawdstrike_policy":
+    default:
+      return autocompletion({
+        override: [policyYamlCompletionSource],
+        icons: false,
+      });
+  }
+}
+
 // ---- Component ----
 
 export function YamlEditor({
@@ -274,6 +316,7 @@ export function YamlEditor({
   readOnly = false,
   errors = [],
   className,
+  fileType,
 }: YamlEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -288,7 +331,7 @@ export function YamlEditor({
   // Build the list of extensions (rebuilds when readOnly, fontSize, or showLineNumbers changes)
   const extensions = useMemo<Extension[]>(() => {
     const base: Extension[] = [
-      yaml(),
+      getLanguageExtension(fileType),
       createClawdTheme(fontSize),
       syntaxHighlighting(clawdHighlightStyle),
       highlightActiveLine(),
@@ -304,7 +347,7 @@ export function YamlEditor({
       }),
       lintGutter(),
       history(),
-      autocompletion({ override: [policyYamlCompletionSource] }),
+      getCompletionSource(fileType),
       closeBrackets(),
       keymap.of([
         ...defaultKeymap,
@@ -335,7 +378,7 @@ export function YamlEditor({
     }
 
     return base;
-  }, [readOnly, fontSize, showLineNumbers]);
+  }, [readOnly, fontSize, showLineNumbers, fileType]);
 
   // Create / destroy the editor view
   useEffect(() => {

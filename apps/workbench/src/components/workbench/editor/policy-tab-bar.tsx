@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useMultiPolicy } from "@/lib/workbench/multi-policy-store";
 import type { PolicyTab } from "@/lib/workbench/multi-policy-store";
+import { FILE_TYPE_REGISTRY } from "@/lib/workbench/file-type-registry";
 import { cn } from "@/lib/utils";
 import {
   IconPlus,
@@ -190,15 +191,25 @@ function TabItem({
         dropPosition === "right" && "border-r-2 border-r-[#d4a84b]",
       )}
     >
-      {/* Active indicator — gold bottom border */}
+      {/* Active indicator — format-colored bottom border */}
       {isActive && (
-        <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#d4a84b]" />
+        <div
+          className="absolute bottom-0 left-0 right-0 h-[2px]"
+          style={{ backgroundColor: FILE_TYPE_REGISTRY[tab.fileType ?? "clawdstrike_policy"].iconColor }}
+        />
       )}
 
       {/* Split indicator */}
       {isSplit && !isActive && (
         <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#6f7f9a]/40" />
       )}
+
+      {/* Format indicator dot */}
+      <span
+        className="inline-block w-2 h-2 rounded-full mr-0.5 flex-shrink-0"
+        style={{ backgroundColor: FILE_TYPE_REGISTRY[tab.fileType ?? "clawdstrike_policy"].iconColor }}
+        title={FILE_TYPE_REGISTRY[tab.fileType ?? "clawdstrike_policy"].label}
+      />
 
       {/* Dirty dot */}
       {tab.dirty && (
@@ -482,7 +493,7 @@ export function PolicyTabBar({ isHomeActive, onHomeClick, onTabSwitch }: PolicyT
                 ? "text-[#6f7f9a] hover:text-[#d4a84b] hover:bg-[#d4a84b]/10"
                 : "text-[#6f7f9a]/30 cursor-not-allowed",
             )}
-            title={canAddTab ? "New tab" : "Maximum tabs reached (10)"}
+            title={canAddTab ? "New tab" : "Maximum tabs reached (25)"}
           >
             <IconPlus size={13} stroke={1.5} />
           </button>

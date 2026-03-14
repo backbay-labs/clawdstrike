@@ -28,6 +28,7 @@ import {
   sanitizeObjectForStorageWithMetadata,
   sanitizeYamlForStorageWithMetadata,
 } from "./storage-sanitizer";
+import type { FileType } from "./file-type-registry";
 import {
   isDesktop,
   openPolicyFile,
@@ -41,6 +42,7 @@ export interface PolicyTab {
   name: string;
   filePath: string | null;
   dirty: boolean;
+  fileType: FileType;
   policy: WorkbenchPolicy;
   yaml: string;
   validation: ValidationResult;
@@ -74,7 +76,7 @@ export interface BulkGuardUpdate {
 }
 
 export type MultiPolicyAction =
-  | { type: "NEW_TAB"; policy?: WorkbenchPolicy; filePath?: string | null }
+  | { type: "NEW_TAB"; policy?: WorkbenchPolicy; filePath?: string | null; fileType?: FileType }
   | { type: "CLOSE_TAB"; tabId: string }
   | { type: "SWITCH_TAB"; tabId: string }
   | { type: "SET_SPLIT_MODE"; mode: SplitMode }
@@ -120,7 +122,7 @@ const TABS_STORAGE_KEY = "clawdstrike_workbench_tabs";
 const SAVED_POLICIES_KEY = "clawdstrike_workbench_policies";
 const RECENT_FILES_KEY = "clawdstrike_recent_files";
 const MAX_RECENT_FILES = 10;
-const MAX_TABS = 10;
+const MAX_TABS = 25;
 const MAX_HISTORY = 50;
 
 
@@ -128,13 +130,14 @@ function createTabId(): string {
   return crypto.randomUUID();
 }
 
-function createDefaultTab(id?: string): PolicyTab {
+function createDefaultTab(id?: string, fileType?: FileType): PolicyTab {
   const yaml = policyToYaml(DEFAULT_POLICY);
   return {
     id: id ?? createTabId(),
     name: DEFAULT_POLICY.name,
     filePath: null,
     dirty: false,
+    fileType: fileType ?? "clawdstrike_policy",
     policy: DEFAULT_POLICY,
     yaml,
     validation: validatePolicy(DEFAULT_POLICY),
@@ -150,13 +153,14 @@ function createDefaultTab(id?: string): PolicyTab {
   };
 }
 
-function createTabFromPolicy(policy: WorkbenchPolicy, filePath?: string | null): PolicyTab {
+function createTabFromPolicy(policy: WorkbenchPolicy, filePath?: string | null, fileType?: FileType): PolicyTab {
   const yaml = policyToYaml(policy);
   return {
     id: createTabId(),
     name: policy.name || "Untitled",
     filePath: filePath ?? null,
     dirty: false,
+    fileType: fileType ?? "clawdstrike_policy",
     policy,
     yaml,
     validation: validatePolicy(policy),
@@ -462,8 +466,8 @@ function multiPolicyReducer(state: MultiPolicyState, action: MultiPolicyAction):
     case "NEW_TAB": {
       if (state.tabs.length >= MAX_TABS) return state;
       const newTab = action.policy
-        ? createTabFromPolicy(action.policy, action.filePath)
-        : createDefaultTab();
+        ? createTabFromPolicy(action.policy, action.filePath, action.fileType)
+        : createDefaultTab(undefined, action.fileType);
       return {
         ...state,
         tabs: [...state.tabs, newTab],
@@ -811,6 +815,7 @@ interface PersistedTab {
   filePath: string | null;
   yaml: string;
   sensitiveFieldsStripped?: boolean;
+  fileType?: FileType;
 }
 
 interface PersistedTabState {
@@ -830,6 +835,7 @@ function persistTabs(state: MultiPolicyState): void {
           filePath: sensitiveFieldsStripped ? null : t.filePath,
           yaml: sanitized.yaml,
           sensitiveFieldsStripped: sensitiveFieldsStripped || undefined,
+          fileType: t.fileType,
         };
       }),
       activeTabId: state.activeTabId,
@@ -871,6 +877,7 @@ function loadPersistedTabs(): MultiPolicyState | null {
         name: pt.name || pol.name || "Untitled",
         filePath: sensitiveFieldsStripped ? null : pt.filePath,
         dirty: sensitiveFieldsStripped,
+        fileType: pt.fileType ?? "clawdstrike_policy",
         policy: pol,
         yaml,
         validation,

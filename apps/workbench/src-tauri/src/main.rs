@@ -3,7 +3,7 @@
 
 mod commands;
 
-use commands::{mcp_sidecar, stronghold as stronghold_cmds, workbench};
+use commands::{detection, mcp_sidecar, stronghold as stronghold_cmds, workbench};
 use mcp_sidecar::McpState;
 use stronghold_cmds::StrongholdState;
 #[allow(unused_imports)]
@@ -91,6 +91,10 @@ fn main() {
             mcp_sidecar::get_mcp_status,
             mcp_sidecar::stop_mcp_server,
             mcp_sidecar::restart_mcp_server,
+            detection::validate_sigma_rule,
+            detection::validate_yara_rule,
+            detection::validate_ocsf_event,
+            detection::detect_file_type,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

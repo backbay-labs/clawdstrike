@@ -1,3 +1,6 @@
+// Re-export FileType from the registry for convenience
+export type { FileType } from "./file-type-registry";
+
 // ---- Policy Schema Types (mirroring Rust/TS canonical schema) ----
 
 export type PolicySchemaVersion = "1.1.0" | "1.2.0" | "1.3.0" | "1.4.0";
