@@ -267,11 +267,7 @@ fn validate_dpop_binding(
             "binding proof issued_at is too far in the future",
         ));
     }
-    if now
-        .signed_duration_since(issued_at.to_owned())
-        .num_seconds()
-        > config.binding_proof_ttl_secs as i64
-    {
+    if now.signed_duration_since(*issued_at).num_seconds() > config.binding_proof_ttl_secs as i64 {
         return Err(ApiError::forbidden(
             "BROKER_BINDING_PROOF_EXPIRED",
             "binding proof is too old",

@@ -321,8 +321,8 @@ async fn build_guard_context(
     };
 
     let mut context = GuardContext::new().with_request(request_context.clone());
-    let mut session_for_audit = attribution.session_id.clone();
-    let mut agent_for_audit: Option<String> = None;
+    let session_for_audit = attribution.session_id.clone();
+    let mut agent_for_audit = None;
 
     if let Some(session_id) = attribution.session_id.as_deref() {
         let validation = state
@@ -333,14 +333,10 @@ async fn build_guard_context(
         if !validation.valid {
             return Err(V1Error::forbidden(
                 "INVALID_SESSION",
-                format!(
-                    "invalid_session: {}",
-                    validation
-                        .reason
-                        .as_ref()
-                        .map(|reason| format!("{reason:?}"))
-                        .unwrap_or_else(|| "unknown".to_string())
-                ),
+                match &validation.reason {
+                    Some(reason) => format!("invalid_session: {reason:?}"),
+                    None => "invalid_session: unknown".to_string(),
+                },
             ));
         }
 
@@ -406,7 +402,7 @@ async fn build_guard_context(
         context = context.with_agent_id(agent_id);
     }
 
-    Ok((context, session_for_audit.take(), agent_for_audit))
+    Ok((context, session_for_audit, agent_for_audit))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -544,7 +540,7 @@ fn build_intent_preview_record(
                 .path_segments()
                 .map(|segments| segments.collect::<Vec<_>>())
                 .unwrap_or_default();
-            match (request.method.clone(), segments.as_slice()) {
+            match (&request.method, segments.as_slice()) {
                 (HttpMethod::POST, ["repos", owner, repo, "issues"]) => (
                     "issues.create".to_string(),
                     format!("Create GitHub issue in {owner}/{repo}"),
@@ -567,7 +563,7 @@ fn build_intent_preview_record(
                         },
                         BrokerIntentResource {
                             kind: "issue_number".to_string(),
-                            value: (*issue_number).to_string(),
+                            value: issue_number.to_string(),
                         },
                     ],
                 ),
@@ -597,35 +593,25 @@ fn build_intent_preview_record(
                 ),
             }
         }
-        BrokerProvider::Slack => match (request.method.clone(), parsed.path()) {
-            (HttpMethod::POST, "/api/chat.postMessage") => {
+        BrokerProvider::Slack => match (&request.method, parsed.path()) {
+            (HttpMethod::POST, "/api/chat.postMessage" | "/api/chat.update") => {
                 let channel = request_body
                     .as_ref()
                     .and_then(|value| value.get("channel"))
                     .and_then(Value::as_str)
                     .unwrap_or("unknown-channel")
                     .to_string();
+                let (op, summary) = if parsed.path() == "/api/chat.postMessage" {
+                    (
+                        "chat.postMessage",
+                        format!("Post Slack message to {channel}"),
+                    )
+                } else {
+                    ("chat.update", format!("Update Slack message in {channel}"))
+                };
                 (
-                    "chat.postMessage".to_string(),
-                    format!("Post Slack message to {channel}"),
-                    BrokerIntentRiskLevel::Medium,
-                    vec!["chat_message".to_string()],
-                    vec![BrokerIntentResource {
-                        kind: "channel".to_string(),
-                        value: channel,
-                    }],
-                )
-            }
-            (HttpMethod::POST, "/api/chat.update") => {
-                let channel = request_body
-                    .as_ref()
-                    .and_then(|value| value.get("channel"))
-                    .and_then(Value::as_str)
-                    .unwrap_or("unknown-channel")
-                    .to_string();
-                (
-                    "chat.update".to_string(),
-                    format!("Update Slack message in {channel}"),
+                    op.to_string(),
+                    summary,
                     BrokerIntentRiskLevel::Medium,
                     vec!["chat_message".to_string()],
                     vec![BrokerIntentResource {
@@ -673,7 +659,7 @@ fn build_intent_preview_record(
 
     let mut preview = BrokerIntentPreview {
         preview_id: uuid::Uuid::now_v7().to_string(),
-        provider: request.provider.clone(),
+        provider: request.provider,
         operation,
         summary,
         created_at: Utc::now(),
@@ -696,7 +682,7 @@ fn build_intent_preview_record(
     Ok(BrokerPreviewRecord {
         preview,
         url: request.url.clone(),
-        method: request.method.clone(),
+        method: request.method,
         secret_ref_id: provider_policy.secret_ref.clone(),
         policy_hash: policy_hash.to_string(),
     })
@@ -1262,7 +1248,7 @@ pub async fn issue_capability(
         origin_fingerprint: request.origin_fingerprint.clone(),
         secret_ref: CredentialRef {
             id: provider_policy.secret_ref.clone(),
-            provider: request.provider.clone(),
+            provider: request.provider,
             tenant_id: None,
             environment: None,
             labels: std::collections::BTreeMap::new(),
@@ -1272,7 +1258,7 @@ pub async fn issue_capability(
             scheme,
             host: host.to_string(),
             port,
-            method: request.method.clone(),
+            method: request.method,
             exact_paths: vec![path.to_string()],
         },
         request_constraints: BrokerRequestConstraints {
@@ -1355,19 +1341,20 @@ pub async fn ingest_evidence(
         ));
     }
 
-    let message = match (&evidence.phase, &evidence.outcome) {
-        (BrokerExecutionPhase::Started, _) => "broker execution start evidence recorded",
-        (_, _) if evidence.suspicion_reason.is_some() => {
-            "broker execution suspicion evidence recorded"
+    let message = if matches!(evidence.phase, BrokerExecutionPhase::Started) {
+        "broker execution start evidence recorded"
+    } else if evidence.suspicion_reason.is_some() {
+        "broker execution suspicion evidence recorded"
+    } else {
+        match &evidence.outcome {
+            Some(BrokerExecutionOutcome::UpstreamError) => {
+                "broker execution error evidence recorded"
+            }
+            Some(BrokerExecutionOutcome::Incomplete) => {
+                "broker execution incomplete evidence recorded"
+            }
+            _ => "broker execution evidence recorded",
         }
-        (_, Some(BrokerExecutionOutcome::Success)) => "broker execution evidence recorded",
-        (_, Some(BrokerExecutionOutcome::UpstreamError)) => {
-            "broker execution error evidence recorded"
-        }
-        (_, Some(BrokerExecutionOutcome::Incomplete)) => {
-            "broker execution incomplete evidence recorded"
-        }
-        (_, None) => "broker execution evidence recorded",
     };
 
     record_broker_audit(
@@ -1464,7 +1451,7 @@ pub async fn revoke_capability(
 ) -> Result<Json<BrokerCapabilityDetailResponse>, V1Error> {
     let capability = state
         .broker_state
-        .revoke_capability(&capability_id, request.reason.clone())
+        .revoke_capability(&capability_id, request.reason)
         .await
         .ok_or_else(|| {
             V1Error::not_found(
@@ -1541,7 +1528,7 @@ pub async fn revoke_all_capabilities(
         None,
         serde_json::json!({
             "revoked_count": revoked_count,
-            "reason": request.reason.clone(),
+            "reason": &request.reason,
         }),
     );
     broadcast_broker_event(
@@ -1550,7 +1537,7 @@ pub async fn revoke_all_capabilities(
         serde_json::json!({
             "timestamp": Utc::now().to_rfc3339(),
             "revoked_count": revoked_count,
-            "reason": request.reason,
+            "reason": &request.reason,
         }),
     );
 
@@ -1580,7 +1567,7 @@ pub async fn freeze_provider(
     let provider = parse_provider(&provider)?;
     let freeze = state
         .broker_state
-        .freeze_provider(provider.clone(), request.reason.clone())
+        .freeze_provider(provider, request.reason)
         .await;
 
     record_broker_audit(
@@ -1616,13 +1603,16 @@ pub async fn unfreeze_provider(
     Path(provider): Path<String>,
 ) -> Result<Json<BrokerFrozenProvidersResponse>, V1Error> {
     let provider = parse_provider(&provider)?;
-    let removed = state.broker_state.unfreeze_provider(&provider).await;
-    if removed.is_none() {
-        return Err(V1Error::not_found(
-            "BROKER_PROVIDER_NOT_FROZEN",
-            "broker provider freeze state was not found",
-        ));
-    }
+    state
+        .broker_state
+        .unfreeze_provider(&provider)
+        .await
+        .ok_or_else(|| {
+            V1Error::not_found(
+                "BROKER_PROVIDER_NOT_FROZEN",
+                "broker provider freeze state was not found",
+            )
+        })?;
 
     record_broker_audit(
         &state,
@@ -1769,19 +1759,21 @@ pub async fn replay_capability(
             current: "frozen".to_string(),
         });
     }
-    if matches!(
+    let capability_inactive = matches!(
         capability.state,
         BrokerCapabilityState::Revoked | BrokerCapabilityState::Expired
-    ) {
+    );
+    let state_label = match capability.state {
+        BrokerCapabilityState::Revoked => "revoked",
+        BrokerCapabilityState::Expired => "expired",
+        BrokerCapabilityState::Frozen => "frozen",
+        BrokerCapabilityState::Active => "active",
+    };
+    if capability_inactive {
         diffs.push(BrokerReplayDiff {
             field: "capability_state".to_string(),
             previous: "active".to_string(),
-            current: match capability.state {
-                BrokerCapabilityState::Revoked => "revoked".to_string(),
-                BrokerCapabilityState::Expired => "expired".to_string(),
-                BrokerCapabilityState::Frozen => "frozen".to_string(),
-                BrokerCapabilityState::Active => "active".to_string(),
-            },
+            current: state_label.to_string(),
         });
     }
     if approval_required && preview_still_approved == Some(false) {
@@ -1795,22 +1787,15 @@ pub async fn replay_capability(
         && provider_allowed
         && !provider_frozen
         && preview_still_approved.unwrap_or(true)
-        && matches!(capability.state, BrokerCapabilityState::Active);
+        && !capability_inactive;
     let reason = if !egress.allowed {
         egress.message
     } else if provider_frozen {
         "provider is currently frozen by broker operator control".to_string()
     } else if approval_required && preview_still_approved == Some(false) {
         "intent preview approval is no longer satisfied".to_string()
-    } else if matches!(
-        capability.state,
-        BrokerCapabilityState::Revoked | BrokerCapabilityState::Expired
-    ) {
-        match capability.state {
-            BrokerCapabilityState::Revoked => "capability has been revoked".to_string(),
-            BrokerCapabilityState::Expired => "capability has expired".to_string(),
-            _ => "capability is not active".to_string(),
-        }
+    } else if capability_inactive {
+        format!("capability has been {state_label}")
     } else if provider_policy.is_none() {
         "requested provider, host, path, method, or secret_ref is not authorized by current broker policy"
             .to_string()
@@ -1832,18 +1817,8 @@ pub async fn replay_capability(
     if approval_required && preview_still_approved == Some(false) {
         notes.push("intent preview is approval-gated and no longer approved".to_string());
     }
-    if matches!(
-        capability.state,
-        BrokerCapabilityState::Revoked | BrokerCapabilityState::Expired
-    ) {
-        notes.push(format!(
-            "capability is currently {}",
-            match capability.state {
-                BrokerCapabilityState::Revoked => "revoked",
-                BrokerCapabilityState::Expired => "expired",
-                _ => "inactive",
-            }
-        ));
+    if capability_inactive {
+        notes.push(format!("capability is currently {state_label}"));
     }
 
     let response = BrokerReplayResponse {
@@ -1863,7 +1838,7 @@ pub async fn replay_capability(
         minted_identity_kind: capability
             .minted_identity
             .as_ref()
-            .and_then(|identity| serde_json::to_value(&identity.kind).ok())
+            .and_then(|identity| serde_json::to_value(identity.kind).ok())
             .and_then(|value| value.as_str().map(ToString::to_string)),
         would_allow,
         reason,

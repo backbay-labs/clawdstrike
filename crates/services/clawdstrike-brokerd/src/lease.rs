@@ -24,18 +24,18 @@ enum SecretLeaseEnvelope {
         installation_token: String,
         installation_id: String,
         app_id: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         expires_at: Option<DateTime<Utc>>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         expires_in_secs: Option<i64>,
     },
     SlackAppSession {
         bot_token: String,
         team_id: String,
         app_id: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         expires_at: Option<DateTime<Utc>>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         expires_in_secs: Option<i64>,
     },
     AwsStsSession {
@@ -43,26 +43,26 @@ enum SecretLeaseEnvelope {
         secret_access_key: String,
         session_token: String,
         role_arn: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         expires_at: Option<DateTime<Utc>>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         expires_in_secs: Option<i64>,
     },
     GenericHttpsBearer {
         value: String,
         subject: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         expires_at: Option<DateTime<Utc>>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         expires_in_secs: Option<i64>,
     },
     GenericHttpsHeader {
         header_name: String,
         value: String,
         subject: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         expires_at: Option<DateTime<Utc>>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(default)]
         expires_in_secs: Option<i64>,
     },
     Tripwire {
@@ -167,10 +167,10 @@ fn resolve_envelope(
             .to_string(),
             minted_identity: Some(BrokerMintedIdentity {
                 kind: BrokerMintedIdentityKind::AwsStsSession,
-                subject: role_arn.clone(),
+                metadata: BTreeMap::from([("role_arn".to_string(), role_arn.clone())]),
+                subject: role_arn,
                 issued_at: Utc::now(),
                 expires_at: resolve_expiry(expires_at, expires_in_secs)?,
-                metadata: BTreeMap::from([("role_arn".to_string(), role_arn)]),
             }),
             suspicion_reason: None,
         }),

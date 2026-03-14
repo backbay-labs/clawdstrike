@@ -41,12 +41,13 @@ pub async fn execute_slack(
         }
     }
 
+    let response_body_sha256 = Some(sha256_hex(&body));
     Ok(ProviderExecutionResponse {
         status,
         headers,
-        body: Some(body.clone()),
+        body: Some(body),
         content_type,
-        response_body_sha256: Some(sha256_hex(&body)),
+        response_body_sha256,
         bytes_received,
         provider_metadata,
     })
@@ -80,7 +81,7 @@ fn prepare_slack_request(request: &BrokerRequest) -> Result<PreparedSlackRequest
     let parsed = Url::parse(&request.url)
         .map_err(|error| ApiError::bad_request("BROKER_SLACK_URL_INVALID", error.to_string()))?;
 
-    let mut provider_metadata = match (request.method.clone(), parsed.path()) {
+    let mut provider_metadata = match (request.method, parsed.path()) {
         (HttpMethod::POST, "/api/chat.postMessage") => {
             require_string_field(&request_json, "channel", "BROKER_SLACK_FIELD_REQUIRED")?;
             require_text_or_blocks(&request_json)?;

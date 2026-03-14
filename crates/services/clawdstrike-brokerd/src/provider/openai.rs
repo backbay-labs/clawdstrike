@@ -46,12 +46,13 @@ pub async fn execute_openai(
         }
     }
 
+    let response_body_sha256 = Some(sha256_hex(&body));
     Ok(ProviderExecutionResponse {
         status,
         headers,
-        body: Some(body.clone()),
+        body: Some(body),
         content_type,
-        response_body_sha256: Some(sha256_hex(&body)),
+        response_body_sha256,
         bytes_received,
         provider_metadata,
     })

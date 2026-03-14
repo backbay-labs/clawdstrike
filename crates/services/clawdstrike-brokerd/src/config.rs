@@ -31,6 +31,13 @@ pub struct Config {
     pub allow_invalid_upstream_tls: bool,
 }
 
+fn env_bool(key: &str) -> bool {
+    std::env::var(key)
+        .ok()
+        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false)
+}
+
 impl Config {
     pub fn from_env() -> anyhow::Result<Self> {
         let listen = std::env::var("CLAWDSTRIKE_BROKERD_LISTEN")
@@ -79,19 +86,10 @@ impl Config {
             .map(|value| value.parse::<u64>())
             .transpose()?
             .unwrap_or(60);
-        let allow_http_loopback = std::env::var("CLAWDSTRIKE_BROKERD_ALLOW_HTTP_LOOPBACK")
-            .ok()
-            .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
-            .unwrap_or(false);
+        let allow_http_loopback = env_bool("CLAWDSTRIKE_BROKERD_ALLOW_HTTP_LOOPBACK");
         let allow_private_upstream_hosts =
-            std::env::var("CLAWDSTRIKE_BROKERD_ALLOW_PRIVATE_UPSTREAM_HOSTS")
-                .ok()
-                .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
-                .unwrap_or(false);
-        let allow_invalid_upstream_tls = std::env::var("CLAWDSTRIKE_BROKERD_ALLOW_INVALID_TLS")
-            .ok()
-            .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
-            .unwrap_or(false);
+            env_bool("CLAWDSTRIKE_BROKERD_ALLOW_PRIVATE_UPSTREAM_HOSTS");
+        let allow_invalid_upstream_tls = env_bool("CLAWDSTRIKE_BROKERD_ALLOW_INVALID_TLS");
 
         let trusted_hushd_public_keys = std::env::var("CLAWDSTRIKE_BROKERD_HUSHD_PUBKEYS")
             .map_err(|_| anyhow::anyhow!("CLAWDSTRIKE_BROKERD_HUSHD_PUBKEYS is required"))?

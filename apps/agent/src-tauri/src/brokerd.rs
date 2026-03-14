@@ -13,6 +13,8 @@ use tokio::sync::{Mutex, RwLock};
 const READY_MAX_ATTEMPTS: usize = 40;
 const READY_POLL_DELAY: Duration = Duration::from_millis(150);
 const MONITOR_POLL_DELAY: Duration = Duration::from_secs(2);
+const SIGTERM_GRACE_PERIOD: Duration = Duration::from_millis(300);
+const HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Clone, Debug)]
 pub struct BrokerdConfig {
@@ -53,7 +55,7 @@ impl BrokerdManager {
             monitor_started: Arc::new(AtomicBool::new(false)),
             monitor_task: Arc::new(Mutex::new(None)),
             http_client: reqwest::Client::builder()
-                .timeout(Duration::from_secs(5))
+                .timeout(HEALTH_CHECK_TIMEOUT)
                 .build()
                 .unwrap_or_else(|_| reqwest::Client::new()),
         }
@@ -115,10 +117,7 @@ impl BrokerdManager {
     }
 
     async fn ensure_monitor_loop(&self) {
-        if self
-            .monitor_started
-            .swap(true, std::sync::atomic::Ordering::SeqCst)
-        {
+        if self.monitor_started.swap(true, Ordering::SeqCst) {
             return;
         }
 
@@ -129,7 +128,7 @@ impl BrokerdManager {
         let config = self.config.clone();
         let http_client = self.http_client.clone();
         let monitor_task = self.monitor_task.clone();
-        let monitor_task_for_loop = monitor_task.clone();
+        let monitor_task_cleanup = self.monitor_task.clone();
 
         let task = tokio::spawn(async move {
             loop {
@@ -165,19 +164,14 @@ impl BrokerdManager {
 
                 // Health check runs outside the write lock to avoid
                 // holding it during the HTTP request (up to 5s timeout).
-                if !needs_restart {
-                    if !is_healthy_with_client(&http_client, &config).await {
-                        if child_alive {
-                            tracing::warn!("brokerd alive but unhealthy; killing and scheduling restart");
-                            let mut guard = child.write().await;
-                            if let Some(existing) = guard.as_mut() {
-                                let _ = existing.kill().await;
-                                let _ = existing.wait().await;
-                            }
-                            *guard = None;
-                        }
-                        needs_restart = true;
+                if !needs_restart && !is_healthy_with_client(&http_client, &config).await {
+                    if child_alive {
+                        tracing::warn!(
+                            "brokerd alive but unhealthy; killing and scheduling restart"
+                        );
+                        terminate_child_slot(&child).await;
                     }
+                    needs_restart = true;
                 }
 
                 if !needs_restart || shutdown_requested.load(Ordering::SeqCst) {
@@ -192,28 +186,30 @@ impl BrokerdManager {
                     continue;
                 }
 
-                match fetch_hushd_public_key(&http_client, &config).await {
-                    Ok(public_key) => match spawn_brokerd_process(&config, &public_key).await {
-                        Ok(mut child_process) => {
-                            attach_child_logs(&mut child_process);
-                            *child.write().await = Some(child_process);
-                            if let Err(error) = wait_until_ready(&http_client, &config).await {
-                                tracing::error!(error = %error, "brokerd restart did not become ready");
-                                terminate_child_slot(&child).await;
-                            }
-                        }
-                        Err(error) => {
-                            tracing::error!(error = %error, "failed to restart brokerd");
-                        }
-                    },
+                let public_key = match fetch_hushd_public_key(&http_client, &config).await {
+                    Ok(key) => key,
                     Err(error) => {
                         tracing::error!(error = %error, "failed to refresh hushd trust for brokerd restart");
+                        continue;
                     }
+                };
+                let mut child_process = match spawn_brokerd_process(&config, &public_key).await {
+                    Ok(proc) => proc,
+                    Err(error) => {
+                        tracing::error!(error = %error, "failed to restart brokerd");
+                        continue;
+                    }
+                };
+                attach_child_logs(&mut child_process);
+                *child.write().await = Some(child_process);
+                if let Err(error) = wait_until_ready(&http_client, &config).await {
+                    tracing::error!(error = %error, "brokerd restart did not become ready");
+                    terminate_child_slot(&child).await;
                 }
             }
 
             monitor_started.store(false, Ordering::SeqCst);
-            *monitor_task_for_loop.lock().await = None;
+            *monitor_task_cleanup.lock().await = None;
         });
 
         *monitor_task.lock().await = Some(task);
@@ -252,7 +248,7 @@ async fn fetch_hushd_public_key(
     let response = request
         .send()
         .await
-        .with_context(|| "Failed to fetch hushd broker signing public key")?;
+        .context("Failed to fetch hushd broker signing public key")?;
     if !response.status().is_success() {
         anyhow::bail!(
             "hushd broker public-key endpoint returned {}",
@@ -262,7 +258,7 @@ async fn fetch_hushd_public_key(
     let payload: serde_json::Value = response
         .json()
         .await
-        .with_context(|| "Failed to parse hushd broker public key response")?;
+        .context("Failed to parse hushd broker public key response")?;
     let public_key = payload
         .get("public_key")
         .and_then(serde_json::Value::as_str)
@@ -301,47 +297,35 @@ async fn spawn_brokerd_process(config: &BrokerdConfig, hushd_public_key: &str) -
         cmd.env("CLAWDSTRIKE_BROKERD_HUSHD_TOKEN", token);
     }
 
-    match config
-        .secret_backend
-        .kind
-        .trim()
-        .to_ascii_lowercase()
-        .as_str()
-    {
-        "file" => {
-            cmd.env("CLAWDSTRIKE_BROKERD_SECRET_BACKEND", "file").env(
-                "CLAWDSTRIKE_BROKERD_SECRET_FILE",
-                config.secret_backend.file_path.to_string_lossy().as_ref(),
+    let backend_kind = config.secret_backend.kind.trim();
+    if backend_kind.eq_ignore_ascii_case("file") {
+        cmd.env("CLAWDSTRIKE_BROKERD_SECRET_BACKEND", "file").env(
+            "CLAWDSTRIKE_BROKERD_SECRET_FILE",
+            config.secret_backend.file_path.to_string_lossy().as_ref(),
+        );
+    } else if backend_kind.eq_ignore_ascii_case("env") {
+        cmd.env("CLAWDSTRIKE_BROKERD_SECRET_BACKEND", "env").env(
+            "CLAWDSTRIKE_BROKERD_SECRET_ENV_PREFIX",
+            &config.secret_backend.env_prefix,
+        );
+    } else if backend_kind.eq_ignore_ascii_case("http") {
+        let base_url = config
+            .secret_backend
+            .http_base_url
+            .as_ref()
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| anyhow::anyhow!("brokerd http secret backend requires http_base_url"))?;
+        cmd.env("CLAWDSTRIKE_BROKERD_SECRET_BACKEND", "http")
+            .env("CLAWDSTRIKE_BROKERD_SECRET_HTTP_URL", base_url)
+            .env(
+                "CLAWDSTRIKE_BROKERD_SECRET_HTTP_PATH_PREFIX",
+                &config.secret_backend.http_path_prefix,
             );
+        if let Some(token) = &config.secret_backend.http_bearer_token {
+            cmd.env("CLAWDSTRIKE_BROKERD_SECRET_HTTP_TOKEN", token);
         }
-        "env" => {
-            cmd.env("CLAWDSTRIKE_BROKERD_SECRET_BACKEND", "env").env(
-                "CLAWDSTRIKE_BROKERD_SECRET_ENV_PREFIX",
-                &config.secret_backend.env_prefix,
-            );
-        }
-        "http" => {
-            let base_url = config
-                .secret_backend
-                .http_base_url
-                .as_ref()
-                .filter(|value| !value.trim().is_empty())
-                .ok_or_else(|| {
-                    anyhow::anyhow!("brokerd http secret backend requires http_base_url")
-                })?;
-            cmd.env("CLAWDSTRIKE_BROKERD_SECRET_BACKEND", "http")
-                .env("CLAWDSTRIKE_BROKERD_SECRET_HTTP_URL", base_url)
-                .env(
-                    "CLAWDSTRIKE_BROKERD_SECRET_HTTP_PATH_PREFIX",
-                    &config.secret_backend.http_path_prefix,
-                );
-            if let Some(token) = &config.secret_backend.http_bearer_token {
-                cmd.env("CLAWDSTRIKE_BROKERD_SECRET_HTTP_TOKEN", token);
-            }
-        }
-        other => {
-            anyhow::bail!("unsupported brokerd secret backend kind '{other}'");
-        }
+    } else {
+        anyhow::bail!("unsupported brokerd secret backend kind '{backend_kind}'");
     }
 
     cmd.spawn()
@@ -363,7 +347,7 @@ async fn terminate_child_slot(child_slot: &Arc<RwLock<Option<Child>>>) {
             libc::kill(pid as i32, libc::SIGTERM);
         }
     }
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    tokio::time::sleep(SIGTERM_GRACE_PERIOD).await;
     let _ = child.kill().await;
     let _ = child.wait().await;
 }
@@ -511,7 +495,10 @@ pub fn prepare_managed_brokerd_binary() -> Result<Option<PathBuf>> {
     Ok(Some(managed_path))
 }
 
-fn managed_brokerd_needs_copy(source_path: &PathBuf, managed_path: &PathBuf) -> Result<bool> {
+fn managed_brokerd_needs_copy(
+    source_path: &std::path::Path,
+    managed_path: &std::path::Path,
+) -> Result<bool> {
     if !managed_path.is_file() {
         return Ok(true);
     }
@@ -521,22 +508,18 @@ fn managed_brokerd_needs_copy(source_path: &PathBuf, managed_path: &PathBuf) -> 
             source_path
         )
     })?;
-    let managed_meta = std::fs::metadata(managed_path).with_context(|| {
-        format!(
-            "Failed to stat managed brokerd at {:?}",
-            managed_path
-        )
-    })?;
+    let managed_meta = std::fs::metadata(managed_path)
+        .with_context(|| format!("Failed to stat managed brokerd at {:?}", managed_path))?;
     if source_meta.len() != managed_meta.len() {
         return Ok(true);
     }
 
     let source_modified = source_meta
         .modified()
-        .with_context(|| "Failed to read bundled brokerd mtime")?;
+        .context("Failed to read bundled brokerd mtime")?;
     let managed_modified = managed_meta
         .modified()
-        .with_context(|| "Failed to read managed brokerd mtime")?;
+        .context("Failed to read managed brokerd mtime")?;
 
     Ok(source_modified > managed_modified)
 }

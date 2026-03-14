@@ -3,9 +3,21 @@ import { fetchFrozenBrokerProviders, type BrokerFrozenProviderStatus } from "../
 import { NoiseGrain, Stamp } from "../components/ui";
 import { useSharedSSE } from "../context/SSEContext";
 import type { SSEEvent } from "../hooks/useSSE";
-import { formatDateTime } from "./broker-utils";
+import { HintBlock, formatDateTime } from "./broker-utils";
 
 type BrokerStreamEvent = SSEEvent & Record<string, unknown>;
+
+const EVENT_CARD_STYLE = {
+  border: "1px solid rgba(27,34,48,0.9)",
+  background: "rgba(11,13,16,0.82)",
+  padding: 12,
+} as const;
+
+const FROZEN_CARD_STYLE = {
+  border: "1px solid rgba(210,163,75,0.28)",
+  background: "rgba(210,163,75,0.08)",
+  padding: 12,
+} as const;
 
 function brokerVariant(
   eventType: string,
@@ -43,8 +55,8 @@ export function BrokerTheater(_props: { windowId?: string }) {
   }, []);
 
   useEffect(() => {
-    refreshFrozen();
-    const interval = window.setInterval(refreshFrozen, 15_000);
+    void refreshFrozen();
+    const interval = window.setInterval(() => void refreshFrozen(), 15_000);
     return () => window.clearInterval(interval);
   }, [refreshFrozen]);
 
@@ -122,16 +134,14 @@ export function BrokerTheater(_props: { windowId?: string }) {
 
       {error && (
         <div
-          className="glass-panel"
+          className="glass-panel font-mono text-xs"
           style={{
             padding: 12,
-            background: "rgba(194,59,59,0.08)",
-            border: "1px solid rgba(194,59,59,0.3)",
             color: "#c23b3b",
+            borderColor: "rgba(194,59,59,0.3)",
           }}
         >
-          <NoiseGrain />
-          <div className="relative font-mono text-xs">{error}</div>
+          {error}
         </div>
       )}
 
@@ -146,9 +156,7 @@ export function BrokerTheater(_props: { windowId?: string }) {
           </div>
           <div className="space-y-3">
             {brokerEvents.length === 0 ? (
-              <div className="font-mono text-xs" style={{ color: "rgba(154,167,181,0.6)" }}>
-                Waiting for broker events...
-              </div>
+              <HintBlock>Waiting for broker events...</HintBlock>
             ) : (
               brokerEvents.slice(0, 60).map((event) => {
                 const provider = typeof event.provider === "string" ? event.provider : "unknown";
@@ -158,15 +166,7 @@ export function BrokerTheater(_props: { windowId?: string }) {
                 const outcome = typeof event.outcome === "string" ? event.outcome : undefined;
                 const url = typeof event.url === "string" ? event.url : undefined;
                 return (
-                  <div
-                    key={event._id}
-                    className="rounded-md"
-                    style={{
-                      border: "1px solid rgba(27,34,48,0.9)",
-                      background: "rgba(11,13,16,0.82)",
-                      padding: 12,
-                    }}
-                  >
+                  <div key={event._id} className="rounded-md" style={EVENT_CARD_STYLE}>
                     <div className="flex flex-wrap items-center gap-2">
                       <Stamp variant={brokerVariant(event.event_type, outcome)}>
                         {event.event_type.replace(/_/g, " ")}
@@ -221,21 +221,11 @@ export function BrokerTheater(_props: { windowId?: string }) {
             Provider Freeze Board
           </div>
           {frozenProviders.length === 0 ? (
-            <div className="font-mono text-xs" style={{ color: "rgba(154,167,181,0.6)" }}>
-              No freezes are active.
-            </div>
+            <HintBlock>No freezes are active.</HintBlock>
           ) : (
             <div className="space-y-3">
               {frozenProviders.map((provider) => (
-                <div
-                  key={provider.provider}
-                  className="rounded-md"
-                  style={{
-                    border: "1px solid rgba(210,163,75,0.28)",
-                    background: "rgba(210,163,75,0.08)",
-                    padding: 12,
-                  }}
-                >
+                <div key={provider.provider} className="rounded-md" style={FROZEN_CARD_STYLE}>
                   <div className="flex items-center gap-2">
                     <Stamp variant="warn">{provider.provider}</Stamp>
                   </div>

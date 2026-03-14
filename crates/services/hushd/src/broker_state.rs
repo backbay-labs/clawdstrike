@@ -33,7 +33,7 @@ impl BrokerStateStore {
     pub async fn register_capability(&self, capability: &BrokerCapability, url: String) {
         let status = BrokerCapabilityStatus {
             capability_id: capability.capability_id.clone(),
-            provider: capability.secret_ref.provider.clone(),
+            provider: capability.secret_ref.provider,
             state: BrokerCapabilityState::Active,
             issued_at: capability.issued_at,
             expires_at: capability.expires_at,
@@ -45,7 +45,7 @@ impl BrokerStateStore {
             origin_fingerprint: capability.origin_fingerprint.clone(),
             secret_ref_id: capability.secret_ref.id.clone(),
             url: url.clone(),
-            method: capability.destination.method.clone(),
+            method: capability.destination.method,
             state_reason: None,
             revoked_at: None,
             execution_count: 0,
@@ -66,7 +66,7 @@ impl BrokerStateStore {
             let record = BrokerPreviewRecord {
                 preview: preview.clone(),
                 url,
-                method: capability.destination.method.clone(),
+                method: capability.destination.method,
                 secret_ref_id: capability.secret_ref.id.clone(),
                 policy_hash: capability.policy_hash.clone(),
             };
@@ -92,7 +92,7 @@ impl BrokerStateStore {
                 status.execution_count = status.execution_count.saturating_add(1);
                 status.last_executed_at = Some(evidence.executed_at);
                 status.last_status_code = evidence.status_code;
-                status.last_outcome = evidence.outcome.clone();
+                status.last_outcome = evidence.outcome;
             }
             if let Some(minted_identity) = &evidence.minted_identity {
                 status.minted_identity = Some(minted_identity.clone());
@@ -128,9 +128,7 @@ impl BrokerStateStore {
         &self,
         capability_id: &str,
     ) -> Option<BrokerCapabilityStatus> {
-        let capabilities = self.capabilities.read().await;
-        let status = capabilities.get(capability_id)?.clone();
-        drop(capabilities);
+        let status = self.capabilities.read().await.get(capability_id)?.clone();
         Some(self.apply_runtime_state(status).await)
     }
 
@@ -224,7 +222,7 @@ impl BrokerStateStore {
     pub async fn revoke_all_active(&self, reason: Option<String>) -> usize {
         let mut capabilities = self.capabilities.write().await;
         let now = Utc::now();
-        let mut revoked: usize = 0;
+        let mut revoked = 0usize;
         for status in capabilities.values_mut() {
             if matches!(status.state, BrokerCapabilityState::Revoked) || status.expires_at <= now {
                 continue;
@@ -242,15 +240,16 @@ impl BrokerStateStore {
         provider: BrokerProvider,
         reason: String,
     ) -> BrokerProviderFreezeStatus {
+        let key = provider_key(&provider);
         let freeze = BrokerProviderFreezeStatus {
-            provider: provider.clone(),
+            provider,
             frozen_at: Utc::now(),
             reason,
         };
         self.frozen_providers
             .write()
             .await
-            .insert(provider_key(&provider), freeze.clone());
+            .insert(key, freeze.clone());
         freeze
     }
 
@@ -299,15 +298,15 @@ impl BrokerStateStore {
             return status;
         }
 
-        if let Some(frozen) = self
+        if let Some(reason) = self
             .frozen_providers
             .read()
             .await
             .get(&provider_key(&status.provider))
-            .cloned()
+            .map(|frozen| frozen.reason.clone())
         {
             status.state = BrokerCapabilityState::Frozen;
-            status.state_reason = Some(frozen.reason);
+            status.state_reason = Some(reason);
         }
 
         status

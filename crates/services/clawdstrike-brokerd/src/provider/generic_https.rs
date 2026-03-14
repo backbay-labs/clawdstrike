@@ -40,12 +40,13 @@ pub async fn execute_generic_https(
         .map_err(|error| ApiError::bad_gateway("BROKER_UPSTREAM_READ_FAILED", error.to_string()))?;
     let bytes_received = body.len();
 
+    let response_body_sha256 = Some(sha256_hex(&body));
     Ok(ProviderExecutionResponse {
         status,
         headers,
-        body: Some(body.clone()),
+        body: Some(body),
         content_type,
-        response_body_sha256: Some(sha256_hex(&body)),
+        response_body_sha256,
         bytes_received,
         provider_metadata,
     })

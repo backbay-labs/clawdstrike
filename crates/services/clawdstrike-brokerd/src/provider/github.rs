@@ -38,12 +38,13 @@ pub async fn execute_github(
         }
     }
 
+    let response_body_sha256 = Some(sha256_hex(&body));
     Ok(ProviderExecutionResponse {
         status,
         headers,
-        body: Some(body.clone()),
+        body: Some(body),
         content_type,
-        response_body_sha256: Some(sha256_hex(&body)),
+        response_body_sha256,
         bytes_received,
         provider_metadata,
     })
@@ -81,41 +82,21 @@ fn prepare_github_request(request: &BrokerRequest) -> Result<PreparedGithubReque
         .map(|segments| segments.collect::<Vec<_>>())
         .unwrap_or_default();
 
-    let (operation, mut provider_metadata) = match (request.method.clone(), segments.as_slice()) {
+    let (operation, mut provider_metadata) = match (request.method, segments.as_slice()) {
         (HttpMethod::POST, ["repos", owner, repo, "issues"]) => {
             require_string_field(&request_json, "title", "BROKER_GITHUB_FIELD_REQUIRED")?;
-            (
-                "issues.create",
-                BTreeMap::from([
-                    ("repository".to_string(), format!("{owner}/{repo}")),
-                    ("repo_owner".to_string(), (*owner).to_string()),
-                    ("repo_name".to_string(), (*repo).to_string()),
-                ]),
-            )
+            ("issues.create", repo_metadata(owner, repo))
         }
         (HttpMethod::POST, ["repos", owner, repo, "issues", issue_number, "comments"]) => {
             require_string_field(&request_json, "body", "BROKER_GITHUB_FIELD_REQUIRED")?;
-            (
-                "issues.comment.create",
-                BTreeMap::from([
-                    ("repository".to_string(), format!("{owner}/{repo}")),
-                    ("repo_owner".to_string(), (*owner).to_string()),
-                    ("repo_name".to_string(), (*repo).to_string()),
-                    ("issue_number".to_string(), (*issue_number).to_string()),
-                ]),
-            )
+            let mut meta = repo_metadata(owner, repo);
+            meta.insert("issue_number".to_string(), (*issue_number).to_string());
+            ("issues.comment.create", meta)
         }
         (HttpMethod::POST, ["repos", owner, repo, "check-runs"]) => {
             require_string_field(&request_json, "name", "BROKER_GITHUB_FIELD_REQUIRED")?;
             require_string_field(&request_json, "head_sha", "BROKER_GITHUB_FIELD_REQUIRED")?;
-            (
-                "checks.create",
-                BTreeMap::from([
-                    ("repository".to_string(), format!("{owner}/{repo}")),
-                    ("repo_owner".to_string(), (*owner).to_string()),
-                    ("repo_name".to_string(), (*repo).to_string()),
-                ]),
-            )
+            ("checks.create", repo_metadata(owner, repo))
         }
         _ => return Err(ApiError::bad_request(
             "BROKER_GITHUB_OPERATION_UNSUPPORTED",
@@ -161,6 +142,14 @@ async fn execute_github_request(
         .send()
         .await
         .map_err(|error| ApiError::bad_gateway("BROKER_UPSTREAM_REQUEST_FAILED", error.to_string()))
+}
+
+fn repo_metadata(owner: &str, repo: &str) -> BTreeMap<String, String> {
+    BTreeMap::from([
+        ("repository".to_string(), format!("{owner}/{repo}")),
+        ("repo_owner".to_string(), owner.to_string()),
+        ("repo_name".to_string(), repo.to_string()),
+    ])
 }
 
 fn require_string_field<'a>(

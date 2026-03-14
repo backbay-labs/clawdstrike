@@ -543,9 +543,9 @@ impl Settings {
             let contents = std::fs::read_to_string(&path)
                 .with_context(|| format!("Failed to read settings from {:?}", path))?;
             let settings_json: serde_json::Value =
-                serde_json::from_str(&contents).with_context(|| "Failed to parse settings JSON")?;
+                serde_json::from_str(&contents).context("Failed to parse settings JSON")?;
             let mut settings: Settings = serde_json::from_value(settings_json.clone())
-                .with_context(|| "Failed to parse settings JSON")?;
+                .context("Failed to parse settings JSON")?;
             let dashboard_url_present = settings_json
                 .as_object()
                 .map(|obj| obj.contains_key("dashboard_url"))
@@ -569,7 +569,7 @@ impl Settings {
         }
 
         let contents =
-            serde_json::to_string_pretty(self).with_context(|| "Failed to serialize settings")?;
+            serde_json::to_string_pretty(self).context("Failed to serialize settings")?;
         write_settings_file(&path, &contents)?;
 
         Ok(())
@@ -587,7 +587,7 @@ fn backfill_dashboard_url_if_missing(settings: &mut Settings, dashboard_url_pres
     }
 }
 
-fn write_settings_file(path: &PathBuf, contents: &str) -> Result<()> {
+fn write_settings_file(path: &std::path::Path, contents: &str) -> Result<()> {
     #[cfg(unix)]
     {
         use std::fs::OpenOptions;

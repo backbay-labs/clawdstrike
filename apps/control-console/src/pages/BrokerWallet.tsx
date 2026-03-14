@@ -18,13 +18,24 @@ import {
 import { GlassButton, NoiseGrain, Stamp } from "../components/ui";
 import { useSharedSSE } from "../context/SSEContext";
 import {
+  Banner,
   DetailItem,
+  HintBlock,
+  MetricCard,
+  PanelHeader,
+  executionVariant,
   formatDateTime,
   formatRelative,
   replayVariant,
   statusVariant,
   uniqueProviders,
 } from "./broker-utils";
+
+const REPLAY_PANEL_STYLE = {
+  padding: 12,
+  border: "1px solid rgba(27,34,48,0.8)",
+  background: "rgba(11,13,16,0.88)",
+} as const;
 
 export function BrokerWallet(_props: { windowId?: string }) {
   const { events } = useSharedSSE();
@@ -219,65 +230,23 @@ export function BrokerWallet(_props: { windowId?: string }) {
       </div>
 
       <div className="grid gap-3 md:grid-cols-4">
-        {[
-          { label: "Active", value: counts.active, variant: "allowed" as const },
-          { label: "Frozen", value: counts.frozen, variant: "warn" as const },
-          { label: "Revoked", value: counts.revoked, variant: "blocked" as const },
-          { label: "Expired", value: counts.expired, variant: "warn" as const },
-        ].map((item) => (
-          <div key={item.label} className="glass-panel" style={{ padding: 16 }}>
-            <NoiseGrain />
-            <div className="font-mono text-[11px]" style={{ color: "rgba(154,167,181,0.7)" }}>
-              {item.label}
-            </div>
-            <div className="mt-2 flex items-center justify-between">
-              <div className="font-display text-3xl">{item.value}</div>
-              <Stamp variant={item.variant}>{item.label}</Stamp>
-            </div>
-          </div>
-        ))}
+        <MetricCard label="Active" value={counts.active} variant="allowed" />
+        <MetricCard label="Frozen" value={counts.frozen} variant="warn" />
+        <MetricCard label="Revoked" value={counts.revoked} variant="blocked" />
+        <MetricCard label="Expired" value={counts.expired} variant="warn" />
       </div>
 
-      {error && (
-        <div
-          className="glass-panel font-mono text-sm"
-          style={{
-            padding: 12,
-            color: "var(--crimson)",
-            borderColor: "rgba(194,59,59,0.35)",
-            boxShadow: "inset 0 1px 0 rgba(194,59,59,0.2)",
-          }}
-        >
-          {error}
-        </div>
-      )}
+      {error && <Banner variant="blocked">{error}</Banner>}
 
       <div className="grid gap-4 xl:grid-cols-[1.1fr_1.4fr]">
         <div className="glass-panel" style={{ minHeight: 520 }}>
           <NoiseGrain />
-          <div
-            className="flex items-center justify-between"
-            style={{
-              padding: "16px 16px 12px 16px",
-              borderBottom: "1px solid rgba(27,34,48,0.8)",
-            }}
-          >
-            <div className="font-mono text-xs uppercase" style={{ letterSpacing: "0.08em" }}>
-              Capability Inventory
-            </div>
-            <div className="font-mono text-xs" style={{ color: "rgba(154,167,181,0.7)" }}>
-              {capabilities.length} tracked
-            </div>
-          </div>
+          <PanelHeader title="Capability Inventory" meta={`${capabilities.length} tracked`} />
           <div style={{ maxHeight: 470, overflow: "auto" }}>
             {loading ? (
-              <div className="font-mono" style={{ padding: 16, color: "rgba(154,167,181,0.6)" }}>
-                Loading capabilities...
-              </div>
+              <HintBlock>Loading capabilities...</HintBlock>
             ) : capabilities.length === 0 ? (
-              <div className="font-mono" style={{ padding: 16, color: "rgba(154,167,181,0.6)" }}>
-                No broker capabilities recorded yet.
-              </div>
+              <HintBlock>No broker capabilities recorded yet.</HintBlock>
             ) : (
               capabilities.map((capability) => {
                 const selected = capability.capability_id === selectedId;
@@ -405,12 +374,7 @@ export function BrokerWallet(_props: { windowId?: string }) {
                     </div>
                   </div>
                 ) : (
-                  <div
-                    className="mt-2 font-mono text-sm"
-                    style={{ color: "rgba(154,167,181,0.65)" }}
-                  >
-                    Select a capability from the wallet.
-                  </div>
+                  <HintBlock>Select a capability from the wallet.</HintBlock>
                 )}
               </div>
               {selectedCapability && (
@@ -476,14 +440,7 @@ export function BrokerWallet(_props: { windowId?: string }) {
             )}
 
             {replay && (
-              <div
-                className="mt-4 rounded-lg"
-                style={{
-                  padding: 12,
-                  border: "1px solid rgba(27,34,48,0.8)",
-                  background: "rgba(11,13,16,0.88)",
-                }}
-              >
+              <div className="mt-4 rounded-lg" style={REPLAY_PANEL_STYLE}>
                 <div className="mb-2 flex items-center justify-between">
                   <div className="font-mono text-xs uppercase" style={{ letterSpacing: "0.08em" }}>
                     Replay Result
@@ -520,29 +477,15 @@ export function BrokerWallet(_props: { windowId?: string }) {
 
           <div className="glass-panel" style={{ minHeight: 260 }}>
             <NoiseGrain />
-            <div
-              className="flex items-center justify-between"
-              style={{
-                padding: "16px 16px 12px 16px",
-                borderBottom: "1px solid rgba(27,34,48,0.8)",
-              }}
-            >
-              <div className="font-mono text-xs uppercase" style={{ letterSpacing: "0.08em" }}>
-                Execution Timeline
-              </div>
-              <div className="font-mono text-xs" style={{ color: "rgba(154,167,181,0.7)" }}>
-                {detailLoading ? "refreshing..." : `${executions.length} events`}
-              </div>
-            </div>
+            <PanelHeader
+              title="Execution Timeline"
+              meta={detailLoading ? "refreshing..." : `${executions.length} events`}
+            />
             <div style={{ maxHeight: 320, overflow: "auto" }}>
               {selectedId === null ? (
-                <div className="font-mono" style={{ padding: 16, color: "rgba(154,167,181,0.6)" }}>
-                  Select a capability to inspect its timeline.
-                </div>
+                <HintBlock>Select a capability to inspect its timeline.</HintBlock>
               ) : executions.length === 0 ? (
-                <div className="font-mono" style={{ padding: 16, color: "rgba(154,167,181,0.6)" }}>
-                  No execution evidence recorded yet.
-                </div>
+                <HintBlock>No execution evidence recorded yet.</HintBlock>
               ) : (
                 <table className="w-full text-left text-sm">
                   <thead>
@@ -565,15 +508,7 @@ export function BrokerWallet(_props: { windowId?: string }) {
                         className="hover-row"
                       >
                         <td className="px-4 py-3">
-                          <Stamp
-                            variant={
-                              execution.phase === "started"
-                                ? "warn"
-                                : execution.outcome === "success"
-                                  ? "allowed"
-                                  : "blocked"
-                            }
-                          >
+                          <Stamp variant={executionVariant(execution.phase, execution.outcome)}>
                             {execution.phase}
                           </Stamp>
                         </td>

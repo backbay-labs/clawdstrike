@@ -139,11 +139,12 @@ impl OperatorState {
         let revoked = inner
             .revoked_capability_ids
             .contains(capability.capability_id.as_str());
+        let capability_id = capability.capability_id.clone();
         inner.capabilities.insert(
-            capability.capability_id.clone(),
+            capability_id.clone(),
             CapabilityRecord {
-                capability_id: capability.capability_id.clone(),
-                provider: capability.secret_ref.provider.clone(),
+                capability_id,
+                provider: capability.secret_ref.provider,
                 secret_ref_id: capability.secret_ref.id.clone(),
                 issued_at: capability.issued_at,
                 expires_at: capability.expires_at,
@@ -155,7 +156,7 @@ impl OperatorState {
                 destination_scheme: capability.destination.scheme.as_str().to_string(),
                 destination_host: capability.destination.host.clone(),
                 destination_port: capability.destination.port,
-                destination_method: capability.destination.method.clone(),
+                destination_method: capability.destination.method,
                 destination_paths: capability.destination.exact_paths.clone(),
                 evidence_required: capability.evidence_required,
                 revoked,
@@ -177,19 +178,42 @@ impl OperatorState {
             .map(|record| record.executed_at)
             .unwrap_or(evidence.executed_at);
 
+        let execution_id = evidence.execution_id.clone();
+        let capability_id = evidence.capability_id.clone();
+        let provider = evidence.provider;
+        let phase = evidence.phase;
+        let outcome = evidence.outcome;
+        let url = evidence.url.clone();
+
+        inner.timeline.push_back(ExecutionTimelineEvent {
+            execution_id: execution_id.clone(),
+            capability_id: capability_id.clone(),
+            provider,
+            phase,
+            occurred_at: evidence.executed_at,
+            url: url.clone(),
+            status_code: evidence.status_code,
+            outcome,
+            bytes_received: evidence.bytes_received,
+            stream_chunk_count: evidence.stream_chunk_count,
+        });
+        while inner.timeline.len() > MAX_TIMELINE_EVENTS {
+            let _ = inner.timeline.pop_front();
+        }
+
         inner.executions.insert(
-            evidence.execution_id.clone(),
+            execution_id.clone(),
             ExecutionRecord {
-                execution_id: evidence.execution_id.clone(),
-                capability_id: evidence.capability_id.clone(),
-                provider: evidence.provider.clone(),
-                phase: evidence.phase.clone(),
-                outcome: evidence.outcome.clone(),
+                execution_id,
+                capability_id,
+                provider,
+                phase,
+                outcome,
                 executed_at,
                 completed_at,
                 secret_ref_id: evidence.secret_ref_id.clone(),
-                url: evidence.url.clone(),
-                method: evidence.method.clone(),
+                url,
+                method: evidence.method,
                 request_body_sha256: evidence.request_body_sha256.clone(),
                 response_body_sha256: evidence.response_body_sha256.clone(),
                 status_code: evidence.status_code,
@@ -200,31 +224,14 @@ impl OperatorState {
             },
         );
         trim_oldest(&mut inner.executions, MAX_EXECUTIONS);
-
-        inner.timeline.push_back(ExecutionTimelineEvent {
-            execution_id: evidence.execution_id.clone(),
-            capability_id: evidence.capability_id.clone(),
-            provider: evidence.provider.clone(),
-            phase: evidence.phase.clone(),
-            occurred_at: evidence.executed_at,
-            url: evidence.url.clone(),
-            status_code: evidence.status_code,
-            outcome: evidence.outcome.clone(),
-            bytes_received: evidence.bytes_received,
-            stream_chunk_count: evidence.stream_chunk_count,
-        });
-        while inner.timeline.len() > MAX_TIMELINE_EVENTS {
-            let _ = inner.timeline.pop_front();
-        }
     }
 }
 
 fn trim_oldest<T>(map: &mut BTreeMap<String, T>, max_len: usize) {
     while map.len() > max_len {
-        let Some(first_key) = map.keys().next().cloned() else {
+        if map.pop_first().is_none() {
             break;
-        };
-        map.remove(&first_key);
+        }
     }
 }
 

@@ -9,7 +9,7 @@ pub const BROKER_EXECUTION_ID_HEADER: &str = "x-clawdstrike-execution-id";
 pub const BROKER_CAPABILITY_ID_HEADER: &str = "x-clawdstrike-capability-id";
 pub const BROKER_PROVIDER_HEADER: &str = "x-clawdstrike-provider";
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BrokerProvider {
     Openai,
@@ -19,6 +19,7 @@ pub enum BrokerProvider {
 }
 
 impl BrokerProvider {
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Openai => "openai",
@@ -29,7 +30,7 @@ impl BrokerProvider {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum HttpMethod {
     GET,
     POST,
@@ -39,6 +40,7 @@ pub enum HttpMethod {
 }
 
 impl HttpMethod {
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::GET => "GET",
@@ -50,14 +52,14 @@ impl HttpMethod {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum UrlScheme {
     Http,
     Https,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProofBindingMode {
     Loopback,
@@ -244,7 +246,7 @@ pub struct BrokerCompletionBundle {
     pub executions: Vec<BrokerExecutionEvidence>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BrokerExecutionPhase {
     Started,
@@ -252,7 +254,7 @@ pub enum BrokerExecutionPhase {
     Completed,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BrokerExecutionOutcome {
     Success,
@@ -260,7 +262,7 @@ pub enum BrokerExecutionOutcome {
     Incomplete,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BrokerIntentRiskLevel {
     #[default]
@@ -269,7 +271,7 @@ pub enum BrokerIntentRiskLevel {
     High,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BrokerApprovalState {
     #[default]
@@ -279,7 +281,7 @@ pub enum BrokerApprovalState {
     Rejected,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BrokerMintedIdentityKind {
     Static,
@@ -288,7 +290,7 @@ pub enum BrokerMintedIdentityKind {
     AwsStsSession,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BrokerCapabilityState {
     #[default]
@@ -541,14 +543,17 @@ pub fn verify_completion_bundle(
     Err(BundleEnvelopeError::InvalidSignature)
 }
 
+#[must_use]
 pub fn normalize_header_name(value: &str) -> String {
     value.trim().to_ascii_lowercase()
 }
 
+#[must_use]
 pub fn sha256_hex(value: &str) -> String {
     sha256(value.as_bytes()).to_hex()
 }
 
+#[must_use]
 pub fn binding_proof_message(
     capability_id: &str,
     method: &HttpMethod,

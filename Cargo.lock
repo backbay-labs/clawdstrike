@@ -1708,7 +1708,6 @@ name = "clawdstrike-broker-protocol"
 version = "0.2.5"
 dependencies = [
  "chrono",
- "hex",
  "hush-core",
  "serde",
  "serde_json",

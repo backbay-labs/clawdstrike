@@ -320,8 +320,14 @@ impl AgentApiServer {
             .route("/api/v1/events", get(proxy_daemon_events))
             .route("/api/v1/siem/exporters", get(proxy_daemon_get))
             .route("/api/v1/broker/public-key", get(proxy_daemon_get))
-            .route("/api/v1/broker/capabilities", get(proxy_daemon_get).post(proxy_daemon_mutation))
-            .route("/api/v1/broker/previews", get(proxy_daemon_get).post(proxy_daemon_mutation))
+            .route(
+                "/api/v1/broker/capabilities",
+                get(proxy_daemon_get).post(proxy_daemon_mutation),
+            )
+            .route(
+                "/api/v1/broker/previews",
+                get(proxy_daemon_get).post(proxy_daemon_mutation),
+            )
             .route(
                 "/api/v1/broker/capabilities/revoke-all",
                 post(proxy_daemon_mutation),
@@ -1163,14 +1169,7 @@ async fn send_daemon_get_request(
     request_headers: &HeaderMap,
     uri: &Uri,
 ) -> Result<reqwest::Response, (StatusCode, String)> {
-    send_daemon_request(
-        state,
-        request_headers,
-        reqwest::Method::GET,
-        uri,
-        None,
-    )
-    .await
+    send_daemon_request(state, request_headers, reqwest::Method::GET, uri, None).await
 }
 
 async fn send_daemon_request(

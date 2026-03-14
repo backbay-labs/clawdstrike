@@ -378,6 +378,32 @@ export async function fetchAuditStats(): Promise<AuditStats> {
   return res.json();
 }
 
+async function brokerGet<T>(path: string, label: string, params?: URLSearchParams): Promise<T> {
+  const qs = params?.toString();
+  const url = `${getApiBase()}${path}${qs ? `?${qs}` : ""}`;
+  const res = await fetch(url, { headers: getHeaders() });
+  if (!res.ok) throw new Error(`${label} failed: ${res.status}`);
+  return res.json();
+}
+
+async function brokerMutate<T>(
+  path: string,
+  label: string,
+  method: "POST" | "DELETE",
+  body?: unknown,
+): Promise<T> {
+  const res = await fetch(`${getApiBase()}${path}`, {
+    method,
+    headers: getHeaders(),
+    ...(body !== undefined && { body: JSON.stringify(body) }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `${label} failed: ${res.status}`);
+  }
+  return res.json();
+}
+
 export async function fetchBrokerCapabilities(filters?: {
   state?: BrokerCapabilityState;
   provider?: BrokerProvider;
@@ -387,23 +413,13 @@ export async function fetchBrokerCapabilities(filters?: {
   if (filters?.state) params.set("state", filters.state);
   if (filters?.provider) params.set("provider", filters.provider);
   if (filters?.limit != null) params.set("limit", String(filters.limit));
-
-  const qs = params.toString();
-  const res = await fetch(`${getApiBase()}/api/v1/broker/capabilities${qs ? `?${qs}` : ""}`, {
-    headers: getHeaders(),
-  });
-  if (!res.ok) throw new Error(`Broker capability query failed: ${res.status}`);
-  return res.json();
+  return brokerGet("/api/v1/broker/capabilities", "Broker capability query", params);
 }
 
 export async function fetchBrokerCapability(
   capabilityId: string,
 ): Promise<BrokerCapabilityDetailResponse> {
-  const res = await fetch(`${getApiBase()}/api/v1/broker/capabilities/${capabilityId}`, {
-    headers: getHeaders(),
-  });
-  if (!res.ok) throw new Error(`Broker capability fetch failed: ${res.status}`);
-  return res.json();
+  return brokerGet(`/api/v1/broker/capabilities/${capabilityId}`, "Broker capability fetch");
 }
 
 export async function fetchBrokerPreviews(filters?: {
@@ -413,37 +429,23 @@ export async function fetchBrokerPreviews(filters?: {
   const params = new URLSearchParams();
   if (filters?.provider) params.set("provider", filters.provider);
   if (filters?.limit != null) params.set("limit", String(filters.limit));
-
-  const qs = params.toString();
-  const res = await fetch(`${getApiBase()}/api/v1/broker/previews${qs ? `?${qs}` : ""}`, {
-    headers: getHeaders(),
-  });
-  if (!res.ok) throw new Error(`Broker preview query failed: ${res.status}`);
-  return res.json();
+  return brokerGet("/api/v1/broker/previews", "Broker preview query", params);
 }
 
 export async function fetchBrokerPreview(previewId: string): Promise<BrokerPreviewResponse> {
-  const res = await fetch(`${getApiBase()}/api/v1/broker/previews/${previewId}`, {
-    headers: getHeaders(),
-  });
-  if (!res.ok) throw new Error(`Broker preview fetch failed: ${res.status}`);
-  return res.json();
+  return brokerGet(`/api/v1/broker/previews/${previewId}`, "Broker preview fetch");
 }
 
 export async function approveBrokerPreview(
   previewId: string,
   approver?: string,
 ): Promise<BrokerIntentPreview> {
-  const res = await fetch(`${getApiBase()}/api/v1/broker/previews/${previewId}/approve`, {
-    method: "POST",
-    headers: getHeaders(),
-    body: JSON.stringify({ approver }),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || `Broker preview approval failed: ${res.status}`);
-  }
-  const payload = (await res.json()) as BrokerPreviewResponse;
+  const payload = await brokerMutate<BrokerPreviewResponse>(
+    `/api/v1/broker/previews/${previewId}/approve`,
+    "Broker preview approval",
+    "POST",
+    { approver },
+  );
   return payload.preview;
 }
 
@@ -451,97 +453,69 @@ export async function revokeBrokerCapability(
   capabilityId: string,
   reason?: string,
 ): Promise<BrokerCapabilityStatus> {
-  const res = await fetch(`${getApiBase()}/api/v1/broker/capabilities/${capabilityId}/revoke`, {
-    method: "POST",
-    headers: getHeaders(),
-    body: JSON.stringify({ reason }),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || `Broker capability revoke failed: ${res.status}`);
-  }
-  const payload = (await res.json()) as { capability: BrokerCapabilityStatus };
+  const payload = await brokerMutate<{ capability: BrokerCapabilityStatus }>(
+    `/api/v1/broker/capabilities/${capabilityId}/revoke`,
+    "Broker capability revoke",
+    "POST",
+    { reason },
+  );
   return payload.capability;
 }
 
 export async function fetchFrozenBrokerProviders(): Promise<BrokerFrozenProvidersResponse> {
-  const res = await fetch(`${getApiBase()}/api/v1/broker/providers/freeze`, {
-    headers: getHeaders(),
-  });
-  if (!res.ok) throw new Error(`Broker provider freeze query failed: ${res.status}`);
-  return res.json();
+  return brokerGet("/api/v1/broker/providers/freeze", "Broker provider freeze query");
 }
 
 export async function freezeBrokerProvider(
   provider: BrokerProvider,
   reason: string,
 ): Promise<BrokerFrozenProvidersResponse> {
-  const res = await fetch(`${getApiBase()}/api/v1/broker/providers/${provider}/freeze`, {
-    method: "POST",
-    headers: getHeaders(),
-    body: JSON.stringify({ reason }),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || `Broker provider freeze failed: ${res.status}`);
-  }
-  return res.json();
+  return brokerMutate(
+    `/api/v1/broker/providers/${provider}/freeze`,
+    "Broker provider freeze",
+    "POST",
+    { reason },
+  );
 }
 
 export async function unfreezeBrokerProvider(
   provider: BrokerProvider,
 ): Promise<BrokerFrozenProvidersResponse> {
-  const res = await fetch(`${getApiBase()}/api/v1/broker/providers/${provider}/freeze`, {
-    method: "DELETE",
-    headers: getHeaders(),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || `Broker provider unfreeze failed: ${res.status}`);
-  }
-  return res.json();
+  return brokerMutate(
+    `/api/v1/broker/providers/${provider}/freeze`,
+    "Broker provider unfreeze",
+    "DELETE",
+  );
 }
 
 export async function replayBrokerCapability(
   capabilityId: string,
 ): Promise<BrokerReplayResponse> {
-  const res = await fetch(`${getApiBase()}/api/v1/broker/capabilities/${capabilityId}/replay`, {
-    method: "POST",
-    headers: getHeaders(),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || `Broker capability replay failed: ${res.status}`);
-  }
-  return res.json();
+  return brokerMutate(
+    `/api/v1/broker/capabilities/${capabilityId}/replay`,
+    "Broker capability replay",
+    "POST",
+  );
 }
 
 export async function exportBrokerCompletionBundle(
   capabilityId: string,
 ): Promise<BrokerCompletionBundleResponse> {
-  const res = await fetch(`${getApiBase()}/api/v1/broker/capabilities/${capabilityId}/bundle`, {
-    headers: getHeaders(),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || `Broker completion bundle export failed: ${res.status}`);
-  }
-  return res.json();
+  return brokerGet(
+    `/api/v1/broker/capabilities/${capabilityId}/bundle`,
+    "Broker completion bundle export",
+  );
 }
 
 export async function revokeAllBrokerCapabilities(
   reason?: string,
 ): Promise<BrokerRevokeAllResponse> {
-  const res = await fetch(`${getApiBase()}/api/v1/broker/capabilities/revoke-all`, {
-    method: "POST",
-    headers: getHeaders(),
-    body: JSON.stringify({ reason }),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || `Broker revoke-all failed: ${res.status}`);
-  }
-  return res.json();
+  return brokerMutate(
+    "/api/v1/broker/capabilities/revoke-all",
+    "Broker revoke-all",
+    "POST",
+    { reason },
+  );
 }
 
 export async function fetchAgentStatus(params?: {

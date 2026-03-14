@@ -23,7 +23,7 @@ use uuid::Uuid;
 use crate::capability::validate_execute_request;
 use crate::lease::resolve_execution_credential;
 use crate::operator::{CapabilityRecord, ExecutionRecord, ExecutionTimelineEvent};
-use crate::provider::{execute_provider, execute_provider_stream};
+use crate::provider::{execute_provider, execute_provider_stream, ProviderStreamResponse};
 use crate::state::AppState;
 
 #[derive(Debug)]
@@ -204,12 +204,12 @@ fn build_execution_evidence(
     BrokerExecutionEvidence {
         execution_id: context.execution_id,
         capability_id: capability.capability_id.clone(),
-        provider: capability.secret_ref.provider.clone(),
+        provider: capability.secret_ref.provider,
         phase: context.phase,
         executed_at: Utc::now(),
         secret_ref_id: capability.secret_ref.id.clone(),
         url: request.url.clone(),
-        method: request.method.clone(),
+        method: request.method,
         request_body_sha256: request.body_sha256.clone(),
         response_body_sha256: context.response_body_sha256,
         status_code: context.status_code,
@@ -252,6 +252,7 @@ async fn freeze_for_tripwire(
     reason: String,
 ) -> Result<ApiError, ApiError> {
     state.operator_state.set_frozen(true).await;
+    let error_message = format!("broker execution blocked by tripwire: {reason}");
     let evidence = build_execution_evidence(
         capability,
         request,
@@ -266,13 +267,13 @@ async fn freeze_for_tripwire(
             provider_metadata: Default::default(),
             outcome: Some(BrokerExecutionOutcome::Incomplete),
             minted_identity,
-            suspicion_reason: Some(reason.clone()),
+            suspicion_reason: Some(reason),
         },
     );
     record_and_submit_evidence(state, &evidence).await?;
     Ok(ApiError::forbidden(
         "BROKER_TRIPWIRE_TRIGGERED",
-        format!("broker execution blocked by tripwire: {reason}"),
+        error_message,
     ))
 }
 
@@ -493,23 +494,26 @@ pub async fn execute_stream(
         );
     }
 
-    let status = response.status;
-    let headers = response.headers.clone();
-    let content_type = response.content_type.clone();
-    let provider_metadata = response.provider_metadata.clone();
+    let ProviderStreamResponse {
+        status,
+        headers,
+        content_type,
+        response: upstream_response,
+        provider_metadata,
+    } = response;
     let capability_id = capability.capability_id.clone();
-    let provider = capability.secret_ref.provider.clone();
-    let secret_ref_id = capability.secret_ref.id.clone();
-    let request_url = request.request.url.clone();
-    let request_method = request.request.method.clone();
-    let request_body_sha256 = request.request.body_sha256.clone();
+    let provider = capability.secret_ref.provider;
+    let secret_ref_id = capability.secret_ref.id;
+    let request_url = request.request.url;
+    let request_method = request.request.method;
+    let request_body_sha256 = request.request.body_sha256;
     let preview_id = capability
         .intent_preview
         .as_ref()
         .map(|preview| preview.preview_id.clone());
     let lineage = capability.lineage.clone();
-    let minted_identity = credential.minted_identity.clone();
-    let mut upstream_stream = response.response.bytes_stream();
+    let minted_identity = credential.minted_identity;
+    let mut upstream_stream = upstream_response.bytes_stream();
     let (tx, rx) = mpsc::channel::<Result<Bytes, std::io::Error>>(16);
     let state_for_task = state.clone();
     let execution_id_for_task = execution_id.clone();

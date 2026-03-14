@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   approveBrokerPreview,
   exportBrokerCompletionBundle,
@@ -18,16 +18,24 @@ import {
   type BrokerIntentPreview,
   type BrokerIntentRiskLevel,
   type BrokerMintedIdentity,
-  type BrokerProvider,
   type BrokerReplayResponse,
 } from "../api/client";
 import { GlassButton, NoiseGrain, Stamp } from "../components/ui";
 import { useSharedSSE } from "../context/SSEContext";
 import {
+  Banner,
   DetailItem,
+  HintBlock,
+  MetricCard,
+  PanelHeader,
+  Stack,
+  Tag,
+  executionVariant,
+  formatCost,
   formatDateTime,
   formatRelative,
   replayVariant,
+  shortValue,
   statusVariant,
   uniqueProviders,
 } from "./broker-utils";
@@ -38,17 +46,6 @@ function sortNewest<T>(items: T[], select: (item: T) => string | undefined): T[]
     const rightTime = select(right) ? new Date(select(right) as string).getTime() : 0;
     return rightTime - leftTime;
   });
-}
-
-function formatCost(value?: number): string {
-  if (value == null) return "-";
-  return `$${(value / 1_000_000).toFixed(4)}`;
-}
-
-function shortValue(value?: string, edge = 12): string {
-  if (!value) return "-";
-  if (value.length <= edge * 2 + 3) return value;
-  return `${value.slice(0, edge)}...${value.slice(-edge)}`;
 }
 
 function approvalVariant(state: BrokerApprovalState): "allowed" | "blocked" | "warn" {
@@ -871,15 +868,7 @@ export function BrokerMissionControl(_props: { windowId?: string }) {
                         className="hover-row"
                       >
                         <td className="px-4 py-3">
-                          <Stamp
-                            variant={
-                              execution.phase === "started"
-                                ? "warn"
-                                : execution.outcome === "success"
-                                  ? "allowed"
-                                  : "blocked"
-                            }
-                          >
+                          <Stamp variant={executionVariant(execution.phase, execution.outcome)}>
                             {execution.phase}
                           </Stamp>
                         </td>
@@ -900,98 +889,6 @@ export function BrokerMissionControl(_props: { windowId?: string }) {
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function MetricCard({
-  label,
-  value,
-  variant,
-}: {
-  label: string;
-  value: number;
-  variant: "allowed" | "blocked" | "warn";
-}) {
-  return (
-    <div className="glass-panel" style={{ padding: 16 }}>
-      <NoiseGrain />
-      <div className="font-mono text-[11px]" style={{ color: "rgba(154,167,181,0.72)" }}>
-        {label}
-      </div>
-      <div className="mt-2 flex items-center justify-between gap-3">
-        <div className="font-display text-3xl">{value}</div>
-        <Stamp variant={variant}>{label}</Stamp>
-      </div>
-    </div>
-  );
-}
-
-function Banner({
-  children,
-  variant,
-}: {
-  children: ReactNode;
-  variant: "allowed" | "blocked";
-}) {
-  const color = variant === "allowed" ? "var(--stamp-allowed)" : "var(--crimson)";
-  const border = variant === "allowed" ? "rgba(63,160,112,0.3)" : "rgba(194,59,59,0.35)";
-  return (
-    <div
-      className="glass-panel font-mono text-sm"
-      style={{ padding: 12, color, borderColor: border }}
-    >
-      {children}
-    </div>
-  );
-}
-
-function PanelHeader({ title, meta }: { title: string; meta: string }) {
-  return (
-    <div
-      className="flex items-center justify-between"
-      style={{ padding: "16px 16px 12px 16px", borderBottom: "1px solid rgba(27,34,48,0.8)" }}
-    >
-      <div className="font-mono text-xs uppercase" style={{ letterSpacing: "0.08em" }}>
-        {title}
-      </div>
-      <div className="font-mono text-xs" style={{ color: "rgba(154,167,181,0.72)" }}>
-        {meta}
-      </div>
-    </div>
-  );
-}
-
-function HintBlock({ children }: { children: ReactNode }) {
-  return (
-    <div className="font-mono" style={{ padding: 16, color: "rgba(154,167,181,0.65)" }}>
-      {children}
-    </div>
-  );
-}
-
-function Tag({ children }: { children: ReactNode }) {
-  return (
-    <span
-      className="inline-flex items-center rounded-full px-2.5 py-1 font-mono text-[11px]"
-      style={{
-        border: "1px solid rgba(27,34,48,0.8)",
-        background: "rgba(8,10,14,0.92)",
-        color: "rgba(154,167,181,0.86)",
-      }}
-    >
-      {children}
-    </span>
-  );
-}
-
-function Stack({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div>
-      <div className="font-mono text-[11px]" style={{ color: "rgba(154,167,181,0.72)" }}>
-        {label}
-      </div>
-      <div className="mt-2 flex flex-wrap gap-2">{children}</div>
     </div>
   );
 }
