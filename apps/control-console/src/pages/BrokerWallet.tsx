@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   fetchBrokerCapabilities,
   fetchBrokerCapability,
@@ -36,6 +36,8 @@ export function BrokerWallet(_props: { windowId?: string }) {
   const [detail, setDetail] = useState<BrokerCapabilityDetailResponse | null>(null);
   const [frozenProviders, setFrozenProviders] = useState<BrokerFrozenProviderStatus[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selectedIdRef = useRef(selectedId);
+  selectedIdRef.current = selectedId;
   const [freezeReason, setFreezeReason] = useState("operator maintenance");
   const [replay, setReplay] = useState<BrokerReplayResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -101,10 +103,11 @@ export function BrokerWallet(_props: { windowId?: string }) {
   useEffect(() => {
     if (!latestBrokerEventId) return;
     void loadWallet();
-    if (selectedId) {
-      void loadDetail(selectedId);
+    const currentId = selectedIdRef.current;
+    if (currentId) {
+      void loadDetail(currentId);
     }
-  }, [latestBrokerEventId, loadDetail, loadWallet, selectedId]);
+  }, [latestBrokerEventId, loadDetail, loadWallet]);
 
   const providerSet = useMemo(
     () => uniqueProviders(capabilities, frozenProviders),
