@@ -50,6 +50,7 @@ const POLICY_VERSION_CACHE_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 const POLICY_VERSION_FETCH_TIMEOUT: Duration = Duration::from_millis(200);
 const POLICY_VERSION_REFRESH_IN_FLIGHT_TIMEOUT: Duration = Duration::from_secs(20);
 const AGENT_API_MAX_BODY_BYTES: usize = 256 * 1024;
+const BROKER_MUTATION_MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
 const APPROVAL_RATE_LIMIT_WINDOW: Duration = Duration::from_secs(60);
 const APPROVAL_RATE_LIMIT_BURST_WINDOW: Duration = Duration::from_secs(1);
 const APPROVAL_RATE_LIMIT_PER_MINUTE: usize = 30;
@@ -319,7 +320,7 @@ impl AgentApiServer {
             .route("/api/v1/events", get(proxy_daemon_events))
             .route("/api/v1/siem/exporters", get(proxy_daemon_get))
             .route("/api/v1/broker/public-key", get(proxy_daemon_get))
-            .route("/api/v1/broker/capabilities", get(proxy_daemon_get))
+            .route("/api/v1/broker/capabilities", get(proxy_daemon_get).post(proxy_daemon_mutation))
             .route("/api/v1/broker/previews", get(proxy_daemon_get).post(proxy_daemon_mutation))
             .route(
                 "/api/v1/broker/capabilities/revoke-all",
@@ -1293,7 +1294,12 @@ async fn proxy_daemon_mutation(
 
     let method = reqwest::Method::from_bytes(request.method().as_str().as_bytes())
         .map_err(|err| internal_error(err.into()))?;
-    let body = axum::body::to_bytes(request.into_body(), AGENT_API_MAX_BODY_BYTES)
+    let max_bytes = if uri.path().starts_with("/api/v1/broker/") {
+        BROKER_MUTATION_MAX_BODY_BYTES
+    } else {
+        AGENT_API_MAX_BODY_BYTES
+    };
+    let body = axum::body::to_bytes(request.into_body(), max_bytes)
         .await
         .map_err(|err| internal_error(err.into()))?;
     let response = send_daemon_request(&state, &headers, method, &uri, Some(body.to_vec())).await?;
