@@ -1850,7 +1850,8 @@ pub async fn replay_capability(
         minted_identity_kind: capability
             .minted_identity
             .as_ref()
-            .map(|identity| format!("{:?}", identity.kind).to_ascii_lowercase()),
+            .and_then(|identity| serde_json::to_value(&identity.kind).ok())
+            .and_then(|value| value.as_str().map(ToString::to_string)),
         would_allow,
         reason,
         diffs,

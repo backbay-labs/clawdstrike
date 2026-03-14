@@ -149,7 +149,16 @@ impl BrokerdManager {
                                 *guard = None;
                                 needs_restart = true;
                             }
-                            Ok(None) => {}
+                            Ok(None) => {
+                                // Child is still running — verify it is actually healthy.
+                                if !is_healthy_with_client(&http_client, &config).await {
+                                    tracing::warn!("brokerd alive but unhealthy; killing and scheduling restart");
+                                    let _ = existing.kill().await;
+                                    let _ = existing.wait().await;
+                                    *guard = None;
+                                    needs_restart = true;
+                                }
+                            }
                             Err(error) => {
                                 tracing::warn!(error = %error, "failed to poll brokerd process");
                                 *guard = None;

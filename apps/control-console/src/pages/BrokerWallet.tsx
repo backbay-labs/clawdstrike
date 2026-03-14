@@ -118,7 +118,7 @@ export function BrokerWallet(_props: { windowId?: string }) {
     [frozenProviders],
   );
   const selectedCapability =
-    detail?.capability ??
+    (detail?.capability.capability_id === selectedId ? detail?.capability : null) ??
     capabilities.find((item) => item.capability_id === selectedId) ??
     null;
   const executions: BrokerExecutionEvidence[] = detail?.executions ?? [];
