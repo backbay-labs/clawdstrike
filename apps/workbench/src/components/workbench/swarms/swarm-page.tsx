@@ -1,13 +1,3 @@
-/**
- * Swarm Page — full swarm management: list, create, filter, navigate.
- *
- * Displays swarm cards with type badges, member/intel/detection counts,
- * an inline creation form, and type filtering. Clicking a card navigates
- * to `/swarms/:id` (SwarmDetail).
- *
- * @see docs/plans/sentinel-swarm/UI-PAGE-MAP.md#6-swarms-page
- */
-
 import { useState, useMemo, useCallback } from "react";
 import {
   IconNetwork,
@@ -29,10 +19,6 @@ import { cn } from "@/lib/utils";
 import { useSwarms, type CreateSwarmConfig } from "@/lib/workbench/swarm-store";
 import type { Swarm, SwarmType } from "@/lib/workbench/sentinel-types";
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
 const SWARM_TYPE_BADGE: Record<SwarmType, { label: string; color: string; icon: typeof IconLock }> = {
   personal: { label: "Personal", color: "#55788b", icon: IconLock },
   trusted: { label: "Trusted", color: "#d4a84b", icon: IconUsersGroup },
@@ -46,10 +32,6 @@ const TYPE_DESCRIPTIONS: Record<SwarmType, string> = {
 };
 
 type TypeFilter = "all" | SwarmType;
-
-// ---------------------------------------------------------------------------
-// SwarmPage
-// ---------------------------------------------------------------------------
 
 export function SwarmPage() {
   const { swarms, createSwarm } = useSwarms();
@@ -205,10 +187,6 @@ export function SwarmPage() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// SwarmCard
-// ---------------------------------------------------------------------------
-
 function SwarmCard({ swarm, onClick }: { swarm: Swarm; onClick: () => void }) {
   const badge = SWARM_TYPE_BADGE[swarm.type];
   const BadgeIcon = badge.icon;
@@ -351,10 +329,6 @@ function SwarmCard({ swarm, onClick }: { swarm: Swarm; onClick: () => void }) {
     </button>
   );
 }
-
-// ---------------------------------------------------------------------------
-// CreateSwarmModal
-// ---------------------------------------------------------------------------
 
 function CreateSwarmModal({
   onClose,
@@ -553,10 +527,6 @@ function CreateSwarmModal({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Shared components
-// ---------------------------------------------------------------------------
-
 function SummaryCard({
   label,
   value,
@@ -633,10 +603,7 @@ function PolicyToggle({
   );
 }
 
-/**
- * Deterministic sigil dot — derives hue from fingerprint bytes for a
- * colored circle representing a member identity.
- */
+// Derives hue from fingerprint bytes for a deterministic identity color.
 function SigilDot({ fingerprint, size = 16 }: { fingerprint: string; size?: number }) {
   // Derive hue from first 2 hex chars of fingerprint
   const byte = parseInt(fingerprint.slice(0, 2), 16) || 0;

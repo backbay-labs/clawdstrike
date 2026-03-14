@@ -23,10 +23,6 @@ import { useFindings } from "@/lib/workbench/finding-store";
 import { GUARD_REGISTRY } from "@/lib/workbench/guard-registry";
 import type { GuardId } from "@/lib/workbench/types";
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
 const CATEGORY_LABELS: Record<string, string> = {
   filesystem: "Filesystem",
   network: "Network",
@@ -50,10 +46,6 @@ const VERDICT_COLORS: Record<string, string> = {
   deny: "#c45c5c",
   warn: "#d4a84b",
 };
-
-// ---------------------------------------------------------------------------
-// Health Ring — SVG arc showing enabled/total guard coverage
-// ---------------------------------------------------------------------------
 
 function HealthRing({
   enabled,
@@ -103,10 +95,6 @@ function HealthRing({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Guard tile — compact indicator in the coverage matrix
-// ---------------------------------------------------------------------------
-
 function GuardTile({
   name,
   enabled,
@@ -144,10 +132,6 @@ function GuardTile({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Navigation card — contextual link with live state indicator
-// ---------------------------------------------------------------------------
-
 function NavCard({
   icon,
   label,
@@ -181,20 +165,12 @@ function NavCard({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Severity colors for findings breakdown
-// ---------------------------------------------------------------------------
-
 const SEVERITY_COLORS: Record<string, string> = {
   critical: "#c45c5c",
   high: "#d4784b",
   medium: "#d4a84b",
   low: "#6f7f9a",
 };
-
-// ---------------------------------------------------------------------------
-// Sentinel Summary Card — shows total, active/paused/retired, mini sigils
-// ---------------------------------------------------------------------------
 
 function SentinelSummaryCard({
   total,
@@ -261,10 +237,6 @@ function SentinelSummaryCard({
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Findings Summary Card — emerging (highlighted), confirmed, total, severity bars
-// ---------------------------------------------------------------------------
 
 function FindingsSummaryCard({
   emerging,
@@ -335,17 +307,12 @@ function FindingsSummaryCard({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Home Page
-// ---------------------------------------------------------------------------
-
 export function HomePage() {
   const { state } = useWorkbench();
   const { tabs } = useMultiPolicy();
   const { connection } = useFleetConnection();
   const { activePolicy, validation, dirty } = state;
 
-  // ---- Guard analysis ----
   const { enabledCount, totalCount, guardsByCategory } = useMemo(() => {
     let enabled = 0;
     const byCategory: Record<
@@ -374,7 +341,6 @@ export function HomePage() {
     };
   }, [activePolicy]);
 
-  // ---- Validation status ----
   const errorCount = validation.errors.length;
   const warningCount = validation.warnings.length;
   let validationText: string;
@@ -391,7 +357,6 @@ export function HomePage() {
     validationColor = "#3dbf84";
   }
 
-  // ---- Derived details for nav cards ----
   const tabCount = tabs.length;
   const tabDetail = `${tabCount} tab${tabCount !== 1 ? "s" : ""}${dirty ? " · unsaved" : ""}`;
 
@@ -401,7 +366,6 @@ export function HomePage() {
 
   const savedCount = state.savedPolicies?.length ?? 0;
 
-  // ---- Sentinel & findings stats from stores ----
   const { sentinels } = useSentinels();
   const { findings } = useFindings();
 
@@ -434,9 +398,6 @@ export function HomePage() {
   return (
     <div className="h-full w-full flex flex-col bg-[#05060a] overflow-auto page-transition-enter">
       <div className="max-w-4xl w-full mx-auto px-8 py-8 flex flex-col gap-8">
-        {/* ================================================================ */}
-        {/* Policy Identity + Health Ring                                     */}
-        {/* ================================================================ */}
         <div className="flex items-center gap-6">
           <HealthRing enabled={enabledCount} total={totalCount} />
           <div className="min-w-0">
@@ -466,17 +427,11 @@ export function HomePage() {
           </div>
         </div>
 
-        {/* ================================================================ */}
-        {/* Sentinel & Findings Summary Cards                                */}
-        {/* ================================================================ */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <SentinelSummaryCard {...sentinelStats} />
           <FindingsSummaryCard {...findingsStats} />
         </div>
 
-        {/* ================================================================ */}
-        {/* Guard Coverage Matrix                                             */}
-        {/* ================================================================ */}
         <div>
           <h2 className="text-[10px] font-mono font-semibold text-[#d4a84b] uppercase tracking-[0.15em] mb-3">
             Guard Coverage
@@ -499,14 +454,8 @@ export function HomePage() {
           </div>
         </div>
 
-        {/* ================================================================ */}
-        {/* Claude Code Hint                                                   */}
-        {/* ================================================================ */}
         <ClaudeCodeHint hintId="home.audit" />
 
-        {/* ================================================================ */}
-        {/* Navigation Cards                                                  */}
-        {/* ================================================================ */}
         <div>
           <h2 className="text-[10px] font-mono font-semibold text-[#d4a84b] uppercase tracking-[0.15em] mb-3">
             Navigate

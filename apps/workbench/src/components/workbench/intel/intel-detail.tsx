@@ -1,12 +1,3 @@
-/**
- * Intel Detail -- full view of an Intel artifact with provenance viewer.
- *
- * Left column (65%): header, content section (type-discriminated), tags, MITRE mappings.
- * Right column (35%): provenance viewer (signature, receipt chain, derivedFrom links).
- *
- * @see docs/plans/sentinel-swarm/UI-PAGE-MAP.md#5b-intel-detail--provenance
- */
-
 import { useState, useEffect, useCallback } from "react";
 import {
   IconArrowLeft,
@@ -59,10 +50,6 @@ import {
   SHAREABILITY_LABELS,
 } from "@/lib/workbench/intel-forge";
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
 const TYPE_ICONS: Record<IntelType, typeof IconShieldCheck> = {
   detection_rule: IconShieldCheck,
   pattern: IconVectorTriangle,
@@ -104,39 +91,23 @@ const SIGIL_ICONS: Record<SigilType, typeof IconDiamond> = {
   moon: IconMoon,
 };
 
-// ---------------------------------------------------------------------------
-// Props
-// ---------------------------------------------------------------------------
-
 export interface IntelDetailProps {
-  /** The Intel artifact to display. */
   intel: Intel;
-  /** Author display info (optional enrichment from sentinel manager). */
   authorInfo?: {
     name: string;
     sigil: SigilType;
     fingerprint: string;
   };
-  /** Callback to navigate back to the intel list. */
   onBack?: () => void;
-  /** Callback to navigate to a finding detail page. */
   onNavigateToFinding?: (findingId: string) => void;
-  /** Callback to share this intel to a swarm. */
   onShareToSwarm?: (intel: Intel) => void;
-  /** Callback to change shareability. */
   onChangeShareability?: (
     intel: Intel,
     shareability: IntelShareability,
   ) => void;
-  /** Optional share operation status for publish feedback. */
   shareStatus?: "publishing" | "error";
-  /** Optional message to display alongside the share status. */
   shareStatusMessage?: string;
 }
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function formatTimestamp(ts: number): string {
   return new Date(ts).toLocaleString(undefined, {
@@ -152,10 +123,6 @@ function truncateHex(hex: string, prefixLen = 8, suffixLen = 8): string {
   if (hex.length <= prefixLen + suffixLen + 3) return hex;
   return `${hex.slice(0, prefixLen)}...${hex.slice(-suffixLen)}`;
 }
-
-// ---------------------------------------------------------------------------
-// Content Renderers (discriminated by IntelContent.kind)
-// ---------------------------------------------------------------------------
 
 function PatternContent({ content }: { content: IntelContentPattern }) {
   return (
@@ -444,7 +411,6 @@ function PolicyPatchContent({
   );
 }
 
-/** Render the correct content section based on the IntelContent discriminated union. */
 function ContentRenderer({ content }: { content: IntelContent }) {
   switch (content.kind) {
     case "pattern":
@@ -461,10 +427,6 @@ function ContentRenderer({ content }: { content: IntelContent }) {
       return <PolicyPatchContent content={content} />;
   }
 }
-
-// ---------------------------------------------------------------------------
-// Provenance Viewer (right column)
-// ---------------------------------------------------------------------------
 
 function ProvenanceViewer({
   intel,
@@ -757,10 +719,6 @@ function ProvenanceViewer({
   );
 }
 
-// ---------------------------------------------------------------------------
-// MITRE Mapping Display
-// ---------------------------------------------------------------------------
-
 function MitreMappingSection({ mappings }: { mappings: MitreMapping[] }) {
   if (mappings.length === 0) return null;
 
@@ -804,10 +762,6 @@ function MitreMappingSection({ mappings }: { mappings: MitreMapping[] }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Tags Display
-// ---------------------------------------------------------------------------
-
 function TagsSection({ tags }: { tags: string[] }) {
   if (tags.length === 0) return null;
 
@@ -829,10 +783,6 @@ function TagsSection({ tags }: { tags: string[] }) {
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Shareability Controls
-// ---------------------------------------------------------------------------
 
 function ShareabilityControls({
   intel,
@@ -925,10 +875,6 @@ function ShareabilityControls({
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Main Component
-// ---------------------------------------------------------------------------
 
 export function IntelDetail({
   intel,

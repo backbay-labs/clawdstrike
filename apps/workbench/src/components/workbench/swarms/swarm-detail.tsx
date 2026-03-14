@@ -1,16 +1,3 @@
-/**
- * Swarm Detail — 5-tab detail view for a single swarm.
- *
- * Tabs:
- *   1. Members — table with fingerprint, sigil, role badge, reputation bar, joined date, actions
- *   2. Shared Detections — list of shared detection rules
- *   3. Trust Graph — force-directed SVG visualization (reuses delegation-page patterns)
- *   4. Speakeasies — list of attached speakeasy rooms
- *   5. Settings — swarm policy editor
- *
- * @see docs/plans/sentinel-swarm/UI-PAGE-MAP.md#6c-swarm-detail
- */
-
 import {
   useState,
   useMemo,
@@ -64,10 +51,6 @@ import type {
 import type { TrustLevel } from "@/lib/workbench/delegation-types";
 import { SwarmInvite } from "./swarm-invite";
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
 type DetailTab = "members" | "detections" | "trust" | "speakeasies" | "invite" | "settings";
 
 const TABS: { id: DetailTab; label: string; icon: typeof IconUsers }[] = [
@@ -106,10 +89,6 @@ const TRUST_COLORS: Record<TrustLevel, string> = {
   Low: "#c45c5c",
   Untrusted: "#6f7f9a",
 };
-
-// ---------------------------------------------------------------------------
-// SwarmDetail (main)
-// ---------------------------------------------------------------------------
 
 export function SwarmDetail() {
   const { id } = useParams<{ id: string }>();
@@ -244,10 +223,6 @@ export function SwarmDetail() {
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Tab 1: Members
-// ---------------------------------------------------------------------------
 
 type MemberSortCol = "name" | "type" | "role" | "reputation" | "joined";
 
@@ -554,10 +529,6 @@ function MemberRow({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Tab 2: Shared Detections
-// ---------------------------------------------------------------------------
-
 function DetectionsTab({ swarm }: { swarm: Swarm }) {
   if (swarm.sharedDetections.length === 0) {
     return (
@@ -615,17 +586,6 @@ function DetectionCard({ detection }: { detection: DetectionRef }) {
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Tab 3: Trust Graph
-// ---------------------------------------------------------------------------
-
-/**
- * Simple force-directed layout for trust graph visualization.
- * Uses the same SVG rendering patterns as delegation-page.tsx but with a
- * simplified force simulation (no external engine dependency for the swarm
- * peer-to-peer graph which is non-hierarchical).
- */
 
 interface ForceNode {
   id: string;
@@ -1113,10 +1073,6 @@ function TrustGraphTab({ swarm }: { swarm: Swarm }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Tab 4: Speakeasies
-// ---------------------------------------------------------------------------
-
 function SpeakeasiesTab({ swarm }: { swarm: Swarm }) {
   if (swarm.speakeasies.length === 0) {
     return (
@@ -1177,10 +1133,6 @@ function SpeakeasyCard({ speakeasy }: { speakeasy: SpeakeasyRef }) {
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Tab 5: Settings
-// ---------------------------------------------------------------------------
 
 function SettingsTab({ swarm }: { swarm: Swarm }) {
   const { updatePolicy, deleteSwarm } = useSwarms();
@@ -1319,10 +1271,6 @@ function PolicyToggle({
     </button>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Shared small components
-// ---------------------------------------------------------------------------
 
 function ToolbarBtn({
   icon: Icon,

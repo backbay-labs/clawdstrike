@@ -1,13 +1,3 @@
-/**
- * Intel Library Page -- browse, filter, and manage Intel artifacts.
- *
- * Two tabs:
- * - Local:  Intel created by the user's sentinels or manually promoted from findings.
- * - Swarm:  Intel received from swarm peers (Phase 2 placeholder).
- *
- * @see docs/plans/sentinel-swarm/UI-PAGE-MAP.md#5-intel-page
- */
-
 import { useState, useMemo, useCallback } from "react";
 
 import {
@@ -51,10 +41,6 @@ import {
   INTEL_TYPES,
   SHAREABILITY_LABELS,
 } from "@/lib/workbench/intel-forge";
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 const TYPE_ICONS: Record<IntelType, typeof IconShieldCheck> = {
   detection_rule: IconShieldCheck,
@@ -101,24 +87,12 @@ type IntelTab = "local" | "swarm";
 type ViewMode = "grid" | "list";
 type TypeFilter = "all" | IntelType;
 
-// ---------------------------------------------------------------------------
-// Props
-// ---------------------------------------------------------------------------
-
 export interface IntelPageProps {
-  /** Local Intel artifacts. */
   localIntel: Intel[];
-  /** Swarm-sourced Intel (Phase 2). */
   swarmIntel?: Intel[];
-  /** Callback to navigate to create-from-finding flow. */
   onCreateFromFinding?: () => void;
-  /** Callback when an intel is selected for detail view. */
   onSelectIntel?: (intelId: string) => void;
 }
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function formatRelativeTime(timestamp: number): string {
   const delta = Date.now() - timestamp;
@@ -136,10 +110,6 @@ function truncateFingerprint(fp: string): string {
   if (fp.length <= 8) return fp;
   return `${fp.slice(0, 4)}...${fp.slice(-4)}`;
 }
-
-// ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
 
 function ConfidenceMeter({ value }: { value: number }) {
   const pct = Math.round(value * 100);
@@ -236,10 +206,6 @@ function AuthorSigil({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Intel Card (Grid view)
-// ---------------------------------------------------------------------------
-
 function IntelCard({
   intel,
   onClick,
@@ -326,10 +292,6 @@ function IntelCard({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Intel Row (List view)
-// ---------------------------------------------------------------------------
-
 function IntelRow({
   intel,
   onClick,
@@ -405,10 +367,6 @@ function IntelRow({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Empty State
-// ---------------------------------------------------------------------------
-
 function EmptyState({
   tab,
   onCreateFromFinding,
@@ -451,10 +409,6 @@ function EmptyState({
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Main Component
-// ---------------------------------------------------------------------------
 
 export function IntelPage({
   localIntel,

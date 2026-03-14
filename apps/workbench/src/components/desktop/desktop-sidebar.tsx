@@ -31,8 +31,6 @@ import { SIGIL_SYMBOLS } from "@/components/workbench/settings/identity-settings
 import { fleetClient } from "@/lib/workbench/fleet-client";
 import { DEMO_APPROVAL_REQUESTS } from "@/lib/workbench/approval-demo-data";
 
-// ---- Data ----
-
 interface NavItem {
   readonly label: string;
   readonly icon: React.ComponentType<SigilProps>;
@@ -80,8 +78,6 @@ const navSections: readonly NavSection[] = [
   },
 ] as const;
 
-// ---- System Heartbeat ----
-
 type SystemPosture = "nominal" | "attention" | "critical" | "offline";
 
 function derivePosture(
@@ -103,7 +99,6 @@ const POSTURE_RING: Record<SystemPosture, { color: string; glow: string; label: 
   offline:   { color: "#6f7f9a", glow: "rgba(111,127,154,0.06)", label: "offline" },
 };
 
-/** Breathing speed (ms) per posture — urgent states breathe faster. */
 const POSTURE_BREATH: Record<SystemPosture, number> = {
   nominal: 5000,
   attention: 2800,
@@ -164,7 +159,6 @@ function SystemHeartbeat({
   const STEP = SEG + GAP;
   const SWEEP_ARC = CIRC * 0.12;
 
-  /** CSS animation shorthand — returns "none" when offline. */
   const anim = (name: string, delay?: string) =>
     breathMs > 0
       ? `${name} ${breathMs}ms ease-in-out ${delay ?? "0ms"} infinite`
@@ -312,56 +306,52 @@ function SystemHeartbeat({
   const fleetChar = fleetOnline ? "○" : "●";
 
   return (
-    <>
-      <Link
-        to="/home"
-        title={tooltipLines}
-        className={cn(
-          "transition-all duration-200 group",
-          collapsed
-            ? cn(
-                "flex flex-col items-center gap-1 mx-auto pt-1 pb-2",
-                !active && "opacity-70 hover:opacity-100",
-              )
-            : cn(
-                "flex items-center gap-3 mx-2 px-3 py-2 rounded-lg",
-                active
-                  ? "bg-[#131721] shadow-[0_0_8px_rgba(212,168,75,0.08)]"
-                  : "hover:bg-[#131721]/40",
-              ),
-        )}
-      >
-        {sigil}
-        {!collapsed && (
-          <div className="flex flex-col min-w-0">
-            <span className="text-[9px] font-mono tracking-[0.08em] text-[#6f7f9a]/70 group-hover:text-[#6f7f9a] transition-colors duration-200 tabular-nums select-none">
-              <span className={cn(activeSentinels > 0 && "text-[#4ade80]/60")}>
-                {activeSentinels}s
-              </span>
-              <span className="mx-[3px] text-[#2d3240]">·</span>
-              <span className={cn(
-                emergingFindings > 0 && "text-[#d4a84b]/70",
-                posture === "critical" && "text-[#ef4444]/70",
-              )}>
-                {emergingFindings}f
-              </span>
-              <span className="mx-[3px] text-[#2d3240]">·</span>
-              <span className={cn(pendingApprovals > 0 && "text-[#7c9aef]/60")}>
-                {pendingApprovals}a
-              </span>
-              <span className="mx-[3px] text-[#2d3240]">·</span>
-              <span className={cn(!fleetOnline && "text-[#ef4444]/40")}>
-                {fleetChar}
-              </span>
+    <Link
+      to="/home"
+      title={tooltipLines}
+      className={cn(
+        "transition-all duration-200 group",
+        collapsed
+          ? cn(
+              "flex flex-col items-center gap-1 mx-auto pt-1 pb-2",
+              !active && "opacity-70 hover:opacity-100",
+            )
+          : cn(
+              "flex items-center gap-3 mx-2 px-3 py-2 rounded-lg",
+              active
+                ? "bg-[#131721] shadow-[0_0_8px_rgba(212,168,75,0.08)]"
+                : "hover:bg-[#131721]/40",
+            ),
+      )}
+    >
+      {sigil}
+      {!collapsed && (
+        <div className="flex flex-col min-w-0">
+          <span className="text-[9px] font-mono tracking-[0.08em] text-[#6f7f9a]/70 group-hover:text-[#6f7f9a] transition-colors duration-200 tabular-nums select-none">
+            <span className={cn(activeSentinels > 0 && "text-[#4ade80]/60")}>
+              {activeSentinels}s
             </span>
-          </div>
-        )}
-      </Link>
-    </>
+            <span className="mx-[3px] text-[#2d3240]">·</span>
+            <span className={cn(
+              emergingFindings > 0 && "text-[#d4a84b]/70",
+              posture === "critical" && "text-[#ef4444]/70",
+            )}>
+              {emergingFindings}f
+            </span>
+            <span className="mx-[3px] text-[#2d3240]">·</span>
+            <span className={cn(pendingApprovals > 0 && "text-[#7c9aef]/60")}>
+              {pendingApprovals}a
+            </span>
+            <span className="mx-[3px] text-[#2d3240]">·</span>
+            <span className={cn(!fleetOnline && "text-[#ef4444]/40")}>
+              {fleetChar}
+            </span>
+          </span>
+        </div>
+      )}
+    </Link>
   );
 }
-
-// ---- Component ----
 
 export function DesktopSidebar() {
   const pathname = useLocation().pathname;
@@ -410,7 +400,6 @@ export function DesktopSidebar() {
   const { findings } = useFindings();
   const emergingFindingsCount = findings.filter((f) => f.status === "emerging").length;
 
-  /** Resolve the badge count for a given nav item. */
   const getBadgeCount = (item: NavItem): number => {
     if (!item.badge) return 0;
     if (item.href === "/findings") return emergingFindingsCount;
@@ -418,7 +407,6 @@ export function DesktopSidebar() {
     return 0;
   };
 
-  /** Whether a badge item is backed by live fleet data (vs demo). */
   const isBadgeLive = (item: NavItem): boolean => {
     if (item.href === "/approvals") return isLiveBadge;
     // Findings badge reflects local store, not fleet-backed
@@ -437,7 +425,6 @@ export function DesktopSidebar() {
       )}
     >
       <nav className="flex-1 py-3 flex flex-col overflow-y-auto">
-        {/* ---- System Heartbeat (replaces Home + Status Tray) ---- */}
         <SystemHeartbeat
           collapsed={collapsed}
           active={pathname === "/home" || pathname === "/"}
@@ -451,7 +438,6 @@ export function DesktopSidebar() {
           style={{ background: "linear-gradient(to right, rgba(212,168,75,0.12), transparent 60%)" }}
         />
 
-        {/* ---- Grouped sections ---- */}
         {navSections.map((section, idx) => (
           <div key={section.title} className={cn("flex flex-col gap-px", idx === 0 ? "mt-2" : "mt-3")}>
             {/* Section header */}
