@@ -210,8 +210,8 @@ impl BrokerdManager {
                 }
             }
 
-            monitor_started.store(false, Ordering::SeqCst);
             *monitor_task_cleanup.lock().await = None;
+            monitor_started.store(false, Ordering::SeqCst);
         });
 
         *monitor_task.lock().await = Some(task);
