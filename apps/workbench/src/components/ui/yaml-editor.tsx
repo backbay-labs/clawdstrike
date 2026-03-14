@@ -12,6 +12,8 @@ import { autocompletion, closeBrackets, closeBracketsKeymap } from "@codemirror/
 import { cn } from "@/lib/utils";
 import { policyYamlCompletionSource } from "@/lib/workbench/yaml-schema";
 import { sigmaYamlCompletionSource } from "@/lib/workbench/sigma-schema";
+import { ocsfJsonCompletionSource } from "@/lib/workbench/ocsf-schema";
+import { yaraLanguage } from "@/lib/workbench/yara-language";
 import type { FileType } from "@/lib/workbench/file-type-registry";
 import { useGeneralSettings, type FontSize } from "@/lib/workbench/use-general-settings";
 
@@ -275,9 +277,7 @@ const clawdHighlightStyle = HighlightStyle.define([
 function getLanguageExtension(fileType?: FileType): Extension {
   switch (fileType) {
     case "yara_rule":
-      // Phase 3 TODO: Custom YARA StreamLanguage
-      // For now, use basic setup without YAML parsing
-      return [];
+      return yaraLanguage;
     case "ocsf_event":
       return json();
     case "sigma_rule":
@@ -300,8 +300,10 @@ function getCompletionSource(fileType?: FileType): Extension {
       // Phase 3 TODO: yaraCompletionSource
       return autocompletion({ override: [] });
     case "ocsf_event":
-      // Phase 2 TODO: ocsfJsonCompletionSource
-      return autocompletion({ override: [] });
+      return autocompletion({
+        override: [ocsfJsonCompletionSource],
+        icons: false,
+      });
     case "clawdstrike_policy":
     default:
       return autocompletion({

@@ -13,6 +13,8 @@ import {
 } from "@/components/ui/select";
 import { EditorVisualPanel } from "@/components/workbench/editor/editor-visual-panel";
 import { SigmaVisualPanel } from "@/components/workbench/editor/sigma-visual-panel";
+import { OcsfVisualPanel } from "@/components/workbench/editor/ocsf-visual-panel";
+import { YaraVisualPanel } from "@/components/workbench/editor/yara-visual-panel";
 import { YamlPreviewPanel } from "@/components/workbench/editor/yaml-preview-panel";
 import { useMultiPolicy, type SplitMode } from "@/lib/workbench/multi-policy-store";
 import { cn } from "@/lib/utils";
@@ -115,19 +117,40 @@ function PaneTabSelector({
 
 function EditorPane() {
   const { activeTab, multiDispatch } = useMultiPolicy();
-  const isSigma = activeTab?.fileType === "sigma_rule";
+  const fileType = activeTab?.fileType;
+
+  const renderVisualPanel = () => {
+    switch (fileType) {
+      case "sigma_rule":
+        return (
+          <SigmaVisualPanel
+            yaml={activeTab!.yaml}
+            onYamlChange={(yaml) => multiDispatch({ type: "SET_YAML", yaml })}
+          />
+        );
+      case "ocsf_event":
+        return (
+          <OcsfVisualPanel
+            json={activeTab!.yaml}
+            onJsonChange={(json) => multiDispatch({ type: "SET_YAML", yaml: json })}
+          />
+        );
+      case "yara_rule":
+        return (
+          <YaraVisualPanel
+            source={activeTab!.yaml}
+            onSourceChange={(source) => multiDispatch({ type: "SET_YAML", yaml: source })}
+          />
+        );
+      default:
+        return <EditorVisualPanel />;
+    }
+  };
 
   return (
     <ResizablePanelGroup direction="horizontal" className="h-full">
       <ResizablePanel defaultSize={55} minSize={30}>
-        {isSigma ? (
-          <SigmaVisualPanel
-            yaml={activeTab.yaml}
-            onYamlChange={(yaml) => multiDispatch({ type: "SET_YAML", yaml })}
-          />
-        ) : (
-          <EditorVisualPanel />
-        )}
+        {renderVisualPanel()}
       </ResizablePanel>
       <ResizableHandle
         className="bg-[#2d3240] hover:bg-[#d4a84b]/40 transition-colors data-[resize-handle-active]:bg-[#d4a84b]"
