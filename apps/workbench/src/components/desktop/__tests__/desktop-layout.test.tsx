@@ -32,23 +32,23 @@ function DirtyBackgroundTabBootstrap() {
 function renderLayout(route = "/editor", withDirtyBackgroundTab = false) {
   return render(
     <MemoryRouter initialEntries={[route]}>
-      <FleetConnectionProvider>
-        <WorkbenchProvider>
-          <OperatorProvider>
-          <SentinelProvider>
-            <FindingProvider>
-              {withDirtyBackgroundTab ? <DirtyBackgroundTabBootstrap /> : null}
-              <Routes>
-                <Route element={<DesktopLayout />}>
-                  <Route path="editor" element={<div data-testid="editor-page">Editor Page</div>} />
-                  <Route path="simulator" element={<div data-testid="simulator-page">Simulator Page</div>} />
-                </Route>
-              </Routes>
-            </FindingProvider>
-          </SentinelProvider>
-          </OperatorProvider>
-        </WorkbenchProvider>
-      </FleetConnectionProvider>
+      <OperatorProvider>
+        <FleetConnectionProvider>
+          <WorkbenchProvider>
+            <SentinelProvider>
+              <FindingProvider>
+                {withDirtyBackgroundTab ? <DirtyBackgroundTabBootstrap /> : null}
+                <Routes>
+                  <Route element={<DesktopLayout />}>
+                    <Route path="editor" element={<div data-testid="editor-page">Editor Page</div>} />
+                    <Route path="simulator" element={<div data-testid="simulator-page">Simulator Page</div>} />
+                  </Route>
+                </Routes>
+              </FindingProvider>
+            </SentinelProvider>
+          </WorkbenchProvider>
+        </FleetConnectionProvider>
+      </OperatorProvider>
     </MemoryRouter>,
   );
 }

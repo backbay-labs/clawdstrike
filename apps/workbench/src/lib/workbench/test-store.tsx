@@ -7,9 +7,6 @@ import React, {
 import { parseSuiteYaml, suiteScenariosToYaml, type SuiteScenario } from "./suite-parser";
 import type { CoverageReport } from "./coverage-analyzer";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 export interface TestResult {
   scenarioName: string;
@@ -41,9 +38,6 @@ export interface TestRunnerState {
   coverageReport: CoverageReport | null;
 }
 
-// ---------------------------------------------------------------------------
-// Actions
-// ---------------------------------------------------------------------------
 
 export type TestRunnerAction =
   | { type: "SET_SUITE_YAML"; yaml: string }
@@ -55,9 +49,6 @@ export type TestRunnerAction =
   | { type: "CLEAR_RESULTS" }
   | { type: "IMPORT_SCENARIOS"; scenarios: SuiteScenario[] };
 
-// ---------------------------------------------------------------------------
-// Guard results computation
-// ---------------------------------------------------------------------------
 
 const MAX_HISTORY = 20;
 
@@ -105,9 +96,6 @@ function computeGuardResults(results: Map<string, TestResult>): Map<string, Guar
   return guardMap;
 }
 
-// ---------------------------------------------------------------------------
-// Reducer
-// ---------------------------------------------------------------------------
 
 function testRunnerReducer(state: TestRunnerState, action: TestRunnerAction): TestRunnerState {
   switch (action.type) {
@@ -175,9 +163,6 @@ function testRunnerReducer(state: TestRunnerState, action: TestRunnerAction): Te
   }
 }
 
-// ---------------------------------------------------------------------------
-// Initial state
-// ---------------------------------------------------------------------------
 
 function getInitialState(): TestRunnerState {
   return {
@@ -193,9 +178,6 @@ function getInitialState(): TestRunnerState {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Context
-// ---------------------------------------------------------------------------
 
 interface TestRunnerContextValue {
   state: TestRunnerState;
@@ -204,9 +186,6 @@ interface TestRunnerContextValue {
 
 const TestRunnerContext = createContext<TestRunnerContextValue | null>(null);
 
-// ---------------------------------------------------------------------------
-// Provider
-// ---------------------------------------------------------------------------
 
 export function TestRunnerProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(testRunnerReducer, undefined, getInitialState);
@@ -218,9 +197,6 @@ export function TestRunnerProvider({ children }: { children: ReactNode }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Hooks
-// ---------------------------------------------------------------------------
 
 /** Access the full test runner state and dispatch. */
 export function useTestRunner(): { state: TestRunnerState; dispatch: React.Dispatch<TestRunnerAction> } {

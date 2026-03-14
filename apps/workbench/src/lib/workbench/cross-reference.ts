@@ -1,8 +1,5 @@
 import type { PolicyTab } from "./multi-policy-store";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 export interface CrossRefMatch {
   /** JSON-path-like location, e.g. "guards.egress_allowlist.allow[2]" */
@@ -19,9 +16,6 @@ export interface CrossRefResult {
   matches: CrossRefMatch[];
 }
 
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
 
 /**
  * Recursively walk an object and emit (path, stringValue) pairs for every
@@ -66,9 +60,6 @@ function findLineInYaml(yaml: string, value: string): number | undefined {
   return undefined;
 }
 
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
 
 /**
  * Full-text search across all open policies' structured data.

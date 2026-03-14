@@ -2,9 +2,6 @@ import { describe, it, expect } from "vitest";
 import { analyzeCoverage, guardsExercisedByScenario } from "../coverage-analyzer";
 import type { GuardConfigMap, GuardId, TestScenario } from "../types";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function makeScenario(
   overrides: Partial<TestScenario> & Pick<TestScenario, "id" | "actionType" | "payload">,
@@ -82,9 +79,6 @@ function fullCoverageScenarios(): TestScenario[] {
   ];
 }
 
-// ---------------------------------------------------------------------------
-// analyzeCoverage — empty scenarios
-// ---------------------------------------------------------------------------
 
 describe("analyzeCoverage with empty scenarios", () => {
   it("reports 0% coverage when all guards are enabled but no scenarios exist", () => {
@@ -111,9 +105,6 @@ describe("analyzeCoverage with empty scenarios", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// analyzeCoverage — full coverage
-// ---------------------------------------------------------------------------
 
 describe("analyzeCoverage with full coverage", () => {
   it("reports 100% coverage when every enabled guard has a scenario", () => {
@@ -132,9 +123,6 @@ describe("analyzeCoverage with full coverage", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// analyzeCoverage — partial coverage
-// ---------------------------------------------------------------------------
 
 describe("analyzeCoverage with partial coverage", () => {
   it("computes correct percentage for partial coverage", () => {
@@ -170,9 +158,6 @@ describe("analyzeCoverage with partial coverage", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Disabled guards
-// ---------------------------------------------------------------------------
 
 describe("disabled guards in coverage", () => {
   it("marks disabled guards as 'disabled' not 'uncovered'", () => {
@@ -224,9 +209,6 @@ describe("disabled guards in coverage", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// guardsExercisedByScenario
-// ---------------------------------------------------------------------------
 
 describe("guardsExercisedByScenario", () => {
   it("extracts guard ID from auto-generated scenario IDs", () => {
@@ -322,9 +304,6 @@ describe("guardsExercisedByScenario", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Report shape
-// ---------------------------------------------------------------------------
 
 describe("coverage report shape", () => {
   it("totalGuards is always 13", () => {

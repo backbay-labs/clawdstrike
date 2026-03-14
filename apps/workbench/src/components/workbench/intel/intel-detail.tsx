@@ -1,13 +1,4 @@
-/**
- * Intel Detail -- full view of an Intel artifact with provenance viewer.
- *
- * Left column (65%): header, content section (type-discriminated), tags, MITRE mappings.
- * Right column (35%): provenance viewer (signature, receipt chain, derivedFrom links).
- *
- * @see docs/plans/sentinel-swarm/UI-PAGE-MAP.md#5b-intel-detail--provenance
- */
-
-import { useState, useMemo, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   IconArrowLeft,
   IconShieldCheck,
@@ -59,10 +50,6 @@ import {
   SHAREABILITY_LABELS,
 } from "@/lib/workbench/intel-forge";
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
 const TYPE_ICONS: Record<IntelType, typeof IconShieldCheck> = {
   detection_rule: IconShieldCheck,
   pattern: IconVectorTriangle,
@@ -104,35 +91,23 @@ const SIGIL_ICONS: Record<SigilType, typeof IconDiamond> = {
   moon: IconMoon,
 };
 
-// ---------------------------------------------------------------------------
-// Props
-// ---------------------------------------------------------------------------
-
 export interface IntelDetailProps {
-  /** The Intel artifact to display. */
   intel: Intel;
-  /** Author display info (optional enrichment from sentinel manager). */
   authorInfo?: {
     name: string;
     sigil: SigilType;
     fingerprint: string;
   };
-  /** Callback to navigate back to the intel list. */
   onBack?: () => void;
-  /** Callback to navigate to a finding detail page. */
   onNavigateToFinding?: (findingId: string) => void;
-  /** Callback to share this intel to a swarm. */
   onShareToSwarm?: (intel: Intel) => void;
-  /** Callback to change shareability. */
   onChangeShareability?: (
     intel: Intel,
     shareability: IntelShareability,
   ) => void;
+  shareStatus?: "publishing" | "error";
+  shareStatusMessage?: string;
 }
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function formatTimestamp(ts: number): string {
   return new Date(ts).toLocaleString(undefined, {
@@ -148,10 +123,6 @@ function truncateHex(hex: string, prefixLen = 8, suffixLen = 8): string {
   if (hex.length <= prefixLen + suffixLen + 3) return hex;
   return `${hex.slice(0, prefixLen)}...${hex.slice(-suffixLen)}`;
 }
-
-// ---------------------------------------------------------------------------
-// Content Renderers (discriminated by IntelContent.kind)
-// ---------------------------------------------------------------------------
 
 function PatternContent({ content }: { content: IntelContentPattern }) {
   return (
@@ -440,7 +411,6 @@ function PolicyPatchContent({
   );
 }
 
-/** Render the correct content section based on the IntelContent discriminated union. */
 function ContentRenderer({ content }: { content: IntelContent }) {
   switch (content.kind) {
     case "pattern":
@@ -458,10 +428,6 @@ function ContentRenderer({ content }: { content: IntelContent }) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Provenance Viewer (right column)
-// ---------------------------------------------------------------------------
-
 function ProvenanceViewer({
   intel,
   authorInfo,
@@ -471,8 +437,39 @@ function ProvenanceViewer({
   authorInfo?: IntelDetailProps["authorInfo"];
   onNavigateToFinding?: (findingId: string) => void;
 }) {
-  const verification = useMemo(() => verifyIntel(intel), [intel]);
   const [sigExpanded, setSigExpanded] = useState(false);
+  const [verification, setVerification] = useState<
+    Awaited<ReturnType<typeof verifyIntel>> | null
+  >(null);
+  const [isVerifying, setIsVerifying] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    setIsVerifying(true);
+    setVerification(null);
+
+    void verifyIntel(intel)
+      .then((result) => {
+        if (cancelled) return;
+        setVerification(result);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setVerification({
+          valid: false,
+          reason: "verification_error",
+        });
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setIsVerifying(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [intel]);
 
   return (
     <div className="space-y-5">
@@ -484,7 +481,12 @@ function ProvenanceViewer({
 
         {/* Verification status */}
         <div className="flex items-center gap-2 mb-3">
-          {verification.valid ? (
+          {isVerifying ? (
+            <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-[#5b8def]/10 border border-[#5b8def]/20 text-[10px] font-mono text-[#5b8def]">
+              <IconClock size={10} stroke={2} />
+              Verifying
+            </span>
+          ) : verification?.valid ? (
             <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-[#3dbf84]/10 border border-[#3dbf84]/20 text-[10px] font-mono text-[#3dbf84]">
               <IconCheck size={10} stroke={2} />
               Verified
@@ -496,7 +498,7 @@ function ProvenanceViewer({
             </span>
           )}
           <span className="text-[9px] text-[#6f7f9a]">
-            {verification.reason}
+            {isVerifying ? "Verifying signature..." : verification?.reason}
           </span>
         </div>
 
@@ -717,10 +719,6 @@ function ProvenanceViewer({
   );
 }
 
-// ---------------------------------------------------------------------------
-// MITRE Mapping Display
-// ---------------------------------------------------------------------------
-
 function MitreMappingSection({ mappings }: { mappings: MitreMapping[] }) {
   if (mappings.length === 0) return null;
 
@@ -764,10 +762,6 @@ function MitreMappingSection({ mappings }: { mappings: MitreMapping[] }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Tags Display
-// ---------------------------------------------------------------------------
-
 function TagsSection({ tags }: { tags: string[] }) {
   if (tags.length === 0) return null;
 
@@ -790,14 +784,12 @@ function TagsSection({ tags }: { tags: string[] }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Shareability Controls
-// ---------------------------------------------------------------------------
-
 function ShareabilityControls({
   intel,
   onChangeShareability,
   onShareToSwarm,
+  shareStatus,
+  shareStatusMessage,
 }: {
   intel: Intel;
   onChangeShareability?: (
@@ -805,6 +797,8 @@ function ShareabilityControls({
     shareability: IntelShareability,
   ) => void;
   onShareToSwarm?: (intel: Intel) => void;
+  shareStatus?: "publishing" | "error";
+  shareStatusMessage?: string;
 }) {
   const levels: IntelShareability[] = ["private", "swarm", "public"];
 
@@ -848,36 +842,39 @@ function ShareabilityControls({
         })}
       </div>
 
-      {/* Share to Swarm button (Phase 2 placeholder) */}
+      {/* Share to Swarm button */}
       <button
         onClick={() => onShareToSwarm?.(intel)}
         disabled={
-          intel.shareability === "private" || !onShareToSwarm
+          intel.shareability === "private" || !onShareToSwarm || shareStatus === "publishing"
         }
         className={cn(
           "w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-[11px] font-medium border transition-colors",
-          intel.shareability === "private" || !onShareToSwarm
+          intel.shareability === "private" || !onShareToSwarm || shareStatus === "publishing"
             ? "text-[#6f7f9a]/40 border-[#2d3240]/30 bg-transparent cursor-not-allowed"
             : "text-[#d4a84b] border-[#d4a84b]/30 bg-[#d4a84b]/10 hover:bg-[#d4a84b]/20",
         )}
       >
         <IconUsers size={13} stroke={1.5} />
-        {intel.shareability === "private"
-          ? "Change to Swarm or Public to share"
-          : "Share to Swarm"}
+        {shareStatus === "publishing"
+          ? "Publishing\u2026"
+          : intel.shareability === "private"
+            ? "Change to Swarm or Public to share"
+            : "Share to Swarm"}
       </button>
-      {!onShareToSwarm && intel.shareability !== "private" && (
+      {shareStatus === "error" && shareStatusMessage && (
+        <p className="text-[9px] text-red-400/80 mt-1.5 text-center">
+          {shareStatusMessage}
+        </p>
+      )}
+      {!onShareToSwarm && shareStatus !== "publishing" && intel.shareability !== "private" && (
         <p className="text-[9px] text-[#6f7f9a]/50 mt-1.5 text-center">
-          Swarm sharing is coming in Phase 2
+          Swarm sharing is unavailable in this view
         </p>
       )}
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Main Component
-// ---------------------------------------------------------------------------
 
 export function IntelDetail({
   intel,
@@ -886,6 +883,8 @@ export function IntelDetail({
   onNavigateToFinding,
   onShareToSwarm,
   onChangeShareability,
+  shareStatus,
+  shareStatusMessage,
 }: IntelDetailProps) {
   const TypeIcon = TYPE_ICONS[intel.type];
   const typeColor = TYPE_COLORS[intel.type];
@@ -1009,6 +1008,8 @@ export function IntelDetail({
               intel={intel}
               onChangeShareability={onChangeShareability}
               onShareToSwarm={onShareToSwarm}
+              shareStatus={shareStatus}
+              shareStatusMessage={shareStatusMessage}
             />
           </div>
         </div>

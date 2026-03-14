@@ -1,10 +1,8 @@
-// ---------------------------------------------------------------------------
 // Swarm Invite — Create and Accept invitation tokens for swarm membership.
 //
 // Two tabs:
 //   1. Create Invitation — generate a signed base64url token for sharing
 //   2. Accept Invitation — paste and validate an invitation token to join
-// ---------------------------------------------------------------------------
 import { useState, useCallback, useMemo, useRef } from "react";
 import {
   IconMail,
@@ -29,9 +27,6 @@ import {
   acceptInvitation,
 } from "@/lib/workbench/invitation-manager";
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 type InviteTab = "create" | "accept";
 
@@ -44,9 +39,6 @@ const EXPIRY_OPTIONS: { label: string; ms: number }[] = [
 
 const ROLE_OPTIONS: SwarmOperatorRole[] = ["observer", "contributor", "admin"];
 
-// ---------------------------------------------------------------------------
-// SwarmInvite
-// ---------------------------------------------------------------------------
 
 export function SwarmInvite({ swarmId }: { swarmId: string }) {
   const [activeTab, setActiveTab] = useState<InviteTab>("create");
@@ -75,9 +67,6 @@ export function SwarmInvite({ swarmId }: { swarmId: string }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Create Tab
-// ---------------------------------------------------------------------------
 
 function CreateTab({ swarmId }: { swarmId: string }) {
   const { currentOperator, getSecretKey } = useOperator();
@@ -151,7 +140,7 @@ function CreateTab({ swarmId }: { swarmId: string }) {
     <div className="flex flex-col gap-4">
       {/* Role selector */}
       <div>
-        <label className="text-[10px] uppercase tracking-wider text-[#6f7f9a]/60 font-semibold">
+        <label className="text-[10px] uppercase tracking-[0.08em] text-[#6f7f9a]/60 font-semibold">
           Granted Role
         </label>
         <div className="mt-1.5 flex items-center gap-1.5">
@@ -174,7 +163,7 @@ function CreateTab({ swarmId }: { swarmId: string }) {
 
       {/* Expiry picker */}
       <div>
-        <label className="text-[10px] uppercase tracking-wider text-[#6f7f9a]/60 font-semibold">
+        <label className="text-[10px] uppercase tracking-[0.08em] text-[#6f7f9a]/60 font-semibold">
           Expiry
         </label>
         <div className="mt-1.5 flex items-center gap-1.5">
@@ -197,7 +186,7 @@ function CreateTab({ swarmId }: { swarmId: string }) {
 
       {/* Message */}
       <div>
-        <label className="text-[10px] uppercase tracking-wider text-[#6f7f9a]/60 font-semibold">
+        <label className="text-[10px] uppercase tracking-[0.08em] text-[#6f7f9a]/60 font-semibold">
           Message (optional)
         </label>
         <textarea
@@ -236,7 +225,7 @@ function CreateTab({ swarmId }: { swarmId: string }) {
       {/* Result */}
       {result && (
         <div className="flex flex-col gap-2">
-          <label className="text-[10px] uppercase tracking-wider text-[#3dbf84]/60 font-semibold flex items-center gap-1.5">
+          <label className="text-[10px] uppercase tracking-[0.08em] text-[#3dbf84]/60 font-semibold flex items-center gap-1.5">
             <IconCheck size={11} stroke={2} />
             Invitation Token
           </label>
@@ -264,9 +253,6 @@ function CreateTab({ swarmId }: { swarmId: string }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Accept Tab
-// ---------------------------------------------------------------------------
 
 function AcceptTab({ swarmId }: { swarmId: string }) {
   const { currentOperator, getSecretKey } = useOperator();
@@ -365,7 +351,7 @@ function AcceptTab({ swarmId }: { swarmId: string }) {
     <div className="flex flex-col gap-4">
       {/* Paste field */}
       <div>
-        <label className="text-[10px] uppercase tracking-wider text-[#6f7f9a]/60 font-semibold">
+        <label className="text-[10px] uppercase tracking-[0.08em] text-[#6f7f9a]/60 font-semibold">
           Invitation Token
         </label>
         <textarea
@@ -439,9 +425,6 @@ function AcceptTab({ swarmId }: { swarmId: string }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Tab button
-// ---------------------------------------------------------------------------
 
 function TabButton({
   active,

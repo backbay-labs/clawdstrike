@@ -160,8 +160,7 @@ export function ApprovalQueue({ currentUser }: { currentUser?: string } = {}) {
   const [denyReason, setDenyReason] = useState("");
   const [scopeDropdownOpen, setScopeDropdownOpen] = useState<string | null>(null);
 
-  // Drives per-second countdown re-renders + auto-expires pending requests
-  const [tick, setTick] = useState(0);
+    const [tick, setTick] = useState(0);
   useEffect(() => {
     const interval = setInterval(() => setTick((t) => t + 1), 1000);
     return () => clearInterval(interval);
@@ -191,8 +190,10 @@ export function ApprovalQueue({ currentUser }: { currentUser?: string } = {}) {
     if (!force && !isLiveData) return;
 
     if (!liveApprovalsReady) {
-      setRequests([]);
-      setDecisions([]);
+      if (isLiveData) {
+        setRequests([]);
+        setDecisions([]);
+      }
       setLiveFetchError(liveApprovalsHint);
       return;
     }
@@ -218,6 +219,7 @@ export function ApprovalQueue({ currentUser }: { currentUser?: string } = {}) {
     if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     pollTimerRef.current = null;
     if (isLiveData && liveApprovalsReady) {
+      void fetchLiveApprovals();
       pollTimerRef.current = setInterval(fetchLiveApprovals, 30_000);
     }
     return () => { if (pollTimerRef.current) clearInterval(pollTimerRef.current); };

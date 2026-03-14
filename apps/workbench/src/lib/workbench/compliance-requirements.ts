@@ -16,12 +16,8 @@ export interface ComplianceRequirementDef {
   check: (guards: GuardConfigMap, settings: PolicySettings) => boolean;
 }
 
-// ---------------------------------------------------------------------------
-// Check functions keyed by requirement id
-// ---------------------------------------------------------------------------
 // These cannot be serialised to JSON, so we keep them here and attach them
 // when hydrating the framework data.
-// ---------------------------------------------------------------------------
 
 const checkFunctions: Record<
   string,
@@ -100,9 +96,6 @@ const checkFunctions: Record<
   "pci-7": (_guards, settings) => settings.verbose_logging === true,
 };
 
-// ---------------------------------------------------------------------------
-// Hydrate JSON data with check functions
-// ---------------------------------------------------------------------------
 
 interface FrameworkJson {
   id: string;

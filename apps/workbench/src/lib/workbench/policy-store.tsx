@@ -594,8 +594,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const saveFileAs = useCallback(async () => {
     try {
       if (!isDesktop()) {
-        // Fallback: browser download
-        exportYaml();
+                exportYaml();
         return;
       }
 
@@ -613,8 +612,7 @@ export function WorkbenchProvider({ children }: { children: ReactNode }) {
   const saveFile = useCallback(async () => {
     try {
       if (!isDesktop()) {
-        // Fallback: browser download
-        exportYaml();
+                exportYaml();
         return;
       }
 

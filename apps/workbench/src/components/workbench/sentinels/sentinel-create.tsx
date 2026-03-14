@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   IconEye,
@@ -38,9 +38,6 @@ import type {
   Sentinel,
 } from "@/lib/workbench/sentinel-manager";
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 const MODE_CONFIGS: {
   mode: SentinelMode;
@@ -105,10 +102,6 @@ const SOURCE_TYPE_LABELS: Record<string, string> = {
   speakeasy_topic: "Speakeasy Topic",
 };
 
-const SOURCE_TYPE_TOOLTIPS: Record<string, string> = {
-  speakeasy_topic: "Encrypted inter-sentinel communication channel for sharing threat intelligence",
-};
-
 const STEPS = [
   { label: "Mode", number: 1 },
   { label: "Identity & Goals", number: 2 },
@@ -127,9 +120,6 @@ const RUNTIME_TARGET_PLACEHOLDERS: Record<SentinelDriverKind, string> = {
   mcp_worker: "MCP server or worker identifier",
 };
 
-// ---------------------------------------------------------------------------
-// Step Indicator
-// ---------------------------------------------------------------------------
 
 function StepIndicator({
   currentStep,
@@ -189,9 +179,6 @@ function StepIndicator({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Step 1: Mode Selection
-// ---------------------------------------------------------------------------
 
 function ModeSelectionStep({
   selected,
@@ -202,7 +189,7 @@ function ModeSelectionStep({
 }) {
   return (
     <div>
-      <h2 className="font-syne text-[13px] font-semibold text-[#ece7dc] mb-1">
+      <h2 className="text-[13px] font-semibold text-[#ece7dc] mb-1">
         Choose a Mode
       </h2>
       <p className="text-[11px] text-[#6f7f9a]/60 mb-5">
@@ -236,7 +223,7 @@ function ModeSelectionStep({
                 <div>
                   <h3
                     className={cn(
-                      "font-syne text-[12px] font-semibold",
+                      "text-[12px] font-semibold",
                       isSelected ? "text-[#d4a84b]" : "text-[#ece7dc]",
                     )}
                   >
@@ -274,9 +261,6 @@ function CapPill({ label }: { label: string }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Step 2: Identity & Goals
-// ---------------------------------------------------------------------------
 
 interface GoalDraft {
   type: GoalType;
@@ -329,7 +313,7 @@ function IdentityGoalsStep({
   return (
     <div className="flex flex-col gap-5">
       <div>
-        <h2 className="font-syne text-[13px] font-semibold text-[#ece7dc] mb-1">
+        <h2 className="text-[13px] font-semibold text-[#ece7dc] mb-1">
           Identity & Goals
         </h2>
         <p className="text-[11px] text-[#6f7f9a]/60 mb-5">
@@ -347,6 +331,7 @@ function IdentityGoalsStep({
           value={name}
           onChange={(e) => onNameChange(e.target.value)}
           placeholder="e.g. Aegis, Prowl, Scribe..."
+          maxLength={128}
           className="rounded-md border border-[#2d3240]/60 bg-[#0b0d13] px-3 py-2 text-[12px] text-[#ece7dc] placeholder-[#6f7f9a]/30 outline-none focus:border-[#d4a84b]/40 transition-colors"
         />
       </div>
@@ -361,6 +346,7 @@ function IdentityGoalsStep({
           onChange={(e) => onDescriptionChange(e.target.value)}
           placeholder="Optional description of this sentinel's purpose..."
           rows={2}
+          maxLength={512}
           className="rounded-md border border-[#2d3240]/60 bg-[#0b0d13] px-3 py-2 text-[12px] text-[#ece7dc] placeholder-[#6f7f9a]/30 outline-none focus:border-[#d4a84b]/40 resize-none transition-colors"
         />
       </div>
@@ -400,7 +386,6 @@ function IdentityGoalsStep({
               <button
                 onClick={() => removeGoal(idx)}
                 className="text-[#6f7f9a]/40 hover:text-[#c45c5c] transition-colors"
-                title="Remove goal"
               >
                 <IconTrash size={12} stroke={1.5} />
               </button>
@@ -441,6 +426,7 @@ function IdentityGoalsStep({
                   updateGoal(idx, { description: e.target.value })
                 }
                 placeholder="What should this goal detect/monitor/hunt?"
+                maxLength={256}
                 className="flex-1 rounded-md border border-[#2d3240]/40 bg-[#131721]/40 px-2.5 py-1.5 text-[11px] text-[#ece7dc] placeholder-[#6f7f9a]/25 outline-none focus:border-[#d4a84b]/30 transition-colors"
               />
             </div>
@@ -455,7 +441,6 @@ function IdentityGoalsStep({
                   <button
                     key={st}
                     onClick={() => updateGoal(idx, { sourceType: st })}
-                    title={SOURCE_TYPE_TOOLTIPS[st]}
                     className={cn(
                       "rounded-md px-2 py-1 text-[9px] font-medium transition-colors",
                       goal.sourceType === st
@@ -509,9 +494,6 @@ function IdentityGoalsStep({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Step 3: Policy & Schedule
-// ---------------------------------------------------------------------------
 
 function PolicyScheduleStep({
   driver,
@@ -579,7 +561,7 @@ function PolicyScheduleStep({
   return (
     <div className="flex flex-col gap-5">
       <div>
-        <h2 className="font-syne text-[13px] font-semibold text-[#ece7dc] mb-1">
+        <h2 className="text-[13px] font-semibold text-[#ece7dc] mb-1">
           Runtime, Policy & Schedule
         </h2>
         <p className="text-[11px] text-[#6f7f9a]/60 mb-5">
@@ -588,7 +570,7 @@ function PolicyScheduleStep({
       </div>
 
       <div className="flex flex-col gap-3 rounded-lg border border-[#2d3240]/60 bg-[#0b0d13]/60 p-4">
-        <h3 className="font-syne text-[10px] font-medium uppercase tracking-wider text-[#6f7f9a]/50">
+        <h3 className="text-[10px] font-medium uppercase tracking-wider text-[#6f7f9a]/50">
           Runtime Driver
         </h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -614,7 +596,7 @@ function PolicyScheduleStep({
                     {definition.label}
                   </span>
                   {isRecommended && (
-                    <span className="rounded-full border border-[#3dbf84]/20 bg-[#3dbf84]/10 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wider text-[#3dbf84]">
+                    <span className="rounded-full border border-[#3dbf84]/20 bg-[#3dbf84]/10 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.08em] text-[#3dbf84]">
                       Recommended
                     </span>
                   )}
@@ -623,10 +605,10 @@ function PolicyScheduleStep({
                   {definition.description}
                 </p>
                 <div className="mt-2 flex flex-wrap gap-1">
-                  <span className="rounded-full border border-[#2d3240]/40 bg-[#131721] px-2 py-0.5 text-[8px] font-medium uppercase tracking-wider text-[#6f7f9a]/60">
+                  <span className="rounded-full border border-[#2d3240]/40 bg-[#131721] px-2 py-0.5 text-[8px] font-medium uppercase tracking-[0.08em] text-[#6f7f9a]/60">
                     {definition.endpointType}
                   </span>
-                  <span className="rounded-full border border-[#2d3240]/40 bg-[#131721] px-2 py-0.5 text-[8px] font-medium uppercase tracking-wider text-[#6f7f9a]/60">
+                  <span className="rounded-full border border-[#2d3240]/40 bg-[#131721] px-2 py-0.5 text-[8px] font-medium uppercase tracking-[0.08em] text-[#6f7f9a]/60">
                     Tier {definition.maxEnforcementTier} max
                   </span>
                 </div>
@@ -637,7 +619,7 @@ function PolicyScheduleStep({
       </div>
 
       <div className="flex flex-col gap-3 rounded-lg border border-[#2d3240]/60 bg-[#0b0d13]/60 p-4">
-        <h3 className="font-syne text-[10px] font-medium uppercase tracking-wider text-[#6f7f9a]/50">
+        <h3 className="text-[10px] font-medium uppercase tracking-wider text-[#6f7f9a]/50">
           Execution Mode
         </h3>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -662,7 +644,7 @@ function PolicyScheduleStep({
                   )}>
                     {candidate.label}
                   </span>
-                  <span className="rounded-full border border-[#2d3240]/40 bg-[#131721] px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wider text-[#6f7f9a]/60">
+                  <span className="rounded-full border border-[#2d3240]/40 bg-[#131721] px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.08em] text-[#6f7f9a]/60">
                     Tier {tierPreview}
                   </span>
                 </div>
@@ -690,6 +672,7 @@ function PolicyScheduleStep({
           value={runtimeTarget}
           onChange={(e) => onRuntimeTargetChange(e.target.value)}
           placeholder={RUNTIME_TARGET_PLACEHOLDERS[driver]}
+          maxLength={512}
           className="rounded-md border border-[#2d3240]/60 bg-[#0b0d13] px-3 py-2 text-[12px] text-[#ece7dc] placeholder-[#6f7f9a]/30 outline-none focus:border-[#d4a84b]/40 transition-colors"
         />
         <p className="text-[10px] text-[#6f7f9a]/45">
@@ -731,6 +714,7 @@ function PolicyScheduleStep({
           value={policyName}
           onChange={(e) => onPolicyNameChange(e.target.value)}
           placeholder="Leave blank to use ruleset name"
+          maxLength={128}
           className="rounded-md border border-[#2d3240]/60 bg-[#0b0d13] px-3 py-2 text-[12px] text-[#ece7dc] placeholder-[#6f7f9a]/30 outline-none focus:border-[#d4a84b]/40 transition-colors"
         />
       </div>
@@ -764,6 +748,7 @@ function PolicyScheduleStep({
               value={schedule}
               onChange={(e) => onScheduleChange(e.target.value)}
               placeholder="Cron expression: */15 * * * *"
+              maxLength={64}
               className="rounded-md border border-[#2d3240]/60 bg-[#0b0d13] px-3 py-2 text-[12px] font-mono text-[#ece7dc] placeholder-[#6f7f9a]/30 outline-none focus:border-[#d4a84b]/40 transition-colors"
             />
           )}
@@ -772,7 +757,7 @@ function PolicyScheduleStep({
 
       {/* Escalation thresholds */}
       <div className="flex flex-col gap-3 rounded-lg border border-[#2d3240]/60 bg-[#0b0d13]/60 p-4">
-        <h3 className="font-syne text-[10px] font-medium uppercase tracking-wider text-[#6f7f9a]/50">
+        <h3 className="text-[10px] font-medium uppercase tracking-wider text-[#6f7f9a]/50">
           Escalation Thresholds
         </h3>
 
@@ -829,9 +814,6 @@ function PolicyScheduleStep({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Step 4: Review & Confirm
-// ---------------------------------------------------------------------------
 
 function ReviewStep({
   mode,
@@ -872,7 +854,7 @@ function ReviewStep({
   return (
     <div className="flex flex-col gap-5">
       <div>
-        <h2 className="font-syne text-[13px] font-semibold text-[#ece7dc] mb-1">
+        <h2 className="text-[13px] font-semibold text-[#ece7dc] mb-1">
           Review & Create
         </h2>
         <p className="text-[11px] text-[#6f7f9a]/60 mb-5">
@@ -890,7 +872,7 @@ function ReviewStep({
             <ModeIcon size={20} stroke={1.5} style={{ color: modeColor }} />
           </div>
           <div>
-            <h3 className="font-syne text-[13px] font-semibold text-[#ece7dc]">
+            <h3 className="text-[13px] font-semibold text-[#ece7dc]">
               {name || "(unnamed)"}
             </h3>
             <div className="flex items-center gap-2 mt-0.5">
@@ -949,7 +931,7 @@ function ReviewStep({
         {/* Goal list */}
         {goals.length > 0 && (
           <div className="border-t border-[#2d3240]/40 px-4 py-3">
-            <span className="text-[9px] font-semibold uppercase tracking-wider text-[#6f7f9a]/50">
+            <span className="text-[9px] font-semibold uppercase tracking-[0.1em] text-[#6f7f9a]/50">
               Goal Summary
             </span>
             <div className="mt-2 flex flex-col gap-1.5">
@@ -964,7 +946,7 @@ function ReviewStep({
                   <span className="text-[#ece7dc]/70 truncate">
                     {goal.description || "(no description)"}
                   </span>
-                  <span className="ml-auto text-[#6f7f9a]/40 font-mono shrink-0" title={SOURCE_TYPE_TOOLTIPS[goal.sourceType]}>
+                  <span className="ml-auto text-[#6f7f9a]/40 font-mono shrink-0">
                     {SOURCE_TYPE_LABELS[goal.sourceType]}
                   </span>
                 </div>
@@ -1006,9 +988,6 @@ function ReviewRow({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Main Wizard
-// ---------------------------------------------------------------------------
 
 export function SentinelCreate({
   onCreated,
@@ -1022,6 +1001,8 @@ export function SentinelCreate({
 }) {
   const navigate = useNavigate();
   const { currentOperator, getSecretKey } = useOperator();
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
   const [step, setStep] = useState(1);
   const [isCreating, setIsCreating] = useState(false);
 
@@ -1129,6 +1110,7 @@ export function SentinelCreate({
       const targetRef = runtimeTarget.trim();
 
       const secretKey = currentOperator ? await getSecretKey() : null;
+      if (!mountedRef.current) return;
 
       const config: CreateSentinelConfig = {
         name: name.trim(),
@@ -1149,12 +1131,15 @@ export function SentinelCreate({
 
       const doCreate = createFn ?? createSentinel;
       const sentinel = await doCreate(config);
+      if (!mountedRef.current) return;
       onCreated(sentinel);
       navigate(`/sentinels/${sentinel.id}`);
     } catch (err) {
       console.error("[sentinel-create] Failed to create sentinel:", err);
     } finally {
-      setIsCreating(false);
+      if (mountedRef.current) {
+        setIsCreating(false);
+      }
     }
   }, [
     mode,
@@ -1187,7 +1172,7 @@ export function SentinelCreate({
               stroke={1.5}
             />
             <div>
-              <h1 className="font-syne text-sm font-semibold text-[#ece7dc] tracking-[-0.01em]">
+              <h1 className="text-sm font-semibold text-[#ece7dc] tracking-[-0.01em]">
                 Create Sentinel
               </h1>
               <p className="text-[11px] text-[#6f7f9a] mt-0.5">

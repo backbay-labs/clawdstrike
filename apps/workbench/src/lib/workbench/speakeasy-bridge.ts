@@ -25,22 +25,18 @@ import type {
   Intel,
   Sentinel,
 } from "./sentinel-types";
-import { canonicalizeJson } from "./intel-forge";
-import { signData } from "./operator-crypto";
+import { canonicalizeJson } from "./operator-crypto";
+import { computeContentHash } from "./intel-forge";
 import type { OperatorIdentity } from "./operator-types";
+import {
+  ED25519_PUBLIC_KEY_HEX,
+  ED25519_SIGNATURE_HEX,
+  signDetachedPayload,
+  verifyDetachedPayload,
+} from "./signature-adapter";
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-/** Gossipsub topic prefix — matches @backbay/speakeasy TOPIC_PREFIX. */
 const TOPIC_PREFIX = "/baychat/v1";
 
-/**
- * Clawdstrike message type discriminators.
- * These extend Speakeasy's built-in MessageType union for domain-specific
- * security coordination messages.
- */
 export const CLAWDSTRIKE_MESSAGE_TYPES = [
   "intel_share",
   "intel_ack",
@@ -55,10 +51,6 @@ export const CLAWDSTRIKE_MESSAGE_TYPES = [
 
 export type ClawdstrikeMessageType = (typeof CLAWDSTRIKE_MESSAGE_TYPES)[number];
 
-/**
- * Default TTL per message category (hops in Gossipsub mesh).
- * Higher-value messages get wider propagation.
- */
 const DEFAULT_TTL: Record<ClawdstrikeMessageType, number> = {
   intel_share: 10,
   intel_ack: 5,
@@ -71,10 +63,6 @@ const DEFAULT_TTL: Record<ClawdstrikeMessageType, number> = {
   detection_sync: 10,
 };
 
-/**
- * Maximum age (ms) for each message type before receivers reject it.
- * Stale messages lose operational value.
- */
 export const MESSAGE_TYPE_MAX_AGE: Record<ClawdstrikeMessageType, number> = {
   intel_share: 30 * 60_000,
   intel_ack: 15 * 60_000,
@@ -87,19 +75,9 @@ export const MESSAGE_TYPE_MAX_AGE: Record<ClawdstrikeMessageType, number> = {
   detection_sync: 30 * 60_000,
 };
 
-/** Timestamp freshness tolerance for verification (5 minutes). */
 const TIMESTAMP_TOLERANCE_MS = 5 * 60_000;
-
-/** Nonce byte length (128-bit). */
 const NONCE_BYTES = 16;
 
-// ---------------------------------------------------------------------------
-// Identity Converters
-// ---------------------------------------------------------------------------
-
-/**
- * Convert an OperatorIdentity to a SpeakeasyMember for use in speakeasy rooms.
- */
 export function operatorIdentityToBayChatIdentity(
   operator: OperatorIdentity,
   role: "moderator" | "participant" | "observer" = "participant",
@@ -114,197 +92,116 @@ export function operatorIdentityToBayChatIdentity(
   };
 }
 
-// ---------------------------------------------------------------------------
-// 1. Message Type Interfaces
-// ---------------------------------------------------------------------------
-
-/**
- * Base fields shared by all Clawdstrike Speakeasy messages.
- * Mirrors @backbay/speakeasy BaseMessage structure.
- */
 export interface ClawdstrikeBaseMessage {
-  /** SHA-256 of canonical pipe-delimited fields. */
+  /** SHA-256 of the canonical JSON of the unsigned payload. */
   id: string;
-  /** Message type discriminator. */
   type: ClawdstrikeMessageType;
-  /** Sender's Ed25519 public key (hex). */
   sender: string;
-  /** Unix timestamp in milliseconds. */
   timestamp: number;
-  /** Random nonce (hex) for replay prevention. */
   nonce: string;
-  /** Ed25519 signature over message hash (hex). */
   signature: string;
 }
 
-/** Intel artifact sharing. */
 export interface IntelShareMessage extends ClawdstrikeBaseMessage {
   type: "intel_share";
-  /** Intel artifact ID. */
   intelId: string;
-  /** Intel type discriminator. */
   intelType: IntelType;
-  /** Human-readable title. */
   title: string;
-  /** Narrative summary (never raw evidence). */
+  /** Never raw evidence. */
   summary: string;
-  /** SHA-256 of the full intel canonical JSON. */
   contentHash: string;
-  /** Ed25519 signature over contentHash by the intel author. */
   intelSignature: string;
-  /** Confidence score 0.0-1.0. */
+  intelSignerPublicKey: string;
   confidence: number;
-  /** MITRE ATT&CK technique IDs if applicable. */
   mitreTechniques?: string[];
-  /** Tags for categorization. */
   tags: string[];
-  /** Shareability level at which this was published. */
   shareability: "swarm" | "public";
-  /** Clawdstrike SignedReceipt as JSON (provenance chain). */
   receiptJson?: string;
 }
 
-/** Acknowledgement of intel receipt. */
 export interface IntelAckMessage extends ClawdstrikeBaseMessage {
   type: "intel_ack";
-  /** Intel artifact ID being acknowledged. */
   intelId: string;
-  /** Digest action. */
   action: "ingested" | "rejected" | "deferred";
-  /** Reason if rejected. */
   reason?: string;
 }
 
-/** Finding status change notification. */
 export interface FindingUpdateMessage extends ClawdstrikeBaseMessage {
   type: "finding_update";
-  /** Finding ID. */
   findingId: string;
-  /** New status. */
   status: FindingStatus;
-  /** New severity if changed. */
   severity?: Severity;
-  /** Updated confidence. */
   confidence?: number;
-  /** Annotation text (analyst note). */
   annotation?: string;
-  /** Number of contributing signals. */
   signalCount?: number;
 }
 
-/** Urgent signal broadcast. */
 export interface SignalAlertMessage extends ClawdstrikeBaseMessage {
   type: "signal_alert";
-  /** Signal ID. */
   signalId: string;
-  /** Signal type. */
   signalType: SignalType;
-  /** Severity. */
   severity: "medium" | "high" | "critical";
-  /** Confidence 0.0-1.0. */
   confidence: number;
-  /** Brief description. */
   summary: string;
-  /** Sentinel that generated this signal. */
   sourceSentinelId?: string;
-  /** Guard that triggered (if guard-originated). */
   sourceGuardId?: string;
-  /** Related finding ID if already correlated. */
   relatedFindingId?: string;
 }
 
-/** Sentinel heartbeat/status update. */
 export interface SentinelStatusMessage extends ClawdstrikeBaseMessage {
   type: "sentinel_status";
-  /** Sentinel ID. */
   sentinelId: string;
-  /** Current mode. */
   mode: SentinelMode;
-  /** Operational status. */
   status: SentinelLifecycleStatus;
-  /** Active goal count. */
   activeGoals: number;
-  /** Signals generated in last hour. */
   recentSignalCount: number;
-  /** Findings contributed to in last hour. */
   recentFindingCount: number;
-  /** Policy hash currently enforced. */
   policyHash?: string;
-  /** Software version. */
   version?: string;
 }
 
-/** Task assignment to sentinel. */
 export interface SentinelTaskMessage extends ClawdstrikeBaseMessage {
   type: "sentinel_task";
-  /** Target sentinel ID (or '*' for any available). */
+  /** '*' for any available sentinel. */
   targetSentinelId: string;
-  /** Task type. */
   taskType: "investigate" | "enrich" | "hunt" | "correlate" | "monitor";
-  /** Task description. */
   description: string;
-  /** Related finding or campaign ID. */
   attachedTo?: string;
-  /** Priority. */
   priority: "low" | "normal" | "high" | "urgent";
-  /** Deadline timestamp (ms). */
   deadline?: number;
-  /** Delegation token if capability transfer is needed. */
   delegationToken?: string;
 }
 
-/** Reputation attestation. */
 export interface ReputationVoteMessage extends ClawdstrikeBaseMessage {
   type: "reputation_vote";
-  /** Public key fingerprint of the target member. */
   targetFingerprint: string;
-  /** Vote direction. */
   vote: "positive" | "negative";
-  /** Category of the vote. */
   category: "intel_quality" | "detection_efficacy" | "uptime" | "collaboration" | "general";
-  /** Human-readable reason. */
   reason: string;
-  /** Optional reference (intel ID, rule ID, etc.). */
   referenceId?: string;
 }
 
-/** Room purpose/classification update. */
 export interface RoomMetadataMessage extends ClawdstrikeBaseMessage {
   type: "room_metadata";
-  /** Speakeasy room ID being updated. */
   speakeasyId: string;
-  /** Updated purpose (if changed). */
   purpose?: SpeakeasyPurpose;
-  /** Updated classification (if changed). */
   classification?: SpeakeasyClassification;
-  /** Updated attachment target (if changed). */
   attachedTo?: string | null;
-  /** Reason for the change. */
   changeReason?: string;
 }
 
-/** Detection rule synchronization. */
 export interface DetectionSyncMessage extends ClawdstrikeBaseMessage {
   type: "detection_sync";
-  /** Detection rule ID. */
   ruleId: string;
-  /** Action. */
   action: "publish" | "update" | "deprecate";
-  /** Rule format. */
   format: "sigma" | "yara" | "clawdstrike_pattern" | "policy_patch";
-  /** Rule content (canonical JSON or rule text). */
   content: string;
-  /** SHA-256 of content. */
   contentHash: string;
-  /** Version number (monotonically increasing). */
   ruleVersion: number;
-  /** Author sentinel or operator fingerprint. */
   authorFingerprint: string;
-  /** Confidence in the rule. */
   confidence: number;
 }
 
-/** Union of all Clawdstrike-specific message types. */
 export type ClawdstrikeMessage =
   | IntelShareMessage
   | IntelAckMessage
@@ -316,40 +213,18 @@ export type ClawdstrikeMessage =
   | RoomMetadataMessage
   | DetectionSyncMessage;
 
-// ---------------------------------------------------------------------------
-// 2. Signing / Hashing Primitives
-// ---------------------------------------------------------------------------
-
-/**
- * Generate a random nonce (16 bytes, hex-encoded).
- * Matches @backbay/speakeasy generateNonce() pattern.
- */
 export function generateNonce(): string {
   const bytes = new Uint8Array(NONCE_BYTES);
   crypto.getRandomValues(bytes);
   return toHex(bytes);
 }
 
-/** Convert bytes to hex string. */
 function toHex(bytes: Uint8Array): string {
   return Array.from(bytes)
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 }
 
-/** Convert hex string to bytes. */
-function hexToBytes(hex: string): Uint8Array {
-  const bytes = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < hex.length; i += 2) {
-    bytes[i / 2] = parseInt(hex.slice(i, i + 2), 16);
-  }
-  return bytes;
-}
-
-/**
- * Compute SHA-256 hash of UTF-8 string, returning hex.
- * Uses Web Crypto API (available in browser + Tauri + Node 18+).
- */
 async function sha256Hex(input: string): Promise<string> {
   const data = new TextEncoder().encode(input);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Bun vs @types/web ArrayBuffer mismatch
@@ -357,139 +232,13 @@ async function sha256Hex(input: string): Promise<string> {
   return toHex(new Uint8Array(hashBuffer));
 }
 
-/**
- * Compute message hash for signing.
- *
- * Follows @backbay/speakeasy's computeMessageHash pattern: pipe-delimited
- * canonical fields, SHA-256 hashed. Each message type includes all
- * semantically significant fields (everything except `id` and `signature`).
- */
+/** Hashes the full unsigned payload using canonical JSON. `id` and `signature` are excluded. */
 export async function computeClawdstrikeMessageHash(
   message: Omit<ClawdstrikeBaseMessage, "signature" | "id"> & Record<string, unknown>,
 ): Promise<string> {
-  const parts: string[] = [
-    message.type as string,
-    message.sender as string,
-    (message.timestamp as number).toString(),
-    message.nonce as string,
-  ];
-
-  switch (message.type) {
-    case "intel_share": {
-      const msg = message as Omit<IntelShareMessage, "signature" | "id">;
-      parts.push(
-        msg.intelId,
-        msg.intelType,
-        msg.title,
-        msg.contentHash,
-        msg.intelSignature,
-        msg.confidence.toString(),
-        msg.shareability,
-      );
-      break;
-    }
-    case "intel_ack": {
-      const msg = message as Omit<IntelAckMessage, "signature" | "id">;
-      parts.push(msg.intelId, msg.action);
-      if (msg.reason) parts.push(msg.reason);
-      break;
-    }
-    case "finding_update": {
-      const msg = message as Omit<FindingUpdateMessage, "signature" | "id">;
-      parts.push(msg.findingId, msg.status);
-      if (msg.severity) parts.push(msg.severity);
-      if (msg.confidence !== undefined) parts.push(msg.confidence.toString());
-      if (msg.annotation) parts.push(msg.annotation);
-      break;
-    }
-    case "signal_alert": {
-      const msg = message as Omit<SignalAlertMessage, "signature" | "id">;
-      parts.push(
-        msg.signalId,
-        msg.signalType,
-        msg.severity,
-        msg.confidence.toString(),
-        msg.summary,
-      );
-      break;
-    }
-    case "sentinel_status": {
-      const msg = message as Omit<SentinelStatusMessage, "signature" | "id">;
-      parts.push(
-        msg.sentinelId,
-        msg.mode,
-        msg.status,
-        msg.activeGoals.toString(),
-        msg.recentSignalCount.toString(),
-        msg.recentFindingCount.toString(),
-      );
-      break;
-    }
-    case "sentinel_task": {
-      const msg = message as Omit<SentinelTaskMessage, "signature" | "id">;
-      parts.push(
-        msg.targetSentinelId,
-        msg.taskType,
-        msg.description,
-        msg.priority,
-      );
-      if (msg.attachedTo) parts.push(msg.attachedTo);
-      break;
-    }
-    case "reputation_vote": {
-      const msg = message as Omit<ReputationVoteMessage, "signature" | "id">;
-      parts.push(
-        msg.targetFingerprint,
-        msg.vote,
-        msg.category,
-        msg.reason,
-      );
-      if (msg.referenceId) parts.push(msg.referenceId);
-      break;
-    }
-    case "room_metadata": {
-      const msg = message as Omit<RoomMetadataMessage, "signature" | "id">;
-      parts.push(msg.speakeasyId);
-      if (msg.purpose) parts.push(msg.purpose);
-      if (msg.classification) parts.push(msg.classification);
-      if (msg.attachedTo !== undefined) parts.push(msg.attachedTo ?? "null");
-      break;
-    }
-    case "detection_sync": {
-      const msg = message as Omit<DetectionSyncMessage, "signature" | "id">;
-      parts.push(
-        msg.ruleId,
-        msg.action,
-        msg.format,
-        msg.contentHash,
-        msg.ruleVersion.toString(),
-        msg.authorFingerprint,
-        msg.confidence.toString(),
-      );
-      break;
-    }
-  }
-
-  const canonical = parts.join("|");
-  return sha256Hex(canonical);
+  return sha256Hex(canonicalizeJson(message));
 }
 
-/**
- * Sign a Clawdstrike message using a sentinel's secret key.
- *
- * This is a placeholder signing function that mirrors the pattern used in
- * sentinel-manager.ts. In production, this delegates to @backbay/speakeasy's
- * Ed25519 signing via @noble/ed25519. Since we cannot import @noble/ed25519
- * directly in the workbench (different repo), we use the same Web Crypto
- * approach: the hash is the signature input, and the actual Ed25519 sign
- * call is injected via the `secretKeyHex` parameter.
- *
- * Steps:
- *   1. Generate nonce (16 random bytes, hex)
- *   2. Compute SHA-256 hash of canonical pipe-delimited fields
- *   3. Sign hash with Ed25519 (via injected signer or placeholder)
- *   4. Set id = hash
- */
 export async function signClawdstrikeMessage<T>(
   content: T & { type: ClawdstrikeMessageType },
   senderPublicKey: string,
@@ -509,9 +258,8 @@ export async function signClawdstrikeMessage<T>(
     message as Omit<ClawdstrikeBaseMessage, "signature" | "id"> & Record<string, unknown>,
   );
 
-  // Sign the message hash with real Ed25519 via operator-crypto.
   const hashBytes = new TextEncoder().encode(hash);
-  const signature = await signData(hashBytes, secretKeyHex);
+  const signature = await signDetachedPayload(hashBytes, secretKeyHex);
 
   return {
     ...message,
@@ -520,13 +268,6 @@ export async function signClawdstrikeMessage<T>(
   } as T & ClawdstrikeBaseMessage;
 }
 
-// ---------------------------------------------------------------------------
-// 3. Message Creation Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Create a signed IntelShareMessage for publishing an intel artifact.
- */
 export async function createIntelShareMessage(
   intel: Intel,
   senderPublicKey: string,
@@ -540,8 +281,9 @@ export async function createIntelShareMessage(
       intelType: intel.type,
       title: intel.title,
       summary: intel.description,
-      contentHash: await sha256Hex(canonicalizeJson(intel.content)),
+      contentHash: await computeContentHash(intel),
       intelSignature: intel.signature,
+      intelSignerPublicKey: intel.signerPublicKey,
       confidence: intel.confidence,
       mitreTechniques: intel.mitre.map((m) => m.techniqueId),
       tags: intel.tags,
@@ -553,9 +295,6 @@ export async function createIntelShareMessage(
   );
 }
 
-/**
- * Create a signed IntelAckMessage acknowledging receipt of intel.
- */
 export async function createIntelAckMessage(
   intelId: string,
   action: IntelAckMessage["action"],
@@ -575,9 +314,6 @@ export async function createIntelAckMessage(
   );
 }
 
-/**
- * Create a signed FindingUpdateMessage for a finding status change.
- */
 export async function createFindingUpdateMessage(
   findingId: string,
   status: FindingStatus,
@@ -605,9 +341,6 @@ export async function createFindingUpdateMessage(
   );
 }
 
-/**
- * Create a signed SignalAlertMessage for an urgent signal broadcast.
- */
 export async function createSignalAlertMessage(
   signalId: string,
   signalType: SignalType,
@@ -639,9 +372,6 @@ export async function createSignalAlertMessage(
   );
 }
 
-/**
- * Create a signed SentinelStatusMessage heartbeat from a sentinel.
- */
 export async function createSentinelStatusMessage(
   sentinel: Pick<Sentinel, "id" | "mode" | "status" | "goals" | "identity">,
   secretKeyHex: string,
@@ -669,9 +399,6 @@ export async function createSentinelStatusMessage(
   );
 }
 
-/**
- * Create a signed SentinelTaskMessage to assign work to a sentinel.
- */
 export async function createSentinelTaskMessage(
   targetSentinelId: string,
   taskType: SentinelTaskMessage["taskType"],
@@ -701,9 +428,6 @@ export async function createSentinelTaskMessage(
   );
 }
 
-/**
- * Create a signed ReputationVoteMessage for peer reputation attestation.
- */
 export async function createReputationVoteMessage(
   targetFingerprint: string,
   vote: ReputationVoteMessage["vote"],
@@ -727,9 +451,6 @@ export async function createReputationVoteMessage(
   );
 }
 
-/**
- * Create a signed RoomMetadataMessage for room configuration changes.
- */
 export async function createRoomMetadataMessage(
   speakeasyId: string,
   senderPublicKey: string,
@@ -755,9 +476,6 @@ export async function createRoomMetadataMessage(
   );
 }
 
-/**
- * Create a signed DetectionSyncMessage for rule synchronization.
- */
 export async function createDetectionSyncMessage(
   ruleId: string,
   action: DetectionSyncMessage["action"],
@@ -786,24 +504,14 @@ export async function createDetectionSyncMessage(
   );
 }
 
-// ---------------------------------------------------------------------------
-// 4. Message Verification
-// ---------------------------------------------------------------------------
-
-/** Verification result returned by verifyClawdstrikeMessage. */
 export interface ClawdstrikeVerificationResult {
   valid: boolean;
   reason?: string;
 }
 
-/**
- * Nonce tracker for replay prevention within the current session.
- * Keeps a bounded set of recently-seen nonces.
- */
 const seenNonces = new Set<string>();
 const MAX_SEEN_NONCES = 10_000;
 
-/** Evict oldest nonces when the set grows too large. */
 function trackNonce(nonce: string): boolean {
   if (seenNonces.has(nonce)) return false;
   if (seenNonces.size >= MAX_SEEN_NONCES) {
@@ -818,19 +526,7 @@ function trackNonce(nonce: string): boolean {
   return true;
 }
 
-/**
- * Verify a Clawdstrike message.
- *
- * Checks:
- * 1. Timestamp freshness (within 5-minute tolerance)
- * 2. Nonce uniqueness (replay prevention)
- * 3. Message hash integrity (id matches recomputed hash)
- * 4. Signature format validity (128 hex chars)
- *
- * Note: Actual Ed25519 signature verification requires @noble/ed25519
- * which is injected at the provider level. This function validates
- * structure and freshness; the provider adds cryptographic verification.
- */
+/** Verifies timestamp freshness, hash integrity, Ed25519 signature, and nonce uniqueness. */
 export async function verifyClawdstrikeMessage(
   message: ClawdstrikeMessage,
 ): Promise<ClawdstrikeVerificationResult> {
@@ -840,9 +536,12 @@ export async function verifyClawdstrikeMessage(
     return { valid: false, reason: "timestamp_stale" };
   }
 
-  // 2. Check nonce uniqueness
-  if (!trackNonce(message.nonce)) {
-    return { valid: false, reason: "nonce_reused" };
+  // 2. Check detached signature/public key format before verification
+  if (!ED25519_SIGNATURE_HEX.test(message.signature)) {
+    return { valid: false, reason: "invalid_signature_format" };
+  }
+  if (!ED25519_PUBLIC_KEY_HEX.test(message.sender)) {
+    return { valid: false, reason: "invalid_sender_format" };
   }
 
   // 3. Recompute hash and verify id
@@ -854,43 +553,34 @@ export async function verifyClawdstrikeMessage(
     return { valid: false, reason: "id_mismatch" };
   }
 
-  // 4. Check signature format (128 hex chars = 64-byte Ed25519 signature)
-  if (typeof signature !== "string" || !/^[0-9a-f]{128}$/.test(signature)) {
-    return { valid: false, reason: "invalid_signature_format" };
+  // 4. Verify the detached signature over the hash bytes.
+  const signatureValid = await verifyDetachedPayload(
+    new TextEncoder().encode(expectedHash),
+    signature,
+    message.sender,
+  );
+  if (!signatureValid) {
+    return { valid: false, reason: "invalid_signature" };
   }
 
-  // 5. Check sender format (64 hex chars = 32-byte Ed25519 public key)
-  if (typeof message.sender !== "string" || !/^[0-9a-f]{64}$/.test(message.sender)) {
-    return { valid: false, reason: "invalid_sender_format" };
+  // 5. Check nonce uniqueness only after the signature succeeds.
+  if (!trackNonce(message.nonce)) {
+    return { valid: false, reason: "nonce_reused" };
   }
 
   return { valid: true };
 }
 
-// ---------------------------------------------------------------------------
-// 5. Room Management (pure functions)
-// ---------------------------------------------------------------------------
-
-/** Configuration for creating a new speakeasy room. */
 export interface CreateSpeakeasyRoomConfig {
-  /** Parent swarm ID. */
   swarmId: string;
-  /** Display name. */
   name: string;
-  /** Room purpose. */
   purpose: SpeakeasyPurpose;
-  /** Initial classification. */
   classification: SpeakeasyClassification;
-  /** What the room is attached to (finding ID, campaign ID, etc.). */
   attachedTo?: string;
-  /** Initial members. */
   members?: SpeakeasyMember[];
 }
 
-/**
- * Derive a deterministic speakeasy ID from purpose + attachment + swarm.
- * Same inputs always produce the same room ID, preventing duplicate rooms.
- */
+/** Deterministic: same inputs always produce the same room ID. */
 export async function deriveSpeakeasyId(
   purpose: SpeakeasyPurpose,
   attachedToId: string,
@@ -901,9 +591,6 @@ export async function deriveSpeakeasyId(
   return `spk_${hash.slice(0, 28)}`;
 }
 
-/**
- * Create a ClawdstrikeSpeakeasy room object with deterministic ID.
- */
 export async function createSpeakeasyRoom(
   config: CreateSpeakeasyRoomConfig,
 ): Promise<ClawdstrikeSpeakeasy> {
@@ -933,10 +620,6 @@ export async function createSpeakeasyRoom(
   };
 }
 
-/**
- * Attach a room to a specific finding.
- * Returns a new room object (immutable update).
- */
 export function attachToFinding(
   room: ClawdstrikeSpeakeasy,
   findingId: string,
@@ -944,10 +627,6 @@ export function attachToFinding(
   return { ...room, attachedTo: findingId };
 }
 
-/**
- * Attach a room to a campaign (intel artifact of type "campaign").
- * Returns a new room object (immutable update).
- */
 export function attachToCampaign(
   room: ClawdstrikeSpeakeasy,
   campaignId: string,
@@ -955,18 +634,10 @@ export function attachToCampaign(
   return { ...room, attachedTo: campaignId };
 }
 
-/**
- * Archive a room — marks it as read-only and unsubscribed from Gossipsub.
- * Returns a new room object.
- */
 export function archiveRoom(room: ClawdstrikeSpeakeasy): ClawdstrikeSpeakeasy {
   return { ...room, archived: true };
 }
 
-/**
- * Add a member to a room. No-op if member with same fingerprint already exists.
- * Returns a new room object.
- */
 export function addRoomMember(
   room: ClawdstrikeSpeakeasy,
   member: SpeakeasyMember,
@@ -976,10 +647,6 @@ export function addRoomMember(
   return { ...room, members: [...room.members, member] };
 }
 
-/**
- * Remove a member from a room by fingerprint.
- * Returns a new room object.
- */
 export function removeRoomMember(
   room: ClawdstrikeSpeakeasy,
   memberFingerprint: string,
@@ -990,10 +657,6 @@ export function removeRoomMember(
   };
 }
 
-/**
- * Update the classification level of a room.
- * Returns a new room object.
- */
 export function updateClassification(
   room: ClawdstrikeSpeakeasy,
   classification: SpeakeasyClassification,
@@ -1001,10 +664,6 @@ export function updateClassification(
   return { ...room, classification };
 }
 
-/**
- * Get Gossipsub topic strings for a room.
- * Follows @backbay/speakeasy topic naming: /baychat/v1/speakeasy/{id}/...
- */
 export function getRoomTopics(speakeasyId: string): {
   messages: string;
   presence: string;
@@ -1022,11 +681,6 @@ export function getRoomTopics(speakeasyId: string): {
   };
 }
 
-// ---------------------------------------------------------------------------
-// 6. Topic Management (Swarm & Sentinel)
-// ---------------------------------------------------------------------------
-
-/** Swarm topic set. */
 export interface SwarmTopics {
   swarmId: string;
   intel: string;
@@ -1036,9 +690,6 @@ export interface SwarmTopics {
   reputation: string;
 }
 
-/**
- * Create all Gossipsub topic strings for a swarm.
- */
 export function createSwarmTopics(swarmId: string): SwarmTopics {
   const base = `${TOPIC_PREFIX}/swarm/${swarmId}`;
   return {
@@ -1051,31 +702,20 @@ export function createSwarmTopics(swarmId: string): SwarmTopics {
   };
 }
 
-/**
- * Get all swarm topic strings as an array (for bulk subscription).
- */
 export function getAllSwarmTopics(swarmId: string): string[] {
   const topics = createSwarmTopics(swarmId);
   return [topics.intel, topics.signals, topics.detections, topics.coordination, topics.reputation];
 }
 
-/**
- * Create the status topic for a specific sentinel.
- */
 export function createSentinelStatusTopic(sentinelId: string): string {
   return `${TOPIC_PREFIX}/sentinel/${sentinelId}/status`;
 }
 
-/** Parsed swarm topic result. */
 export interface ParsedSwarmTopic {
   swarmId: string;
   channel: "intel" | "signals" | "detections" | "coordination" | "reputation";
 }
 
-/**
- * Parse a topic string to extract swarm ID and channel.
- * Returns null if the topic is not a swarm topic.
- */
 export function parseSwarmTopic(topic: string): ParsedSwarmTopic | null {
   const prefix = `${TOPIC_PREFIX}/swarm/`;
   if (!topic.startsWith(prefix)) return null;
@@ -1091,16 +731,11 @@ export function parseSwarmTopic(topic: string): ParsedSwarmTopic | null {
   return { swarmId, channel: channel as ParsedSwarmTopic["channel"] };
 }
 
-/** Parsed sentinel topic result. */
 export interface ParsedSentinelTopic {
   sentinelId: string;
   channel: "status";
 }
 
-/**
- * Parse a topic string to extract sentinel ID and channel.
- * Returns null if the topic is not a sentinel topic.
- */
 export function parseSentinelTopic(topic: string): ParsedSentinelTopic | null {
   const prefix = `${TOPIC_PREFIX}/sentinel/`;
   if (!topic.startsWith(prefix)) return null;
@@ -1115,14 +750,7 @@ export function parseSentinelTopic(topic: string): ParsedSentinelTopic | null {
   return { sentinelId, channel };
 }
 
-// ---------------------------------------------------------------------------
-// 7. Identity Bridge
-// ---------------------------------------------------------------------------
-
-/**
- * BayChatIdentity shape — minimal interface matching @backbay/speakeasy's
- * BayChatIdentity without importing it directly (different repo).
- */
+/** Minimal interface matching @backbay/speakeasy's BayChatIdentity. */
 export interface BayChatIdentityLike {
   publicKey: string;
   secretKey?: string;
@@ -1132,13 +760,7 @@ export interface BayChatIdentityLike {
   createdAt: number;
 }
 
-/**
- * Convert a SentinelIdentity to BayChatIdentity-compatible shape.
- *
- * SentinelIdentity is a public-only type (no secret key). The resulting
- * BayChatIdentityLike will not have signing capability — use this for
- * display and verification, not for message creation.
- */
+/** Public-only conversion; result has no signing capability. */
 export function sentinelIdentityToBayChatIdentity(
   identity: SentinelIdentity,
 ): BayChatIdentityLike {
@@ -1151,11 +773,7 @@ export function sentinelIdentityToBayChatIdentity(
   };
 }
 
-/**
- * Convert a BayChatIdentity-compatible object to SentinelIdentity.
- *
- * Strips secret key material — SentinelIdentity is always public-only.
- */
+/** Strips secret key material. */
 export function bayChatIdentityToSentinelIdentity(
   bayChatIdentity: BayChatIdentityLike,
 ): SentinelIdentity {
@@ -1167,33 +785,19 @@ export function bayChatIdentityToSentinelIdentity(
   };
 }
 
-/**
- * Check if an identity has signing capability (has secret key material).
- * Works with both BayChatIdentityLike and SentinelIdentity (which never has secret key).
- */
 export function canSign(identity: BayChatIdentityLike): boolean {
   return identity.secretKey !== undefined && identity.secretKey.length > 0;
 }
 
-/**
- * Extract the Clawdstrike-compatible public key from a Speakeasy identity.
- * Both systems use the same 32-byte hex format (no 0x prefix).
- */
 export function clawdstrikePublicKey(identity: BayChatIdentityLike): string {
   return identity.publicKey;
 }
 
-/**
- * Format a 16-char hex fingerprint for human-readable display.
- * Produces "a1b2-c3d4-e5f6-g7h8" format used for out-of-band verification.
- */
+/** Produces "a1b2-c3d4-e5f6-g7h8" format. */
 export function formatFingerprint(fingerprint: string): string {
   return fingerprint.match(/.{1,4}/g)?.join("-") ?? fingerprint;
 }
 
-/**
- * Create a SpeakeasyMember from a SentinelIdentity for room membership.
- */
 export function sentinelToMember(
   identity: SentinelIdentity,
   role: SpeakeasyMember["role"] = "participant",
@@ -1208,9 +812,6 @@ export function sentinelToMember(
   };
 }
 
-/**
- * Create an operator SpeakeasyMember from a BayChatIdentity.
- */
 export function operatorToMember(
   identity: BayChatIdentityLike,
   role: SpeakeasyMember["role"] = "moderator",
@@ -1225,14 +826,7 @@ export function operatorToMember(
   };
 }
 
-// ---------------------------------------------------------------------------
-// 8. Message Routing
-// ---------------------------------------------------------------------------
-
-/**
- * Envelope shape matching @backbay/speakeasy MessageEnvelope.
- * Minimal interface to avoid direct import.
- */
+/** Minimal interface matching @backbay/speakeasy MessageEnvelope. */
 export interface MessageEnvelopeLike {
   version: 1;
   type: string;
@@ -1241,10 +835,6 @@ export interface MessageEnvelopeLike {
   created: number;
 }
 
-/**
- * Type guard: check if a message payload is a Clawdstrike message type
- * (vs. standard Speakeasy chat/presence/typing/bounty messages).
- */
 export function isClawdstrikeMessage(
   message: Record<string, unknown>,
 ): message is ClawdstrikeMessage & Record<string, unknown> {
@@ -1254,9 +844,6 @@ export function isClawdstrikeMessage(
   );
 }
 
-/**
- * Type guard for a specific Clawdstrike message type.
- */
 export function isClawdstrikeMessageOfType<T extends ClawdstrikeMessageType>(
   message: Record<string, unknown>,
   type: T,
@@ -1264,33 +851,18 @@ export function isClawdstrikeMessageOfType<T extends ClawdstrikeMessageType>(
   return message.type === type;
 }
 
-/**
- * Routed message result from topic + envelope parsing.
- */
 export interface RoutedMessage {
-  /** Source topic type. */
   source:
     | { kind: "speakeasy"; speakeasyId: string; channel: "messages" | "presence" | "typing" }
     | { kind: "swarm"; swarmId: string; channel: ParsedSwarmTopic["channel"] }
     | { kind: "sentinel"; sentinelId: string; channel: "status" }
     | { kind: "unknown"; topic: string };
-  /** Parsed and typed message, or null if not a Clawdstrike message. */
   message: ClawdstrikeMessage | null;
-  /** Raw payload for non-Clawdstrike messages. */
   rawPayload: Record<string, unknown>;
-  /** Envelope TTL remaining. */
   ttl: number;
-  /** Envelope creation timestamp. */
   envelopeCreated: number;
 }
 
-/**
- * Route an incoming envelope from a topic to a typed ClawdstrikeMessage.
- *
- * Parses the topic string to determine the source (speakeasy room, swarm
- * channel, or sentinel status), then attempts to deserialize the payload
- * as a Clawdstrike message type.
- */
 export function routeMessage(topic: string, envelope: MessageEnvelopeLike): RoutedMessage {
   // Determine source from topic
   let source: RoutedMessage["source"];
@@ -1326,10 +898,6 @@ export function routeMessage(topic: string, envelope: MessageEnvelopeLike): Rout
   };
 }
 
-/**
- * Local speakeasy topic parser (avoids importing from @backbay/speakeasy).
- * Mirrors parseSpeakeasyTopic from topics.ts.
- */
 function parseSpeakeasyTopicLocal(
   topic: string,
 ): { speakeasyId: string; channel: "messages" | "presence" | "typing" } | null {
@@ -1346,10 +914,6 @@ function parseSpeakeasyTopicLocal(
   return { speakeasyId, channel: type };
 }
 
-/**
- * Create a MessageEnvelope for a Clawdstrike message.
- * Uses type-appropriate TTL and envelope type mapping.
- */
 export function createClawdstrikeEnvelope(message: ClawdstrikeMessage): MessageEnvelopeLike {
   // Map message type to envelope type
   let envelopeType: string;
@@ -1386,10 +950,6 @@ export function createClawdstrikeEnvelope(message: ClawdstrikeMessage): MessageE
   };
 }
 
-/**
- * Check if a Clawdstrike message envelope is still valid (not expired).
- * Uses per-type max age from MESSAGE_TYPE_MAX_AGE.
- */
 export function isClawdstrikeEnvelopeValid(envelope: MessageEnvelopeLike): boolean {
   const payload = envelope.payload;
   if (!isClawdstrikeMessage(payload)) return false;
@@ -1399,17 +959,6 @@ export function isClawdstrikeEnvelopeValid(envelope: MessageEnvelopeLike): boole
   return age <= maxAge && envelope.ttl > 0;
 }
 
-// ---------------------------------------------------------------------------
-// 9. Utility: Topic routing for publish
-// ---------------------------------------------------------------------------
-
-/**
- * Determine the correct topic for publishing a Clawdstrike message.
- *
- * @param message - The message to publish
- * @param context - Either a swarm ID, speakeasy ID, or sentinel ID
- * @returns The Gossipsub topic string to publish to
- */
 export function getPublishTopic(
   message: ClawdstrikeMessage,
   context: { swarmId?: string; speakeasyId?: string; sentinelId?: string },
@@ -1466,8 +1015,7 @@ export function getPublishTopic(
       break;
   }
 
-  // Fallback: publish to swarm coordination if available
-  if (context.swarmId) {
+    if (context.swarmId) {
     return createSwarmTopics(context.swarmId).coordination;
   }
 

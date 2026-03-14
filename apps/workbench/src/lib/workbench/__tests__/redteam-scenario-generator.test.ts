@@ -2,9 +2,6 @@ import { describe, it, expect } from "vitest";
 import { generateRedTeamScenarios } from "../redteam/scenario-generator";
 import type { WorkbenchPolicy, GuardConfigMap } from "../types";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function makePolicy(guards: GuardConfigMap): WorkbenchPolicy {
   return {
@@ -16,9 +13,6 @@ function makePolicy(guards: GuardConfigMap): WorkbenchPolicy {
   };
 }
 
-// ---------------------------------------------------------------------------
-// generateRedTeamScenarios — per guard
-// ---------------------------------------------------------------------------
 
 describe("generateRedTeamScenarios per guard", () => {
   it("produces scenarios for a policy with forbidden_path enabled", () => {
@@ -71,9 +65,6 @@ describe("generateRedTeamScenarios per guard", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Scenario validity
-// ---------------------------------------------------------------------------
 
 describe("generated scenario validity", () => {
   const policy = makePolicy({
@@ -112,9 +103,6 @@ describe("generated scenario validity", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Filtering options
-// ---------------------------------------------------------------------------
 
 describe("generateRedTeamScenarios filtering", () => {
   const policy = makePolicy({

@@ -101,9 +101,6 @@ function formatTimestamp(iso: string): string {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Unified event type used in the table (can be fleet or local)
-// ---------------------------------------------------------------------------
 
 interface UnifiedAuditEvent {
   id: string;
@@ -141,12 +138,9 @@ function localToUnified(e: LocalAuditEvent): UnifiedAuditEvent {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Main Component
-// ---------------------------------------------------------------------------
 
 export function AuditLog() {
-  const { connection, agents } = useFleetConnection();
+  const { connection, agents, getAuthenticatedConnection } = useFleetConnection();
   const { events: localEvents, clear: clearLocalEvents } = useLocalAudit();
 
   const [sourceMode, setSourceMode] = useState<EventSourceMode>("auto");
@@ -195,7 +189,7 @@ export function AuditLog() {
       if (actionFilter !== "all") filters.action_type = actionFilter;
       if (agentFilter !== "all") filters.agent_id = agentFilter;
 
-      const result = await fetchAuditEvents(connection, filters);
+      const result = await fetchAuditEvents(getAuthenticatedConnection(), filters);
       setFleetEvents(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to fetch events");
@@ -203,7 +197,7 @@ export function AuditLog() {
     } finally {
       setIsLoading(false);
     }
-  }, [connection, timeRange, decisionFilter, actionFilter, agentFilter]);
+  }, [getAuthenticatedConnection, timeRange, decisionFilter, actionFilter, agentFilter]);
 
   useEffect(() => {
     if (connection.connected && showFleet) {
@@ -557,9 +551,6 @@ export function AuditLog() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Source Badge
-// ---------------------------------------------------------------------------
 
 function SourceBadge({
   mode,
@@ -585,9 +576,6 @@ function SourceBadge({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Shared sub-components
-// ---------------------------------------------------------------------------
 
 function FilterGroup({
   label,
@@ -653,9 +641,6 @@ function StatBadge({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Fleet Event Row (original design)
-// ---------------------------------------------------------------------------
 
 function FleetEventRow({
   event,
@@ -745,9 +730,6 @@ function FleetEventRow({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Local Event Row
-// ---------------------------------------------------------------------------
 
 const SOURCE_COLORS: Record<string, string> = {
   simulator: "#d4a84b",
@@ -835,9 +817,6 @@ function LocalEventRow({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Detail panels
-// ---------------------------------------------------------------------------
 
 function SeverityBadge({ severity }: { severity: string }) {
   const color = SEVERITY_COLORS[severity.toLowerCase()] ?? "#6f7f9a";

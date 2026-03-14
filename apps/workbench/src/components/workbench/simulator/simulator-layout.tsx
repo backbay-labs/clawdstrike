@@ -43,16 +43,11 @@ import { cn } from "@/lib/utils";
 import { SubTabBar, type SubTab } from "../shared/sub-tab-bar";
 import { ClaudeCodeHint } from "@/components/workbench/shared/claude-code-hint";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 type SimulatorTab = "scenarios" | "trustprint-lab" | "observe" | "coverage";
 
-// ---------------------------------------------------------------------------
 // Helpers to map between the workbench TestScenario format and the Rust
 // simulate_action command's flat parameter format.
-// ---------------------------------------------------------------------------
 
 /** Map workbench TestActionType to the Rust action_type string. */
 function toRustActionType(at: TestActionType): string | null {
@@ -208,9 +203,6 @@ function mergeCumulativePosture(
   };
 }
 
-// ---------------------------------------------------------------------------
-// Threat level computation
-// ---------------------------------------------------------------------------
 
 function computeThreatLevel(results: SimulationResult[], scenarios: TestScenario[]): {
   color: string;
@@ -236,9 +228,6 @@ function computeThreatLevel(results: SimulationResult[], scenarios: TestScenario
   return { color: "#c45c5c", label: "AT RISK" };
 }
 
-// ---------------------------------------------------------------------------
-// Tab Header
-// ---------------------------------------------------------------------------
 
 const SIMULATOR_TABS: SubTab[] = [
   { id: "scenarios", label: "Scenarios", icon: IconTestPipe },
@@ -295,9 +284,6 @@ function SimulatorStatusIndicators({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Main Layout
-// ---------------------------------------------------------------------------
 
 export function SimulatorLayout() {
   const { state } = useWorkbench();

@@ -41,9 +41,6 @@ import type {
   SigilType,
 } from "@/lib/workbench/sentinel-manager";
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 const MODE_COLORS: Record<SentinelMode, string> = {
   watcher: "#5b8def",
@@ -105,9 +102,6 @@ const GOAL_TYPE_COLORS: Record<string, string> = {
 
 type DetailTab = "signals" | "goals" | "memory" | "config";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function relativeTime(epochMs: number): string {
   const now = Date.now();
@@ -135,9 +129,6 @@ function formatDate(epochMs: number): string {
   });
 }
 
-// ---------------------------------------------------------------------------
-// Sigil Avatar
-// ---------------------------------------------------------------------------
 
 function SigilAvatar({
   sigil,
@@ -165,9 +156,6 @@ function SigilAvatar({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Copyable Text
-// ---------------------------------------------------------------------------
 
 function CopyableText({ text, truncate = true }: { text: string; truncate?: boolean }) {
   const [copied, setCopied] = useState(false);
@@ -199,9 +187,6 @@ function CopyableText({ text, truncate = true }: { text: string; truncate?: bool
   );
 }
 
-// ---------------------------------------------------------------------------
-// Stats Sidebar
-// ---------------------------------------------------------------------------
 
 function StatsSidebar({ sentinel }: { sentinel: Sentinel }) {
   const runtimeDriver = getSentinelDriverDefinition(sentinel.runtime.driver);
@@ -318,7 +303,7 @@ function StatsSection({
 }) {
   return (
     <div className="flex flex-col gap-2">
-      <h4 className="font-syne text-[9px] font-semibold uppercase tracking-wider text-[#6f7f9a]/50">
+      <h4 className="text-[9px] font-semibold uppercase tracking-[0.1em] text-[#6f7f9a]/50">
         {title}
       </h4>
       <div className="flex flex-col gap-1.5">{children}</div>
@@ -345,16 +330,13 @@ function StatRow({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Tab: Signals
-// ---------------------------------------------------------------------------
 
 function SignalsTab({ sentinel }: { sentinel: Sentinel }) {
   // In a real implementation this would pull from SignalProvider filtered by sentinelId.
   // For now we show a placeholder that communicates the design intent.
   return (
     <div className="flex flex-col items-center justify-center py-16 gap-3">
-      <IconActivity size={28} stroke={1} className="text-[#6f7f9a]/50" />
+      <IconActivity size={28} stroke={1} className="text-[#6f7f9a]/20" />
       <p className="text-[12px] text-[#6f7f9a]/50">
         Signal stream for{" "}
         <span className="font-semibold text-[#ece7dc]/60">
@@ -374,9 +356,6 @@ function SignalsTab({ sentinel }: { sentinel: Sentinel }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Tab: Goals
-// ---------------------------------------------------------------------------
 
 function GoalsTab({
   sentinel,
@@ -390,7 +369,7 @@ function GoalsTab({
   if (goals.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 gap-3">
-        <IconTarget size={28} stroke={1} className="text-[#6f7f9a]/50" />
+        <IconTarget size={28} stroke={1} className="text-[#6f7f9a]/20" />
         <p className="text-[12px] text-[#6f7f9a]/50">
           No goals configured
         </p>
@@ -483,9 +462,6 @@ function GoalsTab({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Tab: Memory
-// ---------------------------------------------------------------------------
 
 function MemoryTab({ sentinel }: { sentinel: Sentinel }) {
   const { memory } = sentinel;
@@ -494,7 +470,7 @@ function MemoryTab({ sentinel }: { sentinel: Sentinel }) {
     <div className="flex flex-col gap-6 py-4">
       {/* Known Patterns */}
       <div>
-        <h3 className="font-syne text-[10px] font-semibold uppercase tracking-wider text-[#6f7f9a]/50 mb-2">
+        <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6f7f9a]/50 mb-2">
           Known Patterns ({memory.knownPatterns.length})
         </h3>
         {memory.knownPatterns.length === 0 ? (
@@ -548,7 +524,7 @@ function MemoryTab({ sentinel }: { sentinel: Sentinel }) {
 
       {/* Baseline Profiles */}
       <div>
-        <h3 className="font-syne text-[10px] font-semibold uppercase tracking-wider text-[#6f7f9a]/50 mb-2">
+        <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6f7f9a]/50 mb-2">
           Baseline Profiles ({memory.baselineProfiles.length})
         </h3>
         {memory.baselineProfiles.length === 0 ? (
@@ -577,7 +553,7 @@ function MemoryTab({ sentinel }: { sentinel: Sentinel }) {
 
       {/* False Positive Hashes */}
       <div>
-        <h3 className="font-syne text-[10px] font-semibold uppercase tracking-wider text-[#6f7f9a]/50 mb-2">
+        <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6f7f9a]/50 mb-2">
           False Positive Hashes ({memory.falsePositiveHashes.length})
         </h3>
         {memory.falsePositiveHashes.length === 0 ? (
@@ -604,9 +580,6 @@ function MemoryTab({ sentinel }: { sentinel: Sentinel }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Tab: Config
-// ---------------------------------------------------------------------------
 
 function ConfigTab({ sentinel }: { sentinel: Sentinel }) {
   const { currentOperator } = useOperator();
@@ -683,7 +656,7 @@ function ConfigTab({ sentinel }: { sentinel: Sentinel }) {
           <span className="text-[#6f7f9a]/50">Public Key</span>
           <CopyableText text={sentinel.identity.publicKey} />
         </div>
-        <ConfigRow label="Sigil" value={sentinel.identity.sigil} title="Unique visual identifier derived from an operator's cryptographic fingerprint" />
+        <ConfigRow label="Sigil" value={sentinel.identity.sigil} />
         <ConfigRow label="Nickname" value={sentinel.identity.nickname} />
       </ConfigSection>
 
@@ -727,7 +700,7 @@ function ConfigSection({
   return (
     <div className="rounded-lg border border-[#2d3240]/60 bg-[#0b0d13]/60 overflow-hidden">
       <div className="px-4 py-2 border-b border-[#2d3240]/40">
-        <h3 className="font-syne text-[9px] font-semibold uppercase tracking-wider text-[#6f7f9a]/50">
+        <h3 className="text-[9px] font-semibold uppercase tracking-[0.1em] text-[#6f7f9a]/50">
           {title}
         </h3>
       </div>
@@ -740,16 +713,14 @@ function ConfigRow({
   label,
   value,
   mono,
-  title,
 }: {
   label: string;
   value: string;
   mono?: boolean;
-  title?: string;
 }) {
   return (
     <div className="flex items-baseline justify-between text-[10px]">
-      <span className="text-[#6f7f9a]/50" title={title}>{label}</span>
+      <span className="text-[#6f7f9a]/50">{label}</span>
       <span className={cn("text-[#ece7dc]/70", mono && "font-mono")}>
         {value}
       </span>
@@ -757,9 +728,6 @@ function ConfigRow({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Main Component
-// ---------------------------------------------------------------------------
 
 export function SentinelDetail({
   sentinel,
@@ -818,10 +786,13 @@ export function SentinelDetail({
     <div className="flex h-full w-full flex-col overflow-hidden bg-[#05060a]">
       {/* Header */}
       <div className="shrink-0 border-b border-[#2d3240]/60 px-6 py-4">
-        <button onClick={() => navigate("/sentinels")} className="flex items-center gap-1 text-[11px] text-[#6f7f9a] hover:text-[#ece7dc] transition-colors mb-3">
-          <IconArrowLeft size={12} /> Back to Sentinels
-        </button>
         <div className="flex items-center gap-4">
+          <button
+            onClick={() => navigate("/sentinels")}
+            className="text-[#6f7f9a]/50 hover:text-[#ece7dc] transition-colors shrink-0"
+          >
+            <IconArrowLeft size={16} stroke={1.5} />
+          </button>
 
           <SigilAvatar
             sigil={sentinel.identity.sigil}
@@ -830,7 +801,7 @@ export function SentinelDetail({
           />
 
           <div className="min-w-0 flex-1">
-            <h1 className="font-syne text-sm font-semibold text-[#ece7dc] tracking-[-0.01em] truncate">
+            <h1 className="text-sm font-semibold text-[#ece7dc] tracking-[-0.01em] truncate">
               {sentinel.name}
             </h1>
             <div className="flex items-center gap-2 mt-0.5">

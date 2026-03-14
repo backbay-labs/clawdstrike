@@ -1,15 +1,3 @@
-/**
- * Trust Graph — Force-directed visualization of peer trust relationships
- * within a sentinel swarm.
- *
- * Self-contained SVG rendering with custom force simulation (no external
- * graph library). Reuses zoom/pan/interaction patterns from delegation-page.tsx
- * and the sigil identity system from sentinel-manager.ts.
- *
- * @see docs/plans/sentinel-swarm/UI-PAGE-MAP.md#6c-swarm-detail (Trust Graph tab)
- * @see docs/plans/sentinel-swarm/SPEAKEASY-INTEGRATION.md#6-trust-model
- */
-
 import {
   useRef,
   useEffect,
@@ -38,20 +26,12 @@ import {
   type SigilType,
 } from "@/lib/workbench/sentinel-manager";
 
-// ---------------------------------------------------------------------------
-// Props
-// ---------------------------------------------------------------------------
-
 export interface TrustGraphProps {
   members: SwarmMember[];
   trustEdges: TrustEdge[];
   onSelectMember?: (memberId: string) => void;
   selectedMemberId?: string | null;
 }
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 const TRUST_LEVEL_WEIGHT: Record<TrustLevel, number> = {
   System: 1.0,
@@ -73,41 +53,26 @@ const ROLE_COLORS: Record<SwarmRole, string> = {
   observer: "#6f7f9a",
 };
 
-
-/**
- * Maximum number of nodes the force simulation will render.
- * Beyond this threshold, the O(n^2) charge repulsion and collision loops
- * become too expensive for 60 fps animation. A warning banner is shown
- * when the member list exceeds this limit.
- */
+// Beyond this limit, O(n^2) simulation becomes too expensive for 60 fps.
 const MAX_GRAPH_NODES = 100;
 
-/** Minimum node radius in pixels. */
 const NODE_MIN_R = 12;
-/** Maximum node radius in pixels. */
 const NODE_MAX_R = 24;
 
-/** Map a trust level to a numeric weight for edge rendering. */
 function trustWeight(edge: TrustEdge): number {
   return TRUST_LEVEL_WEIGHT[edge.trustLevel] ?? 0.5;
 }
 
-/** Edge color based on weight. */
 function edgeColor(weight: number): string {
   if (weight > 0.5) return "#3dbf84"; // green — positive trust
   if (weight < 0.3) return "#c45c5c"; // red — negative/low trust
   return "#6f7f9a"; // neutral gray
 }
 
-/** Node radius based on reputation, linearly interpolated. */
 function nodeRadius(reputation: number): number {
   const clamped = Math.max(0, Math.min(1, reputation));
   return NODE_MIN_R + clamped * (NODE_MAX_R - NODE_MIN_R);
 }
-
-// ---------------------------------------------------------------------------
-// Force simulation types & engine
-// ---------------------------------------------------------------------------
 
 interface SimNode {
   id: string;
@@ -116,7 +81,6 @@ interface SimNode {
   vx: number;
   vy: number;
   radius: number;
-  /** Pinned by user drag — skip force updates while true. */
   pinned: boolean;
 }
 
@@ -164,7 +128,6 @@ function initSimEdges(trustEdges: TrustEdge[]): SimEdge[] {
   }));
 }
 
-/** Run one tick of the force simulation. Returns true if energy remains. */
 function tickSimulation(
   nodes: SimNode[],
   edges: SimEdge[],
@@ -274,11 +237,6 @@ function tickSimulation(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Sigil SVG paths (inline, no external assets)
-// ---------------------------------------------------------------------------
-
-/** Unicode sigil characters for SVG text rendering. */
 const SIGIL_CHARS: Record<SigilType, string> = {
   diamond: "\u25C7",
   eye: "\u25C9",
@@ -290,7 +248,6 @@ const SIGIL_CHARS: Record<SigilType, string> = {
   moon: "\u263E",
 };
 
-/** Render a sigil shape as an SVG text element centered at (0,0). */
 function SigilShape({
   sigil,
   size,
@@ -313,10 +270,6 @@ function SigilShape({
     </text>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
 
 export function TrustGraph({
   members,
@@ -706,7 +659,7 @@ export function TrustGraph({
         <div className="w-12 h-12 rounded-xl bg-[#55788b]/10 border border-[#55788b]/20 flex items-center justify-center mb-4">
           <IconNetwork size={24} stroke={1.5} className="text-[#55788b]" />
         </div>
-        <h2 className="font-syne text-sm font-semibold text-[#ece7dc] mb-1">
+        <h2 className="text-sm font-semibold text-[#ece7dc] mb-1">
           {members.length === 0
             ? "No swarm members"
             : "Not enough members for a trust graph"}
@@ -1076,10 +1029,6 @@ export function TrustGraph({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
-
 function ToolbarBtn({
   icon: Icon,
   label,
@@ -1135,7 +1084,7 @@ function LegendSection({
 }) {
   return (
     <div className="mb-2 last:mb-0">
-      <h4 className="font-syne mb-1 text-[8px] font-semibold uppercase tracking-wider text-[#6f7f9a]/50">
+      <h4 className="mb-1 text-[8px] font-semibold uppercase tracking-[0.1em] text-[#6f7f9a]/50">
         {title}
       </h4>
       <div className="flex flex-col gap-1">{children}</div>
@@ -1143,7 +1092,6 @@ function LegendSection({
   );
 }
 
-/** Format fingerprint as `xxxx-xxxx-xxxx-xxxx`. */
 function formatFingerprint(fp: string): string {
   const clean = fp.replace(/[^a-fA-F0-9]/g, "").slice(0, 16);
   return clean.replace(/(.{4})/g, "$1-").replace(/-$/, "");

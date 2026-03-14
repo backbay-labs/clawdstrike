@@ -2,9 +2,6 @@ import { describe, it, expect } from "vitest";
 import { GUARD_REGISTRY, getGuardMeta, GUARD_CATEGORIES } from "../guard-registry";
 import type { GuardId } from "../types";
 
-// ---------------------------------------------------------------------------
-// GUARD_REGISTRY
-// ---------------------------------------------------------------------------
 
 describe("GUARD_REGISTRY", () => {
   it("contains exactly 13 guards", () => {
@@ -107,9 +104,6 @@ describe("GUARD_REGISTRY", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// getGuardMeta
-// ---------------------------------------------------------------------------
 
 describe("getGuardMeta", () => {
   it("returns correct guard for each known ID", () => {
@@ -142,9 +136,6 @@ describe("getGuardMeta", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// GUARD_CATEGORIES
-// ---------------------------------------------------------------------------
 
 describe("GUARD_CATEGORIES", () => {
   it("has 6 categories", () => {

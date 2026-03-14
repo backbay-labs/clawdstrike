@@ -12,9 +12,6 @@ import type { SimulationResult, SimulationEngine, TestScenario } from "@/lib/wor
 import { IconCheck, IconX, IconClock, IconShieldCheck, IconShieldOff, IconAlertTriangle } from "@tabler/icons-react";
 import { EvaluationPath } from "./evaluation-path";
 
-// ---------------------------------------------------------------------------
-// Verdict display config
-// ---------------------------------------------------------------------------
 
 const VERDICT_DISPLAY: Record<string, {
   label: string;
@@ -54,9 +51,6 @@ const VERDICT_DISPLAY: Record<string, {
   },
 };
 
-// ---------------------------------------------------------------------------
-// Engine badge styles
-// ---------------------------------------------------------------------------
 
 const ENGINE_BADGE_STYLES: Record<SimulationEngine, { label: string; className: string }> = {
   native: {

@@ -2,9 +2,6 @@ import { describe, it, expect } from "vitest";
 import { operatorReducer, type OperatorState, type OperatorAction } from "../operator-store";
 import type { OperatorIdentity, IdpClaims } from "../operator-types";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function makeOperator(overrides?: Partial<OperatorIdentity>): OperatorIdentity {
   return {
@@ -30,9 +27,6 @@ function initialState(overrides?: Partial<OperatorState>): OperatorState {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Reducer tests
-// ---------------------------------------------------------------------------
 
 describe("operatorReducer", () => {
   it("handles INIT with an operator", () => {

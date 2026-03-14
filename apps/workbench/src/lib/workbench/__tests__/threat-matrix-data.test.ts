@@ -7,9 +7,6 @@ import {
 } from "../threat-matrix-data";
 import type { WorkbenchPolicy, GuardId, TestScenario, SimulationResult } from "../types";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function makePolicy(guards: WorkbenchPolicy["guards"]): WorkbenchPolicy {
   return {
@@ -59,9 +56,6 @@ const ALL_GUARD_IDS: GuardId[] = [
   "spider_sense",
 ];
 
-// ---------------------------------------------------------------------------
-// ATTACK_CATEGORIES constant
-// ---------------------------------------------------------------------------
 
 describe("ATTACK_CATEGORIES", () => {
   it("has exactly 8 attack categories", () => {
@@ -89,9 +83,6 @@ describe("ATTACK_CATEGORIES", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// computeThreatMatrix — default (full) policy
-// ---------------------------------------------------------------------------
 
 describe("computeThreatMatrix with full policy", () => {
   const result = computeThreatMatrix(makeFullPolicy());
@@ -149,9 +140,6 @@ describe("computeThreatMatrix with full policy", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Disabling a guard reduces coverage
-// ---------------------------------------------------------------------------
 
 describe("disabling a guard reduces coverage", () => {
   it("disabling egress_allowlist reduces network_egress coverage", () => {
@@ -220,9 +208,6 @@ describe("disabling a guard reduces coverage", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Overall threat score
-// ---------------------------------------------------------------------------
 
 describe("overall threat score calculation", () => {
   it("empty policy has a low overall score", () => {
@@ -242,9 +227,6 @@ describe("overall threat score calculation", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Critical gap identification
-// ---------------------------------------------------------------------------
 
 describe("critical gap identification", () => {
   it("empty policy reports critical gaps", () => {
@@ -290,9 +272,6 @@ describe("critical gap identification", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// "na" cells are preserved
-// ---------------------------------------------------------------------------
 
 describe("na cells", () => {
   it("na cells stay na regardless of guard enablement", () => {
@@ -308,9 +287,6 @@ describe("na cells", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// findScenariosForCell
-// ---------------------------------------------------------------------------
 
 describe("findScenariosForCell", () => {
   const scenarios: TestScenario[] = [
@@ -407,9 +383,6 @@ describe("findScenariosForCell", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Static coverage mapping completeness
-// ---------------------------------------------------------------------------
 
 describe("static coverage mapping completeness", () => {
   it("every guard has a mapping for all 8 attack categories", () => {

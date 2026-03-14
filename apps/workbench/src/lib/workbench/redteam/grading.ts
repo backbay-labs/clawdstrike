@@ -8,9 +8,6 @@
 import type { TestScenario, SimulationResult, Verdict } from "../types";
 import type { RedTeamGradingResult } from "./types";
 
-// ---------------------------------------------------------------------------
-// Verdict comparison helpers
-// ---------------------------------------------------------------------------
 
 const VERDICT_SEVERITY: Record<Verdict, number> = {
   deny: 2,
@@ -51,9 +48,6 @@ function buildReason(
   return `FAIL: "${scenarioName}" — expected ${expected}, got ${actual}. Guard did not catch the attack.`;
 }
 
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
 
 /**
  * Grade a single simulation result against its source scenario.
@@ -85,9 +79,6 @@ export function gradeSimulationResult(
   return { pass, score, reason };
 }
 
-// ---------------------------------------------------------------------------
-// Batch grading
-// ---------------------------------------------------------------------------
 
 export interface PluginGradeSummary {
   passed: number;

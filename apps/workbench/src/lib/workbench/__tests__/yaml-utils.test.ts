@@ -11,9 +11,6 @@ import {
 } from "../yaml-utils";
 import type { WorkbenchPolicy } from "../types";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function makeMinimalPolicy(overrides?: Partial<WorkbenchPolicy>): WorkbenchPolicy {
   return {
@@ -48,9 +45,6 @@ function makeFullPolicy(): WorkbenchPolicy {
   });
 }
 
-// ---------------------------------------------------------------------------
-// policyToYaml
-// ---------------------------------------------------------------------------
 
 describe("policyToYaml", () => {
   it("serializes a default policy to valid YAML string", () => {
@@ -223,9 +217,6 @@ describe("policyToYaml", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// policyToJson
-// ---------------------------------------------------------------------------
 
 describe("policyToJson", () => {
   it("serializes a minimal policy to valid JSON string", () => {
@@ -301,9 +292,6 @@ describe("policyToJson", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// policyToToml
-// ---------------------------------------------------------------------------
 
 describe("policyToToml", () => {
   it("serializes a minimal policy to a TOML string", () => {
@@ -420,9 +408,6 @@ describe("policyToToml", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// policyToFormat
-// ---------------------------------------------------------------------------
 
 describe("policyToFormat", () => {
   it("returns YAML when format is yaml", () => {
@@ -444,9 +429,6 @@ describe("policyToFormat", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// formatExtension / formatMimeType
-// ---------------------------------------------------------------------------
 
 describe("formatExtension", () => {
   it("returns correct extensions", () => {
@@ -464,9 +446,6 @@ describe("formatMimeType", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// yamlToPolicy
-// ---------------------------------------------------------------------------
 
 describe("yamlToPolicy", () => {
   it("parses valid YAML to a WorkbenchPolicy", () => {
@@ -562,9 +541,6 @@ extends: strict
   });
 });
 
-// ---------------------------------------------------------------------------
-// validatePolicy
-// ---------------------------------------------------------------------------
 
 describe("validatePolicy", () => {
   it("accepts a valid minimal policy", () => {
@@ -770,9 +746,6 @@ describe("validatePolicy", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Round-trip: policyToYaml -> yamlToPolicy
-// ---------------------------------------------------------------------------
 
 describe("round-trip", () => {
   it("produces an equivalent policy after serialization and deserialization", () => {

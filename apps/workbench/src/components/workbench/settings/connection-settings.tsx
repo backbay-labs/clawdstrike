@@ -51,13 +51,15 @@ export function ConnectionSettings() {
     disconnect,
     testConnection,
     refreshAgents,
+    getCredentials,
   } = useFleetConnection();
 
+  const credentials = getCredentials();
   const [hushdUrl, setHushdUrl] = useState(connection.hushdUrl || "http://localhost:9876");
   const [controlApiUrl, setControlApiUrl] = useState(connection.controlApiUrl || "");
-  const [apiKey, setApiKey] = useState(connection.apiKey || "");
+  const [apiKey, setApiKey] = useState(credentials.apiKey || "");
   const [showApiKey, setShowApiKey] = useState(false);
-  const [controlApiToken, setControlApiToken] = useState(connection.controlApiToken || "");
+  const [controlApiToken, setControlApiToken] = useState(credentials.controlApiToken || "");
   const [showControlToken, setShowControlToken] = useState(false);
 
   const [testResult, setTestResult] = useState<

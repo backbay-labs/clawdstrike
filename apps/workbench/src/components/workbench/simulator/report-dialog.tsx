@@ -22,9 +22,6 @@ import {
   IconShieldCheck,
 } from "@tabler/icons-react";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function computePostureGrade(passRate: number): {
   grade: string;
@@ -94,9 +91,6 @@ function generateRecommendations(report: BatchTestReport): string[] {
   return recs;
 }
 
-// ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
 
 function StatCard({
   label,
@@ -271,9 +265,6 @@ function ComplianceBar({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Report Dialog
-// ---------------------------------------------------------------------------
 
 interface ReportDialogProps {
   open: boolean;

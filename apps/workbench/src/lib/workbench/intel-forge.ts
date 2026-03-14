@@ -1,19 +1,3 @@
-/**
- * Intel Forge -- promotion engine for creating, signing, and packaging Intel artifacts.
- *
- * All functions are pure (no React, no side effects) and operate on the types
- * defined in sentinel-types.ts.  The signing flow follows the spec in
- * docs/plans/sentinel-swarm/SIGNAL-PIPELINE.md section 6:
- *
- *   1. Extract signable fields from Intel
- *   2. Canonicalize using RFC 8785 (sorted keys, no whitespace)
- *   3. SHA-256 hash of the canonical JSON
- *   4. Ed25519 sign the hash
- *   5. Build receipt chain linking back to source findings
- *
- * @see docs/plans/sentinel-swarm/SIGNAL-PIPELINE.md#6-intel-promotion
- */
-
 import type {
   Intel,
   IntelType,
@@ -32,131 +16,68 @@ import type {
 import type { Finding, Enrichment, MitreTechnique } from "./finding-engine";
 import type { Signal } from "./signal-pipeline";
 import type { Receipt } from "./types";
-
-// ---------------------------------------------------------------------------
-// ID Generation
-// ---------------------------------------------------------------------------
+import {
+  ED25519_PUBLIC_KEY_HEX,
+  ED25519_SIGNATURE_HEX,
+  signDetachedPayload,
+  verifyDetachedPayload,
+} from "./signature-adapter";
+import { canonicalizeJson } from "./operator-crypto";
+export { canonicalizeJson };
 
 let intelCounter = 0;
 
-/** Generate an intel ID with the `int_` prefix. */
 export function generateIntelId(): string {
   const ts = Date.now().toString(36);
   const seq = (++intelCounter).toString(36).padStart(4, "0");
-  return `int_${ts}${seq}`;
+  const rnd = new Uint8Array(2);
+  crypto.getRandomValues(rnd);
+  const rndHex = Array.from(rnd)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  return `int_${ts}${seq}${rndHex}`;
 }
 
-// ---------------------------------------------------------------------------
-// Promotion Config
-// ---------------------------------------------------------------------------
-
-/** Configuration for Intel promotion. */
 export interface PromotionConfig {
-  /** Title override. Falls back to finding title. */
   title?: string;
-  /** Description. Falls back to auto-generated summary. */
   description?: string;
-  /** Intel type override. Falls back to auto-detected type. */
   type?: IntelType;
-  /** Shareability scope. Defaults to "private". */
   shareability?: IntelShareability;
-  /** Additional tags. */
   tags?: string[];
-  /** Author fingerprint (16 hex chars). */
   authorFingerprint: string;
-  /** Content override. Falls back to auto-extracted content. */
   content?: IntelContent;
 }
 
-// ---------------------------------------------------------------------------
-// RFC 8785 Canonical JSON
-// ---------------------------------------------------------------------------
-
-/**
- * RFC 8785 JSON Canonicalization Scheme (JCS).
- *
- * Produces deterministic JSON output:
- * - Object keys sorted lexicographically (Unicode code point order)
- * - No whitespace between tokens
- * - Numbers serialized per ES2015 Number.toString()
- * - Recursive for nested objects and arrays
- * - null, boolean, string serialized per JSON spec
- */
-export function canonicalizeJson(value: unknown): string {
-  if (value === null || value === undefined) {
-    return "null";
-  }
-
-  if (typeof value === "boolean") {
-    return value ? "true" : "false";
-  }
-
-  if (typeof value === "number") {
-    if (!isFinite(value)) return "null";
-    return JSON.stringify(value);
-  }
-
-  if (typeof value === "string") {
-    return JSON.stringify(value);
-  }
-
-  if (Array.isArray(value)) {
-    const items = value.map((item) => canonicalizeJson(item));
-    return `[${items.join(",")}]`;
-  }
-
-  if (typeof value === "object") {
-    const obj = value as Record<string, unknown>;
-    const keys = Object.keys(obj).sort();
-    const entries: string[] = [];
-    for (const key of keys) {
-      const v = obj[key];
-      if (v === undefined) continue;
-      entries.push(`${JSON.stringify(key)}:${canonicalizeJson(v)}`);
-    }
-    return `{${entries.join(",")}}`;
-  }
-
-  return "null";
-}
-
-// ---------------------------------------------------------------------------
-// Content Hash
-// ---------------------------------------------------------------------------
-
-/**
- * Compute SHA-256 hash of the canonical JSON representation of Intel content.
- * Returns hex-encoded hash string. Used for deduplication across the swarm.
- */
-export async function computeContentHash(intel: Intel): Promise<string> {
-  const signableFields = extractSignableFields(intel);
-  const canonical = canonicalizeJson(signableFields);
+async function hashCanonicalValue(value: unknown): Promise<{
+  bytes: Uint8Array;
+  hex: string;
+}> {
+  const canonical = canonicalizeJson(value);
   const encoded = new TextEncoder().encode(canonical);
   const hashBuffer = await crypto.subtle.digest(
     "SHA-256",
     encoded.buffer as ArrayBuffer,
   );
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+  const hashBytes = new Uint8Array(hashBuffer);
+  return {
+    bytes: hashBytes,
+    hex: Array.from(hashBytes)
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join(""),
+  };
 }
 
-// ---------------------------------------------------------------------------
-// Promote Finding -> Intel
-// ---------------------------------------------------------------------------
+export async function computeContentHash(intel: Intel): Promise<string> {
+  const { hex } = await hashCanonicalValue(extractSignableFields(intel));
+  return hex;
+}
 
-/**
- * Auto-detect the best IntelType from a finding's enrichments and signals.
- */
 function detectIntelType(finding: Finding, signals: Signal[]): IntelType {
-  // Check for behavioral patterns
   const hasBehavioral = signals.some(
     (s) => s.type === "behavioral" || s.type === "anomaly",
   );
-  // Check for IOC enrichments
   const hasIocs = finding.enrichments.some((e) => e.type === "ioc_extraction");
-  // Check for detection rules
   const hasDetectionSignals = signals.some((s) => s.type === "detection");
-  // Check for policy violations
   const hasPolicyViolations = signals.some(
     (s) => s.type === "policy_violation",
   );
@@ -169,9 +90,6 @@ function detectIntelType(finding: Finding, signals: Signal[]): IntelType {
   return "advisory";
 }
 
-/**
- * Extract IntelContent from a finding based on its enrichments and type.
- */
 function extractContent(
   finding: Finding,
   signals: Signal[],
@@ -197,7 +115,6 @@ function extractPatternContent(
   finding: Finding,
   signals: Signal[],
 ): IntelContentPattern {
-  // Extract pattern steps from behavioral signals
   const behavioralSignals = signals.filter(
     (s) =>
       finding.signalIds.includes(s.id) &&
@@ -355,9 +272,6 @@ function extractPolicyPatchContent(
   };
 }
 
-/**
- * Extract MITRE ATT&CK mappings from finding enrichments.
- */
 function extractMitreMappings(finding: Finding): MitreMapping[] {
   const mappings: MitreMapping[] = [];
   const seen = new Set<string>();
@@ -385,19 +299,6 @@ function extractMitreMappings(finding: Finding): MitreMapping[] {
   return mappings;
 }
 
-/**
- * Create an Intel artifact from a promoted Finding.
- *
- * This is the primary entry point for the intel promotion flow. It:
- * 1. Auto-detects the intel type from finding content (or uses override)
- * 2. Extracts content based on enrichments and signal types
- * 3. Carries forward MITRE mappings from finding enrichments
- * 4. Sets derivedFrom to the finding's signal IDs for provenance
- * 5. Inherits confidence from the finding
- *
- * The returned Intel has placeholder signature/receipt fields that must be
- * filled by signIntel() before distribution.
- */
 export function promoteToIntel(
   finding: Finding,
   signals: Signal[],
@@ -408,7 +309,6 @@ export function promoteToIntel(
   const mitre = extractMitreMappings(finding);
   const now = Date.now();
 
-  // Build a placeholder receipt -- the real receipt is created during signing
   const placeholderReceipt: Receipt = {
     id: crypto.randomUUID(),
     timestamp: new Date(now).toISOString(),
@@ -457,19 +357,6 @@ export function promoteToIntel(
   return intel;
 }
 
-// ---------------------------------------------------------------------------
-// Signing
-// ---------------------------------------------------------------------------
-
-/**
- * Extract the fields of an Intel artifact that are included in the signature.
- *
- * Per SIGNAL-PIPELINE.md section 6.1, the signed fields are:
- * id, type, title, description, content, derivedFrom, confidence,
- * tags, mitre, shareability, createdAt, author.
- *
- * Excluded from signing: signature, signerPublicKey, receipt (per section 6.1).
- */
 function extractSignableFields(
   intel: Intel,
 ): Record<string, unknown> {
@@ -489,71 +376,51 @@ function extractSignableFields(
   };
 }
 
-/**
- * Sign an Intel artifact with Ed25519.
- *
- * Flow (per SIGNAL-PIPELINE.md section 6.3):
- * 1. Extract signable fields (exclude receipt, signature, signerPublicKey)
- * 2. Canonicalize using RFC 8785 (sorted keys, no whitespace)
- * 3. SHA-256 hash of canonical JSON
- * 4. Sign hash with the provided private key
- * 5. Return intel with signature and signerPublicKey filled
- *
- * NOTE: Ed25519 signing uses Web Crypto API placeholders. In production,
- * this delegates to the Rust hush-core layer via Tauri commands or WASM.
- * The canonical JSON and hashing steps are fully functional.
- */
+function extractReceiptSignableFields(
+  receipt: Receipt,
+): Record<string, unknown> {
+  return {
+    id: receipt.id,
+    timestamp: receipt.timestamp,
+    verdict: receipt.verdict,
+    guard: receipt.guard,
+    policyName: receipt.policyName,
+    action: receipt.action,
+    evidence: receipt.evidence,
+    publicKey: receipt.publicKey,
+    keyType: receipt.keyType,
+    imported: receipt.imported,
+  };
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
+function sameStringArray(
+  left: readonly string[],
+  right: readonly string[],
+): boolean {
+  return left.length === right.length && left.every((entry, index) => entry === right[index]);
+}
+
 export async function signIntel(
   intel: Intel,
   privateKeyHex: string,
+  publicKeyHex = intel.signerPublicKey,
 ): Promise<Intel> {
-  // Step 1: Extract signable fields
-  const signableFields = extractSignableFields(intel);
+  if (!ED25519_PUBLIC_KEY_HEX.test(publicKeyHex)) {
+    throw new Error(
+      "signIntel requires the caller to provide a 32-byte Ed25519 public key",
+    );
+  }
 
-  // Step 2: Canonicalize using RFC 8785
-  const canonical = canonicalizeJson(signableFields);
-
-  // Step 3: SHA-256 hash of canonical JSON
-  const encoded = new TextEncoder().encode(canonical);
-  const hashBuffer = await crypto.subtle.digest(
-    "SHA-256",
-    encoded.buffer as ArrayBuffer,
+  const { bytes: contentHashBytes, hex: contentHash } = await hashCanonicalValue(
+    extractSignableFields(intel),
   );
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  const contentHash = hashArray
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+  const signatureHex = await signDetachedPayload(contentHashBytes, privateKeyHex);
 
-  // Step 4: Sign with Ed25519
-  // TODO: Replace with real Ed25519 signing via hush-core WASM or Tauri command.
-  // For now, produce a deterministic placeholder signature from the content hash
-  // and the private key material, so the signature field is populated and
-  // downstream verification logic can be tested.
-  const signatureInput = new TextEncoder().encode(contentHash + privateKeyHex);
-  const sigBuffer = await crypto.subtle.digest(
-    "SHA-256",
-    signatureInput.buffer as ArrayBuffer,
-  );
-  const sigArray = Array.from(new Uint8Array(sigBuffer));
-  // Double the hash to simulate 64-byte Ed25519 signature (128 hex chars)
-  const signatureHex =
-    sigArray.map((b) => b.toString(16).padStart(2, "0")).join("") +
-    sigArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-
-  // Derive a placeholder public key from the private key
-  // TODO: Replace with real Ed25519 key derivation
-  const pkInput = new TextEncoder().encode("pk:" + privateKeyHex);
-  const pkBuffer = await crypto.subtle.digest(
-    "SHA-256",
-    pkInput.buffer as ArrayBuffer,
-  );
-  const pkArray = Array.from(new Uint8Array(pkBuffer));
-  const publicKeyHex = pkArray
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-
-  // Step 5: Build the signed receipt
-  const signedReceipt: Receipt = {
+  const unsignedReceipt: Receipt = {
     id: crypto.randomUUID(),
     timestamp: new Date().toISOString(),
     verdict: "allow",
@@ -568,8 +435,20 @@ export async function signIntel(
       intel_type: intel.type,
       parent_receipt: intel.receipt.id,
     },
-    signature: signatureHex,
+    signature: "",
     publicKey: publicKeyHex,
+    valid: false,
+  };
+  const { bytes: receiptHashBytes } = await hashCanonicalValue(
+    extractReceiptSignableFields(unsignedReceipt),
+  );
+  const receiptSignature = await signDetachedPayload(
+    receiptHashBytes,
+    privateKeyHex,
+  );
+  const signedReceipt: Receipt = {
+    ...unsignedReceipt,
+    signature: receiptSignature,
     valid: true,
   };
 
@@ -581,63 +460,91 @@ export async function signIntel(
   };
 }
 
-/**
- * Verify an Intel artifact's signature.
- *
- * TODO: Implement real Ed25519 signature verification using hush-core WASM
- * or the @clawdstrike/sdk verifyReport() function. For now, returns true
- * if the signature and signerPublicKey fields are non-empty.
- */
-export function verifyIntel(intel: Intel): {
+export async function verifyIntel(intel: Intel): Promise<{
   valid: boolean;
   reason: string;
-} {
-  // Basic structural checks
+}> {
   if (!intel.signature || intel.signature.length === 0) {
     return { valid: false, reason: "Missing signature" };
   }
   if (!intel.signerPublicKey || intel.signerPublicKey.length === 0) {
     return { valid: false, reason: "Missing signer public key" };
   }
-  if (intel.signature.length !== 128) {
+  if (!ED25519_SIGNATURE_HEX.test(intel.signature)) {
     return {
       valid: false,
-      reason: `Invalid signature length: expected 128 hex chars, got ${intel.signature.length}`,
+      reason: "invalid_signature_format",
     };
   }
-  if (intel.signerPublicKey.length !== 64) {
+  if (!ED25519_PUBLIC_KEY_HEX.test(intel.signerPublicKey)) {
     return {
       valid: false,
-      reason: `Invalid public key length: expected 64 hex chars, got ${intel.signerPublicKey.length}`,
+      reason: "invalid_public_key_format",
     };
   }
 
-  // TODO: Verify Ed25519 signature over canonical JSON hash
-  // For now, structural validation passes.
-  return { valid: true, reason: "Structural validation passed (Ed25519 verification pending)" };
+  const { bytes: intelHashBytes, hex: intelHashHex } = await hashCanonicalValue(
+    extractSignableFields(intel),
+  );
+  const intelValid = await verifyDetachedPayload(
+    intelHashBytes,
+    intel.signature,
+    intel.signerPublicKey,
+  );
+  if (!intelValid) {
+    return { valid: false, reason: "invalid_signature" };
+  }
+
+  if (!intel.receipt.signature || intel.receipt.signature.length === 0) {
+    return { valid: false, reason: "missing_receipt_signature" };
+  }
+  if (!intel.receipt.publicKey || intel.receipt.publicKey.length === 0) {
+    return { valid: false, reason: "missing_receipt_public_key" };
+  }
+  if (!ED25519_SIGNATURE_HEX.test(intel.receipt.signature)) {
+    return { valid: false, reason: "invalid_receipt_signature_format" };
+  }
+  if (!ED25519_PUBLIC_KEY_HEX.test(intel.receipt.publicKey)) {
+    return { valid: false, reason: "invalid_receipt_public_key_format" };
+  }
+  if (intel.receipt.publicKey !== intel.signerPublicKey) {
+    return { valid: false, reason: "receipt_signer_mismatch" };
+  }
+  if (intel.receipt.action.target !== `intel:${intel.id}`) {
+    return { valid: false, reason: "receipt_target_mismatch" };
+  }
+
+  const receiptContentHash = intel.receipt.evidence.content_hash;
+  if (typeof receiptContentHash !== "string" || receiptContentHash !== intelHashHex) {
+    return { valid: false, reason: "receipt_content_hash_mismatch" };
+  }
+
+  const receiptFindingIds = intel.receipt.evidence.finding_ids;
+  if (!isStringArray(receiptFindingIds) || !sameStringArray(receiptFindingIds, intel.derivedFrom)) {
+    return { valid: false, reason: "receipt_finding_ids_mismatch" };
+  }
+
+  const { bytes: receiptHashBytes } = await hashCanonicalValue(
+    extractReceiptSignableFields(intel.receipt),
+  );
+  const receiptValid = await verifyDetachedPayload(
+    receiptHashBytes,
+    intel.receipt.signature,
+    intel.receipt.publicKey,
+  );
+  if (!receiptValid) {
+    return { valid: false, reason: "invalid_receipt_signature" };
+  }
+
+  return { valid: true, reason: "Intel signature verified" };
 }
 
-// ---------------------------------------------------------------------------
-// Swarm Packaging
-// ---------------------------------------------------------------------------
-
-/**
- * Wrap an Intel artifact for Gossipsub distribution via the swarm.
- *
- * Creates a message matching the IntelShareMessage / SpeakeasyIntelMessage
- * shape from SPEAKEASY-INTEGRATION.md, wrapped in a MessageEnvelope.
- *
- * Per SIGNAL-PIPELINE.md section 6.4:
- * - private intel is NOT published (local only)
- * - swarm intel goes to /baychat/v1/swarm/{swarmId}/intel
- * - public intel goes to /baychat/v1/discovery
- */
 export function packageForSwarm(
   intel: Intel,
   sentinelIdentity: SentinelIdentity,
 ): IntelSwarmPackage | null {
   if (intel.shareability === "private") {
-    return null; // Private intel is not distributed
+    return null;
   }
 
   const message: IntelSwarmMessage = {
@@ -653,7 +560,7 @@ export function packageForSwarm(
   const envelope: IntelSwarmEnvelope = {
     envelopeType: "message",
     payload: message,
-    ttl: 10, // Max 10 hops in Gossipsub
+    ttl: 10,
     createdAt: Date.now(),
     senderId: sentinelIdentity.fingerprint,
   };
@@ -663,15 +570,10 @@ export function packageForSwarm(
     topic:
       intel.shareability === "public"
         ? "/baychat/v1/discovery"
-        : undefined, // Swarm-scoped topic is set by the caller with the swarmId
+        : undefined,
   };
 }
 
-// ---------------------------------------------------------------------------
-// Swarm Package Types (local to forge, not exported from sentinel-types)
-// ---------------------------------------------------------------------------
-
-/** Message payload for sharing intel via Gossipsub. */
 export interface IntelSwarmMessage {
   type: "intel_share";
   intel: Intel;
@@ -682,7 +584,6 @@ export interface IntelSwarmMessage {
   authorSigil: string;
 }
 
-/** Envelope wrapping an intel share message for Gossipsub transport. */
 export interface IntelSwarmEnvelope {
   envelopeType: "message";
   payload: IntelSwarmMessage;
@@ -691,18 +592,11 @@ export interface IntelSwarmEnvelope {
   senderId: string;
 }
 
-/** Complete package ready for swarm distribution. */
 export interface IntelSwarmPackage {
   envelope: IntelSwarmEnvelope;
-  /** Gossipsub topic. Undefined means the caller must provide the swarm-scoped topic. */
   topic: string | undefined;
 }
 
-// ---------------------------------------------------------------------------
-// Utility Exports
-// ---------------------------------------------------------------------------
-
-/** Supported IntelType values for UI rendering. */
 export const INTEL_TYPES: readonly IntelType[] = [
   "detection_rule",
   "pattern",
@@ -712,7 +606,6 @@ export const INTEL_TYPES: readonly IntelType[] = [
   "policy_patch",
 ] as const;
 
-/** Human-readable labels for IntelType. */
 export const INTEL_TYPE_LABELS: Record<IntelType, string> = {
   detection_rule: "Detection Rule",
   pattern: "Pattern",
@@ -722,7 +615,6 @@ export const INTEL_TYPE_LABELS: Record<IntelType, string> = {
   policy_patch: "Policy Patch",
 };
 
-/** Human-readable labels for IntelShareability. */
 export const SHAREABILITY_LABELS: Record<IntelShareability, string> = {
   private: "Private",
   swarm: "Swarm",

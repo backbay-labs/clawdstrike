@@ -27,9 +27,6 @@ import type {
 } from "./sentinel-types";
 import type { TrustLevel } from "./delegation-types";
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 /** Starting reputation for new members (neutral). */
 export const DEFAULT_INITIAL_REPUTATION = 0.5;
@@ -60,9 +57,6 @@ export const TRUST_DECAY_HALF_LIFE_MS = 30 * 24 * 60 * 60 * 1000;
  */
 const MAX_TRANSITIVE_HOPS = 3;
 
-// ---------------------------------------------------------------------------
-// ReputationEvent
-// ---------------------------------------------------------------------------
 
 /** Discriminator for reputation-affecting events. */
 export type ReputationEventType =
@@ -98,9 +92,6 @@ export interface ReputationEvent {
   delta: number;
 }
 
-// ---------------------------------------------------------------------------
-// Delta Map
-// ---------------------------------------------------------------------------
 
 /**
  * Reputation deltas per event type. Asymmetric by design: negative outcomes
@@ -119,9 +110,6 @@ const REPUTATION_DELTAS: Readonly<Record<ReputationEventType, number>> = {
   inactive_penalty: -0.01,
 };
 
-// ---------------------------------------------------------------------------
-// TrustLevel <-> Numeric Weight Mapping
-// ---------------------------------------------------------------------------
 
 /**
  * Numeric weight for each TrustLevel. Used internally for trust computation.
@@ -163,9 +151,6 @@ export function trustLevelFromReputation(overall: number): TrustLevel {
   return "Untrusted";
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 /** Clamp a value to [min, max]. */
 function clamp(value: number, min: number, max: number): number {
@@ -174,9 +159,6 @@ function clamp(value: number, min: number, max: number): number {
   return value;
 }
 
-// ---------------------------------------------------------------------------
-// 1. Reputation Scoring (Pure Functions)
-// ---------------------------------------------------------------------------
 
 /**
  * Create a fresh ReputationScore for a new swarm member.
@@ -269,9 +251,6 @@ export function applyReputationEvents(
   return [current, results];
 }
 
-// ---------------------------------------------------------------------------
-// 2. Trust Edge Management
-// ---------------------------------------------------------------------------
 
 /**
  * Create a new trust edge between two swarm members.
@@ -441,9 +420,6 @@ export function computeTransitiveTrust(
   return maxTrust;
 }
 
-// ---------------------------------------------------------------------------
-// 3. Reputation-Gated Operations
-// ---------------------------------------------------------------------------
 
 /**
  * Check whether a member meets the minimum reputation to publish intel
@@ -527,9 +503,6 @@ export function attenuateConfidence(
   return clamp(confidence * peerReputation, 0.0, 1.0);
 }
 
-// ---------------------------------------------------------------------------
-// 4. Sybil Resistance Helpers
-// ---------------------------------------------------------------------------
 
 /**
  * Validate an invitation chain to prevent deep invitation trees.
@@ -680,9 +653,6 @@ export function meetsJoinThreshold(
   return proofOfWork >= threshold;
 }
 
-// ---------------------------------------------------------------------------
-// 5. Reputation Aggregation
-// ---------------------------------------------------------------------------
 
 /**
  * Aggregate reputation statistics for a swarm.
@@ -846,9 +816,6 @@ export function computeReputationTrend(
   return "stable";
 }
 
-// ---------------------------------------------------------------------------
-// 6. Utility: Get Delta for Event Type
-// ---------------------------------------------------------------------------
 
 /**
  * Get the reputation delta for a given event type.

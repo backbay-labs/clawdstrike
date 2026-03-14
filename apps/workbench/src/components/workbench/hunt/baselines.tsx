@@ -12,9 +12,6 @@ import {
 import { cn } from "@/lib/utils";
 import type { AgentBaseline, AgentEvent, DriftMetric } from "@/lib/workbench/hunt-types";
 
-// ---------------------------------------------------------------------------
-// Props
-// ---------------------------------------------------------------------------
 
 interface BaselinesProps {
   baselines: AgentBaseline[];
@@ -23,9 +20,6 @@ interface BaselinesProps {
   sensitivity: "low" | "medium" | "high";
 }
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 const ACTION_TYPE_COLORS: Record<string, string> = {
   file_access: "#6ea8d9",
@@ -69,9 +63,6 @@ const SENSITIVITY_THRESHOLDS: Record<"low" | "medium" | "high", number> = {
 
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function getDriftCount(baseline: AgentBaseline): number {
   return baseline.driftMetrics.filter(
@@ -187,8 +178,7 @@ function buildHeatmap(
       }
     }
   } else {
-    // Fallback: distribute hourly*daily proportionally
-    const totalHourly = baseline.hourlyActivity.reduce((s, v) => s + v, 0);
+        const totalHourly = baseline.hourlyActivity.reduce((s, v) => s + v, 0);
     const totalDaily = baseline.dailyActivity.reduce((s, v) => s + v, 0);
     if (totalHourly > 0 && totalDaily > 0) {
       for (let day = 0; day < 7; day++) {
@@ -242,9 +232,6 @@ function findNewTargets(
   return newTargets;
 }
 
-// ---------------------------------------------------------------------------
-// Main Component
-// ---------------------------------------------------------------------------
 
 export function Baselines({
   baselines,
@@ -440,9 +427,6 @@ export function Baselines({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Baseline Detail Panel
-// ---------------------------------------------------------------------------
 
 function BaselineDetail({
   baseline,
@@ -627,9 +611,6 @@ function BaselineDetail({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Section Header
-// ---------------------------------------------------------------------------
 
 function SectionHeader({
   icon: Icon,
@@ -655,9 +636,6 @@ function SectionHeader({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Action Distribution Chart
-// ---------------------------------------------------------------------------
 
 function ActionDistributionChart({
   baseline,
@@ -759,9 +737,6 @@ function ActionDistributionChart({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Activity Heatmap
-// ---------------------------------------------------------------------------
 
 function ActivityHeatmap({ matrix }: { matrix: number[][] }) {
   const maxVal = useMemo(() => {
@@ -877,9 +852,6 @@ function ActivityHeatmap({ matrix }: { matrix: number[][] }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Drift Alert Row
-// ---------------------------------------------------------------------------
 
 function DriftRow({ metric }: { metric: DriftMetric }) {
   const styles = SIGNIFICANCE_STYLES[metric.significance] ?? SIGNIFICANCE_STYLES.normal;
@@ -945,9 +917,6 @@ function DriftRow({ metric }: { metric: DriftMetric }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Top Targets Table
-// ---------------------------------------------------------------------------
 
 function TopTargetsTable({
   targets,
@@ -1013,9 +982,6 @@ function TopTargetsTable({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Formatting Helpers
-// ---------------------------------------------------------------------------
 
 function formatShortDate(iso: string): string {
   try {

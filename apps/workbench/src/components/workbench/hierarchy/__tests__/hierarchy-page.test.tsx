@@ -42,8 +42,6 @@ vi.mock("@/lib/workbench/use-fleet-connection", async () => {
         connected: true,
         hushdUrl: "http://localhost:9876",
         controlApiUrl: "http://localhost:9877",
-        apiKey: "test-api-key",
-        controlApiToken: "test-control-token",
         hushdHealth: null,
         agentCount: 0,
       },
@@ -56,6 +54,8 @@ vi.mock("@/lib/workbench/use-fleet-connection", async () => {
       testConnection: vi.fn(),
       refreshAgents: vi.fn(),
       refreshRemotePolicy: vi.fn(),
+      getCredentials: () => ({ apiKey: "test-api-key", controlApiToken: "test-control-token" }),
+      getAuthenticatedConnection: () => ({ connected: true, hushdUrl: "http://localhost:9876", controlApiUrl: "http://localhost:9877", apiKey: "test-api-key", controlApiToken: "test-control-token", hushdHealth: null, agentCount: 0 }),
     }),
   };
 });

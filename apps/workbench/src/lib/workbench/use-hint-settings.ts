@@ -1,13 +1,8 @@
-// ---------------------------------------------------------------------------
 // Hint Settings — configurable Claude Code hint text and visibility
 // Persisted to localStorage independently of the policy store.
-// ---------------------------------------------------------------------------
 import { createContext, useContext, useState, useCallback, useMemo, type ReactNode } from "react";
 import React from "react";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 export interface HintConfig {
   hint: string;   // Short description shown in the UI strip
@@ -39,9 +34,6 @@ export const HINT_LABELS: Record<HintId, string> = {
   "library.compare": "Library \u2014 Compare Versions",
 };
 
-// ---------------------------------------------------------------------------
-// Default hint values (extracted from each page's ClaudeCodeHint usage)
-// ---------------------------------------------------------------------------
 
 export const DEFAULT_HINTS: Record<HintId, HintConfig> = {
   "home.audit": {
@@ -96,9 +88,6 @@ export const DEFAULT_HINTS: Record<HintId, HintConfig> = {
   },
 };
 
-// ---------------------------------------------------------------------------
-// State shape
-// ---------------------------------------------------------------------------
 
 interface HintSettingsState {
   showHints: boolean;           // Master toggle -- show/hide all hints
@@ -110,9 +99,6 @@ const DEFAULT_STATE: HintSettingsState = {
   overrides: {},
 };
 
-// ---------------------------------------------------------------------------
-// localStorage persistence
-// ---------------------------------------------------------------------------
 
 const STORAGE_KEY = "clawdstrike_hint_settings";
 
@@ -155,9 +141,6 @@ function persistState(state: HintSettingsState): void {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Context
-// ---------------------------------------------------------------------------
 
 interface HintSettingsContextValue {
   showHints: boolean;
@@ -171,9 +154,6 @@ interface HintSettingsContextValue {
 
 const HintSettingsContext = createContext<HintSettingsContextValue | null>(null);
 
-// ---------------------------------------------------------------------------
-// Hook
-// ---------------------------------------------------------------------------
 
 export function useHintSettings(): HintSettingsContextValue {
   const ctx = useContext(HintSettingsContext);
@@ -189,9 +169,6 @@ export function useHintSettingsSafe(): HintSettingsContextValue | null {
   return useContext(HintSettingsContext);
 }
 
-// ---------------------------------------------------------------------------
-// Provider
-// ---------------------------------------------------------------------------
 
 export function HintSettingsProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<HintSettingsState>(loadState);

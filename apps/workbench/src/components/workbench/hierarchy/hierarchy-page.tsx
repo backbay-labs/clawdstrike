@@ -69,9 +69,6 @@ import type {
   HierarchyTreeResponse,
 } from "@/lib/workbench/fleet-client";
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 const NODE_TYPE_COLORS: Record<OrgNodeType, string> = {
   org: "#d4a84b",
@@ -97,9 +94,6 @@ const NODE_TYPE_LABELS: Record<OrgNodeType, string> = {
   runtime: "Runtime Agent",
 };
 
-// ---------------------------------------------------------------------------
-// Tree node component
-// ---------------------------------------------------------------------------
 
 interface TreeNodeProps {
   node: OrgNode;
@@ -384,9 +378,6 @@ function TreeNode({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Guard provenance card
-// ---------------------------------------------------------------------------
 
 interface GuardProvenanceCardProps {
   guardId: string;
@@ -487,9 +478,6 @@ function GuardProvenanceCard({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Effective policy panel
-// ---------------------------------------------------------------------------
 
 interface EffectivePolicyPanelProps {
   hierarchy: PolicyHierarchy;
@@ -651,9 +639,6 @@ function EffectivePolicyPanel({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Merge preview / impact panel
-// ---------------------------------------------------------------------------
 
 interface MergePreviewPanelProps {
   hierarchy: PolicyHierarchy;
@@ -784,9 +769,6 @@ function MergePreviewPanel({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Validation results modal
-// ---------------------------------------------------------------------------
 
 interface ValidationModalProps {
   issues: HierarchyValidationIssue[];
@@ -871,9 +853,6 @@ function ValidationModal({ issues, onClose, onSelectNode }: ValidationModalProps
   );
 }
 
-// ---------------------------------------------------------------------------
-// Policy assignment dialog
-// ---------------------------------------------------------------------------
 
 interface PolicyAssignDialogProps {
   node: OrgNode;
@@ -986,9 +965,6 @@ function PolicyAssignDialog({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Rename dialog
-// ---------------------------------------------------------------------------
 
 interface RenameDialogProps {
   node: OrgNode;
@@ -1058,19 +1034,13 @@ function RenameDialog({ node, onRename, onClose }: RenameDialogProps) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Main page component
-// ---------------------------------------------------------------------------
 
 export function HierarchyPage() {
   const { state } = useWorkbench();
   const savedPolicies = state.savedPolicies;
-  const { connection } = useFleetConnection();
+  const { connection, getAuthenticatedConnection } = useFleetConnection();
   const fleetConnected = connection.connected;
 
-  // ---------------------------------------------------------------------------
-  // Hierarchy state
-  // ---------------------------------------------------------------------------
 
   const [hierarchy, setHierarchy] = useState<PolicyHierarchy>(() => {
     const loaded = loadHierarchy();
@@ -1116,9 +1086,6 @@ export function HierarchyPage() {
     setHierarchyVersion(nextVersion);
   }, []);
 
-  // ---------------------------------------------------------------------------
-  // Fleet sync state (P2-3)
-  // ---------------------------------------------------------------------------
 
   const [isLiveMode, setIsLiveMode] = useState(false);
   const [hasPulledFleetHierarchy, setHasPulledFleetHierarchy] = useState(false);
@@ -1169,9 +1136,6 @@ export function HierarchyPage() {
     saveHierarchy(hierarchy);
   }, [hierarchy]);
 
-  // ---------------------------------------------------------------------------
-  // Computed values
-  // ---------------------------------------------------------------------------
 
   const selectedNode = selectedId ? hierarchy.nodes[selectedId] : null;
 
@@ -1186,9 +1150,6 @@ export function HierarchyPage() {
     return computeEffectivePolicy(hierarchy, selectedId, savedPolicies);
   }, [hierarchy, selectedId, savedPolicies]);
 
-  // ---------------------------------------------------------------------------
-  // Handlers
-  // ---------------------------------------------------------------------------
 
   const handleSelect = useCallback((id: string) => {
     setSelectedId(id);
@@ -1348,7 +1309,7 @@ export function HierarchyPage() {
                 };
               }
 
-              return createHierarchyNode(connection, {
+              return createHierarchyNode(getAuthenticatedConnection(), {
                 name: newNode.name,
                 node_type: newNode.type,
                 external_id: newNode.externalId ?? null,
@@ -1418,7 +1379,7 @@ export function HierarchyPage() {
 
       // LIVE mode: delete node on backend (no reparent — descendants removed locally)
       syncToBackend("delete node", () =>
-        deleteHierarchyNode(connection, id, false),
+        deleteHierarchyNode(getAuthenticatedConnection(), id, false),
         prevHierarchy,
       );
     },
@@ -1439,7 +1400,7 @@ export function HierarchyPage() {
 
         // LIVE mode: update name on backend
         syncToBackend("rename node", () =>
-          updateHierarchyNode(connection, renameTarget, { name }),
+          updateHierarchyNode(getAuthenticatedConnection(), renameTarget, { name }),
           prevHierarchy,
         );
       }
@@ -1462,7 +1423,7 @@ export function HierarchyPage() {
 
         // LIVE mode: update policy assignment on backend
         syncToBackend("assign policy", () =>
-          updateHierarchyNode(connection, assignTarget, {
+          updateHierarchyNode(getAuthenticatedConnection(), assignTarget, {
             policy_id: policyId,
             policy_name: policyName,
           }),
@@ -1482,7 +1443,7 @@ export function HierarchyPage() {
 
       // LIVE mode: clear policy assignment on backend
       syncToBackend("unassign policy", () =>
-        updateHierarchyNode(connection, assignTarget, {
+        updateHierarchyNode(getAuthenticatedConnection(), assignTarget, {
           policy_id: null,
           policy_name: null,
         }),
@@ -1536,7 +1497,7 @@ export function HierarchyPage() {
                   error: `Parent node "${targetNode.name}" is missing a fleet id`,
                 };
               }
-              return updateHierarchyNode(connection, resolvedMovedId, {
+              return updateHierarchyNode(getAuthenticatedConnection(), resolvedMovedId, {
                 parent_id: resolvedTargetId,
               });
             },
@@ -1586,9 +1547,6 @@ export function HierarchyPage() {
     setValidationIssues(issues);
   }, [hierarchy, savedPolicies]);
 
-  // ---------------------------------------------------------------------------
-  // Fleet sync handlers (P2-3)
-  // ---------------------------------------------------------------------------
 
   const handleToggleLiveMode = useCallback(() => {
     if (!fleetConnected) return;
@@ -1664,7 +1622,7 @@ export function HierarchyPage() {
           metadata: node.metadata,
         };
 
-        const result = await createHierarchyNode(connection, input);
+        const result = await createHierarchyNode(getAuthenticatedConnection(), input);
         if (!result.success) {
           console.warn(
             `[hierarchy-sync] push failed for node "${node.name}":`,
@@ -1820,7 +1778,7 @@ export function HierarchyPage() {
 
     try {
       // Try the new hierarchy tree endpoint first
-      const tree: HierarchyTreeResponse | null = await fetchHierarchyTree(connection);
+      const tree: HierarchyTreeResponse | null = await fetchHierarchyTree(getAuthenticatedConnection());
 
       if (tree) {
         if (tree.nodes.length === 0) {
@@ -1909,8 +1867,8 @@ export function HierarchyPage() {
       // Fallback: try older scoped-policies endpoint for backward compatibility
       console.warn("[hierarchy-sync] hierarchy/tree unavailable, falling back to scoped-policies");
       const [scopedPolicies, assignments] = await Promise.all([
-        fetchScopedPolicies(connection),
-        fetchPolicyAssignments(connection),
+        fetchScopedPolicies(getAuthenticatedConnection()),
+        fetchPolicyAssignments(getAuthenticatedConnection()),
       ]);
 
       if (assignments.length === 0 && scopedPolicies.length === 0) {
@@ -2033,9 +1991,6 @@ export function HierarchyPage() {
     applyHierarchyChange,
   ]);
 
-  // ---------------------------------------------------------------------------
-  // Render
-  // ---------------------------------------------------------------------------
 
   const isSyncing = syncStatus.type === "pushing" || syncStatus.type === "pulling";
   const rootNode = hierarchy.nodes[hierarchy.rootId];

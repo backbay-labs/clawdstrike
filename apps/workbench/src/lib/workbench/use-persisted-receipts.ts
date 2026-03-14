@@ -5,9 +5,6 @@ const STORAGE_KEY = "clawdstrike_workbench_receipts";
 const MAX_RECEIPTS = 1000;
 const DEBOUNCE_MS = 500;
 
-// ---------------------------------------------------------------------------
-// localStorage helpers
-// ---------------------------------------------------------------------------
 
 function readReceipts(): Receipt[] {
   try {
@@ -46,9 +43,6 @@ function enforceCap(receipts: Receipt[], max: number): Receipt[] {
   return receipts.slice(0, max);
 }
 
-// ---------------------------------------------------------------------------
-// Hook
-// ---------------------------------------------------------------------------
 
 /**
  * Drop-in replacement for `useState<Receipt[]>([])` that persists receipts

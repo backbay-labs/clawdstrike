@@ -1,9 +1,6 @@
 import type { WorkbenchPolicy, Verdict, TestActionType, TestScenario } from "./types";
 import { simulatePolicy } from "./simulation-engine";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 export interface DryRunResult {
   scenarioName: string;
@@ -24,9 +21,6 @@ export interface DryRunOutput {
   durationMs: number;
 }
 
-// ---------------------------------------------------------------------------
-// Action-type mapping
-// ---------------------------------------------------------------------------
 
 const ACTION_STRING_MAP: Record<string, TestActionType> = {
   file_access: "file_access",
@@ -55,9 +49,6 @@ function mapAction(raw: string): TestActionType {
   return ACTION_STRING_MAP[key] || "shell_command";
 }
 
-// ---------------------------------------------------------------------------
-// Payload builders
-// ---------------------------------------------------------------------------
 
 function buildPayload(
   actionType: TestActionType,
@@ -81,9 +72,6 @@ function buildPayload(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Extracted scenario from script parsing
-// ---------------------------------------------------------------------------
 
 interface ExtractedScenario {
   name: string;
@@ -92,9 +80,6 @@ interface ExtractedScenario {
   expected: string | null;
 }
 
-// ---------------------------------------------------------------------------
-// Python parser
-// ---------------------------------------------------------------------------
 
 function parsePythonScenarios(script: string): ExtractedScenario[] {
   const scenarios: ExtractedScenario[] = [];
@@ -188,9 +173,6 @@ function parsePythonScenarios(script: string): ExtractedScenario[] {
   return scenarios;
 }
 
-// ---------------------------------------------------------------------------
-// TypeScript parser
-// ---------------------------------------------------------------------------
 
 function parseTypeScriptScenarios(script: string): ExtractedScenario[] {
   const scenarios: ExtractedScenario[] = [];
@@ -312,9 +294,6 @@ function parseTypeScriptScenarios(script: string): ExtractedScenario[] {
   return scenarios;
 }
 
-// ---------------------------------------------------------------------------
-// Terminal output formatting
-// ---------------------------------------------------------------------------
 
 function formatTerminalOutput(
   results: DryRunResult[],
@@ -372,9 +351,6 @@ function formatTerminalOutput(
   return lines.join("\n");
 }
 
-// ---------------------------------------------------------------------------
-// Main entry point
-// ---------------------------------------------------------------------------
 
 export function dryRunScript(
   scriptContent: string,

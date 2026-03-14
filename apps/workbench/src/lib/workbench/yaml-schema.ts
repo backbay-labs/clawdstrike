@@ -2,9 +2,6 @@ import { GUARD_REGISTRY } from "./guard-registry";
 import { BUILTIN_RULESETS } from "./builtin-rulesets";
 import type { Completion, CompletionContext, CompletionResult, CompletionSource } from "@codemirror/autocomplete";
 
-// ---------------------------------------------------------------------------
-// Schema node types
-// ---------------------------------------------------------------------------
 
 /** A single completion option with label, insert text, type hint, and detail. */
 interface SchemaOption {
@@ -25,9 +22,6 @@ interface SchemaNode {
   children?: Record<string, SchemaNode>;
 }
 
-// ---------------------------------------------------------------------------
-// Value constants
-// ---------------------------------------------------------------------------
 
 const BOOLEAN_OPTIONS: SchemaOption[] = [
   { label: "true", type: "keyword", detail: "boolean" },
@@ -47,9 +41,6 @@ const EXTENDS_OPTIONS: SchemaOption[] = BUILTIN_RULESETS.map((r) => ({
   detail: r.description.slice(0, 60),
 }));
 
-// ---------------------------------------------------------------------------
-// Build guard-level schema from GUARD_REGISTRY
-// ---------------------------------------------------------------------------
 
 /** Map config field type to a value hint. */
 function fieldTypeHint(field: { type: string; options?: { value: string; label: string }[] }): string {
@@ -158,9 +149,6 @@ function buildGuardChildren(): Record<string, SchemaNode> {
   return children;
 }
 
-// ---------------------------------------------------------------------------
-// Settings schema
-// ---------------------------------------------------------------------------
 
 const SETTINGS_NODE: SchemaNode = {
   options: [
@@ -174,9 +162,6 @@ const SETTINGS_NODE: SchemaNode = {
   },
 };
 
-// ---------------------------------------------------------------------------
-// Posture schema
-// ---------------------------------------------------------------------------
 
 const POSTURE_NODE: SchemaNode = {
   options: [
@@ -203,9 +188,6 @@ const POSTURE_NODE: SchemaNode = {
   },
 };
 
-// ---------------------------------------------------------------------------
-// Guards top-level node
-// ---------------------------------------------------------------------------
 
 const GUARDS_NODE: SchemaNode = {
   options: GUARD_REGISTRY.map((g) => ({
@@ -217,9 +199,6 @@ const GUARDS_NODE: SchemaNode = {
   children: buildGuardChildren(),
 };
 
-// ---------------------------------------------------------------------------
-// Top-level schema
-// ---------------------------------------------------------------------------
 
 const TOP_LEVEL_NODE: SchemaNode = {
   options: [
@@ -243,9 +222,6 @@ const TOP_LEVEL_NODE: SchemaNode = {
   },
 };
 
-// ---------------------------------------------------------------------------
-// Cursor context detection
-// ---------------------------------------------------------------------------
 
 /**
  * Describes where the cursor sits in the YAML document, derived from
@@ -338,9 +314,6 @@ function getCursorContext(ctx: CompletionContext): CursorContext {
   return { indent, path, isValuePosition, currentKey, prefix, prefixFrom };
 }
 
-// ---------------------------------------------------------------------------
-// Schema lookup
-// ---------------------------------------------------------------------------
 
 /**
  * Walk the schema tree using the resolved path and return the matching
@@ -368,9 +341,6 @@ function resolveSchemaNode(path: string[]): SchemaNode | null {
   return node;
 }
 
-// ---------------------------------------------------------------------------
-// Completion source
-// ---------------------------------------------------------------------------
 
 /** Convert a SchemaOption to a CodeMirror Completion object. */
 function toCompletion(opt: SchemaOption, sectionLabel?: string): Completion {

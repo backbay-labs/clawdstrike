@@ -36,9 +36,7 @@ export function EvaluationPath({ steps }: EvaluationPathProps) {
   const maxDuration = Math.max(...steps.map((s) => s.stage_duration_ms), 0.001);
   const totalDurationMs = Object.values(
     steps.reduce<Record<string, number>>((acc, s) => {
-      // Only count each stage once (stage_duration_ms is the same for all
-      // guards in that stage).
-      if (!(s.stage in acc)) acc[s.stage] = s.stage_duration_ms;
+            if (!(s.stage in acc)) acc[s.stage] = s.stage_duration_ms;
       return acc;
     }, {}),
   ).reduce((a, b) => a + b, 0);

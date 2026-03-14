@@ -35,9 +35,6 @@ import {
   readPolicyFileByPath,
 } from "@/lib/tauri-bridge";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 export interface PolicyTab {
   id: string;
@@ -118,9 +115,6 @@ export type MultiPolicyAction =
   | { type: "UNDO" }
   | { type: "REDO" };
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 const TABS_STORAGE_KEY = "clawdstrike_workbench_tabs";
 const SAVED_POLICIES_KEY = "clawdstrike_workbench_policies";
@@ -129,9 +123,6 @@ const MAX_RECENT_FILES = 10;
 const MAX_TABS = 10;
 const MAX_HISTORY = 50;
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function createTabId(): string {
   return crypto.randomUUID();
@@ -313,9 +304,6 @@ const TAB_DELEGATED_ACTIONS = new Set([
   "REDO",
 ]);
 
-// ---------------------------------------------------------------------------
-// Per-tab reducer (mirrors the single-policy reducer logic)
-// ---------------------------------------------------------------------------
 
 function tabCoreReducer(tab: PolicyTab, action: MultiPolicyAction): PolicyTab {
   switch (action.type) {
@@ -468,9 +456,6 @@ function tabReducer(tab: PolicyTab, action: MultiPolicyAction): PolicyTab {
   return tabCoreReducer(tab, action);
 }
 
-// ---------------------------------------------------------------------------
-// Multi-policy reducer
-// ---------------------------------------------------------------------------
 
 function multiPolicyReducer(state: MultiPolicyState, action: MultiPolicyAction): MultiPolicyState {
   switch (action.type) {
@@ -775,9 +760,6 @@ function multiPolicyReducer(state: MultiPolicyState, action: MultiPolicyAction):
   return state;
 }
 
-// ---------------------------------------------------------------------------
-// Compatibility bridge — shape MultiPolicyState into WorkbenchState
-// ---------------------------------------------------------------------------
 
 function activeTab(state: MultiPolicyState): PolicyTab | undefined {
   return state.tabs.find((t) => t.id === state.activeTabId);
@@ -822,9 +804,6 @@ function toWorkbenchState(state: MultiPolicyState): WorkbenchState {
   };
 }
 
-// ---------------------------------------------------------------------------
-// localStorage persistence for tabs
-// ---------------------------------------------------------------------------
 
 interface PersistedTab {
   id: string;
@@ -957,9 +936,6 @@ function sanitizeSavedPolicy(savedPolicy: SavedPolicy): SavedPolicy {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Context shape
-// ---------------------------------------------------------------------------
 
 interface MultiPolicyContextValue {
   /** The full multi-policy state for components that need tab awareness. */
@@ -999,9 +975,6 @@ interface WorkbenchContextValue {
 const MultiPolicyContext = createContext<MultiPolicyContextValue | null>(null);
 const WorkbenchContext = createContext<WorkbenchContextValue | null>(null);
 
-// ---------------------------------------------------------------------------
-// Hooks
-// ---------------------------------------------------------------------------
 
 /** Access the multi-policy tab state (for tab bar, split pane, etc.). */
 export function useMultiPolicy(): MultiPolicyContextValue {
@@ -1020,9 +993,6 @@ export function useWorkbench(): WorkbenchContextValue {
   return ctx;
 }
 
-// ---------------------------------------------------------------------------
-// Initial state
-// ---------------------------------------------------------------------------
 
 function getInitialState(): MultiPolicyState {
   const restored = loadPersistedTabs();
@@ -1043,9 +1013,6 @@ function getInitialState(): MultiPolicyState {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Provider
-// ---------------------------------------------------------------------------
 
 export function MultiPolicyProvider({ children }: { children: ReactNode }) {
   const [multiState, multiDispatch] = useReducer(multiPolicyReducer, undefined, getInitialState);

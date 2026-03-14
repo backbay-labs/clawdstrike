@@ -3,7 +3,6 @@ import { useLocation, Link } from "react-router-dom";
 import {
   IconChevronsLeft,
   IconChevronsRight,
-  IconX,
 } from "@tabler/icons-react";
 import {
   SigilSentinel,
@@ -28,12 +27,10 @@ import { useFleetConnection } from "@/lib/workbench/use-fleet-connection";
 import { useSentinels } from "@/lib/workbench/sentinel-store";
 import { useFindings } from "@/lib/workbench/finding-store";
 import { cn } from "@/lib/utils";
+import { SIGIL_SYMBOLS } from "@/components/workbench/settings/identity-settings";
 import { fleetClient } from "@/lib/workbench/fleet-client";
 import { DEMO_APPROVAL_REQUESTS } from "@/lib/workbench/approval-demo-data";
-import { SIGIL_SYMBOLS } from "@/components/workbench/settings/identity-settings";
 import type { SigilType } from "@/lib/workbench/sentinel-manager";
-
-// ---- Data ----
 
 interface NavItem {
   readonly label: string;
@@ -82,8 +79,6 @@ const navSections: readonly NavSection[] = [
   },
 ] as const;
 
-// ---- System Heartbeat ----
-
 type SystemPosture = "nominal" | "attention" | "critical" | "offline";
 
 function derivePosture(
@@ -105,12 +100,11 @@ const POSTURE_RING: Record<SystemPosture, { color: string; glow: string; label: 
   offline:   { color: "#6f7f9a", glow: "rgba(111,127,154,0.06)", label: "offline" },
 };
 
-/** Breathing speed (ms) per posture — urgent states breathe faster. */
 const POSTURE_BREATH: Record<SystemPosture, number> = {
   nominal: 5000,
   attention: 2800,
   critical: 1600,
-  offline: 0, // no breathing when offline
+  offline: 0,
 };
 
 function SystemHeartbeat({
@@ -118,11 +112,13 @@ function SystemHeartbeat({
   active,
   fleetOnline,
   pendingApprovals,
+  emergingFindingsCount,
 }: {
   collapsed: boolean;
   active: boolean;
   fleetOnline: boolean;
   pendingApprovals: number;
+  emergingFindingsCount?: number;
 }) {
   const uid = useId();
   const glowId = `hb-glow${uid}`;
@@ -133,10 +129,11 @@ function SystemHeartbeat({
   const domeUrl = `url(#${domeId})`;
 
   const { sentinels } = useSentinels();
-  const { findings } = useFindings();
+  const findingsStore = useFindings();
+  const findings = findingsStore.findings;
 
   const activeSentinels = sentinels.filter((s) => s.status === "active").length;
-  const emergingFindings = findings.filter((f) => f.status === "emerging").length;
+  const emergingFindings = emergingFindingsCount ?? findings.filter((f) => f.status === "emerging").length;
   const criticalFindings = findings.filter(
     (f) => f.status === "emerging" && f.severity === "critical",
   ).length;
@@ -145,7 +142,6 @@ function SystemHeartbeat({
   const ring = POSTURE_RING[posture];
   const breathMs = POSTURE_BREATH[posture];
 
-  // Per-subsystem health → segment ring colors
   const segColors = [
     activeSentinels > 0 ? "#4ade80" : "#2d3240",                                      // sentinels
     criticalFindings > 0 ? "#ef4444" : emergingFindings > 0 ? "#d4a84b" : "#2d3240",  // findings
@@ -153,12 +149,10 @@ function SystemHeartbeat({
     fleetOnline ? "#4ade80" : "#ef4444",                                                // fleet
   ];
 
-  // Radar sweep: faster when urgent, off when offline
   const sweepSec = posture === "critical" ? 2 : posture === "attention" ? 4 : posture === "nominal" ? 8 : 0;
 
   const size = collapsed ? 28 : 36;
 
-  // Segment ring geometry (r=36 inside viewBox 0–100)
   const SR = 36;
   const CIRC = 2 * Math.PI * SR;
   const GAP = 8;
@@ -166,7 +160,6 @@ function SystemHeartbeat({
   const STEP = SEG + GAP;
   const SWEEP_ARC = CIRC * 0.12;
 
-  /** CSS animation shorthand — returns "none" when offline. */
   const anim = (name: string, delay?: string) =>
     breathMs > 0
       ? `${name} ${breathMs}ms ease-in-out ${delay ?? "0ms"} infinite`
@@ -203,7 +196,6 @@ function SystemHeartbeat({
         </radialGradient>
       </defs>
 
-      {/* L1 — Outer halo (blurred glow ring) */}
       <circle
         cx={50} cy={50} r={46}
         fill="none"
@@ -213,7 +205,6 @@ function SystemHeartbeat({
         style={{ filter: glowUrl, animation: anim("hb-glow") }}
       />
 
-      {/* L2 — Outer ring */}
       <circle
         cx={50} cy={50} r={44}
         fill="none"
@@ -223,10 +214,8 @@ function SystemHeartbeat({
         style={{ transformOrigin: "50px 50px", animation: anim("hb-ring") }}
       />
 
-      {/* L2 — Glass dome (subtle inner radial gradient) */}
       <circle cx={50} cy={50} r={43} fill={domeUrl} />
 
-      {/* L2 — Compass ticks (cardinal reference marks) */}
       <g stroke={ring.color} strokeWidth={1.2} opacity={0.2}>
         <line x1={50} y1={2} x2={50} y2={7} />
         <line x1={98} y1={50} x2={93} y2={50} />
@@ -234,7 +223,6 @@ function SystemHeartbeat({
         <line x1={2} y1={50} x2={7} y2={50} />
       </g>
 
-      {/* L3 — Segmented health ring (4 arcs, one per subsystem) */}
       <g style={{ transform: "rotate(-90deg)", transformOrigin: "50px 50px" }}>
         {segColors.map((color, i) => (
           <circle
@@ -255,7 +243,6 @@ function SystemHeartbeat({
         ))}
       </g>
 
-      {/* L4 — Radar sweep (rotating arc with glow trail) */}
       {sweepSec > 0 && (
         <circle
           cx={50} cy={50} r={SR}
@@ -273,7 +260,6 @@ function SystemHeartbeat({
         />
       )}
 
-      {/* L5 — Diamond: background glow fill */}
       <path
         d="M50 28 L68 50 L50 72 L32 50Z"
         fill={ring.color}
@@ -281,7 +267,6 @@ function SystemHeartbeat({
         style={{ filter: glowUrl }}
       />
 
-      {/* L5 — Diamond: main outline */}
       <path
         d="M50 28 L68 50 L50 72 L32 50Z"
         fill="none"
@@ -292,7 +277,6 @@ function SystemHeartbeat({
         style={{ animation: anim("hb-diamond") }}
       />
 
-      {/* L5 — Diamond: facet lines (gemstone cut pattern) */}
       <g stroke={ring.color} strokeWidth={0.6} opacity={0.25} style={{ animation: anim("hb-facets") }}>
         <line x1={32} y1={50} x2={68} y2={50} />
         <line x1={50} y1={28} x2={41} y2={50} />
@@ -301,7 +285,6 @@ function SystemHeartbeat({
         <line x1={50} y1={72} x2={59} y2={50} />
       </g>
 
-      {/* L5 — Diamond: inner core (delayed pulse for depth) */}
       <path
         d="M50 39 L56 50 L50 61 L44 50Z"
         fill={ring.color}
@@ -314,56 +297,52 @@ function SystemHeartbeat({
   const fleetChar = fleetOnline ? "○" : "●";
 
   return (
-    <>
-      <Link
-        to="/home"
-        title={tooltipLines}
-        className={cn(
-          "transition-all duration-200 group",
-          collapsed
-            ? cn(
-                "flex flex-col items-center gap-1 mx-auto pt-1 pb-2",
-                !active && "opacity-70 hover:opacity-100",
-              )
-            : cn(
-                "flex items-center gap-3 mx-2 px-3 py-2 rounded-lg",
-                active
-                  ? "bg-[#131721] shadow-[0_0_8px_rgba(212,168,75,0.08)]"
-                  : "hover:bg-[#131721]/40",
-              ),
-        )}
-      >
-        {sigil}
-        {!collapsed && (
-          <div className="flex flex-col min-w-0">
-            <span className="text-[9px] font-mono tracking-[0.08em] text-[#6f7f9a]/70 group-hover:text-[#6f7f9a] transition-colors duration-200 tabular-nums select-none">
-              <span className={cn(activeSentinels > 0 && "text-[#4ade80]/60")}>
-                {activeSentinels}s
-              </span>
-              <span className="mx-[3px] text-[#2d3240]">·</span>
-              <span className={cn(
-                emergingFindings > 0 && "text-[#d4a84b]/70",
-                posture === "critical" && "text-[#ef4444]/70",
-              )}>
-                {emergingFindings}f
-              </span>
-              <span className="mx-[3px] text-[#2d3240]">·</span>
-              <span className={cn(pendingApprovals > 0 && "text-[#7c9aef]/60")}>
-                {pendingApprovals}a
-              </span>
-              <span className="mx-[3px] text-[#2d3240]">·</span>
-              <span className={cn(!fleetOnline && "text-[#ef4444]/40")}>
-                {fleetChar}
-              </span>
+    <Link
+      to="/home"
+      title={tooltipLines}
+      className={cn(
+        "transition-all duration-200 group",
+        collapsed
+          ? cn(
+              "flex flex-col items-center gap-1 mx-auto pt-1 pb-2",
+              !active && "opacity-70 hover:opacity-100",
+            )
+          : cn(
+              "flex items-center gap-3 mx-2 px-3 py-2 rounded-lg",
+              active
+                ? "bg-[#131721] shadow-[0_0_8px_rgba(212,168,75,0.08)]"
+                : "hover:bg-[#131721]/40",
+            ),
+      )}
+    >
+      {sigil}
+      {!collapsed && (
+        <div className="flex flex-col min-w-0">
+          <span className="text-[9px] font-mono tracking-[0.08em] text-[#6f7f9a]/70 group-hover:text-[#6f7f9a] transition-colors duration-200 tabular-nums select-none">
+            <span className={cn(activeSentinels > 0 && "text-[#4ade80]/60")}>
+              {activeSentinels}s
             </span>
-          </div>
-        )}
-      </Link>
-    </>
+            <span className="mx-[3px] text-[#2d3240]">·</span>
+            <span className={cn(
+              emergingFindings > 0 && "text-[#d4a84b]/70",
+              posture === "critical" && "text-[#ef4444]/70",
+            )}>
+              {emergingFindings}f
+            </span>
+            <span className="mx-[3px] text-[#2d3240]">·</span>
+            <span className={cn(pendingApprovals > 0 && "text-[#7c9aef]/60")}>
+              {pendingApprovals}a
+            </span>
+            <span className="mx-[3px] text-[#2d3240]">·</span>
+            <span className={cn(!fleetOnline && "text-[#ef4444]/40")}>
+              {fleetChar}
+            </span>
+          </span>
+        </div>
+      )}
+    </Link>
   );
 }
-
-// ---- Component ----
 
 export function DesktopSidebar() {
   const pathname = useLocation().pathname;
@@ -373,14 +352,6 @@ export function DesktopSidebar() {
   const { connection } = useFleetConnection();
   const fleetConnected = connection.connected;
   const approvalsConnected = fleetConnected && connection.controlApiUrl.trim().length > 0;
-
-  const [showShortcutHint, setShowShortcutHint] = useState(() => {
-    return localStorage.getItem("clawdstrike_shortcut_hint_dismissed") !== "1";
-  });
-  const dismissHint = () => {
-    setShowShortcutHint(false);
-    localStorage.setItem("clawdstrike_shortcut_hint_dismissed", "1");
-  };
 
   const [liveApprovalCount, setLiveApprovalCount] = useState<number | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -415,14 +386,11 @@ export function DesktopSidebar() {
   );
   const pendingApprovalCount = isLiveBadge
     ? liveApprovalCount
-    : fleetConnected
-      ? 0
-      : demoPendingCount;
+    : demoPendingCount;
 
   const { findings } = useFindings();
   const emergingFindingsCount = findings.filter((f) => f.status === "emerging").length;
 
-  /** Resolve the badge count for a given nav item. */
   const getBadgeCount = (item: NavItem): number => {
     if (!item.badge) return 0;
     if (item.href === "/findings") return emergingFindingsCount;
@@ -430,10 +398,8 @@ export function DesktopSidebar() {
     return 0;
   };
 
-  /** Whether a badge item is backed by live fleet data (vs demo). */
   const isBadgeLive = (item: NavItem): boolean => {
     if (item.href === "/approvals") return isLiveBadge;
-    // Findings badge reflects local store, not fleet-backed
     return false;
   };
 
@@ -449,24 +415,21 @@ export function DesktopSidebar() {
       )}
     >
       <nav className="flex-1 py-3 flex flex-col overflow-y-auto">
-        {/* ---- System Heartbeat (replaces Home + Status Tray) ---- */}
         <SystemHeartbeat
           collapsed={collapsed}
           active={pathname === "/home" || pathname === "/"}
           fleetOnline={fleetConnected}
           pendingApprovals={pendingApprovalCount}
+          emergingFindingsCount={emergingFindingsCount}
         />
 
-        {/* Sigil divider */}
         <div
           className="mx-3 mt-1.5 mb-0.5 h-px"
           style={{ background: "linear-gradient(to right, rgba(212,168,75,0.12), transparent 60%)" }}
         />
 
-        {/* ---- Grouped sections ---- */}
         {navSections.map((section, idx) => (
           <div key={section.title} className={cn("flex flex-col gap-px", idx === 0 ? "mt-2" : "mt-3")}>
-            {/* Section header */}
             {collapsed ? (
               <div
                 className="mx-2 my-1.5 h-px"
@@ -626,26 +589,6 @@ export function DesktopSidebar() {
               {currentOperator.displayName || currentOperator.fingerprint.slice(0, 8)}
             </span>
           )}
-        </div>
-      )}
-
-      {showShortcutHint && !collapsed && (
-        <div className="mx-2 mb-2 rounded-lg border border-[#d4a84b]/20 bg-[#d4a84b]/5 px-3 py-2 flex items-center gap-2">
-          <span className="text-[10px] text-[#d4a84b]/80 flex-1">
-            Press{" "}
-            <kbd className="inline-block rounded border border-[#d4a84b]/30 bg-[#d4a84b]/10 px-1 py-0.5 font-mono text-[9px] text-[#d4a84b]">
-              ⌘?
-            </kbd>{" "}
-            for shortcuts
-          </span>
-          <button
-            type="button"
-            onClick={dismissHint}
-            className="text-[#6f7f9a]/40 hover:text-[#6f7f9a] transition-colors shrink-0"
-            aria-label="Dismiss shortcut hint"
-          >
-            <IconX size={12} stroke={1.5} />
-          </button>
         </div>
       )}
 

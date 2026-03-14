@@ -1,16 +1,3 @@
-/**
- * Swarm Detail — 5-tab detail view for a single swarm.
- *
- * Tabs:
- *   1. Members — table with fingerprint, sigil, role badge, reputation bar, joined date, actions
- *   2. Shared Detections — list of shared detection rules
- *   3. Trust Graph — force-directed SVG visualization (reuses delegation-page patterns)
- *   4. Speakeasies — list of attached speakeasy rooms
- *   5. Settings — swarm policy editor
- *
- * @see docs/plans/sentinel-swarm/UI-PAGE-MAP.md#6c-swarm-detail
- */
-
 import {
   useState,
   useMemo,
@@ -64,10 +51,6 @@ import type {
 import type { TrustLevel } from "@/lib/workbench/delegation-types";
 import { SwarmInvite } from "./swarm-invite";
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
 type DetailTab = "members" | "detections" | "trust" | "speakeasies" | "invite" | "settings";
 
 const TABS: { id: DetailTab; label: string; icon: typeof IconUsers }[] = [
@@ -107,10 +90,6 @@ const TRUST_COLORS: Record<TrustLevel, string> = {
   Untrusted: "#6f7f9a",
 };
 
-// ---------------------------------------------------------------------------
-// SwarmDetail (main)
-// ---------------------------------------------------------------------------
-
 export function SwarmDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -141,11 +120,14 @@ export function SwarmDetail() {
     <div className="flex h-full w-full flex-col overflow-hidden bg-[#05060a]">
       {/* Header */}
       <div className="shrink-0 border-b border-[#2d3240]/60 px-6 py-4">
-        <button onClick={() => navigate("/swarms")} className="flex items-center gap-1 text-[11px] text-[#6f7f9a] hover:text-[#ece7dc] transition-colors mb-3">
-          <IconArrowLeft size={12} /> Back to Swarms
-        </button>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => navigate("/swarms")}
+              className="text-[#6f7f9a]/50 hover:text-[#ece7dc] transition-colors"
+            >
+              <IconArrowLeft size={16} stroke={1.5} />
+            </button>
             <div
               className="w-8 h-8 rounded-lg flex items-center justify-center"
               style={{ backgroundColor: badge.color + "15" }}
@@ -154,7 +136,7 @@ export function SwarmDetail() {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="font-syne text-sm font-semibold text-[#ece7dc] tracking-[-0.01em]">
+                <h1 className="text-sm font-semibold text-[#ece7dc] tracking-[-0.01em]">
                   {swarm.name}
                 </h1>
                 <span
@@ -188,7 +170,7 @@ export function SwarmDetail() {
             </button>
             <button
               onClick={() => {
-                if (confirm(`Delete swarm "${swarm.name}"?\n\nAll shared policies, trust relationships, and member data will be permanently destroyed. This action is irreversible.`)) {
+                if (confirm(`Delete swarm "${swarm.name}"? This cannot be undone.`)) {
                   deleteSwarm(swarm.id);
                   navigate("/swarms");
                 }
@@ -241,10 +223,6 @@ export function SwarmDetail() {
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Tab 1: Members
-// ---------------------------------------------------------------------------
 
 type MemberSortCol = "name" | "type" | "role" | "reputation" | "joined";
 
@@ -310,7 +288,7 @@ function MembersTab({ swarm }: { swarm: Swarm }) {
             <MemberSortHeader label="Role" col="role" current={sortCol} asc={sortAsc} onSort={handleSort} />
             <MemberSortHeader label="Reputation" col="reputation" current={sortCol} asc={sortAsc} onSort={handleSort} />
             <MemberSortHeader label="Joined" col="joined" current={sortCol} asc={sortAsc} onSort={handleSort} />
-            <th className="px-3 py-2.5 text-left text-[9px] uppercase tracking-wider font-semibold text-[#6f7f9a]/50">
+            <th className="px-3 py-2.5 text-left text-[9px] uppercase tracking-[0.08em] font-semibold text-[#6f7f9a]/50">
               Actions
             </th>
           </tr>
@@ -362,7 +340,7 @@ function MemberSortHeader({
   return (
     <th
       className={cn(
-        "px-3 py-2.5 text-left text-[9px] uppercase tracking-wider font-semibold select-none cursor-pointer transition-colors",
+        "px-3 py-2.5 text-left text-[9px] uppercase tracking-[0.08em] font-semibold select-none cursor-pointer transition-colors",
         active ? "text-[#d4a84b]" : "text-[#6f7f9a]/50 hover:text-[#6f7f9a]",
         className,
       )}
@@ -513,7 +491,7 @@ function MemberRow({
             <button
               onClick={onRemove}
               className="rounded p-1 text-[#6f7f9a]/30 hover:text-[#c45c5c] transition-colors"
-              title="Remove from swarm"
+              title="Remove member"
             >
               <IconTrash size={11} stroke={1.5} />
             </button>
@@ -551,16 +529,12 @@ function MemberRow({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Tab 2: Shared Detections
-// ---------------------------------------------------------------------------
-
 function DetectionsTab({ swarm }: { swarm: Swarm }) {
   if (swarm.sharedDetections.length === 0) {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="text-center">
-          <IconShieldCheck size={24} className="text-[#6f7f9a]/50 mx-auto mb-3" />
+          <IconShieldCheck size={24} className="text-[#6f7f9a]/20 mx-auto mb-3" />
           <p className="text-[12px] text-[#6f7f9a]/40">No shared detections yet</p>
           <p className="text-[10px] text-[#6f7f9a]/30 mt-1">
             Publish intel artifacts as detection rules to distribute to swarm members
@@ -612,17 +586,6 @@ function DetectionCard({ detection }: { detection: DetectionRef }) {
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Tab 3: Trust Graph
-// ---------------------------------------------------------------------------
-
-/**
- * Simple force-directed layout for trust graph visualization.
- * Uses the same SVG rendering patterns as delegation-page.tsx but with a
- * simplified force simulation (no external engine dependency for the swarm
- * peer-to-peer graph which is non-hierarchical).
- */
 
 interface ForceNode {
   id: string;
@@ -842,7 +805,7 @@ function TrustGraphTab({ swarm }: { swarm: Swarm }) {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="text-center">
-          <IconTopologyRing size={24} className="text-[#6f7f9a]/50 mx-auto mb-3" />
+          <IconTopologyRing size={24} className="text-[#6f7f9a]/20 mx-auto mb-3" />
           <p className="text-[12px] text-[#6f7f9a]/40">No members to visualize</p>
         </div>
       </div>
@@ -1013,7 +976,7 @@ function TrustGraphTab({ swarm }: { swarm: Swarm }) {
       {selectedNode && (
         <div className="flex w-56 shrink-0 flex-col border-l border-[#1a1f2e] bg-[#0b0d13]">
           <div className="flex items-center justify-between border-b border-[#1a1f2e] px-4 py-3">
-            <h2 className="font-syne text-[10px] font-semibold uppercase tracking-wider text-[#6f7f9a]">
+            <h2 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6f7f9a]">
               Member
             </h2>
             <button
@@ -1038,7 +1001,7 @@ function TrustGraphTab({ swarm }: { swarm: Swarm }) {
 
             <div className="flex flex-col gap-3">
               <div>
-                <span className="text-[8px] uppercase tracking-wider text-[#6f7f9a]/40 font-semibold">
+                <span className="text-[8px] uppercase tracking-[0.08em] text-[#6f7f9a]/40 font-semibold">
                   Info
                 </span>
                 <div className="flex flex-col gap-1 mt-1">
@@ -1049,7 +1012,7 @@ function TrustGraphTab({ swarm }: { swarm: Swarm }) {
               </div>
 
               <div>
-                <span className="text-[8px] uppercase tracking-wider text-[#6f7f9a]/40 font-semibold">
+                <span className="text-[8px] uppercase tracking-[0.08em] text-[#6f7f9a]/40 font-semibold">
                   Reputation
                 </span>
                 <div className="flex flex-col gap-1 mt-1">
@@ -1069,7 +1032,7 @@ function TrustGraphTab({ swarm }: { swarm: Swarm }) {
               </div>
 
               <div>
-                <span className="text-[8px] uppercase tracking-wider text-[#6f7f9a]/40 font-semibold">
+                <span className="text-[8px] uppercase tracking-[0.08em] text-[#6f7f9a]/40 font-semibold">
                   Trust Connections
                 </span>
                 <div className="flex flex-col gap-1 mt-1">
@@ -1110,16 +1073,12 @@ function TrustGraphTab({ swarm }: { swarm: Swarm }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Tab 4: Speakeasies
-// ---------------------------------------------------------------------------
-
 function SpeakeasiesTab({ swarm }: { swarm: Swarm }) {
   if (swarm.speakeasies.length === 0) {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="text-center">
-          <IconMessage size={24} className="text-[#6f7f9a]/50 mx-auto mb-3" />
+          <IconMessage size={24} className="text-[#6f7f9a]/20 mx-auto mb-3" />
           <p className="text-[12px] text-[#6f7f9a]/40">No speakeasy rooms yet</p>
           <p className="text-[10px] text-[#6f7f9a]/30 mt-1">
             Private signed rooms for sensitive collaboration and intel exchange
@@ -1175,10 +1134,6 @@ function SpeakeasyCard({ speakeasy }: { speakeasy: SpeakeasyRef }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Tab 5: Settings
-// ---------------------------------------------------------------------------
-
 function SettingsTab({ swarm }: { swarm: Swarm }) {
   const { updatePolicy, deleteSwarm } = useSwarms();
   const navigate = useNavigate();
@@ -1203,7 +1158,7 @@ function SettingsTab({ swarm }: { swarm: Swarm }) {
     <div className="h-full overflow-auto px-6 py-6">
       <div className="max-w-lg">
         {/* Governance */}
-        <h3 className="font-syne text-[11px] font-semibold uppercase tracking-wider text-[#6f7f9a]/60 mb-4">
+        <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#6f7f9a]/60 mb-4">
           Governance Policies
         </h3>
 
@@ -1254,7 +1209,7 @@ function SettingsTab({ swarm }: { swarm: Swarm }) {
         </div>
 
         {/* Danger zone */}
-        <h3 className="font-syne text-[11px] font-semibold uppercase tracking-wider text-[#c45c5c]/60 mb-4">
+        <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#c45c5c]/60 mb-4">
           Danger Zone
         </h3>
         <div className="flex flex-col gap-2 rounded-lg border border-[#c45c5c]/20 bg-[#c45c5c]/5 p-4">
@@ -1267,7 +1222,7 @@ function SettingsTab({ swarm }: { swarm: Swarm }) {
             </div>
             <button
               onClick={() => {
-                if (confirm(`Delete swarm "${swarm.name}"?\n\nAll shared policies, trust relationships, and member data will be permanently destroyed. This action is irreversible.`)) {
+                if (confirm(`Delete swarm "${swarm.name}"? This action cannot be undone.`)) {
                   deleteSwarm(swarm.id);
                   navigate("/swarms");
                 }
@@ -1316,10 +1271,6 @@ function PolicyToggle({
     </button>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Shared small components
-// ---------------------------------------------------------------------------
 
 function ToolbarBtn({
   icon: Icon,
@@ -1380,7 +1331,7 @@ function reputationColor(score: number): string {
 
 function DetailSectionLabel({ text }: { text: string }) {
   return (
-    <h4 className="font-syne text-[9px] font-semibold uppercase tracking-wider text-[#6f7f9a]/50 mb-1">
+    <h4 className="text-[9px] font-semibold uppercase tracking-[0.1em] text-[#6f7f9a]/50 mb-1">
       {text}
     </h4>
   );

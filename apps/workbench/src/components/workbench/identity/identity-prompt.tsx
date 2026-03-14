@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useOperator } from "@/lib/workbench/operator-store";
 
 export function IdentityPrompt() {
@@ -6,19 +6,29 @@ export function IdentityPrompt() {
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const mountedRef = useRef(true);
+  const submittingRef = useRef(false);
+  useEffect(() => () => { mountedRef.current = false; }, []);
 
   if (!initialized || currentOperator !== null) return null;
 
   const handleCreate = async () => {
     if (!name.trim()) return;
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setCreating(true);
     setError(null);
     try {
       await createIdentity(name.trim());
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to create identity");
+      if (mountedRef.current) {
+        setError(e instanceof Error ? e.message : "Failed to create identity");
+      }
     } finally {
-      setCreating(false);
+      submittingRef.current = false;
+      if (mountedRef.current) {
+        setCreating(false);
+      }
     }
   };
 
@@ -29,7 +39,7 @@ export function IdentityPrompt() {
           className="mx-auto mb-6 h-1 w-12 rounded-full bg-[#d4a84b]"
           style={{ boxShadow: "0 0 12px rgba(212,168,75,0.3)" }}
         />
-        <h2 className="font-syne text-center text-base font-semibold text-[#ece7dc] tracking-[-0.01em]">
+        <h2 className="text-center text-base font-semibold text-[#ece7dc] tracking-[-0.01em]">
           Create Your Operator Identity
         </h2>
         <p className="mt-2 text-center text-[11px] text-[#6f7f9a]/70 leading-relaxed">
@@ -37,7 +47,7 @@ export function IdentityPrompt() {
           sentinels, and signed artifacts. Your private key is stored locally.
         </p>
         <div className="mt-6">
-          <label className="text-[10px] uppercase tracking-wider text-[#6f7f9a]/60 font-semibold">
+          <label className="text-[10px] uppercase tracking-[0.08em] text-[#6f7f9a]/60 font-semibold">
             Display Name
           </label>
           <input

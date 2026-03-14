@@ -24,15 +24,9 @@ import { Baselines } from "./baselines";
 import { InvestigationWorkbench } from "./investigation";
 import { PatternMining } from "./pattern-mining";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 type HuntTab = "stream" | "baselines" | "investigate" | "patterns";
 
-// ---------------------------------------------------------------------------
-// Tab definitions
-// ---------------------------------------------------------------------------
 
 const HUNT_TABS: SubTab[] = [
   { id: "stream", label: "Stream", icon: IconActivity },
@@ -100,9 +94,6 @@ function HuntStatusIndicators({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Main Layout
-// ---------------------------------------------------------------------------
 
 export function HuntLayout() {
   const [activeTab, setActiveTab] = useState<HuntTab>("stream");
@@ -114,7 +105,7 @@ export function HuntLayout() {
   const [streamLive, setStreamLive] = useState(true);
   const [sensitivity, setSensitivity] = useState<"low" | "medium" | "high">("medium");
 
-  const { connection } = useFleetConnection();
+  const { connection, getAuthenticatedConnection } = useFleetConnection();
   const connected = connection.connected;
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -124,7 +115,7 @@ export function HuntLayout() {
 
     try {
       const since = timeRangeToSince("24h");
-      const auditEvents = await fetchAuditEvents(connection, { since, limit: 500 });
+      const auditEvents = await fetchAuditEvents(getAuthenticatedConnection(), { since, limit: 500 });
       const converted = auditEvents.map(auditEventToAgentEvent);
 
       // Compute baselines from all events by agent
@@ -169,28 +160,24 @@ export function HuntLayout() {
     };
   }, [connected, streamLive]);
 
-  // Derived: open investigations count
-  const openInvestigations = useMemo(
+    const openInvestigations = useMemo(
     () => investigations.filter((i) => i.status === "open" || i.status === "in-progress").length,
     [investigations],
   );
 
-  // Derived: anomaly count in last hour
-  const anomalyCount = useMemo(() => {
+    const anomalyCount = useMemo(() => {
     const oneHourAgo = Date.now() - 60 * 60 * 1000;
     return events.filter(
       (e) => (e.anomalyScore ?? 0) > 0.7 && new Date(e.timestamp).getTime() > oneHourAgo,
     ).length;
   }, [events]);
 
-  // Derived: stream stats
-  const streamStats = useMemo<StreamStats>(
+    const streamStats = useMemo<StreamStats>(
     () => computeStreamStats(events),
     [events],
   );
 
-  // Derived: baselines as array for Baselines component
-  const baselinesArray = useMemo(
+    const baselinesArray = useMemo(
     () => Array.from(baselines.values()),
     [baselines],
   );

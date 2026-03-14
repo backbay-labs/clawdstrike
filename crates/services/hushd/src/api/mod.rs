@@ -17,6 +17,7 @@ pub mod session;
 pub mod shutdown;
 pub mod siem;
 pub mod spine_replay;
+pub mod swarm_hub;
 pub mod v1;
 pub mod webhooks;
 
@@ -25,7 +26,7 @@ use axum::{
     routing::{delete, get, patch, post, put},
     Router,
 };
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::{AllowOrigin, Any, CorsLayer};
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::trace::TraceLayer;
 
@@ -65,10 +66,34 @@ pub use shutdown::ShutdownResponse;
 pub fn create_router(state: AppState) -> Router {
     let cors_enabled = state.config.cors_enabled;
     let metrics = state.metrics.clone();
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
+    let cors = {
+        let origin_layer = if state.config.allowed_origins.is_empty() {
+            if cors_enabled {
+                tracing::warn!(
+                    "CORS is enabled but no allowed_origins configured — \
+                     all cross-origin requests will be blocked"
+                );
+            }
+            // Fail-closed: no origins are allowed.
+            AllowOrigin::list(std::iter::empty::<axum::http::HeaderValue>())
+        } else if state.config.allowed_origins.iter().any(|o| o == "*") {
+            // Wildcard origin — tower-http panics if "*" is passed to
+            // AllowOrigin::list, so use the dedicated Any variant.
+            AllowOrigin::any()
+        } else {
+            let origins: Vec<axum::http::HeaderValue> = state
+                .config
+                .allowed_origins
+                .iter()
+                .filter_map(|o| o.parse().ok())
+                .collect();
+            AllowOrigin::list(origins)
+        };
+        CorsLayer::new()
+            .allow_origin(origin_layer)
+            .allow_methods(Any)
+            .allow_headers(Any)
+    };
 
     // Public routes - no auth required
     let public_routes = Router::new()
@@ -281,6 +306,27 @@ pub fn create_router(state: AppState) -> Router {
         )
         .route("/api/v1/events", get(events::stream_events))
         .route("/api/v1/siem/exporters", get(siem::exporters))
+        .route("/api/v1/swarm/hub/config", get(swarm_hub::get_swarm_hub_config))
+        .route(
+            "/api/v1/swarm/feeds/{feedId}/head",
+            get(swarm_hub::get_swarm_feed_head),
+        )
+        .route(
+            "/api/v1/swarm/feeds/{feedId}/replay",
+            get(swarm_hub::replay_swarm_feed),
+        )
+        .route(
+            "/api/v1/swarm/feeds/{feedId}/revocations/head",
+            get(swarm_hub::get_swarm_revocation_head),
+        )
+        .route(
+            "/api/v1/swarm/feeds/{feedId}/revocations/replay",
+            get(swarm_hub::replay_swarm_revocations),
+        )
+        .route(
+            "/api/v1/swarm/blobs/{digest}",
+            get(swarm_hub::get_swarm_blob_refs),
+        )
         .layer(middleware::from_fn_with_state(state.clone(), require_auth));
 
     // Admin routes - require auth + admin scope
@@ -330,6 +376,19 @@ pub fn create_router(state: AppState) -> Router {
             "/api/v1/receipts/replay",
             post(spine_replay::replay_receipts),
         )
+        .route(
+            "/api/v1/swarm/feeds/{feedId}/findings",
+            post(swarm_hub::publish_finding),
+        )
+        .route(
+            "/api/v1/swarm/feeds/{feedId}/revocations",
+            post(swarm_hub::publish_revocation),
+        )
+        .route(
+            "/api/v1/swarm/hub/config/trust-policy",
+            put(swarm_hub::put_swarm_hub_trust_policy),
+        )
+        .route("/api/v1/swarm/blobs/pin", post(swarm_hub::pin_swarm_blob))
         .layer(middleware::from_fn_with_state(state.clone(), require_auth));
 
     // Note: Rate limiting is applied to all routes except /health (handled in middleware).

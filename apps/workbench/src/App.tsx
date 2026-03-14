@@ -9,17 +9,16 @@ import { SwarmProvider } from "@/lib/workbench/swarm-store";
 import { SentinelProvider } from "@/lib/workbench/sentinel-store";
 import { FindingProvider } from "@/lib/workbench/finding-store";
 import { SignalProvider } from "@/lib/workbench/signal-store";
+import { IntelProvider } from "@/lib/workbench/intel-store";
 import { MissionProvider } from "@/lib/workbench/mission-store";
 import { OperatorProvider } from "@/lib/workbench/operator-store";
 import { ReputationProvider } from "@/lib/workbench/reputation-store";
+import { SwarmFeedProvider } from "@/lib/workbench/swarm-feed-store";
 import { ToastProvider } from "@/components/ui/toast";
 import { DesktopLayout } from "@/components/desktop/desktop-layout";
 import { IdentityPrompt } from "@/components/workbench/identity/identity-prompt";
 import { secureStore, migrateCredentialsToStronghold } from "@/lib/workbench/secure-store";
 
-// ---------------------------------------------------------------------------
-// Lazy-loaded route components (code-split into separate chunks)
-// ---------------------------------------------------------------------------
 
 const PolicyEditor = lazy(() =>
   import("@/components/workbench/editor/policy-editor").then((m) => ({
@@ -141,35 +140,6 @@ const MissionControlPage = lazy(() =>
   })),
 );
 
-const HuntLayout = lazy(() =>
-  import("@/components/workbench/hunt/hunt-layout").then((m) => ({
-    default: m.HuntLayout,
-  })),
-);
-
-const GuardsPage = lazy(() =>
-  import("@/components/workbench/guards/guards-page").then((m) => ({
-    default: m.GuardsPage,
-  })),
-);
-
-const DelegationPage = lazy(() =>
-  import("@/components/workbench/delegation/delegation-page").then((m) => ({
-    default: m.DelegationPage,
-  })),
-);
-
-const HierarchyPage = lazy(() =>
-  import("@/components/workbench/hierarchy/hierarchy-page").then((m) => ({
-    default: m.HierarchyPage,
-  })),
-);
-
-
-// ---------------------------------------------------------------------------
-// Loading fallback — dark-themed to prevent white flash in Tauri shell
-// ---------------------------------------------------------------------------
-
 function LoadingFallback() {
   return (
     <div
@@ -220,9 +190,6 @@ function LoadingFallback() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Error boundary — prevents white-screen-of-death on unhandled errors (#3)
-// ---------------------------------------------------------------------------
 
 interface ErrorBoundaryState {
   error: Error | null;
@@ -328,11 +295,15 @@ function AppProviders({ children }: { children: ReactNode }) {
                 <SentinelProvider>
                   <FindingProvider>
                     <SignalProvider>
-                      <MissionProvider>
-                        <SwarmProvider>
-                          <FleetConnectionProvider>{children}</FleetConnectionProvider>
-                        </SwarmProvider>
-                      </MissionProvider>
+                      <IntelProvider>
+                        <MissionProvider>
+                          <SwarmFeedProvider>
+                            <SwarmProvider>
+                              <FleetConnectionProvider>{children}</FleetConnectionProvider>
+                            </SwarmProvider>
+                          </SwarmFeedProvider>
+                        </MissionProvider>
+                      </IntelProvider>
                     </SignalProvider>
                   </FindingProvider>
                 </SentinelProvider>
@@ -344,10 +315,6 @@ function AppProviders({ children }: { children: ReactNode }) {
     </OperatorProvider>
   );
 }
-
-// ---------------------------------------------------------------------------
-// App root
-// ---------------------------------------------------------------------------
 
 /**
  * Root application component for the Tauri desktop workbench.
@@ -367,29 +334,23 @@ export function App() {
     <HashRouter>
       <ErrorBoundary>
         <AppProviders>
-          <IdentityPrompt />
           <Suspense fallback={<LoadingFallback />}>
+            <IdentityPrompt />
             <Routes>
               <Route element={<DesktopLayout />}>
                 {/* Default redirect */}
                 <Route index element={<Navigate to="/home" replace />} />
 
-                {/* Workbench pages */}
+                {/* Core pages */}
                 <Route path="home" element={<HomePage />} />
                 <Route path="editor" element={<PolicyEditor />} />
-                <Route path="simulator" element={<Navigate to="/lab?tab=simulate" replace />} />
-                <Route path="hunt" element={<HuntLayout />} />
-                <Route path="compare" element={<Navigate to="/editor?panel=compare" replace />} />
                 <Route path="compliance" element={<ComplianceDashboard />} />
                 <Route path="receipts" element={<ReceiptInspector />} />
-                <Route path="delegation" element={<DelegationPage />} />
-                <Route path="approvals" element={<ApprovalQueue />} />
-                <Route path="hierarchy" element={<HierarchyPage />} />
-                <Route path="fleet" element={<FleetDashboard />} />
-                <Route path="audit" element={<AuditLog />} />
-                <Route path="guards" element={<GuardsPage />} />
                 <Route path="library" element={<LibraryGallery />} />
                 <Route path="settings" element={<SettingsPage />} />
+                <Route path="approvals" element={<ApprovalQueue />} />
+                <Route path="fleet" element={<FleetDashboard />} />
+                <Route path="audit" element={<AuditLog />} />
 
                 {/* Sentinel Swarm pages */}
                 <Route path="sentinels" element={<SentinelsPage />} />
@@ -413,6 +374,57 @@ export function App() {
                   element={
                     <Navigate
                       to={{ pathname: "/findings", search: "?tab=intel" }}
+                      replace
+                    />
+                  }
+                />
+                <Route
+                  path="hunt"
+                  element={
+                    <Navigate to={{ pathname: "/lab", search: "?tab=hunt" }} replace />
+                  }
+                />
+                <Route
+                  path="simulator"
+                  element={
+                    <Navigate
+                      to={{ pathname: "/lab", search: "?tab=simulate" }}
+                      replace
+                    />
+                  }
+                />
+                <Route
+                  path="guards"
+                  element={
+                    <Navigate
+                      to={{ pathname: "/editor", search: "?panel=guards" }}
+                      replace
+                    />
+                  }
+                />
+                <Route
+                  path="compare"
+                  element={
+                    <Navigate
+                      to={{ pathname: "/editor", search: "?panel=compare" }}
+                      replace
+                    />
+                  }
+                />
+                <Route
+                  path="delegation"
+                  element={
+                    <Navigate
+                      to={{ pathname: "/topology", search: "?tab=delegation" }}
+                      replace
+                    />
+                  }
+                />
+                <Route
+                  path="hierarchy"
+                  element={
+                    <Navigate
+                      to={{ pathname: "/topology", search: "?tab=hierarchy" }}
                       replace
                     />
                   }

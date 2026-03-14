@@ -34,9 +34,6 @@ import {
   IconX,
 } from "@tabler/icons-react";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 type TimeRange = "1h" | "24h" | "7d";
 
@@ -59,9 +56,6 @@ interface WhatIfResult {
   }>;
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function sinceForRange(range: TimeRange): string {
   const now = new Date();
@@ -82,9 +76,6 @@ function countVerdict(
   return scenarios.filter((s) => s.expectedVerdict === verdict).length;
 }
 
-// ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
 
 function HorizontalBar({
   items,
@@ -217,9 +208,6 @@ function GapCard({ gap }: { gap: CoverageGap }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Disconnected State
-// ---------------------------------------------------------------------------
 
 function DisconnectedState() {
   return (
@@ -246,12 +234,9 @@ function DisconnectedState() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Main Panel
-// ---------------------------------------------------------------------------
 
 export function FleetTestingPanel() {
-  const { connection } = useFleetConnection();
+  const { connection, getAuthenticatedConnection } = useFleetConnection();
   const { state } = useWorkbench();
   const { toast } = useToast();
 
@@ -267,8 +252,7 @@ export function FleetTestingPanel() {
     "import",
   );
 
-  // Derived data
-  const trafficSummary: TrafficSummary | null = useMemo(
+    const trafficSummary: TrafficSummary | null = useMemo(
     () => (auditEvents.length > 0 ? summarizeTraffic(auditEvents) : null),
     [auditEvents],
   );
@@ -325,7 +309,7 @@ export function FleetTestingPanel() {
     setLoading(true);
     try {
       const since = sinceForRange(selectedRange);
-      const events = await fetchAuditEvents(connection, {
+      const events = await fetchAuditEvents(getAuthenticatedConnection(), {
         since,
         limit: 500,
       });

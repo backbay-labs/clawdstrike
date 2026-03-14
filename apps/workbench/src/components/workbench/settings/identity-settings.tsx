@@ -1,6 +1,3 @@
-// ---------------------------------------------------------------------------
-// Identity Settings — operator identity management, device list, key export/import.
-// ---------------------------------------------------------------------------
 import { useState, useCallback } from "react";
 import {
   IconFingerprint,
@@ -18,9 +15,6 @@ import { useOperator } from "@/lib/workbench/operator-store";
 import { deriveSigil, deriveSigilColor } from "@/lib/workbench/sentinel-manager";
 import type { SigilType } from "@/lib/workbench/sentinel-manager";
 
-// ---------------------------------------------------------------------------
-// Sigil renderer (matches existing pattern from swarm-detail)
-// ---------------------------------------------------------------------------
 
 export const SIGIL_SYMBOLS: Record<SigilType, string> = {
   diamond: "\u25C6",
@@ -33,9 +27,6 @@ export const SIGIL_SYMBOLS: Record<SigilType, string> = {
   moon: "\u263D",
 };
 
-// ---------------------------------------------------------------------------
-// IdentitySettings
-// ---------------------------------------------------------------------------
 
 export function IdentitySettings() {
   const {
@@ -193,7 +184,7 @@ export function IdentitySettings() {
             {/* Metadata */}
             <div className="flex items-center gap-4 mt-2 text-[9px] text-[#6f7f9a]/40">
               <span>Created {new Date(currentOperator.createdAt).toLocaleDateString()}</span>
-              <span title="Unique visual identifier derived from an operator's cryptographic fingerprint">Sigil: {sigil}</span>
+              <span>Sigil: {sigil}</span>
               <span>{currentOperator.devices.length} device{currentOperator.devices.length !== 1 ? "s" : ""}</span>
             </div>
           </div>
@@ -210,13 +201,13 @@ export function IdentitySettings() {
           <table className="w-full text-[11px]">
             <thead>
               <tr className="border-b border-[#2d3240]/40 bg-[#0b0d13]">
-                <th className="text-left px-3 py-2 text-[9px] uppercase tracking-wider text-[#6f7f9a]/40 font-semibold">
+                <th className="text-left px-3 py-2 text-[9px] uppercase tracking-[0.08em] text-[#6f7f9a]/40 font-semibold">
                   Device ID
                 </th>
-                <th className="text-left px-3 py-2 text-[9px] uppercase tracking-wider text-[#6f7f9a]/40 font-semibold">
+                <th className="text-left px-3 py-2 text-[9px] uppercase tracking-[0.08em] text-[#6f7f9a]/40 font-semibold">
                   Name
                 </th>
-                <th className="text-left px-3 py-2 text-[9px] uppercase tracking-wider text-[#6f7f9a]/40 font-semibold">
+                <th className="text-left px-3 py-2 text-[9px] uppercase tracking-[0.08em] text-[#6f7f9a]/40 font-semibold">
                   Last Seen
                 </th>
               </tr>
@@ -275,7 +266,7 @@ export function IdentitySettings() {
         {showExport && (
           <div className="mt-3 rounded-md border border-[#2d3240]/60 bg-[#0b0d13] p-4 flex flex-col gap-3">
             <div>
-              <label className="text-[10px] uppercase tracking-wider text-[#6f7f9a]/60 font-semibold">
+              <label className="text-[10px] uppercase tracking-[0.08em] text-[#6f7f9a]/60 font-semibold">
                 Passphrase
               </label>
               <input
@@ -320,7 +311,7 @@ export function IdentitySettings() {
         {showImport && (
           <div className="mt-3 rounded-md border border-[#2d3240]/60 bg-[#0b0d13] p-4 flex flex-col gap-3">
             <div>
-              <label className="text-[10px] uppercase tracking-wider text-[#6f7f9a]/60 font-semibold">
+              <label className="text-[10px] uppercase tracking-[0.08em] text-[#6f7f9a]/60 font-semibold">
                 Encrypted Key Data
               </label>
               <textarea
@@ -332,7 +323,7 @@ export function IdentitySettings() {
               />
             </div>
             <div>
-              <label className="text-[10px] uppercase tracking-wider text-[#6f7f9a]/60 font-semibold">
+              <label className="text-[10px] uppercase tracking-[0.08em] text-[#6f7f9a]/60 font-semibold">
                 Passphrase
               </label>
               <input
@@ -393,9 +384,6 @@ export function IdentitySettings() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Shared layout
-// ---------------------------------------------------------------------------
 
 function SettingsSection({
   icon,

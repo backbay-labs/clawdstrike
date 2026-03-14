@@ -27,9 +27,6 @@ import {
   IconDatabase,
 } from "@tabler/icons-react";
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 const ACTION_TYPES: { value: TestActionType; label: string }[] = [
   { value: "user_input", label: "User Input" },
@@ -88,9 +85,6 @@ function computeStageScores(matches: PatternMatch[]): StageScores {
   return scores;
 }
 
-// ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
 
 function VerdictDisplay({ result }: { result: ScreeningResult }) {
   const config = VERDICT_CONFIG[result.verdict];
@@ -410,9 +404,6 @@ function EngineFooter() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Example prompts for onboarding
-// ---------------------------------------------------------------------------
 
 const EXAMPLE_PROMPTS: { text: string; verdict: "deny" | "allow" | "ambiguous"; label: string }[] = [
   {
@@ -457,9 +448,6 @@ const EXAMPLE_PROMPTS: { text: string; verdict: "deny" | "allow" | "ambiguous"; 
   },
 ];
 
-// ---------------------------------------------------------------------------
-// Empty state with clickable examples
-// ---------------------------------------------------------------------------
 
 function EmptyResults({ onTryExample }: { onTryExample: (text: string) => void }) {
   return (
@@ -518,9 +506,6 @@ function EmptyResults({ onTryExample }: { onTryExample: (text: string) => void }
   );
 }
 
-// ---------------------------------------------------------------------------
-// Main Component
-// ---------------------------------------------------------------------------
 
 export function TrustprintLab() {
   const { state } = useWorkbench();

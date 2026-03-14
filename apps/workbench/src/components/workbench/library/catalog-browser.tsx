@@ -545,7 +545,7 @@ function PublishDialog({
 
 export function CatalogBrowser() {
   const { state, loadPolicy } = useWorkbench();
-  const { connection } = useFleetConnection();
+  const { connection, getAuthenticatedConnection } = useFleetConnection();
   const isConnected = connection.connected;
 
   const [search, setSearch] = useState("");
@@ -578,8 +578,8 @@ export function CatalogBrowser() {
 
     try {
       const [templates, categories] = await Promise.all([
-        fetchCatalogTemplates(connection),
-        fetchCatalogCategories(connection),
+        fetchCatalogTemplates(getAuthenticatedConnection()),
+        fetchCatalogCategories(getAuthenticatedConnection()),
       ]);
       if (id !== fetchIdRef.current) return; // stale
       setCatalogTemplates(templates);
@@ -686,7 +686,7 @@ export function CatalogBrowser() {
       if (entry.source === "catalog" && entry.catalogId && isConnected) {
         setForkingId(entry.catalogId);
         try {
-          const result = await forkCatalogTemplate(connection, entry.catalogId);
+          const result = await forkCatalogTemplate(getAuthenticatedConnection(), entry.catalogId);
           if (result.success && result.template) {
             const [policy] = yamlToPolicy(result.template.yaml);
             if (policy) {
@@ -726,7 +726,7 @@ export function CatalogBrowser() {
 
       try {
         const yaml = policyToYaml(state.activePolicy);
-        const result = await publishCatalogTemplate(connection, {
+        const result = await publishCatalogTemplate(getAuthenticatedConnection(), {
           name: meta.name,
           description: meta.description,
           category: meta.category,

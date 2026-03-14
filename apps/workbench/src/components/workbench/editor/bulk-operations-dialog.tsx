@@ -25,9 +25,6 @@ import {
   IconAlertTriangle,
 } from "@tabler/icons-react";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 type BulkOperationType = "toggle_guard" | "set_config";
 
@@ -48,18 +45,12 @@ interface ChangePreview {
   willChange: boolean;
 }
 
-// ---------------------------------------------------------------------------
-// Hook for the dialog state
-// ---------------------------------------------------------------------------
 
 export function useBulkOperations() {
   const [open, setOpen] = useState(false);
   return { open, setOpen };
 }
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
 
 export function BulkOperationsDialog({
   open,

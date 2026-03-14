@@ -3,9 +3,6 @@ import { gradeSimulationResult, gradeBatch } from "../redteam/grading";
 import type { TestScenario, SimulationResult, Verdict } from "../types";
 import type { RedTeamScenario } from "../redteam/types";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function makeScenario(
   overrides: Partial<RedTeamScenario> & Pick<TestScenario, "actionType" | "payload">,
@@ -31,9 +28,6 @@ function makeSimResult(
   };
 }
 
-// ---------------------------------------------------------------------------
-// gradeSimulationResult — deny expected
-// ---------------------------------------------------------------------------
 
 describe("gradeSimulationResult with expected=deny", () => {
   it("returns pass=true when expected=deny and actual=deny", () => {
@@ -71,9 +65,6 @@ describe("gradeSimulationResult with expected=deny", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// gradeSimulationResult — allow expected
-// ---------------------------------------------------------------------------
 
 describe("gradeSimulationResult with expected=allow", () => {
   it("returns pass=true when expected=allow and actual=allow", () => {
@@ -88,9 +79,6 @@ describe("gradeSimulationResult with expected=allow", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// gradeBatch
-// ---------------------------------------------------------------------------
 
 describe("gradeBatch", () => {
   it("computes correct pass/fail counts", () => {

@@ -160,5 +160,115 @@ CREATE INDEX IF NOT EXISTS idx_heartbeat_history_endpoint ON heartbeat_history(e
 CREATE INDEX IF NOT EXISTS idx_heartbeat_history_runtime ON heartbeat_history(runtime_agent_id);
 CREATE INDEX IF NOT EXISTS idx_heartbeat_history_at ON heartbeat_history(heartbeat_at);
 
-INSERT OR REPLACE INTO control_metadata (key, value) VALUES ('schema_version', '6');
+-- Sentinel Swarm Hub MVP state (server-side only).
+CREATE TABLE IF NOT EXISTS swarm_findings (
+    feed_id TEXT NOT NULL,
+    issuer_id TEXT NOT NULL,
+    feed_seq INTEGER NOT NULL,
+    finding_id TEXT NOT NULL,
+    published_at INTEGER NOT NULL,
+    envelope_hash TEXT NOT NULL,
+    envelope_json TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (feed_id, issuer_id, feed_seq)
+);
+
+DROP INDEX IF EXISTS idx_swarm_findings_identity;
+
+CREATE TABLE IF NOT EXISTS swarm_feed_heads (
+    feed_id TEXT NOT NULL,
+    issuer_id TEXT NOT NULL,
+    head_seq INTEGER NOT NULL,
+    head_envelope_hash TEXT NOT NULL,
+    entry_count INTEGER NOT NULL,
+    announced_at INTEGER NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (feed_id, issuer_id)
+);
+
+CREATE TABLE IF NOT EXISTS swarm_revocations (
+    feed_id TEXT NOT NULL,
+    issuer_id TEXT NOT NULL,
+    feed_seq INTEGER NOT NULL,
+    revocation_id TEXT NOT NULL,
+    issued_at INTEGER NOT NULL,
+    action TEXT NOT NULL,
+    target_schema TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    target_digest TEXT NOT NULL,
+    replacement_schema TEXT,
+    replacement_id TEXT,
+    replacement_digest TEXT,
+    envelope_hash TEXT NOT NULL,
+    envelope_json TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (feed_id, issuer_id, feed_seq)
+);
+
+CREATE INDEX IF NOT EXISTS idx_swarm_revocations_target
+    ON swarm_revocations(feed_id, issuer_id, target_schema, target_id, target_digest, feed_seq);
+
+CREATE TABLE IF NOT EXISTS swarm_revocation_heads (
+    feed_id TEXT NOT NULL,
+    issuer_id TEXT NOT NULL,
+    head_seq INTEGER NOT NULL,
+    head_envelope_hash TEXT NOT NULL,
+    entry_count INTEGER NOT NULL,
+    announced_at INTEGER NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (feed_id, issuer_id)
+);
+
+CREATE TABLE IF NOT EXISTS swarm_revocation_targets (
+    feed_id TEXT NOT NULL,
+    issuer_id TEXT NOT NULL,
+    target_schema TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    target_digest TEXT NOT NULL,
+    current_action TEXT NOT NULL,
+    replacement_schema TEXT,
+    replacement_id TEXT,
+    replacement_digest TEXT,
+    source_revocation_id TEXT NOT NULL,
+    source_feed_seq INTEGER NOT NULL,
+    issued_at INTEGER NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (feed_id, issuer_id, target_schema, target_id, target_digest)
+);
+
+CREATE INDEX IF NOT EXISTS idx_swarm_revocation_targets_source
+    ON swarm_revocation_targets(feed_id, issuer_id, source_feed_seq DESC);
+
+CREATE TABLE IF NOT EXISTS swarm_blob_refs (
+    digest TEXT NOT NULL,
+    feed_id TEXT NOT NULL,
+    issuer_id TEXT NOT NULL,
+    feed_seq INTEGER NOT NULL,
+    finding_id TEXT NOT NULL,
+    blob_id TEXT NOT NULL,
+    media_type TEXT NOT NULL,
+    byte_length INTEGER NOT NULL,
+    publish_json TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (digest, feed_id, issuer_id, feed_seq, blob_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_swarm_blob_refs_finding
+    ON swarm_blob_refs(feed_id, issuer_id, feed_seq);
+
+CREATE TABLE IF NOT EXISTS swarm_blob_pin_requests (
+    request_id TEXT PRIMARY KEY,
+    digest TEXT NOT NULL,
+    actor TEXT,
+    note TEXT,
+    request_json TEXT NOT NULL,
+    status TEXT NOT NULL,
+    requested_at INTEGER NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_swarm_blob_pin_requests_digest
+    ON swarm_blob_pin_requests(digest, requested_at DESC);
+
+INSERT OR REPLACE INTO control_metadata (key, value) VALUES ('schema_version', '9');
 "#;

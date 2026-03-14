@@ -1,10 +1,9 @@
 import { useState, useMemo, useCallback } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { formatRelativeTime } from "@/lib/workbench/format-utils";
 import {
   IconCheck,
   IconBan,
   IconArrowUpRight,
-  IconArrowLeft,
   IconX,
   IconChevronDown,
   IconChevronRight,
@@ -22,14 +21,14 @@ import { cn } from "@/lib/utils";
 import { EnrichmentSidebar } from "./enrichment-sidebar";
 import type {
   Finding,
-  FindingStatus,
   TimelineEntry,
 } from "@/lib/workbench/finding-engine";
-import type { Severity, Annotation } from "@/lib/workbench/hunt-types";
-
-// ---------------------------------------------------------------------------
-// Props
-// ---------------------------------------------------------------------------
+import type { Annotation } from "@/lib/workbench/hunt-types";
+import {
+  SEVERITY_COLORS,
+  SEVERITY_LABELS,
+  STATUS_CONFIG,
+} from "@/lib/workbench/finding-constants";
 
 interface FindingDetailProps {
   finding: Finding;
@@ -42,38 +41,9 @@ interface FindingDetailProps {
   onBack?: () => void;
 }
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-const SEVERITY_COLORS: Record<Severity, string> = {
-  critical: "#c45c5c",
-  high: "#d4784b",
-  medium: "#d4a84b",
-  low: "#6b9b8b",
-  info: "#6f7f9a",
-};
-
-const SEVERITY_LABELS: Record<Severity, string> = {
-  critical: "CRITICAL",
-  high: "HIGH",
-  medium: "MEDIUM",
-  low: "LOW",
-  info: "INFO",
-};
-
-const STATUS_CONFIG: Record<FindingStatus, { label: string; color: string; bg: string }> = {
-  emerging: { label: "Emerging", color: "#d4a84b", bg: "#d4a84b20" },
-  confirmed: { label: "Confirmed", color: "#d4784b", bg: "#d4784b20" },
-  promoted: { label: "Promoted", color: "#3dbf84", bg: "#3dbf8420" },
-  dismissed: { label: "Dismissed", color: "#6f7f9a", bg: "#6f7f9a20" },
-  false_positive: { label: "False Positive", color: "#6f7f9a", bg: "#6f7f9a20" },
-  archived: { label: "Archived", color: "#6f7f9a", bg: "#6f7f9a15" },
-};
-
 const TIMELINE_TYPE_CONFIG: Record<
   TimelineEntry["type"],
-  { icon: typeof IconActivity; color: string; label: string; title?: string }
+  { icon: typeof IconActivity; color: string; label: string }
 > = {
   signal_added: { icon: IconActivity, color: "#d4a84b", label: "Signal" },
   enrichment_added: { icon: IconChartBar, color: "#6ea8d9", label: "Enrichment" },
@@ -82,12 +52,8 @@ const TIMELINE_TYPE_CONFIG: Record<
   verdict_set: { icon: IconShieldCheck, color: "#3dbf84", label: "Verdict" },
   action_taken: { icon: IconCheck, color: "#d4a84b", label: "Action" },
   promoted: { icon: IconArrowUpRight, color: "#3dbf84", label: "Promoted" },
-  speakeasy_opened: { icon: IconMessage, color: "#d4a84b", label: "Speakeasy", title: "Encrypted inter-sentinel communication channel for sharing threat intelligence" },
+  speakeasy_opened: { icon: IconMessage, color: "#d4a84b", label: "Speakeasy" },
 };
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function formatTimestamp(ms: number): string {
   try {
@@ -105,16 +71,6 @@ function formatTimestamp(ms: number): string {
   }
 }
 
-function formatRelativeTime(ms: number): string {
-  const diff = Date.now() - ms;
-  const minutes = Math.floor(diff / 60_000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
 
 function formatTimeRange(start: string, end: string): string {
   try {
@@ -134,10 +90,6 @@ function formatTimeRange(start: string, end: string): string {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Main Component
-// ---------------------------------------------------------------------------
-
 export function FindingDetail({
   finding,
   onConfirm,
@@ -148,8 +100,6 @@ export function FindingDetail({
   onRunEnrichment,
   onBack,
 }: FindingDetailProps) {
-  const navigate = useNavigate();
-  const handleBack = onBack ?? (() => navigate(-1));
   const [annotationText, setAnnotationText] = useState("");
   const [expandedEntryId, setExpandedEntryId] = useState<string | null>(null);
 
@@ -157,9 +107,8 @@ export function FindingDetail({
   const statusConfig = STATUS_CONFIG[finding.status] ?? STATUS_CONFIG.emerging;
   const confidencePct = Math.round(finding.confidence * 100);
 
-  // Sort timeline chronologically
   const sortedTimeline = useMemo(
-    () => [...finding.timeline].sort((a, b) => a.timestamp - b.timestamp),
+    () => [...finding.timeline].sort((a, b) => b.timestamp - a.timestamp),
     [finding.timeline],
   );
 
@@ -171,25 +120,23 @@ export function FindingDetail({
 
   return (
     <div className="flex h-full w-full overflow-hidden bg-[#05060a]">
-      {/* ----------------------------------------------------------------- */}
-      {/* Left column: header + signal timeline + annotations (2/3)         */}
-      {/* ----------------------------------------------------------------- */}
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
-        {/* Header */}
         <div className="shrink-0 border-b border-[#2d3240]/60 px-6 py-4">
-          {/* Back button */}
-          <button onClick={handleBack} className="flex items-center gap-1 text-[11px] text-[#6f7f9a] hover:text-[#ece7dc] transition-colors mb-3">
-            <IconArrowLeft size={12} /> Back
-          </button>
-          {/* Title row */}
           <div className="flex items-start gap-3">
+            {onBack && (
+              <button
+                onClick={onBack}
+                className="mt-0.5 text-[#6f7f9a] hover:text-[#ece7dc] transition-colors shrink-0"
+              >
+                <IconChevronRight size={14} className="rotate-180" stroke={1.5} />
+              </button>
+            )}
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2.5 flex-wrap">
-                <h1 className="font-syne text-sm font-semibold text-[#ece7dc] tracking-[-0.01em]">
+                <h1 className="text-sm font-semibold text-[#ece7dc] tracking-[-0.01em]">
                   {finding.title}
                 </h1>
 
-                {/* Severity badge */}
                 <span
                   className="rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase border"
                   style={{
@@ -201,7 +148,6 @@ export function FindingDetail({
                   {SEVERITY_LABELS[finding.severity]}
                 </span>
 
-                {/* Status badge */}
                 <span
                   className="rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase border"
                   style={{
@@ -213,7 +159,6 @@ export function FindingDetail({
                   {statusConfig.label}
                 </span>
 
-                {/* Confidence meter */}
                 <div className="flex items-center gap-2">
                   <div className="w-16 h-1.5 rounded-full bg-[#2d3240]/40 overflow-hidden">
                     <div
@@ -235,13 +180,9 @@ export function FindingDetail({
                 </div>
               </div>
 
-              {/* Meta line: sentinel, signal count, time range */}
               <div className="mt-1.5 flex items-center gap-3 text-[10px] text-[#6f7f9a]">
-                <span className="inline-flex items-center gap-1.5">
+                <span>
                   Sentinel: <span className="text-[#ece7dc]/60">{finding.createdBy}</span>
-                  <Link to={`/sentinels/${finding.createdBy}`} className="text-[#d4a84b] hover:underline text-[11px]">
-                    View Sentinel &rarr;
-                  </Link>
                 </span>
                 <span className="text-[#2d3240]">|</span>
                 <span>
@@ -258,7 +199,6 @@ export function FindingDetail({
               </div>
             </div>
 
-            {/* Action buttons */}
             <div className="flex items-center gap-1.5 shrink-0">
               {finding.status === "emerging" && (
                 <>
@@ -296,7 +236,6 @@ export function FindingDetail({
           </div>
         </div>
 
-        {/* Scope bar */}
         <div className="shrink-0 flex items-center gap-4 border-b border-[#2d3240]/40 bg-[#0b0d13] px-6 py-2">
           <ScopeItem label="Agents" value={finding.scope.agentIds.length.toString()} />
           <ScopeItem label="Sessions" value={finding.scope.sessionIds.length.toString()} />
@@ -306,9 +245,7 @@ export function FindingDetail({
           />
         </div>
 
-        {/* Signal timeline + annotations */}
         <div className="flex-1 overflow-y-auto">
-          {/* Signal Timeline */}
           <div className="px-6 py-5">
             <SectionHeader
               icon={IconActivity}
@@ -316,7 +253,6 @@ export function FindingDetail({
               badge={`${sortedTimeline.length} entries`}
             />
             <div className="relative ml-3">
-              {/* Vertical connector line */}
               <div className="absolute left-[5px] top-2 bottom-2 w-px bg-[#2d3240]/40" />
 
               <div className="flex flex-col gap-0">
@@ -328,7 +264,6 @@ export function FindingDetail({
 
                   return (
                     <div key={entryKey} className="relative pl-6 py-2 group">
-                      {/* Timeline dot */}
                       <div
                         className="absolute left-0 top-3 w-[11px] h-[11px] rounded-full border-2 bg-[#05060a]"
                         style={{ borderColor: config.color }}
@@ -342,12 +277,10 @@ export function FindingDetail({
                         className="w-full text-left"
                       >
                         <div className="flex items-start gap-3">
-                          {/* Timestamp */}
                           <span className="shrink-0 w-[120px] font-mono text-[9px] text-[#6f7f9a]/50 pt-0.5">
                             {formatTimestamp(entry.timestamp)}
                           </span>
 
-                          {/* Icon + type label */}
                           <span className="flex items-center gap-1.5 shrink-0 w-[90px]">
                             <EntryIcon
                               size={12}
@@ -357,23 +290,19 @@ export function FindingDetail({
                             <span
                               className="text-[9px] font-semibold uppercase"
                               style={{ color: config.color }}
-                              title={config.title}
                             >
                               {config.label}
                             </span>
                           </span>
 
-                          {/* Source attribution */}
                           <span className="shrink-0 text-[10px] text-[#ece7dc]/40 w-[80px] truncate">
                             {entry.actor}
                           </span>
 
-                          {/* Summary */}
                           <span className="flex-1 min-w-0 text-[10px] text-[#ece7dc]/70 truncate">
                             {entry.summary}
                           </span>
 
-                          {/* Expand chevron */}
                           <span className="shrink-0">
                             {isExpanded ? (
                               <IconChevronDown
@@ -390,7 +319,6 @@ export function FindingDetail({
                         </div>
                       </button>
 
-                      {/* Expanded detail */}
                       {isExpanded && (
                         <div className="mt-2 ml-[123px] rounded-lg border border-[#2d3240]/40 bg-[#0b0d13] p-3">
                           <div className="flex flex-col gap-1.5">
@@ -429,10 +357,8 @@ export function FindingDetail({
             </div>
           </div>
 
-          {/* Separator */}
           <div className="mx-6 border-t border-[#2d3240]/40" />
 
-          {/* Receipt section */}
           {finding.receipt && (
             <>
               <div className="px-6 py-5">
@@ -486,7 +412,6 @@ export function FindingDetail({
             </>
           )}
 
-          {/* Annotation thread */}
           <div className="px-6 py-5">
             <SectionHeader
               icon={IconNote}
@@ -498,7 +423,6 @@ export function FindingDetail({
               }
             />
 
-            {/* Existing annotations */}
             {finding.annotations.length > 0 ? (
               <div className="flex flex-col gap-2.5 mb-4">
                 {finding.annotations.map((annotation) => (
@@ -511,7 +435,6 @@ export function FindingDetail({
               </p>
             )}
 
-            {/* Add annotation form */}
             <div className="flex items-start gap-2">
               <div className="flex-1">
                 <textarea
@@ -545,9 +468,6 @@ export function FindingDetail({
         </div>
       </div>
 
-      {/* ----------------------------------------------------------------- */}
-      {/* Right column: enrichment sidebar (1/3)                            */}
-      {/* ----------------------------------------------------------------- */}
       <div className="w-80 shrink-0 border-l border-[#2d3240]/60 overflow-y-auto bg-[#0b0d13]">
         <EnrichmentSidebar
           enrichments={finding.enrichments}
@@ -562,10 +482,6 @@ export function FindingDetail({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Section Header
-// ---------------------------------------------------------------------------
-
 function SectionHeader({
   icon: Icon,
   title,
@@ -578,7 +494,7 @@ function SectionHeader({
   return (
     <div className="flex items-center gap-2 mb-3">
       <Icon size={14} stroke={1.5} className="text-[#d4a84b]" />
-      <h3 className="font-syne text-[11px] font-semibold uppercase tracking-wider text-[#ece7dc]/80">
+      <h3 className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[#ece7dc]/80">
         {title}
       </h3>
       {badge && (
@@ -589,10 +505,6 @@ function SectionHeader({
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Action Button
-// ---------------------------------------------------------------------------
 
 function ActionButton({
   label,
@@ -627,24 +539,16 @@ function ActionButton({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Scope Item
-// ---------------------------------------------------------------------------
-
 function ScopeItem({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center gap-1.5">
-      <span className="text-[9px] uppercase tracking-wider text-[#6f7f9a]/40">
+      <span className="text-[9px] uppercase tracking-[0.08em] text-[#6f7f9a]/40">
         {label}
       </span>
       <span className="text-[10px] font-mono text-[#ece7dc]/60">{value}</span>
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Detail Row
-// ---------------------------------------------------------------------------
 
 function DetailRow({
   label,
@@ -666,10 +570,6 @@ function DetailRow({
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Annotation Card
-// ---------------------------------------------------------------------------
 
 function AnnotationCard({ annotation }: { annotation: Annotation }) {
   return (

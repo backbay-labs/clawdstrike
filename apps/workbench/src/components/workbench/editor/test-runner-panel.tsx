@@ -51,9 +51,6 @@ import { CoverageStrip } from "@/components/workbench/editor/coverage-strip";
 import { TestDiffPanel } from "@/components/workbench/editor/test-diff-panel";
 import { generateScenariosFromPolicy } from "@/lib/workbench/scenario-generator";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 type RunnerTab = "quick" | "suite" | "sdk" | "history" | "live";
 
@@ -99,9 +96,6 @@ interface DiffEntry {
   guardDiffs: GuardDiffEntry[];
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 const ACTION_LABELS: Record<TestActionType, string> = {
   file_access: "File Read",
@@ -254,9 +248,6 @@ scenarios:
     expect: deny
 `;
 
-// ---------------------------------------------------------------------------
-// Quick Test Tab
-// ---------------------------------------------------------------------------
 
 function QuickTestTab() {
   const { state } = useWorkbench();
@@ -618,9 +609,6 @@ function QuickTestTab() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Test Suite Tab
-// ---------------------------------------------------------------------------
 
 type SuiteView = "yaml" | "graph";
 
@@ -1302,9 +1290,6 @@ function TestSuiteTab() {
 
 // SDK Integration Tab — imported from ./sdk-integration-tab.tsx
 
-// ---------------------------------------------------------------------------
-// History Tab
-// ---------------------------------------------------------------------------
 
 function HistoryTab() {
   const { state: testState, dispatch: testDispatch } = useTestRunner();
@@ -1506,9 +1491,6 @@ function HistoryTab() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Main Panel
-// ---------------------------------------------------------------------------
 
 export function TestRunnerPanel() {
   const [activeTab, setActiveTab] = useState<RunnerTab>("quick");

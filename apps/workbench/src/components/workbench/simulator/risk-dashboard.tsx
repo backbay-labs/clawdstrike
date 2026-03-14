@@ -12,9 +12,6 @@ import {
 } from "@tabler/icons-react";
 import { ClaudeCodeHint } from "@/components/workbench/shared/claude-code-hint";
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 const LEVEL_COLORS: Record<string, string> = {
   critical: "#c45c5c",
@@ -34,9 +31,6 @@ const LEVEL_LABELS: Record<string, string> = {
 
 const DIST_KEYS = ["critical", "high", "medium", "low", "informational"] as const;
 
-// ---------------------------------------------------------------------------
-// Score Ring
-// ---------------------------------------------------------------------------
 
 function RiskScoreRing({ score, level }: { score: number; level: string }) {
   const color = LEVEL_COLORS[level] ?? "#6f7f9a";
@@ -72,9 +66,6 @@ function RiskScoreRing({ score, level }: { score: number; level: string }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Distribution Bar
-// ---------------------------------------------------------------------------
 
 function DistributionBar({ distribution }: { distribution: Record<string, number> }) {
   const total = DIST_KEYS.reduce((sum, k) => sum + (distribution[k] ?? 0), 0);
@@ -126,9 +117,6 @@ function DistributionBar({ distribution }: { distribution: Record<string, number
   );
 }
 
-// ---------------------------------------------------------------------------
-// Per-guard risk summary
-// ---------------------------------------------------------------------------
 
 interface GuardRiskEntry {
   guardId: GuardId;
@@ -162,9 +150,6 @@ function computeGuardRisks(pluginScores: RedTeamPluginRiskScore[]): GuardRiskEnt
   return entries.sort((a, b) => b.avgRiskScore - a.avgRiskScore);
 }
 
-// ---------------------------------------------------------------------------
-// Main Component
-// ---------------------------------------------------------------------------
 
 interface RiskDashboardProps {
   systemScore: RedTeamSystemRiskScore | null;

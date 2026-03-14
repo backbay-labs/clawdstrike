@@ -1,9 +1,3 @@
-// ---------------------------------------------------------------------------
-// Sentinel Store — React Context + useReducer for sentinel CRUD & lifecycle
-//
-// Follows the multi-policy-store.tsx pattern: State, Action union, reducer,
-// Provider with localStorage persistence, and a typed hook.
-// ---------------------------------------------------------------------------
 import React, {
   createContext,
   useContext,
@@ -29,19 +23,11 @@ import {
   updateStats as engineUpdateStats,
 } from "./sentinel-manager";
 
-// ---------------------------------------------------------------------------
-// State
-// ---------------------------------------------------------------------------
-
 export interface SentinelState {
   sentinels: Sentinel[];
   activeSentinelId: string | null;
   loading: boolean;
 }
-
-// ---------------------------------------------------------------------------
-// Actions
-// ---------------------------------------------------------------------------
 
 export type SentinelAction =
   | { type: "CREATE"; sentinel: Sentinel }
@@ -54,10 +40,6 @@ export type SentinelAction =
   | { type: "UPDATE_MEMORY"; sentinelId: string; memory: SentinelMemory }
   | { type: "UPDATE_STATS"; sentinelId: string; event: StatsEvent }
   | { type: "LOAD"; sentinels: Sentinel[] };
-
-// ---------------------------------------------------------------------------
-// Reducer
-// ---------------------------------------------------------------------------
 
 function sentinelReducer(state: SentinelState, action: SentinelAction): SentinelState {
   switch (action.type) {
@@ -181,10 +163,6 @@ function sentinelReducer(state: SentinelState, action: SentinelAction): Sentinel
   }
 }
 
-// ---------------------------------------------------------------------------
-// Persistence — localStorage
-// ---------------------------------------------------------------------------
-
 const STORAGE_KEY = "clawdstrike_workbench_sentinels";
 
 function persistSentinels(state: SentinelState): void {
@@ -248,10 +226,6 @@ function loadPersistedSentinels(): SentinelState | null {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Initial state
-// ---------------------------------------------------------------------------
-
 function getInitialState(): SentinelState {
   const restored = loadPersistedSentinels();
   if (restored) return restored;
@@ -262,10 +236,6 @@ function getInitialState(): SentinelState {
     loading: false,
   };
 }
-
-// ---------------------------------------------------------------------------
-// Context
-// ---------------------------------------------------------------------------
 
 interface SentinelContextValue {
   sentinels: Sentinel[];
@@ -284,25 +254,16 @@ interface SentinelContextValue {
 
 const SentinelContext = createContext<SentinelContextValue | null>(null);
 
-// ---------------------------------------------------------------------------
-// Hook
-// ---------------------------------------------------------------------------
-
 export function useSentinels(): SentinelContextValue {
   const ctx = useContext(SentinelContext);
   if (!ctx) throw new Error("useSentinels must be used within SentinelProvider");
   return ctx;
 }
 
-// ---------------------------------------------------------------------------
-// Provider
-// ---------------------------------------------------------------------------
-
 export function SentinelProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(sentinelReducer, undefined, getInitialState);
 
-  // Debounced persistence
-  const persistRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const persistRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (persistRef.current) clearTimeout(persistRef.current);
     persistRef.current = setTimeout(() => {
@@ -313,11 +274,9 @@ export function SentinelProvider({ children }: { children: ReactNode }) {
     };
   }, [state.sentinels, state.activeSentinelId]);
 
-  // Derive active sentinel
-  const activeSentinel = state.sentinels.find((s) => s.id === state.activeSentinelId);
+    const activeSentinel = state.sentinels.find((s) => s.id === state.activeSentinelId);
 
-  // Action dispatchers
-
+  
   const createSentinel = useCallback(
     async (config: CreateSentinelConfig): Promise<Sentinel> => {
       const sentinel = await engineCreateSentinel(config);

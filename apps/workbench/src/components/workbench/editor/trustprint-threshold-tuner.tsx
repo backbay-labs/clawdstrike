@@ -1,9 +1,6 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { cn } from "@/lib/utils";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 interface TrustprintThresholdTunerProps {
   threshold: number;
@@ -18,9 +15,6 @@ interface TrustprintThresholdTunerProps {
   compact?: boolean;
 }
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 const COLORS = {
   allow: "#3dbf84",
@@ -57,9 +51,6 @@ const COMPACT_BAR_HEIGHT = 12;
 const COMPACT_BAR_RX = 3;
 const COMPACT_PADDING_X = 8;
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 /** Round a number to 2 decimal places for display */
 function fmt(n: number): string {
@@ -83,15 +74,9 @@ function zoneBounds(threshold: number, band: number) {
   return { lowerBound, upperBound };
 }
 
-// ---------------------------------------------------------------------------
-// Drag state machine
-// ---------------------------------------------------------------------------
 
 type DragTarget = "threshold" | "lower" | "upper" | null;
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
 
 export function TrustprintThresholdTuner({
   threshold,

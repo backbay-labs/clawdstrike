@@ -63,3 +63,6 @@ apps/agent/src-tauri/resources/bin/
 
 # Moon
 .moon/cache/
+
+# Cursor
+.cursor/

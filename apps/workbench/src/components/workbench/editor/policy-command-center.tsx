@@ -18,9 +18,6 @@ import {
   IconShieldLock,
 } from "@tabler/icons-react";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 /** Returns true/false for configured guards, null for missing guards. */
 function isGuardEnabled(tab: PolicyTab, guardId: string): boolean | null {
@@ -34,17 +31,11 @@ function enabledGuardCount(tab: PolicyTab): number {
   return GUARD_REGISTRY.filter((g) => isGuardEnabled(tab, g.id) === true).length;
 }
 
-// ---------------------------------------------------------------------------
-// Props
-// ---------------------------------------------------------------------------
 
 interface PolicyCommandCenterProps {
   onClose: () => void;
 }
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
 
 export function PolicyCommandCenter({ onClose }: PolicyCommandCenterProps) {
   const { tabs, multiDispatch } = useMultiPolicy();

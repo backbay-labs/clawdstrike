@@ -1,8 +1,5 @@
 import { cn } from "@/lib/utils";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 interface FrameworkSelectorProps {
   frameworks: Array<{ id: string; name: string; score: number }>;
@@ -10,9 +7,6 @@ interface FrameworkSelectorProps {
   onSelect: (id: string) => void;
 }
 
-// ---------------------------------------------------------------------------
-// Score Ring (compact variant for pill selector)
-// ---------------------------------------------------------------------------
 
 function MiniScoreRing({ score, size = 32 }: { score: number; size?: number }) {
   const color = score > 80 ? "#3dbf84" : score >= 50 ? "#d4a84b" : "#c45c5c";
@@ -57,9 +51,6 @@ function MiniScoreRing({ score, size = 32 }: { score: number; size?: number }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Framework Pill
-// ---------------------------------------------------------------------------
 
 function FrameworkPill({
   framework,
@@ -103,9 +94,6 @@ function FrameworkPill({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Main Component
-// ---------------------------------------------------------------------------
 
 export function FrameworkSelector({
   frameworks,

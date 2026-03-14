@@ -1,9 +1,6 @@
 import type { WorkbenchPolicy, Verdict, TestActionType, GuardId } from "./types";
 import { simulatePolicy } from "./simulation-engine";
 
-// ---------------------------------------------------------------------------
-// HushdEvent
-// ---------------------------------------------------------------------------
 
 export interface HushdEvent {
   id: string;
@@ -16,9 +13,6 @@ export interface HushdEvent {
   durationMs: number;
 }
 
-// ---------------------------------------------------------------------------
-// Target pools per guard type
-// ---------------------------------------------------------------------------
 
 const TARGET_POOLS: Partial<Record<GuardId, string[]>> = {
   forbidden_path: [
@@ -118,9 +112,6 @@ const TARGET_POOLS: Partial<Record<GuardId, string[]>> = {
   ],
 };
 
-// ---------------------------------------------------------------------------
-// Agent pool
-// ---------------------------------------------------------------------------
 
 const AGENT_POOL = [
   "agent-alpha",
@@ -130,9 +121,6 @@ const AGENT_POOL = [
   "prod-bot",
 ];
 
-// ---------------------------------------------------------------------------
-// Guard -> action type mapping
-// ---------------------------------------------------------------------------
 
 const GUARD_ACTION_MAP: Partial<Record<GuardId, TestActionType>> = {
   forbidden_path: "file_access",
@@ -150,9 +138,6 @@ const GUARD_ACTION_MAP: Partial<Record<GuardId, TestActionType>> = {
   spider_sense: "user_input",
 };
 
-// ---------------------------------------------------------------------------
-// Payload builders per guard
-// ---------------------------------------------------------------------------
 
 function buildPayload(guardId: GuardId, target: string): Record<string, unknown> {
   switch (guardId) {
@@ -191,9 +176,6 @@ function buildPayload(guardId: GuardId, target: string): Record<string, unknown>
   }
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function pickRandom<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
@@ -207,9 +189,6 @@ function mapVerdict(v: Verdict): "ALLOW" | "DENY" | "WARN" {
 
 let eventCounter = 0;
 
-// ---------------------------------------------------------------------------
-// Main generator
-// ---------------------------------------------------------------------------
 
 export function generateRandomEvent(policy: WorkbenchPolicy): HushdEvent {
   // Get list of enabled guards

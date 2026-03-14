@@ -1,6 +1,3 @@
-// ---------------------------------------------------------------------------
-// Trustprint Provider Wizard — guided embedding provider setup for Spider Sense
-// ---------------------------------------------------------------------------
 
 import { useState, useCallback, useMemo } from "react";
 import {
@@ -24,9 +21,6 @@ import {
   type ConnectionTestResult,
 } from "@/lib/workbench/trustprint-connection";
 
-// ---------------------------------------------------------------------------
-// Provider data
-// ---------------------------------------------------------------------------
 
 interface ModelOption {
   id: string;
@@ -98,9 +92,6 @@ const ICON_MAP: Record<string, typeof IconBrain> = {
   IconSettings,
 };
 
-// ---------------------------------------------------------------------------
-// Props
-// ---------------------------------------------------------------------------
 
 export interface TrustprintProviderWizardProps {
   /** Current spider_sense config */
@@ -119,15 +110,9 @@ export interface TrustprintProviderWizardProps {
   compact?: boolean;
 }
 
-// ---------------------------------------------------------------------------
-// Wizard steps
-// ---------------------------------------------------------------------------
 
 type WizardStep = 1 | 2 | 3;
 
-// ---------------------------------------------------------------------------
-// Step 1: Choose Provider
-// ---------------------------------------------------------------------------
 
 function ProviderCard({
   provider,
@@ -250,9 +235,6 @@ function StepProvider({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Step 2: API Key & Model
-// ---------------------------------------------------------------------------
 
 function StepCredentials({
   apiKey,
@@ -405,9 +387,6 @@ function StepCredentials({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Step 3: Test Connection
-// ---------------------------------------------------------------------------
 
 function StepTest({
   url,
@@ -579,9 +558,6 @@ function StepTest({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Step indicator
-// ---------------------------------------------------------------------------
 
 function StepIndicator({ current }: { current: WizardStep }) {
   const steps = [
@@ -634,9 +610,6 @@ function StepIndicator({ current }: { current: WizardStep }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Compact mode
-// ---------------------------------------------------------------------------
 
 type ConnectionStatus = "untested" | "success" | "failed";
 
@@ -656,8 +629,7 @@ function CompactView({
   const providerIcon = provider ? ICON_MAP[provider.icon] : IconSettings;
   const Icon = providerIcon ?? IconSettings;
 
-  // Derive connection status — always "untested" in compact view for now.
-  // Future: persist last test result in local storage keyed by provider URL.
+    // Future: persist last test result in local storage keyed by provider URL.
   const status = "untested" as ConnectionStatus;
 
   return (
@@ -698,9 +670,6 @@ function CompactView({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Main component
-// ---------------------------------------------------------------------------
 
 export function TrustprintProviderWizard({
   config,
@@ -729,8 +698,7 @@ export function TrustprintProviderWizard({
     config.embedding_model && selectedProviderId === "custom" ? config.embedding_model : "",
   );
 
-  // Derived
-  const provider = useMemo(
+    const provider = useMemo(
     () => EMBEDDING_PROVIDERS.find((p) => p.id === selectedProviderId) ?? null,
     [selectedProviderId],
   );

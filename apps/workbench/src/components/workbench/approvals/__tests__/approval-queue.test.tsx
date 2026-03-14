@@ -6,9 +6,6 @@ import { renderWithProviders } from "@/test/test-helpers";
 import { fleetClient } from "@/lib/workbench/fleet-client";
 import { ApprovalQueue } from "../approval-queue";
 
-// ---------------------------------------------------------------------------
-// Mocks
-// ---------------------------------------------------------------------------
 
 // Mock fleet-client so no real HTTP calls happen
 vi.mock("@/lib/workbench/fleet-client", () => ({
@@ -33,6 +30,7 @@ vi.mock("@/lib/workbench/fleet-client", () => ({
   fetchApprovals: vi.fn().mockResolvedValue({ requests: [], decisions: [] }),
   resolveApproval: vi.fn().mockResolvedValue({ success: true }),
   fetchDelegationGraphFromApi: vi.fn().mockResolvedValue(null),
+  redactFleetConnection: vi.fn().mockReturnValue({}),
 }));
 
 // Mock use-fleet-connection to provide a disconnected state by default
@@ -40,10 +38,13 @@ const mockConnection = {
   connected: false,
   hushdUrl: "",
   controlApiUrl: "",
-  apiKey: "",
-  controlApiToken: "",
   hushdHealth: null,
   agentCount: 0,
+};
+
+const mockCredentials = {
+  apiKey: "",
+  controlApiToken: "",
 };
 
 vi.mock("@/lib/workbench/use-fleet-connection", async () => {
@@ -65,6 +66,8 @@ vi.mock("@/lib/workbench/use-fleet-connection", async () => {
       testConnection: vi.fn(),
       refreshAgents: vi.fn(),
       refreshRemotePolicy: vi.fn(),
+      getCredentials: () => mockCredentials,
+      getAuthenticatedConnection: () => ({ ...mockConnection, ...mockCredentials }),
     }),
   };
 });
@@ -75,9 +78,6 @@ vi.mock("@/lib/tauri-bridge", () => ({
   isMacOS: vi.fn(() => false),
 }));
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function renderQueue() {
   return renderWithProviders(<ApprovalQueue />);
@@ -102,9 +102,6 @@ function expectEnabled(node: Element | null) {
   expect((node as HTMLButtonElement).disabled).toBe(false);
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 describe("ApprovalQueue", () => {
   beforeEach(() => {
@@ -113,19 +110,16 @@ describe("ApprovalQueue", () => {
     mockConnection.connected = false;
     mockConnection.hushdUrl = "";
     mockConnection.controlApiUrl = "";
-    mockConnection.apiKey = "";
-    mockConnection.controlApiToken = "";
     mockConnection.hushdHealth = null;
     mockConnection.agentCount = 0;
+    mockCredentials.apiKey = "";
+    mockCredentials.controlApiToken = "";
   });
 
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  // -----------------------------------------------------------------------
-  // Rendering
-  // -----------------------------------------------------------------------
 
   it("renders with demo data by default", () => {
     renderQueue();
@@ -151,9 +145,6 @@ describe("ApprovalQueue", () => {
     expect(pendingBadges.length).toBeGreaterThan(0);
   });
 
-  // -----------------------------------------------------------------------
-  // Filtering
-  // -----------------------------------------------------------------------
 
   it("filters by status", async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
@@ -220,9 +211,6 @@ describe("ApprovalQueue", () => {
     expectPresent(screen.getByText("No approval requests match your filters."));
   });
 
-  // -----------------------------------------------------------------------
-  // Approval Actions
-  // -----------------------------------------------------------------------
 
   it("shows approve dropdown with scope presets", async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
@@ -303,9 +291,6 @@ describe("ApprovalQueue", () => {
     expect(screen.getAllByText("Approve").length).toBeGreaterThan(0);
   });
 
-  // -----------------------------------------------------------------------
-  // Detail Drawer
-  // -----------------------------------------------------------------------
 
   it("opens detail drawer when clicking a request", async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
@@ -337,9 +322,6 @@ describe("ApprovalQueue", () => {
     expectAbsent(screen.queryByText("Request Details"));
   });
 
-  // -----------------------------------------------------------------------
-  // Auto-expire (the bug we fixed)
-  // -----------------------------------------------------------------------
 
   it("does not cause infinite re-render loop (no maximum update depth exceeded)", () => {
     // This is the regression test for the infinite loop bug.
@@ -382,9 +364,6 @@ describe("ApprovalQueue", () => {
     expect(expiredCount2.length).toBe(expiredCount1.length);
   });
 
-  // -----------------------------------------------------------------------
-  // Data source toggle
-  // -----------------------------------------------------------------------
 
   it("disables live toggle when fleet is not connected", () => {
     renderQueue();
@@ -423,9 +402,6 @@ describe("ApprovalQueue", () => {
     expect(vi.mocked(fleetClient.fetchApprovals)).not.toHaveBeenCalled();
   });
 
-  // -----------------------------------------------------------------------
-  // Countdown formatting
-  // -----------------------------------------------------------------------
 
   it("displays countdown timers for pending requests", () => {
     renderQueue();
@@ -436,9 +412,6 @@ describe("ApprovalQueue", () => {
     expect(timerElements.length).toBeGreaterThan(0);
   });
 
-  // -----------------------------------------------------------------------
-  // Provider badges
-  // -----------------------------------------------------------------------
 
   it("renders provider abbreviation badges", () => {
     renderQueue();
@@ -448,9 +421,6 @@ describe("ApprovalQueue", () => {
     expect(screen.getAllByText("G").length).toBeGreaterThan(0); // GitHub
   });
 
-  // -----------------------------------------------------------------------
-  // Risk level badges
-  // -----------------------------------------------------------------------
 
   it("renders risk level badges on cards", () => {
     renderQueue();
@@ -461,9 +431,6 @@ describe("ApprovalQueue", () => {
     expect(screen.getAllByText("Low").length).toBeGreaterThan(0);
   });
 
-  // -----------------------------------------------------------------------
-  // Sort order
-  // -----------------------------------------------------------------------
 
   it("sorts pending requests before resolved ones", () => {
     renderQueue();

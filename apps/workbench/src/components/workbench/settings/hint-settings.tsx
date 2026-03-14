@@ -1,6 +1,3 @@
-// ---------------------------------------------------------------------------
-// Hint Settings — configure Claude Code hint text and visibility
-// ---------------------------------------------------------------------------
 import {
   useHintSettings,
   HINT_LABELS,
@@ -11,9 +8,6 @@ import { IconBrain, IconRefresh, IconCheck } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { useState, useCallback } from "react";
 
-// ---------------------------------------------------------------------------
-// Hint groups
-// ---------------------------------------------------------------------------
 
 const HINT_GROUPS: { label: string; ids: HintId[] }[] = [
   {
@@ -33,9 +27,6 @@ const HINT_GROUPS: { label: string; ids: HintId[] }[] = [
 // Dot colors per group (matching the design language)
 const GROUP_COLORS = ["#d4a84b", "#3dbf84", "#8b5cf6"];
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
 
 export function HintSettings() {
   const {
@@ -147,9 +138,6 @@ export function HintSettings() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Per-hint card
-// ---------------------------------------------------------------------------
 
 function HintCard({
   id,

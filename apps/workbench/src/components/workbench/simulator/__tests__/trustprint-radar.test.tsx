@@ -9,9 +9,6 @@ import { TrustprintRadar, type TrustprintRadarProps } from "../trustprint-radar"
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 const BASE_PROPS: TrustprintRadarProps = {
   scores: {
@@ -38,9 +35,6 @@ function renderRadar(
   return { container, root };
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 describe("TrustprintRadar", () => {
   let container: HTMLDivElement;

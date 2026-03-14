@@ -10,9 +10,6 @@ import {
   type ScreeningResult,
 } from "@/lib/workbench/trustprint-screening";
 
-// ---------------------------------------------------------------------------
-// cosineSimilarity
-// ---------------------------------------------------------------------------
 
 describe("cosineSimilarity", () => {
   it("returns 1 for identical vectors", () => {
@@ -52,9 +49,6 @@ describe("cosineSimilarity", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// generateDemoEmbedding
-// ---------------------------------------------------------------------------
 
 describe("generateDemoEmbedding", () => {
   it("returns a 3-dim vector", () => {
@@ -138,9 +132,6 @@ describe("generateDemoEmbedding", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// S2BENCH_PATTERNS
-// ---------------------------------------------------------------------------
 
 describe("S2BENCH_PATTERNS", () => {
   it("contains exactly 36 patterns", () => {
@@ -184,9 +175,6 @@ describe("S2BENCH_PATTERNS", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Category / Stage metadata
-// ---------------------------------------------------------------------------
 
 describe("display metadata", () => {
   it("has colors for all categories", () => {
@@ -211,9 +199,6 @@ describe("display metadata", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// screenAction
-// ---------------------------------------------------------------------------
 
 describe("screenAction", () => {
   it("returns allow verdict for benign text", () => {

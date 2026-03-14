@@ -1,9 +1,3 @@
-// ---------------------------------------------------------------------------
-// Operator Store — React Context + useReducer for operator identity lifecycle
-//
-// Follows the sentinel-store.tsx pattern: State, Action union, reducer,
-// Provider with localStorage + secureStore persistence, and a typed hook.
-// ---------------------------------------------------------------------------
 import React, {
   createContext,
   useContext,
@@ -22,21 +16,14 @@ import {
   exportKey as cryptoExportKey,
   importKey as cryptoImportKey,
 } from "./operator-crypto";
+import { signDetachedPayload } from "./signature-adapter";
 import { secureStore } from "./secure-store";
-
-// ---------------------------------------------------------------------------
-// State
-// ---------------------------------------------------------------------------
 
 export interface OperatorState {
   currentOperator: OperatorIdentity | null;
   initialized: boolean;
   loading: boolean;
 }
-
-// ---------------------------------------------------------------------------
-// Actions
-// ---------------------------------------------------------------------------
 
 export type OperatorAction =
   | { type: "INIT"; operator: OperatorIdentity | null }
@@ -45,11 +32,8 @@ export type OperatorAction =
   | { type: "LINK_IDP"; claims: IdpClaims }
   | { type: "UNLINK_IDP" }
   | { type: "ADD_DEVICE"; device: { deviceId: string; deviceName: string } }
+  | { type: "REVOKE"; revokedAt: number; revocationReason: string }
   | { type: "SIGN_OUT" };
-
-// ---------------------------------------------------------------------------
-// Reducer
-// ---------------------------------------------------------------------------
 
 export function operatorReducer(state: OperatorState, action: OperatorAction): OperatorState {
   switch (action.type) {
@@ -123,6 +107,18 @@ export function operatorReducer(state: OperatorState, action: OperatorAction): O
       };
     }
 
+    case "REVOKE": {
+      if (!state.currentOperator) return state;
+      return {
+        ...state,
+        currentOperator: {
+          ...state.currentOperator,
+          revokedAt: action.revokedAt,
+          revocationReason: action.revocationReason,
+        },
+      };
+    }
+
     case "SIGN_OUT": {
       return {
         ...state,
@@ -134,10 +130,6 @@ export function operatorReducer(state: OperatorState, action: OperatorAction): O
       return state;
   }
 }
-
-// ---------------------------------------------------------------------------
-// Persistence — localStorage (public identity) + secureStore (secret key)
-// ---------------------------------------------------------------------------
 
 const STORAGE_KEY = "clawdstrike_workbench_operator";
 const SECRET_KEY_STORE_KEY = "operator_secret_key";
@@ -175,19 +167,11 @@ function loadPersistedOperator(): OperatorIdentity | null {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Initial state
-// ---------------------------------------------------------------------------
-
 const INITIAL_STATE: OperatorState = {
   currentOperator: null,
   initialized: false,
   loading: true,
 };
-
-// ---------------------------------------------------------------------------
-// Context
-// ---------------------------------------------------------------------------
 
 interface OperatorContextValue {
   currentOperator: OperatorIdentity | null;
@@ -197,28 +181,26 @@ interface OperatorContextValue {
   updateDisplayName: (displayName: string) => void;
   linkIdp: (claims: IdpClaims) => void;
   unlinkIdp: () => void;
+  /**
+   * @deprecated Callers should migrate to {@link signPayload} to avoid
+   * exposing the raw secret key outside the operator store.
+   */
   getSecretKey: () => Promise<string | null>;
+  signPayload: (data: Uint8Array) => Promise<string>;
   signData: (data: Uint8Array) => Promise<string | null>;
   exportKey: (passphrase: string) => Promise<string | null>;
   importKey: (encoded: string, passphrase: string) => Promise<boolean>;
+  revokeIdentity: (reason: string) => void;
   signOut: () => Promise<void>;
 }
 
 const OperatorContext = createContext<OperatorContextValue | null>(null);
-
-// ---------------------------------------------------------------------------
-// Hook
-// ---------------------------------------------------------------------------
 
 export function useOperator(): OperatorContextValue {
   const ctx = useContext(OperatorContext);
   if (!ctx) throw new Error("useOperator must be used within OperatorProvider");
   return ctx;
 }
-
-// ---------------------------------------------------------------------------
-// Provider
-// ---------------------------------------------------------------------------
 
 export function OperatorProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(operatorReducer, INITIAL_STATE);
@@ -229,8 +211,7 @@ export function OperatorProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "INIT", operator });
   }, []);
 
-  // Debounced persistence
-  const persistRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const persistRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (!state.initialized) return;
     if (persistRef.current) clearTimeout(persistRef.current);
@@ -242,15 +223,11 @@ export function OperatorProvider({ children }: { children: ReactNode }) {
     };
   }, [state.currentOperator, state.initialized]);
 
-  // Action dispatchers
-
+  
   const createIdentity = useCallback(
     async (displayName: string): Promise<OperatorIdentity> => {
-      console.info("[operator-store] createIdentity: generating keypair…");
       const { identity, secretKeyHex } = await createOperatorIdentity(displayName);
-      console.info("[operator-store] createIdentity: keypair ready, storing secret…");
       await secureStore.set(SECRET_KEY_STORE_KEY, secretKeyHex);
-      console.info("[operator-store] createIdentity: stored, dispatching…");
       dispatch({ type: "CREATE", operator: identity });
       return identity;
     },
@@ -278,6 +255,24 @@ export function OperatorProvider({ children }: { children: ReactNode }) {
       const secretKey = await secureStore.get(SECRET_KEY_STORE_KEY);
       if (!secretKey) return null;
       return signData(data, secretKey);
+    },
+    [],
+  );
+
+  const signPayloadAction = useCallback(
+    async (data: Uint8Array): Promise<string> => {
+      const secretKey = await secureStore.get(SECRET_KEY_STORE_KEY);
+      if (!secretKey) {
+        throw new Error("No secret key available — create or import an identity first");
+      }
+      return signDetachedPayload(data, secretKey);
+    },
+    [],
+  );
+
+  const revokeIdentityAction = useCallback(
+    (reason: string): void => {
+      dispatch({ type: "REVOKE", revokedAt: Date.now(), revocationReason: reason });
     },
     [],
   );
@@ -341,9 +336,11 @@ export function OperatorProvider({ children }: { children: ReactNode }) {
     linkIdp,
     unlinkIdp,
     getSecretKey,
+    signPayload: signPayloadAction,
     signData: signDataAction,
     exportKey: exportKeyAction,
     importKey: importKeyAction,
+    revokeIdentity: revokeIdentityAction,
     signOut: signOutAction,
   };
 

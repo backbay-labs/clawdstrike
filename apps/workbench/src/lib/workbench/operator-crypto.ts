@@ -1,35 +1,15 @@
-/**
- * Operator Crypto — Ed25519 key management, signing, and verification.
- *
- * Pure crypto module with no React dependencies. Uses Web Crypto API
- * Ed25519 (Chrome 113+, Node 20+) with SHA-256 fallbacks for environments
- * that lack Ed25519 support.
- */
-
 import type { OperatorIdentity } from "./operator-types";
 
-// ---------------------------------------------------------------------------
-// Hex utilities
-// ---------------------------------------------------------------------------
-
-/**
- * Cast a Uint8Array to a BufferSource-compatible type.
- * Workaround for TypeScript's strict ArrayBuffer/SharedArrayBuffer distinction.
- */
 function buf(data: Uint8Array): ArrayBuffer {
   return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
 }
 
-/**
- * Convert a Uint8Array to a hex string.
- */
 export function toHex(bytes: Uint8Array): string {
   return Array.from(bytes)
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 }
 
-/** Convert a hex string to a Uint8Array. Throws on invalid input. */
 export function hexToBytes(hex: string): Uint8Array {
   if (hex.length % 2 !== 0) {
     throw new Error("hexToBytes: input must have even length");
@@ -44,10 +24,6 @@ export function hexToBytes(hex: string): Uint8Array {
   return bytes;
 }
 
-// ---------------------------------------------------------------------------
-// Sigil System (8 sigil types from @backbay/speakeasy)
-// ---------------------------------------------------------------------------
-
 export type SigilType = "diamond" | "eye" | "wave" | "crown" | "spiral" | "key" | "star" | "moon";
 
 export const SIGILS: readonly SigilType[] = [
@@ -61,23 +37,11 @@ export const SIGILS: readonly SigilType[] = [
   "moon",
 ] as const;
 
-/**
- * Derive sigil type from a fingerprint string.
- * Uses the numeric value of the first byte (2 hex chars) mod 8.
- */
 export function deriveSigil(fingerprint: string): SigilType {
   const firstByte = parseInt(fingerprint.slice(0, 2), 16);
   return SIGILS[firstByte % SIGILS.length];
 }
 
-// ---------------------------------------------------------------------------
-// PKCS8 Ed25519 wrapper
-// ---------------------------------------------------------------------------
-
-/**
- * Build a PKCS8 wrapper around a raw 32-byte Ed25519 seed.
- * The resulting ArrayBuffer can be imported via crypto.subtle.importKey("pkcs8", ...).
- */
 function buildPkcs8Ed25519(seed: Uint8Array): ArrayBuffer {
   const prefix = new Uint8Array([
     0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06,
@@ -89,75 +53,32 @@ function buildPkcs8Ed25519(seed: Uint8Array): ArrayBuffer {
   return pkcs8.buffer;
 }
 
-// ---------------------------------------------------------------------------
-// Key generation
-// ---------------------------------------------------------------------------
-
-/**
- * Generate an Ed25519 keypair. Returns hex-encoded public key (64 chars)
- * and secret key seed (64 chars).
- *
- * Tries Web Crypto Ed25519 first; falls back to random bytes if unavailable.
- */
 export async function generateOperatorKeypair(): Promise<{
   publicKeyHex: string;
   secretKeyHex: string;
 }> {
-  // WebKit (Tauri WebView on macOS) can hang indefinitely on Ed25519
-  // generateKey — race with a timeout to avoid stuck UI.
-  const TIMEOUT_MS = 3000;
-
   try {
-    const keyPair = await Promise.race([
-      crypto.subtle.generateKey("Ed25519", true, ["sign", "verify"]),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("Ed25519 generateKey timed out")), TIMEOUT_MS),
-      ),
-    ]);
+    const keyPair = await crypto.subtle.generateKey("Ed25519", true, ["sign", "verify"]);
     const publicKeyRaw = await crypto.subtle.exportKey("raw", keyPair.publicKey);
     const privateKeyRaw = await crypto.subtle.exportKey("pkcs8", keyPair.privateKey);
-    // PKCS8 Ed25519 private key: 48 bytes total, last 32 are the seed
     const seed = new Uint8Array(privateKeyRaw).slice(-32);
     return {
       publicKeyHex: toHex(new Uint8Array(publicKeyRaw)),
       secretKeyHex: toHex(seed),
     };
-  } catch (err) {
-    // Fallback: generate a random 32-byte seed and derive a "public key"
-    // via SHA-256. Not real Ed25519, but sufficient for local-only identity
-    // in environments where Web Crypto Ed25519 is broken (WebKit).
-    console.warn(
-      "[operator-crypto] Ed25519 generateKey unavailable/timed out, using SHA-256 fallback:",
-      err instanceof Error ? err.message : err,
+  } catch {
+    throw new Error(
+      "Ed25519 not supported in this environment. Web Crypto Ed25519 (Chrome 113+/Node 20+) is required.",
     );
-    const seed = crypto.getRandomValues(new Uint8Array(32));
-    const hash = await crypto.subtle.digest("SHA-256", buf(seed));
-    return {
-      publicKeyHex: toHex(new Uint8Array(hash)),
-      secretKeyHex: toHex(seed),
-    };
   }
 }
 
-// ---------------------------------------------------------------------------
-// Fingerprint derivation
-// ---------------------------------------------------------------------------
-
-/** Derive a 16-char hex fingerprint from a public key hex string. */
 export async function deriveFingerprint(publicKeyHex: string): Promise<string> {
   const bytes = hexToBytes(publicKeyHex);
-  const hash = await crypto.subtle.digest("SHA-256", buf(bytes));
+  const hash = await crypto.subtle.digest("SHA-256", bytes as BufferSource);
   return toHex(new Uint8Array(hash)).slice(0, 16);
 }
 
-// ---------------------------------------------------------------------------
-// Operator identity creation
-// ---------------------------------------------------------------------------
-
-/**
- * Create a full OperatorIdentity from a display name.
- * Returns both the identity and the secret key (caller must store securely).
- */
 export async function createOperatorIdentity(
   displayName: string,
 ): Promise<{ identity: OperatorIdentity; secretKeyHex: string }> {
@@ -189,40 +110,25 @@ export async function createOperatorIdentity(
   };
 }
 
-// ---------------------------------------------------------------------------
-// Signing
-// ---------------------------------------------------------------------------
-
-/** Sign raw bytes with an Ed25519 secret key seed. Returns hex signature. */
 export async function signData(data: Uint8Array, secretKeyHex: string): Promise<string> {
   try {
     const seed = hexToBytes(secretKeyHex);
-    const privateKey = await Promise.race([
-      crypto.subtle.importKey("pkcs8", buildPkcs8Ed25519(seed), "Ed25519", false, ["sign"]),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("Ed25519 importKey timed out")), 3000),
-      ),
-    ]);
+    const privateKey = await crypto.subtle.importKey(
+      "pkcs8",
+      buildPkcs8Ed25519(seed),
+      "Ed25519",
+      false,
+      ["sign"],
+    );
     const sig = await crypto.subtle.sign("Ed25519", privateKey, buf(data));
     return toHex(new Uint8Array(sig));
   } catch {
-    // Fallback: HMAC-SHA256 when Ed25519 is unavailable (WebKit).
-    // Derive the HMAC key from the seed the same way generateOperatorKeypair
-    // derives the public key: SHA-256(seed). This means verifySignature can
-    // use publicKeyHex (which IS SHA-256(seed)) as the HMAC key to verify.
-    const seed = hexToBytes(secretKeyHex);
-    const derivedKey = await crypto.subtle.digest("SHA-256", buf(seed));
-    const key = await crypto.subtle.importKey("raw", derivedKey, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-    const sig = await crypto.subtle.sign("HMAC", key, buf(data));
-    return toHex(new Uint8Array(sig));
+    throw new Error(
+      "Ed25519 not supported in this environment. Web Crypto Ed25519 (Chrome 113+/Node 20+) is required.",
+    );
   }
 }
 
-// ---------------------------------------------------------------------------
-// Verification
-// ---------------------------------------------------------------------------
-
-/** Verify an Ed25519 signature over raw bytes. */
 export async function verifySignature(
   data: Uint8Array,
   signatureHex: string,
@@ -230,38 +136,16 @@ export async function verifySignature(
 ): Promise<boolean> {
   try {
     const publicKeyBytes = hexToBytes(publicKeyHex);
-    const publicKey = await Promise.race([
-      crypto.subtle.importKey("raw", buf(publicKeyBytes), "Ed25519", false, ["verify"]),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("Ed25519 importKey timed out")), 3000),
-      ),
+    const publicKey = await crypto.subtle.importKey("raw", buf(publicKeyBytes), "Ed25519", false, [
+      "verify",
     ]);
     const signature = hexToBytes(signatureHex);
     return crypto.subtle.verify("Ed25519", publicKey, buf(signature), buf(data));
   } catch {
-    // Fallback: HMAC-SHA256 verification using public key as HMAC key.
-    // When Ed25519 is unavailable, signData uses HMAC with the secret seed.
-    // For local verification, the public key (SHA-256 of seed) serves as
-    // a shared identifier — re-derive HMAC using publicKeyHex as the key
-    // so signatures produced by the HMAC fallback can be verified locally.
-    try {
-      const keyBytes = hexToBytes(publicKeyHex);
-      const key = await crypto.subtle.importKey(
-        "raw", buf(keyBytes), { name: "HMAC", hash: "SHA-256" }, false, ["verify"],
-      );
-      const signature = hexToBytes(signatureHex);
-      return crypto.subtle.verify("HMAC", key, buf(signature), buf(data));
-    } catch {
-      return false;
-    }
+    return false;
   }
 }
 
-// ---------------------------------------------------------------------------
-// Canonical JSON (sorted-key canonical JSON, not RFC 8785)
-// ---------------------------------------------------------------------------
-
-/** Serialize an object to sorted-key canonical JSON (not RFC 8785). */
 export function canonicalizeJson(obj: unknown): string {
   return JSON.stringify(obj, (_, value) => {
     if (value && typeof value === "object" && !Array.isArray(value)) {
@@ -276,13 +160,11 @@ export function canonicalizeJson(obj: unknown): string {
   });
 }
 
-/** Sign the canonical JSON serialization of an object. */
 export async function signCanonical(obj: unknown, secretKeyHex: string): Promise<string> {
   const data = new TextEncoder().encode(canonicalizeJson(obj));
   return signData(data, secretKeyHex);
 }
 
-/** Verify a signature over the canonical JSON serialization of an object. */
 export async function verifyCanonical(
   obj: unknown,
   signatureHex: string,
@@ -292,42 +174,48 @@ export async function verifyCanonical(
   return verifySignature(data, signatureHex, publicKeyHex);
 }
 
-// ---------------------------------------------------------------------------
-// Ownership proofs
-// ---------------------------------------------------------------------------
+export const OWNERSHIP_PROOF_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
-/**
- * Sign an ownership proof: operator signs sentinel's public key to prove
- * they control the operator keypair that owns the sentinel.
- */
+export interface OwnershipProof {
+  signature: string;
+  timestamp: number;
+}
+
 export async function signOwnershipProof(
   sentinelPublicKey: string,
   operatorSecretKey: string,
-): Promise<string> {
-  const data = new TextEncoder().encode(`clawdstrike:ownership:${sentinelPublicKey}`);
-  return signData(data, operatorSecretKey);
+  timestamp: number = Date.now(),
+): Promise<OwnershipProof> {
+  const data = new TextEncoder().encode(
+    `clawdstrike:ownership:${sentinelPublicKey}:${timestamp}`,
+  );
+  const signature = await signData(data, operatorSecretKey);
+  return { signature, timestamp };
 }
 
-/** Verify an ownership proof signature. */
 export async function verifyOwnershipProof(
   sentinelPublicKey: string,
-  proof: string,
+  proof: OwnershipProof,
   operatorPublicKey: string,
+  maxAgeMs: number = OWNERSHIP_PROOF_MAX_AGE_MS,
 ): Promise<boolean> {
-  const data = new TextEncoder().encode(`clawdstrike:ownership:${sentinelPublicKey}`);
-  return verifySignature(data, proof, operatorPublicKey);
+  if (!Number.isFinite(proof.timestamp) || proof.timestamp < 0) {
+    return false;
+  }
+
+  if (Number.isFinite(maxAgeMs)) {
+    const age = Date.now() - proof.timestamp;
+    if (age > maxAgeMs || age < -60_000) {
+      return false;
+    }
+  }
+
+  const data = new TextEncoder().encode(
+    `clawdstrike:ownership:${sentinelPublicKey}:${proof.timestamp}`,
+  );
+  return verifySignature(data, proof.signature, operatorPublicKey);
 }
 
-// ---------------------------------------------------------------------------
-// Key export / import (PBKDF2 + AES-256-GCM)
-// ---------------------------------------------------------------------------
-
-/**
- * Export a keypair encrypted with a passphrase.
- * Encrypts both publicKeyHex and secretKeyHex so importKey can return
- * the correct public key without derivation.
- * Returns a base64url-encoded blob: salt(16) + iv(12) + ciphertext.
- */
 export async function exportKey(secretKeyHex: string, publicKeyHex: string, passphrase: string): Promise<string> {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const iv = crypto.getRandomValues(new Uint8Array(12));
@@ -340,7 +228,7 @@ export async function exportKey(secretKeyHex: string, publicKeyHex: string, pass
     ["deriveKey"],
   );
   const aesKey = await crypto.subtle.deriveKey(
-    { name: "PBKDF2", salt: buf(salt), iterations: 100_000, hash: "SHA-256" },
+    { name: "PBKDF2", salt: buf(salt), iterations: 600_000, hash: "SHA-256" },
     passphraseKey,
     { name: "AES-GCM", length: 256 },
     false,
@@ -360,10 +248,6 @@ export async function exportKey(secretKeyHex: string, publicKeyHex: string, pass
     .replace(/=+$/, "");
 }
 
-/**
- * Import a keypair from a passphrase-encrypted base64url blob.
- * Returns the decrypted public key hex and secret key hex.
- */
 export async function importKey(
   encoded: string,
   passphrase: string,
@@ -383,7 +267,7 @@ export async function importKey(
     ["deriveKey"],
   );
   const aesKey = await crypto.subtle.deriveKey(
-    { name: "PBKDF2", salt: buf(salt), iterations: 100_000, hash: "SHA-256" },
+    { name: "PBKDF2", salt: buf(salt), iterations: 600_000, hash: "SHA-256" },
     passphraseKey,
     { name: "AES-GCM", length: 256 },
     false,

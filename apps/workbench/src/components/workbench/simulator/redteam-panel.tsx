@@ -16,9 +16,6 @@ import {
   IconAlertTriangle,
 } from "@tabler/icons-react";
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 const SEVERITY_COLORS: Record<string, string> = {
   critical: "#c45c5c",
@@ -41,9 +38,6 @@ const CATEGORY_LABELS: Record<string, string> = {
   agentic: "Agentic Threats",
 };
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function groupPluginsByCategory(): Record<string, RedTeamPlugin[]> {
   const groups: Record<string, RedTeamPlugin[]> = {};
@@ -159,9 +153,6 @@ function computeSystemRisk(
   return { score: avgScore, level: systemLevel, plugins: pluginScores, distribution };
 }
 
-// ---------------------------------------------------------------------------
-// Plugin Category Group
-// ---------------------------------------------------------------------------
 
 export function PluginCategoryGroup({
   category,
@@ -242,9 +233,6 @@ export function PluginCategoryGroup({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Coverage Indicator
-// ---------------------------------------------------------------------------
 
 export function CoverageIndicator({
   covered,
@@ -282,9 +270,6 @@ export function CoverageIndicator({
   );
 }
 
-// ---------------------------------------------------------------------------
-// useRedTeamPlugins hook
-// ---------------------------------------------------------------------------
 
 export interface UseRedTeamPluginsResult {
   enabledPlugins: Set<string>;
@@ -428,9 +413,6 @@ export function useRedTeamPlugins(
   };
 }
 
-// ---------------------------------------------------------------------------
-// Main Component
-// ---------------------------------------------------------------------------
 
 interface RedTeamPanelProps {
   policy: WorkbenchPolicy;

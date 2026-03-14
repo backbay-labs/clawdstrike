@@ -8,9 +8,6 @@
 
 import type { ApprovalRequest, ApprovalDecision } from "./approval-types";
 
-// ---------------------------------------------------------------------------
-// Helpers — timestamps relative to "now" so countdown timers work in demo
-// ---------------------------------------------------------------------------
 
 function minutesFromNow(m: number): string {
   return new Date(Date.now() + m * 60_000).toISOString();
@@ -20,9 +17,6 @@ function minutesAgo(m: number): string {
   return new Date(Date.now() - m * 60_000).toISOString();
 }
 
-// ---------------------------------------------------------------------------
-// Requests (10)
-// ---------------------------------------------------------------------------
 
 export const DEMO_APPROVAL_REQUESTS: ApprovalRequest[] = [
   {
@@ -255,9 +249,6 @@ export const DEMO_APPROVAL_REQUESTS: ApprovalRequest[] = [
   },
 ];
 
-// ---------------------------------------------------------------------------
-// Resolved decisions (for the already-resolved items above)
-// ---------------------------------------------------------------------------
 
 export const DEMO_APPROVAL_DECISIONS: ApprovalDecision[] = [
   {

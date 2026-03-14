@@ -14,9 +14,6 @@ import {
   IconArrowRight,
 } from "@tabler/icons-react";
 
-// ---------------------------------------------------------------------------
-// Template definitions
-// ---------------------------------------------------------------------------
 
 interface TemplateEntry {
   name: string;
@@ -35,9 +32,6 @@ const TEMPLATES: TemplateEntry[] = [
   { name: "spider-sense", description: "Hierarchical threat screening with pattern matching", hint: "Best for: embedding-based threat detection and anomaly screening" },
 ];
 
-// ---------------------------------------------------------------------------
-// EditorHomeTab
-// ---------------------------------------------------------------------------
 
 export function EditorHomeTab({
   onNavigateToTab,

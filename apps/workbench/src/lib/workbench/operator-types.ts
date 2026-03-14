@@ -6,9 +6,6 @@
  * has an Ed25519 keypair, a fingerprint, and an optional IdP binding.
  */
 
-// ---------------------------------------------------------------------------
-// Identity Provider (IdP)
-// ---------------------------------------------------------------------------
 
 export type IdpProvider = "oidc" | "saml" | "okta" | "auth0" | "azure_ad";
 
@@ -26,9 +23,6 @@ export interface IdpClaims {
   expiresAt: number;
 }
 
-// ---------------------------------------------------------------------------
-// Operator Device
-// ---------------------------------------------------------------------------
 
 export interface OperatorDevice {
   deviceId: string;
@@ -37,9 +31,6 @@ export interface OperatorDevice {
   lastSeenAt: number;
 }
 
-// ---------------------------------------------------------------------------
-// Operator Identity
-// ---------------------------------------------------------------------------
 
 export interface OperatorIdentity {
   publicKey: string;        // 64-char hex (32 bytes)
@@ -51,11 +42,12 @@ export interface OperatorIdentity {
   createdAt: number;
   originDeviceId: string;
   devices: OperatorDevice[];
+  /** Epoch-ms timestamp when this identity was revoked, if applicable. */
+  revokedAt?: number;
+  /** Human-readable reason for revocation, if applicable. */
+  revocationReason?: string;
 }
 
-// ---------------------------------------------------------------------------
-// Capabilities and Roles
-// ---------------------------------------------------------------------------
 
 export type OperatorCapability =
   | "swarm:publish_intel"
@@ -91,9 +83,6 @@ export const ROLE_CAPABILITIES: Record<SwarmOperatorRole, OperatorCapability[]> 
   ],
 };
 
-// ---------------------------------------------------------------------------
-// Invitations
-// ---------------------------------------------------------------------------
 
 export const INVITATION_AUDIENCE = "clawdstrike:swarm-invitation" as const;
 export const MAX_INVITATION_DEPTH = 5;

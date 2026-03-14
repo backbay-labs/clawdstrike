@@ -1,9 +1,7 @@
-// ---------------------------------------------------------------------------
 // Swarm Store — React Context + useReducer for swarm CRUD & coordination
 //
 // Follows the sentinel-store.tsx pattern: State, Action union, reducer,
 // Provider with localStorage persistence, and a typed hook.
-// ---------------------------------------------------------------------------
 import React, {
   createContext,
   useContext,
@@ -26,9 +24,6 @@ import type {
 } from "./sentinel-types";
 import { generateId } from "./sentinel-types";
 
-// ---------------------------------------------------------------------------
-// State
-// ---------------------------------------------------------------------------
 
 export interface SwarmState {
   swarms: Swarm[];
@@ -37,9 +32,6 @@ export interface SwarmState {
   invitationTracking: Record<string, { active: string[]; used: string[]; revoked: string[] }>;
 }
 
-// ---------------------------------------------------------------------------
-// Actions
-// ---------------------------------------------------------------------------
 
 export type SwarmAction =
   | { type: "CREATE"; swarm: Swarm }
@@ -64,9 +56,6 @@ export type SwarmAction =
   | { type: "MARK_INVITATION_USED"; swarmId: string; jti: string }
   | { type: "LOAD"; swarms: Swarm[] };
 
-// ---------------------------------------------------------------------------
-// Stats helpers
-// ---------------------------------------------------------------------------
 
 function recomputeStats(swarm: Swarm): SwarmStats {
   const sentinelCount = swarm.members.filter((m) => m.type === "sentinel").length;
@@ -85,9 +74,6 @@ function recomputeStats(swarm: Swarm): SwarmStats {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Reducer
-// ---------------------------------------------------------------------------
 
 function swarmReducer(state: SwarmState, action: SwarmAction): SwarmState {
   switch (action.type) {
@@ -393,9 +379,6 @@ function swarmReducer(state: SwarmState, action: SwarmAction): SwarmState {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Persistence — localStorage
-// ---------------------------------------------------------------------------
 
 const STORAGE_KEY = "clawdstrike_workbench_swarms";
 
@@ -468,9 +451,6 @@ function loadPersistedSwarms(): SwarmState | null {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Initial state
-// ---------------------------------------------------------------------------
 
 function getInitialState(): SwarmState {
   const restored = loadPersistedSwarms();
@@ -484,9 +464,6 @@ function getInitialState(): SwarmState {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Swarm factory
-// ---------------------------------------------------------------------------
 
 export interface CreateSwarmConfig {
   name: string;
@@ -545,9 +522,6 @@ export function createSwarm(config: CreateSwarmConfig): Swarm {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Context
-// ---------------------------------------------------------------------------
 
 interface SwarmContextValue {
   swarms: Swarm[];
@@ -578,9 +552,6 @@ interface SwarmContextValue {
 
 const SwarmContext = createContext<SwarmContextValue | null>(null);
 
-// ---------------------------------------------------------------------------
-// Hook
-// ---------------------------------------------------------------------------
 
 export function useSwarms(): SwarmContextValue {
   const ctx = useContext(SwarmContext);
@@ -588,15 +559,11 @@ export function useSwarms(): SwarmContextValue {
   return ctx;
 }
 
-// ---------------------------------------------------------------------------
-// Provider
-// ---------------------------------------------------------------------------
 
 export function SwarmProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(swarmReducer, undefined, getInitialState);
 
-  // Debounced persistence
-  const persistRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const persistRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (persistRef.current) clearTimeout(persistRef.current);
     persistRef.current = setTimeout(() => {
@@ -607,11 +574,9 @@ export function SwarmProvider({ children }: { children: ReactNode }) {
     };
   }, [state.swarms, state.activeSwarmId, state.invitationTracking]);
 
-  // Derive active swarm
-  const activeSwarm = state.swarms.find((s) => s.id === state.activeSwarmId);
+    const activeSwarm = state.swarms.find((s) => s.id === state.activeSwarmId);
 
-  // Action dispatchers
-
+  
   const createSwarmAction = useCallback(
     (config: CreateSwarmConfig): Swarm => {
       const swarm = createSwarm(config);

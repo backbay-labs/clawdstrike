@@ -22,9 +22,6 @@ import {
   IconChevronDown,
 } from "@tabler/icons-react";
 
-// ---------------------------------------------------------------------------
-// Props
-// ---------------------------------------------------------------------------
 
 interface TrustprintPatternExplorerProps {
   /** Pattern entries from the loaded DB */
@@ -36,9 +33,6 @@ interface TrustprintPatternExplorerProps {
   compact?: boolean;
 }
 
-// ---------------------------------------------------------------------------
-// Color helpers
-// ---------------------------------------------------------------------------
 
 /** Category color gradient from gold (#d4a84b) to green (#3dbf84). */
 function getCategoryColor(index: number): string {
@@ -63,9 +57,6 @@ function getCellBackground(count: number, categoryIndex: number): string {
   return `${color}80`; // bright
 }
 
-// ---------------------------------------------------------------------------
-// Sorting
-// ---------------------------------------------------------------------------
 
 type SortKey = "id" | "category" | "stage" | "label" | "dims";
 type SortDir = "asc" | "desc";
@@ -92,9 +83,6 @@ function comparePatterns(a: PatternEntry, b: PatternEntry, key: SortKey, dir: So
   return dir === "asc" ? cmp : -cmp;
 }
 
-// ---------------------------------------------------------------------------
-// Compact heatmap
-// ---------------------------------------------------------------------------
 
 /** Short 1-letter stage labels for compact grid header */
 const STAGE_INITIALS: Record<PatternStage, string> = {
@@ -321,9 +309,6 @@ function CompactHeatmap({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Full explorer
-// ---------------------------------------------------------------------------
 
 function SortableHeader({
   label,
@@ -759,9 +744,6 @@ function FullExplorer({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Main export
-// ---------------------------------------------------------------------------
 
 export function TrustprintPatternExplorer({
   patterns,

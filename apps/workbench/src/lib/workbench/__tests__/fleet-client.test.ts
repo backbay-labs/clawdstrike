@@ -1,11 +1,7 @@
-// ---------------------------------------------------------------------------
-// Fleet Client E2E Tests — uses MSW mock server
-// ---------------------------------------------------------------------------
 //
 // The fleet-client uses import.meta.env.DEV (true in Vitest) which causes
 // proxyUrl() to rewrite absolute URLs to /_proxy/hushd/* and /_proxy/control/*.
 // The mock server handles both proxy and direct paths.
-// ---------------------------------------------------------------------------
 
 import { describe, it, expect, beforeAll, afterAll, afterEach, beforeEach, vi } from "vitest";
 import {
@@ -1375,6 +1371,20 @@ describe("validateFleetUrl", () => {
       valid: false,
       reason: "URLs must not include embedded credentials",
     });
+  });
+
+  it("rejects trailing-dot localhost aliases in production", () => {
+    const originalDev = import.meta.env.DEV;
+    vi.stubEnv("DEV", false);
+
+    try {
+      expect(validateFleetUrl("https://localhost./swarm/blob.json")).toEqual({
+        valid: false,
+        reason: "localhost URLs are not allowed in production",
+      });
+    } finally {
+      vi.stubEnv("DEV", originalDev);
+    }
   });
 });
 

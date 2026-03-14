@@ -7,9 +7,6 @@ import {
 } from "../redteam/risk-scoring";
 import type { RedTeamPluginRiskScore } from "../redteam/types";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 /**
  * Build a RedTeamPluginRiskScore from a plugin severity and test outcome.
@@ -33,9 +30,6 @@ function makePluginScore(
   };
 }
 
-// ---------------------------------------------------------------------------
-// calculateExploitabilityScore
-// ---------------------------------------------------------------------------
 
 describe("calculateExploitabilityScore", () => {
   it("returns higher scores for human-exploitable + low-complexity", () => {
@@ -51,9 +45,6 @@ describe("calculateExploitabilityScore", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// calculatePluginRiskScore
-// ---------------------------------------------------------------------------
 
 describe("calculatePluginRiskScore", () => {
   it("critical severity + high success rate = critical level", () => {
@@ -74,9 +65,6 @@ describe("calculatePluginRiskScore", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// calculateSystemRiskScore
-// ---------------------------------------------------------------------------
 
 describe("calculateSystemRiskScore", () => {
   it("aggregates multiple plugin scores correctly", () => {
@@ -108,9 +96,6 @@ describe("calculateSystemRiskScore", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// scoreToLevel
-// ---------------------------------------------------------------------------
 
 describe("scoreToLevel", () => {
   it("maps score ranges correctly", () => {

@@ -23,9 +23,6 @@ import { getGuardMeta } from "./guard-registry";
 import { gradeSimulationResult } from "./redteam/grading";
 import type { RedTeamGradingResult } from "./redteam/types";
 
-// ---------------------------------------------------------------------------
-// Regex cache (module-scoped)
-// ---------------------------------------------------------------------------
 
 const regexCache = new Map<string, RegExp>();
 function cachedRegex(pattern: string, flags?: string): RegExp {
@@ -43,9 +40,6 @@ function cachedRegex(pattern: string, flags?: string): RegExp {
   return re;
 }
 
-// ---------------------------------------------------------------------------
-// Regex safety helper
-// ---------------------------------------------------------------------------
 
 /** Max content size for regex testing (1 MB). Content exceeding this is not tested. */
 const MAX_REGEX_CONTENT_BYTES = 1_048_576;
@@ -87,9 +81,6 @@ function isSafeRegex(pattern: string): boolean {
   return true;
 }
 
-// ---------------------------------------------------------------------------
-// Path normalization
-// ---------------------------------------------------------------------------
 
 /**
  * Normalize a filesystem path by resolving `.` and `..` segments and collapsing
@@ -138,9 +129,6 @@ function normalizePath(p: string): string {
   return result;
 }
 
-// ---------------------------------------------------------------------------
-// Glob / wildcard helpers
-// ---------------------------------------------------------------------------
 
 /** Convert a simple glob pattern to a RegExp. Supports `*` and `**`. */
 function globToRegex(pattern: string): RegExp {
@@ -179,9 +167,6 @@ function domainMatches(pattern: string, host: string): boolean {
   return false;
 }
 
-// ---------------------------------------------------------------------------
-// Per-guard simulators
-// ---------------------------------------------------------------------------
 
 function simulateForbiddenPath(
   config: ForbiddenPathConfig,
@@ -818,9 +803,6 @@ function simulateJailbreak(
   };
 }
 
-// ---------------------------------------------------------------------------
-// Partially-simulatable guard stubs (improved)
-// ---------------------------------------------------------------------------
 
 function stubPathAllowlist(
   config: PathAllowlistConfig,
@@ -1045,9 +1027,6 @@ const STUB_SIMULATORS: Partial<
   input_injection_capability: stubInputInjectionCapability,
 };
 
-// ---------------------------------------------------------------------------
-// Dispatch table
-// ---------------------------------------------------------------------------
 
 type GuardSimulator = (
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1066,9 +1045,6 @@ const SIMULATORS: Partial<Record<GuardId, GuardSimulator>> = {
   jailbreak: simulateJailbreak,
 };
 
-// ---------------------------------------------------------------------------
-// Main entry point
-// ---------------------------------------------------------------------------
 
 export function simulatePolicy(
   policy: WorkbenchPolicy,
@@ -1101,8 +1077,7 @@ export function simulatePolicy(
       if (stubSimulator) {
         guardResults.push(stubSimulator(config, scenario));
       } else {
-        // Fallback: unknown/unhandled guards default to deny (fail-closed)
-        const meta = getGuardMeta(gid);
+                const meta = getGuardMeta(gid);
         guardResults.push({
           guardId: gid,
           guardName: meta?.name || gid,

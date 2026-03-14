@@ -1,10 +1,8 @@
-// ---------------------------------------------------------------------------
 // Trustprint Screening Engine (Demo Mode)
 //
 // Provides deterministic Spider Sense screening using the S2Bench v1 pattern
 // DB with 3-dim demo embeddings.  Input text is hashed to generate a fake
 // embedding and real cosine similarity is computed against all 36 patterns.
-// ---------------------------------------------------------------------------
 
 import type { SpiderSenseConfig } from "./types";
 import {
@@ -16,9 +14,6 @@ import {
 // Re-export for consumers that import from this module
 export { S2BENCH_PATTERNS, CATEGORY_LABELS, STAGE_LABELS };
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 export interface ScreeningInput {
   text: string;
@@ -50,9 +45,6 @@ export interface ScreeningHistoryEntry {
   result: ScreeningResult;
 }
 
-// ---------------------------------------------------------------------------
-// Category display colors (not in patterns module since it's UI-only)
-// ---------------------------------------------------------------------------
 
 export const CATEGORY_COLORS: Record<string, string> = {
   prompt_injection: "#c45c5c",
@@ -66,9 +58,6 @@ export const CATEGORY_COLORS: Record<string, string> = {
   privilege_escalation: "#5cc4a8",
 };
 
-// ---------------------------------------------------------------------------
-// Math helpers
-// ---------------------------------------------------------------------------
 
 /** Cosine similarity between two vectors. Returns 0 for zero-magnitude vectors. */
 export function cosineSimilarity(a: number[], b: number[]): number {
@@ -90,9 +79,6 @@ export function cosineSimilarity(a: number[], b: number[]): number {
   return dot / denom;
 }
 
-// ---------------------------------------------------------------------------
-// Deterministic demo embedding generation
-// ---------------------------------------------------------------------------
 
 /** Simple 32-bit hash (djb2 variant). */
 function hashString(str: string): number {
@@ -235,9 +221,6 @@ export function generateDemoEmbedding(text: string): [number, number, number] {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Screening Engine
-// ---------------------------------------------------------------------------
 
 /** Default config values matching the Rust Spider Sense / guard-registry defaults. */
 const DEFAULT_THRESHOLD = 0.85;

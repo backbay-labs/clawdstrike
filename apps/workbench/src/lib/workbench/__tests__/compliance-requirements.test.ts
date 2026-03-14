@@ -7,9 +7,6 @@ import {
 } from "../compliance-requirements";
 import type { GuardConfigMap, PolicySettings } from "../types";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 /** A strict policy that satisfies most compliance requirements. */
 function makeStrictGuards(): GuardConfigMap {
@@ -54,9 +51,6 @@ function makeEmptySettings(): PolicySettings {
   return {};
 }
 
-// ---------------------------------------------------------------------------
-// Framework structure
-// ---------------------------------------------------------------------------
 
 describe("COMPLIANCE_FRAMEWORKS", () => {
   it("contains hipaa, soc2, and pci-dss", () => {
@@ -87,9 +81,6 @@ describe("COMPLIANCE_FRAMEWORKS", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// getFrameworkRequirements
-// ---------------------------------------------------------------------------
 
 describe("getFrameworkRequirements", () => {
   it("returns HIPAA requirements", () => {
@@ -116,9 +107,6 @@ describe("getFrameworkRequirements", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// HIPAA requirements
-// ---------------------------------------------------------------------------
 
 describe("HIPAA requirements", () => {
   const guards = makeStrictGuards();
@@ -215,9 +203,6 @@ describe("HIPAA requirements", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// SOC2 requirements
-// ---------------------------------------------------------------------------
 
 describe("SOC2 requirements", () => {
   const guards = makeStrictGuards();
@@ -277,9 +262,6 @@ describe("SOC2 requirements", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// PCI-DSS requirements
-// ---------------------------------------------------------------------------
 
 describe("PCI-DSS requirements", () => {
   const guards = makeStrictGuards();
@@ -333,9 +315,6 @@ describe("PCI-DSS requirements", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// scoreFramework
-// ---------------------------------------------------------------------------
 
 describe("scoreFramework", () => {
   it("returns 100% score when all requirements are met", () => {
@@ -394,9 +373,6 @@ describe("scoreFramework", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Individual check isolation
-// ---------------------------------------------------------------------------
 
 describe("individual check functions in isolation", () => {
   it("hipaa-1 check only depends on forbidden_path patterns length", () => {

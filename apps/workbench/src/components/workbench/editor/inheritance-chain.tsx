@@ -17,9 +17,6 @@ import {
   IconLayersLinked,
 } from "@tabler/icons-react";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 type GuardProvenance = "inherited" | "overridden" | "added" | "removed";
 
@@ -36,9 +33,6 @@ interface ResolvedBase {
   policy: WorkbenchPolicy;
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 /**
  * Parse the `extends` field into an ordered array of base names.
@@ -178,9 +172,6 @@ function computeProvenance(
   return entries;
 }
 
-// ---------------------------------------------------------------------------
-// Badge sub-component
-// ---------------------------------------------------------------------------
 
 const PROVENANCE_STYLES: Record<GuardProvenance, string> = {
   inherited: "bg-[#6f7f9a]/10 text-[#6f7f9a] border-[#6f7f9a]/20",
@@ -220,9 +211,6 @@ function ProvenanceBadge({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Skeleton loader
-// ---------------------------------------------------------------------------
 
 function ChainSkeleton() {
   return (
@@ -244,9 +232,6 @@ function ChainSkeleton() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Main component
-// ---------------------------------------------------------------------------
 
 export function InheritanceChain() {
   const { state } = useWorkbench();
@@ -446,16 +431,10 @@ export function InheritanceChain() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Module-level cache shared across all useGuardProvenance instances
-// ---------------------------------------------------------------------------
 
 /** Shared cache so multiple GuardCard instances don't each trigger separate loads. */
 const sharedBaseCache = new Map<string, ResolvedBase>();
 
-// ---------------------------------------------------------------------------
-// Exported helper for guard-card provenance tooltips
-// ---------------------------------------------------------------------------
 
 /**
  * Hook that returns provenance info for a single guard.

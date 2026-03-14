@@ -32,9 +32,6 @@ import {
   IconArrowRight,
 } from "@tabler/icons-react";
 
-// ---------------------------------------------------------------------------
-// Icon mapping — guard-registry.ts uses string names for icons
-// ---------------------------------------------------------------------------
 
 const ICON_MAP: Record<string, typeof IconLock> = {
   IconLock,
@@ -56,9 +53,6 @@ function resolveIcon(iconName: string): typeof IconLock {
   return ICON_MAP[iconName] ?? IconShield;
 }
 
-// ---------------------------------------------------------------------------
-// Category colors & metadata
-// ---------------------------------------------------------------------------
 
 const CATEGORY_COLORS: Record<GuardCategory, string> = {
   filesystem: "#8b7355",
@@ -121,9 +115,6 @@ const CATEGORY_THREAT_MAP: Record<GuardCategory, string[]> = {
   ],
 };
 
-// ---------------------------------------------------------------------------
-// Filter pills
-// ---------------------------------------------------------------------------
 
 type CategoryFilter = "all" | GuardCategory;
 
@@ -137,10 +128,6 @@ const FILTER_OPTIONS: { id: CategoryFilter; label: string }[] = [
   { id: "cua", label: "CUA" },
 ];
 
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
-// Category badge
-// ---------------------------------------------------------------------------
 
 function CategoryBadge({ category }: { category: GuardCategory }) {
   const color = CATEGORY_COLORS[category];
@@ -154,9 +141,6 @@ function CategoryBadge({ category }: { category: GuardCategory }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Guard Grid Card
-// ---------------------------------------------------------------------------
 
 function GuardGridCard({
   guard,
@@ -238,9 +222,6 @@ function GuardGridCard({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Guard List Row
-// ---------------------------------------------------------------------------
 
 function GuardListRow({
   guard,
@@ -306,9 +287,6 @@ function GuardListRow({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Detail Panel
-// ---------------------------------------------------------------------------
 
 function GuardDetailPanel({
   guard,
@@ -517,9 +495,6 @@ function GuardDetailPanel({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Main page
-// ---------------------------------------------------------------------------
 
 interface GuardsPageProps {
   /** Override the default "navigate to editor" behavior (e.g. when embedded as a panel). */
