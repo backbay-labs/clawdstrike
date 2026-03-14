@@ -240,7 +240,7 @@ start_port_forwards() {
   fi
 
   if ! wait_for_url "$control_api_url/api/v1/health"; then
-    kubectl port-forward -n "$namespace" "svc/$control_api_service" 8080:8080 >"$control_pf_log" 2>&1 &
+    kubectl port-forward -n "$namespace" "svc/$control_api_service" 8090:8080 >"$control_pf_log" 2>&1 &
     control_pf_pid=$!
     wait_for_url "$control_api_url/api/v1/health"
   fi
