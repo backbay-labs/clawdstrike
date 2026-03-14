@@ -263,11 +263,14 @@ async fn ingests_broker_evidence_and_persists_audit_event() {
     let daemon = broker_daemon();
     let client = reqwest::Client::new();
 
+    let issued = issue_test_capability(&client, &daemon).await;
+    let capability_id = issued["capability_id"].as_str().unwrap().to_string();
+
     let response = client
         .post(format!("{}/api/v1/broker/evidence", daemon.url))
         .json(&BrokerExecutionEvidence {
             execution_id: "exec-123".to_string(),
-            capability_id: "cap-123".to_string(),
+            capability_id,
             provider: clawdstrike_broker_protocol::BrokerProvider::Openai,
             phase: BrokerExecutionPhase::Completed,
             executed_at: Utc::now(),
@@ -410,7 +413,7 @@ broker:
             "method": "POST",
             "secret_ref": "openai/dev",
             "body": r#"{"model":"gpt-4.1-mini","tools":[{"type":"function","name":"tool"}]}"#,
-            "body_sha256": "abc123"
+            "body_sha256": "f26069c2426b1ffaf147423647d0e80ebd852866b7886f063dbeed8818e12e7f"
         }))
         .send()
         .await
@@ -471,7 +474,7 @@ broker:
             "url": "http://127.0.0.1:8443/v1/responses",
             "method": "POST",
             "secret_ref": "openai/dev",
-            "body_sha256": "abc123",
+            "body_sha256": "f26069c2426b1ffaf147423647d0e80ebd852866b7886f063dbeed8818e12e7f",
             "endpoint_agent_id": "agent:endpoint",
             "runtime_agent_id": "agent:runner",
             "runtime_agent_kind": "delegate",
@@ -619,7 +622,7 @@ broker:
             "method": "POST",
             "secret_ref": "openai/dev",
             "body": r#"{"model":"gpt-4.1-mini","tools":[{"type":"function","name":"tool"}]}"#,
-            "body_sha256": "abc123"
+            "body_sha256": "f26069c2426b1ffaf147423647d0e80ebd852866b7886f063dbeed8818e12e7f"
         }))
         .send()
         .await
@@ -629,7 +632,10 @@ broker:
     let preview = &preview_payload["preview"];
     assert_eq!(preview["approval_required"], true);
     assert_eq!(preview["approval_state"], "pending");
-    assert_eq!(preview["body_sha256"], "abc123");
+    assert_eq!(
+        preview["body_sha256"],
+        "f26069c2426b1ffaf147423647d0e80ebd852866b7886f063dbeed8818e12e7f"
+    );
     let preview_id = preview["preview_id"].as_str().unwrap();
 
     let approve_response = client
@@ -648,7 +654,7 @@ broker:
         "url": "http://127.0.0.1:8443/v1/responses",
         "method": "POST",
         "secret_ref": "openai/dev",
-        "body_sha256": "abc123",
+        "body_sha256": "f26069c2426b1ffaf147423647d0e80ebd852866b7886f063dbeed8818e12e7f",
         "preview_id": preview_id,
         "proof_binding": {
             "mode": "loopback",
