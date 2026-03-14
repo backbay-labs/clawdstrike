@@ -128,11 +128,15 @@ pub fn validate_execute_request(
         ));
     }
 
+    let request_path_and_query = match parsed.query() {
+        Some(q) => format!("{}?{q}", parsed.path()),
+        None => parsed.path().to_string(),
+    };
     if !capability
         .destination
         .exact_paths
         .iter()
-        .any(|path| path == parsed.path())
+        .any(|path| path == &request_path_and_query)
     {
         return Err(ApiError::forbidden(
             "BROKER_PATH_MISMATCH",
