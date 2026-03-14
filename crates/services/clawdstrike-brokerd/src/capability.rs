@@ -8,7 +8,7 @@ use url::Url;
 use crate::api::ApiError;
 use crate::config::Config;
 
-fn is_loopback_host(host: &str) -> bool {
+pub(crate) fn is_loopback_host(host: &str) -> bool {
     host.eq_ignore_ascii_case("localhost")
         || host
             .parse::<std::net::IpAddr>()

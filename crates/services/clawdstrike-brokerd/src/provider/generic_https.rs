@@ -176,6 +176,10 @@ async fn validate_generic_target(
     let host = parsed.host_str().ok_or_else(|| {
         ApiError::bad_request("BROKER_REQUEST_URL_INVALID", "request url is missing host")
     })?;
+
+    if state.config.allow_http_loopback && crate::capability::is_loopback_host(host) {
+        return Ok(None);
+    }
     let port = parsed.port_or_known_default().ok_or_else(|| {
         ApiError::bad_request("BROKER_REQUEST_URL_INVALID", "request url is missing port")
     })?;
