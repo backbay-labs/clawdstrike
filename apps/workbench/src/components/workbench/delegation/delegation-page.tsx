@@ -170,8 +170,8 @@ const CAPABILITY_SHORT: Record<Capability, string> = {
 };
 
 export function DelegationPage() {
-  const { connection: connInfo, getAuthenticatedConnection } = useFleetConnection();
-  const fleetConnected = connInfo.connected;
+  const { connection, getAuthenticatedConnection } = useFleetConnection();
+  const fleetConnected = connection.connected;
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerElement, setContainerElement] = useState<HTMLDivElement | null>(null);
@@ -259,8 +259,7 @@ export function DelegationPage() {
         setLiveAvailable(true);
         setIsLoadingGraph(true);
         // Load principals list
-        const authedConn = getAuthenticatedConnection();
-        const principalsList = await apiFetchPrincipals(authedConn);
+        const principalsList = await apiFetchPrincipals(getAuthenticatedConnection());
         if (cancelled) return;
         setPrincipals(principalsList);
 
@@ -269,7 +268,7 @@ export function DelegationPage() {
         if (defaultId) setSelectedPrincipalId(defaultId);
 
         // Try to fetch live graph
-        const liveGraph = await fetchLiveGraph(authedConn, defaultId);
+        const liveGraph = await fetchLiveGraph(getAuthenticatedConnection(), defaultId);
         if (cancelled) return;
         if (liveGraph) {
           setGraph(liveGraph);
@@ -295,11 +294,10 @@ export function DelegationPage() {
     setIsLoadingGraph(true);
     try {
       // Refresh principals list
-      const refreshConn = getAuthenticatedConnection();
-      const principalsList = await apiFetchPrincipals(refreshConn);
+      const principalsList = await apiFetchPrincipals(getAuthenticatedConnection());
       setPrincipals(principalsList);
 
-      const liveGraph = await fetchLiveGraph(refreshConn, selectedPrincipalId);
+      const liveGraph = await fetchLiveGraph(getAuthenticatedConnection(), selectedPrincipalId);
       if (liveGraph) {
         setGraph(liveGraph);
       }
@@ -309,7 +307,7 @@ export function DelegationPage() {
     } finally {
       setIsLoadingGraph(false);
     }
-  }, [fleetConnected, getAuthenticatedConnection, selectedPrincipalId, fetchLiveGraph]);
+  }, [fleetConnected, connection, selectedPrincipalId, fetchLiveGraph]);
 
   // Re-fetch graph when principal selection changes (while in live mode)
   const handlePrincipalChange = useCallback(
@@ -334,7 +332,7 @@ export function DelegationPage() {
         setIsLoadingPrincipal(false);
       }
     },
-    [isLiveData, fleetConnected, getAuthenticatedConnection, fetchLiveGraph],
+    [isLiveData, fleetConnected, connection, fetchLiveGraph],
   );
 
   const toggleDataSource = useCallback(async () => {
@@ -351,7 +349,7 @@ export function DelegationPage() {
     }
     setSelectedNode(null);
     setTracedPath(null);
-  }, [isLiveData, fleetConnected, getAuthenticatedConnection, selectedPrincipalId, fetchLiveGraph]);
+  }, [isLiveData, fleetConnected, connection, selectedPrincipalId, fetchLiveGraph]);
 
   const filteredGraph = useMemo<DelegationGraph>(() => {
     const q = debouncedSearchQuery.toLowerCase().trim();

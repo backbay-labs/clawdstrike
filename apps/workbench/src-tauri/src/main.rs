@@ -3,7 +3,8 @@
 
 mod commands;
 
-use commands::{mcp_sidecar, stronghold as stronghold_cmds, terminal, workbench, worktree};
+use commands::{capability, mcp_sidecar, stronghold as stronghold_cmds, terminal, workbench, worktree};
+use capability::CommandCapabilityState;
 use mcp_sidecar::McpState;
 use stronghold_cmds::StrongholdState;
 #[allow(unused_imports)]
@@ -29,6 +30,10 @@ fn main() {
         })
         .manage(StrongholdState::new())
         .manage(McpState::new())
+        .manage(
+            std::sync::Arc::new(tokio::sync::Mutex::new(capability::CommandCapabilityManager::new()))
+                as CommandCapabilityState,
+        )
         .manage(
             std::sync::Arc::new(tokio::sync::Mutex::new(terminal::TerminalManager::new()))
                 as TerminalState,
@@ -83,8 +88,8 @@ fn main() {
         // cannot invoke these handlers.
         //
         // Additional defence-in-depth:
-        //  - `ensure_trusted_window()` on every command rejects calls from
-        //    any window label other than "main".
+        //  - Sensitive terminal/worktree commands require backend-minted,
+        //    short-lived capability tokens bound to the trusted window label.
         //  - Terminal commands validate shell paths against an allowlist,
         //    sanitise environment variables via an allowlist, and
         //    canonicalise working directories.
@@ -118,6 +123,7 @@ fn main() {
             mcp_sidecar::get_mcp_status,
             mcp_sidecar::stop_mcp_server,
             mcp_sidecar::restart_mcp_server,
+            capability::acquire_command_capability,
             terminal::terminal_create,
             terminal::terminal_write,
             terminal::terminal_resize,

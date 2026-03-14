@@ -98,7 +98,8 @@ export function WorkbenchSidebar() {
       <nav className="flex-1 py-3 flex flex-col gap-0.5 overflow-y-auto">
         {navSections.map((section, idx) => (
           <div key={section.title} className={idx > 0 ? "mt-2" : undefined}>
-                        {collapsed ? (
+            {/* Section header */}
+            {collapsed ? (
               idx > 0 ? <div className="mx-3 my-1.5 h-px bg-[#2d324060]" /> : null
             ) : (
               <div className="flex items-center gap-2 mx-3 mb-1">
@@ -107,7 +108,7 @@ export function WorkbenchSidebar() {
                   style={{ backgroundColor: section.accent }}
                 />
                 <span
-                  className="text-[8.5px] font-semibold uppercase tracking-[0.12em] select-none whitespace-nowrap"
+                  className="text-[8.5px] font-semibold uppercase tracking-wider select-none whitespace-nowrap"
                   style={{ color: section.accent }}
                 >
                   {section.title}

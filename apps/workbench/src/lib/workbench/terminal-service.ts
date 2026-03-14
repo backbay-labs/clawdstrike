@@ -19,6 +19,8 @@ function isTauri(): boolean {
 }
 
 const INVOKE_TIMEOUT_MS = 15_000;
+let commandCapability: string | null = null;
+let commandCapabilityInFlight: Promise<string> | null = null;
 
 /**
  * Wrapper around Tauri's `invoke` that rejects immediately when not running
@@ -40,6 +42,43 @@ function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
       );
     }),
   ]).finally(() => clearTimeout(timer));
+}
+
+function isCapabilityError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  const lowered = message.toLowerCase();
+  return lowered.includes("command capability") || lowered.includes("missing command capability");
+}
+
+async function getCommandCapability(): Promise<string> {
+  if (commandCapability) return commandCapability;
+  if (commandCapabilityInFlight) return commandCapabilityInFlight;
+
+  commandCapabilityInFlight = invoke<string>("acquire_command_capability")
+    .then((token) => {
+      commandCapability = token;
+      return token;
+    })
+    .finally(() => {
+      commandCapabilityInFlight = null;
+    });
+
+  return commandCapabilityInFlight;
+}
+
+async function invokeSensitive<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  if (!isTauri()) {
+    return invoke<T>(cmd, args);
+  }
+  const capability = await getCommandCapability();
+  try {
+    return await invoke<T>(cmd, { ...(args ?? {}), capability });
+  } catch (error) {
+    if (!isCapabilityError(error)) throw error;
+    commandCapability = null;
+    const refreshedCapability = await getCommandCapability();
+    return invoke<T>(cmd, { ...(args ?? {}), capability: refreshedCapability });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -86,30 +125,30 @@ export const terminalService = {
     shell?: string,
     env?: Record<string, string>,
   ): Promise<SessionInfo> =>
-    invoke<SessionInfo>("terminal_create", { cwd, shell, env }),
+    invokeSensitive<SessionInfo>("terminal_create", { cwd, shell, env }),
 
   /**
    * Write data (keystrokes, paste, etc.) to a session's PTY stdin.
    */
   write: (sessionId: string, data: string): Promise<void> =>
-    invoke<void>("terminal_write", { sessionId, data }),
+    invokeSensitive<void>("terminal_write", { sessionId, data }),
 
   /**
    * Resize the PTY to new dimensions.
    */
   resize: (sessionId: string, cols: number, rows: number): Promise<void> =>
-    invoke<void>("terminal_resize", { sessionId, cols, rows }),
+    invokeSensitive<void>("terminal_resize", { sessionId, cols, rows }),
 
   /**
    * Kill the session's child process and free resources.
    */
   kill: (sessionId: string): Promise<void> =>
-    invoke<void>("terminal_kill", { sessionId }),
+    invokeSensitive<void>("terminal_kill", { sessionId }),
 
   /**
    * List all active terminal sessions.
    */
-  list: (): Promise<SessionInfo[]> => invoke<SessionInfo[]>("terminal_list"),
+  list: (): Promise<SessionInfo[]> => invokeSensitive<SessionInfo[]>("terminal_list"),
 
   /**
    * Get the last N lines from the session's ring buffer (for tile preview).
@@ -118,7 +157,7 @@ export const terminalService = {
    * @param lines     - Number of lines to return (default 6).
    */
   preview: (sessionId: string, lines?: number): Promise<string[]> =>
-    invoke<string[]>("terminal_preview", { sessionId, lines }),
+    invokeSensitive<string[]>("terminal_preview", { sessionId, lines }),
 
   /**
    * Subscribe to stdout output chunks for a session.
@@ -142,7 +181,7 @@ export const terminalService = {
    *
    * Used to auto-detect a sensible default for repoRoot on first launch.
    */
-  getCwd: (): Promise<string> => invoke<string>("get_cwd"),
+  getCwd: (): Promise<string> => invokeSensitive<string>("get_cwd"),
 
   /**
    * Subscribe to session exit events.
@@ -174,23 +213,23 @@ export const worktreeService = {
    * If the branch doesn't exist, it is created from HEAD.
    */
   create: (repoRoot: string, branchName: string): Promise<WorktreeInfo> =>
-    invoke<WorktreeInfo>("worktree_create", { repoRoot, branchName }),
+    invokeSensitive<WorktreeInfo>("worktree_create", { repoRoot, branchName }),
 
   /**
    * Remove a git worktree and prune the reference.
    */
   remove: (repoRoot: string, worktreePath: string): Promise<void> =>
-    invoke<void>("worktree_remove", { repoRoot, worktreePath }),
+    invokeSensitive<void>("worktree_remove", { repoRoot, worktreePath }),
 
   /**
    * List all git worktrees for a repository.
    */
   list: (repoRoot: string): Promise<WorktreeInfo[]> =>
-    invoke<WorktreeInfo[]>("worktree_list", { repoRoot }),
+    invokeSensitive<WorktreeInfo[]>("worktree_list", { repoRoot }),
 
   /**
    * Get the diff status of a worktree (changed files, insertions, deletions).
    */
   status: (repoRoot: string, worktreePath: string): Promise<WorktreeStatus> =>
-    invoke<WorktreeStatus>("worktree_status", { repoRoot, worktreePath }),
+    invokeSensitive<WorktreeStatus>("worktree_status", { repoRoot, worktreePath }),
 };

@@ -24,9 +24,15 @@ import { Baselines } from "./baselines";
 import { InvestigationWorkbench } from "./investigation";
 import { PatternMining } from "./pattern-mining";
 
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
 type HuntTab = "stream" | "baselines" | "investigate" | "patterns";
 
+// ---------------------------------------------------------------------------
+// Tab definitions
+// ---------------------------------------------------------------------------
 
 const HUNT_TABS: SubTab[] = [
   { id: "stream", label: "Stream", icon: IconActivity },
@@ -94,6 +100,9 @@ function HuntStatusIndicators({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Main Layout
+// ---------------------------------------------------------------------------
 
 export function HuntLayout() {
   const [activeTab, setActiveTab] = useState<HuntTab>("stream");
@@ -135,7 +144,7 @@ export function HuntLayout() {
     } catch (err) {
       console.warn("[hunt-layout] Failed to fetch events:", err);
     }
-  }, [connected, connection]);
+  }, [connected, getAuthenticatedConnection]);
 
   // Keep a stable ref to the latest fetchEvents so the polling effect only
   // re-runs when `connected` or `streamLive` change, not when the callback
@@ -160,24 +169,28 @@ export function HuntLayout() {
     };
   }, [connected, streamLive]);
 
-    const openInvestigations = useMemo(
+  // Derived: open investigations count
+  const openInvestigations = useMemo(
     () => investigations.filter((i) => i.status === "open" || i.status === "in-progress").length,
     [investigations],
   );
 
-    const anomalyCount = useMemo(() => {
+  // Derived: anomaly count in last hour
+  const anomalyCount = useMemo(() => {
     const oneHourAgo = Date.now() - 60 * 60 * 1000;
     return events.filter(
       (e) => (e.anomalyScore ?? 0) > 0.7 && new Date(e.timestamp).getTime() > oneHourAgo,
     ).length;
   }, [events]);
 
-    const streamStats = useMemo<StreamStats>(
+  // Derived: stream stats
+  const streamStats = useMemo<StreamStats>(
     () => computeStreamStats(events),
     [events],
   );
 
-    const baselinesArray = useMemo(
+  // Derived: baselines as array for Baselines component
+  const baselinesArray = useMemo(
     () => Array.from(baselines.values()),
     [baselines],
   );

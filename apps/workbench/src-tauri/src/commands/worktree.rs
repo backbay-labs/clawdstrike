@@ -6,7 +6,10 @@
 
 use serde::Serialize;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 use tauri::Runtime;
+
+use crate::commands::capability::{validate_command_capability, CommandCapabilityState};
 
 // ---------------------------------------------------------------------------
 // Types
@@ -34,7 +37,7 @@ pub struct WorktreeStatus {
 
 /// Subdirectory under the repo root where swarm worktrees are created.
 const WORKTREE_DIR: &str = ".swarm-worktrees";
-const TRUSTED_WINDOW_LABEL: &str = "main";
+const GIT_OP_TIMEOUT_SECS: u64 = 20;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -91,14 +94,16 @@ fn sanitise_branch_name(branch: &str) -> Result<String, String> {
     Ok(trimmed)
 }
 
-fn ensure_trusted_window<R: Runtime>(window: &tauri::Window<R>) -> Result<(), String> {
-    if window.label() != TRUSTED_WINDOW_LABEL {
-        return Err(format!(
-            "Rejecting worktree command from unexpected window label: {}",
-            window.label()
-        ));
-    }
-    Ok(())
+async fn run_blocking_with_timeout<T, F>(operation: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+{
+    let join = tauri::async_runtime::spawn_blocking(operation);
+    let timed = tokio::time::timeout(Duration::from_secs(GIT_OP_TIMEOUT_SECS), join)
+        .await
+        .map_err(|_| format!("Worktree operation timed out after {}s", GIT_OP_TIMEOUT_SECS))?;
+    timed.map_err(|e| format!("Worktree operation failed: {e}"))?
 }
 
 fn canonical_repo_root(repo_root: &str) -> Result<PathBuf, String> {
@@ -216,262 +221,283 @@ fn is_registered_worktree(repo_root: &str, target: &Path) -> Result<bool, String
 #[tauri::command]
 pub async fn worktree_create<R: Runtime>(
     window: tauri::Window<R>,
+    capability_state: tauri::State<'_, CommandCapabilityState>,
     repo_root: String,
     branch_name: String,
+    capability: String,
 ) -> Result<WorktreeInfo, String> {
-    ensure_trusted_window(&window)?;
-    let canonical_root = canonical_repo_root(&repo_root)?;
-    let canonical_root_str = canonical_root.to_string_lossy().to_string();
-    let normalized_branch = normalize_branch_name(&canonical_root_str, &branch_name)?;
+    validate_command_capability(&window, &capability_state, &capability).await?;
+    run_blocking_with_timeout(move || {
+        let canonical_root = canonical_repo_root(&repo_root)?;
+        let canonical_root_str = canonical_root.to_string_lossy().to_string();
+        let normalized_branch = normalize_branch_name(&canonical_root_str, &branch_name)?;
 
-    let worktree_base = canonical_root.join(WORKTREE_DIR);
-    std::fs::create_dir_all(&worktree_base).map_err(|e| {
-        format!(
-            "Failed to create worktree directory {}: {e}",
-            worktree_base.display()
+        let worktree_base = canonical_root.join(WORKTREE_DIR);
+        std::fs::create_dir_all(&worktree_base).map_err(|e| {
+            format!(
+                "Failed to create worktree directory {}: {e}",
+                worktree_base.display()
+            )
+        })?;
+
+        let dir_name = sanitise_branch_name(&normalized_branch)?;
+        let worktree_path = worktree_base.join(&dir_name);
+        let worktree_path_str = worktree_path.to_string_lossy().to_string();
+
+        // If the worktree directory already exists, it might be a stale entry.
+        // Let the user clean it up explicitly rather than silently overwriting.
+        if worktree_path.exists() {
+            return Err(format!(
+                "Worktree directory already exists: {worktree_path_str}. \
+                 Remove it with worktree_remove first."
+            ));
+        }
+
+        // Use refs/heads/ prefix for rev-parse to prevent flag injection
+        // (a branch named "--git-dir=..." would be interpreted as a flag without the prefix).
+        let qualified_ref = format!("refs/heads/{normalized_branch}");
+
+        // Check if the branch exists locally
+        let branch_exists = run_git(
+            &canonical_root_str,
+            &["rev-parse", "--verify", &qualified_ref],
         )
-    })?;
+        .is_ok();
 
-    let dir_name = sanitise_branch_name(&normalized_branch)?;
-    let worktree_path = worktree_base.join(&dir_name);
-    let worktree_path_str = worktree_path.to_string_lossy().to_string();
+        if branch_exists {
+            // Syntax: git worktree add <path> <branch>
+            // normalize_branch_name already rejects names starting with `-`,
+            // containing `..`, or with shell metacharacters.
+            run_git(
+                &canonical_root_str,
+                &["worktree", "add", &worktree_path_str, &normalized_branch],
+            )?;
+        } else {
+            // Syntax: git worktree add -b <new-branch> <path>
+            run_git(
+                &canonical_root_str,
+                &["worktree", "add", "-b", &normalized_branch, &worktree_path_str],
+            )?;
+        }
 
-    // If the worktree directory already exists, it might be a stale entry.
-    // Let the user clean it up explicitly rather than silently overwriting.
-    if worktree_path.exists() {
-        return Err(format!(
-            "Worktree directory already exists: {worktree_path_str}. \
-             Remove it with worktree_remove first."
-        ));
-    }
+        let head = get_head_commit(&worktree_path_str);
 
-    // Use refs/heads/ prefix for rev-parse to prevent flag injection
-    // (a branch named "--git-dir=..." would be interpreted as a flag without the prefix).
-    let qualified_ref = format!("refs/heads/{normalized_branch}");
-
-    // Check if the branch exists locally
-    let branch_exists = run_git(
-        &canonical_root_str,
-        &["rev-parse", "--verify", &qualified_ref],
-    )
-    .is_ok();
-
-    if branch_exists {
-        // Syntax: git worktree add <path> <branch>
-        // normalize_branch_name already rejects names starting with `-`,
-        // containing `..`, or with shell metacharacters.
-        run_git(
-            &canonical_root_str,
-            &["worktree", "add", &worktree_path_str, &normalized_branch],
-        )?;
-    } else {
-        // Syntax: git worktree add -b <new-branch> <path>
-        run_git(
-            &canonical_root_str,
-            &["worktree", "add", "-b", &normalized_branch, &worktree_path_str],
-        )?;
-    }
-
-    let head = get_head_commit(&worktree_path_str);
-
-    Ok(WorktreeInfo {
-        path: worktree_path_str,
-        branch: normalized_branch,
-        head,
+        Ok(WorktreeInfo {
+            path: worktree_path_str,
+            branch: normalized_branch,
+            head,
+        })
     })
+    .await
 }
 
 /// Remove a git worktree and prune the reference.
 #[tauri::command]
 pub async fn worktree_remove<R: Runtime>(
     window: tauri::Window<R>,
+    capability_state: tauri::State<'_, CommandCapabilityState>,
     repo_root: String,
     worktree_path: String,
+    capability: String,
 ) -> Result<(), String> {
-    ensure_trusted_window(&window)?;
-    let canonical_root = canonical_repo_root(&repo_root)?;
-    let canonical_root_str = canonical_root.to_string_lossy().to_string();
+    validate_command_capability(&window, &capability_state, &capability).await?;
+    run_blocking_with_timeout(move || {
+        let canonical_root = canonical_repo_root(&repo_root)?;
+        let canonical_root_str = canonical_root.to_string_lossy().to_string();
 
-    // Validate that the worktree path exists and is under the expected directory
-    // to prevent removal of arbitrary directories.
-    let expected_base = canonical_root.join(WORKTREE_DIR);
-    let canonical_wt = canonicalize_worktree_path(&worktree_path, &expected_base)?;
-    if !is_registered_worktree(&canonical_root_str, &canonical_wt)? {
-        return Err("Target path is not a registered git worktree".to_string());
-    }
-    let canonical_wt_str = canonical_wt.to_string_lossy().to_string();
+        // Validate that the worktree path exists and is under the expected directory
+        // to prevent removal of arbitrary directories.
+        let expected_base = canonical_root.join(WORKTREE_DIR);
+        let canonical_wt = canonicalize_worktree_path(&worktree_path, &expected_base)?;
+        if !is_registered_worktree(&canonical_root_str, &canonical_wt)? {
+            return Err("Target path is not a registered git worktree".to_string());
+        }
+        let canonical_wt_str = canonical_wt.to_string_lossy().to_string();
 
-    // Force-remove the worktree (handles dirty state)
-    run_git(
-        &canonical_root_str,
-        &["worktree", "remove", "--force", &canonical_wt_str],
-    )?;
+        // Force-remove the worktree (handles dirty state)
+        run_git(
+            &canonical_root_str,
+            &["worktree", "remove", "--force", &canonical_wt_str],
+        )?;
 
-    // Prune stale worktree references
-    let _ = run_git(&canonical_root_str, &["worktree", "prune"]);
+        // Prune stale worktree references
+        let _ = run_git(&canonical_root_str, &["worktree", "prune"]);
 
-    Ok(())
+        Ok(())
+    })
+    .await
 }
 
 /// List all git worktrees for a repository.
 #[tauri::command]
 pub async fn worktree_list<R: Runtime>(
     window: tauri::Window<R>,
+    capability_state: tauri::State<'_, CommandCapabilityState>,
     repo_root: String,
+    capability: String,
 ) -> Result<Vec<WorktreeInfo>, String> {
-    ensure_trusted_window(&window)?;
-    let canonical_root = canonical_repo_root(&repo_root)?;
-    let canonical_root_str = canonical_root.to_string_lossy().to_string();
+    validate_command_capability(&window, &capability_state, &capability).await?;
+    run_blocking_with_timeout(move || {
+        let canonical_root = canonical_repo_root(&repo_root)?;
+        let canonical_root_str = canonical_root.to_string_lossy().to_string();
 
-    let output = run_git(&canonical_root_str, &["worktree", "list", "--porcelain"])?;
-    let mut worktrees = Vec::new();
-    let mut current_path = String::new();
-    let mut current_head = String::new();
-    let mut current_branch = String::new();
+        let output = run_git(&canonical_root_str, &["worktree", "list", "--porcelain"])?;
+        let mut worktrees = Vec::new();
+        let mut current_path = String::new();
+        let mut current_head = String::new();
+        let mut current_branch = String::new();
 
-    for line in output.lines() {
-        if let Some(path) = line.strip_prefix("worktree ") {
-            // Flush the previous entry if any
-            if !current_path.is_empty() {
-                worktrees.push(WorktreeInfo {
-                    path: current_path.clone(),
-                    branch: current_branch.clone(),
-                    head: current_head.clone(),
-                });
-            }
-            current_path = path.to_string();
-            current_head.clear();
-            current_branch.clear();
-        } else if let Some(head) = line.strip_prefix("HEAD ") {
-            current_head = head.chars().take(7).collect();
-        } else if let Some(branch) = line.strip_prefix("branch refs/heads/") {
-            current_branch = branch.to_string();
-        } else if line == "bare" || line == "detached" {
-            // Mark detached HEAD or bare repos
-            if current_branch.is_empty() {
-                current_branch = "(detached)".to_string();
+        for line in output.lines() {
+            if let Some(path) = line.strip_prefix("worktree ") {
+                // Flush the previous entry if any
+                if !current_path.is_empty() {
+                    worktrees.push(WorktreeInfo {
+                        path: current_path.clone(),
+                        branch: current_branch.clone(),
+                        head: current_head.clone(),
+                    });
+                }
+                current_path = path.to_string();
+                current_head.clear();
+                current_branch.clear();
+            } else if let Some(head) = line.strip_prefix("HEAD ") {
+                current_head = head.chars().take(7).collect();
+            } else if let Some(branch) = line.strip_prefix("branch refs/heads/") {
+                current_branch = branch.to_string();
+            } else if line == "bare" || line == "detached" {
+                // Mark detached HEAD or bare repos
+                if current_branch.is_empty() {
+                    current_branch = "(detached)".to_string();
+                }
             }
         }
-    }
 
-    // Don't forget the last entry
-    if !current_path.is_empty() {
-        worktrees.push(WorktreeInfo {
-            path: current_path,
-            branch: current_branch,
-            head: current_head,
-        });
-    }
+        // Don't forget the last entry
+        if !current_path.is_empty() {
+            worktrees.push(WorktreeInfo {
+                path: current_path,
+                branch: current_branch,
+                head: current_head,
+            });
+        }
 
-    Ok(worktrees)
+        Ok(worktrees)
+    })
+    .await
 }
 
 /// Get the diff status of a worktree (changed files, added/removed lines).
 #[tauri::command]
 pub async fn worktree_status<R: Runtime>(
     window: tauri::Window<R>,
+    capability_state: tauri::State<'_, CommandCapabilityState>,
     repo_root: String,
     worktree_path: String,
+    capability: String,
 ) -> Result<WorktreeStatus, String> {
-    ensure_trusted_window(&window)?;
-    let canonical_root = canonical_repo_root(&repo_root)?;
-    let canonical_root_str = canonical_root.to_string_lossy().to_string();
-    let expected_base = canonical_root.join(WORKTREE_DIR);
-    let canonical_wt = canonicalize_worktree_path(&worktree_path, &expected_base)?;
-    if !is_registered_worktree(&canonical_root_str, &canonical_wt)? {
-        return Err("Target path is not a registered git worktree".to_string());
-    }
-    let worktree_path = canonical_wt.to_string_lossy().to_string();
+    validate_command_capability(&window, &capability_state, &capability).await?;
+    run_blocking_with_timeout(move || {
+        let canonical_root = canonical_repo_root(&repo_root)?;
+        let canonical_root_str = canonical_root.to_string_lossy().to_string();
+        let expected_base = canonical_root.join(WORKTREE_DIR);
+        let canonical_wt = canonicalize_worktree_path(&worktree_path, &expected_base)?;
+        if !is_registered_worktree(&canonical_root_str, &canonical_wt)? {
+            return Err("Target path is not a registered git worktree".to_string());
+        }
+        let worktree_path = canonical_wt.to_string_lossy().to_string();
 
-    // Get the list of changed files from both unstaged and staged diffs.
-    let diff_stat = run_git(&worktree_path, &["diff", "--stat"])?;
-    let cached_stat = run_git(&worktree_path, &["diff", "--cached", "--stat"]).unwrap_or_default();
+        // Get the list of changed files from both unstaged and staged diffs.
+        let diff_stat = run_git(&worktree_path, &["diff", "--stat"])?;
+        let cached_stat =
+            run_git(&worktree_path, &["diff", "--cached", "--stat"]).unwrap_or_default();
 
-    let mut changed_files = Vec::new();
-    let mut added_lines: usize = 0;
-    let mut removed_lines: usize = 0;
+        let mut changed_files = Vec::new();
+        let mut added_lines: usize = 0;
+        let mut removed_lines: usize = 0;
 
-    // Parse a `git diff --stat` block, accumulating files and line counts.
-    let parse_stat_block =
-        |block: &str, files: &mut Vec<String>, added: &mut usize, removed: &mut usize| {
-            for line in block.lines() {
-                let trimmed = line.trim();
-                if trimmed.is_empty() {
-                    continue;
-                }
+        // Parse a `git diff --stat` block, accumulating files and line counts.
+        let parse_stat_block =
+            |block: &str, files: &mut Vec<String>, added: &mut usize, removed: &mut usize| {
+                for line in block.lines() {
+                    let trimmed = line.trim();
+                    if trimmed.is_empty() {
+                        continue;
+                    }
 
-                // Check if this is the summary line.
-                // Match the specific git diff --stat format:
-                //   "N file(s) changed, N insertion(s)(+), N deletion(s)(-)"
-                // Require that the line starts with a number followed by "file"
-                // to avoid false positives on filenames containing these words.
-                let is_summary = trimmed
-                    .split_whitespace()
-                    .next()
-                    .and_then(|first| first.parse::<usize>().ok())
-                    .is_some()
-                    && (trimmed.contains("file changed") || trimmed.contains("files changed"));
-                if is_summary {
-                    for part in trimmed.split(',') {
-                        let part = part.trim();
-                        if part.contains("insertion") {
-                            if let Some(num_str) = part.split_whitespace().next() {
-                                *added += num_str.parse::<usize>().unwrap_or(0);
+                    // Check if this is the summary line.
+                    // Match the specific git diff --stat format:
+                    //   "N file(s) changed, N insertion(s)(+), N deletion(s)(-)"
+                    // Require that the line starts with a number followed by "file"
+                    // to avoid false positives on filenames containing these words.
+                    let is_summary = trimmed
+                        .split_whitespace()
+                        .next()
+                        .and_then(|first| first.parse::<usize>().ok())
+                        .is_some()
+                        && (trimmed.contains("file changed") || trimmed.contains("files changed"));
+                    if is_summary {
+                        for part in trimmed.split(',') {
+                            let part = part.trim();
+                            if part.contains("insertion") {
+                                if let Some(num_str) = part.split_whitespace().next() {
+                                    *added += num_str.parse::<usize>().unwrap_or(0);
+                                }
+                            } else if part.contains("deletion") {
+                                if let Some(num_str) = part.split_whitespace().next() {
+                                    *removed += num_str.parse::<usize>().unwrap_or(0);
+                                }
                             }
-                        } else if part.contains("deletion") {
-                            if let Some(num_str) = part.split_whitespace().next() {
-                                *removed += num_str.parse::<usize>().unwrap_or(0);
+                        }
+                        continue;
+                    }
+
+                    // Otherwise it's a file line: "path/to/file | 10 +++---"
+                    if let Some(pipe_idx) = trimmed.find('|') {
+                        if let Some(file_part) = trimmed.get(..pipe_idx) {
+                            let file_path = file_part.trim().to_string();
+                            if !file_path.is_empty() && !files.contains(&file_path) {
+                                files.push(file_path);
                             }
                         }
                     }
-                    continue;
                 }
+            };
 
-                // Otherwise it's a file line: "path/to/file | 10 +++---"
-                if let Some(pipe_idx) = trimmed.find('|') {
-                    if let Some(file_part) = trimmed.get(..pipe_idx) {
-                        let file_path = file_part.trim().to_string();
-                        if !file_path.is_empty() && !files.contains(&file_path) {
-                            files.push(file_path);
-                        }
-                    }
+        // Parse unstaged changes
+        parse_stat_block(
+            &diff_stat,
+            &mut changed_files,
+            &mut added_lines,
+            &mut removed_lines,
+        );
+        // Parse staged (cached) changes
+        parse_stat_block(
+            &cached_stat,
+            &mut changed_files,
+            &mut added_lines,
+            &mut removed_lines,
+        );
+
+        // Also include untracked and staged changes.
+        // `git status --porcelain` format: "XY filename" where XY is two status
+        // chars followed by a space. Do NOT trim the line — leading chars are
+        // part of the status code. Use char indexing to avoid panics on
+        // multi-byte UTF-8 filenames.
+        let status_output = run_git(&worktree_path, &["status", "--porcelain"]).unwrap_or_default();
+        for line in status_output.lines() {
+            if let Some(rest) = line.get(3..) {
+                let file_path = rest.trim().to_string();
+                if !file_path.is_empty() && !changed_files.contains(&file_path) {
+                    changed_files.push(file_path);
                 }
-            }
-        };
-
-    // Parse unstaged changes
-    parse_stat_block(
-        &diff_stat,
-        &mut changed_files,
-        &mut added_lines,
-        &mut removed_lines,
-    );
-    // Parse staged (cached) changes
-    parse_stat_block(
-        &cached_stat,
-        &mut changed_files,
-        &mut added_lines,
-        &mut removed_lines,
-    );
-
-    // Also include untracked and staged changes.
-    // `git status --porcelain` format: "XY filename" where XY is two status
-    // chars followed by a space. Do NOT trim the line — leading chars are
-    // part of the status code. Use char indexing to avoid panics on
-    // multi-byte UTF-8 filenames.
-    let status_output = run_git(&worktree_path, &["status", "--porcelain"]).unwrap_or_default();
-    for line in status_output.lines() {
-        if let Some(rest) = line.get(3..) {
-            let file_path = rest.trim().to_string();
-            if !file_path.is_empty() && !changed_files.contains(&file_path) {
-                changed_files.push(file_path);
             }
         }
-    }
 
-    Ok(WorktreeStatus {
-        changed_files,
-        added_lines,
-        removed_lines,
+        Ok(WorktreeStatus {
+            changed_files,
+            added_lines,
+            removed_lines,
+        })
     })
+    .await
 }

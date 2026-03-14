@@ -1,19 +1,19 @@
 import { useState } from "react";
 import { IconPlugConnected, IconSettings, IconBrain, IconFingerprint } from "@tabler/icons-react";
-import { cn } from "@/lib/utils";
+import { SubTabBar, type SubTab } from "../shared/sub-tab-bar";
 import { ConnectionSettings } from "./connection-settings";
 import { GeneralSettings } from "./general-settings";
 import { HintSettings } from "./hint-settings";
 import { IdentitySettings } from "./identity-settings";
 
-const TABS = [
-  { id: "connection" as const, label: "Connection", icon: IconPlugConnected },
-  { id: "general" as const, label: "General", icon: IconSettings },
-  { id: "identity" as const, label: "Identity", icon: IconFingerprint },
-  { id: "hints" as const, label: "Claude Code", icon: IconBrain },
-] as const;
+const TABS: SubTab[] = [
+  { id: "connection", label: "Connection", icon: IconPlugConnected },
+  { id: "general", label: "General", icon: IconSettings },
+  { id: "identity", label: "Identity", icon: IconFingerprint },
+  { id: "hints", label: "Claude Code", icon: IconBrain },
+];
 
-type TabId = (typeof TABS)[number]["id"];
+type TabId = "connection" | "general" | "identity" | "hints";
 
 export function SettingsPage() {
   const [activeTab, setActiveTab] = useState<TabId>("connection");
@@ -28,27 +28,8 @@ export function SettingsPage() {
         </p>
 
         {/* Tabs */}
-        <div className="flex items-center gap-0 mt-4 border-b border-[#2d3240]/60">
-          {TABS.map((tab) => {
-            const active = activeTab === tab.id;
-            const Icon = tab.icon;
-
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={cn(
-                  "flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-colors",
-                  active
-                    ? "text-[#d4a84b] border-[#d4a84b]"
-                    : "text-[#6f7f9a] border-transparent hover:text-[#ece7dc] hover:border-[#2d3240]",
-                )}
-              >
-                <Icon size={14} stroke={1.5} />
-                {tab.label}
-              </button>
-            );
-          })}
+        <div className="mt-4">
+          <SubTabBar tabs={TABS} activeTab={activeTab} onTabChange={(id) => setActiveTab(id as TabId)} />
         </div>
       </div>
 

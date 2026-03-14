@@ -17,8 +17,10 @@ use chrono::Utc;
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Runtime};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, OwnedSemaphorePermit, Semaphore};
 use uuid::Uuid;
+
+use crate::commands::capability::{validate_command_capability, CommandCapabilityState};
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -43,9 +45,6 @@ const MAX_ACTIVE_SESSIONS: usize = 32;
 const MAX_WRITE_BYTES: usize = 64 * 1024;
 const MAX_PREVIEW_LINES: usize = 200;
 
-/// Trusted window label for local command handlers.
-const TRUSTED_WINDOW_LABEL: &str = "main";
-
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -60,6 +59,7 @@ pub struct TerminalSession {
     pub branch: Option<String>,
     pub created_at: String,
     pub alive: Arc<AtomicBool>,
+    pub _session_permit: OwnedSemaphorePermit,
     /// Handle to the background reader task so we can abort on cleanup.
     pub reader_task: Option<tauri::async_runtime::JoinHandle<()>>,
 }
@@ -137,19 +137,12 @@ const ALLOWED_EXTRA_ENV_VARS: &[&str] = &[
     "TMP",
     "TEMP",
 ];
-const ALLOWED_ENV_PREFIXES: &[&str] = &["CLAWDSTRIKE_", "SWARM_", "TERM_"];
 
 /// Returns `true` if `key` is allowed in caller-supplied env.
-///
-/// Keys prefixed with `CLAWDSTRIKE_` or `SWARM_` are always allowed (these are
-/// the application's own configuration variables).
 fn is_allowed_env_var(key: &str) -> bool {
     ALLOWED_EXTRA_ENV_VARS
         .iter()
         .any(|allowed| key.eq_ignore_ascii_case(allowed))
-        || ALLOWED_ENV_PREFIXES
-            .iter()
-            .any(|prefix| key.to_ascii_uppercase().starts_with(prefix))
 }
 
 /// Allowlist of safe shell command names.
@@ -229,16 +222,6 @@ fn normalize_cwd(cwd: &str) -> Result<String, String> {
     }
 
     Ok(canonical_str)
-}
-
-fn ensure_trusted_window<R: tauri::Runtime>(window: &tauri::Window<R>) -> Result<(), String> {
-    if window.label() != TRUSTED_WINDOW_LABEL {
-        return Err(format!(
-            "Rejecting terminal command from unexpected window label: {}",
-            window.label()
-        ));
-    }
-    Ok(())
 }
 
 fn validate_session_id(session_id: &str) -> Result<(), String> {
@@ -363,9 +346,16 @@ impl SharedRingBuffer {
 /// Uses a std::sync::Mutex so both sync reader threads and async commands can access it.
 static RING_BUFFERS: std::sync::OnceLock<std::sync::Mutex<HashMap<String, Arc<SharedRingBuffer>>>> =
     std::sync::OnceLock::new();
+static SESSION_LIMITER: std::sync::OnceLock<Arc<Semaphore>> = std::sync::OnceLock::new();
 
 fn ring_buffers() -> &'static std::sync::Mutex<HashMap<String, Arc<SharedRingBuffer>>> {
     RING_BUFFERS.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+fn session_limiter() -> Arc<Semaphore> {
+    SESSION_LIMITER
+        .get_or_init(|| Arc::new(Semaphore::new(MAX_ACTIVE_SESSIONS)))
+        .clone()
 }
 
 fn get_ring_buffer(session_id: &str) -> Option<Arc<SharedRingBuffer>> {
@@ -402,21 +392,20 @@ fn remove_ring_buffer(session_id: &str) {
 pub async fn terminal_create<R: Runtime>(
     app: AppHandle<R>,
     window: tauri::Window<R>,
+    capability_state: tauri::State<'_, CommandCapabilityState>,
     state: tauri::State<'_, TerminalState>,
     cwd: String,
     shell: Option<String>,
     env: Option<HashMap<String, String>>,
+    capability: String,
 ) -> Result<SessionInfo, String> {
-    ensure_trusted_window(&window)?;
-    {
-        let manager = state.lock().await;
-        if manager.sessions.len() >= MAX_ACTIVE_SESSIONS {
-            return Err(format!(
-                "Too many active terminal sessions (max {})",
-                MAX_ACTIVE_SESSIONS
-            ));
-        }
-    }
+    validate_command_capability(&window, &capability_state, &capability).await?;
+    let session_permit = session_limiter().try_acquire_owned().map_err(|_| {
+        format!(
+            "Too many active terminal sessions (max {})",
+            MAX_ACTIVE_SESSIONS
+        )
+    })?;
 
     // Validate cwd exists
     let cwd = normalize_cwd(&cwd)?;
@@ -566,25 +555,16 @@ pub async fn terminal_create<R: Runtime>(
             let exit_event = format!("terminal:exit:{}", event_session_id);
             let _ = app_handle.emit(&exit_event, exit_code);
 
-            // Best-effort backend cleanup for naturally exited sessions.
-            // This avoids stale in-memory session/ring-buffer state when the
-            // frontend does not explicitly call `terminal_kill`.
-            let mut pruned = false;
-            for _ in 0..20 {
-                if let Ok(mut manager) = state_for_reader.try_lock() {
-                    manager.sessions.remove(&event_session_id);
-                    pruned = true;
-                    break;
-                }
-                std::thread::sleep(std::time::Duration::from_millis(10));
-            }
-            if !pruned {
-                eprintln!(
-                    "[terminal] failed to prune session {} after natural exit",
-                    event_session_id
-                );
-            }
-            remove_ring_buffer(&event_session_id);
+            // Guaranteed async cleanup for naturally exited sessions.
+            // This awaits the session lock instead of bounded try_lock retries.
+            let cleanup_state = state_for_reader.clone();
+            let cleanup_session_id = event_session_id.clone();
+            tauri::async_runtime::spawn(async move {
+                let mut manager = cleanup_state.lock().await;
+                manager.sessions.remove(&cleanup_session_id);
+                drop(manager);
+                remove_ring_buffer(&cleanup_session_id);
+            });
         }
     });
 
@@ -598,6 +578,7 @@ pub async fn terminal_create<R: Runtime>(
         branch: branch.clone(),
         created_at: created_at.clone(),
         alive: session_alive,
+        _session_permit: session_permit,
         reader_task: Some(reader_task),
     };
 
@@ -624,11 +605,13 @@ pub async fn terminal_create<R: Runtime>(
 #[tauri::command]
 pub async fn terminal_write<R: Runtime>(
     window: tauri::Window<R>,
+    capability_state: tauri::State<'_, CommandCapabilityState>,
     state: tauri::State<'_, TerminalState>,
     session_id: String,
     data: String,
+    capability: String,
 ) -> Result<(), String> {
-    ensure_trusted_window(&window)?;
+    validate_command_capability(&window, &capability_state, &capability).await?;
     validate_session_id(&session_id)?;
     if data.len() > MAX_WRITE_BYTES {
         return Err(format!(
@@ -660,12 +643,14 @@ pub async fn terminal_write<R: Runtime>(
 #[tauri::command]
 pub async fn terminal_resize<R: Runtime>(
     window: tauri::Window<R>,
+    capability_state: tauri::State<'_, CommandCapabilityState>,
     state: tauri::State<'_, TerminalState>,
     session_id: String,
     cols: u16,
     rows: u16,
+    capability: String,
 ) -> Result<(), String> {
-    ensure_trusted_window(&window)?;
+    validate_command_capability(&window, &capability_state, &capability).await?;
     validate_session_id(&session_id)?;
 
     let manager = state.lock().await;
@@ -698,10 +683,12 @@ pub async fn terminal_resize<R: Runtime>(
 #[tauri::command]
 pub async fn terminal_kill<R: Runtime>(
     window: tauri::Window<R>,
+    capability_state: tauri::State<'_, CommandCapabilityState>,
     state: tauri::State<'_, TerminalState>,
     session_id: String,
+    capability: String,
 ) -> Result<(), String> {
-    ensure_trusted_window(&window)?;
+    validate_command_capability(&window, &capability_state, &capability).await?;
     validate_session_id(&session_id)?;
 
     // Extract the session and signal termination, then drop the lock before
@@ -742,9 +729,11 @@ pub async fn terminal_kill<R: Runtime>(
 #[tauri::command]
 pub async fn terminal_list<R: Runtime>(
     window: tauri::Window<R>,
+    capability_state: tauri::State<'_, CommandCapabilityState>,
     state: tauri::State<'_, TerminalState>,
+    capability: String,
 ) -> Result<Vec<SessionInfo>, String> {
-    ensure_trusted_window(&window)?;
+    validate_command_capability(&window, &capability_state, &capability).await?;
 
     let mut manager = state.lock().await;
     let mut infos = Vec::with_capacity(manager.sessions.len());
@@ -763,11 +752,13 @@ pub async fn terminal_list<R: Runtime>(
 #[tauri::command]
 pub async fn terminal_preview<R: Runtime>(
     window: tauri::Window<R>,
+    capability_state: tauri::State<'_, CommandCapabilityState>,
     state: tauri::State<'_, TerminalState>,
     session_id: String,
     lines: Option<usize>,
+    capability: String,
 ) -> Result<Vec<String>, String> {
-    ensure_trusted_window(&window)?;
+    validate_command_capability(&window, &capability_state, &capability).await?;
     validate_session_id(&session_id)?;
 
     // Verify the session exists
@@ -791,8 +782,12 @@ pub async fn terminal_preview<R: Runtime>(
 /// Used by the frontend to auto-detect a sensible default for `repoRoot` when
 /// none is configured (e.g. first launch).
 #[tauri::command]
-pub fn get_cwd<R: Runtime>(window: tauri::Window<R>) -> Result<String, String> {
-    ensure_trusted_window(&window)?;
+pub async fn get_cwd<R: Runtime>(
+    window: tauri::Window<R>,
+    capability_state: tauri::State<'_, CommandCapabilityState>,
+    capability: String,
+) -> Result<String, String> {
+    validate_command_capability(&window, &capability_state, &capability).await?;
     std::env::current_dir()
         .map(|p| p.to_string_lossy().to_string())
         .map_err(|e| e.to_string())

@@ -480,7 +480,8 @@ jobs:
             --ignore RUSTSEC-2025-0100 \
             --ignore RUSTSEC-2025-0119 \
             # Temporary: transitive via portable-pty->serial in workbench PTY stack.
-            # Mitigated by command hardening (shell/env allowlists + trusted-window guards).
+            # Mitigated by command hardening (shell/env allowlists + backend-minted
+            # capability tokens bound to trusted-window context).
             # Tracking removal: SEC-PTY-001.
             --ignore RUSTSEC-2017-0008
           )
