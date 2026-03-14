@@ -633,6 +633,8 @@ export function IntelDetailPage() {
   const [hubTrustHydrationByConnection, setHubTrustHydrationByConnection] = useState<
     Record<string, HubTrustHydrationStatus>
   >({});
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [publishError, setPublishError] = useState<string | null>(null);
   const intel = id ? getIntelById(id) : undefined;
   const source = id ? getIntelSource(id) : undefined;
   const swarmRecords = id ? getSwarmIntelRecords(id) : [];
@@ -722,7 +724,7 @@ export function IntelDetailPage() {
 
   const handleShareToSwarm = useCallback(
     async (targetIntel: Intel) => {
-      if (!targetSwarm) {
+      if (!targetSwarm || isPublishing) {
         return;
       }
       if (requiresLiveHubTrustHydration && liveHubTrustHydrationStatus !== "success") {
@@ -730,91 +732,104 @@ export function IntelDetailPage() {
         return;
       }
 
-      let nextIntel: Intel =
-        targetIntel.shareability === "private"
-          ? { ...targetIntel, shareability: "swarm" }
-          : targetIntel;
+      setIsPublishing(true);
+      setPublishError(null);
 
-      if (!nextIntel.signerPublicKey || !nextIntel.signature) {
-        if (!currentOperator) {
-          return;
+      try {
+        let nextIntel: Intel =
+          targetIntel.shareability === "private"
+            ? { ...targetIntel, shareability: "swarm" }
+            : targetIntel;
+
+        if (!nextIntel.signerPublicKey || !nextIntel.signature) {
+          if (!currentOperator) {
+            return;
+          }
+
+          const secretKey = await getSecretKey();
+          if (!secretKey) {
+            return;
+          }
+
+          nextIntel = await signIntel(
+            {
+              ...nextIntel,
+              author: currentOperator.fingerprint,
+            },
+            secretKey,
+            currentOperator.publicKey,
+          );
         }
 
-        const secretKey = await getSecretKey();
-        if (!secretKey) {
+        const publishedAt = Date.now();
+        const publisherIdentity = resolvePublisherIdentity(nextIntel, currentOperator);
+        if (!publisherIdentity) {
           return;
         }
-
-        nextIntel = await signIntel(
-          {
-            ...nextIntel,
-            author: currentOperator.fingerprint,
-          },
-          secretKey,
-          currentOperator.publicKey,
+        const nextFeedSeq =
+          (getLatestFindingSeq(targetSwarm.id, publisherIdentity.issuerId) ?? 0) + 1;
+        const envelope = buildFindingEnvelope(
+          nextIntel,
+          publishedAt,
+          nextFeedSeq,
+          publisherIdentity.issuerId,
         );
-      }
+        let headAnnouncement: HeadAnnouncement;
+        if (connection.hushdUrl) {
+          try {
+            const publishResponse = await publishSwarmFinding(connection, envelope);
+            headAnnouncement = publishResponse.headAnnouncement;
+          } catch (error) {
+            const message =
+              error instanceof Error ? error.message : "Unknown publish error";
+            console.warn("[sentinel-swarm-pages] failed to publish finding to hushd:", error);
+            setPublishError(`Publish failed: ${message}`);
+            return;
+          }
+        } else {
+          headAnnouncement = await createHeadAnnouncement({
+            factId: `head:${targetSwarm.id}:${nextIntel.id}:${nextFeedSeq}`,
+            entryCount: nextFeedSeq,
+            head: envelope,
+            announcedAt: publishedAt,
+          });
+        }
 
-      const publishedAt = Date.now();
-      const publisherIdentity = resolvePublisherIdentity(nextIntel, currentOperator);
-      if (!publisherIdentity) {
-        return;
-      }
-      const nextFeedSeq =
-        (getLatestFindingSeq(targetSwarm.id, publisherIdentity.issuerId) ?? 0) + 1;
-      const envelope = buildFindingEnvelope(
-        nextIntel,
-        publishedAt,
-        nextFeedSeq,
-        publisherIdentity.issuerId,
-      );
-      let headAnnouncement: HeadAnnouncement;
-      if (connection.hushdUrl) {
-        try {
-          const publishResponse = await publishSwarmFinding(connection, envelope);
-          headAnnouncement = publishResponse.headAnnouncement;
-        } catch (error) {
-          console.warn("[sentinel-swarm-pages] failed to publish finding to hushd:", error);
+        const findingIngestResult = await ingestFindingEnvelope({
+          swarmId: targetSwarm.id,
+          envelope,
+          receivedAt: publishedAt,
+        });
+        if (!findingIngestResult.accepted) {
+          setPublishError(
+            `Local ingest rejected: ${findingIngestResult.reason ?? "unknown reason"}`,
+          );
           return;
         }
-      } else {
-        headAnnouncement = await createHeadAnnouncement({
-          factId: `head:${targetSwarm.id}:${nextIntel.id}:${nextFeedSeq}`,
-          entryCount: nextFeedSeq,
-          head: envelope,
-          announcedAt: publishedAt,
+        if (editableLocalIntel) {
+          upsertLocalIntel(nextIntel);
+        }
+        addIntelRef(targetSwarm.id, {
+          intelId: nextIntel.id,
+          publishedBy: publisherIdentity.fingerprint,
+          publishedAt,
+          version: nextIntel.version,
         });
+        ingestSwarmIntel({
+          swarmId: targetSwarm.id,
+          intel: nextIntel,
+          receivedAt: publishedAt,
+          publishedBy: publisherIdentity.fingerprint,
+        });
+        ingestHeadAnnouncement({
+          swarmId: targetSwarm.id,
+          lane: "findings",
+          announcement: headAnnouncement,
+          receivedAt: publishedAt,
+        });
+      } finally {
+        setIsPublishing(false);
       }
-
-      const findingIngestResult = await ingestFindingEnvelope({
-        swarmId: targetSwarm.id,
-        envelope,
-        receivedAt: publishedAt,
-      });
-      if (!findingIngestResult.accepted) {
-        return;
-      }
-      if (editableLocalIntel) {
-        upsertLocalIntel(nextIntel);
-      }
-      addIntelRef(targetSwarm.id, {
-        intelId: nextIntel.id,
-        publishedBy: publisherIdentity.fingerprint,
-        publishedAt,
-        version: nextIntel.version,
-      });
-      ingestSwarmIntel({
-        swarmId: targetSwarm.id,
-        intel: nextIntel,
-        receivedAt: publishedAt,
-        publishedBy: publisherIdentity.fingerprint,
-      });
-      ingestHeadAnnouncement({
-        swarmId: targetSwarm.id,
-        lane: "findings",
-        announcement: headAnnouncement,
-        receivedAt: publishedAt,
-      });
     },
     [
       addIntelRef,
@@ -826,6 +841,7 @@ export function IntelDetailPage() {
       ingestFindingEnvelope,
       ingestHeadAnnouncement,
       ingestSwarmIntel,
+      isPublishing,
       liveHubTrustHydrationStatus,
       requiresLiveHubTrustHydration,
       setTrustPolicy,
@@ -849,7 +865,15 @@ export function IntelDetailPage() {
         onBack={() => navigate("/intel")}
         onNavigateToFinding={(findingId: string) => navigate(`/findings/${findingId}`)}
         onChangeShareability={editableLocalIntel ? handleChangeShareability : undefined}
-        onShareToSwarm={canShareToSwarm ? handleShareToSwarm : undefined}
+        onShareToSwarm={canShareToSwarm && !isPublishing ? handleShareToSwarm : undefined}
+        shareStatus={
+          isPublishing
+            ? "publishing"
+            : publishError
+              ? "error"
+              : undefined
+        }
+        shareStatusMessage={publishError ?? undefined}
       />
 
       {swarmRecords.length > 0 && (

@@ -128,6 +128,10 @@ export interface IntelDetailProps {
     intel: Intel,
     shareability: IntelShareability,
   ) => void;
+  /** Optional share operation status for publish feedback. */
+  shareStatus?: "publishing" | "error";
+  /** Optional message to display alongside the share status. */
+  shareStatusMessage?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -834,6 +838,8 @@ function ShareabilityControls({
   intel,
   onChangeShareability,
   onShareToSwarm,
+  shareStatus,
+  shareStatusMessage,
 }: {
   intel: Intel;
   onChangeShareability?: (
@@ -841,6 +847,8 @@ function ShareabilityControls({
     shareability: IntelShareability,
   ) => void;
   onShareToSwarm?: (intel: Intel) => void;
+  shareStatus?: "publishing" | "error";
+  shareStatusMessage?: string;
 }) {
   const levels: IntelShareability[] = ["private", "swarm", "public"];
 
@@ -888,21 +896,28 @@ function ShareabilityControls({
       <button
         onClick={() => onShareToSwarm?.(intel)}
         disabled={
-          intel.shareability === "private" || !onShareToSwarm
+          intel.shareability === "private" || !onShareToSwarm || shareStatus === "publishing"
         }
         className={cn(
           "w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-[11px] font-medium border transition-colors",
-          intel.shareability === "private" || !onShareToSwarm
+          intel.shareability === "private" || !onShareToSwarm || shareStatus === "publishing"
             ? "text-[#6f7f9a]/40 border-[#2d3240]/30 bg-transparent cursor-not-allowed"
             : "text-[#d4a84b] border-[#d4a84b]/30 bg-[#d4a84b]/10 hover:bg-[#d4a84b]/20",
         )}
       >
         <IconUsers size={13} stroke={1.5} />
-        {intel.shareability === "private"
-          ? "Change to Swarm or Public to share"
-          : "Share to Swarm"}
+        {shareStatus === "publishing"
+          ? "Publishing\u2026"
+          : intel.shareability === "private"
+            ? "Change to Swarm or Public to share"
+            : "Share to Swarm"}
       </button>
-      {!onShareToSwarm && intel.shareability !== "private" && (
+      {shareStatus === "error" && shareStatusMessage && (
+        <p className="text-[9px] text-red-400/80 mt-1.5 text-center">
+          {shareStatusMessage}
+        </p>
+      )}
+      {!onShareToSwarm && shareStatus !== "publishing" && intel.shareability !== "private" && (
         <p className="text-[9px] text-[#6f7f9a]/50 mt-1.5 text-center">
           Swarm sharing is unavailable in this view
         </p>
@@ -922,6 +937,8 @@ export function IntelDetail({
   onNavigateToFinding,
   onShareToSwarm,
   onChangeShareability,
+  shareStatus,
+  shareStatusMessage,
 }: IntelDetailProps) {
   const TypeIcon = TYPE_ICONS[intel.type];
   const typeColor = TYPE_COLORS[intel.type];
@@ -1045,6 +1062,8 @@ export function IntelDetail({
               intel={intel}
               onChangeShareability={onChangeShareability}
               onShareToSwarm={onShareToSwarm}
+              shareStatus={shareStatus}
+              shareStatusMessage={shareStatusMessage}
             />
           </div>
         </div>
