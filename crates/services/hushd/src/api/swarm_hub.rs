@@ -31,6 +31,11 @@ const MAX_REPLAY_ENTRIES_PER_SYNC: u64 = 500;
 const CHECKPOINT_INTERVAL: u64 = 50;
 const RETENTION_MS: u64 = 86_400_000;
 const MAX_INLINE_BLOB_BYTES: u64 = 0;
+const MAX_TITLE_LEN: usize = 512;
+const MAX_SUMMARY_LEN: usize = 4096;
+const MAX_TAGS_COUNT: usize = 50;
+const MAX_BLOB_REFS_COUNT: usize = 100;
+const MAX_RELATED_FINDING_IDS_COUNT: usize = 200;
 const ALLOWED_TRUST_POLICY_SCHEMAS: &[&str] = &[
     FINDING_ENVELOPE_SCHEMA,
     FINDING_BLOB_SCHEMA,
@@ -534,6 +539,17 @@ pub async fn publish_finding(
         .await
         .map_err(map_swarm_store_error)?;
 
+    tracing::info!(
+        operation = "publish_finding",
+        feed_id = %finding.feed_id,
+        issuer_id = %finding.issuer_id,
+        finding_id = %finding.finding_id,
+        feed_seq = finding.feed_seq,
+        idempotent = outcome.idempotent,
+        severity = %serde_json::to_value(&finding.severity).unwrap_or_default(),
+        "swarm finding published"
+    );
+
     Ok(Json(PublishFindingResponse {
         accepted: true,
         idempotent: outcome.idempotent,
@@ -597,6 +613,18 @@ pub async fn publish_revocation(
         })
         .await
         .map_err(map_swarm_store_error)?;
+
+    tracing::info!(
+        operation = "publish_revocation",
+        feed_id = %revocation.feed_id,
+        issuer_id = %revocation.issuer_id,
+        revocation_id = %revocation.revocation_id,
+        feed_seq = revocation.feed_seq,
+        action = %revocation.action.as_str(),
+        target_id = %revocation.target.id,
+        idempotent = outcome.idempotent,
+        "swarm revocation published"
+    );
 
     Ok(Json(PublishRevocationResponse {
         accepted: true,
@@ -737,6 +765,29 @@ pub async fn replay_swarm_feed(
         ));
     }
 
+    // Verify that the computed head hash of the last envelope in the
+    // replay matches the stored head hash when the replay reaches the
+    // current head.  This guards against silent data corruption.
+    if to_seq == head.head_seq {
+        if let Some(last_envelope) = envelopes.last() {
+            let computed_hash = hash_finding_envelope_for_head(last_envelope)?;
+            if computed_hash != head.head_envelope_hash {
+                tracing::error!(
+                    feed_id = %feed_id,
+                    issuer_id = %issuer_id,
+                    head_seq = head.head_seq,
+                    stored_hash = %head.head_envelope_hash,
+                    computed_hash = %computed_hash,
+                    "replay head hash verification failed"
+                );
+                return Err(V1Error::internal(
+                    "SWARM_REPLAY_INTEGRITY_ERROR",
+                    "computed head hash does not match stored head hash — data integrity issue",
+                ));
+            }
+        }
+    }
+
     Ok(Json(ReplayResponse {
         schema: REPLAY_SCHEMA,
         feed_id,
@@ -822,6 +873,28 @@ pub async fn replay_swarm_revocations(
             "SWARM_REPLAY_INCONSISTENT",
             "requested replay range is not fully stored",
         ));
+    }
+
+    // Verify that the computed head hash of the last revocation envelope
+    // matches the stored head hash when the replay reaches the current head.
+    if to_seq == head.head_seq {
+        if let Some(last_envelope) = envelopes.last() {
+            let computed_hash = hash_revocation_envelope_for_head(last_envelope)?;
+            if computed_hash != head.head_envelope_hash {
+                tracing::error!(
+                    feed_id = %feed_id,
+                    issuer_id = %issuer_id,
+                    head_seq = head.head_seq,
+                    stored_hash = %head.head_envelope_hash,
+                    computed_hash = %computed_hash,
+                    "revocation replay head hash verification failed"
+                );
+                return Err(V1Error::internal(
+                    "SWARM_REPLAY_INTEGRITY_ERROR",
+                    "computed head hash does not match stored head hash — data integrity issue",
+                ));
+            }
+        }
     }
 
     Ok(Json(RevocationReplayResponse {
@@ -928,12 +1001,22 @@ pub async fn pin_swarm_blob(
         .control_db
         .record_swarm_blob_pin_request(
             digest.clone(),
-            actor_label,
+            actor_label.clone(),
             note,
             request_json,
         )
         .await
         .map_err(map_swarm_store_error)?;
+
+    tracing::info!(
+        operation = "pin_blob",
+        digest = %record.digest,
+        request_id = %record.request_id,
+        status = %record.status,
+        actor = ?actor_label,
+        deduplicated = %record.status == "deduplicated",
+        "swarm blob pin request recorded"
+    );
 
     Ok((
         StatusCode::ACCEPTED,
@@ -1454,26 +1537,53 @@ fn validate_finding_envelope(value: &Value) -> Result<(), V1Error> {
         return Err(invalid_finding("feedSeq must be >= 1"));
     }
     require_safe_u64(map, "publishedAt")?;
-    require_non_empty_json_string(map, "title")?;
-    require_non_empty_json_string(map, "summary")?;
+    let title = require_non_empty_json_string(map, "title")?;
+    if title.len() > MAX_TITLE_LEN {
+        return Err(invalid_finding(format!(
+            "title must not exceed {MAX_TITLE_LEN} characters"
+        )));
+    }
+    let summary = require_non_empty_json_string(map, "summary")?;
+    if summary.len() > MAX_SUMMARY_LEN {
+        return Err(invalid_finding(format!(
+            "summary must not exceed {MAX_SUMMARY_LEN} characters"
+        )));
+    }
     expect_one_of_string(map, "severity", ALLOWED_SEVERITIES)?;
     require_unit_interval(map, "confidence")?;
     expect_one_of_string(map, "status", ALLOWED_STATUSES)?;
     require_safe_u64(map, "signalCount")?;
-    validate_string_array(
-        map.get("tags")
-            .ok_or_else(|| invalid_finding("tags is required"))?,
-        "tags",
-    )?;
+    let tags_value = map.get("tags")
+        .ok_or_else(|| invalid_finding("tags is required"))?;
+    validate_string_array(tags_value, "tags")?;
+    if let Some(tags_arr) = tags_value.as_array() {
+        if tags_arr.len() > MAX_TAGS_COUNT {
+            return Err(invalid_finding(format!(
+                "tags must not exceed {MAX_TAGS_COUNT} entries"
+            )));
+        }
+    }
 
     if let Some(value) = map.get("relatedFindingIds") {
         validate_string_array(value, "relatedFindingIds")?;
+        if let Some(arr) = value.as_array() {
+            if arr.len() > MAX_RELATED_FINDING_IDS_COUNT {
+                return Err(invalid_finding(format!(
+                    "relatedFindingIds must not exceed {MAX_RELATED_FINDING_IDS_COUNT} entries"
+                )));
+            }
+        }
     }
 
     let blob_refs = map
         .get("blobRefs")
         .and_then(Value::as_array)
         .ok_or_else(|| invalid_finding("blobRefs must be an array"))?;
+    if blob_refs.len() > MAX_BLOB_REFS_COUNT {
+        return Err(invalid_finding(format!(
+            "blobRefs must not exceed {MAX_BLOB_REFS_COUNT} entries"
+        )));
+    }
     for blob_ref in blob_refs {
         validate_blob_ref(blob_ref)?;
     }

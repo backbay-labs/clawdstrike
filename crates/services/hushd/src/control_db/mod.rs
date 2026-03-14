@@ -23,6 +23,9 @@ pub enum ControlDbError {
 
 pub type Result<T> = std::result::Result<T, ControlDbError>;
 
+/// Deduplication window for blob pin requests: 1 hour in milliseconds.
+const DEDUP_WINDOW_MS: u64 = 3_600_000;
+
 #[derive(Clone, Debug)]
 pub struct SwarmBlobRefInput {
     pub blob_id: String,
@@ -332,41 +335,89 @@ impl ControlDb {
         request_json: String,
     ) -> Result<SwarmPinRequestRecord> {
         self.spawn_blocking_mut(move |conn| {
-            let request = SwarmPinRequestRecord {
-                request_id: uuid::Uuid::new_v4().to_string(),
+            Self::record_swarm_blob_pin_request_inner(conn, digest, actor, note, request_json)
+        })
+        .await
+    }
+
+    fn record_swarm_blob_pin_request_inner(
+        conn: &mut Connection,
+        digest: String,
+        actor: Option<String>,
+        note: Option<String>,
+        request_json: String,
+    ) -> Result<SwarmPinRequestRecord> {
+        let now = now_millis_u64()?;
+        let dedup_cutoff = now.saturating_sub(DEDUP_WINDOW_MS);
+
+        // Check for a recent pin request with the same (digest, actor) within
+        // the deduplication window.  If one exists, return it instead of
+        // inserting a duplicate row.
+        let existing: Option<SwarmPinRequestRecord> = conn
+            .query_row(
+                r#"
+                SELECT request_id, digest, actor, note, request_json, status, requested_at
+                FROM swarm_blob_pin_requests
+                WHERE digest = ?1
+                  AND ((?2 IS NULL AND actor IS NULL) OR actor = ?2)
+                  AND requested_at >= ?3
+                ORDER BY requested_at DESC
+                LIMIT 1
+                "#,
+                params![&digest, &actor, i64_from_u64(dedup_cutoff)?],
+                |row| {
+                    Ok(SwarmPinRequestRecord {
+                        request_id: row.get(0)?,
+                        digest: row.get(1)?,
+                        actor: row.get(2)?,
+                        note: row.get(3)?,
+                        request_json: row.get(4)?,
+                        status: row.get(5)?,
+                        requested_at: u64_from_i64(row.get::<_, i64>(6)?)
+                            .unwrap_or(0),
+                    })
+                },
+            )
+            .optional()?;
+
+        if let Some(mut record) = existing {
+            record.status = "deduplicated".to_string();
+            return Ok(record);
+        }
+
+        let request = SwarmPinRequestRecord {
+            request_id: uuid::Uuid::new_v4().to_string(),
+            digest,
+            actor,
+            note,
+            request_json,
+            status: "recorded".to_string(),
+            requested_at: now,
+        };
+        conn.execute(
+            r#"
+            INSERT INTO swarm_blob_pin_requests (
+                request_id,
                 digest,
                 actor,
                 note,
                 request_json,
-                status: "recorded".to_string(),
-                requested_at: now_millis_u64()?,
-            };
-            conn.execute(
-                r#"
-                INSERT INTO swarm_blob_pin_requests (
-                    request_id,
-                    digest,
-                    actor,
-                    note,
-                    request_json,
-                    status,
-                    requested_at
-                )
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-                "#,
-                params![
-                    &request.request_id,
-                    &request.digest,
-                    &request.actor,
-                    &request.note,
-                    &request.request_json,
-                    &request.status,
-                    i64_from_u64(request.requested_at)?,
-                ],
-            )?;
-            Ok(request)
-        })
-        .await
+                status,
+                requested_at
+            )
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+            "#,
+            params![
+                &request.request_id,
+                &request.digest,
+                &request.actor,
+                &request.note,
+                &request.request_json,
+                &request.status,
+                i64_from_u64(request.requested_at)?,
+            ],
+        )?;
+        Ok(request)
     }
 
     pub async fn get_control_metadata(
