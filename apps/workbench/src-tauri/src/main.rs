@@ -3,11 +3,12 @@
 
 mod commands;
 
-use commands::{mcp_sidecar, stronghold as stronghold_cmds, workbench};
+use commands::{mcp_sidecar, stronghold as stronghold_cmds, terminal, workbench, worktree};
 use mcp_sidecar::McpState;
 use stronghold_cmds::StrongholdState;
 #[allow(unused_imports)]
 use tauri::Manager;
+use terminal::TerminalState;
 
 fn main() {
     tauri::Builder::default()
@@ -28,6 +29,10 @@ fn main() {
         })
         .manage(StrongholdState::new())
         .manage(McpState::new())
+        .manage(
+            std::sync::Arc::new(tokio::sync::Mutex::new(terminal::TerminalManager::new()))
+                as TerminalState,
+        )
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
                 #[cfg(not(target_os = "macos"))]
@@ -91,14 +96,33 @@ fn main() {
             mcp_sidecar::get_mcp_status,
             mcp_sidecar::stop_mcp_server,
             mcp_sidecar::restart_mcp_server,
+            terminal::terminal_create,
+            terminal::terminal_write,
+            terminal::terminal_resize,
+            terminal::terminal_kill,
+            terminal::terminal_list,
+            terminal::terminal_preview,
+            terminal::get_cwd,
+            worktree::worktree_create,
+            worktree::worktree_remove,
+            worktree::worktree_list,
+            worktree::worktree_status,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
                 // Clean up the MCP sidecar child process on exit.
-                let state = app.state::<McpState>();
-                mcp_sidecar::kill_mcp_server(&state);
+                let mcp_state = app.state::<McpState>();
+                mcp_sidecar::kill_mcp_server(&mcp_state);
+
+                // Clean up all terminal sessions on exit.
+                let terminal_state = app.state::<TerminalState>();
+                // Use a blocking approach since we're in a sync callback.
+                let state_clone = (*terminal_state).clone();
+                tauri::async_runtime::block_on(async {
+                    terminal::kill_all_sessions(&state_clone).await;
+                });
             }
         });
 }

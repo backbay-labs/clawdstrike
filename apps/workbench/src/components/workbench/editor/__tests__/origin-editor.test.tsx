@@ -161,7 +161,7 @@ describe("OriginEditor", () => {
 
     await user.click(screen.getByText("profile-alpha"));
     await user.click(screen.getAllByRole("combobox")[1]);
-    await user.click(screen.getByRole("option", { name: "Custom..." }));
+    await user.click(await screen.findByRole("option", { name: "Custom..." }));
 
     await waitFor(() => {
       expect(
@@ -247,7 +247,7 @@ describe("OriginEditor", () => {
 
     await user.click(screen.getByText("profile-alpha"));
     await user.click(screen.getAllByRole("combobox")[2]);
-    await user.click(screen.getByRole("option", { name: "Custom..." }));
+    await user.click(await screen.findByRole("option", { name: "Custom..." }));
 
     await waitFor(() => {
       expect(

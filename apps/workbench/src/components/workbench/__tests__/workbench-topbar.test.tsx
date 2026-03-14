@@ -184,7 +184,7 @@ describe("WorkbenchTopbar", () => {
     renderWithProviders(<WorkbenchTopbar />);
 
     const saveButton = screen.getByRole("button", { name: "Save" });
-    expect(saveButton).toHaveAttribute("title", "Save policy");
+    expect(saveButton).toHaveAttribute("title", "Save policy (\u2318S)");
 
     await user.click(screen.getByTitle("Export format"));
     await user.click(await screen.findByRole("option", { name: "JSON" }));
@@ -198,7 +198,7 @@ describe("WorkbenchTopbar", () => {
       );
     });
 
-    expect(saveButton).toHaveAttribute("title", "Save policy");
+    expect(saveButton).toHaveAttribute("title", "Save policy (\u2318S)");
 
     await user.click(saveButton);
 

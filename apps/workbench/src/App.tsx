@@ -165,6 +165,7 @@ const HierarchyPage = lazy(() =>
   })),
 );
 
+
 // ---------------------------------------------------------------------------
 // Loading fallback — dark-themed to prevent white flash in Tauri shell
 // ---------------------------------------------------------------------------
@@ -400,6 +401,7 @@ export function App() {
                 <Route path="missions" element={<MissionControlPage />} />
                 <Route path="swarms" element={<SwarmPage />} />
                 <Route path="swarms/:id" element={<SwarmDetail />} />
+                <Route path="swarm-board" element={<Navigate to="/lab" replace />} />
 
                 {/* Merged pages */}
                 <Route path="lab" element={<LabLayout />} />
