@@ -182,11 +182,13 @@ export function ApprovalQueue({ currentUser }: { currentUser?: string } = {}) {
     });
   }, [tick]);
 
-  const fetchLiveApprovals = useCallback(async () => {
+  const fetchLiveApprovals = useCallback(async (force?: boolean) => {
     // Guard: only clear/fetch when actually in live mode. In demo mode the
     // callback can still fire (e.g. via the poll timer race) and would
-    // otherwise wipe the demo data.
-    if (!isLiveData) return;
+    // otherwise wipe the demo data.  The `force` param lets
+    // toggleDataSource bypass this check when it has just set isLiveData
+    // (avoiding stale closure).
+    if (!force && !isLiveData) return;
 
     if (!liveApprovalsReady) {
       setRequests([]);
@@ -229,7 +231,7 @@ export function ApprovalQueue({ currentUser }: { currentUser?: string } = {}) {
       setLiveFetchError(null);
     } else if (liveApprovalsReady) {
       setIsLiveData(true);
-      await fetchLiveApprovals();
+      await fetchLiveApprovals(true);
     }
     setSelectedRequest(null);
     setConfirmAction(null);
@@ -396,7 +398,7 @@ export function ApprovalQueue({ currentUser }: { currentUser?: string } = {}) {
 
           {isLiveData && liveApprovalsReady && (
             <button
-              onClick={fetchLiveApprovals}
+              onClick={() => fetchLiveApprovals()}
               className="flex h-7 items-center gap-1 rounded-md bg-[#2d3240]/50 px-2 text-[10px] text-[#6f7f9a] transition-colors hover:text-[#ece7dc] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]"
               title="Refresh live approvals"
             >
