@@ -123,9 +123,7 @@ impl CommandCapabilityManager {
         ttl_secs: i64,
         max_uses: u32,
     ) {
-        let remaining_uses = max_uses.saturating_sub(1);
-        if remaining_uses == 0 {
-            self.grants.remove(&(window_label.to_string(), scope));
+        if max_uses == 0 {
             return;
         }
 
@@ -133,7 +131,7 @@ impl CommandCapabilityManager {
             (window_label.to_string(), scope),
             AuthorizationGrant {
                 expires_at_epoch: now_epoch.saturating_add(ttl_secs),
-                remaining_uses,
+                remaining_uses: max_uses,
             },
         );
     }
@@ -258,16 +256,13 @@ pub async fn authorize_sensitive_command<R: Runtime>(
             return Ok(());
         }
         if !manager.is_denial_cooled_down(window.label(), policy.scope, now) {
-            return Err(format!(
-                "Sensitive command '{}' denied — approval cooldown active, try again shortly",
-                command.trim()
-            ));
+            return Err(
+                "Sensitive command denied — approval cooldown active, try again shortly"
+                    .to_string(),
+            );
         }
         if manager.pending_prompts.contains(&prompt_key) {
-            return Err(format!(
-                "Sensitive command approval already pending for '{}'",
-                command.trim()
-            ));
+            return Err("Sensitive command approval already pending".to_string());
         }
         manager.pending_prompts.insert(prompt_key);
     }
@@ -280,10 +275,7 @@ pub async fn authorize_sensitive_command<R: Runtime>(
     let approved = prompt_result?;
     if !approved {
         manager.record_denial(window.label(), policy.scope, Utc::now().timestamp());
-        return Err(format!(
-            "Sensitive command '{}' denied by native user approval",
-            command.trim()
-        ));
+        return Err("Sensitive command denied by native user approval".to_string());
     }
 
     let now_epoch = Utc::now().timestamp();

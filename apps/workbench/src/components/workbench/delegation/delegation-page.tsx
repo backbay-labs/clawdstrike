@@ -696,6 +696,7 @@ export function DelegationPage() {
                 selectedId={selectedPrincipalId}
                 isOpen={principalDropdownOpen}
                 onToggle={() => setPrincipalDropdownOpen((p) => !p)}
+                onClose={() => setPrincipalDropdownOpen(false)}
                 onSelect={handlePrincipalChange}
                 disabled={isLoadingPrincipal}
               />
@@ -1102,6 +1103,7 @@ function PrincipalSelector({
   selectedId,
   isOpen,
   onToggle,
+  onClose,
   onSelect,
   disabled = false,
 }: {
@@ -1109,6 +1111,7 @@ function PrincipalSelector({
   selectedId: string | null;
   isOpen: boolean;
   onToggle: () => void;
+  onClose: () => void;
   onSelect: (id: string) => void;
   disabled?: boolean;
 }) {
@@ -1116,17 +1119,18 @@ function PrincipalSelector({
   const selected = principals.find((p) => p.id === selectedId);
   const displayName = selected?.name ?? selected?.id ?? "Select principal";
 
-  // Close dropdown on outside click
+  // Close dropdown on outside click — use explicit close (not toggle) to
+  // avoid double-toggle if state gets out of sync.
   useEffect(() => {
     if (!isOpen) return;
     const handler = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        onToggle();
+        onClose();
       }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [isOpen, onToggle]);
+  }, [isOpen, onClose]);
 
   return (
     <div ref={dropdownRef} className="relative">

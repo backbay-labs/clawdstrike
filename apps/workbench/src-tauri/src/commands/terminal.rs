@@ -158,12 +158,15 @@ fn normalize_shell(shell: &str) -> Option<String> {
     }
 
     let path = Path::new(shell);
-    if path.is_absolute() || path.components().count() != 1 {
-        eprintln!("[terminal] Rejected path-like shell value: {:?}", shell);
+
+    // Reject relative paths with directory components (e.g. `./bash`,
+    // `subdir/bash`) — only bare names and absolute paths are accepted.
+    if !path.is_absolute() && path.components().count() != 1 {
+        eprintln!("[terminal] Rejected relative path shell value: {:?}", shell);
         return None;
     }
 
-    // Extract the base name from the path (bare command names only).
+    // Extract the base name from the path.
     let file_name = path.file_name()?.to_string_lossy();
     let file_name = if cfg!(target_os = "windows") {
         file_name.trim_end_matches(".exe")
@@ -176,7 +179,14 @@ fn normalize_shell(shell: &str) -> Option<String> {
         .find(|allowed| file_name.eq_ignore_ascii_case(allowed));
 
     if let Some(allowed) = allowed {
-        Some((*allowed).to_string())
+        // For absolute paths (e.g. $SHELL=/bin/zsh), return the original
+        // absolute path so the OS resolves the intended binary rather than
+        // relying on PATH lookup. For bare names, return the canonical name.
+        if path.is_absolute() {
+            Some(shell.to_string())
+        } else {
+            Some((*allowed).to_string())
+        }
     } else {
         eprintln!("[terminal] Rejected shell not in allowlist: {:?}", shell);
         None
