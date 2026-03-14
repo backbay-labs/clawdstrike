@@ -10,6 +10,7 @@
 import { useCallback, useMemo } from "react";
 import {
   useSwarmBoard,
+  MAX_ACTIVE_TERMINALS,
   type SpawnSessionOptions,
   type SpawnClaudeSessionOptions,
   type SpawnWorktreeSessionOptions,
@@ -96,7 +97,13 @@ export function useTerminalSessions() {
       if (node) {
         const d = node.data as SwarmBoardNodeData;
         if (d.sessionId && (d.status === "running" || d.status === "blocked")) {
-          await killSession(nodeId);
+          try {
+            await killSession(nodeId);
+          } catch (err) {
+            // Kill failed (IPC error, timeout, etc.) — still remove the node
+            // so the UI doesn't get stuck with an unkillable tile.
+            console.warn("[use-terminal-sessions] killSession failed during removal:", err);
+          }
         }
       }
       removeNode(nodeId);
@@ -118,7 +125,7 @@ export function useTerminalSessions() {
   );
 
   /** Whether we can spawn more sessions (below the limit). */
-  const canSpawnMore = activeSessionCount < 8;
+  const canSpawnMore = activeSessionCount < MAX_ACTIVE_TERMINALS;
 
   /** Whether repoRoot is configured. */
   const hasRepoRoot = Boolean(repoRoot);

@@ -1,4 +1,4 @@
-# Dependency Advisory Triage (2026-02-10)
+# Dependency Advisory Triage (2026-03-14)
 
 This document tracks explicitly accepted RustSec advisories for Clawdstrike.
 
@@ -33,7 +33,7 @@ Policy gates:
 | RUSTSEC-2025-0098 | `unic-ucd-version` (unmaintained) | Temporary exception (transitive via `urlpattern` in `tauri-utils`) | `@desktop-platform` | 2026-06-30 | Remove once `tauri-utils` no longer depends on `urlpattern`/`unic-*` |
 | RUSTSEC-2025-0100 | `unic-ucd-ident` (unmaintained) | Temporary exception (transitive via `urlpattern` in `tauri-utils`) | `@desktop-platform` | 2026-06-30 | Remove once `tauri-utils` no longer depends on `urlpattern`/`unic-*` |
 | RUSTSEC-2025-0119 | `number_prefix` (unmaintained) | Temporary exception (transitive via `indicatif`) | `@deps-maintainers` | 2026-06-30 | Track `indicatif` update to drop `number_prefix` |
-| RUSTSEC-2017-0008 | `serial` (unmaintained) | Temporary exception (transitive via `portable-pty` in workbench PTY service) | `@desktop-platform` | 2026-06-30 | Track `portable-pty` migration away from `serial` crate |
+| RUSTSEC-2017-0008 | `serial` (unmaintained) | Temporary exception (transitive via `portable-pty` in workbench PTY service; mitigated by strict shell/env allowlists and trusted-window IPC guards in terminal/worktree commands) | `@desktop-platform` | 2026-06-30 | Ticket `SEC-PTY-001`: remove ignore immediately after upstream `portable-pty` drops `serial` |
 
 Review rules:
 - No advisory exception may be extended without a new review date and rationale.

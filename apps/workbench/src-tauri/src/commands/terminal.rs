@@ -7,7 +7,11 @@
 
 use std::collections::HashMap;
 use std::io::{Read as IoRead, Write as IoWrite};
-use std::sync::Arc;
+use std::path::Path;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 
 use chrono::Utc;
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
@@ -32,6 +36,12 @@ const DEFAULT_ROWS: u16 = 24;
 
 /// Read chunk size for the stdout reader task.
 const READ_CHUNK_SIZE: usize = 4096;
+const MAX_EXTRA_ENV_VARS: usize = 64;
+const MAX_ENV_KEY_LEN: usize = 128;
+const MAX_ENV_VALUE_LEN: usize = 8192;
+
+/// Trusted window label for local command handlers.
+const TRUSTED_WINDOW_LABEL: &str = "main";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -46,6 +56,7 @@ pub struct TerminalSession {
     pub cwd: String,
     pub branch: Option<String>,
     pub created_at: String,
+    pub alive: Arc<AtomicBool>,
     /// Handle to the background reader task so we can abort on cleanup.
     pub reader_task: Option<tauri::async_runtime::JoinHandle<()>>,
 }
@@ -103,68 +114,106 @@ fn detect_git_branch(cwd: &str) -> Option<String> {
     }
 }
 
-/// Environment variable names that must not be overridden by callers.
-///
-/// These can be used for library injection (`LD_PRELOAD`, `DYLD_INSERT_LIBRARIES`),
-/// path hijacking (`PATH`), or identity spoofing (`HOME`, `USER`). We use an
-/// allowlist-style check: only env vars prefixed with `CLAWDSTRIKE_` or `SWARM_`
-/// are allowed through unconditionally; everything else is checked against this
-/// blocklist. The comparison is case-insensitive to cover platform differences.
-const BLOCKED_ENV_VARS: &[&str] = &[
-    "LD_PRELOAD",
-    "LD_LIBRARY_PATH",
-    "DYLD_INSERT_LIBRARIES",
-    "DYLD_LIBRARY_PATH",
-    "DYLD_FRAMEWORK_PATH",
-    "PATH",
-    "HOME",
-    "USER",
-    "SHELL",
+/// Environment keys allowed from caller-supplied PTY spawn payloads.
+const ALLOWED_EXTRA_ENV_VARS: &[&str] = &[
     "TERM",
-    "HTTP_PROXY",
-    "HTTPS_PROXY",
-    "http_proxy",
-    "https_proxy",
+    "LANG",
+    "LC_ALL",
+    "LC_COLLATE",
+    "LC_CTYPE",
+    "LC_MESSAGES",
+    "LC_MONETARY",
+    "LC_NUMERIC",
+    "LC_TIME",
+    "NO_COLOR",
+    "PAGER",
+    "EDITOR",
+    "VISUAL",
+    "TZ",
+    "TMPDIR",
+    "TMP",
+    "TEMP",
 ];
+const ALLOWED_ENV_PREFIXES: &[&str] = &["CLAWDSTRIKE_", "SWARM_", "TERM_"];
 
-/// Returns `true` if `key` should be blocked from caller-supplied env overrides.
+/// Returns `true` if `key` is allowed in caller-supplied env.
 ///
 /// Keys prefixed with `CLAWDSTRIKE_` or `SWARM_` are always allowed (these are
-/// the application's own configuration variables). All other keys are checked
-/// against [`BLOCKED_ENV_VARS`] (case-insensitive).
-fn is_blocked_env_var(key: &str) -> bool {
-    let upper = key.to_uppercase();
-    // Always allow our own namespaced variables
-    if upper.starts_with("CLAWDSTRIKE_") || upper.starts_with("SWARM_") {
-        return false;
-    }
-    BLOCKED_ENV_VARS
+/// the application's own configuration variables).
+fn is_allowed_env_var(key: &str) -> bool {
+    ALLOWED_EXTRA_ENV_VARS
         .iter()
-        .any(|blocked| blocked.eq_ignore_ascii_case(key))
+        .any(|allowed| key.eq_ignore_ascii_case(allowed))
+        || ALLOWED_ENV_PREFIXES
+            .iter()
+            .any(|prefix| key.to_ascii_uppercase().starts_with(prefix))
 }
 
-/// Allowlist of safe shell paths. Shells not on this list are rejected to
-/// prevent arbitrary binary execution through the `shell` parameter.
-const ALLOWED_SHELLS: &[&str] = &[
-    "/bin/bash",
-    "/bin/sh",
-    "/bin/zsh",
-    "/usr/bin/bash",
-    "/usr/bin/zsh",
-    "/usr/bin/sh",
-    "/usr/local/bin/bash",
-    "/usr/local/bin/zsh",
-    "/usr/local/bin/fish",
-    "/opt/homebrew/bin/bash",
-    "/opt/homebrew/bin/zsh",
-    "/opt/homebrew/bin/fish",
-    "cmd.exe",
-    "powershell.exe",
-];
+/// Allowlist of safe shell command names.
+///
+/// Path-like values are rejected so caller input cannot execute arbitrary binaries.
+const ALLOWED_SHELLS: &[&str] = &["sh", "bash", "zsh", "fish", "cmd", "powershell", "pwsh"];
 
-/// Returns `true` if the given shell path is in the [`ALLOWED_SHELLS`] allowlist.
-fn is_allowed_shell(shell: &str) -> bool {
-    ALLOWED_SHELLS.contains(&shell)
+fn normalize_shell(shell: &str) -> Option<String> {
+    let shell = shell.trim();
+    if shell.is_empty() {
+        return None;
+    }
+
+    let path = Path::new(shell);
+    if path.is_absolute() || path.components().count() != 1 {
+        eprintln!(
+            "[terminal] Rejected shell with path components: {:?}",
+            shell
+        );
+        return None;
+    }
+
+    let file_name = path.file_name()?.to_string_lossy();
+    let file_name = if cfg!(target_os = "windows") {
+        file_name.trim_end_matches(".exe")
+    } else {
+        file_name.as_ref()
+    };
+
+    let result = ALLOWED_SHELLS
+        .iter()
+        .find(|allowed| file_name.eq_ignore_ascii_case(allowed))
+        .map(|allowed| (*allowed).to_string());
+
+    if result.is_none() {
+        eprintln!("[terminal] Rejected shell not in allowlist: {:?}", shell);
+    }
+
+    result
+}
+
+fn normalize_cwd(cwd: &str) -> Result<String, String> {
+    if cwd.len() > 4096 {
+        return Err("Working directory path is too long".to_string());
+    }
+    let canonical = std::fs::canonicalize(cwd)
+        .map_err(|e| format!("Failed to resolve working directory {cwd}: {e}"))?;
+    if !canonical.is_dir() {
+        return Err(format!("Working directory is not a directory: {cwd}"));
+    }
+    Ok(canonical.to_string_lossy().to_string())
+}
+
+fn ensure_trusted_window<R: tauri::Runtime>(window: &tauri::Window<R>) -> Result<(), String> {
+    if window.label() != TRUSTED_WINDOW_LABEL {
+        return Err(format!(
+            "Rejecting terminal command from unexpected window label: {}",
+            window.label()
+        ));
+    }
+    Ok(())
+}
+
+fn validate_session_id(session_id: &str) -> Result<(), String> {
+    Uuid::parse_str(session_id)
+        .map(|_| ())
+        .map_err(|_| format!("Invalid session id format: {session_id}"))
 }
 
 /// Determine the default shell for the current user.
@@ -172,15 +221,18 @@ fn is_allowed_shell(shell: &str) -> bool {
 /// Prefers the `SHELL` environment variable. On Unix-like systems, falls back
 /// through `/bin/bash` then `/bin/sh` rather than assuming zsh is installed.
 fn default_shell() -> String {
-    std::env::var("SHELL").unwrap_or_else(|_| {
-        if cfg!(target_os = "windows") {
-            "cmd.exe".to_string()
-        } else if std::path::Path::new("/bin/bash").exists() {
-            "/bin/bash".to_string()
-        } else {
-            "/bin/sh".to_string()
-        }
-    })
+    std::env::var("SHELL")
+        .ok()
+        .and_then(|s| normalize_shell(&s))
+        .unwrap_or_else(|| {
+            if cfg!(target_os = "windows") {
+                "cmd".to_string()
+            } else if std::path::Path::new("/bin/bash").exists() {
+                "bash".to_string()
+            } else {
+                "sh".to_string()
+            }
+        })
 }
 
 /// Append a chunk of output to the ring buffer, splitting on newlines and
@@ -318,30 +370,26 @@ fn remove_ring_buffer(session_id: &str) {
 #[tauri::command]
 pub async fn terminal_create<R: Runtime>(
     app: AppHandle<R>,
+    window: tauri::Window<R>,
     state: tauri::State<'_, TerminalState>,
     cwd: String,
     shell: Option<String>,
     env: Option<HashMap<String, String>>,
 ) -> Result<SessionInfo, String> {
+    ensure_trusted_window(&window)?;
+
     // Validate cwd exists
-    if !std::path::Path::new(&cwd).is_dir() {
-        return Err(format!("Working directory does not exist: {cwd}"));
-    }
+    let cwd = normalize_cwd(&cwd)?;
 
     let session_id = Uuid::new_v4().to_string();
-    let shell_path = match shell {
-        Some(ref s) if is_allowed_shell(s) => s.clone(),
-        Some(ref s) => {
-            eprintln!(
-                "[terminal] Requested shell {:?} is not in the allowlist; falling back to default",
-                s
-            );
-            default_shell()
-        }
+    let shell_path = match shell.as_deref() {
+        Some(requested) => normalize_shell(requested)
+            .ok_or_else(|| format!("Requested shell is not allowed: {requested}"))?,
         None => default_shell(),
     };
     let branch = detect_git_branch(&cwd);
     let created_at = Utc::now().to_rfc3339();
+    let session_alive = Arc::new(AtomicBool::new(true));
 
     // Create the PTY pair
     let pty_system = native_pty_system();
@@ -361,11 +409,31 @@ pub async fn terminal_create<R: Runtime>(
     // Set TERM for colour support
     cmd.env("TERM", "xterm-256color");
 
-    // Merge caller-supplied environment variables, filtering out dangerous
-    // keys that could be used for privilege escalation or library injection.
+    // Merge caller-supplied environment variables using explicit allowlist.
     if let Some(extra_env) = env {
+        if extra_env.len() > MAX_EXTRA_ENV_VARS {
+            return Err(format!(
+                "Too many environment variables supplied (max {})",
+                MAX_EXTRA_ENV_VARS
+            ));
+        }
         for (key, value) in extra_env {
-            if is_blocked_env_var(&key) {
+            if !is_allowed_env_var(&key) {
+                eprintln!("[terminal] Ignored env key from IPC payload: {}", key);
+                continue;
+            }
+            if key.len() > MAX_ENV_KEY_LEN {
+                eprintln!(
+                    "[terminal] Ignored oversize env key from IPC payload: {}",
+                    key
+                );
+                continue;
+            }
+            if value.len() > MAX_ENV_VALUE_LEN {
+                eprintln!(
+                    "[terminal] Ignored oversize env value for key {} from IPC payload",
+                    key
+                );
                 continue;
             }
             cmd.env(key, value);
@@ -397,6 +465,7 @@ pub async fn terminal_create<R: Runtime>(
     // that reads output, populates the ring buffer, and emits Tauri events.
     let event_session_id = session_id.clone();
     let app_handle = app.clone();
+    let session_alive_for_reader = Arc::clone(&session_alive);
     let buf_for_task = Arc::clone(&shared_buf);
     // Clone the TerminalState Arc so the reader thread can check exit code after EOF.
     let state_for_reader: TerminalState = (*state).clone();
@@ -404,14 +473,22 @@ pub async fn terminal_create<R: Runtime>(
         let event_name = format!("terminal:output:{}", event_session_id);
         let mut chunk_buf = vec![0u8; READ_CHUNK_SIZE];
         loop {
+            if !session_alive_for_reader.load(Ordering::Acquire) {
+                break;
+            }
             match reader.read(&mut chunk_buf) {
                 Ok(0) => break, // EOF
                 Ok(n) => {
                     let text = String::from_utf8_lossy(&chunk_buf[..n]).to_string();
+                    if !session_alive_for_reader.load(Ordering::Acquire) {
+                        break;
+                    }
                     // Append to ring buffer
                     buf_for_task.append(&text);
                     // Emit to frontend
-                    let _ = app_handle.emit(&event_name, &text);
+                    if session_alive_for_reader.load(Ordering::Acquire) {
+                        let _ = app_handle.emit(&event_name, &text);
+                    }
                 }
                 Err(e) => {
                     // On macOS, EIO is expected when the child exits and the
@@ -433,22 +510,21 @@ pub async fn terminal_create<R: Runtime>(
         // Use try_lock() instead of block_on(lock().await) to avoid
         // deadlocking: we're inside spawn_blocking and must not block on
         // the async Mutex via the tokio runtime handle.
-        let exit_code: Option<i32> = state_for_reader
-            .try_lock()
-            .ok()
-            .and_then(|mut manager| {
-                if let Some(session) = manager.sessions.get_mut(&event_session_id) {
-                    match session.child.try_wait() {
-                        Ok(Some(status)) => Some(status.exit_code() as i32),
-                        _ => None,
-                    }
-                } else {
-                    None
+        let exit_code: Option<i32> = state_for_reader.try_lock().ok().and_then(|mut manager| {
+            if let Some(session) = manager.sessions.get_mut(&event_session_id) {
+                match session.child.try_wait() {
+                    Ok(Some(status)) => Some(status.exit_code() as i32),
+                    _ => None,
                 }
-            });
+            } else {
+                None
+            }
+        });
 
-        let exit_event = format!("terminal:exit:{}", event_session_id);
-        let _ = app_handle.emit(&exit_event, exit_code);
+        if session_alive_for_reader.load(Ordering::Acquire) {
+            let exit_event = format!("terminal:exit:{}", event_session_id);
+            let _ = app_handle.emit(&exit_event, exit_code);
+        }
     });
 
     // Build the session
@@ -460,6 +536,7 @@ pub async fn terminal_create<R: Runtime>(
         cwd: cwd.clone(),
         branch: branch.clone(),
         created_at: created_at.clone(),
+        alive: session_alive,
         reader_task: Some(reader_task),
     };
 
@@ -484,11 +561,15 @@ pub async fn terminal_create<R: Runtime>(
 
 /// Write data to a PTY session's stdin.
 #[tauri::command]
-pub async fn terminal_write(
+pub async fn terminal_write<R: Runtime>(
+    window: tauri::Window<R>,
     state: tauri::State<'_, TerminalState>,
     session_id: String,
     data: String,
 ) -> Result<(), String> {
+    ensure_trusted_window(&window)?;
+    validate_session_id(&session_id)?;
+
     let mut manager = state.lock().await;
     let session = manager
         .sessions
@@ -509,12 +590,16 @@ pub async fn terminal_write(
 
 /// Resize a PTY session.
 #[tauri::command]
-pub async fn terminal_resize(
+pub async fn terminal_resize<R: Runtime>(
+    window: tauri::Window<R>,
     state: tauri::State<'_, TerminalState>,
     session_id: String,
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
+    ensure_trusted_window(&window)?;
+    validate_session_id(&session_id)?;
+
     let manager = state.lock().await;
     let session = manager
         .sessions
@@ -535,36 +620,64 @@ pub async fn terminal_resize(
 }
 
 /// Kill a PTY session and clean up resources.
+///
+/// Cleanup order is important to avoid races with the reader task:
+/// 1. Signal the reader to stop (alive = false)
+/// 2. Kill the child process (causes reader EOF)
+/// 3. Drop the session lock so the reader's try_lock() can succeed
+/// 4. Wait for the reader task to finish (ensures no more ring buffer writes)
+/// 5. Remove the ring buffer
 #[tauri::command]
-pub async fn terminal_kill(
+pub async fn terminal_kill<R: Runtime>(
+    window: tauri::Window<R>,
     state: tauri::State<'_, TerminalState>,
     session_id: String,
 ) -> Result<(), String> {
-    let mut manager = state.lock().await;
-    let mut session = manager
-        .sessions
-        .remove(&session_id)
-        .ok_or_else(|| format!("Session not found: {session_id}"))?;
+    ensure_trusted_window(&window)?;
+    validate_session_id(&session_id)?;
 
-    // Kill the child process (best-effort)
-    let _ = session.child.kill();
+    // Extract the session and signal termination, then drop the lock before
+    // waiting on the reader task (the reader may need try_lock() on the
+    // manager to read exit status).
+    let (reader_task, sid) = {
+        let mut manager = state.lock().await;
+        let mut session = manager
+            .sessions
+            .remove(&session_id)
+            .ok_or_else(|| format!("Session not found: {session_id}"))?;
 
-    // Abort the reader task
-    if let Some(task) = session.reader_task.take() {
+        // 1. Signal the reader to stop
+        session.alive.store(false, Ordering::SeqCst);
+
+        // 2. Kill the child process (best-effort; also causes reader EOF)
+        let _ = session.child.kill();
+
+        (session.reader_task.take(), session.id.clone())
+    };
+    // Manager lock is dropped here.
+
+    // 3. Wait for the reader task to finish so no more events/ring-buffer
+    //    writes can occur after this point.
+    if let Some(task) = reader_task {
         task.abort();
+        // Wait for the task to actually complete (abort is async).
+        let _ = task.await;
     }
 
-    // Clean up the shared ring buffer
-    remove_ring_buffer(&session_id);
+    // 4. Now safe to remove the ring buffer — reader is guaranteed stopped.
+    remove_ring_buffer(&sid);
 
     Ok(())
 }
 
 /// List all active terminal sessions.
 #[tauri::command]
-pub async fn terminal_list(
+pub async fn terminal_list<R: Runtime>(
+    window: tauri::Window<R>,
     state: tauri::State<'_, TerminalState>,
 ) -> Result<Vec<SessionInfo>, String> {
+    ensure_trusted_window(&window)?;
+
     let mut manager = state.lock().await;
     let mut infos = Vec::with_capacity(manager.sessions.len());
 
@@ -580,11 +693,15 @@ pub async fn terminal_list(
 
 /// Return the last N lines from a session's ring buffer for tile preview.
 #[tauri::command]
-pub async fn terminal_preview(
+pub async fn terminal_preview<R: Runtime>(
+    window: tauri::Window<R>,
     state: tauri::State<'_, TerminalState>,
     session_id: String,
     lines: Option<usize>,
 ) -> Result<Vec<String>, String> {
+    ensure_trusted_window(&window)?;
+    validate_session_id(&session_id)?;
+
     // Verify the session exists
     {
         let manager = state.lock().await;
@@ -606,7 +723,8 @@ pub async fn terminal_preview(
 /// Used by the frontend to auto-detect a sensible default for `repoRoot` when
 /// none is configured (e.g. first launch).
 #[tauri::command]
-pub fn get_cwd() -> Result<String, String> {
+pub fn get_cwd<R: Runtime>(window: tauri::Window<R>) -> Result<String, String> {
+    ensure_trusted_window(&window)?;
     std::env::current_dir()
         .map(|p| p.to_string_lossy().to_string())
         .map_err(|e| e.to_string())
@@ -614,15 +732,31 @@ pub fn get_cwd() -> Result<String, String> {
 
 /// Kill all sessions. Called during app shutdown.
 pub async fn kill_all_sessions(state: &TerminalState) {
-    let mut manager = state.lock().await;
-    let session_ids: Vec<String> = manager.sessions.keys().cloned().collect();
-    for id in session_ids {
-        if let Some(mut session) = manager.sessions.remove(&id) {
-            let _ = session.child.kill();
-            if let Some(task) = session.reader_task.take() {
-                task.abort();
+    // Collect sessions and signal termination while holding the lock.
+    let pending: Vec<(String, Option<tauri::async_runtime::JoinHandle<()>>)> = {
+        let mut manager = state.lock().await;
+        let session_ids: Vec<String> = manager.sessions.keys().cloned().collect();
+        let mut pending = Vec::with_capacity(session_ids.len());
+        for id in session_ids {
+            if let Some(mut session) = manager.sessions.remove(&id) {
+                session.alive.store(false, Ordering::SeqCst);
+                let _ = session.child.kill();
+                let task = session.reader_task.take();
+                if let Some(ref t) = task {
+                    t.abort();
+                }
+                pending.push((id, task));
             }
-            remove_ring_buffer(&id);
         }
+        pending
+    };
+    // Manager lock is dropped here.
+
+    // Wait for all reader tasks, then clean up ring buffers.
+    for (id, task) in pending {
+        if let Some(t) = task {
+            let _ = t.await;
+        }
+        remove_ring_buffer(&id);
     }
 }

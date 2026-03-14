@@ -95,6 +95,7 @@ export function TerminalRenderer({
   const unlistenRef = useRef<(() => void) | null>(null);
   const onDataDisposeRef = useRef<{ dispose: () => void } | null>(null);
   const isDisposedRef = useRef(false);
+  const mountedSessionRef = useRef<string | null>(null);
 
   // Resolved font size
   const resolvedFontSize = fontSize ?? (active ? 11 : 8);
@@ -105,6 +106,7 @@ export function TerminalRenderer({
     if (!container || !sessionId) return;
 
     isDisposedRef.current = false;
+    mountedSessionRef.current = sessionId;
 
     // ghostty-web requires WASM init before Terminal creation
     let cancelled = false;
@@ -146,15 +148,28 @@ export function TerminalRenderer({
           onReady?.();
         });
 
-        // Subscribe to PTY output
+        // Subscribe to PTY output.
+        //
+        // Note: there is a small window between terminal creation (above) and
+        // when `listen()` resolves (below) during which PTY output events
+        // could be emitted and missed.  In practice this is negligible because
+        // the Tauri event bridge queues on the Rust side and `listen()` is
+        // typically resolved within a single microtask.  If exact
+        // byte-fidelity is needed, use `terminal_preview` to back-fill.
         terminalService
           .onOutput(sessionId, (data: string) => {
-            if (!isDisposedRef.current && termRef.current) {
+            if (
+              !isDisposedRef.current
+              && mountedSessionRef.current === sessionId
+              && termRef.current
+            ) {
               termRef.current.write(data);
             }
           })
           .then((unlisten) => {
-            if (isDisposedRef.current) {
+            if (isDisposedRef.current || mountedSessionRef.current !== sessionId) {
+              // Terminal was disposed or re-mounted with a different session
+              // while the listener was being registered.
               unlisten();
             } else {
               unlistenRef.current = unlisten;
@@ -166,6 +181,9 @@ export function TerminalRenderer({
 
         // Forward user input to PTY stdin
         const onDataDispose = term.onData((data: string) => {
+          if (isDisposedRef.current || mountedSessionRef.current !== sessionId) {
+            return;
+          }
           terminalService.write(sessionId, data).catch(() => {});
         });
         onDataDisposeRef.current = onDataDispose;
@@ -178,6 +196,9 @@ export function TerminalRenderer({
     return () => {
       cancelled = true;
       isDisposedRef.current = true;
+      if (mountedSessionRef.current === sessionId) {
+        mountedSessionRef.current = null;
+      }
 
       if (unlistenRef.current) {
         unlistenRef.current();

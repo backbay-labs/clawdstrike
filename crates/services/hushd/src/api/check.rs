@@ -335,13 +335,10 @@ pub async fn check_action(
 
     if let Some(session_id) = request.session_id.clone() {
         // Validate session existence + liveness.
-        let validation = state
-            .sessions
-            .validate_session(&session_id)
-            .map_err(|e| {
-                tracing::error!(error = %e, "session validation failed");
-                V1Error::internal("INTERNAL_ERROR", "internal server error")
-            })?;
+        let validation = state.sessions.validate_session(&session_id).map_err(|e| {
+            tracing::error!(error = %e, "session validation failed");
+            V1Error::internal("INTERNAL_ERROR", "internal server error")
+        })?;
 
         if !validation.valid {
             return Err(V1Error::forbidden(
@@ -479,13 +476,10 @@ pub async fn check_action(
             V1Error::internal("INTERNAL_ERROR", "internal server error")
         })?;
 
-    let resolved_yaml = resolved
-        .policy
-        .to_yaml()
-        .map_err(|e| {
-            tracing::error!(error = %e, "policy YAML serialization failed");
-            V1Error::internal("INTERNAL_ERROR", "internal server error")
-        })?;
+    let resolved_yaml = resolved.policy.to_yaml().map_err(|e| {
+        tracing::error!(error = %e, "policy YAML serialization failed");
+        V1Error::internal("INTERNAL_ERROR", "internal server error")
+    })?;
     let policy_hash = hush_core::sha256(resolved_yaml.as_bytes()).to_hex();
 
     let resolved_origin_enclave = resolve_request_origin_enclave(&request, &resolved.policy);
@@ -640,22 +634,16 @@ pub async fn check_action(
     if let Some(session_id) = request.session_id.as_deref() {
         let mut combined_patch: HashMap<String, serde_json::Value> = HashMap::new();
         if let Some(posture) = posture_runtime.as_ref() {
-            combined_patch.extend(
-                posture_state_patch(posture)
-                    .map_err(|e| {
-                        tracing::error!(error = %e, "posture state patch failed");
-                        V1Error::internal("INTERNAL_ERROR", "internal server error")
-                    })?,
-            );
+            combined_patch.extend(posture_state_patch(posture).map_err(|e| {
+                tracing::error!(error = %e, "posture state patch failed");
+                V1Error::internal("INTERNAL_ERROR", "internal server error")
+            })?);
         }
         if let Some(origin) = origin_runtime.as_ref() {
-            combined_patch.extend(
-                origin_state_patch(origin)
-                    .map_err(|e| {
-                        tracing::error!(error = %e, "origin state patch failed");
-                        V1Error::internal("INTERNAL_ERROR", "internal server error")
-                    })?,
-            );
+            combined_patch.extend(origin_state_patch(origin).map_err(|e| {
+                tracing::error!(error = %e, "origin state patch failed");
+                V1Error::internal("INTERNAL_ERROR", "internal server error")
+            })?);
         }
 
         if !combined_patch.is_empty() {
@@ -682,13 +670,10 @@ pub async fn check_action(
                     });
         }
 
-        state
-            .sessions
-            .touch_session(session_id)
-            .map_err(|e| {
-                tracing::error!(error = %e, "session touch failed");
-                V1Error::internal("INTERNAL_ERROR", "internal server error")
-            })?;
+        state.sessions.touch_session(session_id).map_err(|e| {
+            tracing::error!(error = %e, "session touch failed");
+            V1Error::internal("INTERNAL_ERROR", "internal server error")
+        })?;
     }
     drop(session_lock);
 

@@ -5,6 +5,78 @@ async function tauriInvoke<T>(cmd: string, args?: Record<string, unknown>): Prom
   return invoke<T>(cmd, args);
 }
 
+// ---------------------------------------------------------------------------
+// Fallback storage — security implications
+// ---------------------------------------------------------------------------
+//
+// When the Stronghold backend is unavailable (browser-only mode, init failure,
+// or timeout), secrets and credentials fall back to one of two tiers:
+//
+// 1. **Sensitive keys** (tokens, passwords, private keys, API keys) are stored
+//    in a per-tab in-memory Map and are NEVER written to sessionStorage.  They
+//    are lost on tab close, which is the intended behavior — leaking secrets
+//    into browser storage is a worse outcome than requiring re-entry.
+//
+// 2. **Non-sensitive keys** (e.g. hushd_url, display preferences) fall back to
+//    sessionStorage.  This is acceptable because the values are not secret, but
+//    callers should be aware they are stored in plaintext and visible to same-
+//    origin scripts.
+//
+// A console.warn is emitted the first time any key hits either fallback path so
+// that operators can diagnose missing Stronghold support in production.
+// ---------------------------------------------------------------------------
+
+const IN_MEMORY_FALLBACK = new Map<string, string>();
+const warnedFallback = new Set<string>();
+
+const EXPLICIT_SENSITIVE_KEYS = new Set<string>([
+  "api_key",
+  "control_api_token",
+  "token",
+  "secret",
+  "password",
+  "private_key",
+  "signing_key",
+]);
+
+function isSessionStorageAvailable(): boolean {
+  return typeof window !== "undefined" && typeof sessionStorage !== "undefined";
+}
+
+function isSensitiveKey(key: string): boolean {
+  const normalized = key.toLowerCase();
+  if (EXPLICIT_SENSITIVE_KEYS.has(normalized)) return true;
+  return (
+    normalized.includes("token")
+    || normalized.includes("secret")
+    || normalized.includes("password")
+    || normalized.includes("api_key")
+    || normalized.includes("apikey")
+    || normalized.includes("private_key")
+  );
+}
+
+function storageKey(key: string): string {
+  return `clawdstrike_${key}`;
+}
+
+function warnSensitiveFallback(key: string): void {
+  if (warnedFallback.has(key)) return;
+  warnedFallback.add(key);
+  console.warn(
+    `[secure-store] Stronghold unavailable; sensitive key "${key}" is using in-memory fallback (not persisted). ` +
+    `The value will be lost when this tab closes.`,
+  );
+}
+
+function warnSessionStorageFallback(key: string): void {
+  if (warnedFallback.has(key)) return;
+  warnedFallback.add(key);
+  console.warn(
+    `[secure-store] Stronghold unavailable; key "${key}" is falling back to sessionStorage (plaintext, same-origin accessible).`,
+  );
+}
+
 let strongholdReady: Promise<boolean> | null = null;
 async function ensureStronghold(): Promise<boolean> {
   if (!isDesktop()) return false;
@@ -15,7 +87,7 @@ async function ensureStronghold(): Promise<boolean> {
       tauriInvoke<boolean>("init_stronghold"),
       new Promise<boolean>((resolve) => {
         timeoutId = setTimeout(() => {
-          console.warn("[secure-store] Stronghold init timed out after 5s, falling back to session storage");
+          console.warn("[secure-store] Stronghold init timed out after 5s, using degraded fallback storage");
           resolve(false);
         }, 5000);
       }),
@@ -46,8 +118,18 @@ export const secureStore = {
       }
     }
 
-    if (typeof window !== "undefined" && typeof sessionStorage !== "undefined") {
-      sessionStorage.setItem(`clawdstrike_${key}`, value);
+    // Sensitive keys (tokens, passwords, private keys) must never be written
+    // to sessionStorage.  Use an ephemeral in-memory map instead.
+    if (isSensitiveKey(key)) {
+      warnSensitiveFallback(key);
+      IN_MEMORY_FALLBACK.set(key, value);
+      return;
+    }
+
+    // Non-sensitive keys fall back to sessionStorage (plaintext).
+    if (isSessionStorageAvailable()) {
+      warnSessionStorageFallback(key);
+      sessionStorage.setItem(storageKey(key), value);
     }
   },
 
@@ -59,8 +141,13 @@ export const secureStore = {
       }
     }
 
-    if (typeof window !== "undefined" && typeof sessionStorage !== "undefined") {
-      return sessionStorage.getItem(`clawdstrike_${key}`);
+    // Sensitive keys are only stored in-memory; never check sessionStorage.
+    if (isSensitiveKey(key)) {
+      return IN_MEMORY_FALLBACK.get(key) ?? null;
+    }
+
+    if (isSessionStorageAvailable()) {
+      return sessionStorage.getItem(storageKey(key));
     }
     return null;
   },
@@ -74,8 +161,10 @@ export const secureStore = {
       }
     }
 
-    if (typeof window !== "undefined" && typeof sessionStorage !== "undefined") {
-      sessionStorage.removeItem(`clawdstrike_${key}`);
+    IN_MEMORY_FALLBACK.delete(key);
+
+    if (!isSensitiveKey(key) && isSessionStorageAvailable()) {
+      sessionStorage.removeItem(storageKey(key));
     }
   },
 
@@ -87,8 +176,12 @@ export const secureStore = {
       }
     }
 
-    if (typeof window !== "undefined" && typeof sessionStorage !== "undefined") {
-      return sessionStorage.getItem(`clawdstrike_${key}`) !== null;
+    if (isSensitiveKey(key)) {
+      return IN_MEMORY_FALLBACK.has(key);
+    }
+
+    if (isSessionStorageAvailable()) {
+      return sessionStorage.getItem(storageKey(key)) !== null;
     }
     return false;
   },

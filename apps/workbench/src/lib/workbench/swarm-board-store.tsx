@@ -824,10 +824,31 @@ export function SwarmBoardProvider({ children }: { children: ReactNode }) {
   // Track exit listeners and worktree paths for cleanup
   const exitListenersRef = useRef<Map<string, UnlistenFn>>(new Map());
   const worktreeMapRef = useRef<Map<string, string>>(new Map()); // sessionId -> worktreePath
+  const closedSessionsRef = useRef<Set<string>>(new Set());
+
+  // Idempotent cleanup for all in-memory session tracking artifacts.
+  const cleanupSessionTracking = useCallback((sessionId: string): string | undefined => {
+    closedSessionsRef.current.add(sessionId);
+
+    const unlisten = exitListenersRef.current.get(sessionId);
+    if (unlisten) {
+      try {
+        unlisten();
+      } catch {
+        // best-effort cleanup
+      }
+    }
+    exitListenersRef.current.delete(sessionId);
+
+    const wtPath = worktreeMapRef.current.get(sessionId);
+    worktreeMapRef.current.delete(sessionId);
+    return wtPath;
+  }, []);
 
   // Monitor a session for exit events
   const monitorSessionExit = useCallback(
     (sessionId: string) => {
+      closedSessionsRef.current.delete(sessionId);
       terminalService.onExit(sessionId, (exitCode) => {
         const status: SessionStatus =
           exitCode === null ? "completed" : exitCode === 0 ? "completed" : "failed";
@@ -837,17 +858,32 @@ export function SwarmBoardProvider({ children }: { children: ReactNode }) {
           status,
           exitCode: exitCode ?? undefined,
         });
-        // Clean up listener — call unlisten() before removing from the map
-        const unlisten = exitListenersRef.current.get(sessionId);
-        if (unlisten) unlisten();
-        exitListenersRef.current.delete(sessionId);
+        // Clear node-session linkage + tracking to avoid stale in-memory mappings.
+        dispatch({
+          type: "SET_SESSION_METADATA",
+          sessionId,
+          metadata: { sessionId: undefined },
+        });
+        cleanupSessionTracking(sessionId);
       }).then((unlisten) => {
+        if (closedSessionsRef.current.has(sessionId)) {
+          unlisten();
+          return;
+        }
+        const existing = exitListenersRef.current.get(sessionId);
+        if (existing) {
+          try {
+            existing();
+          } catch {
+            // best-effort cleanup
+          }
+        }
         exitListenersRef.current.set(sessionId, unlisten);
       }).catch((err) => {
         console.error("[swarm-board-store] Failed to monitor exit:", err);
       });
     },
-    [],
+    [cleanupSessionTracking],
   );
 
   const spawnSession = useCallback(
@@ -1073,46 +1109,68 @@ export function SwarmBoardProvider({ children }: { children: ReactNode }) {
     [state.repoRoot, monitorSessionExit],
   );
 
+  // Track sessions that are currently being killed to make killSession
+  // idempotent — concurrent or repeated calls for the same node are no-ops.
+  const killingRef = useRef<Set<string>>(new Set());
+
   const killSession = useCallback(
     async (nodeId: string) => {
+      // Idempotency: if we're already tearing down this node, bail out.
+      if (killingRef.current.has(nodeId)) return;
+
       // Find the session ID from the node
       const node = state.nodes.find((n) => n.id === nodeId);
       if (!node) return;
       const d = node.data as SwarmBoardNodeData;
-      if (d.sessionId) {
-        // Kill PTY
+      if (!d.sessionId) {
+        dispatch({
+          type: "UPDATE_NODE",
+          nodeId,
+          patch: { status: "completed" },
+        });
+        return;
+      }
+
+      const sessionId = d.sessionId;
+      killingRef.current.add(nodeId);
+
+      // Always clean up tracking first — even if the kill IPC fails, we don't
+      // want stale listeners or worktree mappings lingering in memory.
+      const wtPath = cleanupSessionTracking(sessionId);
+      let finalStatus: SessionStatus = "completed";
+
+      try {
         try {
-          await terminalService.kill(d.sessionId);
+          await terminalService.kill(sessionId);
         } catch (err) {
           console.warn("[swarm-board-store] Failed to kill session:", err);
+          finalStatus = "failed";
         }
 
-        // Clean up exit listener
-        const unlisten = exitListenersRef.current.get(d.sessionId);
-        if (unlisten) {
-          unlisten();
-          exitListenersRef.current.delete(d.sessionId);
-        }
-
-        // Clean up worktree if one was created for this session
-        const wtPath = worktreeMapRef.current.get(d.sessionId);
         if (wtPath && state.repoRoot) {
           try {
             await worktreeService.remove(state.repoRoot, wtPath);
           } catch (err) {
             console.warn("[swarm-board-store] Worktree cleanup failed:", err);
+            finalStatus = "failed";
           }
-          worktreeMapRef.current.delete(d.sessionId);
         }
+      } finally {
+        // Always update node state, even on unexpected errors — the node
+        // should never be left in a "running" limbo with a dead session.
+        dispatch({
+          type: "UPDATE_NODE",
+          nodeId,
+          patch: {
+            status: finalStatus,
+            sessionId: undefined,
+            ...(wtPath ? { worktreePath: undefined } : {}),
+          },
+        });
+        killingRef.current.delete(nodeId);
       }
-      // Update status to completed
-      dispatch({
-        type: "UPDATE_NODE",
-        nodeId,
-        patch: { status: "completed" },
-      });
     },
-    [state.nodes, state.repoRoot],
+    [state.nodes, state.repoRoot, cleanupSessionTracking],
   );
 
   // Clean up all listeners on unmount
@@ -1122,6 +1180,8 @@ export function SwarmBoardProvider({ children }: { children: ReactNode }) {
         unlisten();
       }
       exitListenersRef.current.clear();
+      worktreeMapRef.current.clear();
+      closedSessionsRef.current.clear();
     };
   }, []);
 

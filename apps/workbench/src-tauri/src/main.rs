@@ -74,6 +74,27 @@ fn main() {
 
             Ok(())
         })
+        // ------------------------------------------------------------------
+        // Trust model
+        // ------------------------------------------------------------------
+        // All commands below are exposed via Tauri's IPC bridge, which is
+        // restricted to the same-origin webview window (label "main").
+        // External web pages, browser extensions, and other processes
+        // cannot invoke these handlers.
+        //
+        // Additional defence-in-depth:
+        //  - `ensure_trusted_window()` on every command rejects calls from
+        //    any window label other than "main".
+        //  - Terminal commands validate shell paths against an allowlist,
+        //    sanitise environment variables via an allowlist, and
+        //    canonicalise working directories.
+        //  - Worktree commands validate branch names via `git check-ref-format`,
+        //    reject path traversal, and verify paths are registered worktrees
+        //    before removal.
+        //
+        // No additional privilege escalation checks are required because the
+        // Tauri IPC surface is not reachable from untrusted origins.
+        // ------------------------------------------------------------------
         .invoke_handler(tauri::generate_handler![
             workbench::validate_policy,
             workbench::load_builtin_ruleset,

@@ -5,6 +5,8 @@
 //! concurrent agents working on the same repository.
 
 use serde::Serialize;
+use std::path::{Path, PathBuf};
+use tauri::Runtime;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -32,6 +34,7 @@ pub struct WorktreeStatus {
 
 /// Subdirectory under the repo root where swarm worktrees are created.
 const WORKTREE_DIR: &str = ".swarm-worktrees";
+const TRUSTED_WINDOW_LABEL: &str = "main";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -88,6 +91,106 @@ fn sanitise_branch_name(branch: &str) -> Result<String, String> {
     Ok(trimmed)
 }
 
+fn ensure_trusted_window<R: Runtime>(window: &tauri::Window<R>) -> Result<(), String> {
+    if window.label() != TRUSTED_WINDOW_LABEL {
+        return Err(format!(
+            "Rejecting worktree command from unexpected window label: {}",
+            window.label()
+        ));
+    }
+    Ok(())
+}
+
+fn canonical_repo_root(repo_root: &str) -> Result<PathBuf, String> {
+    let canonical = std::fs::canonicalize(repo_root)
+        .map_err(|e| format!("Cannot resolve repo root '{repo_root}': {e}"))?;
+    if !canonical.is_dir() {
+        return Err(format!("Repository root is not a directory: {repo_root}"));
+    }
+    let canonical_str = canonical.to_string_lossy().to_string();
+    let inside = run_git(&canonical_str, &["rev-parse", "--is-inside-work-tree"])?;
+    if inside.trim() != "true" {
+        return Err(format!(
+            "Repository root is not a git work tree: {repo_root}"
+        ));
+    }
+    Ok(canonical)
+}
+
+fn normalize_branch_name(repo_root: &str, branch_name: &str) -> Result<String, String> {
+    let trimmed = branch_name.trim();
+    if trimmed.is_empty() {
+        return Err("Branch name must not be empty".to_string());
+    }
+    if trimmed.len() > 255 {
+        return Err("Branch name is too long".to_string());
+    }
+    if trimmed.starts_with('-') {
+        return Err("Branch name must not start with '-'".to_string());
+    }
+    if trimmed.contains("..") {
+        return Err("Branch name must not contain '..'".to_string());
+    }
+    if trimmed.chars().any(|c| c.is_ascii_control()) {
+        return Err("Branch name contains control characters".to_string());
+    }
+    if trimmed.chars().any(|c| c.is_whitespace()) {
+        return Err("Branch name must not contain whitespace".to_string());
+    }
+    // Reject shell metacharacters that could be used for injection.
+    const SHELL_META: &[char] = &['`', '$', '(', ')', '{', '}', ';', '&', '|', '!', '#', '\\'];
+    if trimmed.chars().any(|c| SHELL_META.contains(&c)) {
+        return Err("Branch name contains disallowed shell metacharacters".to_string());
+    }
+    run_git(repo_root, &["check-ref-format", "--branch", trimmed])?;
+    Ok(trimmed.to_string())
+}
+
+fn canonicalize_worktree_path(candidate: &str, expected_base: &Path) -> Result<PathBuf, String> {
+    use std::path::Component;
+
+    let candidate_path = Path::new(candidate);
+
+    // Reject paths with parent-directory traversal components before canonicalization.
+    // This catches `..` even if the path doesn't exist on disk yet.
+    if candidate_path
+        .components()
+        .any(|c| matches!(c, Component::ParentDir))
+    {
+        return Err("Worktree path must not contain '..' components".to_string());
+    }
+
+    let canonical = std::fs::canonicalize(candidate)
+        .map_err(|e| format!("Worktree path must exist and be resolvable: {e}"))?;
+    if !canonical.is_dir() {
+        return Err(format!(
+            "Worktree path is not a directory: {}",
+            canonical.display()
+        ));
+    }
+    if !canonical.starts_with(expected_base) {
+        return Err(format!(
+            "Worktree path is not under {}: refusing to remove",
+            expected_base.display()
+        ));
+    }
+    Ok(canonical)
+}
+
+fn is_registered_worktree(repo_root: &str, target: &Path) -> Result<bool, String> {
+    let output = run_git(repo_root, &["worktree", "list", "--porcelain"])?;
+    for line in output.lines() {
+        if let Some(path) = line.strip_prefix("worktree ") {
+            if let Ok(canonical) = std::fs::canonicalize(path) {
+                if canonical == target {
+                    return Ok(true);
+                }
+            }
+        }
+    }
+    Ok(false)
+}
+
 // ---------------------------------------------------------------------------
 // Tauri commands
 // ---------------------------------------------------------------------------
@@ -97,18 +200,17 @@ fn sanitise_branch_name(branch: &str) -> Result<String, String> {
 /// The worktree is created at `{repo_root}/.swarm-worktrees/{sanitised_branch}`.
 /// If the branch does not exist, it is created from HEAD.
 #[tauri::command]
-pub async fn worktree_create(
+pub async fn worktree_create<R: Runtime>(
+    window: tauri::Window<R>,
     repo_root: String,
     branch_name: String,
 ) -> Result<WorktreeInfo, String> {
-    if !std::path::Path::new(&repo_root).is_dir() {
-        return Err(format!("Repository root does not exist: {repo_root}"));
-    }
-    if branch_name.is_empty() {
-        return Err("Branch name must not be empty".to_string());
-    }
+    ensure_trusted_window(&window)?;
+    let canonical_root = canonical_repo_root(&repo_root)?;
+    let canonical_root_str = canonical_root.to_string_lossy().to_string();
+    let normalized_branch = normalize_branch_name(&canonical_root_str, &branch_name)?;
 
-    let worktree_base = std::path::Path::new(&repo_root).join(WORKTREE_DIR);
+    let worktree_base = canonical_root.join(WORKTREE_DIR);
     std::fs::create_dir_all(&worktree_base).map_err(|e| {
         format!(
             "Failed to create worktree directory {}: {e}",
@@ -116,7 +218,7 @@ pub async fn worktree_create(
         )
     })?;
 
-    let dir_name = sanitise_branch_name(&branch_name)?;
+    let dir_name = sanitise_branch_name(&normalized_branch)?;
     let worktree_path = worktree_base.join(&dir_name);
     let worktree_path_str = worktree_path.to_string_lossy().to_string();
 
@@ -131,11 +233,11 @@ pub async fn worktree_create(
 
     // Use refs/heads/ prefix for rev-parse to prevent flag injection
     // (a branch named "--git-dir=..." would be interpreted as a flag without the prefix).
-    let qualified_ref = format!("refs/heads/{branch_name}");
+    let qualified_ref = format!("refs/heads/{normalized_branch}");
 
     // Check if the branch exists locally
     let branch_exists = run_git(
-        &repo_root,
+        &canonical_root_str,
         &["rev-parse", "--verify", &qualified_ref],
     )
     .is_ok();
@@ -144,15 +246,28 @@ pub async fn worktree_create(
         // Add worktree using the existing branch.
         // The `--` separator prevents the branch name from being interpreted as a flag.
         run_git(
-            &repo_root,
-            &["worktree", "add", &worktree_path_str, "--", &branch_name],
+            &canonical_root_str,
+            &[
+                "worktree",
+                "add",
+                &worktree_path_str,
+                "--",
+                &normalized_branch,
+            ],
         )?;
     } else {
         // Create a new branch from HEAD.
         // The `--` separator prevents the branch name from being interpreted as a flag.
         run_git(
-            &repo_root,
-            &["worktree", "add", "-b", &branch_name, "--", &worktree_path_str],
+            &canonical_root_str,
+            &[
+                "worktree",
+                "add",
+                "-b",
+                &normalized_branch,
+                "--",
+                &worktree_path_str,
+            ],
         )?;
     }
 
@@ -160,92 +275,54 @@ pub async fn worktree_create(
 
     Ok(WorktreeInfo {
         path: worktree_path_str,
-        branch: branch_name,
+        branch: normalized_branch,
         head,
     })
 }
 
 /// Remove a git worktree and prune the reference.
 #[tauri::command]
-pub async fn worktree_remove(repo_root: String, worktree_path: String) -> Result<(), String> {
-    if !std::path::Path::new(&repo_root).is_dir() {
-        return Err(format!("Repository root does not exist: {repo_root}"));
-    }
+pub async fn worktree_remove<R: Runtime>(
+    window: tauri::Window<R>,
+    repo_root: String,
+    worktree_path: String,
+) -> Result<(), String> {
+    ensure_trusted_window(&window)?;
+    let canonical_root = canonical_repo_root(&repo_root)?;
+    let canonical_root_str = canonical_root.to_string_lossy().to_string();
 
-    // Validate that the worktree path is under the expected directory to
-    // prevent removal of arbitrary directories.
-    let canonical_root =
-        std::fs::canonicalize(&repo_root).map_err(|e| format!("Cannot resolve repo root: {e}"))?;
+    // Validate that the worktree path exists and is under the expected directory
+    // to prevent removal of arbitrary directories.
     let expected_base = canonical_root.join(WORKTREE_DIR);
-
-    // The worktree_path may or may not exist on disk (it might have been
-    // manually deleted). We still try to remove via git, but we must verify
-    // the path is under our worktree directory to prevent path traversal.
-    if let Ok(canonical_wt) = std::fs::canonicalize(&worktree_path) {
-        if !canonical_wt.starts_with(&expected_base) {
-            return Err(format!(
-                "Worktree path is not under {}: refusing to remove",
-                expected_base.display()
-            ));
-        }
-    } else {
-        // Directory does not exist on disk — validate using lexical path
-        // comparison. Resolve the worktree_path relative to repo_root if
-        // it isn't absolute, then check it starts with the expected base.
-        //
-        // Symlink-based traversal is not a concern here: since the path
-        // does not exist on disk (canonicalize already failed), there are
-        // no symlinks to resolve. The real backstop is that
-        // `git worktree remove` itself validates the target is a
-        // registered worktree — it will refuse to act on arbitrary paths.
-        let wt_path = std::path::Path::new(&worktree_path);
-
-        // Reject paths containing parent-directory components (`..`) that
-        // could bypass the `starts_with` check on a non-canonicalized path.
-        // Uses `Component::ParentDir` matching rather than string comparison
-        // to correctly handle all platform path representations.
-        for component in wt_path.components() {
-            if matches!(component, std::path::Component::ParentDir) {
-                return Err(
-                    "Worktree path contains '..' components: refusing to remove".to_string(),
-                );
-            }
-        }
-
-        let resolved = if wt_path.is_absolute() {
-            wt_path.to_path_buf()
-        } else {
-            canonical_root.join(wt_path)
-        };
-        // Check that the path, once joined, is under the expected base.
-        if !resolved.starts_with(&expected_base) {
-            return Err(format!(
-                "Worktree path is not under {}: refusing to remove",
-                expected_base.display()
-            ));
-        }
+    let canonical_wt = canonicalize_worktree_path(&worktree_path, &expected_base)?;
+    if !is_registered_worktree(&canonical_root_str, &canonical_wt)? {
+        return Err("Target path is not a registered git worktree".to_string());
     }
+    let canonical_wt_str = canonical_wt.to_string_lossy().to_string();
 
     // Force-remove the worktree (handles dirty state)
     run_git(
-        &repo_root,
-        &["worktree", "remove", "--force", &worktree_path],
+        &canonical_root_str,
+        &["worktree", "remove", "--force", &canonical_wt_str],
     )?;
 
     // Prune stale worktree references
-    let _ = run_git(&repo_root, &["worktree", "prune"]);
+    let _ = run_git(&canonical_root_str, &["worktree", "prune"]);
 
     Ok(())
 }
 
 /// List all git worktrees for a repository.
 #[tauri::command]
-pub async fn worktree_list(repo_root: String) -> Result<Vec<WorktreeInfo>, String> {
-    if !std::path::Path::new(&repo_root).is_dir() {
-        return Err(format!("Repository root does not exist: {repo_root}"));
-    }
+pub async fn worktree_list<R: Runtime>(
+    window: tauri::Window<R>,
+    repo_root: String,
+) -> Result<Vec<WorktreeInfo>, String> {
+    ensure_trusted_window(&window)?;
+    let canonical_root = canonical_repo_root(&repo_root)?;
+    let canonical_root_str = canonical_root.to_string_lossy().to_string();
 
-    let output = run_git(&repo_root, &["worktree", "list", "--porcelain"])?;
+    let output = run_git(&canonical_root_str, &["worktree", "list", "--porcelain"])?;
     let mut worktrees = Vec::new();
     let mut current_path = String::new();
     let mut current_head = String::new();
@@ -290,15 +367,33 @@ pub async fn worktree_list(repo_root: String) -> Result<Vec<WorktreeInfo>, Strin
 
 /// Get the diff status of a worktree (changed files, added/removed lines).
 #[tauri::command]
-pub async fn worktree_status(worktree_path: String) -> Result<WorktreeStatus, String> {
-    if !std::path::Path::new(&worktree_path).is_dir() {
-        return Err(format!("Worktree path does not exist: {worktree_path}"));
+pub async fn worktree_status<R: Runtime>(
+    window: tauri::Window<R>,
+    worktree_path: String,
+) -> Result<WorktreeStatus, String> {
+    ensure_trusted_window(&window)?;
+    let canonical_wt = std::fs::canonicalize(&worktree_path)
+        .map_err(|e| format!("Worktree path does not exist or is not resolvable: {e}"))?;
+    if !canonical_wt.is_dir() {
+        return Err(format!(
+            "Worktree path is not a directory: {}",
+            canonical_wt.display()
+        ));
     }
+    if !canonical_wt
+        .components()
+        .any(|component| component.as_os_str() == WORKTREE_DIR)
+    {
+        return Err(format!(
+            "Refusing status for path outside {} namespace",
+            WORKTREE_DIR
+        ));
+    }
+    let worktree_path = canonical_wt.to_string_lossy().to_string();
 
     // Get the list of changed files from both unstaged and staged diffs.
     let diff_stat = run_git(&worktree_path, &["diff", "--stat"])?;
-    let cached_stat = run_git(&worktree_path, &["diff", "--cached", "--stat"])
-        .unwrap_or_default();
+    let cached_stat = run_git(&worktree_path, &["diff", "--cached", "--stat"]).unwrap_or_default();
 
     let mut changed_files = Vec::new();
     let mut added_lines: usize = 0;
@@ -306,10 +401,7 @@ pub async fn worktree_status(worktree_path: String) -> Result<WorktreeStatus, St
 
     // Parse a `git diff --stat` block, accumulating files and line counts.
     let parse_stat_block =
-        |block: &str,
-         files: &mut Vec<String>,
-         added: &mut usize,
-         removed: &mut usize| {
+        |block: &str, files: &mut Vec<String>, added: &mut usize, removed: &mut usize| {
             for line in block.lines() {
                 let trimmed = line.trim();
                 if trimmed.is_empty() {
@@ -356,9 +448,19 @@ pub async fn worktree_status(worktree_path: String) -> Result<WorktreeStatus, St
         };
 
     // Parse unstaged changes
-    parse_stat_block(&diff_stat, &mut changed_files, &mut added_lines, &mut removed_lines);
+    parse_stat_block(
+        &diff_stat,
+        &mut changed_files,
+        &mut added_lines,
+        &mut removed_lines,
+    );
     // Parse staged (cached) changes
-    parse_stat_block(&cached_stat, &mut changed_files, &mut added_lines, &mut removed_lines);
+    parse_stat_block(
+        &cached_stat,
+        &mut changed_files,
+        &mut added_lines,
+        &mut removed_lines,
+    );
 
     // Also include untracked and staged changes.
     // `git status --porcelain` format: "XY filename" where XY is two status
