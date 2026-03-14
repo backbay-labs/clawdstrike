@@ -177,11 +177,14 @@ export function BrokerMissionControl(_props: { windowId?: string }) {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
+      const prev = latestSelection.current;
       const selection = await loadMission();
-      if (selection.capabilityId) {
+      // Only fetch detail/preview explicitly if the selection didn't change,
+      // because the useEffect hooks will handle it when the IDs change.
+      if (selection.capabilityId && selection.capabilityId === prev.capabilityId) {
         await loadDetail(selection.capabilityId);
       }
-      if (selection.previewId) {
+      if (selection.previewId && selection.previewId === prev.previewId) {
         await loadPreview(selection.previewId);
       }
       setError(null);
