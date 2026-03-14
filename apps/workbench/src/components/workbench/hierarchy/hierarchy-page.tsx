@@ -49,7 +49,9 @@ import {
   clearHierarchy,
   getAncestryPath,
   getLeafAgents,
+  getDescendants,
   validateAllLeaves,
+  normalizeHierarchy,
   type HierarchyValidationIssue,
 } from "@/lib/workbench/hierarchy-engine";
 import { useFleetConnection } from "@/lib/workbench/use-fleet-connection";
@@ -74,22 +76,25 @@ import type {
 const NODE_TYPE_COLORS: Record<OrgNodeType, string> = {
   org: "#d4a84b",
   team: "#5b8def",
-  endpoint: "#3dbf84",
-  runtime: "#7b6b8b",
+  agent: "#3dbf84",
+  endpoint: "#6bc5a0",    // teal-green for machines
+  runtime: "#3dbf84",     // bright green for AI agents
 };
 
 const NODE_TYPE_ICONS: Record<OrgNodeType, typeof IconWorld> = {
   org: IconWorld,
   team: IconUsersGroup,
-  endpoint: IconServer,
-  runtime: IconRobot,
+  agent: IconRobot,
+  endpoint: IconServer,    // server icon
+  runtime: IconRobot,      // robot icon
 };
 
 const NODE_TYPE_LABELS: Record<OrgNodeType, string> = {
   org: "Organization",
   team: "Team",
+  agent: "Agent",
   endpoint: "Endpoint",
-  runtime: "Runtime",
+  runtime: "Runtime Agent",
 };
 
 // ---------------------------------------------------------------------------
@@ -103,6 +108,7 @@ interface TreeNodeProps {
   expandedIds: Set<string>;
   ancestryIds: Set<string>;
   depth: number;
+  isSyncing: boolean;
   onSelect: (id: string) => void;
   onToggleExpand: (id: string) => void;
   onAddChild: (parentId: string, type: OrgNodeType) => void;
@@ -114,6 +120,22 @@ interface TreeNodeProps {
   dragOverId: string | null;
 }
 
+export async function resolvePendingHierarchyParentId(
+  parentId: string | null,
+  pendingCreateIds: ReadonlyMap<string, Promise<string | null>>,
+): Promise<string | null> {
+  if (!parentId) {
+    return null;
+  }
+
+  const pendingParentId = pendingCreateIds.get(parentId);
+  if (pendingParentId) {
+    return await pendingParentId;
+  }
+
+  return parentId;
+}
+
 function TreeNode({
   node,
   hierarchy,
@@ -121,6 +143,7 @@ function TreeNode({
   expandedIds,
   ancestryIds,
   depth,
+  isSyncing,
   onSelect,
   onToggleExpand,
   onAddChild,
@@ -139,14 +162,12 @@ function TreeNode({
   const Icon = NODE_TYPE_ICONS[node.type];
   const color = NODE_TYPE_COLORS[node.type];
   const isDragTarget = dragOverId === node.id;
-  const metadataLeafLabel = node.type === "endpoint"
-    ? { singular: "runtime", plural: "runtimes" }
-    : { singular: "leaf node", plural: "leaf nodes" };
 
   const [showActions, setShowActions] = useState(false);
 
   // Determine what child types can be added
   const canAddTeam = node.type === "org";
+  const canAddAgent = node.type === "team";
   const canAddEndpoint = node.type === "team";
   const canAddRuntime = node.type === "endpoint";
   const canRemove = node.type !== "org"; // Can't remove root
@@ -161,8 +182,9 @@ function TreeNode({
           isSelected && "bg-[#131721] ring-1 ring-inset",
           isSelected && node.type === "org" && "ring-[#d4a84b]/30",
           isSelected && node.type === "team" && "ring-[#5b8def]/30",
-          isSelected && node.type === "endpoint" && "ring-[#3dbf84]/30",
-          isSelected && node.type === "runtime" && "ring-[#7b6b8b]/30",
+          isSelected && node.type === "agent" && "ring-[#3dbf84]/30",
+          isSelected && node.type === "endpoint" && "ring-[#6bc5a0]/30",
+          isSelected && node.type === "runtime" && "ring-[#3dbf84]/30",
           isAncestor && !isSelected && "bg-[#131721]/30",
           isDragTarget && "ring-2 ring-[#d4a84b]/50 bg-[#d4a84b]/5",
         )}
@@ -170,17 +192,20 @@ function TreeNode({
         onClick={() => onSelect(node.id)}
         onMouseEnter={() => setShowActions(true)}
         onMouseLeave={() => setShowActions(false)}
-        draggable={node.type !== "org"}
+        draggable={node.type !== "org" && !isSyncing}
         onDragStart={(e) => {
+          if (isSyncing) return;
           e.stopPropagation();
           onDragStart(node.id);
         }}
         onDragOver={(e) => {
+          if (isSyncing) return;
           e.preventDefault();
           e.stopPropagation();
           onDragOver(node.id);
         }}
         onDrop={(e) => {
+          if (isSyncing) return;
           e.preventDefault();
           e.stopPropagation();
           onDrop(node.id);
@@ -232,16 +257,17 @@ function TreeNode({
         )}
 
         {/* Metadata count */}
-        {node.metadata?.agentCount !== undefined && node.type !== "runtime" && !node.policyName && (
+        {node.metadata?.agentCount !== undefined &&
+          node.type !== "runtime" &&
+          node.type !== "agent" &&
+          !node.policyName && (
           <span className="ml-auto shrink-0 text-[9px] font-mono text-[#6f7f9a]/60">
-            {node.metadata.agentCount} {node.metadata.agentCount === 1
-              ? metadataLeafLabel.singular
-              : metadataLeafLabel.plural}
+            {node.metadata.agentCount} leaf{node.metadata.agentCount !== 1 ? "s" : ""}
           </span>
         )}
 
         {/* Hover action buttons */}
-        {showActions && (
+        {showActions && !isSyncing && (
           <div className="flex items-center gap-0.5 ml-1 shrink-0">
             {canAddTeam && (
               <button
@@ -257,8 +283,8 @@ function TreeNode({
             )}
             {canAddEndpoint && (
               <button
-                className="p-0.5 rounded hover:bg-[#3dbf84]/20 text-[#3dbf84]/60 hover:text-[#3dbf84]"
-                title="Add endpoint"
+                className="p-0.5 rounded hover:bg-[#6bc5a0]/20 text-[#6bc5a0]/60 hover:text-[#6bc5a0]"
+                title="Add Endpoint"
                 onClick={(e) => {
                   e.stopPropagation();
                   onAddChild(node.id, "endpoint");
@@ -267,10 +293,22 @@ function TreeNode({
                 <IconPlus size={11} stroke={2} />
               </button>
             )}
+            {canAddAgent && (
+              <button
+                className="p-0.5 rounded hover:bg-[#3dbf84]/20 text-[#3dbf84]/60 hover:text-[#3dbf84]"
+                title="Add Agent"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAddChild(node.id, "agent");
+                }}
+              >
+                <IconPlus size={11} stroke={2} />
+              </button>
+            )}
             {canAddRuntime && (
               <button
-                className="p-0.5 rounded hover:bg-[#7b6b8b]/20 text-[#7b6b8b]/60 hover:text-[#7b6b8b]"
-                title="Add runtime"
+                className="p-0.5 rounded hover:bg-[#3dbf84]/20 text-[#3dbf84]/60 hover:text-[#3dbf84]"
+                title="Add Runtime"
                 onClick={(e) => {
                   e.stopPropagation();
                   onAddChild(node.id, "runtime");
@@ -325,6 +363,7 @@ function TreeNode({
                 expandedIds={expandedIds}
                 ancestryIds={ancestryIds}
                 depth={depth + 1}
+                isSyncing={isSyncing}
                 onSelect={onSelect}
                 onToggleExpand={onToggleExpand}
                 onAddChild={onAddChild}
@@ -628,7 +667,7 @@ function MergePreviewPanel({
   const node = hierarchy.nodes[selectedId];
   if (!node) return null;
 
-  const leafRuntimes = getLeafAgents(hierarchy, selectedId);
+  const leafTargets = getLeafAgents(hierarchy, selectedId);
   const directChildren = node.children.length;
 
   return (
@@ -676,30 +715,35 @@ function MergePreviewPanel({
 
           <div className="flex gap-3 text-[9px] font-mono text-[#6f7f9a]/70">
             <span>{directChildren} direct children</span>
-            <span>{leafRuntimes.length} runtime{leafRuntimes.length !== 1 ? "s" : ""}</span>
+            <span>{leafTargets.length} leaf node{leafTargets.length !== 1 ? "s" : ""}</span>
           </div>
         </div>
 
-        {/* Policy changes at this level affect these runtimes */}
-        {leafRuntimes.length > 0 && (
+        {/* Policy changes at this level affect these leaf nodes */}
+        {leafTargets.length > 0 && (
           <div className="mb-4">
             <span className="text-[9px] font-mono uppercase tracking-wider text-[#6f7f9a]/60 mb-2 block">
-              Affected Runtimes
+              Affected Leaves
             </span>
             <div className="flex flex-col gap-1">
-              {leafRuntimes.map((runtimeId) => {
-                const runtime = hierarchy.nodes[runtimeId];
-                if (!runtime) return null;
+              {leafTargets.map((leafId) => {
+                const leaf = hierarchy.nodes[leafId];
+                if (!leaf) return null;
+                const LeafIcon = NODE_TYPE_ICONS[leaf.type];
                 return (
                   <div
-                    key={runtimeId}
+                    key={leafId}
                     className="flex items-center gap-2 p-1.5 rounded bg-[#131721]/30"
                   >
-                    <IconRobot size={11} stroke={1.5} className="text-[#7b6b8b]/60" />
+                    <LeafIcon
+                      size={11}
+                      stroke={1.5}
+                      style={{ color: `${NODE_TYPE_COLORS[leaf.type]}99` }}
+                    />
                     <span className="text-[10px] font-mono text-[#ece7dc]/70">
-                      {runtime.name}
+                      {leaf.name}
                     </span>
-                    {runtime.policyId && (
+                    {leaf.policyId && (
                       <span className="ml-auto text-[8px] font-mono text-[#d4a84b]/60">
                         has own policy
                       </span>
@@ -780,7 +824,7 @@ function ValidationModal({ issues, onClose, onSelectNode }: ValidationModalProps
             <div className="flex flex-col items-center py-8">
               <IconCheck size={24} stroke={1.5} className="text-[#3dbf84] mb-2" />
               <span className="text-[11px] text-[#3dbf84]">
-                All runtimes have valid effective policies
+                All leaf nodes have valid effective policies
               </span>
             </div>
           ) : (
@@ -797,7 +841,7 @@ function ValidationModal({ issues, onClose, onSelectNode }: ValidationModalProps
               )}
               {issues.map((issue, idx) => (
                 <button
-                  key={idx}
+                  key={`${issue.nodeId}-${issue.severity}-${idx}`}
                   className="flex items-start gap-2 p-2.5 rounded bg-[#131721]/50 border border-[#2d3240]/50 text-left hover:bg-[#131721] transition-colors"
                   onClick={() => {
                     onSelectNode(issue.nodeId);
@@ -921,6 +965,14 @@ function PolicyAssignDialog({
           )}
         </div>
 
+        {node.type === "runtime" && (
+          <div className="shrink-0 px-3 py-2 border-t border-[#2d3240]/50">
+            <p className="text-[9px] text-[#6f7f9a]/60 leading-relaxed">
+              This policy will be applied as an override layer on top of the endpoint's inherited policy.
+            </p>
+          </div>
+        )}
+
         {node.policyId && (
           <div className="shrink-0 p-3 border-t border-[#2d3240]">
             <button
@@ -946,6 +998,12 @@ interface RenameDialogProps {
   onRename: (name: string) => void;
   onClose: () => void;
 }
+
+type HierarchySyncResult = {
+  success: boolean;
+  error?: string;
+  id?: string;
+};
 
 function RenameDialog({ node, onRename, onClose }: RenameDialogProps) {
   const [name, setName] = useState(node.name);
@@ -1018,12 +1076,18 @@ export function HierarchyPage() {
   // ---------------------------------------------------------------------------
 
   const [hierarchy, setHierarchy] = useState<PolicyHierarchy>(() => {
-    return loadHierarchy() ?? createDefaultHierarchy();
+    const loaded = loadHierarchy();
+    return loaded ? normalizeHierarchy(loaded) : createDefaultHierarchy();
   });
+
+  // Version counter to prevent stale optimistic rollbacks on concurrent mutations
+  const [, setHierarchyVersion] = useState(0);
+  const hierarchyVersionRef = useRef(0);
+  const hierarchyRef = useRef(hierarchy);
 
   const [selectedId, setSelectedId] = useState<string | null>(hierarchy.rootId);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => {
-    // Expand the structural layers by default so runtime leaves are visible.
+    // Expand root and all team nodes by default
     const ids = new Set<string>();
     ids.add(hierarchy.rootId);
     for (const node of Object.values(hierarchy.nodes)) {
@@ -1043,6 +1107,18 @@ export function HierarchyPage() {
   const [dragSourceId, setDragSourceId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
 
+  useEffect(() => {
+    hierarchyRef.current = hierarchy;
+  }, [hierarchy]);
+
+  const applyHierarchyChange = useCallback((next: PolicyHierarchy) => {
+    const nextVersion = hierarchyVersionRef.current + 1;
+    hierarchyRef.current = next;
+    hierarchyVersionRef.current = nextVersion;
+    setHierarchy(next);
+    setHierarchyVersion(nextVersion);
+  }, []);
+
   // ---------------------------------------------------------------------------
   // Fleet sync state (P2-3)
   // ---------------------------------------------------------------------------
@@ -1054,6 +1130,8 @@ export function HierarchyPage() {
     message?: string;
   }>({ type: "idle" });
   const syncStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const syncInProgressRef = useRef(false);
+  const pendingCreateIdsRef = useRef(new Map<string, Promise<string | null>>());
 
   /** Show a transient sync status message that auto-clears after a delay. */
   const showSyncStatus = useCallback(
@@ -1068,12 +1146,17 @@ export function HierarchyPage() {
     [],
   );
 
+  const clearPendingCreateIds = useCallback(() => {
+    pendingCreateIdsRef.current.clear();
+  }, []);
+
   // Clear sync status timer on unmount
   useEffect(() => {
     return () => {
       if (syncStatusTimerRef.current) clearTimeout(syncStatusTimerRef.current);
+      clearPendingCreateIds();
     };
-  }, []);
+  }, [clearPendingCreateIds]);
 
   // Turn off live mode if fleet disconnects
   useEffect(() => {
@@ -1128,21 +1211,82 @@ export function HierarchyPage() {
 
   /**
    * Fire-and-forget sync helper: runs a backend call without blocking
-   * the local UI. Logs errors but doesn't block local edits.
+   * the local UI. On failure, rolls back to the previous hierarchy state.
    */
   const syncToBackend = useCallback(
-    (label: string, fn: () => Promise<{ success: boolean; error?: string }>) => {
+    (
+      label: string,
+      fn: () => Promise<HierarchySyncResult>,
+      prevHierarchy: PolicyHierarchy,
+    ) => {
       if (!isLiveMode || !fleetConnected) return;
-      fn().then((result) => {
+      const capturedVersion = hierarchyVersionRef.current;
+      return fn().then((result): HierarchySyncResult => {
         if (!result.success) {
           console.warn(`[hierarchy-sync] ${label} failed:`, result.error);
-          showSyncStatus("error", `Sync: ${label} failed`);
+          const reverted = hierarchyVersionRef.current === capturedVersion;
+          if (reverted) {
+            applyHierarchyChange(prevHierarchy);
+          }
+          showSyncStatus(
+            "error",
+            reverted
+              ? `Sync: ${label} failed — reverted`
+              : `Sync: ${label} failed — newer local changes were kept`,
+          );
         }
-      }).catch((err) => {
+        return result;
+      }).catch((err): HierarchySyncResult => {
         console.warn(`[hierarchy-sync] ${label} error:`, err);
+        const reverted = hierarchyVersionRef.current === capturedVersion;
+        if (reverted) {
+          applyHierarchyChange(prevHierarchy);
+        }
+        showSyncStatus(
+          "error",
+          reverted
+            ? `Sync: ${label} error — reverted`
+            : `Sync: ${label} error — newer local changes were kept`,
+        );
+        return { success: false, error: String(err) };
       });
     },
-    [isLiveMode, fleetConnected, showSyncStatus],
+    [isLiveMode, fleetConnected, applyHierarchyChange, showSyncStatus],
+  );
+
+  /**
+   * Remap a node's ID in the hierarchy after the server assigns a different ID.
+   * Updates: the nodes map key, node.id, parent's children array, and children's parentId.
+   */
+  const remapNodeId = useCallback(
+    (h: PolicyHierarchy, oldId: string, newId: string): PolicyHierarchy => {
+      if (oldId === newId || !h.nodes[oldId]) return h;
+      const nodes = { ...h.nodes };
+      const node = { ...nodes[oldId], id: newId };
+      delete nodes[oldId];
+      nodes[newId] = node;
+
+      // Update parent's children array
+      if (node.parentId && nodes[node.parentId]) {
+        const parent = { ...nodes[node.parentId] };
+        parent.children = parent.children.map((cid) => (cid === oldId ? newId : cid));
+        nodes[node.parentId] = parent;
+      }
+
+      // Update children's parentId
+      for (const childId of node.children) {
+        if (nodes[childId]) {
+          nodes[childId] = { ...nodes[childId], parentId: newId };
+        }
+      }
+
+      return {
+        ...h,
+        nodes,
+        rootId: h.rootId === oldId ? newId : h.rootId,
+      };
+    },
+    [],
   );
 
   const handleAddChild = useCallback(
@@ -1150,10 +1294,12 @@ export function HierarchyPage() {
       const defaultNames: Record<OrgNodeType, string> = {
         org: "New Org",
         team: "New Team",
-        endpoint: `endpoint-new-${String(Date.now()).slice(-4)}`,
-        runtime: `runtime-new-${String(Date.now()).slice(-4)}`,
+        agent: `agent-new-${String(Date.now()).slice(-4)}`,
+        endpoint: `endpoint-${String(Date.now()).slice(-4)}`,
+        runtime: `runtime-${String(Date.now()).slice(-4)}`,
       };
 
+      const prevHierarchy = hierarchy;
       const updated = addNode(hierarchy, parentId, {
         name: defaultNames[type],
         type,
@@ -1163,7 +1309,7 @@ export function HierarchyPage() {
         },
       });
 
-      setHierarchy(updated);
+      applyHierarchyChange(updated);
 
       // Expand parent
       setExpandedIds((prev) => {
@@ -1180,22 +1326,76 @@ export function HierarchyPage() {
         // Trigger rename immediately
         setRenameTarget(newId);
 
-        // LIVE mode: create node on backend
+        // LIVE mode: create node on backend and remap local ID to server ID
         const newNode = updated.nodes[newId];
         if (newNode) {
-          syncToBackend("create node", () =>
-            createHierarchyNode(connection, {
-              name: newNode.name,
-              node_type: newNode.type,
-              external_id: newNode.externalId ?? null,
-              parent_id: newNode.parentId,
-              metadata: newNode.metadata,
-            }),
+          const localId = newId;
+          let resolveCreatedId!: (value: string | null) => void;
+          const pendingCreatedId = new Promise<string | null>((resolve) => {
+            resolveCreatedId = resolve;
+          });
+          pendingCreateIdsRef.current.set(localId, pendingCreatedId);
+
+          const resultPromise = syncToBackend(
+            "create node",
+            async (): Promise<HierarchySyncResult> => {
+              const parentId = await resolvePendingHierarchyParentId(
+                newNode.parentId,
+                pendingCreateIdsRef.current,
+              );
+              if (newNode.parentId && !parentId) {
+                const parentName = updated.nodes[newNode.parentId]?.name ?? newNode.parentId;
+                return {
+                  success: false,
+                  error: `Parent node "${parentName}" is missing a fleet id`,
+                };
+              }
+
+              return createHierarchyNode(connection, {
+                name: newNode.name,
+                node_type: newNode.type,
+                external_id: newNode.externalId ?? null,
+                parent_id: parentId,
+                metadata: newNode.metadata,
+              });
+            },
+            prevHierarchy,
           );
+          if (!resultPromise) {
+            resolveCreatedId(null);
+            pendingCreateIdsRef.current.delete(localId);
+          } else {
+            resultPromise
+              .then((result) => {
+                resolveCreatedId(result.success && result.id ? result.id : null);
+                if (result.success && result.id && result.id !== localId) {
+                  const serverId = result.id;
+                  const remapped = remapNodeId(hierarchyRef.current, localId, serverId);
+                  applyHierarchyChange(remapped);
+                  setSelectedId((prev) => (prev === localId ? serverId : prev));
+                  setRenameTarget((prev) => (prev === localId ? serverId : prev));
+                  setExpandedIds((prev) => {
+                    if (!prev.has(localId)) {
+                      return prev;
+                    }
+                    const next = new Set(prev);
+                    next.delete(localId);
+                    next.add(serverId);
+                    return next;
+                  });
+                }
+              })
+              .catch(() => {
+                resolveCreatedId(null);
+              })
+              .finally(() => {
+                pendingCreateIdsRef.current.delete(localId);
+              });
+          }
         }
       }
     },
-    [hierarchy, syncToBackend, connection],
+    [hierarchy, syncToBackend, connection, remapNodeId, applyHierarchyChange],
   );
 
   const handleRemove = useCallback(
@@ -1203,12 +1403,8 @@ export function HierarchyPage() {
       const node = hierarchy.nodes[id];
       if (!node) return;
 
-      // Finding M18: Confirm before deleting, showing descendant count
-      const childIds = Object.values(hierarchy.nodes).filter((n) => n.parentId === id);
-      const descendantCount = (function countDescendants(nodeId: string): number {
-        const children = Object.values(hierarchy.nodes).filter((n) => n.parentId === nodeId);
-        return children.reduce((sum, child) => sum + 1 + countDescendants(child.id), 0);
-      })(id);
+      // getDescendants is inclusive of the node itself, so subtract 1 for descendants-only count
+      const descendantCount = getDescendants(hierarchy, id).length - 1;
 
       const message = descendantCount > 0
         ? `Delete node "${node.name}" and all ${descendantCount} descendant(s)? This cannot be undone.`
@@ -1216,8 +1412,9 @@ export function HierarchyPage() {
 
       if (!window.confirm(message)) return;
 
+      const prevHierarchy = hierarchy;
       const updated = removeNode(hierarchy, id);
-      setHierarchy(updated);
+      applyHierarchyChange(updated);
       if (selectedId === id) {
         setSelectedId(node.parentId);
       }
@@ -1225,9 +1422,10 @@ export function HierarchyPage() {
       // LIVE mode: delete node on backend (no reparent — descendants removed locally)
       syncToBackend("delete node", () =>
         deleteHierarchyNode(connection, id, false),
+        prevHierarchy,
       );
     },
-    [hierarchy, selectedId, syncToBackend, connection],
+    [hierarchy, selectedId, syncToBackend, connection, applyHierarchyChange],
   );
 
   const handleRename = useCallback((id: string) => {
@@ -1237,24 +1435,32 @@ export function HierarchyPage() {
   const handleDoRename = useCallback(
     (name: string) => {
       if (renameTarget) {
-        setHierarchy((prev) => renameNode(prev, renameTarget, name));
+        const prevHierarchy = hierarchyRef.current;
+        const updated = renameNode(prevHierarchy, renameTarget, name);
+        applyHierarchyChange(updated);
         setRenameTarget(null);
 
         // LIVE mode: update name on backend
         syncToBackend("rename node", () =>
           updateHierarchyNode(connection, renameTarget, { name }),
+          prevHierarchy,
         );
       }
     },
-    [renameTarget, syncToBackend, connection],
+    [renameTarget, syncToBackend, connection, applyHierarchyChange],
   );
 
   const handleAssign = useCallback(
     (policyId: string, policyName: string) => {
       if (assignTarget) {
-        setHierarchy((prev) =>
-          assignPolicy(prev, assignTarget, policyId, policyName),
+        const prevHierarchy = hierarchyRef.current;
+        const updated = assignPolicy(
+          prevHierarchy,
+          assignTarget,
+          policyId,
+          policyName,
         );
+        applyHierarchyChange(updated);
         setAssignTarget(null);
 
         // LIVE mode: update policy assignment on backend
@@ -1263,15 +1469,18 @@ export function HierarchyPage() {
             policy_id: policyId,
             policy_name: policyName,
           }),
+          prevHierarchy,
         );
       }
     },
-    [assignTarget, syncToBackend, connection],
+    [assignTarget, syncToBackend, connection, applyHierarchyChange],
   );
 
   const handleUnassign = useCallback(() => {
     if (assignTarget) {
-      setHierarchy((prev) => unassignPolicy(prev, assignTarget));
+      const prevHierarchy = hierarchyRef.current;
+      const updated = unassignPolicy(prevHierarchy, assignTarget);
+      applyHierarchyChange(updated);
       setAssignTarget(null);
 
       // LIVE mode: clear policy assignment on backend
@@ -1280,9 +1489,10 @@ export function HierarchyPage() {
           policy_id: null,
           policy_name: null,
         }),
+        prevHierarchy,
       );
     }
-  }, [assignTarget, syncToBackend, connection]);
+  }, [assignTarget, syncToBackend, connection, applyHierarchyChange]);
 
   const handleDragStart = useCallback((id: string) => {
     setDragSourceId(id);
@@ -1295,23 +1505,45 @@ export function HierarchyPage() {
   const handleDrop = useCallback(
     (targetId: string) => {
       if (dragSourceId && dragSourceId !== targetId) {
-        const sourceNode = hierarchy.nodes[dragSourceId];
-        const targetNode = hierarchy.nodes[targetId];
+        const currentHierarchy = hierarchyRef.current;
+        const sourceNode = currentHierarchy.nodes[dragSourceId];
+        const targetNode = currentHierarchy.nodes[targetId];
         if (sourceNode && targetNode) {
-          // Only allow direct parent/child drops in the supported hierarchy.
+          // Preserve legacy agent leaf moves while enforcing the new endpoint/runtime hierarchy.
           const canDrop =
             (sourceNode.type === "runtime" && targetNode.type === "endpoint") ||
+            (sourceNode.type === "agent" && targetNode.type === "team") ||
             (sourceNode.type === "endpoint" && targetNode.type === "team") ||
             (sourceNode.type === "team" && targetNode.type === "org");
           if (canDrop) {
-            setHierarchy((prev) => moveNode(prev, dragSourceId, targetId));
+            const prevHierarchy = currentHierarchy;
+            const updated = moveNode(currentHierarchy, dragSourceId, targetId);
+            applyHierarchyChange(updated);
 
             // LIVE mode: update parent_id on backend
             const movedId = dragSourceId;
-            syncToBackend("move node", () =>
-              updateHierarchyNode(connection, movedId, {
-                parent_id: targetId,
-              }),
+            syncToBackend("move node", async (): Promise<HierarchySyncResult> => {
+              const [resolvedMovedId, resolvedTargetId] = await Promise.all([
+                resolvePendingHierarchyParentId(movedId, pendingCreateIdsRef.current),
+                resolvePendingHierarchyParentId(targetId, pendingCreateIdsRef.current),
+              ]);
+              if (!resolvedMovedId) {
+                return {
+                  success: false,
+                  error: `Node "${sourceNode.name}" is missing a fleet id`,
+                };
+              }
+              if (!resolvedTargetId) {
+                return {
+                  success: false,
+                  error: `Parent node "${targetNode.name}" is missing a fleet id`,
+                };
+              }
+              return updateHierarchyNode(connection, resolvedMovedId, {
+                parent_id: resolvedTargetId,
+              });
+            },
+              prevHierarchy,
             );
           }
         }
@@ -1319,13 +1551,15 @@ export function HierarchyPage() {
       setDragSourceId(null);
       setDragOverId(null);
     },
-    [dragSourceId, hierarchy, syncToBackend, connection],
+    [dragSourceId, syncToBackend, connection, applyHierarchyChange],
   );
 
   const handleResetToDemo = useCallback(() => {
+    if (!window.confirm("Reset hierarchy to demo data? All current changes will be lost.")) return;
+    clearPendingCreateIds();
     clearHierarchy();
     const demo = createDefaultHierarchy();
-    setHierarchy(demo);
+    applyHierarchyChange(demo);
     setHasPulledFleetHierarchy(false);
     setSelectedId(demo.rootId);
     setExpandedIds(() => {
@@ -1337,7 +1571,7 @@ export function HierarchyPage() {
       }
       return ids;
     });
-  }, []);
+  }, [applyHierarchyChange, clearPendingCreateIds]);
 
   const handleExport = useCallback(() => {
     const json = JSON.stringify(hierarchy, null, 2);
@@ -1372,35 +1606,93 @@ export function HierarchyPage() {
    */
   const handlePushToFleet = useCallback(async () => {
     if (!fleetConnected) return;
+    if (syncInProgressRef.current) {
+      console.warn("[hierarchy-sync] push skipped: another sync operation is in progress");
+      showSyncStatus("error", "Another sync operation is already in progress");
+      return;
+    }
+
+    const hierarchySnapshot = hierarchyRef.current;
+
+    // Issue #5: Validate before push and require confirmation for any leaf warnings/errors
+    const issues = validateAllLeaves(hierarchySnapshot, savedPolicies);
+    if (issues.length > 0) {
+      const errorCount = issues.filter((i) => i.severity === "error").length;
+      const warningCount = issues.length - errorCount;
+      const message =
+        errorCount > 0 && warningCount > 0
+          ? `There are ${issues.length} validation issue(s) in the hierarchy (${errorCount} error(s), ${warningCount} warning(s)). Push anyway?`
+          : `There are ${issues.length} validation ${errorCount > 0 ? "error" : "warning"}(s) in the hierarchy. Push anyway?`;
+      const proceed = window.confirm(
+        message,
+      );
+      if (!proceed) return;
+    }
+
+    syncInProgressRef.current = true;
     setSyncStatus({ type: "pushing", message: "Uploading hierarchy..." });
 
     try {
-      // BFS traversal: create parents before children
-      const queue: string[] = [hierarchy.rootId];
+      // BFS traversal: create parents before children.
+      // Build an idMap (localId -> serverId) so that child nodes reference
+      // their parent's server-assigned ID rather than the local UUID.
+      const queue: string[] = [hierarchySnapshot.rootId];
+      const idMap = new Map<string, string>(); // localId -> serverId
       let successCount = 0;
       let errorCount = 0;
 
+      let firstMissingParentIdNodeName: string | null = null;
+      let missingParentIdNodeCount = 0;
+      let missingParentSkippedNodeCount = 0;
+
       while (queue.length > 0) {
         const nodeId = queue.shift()!;
-        const node = hierarchy.nodes[nodeId];
+        const node = hierarchySnapshot.nodes[nodeId];
         if (!node) continue;
+
+        // Resolve parent_id: if the parent was already created, use its
+        // server-assigned ID. For the root node (parentId === null) this
+        // is a no-op.
+        const resolvedParentId = node.parentId
+          ? idMap.get(node.parentId) ?? node.parentId
+          : null;
 
         const input: HierarchyNodeInput = {
           name: node.name,
           node_type: node.type,
           external_id: node.externalId ?? null,
-          parent_id: node.parentId,
+          parent_id: resolvedParentId,
           policy_id: node.policyId ?? null,
           policy_name: node.policyName ?? null,
           metadata: node.metadata,
         };
 
         const result = await createHierarchyNode(connection, input);
-        if (result.success) {
-          successCount++;
-        } else {
-          console.warn(`[hierarchy-sync] push failed for node "${node.name}":`, result.error);
+        if (!result.success) {
+          console.warn(
+            `[hierarchy-sync] push failed for node "${node.name}":`,
+            result.error,
+          );
           errorCount++;
+          // Skip children — parent failed so they would reference an invalid ID
+          continue;
+        }
+
+        successCount++;
+
+        if (result.id) {
+          idMap.set(nodeId, result.id);
+        } else if (node.children.length > 0) {
+          firstMissingParentIdNodeName ??= node.name;
+          missingParentIdNodeCount++;
+          missingParentSkippedNodeCount += Math.max(
+            0,
+            getDescendants(hierarchySnapshot, node.id).length - 1,
+          );
+          console.warn(
+            `[hierarchy-sync] push incomplete for node "${node.name}": backend created the node without returning an id, so its descendants cannot be uploaded`,
+          );
+          continue;
         }
 
         // Enqueue children
@@ -1409,7 +1701,38 @@ export function HierarchyPage() {
         }
       }
 
-      if (errorCount === 0) {
+      const remappedHierarchy = Array.from(idMap.entries()).reduce(
+        (currentHierarchy, [localId, serverId]) =>
+          remapNodeId(currentHierarchy, localId, serverId),
+        hierarchyRef.current,
+      );
+
+      if (remappedHierarchy !== hierarchyRef.current) {
+        applyHierarchyChange(remappedHierarchy);
+        setSelectedId((prev) => (prev ? idMap.get(prev) ?? prev : prev));
+        setRenameTarget((prev) => (prev ? idMap.get(prev) ?? prev : prev));
+        setExpandedIds((prev) => {
+          let changed = false;
+          const next = new Set<string>();
+          for (const id of prev) {
+            const mappedId = idMap.get(id) ?? id;
+            if (mappedId !== id) {
+              changed = true;
+            }
+            next.add(mappedId);
+          }
+          return changed ? next : prev;
+        });
+      }
+
+      if (missingParentIdNodeCount > 0) {
+        showSyncStatus(
+          "error",
+          missingParentIdNodeCount === 1
+            ? `Push incomplete: "${firstMissingParentIdNodeName}" was created without an id, so ${missingParentSkippedNodeCount} descendant node${missingParentSkippedNodeCount === 1 ? "" : "s"} could not be uploaded`
+            : `Push incomplete: ${missingParentIdNodeCount} nodes were created without ids, so ${missingParentSkippedNodeCount} descendant nodes could not be uploaded`,
+        );
+      } else if (errorCount === 0) {
         showSyncStatus("success", `Pushed ${successCount} nodes to fleet`);
       } else {
         showSyncStatus(
@@ -1422,29 +1745,27 @@ export function HierarchyPage() {
         "error",
         `Push failed: ${err instanceof Error ? err.message : String(err)}`,
       );
+    } finally {
+      syncInProgressRef.current = false;
     }
-  }, [fleetConnected, hierarchy, connection, showSyncStatus]);
+  }, [fleetConnected, connection, showSyncStatus, savedPolicies, remapNodeId, applyHierarchyChange]);
 
   /**
    * Map a backend node_type string to the frontend OrgNodeType.
    * The backend supports "project" which the frontend does not yet have,
-   * so we map it to "team" as the closest equivalent. Legacy "agent" maps
-   * to "endpoint" after the endpoint/runtime split.
+   * so we map it to "team" as the closest equivalent.
    */
   const mapNodeType = useCallback((backendType: string): OrgNodeType => {
     if (
       backendType === "org" ||
       backendType === "team" ||
+      backendType === "agent" ||
       backendType === "endpoint" ||
       backendType === "runtime"
     ) {
       return backendType;
     }
-    if (backendType === "agent") {
-      return "endpoint";
-    }
-    // "project" and any unknown types map to "team"
-    return "team";
+    return "team"; // "project" and unknown
   }, []);
 
   /**
@@ -1489,6 +1810,13 @@ export function HierarchyPage() {
    */
   const handlePullFromFleet = useCallback(async () => {
     if (!fleetConnected) return;
+    if (syncInProgressRef.current) {
+      console.warn("[hierarchy-sync] pull skipped: another sync operation is in progress");
+      showSyncStatus("error", "Another sync operation is already in progress");
+      return;
+    }
+    if (!window.confirm("Replace local hierarchy with fleet data? Unsaved local changes will be lost.")) return;
+    syncInProgressRef.current = true;
     setSyncStatus({ type: "pulling", message: "Downloading hierarchy..." });
 
     try {
@@ -1555,8 +1883,9 @@ export function HierarchyPage() {
           return;
         }
 
-        const newHierarchy: PolicyHierarchy = { nodes, rootId };
-        setHierarchy(newHierarchy);
+        const newHierarchy: PolicyHierarchy = normalizeHierarchy({ nodes, rootId });
+        clearPendingCreateIds();
+        applyHierarchyChange(newHierarchy);
         setSelectedId(rootId);
 
         // Expand all org and team nodes
@@ -1626,6 +1955,17 @@ export function HierarchyPage() {
         }
       }
 
+      // Older scoped-policies payloads may only encode the tree through children arrays.
+      // Recover missing parent links before normalization so those nodes stay connected.
+      for (const node of Object.values(nodes)) {
+        for (const childId of node.children) {
+          const child = nodes[childId];
+          if (child && child.parentId == null) {
+            child.parentId = node.id;
+          }
+        }
+      }
+
       // If children were not provided, reconstruct from parent pointers
       const anyHasChildren = Object.values(nodes).some(
         (n) => n.children.length > 0,
@@ -1656,8 +1996,9 @@ export function HierarchyPage() {
         return;
       }
 
-      const newHierarchy: PolicyHierarchy = { nodes, rootId };
-      setHierarchy(newHierarchy);
+      const newHierarchy: PolicyHierarchy = normalizeHierarchy({ nodes, rootId });
+      clearPendingCreateIds();
+      applyHierarchyChange(newHierarchy);
       setSelectedId(rootId);
 
       setExpandedIds(() => {
@@ -1680,6 +2021,8 @@ export function HierarchyPage() {
         "error",
         `Pull failed: ${err instanceof Error ? err.message : String(err)}`,
       );
+    } finally {
+      syncInProgressRef.current = false;
     }
   }, [
     fleetConnected,
@@ -1687,12 +2030,15 @@ export function HierarchyPage() {
     showSyncStatus,
     flattenTreeNode,
     mapNodeType,
+    clearPendingCreateIds,
+    applyHierarchyChange,
   ]);
 
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
 
+  const isSyncing = syncStatus.type === "pushing" || syncStatus.type === "pulling";
   const rootNode = hierarchy.nodes[hierarchy.rootId];
 
   return (
@@ -1856,6 +2202,7 @@ export function HierarchyPage() {
                 expandedIds={expandedIds}
                 ancestryIds={ancestryIds}
                 depth={0}
+                isSyncing={isSyncing}
                 onSelect={handleSelect}
                 onToggleExpand={handleToggleExpand}
                 onAddChild={handleAddChild}

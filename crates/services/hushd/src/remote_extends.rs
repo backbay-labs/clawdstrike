@@ -11,7 +11,6 @@ use clawdstrike::policy::{
 };
 use clawdstrike::{Error, Result};
 use hush_core::sha256;
-use rand::Rng as _;
 use reqwest::blocking::Client;
 use reqwest::header::LOCATION;
 use reqwest::Url;
@@ -407,16 +406,16 @@ impl RemotePolicyResolver {
     fn git_show_file(&self, repo: &str, commit: &str, path: &str) -> Result<Vec<u8>> {
         let temp = TempGitDir::new()?;
 
-        run_git(&temp.path, &["init"])?;
-        run_git(&temp.path, &["remote", "add", "origin", repo])?;
+        run_git(temp.path(), &["init"])?;
+        run_git(temp.path(), &["remote", "add", "origin", repo])?;
         run_git(
-            &temp.path,
+            temp.path(),
             &["fetch", "--depth", "1", "origin", "--", commit],
         )?;
 
         let output = Command::new("git")
             .arg("-C")
-            .arg(&temp.path)
+            .arg(temp.path())
             .env("GIT_TERMINAL_PROMPT", "0")
             .args(["show", &format!("FETCH_HEAD:{}", path)])
             .output()
@@ -912,22 +911,20 @@ fn enforce_cache_size_limit(cache_dir: &Path, max_bytes: usize) {
 }
 
 struct TempGitDir {
-    path: PathBuf,
+    dir: tempfile::TempDir,
 }
 
 impl TempGitDir {
     fn new() -> Result<Self> {
-        let mut rng = rand::rng();
-        let nonce: u64 = rng.random();
-        let path = std::env::temp_dir().join(format!("hushd_policy_git_{nonce:x}"));
-        std::fs::create_dir_all(&path).map_err(Error::IoError)?;
-        Ok(Self { path })
+        let dir = tempfile::Builder::new()
+            .prefix("hushd_policy_git_")
+            .tempdir()
+            .map_err(Error::IoError)?;
+        Ok(Self { dir })
     }
-}
 
-impl Drop for TempGitDir {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.path);
+    fn path(&self) -> &Path {
+        self.dir.path()
     }
 }
 
@@ -962,6 +959,20 @@ mod tests {
     use std::sync::Arc;
     use std::thread;
     use std::time::Duration;
+
+    #[test]
+    fn temp_git_dir_is_removed_on_drop() {
+        let temp_path = {
+            let temp = TempGitDir::new().expect("create temp git dir");
+            let path = temp.path().to_path_buf();
+            assert!(path.exists(), "temp git directory should exist");
+            path
+        };
+        assert!(
+            !temp_path.exists(),
+            "temp git directory should be removed when dropped"
+        );
+    }
 
     fn spawn_server_on<F>(
         bind_addr: &str,

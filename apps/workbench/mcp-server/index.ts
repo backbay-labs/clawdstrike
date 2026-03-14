@@ -60,6 +60,49 @@ const server = new McpServer({
 
 const MAX_POLICY_SIZE = 1_000_000; // 1MB
 
+type RawToolSchema = Record<string, z.ZodTypeAny>;
+type RawToolArgs<TSchema extends RawToolSchema> = {
+  [K in keyof TSchema]: z.infer<TSchema[K]>;
+};
+type RawToolResult = Promise<unknown> | unknown;
+type RawPromptSchema = Record<string, z.ZodTypeAny>;
+type RawPromptArgs<TSchema extends RawPromptSchema> = {
+  [K in keyof TSchema]: z.infer<TSchema[K]>;
+};
+type RawPromptResult = unknown;
+
+const registerTypedRawTool = <TSchema extends RawToolSchema>(
+  name: string,
+  description: string,
+  paramsSchema: TSchema,
+  cb: (args: RawToolArgs<TSchema>) => RawToolResult,
+) => {
+  (
+    server.tool as unknown as (
+      name: string,
+      description: string,
+      paramsSchema: RawToolSchema,
+      cb: (args: RawToolArgs<TSchema>) => RawToolResult,
+    ) => void
+  )(name, description, paramsSchema, cb);
+};
+
+const registerTypedPrompt = <TSchema extends RawPromptSchema>(
+  name: string,
+  description: string,
+  argsSchema: TSchema,
+  cb: (args: RawPromptArgs<TSchema>) => RawPromptResult,
+) => {
+  (
+    server.prompt as unknown as (
+      name: string,
+      description: string,
+      argsSchema: RawPromptSchema,
+      cb: (args: RawPromptArgs<TSchema>) => RawPromptResult,
+    ) => void
+  )(name, description, argsSchema, cb);
+};
+
 export function parsePolicy(yaml: string): { policy: WorkbenchPolicy; warnings: string[] } {
   if (yaml.length > MAX_POLICY_SIZE) {
     throw new Error(`Policy YAML too large: ${yaml.length} bytes (max ${MAX_POLICY_SIZE})`);
@@ -498,65 +541,6 @@ export function suggestScenariosFromPolicy(policy: WorkbenchPolicy) {
 // Tools
 // ---------------------------------------------------------------------------
 
-type ToolSchema = Record<string, z.ZodTypeAny>;
-
-type CreateScenarioArgs = {
-  name: string;
-  description: string;
-  category: "attack" | "benign" | "edge_case";
-  action_type: TestActionType;
-  payload: string;
-  expected_verdict?: Verdict;
-};
-
-type SynthPolicyArgs = {
-  events_jsonl: string;
-  base_ruleset?: string;
-  name?: string;
-};
-
-type ComplianceCheckArgs = {
-  policy_yaml: string;
-  frameworks?: ComplianceFramework[];
-};
-
-type ExportPolicyArgs = {
-  policy_yaml: string;
-  format: "json" | "toml" | "yaml";
-};
-
-type HardenPolicyArgs = {
-  policy_yaml: string;
-  level?: "moderate" | "aggressive";
-};
-
-type GeneratePolicyArgs = {
-  description: string;
-  base_ruleset?: string;
-};
-
-// Typed wrappers — the MCP SDK's generic overloads trigger TS2589 (excessively deep
-// type instantiation) with complex Zod schemas, so we cast to the concrete overload
-// signatures used in this file rather than the unconstrained `any`.
-type ToolResult = { content: { type: string; text: string }[]; isError?: boolean };
-type PromptResult = { messages: { role: "user" | "assistant"; content: { type: string; text: string } }[] };
-
-const registerTool = server.tool.bind(server) as (
-  name: string,
-  description: string,
-  schema: Record<string, z.ZodTypeAny>,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  cb: (input: any) => Promise<ToolResult>,
-) => void;
-
-const registerPrompt = server.prompt.bind(server) as (
-  name: string,
-  description: string,
-  schema: Record<string, z.ZodTypeAny>,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  cb: (input: any) => PromptResult,
-) => void;
-
 type RunScenarioArgs = {
   scenario_json: string;
   policy_yaml: string;
@@ -580,78 +564,30 @@ type EventsJsonlArgs = {
   events_jsonl: string;
 };
 
-const createScenarioSchema: ToolSchema = {
+const scenarioCategorySchema = z.enum(["attack", "benign", "edge_case"]);
+const scenarioActionTypeSchema = z.enum([
+  "file_access",
+  "file_write",
+  "network_egress",
+  "shell_command",
+  "mcp_tool_call",
+  "patch_apply",
+  "user_input",
+]);
+const scenarioVerdictSchema = z.enum(["allow", "deny", "warn"]);
+
+const createScenarioSchema = {
   name: z.string().describe("Scenario name (e.g. 'SSH Key Exfiltration')"),
   description: z.string().describe("What this scenario tests"),
-  category: z
-    .enum(["attack", "benign", "edge_case"])
-    .describe("Scenario category"),
-  action_type: z
-    .enum([
-      "file_access",
-      "file_write",
-      "network_egress",
-      "shell_command",
-      "mcp_tool_call",
-      "patch_apply",
-      "user_input",
-    ])
-    .describe("Action type to simulate"),
+  category: scenarioCategorySchema.describe("Scenario category"),
+  action_type: scenarioActionTypeSchema.describe("Action type to simulate"),
   payload: z
     .string()
     .describe("JSON object with action-specific fields (path, host, command, tool, content, text, etc.)"),
-  expected_verdict: z
-    .enum(["allow", "deny", "warn"])
-    .optional()
-    .describe("Expected verdict for pass/fail checking"),
+  expected_verdict: scenarioVerdictSchema.optional().describe("Expected verdict for pass/fail checking"),
 };
 
-const synthPolicySchema: ToolSchema = {
-  events_jsonl: z
-    .string()
-    .describe("JSONL string — one JSON event per line with action_type, target, and optional content"),
-  base_ruleset: z
-    .enum([
-      "default",
-      "strict",
-      "permissive",
-      "ai-agent",
-      "cicd",
-      "ai-agent-posture",
-      "remote-desktop",
-      "remote-desktop-permissive",
-      "remote-desktop-strict",
-      "spider-sense",
-    ])
-    .optional()
-    .describe("Built-in ruleset to extend from"),
-  name: z.string().optional().describe("Name for the synthesized policy"),
-};
-
-const complianceCheckSchema: ToolSchema = {
-  policy_yaml: z
-    .string()
-    .describe("Policy YAML string to check compliance for"),
-  frameworks: z
-    .array(z.enum(["hipaa", "soc2", "pci-dss"]))
-    .optional()
-    .describe("Specific frameworks to check (default: all)"),
-};
-
-const exportPolicySchema: ToolSchema = {
-  policy_yaml: z.string().describe("Policy YAML string to convert"),
-  format: z.enum(["json", "toml", "yaml"]).describe("Target format"),
-};
-
-const hardenPolicySchema: ToolSchema = {
-  policy_yaml: z.string().describe("Policy YAML to harden"),
-  level: z
-    .enum(["moderate", "aggressive"])
-    .optional()
-    .describe("How aggressively to tighten (default: moderate)"),
-};
-
-const generatePolicySchema: ToolSchema = {
+const generatePolicySchema = {
   description: z
     .string()
     .min(1, "Description must not be empty")
@@ -675,45 +611,68 @@ const generatePolicySchema: ToolSchema = {
     .describe("Built-in ruleset to extend from (auto-detected if omitted)"),
 };
 
-registerTool(
+type GeneratePolicyArgs = {
+  description: string;
+  base_ruleset?:
+    | "default"
+    | "strict"
+    | "permissive"
+    | "ai-agent"
+    | "cicd"
+    | "ai-agent-posture"
+    | "remote-desktop"
+    | "remote-desktop-permissive"
+    | "remote-desktop-strict"
+    | "spider-sense";
+};
+
+type CreateScenarioArgs = {
+  name: string;
+  description: string;
+  category: "attack" | "benign" | "edge_case";
+  action_type: TestActionType;
+  payload: string;
+  expected_verdict?: Verdict;
+};
+
+const handleCreateScenario = async ({
+  name,
+  description,
+  category,
+  action_type,
+  payload,
+  expected_verdict,
+}: CreateScenarioArgs) => {
+  let parsedPayload: Record<string, unknown>;
+  try {
+    parsedPayload = JSON.parse(payload);
+  } catch {
+    return textResult("Invalid JSON in payload parameter", true);
+  }
+  if (typeof parsedPayload !== "object" || parsedPayload === null || Array.isArray(parsedPayload)) {
+    return textResult("Invalid payload: must be a plain JSON object (not an array or primitive)", true);
+  }
+
+  const scenario: TestScenario = {
+    id: `custom-${crypto.randomUUID()}`,
+    name,
+    description,
+    category,
+    actionType: action_type as TestActionType,
+    payload: parsedPayload,
+    expectedVerdict: expected_verdict as Verdict | undefined,
+  };
+
+  return jsonResult(scenario);
+};
+registerTypedRawTool(
   "workbench_create_scenario",
   "Create a test scenario with name, action type, target, payload, and expected verdict. Returns the scenario object as JSON.",
   createScenarioSchema,
-  async (input: CreateScenarioArgs) => {
-    const {
-      name,
-      description,
-      category,
-      action_type,
-      payload,
-      expected_verdict,
-    } = input;
-
-    let parsedPayload: Record<string, unknown>;
-    try {
-      parsedPayload = JSON.parse(payload);
-    } catch {
-      return textResult("Invalid JSON in payload parameter", true);
-    }
-    if (typeof parsedPayload !== "object" || parsedPayload === null || Array.isArray(parsedPayload)) {
-      return textResult("Invalid payload: must be a plain JSON object (not an array or primitive)", true);
-    }
-
-    const scenario: TestScenario = {
-      id: `custom-${crypto.randomUUID()}`,
-      name,
-      description,
-      category,
-      actionType: action_type as TestActionType,
-      payload: parsedPayload,
-      expectedVerdict: expected_verdict as Verdict | undefined,
-    };
-
-    return jsonResult(scenario);
-  },
+  handleCreateScenario,
 );
 
-registerTool(
+registerTypedRawTool(
   "workbench_run_scenario",
   "Run a single test scenario against a policy YAML. Returns the verdict and per-guard results.",
   {
@@ -777,7 +736,7 @@ registerTool(
   },
 );
 
-registerTool(
+registerTypedRawTool(
   "workbench_run_all_scenarios",
   "Run a batch of scenarios against a policy YAML. Returns a summary report with per-scenario verdicts.",
   {
@@ -879,7 +838,7 @@ registerTool(
   },
 );
 
-registerTool(
+registerTypedRawTool(
   "workbench_validate_policy",
   "Validate a policy YAML string for schema errors and warnings. Returns structured diagnostics.",
   {
@@ -888,11 +847,33 @@ registerTool(
   async ({ policy_yaml }: PolicyYamlArgs) => jsonResult(validatePolicyYaml(policy_yaml)),
 );
 
-registerTool(
-  "workbench_synth_policy",
-  "Synthesize a candidate security policy from JSONL agent activity events. Each event line needs action_type and target fields.",
-  synthPolicySchema,
-  async ({ events_jsonl, base_ruleset, name: policyName }: SynthPolicyArgs) => {
+const synthPolicySchema = {
+  events_jsonl: z
+    .string()
+    .describe("JSONL string — one JSON event per line with action_type, target, and optional content"),
+  base_ruleset: z
+    .enum([
+      "default",
+      "strict",
+      "permissive",
+      "ai-agent",
+      "cicd",
+      "ai-agent-posture",
+      "remote-desktop",
+      "remote-desktop-permissive",
+      "remote-desktop-strict",
+      "spider-sense",
+    ])
+    .optional()
+    .describe("Built-in ruleset to extend from"),
+  name: z.string().optional().describe("Name for the synthesized policy"),
+};
+type SynthPolicyArgs = {
+  events_jsonl: string;
+  base_ruleset?: string;
+  name?: string;
+};
+const handleSynthPolicy = async ({ events_jsonl, base_ruleset, name: policyName }: SynthPolicyArgs) => {
     if (events_jsonl.length > 10_000_000) {
       return textResult(`events_jsonl too large: ${events_jsonl.length} bytes (max 10,000,000)`, true);
     }
@@ -942,14 +923,29 @@ registerTool(
       },
       ...(parseErrors.length > 0 ? { parseErrors } : {}),
     });
-  },
+  };
+
+registerTypedRawTool(
+  "workbench_synth_policy",
+  "Synthesize a candidate security policy from JSONL agent activity events. Each event line needs action_type and target fields.",
+  synthPolicySchema,
+  handleSynthPolicy,
 );
 
-registerTool(
-  "workbench_compliance_check",
-  "Score a policy against HIPAA, SOC2, and PCI-DSS compliance frameworks. Returns per-framework scores, met requirements, and gaps.",
-  complianceCheckSchema,
-  async ({ policy_yaml, frameworks }: ComplianceCheckArgs) => {
+const complianceCheckSchema = {
+  policy_yaml: z
+    .string()
+    .describe("Policy YAML string to check compliance for"),
+  frameworks: z
+    .array(z.enum(["hipaa", "soc2", "pci-dss"]))
+    .optional()
+    .describe("Specific frameworks to check (default: all)"),
+};
+type ComplianceCheckArgs = {
+  policy_yaml: string;
+  frameworks?: ComplianceFramework[];
+};
+const handleComplianceCheck = async ({ policy_yaml, frameworks }: ComplianceCheckArgs) => {
     let policy: WorkbenchPolicy;
     try {
       ({ policy } = parsePolicy(policy_yaml));
@@ -983,10 +979,16 @@ registerTool(
     }
 
     return jsonResult(scores);
-  },
+  };
+
+registerTypedRawTool(
+  "workbench_compliance_check",
+  "Score a policy against HIPAA, SOC2, and PCI-DSS compliance frameworks. Returns per-framework scores, met requirements, and gaps.",
+  complianceCheckSchema,
+  handleComplianceCheck,
 );
 
-registerTool(
+registerTypedRawTool(
   "workbench_list_guards",
   "List all 13 built-in guards with descriptions, categories, and configuration schemas.",
   {},
@@ -1020,7 +1022,7 @@ registerTool(
   },
 );
 
-registerTool(
+registerTypedRawTool(
   "workbench_suggest_scenarios",
   "Given a policy YAML, suggest test scenarios that exercise the configured guards. Returns an array of scenario objects.",
   {
@@ -1038,7 +1040,7 @@ registerTool(
   },
 );
 
-registerTool(
+registerTypedRawTool(
   "workbench_diff_policies",
   "Compare two policy YAML strings semantically. Returns added, removed, and changed guards with details.",
   {
@@ -1141,11 +1143,15 @@ registerTool(
   },
 );
 
-registerTool(
-  "workbench_export_policy",
-  "Convert a policy YAML to JSON or TOML format.",
-  exportPolicySchema,
-  async ({ policy_yaml, format }: ExportPolicyArgs) => {
+const exportPolicySchema = {
+  policy_yaml: z.string().describe("Policy YAML string to convert"),
+  format: z.enum(["json", "toml", "yaml"]).describe("Target format"),
+};
+type ExportPolicyArgs = {
+  policy_yaml: string;
+  format: "json" | "toml" | "yaml";
+};
+const handleExportPolicy = async ({ policy_yaml, format }: ExportPolicyArgs) => {
     let policy: WorkbenchPolicy;
     try {
       ({ policy } = parsePolicy(policy_yaml));
@@ -1155,14 +1161,27 @@ registerTool(
 
     const output = policyToFormat(policy, format);
     return textResult(output);
-  },
+  };
+
+registerTypedRawTool(
+  "workbench_export_policy",
+  "Convert a policy YAML to JSON or TOML format.",
+  exportPolicySchema,
+  handleExportPolicy,
 );
 
-registerTool(
-  "workbench_harden_policy",
-  "Analyze a policy and return a hardened version with tighter settings, additional guards, and stricter thresholds.",
-  hardenPolicySchema,
-  async ({ policy_yaml, level }: HardenPolicyArgs) => {
+const hardenPolicySchema = {
+  policy_yaml: z.string().describe("Policy YAML to harden"),
+  level: z
+    .enum(["moderate", "aggressive"])
+    .optional()
+    .describe("How aggressively to tighten (default: moderate)"),
+};
+type HardenPolicyArgs = {
+  policy_yaml: string;
+  level?: "moderate" | "aggressive";
+};
+const handleHardenPolicy = async ({ policy_yaml, level }: HardenPolicyArgs) => {
     const hardenLevel = level ?? "moderate";
 
     let policy: WorkbenchPolicy;
@@ -1414,10 +1433,16 @@ registerTool(
         total_changes: changes.length,
       },
     });
-  },
+  };
+
+registerTypedRawTool(
+  "workbench_harden_policy",
+  "Analyze a policy and return a hardened version with tighter settings, additional guards, and stricter thresholds.",
+  hardenPolicySchema,
+  handleHardenPolicy,
 );
 
-registerTool(
+registerTypedRawTool(
   "workbench_guard_coverage",
   "Analyze guard coverage for a policy. Returns enabled/disabled/missing guards, coverage percentage, and risk areas.",
   {
@@ -1507,7 +1532,7 @@ registerTool(
   },
 );
 
-registerTool(
+registerTypedRawTool(
   "workbench_list_rulesets",
   "List all available built-in rulesets with their names, descriptions, and YAML content.",
   {},
@@ -1523,7 +1548,7 @@ registerTool(
   },
 );
 
-registerTool(
+registerTypedRawTool(
   "workbench_generate_policy",
   "Generate a starter policy from a natural language description of the use case.",
   generatePolicySchema,
@@ -1846,7 +1871,7 @@ server.resource(
 // Prompts
 // ---------------------------------------------------------------------------
 
-registerPrompt(
+registerTypedPrompt(
   "security-audit",
   "Run a comprehensive security audit: validate policy, check compliance, run scenarios, and generate improvement report.",
   {
@@ -1885,7 +1910,7 @@ registerPrompt(
   }),
 );
 
-registerPrompt(
+registerTypedPrompt(
   "observe-synth-tighten",
   "Import agent activity logs, analyze patterns, synthesize policy, and iteratively tighten it.",
   {
@@ -1923,7 +1948,7 @@ registerPrompt(
   }),
 );
 
-registerPrompt(
+registerTypedPrompt(
   "tighten-policy",
   "Analyze a policy's weaknesses and generate a hardened version with specific improvement recommendations.",
   {
@@ -1964,7 +1989,7 @@ registerPrompt(
   }),
 );
 
-registerPrompt(
+registerTypedPrompt(
   "red-team-scenarios",
   "Generate adversarial red team scenarios designed to find weaknesses in a policy.",
   {
@@ -2009,7 +2034,7 @@ registerPrompt(
   }),
 );
 
-registerPrompt(
+registerTypedPrompt(
   "build-test-suite",
   "Build a comprehensive test suite for a policy with positive, negative, and edge-case scenarios.",
   {
@@ -2073,13 +2098,13 @@ function wantsSse(): boolean {
  * Hashes both inputs with SHA-256 so the comparison is always over fixed 32-byte
  * digests — no length leaking, no truncation risk regardless of input size.
  */
-function secureTokenCompare(a: string, b: string): boolean {
+export function secureTokenCompare(a: string, b: string): boolean {
   const hashA = createHash("sha256").update(a).digest();
   const hashB = createHash("sha256").update(b).digest();
   return timingSafeEqual(hashA, hashB);
 }
 
-function hasConfiguredSseAuthToken(authToken: string): boolean {
+export function hasConfiguredSseAuthToken(authToken: string): boolean {
   return authToken.trim().length > 0;
 }
 

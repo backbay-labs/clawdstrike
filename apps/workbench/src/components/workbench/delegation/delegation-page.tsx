@@ -1,6 +1,7 @@
 import {
   useRef,
   useEffect,
+  useLayoutEffect,
   useState,
   useCallback,
   useMemo,
@@ -411,13 +412,11 @@ export function DelegationPage() {
     isPanningRef.current = false;
   }, []);
 
-  // Zoom state refs for the native wheel listener (avoids stale closures)
-  const zoomRef = useRef(zoom);
-  const panXRef = useRef(panX);
-  const panYRef = useRef(panY);
-  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
-  useEffect(() => { panXRef.current = panX; }, [panX]);
-  useEffect(() => { panYRef.current = panY; }, [panY]);
+  // Keep wheel zoom/pan reads on one coherent snapshot between renders.
+  const viewportRef = useRef({ zoom, panX, panY });
+  useLayoutEffect(() => {
+    viewportRef.current = { zoom, panX, panY };
+  }, [zoom, panX, panY]);
 
   // Native wheel listener with { passive: false } so we can preventDefault
   useEffect(() => {
@@ -430,9 +429,7 @@ export function DelegationPage() {
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
       const factor = e.deltaY < 0 ? 1.1 : 0.9;
-      const curZoom = zoomRef.current;
-      const curPanX = panXRef.current;
-      const curPanY = panYRef.current;
+      const { zoom: curZoom, panX: curPanX, panY: curPanY } = viewportRef.current;
       const newZoom = Math.min(Math.max(curZoom * factor, 0.15), 4);
       const wx = (x - curPanX) / curZoom;
       const wy = (y - curPanY) / curZoom;
@@ -473,15 +470,17 @@ export function DelegationPage() {
     // Add metadata desc element
     const desc = document.createElementNS("http://www.w3.org/2000/svg", "desc");
     const ts = new Date().toISOString();
-    const pid = selectedPrincipalId ?? "demo";
-    desc.textContent = `Delegation graph for principal ${pid} exported at ${ts}`;
+    const pid = selectedPrincipalId;
+    desc.textContent = pid
+      ? `Delegation graph for principal ${pid} exported at ${ts}`
+      : `Delegation graph for the current view exported at ${ts}`;
     clone.insertBefore(desc, clone.firstChild);
 
     const data = new XMLSerializer().serializeToString(clone);
     const blob = new Blob([data], { type: "image/svg+xml" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    const safePid = pid.replace(/[^a-zA-Z0-9_-]/g, "_");
+    const safePid = pid ? pid.replace(/[^a-zA-Z0-9_-]/g, "_") : "current-view";
     link.download = `delegation-graph-${safePid}.svg`;
     link.href = url;
     link.click();
@@ -697,6 +696,7 @@ export function DelegationPage() {
                 selectedId={selectedPrincipalId}
                 isOpen={principalDropdownOpen}
                 onToggle={() => setPrincipalDropdownOpen((p) => !p)}
+                onClose={() => setPrincipalDropdownOpen(false)}
                 onSelect={handlePrincipalChange}
                 disabled={isLoadingPrincipal}
               />
@@ -1103,6 +1103,7 @@ function PrincipalSelector({
   selectedId,
   isOpen,
   onToggle,
+  onClose,
   onSelect,
   disabled = false,
 }: {
@@ -1110,6 +1111,7 @@ function PrincipalSelector({
   selectedId: string | null;
   isOpen: boolean;
   onToggle: () => void;
+  onClose: () => void;
   onSelect: (id: string) => void;
   disabled?: boolean;
 }) {
@@ -1122,12 +1124,12 @@ function PrincipalSelector({
     if (!isOpen) return;
     const handler = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        onToggle();
+        onClose();
       }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [isOpen, onToggle]);
+  }, [isOpen, onClose]);
 
   return (
     <div ref={dropdownRef} className="relative">

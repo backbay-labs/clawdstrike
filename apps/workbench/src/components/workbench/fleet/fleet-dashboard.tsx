@@ -8,7 +8,7 @@ import {
   IconAlertTriangle,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
-import { useFleetConnection } from "@/lib/workbench/use-fleet-connection";
+import { AGENT_POLL_MS, useFleetConnection } from "@/lib/workbench/use-fleet-connection";
 import type { AgentInfo } from "@/lib/workbench/fleet-client";
 import { Link } from "react-router-dom";
 
@@ -203,6 +203,8 @@ export function FleetDashboard() {
               </h1>
               <p className="text-[11px] text-[#6f7f9a] mt-0.5">
                 {counts.total} agent{counts.total !== 1 ? "s" : ""} registered
+                {" · "}
+                auto-refresh every {AGENT_POLL_MS / 1000}s
               </p>
             </div>
           </div>

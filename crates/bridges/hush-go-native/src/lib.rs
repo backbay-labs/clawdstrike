@@ -10,6 +10,7 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::panic::AssertUnwindSafe;
+use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -391,9 +392,51 @@ pub unsafe extern "C" fn hush_sanitize_output(
 // Watermarking
 // ---------------------------------------------------------------------------
 
-static WATERMARKERS: OnceLock<
-    Mutex<std::collections::HashMap<String, Arc<clawdstrike::PromptWatermarker>>>,
-> = OnceLock::new();
+const MAX_WATERMARKER_CACHE_ENTRIES: usize = 128;
+
+struct WatermarkerCache {
+    entries: HashMap<String, Arc<clawdstrike::PromptWatermarker>>,
+    order: VecDeque<String>,
+}
+
+impl WatermarkerCache {
+    fn new() -> Self {
+        Self {
+            entries: HashMap::new(),
+            order: VecDeque::new(),
+        }
+    }
+
+    fn get(&mut self, key: &str) -> Option<Arc<clawdstrike::PromptWatermarker>> {
+        let value = self.entries.get(key).cloned()?;
+        self.touch(key);
+        Some(value)
+    }
+
+    fn insert(&mut self, key: String, value: Arc<clawdstrike::PromptWatermarker>) {
+        if self.entries.contains_key(&key) {
+            self.entries.insert(key.clone(), value);
+            self.touch(&key);
+            return;
+        }
+        if self.entries.len() >= MAX_WATERMARKER_CACHE_ENTRIES {
+            if let Some(oldest) = self.order.pop_front() {
+                self.entries.remove(&oldest);
+            }
+        }
+        self.order.push_back(key.clone());
+        self.entries.insert(key, value);
+    }
+
+    fn touch(&mut self, key: &str) {
+        if let Some(idx) = self.order.iter().position(|entry| entry == key) {
+            self.order.remove(idx);
+        }
+        self.order.push_back(key.to_string());
+    }
+}
+
+static WATERMARKERS: OnceLock<Mutex<WatermarkerCache>> = OnceLock::new();
 
 fn parse_watermark_config(
     config_json: Option<&str>,
@@ -409,13 +452,30 @@ fn get_or_create_watermarker(
     config_json: Option<&str>,
 ) -> Option<Arc<clawdstrike::PromptWatermarker>> {
     let (key, cfg) = parse_watermark_config(config_json)?;
-    let map = WATERMARKERS.get_or_init(|| Mutex::new(std::collections::HashMap::new()));
-    let mut guard = map.lock().ok()?;
-    if !guard.contains_key(&key) {
-        let wm = clawdstrike::PromptWatermarker::new(cfg).ok()?;
-        guard.insert(key.clone(), Arc::new(wm));
+    let cache = WATERMARKERS.get_or_init(|| Mutex::new(WatermarkerCache::new()));
+    let mut guard = cache.lock().ok()?;
+    if let Some(existing) = guard.get(&key) {
+        return Some(existing);
     }
-    guard.get(&key).cloned()
+    let wm = Arc::new(clawdstrike::PromptWatermarker::new(cfg).ok()?);
+    guard.insert(key, Arc::clone(&wm));
+    Some(wm)
+}
+
+#[cfg(test)]
+fn clear_watermarker_cache() {
+    if let Some(cache) = WATERMARKERS.get() {
+        let mut guard = cache.lock().expect("watermarker cache lock");
+        guard.entries.clear();
+        guard.order.clear();
+    }
+}
+
+#[cfg(test)]
+fn watermarker_cache_len() -> usize {
+    let cache = WATERMARKERS.get_or_init(|| Mutex::new(WatermarkerCache::new()));
+    let guard = cache.lock().expect("watermarker cache lock");
+    guard.entries.len()
 }
 
 /// Get the watermark public key for a watermark configuration.
@@ -799,5 +859,17 @@ mod tests {
         }
         .is_null());
         assert!(unsafe { hush_extract_watermark(std::ptr::null(), std::ptr::null()) }.is_null());
+    }
+
+    #[test]
+    fn test_watermarker_cache_is_bounded() {
+        clear_watermarker_cache();
+        for idx in 0..(MAX_WATERMARKER_CACHE_ENTRIES + 16) {
+            let cfg = format!(r#"{{"custom_metadata":{{"cache_key":"{idx}"}}}}"#);
+            let wm = get_or_create_watermarker(Some(&cfg));
+            assert!(wm.is_some(), "watermarker should be created for config {idx}");
+        }
+        assert_eq!(watermarker_cache_len(), MAX_WATERMARKER_CACHE_ENTRIES);
+        clear_watermarker_cache();
     }
 }

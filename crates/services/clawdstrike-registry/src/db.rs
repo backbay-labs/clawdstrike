@@ -1,8 +1,9 @@
 //! SQLite database layer for package metadata and search.
 
+use std::io;
 use std::path::Path;
 
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection, Error as SqliteError, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 use crate::error::RegistryError;
@@ -173,6 +174,61 @@ fn escape_sqlite_like_literal(value: &str) -> String {
     escaped
 }
 
+fn is_duplicate_column_error(err: &SqliteError) -> bool {
+    match err {
+        SqliteError::SqliteFailure(_, Some(msg)) => {
+            msg.to_ascii_lowercase().contains("duplicate column name")
+        }
+        _ => false,
+    }
+}
+
+fn execute_add_column_if_missing(conn: &Connection, sql: &str) -> Result<(), RegistryError> {
+    match conn.execute(sql, []) {
+        Ok(_) => Ok(()),
+        Err(err) if is_duplicate_column_error(&err) => Ok(()),
+        Err(err) => Err(err.into()),
+    }
+}
+
+fn sqlite_i64_to_u64(value: i64, field: &str) -> Result<u64, RegistryError> {
+    u64::try_from(value).map_err(|_| {
+        RegistryError::Database(SqliteError::FromSqlConversionFailure(
+            0,
+            rusqlite::types::Type::Integer,
+            Box::new(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("invalid negative value for {field}: {value}"),
+            )),
+        ))
+    })
+}
+
+fn u64_to_sqlite_i64(value: u64, field: &str) -> Result<i64, RegistryError> {
+    i64::try_from(value)
+        .map_err(|_| RegistryError::Integrity(format!("value out of range for {field}: {value}")))
+}
+
+fn sqlite_row_i64_to_u64(value: i64, field: &'static str) -> rusqlite::Result<u64> {
+    u64::try_from(value).map_err(|_| {
+        SqliteError::FromSqlConversionFailure(
+            0,
+            rusqlite::types::Type::Integer,
+            Box::new(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("invalid negative value for {field}: {value}"),
+            )),
+        )
+    })
+}
+
+fn sqlite_row_opt_i64_to_opt_u64(
+    value: Option<i64>,
+    field: &'static str,
+) -> rusqlite::Result<Option<u64>> {
+    value.map(|v| sqlite_row_i64_to_u64(v, field)).transpose()
+}
+
 impl RegistryDb {
     /// Open (or create) the registry database at the given path.
     pub fn open(path: &Path) -> Result<Self, RegistryError> {
@@ -267,25 +323,24 @@ impl RegistryDb {
         )?;
 
         // Add columns that may not exist in older databases.
-        // SQLite does not support ADD COLUMN IF NOT EXISTS, so we
-        // swallow the "duplicate column" error.
-        let _ = self
-            .conn
-            .execute("ALTER TABLE versions ADD COLUMN attestation_hash TEXT", []);
-        let _ = self
-            .conn
-            .execute("ALTER TABLE versions ADD COLUMN key_id TEXT", []);
-        let _ = self
-            .conn
-            .execute("ALTER TABLE versions ADD COLUMN leaf_index INTEGER", []);
-        let _ = self.conn.execute(
+        // SQLite does not support ADD COLUMN IF NOT EXISTS.
+        execute_add_column_if_missing(
+            &self.conn,
+            "ALTER TABLE versions ADD COLUMN attestation_hash TEXT",
+        )?;
+        execute_add_column_if_missing(&self.conn, "ALTER TABLE versions ADD COLUMN key_id TEXT")?;
+        execute_add_column_if_missing(
+            &self.conn,
+            "ALTER TABLE versions ADD COLUMN leaf_index INTEGER",
+        )?;
+        execute_add_column_if_missing(
+            &self.conn,
             "ALTER TABLE versions ADD COLUMN download_count INTEGER NOT NULL DEFAULT 0",
-            [],
-        );
-        let _ = self.conn.execute(
+        )?;
+        execute_add_column_if_missing(
+            &self.conn,
             "ALTER TABLE packages ADD COLUMN total_downloads INTEGER NOT NULL DEFAULT 0",
-            [],
-        );
+        )?;
 
         Ok(())
     }
@@ -357,7 +412,10 @@ impl RegistryDb {
                         description: row.get(1)?,
                         created_at: row.get(2)?,
                         updated_at: row.get(3)?,
-                        total_downloads: row.get::<_, i64>(4)? as u64,
+                        total_downloads: sqlite_row_i64_to_u64(
+                            row.get::<_, i64>(4)?,
+                            "packages.total_downloads",
+                        )?,
                     })
                 },
             )
@@ -403,7 +461,9 @@ impl RegistryDb {
                 v.published_at,
                 v.attestation_hash,
                 v.key_id,
-                v.leaf_index.map(|i| i as i64),
+                v.leaf_index
+                    .map(|i| u64_to_sqlite_i64(i, "versions.leaf_index"))
+                    .transpose()?,
             ],
         )?;
         Ok(())
@@ -430,8 +490,14 @@ impl RegistryDb {
                     published_at: row.get(10)?,
                     attestation_hash: row.get(11)?,
                     key_id: row.get(12)?,
-                    leaf_index: row.get::<_, Option<i64>>(13)?.map(|i| i as u64),
-                    download_count: row.get::<_, i64>(14)? as u64,
+                    leaf_index: sqlite_row_opt_i64_to_opt_u64(
+                        row.get::<_, Option<i64>>(13)?,
+                        "versions.leaf_index",
+                    )?,
+                    download_count: sqlite_row_i64_to_u64(
+                        row.get::<_, i64>(14)?,
+                        "versions.download_count",
+                    )?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -464,8 +530,14 @@ impl RegistryDb {
                         published_at: row.get(10)?,
                         attestation_hash: row.get(11)?,
                         key_id: row.get(12)?,
-                        leaf_index: row.get::<_, Option<i64>>(13)?.map(|i| i as u64),
-                        download_count: row.get::<_, i64>(14)? as u64,
+                        leaf_index: sqlite_row_opt_i64_to_opt_u64(
+                            row.get::<_, Option<i64>>(13)?,
+                            "versions.leaf_index",
+                        )?,
+                        download_count: sqlite_row_i64_to_u64(
+                            row.get::<_, i64>(14)?,
+                            "versions.download_count",
+                        )?,
                     })
                 },
             )
@@ -609,7 +681,11 @@ impl RegistryDb {
     ) -> Result<(), RegistryError> {
         self.conn.execute(
             "UPDATE versions SET leaf_index = ?1 WHERE name = ?2 AND version = ?3",
-            params![leaf_index as i64, name, version],
+            params![
+                u64_to_sqlite_i64(leaf_index, "versions.leaf_index")?,
+                name,
+                version
+            ],
         )?;
         Ok(())
     }
@@ -645,8 +721,14 @@ impl RegistryDb {
                     published_at: row.get(10)?,
                     attestation_hash: row.get(11)?,
                     key_id: row.get(12)?,
-                    leaf_index: row.get::<_, Option<i64>>(13)?.map(|i| i as u64),
-                    download_count: row.get::<_, i64>(14)? as u64,
+                    leaf_index: sqlite_row_opt_i64_to_opt_u64(
+                        row.get::<_, Option<i64>>(13)?,
+                        "versions.leaf_index",
+                    )?,
+                    download_count: sqlite_row_i64_to_u64(
+                        row.get::<_, i64>(14)?,
+                        "versions.download_count",
+                    )?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -702,7 +784,10 @@ impl RegistryDb {
             .query_map(params![name], |row| {
                 Ok(VersionStats {
                     version: row.get(0)?,
-                    downloads: row.get::<_, i64>(1)? as u64,
+                    downloads: sqlite_row_i64_to_u64(
+                        row.get::<_, i64>(1)?,
+                        "versions.download_count",
+                    )?,
                     published_at: row.get(2)?,
                 })
             })?
@@ -730,7 +815,10 @@ impl RegistryDb {
                 Ok(PopularPackage {
                     name: row.get(0)?,
                     description: row.get(1)?,
-                    total_downloads: row.get::<_, i64>(2)? as u64,
+                    total_downloads: sqlite_row_i64_to_u64(
+                        row.get::<_, i64>(2)?,
+                        "packages.total_downloads",
+                    )?,
                     latest_version: row.get(3)?,
                 })
             })?
@@ -792,7 +880,7 @@ impl RegistryDb {
             let count: i64 = self
                 .conn
                 .query_row("SELECT COUNT(*) FROM packages", [], |row| row.get(0))?;
-            return Ok(count as u64);
+            return sqlite_i64_to_u64(count, "search.count");
         }
 
         // Keep query sanitation aligned with `search`.
@@ -804,7 +892,7 @@ impl RegistryDb {
             params![safe_query],
             |row| row.get(0),
         )?;
-        Ok(count as u64)
+        sqlite_i64_to_u64(count, "search.count")
     }
 
     // -----------------------------------------------------------------------
@@ -1140,7 +1228,10 @@ impl RegistryDb {
                     description: row.get(1)?,
                     created_at: row.get(2)?,
                     updated_at: row.get(3)?,
-                    total_downloads: row.get::<_, i64>(4)? as u64,
+                    total_downloads: sqlite_row_i64_to_u64(
+                        row.get::<_, i64>(4)?,
+                        "packages.total_downloads",
+                    )?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -2043,6 +2134,108 @@ mod tests {
         let stats = db.get_package_stats("my-guard").unwrap().unwrap();
         assert_eq!(stats.total_downloads, 3);
         assert_eq!(stats.versions[0].downloads, 3);
+    }
+
+    #[test]
+    fn migration_helper_propagates_non_duplicate_column_errors() {
+        let db = test_db();
+        execute_add_column_if_missing(
+            &db.conn,
+            "ALTER TABLE versions ADD COLUMN attestation_hash TEXT",
+        )
+        .expect("duplicate column should be ignored");
+        let err =
+            execute_add_column_if_missing(&db.conn, "ALTER TABLE versions ADD COLUMN").unwrap_err();
+        assert!(
+            matches!(err, RegistryError::Database(_)),
+            "invalid migration SQL should not be swallowed"
+        );
+    }
+
+    #[test]
+    fn get_package_rejects_negative_total_downloads() {
+        let db = test_db();
+        db.conn
+            .execute(
+                "INSERT INTO packages (name, description, created_at, updated_at, total_downloads) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params!["bad-pkg", "bad", "2025-01-01T00:00:00Z", "2025-01-01T00:00:00Z", -1i64],
+            )
+            .unwrap();
+
+        let err = db.get_package("bad-pkg").unwrap_err();
+        assert!(matches!(err, RegistryError::Database(_)));
+    }
+
+    #[test]
+    fn sqlite_i64_to_u64_maps_negative_values_to_database_error() {
+        let err = sqlite_i64_to_u64(-1, "search.count").unwrap_err();
+        assert!(matches!(err, RegistryError::Database(_)));
+    }
+
+    #[test]
+    fn list_versions_rejects_negative_leaf_index_and_download_count() {
+        let db = test_db();
+        db.conn
+            .execute(
+                "INSERT INTO packages (name, description, created_at, updated_at, total_downloads) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params!["bad-version-pkg", "bad", "2025-01-01T00:00:00Z", "2025-01-01T00:00:00Z", 0i64],
+            )
+            .unwrap();
+        db.conn
+            .execute(
+                "INSERT INTO versions (name, version, pkg_type, checksum, manifest_toml, publisher_key, publisher_sig, registry_sig, dependencies_json, yanked, published_at, attestation_hash, key_id, leaf_index, download_count) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+                params![
+                    "bad-version-pkg",
+                    "1.0.0",
+                    "guard",
+                    "abc",
+                    "",
+                    "pk",
+                    "sig",
+                    Option::<String>::None,
+                    "{}",
+                    0i32,
+                    "2025-01-01T00:00:00Z",
+                    Option::<String>::None,
+                    Option::<String>::None,
+                    -1i64,
+                    -1i64,
+                ],
+            )
+            .unwrap();
+
+        let err = db.list_versions("bad-version-pkg").unwrap_err();
+        assert!(matches!(err, RegistryError::Database(_)));
+    }
+
+    #[test]
+    fn update_leaf_index_rejects_values_out_of_i64_range() {
+        let db = test_db();
+        db.upsert_package("pkg", Some("A guard"), "2025-01-01T00:00:00Z")
+            .unwrap();
+        let v = VersionRow {
+            name: "pkg".into(),
+            version: "1.0.0".into(),
+            pkg_type: "guard".into(),
+            checksum: "abc123".into(),
+            manifest_toml: "".into(),
+            publisher_key: "pubkey_hex".into(),
+            publisher_sig: "sig_hex".into(),
+            registry_sig: None,
+            dependencies_json: "{}".into(),
+            yanked: false,
+            published_at: "2025-01-01T00:00:00Z".into(),
+            attestation_hash: None,
+            key_id: None,
+            leaf_index: None,
+            download_count: 0,
+        };
+        db.insert_version(&v).unwrap();
+
+        let err = db
+            .update_leaf_index("pkg", "1.0.0", u64::MAX)
+            .expect_err("out-of-range leaf index should fail");
+        assert!(matches!(err, RegistryError::Integrity(_)));
     }
 
     #[test]

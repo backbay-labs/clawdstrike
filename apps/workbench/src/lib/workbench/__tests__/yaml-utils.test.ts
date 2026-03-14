@@ -168,6 +168,59 @@ describe("policyToYaml", () => {
     expect(yaml).toContain("live-secret-key");
     expect(yaml).not.toContain("***REDACTED***");
   });
+
+  it("serializes origin profile metadata when present", () => {
+    const policy = makeMinimalPolicy({
+      version: "1.4.0",
+      origins: {
+        default_behavior: "deny",
+        profiles: [
+          {
+            id: "slack-prod",
+            match_rules: { provider: "slack", thread_id: "thread-1" },
+            metadata: {
+              channel: "eng-alerts",
+              escalation: true,
+            },
+          },
+        ],
+      },
+    });
+
+    const yaml = policyToYaml(policy);
+
+    expect(yaml).toContain("metadata");
+    expect(yaml).toContain("channel");
+    expect(yaml).toContain("eng-alerts");
+    expect(yaml).toContain("escalation");
+  });
+
+  it("preserves intentionally empty origin metadata collections", () => {
+    const policy = makeMinimalPolicy({
+      version: "1.4.0",
+      origins: {
+        default_behavior: "deny",
+        profiles: [
+          {
+            id: "slack-prod",
+            match_rules: { provider: "slack" },
+            metadata: {
+              tags: [],
+              nested: {
+                labels: [],
+              },
+            },
+          },
+        ],
+      },
+    });
+
+    const yaml = policyToYaml(policy);
+
+    expect(yaml).toContain("metadata");
+    expect(yaml).toContain("tags: []");
+    expect(yaml).toContain("labels: []");
+  });
 });
 
 // ---------------------------------------------------------------------------

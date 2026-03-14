@@ -82,6 +82,15 @@ pub fn validate_trust_level(value: Option<&str>) -> Result<(), ApiError> {
     Ok(())
 }
 
+/// Clamp legacy trust levels to the directory contract.
+pub fn sanitize_trust_level(value: &str) -> &str {
+    if KNOWN_TRUST_LEVELS.contains(&value) {
+        value
+    } else {
+        "medium"
+    }
+}
+
 /// Validate that serialized metadata JSON does not exceed 64 KiB.
 pub fn validate_metadata(value: Option<&serde_json::Value>) -> Result<(), ApiError> {
     if let Some(v) = value {
@@ -186,6 +195,21 @@ mod tests {
     fn validate_trust_level_rejects_oversized_values() {
         let long = "a".repeat(33);
         assert!(validate_trust_level(Some(&long)).is_err());
+    }
+
+    #[test]
+    fn sanitize_trust_level_preserves_known_values() {
+        assert_eq!(sanitize_trust_level("untrusted"), "untrusted");
+        assert_eq!(sanitize_trust_level("low"), "low");
+        assert_eq!(sanitize_trust_level("medium"), "medium");
+        assert_eq!(sanitize_trust_level("high"), "high");
+        assert_eq!(sanitize_trust_level("system"), "system");
+    }
+
+    #[test]
+    fn sanitize_trust_level_clamps_legacy_values() {
+        assert_eq!(sanitize_trust_level("verified"), "medium");
+        assert_eq!(sanitize_trust_level("custom"), "medium");
     }
 
     #[test]

@@ -74,7 +74,7 @@ export function useFleetConnection(): FleetConnectionHook {
 // ---- Constants ----
 
 const HEALTH_POLL_MS = 30_000;
-const AGENT_POLL_MS = 60_000;
+export const AGENT_POLL_MS = 60_000;
 
 function normalizeFleetUrl(url: string): string {
   return url.trim().replace(/\/+$/, "");
@@ -365,12 +365,12 @@ export function FleetConnectionProvider({ children }: { children: ReactNode }) {
   );
 
   const refreshAgents = useCallback(async () => {
-    await pollAgents(connection);
-  }, [pollAgents, connection]);
+    await pollAgents(connectionRef.current);
+  }, [pollAgents]);
 
   const refreshRemotePolicy = useCallback(async () => {
-    await fetchRemoteInfo(connection);
-  }, [fetchRemoteInfo, connection]);
+    await fetchRemoteInfo(connectionRef.current);
+  }, [fetchRemoteInfo]);
 
   const value: FleetConnectionHook = {
     connection,

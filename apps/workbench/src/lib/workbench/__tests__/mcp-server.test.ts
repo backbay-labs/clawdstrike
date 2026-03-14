@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import type { WorkbenchPolicy } from "../types";
 import {
   deepEqual,
+  hasConfiguredSseAuthToken,
   parsePolicy,
+  secureTokenCompare,
   suggestScenariosFromPolicy,
   validatePolicyYaml,
 } from "../../../../mcp-server/index.ts";
@@ -150,5 +152,19 @@ guards:
     expect(
       result.scenarios.some((scenario) => scenario.name.startsWith("Forbidden path:")),
     ).toBe(false);
+  });
+
+  it("requires a non-empty auth token before starting SSE mode", () => {
+    expect(hasConfiguredSseAuthToken("")).toBe(false);
+    expect(hasConfiguredSseAuthToken("   ")).toBe(false);
+    expect(hasConfiguredSseAuthToken("token-123")).toBe(true);
+  });
+
+  it("compares the full bearer token in constant time", () => {
+    const expected = "Bearer super-secret-token";
+
+    expect(secureTokenCompare(expected, expected)).toBe(true);
+    expect(secureTokenCompare("Bearer super-secret", expected)).toBe(false);
+    expect(secureTokenCompare("Bearer super-secret-token-extra", expected)).toBe(false);
   });
 });

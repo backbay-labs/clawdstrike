@@ -477,8 +477,11 @@ impl Exporter for AlertingExporter {
 
     async fn shutdown(&self) -> Result<(), String> {
         let _ = self.shutdown_tx.send(true);
-        let mut tasks = self.tasks.lock().await;
-        for task in tasks.drain(..) {
+        let drained_tasks = {
+            let mut tasks = self.tasks.lock().await;
+            tasks.drain(..).collect::<Vec<_>>()
+        };
+        for task in drained_tasks {
             let _ = task.await;
         }
         Ok(())
@@ -637,5 +640,38 @@ fn opsgenie_priority(sev: &SecuritySeverity, mapping: &OpsGeniePriorityMapping) 
         SecuritySeverity::Medium => mapping.medium.clone().unwrap_or_else(|| "P3".to_string()),
         SecuritySeverity::Low => mapping.low.clone().unwrap_or_else(|| "P4".to_string()),
         SecuritySeverity::Info => mapping.info.clone().unwrap_or_else(|| "P5".to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::siem::exporter::Exporter;
+
+    #[tokio::test]
+    async fn shutdown_does_not_hold_task_lock_while_awaiting_joins() {
+        let exporter = AlertingExporter::new(AlertingConfig {
+            pagerduty: None,
+            opsgenie: None,
+            min_severity: None,
+            include_guards: Vec::new(),
+            exclude_guards: Vec::new(),
+            timeout_ms: 1_000,
+        })
+        .expect("create alerting exporter");
+
+        let tasks_ref = exporter.tasks.clone();
+        let tasks_for_worker = tasks_ref.clone();
+        {
+            let mut tasks = tasks_ref.lock().await;
+            tasks.push(tokio::spawn(async move {
+                let _lock = tasks_for_worker.lock().await;
+            }));
+        }
+
+        tokio::time::timeout(Duration::from_secs(1), Exporter::shutdown(&exporter))
+            .await
+            .expect("shutdown should not deadlock")
+            .expect("shutdown should succeed");
     }
 }

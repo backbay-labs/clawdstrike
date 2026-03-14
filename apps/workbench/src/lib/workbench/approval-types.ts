@@ -1,17 +1,21 @@
+import type {
+  OriginProvider as CanonicalOriginProvider,
+  OriginContext as CanonicalOriginContext,
+} from "./types";
+
 export type ApprovalStatus = "pending" | "approved" | "denied" | "expired";
 
 export type RiskLevel = "low" | "medium" | "high" | "critical";
 
-export type OriginProvider = "slack" | "teams" | "github" | "jira" | "cli" | "api";
+export type OriginProvider = CanonicalOriginProvider;
 
-export interface OriginContext {
+/**
+ * Extends the canonical OriginContext with approval-specific fields.
+ * - `actor_name` is an approval-specific display name for the actor.
+ */
+export interface OriginContext extends Omit<CanonicalOriginContext, "provider"> {
   provider: OriginProvider;
-  tenant_id?: string;
-  space_id?: string;
-  space_type?: string;
-  actor_id?: string;
   actor_name?: string;
-  visibility?: string;
 }
 
 export interface ApprovalRequest {
