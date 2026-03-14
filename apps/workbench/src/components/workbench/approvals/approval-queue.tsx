@@ -180,8 +180,12 @@ export function ApprovalQueue({ currentUser }: { currentUser?: string } = {}) {
 
   const fetchLiveApprovals = useCallback(async () => {
     if (!liveApprovalsReady) {
-      setRequests([]);
-      setDecisions([]);
+      // Only clear data when we are actually in live mode — otherwise we would
+      // wipe the demo dataset while the user is still viewing it.
+      if (isLiveData) {
+        setRequests([]);
+        setDecisions([]);
+      }
       setLiveFetchError(liveApprovalsHint);
       return;
     }
@@ -201,7 +205,7 @@ export function ApprovalQueue({ currentUser }: { currentUser?: string } = {}) {
       setRequests([]);
       setDecisions([]);
     }
-  }, [liveApprovalsHint, liveApprovalsReady]);
+  }, [isLiveData, liveApprovalsHint, liveApprovalsReady]);
 
   useEffect(() => {
     if (pollTimerRef.current) clearInterval(pollTimerRef.current);

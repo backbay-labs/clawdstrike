@@ -13,6 +13,7 @@
 import { createHmac, generateKeyPairSync } from "crypto";
 
 const HUSHD_URL = process.env.HUSHD_URL ?? "http://localhost:9876";
+// Port 8090 matches the control-api default in e2e-local-test.sh and workbench-live-dogfood.sh.
 const CONTROL_API_URL = process.env.CONTROL_API_URL ?? "http://localhost:8090";
 const HUSHD_API_KEY =
   process.env.HUSHD_API_KEY ?? "3cg5Q2lAY-Xnf9N_-D3L90d-QYbIsBhd8g9b8Iur3Pw";
