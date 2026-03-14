@@ -22,6 +22,7 @@ import {
   exportKey as cryptoExportKey,
   importKey as cryptoImportKey,
 } from "./operator-crypto";
+import { signDetachedPayload } from "./signature-adapter";
 import { secureStore } from "./secure-store";
 
 // ---------------------------------------------------------------------------
@@ -45,6 +46,7 @@ export type OperatorAction =
   | { type: "LINK_IDP"; claims: IdpClaims }
   | { type: "UNLINK_IDP" }
   | { type: "ADD_DEVICE"; device: { deviceId: string; deviceName: string } }
+  | { type: "REVOKE"; revokedAt: number; revocationReason: string }
   | { type: "SIGN_OUT" };
 
 // ---------------------------------------------------------------------------
@@ -123,6 +125,18 @@ export function operatorReducer(state: OperatorState, action: OperatorAction): O
       };
     }
 
+    case "REVOKE": {
+      if (!state.currentOperator) return state;
+      return {
+        ...state,
+        currentOperator: {
+          ...state.currentOperator,
+          revokedAt: action.revokedAt,
+          revocationReason: action.revocationReason,
+        },
+      };
+    }
+
     case "SIGN_OUT": {
       return {
         ...state,
@@ -197,10 +211,16 @@ interface OperatorContextValue {
   updateDisplayName: (displayName: string) => void;
   linkIdp: (claims: IdpClaims) => void;
   unlinkIdp: () => void;
+  /**
+   * @deprecated Callers should migrate to {@link signPayload} to avoid
+   * exposing the raw secret key outside the operator store.
+   */
   getSecretKey: () => Promise<string | null>;
+  signPayload: (data: Uint8Array) => Promise<string>;
   signData: (data: Uint8Array) => Promise<string | null>;
   exportKey: (passphrase: string) => Promise<string | null>;
   importKey: (encoded: string, passphrase: string) => Promise<boolean>;
+  revokeIdentity: (reason: string) => void;
   signOut: () => Promise<void>;
 }
 
@@ -279,6 +299,24 @@ export function OperatorProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const signPayloadAction = useCallback(
+    async (data: Uint8Array): Promise<string> => {
+      const secretKey = await secureStore.get(SECRET_KEY_STORE_KEY);
+      if (!secretKey) {
+        throw new Error("No secret key available — create or import an identity first");
+      }
+      return signDetachedPayload(data, secretKey);
+    },
+    [],
+  );
+
+  const revokeIdentityAction = useCallback(
+    (reason: string): void => {
+      dispatch({ type: "REVOKE", revokedAt: Date.now(), revocationReason: reason });
+    },
+    [],
+  );
+
   const exportKeyAction = useCallback(
     async (passphrase: string): Promise<string | null> => {
       const secretKey = await secureStore.get(SECRET_KEY_STORE_KEY);
@@ -338,9 +376,11 @@ export function OperatorProvider({ children }: { children: ReactNode }) {
     linkIdp,
     unlinkIdp,
     getSecretKey,
+    signPayload: signPayloadAction,
     signData: signDataAction,
     exportKey: exportKeyAction,
     importKey: importKeyAction,
+    revokeIdentity: revokeIdentityAction,
     signOut: signOutAction,
   };
 

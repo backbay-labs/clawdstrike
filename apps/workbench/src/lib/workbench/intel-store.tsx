@@ -158,7 +158,7 @@ function intelReducer(state: IntelState, action: IntelAction): IntelState {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function normalizeSwarmIntelRecord(value: unknown): SwarmIntelRecord | null {

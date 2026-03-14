@@ -51,6 +51,10 @@ export interface OperatorIdentity {
   createdAt: number;
   originDeviceId: string;
   devices: OperatorDevice[];
+  /** Epoch-ms timestamp when this identity was revoked, if applicable. */
+  revokedAt?: number;
+  /** Human-readable reason for revocation, if applicable. */
+  revocationReason?: string;
 }
 
 // ---------------------------------------------------------------------------
