@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useOperator } from "@/lib/workbench/operator-store";
 
 export function IdentityPrompt() {
@@ -6,6 +6,8 @@ export function IdentityPrompt() {
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
 
   if (!initialized || currentOperator !== null) return null;
 
@@ -16,9 +18,13 @@ export function IdentityPrompt() {
     try {
       await createIdentity(name.trim());
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to create identity");
+      if (mountedRef.current) {
+        setError(e instanceof Error ? e.message : "Failed to create identity");
+      }
     } finally {
-      setCreating(false);
+      if (mountedRef.current) {
+        setCreating(false);
+      }
     }
   };
 

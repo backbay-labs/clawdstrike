@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   IconEye,
@@ -343,6 +343,7 @@ function IdentityGoalsStep({
           value={name}
           onChange={(e) => onNameChange(e.target.value)}
           placeholder="e.g. Aegis, Prowl, Scribe..."
+          maxLength={128}
           className="rounded-md border border-[#2d3240]/60 bg-[#0b0d13] px-3 py-2 text-[12px] text-[#ece7dc] placeholder-[#6f7f9a]/30 outline-none focus:border-[#d4a84b]/40 transition-colors"
         />
       </div>
@@ -357,6 +358,7 @@ function IdentityGoalsStep({
           onChange={(e) => onDescriptionChange(e.target.value)}
           placeholder="Optional description of this sentinel's purpose..."
           rows={2}
+          maxLength={512}
           className="rounded-md border border-[#2d3240]/60 bg-[#0b0d13] px-3 py-2 text-[12px] text-[#ece7dc] placeholder-[#6f7f9a]/30 outline-none focus:border-[#d4a84b]/40 resize-none transition-colors"
         />
       </div>
@@ -436,6 +438,7 @@ function IdentityGoalsStep({
                   updateGoal(idx, { description: e.target.value })
                 }
                 placeholder="What should this goal detect/monitor/hunt?"
+                maxLength={256}
                 className="flex-1 rounded-md border border-[#2d3240]/40 bg-[#131721]/40 px-2.5 py-1.5 text-[11px] text-[#ece7dc] placeholder-[#6f7f9a]/25 outline-none focus:border-[#d4a84b]/30 transition-colors"
               />
             </div>
@@ -684,6 +687,7 @@ function PolicyScheduleStep({
           value={runtimeTarget}
           onChange={(e) => onRuntimeTargetChange(e.target.value)}
           placeholder={RUNTIME_TARGET_PLACEHOLDERS[driver]}
+          maxLength={512}
           className="rounded-md border border-[#2d3240]/60 bg-[#0b0d13] px-3 py-2 text-[12px] text-[#ece7dc] placeholder-[#6f7f9a]/30 outline-none focus:border-[#d4a84b]/40 transition-colors"
         />
         <p className="text-[10px] text-[#6f7f9a]/45">
@@ -725,6 +729,7 @@ function PolicyScheduleStep({
           value={policyName}
           onChange={(e) => onPolicyNameChange(e.target.value)}
           placeholder="Leave blank to use ruleset name"
+          maxLength={128}
           className="rounded-md border border-[#2d3240]/60 bg-[#0b0d13] px-3 py-2 text-[12px] text-[#ece7dc] placeholder-[#6f7f9a]/30 outline-none focus:border-[#d4a84b]/40 transition-colors"
         />
       </div>
@@ -758,6 +763,7 @@ function PolicyScheduleStep({
               value={schedule}
               onChange={(e) => onScheduleChange(e.target.value)}
               placeholder="Cron expression: */15 * * * *"
+              maxLength={64}
               className="rounded-md border border-[#2d3240]/60 bg-[#0b0d13] px-3 py-2 text-[12px] font-mono text-[#ece7dc] placeholder-[#6f7f9a]/30 outline-none focus:border-[#d4a84b]/40 transition-colors"
             />
           )}
@@ -1016,6 +1022,8 @@ export function SentinelCreate({
 }) {
   const navigate = useNavigate();
   const { currentOperator, getSecretKey } = useOperator();
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
   const [step, setStep] = useState(1);
   const [isCreating, setIsCreating] = useState(false);
 
@@ -1123,6 +1131,7 @@ export function SentinelCreate({
       const targetRef = runtimeTarget.trim();
 
       const secretKey = currentOperator ? await getSecretKey() : null;
+      if (!mountedRef.current) return;
 
       const config: CreateSentinelConfig = {
         name: name.trim(),
@@ -1143,12 +1152,15 @@ export function SentinelCreate({
 
       const doCreate = createFn ?? createSentinel;
       const sentinel = await doCreate(config);
+      if (!mountedRef.current) return;
       onCreated(sentinel);
       navigate(`/sentinels/${sentinel.id}`);
     } catch (err) {
       console.error("[sentinel-create] Failed to create sentinel:", err);
     } finally {
-      setIsCreating(false);
+      if (mountedRef.current) {
+        setIsCreating(false);
+      }
     }
   }, [
     mode,

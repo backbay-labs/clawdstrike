@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   IconArrowRight,
@@ -138,6 +138,9 @@ export function MissionControlPage() {
   const { ingestSignal } = useSignals();
   const { createFromCluster, findings } = useFindings();
 
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
+
   const eligibleSentinels = useMemo(
     () =>
       sentinels.filter((sentinel) =>
@@ -211,6 +214,7 @@ export function MissionControlPage() {
       nextMission.objective,
       execution.launchState,
     );
+    if (!mountedRef.current) return;
     if (signedReceipt) {
       execution.evidence.push(signedReceipt);
     }
@@ -430,6 +434,7 @@ export function MissionControlPage() {
                   value={title}
                   onChange={(event) => setTitle(event.target.value)}
                   placeholder="Credential harvest triage"
+                  maxLength={128}
                   className="rounded-md border border-[#2d3240]/60 bg-[#05060a] px-3 py-2 text-[12px] text-[#ece7dc] outline-none focus:border-[#d4a84b]/40"
                 />
               </div>
@@ -442,6 +447,7 @@ export function MissionControlPage() {
                   value={objective}
                   onChange={(event) => setObjective(event.target.value)}
                   rows={4}
+                  maxLength={2048}
                   placeholder="Describe what the sentinel should verify, collect, or harden."
                   className="rounded-md border border-[#2d3240]/60 bg-[#05060a] px-3 py-2 text-[12px] text-[#ece7dc] outline-none focus:border-[#d4a84b]/40 resize-none"
                 />
