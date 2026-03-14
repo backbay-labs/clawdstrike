@@ -42,9 +42,9 @@ import {
 
 function sortNewest<T>(items: T[], select: (item: T) => string | undefined): T[] {
   return [...items].sort((left, right) => {
-    const leftTime = select(left) ? new Date(select(left) as string).getTime() : 0;
-    const rightTime = select(right) ? new Date(select(right) as string).getTime() : 0;
-    return rightTime - leftTime;
+    const l = select(left);
+    const r = select(right);
+    return (r ? new Date(r).getTime() : 0) - (l ? new Date(l).getTime() : 0);
   });
 }
 
@@ -80,7 +80,7 @@ export function BrokerMissionControl(_props: { windowId?: string }) {
     previewId: null,
   });
   const latestBrokerEventId = useMemo(
-    () => events.find((event) => event.event_type.startsWith("broker_"))?._id ?? 0,
+    () => [...events].reverse().find((event) => event.event_type.startsWith("broker_"))?._id ?? 0,
     [events],
   );
   const [capabilities, setCapabilities] = useState<BrokerCapabilityStatus[]>([]);
@@ -116,9 +116,9 @@ export function BrokerMissionControl(_props: { windowId?: string }) {
     const nextCapabilities = sortNewest(capabilityResponse.capabilities, (item) => item.issued_at);
     const nextPreviews = sortNewest(previewResponse.previews, (item) => item.created_at).sort(
       (left, right) => {
-        const pendingRank = left.approval_state === "pending" ? 0 : 1;
+        const leftRank = left.approval_state === "pending" ? 0 : 1;
         const rightRank = right.approval_state === "pending" ? 0 : 1;
-        return pendingRank - rightRank;
+        return leftRank - rightRank;
       },
     );
     setCapabilities(nextCapabilities);
