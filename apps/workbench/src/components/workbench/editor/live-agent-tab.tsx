@@ -422,7 +422,7 @@ export function consumeSseMessages(buffer: string): {
 }
 
 function HushdMonitorPanel() {
-  const { connection } = useFleetConnection();
+  const { connection, getCredentials } = useFleetConnection();
   const { toast } = useToast();
   const [endpoint, setEndpoint] = useState(connection.hushdUrl || "http://127.0.0.1:8080");
   const [connected, setConnected] = useState(false);
@@ -537,10 +537,11 @@ function HushdMonitorPanel() {
 
   const startSse = useCallback(
     (proxyBase: string) => {
+      const creds = getCredentials();
       const authScopeMismatch = describeHushdAuthScopeMismatch(
         endpoint,
         connection.hushdUrl,
-        connection.apiKey,
+        creds.apiKey,
       );
       if (authScopeMismatch) {
         setConnected(false);
@@ -549,7 +550,7 @@ function HushdMonitorPanel() {
         return;
       }
 
-      const authHeaders = buildHushdAuthHeaders(endpoint, connection.hushdUrl, connection.apiKey);
+      const authHeaders = buildHushdAuthHeaders(endpoint, connection.hushdUrl, creds.apiKey);
 
       // Clean up any prior EventSource before opening a new one
       removeListeners();
@@ -726,7 +727,7 @@ function HushdMonitorPanel() {
         }
       };
     },
-    [connection.apiKey, connection.hushdUrl, endpoint, removeListeners, scheduleReconnect],
+    [getCredentials, connection.hushdUrl, endpoint, removeListeners, scheduleReconnect],
   );
 
   // --- Connect: probe /health first, then open SSE ---
@@ -734,10 +735,11 @@ function HushdMonitorPanel() {
     setConnecting(true);
     setConnectionError(null);
     const proxyBase = resolveProxyBase(endpoint);
+    const connectCreds = getCredentials();
     const authScopeMismatch = describeHushdAuthScopeMismatch(
       endpoint,
       connection.hushdUrl,
-      connection.apiKey,
+      connectCreds.apiKey,
     );
     if (authScopeMismatch) {
       setConnecting(false);
@@ -751,7 +753,7 @@ function HushdMonitorPanel() {
       return;
     }
 
-    const authHeaders = buildHushdAuthHeaders(endpoint, connection.hushdUrl, connection.apiKey);
+    const authHeaders = buildHushdAuthHeaders(endpoint, connection.hushdUrl, connectCreds.apiKey);
 
     try {
       const resp = await fetch(`${proxyBase}/health`, {
@@ -790,7 +792,7 @@ function HushdMonitorPanel() {
           : msg,
       });
     }
-  }, [connection.apiKey, endpoint, startSse, toast]);
+  }, [getCredentials, endpoint, startSse, toast]);
 
   const handleDisconnect = useCallback(() => {
     stopSse();
@@ -892,7 +894,7 @@ function HushdMonitorPanel() {
           )}
         </div>
         <p className="mt-1.5 text-[8px] font-mono text-[#6f7f9a]/50">
-          {connection.apiKey.trim()
+          {getCredentials().apiKey.trim()
             ? "Uses the configured hushd API key from Settings for health checks and authenticated event streaming."
             : "No hushd API key configured. Authenticated hushd deployments will reject the live stream until you add one in Settings."}
         </p>

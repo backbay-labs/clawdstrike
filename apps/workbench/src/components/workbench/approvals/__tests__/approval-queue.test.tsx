@@ -40,10 +40,13 @@ const mockConnection = {
   connected: false,
   hushdUrl: "",
   controlApiUrl: "",
-  apiKey: "",
-  controlApiToken: "",
   hushdHealth: null,
   agentCount: 0,
+};
+
+const mockCredentials = {
+  apiKey: "",
+  controlApiToken: "",
 };
 
 vi.mock("@/lib/workbench/use-fleet-connection", async () => {
@@ -65,6 +68,8 @@ vi.mock("@/lib/workbench/use-fleet-connection", async () => {
       testConnection: vi.fn(),
       refreshAgents: vi.fn(),
       refreshRemotePolicy: vi.fn(),
+      getCredentials: () => mockCredentials,
+      getAuthenticatedConnection: () => ({ ...mockConnection, ...mockCredentials }),
     }),
   };
 });
@@ -113,10 +118,10 @@ describe("ApprovalQueue", () => {
     mockConnection.connected = false;
     mockConnection.hushdUrl = "";
     mockConnection.controlApiUrl = "";
-    mockConnection.apiKey = "";
-    mockConnection.controlApiToken = "";
     mockConnection.hushdHealth = null;
     mockConnection.agentCount = 0;
+    mockCredentials.apiKey = "";
+    mockCredentials.controlApiToken = "";
   });
 
   afterEach(() => {

@@ -428,7 +428,7 @@ export async function createSentinel(config: CreateSentinelConfig): Promise<Sent
   const identity = await generateSentinelIdentity(config.name);
   const runtime = createDefaultRuntimeBinding(config.mode, config.runtime, config.fleetAgentId);
 
-  let ownershipProof: string | null = null;
+  let ownershipProof: import("./operator-crypto").OwnershipProof | null = null;
   if (config.operatorSecretKey) {
     const { signOwnershipProof } = await import("./operator-crypto");
     ownershipProof = await signOwnershipProof(identity.publicKey, config.operatorSecretKey);

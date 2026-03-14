@@ -170,7 +170,7 @@ const CAPABILITY_SHORT: Record<Capability, string> = {
 };
 
 export function DelegationPage() {
-  const { connection } = useFleetConnection();
+  const { connection, getAuthenticatedConnection } = useFleetConnection();
   const fleetConnected = connection.connected;
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -259,7 +259,8 @@ export function DelegationPage() {
         setLiveAvailable(true);
         setIsLoadingGraph(true);
         // Load principals list
-        const principalsList = await apiFetchPrincipals(connection);
+        const authedConn = getAuthenticatedConnection();
+        const principalsList = await apiFetchPrincipals(authedConn);
         if (cancelled) return;
         setPrincipals(principalsList);
 
@@ -268,7 +269,7 @@ export function DelegationPage() {
         if (defaultId) setSelectedPrincipalId(defaultId);
 
         // Try to fetch live graph
-        const liveGraph = await fetchLiveGraph(connection, defaultId);
+        const liveGraph = await fetchLiveGraph(authedConn, defaultId);
         if (cancelled) return;
         if (liveGraph) {
           setGraph(liveGraph);
@@ -294,10 +295,11 @@ export function DelegationPage() {
     setIsLoadingGraph(true);
     try {
       // Refresh principals list
-      const principalsList = await apiFetchPrincipals(connection);
+      const refreshConn = getAuthenticatedConnection();
+      const principalsList = await apiFetchPrincipals(refreshConn);
       setPrincipals(principalsList);
 
-      const liveGraph = await fetchLiveGraph(connection, selectedPrincipalId);
+      const liveGraph = await fetchLiveGraph(refreshConn, selectedPrincipalId);
       if (liveGraph) {
         setGraph(liveGraph);
       }
@@ -317,7 +319,7 @@ export function DelegationPage() {
       if (!isLiveData || !fleetConnected) return;
       setIsLoadingPrincipal(true);
       try {
-        const liveGraph = await fetchLiveGraph(connection, principalId);
+        const liveGraph = await fetchLiveGraph(getAuthenticatedConnection(), principalId);
         if (liveGraph) {
           setGraph(liveGraph);
         } else {
@@ -342,7 +344,7 @@ export function DelegationPage() {
       setLiveFetchError(null);
     } else if (fleetConnected) {
       setIsLiveData(true);
-      const liveGraph = await fetchLiveGraph(connection, selectedPrincipalId);
+      const liveGraph = await fetchLiveGraph(getAuthenticatedConnection(), selectedPrincipalId);
       if (liveGraph) {
         setGraph(liveGraph);
       }

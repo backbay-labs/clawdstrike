@@ -251,7 +251,7 @@ function DisconnectedState() {
 // ---------------------------------------------------------------------------
 
 export function FleetTestingPanel() {
-  const { connection } = useFleetConnection();
+  const { connection, getAuthenticatedConnection } = useFleetConnection();
   const { state } = useWorkbench();
   const { toast } = useToast();
 
@@ -325,7 +325,7 @@ export function FleetTestingPanel() {
     setLoading(true);
     try {
       const since = sinceForRange(selectedRange);
-      const events = await fetchAuditEvents(connection, {
+      const events = await fetchAuditEvents(getAuthenticatedConnection(), {
         since,
         limit: 500,
       });

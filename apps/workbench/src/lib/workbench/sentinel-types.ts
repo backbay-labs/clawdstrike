@@ -281,10 +281,11 @@ export interface Sentinel {
    */
   ownerPublicKey?: string;
   /**
-   * Ed25519 signature proving the owner controls the operator keypair.
+   * Ed25519 signature + timestamp proving the owner controls the operator keypair.
    * Created via signOwnershipProof(sentinel.identity.publicKey, operatorSecretKey).
+   * The proof includes a timestamp and expires after 24 hours (see OWNERSHIP_PROOF_MAX_AGE_MS).
    */
-  ownershipProof?: string | null;
+  ownershipProof?: import("./operator-crypto").OwnershipProof | null;
   /** Creation timestamp (Unix ms). */
   createdAt: number;
   /** Last update timestamp (Unix ms). */

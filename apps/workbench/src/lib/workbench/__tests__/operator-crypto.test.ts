@@ -126,7 +126,8 @@ describe("signOwnershipProof + verifyOwnershipProof", () => {
     const sentinelPublicKey = toHex(crypto.getRandomValues(new Uint8Array(32)));
 
     const proof = await signOwnershipProof(sentinelPublicKey, operator.secretKeyHex);
-    expect(proof).toMatch(/^[0-9a-f]+$/);
+    expect(proof.signature).toMatch(/^[0-9a-f]+$/);
+    expect(proof.timestamp).toBeGreaterThan(0);
 
     const valid = await verifyOwnershipProof(sentinelPublicKey, proof, operator.publicKeyHex);
     expect(valid).toBe(true);
@@ -141,6 +142,54 @@ describe("signOwnershipProof + verifyOwnershipProof", () => {
     const valid = await verifyOwnershipProof(sentinelPublicKey, proof, stranger.publicKeyHex);
 
     expect(valid).toBe(false);
+  });
+
+  it("rejects expired proofs (older than maxAgeMs)", async () => {
+    const operator = await generateOperatorKeypair();
+    const sentinelPublicKey = toHex(crypto.getRandomValues(new Uint8Array(32)));
+
+    // Create proof with a timestamp 25 hours in the past
+    const oldTimestamp = Date.now() - 25 * 60 * 60 * 1000;
+    const proof = await signOwnershipProof(sentinelPublicKey, operator.secretKeyHex, oldTimestamp);
+
+    const valid = await verifyOwnershipProof(sentinelPublicKey, proof, operator.publicKeyHex);
+    expect(valid).toBe(false);
+  });
+
+  it("accepts proofs within maxAgeMs window", async () => {
+    const operator = await generateOperatorKeypair();
+    const sentinelPublicKey = toHex(crypto.getRandomValues(new Uint8Array(32)));
+
+    // Create proof with a timestamp 1 hour in the past
+    const recentTimestamp = Date.now() - 60 * 60 * 1000;
+    const proof = await signOwnershipProof(sentinelPublicKey, operator.secretKeyHex, recentTimestamp);
+
+    const valid = await verifyOwnershipProof(sentinelPublicKey, proof, operator.publicKeyHex);
+    expect(valid).toBe(true);
+  });
+
+  it("rejects proofs far in the future (clock skew)", async () => {
+    const operator = await generateOperatorKeypair();
+    const sentinelPublicKey = toHex(crypto.getRandomValues(new Uint8Array(32)));
+
+    // Create proof with a timestamp 5 minutes in the future (beyond 60s tolerance)
+    const futureTimestamp = Date.now() + 5 * 60 * 1000;
+    const proof = await signOwnershipProof(sentinelPublicKey, operator.secretKeyHex, futureTimestamp);
+
+    const valid = await verifyOwnershipProof(sentinelPublicKey, proof, operator.publicKeyHex);
+    expect(valid).toBe(false);
+  });
+
+  it("bypasses expiry check with Infinity maxAgeMs", async () => {
+    const operator = await generateOperatorKeypair();
+    const sentinelPublicKey = toHex(crypto.getRandomValues(new Uint8Array(32)));
+
+    // Create proof with a very old timestamp
+    const oldTimestamp = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const proof = await signOwnershipProof(sentinelPublicKey, operator.secretKeyHex, oldTimestamp);
+
+    const valid = await verifyOwnershipProof(sentinelPublicKey, proof, operator.publicKeyHex, Infinity);
+    expect(valid).toBe(true);
   });
 });
 

@@ -39,7 +39,7 @@ import { useToast } from "@/components/ui/toast";
 const CONFIRM_TEXT = "deploy";
 
 export function DeployPanel() {
-  const { connection, agents, remotePolicyInfo, refreshRemotePolicy } = useFleetConnection();
+  const { connection, agents, remotePolicyInfo, refreshRemotePolicy, getAuthenticatedConnection } = useFleetConnection();
   const { state } = useWorkbench();
 
   const [deployOpen, setDeployOpen] = useState(false);
@@ -150,7 +150,7 @@ function DeployConfirmDialog({
   onClose: () => void;
   onSuccess: () => void;
 }) {
-  const { connection, agents } = useFleetConnection();
+  const { connection, agents, getAuthenticatedConnection: getAuthedConn } = useFleetConnection();
   const { state } = useWorkbench();
   const { toast } = useToast();
 
@@ -167,7 +167,7 @@ function DeployConfirmDialog({
   const handleValidate = useCallback(async () => {
     setIsValidating(true);
     try {
-      const result = await validateRemotely(connection, state.yaml);
+      const result = await validateRemotely(getAuthedConn(), state.yaml);
       setValidationResult(result);
     } catch (err) {
       setValidationResult({
@@ -184,7 +184,7 @@ function DeployConfirmDialog({
     setIsDeploying(true);
     setDeployResult(null);
     try {
-      const result = await deployPolicy(connection, state.yaml);
+      const result = await deployPolicy(getAuthedConn(), state.yaml);
       setDeployResult(result);
       if (result.success) {
         toast({
@@ -402,7 +402,7 @@ function DeployConfirmDialog({
 // ---------------------------------------------------------------------------
 
 function ImportConfirmDialog({ onClose }: { onClose: () => void }) {
-  const { connection } = useFleetConnection();
+  const { connection, getAuthenticatedConnection: getAuthedImport } = useFleetConnection();
   const { state, dispatch } = useWorkbench();
   const { toast } = useToast();
 
@@ -411,7 +411,7 @@ function ImportConfirmDialog({ onClose }: { onClose: () => void }) {
   const handleImport = useCallback(async () => {
     setIsImporting(true);
     try {
-      const remote = await fetchRemotePolicy(connection);
+      const remote = await fetchRemotePolicy(getAuthedImport());
       if (!remote.yaml) {
         toast({ type: "warning", title: "No remote policy", description: "The remote daemon has no active policy." });
         return;

@@ -180,7 +180,7 @@ function SwarmArtifactsPanel({
   swarmIds: string[];
   requestedBy?: string;
 }) {
-  const { connection } = useFleetConnection();
+  const { connection, getCredentials } = useFleetConnection();
   const { projectedFindingRecords } = useSwarmFeed();
   const [states, setStates] = useState<Record<string, BlobVerificationState | undefined>>({});
 
@@ -249,10 +249,11 @@ function SwarmArtifactsPanel({
       let bytesAvailable: boolean | null = null;
 
       try {
+        const creds = getCredentials();
         const lookup = await fetchSwarmBlobLookup(
           {
             hushdUrl: connection.hushdUrl,
-            apiKey: connection.apiKey || undefined,
+            apiKey: creds.apiKey || undefined,
           },
           blobRef.ref.digest,
         );
@@ -297,7 +298,7 @@ function SwarmArtifactsPanel({
         }));
       }
     },
-    [connection.apiKey, connection.hushdUrl],
+    [getCredentials, connection.hushdUrl],
   );
 
   const handleRequestPin = useCallback(
@@ -312,10 +313,11 @@ function SwarmArtifactsPanel({
       }));
 
       try {
+        const pinCreds = getCredentials();
         const response = await requestSwarmBlobPin(
           {
             hushdUrl: connection.hushdUrl,
-            apiKey: connection.apiKey || undefined,
+            apiKey: pinCreds.apiKey || undefined,
           },
           {
             digest: blobRef.ref.digest,
@@ -344,7 +346,7 @@ function SwarmArtifactsPanel({
         }));
       }
     },
-    [connection.apiKey, connection.hushdUrl, intel.id, requestedBy],
+    [getCredentials, connection.hushdUrl, intel.id, requestedBy],
   );
 
   return (
@@ -607,7 +609,7 @@ export function IntelDetailPage() {
     getLatestFindingSeq,
     setTrustPolicy,
   } = useSwarmFeed();
-  const { connection } = useFleetConnection();
+  const { connection, getCredentials: getCredsForDetail, getAuthenticatedConnection } = useFleetConnection();
   const { currentOperator, getSecretKey } = useOperator();
   const navigate = useNavigate();
   const [hubTrustHydrationByConnection, setHubTrustHydrationByConnection] = useState<
@@ -653,7 +655,7 @@ export function IntelDetailPage() {
 
     void (async () => {
       try {
-        const hubConfig = await fetchSwarmHubConfig(connection);
+        const hubConfig = await fetchSwarmHubConfig(getAuthenticatedConnection());
         if (cancelled) {
           return;
         }
@@ -679,7 +681,7 @@ export function IntelDetailPage() {
       cancelled = true;
     };
   }, [
-    connection.apiKey,
+    getAuthenticatedConnection,
     connection.hushdUrl,
     hubTrustConnectionKey,
     setTrustPolicy,
@@ -755,7 +757,7 @@ export function IntelDetailPage() {
         let headAnnouncement: HeadAnnouncement;
         if (connection.hushdUrl) {
           try {
-            const publishResponse = await publishSwarmFinding(connection, envelope);
+            const publishResponse = await publishSwarmFinding(getAuthenticatedConnection(), envelope);
             headAnnouncement = publishResponse.headAnnouncement;
           } catch (error) {
             const message =

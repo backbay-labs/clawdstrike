@@ -273,6 +273,8 @@ export function useIntel(): IntelContextValue {
 export function IntelProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(intelReducer, undefined, getInitialState);
   const persistRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stateRef = useRef(state);
+  stateRef.current = state;
 
   useEffect(() => {
     if (persistRef.current) {
@@ -280,6 +282,7 @@ export function IntelProvider({ children }: { children: ReactNode }) {
     }
     persistRef.current = setTimeout(() => {
       persistIntel(state);
+      persistRef.current = null;
     }, 500);
 
     return () => {
@@ -288,6 +291,21 @@ export function IntelProvider({ children }: { children: ReactNode }) {
       }
     };
   }, [state.localIntel, state.swarmIntel, state.activeIntelId]);
+
+  // Flush pending persistence synchronously on tab close to prevent data loss
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (persistRef.current) {
+        clearTimeout(persistRef.current);
+        persistRef.current = null;
+        persistIntel(stateRef.current);
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, []);
 
   const getIntelById = useCallback(
     (intelId: string) =>

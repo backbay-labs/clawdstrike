@@ -1723,6 +1723,7 @@ export function SwarmFeedProvider({ children }: { children: ReactNode }) {
     }
     persistRef.current = setTimeout(() => {
       persistSwarmFeed(state);
+      persistRef.current = null;
     }, 500);
 
     return () => {
@@ -1740,6 +1741,21 @@ export function SwarmFeedProvider({ children }: { children: ReactNode }) {
     state.quarantinedRevocationEnvelopes,
     state.trustPolicies,
   ]);
+
+  // Flush pending persistence synchronously on tab close to prevent data loss
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (persistRef.current) {
+        clearTimeout(persistRef.current);
+        persistRef.current = null;
+        persistSwarmFeed(stateRef.current);
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, []);
 
   const getTrustPolicy = useCallback(
     (swarmId: string) => selectTrustPolicy(state, swarmId),

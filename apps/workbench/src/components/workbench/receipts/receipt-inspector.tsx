@@ -312,7 +312,7 @@ export function ReceiptInspector() {
   const [generateError, setGenerateError] = useState("");
 
   // Fleet sync state (P3-4)
-  const { connection } = useFleetConnection();
+  const { connection, getAuthenticatedConnection } = useFleetConnection();
   const fleetConnected = connection.connected;
   const [syncedIds, setSyncedIds] = useState<Set<string>>(() => readSyncedIds());
   const [syncing, setSyncing] = useState(false);
@@ -339,7 +339,7 @@ export function ReceiptInspector() {
       const newest = receipts[0];
       if (!syncedIds.has(newest.id) && isFleetSyncEligible(newest)) {
         // Fire-and-forget upload of the single new receipt
-        storeReceiptsBatch(connection, [receiptToFleet(newest)])
+        storeReceiptsBatch(getAuthenticatedConnection(), [receiptToFleet(newest)])
           .then((res) => {
             if (res.success) {
               setSyncedIds((prev) => {
@@ -377,7 +377,7 @@ export function ReceiptInspector() {
     setFleetError("");
     try {
       const fleetReceipts = eligible.map(receiptToFleet);
-      const res = await storeReceiptsBatch(connection, fleetReceipts);
+      const res = await storeReceiptsBatch(getAuthenticatedConnection(), fleetReceipts);
       if (res.success) {
         const newSynced = new Set(syncedIds);
         for (const r of eligible) newSynced.add(r.id);
@@ -411,7 +411,7 @@ export function ReceiptInspector() {
     setLoadingFleet(true);
     setFleetError("");
     try {
-      const res = await apiFetchReceipts(connection, { limit: 200 });
+      const res = await apiFetchReceipts(getAuthenticatedConnection(), { limit: 200 });
       if (res.receipts.length === 0) {
         setFleetError("No receipts found on fleet");
         return;
@@ -1006,7 +1006,7 @@ export function ReceiptInspector() {
         <ReceiptTimeline
           receipts={filteredReceipts}
           syncedIds={fleetConnected ? syncedIds : undefined}
-          fleetConnection={fleetConnected ? connection : undefined}
+          fleetConnection={fleetConnected ? getAuthenticatedConnection() : undefined}
         />
       </div>
     </div>

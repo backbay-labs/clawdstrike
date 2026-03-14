@@ -278,6 +278,8 @@ export function useFindings(): FindingContextValue {
 
 export function FindingProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(findingReducer, undefined, getInitialState);
+  const stateRef = useRef(state);
+  stateRef.current = state;
 
   // Debounced persistence
   const persistRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -285,11 +287,27 @@ export function FindingProvider({ children }: { children: ReactNode }) {
     if (persistRef.current) clearTimeout(persistRef.current);
     persistRef.current = setTimeout(() => {
       persistFindings(state);
+      persistRef.current = null;
     }, 500);
     return () => {
       if (persistRef.current) clearTimeout(persistRef.current);
     };
   }, [state.findings, state.activeFindingId]);
+
+  // Flush pending persistence synchronously on tab close to prevent data loss
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (persistRef.current) {
+        clearTimeout(persistRef.current);
+        persistRef.current = null;
+        persistFindings(stateRef.current);
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, []);
 
   // Derive active finding
   const activeFinding = state.findings.find((f) => f.id === state.activeFindingId);

@@ -125,6 +125,19 @@ export interface FleetConnection {
   agentCount: number;
 }
 
+/**
+ * Credential-free projection of FleetConnection, safe for context exposure.
+ * Consumers that need credentials should call `getCredentials()` from the
+ * fleet connection hook instead of reading them from this object.
+ */
+export type FleetConnectionInfo = Omit<FleetConnection, "apiKey" | "controlApiToken">;
+
+/** Strip credentials from a FleetConnection for safe context exposure. */
+export function redactFleetConnection(conn: FleetConnection): FleetConnectionInfo {
+  const { apiKey: _apiKey, controlApiToken: _controlApiToken, ...info } = conn;
+  return info;
+}
+
 export interface HealthResponse {
   status: string;
   version?: string;

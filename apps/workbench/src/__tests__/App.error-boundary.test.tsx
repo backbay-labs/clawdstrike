@@ -41,6 +41,8 @@ describe("App error boundary", () => {
         testConnection: vi.fn(),
         refreshAgents: vi.fn(),
         refreshRemotePolicy: vi.fn(),
+        getCredentials: () => ({ apiKey: "", controlApiToken: "" }),
+        getAuthenticatedConnection: () => ({ connected: false, hushdUrl: "", controlApiUrl: "", apiKey: "", controlApiToken: "", hushdHealth: null, agentCount: 0 }),
       }),
     }));
 

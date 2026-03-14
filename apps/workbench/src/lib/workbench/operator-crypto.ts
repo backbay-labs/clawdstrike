@@ -195,25 +195,64 @@ export async function verifyCanonical(
   return verifySignature(data, signatureHex, publicKeyHex);
 }
 
+/** Maximum age (in milliseconds) for a valid ownership proof: 24 hours. */
+export const OWNERSHIP_PROOF_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+export interface OwnershipProof {
+  signature: string;
+  timestamp: number;
+}
+
 /**
- * Sign an ownership proof: operator signs sentinel's public key to prove
- * they control the operator keypair that owns the sentinel.
+ * Sign an ownership proof: operator signs sentinel's public key with a
+ * timestamp to prove they control the operator keypair that owns the sentinel.
+ *
+ * The signed payload includes a timestamp so proofs expire after 24 hours,
+ * preventing indefinite replay.
  */
 export async function signOwnershipProof(
   sentinelPublicKey: string,
   operatorSecretKey: string,
-): Promise<string> {
-  const data = new TextEncoder().encode(`clawdstrike:ownership:${sentinelPublicKey}`);
-  return signData(data, operatorSecretKey);
+  timestamp: number = Date.now(),
+): Promise<OwnershipProof> {
+  const data = new TextEncoder().encode(
+    `clawdstrike:ownership:${sentinelPublicKey}:${timestamp}`,
+  );
+  const signature = await signData(data, operatorSecretKey);
+  return { signature, timestamp };
 }
 
+/**
+ * Verify an ownership proof. Rejects proofs older than 24 hours by default.
+ *
+ * @param maxAgeMs - Maximum acceptable age of the proof in milliseconds.
+ *   Defaults to {@link OWNERSHIP_PROOF_MAX_AGE_MS} (24h). Pass `Infinity` to
+ *   skip the expiry check (useful for stored proofs that are already trusted).
+ */
 export async function verifyOwnershipProof(
   sentinelPublicKey: string,
-  proof: string,
+  proof: OwnershipProof,
   operatorPublicKey: string,
+  maxAgeMs: number = OWNERSHIP_PROOF_MAX_AGE_MS,
 ): Promise<boolean> {
-  const data = new TextEncoder().encode(`clawdstrike:ownership:${sentinelPublicKey}`);
-  return verifySignature(data, proof, operatorPublicKey);
+  // Reject proofs with non-finite or negative timestamps
+  if (!Number.isFinite(proof.timestamp) || proof.timestamp < 0) {
+    return false;
+  }
+
+  // Reject expired proofs
+  if (Number.isFinite(maxAgeMs)) {
+    const age = Date.now() - proof.timestamp;
+    if (age > maxAgeMs || age < -60_000) {
+      // Also reject proofs from > 60s in the future (clock skew tolerance)
+      return false;
+    }
+  }
+
+  const data = new TextEncoder().encode(
+    `clawdstrike:ownership:${sentinelPublicKey}:${proof.timestamp}`,
+  );
+  return verifySignature(data, proof.signature, operatorPublicKey);
 }
 
 /**

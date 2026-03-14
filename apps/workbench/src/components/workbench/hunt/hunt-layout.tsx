@@ -139,7 +139,7 @@ export function HuntLayout() {
   const [streamLive, setStreamLive] = useState(true);
   const [sensitivity, setSensitivity] = useState<"low" | "medium" | "high">("medium");
 
-  const { connection } = useFleetConnection();
+  const { connection, getAuthenticatedConnection } = useFleetConnection();
   const connected = connection.connected;
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -149,7 +149,7 @@ export function HuntLayout() {
 
     try {
       const since = timeRangeToSince("24h");
-      const auditEvents = await fetchAuditEvents(connection, { since, limit: 500 });
+      const auditEvents = await fetchAuditEvents(getAuthenticatedConnection(), { since, limit: 500 });
       const converted = auditEvents.map(auditEventToAgentEvent);
 
       // Compute baselines from all events by agent

@@ -9,6 +9,16 @@ const useFleetConnectionMock = vi.hoisted(() => ({
   disconnect: vi.fn(),
   testConnection: vi.fn(),
   refreshAgents: vi.fn(),
+  getCredentials: vi.fn(() => ({ apiKey: "", controlApiToken: "" })),
+  getAuthenticatedConnection: vi.fn(() => ({
+    hushdUrl: "",
+    controlApiUrl: "",
+    apiKey: "",
+    controlApiToken: "",
+    connected: false,
+    hushdHealth: null,
+    agentCount: 0,
+  })),
 }));
 
 const emitAuditEventMock = vi.hoisted(() => vi.fn());
@@ -19,8 +29,6 @@ vi.mock("@/lib/workbench/use-fleet-connection", () => ({
       connected: false,
       hushdUrl: "",
       controlApiUrl: "",
-      apiKey: "",
-      controlApiToken: "",
       hushdHealth: null,
       agentCount: 0,
     },
@@ -34,6 +42,8 @@ vi.mock("@/lib/workbench/use-fleet-connection", () => ({
     disconnect: useFleetConnectionMock.disconnect,
     testConnection: useFleetConnectionMock.testConnection,
     refreshAgents: useFleetConnectionMock.refreshAgents,
+    getCredentials: useFleetConnectionMock.getCredentials,
+    getAuthenticatedConnection: useFleetConnectionMock.getAuthenticatedConnection,
   }),
 }));
 
