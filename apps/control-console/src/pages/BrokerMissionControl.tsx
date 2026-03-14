@@ -80,7 +80,7 @@ export function BrokerMissionControl(_props: { windowId?: string }) {
     previewId: null,
   });
   const latestBrokerEventId = useMemo(
-    () => [...events].reverse().find((event) => event.event_type.startsWith("broker_"))?._id ?? 0,
+    () => events.find((event) => event.event_type.startsWith("broker_"))?._id ?? 0,
     [events],
   );
   const [capabilities, setCapabilities] = useState<BrokerCapabilityStatus[]>([]);
