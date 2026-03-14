@@ -190,13 +190,23 @@ pub async fn worktree_remove(repo_root: String, worktree_path: String) -> Result
         // comparison. Resolve the worktree_path relative to repo_root if
         // it isn't absolute, then check it starts with the expected base.
         let wt_path = std::path::Path::new(&worktree_path);
+
+        // Reject paths containing parent-directory components (`..`) that
+        // could bypass the `starts_with` check on a non-canonicalized path.
+        for component in wt_path.components() {
+            if matches!(component, std::path::Component::ParentDir) {
+                return Err(
+                    "Worktree path contains '..' components: refusing to remove".to_string(),
+                );
+            }
+        }
+
         let resolved = if wt_path.is_absolute() {
             wt_path.to_path_buf()
         } else {
             canonical_root.join(wt_path)
         };
         // Check that the path, once joined, is under the expected base.
-        // Use string prefix as a fallback since we can't canonicalize.
         if !resolved.starts_with(&expected_base) {
             return Err(format!(
                 "Worktree path is not under {}: refusing to remove",
@@ -274,52 +284,68 @@ pub async fn worktree_status(worktree_path: String) -> Result<WorktreeStatus, St
         return Err(format!("Worktree path does not exist: {worktree_path}"));
     }
 
-    // Get the list of changed files
+    // Get the list of changed files from both unstaged and staged diffs.
     let diff_stat = run_git(&worktree_path, &["diff", "--stat"])?;
+    let cached_stat = run_git(&worktree_path, &["diff", "--cached", "--stat"])
+        .unwrap_or_default();
 
     let mut changed_files = Vec::new();
     let mut added_lines: usize = 0;
     let mut removed_lines: usize = 0;
 
-    // Parse `git diff --stat` output. Each line looks like:
-    //   src/main.rs | 10 +++++-----
-    // The last line is a summary: "N files changed, M insertions(+), P deletions(-)"
-    for line in diff_stat.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
+    // Parse a `git diff --stat` block, accumulating files and line counts.
+    let parse_stat_block =
+        |block: &str,
+         files: &mut Vec<String>,
+         added: &mut usize,
+         removed: &mut usize| {
+            for line in block.lines() {
+                let trimmed = line.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
 
-        // Check if this is the summary line
-        if trimmed.contains("files changed")
-            || trimmed.contains("file changed")
-            || trimmed.contains("insertions")
-            || trimmed.contains("deletions")
-        {
-            // Parse summary: "3 files changed, 15 insertions(+), 7 deletions(-)"
-            for part in trimmed.split(',') {
-                let part = part.trim();
-                if part.contains("insertion") {
-                    if let Some(num_str) = part.split_whitespace().next() {
-                        added_lines = num_str.parse().unwrap_or(0);
+                // Check if this is the summary line.
+                // Match the specific git diff --stat format:
+                //   "N file(s) changed, N insertion(s)(+), N deletion(s)(-)"
+                // Require that the line starts with a number followed by "file"
+                // to avoid false positives on filenames containing these words.
+                let is_summary = trimmed
+                    .split_whitespace()
+                    .next()
+                    .and_then(|first| first.parse::<usize>().ok())
+                    .is_some()
+                    && (trimmed.contains("file changed") || trimmed.contains("files changed"));
+                if is_summary {
+                    for part in trimmed.split(',') {
+                        let part = part.trim();
+                        if part.contains("insertion") {
+                            if let Some(num_str) = part.split_whitespace().next() {
+                                *added += num_str.parse::<usize>().unwrap_or(0);
+                            }
+                        } else if part.contains("deletion") {
+                            if let Some(num_str) = part.split_whitespace().next() {
+                                *removed += num_str.parse::<usize>().unwrap_or(0);
+                            }
+                        }
                     }
-                } else if part.contains("deletion") {
-                    if let Some(num_str) = part.split_whitespace().next() {
-                        removed_lines = num_str.parse().unwrap_or(0);
+                    continue;
+                }
+
+                // Otherwise it's a file line: "path/to/file | 10 +++---"
+                if let Some(pipe_idx) = trimmed.find('|') {
+                    let file_path = trimmed[..pipe_idx].trim().to_string();
+                    if !file_path.is_empty() && !files.contains(&file_path) {
+                        files.push(file_path);
                     }
                 }
             }
-            continue;
-        }
+        };
 
-        // Otherwise it's a file line: "path/to/file | 10 +++---"
-        if let Some(pipe_idx) = trimmed.find('|') {
-            let file_path = trimmed[..pipe_idx].trim().to_string();
-            if !file_path.is_empty() {
-                changed_files.push(file_path);
-            }
-        }
-    }
+    // Parse unstaged changes
+    parse_stat_block(&diff_stat, &mut changed_files, &mut added_lines, &mut removed_lines);
+    // Parse staged (cached) changes
+    parse_stat_block(&cached_stat, &mut changed_files, &mut added_lines, &mut removed_lines);
 
     // Also include untracked and staged changes.
     // `git status --porcelain` format: "XY filename" where XY is two status

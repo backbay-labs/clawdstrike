@@ -195,7 +195,7 @@ export function OriginEditor() {
 
           {/* Profile cards */}
           <div className="flex flex-col gap-2">
-            {(origins.profiles ?? []).map((profile, idx) => (
+            {(origins?.profiles ?? []).map((profile, idx) => (
               <OriginProfileCard
                 key={profile.id}
                 profile={profile}

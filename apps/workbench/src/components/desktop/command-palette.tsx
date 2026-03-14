@@ -3,8 +3,8 @@
  */
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion, AnimatePresence } from "motion/react";
-import { IconSearch, IconChevronRight } from "@tabler/icons-react";
+import { motion } from "motion/react";
+import { IconSearch } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 
 interface CommandItem {
@@ -98,7 +98,6 @@ export function CommandPalette() {
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: -10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95 }}
         transition={{ duration: 0.15 }}
         className="relative w-full max-w-lg rounded-xl border border-[#2d3240] bg-[#131721] shadow-2xl overflow-hidden"
         onClick={e => e.stopPropagation()}

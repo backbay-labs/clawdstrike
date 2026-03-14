@@ -345,25 +345,23 @@ pub async fn terminal_create<R: Runtime>(
         // was closed). Try to retrieve the exit code and emit a terminal
         // exit event so the frontend can update session status.
         //
-        // Brief sleep to let the child process fully exit before checking
-        // the exit code. We use the tokio Handle to lock the async Mutex
-        // from this blocking thread.
+        // Brief sleep to let the child process fully exit before we check.
         std::thread::sleep(std::time::Duration::from_millis(100));
-        let exit_code: Option<i32> = tokio::runtime::Handle::try_current()
+        // Use try_lock() instead of block_on(lock().await) to avoid
+        // deadlocking: we're inside spawn_blocking and must not block on
+        // the async Mutex via the tokio runtime handle.
+        let exit_code: Option<i32> = state_for_reader
+            .try_lock()
             .ok()
-            .and_then(|handle| {
-                handle
-                    .block_on(async {
-                        let mut manager = state_for_reader.lock().await;
-                        if let Some(session) = manager.sessions.get_mut(&event_session_id) {
-                            match session.child.try_wait() {
-                                Ok(Some(status)) => Some(status.exit_code() as i32),
-                                _ => None,
-                            }
-                        } else {
-                            None
-                        }
-                    })
+            .and_then(|mut manager| {
+                if let Some(session) = manager.sessions.get_mut(&event_session_id) {
+                    match session.child.try_wait() {
+                        Ok(Some(status)) => Some(status.exit_code() as i32),
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
             });
 
         let exit_event = format!("terminal:exit:{}", event_session_id);

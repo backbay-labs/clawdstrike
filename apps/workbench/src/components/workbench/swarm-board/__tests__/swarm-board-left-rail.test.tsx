@@ -48,7 +48,6 @@ function LeftRailHarness() {
   const {
     state,
     addNode,
-    selectNode,
     clearBoard,
   } = useSwarmBoard();
 

@@ -71,8 +71,6 @@ function InspectorHarness() {
     addNode,
     selectNode,
     clearBoard,
-    selectedNode,
-    dispatch,
   } = useSwarmBoard();
 
   return (
