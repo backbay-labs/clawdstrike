@@ -1998,7 +1998,9 @@ mod tests {
             parse_revocation_envelope(sample_revocation_value("supersede", false))
                 .expect_err("supersede should require replacement");
         assert_eq!(missing_replacement.code, "INVALID_REVOCATION_ENVELOPE");
-        assert!(missing_replacement.message.contains("replacement is required"));
+        assert!(missing_replacement
+            .message
+            .contains("replacement is required"));
 
         let replacement_with_revoke =
             parse_revocation_envelope(sample_revocation_value("revoke", true))

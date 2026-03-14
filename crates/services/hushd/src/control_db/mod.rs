@@ -1152,7 +1152,10 @@ mod tests {
         assert_eq!(one, 1);
 
         db.spawn_blocking_mut(|conn| {
-            conn.execute("CREATE TABLE spawn_blocking_smoke (id INTEGER NOT NULL)", [])?;
+            conn.execute(
+                "CREATE TABLE spawn_blocking_smoke (id INTEGER NOT NULL)",
+                [],
+            )?;
             conn.execute("INSERT INTO spawn_blocking_smoke (id) VALUES (7)", [])?;
             Ok(())
         })

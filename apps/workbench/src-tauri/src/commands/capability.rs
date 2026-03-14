@@ -66,7 +66,7 @@ impl CommandCapabilityManager {
             .records
             .iter()
             .filter_map(|(token, record)| {
-                let age = now_epoch.saturating_sub(record.last_used_epoch);
+                let age = now_epoch.saturating_sub(record.issued_at_epoch);
                 (age >= CAPABILITY_TTL_SECS).then_some(token.clone())
             })
             .collect();
@@ -96,7 +96,7 @@ impl CommandCapabilityManager {
 
         if let Some(existing_token) = self.by_window_command.get(&scope_key).cloned() {
             if let Some(record) = self.records.get_mut(&existing_token) {
-                let age = now_epoch.saturating_sub(record.last_used_epoch);
+                let age = now_epoch.saturating_sub(record.issued_at_epoch);
                 if age < CAPABILITY_TTL_SECS && record.remaining_uses > 0 {
                     record.last_used_epoch = now_epoch;
                     return existing_token;
@@ -141,7 +141,7 @@ impl CommandCapabilityManager {
             return Err("Command capability does not match requested operation".to_string());
         }
 
-        let age = now_epoch.saturating_sub(record.last_used_epoch);
+        let age = now_epoch.saturating_sub(record.issued_at_epoch);
         if age >= CAPABILITY_TTL_SECS {
             self.revoke_token(capability);
             return Err("Command capability expired".to_string());
@@ -167,9 +167,7 @@ fn normalize_sensitive_command(command: &str) -> Result<String, String> {
         return Err("Missing sensitive command name for capability issuance".to_string());
     }
     if !ALLOWED_SENSITIVE_COMMANDS.contains(&command) {
-        return Err(format!(
-            "Unsupported sensitive command for capability issuance: {command}"
-        ));
+        return Err("Unsupported sensitive command for capability issuance".to_string());
     }
     Ok(command.to_string())
 }

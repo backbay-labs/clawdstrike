@@ -356,10 +356,8 @@ mod tests {
 
     #[tokio::test]
     async fn okta_webhook_handles_verification_challenge() {
-        let test_dir = std::env::temp_dir().join(format!(
-            "hushd-okta-webhook-test-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let test_dir =
+            std::env::temp_dir().join(format!("hushd-okta-webhook-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&test_dir).expect("create temp dir");
 
         let config = Config {
@@ -394,10 +392,8 @@ mod tests {
 
     #[tokio::test]
     async fn auth0_webhook_accepts_bearer_authorization() {
-        let test_dir = std::env::temp_dir().join(format!(
-            "hushd-auth0-webhook-test-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let test_dir =
+            std::env::temp_dir().join(format!("hushd-auth0-webhook-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&test_dir).expect("create temp dir");
 
         let config = Config {

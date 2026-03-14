@@ -440,10 +440,8 @@ mod tests {
 
     #[tokio::test]
     async fn create_router_registers_swarm_routes() {
-        let test_dir = std::env::temp_dir().join(format!(
-            "hushd-api-router-test-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let test_dir =
+            std::env::temp_dir().join(format!("hushd-api-router-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&test_dir).expect("create temp dir");
 
         let config = crate::config::Config {
