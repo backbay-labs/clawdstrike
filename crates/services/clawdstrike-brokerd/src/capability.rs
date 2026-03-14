@@ -179,6 +179,18 @@ pub fn validate_execute_request(
         }
     }
 
+    if let Some(preview) = &capability.intent_preview {
+        if let Some(preview_hash) = &preview.body_sha256 {
+            let request_hash = request.request.body_sha256.as_deref().unwrap_or("");
+            if request_hash != preview_hash {
+                return Err(ApiError::forbidden(
+                    "BROKER_PREVIEW_BODY_HASH_MISMATCH",
+                    "request body_sha256 does not match the approved preview body hash",
+                ));
+            }
+        }
+    }
+
     const FORBIDDEN_HEADERS: &[&str] = &[
         "authorization",
         "proxy-authorization",

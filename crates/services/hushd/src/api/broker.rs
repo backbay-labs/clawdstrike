@@ -1073,6 +1073,10 @@ pub async fn issue_capability(
         .host_str()
         .ok_or_else(|| V1Error::bad_request("INVALID_BROKER_URL", "broker url is missing host"))?;
     let path = parsed.path();
+    let path_and_query = match parsed.query() {
+        Some(q) => format!("{path}?{q}"),
+        None => path.to_string(),
+    };
     let port = parsed.port_or_known_default();
 
     let scheme = match parsed.scheme() {
@@ -1269,7 +1273,7 @@ pub async fn issue_capability(
             host: host.to_string(),
             port,
             method: request.method,
-            exact_paths: vec![path.to_string()],
+            exact_paths: vec![path_and_query],
         },
         request_constraints: BrokerRequestConstraints {
             allowed_headers: provider_policy.allowed_headers.clone(),
