@@ -165,3 +165,67 @@ export function evaluateRevocationTrustPolicy(
     verifyAttestation: () => verifyRevocationAttestation(revocation),
   });
 }
+
+/**
+ * Synchronous trust policy evaluation for use in contexts that cannot await
+ * (e.g., React reducers, localStorage reload). Performs all checks that do not
+ * require async attestation verification. If the policy requires attestation
+ * verification (async crypto), the decision is fail-closed: the record is
+ * denied with reason "invalid_attestation" and should remain quarantined until
+ * it can be re-evaluated asynchronously.
+ */
+export function evaluateFindingTrustPolicySync(
+  policy: HubTrustPolicy,
+  finding: FindingEnvelope,
+): FindingTrustPolicyDecision {
+  return evaluateSignedEnvelopeTrustPolicySync(policy, finding, {
+    hasWitnessProofs: findingHasWitnessProofs(finding),
+  });
+}
+
+export function evaluateRevocationTrustPolicySync(
+  policy: HubTrustPolicy,
+  revocation: RevocationEnvelope,
+): FindingTrustPolicyDecision {
+  return evaluateSignedEnvelopeTrustPolicySync(policy, revocation, {
+    hasWitnessProofs: revocationHasWitnessProofs(revocation),
+  });
+}
+
+function evaluateSignedEnvelopeTrustPolicySync(
+  policy: HubTrustPolicy,
+  envelope:
+    | Pick<FindingEnvelope, "issuerId" | "schema" | "attestation">
+    | Pick<RevocationEnvelope, "issuerId" | "schema" | "attestation">,
+  options: {
+    hasWitnessProofs: boolean;
+  },
+): FindingTrustPolicyDecision {
+  if (policy.blockedIssuers.includes(envelope.issuerId)) {
+    return { accepted: false, reason: "blocked_issuer" };
+  }
+
+  if (policy.trustedIssuers.length > 0 && !policy.trustedIssuers.includes(envelope.issuerId)) {
+    return { accepted: false, reason: "untrusted_issuer" };
+  }
+
+  if (!policy.allowedSchemas.includes(envelope.schema)) {
+    return { accepted: false, reason: "disallowed_schema" };
+  }
+
+  if (requiresVerifiedAttestation(policy) && envelope.attestation === undefined) {
+    return { accepted: false, reason: "missing_attestation" };
+  }
+
+  if (policy.requireWitnessProofs && !options.hasWitnessProofs) {
+    return { accepted: false, reason: "missing_witness_proofs" };
+  }
+
+  // If the policy requires attestation verification, we cannot verify async
+  // in a synchronous context. Fail-closed: deny and keep quarantined.
+  if (requiresVerifiedAttestation(policy)) {
+    return { accepted: false, reason: "invalid_attestation" };
+  }
+
+  return { accepted: true };
+}

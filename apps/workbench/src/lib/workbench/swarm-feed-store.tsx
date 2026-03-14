@@ -35,7 +35,9 @@ import {
   DEFAULT_HUB_TRUST_POLICY,
   FAIL_CLOSED_HUB_TRUST_POLICY,
   evaluateFindingTrustPolicy,
+  evaluateFindingTrustPolicySync,
   evaluateRevocationTrustPolicy,
+  evaluateRevocationTrustPolicySync,
   type FindingTrustPolicyDecision,
   type FindingTrustPolicyRejectionReason,
 } from "./swarm-trust-policy";
@@ -571,7 +573,6 @@ function applyTrustPolicyChange(
     ...state.trustPolicies,
     [swarmId]: trustPolicy,
   };
-  const shouldRestoreActiveRecords = isDefaultPermissiveTrustPolicy(trustPolicy);
   const { matching: activeFindingEnvelopes, remaining: otherFindingEnvelopes } = splitSwarmRecords(
     state.findingEnvelopes,
     swarmId,
@@ -595,13 +596,40 @@ function applyTrustPolicyChange(
     remaining: otherQuarantinedRevocationEnvelopes,
   } = splitSwarmRecords(state.quarantinedRevocationEnvelopes, swarmId);
 
-  if (shouldRestoreActiveRecords) {
+  if (isDefaultPermissiveTrustPolicy(trustPolicy)) {
+    // H-3 fix: When relaxing back to a permissive policy, re-evaluate each
+    // quarantined record against the new policy before restoring. Only records
+    // that pass the policy check are moved to active; records that still fail
+    // remain quarantined. Uses synchronous evaluation — records requiring
+    // async attestation verification stay quarantined (fail-closed).
+    const restoredFindings: SwarmFindingEnvelopeRecord[] = [];
+    const stillQuarantinedFindings: SwarmFindingEnvelopeRecord[] = [];
+    for (const record of quarantinedFindingEnvelopes) {
+      const decision = evaluateFindingTrustPolicySync(trustPolicy, record.envelope);
+      if (decision.accepted) {
+        restoredFindings.push(record);
+      } else {
+        stillQuarantinedFindings.push(record);
+      }
+    }
+
+    const restoredRevocations: SwarmRevocationEnvelopeRecord[] = [];
+    const stillQuarantinedRevocations: SwarmRevocationEnvelopeRecord[] = [];
+    for (const record of quarantinedRevocationEnvelopes) {
+      const decision = evaluateRevocationTrustPolicySync(trustPolicy, record.envelope);
+      if (decision.accepted) {
+        restoredRevocations.push(record);
+      } else {
+        stillQuarantinedRevocations.push(record);
+      }
+    }
+
     return {
       ...state,
       findingEnvelopes: mergeFindingEnvelopeRecords(
         otherFindingEnvelopes,
         activeFindingEnvelopes,
-        quarantinedFindingEnvelopes,
+        restoredFindings,
       ),
       headAnnouncements: mergeHeadAnnouncementRecords(
         otherHeadAnnouncements,
@@ -611,11 +639,17 @@ function applyTrustPolicyChange(
       revocationEnvelopes: mergeRevocationEnvelopeRecords(
         otherRevocationEnvelopes,
         activeRevocationEnvelopes,
-        quarantinedRevocationEnvelopes,
+        restoredRevocations,
       ),
-      quarantinedFindingEnvelopes: otherQuarantinedFindingEnvelopes,
+      quarantinedFindingEnvelopes: mergeFindingEnvelopeRecords(
+        otherQuarantinedFindingEnvelopes,
+        stillQuarantinedFindings,
+      ),
       quarantinedHeadAnnouncements: otherQuarantinedHeadAnnouncements,
-      quarantinedRevocationEnvelopes: otherQuarantinedRevocationEnvelopes,
+      quarantinedRevocationEnvelopes: mergeRevocationEnvelopeRecords(
+        otherQuarantinedRevocationEnvelopes,
+        stillQuarantinedRevocations,
+      ),
       trustPolicies: nextTrustPolicies,
     };
   }
@@ -779,16 +813,53 @@ function loadPersistedSwarmFeed(): SwarmFeedState | null {
       trustPolicies,
     };
 
-    const shouldRestorePersistedRecords = (swarmId: string): boolean =>
+    // H-4 fix: Re-evaluate every persisted active record against its stored
+    // trust policy. Records that fail the policy check are moved to quarantine
+    // rather than being blindly restored to active. This prevents localStorage
+    // reload from bypassing trust enforcement. Uses synchronous evaluation —
+    // records requiring async attestation verification remain quarantined
+    // (fail-closed). For non-permissive policies, all records are quarantined
+    // and must be re-validated asynchronously before reuse.
+    const isPermissiveSwarm = (swarmId: string): boolean =>
       isDefaultPermissiveTrustPolicy(selectTrustPolicy(persistedState, swarmId));
-    const restoredFindingEnvelopes = persistedState.findingEnvelopes.filter((record) =>
-      shouldRestorePersistedRecords(record.swarmId),
-    );
+
+    const restoredFindingEnvelopes: SwarmFindingEnvelopeRecord[] = [];
+    const quarantinedOnReloadFindings: SwarmFindingEnvelopeRecord[] = [];
+    for (const record of persistedState.findingEnvelopes) {
+      if (!isPermissiveSwarm(record.swarmId)) {
+        // Non-permissive: quarantine until async re-validation.
+        quarantinedOnReloadFindings.push(record);
+        continue;
+      }
+      const policy = selectTrustPolicy(persistedState, record.swarmId);
+      const decision = evaluateFindingTrustPolicySync(policy, record.envelope);
+      if (decision.accepted) {
+        restoredFindingEnvelopes.push(record);
+      } else {
+        quarantinedOnReloadFindings.push(record);
+      }
+    }
+
+    const restoredRevocationEnvelopes: SwarmRevocationEnvelopeRecord[] = [];
+    const quarantinedOnReloadRevocations: SwarmRevocationEnvelopeRecord[] = [];
+    for (const record of persistedState.revocationEnvelopes) {
+      if (!isPermissiveSwarm(record.swarmId)) {
+        quarantinedOnReloadRevocations.push(record);
+        continue;
+      }
+      const policy = selectTrustPolicy(persistedState, record.swarmId);
+      const decision = evaluateRevocationTrustPolicySync(policy, record.envelope);
+      if (decision.accepted) {
+        restoredRevocationEnvelopes.push(record);
+      } else {
+        quarantinedOnReloadRevocations.push(record);
+      }
+    }
+
+    // Head announcements lack trust-evaluable fields. Restore heads only for
+    // swarms whose persisted policy is the default permissive template.
     const restoredHeadAnnouncements = persistedState.headAnnouncements.filter((record) =>
-      shouldRestorePersistedRecords(record.swarmId),
-    );
-    const restoredRevocationEnvelopes = persistedState.revocationEnvelopes.filter((record) =>
-      shouldRestorePersistedRecords(record.swarmId),
+      isPermissiveSwarm(record.swarmId),
     );
 
     return {
@@ -799,21 +870,17 @@ function loadPersistedSwarmFeed(): SwarmFeedState | null {
       revocationEnvelopes: restoredRevocationEnvelopes,
       quarantinedFindingEnvelopes: mergeFindingEnvelopeRecords(
         persistedState.quarantinedFindingEnvelopes,
-        persistedState.findingEnvelopes.filter(
-          (record) => !shouldRestorePersistedRecords(record.swarmId),
-        ),
+        quarantinedOnReloadFindings,
       ),
       quarantinedHeadAnnouncements: mergeHeadAnnouncementRecords(
         persistedState.quarantinedHeadAnnouncements,
         persistedState.headAnnouncements.filter(
-          (record) => !shouldRestorePersistedRecords(record.swarmId),
+          (record) => !isPermissiveSwarm(record.swarmId),
         ),
       ),
       quarantinedRevocationEnvelopes: mergeRevocationEnvelopeRecords(
         persistedState.quarantinedRevocationEnvelopes,
-        persistedState.revocationEnvelopes.filter(
-          (record) => !shouldRestorePersistedRecords(record.swarmId),
-        ),
+        quarantinedOnReloadRevocations,
       ),
     };
   } catch (error) {
@@ -822,6 +889,11 @@ function loadPersistedSwarmFeed(): SwarmFeedState | null {
   }
 }
 
+// SECURITY NOTE: All feed data — including quarantined records — is stored in
+// plaintext localStorage. Quarantined data should be treated as untrusted on
+// reload and must be re-evaluated against the active trust policy before
+// restoration. Do not assume localStorage contents are tamper-proof; any data
+// read back must pass trust policy checks before being placed in active state.
 function persistSwarmFeed(state: SwarmFeedState): void {
   try {
     localStorage.setItem(
