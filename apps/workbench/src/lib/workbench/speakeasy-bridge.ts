@@ -25,7 +25,8 @@ import type {
   Intel,
   Sentinel,
 } from "./sentinel-types";
-import { canonicalizeJson, computeContentHash } from "./intel-forge";
+import { canonicalizeJson } from "./operator-crypto";
+import { computeContentHash } from "./intel-forge";
 import type { OperatorIdentity } from "./operator-types";
 import {
   ED25519_PUBLIC_KEY_HEX,

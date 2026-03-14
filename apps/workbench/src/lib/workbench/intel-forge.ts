@@ -38,6 +38,13 @@ import {
   signDetachedPayload,
   verifyDetachedPayload,
 } from "./signature-adapter";
+// ---------------------------------------------------------------------------
+// Canonical JSON — single implementation lives in operator-crypto.ts.
+// Imported for local use and re-exported for backward compatibility
+// with existing imports (e.g. speakeasy-bridge.ts).
+// ---------------------------------------------------------------------------
+import { canonicalizeJson } from "./operator-crypto";
+export { canonicalizeJson };
 
 // ---------------------------------------------------------------------------
 // ID Generation
@@ -45,11 +52,23 @@ import {
 
 let intelCounter = 0;
 
-/** Generate an intel ID with the `int_` prefix. */
+/**
+ * Generate an intel ID with the `int_` prefix.
+ *
+ * Format: `int_<timestamp_b36><counter_b36><random_hex>`
+ * The timestamp + counter prefix preserves sortability, while the 4
+ * random hex chars (from crypto.getRandomValues) prevent collisions
+ * when the module-level counter resets on page reload.
+ */
 export function generateIntelId(): string {
   const ts = Date.now().toString(36);
   const seq = (++intelCounter).toString(36).padStart(4, "0");
-  return `int_${ts}${seq}`;
+  const rnd = new Uint8Array(2);
+  crypto.getRandomValues(rnd);
+  const rndHex = Array.from(rnd)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  return `int_${ts}${seq}${rndHex}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -72,58 +91,6 @@ export interface PromotionConfig {
   authorFingerprint: string;
   /** Content override. Falls back to auto-extracted content. */
   content?: IntelContent;
-}
-
-// ---------------------------------------------------------------------------
-// RFC 8785 Canonical JSON
-// ---------------------------------------------------------------------------
-
-/**
- * RFC 8785 JSON Canonicalization Scheme (JCS).
- *
- * Produces deterministic JSON output:
- * - Object keys sorted lexicographically (Unicode code point order)
- * - No whitespace between tokens
- * - Numbers serialized per ES2015 Number.toString()
- * - Recursive for nested objects and arrays
- * - null, boolean, string serialized per JSON spec
- */
-export function canonicalizeJson(value: unknown): string {
-  if (value === null || value === undefined) {
-    return "null";
-  }
-
-  if (typeof value === "boolean") {
-    return value ? "true" : "false";
-  }
-
-  if (typeof value === "number") {
-    if (!isFinite(value)) return "null";
-    return JSON.stringify(value);
-  }
-
-  if (typeof value === "string") {
-    return JSON.stringify(value);
-  }
-
-  if (Array.isArray(value)) {
-    const items = value.map((item) => canonicalizeJson(item));
-    return `[${items.join(",")}]`;
-  }
-
-  if (typeof value === "object") {
-    const obj = value as Record<string, unknown>;
-    const keys = Object.keys(obj).sort();
-    const entries: string[] = [];
-    for (const key of keys) {
-      const v = obj[key];
-      if (v === undefined) continue;
-      entries.push(`${JSON.stringify(key)}:${canonicalizeJson(v)}`);
-    }
-    return `{${entries.join(",")}}`;
-  }
-
-  return "null";
 }
 
 async function hashCanonicalValue(value: unknown): Promise<{

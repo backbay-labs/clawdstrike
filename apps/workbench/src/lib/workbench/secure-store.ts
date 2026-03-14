@@ -60,9 +60,16 @@ export const secureStore = {
       }
     }
 
-    // Fallback: sessionStorage (credentials cleared when tab closes)
+    // DEV-ONLY FALLBACK: sessionStorage stores credentials in plaintext.
+    // This path is only used during web-based development. In production the
+    // Tauri desktop app uses the Stronghold encrypted vault (see above).
+    // Do NOT rely on this for anything beyond local dev/test workflows.
     if (typeof window !== "undefined" && typeof sessionStorage !== "undefined") {
-      console.warn("[secure-store] Using session storage (insecure fallback)");
+      console.error(
+        "[secure-store] SECURITY WARNING: Storing credentials in plaintext sessionStorage. " +
+          "This is acceptable for local development only. " +
+          "Production deployments MUST use the Tauri Stronghold backend.",
+      );
       sessionStorage.setItem(`clawdstrike_${key}`, value);
     }
   },

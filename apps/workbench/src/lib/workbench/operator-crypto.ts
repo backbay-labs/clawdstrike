@@ -299,7 +299,7 @@ export async function exportKey(secretKeyHex: string, publicKeyHex: string, pass
     ["deriveKey"],
   );
   const aesKey = await crypto.subtle.deriveKey(
-    { name: "PBKDF2", salt: buf(salt), iterations: 100_000, hash: "SHA-256" },
+    { name: "PBKDF2", salt: buf(salt), iterations: 600_000, hash: "SHA-256" },
     passphraseKey,
     { name: "AES-GCM", length: 256 },
     false,
@@ -342,7 +342,7 @@ export async function importKey(
     ["deriveKey"],
   );
   const aesKey = await crypto.subtle.deriveKey(
-    { name: "PBKDF2", salt: buf(salt), iterations: 100_000, hash: "SHA-256" },
+    { name: "PBKDF2", salt: buf(salt), iterations: 600_000, hash: "SHA-256" },
     passphraseKey,
     { name: "AES-GCM", length: 256 },
     false,
