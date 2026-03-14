@@ -1,9 +1,3 @@
-// ---------------------------------------------------------------------------
-// Operator Store — React Context + useReducer for operator identity lifecycle
-//
-// Follows the sentinel-store.tsx pattern: State, Action union, reducer,
-// Provider with localStorage + secureStore persistence, and a typed hook.
-// ---------------------------------------------------------------------------
 import React, {
   createContext,
   useContext,
@@ -25,19 +19,11 @@ import {
 import { signDetachedPayload } from "./signature-adapter";
 import { secureStore } from "./secure-store";
 
-// ---------------------------------------------------------------------------
-// State
-// ---------------------------------------------------------------------------
-
 export interface OperatorState {
   currentOperator: OperatorIdentity | null;
   initialized: boolean;
   loading: boolean;
 }
-
-// ---------------------------------------------------------------------------
-// Actions
-// ---------------------------------------------------------------------------
 
 export type OperatorAction =
   | { type: "INIT"; operator: OperatorIdentity | null }
@@ -48,10 +34,6 @@ export type OperatorAction =
   | { type: "ADD_DEVICE"; device: { deviceId: string; deviceName: string } }
   | { type: "REVOKE"; revokedAt: number; revocationReason: string }
   | { type: "SIGN_OUT" };
-
-// ---------------------------------------------------------------------------
-// Reducer
-// ---------------------------------------------------------------------------
 
 export function operatorReducer(state: OperatorState, action: OperatorAction): OperatorState {
   switch (action.type) {
@@ -149,10 +131,6 @@ export function operatorReducer(state: OperatorState, action: OperatorAction): O
   }
 }
 
-// ---------------------------------------------------------------------------
-// Persistence — localStorage (public identity) + secureStore (secret key)
-// ---------------------------------------------------------------------------
-
 const STORAGE_KEY = "clawdstrike_workbench_operator";
 const SECRET_KEY_STORE_KEY = "operator_secret_key";
 
@@ -189,19 +167,11 @@ function loadPersistedOperator(): OperatorIdentity | null {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Initial state
-// ---------------------------------------------------------------------------
-
 const INITIAL_STATE: OperatorState = {
   currentOperator: null,
   initialized: false,
   loading: true,
 };
-
-// ---------------------------------------------------------------------------
-// Context
-// ---------------------------------------------------------------------------
 
 interface OperatorContextValue {
   currentOperator: OperatorIdentity | null;
@@ -226,19 +196,11 @@ interface OperatorContextValue {
 
 const OperatorContext = createContext<OperatorContextValue | null>(null);
 
-// ---------------------------------------------------------------------------
-// Hook
-// ---------------------------------------------------------------------------
-
 export function useOperator(): OperatorContextValue {
   const ctx = useContext(OperatorContext);
   if (!ctx) throw new Error("useOperator must be used within OperatorProvider");
   return ctx;
 }
-
-// ---------------------------------------------------------------------------
-// Provider
-// ---------------------------------------------------------------------------
 
 export function OperatorProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(operatorReducer, INITIAL_STATE);

@@ -2,34 +2,22 @@
  * Operator Crypto — Ed25519 key management, signing, and verification.
  *
  * Pure crypto module with no React dependencies. Uses Web Crypto API
- * Ed25519 (Chrome 113+, Node 20+) with SHA-256 fallbacks for environments
- * that lack Ed25519 support.
+ * Ed25519 (Chrome 113+, Node 20+).
  */
 
 import type { OperatorIdentity } from "./operator-types";
 
-// ---------------------------------------------------------------------------
-// Hex utilities
-// ---------------------------------------------------------------------------
-
-/**
- * Cast a Uint8Array to a BufferSource-compatible type.
- * Workaround for TypeScript's strict ArrayBuffer/SharedArrayBuffer distinction.
- */
+/** Workaround for TypeScript's strict ArrayBuffer/SharedArrayBuffer distinction. */
 function buf(data: Uint8Array): ArrayBuffer {
   return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
 }
 
-/**
- * Convert a Uint8Array to a hex string.
- */
 export function toHex(bytes: Uint8Array): string {
   return Array.from(bytes)
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 }
 
-/** Convert a hex string to a Uint8Array. Throws on invalid input. */
 export function hexToBytes(hex: string): Uint8Array {
   if (hex.length % 2 !== 0) {
     throw new Error("hexToBytes: input must have even length");
@@ -44,10 +32,6 @@ export function hexToBytes(hex: string): Uint8Array {
   return bytes;
 }
 
-// ---------------------------------------------------------------------------
-// Sigil System (8 sigil types from @backbay/speakeasy)
-// ---------------------------------------------------------------------------
-
 export type SigilType = "diamond" | "eye" | "wave" | "crown" | "spiral" | "key" | "star" | "moon";
 
 export const SIGILS: readonly SigilType[] = [
@@ -61,22 +45,15 @@ export const SIGILS: readonly SigilType[] = [
   "moon",
 ] as const;
 
-/**
- * Derive sigil type from a fingerprint string.
- * Uses the numeric value of the first byte (2 hex chars) mod 8.
- */
+/** Uses the numeric value of the first byte (2 hex chars) mod 8. */
 export function deriveSigil(fingerprint: string): SigilType {
   const firstByte = parseInt(fingerprint.slice(0, 2), 16);
   return SIGILS[firstByte % SIGILS.length];
 }
 
-// ---------------------------------------------------------------------------
-// PKCS8 Ed25519 wrapper
-// ---------------------------------------------------------------------------
-
 /**
- * Build a PKCS8 wrapper around a raw 32-byte Ed25519 seed.
- * The resulting ArrayBuffer can be imported via crypto.subtle.importKey("pkcs8", ...).
+ * Build a PKCS8 wrapper around a raw 32-byte Ed25519 seed so it can be
+ * imported via crypto.subtle.importKey("pkcs8", ...).
  */
 function buildPkcs8Ed25519(seed: Uint8Array): ArrayBuffer {
   const prefix = new Uint8Array([
@@ -89,15 +66,9 @@ function buildPkcs8Ed25519(seed: Uint8Array): ArrayBuffer {
   return pkcs8.buffer;
 }
 
-// ---------------------------------------------------------------------------
-// Key generation
-// ---------------------------------------------------------------------------
-
 /**
  * Generate an Ed25519 keypair. Returns hex-encoded public key (64 chars)
- * and secret key seed (64 chars).
- *
- * Tries Web Crypto Ed25519 first; falls back to random bytes if unavailable.
+ * and secret key seed (64 chars). Requires Web Crypto Ed25519.
  */
 export async function generateOperatorKeypair(): Promise<{
   publicKeyHex: string;
@@ -120,25 +91,13 @@ export async function generateOperatorKeypair(): Promise<{
   }
 }
 
-// ---------------------------------------------------------------------------
-// Fingerprint derivation
-// ---------------------------------------------------------------------------
-
-/** Derive a 16-char hex fingerprint from a public key hex string. */
 export async function deriveFingerprint(publicKeyHex: string): Promise<string> {
   const bytes = hexToBytes(publicKeyHex);
   const hash = await crypto.subtle.digest("SHA-256", buf(bytes));
   return toHex(new Uint8Array(hash)).slice(0, 16);
 }
 
-// ---------------------------------------------------------------------------
-// Operator identity creation
-// ---------------------------------------------------------------------------
-
-/**
- * Create a full OperatorIdentity from a display name.
- * Returns both the identity and the secret key (caller must store securely).
- */
+/** Returns both the identity and the secret key (caller must store securely). */
 export async function createOperatorIdentity(
   displayName: string,
 ): Promise<{ identity: OperatorIdentity; secretKeyHex: string }> {
@@ -170,11 +129,6 @@ export async function createOperatorIdentity(
   };
 }
 
-// ---------------------------------------------------------------------------
-// Signing
-// ---------------------------------------------------------------------------
-
-/** Sign raw bytes with an Ed25519 secret key seed. Returns hex signature. */
 export async function signData(data: Uint8Array, secretKeyHex: string): Promise<string> {
   try {
     const seed = hexToBytes(secretKeyHex);
@@ -194,11 +148,7 @@ export async function signData(data: Uint8Array, secretKeyHex: string): Promise<
   }
 }
 
-// ---------------------------------------------------------------------------
-// Verification
-// ---------------------------------------------------------------------------
-
-/** Verify an Ed25519 signature over raw bytes. */
+/** Returns false on verification failure or if Ed25519 is unavailable. */
 export async function verifySignature(
   data: Uint8Array,
   signatureHex: string,
@@ -216,11 +166,7 @@ export async function verifySignature(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Canonical JSON (sorted-key canonical JSON, not RFC 8785)
-// ---------------------------------------------------------------------------
-
-/** Serialize an object to sorted-key canonical JSON (not RFC 8785). */
+/** Sorted-key canonical JSON (not RFC 8785). */
 export function canonicalizeJson(obj: unknown): string {
   return JSON.stringify(obj, (_, value) => {
     if (value && typeof value === "object" && !Array.isArray(value)) {
@@ -235,13 +181,11 @@ export function canonicalizeJson(obj: unknown): string {
   });
 }
 
-/** Sign the canonical JSON serialization of an object. */
 export async function signCanonical(obj: unknown, secretKeyHex: string): Promise<string> {
   const data = new TextEncoder().encode(canonicalizeJson(obj));
   return signData(data, secretKeyHex);
 }
 
-/** Verify a signature over the canonical JSON serialization of an object. */
 export async function verifyCanonical(
   obj: unknown,
   signatureHex: string,
@@ -250,10 +194,6 @@ export async function verifyCanonical(
   const data = new TextEncoder().encode(canonicalizeJson(obj));
   return verifySignature(data, signatureHex, publicKeyHex);
 }
-
-// ---------------------------------------------------------------------------
-// Ownership proofs
-// ---------------------------------------------------------------------------
 
 /**
  * Sign an ownership proof: operator signs sentinel's public key to prove
@@ -267,7 +207,6 @@ export async function signOwnershipProof(
   return signData(data, operatorSecretKey);
 }
 
-/** Verify an ownership proof signature. */
 export async function verifyOwnershipProof(
   sentinelPublicKey: string,
   proof: string,
@@ -277,14 +216,8 @@ export async function verifyOwnershipProof(
   return verifySignature(data, proof, operatorPublicKey);
 }
 
-// ---------------------------------------------------------------------------
-// Key export / import (PBKDF2 + AES-256-GCM)
-// ---------------------------------------------------------------------------
-
 /**
- * Export a keypair encrypted with a passphrase.
- * Encrypts both publicKeyHex and secretKeyHex so importKey can return
- * the correct public key without derivation.
+ * Export a keypair encrypted with a passphrase (PBKDF2 + AES-256-GCM).
  * Returns a base64url-encoded blob: salt(16) + iv(12) + ciphertext.
  */
 export async function exportKey(secretKeyHex: string, publicKeyHex: string, passphrase: string): Promise<string> {
@@ -319,10 +252,7 @@ export async function exportKey(secretKeyHex: string, publicKeyHex: string, pass
     .replace(/=+$/, "");
 }
 
-/**
- * Import a keypair from a passphrase-encrypted base64url blob.
- * Returns the decrypted public key hex and secret key hex.
- */
+/** Import a keypair from a passphrase-encrypted base64url blob. */
 export async function importKey(
   encoded: string,
   passphrase: string,

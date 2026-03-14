@@ -38,28 +38,12 @@ import {
   signDetachedPayload,
   verifyDetachedPayload,
 } from "./signature-adapter";
-// ---------------------------------------------------------------------------
-// Canonical JSON — single implementation lives in operator-crypto.ts.
-// Imported for local use and re-exported for backward compatibility
-// with existing imports (e.g. speakeasy-bridge.ts).
-// ---------------------------------------------------------------------------
 import { canonicalizeJson } from "./operator-crypto";
 export { canonicalizeJson };
 
-// ---------------------------------------------------------------------------
-// ID Generation
-// ---------------------------------------------------------------------------
-
 let intelCounter = 0;
 
-/**
- * Generate an intel ID with the `int_` prefix.
- *
- * Format: `int_<timestamp_b36><counter_b36><random_hex>`
- * The timestamp + counter prefix preserves sortability, while the 4
- * random hex chars (from crypto.getRandomValues) prevent collisions
- * when the module-level counter resets on page reload.
- */
+/** Format: `int_<timestamp_b36><counter_b36><random_hex>` -- sortable with collision resistance. */
 export function generateIntelId(): string {
   const ts = Date.now().toString(36);
   const seq = (++intelCounter).toString(36).padStart(4, "0");
@@ -71,25 +55,13 @@ export function generateIntelId(): string {
   return `int_${ts}${seq}${rndHex}`;
 }
 
-// ---------------------------------------------------------------------------
-// Promotion Config
-// ---------------------------------------------------------------------------
-
-/** Configuration for Intel promotion. */
 export interface PromotionConfig {
-  /** Title override. Falls back to finding title. */
   title?: string;
-  /** Description. Falls back to auto-generated summary. */
   description?: string;
-  /** Intel type override. Falls back to auto-detected type. */
   type?: IntelType;
-  /** Shareability scope. Defaults to "private". */
   shareability?: IntelShareability;
-  /** Additional tags. */
   tags?: string[];
-  /** Author fingerprint (16 hex chars). */
   authorFingerprint: string;
-  /** Content override. Falls back to auto-extracted content. */
   content?: IntelContent;
 }
 
@@ -112,26 +84,13 @@ async function hashCanonicalValue(value: unknown): Promise<{
   };
 }
 
-// ---------------------------------------------------------------------------
-// Content Hash
-// ---------------------------------------------------------------------------
-
-/**
- * Compute SHA-256 hash of the canonical JSON representation of Intel content.
- * Returns hex-encoded hash string. Used for deduplication across the swarm.
- */
+/** SHA-256 of the canonical signable fields. Used for deduplication across the swarm. */
 export async function computeContentHash(intel: Intel): Promise<string> {
   const { hex } = await hashCanonicalValue(extractSignableFields(intel));
   return hex;
 }
 
-// ---------------------------------------------------------------------------
-// Promote Finding -> Intel
-// ---------------------------------------------------------------------------
-
-/**
- * Auto-detect the best IntelType from a finding's enrichments and signals.
- */
+/** Auto-detect the best IntelType from a finding's enrichments and signals. */
 function detectIntelType(finding: Finding, signals: Signal[]): IntelType {
   // Check for behavioral patterns
   const hasBehavioral = signals.some(
@@ -154,9 +113,6 @@ function detectIntelType(finding: Finding, signals: Signal[]): IntelType {
   return "advisory";
 }
 
-/**
- * Extract IntelContent from a finding based on its enrichments and type.
- */
 function extractContent(
   finding: Finding,
   signals: Signal[],
@@ -340,9 +296,6 @@ function extractPolicyPatchContent(
   };
 }
 
-/**
- * Extract MITRE ATT&CK mappings from finding enrichments.
- */
 function extractMitreMappings(finding: Finding): MitreMapping[] {
   const mappings: MitreMapping[] = [];
   const seen = new Set<string>();
@@ -442,18 +395,9 @@ export function promoteToIntel(
   return intel;
 }
 
-// ---------------------------------------------------------------------------
-// Signing
-// ---------------------------------------------------------------------------
-
 /**
- * Extract the fields of an Intel artifact that are included in the signature.
- *
- * Per SIGNAL-PIPELINE.md section 6.1, the signed fields are:
- * id, type, title, description, content, derivedFrom, confidence,
- * tags, mitre, shareability, createdAt, author.
- *
- * Excluded from signing: signature, signerPublicKey, receipt (per section 6.1).
+ * Fields included in the signature (per SIGNAL-PIPELINE.md section 6.1).
+ * Excludes: signature, signerPublicKey, receipt.
  */
 function extractSignableFields(
   intel: Intel,
@@ -503,19 +447,8 @@ function sameStringArray(
 }
 
 /**
- * Sign an Intel artifact with Ed25519.
- *
- * Flow (per SIGNAL-PIPELINE.md section 6.3):
- * 1. Extract signable fields (exclude receipt, signature, signerPublicKey)
- * 2. Canonicalize using RFC 8785 (sorted keys, no whitespace)
- * 3. SHA-256 hash of canonical JSON
- * 4. Sign hash with the provided private key
- * 5. Return intel with signature and signerPublicKey filled
- *
- * The workbench does not currently depend on `@backbay/witness`, so callers
- * must supply the signer public key explicitly. Detached Ed25519 signing is
- * routed through the local signature adapter, which can be swapped for a
- * witness-backed verifier later without changing the calling contract.
+ * Sign an Intel artifact with Ed25519 (per SIGNAL-PIPELINE.md section 6.3).
+ * Callers must supply the signer public key explicitly.
  */
 export async function signIntel(
   intel: Intel,
@@ -573,10 +506,7 @@ export async function signIntel(
   };
 }
 
-/**
- * Verify an Intel artifact's signature.
- *
- */
+/** Verify an Intel artifact's signature and receipt chain. */
 export async function verifyIntel(intel: Intel): Promise<{
   valid: boolean;
   reason: string;
@@ -656,20 +586,9 @@ export async function verifyIntel(intel: Intel): Promise<{
   return { valid: true, reason: "Intel signature verified" };
 }
 
-// ---------------------------------------------------------------------------
-// Swarm Packaging
-// ---------------------------------------------------------------------------
-
 /**
  * Wrap an Intel artifact for Gossipsub distribution via the swarm.
- *
- * Creates a message matching the IntelShareMessage / SpeakeasyIntelMessage
- * shape from SPEAKEASY-INTEGRATION.md, wrapped in a MessageEnvelope.
- *
- * Per SIGNAL-PIPELINE.md section 6.4:
- * - private intel is NOT published (local only)
- * - swarm intel goes to /baychat/v1/swarm/{swarmId}/intel
- * - public intel goes to /baychat/v1/discovery
+ * Private intel returns null (not distributed). Public intel targets /baychat/v1/discovery.
  */
 export function packageForSwarm(
   intel: Intel,
@@ -706,11 +625,6 @@ export function packageForSwarm(
   };
 }
 
-// ---------------------------------------------------------------------------
-// Swarm Package Types (local to forge, not exported from sentinel-types)
-// ---------------------------------------------------------------------------
-
-/** Message payload for sharing intel via Gossipsub. */
 export interface IntelSwarmMessage {
   type: "intel_share";
   intel: Intel;
@@ -721,7 +635,6 @@ export interface IntelSwarmMessage {
   authorSigil: string;
 }
 
-/** Envelope wrapping an intel share message for Gossipsub transport. */
 export interface IntelSwarmEnvelope {
   envelopeType: "message";
   payload: IntelSwarmMessage;
@@ -730,18 +643,12 @@ export interface IntelSwarmEnvelope {
   senderId: string;
 }
 
-/** Complete package ready for swarm distribution. */
 export interface IntelSwarmPackage {
   envelope: IntelSwarmEnvelope;
-  /** Gossipsub topic. Undefined means the caller must provide the swarm-scoped topic. */
+  /** Undefined means the caller must provide the swarm-scoped topic. */
   topic: string | undefined;
 }
 
-// ---------------------------------------------------------------------------
-// Utility Exports
-// ---------------------------------------------------------------------------
-
-/** Supported IntelType values for UI rendering. */
 export const INTEL_TYPES: readonly IntelType[] = [
   "detection_rule",
   "pattern",
@@ -751,7 +658,6 @@ export const INTEL_TYPES: readonly IntelType[] = [
   "policy_patch",
 ] as const;
 
-/** Human-readable labels for IntelType. */
 export const INTEL_TYPE_LABELS: Record<IntelType, string> = {
   detection_rule: "Detection Rule",
   pattern: "Pattern",
@@ -761,7 +667,6 @@ export const INTEL_TYPE_LABELS: Record<IntelType, string> = {
   policy_patch: "Policy Patch",
 };
 
-/** Human-readable labels for IntelShareability. */
 export const SHAREABILITY_LABELS: Record<IntelShareability, string> = {
   private: "Private",
   swarm: "Swarm",

@@ -16,9 +16,8 @@
 import type {
   Severity,
   Annotation,
-  HuntPattern,
 } from "./hunt-types";
-import type { TestActionType, Receipt } from "./types";
+import type { Receipt } from "./types";
 import type {
   FindingStatus,
   FindingVerdict,
@@ -31,11 +30,7 @@ import type {
 import type {
   Signal,
   SignalCluster,
-  SignalSource,
-  SignalContext,
 } from "./signal-pipeline";
-
-import { deriveSeverity } from "./signal-pipeline";
 
 // Re-export canonical types so downstream consumers (finding-store, etc.) still work.
 export type {
@@ -47,19 +42,10 @@ export type {
   SignalProvenance,
 };
 
-// ---------------------------------------------------------------------------
-// Finding-engine-local types
-//
 // Enrichment uses `data: Record<string, unknown>` rather than the canonical
-// discriminated-union `EnrichmentData` from sentinel-types.ts, because the
-// enrichment pipeline constructs payloads with shapes that don't match the
-// strict canonical variants (e.g. MITRE enrichments carry `techniques[]`
-// arrays, not single-technique records). The canonical Enrichment type is
-// the system-of-record for serialized data; this is the construction-time
-// type used by the engine.
-// ---------------------------------------------------------------------------
+// discriminated-union from sentinel-types.ts, because the enrichment pipeline
+// constructs payloads with shapes that don't match the strict canonical variants.
 
-/** External enrichment applied to a finding (engine-local construction type). */
 export interface Enrichment {
   id: string;
   type:
@@ -78,7 +64,6 @@ export interface Enrichment {
   source: string;
 }
 
-/** MITRE technique mapping for enrichment. */
 export interface MitreTechnique {
   id: string;
   name: string;
@@ -86,7 +71,6 @@ export interface MitreTechnique {
   subTechnique?: string;
 }
 
-/** A grouped, enriched, scored conclusion built from one or more signals. */
 export interface Finding {
   id: string;
   title: string;
@@ -110,7 +94,6 @@ export interface Finding {
   updatedAt: number;
 }
 
-/** Auto-promotion rule thresholds (configurable per sentinel). */
 export interface AutoPromotionRules {
   autoConfirmThresholds: {
     minSignals: number;
@@ -125,14 +108,12 @@ export interface AutoPromotionRules {
   };
 }
 
-/** IOC entry extracted from signal data. */
 export interface ExtractedIoc {
   indicator: string;
   iocType: string;
   source?: string;
 }
 
-/** Spider Sense screening result for enrichment. */
 export interface SpiderSenseResult {
   verdict: "deny" | "ambiguous" | "allow";
   topScore: number;
@@ -144,17 +125,9 @@ export interface SpiderSenseResult {
   }>;
 }
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-/** Minimum signals needed for an emerging finding. */
 const MIN_CLUSTER_SIGNALS = 2;
-
-/** Minimum cluster confidence for emerging finding creation. */
 const MIN_CLUSTER_CONFIDENCE = 0.3;
 
-/** Default auto-confirmation thresholds. */
 const DEFAULT_AUTO_CONFIRM: AutoPromotionRules["autoConfirmThresholds"] = {
   minSignals: 5,
   minConfidence: 0.8,
@@ -162,20 +135,17 @@ const DEFAULT_AUTO_CONFIRM: AutoPromotionRules["autoConfirmThresholds"] = {
   requireMitreMapping: true,
 };
 
-/** Default auto-promotion thresholds. */
 const DEFAULT_AUTO_PROMOTE: AutoPromotionRules["autoPromoteThresholds"] = {
   minConfidence: 0.9,
   minSeverity: "critical",
   requireCorroboration: true,
 };
 
-/** Default auto-promotion rules. */
 export const DEFAULT_AUTO_PROMOTION_RULES: AutoPromotionRules = {
   autoConfirmThresholds: DEFAULT_AUTO_CONFIRM,
   autoPromoteThresholds: DEFAULT_AUTO_PROMOTE,
 };
 
-/** Terminal states — no further transitions allowed. */
 const TERMINAL_STATES: ReadonlySet<FindingStatus> = new Set([
   "promoted",
   "dismissed",
@@ -183,7 +153,6 @@ const TERMINAL_STATES: ReadonlySet<FindingStatus> = new Set([
   "archived",
 ]);
 
-/** Valid state transitions. */
 const VALID_TRANSITIONS: Record<string, FindingStatus[]> = {
   emerging: ["confirmed", "dismissed", "archived"],
   confirmed: ["promoted", "dismissed", "false_positive"],
@@ -192,34 +161,19 @@ const VALID_TRANSITIONS: Record<string, FindingStatus[]> = {
 let findingCounter = 0;
 let enrichmentCounter = 0;
 
-// ---------------------------------------------------------------------------
-// ID Generation
-// ---------------------------------------------------------------------------
-
-/** Generate a finding ID with the `fnd_` prefix. */
 export function generateFindingId(): string {
   const ts = Date.now().toString(36);
   const seq = (++findingCounter).toString(36).padStart(4, "0");
   return `fnd_${ts}${seq}`;
 }
 
-/** Generate an enrichment ID with the `enr_` prefix. */
 export function generateEnrichmentId(): string {
   const ts = Date.now().toString(36);
   const seq = (++enrichmentCounter).toString(36).padStart(4, "0");
   return `enr_${ts}${seq}`;
 }
 
-// ---------------------------------------------------------------------------
-// Finding Creation (Section 4.1)
-// ---------------------------------------------------------------------------
-
-/**
- * Create an emerging Finding from a signal cluster.
- *
- * Requires the cluster to have >= 2 signals and confidence > 0.3.
- * Returns null if the cluster does not meet the minimum threshold.
- */
+/** Returns null if the cluster has < 2 signals or confidence <= 0.3. */
 export function createFromCluster(
   cluster: SignalCluster,
   signals: Signal[],
@@ -272,10 +226,6 @@ export function createFromCluster(
   return finding;
 }
 
-/**
- * Add new signals to an existing finding.
- * Returns a new Finding with updated signal list, count, scope, and timeline.
- */
 export function addSignals(
   finding: Finding,
   newSignals: Signal[],
@@ -320,14 +270,7 @@ export function addSignals(
   };
 }
 
-// ---------------------------------------------------------------------------
-// State Machine Transitions (Section 4.1)
-// ---------------------------------------------------------------------------
-
-/**
- * Validate whether a state transition is allowed.
- * Returns an error message if invalid, or null if valid.
- */
+/** Returns an error message if the transition is invalid, or null if valid. */
 export function validateTransition(
   currentStatus: FindingStatus,
   targetStatus: FindingStatus,
@@ -344,11 +287,7 @@ export function validateTransition(
   return null;
 }
 
-/**
- * Confirm an emerging finding (emerging -> confirmed).
- *
- * Requires the finding to be in "emerging" state.
- */
+/** emerging -> confirmed */
 export function confirm(
   finding: Finding,
   actor: string,
@@ -374,9 +313,7 @@ export function confirm(
   };
 }
 
-/**
- * Dismiss a finding (emerging -> dismissed OR confirmed -> dismissed).
- */
+/** emerging -> dismissed OR confirmed -> dismissed */
 export function dismiss(
   finding: Finding,
   actor: string,
@@ -404,10 +341,8 @@ export function dismiss(
 }
 
 /**
- * Mark a confirmed finding as false positive (confirmed -> false_positive).
- *
- * Triggers FP suppression feedback: the contributing signal patterns
- * should be folded into the sentinel's FP hash set by the caller.
+ * confirmed -> false_positive. Caller should fold contributing signal
+ * patterns into the sentinel's FP hash set.
  */
 export function markFalsePositive(
   finding: Finding,
@@ -444,11 +379,7 @@ export function markFalsePositive(
   };
 }
 
-/**
- * Promote a confirmed finding to intel (confirmed -> promoted).
- *
- * Requires an intel artifact ID to link to.
- */
+/** confirmed -> promoted. Requires an intel artifact ID to link to. */
 export function promote(
   finding: Finding,
   actor: string,
@@ -485,9 +416,7 @@ export function promote(
   };
 }
 
-/**
- * Archive an emerging finding whose TTL has expired (emerging -> archived).
- */
+/** emerging -> archived (TTL expired). */
 export function archive(
   finding: Finding,
   actor: string = "system",
@@ -513,10 +442,7 @@ export function archive(
   };
 }
 
-/**
- * Set a verdict on a finding. Does not change status — status transitions
- * are handled by the specific transition functions.
- */
+/** Sets verdict without changing status. */
 export function setVerdict(
   finding: Finding,
   verdict: FindingVerdict,
@@ -542,9 +468,6 @@ export function setVerdict(
   };
 }
 
-/**
- * Record an action taken on a finding.
- */
 export function recordAction(
   finding: Finding,
   action: FindingAction,
@@ -569,19 +492,6 @@ export function recordAction(
   };
 }
 
-// ---------------------------------------------------------------------------
-// Auto-Promotion Rules (Section 4.2)
-// ---------------------------------------------------------------------------
-
-/**
- * Check whether a finding should be auto-confirmed.
- *
- * An emerging finding is auto-confirmed when:
- * - Signal count >= minSignals (default 5)
- * - Confidence >= minConfidence (default 0.8)
- * - Severity >= minSeverity (default "high")
- * - If requireMitreMapping, at least one MITRE enrichment exists
- */
 export function checkAutoConfirm(
   finding: Finding,
   rules: AutoPromotionRules = DEFAULT_AUTO_PROMOTION_RULES,
@@ -604,14 +514,6 @@ export function checkAutoConfirm(
   return true;
 }
 
-/**
- * Check whether a confirmed finding should be auto-promoted.
- *
- * A confirmed finding is auto-promoted when:
- * - Confidence >= minConfidence (default 0.9)
- * - Severity >= minSeverity (default "critical")
- * - If requireCorroboration, signals from 2+ distinct source families
- */
 export function checkAutoPromote(
   finding: Finding,
   signals: Signal[],
@@ -633,10 +535,6 @@ export function checkAutoPromote(
   return true;
 }
 
-/**
- * Run all auto-promotion checks and apply transitions if warranted.
- * Returns the (possibly transitioned) finding.
- */
 export function checkAutoPromotion(
   finding: Finding,
   signals: Signal[],
@@ -675,10 +573,7 @@ export function checkAutoPromotion(
   return finding;
 }
 
-/**
- * Check whether a finding is "corroborated": signals from at least two
- * distinct source families (guard, anomaly, external feed, swarm intel).
- */
+/** Signals from at least two distinct source families. */
 export function isCorroborated(
   finding: Finding,
   signals: Signal[],
@@ -695,9 +590,6 @@ export function isCorroborated(
   return sourceFamilies.size >= 2;
 }
 
-/**
- * Map a signal provenance to a source family for corroboration checking.
- */
 function provenanceToFamily(provenance: SignalProvenance): string {
   switch (provenance) {
     case "guard_evaluation":
@@ -721,14 +613,7 @@ function provenanceToFamily(provenance: SignalProvenance): string {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Enrichment Pipeline (Section 5)
-// ---------------------------------------------------------------------------
-
-/**
- * Append an enrichment to a finding. Idempotent — if an enrichment
- * with the same type and source already exists, it is replaced.
- */
+/** Idempotent: replaces existing enrichment of same type+source. */
 export function addEnrichment(
   finding: Finding,
   enrichment: Enrichment,
@@ -767,12 +652,6 @@ export function addEnrichment(
   };
 }
 
-/**
- * Enrich a finding with MITRE ATT&CK technique mappings.
- *
- * Takes signal data and maps it against technique patterns.
- * Builds a kill-chain progression from the matched techniques.
- */
 export function enrichWithMitre(
   finding: Finding,
   techniques: MitreTechnique[],
@@ -808,11 +687,6 @@ export function enrichWithMitre(
   return addEnrichment(finding, enrichment, actor);
 }
 
-/**
- * Enrich a finding with extracted IOCs from signal payloads.
- *
- * Scans signal data for indicators of compromise.
- */
 export function enrichWithIocs(
   finding: Finding,
   extractedIocs: ExtractedIoc[],
@@ -846,13 +720,6 @@ export function enrichWithIocs(
   return addEnrichment(finding, enrichment, actor);
 }
 
-/**
- * Enrich a finding with Spider Sense screening results.
- *
- * Applies two-tier threat screening: fast-path cosine similarity
- * against the PatternDb. Results include verdict, top score, and
- * top matching patterns.
- */
 export function enrichWithSpiderSense(
   finding: Finding,
   result: SpiderSenseResult,
@@ -875,12 +742,7 @@ export function enrichWithSpiderSense(
   return addEnrichment(finding, enrichment, actor);
 }
 
-/**
- * Enrich a finding with swarm corroboration data.
- *
- * Records that a swarm peer independently observed the same threat
- * pattern, increasing confidence in the finding.
- */
+/** Boosts confidence by 0.05 (capped at 1.0) for peer corroboration. */
 export function enrichWithSwarmCorroboration(
   finding: Finding,
   peerFingerprint: string,
@@ -911,12 +773,6 @@ export function enrichWithSwarmCorroboration(
   };
 }
 
-/**
- * Run all enrichment stages on a finding.
- *
- * This is the primary enrichment entry point. It runs MITRE mapping,
- * IOC extraction, and Spider Sense screening if inputs are available.
- */
 export function runEnrichmentPipeline(
   finding: Finding,
   options: {
@@ -943,16 +799,7 @@ export function runEnrichmentPipeline(
   return enriched;
 }
 
-// ---------------------------------------------------------------------------
-// Finding Timeline (Section 5)
-// ---------------------------------------------------------------------------
-
-/**
- * Build a chronological narrative timeline from a finding's signals.
- *
- * Each signal becomes a timeline entry describing what was observed,
- * sorted by timestamp.
- */
+/** Build a chronological narrative timeline merging signals and existing entries. */
 export function buildFindingTimeline(
   finding: Finding,
   signals: Signal[],
@@ -994,9 +841,6 @@ export function buildFindingTimeline(
   return deduped;
 }
 
-/**
- * Generate a human-readable narrative from a signal for timeline display.
- */
 function signalToNarrative(signal: Signal): string {
   if (signal.data.summary) return signal.data.summary;
 
@@ -1016,13 +860,6 @@ function signalToNarrative(signal: Signal): string {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Annotation Support
-// ---------------------------------------------------------------------------
-
-/**
- * Add an annotation to a finding.
- */
 export function addAnnotation(
   finding: Finding,
   annotation: Annotation,
@@ -1046,15 +883,7 @@ export function addAnnotation(
   };
 }
 
-// ---------------------------------------------------------------------------
-// TTL / Expiration
-// ---------------------------------------------------------------------------
-
-/**
- * Check emerging findings for TTL expiration and archive them.
- *
- * Default TTL for emerging findings is 24 hours.
- */
+/** Archive emerging findings whose TTL has expired (default 24h). */
 export function archiveExpiredFindings(
   findings: Finding[],
   ttlMs: number = 24 * 60 * 60 * 1000,
@@ -1069,13 +898,6 @@ export function archiveExpiredFindings(
   });
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Compute the scope (agents, sessions, time range) from a set of signals.
- */
 function computeScope(signals: Signal[]): FindingScope {
   const agentIds = new Set<string>();
   const sessionIds = new Set<string>();
@@ -1099,9 +921,6 @@ function computeScope(signals: Signal[]): FindingScope {
   };
 }
 
-/**
- * Merge two scopes into a union scope.
- */
 function mergeScope(a: FindingScope, b: FindingScope): FindingScope {
   const agentIds = Array.from(new Set([...a.agentIds, ...b.agentIds]));
   const sessionIds = Array.from(new Set([...a.sessionIds, ...b.sessionIds]));
@@ -1121,10 +940,6 @@ function mergeScope(a: FindingScope, b: FindingScope): FindingScope {
   };
 }
 
-/**
- * Compute aggregate severity from a set of signals.
- * Takes the maximum severity found.
- */
 function computeAggregateSeverity(signals: Signal[]): Severity {
   let maxSev = 0;
   for (const s of signals) {
@@ -1134,10 +949,6 @@ function computeAggregateSeverity(signals: Signal[]): Severity {
   return numberToSeverity(maxSev);
 }
 
-/**
- * Compute aggregate severity combining existing finding severity
- * with new signals.
- */
 function computeAggregateSeverityFromFindings(
   currentSeverity: Severity,
   newSignals: Signal[],
@@ -1150,10 +961,7 @@ function computeAggregateSeverityFromFindings(
   return numberToSeverity(maxSev);
 }
 
-/**
- * Compute aggregate confidence from signals as a weighted average.
- * Weights are based on severity — higher severity signals contribute more.
- */
+/** Severity-weighted average confidence. */
 function computeAggregateConfidence(signals: Signal[]): number {
   if (signals.length === 0) return 0;
 
@@ -1169,9 +977,6 @@ function computeAggregateConfidence(signals: Signal[]): number {
   return totalWeight > 0 ? weightedSum / totalWeight : 0;
 }
 
-/**
- * Recompute confidence when new signals are added.
- */
 function recomputeConfidence(
   finding: Finding,
   newSignals: Signal[],
@@ -1192,9 +997,6 @@ function recomputeConfidence(
   return totalWeight > 0 ? newWeightedSum / totalWeight : finding.confidence;
 }
 
-/**
- * Generate a human-readable title for a finding from its signals.
- */
 function generateFindingTitle(signals: Signal[]): string {
   // Determine the dominant signal type
   const typeCounts = new Map<string, number>();

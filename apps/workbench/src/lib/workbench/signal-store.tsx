@@ -1,9 +1,3 @@
-// ---------------------------------------------------------------------------
-// Signal Store — React Context + useReducer for signal ingestion & streaming
-//
-// Follows the multi-policy-store.tsx pattern. Signals are high-volume so
-// persistence uses IndexedDB instead of localStorage.
-// ---------------------------------------------------------------------------
 import React, {
   createContext,
   useContext,
@@ -14,25 +8,17 @@ import React, {
   type ReactNode,
 } from "react";
 import type { AuditEvent } from "./fleet-client";
-import type { AgentBaseline } from "./hunt-types";
-import type { StreamStats } from "./hunt-types";
+import type { AgentBaseline, StreamStats } from "./hunt-types";
 import type {
   Signal,
   SignalPipelineState,
-  SignalCluster,
 } from "./signal-pipeline";
 import {
   createPipelineState,
   ingestSignal as pipelineIngestSignal,
   ingestAuditEvent as pipelineIngestAuditEvent,
   evictExpiredSignals as pipelineEvictExpired,
-  SignalDeduplicator,
-  correlateSignals,
 } from "./signal-pipeline";
-
-// ---------------------------------------------------------------------------
-// State
-// ---------------------------------------------------------------------------
 
 export interface SignalState {
   signals: Signal[];
@@ -40,10 +26,6 @@ export interface SignalState {
   stats: StreamStats;
   isStreaming: boolean;
 }
-
-// ---------------------------------------------------------------------------
-// Actions
-// ---------------------------------------------------------------------------
 
 export type SignalAction =
   | { type: "INGEST"; signal: Signal }
@@ -53,10 +35,6 @@ export type SignalAction =
   | { type: "CLEAR" }
   | { type: "UPDATE_STATS"; stats: StreamStats }
   | { type: "LOAD"; signals: Signal[] };
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function computeSignalStats(signals: Signal[]): StreamStats {
   const stats: StreamStats = {
@@ -91,10 +69,6 @@ function computeSignalStats(signals: Signal[]): StreamStats {
 
   return stats;
 }
-
-// ---------------------------------------------------------------------------
-// Reducer
-// ---------------------------------------------------------------------------
 
 function signalReducer(state: SignalState, action: SignalAction): SignalState {
   switch (action.type) {
@@ -186,10 +160,6 @@ function signalReducer(state: SignalState, action: SignalAction): SignalState {
       return state;
   }
 }
-
-// ---------------------------------------------------------------------------
-// IndexedDB persistence
-// ---------------------------------------------------------------------------
 
 const IDB_NAME = "clawdstrike_workbench_signals";
 const IDB_VERSION = 1;
@@ -292,10 +262,6 @@ async function clearSignalIdb(): Promise<void> {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Initial state
-// ---------------------------------------------------------------------------
-
 function getInitialState(): SignalState {
   return {
     signals: [],
@@ -311,10 +277,6 @@ function getInitialState(): SignalState {
     isStreaming: false,
   };
 }
-
-// ---------------------------------------------------------------------------
-// Context
-// ---------------------------------------------------------------------------
 
 interface SignalContextValue {
   signals: Signal[];
@@ -333,19 +295,11 @@ interface SignalContextValue {
 
 const SignalContext = createContext<SignalContextValue | null>(null);
 
-// ---------------------------------------------------------------------------
-// Hook
-// ---------------------------------------------------------------------------
-
 export function useSignals(): SignalContextValue {
   const ctx = useContext(SignalContext);
   if (!ctx) throw new Error("useSignals must be used within SignalProvider");
   return ctx;
 }
-
-// ---------------------------------------------------------------------------
-// Provider
-// ---------------------------------------------------------------------------
 
 export function SignalProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(signalReducer, undefined, getInitialState);

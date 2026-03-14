@@ -1,9 +1,3 @@
-// ---------------------------------------------------------------------------
-// Finding Store — React Context + useReducer for finding lifecycle & enrichment
-//
-// Follows the multi-policy-store.tsx pattern: State, Action union, reducer,
-// Provider with localStorage persistence, and a typed hook.
-// ---------------------------------------------------------------------------
 import React, {
   createContext,
   useContext,
@@ -32,18 +26,10 @@ import {
   archiveExpiredFindings as engineArchiveExpired,
 } from "./finding-engine";
 
-// ---------------------------------------------------------------------------
-// State
-// ---------------------------------------------------------------------------
-
 export interface FindingState {
   findings: Finding[];
   activeFindingId: string | null;
 }
-
-// ---------------------------------------------------------------------------
-// Actions
-// ---------------------------------------------------------------------------
 
 export type FindingAction =
   | { type: "CREATE"; finding: Finding }
@@ -58,10 +44,6 @@ export type FindingAction =
   | { type: "SET_ACTIVE"; findingId: string | null }
   | { type: "ARCHIVE_EXPIRED"; ttlMs?: number }
   | { type: "LOAD"; findings: Finding[] };
-
-// ---------------------------------------------------------------------------
-// Reducer
-// ---------------------------------------------------------------------------
 
 function findingReducer(state: FindingState, action: FindingAction): FindingState {
   switch (action.type) {
@@ -204,10 +186,6 @@ function findingReducer(state: FindingState, action: FindingAction): FindingStat
   }
 }
 
-// ---------------------------------------------------------------------------
-// Persistence — localStorage
-// ---------------------------------------------------------------------------
-
 const STORAGE_KEY = "clawdstrike_workbench_findings";
 
 function persistFindings(state: FindingState): void {
@@ -261,10 +239,6 @@ function loadPersistedFindings(): FindingState | null {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Initial state
-// ---------------------------------------------------------------------------
-
 function getInitialState(): FindingState {
   const restored = loadPersistedFindings();
   if (restored) return restored;
@@ -274,10 +248,6 @@ function getInitialState(): FindingState {
     activeFindingId: null,
   };
 }
-
-// ---------------------------------------------------------------------------
-// Context
-// ---------------------------------------------------------------------------
 
 interface FindingContextValue {
   findings: Finding[];
@@ -300,19 +270,11 @@ interface FindingContextValue {
 
 const FindingContext = createContext<FindingContextValue | null>(null);
 
-// ---------------------------------------------------------------------------
-// Hook
-// ---------------------------------------------------------------------------
-
 export function useFindings(): FindingContextValue {
   const ctx = useContext(FindingContext);
   if (!ctx) throw new Error("useFindings must be used within FindingProvider");
   return ctx;
 }
-
-// ---------------------------------------------------------------------------
-// Provider
-// ---------------------------------------------------------------------------
 
 export function FindingProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(findingReducer, undefined, getInitialState);
