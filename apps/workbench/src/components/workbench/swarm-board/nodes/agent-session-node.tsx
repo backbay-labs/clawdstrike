@@ -1,10 +1,8 @@
 /**
  * AgentSessionNode — React Flow custom node for an active agent coding session.
  *
- * Displays agent model, branch, status indicator, a LIVE xterm.js terminal
- * connected to the PTY backend, footer metrics, and a status bar.
- *
- * Styled as a premium operator terminal window — not a generic card.
+ * Visual language: Bloomberg terminal. Dark, dense, utilitarian.
+ * Information density IS the aesthetic. No decorative elements.
  */
 
 import { memo, useCallback } from "react";
@@ -24,15 +22,15 @@ import { TerminalRenderer } from "../terminal-renderer";
 import type { SwarmBoardNodeData, SessionStatus, RiskLevel } from "@/lib/workbench/swarm-board-types";
 
 // ---------------------------------------------------------------------------
-// Status dot colors
+// Status dot colors — slightly tinted, never neon
 // ---------------------------------------------------------------------------
 
 const STATUS_COLOR: Record<SessionStatus, string> = {
-  idle: "#6f7f9a",
-  running: "#3dbf84",
-  blocked: "#d4a84b",
-  completed: "#6f7f9a",
-  failed: "#e74c3c",
+  idle: "#6b7a92",
+  running: "#38a876",
+  blocked: "#c49a3c",
+  completed: "#6b7a92",
+  failed: "#b85450",
 };
 
 /** Statuses that show a pulsing animation on the dot. */
@@ -42,17 +40,17 @@ const STATUS_PULSE: Partial<Record<SessionStatus, boolean>> = {
 };
 
 const STATUS_LABEL: Record<SessionStatus, string> = {
-  idle: "idle",
-  running: "running",
-  blocked: "blocked",
-  completed: "done",
-  failed: "failed",
+  idle: "IDLE",
+  running: "RUN",
+  blocked: "WAIT",
+  completed: "DONE",
+  failed: "FAIL",
 };
 
-const RISK_COLORS: Record<RiskLevel, { bg: string; text: string }> = {
-  low: { bg: "transparent", text: "#3dbf84" },
-  medium: { bg: "transparent", text: "#d4a84b" },
-  high: { bg: "transparent", text: "#e74c3c" },
+const RISK_COLORS: Record<RiskLevel, string> = {
+  low: "#38a876",
+  medium: "#c49a3c",
+  high: "#b85450",
 };
 
 // ---------------------------------------------------------------------------
@@ -65,7 +63,6 @@ function AgentSessionNodeInner({ id, data, selected }: NodeProps) {
   const status = d.status ?? "idle";
   const statusColor = STATUS_COLOR[status];
   const risk = d.risk ?? "low";
-  const riskStyle = RISK_COLORS[risk];
   const maximized = d.maximized ?? false;
   const hasSession = !!d.sessionId;
 
@@ -88,21 +85,15 @@ function AgentSessionNodeInner({ id, data, selected }: NodeProps) {
     [id, maximized, updateNode],
   );
 
-  // Build the compact status line pieces
-  const statusLineParts: string[] = [];
-  if (d.agentModel) statusLineParts.push(d.agentModel);
-  if (d.branch) statusLineParts.push(d.branch);
-  if (d.policyMode) statusLineParts.push(d.policyMode);
-
-  // Status-driven visual classes
+  // Status-driven left border accent
   const statusBorderClass = cn(
-    status === 'running' && 'border-l-2 border-l-[#d4a84b]',
-    status === 'blocked' && 'border-l-2 border-l-[#f59e0b]',
-    status === 'failed' && 'border-l-2 border-l-[#c45c5c]',
+    status === 'running' && 'border-l-2 border-l-[#c49a3c]',
+    status === 'blocked' && 'border-l-2 border-l-[#d4a04a]',
+    status === 'failed' && 'border-l-2 border-l-[#b85450]',
   );
 
   const statusOpacityClass = cn(
-    status === 'completed' && 'opacity-[0.75]',
+    status === 'completed' && 'opacity-[0.7]',
     status === 'blocked' && 'opacity-95',
     status === 'failed' && 'opacity-90',
   );
@@ -119,17 +110,16 @@ function AgentSessionNodeInner({ id, data, selected }: NodeProps) {
   return (
     <div
       className={cn(
-        "rounded-lg transition-all duration-200 overflow-hidden flex flex-col relative",
+        // Sharp corners — this is a terminal, not a card
+        "rounded-sm transition-all duration-150 overflow-hidden flex flex-col relative",
         statusBorderClass,
         statusOpacityClass,
         selected
-          ? "shadow-[0_0_0_1px_rgba(212,168,75,0.25)]"
-          : "shadow-[0_2px_8px_rgba(0,0,0,0.4)]",
-        !selected && "hover:bg-[#0f1219]",
-        status === 'idle' && 'border-b border-b-[#1a1f2e20]',
+          ? "ring-1 ring-[#c49a3c]/20"
+          : "shadow-[0_1px_4px_rgba(0,0,0,0.5)]",
       )}
       style={{
-        backgroundColor: selected ? "#11141c" : "#0c0e14",
+        backgroundColor: selected ? "#0e1018" : "#0a0c11",
         width: "100%",
         height: "100%",
         minWidth: 320,
@@ -140,10 +130,10 @@ function AgentSessionNodeInner({ id, data, selected }: NodeProps) {
       {/* Heartbeat radial pulse for running sessions */}
       {status === 'running' && (
         <div
-          className="absolute inset-0 rounded-lg pointer-events-none"
+          className="absolute inset-0 rounded-sm pointer-events-none"
           style={{
             animation: 'heartbeat 3s ease-in-out infinite',
-            background: 'radial-gradient(circle at 50% 50%, rgba(212,168,75,0.04) 0%, transparent 70%)',
+            background: 'radial-gradient(circle at 50% 50%, rgba(196,154,60,0.03) 0%, transparent 70%)',
           }}
         />
       )}
@@ -151,75 +141,76 @@ function AgentSessionNodeInner({ id, data, selected }: NodeProps) {
         minWidth={320}
         minHeight={240}
         isVisible={selected}
-        lineClassName="!border-[#d4a84b]/30"
-        handleClassName="!w-1.5 !h-1.5 !bg-[#d4a84b] !border-[#0c0e14]"
+        lineClassName="!border-[#c49a3c]/25"
+        handleClassName="!w-1.5 !h-1.5 !bg-[#c49a3c] !border-[#0a0c11]"
       />
       {/* Top handle */}
       <Handle
         type="target"
         position={Position.Top}
-        className="!w-2 !h-2 !bg-[#2d3240] !border-[#0c0e14] !border-2 hover:!bg-[#d4a84b] transition-colors"
+        className="!w-1.5 !h-1.5 !bg-[#2a2f3a] !border-[#0a0c11] !border-2 hover:!bg-[#c49a3c] transition-colors"
       />
 
-      {/* Header — compact terminal status line */}
+      {/* Title bar — dense, monospace, terminal chrome */}
       <div
-        className="flex items-center justify-between px-3 shrink-0 select-none"
-        style={{ height: 32, backgroundColor: "#090b10" }}
+        className="flex items-center justify-between px-2 shrink-0 select-none"
+        style={{ height: 28, backgroundColor: "#07080c" }}
       >
-        {/* Left: status line */}
-        <div className="flex items-center gap-1.5 min-w-0 flex-1">
-          {/* Status dot */}
+        {/* Left: inline status segments separated by dim pipes */}
+        <div className="flex items-center gap-0 min-w-0 flex-1">
+          {/* Status dot — small, functional */}
           <span
-            className="w-[7px] h-[7px] rounded-full shrink-0"
+            className="w-[6px] h-[6px] rounded-full shrink-0 mr-1.5"
             style={{
               backgroundColor: statusColor,
-              boxShadow: STATUS_PULSE[status] ? `0 0 6px ${statusColor}80` : undefined,
+              boxShadow: STATUS_PULSE[status] ? `0 0 4px ${statusColor}60` : undefined,
               animation: STATUS_PULSE[status] ? "pulse 2s ease-in-out infinite" : undefined,
             }}
           />
-          {/* Compact inline status: model . branch . policy . status */}
-          <span className="text-[10px] font-mono text-[#6f7f9a] truncate">
-            {statusLineParts.length > 0 && (
-              <>
-                {statusLineParts.map((part, i) => (
-                  <span key={i}>
-                    {i > 0 && <span className="text-[#2d3240] mx-1">&middot;</span>}
-                    <span className={cn(
-                      part === d.agentModel && "text-[#d4a84b]",
-                      part === d.branch && "text-[#5b8def]",
-                      part === d.policyMode && (d.policyMode === "strict" ? "text-[#e74c3c]" : "text-[#6f7f9a]"),
-                    )}>
-                      {part}
-                    </span>
-                  </span>
-                ))}
-                <span className="text-[#2d3240] mx-1">&middot;</span>
-              </>
+          <span className="text-[9px] font-mono text-[#4a5568] truncate" style={{ fontVariantNumeric: 'tabular-nums' }}>
+            {d.agentModel && (
+              <span className="text-[#c49a3c]/80">{d.agentModel}</span>
             )}
-            <span style={{ color: statusColor }}>
+            {d.agentModel && d.branch && <span className="text-[#252a35] mx-1">|</span>}
+            {d.branch && (
+              <span className="text-[#5580cc]">{d.branch}</span>
+            )}
+            {(d.agentModel || d.branch) && d.policyMode && <span className="text-[#252a35] mx-1">|</span>}
+            {d.policyMode && (
+              <span className={d.policyMode === "strict" ? "text-[#b85450]/70" : "text-[#4a5568]"}>
+                {d.policyMode}
+              </span>
+            )}
+            {(d.agentModel || d.branch || d.policyMode) && <span className="text-[#252a35] mx-1">|</span>}
+            <span
+              className="uppercase text-[8px] tracking-[0.12em] font-semibold"
+              style={{ color: statusColor }}
+            >
               {STATUS_LABEL[status]}
             </span>
             {d.exitCode != null && status !== "running" && (
-              <span className="text-[#3d4250] ml-0.5">({d.exitCode})</span>
+              <span className="text-[#2a2f3a] ml-0.5">({d.exitCode})</span>
             )}
           </span>
         </div>
 
-        {/* Right: window controls */}
-        <div className="flex items-center gap-0.5 shrink-0 ml-2">
+        {/* Right: window controls — tiny, flush */}
+        <div className="flex items-center shrink-0 ml-2">
           <button
             onClick={handleToggleMaximize}
-            className="p-1 rounded hover:bg-[#ffffff08] text-[#3d4250] hover:text-[#6f7f9a] transition-colors"
+            className="p-0.5 text-[#2a2f3a] hover:text-[#6b7a92] transition-colors"
             title={maximized ? "Minimize" : "Maximize"}
+            aria-label={maximized ? "Minimize session" : "Maximize session"}
           >
-            {maximized ? <IconMinimize size={10} stroke={1.5} /> : <IconMaximize size={10} stroke={1.5} />}
+            {maximized ? <IconMinimize size={9} stroke={1.5} /> : <IconMaximize size={9} stroke={1.5} />}
           </button>
           <button
             onClick={handleClose}
-            className="p-1 rounded hover:bg-[#e74c3c15] text-[#3d4250] hover:text-[#e74c3c] transition-colors"
+            className="p-0.5 ml-0.5 text-[#2a2f3a] hover:text-[#b85450] transition-colors"
             title="Close session"
+            aria-label="Close session"
           >
-            <IconX size={10} stroke={1.5} />
+            <IconX size={9} stroke={1.5} />
           </button>
         </div>
       </div>
@@ -233,32 +224,35 @@ function AgentSessionNodeInner({ id, data, selected }: NodeProps) {
             fontSize={selected || maximized ? 11 : 8}
           />
         ) : (
-          /* Fallback: static preview lines styled as a proper code block */
+          /* Fallback: static preview lines — no frills, just output */
           <div
             className="w-full h-full overflow-auto"
-            style={{ backgroundColor: "#080a0f" }}
+            style={{ backgroundColor: "#06070b" }}
           >
-            <div className="py-2">
+            <div className="py-1">
               {(d.previewLines ?? []).slice(maximized ? 0 : -8).map((line, i) => (
                 <div
                   key={i}
-                  className="flex hover:bg-[#ffffff03]"
+                  className="flex hover:bg-[#ffffff02]"
                 >
                   {/* Line gutter */}
-                  <span className="shrink-0 w-8 text-right pr-2 text-[9px] font-mono text-[#1e2230] select-none leading-[1.7]">
+                  <span
+                    className="shrink-0 w-7 text-right pr-1.5 text-[8px] font-mono text-[#1a1e28] select-none leading-[1.7]"
+                    style={{ fontVariantNumeric: 'tabular-nums' }}
+                  >
                     {i + 1}
                   </span>
                   {/* Line content */}
                   <span
                     className={cn(
-                      "flex-1 pl-2 font-mono text-[11px] leading-[1.7] whitespace-pre truncate",
+                      "flex-1 pl-1.5 font-mono text-[10px] leading-[1.7] whitespace-pre truncate",
                       line.startsWith("$")
-                        ? "text-[#d4a84b]"
+                        ? "text-[#c49a3c]"
                         : line.includes("FAILED") || line.includes("error")
-                          ? "text-[#e74c3c]"
+                          ? "text-[#b85450]"
                           : line.includes("ok") || line.includes("passed")
-                            ? "text-[#3dbf84]"
-                            : "text-[#6f7f9a]",
+                            ? "text-[#38a876]"
+                            : "text-[#5c6a80]",
                     )}
                   >
                     {line}
@@ -267,7 +261,7 @@ function AgentSessionNodeInner({ id, data, selected }: NodeProps) {
               ))}
               {(!d.previewLines || d.previewLines.length === 0) && (
                 <div className="flex items-center justify-center h-full min-h-[60px]">
-                  <span className="text-[10px] font-mono text-[#1e2230]">awaiting output...</span>
+                  <span className="text-[9px] font-mono text-[#1a1e28]">awaiting output</span>
                 </div>
               )}
             </div>
@@ -275,22 +269,22 @@ function AgentSessionNodeInner({ id, data, selected }: NodeProps) {
         )}
       </div>
 
-      {/* Footer metrics — compact icon+number pairs */}
+      {/* Footer metrics — dense icon+number pairs, tabular numbers */}
       <div
-        className="flex items-center gap-3 px-3 shrink-0 select-none"
-        style={{ height: 26, backgroundColor: "#090b10" }}
+        className="flex items-center gap-2.5 px-2 shrink-0 select-none"
+        style={{ height: 24, backgroundColor: "#07080c" }}
       >
-        <FooterMetric icon={IconFileCode} value={d.changedFilesCount ?? 0} color="#5b8def" />
-        <FooterMetric icon={IconReceipt} value={d.receiptCount ?? 0} color="#8b5cf6" />
-        <FooterMetric icon={IconShieldOff} value={d.blockedActionCount ?? 0} color={d.blockedActionCount ? "#e74c3c" : "#3d4250"} />
+        <FooterMetric icon={IconFileCode} value={d.changedFilesCount ?? 0} color="#5580cc" />
+        <FooterMetric icon={IconReceipt} value={d.receiptCount ?? 0} color="#7c5cbf" />
+        <FooterMetric icon={IconShieldOff} value={d.blockedActionCount ?? 0} color={d.blockedActionCount ? "#b85450" : "#2a2f3a"} />
         {d.toolBoundaryEvents != null && (
-          <FooterMetric icon={IconActivity} value={d.toolBoundaryEvents} color="#d4a84b" />
+          <FooterMetric icon={IconActivity} value={d.toolBoundaryEvents} color="#c49a3c" />
         )}
 
-        {/* Risk indicator — minimal, right-aligned */}
+        {/* Risk indicator — right-aligned, understated */}
         <span
-          className="ml-auto text-[8px] font-mono font-medium uppercase tracking-widest"
-          style={{ color: riskStyle.text }}
+          className="ml-auto text-[7px] font-mono font-semibold uppercase"
+          style={{ color: RISK_COLORS[risk], letterSpacing: '0.14em' }}
         >
           {risk}
         </span>
@@ -298,19 +292,20 @@ function AgentSessionNodeInner({ id, data, selected }: NodeProps) {
 
       {/* Status bar — thin vim-like footer */}
       <div
-        className="flex items-center gap-2.5 px-3 shrink-0 select-none"
-        style={{ height: 20, backgroundColor: "#070910" }}
+        className="flex items-center gap-2 px-2 shrink-0 select-none"
+        style={{ height: 18, backgroundColor: "#060710" }}
       >
         {d.worktreePath && (
-          <span className="text-[8px] font-mono text-[#1e2230] truncate max-w-[120px]">
+          <span className="text-[7px] font-mono text-[#1a1e28] truncate max-w-[120px]">
             {d.worktreePath.split("/").slice(-2).join("/")}
           </span>
         )}
         {d.policyMode && (
           <span
-            className="ml-auto text-[8px] font-mono font-medium uppercase tracking-wider"
+            className="ml-auto text-[7px] font-mono font-medium uppercase"
             style={{
-              color: d.policyMode === "strict" ? "#e74c3c80" : "#3dbf8460",
+              color: d.policyMode === "strict" ? "#b8545060" : "#38a87640",
+              letterSpacing: '0.12em',
             }}
           >
             {d.policyMode === "strict" ? "bypass off" : "bypass on"}
@@ -322,7 +317,7 @@ function AgentSessionNodeInner({ id, data, selected }: NodeProps) {
       <Handle
         type="source"
         position={Position.Bottom}
-        className="!w-2 !h-2 !bg-[#2d3240] !border-[#0c0e14] !border-2 hover:!bg-[#d4a84b] transition-colors"
+        className="!w-1.5 !h-1.5 !bg-[#2a2f3a] !border-[#0a0c11] !border-2 hover:!bg-[#c49a3c] transition-colors"
       />
     </div>
   );
@@ -342,9 +337,12 @@ function FooterMetric({
   color: string;
 }) {
   return (
-    <div className="flex items-center gap-1">
-      <Icon size={11} stroke={1.5} style={{ color }} />
-      <span className="text-[10px] font-mono font-medium tabular-nums" style={{ color }}>
+    <div className="flex items-center gap-0.5">
+      <Icon size={10} stroke={1.5} style={{ color }} />
+      <span
+        className="text-[9px] font-mono font-semibold"
+        style={{ color, fontVariantNumeric: 'tabular-nums' }}
+      >
         {value}
       </span>
     </div>

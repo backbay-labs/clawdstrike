@@ -76,11 +76,11 @@ describe("TerminalTaskNode", () => {
 
   describe("status badge", () => {
     const statusTests: [SessionStatus, string][] = [
-      ["idle", "Idle"],
-      ["running", "Running"],
-      ["blocked", "Blocked"],
-      ["completed", "Completed"],
-      ["failed", "Failed"],
+      ["idle", "IDLE"],
+      ["running", "RUN"],
+      ["blocked", "WAIT"],
+      ["completed", "DONE"],
+      ["failed", "FAIL"],
     ];
 
     it.each(statusTests)(
@@ -91,10 +91,10 @@ describe("TerminalTaskNode", () => {
       },
     );
 
-    it("defaults to Idle when status is undefined", () => {
+    it("defaults to IDLE when status is undefined", () => {
       renderNode({ status: undefined as any });
       // The component defaults: const status = d.status ?? "idle"
-      expect(screen.getByText("Idle")).toBeInTheDocument();
+      expect(screen.getByText("IDLE")).toBeInTheDocument();
     });
   });
 
@@ -109,15 +109,15 @@ describe("TerminalTaskNode", () => {
       expect(screen.getByText("No task description")).toBeInTheDocument();
     });
 
-    it("truncates long prompts via line-clamp-3 CSS class", () => {
+    it("truncates long prompts via line-clamp CSS class", () => {
       const longPrompt = "A".repeat(500);
       renderNode({ taskPrompt: longPrompt });
 
-      // The text still renders in the DOM, but line-clamp-3 CSS truncates visually.
+      // The text still renders in the DOM, but line-clamp CSS truncates visually.
       // We verify the full text is in the DOM (CSS handles visual truncation).
       const el = screen.getByText(longPrompt);
       expect(el).toBeInTheDocument();
-      expect(el.className).toContain("line-clamp-3");
+      expect(el.className).toContain("line-clamp-2");
     });
   });
 
@@ -183,7 +183,7 @@ describe("TerminalTaskNode", () => {
         status: "idle",
       });
       expect(screen.getByText("Minimal Task")).toBeInTheDocument();
-      expect(screen.getByText("Idle")).toBeInTheDocument();
+      expect(screen.getByText("IDLE")).toBeInTheDocument();
       expect(screen.getByText("No task description")).toBeInTheDocument();
     });
   });

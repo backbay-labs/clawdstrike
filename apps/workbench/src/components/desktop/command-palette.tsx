@@ -118,6 +118,7 @@ export function CommandPalette() {
             onChange={e => { setQuery(e.target.value); setSelectedIndex(0); }}
             onKeyDown={handleKeyDown}
             placeholder="Search pages and actions..."
+            aria-label="Search pages and actions"
             className="flex-1 bg-transparent text-[13px] text-[#ece7dc] placeholder-[#6f7f9a]/40 outline-none"
           />
           <kbd className="text-[9px] font-mono text-[#6f7f9a]/40 border border-[#2d3240]/60 rounded px-1.5 py-0.5">ESC</kbd>
@@ -131,6 +132,7 @@ export function CommandPalette() {
               <button
                 key={item.id}
                 onClick={() => { if (item.href) navigate(item.href); setOpen(false); }}
+                aria-label={`${item.section}: ${item.label}`}
                 className={cn(
                   "flex items-center justify-between w-full px-4 py-2 text-left transition-colors",
                   i === selectedIndex ? "bg-[#d4a84b]/10 text-[#ece7dc]" : "text-[#6f7f9a] hover:bg-[#0b0d13]",

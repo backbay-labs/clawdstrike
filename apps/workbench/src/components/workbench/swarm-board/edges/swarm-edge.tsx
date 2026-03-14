@@ -2,10 +2,10 @@
  * SwarmEdge — custom edge renderer for the SwarmBoard.
  *
  * Renders differently based on the edge's `data.edgeType`:
- * - handoff:  Solid line with arrow, gold #d4a84b
- * - spawned:  Dashed line with arrow, blue #5b8def (subtle pulse animation)
- * - artifact: Dotted line, green #3dbf84
- * - receipt:  Thin dotted line, muted #6f7f9a
+ * - handoff:  Solid line with arrow, warm gold
+ * - spawned:  Dashed line with arrow, steel blue (subtle pulse)
+ * - artifact: Dotted line, muted green
+ * - receipt:  Thin dotted line, dim gray
  *
  * Uses React Flow's BaseEdge + getSmoothStepPath.
  */
@@ -26,15 +26,15 @@ function ensureKeyframes() {
   const style = document.createElement("style");
   style.textContent = `
     @keyframes swarmEdgePulse {
-      0%, 100% { opacity: 0.15; }
-      50% { opacity: 0.35; }
+      0%, 100% { opacity: 0.12; }
+      50% { opacity: 0.30; }
     }
   `;
   document.head.appendChild(style);
 }
 
 // ---------------------------------------------------------------------------
-// Edge type visual config
+// Edge type visual config — restrained, functional colors
 // ---------------------------------------------------------------------------
 
 type SwarmEdgeType = "handoff" | "spawned" | "artifact" | "receipt";
@@ -44,38 +44,44 @@ interface EdgeStyleConfig {
   strokeWidth: number;
   strokeDasharray?: string;
   animated: boolean;
+  dotSize: number;
 }
 
 const EDGE_STYLES: Record<SwarmEdgeType, EdgeStyleConfig> = {
   handoff: {
-    color: "#d4a84b",
+    color: "#c49a3c",
     strokeWidth: 1.5,
     animated: false,
+    dotSize: 7,
   },
   spawned: {
-    color: "#5b8def",
+    color: "#5580cc",
     strokeWidth: 1,
     strokeDasharray: "6 4",
     animated: true,
+    dotSize: 6,
   },
   artifact: {
-    color: "#3dbf84",
-    strokeWidth: 1,
+    color: "#38a876",
+    strokeWidth: 0.75,
     strokeDasharray: "2 4",
     animated: false,
+    dotSize: 5,
   },
   receipt: {
-    color: "#6f7f9a",
-    strokeWidth: 0.75,
+    color: "#5c6a80",
+    strokeWidth: 0.5,
     strokeDasharray: "2 5",
     animated: false,
+    dotSize: 4,
   },
 };
 
 const DEFAULT_STYLE: EdgeStyleConfig = {
-  color: "#1a1f2e",
+  color: "#1a1e28",
   strokeWidth: 1,
   animated: false,
+  dotSize: 4,
 };
 
 // ---------------------------------------------------------------------------
@@ -117,7 +123,7 @@ export function SwarmEdge({
     targetY,
     sourcePosition,
     targetPosition,
-    borderRadius: 16,
+    borderRadius: 12,
   });
 
   // Subtle pulse animation for spawned edges
@@ -129,7 +135,7 @@ export function SwarmEdge({
     : {};
 
   // Determine opacity: very dim by default, bright when connected to hovered/selected node
-  const edgeOpacity = isHighlighted ? 0.8 : 0.18;
+  const edgeOpacity = isHighlighted ? 0.7 : 0.15;
 
   return (
     <>
@@ -142,13 +148,13 @@ export function SwarmEdge({
           strokeWidth: config.strokeWidth,
           strokeDasharray: config.strokeDasharray,
           opacity: edgeOpacity,
-          transition: "opacity 0.3s ease, stroke 0.2s ease",
-          filter: isHighlighted ? `drop-shadow(0 0 3px ${config.color}40)` : undefined,
+          transition: "opacity 0.25s ease, stroke 0.2s ease",
+          filter: isHighlighted ? `drop-shadow(0 0 2px ${config.color}30)` : undefined,
           ...animatedStyle,
         }}
       />
 
-      {/* Colored dot at midpoint instead of text label */}
+      {/* Colored dot at midpoint — sized per edge type, subtle glow when highlighted */}
       {edgeType && (
         <EdgeLabelRenderer>
           <div
@@ -156,14 +162,17 @@ export function SwarmEdge({
             style={{
               position: "absolute",
               transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
-              opacity: isHighlighted ? 0.8 : 0.25,
-              transition: "opacity 0.3s ease",
+              opacity: isHighlighted ? 0.85 : 0.2,
+              transition: "opacity 0.25s ease",
             }}
           >
             <span
-              className="block w-[5px] h-[5px] rounded-full"
+              className="block rounded-full"
               style={{
+                width: config.dotSize,
+                height: config.dotSize,
                 backgroundColor: config.color,
+                boxShadow: isHighlighted ? `0 0 6px ${config.color}40` : undefined,
               }}
             />
           </div>

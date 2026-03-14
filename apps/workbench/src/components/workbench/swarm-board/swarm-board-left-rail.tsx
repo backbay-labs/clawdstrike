@@ -1,39 +1,32 @@
 /**
- * SwarmBoardLeftRail — workspace explorer panel (Section 9).
+ * SwarmBoardLeftRail — minimal workspace explorer panel.
  *
- * Provides a collapsible left rail with:
- * - Active sessions list
- * - Hunts/investigations
- * - Recent artifacts
- * - Branch overview
- *
- * Phase 1: static list derived from board state.
- * Phase 2+: live data from PTY backend + git integration.
+ * Design: terminal-listing aesthetic. Section headers are barely-there
+ * single-character abbreviations with thin divider lines. Session items
+ * are monospace rows with a status dot, name, and branch — no cards,
+ * no padding excess.
  */
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import {
-  IconChevronLeft,
-  IconChevronRight,
-  IconTerminal2,
-  IconTarget,
-  IconFile,
-  IconGitBranch,
-  IconCircleFilled,
-} from "@tabler/icons-react";
+import { IconCircleFilled } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { useSwarmBoard } from "@/lib/workbench/swarm-board-store";
 import type { SwarmBoardNodeData, SessionStatus } from "@/lib/workbench/swarm-board-types";
 
 // ---------------------------------------------------------------------------
-// Status dot color
+// Constants
 // ---------------------------------------------------------------------------
 
+const COLLAPSED_WIDTH = 28;
+const EXPANDED_WIDTH = 200;
+const BRANCH_TRUNCATE_LENGTH = 10;
+const BRANCH_DISPLAY_LENGTH = 8;
+
 const STATUS_DOT_COLOR: Record<SessionStatus, string> = {
-  idle: "#6f7f9a",
+  idle: "#3d4250",
   running: "#3dbf84",
   blocked: "#d4a84b",
-  completed: "#6f7f9a",
+  completed: "#3d4250",
   failed: "#e74c3c",
 };
 
@@ -47,7 +40,6 @@ export function SwarmBoardLeftRail() {
 
   const toggle = useCallback(() => setCollapsed((c) => !c), []);
 
-  // Derive lists from board state
   const sessions = state.nodes.filter(
     (n) => (n.data as SwarmBoardNodeData).nodeType === "agentSession",
   );
@@ -55,7 +47,6 @@ export function SwarmBoardLeftRail() {
     (n) => (n.data as SwarmBoardNodeData).nodeType === "artifact",
   );
 
-  // Unique branches from session nodes
   const branches = Array.from(
     new Set(
       sessions
@@ -64,7 +55,6 @@ export function SwarmBoardLeftRail() {
     ),
   );
 
-  // Unique hunt IDs
   const hunts = Array.from(
     new Set(
       state.nodes
@@ -76,21 +66,18 @@ export function SwarmBoardLeftRail() {
   if (collapsed) {
     return (
       <div
-        className="flex flex-col items-center py-3 shrink-0"
-        style={{ backgroundColor: "#070910", width: 36, borderRight: "1px solid #1a1f2e" }}
+        className="flex flex-col items-center pt-2 shrink-0"
+        style={{ backgroundColor: "#070910", width: COLLAPSED_WIDTH, borderRight: "1px solid #0f1119" }}
       >
         <button
           onClick={toggle}
-          className="p-1 rounded hover:bg-[#ffffff06] text-[#3d4250] hover:text-[#6f7f9a] transition-colors"
+          className="text-[#3d4250] hover:text-[#6f7f9a] transition-colors leading-none text-[11px]"
           title="Expand panel"
           aria-label="Expand explorer panel"
         >
-          <IconChevronRight size={13} stroke={1.5} />
+          &#x203a;
         </button>
-        <div className="mt-4 flex flex-col gap-2 items-center">
-          <IconTerminal2 size={12} stroke={1.5} className="text-[#1e2230]" />
-          <span className="text-[9px] text-[#3d4250] font-mono tabular-nums">{sessions.length}</span>
-        </div>
+        <span className="text-[9px] text-[#1e2230] font-mono tabular-nums mt-3">{sessions.length}</span>
       </div>
     );
   }
@@ -98,28 +85,28 @@ export function SwarmBoardLeftRail() {
   return (
     <div
       className="flex flex-col shrink-0 overflow-y-auto"
-      style={{ backgroundColor: "#070910", width: 220, borderRight: "1px solid #1a1f2e" }}
+      style={{ backgroundColor: "#070910", width: EXPANDED_WIDTH, borderRight: "1px solid #0f1119" }}
     >
-      {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2.5 shrink-0" style={{ borderBottom: "1px solid #1a1f2e" }}>
-        <span className="text-[8px] font-mono text-[#3d4250] uppercase tracking-[0.2em]">
-          Explorer
+      {/* Header — minimal */}
+      <div className="flex items-center justify-between px-2 py-1.5 shrink-0" style={{ borderBottom: "1px solid #0f1119" }}>
+        <span className="text-[8px] font-mono text-[#1e2230] uppercase tracking-[0.2em]">
+          explorer
         </span>
         <button
           onClick={toggle}
-          className="p-0.5 rounded hover:bg-[#ffffff06] text-[#3d4250] hover:text-[#6f7f9a] transition-colors"
+          className="text-[#3d4250] hover:text-[#6f7f9a] transition-colors leading-none text-[11px]"
           title="Collapse panel"
           aria-label="Collapse explorer panel"
         >
-          <IconChevronLeft size={13} stroke={1.5} />
+          &#x2039;
         </button>
       </div>
 
       {/* Sessions */}
-      <RailSection icon={IconTerminal2} title="Sessions" count={sessions.length}>
+      <RailSection label="S" title="Sessions" count={sessions.length}>
         {sessions.length === 0 ? (
-          <span className="text-[10px] text-[#1e2230] font-mono px-3 py-1 block">
-            spawn a session to begin...
+          <span className="text-[9px] text-[#1e2230] font-mono px-2 py-0.5 block">
+            no sessions
           </span>
         ) : (
           sessions.map((node) => {
@@ -130,32 +117,26 @@ export function SwarmBoardLeftRail() {
                 key={node.id}
                 onClick={() => selectNode(node.id)}
                 className={cn(
-                  "w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors",
+                  "w-full flex items-center gap-1.5 px-2 py-[3px] text-left font-mono transition-colors",
                   isSelected
-                    ? "bg-[#d4a84b08]"
-                    : "hover:bg-[#ffffff04]",
+                    ? "bg-[#d4a84b08] text-[#ece7dc]"
+                    : "text-[#6f7f9a] hover:bg-[#ffffff04]",
                 )}
+                aria-label={`Select session: ${d.title}`}
               >
                 <IconCircleFilled
-                  size={5}
+                  size={4}
                   style={{ color: STATUS_DOT_COLOR[d.status ?? "idle"] }}
                   className="shrink-0"
                 />
-                <span className={cn(
-                  "text-[11px] truncate flex-1",
-                  isSelected ? "text-[#ece7dc]" : "text-[#6f7f9a]",
-                )}>
+                <span className="text-[10px] truncate flex-1">
                   {d.title}
                 </span>
-                {d.sessionId ? (
-                  d.branch && (
-                    <span className="text-[9px] text-[#1e2230] font-mono truncate max-w-[55px] text-right">
-                      {d.branch.length > 10 ? d.branch.slice(0, 8) + "..." : d.branch}
-                    </span>
-                  )
-                ) : (
-                  <span className="text-[9px] text-[#1e223080] font-mono">
-                    demo
+                {d.branch && (
+                  <span className="text-[8px] text-[#1e2230] truncate max-w-[50px] text-right tabular-nums">
+                    {d.branch.length > BRANCH_TRUNCATE_LENGTH
+                      ? d.branch.slice(0, BRANCH_DISPLAY_LENGTH) + ".."
+                      : d.branch}
                   </span>
                 )}
               </button>
@@ -165,91 +146,71 @@ export function SwarmBoardLeftRail() {
       </RailSection>
 
       {/* Hunts */}
-      <RailSection icon={IconTarget} title="Hunts" count={hunts.length}>
-        {hunts.length === 0 ? (
-          <span className="text-[10px] text-[#1e2230] font-mono px-3 py-1 block">
-            No active hunts
-          </span>
-        ) : (
-          hunts.map((huntId) => (
-            <div
-              key={huntId}
-              className="flex items-center gap-2 px-3 py-1.5"
-            >
-              <IconTarget size={10} stroke={1.5} className="text-[#d4a84b60] shrink-0" />
-              <span className="text-[10px] text-[#6f7f9a] font-mono truncate">
+      {hunts.length > 0 && (
+        <RailSection label="H" title="Hunts" count={hunts.length}>
+          {hunts.map((huntId) => (
+            <div key={huntId} className="flex items-center gap-1.5 px-2 py-[3px] font-mono">
+              <span className="text-[10px] text-[#6f7f9a] truncate">
                 {huntId}
               </span>
             </div>
-          ))
-        )}
-      </RailSection>
+          ))}
+        </RailSection>
+      )}
 
-      {/* Recent Artifacts */}
-      <RailSection icon={IconFile} title="Artifacts" count={artifacts.length}>
-        {artifacts.length === 0 ? (
-          <span className="text-[10px] text-[#1e2230] font-mono px-3 py-1 block">
-            No artifacts
-          </span>
-        ) : (
-          artifacts.map((node) => {
+      {/* Artifacts */}
+      {artifacts.length > 0 && (
+        <RailSection label="A" title="Artifacts" count={artifacts.length}>
+          {artifacts.map((node) => {
             const d = node.data as SwarmBoardNodeData;
             return (
               <button
                 key={node.id}
                 onClick={() => selectNode(node.id)}
                 className={cn(
-                  "w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors",
+                  "w-full flex items-center gap-1.5 px-2 py-[3px] text-left font-mono transition-colors",
                   state.selectedNodeId === node.id
-                    ? "bg-[#3dbf8408]"
-                    : "hover:bg-[#ffffff04]",
+                    ? "bg-[#3dbf8408] text-[#ece7dc]"
+                    : "text-[#6f7f9a] hover:bg-[#ffffff04]",
                 )}
+                aria-label={`Select artifact: ${d.filePath ?? d.title}`}
               >
-                <IconFile size={10} stroke={1.5} className="text-[#3dbf8460] shrink-0" />
-                <span className="text-[10px] text-[#6f7f9a] font-mono truncate">
+                <span className="text-[10px] truncate">
                   {d.filePath ?? d.title}
                 </span>
               </button>
             );
-          })
-        )}
-      </RailSection>
+          })}
+        </RailSection>
+      )}
 
       {/* Branches */}
-      <RailSection icon={IconGitBranch} title="Branches" count={branches.length}>
-        {branches.length === 0 ? (
-          <span className="text-[10px] text-[#1e2230] font-mono px-3 py-1 block">
-            No branches
-          </span>
-        ) : (
-          branches.map((branch) => (
-            <div
-              key={branch}
-              className="flex items-center gap-2 px-3 py-1.5"
-            >
-              <IconGitBranch size={10} stroke={1.5} className="text-[#5b8def60] shrink-0" />
-              <span className="text-[10px] text-[#6f7f9a] font-mono truncate">
+      {branches.length > 0 && (
+        <RailSection label="B" title="Branches" count={branches.length}>
+          {branches.map((branch) => (
+            <div key={branch} className="flex items-center gap-1.5 px-2 py-[3px] font-mono">
+              <span className="text-[10px] text-[#6f7f9a] truncate">
                 {branch}
               </span>
             </div>
-          ))
-        )}
-      </RailSection>
+          ))}
+        </RailSection>
+      )}
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Section helper
+// Section — barely-there label + thin divider, collapsible
 // ---------------------------------------------------------------------------
 
 function RailSection({
-  icon: Icon,
+  label,
   title,
   count,
   children,
 }: {
-  icon: typeof IconTerminal2;
+  label: string;
   title: string;
   count: number;
   children: React.ReactNode;
@@ -265,25 +226,27 @@ function RailSection({
   }, [children]);
 
   return (
-    <div style={{ borderBottom: "1px solid #0f1119" }}>
+    <div style={{ borderBottom: "1px solid #0a0c12" }}>
       <button
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-1.5 px-3 py-2 w-full text-left hover:bg-[#ffffff03] transition-colors"
+        className="flex items-center gap-1 px-2 py-1 w-full text-left"
+        aria-label={`${open ? "Collapse" : "Expand"} ${title} section`}
+        title={title}
       >
-        <Icon size={10} stroke={1.5} className="text-[#1e2230] shrink-0" />
-        <span className="text-[8px] font-mono uppercase tracking-[0.2em] text-[#3d4250] flex-1">
-          {title}
+        <span className="text-[8px] font-mono text-[#1e2230] w-3 shrink-0 uppercase">
+          {label}
         </span>
-        <span className="text-[9px] text-[#1e2230] font-mono tabular-nums">{count}</span>
+        <span className="flex-1 h-px bg-[#0f1119]" />
+        <span className="text-[8px] text-[#1e2230] font-mono tabular-nums ml-1">{count}</span>
       </button>
       <div
         style={{
           height: open ? contentHeight : 0,
           overflow: "hidden",
-          transition: "height 0.2s ease",
+          transition: "height 0.15s ease",
         }}
       >
-        <div ref={contentRef} className="pb-1">
+        <div ref={contentRef} className="pb-0.5">
           {children}
         </div>
       </div>

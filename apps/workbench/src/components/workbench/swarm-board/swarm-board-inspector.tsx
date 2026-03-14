@@ -1,8 +1,8 @@
 /**
  * SwarmBoardInspector — right-side detail drawer for the selected node.
  *
- * Shows full details based on node type: terminal output, guard results,
- * diff view, artifact preview, etc.
+ * Dense monospace layout. Metrics as inline text, not cards.
+ * Action hierarchy: one primary button, rest as text links.
  */
 
 import { useCallback, useEffect } from "react";
@@ -19,29 +19,27 @@ import {
   IconAlertTriangle,
   IconShieldOff,
   IconFileCode,
-  IconFolder,
-  IconGitBranch,
-  IconReceipt,
-  IconExternalLink,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { useSwarmBoard } from "@/lib/workbench/swarm-board-store";
 import type { SwarmBoardNodeData, SwarmNodeType } from "@/lib/workbench/swarm-board-types";
 
 // ---------------------------------------------------------------------------
-// Node type metadata
+// Constants — restrained palette matching node components
 // ---------------------------------------------------------------------------
+
+const INSPECTOR_WIDTH = 340;
 
 const NODE_TYPE_META: Record<
   SwarmNodeType,
   { icon: typeof IconTerminal2; label: string; color: string }
 > = {
-  agentSession: { icon: IconTerminal2, label: "Agent Session", color: "#d4a84b" },
-  terminalTask: { icon: IconSubtask, label: "Terminal Task", color: "#5b8def" },
-  artifact: { icon: IconFile, label: "Artifact", color: "#3dbf84" },
-  diff: { icon: IconGitCommit, label: "Diff", color: "#8b5cf6" },
-  note: { icon: IconNote, label: "Note", color: "#d4a84b" },
-  receipt: { icon: IconCertificate, label: "Receipt", color: "#8b5cf6" },
+  agentSession: { icon: IconTerminal2, label: "session", color: "#c49a3c" },
+  terminalTask: { icon: IconSubtask, label: "task", color: "#5580cc" },
+  artifact: { icon: IconFile, label: "artifact", color: "#38a876" },
+  diff: { icon: IconGitCommit, label: "diff", color: "#7c5cbf" },
+  note: { icon: IconNote, label: "note", color: "#a08a60" },
+  receipt: { icon: IconCertificate, label: "receipt", color: "#7c5cbf" },
 };
 
 // ---------------------------------------------------------------------------
@@ -56,7 +54,6 @@ export function SwarmBoardInspector() {
     selectNode(null);
   }, [selectNode]);
 
-  // Close on Escape key
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -70,12 +67,12 @@ export function SwarmBoardInspector() {
     <AnimatePresence>
       {open && selectedNode && (
         <motion.aside
-          initial={{ x: 360, opacity: 0 }}
+          initial={{ x: INSPECTOR_WIDTH, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
-          exit={{ x: 360, opacity: 0 }}
-          transition={{ type: "spring", damping: 28, stiffness: 300 }}
-          className="fixed top-0 right-0 h-full w-[360px] z-50 flex flex-col border-l border-[#2d3240]"
-          style={{ backgroundColor: "#0a0c12" }}
+          exit={{ x: INSPECTOR_WIDTH, opacity: 0 }}
+          transition={{ type: "spring", damping: 30, stiffness: 280 }}
+          className="fixed top-0 right-0 h-full z-50 flex flex-col border-l border-[#14181f]"
+          style={{ backgroundColor: "#08090e", width: INSPECTOR_WIDTH }}
           aria-label="Node inspector"
           role="complementary"
         >
@@ -107,35 +104,30 @@ function InspectorContent({
   return (
     <>
       {/* Header */}
-      <div className="flex items-center gap-2.5 px-4 py-3 border-b border-[#2d324060] shrink-0">
-        <div
-          className="shrink-0 flex items-center justify-center w-7 h-7 rounded-md"
-          style={{
-            backgroundColor: `${meta.color}12`,
-            border: `1px solid ${meta.color}20`,
-          }}
-        >
-          <TypeIcon size={14} stroke={1.5} style={{ color: meta.color }} />
-        </div>
+      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[#0e1018] shrink-0">
+        <TypeIcon size={12} stroke={1.5} style={{ color: meta.color }} className="shrink-0" />
         <div className="flex-1 min-w-0">
-          <div className="text-[13px] font-syne font-semibold text-[#ece7dc] truncate">
+          <span className="text-[12px] font-mono font-medium text-[#ece7dc] truncate block tracking-tight">
             {data.title}
-          </div>
-          <div className="text-[10px] text-[#6f7f9a] uppercase tracking-wider">
-            {meta.label}
-          </div>
+          </span>
         </div>
+        <span
+          className="text-[7px] font-mono text-[#2a2f3a] uppercase mr-1"
+          style={{ letterSpacing: '0.14em' }}
+        >
+          {meta.label}
+        </span>
         <button
           onClick={onClose}
-          className="shrink-0 p-1 rounded hover:bg-[#131721] text-[#6f7f9a] hover:text-[#ece7dc] transition-colors"
+          className="shrink-0 p-0.5 text-[#2a2f3a] hover:text-[#5c6a80] transition-colors"
           aria-label="Close inspector"
         >
-          <IconX size={16} stroke={1.5} />
+          <IconX size={13} stroke={1.5} />
         </button>
       </div>
 
       {/* Body (scrollable) */}
-      <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
+      <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-4">
         {nodeType === "agentSession" && <AgentSessionDetail data={data} />}
         {nodeType === "terminalTask" && <TerminalTaskDetail data={data} />}
         {nodeType === "receipt" && <ReceiptDetail data={data} />}
@@ -144,29 +136,70 @@ function InspectorContent({
         {nodeType === "note" && <NoteDetail data={data} />}
       </div>
 
-      {/* Footer actions */}
-      <div className="flex items-center gap-2 px-4 py-3 border-t border-[#2d324060] shrink-0">
-        {nodeType === "agentSession" && (
-          <>
-            <ActionButton icon={IconTerminal2} label="Open Terminal" />
-            <ActionButton icon={IconReceipt} label="View Receipts" />
-            <ActionButton icon={IconGitCommit} label="Show Diff" />
-          </>
-        )}
-        {nodeType === "receipt" && (
-          <>
-            <ActionButton icon={IconCertificate} label="Verify Signature" />
-            <ActionButton icon={IconExternalLink} label="Full Receipt" />
-          </>
-        )}
-        {nodeType === "diff" && (
-          <ActionButton icon={IconExternalLink} label="Open Diff View" />
-        )}
-        {nodeType === "artifact" && (
-          <ActionButton icon={IconExternalLink} label="Open File" />
-        )}
-      </div>
+      {/* Footer actions — hierarchy: one primary, rest as text links */}
+      <InspectorFooter nodeType={nodeType} />
     </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Footer with action hierarchy
+// ---------------------------------------------------------------------------
+
+function InspectorFooter({ nodeType }: { nodeType: SwarmNodeType }) {
+  switch (nodeType) {
+    case "agentSession":
+      return (
+        <div className="flex items-center gap-3 px-4 py-2.5 border-t border-[#0e1018] shrink-0">
+          <button
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-[9px] font-mono font-semibold bg-[#c49a3c] text-[#050609] hover:bg-[#d4aa50] transition-colors"
+            aria-label="Open Terminal"
+          >
+            <IconTerminal2 size={10} stroke={1.5} />
+            Terminal
+          </button>
+          <TextAction label="Receipts" />
+          <TextAction label="Diff" />
+        </div>
+      );
+    case "receipt":
+      return (
+        <div className="flex items-center gap-3 px-4 py-2.5 border-t border-[#0e1018] shrink-0">
+          <button
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-[9px] font-mono font-semibold bg-[#7c5cbf] text-[#050609] hover:bg-[#8e6ed0] transition-colors"
+            aria-label="Verify Signature"
+          >
+            <IconCertificate size={10} stroke={1.5} />
+            Verify
+          </button>
+          <TextAction label="Full Receipt" />
+        </div>
+      );
+    case "diff":
+      return (
+        <div className="flex items-center gap-3 px-4 py-2.5 border-t border-[#0e1018] shrink-0">
+          <TextAction label="Open Diff View" />
+        </div>
+      );
+    case "artifact":
+      return (
+        <div className="flex items-center gap-3 px-4 py-2.5 border-t border-[#0e1018] shrink-0">
+          <TextAction label="Open File" />
+        </div>
+      );
+    default:
+      return null;
+  }
+}
+
+function TextAction({ label }: { label: string }) {
+  return (
+    <button
+      className="text-[9px] font-mono text-[#4a5568] hover:text-[#ece7dc] transition-colors"
+      aria-label={label}
+    >
+      {label}
+    </button>
   );
 }
 
@@ -175,44 +208,61 @@ function InspectorContent({
 // ---------------------------------------------------------------------------
 
 function AgentSessionDetail({ data }: { data: SwarmBoardNodeData }) {
+  const files = data.changedFilesCount ?? 0;
+  const receipts = data.receiptCount ?? 0;
+  const blocked = data.blockedActionCount ?? 0;
+  const events = data.toolBoundaryEvents;
+  const confidence = data.confidence;
+
   return (
     <>
-      {/* Session info */}
-      <Section title="Session">
-        <InfoRow icon={IconGitBranch} label="Branch" value={data.branch} />
-        <InfoRow icon={IconFolder} label="Worktree" value={data.worktreePath} mono />
-        <InfoRow label="Model" value={data.agentModel} />
-        <InfoRow label="Policy" value={data.policyMode} />
-        <InfoRow label="Session ID" value={data.sessionId} mono />
-      </Section>
-
-      {/* Metrics */}
-      <Section title="Metrics">
-        <div className="grid grid-cols-3 gap-2">
-          <MetricCard label="Files Changed" value={data.changedFilesCount ?? 0} color="#5b8def" />
-          <MetricCard label="Receipts" value={data.receiptCount ?? 0} color="#8b5cf6" />
-          <MetricCard label="Blocked" value={data.blockedActionCount ?? 0} color={data.blockedActionCount ? "#e74c3c" : "#6f7f9a"} />
-        </div>
-        {(data.toolBoundaryEvents != null || data.confidence != null) && (
-          <div className="grid grid-cols-2 gap-2 mt-2">
-            {data.toolBoundaryEvents != null && (
-              <MetricCard label="Tool Events" value={data.toolBoundaryEvents} color="#d4a84b" />
-            )}
-            {data.confidence != null && (
-              <MetricCard label="Confidence" value={data.confidence} color={data.confidence >= 80 ? "#3dbf84" : data.confidence >= 50 ? "#d4a84b" : "#e74c3c"} />
-            )}
-          </div>
+      {/* Dense inline metrics — single monospace line, dot-separated */}
+      <div
+        className="text-[9px] font-mono text-[#4a5568] leading-relaxed"
+        style={{ fontVariantNumeric: 'tabular-nums' }}
+      >
+        <span className={files > 0 ? "text-[#5580cc]" : ""}>{files} files</span>
+        <Dot />
+        <span className={receipts > 0 ? "text-[#7c5cbf]" : ""}>{receipts} receipts</span>
+        {blocked > 0 && (
+          <>
+            <Dot />
+            <span className="text-[#b85450]">{blocked} blocked</span>
+          </>
         )}
+        {events != null && (
+          <>
+            <Dot />
+            <span>{events} events</span>
+          </>
+        )}
+        {confidence != null && (
+          <>
+            <Dot />
+            <span className={confidence >= 80 ? "text-[#38a876]" : confidence >= 50 ? "text-[#c49a3c]" : "text-[#b85450]"}>
+              {confidence}% conf
+            </span>
+          </>
+        )}
+      </div>
+
+      {/* Session info */}
+      <Section title="session">
+        <InfoRow label="branch" value={data.branch} />
+        <InfoRow label="worktree" value={data.worktreePath} />
+        <InfoRow label="model" value={data.agentModel} />
+        <InfoRow label="policy" value={data.policyMode} />
+        <InfoRow label="id" value={data.sessionId} />
       </Section>
 
       {/* Files touched */}
       {data.filesTouched && data.filesTouched.length > 0 && (
-        <Section title="Files Touched">
-          <div className="flex flex-col gap-0.5">
+        <Section title="files">
+          <div className="flex flex-col">
             {data.filesTouched.map((file, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <IconFileCode size={11} stroke={1.5} className="text-[#5b8def] shrink-0" />
-                <span className="text-[10px] text-[#8a96ab] font-mono truncate">{file}</span>
+              <div key={i} className="flex items-center gap-1.5 py-px">
+                <IconFileCode size={9} stroke={1.5} className="text-[#2a2f3a] shrink-0" />
+                <span className="text-[9px] text-[#5c6a80] font-mono truncate">{file}</span>
               </div>
             ))}
           </div>
@@ -220,10 +270,10 @@ function AgentSessionDetail({ data }: { data: SwarmBoardNodeData }) {
       )}
 
       {/* Terminal output */}
-      <Section title="Terminal Output">
+      <Section title="output">
         <div
-          className="rounded-md p-3 font-mono text-[10px] leading-[1.7] overflow-x-auto"
-          style={{ backgroundColor: "#05060a", border: "1px solid #1a1f2e" }}
+          className="rounded-sm p-2 font-mono text-[9px] leading-[1.7] overflow-x-auto"
+          style={{ backgroundColor: "#050609" }}
         >
           {(data.previewLines ?? []).map((line, i) => (
             <div
@@ -231,19 +281,19 @@ function AgentSessionDetail({ data }: { data: SwarmBoardNodeData }) {
               className={cn(
                 "whitespace-pre",
                 line.startsWith("$")
-                  ? "text-[#d4a84b]"
+                  ? "text-[#c49a3c]"
                   : line.includes("FAILED") || line.includes("error")
-                    ? "text-[#e74c3c]"
+                    ? "text-[#b85450]"
                     : line.includes("ok") || line.includes("passed")
-                      ? "text-[#3dbf84]"
-                      : "text-[#8a96ab]",
+                      ? "text-[#38a876]"
+                      : "text-[#5c6a80]",
               )}
             >
               {line}
             </div>
           ))}
           {(!data.previewLines || data.previewLines.length === 0) && (
-            <span className="text-[#3d4250] italic">No terminal output yet</span>
+            <span className="text-[#1a1e28]">no output yet</span>
           )}
         </div>
       </Section>
@@ -254,12 +304,12 @@ function AgentSessionDetail({ data }: { data: SwarmBoardNodeData }) {
 function TerminalTaskDetail({ data }: { data: SwarmBoardNodeData }) {
   return (
     <>
-      <Section title="Task">
-        <InfoRow label="Status" value={data.status} />
-        <InfoRow label="Session" value={data.sessionId} mono />
+      <Section title="task">
+        <InfoRow label="status" value={data.status} />
+        <InfoRow label="session" value={data.sessionId} />
       </Section>
-      <Section title="Prompt">
-        <p className="text-[11px] text-[#8a96ab] leading-[1.6] whitespace-pre-wrap">
+      <Section title="prompt">
+        <p className="text-[10px] text-[#5c6a80] font-mono leading-[1.6] whitespace-pre-wrap">
           {data.taskPrompt ?? "No task description provided."}
         </p>
       </Section>
@@ -270,65 +320,58 @@ function TerminalTaskDetail({ data }: { data: SwarmBoardNodeData }) {
 function ReceiptDetail({ data }: { data: SwarmBoardNodeData }) {
   const guards = data.guardResults ?? [];
   const passed = guards.filter((g) => g.allowed).length;
-  const failed = guards.filter((g) => !g.allowed).length;
+  const totalMs = guards.reduce((s, g) => s + (g.duration_ms ?? 0), 0);
 
   return (
     <>
-      <Section title="Verdict">
-        <div className="flex items-center gap-3">
-          <VerdictBadgeLarge verdict={data.verdict ?? "allow"} />
-          <div>
-            <div className="text-[11px] text-[#8a96ab]">
-              {passed} passed / {failed} failed
-            </div>
-            <div className="text-[10px] text-[#3d4250] mt-0.5">
-              Total duration: {guards.reduce((s, g) => s + (g.duration_ms ?? 0), 0)}ms
-            </div>
-          </div>
-        </div>
-      </Section>
+      {/* Verdict + summary in one line */}
+      <div className="flex items-center gap-2">
+        <VerdictBadge verdict={data.verdict ?? "allow"} />
+        <span
+          className="text-[9px] font-mono text-[#4a5568]"
+          style={{ fontVariantNumeric: 'tabular-nums' }}
+        >
+          {passed}/{guards.length} passed
+          <Dot />
+          {totalMs}ms
+        </span>
+      </div>
 
-      <Section title="Guard Results">
-        <div className="flex flex-col gap-1.5">
+      <Section title="guards">
+        <div className="flex flex-col gap-0.5">
           {guards.map((gr, i) => (
-            <div
-              key={i}
-              className="flex items-center gap-2 px-2.5 py-1.5 rounded-md"
-              style={{ backgroundColor: "#0b0d13", border: "1px solid #1a1f2e" }}
-            >
+            <div key={i} className="flex items-center gap-2 py-0.5">
               <span
-                className="w-2 h-2 rounded-full shrink-0"
-                style={{ backgroundColor: gr.allowed ? "#3dbf84" : "#e74c3c" }}
+                className="w-1 h-1 rounded-full shrink-0"
+                style={{ backgroundColor: gr.allowed ? "#38a876" : "#b85450" }}
               />
-              <span className="text-[11px] text-[#ece7dc] font-mono flex-1 truncate">
+              <span className="text-[9px] text-[#ece7dc] font-mono flex-1 truncate">
                 {gr.guard}
               </span>
-              {gr.allowed ? (
-                <IconCheck size={12} stroke={2} className="text-[#3dbf84] shrink-0" />
-              ) : (
-                <IconShieldOff size={12} stroke={2} className="text-[#e74c3c] shrink-0" />
-              )}
               {gr.duration_ms != null && (
-                <span className="text-[9px] text-[#3d4250] font-mono shrink-0 w-8 text-right">
+                <span
+                  className="text-[8px] text-[#2a2f3a] font-mono shrink-0"
+                  style={{ fontVariantNumeric: 'tabular-nums' }}
+                >
                   {gr.duration_ms}ms
                 </span>
               )}
             </div>
           ))}
           {guards.length === 0 && (
-            <span className="text-[10px] text-[#3d4250] italic">No guard results</span>
+            <span className="text-[9px] text-[#1a1e28] font-mono">no guard results</span>
           )}
         </div>
       </Section>
 
-      <Section title="Signature">
+      <Section title="signature">
         <div
-          className="rounded-md p-2.5 font-mono text-[9px] text-[#3d4250] break-all"
-          style={{ backgroundColor: "#05060a", border: "1px solid #1a1f2e" }}
+          className="font-mono text-[8px] text-[#2a2f3a] break-all leading-[1.5]"
+          style={{ fontVariantNumeric: 'tabular-nums' }}
         >
           {data.sessionId
             ? `ed25519:${data.sessionId.replace(/[^a-f0-9]/gi, "").padEnd(64, "0").slice(0, 64)}`
-            : "No signature available"}
+            : "no signature available"}
         </div>
       </Section>
     </>
@@ -339,22 +382,29 @@ function DiffDetail({ data }: { data: SwarmBoardNodeData }) {
   const summary = data.diffSummary;
   return (
     <>
-      <Section title="Summary">
-        <div className="flex items-center gap-4 mb-2">
-          <span className="text-[18px] font-bold text-[#3dbf84]">+{summary?.added ?? 0}</span>
-          <span className="text-[18px] font-bold text-[#e74c3c]">-{summary?.removed ?? 0}</span>
-        </div>
-      </Section>
-      <Section title="Changed Files">
-        <div className="flex flex-col gap-1">
+      {/* Compact diff stat — matching diff node's split treatment */}
+      <div
+        className="flex items-baseline gap-3 font-mono"
+        style={{ fontVariantNumeric: 'tabular-nums' }}
+      >
+        <span className="text-[18px] font-bold text-[#38a876] tracking-tight">
+          +{summary?.added ?? 0}
+        </span>
+        <span className="text-[18px] font-bold text-[#b85450] tracking-tight">
+          -{summary?.removed ?? 0}
+        </span>
+      </div>
+
+      <Section title="changed files">
+        <div className="flex flex-col">
           {(summary?.files ?? []).map((file, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <IconFileCode size={12} stroke={1.5} className="text-[#5b8def] shrink-0" />
-              <span className="text-[11px] text-[#8a96ab] font-mono truncate">{file}</span>
+            <div key={i} className="flex items-center gap-1.5 py-px">
+              <IconFileCode size={9} stroke={1.5} className="text-[#2a2f3a] shrink-0" />
+              <span className="text-[9px] text-[#5c6a80] font-mono truncate">{file}</span>
             </div>
           ))}
           {(!summary?.files || summary.files.length === 0) && (
-            <span className="text-[10px] text-[#3d4250] italic">No files changed</span>
+            <span className="text-[9px] text-[#1a1e28] font-mono">no files changed</span>
           )}
         </div>
       </Section>
@@ -365,16 +415,16 @@ function DiffDetail({ data }: { data: SwarmBoardNodeData }) {
 function ArtifactDetail({ data }: { data: SwarmBoardNodeData }) {
   return (
     <>
-      <Section title="File Info">
-        <InfoRow label="Path" value={data.filePath} mono />
-        <InfoRow label="Type" value={data.fileType} />
+      <Section title="file">
+        <InfoRow label="path" value={data.filePath} />
+        <InfoRow label="type" value={data.fileType} />
       </Section>
-      <Section title="Preview">
+      <Section title="preview">
         <div
-          className="rounded-md p-3 font-mono text-[10px] text-[#3d4250] leading-[1.7]"
-          style={{ backgroundColor: "#05060a", border: "1px solid #1a1f2e", minHeight: 80 }}
+          className="rounded-sm p-2 font-mono text-[8px] text-[#1a1e28] leading-[1.7]"
+          style={{ backgroundColor: "#050609", minHeight: 48 }}
         >
-          <span className="italic">File preview will be available when connected to a PTY backend.</span>
+          preview available when connected to PTY backend
         </div>
       </Section>
     </>
@@ -383,10 +433,10 @@ function ArtifactDetail({ data }: { data: SwarmBoardNodeData }) {
 
 function NoteDetail({ data }: { data: SwarmBoardNodeData }) {
   return (
-    <Section title="Content">
-      <div className="text-[12px] text-[#8a96ab] leading-[1.7] whitespace-pre-wrap min-h-[80px]">
+    <Section title="content">
+      <div className="text-[10px] text-[#9a8e78] leading-[1.7] whitespace-pre-wrap min-h-[48px]">
         {data.content || (
-          <span className="text-[#3d4250] italic">No content</span>
+          <span className="text-[#3d3528]">empty</span>
         )}
       </div>
     </Section>
@@ -400,108 +450,52 @@ function NoteDetail({ data }: { data: SwarmBoardNodeData }) {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
-      <h3 className="text-[9px] font-semibold uppercase tracking-wider text-[#6f7f9a] mb-2">
+      <div
+        className="text-[7px] font-mono uppercase text-[#2a2f3a] mb-1.5"
+        style={{ letterSpacing: '0.15em' }}
+      >
         {title}
-      </h3>
+      </div>
       {children}
     </div>
   );
 }
 
 function InfoRow({
-  icon: Icon,
   label,
   value,
-  mono = false,
 }: {
-  icon?: typeof IconGitBranch;
   label: string;
   value?: string;
-  mono?: boolean;
 }) {
   if (!value) return null;
   return (
-    <div className="flex items-center gap-2 py-0.5">
-      {Icon && <Icon size={11} stroke={1.5} className="text-[#3d4250] shrink-0" />}
-      <span className="text-[10px] text-[#6f7f9a] w-16 shrink-0">{label}</span>
-      <span
-        className={cn(
-          "text-[11px] text-[#ece7dc] truncate",
-          mono && "font-mono text-[10px]",
-        )}
-      >
-        {value}
-      </span>
+    <div className="flex items-baseline gap-2 py-px font-mono">
+      <span className="text-[8px] text-[#2a2f3a] w-14 shrink-0">{label}</span>
+      <span className="text-[9px] text-[#5c6a80] truncate">{value}</span>
     </div>
   );
 }
 
-function MetricCard({
-  label,
-  value,
-  color,
-}: {
-  label: string;
-  value: number;
-  color: string;
-}) {
-  return (
-    <div
-      className="flex flex-col items-center gap-0.5 rounded-md py-2 px-1"
-      style={{ backgroundColor: `${color}08`, border: `1px solid ${color}15` }}
-    >
-      <span className="text-[16px] font-bold" style={{ color }}>
-        {value}
-      </span>
-      <span className="text-[8px] text-[#6f7f9a] uppercase tracking-wider text-center">
-        {label}
-      </span>
-    </div>
-  );
+function Dot() {
+  return <span className="text-[#1a1e28] mx-1">&middot;</span>;
 }
 
-function VerdictBadgeLarge({ verdict }: { verdict: "allow" | "deny" | "warn" }) {
+function VerdictBadge({ verdict }: { verdict: "allow" | "deny" | "warn" }) {
   const config = {
-    allow: { bg: "#3dbf8418", text: "#3dbf84", border: "#3dbf8430", label: "ALLOW", icon: IconCheck },
-    deny: { bg: "#e74c3c18", text: "#e74c3c", border: "#e74c3c30", label: "DENY", icon: IconShieldOff },
-    warn: { bg: "#d4a84b18", text: "#d4a84b", border: "#d4a84b30", label: "WARN", icon: IconAlertTriangle },
+    allow: { text: "#38a876", bg: "#38a87612", label: "ALLOW", icon: IconCheck },
+    deny: { text: "#b85450", bg: "#b8545012", label: "DENY", icon: IconShieldOff },
+    warn: { text: "#c49a3c", bg: "#c49a3c12", label: "WARN", icon: IconAlertTriangle },
   }[verdict];
   const VIcon = config.icon;
 
   return (
-    <div
-      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-bold uppercase tracking-wide"
-      style={{
-        backgroundColor: config.bg,
-        color: config.text,
-        border: `1px solid ${config.border}`,
-      }}
+    <span
+      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm text-[9px] font-mono font-semibold"
+      style={{ backgroundColor: config.bg, color: config.text }}
     >
-      <VIcon size={14} stroke={2} />
+      <VIcon size={10} stroke={2} />
       {config.label}
-    </div>
-  );
-}
-
-function ActionButton({
-  icon: Icon,
-  label,
-  onClick,
-}: {
-  icon: typeof IconTerminal2;
-  label: string;
-  onClick?: () => void;
-}) {
-  return (
-    <button
-      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[10px] font-medium text-[#6f7f9a] hover:text-[#ece7dc] hover:bg-[#131721] transition-colors uppercase tracking-wide border border-[#2d324060] disabled:opacity-40 disabled:pointer-events-none"
-      title={label}
-      aria-label={label}
-      onClick={onClick}
-      disabled={!onClick}
-    >
-      <Icon size={12} stroke={1.5} />
-      <span>{label}</span>
-    </button>
+    </span>
   );
 }

@@ -452,7 +452,7 @@ function SwarmBoardCanvas() {
 
   const handleContextConnect = useCallback(() => {
     if (contextMenu) {
-      // TODO(connect): Open connection picker modal (placeholder)
+      // Connection picker not yet implemented (tracked in swarm-board backlog)
       setContextMenu(null);
     }
   }, [contextMenu]);
@@ -687,6 +687,7 @@ const NodeContextMenu = forwardRef<
               if (!isDisabled && "action" in item) item.action();
             }}
             disabled={isDisabled}
+            aria-label={"label" in item ? item.label : undefined}
           >
             {Icon && <Icon size={12} stroke={1.5} />}
             {"label" in item && item.label}
@@ -703,6 +704,8 @@ NodeContextMenu.displayName = "NodeContextMenu";
 // Stats Bar
 // ---------------------------------------------------------------------------
 
+const STATS_BAR_HEIGHT = 20;
+
 function SwarmBoardStatsBar({
   totalNodes,
   runningSessions,
@@ -718,50 +721,29 @@ function SwarmBoardStatsBar({
   totalEdges: number;
   followActive: boolean;
 }) {
+  // Build stat segments, then join with dot separator
+  const segments: Array<{ text: string; color?: string }> = [
+    { text: `${totalNodes} nodes` },
+  ];
+  if (runningSessions > 0) segments.push({ text: `${runningSessions} running`, color: "#3dbf84" });
+  if (blockedSessions > 0) segments.push({ text: `${blockedSessions} blocked`, color: "#d4a84b" });
+  if (totalReceipts > 0) segments.push({ text: `${totalReceipts} receipts` });
+  if (totalEdges > 0) segments.push({ text: `${totalEdges} edges` });
+  if (followActive) segments.push({ text: "following", color: "#3dbf84" });
+
   return (
     <div
-      className="flex items-center gap-3 px-3 shrink-0 select-none"
-      style={{ height: 22, backgroundColor: "#070910", borderTop: "1px solid #0f1119" }}
+      className="flex items-center px-3 shrink-0 select-none"
+      style={{ height: STATS_BAR_HEIGHT, backgroundColor: "#070910", borderTop: "1px solid #0a0c12" }}
     >
-      {/* Stats as compact monospace text */}
       <span className="text-[9px] font-mono text-[#1e2230] tabular-nums">
-        {totalNodes} nodes
-      </span>
-      {runningSessions > 0 && (
-        <span className="text-[9px] font-mono text-[#3dbf8460] tabular-nums">
-          {runningSessions} running
-        </span>
-      )}
-      {blockedSessions > 0 && (
-        <span className="text-[9px] font-mono text-[#d4a84b60] tabular-nums">
-          {blockedSessions} blocked
-        </span>
-      )}
-      {totalReceipts > 0 && (
-        <span className="text-[9px] font-mono text-[#8b5cf640] tabular-nums">
-          {totalReceipts} receipts
-        </span>
-      )}
-      {totalEdges > 0 && (
-        <span className="text-[9px] font-mono text-[#1e2230] tabular-nums">
-          {totalEdges} edges
-        </span>
-      )}
-
-      {/* Follow active indicator */}
-      {followActive && (
-        <span className="flex items-center gap-1 ml-1">
-          <span
-            className="w-1 h-1 rounded-full"
-            style={{ backgroundColor: "#3dbf84", animation: "pulse 2s ease-in-out infinite" }}
-          />
-          <span className="text-[8px] font-mono text-[#3dbf8460] uppercase tracking-wider">
-            following
+        {segments.map((seg, i) => (
+          <span key={i}>
+            {i > 0 && <span className="mx-1">&middot;</span>}
+            <span style={seg.color ? { color: seg.color } : undefined}>{seg.text}</span>
           </span>
-        </span>
-      )}
-
-      {/* Keyboard shortcut hint */}
+        ))}
+      </span>
       <span className="ml-auto text-[8px] text-[#0f1119] font-mono">
         1-6 add / F fit / Space follow
       </span>

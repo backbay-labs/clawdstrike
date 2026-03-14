@@ -386,11 +386,8 @@ describe("SwarmBoardInspector", () => {
 
       const inspector = screen.getByLabelText("Node inspector");
 
-      // Title should be shown
-      expect(inspector).toHaveTextContent("Agent Session");
-
-      // Node type label
-      expect(inspector).toHaveTextContent("Agent Session");
+      // Node type label (lowercase in new design)
+      expect(inspector).toHaveTextContent("session");
 
       // Session info
       expect(inspector).toHaveTextContent("feat/test");
@@ -398,21 +395,12 @@ describe("SwarmBoardInspector", () => {
       expect(inspector).toHaveTextContent("strict");
       expect(inspector).toHaveTextContent("sess-abc123");
 
-      // Metrics
-      expect(inspector).toHaveTextContent("Files Changed");
-      expect(inspector).toHaveTextContent("Receipts");
-      expect(inspector).toHaveTextContent("Blocked");
-
-      // Metric values
-      expect(inspector).toHaveTextContent("3"); // changedFilesCount
-      expect(inspector).toHaveTextContent("5"); // receiptCount
-      expect(inspector).toHaveTextContent("2"); // blockedActionCount
-
-      // Tool events and confidence
-      expect(inspector).toHaveTextContent("Tool Events");
-      expect(inspector).toHaveTextContent("15");
-      expect(inspector).toHaveTextContent("Confidence");
-      expect(inspector).toHaveTextContent("72");
+      // Inline metrics (new format: "3 files . 5 receipts . 2 blocked . 15 events . 72% conf")
+      expect(inspector).toHaveTextContent("3 files");
+      expect(inspector).toHaveTextContent("5 receipts");
+      expect(inspector).toHaveTextContent("2 blocked");
+      expect(inspector).toHaveTextContent("15 events");
+      expect(inspector).toHaveTextContent("72% conf");
     });
 
     it("shows terminal preview lines", () => {
@@ -441,8 +429,8 @@ describe("SwarmBoardInspector", () => {
       });
 
       expect(screen.getByLabelText("Open Terminal")).toBeInTheDocument();
-      expect(screen.getByLabelText("View Receipts")).toBeInTheDocument();
-      expect(screen.getByLabelText("Show Diff")).toBeInTheDocument();
+      expect(screen.getByLabelText("Receipts")).toBeInTheDocument();
+      expect(screen.getByLabelText("Diff")).toBeInTheDocument();
     });
   });
 
@@ -466,15 +454,12 @@ describe("SwarmBoardInspector", () => {
       expect(inspector).toHaveTextContent("ForbiddenPathGuard");
       expect(inspector).toHaveTextContent("SecretLeakGuard");
 
-      // Guard results summary: 1 passed / 1 failed
-      expect(inspector).toHaveTextContent("1 passed");
-      expect(inspector).toHaveTextContent("1 failed");
+      // Guard results summary: "1/2 passed . 10ms" format
+      expect(inspector).toHaveTextContent("1/2 passed");
 
       // Durations
       expect(inspector).toHaveTextContent("2ms");
       expect(inspector).toHaveTextContent("8ms");
-
-      // Total duration: 2 + 8 = 10
       expect(inspector).toHaveTextContent("10ms");
     });
 
@@ -489,8 +474,9 @@ describe("SwarmBoardInspector", () => {
       });
 
       const inspector = screen.getByLabelText("Node inspector");
-      expect(inspector).toHaveTextContent("Signature");
-      expect(inspector).toHaveTextContent("ed25519:");
+      expect(inspector).toHaveTextContent("signature");
+      // Signature uses ed25519 prefix with hex hash
+      expect(inspector).toHaveTextContent(/ed25519:/);
     });
 
     it("shows action buttons for receipt nodes", () => {
@@ -616,19 +602,19 @@ describe("SwarmBoardInspector", () => {
       });
 
       const inspector = screen.getByLabelText("Node inspector");
-      expect(inspector).toHaveTextContent("Terminal Task");
+      expect(inspector).toHaveTextContent("task");
       expect(inspector).toHaveTextContent("Execute the full integration test suite");
     });
   });
 
   describe("node type labels", () => {
     const nodeTypeTests: [string, string, SwarmNodeType][] = [
-      ["add-agent", "Agent Session", "agentSession"],
-      ["add-receipt", "Receipt", "receipt"],
-      ["add-diff", "Diff", "diff"],
-      ["add-artifact", "Artifact", "artifact"],
-      ["add-note", "Note", "note"],
-      ["add-terminal-task", "Terminal Task", "terminalTask"],
+      ["add-agent", "session", "agentSession"],
+      ["add-receipt", "receipt", "receipt"],
+      ["add-diff", "diff", "diff"],
+      ["add-artifact", "artifact", "artifact"],
+      ["add-note", "note", "note"],
+      ["add-terminal-task", "task", "terminalTask"],
     ];
 
     it.each(nodeTypeTests)(

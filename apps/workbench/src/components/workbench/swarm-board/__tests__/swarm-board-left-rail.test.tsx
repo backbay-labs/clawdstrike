@@ -200,25 +200,21 @@ describe("SwarmBoardLeftRail", () => {
     it("shows empty state when no nodes exist", () => {
       renderLeftRail();
 
-      expect(screen.getByText("spawn a session to begin...")).toBeInTheDocument();
-      expect(screen.getByText("No active hunts")).toBeInTheDocument();
-      expect(screen.getByText("No artifacts")).toBeInTheDocument();
-      expect(screen.getByText("No branches")).toBeInTheDocument();
+      expect(screen.getByText("no sessions")).toBeInTheDocument();
+      // Hunts, Artifacts, Branches sections are hidden when empty
     });
 
-    it("shows section headers", () => {
+    it("shows sessions section header", () => {
       renderLeftRail();
 
-      expect(screen.getByText("Sessions")).toBeInTheDocument();
-      expect(screen.getByText("Hunts")).toBeInTheDocument();
-      expect(screen.getByText("Artifacts")).toBeInTheDocument();
-      expect(screen.getByText("Branches")).toBeInTheDocument();
+      // Sessions section is always visible; others are conditionally rendered
+      expect(screen.getByTitle("Sessions")).toBeInTheDocument();
     });
 
-    it("shows Explorer header", () => {
+    it("shows explorer header", () => {
       renderLeftRail();
 
-      expect(screen.getByText("Explorer")).toBeInTheDocument();
+      expect(screen.getByText("explorer")).toBeInTheDocument();
     });
   });
 
@@ -272,9 +268,8 @@ describe("SwarmBoardLeftRail", () => {
         screen.getByTestId("add-note").click();
       });
 
-      // The "Notes" title should appear somewhere but not in sessions section
-      // There should still be empty-state text since note is not a session
-      expect(screen.getByText("spawn a session to begin...")).toBeInTheDocument();
+      // The note is not a session — session list should still show empty text
+      expect(screen.getByText("no sessions")).toBeInTheDocument();
     });
   });
 
@@ -282,8 +277,8 @@ describe("SwarmBoardLeftRail", () => {
     it("shows correct session count", () => {
       renderLeftRail();
 
-      // Count starts at 0
-      const sessionSection = screen.getByText("Sessions").closest("div");
+      // Count starts at 0 — shown in the session section button
+      const sessionSection = screen.getByTitle("Sessions").closest("div");
       expect(sessionSection).toHaveTextContent("0");
 
       act(() => {
@@ -294,7 +289,7 @@ describe("SwarmBoardLeftRail", () => {
       });
 
       // Now count should be 2
-      expect(screen.getByText("Sessions").closest("div")).toHaveTextContent("2");
+      expect(screen.getByTitle("Sessions").closest("div")).toHaveTextContent("2");
     });
   });
 
@@ -351,14 +346,15 @@ describe("SwarmBoardLeftRail", () => {
       expect(huntTexts).toHaveLength(1);
     });
 
-    it("shows 'No active hunts' when no hunts exist", () => {
+    it("hides hunts section when no hunts exist", () => {
       renderLeftRail();
 
       act(() => {
         screen.getByTestId("add-agent-3").click(); // Agent without huntId
       });
 
-      expect(screen.getByText("No active hunts")).toBeInTheDocument();
+      // Hunts section is hidden entirely when there are no hunts
+      expect(screen.queryByTitle("Hunts")).toBeNull();
     });
   });
 
@@ -373,19 +369,21 @@ describe("SwarmBoardLeftRail", () => {
         screen.getByTestId("add-agent-2").click();
       });
 
-      // Should list both branches
-      expect(screen.getByText("Branches").closest("div")?.parentElement).toHaveTextContent("feat/fix-auth");
-      expect(screen.getByText("Branches").closest("div")?.parentElement).toHaveTextContent("feat/rate-limit");
+      // Branches section should appear and list both branches
+      expect(screen.getByTitle("Branches")).toBeInTheDocument();
+      expect(screen.getByText("feat/fix-auth")).toBeInTheDocument();
+      expect(screen.getByText("feat/rate-limit")).toBeInTheDocument();
     });
 
-    it("shows 'No branches' when no agents have branches", () => {
+    it("hides branches section when no agents have branches", () => {
       renderLeftRail();
 
       act(() => {
         screen.getByTestId("add-agent-3").click(); // Agent without branch
       });
 
-      expect(screen.getByText("No branches")).toBeInTheDocument();
+      // Branches section is hidden entirely when there are no branches
+      expect(screen.queryByTitle("Branches")).toBeNull();
     });
   });
 
@@ -393,21 +391,21 @@ describe("SwarmBoardLeftRail", () => {
     it("starts in expanded state", () => {
       renderLeftRail();
 
-      expect(screen.getByText("Explorer")).toBeInTheDocument();
-      expect(screen.getByTitle("Collapse panel")).toBeInTheDocument();
+      expect(screen.getByText("explorer")).toBeInTheDocument();
+      expect(screen.getByLabelText("Collapse explorer panel")).toBeInTheDocument();
     });
 
     it("collapses when collapse button is clicked", () => {
       renderLeftRail();
 
       act(() => {
-        screen.getByTitle("Collapse panel").click();
+        screen.getByLabelText("Collapse explorer panel").click();
       });
 
       // Explorer header should be gone
-      expect(screen.queryByText("Explorer")).toBeNull();
+      expect(screen.queryByText("explorer")).toBeNull();
       // Expand button should appear
-      expect(screen.getByTitle("Expand panel")).toBeInTheDocument();
+      expect(screen.getByLabelText("Expand explorer panel")).toBeInTheDocument();
     });
 
     it("expands back when expand button is clicked", () => {
@@ -415,15 +413,15 @@ describe("SwarmBoardLeftRail", () => {
 
       // Collapse
       act(() => {
-        screen.getByTitle("Collapse panel").click();
+        screen.getByLabelText("Collapse explorer panel").click();
       });
-      expect(screen.queryByText("Explorer")).toBeNull();
+      expect(screen.queryByText("explorer")).toBeNull();
 
       // Expand
       act(() => {
-        screen.getByTitle("Expand panel").click();
+        screen.getByLabelText("Expand explorer panel").click();
       });
-      expect(screen.getByText("Explorer")).toBeInTheDocument();
+      expect(screen.getByText("explorer")).toBeInTheDocument();
     });
 
     it("shows session count in collapsed state", () => {
@@ -438,7 +436,7 @@ describe("SwarmBoardLeftRail", () => {
 
       // Collapse
       act(() => {
-        screen.getByTitle("Collapse panel").click();
+        screen.getByLabelText("Collapse explorer panel").click();
       });
 
       // The collapsed view shows session count as a small text element

@@ -1,9 +1,12 @@
 /**
- * ArtifactNode — compact file card with icon, filename, and type badge.
+ * ArtifactNode — desktop file icon aesthetic.
+ *
+ * TINY and ICONIC. Just a file icon + name. No card wrapper.
+ * Think: a file icon floating on the canvas with a small label.
  */
 
 import { memo } from "react";
-import { Handle, Position, NodeResizer, type NodeProps } from "@xyflow/react";
+import { Handle, Position, type NodeProps } from "@xyflow/react";
 import {
   IconFile,
   IconFileCode,
@@ -35,16 +38,16 @@ const FILE_ICONS: Record<string, typeof IconFile> = {
 };
 
 const FILE_COLORS: Record<string, string> = {
-  rust: "#dea584",
-  rs: "#dea584",
-  ts: "#3178c6",
-  tsx: "#3178c6",
-  typescript: "#3178c6",
-  py: "#3572a5",
-  python: "#3572a5",
-  pdf: "#e74c3c",
-  md: "#6f7f9a",
-  txt: "#6f7f9a",
+  rust: "#c88c6a",
+  rs: "#c88c6a",
+  ts: "#2e6db3",
+  tsx: "#2e6db3",
+  typescript: "#2e6db3",
+  py: "#2e6196",
+  python: "#2e6196",
+  pdf: "#b85450",
+  md: "#5c6a80",
+  txt: "#5c6a80",
 };
 
 function getFileIcon(fileType?: string): typeof IconFile {
@@ -53,8 +56,8 @@ function getFileIcon(fileType?: string): typeof IconFile {
 }
 
 function getFileColor(fileType?: string): string {
-  if (!fileType) return "#5b8def";
-  return FILE_COLORS[fileType.toLowerCase()] ?? "#5b8def";
+  if (!fileType) return "#5580cc";
+  return FILE_COLORS[fileType.toLowerCase()] ?? "#5580cc";
 }
 
 // ---------------------------------------------------------------------------
@@ -73,59 +76,44 @@ function ArtifactNodeInner({ data, selected }: NodeProps) {
   return (
     <div
       className={cn(
-        "rounded-lg transition-all duration-200 flex items-center gap-2.5 px-3 py-2.5",
-        selected
-          ? "shadow-[0_0_0_1px_rgba(212,168,75,0.25)]"
-          : "shadow-[0_2px_8px_rgba(0,0,0,0.4)]",
-        !selected && "hover:bg-[#0f1219]",
+        // No card background, no border, no padding — just floating content
+        "flex flex-col items-center gap-1 transition-all duration-150",
+        selected && "drop-shadow-[0_0_6px_rgba(196,154,60,0.15)]",
       )}
-      style={{ backgroundColor: selected ? "#11141c" : "#0c0e14", width: "100%", height: "100%", minWidth: 180, minHeight: 80 }}
+      style={{ minWidth: 64, maxWidth: 96 }}
     >
-      <NodeResizer
-        minWidth={180}
-        minHeight={80}
-        isVisible={selected}
-        lineClassName="!border-[#d4a84b]/40"
-        handleClassName="!w-2 !h-2 !bg-[#d4a84b] !border-[#0b0d13]"
-      />
       <Handle
         type="target"
         position={Position.Top}
-        className="!w-2 !h-2 !bg-[#2d3240] !border-[#0b0d13] !border-2 hover:!bg-[#d4a84b] transition-colors"
+        className="!w-1 !h-1 !bg-[#2a2f3a] !border-[#0a0c11] !border hover:!bg-[#c49a3c] transition-colors"
       />
 
-      {/* File icon */}
+      {/* Icon — the primary visual */}
       <div
-        className="shrink-0 flex items-center justify-center w-7 h-7 rounded-md"
-        style={{
-          backgroundColor: `${fileColor}12`,
-          border: `1px solid ${fileColor}20`,
-        }}
-      >
-        <FileIcon size={14} stroke={1.5} style={{ color: fileColor }} />
-      </div>
-
-      {/* Filename + path */}
-      <div className="min-w-0 flex-1">
-        <div className="text-[12px] font-medium text-[#ece7dc] truncate">
-          {filename}
-        </div>
-        {d.filePath && d.filePath !== filename && (
-          <div className="text-[9px] text-[#3d4250] font-mono truncate mt-0.5">
-            {d.filePath}
-          </div>
+        className={cn(
+          "flex items-center justify-center w-10 h-10 rounded-sm transition-colors",
+          selected ? "bg-[#1a1e28]" : "bg-[#0e1018]",
         )}
+      >
+        <FileIcon size={20} stroke={1.2} style={{ color: fileColor }} />
       </div>
 
-      {/* Type badge */}
+      {/* Filename label — small, underneath, like a desktop icon */}
+      <span
+        className={cn(
+          "text-[9px] font-mono text-center leading-tight truncate w-full",
+          selected ? "text-[#ece7dc]" : "text-[#5c6a80]",
+        )}
+        title={d.filePath ?? filename}
+      >
+        {filename}
+      </span>
+
+      {/* File type — tiny, only if present */}
       {d.fileType && (
         <span
-          className="shrink-0 px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide"
-          style={{
-            backgroundColor: `${fileColor}15`,
-            color: fileColor,
-            border: `1px solid ${fileColor}25`,
-          }}
+          className="text-[7px] font-mono uppercase"
+          style={{ color: `${fileColor}80`, letterSpacing: '0.1em' }}
         >
           {d.fileType}
         </span>
@@ -134,7 +122,7 @@ function ArtifactNodeInner({ data, selected }: NodeProps) {
       <Handle
         type="source"
         position={Position.Bottom}
-        className="!w-2 !h-2 !bg-[#2d3240] !border-[#0b0d13] !border-2 hover:!bg-[#d4a84b] transition-colors"
+        className="!w-1 !h-1 !bg-[#2a2f3a] !border-[#0a0c11] !border hover:!bg-[#c49a3c] transition-colors"
       />
     </div>
   );

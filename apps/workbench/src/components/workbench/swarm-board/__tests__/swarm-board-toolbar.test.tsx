@@ -98,7 +98,7 @@ function renderToolbar() {
     </MemoryRouter>,
   );
   // Clear the placeholder to get a clean board
-  const clearBtn = screen.getByLabelText("Clear");
+  const clearBtn = screen.getByLabelText("Clear board");
   act(() => {
     clearBtn.click();
   });
@@ -169,7 +169,7 @@ describe("SwarmBoardToolbar", () => {
 
       // Clear
       act(() => {
-        screen.getByLabelText("Clear").click();
+        screen.getByLabelText("Clear board").click();
       });
 
       expect(screen.getByTestId("node-count").textContent).toBe("0");
@@ -288,7 +288,7 @@ describe("SwarmBoardToolbar", () => {
         "Auto Layout",
         "Gather",
         "Follow Active",
-        "Clear",
+        "Clear board",
       ];
 
       for (const label of expectedLabels) {
@@ -298,10 +298,10 @@ describe("SwarmBoardToolbar", () => {
   });
 
   describe("board title", () => {
-    it("displays SwarmBoard title", () => {
+    it("displays set workspace button when no repo root", () => {
       renderToolbar();
 
-      expect(screen.getByText("SwarmBoard")).toBeInTheDocument();
+      expect(screen.getByLabelText("Set workspace root")).toBeInTheDocument();
     });
 
     it("displays repo root when set", () => {

@@ -1,39 +1,39 @@
 /**
- * ReceiptNode — shows verdict badge, guard results, and signature hash.
+ * ReceiptNode — legal document stamp aesthetic.
+ *
+ * The verdict (ALLOW/DENY) is the dominant visual element — large, bold,
+ * impossible to miss. Guard details are secondary, quieter.
  */
 
 import { memo } from "react";
 import { Handle, Position, NodeResizer, type NodeProps } from "@xyflow/react";
-import { IconCertificate, IconCheck, IconX, IconAlertTriangle } from "@tabler/icons-react";
+import { IconCheck, IconX, IconAlertTriangle } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import type { SwarmBoardNodeData } from "@/lib/workbench/swarm-board-types";
 
 // ---------------------------------------------------------------------------
-// Verdict styling
+// Verdict styling — the verdict IS the node
 // ---------------------------------------------------------------------------
 
 const VERDICT_STYLE: Record<
   "allow" | "deny" | "warn",
-  { bg: string; text: string; border: string; icon: typeof IconCheck; label: string }
+  { accent: string; accentMuted: string; icon: typeof IconCheck; label: string }
 > = {
   allow: {
-    bg: "#3dbf8415",
-    text: "#3dbf84",
-    border: "#3dbf8430",
+    accent: "#38a876",
+    accentMuted: "#38a87618",
     icon: IconCheck,
     label: "ALLOW",
   },
   deny: {
-    bg: "#e74c3c15",
-    text: "#e74c3c",
-    border: "#e74c3c30",
+    accent: "#b85450",
+    accentMuted: "#b8545018",
     icon: IconX,
     label: "DENY",
   },
   warn: {
-    bg: "#d4a84b15",
-    text: "#d4a84b",
-    border: "#d4a84b30",
+    accent: "#c49a3c",
+    accentMuted: "#c49a3c18",
     icon: IconAlertTriangle,
     label: "WARN",
   },
@@ -50,7 +50,6 @@ function ReceiptNodeInner({ data, selected }: NodeProps) {
   const VerdictIcon = vs.icon;
   const guards = d.guardResults ?? [];
 
-  // Generate a fake signature hash for display
   const sigHash = d.sessionId
     ? `0x${d.sessionId.replace(/[^a-f0-9]/gi, "").padEnd(40, "0").slice(0, 40)}`
     : "0x" + "0".repeat(40);
@@ -63,99 +62,120 @@ function ReceiptNodeInner({ data, selected }: NodeProps) {
       })
     : null;
 
+  const passedCount = guards.filter(g => g.allowed).length;
+  const failedCount = guards.filter(g => !g.allowed).length;
+
   return (
     <div
       className={cn(
-        "rounded-lg transition-all duration-200 overflow-hidden",
+        "rounded transition-all duration-150 overflow-hidden",
         selected
-          ? "shadow-[0_0_0_1px_rgba(212,168,75,0.25)]"
-          : "shadow-[0_2px_8px_rgba(0,0,0,0.4)]",
-        !selected && "hover:bg-[#0f1219]",
+          ? "ring-1 ring-[#c49a3c]/20"
+          : "shadow-[0_1px_4px_rgba(0,0,0,0.5)]",
       )}
-      style={{ backgroundColor: selected ? "#11141c" : "#0c0e14", width: "100%", height: "100%", minWidth: 260, minHeight: 160 }}
+      style={{
+        backgroundColor: selected ? "#0e1018" : "#0a0c11",
+        width: "100%",
+        height: "100%",
+        minWidth: 240,
+        minHeight: 160,
+        // Thin top accent line — the "seal" color
+        borderTop: `2px solid ${vs.accent}30`,
+      }}
     >
       <NodeResizer
-        minWidth={260}
+        minWidth={240}
         minHeight={160}
         isVisible={selected}
-        lineClassName="!border-[#d4a84b]/40"
-        handleClassName="!w-2 !h-2 !bg-[#d4a84b] !border-[#0b0d13]"
+        lineClassName="!border-[#c49a3c]/25"
+        handleClassName="!w-1.5 !h-1.5 !bg-[#c49a3c] !border-[#0a0c11]"
       />
       <Handle
         type="target"
         position={Position.Top}
-        className="!w-2 !h-2 !bg-[#2d3240] !border-[#0b0d13] !border-2 hover:!bg-[#d4a84b] transition-colors"
+        className="!w-1.5 !h-1.5 !bg-[#2a2f3a] !border-[#0a0c11] !border-2 hover:!bg-[#c49a3c] transition-colors"
       />
 
-      {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-[#2d324060]">
-        <IconCertificate size={14} stroke={1.5} className="text-[#8b5cf6] shrink-0" />
-        <span className="text-[12px] font-medium text-[#ece7dc] truncate flex-1">
-          {d.title || "Receipt"}
-        </span>
-
-        {/* Verdict badge */}
-        <span
-          className="shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide"
-          style={{
-            backgroundColor: vs.bg,
-            color: vs.text,
-            border: `1px solid ${vs.border}`,
-          }}
+      {/* Verdict hero — the FIRST thing you see */}
+      <div className="flex items-center gap-3 px-3 pt-3 pb-2">
+        <div
+          className="shrink-0 flex items-center justify-center w-9 h-9 rounded"
+          style={{ backgroundColor: vs.accentMuted }}
         >
-          <VerdictIcon size={10} stroke={2} />
-          {vs.label}
-        </span>
-      </div>
-
-      {/* Guard results */}
-      <div className="px-3 py-2 flex flex-col gap-1">
-        {guards.length > 0 ? (
-          guards.slice(0, 6).map((gr, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <span
-                className="w-1.5 h-1.5 rounded-full shrink-0"
-                style={{
-                  backgroundColor: gr.allowed ? "#3dbf84" : "#e74c3c",
-                }}
-              />
-              <span className="text-[10px] text-[#8a96ab] font-mono truncate flex-1">
-                {gr.guard}
-              </span>
-              {gr.duration_ms != null && (
-                <span className="text-[9px] text-[#3d4250] font-mono shrink-0">
-                  {gr.duration_ms}ms
-                </span>
-              )}
-            </div>
-          ))
-        ) : (
-          <span className="text-[10px] text-[#3d4250] italic">No guard results</span>
-        )}
-        {guards.length > 6 && (
-          <span className="text-[9px] text-[#3d4250] ml-3.5">
-            +{guards.length - 6} more
+          <VerdictIcon size={20} stroke={2.5} style={{ color: vs.accent }} />
+        </div>
+        <div className="min-w-0">
+          <div
+            className="text-[18px] font-bold tracking-tight leading-none"
+            style={{ color: vs.accent, letterSpacing: '0.04em' }}
+          >
+            {vs.label}
+          </div>
+          <div
+            className="text-[9px] font-mono mt-1"
+            style={{ color: '#4a5568', fontVariantNumeric: 'tabular-nums' }}
+          >
+            {passedCount} passed{failedCount > 0 && <> / <span style={{ color: '#b85450' }}>{failedCount} failed</span></>}
+          </div>
+        </div>
+        {timeStr && (
+          <span
+            className="ml-auto text-[8px] font-mono text-[#2a2f3a] self-start mt-0.5"
+            style={{ fontVariantNumeric: 'tabular-nums' }}
+          >
+            {timeStr}
           </span>
         )}
       </div>
 
-      {/* Footer: signature + timestamp */}
-      <div className="flex items-center gap-2 px-3 py-1.5 border-t border-[#2d324060]">
+      {/* Guard results — secondary, compact */}
+      {guards.length > 0 && (
+        <div className="px-3 py-1.5">
+          {guards.slice(0, 6).map((gr, i) => (
+            <div key={i} className="flex items-center gap-1.5 py-[2px]">
+              <span
+                className="w-1 h-1 rounded-full shrink-0"
+                style={{ backgroundColor: gr.allowed ? "#38a876" : "#b85450" }}
+              />
+              <span className="text-[9px] text-[#4a5568] font-mono truncate flex-1">
+                {gr.guard}
+              </span>
+              {gr.duration_ms != null && (
+                <span
+                  className="text-[8px] text-[#2a2f3a] font-mono shrink-0"
+                  style={{ fontVariantNumeric: 'tabular-nums' }}
+                >
+                  {gr.duration_ms}ms
+                </span>
+              )}
+            </div>
+          ))}
+          {guards.length > 6 && (
+            <span className="text-[8px] text-[#2a2f3a] ml-2.5">
+              +{guards.length - 6} more
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Signature footer — like a stamp seal */}
+      <div
+        className="flex items-center px-3 py-1.5 mt-auto"
+        style={{ borderTop: '1px solid #1a1e2820' }}
+      >
         <span
-          className="text-[8px] text-[#3d4250] font-mono truncate flex-1"
+          className="text-[7px] text-[#2a2f3a] font-mono truncate"
+          style={{ fontVariantNumeric: 'tabular-nums' }}
           title={sigHash}
         >
-          sig: {sigHash.slice(0, 18)}...
+          sig {sigHash.slice(0, 18)}...
         </span>
-        {timeStr && (
-          <span className="text-[9px] text-[#3d4250] shrink-0">{timeStr}</span>
-        )}
       </div>
 
       <Handle
         type="source"
         position={Position.Bottom}
-        className="!w-2 !h-2 !bg-[#2d3240] !border-[#0b0d13] !border-2 hover:!bg-[#d4a84b] transition-colors"
+        className="!w-1.5 !h-1.5 !bg-[#2a2f3a] !border-[#0a0c11] !border-2 hover:!bg-[#c49a3c] transition-colors"
       />
     </div>
   );

@@ -1,20 +1,17 @@
 /**
- * SwarmBoardToolbar — top bar with session spawning, layout, and zoom controls.
+ * SwarmBoardToolbar — dense, vim-statusline-style top bar.
  *
- * Session buttons spawn real PTY sessions via the Tauri backend:
- * - "New Claude Session" (primary, gold accent) — Claude Code in an isolated worktree
- * - "New Terminal" — plain shell at repo root
- * - "Worktree" — shell in a new git worktree
- *
- * The dropdown chevron opens an advanced session options popover for configuring
- * shell type, working directory, worktree isolation, and initial commands.
+ * Visual hierarchy:
+ *   Primary  — "New Claude Session" (gold bg, label visible)
+ *   Secondary — "Terminal", "Worktree" (ghost outline, label visible)
+ *   Tertiary — Layout/zoom/misc (icon-only, tight group, title tooltip)
+ *   Danger   — "Clear" (icon-only, far-right, low prominence)
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useReactFlow } from "@xyflow/react";
 import {
   IconTerminal2,
-  IconNote,
   IconLayoutDistributeHorizontal,
   IconFocusCentered,
   IconPlayerPlay,
@@ -26,6 +23,7 @@ import {
   IconGitBranch,
   IconChevronDown,
   IconRobot,
+  IconNote,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { isDesktop } from "@/lib/tauri-bridge";
@@ -36,6 +34,23 @@ import {
   type SpawnClaudeSessionOptions,
 } from "@/lib/workbench/swarm-board-store";
 import { useTerminalSessions } from "@/lib/workbench/use-terminal-sessions";
+
+// ---------------------------------------------------------------------------
+// Layout constants
+// ---------------------------------------------------------------------------
+
+const TOOLBAR_HEIGHT = 34;
+const SESSION_GRID_GAP = 500;
+const TASK_GRID_GAP = 350;
+const TASK_X_OFFSET = 80;
+const TASK_Y = 380;
+const EVIDENCE_GRID_GAP = 320;
+const EVIDENCE_Y = 550;
+const ARTIFACT_X_OFFSET = 100;
+const ARTIFACT_Y_GAP = 130;
+const NOTE_Y_GAP = 200;
+const ERROR_DISMISS_MS = 5000;
+const LAYOUT_SETTLE_MS = 50;
 
 // ---------------------------------------------------------------------------
 // Component
@@ -59,10 +74,8 @@ export function SwarmBoardToolbar() {
   const [workspaceInputValue, setWorkspaceInputValue] = useState("");
   const optionsRef = useRef<HTMLDivElement>(null);
 
-  // Whether we are running inside Tauri desktop
   const desktop = isDesktop();
 
-  // Get a sensible position for new nodes (center of viewport)
   const getDropPosition = useCallback(() => {
     try {
       const viewport = reactFlow.getViewport();
@@ -77,14 +90,12 @@ export function SwarmBoardToolbar() {
     }
   }, [reactFlow]);
 
-  // Clear error after 5 seconds
   useEffect(() => {
     if (!spawnError) return;
-    const t = setTimeout(() => setSpawnError(null), 5000);
+    const t = setTimeout(() => setSpawnError(null), ERROR_DISMISS_MS);
     return () => clearTimeout(t);
   }, [spawnError]);
 
-  // Close options popover on click-outside or Escape
   useEffect(() => {
     if (!optionsOpen) return;
     function handleClick(e: MouseEvent) {
@@ -119,9 +130,7 @@ export function SwarmBoardToolbar() {
       dispatch({ type: "SELECT_NODE", nodeId: node.id });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error("[SwarmBoardToolbar] Failed to spawn terminal:", msg);
       setSpawnError(`Terminal: ${msg}`);
-      // Fallback mock node for development without Tauri
       addNode({
         nodeType: "agentSession",
         title: "Terminal (offline)",
@@ -149,14 +158,12 @@ export function SwarmBoardToolbar() {
     try {
       const node = await spawnClaudeSession({
         position: getDropPosition(),
-        worktree: hasRepoRoot, // use worktree isolation when repo is configured
+        worktree: hasRepoRoot,
       });
       dispatch({ type: "SELECT_NODE", nodeId: node.id });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error("[SwarmBoardToolbar] Failed to spawn Claude session:", msg);
       setSpawnError(`Claude: ${msg}`);
-      // Fallback mock node for development without Tauri
       addNode({
         nodeType: "agentSession",
         title: "Claude (offline)",
@@ -188,7 +195,6 @@ export function SwarmBoardToolbar() {
       dispatch({ type: "SELECT_NODE", nodeId: node.id });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error("[SwarmBoardToolbar] Failed to spawn worktree session:", msg);
       setSpawnError(`Worktree: ${msg}`);
     } finally {
       setSpawning(false);
@@ -210,7 +216,6 @@ export function SwarmBoardToolbar() {
     const nodes = state.nodes;
     if (nodes.length === 0) return;
 
-    // Smart grouped layout: spatial zones by node type
     const sessions = nodes.filter((n) => (n.data as Record<string, unknown>).nodeType === "agentSession");
     const tasks = nodes.filter((n) => (n.data as Record<string, unknown>).nodeType === "terminalTask");
     const receipts = nodes.filter((n) => (n.data as Record<string, unknown>).nodeType === "receipt");
@@ -220,32 +225,27 @@ export function SwarmBoardToolbar() {
 
     const positions = new Map<string, { x: number; y: number }>();
 
-    // Top zone: agent sessions (wide spacing, prominent)
     sessions.forEach((n, i) => {
-      positions.set(n.id, { x: i * 500, y: 0 });
+      positions.set(n.id, { x: i * SESSION_GRID_GAP, y: 0 });
     });
 
-    // Middle zone: tasks (narrower spacing, below sessions)
     tasks.forEach((n, i) => {
-      positions.set(n.id, { x: i * 350 + 80, y: 380 });
+      positions.set(n.id, { x: i * TASK_GRID_GAP + TASK_X_OFFSET, y: TASK_Y });
     });
 
-    // Lower zone: receipts and diffs (evidence cluster)
     const evidenceNodes = [...receipts, ...diffs];
     evidenceNodes.forEach((n, i) => {
-      positions.set(n.id, { x: i * 320, y: 550 });
+      positions.set(n.id, { x: i * EVIDENCE_GRID_GAP, y: EVIDENCE_Y });
     });
 
-    // Right zone: artifacts (small, clustered vertically)
     artifacts.forEach((n, i) => {
-      positions.set(n.id, { x: sessions.length * 500 + 100, y: i * 130 });
+      positions.set(n.id, { x: sessions.length * SESSION_GRID_GAP + ARTIFACT_X_OFFSET, y: i * ARTIFACT_Y_GAP });
     });
 
-    // Far right: notes (generous offset)
     notes.forEach((n, i) => {
       positions.set(n.id, {
-        x: sessions.length * 500 + 100,
-        y: evidenceNodes.length > 0 ? 550 + i * 200 : i * 200,
+        x: sessions.length * SESSION_GRID_GAP + ARTIFACT_X_OFFSET,
+        y: evidenceNodes.length > 0 ? EVIDENCE_Y + i * NOTE_Y_GAP : i * NOTE_Y_GAP,
       });
     });
 
@@ -257,7 +257,7 @@ export function SwarmBoardToolbar() {
     dispatch({ type: "SET_NODES", nodes: updated });
     setTimeout(() => {
       reactFlow.fitView({ padding: 0.15, duration: 400 });
-    }, 50);
+    }, LAYOUT_SETTLE_MS);
   }, [state.nodes, dispatch, reactFlow]);
 
   const handleGather = useCallback(() => {
@@ -294,7 +294,6 @@ export function SwarmBoardToolbar() {
 
   const handlePickWorkspace = useCallback(async () => {
     if (!desktop) {
-      // Show text input fallback in browser
       setWorkspaceInput(true);
       return;
     }
@@ -304,9 +303,7 @@ export function SwarmBoardToolbar() {
       if (selected && typeof selected === "string") {
         dispatch({ type: "SET_REPO_ROOT", repoRoot: selected });
       }
-    } catch (err) {
-      console.error("[SwarmBoardToolbar] Folder picker failed:", err);
-      // Fall back to text input
+    } catch {
       setWorkspaceInput(true);
     }
   }, [desktop, dispatch]);
@@ -320,42 +317,40 @@ export function SwarmBoardToolbar() {
     setWorkspaceInputValue("");
   }, [workspaceInputValue, dispatch]);
 
-  // Build tooltip for disabled spawn buttons
   const spawnTooltip = !desktop
     ? "Tauri desktop app required for live sessions"
     : !canSpawnMore
       ? `Session limit reached (${MAX_ACTIVE_TERMINALS})`
       : undefined;
 
+  const spawnDisabled = spawning || !canSpawnMore;
+
   return (
     <div
-      className="flex items-center gap-0.5 px-3 py-1.5 shrink-0 select-none"
+      className="flex items-center gap-0.5 px-3 shrink-0 select-none"
       style={{
-        backgroundColor: "#090b10",
-        borderBottom: "1px solid #1a1f2e",
+        height: TOOLBAR_HEIGHT,
+        backgroundColor: "#070910",
+        borderBottom: "1px solid #0f1119",
       }}
     >
-      {/* Board title / repo root */}
-      <div className="flex items-center gap-2 mr-2 min-w-0">
-        <IconFolder size={12} stroke={1.5} className="text-[#d4a84b] shrink-0" />
-        <span className="text-[11px] font-syne font-semibold text-[#ece7dc] tracking-wide">
-          SwarmBoard
-        </span>
+      {/* Board identity / repo root */}
+      <div className="flex items-center gap-1.5 mr-2 min-w-0">
+        <IconFolder size={11} stroke={1.5} className="text-[#3d4250] shrink-0" />
         {state.repoRoot ? (
-          <span className="text-[9px] text-[#1e2230] font-mono truncate max-w-[180px]">
+          <span className="text-[10px] text-[#3d4250] font-mono truncate max-w-[200px]">
             {state.repoRoot}
           </span>
         ) : !workspaceInput ? (
           <button
             onClick={handlePickWorkspace}
-            className="text-[9px] font-mono text-[#d4a84b] hover:text-[#e8c06a] transition-colors underline underline-offset-2"
+            className="text-[9px] font-mono text-[#6f7f9a] hover:text-[#ece7dc] transition-colors"
             title="Set the workspace root directory"
-            aria-label="Set Workspace"
+            aria-label="Set workspace root"
           >
-            Set Workspace
+            set workspace
           </button>
         ) : null}
-        {/* Inline workspace path input (fallback when no native dialog) */}
         {workspaceInput && (
           <form
             className="flex items-center gap-1"
@@ -369,10 +364,9 @@ export function SwarmBoardToolbar() {
               value={workspaceInputValue}
               onChange={(e) => setWorkspaceInputValue(e.target.value)}
               placeholder="/path/to/project"
-              className="w-[160px] px-1.5 py-0.5 bg-[#0b0d13] border border-[#2d3240] rounded text-[9px] font-mono text-[#ece7dc] placeholder-[#3d4250] focus:border-[#d4a84b40] focus:outline-none"
+              className="w-[160px] px-1.5 py-0.5 bg-[#05060a] border border-[#1a1f2e] rounded text-[9px] font-mono text-[#ece7dc] placeholder-[#3d4250] focus:border-[#d4a84b40] focus:outline-none"
               autoFocus
               onBlur={() => {
-                // Dismiss if empty
                 if (!workspaceInputValue.trim()) {
                   setWorkspaceInput(false);
                 }
@@ -381,70 +375,82 @@ export function SwarmBoardToolbar() {
             <button
               type="submit"
               className="text-[9px] font-mono text-[#d4a84b] hover:text-[#e8c06a]"
+              aria-label="Confirm workspace path"
             >
               OK
             </button>
           </form>
         )}
         {activeSessionCount > 0 && (
-          <span className="flex items-center gap-1 text-[9px] font-mono text-[#3dbf84]">
-            <span
-              className="w-1 h-1 rounded-full bg-[#3dbf84]"
-              style={{ animation: "pulse 2s ease-in-out infinite" }}
-            />
-            {activeSessionCount}
+          <span className="text-[9px] font-mono text-[#3dbf84] tabular-nums">
+            {activeSessionCount} live
           </span>
         )}
       </div>
 
-      {/* Separator */}
-      <div className="w-px h-4 bg-[#1a1f2e] mx-1.5" />
+      {/* Thin separator */}
+      <div className="w-px h-3 bg-[#1a1f2e] mx-1" />
 
-      {/* Primary action: New Claude Session (gold accent, visually distinct) */}
+      {/* --- Primary: New Claude Session (gold, prominent) --- */}
       <button
         onClick={handleNewClaudeSession}
-        disabled={spawning || !canSpawnMore}
+        disabled={spawnDisabled}
         className={cn(
-          "flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[10px] font-syne font-semibold uppercase tracking-wider transition-all",
-          spawning || !canSpawnMore
-            ? "opacity-40 cursor-not-allowed text-[#d4a84b60]"
-            : "text-[#d4a84b] hover:bg-[#d4a84b12] hover:text-[#e8c06a] active:bg-[#d4a84b18]",
+          "flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] font-mono font-medium transition-all",
+          spawnDisabled
+            ? "opacity-30 cursor-not-allowed text-[#d4a84b60]"
+            : "bg-[#d4a84b] text-[#05060a] hover:bg-[#e8c06a] active:bg-[#c49a3d]",
         )}
-        title={spawning || !canSpawnMore ? spawnTooltip : "New Claude Session"}
+        title={spawnDisabled ? spawnTooltip : "New Claude Session"}
         aria-label="New Claude Session"
       >
-        <IconRobot size={14} stroke={1.5} />
-        <span className="hidden sm:inline">{spawning ? "Spawning..." : "New Claude Session"}</span>
+        <IconRobot size={12} stroke={1.5} />
+        <span className="hidden sm:inline">{spawning ? "..." : "Claude"}</span>
       </button>
 
-      {/* New Terminal */}
-      <ToolbarButton
-        icon={IconTerminal2}
-        label={spawning ? "Spawning..." : "New Terminal"}
+      {/* --- Secondary: Terminal, Worktree (ghost outline) --- */}
+      <button
         onClick={handleNewTerminal}
-        disabled={spawning || !canSpawnMore}
-        tooltip={spawnTooltip}
-      />
+        disabled={spawnDisabled}
+        className={cn(
+          "flex items-center gap-1 px-2 py-1 rounded text-[10px] font-mono transition-colors",
+          spawnDisabled
+            ? "opacity-30 cursor-not-allowed text-[#3d4250]"
+            : "text-[#6f7f9a] hover:text-[#ece7dc] hover:bg-[#ffffff06]",
+        )}
+        title={spawnDisabled ? spawnTooltip : "New Terminal"}
+        aria-label="New Terminal"
+      >
+        <IconTerminal2 size={11} stroke={1.5} />
+        <span className="hidden sm:inline">Terminal</span>
+      </button>
 
-      {/* New Worktree Session */}
-      <ToolbarButton
-        icon={IconGitBranch}
-        label={spawning ? "Spawning..." : "Worktree"}
+      <button
         onClick={handleNewWorktreeSession}
-        disabled={spawning || !canSpawnMore || !hasRepoRoot}
-        tooltip={
-          !hasRepoRoot
-            ? "Set a workspace root first"
-            : spawnTooltip
-        }
-      />
+        disabled={spawnDisabled || !hasRepoRoot}
+        className={cn(
+          "flex items-center gap-1 px-2 py-1 rounded text-[10px] font-mono transition-colors",
+          spawnDisabled || !hasRepoRoot
+            ? "opacity-30 cursor-not-allowed text-[#3d4250]"
+            : "text-[#6f7f9a] hover:text-[#ece7dc] hover:bg-[#ffffff06]",
+        )}
+        title={!hasRepoRoot ? "Set a workspace root first" : (spawnDisabled ? spawnTooltip : "New Worktree Session")}
+        aria-label="New Worktree Session"
+      >
+        <IconGitBranch size={11} stroke={1.5} />
+        <span className="hidden sm:inline">Worktree</span>
+      </button>
 
-      {/* Session options dropdown */}
+      {/* Session options dropdown chevron */}
       <div className="relative" ref={optionsRef}>
-        <ToolbarButton
-          icon={IconChevronDown}
+        <button
           onClick={() => setOptionsOpen(!optionsOpen)}
-        />
+          className="p-1 rounded text-[#3d4250] hover:text-[#6f7f9a] hover:bg-[#ffffff06] transition-colors"
+          title="Advanced session options"
+          aria-label="Advanced session options"
+        >
+          <IconChevronDown size={10} stroke={1.5} />
+        </button>
         {optionsOpen && (
           <SessionOptionsPopover
             repoRoot={state.repoRoot}
@@ -483,80 +489,97 @@ export function SwarmBoardToolbar() {
         )}
       </div>
 
-      {/* Separator */}
-      <div className="w-px h-4 bg-[#1a1f2e] mx-1.5" />
+      {/* Thin separator */}
+      <div className="w-px h-3 bg-[#1a1f2e] mx-1" />
 
-      {/* Add Note */}
-      <ToolbarButton
-        icon={IconNote}
-        label="Add Note"
-        onClick={handleNewNote}
-      />
-
-      {/* Separator */}
-      <div className="w-px h-4 bg-[#1a1f2e] mx-1.5" />
-
-      {/* Layout actions */}
-      <ToolbarButton
-        icon={IconLayoutDistributeHorizontal}
-        label="Auto Layout"
-        onClick={handleAutoLayout}
-      />
-      <ToolbarButton
-        icon={IconFocusCentered}
-        label="Gather"
-        onClick={handleGather}
-      />
-      <ToolbarButton
-        icon={IconPlayerPlay}
-        label="Follow Active"
-        onClick={handleFollowActive}
-      />
+      {/* --- Tertiary: Layout + Note actions (icon-only, tight) --- */}
+      <div className="flex items-center gap-0">
+        <IconButton icon={IconNote} onClick={handleNewNote} title="Add Note" />
+        <IconButton icon={IconLayoutDistributeHorizontal} onClick={handleAutoLayout} title="Auto Layout" />
+        <IconButton icon={IconFocusCentered} onClick={handleGather} title="Gather" />
+        <IconButton icon={IconPlayerPlay} onClick={handleFollowActive} title="Follow Active" />
+      </div>
 
       {/* Spacer */}
       <div className="flex-1" />
 
-      {/* Error toast */}
+      {/* Error toast (inline, minimal) */}
       {spawnError && (
-        <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-[#e74c3c08] mr-2">
-          <span className="text-[9px] font-mono text-[#e74c3c] truncate max-w-[180px]">
-            {spawnError}
-          </span>
+        <span className="text-[9px] font-mono text-[#e74c3c] truncate max-w-[180px] mr-2">
+          {spawnError}
           <button
-            className="text-[#e74c3c60] hover:text-[#e74c3c] text-[10px]"
+            className="ml-1 text-[#e74c3c60] hover:text-[#e74c3c]"
             onClick={() => setSpawnError(null)}
+            aria-label="Dismiss error"
           >
             x
           </button>
-        </div>
-      )}
-
-      {/* Session limit badge */}
-      {!canSpawnMore && (
-        <span
-          className="text-[8px] font-mono text-[#d4a84b60] mr-2 uppercase tracking-wider"
-          title={`Maximum of ${MAX_ACTIVE_TERMINALS} concurrent sessions reached`}
-        >
-          max sessions
         </span>
       )}
 
-      {/* Zoom controls */}
-      <ToolbarButton icon={IconZoomOut} onClick={handleZoomOut} />
-      <ToolbarButton icon={IconZoomReset} onClick={handleResetZoom} />
-      <ToolbarButton icon={IconZoomIn} onClick={handleZoomIn} />
+      {/* Session limit (text only) */}
+      {!canSpawnMore && (
+        <span
+          className="text-[8px] font-mono text-[#3d4250] mr-2 tabular-nums"
+          title={`Maximum of ${MAX_ACTIVE_TERMINALS} concurrent sessions reached`}
+        >
+          {MAX_ACTIVE_TERMINALS}/{MAX_ACTIVE_TERMINALS}
+        </span>
+      )}
 
-      {/* Separator */}
-      <div className="w-px h-4 bg-[#1a1f2e] mx-1.5" />
+      {/* Zoom (icon-only, tight group) */}
+      <div className="flex items-center gap-0">
+        <IconButton icon={IconZoomOut} onClick={handleZoomOut} title="Zoom out" />
+        <IconButton icon={IconZoomReset} onClick={handleResetZoom} title="Reset zoom" />
+        <IconButton icon={IconZoomIn} onClick={handleZoomIn} title="Zoom in" />
+      </div>
 
-      {/* Clear */}
-      <ToolbarButton
-        icon={IconTrash}
-        label="Clear"
+      {/* Thin separator */}
+      <div className="w-px h-3 bg-[#1a1f2e] mx-1" />
+
+      {/* --- Danger: Clear (icon-only, subdued, far right) --- */}
+      <button
         onClick={clearBoard}
-        danger
-      />
+        className="p-1 rounded text-[#1e2230] hover:text-[#e74c3c] hover:bg-[#e74c3c08] transition-colors"
+        title="Clear board"
+        aria-label="Clear board"
+      >
+        <IconTrash size={11} stroke={1.5} />
+      </button>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Icon-only toolbar button (tertiary actions)
+// ---------------------------------------------------------------------------
+
+function IconButton({
+  icon: Icon,
+  onClick,
+  title,
+  disabled = false,
+}: {
+  icon: typeof IconTerminal2;
+  onClick: () => void;
+  title: string;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        "p-1.5 rounded transition-colors",
+        disabled
+          ? "opacity-20 cursor-not-allowed text-[#3d4250]"
+          : "text-[#3d4250] hover:text-[#6f7f9a] hover:bg-[#ffffff06]",
+      )}
+      title={title}
+      aria-label={title}
+    >
+      <Icon size={12} stroke={1.5} />
+    </button>
   );
 }
 
@@ -642,6 +665,7 @@ function SessionOptionsPopover({
               : "bg-[#131721] text-[#6f7f9a] border border-[#2d3240] hover:text-[#ece7dc]",
           )}
           onClick={() => setMode("claude")}
+          aria-label="Claude mode"
         >
           Claude
         </button>
@@ -653,6 +677,7 @@ function SessionOptionsPopover({
               : "bg-[#131721] text-[#6f7f9a] border border-[#2d3240] hover:text-[#ece7dc]",
           )}
           onClick={() => setMode("terminal")}
+          aria-label="Terminal mode"
         >
           Terminal
         </button>
@@ -675,7 +700,6 @@ function SessionOptionsPopover({
       {/* Mode-specific options */}
       {mode === "claude" ? (
         <>
-          {/* Worktree toggle */}
           <label className="flex items-center gap-2 mb-2 cursor-pointer">
             <input
               type="checkbox"
@@ -688,7 +712,6 @@ function SessionOptionsPopover({
             </span>
           </label>
 
-          {/* Branch name (for worktree) */}
           {useWorktree && (
             <label className="block mb-2">
               <span className="text-[9px] font-mono text-[#6f7f9a] uppercase tracking-wider">
@@ -704,7 +727,6 @@ function SessionOptionsPopover({
             </label>
           )}
 
-          {/* Initial prompt */}
           <label className="block mb-3">
             <span className="text-[9px] font-mono text-[#6f7f9a] uppercase tracking-wider">
               Initial Prompt
@@ -720,13 +742,12 @@ function SessionOptionsPopover({
         </>
       ) : (
         <>
-          {/* Shell selection */}
           <label className="block mb-2">
             <span className="text-[9px] font-mono text-[#6f7f9a] uppercase tracking-wider">
               Shell
             </span>
             <div className="flex gap-1 mt-1">
-              {["zsh", "bash"].map((s) => (
+              {(["zsh", "bash"] as const).map((s) => (
                 <button
                   key={s}
                   className={cn(
@@ -736,6 +757,7 @@ function SessionOptionsPopover({
                       : "bg-[#0b0d13] text-[#6f7f9a] border border-[#2d3240] hover:text-[#ece7dc]",
                   )}
                   onClick={() => setShell(s)}
+                  aria-label={`${s} shell`}
                 >
                   {s}
                 </button>
@@ -743,7 +765,6 @@ function SessionOptionsPopover({
             </div>
           </label>
 
-          {/* Initial command */}
           <label className="block mb-3">
             <span className="text-[9px] font-mono text-[#6f7f9a] uppercase tracking-wider">
               Initial Command
@@ -771,53 +792,10 @@ function SessionOptionsPopover({
               ? "bg-[#d4a84b] text-[#0b0d13] hover:bg-[#e8c06a]"
               : "bg-[#5b8def] text-[#0b0d13] hover:bg-[#7ba4f5]",
         )}
+        aria-label={mode === "claude" ? "Launch Claude session" : "Launch terminal session"}
       >
         {spawning ? "Spawning..." : mode === "claude" ? "Launch Claude" : "Launch Terminal"}
       </button>
     </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Reusable toolbar button
-// ---------------------------------------------------------------------------
-
-function ToolbarButton({
-  icon: Icon,
-  label,
-  onClick,
-  danger = false,
-  disabled = false,
-  highlight = false,
-  tooltip,
-}: {
-  icon: typeof IconTerminal2;
-  label?: string;
-  onClick: () => void;
-  danger?: boolean;
-  disabled?: boolean;
-  highlight?: boolean;
-  /** Override the native title tooltip (e.g. to explain why the button is disabled). */
-  tooltip?: string;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className={cn(
-        "flex items-center gap-1.5 px-2 py-1.5 rounded-md text-[10px] font-mono font-medium transition-colors",
-        disabled && "opacity-30 cursor-not-allowed",
-        danger
-          ? "text-[#3d4250] hover:text-[#e74c3c] hover:bg-[#e74c3c08]"
-          : highlight
-            ? "text-[#d4a84b] hover:text-[#e8c06a] hover:bg-[#d4a84b10]"
-            : "text-[#6f7f9a] hover:text-[#ece7dc] hover:bg-[#ffffff06]",
-      )}
-      title={disabled && tooltip ? tooltip : label}
-      aria-label={label}
-    >
-      <Icon size={12} stroke={1.5} />
-      {label && <span className="hidden sm:inline">{label}</span>}
-    </button>
   );
 }

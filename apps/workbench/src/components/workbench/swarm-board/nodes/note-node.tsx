@@ -1,10 +1,13 @@
 /**
- * NoteNode — editable sticky note with gold-tinted background.
+ * NoteNode — sticky note aesthetic.
+ *
+ * Warm background tint, slight rotation, no hard borders.
+ * Feels handwritten and analog, not digital.
  */
 
 import { memo, useState, useCallback, useRef, useEffect } from "react";
 import { NodeResizer, type NodeProps } from "@xyflow/react";
-import { IconNote, IconPencil, IconCheck } from "@tabler/icons-react";
+import { IconPencil, IconCheck } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { useSwarmBoard } from "@/lib/workbench/swarm-board-store";
 import type { SwarmBoardNodeData } from "@/lib/workbench/swarm-board-types";
@@ -27,7 +30,8 @@ function NoteNodeInner({ id, data, selected }: NodeProps) {
       // Clear the flag so it doesn't re-trigger
       updateNode(id, { editing: false });
     }
-  }, [d.editing]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [d.editing, d.content, id, updateNode]);
 
   // Focus the textarea when entering edit mode
   useEffect(() => {
@@ -35,6 +39,8 @@ function NoteNodeInner({ id, data, selected }: NodeProps) {
       textareaRef.current.focus();
       textareaRef.current.setSelectionRange(draft.length, draft.length);
     }
+    // draft.length is intentionally omitted — we only want to focus on editing toggle
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing]);
 
   const handleSave = useCallback(() => {
@@ -66,35 +72,37 @@ function NoteNodeInner({ id, data, selected }: NodeProps) {
   return (
     <div
       className={cn(
-        "rounded-lg transition-all duration-200 overflow-hidden",
-        selected
-          ? "shadow-[0_0_0_1px_rgba(212,168,75,0.25)]"
-          : "shadow-[0_2px_8px_rgba(0,0,0,0.4)]",
-        !selected && "hover:bg-[#0f1219]",
+        // Soft edges, no hard border — sticky note vibes
+        "rounded transition-all duration-150 overflow-hidden",
+        selected && "ring-1 ring-[#c49a3c]/15",
       )}
       style={{
-        backgroundColor: selected ? "#11141c" : "#0c0e14",
+        backgroundColor: '#12100c',
         width: "100%",
         height: "100%",
-        minWidth: 200,
-        minHeight: 100,
-        // Subtle gold tint via gradient overlay
-        backgroundImage:
-          "linear-gradient(135deg, rgba(212,168,75,0.04) 0%, rgba(12,14,20,0) 60%)",
+        minWidth: 180,
+        minHeight: 90,
+        // The slight rotation that says "a human placed this here"
+        transform: 'rotate(-1.2deg)',
+        // Warm tint overlay — amber, not blue-gray like everything else
+        boxShadow: selected
+          ? '0 2px 12px rgba(196,154,60,0.08)'
+          : '0 1px 6px rgba(0,0,0,0.3)',
       }}
     >
       <NodeResizer
-        minWidth={200}
-        minHeight={100}
+        minWidth={180}
+        minHeight={90}
         isVisible={selected}
-        lineClassName="!border-[#d4a84b]/40"
-        handleClassName="!w-2 !h-2 !bg-[#d4a84b] !border-[#0b0d13]"
+        lineClassName="!border-[#c49a3c]/25"
+        handleClassName="!w-1.5 !h-1.5 !bg-[#c49a3c] !border-[#12100c]"
       />
 
-      {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-[#d4a84b15]">
-        <IconNote size={13} stroke={1.5} className="text-[#d4a84b80] shrink-0" />
-        <span className="text-[11px] font-medium text-[#d4a84b] truncate flex-1">
+      {/* Top accent — warm amber strip instead of a full header */}
+      <div
+        className="flex items-center justify-between px-3 pt-2.5 pb-1"
+      >
+        <span className="text-[10px] font-medium text-[#a08a60] truncate flex-1">
           {d.title || "Note"}
         </span>
         <button
@@ -107,15 +115,16 @@ function NoteNodeInner({ id, data, selected }: NodeProps) {
               setEditing(true);
             }
           }}
-          className="shrink-0 p-0.5 rounded hover:bg-[#d4a84b15] text-[#d4a84b80] hover:text-[#d4a84b] transition-colors"
+          className="shrink-0 p-0.5 text-[#a08a60]/50 hover:text-[#a08a60] transition-colors"
           title={editing ? "Save" : "Edit"}
+          aria-label={editing ? "Save note" : "Edit note"}
         >
-          {editing ? <IconCheck size={12} stroke={2} /> : <IconPencil size={12} stroke={1.5} />}
+          {editing ? <IconCheck size={11} stroke={2} /> : <IconPencil size={11} stroke={1.5} />}
         </button>
       </div>
 
-      {/* Body */}
-      <div className="px-3 py-2.5">
+      {/* Body — generous padding, warm text */}
+      <div className="px-3 pb-3 pt-1">
         {editing ? (
           <textarea
             ref={textareaRef}
@@ -123,14 +132,14 @@ function NoteNodeInner({ id, data, selected }: NodeProps) {
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={handleKeyDown}
             onBlur={handleSave}
-            className="w-full bg-transparent text-[11px] text-[#ece7dc] leading-[1.6] resize-none outline-none placeholder-[#3d4250] min-h-[60px]"
+            className="w-full bg-transparent text-[11px] text-[#d4cabb] leading-[1.7] resize-none outline-none placeholder-[#3d3528] min-h-[50px]"
             placeholder="Type your notes here..."
             // Prevent React Flow from capturing drag events on the textarea
             onMouseDown={(e) => e.stopPropagation()}
           />
         ) : (
           <div
-            className="text-[11px] text-[#8a96ab] leading-[1.6] whitespace-pre-wrap cursor-text"
+            className="text-[11px] text-[#9a8e78] leading-[1.7] whitespace-pre-wrap cursor-text"
             onClick={(e) => {
               e.stopPropagation();
               setDraft(d.content ?? "");
@@ -138,17 +147,17 @@ function NoteNodeInner({ id, data, selected }: NodeProps) {
             }}
           >
             {d.content || (
-              <span className="text-[#3d4250] italic">Click to add notes...</span>
+              <span className="text-[#3d3528] italic">Click to add notes...</span>
             )}
           </div>
         )}
       </div>
 
-      {/* Helper hint when editing */}
+      {/* Helper hint when editing — very quiet */}
       {editing && (
-        <div className="px-3 pb-1.5">
-          <span className="text-[8px] text-[#3d4250]">
-            Ctrl+Enter to save / Escape to cancel
+        <div className="px-3 pb-2">
+          <span className="text-[7px] text-[#3d3528]">
+            Ctrl+Enter to save / Esc to cancel
           </span>
         </div>
       )}
