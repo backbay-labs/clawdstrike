@@ -131,6 +131,8 @@ pub struct BrokerRequestConstraints {
     pub allow_redirects: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stream_response: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_executions: Option<u32>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -427,6 +429,8 @@ pub struct BrokerCapabilityStatus {
     #[serde(default)]
     pub execution_count: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_executions: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_executed_at: Option<DateTime<Utc>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_status_code: Option<u16>,
@@ -611,6 +615,7 @@ mod tests {
                 require_request_body_sha256: Some(true),
                 allow_redirects: Some(false),
                 stream_response: Some(false),
+                max_executions: None,
             },
             evidence_required: true,
             intent_preview: None,
@@ -658,6 +663,7 @@ mod tests {
             state_reason: None,
             revoked_at: None,
             execution_count: 1,
+            max_executions: None,
             last_executed_at: Some(Utc::now()),
             last_status_code: Some(200),
             last_outcome: Some(BrokerExecutionOutcome::Success),

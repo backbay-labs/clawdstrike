@@ -23,6 +23,7 @@ pub struct BrokerdConfig {
     pub port: u16,
     pub hushd_base_url: String,
     pub hushd_token: Option<String>,
+    pub admin_token: Option<String>,
     pub secret_backend: crate::settings::BrokerdSecretBackendSettings,
     pub allow_http_loopback: bool,
     pub allow_private_upstream_hosts: bool,
@@ -299,6 +300,9 @@ async fn spawn_brokerd_process(config: &BrokerdConfig, hushd_public_key: &str) -
 
     if let Some(token) = &config.hushd_token {
         cmd.env("CLAWDSTRIKE_BROKERD_HUSHD_TOKEN", token);
+    }
+    if let Some(token) = &config.admin_token {
+        cmd.env("CLAWDSTRIKE_BROKERD_ADMIN_TOKEN", token);
     }
 
     let backend_kind = config.secret_backend.kind.trim();

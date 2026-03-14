@@ -1,7 +1,7 @@
 use axum::{
     body::{Body, Bytes},
     extract::{Path, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
@@ -34,6 +34,14 @@ pub struct ApiError {
 }
 
 impl ApiError {
+    pub fn unauthorized(code: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::UNAUTHORIZED,
+            code: code.into(),
+            message: message.into(),
+        }
+    }
+
     pub fn bad_request(code: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             status: StatusCode::BAD_REQUEST,
@@ -144,6 +152,42 @@ pub fn create_router(state: AppState) -> Router {
         .with_state(state)
 }
 
+/// Constant-time byte comparison to prevent timing side-channels on token
+/// validation.  Returns `true` when both slices have equal length and
+/// identical contents.
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut acc = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        acc |= x ^ y;
+    }
+    acc == 0
+}
+
+/// Verify the `Authorization: Bearer <token>` header against the configured
+/// admin token.  When no admin token is configured the check is a no-op
+/// (backward compatible).
+fn require_admin_auth(headers: &HeaderMap, state: &AppState) -> Result<(), ApiError> {
+    let expected = match state.config.admin_token.as_deref() {
+        Some(token) => token,
+        None => return Ok(()), // No token configured — auth disabled.
+    };
+    let header_value = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("");
+    let provided = header_value.strip_prefix("Bearer ").unwrap_or("");
+    if provided.is_empty() || !constant_time_eq(provided.as_bytes(), expected.as_bytes()) {
+        return Err(ApiError::unauthorized(
+            "BROKER_AUTH_REQUIRED",
+            "valid admin bearer token required",
+        ));
+    }
+    Ok(())
+}
+
 pub async fn health() -> Json<HealthResponse> {
     Json(HealthResponse {
         status: "healthy",
@@ -177,23 +221,27 @@ pub async fn executions(State(state): State<AppState>) -> Json<ExecutionsRespons
 
 pub async fn revoke_capability(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(capability_id): Path<String>,
-) -> Json<RevokeCapabilityResponse> {
+) -> Result<Json<RevokeCapabilityResponse>, ApiError> {
+    require_admin_auth(&headers, &state)?;
     let revoked = state.operator_state.revoke_capability(&capability_id).await;
-    Json(RevokeCapabilityResponse {
+    Ok(Json(RevokeCapabilityResponse {
         capability_id,
         revoked,
-    })
+    }))
 }
 
 pub async fn set_freeze(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(request): Json<FreezeRequest>,
-) -> Json<FreezeResponse> {
+) -> Result<Json<FreezeResponse>, ApiError> {
+    require_admin_auth(&headers, &state)?;
     state.operator_state.set_frozen(request.frozen).await;
-    Json(FreezeResponse {
+    Ok(Json(FreezeResponse {
         frozen: request.frozen,
-    })
+    }))
 }
 
 fn build_execution_evidence(
@@ -279,8 +327,10 @@ async fn freeze_for_tripwire(
 
 pub async fn execute(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(request): Json<BrokerExecuteRequest>,
 ) -> Result<Json<BrokerExecuteResponse>, ApiError> {
+    require_admin_auth(&headers, &state)?;
     let (capability, _url) = validate_execute_request(&request, &state.config, false)?;
     ensure_operator_allows(&state, &capability).await?;
     ensure_hushd_allows(&state, &capability.capability_id).await?;
@@ -407,8 +457,10 @@ pub async fn execute(
 
 pub async fn execute_stream(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(request): Json<BrokerExecuteRequest>,
 ) -> Result<Response, ApiError> {
+    require_admin_auth(&headers, &state)?;
     let (capability, _url) = validate_execute_request(&request, &state.config, true)?;
     ensure_operator_allows(&state, &capability).await?;
     ensure_hushd_allows(&state, &capability.capability_id).await?;
@@ -655,20 +707,37 @@ async fn ensure_hushd_allows(state: &AppState, capability_id: &str) -> Result<()
             ApiError::bad_gateway("BROKER_AUTHORITY_STATUS_INVALID", error.to_string())
         })?;
     match payload.capability.state {
-        BrokerCapabilityState::Active => Ok(()),
-        BrokerCapabilityState::Expired => Err(ApiError::forbidden(
-            "BROKER_CAPABILITY_EXPIRED",
-            "broker capability is no longer active",
-        )),
-        BrokerCapabilityState::Revoked => Err(ApiError::forbidden(
-            "BROKER_CAPABILITY_REVOKED",
-            "broker capability has been revoked by hushd authority",
-        )),
-        BrokerCapabilityState::Frozen => Err(ApiError::forbidden(
-            "BROKER_PROVIDER_FROZEN",
-            "broker provider is currently frozen by hushd authority",
-        )),
+        BrokerCapabilityState::Active => {}
+        BrokerCapabilityState::Expired => {
+            return Err(ApiError::forbidden(
+                "BROKER_CAPABILITY_EXPIRED",
+                "broker capability is no longer active",
+            ))
+        }
+        BrokerCapabilityState::Revoked => {
+            return Err(ApiError::forbidden(
+                "BROKER_CAPABILITY_REVOKED",
+                "broker capability has been revoked by hushd authority",
+            ))
+        }
+        BrokerCapabilityState::Frozen => {
+            return Err(ApiError::forbidden(
+                "BROKER_PROVIDER_FROZEN",
+                "broker provider is currently frozen by hushd authority",
+            ))
+        }
     }
+
+    if let Some(max_executions) = payload.capability.max_executions {
+        if payload.capability.execution_count >= u64::from(max_executions) {
+            return Err(ApiError::forbidden(
+                "BROKER_CAPABILITY_EXHAUSTED",
+                format!("broker capability has reached its execution limit ({max_executions})"),
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 async fn record_and_submit_evidence(
@@ -703,4 +772,131 @@ async fn submit_evidence(
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
+
+    use super::*;
+
+    // ── constant_time_eq ────────────────────────────────────────────
+
+    #[test]
+    fn constant_time_eq_equal_slices() {
+        assert!(constant_time_eq(b"secret-token", b"secret-token"));
+    }
+
+    #[test]
+    fn constant_time_eq_different_slices() {
+        assert!(!constant_time_eq(b"secret-token", b"wrong-token!"));
+    }
+
+    #[test]
+    fn constant_time_eq_different_lengths() {
+        assert!(!constant_time_eq(b"short", b"longer-string"));
+    }
+
+    #[test]
+    fn constant_time_eq_empty_slices() {
+        assert!(constant_time_eq(b"", b""));
+    }
+
+    // ── require_admin_auth ──────────────────────────────────────────
+
+    fn make_test_state(admin_token: Option<String>) -> AppState {
+        use crate::config::{Config, SecretBackendConfig};
+        use crate::operator::OperatorState;
+        use hush_core::Keypair;
+        use std::sync::Arc;
+
+        let keypair = Keypair::generate();
+        let config = Config {
+            listen: "127.0.0.1:9889".to_string(),
+            hushd_base_url: "http://127.0.0.1:9876".to_string(),
+            hushd_token: None,
+            secret_backend: SecretBackendConfig::Env {
+                prefix: "TEST_".to_string(),
+            },
+            trusted_hushd_public_keys: vec![keypair.public_key()],
+            request_timeout_secs: 5,
+            binding_proof_ttl_secs: 60,
+            allow_http_loopback: false,
+            allow_private_upstream_hosts: false,
+            allow_invalid_upstream_tls: false,
+            admin_token,
+        };
+        AppState {
+            config: Arc::new(config),
+            secret_provider: Arc::new(crate::secret_provider::EnvSecretProvider::new(
+                "TEST_".to_string(),
+            )),
+            operator_state: OperatorState::default(),
+            hushd_client: reqwest::Client::new(),
+            upstream_client: reqwest::Client::new(),
+        }
+    }
+
+    #[test]
+    fn auth_skipped_when_no_token_configured() {
+        let state = make_test_state(None);
+        let headers = HeaderMap::new();
+        assert!(require_admin_auth(&headers, &state).is_ok());
+    }
+
+    #[test]
+    fn auth_passes_with_correct_bearer_token() {
+        let state = make_test_state(Some("my-secret".to_string()));
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            axum::http::header::AUTHORIZATION,
+            "Bearer my-secret".parse().unwrap(),
+        );
+        assert!(require_admin_auth(&headers, &state).is_ok());
+    }
+
+    #[test]
+    fn auth_rejects_wrong_token() {
+        let state = make_test_state(Some("my-secret".to_string()));
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            axum::http::header::AUTHORIZATION,
+            "Bearer wrong-token".parse().unwrap(),
+        );
+        let err = require_admin_auth(&headers, &state).unwrap_err();
+        assert_eq!(err.status, StatusCode::UNAUTHORIZED);
+        assert_eq!(err.code, "BROKER_AUTH_REQUIRED");
+    }
+
+    #[test]
+    fn auth_rejects_missing_header() {
+        let state = make_test_state(Some("my-secret".to_string()));
+        let headers = HeaderMap::new();
+        let err = require_admin_auth(&headers, &state).unwrap_err();
+        assert_eq!(err.status, StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn auth_rejects_non_bearer_scheme() {
+        let state = make_test_state(Some("my-secret".to_string()));
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            axum::http::header::AUTHORIZATION,
+            "Basic my-secret".parse().unwrap(),
+        );
+        let err = require_admin_auth(&headers, &state).unwrap_err();
+        assert_eq!(err.status, StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn auth_rejects_empty_bearer_value() {
+        let state = make_test_state(Some("my-secret".to_string()));
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            axum::http::header::AUTHORIZATION,
+            "Bearer ".parse().unwrap(),
+        );
+        let err = require_admin_auth(&headers, &state).unwrap_err();
+        assert_eq!(err.status, StatusCode::UNAUTHORIZED);
+    }
 }

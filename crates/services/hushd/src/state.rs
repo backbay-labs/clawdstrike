@@ -9,6 +9,7 @@ use hush_certification::certification::{IssuerConfig, SqliteCertificationStore};
 use hush_certification::evidence::SqliteEvidenceExportStore;
 use hush_certification::webhooks::SqliteWebhookStore;
 use hush_core::{Keypair, PublicKey};
+use hush_multi_agent::InMemoryRevocationStore;
 
 use crate::audit::forward::AuditForwarder;
 use crate::audit::{AuditEvent, AuditLedger};
@@ -119,6 +120,11 @@ pub struct AppState {
     pub shutdown: Arc<Notify>,
     /// In-memory broker capability lifecycle state.
     pub broker_state: Arc<BrokerStateStore>,
+    /// Shared delegation-token revocation store for the secret broker.
+    ///
+    /// Without this, each call to `resolve_delegation_lineage` would create a
+    /// fresh empty store, silently accepting revoked tokens.
+    pub delegation_revocations: Arc<InMemoryRevocationStore>,
 }
 
 #[derive(Clone)]
@@ -494,6 +500,7 @@ impl AppState {
             spine_publisher,
             shutdown: Arc::new(Notify::new()),
             broker_state: Arc::new(BrokerStateStore::new()),
+            delegation_revocations: Arc::new(InMemoryRevocationStore::default()),
         };
 
         // Record session start (after forwarder is initialized).

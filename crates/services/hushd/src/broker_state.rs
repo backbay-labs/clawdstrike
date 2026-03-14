@@ -49,6 +49,7 @@ impl BrokerStateStore {
             state_reason: None,
             revoked_at: None,
             execution_count: 0,
+            max_executions: capability.request_constraints.max_executions,
             last_executed_at: None,
             last_status_code: None,
             last_outcome: None,

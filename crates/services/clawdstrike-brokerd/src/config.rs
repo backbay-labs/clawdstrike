@@ -29,6 +29,9 @@ pub struct Config {
     pub allow_http_loopback: bool,
     pub allow_private_upstream_hosts: bool,
     pub allow_invalid_upstream_tls: bool,
+    /// Optional bearer token required for admin and mutation endpoints.
+    /// When `None`, authentication is skipped (backward compatible).
+    pub admin_token: Option<String>,
 }
 
 fn env_bool(key: &str) -> bool {
@@ -90,6 +93,9 @@ impl Config {
         let allow_private_upstream_hosts =
             env_bool("CLAWDSTRIKE_BROKERD_ALLOW_PRIVATE_UPSTREAM_HOSTS");
         let allow_invalid_upstream_tls = env_bool("CLAWDSTRIKE_BROKERD_ALLOW_INVALID_TLS");
+        let admin_token = std::env::var("CLAWDSTRIKE_BROKERD_ADMIN_TOKEN")
+            .ok()
+            .filter(|value| !value.trim().is_empty());
 
         let trusted_hushd_public_keys = std::env::var("CLAWDSTRIKE_BROKERD_HUSHD_PUBKEYS")
             .map_err(|_| anyhow::anyhow!("CLAWDSTRIKE_BROKERD_HUSHD_PUBKEYS is required"))?
@@ -123,6 +129,7 @@ impl Config {
             allow_http_loopback,
             allow_private_upstream_hosts,
             allow_invalid_upstream_tls,
+            admin_token,
         })
     }
 }

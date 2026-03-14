@@ -115,6 +115,7 @@ export interface BrokerCapabilityStatus {
   state_reason?: string;
   revoked_at?: string;
   execution_count: number;
+  max_executions?: number;
   last_executed_at?: string;
   last_status_code?: number;
   last_outcome?: BrokerExecutionOutcome;

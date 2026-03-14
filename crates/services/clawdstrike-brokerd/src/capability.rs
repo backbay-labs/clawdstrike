@@ -338,6 +338,7 @@ mod tests {
             allow_http_loopback: false,
             allow_private_upstream_hosts: false,
             allow_invalid_upstream_tls: false,
+            admin_token: None,
         }
     }
 
@@ -375,6 +376,7 @@ mod tests {
                 require_request_body_sha256: None,
                 allow_redirects: None,
                 stream_response: None,
+                max_executions: None,
             },
             evidence_required: true,
             intent_preview: None,

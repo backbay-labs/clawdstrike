@@ -724,6 +724,7 @@ fn validate_preview_matches_request(
 
 fn resolve_delegation_lineage(
     request: &BrokerCapabilityIssueRequest,
+    revocations: &InMemoryRevocationStore,
 ) -> Result<Option<clawdstrike_broker_protocol::BrokerDelegationLineage>, V1Error> {
     let Some(token) = request.delegation_token.as_deref() else {
         return Ok(None);
@@ -753,12 +754,11 @@ fn resolve_delegation_lineage(
     let expected_subject = AgentId::new(expected_subject).map_err(|error| {
         V1Error::bad_request("BROKER_DELEGATION_TOKEN_INVALID", error.to_string())
     })?;
-    let revocations = InMemoryRevocationStore::default();
     signed
         .verify_and_validate(
             &issuer_public_key,
             Utc::now().timestamp(),
-            &revocations,
+            revocations,
             DELEGATION_AUDIENCE,
             Some(&expected_subject),
         )
@@ -1226,7 +1226,7 @@ pub async fn issue_capability(
         }
         None => None,
     };
-    let lineage = resolve_delegation_lineage(&request)?;
+    let lineage = resolve_delegation_lineage(&request, &state.delegation_revocations)?;
 
     let keypair = engine.keypair().cloned().ok_or_else(|| {
         V1Error::internal(
@@ -1267,6 +1267,7 @@ pub async fn issue_capability(
             require_request_body_sha256: provider_policy.require_body_sha256,
             allow_redirects: Some(false),
             stream_response: provider_policy.stream_response,
+            max_executions: provider_policy.max_executions,
         },
         evidence_required: true,
         intent_preview: intent_preview.clone(),
@@ -2120,6 +2121,7 @@ mod tests {
             require_body_sha256: None,
             stream_response: None,
             require_intent_preview: None,
+            max_executions: None,
             approval_required_risk_levels: vec!["high".to_string()],
             approval_required_data_classes: vec![],
         };
@@ -2163,6 +2165,7 @@ mod tests {
             require_body_sha256: None,
             stream_response: None,
             require_intent_preview: None,
+            max_executions: None,
             approval_required_risk_levels: vec![],
             approval_required_data_classes: vec!["pii".to_string()],
         };
@@ -2214,6 +2217,7 @@ mod tests {
                 require_body_sha256: None,
                 stream_response: None,
                 require_intent_preview: None,
+                max_executions: None,
                 approval_required_risk_levels: vec![],
                 approval_required_data_classes: vec![],
             }],
@@ -2261,6 +2265,7 @@ mod tests {
                 require_body_sha256: None,
                 stream_response: None,
                 require_intent_preview: None,
+                max_executions: None,
                 approval_required_risk_levels: vec![],
                 approval_required_data_classes: vec![],
             }],
@@ -2297,6 +2302,7 @@ mod tests {
                 require_body_sha256: None,
                 stream_response: None,
                 require_intent_preview: None,
+                max_executions: None,
                 approval_required_risk_levels: vec![],
                 approval_required_data_classes: vec![],
             }],
@@ -2352,6 +2358,7 @@ mod tests {
                 require_body_sha256: None,
                 stream_response: None,
                 require_intent_preview: None,
+                max_executions: None,
                 approval_required_risk_levels: vec![],
                 approval_required_data_classes: vec![],
             }],

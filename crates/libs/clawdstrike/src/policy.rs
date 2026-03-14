@@ -592,6 +592,8 @@ pub struct BrokerProviderPolicy {
     pub stream_response: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub require_intent_preview: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_executions: Option<u32>,
     #[serde(default)]
     pub approval_required_risk_levels: Vec<String>,
     #[serde(default)]

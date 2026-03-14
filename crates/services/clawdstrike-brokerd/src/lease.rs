@@ -635,6 +635,7 @@ mod tests {
             allow_http_loopback: false,
             allow_private_upstream_hosts: false,
             allow_invalid_upstream_tls: false,
+            admin_token: None,
         };
         let provider = Arc::new(FileSecretProvider::new(secrets));
         AppState {

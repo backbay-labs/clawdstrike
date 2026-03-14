@@ -258,6 +258,10 @@ pub struct BrokerdSettings {
     pub allow_invalid_upstream_tls: bool,
     #[serde(default)]
     pub secret_backend: BrokerdSecretBackendSettings,
+    /// Optional bearer token required for admin and mutation endpoints on
+    /// the local brokerd instance.  When absent, brokerd skips auth.
+    #[serde(default)]
+    pub admin_token: Option<String>,
 }
 
 impl Default for BrokerdSettings {
@@ -270,6 +274,7 @@ impl Default for BrokerdSettings {
             allow_private_upstream_hosts: false,
             allow_invalid_upstream_tls: false,
             secret_backend: BrokerdSecretBackendSettings::default(),
+            admin_token: None,
         }
     }
 }

@@ -232,6 +232,7 @@ fn main() {
             port: guard.brokerd.port,
             hushd_base_url: guard.daemon_url(),
             hushd_token: guard.api_key.clone(),
+            admin_token: guard.brokerd.admin_token.clone(),
             secret_backend: guard.brokerd.secret_backend.clone(),
             allow_http_loopback: guard.brokerd.allow_http_loopback,
             allow_private_upstream_hosts: guard.brokerd.allow_private_upstream_hosts,
