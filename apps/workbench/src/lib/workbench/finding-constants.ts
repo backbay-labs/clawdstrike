@@ -1,16 +1,5 @@
-/**
- * Shared constants for finding-related components.
- *
- * These were previously duplicated across findings-list.tsx,
- * finding-detail.tsx, and enrichment-sidebar.tsx.
- */
-
 import type { FindingStatus } from "@/lib/workbench/finding-engine";
 import type { Severity } from "@/lib/workbench/hunt-types";
-
-// ---------------------------------------------------------------------------
-// Severity
-// ---------------------------------------------------------------------------
 
 export const SEVERITY_COLORS: Record<Severity, string> = {
   critical: "#c45c5c",
@@ -28,7 +17,6 @@ export const SEVERITY_LABELS: Record<Severity, string> = {
   info: "INFO",
 };
 
-/** Short labels used in compact table views. */
 export const SEVERITY_LABELS_SHORT: Record<Severity, string> = {
   critical: "CRIT",
   high: "HIGH",
@@ -44,10 +32,6 @@ export const SEVERITY_ORDER: Record<Severity, number> = {
   low: 2,
   info: 1,
 };
-
-// ---------------------------------------------------------------------------
-// Finding Status
-// ---------------------------------------------------------------------------
 
 export const STATUS_CONFIG: Record<FindingStatus, { label: string; color: string; bg: string }> = {
   emerging: { label: "Emerging", color: "#d4a84b", bg: "#d4a84b20" },

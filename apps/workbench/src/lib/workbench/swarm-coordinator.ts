@@ -27,9 +27,6 @@ import type {
 
 import { generateId } from "./sentinel-types";
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 /** Protocol prefix, matching @backbay/speakeasy TOPIC_PREFIX. */
 const TOPIC_PREFIX = "/baychat/v1";
@@ -61,9 +58,6 @@ const RECONNECT_MAX_ATTEMPTS = 10;
 /** Envelope protocol version. */
 const ENVELOPE_VERSION = 1 as const;
 
-// ---------------------------------------------------------------------------
-// SwarmEnvelope
-// ---------------------------------------------------------------------------
 
 /**
  * Envelope type for swarm messages. Matches the Speakeasy MessageEnvelope
@@ -109,9 +103,6 @@ export interface DetectionMessage {
   confidence: number;
 }
 
-// ---------------------------------------------------------------------------
-// Topic Helpers
-// ---------------------------------------------------------------------------
 
 /**
  * Build the intel topic for a swarm.
@@ -205,9 +196,6 @@ export function getSwarmTopics(
   return topics;
 }
 
-// ---------------------------------------------------------------------------
-// TransportAdapter Interface
-// ---------------------------------------------------------------------------
 
 /**
  * Abstract transport interface for swarm networking.
@@ -235,9 +223,6 @@ export interface TransportAdapter {
   isConnected(): boolean;
 }
 
-// ---------------------------------------------------------------------------
-// Envelope Factory
-// ---------------------------------------------------------------------------
 
 /** Create a SwarmEnvelope with the given type, payload, and TTL. */
 export function createSwarmEnvelope(
@@ -261,9 +246,6 @@ export function createSwarmEnvelope(
   };
 }
 
-// ---------------------------------------------------------------------------
-// MessageOutbox — offline queue
-// ---------------------------------------------------------------------------
 
 /** A single queued message waiting for transport reconnection. */
 export interface OutboxEntry {
@@ -379,9 +361,6 @@ export class MessageOutbox {
   }
 }
 
-// ---------------------------------------------------------------------------
-// InProcessEventBus — personal swarm (local-only) transport
-// ---------------------------------------------------------------------------
 
 /**
  * In-process transport adapter for personal swarm coordination.
@@ -465,17 +444,11 @@ export class InProcessEventBus implements TransportAdapter {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Handler types
-// ---------------------------------------------------------------------------
 
 export type IntelHandler = (swarmId: string, intel: Intel) => void;
 export type SignalHandler = (swarmId: string, signal: Signal) => void;
 export type DetectionHandler = (swarmId: string, detection: DetectionMessage) => void;
 
-// ---------------------------------------------------------------------------
-// SwarmCoordinator
-// ---------------------------------------------------------------------------
 
 /**
  * Core networking layer for swarm intel distribution.
@@ -525,9 +498,6 @@ export class SwarmCoordinator {
     this.transport.onMessage(this.boundRouter);
   }
 
-  // -----------------------------------------------------------------------
-  // Swarm lifecycle
-  // -----------------------------------------------------------------------
 
   /**
    * Create a new Swarm object (in-memory).
@@ -618,9 +588,6 @@ export class SwarmCoordinator {
     }
   }
 
-  // -----------------------------------------------------------------------
-  // Publish
-  // -----------------------------------------------------------------------
 
   /**
    * Publish an Intel artifact to a swarm's intel topic.
@@ -655,9 +622,6 @@ export class SwarmCoordinator {
     await this.safePublish(topic, envelope);
   }
 
-  // -----------------------------------------------------------------------
-  // Subscribe (incoming)
-  // -----------------------------------------------------------------------
 
   /** Register a handler for incoming Intel artifacts. */
   onIntelReceived(handler: IntelHandler): void {
@@ -689,9 +653,6 @@ export class SwarmCoordinator {
     this.detectionHandlers.delete(handler);
   }
 
-  // -----------------------------------------------------------------------
-  // Reconnection
-  // -----------------------------------------------------------------------
 
   /**
    * Attempt to flush the outbox. Call this when the transport reconnects.
@@ -735,9 +696,6 @@ export class SwarmCoordinator {
     return this.reconnectAttempts;
   }
 
-  // -----------------------------------------------------------------------
-  // State
-  // -----------------------------------------------------------------------
 
   /** IDs of swarms we are currently joined to. */
   get joinedSwarmIds(): string[] {
@@ -770,9 +728,6 @@ export class SwarmCoordinator {
     this.outbox.clear();
   }
 
-  // -----------------------------------------------------------------------
-  // Internal
-  // -----------------------------------------------------------------------
 
   /**
    * Publish via transport if connected, otherwise queue in outbox.
@@ -898,9 +853,6 @@ export class SwarmCoordinator {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Swarm CRUD Helpers (pure functions)
-// ---------------------------------------------------------------------------
 
 /** Configuration for creating a new swarm. */
 export interface CreateSwarmConfig {
@@ -1042,9 +994,6 @@ export function updateSwarmStats(
   };
 }
 
-// ---------------------------------------------------------------------------
-// Internal stat helpers
-// ---------------------------------------------------------------------------
 
 /**
  * Recompute derived stats from current members and references.

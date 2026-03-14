@@ -63,8 +63,7 @@ function HealthRing({
   return (
     <div className="relative w-[76px] h-[76px] shrink-0">
       <svg viewBox="0 0 80 80" className="w-full h-full -rotate-90">
-        {/* Track */}
-        <circle
+                <circle
           cx="40"
           cy="40"
           r={radius}
@@ -72,8 +71,7 @@ function HealthRing({
           stroke="#2d3240"
           strokeWidth="3.5"
         />
-        {/* Active arc */}
-        <circle
+                <circle
           cx="40"
           cy="40"
           r={radius}
@@ -209,7 +207,6 @@ function SentinelSummaryCard({
           <span className="text-[#6f7f9a]">retired</span>
         </span>
       </div>
-      {/* Mini sigil placeholders for active sentinels */}
       {active > 0 && (
         <div className="flex items-center gap-1.5 mt-3">
           {Array.from({ length: Math.min(active, 8) }).map((_, i) => (
@@ -272,7 +269,6 @@ function FindingsSummaryCard({
           <span className="text-[#6f7f9a]">confirmed</span>
         </span>
       </div>
-      {/* Severity breakdown mini-bars */}
       <div className="flex items-end gap-1 mt-3 h-5">
         {(["critical", "high", "medium", "low"] as const).map((sev) => {
           const count = severityCounts[sev] ?? 0;
@@ -383,7 +379,6 @@ export function HomePage() {
     for (const f of findings) {
       if (f.status === "emerging") emerging++;
       else if (f.status === "confirmed") confirmed++;
-      // Only count severity for active findings (emerging + confirmed)
       if ((f.status === "emerging" || f.status === "confirmed") && f.severity in severityCounts) {
         severityCounts[f.severity]++;
       }

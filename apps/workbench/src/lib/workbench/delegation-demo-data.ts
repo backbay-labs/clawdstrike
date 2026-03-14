@@ -12,9 +12,6 @@
 
 import type { DelegationGraph, DelegationNode, DelegationEdge } from "./delegation-types";
 
-// ---------------------------------------------------------------------------
-// Dynamic date helpers — keep demo data from appearing expired
-// ---------------------------------------------------------------------------
 
 function isoRelative(daysFromNow: number, hours = 0): string {
   const d = new Date();
@@ -23,9 +20,6 @@ function isoRelative(daysFromNow: number, hours = 0): string {
   return d.toISOString();
 }
 
-// ---------------------------------------------------------------------------
-// Nodes (~18)
-// ---------------------------------------------------------------------------
 
 const nodes: DelegationNode[] = [
   // --- Principals ---
@@ -202,9 +196,6 @@ const nodes: DelegationNode[] = [
   },
 ];
 
-// ---------------------------------------------------------------------------
-// Edges (~24)
-// ---------------------------------------------------------------------------
 
 const edges: DelegationEdge[] = [
   // Orchestrator issues grants
@@ -400,8 +391,5 @@ const edges: DelegationEdge[] = [
   },
 ];
 
-// ---------------------------------------------------------------------------
-// Export
-// ---------------------------------------------------------------------------
 
 export const DEMO_DELEGATION_GRAPH: DelegationGraph = { nodes, edges };

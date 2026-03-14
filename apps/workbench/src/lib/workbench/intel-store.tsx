@@ -292,7 +292,6 @@ export function IntelProvider({ children }: { children: ReactNode }) {
     };
   }, [state.localIntel, state.swarmIntel, state.activeIntelId]);
 
-  // Flush pending persistence synchronously on tab close to prevent data loss
   useEffect(() => {
     const handleBeforeUnload = () => {
       if (persistRef.current) {

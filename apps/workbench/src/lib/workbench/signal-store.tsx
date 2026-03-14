@@ -319,8 +319,7 @@ export function SignalProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // Debounced IndexedDB persistence
-  const persistRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const persistRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (persistRef.current) clearTimeout(persistRef.current);
     persistRef.current = setTimeout(() => {
@@ -339,8 +338,7 @@ export function SignalProvider({ children }: { children: ReactNode }) {
     pipelineRef.current = state.pipelineState;
   }, [state.pipelineState]);
 
-  // Action dispatchers
-
+  
   const ingestSignal = useCallback((signal: Signal) => {
     dispatch({ type: "INGEST", signal });
   }, []);

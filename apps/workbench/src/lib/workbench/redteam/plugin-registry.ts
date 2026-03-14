@@ -927,9 +927,6 @@ export const REDTEAM_PLUGINS: Record<string, RedTeamPlugin> = {
   "agentic:memory-poisoning": p("agentic:memory-poisoning", ["prompt_injection", "spider_sense"]),
 };
 
-// ---------------------------------------------------------------------------
-// GUARD_TO_PLUGINS — which promptfoo plugins exercise each guard
-// ---------------------------------------------------------------------------
 
 function buildGuardToPlugins(): Record<GuardId, string[]> {
   const map: Record<string, string[]> = {};
@@ -944,9 +941,6 @@ function buildGuardToPlugins(): Record<GuardId, string[]> {
 
 export const GUARD_TO_PLUGINS: Record<GuardId, string[]> = buildGuardToPlugins();
 
-// ---------------------------------------------------------------------------
-// PLUGIN_TO_GUARDS — reverse mapping (convenience alias)
-// ---------------------------------------------------------------------------
 
 function buildPluginToGuards(): Record<string, GuardId[]> {
   const map: Record<string, GuardId[]> = {};
@@ -958,9 +952,6 @@ function buildPluginToGuards(): Record<string, GuardId[]> {
 
 export const PLUGIN_TO_GUARDS: Record<string, GuardId[]> = buildPluginToGuards();
 
-// ---------------------------------------------------------------------------
-// REDTEAM_STRATEGIES — strategy metadata (bridge type with id/description)
-// ---------------------------------------------------------------------------
 
 function s(
   id: string,

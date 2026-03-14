@@ -1,19 +1,3 @@
-/**
- * Intel Forge -- promotion engine for creating, signing, and packaging Intel artifacts.
- *
- * All functions are pure (no React, no side effects) and operate on the types
- * defined in sentinel-types.ts.  The signing flow follows the spec in
- * docs/plans/sentinel-swarm/SIGNAL-PIPELINE.md section 6:
- *
- *   1. Extract signable fields from Intel
- *   2. Canonicalize using RFC 8785 (sorted keys, no whitespace)
- *   3. SHA-256 hash of the canonical JSON
- *   4. Ed25519 sign the hash
- *   5. Build receipt chain linking back to source findings
- *
- * @see docs/plans/sentinel-swarm/SIGNAL-PIPELINE.md#6-intel-promotion
- */
-
 import type {
   Intel,
   IntelType,
@@ -43,7 +27,6 @@ export { canonicalizeJson };
 
 let intelCounter = 0;
 
-/** Format: `int_<timestamp_b36><counter_b36><random_hex>` -- sortable with collision resistance. */
 export function generateIntelId(): string {
   const ts = Date.now().toString(36);
   const seq = (++intelCounter).toString(36).padStart(4, "0");
@@ -84,23 +67,17 @@ async function hashCanonicalValue(value: unknown): Promise<{
   };
 }
 
-/** SHA-256 of the canonical signable fields. Used for deduplication across the swarm. */
 export async function computeContentHash(intel: Intel): Promise<string> {
   const { hex } = await hashCanonicalValue(extractSignableFields(intel));
   return hex;
 }
 
-/** Auto-detect the best IntelType from a finding's enrichments and signals. */
 function detectIntelType(finding: Finding, signals: Signal[]): IntelType {
-  // Check for behavioral patterns
   const hasBehavioral = signals.some(
     (s) => s.type === "behavioral" || s.type === "anomaly",
   );
-  // Check for IOC enrichments
   const hasIocs = finding.enrichments.some((e) => e.type === "ioc_extraction");
-  // Check for detection rules
   const hasDetectionSignals = signals.some((s) => s.type === "detection");
-  // Check for policy violations
   const hasPolicyViolations = signals.some(
     (s) => s.type === "policy_violation",
   );
@@ -138,7 +115,6 @@ function extractPatternContent(
   finding: Finding,
   signals: Signal[],
 ): IntelContentPattern {
-  // Extract pattern steps from behavioral signals
   const behavioralSignals = signals.filter(
     (s) =>
       finding.signalIds.includes(s.id) &&
@@ -323,19 +299,6 @@ function extractMitreMappings(finding: Finding): MitreMapping[] {
   return mappings;
 }
 
-/**
- * Create an Intel artifact from a promoted Finding.
- *
- * This is the primary entry point for the intel promotion flow. It:
- * 1. Auto-detects the intel type from finding content (or uses override)
- * 2. Extracts content based on enrichments and signal types
- * 3. Carries forward MITRE mappings from finding enrichments
- * 4. Sets derivedFrom to the finding's signal IDs for provenance
- * 5. Inherits confidence from the finding
- *
- * The returned Intel has placeholder signature/receipt fields that must be
- * filled by signIntel() before distribution.
- */
 export function promoteToIntel(
   finding: Finding,
   signals: Signal[],
@@ -346,7 +309,6 @@ export function promoteToIntel(
   const mitre = extractMitreMappings(finding);
   const now = Date.now();
 
-  // Build a placeholder receipt -- the real receipt is created during signing
   const placeholderReceipt: Receipt = {
     id: crypto.randomUUID(),
     timestamp: new Date(now).toISOString(),
@@ -395,10 +357,6 @@ export function promoteToIntel(
   return intel;
 }
 
-/**
- * Fields included in the signature (per SIGNAL-PIPELINE.md section 6.1).
- * Excludes: signature, signerPublicKey, receipt.
- */
 function extractSignableFields(
   intel: Intel,
 ): Record<string, unknown> {
@@ -446,10 +404,6 @@ function sameStringArray(
   return left.length === right.length && left.every((entry, index) => entry === right[index]);
 }
 
-/**
- * Sign an Intel artifact with Ed25519 (per SIGNAL-PIPELINE.md section 6.3).
- * Callers must supply the signer public key explicitly.
- */
 export async function signIntel(
   intel: Intel,
   privateKeyHex: string,
@@ -506,7 +460,6 @@ export async function signIntel(
   };
 }
 
-/** Verify an Intel artifact's signature and receipt chain. */
 export async function verifyIntel(intel: Intel): Promise<{
   valid: boolean;
   reason: string;
@@ -586,16 +539,12 @@ export async function verifyIntel(intel: Intel): Promise<{
   return { valid: true, reason: "Intel signature verified" };
 }
 
-/**
- * Wrap an Intel artifact for Gossipsub distribution via the swarm.
- * Private intel returns null (not distributed). Public intel targets /baychat/v1/discovery.
- */
 export function packageForSwarm(
   intel: Intel,
   sentinelIdentity: SentinelIdentity,
 ): IntelSwarmPackage | null {
   if (intel.shareability === "private") {
-    return null; // Private intel is not distributed
+    return null;
   }
 
   const message: IntelSwarmMessage = {
@@ -611,7 +560,7 @@ export function packageForSwarm(
   const envelope: IntelSwarmEnvelope = {
     envelopeType: "message",
     payload: message,
-    ttl: 10, // Max 10 hops in Gossipsub
+    ttl: 10,
     createdAt: Date.now(),
     senderId: sentinelIdentity.fingerprint,
   };
@@ -621,7 +570,7 @@ export function packageForSwarm(
     topic:
       intel.shareability === "public"
         ? "/baychat/v1/discovery"
-        : undefined, // Swarm-scoped topic is set by the caller with the swarmId
+        : undefined,
   };
 }
 
@@ -645,7 +594,6 @@ export interface IntelSwarmEnvelope {
 
 export interface IntelSwarmPackage {
   envelope: IntelSwarmEnvelope;
-  /** Undefined means the caller must provide the swarm-scoped topic. */
   topic: string | undefined;
 }
 

@@ -7,9 +7,6 @@
 
 import type { GuardId, ThreatSeverity, TestScenario } from "../types.ts";
 
-// ---------------------------------------------------------------------------
-// Plugin & Strategy metadata
-// ---------------------------------------------------------------------------
 
 /** A promptfoo red-team plugin mapped to ClawdStrike guards. */
 export interface RedTeamPlugin {
@@ -31,9 +28,6 @@ export interface RedTeamStrategy {
   humanComplexity: "low" | "medium" | "high";
 }
 
-// ---------------------------------------------------------------------------
-// Risk scoring
-// ---------------------------------------------------------------------------
 
 /**
  * Per-plugin risk score result.
@@ -67,9 +61,6 @@ export interface RedTeamSystemRiskScore {
   distribution: Record<string, number>;
 }
 
-// ---------------------------------------------------------------------------
-// Grading
-// ---------------------------------------------------------------------------
 
 /**
  * Result of grading a single red-team scenario.
@@ -81,9 +72,6 @@ export interface RedTeamGradingResult {
   skipped?: boolean;
 }
 
-// ---------------------------------------------------------------------------
-// Scenario extension
-// ---------------------------------------------------------------------------
 
 /** Extends the workbench TestScenario with optional red-team identifiers. */
 export interface RedTeamScenario extends TestScenario {

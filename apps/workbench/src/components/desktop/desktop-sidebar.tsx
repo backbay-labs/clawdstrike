@@ -103,7 +103,7 @@ const POSTURE_BREATH: Record<SystemPosture, number> = {
   nominal: 5000,
   attention: 2800,
   critical: 1600,
-  offline: 0, // no breathing when offline
+  offline: 0,
 };
 
 function SystemHeartbeat({
@@ -128,8 +128,7 @@ function SystemHeartbeat({
   const domeUrl = `url(#${domeId})`;
 
   const { sentinels } = useSentinels();
-  // Use prop when provided; fall back to independent hook for backwards compat
-  const findingsStore = useFindings();
+    const findingsStore = useFindings();
   const findings = findingsStore.findings;
 
   const activeSentinels = sentinels.filter((s) => s.status === "active").length;
@@ -142,21 +141,18 @@ function SystemHeartbeat({
   const ring = POSTURE_RING[posture];
   const breathMs = POSTURE_BREATH[posture];
 
-  // Per-subsystem health → segment ring colors
-  const segColors = [
+    const segColors = [
     activeSentinels > 0 ? "#4ade80" : "#2d3240",                                      // sentinels
     criticalFindings > 0 ? "#ef4444" : emergingFindings > 0 ? "#d4a84b" : "#2d3240",  // findings
     pendingApprovals > 0 ? "#7c9aef" : "#2d3240",                                      // approvals
     fleetOnline ? "#4ade80" : "#ef4444",                                                // fleet
   ];
 
-  // Radar sweep: faster when urgent, off when offline
-  const sweepSec = posture === "critical" ? 2 : posture === "attention" ? 4 : posture === "nominal" ? 8 : 0;
+    const sweepSec = posture === "critical" ? 2 : posture === "attention" ? 4 : posture === "nominal" ? 8 : 0;
 
   const size = collapsed ? 28 : 36;
 
-  // Segment ring geometry (r=36 inside viewBox 0–100)
-  const SR = 36;
+    const SR = 36;
   const CIRC = 2 * Math.PI * SR;
   const GAP = 8;
   const SEG = (CIRC - 4 * GAP) / 4;
@@ -199,8 +195,7 @@ function SystemHeartbeat({
         </radialGradient>
       </defs>
 
-      {/* L1 — Outer halo (blurred glow ring) */}
-      <circle
+            <circle
         cx={50} cy={50} r={46}
         fill="none"
         stroke={ring.color}
@@ -209,8 +204,7 @@ function SystemHeartbeat({
         style={{ filter: glowUrl, animation: anim("hb-glow") }}
       />
 
-      {/* L2 — Outer ring */}
-      <circle
+            <circle
         cx={50} cy={50} r={44}
         fill="none"
         stroke={ring.color}
@@ -219,19 +213,16 @@ function SystemHeartbeat({
         style={{ transformOrigin: "50px 50px", animation: anim("hb-ring") }}
       />
 
-      {/* L2 — Glass dome (subtle inner radial gradient) */}
-      <circle cx={50} cy={50} r={43} fill={domeUrl} />
+            <circle cx={50} cy={50} r={43} fill={domeUrl} />
 
-      {/* L2 — Compass ticks (cardinal reference marks) */}
-      <g stroke={ring.color} strokeWidth={1.2} opacity={0.2}>
+            <g stroke={ring.color} strokeWidth={1.2} opacity={0.2}>
         <line x1={50} y1={2} x2={50} y2={7} />
         <line x1={98} y1={50} x2={93} y2={50} />
         <line x1={50} y1={98} x2={50} y2={93} />
         <line x1={2} y1={50} x2={7} y2={50} />
       </g>
 
-      {/* L3 — Segmented health ring (4 arcs, one per subsystem) */}
-      <g style={{ transform: "rotate(-90deg)", transformOrigin: "50px 50px" }}>
+            <g style={{ transform: "rotate(-90deg)", transformOrigin: "50px 50px" }}>
         {segColors.map((color, i) => (
           <circle
             key={i}
@@ -251,8 +242,7 @@ function SystemHeartbeat({
         ))}
       </g>
 
-      {/* L4 — Radar sweep (rotating arc with glow trail) */}
-      {sweepSec > 0 && (
+            {sweepSec > 0 && (
         <circle
           cx={50} cy={50} r={SR}
           fill="none"
@@ -269,16 +259,14 @@ function SystemHeartbeat({
         />
       )}
 
-      {/* L5 — Diamond: background glow fill */}
-      <path
+            <path
         d="M50 28 L68 50 L50 72 L32 50Z"
         fill={ring.color}
         opacity={0.06}
         style={{ filter: glowUrl }}
       />
 
-      {/* L5 — Diamond: main outline */}
-      <path
+            <path
         d="M50 28 L68 50 L50 72 L32 50Z"
         fill="none"
         stroke={ring.color}
@@ -288,8 +276,7 @@ function SystemHeartbeat({
         style={{ animation: anim("hb-diamond") }}
       />
 
-      {/* L5 — Diamond: facet lines (gemstone cut pattern) */}
-      <g stroke={ring.color} strokeWidth={0.6} opacity={0.25} style={{ animation: anim("hb-facets") }}>
+            <g stroke={ring.color} strokeWidth={0.6} opacity={0.25} style={{ animation: anim("hb-facets") }}>
         <line x1={32} y1={50} x2={68} y2={50} />
         <line x1={50} y1={28} x2={41} y2={50} />
         <line x1={50} y1={28} x2={59} y2={50} />
@@ -297,8 +284,7 @@ function SystemHeartbeat({
         <line x1={50} y1={72} x2={59} y2={50} />
       </g>
 
-      {/* L5 — Diamond: inner core (delayed pulse for depth) */}
-      <path
+            <path
         d="M50 39 L56 50 L50 61 L44 50Z"
         fill={ring.color}
         opacity={0.1}
@@ -413,8 +399,7 @@ export function DesktopSidebar() {
 
   const isBadgeLive = (item: NavItem): boolean => {
     if (item.href === "/approvals") return isLiveBadge;
-    // Findings badge reflects local store, not fleet-backed
-    return false;
+        return false;
   };
 
   const settingsActive = pathname === "/settings" || pathname.startsWith("/settings/");
@@ -437,16 +422,14 @@ export function DesktopSidebar() {
           emergingFindingsCount={emergingFindingsCount}
         />
 
-        {/* Sigil divider */}
-        <div
+                <div
           className="mx-3 mt-1.5 mb-0.5 h-px"
           style={{ background: "linear-gradient(to right, rgba(212,168,75,0.12), transparent 60%)" }}
         />
 
         {navSections.map((section, idx) => (
           <div key={section.title} className={cn("flex flex-col gap-px", idx === 0 ? "mt-2" : "mt-3")}>
-            {/* Section header */}
-            {collapsed ? (
+                        {collapsed ? (
               <div
                 className="mx-2 my-1.5 h-px"
                 style={{ background: `linear-gradient(to right, ${section.accent}30, transparent 70%)` }}

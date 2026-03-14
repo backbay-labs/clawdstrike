@@ -20,9 +20,6 @@ import type { GuardSimResult, Receipt, OriginContext, TestActionType, GuardConfi
 import type { TrustLevel, Capability } from "./delegation-types";
 import type { ApprovalRequest } from "./approval-types";
 
-// ---------------------------------------------------------------------------
-// Shared Enums
-// ---------------------------------------------------------------------------
 
 /** Sentinel operating modes. All modes are still "Sentinels" in the product. */
 export type SentinelMode = "watcher" | "hunter" | "curator" | "liaison";
@@ -125,9 +122,6 @@ export type SignalProvenance =
   | "swarm_intel"         // Received from a swarm peer
   | "manual";             // Manually created by operator
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 /** Maximum signals held in local store before eviction. */
 export const SIGNAL_LOCAL_LIMIT = 10_000;
@@ -147,9 +141,6 @@ export const AUTO_FINDING_CONFIDENCE_THRESHOLD = 0.75;
 /** Default Gossipsub message TTL in hops. */
 export const SWARM_MESSAGE_DEFAULT_TTL = 10;
 
-// ---------------------------------------------------------------------------
-// ID Generation
-// ---------------------------------------------------------------------------
 
 /** Valid ID prefixes for Sentinel Swarm objects. */
 export type IdPrefix = "sen" | "sig" | "fnd" | "int" | "swm" | "spk" | "enr" | "msn";
@@ -204,9 +195,6 @@ export function generateId(prefix: IdPrefix): string {
   return `${prefix}_${encodeTime(Date.now())}${encodeRandom()}`;
 }
 
-// ---------------------------------------------------------------------------
-// 4.1 Sentinel
-// ---------------------------------------------------------------------------
 
 /**
  * Sentinel identity — Ed25519 keypair compatible with both
@@ -481,9 +469,6 @@ export interface SentinelStats {
   lastActiveAt: number;
 }
 
-// ---------------------------------------------------------------------------
-// 4.2 Signal
-// ---------------------------------------------------------------------------
 
 /**
  * A raw clue, anomaly, event, or candidate detection.
@@ -674,9 +659,6 @@ export interface SignalContext {
   flags: EventFlag[];
 }
 
-// ---------------------------------------------------------------------------
-// 4.3 Finding
-// ---------------------------------------------------------------------------
 
 /**
  * A grouped, enriched, scored conclusion built from one or more signals.
@@ -844,9 +826,6 @@ export interface GenericEnrichment {
 /** Discriminated union of enrichment data variants. */
 export type EnrichmentData = MitreEnrichment | IocEnrichment | GenericEnrichment;
 
-// ---------------------------------------------------------------------------
-// 4.4 Intel
-// ---------------------------------------------------------------------------
 
 /**
  * A portable, shareable knowledge artifact derived from findings.
@@ -1028,9 +1007,6 @@ export interface IntelContentPolicyPatch {
   targetRuleset?: string;
 }
 
-// ---------------------------------------------------------------------------
-// 4.5 Swarm
-// ---------------------------------------------------------------------------
 
 /**
  * A coordination layer where sentinels and operators share intel.
@@ -1243,9 +1219,6 @@ export interface SpeakeasyRef {
   attachedTo: string | null;
 }
 
-// ---------------------------------------------------------------------------
-// 4.6 Speakeasy
-// ---------------------------------------------------------------------------
 
 /**
  * A private signed room for sensitive collaboration and intel exchange.
@@ -1391,9 +1364,6 @@ export type ClawdstrikeSpeakeasyMessage =
   | SpeakeasyFindingMessage
   | SpeakeasyApprovalMessage;
 
-// ---------------------------------------------------------------------------
-// Type Guards
-// ---------------------------------------------------------------------------
 
 /**
  * Check whether a value is a Sentinel by verifying its `id` prefix.
@@ -1486,9 +1456,6 @@ export function isSpeakeasy(value: unknown): value is ClawdstrikeSpeakeasy {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Migration Helpers (Section 6)
-// ---------------------------------------------------------------------------
 
 /**
  * Derive severity from an AgentEvent based on verdict and anomaly score.

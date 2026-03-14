@@ -2,9 +2,6 @@ import { describe, it, expect } from "vitest";
 import { generateScenariosFromPolicy, guardDisplayName } from "../scenario-generator";
 import type { WorkbenchPolicy, GuardId, TestActionType } from "../types";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function makePolicy(guards: WorkbenchPolicy["guards"]): WorkbenchPolicy {
   return {
@@ -84,9 +81,6 @@ const VALID_ACTION_TYPES: TestActionType[] = [
   "user_input",
 ];
 
-// ---------------------------------------------------------------------------
-// generateScenariosFromPolicy — default policy
-// ---------------------------------------------------------------------------
 
 describe("generateScenariosFromPolicy with default policy", () => {
   const policy = makeDefaultPolicy();
@@ -138,9 +132,6 @@ describe("generateScenariosFromPolicy with default policy", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// All guards disabled
-// ---------------------------------------------------------------------------
 
 describe("generateScenariosFromPolicy with all guards disabled", () => {
   const policy = makePolicy({
@@ -177,9 +168,6 @@ describe("generateScenariosFromPolicy with all guards disabled", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Empty policy (no guard config at all)
-// ---------------------------------------------------------------------------
 
 describe("generateScenariosFromPolicy with empty guard config", () => {
   const policy = makePolicy({});
@@ -191,9 +179,6 @@ describe("generateScenariosFromPolicy with empty guard config", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Specific guard configs
-// ---------------------------------------------------------------------------
 
 describe("forbidden_path scenarios reference configured patterns", () => {
   const policy = makePolicy({
@@ -298,9 +283,6 @@ describe("mcp_tool scenarios use configured tool lists", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Determinism
-// ---------------------------------------------------------------------------
 
 describe("determinism", () => {
   it("same policy produces identical scenarios", () => {
@@ -321,9 +303,6 @@ describe("determinism", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Each guard generator produces at least 2 scenarios
-// ---------------------------------------------------------------------------
 
 describe("each guard generator produces at least 2 scenarios when enabled", () => {
   it.each(ALL_GUARD_IDS)("%s produces at least 2 scenarios", (guardId) => {
@@ -362,9 +341,6 @@ describe("each guard generator produces at least 2 scenarios when enabled", () =
   });
 });
 
-// ---------------------------------------------------------------------------
-// guardDisplayName
-// ---------------------------------------------------------------------------
 
 describe("guardDisplayName", () => {
   it("returns a human-readable name for known guards", () => {
@@ -379,9 +355,6 @@ describe("guardDisplayName", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Partial enablement
-// ---------------------------------------------------------------------------
 
 describe("partial guard enablement", () => {
   it("only generates scenarios for enabled guards", () => {

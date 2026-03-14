@@ -1,8 +1,5 @@
 import type { TestActionType, Verdict, GuardSimResult } from "./types";
 
-// ---------------------------------------------------------------------------
-// Core Hunt Lab types
-// ---------------------------------------------------------------------------
 
 /** A single agent action observed in production via fleet */
 export interface AgentEvent {
@@ -32,9 +29,6 @@ export type EventFlag =
   | { type: "tag"; label: string; color?: string }
   | { type: "pattern-match"; patternId: string; patternName: string };
 
-// ---------------------------------------------------------------------------
-// Activity Stream
-// ---------------------------------------------------------------------------
 
 export interface StreamFilters {
   agentId?: string;
@@ -55,9 +49,6 @@ export interface StreamStats {
   byActionType: Record<string, number>;
 }
 
-// ---------------------------------------------------------------------------
-// Behavioral Baselines
-// ---------------------------------------------------------------------------
 
 export interface AgentBaseline {
   agentId: string;
@@ -89,9 +80,6 @@ export interface DriftMetric {
   significance: "normal" | "notable" | "alert";
 }
 
-// ---------------------------------------------------------------------------
-// Investigation
-// ---------------------------------------------------------------------------
 
 export type InvestigationStatus = "open" | "in-progress" | "resolved" | "false-positive";
 export type InvestigationVerdict = "threat-confirmed" | "false-positive" | "policy-gap" | "inconclusive";
@@ -129,9 +117,6 @@ export interface Annotation {
   createdBy: string;
 }
 
-// ---------------------------------------------------------------------------
-// Pattern Mining
-// ---------------------------------------------------------------------------
 
 export type PatternStatus = "draft" | "confirmed" | "promoted" | "dismissed";
 
@@ -162,9 +147,6 @@ export interface PatternStep {
   timeWindow?: number;  // max ms to next step
 }
 
-// ---------------------------------------------------------------------------
-// Anomaly Detection Engine
-// ---------------------------------------------------------------------------
 
 export interface AnomalyResult {
   score: number;           // 0–1

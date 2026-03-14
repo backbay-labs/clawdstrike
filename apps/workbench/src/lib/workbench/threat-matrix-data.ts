@@ -9,9 +9,6 @@ import type { GuardId, GuardConfigMap, WorkbenchPolicy } from "./types";
 import type { TestScenario, TestActionType, SimulationResult } from "./types";
 import { ALL_GUARD_IDS, GUARD_DISPLAY_NAMES } from "./guard-registry";
 
-// ---------------------------------------------------------------------------
-// Attack categories
-// ---------------------------------------------------------------------------
 
 export type AttackCategory =
   | "file_exfiltration"
@@ -81,9 +78,6 @@ export const ATTACK_CATEGORIES: AttackCategoryMeta[] = [
   },
 ];
 
-// ---------------------------------------------------------------------------
-// Guard-to-Attack coverage mapping
-// ---------------------------------------------------------------------------
 
 export type CoverageLevel = "full" | "partial" | "none" | "na";
 
@@ -224,9 +218,6 @@ const STATIC_COVERAGE: Record<GuardId, Record<AttackCategory, CoverageLevel>> = 
   },
 };
 
-// ---------------------------------------------------------------------------
-// Computed matrix
-// ---------------------------------------------------------------------------
 
 export interface MatrixCell {
   guardId: GuardId;

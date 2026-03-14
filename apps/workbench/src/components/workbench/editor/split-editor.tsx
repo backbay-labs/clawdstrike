@@ -21,9 +21,6 @@ import {
   IconLayoutSidebar,
 } from "@tabler/icons-react";
 
-// ---------------------------------------------------------------------------
-// Split mode toolbar button
-// ---------------------------------------------------------------------------
 
 export function SplitModeToggle() {
   const { multiState, multiDispatch, tabs } = useMultiPolicy();
@@ -71,9 +68,6 @@ export function SplitModeToggle() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Pane tab selector (dropdown to pick which tab to view in a pane)
-// ---------------------------------------------------------------------------
 
 function PaneTabSelector({
   selectedTabId,
@@ -117,9 +111,6 @@ function PaneTabSelector({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Single editor pane (the full visual + yaml side-by-side)
-// ---------------------------------------------------------------------------
 
 function EditorPane() {
   return (
@@ -138,9 +129,6 @@ function EditorPane() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Read-only YAML preview for the secondary split pane
-// ---------------------------------------------------------------------------
 
 function SecondaryPanePreview({ tabId }: { tabId: string }) {
   const { tabs } = useMultiPolicy();
@@ -170,9 +158,6 @@ function SecondaryPanePreview({ tabId }: { tabId: string }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// SplitEditor — main export
-// ---------------------------------------------------------------------------
 
 export function SplitEditor() {
   const { multiState, multiDispatch } = useMultiPolicy();

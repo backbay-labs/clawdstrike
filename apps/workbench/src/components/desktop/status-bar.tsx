@@ -144,9 +144,6 @@ export function StatusBar() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// MCP Status Indicator — shown in the bottom bar with a click-to-manage popover
-// ---------------------------------------------------------------------------
 
 function McpStatusIndicator() {
   const {

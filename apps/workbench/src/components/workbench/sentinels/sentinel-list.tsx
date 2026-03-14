@@ -29,9 +29,6 @@ import {
 } from "@/lib/workbench/sentinel-manager";
 import type { SigilType } from "@/lib/workbench/sentinel-manager";
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 const MODE_COLORS: Record<SentinelMode, string> = {
   watcher: "#5b8def",
@@ -80,9 +77,6 @@ const SIGIL_ICONS: Record<SigilType, typeof IconDiamond> = {
 type ModeFilter = "all" | SentinelMode;
 type StatusFilter = "all" | SentinelStatus;
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function relativeTime(epochMs: number): string {
   const now = Date.now();
@@ -94,9 +88,6 @@ function relativeTime(epochMs: number): string {
   return `${Math.floor(diffSecs / 86400)}d ago`;
 }
 
-// ---------------------------------------------------------------------------
-// Sigil Avatar
-// ---------------------------------------------------------------------------
 
 function SigilAvatar({
   sigil,
@@ -124,9 +115,6 @@ function SigilAvatar({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Sentinel Card
-// ---------------------------------------------------------------------------
 
 function SentinelCard({ sentinel }: { sentinel: Sentinel }) {
   const modeColor = MODE_COLORS[sentinel.mode];
@@ -275,9 +263,6 @@ function MetricPill({ label, value }: { label: string; value: number }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Empty State
-// ---------------------------------------------------------------------------
 
 function EmptyState() {
   return (
@@ -304,16 +289,12 @@ function EmptyState() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Main Component
-// ---------------------------------------------------------------------------
 
 export function SentinelList({ sentinels }: { sentinels: Sentinel[] }) {
   const [modeFilter, setModeFilter] = useState<ModeFilter>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 
-  // Derived counts
-  const counts = useMemo(() => {
+    const counts = useMemo(() => {
     let active = 0;
     let paused = 0;
     let retired = 0;

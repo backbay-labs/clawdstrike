@@ -98,9 +98,6 @@ function formatTimestamp(iso: string): string {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Unified event type used in the table (can be fleet or local)
-// ---------------------------------------------------------------------------
 
 interface UnifiedAuditEvent {
   id: string;
@@ -138,9 +135,6 @@ function localToUnified(e: LocalAuditEvent): UnifiedAuditEvent {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Main Component
-// ---------------------------------------------------------------------------
 
 export function AuditLog() {
   const { connection, agents, getAuthenticatedConnection } = useFleetConnection();
@@ -544,9 +538,6 @@ export function AuditLog() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Source Badge
-// ---------------------------------------------------------------------------
 
 function SourceBadge({
   mode,
@@ -572,9 +563,6 @@ function SourceBadge({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Shared sub-components
-// ---------------------------------------------------------------------------
 
 function FilterGroup({
   label,
@@ -640,9 +628,6 @@ function StatBadge({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Fleet Event Row (original design)
-// ---------------------------------------------------------------------------
 
 function FleetEventRow({
   event,
@@ -727,9 +712,6 @@ function FleetEventRow({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Local Event Row
-// ---------------------------------------------------------------------------
 
 const SOURCE_COLORS: Record<string, string> = {
   simulator: "#d4a84b",
@@ -812,9 +794,6 @@ function LocalEventRow({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Detail panels
-// ---------------------------------------------------------------------------
 
 function SeverityBadge({ severity }: { severity: string }) {
   const color = SEVERITY_COLORS[severity.toLowerCase()] ?? "#6f7f9a";

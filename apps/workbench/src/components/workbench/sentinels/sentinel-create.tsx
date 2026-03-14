@@ -38,9 +38,6 @@ import type {
   Sentinel,
 } from "@/lib/workbench/sentinel-manager";
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 const MODE_CONFIGS: {
   mode: SentinelMode;
@@ -123,9 +120,6 @@ const RUNTIME_TARGET_PLACEHOLDERS: Record<SentinelDriverKind, string> = {
   mcp_worker: "MCP server or worker identifier",
 };
 
-// ---------------------------------------------------------------------------
-// Step Indicator
-// ---------------------------------------------------------------------------
 
 function StepIndicator({
   currentStep,
@@ -185,9 +179,6 @@ function StepIndicator({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Step 1: Mode Selection
-// ---------------------------------------------------------------------------
 
 function ModeSelectionStep({
   selected,
@@ -270,9 +261,6 @@ function CapPill({ label }: { label: string }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Step 2: Identity & Goals
-// ---------------------------------------------------------------------------
 
 interface GoalDraft {
   type: GoalType;
@@ -506,9 +494,6 @@ function IdentityGoalsStep({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Step 3: Policy & Schedule
-// ---------------------------------------------------------------------------
 
 function PolicyScheduleStep({
   driver,
@@ -829,9 +814,6 @@ function PolicyScheduleStep({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Step 4: Review & Confirm
-// ---------------------------------------------------------------------------
 
 function ReviewStep({
   mode,
@@ -1006,9 +988,6 @@ function ReviewRow({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Main Wizard
-// ---------------------------------------------------------------------------
 
 export function SentinelCreate({
   onCreated,

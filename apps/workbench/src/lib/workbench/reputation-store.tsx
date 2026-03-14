@@ -1,9 +1,7 @@
-// ---------------------------------------------------------------------------
 // Reputation Store — React Context + useReducer for reputation event tracking.
 //
 // Follows the sentinel-store.tsx pattern: State, Action union, reducer,
 // Provider with localStorage persistence, and a typed hook.
-// ---------------------------------------------------------------------------
 import React, {
   createContext,
   useContext,
@@ -14,9 +12,6 @@ import React, {
   type ReactNode,
 } from "react";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 export interface ReputationEvent {
   target: string;        // fingerprint of the entity being rated
@@ -27,34 +22,22 @@ export interface ReputationEvent {
   source: string;        // fingerprint of the voter/system
 }
 
-// ---------------------------------------------------------------------------
-// State
-// ---------------------------------------------------------------------------
 
 interface ReputationState {
   events: Record<string, ReputationEvent[]>;  // keyed by target fingerprint
   loading: boolean;
 }
 
-// ---------------------------------------------------------------------------
-// Actions
-// ---------------------------------------------------------------------------
 
 type ReputationAction =
   | { type: "ADD_EVENT"; event: ReputationEvent }
   | { type: "LOAD"; events: Record<string, ReputationEvent[]> };
 
-// ---------------------------------------------------------------------------
-// Dedup key
-// ---------------------------------------------------------------------------
 
 function eventKey(e: ReputationEvent): string {
   return `${e.target}:${e.eventType}:${e.timestamp}:${e.artifactId}:${e.source}`;
 }
 
-// ---------------------------------------------------------------------------
-// Reducer
-// ---------------------------------------------------------------------------
 
 function reputationReducer(
   state: ReputationState,
@@ -91,9 +74,6 @@ function reputationReducer(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Persistence — localStorage with debounced writes
-// ---------------------------------------------------------------------------
 
 const STORAGE_KEY = "clawdstrike_workbench_reputation";
 
@@ -118,9 +98,6 @@ function loadPersistedReputation(): Record<string, ReputationEvent[]> | null {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Initial state
-// ---------------------------------------------------------------------------
 
 function getInitialState(): ReputationState {
   const restored = loadPersistedReputation();
@@ -130,9 +107,6 @@ function getInitialState(): ReputationState {
   return { events: {}, loading: false };
 }
 
-// ---------------------------------------------------------------------------
-// Context
-// ---------------------------------------------------------------------------
 
 interface ReputationContextValue {
   events: Record<string, ReputationEvent[]>;
@@ -144,9 +118,6 @@ interface ReputationContextValue {
 
 const ReputationContext = createContext<ReputationContextValue | null>(null);
 
-// ---------------------------------------------------------------------------
-// Hook
-// ---------------------------------------------------------------------------
 
 export function useReputation(): ReputationContextValue {
   const ctx = useContext(ReputationContext);
@@ -154,15 +125,11 @@ export function useReputation(): ReputationContextValue {
   return ctx;
 }
 
-// ---------------------------------------------------------------------------
-// Provider
-// ---------------------------------------------------------------------------
 
 export function ReputationProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reputationReducer, undefined, getInitialState);
 
-  // Debounced persistence
-  const persistRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const persistRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (persistRef.current) clearTimeout(persistRef.current);
     persistRef.current = setTimeout(() => {

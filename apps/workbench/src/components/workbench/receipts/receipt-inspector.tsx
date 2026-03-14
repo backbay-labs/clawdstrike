@@ -148,9 +148,6 @@ function isFleetSyncEligible(receipt: Receipt): boolean {
   return receiptSyncSkipReason(receipt) === null;
 }
 
-// ---------------------------------------------------------------------------
-// Fleet sync helpers
-// ---------------------------------------------------------------------------
 
 /** Convert a local Receipt to the backend FleetReceipt wire format. */
 function receiptToFleet(r: Receipt): FleetReceipt {
@@ -519,8 +516,7 @@ export function ReceiptInspector() {
   const handleGenerateReal = useCallback(async () => {
     setGenerateError("");
 
-    // Fallback: if not running in desktop mode, generate a test receipt
-    if (!isDesktop()) {
+        if (!isDesktop()) {
       handleGenerate();
       return;
     }

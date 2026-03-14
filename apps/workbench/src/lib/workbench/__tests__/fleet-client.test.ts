@@ -1,11 +1,7 @@
-// ---------------------------------------------------------------------------
-// Fleet Client E2E Tests — uses MSW mock server
-// ---------------------------------------------------------------------------
 //
 // The fleet-client uses import.meta.env.DEV (true in Vitest) which causes
 // proxyUrl() to rewrite absolute URLs to /_proxy/hushd/* and /_proxy/control/*.
 // The mock server handles both proxy and direct paths.
-// ---------------------------------------------------------------------------
 
 import { describe, it, expect, beforeAll, afterAll, afterEach, beforeEach, vi } from "vitest";
 import {

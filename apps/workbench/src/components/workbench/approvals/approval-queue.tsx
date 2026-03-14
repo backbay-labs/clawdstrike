@@ -159,8 +159,7 @@ export function ApprovalQueue({ currentUser }: { currentUser?: string } = {}) {
   const [denyReason, setDenyReason] = useState("");
   const [scopeDropdownOpen, setScopeDropdownOpen] = useState<string | null>(null);
 
-  // Drives per-second countdown re-renders + auto-expires pending requests
-  const [tick, setTick] = useState(0);
+    const [tick, setTick] = useState(0);
   useEffect(() => {
     const interval = setInterval(() => setTick((t) => t + 1), 1000);
     return () => clearInterval(interval);
@@ -183,9 +182,7 @@ export function ApprovalQueue({ currentUser }: { currentUser?: string } = {}) {
 
   const fetchLiveApprovals = useCallback(async () => {
     if (!liveApprovalsReady) {
-      // Only clear data when we are actually in live mode — otherwise we would
-      // wipe the demo dataset while the user is still viewing it.
-      if (isLiveData) {
+            if (isLiveData) {
         setRequests([]);
         setDecisions([]);
       }
@@ -227,9 +224,7 @@ export function ApprovalQueue({ currentUser }: { currentUser?: string } = {}) {
       setIsLiveData(false);
       setLiveFetchError(null);
     } else if (liveApprovalsReady) {
-      // Set live mode first — the useEffect on isLiveData will trigger
-      // fetchLiveApprovals on the next render with the correct closure.
-      setIsLiveData(true);
+            setIsLiveData(true);
     }
     setSelectedRequest(null);
     setConfirmAction(null);

@@ -102,9 +102,6 @@ function useBuiltinRulesets() {
 
 import { useMcpStatus } from "@/lib/workbench/use-mcp-status";
 
-// ---------------------------------------------------------------------------
-// Library prompt cards — read from hint settings store
-// ---------------------------------------------------------------------------
 
 const LIBRARY_PROMPT_CARDS: { hintId: HintId; fallbackLabel: string; fallbackPrompt: string }[] = [
   {

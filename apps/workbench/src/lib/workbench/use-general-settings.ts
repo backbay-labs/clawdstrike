@@ -1,13 +1,8 @@
-// ---------------------------------------------------------------------------
 // General Settings — app-level preferences (theme, editor, autosave)
 // Persisted to localStorage independently of the policy store.
-// ---------------------------------------------------------------------------
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
 import React from "react";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 export type Theme = "dark";
 export type FontSize = "small" | "medium" | "large";
@@ -27,9 +22,6 @@ export const DEFAULT_GENERAL_SETTINGS: GeneralSettings = {
   showLineNumbers: true,
 };
 
-// ---------------------------------------------------------------------------
-// localStorage persistence
-// ---------------------------------------------------------------------------
 
 const STORAGE_KEY = "clawdstrike_general_settings";
 
@@ -73,9 +65,6 @@ function persistSettings(settings: GeneralSettings): void {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Context
-// ---------------------------------------------------------------------------
 
 interface GeneralSettingsContextValue {
   settings: GeneralSettings;
@@ -85,9 +74,6 @@ interface GeneralSettingsContextValue {
 
 const GeneralSettingsContext = createContext<GeneralSettingsContextValue | null>(null);
 
-// ---------------------------------------------------------------------------
-// Hook
-// ---------------------------------------------------------------------------
 
 export function useGeneralSettings(): GeneralSettingsContextValue {
   const ctx = useContext(GeneralSettingsContext);
@@ -95,9 +81,6 @@ export function useGeneralSettings(): GeneralSettingsContextValue {
   return ctx;
 }
 
-// ---------------------------------------------------------------------------
-// Provider
-// ---------------------------------------------------------------------------
 
 export function GeneralSettingsProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<GeneralSettings>(loadSettings);

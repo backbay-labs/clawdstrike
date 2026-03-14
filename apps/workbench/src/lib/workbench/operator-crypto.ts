@@ -1,13 +1,5 @@
-/**
- * Operator Crypto — Ed25519 key management, signing, and verification.
- *
- * Pure crypto module with no React dependencies. Uses Web Crypto API
- * Ed25519 (Chrome 113+, Node 20+).
- */
-
 import type { OperatorIdentity } from "./operator-types";
 
-/** Workaround for TypeScript's strict ArrayBuffer/SharedArrayBuffer distinction. */
 function buf(data: Uint8Array): ArrayBuffer {
   return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
 }
@@ -45,16 +37,11 @@ export const SIGILS: readonly SigilType[] = [
   "moon",
 ] as const;
 
-/** Uses the numeric value of the first byte (2 hex chars) mod 8. */
 export function deriveSigil(fingerprint: string): SigilType {
   const firstByte = parseInt(fingerprint.slice(0, 2), 16);
   return SIGILS[firstByte % SIGILS.length];
 }
 
-/**
- * Build a PKCS8 wrapper around a raw 32-byte Ed25519 seed so it can be
- * imported via crypto.subtle.importKey("pkcs8", ...).
- */
 function buildPkcs8Ed25519(seed: Uint8Array): ArrayBuffer {
   const prefix = new Uint8Array([
     0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06,
@@ -66,10 +53,6 @@ function buildPkcs8Ed25519(seed: Uint8Array): ArrayBuffer {
   return pkcs8.buffer;
 }
 
-/**
- * Generate an Ed25519 keypair. Returns hex-encoded public key (64 chars)
- * and secret key seed (64 chars). Requires Web Crypto Ed25519.
- */
 export async function generateOperatorKeypair(): Promise<{
   publicKeyHex: string;
   secretKeyHex: string;
@@ -78,7 +61,6 @@ export async function generateOperatorKeypair(): Promise<{
     const keyPair = await crypto.subtle.generateKey("Ed25519", true, ["sign", "verify"]);
     const publicKeyRaw = await crypto.subtle.exportKey("raw", keyPair.publicKey);
     const privateKeyRaw = await crypto.subtle.exportKey("pkcs8", keyPair.privateKey);
-    // PKCS8 Ed25519 private key: 48 bytes total, last 32 are the seed
     const seed = new Uint8Array(privateKeyRaw).slice(-32);
     return {
       publicKeyHex: toHex(new Uint8Array(publicKeyRaw)),
@@ -93,13 +75,10 @@ export async function generateOperatorKeypair(): Promise<{
 
 export async function deriveFingerprint(publicKeyHex: string): Promise<string> {
   const bytes = hexToBytes(publicKeyHex);
-  // Uint8Array is a valid BufferSource at runtime; the cast avoids a TS 5.x
-  // strictness issue with ArrayBufferLike vs ArrayBuffer without copying bytes.
   const hash = await crypto.subtle.digest("SHA-256", bytes as BufferSource);
   return toHex(new Uint8Array(hash)).slice(0, 16);
 }
 
-/** Returns both the identity and the secret key (caller must store securely). */
 export async function createOperatorIdentity(
   displayName: string,
 ): Promise<{ identity: OperatorIdentity; secretKeyHex: string }> {
@@ -150,7 +129,6 @@ export async function signData(data: Uint8Array, secretKeyHex: string): Promise<
   }
 }
 
-/** Returns false on verification failure or if Ed25519 is unavailable. */
 export async function verifySignature(
   data: Uint8Array,
   signatureHex: string,
@@ -168,7 +146,6 @@ export async function verifySignature(
   }
 }
 
-/** Sorted-key canonical JSON (not RFC 8785). */
 export function canonicalizeJson(obj: unknown): string {
   return JSON.stringify(obj, (_, value) => {
     if (value && typeof value === "object" && !Array.isArray(value)) {
@@ -197,7 +174,6 @@ export async function verifyCanonical(
   return verifySignature(data, signatureHex, publicKeyHex);
 }
 
-/** Maximum age (in milliseconds) for a valid ownership proof: 24 hours. */
 export const OWNERSHIP_PROOF_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 export interface OwnershipProof {
@@ -205,13 +181,6 @@ export interface OwnershipProof {
   timestamp: number;
 }
 
-/**
- * Sign an ownership proof: operator signs sentinel's public key with a
- * timestamp to prove they control the operator keypair that owns the sentinel.
- *
- * The signed payload includes a timestamp so proofs expire after 24 hours,
- * preventing indefinite replay.
- */
 export async function signOwnershipProof(
   sentinelPublicKey: string,
   operatorSecretKey: string,
@@ -224,29 +193,19 @@ export async function signOwnershipProof(
   return { signature, timestamp };
 }
 
-/**
- * Verify an ownership proof. Rejects proofs older than 24 hours by default.
- *
- * @param maxAgeMs - Maximum acceptable age of the proof in milliseconds.
- *   Defaults to {@link OWNERSHIP_PROOF_MAX_AGE_MS} (24h). Pass `Infinity` to
- *   skip the expiry check (useful for stored proofs that are already trusted).
- */
 export async function verifyOwnershipProof(
   sentinelPublicKey: string,
   proof: OwnershipProof,
   operatorPublicKey: string,
   maxAgeMs: number = OWNERSHIP_PROOF_MAX_AGE_MS,
 ): Promise<boolean> {
-  // Reject proofs with non-finite or negative timestamps
   if (!Number.isFinite(proof.timestamp) || proof.timestamp < 0) {
     return false;
   }
 
-  // Reject expired proofs
   if (Number.isFinite(maxAgeMs)) {
     const age = Date.now() - proof.timestamp;
     if (age > maxAgeMs || age < -60_000) {
-      // Also reject proofs from > 60s in the future (clock skew tolerance)
       return false;
     }
   }
@@ -257,10 +216,6 @@ export async function verifyOwnershipProof(
   return verifySignature(data, proof.signature, operatorPublicKey);
 }
 
-/**
- * Export a keypair encrypted with a passphrase (PBKDF2 + AES-256-GCM).
- * Returns a base64url-encoded blob: salt(16) + iv(12) + ciphertext.
- */
 export async function exportKey(secretKeyHex: string, publicKeyHex: string, passphrase: string): Promise<string> {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const iv = crypto.getRandomValues(new Uint8Array(12));
@@ -293,7 +248,6 @@ export async function exportKey(secretKeyHex: string, publicKeyHex: string, pass
     .replace(/=+$/, "");
 }
 
-/** Import a keypair from a passphrase-encrypted base64url blob. */
 export async function importKey(
   encoded: string,
   passphrase: string,

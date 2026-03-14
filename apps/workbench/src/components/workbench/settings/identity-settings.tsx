@@ -1,6 +1,3 @@
-// ---------------------------------------------------------------------------
-// Identity Settings — operator identity management, device list, key export/import.
-// ---------------------------------------------------------------------------
 import { useState, useCallback } from "react";
 import {
   IconFingerprint,
@@ -18,9 +15,6 @@ import { useOperator } from "@/lib/workbench/operator-store";
 import { deriveSigil, deriveSigilColor } from "@/lib/workbench/sentinel-manager";
 import type { SigilType } from "@/lib/workbench/sentinel-manager";
 
-// ---------------------------------------------------------------------------
-// Sigil renderer (matches existing pattern from swarm-detail)
-// ---------------------------------------------------------------------------
 
 export const SIGIL_SYMBOLS: Record<SigilType, string> = {
   diamond: "\u25C6",
@@ -33,9 +27,6 @@ export const SIGIL_SYMBOLS: Record<SigilType, string> = {
   moon: "\u263D",
 };
 
-// ---------------------------------------------------------------------------
-// IdentitySettings
-// ---------------------------------------------------------------------------
 
 export function IdentitySettings() {
   const {
@@ -393,9 +384,6 @@ export function IdentitySettings() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Shared layout
-// ---------------------------------------------------------------------------
 
 function SettingsSection({
   icon,

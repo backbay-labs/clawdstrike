@@ -22,9 +22,6 @@ import type {
 } from "@/lib/workbench/sentinel-types";
 import { deriveSigilColor } from "@/lib/workbench/sentinel-manager";
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 const PURPOSE_CONFIG: Record<SpeakeasyPurpose, { icon: typeof IconSearch; label: string; color: string }> = {
   finding: { icon: IconSearch, label: "Finding", color: "#c45c5c" },
@@ -51,9 +48,6 @@ const SIGIL_ICONS: Record<string, string> = {
   moon: "\u263E",
 };
 
-// ---------------------------------------------------------------------------
-// Props
-// ---------------------------------------------------------------------------
 
 interface RoomHeaderProps {
   room: ClawdstrikeSpeakeasy;
@@ -62,9 +56,6 @@ interface RoomHeaderProps {
   onAttachedClick?: (entityId: string) => void;
 }
 
-// ---------------------------------------------------------------------------
-// SigilAvatar (inline, reused in member list)
-// ---------------------------------------------------------------------------
 
 function SigilAvatar({
   member,
@@ -95,9 +86,6 @@ function SigilAvatar({
   );
 }
 
-// ---------------------------------------------------------------------------
-// RoomHeader
-// ---------------------------------------------------------------------------
 
 export function RoomHeader({ room, onClose, onMinimize, onAttachedClick }: RoomHeaderProps) {
   const [memberListOpen, setMemberListOpen] = useState(false);

@@ -8,9 +8,6 @@ import {
 } from "../observe-synth-engine";
 import type { WorkbenchPolicy } from "../types";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function makePolicy(guards: WorkbenchPolicy["guards"]): WorkbenchPolicy {
   return {
@@ -47,9 +44,6 @@ function makeParsedEvent(overrides: Partial<ParsedEvent> & Pick<PolicyEvent, "ac
   };
 }
 
-// ---------------------------------------------------------------------------
-// JSONL Parsing — valid events
-// ---------------------------------------------------------------------------
 
 describe("parseEventLog with valid events", () => {
   it("parses a single valid JSONL line", () => {
@@ -133,9 +127,6 @@ describe("parseEventLog with valid events", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// JSONL Parsing — malformed lines
-// ---------------------------------------------------------------------------
 
 describe("parseEventLog with malformed lines", () => {
   it("skips invalid JSON lines and reports errors", () => {
@@ -184,9 +175,6 @@ describe("parseEventLog with malformed lines", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Risk level classification
-// ---------------------------------------------------------------------------
 
 describe("event risk classification", () => {
   it("classifies deny/blocked verdicts as 'blocked'", () => {
@@ -247,9 +235,6 @@ describe("event risk classification", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Policy synthesis — file_access events
-// ---------------------------------------------------------------------------
 
 describe("synthesizePolicy from file events", () => {
   it("produces forbidden_path config from sensitive file access", () => {
@@ -295,9 +280,6 @@ describe("synthesizePolicy from file events", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Policy synthesis — network events
-// ---------------------------------------------------------------------------
 
 describe("synthesizePolicy from network events", () => {
   it("produces egress_allowlist config from network events", () => {
@@ -350,9 +332,6 @@ describe("synthesizePolicy from network events", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Policy synthesis — shell command events
-// ---------------------------------------------------------------------------
 
 describe("synthesizePolicy from shell command events", () => {
   it("always produces shell_command guard with dangerous patterns", () => {
@@ -385,9 +364,6 @@ describe("synthesizePolicy from shell command events", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Policy synthesis — MCP tool events
-// ---------------------------------------------------------------------------
 
 describe("synthesizePolicy from MCP tool events", () => {
   it("builds allow and block lists from verdicts", () => {
@@ -426,9 +402,6 @@ describe("synthesizePolicy from MCP tool events", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Policy synthesis — always includes secret_leak
-// ---------------------------------------------------------------------------
 
 describe("synthesizePolicy always includes secret_leak", () => {
   it("produces secret_leak config even with only network events", () => {
@@ -442,9 +415,6 @@ describe("synthesizePolicy always includes secret_leak", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Synthesis coverage
-// ---------------------------------------------------------------------------
 
 describe("synthesizePolicy coverage analysis", () => {
   it("returns coverage entries for all events", () => {
@@ -487,9 +457,6 @@ describe("synthesizePolicy coverage analysis", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Merge logic
-// ---------------------------------------------------------------------------
 
 describe("mergeSynthIntoPolicy", () => {
   it("merges new forbidden_path patterns into existing policy", () => {

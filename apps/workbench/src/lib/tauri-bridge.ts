@@ -6,9 +6,6 @@
  * throwing at module-evaluation time.
  */
 
-// ---------------------------------------------------------------------------
-// Environment detection
-// ---------------------------------------------------------------------------
 
 /** Returns true when running inside a Tauri webview. */
 export function isDesktop(): boolean {
@@ -21,9 +18,6 @@ export function isMacOS(): boolean {
   return /Mac/i.test(navigator.platform);
 }
 
-// ---------------------------------------------------------------------------
-// Window controls
-// ---------------------------------------------------------------------------
 
 async function getWindow() {
   const { getCurrentWindow } = await import("@tauri-apps/api/window");
@@ -59,9 +53,6 @@ export async function toggleFullscreen(): Promise<void> {
   await win.setFullscreen(!isFullscreen);
 }
 
-// ---------------------------------------------------------------------------
-// File dialogs
-// ---------------------------------------------------------------------------
 
 export interface OpenFileResult {
   /** Raw YAML string content */

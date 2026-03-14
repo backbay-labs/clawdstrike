@@ -14,9 +14,7 @@ use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager, Runtime};
 use zeroize::{Zeroize, Zeroizing};
 
-// ---------------------------------------------------------------------------
 // Managed state
-// ---------------------------------------------------------------------------
 
 /// Application state wrapping the Stronghold instance.
 /// Lazily initialised on the first `init_stronghold` call.
@@ -38,9 +36,7 @@ impl StrongholdState {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Constants
-// ---------------------------------------------------------------------------
 
 /// Client name inside the Stronghold snapshot.
 const CLIENT_NAME: &[u8] = b"clawdstrike-workbench";
@@ -54,9 +50,7 @@ const SIGNING_KEY_RECORD: &[u8] = b"signing_key_seed";
 /// Store key for the cached persistent Ed25519 public key (32 bytes).
 const SIGNING_PUBKEY_RECORD: &[u8] = b"signing_public_key";
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 /// Derive a machine-bound password that combines real entropy with hostname binding.
 ///
@@ -273,9 +267,7 @@ fn has_credential_in_state(state: &StrongholdState, key: String) -> Result<bool,
     })
 }
 
-// ---------------------------------------------------------------------------
 // P4-1: Stronghold initialisation
-// ---------------------------------------------------------------------------
 
 /// Initialise the Stronghold vault. Called once at app startup from the
 /// frontend. Subsequent calls are no-ops returning `true`.
@@ -297,9 +289,7 @@ pub async fn init_stronghold<R: Runtime>(app: AppHandle<R>) -> Result<bool, Stri
     init_stronghold_state(&state, &snapshot_file, &data_dir)
 }
 
-// ---------------------------------------------------------------------------
 // P4-2: Credential storage
-// ---------------------------------------------------------------------------
 
 /// Store a credential value in the Stronghold vault.
 #[tauri::command]
@@ -337,9 +327,7 @@ pub async fn has_credential<R: Runtime>(app: AppHandle<R>, key: String) -> Resul
     has_credential_in_state(&state, key)
 }
 
-// ---------------------------------------------------------------------------
 // P4-3: Persistent signing keys
-// ---------------------------------------------------------------------------
 
 /// Response type for the generate_persistent_keypair command.
 #[derive(Debug, Clone, Serialize)]
@@ -386,9 +374,7 @@ pub async fn sign_with_persistent_key<R: Runtime>(
     sign_with_persistent_key_in_state(&state, data_hex)
 }
 
-// ---------------------------------------------------------------------------
 // Public helper for workbench commands (P4-3: persistent key signing)
-// ---------------------------------------------------------------------------
 
 /// Attempt to load the persistent Ed25519 keypair from Stronghold state.
 /// Returns `None` if Stronghold is not initialised or no key exists.

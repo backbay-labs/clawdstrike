@@ -19,9 +19,6 @@ import type {
 } from "./hunt-types";
 import type { TestActionType, Verdict, GuardSimResult } from "./types";
 
-// ---------------------------------------------------------------------------
-// AuditEvent → AgentEvent conversion
-// ---------------------------------------------------------------------------
 
 const ACTION_TYPE_MAP: Record<string, TestActionType> = {
   file_access: "file_access",
@@ -76,9 +73,6 @@ export function auditEventToAgentEvent(ae: AuditEvent): AgentEvent {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Stream Statistics
-// ---------------------------------------------------------------------------
 
 export function computeStreamStats(events: AgentEvent[]): StreamStats {
   const stats: StreamStats = {
@@ -104,9 +98,6 @@ export function computeStreamStats(events: AgentEvent[]): StreamStats {
   return stats;
 }
 
-// ---------------------------------------------------------------------------
-// Anomaly Detection
-// ---------------------------------------------------------------------------
 
 /**
  * Score how anomalous an event is relative to a baseline.
@@ -203,9 +194,6 @@ export function enrichEvents(
   });
 }
 
-// ---------------------------------------------------------------------------
-// Baseline Computation
-// ---------------------------------------------------------------------------
 
 /**
  * Compute a behavioral baseline from a set of events for a specific agent.
@@ -352,9 +340,6 @@ export function computeDrift(
   return metrics.sort((a, b) => Math.abs(b.percentChange) - Math.abs(a.percentChange));
 }
 
-// ---------------------------------------------------------------------------
-// Pattern Matching
-// ---------------------------------------------------------------------------
 
 /**
  * Check if a session's events match a pattern sequence.
@@ -489,9 +474,6 @@ export function discoverPatterns(
   return patterns.sort((a, b) => b.matchCount - a.matchCount);
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 /** Simple glob matching (supports * and **) */
 function matchGlob(value: string, pattern: string): boolean {
@@ -543,9 +525,6 @@ function generatePatternName(steps: PatternStep[]): string {
   return names.join(" → ") + " Chain";
 }
 
-// ---------------------------------------------------------------------------
-// Anomaly Cluster Detection
-// ---------------------------------------------------------------------------
 
 /**
  * Detect clusters of anomalous events in the same session.
@@ -579,9 +558,6 @@ export function detectAnomalyClusters(
   return sessionAnomalies;
 }
 
-// ---------------------------------------------------------------------------
-// Time range helpers
-// ---------------------------------------------------------------------------
 
 export function timeRangeToSince(range: "1h" | "6h" | "24h" | "7d"): string {
   const now = Date.now();

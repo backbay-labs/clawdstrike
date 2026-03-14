@@ -38,9 +38,6 @@ import { TestRunnerProvider, useTestRunnerOptional } from "@/lib/workbench/test-
 import { simulatePolicy } from "@/lib/workbench/simulation-engine";
 import type { TestActionType, Verdict } from "@/lib/workbench/types";
 
-// ---------------------------------------------------------------------------
-// Quick test definitions for the Run dropdown
-// ---------------------------------------------------------------------------
 
 interface QuickTest {
   label: string;
@@ -55,9 +52,6 @@ const QUICK_TESTS: QuickTest[] = [
   { label: "Quick Test: Network Egress", icon: IconWorld, action: "network_egress", target: "evil-exfil.com" },
 ];
 
-// ---------------------------------------------------------------------------
-// Run Button (with dropdown) -- must live inside TestRunnerProvider
-// ---------------------------------------------------------------------------
 
 function RunButtonGroup({
   testRunnerOpen,
@@ -297,9 +291,6 @@ function RunButtonGroup({
   );
 }
 
-// ---------------------------------------------------------------------------
-// PolicyEditor
-// ---------------------------------------------------------------------------
 
 export function PolicyEditor() {
   const { tabs, activeTab } = useMultiPolicy();

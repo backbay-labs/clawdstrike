@@ -5,9 +5,6 @@ import { cn } from "@/lib/utils";
 import { HuntLayout } from "../hunt/hunt-layout";
 import { SimulatorLayout } from "../simulator/simulator-layout";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 type LabTab = "hunt" | "simulate";
 
@@ -15,18 +12,12 @@ function isLabTab(value: string | null): value is LabTab {
   return value === "hunt" || value === "simulate";
 }
 
-// ---------------------------------------------------------------------------
-// Tab bar
-// ---------------------------------------------------------------------------
 
 const tabs: { id: LabTab; label: string; icon: typeof IconSearch }[] = [
   { id: "hunt", label: "Hunt", icon: IconSearch },
   { id: "simulate", label: "Simulate", icon: IconCrosshair },
 ];
 
-// ---------------------------------------------------------------------------
-// Lab Layout
-// ---------------------------------------------------------------------------
 
 export function LabLayout() {
   const [searchParams, setSearchParams] = useSearchParams();

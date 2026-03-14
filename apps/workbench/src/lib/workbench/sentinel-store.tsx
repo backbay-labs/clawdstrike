@@ -263,8 +263,7 @@ export function useSentinels(): SentinelContextValue {
 export function SentinelProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(sentinelReducer, undefined, getInitialState);
 
-  // Debounced persistence
-  const persistRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const persistRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (persistRef.current) clearTimeout(persistRef.current);
     persistRef.current = setTimeout(() => {
@@ -275,11 +274,9 @@ export function SentinelProvider({ children }: { children: ReactNode }) {
     };
   }, [state.sentinels, state.activeSentinelId]);
 
-  // Derive active sentinel
-  const activeSentinel = state.sentinels.find((s) => s.id === state.activeSentinelId);
+    const activeSentinel = state.sentinels.find((s) => s.id === state.activeSentinelId);
 
-  // Action dispatchers
-
+  
   const createSentinel = useCallback(
     async (config: CreateSentinelConfig): Promise<Sentinel> => {
       const sentinel = await engineCreateSentinel(config);

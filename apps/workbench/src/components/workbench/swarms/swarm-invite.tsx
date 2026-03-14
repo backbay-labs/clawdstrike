@@ -1,10 +1,8 @@
-// ---------------------------------------------------------------------------
 // Swarm Invite — Create and Accept invitation tokens for swarm membership.
 //
 // Two tabs:
 //   1. Create Invitation — generate a signed base64url token for sharing
 //   2. Accept Invitation — paste and validate an invitation token to join
-// ---------------------------------------------------------------------------
 import { useState, useCallback, useMemo, useRef } from "react";
 import {
   IconMail,
@@ -29,9 +27,6 @@ import {
   acceptInvitation,
 } from "@/lib/workbench/invitation-manager";
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 type InviteTab = "create" | "accept";
 
@@ -44,9 +39,6 @@ const EXPIRY_OPTIONS: { label: string; ms: number }[] = [
 
 const ROLE_OPTIONS: SwarmOperatorRole[] = ["observer", "contributor", "admin"];
 
-// ---------------------------------------------------------------------------
-// SwarmInvite
-// ---------------------------------------------------------------------------
 
 export function SwarmInvite({ swarmId }: { swarmId: string }) {
   const [activeTab, setActiveTab] = useState<InviteTab>("create");
@@ -75,9 +67,6 @@ export function SwarmInvite({ swarmId }: { swarmId: string }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Create Tab
-// ---------------------------------------------------------------------------
 
 function CreateTab({ swarmId }: { swarmId: string }) {
   const { currentOperator, getSecretKey } = useOperator();
@@ -264,9 +253,6 @@ function CreateTab({ swarmId }: { swarmId: string }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Accept Tab
-// ---------------------------------------------------------------------------
 
 function AcceptTab({ swarmId }: { swarmId: string }) {
   const { currentOperator, getSecretKey } = useOperator();
@@ -439,9 +425,6 @@ function AcceptTab({ swarmId }: { swarmId: string }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Tab button
-// ---------------------------------------------------------------------------
 
 function TabButton({
   active,

@@ -69,9 +69,6 @@ import type {
   HierarchyTreeResponse,
 } from "@/lib/workbench/fleet-client";
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 const NODE_TYPE_COLORS: Record<OrgNodeType, string> = {
   org: "#d4a84b",
@@ -97,9 +94,6 @@ const NODE_TYPE_LABELS: Record<OrgNodeType, string> = {
   runtime: "Runtime Agent",
 };
 
-// ---------------------------------------------------------------------------
-// Tree node component
-// ---------------------------------------------------------------------------
 
 interface TreeNodeProps {
   node: OrgNode;
@@ -382,9 +376,6 @@ function TreeNode({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Guard provenance card
-// ---------------------------------------------------------------------------
 
 interface GuardProvenanceCardProps {
   guardId: string;
@@ -485,9 +476,6 @@ function GuardProvenanceCard({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Effective policy panel
-// ---------------------------------------------------------------------------
 
 interface EffectivePolicyPanelProps {
   hierarchy: PolicyHierarchy;
@@ -649,9 +637,6 @@ function EffectivePolicyPanel({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Merge preview / impact panel
-// ---------------------------------------------------------------------------
 
 interface MergePreviewPanelProps {
   hierarchy: PolicyHierarchy;
@@ -787,9 +772,6 @@ function MergePreviewPanel({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Validation results modal
-// ---------------------------------------------------------------------------
 
 interface ValidationModalProps {
   issues: HierarchyValidationIssue[];
@@ -874,9 +856,6 @@ function ValidationModal({ issues, onClose, onSelectNode }: ValidationModalProps
   );
 }
 
-// ---------------------------------------------------------------------------
-// Policy assignment dialog
-// ---------------------------------------------------------------------------
 
 interface PolicyAssignDialogProps {
   node: OrgNode;
@@ -989,9 +968,6 @@ function PolicyAssignDialog({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Rename dialog
-// ---------------------------------------------------------------------------
 
 interface RenameDialogProps {
   node: OrgNode;
@@ -1061,9 +1037,6 @@ function RenameDialog({ node, onRename, onClose }: RenameDialogProps) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Main page component
-// ---------------------------------------------------------------------------
 
 export function HierarchyPage() {
   const { state } = useWorkbench();
@@ -1071,9 +1044,6 @@ export function HierarchyPage() {
   const { connection, getAuthenticatedConnection } = useFleetConnection();
   const fleetConnected = connection.connected;
 
-  // ---------------------------------------------------------------------------
-  // Hierarchy state
-  // ---------------------------------------------------------------------------
 
   const [hierarchy, setHierarchy] = useState<PolicyHierarchy>(() => {
     const loaded = loadHierarchy();
@@ -1119,9 +1089,6 @@ export function HierarchyPage() {
     setHierarchyVersion(nextVersion);
   }, []);
 
-  // ---------------------------------------------------------------------------
-  // Fleet sync state (P2-3)
-  // ---------------------------------------------------------------------------
 
   const [isLiveMode, setIsLiveMode] = useState(false);
   const [hasPulledFleetHierarchy, setHasPulledFleetHierarchy] = useState(false);
@@ -1172,9 +1139,6 @@ export function HierarchyPage() {
     saveHierarchy(hierarchy);
   }, [hierarchy]);
 
-  // ---------------------------------------------------------------------------
-  // Computed values
-  // ---------------------------------------------------------------------------
 
   const selectedNode = selectedId ? hierarchy.nodes[selectedId] : null;
 
@@ -1189,9 +1153,6 @@ export function HierarchyPage() {
     return computeEffectivePolicy(hierarchy, selectedId, savedPolicies);
   }, [hierarchy, selectedId, savedPolicies]);
 
-  // ---------------------------------------------------------------------------
-  // Handlers
-  // ---------------------------------------------------------------------------
 
   const handleSelect = useCallback((id: string) => {
     setSelectedId(id);
@@ -1589,9 +1550,6 @@ export function HierarchyPage() {
     setValidationIssues(issues);
   }, [hierarchy, savedPolicies]);
 
-  // ---------------------------------------------------------------------------
-  // Fleet sync handlers (P2-3)
-  // ---------------------------------------------------------------------------
 
   const handleToggleLiveMode = useCallback(() => {
     if (!fleetConnected) return;
@@ -2034,9 +1992,6 @@ export function HierarchyPage() {
     applyHierarchyChange,
   ]);
 
-  // ---------------------------------------------------------------------------
-  // Render
-  // ---------------------------------------------------------------------------
 
   const isSyncing = syncStatus.type === "pushing" || syncStatus.type === "pulling";
   const rootNode = hierarchy.nodes[hierarchy.rootId];

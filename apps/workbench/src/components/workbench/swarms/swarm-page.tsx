@@ -603,10 +603,8 @@ function PolicyToggle({
   );
 }
 
-// Derives hue from fingerprint bytes for a deterministic identity color.
 function SigilDot({ fingerprint, size = 16 }: { fingerprint: string; size?: number }) {
-  // Derive hue from first 2 hex chars of fingerprint
-  const byte = parseInt(fingerprint.slice(0, 2), 16) || 0;
+    const byte = parseInt(fingerprint.slice(0, 2), 16) || 0;
   const hue = Math.round((byte / 255) * 360);
   const color = `hsl(${hue}, 55%, 55%)`;
 

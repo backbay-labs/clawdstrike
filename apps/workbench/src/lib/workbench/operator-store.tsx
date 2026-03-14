@@ -211,8 +211,7 @@ export function OperatorProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "INIT", operator });
   }, []);
 
-  // Debounced persistence
-  const persistRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const persistRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (!state.initialized) return;
     if (persistRef.current) clearTimeout(persistRef.current);
@@ -224,8 +223,7 @@ export function OperatorProvider({ children }: { children: ReactNode }) {
     };
   }, [state.currentOperator, state.initialized]);
 
-  // Action dispatchers
-
+  
   const createIdentity = useCallback(
     async (displayName: string): Promise<OperatorIdentity> => {
       const { identity, secretKeyHex } = await createOperatorIdentity(displayName);

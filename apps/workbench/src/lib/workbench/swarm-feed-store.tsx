@@ -1742,8 +1742,7 @@ export function SwarmFeedProvider({ children }: { children: ReactNode }) {
     state.trustPolicies,
   ]);
 
-  // Flush pending persistence synchronously on tab close to prevent data loss
-  useEffect(() => {
+    useEffect(() => {
     const handleBeforeUnload = () => {
       if (persistRef.current) {
         clearTimeout(persistRef.current);

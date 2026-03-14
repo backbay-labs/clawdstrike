@@ -11,12 +11,10 @@ import {
   useAutoSave,
 } from "../use-auto-save";
 
-// ---------------------------------------------------------------------------
 // We test the exported utility functions (readAutosave, clearAutosave,
 // writeAutosave is private so we simulate it via localStorage.setItem
 // directly). The hook itself (useAutoSave) requires the full WorkbenchProvider
 // context, so we focus on the underlying logic.
-// ---------------------------------------------------------------------------
 
 const AUTOSAVE_KEY = "clawdstrike_workbench_autosave";
 
@@ -31,9 +29,6 @@ function makeEntry(overrides?: Partial<AutosaveEntry>): AutosaveEntry {
   };
 }
 
-// ---------------------------------------------------------------------------
-// localStorage mock (jsdom in this project doesn't provide full localStorage)
-// ---------------------------------------------------------------------------
 
 let store: Record<string, string>;
 
@@ -46,9 +41,6 @@ const localStorageMock = {
   key: (index: number) => Object.keys(store)[index] ?? null,
 };
 
-// ---------------------------------------------------------------------------
-// Setup / teardown
-// ---------------------------------------------------------------------------
 
 beforeEach(() => {
   store = {};
@@ -104,9 +96,6 @@ guards:
   );
 }
 
-// ---------------------------------------------------------------------------
-// readAutosave
-// ---------------------------------------------------------------------------
 
 describe("readAutosave", () => {
   it("returns null when nothing is stored", () => {
@@ -225,9 +214,6 @@ guards:
   });
 });
 
-// ---------------------------------------------------------------------------
-// clearAutosave
-// ---------------------------------------------------------------------------
 
 describe("clearAutosave", () => {
   it("removes the autosave entry from localStorage", () => {
@@ -250,9 +236,6 @@ describe("clearAutosave", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// write + read roundtrip (via localStorage.setItem simulating writeAutosave)
-// ---------------------------------------------------------------------------
 
 describe("write + read roundtrip", () => {
   it("stores and retrieves yaml content correctly", () => {

@@ -1,13 +1,7 @@
-// ---------------------------------------------------------------------------
-// General Settings — theme, editor preferences, autosave configuration
-// ---------------------------------------------------------------------------
 import { useGeneralSettings, type FontSize, type AutosaveInterval } from "@/lib/workbench/use-general-settings";
 import { IconPalette, IconTypography, IconDeviceFloppy, IconHash } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 
-// ---------------------------------------------------------------------------
-// Option definitions
-// ---------------------------------------------------------------------------
 
 const FONT_SIZE_OPTIONS: { value: FontSize; label: string; description: string }[] = [
   { value: "small", label: "Small", description: "11.5px" },
@@ -23,9 +17,6 @@ const AUTOSAVE_OPTIONS: { value: AutosaveInterval; label: string }[] = [
   { value: "60", label: "60 seconds" },
 ];
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
 
 export function GeneralSettings() {
   const { settings, updateSettings } = useGeneralSettings();
@@ -144,9 +135,6 @@ export function GeneralSettings() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Shared layout for each settings row
-// ---------------------------------------------------------------------------
 
 function SettingsSection({
   icon,

@@ -84,9 +84,6 @@ export function deriveSigilColor(fingerprint: string): string {
   return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
 }
 
-// ---------------------------------------------------------------------------
-// Sentinel mode capabilities
-// ---------------------------------------------------------------------------
 
 export interface SentinelCapabilities {
   /** Can generate signals from continuous monitoring. */
@@ -105,9 +102,6 @@ export interface SentinelCapabilities {
   supportsSchedule: boolean;
 }
 
-// ---------------------------------------------------------------------------
-// Configuration for creating a sentinel
-// ---------------------------------------------------------------------------
 
 export interface CreateSentinelConfig {
   name: string;
@@ -129,9 +123,6 @@ export interface SentinelMutablePatch extends Partial<Pick<
   runtime?: Partial<SentinelRuntimeBinding>;
 }
 
-// ---------------------------------------------------------------------------
-// Runtime Drivers and Execution Modes
-// ---------------------------------------------------------------------------
 
 export interface SentinelDriverDefinition {
   kind: SentinelDriverKind;
@@ -310,9 +301,6 @@ export function createDefaultRuntimeBinding(
   };
 }
 
-// ---------------------------------------------------------------------------
-// Stats event types
-// ---------------------------------------------------------------------------
 
 export type StatsEvent =
   | { type: "signal_generated" }
@@ -322,9 +310,6 @@ export type StatsEvent =
   | { type: "swarm_intel_consumed" }
   | { type: "active_tick"; elapsedMs: number };
 
-// ---------------------------------------------------------------------------
-// ID Generation (DATA-MODEL.md section 10)
-// ---------------------------------------------------------------------------
 
 /**
  * Generate a sentinel ID with the `sen_` prefix.
@@ -339,9 +324,6 @@ function generateSentinelId(): string {
   return `sen_${timestamp}${random}`;
 }
 
-// ---------------------------------------------------------------------------
-// Identity Creation
-// ---------------------------------------------------------------------------
 
 // Re-export from operator-crypto for backward compatibility.
 export { toHex, deriveSigil, SIGILS, type SigilType };
@@ -370,9 +352,6 @@ export async function generateSentinelIdentity(name: string): Promise<SentinelId
   return { publicKey: publicKeyHex, fingerprint, sigil, nickname };
 }
 
-// ---------------------------------------------------------------------------
-// Stats Tracking
-// ---------------------------------------------------------------------------
 
 /**
  * Create a zeroed SentinelStats object.
@@ -414,9 +393,6 @@ export function updateStats(stats: SentinelStats, event: StatsEvent): SentinelSt
   }
 }
 
-// ---------------------------------------------------------------------------
-// CRUD Operations
-// ---------------------------------------------------------------------------
 
 /**
  * Create a new Sentinel with a generated ID, identity, and empty memory.
@@ -534,9 +510,6 @@ export function getSentinel(
   return sentinels.find((s) => s.id === sentinelId);
 }
 
-// ---------------------------------------------------------------------------
-// Lifecycle Management
-// ---------------------------------------------------------------------------
 
 /**
  * Valid status transitions:
@@ -601,9 +574,6 @@ export function retireSentinel(sentinel: Sentinel): Sentinel {
   return { ...sentinel, status: "retired", updatedAt: Date.now() };
 }
 
-// ---------------------------------------------------------------------------
-// Memory Management
-// ---------------------------------------------------------------------------
 
 /**
  * Add a MemoryPattern to sentinel memory. Deduplicates by pattern ID.
@@ -638,7 +608,7 @@ export function addPattern(memory: SentinelMemory, pattern: MemoryPattern): Sent
  */
 export function addFalsePositiveHash(memory: SentinelMemory, hash: string): SentinelMemory {
   if (memory.falsePositiveHashes.includes(hash)) {
-    return memory; // Already present, no change
+    return memory;
   }
 
   return {
@@ -662,14 +632,12 @@ export function pruneMemory(
   let falsePositiveHashes = memory.falsePositiveHashes;
 
   if (knownPatterns.length > maxPatterns) {
-    // Keep the most recently added patterns
     knownPatterns = [...knownPatterns]
       .sort((a, b) => b.addedAt - a.addedAt)
       .slice(0, maxPatterns);
   }
 
   if (falsePositiveHashes.length > maxFPHashes) {
-    // FP hashes are appended in order — keep the most recent (tail)
     falsePositiveHashes = falsePositiveHashes.slice(-maxFPHashes);
   }
 
@@ -677,7 +645,7 @@ export function pruneMemory(
     knownPatterns === memory.knownPatterns &&
     falsePositiveHashes === memory.falsePositiveHashes
   ) {
-    return memory; // No change needed
+    return memory;
   }
 
   return {
@@ -688,53 +656,28 @@ export function pruneMemory(
   };
 }
 
-/**
- * Merge a swarm-sourced pattern into sentinel memory.
- * Only ingests patterns from peers with reputation above the minimum threshold.
- *
- * See SIGNAL-PIPELINE.md section 7.2 for the full pattern:
- *   - Check peer reputation >= minReputation
- *   - Add to memory as an "imported_intel" source
- */
 export function mergeSwarmPattern(
   memory: SentinelMemory,
   intelPattern: MemoryPattern,
   peerReputation: number,
   minReputation: number = 0.3,
 ): SentinelMemory {
-  // Fail-closed: reject patterns from untrusted peers
   if (peerReputation < minReputation) {
     return memory;
   }
 
-  // Mark the pattern as imported from swarm intel
   const importedPattern: MemoryPattern = {
     ...intelPattern,
     source: "imported_intel",
-    localMatchCount: 0, // Reset — local matches not yet observed
+    localMatchCount: 0,
     addedAt: Date.now(),
   };
 
   return addPattern(memory, importedPattern);
 }
 
-// ---------------------------------------------------------------------------
-// Scheduling
-// ---------------------------------------------------------------------------
 
-/**
- * Simple interval-based schedule check. Parses a cron-like schedule
- * string and determines whether the sentinel should run.
- *
- * For simplicity, supports a subset of cron:
- * - Standard 5-field cron: only checks the minute and hour fields
- * - Special strings: "@hourly", "@daily", "@weekly"
- *
- * For a full cron parser, use a dedicated library. This is a lightweight
- * approximation for the workbench client-side scheduler.
- */
 export function isScheduleDue(sentinel: Sentinel, now: Date = new Date()): boolean {
-  // Only active, scheduled hunters need schedule checks
   if (sentinel.status !== "active") return false;
   if (!sentinel.schedule) return false;
 
@@ -821,9 +764,6 @@ export function getNextRunTime(sentinel: Sentinel, from: Date = new Date()): Dat
   return null; // No match within 7 days
 }
 
-// ---------------------------------------------------------------------------
-// Sentinel Mode Helpers
-// ---------------------------------------------------------------------------
 
 /**
  * Get the capabilities for a given sentinel mode.

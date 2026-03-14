@@ -10,9 +10,6 @@ import {
   type PatternEntry,
 } from "@/lib/workbench/trustprint-patterns";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 /** Create a subset of patterns missing specific stage+category combos. */
 function patternsWithGaps(
@@ -36,9 +33,6 @@ function makePatterns(
   }));
 }
 
-// ---------------------------------------------------------------------------
-// Full mode - Heatmap rendering
-// ---------------------------------------------------------------------------
 
 describe("TrustprintPatternExplorer - Heatmap", () => {
   it("renders heatmap grid with correct number of cells", () => {
@@ -147,9 +141,6 @@ describe("TrustprintPatternExplorer - Heatmap", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Full mode - Table filtering
-// ---------------------------------------------------------------------------
 
 describe("TrustprintPatternExplorer - Table filtering", () => {
   it("renders all patterns in the table by default", () => {
@@ -227,9 +218,6 @@ describe("TrustprintPatternExplorer - Table filtering", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Full mode - Heatmap cell click filters table
-// ---------------------------------------------------------------------------
 
 describe("TrustprintPatternExplorer - Cell click filtering", () => {
   it("clicking a heatmap cell filters the table to that stage+category", async () => {
@@ -308,9 +296,6 @@ describe("TrustprintPatternExplorer - Cell click filtering", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Full mode - Gap detection
-// ---------------------------------------------------------------------------
 
 describe("TrustprintPatternExplorer - Gap detection", () => {
   it("shows 'Full coverage' when no gaps exist", () => {
@@ -357,9 +342,6 @@ describe("TrustprintPatternExplorer - Gap detection", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Full mode - Table sorting
-// ---------------------------------------------------------------------------
 
 describe("TrustprintPatternExplorer - Table sorting", () => {
   it("sorts by ID ascending by default", () => {
@@ -402,9 +384,6 @@ describe("TrustprintPatternExplorer - Table sorting", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Full mode - Pattern selection
-// ---------------------------------------------------------------------------
 
 describe("TrustprintPatternExplorer - Pattern selection", () => {
   it("calls onSelectPattern when a table row is clicked", async () => {
@@ -445,9 +424,6 @@ describe("TrustprintPatternExplorer - Pattern selection", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Compact mode
-// ---------------------------------------------------------------------------
 
 describe("TrustprintPatternExplorer - Compact mode", () => {
   it("renders compact heatmap grid", () => {
@@ -528,9 +504,6 @@ describe("TrustprintPatternExplorer - Compact mode", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Edge cases
-// ---------------------------------------------------------------------------
 
 describe("TrustprintPatternExplorer - Edge cases", () => {
   it("handles empty patterns array without crashing", () => {

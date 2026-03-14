@@ -30,15 +30,9 @@ import type {
 import { ALL_GUARD_IDS, GUARD_DISPLAY_NAMES } from "./guard-registry";
 import { generateRedTeamScenarios } from "./redteam/scenario-generator";
 
-// ---------------------------------------------------------------------------
-// Generation mode
-// ---------------------------------------------------------------------------
 
 export type ScenarioGenerationMode = "standard" | "redteam" | "combined";
 
-// ---------------------------------------------------------------------------
-// Public types
-// ---------------------------------------------------------------------------
 
 export interface GeneratedScenarioSet {
   /** All auto-generated scenarios. */
@@ -51,9 +45,6 @@ export interface GeneratedScenarioSet {
   coveredGuards: GuardId[];
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function makeId(guard: string, suffix: string): string {
   return `auto-${guard}-${suffix}`;
@@ -87,9 +78,6 @@ function isEnabled(config: { enabled?: boolean } | undefined): boolean {
   return config.enabled !== false;
 }
 
-// ---------------------------------------------------------------------------
-// Per-guard generators
-// ---------------------------------------------------------------------------
 
 function generateForbiddenPath(config: ForbiddenPathConfig): TestScenario[] {
   const results: TestScenario[] = [];
@@ -1007,9 +995,6 @@ function generateSpiderSense(_config: SpiderSenseConfig): TestScenario[] {
   return results;
 }
 
-// ---------------------------------------------------------------------------
-// Main generator
-// ---------------------------------------------------------------------------
 
 type GeneratorFn<T> = (config: T) => TestScenario[];
 

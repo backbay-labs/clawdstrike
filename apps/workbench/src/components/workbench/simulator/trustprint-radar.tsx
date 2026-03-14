@@ -1,9 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 export interface StageScores {
   perception: number;
@@ -29,9 +26,6 @@ export interface TrustprintRadarProps {
   onStageClick?: (stage: string) => void;
 }
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 const STAGES = ["perception", "action", "feedback", "cognition"] as const;
 type Stage = (typeof STAGES)[number];
@@ -68,9 +62,6 @@ const COLORS = {
   cream: "#ece7dc",
 } as const;
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
@@ -175,9 +166,6 @@ function labelPosition(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
 
 export function TrustprintRadar({
   scores,
@@ -195,9 +183,6 @@ export function TrustprintRadar({
 
   const idPrefix = useUniqueId("trustprint-radar");
 
-  // -----------------------------------------------------------------------
-  // Animation state
-  // -----------------------------------------------------------------------
   const [animProgress, setAnimProgress] = useState(animated ? 0 : 1);
   const animStartRef = useRef<number | null>(null);
 
@@ -232,9 +217,6 @@ export function TrustprintRadar({
     return () => cancelAnimationFrame(frameId);
   }, [animated, scores]);
 
-  // -----------------------------------------------------------------------
-  // Derived values
-  // -----------------------------------------------------------------------
   const animatedScores: StageScores = useMemo(
     () => ({
       perception: scores.perception * animProgress,
@@ -252,9 +234,6 @@ export function TrustprintRadar({
   const lowerBound = clamp(threshold - ambiguityBand, 0, 1) * chartRadius;
   const upperBound = clamp(threshold + ambiguityBand, 0, 1) * chartRadius;
 
-  // -----------------------------------------------------------------------
-  // Accessibility description
-  // -----------------------------------------------------------------------
   const ariaLabel = useMemo(() => {
     const parts = STAGES.map(
       (s) => `${STAGE_LABELS[s]}: ${scores[s].toFixed(2)}`,

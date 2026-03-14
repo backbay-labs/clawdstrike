@@ -7,9 +7,6 @@
 
 import { isDesktop } from "@/lib/tauri-bridge";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 export interface ConnectionTestResult {
   success: boolean;
@@ -19,9 +16,6 @@ export interface ConnectionTestResult {
   error?: string;
 }
 
-// ---------------------------------------------------------------------------
-// Desktop (Tauri) test — real HTTP call
-// ---------------------------------------------------------------------------
 
 async function testDesktop(
   url: string,
@@ -93,9 +87,6 @@ async function testDesktop(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Web (simulated) test — CORS may block real calls
-// ---------------------------------------------------------------------------
 
 /** Model-to-dimensions lookup for known models. */
 const KNOWN_DIMENSIONS: Record<string, number> = {
@@ -139,9 +130,6 @@ async function testSimulated(
   };
 }
 
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
 
 /**
  * Test the embedding API connection.

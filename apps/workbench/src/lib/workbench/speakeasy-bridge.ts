@@ -1015,8 +1015,7 @@ export function getPublishTopic(
       break;
   }
 
-  // Fallback: publish to swarm coordination if available
-  if (context.swarmId) {
+    if (context.swarmId) {
     return createSwarmTopics(context.swarmId).coordination;
   }
 

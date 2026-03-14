@@ -61,7 +61,7 @@ function findingReducer(state: FindingState, action: FindingAction): FindingStat
         action.signals,
         action.createdBy,
       );
-      if (!finding) return state; // Below threshold
+      if (!finding) return state;
 
       return {
         ...state,
@@ -159,7 +159,6 @@ function findingReducer(state: FindingState, action: FindingAction): FindingStat
 
     case "ARCHIVE_EXPIRED": {
       const archived = engineArchiveExpired(state.findings, action.ttlMs);
-      // Only update if something actually changed
       const changed = archived.some(
         (f, i) => f.status !== state.findings[i]?.status,
       );
@@ -210,7 +209,6 @@ function loadPersistedFindings(): FindingState | null {
       return null;
     }
 
-    // Validate each entry has required fields
     const validFindings: Finding[] = parsed.findings.filter(
       (f: unknown): f is Finding =>
         typeof f === "object" &&
@@ -281,7 +279,6 @@ export function FindingProvider({ children }: { children: ReactNode }) {
   const stateRef = useRef(state);
   stateRef.current = state;
 
-  // Debounced persistence
   const persistRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (persistRef.current) clearTimeout(persistRef.current);
@@ -294,7 +291,6 @@ export function FindingProvider({ children }: { children: ReactNode }) {
     };
   }, [state.findings, state.activeFindingId]);
 
-  // Flush pending persistence synchronously on tab close to prevent data loss
   useEffect(() => {
     const handleBeforeUnload = () => {
       if (persistRef.current) {
@@ -309,10 +305,7 @@ export function FindingProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // Derive active finding
   const activeFinding = state.findings.find((f) => f.id === state.activeFindingId);
-
-  // Action dispatchers
 
   const createFromCluster = useCallback(
     (cluster: SignalCluster, signals: Signal[], createdBy: string) => {

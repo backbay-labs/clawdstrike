@@ -16,17 +16,11 @@ import type { RedTeamScenario } from "./types";
 import { GUARD_TO_PLUGINS } from "./plugin-registry";
 import { generateRedTeamScenarios } from "./scenario-generator";
 
-// ---------------------------------------------------------------------------
-// Guard → suggested plugin mapping
-// ---------------------------------------------------------------------------
 
 function pluginsForGuard(guardId: GuardId): string[] {
   return GUARD_TO_PLUGINS[guardId] ?? [];
 }
 
-// ---------------------------------------------------------------------------
-// Gap identification
-// ---------------------------------------------------------------------------
 
 export interface RedTeamGap {
   guardId: GuardId;
@@ -69,9 +63,6 @@ export function identifyRedTeamGaps(
   return gaps;
 }
 
-// ---------------------------------------------------------------------------
-// Gap-filling scenario generation
-// ---------------------------------------------------------------------------
 
 /**
  * Auto-generate red-team scenarios for guards identified as coverage gaps.
@@ -95,9 +86,6 @@ export function generateGapFillingScenarios(
   });
 }
 
-// ---------------------------------------------------------------------------
-// Red-team coverage computation
-// ---------------------------------------------------------------------------
 
 export interface GuardRedTeamCoverage {
   total: number;

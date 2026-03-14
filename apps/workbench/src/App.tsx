@@ -19,9 +19,6 @@ import { DesktopLayout } from "@/components/desktop/desktop-layout";
 import { IdentityPrompt } from "@/components/workbench/identity/identity-prompt";
 import { secureStore, migrateCredentialsToStronghold } from "@/lib/workbench/secure-store";
 
-// ---------------------------------------------------------------------------
-// Lazy-loaded route components (code-split into separate chunks)
-// ---------------------------------------------------------------------------
 
 const PolicyEditor = lazy(() =>
   import("@/components/workbench/editor/policy-editor").then((m) => ({
@@ -143,9 +140,6 @@ const MissionControlPage = lazy(() =>
   })),
 );
 
-// ---------------------------------------------------------------------------
-// Loading fallback — dark-themed to prevent white flash in Tauri shell
-// ---------------------------------------------------------------------------
 
 function LoadingFallback() {
   return (
@@ -197,9 +191,6 @@ function LoadingFallback() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Error boundary — prevents white-screen-of-death on unhandled errors (#3)
-// ---------------------------------------------------------------------------
 
 interface ErrorBoundaryState {
   error: Error | null;
@@ -326,9 +317,6 @@ function AppProviders({ children }: { children: ReactNode }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// App root
-// ---------------------------------------------------------------------------
 
 /**
  * Root application component for the Tauri desktop workbench.

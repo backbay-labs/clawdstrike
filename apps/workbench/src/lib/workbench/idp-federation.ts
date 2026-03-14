@@ -1,9 +1,7 @@
-// ---------------------------------------------------------------------------
 // IdP Federation — OIDC integration with PKCE for operator identity binding.
 //
 // Structural implementation: types, PKCE challenge generation, OIDC discovery,
 // authorization URL construction, token exchange, and IdP binding proofs.
-// ---------------------------------------------------------------------------
 
 import { validateFleetUrl } from "./fleet-url-policy";
 
@@ -38,9 +36,6 @@ export interface OidcDiscovery {
   issuer: string;
 }
 
-// ---------------------------------------------------------------------------
-// Base64url encoding
-// ---------------------------------------------------------------------------
 
 function base64url(bytes: Uint8Array): string {
   return btoa(String.fromCharCode(...Array.from(bytes)))
@@ -49,9 +44,6 @@ function base64url(bytes: Uint8Array): string {
     .replace(/=+$/, "");
 }
 
-// ---------------------------------------------------------------------------
-// PKCE
-// ---------------------------------------------------------------------------
 
 export async function generatePkceChallenge(): Promise<PkceChallenge> {
   const verifierBytes = crypto.getRandomValues(new Uint8Array(32));
@@ -62,9 +54,6 @@ export async function generatePkceChallenge(): Promise<PkceChallenge> {
   return { codeVerifier, codeChallenge, codeChallengeMethod: "S256" };
 }
 
-// ---------------------------------------------------------------------------
-// OIDC Discovery
-// ---------------------------------------------------------------------------
 
 export async function discoverEndpoints(
   issuerUrl: string,
@@ -97,9 +86,6 @@ export async function discoverEndpoints(
   return JSON.parse(text);
 }
 
-// ---------------------------------------------------------------------------
-// Authorization URL
-// ---------------------------------------------------------------------------
 
 export function buildAuthorizationUrl(
   config: IdpConfig,
@@ -119,9 +105,6 @@ export function buildAuthorizationUrl(
   return `${discovery.authorization_endpoint}?${params}`;
 }
 
-// ---------------------------------------------------------------------------
-// Token Exchange
-// ---------------------------------------------------------------------------
 
 export async function exchangeCodeForTokens(
   code: string,
@@ -154,9 +137,6 @@ export async function exchangeCodeForTokens(
   };
 }
 
-// ---------------------------------------------------------------------------
-// IdP Binding Proof
-// ---------------------------------------------------------------------------
 
 export async function createIdpBinding(
   sub: string,
@@ -168,9 +148,6 @@ export async function createIdpBinding(
   return signData(new TextEncoder().encode(message), operatorSecretKey);
 }
 
-// ---------------------------------------------------------------------------
-// Token Refresh
-// ---------------------------------------------------------------------------
 
 export async function refreshTokens(
   refreshToken: string,

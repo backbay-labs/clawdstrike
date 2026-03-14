@@ -1,15 +1,8 @@
-// ---------------------------------------------------------------------------
-// Local Audit Trail — localStorage-backed event store for workbench actions
-// ---------------------------------------------------------------------------
 // P1-6: Captures workbench events locally so the audit log is useful even
 // when disconnected from a fleet hushd instance.
-// ---------------------------------------------------------------------------
 
 import { useCallback, useSyncExternalStore } from "react";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 export type AuditSource =
   | "simulator"
@@ -27,16 +20,10 @@ export interface LocalAuditEvent {
   details?: Record<string, unknown>;
 }
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 const LS_KEY = "clawdstrike_workbench_audit";
 const MAX_EVENTS = 5000;
 
-// ---------------------------------------------------------------------------
-// Internal store (singleton, survives across React re-renders)
-// ---------------------------------------------------------------------------
 
 let cachedEvents: LocalAuditEvent[] | null = null;
 const listeners = new Set<() => void>();
@@ -80,9 +67,6 @@ function writeToStorage(events: LocalAuditEvent[]) {
   notifyListeners();
 }
 
-// ---------------------------------------------------------------------------
-// Public API (non-React)
-// ---------------------------------------------------------------------------
 
 /**
  * Emit a new audit event. Prepends to the store (newest first) and
@@ -112,9 +96,6 @@ export function clearAuditEvents(): void {
   writeToStorage([]);
 }
 
-// ---------------------------------------------------------------------------
-// React hook
-// ---------------------------------------------------------------------------
 
 function subscribe(callback: () => void): () => void {
   listeners.add(callback);

@@ -1,6 +1,3 @@
-// ---------------------------------------------------------------------------
-// Deploy Panel — deploy local policy to fleet, import from production
-// ---------------------------------------------------------------------------
 import { useState, useCallback } from "react";
 import {
   IconRocket,
@@ -139,9 +136,6 @@ export function DeployPanel() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Deploy Confirmation Dialog
-// ---------------------------------------------------------------------------
 
 function DeployConfirmDialog({
   onClose,
@@ -397,9 +391,6 @@ function DeployConfirmDialog({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Import from Production Dialog
-// ---------------------------------------------------------------------------
 
 function ImportConfirmDialog({ onClose }: { onClose: () => void }) {
   const { connection, getAuthenticatedConnection: getAuthedImport } = useFleetConnection();

@@ -1,6 +1,3 @@
-// ---------------------------------------------------------------------------
-// Settings Page — tabbed layout for app-level configuration
-// ---------------------------------------------------------------------------
 import { useState } from "react";
 import { IconPlugConnected, IconSettings, IconBrain, IconFingerprint } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";

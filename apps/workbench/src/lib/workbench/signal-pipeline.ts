@@ -34,7 +34,6 @@ import {
 // Re-export canonical types so downstream consumers (finding-engine, stores) still work.
 export type { SignalType, SignalProvenance, SignalSource };
 
-// ---------------------------------------------------------------------------
 // Pipeline-specific types
 //
 // SignalContext, SignalData, and Signal use flat/optional-field shapes that
@@ -43,7 +42,6 @@ export type { SignalType, SignalProvenance, SignalSource };
 // functions to construct signals from heterogeneous sources without matching
 // the strict canonical shape.  The canonical types are the system-of-record
 // for serialized/persisted signals; these are the *construction-time* types.
-// ---------------------------------------------------------------------------
 
 /** Context about the agent, session, and origin for a signal. */
 export interface SignalContext {
@@ -158,9 +156,6 @@ export type CorrelationStrategyName =
   | "pattern_match"
   | "mitre_grouping";
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 const SIGNAL_DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -199,9 +194,6 @@ const MITRE_CHAIN_BOOST = 0.4;
 
 let signalCounter = 0;
 
-// ---------------------------------------------------------------------------
-// ID Generation
-// ---------------------------------------------------------------------------
 
 /**
  * Generate a signal ID with the `sig_` prefix.
@@ -213,9 +205,6 @@ export function generateSignalId(): string {
   return `sig_${ts}${seq}`;
 }
 
-// ---------------------------------------------------------------------------
-// Signal Normalization (Section 1.2)
-// ---------------------------------------------------------------------------
 
 /**
  * Convert a guard evaluation result and its parent AgentEvent into a Signal.
@@ -407,9 +396,6 @@ export function swarmIntelToSignal(
   };
 }
 
-// ---------------------------------------------------------------------------
-// Signal Severity Helpers
-// ---------------------------------------------------------------------------
 
 /**
  * Derive a severity classification from confidence and impact.
@@ -467,9 +453,6 @@ function inferImpact(event: AgentEvent): SignalImpact {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Signal Deduplication (Section 1.3)
-// ---------------------------------------------------------------------------
 
 /**
  * Compute a deduplication hash for a signal.
@@ -546,9 +529,6 @@ export class SignalDeduplicator {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Signal Confidence Scoring (Section 2.1)
-// ---------------------------------------------------------------------------
 
 /** Inputs for the composite confidence calculation. */
 export interface ConfidenceInputs {
@@ -614,9 +594,6 @@ export function recalculateSignalConfidence(
   };
 }
 
-// ---------------------------------------------------------------------------
-// False-Positive Suppression (Section 2.3)
-// ---------------------------------------------------------------------------
 
 /**
  * Check whether a signal should be suppressed based on known false-positive
@@ -644,9 +621,6 @@ export function isPatternSuppressed(
   return suppressedPatternIds.has(patternId);
 }
 
-// ---------------------------------------------------------------------------
-// Signal Correlation (Section 3)
-// ---------------------------------------------------------------------------
 
 /**
  * Time-window correlation: group signals from the same agent/session
@@ -875,9 +849,6 @@ export function correlateByMitreTechnique(
   return clusters;
 }
 
-// ---------------------------------------------------------------------------
-// Cluster Merging (Section 3.2)
-// ---------------------------------------------------------------------------
 
 /**
  * Merge overlapping clusters. Two clusters merge if they share at least
@@ -971,9 +942,6 @@ export function clusterSignals(clusters: SignalCluster[]): SignalCluster[] {
   return merged;
 }
 
-// ---------------------------------------------------------------------------
-// Full Correlation Pipeline
-// ---------------------------------------------------------------------------
 
 /** Options for the correlation pipeline. */
 export interface CorrelationOptions {
@@ -1024,9 +992,6 @@ export function correlateSignals(
   return clusterSignals(allClusters);
 }
 
-// ---------------------------------------------------------------------------
-// Signal Pipeline (Orchestrator)
-// ---------------------------------------------------------------------------
 
 /**
  * Full signal ingestion pipeline state.
@@ -1163,9 +1128,6 @@ export function evictLowPrioritySignals(
   return { ...state, signals: remaining };
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function clamp(min: number, max: number, value: number): number {
   return Math.max(min, Math.min(max, value));

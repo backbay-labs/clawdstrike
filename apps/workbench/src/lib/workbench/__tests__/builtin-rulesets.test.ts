@@ -2,18 +2,12 @@ import { describe, it, expect } from "vitest";
 import { BUILTIN_RULESETS } from "../builtin-rulesets";
 import { yamlToPolicy } from "../yaml-utils";
 
-// ---------------------------------------------------------------------------
-// Helper: parse YAML and return policy (unwraps the [policy, errors] tuple)
-// ---------------------------------------------------------------------------
 
 function parseRuleset(yaml: string) {
   const [policy, errors] = yamlToPolicy(yaml);
   return { policy, errors };
 }
 
-// ---------------------------------------------------------------------------
-// Tests for BUILTIN_RULESETS — the set of packaged policy templates
-// ---------------------------------------------------------------------------
 
 describe("BUILTIN_RULESETS", () => {
   it("contains at least 5 rulesets", () => {
@@ -58,9 +52,6 @@ describe("BUILTIN_RULESETS", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// YAML parsing tests — ensure each ruleset YAML parses to a valid policy
-// ---------------------------------------------------------------------------
 
 describe("BUILTIN_RULESETS YAML validity", () => {
   for (const ruleset of BUILTIN_RULESETS) {
@@ -93,9 +84,6 @@ describe("BUILTIN_RULESETS YAML validity", () => {
   }
 });
 
-// ---------------------------------------------------------------------------
-// Policy content checks for key rulesets
-// ---------------------------------------------------------------------------
 
 describe("default ruleset", () => {
   const ruleset = BUILTIN_RULESETS.find((r) => r.id === "default")!;

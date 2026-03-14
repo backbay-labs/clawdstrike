@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 
-// ---------------------------------------------------------------------------
 // The hook useNativeValidation requires React context and async Tauri calls.
 // We test the pure helper functions that are exported: countNativeErrors.
 // The internal functions (extractGuardId, parseValidationResponse) are not
@@ -9,14 +8,10 @@ import { describe, it, expect } from "vitest";
 //
 // We also re-implement the internal logic for extractGuardId and
 // parseValidationResponse in a test-friendly way to verify the parsing logic.
-// ---------------------------------------------------------------------------
 
 import { countNativeErrors } from "../use-native-validation";
 import type { NativeValidationState } from "../policy-store";
 
-// ---------------------------------------------------------------------------
-// Re-implement internal helpers for testing (mirrors the module's logic)
-// ---------------------------------------------------------------------------
 
 const GUARD_IDS = [
   "forbidden_path",
@@ -70,9 +65,6 @@ function parseValidationResponse(response: TauriValidationResponse) {
   return { guardErrors, topLevelErrors, valid: response.valid };
 }
 
-// ---------------------------------------------------------------------------
-// extractGuardId tests
-// ---------------------------------------------------------------------------
 
 describe("extractGuardId (internal logic)", () => {
   it("extracts forbidden_path from guards.forbidden_path.patterns[0]", () => {
@@ -122,9 +114,6 @@ describe("extractGuardId (internal logic)", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// parseValidationResponse tests
-// ---------------------------------------------------------------------------
 
 describe("parseValidationResponse (internal logic)", () => {
   it("parses a valid response with no errors", () => {
@@ -217,9 +206,6 @@ describe("parseValidationResponse (internal logic)", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// countNativeErrors tests
-// ---------------------------------------------------------------------------
 
 describe("countNativeErrors", () => {
   it("returns 0 for empty state", () => {

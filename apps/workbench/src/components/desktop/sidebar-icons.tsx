@@ -28,9 +28,6 @@ const base = (p: SigilProps) => ({
   style: p.style,
 });
 
-// ---------------------------------------------------------------------------
-// Detect & Respond
-// ---------------------------------------------------------------------------
 
 /** Sentinel — watchful eye with diamond iris */
 export function SigilSentinel(p: SigilProps) {
@@ -91,9 +88,6 @@ export function SigilMission(p: SigilProps) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Author & Test
-// ---------------------------------------------------------------------------
 
 /** Editor — code brackets with diamond cursor */
 export function SigilEditor(p: SigilProps) {
@@ -119,9 +113,6 @@ export function SigilLibrary(p: SigilProps) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Platform
-// ---------------------------------------------------------------------------
 
 /** Compliance — shield with checkmark */
 export function SigilCompliance(p: SigilProps) {
@@ -198,9 +189,6 @@ export function SigilTopology(p: SigilProps) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Chrome
-// ---------------------------------------------------------------------------
 
 /** Settings — diamond core with radiating control lines */
 export function SigilSettings(p: SigilProps) {

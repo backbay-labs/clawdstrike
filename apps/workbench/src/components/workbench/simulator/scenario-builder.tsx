@@ -282,9 +282,6 @@ export function ScenarioBuilder({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Agent Profile Section (dynamic, fleet-aware)
-// ---------------------------------------------------------------------------
 
 const DEFAULT_AGENT_PROFILE: AgentProfile = {
   agentName: "autonomous-agent-01",
@@ -520,9 +517,6 @@ function AgentProfileSection({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Payload Fields with improved labels and help text
-// ---------------------------------------------------------------------------
 
 function PayloadFields({
   actionType,
@@ -745,9 +739,6 @@ function PayloadFields({
   }
 }
 
-// ---------------------------------------------------------------------------
-// Origin Context Section
-// ---------------------------------------------------------------------------
 
 const ORIGIN_PROVIDERS: { value: OriginProvider; label: string }[] = [
   { value: "slack", label: "Slack" },

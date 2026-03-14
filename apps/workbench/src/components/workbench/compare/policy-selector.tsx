@@ -18,9 +18,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-// ---------------------------------------------------------------------------
-// Hook: load the built-in ruleset list from the Rust engine (with fallback)
-// ---------------------------------------------------------------------------
 
 interface RulesetListEntry {
   id: string;
@@ -80,10 +77,8 @@ function useBuiltinRulesetList() {
   return { rulesets, loading, nativeAvailable };
 }
 
-// ---------------------------------------------------------------------------
 // Resolve a built-in ruleset to { policy, yaml } via the Rust engine,
 // falling back to the client-side BUILTIN_RULESETS data.
-// ---------------------------------------------------------------------------
 
 function clientFallbackForRuleset(
   name: string
@@ -141,9 +136,6 @@ async function resolveBuiltinRuleset(
   return { policy: minimal, yaml: policyToYaml(minimal) };
 }
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
 
 interface PolicySelectorProps {
   label: string;

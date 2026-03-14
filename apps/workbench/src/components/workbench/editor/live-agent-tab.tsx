@@ -30,9 +30,6 @@ interface HushdEvent extends Omit<BaseHushdEvent, "verdict"> {
   sseEventType?: string;
 }
 
-// ---------------------------------------------------------------------------
-// Script Runner sub-panel
-// ---------------------------------------------------------------------------
 
 const EXAMPLE_SCRIPT = `"""
 Example test script using the clawdstrike.testing module.
@@ -234,9 +231,6 @@ function ScriptRunnerPanel() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// hushd Monitor sub-panel
-// ---------------------------------------------------------------------------
 
 type VerdictFilter = "ALL" | HushdEvent["verdict"];
 
@@ -1044,9 +1038,6 @@ function HushdMonitorPanel() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Main Live Agent Tab
-// ---------------------------------------------------------------------------
 
 type LiveSubTab = "script" | "hushd";
 

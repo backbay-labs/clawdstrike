@@ -16,9 +16,6 @@ import type {
 import { RoomHeader, CLASSIFICATION_CONFIG } from "./room-header";
 import { MessageList, type SpeakeasyDisplayMessage } from "./message-list";
 
-// ---------------------------------------------------------------------------
-// Props
-// ---------------------------------------------------------------------------
 
 interface SpeakeasyPanelProps {
   /** The room to display, or null when no room is open. */
@@ -47,9 +44,6 @@ interface SpeakeasyPanelProps {
   onAttachedClick?: (entityId: string) => void;
 }
 
-// ---------------------------------------------------------------------------
-// Classification footer badge
-// ---------------------------------------------------------------------------
 
 function ClassificationFooter({ classification }: { classification: SpeakeasyClassification }) {
   const cfg = CLASSIFICATION_CONFIG[classification];
@@ -83,9 +77,6 @@ function ClassificationFooter({ classification }: { classification: SpeakeasyCla
   );
 }
 
-// ---------------------------------------------------------------------------
-// Sentinel request mini-form
-// ---------------------------------------------------------------------------
 
 interface SentinelRequestFormProps {
   sentinels: SpeakeasyMember[];
@@ -200,9 +191,6 @@ function SentinelRequestForm({ sentinels, onSubmit, onCancel }: SentinelRequestF
   );
 }
 
-// ---------------------------------------------------------------------------
-// SpeakeasyPanel
-// ---------------------------------------------------------------------------
 
 export function SpeakeasyPanel({
   room,

@@ -4,9 +4,6 @@ import userEvent from "@testing-library/user-event";
 
 import { ClaudeCodeHint } from "../claude-code-hint";
 
-// ---------------------------------------------------------------------------
-// Mock the hint settings hook (useHintSettingsSafe)
-// ---------------------------------------------------------------------------
 
 const mockGetHint = vi.hoisted(() => vi.fn());
 const mockShowHints = vi.hoisted(() => ({ value: true }));
@@ -16,9 +13,6 @@ vi.mock("@/lib/workbench/use-hint-settings", () => ({
   useHintSettingsSafe: () => mockCtx.value,
 }));
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function setupContextMock(overrides?: { showHints?: boolean }) {
   const show = overrides?.showHints ?? true;
@@ -38,9 +32,6 @@ function clearContextMock() {
   mockCtx.value = null;
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 describe("ClaudeCodeHint", () => {
   beforeEach(() => {
@@ -48,9 +39,6 @@ describe("ClaudeCodeHint", () => {
     clearContextMock();
   });
 
-  // -------------------------------------------------------------------------
-  // Raw props rendering (no hintId)
-  // -------------------------------------------------------------------------
 
   it("renders hint text and copy button with raw props", () => {
     render(<ClaudeCodeHint hint="Test hint text" prompt="Test prompt text" />);
@@ -71,9 +59,6 @@ describe("ClaudeCodeHint", () => {
     expect(screen.getByText("Raw hint")).toBeInTheDocument();
   });
 
-  // -------------------------------------------------------------------------
-  // Store-based rendering (with hintId)
-  // -------------------------------------------------------------------------
 
   it("renders hint from store when hintId is provided", () => {
     setupContextMock();
@@ -99,9 +84,6 @@ describe("ClaudeCodeHint", () => {
     expect(container.firstChild).toBeNull();
   });
 
-  // -------------------------------------------------------------------------
-  // Props override store
-  // -------------------------------------------------------------------------
 
   it("explicit props override store values when both hintId and props are provided", () => {
     setupContextMock();
@@ -134,13 +116,11 @@ describe("ClaudeCodeHint", () => {
     // The prompt from store is used internally for the copy action
   });
 
-  // -------------------------------------------------------------------------
   // Copy button behavior
   //
   // NOTE: userEvent.setup() installs its own Clipboard stub on
   // navigator.clipboard, so we spy on that stub AFTER render (before
   // the click) to intercept the component's writeText call.
-  // -------------------------------------------------------------------------
 
   it("copy button copies prompt to clipboard", async () => {
     const user = userEvent.setup();
@@ -202,9 +182,6 @@ describe("ClaudeCodeHint", () => {
     spy.mockRestore();
   });
 
-  // -------------------------------------------------------------------------
-  // Context not available (useHintSettingsSafe returns null)
-  // -------------------------------------------------------------------------
 
   it("renders with raw props when provider is not mounted", () => {
     clearContextMock();
@@ -222,9 +199,6 @@ describe("ClaudeCodeHint", () => {
     expect(container.firstChild).toBeNull();
   });
 
-  // -------------------------------------------------------------------------
-  // className passthrough
-  // -------------------------------------------------------------------------
 
   it("passes className to the root element", () => {
     const { container } = render(

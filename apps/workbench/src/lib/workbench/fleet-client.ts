@@ -1157,8 +1157,7 @@ function adaptApprovalsResponse(
         const decision = adaptBackendDecision(row as unknown as BackendApproval);
         if (decision) decisions.push(decision);
       } else if ("toolName" in row || "originContext" in row) {
-        // Already in frontend shape -- passthrough
-        requests.push(row as unknown as ApprovalRequest);
+                requests.push(row as unknown as ApprovalRequest);
       }
     }
     return { requests, decisions };

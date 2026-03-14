@@ -41,9 +41,6 @@ import type {
   SigilType,
 } from "@/lib/workbench/sentinel-manager";
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
 
 const MODE_COLORS: Record<SentinelMode, string> = {
   watcher: "#5b8def",
@@ -105,9 +102,6 @@ const GOAL_TYPE_COLORS: Record<string, string> = {
 
 type DetailTab = "signals" | "goals" | "memory" | "config";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function relativeTime(epochMs: number): string {
   const now = Date.now();
@@ -135,9 +129,6 @@ function formatDate(epochMs: number): string {
   });
 }
 
-// ---------------------------------------------------------------------------
-// Sigil Avatar
-// ---------------------------------------------------------------------------
 
 function SigilAvatar({
   sigil,
@@ -165,9 +156,6 @@ function SigilAvatar({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Copyable Text
-// ---------------------------------------------------------------------------
 
 function CopyableText({ text, truncate = true }: { text: string; truncate?: boolean }) {
   const [copied, setCopied] = useState(false);
@@ -199,9 +187,6 @@ function CopyableText({ text, truncate = true }: { text: string; truncate?: bool
   );
 }
 
-// ---------------------------------------------------------------------------
-// Stats Sidebar
-// ---------------------------------------------------------------------------
 
 function StatsSidebar({ sentinel }: { sentinel: Sentinel }) {
   const runtimeDriver = getSentinelDriverDefinition(sentinel.runtime.driver);
@@ -345,9 +330,6 @@ function StatRow({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Tab: Signals
-// ---------------------------------------------------------------------------
 
 function SignalsTab({ sentinel }: { sentinel: Sentinel }) {
   // In a real implementation this would pull from SignalProvider filtered by sentinelId.
@@ -374,9 +356,6 @@ function SignalsTab({ sentinel }: { sentinel: Sentinel }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Tab: Goals
-// ---------------------------------------------------------------------------
 
 function GoalsTab({
   sentinel,
@@ -483,9 +462,6 @@ function GoalsTab({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Tab: Memory
-// ---------------------------------------------------------------------------
 
 function MemoryTab({ sentinel }: { sentinel: Sentinel }) {
   const { memory } = sentinel;
@@ -604,9 +580,6 @@ function MemoryTab({ sentinel }: { sentinel: Sentinel }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Tab: Config
-// ---------------------------------------------------------------------------
 
 function ConfigTab({ sentinel }: { sentinel: Sentinel }) {
   const { currentOperator } = useOperator();
@@ -755,9 +728,6 @@ function ConfigRow({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Main Component
-// ---------------------------------------------------------------------------
 
 export function SentinelDetail({
   sentinel,

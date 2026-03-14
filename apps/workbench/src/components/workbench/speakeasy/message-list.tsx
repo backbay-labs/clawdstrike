@@ -15,9 +15,6 @@ import type { SpeakeasyMember } from "@/lib/workbench/sentinel-types";
 import type { ClawdstrikeBaseMessage } from "@/lib/workbench/speakeasy-bridge";
 import { SigilAvatar, SIGIL_ICONS } from "./room-header";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 /**
  * Display message type for the message list.
@@ -90,9 +87,6 @@ interface MessageListProps {
   onIntelClick?: (intelId: string) => void;
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function formatRelativeTime(timestamp: number): string {
   const now = Date.now();
@@ -119,9 +113,6 @@ function getVerificationStatus(
   return "verified";
 }
 
-// ---------------------------------------------------------------------------
-// VerificationBadge
-// ---------------------------------------------------------------------------
 
 function VerificationBadge({ status }: { status: VerificationStatus }) {
   switch (status) {
@@ -149,9 +140,6 @@ function VerificationBadge({ status }: { status: VerificationStatus }) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// IntelShareCard
-// ---------------------------------------------------------------------------
 
 function IntelShareCard({
   intelShare,
@@ -189,9 +177,6 @@ function IntelShareCard({
   );
 }
 
-// ---------------------------------------------------------------------------
-// FindingUpdateCard
-// ---------------------------------------------------------------------------
 
 function FindingUpdateCard({
   findingUpdate,
@@ -240,9 +225,6 @@ function FindingUpdateCard({
   );
 }
 
-// ---------------------------------------------------------------------------
-// SentinelStatusIndicator
-// ---------------------------------------------------------------------------
 
 function SentinelStatusIndicator({
   sentinelStatus,
@@ -275,9 +257,6 @@ function SentinelStatusIndicator({
   );
 }
 
-// ---------------------------------------------------------------------------
-// ReputationVoteIndicator
-// ---------------------------------------------------------------------------
 
 function ReputationVoteIndicator({
   reputationVote,
@@ -307,9 +286,6 @@ function ReputationVoteIndicator({
   );
 }
 
-// ---------------------------------------------------------------------------
-// SenderInfo
-// ---------------------------------------------------------------------------
 
 function SenderInfo({
   message,
@@ -332,8 +308,7 @@ function SenderInfo({
     );
   }
 
-  // Fallback: show truncated public key
-  return (
+    return (
     <div className="flex items-center gap-1.5">
       <div className="rounded-full flex items-center justify-center bg-[#131721] border border-[#2d3240] text-[#6f7f9a]"
         style={{ width: 18, height: 18, fontSize: 10 }}
@@ -347,9 +322,6 @@ function SenderInfo({
   );
 }
 
-// ---------------------------------------------------------------------------
-// MessageBubble
-// ---------------------------------------------------------------------------
 
 function MessageBubble({
   message,
@@ -467,9 +439,6 @@ function MessageBubble({
   );
 }
 
-// ---------------------------------------------------------------------------
-// MessageList
-// ---------------------------------------------------------------------------
 
 export function MessageList({
   messages,

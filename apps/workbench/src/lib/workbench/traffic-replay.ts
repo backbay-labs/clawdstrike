@@ -15,9 +15,6 @@ import type {
 import type { AuditEvent } from "./fleet-client";
 import { ALL_GUARD_IDS, GUARD_DISPLAY_NAMES } from "./guard-registry";
 
-// ---------------------------------------------------------------------------
-// Public types
-// ---------------------------------------------------------------------------
 
 export interface TrafficSummary {
   totalEvents: number;
@@ -58,9 +55,6 @@ export interface WhatIfSummary {
   deltas: WhatIfDelta[];
 }
 
-// ---------------------------------------------------------------------------
-// Action type normalization
-// ---------------------------------------------------------------------------
 
 /** Map hushd action_type strings to workbench TestActionType. */
 function normalizeActionType(raw: string): TestActionType | null {
@@ -112,9 +106,6 @@ function categoryFromDecision(decision: string): "benign" | "attack" | "edge_cas
   return "benign";
 }
 
-// ---------------------------------------------------------------------------
-// Build payload from audit event
-// ---------------------------------------------------------------------------
 
 function buildPayload(
   actionType: TestActionType,
@@ -144,9 +135,6 @@ function buildPayload(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Core functions
-// ---------------------------------------------------------------------------
 
 /**
  * Convert audit events from hushd into TestScenarios.
@@ -339,9 +327,6 @@ export function identifyCoverageGaps(
   return dedupedGaps;
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function truncate(s: string, maxLen: number): string {
   if (s.length <= maxLen) return s;
