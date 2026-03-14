@@ -380,10 +380,21 @@ pub async fn worktree_status<R: Runtime>(
             canonical_wt.display()
         ));
     }
-    if !canonical_wt
-        .components()
-        .any(|component| component.as_os_str() == WORKTREE_DIR)
-    {
+
+    // Verify that WORKTREE_DIR appears as a proper parent directory in the
+    // canonicalized path — not merely as an arbitrary path component (e.g. a
+    // file or sibling directory that happens to contain the name). We walk the
+    // ancestors and check that one of them ends with WORKTREE_DIR and that the
+    // canonical worktree path is strictly beneath it.
+    let has_worktree_parent = canonical_wt.ancestors().any(|ancestor| {
+        ancestor
+            .file_name()
+            .map(|name| name == WORKTREE_DIR)
+            .unwrap_or(false)
+            && canonical_wt.starts_with(ancestor)
+            && canonical_wt != ancestor
+    });
+    if !has_worktree_parent {
         return Err(format!(
             "Refusing status for path outside {} namespace",
             WORKTREE_DIR

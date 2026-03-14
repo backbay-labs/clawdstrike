@@ -51,7 +51,7 @@ import { SwarmBoardToolbar } from "../swarm-board-toolbar";
 // ---------------------------------------------------------------------------
 
 function ToolbarHarness() {
-  const { state, clearBoard } = useSwarmBoard();
+  const { state } = useSwarmBoard();
 
   return (
     <div>

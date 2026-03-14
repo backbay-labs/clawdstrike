@@ -161,14 +161,9 @@ fn normalize_shell(shell: &str) -> Option<String> {
     }
 
     let path = Path::new(shell);
-    if path.is_absolute() || path.components().count() != 1 {
-        eprintln!(
-            "[terminal] Rejected shell with path components: {:?}",
-            shell
-        );
-        return None;
-    }
 
+    // Extract the base name from the path (handles both absolute paths like
+    // `/bin/zsh` and bare names like `zsh`).
     let file_name = path.file_name()?.to_string_lossy();
     let file_name = if cfg!(target_os = "windows") {
         file_name.trim_end_matches(".exe")
@@ -176,6 +171,9 @@ fn normalize_shell(shell: &str) -> Option<String> {
         file_name.as_ref()
     };
 
+    // Check the base name against the allowlist. This accepts absolute paths
+    // (e.g. $SHELL = "/bin/zsh") as long as the final component is allowed,
+    // while still rejecting unknown or multi-component relative paths.
     let result = ALLOWED_SHELLS
         .iter()
         .find(|allowed| file_name.eq_ignore_ascii_case(allowed))

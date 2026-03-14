@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 // ---------------------------------------------------------------------------
 // The persistence functions are not individually exported from the store,

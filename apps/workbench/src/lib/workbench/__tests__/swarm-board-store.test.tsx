@@ -58,11 +58,6 @@ function Harness() {
     state,
     dispatch,
     addNode,
-    removeNode,
-    updateNode,
-    selectNode,
-    addEdge,
-    removeEdge,
     clearBoard,
     selectedNode,
     rfEdges,
@@ -1023,31 +1018,6 @@ describe("rfEdges", () => {
 
 describe("useSwarmBoard hook outside provider", () => {
   it("throws when used outside SwarmBoardProvider", () => {
-    const ErrorBoundary = ({ children }: { children: React.ReactNode }) => {
-      const [error, setError] = React.useState<string | null>(null);
-      if (error) return <pre data-testid="error">{error}</pre>;
-      return (
-        <React.Suspense fallback={null}>
-          <ErrorCatcher onError={setError}>{children}</ErrorCatcher>
-        </React.Suspense>
-      );
-    };
-
-    const ErrorCatcher = ({
-      children,
-      onError,
-    }: {
-      children: React.ReactNode;
-      onError: (msg: string) => void;
-    }) => {
-      try {
-        return <>{children}</>;
-      } catch {
-        // won't be caught here with hooks
-        return null;
-      }
-    };
-
     // Using a class-based error boundary
     class TestErrorBoundary extends React.Component<
       { children: React.ReactNode },
