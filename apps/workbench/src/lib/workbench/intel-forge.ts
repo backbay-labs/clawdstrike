@@ -32,6 +32,12 @@ import type {
 import type { Finding, Enrichment, MitreTechnique } from "./finding-engine";
 import type { Signal } from "./signal-pipeline";
 import type { Receipt } from "./types";
+import {
+  ED25519_PUBLIC_KEY_HEX,
+  ED25519_SIGNATURE_HEX,
+  signDetachedPayload,
+  verifyDetachedPayload,
+} from "./signature-adapter";
 
 // ---------------------------------------------------------------------------
 // ID Generation
@@ -120,6 +126,25 @@ export function canonicalizeJson(value: unknown): string {
   return "null";
 }
 
+async function hashCanonicalValue(value: unknown): Promise<{
+  bytes: Uint8Array;
+  hex: string;
+}> {
+  const canonical = canonicalizeJson(value);
+  const encoded = new TextEncoder().encode(canonical);
+  const hashBuffer = await crypto.subtle.digest(
+    "SHA-256",
+    encoded.buffer as ArrayBuffer,
+  );
+  const hashBytes = new Uint8Array(hashBuffer);
+  return {
+    bytes: hashBytes,
+    hex: Array.from(hashBytes)
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join(""),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Content Hash
 // ---------------------------------------------------------------------------
@@ -129,15 +154,8 @@ export function canonicalizeJson(value: unknown): string {
  * Returns hex-encoded hash string. Used for deduplication across the swarm.
  */
 export async function computeContentHash(intel: Intel): Promise<string> {
-  const signableFields = extractSignableFields(intel);
-  const canonical = canonicalizeJson(signableFields);
-  const encoded = new TextEncoder().encode(canonical);
-  const hashBuffer = await crypto.subtle.digest(
-    "SHA-256",
-    encoded.buffer as ArrayBuffer,
-  );
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+  const { hex } = await hashCanonicalValue(extractSignableFields(intel));
+  return hex;
 }
 
 // ---------------------------------------------------------------------------
@@ -489,6 +507,34 @@ function extractSignableFields(
   };
 }
 
+function extractReceiptSignableFields(
+  receipt: Receipt,
+): Record<string, unknown> {
+  return {
+    id: receipt.id,
+    timestamp: receipt.timestamp,
+    verdict: receipt.verdict,
+    guard: receipt.guard,
+    policyName: receipt.policyName,
+    action: receipt.action,
+    evidence: receipt.evidence,
+    publicKey: receipt.publicKey,
+    keyType: receipt.keyType,
+    imported: receipt.imported,
+  };
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
+function sameStringArray(
+  left: readonly string[],
+  right: readonly string[],
+): boolean {
+  return left.length === right.length && left.every((entry, index) => entry === right[index]);
+}
+
 /**
  * Sign an Intel artifact with Ed25519.
  *
@@ -499,61 +545,28 @@ function extractSignableFields(
  * 4. Sign hash with the provided private key
  * 5. Return intel with signature and signerPublicKey filled
  *
- * NOTE: Ed25519 signing uses Web Crypto API placeholders. In production,
- * this delegates to the Rust hush-core layer via Tauri commands or WASM.
- * The canonical JSON and hashing steps are fully functional.
+ * The workbench does not currently depend on `@backbay/witness`, so callers
+ * must supply the signer public key explicitly. Detached Ed25519 signing is
+ * routed through the local signature adapter, which can be swapped for a
+ * witness-backed verifier later without changing the calling contract.
  */
 export async function signIntel(
   intel: Intel,
   privateKeyHex: string,
+  publicKeyHex = intel.signerPublicKey,
 ): Promise<Intel> {
-  // Step 1: Extract signable fields
-  const signableFields = extractSignableFields(intel);
+  if (!ED25519_PUBLIC_KEY_HEX.test(publicKeyHex)) {
+    throw new Error(
+      "signIntel requires the caller to provide a 32-byte Ed25519 public key",
+    );
+  }
 
-  // Step 2: Canonicalize using RFC 8785
-  const canonical = canonicalizeJson(signableFields);
-
-  // Step 3: SHA-256 hash of canonical JSON
-  const encoded = new TextEncoder().encode(canonical);
-  const hashBuffer = await crypto.subtle.digest(
-    "SHA-256",
-    encoded.buffer as ArrayBuffer,
+  const { bytes: contentHashBytes, hex: contentHash } = await hashCanonicalValue(
+    extractSignableFields(intel),
   );
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  const contentHash = hashArray
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+  const signatureHex = await signDetachedPayload(contentHashBytes, privateKeyHex);
 
-  // Step 4: Sign with Ed25519
-  // TODO: Replace with real Ed25519 signing via hush-core WASM or Tauri command.
-  // For now, produce a deterministic placeholder signature from the content hash
-  // and the private key material, so the signature field is populated and
-  // downstream verification logic can be tested.
-  const signatureInput = new TextEncoder().encode(contentHash + privateKeyHex);
-  const sigBuffer = await crypto.subtle.digest(
-    "SHA-256",
-    signatureInput.buffer as ArrayBuffer,
-  );
-  const sigArray = Array.from(new Uint8Array(sigBuffer));
-  // Double the hash to simulate 64-byte Ed25519 signature (128 hex chars)
-  const signatureHex =
-    sigArray.map((b) => b.toString(16).padStart(2, "0")).join("") +
-    sigArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-
-  // Derive a placeholder public key from the private key
-  // TODO: Replace with real Ed25519 key derivation
-  const pkInput = new TextEncoder().encode("pk:" + privateKeyHex);
-  const pkBuffer = await crypto.subtle.digest(
-    "SHA-256",
-    pkInput.buffer as ArrayBuffer,
-  );
-  const pkArray = Array.from(new Uint8Array(pkBuffer));
-  const publicKeyHex = pkArray
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-
-  // Step 5: Build the signed receipt
-  const signedReceipt: Receipt = {
+  const unsignedReceipt: Receipt = {
     id: crypto.randomUUID(),
     timestamp: new Date().toISOString(),
     verdict: "allow",
@@ -568,8 +581,20 @@ export async function signIntel(
       intel_type: intel.type,
       parent_receipt: intel.receipt.id,
     },
-    signature: signatureHex,
+    signature: "",
     publicKey: publicKeyHex,
+    valid: false,
+  };
+  const { bytes: receiptHashBytes } = await hashCanonicalValue(
+    extractReceiptSignableFields(unsignedReceipt),
+  );
+  const receiptSignature = await signDetachedPayload(
+    receiptHashBytes,
+    privateKeyHex,
+  );
+  const signedReceipt: Receipt = {
+    ...unsignedReceipt,
+    signature: receiptSignature,
     valid: true,
   };
 
@@ -584,37 +609,84 @@ export async function signIntel(
 /**
  * Verify an Intel artifact's signature.
  *
- * TODO: Implement real Ed25519 signature verification using hush-core WASM
- * or the @clawdstrike/sdk verifyReport() function. For now, returns true
- * if the signature and signerPublicKey fields are non-empty.
  */
-export function verifyIntel(intel: Intel): {
+export async function verifyIntel(intel: Intel): Promise<{
   valid: boolean;
   reason: string;
-} {
-  // Basic structural checks
+}> {
   if (!intel.signature || intel.signature.length === 0) {
     return { valid: false, reason: "Missing signature" };
   }
   if (!intel.signerPublicKey || intel.signerPublicKey.length === 0) {
     return { valid: false, reason: "Missing signer public key" };
   }
-  if (intel.signature.length !== 128) {
+  if (!ED25519_SIGNATURE_HEX.test(intel.signature)) {
     return {
       valid: false,
-      reason: `Invalid signature length: expected 128 hex chars, got ${intel.signature.length}`,
+      reason: "invalid_signature_format",
     };
   }
-  if (intel.signerPublicKey.length !== 64) {
+  if (!ED25519_PUBLIC_KEY_HEX.test(intel.signerPublicKey)) {
     return {
       valid: false,
-      reason: `Invalid public key length: expected 64 hex chars, got ${intel.signerPublicKey.length}`,
+      reason: "invalid_public_key_format",
     };
   }
 
-  // TODO: Verify Ed25519 signature over canonical JSON hash
-  // For now, structural validation passes.
-  return { valid: true, reason: "Structural validation passed (Ed25519 verification pending)" };
+  const { bytes: intelHashBytes, hex: intelHashHex } = await hashCanonicalValue(
+    extractSignableFields(intel),
+  );
+  const intelValid = await verifyDetachedPayload(
+    intelHashBytes,
+    intel.signature,
+    intel.signerPublicKey,
+  );
+  if (!intelValid) {
+    return { valid: false, reason: "invalid_signature" };
+  }
+
+  if (!intel.receipt.signature || intel.receipt.signature.length === 0) {
+    return { valid: false, reason: "missing_receipt_signature" };
+  }
+  if (!intel.receipt.publicKey || intel.receipt.publicKey.length === 0) {
+    return { valid: false, reason: "missing_receipt_public_key" };
+  }
+  if (!ED25519_SIGNATURE_HEX.test(intel.receipt.signature)) {
+    return { valid: false, reason: "invalid_receipt_signature_format" };
+  }
+  if (!ED25519_PUBLIC_KEY_HEX.test(intel.receipt.publicKey)) {
+    return { valid: false, reason: "invalid_receipt_public_key_format" };
+  }
+  if (intel.receipt.publicKey !== intel.signerPublicKey) {
+    return { valid: false, reason: "receipt_signer_mismatch" };
+  }
+  if (intel.receipt.action.target !== `intel:${intel.id}`) {
+    return { valid: false, reason: "receipt_target_mismatch" };
+  }
+
+  const receiptContentHash = intel.receipt.evidence.content_hash;
+  if (typeof receiptContentHash !== "string" || receiptContentHash !== intelHashHex) {
+    return { valid: false, reason: "receipt_content_hash_mismatch" };
+  }
+
+  const receiptFindingIds = intel.receipt.evidence.finding_ids;
+  if (!isStringArray(receiptFindingIds) || !sameStringArray(receiptFindingIds, intel.derivedFrom)) {
+    return { valid: false, reason: "receipt_finding_ids_mismatch" };
+  }
+
+  const { bytes: receiptHashBytes } = await hashCanonicalValue(
+    extractReceiptSignableFields(intel.receipt),
+  );
+  const receiptValid = await verifyDetachedPayload(
+    receiptHashBytes,
+    intel.receipt.signature,
+    intel.receipt.publicKey,
+  );
+  if (!receiptValid) {
+    return { valid: false, reason: "invalid_receipt_signature" };
+  }
+
+  return { valid: true, reason: "Intel signature verified" };
 }
 
 // ---------------------------------------------------------------------------

@@ -9,14 +9,15 @@
  * Default tab is "findings".
  */
 
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { IconAlertTriangle, IconBrain } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { useFindings } from "@/lib/workbench/finding-store";
+import { useIntel } from "@/lib/workbench/intel-store";
+import { promoteToIntel } from "@/lib/workbench/intel-forge";
 import { FindingsList } from "./findings-list";
 import { IntelPage } from "../intel/intel-page";
-import type { Intel } from "@/lib/workbench/sentinel-types";
 
 // ---------------------------------------------------------------------------
 // Tab type
@@ -38,11 +39,24 @@ export function FindingsIntelPage() {
   const activeTab = resolveTab(searchParams.get("tab"));
 
   // --- Findings store ---
-  const { findings, confirm, dismiss, markFalsePositive, promote } =
-    useFindings();
+  const { findings, confirm, dismiss, markFalsePositive, promote } = useFindings();
+  const { localIntel, swarmIntel, upsertLocalIntel } = useIntel();
 
-  // --- Intel (no store yet — placeholder) ---
-  const [localIntel] = useState<Intel[]>([]);
+  const promoteFinding = useCallback(
+    (findingId: string) => {
+      const finding = findings.find((entry) => entry.id === findingId);
+      if (!finding) return;
+
+      const intel = promoteToIntel(finding, [], {
+        authorFingerprint: finding.createdBy || "operator",
+        shareability: "private",
+      });
+
+      upsertLocalIntel(intel);
+      promote(findingId, "operator", intel.id);
+    },
+    [findings, promote, upsertLocalIntel],
+  );
 
   // --- Tab switching ---
   const setTab = useCallback(
@@ -94,7 +108,7 @@ export function FindingsIntelPage() {
             onSelect={(id: string) => navigate(`/findings/${id}`)}
             onConfirm={(id: string) => confirm(id, "operator")}
             onDismiss={(id: string) => dismiss(id, "operator")}
-            onPromote={(id: string) => promote(id, "operator", `intel_${id}`)}
+            onPromote={promoteFinding}
             onMarkFalsePositive={(id: string) =>
               markFalsePositive(id, "operator")
             }
@@ -102,6 +116,7 @@ export function FindingsIntelPage() {
         ) : (
           <IntelPage
             localIntel={localIntel}
+            swarmIntel={swarmIntel}
             onSelectIntel={(intelId: string) =>
               navigate(`/intel/${intelId}`)
             }

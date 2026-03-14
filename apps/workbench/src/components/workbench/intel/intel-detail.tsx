@@ -7,7 +7,7 @@
  * @see docs/plans/sentinel-swarm/UI-PAGE-MAP.md#5b-intel-detail--provenance
  */
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   IconArrowLeft,
   IconShieldCheck,
@@ -471,8 +471,39 @@ function ProvenanceViewer({
   authorInfo?: IntelDetailProps["authorInfo"];
   onNavigateToFinding?: (findingId: string) => void;
 }) {
-  const verification = useMemo(() => verifyIntel(intel), [intel]);
   const [sigExpanded, setSigExpanded] = useState(false);
+  const [verification, setVerification] = useState<
+    Awaited<ReturnType<typeof verifyIntel>> | null
+  >(null);
+  const [isVerifying, setIsVerifying] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    setIsVerifying(true);
+    setVerification(null);
+
+    void verifyIntel(intel)
+      .then((result) => {
+        if (cancelled) return;
+        setVerification(result);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setVerification({
+          valid: false,
+          reason: "verification_error",
+        });
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setIsVerifying(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [intel]);
 
   return (
     <div className="space-y-5">
@@ -484,7 +515,12 @@ function ProvenanceViewer({
 
         {/* Verification status */}
         <div className="flex items-center gap-2 mb-3">
-          {verification.valid ? (
+          {isVerifying ? (
+            <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-[#5b8def]/10 border border-[#5b8def]/20 text-[10px] font-mono text-[#5b8def]">
+              <IconClock size={10} stroke={2} />
+              Verifying
+            </span>
+          ) : verification?.valid ? (
             <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-[#3dbf84]/10 border border-[#3dbf84]/20 text-[10px] font-mono text-[#3dbf84]">
               <IconCheck size={10} stroke={2} />
               Verified
@@ -496,7 +532,7 @@ function ProvenanceViewer({
             </span>
           )}
           <span className="text-[9px] text-[#6f7f9a]">
-            {verification.reason}
+            {isVerifying ? "Verifying signature..." : verification?.reason}
           </span>
         </div>
 
@@ -848,7 +884,7 @@ function ShareabilityControls({
         })}
       </div>
 
-      {/* Share to Swarm button (Phase 2 placeholder) */}
+      {/* Share to Swarm button */}
       <button
         onClick={() => onShareToSwarm?.(intel)}
         disabled={
@@ -868,7 +904,7 @@ function ShareabilityControls({
       </button>
       {!onShareToSwarm && intel.shareability !== "private" && (
         <p className="text-[9px] text-[#6f7f9a]/50 mt-1.5 text-center">
-          Swarm sharing is coming in Phase 2
+          Swarm sharing is unavailable in this view
         </p>
       )}
     </div>

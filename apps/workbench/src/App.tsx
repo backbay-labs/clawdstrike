@@ -9,9 +9,11 @@ import { SwarmProvider } from "@/lib/workbench/swarm-store";
 import { SentinelProvider } from "@/lib/workbench/sentinel-store";
 import { FindingProvider } from "@/lib/workbench/finding-store";
 import { SignalProvider } from "@/lib/workbench/signal-store";
+import { IntelProvider } from "@/lib/workbench/intel-store";
 import { MissionProvider } from "@/lib/workbench/mission-store";
 import { OperatorProvider } from "@/lib/workbench/operator-store";
 import { ReputationProvider } from "@/lib/workbench/reputation-store";
+import { SwarmFeedProvider } from "@/lib/workbench/swarm-feed-store";
 import { ToastProvider } from "@/components/ui/toast";
 import { DesktopLayout } from "@/components/desktop/desktop-layout";
 import { IdentityPrompt } from "@/components/workbench/identity/identity-prompt";
@@ -303,11 +305,15 @@ function AppProviders({ children }: { children: ReactNode }) {
                 <SentinelProvider>
                   <FindingProvider>
                     <SignalProvider>
-                      <MissionProvider>
-                        <SwarmProvider>
-                          <FleetConnectionProvider>{children}</FleetConnectionProvider>
-                        </SwarmProvider>
-                      </MissionProvider>
+                      <IntelProvider>
+                        <MissionProvider>
+                          <SwarmFeedProvider>
+                            <SwarmProvider>
+                              <FleetConnectionProvider>{children}</FleetConnectionProvider>
+                            </SwarmProvider>
+                          </SwarmFeedProvider>
+                        </MissionProvider>
+                      </IntelProvider>
                     </SignalProvider>
                   </FindingProvider>
                 </SentinelProvider>

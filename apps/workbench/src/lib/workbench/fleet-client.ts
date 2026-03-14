@@ -16,7 +16,21 @@ import type {
   EdgeKind,
   Capability,
 } from "./delegation-types";
+import {
+  isPrivateOrLoopbackFleetHostname,
+  validateFleetUrl,
+} from "./fleet-url-policy";
+import { httpFetch } from "./http-transport";
+import {
+  isHeadAnnouncement,
+  isHubConfig,
+  type FindingEnvelope,
+  type HeadAnnouncement,
+  type HubConfig,
+} from "./swarm-protocol";
 import { yamlToPolicy } from "./yaml-utils";
+
+export { isPrivateOrLoopbackFleetHostname, validateFleetUrl } from "./fleet-url-policy";
 
 const DEV = import.meta.env.DEV;
 
@@ -24,157 +38,8 @@ const DEV = import.meta.env.DEV;
 // URL validation (Finding 3: SSRF prevention)
 // ---------------------------------------------------------------------------
 
-function parseIpv4Bytes(hostname: string): number[] | null {
-  if (!/^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname)) return null;
-  const octets = hostname.split(".").map((part) => Number.parseInt(part, 10));
-  if (octets.some((part) => Number.isNaN(part) || part < 0 || part > 255)) return null;
-  return octets;
-}
-
-function isPrivateOrLoopbackIpv4(octets: number[]): boolean {
-  const [a, b, c, d] = octets;
-  if ([a, b, c, d].some((part) => part === undefined)) return false;
-
-  return (
-    a === 127 ||
-    a === 10 ||
-    (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168) ||
-    (a === 169 && b === 254) ||
-    (a === 0 && b === 0 && c === 0 && d === 0)
-  );
-}
-
-function parseIpv6Bytes(hostname: string): number[] | null {
-  let normalized = hostname.toLowerCase();
-  if (normalized.startsWith("[") && normalized.endsWith("]")) {
-    normalized = normalized.slice(1, -1);
-  }
-
-  const zoneIndex = normalized.indexOf("%");
-  if (zoneIndex >= 0) {
-    normalized = normalized.slice(0, zoneIndex);
-  }
-
-  if (!normalized.includes(":")) return null;
-
-  const lastColon = normalized.lastIndexOf(":");
-  const maybeIpv4 = lastColon >= 0 ? normalized.slice(lastColon + 1) : "";
-  if (maybeIpv4.includes(".")) {
-    const ipv4Bytes = parseIpv4Bytes(maybeIpv4);
-    if (!ipv4Bytes) return null;
-    const high = ((ipv4Bytes[0] << 8) | ipv4Bytes[1]).toString(16);
-    const low = ((ipv4Bytes[2] << 8) | ipv4Bytes[3]).toString(16);
-    normalized = `${normalized.slice(0, lastColon)}:${high}:${low}`;
-  }
-
-  if ((normalized.match(/::/g) || []).length > 1) return null;
-
-  const hasCompression = normalized.includes("::");
-  const [leftRaw, rightRaw = ""] = normalized.split("::");
-  const leftParts = leftRaw ? leftRaw.split(":").filter(Boolean) : [];
-  const rightParts = rightRaw ? rightRaw.split(":").filter(Boolean) : [];
-  const parts = [...leftParts, ...rightParts];
-
-  if (parts.some((part) => !/^[0-9a-f]{1,4}$/i.test(part))) {
-    return null;
-  }
-
-  const missing = 8 - parts.length;
-  if ((!hasCompression && parts.length !== 8) || (hasCompression && missing < 0)) {
-    return null;
-  }
-
-  const hextets = hasCompression
-    ? [...leftParts, ...Array.from({ length: missing }, () => "0"), ...rightParts]
-    : parts;
-
-  if (hextets.length !== 8) return null;
-
-  return hextets.flatMap((part) => {
-    const value = Number.parseInt(part, 16);
-    return [(value >> 8) & 0xff, value & 0xff];
-  });
-}
-
-export function isPrivateOrLoopbackFleetHostname(hostname: string): boolean {
-  const ipv4Bytes = parseIpv4Bytes(hostname);
-  if (ipv4Bytes) {
-    return isPrivateOrLoopbackIpv4(ipv4Bytes);
-  }
-
-  const ipv6Bytes = parseIpv6Bytes(hostname);
-  if (!ipv6Bytes) return false;
-
-  const isAllZero = ipv6Bytes.every((part) => part === 0);
-  if (isAllZero) return true;
-
-  const isLoopback =
-    ipv6Bytes.slice(0, 15).every((part) => part === 0) && ipv6Bytes[15] === 1;
-  if (isLoopback) return true;
-
-  const isUniqueLocal = (ipv6Bytes[0] & 0xfe) === 0xfc;
-  if (isUniqueLocal) return true;
-
-  const isLinkLocal = ipv6Bytes[0] === 0xfe && (ipv6Bytes[1] & 0xc0) === 0x80;
-  if (isLinkLocal) return true;
-
-  const isIpv4Mapped =
-    ipv6Bytes.slice(0, 10).every((part) => part === 0) &&
-    ipv6Bytes[10] === 0xff &&
-    ipv6Bytes[11] === 0xff;
-  const isIpv4Compatible = ipv6Bytes.slice(0, 12).every((part) => part === 0);
-  if (isIpv4Mapped || isIpv4Compatible) {
-    return isPrivateOrLoopbackIpv4(ipv6Bytes.slice(12));
-  }
-
-  return false;
-}
-
 function normalizeFleetUrlInput(url: string): string {
   return url.trim();
-}
-
-export function validateFleetUrl(url: string): { valid: true; tlsWarning?: string } | { valid: false; reason: string } {
-  const normalizedUrl = normalizeFleetUrlInput(url);
-  if (!normalizedUrl) {
-    return { valid: false, reason: "URL must not be empty" };
-  }
-
-  let parsed: URL;
-  try {
-    parsed = new URL(normalizedUrl);
-  } catch {
-    return { valid: false, reason: "Invalid URL format" };
-  }
-
-  // Only allow http and https schemes
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    return { valid: false, reason: `Unsupported URL scheme "${parsed.protocol}" — only http: and https: are allowed` };
-  }
-
-  if (parsed.username || parsed.password) {
-    return { valid: false, reason: "URLs must not include embedded credentials" };
-  }
-
-  const hostname = parsed.hostname.toLowerCase();
-
-  // In production, reject private/loopback addresses (SSRF prevention)
-  if (!import.meta.env.DEV) {
-    if (hostname === "localhost") {
-      return { valid: false, reason: "localhost URLs are not allowed in production" };
-    }
-    if (isPrivateOrLoopbackFleetHostname(hostname)) {
-      return { valid: false, reason: "Private/loopback IP addresses are not allowed in production" };
-    }
-  }
-
-  // TLS warning (Finding M4): warn about http in non-localhost contexts
-  if (parsed.protocol === "http:" && hostname !== "localhost" && hostname !== "127.0.0.1") {
-    return { valid: true, tlsWarning: "Connection is using unencrypted HTTP. Use HTTPS in production to protect credentials in transit." };
-  }
-
-  return { valid: true };
 }
 
 function normalizedValidatedFleetUrl(url: string, fieldName: string): string {
@@ -216,23 +81,6 @@ function proxyUrl(absoluteUrl: string, kind: "hushd" | "control"): string {
     console.warn("[fleet-client] Invalid URL format for proxy rewrite");
     return normalizedUrl;
   }
-}
-
-const isTauri =
-  typeof window !== "undefined" && "__TAURI_INTERNALS__" in window && !DEV;
-
-const tauriFetchPromise: Promise<typeof globalThis.fetch> | null = isTauri
-  ? import("@tauri-apps/plugin-http")
-      .then((mod) => mod.fetch as typeof globalThis.fetch)
-      .catch(() => globalThis.fetch.bind(globalThis))
-  : null;
-
-async function httpFetch(
-  input: RequestInfo | URL,
-  init?: RequestInit,
-): Promise<Response> {
-  const fn = tauriFetchPromise ? await tauriFetchPromise : globalThis.fetch;
-  return fn(input, init);
 }
 
 import { secureStore } from "./secure-store";
@@ -644,6 +492,34 @@ function readBoolean(value: unknown): boolean | undefined {
   return typeof value === "boolean" ? value : undefined;
 }
 
+export interface SwarmFindingPublishResponse {
+  accepted: boolean;
+  idempotent: boolean;
+  feedId: string;
+  issuerId: string;
+  feedSeq: number;
+  findingId: string;
+  headAnnouncement: HeadAnnouncement;
+}
+
+function isSwarmFindingPublishResponse(value: unknown): value is SwarmFindingPublishResponse {
+  if (!isRecord(value)) {
+    return false;
+  }
+  const feedSeq = readNumber(value.feedSeq);
+  return (
+    readBoolean(value.accepted) !== undefined &&
+    readBoolean(value.idempotent) !== undefined &&
+    typeof value.feedId === "string" &&
+    typeof value.issuerId === "string" &&
+    typeof value.findingId === "string" &&
+    feedSeq !== undefined &&
+    Number.isSafeInteger(feedSeq) &&
+    feedSeq >= 0 &&
+    isHeadAnnouncement(value.headAnnouncement)
+  );
+}
+
 function secondsSince(isoDate?: string | null): number | undefined {
   if (!isoDate) return undefined;
   const ts = new Date(isoDate).getTime();
@@ -867,6 +743,54 @@ export async function fetchRemotePolicy(
     version: res.version,
     policyHash: res.policy_hash,
   };
+}
+
+export async function fetchSwarmHubConfig(conn: FleetConnection): Promise<HubConfig> {
+  const url = stripTrailingSlash(conn.hushdUrl);
+  const res = await jsonFetch<unknown>(proxyUrl(`${url}/api/v1/swarm/hub/config`, "hushd"), {
+    headers: hushdHeaders(conn.apiKey),
+  });
+  if (!isHubConfig(res)) {
+    throw new Error("[fleet-client] fetchSwarmHubConfig: unexpected response shape");
+  }
+  return res;
+}
+
+export async function publishSwarmFinding(
+  conn: FleetConnection,
+  envelope: FindingEnvelope,
+): Promise<SwarmFindingPublishResponse> {
+  const url = stripTrailingSlash(conn.hushdUrl);
+  const res = await jsonFetch<unknown>(
+    proxyUrl(`${url}/api/v1/swarm/feeds/${encodeURIComponent(envelope.feedId)}/findings`, "hushd"),
+    {
+      method: "POST",
+      headers: hushdHeaders(conn.apiKey),
+      body: JSON.stringify(envelope),
+    },
+  );
+  if (!isSwarmFindingPublishResponse(res)) {
+    throw new Error("[fleet-client] publishSwarmFinding: unexpected response shape");
+  }
+  if (
+    res.feedId !== envelope.feedId ||
+    res.issuerId !== envelope.issuerId ||
+    res.feedSeq !== envelope.feedSeq ||
+    res.findingId !== envelope.findingId
+  ) {
+    throw new Error("[fleet-client] publishSwarmFinding: response mismatch");
+  }
+  if (!res.accepted) {
+    throw new Error("[fleet-client] publishSwarmFinding: publish rejected");
+  }
+  if (
+    res.headAnnouncement.feedId !== envelope.feedId ||
+    res.headAnnouncement.issuerId !== envelope.issuerId ||
+    res.headAnnouncement.headSeq !== envelope.feedSeq
+  ) {
+    throw new Error("[fleet-client] publishSwarmFinding: head mismatch");
+  }
+  return res;
 }
 
 export async function deployPolicy(

@@ -25,9 +25,14 @@ import type {
   Intel,
   Sentinel,
 } from "./sentinel-types";
-import { canonicalizeJson } from "./intel-forge";
-import { signData } from "./operator-crypto";
+import { canonicalizeJson, computeContentHash } from "./intel-forge";
 import type { OperatorIdentity } from "./operator-types";
+import {
+  ED25519_PUBLIC_KEY_HEX,
+  ED25519_SIGNATURE_HEX,
+  signDetachedPayload,
+  verifyDetachedPayload,
+} from "./signature-adapter";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -123,7 +128,7 @@ export function operatorIdentityToBayChatIdentity(
  * Mirrors @backbay/speakeasy BaseMessage structure.
  */
 export interface ClawdstrikeBaseMessage {
-  /** SHA-256 of canonical pipe-delimited fields. */
+  /** SHA-256 of the canonical JSON serialization of the unsigned payload. */
   id: string;
   /** Message type discriminator. */
   type: ClawdstrikeMessageType;
@@ -148,10 +153,12 @@ export interface IntelShareMessage extends ClawdstrikeBaseMessage {
   title: string;
   /** Narrative summary (never raw evidence). */
   summary: string;
-  /** SHA-256 of the full intel canonical JSON. */
+  /** SHA-256 of the full signable intel canonical JSON. */
   contentHash: string;
-  /** Ed25519 signature over contentHash by the intel author. */
+  /** Ed25519 signature over the signable intel hash by the intel author. */
   intelSignature: string;
+  /** Public key needed to verify the intel signature path. */
+  intelSignerPublicKey: string;
   /** Confidence score 0.0-1.0. */
   confidence: number;
   /** MITRE ATT&CK technique IDs if applicable. */
@@ -337,15 +344,6 @@ function toHex(bytes: Uint8Array): string {
     .join("");
 }
 
-/** Convert hex string to bytes. */
-function hexToBytes(hex: string): Uint8Array {
-  const bytes = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < hex.length; i += 2) {
-    bytes[i / 2] = parseInt(hex.slice(i, i + 2), 16);
-  }
-  return bytes;
-}
-
 /**
  * Compute SHA-256 hash of UTF-8 string, returning hex.
  * Uses Web Crypto API (available in browser + Tauri + Node 18+).
@@ -360,134 +358,23 @@ async function sha256Hex(input: string): Promise<string> {
 /**
  * Compute message hash for signing.
  *
- * Follows @backbay/speakeasy's computeMessageHash pattern: pipe-delimited
- * canonical fields, SHA-256 hashed. Each message type includes all
- * semantically significant fields (everything except `id` and `signature`).
+ * Hashes the full unsigned payload using canonical JSON so every mutable
+ * message field is bound into the signature. Only `id` and `signature` stay
+ * out of band.
  */
 export async function computeClawdstrikeMessageHash(
   message: Omit<ClawdstrikeBaseMessage, "signature" | "id"> & Record<string, unknown>,
 ): Promise<string> {
-  const parts: string[] = [
-    message.type as string,
-    message.sender as string,
-    (message.timestamp as number).toString(),
-    message.nonce as string,
-  ];
-
-  switch (message.type) {
-    case "intel_share": {
-      const msg = message as Omit<IntelShareMessage, "signature" | "id">;
-      parts.push(
-        msg.intelId,
-        msg.intelType,
-        msg.title,
-        msg.contentHash,
-        msg.intelSignature,
-        msg.confidence.toString(),
-        msg.shareability,
-      );
-      break;
-    }
-    case "intel_ack": {
-      const msg = message as Omit<IntelAckMessage, "signature" | "id">;
-      parts.push(msg.intelId, msg.action);
-      if (msg.reason) parts.push(msg.reason);
-      break;
-    }
-    case "finding_update": {
-      const msg = message as Omit<FindingUpdateMessage, "signature" | "id">;
-      parts.push(msg.findingId, msg.status);
-      if (msg.severity) parts.push(msg.severity);
-      if (msg.confidence !== undefined) parts.push(msg.confidence.toString());
-      if (msg.annotation) parts.push(msg.annotation);
-      break;
-    }
-    case "signal_alert": {
-      const msg = message as Omit<SignalAlertMessage, "signature" | "id">;
-      parts.push(
-        msg.signalId,
-        msg.signalType,
-        msg.severity,
-        msg.confidence.toString(),
-        msg.summary,
-      );
-      break;
-    }
-    case "sentinel_status": {
-      const msg = message as Omit<SentinelStatusMessage, "signature" | "id">;
-      parts.push(
-        msg.sentinelId,
-        msg.mode,
-        msg.status,
-        msg.activeGoals.toString(),
-        msg.recentSignalCount.toString(),
-        msg.recentFindingCount.toString(),
-      );
-      break;
-    }
-    case "sentinel_task": {
-      const msg = message as Omit<SentinelTaskMessage, "signature" | "id">;
-      parts.push(
-        msg.targetSentinelId,
-        msg.taskType,
-        msg.description,
-        msg.priority,
-      );
-      if (msg.attachedTo) parts.push(msg.attachedTo);
-      break;
-    }
-    case "reputation_vote": {
-      const msg = message as Omit<ReputationVoteMessage, "signature" | "id">;
-      parts.push(
-        msg.targetFingerprint,
-        msg.vote,
-        msg.category,
-        msg.reason,
-      );
-      if (msg.referenceId) parts.push(msg.referenceId);
-      break;
-    }
-    case "room_metadata": {
-      const msg = message as Omit<RoomMetadataMessage, "signature" | "id">;
-      parts.push(msg.speakeasyId);
-      if (msg.purpose) parts.push(msg.purpose);
-      if (msg.classification) parts.push(msg.classification);
-      if (msg.attachedTo !== undefined) parts.push(msg.attachedTo ?? "null");
-      break;
-    }
-    case "detection_sync": {
-      const msg = message as Omit<DetectionSyncMessage, "signature" | "id">;
-      parts.push(
-        msg.ruleId,
-        msg.action,
-        msg.format,
-        msg.contentHash,
-        msg.ruleVersion.toString(),
-        msg.authorFingerprint,
-        msg.confidence.toString(),
-      );
-      break;
-    }
-  }
-
-  const canonical = parts.join("|");
-  return sha256Hex(canonical);
+  return sha256Hex(canonicalizeJson(message));
 }
 
 /**
  * Sign a Clawdstrike message using a sentinel's secret key.
  *
- * This is a placeholder signing function that mirrors the pattern used in
- * sentinel-manager.ts. In production, this delegates to @backbay/speakeasy's
- * Ed25519 signing via @noble/ed25519. Since we cannot import @noble/ed25519
- * directly in the workbench (different repo), we use the same Web Crypto
- * approach: the hash is the signature input, and the actual Ed25519 sign
- * call is injected via the `secretKeyHex` parameter.
- *
  * Steps:
  *   1. Generate nonce (16 random bytes, hex)
- *   2. Compute SHA-256 hash of canonical pipe-delimited fields
- *   3. Sign hash with Ed25519 (via injected signer or placeholder)
+ *   2. Compute SHA-256 hash of canonical JSON over the unsigned payload
+ *   3. Sign the hash bytes with Ed25519 via the workbench signature adapter
  *   4. Set id = hash
  */
 export async function signClawdstrikeMessage<T>(
@@ -509,9 +396,8 @@ export async function signClawdstrikeMessage<T>(
     message as Omit<ClawdstrikeBaseMessage, "signature" | "id"> & Record<string, unknown>,
   );
 
-  // Sign the message hash with real Ed25519 via operator-crypto.
   const hashBytes = new TextEncoder().encode(hash);
-  const signature = await signData(hashBytes, secretKeyHex);
+  const signature = await signDetachedPayload(hashBytes, secretKeyHex);
 
   return {
     ...message,
@@ -540,8 +426,9 @@ export async function createIntelShareMessage(
       intelType: intel.type,
       title: intel.title,
       summary: intel.description,
-      contentHash: await sha256Hex(canonicalizeJson(intel.content)),
+      contentHash: await computeContentHash(intel),
       intelSignature: intel.signature,
+      intelSignerPublicKey: intel.signerPublicKey,
       confidence: intel.confidence,
       mitreTechniques: intel.mitre.map((m) => m.techniqueId),
       tags: intel.tags,
@@ -823,13 +710,9 @@ function trackNonce(nonce: string): boolean {
  *
  * Checks:
  * 1. Timestamp freshness (within 5-minute tolerance)
- * 2. Nonce uniqueness (replay prevention)
- * 3. Message hash integrity (id matches recomputed hash)
- * 4. Signature format validity (128 hex chars)
- *
- * Note: Actual Ed25519 signature verification requires @noble/ed25519
- * which is injected at the provider level. This function validates
- * structure and freshness; the provider adds cryptographic verification.
+ * 2. Message hash integrity (id matches recomputed hash)
+ * 3. Detached Ed25519 signature validity against the sender public key
+ * 4. Nonce uniqueness (replay prevention)
  */
 export async function verifyClawdstrikeMessage(
   message: ClawdstrikeMessage,
@@ -840,9 +723,12 @@ export async function verifyClawdstrikeMessage(
     return { valid: false, reason: "timestamp_stale" };
   }
 
-  // 2. Check nonce uniqueness
-  if (!trackNonce(message.nonce)) {
-    return { valid: false, reason: "nonce_reused" };
+  // 2. Check detached signature/public key format before verification
+  if (!ED25519_SIGNATURE_HEX.test(message.signature)) {
+    return { valid: false, reason: "invalid_signature_format" };
+  }
+  if (!ED25519_PUBLIC_KEY_HEX.test(message.sender)) {
+    return { valid: false, reason: "invalid_sender_format" };
   }
 
   // 3. Recompute hash and verify id
@@ -854,14 +740,19 @@ export async function verifyClawdstrikeMessage(
     return { valid: false, reason: "id_mismatch" };
   }
 
-  // 4. Check signature format (128 hex chars = 64-byte Ed25519 signature)
-  if (typeof signature !== "string" || !/^[0-9a-f]{128}$/.test(signature)) {
-    return { valid: false, reason: "invalid_signature_format" };
+  // 4. Verify the detached signature over the hash bytes.
+  const signatureValid = await verifyDetachedPayload(
+    new TextEncoder().encode(expectedHash),
+    signature,
+    message.sender,
+  );
+  if (!signatureValid) {
+    return { valid: false, reason: "invalid_signature" };
   }
 
-  // 5. Check sender format (64 hex chars = 32-byte Ed25519 public key)
-  if (typeof message.sender !== "string" || !/^[0-9a-f]{64}$/.test(message.sender)) {
-    return { valid: false, reason: "invalid_sender_format" };
+  // 5. Check nonce uniqueness only after the signature succeeds.
+  if (!trackNonce(message.nonce)) {
+    return { valid: false, reason: "nonce_reused" };
   }
 
   return { valid: true };
