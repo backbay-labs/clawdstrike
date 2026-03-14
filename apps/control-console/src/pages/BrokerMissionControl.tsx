@@ -213,6 +213,7 @@ export function BrokerMissionControl(_props: { windowId?: string }) {
       } finally {
         if (!cancelled) {
           setLoading(false);
+          loadingRef.current = false;
         }
       }
     };
