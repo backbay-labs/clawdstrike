@@ -696,7 +696,6 @@ export function DelegationPage() {
                 selectedId={selectedPrincipalId}
                 isOpen={principalDropdownOpen}
                 onToggle={() => setPrincipalDropdownOpen((p) => !p)}
-                onClose={() => setPrincipalDropdownOpen(false)}
                 onSelect={handlePrincipalChange}
                 disabled={isLoadingPrincipal}
               />
@@ -1103,7 +1102,6 @@ function PrincipalSelector({
   selectedId,
   isOpen,
   onToggle,
-  onClose,
   onSelect,
   disabled = false,
 }: {
@@ -1111,7 +1109,6 @@ function PrincipalSelector({
   selectedId: string | null;
   isOpen: boolean;
   onToggle: () => void;
-  onClose: () => void;
   onSelect: (id: string) => void;
   disabled?: boolean;
 }) {
