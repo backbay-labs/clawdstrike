@@ -3,6 +3,7 @@ import { fetchFrozenBrokerProviders, type BrokerFrozenProviderStatus } from "../
 import { NoiseGrain, Stamp } from "../components/ui";
 import { useSharedSSE } from "../context/SSEContext";
 import type { SSEEvent } from "../hooks/useSSE";
+import { formatDateTime } from "./broker-utils";
 
 type BrokerStreamEvent = SSEEvent & Record<string, unknown>;
 
@@ -14,12 +15,6 @@ function brokerVariant(
   if (eventType.includes("frozen")) return "warn";
   if (outcome === "upstream_error" || outcome === "incomplete") return "warn";
   return "allowed";
-}
-
-function formatDate(value?: string): string {
-  if (!value) return "-";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
 export function BrokerTheater(_props: { windowId?: string }) {
@@ -208,7 +203,7 @@ export function BrokerTheater(_props: { windowId?: string }) {
                       </div>
                     )}
                     <div className="mt-2 font-mono text-xs" style={{ color: "rgba(154,167,181,0.5)" }}>
-                      {formatDate(event.timestamp)}
+                      {formatDateTime(event.timestamp)}
                     </div>
                   </div>
                 );
@@ -248,7 +243,7 @@ export function BrokerTheater(_props: { windowId?: string }) {
                     {provider.reason}
                   </div>
                   <div className="mt-2 font-mono text-xs" style={{ color: "rgba(154,167,181,0.6)" }}>
-                    frozen {formatDate(provider.frozen_at)}
+                    frozen {formatDateTime(provider.frozen_at)}
                   </div>
                 </div>
               ))}

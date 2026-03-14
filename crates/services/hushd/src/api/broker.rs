@@ -720,6 +720,19 @@ fn validate_preview_matches_request(
         ));
     }
 
+    // When the preview required approval, enforce that body_sha256 is
+    // actually present so callers cannot bypass the approval gate by
+    // omitting the digest on both the preview and the capability request.
+    if record.preview.approval_required
+        && record.preview.body_sha256.is_none()
+        && request.body_sha256.is_none()
+    {
+        return Err(V1Error::forbidden(
+            "BROKER_PREVIEW_BODY_HASH_REQUIRED",
+            "approval-gated previews require body_sha256 to bind the approved intent to a specific request body",
+        ));
+    }
+
     Ok(())
 }
 

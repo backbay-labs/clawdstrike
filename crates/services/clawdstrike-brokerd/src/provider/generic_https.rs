@@ -193,15 +193,13 @@ async fn validate_generic_target(state: &AppState, request_url: &str) -> Result<
 
 fn is_restricted_ip(ip: IpAddr) -> bool {
     match ip {
-        IpAddr::V4(ip) => {
-            ip.is_private()
-                || ip.is_loopback()
-                || ip.is_link_local()
-                || ip.is_multicast()
-                || ip.is_unspecified()
-                || ip.is_documentation()
-        }
+        IpAddr::V4(ip) => is_restricted_ipv4(ip),
         IpAddr::V6(ip) => {
+            // Unwrap IPv4-mapped IPv6 addresses (e.g. ::ffff:127.0.0.1) and
+            // check against IPv4 restricted ranges to prevent SSRF bypass.
+            if let Some(mapped) = ip.to_ipv4_mapped() {
+                return is_restricted_ipv4(mapped);
+            }
             ip.is_loopback()
                 || ip.is_multicast()
                 || ip.is_unspecified()
@@ -209,4 +207,13 @@ fn is_restricted_ip(ip: IpAddr) -> bool {
                 || ip.is_unicast_link_local()
         }
     }
+}
+
+fn is_restricted_ipv4(ip: std::net::Ipv4Addr) -> bool {
+    ip.is_private()
+        || ip.is_loopback()
+        || ip.is_link_local()
+        || ip.is_multicast()
+        || ip.is_unspecified()
+        || ip.is_documentation()
 }
