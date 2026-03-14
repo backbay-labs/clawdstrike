@@ -207,8 +207,10 @@ impl ControlDb {
         feed_id: String,
         issuer_id: String,
     ) -> Result<Option<SwarmHeadRecord>> {
-        self.spawn_blocking(move |conn| Self::load_consistent_swarm_head(conn, &feed_id, &issuer_id))
-            .await
+        self.spawn_blocking(move |conn| {
+            Self::load_consistent_swarm_head(conn, &feed_id, &issuer_id)
+        })
+        .await
     }
 
     pub async fn get_swarm_revocation_head(
@@ -373,8 +375,7 @@ impl ControlDb {
                         note: row.get(3)?,
                         request_json: row.get(4)?,
                         status: row.get(5)?,
-                        requested_at: u64_from_i64(row.get::<_, i64>(6)?)
-                            .unwrap_or(0),
+                        requested_at: u64_from_i64(row.get::<_, i64>(6)?).unwrap_or(0),
                     })
                 },
             )
@@ -487,8 +488,8 @@ impl ControlDb {
             .optional()?;
 
         if let Some(existing_json) = existing_json {
-            let head = Self::load_consistent_swarm_head(&tx, &feed_id, &issuer_id)?
-                .ok_or_else(|| {
+            let head =
+                Self::load_consistent_swarm_head(&tx, &feed_id, &issuer_id)?.ok_or_else(|| {
                     ControlDbError::Invariant(
                         "swarm head missing for existing feed sequence".to_string(),
                     )
@@ -692,7 +693,9 @@ impl ControlDb {
         let target_digest = target.digest.unwrap_or_default();
         let replacement_schema = replacement.as_ref().map(|value| value.schema.as_str());
         let replacement_id = replacement.as_ref().map(|value| value.id.as_str());
-        let replacement_digest = replacement.as_ref().and_then(|value| value.digest.as_deref());
+        let replacement_digest = replacement
+            .as_ref()
+            .and_then(|value| value.digest.as_deref());
 
         tx.execute(
             r#"
@@ -1023,11 +1026,13 @@ impl ControlDb {
 }
 
 fn i64_from_u64(value: u64) -> Result<i64> {
-    i64::try_from(value).map_err(|_| ControlDbError::Invariant("u64 value exceeded i64".to_string()))
+    i64::try_from(value)
+        .map_err(|_| ControlDbError::Invariant("u64 value exceeded i64".to_string()))
 }
 
 fn u64_from_i64(value: i64) -> Result<u64> {
-    u64::try_from(value).map_err(|_| ControlDbError::Invariant("negative database integer".to_string()))
+    u64::try_from(value)
+        .map_err(|_| ControlDbError::Invariant("negative database integer".to_string()))
 }
 
 fn now_millis_u64() -> Result<u64> {

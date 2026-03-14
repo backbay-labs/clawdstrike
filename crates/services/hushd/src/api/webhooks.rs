@@ -69,11 +69,10 @@ pub async fn okta_webhook(
         ));
     };
 
-    let expected = expand_env_refs(&webhooks.verification_key)
-        .map_err(|e| {
-            tracing::error!(error = %e, "failed to expand Okta webhook verification key");
-            V1Error::internal("CONFIG_ERROR", "internal configuration error")
-        })?;
+    let expected = expand_env_refs(&webhooks.verification_key).map_err(|e| {
+        tracing::error!(error = %e, "failed to expand Okta webhook verification key");
+        V1Error::internal("CONFIG_ERROR", "internal configuration error")
+    })?;
     let Some(token) = extract_bearer_token(&headers) else {
         return Err(V1Error::unauthorized(
             "MISSING_AUTHORIZATION",
@@ -188,11 +187,10 @@ pub async fn auth0_webhook(
         ));
     };
 
-    let expected = expand_env_refs(&log_stream.authorization)
-        .map_err(|e| {
-            tracing::error!(error = %e, "failed to expand Auth0 log stream authorization");
-            V1Error::internal("CONFIG_ERROR", "internal configuration error")
-        })?;
+    let expected = expand_env_refs(&log_stream.authorization).map_err(|e| {
+        tracing::error!(error = %e, "failed to expand Auth0 log stream authorization");
+        V1Error::internal("CONFIG_ERROR", "internal configuration error")
+    })?;
     let Some(token) = extract_bearer_token(&headers) else {
         return Err(V1Error::unauthorized(
             "MISSING_AUTHORIZATION",

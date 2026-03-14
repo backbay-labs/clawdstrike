@@ -103,10 +103,7 @@ impl BrokerdManager {
     }
 
     async fn is_healthy(&self) -> bool {
-        match self.http_client.get(self.health_url()).send().await {
-            Ok(response) => response.status().is_success(),
-            Err(_) => false,
-        }
+        is_healthy_with_client(&self.http_client, &self.config).await
     }
 
     async fn spawn_with_fresh_trust(&self) -> Result<()> {

@@ -345,7 +345,10 @@ pub fn create_router(state: AppState) -> Router {
         )
         .route("/api/v1/events", get(events::stream_events))
         .route("/api/v1/siem/exporters", get(siem::exporters))
-        .route("/api/v1/swarm/hub/config", get(swarm_hub::get_swarm_hub_config))
+        .route(
+            "/api/v1/swarm/hub/config",
+            get(swarm_hub::get_swarm_hub_config),
+        )
         .route(
             "/api/v1/swarm/feeds/{feedId}/head",
             get(swarm_hub::get_swarm_feed_head),
