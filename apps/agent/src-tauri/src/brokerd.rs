@@ -140,7 +140,7 @@ impl BrokerdManager {
                 tokio::time::sleep(MONITOR_POLL_DELAY).await;
 
                 let mut needs_restart = false;
-                {
+                let child_alive = {
                     let mut guard = child.write().await;
                     if let Some(existing) = guard.as_mut() {
                         match existing.try_wait() {
@@ -148,24 +148,34 @@ impl BrokerdManager {
                                 tracing::warn!(status = %status, "brokerd exited; scheduling restart");
                                 *guard = None;
                                 needs_restart = true;
+                                false
                             }
-                            Ok(None) => {
-                                // Child is still running — verify it is actually healthy.
-                                if !is_healthy_with_client(&http_client, &config).await {
-                                    tracing::warn!("brokerd alive but unhealthy; killing and scheduling restart");
-                                    let _ = existing.kill().await;
-                                    let _ = existing.wait().await;
-                                    *guard = None;
-                                    needs_restart = true;
-                                }
-                            }
+                            Ok(None) => true,
                             Err(error) => {
                                 tracing::warn!(error = %error, "failed to poll brokerd process");
                                 *guard = None;
                                 needs_restart = true;
+                                false
                             }
                         }
-                    } else if !is_healthy_with_client(&http_client, &config).await {
+                    } else {
+                        false
+                    }
+                };
+
+                // Health check runs outside the write lock to avoid
+                // holding it during the HTTP request (up to 5s timeout).
+                if !needs_restart {
+                    if !is_healthy_with_client(&http_client, &config).await {
+                        if child_alive {
+                            tracing::warn!("brokerd alive but unhealthy; killing and scheduling restart");
+                            let mut guard = child.write().await;
+                            if let Some(existing) = guard.as_mut() {
+                                let _ = existing.kill().await;
+                                let _ = existing.wait().await;
+                            }
+                            *guard = None;
+                        }
                         needs_restart = true;
                     }
                 }

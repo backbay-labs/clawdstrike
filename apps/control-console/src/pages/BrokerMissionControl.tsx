@@ -321,7 +321,7 @@ export function BrokerMissionControl(_props: { windowId?: string }) {
   const handleApprovePreview = useCallback(
     async (previewId: string) => {
       await withAction(`approve:${previewId}`, async () => {
-        const updated = await approveBrokerPreview(previewId);
+        const updated = await approveBrokerPreview(previewId, "operator:mission-control");
         setPreviews((current) =>
           sortNewest(
             current.map((preview) => (preview.preview_id === previewId ? updated : preview)),
