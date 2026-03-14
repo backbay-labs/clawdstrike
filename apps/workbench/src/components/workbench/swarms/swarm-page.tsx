@@ -21,7 +21,6 @@ import {
   IconWorld,
   IconChevronRight,
   IconMessage,
-  IconEye,
   IconToggleLeft,
   IconToggleRight,
 } from "@tabler/icons-react";
@@ -113,13 +112,6 @@ export function SwarmPage() {
           <IconPlus size={14} stroke={1.5} />
           Create Your First Swarm
         </button>
-
-        {showCreate && (
-          <CreateSwarmModal
-            onClose={() => setShowCreate(false)}
-            onCreate={handleCreate}
-          />
-        )}
       </div>
     );
   }

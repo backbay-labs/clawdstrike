@@ -22,12 +22,6 @@ import {
   IconZoomIn,
   IconZoomOut,
   IconFocus2,
-  IconDiamond,
-  IconEye,
-  IconCrown,
-  IconKey,
-  IconStar,
-  IconMoon,
   IconUser,
   IconNetwork,
 } from "@tabler/icons-react";

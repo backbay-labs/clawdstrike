@@ -18,6 +18,8 @@ import { cn } from "@/lib/utils";
 import { ClaudeCodeHint } from "@/components/workbench/shared/claude-code-hint";
 import { useWorkbench, useMultiPolicy } from "@/lib/workbench/multi-policy-store";
 import { useFleetConnection } from "@/lib/workbench/use-fleet-connection";
+import { useSentinels } from "@/lib/workbench/sentinel-store";
+import { useFindings } from "@/lib/workbench/finding-store";
 import { GUARD_REGISTRY } from "@/lib/workbench/guard-registry";
 import type { GuardId } from "@/lib/workbench/types";
 
@@ -185,7 +187,7 @@ function NavCard({
 
 const SEVERITY_COLORS: Record<string, string> = {
   critical: "#c45c5c",
-  high: "#d47b4b",
+  high: "#d4784b",
   medium: "#d4a84b",
   low: "#6f7f9a",
 };
@@ -399,14 +401,35 @@ export function HomePage() {
 
   const savedCount = state.savedPolicies?.length ?? 0;
 
-  // ---- Sentinel & findings placeholders (wired to providers in Phase 1) ----
-  const sentinelStats = { total: 0, active: 0, paused: 0, retired: 0 };
-  const findingsStats = {
-    emerging: 0,
-    confirmed: 0,
-    total: 0,
-    severityCounts: { critical: 0, high: 0, medium: 0, low: 0 } as Record<string, number>,
-  };
+  // ---- Sentinel & findings stats from stores ----
+  const { sentinels } = useSentinels();
+  const { findings } = useFindings();
+
+  const sentinelStats = useMemo(() => {
+    let active = 0;
+    let paused = 0;
+    let retired = 0;
+    for (const s of sentinels) {
+      if (s.status === "active") active++;
+      else if (s.status === "paused") paused++;
+      else if (s.status === "retired") retired++;
+    }
+    return { total: sentinels.length, active, paused, retired };
+  }, [sentinels]);
+
+  const findingsStats = useMemo(() => {
+    let emerging = 0;
+    let confirmed = 0;
+    const severityCounts: Record<string, number> = { critical: 0, high: 0, medium: 0, low: 0 };
+    for (const f of findings) {
+      if (f.status === "emerging") emerging++;
+      else if (f.status === "confirmed") confirmed++;
+      if (f.severity in severityCounts) {
+        severityCounts[f.severity]++;
+      }
+    }
+    return { emerging, confirmed, total: findings.length, severityCounts };
+  }, [findings]);
 
   return (
     <div className="h-full w-full flex flex-col bg-[#05060a] overflow-auto page-transition-enter">
