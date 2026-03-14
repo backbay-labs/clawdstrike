@@ -52,7 +52,7 @@ require_cmd() {
 }
 
 log() {
-  printf '[dogfood] %s\n' "$1"
+  printf '[dogfood] %s\n' "$1" >&2
 }
 
 pw() {
@@ -771,7 +771,7 @@ share_intel_to_swarm() {
   log "Sharing promoted intel to the swarm"
   set_hash "#/intel/$intel_id"
   wait_for_text "Shareability"
-  click_text "Swarm"
+  click_text_exact "Swarm"
   wait_for_button_enabled "Share to Swarm"
   capture_page "intel-share-ready"
   click_text "Share to Swarm"
@@ -896,17 +896,17 @@ log "Collecting artifacts and summary"
 capture_playwright_report "$console_file" console error
 capture_playwright_report "$network_file" network
 
-claude_launch_state="$(
+if claude_launch_state="$(
   pw_eval_result "$(cat <<'EOF'
 () => {
   const text = document.body.innerText.toLowerCase();
   return text.includes("blocked") ? "blocked" : text;
 }
 EOF
-)"
-)"
+)" 2>/dev/null
+)"; then true; else claude_launch_state="unknown"; fi
 
-openclaw_finding_links="$(
+if openclaw_finding_links="$(
   pw_eval_result "$(cat <<'EOF'
 () => {
   return String(
@@ -914,41 +914,72 @@ openclaw_finding_links="$(
   );
 }
 EOF
-)"
-)"
+)" 2>/dev/null
+)"; then true; else openclaw_finding_links="0"; fi
 
-python3 - <<PY
+RUN_ID="$run_id" \
+SESSION="$session" \
+BASE_URL="$base_url" \
+HUSHD_URL="$hushd_url" \
+CLAUDE_NAME="$claude_name" \
+CLAUDE_MISSION_TITLE="$claude_mission_title" \
+CLAUDE_LAUNCH_STATE="$claude_launch_state" \
+OPENCLAW_NAME="$openclaw_name" \
+OPENCLAW_MISSION_TITLE="$openclaw_mission_title" \
+OPENCLAW_FINDING_LINKS="$openclaw_finding_links" \
+PROMOTED_INTEL_ID="$promoted_intel_id" \
+ENDPOINT_ID="$endpoint_id" \
+RUNTIME_ID="$runtime_id" \
+SWARM_NAME="$swarm_name" \
+STATUS_BEFORE_FILE="$status_before_file" \
+STATUS_AFTER_FILE="$status_after_file" \
+SWARM_SHARE_STATE_FILE="$swarm_share_state_file" \
+SWARM_HEAD_FILE="$swarm_head_file" \
+SWARM_REPLAY_FILE="$swarm_replay_file" \
+OUTPUT_DIR="$output_dir" \
+SUMMARY_FILE="$summary_file" \
+python3 - <<'PY'
 import json
+import os
 from pathlib import Path
 
-status_before = json.loads(Path("$status_before_file").read_text())
-status_after = json.loads(Path("$status_after_file").read_text())
-swarm_share_state = json.loads(Path("$swarm_share_state_file").read_text())
-swarm_head = json.loads(Path("$swarm_head_file").read_text())
-swarm_replay = json.loads(Path("$swarm_replay_file").read_text())
+status_before = json.loads(Path(os.environ.get("STATUS_BEFORE_FILE", "")).read_text()) if os.environ.get("STATUS_BEFORE_FILE") else {}
+status_after = json.loads(Path(os.environ.get("STATUS_AFTER_FILE", "")).read_text()) if os.environ.get("STATUS_AFTER_FILE") else {}
+swarm_share_state = json.loads(Path(os.environ.get("SWARM_SHARE_STATE_FILE", "")).read_text()) if os.environ.get("SWARM_SHARE_STATE_FILE") else {}
+swarm_head = json.loads(Path(os.environ.get("SWARM_HEAD_FILE", "")).read_text()) if os.environ.get("SWARM_HEAD_FILE") else {}
+swarm_replay = json.loads(Path(os.environ.get("SWARM_REPLAY_FILE", "")).read_text()) if os.environ.get("SWARM_REPLAY_FILE") else {}
+
+claude_launch_state = os.environ.get("CLAUDE_LAUNCH_STATE", "unknown")
+if len(claude_launch_state) > 200:
+    claude_launch_state = claude_launch_state[:200] + "..."
+
+try:
+    finding_links = int(os.environ.get("OPENCLAW_FINDING_LINKS", "0"))
+except ValueError:
+    finding_links = 0
 
 summary = {
     "status": "ok",
-    "run_id": "$run_id",
-    "session": "$session",
-    "base_url": "$base_url",
-    "hushd_url": "$hushd_url",
+    "run_id": os.environ.get("RUN_ID", ""),
+    "session": os.environ.get("SESSION", ""),
+    "base_url": os.environ.get("BASE_URL", ""),
+    "hushd_url": os.environ.get("HUSHD_URL", ""),
     "claude": {
-        "sentinel_name": "$claude_name",
-        "mission_title": "$claude_mission_title",
-        "launch_state": "$claude_launch_state",
+        "sentinel_name": os.environ.get("CLAUDE_NAME", ""),
+        "mission_title": os.environ.get("CLAUDE_MISSION_TITLE", ""),
+        "launch_state": claude_launch_state,
         "expected_runtime": "blocked_in_web_runtime",
     },
     "openclaw": {
-        "sentinel_name": "$openclaw_name",
-        "mission_title": "$openclaw_mission_title",
-        "finding_links": int("$openclaw_finding_links"),
-        "promoted_intel_id": "$promoted_intel_id",
-        "seeded_endpoint_id": "$endpoint_id",
-        "seeded_runtime_id": "$runtime_id",
+        "sentinel_name": os.environ.get("OPENCLAW_NAME", ""),
+        "mission_title": os.environ.get("OPENCLAW_MISSION_TITLE", ""),
+        "finding_links": finding_links,
+        "promoted_intel_id": os.environ.get("PROMOTED_INTEL_ID", ""),
+        "seeded_endpoint_id": os.environ.get("ENDPOINT_ID", ""),
+        "seeded_runtime_id": os.environ.get("RUNTIME_ID", ""),
     },
     "swarm": {
-        "name": "$swarm_name",
+        "name": os.environ.get("SWARM_NAME", ""),
         "shared_intel_count": swarm_share_state.get("sharedIntelCount", 0),
         "finding_envelope_count": swarm_share_state.get("findingEnvelopeCount", 0),
         "head_announcement_count": swarm_share_state.get("headAnnouncementCount", 0),
@@ -965,7 +996,7 @@ summary = {
         "online_after": sum(1 for item in status_after.get("endpoints", []) if item.get("online")),
         "runtimes_after": len(status_after.get("runtimes", [])),
     },
-    "output_dir": "$output_dir",
+    "output_dir": os.environ.get("OUTPUT_DIR", ""),
     "artifacts": {
         "settings_connected": "settings-connected.png",
         "swarm_created": "swarm-created.png",
@@ -989,6 +1020,8 @@ summary = {
     },
 }
 
-Path("$summary_file").write_text(json.dumps(summary, indent=2) + "\\n")
+summary_file = os.environ.get("SUMMARY_FILE", "")
+if summary_file:
+    Path(summary_file).write_text(json.dumps(summary, indent=2) + "\n")
 print(json.dumps(summary, indent=2))
 PY

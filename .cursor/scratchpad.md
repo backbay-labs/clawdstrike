@@ -150,9 +150,10 @@ GENIUS: References
 - ~~**In Progress:** Awaiting validation to begin Task #8 - Add trust list, moderation, revocation, and supersession flows~~
 - ~~**In Progress:** Task #8 - Add trust list, moderation, revocation, and supersession flows~~
 - ~~**In Progress:** Task #8 slice two - revocation and supersession propagation~~
-- **In Progress:** Task #9 - End-to-end dogfood and operator validation
+- ~~**In Progress:** Task #9 - End-to-end dogfood and operator validation~~
 - ~~**Blocked On:** None~~
 - ~~**Blocked On:** User validation to begin Task #8~~
+- **In Progress:** Task #10 - Production packaging and runbooks
 - **Blocked On:** None
 - **Done:** Initial repo/doc/code assessment - 2026-03-13
 - **Done:** Integrated `@backbay/witness` / `@backbay/notary` findings into federation plan - 2026-03-13
@@ -166,6 +167,7 @@ GENIUS: References
 - **Done:** Task #7 - Deliver blob retrieval and verification lane - 2026-03-13
 - **Done:** Task #8 slice one - durable trust-policy state and fail-closed finding enforcement - 2026-03-13
 - **Done:** Task #8 - Add trust list, moderation, revocation, and supersession flows - 2026-03-13
+- **Done:** Task #9 - End-to-end dogfood and operator validation - 2026-03-14
 
 # Current Status / Progress Tracking
 - 2026-03-13 11:00 - Reviewed sentinel swarm plans, workbench stores, mission flow, swarm coordinator, intel forge, and Speakeasy bridge.
@@ -247,6 +249,11 @@ GENIUS: References
 - 2026-03-14 04:09 - Current execution focus: keep Task #9 in progress and build or extend a browser dogfood slice for the missing federation tail: mission-produced finding/intel promotion, share into the hub, second-session replay/hydration, and blob verification or pin fallback through the real `Sentinel Swarm` UI path.
 - 2026-03-14 06:14 - Current execution focus: first close the client gap that blocks the live federation tail by wiring `Share to Swarm` to hushd publish fail-closed with regression coverage, then resume the browser dogfood expansion on top of the real publish path.
 - 2026-03-14 06:18 - Current execution focus: extend the live dogfood/browser slice to create a swarm in a clean session, promote a mission-produced finding into intel, drive the real hushd-backed `Share to Swarm` path, and capture publish-network evidence before tackling replay/hydration.
+- 2026-03-14 08:17 - Task #9 dogfood completed end-to-end. Three script bugs fixed: (1) `log()` wrote to stdout, contaminating command-substitution return values — fixed by redirecting to stderr; (2) `click_text "Swarm"` matched sidebar "Swarms" link — fixed by using `click_text_exact "Swarm"`; (3) `pw_eval_result` multiline output broke Python heredoc interpolation — fixed by passing all variables as env vars and using a quoted heredoc.
+- 2026-03-14 08:17 - Task #9 hushd requirement: the live dogfood requires a hushd instance built from this branch (with Task #6 swarm hub routes). The existing Lima-hosted hushd on port 9876 returns 404 for `/api/v1/swarm/hub/config`, causing the IntelDetailPage hub trust hydration to fail-close and disable the "Share to Swarm" button. A local hushd was started on port 9878 from `target/debug/clawdstriked` for the dogfood run.
+- 2026-03-14 08:17 - Task #9 passing run evidence: `output/playwright/workbench-mission-control-dogfood/20260314T121240Z/summary.json` with status `ok`, `shared_intel_count: 1`, `finding_envelope_count: 1`, `head_announcement_count: 1`, `head_seq: 1` == `remote_head_seq: 1`, `replay_envelope_count: 1`. Intel shared page screenshot shows `Verified` Ed25519 signature, valid receipt chain, and swarm provenance with share target.
+- 2026-03-14 08:17 - Task #9 verification: `npm --prefix apps/workbench run typecheck` passed, `npm exec vitest run src/components/workbench/intel/__tests__/intel-detail-page.test.tsx` passed (15/15).
+- 2026-03-14 08:17 - Current execution focus: Task #10 - Production packaging and runbooks. Known remaining gaps: remote `feedSeq` reconciliation against hushd head state (multi-session correctness), hushd must be built from this branch for swarm hub features, `claude_launch_state` capture doesn't navigate back to missions page so it returns page body text instead of "blocked".
 
 # Lessons
 - 2026-03-13 - The branch already has more federation substrate than the UI suggests; the main gap is protocol and verification hardening, not lack of initial scaffolding.
@@ -269,3 +276,7 @@ GENIUS: References
 - 2026-03-13 - Once swarm feed data can move between active and quarantined partitions, every async updater and duplicate/replay guard has to stay partition-aware or a later strict policy flip will silently resurrect moderated history.
 - 2026-03-14 - Browser dogfood scripts are part of the product contract too: if they clear local state, they must recreate any new mandatory bootstrap state such as operator identity before they drive later workflow surfaces.
 - 2026-03-14 - The workbench dev proxy needs explicit auth available at startup for live dogfood against hushd/control-api; otherwise the UI can look “connected” while fleet-backed readiness silently degrades to empty-state behavior.
+- 2026-03-14 - Shell functions whose stdout is captured by command substitution must never call `log()` or write diagnostic output to stdout; redirect all non-return-value output to stderr or the caller's variable will contain garbage.
+- 2026-03-14 - `click_text` with `includes()` matching will hit sidebar navigation links before content-area buttons if both share a substring; use `click_text_exact` when the target label is a strict subset of another element's text (e.g., “Swarm” vs “Swarms”).
+- 2026-03-14 - Heredoc string interpolation (`<<PY ... “$var” ... PY`) is unsafe for variables that may contain multiline text, quotes, or special characters; pass such values as environment variables with a quoted heredoc (`<<'PY'`) instead.
+- 2026-03-14 - Live dogfood scripts must test against a hushd instance built from the same branch; if the running hushd is from a different branch, newly added endpoints (like swarm hub config) return 404 and fail-closed trust hydration will silently disable federation features.
