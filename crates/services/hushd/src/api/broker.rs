@@ -492,6 +492,16 @@ fn build_intent_preview_record(
     host: &str,
     parsed: &Url,
 ) -> Result<BrokerPreviewRecord, V1Error> {
+    if let (Some(body), Some(claimed_hash)) = (&request.body, &request.body_sha256) {
+        let actual_hash = hush_core::sha256(body.as_bytes()).to_hex();
+        if actual_hash != *claimed_hash {
+            return Err(V1Error::bad_request(
+                "BROKER_PREVIEW_BODY_HASH_MISMATCH",
+                "body_sha256 does not match the SHA-256 digest of the supplied body",
+            ));
+        }
+    }
+
     let request_body =
         parse_request_body_json(request.body.as_deref(), "BROKER_PREVIEW_BODY_INVALID")?;
     let (operation, summary, risk_level, data_classes, resources) = match request.provider {
