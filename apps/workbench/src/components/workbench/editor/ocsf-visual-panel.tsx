@@ -315,7 +315,7 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
             onChange={(v) => {
               const numVal = Number(v);
               commitEvent((current) => {
-                let updated = deepSet(current, ["class_uid"], numVal || undefined);
+                let updated = deepSet(current, ["class_uid"], isNaN(numVal) ? undefined : numVal);
                 const cat = CATEGORY_FROM_CLASS[numVal];
                 if (cat) {
                   updated = deepSet(updated, ["category_uid"], cat.uid);
@@ -343,7 +343,7 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
               label="Activity"
               value={event.activity_id != null ? String(event.activity_id) : ""}
               options={ACTIVITY_OPTIONS}
-              onChange={(v) => updateField(["activity_id"], v ? Number(v) : undefined)}
+              onChange={(v) => updateField(["activity_id"], v !== "" ? Number(v) : undefined)}
               readOnly={readOnly}
               required
               placeholder="Choose an activity..."
@@ -457,7 +457,7 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
             label="Disposition"
             value={event.disposition_id != null ? String(event.disposition_id) : ""}
             options={DISPOSITION_OPTIONS}
-            onChange={(v) => updateField(["disposition_id"], v ? Number(v) : undefined)}
+            onChange={(v) => updateField(["disposition_id"], v !== "" ? Number(v) : undefined)}
             readOnly={readOnly}
             placeholder="Choose a disposition..."
             accentColor={ACCENT}

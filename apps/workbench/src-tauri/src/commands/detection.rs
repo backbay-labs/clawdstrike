@@ -350,12 +350,13 @@ pub fn validate_yara_rule(source: String) -> Result<YaraValidationResponse, Stri
         let trimmed = line.trim();
         let line_no = (idx + 1) as u32;
 
-        if let Some(caps) = trimmed
+        // Try stripping optional modifiers, then check for "rule " prefix
+        let after_modifiers = trimmed
             .strip_prefix("private ")
             .or_else(|| trimmed.strip_prefix("global "))
-            .or_else(|| Some(trimmed))
+            .unwrap_or(trimmed);
         {
-            if let Some(rule_decl) = caps.strip_prefix("rule ") {
+            if let Some(rule_decl) = after_modifiers.strip_prefix("rule ") {
                 if let Some((rule_name, _, saw_condition)) = current_rule.take() {
                     if !saw_condition {
                         diagnostics.push(DetectionDiagnostic {
