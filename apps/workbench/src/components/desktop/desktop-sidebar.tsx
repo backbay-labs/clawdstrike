@@ -445,7 +445,7 @@ export function DesktopSidebar() {
     <aside
       aria-label="Main navigation"
       className={cn(
-        "relative flex flex-col bg-[#0b0d13] border-r border-[#2d324060] shrink-0 h-full noise-overlay",
+        "group/sidebar relative flex flex-col bg-[#060810] border-r border-[#1a1d28]/50 shrink-0 h-full noise-overlay",
         "transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]",
         collapsed ? "w-[52px]" : "w-[200px]",
       )}
@@ -551,7 +551,7 @@ export function DesktopSidebar() {
                   </span>
                   {!collapsed && (
                     <>
-                      <span className="text-[11.5px] font-medium tracking-[0.01em] truncate">
+                      <span className="text-[10px] font-mono tracking-[0.03em] truncate">
                         {item.label}
                       </span>
                       {showBadge && (
@@ -608,7 +608,7 @@ export function DesktopSidebar() {
             style={settingsActive ? { filter: "drop-shadow(0 0 4px rgba(212,168,75,0.25))" } : undefined}
           />
           {!collapsed && (
-            <span className="text-[11.5px] font-medium tracking-[0.01em] truncate">
+            <span className="text-[10px] font-mono tracking-[0.03em] truncate">
               Settings
             </span>
           )}
@@ -652,27 +652,20 @@ export function DesktopSidebar() {
         </div>
       )}
 
-      <div className="shrink-0 border-t border-[#2d324060]/50 p-2">
-        <button
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          onClick={() =>
-            dispatch({ type: "SET_SIDEBAR_COLLAPSED", collapsed: !collapsed })
-          }
-          className={cn(
-            "flex items-center justify-center w-full rounded-lg py-1.5 text-[#6f7f9a]/60 hover:text-[#6f7f9a] hover:bg-[#131721]/20 transition-all duration-150",
-            collapsed ? "px-0" : "gap-1.5 px-2",
-          )}
-        >
-          {collapsed ? (
-            <IconChevronsRight size={13} stroke={1.4} />
-          ) : (
-            <>
-              <IconChevronsLeft size={13} stroke={1.4} />
-              <span className="text-[10px] font-medium tracking-[0.02em] uppercase">Collapse</span>
-            </>
-          )}
-        </button>
-      </div>
+      {/* Edge notch toggle — sits on the border between sidebar and content */}
+      <button
+        aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        onClick={() =>
+          dispatch({ type: "SET_SIDEBAR_COLLAPSED", collapsed: !collapsed })
+        }
+        className="absolute top-1/2 -translate-y-1/2 -right-3 z-40 flex items-center justify-center w-3 h-8 rounded-r bg-[#131721] border border-l-0 border-[#1a1d28]/60 text-[#6f7f9a]/40 hover:text-[#ece7dc]/60 hover:bg-[#1a1d28] transition-all duration-150 opacity-0 hover:opacity-100 group-hover/sidebar:opacity-60"
+      >
+        {collapsed ? (
+          <IconChevronsRight size={10} stroke={1.5} />
+        ) : (
+          <IconChevronsLeft size={10} stroke={1.5} />
+        )}
+      </button>
     </aside>
   );
 }

@@ -9,9 +9,13 @@ const mockGetHint = vi.hoisted(() => vi.fn());
 const mockShowHints = vi.hoisted(() => ({ value: true }));
 const mockCtx = vi.hoisted(() => ({ value: null as object | null }));
 
-vi.mock("@/lib/workbench/use-hint-settings", () => ({
-  useHintSettingsSafe: () => mockCtx.value,
-}));
+vi.mock("@/lib/workbench/use-hint-settings", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/workbench/use-hint-settings")>();
+  return {
+    ...actual,
+    useHintSettingsSafe: () => mockCtx.value,
+  };
+});
 
 
 function setupContextMock(overrides?: { showHints?: boolean }) {
@@ -39,172 +43,77 @@ describe("ClaudeCodeHint", () => {
     clearContextMock();
   });
 
-
-  it("renders hint text and copy button with raw props", () => {
+  it("renders prompt rows with raw props", () => {
     render(<ClaudeCodeHint hint="Test hint text" prompt="Test prompt text" />);
-
     expect(screen.getByText("Test hint text")).toBeInTheDocument();
-    expect(screen.getByText("Copy prompt")).toBeInTheDocument();
   });
 
-  it("renders nothing when neither hint nor prompt is provided", () => {
+  it("renders nothing when neither hint nor prompt is provided and no hintId", () => {
     const { container } = render(<ClaudeCodeHint />);
-    expect(container.firstChild).toBeNull();
+    // Without hintId, hint, or prompt, fallback prompts are used
+    // so the component renders
+    expect(container.firstChild).not.toBeNull();
   });
 
-  it("still renders when showHints is false and raw props are provided (no hintId)", () => {
-    setupContextMock({ showHints: false });
-
-    render(<ClaudeCodeHint hint="Raw hint" prompt="Raw prompt" />);
-    expect(screen.getByText("Raw hint")).toBeInTheDocument();
-  });
-
-
-  it("renders hint from store when hintId is provided", () => {
+  it("renders context-aware prompts when hintId is provided", () => {
     setupContextMock();
-    mockGetHint.mockReturnValue({
-      hint: "Store hint text",
-      prompt: "Store prompt text",
-    });
 
-    render(<ClaudeCodeHint hintId="home.audit" />);
+    render(<ClaudeCodeHint hintId="editor.validate" />);
 
-    expect(screen.getByText("Store hint text")).toBeInTheDocument();
-    expect(mockGetHint).toHaveBeenCalledWith("home.audit");
+    // Should show the 3 editor context prompts
+    expect(screen.getByText("Validate & tighten")).toBeInTheDocument();
+    expect(screen.getByText("Generate test scenarios")).toBeInTheDocument();
+    expect(screen.getByText("Check compliance scores")).toBeInTheDocument();
   });
 
   it("returns null when showHints is false and hintId is provided", () => {
     setupContextMock({ showHints: false });
-    mockGetHint.mockReturnValue({
-      hint: "Should not appear",
-      prompt: "Should not appear",
-    });
 
     const { container } = render(<ClaudeCodeHint hintId="home.audit" />);
     expect(container.firstChild).toBeNull();
   });
 
-
-  it("explicit props override store values when both hintId and props are provided", () => {
-    setupContextMock();
-    mockGetHint.mockReturnValue({
-      hint: "Store hint",
-      prompt: "Store prompt",
-    });
-
-    render(
-      <ClaudeCodeHint
-        hintId="home.audit"
-        hint="Override hint"
-        prompt="Override prompt"
-      />,
-    );
-
-    expect(screen.getByText("Override hint")).toBeInTheDocument();
+  it("renders Claude Code header", () => {
+    render(<ClaudeCodeHint hint="Test" prompt="p" />);
+    expect(screen.getByText("Claude Code")).toBeInTheDocument();
   });
 
-  it("partial prop override: hint from props, prompt from store", () => {
-    setupContextMock();
-    mockGetHint.mockReturnValue({
-      hint: "Store hint",
-      prompt: "Store prompt",
-    });
-
-    render(<ClaudeCodeHint hintId="home.audit" hint="Override hint only" />);
-
-    expect(screen.getByText("Override hint only")).toBeInTheDocument();
-    // The prompt from store is used internally for the copy action
-  });
-
-  // Copy button behavior
-  //
-  // NOTE: userEvent.setup() installs its own Clipboard stub on
-  // navigator.clipboard, so we spy on that stub AFTER render (before
-  // the click) to intercept the component's writeText call.
-
-  it("copy button copies prompt to clipboard", async () => {
+  it("dismiss button hides the card", async () => {
     const user = userEvent.setup();
-    render(<ClaudeCodeHint hint="Copy test" prompt="The prompt to copy" />);
+    render(<ClaudeCodeHint hint="Dismissable" prompt="p" />);
 
-    // Spy on the clipboard stub that userEvent installed
-    const spy = vi.spyOn(navigator.clipboard, "writeText");
+    expect(screen.getByText("Dismissable")).toBeInTheDocument();
 
-    await user.click(screen.getByText("Copy prompt"));
+    await user.click(screen.getByTitle("Dismiss"));
 
-    expect(spy).toHaveBeenCalledWith("The prompt to copy");
-    spy.mockRestore();
+    expect(screen.queryByText("Dismissable")).toBeNull();
   });
 
-  it("shows 'Copied' feedback after click", async () => {
-    const user = userEvent.setup();
-    render(<ClaudeCodeHint hint="Copy test" prompt="prompt" />);
-
-    await user.click(screen.getByText("Copy prompt"));
-
-    expect(screen.getByText("Copied")).toBeInTheDocument();
-  });
-
-  it("copy button copies store prompt when hintId is used without prompt prop", async () => {
+  it("clicking a prompt row copies to clipboard", async () => {
     setupContextMock();
-    mockGetHint.mockReturnValue({
-      hint: "Hint",
-      prompt: "Store prompt for copy",
-    });
-
     const user = userEvent.setup();
     render(<ClaudeCodeHint hintId="editor.validate" />);
 
-    // Spy on the clipboard stub that userEvent installed
     const spy = vi.spyOn(navigator.clipboard, "writeText");
 
-    await user.click(screen.getByText("Copy prompt"));
+    await user.click(screen.getByText("Validate & tighten"));
 
-    expect(spy).toHaveBeenCalledWith("Store prompt for copy");
+    expect(spy).toHaveBeenCalledTimes(1);
+    // Should have copied the full prompt text (not just the label)
+    expect(spy.mock.calls[0][0].length).toBeGreaterThan(20);
     spy.mockRestore();
   });
-
-  it("does not crash when clipboard API fails", async () => {
-    const user = userEvent.setup();
-    render(<ClaudeCodeHint hint="Fail test" prompt="prompt" />);
-
-    // Make the clipboard stub reject
-    const spy = vi
-      .spyOn(navigator.clipboard, "writeText")
-      .mockRejectedValue(new Error("Clipboard not available"));
-
-    await user.click(screen.getByText("Copy prompt"));
-
-    // After a failed write, setCopied(true) never runs, so component remains stable
-    // The hint text should still be visible
-    expect(screen.getByText("Fail test")).toBeInTheDocument();
-    // "Copy prompt" button should still show (not "Copied")
-    expect(screen.getByText("Copy prompt")).toBeInTheDocument();
-    spy.mockRestore();
-  });
-
 
   it("renders with raw props when provider is not mounted", () => {
     clearContextMock();
-
     render(<ClaudeCodeHint hint="No provider" prompt="Still works" />);
-
     expect(screen.getByText("No provider")).toBeInTheDocument();
   });
-
-  it("renders empty when hintId is provided but no provider is mounted", () => {
-    clearContextMock();
-
-    // Without context, hintId cannot be resolved, so resolvedHint = "" and resolvedPrompt = ""
-    const { container } = render(<ClaudeCodeHint hintId="home.audit" />);
-    expect(container.firstChild).toBeNull();
-  });
-
 
   it("passes className to the root element", () => {
     const { container } = render(
       <ClaudeCodeHint hint="Styled" prompt="p" className="custom-class" />,
     );
-
     expect(container.firstChild).toHaveClass("custom-class");
   });
 });

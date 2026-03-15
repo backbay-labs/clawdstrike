@@ -904,12 +904,7 @@ export function PolicyEditor() {
           </div>
         </div>
 
-        <ClaudeCodeHint
-          hintId="editor.validate"
-          className="mx-2 mt-1.5 mb-0.5"
-        />
-
-        <div className="flex-1 min-h-0 flex">
+        <div className="flex-1 min-h-0 flex relative">
           {showExplorer && (
             <div className="w-[280px] shrink-0 border-r border-[#2d3240]">
               <ExplorerPanel
@@ -1026,6 +1021,8 @@ export function PolicyEditor() {
               />
             </div>
           )}
+
+          <ClaudeCodeHint hintId="editor.validate" />
         </div>
 
         <CommandPalette

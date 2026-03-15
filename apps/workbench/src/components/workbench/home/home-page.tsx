@@ -1,22 +1,19 @@
-import { useMemo } from "react";
+import { useMemo, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { motion } from "motion/react";
+import { motion, AnimatePresence } from "motion/react";
 import {
   IconPencil,
   IconShieldCheck,
   IconGavel,
-  IconServer,
-  IconBooks,
   IconRadar,
   IconAlertTriangle,
-  IconNetwork,
   IconFlask,
-  IconFileAnalytics,
-  IconCertificate,
-  IconSitemap,
-  IconInfoCircle,
-  IconCheck,
+  IconServer,
   IconArrowRight,
+  IconCheck,
+  IconPlugConnected,
+  IconActivity,
+  IconShieldLock,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { ClaudeCodeHint } from "@/components/workbench/shared/claude-code-hint";
@@ -29,169 +26,461 @@ import { SEVERITY_COLORS } from "@/lib/workbench/finding-constants";
 import type { GuardId } from "@/lib/workbench/types";
 
 // ---------------------------------------------------------------------------
-// Constants
+// Posture — the dominant state of the system
 // ---------------------------------------------------------------------------
 
-const CATEGORY_LABELS: Record<string, string> = {
-  filesystem: "Filesystem",
-  network: "Network",
-  content: "Content",
-  tools: "Tools",
-  detection: "Detection",
-  cua: "Desktop",
+type Posture = "nominal" | "attention" | "critical" | "offline";
+
+function derivePosture(
+  fleetConnected: boolean,
+  criticalFindings: number,
+  emergingFindings: number,
+  enabledGuards: number,
+): Posture {
+  if (!fleetConnected && enabledGuards === 0) return "offline";
+  if (criticalFindings > 0) return "critical";
+  if (emergingFindings > 0) return "attention";
+  return "nominal";
+}
+
+const POSTURE_CONFIG: Record<Posture, {
+  label: string;
+  color: string;
+  glow: string;
+  breathMs: number;
+  ringStroke: string;
+}> = {
+  nominal: {
+    label: "NOMINAL",
+    color: "#4ade80",
+    glow: "rgba(74,222,128,0.15)",
+    breathMs: 5000,
+    ringStroke: "#4ade80",
+  },
+  attention: {
+    label: "ATTENTION",
+    color: "#d4a84b",
+    glow: "rgba(212,168,75,0.2)",
+    breathMs: 2800,
+    ringStroke: "#d4a84b",
+  },
+  critical: {
+    label: "CRITICAL",
+    color: "#ef4444",
+    glow: "rgba(239,68,68,0.25)",
+    breathMs: 1600,
+    ringStroke: "#ef4444",
+  },
+  offline: {
+    label: "OFFLINE",
+    color: "#6f7f9a",
+    glow: "rgba(111,127,154,0.08)",
+    breathMs: 0,
+    ringStroke: "#6f7f9a",
+  },
 };
 
-const CATEGORY_ORDER = [
-  "filesystem",
-  "network",
-  "content",
-  "tools",
-  "detection",
-  "cua",
-];
-
-const VERDICT_COLORS: Record<string, string> = {
-  allow: "#3dbf84",
-  deny: "#c45c5c",
-  warn: "#d4a84b",
-};
-
 // ---------------------------------------------------------------------------
-// Health Ring — SVG arc showing enabled/total guard coverage
+// Scan line — animated horizontal sweep across the viewport
 // ---------------------------------------------------------------------------
 
-function HealthRing({
-  enabled,
-  total,
+function ScanLine({ posture }: { posture: Posture }) {
+  if (posture === "offline") return null;
+  const config = POSTURE_CONFIG[posture];
+  return (
+    <motion.div
+      className="absolute left-0 right-0 h-px pointer-events-none z-10"
+      style={{
+        background: `linear-gradient(90deg, transparent 0%, ${config.color}40 20%, ${config.color}18 50%, ${config.color}40 80%, transparent 100%)`,
+        boxShadow: `0 0 8px ${config.glow}`,
+      }}
+      animate={{ top: ["0%", "100%"] }}
+      transition={{
+        duration: posture === "critical" ? 4 : posture === "attention" ? 8 : 12,
+        repeat: Infinity,
+        ease: "linear",
+      }}
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Posture Core — the hero visualization
+// ---------------------------------------------------------------------------
+
+function PostureCore({
+  posture,
+  enabledGuards,
+  totalGuards,
 }: {
-  enabled: number;
-  total: number;
+  posture: Posture;
+  enabledGuards: number;
+  totalGuards: number;
 }) {
-  const pct = total > 0 ? enabled / total : 0;
-  const radius = 34;
-  const circumference = 2 * Math.PI * radius;
-  const dashOffset = circumference * (1 - pct);
+  const config = POSTURE_CONFIG[posture];
+  const pct = totalGuards > 0 ? enabledGuards / totalGuards : 0;
+
+  // Guard arc segments
+  const segments = useMemo(() => {
+    const result: { angle: number; active: boolean }[] = [];
+    const step = 360 / totalGuards;
+    let idx = 0;
+    for (const guard of GUARD_REGISTRY) {
+      const cfg = (guard as { id: string }).id;
+      result.push({ angle: step * idx, active: idx < enabledGuards });
+      idx++;
+    }
+    return result;
+  }, [enabledGuards, totalGuards]);
 
   return (
-    <div className="relative w-[76px] h-[76px] shrink-0">
-      <svg viewBox="0 0 80 80" className="w-full h-full -rotate-90">
-        {/* Track */}
-        <circle
-          cx="40"
-          cy="40"
-          r={radius}
-          fill="none"
-          stroke="#2d3240"
-          strokeWidth="3.5"
-        />
-        {/* Active arc — stroke-draw animation */}
+    <div className="relative flex items-center justify-center">
+      {/* Outer glow */}
+      <div
+        className="absolute rounded-full"
+        style={{
+          width: 220,
+          height: 220,
+          background: `radial-gradient(circle, ${config.glow} 0%, transparent 70%)`,
+        }}
+      />
+
+      {/* SVG rings */}
+      <svg viewBox="0 0 200 200" className="w-[200px] h-[200px] -rotate-90" style={{ filter: `drop-shadow(0 0 12px ${config.glow})` }}>
+        {/* Outer track */}
+        <circle cx="100" cy="100" r="88" fill="none" stroke="#1a1d28" strokeWidth="1" />
+
+        {/* Guard segment arcs */}
+        {segments.map((seg, i) => {
+          const r = 82;
+          const segLen = (2 * Math.PI * r) / totalGuards;
+          const gap = 3;
+          const arcLen = segLen - gap;
+          const offset = (2 * Math.PI * r) - (segLen * i);
+          return (
+            <motion.circle
+              key={i}
+              cx="100"
+              cy="100"
+              r={r}
+              fill="none"
+              stroke={seg.active ? config.ringStroke : "#1a1d28"}
+              strokeWidth="3"
+              strokeLinecap="round"
+              strokeDasharray={`${arcLen} ${2 * Math.PI * r - arcLen}`}
+              strokeDashoffset={offset}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: seg.active ? 1 : 0.25 }}
+              transition={{ delay: i * 0.05, duration: 0.4 }}
+            />
+          );
+        })}
+
+        {/* Inner ring — coverage arc */}
+        <circle cx="100" cy="100" r="68" fill="none" stroke="#0e1018" strokeWidth="12" />
         <motion.circle
-          cx="40"
-          cy="40"
-          r={radius}
+          cx="100"
+          cy="100"
+          r="68"
           fill="none"
-          stroke="#d4a84b"
-          strokeWidth="3.5"
+          stroke={config.ringStroke}
+          strokeWidth="2"
           strokeLinecap="round"
-          strokeDasharray={circumference}
-          initial={{ strokeDashoffset: circumference }}
-          animate={{ strokeDashoffset: dashOffset }}
-          transition={{ duration: 1, ease: "easeOut" }}
+          strokeDasharray={2 * Math.PI * 68}
+          initial={{ strokeDashoffset: 2 * Math.PI * 68 }}
+          animate={{ strokeDashoffset: (2 * Math.PI * 68) * (1 - pct) }}
+          transition={{ duration: 1.2, ease: "easeOut" }}
+          style={{ filter: `drop-shadow(0 0 4px ${config.color}60)` }}
         />
+
+        {/* Sweep tick marks */}
+        {[0, 90, 180, 270].map((angle) => (
+          <line
+            key={angle}
+            x1="100"
+            y1="8"
+            x2="100"
+            y2="14"
+            stroke="#2d3240"
+            strokeWidth="1"
+            transform={`rotate(${angle} 100 100)`}
+          />
+        ))}
       </svg>
+
+      {/* Center content */}
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-xl font-syne font-bold text-[#ece7dc] leading-none">
-          {enabled}
+        <motion.span
+          className="text-[10px] font-mono font-bold tracking-[0.3em] leading-none"
+          style={{ color: config.color }}
+          animate={posture !== "offline" ? {
+            opacity: [1, 0.5, 1],
+          } : {}}
+          transition={{
+            duration: config.breathMs / 1000,
+            repeat: Infinity,
+            ease: "easeInOut",
+          }}
+        >
+          {config.label}
+        </motion.span>
+        <span className="text-3xl font-syne font-black text-[#ece7dc] leading-none mt-2">
+          {enabledGuards}
+          <span className="text-lg text-[#6f7f9a] font-normal">/{totalGuards}</span>
         </span>
-        <span className="text-[9px] font-mono text-[#6f7f9a]">/{total}</span>
+        <span className="text-[9px] font-mono text-[#6f7f9a]/60 mt-1">GUARDS ACTIVE</span>
       </div>
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Guard tile — compact indicator in the coverage matrix
+// Threat ticker — scrolling threat/finding feed
 // ---------------------------------------------------------------------------
 
-function GuardTile({
-  name,
-  enabled,
-  verdict,
+function ThreatTicker({
+  findings,
 }: {
-  name: string;
-  enabled: boolean;
-  verdict: string;
+  findings: Array<{ id: string; title: string; severity: string; status: string }>;
 }) {
-  const color = enabled ? VERDICT_COLORS[verdict] || "#6f7f9a" : "#2d324060";
+  const [visibleIdx, setVisibleIdx] = useState(0);
+  const emergingFindings = findings.filter((f) => f.status === "emerging");
 
-  return (
-    <div
-      className={cn(
-        "flex items-center gap-2 px-3 py-2 rounded-md transition-all duration-150",
-        enabled ? "bg-[#131721]/80" : "bg-transparent",
-      )}
-    >
-      <span
-        className={cn(
-          "w-1.5 h-1.5 rounded-full shrink-0",
-          enabled && "animate-[pulse_3s_ease-in-out_infinite]",
-        )}
-        style={{ backgroundColor: color }}
-      />
-      <span
-        className={cn(
-          "text-[11px] font-mono truncate",
-          enabled ? "text-[#ece7dc]" : "text-[#6f7f9a]/40",
-        )}
-      >
-        {name}
-      </span>
-    </div>
-  );
-}
+  useEffect(() => {
+    if (emergingFindings.length <= 1) return;
+    const iv = setInterval(() => {
+      setVisibleIdx((prev) => (prev + 1) % emergingFindings.length);
+    }, 4000);
+    return () => clearInterval(iv);
+  }, [emergingFindings.length]);
 
-// ---------------------------------------------------------------------------
-// Navigation card — contextual link with live state indicator
-// ---------------------------------------------------------------------------
+  if (emergingFindings.length === 0) return null;
 
-function NavCard({
-  icon,
-  label,
-  detail,
-  href,
-  accent,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  detail: string;
-  href: string;
-  accent?: string;
-}) {
+  const current = emergingFindings[visibleIdx % emergingFindings.length];
+  if (!current) return null;
+  const sevColor = SEVERITY_COLORS[current.severity as keyof typeof SEVERITY_COLORS] ?? "#6f7f9a";
+
   return (
     <Link
-      to={href}
-      className="group flex items-center gap-3.5 px-4 py-3.5 rounded-lg border border-[#2d3240]/40 bg-[#0b0d13]/40 hover:border-[#2d3240] hover:bg-[#0b0d13] transition-all duration-150 card-shadow"
+      to="/findings"
+      className="group flex items-center gap-3 px-4 py-2.5 rounded border border-[#c45c5c]/15 bg-[#c45c5c]/[0.03] hover:border-[#c45c5c]/30 transition-all"
     >
-      <div className="w-8 h-8 rounded-md bg-[#131721] flex items-center justify-center text-[#6f7f9a] group-hover:text-[#d4a84b] transition-colors shrink-0">
-        {icon}
-      </div>
-      <div className="min-w-0">
-        <div className="text-xs font-medium text-[#ece7dc] truncate">
-          {label}
-        </div>
-        <div className={cn("text-[10px] truncate", accent || "text-[#6f7f9a]")}>
-          {detail}
-        </div>
-      </div>
+      <span className="w-1.5 h-1.5 rounded-full animate-pulse shrink-0" style={{ backgroundColor: sevColor }} />
+      <AnimatePresence mode="wait">
+        <motion.span
+          key={current.id}
+          className="text-[11px] font-mono text-[#ece7dc]/80 truncate flex-1"
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -6 }}
+          transition={{ duration: 0.25 }}
+        >
+          <span className="font-bold uppercase text-[10px] mr-2" style={{ color: sevColor }}>
+            {current.severity}
+          </span>
+          {current.title}
+        </motion.span>
+      </AnimatePresence>
+      {emergingFindings.length > 1 && (
+        <span className="text-[9px] font-mono text-[#6f7f9a]/50 shrink-0">
+          {visibleIdx + 1}/{emergingFindings.length}
+        </span>
+      )}
+      <IconArrowRight size={12} stroke={1.5} className="text-[#6f7f9a]/30 group-hover:text-[#c45c5c]/60 transition-colors shrink-0" />
     </Link>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Quick Start Guide — shown until the user has made meaningful progress
+// Stat cell — compact telemetry readout
 // ---------------------------------------------------------------------------
 
-function QuickStartGuide({
+function StatCell({
+  label,
+  value,
+  sub,
+  color,
+  href,
+  pulse,
+  delay = 0,
+}: {
+  label: string;
+  value: string | number;
+  sub?: string;
+  color?: string;
+  href?: string;
+  pulse?: boolean;
+  delay?: number;
+}) {
+  const content = (
+    <motion.div
+      className={cn(
+        "px-4 py-3 rounded border border-[#1a1d28] bg-[#0a0c12]/80 transition-all duration-150",
+        href && "hover:border-[#2d3240] hover:bg-[#0e1018] cursor-pointer group",
+      )}
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: delay * 0.08, duration: 0.35 }}
+    >
+      <div className="text-[8px] font-mono text-[#6f7f9a]/50 uppercase tracking-[0.2em] mb-1">
+        {label}
+      </div>
+      <div className="flex items-baseline gap-1.5">
+        {pulse && <span className="w-1.5 h-1.5 rounded-full animate-pulse shrink-0" style={{ backgroundColor: color }} />}
+        <span
+          className="text-lg font-syne font-bold leading-none"
+          style={{ color: color || "#ece7dc" }}
+        >
+          {value}
+        </span>
+        {sub && (
+          <span className="text-[10px] font-mono text-[#6f7f9a]/60">{sub}</span>
+        )}
+      </div>
+    </motion.div>
+  );
+
+  if (href) return <Link to={href}>{content}</Link>;
+  return content;
+}
+
+// ---------------------------------------------------------------------------
+// Guard matrix — refined coverage display
+// ---------------------------------------------------------------------------
+
+const CATEGORY_LABELS: Record<string, string> = {
+  filesystem: "FS",
+  network: "NET",
+  content: "CONT",
+  tools: "TOOL",
+  detection: "DET",
+  cua: "CUA",
+};
+
+function GuardMatrix({
+  guards,
+  posture,
+}: {
+  guards: { name: string; shortName: string; enabled: boolean; category: string }[];
+  posture: Posture;
+}) {
+  const config = POSTURE_CONFIG[posture];
+
+  return (
+    <div className="grid grid-cols-13 gap-px">
+      {guards.map((g, i) => (
+        <motion.div
+          key={g.shortName}
+          className="relative group"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.6 + i * 0.04 }}
+        >
+          <div
+            className={cn(
+              "w-full aspect-square rounded-sm flex items-center justify-center transition-all duration-300",
+              g.enabled
+                ? "bg-[#131721] border border-[#2d3240]/60"
+                : "bg-[#0a0c12] border border-[#1a1d28]/40",
+            )}
+            title={`${g.name} — ${g.enabled ? "enabled" : "disabled"}`}
+          >
+            <div
+              className={cn(
+                "w-1.5 h-1.5 rounded-full transition-all",
+                g.enabled && "animate-[pulse_4s_ease-in-out_infinite]",
+              )}
+              style={{
+                backgroundColor: g.enabled ? config.ringStroke : "#1a1d28",
+                boxShadow: g.enabled ? `0 0 4px ${config.color}40` : "none",
+              }}
+            />
+          </div>
+          {/* Tooltip */}
+          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 rounded bg-[#1a1d28] border border-[#2d3240]/60 text-[9px] font-mono text-[#ece7dc] whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20">
+            {g.name}
+            <span className="text-[#6f7f9a] ml-1.5">{CATEGORY_LABELS[g.category]}</span>
+          </div>
+        </motion.div>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Action zone — primary actions
+// ---------------------------------------------------------------------------
+
+function ActionCard({
+  icon,
+  label,
+  detail,
+  href,
+  accentColor,
+  badge,
+  delay = 0,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  detail: string;
+  href: string;
+  accentColor: string;
+  badge?: string | number;
+  delay?: number;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: delay * 0.06 + 0.3, duration: 0.35 }}
+    >
+      <Link
+        to={href}
+        className="group flex items-center gap-3 px-4 py-3 rounded border border-[#1a1d28] bg-[#0a0c12]/60 hover:border-[#2d3240] hover:bg-[#0e1018] transition-all duration-150"
+      >
+        <div
+          className="w-8 h-8 rounded flex items-center justify-center shrink-0 transition-colors"
+          style={{
+            backgroundColor: `${accentColor}10`,
+            color: accentColor,
+          }}
+        >
+          {icon}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-xs font-syne font-semibold text-[#ece7dc] group-hover:text-white transition-colors truncate">
+            {label}
+          </div>
+          <div className="text-[10px] font-mono text-[#6f7f9a]/60 truncate">
+            {detail}
+          </div>
+        </div>
+        {badge !== undefined && badge !== 0 && (
+          <span
+            className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded-full shrink-0"
+            style={{
+              backgroundColor: `${accentColor}18`,
+              color: accentColor,
+            }}
+          >
+            {badge}
+          </span>
+        )}
+        <IconArrowRight
+          size={13}
+          stroke={1.5}
+          className="text-[#2d3240] group-hover:text-[#6f7f9a] transition-colors shrink-0"
+        />
+      </Link>
+    </motion.div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Quick Start — compact onboarding strip
+// ---------------------------------------------------------------------------
+
+function QuickStartStrip({
   fleetConnected,
   sentinelCount,
   findingsCount,
@@ -200,247 +489,46 @@ function QuickStartGuide({
   sentinelCount: number;
   findingsCount: number;
 }) {
-  // Hide once all three milestones are met
   if (sentinelCount > 0 && findingsCount > 0 && fleetConnected) return null;
 
   const steps = [
-    {
-      num: 1,
-      title: "Connect to Fleet",
-      desc: "Link your hushd daemon to enable live enforcement",
-      done: fleetConnected,
-      href: "/settings",
-    },
-    {
-      num: 2,
-      title: "Deploy a Sentinel",
-      desc: "Create an autonomous security monitor for your agents",
-      done: sentinelCount > 0,
-      href: "/fleet",
-    },
-    {
-      num: 3,
-      title: "Review Findings",
-      desc: "Investigate threats detected by your sentinels",
-      done: findingsCount > 0,
-      href: "/audit",
-    },
+    { label: "Connect Fleet", done: fleetConnected, href: "/settings" },
+    { label: "Deploy Sentinel", done: sentinelCount > 0, href: "/sentinels/create" },
+    { label: "Review Findings", done: findingsCount > 0, href: "/findings" },
   ];
 
-  // Determine the first incomplete step so we can accent it
-  const nextStepIdx = steps.findIndex((s) => !s.done);
-
   return (
-    <div>
-      <h2 className="text-[10px] font-mono font-semibold text-[#d4a84b] uppercase tracking-[0.15em] mb-3">
-        Quick Start
-      </h2>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        {steps.map((step, idx) => {
-          const isNext = idx === nextStepIdx;
-          return (
-            <Link
-              key={step.num}
-              to={step.href}
-              className={cn(
-                "group relative flex items-start gap-3 px-4 py-4 rounded-lg border transition-all duration-200",
-                step.done
-                  ? "border-[#3dbf84]/20 bg-[#3dbf84]/[0.03]"
-                  : isNext
-                    ? "border-[#d4a84b]/30 bg-[#d4a84b]/[0.04] hover:border-[#d4a84b]/50"
-                    : "border-[#2d3240]/40 bg-[#0b0d13]/40 hover:border-[#2d3240]",
-              )}
-            >
-              {/* Step number or checkmark */}
-              <div
-                className={cn(
-                  "w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-xs font-bold transition-colors",
-                  step.done
-                    ? "bg-[#3dbf84]/15 text-[#3dbf84]"
-                    : isNext
-                      ? "bg-[#d4a84b]/15 text-[#d4a84b] ring-1 ring-[#d4a84b]/30"
-                      : "bg-[#2d3240]/40 text-[#6f7f9a]/60",
-                )}
-              >
-                {step.done ? (
-                  <IconCheck size={14} stroke={2.5} />
-                ) : (
-                  step.num
-                )}
-              </div>
-
-              <div className="min-w-0 flex-1">
-                <div
-                  className={cn(
-                    "text-xs font-medium",
-                    step.done
-                      ? "text-[#3dbf84]/80"
-                      : "text-[#ece7dc]",
-                  )}
-                >
-                  {step.title}
-                </div>
-                <div className="text-[10px] text-[#6f7f9a] mt-0.5 leading-relaxed">
-                  {step.desc}
-                </div>
-              </div>
-
-              {/* Arrow hint for the active step */}
-              {isNext && !step.done && (
-                <IconArrowRight
-                  size={14}
-                  stroke={1.5}
-                  className="text-[#d4a84b]/40 group-hover:text-[#d4a84b] transition-colors shrink-0 mt-1.5"
-                />
-              )}
-            </Link>
-          );
-        })}
+    <motion.div
+      className="flex items-center gap-2 px-3 py-2 rounded border border-[#d4a84b]/10 bg-[#d4a84b]/[0.02]"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ delay: 1 }}
+    >
+      <span className="text-[8px] font-mono text-[#d4a84b]/60 uppercase tracking-widest shrink-0">
+        Setup
+      </span>
+      <div className="flex items-center gap-1 flex-1 min-w-0">
+        {steps.map((step, i) => (
+          <Link
+            key={step.label}
+            to={step.href}
+            className={cn(
+              "flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-mono transition-all",
+              step.done
+                ? "text-[#3dbf84]/60"
+                : "text-[#ece7dc]/60 hover:text-[#d4a84b] hover:bg-[#d4a84b]/[0.05]",
+            )}
+          >
+            {step.done ? (
+              <IconCheck size={10} stroke={2.5} className="text-[#3dbf84]/60" />
+            ) : (
+              <span className="text-[8px] font-bold text-[#d4a84b]/40">{i + 1}</span>
+            )}
+            <span className={step.done ? "line-through" : ""}>{step.label}</span>
+          </Link>
+        ))}
       </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Sentinel Summary Card — shows total, active/paused/retired, mini sigils
-// ---------------------------------------------------------------------------
-
-function SentinelSummaryCard({
-  total,
-  active,
-  paused,
-  retired,
-}: {
-  total: number;
-  active: number;
-  paused: number;
-  retired: number;
-}) {
-  return (
-    <div className="rounded-lg border border-[#2d3240]/40 bg-[#0b0d13]/60 p-4">
-      <div className="flex items-center gap-2 mb-3">
-        <IconRadar size={15} stroke={1.5} className="text-[#8b5555]" />
-        <span className="text-[10px] font-mono font-semibold text-[#8b5555] uppercase tracking-wider">
-          Sentinels
-        </span>
-      </div>
-      <div className="flex items-baseline gap-3">
-        <span className="text-2xl font-syne font-bold text-[#ece7dc] leading-none">
-          {total}
-        </span>
-        <span className="text-[10px] font-mono text-[#6f7f9a]">total</span>
-      </div>
-      <div className="flex items-center gap-3 mt-2 text-[10px] font-mono">
-        <span className="flex items-center gap-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#3dbf84]" />
-          <span className="text-[#ece7dc]">{active}</span>
-          <span className="text-[#6f7f9a]">active</span>
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#d4a84b]" />
-          <span className="text-[#ece7dc]">{paused}</span>
-          <span className="text-[#6f7f9a]">paused</span>
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#6f7f9a]/40" />
-          <span className="text-[#ece7dc]">{retired}</span>
-          <span className="text-[#6f7f9a]">retired</span>
-        </span>
-      </div>
-      {/* Mini sigil placeholders for active sentinels */}
-      {active > 0 && (
-        <div className="flex items-center gap-1.5 mt-3">
-          {Array.from({ length: Math.min(active, 8) }).map((_, i) => (
-            <div
-              key={i}
-              className="w-5 h-5 rounded-full bg-[#131721] border border-[#2d3240]/60 flex items-center justify-center"
-            >
-              <span className="text-[7px] font-mono text-[#6f7f9a]">
-                {String.fromCharCode(65 + i)}
-              </span>
-            </div>
-          ))}
-          {active > 8 && (
-            <span className="text-[9px] font-mono text-[#6f7f9a]">
-              +{active - 8}
-            </span>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Findings Summary Card — emerging (highlighted), confirmed, total, severity bars
-// ---------------------------------------------------------------------------
-
-function FindingsSummaryCard({
-  emerging,
-  confirmed,
-  total,
-  severityCounts,
-}: {
-  emerging: number;
-  confirmed: number;
-  total: number;
-  severityCounts: Record<string, number>;
-}) {
-  const maxSeverity = Math.max(1, ...Object.values(severityCounts));
-
-  return (
-    <div className="rounded-lg border border-[#2d3240]/40 bg-[#0b0d13]/60 p-4">
-      <div className="flex items-center gap-2 mb-3">
-        <IconAlertTriangle size={15} stroke={1.5} className="text-[#d4a84b]" />
-        <span className="text-[10px] font-mono font-semibold text-[#d4a84b] uppercase tracking-wider">
-          Findings
-        </span>
-      </div>
-      <div className="flex items-baseline gap-3">
-        <span className="text-2xl font-syne font-bold text-[#ece7dc] leading-none">
-          {total}
-        </span>
-        <span className="text-[10px] font-mono text-[#6f7f9a]">total</span>
-      </div>
-      <div className="flex items-center gap-3 mt-2 text-[10px] font-mono">
-        <span className="flex items-center gap-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#d4a84b] animate-pulse" />
-          <span className="text-[#d4a84b] font-semibold">{emerging}</span>
-          <span className="text-[#d4a84b]">emerging</span>
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#3dbf84]" />
-          <span className="text-[#ece7dc]">{confirmed}</span>
-          <span className="text-[#6f7f9a]">confirmed</span>
-        </span>
-      </div>
-      {/* Severity breakdown mini-bars */}
-      <div className="flex items-end gap-1 mt-3 h-5">
-        {(["critical", "high", "medium", "low"] as const).map((sev) => {
-          const count = severityCounts[sev] ?? 0;
-          const heightPct = maxSeverity > 0 ? (count / maxSeverity) * 100 : 0;
-          return (
-            <div
-              key={sev}
-              className="flex flex-col items-center gap-0.5"
-              title={`${sev}: ${count}`}
-            >
-              <div
-                className="w-3 rounded-sm transition-all duration-500"
-                style={{
-                  height: `${Math.max(heightPct, 8)}%`,
-                  backgroundColor: SEVERITY_COLORS[sev] ?? "#6f7f9a",
-                  opacity: count > 0 ? 1 : 0.2,
-                }}
-              />
-            </div>
-          );
-        })}
-        <span className="text-[8px] font-mono text-[#6f7f9a] ml-1.5 leading-none self-end">
-          severity
-        </span>
-      </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -454,268 +542,309 @@ export function HomePage() {
   const { connection } = useFleetConnection();
   const { activePolicy, validation, dirty } = state;
 
+  const { sentinels } = useSentinels();
+  const { findings } = useFindings();
+
   // ---- Guard analysis ----
-  const { enabledCount, totalCount, guardsByCategory } = useMemo(() => {
+  const { enabledCount, totalCount, guardList } = useMemo(() => {
     let enabled = 0;
-    const byCategory: Record<
-      string,
-      { name: string; enabled: boolean; verdict: string }[]
-    > = {};
+    const list: { name: string; shortName: string; enabled: boolean; category: string }[] = [];
 
     for (const guard of GUARD_REGISTRY) {
       const cfg = activePolicy.guards[guard.id as GuardId];
       const isEnabled = !!(cfg && "enabled" in cfg && cfg.enabled);
       if (isEnabled) enabled++;
-
-      const cat = guard.category;
-      if (!byCategory[cat]) byCategory[cat] = [];
-      byCategory[cat].push({
+      list.push({
         name: guard.name,
+        shortName: guard.id,
         enabled: isEnabled,
-        verdict: guard.defaultVerdict,
+        category: guard.category,
       });
     }
 
-    return {
-      enabledCount: enabled,
-      totalCount: GUARD_REGISTRY.length,
-      guardsByCategory: byCategory,
-    };
+    return { enabledCount: enabled, totalCount: GUARD_REGISTRY.length, guardList: list };
   }, [activePolicy]);
 
-  // ---- Validation status ----
-  const errorCount = validation.errors.length;
-  const warningCount = validation.warnings.length;
-  let validationText: string;
-  let validationColor: string;
-
-  if (errorCount > 0) {
-    validationText = `${errorCount} error${errorCount !== 1 ? "s" : ""}`;
-    validationColor = "#c45c5c";
-  } else if (warningCount > 0) {
-    validationText = `${warningCount} warning${warningCount !== 1 ? "s" : ""}`;
-    validationColor = "#d4a84b";
-  } else {
-    validationText = "Valid";
-    validationColor = "#3dbf84";
-  }
-
-  // ---- Derived details for nav cards ----
-  const tabCount = tabs.length;
-  const tabDetail = `${tabCount} tab${tabCount !== 1 ? "s" : ""}${dirty ? " · unsaved" : ""}`;
-
-  const fleetDetail = connection.connected
-    ? `Connected · ${connection.agentCount} agent${connection.agentCount !== 1 ? "s" : ""}`
-    : "Not connected";
-
-  const savedCount = state.savedPolicies?.length ?? 0;
-
-  // ---- Live sentinel & findings data from providers ----
-  const { sentinels } = useSentinels();
-  const { findings } = useFindings();
-
+  // ---- Sentinel stats ----
   const sentinelStats = useMemo(() => {
-    let active = 0;
-    let paused = 0;
-    let retired = 0;
+    let active = 0, paused = 0;
     for (const s of sentinels) {
       if (s.status === "active") active++;
       else if (s.status === "paused") paused++;
-      else if (s.status === "retired") retired++;
     }
-    return { total: sentinels.length, active, paused, retired };
+    return { total: sentinels.length, active, paused };
   }, [sentinels]);
 
+  // ---- Findings stats ----
   const findingsStats = useMemo(() => {
-    let emerging = 0;
-    let confirmed = 0;
+    let emerging = 0, confirmed = 0, critical = 0;
     const severityCounts: Record<string, number> = { critical: 0, high: 0, medium: 0, low: 0 };
     for (const f of findings) {
       if (f.status === "emerging") emerging++;
       else if (f.status === "confirmed") confirmed++;
+      if (f.severity === "critical" && (f.status === "emerging" || f.status === "confirmed")) critical++;
       if ((f.status === "emerging" || f.status === "confirmed") && f.severity in severityCounts) {
         severityCounts[f.severity]++;
       }
     }
-    return { emerging, confirmed, total: findings.length, severityCounts };
+    return { emerging, confirmed, critical, total: findings.length, severityCounts };
   }, [findings]);
 
+  // ---- Posture ----
+  const posture = derivePosture(
+    connection.connected,
+    findingsStats.critical,
+    findingsStats.emerging,
+    enabledCount,
+  );
+
+  // ---- Validation ----
+  const errorCount = validation.errors.length;
+  const validationColor = errorCount > 0 ? "#c45c5c" : "#3dbf84";
+
   return (
-    <div className="h-full w-full flex flex-col bg-[#05060a] overflow-auto page-transition-enter">
-      <div className="max-w-4xl w-full mx-auto px-6 py-6 flex flex-col gap-8">
+    <div className="h-full w-full flex flex-col bg-[#05060a] overflow-auto page-transition-enter relative">
+      <ScanLine posture={posture} />
+
+      <div className="w-full px-8 py-6 flex flex-col gap-6 relative z-10 max-w-6xl">
+
         {/* ================================================================ */}
-        {/* Policy Identity + Health Ring                                     */}
+        {/* Hero — Posture Core + Policy Identity                           */}
         {/* ================================================================ */}
-        <div className="flex items-center gap-6">
-          <HealthRing enabled={enabledCount} total={totalCount} />
-          <div className="min-w-0">
-            <h1 className="font-syne text-2xl font-bold text-[#ece7dc] tracking-tight truncate">
+        <div className="flex flex-col items-center pt-2 pb-2">
+          <PostureCore
+            posture={posture}
+            enabledGuards={enabledCount}
+            totalGuards={totalCount}
+          />
+
+          {/* Policy identity — below the ring */}
+          <motion.div
+            className="text-center mt-4"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4, duration: 0.5 }}
+          >
+            <h1 className="font-syne text-lg font-bold text-[#ece7dc] tracking-tight">
               {activePolicy.name}
             </h1>
-            <div className="flex items-center gap-2 mt-1 flex-wrap text-xs font-mono">
+            <div className="flex items-center justify-center gap-2 mt-1 text-[10px] font-mono">
               <span className="text-[#6f7f9a]">v{activePolicy.version}</span>
-              <span className="text-[#2d3240]">&middot;</span>
-              <span style={{ color: validationColor }}>{validationText}</span>
-              <span className="text-[#2d3240]">&middot;</span>
-              <span className="text-[#6f7f9a]">
-                {enabledCount}/{totalCount} guards
+              <span className="text-[#1a1d28]">/</span>
+              <span style={{ color: validationColor }}>
+                {errorCount > 0 ? `${errorCount} errors` : "valid"}
               </span>
               {dirty && (
                 <>
-                  <span className="text-[#2d3240]">&middot;</span>
+                  <span className="text-[#1a1d28]">/</span>
                   <span className="text-[#d4a84b]">unsaved</span>
                 </>
               )}
             </div>
-            {activePolicy.description && (
-              <p className="text-[11px] text-[#6f7f9a]/60 mt-1.5 truncate max-w-lg">
-                {activePolicy.description}
-              </p>
-            )}
-          </div>
+          </motion.div>
         </div>
 
         {/* ================================================================ */}
-        {/* Sentinel & Findings Summary Cards                                */}
+        {/* Threat Ticker — emerging findings scroll                        */}
         {/* ================================================================ */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <SentinelSummaryCard {...sentinelStats} />
-          <FindingsSummaryCard {...findingsStats} />
+        <ThreatTicker findings={findings as Array<{ id: string; title: string; severity: string; status: string }>} />
+
+        {/* ================================================================ */}
+        {/* Telemetry strip — key numbers at a glance                       */}
+        {/* ================================================================ */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <StatCell
+            label="Sentinels"
+            value={sentinelStats.active}
+            sub={`/ ${sentinelStats.total}`}
+            color={sentinelStats.active > 0 ? "#4ade80" : "#6f7f9a"}
+            href="/sentinels"
+            delay={0}
+          />
+          <StatCell
+            label="Emerging"
+            value={findingsStats.emerging}
+            color={findingsStats.emerging > 0 ? "#d4a84b" : "#6f7f9a"}
+            pulse={findingsStats.emerging > 0}
+            href="/findings"
+            delay={1}
+          />
+          <StatCell
+            label="Fleet"
+            value={connection.connected ? connection.agentCount : "—"}
+            sub={connection.connected ? "agents" : ""}
+            color={connection.connected ? "#4ade80" : "#6f7f9a"}
+            href="/fleet"
+            delay={2}
+          />
+          <StatCell
+            label="Editor"
+            value={tabs.length}
+            sub={dirty ? "unsaved" : "tabs"}
+            color={dirty ? "#d4a84b" : "#6f7f9a"}
+            href="/editor"
+            delay={3}
+          />
         </div>
 
         {/* ================================================================ */}
-        {/* Quick Start Guide                                                */}
+        {/* Severity breakdown — horizontal bar                             */}
         {/* ================================================================ */}
-        <QuickStartGuide
-          fleetConnected={connection.connected}
-          sentinelCount={connection.agentCount}
-          findingsCount={enabledCount}
-        />
-
-        {sentinelStats.total === 0 && findingsStats.total === 0 && (
-          <div className="mx-6 mt-4 rounded-lg border border-[#2d3240]/40 bg-[#131721]/30 px-4 py-3 flex items-center gap-3">
-            <IconInfoCircle size={16} stroke={1.5} className="text-[#6f7f9a]/50 shrink-0" />
-            <p className="text-[11px] text-[#6f7f9a]/60">
-              Deploy a sentinel or connect to fleet to see live stats here.
-            </p>
-          </div>
+        {findingsStats.total > 0 && (
+          <motion.div
+            className="flex items-center gap-2"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.5 }}
+          >
+            <span className="text-[8px] font-mono text-[#6f7f9a]/40 uppercase tracking-widest shrink-0 w-12">
+              Threat
+            </span>
+            <div className="flex-1 flex items-center h-2 rounded-full overflow-hidden bg-[#0e1018] border border-[#1a1d28]">
+              {(["critical", "high", "medium", "low"] as const).map((sev) => {
+                const count = findingsStats.severityCounts[sev] ?? 0;
+                const pct = findingsStats.total > 0 ? (count / findingsStats.total) * 100 : 0;
+                if (pct === 0) return null;
+                return (
+                  <motion.div
+                    key={sev}
+                    className="h-full"
+                    style={{ backgroundColor: SEVERITY_COLORS[sev] }}
+                    initial={{ width: 0 }}
+                    animate={{ width: `${pct}%` }}
+                    transition={{ delay: 0.7, duration: 0.6, ease: "easeOut" }}
+                  />
+                );
+              })}
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {(["critical", "high", "medium", "low"] as const).map((sev) => {
+                const count = findingsStats.severityCounts[sev] ?? 0;
+                if (count === 0) return null;
+                return (
+                  <span key={sev} className="flex items-center gap-1">
+                    <span className="w-1 h-1 rounded-full" style={{ backgroundColor: SEVERITY_COLORS[sev] }} />
+                    <span className="text-[8px] font-mono" style={{ color: SEVERITY_COLORS[sev] }}>{count}</span>
+                  </span>
+                );
+              })}
+            </div>
+          </motion.div>
         )}
 
         {/* ================================================================ */}
-        {/* Guard Coverage Matrix                                             */}
+        {/* Guard matrix — compact visual grid                              */}
         {/* ================================================================ */}
-        <div>
-          <h2 className="font-syne text-[10px] font-semibold text-[#d4a84b] uppercase tracking-wider mb-3">
-            Guard Coverage
-          </h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-5">
-            {CATEGORY_ORDER.filter(
-              (cat) => guardsByCategory[cat]?.length,
-            ).map((cat) => (
-              <div key={cat}>
-                <span className="text-[9px] font-mono text-[#6f7f9a]/50 uppercase tracking-wider">
-                  {CATEGORY_LABELS[cat] || cat}
-                </span>
-                <div className="mt-1.5 space-y-0.5">
-                  {guardsByCategory[cat].map((g) => (
-                    <GuardTile key={g.name} {...g} />
-                  ))}
-                </div>
-              </div>
-            ))}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.6 }}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[8px] font-mono text-[#6f7f9a]/40 uppercase tracking-[0.2em]">
+              Guard Coverage
+            </span>
+            <Link
+              to="/editor"
+              className="text-[9px] font-mono text-[#6f7f9a]/30 hover:text-[#d4a84b] transition-colors"
+            >
+              Configure
+            </Link>
           </div>
-        </div>
+          <GuardMatrix guards={guardList} posture={posture} />
+        </motion.div>
 
         {/* ================================================================ */}
-        {/* Claude Code Hint                                                   */}
+        {/* Quick start — compact setup strip                               */}
         {/* ================================================================ */}
-        <ClaudeCodeHint hintId="home.audit" />
+        <QuickStartStrip
+          fleetConnected={connection.connected}
+          sentinelCount={sentinelStats.total}
+          findingsCount={findingsStats.total}
+        />
 
         {/* ================================================================ */}
-        {/* Navigation Cards                                                  */}
+        {/* Action zones — curated primary actions                          */}
         {/* ================================================================ */}
         <div>
-          <h2 className="font-syne text-[10px] font-semibold text-[#d4a84b] uppercase tracking-wider mb-3">
-            Navigate
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            <NavCard
+          <span className="text-[8px] font-mono text-[#6f7f9a]/40 uppercase tracking-[0.2em] mb-2 block">
+            Operations
+          </span>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <ActionCard
               icon={<IconRadar size={16} stroke={1.5} />}
               label="Sentinels"
-              detail={`${sentinelStats.active} active sentinel${sentinelStats.active !== 1 ? "s" : ""}`}
+              detail={`${sentinelStats.active} active · ${sentinelStats.paused} paused`}
               href="/sentinels"
+              accentColor="#4ade80"
+              badge={sentinelStats.active || undefined}
+              delay={0}
             />
-            <NavCard
+            <ActionCard
               icon={<IconAlertTriangle size={16} stroke={1.5} />}
-              label="Findings & Intel"
-              detail={`${findingsStats.emerging} emerging · ${findingsStats.total} total findings & intel`}
+              label="Findings"
+              detail={`${findingsStats.emerging} emerging · ${findingsStats.confirmed} confirmed`}
               href="/findings"
-              accent={findingsStats.emerging > 0 ? "text-[#d4a84b]" : undefined}
+              accentColor={findingsStats.critical > 0 ? "#ef4444" : "#d4a84b"}
+              badge={findingsStats.emerging || undefined}
+              delay={1}
             />
-            <NavCard
+            <ActionCard
               icon={<IconFlask size={16} stroke={1.5} />}
               label="Lab"
-              detail="Simulate and hunt threats"
+              detail="Hunt · Simulate · Replay"
               href="/lab"
+              accentColor="#7c9aef"
+              delay={2}
             />
-            <NavCard
-              icon={<IconNetwork size={16} stroke={1.5} />}
-              label="Swarms"
-              detail="Trust network coordination"
-              href="/swarms"
-            />
-            <NavCard
+            <ActionCard
               icon={<IconPencil size={16} stroke={1.5} />}
               label="Editor"
-              detail={tabDetail}
+              detail={`${tabs.length} tab${tabs.length !== 1 ? "s" : ""} open`}
               href="/editor"
-              accent={dirty ? "text-[#d4a84b]" : undefined}
+              accentColor="#d4a84b"
+              badge={dirty ? "!" : undefined}
+              delay={3}
             />
-            <NavCard
-              icon={<IconBooks size={16} stroke={1.5} />}
-              label="Library"
-              detail={`${savedCount} saved polic${savedCount !== 1 ? "ies" : "y"}`}
-              href="/library"
+            <ActionCard
+              icon={<IconServer size={16} stroke={1.5} />}
+              label="Fleet"
+              detail={connection.connected ? `${connection.agentCount} agents connected` : "Not connected"}
+              href="/fleet"
+              accentColor={connection.connected ? "#4ade80" : "#6f7f9a"}
+              delay={4}
             />
-            <NavCard
+            <ActionCard
               icon={<IconShieldCheck size={16} stroke={1.5} />}
               label="Compliance"
-              detail="Framework coverage analysis"
+              detail="Framework coverage"
               href="/compliance"
+              accentColor="#8b7355"
+              delay={5}
             />
-            <NavCard
+            <ActionCard
               icon={<IconGavel size={16} stroke={1.5} />}
               label="Approvals"
               detail={connection.connected ? "Live queue" : "Demo mode"}
               href="/approvals"
+              accentColor="#7b6b8b"
+              delay={6}
             />
-            <NavCard
-              icon={<IconFileAnalytics size={16} stroke={1.5} />}
-              label="Audit"
-              detail="Decision audit trail"
+            <ActionCard
+              icon={<IconActivity size={16} stroke={1.5} />}
+              label="Audit & Receipts"
+              detail="Decision trail · Signed attestations"
               href="/audit"
-            />
-            <NavCard
-              icon={<IconCertificate size={16} stroke={1.5} />}
-              label="Receipts"
-              detail="Signed attestations"
-              href="/receipts"
-            />
-            <NavCard
-              icon={<IconServer size={16} stroke={1.5} />}
-              label="Fleet"
-              detail={fleetDetail}
-              href="/fleet"
-              accent={connection.connected ? "text-[#3dbf84]" : undefined}
-            />
-            <NavCard
-              icon={<IconSitemap size={16} stroke={1.5} />}
-              label="Topology"
-              detail="Delegation & hierarchy graphs"
-              href="/topology"
+              accentColor="#6b9b8b"
+              delay={7}
             />
           </div>
         </div>
+
+        {/* ================================================================ */}
+        {/* Claude Code Hint                                                 */}
+        {/* ================================================================ */}
+        <ClaudeCodeHint hintId="home.audit" />
       </div>
     </div>
   );

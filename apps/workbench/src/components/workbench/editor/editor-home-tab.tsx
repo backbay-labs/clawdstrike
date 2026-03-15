@@ -1,23 +1,33 @@
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useMemo } from "react";
+import { motion } from "motion/react";
 import { useMultiPolicy, useWorkbench } from "@/lib/workbench/multi-policy-store";
 import type { PolicyTab } from "@/lib/workbench/multi-policy-store";
 import { getRecentFiles } from "@/lib/workbench/policy-store";
-import { FILE_TYPE_REGISTRY } from "@/lib/workbench/file-type-registry";
+import {
+  FILE_TYPE_REGISTRY,
+  type FileType,
+} from "@/lib/workbench/file-type-registry";
 import { SIGMA_TEMPLATES } from "@/lib/workbench/sigma-templates";
 import type { SigmaTemplate } from "@/lib/workbench/sigma-templates";
+import { YARA_TEMPLATES } from "@/lib/workbench/yara-templates";
+import type { YaraTemplate } from "@/lib/workbench/yara-templates";
 import { isDesktop } from "@/lib/tauri-bridge";
 import { cn } from "@/lib/utils";
 import {
-  IconPlus,
-  IconFolderOpen,
-  IconTemplate,
-  IconX,
-  IconFileText,
-  IconShieldCheck,
   IconArrowRight,
-  IconRadar,
+  IconFileText,
+  IconFolderOpen,
+  IconPlus,
+  IconX,
+  IconShieldLock,
+  IconRadar2,
+  IconBug,
+  IconSchema,
 } from "@tabler/icons-react";
 
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 interface TemplateEntry {
   name: string;
@@ -26,16 +36,240 @@ interface TemplateEntry {
 }
 
 const TEMPLATES: TemplateEntry[] = [
-  { name: "ai-agent", description: "Tailored for LLM tool boundaries \u2014 recommended starting point", hint: "Best for: ChatGPT, Claude, and custom agent tool calls" },
-  { name: "strict", description: "Maximum restriction \u2014 blocks most actions by default", hint: "Best for: high-security environments and compliance-critical workloads" },
-  { name: "default", description: "Balanced protection with sensible defaults", hint: "Best for: general-purpose agent deployments" },
-  { name: "permissive", description: "Minimal restrictions \u2014 allows most actions", hint: "Best for: development and testing environments" },
-  { name: "cicd", description: "Optimized for CI/CD pipeline security", hint: "Best for: GitHub Actions, GitLab CI, and build pipelines" },
-  { name: "ai-agent-posture", description: "Posture-aware AI agent enforcement", hint: "Best for: multi-tenant agent fleets with varying trust levels" },
-  { name: "remote-desktop", description: "Controls for remote desktop/CUA sessions", hint: "Best for: computer-use agents and remote desktop automation" },
-  { name: "spider-sense", description: "Hierarchical threat screening with pattern matching", hint: "Best for: embedding-based threat detection and anomaly screening" },
+  { name: "ai-agent", description: "Tailored for LLM tool boundaries", hint: "Agent tool policies" },
+  { name: "strict", description: "Maximum restriction with conservative defaults", hint: "High-security posture" },
+  { name: "default", description: "Balanced protection with sensible defaults", hint: "General-purpose baseline" },
+  { name: "permissive", description: "Minimal restrictions for development and tests", hint: "Fast iteration" },
+  { name: "cicd", description: "Optimized for CI/CD pipeline security", hint: "Build systems" },
+  { name: "ai-agent-posture", description: "Posture-aware AI agent enforcement", hint: "Multi-tenant fleets" },
+  { name: "remote-desktop", description: "Controls for remote desktop and CUA sessions", hint: "Computer use" },
+  { name: "spider-sense", description: "Hierarchical threat screening with pattern matching", hint: "Threat screening" },
 ];
 
+function fileName(path: string): string {
+  const parts = path.replace(/\\/g, "/").split("/");
+  return parts[parts.length - 1] || path;
+}
+
+function guardCount(tab: PolicyTab): number {
+  if (tab.fileType !== "clawdstrike_policy") return 0;
+  return Object.keys(tab.policy.guards).filter(
+    (key) =>
+      (tab.policy.guards as Record<string, { enabled?: boolean }>)[key]?.enabled === true,
+  ).length;
+}
+
+function tabStatus(tab: PolicyTab): string {
+  if (!tab.validation.valid) {
+    const issueCount = tab.validation.errors.length;
+    return `${issueCount} issue${issueCount === 1 ? "" : "s"}`;
+  }
+  switch (tab.fileType) {
+    case "clawdstrike_policy": {
+      const guards = guardCount(tab);
+      return `${guards} guard${guards === 1 ? "" : "s"}`;
+    }
+    case "sigma_rule":
+      return "replay ready";
+    case "yara_rule":
+      return "scan ready";
+    case "ocsf_event":
+      return "schema ready";
+    default:
+      return "ready";
+  }
+}
+
+const FORMAT_ICONS: Record<FileType, typeof IconShieldLock> = {
+  clawdstrike_policy: IconShieldLock,
+  sigma_rule: IconRadar2,
+  yara_rule: IconBug,
+  ocsf_event: IconSchema,
+};
+
+// ---------------------------------------------------------------------------
+// Open document row
+// ---------------------------------------------------------------------------
+
+function DocumentRow({
+  tab,
+  isActive,
+  onSwitch,
+  onClose,
+  delay,
+}: {
+  tab: PolicyTab;
+  isActive: boolean;
+  onSwitch: () => void;
+  onClose: () => void;
+  delay: number;
+}) {
+  const desc = FILE_TYPE_REGISTRY[tab.fileType];
+  const Icon = FORMAT_ICONS[tab.fileType] ?? IconFileText;
+
+  return (
+    <motion.div
+      className={cn(
+        "group flex items-center gap-3 px-3 py-2.5 rounded transition-all cursor-pointer",
+        isActive
+          ? "bg-[#131721] border-l-2"
+          : "hover:bg-[#0e1118] border-l-2 border-transparent",
+      )}
+      style={isActive ? { borderLeftColor: desc.iconColor } : undefined}
+      onClick={onSwitch}
+      initial={{ opacity: 0, x: -8 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ delay: delay * 0.04, duration: 0.25 }}
+    >
+      <Icon
+        size={14}
+        stroke={1.5}
+        className="shrink-0"
+        style={{ color: desc.iconColor }}
+      />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className={cn(
+            "text-[12px] truncate",
+            isActive ? "text-[#ece7dc] font-medium" : "text-[#ece7dc]/70",
+          )}>
+            {tab.name || "Untitled"}
+          </span>
+          {tab.dirty && (
+            <span className="w-1.5 h-1.5 rounded-full bg-[#d4a84b] shrink-0" />
+          )}
+        </div>
+        <div className="text-[9px] font-mono text-[#6f7f9a]/60 mt-0.5 flex items-center gap-1.5">
+          <span style={{ color: `${desc.iconColor}80` }}>{desc.shortLabel}</span>
+          <span>&middot;</span>
+          <span>{tabStatus(tab)}</span>
+          {tab.filePath && (
+            <>
+              <span>&middot;</span>
+              <span className="truncate">{fileName(tab.filePath)}</span>
+            </>
+          )}
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onClose(); }}
+        className="opacity-0 group-hover:opacity-100 rounded p-0.5 text-[#6f7f9a]/40 hover:text-[#c45c5c] transition-all"
+        title="Close"
+      >
+        <IconX size={11} stroke={1.5} />
+      </button>
+    </motion.div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Create format card
+// ---------------------------------------------------------------------------
+
+function FormatCard({
+  fileType,
+  label,
+  note,
+  disabled,
+  onClick,
+  delay,
+}: {
+  fileType: FileType;
+  label: string;
+  note: string;
+  disabled: boolean;
+  onClick: () => void;
+  delay: number;
+}) {
+  const desc = FILE_TYPE_REGISTRY[fileType];
+  const Icon = FORMAT_ICONS[fileType] ?? IconFileText;
+
+  return (
+    <motion.button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        "group relative flex items-center gap-3 px-3 py-3 rounded border transition-all text-left overflow-hidden",
+        disabled
+          ? "cursor-not-allowed opacity-40 border-[#1a1d28] bg-[#0a0c12]"
+          : "border-[#1a1d28] bg-[#0a0c12]/60 hover:bg-[#0e1018] hover:border-[#2d3240]",
+      )}
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: delay * 0.05 + 0.2, duration: 0.25 }}
+    >
+      {/* Left accent strip */}
+      <div
+        className="absolute left-0 top-0 bottom-0 w-[2px] transition-all group-hover:w-[3px]"
+        style={{ backgroundColor: disabled ? "#1a1d28" : desc.iconColor }}
+      />
+      <Icon
+        size={16}
+        stroke={1.5}
+        className="shrink-0 ml-1 transition-colors"
+        style={{ color: disabled ? "#6f7f9a40" : desc.iconColor }}
+      />
+      <div className="min-w-0 flex-1">
+        <div className="text-[11px] font-medium text-[#ece7dc]">{label}</div>
+        <div className="text-[9px] font-mono text-[#6f7f9a]/50 mt-0.5">{note}</div>
+      </div>
+      <IconPlus
+        size={11}
+        stroke={1.5}
+        className="shrink-0 text-[#6f7f9a]/20 group-hover:text-[#6f7f9a]/60 transition-colors"
+      />
+    </motion.button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Template row
+// ---------------------------------------------------------------------------
+
+function TemplateRow({
+  name,
+  hint,
+  color,
+  disabled,
+  onClick,
+}: {
+  name: string;
+  hint: string;
+  color: string;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        "group flex items-center gap-2.5 w-full px-2 py-2 rounded text-left transition-all",
+        disabled
+          ? "cursor-not-allowed opacity-40"
+          : "hover:bg-[#0e1018]",
+      )}
+    >
+      <span
+        className="w-1 h-1 rounded-full shrink-0"
+        style={{ backgroundColor: color }}
+      />
+      <div className="min-w-0 flex-1">
+        <span className="text-[11px] text-[#ece7dc]/80">{name}</span>
+      </div>
+      <span className="text-[8px] font-mono text-[#6f7f9a]/40 uppercase tracking-wider shrink-0">
+        {hint}
+      </span>
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Editor Home Tab
+// ---------------------------------------------------------------------------
 
 export function EditorHomeTab({
   onNavigateToTab,
@@ -44,14 +278,18 @@ export function EditorHomeTab({
 }) {
   const { tabs, multiDispatch, multiState, canAddTab } = useMultiPolicy();
   const { openFile, openFileByPath } = useWorkbench();
-  const templatesRef = useRef<HTMLDivElement>(null);
   const desktop = isDesktop();
   const recentFiles = useMemo(
     () => (desktop ? getRecentFiles() : []),
     [desktop, tabs.length],
   );
 
-  // ---- Handlers ----
+  const activeTab = useMemo(
+    () => tabs.find((tab) => tab.id === multiState.activeTabId) ?? tabs[0] ?? null,
+    [tabs, multiState.activeTabId],
+  );
+
+  const visibleRecentFiles = recentFiles.slice(0, 6);
 
   const handleSwitchToTab = useCallback(
     (tabId: string) => {
@@ -63,11 +301,9 @@ export function EditorHomeTab({
 
   const handleCloseTab = useCallback(
     (tabId: string) => {
-      const tab = tabs.find((t) => t.id === tabId);
+      const tab = tabs.find((entry) => entry.id === tabId);
       if (tab?.dirty) {
-        const confirmed = window.confirm(
-          `"${tab.name}" has unsaved changes. Close anyway?`,
-        );
+        const confirmed = window.confirm(`"${tab.name}" has unsaved changes. Close anyway?`);
         if (!confirmed) return;
       }
       multiDispatch({ type: "CLOSE_TAB", tabId });
@@ -75,10 +311,14 @@ export function EditorHomeTab({
     [tabs, multiDispatch],
   );
 
-  const handleNewPolicy = useCallback(() => {
-    multiDispatch({ type: "NEW_TAB" });
-    onNavigateToTab();
-  }, [multiDispatch, onNavigateToTab]);
+  const handleCreateFile = useCallback(
+    (fileType: FileType) => {
+      if (!canAddTab) return;
+      multiDispatch({ type: "NEW_TAB", fileType });
+      onNavigateToTab();
+    },
+    [canAddTab, multiDispatch, onNavigateToTab],
+  );
 
   const handleOpenFile = useCallback(async () => {
     await openFile();
@@ -115,297 +355,253 @@ export function EditorHomeTab({
   const handleLoadSigmaTemplate = useCallback(
     (template: SigmaTemplate) => {
       if (!canAddTab) return;
-      multiDispatch({
-        type: "NEW_TAB",
-        fileType: "sigma_rule",
-        yaml: template.content,
-      });
+      multiDispatch({ type: "NEW_TAB", fileType: "sigma_rule", yaml: template.content });
       onNavigateToTab();
     },
     [canAddTab, multiDispatch, onNavigateToTab],
   );
 
-  const handleScrollToTemplates = useCallback(() => {
-    templatesRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, []);
+  const handleLoadYaraTemplate = useCallback(
+    (template: YaraTemplate) => {
+      if (!canAddTab) return;
+      multiDispatch({ type: "NEW_TAB", fileType: "yara_rule", yaml: template.content });
+      onNavigateToTab();
+    },
+    [canAddTab, multiDispatch, onNavigateToTab],
+  );
 
-  // ---- Guard count helper ----
-  function guardCount(tab: PolicyTab): number {
-    return Object.keys(tab.policy.guards).filter(
-      (k) => (tab.policy.guards as Record<string, { enabled?: boolean }>)[k]?.enabled === true,
-    ).length;
-  }
+  const featuredSigmaTemplate = SIGMA_TEMPLATES[0] ?? null;
+  const featuredYaraTemplate = YARA_TEMPLATES[0] ?? null;
 
-  function fileName(path: string): string {
-    const parts = path.replace(/\\/g, "/").split("/");
-    return parts[parts.length - 1] || path;
-  }
+  // Count open tabs by format
+  const formatCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const tab of tabs) {
+      counts[tab.fileType] = (counts[tab.fileType] ?? 0) + 1;
+    }
+    return counts;
+  }, [tabs]);
+
+  const dirtyCount = tabs.filter((t) => t.dirty).length;
 
   return (
-    <div className="h-full overflow-y-auto bg-[#05060a]">
-      <div className="max-w-5xl mx-auto px-6 py-8">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="font-syne font-bold text-lg text-[#ece7dc] mb-1 flex items-center gap-2">
-            <IconShieldCheck size={20} stroke={1.5} className="text-[#d4a84b]" />
-            Policy Workspace
-          </h1>
-          <p className="text-xs text-[#6f7f9a] font-mono">
-            Manage open policies, browse templates, and open recent files.
-          </p>
-        </div>
+    <div className="h-full overflow-auto bg-[#05060a]">
+      <div className="w-full px-8 py-6 flex flex-col gap-6 max-w-7xl">
 
-        {/* Three-column grid: Open Tabs, Recent Files, Templates */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-8">
-          {/* Open Tabs */}
-          <section>
-            <h2 className="font-syne text-[10px] font-semibold uppercase tracking-wider text-[#6f7f9a] mb-2">
-              Open Tabs
-            </h2>
-            <div className="space-y-1.5">
-              {tabs.map((tab) => {
-                const isActive = tab.id === multiState.activeTabId;
-                const guards = guardCount(tab);
-                const hasErrors = !tab.validation.valid;
-                return (
-                  <div
-                    key={tab.id}
-                    onClick={() => handleSwitchToTab(tab.id)}
-                    className={cn(
-                      "group relative flex items-center gap-2 px-3 py-2 rounded cursor-pointer transition-all",
-                      "bg-[#131721] border",
-                      isActive
-                        ? "border-[#d4a84b] text-[#ece7dc]"
-                        : "border-[#2d3240] text-[#ece7dc]/80 hover:border-[#d4a84b]/30",
-                    )}
-                  >
-                    {/* Dirty indicator */}
-                    {tab.dirty && (
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#d4a84b] shrink-0" />
-                    )}
-
-                    <div className="flex-1 min-w-0">
-                      <div className="text-[11px] font-mono truncate">
-                        {tab.name || "Untitled"}
-                      </div>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-[9px] text-[#6f7f9a] font-mono">
-                          {guards} guard{guards !== 1 ? "s" : ""}
-                        </span>
-                        {hasErrors && (
-                          <span className="text-[9px] text-[#c45c5c] font-mono">
-                            errors
-                          </span>
-                        )}
-                        {tab.filePath && (
-                          <span className="text-[9px] text-[#6f7f9a]/60 font-mono truncate max-w-[120px]">
-                            {fileName(tab.filePath)}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Close button */}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleCloseTab(tab.id);
+        {/* ================================================================ */}
+        {/* Header — compact workstation briefing                           */}
+        {/* ================================================================ */}
+        <motion.div
+          className="flex items-center justify-between gap-4"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.3 }}
+        >
+          <div>
+            <div className="flex items-center gap-3">
+              <h1 className="font-syne text-lg font-bold text-[#ece7dc] tracking-tight">
+                Workspace
+              </h1>
+              {/* Format tally */}
+              <div className="flex items-center gap-1.5">
+                {Object.entries(formatCounts).map(([ft, count]) => {
+                  const desc = FILE_TYPE_REGISTRY[ft as FileType];
+                  return (
+                    <span
+                      key={ft}
+                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-mono"
+                      style={{
+                        backgroundColor: `${desc.iconColor}10`,
+                        color: `${desc.iconColor}aa`,
                       }}
-                      className="shrink-0 p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-[#c45c5c]/20 hover:text-[#c45c5c] transition-all"
-                      title="Close tab"
                     >
-                      <IconX size={11} stroke={1.5} />
-                    </button>
-                  </div>
-                );
-              })}
-              {tabs.length === 0 && (
-                <div className="text-[10px] text-[#6f7f9a]/50 font-mono px-3 py-4 text-center">
-                  No open tabs
-                </div>
-              )}
-            </div>
-          </section>
-
-          {/* Recent Files */}
-          {desktop && (
-            <section>
-              <h2 className="font-syne text-[10px] font-semibold uppercase tracking-wider text-[#6f7f9a] mb-2">
-                Recent Files
-              </h2>
-              <div className="space-y-1.5">
-                {recentFiles.length > 0 ? (
-                  recentFiles.map((filePath) => (
-                    <div
-                      key={filePath}
-                      onClick={() => handleOpenRecentFile(filePath)}
-                      className="group flex items-center gap-2 px-3 py-2 rounded cursor-pointer transition-all bg-[#131721] border border-[#2d3240] hover:border-[#d4a84b]/30"
-                    >
-                      <IconFileText size={13} stroke={1.5} className="text-[#6f7f9a] shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-[11px] font-mono text-[#ece7dc] truncate">
-                          {fileName(filePath)}
-                        </div>
-                        <div className="text-[9px] text-[#6f7f9a]/60 font-mono truncate">
-                          {filePath}
-                        </div>
-                      </div>
-                      <IconArrowRight
-                        size={11}
-                        stroke={1.5}
-                        className="text-[#6f7f9a]/0 group-hover:text-[#6f7f9a] transition-colors shrink-0"
+                      <span
+                        className="w-1 h-1 rounded-full"
+                        style={{ backgroundColor: desc.iconColor }}
                       />
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-[10px] text-[#6f7f9a]/50 font-mono px-3 py-4 text-center">
-                    No recent files
-                  </div>
+                      {count}
+                    </span>
+                  );
+                })}
+                {dirtyCount > 0 && (
+                  <span className="text-[8px] font-mono text-[#d4a84b]/60">
+                    {dirtyCount} unsaved
+                  </span>
                 )}
               </div>
-            </section>
-          )}
-
-          {/* Templates */}
-          <section ref={templatesRef}>
-            <h2 className="font-syne text-[10px] font-semibold uppercase tracking-wider text-[#6f7f9a] mb-2">
-              Templates
-            </h2>
-            <div className="space-y-1.5">
-              {TEMPLATES.map((template) => (
-                <button
-                  key={template.name}
-                  type="button"
-                  onClick={() => handleLoadTemplate(template)}
-                  disabled={!canAddTab}
-                  className={cn(
-                    "group flex w-full items-center gap-2 px-3 py-2 rounded text-left transition-all bg-[#131721] border border-[#2d3240] hover:border-[#d4a84b]/30",
-                    canAddTab ? "cursor-pointer" : "opacity-40 cursor-not-allowed",
-                  )}
-                >
-                  <IconTemplate size={13} stroke={1.5} className="text-[#d4a84b]/60 shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[11px] font-mono text-[#ece7dc]">
-                      {template.name}
-                    </div>
-                    <div className="text-[9px] text-[#6f7f9a] font-mono leading-snug">
-                      {template.description}
-                    </div>
-                    <div className="text-[8px] text-[#6f7f9a]/50 font-mono mt-0.5 italic">
-                      {template.hint}
-                    </div>
-                  </div>
-                  <IconArrowRight
-                    size={11}
-                    stroke={1.5}
-                    className="text-[#6f7f9a]/0 group-hover:text-[#6f7f9a] transition-colors shrink-0"
-                  />
-                </button>
-              ))}
             </div>
-          </section>
-        </div>
-
-        {/* Sigma Templates */}
-        <section className="mb-8">
-          <h2 className="text-[10px] font-mono uppercase tracking-wider text-[#6f7f9a] mb-2 flex items-center gap-1.5">
-            <span
-              className="inline-block w-2 h-2 rounded-full"
-              style={{ backgroundColor: FILE_TYPE_REGISTRY.sigma_rule.iconColor }}
-            />
-            Sigma Detection Templates
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-            {SIGMA_TEMPLATES.map((template) => (
-              <button
-                key={template.id}
-                type="button"
-                onClick={() => handleLoadSigmaTemplate(template)}
-                disabled={!canAddTab}
-                className={cn(
-                  "group flex w-full items-center gap-2 px-3 py-2 rounded text-left transition-all bg-[#131721] border border-[#2d3240] hover:border-[#7c9aef]/30",
-                  canAddTab ? "cursor-pointer" : "opacity-40 cursor-not-allowed",
-                )}
-              >
-                <IconRadar size={13} stroke={1.5} className="text-[#7c9aef]/60 shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <div className="text-[11px] font-mono text-[#ece7dc] truncate">
-                    {template.name}
-                  </div>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <span className="text-[9px] text-[#7c9aef]/70 font-mono">
-                      {template.category}
-                    </span>
-                    <span className="text-[9px] text-[#6f7f9a]/50 font-mono">
-                      {template.logsourceProduct}
-                    </span>
-                    <span
-                      className={cn(
-                        "text-[9px] font-mono",
-                        template.level === "high"
-                          ? "text-[#c45c5c]"
-                          : template.level === "medium"
-                          ? "text-[#d4a84b]"
-                          : "text-[#6f7f9a]",
-                      )}
-                    >
-                      {template.level}
-                    </span>
-                  </div>
-                </div>
-                <IconArrowRight
-                  size={11}
-                  stroke={1.5}
-                  className="text-[#6f7f9a]/0 group-hover:text-[#6f7f9a] transition-colors shrink-0"
-                />
-              </button>
-            ))}
           </div>
-        </section>
 
-        {/* Quick Actions */}
-        <section>
-          <h2 className="font-syne text-[10px] font-semibold uppercase tracking-wider text-[#6f7f9a] mb-2">
-            Quick Actions
-          </h2>
-          <div className="flex items-center gap-2 flex-wrap">
-            <button
-              type="button"
-              onClick={handleNewPolicy}
-              disabled={!canAddTab}
-              className={cn(
-                "inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-mono rounded border transition-colors",
-                canAddTab
-                  ? "text-[#ece7dc] border-[#2d3240] bg-[#131721] hover:border-[#d4a84b]/40 hover:text-[#d4a84b]"
-                  : "text-[#6f7f9a]/30 border-[#2d3240]/30 bg-[#131721]/50 cursor-not-allowed",
-              )}
-            >
-              <IconPlus size={12} stroke={1.5} />
-              New Policy
-            </button>
-
+          <div className="flex items-center gap-2">
             {desktop && (
               <button
                 type="button"
                 onClick={handleOpenFile}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-mono rounded border text-[#ece7dc] border-[#2d3240] bg-[#131721] hover:border-[#d4a84b]/40 hover:text-[#d4a84b] transition-colors"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-mono text-[#6f7f9a] hover:text-[#ece7dc] border border-[#1a1d28] hover:border-[#2d3240] rounded transition-colors"
               >
                 <IconFolderOpen size={12} stroke={1.5} />
-                Open File
+                Open
               </button>
             )}
-
-            <button
-              type="button"
-              onClick={handleScrollToTemplates}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-mono rounded border text-[#ece7dc] border-[#2d3240] bg-[#131721] hover:border-[#d4a84b]/40 hover:text-[#d4a84b] transition-colors"
-            >
-              <IconTemplate size={12} stroke={1.5} />
-              From Template
-            </button>
           </div>
-        </section>
+        </motion.div>
+
+        {/* ================================================================ */}
+        {/* Main grid — documents left, create/templates right              */}
+        {/* ================================================================ */}
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4 min-h-0">
+
+          {/* ---- Left: Open documents ---- */}
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center justify-between px-1 mb-1">
+              <span className="text-[8px] font-mono text-[#6f7f9a]/40 uppercase tracking-[0.2em]">
+                Open Documents
+              </span>
+              <span className="text-[8px] font-mono text-[#6f7f9a]/30">
+                {tabs.length} / 25
+              </span>
+            </div>
+
+            {tabs.length === 0 ? (
+              <div className="flex items-center justify-center py-12 text-[11px] text-[#6f7f9a]/40 font-mono">
+                No open files. Create or open something to get started.
+              </div>
+            ) : (
+              <div className="space-y-0.5">
+                {tabs.map((tab, i) => (
+                  <DocumentRow
+                    key={tab.id}
+                    tab={tab}
+                    isActive={tab.id === activeTab?.id}
+                    onSwitch={() => handleSwitchToTab(tab.id)}
+                    onClose={() => handleCloseTab(tab.id)}
+                    delay={i}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* ---- Recent files ---- */}
+            {desktop && visibleRecentFiles.length > 0 && (
+              <div className="mt-4">
+                <div className="px-1 mb-2">
+                  <span className="text-[8px] font-mono text-[#6f7f9a]/40 uppercase tracking-[0.2em]">
+                    Recent Files
+                  </span>
+                </div>
+                <div className="space-y-0.5">
+                  {visibleRecentFiles.map((filePath, i) => (
+                    <motion.button
+                      key={filePath}
+                      type="button"
+                      onClick={() => { void handleOpenRecentFile(filePath); }}
+                      className="group flex items-center gap-2.5 w-full px-3 py-2 rounded text-left hover:bg-[#0e1118] transition-colors"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: 0.3 + i * 0.03 }}
+                    >
+                      <IconFileText size={12} stroke={1.5} className="shrink-0 text-[#6f7f9a]/30" />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[11px] text-[#ece7dc]/60 truncate group-hover:text-[#ece7dc]/80 transition-colors">
+                          {fileName(filePath)}
+                        </div>
+                        <div className="text-[8px] font-mono text-[#6f7f9a]/30 truncate mt-0.5">
+                          {filePath}
+                        </div>
+                      </div>
+                      <IconArrowRight size={10} stroke={1.5} className="shrink-0 text-[#6f7f9a]/0 group-hover:text-[#6f7f9a]/30 transition-colors" />
+                    </motion.button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ---- Right: Create + Templates ---- */}
+          <div className="flex flex-col gap-4">
+            {/* Create new */}
+            <div>
+              <div className="px-1 mb-2">
+                <span className="text-[8px] font-mono text-[#6f7f9a]/40 uppercase tracking-[0.2em]">
+                  New Document
+                </span>
+              </div>
+              <div className="grid grid-cols-1 gap-1.5">
+                <FormatCard
+                  fileType="clawdstrike_policy"
+                  label="Policy"
+                  note="Guardrails & runtime controls"
+                  disabled={!canAddTab}
+                  onClick={() => handleCreateFile("clawdstrike_policy")}
+                  delay={0}
+                />
+                <FormatCard
+                  fileType="sigma_rule"
+                  label="Sigma Rule"
+                  note="Portable detection logic"
+                  disabled={!canAddTab}
+                  onClick={() => handleCreateFile("sigma_rule")}
+                  delay={1}
+                />
+                <FormatCard
+                  fileType="yara_rule"
+                  label="YARA Rule"
+                  note="Artifact & pattern scanning"
+                  disabled={!canAddTab}
+                  onClick={() => handleCreateFile("yara_rule")}
+                  delay={2}
+                />
+                <FormatCard
+                  fileType="ocsf_event"
+                  label="OCSF Event"
+                  note="Normalized telemetry"
+                  disabled={!canAddTab}
+                  onClick={() => handleCreateFile("ocsf_event")}
+                  delay={3}
+                />
+              </div>
+            </div>
+
+            {/* Templates */}
+            <div>
+              <div className="px-1 mb-1.5">
+                <span className="text-[8px] font-mono text-[#6f7f9a]/40 uppercase tracking-[0.2em]">
+                  Starter Kits
+                </span>
+              </div>
+              <div className="space-y-0">
+                {TEMPLATES.slice(0, 5).map((template) => (
+                  <TemplateRow
+                    key={template.name}
+                    name={template.name}
+                    hint={template.hint}
+                    color="#d4a84b"
+                    disabled={!canAddTab}
+                    onClick={() => handleLoadTemplate(template)}
+                  />
+                ))}
+                {featuredSigmaTemplate && (
+                  <TemplateRow
+                    name={featuredSigmaTemplate.name}
+                    hint="Sigma starter"
+                    color="#7c9aef"
+                    disabled={!canAddTab}
+                    onClick={() => handleLoadSigmaTemplate(featuredSigmaTemplate)}
+                  />
+                )}
+                {featuredYaraTemplate && (
+                  <TemplateRow
+                    name={featuredYaraTemplate.name}
+                    hint="YARA starter"
+                    color="#e0915c"
+                    disabled={!canAddTab}
+                    onClick={() => handleLoadYaraTemplate(featuredYaraTemplate)}
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

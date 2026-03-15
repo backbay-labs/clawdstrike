@@ -62,4 +62,17 @@ describe("EditorHomeTab", () => {
 
     expect(multiDispatch).not.toHaveBeenCalled();
   });
+
+  it("creates a new YARA rule from the start-new section", async () => {
+    const user = userEvent.setup();
+
+    render(<EditorHomeTab onNavigateToTab={() => {}} />);
+
+    await user.click(screen.getByRole("button", { name: /yara rule/i }));
+
+    expect(multiDispatch).toHaveBeenCalledWith({
+      type: "NEW_TAB",
+      fileType: "yara_rule",
+    });
+  });
 });

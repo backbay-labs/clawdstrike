@@ -16,44 +16,72 @@ export interface SigmaTemplate {
 }
 
 export const SIGMA_TEMPLATES: SigmaTemplate[] = [
-  // 1. Suspicious PowerShell Encoded Command Execution
+  // 1. PowerShell Filesystem Enumeration
   {
-    id: "f3a98ce2-1b4a-4c7d-9e8f-2a5b6d7c8e9f",
-    name: "Suspicious PowerShell Encoded Command Execution",
+    id: "a7c12d4e-5f38-4b91-ae62-9d0c3e8f7a1b",
+    name: "PowerShell Filesystem Enumeration",
     description:
-      "Detects execution of PowerShell with encoded commands, commonly used by attackers to obfuscate malicious scripts.",
-    category: "Execution",
+      "Detects PowerShell commands used to enumerate filesystem contents, a common reconnaissance technique for discovering sensitive files, credentials, and configuration data.",
+    category: "Discovery",
     logsourceCategory: "process_creation",
     logsourceProduct: "windows",
     level: "medium",
-    content: `title: Suspicious PowerShell Encoded Command Execution
-id: f3a98ce2-1b4a-4c7d-9e8f-2a5b6d7c8e9f
+    content: `title: PowerShell Filesystem Enumeration
+id: a7c12d4e-5f38-4b91-ae62-9d0c3e8f7a1b
 status: experimental
 description: |
-    Detects execution of PowerShell with encoded commands, which is commonly
-    used by attackers to obfuscate malicious scripts.
+    Detects PowerShell commands commonly used for filesystem enumeration
+    and reconnaissance. Adversaries use these to discover sensitive files,
+    credentials, configuration data, and understand directory structures
+    prior to exfiltration or lateral movement.
 author: ClawdStrike Workbench
-date: 2026/03/14
+date: 2026/03/15
 tags:
-    - attack.execution
-    - attack.t1059.001
+    - attack.discovery
+    - attack.t1083
+    - attack.t1119
+    - attack.t1005
 logsource:
     category: process_creation
     product: windows
 detection:
     selection_powershell:
         Image|endswith:
-            - '\\powershell.exe'
-            - '\\pwsh.exe'
-    selection_encoded:
+            - '\\\\powershell.exe'
+            - '\\\\pwsh.exe'
+    selection_enum_cmdlets:
         CommandLine|contains:
-            - '-enc'
-            - '-EncodedCommand'
-            - '-e '
-    condition: selection_powershell and selection_encoded
+            - 'Get-ChildItem'
+            - 'gci '
+            - 'dir '
+            - 'ls '
+            - 'Get-Item'
+            - 'Get-Content'
+            - 'gc '
+            - 'cat '
+            - 'type '
+            - '[System.IO.Directory]::GetFiles'
+            - '[System.IO.Directory]::GetDirectories'
+            - 'Test-Path'
+    selection_sensitive_paths:
+        CommandLine|contains:
+            - '\\\\Users\\\\'
+            - '\\\\AppData\\\\'
+            - '\\\\Documents\\\\'
+            - '\\\\.ssh\\\\'
+            - '\\\\.aws\\\\'
+            - '\\\\.azure\\\\'
+            - '\\\\.kube\\\\'
+            - '\\\\.gnupg\\\\'
+            - '\\\\Desktop\\\\'
+            - 'C:\\\\Windows\\\\System32\\\\config'
+            - '-Recurse'
+            - '-Force -Hidden'
+    condition: selection_powershell and selection_enum_cmdlets and selection_sensitive_paths
 falsepositives:
-    - Legitimate admin scripts using encoded commands
-    - Software installers
+    - System administration scripts auditing file permissions
+    - Backup and compliance scanning tools
+    - IT asset inventory collection
 level: medium
 `,
   },

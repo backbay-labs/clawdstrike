@@ -90,7 +90,7 @@ describe("DesktopSidebar", () => {
 
   it("renders a collapse button", () => {
     renderWithProviders(<DesktopSidebar />);
-    expect(screen.getByText("Collapse")).toBeTruthy();
+    expect(screen.getByLabelText("Collapse sidebar")).toBeTruthy();
   });
 
   it("renders section group headers", () => {
@@ -105,7 +105,7 @@ describe("DesktopSidebar", () => {
     const user = userEvent.setup();
     renderWithProviders(<DesktopSidebar />);
 
-    const collapseBtn = screen.getByText("Collapse").closest("button")!;
+    const collapseBtn = screen.getByLabelText("Collapse sidebar");
     await user.click(collapseBtn);
 
     for (const title of SECTION_HEADERS) {
@@ -120,11 +120,10 @@ describe("DesktopSidebar", () => {
     const sidebar = screen.getByRole("complementary");
     expect(sidebar.className).toContain("w-[200px]");
 
-    const collapseBtn = screen.getByText("Collapse").closest("button")!;
+    const collapseBtn = screen.getByLabelText("Collapse sidebar");
     await user.click(collapseBtn);
 
     expect(sidebar.className).toContain("w-[52px]");
-    expect(screen.queryByText("Collapse")).toBeNull();
     expect(screen.queryByText("Editor")).toBeNull();
   });
 });
