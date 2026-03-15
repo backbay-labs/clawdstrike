@@ -12,9 +12,14 @@ const tauriBridgeMocks = vi.hoisted(() => ({
   minimizeWindow: vi.fn<() => Promise<void>>(),
   maximizeWindow: vi.fn<() => Promise<void>>(),
   closeWindow: vi.fn<() => Promise<void>>(),
+  openDetectionFile: vi.fn<() => Promise<OpenFileResult | null>>(),
+  readDetectionFileByPath: vi.fn<(filePath: string) => Promise<OpenFileResult | null>>(),
   openPolicyFile: vi.fn<() => Promise<OpenFileResult | null>>(),
   readPolicyFileByPath: vi.fn<(filePath: string) => Promise<OpenFileResult | null>>(),
   pickSavePath: vi.fn<(format?: string) => Promise<string | null>>(),
+  saveDetectionFile: vi.fn<
+    (content: string, fileType: string, filePath?: string | null, suggestedName?: string) => Promise<string | null>
+  >(),
   savePolicyFile: vi.fn<
     (content: string, filePath?: string | null, format?: string) => Promise<string | null>
   >(),
@@ -36,6 +41,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   tauriBridgeMocks.isDesktop.mockReturnValue(false);
   tauriBridgeMocks.pickSavePath.mockResolvedValue(null);
+  tauriBridgeMocks.saveDetectionFile.mockResolvedValue(null);
   tauriBridgeMocks.savePolicyFile.mockResolvedValue(null);
   tauriCommandMocks.exportPolicyFileNative.mockResolvedValue(null);
 });
@@ -174,7 +180,7 @@ describe("WorkbenchTopbar", () => {
     const user = userEvent.setup();
     tauriBridgeMocks.isDesktop.mockReturnValue(true);
     tauriBridgeMocks.pickSavePath.mockResolvedValue("/tmp/exported-policy.json");
-    tauriBridgeMocks.savePolicyFile.mockResolvedValue("/tmp/saved-policy.yaml");
+    tauriBridgeMocks.saveDetectionFile.mockResolvedValue("/tmp/saved-policy.yaml");
     tauriCommandMocks.exportPolicyFileNative.mockResolvedValue({
       success: true,
       path: "/tmp/exported-policy.json",
@@ -203,9 +209,9 @@ describe("WorkbenchTopbar", () => {
     await user.click(saveButton);
 
     await waitFor(() => {
-      expect(tauriBridgeMocks.savePolicyFile).toHaveBeenCalledTimes(1);
+      expect(tauriBridgeMocks.saveDetectionFile).toHaveBeenCalledTimes(1);
     });
-    expect(tauriBridgeMocks.savePolicyFile.mock.calls[0]).toHaveLength(1);
+    expect(tauriBridgeMocks.saveDetectionFile.mock.calls[0]).toHaveLength(4);
   });
 
   it("desktop export does not write through savePolicyFile before native validation", async () => {

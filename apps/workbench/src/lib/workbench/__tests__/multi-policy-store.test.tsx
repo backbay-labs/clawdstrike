@@ -7,20 +7,9 @@ import {
   useMultiPolicy,
   useWorkbench,
 } from "../multi-policy-store";
-import type { WorkbenchPolicy } from "../types";
 
 const TABS_STORAGE_KEY = "clawdstrike_workbench_tabs";
 const SAVED_POLICIES_KEY = "clawdstrike_workbench_policies";
-
-function makePolicy(name: string): WorkbenchPolicy {
-  return {
-    version: "1.2.0",
-    name,
-    description: "",
-    guards: {},
-    settings: {},
-  };
-}
 
 function ReopenHarness() {
   const { multiDispatch } = useMultiPolicy();
@@ -84,6 +73,69 @@ function PersistedSuiteHarness() {
     "span",
     { "data-testid": "persisted-suite" },
     activeTab?.testSuiteYaml ?? "",
+  );
+}
+
+function SigmaTabHarness() {
+  const { multiDispatch, activeTab, tabs } = useMultiPolicy();
+  const { state } = useWorkbench();
+
+  return React.createElement(
+    "div",
+    null,
+    React.createElement(
+      "button",
+      {
+        type: "button",
+        onClick: () =>
+          multiDispatch({
+            type: "NEW_TAB",
+            fileType: "sigma_rule",
+            yaml: `title: Demo Sigma
+id: 11111111-1111-1111-1111-111111111111
+status: experimental
+logsource:
+  category: process_creation
+detection:
+  selection:
+    CommandLine|contains:
+      - calc
+  condition: selection
+level: medium
+`,
+          }),
+      },
+      "new-sigma",
+    ),
+    React.createElement(
+      "button",
+      {
+        type: "button",
+        onClick: () => multiDispatch({ type: "UPDATE_META", name: "Should Not Rewrite" }),
+      },
+      "update-meta",
+    ),
+    React.createElement(
+      "button",
+      {
+        type: "button",
+        onClick: () =>
+          multiDispatch({
+            type: "OPEN_TAB_OR_SWITCH",
+            filePath: "/tmp/demo-rule.yar",
+            fileType: "yara_rule",
+            yaml: `rule demo_rule {
+    condition:
+        true
+}
+`,
+          }),
+      },
+      "open-yara",
+    ),
+    React.createElement("span", { "data-testid": "active-file-type" }, activeTab?.fileType ?? ""),
+    React.createElement("span", { "data-testid": "tab-count" }, String(tabs.length)),
+    React.createElement("pre", { "data-testid": "active-yaml" }, state.yaml),
   );
 }
 
@@ -285,5 +337,82 @@ guards:
     expect(raw).not.toBeNull();
     expect(raw).not.toContain("embedding_api_key");
     expect(raw).not.toContain("super-secret");
+  });
+
+  it("does not rewrite non-policy tabs through UPDATE_META actions", () => {
+    render(
+      React.createElement(
+        MultiPolicyProvider,
+        null,
+        React.createElement(SigmaTabHarness),
+      ),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "new-sigma" }));
+    const before = screen.getByTestId("active-yaml").textContent;
+
+    fireEvent.click(screen.getByRole("button", { name: "update-meta" }));
+
+    expect(screen.getByTestId("active-file-type").textContent).toBe("sigma_rule");
+    expect(screen.getByTestId("active-yaml").textContent).toBe(before);
+    expect(screen.getByTestId("active-yaml").textContent).toContain("title: Demo Sigma");
+  });
+
+  it("opens typed detection files in new tabs without clobbering the current tab", () => {
+    render(
+      React.createElement(
+        MultiPolicyProvider,
+        null,
+        React.createElement(SigmaTabHarness),
+      ),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "new-sigma" }));
+    fireEvent.click(screen.getByRole("button", { name: "open-yara" }));
+
+    expect(screen.getByTestId("tab-count").textContent).toBe("3");
+    expect(screen.getByTestId("active-file-type").textContent).toBe("yara_rule");
+    expect(screen.getByTestId("active-yaml").textContent).toContain("rule demo_rule");
+  });
+
+  it("restores persisted Sigma tabs without coercing them into policies", () => {
+    localStorage.setItem(
+      TABS_STORAGE_KEY,
+      JSON.stringify({
+        tabs: [
+          {
+            id: "tab-sigma",
+            name: "Persisted Sigma",
+            filePath: "/tmp/persisted-sigma.yml",
+            fileType: "sigma_rule",
+            yaml: `title: Persisted Sigma
+id: 22222222-2222-2222-2222-222222222222
+status: experimental
+logsource:
+  category: process_creation
+detection:
+  selection:
+    CommandLine|contains:
+      - whoami
+  condition: selection
+level: medium
+`,
+          },
+        ],
+        activeTabId: "tab-sigma",
+      }),
+    );
+
+    render(
+      React.createElement(
+        MultiPolicyProvider,
+        null,
+        React.createElement(SigmaTabHarness),
+      ),
+    );
+
+    expect(screen.getByTestId("active-file-type").textContent).toBe("sigma_rule");
+    expect(screen.getByTestId("active-yaml").textContent).toContain("title: Persisted Sigma");
+    expect(screen.getByTestId("active-yaml").textContent).not.toContain("guards:");
   });
 });

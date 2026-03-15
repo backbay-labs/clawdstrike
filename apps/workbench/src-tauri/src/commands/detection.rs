@@ -280,10 +280,9 @@ pub fn validate_sigma_rule(source: String) -> Result<SigmaValidationResponse, St
                         line: None,
                         column: None,
                     });
-                } else if !detection
-                    .as_mapping()
-                    .is_some_and(|det| det.contains_key(&serde_yaml::Value::String("condition".into())))
-                {
+                } else if !detection.as_mapping().is_some_and(|det| {
+                    det.contains_key(&serde_yaml::Value::String("condition".into()))
+                }) {
                     diagnostics.push(DetectionDiagnostic {
                         severity: "error".into(),
                         message: "detection.condition is required".into(),
@@ -398,7 +397,9 @@ pub fn validate_yara_rule(source: String) -> Result<YaraValidationResponse, Stri
         if !saw_condition {
             diagnostics.push(DetectionDiagnostic {
                 severity: "error".into(),
-                message: format!("YARA rule '{rule_name}' is missing a required 'condition:' section"),
+                message: format!(
+                    "YARA rule '{rule_name}' is missing a required 'condition:' section"
+                ),
                 line: None,
                 column: None,
             });
@@ -416,8 +417,7 @@ pub fn validate_yara_rule(source: String) -> Result<YaraValidationResponse, Stri
     if rule_count == 0 {
         diagnostics.push(DetectionDiagnostic {
             severity: "error".into(),
-            message: "No YARA rule declarations found. Rules must start with 'rule <name>'"
-                .into(),
+            message: "No YARA rule declarations found. Rules must start with 'rule <name>'".into(),
             line: None,
             column: None,
         });

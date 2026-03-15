@@ -4,6 +4,7 @@ import { useWorkbench, useMultiPolicy } from "@/lib/workbench/multi-policy-store
 import { useFleetConnection } from "@/lib/workbench/use-fleet-connection";
 import { useMcpStatus } from "@/lib/workbench/use-mcp-status";
 import { isDesktop } from "@/lib/tauri-bridge";
+import { FILE_TYPE_REGISTRY, isPolicyFileType } from "@/lib/workbench/file-type-registry";
 import { GUARD_REGISTRY } from "@/lib/workbench/guard-registry";
 import type { GuardId } from "@/lib/workbench/types";
 import { cn } from "@/lib/utils";
@@ -21,6 +22,8 @@ export function StatusBar() {
   const navigate = useNavigate();
   const { activePolicy, validation, filePath } = state;
   const desktop = isDesktop();
+  const fileType = currentTab?.fileType ?? "clawdstrike_policy";
+  const policyTab = isPolicyFileType(fileType);
 
   // ---- Validation status ----
   const errorCount = validation.errors.length;
@@ -64,21 +67,25 @@ export function StatusBar() {
         {/* Separator */}
         <span className="w-px h-3 bg-[#2d3240]/60" />
 
-        {/* Guard count */}
-        <span className="text-[#6f7f9a]/80">
-          {enabledGuards}/{totalGuards} guards
-        </span>
-
-        {/* Separator */}
-        <span className="w-px h-3 bg-[#2d3240]/60" />
-
-        {/* Schema version */}
-        <span className="text-[#6f7f9a]/80">
-          v{activePolicy.version}
-        </span>
-
-        {/* Separator */}
-        <span className="w-px h-3 bg-[#2d3240]/60" />
+        {policyTab ? (
+          <>
+            <span className="text-[#6f7f9a]/80">
+              {enabledGuards}/{totalGuards} guards
+            </span>
+            <span className="w-px h-3 bg-[#2d3240]/60" />
+            <span className="text-[#6f7f9a]/80">
+              v{activePolicy.version}
+            </span>
+            <span className="w-px h-3 bg-[#2d3240]/60" />
+          </>
+        ) : (
+          <>
+            <span className="text-[#6f7f9a]/80">
+              {FILE_TYPE_REGISTRY[fileType].label}
+            </span>
+            <span className="w-px h-3 bg-[#2d3240]/60" />
+          </>
+        )}
 
         {/* Fleet connection status */}
         <button

@@ -49,6 +49,11 @@ export function YamlPreviewPanel({ fileType }: YamlPreviewPanelProps) {
   }, []);
 
   const { errors, warnings } = state.validation;
+  const editLabel = fileType === "yara_rule"
+    ? "Edit Source"
+    : fileType === "ocsf_event"
+    ? "Edit JSON"
+    : "Edit YAML";
 
   // Show toast when new YAML parse errors appear (only while editing)
   const prevErrorCountRef = useRef(errors.length);
@@ -130,7 +135,7 @@ export function YamlPreviewPanel({ fileType }: YamlPreviewPanelProps) {
               : "text-[#6f7f9a] hover:text-[#ece7dc]"
           )}
         >
-          Edit YAML
+          {editLabel}
           {activeTab === "edit" && (
             <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#d4a84b]" />
           )}

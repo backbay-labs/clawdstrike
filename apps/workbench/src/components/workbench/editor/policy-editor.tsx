@@ -389,9 +389,17 @@ export function PolicyEditor() {
     const usedPaths = new Set<string>();
     return tabs.map((tab, index) => {
       const ext = getPrimaryExtension(tab.fileType);
-      let relativePath = tab.filePath
+      const directoryPrefix = tab.fileType === "sigma_rule"
+        ? "sigma"
+        : tab.fileType === "clawdstrike_policy"
+        ? "policies"
+        : tab.fileType === "yara_rule"
+        ? "yara"
+        : "ocsf";
+      const baseName = tab.filePath
         ? tab.filePath.replace(/\\/g, "/").split("/").pop() ?? `${index + 1}${ext}`
-        : `unsaved/${sanitizeFilenameStem(tab.name, `untitled_${index + 1}`)}${ext}`;
+        : `${sanitizeFilenameStem(tab.name, `untitled_${index + 1}`)}${ext}`;
+      let relativePath = `${directoryPrefix}/${baseName}`;
 
       while (usedPaths.has(relativePath)) {
         const stem = relativePath.replace(/\.[^.]+$/, "");
@@ -482,7 +490,12 @@ export function PolicyEditor() {
   const { versions } = useVersionHistory(policyId);
 
   // Auto-create versions on explicit save (dirty -> clean transition)
-  useAutoVersion(policyId, state.yaml, state.activePolicy, state.dirty);
+  useAutoVersion(
+    isPolicyTab ? policyId : undefined,
+    state.yaml,
+    state.activePolicy,
+    isPolicyTab && state.dirty,
+  );
 
   // Rollback handler: load a version's policy into the editor
   const handleRollback = useCallback(
@@ -803,7 +816,9 @@ export function PolicyEditor() {
             navigate("/editor");
           }}
           onNavigate={(path) => navigate(path)}
-          onOpenFile={() => { void openFile(); }}
+          onOpenFile={() => {
+            void openFile().then(() => navigate("/editor"));
+          }}
           onValidate={handleValidateCurrentFile}
           onToggleCoverage={() => setShowCoverage((prev) => !prev)}
         />
