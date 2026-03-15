@@ -1,5 +1,6 @@
 # Remote Desktop Agent Ruleset
 # Moderate CUA security policy for remote desktop AI agents
+# HushSpec equivalent: https://github.com/backbay-labs/hush/blob/main/rulesets/remote-desktop.yaml
 version: "1.2.0"
 name: Remote Desktop Agent
 description: Security rules for AI agents operating via remote desktop (CUA)

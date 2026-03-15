@@ -39,6 +39,7 @@
 
 # Guides
 
+- [Adopting HushSpec](guides/hushspec-migration.md)
 - [OpenClaw Integration](guides/openclaw-integration.md)
 - [Agent OpenClaw Operations](guides/agent-openclaw-operations.md)
 - [Agent Attribution Model](guides/agent-attribution-model.md)

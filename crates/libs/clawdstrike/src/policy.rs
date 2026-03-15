@@ -787,6 +787,27 @@ impl Policy {
         Ok(policy)
     }
 
+    /// Parse from YAML string, auto-detecting HushSpec or Clawdstrike format.
+    pub fn from_yaml_auto(yaml: &str) -> Result<Self> {
+        if crate::hushspec_compiler::is_hushspec(yaml) {
+            let spec = hushspec::HushSpec::parse(yaml)
+                .map_err(|e| Error::ConfigError(format!("Failed to parse HushSpec YAML: {e}")))?;
+            let validation = hushspec::validate(&spec);
+            if !validation.is_valid() {
+                let errors: Vec<String> = validation.errors.iter().map(|e| e.to_string()).collect();
+                return Err(Error::ConfigError(format!(
+                    "HushSpec validation failed: {}",
+                    errors.join(", ")
+                )));
+            }
+            let policy = crate::hushspec_compiler::compile(&spec)?;
+            policy.validate()?;
+            Ok(policy)
+        } else {
+            Self::from_yaml(yaml)
+        }
+    }
+
     fn from_yaml_unvalidated(yaml: &str) -> Result<Self> {
         let policy: Self = serde_yaml::from_str(yaml)?;
         #[cfg(feature = "full")]

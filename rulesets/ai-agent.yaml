@@ -1,5 +1,6 @@
 # AI Agent Ruleset
 # Optimized for AI coding assistants (Claude, GPT, etc.)
+# HushSpec equivalent: https://github.com/backbay-labs/hush/blob/main/rulesets/ai-agent.yaml
 version: "1.1.0"
 name: AI Agent
 description: Security rules optimized for AI coding assistants

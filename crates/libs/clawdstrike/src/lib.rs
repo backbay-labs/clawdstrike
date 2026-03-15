@@ -105,6 +105,8 @@ pub mod error;
 #[cfg(any(feature = "full", feature = "policy-event"))]
 pub mod guards;
 #[cfg(any(feature = "full", feature = "policy-event"))]
+pub mod hushspec_compiler;
+#[cfg(any(feature = "full", feature = "policy-event"))]
 pub mod identity;
 #[cfg(feature = "full")]
 pub mod irm;
@@ -168,6 +170,8 @@ pub use marketplace_feed::{
 #[cfg(feature = "ipfs")]
 pub mod ipfs;
 
+#[cfg(any(feature = "full", feature = "policy-event"))]
+pub use hushspec_compiler::{compile_hushspec, decompile_to_hushspec, is_hushspec};
 #[cfg(feature = "full")]
 pub use pipeline::{EvaluationPath, EvaluationStage};
 #[cfg(feature = "full")]

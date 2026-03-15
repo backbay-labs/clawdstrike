@@ -2,6 +2,12 @@
 
 Reference for canonical Clawdstrike policy files (`version`, `guards`, `settings`, `posture`, and `extends` behavior).
 
+## HushSpec Compatibility
+
+Clawdstrike supports loading policies in [HushSpec](https://github.com/backbay-labs/hush) format. HushSpec is a portable, engine-neutral specification for AI agent security rules. See the [migration guide](../guides/hushspec-migration.md) for details.
+
+When a policy file starts with `hushspec:` instead of `version:`, Clawdstrike automatically compiles it to the native format using the built-in HushSpec compiler.
+
 ## Supported Versions
 
 - `1.1.0`
