@@ -41,7 +41,7 @@ uuid.workspace = true
 regorus = { version = "0.9.1", optional = true }
 toml.workspace = true
 dirs.workspace = true
-hushspec = { path = "../../../../hush/crates/hushspec" }
+hushspec = { git = "https://github.com/backbay-labs/hush.git" }
 hunt-scan.workspace = true
 hunt-query.workspace = true
 hunt-correlate.workspace = true

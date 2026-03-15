@@ -788,19 +788,14 @@ impl Policy {
     }
 
     /// Parse from YAML string, auto-detecting HushSpec or Clawdstrike format.
+    ///
+    /// If the document starts with `hushspec:`, it is parsed and compiled via
+    /// [`compile_hushspec`](crate::hushspec_compiler::compile_hushspec), then
+    /// validated as a Clawdstrike policy. Otherwise falls through to
+    /// [`from_yaml`](Self::from_yaml).
     pub fn from_yaml_auto(yaml: &str) -> Result<Self> {
         if crate::hushspec_compiler::is_hushspec(yaml) {
-            let spec = hushspec::HushSpec::parse(yaml)
-                .map_err(|e| Error::ConfigError(format!("Failed to parse HushSpec YAML: {e}")))?;
-            let validation = hushspec::validate(&spec);
-            if !validation.is_valid() {
-                let errors: Vec<String> = validation.errors.iter().map(|e| e.to_string()).collect();
-                return Err(Error::ConfigError(format!(
-                    "HushSpec validation failed: {}",
-                    errors.join(", ")
-                )));
-            }
-            let policy = crate::hushspec_compiler::compile(&spec)?;
+            let policy = crate::hushspec_compiler::compile_hushspec(yaml)?;
             policy.validate()?;
             Ok(policy)
         } else {

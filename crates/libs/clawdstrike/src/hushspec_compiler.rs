@@ -28,7 +28,7 @@ use hush_proxy::policy::PolicyAction;
 pub fn is_hushspec(yaml: &str) -> bool {
     for line in yaml.lines() {
         let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') {
+        if trimmed.is_empty() || trimmed.starts_with('#') || trimmed == "---" || trimmed == "..." {
             continue;
         }
         return trimmed.starts_with("hushspec:");

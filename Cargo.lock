@@ -3909,6 +3909,7 @@ dependencies = [
 [[package]]
 name = "hushspec"
 version = "0.1.0"
+source = "git+https://github.com/backbay-labs/hush.git#98727b8d738cb1dff0f0a89122e4b2ccc0a2dfca"
 dependencies = [
  "serde",
  "serde_json",

@@ -29,6 +29,13 @@ fn is_hushspec_detects_format() {
         "version: \"1.5.0\"\nname: test\n"
     ));
     assert!(!hushspec_compiler::is_hushspec("name: test\n"));
+    // YAML document markers should be skipped
+    assert!(hushspec_compiler::is_hushspec(
+        "---\nhushspec: \"0.1.0\"\nname: test\n"
+    ));
+    assert!(hushspec_compiler::is_hushspec(
+        "---\n# comment\nhushspec: \"0.1.0\"\n"
+    ));
 }
 
 // ---------------------------------------------------------------------------
