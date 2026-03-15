@@ -17,7 +17,6 @@ import {
   IconVariable,
   IconFilter,
   IconPackageImport,
-  IconTag,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import {
@@ -333,6 +332,12 @@ export function YaraVisualPanel({
   return (
     <ScrollArea className="h-full">
       <div className="flex flex-col">
+        {/* Format sigil */}
+        <div className="flex items-center gap-2 px-4 pt-3 pb-1">
+          <span className="text-base font-black tracking-tight" style={{ color: ACCENT }}>YAR</span>
+          <span className="text-[10px] font-mono text-[#6f7f9a]">YARA Pattern Rule</span>
+        </div>
+
         {/* Rule modifier badges */}
         {(rule.isPrivate || rule.isGlobal || rule.tags.length > 0) && (
           <div className="flex items-center gap-2 px-4 pt-3 pb-0 flex-wrap">
@@ -391,7 +396,7 @@ export function YaraVisualPanel({
             label="Author"
             value={getMetaValue("author")}
             onChange={(v) => handleMetaChange("author", v)}
-            placeholder="Author name"
+            placeholder="Your name or team"
             readOnly={readOnly}
             accentColor={ACCENT}
           />
@@ -456,7 +461,7 @@ export function YaraVisualPanel({
             </div>
           ) : (
             <div className="text-[11px] font-mono text-[#6f7f9a]/50 italic py-2">
-              No strings defined
+              No string patterns found. Add strings in the YARA source editor.
             </div>
           )}
         </Section>
@@ -472,7 +477,7 @@ export function YaraVisualPanel({
             </div>
           ) : (
             <div className="text-[11px] font-mono text-[#6f7f9a]/50 italic py-2">
-              No condition defined
+              Every YARA rule needs a condition. Add one in the source editor.
             </div>
           )}
         </Section>
@@ -503,31 +508,10 @@ export function YaraVisualPanel({
             </div>
           ) : (
             <div className="text-[11px] font-mono text-[#6f7f9a]/50 italic py-1">
-              No imports
+              No module imports
             </div>
           )}
         </Section>
-
-        {/* Section 5: Tags (if any) */}
-        {rule.tags.length > 0 && (
-          <Section title="Tags" icon={IconTag} defaultOpen accentColor={ACCENT}>
-            <div className="flex flex-wrap gap-1.5">
-              {rule.tags.map((tag) => (
-                <span
-                  key={tag}
-                  className="inline-flex items-center px-2 py-0.5 text-[10px] font-mono border rounded"
-                  style={{
-                    color: ACCENT,
-                    borderColor: `${ACCENT}30`,
-                    backgroundColor: `${ACCENT}10`,
-                  }}
-                >
-                  {tag}
-                </span>
-              ))}
-            </div>
-          </Section>
-        )}
 
         {/* Bottom padding */}
         <div className="h-6" />

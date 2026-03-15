@@ -121,7 +121,7 @@ export function ProblemsPanel({ diagnostics, className }: ProblemsPanelProps) {
           )}
           {counts.error === 0 && counts.warning === 0 && counts.info === 0 && (
             <span className="text-[9px] font-mono text-[#6f7f9a]/50">
-              0 issues
+              No issues
             </span>
           )}
         </div>
@@ -132,7 +132,7 @@ export function ProblemsPanel({ diagnostics, className }: ProblemsPanelProps) {
         <div className="flex flex-col items-center justify-center py-8 gap-2">
           <IconCircleCheck size={20} stroke={1.5} className="text-[#3dbf84]/50" />
           <span className="text-[11px] font-mono text-[#6f7f9a]/60">
-            No problems detected
+            All clear — no problems found
           </span>
         </div>
       ) : (
@@ -159,7 +159,7 @@ function ProblemRow({ entry }: { entry: ProblemEntry }) {
   return (
     <div
       className="flex items-center gap-2.5 px-4 py-1.5 hover:bg-[#131721]/40 transition-colors group"
-      style={{ borderLeft: `2px solid ${accentColor}` }}
+      style={{ borderLeft: `4px solid ${accentColor}` }}
     >
       {/* Severity icon */}
       <Icon
@@ -189,18 +189,6 @@ function ProblemRow({ entry }: { entry: ProblemEntry }) {
       {/* Message */}
       <span className="text-[10px] font-mono text-[#6f7f9a] group-hover:text-[#ece7dc]/80 transition-colors truncate flex-1">
         {entry.message}
-      </span>
-
-      {/* Format badge */}
-      <span
-        className="text-[8px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded shrink-0"
-        style={{
-          color: descriptor.iconColor,
-          backgroundColor: `${descriptor.iconColor}10`,
-          border: `1px solid ${descriptor.iconColor}20`,
-        }}
-      >
-        {descriptor.shortLabel}
       </span>
     </div>
   );

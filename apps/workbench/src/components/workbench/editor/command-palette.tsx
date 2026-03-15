@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import { FILE_TYPE_REGISTRY } from "@/lib/workbench/file-type-registry";
 import type { FileType } from "@/lib/workbench/file-type-registry";
 
@@ -224,96 +225,105 @@ export function CommandPalette({ open, onClose, onNewTab, onNavigate }: CommandP
     [flatItems.length, executeSelected, onClose],
   );
 
-  if (!open) return null;
-
   // Track a running flat index across groups for selection highlighting
   let flatIdx = 0;
 
   return (
-    // Backdrop
-    <div
-      className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-start justify-center pt-[15vh]"
-      onClick={onClose}
-    >
-      {/* Palette container */}
-      <div
-        className="w-full max-w-[500px] max-h-[400px] bg-[#0b0d13] border border-[#2d3240] rounded-lg shadow-2xl flex flex-col overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={handleKeyDown}
-      >
-        {/* Search input */}
-        <div className="flex items-center border-b border-[#2d3240]">
-          <span className="pl-4 text-[#6f7f9a] text-[13px] select-none" aria-hidden>
-            &gt;
-          </span>
-          <input
-            ref={inputRef}
-            type="text"
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              setSelectedIndex(0);
-            }}
-            placeholder="Type a command\u2026"
-            className="flex-1 text-[13px] font-mono text-[#ece7dc] bg-transparent w-full px-2 py-3 outline-none caret-[#d4a84b] placeholder:text-[#6f7f9a]/60"
-            spellCheck={false}
-            autoComplete="off"
+    <AnimatePresence>
+      {open && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-black/50 z-50"
+            onClick={onClose}
           />
-        </div>
-
-        {/* Command list */}
-        <div ref={listRef} className="overflow-y-auto flex-1">
-          {groups.length === 0 && (
-            <div className="px-4 py-6 text-center text-[12px] text-[#6f7f9a] font-mono">
-              No matching commands
+          {/* Palette container */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.97, y: -8 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.97, y: -8 }}
+            transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
+            className="fixed top-[15vh] left-1/2 -translate-x-1/2 z-50 w-full max-w-[560px] max-h-[400px] bg-[#0b0d13] border border-[#2d3240] rounded-lg shadow-2xl flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={handleKeyDown}
+          >
+            {/* Search input */}
+            <div className="flex items-center border-b border-[#2d3240]">
+              <span className="pl-4 text-[#d4a84b] text-[15px] select-none font-mono" aria-hidden>
+                &gt;
+              </span>
+              <input
+                ref={inputRef}
+                type="text"
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  setSelectedIndex(0);
+                }}
+                placeholder="Type a command\u2026"
+                className="flex-1 text-[14px] font-mono text-[#ece7dc] bg-transparent w-full px-2 py-3 outline-none caret-[#d4a84b] placeholder:text-[#6f7f9a]/60"
+                spellCheck={false}
+                autoComplete="off"
+              />
             </div>
-          )}
 
-          {groups.map((group) => (
-            <div key={group.category}>
-              {/* Category header */}
-              <div className="text-[9px] font-semibold uppercase tracking-[0.08em] text-[#6f7f9a] px-4 py-1 mt-1 select-none">
-                {group.category}
-              </div>
+            {/* Command list */}
+            <div ref={listRef} className="overflow-y-auto flex-1">
+              {groups.length === 0 && (
+                <div className="px-4 py-6 text-center font-mono">
+                  <div className="text-[12px] text-[#6f7f9a]">No matching commands</div>
+                  <div className="text-[10px] text-[#6f7f9a]/50 mt-1">Try a shorter query, or press Esc to close.</div>
+                </div>
+              )}
 
-              {group.items.map((cmd) => {
-                const isActive = flatIdx === selectedIndex;
-                const idx = flatIdx;
-                flatIdx++;
-                return (
-                  <div
-                    key={cmd.id}
-                    data-active={isActive}
-                    className={`flex items-center justify-between px-4 py-2 cursor-pointer transition-colors ${
-                      isActive
-                        ? "bg-[#131721] text-[#d4a84b]"
-                        : "text-[#ece7dc] hover:bg-[#131721]/60"
-                    }`}
-                    onMouseEnter={() => setSelectedIndex(idx)}
-                    onClick={() => cmd.action()}
-                  >
-                    <span className="flex items-center gap-2 text-[12px] font-mono truncate">
-                      {cmd.dotColor && (
-                        <span
-                          className="inline-block w-2 h-2 rounded-full flex-shrink-0"
-                          style={{ backgroundColor: cmd.dotColor }}
-                        />
-                      )}
-                      {cmd.label}
-                    </span>
-
-                    {cmd.shortcut && (
-                      <kbd className="ml-4 flex-shrink-0 text-[9px] text-[#6f7f9a] bg-[#131721] px-1.5 py-0.5 rounded font-mono">
-                        {cmd.shortcut}
-                      </kbd>
-                    )}
+              {groups.map((group) => (
+                <div key={group.category}>
+                  {/* Category header */}
+                  <div className="text-[9px] font-semibold uppercase tracking-[0.08em] text-[#6f7f9a] px-4 py-1 mt-1 select-none">
+                    {group.category}
                   </div>
-                );
-              })}
+
+                  {group.items.map((cmd) => {
+                    const isActive = flatIdx === selectedIndex;
+                    const idx = flatIdx;
+                    flatIdx++;
+                    return (
+                      <div
+                        key={cmd.id}
+                        data-active={isActive}
+                        className={`flex items-center justify-between py-2 cursor-pointer transition-colors ${
+                          isActive
+                            ? "bg-[#131721]/60 text-[#ece7dc]"
+                            : "text-[#ece7dc] hover:bg-[#131721]/60"
+                        }`}
+                        style={isActive ? { borderLeft: '3px solid #d4a84b', paddingLeft: '13px', paddingRight: '16px' } : { paddingLeft: '16px', paddingRight: '16px' }}
+                        onMouseEnter={() => setSelectedIndex(idx)}
+                        onClick={() => cmd.action()}
+                      >
+                        <span className="flex items-center gap-2 text-[12px] font-mono truncate">
+                          {cmd.dotColor && (
+                            <span
+                              className="inline-block w-2 h-2 rounded-full flex-shrink-0"
+                              style={{ backgroundColor: cmd.dotColor }}
+                            />
+                          )}
+                          {cmd.label}
+                        </span>
+
+                        {cmd.shortcut && (
+                          <kbd className="ml-4 flex-shrink-0 text-[9px] text-[#6f7f9a] bg-[#131721] px-1.5 py-0.5 rounded font-mono">
+                            {cmd.shortcut}
+                          </kbd>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      </div>
-    </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
   );
 }

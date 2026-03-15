@@ -224,16 +224,16 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
       errors.push(`JSON parse error: ${parseError}`);
     }
     if (!event.class_uid && event.class_uid !== 0) {
-      errors.push("class_uid is required");
+      errors.push("Select an event class to continue.");
     }
     if (!event.category_uid && event.category_uid !== 0) {
-      errors.push("category_uid is required");
+      errors.push("Category is set automatically from the event class.");
     }
     if (event.time === undefined || event.time === null) {
-      errors.push("time is required");
+      errors.push("Set the event time in the Status & Actions section.");
     }
     if (!event.metadata) {
-      errors.push("metadata object is required");
+      errors.push("Fill in the Metadata section \u2014 at minimum, set the version.");
     }
     return errors;
   }, [event, parseError]);
@@ -244,6 +244,12 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
   return (
     <ScrollArea className="h-full">
       <div className="flex flex-col">
+        {/* Format sigil */}
+        <div className="flex items-center gap-2 px-4 pt-3 pb-1">
+          <span className="text-base font-black tracking-tight" style={{ color: ACCENT }}>OCSF</span>
+          <span className="text-[10px] font-mono text-[#6f7f9a]">Open Cybersecurity Schema</span>
+        </div>
+
         {/* Parse errors banner */}
         {parseError && (
           <div className="mx-4 mt-3 p-2 bg-[#c45c5c]/10 border border-[#c45c5c]/20 rounded">
@@ -288,7 +294,7 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
         {/* Section 1: Event Class */}
         <Section title="Event Class" icon={IconFileAnalytics} accentColor={ACCENT}>
           <SelectInput
-            label="Class UID"
+            label="Event Class"
             value={classUid ? String(classUid) : ""}
             options={CLASS_UID_OPTIONS}
             onChange={(v) => {
@@ -306,7 +312,7 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
             accentColor={ACCENT}
           />
           <div className="flex flex-col gap-1">
-            <FieldLabel label="Category UID" />
+            <FieldLabel label="Category" />
             <div
               className="bg-[#0b0d13]/50 border border-[#2d3240] rounded px-2 py-1 text-[11px] font-mono text-[#ece7dc]/60"
             >
@@ -317,23 +323,23 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
           </div>
           <div className="grid grid-cols-2 gap-3">
             <SelectInput
-              label="Activity ID"
+              label="Activity"
               value={event.activity_id != null ? String(event.activity_id) : ""}
               options={ACTIVITY_OPTIONS}
               onChange={(v) => updateField(["activity_id"], v ? Number(v) : undefined)}
               readOnly={readOnly}
               required
-              placeholder="Select..."
+              placeholder="Choose an activity..."
               accentColor={ACCENT}
             />
             <SelectInput
-              label="Severity ID"
+              label="Severity"
               value={severityId ? String(severityId) : ""}
               options={SEVERITY_OPTIONS}
               onChange={(v) => updateField(["severity_id"], v ? Number(v) : undefined)}
               readOnly={readOnly}
               required
-              placeholder="Select..."
+              placeholder="Choose a severity..."
               accentColor={ACCENT}
             />
           </div>
@@ -354,7 +360,7 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
             label="Product Name"
             value={String(deepGet(event, ["metadata", "product", "name"]) ?? "")}
             onChange={(v) => updateField(["metadata", "product", "name"], v || undefined)}
-            placeholder="Product name"
+            placeholder="Name of the product that generated this event"
             readOnly={readOnly}
             accentColor={ACCENT}
           />
@@ -362,7 +368,7 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
             label="Vendor Name"
             value={String(deepGet(event, ["metadata", "product", "vendor_name"]) ?? "")}
             onChange={(v) => updateField(["metadata", "product", "vendor_name"], v || undefined)}
-            placeholder="Vendor name"
+            placeholder="Name of the vendor (e.g. CrowdStrike, Splunk)"
             readOnly={readOnly}
             accentColor={ACCENT}
           />
@@ -379,7 +385,7 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
 
         {/* Section 3: Finding Info (shown when class_uid is 2004) */}
         {isDetectionFinding && (
-          <Section title="Finding Info" icon={IconSearch} accentColor={ACCENT}>
+          <Section title="Detection Finding Details" icon={IconSearch} accentColor={ACCENT}>
             <TextInput
               label="Finding UID"
               value={String(deepGet(event, ["finding_info", "uid"]) ?? "")}
@@ -412,38 +418,38 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
         <Section title="Status & Actions" icon={IconShieldCheck} accentColor={ACCENT}>
           <div className="grid grid-cols-2 gap-3">
             <SelectInput
-              label="Status ID"
+              label="Status"
               value={event.status_id != null ? String(event.status_id) : ""}
               options={STATUS_OPTIONS}
               onChange={(v) => updateField(["status_id"], v ? Number(v) : undefined)}
               readOnly={readOnly}
-              placeholder="Select..."
+              placeholder="Choose a status..."
               accentColor={ACCENT}
             />
             <SelectInput
-              label="Action ID"
+              label="Action"
               value={event.action_id != null ? String(event.action_id) : ""}
               options={ACTION_OPTIONS}
               onChange={(v) => updateField(["action_id"], v ? Number(v) : undefined)}
               readOnly={readOnly}
-              placeholder="Select..."
+              placeholder="Choose an action..."
               accentColor={ACCENT}
             />
           </div>
           <SelectInput
-            label="Disposition ID"
+            label="Disposition"
             value={event.disposition_id != null ? String(event.disposition_id) : ""}
             options={DISPOSITION_OPTIONS}
             onChange={(v) => updateField(["disposition_id"], v ? Number(v) : undefined)}
             readOnly={readOnly}
-            placeholder="Select..."
+            placeholder="Choose a disposition..."
             accentColor={ACCENT}
           />
           <TextArea
             label="Message"
             value={String(event.message ?? "")}
             onChange={(v) => updateField(["message"], v || undefined)}
-            placeholder="Event message..."
+            placeholder="Human-readable summary of the event"
             readOnly={readOnly}
             rows={2}
             accentColor={ACCENT}
@@ -452,14 +458,14 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
             label="Time"
             value={event.time != null ? Number(event.time) : undefined}
             onChange={(v) => updateField(["time"], v)}
-            placeholder="Epoch milliseconds"
+            placeholder="e.g. 1710432000000"
             required
             readOnly={readOnly}
           />
         </Section>
 
         {/* Section 5: Validation Summary */}
-        <Section title="Validation Summary" icon={IconChecks} defaultOpen={validationErrors.length > 0} accentColor={ACCENT}>
+        <Section title="Required Fields" icon={IconChecks} defaultOpen={validationErrors.length > 0} accentColor={ACCENT}>
           <div className="flex flex-col gap-2">
             {/* Progress indicator */}
             <div className="flex items-center gap-2">

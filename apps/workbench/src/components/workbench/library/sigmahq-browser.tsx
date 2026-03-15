@@ -1256,11 +1256,11 @@ export function SigmaHQBrowser({ onImport }: SigmaHQBrowserProps) {
                     </button>
                     <button
                       onClick={() => onImport(rule.content, rule.title)}
-                      title="Import to Workbench"
+                      title="Open in editor"
                       className="flex items-center gap-1 px-2 py-1 rounded-md bg-[#7c9aef]/10 text-[#7c9aef] text-[10px] font-medium hover:bg-[#7c9aef]/20 transition-colors"
                     >
                       <IconDownload size={11} stroke={1.5} />
-                      Import
+                      Open in editor
                     </button>
                   </div>
                 </div>

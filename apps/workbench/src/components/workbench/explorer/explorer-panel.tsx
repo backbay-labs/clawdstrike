@@ -198,7 +198,7 @@ export function ExplorerPanel({
             className="text-[#6f7f9a]/30"
           />
           <p className="text-[11px] font-mono text-[#6f7f9a]/70 leading-relaxed">
-            Open a folder to get started
+            No project open. Open a folder containing detection rules to browse them here.
           </p>
           {onOpenFolder && (
             <button
@@ -280,7 +280,7 @@ export function ExplorerPanel({
         {/* Format filter dots */}
         <div className="flex items-center gap-2">
           <span className="text-[9px] font-mono text-[#6f7f9a]/40 uppercase tracking-wide">
-            Format
+            File type
           </span>
           <div className="flex items-center gap-1.5">
             {ALL_FILE_TYPES.map((ft) => (

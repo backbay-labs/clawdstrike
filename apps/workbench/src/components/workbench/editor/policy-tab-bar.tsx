@@ -165,6 +165,7 @@ function TabItem({
   onRename: (tabId: string, name: string) => void;
 }) {
   const isRenaming = renamingId === tab.id;
+  const iconColor = FILE_TYPE_REGISTRY[tab.fileType ?? "clawdstrike_policy"].iconColor;
 
   return (
     <div
@@ -192,11 +193,12 @@ function TabItem({
         dropPosition === "left" && "border-l-2 border-l-[#d4a84b]",
         dropPosition === "right" && "border-r-2 border-r-[#d4a84b]",
       )}
+      style={isActive ? { backgroundColor: `${iconColor}08` } : undefined}
     >
-      {/* Active indicator — format-colored bottom border */}
+      {/* Active indicator — format-colored top border */}
       {isActive && (
         <div
-          className="absolute bottom-0 left-0 right-0 h-[2px]"
+          className="absolute top-0 left-0 right-0 h-[3px]"
           style={{ backgroundColor: FILE_TYPE_REGISTRY[tab.fileType ?? "clawdstrike_policy"].iconColor }}
         />
       )}
@@ -208,7 +210,7 @@ function TabItem({
 
       {/* Format indicator dot */}
       <span
-        className="inline-block w-2 h-2 rounded-full mr-0.5 flex-shrink-0"
+        className="inline-block w-2.5 h-2.5 rounded-full mr-0.5 flex-shrink-0"
         style={{ backgroundColor: FILE_TYPE_REGISTRY[tab.fileType ?? "clawdstrike_policy"].iconColor }}
         title={FILE_TYPE_REGISTRY[tab.fileType ?? "clawdstrike_policy"].label}
       />

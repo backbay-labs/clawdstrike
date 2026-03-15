@@ -291,6 +291,12 @@ export function SigmaVisualPanel({ yaml: yamlText, onYamlChange, readOnly }: Sig
   return (
     <ScrollArea className="h-full">
       <div className="flex flex-col">
+        {/* Format sigil */}
+        <div className="flex items-center gap-2 px-4 pt-3 pb-1">
+          <span className="text-base font-black tracking-tight" style={{ color: ACCENT }}>SIG</span>
+          <span className="text-[10px] font-mono text-[#6f7f9a]">Sigma Detection Rule</span>
+        </div>
+
         {/* Parse errors banner */}
         {errors.length > 0 && (
           <div className="mx-4 mt-3 p-2 bg-[#c45c5c]/10 border border-[#c45c5c]/20 rounded">
@@ -376,7 +382,7 @@ export function SigmaVisualPanel({ yaml: yamlText, onYamlChange, readOnly }: Sig
             label="Description"
             value={rule?.description ?? ""}
             onChange={(v) => updateField(["description"], v || undefined)}
-            placeholder="Detects ..."
+            placeholder="Describe what this rule detects and why it matters."
             readOnly={readOnly}
             accentColor={ACCENT}
           />
@@ -385,7 +391,7 @@ export function SigmaVisualPanel({ yaml: yamlText, onYamlChange, readOnly }: Sig
               label="Author"
               value={rule?.author ?? ""}
               onChange={(v) => updateField(["author"], v || undefined)}
-              placeholder="Author name"
+              placeholder="Your name or team"
               readOnly={readOnly}
               accentColor={ACCENT}
             />
@@ -402,7 +408,7 @@ export function SigmaVisualPanel({ yaml: yamlText, onYamlChange, readOnly }: Sig
         </Section>
 
         {/* Section 2: Logsource */}
-        <Section title="Logsource" icon={IconServer} accentColor={ACCENT}>
+        <Section title="Log Source" icon={IconServer} accentColor={ACCENT}>
           <div className="grid grid-cols-2 gap-3">
             <SelectInput
               label="Category"
@@ -427,7 +433,7 @@ export function SigmaVisualPanel({ yaml: yamlText, onYamlChange, readOnly }: Sig
             label="Service"
             value={rule?.logsource?.service ?? ""}
             onChange={(v) => updateField(["logsource", "service"], v || undefined)}
-            placeholder="Optional service name"
+            placeholder="e.g. sysmon, security, powershell"
             readOnly={readOnly}
             accentColor={ACCENT}
           />
@@ -439,7 +445,7 @@ export function SigmaVisualPanel({ yaml: yamlText, onYamlChange, readOnly }: Sig
             <DetectionSection detection={rule.detection} />
           ) : (
             <div className="text-[11px] font-mono text-[#6f7f9a]/50 italic py-2">
-              No detection block parsed
+              No detection logic found. Add a detection block in the YAML editor.
             </div>
           )}
         </Section>
@@ -454,7 +460,7 @@ export function SigmaVisualPanel({ yaml: yamlText, onYamlChange, readOnly }: Sig
             </div>
           ) : (
             <div className="text-[11px] font-mono text-[#6f7f9a]/50 italic py-1">
-              No tags defined
+              No tags yet. Add ATT&CK tags like attack.t1059 to map this rule to techniques.
             </div>
           )}
         </Section>
@@ -479,7 +485,7 @@ export function SigmaVisualPanel({ yaml: yamlText, onYamlChange, readOnly }: Sig
             </div>
           ) : (
             <div className="text-[11px] font-mono text-[#6f7f9a]/50 italic py-1">
-              No false positives documented
+              No false positives documented. Consider adding known benign triggers.
             </div>
           )}
         </Section>
