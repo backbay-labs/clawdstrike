@@ -10,18 +10,22 @@
  * YARA is NOT YAML — all parsing is regex-based with targeted string
  * replacement for round-trip editing of meta fields.
  */
-import { useMemo, useCallback, useState } from "react";
+import { useMemo, useCallback } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   IconFileAnalytics,
   IconVariable,
   IconFilter,
   IconPackageImport,
-  IconChevronDown,
-  IconChevronRight,
   IconTag,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import {
+  Section,
+  FieldLabel,
+  TextInput,
+  TextArea,
+} from "./shared-form-fields";
 
 
 // ---- Constants ----
@@ -222,142 +226,6 @@ function updateRuleName(source: string, newName: string): string {
 }
 
 
-// ---- Collapsible Section ----
-
-function Section({
-  title,
-  icon: Icon,
-  defaultOpen = true,
-  count,
-  children,
-}: {
-  title: string;
-  icon: React.ComponentType<{ size?: number; stroke?: number; className?: string }>;
-  defaultOpen?: boolean;
-  count?: number;
-  children: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-
-  return (
-    <section className="flex flex-col">
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 px-4 py-2.5 hover:bg-[#131721]/50 transition-colors"
-      >
-        {open ? (
-          <IconChevronDown size={12} stroke={1.5} className="text-[#6f7f9a]/70" />
-        ) : (
-          <IconChevronRight size={12} stroke={1.5} className="text-[#6f7f9a]/70" />
-        )}
-        <Icon size={12} stroke={1.5} className="text-[#6f7f9a]/70" />
-        <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6f7f9a]">
-          {title}
-        </span>
-        {count !== undefined && count > 0 && (
-          <span
-            className="text-[9px] font-mono px-1.5 py-0.5 rounded-full"
-            style={{
-              color: ACCENT,
-              backgroundColor: `${ACCENT}15`,
-            }}
-          >
-            {count}
-          </span>
-        )}
-      </button>
-      {open && (
-        <div className="flex flex-col gap-3 px-4 pb-4 pt-1">
-          {children}
-        </div>
-      )}
-    </section>
-  );
-}
-
-
-// ---- Field Components ----
-
-function FieldLabel({ label, required }: { label: string; required?: boolean }) {
-  return (
-    <label className="text-[10px] font-mono text-[#6f7f9a] uppercase tracking-wide">
-      {label}
-      {required && <span className="text-[#c45c5c] ml-0.5">*</span>}
-    </label>
-  );
-}
-
-function TextInput({
-  label,
-  value,
-  onChange,
-  placeholder,
-  required,
-  readOnly,
-  mono,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
-  required?: boolean;
-  readOnly?: boolean;
-  mono?: boolean;
-}) {
-  return (
-    <div className="flex flex-col gap-1">
-      <FieldLabel label={label} required={required} />
-      <input
-        type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        readOnly={readOnly}
-        className={cn(
-          "bg-[#0b0d13] border border-[#2d3240] rounded text-[11px] text-[#ece7dc] px-2 py-1 outline-none transition-colors",
-          `focus:border-[${ACCENT}]/50`,
-          readOnly && "opacity-60 cursor-default",
-          mono && "font-mono",
-        )}
-      />
-    </div>
-  );
-}
-
-function TextAreaField({
-  label,
-  value,
-  onChange,
-  placeholder,
-  readOnly,
-  rows = 3,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
-  readOnly?: boolean;
-  rows?: number;
-}) {
-  return (
-    <div className="flex flex-col gap-1">
-      <FieldLabel label={label} />
-      <textarea
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        readOnly={readOnly}
-        rows={rows}
-        className={cn(
-          "bg-[#0b0d13] border border-[#2d3240] rounded text-[11px] font-mono text-[#ece7dc] px-2 py-1.5 outline-none transition-colors resize-none leading-relaxed",
-          `focus:border-[${ACCENT}]/50`,
-          readOnly && "opacity-60 cursor-default",
-        )}
-      />
-    </div>
-  );
-}
 
 
 // ---- String Type Badge ----
@@ -509,7 +377,7 @@ export function YaraVisualPanel({
         )}
 
         {/* Section 1: Meta */}
-        <Section title="Meta" icon={IconFileAnalytics}>
+        <Section title="Meta" icon={IconFileAnalytics} accentColor={ACCENT}>
           <TextInput
             label="Rule Name"
             value={rule.ruleName}
@@ -517,6 +385,7 @@ export function YaraVisualPanel({
             required
             readOnly={readOnly}
             mono
+            accentColor={ACCENT}
           />
           <TextInput
             label="Author"
@@ -524,14 +393,16 @@ export function YaraVisualPanel({
             onChange={(v) => handleMetaChange("author", v)}
             placeholder="Author name"
             readOnly={readOnly}
+            accentColor={ACCENT}
           />
-          <TextAreaField
+          <TextArea
             label="Description"
             value={getMetaValue("description")}
             onChange={(v) => handleMetaChange("description", v)}
             placeholder="What does this rule detect?"
             readOnly={readOnly}
             rows={2}
+            accentColor={ACCENT}
           />
           <div className="grid grid-cols-2 gap-3">
             <TextInput
@@ -541,6 +412,7 @@ export function YaraVisualPanel({
               placeholder="YYYY-MM-DD"
               readOnly={readOnly}
               mono
+              accentColor={ACCENT}
             />
             <TextInput
               label="Reference"
@@ -548,6 +420,7 @@ export function YaraVisualPanel({
               onChange={(v) => handleMetaChange("reference", v)}
               placeholder="https://..."
               readOnly={readOnly}
+              accentColor={ACCENT}
             />
           </div>
 
@@ -573,6 +446,7 @@ export function YaraVisualPanel({
           icon={IconVariable}
           count={rule.strings.length}
           defaultOpen={rule.strings.length > 0}
+          accentColor={ACCENT}
         >
           {rule.strings.length > 0 ? (
             <div className="flex flex-col gap-2">
@@ -588,7 +462,7 @@ export function YaraVisualPanel({
         </Section>
 
         {/* Section 3: Condition (read-only) */}
-        <Section title="Condition" icon={IconFilter}>
+        <Section title="Condition" icon={IconFilter} accentColor={ACCENT}>
           {rule.condition ? (
             <div
               className="bg-[#0b0d13] border border-[#2d3240] rounded-lg px-3 py-2.5 font-mono text-[11px] leading-relaxed whitespace-pre-wrap"
@@ -609,6 +483,7 @@ export function YaraVisualPanel({
           icon={IconPackageImport}
           defaultOpen={rule.imports.length > 0}
           count={rule.imports.length}
+          accentColor={ACCENT}
         >
           {rule.imports.length > 0 ? (
             <div className="flex flex-wrap gap-1.5">
@@ -635,7 +510,7 @@ export function YaraVisualPanel({
 
         {/* Section 5: Tags (if any) */}
         {rule.tags.length > 0 && (
-          <Section title="Tags" icon={IconTag} defaultOpen>
+          <Section title="Tags" icon={IconTag} defaultOpen accentColor={ACCENT}>
             <div className="flex flex-wrap gap-1.5">
               {rule.tags.map((tag) => (
                 <span

@@ -5,11 +5,16 @@ import {
   IconInfoCircle,
   IconSearch,
   IconShieldCheck,
-  IconChevronDown,
-  IconChevronRight,
   IconChecks,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import {
+  Section,
+  FieldLabel,
+  TextInput,
+  TextArea,
+  SelectInput,
+} from "./shared-form-fields";
 
 
 // ---- Constants ----
@@ -77,95 +82,7 @@ interface OcsfVisualPanelProps {
 }
 
 
-// ---- Collapsible Section ----
-
-function Section({
-  title,
-  icon: Icon,
-  defaultOpen = true,
-  children,
-}: {
-  title: string;
-  icon: React.ComponentType<{ size?: number; stroke?: number; className?: string }>;
-  defaultOpen?: boolean;
-  children: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-
-  return (
-    <section className="flex flex-col">
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 px-4 py-2.5 hover:bg-[#131721]/50 transition-colors"
-      >
-        {open ? (
-          <IconChevronDown size={12} stroke={1.5} className="text-[#6f7f9a]/70" />
-        ) : (
-          <IconChevronRight size={12} stroke={1.5} className="text-[#6f7f9a]/70" />
-        )}
-        <Icon size={12} stroke={1.5} className="text-[#6f7f9a]/70" />
-        <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6f7f9a]">
-          {title}
-        </span>
-      </button>
-      {open && (
-        <div className="flex flex-col gap-3 px-4 pb-4 pt-1">
-          {children}
-        </div>
-      )}
-    </section>
-  );
-}
-
-
-// ---- Field Components ----
-
-function FieldLabel({ label, required }: { label: string; required?: boolean }) {
-  return (
-    <label className="text-[10px] font-mono text-[#6f7f9a] uppercase tracking-wide">
-      {label}
-      {required && <span className="text-[#c45c5c] ml-0.5">*</span>}
-    </label>
-  );
-}
-
-function TextInput({
-  label,
-  value,
-  onChange,
-  placeholder,
-  required,
-  readOnly,
-  mono,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
-  required?: boolean;
-  readOnly?: boolean;
-  mono?: boolean;
-}) {
-  return (
-    <div className="flex flex-col gap-1">
-      <FieldLabel label={label} required={required} />
-      <input
-        type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        readOnly={readOnly}
-        className={cn(
-          "bg-[#0b0d13] border border-[#2d3240] rounded text-[11px] text-[#ece7dc] px-2 py-1 outline-none transition-colors",
-          `focus:border-[${ACCENT}]/50`,
-          readOnly && "opacity-60 cursor-default",
-          mono && "font-mono",
-        )}
-      />
-    </div>
-  );
-}
+// ---- OCSF-specific Field Components ----
 
 function NumberInput({
   label,
@@ -182,6 +99,8 @@ function NumberInput({
   required?: boolean;
   readOnly?: boolean;
 }) {
+  const [focused, setFocused] = useState(false);
+
   return (
     <div className="flex flex-col gap-1">
       <FieldLabel label={label} required={required} />
@@ -194,87 +113,14 @@ function NumberInput({
         }}
         placeholder={placeholder}
         readOnly={readOnly}
+        style={focused ? { borderColor: `${ACCENT}80` } : undefined}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
         className={cn(
           "bg-[#0b0d13] border border-[#2d3240] rounded text-[11px] font-mono text-[#ece7dc] px-2 py-1 outline-none transition-colors",
-          `focus:border-[${ACCENT}]/50`,
           readOnly && "opacity-60 cursor-default",
         )}
       />
-    </div>
-  );
-}
-
-function TextArea({
-  label,
-  value,
-  onChange,
-  placeholder,
-  readOnly,
-  rows = 3,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
-  readOnly?: boolean;
-  rows?: number;
-}) {
-  return (
-    <div className="flex flex-col gap-1">
-      <FieldLabel label={label} />
-      <textarea
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        readOnly={readOnly}
-        rows={rows}
-        className={cn(
-          "bg-[#0b0d13] border border-[#2d3240] rounded text-[11px] font-mono text-[#ece7dc] px-2 py-1.5 outline-none transition-colors resize-none leading-relaxed",
-          `focus:border-[${ACCENT}]/50`,
-          readOnly && "opacity-60 cursor-default",
-        )}
-      />
-    </div>
-  );
-}
-
-function SelectInput({
-  label,
-  value,
-  options,
-  onChange,
-  readOnly,
-  required,
-  placeholder,
-}: {
-  label: string;
-  value: string;
-  options: { value: number; label: string }[];
-  onChange: (value: string) => void;
-  readOnly?: boolean;
-  required?: boolean;
-  placeholder?: string;
-}) {
-  return (
-    <div className="flex flex-col gap-1">
-      <FieldLabel label={label} required={required} />
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={readOnly}
-        className={cn(
-          "bg-[#0b0d13] border border-[#2d3240] rounded text-[11px] font-mono text-[#ece7dc] px-2 py-1 outline-none transition-colors appearance-none cursor-pointer",
-          `focus:border-[${ACCENT}]/50`,
-          readOnly && "opacity-60 cursor-default",
-        )}
-      >
-        {placeholder && <option value="">{placeholder}</option>}
-        {options.map((opt) => (
-          <option key={opt.value} value={opt.value}>
-            {opt.label}
-          </option>
-        ))}
-      </select>
     </div>
   );
 }
@@ -440,7 +286,7 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
         </div>
 
         {/* Section 1: Event Class */}
-        <Section title="Event Class" icon={IconFileAnalytics}>
+        <Section title="Event Class" icon={IconFileAnalytics} accentColor={ACCENT}>
           <SelectInput
             label="Class UID"
             value={classUid ? String(classUid) : ""}
@@ -457,6 +303,7 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
             readOnly={readOnly}
             required
             placeholder="Select event class..."
+            accentColor={ACCENT}
           />
           <div className="flex flex-col gap-1">
             <FieldLabel label="Category UID" />
@@ -477,6 +324,7 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
               readOnly={readOnly}
               required
               placeholder="Select..."
+              accentColor={ACCENT}
             />
             <SelectInput
               label="Severity ID"
@@ -486,12 +334,13 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
               readOnly={readOnly}
               required
               placeholder="Select..."
+              accentColor={ACCENT}
             />
           </div>
         </Section>
 
         {/* Section 2: Metadata */}
-        <Section title="Metadata" icon={IconInfoCircle}>
+        <Section title="Metadata" icon={IconInfoCircle} accentColor={ACCENT}>
           <TextInput
             label="Version"
             value={String(deepGet(event, ["metadata", "version"]) ?? "1.4.0")}
@@ -499,6 +348,7 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
             placeholder="1.4.0"
             readOnly={readOnly}
             mono
+            accentColor={ACCENT}
           />
           <TextInput
             label="Product Name"
@@ -506,6 +356,7 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
             onChange={(v) => updateField(["metadata", "product", "name"], v || undefined)}
             placeholder="Product name"
             readOnly={readOnly}
+            accentColor={ACCENT}
           />
           <TextInput
             label="Vendor Name"
@@ -513,6 +364,7 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
             onChange={(v) => updateField(["metadata", "product", "vendor_name"], v || undefined)}
             placeholder="Vendor name"
             readOnly={readOnly}
+            accentColor={ACCENT}
           />
           <TextInput
             label="Product UID"
@@ -521,12 +373,13 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
             placeholder="Unique product identifier"
             readOnly={readOnly}
             mono
+            accentColor={ACCENT}
           />
         </Section>
 
         {/* Section 3: Finding Info (shown when class_uid is 2004) */}
         {isDetectionFinding && (
-          <Section title="Finding Info" icon={IconSearch}>
+          <Section title="Finding Info" icon={IconSearch} accentColor={ACCENT}>
             <TextInput
               label="Finding UID"
               value={String(deepGet(event, ["finding_info", "uid"]) ?? "")}
@@ -534,6 +387,7 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
               placeholder="Unique finding identifier"
               readOnly={readOnly}
               mono
+              accentColor={ACCENT}
             />
             <TextInput
               label="Title"
@@ -541,6 +395,7 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
               onChange={(v) => updateField(["finding_info", "title"], v || undefined)}
               placeholder="Finding title"
               readOnly={readOnly}
+              accentColor={ACCENT}
             />
             <TextArea
               label="Description"
@@ -548,12 +403,13 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
               onChange={(v) => updateField(["finding_info", "desc"], v || undefined)}
               placeholder="Describe the finding..."
               readOnly={readOnly}
+              accentColor={ACCENT}
             />
           </Section>
         )}
 
         {/* Section 4: Status & Actions */}
-        <Section title="Status & Actions" icon={IconShieldCheck}>
+        <Section title="Status & Actions" icon={IconShieldCheck} accentColor={ACCENT}>
           <div className="grid grid-cols-2 gap-3">
             <SelectInput
               label="Status ID"
@@ -562,6 +418,7 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
               onChange={(v) => updateField(["status_id"], v ? Number(v) : undefined)}
               readOnly={readOnly}
               placeholder="Select..."
+              accentColor={ACCENT}
             />
             <SelectInput
               label="Action ID"
@@ -570,6 +427,7 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
               onChange={(v) => updateField(["action_id"], v ? Number(v) : undefined)}
               readOnly={readOnly}
               placeholder="Select..."
+              accentColor={ACCENT}
             />
           </div>
           <SelectInput
@@ -579,6 +437,7 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
             onChange={(v) => updateField(["disposition_id"], v ? Number(v) : undefined)}
             readOnly={readOnly}
             placeholder="Select..."
+            accentColor={ACCENT}
           />
           <TextArea
             label="Message"
@@ -587,6 +446,7 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
             placeholder="Event message..."
             readOnly={readOnly}
             rows={2}
+            accentColor={ACCENT}
           />
           <NumberInput
             label="Time"
@@ -599,7 +459,7 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
         </Section>
 
         {/* Section 5: Validation Summary */}
-        <Section title="Validation Summary" icon={IconChecks} defaultOpen={validationErrors.length > 0}>
+        <Section title="Validation Summary" icon={IconChecks} defaultOpen={validationErrors.length > 0} accentColor={ACCENT}>
           <div className="flex flex-col gap-2">
             {/* Progress indicator */}
             <div className="flex items-center gap-2">

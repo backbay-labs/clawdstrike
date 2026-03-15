@@ -107,6 +107,23 @@
   /* Desktop-specific tokens */
   --titlebar-height: 36px;
   --statusbar-height: 24px;
+
+  /* Motion tokens */
+  --duration-instant: 100ms;
+  --duration-fast: 150ms;
+  --duration-normal: 250ms;
+  --duration-slow: 400ms;
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-instant: 0ms;
+    --duration-fast: 0ms;
+    --duration-normal: 0ms;
+    --duration-slow: 0ms;
+  }
 }
 
 /* No separate .dark -- this app is always dark */
@@ -358,6 +375,9 @@ body::after {
 }
 
 /* Button press state */
+button {
+  transition: transform var(--duration-instant) ease-out;
+}
 button:active:not(:disabled) {
   transform: scale(0.98);
 }

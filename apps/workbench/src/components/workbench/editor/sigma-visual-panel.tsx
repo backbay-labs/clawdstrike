@@ -14,11 +14,15 @@ import {
   IconSearch,
   IconTag,
   IconShieldQuestion,
-  IconChevronDown,
-  IconChevronRight,
 } from "@tabler/icons-react";
-import { useState } from "react";
 import { cn } from "@/lib/utils";
+import {
+  Section,
+  FieldLabel,
+  TextInput,
+  TextArea,
+  SelectInput,
+} from "./shared-form-fields";
 
 
 // ---- Constants ----
@@ -89,170 +93,6 @@ interface SigmaVisualPanelProps {
 }
 
 
-// ---- Collapsible Section ----
-
-function Section({
-  title,
-  icon: Icon,
-  defaultOpen = true,
-  children,
-}: {
-  title: string;
-  icon: React.ComponentType<{ size?: number; stroke?: number; className?: string }>;
-  defaultOpen?: boolean;
-  children: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-
-  return (
-    <section className="flex flex-col">
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 px-4 py-2.5 hover:bg-[#131721]/50 transition-colors"
-      >
-        {open ? (
-          <IconChevronDown size={12} stroke={1.5} className="text-[#6f7f9a]/70" />
-        ) : (
-          <IconChevronRight size={12} stroke={1.5} className="text-[#6f7f9a]/70" />
-        )}
-        <Icon size={12} stroke={1.5} className="text-[#6f7f9a]/70" />
-        <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6f7f9a]">
-          {title}
-        </span>
-      </button>
-      {open && (
-        <div className="flex flex-col gap-3 px-4 pb-4 pt-1">
-          {children}
-        </div>
-      )}
-    </section>
-  );
-}
-
-
-// ---- Field Components ----
-
-function FieldLabel({ label, required }: { label: string; required?: boolean }) {
-  return (
-    <label className="text-[10px] font-mono text-[#6f7f9a] uppercase tracking-wide">
-      {label}
-      {required && <span className="text-[#c45c5c] ml-0.5">*</span>}
-    </label>
-  );
-}
-
-function TextInput({
-  label,
-  value,
-  onChange,
-  placeholder,
-  required,
-  readOnly,
-  mono,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
-  required?: boolean;
-  readOnly?: boolean;
-  mono?: boolean;
-}) {
-  return (
-    <div className="flex flex-col gap-1">
-      <FieldLabel label={label} required={required} />
-      <input
-        type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        readOnly={readOnly}
-        className={cn(
-          "bg-[#0b0d13] border border-[#2d3240] rounded text-[11px] text-[#ece7dc] px-2 py-1 outline-none transition-colors",
-          "focus:border-[#7c9aef]/50",
-          readOnly && "opacity-60 cursor-default",
-          mono && "font-mono",
-        )}
-      />
-    </div>
-  );
-}
-
-function TextArea({
-  label,
-  value,
-  onChange,
-  placeholder,
-  readOnly,
-  rows = 3,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
-  readOnly?: boolean;
-  rows?: number;
-}) {
-  return (
-    <div className="flex flex-col gap-1">
-      <FieldLabel label={label} />
-      <textarea
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        readOnly={readOnly}
-        rows={rows}
-        className={cn(
-          "bg-[#0b0d13] border border-[#2d3240] rounded text-[11px] font-mono text-[#ece7dc] px-2 py-1.5 outline-none transition-colors resize-none leading-relaxed",
-          "focus:border-[#7c9aef]/50",
-          readOnly && "opacity-60 cursor-default",
-        )}
-      />
-    </div>
-  );
-}
-
-function SelectInput({
-  label,
-  value,
-  options,
-  onChange,
-  readOnly,
-  required,
-  placeholder,
-}: {
-  label: string;
-  value: string;
-  options: string[];
-  onChange: (value: string) => void;
-  readOnly?: boolean;
-  required?: boolean;
-  placeholder?: string;
-}) {
-  return (
-    <div className="flex flex-col gap-1">
-      <FieldLabel label={label} required={required} />
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={readOnly}
-        className={cn(
-          "bg-[#0b0d13] border border-[#2d3240] rounded text-[11px] font-mono text-[#ece7dc] px-2 py-1 outline-none transition-colors appearance-none cursor-pointer",
-          "focus:border-[#7c9aef]/50",
-          readOnly && "opacity-60 cursor-default",
-        )}
-      >
-        {placeholder && <option value="">{placeholder}</option>}
-        {options.map((opt) => (
-          <option key={opt} value={opt}>
-            {opt}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-}
 
 
 // ---- Detection Cards ----
@@ -495,13 +335,14 @@ export function SigmaVisualPanel({ yaml: yamlText, onYamlChange, readOnly }: Sig
         )}
 
         {/* Section 1: Rule Header */}
-        <Section title="Rule Header" icon={IconFileAnalytics}>
+        <Section title="Rule Header" icon={IconFileAnalytics} accentColor={ACCENT}>
           <TextInput
             label="Title"
             value={rule?.title ?? ""}
             onChange={(v) => updateField(["title"], v)}
             required
             readOnly={readOnly}
+            accentColor={ACCENT}
           />
           <TextInput
             label="ID"
@@ -509,6 +350,7 @@ export function SigmaVisualPanel({ yaml: yamlText, onYamlChange, readOnly }: Sig
             onChange={() => {}}
             readOnly
             mono
+            accentColor={ACCENT}
           />
           <div className="grid grid-cols-2 gap-3">
             <SelectInput
@@ -518,6 +360,7 @@ export function SigmaVisualPanel({ yaml: yamlText, onYamlChange, readOnly }: Sig
               onChange={(v) => updateField(["status"], v)}
               readOnly={readOnly}
               required
+              accentColor={ACCENT}
             />
             <SelectInput
               label="Level"
@@ -526,6 +369,7 @@ export function SigmaVisualPanel({ yaml: yamlText, onYamlChange, readOnly }: Sig
               onChange={(v) => updateField(["level"], v)}
               readOnly={readOnly}
               required
+              accentColor={ACCENT}
             />
           </div>
           <TextArea
@@ -534,6 +378,7 @@ export function SigmaVisualPanel({ yaml: yamlText, onYamlChange, readOnly }: Sig
             onChange={(v) => updateField(["description"], v || undefined)}
             placeholder="Detects ..."
             readOnly={readOnly}
+            accentColor={ACCENT}
           />
           <div className="grid grid-cols-2 gap-3">
             <TextInput
@@ -542,6 +387,7 @@ export function SigmaVisualPanel({ yaml: yamlText, onYamlChange, readOnly }: Sig
               onChange={(v) => updateField(["author"], v || undefined)}
               placeholder="Author name"
               readOnly={readOnly}
+              accentColor={ACCENT}
             />
             <TextInput
               label="Date"
@@ -550,12 +396,13 @@ export function SigmaVisualPanel({ yaml: yamlText, onYamlChange, readOnly }: Sig
               placeholder="YYYY/MM/DD"
               readOnly={readOnly}
               mono
+              accentColor={ACCENT}
             />
           </div>
         </Section>
 
         {/* Section 2: Logsource */}
-        <Section title="Logsource" icon={IconServer}>
+        <Section title="Logsource" icon={IconServer} accentColor={ACCENT}>
           <div className="grid grid-cols-2 gap-3">
             <SelectInput
               label="Category"
@@ -564,6 +411,7 @@ export function SigmaVisualPanel({ yaml: yamlText, onYamlChange, readOnly }: Sig
               onChange={(v) => updateField(["logsource", "category"], v || undefined)}
               readOnly={readOnly}
               placeholder="Select category..."
+              accentColor={ACCENT}
             />
             <SelectInput
               label="Product"
@@ -572,6 +420,7 @@ export function SigmaVisualPanel({ yaml: yamlText, onYamlChange, readOnly }: Sig
               onChange={(v) => updateField(["logsource", "product"], v || undefined)}
               readOnly={readOnly}
               placeholder="Select product..."
+              accentColor={ACCENT}
             />
           </div>
           <TextInput
@@ -580,11 +429,12 @@ export function SigmaVisualPanel({ yaml: yamlText, onYamlChange, readOnly }: Sig
             onChange={(v) => updateField(["logsource", "service"], v || undefined)}
             placeholder="Optional service name"
             readOnly={readOnly}
+            accentColor={ACCENT}
           />
         </Section>
 
         {/* Section 3: Detection */}
-        <Section title="Detection" icon={IconSearch}>
+        <Section title="Detection" icon={IconSearch} accentColor={ACCENT}>
           {rule?.detection ? (
             <DetectionSection detection={rule.detection} />
           ) : (
@@ -595,7 +445,7 @@ export function SigmaVisualPanel({ yaml: yamlText, onYamlChange, readOnly }: Sig
         </Section>
 
         {/* Section 4: Tags */}
-        <Section title="Tags" icon={IconTag} defaultOpen={!!(rule?.tags && rule.tags.length > 0)}>
+        <Section title="Tags" icon={IconTag} defaultOpen={!!(rule?.tags && rule.tags.length > 0)} accentColor={ACCENT}>
           {rule?.tags && rule.tags.length > 0 ? (
             <div className="flex flex-wrap gap-1.5">
               {rule.tags.map((tag, i) => (
@@ -614,6 +464,7 @@ export function SigmaVisualPanel({ yaml: yamlText, onYamlChange, readOnly }: Sig
           title="False Positives"
           icon={IconShieldQuestion}
           defaultOpen={!!(rule?.falsepositives && rule.falsepositives.length > 0)}
+          accentColor={ACCENT}
         >
           {rule?.falsepositives && rule.falsepositives.length > 0 ? (
             <div className="flex flex-col gap-1.5">
