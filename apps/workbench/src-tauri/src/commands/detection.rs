@@ -88,6 +88,11 @@ fn check_source_size(source: &str) -> Result<(), String> {
     Ok(())
 }
 
+// TODO: This function handles `"strings"` and `/regex/` but does not account for
+// YARA hex string literals (`{ AB CD ?? }`) — braces inside hex strings are counted
+// as rule-level braces, which could cause false positives in brace-balance checks
+// for rules that use hex string literals. Acceptable for now; a full YARA lexer
+// would be needed to handle this correctly.
 fn count_braces_outside_literals(line: &str) -> (i32, i32) {
     let mut opens = 0;
     let mut closes = 0;
@@ -175,7 +180,21 @@ fn detect_file_type_from_content(content: &str) -> DetectionFileType {
             confidence: 0.9,
         };
     }
-    if content.contains("title:") && content.contains("status:") && !content.contains("guards:") {
+    // YARA check must precede JSON check — a YARA hex test like `{ rule x { condition: true } }`
+    // starts with `{` but should not be misidentified as JSON/OCSF.
+    if content.contains("rule ") && content.contains("condition:") {
+        return DetectionFileType {
+            file_type: "yara_rule".into(),
+            confidence: 0.8,
+        };
+    }
+    // Sigma heuristic: require `title:` + `status:` but not if YARA markers are also present
+    // (a YARA meta section may contain `title:` and `status:` fields).
+    if content.contains("title:")
+        && content.contains("status:")
+        && !content.contains("guards:")
+        && !(content.contains("rule ") && content.contains("condition:"))
+    {
         return DetectionFileType {
             file_type: "sigma_rule".into(),
             confidence: 0.7,
@@ -185,12 +204,6 @@ fn detect_file_type_from_content(content: &str) -> DetectionFileType {
         return DetectionFileType {
             file_type: "ocsf_event".into(),
             confidence: 0.6,
-        };
-    }
-    if content.contains("rule ") && content.contains("condition:") {
-        return DetectionFileType {
-            file_type: "yara_rule".into(),
-            confidence: 0.8,
         };
     }
 
@@ -557,8 +570,8 @@ pub fn detect_file_type(content: String) -> Result<DetectionFileType, String> {
 #[tauri::command]
 pub async fn import_detection_file(path: String) -> Result<DetectionImportResponse, String> {
     let import_path = validate_file_path(&path)?;
-    let content = read_text_file_secure(import_path.clone()).await?;
 
+    // Check sensitive path BEFORE reading file content
     if import_path.exists() {
         if let Ok(canon) = import_path.canonicalize() {
             let canon_check = canon.to_string_lossy().replace('\\', "/").to_lowercase();
@@ -566,7 +579,18 @@ pub async fn import_detection_file(path: String) -> Result<DetectionImportRespon
         }
     }
 
-    check_source_size(&content)?;
+    // Check file size via metadata BEFORE reading the full file into memory
+    if let Ok(metadata) = std::fs::metadata(&import_path) {
+        let file_size = metadata.len() as usize;
+        if file_size > MAX_SOURCE_SIZE {
+            return Err(format!(
+                "File exceeds maximum size ({} bytes > {} bytes)",
+                file_size, MAX_SOURCE_SIZE
+            ));
+        }
+    }
+
+    let content = read_text_file_secure(import_path).await?;
 
     let detected = detect_file_type_from_path_and_content(&path, &content);
     Ok(DetectionImportResponse {
@@ -649,17 +673,20 @@ pub async fn export_detection_file(
     }
 
     let export_path = validate_file_path(&path)?;
-    write_text_file_secure(export_path.clone(), content).await?;
 
-    if export_path.exists() {
-        if let Ok(canon) = export_path.canonicalize() {
-            let canon_check = canon.to_string_lossy().replace('\\', "/").to_lowercase();
-            if check_sensitive_path(&canon_check).is_err() {
-                let _ = tokio::fs::remove_file(&export_path).await;
-                return Err("File resolved to a sensitive path after write; removed".to_string());
-            }
-        }
+    // Check sensitive path BEFORE writing to prevent writing to sensitive locations
+    if let Ok(canon) = export_path.canonicalize().or_else(|_| {
+        // If the file doesn't exist yet, canonicalize the parent directory
+        export_path.parent()
+            .and_then(|p| p.canonicalize().ok())
+            .map(|p| p.join(export_path.file_name().unwrap_or_default()))
+            .ok_or(std::io::Error::new(std::io::ErrorKind::NotFound, "no parent"))
+    }) {
+        let canon_check = canon.to_string_lossy().replace('\\', "/").to_lowercase();
+        check_sensitive_path(&canon_check)?;
     }
+
+    write_text_file_secure(export_path, content).await?;
 
     Ok(ExportResponse {
         success: true,

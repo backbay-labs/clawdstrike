@@ -381,8 +381,9 @@ function LogicTree({
     <div className="flex flex-col gap-4 mt-2">
       {groups.map((group, gi) => {
         const isNot = group.operator === "not";
+        const isOr = group.operator === "or";
         const junctionColor = isNot ? "#c45c5c" : "#d4a84b";
-        const junctionLabel = isNot ? "!" : "&";
+        const junctionLabel = isNot ? "!" : isOr ? "|" : "&";
 
         return (
           <div key={gi} className="flex flex-col">

@@ -228,3 +228,14 @@ export function detectFileType(filename: string, content: string): FileType {
 export function getDescriptor(fileType: FileType): FileTypeDescriptor {
   return FILE_TYPE_REGISTRY[fileType];
 }
+
+/**
+ * Extract the filename (basename) from a file path, normalizing
+ * backslashes for cross-platform paths. Returns null for empty/null input.
+ */
+export function basenameFromPath(filePath: string | null | undefined): string | null {
+  if (!filePath) return null;
+  const normalized = filePath.replace(/\\/g, "/");
+  const base = normalized.split("/").pop() ?? "";
+  return base || null;
+}

@@ -35,6 +35,7 @@ import {
   getPrimaryExtension,
   isPolicyFileType,
   sanitizeFilenameStem,
+  basenameFromPath,
   type FileType,
 } from "./file-type-registry";
 import {
@@ -182,13 +183,6 @@ function toValidationResult(
     errors: severity === "error" ? issues : [],
     warnings: severity === "warning" ? issues : [],
   };
-}
-
-function basenameFromPath(filePath: string | null | undefined): string | null {
-  if (!filePath) return null;
-  const normalized = filePath.replace(/\\/g, "/");
-  const base = normalized.split("/").pop() ?? "";
-  return base || null;
 }
 
 function stripWrappingQuotes(value: string): string {

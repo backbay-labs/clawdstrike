@@ -24,7 +24,7 @@ import { buildFileTree, useProject } from "@/lib/workbench/project-store";
 import { useVersionHistory } from "@/lib/workbench/use-version-history";
 import { useAutoVersion } from "@/lib/workbench/use-auto-version";
 import type { PolicyVersion } from "@/lib/workbench/version-store";
-import { getPrimaryExtension, isPolicyFileType, sanitizeFilenameStem } from "@/lib/workbench/file-type-registry";
+import { getPrimaryExtension, isPolicyFileType, sanitizeFilenameStem, basenameFromPath } from "@/lib/workbench/file-type-registry";
 import { triggerNativeValidation } from "@/lib/workbench/use-native-validation";
 import {
   IconWand,
@@ -67,13 +67,6 @@ function tabLabelForDiagnostics(name: string, extension: string): string {
   const stem = sanitizeFilenameStem(name, "untitled");
   return `${stem}${extension}`;
 }
-
-function basenameFromPath(filePath: string | null | undefined): string | null {
-  if (!filePath) return null;
-  const normalized = filePath.replace(/\\/g, "/");
-  return normalized.split("/").pop() ?? null;
-}
-
 
 function RunButtonGroup({
   testRunnerOpen,

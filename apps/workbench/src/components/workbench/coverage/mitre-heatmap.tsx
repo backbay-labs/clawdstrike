@@ -176,7 +176,7 @@ export function MitreHeatmap({ tabs }: MitreHeatmapProps) {
 
   const handleCellHover = useCallback(
     (techniqueId: string, e: React.MouseEvent) => {
-      const rect = (e.target as HTMLElement).getBoundingClientRect();
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
       setTooltip({
         techniqueId,
         x: rect.left + rect.width / 2,

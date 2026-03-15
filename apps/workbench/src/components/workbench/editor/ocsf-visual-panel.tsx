@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useState } from "react";
+import { useMemo, useCallback, useState, useRef } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   IconFileAnalytics,
@@ -69,8 +69,10 @@ const DISPOSITION_OPTIONS = [
   { value: 17, label: "17 — Logged" },
 ];
 
-/** Required top-level fields for a minimal OCSF event. */
-const REQUIRED_FIELDS = ["class_uid", "category_uid", "activity_id", "severity_id", "time", "metadata"];
+/** Required top-level fields for a minimal OCSF event.
+ *  category_uid is excluded — it is auto-derived from class_uid, so validating
+ *  it independently would produce misleading errors. */
+const REQUIRED_FIELDS = ["class_uid", "activity_id", "severity_id", "time", "metadata"];
 
 
 // ---- Props ----
@@ -169,8 +171,10 @@ function deepSet(obj: Record<string, unknown>, path: string[], value: unknown): 
   }
 
   const [head, ...rest] = path;
-  const child = (result[head] != null && typeof result[head] === "object")
-    ? { ...(result[head] as Record<string, unknown>) }
+  // Handle intermediate null/undefined/non-object values by creating a fresh object
+  const existing = result[head];
+  const child = (existing != null && typeof existing === "object" && !Array.isArray(existing))
+    ? { ...(existing as Record<string, unknown>) }
     : {};
   result[head] = deepSet(child, rest, value);
   return result;
@@ -189,16 +193,24 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
     }
   }, [json]);
 
+  // Ref tracks the latest event so sequential updateField calls within the
+  // same render cycle don't overwrite each other with stale state.
+  const eventRef = useRef(event);
+  eventRef.current = event;
+
   const commitEvent = useCallback(
     (updater: (current: Record<string, unknown>) => Record<string, unknown>) => {
       try {
-        const updated = updater(event);
+        const updated = updater(eventRef.current);
+        // Also update the ref immediately so the next synchronous call
+        // within the same tick sees the intermediate result.
+        eventRef.current = updated;
         onJsonChange(JSON.stringify(updated, null, 2));
       } catch {
         // If JSON is fundamentally broken, do nothing
       }
     },
-    [event, onJsonChange],
+    [onJsonChange],
   );
 
   const updateField = useCallback(
@@ -276,7 +288,7 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
               {CLASS_UID_OPTIONS.find((o) => o.value === classUid)?.label ?? `Class ${classUid}`}
             </span>
           )}
-          {severityId > 0 && (
+          {event.severity_id != null && (
             <span
               className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[9px] font-mono border rounded"
               style={{
@@ -339,9 +351,9 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
             />
             <SelectInput
               label="Severity"
-              value={severityId ? String(severityId) : ""}
+              value={event.severity_id != null ? String(event.severity_id) : ""}
               options={SEVERITY_OPTIONS}
-              onChange={(v) => updateField(["severity_id"], v ? Number(v) : undefined)}
+              onChange={(v) => updateField(["severity_id"], v !== "" ? Number(v) : undefined)}
               readOnly={readOnly}
               required
               placeholder="Choose a severity..."
@@ -354,7 +366,7 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
         <Section title="Metadata" icon={IconInfoCircle} accentColor={ACCENT}>
           <TextInput
             label="Version"
-            value={String(deepGet(event, ["metadata", "version"]) ?? "1.4.0")}
+            value={String(deepGet(event, ["metadata", "version"]) ?? "")}
             onChange={(v) => updateField(["metadata", "version"], v || undefined)}
             placeholder="1.4.0"
             readOnly={readOnly}
@@ -426,7 +438,7 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
               label="Status"
               value={event.status_id != null ? String(event.status_id) : ""}
               options={STATUS_OPTIONS}
-              onChange={(v) => updateField(["status_id"], v ? Number(v) : undefined)}
+              onChange={(v) => updateField(["status_id"], v !== "" ? Number(v) : undefined)}
               readOnly={readOnly}
               placeholder="Choose a status..."
               accentColor={ACCENT}
@@ -435,7 +447,7 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
               label="Action"
               value={event.action_id != null ? String(event.action_id) : ""}
               options={ACTION_OPTIONS}
-              onChange={(v) => updateField(["action_id"], v ? Number(v) : undefined)}
+              onChange={(v) => updateField(["action_id"], v !== "" ? Number(v) : undefined)}
               readOnly={readOnly}
               placeholder="Choose an action..."
               accentColor={ACCENT}
