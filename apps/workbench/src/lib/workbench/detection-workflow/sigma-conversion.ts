@@ -468,9 +468,30 @@ export function convertSigmaToQuery(
   }
 
   if (target === "json_export") {
+    // Produce a structured JSON export including rule metadata and detection
+    // logic, not just the raw Sigma YAML parsed to JSON.
+    const exportObj = {
+      _meta: {
+        converter: "sigma-to-json",
+        converterVersion: CONVERTER_VERSION,
+        exportedAt: new Date().toISOString(),
+      },
+      rule: {
+        id: rule.id ?? null,
+        title: rule.title,
+        status: rule.status,
+        level: rule.level,
+        description: rule.description ?? null,
+        author: rule.author ?? null,
+        tags: rule.tags ?? [],
+        logsource: rule.logsource,
+        detection: rule.detection,
+        falsepositives: rule.falsepositives ?? [],
+      },
+    };
     return {
       success: true,
-      output: JSON.stringify(rule, null, 2),
+      output: JSON.stringify(exportObj, null, 2),
       converterId: "sigma-to-json",
       converterVersion: CONVERTER_VERSION,
       diagnostics,
@@ -497,19 +518,28 @@ export function convertSigmaToQuery(
   const whereJoiner = target === "spl" ? " OR " : " or ";
   const whereClause = queryBlocks.join(whereJoiner);
   const heading = `// ${rule.title}`;
+  const caveat =
+    "// NOTE: Auto-generated from Sigma rule. Review field names and " +
+    "syntax for your target platform before production use.";
   const output =
     target === "spl"
-      ? `${heading}\nsearch ${whereClause}`
+      ? `${heading}\n${caveat}\nsearch ${whereClause}`
       : target === "kql"
-        ? `${heading}\n${whereClause}`
-        : `${heading}\nfrom logs | where ${whereClause}`;
+        ? `${heading}\n${caveat}\n${whereClause}`
+        : `${heading}\n${caveat}\nfrom logs | where ${whereClause}`;
 
   return {
     success: true,
     output,
     converterId: `sigma-to-${target}`,
     converterVersion: CONVERTER_VERSION,
-    diagnostics,
+    diagnostics: [
+      ...diagnostics,
+      {
+        severity: "info",
+        message: `Generated ${target.toUpperCase()} query from Sigma selection blocks — field names may need adjustment for your SIEM`,
+      },
+    ],
   };
 }
 

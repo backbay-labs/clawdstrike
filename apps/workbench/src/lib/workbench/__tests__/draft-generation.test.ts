@@ -833,6 +833,12 @@ describe("all adapters", () => {
       });
 
       it("buildPublication returns manifest with SHA-256 hash", async () => {
+        // Sigma json_export requires parseable Sigma YAML; other adapters
+        // accept arbitrary content for the identity/passthrough path.
+        const testSource =
+          adapter.fileType === "sigma_rule"
+            ? `title: Test Rule\nstatus: test\nlevel: low\nlogsource:\n  category: process_creation\ndetection:\n  selection:\n    CommandLine|contains: test\n  condition: selection\n`
+            : "test content for hashing";
         const result = await adapter.buildPublication({
           document: {
             documentId: "doc-1",
@@ -841,7 +847,7 @@ describe("all adapters", () => {
             name: "Test",
             sourceHash: "abc",
           },
-          source: "test content for hashing",
+          source: testSource,
           targetFormat: "json_export",
         });
 

@@ -462,31 +462,50 @@ pub fn validate_yara_rule(source: String) -> Result<YaraValidationResponse, Stri
             }
         }
         {
-            if let Some(rule_decl) = after_modifiers.strip_prefix("rule ") {
-                if let Some((rule_name, _, saw_condition)) = current_rule.take() {
-                    if !saw_condition {
-                        diagnostics.push(DetectionDiagnostic {
-                            severity: "error".into(),
-                            message: format!(
-                                "YARA rule '{rule_name}' is missing a required 'condition:' section"
-                            ),
-                            line: Some(line_no.saturating_sub(1)),
-                            column: None,
-                        });
+            // Only detect rule declarations outside block comments.
+            if !in_block_comment {
+                if let Some(rule_decl) = after_modifiers.strip_prefix("rule ") {
+                    // Emit a diagnostic for the previous rule if it was not properly
+                    // terminated (brace_depth != 0) before starting a new one.
+                    if let Some((prev_name, prev_depth, prev_saw_condition)) = current_rule.take()
+                    {
+                        if !prev_saw_condition {
+                            diagnostics.push(DetectionDiagnostic {
+                                severity: "error".into(),
+                                message: format!(
+                                    "YARA rule '{prev_name}' is missing a required 'condition:' section"
+                                ),
+                                line: Some(line_no.saturating_sub(1)),
+                                column: None,
+                            });
+                        }
+                        if prev_depth != 0 {
+                            diagnostics.push(DetectionDiagnostic {
+                                severity: "error".into(),
+                                message: format!(
+                                    "YARA rule '{prev_name}' has unterminated body (unbalanced braces) before next rule declaration"
+                                ),
+                                line: Some(line_no.saturating_sub(1)),
+                                column: None,
+                            });
+                        }
                     }
-                }
 
-                let rule_name = rule_decl
-                    .split(|c: char| c.is_whitespace() || c == '{' || c == ':')
-                    .next()
-                    .unwrap_or("unnamed")
-                    .to_string();
-                let (opens, closes, saw_condition, blk) =
-                    analyze_yara_line(line, in_block_comment);
-                in_block_comment = blk;
-                current_rule = Some((rule_name, opens - closes, saw_condition));
-                rule_count += 1;
-                continue;
+                    let rule_name = rule_decl
+                        .split(|c: char| c.is_whitespace() || c == '{' || c == ':')
+                        .next()
+                        .unwrap_or("unnamed")
+                        .to_string();
+                    // Count braces on the rule declaration line itself so that
+                    // single-line rules (e.g. `rule x { condition: true }`) are
+                    // tracked correctly.
+                    let (opens, closes, saw_condition, blk) =
+                        analyze_yara_line(line, in_block_comment);
+                    in_block_comment = blk;
+                    current_rule = Some((rule_name, opens - closes, saw_condition));
+                    rule_count += 1;
+                    continue;
+                }
             }
         }
 
@@ -920,10 +939,23 @@ pub fn test_sigma_rule(
         })
         .collect();
 
-    // `hunt_correlate` does not return event-level attribution yet, so avoid
-    // overclaiming by treating each finding as at most one matched event and
-    // bounding the estimate by the number of tested events.
-    let events_matched = estimate_sigma_events_matched(findings.len(), events_tested);
+    // `hunt_correlate` does not return event-level attribution yet, so count
+    // unique event indices where available; otherwise fall back to the number
+    // of distinct findings (capped by events_tested).  Previous code counted
+    // individual evidence_refs strings which are field-ref IDs, not events.
+    let unique_event_count = {
+        let indices: std::collections::HashSet<usize> = findings
+            .iter()
+            .filter_map(|f| f.event_index)
+            .collect();
+        if indices.is_empty() {
+            // No event-level attribution — best estimate is distinct findings.
+            findings.len()
+        } else {
+            indices.len()
+        }
+    };
+    let events_matched = estimate_sigma_events_matched(unique_event_count, events_tested);
     let matched = !findings.is_empty();
 
     Ok(SigmaTestResponse {
@@ -1139,12 +1171,28 @@ pub fn convert_sigma_rule(
 /// backslashes.  Plain alphanumeric strings pass through unchanged.
 fn escape_yaml_string(s: &str) -> String {
     const SPECIAL: &[char] = &[':', '#', '\'', '"', '{', '}', '[', ']', '>', '|', '*', '&', '!', '%', '@', '`', ','];
+    let has_control = s.chars().any(|c| c.is_control());
     let needs_quoting = s.is_empty()
         || s.starts_with(|c: char| c.is_whitespace())
         || s.ends_with(|c: char| c.is_whitespace())
-        || s.contains(SPECIAL);
+        || s.contains(SPECIAL)
+        || has_control;
     if needs_quoting {
-        let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
+        let mut escaped = String::with_capacity(s.len() + 2);
+        for ch in s.chars() {
+            match ch {
+                '\\' => escaped.push_str("\\\\"),
+                '"' => escaped.push_str("\\\""),
+                '\n' => escaped.push_str("\\n"),
+                '\r' => escaped.push_str("\\r"),
+                '\t' => escaped.push_str("\\t"),
+                c if c.is_control() => {
+                    // Escape other control characters as Unicode escapes.
+                    escaped.push_str(&format!("\\u{:04x}", c as u32));
+                }
+                c => escaped.push(c),
+            }
+        }
         format!("\"{escaped}\"")
     } else {
         s.to_string()
@@ -1202,7 +1250,16 @@ fn convert_sigma_to_native_policy(source: &str) -> Result<SigmaConvertResponse, 
         .and_then(|v| v.as_str())
         .unwrap_or("any");
     let product_comment = sanitize_yaml_comment_text(product_raw);
-    let sigma_marker = escape_yaml_string(&format!("# Sigma: {title_raw}"));
+    // Build the Sigma marker as a single YAML-safe double-quoted string.
+    // Use sanitize_yaml_comment_text for the title portion to strip
+    // newlines/control chars, then manually construct the quoted value so we
+    // avoid the double-quoting that would occur if escape_yaml_string
+    // wrapped an already-quoted result.
+    let title_sanitized = sanitize_yaml_comment_text(title_raw);
+    let sigma_marker = {
+        let inner = title_sanitized.replace('\\', "\\\\").replace('"', "\\\"");
+        format!("\"# Sigma: {inner}\"")
+    };
     let level_yaml = escape_yaml_string(level);
 
     // Map Sigma level to policy severity

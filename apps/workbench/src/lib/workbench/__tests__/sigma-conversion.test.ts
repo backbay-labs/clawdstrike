@@ -596,7 +596,7 @@ describe("sigma-adapter buildPublication with native_policy target", () => {
     expect(result.manifest.target).toBe("fleet_deploy");
   });
 
-  it("falls back to identity converter for json_export target", async () => {
+  it("produces structured JSON export for json_export target", async () => {
     const result = await sigmaAdapter.buildPublication({
       document: {
         documentId: "doc-1",
@@ -609,8 +609,13 @@ describe("sigma-adapter buildPublication with native_policy target", () => {
       targetFormat: "json_export",
     });
 
-    expect(result.manifest.converter.id).toBe("sigma-identity");
-    expect(result.outputContent).toBe(PROCESS_CREATION_RULE);
+    expect(result.manifest.converter.id).toBe("sigma-to-json");
+    const parsed = JSON.parse(result.outputContent);
+    expect(parsed._meta).toBeDefined();
+    expect(parsed._meta.converter).toBe("sigma-to-json");
+    expect(parsed.rule).toBeDefined();
+    expect(parsed.rule.title).toBeDefined();
+    expect(parsed.rule.detection).toBeDefined();
   });
 
   it("includes run snapshot when labRunId and evidencePackId are provided", async () => {
