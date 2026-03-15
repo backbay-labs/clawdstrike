@@ -16,6 +16,11 @@ vi.mock("@/lib/workbench/secure-store", () => ({
   migrateCredentialsToStronghold: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock("@/lib/workbench/http-transport", () => ({
+  createHttpTransport: vi.fn(() => vi.fn().mockResolvedValue(new Response())),
+  httpFetch: vi.fn().mockResolvedValue(new Response()),
+}));
+
 describe("App error boundary", () => {
   afterEach(() => {
     vi.resetModules();

@@ -474,13 +474,12 @@ function LogicTree({
 // DetectionSection — circuit board layout combining ConditionBar and LogicTree
 
 function DetectionSection({ detection }: { detection: SigmaDetection }) {
-  const { condition, ...selections } = detection;
   const [hoveredSelection, setHoveredSelection] = useState<string | null>(null);
 
-  const groups = useMemo(
-    () => parseConditionGroups(condition || "", selections as Record<string, unknown>),
-    [condition, selections],
-  );
+  const groups = useMemo(() => {
+    const { condition, ...selections } = detection;
+    return parseConditionGroups(condition || "", selections as Record<string, unknown>);
+  }, [detection]);
 
   return (
     <div className="flex flex-col gap-3">
@@ -488,7 +487,7 @@ function DetectionSection({ detection }: { detection: SigmaDetection }) {
       <div className="flex flex-col gap-1">
         <FieldLabel label="Condition" />
         <ConditionBar
-          condition={condition || ""}
+          condition={detection.condition || ""}
           hoveredSelection={hoveredSelection}
           onHoverSelection={setHoveredSelection}
         />

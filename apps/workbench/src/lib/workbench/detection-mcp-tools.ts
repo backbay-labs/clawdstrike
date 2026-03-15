@@ -192,7 +192,7 @@ export function generateSigmaFromMcpInput(input: Record<string, unknown>): strin
   }
 
   const lines = [
-    `title: ${title}`,
+    `title: '${title.replace(/'/g, "''")}'`,
     `id: ${id}`,
     `status: experimental`,
     `description: |`,
@@ -226,7 +226,9 @@ export function generateSigmaFromMcpInput(input: Record<string, unknown>): strin
 export function generateYaraFromMcpInput(input: Record<string, unknown>): string {
   const ruleName = String(input.rule_name ?? "untitled_rule").replace(/[^a-zA-Z0-9_]/g, "_");
   const description = input.description ? String(input.description) : "";
-  const condition = String(input.condition ?? "any of them");
+  // Sanitize condition to prevent YARA source injection (no newlines, no braces that close the rule)
+  const rawCondition = String(input.condition ?? "any of them");
+  const condition = rawCondition.replace(/[\n\r]/g, " ").replace(/}/g, "").trim();
 
   const today = new Date();
   const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;

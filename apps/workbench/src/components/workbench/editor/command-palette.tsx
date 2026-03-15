@@ -172,6 +172,18 @@ export function CommandPalette({ open, onClose, onNewTab, onNavigate }: CommandP
   // Flat list of visible commands for keyboard navigation
   const flatItems = useMemo(() => groups.flatMap((g) => g.items), [groups]);
 
+  // Pre-compute flat index for each command id to avoid mutable counter in render
+  const flatIndexMap = useMemo(() => {
+    const map = new Map<string, number>();
+    let idx = 0;
+    for (const group of groups) {
+      for (const cmd of group.items) {
+        map.set(cmd.id, idx++);
+      }
+    }
+    return map;
+  }, [groups]);
+
   // Reset state when opening
   useEffect(() => {
     if (open) {
@@ -227,9 +239,6 @@ export function CommandPalette({ open, onClose, onNewTab, onNavigate }: CommandP
     },
     [flatItems.length, executeSelected, onClose],
   );
-
-  // Track a running flat index across groups for selection highlighting
-  let flatIdx = 0;
 
   return (
     <AnimatePresence>
@@ -293,9 +302,8 @@ export function CommandPalette({ open, onClose, onNewTab, onNavigate }: CommandP
                   </div>
 
                   {group.items.map((cmd) => {
-                    const isActive = flatIdx === selectedIndex;
-                    const idx = flatIdx;
-                    flatIdx++;
+                    const idx = flatIndexMap.get(cmd.id) ?? 0;
+                    const isActive = idx === selectedIndex;
                     return (
                       <div
                         key={cmd.id}

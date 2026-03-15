@@ -144,8 +144,17 @@ pub fn validate_yara_rule(source: String) -> Result<YaraValidationResponse, Stri
     check_source_size(&source)?;
 
     // Phase 3 TODO: Wire to yara-x parser for full validation
-    // For now, check for basic rule structure
-    let rule_count = source.matches("rule ").count() as u32;
+    // For now, check for basic rule structure.
+    // Use line-by-line checks to avoid matching "rule " inside string literals or comments.
+    let rule_count = source
+        .lines()
+        .filter(|line| {
+            let trimmed = line.trim();
+            trimmed.starts_with("rule ")
+                || trimmed.starts_with("private rule ")
+                || trimmed.starts_with("global rule ")
+        })
+        .count() as u32;
     let mut diagnostics = Vec::new();
 
     if rule_count == 0 {
@@ -158,7 +167,13 @@ pub fn validate_yara_rule(source: String) -> Result<YaraValidationResponse, Stri
         });
     }
 
-    if !source.contains("condition:") && rule_count > 0 {
+    // Check for "condition:" at the start of a line (ignoring leading whitespace)
+    // to avoid false matches inside string literals.
+    let has_condition = source
+        .lines()
+        .any(|line| line.trim().starts_with("condition:"));
+
+    if !has_condition && rule_count > 0 {
         diagnostics.push(DetectionDiagnostic {
             severity: "error".into(),
             message: "YARA rule missing required 'condition:' section".into(),
@@ -260,40 +275,41 @@ pub fn validate_ocsf_event(json: String) -> Result<OcsfValidationResponse, Strin
 // ---- File-Type Detection ----
 
 #[tauri::command]
-pub fn detect_file_type(content: String) -> DetectionFileType {
+pub fn detect_file_type(content: String) -> Result<DetectionFileType, String> {
+    check_source_size(&content)?;
     // Content heuristic for YAML files
     if content.contains("guards:") || content.contains("schema_version:") {
-        return DetectionFileType {
+        return Ok(DetectionFileType {
             file_type: "clawdstrike_policy".into(),
             confidence: 0.9,
-        };
+        });
     }
     if content.contains("detection:") && content.contains("logsource:") {
-        return DetectionFileType {
+        return Ok(DetectionFileType {
             file_type: "sigma_rule".into(),
             confidence: 0.9,
-        };
+        });
     }
     if content.contains("title:") && content.contains("status:") && !content.contains("guards:") {
-        return DetectionFileType {
+        return Ok(DetectionFileType {
             file_type: "sigma_rule".into(),
             confidence: 0.7,
-        };
+        });
     }
     if content.trim_start().starts_with('{') {
-        return DetectionFileType {
+        return Ok(DetectionFileType {
             file_type: "ocsf_event".into(),
             confidence: 0.6,
-        };
+        });
     }
     if content.contains("rule ") && content.contains("condition:") {
-        return DetectionFileType {
+        return Ok(DetectionFileType {
             file_type: "yara_rule".into(),
             confidence: 0.8,
-        };
+        });
     }
-    DetectionFileType {
+    Ok(DetectionFileType {
         file_type: "clawdstrike_policy".into(),
         confidence: 0.3,
-    }
+    })
 }

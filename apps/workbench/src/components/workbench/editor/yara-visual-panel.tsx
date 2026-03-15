@@ -192,7 +192,9 @@ function updateMetaField(
     "m",
   );
   if (existingRe.test(source)) {
-    return source.replace(existingRe, `$1"${newValue}"`);
+    // Escape $ in replacement to prevent regex replacement string injection
+    const safeValue = newValue.replace(/\$/g, "$$$$");
+    return source.replace(existingRe, `$1"${safeValue}"`);
   }
 
   // Try non-string value

@@ -6,7 +6,6 @@ import { FILE_TYPE_REGISTRY, type FileType } from "@/lib/workbench/file-type-reg
 import {
   MITRE_TECHNIQUES,
   MITRE_TACTICS,
-  GUARD_TECHNIQUE_MAP,
   extractSigmaTechniques,
   extractYaraTechniques,
   extractPolicyTechniques,

@@ -160,7 +160,7 @@ function deepGet(obj: Record<string, unknown>, path: string[]): unknown {
 function deepSet(obj: Record<string, unknown>, path: string[], value: unknown): Record<string, unknown> {
   const result = { ...obj };
   if (path.length === 1) {
-    if (value === undefined || value === null || value === "") {
+    if (value === undefined || value === null) {
       delete result[path[0]];
     } else {
       result[path[0]] = value;
@@ -225,9 +225,6 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
     }
     if (!event.class_uid && event.class_uid !== 0) {
       errors.push("Select an event class to continue.");
-    }
-    if (!event.category_uid && event.category_uid !== 0) {
-      errors.push("Category is set automatically from the event class.");
     }
     if (event.time === undefined || event.time === null) {
       errors.push("Set the event time in the Status & Actions section.");
