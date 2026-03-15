@@ -1,4 +1,4 @@
-import { useMemo, useCallback } from "react";
+import { useMemo, useCallback, useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import YAML from "yaml";
 import {
@@ -95,97 +95,413 @@ interface SigmaVisualPanelProps {
 
 
 
-// ---- Detection Cards ----
+// ---- Detection Logic Circuit Board ----
 
-function DetectionSection({ detection }: { detection: SigmaDetection }) {
-  const { condition, ...selections } = detection;
-  const selectionEntries = Object.entries(selections);
+// Condition tokenizer — splits condition into typed tokens for syntax coloring
+
+interface ConditionToken {
+  type: "keyword" | "reference" | "paren" | "other";
+  value: string;
+}
+
+const CONDITION_KEYWORDS = new Set([
+  "and", "or", "not", "1", "of", "all", "them", "any",
+]);
+
+function tokenizeCondition(condition: string): ConditionToken[] {
+  const tokens: ConditionToken[] = [];
+  // Split on whitespace boundaries while preserving parens as separate tokens
+  const raw = condition.replace(/([()])/g, " $1 ").split(/\s+/).filter(Boolean);
+
+  for (const word of raw) {
+    if (word === "(" || word === ")") {
+      tokens.push({ type: "paren", value: word });
+    } else if (CONDITION_KEYWORDS.has(word.toLowerCase())) {
+      tokens.push({ type: "keyword", value: word });
+    } else {
+      tokens.push({ type: "reference", value: word });
+    }
+  }
+  return tokens;
+}
+
+// Condition parser — extracts operator groups for the logic tree
+
+interface OperatorGroup {
+  operator: "and" | "or" | "not";
+  operatorLabel: string;
+  selections: { name: string; value: Record<string, unknown> }[];
+}
+
+function parseConditionGroups(
+  condition: string,
+  selections: Record<string, unknown>,
+): OperatorGroup[] {
+  const groups: OperatorGroup[] = [];
+  const stripped = condition.replace(/[()]/g, " ").trim();
+
+  // Detect whether the top-level joiner is AND or OR
+  // Simple heuristic: split on ` or ` first; if >1 segment, top-level is OR
+  const orSegments = stripped.split(/\s+or\s+/i);
+  const isTopOr = orSegments.length > 1;
+
+  const segments = isTopOr
+    ? orSegments
+    : stripped.split(/\s+and\s+/i);
+  const topOp = isTopOr ? "or" : "and";
+
+  // Collect positive and negated terms
+  const positive: { name: string; value: Record<string, unknown> }[] = [];
+  const negated: { name: string; value: Record<string, unknown> }[] = [];
+
+  for (const seg of segments) {
+    const trimmed = seg.trim();
+    if (!trimmed) continue;
+
+    // Check for "not <selection>"
+    const notMatch = trimmed.match(/^not\s+(.+)$/i);
+    const isNegated = !!notMatch;
+    const expr = isNegated ? notMatch![1].trim() : trimmed;
+
+    // Check for special expressions: "1 of selection*", "all of them", etc.
+    const isSpecial = /^\d+\s+of\s+/i.test(expr) || /^all\s+of\s+/i.test(expr) || /^any\s+of\s+/i.test(expr);
+
+    if (isSpecial) {
+      const entry = { name: expr, value: {} as Record<string, unknown> };
+      if (isNegated) {
+        negated.push(entry);
+      } else {
+        positive.push(entry);
+      }
+    } else {
+      // expr should be a selection name
+      const selValue = selections[expr];
+      const entry = {
+        name: expr,
+        value: (selValue != null && typeof selValue === "object" && !Array.isArray(selValue)
+          ? selValue
+          : {}) as Record<string, unknown>,
+      };
+      if (isNegated) {
+        negated.push(entry);
+      } else {
+        positive.push(entry);
+      }
+    }
+  }
+
+  if (positive.length > 0) {
+    groups.push({
+      operator: topOp,
+      operatorLabel: topOp.toUpperCase(),
+      selections: positive,
+    });
+  }
+
+  if (negated.length > 0) {
+    groups.push({
+      operator: "not",
+      operatorLabel: `${topOp.toUpperCase()} NOT`,
+      selections: negated,
+    });
+  }
+
+  return groups;
+}
+
+// Format a selection value for compact display
+function formatFieldValues(value: unknown): string {
+  if (value == null) return "null";
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    if (value.length <= 3) {
+      return value.map((v) => (typeof v === "object" ? JSON.stringify(v) : String(v))).join(", ");
+    }
+    const shown = value.slice(0, 3).map((v) => (typeof v === "object" ? JSON.stringify(v) : String(v))).join(", ");
+    return `${shown} +${value.length - 3} more`;
+  }
+  return JSON.stringify(value);
+}
+
+// ConditionBar — syntax-colored condition display
+
+function ConditionBar({
+  condition,
+  hoveredSelection,
+  onHoverSelection,
+}: {
+  condition: string;
+  hoveredSelection: string | null;
+  onHoverSelection: (name: string | null) => void;
+}) {
+  const tokens = useMemo(() => tokenizeCondition(condition), [condition]);
+
+  if (!condition) {
+    return (
+      <div
+        className="bg-[#05060a] border border-[#2d3240] border-l-2 rounded px-4 py-3 font-mono text-[12px] text-[#6f7f9a]/50 italic"
+        style={{ borderLeftColor: ACCENT }}
+      >
+        (empty)
+      </div>
+    );
+  }
 
   return (
-    <div className="flex flex-col gap-2">
-      {selectionEntries.map(([name, value]) => (
-        <SelectionCard key={name} name={name} value={value} />
-      ))}
+    <div
+      className="bg-[#05060a] border border-[#2d3240] border-l-2 rounded px-4 py-3 font-mono text-[12px] leading-relaxed flex flex-wrap gap-x-1.5 gap-y-0.5"
+      style={{ borderLeftColor: ACCENT }}
+    >
+      {tokens.map((token, i) => {
+        let color = "#ece7dc";
+        let cursor = "default";
 
-      {/* Condition display */}
-      <div className="flex flex-col gap-1 mt-1">
-        <FieldLabel label="Condition" />
-        <div
-          className="bg-[#0b0d13] border border-[#2d3240] rounded-lg px-3 py-2 font-mono text-[11px] leading-relaxed"
-          style={{ color: ACCENT }}
-        >
-          {condition || "(empty)"}
-        </div>
-      </div>
+        if (token.type === "keyword") {
+          const lower = token.value.toLowerCase();
+          if (lower === "not") {
+            color = "#c45c5c";
+          } else {
+            color = "#d4a84b";
+          }
+        } else if (token.type === "reference") {
+          color = ACCENT;
+          cursor = "pointer";
+        } else if (token.type === "paren") {
+          color = "#6f7f9a";
+        }
+
+        return (
+          <span
+            key={i}
+            style={{
+              color,
+              cursor,
+              borderBottom: token.type === "reference" && hoveredSelection === token.value
+                ? `1px solid ${ACCENT}60`
+                : "1px solid transparent",
+              transition: "border-color 150ms ease",
+            }}
+            onMouseEnter={token.type === "reference" ? () => onHoverSelection(token.value) : undefined}
+            onMouseLeave={token.type === "reference" ? () => onHoverSelection(null) : undefined}
+          >
+            {token.value}
+          </span>
+        );
+      })}
     </div>
   );
 }
 
-function SelectionCard({ name, value }: { name: string; value: unknown }) {
+// SelectionNode — a single selection in the logic tree
+
+function SelectionNode({
+  name,
+  value,
+  isNegated,
+  isHighlighted,
+  onMouseEnter,
+  onMouseLeave,
+}: {
+  name: string;
+  value: Record<string, unknown>;
+  isNegated: boolean;
+  isHighlighted: boolean;
+  onMouseEnter: () => void;
+  onMouseLeave: () => void;
+}) {
+  const borderColor = isNegated ? "#c45c5c" : ACCENT;
+  const entries = Object.entries(value);
+  const isEmpty = entries.length === 0;
+
   return (
-    <div className="bg-[#0b0d13]/50 border border-[#2d3240] rounded-lg p-3">
-      <div className="flex items-center gap-2 mb-2">
+    <div
+      className="bg-[#0b0d13]/60 border rounded-md pl-3 pr-3 py-2 transition-shadow"
+      style={{
+        borderColor: `${borderColor}30`,
+        borderLeftWidth: 3,
+        borderLeftColor: borderColor,
+        opacity: isNegated ? 0.7 : 1,
+        boxShadow: isHighlighted ? `0 0 0 1px ${ACCENT}40` : "none",
+        transition: "box-shadow 150ms ease",
+      }}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+    >
+      <div className="flex items-center gap-2">
         <span
-          className="text-[10px] font-semibold font-mono px-1.5 py-0.5 rounded"
-          style={{
-            color: ACCENT,
-            backgroundColor: `${ACCENT}15`,
-            border: `1px solid ${ACCENT}30`,
-          }}
+          className="text-[11px] font-mono font-bold"
+          style={{ color: isNegated ? "#c45c5c" : ACCENT }}
         >
           {name}
         </span>
+        {isNegated && (
+          <span className="text-[8px] font-mono uppercase tracking-wider text-[#c45c5c]/60">
+            excluded
+          </span>
+        )}
       </div>
-      <div className="flex flex-col gap-1">
-        {renderSelectionValue(value)}
-      </div>
+      {!isEmpty && (
+        <div className="flex flex-col gap-0.5 mt-1.5">
+          {entries.map(([field, val]) => (
+            <div key={field} className="flex items-baseline gap-1.5">
+              <span className="text-[10px] font-mono text-[#6f7f9a] shrink-0">{field}:</span>
+              <span className="text-[10px] font-mono text-[#ece7dc]/60 break-all">
+                {formatFieldValues(val)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-function renderSelectionValue(value: unknown, depth = 0): React.ReactNode {
-  if (value == null) {
-    return <span className="text-[11px] font-mono text-[#6f7f9a]/50 italic">null</span>;
-  }
+// LogicTree — renders operator groups with junction markers and connector lines
 
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+function LogicTree({
+  groups,
+  hoveredSelection,
+  onHoverSelection,
+}: {
+  groups: OperatorGroup[];
+  hoveredSelection: string | null;
+  onHoverSelection: (name: string | null) => void;
+}) {
+  if (groups.length === 0) {
     return (
-      <span className="text-[11px] font-mono text-[#ece7dc]/80 pl-2">
-        {String(value)}
-      </span>
-    );
-  }
-
-  if (Array.isArray(value)) {
-    return (
-      <div className="flex flex-col gap-0.5" style={{ paddingLeft: depth > 0 ? 8 : 0 }}>
-        {value.map((item, i) => (
-          <div key={i} className="flex items-start gap-1.5">
-            <span className="text-[10px] text-[#6f7f9a]/40 mt-0.5 shrink-0">-</span>
-            <span className="text-[11px] font-mono text-[#ece7dc]/80 break-all">
-              {typeof item === "object" ? JSON.stringify(item) : String(item)}
-            </span>
-          </div>
-        ))}
+      <div className="text-[11px] font-mono text-[#6f7f9a]/50 italic py-2">
+        No selection groups parsed.
       </div>
     );
   }
 
-  if (typeof value === "object") {
-    const entries = Object.entries(value as Record<string, unknown>);
-    return (
-      <div className="flex flex-col gap-1" style={{ paddingLeft: depth > 0 ? 8 : 0 }}>
-        {entries.map(([key, val]) => (
-          <div key={key} className="flex flex-col gap-0.5">
-            <span className="text-[10px] font-mono text-[#6f7f9a]">{key}:</span>
-            {renderSelectionValue(val, depth + 1)}
-          </div>
-        ))}
-      </div>
-    );
-  }
+  return (
+    <div className="flex flex-col gap-4 mt-2">
+      {groups.map((group, gi) => {
+        const isNot = group.operator === "not";
+        const junctionColor = isNot ? "#c45c5c" : "#d4a84b";
+        const junctionLabel = isNot ? "!" : "&";
 
-  return <span className="text-[11px] font-mono text-[#ece7dc]/50">{String(value)}</span>;
+        return (
+          <div key={gi} className="flex flex-col">
+            {/* Operator junction header */}
+            <div className="flex items-center gap-2 mb-2">
+              {/* Junction circle */}
+              <div
+                className="w-[22px] h-[22px] rounded-full flex items-center justify-center text-[8px] font-mono font-black shrink-0"
+                style={{
+                  color: junctionColor,
+                  backgroundColor: `${junctionColor}1a`,
+                  border: `1px solid ${junctionColor}33`,
+                }}
+              >
+                {junctionLabel}
+              </div>
+              {/* Horizontal rule */}
+              <div className="flex items-center gap-2 flex-1">
+                <span
+                  className="text-[9px] font-mono font-bold tracking-wider"
+                  style={{ color: junctionColor }}
+                >
+                  {group.operatorLabel}
+                </span>
+                <div className="flex-1 h-px" style={{ backgroundColor: "#2d3240" }} />
+              </div>
+            </div>
+
+            {/* Selection nodes with vertical connector */}
+            <div className="flex">
+              {/* Vertical connector line */}
+              <div className="flex flex-col items-center" style={{ width: 22 }}>
+                <div
+                  className="flex-1"
+                  style={{ width: 1, backgroundColor: "#2d3240" }}
+                />
+              </div>
+
+              {/* Nodes */}
+              <div className="flex flex-col gap-2 flex-1 pl-3">
+                {group.selections.map((sel, si) => {
+                  const isLast = si === group.selections.length - 1;
+                  return (
+                    <div key={si} className="relative">
+                      {/* Horizontal branch connector */}
+                      <div
+                        className="absolute"
+                        style={{
+                          left: -12,
+                          top: 14,
+                          width: 12,
+                          height: 1,
+                          backgroundColor: "#2d3240",
+                        }}
+                      />
+                      {/* Branch node indicator */}
+                      <div
+                        className="absolute"
+                        style={{
+                          left: -15,
+                          top: 11,
+                          width: 5,
+                          height: 5,
+                          borderRadius: "50%",
+                          backgroundColor: isLast ? "#2d3240" : "transparent",
+                          border: `1px solid ${isNot ? "#c45c5c40" : "#2d3240"}`,
+                        }}
+                      />
+                      <SelectionNode
+                        name={sel.name}
+                        value={sel.value}
+                        isNegated={isNot}
+                        isHighlighted={hoveredSelection === sel.name}
+                        onMouseEnter={() => onHoverSelection(sel.name)}
+                        onMouseLeave={() => onHoverSelection(null)}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// DetectionSection — circuit board layout combining ConditionBar and LogicTree
+
+function DetectionSection({ detection }: { detection: SigmaDetection }) {
+  const { condition, ...selections } = detection;
+  const [hoveredSelection, setHoveredSelection] = useState<string | null>(null);
+
+  const groups = useMemo(
+    () => parseConditionGroups(condition || "", selections as Record<string, unknown>),
+    [condition, selections],
+  );
+
+  return (
+    <div className="flex flex-col gap-3">
+      {/* Condition bar with syntax coloring */}
+      <div className="flex flex-col gap-1">
+        <FieldLabel label="Condition" />
+        <ConditionBar
+          condition={condition || ""}
+          hoveredSelection={hoveredSelection}
+          onHoverSelection={setHoveredSelection}
+        />
+      </div>
+
+      {/* Logic tree */}
+      <LogicTree
+        groups={groups}
+        hoveredSelection={hoveredSelection}
+        onHoverSelection={setHoveredSelection}
+      />
+    </div>
+  );
 }
 
 

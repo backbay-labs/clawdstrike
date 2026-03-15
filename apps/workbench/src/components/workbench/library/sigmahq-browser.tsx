@@ -55,6 +55,77 @@ const LEVEL_COLORS: Record<string, { bg: string; text: string; border: string }>
   },
 };
 
+// ---- Tactic helpers ----
+
+const TACTIC_ORDER = [
+  "initial_access",
+  "execution",
+  "persistence",
+  "privilege_escalation",
+  "defense_evasion",
+  "credential_access",
+  "discovery",
+  "lateral_movement",
+  "collection",
+  "exfiltration",
+  "command_and_control",
+  "impact",
+  "uncategorized",
+] as const;
+
+const TACTIC_LABELS: Record<string, string> = {
+  initial_access: "Initial Access",
+  execution: "Execution",
+  persistence: "Persistence",
+  privilege_escalation: "Privilege Escalation",
+  defense_evasion: "Defense Evasion",
+  credential_access: "Credential Access",
+  discovery: "Discovery",
+  lateral_movement: "Lateral Movement",
+  collection: "Collection",
+  exfiltration: "Exfiltration",
+  command_and_control: "Command & Control",
+  impact: "Impact",
+  uncategorized: "Uncategorized",
+};
+
+const LEVEL_SEVERITY: Record<string, number> = {
+  critical: 4,
+  high: 3,
+  medium: 2,
+  low: 1,
+  informational: 0,
+};
+
+function extractTactic(tags: string[]): string {
+  for (const tag of tags) {
+    const match = tag.match(/^attack\.(\w+)$/);
+    if (match && !tag.match(/^attack\.t\d/i)) return match[1];
+  }
+  return "uncategorized";
+}
+
+function extractTechniques(tags: string[]): string[] {
+  return tags
+    .filter((t) => /^attack\.t\d+/i.test(t))
+    .map((t) => t.replace("attack.", "").toUpperCase());
+}
+
+function levelColorHex(level: string): string {
+  switch (level) {
+    case "critical":
+      return "#c45c5c";
+    case "high":
+      return "#e0915c";
+    case "medium":
+      return "#d4a84b";
+    case "low":
+      return "#3dbf84";
+    default:
+      return "#6f7f9a";
+  }
+}
+
 const PRODUCT_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   windows: {
     bg: "bg-[#7c9aef]/10",
@@ -960,6 +1031,280 @@ function matchesProductFilter(rule: SigmaHQRule, filter: ProductFilter): boolean
   return rule.product === filter;
 }
 
+// ---- Tactic group header ----
+
+function TacticGroupHeader({ tactic, count }: { tactic: string; count: number }) {
+  return (
+    <div className="border-b border-[#2d3240] pt-6 pb-2 flex items-baseline gap-2">
+      <span className="text-[13px] font-syne font-black uppercase tracking-[0.12em] text-[#ece7dc]">
+        {TACTIC_LABELS[tactic] ?? tactic}
+      </span>
+      <span className="inline-flex items-center px-1.5 py-0.5 text-[9px] font-mono text-[#6f7f9a] bg-[#131721] border border-[#2d3240] rounded">
+        {count}
+      </span>
+    </div>
+  );
+}
+
+// ---- Critical rule card ----
+
+function CriticalRuleCard({
+  rule,
+  isExpanded,
+  onToggleExpand,
+  onImport,
+}: {
+  rule: SigmaHQRule;
+  isExpanded: boolean;
+  onToggleExpand: () => void;
+  onImport: () => void;
+}) {
+  const techniques = extractTechniques(rule.tags);
+
+  return (
+    <div
+      className="mt-2 border-l-[3px] border-[#c45c5c] bg-[#c45c5c]/[0.03] rounded-r-lg p-4"
+    >
+      {/* Top row: CRITICAL badge + product */}
+      <div className="flex items-center gap-2 mb-2">
+        <span className="inline-flex items-center px-1.5 py-0.5 text-[9px] font-mono font-bold uppercase text-[#c45c5c] bg-[#c45c5c]/10 border border-[#c45c5c]/20 rounded">
+          CRITICAL
+        </span>
+        <span
+          className={cn(
+            "inline-flex items-center px-1.5 py-0.5 text-[9px] font-mono border rounded",
+            (PRODUCT_COLORS[rule.product] ?? PRODUCT_COLORS.windows).bg,
+            (PRODUCT_COLORS[rule.product] ?? PRODUCT_COLORS.windows).text,
+            (PRODUCT_COLORS[rule.product] ?? PRODUCT_COLORS.windows).border,
+          )}
+        >
+          {rule.product}
+        </span>
+        <span className="inline-flex items-center px-1.5 py-0.5 text-[9px] font-mono bg-[#131721] text-[#6f7f9a] border border-[#2d3240] rounded">
+          {rule.category}
+        </span>
+      </div>
+
+      {/* Title */}
+      <h4 className="text-[15px] font-syne font-bold text-[#ece7dc] leading-tight mb-2">
+        {rule.title}
+      </h4>
+
+      {/* Full description */}
+      <p className="text-xs text-[#6f7f9a] leading-relaxed mb-3">
+        {rule.description}
+      </p>
+
+      {/* ATT&CK technique badges */}
+      {techniques.length > 0 && (
+        <div className="flex items-center gap-1 mb-3 flex-wrap">
+          {techniques.map((tech) => (
+            <span
+              key={tech}
+              className="inline-flex items-center px-1.5 py-0.5 text-[9px] font-mono font-bold bg-[#7c9aef]/10 text-[#7c9aef] border border-[#7c9aef]/20 rounded"
+            >
+              {tech}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Expanded YAML preview */}
+      {isExpanded && (
+        <div className="mb-3 rounded-md bg-[#131721] border border-[#2d3240]/50 overflow-hidden">
+          <div className="flex items-center justify-between px-3 py-1.5 border-b border-[#2d3240]/30">
+            <span className="text-[9px] font-mono text-[#6f7f9a]">
+              {rule.fileName}
+            </span>
+            <span className="text-[9px] font-mono text-[#7c9aef]/50">
+              sigma yaml
+            </span>
+          </div>
+          <pre className="p-3 text-[10px] font-mono text-[#6f7f9a]/80 leading-relaxed overflow-x-auto max-h-[400px] overflow-y-auto whitespace-pre">
+            {rule.content}
+          </pre>
+        </div>
+      )}
+
+      {/* Footer: author + actions */}
+      <div className="pt-3 border-t border-[#2d3240]/30 flex items-center justify-between">
+        <span className="text-[10px] text-[#6f7f9a]/60">{rule.author}</span>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={onToggleExpand}
+            title={isExpanded ? "Collapse" : "Preview YAML"}
+            className="flex items-center gap-1 px-2 py-1 rounded-md bg-[#131721] text-[#6f7f9a] text-[10px] font-medium hover:text-[#ece7dc] transition-colors"
+          >
+            {isExpanded ? (
+              <>
+                <IconChevronUp size={11} stroke={1.5} />
+                Collapse
+              </>
+            ) : (
+              <>
+                <IconEye size={11} stroke={1.5} />
+                Preview
+              </>
+            )}
+          </button>
+          <button
+            onClick={onImport}
+            title="Open in editor"
+            className="flex items-center gap-1 px-2 py-1 rounded-md bg-[#7c9aef]/10 text-[#7c9aef] text-[10px] font-medium hover:bg-[#7c9aef]/20 transition-colors"
+          >
+            <IconDownload size={11} stroke={1.5} />
+            Open in editor
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---- Standard rule row ----
+
+function StandardRuleRow({
+  rule,
+  isExpanded,
+  onToggleExpand,
+  onImport,
+}: {
+  rule: SigmaHQRule;
+  isExpanded: boolean;
+  onToggleExpand: () => void;
+  onImport: () => void;
+}) {
+  const techniques = extractTechniques(rule.tags);
+  const primaryTechnique = techniques[0] ?? null;
+  const borderColor = levelColorHex(rule.level);
+  const levelColor = LEVEL_COLORS[rule.level] ?? LEVEL_COLORS.medium;
+  const productColor = PRODUCT_COLORS[rule.product] ?? PRODUCT_COLORS.windows;
+
+  return (
+    <div className="mt-1">
+      {/* Compact row */}
+      <div
+        onClick={onToggleExpand}
+        className="group flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-[#131721]/40 transition-colors rounded-r"
+        style={{ borderLeft: `2px solid ${borderColor}` }}
+      >
+        {/* Title */}
+        <span className="flex-1 text-xs font-syne font-medium text-[#ece7dc] truncate">
+          {rule.title}
+        </span>
+
+        {/* Level badge */}
+        <span
+          className={cn(
+            "shrink-0 inline-flex items-center px-1.5 py-0.5 text-[9px] font-mono font-bold uppercase border rounded",
+            levelColor.bg,
+            levelColor.text,
+            levelColor.border,
+          )}
+        >
+          {rule.level}
+        </span>
+
+        {/* Product badge */}
+        <span
+          className={cn(
+            "shrink-0 inline-flex items-center px-1.5 py-0.5 text-[9px] font-mono border rounded",
+            productColor.bg,
+            productColor.text,
+            productColor.border,
+          )}
+        >
+          {rule.product}
+        </span>
+
+        {/* Primary technique */}
+        {primaryTechnique && (
+          <span className="shrink-0 inline-flex items-center px-1.5 py-0.5 text-[8px] font-mono bg-[#7c9aef]/5 text-[#7c9aef]/70 border border-[#7c9aef]/10 rounded">
+            {primaryTechnique}
+          </span>
+        )}
+
+        {/* Hover-revealed Open button */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onImport();
+          }}
+          className="shrink-0 opacity-0 group-hover:opacity-100 flex items-center gap-1 px-2 py-1 rounded-md bg-[#7c9aef]/10 text-[#7c9aef] text-[10px] font-medium hover:bg-[#7c9aef]/20 transition-all"
+        >
+          <IconDownload size={11} stroke={1.5} />
+          Open
+        </button>
+
+        {/* Expand chevron */}
+        {isExpanded ? (
+          <IconChevronUp size={12} className="shrink-0 text-[#6f7f9a]" stroke={1.5} />
+        ) : (
+          <IconChevronDown size={12} className="shrink-0 text-[#6f7f9a]" stroke={1.5} />
+        )}
+      </div>
+
+      {/* Expanded details */}
+      {isExpanded && (
+        <div
+          className="ml-[2px] pl-5 pr-3 pb-3 bg-[#131721]/20 rounded-br"
+          style={{ borderLeft: `2px solid ${borderColor}` }}
+        >
+          {/* Description */}
+          <p className="text-xs text-[#6f7f9a] leading-relaxed mb-3 pt-2">
+            {rule.description}
+          </p>
+
+          {/* All tags */}
+          <div className="flex items-center gap-1 mb-3 flex-wrap">
+            {rule.tags.map((tag) => (
+              <span
+                key={tag}
+                className="inline-flex items-center px-1.5 py-0.5 text-[8px] font-mono bg-[#7c9aef]/5 text-[#7c9aef]/70 border border-[#7c9aef]/10 rounded"
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
+
+          {/* Author + filename */}
+          <div className="flex items-center gap-4 text-[10px] text-[#6f7f9a]/60 mb-3">
+            <span>{rule.author}</span>
+            <span className="font-mono">{rule.fileName}</span>
+          </div>
+
+          {/* YAML preview */}
+          <div className="rounded-md bg-[#131721] border border-[#2d3240]/50 overflow-hidden">
+            <div className="flex items-center justify-between px-3 py-1.5 border-b border-[#2d3240]/30">
+              <span className="text-[9px] font-mono text-[#6f7f9a]">
+                {rule.fileName}
+              </span>
+              <span className="text-[9px] font-mono text-[#7c9aef]/50">
+                sigma yaml
+              </span>
+            </div>
+            <pre className="p-3 text-[10px] font-mono text-[#6f7f9a]/80 leading-relaxed overflow-x-auto max-h-[400px] overflow-y-auto whitespace-pre">
+              {rule.content}
+            </pre>
+          </div>
+
+          {/* Actions row */}
+          <div className="flex items-center justify-end gap-1.5 mt-3">
+            <button
+              onClick={onImport}
+              title="Open in editor"
+              className="flex items-center gap-1 px-2 py-1 rounded-md bg-[#7c9aef]/10 text-[#7c9aef] text-[10px] font-medium hover:bg-[#7c9aef]/20 transition-colors"
+            >
+              <IconDownload size={11} stroke={1.5} />
+              Open in editor
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---- Component ----
 
 interface SigmaHQBrowserProps {
@@ -1015,6 +1360,45 @@ export function SigmaHQBrowser({ onImport }: SigmaHQBrowserProps) {
     }
     return counts;
   }, []);
+
+  // Group filtered rules by MITRE tactic, sorted by tactic order then severity
+  const groupedRules = useMemo(() => {
+    const groups = new Map<string, SigmaHQRule[]>();
+
+    for (const rule of filteredRules) {
+      const tactic = extractTactic(rule.tags);
+      const existing = groups.get(tactic);
+      if (existing) {
+        existing.push(rule);
+      } else {
+        groups.set(tactic, [rule]);
+      }
+    }
+
+    // Sort rules within each group by severity (critical first)
+    for (const rules of groups.values()) {
+      rules.sort(
+        (a, b) => (LEVEL_SEVERITY[b.level] ?? 0) - (LEVEL_SEVERITY[a.level] ?? 0),
+      );
+    }
+
+    // Sort groups by tactic order
+    const ordered: [string, SigmaHQRule[]][] = [];
+    for (const tactic of TACTIC_ORDER) {
+      const rules = groups.get(tactic);
+      if (rules && rules.length > 0) {
+        ordered.push([tactic, rules]);
+      }
+    }
+    // Any remaining tactics not in the order list
+    for (const [tactic, rules] of groups) {
+      if (!TACTIC_ORDER.includes(tactic as (typeof TACTIC_ORDER)[number]) && rules.length > 0) {
+        ordered.push([tactic, rules]);
+      }
+    }
+
+    return ordered;
+  }, [filteredRules]);
 
   return (
     <div>
@@ -1121,7 +1505,7 @@ export function SigmaHQBrowser({ onImport }: SigmaHQBrowserProps) {
         </div>
       </div>
 
-      {/* Results grid */}
+      {/* Tactic-grouped results */}
       {filteredRules.length === 0 ? (
         <div className="rounded-xl border border-dashed border-[#2d3240]/60 bg-[#0b0d13]/30 px-8 py-14 text-center flex flex-col items-center">
           <div className="w-12 h-12 rounded-2xl bg-[#131721] border border-[#2d3240]/50 flex items-center justify-center mb-4">
@@ -1135,138 +1519,31 @@ export function SigmaHQBrowser({ onImport }: SigmaHQBrowserProps) {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredRules.map((rule) => {
-            const isExpanded = expandedId === rule.id;
-            const levelColor = LEVEL_COLORS[rule.level] ?? LEVEL_COLORS.medium;
-            const productKey =
-              rule.product === "aws" || rule.product === "azure" ? rule.product : rule.product;
-            const productColor = PRODUCT_COLORS[productKey] ?? PRODUCT_COLORS.windows;
-
-            return (
-              <div
-                key={rule.id}
-                className={cn(
-                  "group flex flex-col rounded-lg border border-[#2d3240] bg-[#0b0d13] p-4 hover:border-[#3d4250] hover:bg-[#0b0d13]/80 transition-colors duration-150",
-                  isExpanded && "col-span-1 sm:col-span-2 lg:col-span-3",
-                )}
-              >
-                {/* Header */}
-                <div className="flex items-start justify-between gap-2 mb-2">
-                  <h4 className="font-syne font-bold text-sm text-[#ece7dc] leading-tight">
-                    {rule.title}
-                  </h4>
-                  <div className="flex items-center gap-1 shrink-0">
-                    {/* Level badge */}
-                    <span
-                      className={cn(
-                        "inline-flex items-center px-1.5 py-0.5 text-[9px] font-mono font-bold uppercase border rounded",
-                        levelColor.bg,
-                        levelColor.text,
-                        levelColor.border,
-                      )}
-                    >
-                      {rule.level}
-                    </span>
-                    {/* Product badge */}
-                    <span
-                      className={cn(
-                        "inline-flex items-center px-1.5 py-0.5 text-[9px] font-mono border rounded",
-                        productColor.bg,
-                        productColor.text,
-                        productColor.border,
-                      )}
-                    >
-                      {rule.product}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Category */}
-                <div className="mb-2">
-                  <span className="inline-flex items-center px-1.5 py-0.5 text-[9px] font-mono bg-[#131721] text-[#6f7f9a] border border-[#2d3240] rounded">
-                    {rule.category}
-                  </span>
-                </div>
-
-                {/* Description */}
-                <p
-                  className={cn(
-                    "text-xs text-[#6f7f9a] leading-relaxed mb-3",
-                    !isExpanded && "line-clamp-2",
-                  )}
-                >
-                  {rule.description}
-                </p>
-
-                {/* ATT&CK tags */}
-                <div className="flex items-center gap-1 mb-3 flex-wrap">
-                  {rule.tags.slice(0, isExpanded ? undefined : 3).map((tag) => (
-                    <span
-                      key={tag}
-                      className="inline-flex items-center px-1.5 py-0.5 text-[8px] font-mono bg-[#7c9aef]/5 text-[#7c9aef]/70 border border-[#7c9aef]/10 rounded"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                  {!isExpanded && rule.tags.length > 3 && (
-                    <span className="text-[9px] text-[#6f7f9a]/50">
-                      +{rule.tags.length - 3}
-                    </span>
-                  )}
-                </div>
-
-                {/* Expanded YAML preview */}
-                {isExpanded && (
-                  <div className="mb-3 rounded-md bg-[#131721] border border-[#2d3240]/50 overflow-hidden">
-                    <div className="flex items-center justify-between px-3 py-1.5 border-b border-[#2d3240]/30">
-                      <span className="text-[9px] font-mono text-[#6f7f9a]">
-                        {rule.fileName}
-                      </span>
-                      <span className="text-[9px] font-mono text-[#7c9aef]/50">
-                        sigma yaml
-                      </span>
-                    </div>
-                    <pre className="p-3 text-[10px] font-mono text-[#6f7f9a]/80 leading-relaxed overflow-x-auto max-h-[400px] overflow-y-auto whitespace-pre">
-                      {rule.content}
-                    </pre>
-                  </div>
-                )}
-
-                {/* Footer: author + actions */}
-                <div className="mt-auto pt-3 border-t border-[#2d3240]/30 flex items-center justify-between">
-                  <span className="text-[10px] text-[#6f7f9a]/60">{rule.author}</span>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      onClick={() => toggleExpand(rule.id)}
-                      title={isExpanded ? "Collapse" : "Preview YAML"}
-                      className="flex items-center gap-1 px-2 py-1 rounded-md bg-[#131721] text-[#6f7f9a] text-[10px] font-medium hover:text-[#ece7dc] transition-colors"
-                    >
-                      {isExpanded ? (
-                        <>
-                          <IconChevronUp size={11} stroke={1.5} />
-                          Collapse
-                        </>
-                      ) : (
-                        <>
-                          <IconEye size={11} stroke={1.5} />
-                          Preview
-                        </>
-                      )}
-                    </button>
-                    <button
-                      onClick={() => onImport(rule.content, rule.title)}
-                      title="Open in editor"
-                      className="flex items-center gap-1 px-2 py-1 rounded-md bg-[#7c9aef]/10 text-[#7c9aef] text-[10px] font-medium hover:bg-[#7c9aef]/20 transition-colors"
-                    >
-                      <IconDownload size={11} stroke={1.5} />
-                      Open in editor
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+        <div className="space-y-0">
+          {groupedRules.map(([tactic, rules]) => (
+            <div key={tactic}>
+              <TacticGroupHeader tactic={tactic} count={rules.length} />
+              {rules.map((rule) =>
+                rule.level === "critical" ? (
+                  <CriticalRuleCard
+                    key={rule.id}
+                    rule={rule}
+                    isExpanded={expandedId === rule.id}
+                    onToggleExpand={() => toggleExpand(rule.id)}
+                    onImport={() => onImport(rule.content, rule.title)}
+                  />
+                ) : (
+                  <StandardRuleRow
+                    key={rule.id}
+                    rule={rule}
+                    isExpanded={expandedId === rule.id}
+                    onToggleExpand={() => toggleExpand(rule.id)}
+                    onImport={() => onImport(rule.content, rule.title)}
+                  />
+                ),
+              )}
+            </div>
+          ))}
         </div>
       )}
 
