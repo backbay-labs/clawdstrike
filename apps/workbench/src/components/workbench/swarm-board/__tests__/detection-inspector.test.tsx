@@ -117,11 +117,14 @@ vi.mock("@/lib/workbench/detection-workflow/publication-store", () => ({
       outputHash: "sha256:out456def",
       validationSnapshot: { valid: true, diagnosticCount: 0 },
       runSnapshot: { evidencePackId: "ep-001", labRunId: "lr-001", passed: true },
+      coverageSnapshot: null,
       converter: { id: "sigma-to-policy", version: "1.2.0" },
       signer: null,
+      provenance: null,
       receiptId: "rcpt-001",
       deployResponse: { success: true, hash: "deploy-hash", destination: "fleet-prod" },
     }),
+    getOutputContent: vi.fn().mockResolvedValue("converted publication output"),
   }),
   PublicationStore: vi.fn(),
 }));
@@ -416,7 +419,7 @@ describe("Detection Inspector — Lab Run", () => {
     await screen.findByTestId("lab-run-summary");
 
     expect(screen.getByLabelText("View in Lab")).toBeInTheDocument();
-    expect(screen.getByLabelText("Compare")).toBeInTheDocument();
+    expect(screen.getByLabelText("Open in Editor")).toBeInTheDocument();
   });
 });
 

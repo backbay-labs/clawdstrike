@@ -16,7 +16,7 @@ import { useState, useCallback } from "react";
 import { FILE_TYPE_REGISTRY } from "../file-type-registry";
 import type { MultiPolicyAction } from "../multi-policy-store";
 import type { AgentEvent, Investigation, HuntPattern } from "../hunt-types";
-import type { DraftSeed } from "./shared-types";
+import type { CoverageGapCandidate, DraftSeed } from "./shared-types";
 import type { DraftBuildResult } from "./execution-types";
 import { getEvidencePackStore } from "./evidence-pack-store";
 import {
@@ -26,16 +26,30 @@ import {
 } from "./draft-mappers";
 import { generateDraft } from "./draft-generator";
 
-export function buildSeedFromEvents(events: AgentEvent[]): DraftSeed {
-  return mapEventsToDraftSeed(events);
+export function buildSeedFromEvents(
+  events: AgentEvent[],
+  selectedGap?: CoverageGapCandidate,
+): DraftSeed {
+  return mapEventsToDraftSeed(events, {
+    extraTechniqueHints: selectedGap?.techniqueHints,
+    extraDataSourceHints: selectedGap?.dataSourceHints,
+    preferredFormats: selectedGap?.suggestedFormats,
+  });
 }
 
-export function buildSeedFromInvestigation(investigation: Investigation): DraftSeed {
-  return mapInvestigationToDraftSeed(investigation);
+export function buildSeedFromInvestigation(
+  investigation: Investigation,
+  scopeEvents?: AgentEvent[],
+  selectedGap?: CoverageGapCandidate,
+): DraftSeed {
+  return mapInvestigationToDraftSeed(investigation, scopeEvents, selectedGap);
 }
 
-export function buildSeedFromPattern(pattern: HuntPattern): DraftSeed {
-  return mapPatternToDraftSeed(pattern);
+export function buildSeedFromPattern(
+  pattern: HuntPattern,
+  selectedGap?: CoverageGapCandidate,
+): DraftSeed {
+  return mapPatternToDraftSeed(pattern, selectedGap);
 }
 
 // ---- Draft Building ----
@@ -129,11 +143,15 @@ export interface UseDraftDetectionOptions {
 
 export interface UseDraftDetectionResult {
   /** Draft a detection rule from selected hunt events. */
-  draftFromEvents: (events: AgentEvent[]) => Promise<void>;
+  draftFromEvents: (events: AgentEvent[], selectedGap?: CoverageGapCandidate) => Promise<void>;
   /** Draft a detection rule from an investigation. */
-  draftFromInvestigation: (investigation: Investigation) => Promise<void>;
+  draftFromInvestigation: (
+    investigation: Investigation,
+    scopeEvents?: AgentEvent[],
+    selectedGap?: CoverageGapCandidate,
+  ) => Promise<void>;
   /** Draft a detection rule from a discovered pattern. */
-  draftFromPattern: (pattern: HuntPattern) => Promise<void>;
+  draftFromPattern: (pattern: HuntPattern, selectedGap?: CoverageGapCandidate) => Promise<void>;
   /** Whether a draft is currently being generated. */
   loading: boolean;
   /** Status message for the most recent draft action. */
@@ -169,12 +187,12 @@ export function useDraftDetection({
   );
 
   const draftFromEvents = useCallback(
-    async (events: AgentEvent[]) => {
+    async (events: AgentEvent[], selectedGap?: CoverageGapCandidate) => {
       if (events.length === 0) return;
       setLoading(true);
       setStatusMessage(null);
       try {
-        const seed = buildSeedFromEvents(events);
+        const seed = buildSeedFromEvents(events, selectedGap);
         const { draft, starterEvidence } = await generateDraftWithEvidence(seed);
         openDraft(draft, starterEvidence.documentId);
         setStatusMessage(
@@ -192,11 +210,15 @@ export function useDraftDetection({
   );
 
   const draftFromInvestigation = useCallback(
-    async (investigation: Investigation) => {
+    async (
+      investigation: Investigation,
+      scopeEvents?: AgentEvent[],
+      selectedGap?: CoverageGapCandidate,
+    ) => {
       setLoading(true);
       setStatusMessage(null);
       try {
-        const seed = buildSeedFromInvestigation(investigation);
+        const seed = buildSeedFromInvestigation(investigation, scopeEvents, selectedGap);
         const { draft, starterEvidence } = await generateDraftWithEvidence(seed);
         openDraft(draft, starterEvidence.documentId);
         setStatusMessage(
@@ -214,11 +236,11 @@ export function useDraftDetection({
   );
 
   const draftFromPattern = useCallback(
-    async (pattern: HuntPattern) => {
+    async (pattern: HuntPattern, selectedGap?: CoverageGapCandidate) => {
       setLoading(true);
       setStatusMessage(null);
       try {
-        const seed = buildSeedFromPattern(pattern);
+        const seed = buildSeedFromPattern(pattern, selectedGap);
         const { draft, starterEvidence } = await generateDraftWithEvidence(seed);
         openDraft(draft, starterEvidence.documentId);
         setStatusMessage(

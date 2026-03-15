@@ -9,7 +9,8 @@ import type {
 } from "@/lib/workbench/hunt-types";
 import { discoverPatterns } from "@/lib/workbench/hunt-engine";
 import { useCoverageGaps } from "@/lib/workbench/detection-workflow/use-coverage-gaps";
-import type { CoverageGapInput } from "@/lib/workbench/detection-workflow/coverage-gap-engine";
+import type { CoverageGapInput, DocumentCoverageEntry } from "@/lib/workbench/detection-workflow/coverage-gap-engine";
+import type { CoverageGapCandidate } from "@/lib/workbench/detection-workflow/shared-types";
 import { CoverageGapCard } from "@/components/workbench/coverage/coverage-gap-card";
 import {
   IconArrowDown,
@@ -552,13 +553,17 @@ function PatternDetail({
   onPromoteToTrustprint,
   onCreateScenario,
   onDraftDetection,
+  openDocumentCoverage,
+  publishedCoverage,
 }: {
   pattern: HuntPattern;
   events: AgentEvent[];
   onUpdatePattern: (id: string, updates: Partial<HuntPattern>) => void;
   onPromoteToTrustprint: (patternId: string) => void;
   onCreateScenario: (patternId: string) => void;
-  onDraftDetection?: (pattern: HuntPattern) => void;
+  onDraftDetection?: (pattern: HuntPattern, selectedGap?: CoverageGapCandidate) => void;
+  openDocumentCoverage?: DocumentCoverageEntry[];
+  publishedCoverage?: DocumentCoverageEntry[];
 }) {
   const status = STATUS_CONFIG[pattern.status];
 
@@ -742,6 +747,8 @@ function PatternDetail({
       <PatternCoverageGaps
         pattern={pattern}
         onDraftDetection={onDraftDetection}
+        openDocumentCoverage={openDocumentCoverage}
+        publishedCoverage={publishedCoverage}
       />
     </div>
   );
@@ -751,19 +758,28 @@ function PatternDetail({
 function PatternCoverageGaps({
   pattern,
   onDraftDetection,
+  openDocumentCoverage,
+  publishedCoverage,
 }: {
   pattern: HuntPattern;
-  onDraftDetection?: (pattern: HuntPattern) => void;
+  onDraftDetection?: (pattern: HuntPattern, selectedGap?: CoverageGapCandidate) => void;
+  openDocumentCoverage?: DocumentCoverageEntry[];
+  publishedCoverage?: DocumentCoverageEntry[];
 }) {
   const gapInput = useMemo<CoverageGapInput>(
-    () => ({ patterns: [pattern] }),
-    [pattern],
+    () => ({
+      patterns: [pattern],
+      openDocumentCoverage,
+      publishedCoverage,
+    }),
+    [openDocumentCoverage, pattern, publishedCoverage],
   );
 
   const { gaps, dismiss, draftFromGap } = useCoverageGaps(gapInput, {
     onDraftFromGap: onDraftDetection
-      ? () => onDraftDetection(pattern)
+      ? (gap) => onDraftDetection(pattern, gap)
       : undefined,
+    persistenceKey: `clawdstrike_gap_dismissals_pattern_${pattern.id}`,
   });
 
   if (gaps.length === 0) return null;
@@ -821,7 +837,9 @@ interface PatternMiningProps {
   patterns: HuntPattern[];
   events: AgentEvent[];
   onPatternsChange: (patterns: HuntPattern[]) => void;
-  onDraftDetection?: (pattern: HuntPattern) => void;
+  onDraftDetection?: (pattern: HuntPattern, selectedGap?: CoverageGapCandidate) => void;
+  openDocumentCoverage?: DocumentCoverageEntry[];
+  publishedCoverage?: DocumentCoverageEntry[];
 }
 
 export function PatternMining({
@@ -829,6 +847,8 @@ export function PatternMining({
   events,
   onPatternsChange,
   onDraftDetection,
+  openDocumentCoverage,
+  publishedCoverage,
 }: PatternMiningProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -1008,6 +1028,8 @@ export function PatternMining({
               onPromoteToTrustprint={handlePromoteToTrustprint}
               onCreateScenario={handleCreateScenario}
               onDraftDetection={onDraftDetection}
+              openDocumentCoverage={openDocumentCoverage}
+              publishedCoverage={publishedCoverage}
             />
           ) : (
             <EmptyDetail onDiscover={handleDiscoverPatterns} />

@@ -18,6 +18,15 @@ import type {
   EvidenceDatasetKind,
 } from "./shared-types";
 import { getPublicationStore } from "./publication-store";
+import { verifyPublicationProvenance } from "./publication-provenance";
+
+async function sha256Hex(text: string): Promise<string> {
+  const data = new TextEncoder().encode(text);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data.buffer as ArrayBuffer);
+  return Array.from(new Uint8Array(hashBuffer))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
 
 // Re-export the type for convenience
 export type SwarmBoardNode = Node<SwarmBoardNodeData>;
@@ -117,6 +126,24 @@ export function createPublicationNode(
   });
 }
 
+export function createConversionOutputNode(
+  manifest: PublicationManifest,
+  position: { x: number; y: number },
+): SwarmBoardNode {
+  return createBoardNode({
+    nodeType: "artifact",
+    title: `Output: ${manifest.target}`,
+    position,
+    data: {
+      artifactKind: "conversion_output",
+      documentId: manifest.documentId,
+      publicationId: manifest.id,
+      format: manifest.sourceFileType,
+      publishState: manifest.deployResponse?.success ? "deployed" : "published",
+    },
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Publish state verification
 // ---------------------------------------------------------------------------
@@ -185,6 +212,30 @@ export async function verifyPublishState(
     return {
       valid: false,
       reason: "Publication manifest is missing sourceHash or outputHash",
+    };
+  }
+
+  const outputContent = await store.getOutputContent(publicationId);
+  if (!outputContent) {
+    return {
+      valid: false,
+      reason: "Publication artifact output is missing from the store",
+    };
+  }
+
+  const computedOutputHash = await sha256Hex(outputContent);
+  if (computedOutputHash !== manifest.outputHash) {
+    return {
+      valid: false,
+      reason: "Stored publication output hash does not match manifest output hash",
+    };
+  }
+
+  const provenanceVerification = await verifyPublicationProvenance(manifest);
+  if (!provenanceVerification.valid) {
+    return {
+      valid: false,
+      reason: provenanceVerification.reason ?? "Publication provenance verification failed",
     };
   }
 

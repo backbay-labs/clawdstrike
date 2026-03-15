@@ -57,6 +57,18 @@ interface YaraString {
   isHex: boolean;
 }
 
+interface ParsedYaraStringDefinition {
+  name: string;
+  bytes: Uint8Array;
+  line: number;
+}
+
+interface ParsedYaraRule {
+  strings: ParsedYaraStringDefinition[];
+  condition: string;
+  conditionLine: number;
+}
+
 function extractStrings(seed: DraftSeed): YaraString[] {
   const strings: YaraString[] = [];
   let idx = 1;
@@ -64,9 +76,14 @@ function extractStrings(seed: DraftSeed): YaraString[] {
   const targets = seed.extractedFields["targets"] as string[] | undefined;
   const commands = seed.extractedFields["commands"] as string[] | undefined;
   const paths = seed.extractedFields["paths"] as string[] | undefined;
+  const contents = seed.sourceEventIds
+    .map((eventId) => seed.extractedFields[eventId] as Record<string, unknown> | undefined)
+    .map((eventData) => (typeof eventData?.["content"] === "string" ? eventData.content : undefined))
+    .filter((content): content is string => Boolean(content));
 
-  // Extract string patterns from commands/targets
+  // Extract string patterns from artifact content first, then telemetry fields.
   const candidates = [
+    ...contents,
     ...(commands ?? []),
     ...(paths ?? []),
     ...(targets ?? []),
@@ -81,7 +98,7 @@ function extractStrings(seed: DraftSeed): YaraString[] {
     if (/^[0-9a-fA-F\s]+$/.test(candidate) && candidate.length >= 4) {
       strings.push({
         name: `$h${idx}`,
-        value: candidate.replace(/\s+/g, " ").trim(),
+        value: normalizeHexPattern(candidate),
         isHex: true,
       });
     } else {
@@ -124,6 +141,212 @@ function buildMeta(seed: DraftSeed): string {
   }
 
   return lines.join("\n");
+}
+
+function utf8Bytes(value: string): Uint8Array {
+  return new TextEncoder().encode(value);
+}
+
+function normalizeHexPattern(value: string): string {
+  const cleaned = value.replace(/[^0-9a-fA-F]/g, "");
+  if (cleaned.length < 2) {
+    return value.trim().replace(/\s+/g, " ");
+  }
+  const evenLength = cleaned.length - (cleaned.length % 2);
+  const evenCleaned = cleaned.slice(0, evenLength);
+  return evenCleaned.match(/.{1,2}/g)?.join(" ") ?? value.trim().replace(/\s+/g, " ");
+}
+
+function decodeEscapedYaraString(value: string): string {
+  try {
+    return JSON.parse(`"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`) as string;
+  } catch {
+    return value;
+  }
+}
+
+function parseHexString(value: string): Uint8Array {
+  const cleaned = normalizeHexPattern(value)
+    .trim()
+    .split(/\s+/)
+    .filter((token) => /^[0-9a-fA-F]{2}$/.test(token))
+    .map((token) => Number.parseInt(token, 16));
+  return Uint8Array.from(cleaned);
+}
+
+function parseYaraRule(source: string): ParsedYaraRule {
+  const lines = source.split(/\r?\n/);
+  const strings: ParsedYaraStringDefinition[] = [];
+  let inStrings = false;
+  let inCondition = false;
+  let conditionLine = 0;
+  const conditionLines: string[] = [];
+
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index];
+    const trimmed = line.trim();
+
+    if (/^strings\s*:/i.test(trimmed)) {
+      inStrings = true;
+      inCondition = false;
+      continue;
+    }
+    if (/^condition\s*:/i.test(trimmed)) {
+      inStrings = false;
+      inCondition = true;
+      conditionLine = index + 1;
+      const inlineCondition = trimmed.replace(/^condition\s*:/i, "").trim();
+      if (inlineCondition.length > 0) {
+        conditionLines.push(inlineCondition);
+      }
+      continue;
+    }
+
+    if (inStrings) {
+      const textMatch = /^\s*(\$\w+)\s*=\s*"((?:\\.|[^"])*)"/.exec(line);
+      if (textMatch) {
+        strings.push({
+          name: textMatch[1],
+          bytes: utf8Bytes(decodeEscapedYaraString(textMatch[2])),
+          line: index + 1,
+        });
+        continue;
+      }
+
+      const hexMatch = /^\s*(\$\w+)\s*=\s*\{([^}]+)\}/.exec(line);
+      if (hexMatch) {
+        strings.push({
+          name: hexMatch[1],
+          bytes: parseHexString(hexMatch[2]),
+          line: index + 1,
+        });
+      }
+      continue;
+    }
+
+    if (inCondition) {
+      if (trimmed === "}") {
+        break;
+      }
+      if (trimmed.length > 0) {
+        conditionLines.push(trimmed);
+      }
+    }
+  }
+
+  return {
+    strings,
+    condition: conditionLines.join(" ").trim() || "any of them",
+    conditionLine,
+  };
+}
+
+function bytesFromEvidenceItem(item: EvidenceItem): Uint8Array {
+  if (item.kind === "bytes") {
+    if (item.encoding === "hex") {
+      return parseHexString(item.payload);
+    }
+    if (item.encoding === "base64") {
+      const normalized =
+        typeof Buffer !== "undefined"
+          ? Buffer.from(item.payload, "base64")
+          : Uint8Array.from(atob(item.payload), (char) => char.charCodeAt(0));
+      return normalized instanceof Uint8Array ? normalized : new Uint8Array(normalized);
+    }
+    return utf8Bytes(item.payload);
+  }
+
+  if (item.kind === "structured_event" || item.kind === "ocsf_event") {
+    return utf8Bytes(JSON.stringify(item.payload));
+  }
+
+  if (item.kind === "policy_scenario") {
+    return utf8Bytes(JSON.stringify(item.scenario));
+  }
+
+  return new Uint8Array();
+}
+
+function findMatches(
+  haystack: Uint8Array,
+  needle: Uint8Array,
+): Array<{ offset: number; length: number }> {
+  if (needle.length === 0 || haystack.length < needle.length) return [];
+  const matches: Array<{ offset: number; length: number }> = [];
+
+  for (let index = 0; index <= haystack.length - needle.length; index++) {
+    let matched = true;
+    for (let inner = 0; inner < needle.length; inner++) {
+      if (haystack[index + inner] !== needle[inner]) {
+        matched = false;
+        break;
+      }
+    }
+    if (matched) {
+      matches.push({ offset: index, length: needle.length });
+    }
+  }
+
+  return matches;
+}
+
+function resolveNameGroup(pattern: string, names: string[]): string[] {
+  const trimmed = pattern.trim();
+  if (trimmed === "them") {
+    return names;
+  }
+  if (trimmed.startsWith("$") && trimmed.endsWith("*")) {
+    const prefix = trimmed.slice(0, -1);
+    return names.filter((name) => name.startsWith(prefix));
+  }
+  return trimmed
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part.startsWith("$"))
+    .flatMap((part) => resolveNameGroup(part, names));
+}
+
+function evaluateSimpleExpression(
+  expression: string,
+  matchedNames: Set<string>,
+  availableNames: string[],
+): boolean {
+  let resolved = expression
+    .replace(/\bany of them\b/gi, matchedNames.size > 0 ? "true" : "false")
+    .replace(/\ball of them\b/gi, availableNames.every((name) => matchedNames.has(name)) ? "true" : "false")
+    .replace(/(\d+)\s+of\s+them/gi, (_, count) =>
+      matchedNames.size >= Number.parseInt(String(count), 10) ? "true" : "false",
+    )
+    .replace(/any of \(([^)]+)\)/gi, (_, group) =>
+      resolveNameGroup(String(group), availableNames).some((name) => matchedNames.has(name))
+        ? "true"
+        : "false",
+    )
+    .replace(/all of \(([^)]+)\)/gi, (_, group) =>
+      resolveNameGroup(String(group), availableNames).every((name) => matchedNames.has(name))
+        ? "true"
+        : "false",
+    );
+
+  for (const name of availableNames) {
+    const escaped = name.replace(/\$/g, "\\$");
+    resolved = resolved.replace(new RegExp(escaped, "g"), matchedNames.has(name) ? "true" : "false");
+  }
+
+  const normalized = resolved
+    .replace(/\band\b/gi, "&&")
+    .replace(/\bor\b/gi, "||")
+    .replace(/\bnot\b/gi, "!");
+
+  if (!/^[\s()!&|truefals]+$/i.test(normalized)) {
+    return matchedNames.size > 0;
+  }
+
+  try {
+    return Function(`"use strict"; return (${normalized});`)() === true;
+  } catch {
+    return matchedNames.size > 0;
+  }
 }
 
 // ---- YARA Adapter ----
@@ -192,11 +415,13 @@ ${stringsSection}
         const content = eventData?.["content"] as string | undefined;
 
         if (content) {
+          const normalizedHex = normalizeHexPattern(content);
+          const isHexPayload = normalizedHex.length >= 2 && /^[0-9a-fA-F\s]+$/.test(normalizedHex);
           const item: EvidenceItem = {
             id: crypto.randomUUID(),
             kind: "bytes",
-            encoding: "utf8",
-            payload: content,
+            encoding: isHexPayload ? "hex" : "utf8",
+            payload: isHexPayload ? normalizedHex : content,
             expected: "match",
             sourceArtifactPath: eventData?.["target"] as string | undefined,
           };
@@ -234,8 +459,91 @@ ${stringsSection}
   },
 
   async runLab(request: DetectionExecutionRequest): Promise<DetectionExecutionResult> {
-    // Stub — YARA execution requires yara-x backend
     const startedAt = new Date().toISOString();
+    const source = request.adapterRunConfig?.["yaraSource"] as string | undefined;
+    const parsedRule = parseYaraRule(source ?? "");
+    const allItems: Array<{ item: EvidenceItem; dataset: keyof EvidencePack["datasets"] }> = [];
+
+    for (const [datasetKind, items] of Object.entries(request.evidencePack.datasets)) {
+      for (const item of items) {
+        allItems.push({
+          item,
+          dataset: datasetKind as keyof EvidencePack["datasets"],
+        });
+      }
+    }
+
+    const results: LabRun["results"] = [];
+    const traces: ExplainabilityTrace[] = [];
+
+    for (const { item, dataset } of allItems) {
+      const haystack = bytesFromEvidenceItem(item);
+      const caseId = item.id;
+      const matchesByName = new Map<string, Array<{ offset: number; length: number }>>();
+
+      for (const definition of parsedRule.strings) {
+        const matches = findMatches(haystack, definition.bytes);
+        if (matches.length > 0) {
+          matchesByName.set(definition.name, matches);
+        }
+      }
+
+      const matchedNames = new Set(matchesByName.keys());
+      const didMatch = evaluateSimpleExpression(
+        parsedRule.condition,
+        matchedNames,
+        parsedRule.strings.map((definition) => definition.name),
+      );
+
+      const expectedMatch = item.expected === "match";
+      const passed = expectedMatch === didMatch;
+      const traceId = crypto.randomUUID();
+
+      results.push({
+        caseId,
+        dataset,
+        status: passed ? "pass" : "fail",
+        expected: expectedMatch ? "match" : "no_match",
+        actual: didMatch ? "match" : "no_match",
+        explanationRefIds: [traceId],
+      });
+
+      const matchedStrings = [...matchesByName.entries()].flatMap(([name, matches]) =>
+        matches.map((match) => ({
+          name,
+          offset: match.offset,
+          length: match.length,
+        })),
+      );
+      const sourceLineHints = new Set<number>();
+      for (const definition of parsedRule.strings) {
+        if (matchedNames.has(definition.name)) {
+          sourceLineHints.add(definition.line);
+        }
+      }
+      if (parsedRule.conditionLine > 0) {
+        sourceLineHints.add(parsedRule.conditionLine);
+      }
+
+      traces.push({
+        id: traceId,
+        kind: "yara_match",
+        caseId,
+        matchedStrings,
+        conditionSummary: parsedRule.condition,
+        sourceLineHints: [...sourceLineHints].sort((a, b) => a - b),
+      });
+    }
+
+    const passedCount = results.filter((result) => result.status === "pass").length;
+    const failedCount = results.filter((result) => result.status === "fail").length;
+    const matchedCount = results.filter((result) => result.actual === "match").length;
+    const missedCount = results.filter(
+      (result) => result.expected === "match" && result.actual === "no_match",
+    ).length;
+    const falsePositives = results.filter(
+      (result) => result.expected === "no_match" && result.actual === "match",
+    ).length;
     const completedAt = new Date().toISOString();
 
     const run: LabRun = {
@@ -246,23 +554,29 @@ ${stringsSection}
       startedAt,
       completedAt,
       summary: {
-        totalCases: 0,
-        passed: 0,
-        failed: 0,
-        matched: 0,
-        missed: 0,
-        falsePositives: 0,
+        totalCases: results.length,
+        passed: passedCount,
+        failed: failedCount,
+        matched: matchedCount,
+        missed: missedCount,
+        falsePositives,
         engine: "client",
       },
-      results: [],
-      explainability: [],
+      results,
+      explainability: traces,
     };
 
     const reportArtifacts: ReportArtifact[] = [
       {
         id: crypto.randomUUID(),
         kind: "summary",
-        title: "YARA lab execution requires yara-x backend (not implemented in browser)",
+        title: `YARA lab: ${passedCount}/${results.length} passed`,
+        data: {
+          matchedStrings: traces.reduce(
+            (count, trace) => count + (trace.kind === "yara_match" ? trace.matchedStrings.length : 0),
+            0,
+          ),
+        },
       },
     ];
 
@@ -274,8 +588,19 @@ ${stringsSection}
   },
 
   async buildPublication(request: PublicationRequest): Promise<PublicationBuildResult> {
+    const outputContent =
+      request.targetFormat === "json_export"
+        ? JSON.stringify(
+            {
+              kind: "yara_rule",
+              source: request.source,
+            },
+            null,
+            2,
+          )
+        : request.source;
     const sourceHash = await sha256Hex(request.source);
-    const outputHash = await sha256Hex(request.source);
+    const outputHash = await sha256Hex(outputContent);
 
     return {
       manifest: {
@@ -296,13 +621,15 @@ ${stringsSection}
                 passed: true,
               }
             : null,
+        coverageSnapshot: null,
         converter: {
-          id: "yara-identity",
+          id: request.targetFormat === "json_export" ? "yara-to-json" : "yara-identity",
           version: "1.0.0",
         },
         signer: null,
+        provenance: null,
       },
-      outputContent: request.source,
+      outputContent,
       outputHash,
     };
   },

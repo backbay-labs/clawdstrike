@@ -7,12 +7,17 @@
 
 import { useCallback, useMemo } from "react";
 import type { FileType } from "../file-type-registry";
-import type { SwarmBoardNodeData } from "../swarm-board-types";
 import {
   createBoardNode,
-  generateNodeId,
-  type CreateNodeConfig,
 } from "../swarm-board-store";
+import type { EvidencePack, LabRun, PublicationManifest } from "./shared-types";
+import {
+  createConversionOutputNode,
+  createDetectionRuleNode,
+  createEvidencePackNode,
+  createLabRunNode,
+  createPublicationNode,
+} from "./swarm-detection-nodes";
 
 // ---------------------------------------------------------------------------
 // Public interface
@@ -25,6 +30,8 @@ export interface SwarmLaunchActions {
   openReviewSwarmWithEvidence(evidencePackId: string): void;
   /** Open a swarm with the document + lab run results */
   openReviewSwarmWithRun(labRunId: string): void;
+  /** Open a swarm with the document + publication chain. */
+  openReviewSwarmWithPublication(publicationId: string): void;
   /** Whether swarm launch is available */
   canLaunch: boolean;
 }
@@ -36,11 +43,14 @@ export interface SwarmLaunchOptions {
   name?: string;
   filePath?: string | null;
   sourceHash?: string;
+  evidencePack?: EvidencePack | null;
+  labRun?: LabRun | null;
+  publicationManifest?: PublicationManifest | null;
   onNavigate?: (path: string) => void;
 }
 
 // ---------------------------------------------------------------------------
-// Node creation helpers (self-contained; does not modify swarm-board-types)
+// Node creation helpers
 // ---------------------------------------------------------------------------
 
 /** Position constants for a left-to-right layout on the board. */
@@ -48,50 +58,11 @@ const LAYOUT = {
   ruleX: 200,
   evidenceX: 520,
   runX: 840,
+  publicationX: 1160,
+  outputX: 1480,
+  receiptX: 1800,
   baseY: 200,
 } as const;
-
-function buildRuleNode(opts: SwarmLaunchOptions): CreateNodeConfig {
-  return {
-    nodeType: "artifact",
-    title: opts.name ?? "Detection Rule",
-    position: { x: LAYOUT.ruleX, y: LAYOUT.baseY },
-    data: {
-      filePath: opts.filePath ?? undefined,
-      fileType: opts.fileType ?? "sigma_rule",
-      // Store document identity in the index-signature bucket so the
-      // other agent's detection metadata extension can pick it up later
-      // without requiring changes to the SwarmBoardNodeData interface.
-      documentId: opts.documentId,
-      tabId: opts.tabId,
-      sourceHash: opts.sourceHash,
-    } as Partial<SwarmBoardNodeData>,
-  };
-}
-
-function buildEvidenceNode(evidencePackId: string): CreateNodeConfig {
-  return {
-    nodeType: "artifact",
-    title: "Evidence Pack",
-    position: { x: LAYOUT.evidenceX, y: LAYOUT.baseY },
-    data: {
-      fileType: "json",
-      evidencePackId,
-    } as Partial<SwarmBoardNodeData>,
-  };
-}
-
-function buildRunNode(labRunId: string): CreateNodeConfig {
-  return {
-    nodeType: "artifact",
-    title: "Lab Run",
-    position: { x: LAYOUT.runX, y: LAYOUT.baseY },
-    data: {
-      fileType: "json",
-      labRunId,
-    } as Partial<SwarmBoardNodeData>,
-  };
-}
 
 // ---------------------------------------------------------------------------
 // Dispatch helper — pushes nodes into the store without requiring the
@@ -113,9 +84,117 @@ export interface SwarmLaunchPayload {
     id: string;
     source: string;
     target: string;
-    type: "artifact";
+    type: "artifact" | "receipt";
     label?: string;
   }>;
+}
+
+function buildPayload(options: SwarmLaunchOptions): SwarmLaunchPayload {
+  const {
+    documentId,
+    fileType,
+    filePath,
+    name,
+    sourceHash,
+    evidencePack,
+    labRun,
+    publicationManifest,
+  } = options;
+
+  if (!documentId || !fileType) {
+    return { nodes: [], edges: [] };
+  }
+
+  const ruleNode = createDetectionRuleNode(
+    {
+      documentId,
+      fileType,
+      filePath: filePath ?? null,
+      name: name ?? "Detection Rule",
+      sourceHash: sourceHash ?? "",
+    },
+    { x: LAYOUT.ruleX, y: LAYOUT.baseY },
+  );
+
+  const nodes: SwarmLaunchPayload["nodes"] = [ruleNode];
+  const edges: SwarmLaunchPayload["edges"] = [];
+
+  if (evidencePack) {
+    const evidenceNode = createEvidencePackNode(evidencePack, {
+      x: LAYOUT.evidenceX,
+      y: LAYOUT.baseY,
+    });
+    nodes.push(evidenceNode);
+    edges.push({
+      id: `edge-${ruleNode.id}-${evidenceNode.id}`,
+      source: ruleNode.id,
+      target: evidenceNode.id,
+      type: "artifact",
+      label: "evidence",
+    });
+  }
+
+  if (labRun) {
+    const runNode = createLabRunNode(labRun, { x: LAYOUT.runX, y: LAYOUT.baseY });
+    nodes.push(runNode);
+    edges.push({
+      id: `edge-${ruleNode.id}-${runNode.id}`,
+      source: ruleNode.id,
+      target: runNode.id,
+      type: "artifact",
+      label: "run",
+    });
+  }
+
+  if (publicationManifest) {
+    const publicationNode = createPublicationNode(publicationManifest, {
+      x: LAYOUT.publicationX,
+      y: LAYOUT.baseY,
+    });
+    const outputNode = createConversionOutputNode(publicationManifest, {
+      x: LAYOUT.outputX,
+      y: LAYOUT.baseY,
+    });
+    nodes.push(publicationNode, outputNode);
+    edges.push({
+      id: `edge-${ruleNode.id}-${publicationNode.id}`,
+      source: ruleNode.id,
+      target: publicationNode.id,
+      type: "artifact",
+      label: "publication",
+    });
+    edges.push({
+      id: `edge-${publicationNode.id}-${outputNode.id}`,
+      source: publicationNode.id,
+      target: outputNode.id,
+      type: "artifact",
+      label: "output",
+    });
+
+    if (publicationManifest.receiptId) {
+      const receiptNode = createBoardNode({
+        nodeType: "receipt",
+        title: `Receipt: ${publicationManifest.target}`,
+        position: { x: LAYOUT.receiptX, y: LAYOUT.baseY },
+        data: {
+          status: "completed",
+          nodeType: "receipt",
+          verdict: "allow",
+          content: publicationManifest.receiptId,
+        },
+      });
+      nodes.push(receiptNode);
+      edges.push({
+        id: `edge-${receiptNode.id}-${publicationNode.id}`,
+        source: receiptNode.id,
+        target: publicationNode.id,
+        type: "receipt",
+        label: "receipt",
+      });
+    }
+  }
+
+  return { nodes, edges };
 }
 
 function dispatchSwarmNodes(payload: SwarmLaunchPayload): void {
@@ -158,68 +237,131 @@ function dispatchSwarmNodes(payload: SwarmLaunchPayload): void {
 // ---------------------------------------------------------------------------
 
 export function useSwarmLaunch(options: SwarmLaunchOptions): SwarmLaunchActions {
-  const { documentId, fileType, tabId, name, filePath, sourceHash, onNavigate } = options;
+  const {
+    documentId,
+    fileType,
+    tabId,
+    name,
+    filePath,
+    sourceHash,
+    evidencePack,
+    labRun,
+    publicationManifest,
+    onNavigate,
+  } = options;
   const canLaunch = Boolean(documentId);
 
   const openReviewSwarm = useCallback(() => {
-    if (!documentId) return;
-
-    const ruleNode = createBoardNode(buildRuleNode({ documentId, fileType, tabId, name, filePath, sourceHash }));
-    dispatchSwarmNodes({ nodes: [ruleNode], edges: [] });
+    if (!documentId || !fileType) return;
+    dispatchSwarmNodes(
+      buildPayload({
+        documentId,
+        fileType,
+        tabId,
+        name,
+        filePath,
+        sourceHash,
+        evidencePack,
+        labRun,
+        publicationManifest,
+      }),
+    );
 
     onNavigate?.("/lab");
-  }, [documentId, fileType, tabId, name, filePath, sourceHash, onNavigate]);
+  }, [
+    documentId,
+    evidencePack,
+    filePath,
+    fileType,
+    labRun,
+    name,
+    onNavigate,
+    publicationManifest,
+    sourceHash,
+    tabId,
+  ]);
 
   const openReviewSwarmWithEvidence = useCallback(
     (evidencePackId: string) => {
-      if (!documentId) return;
-
-      const ruleNode = createBoardNode(buildRuleNode({ documentId, fileType, tabId, name, filePath, sourceHash }));
-      const evidenceNode = createBoardNode(buildEvidenceNode(evidencePackId));
-
-      const edgeId = `edge-${ruleNode.id}-${evidenceNode.id}`;
-      dispatchSwarmNodes({
-        nodes: [ruleNode, evidenceNode],
-        edges: [
-          {
-            id: edgeId,
-            source: ruleNode.id,
-            target: evidenceNode.id,
-            type: "artifact",
-            label: "evidence",
-          },
-        ],
-      });
+      if (!documentId || !fileType) return;
+      const nextEvidence =
+        evidencePack && evidencePack.id === evidencePackId
+          ? evidencePack
+          : null;
+      dispatchSwarmNodes(
+        buildPayload({
+          documentId,
+          fileType,
+          tabId,
+          name,
+          filePath,
+          sourceHash,
+          evidencePack: nextEvidence,
+        }),
+      );
 
       onNavigate?.("/lab");
     },
-    [documentId, fileType, tabId, name, filePath, sourceHash, onNavigate],
+    [documentId, evidencePack, filePath, fileType, name, onNavigate, sourceHash, tabId],
   );
 
   const openReviewSwarmWithRun = useCallback(
     (labRunId: string) => {
-      if (!documentId) return;
-
-      const ruleNode = createBoardNode(buildRuleNode({ documentId, fileType, tabId, name, filePath, sourceHash }));
-      const runNode = createBoardNode(buildRunNode(labRunId));
-
-      const edgeId = `edge-${ruleNode.id}-${runNode.id}`;
-      dispatchSwarmNodes({
-        nodes: [ruleNode, runNode],
-        edges: [
-          {
-            id: edgeId,
-            source: ruleNode.id,
-            target: runNode.id,
-            type: "artifact",
-            label: "run",
-          },
-        ],
-      });
+      if (!documentId || !fileType) return;
+      const nextRun = labRun && labRun.id === labRunId ? labRun : null;
+      dispatchSwarmNodes(
+        buildPayload({
+          documentId,
+          fileType,
+          tabId,
+          name,
+          filePath,
+          sourceHash,
+          labRun: nextRun,
+          evidencePack,
+        }),
+      );
 
       onNavigate?.("/lab");
     },
-    [documentId, fileType, tabId, name, filePath, sourceHash, onNavigate],
+    [documentId, evidencePack, filePath, fileType, labRun, name, onNavigate, sourceHash, tabId],
+  );
+
+  const openReviewSwarmWithPublication = useCallback(
+    (publicationId: string) => {
+      if (!documentId || !fileType) return;
+      const nextPublication =
+        publicationManifest && publicationManifest.id === publicationId
+          ? publicationManifest
+          : null;
+      dispatchSwarmNodes(
+        buildPayload({
+          documentId,
+          fileType,
+          tabId,
+          name,
+          filePath,
+          sourceHash,
+          evidencePack,
+          labRun,
+          publicationManifest: nextPublication,
+        }),
+      );
+
+      onNavigate?.("/lab");
+    },
+    [
+      documentId,
+      evidencePack,
+      filePath,
+      fileType,
+      labRun,
+      name,
+      onNavigate,
+      publicationManifest,
+      sourceHash,
+      tabId,
+    ],
   );
 
   return useMemo(
@@ -227,8 +369,15 @@ export function useSwarmLaunch(options: SwarmLaunchOptions): SwarmLaunchActions 
       openReviewSwarm,
       openReviewSwarmWithEvidence,
       openReviewSwarmWithRun,
+      openReviewSwarmWithPublication,
       canLaunch,
     }),
-    [openReviewSwarm, openReviewSwarmWithEvidence, openReviewSwarmWithRun, canLaunch],
+    [
+      canLaunch,
+      openReviewSwarm,
+      openReviewSwarmWithEvidence,
+      openReviewSwarmWithPublication,
+      openReviewSwarmWithRun,
+    ],
   );
 }

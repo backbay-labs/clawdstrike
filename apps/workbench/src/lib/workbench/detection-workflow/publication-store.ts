@@ -154,6 +154,16 @@ export class PublicationStore {
     });
   }
 
+  async getAllManifests(): Promise<PublicationManifest[]> {
+    const db = this.ensureDB();
+    const tx = db.transaction(MANIFESTS_STORE, "readonly");
+    const req = tx.objectStore(MANIFESTS_STORE).getAll();
+    const result = await requestPromise(req);
+    return ((result as PublicationManifest[]) ?? []).sort(
+      (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
+    );
+  }
+
   async deleteManifest(manifestId: string): Promise<void> {
     const db = this.ensureDB();
     const tx = db.transaction([MANIFESTS_STORE, ARTIFACTS_STORE], "readwrite");

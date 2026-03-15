@@ -14,7 +14,7 @@ import type {
   HuntPattern,
   PatternStep,
 } from "../hunt-types";
-import type { DraftSeed, DraftSeedKind } from "./shared-types";
+import type { CoverageGapCandidate, DraftSeed, DraftSeedKind } from "./shared-types";
 
 // ---- Options ----
 
@@ -166,24 +166,35 @@ export function mapEventsToDraftSeed(
   return seed;
 }
 
-/**
- * Map an investigation to a DraftSeed.
- */
-export function mapInvestigationToDraftSeed(investigation: Investigation): DraftSeed {
-  const dataSourceHints: string[] = [];
-  const techniqueHints: string[] = [];
+export function mapInvestigationToDraftSeed(
+  investigation: Investigation,
+  scopeEvents: AgentEvent[] = [],
+  selectedGap?: CoverageGapCandidate,
+): DraftSeed {
+  const eventSeed =
+    scopeEvents.length > 0
+      ? mapEventsToDraftSeed(scopeEvents, { kind: "investigation" })
+      : null;
 
-  // Extract hints from annotations
-  for (const annotation of investigation.annotations) {
-    const matches = annotation.text.match(/T\d{4}(?:\.\d{3})?/g);
-    if (matches) {
-      for (const m of matches) {
-        if (!techniqueHints.includes(m)) techniqueHints.push(m);
-      }
-    }
-  }
+  const textTechniqueHints = inferTechniqueHintsFromText([
+    investigation.title,
+    ...investigation.annotations.map((annotation) => annotation.text),
+    ...(investigation.actions ?? []),
+  ]);
+
+  const techniqueHints = uniqueStrings([
+    ...(eventSeed?.techniqueHints ?? []),
+    ...textTechniqueHints,
+    ...(selectedGap?.techniqueHints ?? []),
+  ]);
+
+  const dataSourceHints = uniqueStrings([
+    ...(eventSeed?.dataSourceHints ?? []),
+    ...(selectedGap?.dataSourceHints ?? []),
+  ]);
 
   const extractedFields: Record<string, unknown> = {
+    ...(eventSeed?.extractedFields ?? {}),
     title: investigation.title,
     severity: investigation.severity,
     status: investigation.status,
@@ -191,6 +202,7 @@ export function mapInvestigationToDraftSeed(investigation: Investigation): Draft
     verdict: investigation.verdict,
     eventIds: investigation.eventIds,
     actions: investigation.actions,
+    annotationTexts: investigation.annotations.map((annotation) => annotation.text),
   };
 
   const seed: DraftSeed = {
@@ -198,16 +210,21 @@ export function mapInvestigationToDraftSeed(investigation: Investigation): Draft
     kind: "investigation",
     sourceEventIds: investigation.eventIds,
     investigationId: investigation.id,
-    preferredFormats: [],
+    preferredFormats: selectedGap?.suggestedFormats ?? eventSeed?.preferredFormats ?? [],
     techniqueHints,
     dataSourceHints,
     extractedFields,
     createdAt: new Date().toISOString(),
-    confidence: severityToConfidence(investigation.severity),
+    confidence: Math.max(
+      severityToConfidence(investigation.severity),
+      eventSeed?.confidence ?? 0,
+      selectedGap?.confidence ?? 0,
+    ),
   };
 
-  // Infer preferred formats if we have hints
-  seed.preferredFormats = recommendFormats(seed);
+  if (seed.preferredFormats.length === 0) {
+    seed.preferredFormats = recommendFormats(seed);
+  }
 
   return seed;
 }
@@ -215,9 +232,35 @@ export function mapInvestigationToDraftSeed(investigation: Investigation): Draft
 /**
  * Map a discovered Hunt pattern to a DraftSeed.
  */
-export function mapPatternToDraftSeed(pattern: HuntPattern): DraftSeed {
+export function mapPatternToDraftSeed(
+  pattern: HuntPattern,
+  selectedGap?: CoverageGapCandidate,
+): DraftSeed {
   const dataSourceHints = inferDataSourceHintsFromSteps(pattern.sequence);
-  const techniqueHints: string[] = [];
+  const techniqueHints = uniqueStrings([
+    ...inferTechniqueHintsFromText([
+      pattern.name,
+      pattern.description,
+      ...pattern.sequence.map((step) => step.targetPattern),
+    ]),
+    ...(selectedGap?.techniqueHints ?? []),
+  ]);
+  const mergedDataSourceHints = uniqueStrings([
+    ...dataSourceHints,
+    ...(selectedGap?.dataSourceHints ?? []),
+  ]);
+  const targets = pattern.sequence.map((step) => step.targetPattern);
+  const commands = pattern.sequence
+    .filter((step) => step.actionType === "shell_command")
+    .map((step) => step.targetPattern);
+  const paths = pattern.sequence
+    .filter((step) =>
+      step.actionType === "file_access" || step.actionType === "file_write" || step.actionType === "patch_apply",
+    )
+    .map((step) => step.targetPattern);
+  const domains = pattern.sequence
+    .filter((step) => step.actionType === "network_egress")
+    .map((step) => step.targetPattern);
 
   const extractedFields: Record<string, unknown> = {
     name: pattern.name,
@@ -232,6 +275,10 @@ export function mapPatternToDraftSeed(pattern: HuntPattern): DraftSeed {
       targetPattern: step.targetPattern,
       timeWindow: step.timeWindow,
     })),
+    targets,
+    ...(commands.length > 0 ? { commands } : {}),
+    ...(paths.length > 0 ? { paths } : {}),
+    ...(domains.length > 0 ? { domains } : {}),
   };
 
   // Set primary action type from the first step
@@ -244,12 +291,15 @@ export function mapPatternToDraftSeed(pattern: HuntPattern): DraftSeed {
     kind: "hunt_pattern",
     sourceEventIds: [],
     patternId: pattern.id,
-    preferredFormats: [],
+    preferredFormats: selectedGap?.suggestedFormats ?? [],
     techniqueHints,
-    dataSourceHints,
+    dataSourceHints: mergedDataSourceHints,
     extractedFields,
     createdAt: new Date().toISOString(),
-    confidence: pattern.matchCount > 5 ? 0.9 : pattern.matchCount > 1 ? 0.7 : 0.5,
+    confidence: Math.max(
+      pattern.matchCount > 5 ? 0.9 : pattern.matchCount > 1 ? 0.7 : 0.5,
+      selectedGap?.confidence ?? 0,
+    ),
   };
 
   seed.preferredFormats = recommendFormats(seed);
@@ -306,6 +356,23 @@ export function inferTechniqueHints(events: AgentEvent[]): string[] {
       }
       if (flag.type === "tag" && flag.label.match(/T\d{4}/)) {
         techniques.add(flag.label);
+      }
+    }
+  }
+  return [...techniques];
+}
+
+function inferTechniqueHintsFromText(texts: string[]): string[] {
+  const techniques = new Set<string>();
+  for (const text of texts) {
+    if (!text) continue;
+    const directMatches = text.match(/T\d{4}(?:\.\d{3})?/gi) ?? [];
+    for (const match of directMatches) {
+      techniques.add(match.toUpperCase());
+    }
+    for (const { pattern, technique } of TECHNIQUE_PATTERNS) {
+      if (pattern.test(text)) {
+        techniques.add(technique);
       }
     }
   }
@@ -372,6 +439,10 @@ function inferDataSourceHintsFromSteps(steps: PatternStep[]): string[] {
     }
   }
   return [...hints];
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values.filter((value) => value.length > 0))];
 }
 
 function computeConfidence(events: AgentEvent[]): number {

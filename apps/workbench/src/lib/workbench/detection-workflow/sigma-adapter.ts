@@ -29,7 +29,9 @@ import type {
   ReportArtifact,
 } from "./execution-types";
 import { testSigmaRuleNative } from "@/lib/tauri-commands";
-import { convertSigmaToPolicy } from "./sigma-conversion";
+import { convertSigmaToPolicy, convertSigmaToQuery } from "./sigma-conversion";
+import { parseSigmaYaml } from "../sigma-types";
+import { extractSigmaTechniques } from "../mitre-attack-data";
 
 // ---- SHA-256 ----
 
@@ -175,6 +177,30 @@ export function extractSigmaSelectionFields(source: string): SigmaSelectionField
     // Parse error — return empty fields
   }
   return fields;
+}
+
+function extractTechniqueHints(source: string): string[] {
+  const { rule } = parseSigmaYaml(source);
+  return extractSigmaTechniques(rule?.tags ?? []);
+}
+
+function findSourceLineHints(source: string, fields: string[]): number[] {
+  const lines = source.split(/\r?\n/);
+  const lineHints = new Set<number>();
+
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index];
+    if (line.includes("condition:")) {
+      lineHints.add(index + 1);
+    }
+    for (const field of fields) {
+      if (field && line.includes(field)) {
+        lineHints.add(index + 1);
+      }
+    }
+  }
+
+  return [...lineHints].sort((a, b) => a - b);
 }
 
 /**
@@ -358,6 +384,8 @@ const sigmaAdapter: DetectionWorkflowAdapter = {
     const traces: ExplainabilityTrace[] = [];
     let engine: "native" | "client" | "mixed" = "client";
 
+    const ruleTechniqueHints = extractTechniqueHints(source);
+
     if (nativeResult) {
       const hasIndexedFindings = nativeResult.findings.some((finding) => finding.event_index != null);
       engine = hasIndexedFindings ? "native" : "mixed";
@@ -383,6 +411,10 @@ const sigmaAdapter: DetectionWorkflowAdapter = {
           });
 
           if (didMatch && traceId) {
+            const matchedFields = allEvidenceRefs.map((ref) => ({
+              path: ref,
+              value: String((events[i] as Record<string, unknown>)?.[ref] ?? ""),
+            }));
             traces.push({
               id: traceId,
               kind: "sigma_match",
@@ -391,12 +423,12 @@ const sigmaAdapter: DetectionWorkflowAdapter = {
                 name: finding.title,
                 fields: finding.evidence_refs,
               })),
-              matchedFields: allEvidenceRefs.map((ref) => ({
-                path: ref,
-                value: String((events[i] as Record<string, unknown>)?.[ref] ?? ""),
-              })),
-              techniqueHints: [],
-              sourceLineHints: [],
+              matchedFields,
+              techniqueHints: ruleTechniqueHints,
+              sourceLineHints: findSourceLineHints(
+                source,
+                matchedFields.map((field) => field.path),
+              ),
             });
           }
         }
@@ -443,8 +475,11 @@ const sigmaAdapter: DetectionWorkflowAdapter = {
           caseId,
           matchedSelectors: didMatch ? [{ name: "selection", fields: matchedFieldEntries.map((f) => f.path) }] : [],
           matchedFields: matchedFieldEntries,
-          techniqueHints: [],
-          sourceLineHints: [],
+          techniqueHints: ruleTechniqueHints,
+          sourceLineHints: findSourceLineHints(
+            source,
+            matchedFieldEntries.map((field) => field.path),
+          ),
         });
       }
     }
@@ -522,11 +557,11 @@ const sigmaAdapter: DetectionWorkflowAdapter = {
           target: request.targetFormat,
           sourceHash,
           outputHash,
-          validationSnapshot: {
-            valid: true,
-            diagnosticCount: conversion.diagnostics.filter((d) => d.severity === "warning").length,
-          },
-          runSnapshot:
+        validationSnapshot: {
+          valid: true,
+          diagnosticCount: conversion.diagnostics.filter((d) => d.severity === "warning").length,
+        },
+        runSnapshot:
             request.labRunId && request.evidencePackId
               ? {
                   evidencePackId: request.evidencePackId,
@@ -534,31 +569,46 @@ const sigmaAdapter: DetectionWorkflowAdapter = {
                   passed: true,
                 }
               : null,
-          converter: {
-            id: "sigma-to-policy",
-            version: conversion.converterVersion,
-          },
-          signer: null,
+        coverageSnapshot: null,
+        converter: {
+          id: "sigma-to-policy",
+          version: conversion.converterVersion,
         },
-        outputContent: conversion.policyYaml,
-        outputHash,
-      };
+        signer: null,
+        provenance: null,
+      },
+      outputContent: conversion.policyYaml,
+      outputHash,
+    };
+  }
+
+    const target = request.targetFormat;
+    if (target !== "spl" && target !== "kql" && target !== "esql" && target !== "json_export") {
+      throw new Error(`Unsupported Sigma publish target "${target}"`);
     }
 
-    // For other targets (spl, kql, esql, json_export), return the Sigma source as-is
+    const queryConversion = convertSigmaToQuery(request.source, target);
+    if (!queryConversion.success || !queryConversion.output) {
+      const errors = queryConversion.diagnostics
+        .filter((diagnostic) => diagnostic.severity === "error")
+        .map((diagnostic) => diagnostic.message)
+        .join("; ");
+      throw new Error(errors || `Sigma conversion failed for ${target}`);
+    }
+
     const sourceHash = await sha256Hex(request.source);
-    const outputHash = await sha256Hex(request.source);
+    const outputHash = await sha256Hex(queryConversion.output);
 
     return {
       manifest: {
         documentId: request.document.documentId,
         sourceFileType: "sigma_rule",
-        target: request.targetFormat,
+        target,
         sourceHash,
         outputHash,
         validationSnapshot: {
           valid: true,
-          diagnosticCount: 0,
+          diagnosticCount: queryConversion.diagnostics.length,
         },
         runSnapshot:
           request.labRunId && request.evidencePackId
@@ -567,14 +617,16 @@ const sigmaAdapter: DetectionWorkflowAdapter = {
                 labRunId: request.labRunId,
                 passed: true,
               }
-            : null,
+              : null,
+        coverageSnapshot: null,
         converter: {
-          id: "sigma-identity",
-          version: "1.0.0",
+          id: queryConversion.converterId,
+          version: queryConversion.converterVersion,
         },
         signer: null,
+        provenance: null,
       },
-      outputContent: request.source,
+      outputContent: queryConversion.output,
       outputHash,
     };
   },

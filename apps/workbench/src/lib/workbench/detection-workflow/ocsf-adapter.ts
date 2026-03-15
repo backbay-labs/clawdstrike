@@ -393,11 +393,13 @@ const ocsfAdapter: DetectionWorkflowAdapter = {
                 passed: true,
               }
             : null,
+        coverageSnapshot: null,
         converter: {
           id: "ocsf-identity",
           version: "1.0.0",
         },
         signer: null,
+        provenance: null,
       },
       outputContent: request.source,
       outputHash,

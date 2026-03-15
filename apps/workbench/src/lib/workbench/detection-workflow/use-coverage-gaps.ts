@@ -32,14 +32,37 @@ export interface UseCoverageGapsResult {
 export interface UseCoverageGapsOptions {
   /** Optional callback to launch draft detection from a gap. */
   onDraftFromGap?: (gap: CoverageGapCandidate) => void;
+  /** Optional storage key for durable dismissal state. */
+  persistenceKey?: string;
 }
 
 export function useCoverageGaps(
   input: CoverageGapInput,
   options: UseCoverageGapsOptions = {},
 ): UseCoverageGapsResult {
-  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
+  const storageKey = options.persistenceKey ?? "clawdstrike_detection_gap_dismissals";
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(() => {
+    try {
+      const stored = localStorage.getItem(storageKey);
+      if (!stored) return new Set<string>();
+      const parsed = JSON.parse(stored) as unknown;
+      return Array.isArray(parsed) ? new Set(parsed.filter((item): item is string => typeof item === "string")) : new Set<string>();
+    } catch {
+      return new Set<string>();
+    }
+  });
   const [refreshToken, setRefreshToken] = useState(0);
+
+  const persistDismissedIds = useCallback(
+    (ids: Set<string>) => {
+      try {
+        localStorage.setItem(storageKey, JSON.stringify([...ids]));
+      } catch (error) {
+        console.warn("[use-coverage-gaps] Failed to persist dismissed coverage gaps:", error);
+      }
+    },
+    [storageKey],
+  );
 
   const gaps = useMemo(() => {
     // Discover raw gaps
@@ -70,9 +93,10 @@ export function useCoverageGaps(
     setDismissedIds((prev) => {
       const next = new Set(prev);
       next.add(gapId);
+      persistDismissedIds(next);
       return next;
     });
-  }, []);
+  }, [persistDismissedIds]);
 
   const draftFromGap = useCallback(
     (gap: CoverageGapCandidate) => {

@@ -14,7 +14,6 @@ import {
   IconX,
   IconLoader2,
   IconCircle,
-  IconAlertTriangle,
   IconChevronDown,
   IconChevronRight,
   IconFileExport,
@@ -22,7 +21,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useToast } from "@/components/ui/toast";
 import { emitAuditEvent } from "@/lib/workbench/local-audit";
-import { isPolicyFileType, FILE_TYPE_REGISTRY, type FileType } from "@/lib/workbench/file-type-registry";
+import { FILE_TYPE_REGISTRY, type FileType } from "@/lib/workbench/file-type-registry";
 import type { PublicationManifest, PublishTarget, LabRun } from "@/lib/workbench/detection-workflow/shared-types";
 import {
   usePublication,
@@ -72,6 +71,7 @@ export function PublishPanel({
     publish,
     canPublish,
     publishGateStatus,
+    refreshManifests,
   } = usePublication(documentId, fileType, {
     validationValid,
     currentSource: source,
@@ -105,10 +105,22 @@ export function PublishPanel({
       });
 
       if (result.success && result.manifest) {
-        // For fleet_deploy target, also deploy to fleet (policy files only)
-        if (effectiveTarget === "fleet_deploy" && connection.connected && fileType && isPolicyFileType(fileType)) {
+        if (effectiveTarget === "fleet_deploy" && connection.connected) {
           try {
-            const deployResult = await deployPolicy(getAuthedConn(), source);
+            const deploySource = result.outputContent ?? source;
+            const deployResult = await deployPolicy(getAuthedConn(), deploySource);
+            const updatedManifest: PublicationManifest = {
+              ...result.manifest,
+              deployResponse: {
+                success: deployResult.success,
+                hash: deployResult.hash,
+                destination: "fleet",
+              },
+            };
+            const store = getPublicationStore();
+            await store.init();
+            await store.saveManifest(updatedManifest);
+            await refreshManifests();
             if (deployResult.success) {
               toast({
                 type: "success",
@@ -120,7 +132,7 @@ export function PublishPanel({
                 source: "deploy",
                 summary: `Published and deployed to fleet`,
                 details: {
-                  manifestId: result.manifest.id,
+                  manifestId: updatedManifest.id,
                   hash: deployResult.hash,
                 },
               });
@@ -177,7 +189,7 @@ export function PublishPanel({
     } finally {
       setIsPublishing(false);
     }
-  }, [effectiveTarget, publish, source, skipLabGate, connection, getAuthedConn, toast, fileType]);
+  }, [connection, effectiveTarget, getAuthedConn, publish, refreshManifests, source, skipLabGate, toast]);
 
   // ---- Download Helper ----
 
@@ -252,12 +264,7 @@ export function PublishPanel({
   }
 
   const isFleetTarget = effectiveTarget === "fleet_deploy";
-  const isNonPolicyFleetDeploy = isFleetTarget && !isPolicyFileType(fileType);
-  const publishBlocked =
-    isPublishing ||
-    !effectiveTarget ||
-    isNonPolicyFleetDeploy ||
-    (!publishGateStatus.gateOpen && !skipLabGate);
+  const publishBlocked = isPublishing || !effectiveTarget || (!publishGateStatus.gateOpen && !skipLabGate);
 
   return (
     <div className="flex flex-col gap-3 p-4 h-full overflow-y-auto">
@@ -273,17 +280,6 @@ export function PublishPanel({
 
       {/* ---- Gate Status ---- */}
       <GateStatusSection status={publishGateStatus} />
-
-      {/* ---- Non-policy fleet deploy warning ---- */}
-      {isNonPolicyFleetDeploy && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-md text-[10px] border bg-[#c45c5c]/5 border-[#c45c5c]/15 text-[#c45c5c]">
-          <IconAlertTriangle size={12} stroke={1.5} />
-          <span>
-            Fleet deploy is only available for native policy files. Use the Publish panel
-            to convert and export instead.
-          </span>
-        </div>
-      )}
 
       {/* ---- Target Selector ---- */}
       <div className="flex flex-col gap-1.5">

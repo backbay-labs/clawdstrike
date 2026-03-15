@@ -115,6 +115,7 @@ export function EvidencePackPanel({ documentId, fileType }: EvidencePackPanelPro
     selectPack,
     createPack,
     deletePack,
+    addItem,
     removeItem,
     reclassifyItem,
     importPack,
@@ -421,6 +422,12 @@ export function EvidencePackPanel({ documentId, fileType }: EvidencePackPanelPro
                         )}
 
                         {/* Items grouped by dataset kind */}
+                        <AddEvidenceItemComposer
+                          packId={pack.id}
+                          fileType={pack.fileType}
+                          onAddItem={addItem}
+                        />
+
                         {DATASET_ORDER.map((kind) => {
                           const items = pack.datasets[kind];
                           if (items.length === 0) return null;
@@ -451,6 +458,311 @@ export function EvidencePackPanel({ documentId, fileType }: EvidencePackPanelPro
           )}
         </div>
       </ScrollArea>
+    </div>
+  );
+}
+
+const POLICY_ACTION_OPTIONS = [
+  "file_access",
+  "file_write",
+  "network_egress",
+  "shell_command",
+  "mcp_tool_call",
+  "patch_apply",
+  "user_input",
+] as const;
+
+function defaultItemKind(fileType: FileType): EvidenceItem["kind"] {
+  if (fileType === "yara_rule") return "bytes";
+  if (fileType === "ocsf_event") return "ocsf_event";
+  if (fileType === "clawdstrike_policy") return "policy_scenario";
+  return "structured_event";
+}
+
+function AddEvidenceItemComposer({
+  packId,
+  fileType,
+  onAddItem,
+}: {
+  packId: string;
+  fileType: FileType;
+  onAddItem: (
+    packId: string,
+    dataset: EvidenceDatasetKind,
+    item: EvidenceItem,
+  ) => Promise<void>;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [dataset, setDataset] = useState<EvidenceDatasetKind>("regression");
+  const [itemKind, setItemKind] = useState<EvidenceItem["kind"]>(() => defaultItemKind(fileType));
+  const [payloadText, setPayloadText] = useState("{}");
+  const [bytesEncoding, setBytesEncoding] = useState<"base64" | "hex" | "utf8">("utf8");
+  const [expectedMatch, setExpectedMatch] = useState<"match" | "no_match">("match");
+  const [expectedValidity, setExpectedValidity] = useState<"valid" | "invalid">("valid");
+  const [scenarioVerdict, setScenarioVerdict] = useState<"allow" | "warn" | "deny">("deny");
+  const [scenarioActionType, setScenarioActionType] = useState<(typeof POLICY_ACTION_OPTIONS)[number]>("shell_command");
+  const [scenarioName, setScenarioName] = useState("Captured Scenario");
+  const [scenarioTarget, setScenarioTarget] = useState("");
+  const [sourceRef, setSourceRef] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const handleAdd = useCallback(async () => {
+    try {
+      let item: EvidenceItem;
+      if (itemKind === "structured_event") {
+        item = {
+          id: crypto.randomUUID(),
+          kind: "structured_event",
+          format: "json",
+          payload: JSON.parse(payloadText) as Record<string, unknown>,
+          expected: expectedMatch,
+          sourceEventId: sourceRef || undefined,
+        };
+      } else if (itemKind === "bytes") {
+        item = {
+          id: crypto.randomUUID(),
+          kind: "bytes",
+          encoding: bytesEncoding,
+          payload: payloadText,
+          expected: expectedMatch,
+          sourceArtifactPath: sourceRef || undefined,
+        };
+      } else if (itemKind === "ocsf_event") {
+        item = {
+          id: crypto.randomUUID(),
+          kind: "ocsf_event",
+          payload: JSON.parse(payloadText) as Record<string, unknown>,
+          expected: expectedValidity,
+          sourceEventId: sourceRef || undefined,
+        };
+      } else {
+        item = {
+          id: crypto.randomUUID(),
+          kind: "policy_scenario",
+          scenario: {
+            id: crypto.randomUUID(),
+            name: scenarioName.trim() || "Captured Scenario",
+            description: "Manually captured evidence scenario",
+            category: dataset === "negative" || dataset === "false_positive" ? "benign" : "attack",
+            actionType: scenarioActionType,
+            payload: {
+              target: scenarioTarget,
+              content: payloadText.trim().length > 0 ? payloadText : undefined,
+            },
+            expectedVerdict: scenarioVerdict,
+          },
+          expected: scenarioVerdict,
+        };
+      }
+
+      await onAddItem(packId, dataset, item);
+      setError(null);
+      setExpanded(false);
+      setPayloadText(itemKind === "bytes" ? "" : "{}");
+      setScenarioTarget("");
+      setSourceRef("");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Failed to add evidence item");
+    }
+  }, [
+    bytesEncoding,
+    dataset,
+    expectedMatch,
+    expectedValidity,
+    itemKind,
+    onAddItem,
+    packId,
+    payloadText,
+    scenarioActionType,
+    scenarioName,
+    scenarioTarget,
+    scenarioVerdict,
+    sourceRef,
+  ]);
+
+  return (
+    <div className="mb-3 rounded-md border border-[#2d3240]/70 bg-[#0f131c] p-2">
+      <button
+        type="button"
+        onClick={() => setExpanded((value) => !value)}
+        className="flex w-full items-center gap-1.5 text-left"
+      >
+        {expanded ? (
+          <IconChevronDown size={10} stroke={1.5} className="text-[#6f7f9a]" />
+        ) : (
+          <IconChevronRight size={10} stroke={1.5} className="text-[#6f7f9a]" />
+        )}
+        <IconPlus size={10} stroke={1.8} className="text-[#d4a84b]" />
+        <span className="text-[9px] font-mono uppercase tracking-wider text-[#d4a84b]">
+          Add Evidence Item
+        </span>
+      </button>
+
+      {expanded && (
+        <div className="mt-2 space-y-2">
+          <div className="grid grid-cols-2 gap-2">
+            <label className="text-[8px] font-mono text-[#6f7f9a]">
+              Dataset
+              <select
+                value={dataset}
+                onChange={(event) => setDataset(event.target.value as EvidenceDatasetKind)}
+                className="mt-1 h-7 w-full rounded border border-[#2d3240] bg-[#05060a] px-2 text-[9px] text-[#ece7dc]"
+              >
+                {DATASET_ORDER.map((kind) => (
+                  <option key={kind} value={kind}>
+                    {DATASET_LABELS[kind]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-[8px] font-mono text-[#6f7f9a]">
+              Kind
+              <select
+                value={itemKind}
+                onChange={(event) => setItemKind(event.target.value as EvidenceItem["kind"])}
+                className="mt-1 h-7 w-full rounded border border-[#2d3240] bg-[#05060a] px-2 text-[9px] text-[#ece7dc]"
+              >
+                <option value="structured_event">Structured Event</option>
+                <option value="bytes">Byte Sample</option>
+                <option value="ocsf_event">OCSF Event</option>
+                <option value="policy_scenario">Policy Scenario</option>
+              </select>
+            </label>
+          </div>
+
+          {(itemKind === "structured_event" || itemKind === "bytes" || itemKind === "ocsf_event") && (
+            <label className="block text-[8px] font-mono text-[#6f7f9a]">
+              Source Reference
+              <input
+                value={sourceRef}
+                onChange={(event) => setSourceRef(event.target.value)}
+                placeholder="event id or artifact path"
+                className="mt-1 h-7 w-full rounded border border-[#2d3240] bg-[#05060a] px-2 text-[9px] text-[#ece7dc]"
+              />
+            </label>
+          )}
+
+          {itemKind === "bytes" && (
+            <label className="block text-[8px] font-mono text-[#6f7f9a]">
+              Encoding
+              <select
+                value={bytesEncoding}
+                onChange={(event) => setBytesEncoding(event.target.value as "base64" | "hex" | "utf8")}
+                className="mt-1 h-7 w-full rounded border border-[#2d3240] bg-[#05060a] px-2 text-[9px] text-[#ece7dc]"
+              >
+                <option value="utf8">UTF-8</option>
+                <option value="hex">Hex</option>
+                <option value="base64">Base64</option>
+              </select>
+            </label>
+          )}
+
+          {itemKind === "policy_scenario" ? (
+            <div className="space-y-2">
+              <label className="block text-[8px] font-mono text-[#6f7f9a]">
+                Scenario Name
+                <input
+                  value={scenarioName}
+                  onChange={(event) => setScenarioName(event.target.value)}
+                  className="mt-1 h-7 w-full rounded border border-[#2d3240] bg-[#05060a] px-2 text-[9px] text-[#ece7dc]"
+                />
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="text-[8px] font-mono text-[#6f7f9a]">
+                  Action
+                  <select
+                    value={scenarioActionType}
+                    onChange={(event) =>
+                      setScenarioActionType(event.target.value as (typeof POLICY_ACTION_OPTIONS)[number])
+                    }
+                    className="mt-1 h-7 w-full rounded border border-[#2d3240] bg-[#05060a] px-2 text-[9px] text-[#ece7dc]"
+                  >
+                    {POLICY_ACTION_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-[8px] font-mono text-[#6f7f9a]">
+                  Expect
+                  <select
+                    value={scenarioVerdict}
+                    onChange={(event) => setScenarioVerdict(event.target.value as "allow" | "warn" | "deny")}
+                    className="mt-1 h-7 w-full rounded border border-[#2d3240] bg-[#05060a] px-2 text-[9px] text-[#ece7dc]"
+                  >
+                    <option value="deny">deny</option>
+                    <option value="warn">warn</option>
+                    <option value="allow">allow</option>
+                  </select>
+                </label>
+              </div>
+              <label className="block text-[8px] font-mono text-[#6f7f9a]">
+                Target
+                <input
+                  value={scenarioTarget}
+                  onChange={(event) => setScenarioTarget(event.target.value)}
+                  className="mt-1 h-7 w-full rounded border border-[#2d3240] bg-[#05060a] px-2 text-[9px] text-[#ece7dc]"
+                />
+              </label>
+            </div>
+          ) : (
+            <label className="block text-[8px] font-mono text-[#6f7f9a]">
+              Expected
+              <select
+                value={itemKind === "ocsf_event" ? expectedValidity : expectedMatch}
+                onChange={(event) => {
+                  if (itemKind === "ocsf_event") {
+                    setExpectedValidity(event.target.value as "valid" | "invalid");
+                  } else {
+                    setExpectedMatch(event.target.value as "match" | "no_match");
+                  }
+                }}
+                className="mt-1 h-7 w-full rounded border border-[#2d3240] bg-[#05060a] px-2 text-[9px] text-[#ece7dc]"
+              >
+                {itemKind === "ocsf_event" ? (
+                  <>
+                    <option value="valid">valid</option>
+                    <option value="invalid">invalid</option>
+                  </>
+                ) : (
+                  <>
+                    <option value="match">match</option>
+                    <option value="no_match">no match</option>
+                  </>
+                )}
+              </select>
+            </label>
+          )}
+
+          <label className="block text-[8px] font-mono text-[#6f7f9a]">
+            {itemKind === "bytes"
+              ? "Byte Content"
+              : itemKind === "policy_scenario"
+                ? "Optional Content"
+                : "JSON Payload"}
+            <textarea
+              value={payloadText}
+              onChange={(event) => setPayloadText(event.target.value)}
+              rows={itemKind === "policy_scenario" ? 3 : 5}
+              className="mt-1 w-full rounded border border-[#2d3240] bg-[#05060a] px-2 py-1.5 text-[9px] font-mono text-[#ece7dc]"
+            />
+          </label>
+
+          {error && <p className="text-[8px] font-mono text-[#c45c5c]">{error}</p>}
+
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => void handleAdd()}
+              className="inline-flex items-center gap-1 rounded border border-[#d4a84b]/25 bg-[#d4a84b]/10 px-2 py-1 text-[8px] font-mono text-[#d4a84b] hover:bg-[#d4a84b]/15"
+            >
+              <IconPlus size={9} stroke={1.8} />
+              Add Item
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

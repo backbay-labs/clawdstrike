@@ -55,6 +55,10 @@ pub struct SigmaTestResponse {
     pub events_matched: usize,
 }
 
+fn estimate_sigma_events_matched(findings_len: usize, events_tested: usize) -> usize {
+    findings_len.min(events_tested)
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SigmaTestFindingEntry {
     pub title: String,
@@ -125,21 +129,15 @@ fn check_source_size(source: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Count structural (rule-level) braces in a YARA source line, ignoring braces
-/// inside `"strings"`, `/regex/` literals, and YARA hex string literals (`{ AB CD ?? }`).
-///
-/// Hex string context is detected by a preceding `=` before `{` — YARA hex strings
-/// are always assigned via `$hex = { ... }`. When we see `= {`, we enter hex-string
-/// mode and skip all content (including `{`/`}`) until the closing `}`.
-/// Count structural `{` and `}` on a single line, skipping braces that appear inside
-/// string literals, regex literals, hex strings (`= { ... }`), line comments (`//`),
-/// and block comments (`/* ... */`).
+/// Scrub a YARA source line down to structural code tokens by removing content
+/// inside string literals, regex literals, hex strings (`= { ... }`), line comments,
+/// and block comments.
 ///
 /// `in_block_comment` is threaded through successive calls so that multi-line `/* */`
-/// comments are handled correctly.  The updated flag is returned alongside the counts.
-fn count_braces_outside_literals(line: &str, in_block_comment: bool) -> (i32, i32, bool) {
-    let mut opens = 0;
-    let mut closes = 0;
+/// comments are handled correctly. The updated flag is returned alongside the scrubbed
+/// code fragment.
+fn scrub_yara_line(line: &str, in_block_comment: bool) -> (String, bool) {
+    let mut code = String::with_capacity(line.len());
     let mut in_string = false;
     let mut in_regex = false;
     let mut in_hex_string = false;
@@ -234,10 +232,8 @@ fn count_braces_outside_literals(line: &str, in_block_comment: bool) -> (i32, i3
                     i += 1;
                     continue;
                 }
-                opens += 1;
-            } else if ch == '}' {
-                closes += 1;
             }
+            code.push(ch);
         }
 
         if !ch.is_whitespace() {
@@ -246,7 +242,17 @@ fn count_braces_outside_literals(line: &str, in_block_comment: bool) -> (i32, i3
         i += 1;
     }
 
-    (opens, closes, in_block)
+    (code, in_block)
+}
+
+/// Analyze a YARA source line for structural braces and a `condition:` token while
+/// ignoring strings, regexes, hex strings, and comments.
+fn analyze_yara_line(line: &str, in_block_comment: bool) -> (i32, i32, bool, bool) {
+    let (code, in_block_comment) = scrub_yara_line(line, in_block_comment);
+    let opens = code.chars().filter(|ch| *ch == '{').count() as i32;
+    let closes = code.chars().filter(|ch| *ch == '}').count() as i32;
+    let has_condition = code.contains("condition:");
+    (opens, closes, has_condition, in_block_comment)
 }
 
 fn format_detection_diagnostic(diagnostic: &DetectionDiagnostic) -> String {
@@ -475,21 +481,22 @@ pub fn validate_yara_rule(source: String) -> Result<YaraValidationResponse, Stri
                     .next()
                     .unwrap_or("unnamed")
                     .to_string();
-                let (opens, closes, blk) = count_braces_outside_literals(line, in_block_comment);
+                let (opens, closes, saw_condition, blk) =
+                    analyze_yara_line(line, in_block_comment);
                 in_block_comment = blk;
-                current_rule = Some((rule_name, opens - closes, false));
+                current_rule = Some((rule_name, opens - closes, saw_condition));
                 rule_count += 1;
                 continue;
             }
         }
 
         if let Some((rule_name, brace_depth, saw_condition)) = current_rule.as_mut() {
-            if trimmed.starts_with("condition:") {
+            let (opens, closes, line_has_condition, blk) =
+                analyze_yara_line(line, in_block_comment);
+            in_block_comment = blk;
+            if line_has_condition {
                 *saw_condition = true;
             }
-
-            let (opens, closes, blk) = count_braces_outside_literals(line, in_block_comment);
-            in_block_comment = blk;
             *brace_depth += opens - closes;
 
             if *brace_depth < 0 {
@@ -913,15 +920,10 @@ pub fn test_sigma_rule(
         })
         .collect();
 
-    // Count unique matched events by deduplicating on evidence_refs — each unique
-    // set of evidence references corresponds to a distinct matched event.
-    let events_matched = {
-        let mut seen = std::collections::HashSet::new();
-        for f in &findings {
-            seen.extend(f.evidence_refs.iter().cloned());
-        }
-        seen.len()
-    };
+    // `hunt_correlate` does not return event-level attribution yet, so avoid
+    // overclaiming by treating each finding as at most one matched event and
+    // bounding the estimate by the number of tested events.
+    let events_matched = estimate_sigma_events_matched(findings.len(), events_tested);
     let matched = !findings.is_empty();
 
     Ok(SigmaTestResponse {
@@ -1149,6 +1151,14 @@ fn escape_yaml_string(s: &str) -> String {
     }
 }
 
+fn sanitize_yaml_comment_text(s: &str) -> String {
+    s.lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn convert_sigma_to_native_policy(source: &str) -> Result<SigmaConvertResponse, String> {
     // First, compile the Sigma rule to validate it
     let compilation = hunt_correlate::detection::compile_rule_source("sigma", source)
@@ -1177,9 +1187,9 @@ fn convert_sigma_to_native_policy(source: &str) -> Result<SigmaConvertResponse, 
 
     // Escape strings that will be embedded in YAML to prevent malformed output
     // when they contain special YAML characters (`:`, `#`, `'`, `"`, etc.).
-    let title = escape_yaml_string(title_raw);
-    let description = escape_yaml_string(description_raw);
-    let status = escape_yaml_string(status_raw);
+    let title_comment = sanitize_yaml_comment_text(title_raw);
+    let description_comment = sanitize_yaml_comment_text(description_raw);
+    let status_comment = sanitize_yaml_comment_text(status_raw);
 
     // Extract logsource for guard mapping
     let logsource = parsed.get("logsource");
@@ -1191,7 +1201,9 @@ fn convert_sigma_to_native_policy(source: &str) -> Result<SigmaConvertResponse, 
         .and_then(|ls| ls.get("product"))
         .and_then(|v| v.as_str())
         .unwrap_or("any");
-    let product = escape_yaml_string(product_raw);
+    let product_comment = sanitize_yaml_comment_text(product_raw);
+    let sigma_marker = escape_yaml_string(&format!("# Sigma: {title_raw}"));
+    let level_yaml = escape_yaml_string(level);
 
     // Map Sigma level to policy severity
     let policy_level = match level {
@@ -1206,30 +1218,30 @@ fn convert_sigma_to_native_policy(source: &str) -> Result<SigmaConvertResponse, 
     let guard_config = match category {
         "process_creation" | "process_access" | "image_load" => {
             format!(
-                "    shell_command:\n      blocked_commands:\n        - \"# Sigma: {title}\"\n      log_level: \"{level}\""
+                "    shell_command:\n      blocked_commands:\n        - {sigma_marker}\n      log_level: {level_yaml}"
             )
         }
         "file_event" | "file_access" | "file_creation" | "file_delete" | "file_rename" => {
             format!(
-                "    forbidden_path:\n      paths:\n        - \"# Sigma: {title}\"\n      log_level: \"{level}\""
+                "    forbidden_path:\n      paths:\n        - {sigma_marker}\n      log_level: {level_yaml}"
             )
         }
         "network_connection" | "dns_query" | "dns" | "proxy" | "firewall" => {
             format!(
-                "    egress_allowlist:\n      allowed_domains:\n        - \"# Sigma: {title}\"\n      log_level: \"{level}\""
+                "    egress_allowlist:\n      allowed_domains:\n        - {sigma_marker}\n      log_level: {level_yaml}"
             )
         }
         _ => {
             format!(
-                "    # No direct guard mapping for logsource category '{category}'\n    # Review and configure appropriate guards manually\n    shell_command:\n      log_level: \"{level}\""
+                "    # No direct guard mapping for logsource category '{category}'\n    # Review and configure appropriate guards manually\n    shell_command:\n      log_level: {level_yaml}"
             )
         }
     };
 
     let policy_yaml = format!(
-        r#"# Auto-generated from Sigma rule: {title}
-# Status: {status} | Level: {level} | Product: {product}
-# {description}
+        r#"# Auto-generated from Sigma rule: {title_comment}
+# Status: {status_comment} | Level: {level} | Product: {product_comment}
+# {description_comment}
 #
 # Source compilation: {engine_kind} engine
 # NOTE: This is a structural template. Detection logic from the Sigma
@@ -1280,4 +1292,61 @@ guards:
         diagnostics,
         converter_version: "0.1.0".into(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_yara_rule_accepts_inline_condition_on_rule_declaration_line() {
+        let response = validate_yara_rule(
+            "rule inline_condition { strings: $a = \"x\" condition: $a }".to_string(),
+        )
+        .expect("inline YARA rule should validate");
+
+        assert!(response.valid, "expected inline condition rule to be valid");
+        assert_eq!(response.rule_count, 1);
+        assert!(
+            response
+                .diagnostics
+                .iter()
+                .all(|diagnostic| !diagnostic.message.contains("missing a required 'condition:'")),
+            "unexpected missing-condition diagnostic: {:?}",
+            response.diagnostics
+        );
+    }
+
+    #[test]
+    fn convert_sigma_to_native_policy_keeps_special_titles_yaml_safe() {
+        let sigma = r#"title: "Suspicious Command: PowerShell #1"
+description: Detects "weird" command lines
+status: experimental
+level: high
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection:
+    CommandLine|contains: powershell -enc
+  condition: selection
+"#;
+
+        let response =
+            convert_sigma_to_native_policy(sigma).expect("sigma conversion should succeed");
+        let output = response.output.expect("expected native policy output");
+
+        serde_yaml::from_str::<serde_yaml::Value>(&output)
+            .expect("generated native policy should remain valid YAML");
+        assert!(output.contains("# Auto-generated from Sigma rule: Suspicious Command: PowerShell #1"));
+        assert!(output.contains("- \"# Sigma: Suspicious Command: PowerShell #1\""));
+        assert!(!output.contains("\"# Sigma: \\\"Suspicious Command: PowerShell #1\\\"\""));
+    }
+
+    #[test]
+    fn estimate_sigma_events_matched_never_exceeds_tested_events() {
+        assert_eq!(estimate_sigma_events_matched(0, 5), 0);
+        assert_eq!(estimate_sigma_events_matched(2, 5), 2);
+        assert_eq!(estimate_sigma_events_matched(9, 3), 3);
+    }
 }

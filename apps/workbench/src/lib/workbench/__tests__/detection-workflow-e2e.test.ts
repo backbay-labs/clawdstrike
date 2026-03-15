@@ -43,6 +43,7 @@ import { EvidencePackStore } from "../detection-workflow/evidence-pack-store";
 import { LabRunStore } from "../detection-workflow/lab-run-store";
 import { PublicationStore } from "../detection-workflow/publication-store";
 import { DocumentIdentityStore } from "../detection-workflow/document-identity-store";
+import { signPublicationOutput } from "../detection-workflow/publication-provenance";
 
 // ---- Explainability ----
 import { extractTraces, compareRuns } from "../detection-workflow/explainability";
@@ -70,6 +71,7 @@ import type { FileType } from "../file-type-registry";
 // its own mock behavior.
 // ---------------------------------------------------------------------------
 const mockGetManifest = vi.fn();
+const mockGetOutputContent = vi.fn();
 const mockPubStoreInit = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("../detection-workflow/publication-store", async (importOriginal) => {
@@ -79,6 +81,7 @@ vi.mock("../detection-workflow/publication-store", async (importOriginal) => {
     getPublicationStore: () => ({
       init: mockPubStoreInit,
       getManifest: mockGetManifest,
+      getOutputContent: mockGetOutputContent,
     }),
   };
 });
@@ -86,6 +89,14 @@ vi.mock("../detection-workflow/publication-store", async (importOriginal) => {
 // ---------------------------------------------------------------------------
 // Test helpers
 // ---------------------------------------------------------------------------
+
+async function sha256Hex(text: string): Promise<string> {
+  const data = new TextEncoder().encode(text);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data.buffer as ArrayBuffer);
+  return Array.from(new Uint8Array(hashBuffer))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
 
 function makeShellCommandEvent(
   target: string,
@@ -465,8 +476,10 @@ describe("Scenario 3: DocumentId Persistence Across Lifecycle", () => {
       outputHash: "b".repeat(64),
       validationSnapshot: { valid: true, diagnosticCount: 0 },
       runSnapshot: { evidencePackId: pack.id, labRunId: run.id, passed: true },
+      coverageSnapshot: null,
       converter: { id: "sigma-identity", version: "1.0.0" },
       signer: null,
+      provenance: null,
     };
     await publicationStore.saveManifest(manifest);
 
@@ -564,6 +577,7 @@ describe("Scenario 4: Coverage Gap -> Draft Loop", () => {
 describe("Scenario 5: Swarm Board Artifact Nodes", () => {
   beforeEach(() => {
     mockGetManifest.mockReset();
+    mockGetOutputContent.mockReset();
     mockPubStoreInit.mockReset().mockResolvedValue(undefined);
   });
 
@@ -625,6 +639,17 @@ describe("Scenario 5: Swarm Board Artifact Nodes", () => {
     expect(runNode.data.status).toBe("failed"); // has failed cases
 
     // 4. Publication manifest node
+    const outputContent = JSON.stringify(
+      {
+        kind: "sigma_rule",
+        title: "Swarm Publication Test",
+        query: 'CommandLine contains "powershell"',
+      },
+      null,
+      2,
+    );
+    const outputHash = await sha256Hex(outputContent);
+    const signed = await signPublicationOutput(outputHash, documentId, "json_export");
     const manifest: PublicationManifest = {
       id: crypto.randomUUID(),
       documentId,
@@ -632,11 +657,14 @@ describe("Scenario 5: Swarm Board Artifact Nodes", () => {
       target: "json_export",
       createdAt: new Date().toISOString(),
       sourceHash: "a".repeat(64),
-      outputHash: "b".repeat(64),
+      outputHash,
       validationSnapshot: { valid: true, diagnosticCount: 0 },
       runSnapshot: null,
-      converter: { id: "sigma-identity", version: "1.0.0" },
-      signer: null,
+      coverageSnapshot: null,
+      converter: { id: "sigma-to-json", version: "1.0.0" },
+      signer: signed.signer,
+      provenance: signed.provenance,
+      receiptId: signed.receiptId,
     };
     const pubNode = createPublicationNode(manifest, pos);
     expect(pubNode.data.artifactKind).toBe("publication_manifest");
@@ -645,6 +673,7 @@ describe("Scenario 5: Swarm Board Artifact Nodes", () => {
 
     // 5. verifyPublishState for published manifest node -> valid
     mockGetManifest.mockResolvedValue(manifest);
+    mockGetOutputContent.mockResolvedValue(outputContent);
     const pubVerification = await verifyPublishState(pubNode);
     expect(pubVerification.valid).toBe(true);
 
@@ -990,6 +1019,45 @@ describe("Scenario: Policy adapter end-to-end with real simulation engine", () =
 
 describe("Scenario: Publication SHA-256 integrity across all adapters", () => {
   const adaptersToTest: FileType[] = ["sigma_rule", "yara_rule", "ocsf_event", "clawdstrike_policy"];
+  const publicationSourceByType: Record<FileType, string> = {
+    sigma_rule: [
+      "title: Suspicious PowerShell",
+      "id: 2f8e8e4c-5575-4d52-986d-75e3cedefc31",
+      "status: experimental",
+      "logsource:",
+      "  product: windows",
+      "  category: process_creation",
+      "detection:",
+      "  selection:",
+      "    CommandLine|contains: powershell -enc",
+      "  condition: selection",
+    ].join("\n"),
+    yara_rule: [
+      "rule suspicious_binary {",
+      "  strings:",
+      "    $mz = { 4D 5A }",
+      "  condition:",
+      "    $mz",
+      "}",
+    ].join("\n"),
+    ocsf_event: JSON.stringify(
+      {
+        class_uid: 1001,
+        activity_name: "Process Activity",
+        actor: { user: { name: "analyst" } },
+      },
+      null,
+      2,
+    ),
+    clawdstrike_policy: [
+      'version: "1.5.0"',
+      "name: Test Policy",
+      "guards:",
+      "  shell_command:",
+      "    enabled: true",
+      "settings: {}",
+    ].join("\n"),
+  };
 
   for (const fileType of adaptersToTest) {
     it(`${fileType} adapter produces 64-char hex SHA-256 hashes in publication manifest`, async () => {
@@ -1006,7 +1074,7 @@ describe("Scenario: Publication SHA-256 integrity across all adapters", () => {
 
       const pubResult = await adapter.buildPublication({
         document: docRef,
-        source: "test source content for hash verification",
+        source: publicationSourceByType[fileType],
         targetFormat: "json_export",
       });
 
@@ -1102,7 +1170,7 @@ describe("Scenario: OCSF adapter draft from tool/prompt events", () => {
 // ---------------------------------------------------------------------------
 
 describe("Scenario: YARA adapter byte-level evidence pipeline", () => {
-  it("builds YARA-specific byte evidence items from binary artifact events", () => {
+  it("builds YARA-specific byte evidence items from binary artifact events and replays them in the lab", async () => {
     const events: AgentEvent[] = [
       makeBinaryArtifactEvent("/tmp/suspicious.exe", "4d5a9000 03000000 04000000 ffff0000"),
     ];
@@ -1128,8 +1196,23 @@ describe("Scenario: YARA adapter byte-level evidence pipeline", () => {
     expect(evidence.datasets.positive.length).toBeGreaterThan(0);
     // The first positive item should be a bytes item since we have binary content
     expect(evidence.datasets.positive[0].kind).toBe("bytes");
+    if (evidence.datasets.positive[0].kind !== "bytes") {
+      throw new Error("Expected byte evidence for binary artifact seed");
+    }
+    expect(evidence.datasets.positive[0].encoding).toBe("hex");
     expect(evidence.documentId).toBe(docRef.documentId);
     expect(evidence.fileType).toBe("yara_rule");
+
+    const draft = yaraAdapter.buildDraft(seed);
+    const labResult = await yaraAdapter.runLab({
+      document: docRef,
+      evidencePack: evidence,
+      adapterRunConfig: { yaraSource: draft.source },
+    });
+
+    expect(labResult.run.summary.totalCases).toBeGreaterThan(0);
+    expect(labResult.run.summary.failed).toBe(0);
+    expect(labResult.run.explainability.length).toBeGreaterThan(0);
   });
 });
 

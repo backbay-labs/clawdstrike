@@ -40,6 +40,14 @@ export interface SigmaConversionResult {
   fieldMappings: SigmaFieldMapping[];
 }
 
+export interface SigmaQueryConversionResult {
+  success: boolean;
+  output: string | null;
+  converterId: string;
+  converterVersion: string;
+  diagnostics: SigmaConversionDiagnostic[];
+}
+
 // ---- Constants ----
 
 const CONVERTER_VERSION = "1.0.0";
@@ -368,6 +376,141 @@ function extractSelections(
   }
 
   return selections;
+}
+
+type QueryTarget = "spl" | "kql" | "esql" | "json_export";
+
+function escapeDoubleQuoted(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+function selectionFieldToQueryClause(
+  field: string,
+  value: string,
+  modifier: string | undefined,
+  target: QueryTarget,
+): string {
+  const escaped = escapeDoubleQuoted(value);
+
+  switch (target) {
+    case "spl":
+      if (modifier === "contains") return `${field}="*${escaped}*"`;
+      if (modifier === "startswith") return `${field}="${escaped}*"`;
+      if (modifier === "endswith") return `${field}="*${escaped}"`;
+      if (modifier === "re") return `match(${field}, "${escaped}")`;
+      return `${field}="${escaped}"`;
+    case "kql":
+      if (modifier === "contains") return `${field} contains "${escaped}"`;
+      if (modifier === "startswith") return `${field} startswith "${escaped}"`;
+      if (modifier === "endswith") return `${field} endswith "${escaped}"`;
+      if (modifier === "re") return `${field} matches regex @"${escaped}"`;
+      return `${field} =~ "${escaped}"`;
+    case "esql":
+      if (modifier === "contains") return `${field} like "*${escaped}*"`;
+      if (modifier === "startswith") return `${field} like "${escaped}*"`;
+      if (modifier === "endswith") return `${field} like "*${escaped}"`;
+      if (modifier === "re") return `${field} rlike "${escaped}"`;
+      return `${field} == "${escaped}"`;
+    default:
+      return `${field}="${escaped}"`;
+  }
+}
+
+function buildSelectionQueries(
+  detection: Record<string, unknown>,
+  target: QueryTarget,
+): string[] {
+  const selections = extractSelections(detection);
+  return selections.flatMap((selection) => {
+    const clauses = Object.entries(selection.fields).map(([key, rawValue]) => {
+      const { field, modifiers } = parseFieldKey(key);
+      const values = normalizeValues(rawValue);
+      const operator = modifiers.find((modifier) =>
+        ["contains", "startswith", "endswith", "re"].includes(modifier),
+      );
+
+      const disjunction = values.map((value) =>
+        selectionFieldToQueryClause(field, value, operator, target),
+      );
+
+      if (disjunction.length === 1) {
+        return disjunction[0];
+      }
+
+      const joiner = target === "spl" ? " OR " : " or ";
+      return `(${disjunction.join(joiner)})`;
+    });
+
+    if (clauses.length === 0) {
+      return [];
+    }
+
+    const joiner = target === "spl" ? " AND " : " and ";
+    return [`(${clauses.join(joiner)})`];
+  });
+}
+
+export function convertSigmaToQuery(
+  sigmaYaml: string,
+  target: QueryTarget,
+): SigmaQueryConversionResult {
+  const { rule, errors } = parseSigmaYaml(sigmaYaml);
+  const diagnostics = errors.map((message) => ({ severity: "error" as const, message }));
+
+  if (!rule) {
+    return {
+      success: false,
+      output: null,
+      converterId: `sigma-to-${target}`,
+      converterVersion: CONVERTER_VERSION,
+      diagnostics,
+    };
+  }
+
+  if (target === "json_export") {
+    return {
+      success: true,
+      output: JSON.stringify(rule, null, 2),
+      converterId: "sigma-to-json",
+      converterVersion: CONVERTER_VERSION,
+      diagnostics,
+    };
+  }
+
+  const queryBlocks = buildSelectionQueries(rule.detection as Record<string, unknown>, target);
+  if (queryBlocks.length === 0) {
+    return {
+      success: false,
+      output: null,
+      converterId: `sigma-to-${target}`,
+      converterVersion: CONVERTER_VERSION,
+      diagnostics: [
+        ...diagnostics,
+        {
+          severity: "error",
+          message: "Sigma rule has no convertible selection blocks",
+        },
+      ],
+    };
+  }
+
+  const whereJoiner = target === "spl" ? " OR " : " or ";
+  const whereClause = queryBlocks.join(whereJoiner);
+  const heading = `// ${rule.title}`;
+  const output =
+    target === "spl"
+      ? `${heading}\nsearch ${whereClause}`
+      : target === "kql"
+        ? `${heading}\n${whereClause}`
+        : `${heading}\nfrom logs | where ${whereClause}`;
+
+  return {
+    success: true,
+    output,
+    converterId: `sigma-to-${target}`,
+    converterVersion: CONVERTER_VERSION,
+    diagnostics,
+  };
 }
 
 // ---- Main conversion function ----

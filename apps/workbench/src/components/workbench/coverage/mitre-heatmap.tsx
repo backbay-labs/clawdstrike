@@ -116,6 +116,20 @@ function computeGapTechniques(gaps: CoverageGapCandidate[]): Map<string, Coverag
   return map;
 }
 
+function groupTechniquesByTactic(): Map<MitreTactic, MitreTechnique[]> {
+  const groups = new Map<MitreTactic, MitreTechnique[]>();
+  for (const tactic of MITRE_TACTICS) {
+    groups.set(tactic.id, []);
+  }
+  for (const tech of MITRE_TECHNIQUES) {
+    const arr = groups.get(tech.tactic);
+    if (arr) arr.push(tech);
+  }
+  return groups;
+}
+
+const TECHNIQUES_BY_TACTIC = groupTechniquesByTactic();
+
 
 // ---- Intensity helpers ----
 
@@ -197,19 +211,7 @@ export function MitreHeatmap({ tabs, inferredGaps, onDraftFromGap, onDismissGap 
     };
   }, [coverageMap, gapTechniqueMap]);
 
-  // Group techniques by tactic — deps intentionally empty because
-  // MITRE_TACTICS and MITRE_TECHNIQUES are module-level constants.
-  const techniquesByTactic = useMemo(() => {
-    const groups = new Map<MitreTactic, MitreTechnique[]>();
-    for (const tactic of MITRE_TACTICS) {
-      groups.set(tactic.id, []);
-    }
-    for (const tech of MITRE_TECHNIQUES) {
-      const arr = groups.get(tech.tactic);
-      if (arr) arr.push(tech);
-    }
-    return groups;
-  }, []);
+  const techniquesByTactic = TECHNIQUES_BY_TACTIC;
 
   const handleCellHover = useCallback(
     (techniqueId: string, e: React.MouseEvent) => {

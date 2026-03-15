@@ -90,8 +90,10 @@ function makeManifest(overrides: Partial<PublicationManifest> = {}): Publication
     outputHash: "def456",
     validationSnapshot: { valid: true, diagnosticCount: 0 },
     runSnapshot: null,
+    coverageSnapshot: null,
     converter: { id: "identity", version: "1.0.0" },
     signer: null,
+    provenance: null,
     ...overrides,
   };
 }

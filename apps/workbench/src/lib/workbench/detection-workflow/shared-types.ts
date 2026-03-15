@@ -117,6 +117,21 @@ export interface LabRun {
   };
 }
 
+// ---- Publication Provenance ----
+
+export interface PublicationCoverageSnapshot {
+  techniques: string[];
+  dataSources: string[];
+}
+
+export interface PublicationProvenance {
+  algorithm: "tauri_signed_receipt" | "browser_ecdsa_p256";
+  signature: string;
+  signedAt: string;
+  receiptHash: string;
+  signedReceipt: Record<string, unknown> | null;
+}
+
 // ---- Publication Manifest ----
 
 export type PublishTarget =
@@ -144,6 +159,7 @@ export interface PublicationManifest {
     labRunId: string;
     passed: boolean;
   } | null;
+  coverageSnapshot: PublicationCoverageSnapshot | null;
   converter: {
     id: string;
     version: string;
@@ -152,6 +168,7 @@ export interface PublicationManifest {
     publicKey: string;
     keyType: "persistent" | "ephemeral";
   } | null;
+  provenance: PublicationProvenance | null;
   receiptId?: string;
   exportPath?: string;
   deployResponse?: {

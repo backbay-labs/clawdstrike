@@ -38,7 +38,8 @@ import type {
 } from "@/lib/workbench/hunt-types";
 import type { Verdict, TestActionType } from "@/lib/workbench/types";
 import { useCoverageGaps } from "@/lib/workbench/detection-workflow/use-coverage-gaps";
-import type { CoverageGapInput } from "@/lib/workbench/detection-workflow/coverage-gap-engine";
+import type { CoverageGapInput, DocumentCoverageEntry } from "@/lib/workbench/detection-workflow/coverage-gap-engine";
+import type { CoverageGapCandidate } from "@/lib/workbench/detection-workflow/shared-types";
 import { CoverageGapCard } from "@/components/workbench/coverage/coverage-gap-card";
 
 
@@ -48,7 +49,13 @@ interface InvestigationWorkbenchProps {
   onCreateInvestigation: (investigation: Investigation) => void;
   onUpdateInvestigation: (id: string, updates: Partial<Investigation>) => void;
   onAddAnnotation: (investigationId: string, text: string) => void;
-  onDraftDetection?: (investigation: Investigation) => void;
+  onDraftDetection?: (
+    investigation: Investigation,
+    scopeEvents?: AgentEvent[],
+    selectedGap?: CoverageGapCandidate,
+  ) => void;
+  openDocumentCoverage?: DocumentCoverageEntry[];
+  publishedCoverage?: DocumentCoverageEntry[];
 }
 
 
@@ -188,6 +195,8 @@ export function InvestigationWorkbench({
   onUpdateInvestigation,
   onAddAnnotation,
   onDraftDetection,
+  openDocumentCoverage,
+  publishedCoverage,
 }: InvestigationWorkbenchProps) {
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
@@ -1111,7 +1120,16 @@ export function InvestigationWorkbench({
                         <div className="h-4 w-px bg-[#2d3240]/60" />
                         <button
                           data-testid="investigation-draft-detection"
-                          onClick={() => onDraftDetection(selectedCase)}
+                          onClick={() =>
+                            onDraftDetection(
+                              selectedCase,
+                              events.filter(
+                                (event) =>
+                                  selectedCase.eventIds.includes(event.id) ||
+                                  selectedCase.sessionIds.includes(event.sessionId),
+                              ),
+                            )
+                          }
                           className="flex items-center gap-1.5 rounded-md border border-[#7c9aef]/25 bg-[#7c9aef]/10 px-2.5 py-1 text-[10px] font-medium text-[#7c9aef] hover:bg-[#7c9aef]/20 transition-colors"
                         >
                           <IconShieldPlus size={12} stroke={1.5} />
@@ -1133,6 +1151,8 @@ export function InvestigationWorkbench({
               investigation={selectedCase}
               events={events}
               onDraftDetection={onDraftDetection}
+              openDocumentCoverage={openDocumentCoverage}
+              publishedCoverage={publishedCoverage}
             />
           )}
         </div>
@@ -1146,10 +1166,18 @@ function InvestigationCoverageGaps({
   investigation,
   events,
   onDraftDetection,
+  openDocumentCoverage,
+  publishedCoverage,
 }: {
   investigation: Investigation;
   events: AgentEvent[];
-  onDraftDetection?: (investigation: Investigation) => void;
+  onDraftDetection?: (
+    investigation: Investigation,
+    scopeEvents?: AgentEvent[],
+    selectedGap?: CoverageGapCandidate,
+  ) => void;
+  openDocumentCoverage?: DocumentCoverageEntry[];
+  publishedCoverage?: DocumentCoverageEntry[];
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -1168,14 +1196,17 @@ function InvestigationCoverageGaps({
     () => ({
       events: scopeEvents,
       investigations: [investigation],
+      openDocumentCoverage,
+      publishedCoverage,
     }),
-    [scopeEvents, investigation],
+    [investigation, openDocumentCoverage, publishedCoverage, scopeEvents],
   );
 
   const { gaps, dismiss, draftFromGap } = useCoverageGaps(gapInput, {
     onDraftFromGap: onDraftDetection
-      ? () => onDraftDetection(investigation)
+      ? (gap) => onDraftDetection(investigation, scopeEvents, gap)
       : undefined,
+    persistenceKey: `clawdstrike_gap_dismissals_investigation_${investigation.id}`,
   });
 
   if (gaps.length === 0) return null;

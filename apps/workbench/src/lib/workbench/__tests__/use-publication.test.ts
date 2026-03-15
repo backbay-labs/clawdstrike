@@ -31,8 +31,10 @@ function makeManifest(overrides: Partial<PublicationManifest> = {}): Publication
     outputHash: "def456",
     validationSnapshot: { valid: true, diagnosticCount: 0 },
     runSnapshot: null,
+    coverageSnapshot: null,
     converter: { id: "identity", version: "1.0.0" },
     signer: null,
+    provenance: null,
     ...overrides,
   };
 }
@@ -262,11 +264,11 @@ describe("getAvailableTargets", () => {
   it("returns correct targets for sigma_rule", () => {
     const targets = getAvailableTargets("sigma_rule");
     expect(targets).toContain("native_policy");
+    expect(targets).toContain("fleet_deploy");
     expect(targets).toContain("json_export");
     expect(targets).toContain("spl");
     expect(targets).toContain("kql");
     expect(targets).toContain("esql");
-    expect(targets).not.toContain("fleet_deploy");
   });
 
   it("returns json_export for yara_rule", () => {

@@ -28,15 +28,29 @@ import { linkReceiptToPublication } from "../detection-workflow/swarm-receipt-li
 // Mock the publication store for verifyPublishState tests
 // ---------------------------------------------------------------------------
 
-const mockGetManifest = vi.fn();
-const mockInit = vi.fn().mockResolvedValue(undefined);
+const {
+  mockGetManifest,
+  mockGetOutputContent,
+  mockInit,
+  mockVerifyPublicationProvenance,
+} = vi.hoisted(() => ({
+  mockGetManifest: vi.fn(),
+  mockGetOutputContent: vi.fn(),
+  mockInit: vi.fn().mockResolvedValue(undefined),
+  mockVerifyPublicationProvenance: vi.fn(),
+}));
 
 vi.mock("../detection-workflow/publication-store", () => ({
   getPublicationStore: () => ({
     init: mockInit,
     getManifest: mockGetManifest,
+    getOutputContent: mockGetOutputContent,
   }),
   PublicationStore: vi.fn(),
+}));
+
+vi.mock("../detection-workflow/publication-provenance", () => ({
+  verifyPublicationProvenance: mockVerifyPublicationProvenance,
 }));
 
 // ---------------------------------------------------------------------------
@@ -118,16 +132,18 @@ function makeManifest(overrides?: Partial<PublicationManifest>): PublicationMani
     sourceFileType: "sigma_rule",
     target: "native_policy",
     createdAt: "2026-03-15T10:00:00Z",
-    sourceHash: "sha256:src123",
-    outputHash: "sha256:out456",
+    sourceHash: "a".repeat(64),
+    outputHash: "31d48aa78a90ae82944d48a5f7f55e9a7c7a6ef8280b09c2f76262abace49e65",
     validationSnapshot: { valid: true, diagnosticCount: 0 },
     runSnapshot: {
       evidencePackId: "ep-001",
       labRunId: "lr-001",
       passed: true,
     },
+    coverageSnapshot: null,
     converter: { id: "sigma-to-policy", version: "1.0.0" },
     signer: null,
+    provenance: null,
     ...overrides,
   };
 }
@@ -267,7 +283,9 @@ describe("createPublicationNode", () => {
 describe("verifyPublishState", () => {
   beforeEach(() => {
     mockGetManifest.mockReset();
+    mockGetOutputContent.mockReset().mockResolvedValue("published output for tests");
     mockInit.mockReset().mockResolvedValue(undefined);
+    mockVerifyPublicationProvenance.mockReset().mockResolvedValue({ valid: true });
   });
 
   it("accepts nodes in draft state", async () => {

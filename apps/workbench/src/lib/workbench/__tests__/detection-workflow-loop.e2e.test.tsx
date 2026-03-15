@@ -1,6 +1,6 @@
 import "fake-indexeddb/auto";
 import React from "react";
-import { act, render, waitFor } from "@testing-library/react";
+import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import "../detection-workflow/index";
 import { MultiPolicyProvider, useMultiPolicy } from "../multi-policy-store";
@@ -31,11 +31,22 @@ interface HarnessSnapshot {
   canPublish: boolean;
   publishManifestCount: number;
   publishGateOpen: boolean;
+  latestManifestId?: string;
   draftFromEvents(events: AgentEvent[]): Promise<void>;
   executeRun(pack: EvidencePack, source: string): Promise<unknown>;
-  publish(source: string, evidencePackId: string, labRunId: string): Promise<{
+  publish(
+    source: string,
+    evidencePackId: string,
+    labRunId: string,
+    targetFormat?: "native_policy" | "json_export" | "fleet_deploy",
+  ): Promise<{
     success: boolean;
-    manifest?: { id: string; outputHash: string };
+    manifest?: {
+      id: string;
+      outputHash: string;
+      signer: { publicKey: string; keyType: "persistent" | "ephemeral" } | null;
+      provenance: object | null;
+    };
     outputContent?: string;
     error?: string;
   }>;
@@ -55,6 +66,29 @@ function makeShellCommandEvent(target: string, overrides: Partial<AgentEvent> = 
     policyVersion: "1.0.0",
     flags: [],
     anomalyScore: 0.9,
+    ...overrides,
+  };
+}
+
+function makeBinaryArtifactEvent(
+  target: string,
+  hexContent: string,
+  overrides: Partial<AgentEvent> = {},
+): AgentEvent {
+  return {
+    id: crypto.randomUUID(),
+    timestamp: new Date().toISOString(),
+    agentId: "agent-1",
+    agentName: "Test Agent",
+    sessionId: "session-1",
+    actionType: "file_access",
+    target,
+    content: hexContent,
+    verdict: "deny",
+    guardResults: [],
+    policyVersion: "1.0.0",
+    flags: [],
+    anomalyScore: 0.92,
     ...overrides,
   };
 }
@@ -91,12 +125,18 @@ function Harness({
       canPublish: publication.canPublish,
       publishManifestCount: publication.manifests.length,
       publishGateOpen: publication.publishGateStatus.gateOpen,
+      latestManifestId: publication.latestManifest?.id,
       draftFromEvents: draftDetection.draftFromEvents,
       executeRun: labExecution.executeRun,
-      publish: async (source: string, evidencePackId: string, labRunId: string) =>
+      publish: async (
+        source: string,
+        evidencePackId: string,
+        labRunId: string,
+        targetFormat = "native_policy",
+      ) =>
         publication.publish({
           source,
-          targetFormat: "native_policy",
+          targetFormat,
           evidencePackId,
           labRunId,
         }),
@@ -135,10 +175,11 @@ describe("detection workflow loop", () => {
   });
 
   afterEach(async () => {
+    cleanup();
     await resetWorkflowState();
   });
 
-  it("runs hunt -> draft -> evidence -> lab -> publish end to end for sigma", async () => {
+  it("runs hunt -> draft -> evidence -> lab -> publish end to end for sigma and yara", async () => {
     let snapshot: HarnessSnapshot | null = null;
 
     render(
@@ -171,15 +212,15 @@ describe("detection workflow loop", () => {
       expect(snapshot!.selectedPackId).toBeTruthy();
     });
 
-    const starterPack = snapshot!.evidencePacks.find((pack) => pack.id === snapshot!.selectedPackId);
-    expect(starterPack).toBeDefined();
-    expect(starterPack!.documentId).toBe(snapshot!.activeDocumentId);
-    expect(starterPack!.fileType).toBe("sigma_rule");
-    expect(starterPack!.datasets.positive.length).toBe(3);
-    expect(starterPack!.datasets.negative.length).toBe(1);
+    const sigmaPack = snapshot!.evidencePacks.find((pack) => pack.id === snapshot!.selectedPackId);
+    expect(sigmaPack).toBeDefined();
+    expect(sigmaPack!.documentId).toBe(snapshot!.activeDocumentId);
+    expect(sigmaPack!.fileType).toBe("sigma_rule");
+    expect(sigmaPack!.datasets.positive.length).toBe(3);
+    expect(sigmaPack!.datasets.negative.length).toBe(1);
 
     await act(async () => {
-      await snapshot!.executeRun(starterPack!, snapshot!.activeTabYaml);
+      await snapshot!.executeRun(sigmaPack!, snapshot!.activeTabYaml);
     });
 
     await waitFor(() => {
@@ -190,18 +231,24 @@ describe("detection workflow loop", () => {
       expect(snapshot!.lastRun!.summary.failed).toBe(0);
     });
 
-    let publishResult:
+    let sigmaPublishResult:
       | Awaited<ReturnType<HarnessSnapshot["publish"]>>
       | undefined;
     await act(async () => {
-      publishResult = await snapshot!.publish(snapshot!.activeTabYaml, starterPack!.id, snapshot!.lastRun!.id);
+      sigmaPublishResult = await snapshot!.publish(
+        snapshot!.activeTabYaml,
+        sigmaPack!.id,
+        snapshot!.lastRun!.id,
+      );
     });
 
-    expect(publishResult?.success).toBe(true);
-    expect(publishResult?.error).toBeUndefined();
-    expect(publishResult?.manifest).toBeDefined();
-    expect(publishResult?.outputContent).toBeTruthy();
-    expect(publishResult?.outputContent).not.toBe(snapshot!.activeTabYaml);
+    expect(sigmaPublishResult?.success).toBe(true);
+    expect(sigmaPublishResult?.error).toBeUndefined();
+    expect(sigmaPublishResult?.manifest).toBeDefined();
+    expect(sigmaPublishResult?.manifest?.signer).not.toBeNull();
+    expect(sigmaPublishResult?.manifest?.provenance).not.toBeNull();
+    expect(sigmaPublishResult?.outputContent).toBeTruthy();
+    expect(sigmaPublishResult?.outputContent).not.toBe(snapshot!.activeTabYaml);
 
     await waitFor(() => {
       expect(snapshot!.canPublish).toBe(true);
@@ -211,9 +258,9 @@ describe("detection workflow loop", () => {
 
     const publicationStore = getPublicationStore();
     await publicationStore.init();
-    const persistedOutput = await publicationStore.getOutputContent(publishResult!.manifest!.id);
+    const persistedOutput = await publicationStore.getOutputContent(sigmaPublishResult!.manifest!.id);
 
-    expect(persistedOutput).toBe(publishResult!.outputContent);
+    expect(persistedOutput).toBe(sigmaPublishResult!.outputContent);
     expect(persistedOutput).toContain("version:");
     expect(persistedOutput).toContain("guards:");
 
@@ -227,6 +274,69 @@ describe("detection workflow loop", () => {
     await runStore.init();
     const persistedRuns = await runStore.getRunsForDocument(snapshot!.activeDocumentId!);
     expect(persistedRuns).toHaveLength(1);
-    expect(persistedRuns[0].evidencePackId).toBe(starterPack!.id);
+    expect(persistedRuns[0].evidencePackId).toBe(sigmaPack!.id);
+
+    const yaraEvents = [
+      makeBinaryArtifactEvent("/tmp/dropper.exe", "4d5a90000300000004000000ffff0000"),
+      makeBinaryArtifactEvent("/tmp/payload.dll", "4d5a9000900090004d5a9000ffff0000"),
+    ];
+
+    await act(async () => {
+      await snapshot!.draftFromEvents(yaraEvents);
+    });
+
+    await waitFor(() => {
+      expect(snapshot!.activeTabFileType).toBe("yara_rule");
+      expect(snapshot!.activeValidationValid).toBe(true);
+      expect(snapshot!.evidencePacks.length).toBe(1);
+    });
+
+    const yaraPack = snapshot!.evidencePacks.find((pack) => pack.id === snapshot!.selectedPackId);
+    expect(yaraPack).toBeDefined();
+    expect(yaraPack!.fileType).toBe("yara_rule");
+    expect(yaraPack!.datasets.positive[0]?.kind).toBe("bytes");
+
+    await act(async () => {
+      await snapshot!.executeRun(yaraPack!, snapshot!.activeTabYaml);
+    });
+
+    await waitFor(() => {
+      expect(snapshot!.lastRun).not.toBeNull();
+      expect(snapshot!.runHistoryLength).toBeGreaterThanOrEqual(1);
+      expect(snapshot!.lastRun!.summary.totalCases).toBeGreaterThan(0);
+      expect(snapshot!.lastRun!.explainability.length).toBeGreaterThan(0);
+    });
+
+    let yaraPublishResult:
+      | Awaited<ReturnType<HarnessSnapshot["publish"]>>
+      | undefined;
+    await act(async () => {
+      yaraPublishResult = await snapshot!.publish(
+        snapshot!.activeTabYaml,
+        yaraPack!.id,
+        snapshot!.lastRun!.id,
+        "json_export",
+      );
+    });
+
+    expect(yaraPublishResult?.success).toBe(true);
+    expect(yaraPublishResult?.manifest).toBeDefined();
+    expect(yaraPublishResult?.manifest?.signer).not.toBeNull();
+    expect(yaraPublishResult?.manifest?.provenance).not.toBeNull();
+    expect(yaraPublishResult?.outputContent).toContain("\"kind\": \"yara_rule\"");
+
+    const publicationStoreAfterYara = getPublicationStore();
+    await publicationStoreAfterYara.init();
+    const persistedYaraOutput = await publicationStoreAfterYara.getOutputContent(
+      yaraPublishResult!.manifest!.id,
+    );
+    const persistedYaraManifest = await publicationStoreAfterYara.getManifest(
+      yaraPublishResult!.manifest!.id,
+    );
+
+    expect(persistedYaraOutput).toBe(yaraPublishResult!.outputContent);
+    expect(persistedYaraManifest?.target).toBe("json_export");
+    expect(persistedYaraManifest?.signer).not.toBeNull();
+    expect(persistedYaraManifest?.provenance).not.toBeNull();
   });
 });

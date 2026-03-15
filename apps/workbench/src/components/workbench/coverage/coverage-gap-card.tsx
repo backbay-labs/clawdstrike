@@ -34,6 +34,10 @@ interface CoverageGapCardProps {
   compact?: boolean;
 }
 
+function isRegisteredFileType(format: string): format is FileType {
+  return format in FILE_TYPE_REGISTRY;
+}
+
 export function CoverageGapCard({
   gap,
   onDraft,
@@ -130,7 +134,9 @@ export function CoverageGapCard({
       {/* Suggested formats */}
       {gap.suggestedFormats.length > 0 && (
         <div className="flex flex-wrap gap-1 mb-2">
-          {gap.suggestedFormats.map((format) => {
+          {gap.suggestedFormats
+            .filter(isRegisteredFileType)
+            .map((format) => {
             const descriptor = FILE_TYPE_REGISTRY[format];
             return (
               <span
@@ -144,7 +150,7 @@ export function CoverageGapCard({
                 {descriptor.shortLabel}
               </span>
             );
-          })}
+            })}
         </div>
       )}
 

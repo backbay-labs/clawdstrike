@@ -12,7 +12,8 @@ import type { PublicationManifest, PublishTarget, LabRun } from "./shared-types"
 import type { PublicationRequest } from "./execution-types";
 import { getAdapter, hasAdapter } from "./adapters";
 import { getPublicationStore } from "./publication-store";
-import { getLabRunStore } from "./lab-run-store";
+import { extractDocumentCoverage } from "./coverage-projection";
+import { signPublicationOutput } from "./publication-provenance";
 
 // ---- SHA-256 ----
 
@@ -73,7 +74,7 @@ export function getAvailableTargets(fileType: FileType): PublishTarget[] {
     case "clawdstrike_policy":
       return ["native_policy", "fleet_deploy"];
     case "sigma_rule":
-      return ["native_policy", "json_export", "spl", "kql", "esql"];
+      return ["native_policy", "fleet_deploy", "json_export", "spl", "kql", "esql"];
     case "yara_rule":
       return ["json_export"];
     case "ocsf_event":
@@ -99,6 +100,7 @@ export function usePublication(
 ): UsePublicationReturn {
   const [manifests, setManifests] = useState<PublicationManifest[]>([]);
   const [loading, setLoading] = useState(false);
+  const [currentSourceHash, setCurrentSourceHash] = useState<string | null>(null);
   const storeInitialized = useRef(false);
 
   const canPublish = fileType != null && hasAdapter(fileType);
@@ -136,6 +138,24 @@ export function usePublication(
     }
   }, [documentId, refreshManifests]);
 
+  useEffect(() => {
+    if (!options?.currentSource) {
+      setCurrentSourceHash(null);
+      return;
+    }
+
+    let cancelled = false;
+    void sha256Hex(options.currentSource).then((hash) => {
+      if (!cancelled) {
+        setCurrentSourceHash(hash);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [options?.currentSource]);
+
   // ---- Derived state ----
 
   const latestManifest = manifests.length > 0 ? manifests[0] : null;
@@ -147,13 +167,10 @@ export function usePublication(
       lastRun === undefined ? null : lastRun === null ? null : lastRun.summary.failed === 0;
 
     // Source hash changed check
-    let sourceHashChanged = false;
-    if (latestManifest && options?.currentSource) {
-      // We do a sync comparison; the actual SHA-256 is async but we need a
-      // synchronous status. We compare against the latest manifest's sourceHash
-      // on publish, but for the gate indicator we use a simpler content check.
-      sourceHashChanged = true; // Assume changed unless we can prove otherwise
-    }
+    const sourceHashChanged =
+      latestManifest != null &&
+      currentSourceHash != null &&
+      latestManifest.sourceHash !== currentSourceHash;
 
     const reasons: string[] = [];
     if (!validationPassed) reasons.push("Validation has errors");
@@ -168,7 +185,7 @@ export function usePublication(
       gateOpen,
       reasons,
     };
-  }, [options?.validationValid, options?.lastLabRun, options?.currentSource, latestManifest]);
+  }, [currentSourceHash, latestManifest, options?.lastLabRun, options?.validationValid]);
 
   // ---- Publish ----
 
@@ -227,11 +244,22 @@ export function usePublication(
           };
         }
 
+        const provenance = await signPublicationOutput(
+          buildResult.outputHash,
+          documentId,
+          request.targetFormat,
+        );
+        const coverageSnapshot = extractDocumentCoverage(fileType, request.source);
+
         // Build the full manifest
         const manifest: PublicationManifest = {
           ...buildResult.manifest,
           id: crypto.randomUUID(),
           createdAt: new Date().toISOString(),
+          coverageSnapshot,
+          signer: provenance.signer,
+          provenance: provenance.provenance,
+          receiptId: provenance.receiptId,
         };
 
         // Persist to store

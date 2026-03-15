@@ -11,6 +11,8 @@ import { useFleetConnection } from "@/lib/workbench/use-fleet-connection";
 import { fetchAuditEvents } from "@/lib/workbench/fleet-client";
 import { useMultiPolicy } from "@/lib/workbench/multi-policy-store";
 import { useDraftDetection } from "@/lib/workbench/detection-workflow/use-draft-detection";
+import { buildOpenDocumentCoverage } from "@/lib/workbench/detection-workflow/coverage-projection";
+import { usePublishedCoverage } from "@/lib/workbench/detection-workflow/use-published-coverage";
 import {
   IconActivity,
   IconChartBar,
@@ -119,9 +121,10 @@ export function HuntLayout() {
   const { connection, getAuthenticatedConnection } = useFleetConnection();
   const connected = connection.connected;
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const publishedCoverage = usePublishedCoverage();
 
   // Draft detection hook — bridges Hunt -> Editor
-  const { multiDispatch } = useMultiPolicy();
+  const { multiDispatch, tabs } = useMultiPolicy();
   const {
     draftFromEvents,
     draftFromInvestigation,
@@ -206,6 +209,11 @@ export function HuntLayout() {
   const baselinesArray = useMemo(
     () => Array.from(baselines.values()),
     [baselines],
+  );
+
+  const openDocumentCoverage = useMemo(
+    () => buildOpenDocumentCoverage(tabs),
+    [tabs],
   );
 
   return (
@@ -308,6 +316,8 @@ export function HuntLayout() {
                 ),
               );
             }}
+            openDocumentCoverage={openDocumentCoverage}
+            publishedCoverage={publishedCoverage}
           />
         )}
 
@@ -317,6 +327,8 @@ export function HuntLayout() {
             events={events}
             onPatternsChange={setPatterns}
             onDraftDetection={draftFromPattern}
+            openDocumentCoverage={openDocumentCoverage}
+            publishedCoverage={publishedCoverage}
           />
         )}
       </div>

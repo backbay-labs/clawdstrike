@@ -6,6 +6,7 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
 import {
   IconX,
@@ -28,7 +29,10 @@ import type { EvidencePack, LabRun, PublicationManifest } from "@/lib/workbench/
 import { getEvidencePackStore } from "@/lib/workbench/detection-workflow/evidence-pack-store";
 import { getLabRunStore } from "@/lib/workbench/detection-workflow/lab-run-store";
 import { getPublicationStore } from "@/lib/workbench/detection-workflow/publication-store";
-import { countDatasetItems } from "@/lib/workbench/detection-workflow/swarm-detection-nodes";
+import {
+  countDatasetItems,
+  verifyPublishState,
+} from "@/lib/workbench/detection-workflow/swarm-detection-nodes";
 
 // ---------------------------------------------------------------------------
 // Constants — restrained palette matching node components
@@ -157,7 +161,7 @@ function InspectorContent({
 function InspectorFooter({ nodeType, data }: { nodeType: SwarmNodeType; data?: SwarmBoardNodeData }) {
   // Detection artifact footers
   if (data?.artifactKind) {
-    return <DetectionArtifactFooter artifactKind={data.artifactKind} />;
+    return <DetectionArtifactFooter data={data} />;
   }
 
   switch (nodeType) {
@@ -205,40 +209,108 @@ function InspectorFooter({ nodeType, data }: { nodeType: SwarmNodeType; data?: S
   }
 }
 
-function DetectionArtifactFooter({ artifactKind }: { artifactKind: DetectionArtifactKind }) {
+function downloadTextFile(filename: string, content: string): void {
+  const blob = new Blob([content], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
+}
+
+function DetectionArtifactFooter({ data }: { data: SwarmBoardNodeData }) {
+  const navigate = useNavigate();
+  const { selectedNode } = useSwarmBoard();
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+
+  const handleViewManifest = useCallback(async () => {
+    if (!data.publicationId) return;
+    const store = getPublicationStore();
+    await store.init();
+    const manifest = await store.getManifest(data.publicationId);
+    if (!manifest) {
+      setStatusMessage("Publication manifest unavailable");
+      return;
+    }
+    downloadTextFile(`publication-${manifest.id}.json`, JSON.stringify(manifest, null, 2));
+    setStatusMessage("Downloaded publication manifest");
+  }, [data.publicationId]);
+
+  const handleVerify = useCallback(async () => {
+    if (!selectedNode) return;
+    const verification = await verifyPublishState(selectedNode);
+    setStatusMessage(verification.valid ? "Publish state verified" : verification.reason ?? "Verification failed");
+  }, [selectedNode]);
+
+  const handleOpenOutput = useCallback(async () => {
+    if (!data.publicationId) return;
+    const store = getPublicationStore();
+    await store.init();
+    const output = await store.getOutputContent(data.publicationId);
+    if (!output) {
+      setStatusMessage("Publication output unavailable");
+      return;
+    }
+    downloadTextFile(`publication-${data.publicationId}.txt`, output);
+    setStatusMessage("Downloaded publication output");
+  }, [data.publicationId]);
+
+  const artifactKind = data.artifactKind;
+
   switch (artifactKind) {
     case "detection_rule":
       return (
-        <div className="flex items-center gap-3 px-4 py-2.5 border-t border-[#0e1018] shrink-0">
-          <TextAction label="Open in Editor" />
-          <TextAction label="Run Lab" />
+        <div className="px-4 py-2.5 border-t border-[#0e1018] shrink-0">
+          <div className="flex items-center gap-3">
+            <TextAction label="Open in Editor" onClick={() => navigate("/editor")} />
+            <TextAction label="Run Lab" onClick={() => navigate("/lab")} />
+          </div>
         </div>
       );
     case "evidence_pack":
       return (
-        <div className="flex items-center gap-3 px-4 py-2.5 border-t border-[#0e1018] shrink-0">
-          <TextAction label="Edit Pack" />
-          <TextAction label="Run Lab" />
+        <div className="px-4 py-2.5 border-t border-[#0e1018] shrink-0">
+          <div className="flex items-center gap-3">
+            <TextAction label="Edit Pack" onClick={() => navigate("/editor")} />
+            <TextAction label="Run Lab" onClick={() => navigate("/lab")} />
+          </div>
         </div>
       );
     case "lab_run":
       return (
-        <div className="flex items-center gap-3 px-4 py-2.5 border-t border-[#0e1018] shrink-0">
-          <TextAction label="View in Lab" />
-          <TextAction label="Compare" />
+        <div className="px-4 py-2.5 border-t border-[#0e1018] shrink-0">
+          <div className="flex items-center gap-3">
+            <TextAction label="View in Lab" onClick={() => navigate("/lab")} />
+            <TextAction label="Open in Editor" onClick={() => navigate("/editor")} />
+          </div>
         </div>
       );
     case "publication_manifest":
       return (
-        <div className="flex items-center gap-3 px-4 py-2.5 border-t border-[#0e1018] shrink-0">
-          <TextAction label="View Manifest" />
-          <TextAction label="Verify" />
+        <div className="px-4 py-2.5 border-t border-[#0e1018] shrink-0">
+          <div className="flex items-center gap-3">
+            <TextAction label="View Manifest" onClick={() => void handleViewManifest()} />
+            <TextAction label="Verify" onClick={() => void handleVerify()} />
+            <TextAction label="Open Output" onClick={() => void handleOpenOutput()} />
+          </div>
+          {statusMessage && (
+            <p className="mt-1 text-[8px] font-mono text-[#6f7f9a]">{statusMessage}</p>
+          )}
         </div>
       );
     case "conversion_output":
       return (
-        <div className="flex items-center gap-3 px-4 py-2.5 border-t border-[#0e1018] shrink-0">
-          <TextAction label="Open Output" />
+        <div className="px-4 py-2.5 border-t border-[#0e1018] shrink-0">
+          <div className="flex items-center gap-3">
+            <TextAction label="Open Output" onClick={() => void handleOpenOutput()} />
+            <TextAction label="View Manifest" onClick={() => void handleViewManifest()} />
+          </div>
+          {statusMessage && (
+            <p className="mt-1 text-[8px] font-mono text-[#6f7f9a]">{statusMessage}</p>
+          )}
         </div>
       );
     default:
@@ -246,9 +318,10 @@ function DetectionArtifactFooter({ artifactKind }: { artifactKind: DetectionArti
   }
 }
 
-function TextAction({ label }: { label: string }) {
+function TextAction({ label, onClick }: { label: string; onClick?: () => void }) {
   return (
     <button
+      onClick={onClick}
       className="text-[9px] font-mono text-[#4a5568] hover:text-[#ece7dc] transition-colors"
       aria-label={label}
     >
@@ -888,6 +961,8 @@ function PublicationManifestInspector({ data }: { data: SwarmBoardNodeData }) {
         <InfoRow label="target" value={manifest.target} />
         <InfoRow label="converter" value={`${manifest.converter.id}@${manifest.converter.version}`} />
         <InfoRow label="receipt" value={manifest.receiptId} />
+        <InfoRow label="signer" value={manifest.signer?.keyType ?? "missing"} />
+        <InfoRow label="provenance" value={manifest.provenance?.algorithm ?? "missing"} />
       </div>
       <div className="mt-2" data-testid="publication-hashes">
         <div className="text-[7px] font-mono uppercase text-[#2a2f3a] mb-1" style={{ letterSpacing: "0.15em" }}>

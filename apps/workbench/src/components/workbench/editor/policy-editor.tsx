@@ -56,7 +56,15 @@ import { TestRunnerProvider, useTestRunnerOptional } from "@/lib/workbench/test-
 import { simulatePolicy } from "@/lib/workbench/simulation-engine";
 import { useLabExecution } from "@/lib/workbench/detection-workflow/use-lab-execution";
 import { useSwarmLaunch } from "@/lib/workbench/detection-workflow/use-swarm-launch";
+import { useDraftDetection } from "@/lib/workbench/detection-workflow/use-draft-detection";
+import { useEvidencePacks } from "@/lib/workbench/detection-workflow/use-evidence-packs";
+import { useCoverageGaps } from "@/lib/workbench/detection-workflow/use-coverage-gaps";
+import { buildOpenDocumentCoverage } from "@/lib/workbench/detection-workflow/coverage-projection";
+import { usePublishedCoverage } from "@/lib/workbench/detection-workflow/use-published-coverage";
+import { usePublication } from "@/lib/workbench/detection-workflow/use-publication";
+import type { CoverageGapCandidate } from "@/lib/workbench/detection-workflow/shared-types";
 import type { TestActionType, Verdict } from "@/lib/workbench/types";
+import type { AgentEvent } from "@/lib/workbench/hunt-types";
 
 
 interface QuickTest {
@@ -348,9 +356,34 @@ export function PolicyEditor() {
   const [explainOpen, setExplainOpen] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
   const isPolicyTab = activeTab ? isPolicyFileType(activeTab.fileType) : true;
+  const publishedCoverage = usePublishedCoverage();
+  const openDocumentCoverage = useMemo(
+    () => buildOpenDocumentCoverage(tabs),
+    [tabs],
+  );
 
   // Lab execution hook for explainability traces
   const labExecution = useLabExecution(activeTab?.documentId, activeTab?.fileType);
+  const {
+    packs: evidencePacks,
+    selectedPackId,
+  } = useEvidencePacks(activeTab?.documentId, activeTab?.fileType);
+  const { draftFromEvents } = useDraftDetection({
+    dispatch: multiDispatch,
+    onNavigateToEditor: () => navigate("/editor"),
+  });
+  const selectedEvidencePack = useMemo(
+    () =>
+      evidencePacks.find((pack) => pack.id === selectedPackId) ??
+      evidencePacks[0] ??
+      null,
+    [evidencePacks, selectedPackId],
+  );
+  const { latestManifest } = usePublication(activeTab?.documentId, activeTab?.fileType, {
+    validationValid: state.validation.valid && state.nativeValidation.valid !== false,
+    currentSource: state.yaml,
+    lastLabRun: labExecution.lastRun,
+  });
 
   // Swarm launch hook — creates detection nodes on the SwarmBoard
   const swarmLaunch = useSwarmLaunch({
@@ -359,8 +392,79 @@ export function PolicyEditor() {
     tabId: activeTab?.id,
     name: activeTab?.name,
     filePath: activeTab?.filePath,
+    evidencePack: selectedEvidencePack,
+    labRun: labExecution.lastRun,
+    publicationManifest: latestManifest,
     onNavigate: (path) => navigate(path),
   });
+
+  const coverageObservedEvents = useMemo<AgentEvent[]>(() => {
+    if (!activeTab) return [];
+
+    return evidencePacks.flatMap((pack) =>
+      [...pack.datasets.positive, ...pack.datasets.regression].flatMap((item) => {
+        if (item.kind !== "structured_event" && item.kind !== "ocsf_event") {
+          return [];
+        }
+
+        const payload = item.payload as Record<string, unknown>;
+        const actionType =
+          typeof payload.actionType === "string"
+            ? (payload.actionType as TestActionType)
+            : "CommandLine" in payload || "process" in payload
+              ? "shell_command"
+              : "TargetFilename" in payload || "file" in payload
+                ? "file_access"
+                : "DestinationHostname" in payload || "dst_endpoint" in payload
+                  ? "network_egress"
+                  : "file_access";
+        const target =
+          typeof payload.target === "string"
+            ? payload.target
+            : typeof payload.CommandLine === "string"
+              ? payload.CommandLine
+              : typeof payload.TargetFilename === "string"
+                ? payload.TargetFilename
+                : typeof payload.DestinationHostname === "string"
+                  ? payload.DestinationHostname
+                  : typeof payload.message === "string"
+                    ? payload.message
+                    : item.sourceEventId ?? item.id;
+
+        return [
+          {
+            id: item.id,
+            timestamp: new Date().toISOString(),
+            agentId: item.sourceEventId ?? activeTab.documentId,
+            agentName: "Evidence Pack",
+            sessionId: activeTab.documentId,
+            actionType,
+            target,
+            content: JSON.stringify(payload),
+            verdict: item.expected === "no_match" ? "allow" : "deny",
+            guardResults: [],
+            policyVersion: "detection-lab",
+            flags: [],
+          } satisfies AgentEvent,
+        ];
+      }),
+    );
+  }, [activeTab, evidencePacks]);
+
+  const coverageGaps = useCoverageGaps(
+    {
+      events: coverageObservedEvents,
+      openDocumentCoverage,
+      publishedCoverage,
+    },
+    {
+      onDraftFromGap: (gap: CoverageGapCandidate) => {
+        if (coverageObservedEvents.length === 0) return;
+        void draftFromEvents(coverageObservedEvents, gap);
+      },
+      persistenceKey: `clawdstrike_gap_dismissals_editor_${activeTab?.documentId ?? "none"}`,
+    },
+  );
 
   // Activate panels based on URL search params on mount
   useEffect(() => {
@@ -833,7 +937,12 @@ export function PolicyEditor() {
             ) : showCompare ? (
               <CompareLayout />
             ) : showCoverage ? (
-              <MitreHeatmap tabs={tabs} />
+              <MitreHeatmap
+                tabs={tabs}
+                inferredGaps={coverageGaps.gaps}
+                onDraftFromGap={coverageGaps.draftFromGap}
+                onDismissGap={coverageGaps.dismiss}
+              />
             ) : isPolicyTab && testRunnerOpen ? (
               <ResizablePanelGroup direction="vertical" className="h-full">
                 <ResizablePanel defaultSize={65} minSize={30}>

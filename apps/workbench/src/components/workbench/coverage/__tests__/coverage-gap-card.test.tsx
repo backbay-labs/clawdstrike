@@ -100,4 +100,17 @@ describe("CoverageGapCard", () => {
 
     expect(screen.getByText(rationale)).toBeDefined();
   });
+
+  it("ignores unknown suggested formats without crashing", () => {
+    render(
+      <CoverageGapCard
+        gap={makeGap({
+          suggestedFormats: ["sigma_rule", "unknown_format"] as unknown as CoverageGapCandidate["suggestedFormats"],
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Sigma")).toBeDefined();
+    expect(screen.queryByText("unknown_format")).toBeNull();
+  });
 });
