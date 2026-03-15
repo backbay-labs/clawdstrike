@@ -112,7 +112,7 @@ export function HintSettings() {
       {/* Hint groups */}
       {HINT_GROUPS.map((group, gi) => (
         <div key={group.label}>
-          <h3 className="text-[10px] font-mono font-semibold uppercase tracking-[0.12em] text-[#6f7f9a] mb-3 flex items-center gap-2">
+          <h3 className="text-[10px] font-mono font-semibold uppercase tracking-wider text-[#6f7f9a] mb-3 flex items-center gap-2">
             <span
               className="w-1.5 h-1.5 rounded-full shrink-0"
               style={{ backgroundColor: GROUP_COLORS[gi] }}

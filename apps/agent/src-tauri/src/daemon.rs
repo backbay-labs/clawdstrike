@@ -85,6 +85,8 @@ struct HushdRuntimeConfig {
     policy_path: Option<PathBuf>,
     ruleset: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    signing_key: Option<PathBuf>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     siem: Option<HushdRuntimeSiemConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     spine: Option<HushdRuntimeSpineConfig>,
@@ -1149,7 +1151,11 @@ impl AuditQueue {
     }
 
     /// Drain all queued events and upload them to hushd.
-    pub async fn flush(&self, daemon_url: &str, api_key: Option<&str>) -> Result<AuditFlushOutcome> {
+    pub async fn flush(
+        &self,
+        daemon_url: &str,
+        api_key: Option<&str>,
+    ) -> Result<AuditFlushOutcome> {
         // Serialize flushes so we never interleave drain/requeue in ways that can reorder or
         // duplicate audit uploads during rapid reconnects.
         let _flush_guard = self.flush_lock.lock().await;
@@ -1166,7 +1172,8 @@ impl AuditQueue {
             };
 
             if events.is_empty() {
-                self.persist_current_queue("after draining audit outbox").await;
+                self.persist_current_queue("after draining audit outbox")
+                    .await;
                 if dropped_invalid_total > 0 {
                     tracing::warn!(
                         dropped_invalid = dropped_invalid_total,
@@ -1174,7 +1181,10 @@ impl AuditQueue {
                     );
                 }
                 if outcome.accepted > 0 {
-                    tracing::info!(count = outcome.accepted, "Flushed queued audit events to daemon");
+                    tracing::info!(
+                        count = outcome.accepted,
+                        "Flushed queued audit events to daemon"
+                    );
                 }
                 return Ok(outcome);
             }
@@ -1386,6 +1396,7 @@ async fn write_runtime_config_file(
         std::fs::create_dir_all(&parent)
             .with_context(|| format!("Failed to create runtime config dir {:?}", parent))?;
 
+        let runtime_signing_key_path = materialize_runtime_signing_keypair(&parent, daemon_port)?;
         let runtime_keypair_path = if settings
             .as_ref()
             .and_then(|s| build_runtime_spine_config(s, None))
@@ -1400,6 +1411,7 @@ async fn write_runtime_config_file(
             listen,
             policy_path,
             ruleset: "default".to_string(),
+            signing_key: Some(runtime_signing_key_path),
             siem: settings.as_ref().and_then(build_runtime_siem_config),
             spine: settings
                 .as_ref()
@@ -1444,6 +1456,26 @@ async fn load_runtime_settings_for_config(
 
 fn runtime_enrollment_keypair_path(runtime_parent: &Path, daemon_port: u16) -> PathBuf {
     runtime_parent.join(format!("agent.runtime.{}.key", daemon_port))
+}
+
+fn runtime_signing_keypair_path(runtime_parent: &Path, daemon_port: u16) -> PathBuf {
+    runtime_parent.join(format!("hushd.signing.{}.key", daemon_port))
+}
+
+fn materialize_runtime_signing_keypair(runtime_parent: &Path, daemon_port: u16) -> Result<PathBuf> {
+    let key_path = runtime_signing_keypair_path(runtime_parent, daemon_port);
+    if key_path.exists() {
+        return Ok(key_path);
+    }
+
+    let keypair = hush_core::Keypair::generate();
+    let normalized = format!("{}\n", keypair.to_hex());
+    crate::security::fs::write_private_atomic(
+        &key_path,
+        normalized.as_bytes(),
+        "runtime hushd signing keypair",
+    )?;
+    Ok(key_path)
 }
 
 fn materialize_runtime_enrollment_keypair(
@@ -2510,10 +2542,10 @@ mod tests {
             release: Arc::new(Notify::new()),
         };
 
-        let app = Router::new().route(
-            "/api/v1/audit/batch",
-            post(
-                |State(gate): State<FlushGate>| async move {
+        let app = Router::new()
+            .route(
+                "/api/v1/audit/batch",
+                post(|State(gate): State<FlushGate>| async move {
                     gate.started.notify_one();
                     gate.release.notified().await;
                     Json(serde_json::json!({
@@ -2522,9 +2554,9 @@ mod tests {
                         "rejected": 0,
                         "accepted_ids": ["evt-1", "evt-2"]
                     }))
-                },
-            ),
-        ).with_state(gate.clone());
+                }),
+            )
+            .with_state(gate.clone());
 
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -2534,7 +2566,9 @@ mod tests {
 
         let queue_for_flush = Arc::clone(&queue);
         let flush_task = tokio::spawn(async move {
-            queue_for_flush.flush(&format!("http://{}", addr), None).await
+            queue_for_flush
+                .flush(&format!("http://{}", addr), None)
+                .await
         });
 
         gate.started.notified().await;
@@ -2880,32 +2914,33 @@ mod tests {
         let state = BatchState {
             calls: Arc::new(StdMutex::new(0)),
         };
-        let app = Router::new()
-            .route(
-                "/api/v1/audit/batch",
-                post(
-                    |State(state): State<BatchState>,
-                     Json(payload): Json<serde_json::Value>| async move {
-                        let len = payload
-                            .get("events")
-                            .and_then(|events| events.as_array())
-                            .map(|events| events.len())
-                            .unwrap_or(0);
-                        let mut calls = state.calls.lock().unwrap();
-                        *calls += 1;
-                        if *calls == 1 {
-                            Ok::<_, StatusCode>(Json(serde_json::json!({
-                                "accepted": len,
-                                "duplicates": 0,
-                                "rejected": 0
-                            })))
-                        } else {
-                            Err(StatusCode::INTERNAL_SERVER_ERROR)
-                        }
-                    },
-                ),
-            )
-            .with_state(state);
+        let app =
+            Router::new()
+                .route(
+                    "/api/v1/audit/batch",
+                    post(
+                        |State(state): State<BatchState>,
+                         Json(payload): Json<serde_json::Value>| async move {
+                            let len = payload
+                                .get("events")
+                                .and_then(|events| events.as_array())
+                                .map(|events| events.len())
+                                .unwrap_or(0);
+                            let mut calls = state.calls.lock().unwrap();
+                            *calls += 1;
+                            if *calls == 1 {
+                                Ok::<_, StatusCode>(Json(serde_json::json!({
+                                    "accepted": len,
+                                    "duplicates": 0,
+                                    "rejected": 0
+                                })))
+                            } else {
+                                Err(StatusCode::INTERNAL_SERVER_ERROR)
+                            }
+                        },
+                    ),
+                )
+                .with_state(state);
 
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -2966,33 +3001,34 @@ mod tests {
         let state = BatchState {
             calls: Arc::new(StdMutex::new(0)),
         };
-        let app = Router::new()
-            .route(
-                "/api/v1/audit/batch",
-                post(
-                    |State(state): State<BatchState>,
-                     Json(payload): Json<serde_json::Value>| async move {
-                        let len = payload
-                            .get("events")
-                            .and_then(|events| events.as_array())
-                            .map(|events| events.len())
-                            .unwrap_or(0);
-                        let mut calls = state.calls.lock().unwrap();
-                        *calls += 1;
-                        if *calls == 1 {
-                            Json(serde_json::json!({
-                                "accepted": len,
-                                "duplicates": 0,
-                                "rejected": 0
-                            }))
-                            .into_response()
-                        } else {
-                            "not-json".into_response()
-                        }
-                    },
-                ),
-            )
-            .with_state(state);
+        let app =
+            Router::new()
+                .route(
+                    "/api/v1/audit/batch",
+                    post(
+                        |State(state): State<BatchState>,
+                         Json(payload): Json<serde_json::Value>| async move {
+                            let len = payload
+                                .get("events")
+                                .and_then(|events| events.as_array())
+                                .map(|events| events.len())
+                                .unwrap_or(0);
+                            let mut calls = state.calls.lock().unwrap();
+                            *calls += 1;
+                            if *calls == 1 {
+                                Json(serde_json::json!({
+                                    "accepted": len,
+                                    "duplicates": 0,
+                                    "rejected": 0
+                                }))
+                                .into_response()
+                            } else {
+                                "not-json".into_response()
+                            }
+                        },
+                    ),
+                )
+                .with_state(state);
 
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();

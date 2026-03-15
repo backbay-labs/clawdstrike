@@ -268,10 +268,12 @@ function PatternRow({
   pattern,
   isSelected,
   onSelect,
+  onUpdateStatus,
 }: {
   pattern: HuntPattern;
   isSelected: boolean;
   onSelect: () => void;
+  onUpdateStatus?: (id: string, status: PatternStatus) => void;
 }) {
   const status = STATUS_CONFIG[pattern.status];
 
@@ -279,18 +281,22 @@ function PatternRow({
     <button
       onClick={onSelect}
       className={cn(
-        "w-full flex items-center gap-2 px-3 py-2.5 text-left transition-all duration-100",
+        "group w-full flex items-center gap-2 px-3 py-2.5 text-left transition-all duration-100",
         isSelected
           ? "bg-[#131721] border-l-2 border-l-[#d4a84b]"
           : "border-l-2 border-l-transparent hover:bg-[#131721]/50",
       )}
     >
+      {/* Status badge */}
       <span
-        className="text-[10px] shrink-0 leading-none"
-        style={{ color: status.color }}
-        title={status.label}
+        className="text-[8px] font-mono uppercase px-1.5 py-0.5 rounded border shrink-0"
+        style={{
+          color: status.color,
+          borderColor: `${status.color}33`,
+          backgroundColor: `${status.color}10`,
+        }}
       >
-        {status.icon}
+        {status.label}
       </span>
       <div className="flex-1 min-w-0">
         <div
@@ -302,6 +308,32 @@ function PatternRow({
           {pattern.name}
         </div>
       </div>
+
+      {/* Hover-revealed action buttons */}
+      {onUpdateStatus && pattern.status !== "promoted" && (
+        <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-150 flex items-center gap-1 shrink-0">
+          {pattern.status !== "confirmed" && (
+            <span
+              onClick={(e) => { e.stopPropagation(); onUpdateStatus(pattern.id, "confirmed"); }}
+              className="px-1.5 py-0.5 text-[8px] font-medium text-[#3dbf84]/70 hover:text-[#3dbf84] hover:bg-[#3dbf84]/10 rounded transition-colors cursor-pointer"
+              title="Confirm"
+            >
+              Confirm
+            </span>
+          )}
+          {pattern.status !== "dismissed" && (
+            <span
+              onClick={(e) => { e.stopPropagation(); onUpdateStatus(pattern.id, "dismissed"); }}
+              className="px-1.5 py-0.5 text-[8px] font-medium text-[#6f7f9a]/50 hover:text-[#6f7f9a] hover:bg-[#6f7f9a]/10 rounded transition-colors cursor-pointer"
+              title="Dismiss"
+            >
+              Dismiss
+            </span>
+          )}
+        </span>
+      )}
+
+      {/* Match count -- always visible as a subtle affordance */}
       <span className="text-[9px] font-mono text-[#6f7f9a]/70 shrink-0 px-1.5 py-0.5 rounded bg-[#0b0d13] border border-[#2d3240]/50">
         {pattern.matchCount}&times;
       </span>
@@ -476,7 +508,7 @@ function ExampleSessions({
             )
           }
           className={cn(
-            "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg border text-left transition-all duration-100",
+            "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg border text-left transition-all duration-150",
             selectedSession === s.sessionId
               ? "bg-[#d4a84b]/5 border-[#d4a84b]/20"
               : "bg-[#131721] border-[#2d3240]/40 hover:border-[#2d3240]",
@@ -848,6 +880,7 @@ export function PatternMining({
                   pattern={p}
                   isSelected={selectedId === p.id}
                   onSelect={() => setSelectedId(p.id)}
+                  onUpdateStatus={(id, status) => handleUpdatePattern(id, { status })}
                 />
               ))}
             </div>

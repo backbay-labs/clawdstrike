@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from "react";
+import { motion } from "motion/react";
 import {
   IconPlus,
   IconFileAnalytics,
@@ -340,7 +341,7 @@ export function InvestigationWorkbench({
           {/* Header */}
           <div className="shrink-0 px-3 py-3 border-b border-[#2d3240]/60">
             <div className="flex items-center justify-between">
-              <span className="text-[9px] font-semibold uppercase tracking-[0.1em] text-[#6f7f9a]/50">
+              <span className="text-[9px] font-semibold uppercase tracking-wider text-[#6f7f9a]/50">
                 Cases
               </span>
               <button
@@ -364,7 +365,7 @@ export function InvestigationWorkbench({
                   if (e.key === "Enter") handleCreateInvestigation();
                   if (e.key === "Escape") setShowNewCaseForm(false);
                 }}
-                placeholder="Investigation title..."
+                placeholder="e.g., Suspicious egress to unknown domain"
                 autoFocus
                 className="w-full rounded-md border border-[#2d3240] bg-[#05060a] px-2 py-1.5 text-[11px] text-[#ece7dc] placeholder:text-[#6f7f9a]/40 outline-none focus:border-[#d4a84b]/50 transition-colors"
               />
@@ -402,7 +403,7 @@ export function InvestigationWorkbench({
               <div className="px-4 py-8 text-center">
                 <IconFileAnalytics
                   size={20}
-                  className="mx-auto mb-2 text-[#6f7f9a]/20"
+                  className="mx-auto mb-2 text-[#6f7f9a]/50"
                 />
                 <p className="text-[10px] text-[#6f7f9a]/40 leading-relaxed">
                   No investigations yet. Escalate suspicious activity from the
@@ -488,7 +489,7 @@ export function InvestigationWorkbench({
                   <div className="shrink-0 px-5 py-3 border-b border-[#2d3240]/60 bg-[#0b0d13]">
                     <div className="flex items-center justify-between">
                       <div>
-                        <h2 className="text-[11px] font-semibold text-[#ece7dc] tracking-[-0.01em]">
+                        <h2 className="font-syne text-[11px] font-semibold text-[#ece7dc] tracking-[-0.01em]">
                           Session Timeline
                         </h2>
                         <div className="flex items-center gap-2 mt-0.5">
@@ -511,7 +512,7 @@ export function InvestigationWorkbench({
                             className={cn(
                               "flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium transition-colors",
                               sessionIndex === 0
-                                ? "text-[#6f7f9a]/20 cursor-not-allowed"
+                                ? "text-[#6f7f9a]/50 cursor-not-allowed"
                                 : "text-[#6f7f9a] hover:text-[#ece7dc] hover:bg-[#131721]",
                             )}
                           >
@@ -527,7 +528,7 @@ export function InvestigationWorkbench({
                             className={cn(
                               "flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium transition-colors",
                               sessionIndex >= sessionIds.length - 1
-                                ? "text-[#6f7f9a]/20 cursor-not-allowed"
+                                ? "text-[#6f7f9a]/50 cursor-not-allowed"
                                 : "text-[#6f7f9a] hover:text-[#ece7dc] hover:bg-[#131721]",
                             )}
                           >
@@ -546,7 +547,7 @@ export function InvestigationWorkbench({
                         <div className="flex flex-col items-center gap-3">
                           <IconAlertTriangle
                             size={20}
-                            className="text-[#6f7f9a]/20"
+                            className="text-[#6f7f9a]/50"
                           />
                           <p className="text-[11px] text-[#6f7f9a]/40 max-w-[260px] text-center">
                             No events in scope. Add events from the Activity
@@ -674,10 +675,10 @@ export function InvestigationWorkbench({
             {/* ------------------------------------------------------------- */}
             {/* RIGHT COLUMN: Receipt Inspector */}
             {/* ------------------------------------------------------------- */}
-            <div className="w-72 shrink-0 border-l border-[#2d3240]/60 flex flex-col bg-[#0b0d13]">
+            <div className="w-72 shrink-0 border-l border-[#2d3240]/60 flex flex-col bg-[#0b0d13] max-lg:hidden">
               {/* Header */}
               <div className="shrink-0 px-4 py-3 border-b border-[#2d3240]/60">
-                <span className="text-[9px] font-semibold uppercase tracking-[0.1em] text-[#6f7f9a]/50">
+                <span className="text-[9px] font-semibold uppercase tracking-wider text-[#6f7f9a]/50">
                   Receipt Inspector
                 </span>
               </div>
@@ -685,7 +686,13 @@ export function InvestigationWorkbench({
               {/* Content */}
               <div className="flex-1 overflow-y-auto px-4 py-3">
                 {selectedEvent ? (
-                  <div className="space-y-4">
+                  <motion.div
+                    key={selectedEvent.id}
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.15 }}
+                    className="space-y-4"
+                  >
                     {/* Event metadata */}
                     <section>
                       <SectionHeading>Event Metadata</SectionHeading>
@@ -924,7 +931,7 @@ export function InvestigationWorkbench({
                         </div>
                       </section>
                     )}
-                  </div>
+                  </motion.div>
                 ) : (
                   <div className="flex h-full items-center justify-center">
                     <div className="flex flex-col items-center gap-2">
@@ -956,7 +963,7 @@ export function InvestigationWorkbench({
               <div className="shrink-0 px-4 py-1.5 flex items-center justify-between border-b border-[#2d3240]/40">
                 <button
                   onClick={() => setAnnotationsExpanded((v) => !v)}
-                  className="flex items-center gap-1.5 text-[9px] font-semibold uppercase tracking-[0.1em] text-[#6f7f9a]/50 hover:text-[#ece7dc] transition-colors"
+                  className="flex items-center gap-1.5 text-[9px] font-semibold uppercase tracking-wider text-[#6f7f9a]/50 hover:text-[#ece7dc] transition-colors"
                 >
                   {annotationsExpanded ? (
                     <IconChevronDown size={10} stroke={2} />
@@ -1034,7 +1041,7 @@ export function InvestigationWorkbench({
                   <div className="shrink-0 px-4 py-2 border-t border-[#2d3240]/40 flex items-center gap-3">
                     {/* Verdict dropdown */}
                     <div className="flex items-center gap-1.5">
-                      <span className="text-[9px] uppercase tracking-[0.08em] text-[#6f7f9a]/40">
+                      <span className="text-[9px] uppercase tracking-wider text-[#6f7f9a]/40">
                         Verdict
                       </span>
                       <select
@@ -1176,7 +1183,7 @@ function AnnotationRow({ annotation }: { annotation: Annotation }) {
           <span className="text-[8px] text-[#6f7f9a]/30">
             {annotation.createdBy}
           </span>
-          <span className="text-[8px] text-[#6f7f9a]/20 font-mono">
+          <span className="text-[8px] text-[#6f7f9a]/50 font-mono">
             {formatTimestamp(annotation.createdAt)}
           </span>
         </div>
@@ -1187,7 +1194,7 @@ function AnnotationRow({ annotation }: { annotation: Annotation }) {
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return (
-    <h3 className="text-[9px] font-semibold uppercase tracking-[0.1em] text-[#6f7f9a]/50">
+    <h3 className="font-syne text-[9px] font-semibold uppercase tracking-wider text-[#6f7f9a]/50">
       {children}
     </h3>
   );

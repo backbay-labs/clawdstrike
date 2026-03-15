@@ -301,4 +301,73 @@ describe("BaseToolInterceptor", () => {
       },
     });
   });
+
+  it("uses broker executor replacement results without dispatch fallback", async () => {
+    const engine: PolicyEngineLike = {
+      evaluate: () => ({ status: "allow" }),
+    };
+
+    const interceptor = new BaseToolInterceptor(engine, {
+      broker: {
+        executor: {
+          execute: async ({ toolName, parameters }) => ({
+            replacementResult: {
+              brokered: true,
+              toolName,
+              echoed: parameters,
+            },
+          }),
+        },
+      },
+    });
+
+    const context = createSecurityContext({
+      contextId: "ctx-broker-1",
+      sessionId: "sess-broker-1",
+    });
+    const result = await interceptor.beforeExecute(
+      "responses.create",
+      { body: { model: "gpt-4.1-mini", input: "hi" } },
+      context,
+    );
+
+    expect(result.proceed).toBe(true);
+    expect(result.replacementResult).toEqual({
+      brokered: true,
+      toolName: "responses.create",
+      echoed: {
+        body: { model: "gpt-4.1-mini", input: "hi" },
+      },
+    });
+  });
+
+  it("fails closed when broker execution throws", async () => {
+    const engine: PolicyEngineLike = {
+      evaluate: () => ({ status: "allow" }),
+    };
+
+    const interceptor = new BaseToolInterceptor(engine, {
+      broker: {
+        executor: {
+          execute: async () => {
+            throw new Error("broker offline");
+          },
+        },
+      },
+    });
+
+    const context = createSecurityContext({
+      contextId: "ctx-broker-2",
+      sessionId: "sess-broker-2",
+    });
+    const result = await interceptor.beforeExecute(
+      "responses.create",
+      { body: { model: "gpt-4.1-mini", input: "hi" } },
+      context,
+    );
+
+    expect(result.proceed).toBe(false);
+    expect(result.decision.status).toBe("deny");
+    expect(result.decision.guard).toBe("broker");
+  });
 });

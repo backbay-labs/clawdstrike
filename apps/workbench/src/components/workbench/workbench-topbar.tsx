@@ -251,7 +251,7 @@ export function WorkbenchTopbar() {
             onClick={undo}
             disabled={!canUndo}
             className={btnIcon}
-            title="Undo (Cmd+Z)"
+            title="Undo (\u2318Z)"
           >
             <IconArrowBackUp size={14} />
           </button>
@@ -259,7 +259,7 @@ export function WorkbenchTopbar() {
             onClick={redo}
             disabled={!canRedo}
             className={btnIcon}
-            title="Redo (Cmd+Shift+Z)"
+            title="Redo (\u2318\u21e7Z)"
           >
             <IconArrowForwardUp size={14} />
           </button>
@@ -269,7 +269,7 @@ export function WorkbenchTopbar() {
         <button
           onClick={newPolicy}
           className={btnBase}
-          title="New policy"
+          title="New policy (\u2318N)"
         >
           <IconFilePlus size={14} />
           New
@@ -280,7 +280,7 @@ export function WorkbenchTopbar() {
           <button
             onClick={openFile}
             className={btnBase}
-            title="Open policy file"
+            title="Open policy file (\u2318O)"
           >
             <IconFolderOpen size={14} />
             Open
@@ -298,7 +298,7 @@ export function WorkbenchTopbar() {
             toast({ type: "success", title: "Policy saved" });
           }}
           className={btnBase}
-          title={desktop && state.filePath ? `Save to ${state.filePath}` : "Save policy"}
+          title={desktop && state.filePath ? `Save to ${state.filePath} (\u2318S)` : "Save policy (\u2318S)"}
         >
           <IconDeviceFloppy size={14} />
           Save
@@ -321,7 +321,7 @@ export function WorkbenchTopbar() {
           <button
             onClick={handleExport}
             className="h-[30px] px-3 py-1.5 text-xs font-medium text-[#ece7dc]/90 bg-[#131721] border border-[#2d3240]/70 rounded-md hover:border-[#2d3240] hover:bg-[#1a1f2e] hover:text-[#ece7dc] transition-all duration-150 inline-flex items-center gap-1.5"
-            title={desktop ? "Save As..." : `Export ${exportFormat.toUpperCase()} file`}
+            title={desktop ? "Save As... (\u2318\u21e7S)" : `Export ${exportFormat.toUpperCase()} file (\u2318E)`}
           >
             <IconFileExport size={14} />
             {desktop ? "Save As" : "Export"}

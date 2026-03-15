@@ -126,7 +126,7 @@ function PostureGradeBadge({ passRate }: { passRate: number }) {
       <span className="text-[10px] font-mono uppercase tracking-wider mt-1" style={{ color }}>
         {label}
       </span>
-      <span className="text-[9px] font-mono text-[#6f7f9a]/60 mt-0.5">
+      <span className="text-[9px] font-mono text-[#6f7f9a]/60 mt-0.5" title="Resource usage limits and automated state transitions for agent capabilities">
         Security Posture
       </span>
     </div>
@@ -346,7 +346,7 @@ export function ReportDialog({
           <div className="space-y-6">
             {/* Security Posture Grade + Summary */}
             <section>
-              <h3 className="text-[10px] font-mono uppercase tracking-wider text-[#6f7f9a] mb-3">
+              <h3 className="text-[10px] font-mono uppercase tracking-wider text-[#6f7f9a] mb-3" title="Resource usage limits and automated state transitions for agent capabilities">
                 Security Posture
               </h3>
               <div className="grid grid-cols-[auto_1fr] gap-4">

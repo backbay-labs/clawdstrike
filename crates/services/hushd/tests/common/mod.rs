@@ -1,4 +1,5 @@
 //! Common test utilities for clawdstriked integration tests
+#![allow(dead_code)]
 
 use std::net::TcpListener;
 use std::net::{SocketAddr, TcpStream};

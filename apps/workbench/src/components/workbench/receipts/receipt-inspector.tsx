@@ -26,7 +26,7 @@ import {
   verdictFromNativeGuardResult,
   verdictFromNativeSimulation,
 } from "@/lib/workbench/native-simulation";
-import { IconCloudUpload, IconCloudDownload, IconCircleDot } from "@tabler/icons-react";
+import { IconCloudUpload, IconCloudDownload, IconCircleDot, IconDots } from "@tabler/icons-react";
 
 function randomHex(len: number): string {
   const bytes = new Uint8Array(len / 2);
@@ -307,6 +307,7 @@ export function ReceiptInspector() {
   const [generating, setGenerating] = useState(false);
   const [selectedAction, setSelectedAction] = useState(0); // index into SAMPLE_ACTIONS
   const [generateError, setGenerateError] = useState("");
+  const [showMore, setShowMore] = useState(false);
 
   // Fleet sync state (P3-4)
   const { connection, getAuthenticatedConnection } = useFleetConnection();
@@ -852,19 +853,7 @@ export function ReceiptInspector() {
                       : "text-[#3dbf84] bg-[#3dbf84]/10 border-[#3dbf84]/20 hover:bg-[#3dbf84]/20"
                   )}
                 >
-                  {generating ? "Generating..." : "Generate Real"}
-                </button>
-                <button
-                  onClick={handleSignReceipt}
-                  disabled={signing}
-                  className={cn(
-                    "px-3 py-1.5 text-xs font-medium border rounded-md transition-colors",
-                    signing
-                      ? "text-[#6f7f9a] bg-[#131721] border-[#2d3240] cursor-wait"
-                      : "text-[#6f7f9a] bg-[#131721] border-[#2d3240] hover:border-[#d4a84b]/40 hover:text-[#ece7dc]"
-                  )}
-                >
-                  {signing ? "Signing..." : "Sign Only"}
+                  {generating ? "Generating..." : "Generate"}
                 </button>
               </>
             ) : (
@@ -872,25 +861,48 @@ export function ReceiptInspector() {
                 onClick={handleGenerate}
                 className="px-3 py-1.5 text-xs font-medium text-[#d4a84b] bg-[#d4a84b]/10 border border-[#d4a84b]/20 rounded-md hover:bg-[#d4a84b]/20 transition-colors"
               >
-                Generate Test
+                Generate
               </button>
             )}
-            {receipts.length >= 2 && (
+
+            {/* More Actions dropdown */}
+            <div className="relative">
               <button
-                onClick={() => setShowChainView(true)}
-                className="px-3 py-1.5 text-xs font-medium text-[#d4a84b] bg-[#d4a84b]/10 border border-[#d4a84b]/20 rounded-md hover:bg-[#d4a84b]/20 transition-colors"
+                onClick={() => setShowMore(!showMore)}
+                className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#6f7f9a] bg-[#131721] border border-[#2d3240] rounded-md hover:border-[#d4a84b]/40 hover:text-[#ece7dc] transition-colors"
               >
-                Verify Chain
+                <IconDots size={14} /> More
               </button>
-            )}
-            {receipts.length > 0 && (
-              <button
-                onClick={handleClear}
-                className="px-3 py-1.5 text-xs font-medium text-[#6f7f9a] bg-transparent border border-[#2d3240] rounded-md hover:text-[#c45c5c] hover:border-[#c45c5c]/30 transition-colors"
-              >
-                Clear All
-              </button>
-            )}
+              {showMore && (
+                <div className="absolute right-0 top-full mt-1 z-50 rounded-lg border border-[#2d3240] bg-[#131721] py-1 shadow-xl min-w-[180px]">
+                  {isDesktop() && (
+                    <button
+                      onClick={() => { handleSignReceipt(); setShowMore(false); }}
+                      disabled={signing}
+                      className="px-3 py-2 text-[11px] text-[#6f7f9a] hover:text-[#ece7dc] hover:bg-[#0b0d13] flex items-center gap-2 w-full transition-colors"
+                    >
+                      {signing ? "Signing..." : "Sign Only"}
+                    </button>
+                  )}
+                  {receipts.length >= 2 && (
+                    <button
+                      onClick={() => { setShowChainView(true); setShowMore(false); }}
+                      className="px-3 py-2 text-[11px] text-[#6f7f9a] hover:text-[#ece7dc] hover:bg-[#0b0d13] flex items-center gap-2 w-full transition-colors"
+                    >
+                      Verify Chain
+                    </button>
+                  )}
+                  {receipts.length > 0 && (
+                    <button
+                      onClick={() => { handleClear(); setShowMore(false); }}
+                      className="px-3 py-2 text-[11px] text-[#c45c5c]/70 hover:text-[#c45c5c] hover:bg-[#0b0d13] flex items-center gap-2 w-full transition-colors"
+                    >
+                      Clear All
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

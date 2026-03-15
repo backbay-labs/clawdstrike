@@ -3,6 +3,7 @@ import type { Receipt } from "@/lib/workbench/types";
 import type { FleetConnection } from "@/lib/workbench/fleet-client";
 import { verifyReceiptRemote } from "@/lib/workbench/fleet-client";
 import { VerdictBadge } from "@/components/workbench/shared/verdict-badge";
+import { Breadcrumb } from "@/components/workbench/shared/breadcrumb";
 import { CodeBlock } from "@/components/ui/code-block";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { IconCopy, IconCheck, IconChevronDown, IconShieldCheck, IconX } from "@tabler/icons-react";
@@ -98,8 +99,13 @@ export function ReceiptDetail({ receipt, fleetConnection }: ReceiptDetailProps) 
       ? `${receipt.signature.slice(0, 16)}...${receipt.signature.slice(-16)}`
       : receipt.signature;
 
+  const receiptLabel = `${receipt.guard} — ${receipt.verdict}`;
+
   return (
     <div className="border border-[#2d3240] rounded-lg bg-[#0b0d13] overflow-hidden">
+      {/* Breadcrumb */}
+      <Breadcrumb items={[{ label: "Receipts", href: "/receipts" }, { label: receiptLabel }]} />
+
       {/* Header with toggle */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-[#2d3240] bg-[#131721]">
         <div className="flex items-center gap-3">

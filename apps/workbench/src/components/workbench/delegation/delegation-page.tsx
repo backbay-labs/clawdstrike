@@ -170,8 +170,8 @@ const CAPABILITY_SHORT: Record<Capability, string> = {
 };
 
 export function DelegationPage() {
-  const { connection: connInfo, getAuthenticatedConnection } = useFleetConnection();
-  const fleetConnected = connInfo.connected;
+  const { connection, getAuthenticatedConnection } = useFleetConnection();
+  const fleetConnected = connection.connected;
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerElement, setContainerElement] = useState<HTMLDivElement | null>(null);
@@ -258,9 +258,9 @@ export function DelegationPage() {
       try {
         setLiveAvailable(true);
         setIsLoadingGraph(true);
+        const connection = getAuthenticatedConnection();
         // Load principals list
-        const authedConn = getAuthenticatedConnection();
-        const principalsList = await apiFetchPrincipals(authedConn);
+        const principalsList = await apiFetchPrincipals(connection);
         if (cancelled) return;
         setPrincipals(principalsList);
 
@@ -269,7 +269,7 @@ export function DelegationPage() {
         if (defaultId) setSelectedPrincipalId(defaultId);
 
         // Try to fetch live graph
-        const liveGraph = await fetchLiveGraph(authedConn, defaultId);
+        const liveGraph = await fetchLiveGraph(connection, defaultId);
         if (cancelled) return;
         if (liveGraph) {
           setGraph(liveGraph);
@@ -294,12 +294,12 @@ export function DelegationPage() {
     if (!fleetConnected) return;
     setIsLoadingGraph(true);
     try {
+      const connection = getAuthenticatedConnection();
       // Refresh principals list
-      const refreshConn = getAuthenticatedConnection();
-      const principalsList = await apiFetchPrincipals(refreshConn);
+      const principalsList = await apiFetchPrincipals(connection);
       setPrincipals(principalsList);
 
-      const liveGraph = await fetchLiveGraph(refreshConn, selectedPrincipalId);
+      const liveGraph = await fetchLiveGraph(connection, selectedPrincipalId);
       if (liveGraph) {
         setGraph(liveGraph);
       }
@@ -553,7 +553,7 @@ export function DelegationPage() {
     <div className="flex h-full w-full overflow-hidden bg-[#05060a]">
       <div className="flex w-52 shrink-0 flex-col border-r border-[#1a1f2e] bg-[#0b0d13]">
         <div className="border-b border-[#1a1f2e] px-4 py-3">
-          <h2 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6f7f9a]">
+          <h2 className="font-syne text-[10px] font-semibold uppercase tracking-wider text-[#6f7f9a]">
             Filters
           </h2>
         </div>
@@ -575,7 +575,7 @@ export function DelegationPage() {
         </div>
 
         <div className="border-b border-[#1a1f2e] px-4 py-3">
-          <h3 className="mb-2.5 text-[9px] font-semibold uppercase tracking-[0.1em] text-[#6f7f9a]/70">
+          <h3 className="font-syne mb-2.5 text-[9px] font-semibold uppercase tracking-wider text-[#6f7f9a]/70">
             Node Kind
           </h3>
           <div className="flex flex-col gap-2">
@@ -601,7 +601,7 @@ export function DelegationPage() {
         </div>
 
         <div className="border-b border-[#1a1f2e] px-4 py-3">
-          <h3 className="mb-2.5 text-[9px] font-semibold uppercase tracking-[0.1em] text-[#6f7f9a]/70">
+          <h3 className="font-syne mb-2.5 text-[9px] font-semibold uppercase tracking-wider text-[#6f7f9a]/70">
             Trust Level
           </h3>
           <div className="flex flex-col gap-2">
@@ -807,7 +807,7 @@ export function DelegationPage() {
                         ? "url(#arrow-gold)"
                         : "url(#arrow)"
                   }
-                  className="transition-opacity duration-200"
+                  className="transition-opacity duration-150"
                 />
               );
             })}
@@ -829,7 +829,7 @@ export function DelegationPage() {
                   data-node={node.id}
                   transform={`translate(${ln.x},${ln.y})`}
                   opacity={isDimmed ? 0.12 : 1}
-                  className="cursor-pointer transition-opacity duration-200"
+                  className="cursor-pointer transition-opacity duration-150"
                   onMouseEnter={() => setHoveredNodeId(node.id)}
                   onMouseLeave={() => setHoveredNodeId(null)}
                   onClick={(e) => {
@@ -920,7 +920,7 @@ export function DelegationPage() {
       {selectedNode && (
         <div className="flex w-64 shrink-0 flex-col border-l border-[#1a1f2e] bg-[#0b0d13]">
           <div className="flex items-center justify-between border-b border-[#1a1f2e] px-4 py-3">
-            <h2 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6f7f9a]">
+            <h2 className="font-syne text-[10px] font-semibold uppercase tracking-wider text-[#6f7f9a]">
               Details
             </h2>
             <button
@@ -1121,7 +1121,8 @@ function PrincipalSelector({
   const selected = principals.find((p) => p.id === selectedId);
   const displayName = selected?.name ?? selected?.id ?? "Select principal";
 
-  // Close dropdown on outside click
+  // Close dropdown on outside click — use explicit close (not toggle) to
+  // avoid double-toggle if state gets out of sync.
   useEffect(() => {
     if (!isOpen) return;
     const handler = (e: MouseEvent) => {
@@ -1193,7 +1194,7 @@ function Sep() {
 
 function SectionLabel({ text }: { text: string }) {
   return (
-    <h3 className="mb-2 text-[9px] font-semibold uppercase tracking-[0.1em] text-[#6f7f9a]/50">
+    <h3 className="font-syne mb-2 text-[9px] font-semibold uppercase tracking-wider text-[#6f7f9a]/50">
       {text}
     </h3>
   );

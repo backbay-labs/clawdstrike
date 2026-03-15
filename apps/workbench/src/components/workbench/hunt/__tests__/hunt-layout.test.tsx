@@ -70,9 +70,13 @@ describe("HuntLayout", () => {
     });
 
     vi.spyOn(globalThis, "setInterval").mockImplementation(
-      ((callback: TimerHandler) => {
+      ((callback: TimerHandler, delay?: number) => {
         const intervalId = nextIntervalId++;
-        intervalCallbacks.set(intervalId, callback);
+        // Only track application polling intervals (30s); ignore jsdom
+        // internal intervals (e.g. requestAnimationFrame polyfill).
+        if (typeof delay === "number" && delay >= 1000) {
+          intervalCallbacks.set(intervalId, callback);
+        }
         return intervalId as unknown as ReturnType<typeof setInterval>;
       }) as unknown as typeof setInterval,
     );
@@ -96,7 +100,8 @@ describe("HuntLayout", () => {
     await flushMicrotasks();
 
     expect(fleetClientMocks.fetchAuditEvents).toHaveBeenCalledTimes(1);
-    expect(globalThis.setInterval).toHaveBeenCalledTimes(1);
+    // Use intervalCallbacks.size (not spy call count) because jsdom's
+    // requestAnimationFrame polyfill also calls setInterval internally.
     expect(intervalCallbacks.size).toBe(1);
 
     const [activeIntervalId, activeIntervalCallback] = Array.from(intervalCallbacks.entries())[0];
@@ -111,14 +116,12 @@ describe("HuntLayout", () => {
     expect(screen.getByRole("button", { name: "PAUSED" })).toBeInTheDocument();
     expect(globalThis.clearInterval).toHaveBeenCalledWith(activeIntervalId);
     expect(intervalCallbacks.size).toBe(0);
-    expect(globalThis.setInterval).toHaveBeenCalledTimes(1);
 
     expect(fleetClientMocks.fetchAuditEvents).toHaveBeenCalledTimes(2);
 
     fireEvent.click(screen.getByRole("button", { name: "PAUSED" }));
     await flushMicrotasks();
     expect(fleetClientMocks.fetchAuditEvents).toHaveBeenCalledTimes(3);
-    expect(globalThis.setInterval).toHaveBeenCalledTimes(2);
     expect(intervalCallbacks.size).toBe(1);
   });
 });

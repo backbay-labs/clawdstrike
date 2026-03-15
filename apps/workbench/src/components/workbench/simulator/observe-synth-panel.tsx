@@ -443,7 +443,7 @@ export function ObserveSynthPanel() {
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
               className={cn(
-                "relative border-2 border-dashed rounded-xl p-8 text-center transition-all duration-200 mb-6",
+                "relative border-2 border-dashed rounded-xl p-8 text-center transition-all duration-150 mb-6",
                 isDragOver
                   ? "border-[#d4a84b] bg-[#d4a84b]/5 scale-[1.01]"
                   : "border-[#2d3240] bg-[#0b0d13]/50 hover:border-[#d4a84b]/40",

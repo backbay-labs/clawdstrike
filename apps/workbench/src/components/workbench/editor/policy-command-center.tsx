@@ -399,7 +399,7 @@ export function PolicyCommandCenter({ onClose }: PolicyCommandCenterProps) {
         <button
           onClick={() => {
             const count = tabs.length;
-            if (window.confirm(`Enable all 13 guards across ${count} ${count === 1 ? "policy" : "policies"}? This will mark all policies as unsaved.`)) {
+            if (window.confirm(`Enable all 13 guards across ${count} ${count === 1 ? "policy" : "policies"}?\n\nEvery guard will be activated on all open policies. Each affected policy will be marked as unsaved until you explicitly save it.`)) {
               handleEnableAllGuardsEverywhere();
             }
           }}

@@ -497,7 +497,7 @@ function EmptyResults({ onTryExample }: { onTryExample: (text: string) => void }
                   </span>
                 </div>
               </div>
-              <IconChevronRight size={12} stroke={1.5} className="text-[#6f7f9a]/20 group-hover:text-[#d4a84b]/50 mt-1 shrink-0 transition-colors" />
+              <IconChevronRight size={12} stroke={1.5} className="text-[#6f7f9a]/50 group-hover:text-[#d4a84b]/50 mt-1 shrink-0 transition-colors" />
             </button>
           );
         })}

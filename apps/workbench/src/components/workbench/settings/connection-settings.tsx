@@ -182,7 +182,7 @@ export function ConnectionSettings() {
       {connection.connected && (
         <div className="flex flex-col gap-3 p-4 rounded-lg border border-[#2d3240] bg-[#131721]/50">
           <div className="flex items-center justify-between">
-            <h4 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6f7f9a]">
+            <h4 className="text-[10px] font-semibold uppercase tracking-wider text-[#6f7f9a]">
               Fleet Summary
             </h4>
             <button

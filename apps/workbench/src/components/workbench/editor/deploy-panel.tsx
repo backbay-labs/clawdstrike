@@ -55,7 +55,7 @@ export function DeployPanel() {
     <div className="flex flex-col gap-3 p-4 border-t border-[#2d3240]/60">
       {/* ---- Section header ---- */}
       <div className="flex items-center justify-between">
-        <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6f7f9a]">
+        <h3 className="text-[10px] font-semibold uppercase tracking-wider text-[#6f7f9a]">
           Fleet Deployment
         </h3>
         <div className="flex items-center gap-1.5 text-[10px] text-[#3dbf84]">

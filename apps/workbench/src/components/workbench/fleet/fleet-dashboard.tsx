@@ -8,6 +8,7 @@ import {
   IconAlertTriangle,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import { PageHeader } from "../shared/page-header";
 import { AGENT_POLL_MS, useFleetConnection } from "@/lib/workbench/use-fleet-connection";
 import type { AgentInfo } from "@/lib/workbench/fleet-client";
 import { Link } from "react-router-dom";
@@ -193,40 +194,30 @@ export function FleetDashboard() {
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-[#05060a]">
       {/* Header */}
-      <div className="shrink-0 border-b border-[#2d3240]/60 px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <IconServer size={18} className="text-[#d4a84b]" stroke={1.5} />
-            <div>
-              <h1 className="text-sm font-semibold text-[#ece7dc] tracking-[-0.01em]">
-                Fleet Dashboard
-              </h1>
-              <p className="text-[11px] text-[#6f7f9a] mt-0.5">
-                {counts.total} agent{counts.total !== 1 ? "s" : ""} registered
-                {" · "}
-                auto-refresh every {AGENT_POLL_MS / 1000}s
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={handleRefresh}
-            disabled={isRefreshing}
-            className={cn(
-              "flex items-center gap-1.5 rounded-md border border-[#2d3240] px-3 py-1.5 text-[11px] transition-colors",
-              isRefreshing
-                ? "text-[#6f7f9a]/40 cursor-not-allowed"
-                : "text-[#6f7f9a] hover:text-[#ece7dc] hover:border-[#d4a84b]/30",
-            )}
-          >
-            <IconRefresh
-              size={13}
-              stroke={1.5}
-              className={isRefreshing ? "animate-spin" : ""}
-            />
-            Refresh
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title="Fleet Dashboard"
+        subtitle={<>{counts.total} agent{counts.total !== 1 ? "s" : ""} registered{" · "}auto-refresh every {AGENT_POLL_MS / 1000}s</>}
+        icon={IconServer}
+        sectionAccent="#7b6b8b"
+      >
+        <button
+          onClick={handleRefresh}
+          disabled={isRefreshing}
+          className={cn(
+            "flex items-center gap-1.5 rounded-md border border-[#2d3240] px-3 py-1.5 text-[11px] transition-colors active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]",
+            isRefreshing
+              ? "text-[#6f7f9a]/40 cursor-not-allowed"
+              : "text-[#6f7f9a] hover:text-[#ece7dc] hover:border-[#d4a84b]/30",
+          )}
+        >
+          <IconRefresh
+            size={13}
+            stroke={1.5}
+            className={isRefreshing ? "animate-spin" : ""}
+          />
+          Refresh
+        </button>
+      </PageHeader>
 
       {/* Warning banners */}
       {secureStorageWarning && (
@@ -245,7 +236,6 @@ export function FleetDashboard() {
           </span>
         </div>
       )}
-
       {/* Summary cards */}
       <div className="shrink-0 border-b border-[#2d3240]/60 px-6 py-4">
         <div className="flex items-stretch gap-3">
@@ -275,7 +265,7 @@ export function FleetDashboard() {
 
       {/* Filter bar */}
       <div className="shrink-0 border-b border-[#2d3240]/60 px-6 py-2.5 flex items-center gap-2">
-        <span className="text-[10px] uppercase tracking-[0.08em] text-[#6f7f9a]/50 mr-1">
+        <span className="text-[10px] uppercase tracking-wider text-[#6f7f9a]/50 mr-1">
           Filter
         </span>
         {(["all", "online", "stale", "drift"] as StatusFilter[]).map((f) => (
@@ -283,7 +273,7 @@ export function FleetDashboard() {
             key={f}
             onClick={() => setFilter(f)}
             className={cn(
-              "rounded-md px-2.5 py-1 text-[10px] font-medium capitalize transition-colors",
+              "rounded-md px-2.5 py-1 text-[10px] font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]",
               filter === f
                 ? "bg-[#d4a84b]/10 text-[#d4a84b]"
                 : "text-[#6f7f9a]/60 hover:text-[#ece7dc] hover:bg-[#131721]/40",
@@ -299,8 +289,8 @@ export function FleetDashboard() {
 
       {/* Agent table */}
       <div className="flex-1 overflow-auto">
-        <table className="w-full min-w-[900px]">
-          <thead className="sticky top-0 z-10 bg-[#0b0d13]">
+        <table className="w-full min-w-[700px]">
+          <thead className="sticky top-0 z-10 bg-[#0b0d13]/60">
             <tr className="border-b border-[#2d3240]/60">
               <SortableHeader
                 label=""
@@ -323,6 +313,7 @@ export function FleetDashboard() {
                 currentSort={sortCol}
                 asc={sortAsc}
                 onSort={handleSort}
+                title="Resource usage limits and automated state transitions for agent capabilities"
               />
               <SortableHeader
                 label="Policy"
@@ -362,7 +353,7 @@ export function FleetDashboard() {
             </tr>
           </thead>
           <tbody>
-            {filteredAgents.map((agent) => {
+            {filteredAgents.map((agent, index) => {
               const status = agentStatus(agent);
               const isExpanded = expandedId === agent.endpoint_agent_id;
 
@@ -372,6 +363,7 @@ export function FleetDashboard() {
                   agent={agent}
                   status={status}
                   isExpanded={isExpanded}
+                  index={index}
                   onToggle={() =>
                     setExpandedId(
                       isExpanded ? null : agent.endpoint_agent_id,
@@ -410,7 +402,7 @@ function SummaryCard({
 }) {
   return (
     <div className="flex flex-col rounded-lg border border-[#2d3240]/60 bg-[#0b0d13] px-4 py-3 min-w-[120px]">
-      <span className="text-[9px] uppercase tracking-[0.08em] text-[#6f7f9a]/50">
+      <span className="text-[9px] uppercase tracking-wider text-[#6f7f9a]/50">
         {label}
       </span>
       <div className="mt-1.5 flex items-center gap-2">
@@ -440,6 +432,7 @@ function SortableHeader({
   asc,
   onSort,
   className,
+  title,
 }: {
   label: string;
   column: SortColumn;
@@ -447,6 +440,7 @@ function SortableHeader({
   asc: boolean;
   onSort: (col: SortColumn) => void;
   className?: string;
+  title?: string;
 }) {
   const active = currentSort === column;
 
@@ -454,10 +448,11 @@ function SortableHeader({
     <th
       className={cn(
         "px-3 py-2.5 text-left text-[9px] uppercase tracking-[0.08em] font-semibold select-none cursor-pointer transition-colors",
-        active ? "text-[#d4a84b]" : "text-[#6f7f9a]/50 hover:text-[#6f7f9a]",
+        active ? "text-[#d4a84b]" : "text-[#6f7f9a]/80 hover:text-[#6f7f9a]",
         className,
       )}
       onClick={() => onSort(column)}
+      title={title}
     >
       <span className="flex items-center gap-1">
         {label}
@@ -476,11 +471,13 @@ function AgentRow({
   agent,
   status,
   isExpanded,
+  index,
   onToggle,
 }: {
   agent: AgentInfo;
   status: "online" | "stale" | "offline";
   isExpanded: boolean;
+  index: number;
   onToggle: () => void;
 }) {
   const dotColor = STATUS_DOT_COLORS[status];
@@ -494,8 +491,9 @@ function AgentRow({
         className={cn(
           "border-b border-[#2d3240]/30 cursor-pointer transition-colors",
           isExpanded
-            ? "bg-[#131721]"
-            : "hover:bg-[#0b0d13]",
+            ? "bg-[#131721] border-l-2 border-l-[#d4a84b]"
+            : "hover:bg-[#131721] border-l-2 border-l-transparent",
+          !isExpanded && (index % 2 === 0 ? "bg-[#05060a]" : "bg-[#0b0d13]/40"),
         )}
       >
         <td className="px-3 py-2.5 text-center">
@@ -512,7 +510,7 @@ function AgentRow({
             ) : (
               <IconChevronRight size={11} className="text-[#6f7f9a]/40 shrink-0" />
             )}
-            <span className="font-mono text-[11px] text-[#ece7dc]/80 truncate max-w-[200px]">
+            <span className="font-mono text-[11px] text-[#ece7dc]/80 truncate max-w-[180px] inline-block">
               {agent.endpoint_agent_id}
             </span>
           </div>
@@ -534,11 +532,11 @@ function AgentRow({
           )}
         </td>
 
-        <td className="px-3 py-2.5 font-mono text-[10px] text-[#ece7dc]/50">
+        <td className="px-3 py-2.5 font-mono text-[10px] text-[#ece7dc]/50 max-w-[120px] truncate">
           {agent.policy_version ?? "---"}
         </td>
 
-        <td className="px-3 py-2.5 font-mono text-[10px] text-[#ece7dc]/50">
+        <td className="px-3 py-2.5 font-mono text-[10px] text-[#ece7dc]/50 max-w-[120px] truncate">
           {agent.daemon_version ?? "---"}
         </td>
 
@@ -564,7 +562,7 @@ function AgentRow({
             {!agent.drift.policy_drift &&
               !agent.drift.daemon_drift &&
               !agent.drift.stale && (
-                <span className="text-[10px] text-[#6f7f9a]/20">---</span>
+                <span className="text-[10px] text-[#6f7f9a]/50">---</span>
               )}
           </div>
         </td>
@@ -589,7 +587,7 @@ function AgentDetail({ agent }: { agent: AgentInfo }) {
       <div className="flex flex-col gap-2 min-w-[240px]">
         <DetailSectionLabel text="Agent Info" />
         <DetailRow label="Agent ID" value={agent.endpoint_agent_id} mono />
-        <DetailRow label="Posture" value={agent.posture ?? "---"} />
+        <DetailRow label="Posture" value={agent.posture ?? "---"} title="Resource usage limits and automated state transitions for agent capabilities" />
         <DetailRow label="Policy Version" value={agent.policy_version ?? "---"} mono />
         <DetailRow label="Daemon Version" value={agent.daemon_version ?? "---"} mono />
         <DetailRow label="Session ID" value={agent.last_session_id ?? "---"} mono />
@@ -645,7 +643,7 @@ function DriftBadge({ label, color }: { label: string; color: string }) {
 
 function DetailSectionLabel({ text }: { text: string }) {
   return (
-    <h4 className="text-[9px] font-semibold uppercase tracking-[0.1em] text-[#6f7f9a]/50 mb-1">
+    <h4 className="text-[9px] font-semibold uppercase tracking-wider text-[#6f7f9a]/50 mb-1">
       {text}
     </h4>
   );
@@ -656,15 +654,17 @@ function DetailRow({
   value,
   mono,
   valueColor,
+  title,
 }: {
   label: string;
   value: string;
   mono?: boolean;
   valueColor?: string;
+  title?: string;
 }) {
   return (
     <div className="flex items-baseline gap-3 text-[10px]">
-      <span className="text-[#6f7f9a]/50 shrink-0 w-[100px]">{label}</span>
+      <span className="text-[#6f7f9a]/50 shrink-0 w-[100px]" title={title}>{label}</span>
       <span
         className={cn(
           "text-[#ece7dc]/70 truncate",

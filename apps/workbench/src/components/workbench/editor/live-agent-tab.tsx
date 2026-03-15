@@ -5,6 +5,7 @@ import { useToast } from "@/components/ui/toast";
 import { policyToYaml } from "@/lib/workbench/yaml-utils";
 import { isDesktop, savePolicyFile } from "@/lib/tauri-bridge";
 import { cn } from "@/lib/utils";
+import { SubTabBar, type SubTab } from "../shared/sub-tab-bar";
 import {
   IconPlayerPlay,
   IconPlayerStop,
@@ -991,7 +992,7 @@ function HushdMonitorPanel() {
               </span>
               {/* Show daemon event_id on hover */}
               {evt.sourceEventId && (
-                <span className="text-[#6f7f9a]/20 shrink-0 text-[8px] hidden group-hover:inline truncate max-w-[120px]" title={evt.sourceEventId}>
+                <span className="text-[#6f7f9a]/50 shrink-0 text-[8px] hidden group-hover:inline truncate max-w-[120px]" title={evt.sourceEventId}>
                   {evt.sourceEventId.length > 12
                     ? `${evt.sourceEventId.slice(0, 8)}…`
                     : evt.sourceEventId}
@@ -1012,7 +1013,7 @@ function HushdMonitorPanel() {
                 Live SSE stream:
               </span>{" "}
               <code className="text-[#3dbf84]/60">{endpoint}/api/v1/events</code>
-              <span className="ml-2 text-[#6f7f9a]/25">
+              <span className="ml-2 text-[#6f7f9a]/50">
                 Hover events to see daemon event IDs
               </span>
             </>
@@ -1023,7 +1024,7 @@ function HushdMonitorPanel() {
                 Reconnecting to
               </span>{" "}
               <code className="text-[#d4a84b]/60">{endpoint}/api/v1/events</code>
-              <span className="ml-2 text-[#6f7f9a]/25">
+              <span className="ml-2 text-[#6f7f9a]/50">
                 Attempt {reconnectAttemptsRef.current} of {MAX_RECONNECT_ATTEMPTS}
               </span>
             </>
@@ -1041,38 +1042,18 @@ function HushdMonitorPanel() {
 
 type LiveSubTab = "script" | "hushd";
 
+const LIVE_TABS: SubTab[] = [
+  { id: "script", label: "Script Runner", icon: IconTerminal2 },
+  { id: "hushd", label: "hushd Monitor", icon: IconServer },
+];
+
 export function LiveAgentTab() {
   const [activeSubTab, setActiveSubTab] = useState<LiveSubTab>("script");
 
   return (
     <div className="h-full flex flex-col bg-[#05060a]">
       {/* Sub-tab bar */}
-      <div className="flex items-center border-b border-[#2d3240] bg-[#0b0d13] shrink-0">
-        <button
-          onClick={() => setActiveSubTab("script")}
-          className={cn(
-            "flex items-center gap-1.5 px-3 py-2 text-[10px] font-mono transition-colors border-b-2 -mb-px",
-            activeSubTab === "script"
-              ? "text-[#d4a84b] border-[#d4a84b]"
-              : "text-[#6f7f9a] border-transparent hover:text-[#ece7dc] hover:border-[#2d3240]",
-          )}
-        >
-          <IconTerminal2 size={12} stroke={1.5} />
-          Script Runner
-        </button>
-        <button
-          onClick={() => setActiveSubTab("hushd")}
-          className={cn(
-            "flex items-center gap-1.5 px-3 py-2 text-[10px] font-mono transition-colors border-b-2 -mb-px",
-            activeSubTab === "hushd"
-              ? "text-[#d4a84b] border-[#d4a84b]"
-              : "text-[#6f7f9a] border-transparent hover:text-[#ece7dc] hover:border-[#2d3240]",
-          )}
-        >
-          <IconServer size={12} stroke={1.5} />
-          hushd Monitor
-        </button>
-      </div>
+      <SubTabBar tabs={LIVE_TABS} activeTab={activeSubTab} onTabChange={(id) => setActiveSubTab(id as LiveSubTab)} />
 
       {/* Sub-tab content */}
       <div className="flex-1 min-h-0">

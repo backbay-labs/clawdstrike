@@ -3,11 +3,16 @@
 
 mod commands;
 
-use commands::{detection, mcp_sidecar, stronghold as stronghold_cmds, workbench};
+use commands::{
+    capability, detection, mcp_sidecar, repo_roots, stronghold as stronghold_cmds, terminal,
+    workbench, worktree,
+};
+use capability::CommandCapabilityState;
 use mcp_sidecar::McpState;
 use stronghold_cmds::StrongholdState;
 #[allow(unused_imports)]
 use tauri::Manager;
+use terminal::TerminalState;
 
 fn main() {
     tauri::Builder::default()
@@ -28,6 +33,14 @@ fn main() {
         })
         .manage(StrongholdState::new())
         .manage(McpState::new())
+        .manage(
+            std::sync::Arc::new(tokio::sync::Mutex::new(capability::CommandCapabilityManager::new()))
+                as CommandCapabilityState,
+        )
+        .manage(
+            std::sync::Arc::new(tokio::sync::Mutex::new(terminal::TerminalManager::new()))
+                as TerminalState,
+        )
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
                 #[cfg(not(target_os = "macos"))]
@@ -67,8 +80,38 @@ fn main() {
                 }
             });
 
+            if let Err(err) = repo_roots::init_approved_repo_roots(app.handle()) {
+                eprintln!(
+                    "[workbench] WARNING: failed to initialize approved repo roots registry: {}",
+                    err
+                );
+            }
+
             Ok(())
         })
+        // ------------------------------------------------------------------
+        // Trust model
+        // ------------------------------------------------------------------
+        // All commands below are exposed via Tauri's IPC bridge, which is
+        // restricted to the same-origin webview window (label "main").
+        // External web pages, browser extensions, and other processes
+        // cannot invoke these handlers.
+        //
+        // Additional defence-in-depth:
+        //  - Sensitive terminal/worktree commands require a backend-held
+        //    native approval grant; the renderer does not receive reusable
+        //    auth material for these operations.
+        //  - Terminal commands validate shell paths against an allowlist,
+        //    sanitise environment variables via an allowlist, and
+        //    canonicalise working directories.
+        //  - Worktree commands validate branch names via `git check-ref-format`,
+        //    reject path traversal, and verify paths are registered worktrees
+        //    before removal.
+        //
+        // Renderer compromise is still an in-scope desktop risk; do not load
+        // remote/untrusted content in this webview, and keep adding backend
+        // guardrails for high-impact commands.
+        // ------------------------------------------------------------------
         .invoke_handler(tauri::generate_handler![
             workbench::validate_policy,
             workbench::load_builtin_ruleset,
@@ -97,14 +140,33 @@ fn main() {
             detection::detect_file_type,
             detection::import_detection_file,
             detection::export_detection_file,
+            terminal::terminal_create,
+            terminal::terminal_write,
+            terminal::terminal_resize,
+            terminal::terminal_kill,
+            terminal::terminal_list,
+            terminal::terminal_preview,
+            terminal::get_cwd,
+            worktree::worktree_create,
+            worktree::worktree_remove,
+            worktree::worktree_list,
+            worktree::worktree_status,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
                 // Clean up the MCP sidecar child process on exit.
-                let state = app.state::<McpState>();
-                mcp_sidecar::kill_mcp_server(&state);
+                let mcp_state = app.state::<McpState>();
+                mcp_sidecar::kill_mcp_server(&mcp_state);
+
+                // Clean up all terminal sessions on exit.
+                let terminal_state = app.state::<TerminalState>();
+                // Use a blocking approach since we're in a sync callback.
+                let state_clone = (*terminal_state).clone();
+                tauri::async_runtime::block_on(async {
+                    terminal::kill_all_sessions(&state_clone).await;
+                });
             }
         });
 }

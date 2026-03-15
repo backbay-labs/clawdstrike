@@ -9,6 +9,7 @@ import type { ComplianceRequirementDef } from "@/lib/workbench/compliance-requir
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { IconCheck, IconX, IconArrowRight } from "@tabler/icons-react";
 import { Link } from "react-router-dom";
+import { Breadcrumb } from "@/components/workbench/shared/breadcrumb";
 
 interface FrameworkDetailProps {
   framework: ComplianceFramework;
@@ -97,6 +98,9 @@ export function FrameworkDetail({ framework, onClose }: FrameworkDetailProps) {
 
   return (
     <div className="flex flex-col h-full">
+      {/* Breadcrumb */}
+      <Breadcrumb items={[{ label: "Compliance", href: "/compliance" }, { label: frameworkDef.name }]} />
+
       {/* Header */}
       <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-[#2d3240] bg-[#0b0d13]">
         <div className="flex items-center gap-3">

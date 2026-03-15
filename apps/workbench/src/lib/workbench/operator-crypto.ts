@@ -53,6 +53,10 @@ function buildPkcs8Ed25519(seed: Uint8Array): ArrayBuffer {
   return pkcs8.buffer;
 }
 
+// NOTE: This module requires Web Crypto Ed25519 support (Chrome 113+/Node 20+).
+// There is no browser fallback — environments without Ed25519 will throw.
+// In the Tauri desktop app, real Ed25519 is provided by the Stronghold backend;
+// this Web Crypto path is only used in browser-only (non-Tauri) development mode.
 export async function generateOperatorKeypair(): Promise<{
   publicKeyHex: string;
   secretKeyHex: string;

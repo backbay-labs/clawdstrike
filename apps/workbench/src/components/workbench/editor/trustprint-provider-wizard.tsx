@@ -318,7 +318,7 @@ function StepCredentials({
             type="text"
             value={customModel}
             onChange={(e) => onCustomModelChange(e.target.value)}
-            placeholder="model-name"
+            placeholder="e.g., text-embedding-3-small"
             className="h-8 w-full rounded-md border border-[#2d3240] bg-[#131721] px-2.5 py-1 text-xs font-mono text-[#ece7dc] placeholder:text-[#6f7f9a]/50 outline-none focus:border-[#d4a84b]/50 transition-colors"
           />
         ) : (

@@ -847,7 +847,7 @@ function OriginContextSection({
                 size={14}
                 stroke={1.5}
                 className={cn(
-                  "transition-transform duration-200",
+                  "transition-transform duration-150",
                   expanded && "rotate-180",
                 )}
               />

@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/libs/bridge-runtime",
+    "crates/libs/clawdstrike-broker-protocol",
     "crates/libs/hush-core",
     "crates/libs/hush-proxy",
     "crates/libs/clawdstrike",
@@ -21,6 +22,7 @@ members = [
     "crates/tests/sdr-integration-tests",
     "crates/tests/e2e-posture-cmd",
     "crates/services/control-api",
+    "crates/services/clawdstrike-brokerd",
     "packages/sdk/hush-py/hush-native",
     "crates/libs/hush-ffi",
     "crates/libs/clawdstrike-guard-sdk",
@@ -157,6 +159,7 @@ jsonwebtoken = { version = "10", default-features = false, features = ["aws_lc_r
 hush-core = { path = "crates/libs/hush-core", version = "0.2.5" }
 hush-proxy = { path = "crates/libs/hush-proxy", version = "0.2.5" }
 clawdstrike = { path = "crates/libs/clawdstrike", version = "0.2.5", default-features = false }
+clawdstrike-broker-protocol = { path = "crates/libs/clawdstrike-broker-protocol", version = "0.2.5" }
 hush-certification = { path = "crates/libs/hush-certification", version = "0.2.5" }
 spine = { package = "hush-spine", path = "crates/libs/spine", version = "0.2.5" }
 bridge-runtime = { path = "crates/libs/bridge-runtime", version = "0.2.5" }

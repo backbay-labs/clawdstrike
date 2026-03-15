@@ -74,16 +74,16 @@ const NODE_TYPE_COLORS: Record<OrgNodeType, string> = {
   org: "#d4a84b",
   team: "#5b8def",
   agent: "#3dbf84",
-  endpoint: "#6bc5a0",    // teal-green for machines
-  runtime: "#3dbf84",     // bright green for AI agents
+  endpoint: "#3dbf84",
+  runtime: "#7b6b8b",
 };
 
 const NODE_TYPE_ICONS: Record<OrgNodeType, typeof IconWorld> = {
   org: IconWorld,
   team: IconUsersGroup,
   agent: IconRobot,
-  endpoint: IconServer,    // server icon
-  runtime: IconRobot,      // robot icon
+  endpoint: IconServer,
+  runtime: IconRobot,
 };
 
 const NODE_TYPE_LABELS: Record<OrgNodeType, string> = {
@@ -156,6 +156,9 @@ function TreeNode({
   const Icon = NODE_TYPE_ICONS[node.type];
   const color = NODE_TYPE_COLORS[node.type];
   const isDragTarget = dragOverId === node.id;
+  const metadataLeafLabel = node.type === "endpoint"
+    ? { singular: "runtime", plural: "runtimes" }
+    : { singular: "leaf node", plural: "leaf nodes" };
 
   const [showActions, setShowActions] = useState(false);
 
@@ -171,14 +174,14 @@ function TreeNode({
       {/* Node row */}
       <div
         className={cn(
-          "group flex items-center gap-1.5 py-1.5 px-2 rounded-md cursor-pointer transition-all duration-100",
+          "group flex items-center gap-1.5 py-1.5 px-2 rounded-md cursor-pointer transition-all duration-150",
           "hover:bg-[#131721]/60",
           isSelected && "bg-[#131721] ring-1 ring-inset",
           isSelected && node.type === "org" && "ring-[#d4a84b]/30",
           isSelected && node.type === "team" && "ring-[#5b8def]/30",
           isSelected && node.type === "agent" && "ring-[#3dbf84]/30",
-          isSelected && node.type === "endpoint" && "ring-[#6bc5a0]/30",
-          isSelected && node.type === "runtime" && "ring-[#3dbf84]/30",
+          isSelected && node.type === "endpoint" && "ring-[#3dbf84]/30",
+          isSelected && node.type === "runtime" && "ring-[#7b6b8b]/30",
           isAncestor && !isSelected && "bg-[#131721]/30",
           isDragTarget && "ring-2 ring-[#d4a84b]/50 bg-[#d4a84b]/5",
         )}
@@ -251,12 +254,11 @@ function TreeNode({
         )}
 
         {/* Metadata count */}
-        {node.metadata?.agentCount !== undefined &&
-          node.type !== "runtime" &&
-          node.type !== "agent" &&
-          !node.policyName && (
+        {node.metadata?.agentCount !== undefined && node.type !== "runtime" && node.type !== "agent" && !node.policyName && (
           <span className="ml-auto shrink-0 text-[9px] font-mono text-[#6f7f9a]/60">
-            {node.metadata.agentCount} leaf{node.metadata.agentCount !== 1 ? "s" : ""}
+            {node.metadata.agentCount} {node.metadata.agentCount === 1
+              ? metadataLeafLabel.singular
+              : metadataLeafLabel.plural}
           </span>
         )}
 
@@ -275,18 +277,6 @@ function TreeNode({
                 <IconPlus size={11} stroke={2} />
               </button>
             )}
-            {canAddEndpoint && (
-              <button
-                className="p-0.5 rounded hover:bg-[#6bc5a0]/20 text-[#6bc5a0]/60 hover:text-[#6bc5a0]"
-                title="Add Endpoint"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onAddChild(node.id, "endpoint");
-                }}
-              >
-                <IconPlus size={11} stroke={2} />
-              </button>
-            )}
             {canAddAgent && (
               <button
                 className="p-0.5 rounded hover:bg-[#3dbf84]/20 text-[#3dbf84]/60 hover:text-[#3dbf84]"
@@ -299,9 +289,21 @@ function TreeNode({
                 <IconPlus size={11} stroke={2} />
               </button>
             )}
-            {canAddRuntime && (
+            {canAddEndpoint && (
               <button
                 className="p-0.5 rounded hover:bg-[#3dbf84]/20 text-[#3dbf84]/60 hover:text-[#3dbf84]"
+                title="Add Endpoint"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAddChild(node.id, "endpoint");
+                }}
+              >
+                <IconPlus size={11} stroke={2} />
+              </button>
+            )}
+            {canAddRuntime && (
+              <button
+                className="p-0.5 rounded hover:bg-[#7b6b8b]/20 text-[#7b6b8b]/60 hover:text-[#7b6b8b]"
                 title="Add Runtime"
                 onClick={(e) => {
                   e.stopPropagation();
@@ -324,7 +326,7 @@ function TreeNode({
             {canRemove && (
               <button
                 className="p-0.5 rounded hover:bg-[#c45c5c]/20 text-[#c45c5c]/60 hover:text-[#c45c5c]"
-                title="Remove"
+                title="Delete node"
                 onClick={(e) => {
                   e.stopPropagation();
                   onRemove(node.id);
@@ -652,7 +654,7 @@ function MergePreviewPanel({
   const node = hierarchy.nodes[selectedId];
   if (!node) return null;
 
-  const leafTargets = getLeafAgents(hierarchy, selectedId);
+  const leafRuntimes = getLeafAgents(hierarchy, selectedId);
   const directChildren = node.children.length;
 
   return (
@@ -700,35 +702,30 @@ function MergePreviewPanel({
 
           <div className="flex gap-3 text-[9px] font-mono text-[#6f7f9a]/70">
             <span>{directChildren} direct children</span>
-            <span>{leafTargets.length} leaf node{leafTargets.length !== 1 ? "s" : ""}</span>
+            <span>{leafRuntimes.length} leaf node{leafRuntimes.length !== 1 ? "s" : ""}</span>
           </div>
         </div>
 
-        {/* Policy changes at this level affect these leaf nodes */}
-        {leafTargets.length > 0 && (
+        {/* Policy changes at this level affect these runtimes */}
+        {leafRuntimes.length > 0 && (
           <div className="mb-4">
             <span className="text-[9px] font-mono uppercase tracking-wider text-[#6f7f9a]/60 mb-2 block">
-              Affected Leaves
+              Affected Runtimes
             </span>
             <div className="flex flex-col gap-1">
-              {leafTargets.map((leafId) => {
-                const leaf = hierarchy.nodes[leafId];
-                if (!leaf) return null;
-                const LeafIcon = NODE_TYPE_ICONS[leaf.type];
+              {leafRuntimes.map((runtimeId) => {
+                const runtime = hierarchy.nodes[runtimeId];
+                if (!runtime) return null;
                 return (
                   <div
-                    key={leafId}
+                    key={runtimeId}
                     className="flex items-center gap-2 p-1.5 rounded bg-[#131721]/30"
                   >
-                    <LeafIcon
-                      size={11}
-                      stroke={1.5}
-                      style={{ color: `${NODE_TYPE_COLORS[leaf.type]}99` }}
-                    />
+                    <IconRobot size={11} stroke={1.5} className="text-[#7b6b8b]/60" />
                     <span className="text-[10px] font-mono text-[#ece7dc]/70">
-                      {leaf.name}
+                      {runtime.name}
                     </span>
-                    {leaf.policyId && (
+                    {runtime.policyId && (
                       <span className="ml-auto text-[8px] font-mono text-[#d4a84b]/60">
                         has own policy
                       </span>
@@ -806,7 +803,7 @@ function ValidationModal({ issues, onClose, onSelectNode }: ValidationModalProps
             <div className="flex flex-col items-center py-8">
               <IconCheck size={24} stroke={1.5} className="text-[#3dbf84] mb-2" />
               <span className="text-[11px] text-[#3dbf84]">
-                All leaf nodes have valid effective policies
+                All runtimes have valid effective policies
               </span>
             </div>
           ) : (
@@ -1012,7 +1009,7 @@ function RenameDialog({ node, onRename, onClose }: RenameDialogProps) {
             value={name}
             onChange={(e) => setName(e.target.value)}
             className="w-full px-3 py-2 text-[11px] font-mono bg-[#131721] border border-[#2d3240] rounded text-[#ece7dc] placeholder-[#6f7f9a]/40 focus:outline-none focus:border-[#d4a84b]/50"
-            placeholder="Enter name..."
+            placeholder="e.g., prod-us-east"
             autoFocus
           />
           <div className="flex justify-end gap-2">
@@ -1057,7 +1054,7 @@ export function HierarchyPage() {
 
   const [selectedId, setSelectedId] = useState<string | null>(hierarchy.rootId);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => {
-    // Expand root and all team nodes by default
+    // Expand the structural layers by default so runtime leaves are visible.
     const ids = new Set<string>();
     ids.add(hierarchy.rootId);
     for (const node of Object.values(hierarchy.nodes)) {
@@ -1368,8 +1365,8 @@ export function HierarchyPage() {
       const descendantCount = getDescendants(hierarchy, id).length - 1;
 
       const message = descendantCount > 0
-        ? `Delete node "${node.name}" and all ${descendantCount} descendant(s)? This cannot be undone.`
-        : `Delete node "${node.name}"? This cannot be undone.`;
+        ? `Delete "${node.name}" and all ${descendantCount} child node(s)?\n\nThis removes them from the hierarchy permanently. Policy assignments on deleted nodes will be lost.`
+        : `Delete "${node.name}"?\n\nThis removes the node from the hierarchy permanently. Any policy assignment on this node will be lost.`;
 
       if (!window.confirm(message)) return;
 
@@ -1470,12 +1467,12 @@ export function HierarchyPage() {
         const sourceNode = currentHierarchy.nodes[dragSourceId];
         const targetNode = currentHierarchy.nodes[targetId];
         if (sourceNode && targetNode) {
-          // Preserve legacy agent leaf moves while enforcing the new endpoint/runtime hierarchy.
+          // Only allow direct parent/child drops in the supported hierarchy.
           const canDrop =
             (sourceNode.type === "runtime" && targetNode.type === "endpoint") ||
-            (sourceNode.type === "agent" && targetNode.type === "team") ||
             (sourceNode.type === "endpoint" && targetNode.type === "team") ||
-            (sourceNode.type === "team" && targetNode.type === "org");
+            (sourceNode.type === "team" && targetNode.type === "org") ||
+            (sourceNode.type === "agent" && targetNode.type === "team");
           if (canDrop) {
             const prevHierarchy = currentHierarchy;
             const updated = moveNode(currentHierarchy, dragSourceId, targetId);
@@ -1516,7 +1513,7 @@ export function HierarchyPage() {
   );
 
   const handleResetToDemo = useCallback(() => {
-    if (!window.confirm("Reset hierarchy to demo data? All current changes will be lost.")) return;
+    if (!window.confirm("Reset to demo data?\n\nYour current hierarchy and all node configurations will be replaced. Saved policies in the library are not affected.")) return;
     clearPendingCreateIds();
     clearHierarchy();
     const demo = createDefaultHierarchy();
@@ -1579,8 +1576,8 @@ export function HierarchyPage() {
       const warningCount = issues.length - errorCount;
       const message =
         errorCount > 0 && warningCount > 0
-          ? `There are ${issues.length} validation issue(s) in the hierarchy (${errorCount} error(s), ${warningCount} warning(s)). Push anyway?`
-          : `There are ${issues.length} validation ${errorCount > 0 ? "error" : "warning"}(s) in the hierarchy. Push anyway?`;
+          ? `Push hierarchy with ${issues.length} validation issue(s)?\n\n${errorCount} error(s) and ${warningCount} warning(s) detected. Agents will receive this hierarchy as-is, which may cause unexpected enforcement behavior.`
+          : `Push hierarchy with ${issues.length} validation ${errorCount > 0 ? "error" : "warning"}(s)?\n\n${errorCount > 0 ? "Errors may cause unexpected enforcement behavior on receiving agents." : "Warnings indicate potential configuration issues that may affect enforcement."}`;
       const proceed = window.confirm(
         message,
       );
@@ -1619,7 +1616,7 @@ export function HierarchyPage() {
           name: node.name,
           node_type: node.type,
           external_id: node.externalId ?? null,
-          parent_id: resolvedParentId,
+          parent_id: node.parentId,
           policy_id: node.policyId ?? null,
           policy_name: node.policyName ?? null,
           metadata: node.metadata,
@@ -1711,7 +1708,8 @@ export function HierarchyPage() {
   /**
    * Map a backend node_type string to the frontend OrgNodeType.
    * The backend supports "project" which the frontend does not yet have,
-   * so we map it to "team" as the closest equivalent.
+   * so we map it to "team" as the closest equivalent. Legacy "agent" maps
+   * to "endpoint" after the endpoint/runtime split.
    */
   const mapNodeType = useCallback((backendType: string): OrgNodeType => {
     if (
@@ -1723,7 +1721,8 @@ export function HierarchyPage() {
     ) {
       return backendType;
     }
-    return "team"; // "project" and unknown
+    // "project" and any unknown types map to "team"
+    return "team";
   }, []);
 
   /**
@@ -1773,7 +1772,7 @@ export function HierarchyPage() {
       showSyncStatus("error", "Another sync operation is already in progress");
       return;
     }
-    if (!window.confirm("Replace local hierarchy with fleet data? Unsaved local changes will be lost.")) return;
+    if (!window.confirm("Replace local hierarchy with fleet data?\n\nAll unsaved local changes to the hierarchy will be overwritten. Saved policies in the library are not affected.")) return;
     syncInProgressRef.current = true;
     setSyncStatus({ type: "pulling", message: "Downloading hierarchy..." });
 
@@ -2208,7 +2207,7 @@ export function HierarchyPage() {
         </div>
 
         {/* Right: Merge Preview / Impact */}
-        <div className="w-[260px] shrink-0">
+        <div className="w-[260px] shrink-0 max-lg:hidden">
           {selectedId && selectedNode ? (
             <MergePreviewPanel
               hierarchy={hierarchy}

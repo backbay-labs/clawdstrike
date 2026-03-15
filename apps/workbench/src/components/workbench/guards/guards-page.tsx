@@ -32,6 +32,9 @@ import {
   IconArrowRight,
 } from "@tabler/icons-react";
 
+// ---------------------------------------------------------------------------
+// Icon mapping — guard-registry.ts uses string names for icons
+// ---------------------------------------------------------------------------
 
 const ICON_MAP: Record<string, typeof IconLock> = {
   IconLock,
@@ -53,6 +56,9 @@ function resolveIcon(iconName: string): typeof IconLock {
   return ICON_MAP[iconName] ?? IconShield;
 }
 
+// ---------------------------------------------------------------------------
+// Category colors & metadata
+// ---------------------------------------------------------------------------
 
 const CATEGORY_COLORS: Record<GuardCategory, string> = {
   filesystem: "#8b7355",
@@ -115,6 +121,9 @@ const CATEGORY_THREAT_MAP: Record<GuardCategory, string[]> = {
   ],
 };
 
+// ---------------------------------------------------------------------------
+// Filter pills
+// ---------------------------------------------------------------------------
 
 type CategoryFilter = "all" | GuardCategory;
 
@@ -128,6 +137,10 @@ const FILTER_OPTIONS: { id: CategoryFilter; label: string }[] = [
   { id: "cua", label: "CUA" },
 ];
 
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Category badge
+// ---------------------------------------------------------------------------
 
 function CategoryBadge({ category }: { category: GuardCategory }) {
   const color = CATEGORY_COLORS[category];
@@ -141,6 +154,9 @@ function CategoryBadge({ category }: { category: GuardCategory }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Guard Grid Card
+// ---------------------------------------------------------------------------
 
 function GuardGridCard({
   guard,
@@ -160,7 +176,7 @@ function GuardGridCard({
     <button
       onClick={onSelect}
       className={cn(
-        "relative text-left rounded-xl border p-4 transition-all duration-150 group",
+        "relative text-left rounded-xl border p-4 transition-all duration-150 group card-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]",
         "hover:shadow-[0_0_16px_rgba(212,168,75,0.06)]",
         isSelected
           ? "bg-[#131721] border-[#d4a84b]/40 shadow-[0_0_16px_rgba(212,168,75,0.08)]"
@@ -189,7 +205,7 @@ function GuardGridCard({
           />
         </div>
         <div className="min-w-0 flex-1">
-          <h3 className="text-[13px] font-semibold text-[#ece7dc] truncate leading-tight">
+          <h3 className="font-syne text-[13px] font-semibold text-[#ece7dc] truncate leading-tight">
             {guard.name}
           </h3>
           <div className="flex items-center gap-1.5 mt-1">
@@ -222,6 +238,9 @@ function GuardGridCard({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Guard List Row
+// ---------------------------------------------------------------------------
 
 function GuardListRow({
   guard,
@@ -240,7 +259,7 @@ function GuardListRow({
     <button
       onClick={onSelect}
       className={cn(
-        "w-full text-left flex items-center gap-3 px-4 py-2.5 rounded-lg border transition-all duration-150 group",
+        "w-full text-left flex items-center gap-3 px-4 py-2.5 rounded-lg border transition-all duration-150 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]",
         isSelected
           ? "bg-[#131721] border-[#d4a84b]/40"
           : "bg-[#131721]/50 border-transparent hover:bg-[#131721] hover:border-[#2d3240]",
@@ -287,6 +306,9 @@ function GuardListRow({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Detail Panel
+// ---------------------------------------------------------------------------
 
 function GuardDetailPanel({
   guard,
@@ -325,7 +347,7 @@ function GuardDetailPanel({
             />
           </div>
           <div className="min-w-0">
-            <h2 className="text-base font-semibold text-[#ece7dc] leading-tight">
+            <h2 className="font-syne text-base font-semibold text-[#ece7dc] leading-tight">
               {guard.name}
             </h2>
             <p className="text-[11px] font-mono text-[#6f7f9a]/60 mt-0.5">
@@ -350,7 +372,7 @@ function GuardDetailPanel({
         </div>
         <button
           onClick={onClose}
-          className="shrink-0 p-1 rounded-md text-[#6f7f9a] hover:text-[#ece7dc] hover:bg-[#131721] transition-colors"
+          className="shrink-0 p-1 rounded-md text-[#6f7f9a] hover:text-[#ece7dc] hover:bg-[#131721] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]"
         >
           <IconX size={16} stroke={1.5} />
         </button>
@@ -366,13 +388,13 @@ function GuardDetailPanel({
         {/* Configuration schema */}
         {nonEnabledFields.length > 0 && (
           <div>
-            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-[#ece7dc]/70 mb-2.5 flex items-center gap-1.5">
+            <h3 className="font-syne text-[11px] font-semibold uppercase tracking-wider text-[#ece7dc]/70 mb-2.5 flex items-center gap-1.5">
               <IconSettings size={12} stroke={1.5} className="text-[#d4a84b]" />
               Configuration Schema
             </h3>
-            <div className="rounded-lg border border-[#2d3240]/60 bg-[#131721]/30 divide-y divide-[#2d3240]/30">
+            <div className="rounded-lg border border-[#2d3240]/60 bg-[#131721]/30 space-y-3 p-3">
               {nonEnabledFields.map((field) => (
-                <div key={field.key} className="px-3 py-2.5 flex items-start gap-3">
+                <div key={field.key} className="flex items-start gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-[11.5px] font-medium text-[#ece7dc]">
@@ -443,7 +465,7 @@ function GuardDetailPanel({
         {/* Threat categories */}
         {threats.length > 0 && (
           <div>
-            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-[#ece7dc]/70 mb-2.5">
+            <h3 className="font-syne text-[11px] font-semibold uppercase tracking-wider text-[#ece7dc]/70 mb-2.5">
               Threat Categories Covered
             </h3>
             <div className="flex flex-wrap gap-1.5">
@@ -464,7 +486,7 @@ function GuardDetailPanel({
           <button
             onClick={onToggle}
             className={cn(
-              "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-colors",
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-colors active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]",
               isActive
                 ? "bg-[#c45c5c]/15 text-[#c45c5c] hover:bg-[#c45c5c]/25 border border-[#c45c5c]/20"
                 : "bg-[#3dbf84]/15 text-[#3dbf84] hover:bg-[#3dbf84]/25 border border-[#3dbf84]/20",
@@ -476,7 +498,7 @@ function GuardDetailPanel({
 
           <button
             onClick={onNavigateToEditor}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-[#131721] text-[#ece7dc] border border-[#2d3240] hover:border-[#d4a84b]/40 hover:text-[#d4a84b] transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-[#131721] text-[#ece7dc] border border-[#2d3240] hover:border-[#d4a84b]/40 hover:text-[#d4a84b] transition-colors active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]"
           >
             <IconArrowRight size={13} stroke={1.5} />
             Configure in Editor
@@ -484,7 +506,7 @@ function GuardDetailPanel({
 
           <button
             onClick={onGenerateTests}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-[#131721] text-[#ece7dc] border border-[#2d3240] hover:border-[#7b6b8b]/40 hover:text-[#7b6b8b] transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-[#131721] text-[#ece7dc] border border-[#2d3240] hover:border-[#7b6b8b]/40 hover:text-[#7b6b8b] transition-colors active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]"
           >
             <IconTestPipe size={13} stroke={1.5} />
             Generate Test Scenarios
@@ -495,6 +517,9 @@ function GuardDetailPanel({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Main page
+// ---------------------------------------------------------------------------
 
 interface GuardsPageProps {
   /** Override the default "navigate to editor" behavior (e.g. when embedded as a panel). */
@@ -613,7 +638,7 @@ export function GuardsPage({ onNavigateToEditor: onNavigateToEditorProp }: Guard
   return (
     <div className="flex flex-col h-full bg-[#05060a]">
       {/* Header bar */}
-      <div className="shrink-0 border-b border-[#2d3240]/60 bg-[#0b0d13]/50">
+      <div className="relative shrink-0 border-b border-[#2d3240]/60 bg-[#0b0d13]/50 noise-overlay">
         <div className="flex items-center justify-between gap-4 px-6 py-4">
           {/* Left: title */}
           <div className="shrink-0">
@@ -633,7 +658,7 @@ export function GuardsPage({ onNavigateToEditor: onNavigateToEditorProp }: Guard
                 key={opt.id}
                 onClick={() => setCategoryFilter(opt.id)}
                 className={cn(
-                  "px-2.5 py-1 rounded-full text-[10.5px] font-medium transition-all duration-150",
+                  "px-2.5 py-1 rounded-full text-[10.5px] font-medium transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]",
                   categoryFilter === opt.id
                     ? "bg-[#d4a84b]/15 text-[#d4a84b] border border-[#d4a84b]/30"
                     : "text-[#6f7f9a] border border-transparent hover:text-[#ece7dc] hover:bg-[#131721]/60",
@@ -651,7 +676,7 @@ export function GuardsPage({ onNavigateToEditor: onNavigateToEditorProp }: Guard
               <button
                 onClick={() => setViewMode("grid")}
                 className={cn(
-                  "p-1.5 rounded-md transition-colors",
+                  "p-1.5 rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]",
                   viewMode === "grid"
                     ? "bg-[#d4a84b]/15 text-[#d4a84b]"
                     : "text-[#6f7f9a] hover:text-[#ece7dc]",
@@ -663,7 +688,7 @@ export function GuardsPage({ onNavigateToEditor: onNavigateToEditorProp }: Guard
               <button
                 onClick={() => setViewMode("list")}
                 className={cn(
-                  "p-1.5 rounded-md transition-colors",
+                  "p-1.5 rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]",
                   viewMode === "list"
                     ? "bg-[#d4a84b]/15 text-[#d4a84b]"
                     : "text-[#6f7f9a] hover:text-[#ece7dc]",
@@ -695,7 +720,7 @@ export function GuardsPage({ onNavigateToEditor: onNavigateToEditorProp }: Guard
               {searchQuery && (
                 <button
                   onClick={() => setSearchQuery("")}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[#6f7f9a] hover:text-[#ece7dc] transition-colors"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[#6f7f9a] hover:text-[#ece7dc] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]"
                 >
                   <IconX size={12} stroke={1.5} />
                 </button>
@@ -725,7 +750,7 @@ export function GuardsPage({ onNavigateToEditor: onNavigateToEditorProp }: Guard
                   setCategoryFilter("all");
                   setSearchQuery("");
                 }}
-                className="mt-4 px-3 py-1.5 rounded-lg text-[11px] font-medium text-[#d4a84b] bg-[#d4a84b]/10 border border-[#d4a84b]/20 hover:bg-[#d4a84b]/15 transition-colors"
+                className="mt-4 px-3 py-1.5 rounded-lg text-[11px] font-medium text-[#d4a84b] bg-[#d4a84b]/10 border border-[#d4a84b]/20 hover:bg-[#d4a84b]/15 transition-colors active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]"
               >
                 Clear filters
               </button>
@@ -734,7 +759,7 @@ export function GuardsPage({ onNavigateToEditor: onNavigateToEditorProp }: Guard
             <div className="space-y-6">
               {/* Grid / List */}
               {viewMode === "grid" ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                   {filteredGuards.map((guard) => (
                     <GuardGridCard
                       key={guard.id}

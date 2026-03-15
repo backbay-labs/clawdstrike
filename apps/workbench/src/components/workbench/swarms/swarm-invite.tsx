@@ -15,6 +15,7 @@ import {
   IconUser,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import { SubTabBar, type SubTab } from "../shared/sub-tab-bar";
 import { useOperator } from "@/lib/workbench/operator-store";
 import { useSwarms } from "@/lib/workbench/swarm-store";
 import type { SwarmOperatorRole } from "@/lib/workbench/operator-types";
@@ -29,6 +30,11 @@ import {
 
 
 type InviteTab = "create" | "accept";
+
+const INVITE_TABS: SubTab[] = [
+  { id: "create", label: "Create Invitation", icon: IconMail },
+  { id: "accept", label: "Accept Invitation", icon: IconMailOpened },
+];
 
 const EXPIRY_OPTIONS: { label: string; ms: number }[] = [
   { label: "1 hour", ms: 60 * 60 * 1000 },
@@ -46,20 +52,7 @@ export function SwarmInvite({ swarmId }: { swarmId: string }) {
   return (
     <div className="flex flex-col gap-4">
       {/* Tabs */}
-      <div className="flex items-center gap-0 border-b border-[#2d3240]/60">
-        <TabButton
-          active={activeTab === "create"}
-          onClick={() => setActiveTab("create")}
-          icon={<IconMail size={13} stroke={1.5} />}
-          label="Create Invitation"
-        />
-        <TabButton
-          active={activeTab === "accept"}
-          onClick={() => setActiveTab("accept")}
-          icon={<IconMailOpened size={13} stroke={1.5} />}
-          label="Accept Invitation"
-        />
-      </div>
+      <SubTabBar tabs={INVITE_TABS} activeTab={activeTab} onTabChange={(id) => setActiveTab(id as InviteTab)} />
 
       {activeTab === "create" && <CreateTab swarmId={swarmId} />}
       {activeTab === "accept" && <AcceptTab swarmId={swarmId} />}
@@ -426,29 +419,3 @@ function AcceptTab({ swarmId }: { swarmId: string }) {
 }
 
 
-function TabButton({
-  active,
-  onClick,
-  icon,
-  label,
-}: {
-  active: boolean;
-  onClick: () => void;
-  icon: React.ReactNode;
-  label: string;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-colors",
-        active
-          ? "text-[#d4a84b] border-[#d4a84b]"
-          : "text-[#6f7f9a] border-transparent hover:text-[#ece7dc] hover:border-[#2d3240]",
-      )}
-    >
-      {icon}
-      {label}
-    </button>
-  );
-}

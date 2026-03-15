@@ -64,7 +64,26 @@
   --color-verdict-allow: #3dbf84;
   --color-verdict-deny: #c45c5c;
   --color-verdict-warn: #d4a84b;
+  --color-border-subtle: #2d3240;
+  --color-surface-hover: #131721;
+  --color-deny: #c45c5c;
+  --color-allow: #3dbf84;
+  --color-surface-prominent: #1a202c;
+  --color-surface-floating: #232d3d;
 }
+
+/* ==========================================================================
+   Type Scale (reference — normalize toward these values)
+   ==========================================================================
+   Display:    font-syne text-xl    (20px) — page titles, hero text
+   Heading:    font-syne text-base  (16px) — section headings
+   Heading-sm: font-syne text-sm    (14px) — subsection headings
+   Body:       text-sm              (14px) — default body text
+   Body-sm:    text-xs              (12px) — secondary body text
+   Label:      text-[11px]          (11px) — form labels, metadata
+   Caption:    text-[10px]          (10px) — timestamps, badges, filters
+   Micro:      text-[9px]           (9px)  — status indicators only
+   ========================================================================== */
 
 /* ==========================================================================
    CSS Custom Properties (design tokens)
@@ -149,6 +168,22 @@
     font-family: var(--font-sans);
     scroll-behavior: smooth;
   }
+}
+
+/* Card elevation shadows for dark theme depth */
+.card-shadow {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+.card-shadow-hover {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* Semantic border utilities for dark theme */
+.border-lifted {
+  border-color: #3d4250;
+}
+.border-active {
+  border-color: rgba(212, 168, 75, 0.25);
 }
 
 /* ==========================================================================

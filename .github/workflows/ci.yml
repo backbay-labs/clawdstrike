@@ -478,7 +478,12 @@ jobs:
             --ignore RUSTSEC-2025-0081 \
             --ignore RUSTSEC-2025-0098 \
             --ignore RUSTSEC-2025-0100 \
-            --ignore RUSTSEC-2025-0119
+            --ignore RUSTSEC-2025-0119 \
+            # Temporary: transitive via portable-pty->serial in workbench PTY stack.
+            # Mitigated by command hardening (shell/env allowlists + backend-minted
+            # capability tokens bound to trusted-window context).
+            # Tracking removal: SEC-PTY-001.
+            --ignore RUSTSEC-2017-0008
           )
 
           cargo audit --deny warnings "${audit_ignores[@]}"
@@ -841,6 +846,7 @@ jobs:
           cache: 'npm'
           cache-dependency-path: |
             packages/adapters/clawdstrike-adapter-core/package-lock.json
+            packages/adapters/clawdstrike-broker-client/package-lock.json
             packages/adapters/clawdstrike-openai/package-lock.json
             packages/adapters/clawdstrike-claude/package-lock.json
             packages/adapters/clawdstrike-hush-cli-engine/package-lock.json
@@ -849,6 +855,7 @@ jobs:
       - name: Install dependencies
         run: |
           npm --prefix packages/adapters/clawdstrike-adapter-core ci
+          npm --prefix packages/adapters/clawdstrike-broker-client ci
           npm --prefix packages/adapters/clawdstrike-openai ci
           npm --prefix packages/adapters/clawdstrike-claude ci
           npm --prefix packages/adapters/clawdstrike-hush-cli-engine ci
@@ -857,6 +864,7 @@ jobs:
       - name: Build dependencies and adapters
         run: |
           npm --prefix packages/adapters/clawdstrike-adapter-core run build
+          npm --prefix packages/adapters/clawdstrike-broker-client run build
           npm --prefix packages/adapters/clawdstrike-openai run build
           npm --prefix packages/adapters/clawdstrike-claude run build
           npm --prefix packages/adapters/clawdstrike-hush-cli-engine run build

@@ -1,0 +1,42 @@
+[package]
+name = "clawdstrike-brokerd"
+description = "Secret-bearing outbound request broker for Clawdstrike"
+publish = false
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "clawdstrike_brokerd"
+path = "src/lib.rs"
+
+[[bin]]
+name = "clawdstrike-brokerd"
+path = "src/main.rs"
+
+[dependencies]
+hush-core.workspace = true
+clawdstrike-broker-protocol.workspace = true
+anyhow.workspace = true
+async-trait.workspace = true
+axum.workspace = true
+chrono.workspace = true
+futures.workspace = true
+reqwest = { workspace = true, features = ["stream"] }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+url.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

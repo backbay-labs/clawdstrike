@@ -808,6 +808,19 @@ export function PolicyEditor() {
           )}
         </div>
 
+        {/* Version history panel (collapsible right sidebar — responsive) */}
+        {historyOpen && !showHome && (
+          <div className="w-[280px] shrink-0 max-lg:hidden">
+            <VersionHistoryPanel
+              policyId={policyId}
+              currentYaml={state.yaml}
+              currentPolicy={state.activePolicy}
+              onRollback={handleRollback}
+              onCompare={handleCompare}
+            />
+          </div>
+        )}
+
         <CommandPalette
           open={commandPaletteOpen}
           onClose={() => setCommandPaletteOpen(false)}

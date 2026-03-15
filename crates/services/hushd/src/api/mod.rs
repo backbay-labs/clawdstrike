@@ -2,6 +2,7 @@
 
 pub mod agent_status;
 pub mod audit;
+pub mod broker;
 pub mod certification;
 pub mod check;
 pub mod eval;
@@ -39,6 +40,11 @@ pub use agent_status::{
     AgentHeartbeatRequest, AgentHeartbeatResponse, AgentStatusQuery, AgentStatusResponse,
 };
 pub use audit::{AuditQuery, AuditResponse, AuditStatsResponse};
+pub use broker::{
+    BrokerCapabilitiesResponse, BrokerCapabilityDetailResponse, BrokerCompletionBundleResponse,
+    BrokerEvidenceAck, BrokerFrozenProvidersResponse, BrokerPreviewListResponse,
+    BrokerPreviewResponse, BrokerPublicKeyResponse, BrokerReplayResponse,
+};
 pub use check::{CheckRequest, CheckResponse};
 pub use health::{HealthResponse, ReadinessResponse};
 pub use me::MeResponse;
@@ -264,6 +270,17 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/v1/check", post(check::check_action))
         .route("/api/v1/eval", post(eval::eval_policy_event))
         .route(
+            "/api/v1/broker/capabilities",
+            post(broker::issue_capability),
+        )
+        .route("/api/v1/broker/previews", post(broker::create_preview))
+        .route(
+            "/api/v1/broker/capabilities/{id}/status",
+            get(broker::capability_status),
+        )
+        .route("/api/v1/broker/public-key", get(broker::public_key))
+        .route("/api/v1/broker/evidence", post(broker::ingest_evidence))
+        .route(
             "/api/v1/agent/heartbeat",
             post(agent_status::ingest_agent_heartbeat),
         )
@@ -278,6 +295,28 @@ pub fn create_router(state: AppState) -> Router {
         .route("/metrics", get(metrics::metrics))
         .route("/api/v1/policy", get(policy::get_policy))
         .route("/api/v1/policy/bundle", get(policy::get_policy_bundle))
+        .route(
+            "/api/v1/broker/capabilities",
+            get(broker::list_capabilities),
+        )
+        .route(
+            "/api/v1/broker/capabilities/{id}",
+            get(broker::capability_status),
+        )
+        .route("/api/v1/broker/previews", get(broker::list_previews))
+        .route("/api/v1/broker/previews/{id}", get(broker::get_preview))
+        .route(
+            "/api/v1/broker/capabilities/{id}/replay",
+            post(broker::replay_capability),
+        )
+        .route(
+            "/api/v1/broker/capabilities/{id}/bundle",
+            get(broker::export_completion_bundle),
+        )
+        .route(
+            "/api/v1/broker/providers/freeze",
+            get(broker::list_frozen_providers),
+        )
         .route("/api/v1/rbac/roles", get(rbac::list_roles))
         .route("/api/v1/rbac/roles/{id}", get(rbac::get_role))
         .route("/api/v1/rbac/assignments", get(rbac::list_role_assignments))
@@ -306,7 +345,10 @@ pub fn create_router(state: AppState) -> Router {
         )
         .route("/api/v1/events", get(events::stream_events))
         .route("/api/v1/siem/exporters", get(siem::exporters))
-        .route("/api/v1/swarm/hub/config", get(swarm_hub::get_swarm_hub_config))
+        .route(
+            "/api/v1/swarm/hub/config",
+            get(swarm_hub::get_swarm_hub_config),
+        )
         .route(
             "/api/v1/swarm/feeds/{feedId}/head",
             get(swarm_hub::get_swarm_feed_head),
@@ -335,6 +377,22 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/v1/policy/validate", post(policy::validate_policy))
         .route("/api/v1/policy/bundle", put(policy::update_policy_bundle))
         .route("/api/v1/policy/reload", post(policy::reload_policy))
+        .route(
+            "/api/v1/broker/capabilities/revoke-all",
+            post(broker::revoke_all_capabilities),
+        )
+        .route(
+            "/api/v1/broker/capabilities/{id}/revoke",
+            post(broker::revoke_capability),
+        )
+        .route(
+            "/api/v1/broker/providers/{provider}/freeze",
+            post(broker::freeze_provider).delete(broker::unfreeze_provider),
+        )
+        .route(
+            "/api/v1/broker/previews/{id}/approve",
+            post(broker::approve_preview),
+        )
         .route("/api/v1/audit/batch", post(audit::ingest_audit_batch))
         .route("/api/v1/rbac/roles", post(rbac::create_role))
         .route(
@@ -423,5 +481,62 @@ pub fn create_router(state: AppState) -> Router {
         app.layer(cors)
     } else {
         app
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode},
+    };
+    use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn create_router_registers_swarm_routes() {
+        let test_dir =
+            std::env::temp_dir().join(format!("hushd-api-router-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&test_dir).expect("create temp dir");
+
+        let config = crate::config::Config {
+            cors_enabled: false,
+            audit_db: test_dir.join("audit.db"),
+            control_db: Some(test_dir.join("control.db")),
+            ..Default::default()
+        };
+        let state = crate::state::AppState::new(config).await.expect("state");
+        let app = create_router(state);
+
+        let health_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/health")
+                    .body(Body::empty())
+                    .expect("build health request"),
+            )
+            .await
+            .expect("health response");
+        assert_eq!(health_response.status(), StatusCode::OK);
+
+        let swarm_response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/api/v1/swarm/hub/config")
+                    .body(Body::empty())
+                    .expect("build swarm request"),
+            )
+            .await
+            .expect("swarm response");
+        assert_ne!(
+            swarm_response.status(),
+            StatusCode::NOT_FOUND,
+            "swarm hub route should be registered"
+        );
+
+        let _ = std::fs::remove_dir_all(&test_dir);
     }
 }

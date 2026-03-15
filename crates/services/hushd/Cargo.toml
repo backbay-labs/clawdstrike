@@ -27,6 +27,8 @@ path = "src/bin/clawdstriked.rs"
 hush-core.workspace = true
 hush-proxy.workspace = true
 clawdstrike = { workspace = true, features = ["full"] }
+clawdstrike-broker-protocol.workspace = true
+hush-multi-agent.workspace = true
 clawdstrike-ocsf.workspace = true
 clawdstrike-policy-event = { workspace = true, features = ["simulate"] }
 hush-certification.workspace = true

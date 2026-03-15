@@ -274,7 +274,7 @@ export function Baselines({
         {/* Agents section */}
         <div className="px-3 pt-4 pb-2">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-[9px] font-semibold uppercase tracking-[0.08em] text-[#6f7f9a]/50">
+            <span className="text-[9px] font-semibold uppercase tracking-wider text-[#6f7f9a]/50">
               Agents
             </span>
             <span className="text-[9px] font-mono text-[#6f7f9a]/30">
@@ -336,7 +336,7 @@ export function Baselines({
         {/* Teams section */}
         <div className="px-3 pb-4">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-[9px] font-semibold uppercase tracking-[0.08em] text-[#6f7f9a]/50">
+            <span className="text-[9px] font-semibold uppercase tracking-wider text-[#6f7f9a]/50">
               Teams
             </span>
             <span className="text-[9px] font-mono text-[#6f7f9a]/30">
@@ -415,7 +415,7 @@ export function Baselines({
         ) : (
           <div className="flex h-full items-center justify-center">
             <div className="flex flex-col items-center gap-3">
-              <IconActivity size={24} className="text-[#6f7f9a]/20" />
+              <IconActivity size={24} className="text-[#6f7f9a]/50" />
               <span className="text-[12px] text-[#6f7f9a]/40">
                 Select an agent to view their behavioral baseline
               </span>
@@ -511,7 +511,7 @@ function BaselineDetail({
       <div className="shrink-0 border-b border-[#2d3240]/60 px-6 py-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <h2 className="text-sm font-semibold text-[#ece7dc] tracking-[-0.01em]">
+            <h2 className="font-syne text-sm font-semibold text-[#ece7dc] tracking-[-0.01em]">
               {baseline.agentName}
             </h2>
             {driftCount > 0 && (
@@ -524,7 +524,7 @@ function BaselineDetail({
 
           {/* Sensitivity segmented control */}
           <div className="flex items-center gap-2">
-            <span className="text-[9px] uppercase tracking-[0.08em] text-[#6f7f9a]/40">
+            <span className="text-[9px] uppercase tracking-wider text-[#6f7f9a]/40">
               Sensitivity
             </span>
             <div className="flex items-center rounded-md border border-[#2d3240] overflow-hidden">
@@ -624,7 +624,7 @@ function SectionHeader({
   return (
     <div className="flex items-center gap-2 mb-3">
       <Icon size={14} stroke={1.5} className="text-[#d4a84b]" />
-      <h3 className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[#ece7dc]/80">
+      <h3 className="font-syne text-[11px] font-semibold uppercase tracking-wider text-[#ece7dc]/80">
         {title}
       </h3>
       {badge && (
@@ -926,13 +926,13 @@ function TopTargetsTable({
   newTargets: Set<string>;
 }) {
   const TH =
-    "px-3 py-2 text-left text-[9px] uppercase tracking-[0.08em] font-semibold text-[#6f7f9a]/50";
+    "px-3 py-2 text-left text-[9px] uppercase tracking-[0.08em] font-semibold text-[#6f7f9a]/80";
 
   return (
     <div className="rounded-lg border border-[#2d3240]/60 bg-[#131721] overflow-hidden">
       <table className="w-full">
         <thead>
-          <tr className="border-b border-[#2d3240]/60 bg-[#0b0d13]">
+          <tr className="border-b border-[#2d3240]/60 bg-[#0b0d13]/60">
             <th className={TH}>Target</th>
             <th className={cn(TH, "w-[80px]")}>Count</th>
             <th className={cn(TH, "w-[120px]")}>Action Type</th>

@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
+import { motion } from "motion/react";
 import {
   IconPencil,
   IconShieldCheck,
@@ -13,6 +14,9 @@ import {
   IconFileAnalytics,
   IconCertificate,
   IconSitemap,
+  IconInfoCircle,
+  IconCheck,
+  IconArrowRight,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { ClaudeCodeHint } from "@/components/workbench/shared/claude-code-hint";
@@ -23,6 +27,10 @@ import { useFindings } from "@/lib/workbench/finding-store";
 import { GUARD_REGISTRY } from "@/lib/workbench/guard-registry";
 import { SEVERITY_COLORS } from "@/lib/workbench/finding-constants";
 import type { GuardId } from "@/lib/workbench/types";
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
 
 const CATEGORY_LABELS: Record<string, string> = {
   filesystem: "Filesystem",
@@ -48,6 +56,10 @@ const VERDICT_COLORS: Record<string, string> = {
   warn: "#d4a84b",
 };
 
+// ---------------------------------------------------------------------------
+// Health Ring — SVG arc showing enabled/total guard coverage
+// ---------------------------------------------------------------------------
+
 function HealthRing({
   enabled,
   total,
@@ -63,7 +75,8 @@ function HealthRing({
   return (
     <div className="relative w-[76px] h-[76px] shrink-0">
       <svg viewBox="0 0 80 80" className="w-full h-full -rotate-90">
-                <circle
+        {/* Track */}
+        <circle
           cx="40"
           cy="40"
           r={radius}
@@ -71,7 +84,8 @@ function HealthRing({
           stroke="#2d3240"
           strokeWidth="3.5"
         />
-                <circle
+        {/* Active arc — stroke-draw animation */}
+        <motion.circle
           cx="40"
           cy="40"
           r={radius}
@@ -80,8 +94,9 @@ function HealthRing({
           strokeWidth="3.5"
           strokeLinecap="round"
           strokeDasharray={circumference}
-          strokeDashoffset={dashOffset}
-          className="transition-all duration-1000 ease-out"
+          initial={{ strokeDashoffset: circumference }}
+          animate={{ strokeDashoffset: dashOffset }}
+          transition={{ duration: 1, ease: "easeOut" }}
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
@@ -93,6 +108,10 @@ function HealthRing({
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Guard tile — compact indicator in the coverage matrix
+// ---------------------------------------------------------------------------
 
 function GuardTile({
   name,
@@ -108,7 +127,7 @@ function GuardTile({
   return (
     <div
       className={cn(
-        "flex items-center gap-2 px-3 py-2 rounded-md transition-all duration-200",
+        "flex items-center gap-2 px-3 py-2 rounded-md transition-all duration-150",
         enabled ? "bg-[#131721]/80" : "bg-transparent",
       )}
     >
@@ -131,6 +150,10 @@ function GuardTile({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Navigation card — contextual link with live state indicator
+// ---------------------------------------------------------------------------
+
 function NavCard({
   icon,
   label,
@@ -147,7 +170,7 @@ function NavCard({
   return (
     <Link
       to={href}
-      className="group flex items-center gap-3.5 px-4 py-3.5 rounded-lg border border-[#2d3240]/40 bg-[#0b0d13]/40 hover:border-[#2d3240] hover:bg-[#0b0d13] transition-all duration-200"
+      className="group flex items-center gap-3.5 px-4 py-3.5 rounded-lg border border-[#2d3240]/40 bg-[#0b0d13]/40 hover:border-[#2d3240] hover:bg-[#0b0d13] transition-all duration-150 card-shadow"
     >
       <div className="w-8 h-8 rounded-md bg-[#131721] flex items-center justify-center text-[#6f7f9a] group-hover:text-[#d4a84b] transition-colors shrink-0">
         {icon}
@@ -164,6 +187,123 @@ function NavCard({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Quick Start Guide — shown until the user has made meaningful progress
+// ---------------------------------------------------------------------------
+
+function QuickStartGuide({
+  fleetConnected,
+  sentinelCount,
+  findingsCount,
+}: {
+  fleetConnected: boolean;
+  sentinelCount: number;
+  findingsCount: number;
+}) {
+  // Hide once all three milestones are met
+  if (sentinelCount > 0 && findingsCount > 0 && fleetConnected) return null;
+
+  const steps = [
+    {
+      num: 1,
+      title: "Connect to Fleet",
+      desc: "Link your hushd daemon to enable live enforcement",
+      done: fleetConnected,
+      href: "/settings",
+    },
+    {
+      num: 2,
+      title: "Deploy a Sentinel",
+      desc: "Create an autonomous security monitor for your agents",
+      done: sentinelCount > 0,
+      href: "/fleet",
+    },
+    {
+      num: 3,
+      title: "Review Findings",
+      desc: "Investigate threats detected by your sentinels",
+      done: findingsCount > 0,
+      href: "/audit",
+    },
+  ];
+
+  // Determine the first incomplete step so we can accent it
+  const nextStepIdx = steps.findIndex((s) => !s.done);
+
+  return (
+    <div>
+      <h2 className="text-[10px] font-mono font-semibold text-[#d4a84b] uppercase tracking-[0.15em] mb-3">
+        Quick Start
+      </h2>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {steps.map((step, idx) => {
+          const isNext = idx === nextStepIdx;
+          return (
+            <Link
+              key={step.num}
+              to={step.href}
+              className={cn(
+                "group relative flex items-start gap-3 px-4 py-4 rounded-lg border transition-all duration-200",
+                step.done
+                  ? "border-[#3dbf84]/20 bg-[#3dbf84]/[0.03]"
+                  : isNext
+                    ? "border-[#d4a84b]/30 bg-[#d4a84b]/[0.04] hover:border-[#d4a84b]/50"
+                    : "border-[#2d3240]/40 bg-[#0b0d13]/40 hover:border-[#2d3240]",
+              )}
+            >
+              {/* Step number or checkmark */}
+              <div
+                className={cn(
+                  "w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-xs font-bold transition-colors",
+                  step.done
+                    ? "bg-[#3dbf84]/15 text-[#3dbf84]"
+                    : isNext
+                      ? "bg-[#d4a84b]/15 text-[#d4a84b] ring-1 ring-[#d4a84b]/30"
+                      : "bg-[#2d3240]/40 text-[#6f7f9a]/60",
+                )}
+              >
+                {step.done ? (
+                  <IconCheck size={14} stroke={2.5} />
+                ) : (
+                  step.num
+                )}
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <div
+                  className={cn(
+                    "text-xs font-medium",
+                    step.done
+                      ? "text-[#3dbf84]/80"
+                      : "text-[#ece7dc]",
+                  )}
+                >
+                  {step.title}
+                </div>
+                <div className="text-[10px] text-[#6f7f9a] mt-0.5 leading-relaxed">
+                  {step.desc}
+                </div>
+              </div>
+
+              {/* Arrow hint for the active step */}
+              {isNext && !step.done && (
+                <IconArrowRight
+                  size={14}
+                  stroke={1.5}
+                  className="text-[#d4a84b]/40 group-hover:text-[#d4a84b] transition-colors shrink-0 mt-1.5"
+                />
+              )}
+            </Link>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Sentinel Summary Card — shows total, active/paused/retired, mini sigils
+// ---------------------------------------------------------------------------
 
 function SentinelSummaryCard({
   total,
@@ -177,10 +317,10 @@ function SentinelSummaryCard({
   retired: number;
 }) {
   return (
-    <div className="rounded-lg border border-[#2d3240]/40 bg-[#0b0d13]/60 px-5 py-4">
+    <div className="rounded-lg border border-[#2d3240]/40 bg-[#0b0d13]/60 p-4">
       <div className="flex items-center gap-2 mb-3">
         <IconRadar size={15} stroke={1.5} className="text-[#8b5555]" />
-        <span className="text-[10px] font-mono font-semibold text-[#8b5555] uppercase tracking-[0.12em]">
+        <span className="text-[10px] font-mono font-semibold text-[#8b5555] uppercase tracking-wider">
           Sentinels
         </span>
       </div>
@@ -207,6 +347,7 @@ function SentinelSummaryCard({
           <span className="text-[#6f7f9a]">retired</span>
         </span>
       </div>
+      {/* Mini sigil placeholders for active sentinels */}
       {active > 0 && (
         <div className="flex items-center gap-1.5 mt-3">
           {Array.from({ length: Math.min(active, 8) }).map((_, i) => (
@@ -230,6 +371,10 @@ function SentinelSummaryCard({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Findings Summary Card — emerging (highlighted), confirmed, total, severity bars
+// ---------------------------------------------------------------------------
+
 function FindingsSummaryCard({
   emerging,
   confirmed,
@@ -244,10 +389,10 @@ function FindingsSummaryCard({
   const maxSeverity = Math.max(1, ...Object.values(severityCounts));
 
   return (
-    <div className="rounded-lg border border-[#2d3240]/40 bg-[#0b0d13]/60 px-5 py-4">
+    <div className="rounded-lg border border-[#2d3240]/40 bg-[#0b0d13]/60 p-4">
       <div className="flex items-center gap-2 mb-3">
         <IconAlertTriangle size={15} stroke={1.5} className="text-[#d4a84b]" />
-        <span className="text-[10px] font-mono font-semibold text-[#d4a84b] uppercase tracking-[0.12em]">
+        <span className="text-[10px] font-mono font-semibold text-[#d4a84b] uppercase tracking-wider">
           Findings
         </span>
       </div>
@@ -269,6 +414,7 @@ function FindingsSummaryCard({
           <span className="text-[#6f7f9a]">confirmed</span>
         </span>
       </div>
+      {/* Severity breakdown mini-bars */}
       <div className="flex items-end gap-1 mt-3 h-5">
         {(["critical", "high", "medium", "low"] as const).map((sev) => {
           const count = severityCounts[sev] ?? 0;
@@ -298,12 +444,17 @@ function FindingsSummaryCard({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Home Page
+// ---------------------------------------------------------------------------
+
 export function HomePage() {
   const { state } = useWorkbench();
   const { tabs } = useMultiPolicy();
   const { connection } = useFleetConnection();
   const { activePolicy, validation, dirty } = state;
 
+  // ---- Guard analysis ----
   const { enabledCount, totalCount, guardsByCategory } = useMemo(() => {
     let enabled = 0;
     const byCategory: Record<
@@ -332,6 +483,7 @@ export function HomePage() {
     };
   }, [activePolicy]);
 
+  // ---- Validation status ----
   const errorCount = validation.errors.length;
   const warningCount = validation.warnings.length;
   let validationText: string;
@@ -348,6 +500,7 @@ export function HomePage() {
     validationColor = "#3dbf84";
   }
 
+  // ---- Derived details for nav cards ----
   const tabCount = tabs.length;
   const tabDetail = `${tabCount} tab${tabCount !== 1 ? "s" : ""}${dirty ? " · unsaved" : ""}`;
 
@@ -357,6 +510,7 @@ export function HomePage() {
 
   const savedCount = state.savedPolicies?.length ?? 0;
 
+  // ---- Live sentinel & findings data from providers ----
   const { sentinels } = useSentinels();
   const { findings } = useFindings();
 
@@ -388,7 +542,10 @@ export function HomePage() {
 
   return (
     <div className="h-full w-full flex flex-col bg-[#05060a] overflow-auto page-transition-enter">
-      <div className="max-w-4xl w-full mx-auto px-8 py-8 flex flex-col gap-8">
+      <div className="max-w-4xl w-full mx-auto px-6 py-6 flex flex-col gap-8">
+        {/* ================================================================ */}
+        {/* Policy Identity + Health Ring                                     */}
+        {/* ================================================================ */}
         <div className="flex items-center gap-6">
           <HealthRing enabled={enabledCount} total={totalCount} />
           <div className="min-w-0">
@@ -418,16 +575,40 @@ export function HomePage() {
           </div>
         </div>
 
+        {/* ================================================================ */}
+        {/* Sentinel & Findings Summary Cards                                */}
+        {/* ================================================================ */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <SentinelSummaryCard {...sentinelStats} />
           <FindingsSummaryCard {...findingsStats} />
         </div>
 
+        {/* ================================================================ */}
+        {/* Quick Start Guide                                                */}
+        {/* ================================================================ */}
+        <QuickStartGuide
+          fleetConnected={connection.connected}
+          sentinelCount={connection.agentCount}
+          findingsCount={enabledCount}
+        />
+
+        {sentinelStats.total === 0 && findingsStats.total === 0 && (
+          <div className="mx-6 mt-4 rounded-lg border border-[#2d3240]/40 bg-[#131721]/30 px-4 py-3 flex items-center gap-3">
+            <IconInfoCircle size={16} stroke={1.5} className="text-[#6f7f9a]/50 shrink-0" />
+            <p className="text-[11px] text-[#6f7f9a]/60">
+              Deploy a sentinel or connect to fleet to see live stats here.
+            </p>
+          </div>
+        )}
+
+        {/* ================================================================ */}
+        {/* Guard Coverage Matrix                                             */}
+        {/* ================================================================ */}
         <div>
-          <h2 className="text-[10px] font-mono font-semibold text-[#d4a84b] uppercase tracking-[0.15em] mb-3">
+          <h2 className="font-syne text-[10px] font-semibold text-[#d4a84b] uppercase tracking-wider mb-3">
             Guard Coverage
           </h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-5">
             {CATEGORY_ORDER.filter(
               (cat) => guardsByCategory[cat]?.length,
             ).map((cat) => (
@@ -445,13 +626,19 @@ export function HomePage() {
           </div>
         </div>
 
+        {/* ================================================================ */}
+        {/* Claude Code Hint                                                   */}
+        {/* ================================================================ */}
         <ClaudeCodeHint hintId="home.audit" />
 
+        {/* ================================================================ */}
+        {/* Navigation Cards                                                  */}
+        {/* ================================================================ */}
         <div>
-          <h2 className="text-[10px] font-mono font-semibold text-[#d4a84b] uppercase tracking-[0.15em] mb-3">
+          <h2 className="font-syne text-[10px] font-semibold text-[#d4a84b] uppercase tracking-wider mb-3">
             Navigate
           </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <NavCard
               icon={<IconRadar size={16} stroke={1.5} />}
               label="Sentinels"

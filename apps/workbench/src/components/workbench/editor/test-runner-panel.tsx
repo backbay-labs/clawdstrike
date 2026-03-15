@@ -16,6 +16,7 @@ import {
   type TauriSimulationResponse,
 } from "@/lib/tauri-commands";
 import { cn } from "@/lib/utils";
+import { SubTabBar, type SubTab } from "../shared/sub-tab-bar";
 import {
   IconPlayerPlay,
   IconPlus,
@@ -558,7 +559,7 @@ function QuickTestTab() {
                         <button
                           onClick={() => removeEntry(entry.id)}
                           className="p-0.5 text-[#6f7f9a] hover:text-[#c45c5c] transition-colors"
-                          title="Remove"
+                          title="Remove test entry"
                         >
                           <IconTrash size={11} stroke={1.5} />
                         </button>
@@ -1492,40 +1493,21 @@ function HistoryTab() {
 }
 
 
+const RUNNER_TABS: SubTab[] = [
+  { id: "quick", label: "Quick Test", icon: IconTestPipe },
+  { id: "suite", label: "Test Suite", icon: IconFileCode },
+  { id: "sdk", label: "SDK Integration", icon: IconCode },
+  { id: "history", label: "History", icon: IconHistory },
+  { id: "live", label: "Live Agent", icon: IconPlugConnected },
+];
+
 export function TestRunnerPanel() {
   const [activeTab, setActiveTab] = useState<RunnerTab>("quick");
-
-  const tabs: { id: RunnerTab; label: string; icon: typeof IconTestPipe }[] = [
-    { id: "quick", label: "Quick Test", icon: IconTestPipe },
-    { id: "suite", label: "Test Suite", icon: IconFileCode },
-    { id: "sdk", label: "SDK Integration", icon: IconCode },
-    { id: "history", label: "History", icon: IconHistory },
-    { id: "live", label: "Live Agent", icon: IconPlugConnected },
-  ];
 
   return (
     <div className="h-full flex flex-col bg-[#05060a]">
       {/* Tab bar */}
-      <div className="flex items-center border-b border-[#2d3240] bg-[#0b0d13] shrink-0">
-        {tabs.map((tab) => {
-          const Icon = tab.icon;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={cn(
-                "flex items-center gap-1.5 px-3 py-2 text-[10px] font-mono transition-colors border-b-2 -mb-px",
-                activeTab === tab.id
-                  ? "text-[#d4a84b] border-[#d4a84b]"
-                  : "text-[#6f7f9a] border-transparent hover:text-[#ece7dc] hover:border-[#2d3240]"
-              )}
-            >
-              <Icon size={12} stroke={1.5} />
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
+      <SubTabBar tabs={RUNNER_TABS} activeTab={activeTab} onTabChange={(id) => setActiveTab(id as RunnerTab)} />
 
       {/* Tab content */}
       <div className="flex-1 min-h-0">

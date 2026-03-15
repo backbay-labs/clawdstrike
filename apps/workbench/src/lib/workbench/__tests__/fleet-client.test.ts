@@ -49,6 +49,7 @@ import {
   type FleetConnection,
   type FleetReceipt,
 } from "../fleet-client";
+import { secureStore } from "../secure-store";
 
 // ---- MSW lifecycle ----
 
@@ -921,16 +922,17 @@ describe("fleetClient convenience object", () => {
     key: (index: number) => Object.keys(fleetSsStore)[index] ?? null,
   };
 
-  function seedLocalStorage() {
+  async function seedLocalStorage() {
     // URLs go to localStorage (sync-readable bootstrap)
     fleetLsStore["clawdstrike_hushd_url"] = "http://localhost:9876";
     fleetLsStore["clawdstrike_control_api_url"] = "http://localhost:9877";
-    // All credentials go to sessionStorage (secureStore web fallback)
-    // secureStore uses "clawdstrike_" prefix for the key name
+    // Non-sensitive keys go to sessionStorage (secureStore web fallback)
     fleetSsStore["clawdstrike_hushd_url"] = "http://localhost:9876";
     fleetSsStore["clawdstrike_control_api_url"] = "http://localhost:9877";
-    fleetSsStore["clawdstrike_api_key"] = "test-api-key";
-    fleetSsStore["clawdstrike_control_api_token"] = TEST_CONTROL_API_JWT;
+    // Sensitive keys (api_key, control_api_token) go to in-memory fallback
+    // via secureStore.set() — they are never written to sessionStorage.
+    await secureStore.set("api_key", "test-api-key");
+    await secureStore.set("control_api_token", TEST_CONTROL_API_JWT);
   }
 
   beforeEach(() => {
@@ -940,13 +942,16 @@ describe("fleetClient convenience object", () => {
     vi.stubGlobal("sessionStorage", fleetSessionStorageMock);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // Clean up in-memory fallback for sensitive keys
+    await secureStore.delete("api_key");
+    await secureStore.delete("control_api_token");
     vi.unstubAllGlobals();
   });
 
   describe("healthCheck", () => {
     it("returns true when hushd is reachable", async () => {
-      seedLocalStorage();
+      await seedLocalStorage();
       const ok = await fleetClient.healthCheck();
       expect(ok).toBe(true);
     });
@@ -958,7 +963,7 @@ describe("fleetClient convenience object", () => {
     });
 
     it("returns false when hushd is unreachable", async () => {
-      seedLocalStorage();
+      await seedLocalStorage();
       injectError("/_proxy/hushd/health", 500);
       const ok = await fleetClient.healthCheck();
       expect(ok).toBe(false);
@@ -974,13 +979,13 @@ describe("fleetClient convenience object", () => {
     });
 
     it("returns null when grants are empty", async () => {
-      seedLocalStorage();
+      await seedLocalStorage();
       const graph = await fleetClient.fetchDelegationGraph();
       expect(graph).toBeNull();
     });
 
     it("returns graph when grants data is available", async () => {
-      seedLocalStorage();
+      await seedLocalStorage();
       injectGrantsData();
       const graph = await fleetClient.fetchDelegationGraph();
       expect(graph).not.toBeNull();
@@ -998,21 +1003,22 @@ describe("fleetClient convenience object", () => {
 
     it("returns null when the saved connection has no control API URL", async () => {
       localStorage.setItem("clawdstrike_hushd_url", "http://localhost:9876");
-      localStorage.setItem("clawdstrike_api_key", "test-key");
+      // api_key is sensitive; seed via secureStore (goes to in-memory fallback)
+      await secureStore.set("api_key", "test-key");
 
       const result = await fleetClient.fetchApprovals();
       expect(result).toBeNull();
     });
 
     it("returns approvals when connection is configured", async () => {
-      seedLocalStorage();
+      await seedLocalStorage();
       const result = await fleetClient.fetchApprovals();
       expect(result).not.toBeNull();
       expect(result!.requests).toHaveLength(MOCK_DATA.approvalRequests.length);
     });
 
     it("returns null on server error (does not throw)", async () => {
-      seedLocalStorage();
+      await seedLocalStorage();
       injectError("/_proxy/control/api/v1/approvals", 500);
       const result = await fleetClient.fetchApprovals();
       expect(result).toBeNull();
@@ -1021,13 +1027,13 @@ describe("fleetClient convenience object", () => {
 
   describe("resolveApproval", () => {
     it("resolves approval via saved connection", async () => {
-      seedLocalStorage();
+      await seedLocalStorage();
       const result = await fleetClient.resolveApproval("apr-001", "approved");
       expect(result.success).toBe(true);
     });
 
     it("passes scope and reason through", async () => {
-      seedLocalStorage();
+      await seedLocalStorage();
       const result = await fleetClient.resolveApproval("apr-001", "denied", {
         scope: { ttlSeconds: 60 },
         reason: "Not needed",
@@ -1239,7 +1245,10 @@ describe("persistence helpers", () => {
     vi.stubGlobal("sessionStorage", sessionStorageMock);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // Clean up in-memory fallback for sensitive keys
+    await secureStore.delete("api_key");
+    await secureStore.delete("control_api_token");
     vi.unstubAllGlobals();
   });
 
@@ -1257,8 +1266,9 @@ describe("persistence helpers", () => {
     );
     // Secrets should NOT be in localStorage (Finding 2)
     expect(localStorage.getItem("clawdstrike_api_key")).toBeNull();
-    // Secrets go to sessionStorage (secureStore web fallback)
-    expect(sessionStorage.getItem("clawdstrike_api_key")).toBe("my-key");
+    // Sensitive secrets go to in-memory fallback (not sessionStorage)
+    expect(sessionStorage.getItem("clawdstrike_api_key")).toBeNull();
+    expect(await secureStore.get("api_key")).toBe("my-key");
   });
 
   it("saveConnectionConfig trims surrounding whitespace from URLs before persisting", async () => {
@@ -1306,8 +1316,10 @@ describe("persistence helpers", () => {
   });
 
   it("loadSavedConnectionAsync preserves secureStore-only control-api values", async () => {
+    // control_api_url is non-sensitive, goes to sessionStorage
     sessionStorage.setItem("clawdstrike_control_api_url", "http://localhost:9877");
-    sessionStorage.setItem("clawdstrike_control_api_token", "secure-token");
+    // control_api_token is sensitive, goes to in-memory fallback via secureStore
+    await secureStore.set("control_api_token", "secure-token");
 
     const saved = await loadSavedConnectionAsync();
     expect(saved.controlApiUrl).toBe("http://localhost:9877");
@@ -1316,8 +1328,10 @@ describe("persistence helpers", () => {
 
   it("loadSavedConnectionAsync backfills missing secure-store URLs from local bootstrap storage", async () => {
     localStorage.setItem("clawdstrike_hushd_url", "http://localhost:9876");
+    // control_api_url is non-sensitive, goes to sessionStorage
     sessionStorage.setItem("clawdstrike_control_api_url", "http://localhost:9877");
-    sessionStorage.setItem("clawdstrike_control_api_token", "secure-token");
+    // control_api_token is sensitive, goes to in-memory fallback via secureStore
+    await secureStore.set("control_api_token", "secure-token");
 
     const saved = await loadSavedConnectionAsync();
 

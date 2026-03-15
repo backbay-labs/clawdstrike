@@ -136,7 +136,10 @@ fn finding_attestation_digest(value: &Value) -> String {
         .expect("finding envelope should serialize as an object");
     signable_map.remove("attestation");
     signable_map.remove("publish");
-    if let Some(blob_refs) = signable_map.get_mut("blobRefs").and_then(Value::as_array_mut) {
+    if let Some(blob_refs) = signable_map
+        .get_mut("blobRefs")
+        .and_then(Value::as_array_mut)
+    {
         for blob_ref in blob_refs {
             if let Some(blob_ref_map) = blob_ref.as_object_mut() {
                 blob_ref_map.remove("publish");
@@ -204,7 +207,10 @@ fn finding_envelope_hash(value: &Value) -> String {
         .as_object_mut()
         .expect("finding envelope should serialize as an object");
     signable_map.remove("publish");
-    if let Some(blob_refs) = signable_map.get_mut("blobRefs").and_then(Value::as_array_mut) {
+    if let Some(blob_refs) = signable_map
+        .get_mut("blobRefs")
+        .and_then(Value::as_array_mut)
+    {
         for blob_ref in blob_refs {
             if let Some(blob_ref_map) = blob_ref.as_object_mut() {
                 blob_ref_map.remove("publish");
@@ -235,7 +241,10 @@ fn assert_canonical_head_announcement(
     let fact_id = head["factId"]
         .as_str()
         .expect("headAnnouncement.factId should be a non-empty string");
-    assert!(!fact_id.is_empty(), "headAnnouncement.factId should not be empty");
+    assert!(
+        !fact_id.is_empty(),
+        "headAnnouncement.factId should not be empty"
+    );
     assert_eq!(head["schema"], "clawdstrike.swarm.head_announcement.v1");
     assert_eq!(head["feedId"], expected_finding["feedId"]);
     assert_eq!(head["issuerId"], expected_finding["issuerId"]);
@@ -260,7 +269,10 @@ fn assert_canonical_revocation_head_announcement(
     let fact_id = head["factId"]
         .as_str()
         .expect("headAnnouncement.factId should be a non-empty string");
-    assert!(!fact_id.is_empty(), "headAnnouncement.factId should not be empty");
+    assert!(
+        !fact_id.is_empty(),
+        "headAnnouncement.factId should not be empty"
+    );
     assert_eq!(head["schema"], HEAD_ANNOUNCEMENT_SCHEMA);
     assert_eq!(head["feedId"], expected_revocation["feedId"]);
     assert_eq!(head["issuerId"], expected_revocation["issuerId"]);
@@ -277,7 +289,11 @@ fn assert_canonical_revocation_head_announcement(
     fact_id.to_string()
 }
 
-async fn publish_finding(client: &reqwest::Client, daemon: &TestDaemon, finding: &Value) -> reqwest::Response {
+async fn publish_finding(
+    client: &reqwest::Client,
+    daemon: &TestDaemon,
+    finding: &Value,
+) -> reqwest::Response {
     let feed_id = finding["feedId"]
         .as_str()
         .expect("finding feedId should be a string");
@@ -372,8 +388,10 @@ fn count_swarm_findings(conn: &Connection) -> i64 {
 }
 
 fn count_swarm_revocations(conn: &Connection) -> i64 {
-    conn.query_row("SELECT COUNT(*) FROM swarm_revocations", [], |row| row.get(0))
-        .expect("query swarm revocation count")
+    conn.query_row("SELECT COUNT(*) FROM swarm_revocations", [], |row| {
+        row.get(0)
+    })
+    .expect("query swarm revocation count")
 }
 
 fn read_persisted_trust_policy(conn: &Connection) -> Option<Value> {
@@ -386,7 +404,9 @@ fn read_persisted_trust_policy(conn: &Connection) -> Option<Value> {
         .optional()
         .expect("query persisted trust policy");
 
-    raw.map(|value| serde_json::from_str(&value).expect("persisted trust policy should be valid json"))
+    raw.map(|value| {
+        serde_json::from_str(&value).expect("persisted trust policy should be valid json")
+    })
 }
 
 #[tokio::test]
@@ -639,8 +659,7 @@ async fn test_swarm_hub_revocation_publish_and_head_synthesis_match_contract() {
 
     assert!(head.status().is_success());
     let head_body: Value = head.json().await.unwrap();
-    let head_fact_id =
-        assert_canonical_revocation_head_announcement(&head_body, &revocation, 1);
+    let head_fact_id = assert_canonical_revocation_head_announcement(&head_body, &revocation, 1);
     assert_eq!(head_fact_id, publish_fact_id);
 }
 
@@ -663,8 +682,11 @@ async fn test_swarm_hub_revocation_replay_returns_ordered_append_only_results() 
     let second = publish_revocation(&client, &daemon, &revocation_two).await;
     assert!(second.status().is_success());
     let publish_body: Value = second.json().await.unwrap();
-    let publish_fact_id =
-        assert_canonical_revocation_head_announcement(&publish_body["headAnnouncement"], &revocation_two, 2);
+    let publish_fact_id = assert_canonical_revocation_head_announcement(
+        &publish_body["headAnnouncement"],
+        &revocation_two,
+        2,
+    );
 
     let resp = client
         .get(format!(
@@ -687,8 +709,11 @@ async fn test_swarm_hub_revocation_replay_returns_ordered_append_only_results() 
     assert_eq!(body["envelopes"][0]["action"], "revoke");
     assert_eq!(body["envelopes"][1]["feedSeq"], 2);
     assert_eq!(body["envelopes"][1]["action"], "supersede");
-    let replay_fact_id =
-        assert_canonical_revocation_head_announcement(&body["headAnnouncement"], &revocation_two, 2);
+    let replay_fact_id = assert_canonical_revocation_head_announcement(
+        &body["headAnnouncement"],
+        &revocation_two,
+        2,
+    );
     assert_eq!(replay_fact_id, publish_fact_id);
 }
 
@@ -798,14 +823,22 @@ async fn test_swarm_hub_supersede_projection_stores_replacements_per_target_dige
               AND target_id = ?3
               AND target_digest = ?4
             "#,
-            [ISSUER_ID, FINDING_ENVELOPE_SCHEMA, target_id, target_digest_one.as_str()],
+            [
+                ISSUER_ID,
+                FINDING_ENVELOPE_SCHEMA,
+                target_id,
+                target_digest_one.as_str(),
+            ],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .expect("load first supersede projection");
     assert_eq!(projection_one.0, "supersede");
     assert_eq!(projection_one.1.as_deref(), Some(FINDING_ENVELOPE_SCHEMA));
     assert_eq!(projection_one.2.as_deref(), Some(replacement_one.0));
-    assert_eq!(projection_one.3.as_deref(), Some(replacement_one.1.as_str()));
+    assert_eq!(
+        projection_one.3.as_deref(),
+        Some(replacement_one.1.as_str())
+    );
 
     let projection_two: (String, Option<String>, Option<String>, Option<String>) = conn
         .query_row(
@@ -818,18 +851,27 @@ async fn test_swarm_hub_supersede_projection_stores_replacements_per_target_dige
               AND target_id = ?3
               AND target_digest = ?4
             "#,
-            [ISSUER_ID, FINDING_ENVELOPE_SCHEMA, target_id, target_digest_two.as_str()],
+            [
+                ISSUER_ID,
+                FINDING_ENVELOPE_SCHEMA,
+                target_id,
+                target_digest_two.as_str(),
+            ],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .expect("load second supersede projection");
     assert_eq!(projection_two.0, "supersede");
     assert_eq!(projection_two.1.as_deref(), Some(FINDING_ENVELOPE_SCHEMA));
     assert_eq!(projection_two.2.as_deref(), Some(replacement_two.0));
-    assert_eq!(projection_two.3.as_deref(), Some(replacement_two.1.as_str()));
+    assert_eq!(
+        projection_two.3.as_deref(),
+        Some(replacement_two.1.as_str())
+    );
 }
 
 #[tokio::test]
-async fn test_swarm_hub_findings_routes_remain_finding_only_after_revocation_lane_adds_parallel_history() {
+async fn test_swarm_hub_findings_routes_remain_finding_only_after_revocation_lane_adds_parallel_history(
+) {
     let daemon = TestDaemon::spawn();
     let client = reqwest::Client::new();
 
@@ -871,8 +913,14 @@ async fn test_swarm_hub_findings_routes_remain_finding_only_after_revocation_lan
     let replay_body: Value = replay.json().await.unwrap();
     assert_eq!(replay_body["schema"], REPLAY_SCHEMA);
     assert_eq!(replay_body["envelopes"].as_array().unwrap().len(), 1);
-    assert_eq!(replay_body["envelopes"][0]["schema"], FINDING_ENVELOPE_SCHEMA);
-    assert_eq!(replay_body["envelopes"][0]["findingId"], finding["findingId"]);
+    assert_eq!(
+        replay_body["envelopes"][0]["schema"],
+        FINDING_ENVELOPE_SCHEMA
+    );
+    assert_eq!(
+        replay_body["envelopes"][0]["findingId"],
+        finding["findingId"]
+    );
     assert!(replay_body["envelopes"][0].get("revocationId").is_none());
     let replay_fact_id =
         assert_canonical_head_announcement(&replay_body["headAnnouncement"], &finding, 1);
@@ -909,8 +957,14 @@ async fn test_swarm_hub_allows_re_emitting_same_finding_id_at_later_feed_seq() {
     assert!(replay.status().is_success());
     let replay_body: Value = replay.json().await.unwrap();
     assert_eq!(replay_body["envelopes"].as_array().unwrap().len(), 2);
-    assert_eq!(replay_body["envelopes"][0]["findingId"], finding_one["findingId"]);
-    assert_eq!(replay_body["envelopes"][1]["findingId"], finding_one["findingId"]);
+    assert_eq!(
+        replay_body["envelopes"][0]["findingId"],
+        finding_one["findingId"]
+    );
+    assert_eq!(
+        replay_body["envelopes"][1]["findingId"],
+        finding_one["findingId"]
+    );
     let replay_fact_id =
         assert_canonical_head_announcement(&replay_body["headAnnouncement"], &finding_two, 2);
     assert_eq!(replay_fact_id, publish_fact_id);
@@ -959,10 +1013,7 @@ async fn test_swarm_hub_blob_lookup_uses_stored_refs() {
     assert!(publish.status().is_success());
 
     let resp = client
-        .get(format!(
-            "{}/api/v1/swarm/blobs/{}",
-            daemon.url, DIGEST_1
-        ))
+        .get(format!("{}/api/v1/swarm/blobs/{}", daemon.url, DIGEST_1))
         .send()
         .await
         .expect("failed to fetch blob ref");

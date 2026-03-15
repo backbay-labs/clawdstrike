@@ -68,9 +68,9 @@ function withAdapterConfig(source: ToolInterceptor, config?: AdapterConfig): Too
     return source.withConfig(config);
   }
 
-  if (config.translateToolCall !== undefined) {
+  if (config.translateToolCall !== undefined || config.broker !== undefined) {
     throw new Error(
-      "ToolInterceptor source does not support adapter translator config. " +
+      "ToolInterceptor source does not support adapter translator config or broker config. " +
         "Use a PolicyEngineLike/ClawdstrikeLike source or a configurable interceptor.",
     );
   }

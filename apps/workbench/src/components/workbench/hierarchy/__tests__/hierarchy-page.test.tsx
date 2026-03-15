@@ -667,7 +667,7 @@ describe("HierarchyPage", () => {
 
       expect(validateAllLeavesSpy).toHaveBeenCalled();
       expect(confirmSpy).toHaveBeenCalledWith(
-        "There are 3 validation issue(s) in the hierarchy (1 error(s), 2 warning(s)). Push anyway?",
+        "Push hierarchy with 3 validation issue(s)?\n\n1 error(s) and 2 warning(s) detected. Agents will receive this hierarchy as-is, which may cause unexpected enforcement behavior.",
       );
       expect(fleetClientMocks.createHierarchyNode).not.toHaveBeenCalled();
     } finally {

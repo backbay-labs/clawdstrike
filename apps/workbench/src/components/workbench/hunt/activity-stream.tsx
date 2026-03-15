@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import { motion } from "motion/react";
 import {
   IconActivity,
   IconChevronDown,
@@ -489,7 +490,7 @@ export function ActivityStream({
         {filteredEvents.length === 0 ? (
           <div className="flex h-full items-center justify-center">
             <div className="flex flex-col items-center gap-3">
-              <IconActivity size={24} className="text-[#6f7f9a]/20" />
+              <IconActivity size={24} className="text-[#6f7f9a]/50" />
               <span className="text-[12px] text-[#6f7f9a]/40">
                 No events match the current filters
               </span>
@@ -513,7 +514,12 @@ export function ActivityStream({
               const cluster = clusters.get(idx);
 
               return (
-                <div key={event.id}>
+                <motion.div
+                  key={event.id}
+                  initial={{ opacity: 0, x: -12 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.25, delay: Math.min(idx * 0.03, 0.3) }}
+                >
                   {/* Cluster separator - shown before the first event in a cluster */}
                   {cluster && (
                     <ClusterSeparator
@@ -528,7 +534,7 @@ export function ActivityStream({
                       setExpandedId(expandedId === event.id ? null : event.id)
                     }
                   />
-                </div>
+                </motion.div>
               );
             })}
           </div>
@@ -573,7 +579,7 @@ export function ActivityStream({
 
 
 const TH_CELL =
-  "text-[9px] uppercase tracking-[0.08em] font-semibold text-[#6f7f9a]/50 select-none";
+  "text-[9px] uppercase tracking-wider font-semibold text-[#6f7f9a]/50 select-none";
 
 
 function EventRow({
@@ -597,7 +603,9 @@ function EventRow({
         onClick={onToggle}
         className={cn(
           "flex w-full items-center gap-0 px-3 py-2 text-left border-b border-[#2d3240]/20 cursor-pointer transition-colors",
-          isExpanded ? "bg-[#131721]" : "hover:bg-[#0b0d13]",
+          isExpanded
+            ? "bg-[#131721] border-l-2 border-l-[#d4a84b]"
+            : "hover:bg-[#131721] border-l-2 border-l-transparent",
         )}
       >
         {/* Timestamp */}
@@ -695,6 +703,7 @@ function EventDetail({ event }: { event: AgentEvent }) {
               label="Trustprint"
               value={event.trustprintScore.toFixed(4)}
               mono
+              title="Embedding-based threat screening using vector similarity against known patterns"
             />
           )}
         </div>
@@ -817,7 +826,9 @@ function ClusterSeparator({
       <span className="text-[9px] text-[#c45c5c]/50">
         {cluster.eventIds.length} flagged events
       </span>
-      <button
+      <motion.button
+        whileTap={{ scale: 0.92 }}
+        transition={{ type: "spring", bounce: 0.4, duration: 0.2 }}
         onClick={(e) => {
           e.stopPropagation();
           onInvestigate(cluster);
@@ -826,7 +837,7 @@ function ClusterSeparator({
       >
         Investigate
         <IconChevronRight size={11} stroke={1.5} />
-      </button>
+      </motion.button>
     </div>
   );
 }
@@ -890,7 +901,7 @@ function FilterGroup({
 }) {
   return (
     <div className="flex items-center gap-1.5 shrink-0">
-      <span className="text-[9px] uppercase tracking-[0.08em] text-[#6f7f9a]/40 mr-0.5">
+      <span className="text-[9px] uppercase tracking-wider text-[#6f7f9a]/40 mr-0.5">
         {label}
       </span>
       {children}
@@ -900,7 +911,7 @@ function FilterGroup({
 
 function DetailSectionHeader({ children }: { children: React.ReactNode }) {
   return (
-    <h4 className="text-[9px] font-semibold uppercase tracking-[0.1em] text-[#6f7f9a]/50 mb-2">
+    <h4 className="text-[9px] font-semibold uppercase tracking-wider text-[#6f7f9a]/50 mb-2">
       {children}
     </h4>
   );
@@ -910,14 +921,16 @@ function DetailRow({
   label,
   value,
   mono,
+  title,
 }: {
   label: string;
   value: string;
   mono?: boolean;
+  title?: string;
 }) {
   return (
     <div className="flex items-baseline gap-3 text-[10px]">
-      <span className="text-[#6f7f9a]/50 shrink-0 w-[90px]">{label}</span>
+      <span className="text-[#6f7f9a]/50 shrink-0 w-[90px]" title={title}>{label}</span>
       <span
         className={cn(
           "text-[#ece7dc]/70 break-all",

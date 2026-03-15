@@ -143,6 +143,8 @@ export interface HealthResponse {
   version?: string;
   uptime_secs?: number;
   policy_hash?: string;
+  /** Total evaluations processed by the daemon (reported by newer hushd builds). */
+  total_evaluations?: number;
 }
 
 export interface PolicyResponse {

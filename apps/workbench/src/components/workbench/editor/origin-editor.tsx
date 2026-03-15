@@ -63,6 +63,9 @@ function createEmptyOriginsConfig(): OriginsConfig {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
 
 export function OriginEditor() {
   const { state, dispatch } = useWorkbench();
@@ -104,18 +107,17 @@ export function OriginEditor() {
 
   const handleAddProfile = useCallback(() => {
     if (!origins) return;
-    const currentProfiles = origins.profiles ?? [];
     updateOrigins({
       ...origins,
-      profiles: [...currentProfiles, createEmptyProfile()],
+      profiles: [...(origins.profiles ?? []), createEmptyProfile()],
     });
   }, [origins, updateOrigins]);
 
   const handleRemoveProfile = useCallback(
     (index: number) => {
       if (!origins) return;
-      const currentProfiles = origins.profiles ?? [];
-      updateOrigins({ ...origins, profiles: currentProfiles.filter((_, i) => i !== index) });
+      const profiles = (origins.profiles ?? []).filter((_, i) => i !== index);
+      updateOrigins({ ...origins, profiles });
     },
     [origins, updateOrigins],
   );
@@ -123,9 +125,9 @@ export function OriginEditor() {
   const handleUpdateProfile = useCallback(
     (index: number, updated: OriginProfile) => {
       if (!origins) return;
-      const currentProfiles = [...(origins.profiles ?? [])];
-      currentProfiles[index] = updated;
-      updateOrigins({ ...origins, profiles: currentProfiles });
+      const profiles = [...(origins.profiles ?? [])];
+      profiles[index] = updated;
+      updateOrigins({ ...origins, profiles });
     },
     [origins, updateOrigins],
   );
@@ -141,7 +143,8 @@ export function OriginEditor() {
 
   return (
     <div className="flex flex-col gap-4 p-4 border-t border-[#2d3240]">
-            <div className="flex items-center justify-between">
+      {/* Section header */}
+      <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <IconWorld size={14} stroke={1.5} className="text-[#d4a84b]" />
           <h3 className="text-[10px] font-mono uppercase tracking-wider text-[#6f7f9a]">
@@ -192,7 +195,7 @@ export function OriginEditor() {
 
           {/* Profile cards */}
           <div className="flex flex-col gap-2">
-            {safeOrigins.profiles.map((profile, idx) => (
+            {(origins?.profiles ?? []).map((profile, idx) => (
               <OriginProfileCard
                 key={profile.id}
                 profile={profile}
@@ -217,6 +220,9 @@ export function OriginEditor() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Profile card
+// ---------------------------------------------------------------------------
 
 interface OriginProfileCardProps {
   profile: OriginProfile;
@@ -368,7 +374,7 @@ function OriginProfileCard({ profile, index, onUpdate, onRemove }: OriginProfile
             size={14}
             stroke={1.5}
             className={cn(
-              "shrink-0 text-[#6f7f9a] transition-transform duration-200",
+              "shrink-0 text-[#6f7f9a] transition-transform duration-150",
               open && "rotate-180",
             )}
           />
@@ -820,6 +826,9 @@ function OriginProfileCard({ profile, index, onUpdate, onRemove }: OriginProfile
   );
 }
 
+// ---------------------------------------------------------------------------
+// Profile overrides (guard/egress/data/budgets/bridge)
+// ---------------------------------------------------------------------------
 
 function ProfileOverrides({
   profile,
@@ -835,7 +844,7 @@ function ProfileOverrides({
       </h4>
       <div className="space-y-4">
         {/* Posture state */}
-        <FieldRow label="Posture State">
+        <FieldRow label="Posture State" title="Resource usage limits and automated state transitions for agent capabilities">
           <Input
             value={profile.posture ?? ""}
             onChange={(e) =>
@@ -880,6 +889,9 @@ function ProfileOverrides({
   );
 }
 
+// ---------------------------------------------------------------------------
+// MCP override section
+// ---------------------------------------------------------------------------
 
 function McpOverrideSection({
   mcp,
@@ -1029,6 +1041,9 @@ function McpOverrideSection({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Egress override section
+// ---------------------------------------------------------------------------
 
 function EgressOverrideSection({
   egress,
@@ -1101,6 +1116,9 @@ function EgressOverrideSection({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Data policy section
+// ---------------------------------------------------------------------------
 
 function DataPolicySection({
   data,
@@ -1155,6 +1173,9 @@ function DataPolicySection({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Budgets section
+// ---------------------------------------------------------------------------
 
 function BudgetsSection({
   budgets,
@@ -1232,6 +1253,9 @@ function BudgetsSection({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Bridge policy section
+// ---------------------------------------------------------------------------
 
 function BridgePolicySection({
   bridgePolicy,
@@ -1281,17 +1305,22 @@ function BridgePolicySection({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Shared micro-components
+// ---------------------------------------------------------------------------
 
 function FieldRow({
   label,
   children,
+  title,
 }: {
   label: string;
   children: React.ReactNode;
+  title?: string;
 }) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <label className="text-xs text-[#ece7dc] whitespace-nowrap">{label}</label>
+      <label className="text-xs text-[#ece7dc] whitespace-nowrap" title={title}>{label}</label>
       <div className="flex-1 max-w-[200px]">{children}</div>
     </div>
   );

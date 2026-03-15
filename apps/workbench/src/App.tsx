@@ -141,7 +141,6 @@ const MissionControlPage = lazy(() =>
   })),
 );
 
-
 function LoadingFallback() {
   return (
     <div
@@ -320,7 +319,6 @@ function AppProviders({ children }: { children: ReactNode }) {
   );
 }
 
-
 /**
  * Root application component for the Tauri desktop workbench.
  *
@@ -367,6 +365,7 @@ export function App() {
                 <Route path="missions" element={<MissionControlPage />} />
                 <Route path="swarms" element={<SwarmPage />} />
                 <Route path="swarms/:id" element={<SwarmDetail />} />
+                <Route path="swarm-board" element={<Navigate to="/lab" replace />} />
 
                 {/* Merged pages */}
                 <Route path="lab" element={<LabLayout />} />

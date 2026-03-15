@@ -50,6 +50,7 @@ const POLICY_VERSION_CACHE_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 const POLICY_VERSION_FETCH_TIMEOUT: Duration = Duration::from_millis(200);
 const POLICY_VERSION_REFRESH_IN_FLIGHT_TIMEOUT: Duration = Duration::from_secs(20);
 const AGENT_API_MAX_BODY_BYTES: usize = 256 * 1024;
+const BROKER_MUTATION_MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
 const APPROVAL_RATE_LIMIT_WINDOW: Duration = Duration::from_secs(60);
 const APPROVAL_RATE_LIMIT_BURST_WINDOW: Duration = Duration::from_secs(1);
 const APPROVAL_RATE_LIMIT_PER_MINUTE: usize = 30;
@@ -318,6 +319,46 @@ impl AgentApiServer {
             .route("/api/v1/agents/status", get(proxy_daemon_get))
             .route("/api/v1/events", get(proxy_daemon_events))
             .route("/api/v1/siem/exporters", get(proxy_daemon_get))
+            .route("/api/v1/broker/public-key", get(proxy_daemon_get))
+            .route(
+                "/api/v1/broker/capabilities",
+                get(proxy_daemon_get).post(proxy_daemon_mutation),
+            )
+            .route(
+                "/api/v1/broker/previews",
+                get(proxy_daemon_get).post(proxy_daemon_mutation),
+            )
+            .route(
+                "/api/v1/broker/capabilities/revoke-all",
+                post(proxy_daemon_mutation),
+            )
+            .route("/api/v1/broker/capabilities/{id}", get(proxy_daemon_get))
+            .route(
+                "/api/v1/broker/capabilities/{id}/status",
+                get(proxy_daemon_get),
+            )
+            .route(
+                "/api/v1/broker/capabilities/{id}/replay",
+                post(proxy_daemon_mutation),
+            )
+            .route(
+                "/api/v1/broker/capabilities/{id}/bundle",
+                get(proxy_daemon_get),
+            )
+            .route(
+                "/api/v1/broker/capabilities/{id}/revoke",
+                post(proxy_daemon_mutation),
+            )
+            .route("/api/v1/broker/previews/{id}", get(proxy_daemon_get))
+            .route(
+                "/api/v1/broker/previews/{id}/approve",
+                post(proxy_daemon_mutation),
+            )
+            .route("/api/v1/broker/providers/freeze", get(proxy_daemon_get))
+            .route(
+                "/api/v1/broker/providers/{provider}/freeze",
+                post(proxy_daemon_mutation).delete(proxy_daemon_mutation),
+            )
             .route("/api/v1/agent/health", get(agent_health))
             .route(
                 "/api/v1/agent/settings",
@@ -1128,13 +1169,23 @@ async fn send_daemon_get_request(
     request_headers: &HeaderMap,
     uri: &Uri,
 ) -> Result<reqwest::Response, (StatusCode, String)> {
+    send_daemon_request(state, request_headers, reqwest::Method::GET, uri, None).await
+}
+
+async fn send_daemon_request(
+    state: &AgentApiState,
+    request_headers: &HeaderMap,
+    method: reqwest::Method,
+    uri: &Uri,
+    body: Option<Vec<u8>>,
+) -> Result<reqwest::Response, (StatusCode, String)> {
     let (daemon_url, daemon_api_key) = {
         let settings = state.settings.read().await;
         (settings.daemon_url(), settings.api_key.clone())
     };
 
     let target_url = build_daemon_proxy_target(&daemon_url, uri)?;
-    let mut request = state.http_client.get(target_url);
+    let mut request = state.http_client.request(method, target_url);
 
     if let Some(value) = request_headers
         .get(ACCEPT)
@@ -1142,11 +1193,20 @@ async fn send_daemon_get_request(
     {
         request = request.header(ACCEPT.as_str(), value);
     }
+    if let Some(value) = request_headers
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+    {
+        request = request.header(CONTENT_TYPE.as_str(), value);
+    }
 
     if let Some(auth_header) =
         merged_authorization_header(request_headers, daemon_api_key.as_deref())
     {
         request = request.header(AUTHORIZATION.as_str(), auth_header);
+    }
+    if let Some(body) = body {
+        request = request.body(body);
     }
 
     request
@@ -1220,6 +1280,30 @@ async fn proxy_daemon_events(
     out_headers.insert(CONNECTION, HeaderValue::from_static("keep-alive"));
 
     Ok((status, out_headers, body).into_response())
+}
+
+async fn proxy_daemon_mutation(
+    State(state): State<Arc<AgentApiState>>,
+    mut headers: HeaderMap,
+    uri: Uri,
+    request: Request,
+) -> Result<Response, (StatusCode, String)> {
+    require_auth(&headers, &state)?;
+    headers.remove(AUTHORIZATION);
+
+    let method = reqwest::Method::from_bytes(request.method().as_str().as_bytes())
+        .map_err(|err| internal_error(err.into()))?;
+    let max_bytes = if uri.path().starts_with("/api/v1/broker/") {
+        BROKER_MUTATION_MAX_BODY_BYTES
+    } else {
+        AGENT_API_MAX_BODY_BYTES
+    };
+    let body = axum::body::to_bytes(request.into_body(), max_bytes)
+        .await
+        .map_err(|err| internal_error(err.into()))?;
+    let body = if body.is_empty() { None } else { Some(body.to_vec()) };
+    let response = send_daemon_request(&state, &headers, method, &uri, body).await?;
+    proxy_http_response(response).await
 }
 
 fn normalize_integration_settings(settings: &mut IntegrationSettings) {

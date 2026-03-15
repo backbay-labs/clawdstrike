@@ -207,8 +207,10 @@ impl ControlDb {
         feed_id: String,
         issuer_id: String,
     ) -> Result<Option<SwarmHeadRecord>> {
-        self.spawn_blocking(move |conn| Self::load_consistent_swarm_head(conn, &feed_id, &issuer_id))
-            .await
+        self.spawn_blocking(move |conn| {
+            Self::load_consistent_swarm_head(conn, &feed_id, &issuer_id)
+        })
+        .await
     }
 
     pub async fn get_swarm_revocation_head(
@@ -373,8 +375,7 @@ impl ControlDb {
                         note: row.get(3)?,
                         request_json: row.get(4)?,
                         status: row.get(5)?,
-                        requested_at: u64_from_i64(row.get::<_, i64>(6)?)
-                            .unwrap_or(0),
+                        requested_at: u64_from_i64(row.get::<_, i64>(6)?).unwrap_or(0),
                     })
                 },
             )
@@ -487,8 +488,8 @@ impl ControlDb {
             .optional()?;
 
         if let Some(existing_json) = existing_json {
-            let head = Self::load_consistent_swarm_head(&tx, &feed_id, &issuer_id)?
-                .ok_or_else(|| {
+            let head =
+                Self::load_consistent_swarm_head(&tx, &feed_id, &issuer_id)?.ok_or_else(|| {
                     ControlDbError::Invariant(
                         "swarm head missing for existing feed sequence".to_string(),
                     )
@@ -692,7 +693,9 @@ impl ControlDb {
         let target_digest = target.digest.unwrap_or_default();
         let replacement_schema = replacement.as_ref().map(|value| value.schema.as_str());
         let replacement_id = replacement.as_ref().map(|value| value.id.as_str());
-        let replacement_digest = replacement.as_ref().and_then(|value| value.digest.as_deref());
+        let replacement_digest = replacement
+            .as_ref()
+            .and_then(|value| value.digest.as_deref());
 
         tx.execute(
             r#"
@@ -1023,11 +1026,13 @@ impl ControlDb {
 }
 
 fn i64_from_u64(value: u64) -> Result<i64> {
-    i64::try_from(value).map_err(|_| ControlDbError::Invariant("u64 value exceeded i64".to_string()))
+    i64::try_from(value)
+        .map_err(|_| ControlDbError::Invariant("u64 value exceeded i64".to_string()))
 }
 
 fn u64_from_i64(value: i64) -> Result<u64> {
-    u64::try_from(value).map_err(|_| ControlDbError::Invariant("negative database integer".to_string()))
+    u64::try_from(value)
+        .map_err(|_| ControlDbError::Invariant("negative database integer".to_string()))
 }
 
 fn now_millis_u64() -> Result<u64> {
@@ -1131,5 +1136,78 @@ mod tests {
 
         assert_eq!(second.head.head_seq, 2);
         assert_eq!(second.head.entry_count, 2);
+    }
+
+    #[tokio::test]
+    async fn control_db_spawn_blocking_helpers_execute_queries() {
+        let db = Arc::new(ControlDb::in_memory().expect("db"));
+
+        let one = db
+            .spawn_blocking(|conn| {
+                conn.query_row("SELECT 1", [], |row| row.get::<_, i64>(0))
+                    .map_err(ControlDbError::from)
+            })
+            .await
+            .expect("select one");
+        assert_eq!(one, 1);
+
+        db.spawn_blocking_mut(|conn| {
+            conn.execute(
+                "CREATE TABLE spawn_blocking_smoke (id INTEGER NOT NULL)",
+                [],
+            )?;
+            conn.execute("INSERT INTO spawn_blocking_smoke (id) VALUES (7)", [])?;
+            Ok(())
+        })
+        .await
+        .expect("insert via spawn_blocking_mut");
+
+        let id = db
+            .spawn_blocking(|conn| {
+                conn.query_row("SELECT id FROM spawn_blocking_smoke LIMIT 1", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .map_err(ControlDbError::from)
+            })
+            .await
+            .expect("read inserted id");
+        assert_eq!(id, 7);
+    }
+
+    #[tokio::test]
+    async fn control_db_pin_request_deduplicates_and_metadata_roundtrips() {
+        let db = Arc::new(ControlDb::in_memory().expect("db"));
+        let digest = format!("0x{}", "a".repeat(64));
+
+        let first = db
+            .record_swarm_blob_pin_request(
+                digest.clone(),
+                Some("actor-1".to_string()),
+                Some("initial request".to_string()),
+                r#"{"digest":"test"}"#.to_string(),
+            )
+            .await
+            .expect("first pin request");
+        let second = db
+            .record_swarm_blob_pin_request(
+                digest,
+                Some("actor-1".to_string()),
+                None,
+                r#"{"digest":"test-2"}"#.to_string(),
+            )
+            .await
+            .expect("second pin request");
+
+        assert_eq!(second.request_id, first.request_id);
+        assert_eq!(second.status, "deduplicated");
+
+        db.set_control_metadata("hub_mode".to_string(), "strict".to_string())
+            .await
+            .expect("set metadata");
+        let metadata = db
+            .get_control_metadata("hub_mode".to_string())
+            .await
+            .expect("get metadata");
+        assert_eq!(metadata.as_deref(), Some("strict"));
     }
 }

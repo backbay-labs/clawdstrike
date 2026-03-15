@@ -15,7 +15,10 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
 toml = "0.8"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "net", "io-util"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "net", "io-util", "sync", "time"] }
+portable-pty = "0.8" # SEC-PTY-001: upgrade/remove once transitive `serial` is eliminated
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
 
 # Local crates
 hush-core = { path = "../../../crates/libs/hush-core" }

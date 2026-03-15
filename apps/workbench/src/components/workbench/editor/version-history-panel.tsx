@@ -307,7 +307,7 @@ export function VersionHistoryPanel({
         {showCommitInput ? (
           <div className="flex flex-col gap-1.5">
             <Input
-              placeholder="Version message (optional)"
+              placeholder="e.g., tighten egress rules for prod"
               value={commitMessage}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCommitMessage(e.target.value)}
               onKeyDown={(e: React.KeyboardEvent) => {
@@ -474,7 +474,7 @@ export function VersionHistoryPanel({
                         {tagInput?.versionId === v.id ? (
                           <div className="flex items-center gap-1">
                             <Input
-                              placeholder="Tag name"
+                              placeholder="e.g., v1.2-prod"
                               value={tagInput.value}
                               onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                                 setTagInput({ ...tagInput, value: e.target.value })

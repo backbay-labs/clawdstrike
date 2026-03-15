@@ -231,7 +231,7 @@ describe("TrustprintProviderWizard", () => {
     await user.click(screen.getByRole("button", { name: /next/i }));
 
     // Should show free text input for model
-    expect(screen.getByPlaceholderText("model-name")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("e.g., text-embedding-3-small")).toBeInTheDocument();
   });
 
   // ---- Step 3: Connection test ----

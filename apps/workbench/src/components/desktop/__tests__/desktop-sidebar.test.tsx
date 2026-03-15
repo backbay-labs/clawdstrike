@@ -69,11 +69,11 @@ describe("DesktopSidebar", () => {
     renderWithProviders(<DesktopSidebar />, { route: "/editor" });
 
     const editorLink = screen.getByRole("link", { name: "Editor" });
-    const accentBar = editorLink.querySelector("span.bg-\\[\\#d4a84b\\]");
-    expect(accentBar).toBeTruthy();
+    const accentBar = editorLink.querySelector(".sidebar-accent-bar");
+    expect(accentBar).toBeInTheDocument();
 
     const labLink = screen.getByRole("link", { name: "Lab" });
-    const noAccent = labLink.querySelector("span.bg-\\[\\#d4a84b\\]");
+    const noAccent = labLink.querySelector(".sidebar-accent-bar");
     expect(noAccent).toBeNull();
   });
 

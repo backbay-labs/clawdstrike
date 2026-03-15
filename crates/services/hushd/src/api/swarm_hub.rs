@@ -11,8 +11,8 @@ use crate::api::v1::V1Error;
 use crate::auth::{AuthenticatedActor, Scope};
 use crate::authz::require_api_key_scope_or_user_permission;
 use crate::control_db::{
-    ControlDbError, SwarmBlobRefInput, SwarmFindingInput, SwarmHeadRecord,
-    SwarmRevocationInput, SwarmTargetReferenceInput,
+    ControlDbError, SwarmBlobRefInput, SwarmFindingInput, SwarmHeadRecord, SwarmRevocationInput,
+    SwarmTargetReferenceInput,
 };
 use crate::rbac::{Action, ResourceType};
 use crate::state::AppState;
@@ -63,8 +63,7 @@ const FINDING_ENVELOPE_KEYS: &[&str] = &[
     "attestation",
     "publish",
 ];
-const FINDING_BLOB_REF_KEYS: &[&str] =
-    &["blobId", "digest", "mediaType", "byteLength", "publish"];
+const FINDING_BLOB_REF_KEYS: &[&str] = &["blobId", "digest", "mediaType", "byteLength", "publish"];
 const DURABLE_PUBLISH_KEYS: &[&str] = &[
     "uri",
     "publishedAt",
@@ -448,13 +447,11 @@ pub async fn put_swarm_hub_trust_policy(
         Action::Update,
     )?;
 
-    validate_hub_trust_policy(&trust_policy)
-        .map_err(invalid_trust_policy)?;
-    let serialized = serde_json::to_string(&trust_policy)
-        .map_err(|err| {
-            tracing::error!(error = %err, "failed to serialize trust policy");
-            V1Error::internal("SWARM_SERIALIZATION_ERROR", "internal serialization error")
-        })?;
+    validate_hub_trust_policy(&trust_policy).map_err(invalid_trust_policy)?;
+    let serialized = serde_json::to_string(&trust_policy).map_err(|err| {
+        tracing::error!(error = %err, "failed to serialize trust policy");
+        V1Error::internal("SWARM_SERIALIZATION_ERROR", "internal serialization error")
+    })?;
     state
         .control_db
         .set_control_metadata(SWARM_HUB_TRUST_POLICY_KEY.to_string(), serialized)
@@ -495,11 +492,10 @@ pub async fn publish_finding(
     enforce_finding_trust_policy(&trust_policy, &finding)?;
 
     let envelope_hash = hash_finding_envelope_for_head(&finding)?;
-    let envelope_json = serde_json::to_string(&finding)
-        .map_err(|err| {
-            tracing::error!(error = %err, "failed to serialize finding envelope");
-            V1Error::internal("SWARM_SERIALIZATION_ERROR", "internal serialization error")
-        })?;
+    let envelope_json = serde_json::to_string(&finding).map_err(|err| {
+        tracing::error!(error = %err, "failed to serialize finding envelope");
+        V1Error::internal("SWARM_SERIALIZATION_ERROR", "internal serialization error")
+    })?;
     let blob_refs = finding
         .blob_refs
         .iter()
@@ -587,11 +583,10 @@ pub async fn publish_revocation(
     enforce_revocation_trust_policy(&trust_policy, &revocation)?;
 
     let envelope_hash = hash_revocation_envelope_for_head(&revocation)?;
-    let envelope_json = serde_json::to_string(&revocation)
-        .map_err(|err| {
-            tracing::error!(error = %err, "failed to serialize revocation envelope");
-            V1Error::internal("SWARM_SERIALIZATION_ERROR", "internal serialization error")
-        })?;
+    let envelope_json = serde_json::to_string(&revocation).map_err(|err| {
+        tracing::error!(error = %err, "failed to serialize revocation envelope");
+        V1Error::internal("SWARM_SERIALIZATION_ERROR", "internal serialization error")
+    })?;
 
     let outcome = state
         .control_db
@@ -754,7 +749,10 @@ pub async fn replay_swarm_feed(
         .map(|record| {
             serde_json::from_str::<FindingEnvelope>(&record.envelope_json).map_err(|err| {
                 tracing::error!(error = %err, "failed to deserialize stored finding envelope");
-                V1Error::internal("SWARM_REPLAY_DESERIALIZATION_ERROR", "internal deserialization error")
+                V1Error::internal(
+                    "SWARM_REPLAY_DESERIALIZATION_ERROR",
+                    "internal deserialization error",
+                )
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -864,7 +862,10 @@ pub async fn replay_swarm_revocations(
         .map(|record| {
             serde_json::from_str::<RevocationEnvelope>(&record.envelope_json).map_err(|err| {
                 tracing::error!(error = %err, "failed to deserialize stored revocation envelope");
-                V1Error::internal("SWARM_REPLAY_DESERIALIZATION_ERROR", "internal deserialization error")
+                V1Error::internal(
+                    "SWARM_REPLAY_DESERIALIZATION_ERROR",
+                    "internal deserialization error",
+                )
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -928,7 +929,10 @@ pub async fn get_swarm_blob_refs(
         .await
         .map_err(map_swarm_store_error)?;
     if refs.is_empty() {
-        return Err(V1Error::not_found("SWARM_BLOB_NOT_FOUND", "swarm_blob_not_found"));
+        return Err(V1Error::not_found(
+            "SWARM_BLOB_NOT_FOUND",
+            "swarm_blob_not_found",
+        ));
     }
 
     let refs = refs
@@ -941,7 +945,10 @@ pub async fn get_swarm_blob_refs(
                 .transpose()
                 .map_err(|err| {
                     tracing::error!(error = %err, "failed to deserialize blob publish metadata");
-                    V1Error::internal("SWARM_BLOB_DESERIALIZATION_ERROR", "internal deserialization error")
+                    V1Error::internal(
+                        "SWARM_BLOB_DESERIALIZATION_ERROR",
+                        "internal deserialization error",
+                    )
                 })?;
             Ok(BlobLookupRef {
                 blob_id: record.blob_id,
@@ -999,12 +1006,7 @@ pub async fn pin_swarm_blob(
     })?;
     let record = state
         .control_db
-        .record_swarm_blob_pin_request(
-            digest.clone(),
-            actor_label.clone(),
-            note,
-            request_json,
-        )
+        .record_swarm_blob_pin_request(digest.clone(), actor_label.clone(), note, request_json)
         .await
         .map_err(map_swarm_store_error)?;
 
@@ -1051,11 +1053,10 @@ async fn load_hub_trust_policy(state: &AppState) -> Result<HubTrustPolicy, V1Err
         .await
         .map_err(map_swarm_store_error)?;
     let trust_policy = match stored {
-        Some(raw) => serde_json::from_str::<HubTrustPolicy>(&raw)
-            .map_err(|err| {
-                tracing::error!(error = %err, "failed to deserialize stored hub trust policy");
-                V1Error::internal("SWARM_STATE_INCONSISTENT", "internal state error")
-            })?,
+        Some(raw) => serde_json::from_str::<HubTrustPolicy>(&raw).map_err(|err| {
+            tracing::error!(error = %err, "failed to deserialize stored hub trust policy");
+            V1Error::internal("SWARM_STATE_INCONSISTENT", "internal state error")
+        })?,
         None => default_hub_trust_policy(),
     };
     validate_hub_trust_policy(&trust_policy)
@@ -1113,7 +1114,9 @@ fn validate_hub_trust_policy(trust_policy: &HubTrustPolicy) -> std::result::Resu
     }
     for schema in &trust_policy.allowed_schemas {
         if !ALLOWED_TRUST_POLICY_SCHEMAS.contains(&schema.as_str()) {
-            return Err(format!("allowedSchemas contains unsupported schema `{schema}`"));
+            return Err(format!(
+                "allowedSchemas contains unsupported schema `{schema}`"
+            ));
         }
     }
     Ok(())
@@ -1144,11 +1147,10 @@ fn requires_verified_attestation(trust_policy: &HubTrustPolicy) -> bool {
 }
 
 fn hash_finding_attestation_payload(finding: &FindingEnvelope) -> Result<String, V1Error> {
-    let mut value = serde_json::to_value(finding)
-        .map_err(|err| {
-            tracing::error!(error = %err, "failed to serialize finding for attestation hash");
-            V1Error::internal("SWARM_SERIALIZATION_ERROR", "internal serialization error")
-        })?;
+    let mut value = serde_json::to_value(finding).map_err(|err| {
+        tracing::error!(error = %err, "failed to serialize finding for attestation hash");
+        V1Error::internal("SWARM_SERIALIZATION_ERROR", "internal serialization error")
+    })?;
     let value_map = value.as_object_mut().ok_or_else(|| {
         V1Error::internal(
             "SWARM_SERIALIZATION_ERROR",
@@ -1164,11 +1166,10 @@ fn hash_finding_attestation_payload(finding: &FindingEnvelope) -> Result<String,
             }
         }
     }
-    let canonical = canonicalize(&value)
-        .map_err(|err| {
-            tracing::error!(error = %err, "failed to canonicalize finding for attestation hash");
-            V1Error::internal("SWARM_HASH_ERROR", "internal hash error")
-        })?;
+    let canonical = canonicalize(&value).map_err(|err| {
+        tracing::error!(error = %err, "failed to canonicalize finding for attestation hash");
+        V1Error::internal("SWARM_HASH_ERROR", "internal hash error")
+    })?;
     Ok(sha256_hex(canonical.as_bytes()))
 }
 
@@ -1187,11 +1188,10 @@ fn verify_finding_attestation(finding: &FindingEnvelope) -> Result<bool, V1Error
 }
 
 fn hash_revocation_attestation_payload(revocation: &RevocationEnvelope) -> Result<String, V1Error> {
-    let mut value = serde_json::to_value(revocation)
-        .map_err(|err| {
-            tracing::error!(error = %err, "failed to serialize revocation for attestation hash");
-            V1Error::internal("SWARM_SERIALIZATION_ERROR", "internal serialization error")
-        })?;
+    let mut value = serde_json::to_value(revocation).map_err(|err| {
+        tracing::error!(error = %err, "failed to serialize revocation for attestation hash");
+        V1Error::internal("SWARM_SERIALIZATION_ERROR", "internal serialization error")
+    })?;
     let value_map = value.as_object_mut().ok_or_else(|| {
         V1Error::internal(
             "SWARM_SERIALIZATION_ERROR",
@@ -1200,11 +1200,10 @@ fn hash_revocation_attestation_payload(revocation: &RevocationEnvelope) -> Resul
     })?;
     value_map.remove("attestation");
     value_map.remove("publish");
-    let canonical = canonicalize(&value)
-        .map_err(|err| {
-            tracing::error!(error = %err, "failed to canonicalize revocation for attestation hash");
-            V1Error::internal("SWARM_HASH_ERROR", "internal hash error")
-        })?;
+    let canonical = canonicalize(&value).map_err(|err| {
+        tracing::error!(error = %err, "failed to canonicalize revocation for attestation hash");
+        V1Error::internal("SWARM_HASH_ERROR", "internal hash error")
+    })?;
     Ok(sha256_hex(canonical.as_bytes()))
 }
 
@@ -1247,11 +1246,7 @@ fn enforce_common_trust_policy(
             "issuer `{issuer_id}` is not in the trusted issuer allowlist",
         )));
     }
-    if !trust_policy
-        .allowed_schemas
-        .iter()
-        .any(|s| s == schema)
-    {
+    if !trust_policy.allowed_schemas.iter().any(|s| s == schema) {
         return Err(trust_policy_rejection(format!(
             "schema `{schema}` is not allowed by hub trust policy",
         )));
@@ -1355,10 +1350,7 @@ fn trust_policy_rejection(message: impl Into<String>) -> V1Error {
 }
 
 fn parse_issuer_query(raw: Option<String>) -> Result<String, V1Error> {
-    let issuer = require_non_empty_string(
-        raw.as_deref().unwrap_or_default().trim(),
-        "issuerId",
-    )?;
+    let issuer = require_non_empty_string(raw.as_deref().unwrap_or_default().trim(), "issuerId")?;
     validate_issuer_id(&issuer)?;
     Ok(issuer)
 }
@@ -1385,10 +1377,13 @@ fn require_non_empty_string(value: &str, field: &str) -> Result<String, V1Error>
 
 fn parse_revocation_envelope(value: Value) -> Result<RevocationEnvelope, V1Error> {
     if !value.is_object() {
-        return Err(invalid_revocation("revocation envelope must be a JSON object"));
+        return Err(invalid_revocation(
+            "revocation envelope must be a JSON object",
+        ));
     }
-    let revocation = serde_json::from_value::<RevocationEnvelope>(value)
-        .map_err(|err| invalid_revocation(format!("schema-mismatched revocation envelope: {err}")))?;
+    let revocation = serde_json::from_value::<RevocationEnvelope>(value).map_err(|err| {
+        invalid_revocation(format!("schema-mismatched revocation envelope: {err}"))
+    })?;
     validate_revocation_envelope_fields(&revocation)?;
     Ok(revocation)
 }
@@ -1401,7 +1396,8 @@ fn validate_revocation_envelope_fields(revocation: &RevocationEnvelope) -> Resul
     }
     validate_non_empty_protocol_string(&revocation.revocation_id, "revocationId")
         .map_err(invalid_revocation)?;
-    validate_non_empty_protocol_string(&revocation.feed_id, "feedId").map_err(invalid_revocation)?;
+    validate_non_empty_protocol_string(&revocation.feed_id, "feedId")
+        .map_err(invalid_revocation)?;
     validate_non_empty_protocol_string(&revocation.reason, "reason").map_err(invalid_revocation)?;
     validate_issuer_id_message(&revocation.issuer_id).map_err(invalid_revocation)?;
     validate_safe_integer_bound(revocation.feed_seq, "feedSeq").map_err(invalid_revocation)?;
@@ -1418,7 +1414,8 @@ fn validate_revocation_envelope_fields(revocation: &RevocationEnvelope) -> Resul
     }
     validate_protocol_target_reference(&revocation.target, "target").map_err(invalid_revocation)?;
     if let Some(replacement) = revocation.replacement.as_ref() {
-        validate_protocol_target_reference(replacement, "replacement").map_err(invalid_revocation)?;
+        validate_protocol_target_reference(replacement, "replacement")
+            .map_err(invalid_revocation)?;
     }
     match revocation.action {
         RevocationAction::Revoke if revocation.replacement.is_some() => {
@@ -1457,9 +1454,7 @@ fn validate_non_empty_protocol_string(value: &str, field: &str) -> std::result::
 
 fn validate_safe_integer_bound(value: u64, field: &str) -> std::result::Result<(), String> {
     if value > MAX_SAFE_INTEGER {
-        return Err(format!(
-            "{field} exceeds JavaScript safe integer range"
-        ));
+        return Err(format!("{field} exceeds JavaScript safe integer range"));
     }
     Ok(())
 }
@@ -1553,7 +1548,8 @@ fn validate_finding_envelope(value: &Value) -> Result<(), V1Error> {
     require_unit_interval(map, "confidence")?;
     expect_one_of_string(map, "status", ALLOWED_STATUSES)?;
     require_safe_u64(map, "signalCount")?;
-    let tags_value = map.get("tags")
+    let tags_value = map
+        .get("tags")
         .ok_or_else(|| invalid_finding("tags is required"))?;
     validate_string_array(tags_value, "tags")?;
     if let Some(tags_arr) = tags_value.as_array() {
@@ -1727,9 +1723,7 @@ fn expect_exact_string(
 ) -> Result<(), V1Error> {
     let actual = require_non_empty_json_string(map, field)?;
     if actual != expected {
-        return Err(invalid_finding(format!(
-            "{field} must equal `{expected}`"
-        )));
+        return Err(invalid_finding(format!("{field} must equal `{expected}`")));
     }
     Ok(())
 }
@@ -1753,12 +1747,12 @@ fn require_non_empty_json_string<'a>(
     map: &'a Map<String, Value>,
     field: &str,
 ) -> Result<&'a str, V1Error> {
-    let value = map.get(field).ok_or_else(|| {
-        invalid_finding(format!("{field} is required"))
-    })?;
-    let string = value.as_str().ok_or_else(|| {
-        invalid_finding(format!("{field} must be a string"))
-    })?;
+    let value = map
+        .get(field)
+        .ok_or_else(|| invalid_finding(format!("{field} is required")))?;
+    let string = value
+        .as_str()
+        .ok_or_else(|| invalid_finding(format!("{field} must be a string")))?;
     if string.trim().is_empty() {
         return Err(invalid_finding(format!(
             "{field} must be a non-empty string"
@@ -1808,9 +1802,7 @@ fn require_unit_interval(map: &Map<String, Value>, field: &str) -> Result<f64, V
         .as_f64()
         .ok_or_else(|| invalid_finding(format!("{field} must be a finite number")))?;
     if !(0.0..=1.0).contains(&number) {
-        return Err(invalid_finding(format!(
-            "{field} must be within [0, 1]"
-        )));
+        return Err(invalid_finding(format!("{field} must be within [0, 1]")));
     }
     Ok(number)
 }
@@ -1829,9 +1821,7 @@ fn validate_string_array(value: &Value, field: &str) -> Result<(), V1Error> {
 
 fn validate_issuer_id_message(value: &str) -> std::result::Result<(), String> {
     if !value.starts_with(ISSUER_ID_PREFIX) {
-        return Err(format!(
-            "issuerId must start with `{ISSUER_ID_PREFIX}`"
-        ));
+        return Err(format!("issuerId must start with `{ISSUER_ID_PREFIX}`"));
     }
     let suffix = &value[ISSUER_ID_PREFIX.len()..];
     if !is_lower_hex(suffix, 64) {
@@ -1865,11 +1855,10 @@ fn is_lower_hex(value: &str, expected_len: usize) -> bool {
 }
 
 fn hash_finding_envelope_for_head(finding: &FindingEnvelope) -> Result<String, V1Error> {
-    let mut value = serde_json::to_value(finding)
-        .map_err(|err| {
-            tracing::error!(error = %err, "failed to serialize finding for head hash");
-            V1Error::internal("SWARM_SERIALIZATION_ERROR", "internal serialization error")
-        })?;
+    let mut value = serde_json::to_value(finding).map_err(|err| {
+        tracing::error!(error = %err, "failed to serialize finding for head hash");
+        V1Error::internal("SWARM_SERIALIZATION_ERROR", "internal serialization error")
+    })?;
     let value_map = value.as_object_mut().ok_or_else(|| {
         V1Error::internal(
             "SWARM_SERIALIZATION_ERROR",
@@ -1884,20 +1873,18 @@ fn hash_finding_envelope_for_head(finding: &FindingEnvelope) -> Result<String, V
             }
         }
     }
-    let canonical = canonicalize(&value)
-        .map_err(|err| {
-            tracing::error!(error = %err, "failed to canonicalize finding for head hash");
-            V1Error::internal("SWARM_HASH_ERROR", "internal hash error")
-        })?;
+    let canonical = canonicalize(&value).map_err(|err| {
+        tracing::error!(error = %err, "failed to canonicalize finding for head hash");
+        V1Error::internal("SWARM_HASH_ERROR", "internal hash error")
+    })?;
     Ok(sha256_hex(canonical.as_bytes()))
 }
 
 fn hash_revocation_envelope_for_head(revocation: &RevocationEnvelope) -> Result<String, V1Error> {
-    let mut value = serde_json::to_value(revocation)
-        .map_err(|err| {
-            tracing::error!(error = %err, "failed to serialize revocation for head hash");
-            V1Error::internal("SWARM_SERIALIZATION_ERROR", "internal serialization error")
-        })?;
+    let mut value = serde_json::to_value(revocation).map_err(|err| {
+        tracing::error!(error = %err, "failed to serialize revocation for head hash");
+        V1Error::internal("SWARM_SERIALIZATION_ERROR", "internal serialization error")
+    })?;
     let value_map = value.as_object_mut().ok_or_else(|| {
         V1Error::internal(
             "SWARM_SERIALIZATION_ERROR",
@@ -1905,10 +1892,147 @@ fn hash_revocation_envelope_for_head(revocation: &RevocationEnvelope) -> Result<
         )
     })?;
     value_map.remove("publish");
-    let canonical = canonicalize(&value)
-        .map_err(|err| {
-            tracing::error!(error = %err, "failed to canonicalize revocation for head hash");
-            V1Error::internal("SWARM_HASH_ERROR", "internal hash error")
-        })?;
+    let canonical = canonicalize(&value).map_err(|err| {
+        tracing::error!(error = %err, "failed to canonicalize revocation for head hash");
+        V1Error::internal("SWARM_HASH_ERROR", "internal hash error")
+    })?;
     Ok(sha256_hex(canonical.as_bytes()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::StatusCode;
+    use serde_json::json;
+
+    fn valid_issuer_id() -> String {
+        format!("{ISSUER_ID_PREFIX}{}", "b".repeat(64))
+    }
+
+    fn sample_finding_value() -> Value {
+        json!({
+            "schema": FINDING_ENVELOPE_SCHEMA,
+            "findingId": "finding-1",
+            "issuerId": valid_issuer_id(),
+            "feedId": "feed-1",
+            "feedSeq": 1,
+            "publishedAt": 1,
+            "title": "title",
+            "summary": "summary",
+            "severity": "high",
+            "confidence": 0.9,
+            "status": "confirmed",
+            "signalCount": 1,
+            "tags": ["tag-1"],
+            "relatedFindingIds": [],
+            "blobRefs": []
+        })
+    }
+
+    fn sample_revocation_value(action: &str, include_replacement: bool) -> Value {
+        let mut value = json!({
+            "schema": REVOCATION_ENVELOPE_SCHEMA,
+            "revocationId": "rev-1",
+            "issuerId": valid_issuer_id(),
+            "feedId": "feed-1",
+            "feedSeq": 1,
+            "issuedAt": 1,
+            "action": action,
+            "target": {
+                "schema": FINDING_ENVELOPE_SCHEMA,
+                "id": "finding-1",
+                "digest": format!("0x{}", "a".repeat(64)),
+            },
+            "reason": "test-reason"
+        });
+        if include_replacement {
+            value["replacement"] = json!({
+                "schema": FINDING_ENVELOPE_SCHEMA,
+                "id": "finding-2",
+                "digest": format!("0x{}", "c".repeat(64)),
+            });
+        }
+        value
+    }
+
+    #[test]
+    fn validate_hub_trust_policy_rejects_unsupported_schemas() {
+        let mut trust_policy = default_hub_trust_policy();
+        trust_policy
+            .allowed_schemas
+            .push("clawdstrike.swarm.unknown.v1".to_string());
+        let err = validate_hub_trust_policy(&trust_policy).expect_err("unsupported schema");
+        assert!(err.contains("unsupported schema"));
+    }
+
+    #[test]
+    fn map_swarm_store_error_maps_gap_and_conflict() {
+        let gap = map_swarm_store_error(ControlDbError::Gap("missing seq".to_string()));
+        assert_eq!(gap.status, StatusCode::CONFLICT);
+        assert_eq!(gap.code, "SWARM_SEQ_GAP");
+
+        let conflict = map_swarm_store_error(ControlDbError::Conflict("duplicate".to_string()));
+        assert_eq!(conflict.status, StatusCode::CONFLICT);
+        assert_eq!(conflict.code, "SWARM_SEQ_CONFLICT");
+    }
+
+    #[test]
+    fn parse_required_query_u64_requires_unsigned_integer() {
+        assert_eq!(
+            parse_required_query_u64(Some("42".to_string()), "fromSeq").expect("valid value"),
+            42
+        );
+
+        let empty = parse_required_query_u64(Some(String::new()), "fromSeq")
+            .expect_err("empty value should fail");
+        assert_eq!(empty.code, "INVALID_SWARM_REQUEST");
+
+        let invalid = parse_required_query_u64(Some("abc".to_string()), "fromSeq")
+            .expect_err("non-numeric value should fail");
+        assert_eq!(invalid.code, "INVALID_REPLAY_QUERY");
+    }
+
+    #[test]
+    fn parse_revocation_envelope_enforces_replacement_action_rules() {
+        let missing_replacement =
+            parse_revocation_envelope(sample_revocation_value("supersede", false))
+                .expect_err("supersede should require replacement");
+        assert_eq!(missing_replacement.code, "INVALID_REVOCATION_ENVELOPE");
+        assert!(missing_replacement
+            .message
+            .contains("replacement is required"));
+
+        let replacement_with_revoke =
+            parse_revocation_envelope(sample_revocation_value("revoke", true))
+                .expect_err("revoke should reject replacement");
+        assert_eq!(replacement_with_revoke.code, "INVALID_REVOCATION_ENVELOPE");
+        assert!(replacement_with_revoke.message.contains("must be omitted"));
+
+        let valid =
+            parse_revocation_envelope(sample_revocation_value("supersede", true)).expect("valid");
+        assert_eq!(valid.action.as_str(), "supersede");
+    }
+
+    #[test]
+    fn finding_validation_accepts_minimal_payload_and_rejects_unknown_fields() {
+        let valid = sample_finding_value();
+        assert!(validate_finding_envelope(&valid).is_ok());
+
+        let mut invalid = sample_finding_value();
+        invalid["unexpected"] = json!("field");
+        let err = validate_finding_envelope(&invalid).expect_err("unknown field should fail");
+        assert_eq!(err.code, "INVALID_FINDING_ENVELOPE");
+        assert!(err.message.contains("unknown field"));
+    }
+
+    #[test]
+    fn normalize_digest_message_requires_prefixed_lower_hex() {
+        let digest = format!("0x{}", "a".repeat(64));
+        assert_eq!(
+            normalize_digest_message(&digest).expect("valid digest"),
+            digest
+        );
+        assert!(normalize_digest_message("ABC").is_err());
+        assert!(normalize_digest_message("0xABC").is_err());
+    }
 }

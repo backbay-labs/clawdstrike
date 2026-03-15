@@ -40,6 +40,7 @@ import {
   IconFingerprint,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import { SubTabBar, type SubTab } from "../shared/sub-tab-bar";
 import { ClaudeCodeHint } from "@/components/workbench/shared/claude-code-hint";
 
 
@@ -228,88 +229,58 @@ function computeThreatLevel(results: SimulationResult[], scenarios: TestScenario
 }
 
 
-function SimulatorHeader({
-  activeTab,
-  onTabChange,
+const SIMULATOR_TABS: SubTab[] = [
+  { id: "scenarios", label: "Scenarios", icon: IconTestPipe },
+  { id: "trustprint-lab", label: "Trustprint", icon: IconFingerprint, title: "Embedding-based threat screening using vector similarity against known patterns" },
+  { id: "observe", label: "Observe", icon: IconEye },
+  { id: "coverage", label: "Coverage", icon: IconGrid3x3 },
+];
+
+function SimulatorStatusIndicators({
   threatLevel,
   engineConnected,
 }: {
-  activeTab: SimulatorTab;
-  onTabChange: (tab: SimulatorTab) => void;
   threatLevel: { color: string; label: string };
   engineConnected: boolean;
 }) {
-  const tabs: { id: SimulatorTab; label: string; icon: typeof IconTestPipe }[] = [
-    { id: "scenarios", label: "Scenarios", icon: IconTestPipe },
-    { id: "trustprint-lab", label: "Trustprint", icon: IconFingerprint },
-    { id: "observe", label: "Observe", icon: IconEye },
-    { id: "coverage", label: "Coverage", icon: IconGrid3x3 },
-  ];
-
   return (
-    <div className="flex items-center justify-between px-1 py-0 border-b border-[#2d3240] bg-[#0b0d13] shrink-0">
-      {/* Tabs */}
-      <div className="flex items-center">
-        {tabs.map((tab) => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => onTabChange(tab.id)}
-              className={cn(
-                "flex items-center gap-1.5 px-4 py-3 text-xs font-medium transition-all duration-150 border-b-2 -mb-px",
-                isActive
-                  ? "text-[#d4a84b] border-[#d4a84b]"
-                  : "text-[#6f7f9a] border-transparent hover:text-[#ece7dc] hover:border-[#2d3240]",
-              )}
-            >
-              <Icon size={14} stroke={1.5} />
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Right side: status indicators */}
-      <div className="flex items-center gap-3 pr-3">
-        {/* Engine connection status */}
-        <div
-          className="flex items-center gap-1.5"
-          title={
-            engineConnected
-              ? "Rust engine available"
-              : "Rust engine unavailable — using JS fallback"
-          }
+    <>
+      {/* Engine connection status */}
+      <div
+        className="flex items-center gap-1.5"
+        title={
+          engineConnected
+            ? "Rust engine available"
+            : "Rust engine unavailable — using JS fallback"
+        }
+      >
+        <IconCircle
+          size={6}
+          stroke={0}
+          fill={engineConnected ? "#3dbf84" : "#6f7f9a"}
+          className={engineConnected ? "animate-pulse" : ""}
+        />
+        <span
+          className={cn(
+            "text-[9px] font-mono uppercase tracking-wider",
+            engineConnected ? "text-[#3dbf84]/70" : "text-[#6f7f9a]/50",
+          )}
         >
-          <IconCircle
-            size={6}
-            stroke={0}
-            fill={engineConnected ? "#3dbf84" : "#6f7f9a"}
-            className={engineConnected ? "animate-pulse" : ""}
-          />
-          <span
-            className={cn(
-              "text-[9px] font-mono uppercase tracking-wider",
-              engineConnected ? "text-[#3dbf84]/70" : "text-[#6f7f9a]/50",
-            )}
-          >
-            {engineConnected ? "Rust" : "JS"}
-          </span>
-        </div>
-
-        {/* Threat level badge */}
-        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-[#2d3240] bg-[#131721]">
-          <IconShieldCheck size={13} stroke={1.5} style={{ color: threatLevel.color }} />
-          <span
-            className="text-[10px] font-mono font-semibold uppercase tracking-wider"
-            style={{ color: threatLevel.color }}
-          >
-            {threatLevel.label}
-          </span>
-        </div>
+          {engineConnected ? "Rust" : "JS"}
+        </span>
       </div>
-    </div>
+
+      {/* Threat level badge */}
+      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-[#2d3240] bg-[#131721]">
+        <IconShieldCheck size={13} stroke={1.5} style={{ color: threatLevel.color }} />
+        <span
+          className="text-[10px] font-mono font-semibold uppercase tracking-wider"
+          style={{ color: threatLevel.color }}
+        >
+          {threatLevel.label}
+        </span>
+      </div>
+    </>
   );
 }
 
@@ -727,13 +698,17 @@ export function SimulatorLayout() {
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      {/* Header with tabs + status indicators */}
-      <SimulatorHeader
+      {/* Sub-tab bar with status indicators */}
+      <SubTabBar
+        tabs={SIMULATOR_TABS}
         activeTab={activeTab}
-        onTabChange={setActiveTab}
-        threatLevel={threatLevel}
-        engineConnected={engineConnected}
-      />
+        onTabChange={(id) => setActiveTab(id as SimulatorTab)}
+      >
+        <SimulatorStatusIndicators
+          threatLevel={threatLevel}
+          engineConnected={engineConnected}
+        />
+      </SubTabBar>
 
       {/* Tab content */}
       <div className="flex-1 min-h-0">

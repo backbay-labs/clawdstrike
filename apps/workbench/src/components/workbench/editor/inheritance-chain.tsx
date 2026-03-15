@@ -344,7 +344,7 @@ export function InheritanceChain() {
             size={12}
             stroke={1.5}
             className={cn(
-              "shrink-0 text-[#6f7f9a] transition-transform duration-200",
+              "shrink-0 text-[#6f7f9a] transition-transform duration-150",
               open && "rotate-180",
             )}
           />

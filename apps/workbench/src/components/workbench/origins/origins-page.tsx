@@ -1869,7 +1869,7 @@ function ProfileDetail({
               </p>
             )}
             <div className="flex items-center gap-2 mt-1.5 ml-1.5">
-              <span className="text-[9px] text-[#6f7f9a]">Posture:</span>
+              <span className="text-[9px] text-[#6f7f9a]" title="Resource usage limits and automated state transitions for agent capabilities">Posture:</span>
               <Select
                 value={profile.posture ?? "__none__"}
                 onValueChange={(val: string | null) =>

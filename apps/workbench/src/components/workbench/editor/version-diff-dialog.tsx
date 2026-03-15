@@ -335,7 +335,7 @@ function SemanticDiffContent({ diff }: { diff: VersionDiff }) {
         <DiffSection title="Settings" changes={grouped.setting} />
       )}
       {grouped.posture.length > 0 && (
-        <DiffSection title="Posture" changes={grouped.posture} />
+        <DiffSection title="Posture" titleAttr="Resource usage limits and automated state transitions for agent capabilities" changes={grouped.posture} />
       )}
       {grouped.origin.length > 0 && (
         <DiffSection title="Origins" changes={grouped.origin} />
@@ -344,10 +344,10 @@ function SemanticDiffContent({ diff }: { diff: VersionDiff }) {
   );
 }
 
-function DiffSection({ title, changes }: { title: string; changes: VersionChange[] }) {
+function DiffSection({ title, titleAttr, changes }: { title: string; titleAttr?: string; changes: VersionChange[] }) {
   return (
     <section>
-      <h3 className="text-[10px] font-mono uppercase tracking-wider text-[#6f7f9a] mb-2">
+      <h3 className="text-[10px] font-mono uppercase tracking-wider text-[#6f7f9a] mb-2" title={titleAttr}>
         {title}
       </h3>
       <div className="space-y-1.5">

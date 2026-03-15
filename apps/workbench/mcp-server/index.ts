@@ -67,36 +67,24 @@ type RawPromptArgs<TSchema extends RawPromptSchema> = {
 };
 type RawPromptResult = unknown;
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- MCP SDK overloads make exact typing impractical; the wrapper enforces type safety at the call site via TSchema.
 const registerTypedRawTool = <TSchema extends RawToolSchema>(
   name: string,
   description: string,
   paramsSchema: TSchema,
   cb: (args: RawToolArgs<TSchema>) => RawToolResult,
 ) => {
-  (
-    server.tool as unknown as (
-      name: string,
-      description: string,
-      paramsSchema: RawToolSchema,
-      cb: (args: RawToolArgs<TSchema>) => RawToolResult,
-    ) => void
-  )(name, description, paramsSchema, cb);
+  (server.tool as (...args: any[]) => void)(name, description, paramsSchema, cb);
 };
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- MCP SDK overloads make exact typing impractical; the wrapper enforces type safety at the call site via TSchema.
 const registerTypedPrompt = <TSchema extends RawPromptSchema>(
   name: string,
   description: string,
   argsSchema: TSchema,
   cb: (args: RawPromptArgs<TSchema>) => RawPromptResult,
 ) => {
-  (
-    server.prompt as unknown as (
-      name: string,
-      description: string,
-      argsSchema: RawPromptSchema,
-      cb: (args: RawPromptArgs<TSchema>) => RawPromptResult,
-    ) => void
-  )(name, description, argsSchema, cb);
+  (server.prompt as (...args: any[]) => void)(name, description, argsSchema, cb);
 };
 
 export function parsePolicy(yaml: string): { policy: WorkbenchPolicy; warnings: string[] } {

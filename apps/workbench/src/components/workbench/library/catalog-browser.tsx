@@ -801,7 +801,7 @@ export function CatalogBrowser() {
                 onClick={loadCatalog}
                 disabled={catalogLoading}
                 title="Refresh catalog"
-                className="flex items-center gap-1 px-2 py-1 rounded-md bg-[#131721] text-[#6f7f9a] text-[10px] font-medium hover:text-[#ece7dc] transition-colors disabled:opacity-50"
+                className="flex items-center gap-1 px-2 py-1 rounded-md bg-[#131721] text-[#6f7f9a] text-[10px] font-medium hover:text-[#ece7dc] transition-colors disabled:opacity-40 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d4a84b]/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#05060a]"
               >
                 <IconRefresh size={11} stroke={1.5} className={catalogLoading ? "animate-spin" : ""} />
                 Refresh

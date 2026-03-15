@@ -22,6 +22,7 @@ import {
   IconFlag3,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import { SubTabBar, type SubTab } from "../shared/sub-tab-bar";
 import { useOperator } from "@/lib/workbench/operator-store";
 import {
   activateSentinel,
@@ -775,7 +776,7 @@ export function SentinelDetail({
     }
   }, [sentinel, onUpdate]);
 
-  const tabs: { id: DetailTab; label: string; icon: typeof IconActivity }[] = [
+  const tabs: SubTab[] = [
     { id: "signals", label: "Signals", icon: IconActivity },
     { id: "goals", label: "Goals", icon: IconTarget },
     { id: "memory", label: "Memory", icon: IconDatabase },
@@ -884,27 +885,7 @@ export function SentinelDetail({
         {/* Main content — left 2/3 */}
         <div className="flex flex-col flex-1 min-w-0 border-r border-[#2d3240]/60">
           {/* Tabs */}
-          <div className="flex items-center px-1 py-0 border-b border-[#2d3240] bg-[#0b0d13] shrink-0">
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              const isActive = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={cn(
-                    "flex items-center gap-1.5 px-4 py-3 text-xs font-medium transition-all duration-150 border-b-2 -mb-px",
-                    isActive
-                      ? "text-[#d4a84b] border-[#d4a84b]"
-                      : "text-[#6f7f9a] border-transparent hover:text-[#ece7dc] hover:border-[#2d3240]",
-                  )}
-                >
-                  <Icon size={14} stroke={1.5} />
-                  {tab.label}
-                </button>
-              );
-            })}
-          </div>
+          <SubTabBar tabs={tabs} activeTab={activeTab} onTabChange={(id) => setActiveTab(id as DetailTab)} />
 
           {/* Tab content */}
           <div className="flex-1 overflow-auto px-5">
