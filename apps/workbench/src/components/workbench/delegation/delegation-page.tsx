@@ -258,8 +258,9 @@ export function DelegationPage() {
       try {
         setLiveAvailable(true);
         setIsLoadingGraph(true);
+        const connection = getAuthenticatedConnection();
         // Load principals list
-        const principalsList = await apiFetchPrincipals(getAuthenticatedConnection());
+        const principalsList = await apiFetchPrincipals(connection);
         if (cancelled) return;
         setPrincipals(principalsList);
 
@@ -268,7 +269,7 @@ export function DelegationPage() {
         if (defaultId) setSelectedPrincipalId(defaultId);
 
         // Try to fetch live graph
-        const liveGraph = await fetchLiveGraph(getAuthenticatedConnection(), defaultId);
+        const liveGraph = await fetchLiveGraph(connection, defaultId);
         if (cancelled) return;
         if (liveGraph) {
           setGraph(liveGraph);
@@ -293,11 +294,12 @@ export function DelegationPage() {
     if (!fleetConnected) return;
     setIsLoadingGraph(true);
     try {
+      const connection = getAuthenticatedConnection();
       // Refresh principals list
-      const principalsList = await apiFetchPrincipals(getAuthenticatedConnection());
+      const principalsList = await apiFetchPrincipals(connection);
       setPrincipals(principalsList);
 
-      const liveGraph = await fetchLiveGraph(getAuthenticatedConnection(), selectedPrincipalId);
+      const liveGraph = await fetchLiveGraph(connection, selectedPrincipalId);
       if (liveGraph) {
         setGraph(liveGraph);
       }

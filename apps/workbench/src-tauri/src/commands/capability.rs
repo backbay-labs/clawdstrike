@@ -123,7 +123,9 @@ impl CommandCapabilityManager {
         ttl_secs: i64,
         max_uses: u32,
     ) {
-        if max_uses == 0 {
+        let remaining_uses = max_uses.saturating_sub(1);
+        if remaining_uses == 0 {
+            self.grants.remove(&(window_label.to_string(), scope));
             return;
         }
 
@@ -131,7 +133,7 @@ impl CommandCapabilityManager {
             (window_label.to_string(), scope),
             AuthorizationGrant {
                 expires_at_epoch: now_epoch.saturating_add(ttl_secs),
-                remaining_uses: max_uses,
+                remaining_uses,
             },
         );
     }
@@ -307,4 +309,48 @@ pub async fn authorize_sensitive_command<R: Runtime>(
         policy.max_uses,
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn terminal_permissions_are_split_by_scope() {
+        let Ok(list) = policy_for_command("terminal_list") else {
+            panic!("missing terminal_list policy");
+        };
+        let Ok(write) = policy_for_command("terminal_write") else {
+            panic!("missing terminal_write policy");
+        };
+        let Ok(create) = policy_for_command("terminal_create") else {
+            panic!("missing terminal_create policy");
+        };
+
+        assert_eq!(list.scope, AuthorizationScope::TerminalRead);
+        assert_eq!(write.scope, AuthorizationScope::TerminalWrite);
+        assert_eq!(create.scope, AuthorizationScope::TerminalLifecycle);
+    }
+
+    #[test]
+    fn single_use_grant_does_not_authorize_a_second_call() {
+        let mut manager = CommandCapabilityManager::new();
+        let now = 1_700_000_000;
+
+        manager.issue_grant("main", AuthorizationScope::WorktreeWrite, now, 15, 1);
+
+        assert!(!manager.consume_active_grant("main", AuthorizationScope::WorktreeWrite, now));
+    }
+
+    #[test]
+    fn multi_use_grant_reserves_one_use_for_the_approving_call() {
+        let mut manager = CommandCapabilityManager::new();
+        let now = 1_700_000_000;
+
+        manager.issue_grant("main", AuthorizationScope::TerminalWrite, now, 30, 3);
+
+        assert!(manager.consume_active_grant("main", AuthorizationScope::TerminalWrite, now));
+        assert!(manager.consume_active_grant("main", AuthorizationScope::TerminalWrite, now));
+        assert!(!manager.consume_active_grant("main", AuthorizationScope::TerminalWrite, now));
+    }
 }
