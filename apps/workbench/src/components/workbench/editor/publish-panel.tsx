@@ -14,9 +14,7 @@ import {
   IconX,
   IconLoader2,
   IconCircle,
-  IconCircleFilled,
   IconAlertTriangle,
-  IconHistory,
   IconChevronDown,
   IconChevronRight,
   IconFileExport,
@@ -70,7 +68,6 @@ export function PublishPanel({
 
   const {
     manifests,
-    latestManifest,
     loading,
     publish,
     canPublish,

@@ -15,8 +15,6 @@ import {
   IconBulb,
   IconChevronDown,
   IconChevronRight,
-  IconCheck,
-  IconX,
   IconTarget,
   IconAlertTriangle,
   IconEye,

@@ -211,7 +211,12 @@ describe("WorkbenchTopbar", () => {
     await waitFor(() => {
       expect(tauriBridgeMocks.saveDetectionFile).toHaveBeenCalledTimes(1);
     });
-    expect(tauriBridgeMocks.saveDetectionFile.mock.calls[0]).toHaveLength(4);
+    expect(tauriBridgeMocks.saveDetectionFile).toHaveBeenCalledWith(
+      expect.any(String),   // content
+      expect.any(String),   // fileType
+      null,                 // no existing filePath (Save As flow)
+      expect.any(String),   // suggestedName
+    );
   });
 
   it("desktop export does not write through savePolicyFile before native validation", async () => {

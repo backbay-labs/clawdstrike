@@ -28,7 +28,6 @@ import { createEmptyDatasets } from "../detection-workflow/shared-types";
 import {
   mapEventsToDraftSeed,
   recommendFormats,
-  inferDataSourceHints,
 } from "../detection-workflow/draft-mappers";
 import { generateDraft, generateDraftFromEvents } from "../detection-workflow/draft-generator";
 

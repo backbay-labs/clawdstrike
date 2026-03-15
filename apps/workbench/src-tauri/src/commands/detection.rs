@@ -41,7 +41,7 @@ pub struct YaraValidationResponse {
 pub struct OcsfValidationResponse {
     pub valid: bool,
     pub diagnostics: Vec<DetectionDiagnostic>,
-    pub class_uid: Option<u32>,
+    pub class_uid: Option<i64>,
     pub event_class: Option<String>,
 }
 
@@ -416,11 +416,19 @@ pub fn validate_yara_rule(source: String) -> Result<YaraValidationResponse, Stri
         let trimmed = line.trim();
         let line_no = (idx + 1) as u32;
 
-        // Try stripping optional modifiers, then check for "rule " prefix
-        let after_modifiers = trimmed
-            .strip_prefix("private ")
-            .or_else(|| trimmed.strip_prefix("global "))
-            .unwrap_or(trimmed);
+        // Strip optional YARA rule modifiers (`private`, `global`) in any order.
+        // Handles `private rule`, `global rule`, `private global rule`, and
+        // `global private rule`.
+        let mut after_modifiers = trimmed;
+        loop {
+            if let Some(rest) = after_modifiers.strip_prefix("private ") {
+                after_modifiers = rest.trim_start();
+            } else if let Some(rest) = after_modifiers.strip_prefix("global ") {
+                after_modifiers = rest.trim_start();
+            } else {
+                break;
+            }
+        }
         {
             if let Some(rule_decl) = after_modifiers.strip_prefix("rule ") {
                 if let Some((rule_name, _, saw_condition)) = current_rule.take() {
@@ -545,21 +553,12 @@ pub fn validate_ocsf_event(json: String) -> Result<OcsfValidationResponse, Strin
             let mut diagnostics = Vec::new();
             let has_class_uid = value.get("class_uid").is_some();
             let class_uid = match value.get("class_uid") {
-                Some(v) => match v.as_u64() {
-                    Some(uid) if uid <= u32::MAX as u64 => Some(uid as u32),
-                    Some(_) => {
-                        diagnostics.push(DetectionDiagnostic {
-                            severity: "error".into(),
-                            message: "class_uid exceeds the maximum supported u32 value".into(),
-                            line: None,
-                            column: None,
-                        });
-                        None
-                    }
+                Some(v) => match v.as_i64() {
+                    Some(uid) => Some(uid),
                     None => {
                         diagnostics.push(DetectionDiagnostic {
                             severity: "error".into(),
-                            message: "class_uid must be an unsigned integer".into(),
+                            message: "class_uid must be an integer".into(),
                             line: None,
                             column: None,
                         });
@@ -605,12 +604,8 @@ pub fn validate_ocsf_event(json: String) -> Result<OcsfValidationResponse, Strin
                 });
             }
 
-            let event_class = class_uid.map(|uid| match uid {
-                1001 => "File Activity".into(),
-                1007 => "Process Activity".into(),
-                2004 => "Detection Finding".into(),
-                4001 => "Network Activity".into(),
-                _ => format!("Unknown ({})", uid),
+            let event_class = class_uid.and_then(ocsf_class_name).or_else(|| {
+                class_uid.map(|uid| format!("Unknown ({uid})"))
             });
 
             let valid = diagnostics.iter().all(|d| d.severity != "error");

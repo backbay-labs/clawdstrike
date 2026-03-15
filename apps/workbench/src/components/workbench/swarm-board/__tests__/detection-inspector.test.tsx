@@ -375,9 +375,6 @@ describe("Detection Inspector — Evidence Pack", () => {
       screen.getByTestId("select-first").click();
     });
 
-    // Wait for the async store load to complete
-    const inspector = screen.getByLabelText("Node inspector");
-
     // Initially shows loading skeleton
     // After async load, should show pack data
     // Use findBy to wait for async render

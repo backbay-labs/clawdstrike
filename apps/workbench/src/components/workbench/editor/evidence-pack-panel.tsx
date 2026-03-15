@@ -162,11 +162,6 @@ export function EvidencePackPanel({ documentId, fileType }: EvidencePackPanelPro
     [exportPack],
   );
 
-  const selectedPack = useMemo(
-    () => packs.find((p) => p.id === selectedPackId) ?? null,
-    [packs, selectedPackId],
-  );
-
   if (!documentId) {
     return (
       <div className="flex flex-col items-center justify-center h-full p-4 text-center">

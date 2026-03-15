@@ -74,7 +74,7 @@ export function ShortcutProvider() {
     if (!activeTab) return;
     void triggerNativeValidation(activeTab.fileType, state.yaml, dispatch);
     navigate("/editor");
-  }, [activeTab, activeTab?.fileType, state.yaml, dispatch, navigate]);
+  }, [activeTab, state.yaml, dispatch, navigate]);
 
   const handleNewTab = useCallback(() => {
     multiDispatch({ type: "NEW_TAB" });
