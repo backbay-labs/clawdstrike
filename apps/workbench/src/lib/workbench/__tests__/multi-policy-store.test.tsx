@@ -51,10 +51,11 @@ function ReopenHarness() {
         type: "button",
         onClick: () =>
           multiDispatch({
-            type: "NEW_TAB_OR_SWITCH",
-            policy: makePolicy("Reloaded Policy"),
+            type: "OPEN_TAB_OR_SWITCH",
             filePath: "/tmp/policy.yaml",
-            fallbackYaml: '# from disk\nversion: "1.2.0"\nname: "Reloaded Policy"\n',
+            fileType: "clawdstrike_policy",
+            yaml: '# from disk\nversion: "1.2.0"\nname: "Reloaded Policy"\n',
+            name: "Reloaded Policy",
           }),
       },
       "reopen",

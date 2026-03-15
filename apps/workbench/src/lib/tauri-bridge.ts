@@ -6,6 +6,13 @@
  * throwing at module-evaluation time.
  */
 
+import {
+  FILE_TYPE_REGISTRY,
+  getPrimaryExtension,
+  sanitizeFilenameStem,
+  type FileType,
+} from "@/lib/workbench/file-type-registry";
+
 
 /** Returns true when running inside a Tauri webview. */
 export function isDesktop(): boolean {
@@ -55,17 +62,19 @@ export async function toggleFullscreen(): Promise<void> {
 
 
 export interface OpenFileResult {
-  /** Raw YAML string content */
+  /** Raw file content */
   content: string;
   /** Absolute path on disk */
   path: string;
+  /** Detected file type */
+  fileType: FileType;
 }
 
 /**
- * Open a native file dialog filtered for YAML policy files.
+ * Open a native file dialog filtered for supported detection files.
  * Returns null if the user cancels.
  */
-export async function openPolicyFile(): Promise<OpenFileResult | null> {
+export async function openDetectionFile(): Promise<OpenFileResult | null> {
   if (!isDesktop()) return null;
 
   const { open } = await import("@tauri-apps/plugin-dialog");
@@ -74,11 +83,11 @@ export async function openPolicyFile(): Promise<OpenFileResult | null> {
     multiple: false,
     filters: [
       {
-        name: "YAML Policy",
-        extensions: ["yaml", "yml"],
+        name: "Detection Files",
+        extensions: ["yaml", "yml", "yar", "yara", "json"],
       },
     ],
-    title: "Open Policy File",
+    title: "Open Detection File",
   });
 
   if (!selected) return null;
@@ -87,51 +96,88 @@ export async function openPolicyFile(): Promise<OpenFileResult | null> {
   const filePath = typeof selected === "string" ? selected : selected[0];
   if (!filePath) return null;
 
-  const { importPolicyFileNative } = await import("./tauri-commands");
-  const result = await importPolicyFileNative(filePath);
+  const { importDetectionFileNative } = await import("./tauri-commands");
+  const result = await importDetectionFileNative(filePath);
   if (!result) {
     throw new Error("Native import command unavailable");
   }
 
-  return { content: result.yaml, path: filePath };
+  return {
+    content: result.content,
+    path: filePath,
+    fileType: result.file_type as FileType,
+  };
 }
 
 /**
- * Read a policy file directly by path (no dialog).
+ * Read a detection file directly by path (no dialog).
  * Returns null if not in desktop mode or if the file cannot be read.
  */
-export async function readPolicyFileByPath(filePath: string): Promise<OpenFileResult | null> {
+export async function readDetectionFileByPath(filePath: string): Promise<OpenFileResult | null> {
   if (!isDesktop()) return null;
 
   try {
-    const { importPolicyFileNative } = await import("./tauri-commands");
-    const result = await importPolicyFileNative(filePath);
+    const { importDetectionFileNative } = await import("./tauri-commands");
+    const result = await importDetectionFileNative(filePath);
     if (!result) return null;
-    return { content: result.yaml, path: filePath };
+    return {
+      content: result.content,
+      path: filePath,
+      fileType: result.file_type as FileType,
+    };
   } catch (err) {
     console.error("[tauri-bridge] Failed to read file:", filePath, err);
     return null;
   }
 }
 
-/** File dialog filter configs per format. */
-const FORMAT_FILTERS: Record<string, { name: string; extensions: string[]; defaultExt: string }> = {
-  yaml: { name: "YAML Policy", extensions: ["yaml", "yml"], defaultExt: "yaml" },
-  json: { name: "JSON Policy", extensions: ["json"], defaultExt: "json" },
-  toml: { name: "TOML Policy", extensions: ["toml"], defaultExt: "toml" },
+/** File dialog filter configs per workbench file type. */
+const FILE_TYPE_FILTERS: Record<FileType, { name: string; extensions: string[] }> = {
+  clawdstrike_policy: { name: "ClawdStrike Policy", extensions: ["yaml", "yml"] },
+  sigma_rule: { name: "Sigma Rule", extensions: ["yaml", "yml"] },
+  yara_rule: { name: "YARA Rule", extensions: ["yar", "yara"] },
+  ocsf_event: { name: "OCSF Event", extensions: ["json"] },
 };
+
+function resolveLegacySaveType(value: FileType | string): FileType {
+  if (value in FILE_TYPE_FILTERS) {
+    return value as FileType;
+  }
+
+  switch (value) {
+    case "json":
+      return "ocsf_event";
+    case "yara":
+    case "yar":
+      return "yara_rule";
+    case "yaml":
+    case "yml":
+    default:
+      return "clawdstrike_policy";
+  }
+}
 
 /**
  * Show a native "Save As" dialog and return the chosen path (without writing).
  *
- * @param format - Export format used to filter extensions: "yaml", "json", or "toml".
+ * @param fileType - File type used to filter extensions.
+ * @param suggestedName - File name stem to use in the dialog default.
  * @returns The chosen file path, or null if the user cancelled.
  */
-export async function pickSavePath(format: string = "yaml"): Promise<string | null> {
+export async function pickSavePath(
+  fileType: FileType | string = "clawdstrike_policy",
+  suggestedName?: string,
+): Promise<string | null> {
   if (!isDesktop()) return null;
 
   const { save } = await import("@tauri-apps/plugin-dialog");
-  const filterCfg = FORMAT_FILTERS[format] || FORMAT_FILTERS.yaml;
+  const resolvedFileType = resolveLegacySaveType(fileType);
+  const filterCfg = FILE_TYPE_FILTERS[resolvedFileType] ?? FILE_TYPE_FILTERS.clawdstrike_policy;
+  const defaultExt = getPrimaryExtension(resolvedFileType).replace(/^\./, "");
+  const defaultStem = sanitizeFilenameStem(
+    suggestedName ?? FILE_TYPE_REGISTRY[resolvedFileType].shortLabel.toLowerCase(),
+    FILE_TYPE_REGISTRY[resolvedFileType].shortLabel.toLowerCase(),
+  );
   const result = await save({
     filters: [
       {
@@ -139,38 +185,40 @@ export async function pickSavePath(format: string = "yaml"): Promise<string | nu
         extensions: filterCfg.extensions,
       },
     ],
-    title: "Save Policy File",
-    defaultPath: `policy.${filterCfg.defaultExt}`,
+    title: "Save Detection File",
+    defaultPath: `${defaultStem}.${defaultExt}`,
   });
 
   return result ?? null;
 }
 
 /**
- * Save policy content to disk via native dialog.
+ * Save detection content to disk via native dialog.
  *
- * @param content  - The serialized policy string to write
+ * @param content  - The serialized source string to write
+ * @param fileType - Detection file type used for validation and save dialog filters.
  * @param filePath - If provided, saves directly without prompting a dialog.
  *                   Pass null/undefined to show the "Save As" dialog.
- * @param format   - Export format: "yaml" (default), "json", or "toml".
+ * @param suggestedName - File name stem to use when prompting a dialog.
  * @returns The path the file was saved to, or null if cancelled.
  */
-export async function savePolicyFile(
+export async function saveDetectionFile(
   content: string,
+  fileType: FileType,
   filePath?: string | null,
-  format: string = "yaml",
+  suggestedName?: string,
 ): Promise<string | null> {
   if (!isDesktop()) return null;
 
   let targetPath = filePath;
 
   if (!targetPath) {
-    targetPath = await pickSavePath(format);
+    targetPath = await pickSavePath(fileType, suggestedName);
     if (!targetPath) return null;
   }
 
-  const { exportPolicyFileNative } = await import("./tauri-commands");
-  const result = await exportPolicyFileNative(content, targetPath, format);
+  const { exportDetectionFileNative } = await import("./tauri-commands");
+  const result = await exportDetectionFileNative(content, targetPath, fileType);
   if (!result) {
     throw new Error("Native export command unavailable");
   }
@@ -179,4 +227,20 @@ export async function savePolicyFile(
   }
 
   return result.path;
+}
+
+export async function openPolicyFile(): Promise<OpenFileResult | null> {
+  return openDetectionFile();
+}
+
+export async function readPolicyFileByPath(filePath: string): Promise<OpenFileResult | null> {
+  return readDetectionFileByPath(filePath);
+}
+
+export async function savePolicyFile(
+  content: string,
+  filePath?: string | null,
+  _format?: string,
+): Promise<string | null> {
+  return saveDetectionFile(content, "clawdstrike_policy", filePath, "policy");
 }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMultiPolicy } from "./multi-policy-store";
 import { sanitizeYamlForStorageWithMetadata } from "./storage-sanitizer";
+import type { FileType } from "./file-type-registry";
 
 const AUTOSAVE_KEY = "clawdstrike_workbench_autosave";
 const PERIODIC_INTERVAL_MS = 30_000;
@@ -12,6 +13,7 @@ export interface AutosaveEntry {
   filePath: string | null;
   timestamp: number;
   policyName: string;
+  fileType?: FileType;
   sensitiveFieldsStripped?: boolean;
 }
 
@@ -34,6 +36,7 @@ function isAutosaveEntry(value: unknown): value is AutosaveEntry {
     typeof entry.yaml === "string" &&
     typeof entry.timestamp === "number" &&
     typeof entry.policyName === "string" &&
+    (entry.fileType === undefined || typeof entry.fileType === "string") &&
     (entry.filePath === null || typeof entry.filePath === "string")
   );
 }
@@ -154,6 +157,7 @@ export function useAutoSave() {
         filePath: tab.filePath,
         timestamp,
         policyName: tab.policy.name || tab.name,
+        fileType: tab.fileType,
       })),
     );
     lastWriteRef.current = timestamp;

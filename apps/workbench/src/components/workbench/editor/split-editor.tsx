@@ -16,7 +16,8 @@ import { SigmaVisualPanel } from "@/components/workbench/editor/sigma-visual-pan
 import { OcsfVisualPanel } from "@/components/workbench/editor/ocsf-visual-panel";
 import { YaraVisualPanel } from "@/components/workbench/editor/yara-visual-panel";
 import { YamlPreviewPanel } from "@/components/workbench/editor/yaml-preview-panel";
-import { useMultiPolicy, type SplitMode } from "@/lib/workbench/multi-policy-store";
+import { useMultiPolicy, useWorkbench, type SplitMode } from "@/lib/workbench/multi-policy-store";
+import { useNativeValidation } from "@/lib/workbench/use-native-validation";
 import { cn } from "@/lib/utils";
 import {
   IconLayoutColumns,
@@ -117,7 +118,14 @@ function PaneTabSelector({
 
 function EditorPane() {
   const { activeTab, multiDispatch } = useMultiPolicy();
+  const { dispatch } = useWorkbench();
   const fileType = activeTab?.fileType;
+
+  useNativeValidation(
+    activeTab?.yaml ?? "",
+    activeTab?.fileType ?? "clawdstrike_policy",
+    dispatch,
+  );
 
   const renderVisualPanel = () => {
     switch (fileType) {

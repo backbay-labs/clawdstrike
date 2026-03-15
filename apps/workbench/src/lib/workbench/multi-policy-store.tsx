@@ -11,6 +11,7 @@ import React, {
 import type {
   WorkbenchPolicy,
   ValidationResult,
+  ValidationIssue,
   SavedPolicy,
   GuardId,
   GuardConfigMap,
@@ -24,16 +25,23 @@ import {
   type NativeValidationState,
 } from "./policy-store";
 import { policyToYaml, yamlToPolicy, validatePolicy } from "./yaml-utils";
+import { parseSigmaYaml } from "./sigma-types";
 import {
   sanitizeObjectForStorageWithMetadata,
   sanitizeYamlForStorageWithMetadata,
 } from "./storage-sanitizer";
-import { FILE_TYPE_REGISTRY, type FileType } from "./file-type-registry";
+import {
+  FILE_TYPE_REGISTRY,
+  getPrimaryExtension,
+  isPolicyFileType,
+  sanitizeFilenameStem,
+  type FileType,
+} from "./file-type-registry";
 import {
   isDesktop,
-  openPolicyFile,
-  savePolicyFile,
-  readPolicyFileByPath,
+  openDetectionFile,
+  saveDetectionFile,
+  readDetectionFileByPath,
 } from "@/lib/tauri-bridge";
 
 
@@ -85,7 +93,7 @@ export type MultiPolicyAction =
   | { type: "REORDER_TABS"; fromIndex: number; toIndex: number }
   | { type: "DUPLICATE_TAB"; tabId: string }
   | { type: "BULK_UPDATE_GUARDS"; updates: BulkGuardUpdate[] }
-  | { type: "NEW_TAB_OR_SWITCH"; policy: WorkbenchPolicy; filePath: string; fallbackYaml?: string }
+  | { type: "OPEN_TAB_OR_SWITCH"; filePath: string; fileType: FileType; yaml: string; name?: string }
   | { type: "SET_TAB_TEST_SUITE"; tabId: string; yaml: string }
   | {
     type: "RESTORE_AUTOSAVE_ENTRIES";
@@ -95,6 +103,7 @@ export type MultiPolicyAction =
       filePath: string | null;
       timestamp: number;
       policyName: string;
+      fileType?: FileType;
     }>;
   }
   // Delegated to active tab — same as WorkbenchAction
@@ -130,23 +139,298 @@ function createTabId(): string {
   return crypto.randomUUID();
 }
 
+function emptyValidation(): ValidationResult {
+  return {
+    valid: true,
+    errors: [],
+    warnings: [],
+  };
+}
+
+function emptyNativeValidation(): NativeValidationState {
+  return {
+    guardErrors: {},
+    topLevelErrors: [],
+    loading: false,
+    valid: null,
+  };
+}
+
+function createPlaceholderPolicy(name: string): WorkbenchPolicy {
+  return {
+    version: DEFAULT_POLICY.version,
+    name,
+    description: "",
+    guards: {},
+    settings: {},
+  };
+}
+
+function toValidationResult(
+  messages: string[],
+  path: string,
+  severity: ValidationIssue["severity"] = "error",
+): ValidationResult {
+  const issues = messages.map((message) => ({
+    path,
+    message,
+    severity,
+  }));
+
+  return {
+    valid: severity !== "error" && issues.length > 0 ? true : issues.length === 0,
+    errors: severity === "error" ? issues : [],
+    warnings: severity === "warning" ? issues : [],
+  };
+}
+
+function basenameFromPath(filePath: string | null | undefined): string | null {
+  if (!filePath) return null;
+  const normalized = filePath.replace(/\\/g, "/");
+  const base = normalized.split("/").pop() ?? "";
+  return base || null;
+}
+
+function stripWrappingQuotes(value: string): string {
+  return value.replace(/^['"]|['"]$/g, "").trim();
+}
+
+function extractNameFromPolicyYaml(yaml: string): string | null {
+  const [policy, errors] = yamlToPolicy(yaml);
+  if (policy?.name?.trim() && errors.length === 0) {
+    return policy.name.trim();
+  }
+
+  const match = yaml.match(/^\s*name:\s*(.+)$/m);
+  return match ? stripWrappingQuotes(match[1]) : null;
+}
+
+function extractNameFromSigmaYaml(yaml: string): string | null {
+  const { rule } = parseSigmaYaml(yaml);
+  if (rule?.title?.trim()) {
+    return rule.title.trim();
+  }
+
+  const match = yaml.match(/^\s*title:\s*(.+)$/m);
+  return match ? stripWrappingQuotes(match[1]) : null;
+}
+
+function extractNameFromYaraSource(source: string): string | null {
+  const match = source.match(/(?:private\s+|global\s+)*rule\s+([A-Za-z_]\w*)/);
+  return match?.[1] ?? null;
+}
+
+function extractNameFromOcsfJson(json: string): string | null {
+  try {
+    const value = JSON.parse(json) as Record<string, unknown>;
+    const findingTitle = value.finding_info
+      && typeof value.finding_info === "object"
+      && typeof (value.finding_info as Record<string, unknown>).title === "string"
+      ? String((value.finding_info as Record<string, unknown>).title).trim()
+      : "";
+    if (findingTitle) return findingTitle;
+
+    const message = typeof value.message === "string" ? value.message.trim() : "";
+    if (message) return message;
+  } catch {
+    // ignore parse failures when deriving a label
+  }
+
+  return null;
+}
+
+function extractNameFromSource(
+  fileType: FileType,
+  source: string,
+  filePath?: string | null,
+  fallback?: string,
+): string {
+  const fromContent = (() => {
+    switch (fileType) {
+      case "sigma_rule":
+        return extractNameFromSigmaYaml(source);
+      case "yara_rule":
+        return extractNameFromYaraSource(source);
+      case "ocsf_event":
+        return extractNameFromOcsfJson(source);
+      case "clawdstrike_policy":
+      default:
+        return extractNameFromPolicyYaml(source);
+    }
+  })();
+
+  if (fromContent) return fromContent;
+
+  const basename = basenameFromPath(filePath);
+  if (basename) {
+    return basename.replace(/\.[^.]+$/, "");
+  }
+
+  return fallback || FILE_TYPE_REGISTRY[fileType].label;
+}
+
+function validateSigmaSource(yaml: string): ValidationResult {
+  const { errors } = parseSigmaYaml(yaml);
+  return toValidationResult(errors, "sigma");
+}
+
+function validateYaraSource(source: string): ValidationResult {
+  const errors: string[] = [];
+  const lines = source.split(/\r?\n/);
+  let ruleCount = 0;
+  let currentRule: { name: string; sawCondition: boolean; braceDepth: number } | null = null;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    const ruleMatch = trimmed.match(
+      /^(?:(?:private|global)\s+)*(?:rule)\s+([A-Za-z_]\w*)\b/,
+    );
+
+    if (ruleMatch) {
+      if (currentRule && !currentRule.sawCondition) {
+        errors.push(`Rule "${currentRule.name}" is missing a condition section`);
+      }
+      currentRule = {
+        name: ruleMatch[1],
+        sawCondition: false,
+        braceDepth: (line.match(/\{/g) ?? []).length - (line.match(/\}/g) ?? []).length,
+      };
+      ruleCount += 1;
+      continue;
+    }
+
+    if (!currentRule) continue;
+
+    if (trimmed.startsWith("condition:")) {
+      currentRule.sawCondition = true;
+    }
+
+    currentRule.braceDepth += (line.match(/\{/g) ?? []).length;
+    currentRule.braceDepth -= (line.match(/\}/g) ?? []).length;
+
+    if (currentRule.braceDepth <= 0) {
+      if (!currentRule.sawCondition) {
+        errors.push(`Rule "${currentRule.name}" is missing a condition section`);
+      }
+      currentRule = null;
+    }
+  }
+
+  if (ruleCount === 0) {
+    errors.push("No YARA rule declarations found");
+  } else if (currentRule && !currentRule.sawCondition) {
+    errors.push(`Rule "${currentRule.name}" is missing a condition section`);
+  }
+
+  return toValidationResult(errors, "yara");
+}
+
+function validateOcsfSource(json: string): ValidationResult {
+  try {
+    const value = JSON.parse(json) as unknown;
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return toValidationResult(["OCSF event must be a JSON object"], "ocsf");
+    }
+
+    const event = value as Record<string, unknown>;
+    const errors: string[] = [];
+    const warnings: string[] = [];
+
+    if (typeof event.class_uid !== "number" || !Number.isInteger(event.class_uid) || event.class_uid < 0) {
+      errors.push("Missing required field: class_uid");
+    }
+    if (typeof event.activity_id !== "number" || !Number.isInteger(event.activity_id)) {
+      errors.push("Missing required field: activity_id");
+    }
+    if (typeof event.severity_id !== "number" || !Number.isInteger(event.severity_id)) {
+      errors.push("Missing required field: severity_id");
+    }
+    if (event.metadata == null || typeof event.metadata !== "object" || Array.isArray(event.metadata)) {
+      warnings.push("Missing recommended field: metadata");
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors: errors.map((message) => ({ path: "ocsf", message, severity: "error" })),
+      warnings: warnings.map((message) => ({ path: "ocsf", message, severity: "warning" })),
+    };
+  } catch (error) {
+    return toValidationResult(
+      [`JSON parse error: ${error instanceof Error ? error.message : String(error)}`],
+      "ocsf",
+    );
+  }
+}
+
+function validateSourceForFileType(fileType: FileType, source: string): ValidationResult {
+  switch (fileType) {
+    case "sigma_rule":
+      return validateSigmaSource(source);
+    case "yara_rule":
+      return validateYaraSource(source);
+    case "ocsf_event":
+      return validateOcsfSource(source);
+    case "clawdstrike_policy":
+    default:
+      return emptyValidation();
+  }
+}
+
+function evaluateTabSource(
+  fileType: FileType,
+  source: string,
+  currentPolicy: WorkbenchPolicy,
+  filePath?: string | null,
+  fallbackName?: string,
+): { policy: WorkbenchPolicy; validation: ValidationResult; name: string } {
+  const derivedName = extractNameFromSource(fileType, source, filePath, fallbackName);
+
+  if (isPolicyFileType(fileType)) {
+    const [policy, errors] = yamlToPolicy(source);
+    if (policy && errors.length === 0) {
+      return {
+        policy,
+        validation: validatePolicy(policy),
+        name: policy.name || derivedName,
+      };
+    }
+
+    return {
+      policy: currentPolicy,
+      validation: toValidationResult(errors, "yaml"),
+      name: derivedName,
+    };
+  }
+
+  return {
+    policy: createPlaceholderPolicy(derivedName),
+    validation: validateSourceForFileType(fileType, source),
+    name: derivedName,
+  };
+}
+
 function createDefaultTab(id?: string, fileType?: FileType): PolicyTab {
-  const yaml = policyToYaml(DEFAULT_POLICY);
+  const nextFileType = fileType ?? "clawdstrike_policy";
+  const yaml = isPolicyFileType(nextFileType)
+    ? policyToYaml(DEFAULT_POLICY)
+    : FILE_TYPE_REGISTRY[nextFileType].defaultContent;
+  const { policy, validation, name } = evaluateTabSource(
+    nextFileType,
+    yaml,
+    DEFAULT_POLICY,
+    null,
+    DEFAULT_POLICY.name,
+  );
   return {
     id: id ?? createTabId(),
-    name: DEFAULT_POLICY.name,
+    name,
     filePath: null,
     dirty: false,
-    fileType: fileType ?? "clawdstrike_policy",
-    policy: DEFAULT_POLICY,
+    fileType: nextFileType,
+    policy,
     yaml,
-    validation: validatePolicy(DEFAULT_POLICY),
-    nativeValidation: {
-      guardErrors: {},
-      topLevelErrors: [],
-      loading: false,
-      valid: null,
-    },
+    validation,
+    nativeValidation: emptyNativeValidation(),
     _undoPast: [],
     _undoFuture: [],
     _cleanSnapshot: null,
@@ -164,12 +448,7 @@ function createTabFromPolicy(policy: WorkbenchPolicy, filePath?: string | null, 
     policy,
     yaml,
     validation: validatePolicy(policy),
-    nativeValidation: {
-      guardErrors: {},
-      topLevelErrors: [],
-      loading: false,
-      valid: null,
-    },
+    nativeValidation: emptyNativeValidation(),
     _undoPast: [],
     _undoFuture: [],
     _cleanSnapshot: {
@@ -182,33 +461,35 @@ function createTabFromPolicy(policy: WorkbenchPolicy, filePath?: string | null, 
 
 function replaceTabFromOpenedFile(
   tab: PolicyTab,
-  policy: WorkbenchPolicy,
   filePath: string,
-  yamlFromDisk?: string,
+  fileType: FileType,
+  yamlFromDisk: string,
+  name?: string,
 ): PolicyTab {
-  const yaml = yamlFromDisk ?? policyToYaml(policy);
-  const validation = validatePolicy(policy);
+  const evaluated = evaluateTabSource(
+    fileType,
+    yamlFromDisk,
+    tab.policy,
+    filePath,
+    name ?? tab.name,
+  );
 
   return {
     ...tab,
-    name: policy.name || "Untitled",
+    name: evaluated.name || "Untitled",
     filePath,
-    yaml,
-    policy,
+    fileType,
+    yaml: yamlFromDisk,
+    policy: evaluated.policy,
     dirty: false,
-    validation,
-    nativeValidation: {
-      guardErrors: {},
-      topLevelErrors: [],
-      loading: false,
-      valid: null,
-    },
+    validation: evaluated.validation,
+    nativeValidation: emptyNativeValidation(),
     _undoPast: [],
     _undoFuture: [],
     _cleanSnapshot: {
-      activePolicy: policy,
-      yaml,
-      validation,
+      activePolicy: evaluated.policy,
+      yaml: yamlFromDisk,
+      validation: evaluated.validation,
     },
   };
 }
@@ -238,46 +519,37 @@ function revalidate(policy: WorkbenchPolicy, yaml?: string): { yaml: string; val
   };
 }
 
-function applyYamlToTab(
+function applySourceToTab(
   tab: PolicyTab,
-  yaml: string,
+  source: string,
   options?: {
     dirty?: boolean;
     filePath?: string | null;
     nameFallback?: string;
+    fileType?: FileType;
   },
 ): PolicyTab {
   const nextDirty = options?.dirty ?? tab.dirty;
   const nextFilePath = options?.filePath !== undefined ? options.filePath : tab.filePath;
-  const [policy, errors] = yamlToPolicy(yaml);
-
-  if (policy && errors.length === 0) {
-    return {
-      ...tab,
-      policy,
-      name: policy.name || options?.nameFallback || tab.name,
-      yaml,
-      filePath: nextFilePath,
-      dirty: nextDirty,
-      validation: validatePolicy(policy),
-    };
-  }
+  const nextFileType = options?.fileType ?? tab.fileType;
+  const evaluated = evaluateTabSource(
+    nextFileType,
+    source,
+    tab.policy,
+    nextFilePath,
+    options?.nameFallback ?? tab.name,
+  );
 
   return {
     ...tab,
-    name: options?.nameFallback || tab.name,
-    yaml,
+    fileType: nextFileType,
+    policy: evaluated.policy,
+    name: evaluated.name,
+    yaml: source,
     filePath: nextFilePath,
     dirty: nextDirty,
-    validation: {
-      valid: false,
-      errors: errors.map((msg) => ({
-        path: "yaml",
-        message: msg,
-        severity: "error" as const,
-      })),
-      warnings: [],
-    },
+    validation: evaluated.validation,
+    nativeValidation: emptyNativeValidation(),
   };
 }
 
@@ -312,6 +584,9 @@ const TAB_DELEGATED_ACTIONS = new Set([
 function tabCoreReducer(tab: PolicyTab, action: MultiPolicyAction): PolicyTab {
   switch (action.type) {
     case "SET_POLICY": {
+      if (!isPolicyFileType(tab.fileType)) {
+        return tab;
+      }
       const rv = revalidate(action.policy);
       return {
         ...tab,
@@ -323,10 +598,13 @@ function tabCoreReducer(tab: PolicyTab, action: MultiPolicyAction): PolicyTab {
     }
 
     case "SET_YAML": {
-      return applyYamlToTab(tab, action.yaml, { dirty: true });
+      return applySourceToTab(tab, action.yaml, { dirty: true });
     }
 
     case "UPDATE_GUARD": {
+      if (!isPolicyFileType(tab.fileType)) {
+        return tab;
+      }
       const newGuards = {
         ...tab.policy.guards,
         [action.guardId]: {
@@ -339,6 +617,9 @@ function tabCoreReducer(tab: PolicyTab, action: MultiPolicyAction): PolicyTab {
     }
 
     case "TOGGLE_GUARD": {
+      if (!isPolicyFileType(tab.fileType)) {
+        return tab;
+      }
       const existing = tab.policy.guards[action.guardId] || {};
       const newGuards = {
         ...tab.policy.guards,
@@ -355,6 +636,9 @@ function tabCoreReducer(tab: PolicyTab, action: MultiPolicyAction): PolicyTab {
     }
 
     case "UPDATE_SETTINGS": {
+      if (!isPolicyFileType(tab.fileType)) {
+        return tab;
+      }
       const newPolicy = {
         ...tab.policy,
         settings: { ...tab.policy.settings, ...action.settings },
@@ -363,6 +647,9 @@ function tabCoreReducer(tab: PolicyTab, action: MultiPolicyAction): PolicyTab {
     }
 
     case "UPDATE_META": {
+      if (!isPolicyFileType(tab.fileType)) {
+        return tab;
+      }
       const newPolicy = { ...tab.policy };
       if (action.name !== undefined) {
         newPolicy.name = action.name;
@@ -381,6 +668,9 @@ function tabCoreReducer(tab: PolicyTab, action: MultiPolicyAction): PolicyTab {
     }
 
     case "UPDATE_ORIGINS": {
+      if (!isPolicyFileType(tab.fileType)) {
+        return tab;
+      }
       const newPolicy = { ...tab.policy, origins: action.origins };
       return { ...tab, policy: newPolicy, dirty: true, ...revalidate(newPolicy) };
     }
@@ -469,18 +759,11 @@ function multiPolicyReducer(state: MultiPolicyState, action: MultiPolicyAction):
       if (action.policy) {
         newTab = createTabFromPolicy(action.policy, action.filePath, action.fileType);
       } else if (action.yaml) {
-        // Non-policy file types with raw YAML/content — extract a
-        // sensible tab name from a "title:" YAML field when present
-        // (e.g. Sigma rules), otherwise fall back to the registry label.
         newTab = createDefaultTab(undefined, action.fileType);
-        const titleMatch = action.yaml.match(/^title:\s*(.+)$/m);
-        const fallbackName = titleMatch?.[1]?.trim()
-          || (action.fileType
-            ? FILE_TYPE_REGISTRY[action.fileType].label
-            : newTab.name);
-        newTab = applyYamlToTab(newTab, action.yaml, {
+        newTab = applySourceToTab(newTab, action.yaml, {
           dirty: false,
-          nameFallback: fallbackName,
+          nameFallback: FILE_TYPE_REGISTRY[action.fileType ?? newTab.fileType].label,
+          fileType: action.fileType,
         });
         newTab._cleanSnapshot = takeTabSnapshot(newTab);
       } else {
@@ -638,14 +921,14 @@ function multiPolicyReducer(state: MultiPolicyState, action: MultiPolicyAction):
 
     // Atomically check if a file path is already open and switch to it, or
     // create a new tab — avoids stale closure race in async file dialogs (#31).
-    case "NEW_TAB_OR_SWITCH": {
+    case "OPEN_TAB_OR_SWITCH": {
       const existing = state.tabs.find((t) => t.filePath === action.filePath);
       if (existing) {
         return {
           ...state,
           tabs: state.tabs.map((tab) =>
             tab.id === existing.id
-              ? replaceTabFromOpenedFile(tab, action.policy, action.filePath, action.fallbackYaml)
+              ? replaceTabFromOpenedFile(tab, action.filePath, action.fileType, action.yaml, action.name)
               : tab,
           ),
           activeTabId: existing.id,
@@ -653,10 +936,11 @@ function multiPolicyReducer(state: MultiPolicyState, action: MultiPolicyAction):
       }
       if (state.tabs.length >= MAX_TABS) return state;
       const newTab = replaceTabFromOpenedFile(
-        createTabFromPolicy(action.policy, action.filePath),
-        action.policy,
+        createDefaultTab(undefined, action.fileType),
         action.filePath,
-        action.fallbackYaml,
+        action.fileType,
+        action.yaml,
+        action.name,
       );
       return {
         ...state,
@@ -715,10 +999,11 @@ function multiPolicyReducer(state: MultiPolicyState, action: MultiPolicyAction):
         if (existingIndex >= 0) {
           const existing = nextTabs[existingIndex];
           nextTabs[existingIndex] = {
-            ...applyYamlToTab(existing, entry.yaml, {
+            ...applySourceToTab(existing, entry.yaml, {
               dirty: true,
               filePath: entry.filePath,
               nameFallback: entry.policyName || existing.name,
+              fileType: entry.fileType ?? existing.fileType,
             }),
             _undoPast: [],
             _undoFuture: [],
@@ -731,10 +1016,11 @@ function multiPolicyReducer(state: MultiPolicyState, action: MultiPolicyAction):
           break;
         }
 
-        const restored = applyYamlToTab(createDefaultTab(entry.tabId), entry.yaml, {
+        const restored = applySourceToTab(createDefaultTab(entry.tabId, entry.fileType), entry.yaml, {
           dirty: true,
           filePath: entry.filePath,
           nameFallback: entry.policyName || "Recovered Policy",
+          fileType: entry.fileType,
         });
         nextTabs = [
           ...nextTabs,
@@ -885,26 +1171,28 @@ function loadPersistedTabs(): MultiPolicyState | null {
     if (validPersistedTabs.length === 0) return null;
 
     const tabs: PolicyTab[] = validPersistedTabs.map((pt) => {
-      const [policy] = yamlToPolicy(pt.yaml);
-      const pol = policy ?? DEFAULT_POLICY;
-      const yaml = pt.yaml;
-      const validation = validatePolicy(pol);
+      const fileType = pt.fileType ?? "clawdstrike_policy";
+      const hydrated = applySourceToTab(createDefaultTab(pt.id, fileType), pt.yaml, {
+        dirty: false,
+        filePath: pt.filePath,
+        nameFallback: pt.name || FILE_TYPE_REGISTRY[fileType].label,
+        fileType,
+      });
       const sensitiveFieldsStripped = pt.sensitiveFieldsStripped === true;
       return {
-        id: pt.id,
-        name: pt.name || pol.name || "Untitled",
+        ...hydrated,
         filePath: sensitiveFieldsStripped ? null : pt.filePath,
         dirty: sensitiveFieldsStripped,
-        fileType: pt.fileType ?? "clawdstrike_policy",
-        policy: pol,
-        yaml,
-        validation,
-        nativeValidation: { guardErrors: {}, topLevelErrors: [], loading: false, valid: null },
+        nativeValidation: emptyNativeValidation(),
         _undoPast: [],
         _undoFuture: [],
         _cleanSnapshot: sensitiveFieldsStripped
           ? null
-          : { activePolicy: pol, yaml, validation },
+          : {
+              activePolicy: hydrated.policy,
+              yaml: hydrated.yaml,
+              validation: hydrated.validation,
+            },
       };
     });
 
@@ -1126,7 +1414,7 @@ export function MultiPolicyProvider({ children }: { children: ReactNode }) {
   // ---- Callback implementations (mirroring single-policy store) ----
 
   const saveCurrentPolicy = useCallback(() => {
-    if (!currentTab) return;
+    if (!currentTab || !isPolicyFileType(currentTab.fileType)) return;
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     const savedPolicy = sanitizeSavedPolicy({
@@ -1141,11 +1429,14 @@ export function MultiPolicyProvider({ children }: { children: ReactNode }) {
 
   const exportYaml = useCallback(() => {
     if (!currentTab) return;
-    const blob = new Blob([currentTab.yaml], { type: "text/yaml" });
+    const blob = new Blob([currentTab.yaml], {
+      type: currentTab.fileType === "ocsf_event" ? "application/json" : "text/plain",
+    });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${currentTab.policy.name || "policy"}.yaml`;
+    const stem = sanitizeFilenameStem(currentTab.name || "untitled", "untitled");
+    a.download = `${stem}${getPrimaryExtension(currentTab.fileType)}`;
     a.click();
     URL.revokeObjectURL(url);
   }, [currentTab]);
@@ -1157,31 +1448,26 @@ export function MultiPolicyProvider({ children }: { children: ReactNode }) {
 
   const loadPolicy = useCallback(
     (policy: WorkbenchPolicy) => {
+      if (currentTab && !isPolicyFileType(currentTab.fileType)) {
+        multiDispatch({ type: "NEW_TAB", policy });
+        return;
+      }
       multiDispatch({ type: "SET_POLICY", policy });
     },
-    [multiDispatch],
+    [currentTab, multiDispatch],
   );
 
   const openFile = useCallback(async () => {
     try {
-      const result = await openPolicyFile();
+      const result = await openDetectionFile();
       if (!result) return;
 
-      const [policy] = yamlToPolicy(result.content);
-      if (policy) {
-        // Atomically check-and-switch-or-create inside the reducer (#31)
-        multiDispatch({
-          type: "NEW_TAB_OR_SWITCH",
-          policy,
-          filePath: result.path,
-          fallbackYaml: result.content,
-        });
-      } else {
-        // Still open but with raw yaml in current tab
-        multiDispatch({ type: "SET_YAML", yaml: result.content });
-        multiDispatch({ type: "SET_FILE_PATH", path: result.path });
-      }
-      multiDispatch({ type: "MARK_CLEAN" });
+      multiDispatch({
+        type: "OPEN_TAB_OR_SWITCH",
+        filePath: result.path,
+        fileType: result.fileType,
+        yaml: result.content,
+      });
       pushRecentFile(result.path);
     } catch (err) {
       console.error("[multi-policy] Failed to open file:", err);
@@ -1191,23 +1477,15 @@ export function MultiPolicyProvider({ children }: { children: ReactNode }) {
   const openFileByPath = useCallback(
     async (filePath: string) => {
       try {
-        const result = await readPolicyFileByPath(filePath);
+        const result = await readDetectionFileByPath(filePath);
         if (!result) return;
 
-        const [policy] = yamlToPolicy(result.content);
-        if (policy) {
-          // Atomically check-and-switch-or-create inside the reducer (#31)
-          multiDispatch({
-            type: "NEW_TAB_OR_SWITCH",
-            policy,
-            filePath: result.path,
-            fallbackYaml: result.content,
-          });
-        } else {
-          multiDispatch({ type: "SET_YAML", yaml: result.content });
-          multiDispatch({ type: "SET_FILE_PATH", path: result.path });
-        }
-        multiDispatch({ type: "MARK_CLEAN" });
+        multiDispatch({
+          type: "OPEN_TAB_OR_SWITCH",
+          filePath: result.path,
+          fileType: result.fileType,
+          yaml: result.content,
+        });
         pushRecentFile(result.path);
       } catch (err) {
         console.error("[multi-policy] Failed to open file by path:", err);
@@ -1223,7 +1501,12 @@ export function MultiPolicyProvider({ children }: { children: ReactNode }) {
         exportYaml();
         return;
       }
-      const savedPath = await savePolicyFile(currentTab.yaml);
+      const savedPath = await saveDetectionFile(
+        currentTab.yaml,
+        currentTab.fileType,
+        null,
+        currentTab.name,
+      );
       if (!savedPath) return;
       multiDispatch({ type: "SET_FILE_PATH", path: savedPath });
       multiDispatch({ type: "MARK_CLEAN" });
@@ -1241,7 +1524,12 @@ export function MultiPolicyProvider({ children }: { children: ReactNode }) {
         return;
       }
       if (currentTab.filePath) {
-        await savePolicyFile(currentTab.yaml, currentTab.filePath);
+        await saveDetectionFile(
+          currentTab.yaml,
+          currentTab.fileType,
+          currentTab.filePath,
+          currentTab.name,
+        );
         multiDispatch({ type: "MARK_CLEAN" });
       } else {
         await saveFileAs();

@@ -95,6 +95,8 @@ fn main() {
             detection::validate_yara_rule,
             detection::validate_ocsf_event,
             detection::detect_file_type,
+            detection::import_detection_file,
+            detection::export_detection_file,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

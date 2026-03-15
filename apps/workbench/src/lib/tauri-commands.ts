@@ -99,6 +99,13 @@ export interface TauriExportResponse {
   message: string;
 }
 
+export interface TauriDetectionDiagnostic {
+  severity: "error" | "warning" | "info";
+  message: string;
+  line?: number | null;
+  column?: number | null;
+}
+
 export interface TauriImportResponse {
   valid: boolean;
   yaml: string;
@@ -106,6 +113,30 @@ export interface TauriImportResponse {
   version: string | null;
   errors: TauriValidationError[];
   parse_error: string | null;
+}
+
+export interface TauriDetectionImportResponse {
+  content: string;
+  file_type: string;
+}
+
+export interface TauriSigmaValidationResponse {
+  valid: boolean;
+  diagnostics: TauriDetectionDiagnostic[];
+  compiled_preview: string | null;
+}
+
+export interface TauriYaraValidationResponse {
+  valid: boolean;
+  diagnostics: TauriDetectionDiagnostic[];
+  rule_count: number;
+}
+
+export interface TauriOcsfValidationResponse {
+  valid: boolean;
+  diagnostics: TauriDetectionDiagnostic[];
+  class_uid: number | null;
+  event_class: string | null;
 }
 
 export interface TauriChainReceiptInput {
@@ -156,6 +187,42 @@ export async function validatePolicyNative(yaml: string): Promise<TauriValidatio
     return await tauriInvoke<TauriValidationResponse>("validate_policy", { yaml });
   } catch (err) {
     console.error("[tauri-commands] validate_policy failed:", err);
+    return null;
+  }
+}
+
+export async function validateSigmaRuleNative(
+  source: string,
+): Promise<TauriSigmaValidationResponse | null> {
+  if (!isDesktop()) return null;
+  try {
+    return await tauriInvoke<TauriSigmaValidationResponse>("validate_sigma_rule", { source });
+  } catch (err) {
+    console.error("[tauri-commands] validate_sigma_rule failed:", err);
+    return null;
+  }
+}
+
+export async function validateYaraRuleNative(
+  source: string,
+): Promise<TauriYaraValidationResponse | null> {
+  if (!isDesktop()) return null;
+  try {
+    return await tauriInvoke<TauriYaraValidationResponse>("validate_yara_rule", { source });
+  } catch (err) {
+    console.error("[tauri-commands] validate_yara_rule failed:", err);
+    return null;
+  }
+}
+
+export async function validateOcsfEventNative(
+  json: string,
+): Promise<TauriOcsfValidationResponse | null> {
+  if (!isDesktop()) return null;
+  try {
+    return await tauriInvoke<TauriOcsfValidationResponse>("validate_ocsf_event", { json });
+  } catch (err) {
+    console.error("[tauri-commands] validate_ocsf_event failed:", err);
     return null;
   }
 }
@@ -293,6 +360,36 @@ export async function importPolicyFileNative(
     return await tauriInvoke<TauriImportResponse>("import_policy_file", { path });
   } catch (err) {
     console.error("[tauri-commands] import_policy_file failed:", err);
+    return null;
+  }
+}
+
+export async function importDetectionFileNative(
+  path: string,
+): Promise<TauriDetectionImportResponse | null> {
+  if (!isDesktop()) return null;
+  try {
+    return await tauriInvoke<TauriDetectionImportResponse>("import_detection_file", { path });
+  } catch (err) {
+    console.error("[tauri-commands] import_detection_file failed:", err);
+    return null;
+  }
+}
+
+export async function exportDetectionFileNative(
+  content: string,
+  path: string,
+  fileType: string,
+): Promise<TauriExportResponse | null> {
+  if (!isDesktop()) return null;
+  try {
+    return await tauriInvoke<TauriExportResponse>("export_detection_file", {
+      content,
+      path,
+      fileType,
+    });
+  } catch (err) {
+    console.error("[tauri-commands] export_detection_file failed:", err);
     return null;
   }
 }

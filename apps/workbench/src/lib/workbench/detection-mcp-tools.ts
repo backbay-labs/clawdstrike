@@ -149,6 +149,71 @@ export const DETECTION_MCP_TOOLS: McpToolDefinition[] = [
 
 // ---- Helper: generate a Sigma rule YAML from MCP tool inputs ----
 
+function sanitizeYamlToken(value: string, fallback: string): string {
+  const cleaned = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_.-]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+  return cleaned || fallback;
+}
+
+function sanitizeSigmaField(value: string): string {
+  const cleaned = value
+    .trim()
+    .replace(/[\r\n:]+/g, " ")
+    .replace(/\s+/g, "_")
+    .replace(/[^A-Za-z0-9_|.-]+/g, "");
+
+  return cleaned || "CommandLine";
+}
+
+function yamlSingleQuoted(value: string): string {
+  return `'${value.replace(/\r?\n+/g, " ").replace(/'/g, "''")}'`;
+}
+
+function yamlBlockScalar(value: string, indent: string = "    "): string[] {
+  const normalized = value.replace(/\r\n?/g, "\n");
+  const lines = normalized.split("\n");
+  return ["|", ...lines.map((line) => `${indent}${line}`)];
+}
+
+function sanitizeYaraIdentifier(value: string, fallback: string): string {
+  const cleaned = value.replace(/[^A-Za-z0-9_]/g, "_").replace(/_+/g, "_");
+  if (/^[A-Za-z_]/.test(cleaned)) {
+    return cleaned;
+  }
+  return fallback;
+}
+
+function escapeYaraText(value: string): string {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\r/g, "\\r")
+    .replace(/\n/g, "\\n")
+    .replace(/\t/g, "\\t");
+}
+
+function sanitizeYaraHex(value: string): string {
+  const cleaned = value
+    .replace(/[^0-9A-Fa-f?\[\]\-\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return cleaned || "90 90";
+}
+
+function sanitizeYaraRegex(value: string): string {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/\//g, "\\/")
+    .replace(/\r/g, "\\r")
+    .replace(/\n/g, "\\n");
+}
+
 /**
  * Generate valid Sigma YAML from MCP `create_sigma_rule` input parameters.
  */
@@ -156,13 +221,16 @@ export function generateSigmaFromMcpInput(input: Record<string, unknown>): strin
   const title = String(input.title ?? "Untitled Sigma Rule");
   const id = crypto.randomUUID();
   const description = input.description ? String(input.description) : `Detects ${title.toLowerCase()}.`;
-  const category = String(input.logsource_category ?? "process_creation");
-  const product = input.logsource_product ? String(input.logsource_product) : "windows";
-  const field = String(input.detection_field ?? "CommandLine");
+  const category = sanitizeYamlToken(String(input.logsource_category ?? "process_creation"), "process_creation");
+  const product = sanitizeYamlToken(
+    input.logsource_product ? String(input.logsource_product) : "windows",
+    "windows",
+  );
+  const field = sanitizeSigmaField(String(input.detection_field ?? "CommandLine"));
   const values = Array.isArray(input.detection_values)
     ? (input.detection_values as unknown[]).map(String)
     : ["suspicious"];
-  const level = String(input.level ?? "medium");
+  const level = sanitizeYamlToken(String(input.level ?? "medium"), "medium");
   const techniques = Array.isArray(input.mitre_techniques)
     ? (input.mitre_techniques as unknown[]).map(String)
     : [];
@@ -170,7 +238,7 @@ export function generateSigmaFromMcpInput(input: Record<string, unknown>): strin
   // Build tags
   const tags: string[] = [];
   for (const t of techniques) {
-    const tid = String(t).toLowerCase();
+    const tid = sanitizeYamlToken(String(t), "execution");
     // Map common technique prefixes to tactics
     tags.push(`attack.${tid}`);
   }
@@ -179,7 +247,7 @@ export function generateSigmaFromMcpInput(input: Record<string, unknown>): strin
   }
 
   // Build detection values (using `|contains` modifier for general matching)
-  const valuesYaml = values.map((v) => `            - '${v.replace(/'/g, "''")}'`).join("\n");
+  const valuesYaml = values.map((v) => `            - ${yamlSingleQuoted(v)}`).join("\n");
   const tagsYaml = tags.map((t) => `    - ${t}`).join("\n");
 
   const today = new Date();
@@ -192,11 +260,11 @@ export function generateSigmaFromMcpInput(input: Record<string, unknown>): strin
   }
 
   const lines = [
-    `title: '${title.replace(/'/g, "''")}'`,
+    `title: ${yamlSingleQuoted(title)}`,
     `id: ${id}`,
     `status: experimental`,
-    `description: |`,
-    `    ${description}`,
+    `description:`,
+    ...yamlBlockScalar(description),
     `author: ClawdStrike Workbench`,
     `date: ${dateStr}`,
     `tags:`,
@@ -224,11 +292,11 @@ export function generateSigmaFromMcpInput(input: Record<string, unknown>): strin
  * Generate valid YARA source from MCP `create_yara_rule` input parameters.
  */
 export function generateYaraFromMcpInput(input: Record<string, unknown>): string {
-  const ruleName = String(input.rule_name ?? "untitled_rule").replace(/[^a-zA-Z0-9_]/g, "_");
+  const ruleName = sanitizeYaraIdentifier(String(input.rule_name ?? "untitled_rule"), "untitled_rule");
   const description = input.description ? String(input.description) : "";
   // Sanitize condition to prevent YARA source injection (no newlines, no braces that close the rule)
   const rawCondition = String(input.condition ?? "any of them");
-  const condition = rawCondition.replace(/[\n\r]/g, " ").replace(/}/g, "").trim();
+  const condition = rawCondition.replace(/[\n\r]+/g, " ").replace(/[{}]/g, "").trim() || "any of them";
 
   const today = new Date();
   const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
@@ -250,18 +318,19 @@ export function generateYaraFromMcpInput(input: Record<string, unknown>): string
     const value = String(s.value ?? "");
     const type = String(s.type ?? "text");
 
-    const varName = name.startsWith("$") ? name : `$${name}`;
+    const normalizedName = sanitizeYaraIdentifier(name.replace(/^\$/, ""), "s1");
+    const varName = `$${normalizedName}`;
 
     switch (type) {
       case "hex":
-        stringLines.push(`        ${varName} = { ${value} }`);
+        stringLines.push(`        ${varName} = { ${sanitizeYaraHex(value)} }`);
         break;
       case "regex":
-        stringLines.push(`        ${varName} = /${value}/`);
+        stringLines.push(`        ${varName} = /${sanitizeYaraRegex(value)}/`);
         break;
       case "text":
       default:
-        stringLines.push(`        ${varName} = "${value.replace(/"/g, '\\"')}"`);
+        stringLines.push(`        ${varName} = "${escapeYaraText(value)}"`);
         break;
     }
   }
@@ -274,7 +343,7 @@ export function generateYaraFromMcpInput(input: Record<string, unknown>): string
     `rule ${ruleName} {`,
     `    meta:`,
     `        author = "ClawdStrike Workbench"`,
-    `        description = "${description.replace(/"/g, '\\"')}"`,
+    `        description = "${escapeYaraText(description)}"`,
     `        date = "${dateStr}"`,
     ``,
     `    strings:`,

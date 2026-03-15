@@ -9,7 +9,7 @@ import { OriginEditor } from "@/components/workbench/editor/origin-editor";
 import { GUARD_CATEGORIES } from "@/lib/workbench/guard-registry";
 import type { GuardId } from "@/lib/workbench/types";
 import { useWorkbench } from "@/lib/workbench/multi-policy-store";
-import { useNativeValidation, countNativeErrors } from "@/lib/workbench/use-native-validation";
+import { countNativeErrors } from "@/lib/workbench/use-native-validation";
 import { useGuardOrder } from "@/lib/workbench/use-guard-order";
 import { cn } from "@/lib/utils";
 import {
@@ -19,10 +19,7 @@ import {
 } from "@tabler/icons-react";
 
 export function EditorVisualPanel() {
-  const { state, dispatch } = useWorkbench();
-
-  // Run native Rust validation on YAML changes (800ms debounce, no-op in web mode)
-  useNativeValidation(state.yaml, dispatch);
+  const { state } = useWorkbench();
 
   const nv = state.nativeValidation;
   const errorCount = countNativeErrors(nv);

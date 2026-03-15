@@ -10,6 +10,9 @@ interface CommandPaletteProps {
   onClose: () => void;
   onNewTab: (fileType: FileType) => void;
   onNavigate: (path: string) => void;
+  onOpenFile: () => void;
+  onValidate: () => void;
+  onToggleCoverage: () => void;
 }
 
 interface Command {
@@ -29,6 +32,9 @@ const CATEGORY_ORDER = ["File", "Navigate", "Format"] as const;
 function buildCommands(
   onNewTab: (ft: FileType) => void,
   onNavigate: (path: string) => void,
+  onOpenFile: () => void,
+  onValidate: () => void,
+  onToggleCoverage: () => void,
   onClose: () => void,
 ): Command[] {
   const reg = FILE_TYPE_REGISTRY;
@@ -68,7 +74,7 @@ function buildCommands(
       label: "Open File\u2026",
       category: "File",
       shortcut: "\u2318O",
-      action: () => { onClose(); },
+      action: () => { onOpenFile(); onClose(); },
     },
 
     // Navigate
@@ -125,28 +131,36 @@ function buildCommands(
       label: "Validate Current File",
       category: "Format",
       shortcut: "\u2318\u21a9",
-      action: () => { onClose(); },
+      action: () => { onValidate(); onClose(); },
     },
     {
       id: "attack-coverage",
       label: "Show ATT&CK Coverage",
       category: "Format",
-      action: () => { onClose(); },
+      action: () => { onToggleCoverage(); onClose(); },
     },
   ];
 }
 
 // ---- Component ----
 
-export function CommandPalette({ open, onClose, onNewTab, onNavigate }: CommandPaletteProps) {
+export function CommandPalette({
+  open,
+  onClose,
+  onNewTab,
+  onNavigate,
+  onOpenFile,
+  onValidate,
+  onToggleCoverage,
+}: CommandPaletteProps) {
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   const commands = useMemo(
-    () => buildCommands(onNewTab, onNavigate, onClose),
-    [onNewTab, onNavigate, onClose],
+    () => buildCommands(onNewTab, onNavigate, onOpenFile, onValidate, onToggleCoverage, onClose),
+    [onNewTab, onNavigate, onOpenFile, onValidate, onToggleCoverage, onClose],
   );
 
   // Filter commands by query

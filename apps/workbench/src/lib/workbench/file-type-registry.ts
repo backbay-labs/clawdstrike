@@ -155,6 +155,26 @@ export const FILE_TYPE_REGISTRY: Record<FileType, FileTypeDescriptor> = {
 
 // ---- Detection helpers ----
 
+export function isPolicyFileType(fileType: FileType): boolean {
+  return fileType === "clawdstrike_policy";
+}
+
+export function getPrimaryExtension(fileType: FileType): string {
+  const [primary] = FILE_TYPE_REGISTRY[fileType].extensions;
+  return primary ?? ".yaml";
+}
+
+export function sanitizeFilenameStem(name: string, fallback: string): string {
+  const cleaned = name
+    .trim()
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_")
+    .replace(/\s+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+  return cleaned || fallback;
+}
+
 /**
  * Returns the file type based solely on file extension, or null if
  * the extension is ambiguous (e.g. `.yaml` could be policy or sigma).

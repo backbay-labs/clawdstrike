@@ -58,6 +58,24 @@ interface ParsedYaraString {
   modifiers: string[];
 }
 
+function escapeYaraMetaString(value: string): string {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\r/g, "\\r")
+    .replace(/\n/g, "\\n")
+    .replace(/\t/g, "\\t");
+}
+
+function unescapeYaraMetaString(value: string): string {
+  return value
+    .replace(/\\r/g, "\r")
+    .replace(/\\n/g, "\n")
+    .replace(/\\t/g, "\t")
+    .replace(/\\"/g, '"')
+    .replace(/\\\\/g, "\\");
+}
+
 
 // ---- Parsing helpers (regex-based, NOT YAML) ----
 
@@ -121,10 +139,10 @@ function parseYaraRule(source: string): ParsedYaraRule {
     // Remove the "meta:" header line
     const metaContent = metaBlock.replace(/^\s*meta\s*:\s*/m, "");
     // Parse key = value pairs
-    const metaLineRe = /^\s*(\w+)\s*=\s*"([^"]*)"\s*$/gm;
+    const metaLineRe = /^\s*(\w+)\s*=\s*"((?:[^"\\]|\\.)*)"\s*$/gm;
     let metaLineMatch: RegExpExecArray | null;
     while ((metaLineMatch = metaLineRe.exec(metaContent)) !== null) {
-      result.meta.push({ key: metaLineMatch[1], value: metaLineMatch[2] });
+      result.meta.push({ key: metaLineMatch[1], value: unescapeYaraMetaString(metaLineMatch[2]) });
     }
     // Also parse non-string values (numbers, booleans)
     const metaValRe = /^\s*(\w+)\s*=\s*([^"\s][^\n]*?)\s*$/gm;
@@ -186,14 +204,14 @@ function updateMetaField(
   key: string,
   newValue: string,
 ): string {
+  const escapedValue = escapeYaraMetaString(newValue);
   // Try to find and replace existing meta field
   const existingRe = new RegExp(
-    `^(\\s*${key}\\s*=\\s*)"([^"]*)"`,
+    `^(\\s*${key}\\s*=\\s*)"(?:[^"\\\\]|\\\\.)*"`,
     "m",
   );
   if (existingRe.test(source)) {
-    // Escape $ in replacement to prevent regex replacement string injection
-    const safeValue = newValue.replace(/\$/g, "$$$$");
+    const safeValue = escapedValue.replace(/\$/g, "$$$$");
     return source.replace(existingRe, `$1"${safeValue}"`);
   }
 
@@ -203,13 +221,13 @@ function updateMetaField(
     "m",
   );
   if (existingValRe.test(source)) {
-    return source.replace(existingValRe, `$1"${newValue}"`);
+    return source.replace(existingValRe, `$1"${escapedValue.replace(/\$/g, "$$$$")}"`);
   }
 
   // Field doesn't exist — insert it into the meta section
   const metaRe = /^(\s*meta\s*:)/m;
   if (metaRe.test(source)) {
-    return source.replace(metaRe, `$1\n        ${key} = "${newValue}"`);
+    return source.replace(metaRe, `$1\n        ${key} = "${escapedValue.replace(/\$/g, "$$$$")}"`);
   }
 
   return source;

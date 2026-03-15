@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useWorkbench } from "@/lib/workbench/multi-policy-store";
+import { useWorkbench, useMultiPolicy } from "@/lib/workbench/multi-policy-store";
 import { getRecentFiles } from "@/lib/workbench/policy-store";
 import { BUILTIN_RULESETS, type BuiltinRuleset } from "@/lib/workbench/builtin-rulesets";
 import {
@@ -30,10 +30,11 @@ import { PolicyCard } from "./policy-card";
 import { ImportExport } from "./import-export";
 import { YamlViewDialog } from "./yaml-view-dialog";
 import { CatalogBrowser } from "./catalog-browser";
+import { SigmaHQBrowser } from "./sigmahq-browser";
 
 const MCP_LAUNCH_COMMAND = "bun run apps/workbench/mcp-server/index.ts";
 
-type LibraryTab = "my-policies" | "catalog";
+type LibraryTab = "my-policies" | "catalog" | "sigmahq";
 
 /**
  * Merge native rulesets from the Rust engine with the client-side fallback list.
@@ -194,6 +195,7 @@ function LibraryCopyableCard({ label, prompt }: { label: string; prompt: string 
 
 export function LibraryGallery() {
   const { state, openFile, openFileByPath } = useWorkbench();
+  const { multiDispatch } = useMultiPolicy();
   const [viewYaml, setViewYaml] = useState<{ name: string; yaml: string } | null>(null);
   const { rulesets, loading, nativeAvailable } = useBuiltinRulesets();
   const [activeTab, setActiveTab] = useState<LibraryTab>("my-policies");
@@ -251,11 +253,34 @@ export function LibraryGallery() {
           <IconLayoutGrid size={15} stroke={1.5} />
           Catalog
         </button>
+        <button
+          onClick={() => setActiveTab("sigmahq")}
+          className={cn(
+            "flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-t-md transition-colors -mb-px border-b-2",
+            activeTab === "sigmahq"
+              ? "text-[#ece7dc] border-[#7c9aef] bg-[#131721]/30"
+              : "text-[#6f7f9a] border-transparent hover:text-[#ece7dc] hover:bg-[#131721]/20",
+          )}
+        >
+          <IconShieldCheck size={15} stroke={1.5} />
+          SigmaHQ
+        </button>
       </div>
 
       {/* Tab content */}
       {activeTab === "catalog" ? (
         <CatalogBrowser />
+      ) : activeTab === "sigmahq" ? (
+        <SigmaHQBrowser
+          onImport={(yaml, title) => {
+            multiDispatch({
+              type: "NEW_TAB",
+              fileType: "sigma_rule",
+              yaml,
+            });
+            setViewYaml({ name: title, yaml });
+          }}
+        />
       ) : (
         <>
           {/* Recent files (desktop only) */}

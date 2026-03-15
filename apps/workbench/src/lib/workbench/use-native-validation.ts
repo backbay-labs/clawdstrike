@@ -1,7 +1,17 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type Dispatch } from "react";
 import { isDesktop } from "@/lib/tauri-bridge";
-import { validatePolicyNative } from "@/lib/tauri-commands";
-import type { TauriValidationResponse } from "@/lib/tauri-commands";
+import {
+  validateOcsfEventNative,
+  validatePolicyNative,
+  validateSigmaRuleNative,
+  validateYaraRuleNative,
+  type TauriDetectionDiagnostic,
+  type TauriOcsfValidationResponse,
+  type TauriSigmaValidationResponse,
+  type TauriValidationResponse,
+  type TauriYaraValidationResponse,
+} from "@/lib/tauri-commands";
+import { isPolicyFileType, type FileType } from "./file-type-registry";
 import type { NativeValidationErrors, NativeValidationState } from "./policy-store";
 import type { GuardId } from "./types";
 
@@ -21,22 +31,35 @@ const GUARD_IDS: readonly string[] = [
   "spider_sense",
 ] satisfies readonly GuardId[];
 
+const EMPTY_NATIVE_VALIDATION: NativeValidationState = {
+  guardErrors: {},
+  topLevelErrors: [],
+  loading: false,
+  valid: null,
+};
+
 /** Extract guard ID from a Rust validation error path like "guards.forbidden_path.patterns[0]". */
 function extractGuardId(errorPath: string): string | null {
-  // Pattern: "guards.<guard_id>" or "guards.<guard_id>.<rest>"
   const match = errorPath.match(/^guards\.([a-z_]+)/);
   if (!match) return null;
   const candidate = match[1];
   return GUARD_IDS.includes(candidate) ? candidate : null;
 }
 
-function parseValidationResponse(
+function formatDetectionDiagnostic(diagnostic: TauriDetectionDiagnostic): string {
+  const location = diagnostic.line != null
+    ? `line ${diagnostic.line}${diagnostic.column != null ? `:${diagnostic.column}` : ""}: `
+    : "";
+
+  return `${location}${diagnostic.message}`;
+}
+
+function parsePolicyValidationResponse(
   response: TauriValidationResponse,
 ): Pick<NativeValidationState, "guardErrors" | "topLevelErrors" | "valid"> {
   const guardErrors: NativeValidationErrors = {};
   const topLevelErrors: string[] = [];
 
-  // Parse error from the YAML parser itself
   if (response.parse_error) {
     topLevelErrors.push(response.parse_error);
   }
@@ -60,19 +83,104 @@ function parseValidationResponse(
   };
 }
 
+function detectionDiagnosticsToState(
+  valid: boolean,
+  diagnostics: TauriDetectionDiagnostic[],
+): NativeValidationState {
+  return {
+    guardErrors: {},
+    topLevelErrors: diagnostics.map(formatDetectionDiagnostic),
+    loading: false,
+    valid,
+  };
+}
+
+async function runNativeValidation(
+  fileType: FileType,
+  source: string,
+): Promise<NativeValidationState> {
+  if (!isDesktop()) {
+    return EMPTY_NATIVE_VALIDATION;
+  }
+
+  if (isPolicyFileType(fileType)) {
+    const result = await validatePolicyNative(source);
+    if (!result) return EMPTY_NATIVE_VALIDATION;
+    const parsed = parsePolicyValidationResponse(result);
+    return {
+      ...parsed,
+      loading: false,
+    };
+  }
+
+  let result:
+    | TauriSigmaValidationResponse
+    | TauriYaraValidationResponse
+    | TauriOcsfValidationResponse
+    | null = null;
+
+  switch (fileType) {
+    case "sigma_rule":
+      result = await validateSigmaRuleNative(source);
+      break;
+    case "yara_rule":
+      result = await validateYaraRuleNative(source);
+      break;
+    case "ocsf_event":
+      result = await validateOcsfEventNative(source);
+      break;
+    default:
+      return EMPTY_NATIVE_VALIDATION;
+  }
+
+  if (!result) return EMPTY_NATIVE_VALIDATION;
+  return detectionDiagnosticsToState(result.valid, result.diagnostics);
+}
+
+export async function triggerNativeValidation(
+  fileType: FileType,
+  source: string,
+  dispatch: Dispatch<{ type: "SET_NATIVE_VALIDATION"; payload: NativeValidationState }>,
+): Promise<void> {
+  if (!isDesktop()) {
+    dispatch({ type: "SET_NATIVE_VALIDATION", payload: EMPTY_NATIVE_VALIDATION });
+    return;
+  }
+
+  dispatch({
+    type: "SET_NATIVE_VALIDATION",
+    payload: {
+      ...EMPTY_NATIVE_VALIDATION,
+      loading: true,
+    },
+  });
+
+  try {
+    const result = await runNativeValidation(fileType, source);
+    dispatch({
+      type: "SET_NATIVE_VALIDATION",
+      payload: result,
+    });
+  } catch (err) {
+    console.error("[native-validation] IPC call failed:", err);
+    dispatch({ type: "SET_NATIVE_VALIDATION", payload: EMPTY_NATIVE_VALIDATION });
+  }
+}
+
 const DEBOUNCE_MS = 800;
 
 /** Debounced native Rust validation. No-op outside Tauri. */
 export function useNativeValidation(
-  yaml: string,
-  dispatch: React.Dispatch<{ type: "SET_NATIVE_VALIDATION"; payload: NativeValidationState }>,
+  source: string,
+  fileType: FileType,
+  dispatch: Dispatch<{ type: "SET_NATIVE_VALIDATION"; payload: NativeValidationState }>,
 ): void {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const latestYamlRef = useRef(yaml);
+  const latestSourceRef = useRef(source);
+  const latestFileTypeRef = useRef(fileType);
 
-  // Always keep the latest yaml in the ref so the async callback can check
-  // whether a newer request has superseded it.
-  latestYamlRef.current = yaml;
+  latestSourceRef.current = source;
+  latestFileTypeRef.current = fileType;
 
   useEffect(() => {
     if (!isDesktop()) return;
@@ -81,55 +189,33 @@ export function useNativeValidation(
       clearTimeout(debounceRef.current);
     }
 
-    const capturedYaml = yaml;
+    const capturedSource = source;
+    const capturedFileType = fileType;
 
     debounceRef.current = setTimeout(() => {
-      // Mark loading only when we actually start the async validation,
-      // not on every keystroke, to avoid UI flicker.
       dispatch({
         type: "SET_NATIVE_VALIDATION",
         payload: {
-          guardErrors: {},
-          topLevelErrors: [],
+          ...EMPTY_NATIVE_VALIDATION,
           loading: true,
-          valid: null,
         },
       });
 
-      validatePolicyNative(capturedYaml).then((result) => {
-        // If yaml changed while we were waiting, discard this stale result
-        if (latestYamlRef.current !== capturedYaml) return;
-
-        if (!result) {
-          // Tauri call returned null (not in desktop mode or error)
-          dispatch({
-            type: "SET_NATIVE_VALIDATION",
-            payload: {
-              guardErrors: {},
-              topLevelErrors: [],
-              loading: false,
-              valid: null,
-            },
-          });
+      runNativeValidation(capturedFileType, capturedSource).then((result) => {
+        if (
+          latestSourceRef.current !== capturedSource ||
+          latestFileTypeRef.current !== capturedFileType
+        ) {
           return;
         }
 
-        const { guardErrors, topLevelErrors, valid } = parseValidationResponse(result);
         dispatch({
           type: "SET_NATIVE_VALIDATION",
-          payload: {
-            guardErrors,
-            topLevelErrors,
-            loading: false,
-            valid,
-          },
+          payload: result,
         });
       }).catch((err) => {
         console.error("[native-validation] IPC call failed:", err);
-        dispatch({
-          type: "SET_NATIVE_VALIDATION",
-          payload: { guardErrors: {}, topLevelErrors: [], loading: false, valid: null },
-        });
+        dispatch({ type: "SET_NATIVE_VALIDATION", payload: EMPTY_NATIVE_VALIDATION });
       });
     }, DEBOUNCE_MS);
 
@@ -138,7 +224,7 @@ export function useNativeValidation(
         clearTimeout(debounceRef.current);
       }
     };
-  }, [yaml, dispatch]);
+  }, [source, fileType, dispatch]);
 }
 
 export function countNativeErrors(state: NativeValidationState): number {

@@ -1,12 +1,16 @@
-import { useState, useCallback, useRef, useEffect } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { PolicyTabBar } from "@/components/workbench/editor/policy-tab-bar";
+import { CommandPalette } from "@/components/workbench/editor/command-palette";
+import { ProblemsPanel, type ProblemEntry } from "@/components/workbench/editor/problems-panel";
 import { SplitEditor, SplitModeToggle } from "@/components/workbench/editor/split-editor";
 import { EditorHomeTab } from "@/components/workbench/editor/editor-home-tab";
 import { PolicyCommandCenter } from "@/components/workbench/editor/policy-command-center";
 import { VersionHistoryPanel } from "@/components/workbench/editor/version-history-panel";
 import { VersionDiffDialog } from "@/components/workbench/editor/version-diff-dialog";
 import { TestRunnerPanel } from "@/components/workbench/editor/test-runner-panel";
+import { ExplorerPanel } from "@/components/workbench/explorer/explorer-panel";
+import { MitreHeatmap } from "@/components/workbench/coverage/mitre-heatmap";
 import { GuardsPage } from "@/components/workbench/guards/guards-page";
 import { CompareLayout } from "@/components/workbench/compare/compare-layout";
 import {
@@ -16,9 +20,12 @@ import {
 } from "@/components/ui/resizable";
 import { useMultiPolicy } from "@/lib/workbench/multi-policy-store";
 import { useWorkbench } from "@/lib/workbench/multi-policy-store";
+import { buildFileTree, useProject } from "@/lib/workbench/project-store";
 import { useVersionHistory } from "@/lib/workbench/use-version-history";
 import { useAutoVersion } from "@/lib/workbench/use-auto-version";
 import type { PolicyVersion } from "@/lib/workbench/version-store";
+import { getPrimaryExtension, isPolicyFileType, sanitizeFilenameStem } from "@/lib/workbench/file-type-registry";
+import { triggerNativeValidation } from "@/lib/workbench/use-native-validation";
 import {
   IconWand,
   IconHistory,
@@ -31,6 +38,10 @@ import {
   IconWorld,
   IconShield,
   IconColumns,
+  IconFolderOpen,
+  IconAlertCircle,
+  IconTarget,
+  IconSearch,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { ClaudeCodeHint } from "@/components/workbench/shared/claude-code-hint";
@@ -51,6 +62,17 @@ const QUICK_TESTS: QuickTest[] = [
   { label: "Quick Test: Shell Command", icon: IconTerminal2, action: "shell_command", target: "rm -rf /" },
   { label: "Quick Test: Network Egress", icon: IconWorld, action: "network_egress", target: "evil-exfil.com" },
 ];
+
+function tabLabelForDiagnostics(name: string, extension: string): string {
+  const stem = sanitizeFilenameStem(name, "untitled");
+  return `${stem}${extension}`;
+}
+
+function basenameFromPath(filePath: string | null | undefined): string | null {
+  if (!filePath) return null;
+  const normalized = filePath.replace(/\\/g, "/");
+  return normalized.split("/").pop() ?? null;
+}
 
 
 function RunButtonGroup({
@@ -293,11 +315,22 @@ function RunButtonGroup({
 
 
 export function PolicyEditor() {
-  const { tabs, activeTab } = useMultiPolicy();
-  const { state, dispatch } = useWorkbench();
+  const { tabs, activeTab, multiDispatch } = useMultiPolicy();
+  const { state, dispatch, openFile, openFileByPath } = useWorkbench();
+  const {
+    state: projectState,
+    toggleDir,
+    setFilter,
+    setFormatFilter,
+    expandAll,
+    collapseAll,
+    setProject,
+  } = useProject();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const panelParam = searchParams.get("panel");
   const [showCommandCenter, setShowCommandCenter] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [testRunnerOpen, setTestRunnerOpen] = useState(false);
   const [diffDialogOpen, setDiffDialogOpen] = useState(false);
@@ -306,6 +339,10 @@ export function PolicyEditor() {
   const [showHome, setShowHome] = useState(false);
   const [showGuards, setShowGuards] = useState(false);
   const [showCompare, setShowCompare] = useState(false);
+  const [showCoverage, setShowCoverage] = useState(false);
+  const [showExplorer, setShowExplorer] = useState(false);
+  const [showProblems, setShowProblems] = useState(false);
+  const isPolicyTab = activeTab ? isPolicyFileType(activeTab.fileType) : true;
 
   // Activate panels based on URL search params on mount
   useEffect(() => {
@@ -314,16 +351,131 @@ export function PolicyEditor() {
       setShowHome(false);
       setShowCommandCenter(false);
       setShowCompare(false);
+      setShowCoverage(false);
     } else if (panelParam === "compare") {
       setShowCompare(true);
       setShowHome(false);
       setShowCommandCenter(false);
       setShowGuards(false);
+      setShowCoverage(false);
     } else if (panelParam === null) {
       setShowGuards(false);
       setShowCompare(false);
     }
   }, [panelParam]);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setCommandPaletteOpen((prev) => !prev);
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  useEffect(() => {
+    if (isPolicyTab) return;
+    setShowCommandCenter(false);
+    setShowGuards(false);
+    setShowCompare(false);
+    setHistoryOpen(false);
+    setTestRunnerOpen(false);
+  }, [isPolicyTab]);
+
+  const explorerEntries = useMemo(() => {
+    const usedPaths = new Set<string>();
+    return tabs.map((tab, index) => {
+      const ext = getPrimaryExtension(tab.fileType);
+      let relativePath = tab.filePath
+        ? tab.filePath.replace(/\\/g, "/").split("/").pop() ?? `${index + 1}${ext}`
+        : `unsaved/${sanitizeFilenameStem(tab.name, `untitled_${index + 1}`)}${ext}`;
+
+      while (usedPaths.has(relativePath)) {
+        const stem = relativePath.replace(/\.[^.]+$/, "");
+        relativePath = `${stem}_${index + 1}${ext}`;
+      }
+
+      usedPaths.add(relativePath);
+      return { tab, relativePath };
+    });
+  }, [tabs]);
+
+  const explorerProject = useMemo(() => {
+    const defaultExpanded = new Set<string>(
+      explorerEntries
+        .map((entry) => {
+          const slashIndex = entry.relativePath.indexOf("/");
+          return slashIndex > 0 ? entry.relativePath.slice(0, slashIndex) : null;
+        })
+        .filter((value): value is string => Boolean(value)),
+    );
+
+    return {
+      rootPath: "workspace",
+      name: "Workspace",
+      files: buildFileTree("workspace", explorerEntries.map((entry) => entry.relativePath)),
+      expandedDirs: projectState.project?.expandedDirs ?? defaultExpanded,
+    };
+  }, [explorerEntries, projectState.project]);
+
+  const explorerSyncKey = useMemo(
+    () => explorerEntries.map((entry) => `${entry.tab.id}:${entry.relativePath}`).join("|"),
+    [explorerEntries],
+  );
+  const explorerSyncRef = useRef<string>("");
+
+  useEffect(() => {
+    if (explorerSyncRef.current === explorerSyncKey) return;
+    explorerSyncRef.current = explorerSyncKey;
+    setProject(explorerProject);
+  }, [explorerProject, explorerSyncKey, setProject]);
+
+  const relativePathByTabId = useMemo(
+    () => new Map(explorerEntries.map((entry) => [entry.tab.id, entry.relativePath])),
+    [explorerEntries],
+  );
+
+  const problems = useMemo<ProblemEntry[]>(() => {
+    return tabs.flatMap((tab) => {
+      const file = basenameFromPath(tab.filePath)
+        ?? tabLabelForDiagnostics(tab.name, getPrimaryExtension(tab.fileType));
+      const clientIssues = [
+        ...tab.validation.errors.map((issue) => ({
+          severity: "error" as const,
+          message: issue.message,
+          file,
+          fileType: tab.fileType,
+        })),
+        ...tab.validation.warnings.map((issue) => ({
+          severity: "warning" as const,
+          message: issue.message,
+          file,
+          fileType: tab.fileType,
+        })),
+      ];
+
+      const nativeTopLevel = tab.nativeValidation.topLevelErrors.map((message) => ({
+        severity: "error" as const,
+        message,
+        file,
+        fileType: tab.fileType,
+      }));
+      const nativeGuardIssues = Object.entries(tab.nativeValidation.guardErrors).flatMap(
+        ([guardId, messages]) =>
+          messages.map((message) => ({
+            severity: "error" as const,
+            message: `${guardId}: ${message}`,
+            file,
+            fileType: tab.fileType,
+          })),
+      );
+
+      return [...clientIssues, ...nativeTopLevel, ...nativeGuardIssues];
+    });
+  }, [tabs]);
 
   // Use the active tab's ID as the policyId for version tracking
   const policyId = activeTab?.id;
@@ -350,163 +502,323 @@ export function PolicyEditor() {
     [],
   );
 
+  const handleOpenExplorerFile = useCallback(
+    async (relativePath: string) => {
+      const existing = explorerEntries.find((entry) => entry.relativePath === relativePath);
+      if (!existing) return;
+
+      multiDispatch({ type: "SWITCH_TAB", tabId: existing.tab.id });
+      if (existing.tab.filePath) {
+        await openFileByPath(existing.tab.filePath);
+      }
+      navigate("/editor");
+    },
+    [explorerEntries, multiDispatch, navigate, openFileByPath],
+  );
+
+  const handleValidateCurrentFile = useCallback(() => {
+    if (!activeTab) return;
+    void triggerNativeValidation(activeTab.fileType, state.yaml, dispatch);
+    setShowProblems(true);
+  }, [activeTab, state.yaml, dispatch]);
+
   return (
     <TestRunnerProvider key={activeTab?.id ?? "no-active-tab"}>
-    <div className="h-full w-full flex flex-col">
-      {/* Tab bar + toolbar */}
-      <div className="flex items-center bg-[#0b0d13] border-b border-[#2d3240]">
-        <div className="flex-1 min-w-0">
-          <PolicyTabBar
-            isHomeActive={showHome}
-            onHomeClick={() => { setShowHome(true); setShowCommandCenter(false); setShowGuards(false); setShowCompare(false); }}
-            onTabSwitch={() => { setShowHome(false); setShowCommandCenter(false); setShowGuards(false); setShowCompare(false); }}
-          />
-        </div>
-        <div className="flex items-center gap-1 px-2 shrink-0">
-          <RunButtonGroup
-            testRunnerOpen={testRunnerOpen}
-            setTestRunnerOpen={setTestRunnerOpen}
-          />
-          <SplitModeToggle />
-          <button
-            type="button"
-            onClick={() => { setShowCommandCenter(true); setShowHome(false); setShowGuards(false); setShowCompare(false); }}
-            className="inline-flex items-center gap-1 px-2 py-1 text-[9px] font-mono text-[#6f7f9a] hover:text-[#d4a84b] border border-transparent hover:border-[#2d3240] rounded transition-colors"
-            title="Policy command center"
-            aria-label="Policy command center"
-          >
-            <IconWand size={12} stroke={1.5} />
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setShowGuards((prev) => {
-                if (!prev) { setShowHome(false); setShowCommandCenter(false); setShowCompare(false); }
-                return !prev;
-              });
-            }}
-            className={cn(
-              "inline-flex items-center gap-1 px-2 py-1 text-[9px] font-mono rounded transition-colors",
-              showGuards
-                ? "bg-[#d4a84b]/15 text-[#d4a84b] border border-[#d4a84b]/30"
-                : "text-[#6f7f9a] hover:text-[#ece7dc] border border-transparent hover:border-[#2d3240]",
-            )}
-            title="Guards"
-            aria-label="Guards"
-          >
-            <IconShield size={12} stroke={1.5} />
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setShowCompare((prev) => {
-                if (!prev) { setShowHome(false); setShowCommandCenter(false); setShowGuards(false); }
-                return !prev;
-              });
-            }}
-            className={cn(
-              "inline-flex items-center gap-1 px-2 py-1 text-[9px] font-mono rounded transition-colors",
-              showCompare
-                ? "bg-[#d4a84b]/15 text-[#d4a84b] border border-[#d4a84b]/30"
-                : "text-[#6f7f9a] hover:text-[#ece7dc] border border-transparent hover:border-[#2d3240]",
-            )}
-            title="Compare"
-            aria-label="Compare"
-          >
-            <IconColumns size={12} stroke={1.5} />
-          </button>
-          <button
-            type="button"
-            onClick={() => setTestRunnerOpen((prev) => !prev)}
-            className={cn(
-              "inline-flex items-center gap-1 px-2 py-1 text-[9px] font-mono rounded transition-colors",
-              testRunnerOpen
-                ? "bg-[#d4a84b]/15 text-[#d4a84b] border border-[#d4a84b]/30"
-                : "text-[#6f7f9a] hover:text-[#ece7dc] border border-transparent hover:border-[#2d3240]",
-            )}
-            title="Toggle test runner"
-            aria-label="Toggle test runner"
-          >
-            <IconTestPipe size={12} stroke={1.5} />
-          </button>
-          <button
-            type="button"
-            onClick={() => setHistoryOpen((prev) => !prev)}
-            className={cn(
-              "inline-flex items-center gap-1 px-2 py-1 text-[9px] font-mono rounded transition-colors",
-              historyOpen
-                ? "bg-[#d4a84b]/15 text-[#d4a84b] border border-[#d4a84b]/30"
-                : "text-[#6f7f9a] hover:text-[#ece7dc] border border-transparent hover:border-[#2d3240]",
-            )}
-            title="Toggle version history"
-            aria-label="Version history"
-          >
-            <IconHistory size={12} stroke={1.5} />
-          </button>
-        </div>
-      </div>
-
-      {/* Claude Code hint strip */}
-      <ClaudeCodeHint
-        hintId="editor.validate"
-        className="mx-2 mt-1.5 mb-0.5"
-      />
-
-      {/* Editor content + optional test runner + version history sidebar */}
-      <div className="flex-1 min-h-0 flex">
-        <div className="flex-1 min-w-0">
-          {showCommandCenter ? (
-            <PolicyCommandCenter onClose={() => setShowCommandCenter(false)} />
-          ) : showHome ? (
-            <EditorHomeTab onNavigateToTab={() => setShowHome(false)} />
-          ) : showGuards ? (
-            <GuardsPage onNavigateToEditor={() => setShowGuards(false)} />
-          ) : showCompare ? (
-            <CompareLayout />
-          ) : testRunnerOpen ? (
-            <ResizablePanelGroup direction="vertical" className="h-full">
-              <ResizablePanel defaultSize={65} minSize={30}>
-                <SplitEditor />
-              </ResizablePanel>
-              <ResizableHandle
-                className="bg-[#2d3240] hover:bg-[#d4a84b]/40 transition-colors data-[resize-handle-active]:bg-[#d4a84b]"
-                withHandle
+      <div className="h-full w-full flex flex-col">
+        <div className="flex items-center bg-[#0b0d13] border-b border-[#2d3240]">
+          <div className="flex-1 min-w-0">
+            <PolicyTabBar
+              isHomeActive={showHome}
+              onHomeClick={() => {
+                setShowHome(true);
+                setShowCommandCenter(false);
+                setShowGuards(false);
+                setShowCompare(false);
+                setShowCoverage(false);
+              }}
+              onTabSwitch={() => {
+                setShowHome(false);
+                setShowCommandCenter(false);
+                setShowGuards(false);
+                setShowCompare(false);
+                setShowCoverage(false);
+              }}
+            />
+          </div>
+          <div className="flex items-center gap-1 px-2 shrink-0">
+            {isPolicyTab && (
+              <RunButtonGroup
+                testRunnerOpen={testRunnerOpen}
+                setTestRunnerOpen={setTestRunnerOpen}
               />
-              <ResizablePanel defaultSize={35} minSize={15}>
-                <TestRunnerPanel />
-              </ResizablePanel>
-            </ResizablePanelGroup>
-          ) : (
-            <SplitEditor />
+            )}
+            <SplitModeToggle />
+            <button
+              type="button"
+              onClick={() => setCommandPaletteOpen(true)}
+              className="inline-flex items-center gap-1 px-2 py-1 text-[9px] font-mono text-[#6f7f9a] hover:text-[#ece7dc] border border-transparent hover:border-[#2d3240] rounded transition-colors"
+              title="Command palette"
+              aria-label="Command palette"
+            >
+              <IconSearch size={12} stroke={1.5} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowExplorer((prev) => !prev)}
+              className={cn(
+                "inline-flex items-center gap-1 px-2 py-1 text-[9px] font-mono rounded transition-colors",
+                showExplorer
+                  ? "bg-[#d4a84b]/15 text-[#d4a84b] border border-[#d4a84b]/30"
+                  : "text-[#6f7f9a] hover:text-[#ece7dc] border border-transparent hover:border-[#2d3240]",
+              )}
+              title="Explorer"
+              aria-label="Explorer"
+            >
+              <IconFolderOpen size={12} stroke={1.5} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowProblems((prev) => !prev)}
+              className={cn(
+                "inline-flex items-center gap-1 px-2 py-1 text-[9px] font-mono rounded transition-colors",
+                showProblems
+                  ? "bg-[#c45c5c]/15 text-[#c45c5c] border border-[#c45c5c]/30"
+                  : "text-[#6f7f9a] hover:text-[#ece7dc] border border-transparent hover:border-[#2d3240]",
+              )}
+              title="Problems"
+              aria-label="Problems"
+            >
+              <IconAlertCircle size={12} stroke={1.5} />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowCoverage((prev) => !prev);
+                setShowHome(false);
+                setShowCommandCenter(false);
+                setShowGuards(false);
+                setShowCompare(false);
+              }}
+              className={cn(
+                "inline-flex items-center gap-1 px-2 py-1 text-[9px] font-mono rounded transition-colors",
+                showCoverage
+                  ? "bg-[#7c9aef]/15 text-[#7c9aef] border border-[#7c9aef]/30"
+                  : "text-[#6f7f9a] hover:text-[#ece7dc] border border-transparent hover:border-[#2d3240]",
+              )}
+              title="ATT&CK coverage"
+              aria-label="ATT&CK coverage"
+            >
+              <IconTarget size={12} stroke={1.5} />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (!isPolicyTab) return;
+                setShowCommandCenter(true);
+                setShowHome(false);
+                setShowGuards(false);
+                setShowCompare(false);
+                setShowCoverage(false);
+              }}
+              disabled={!isPolicyTab}
+              className="inline-flex items-center gap-1 px-2 py-1 text-[9px] font-mono text-[#6f7f9a] hover:text-[#d4a84b] border border-transparent hover:border-[#2d3240] rounded transition-colors disabled:opacity-40 disabled:hover:text-[#6f7f9a] disabled:hover:border-transparent"
+              title={isPolicyTab ? "Policy command center" : "Policy-only surface"}
+              aria-label="Policy command center"
+            >
+              <IconWand size={12} stroke={1.5} />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (!isPolicyTab) return;
+                setShowGuards((prev) => {
+                  if (!prev) {
+                    setShowHome(false);
+                    setShowCommandCenter(false);
+                    setShowCompare(false);
+                    setShowCoverage(false);
+                  }
+                  return !prev;
+                });
+              }}
+              disabled={!isPolicyTab}
+              className={cn(
+                "inline-flex items-center gap-1 px-2 py-1 text-[9px] font-mono rounded transition-colors disabled:opacity-40 disabled:hover:text-[#6f7f9a] disabled:hover:border-transparent",
+                showGuards
+                  ? "bg-[#d4a84b]/15 text-[#d4a84b] border border-[#d4a84b]/30"
+                  : "text-[#6f7f9a] hover:text-[#ece7dc] border border-transparent hover:border-[#2d3240]",
+              )}
+              title="Guards"
+              aria-label="Guards"
+            >
+              <IconShield size={12} stroke={1.5} />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (!isPolicyTab) return;
+                setShowCompare((prev) => {
+                  if (!prev) {
+                    setShowHome(false);
+                    setShowCommandCenter(false);
+                    setShowGuards(false);
+                    setShowCoverage(false);
+                  }
+                  return !prev;
+                });
+              }}
+              disabled={!isPolicyTab}
+              className={cn(
+                "inline-flex items-center gap-1 px-2 py-1 text-[9px] font-mono rounded transition-colors disabled:opacity-40 disabled:hover:text-[#6f7f9a] disabled:hover:border-transparent",
+                showCompare
+                  ? "bg-[#d4a84b]/15 text-[#d4a84b] border border-[#d4a84b]/30"
+                  : "text-[#6f7f9a] hover:text-[#ece7dc] border border-transparent hover:border-[#2d3240]",
+              )}
+              title="Compare"
+              aria-label="Compare"
+            >
+              <IconColumns size={12} stroke={1.5} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setTestRunnerOpen((prev) => !prev)}
+              disabled={!isPolicyTab}
+              className={cn(
+                "inline-flex items-center gap-1 px-2 py-1 text-[9px] font-mono rounded transition-colors disabled:opacity-40 disabled:hover:text-[#6f7f9a] disabled:hover:border-transparent",
+                testRunnerOpen
+                  ? "bg-[#d4a84b]/15 text-[#d4a84b] border border-[#d4a84b]/30"
+                  : "text-[#6f7f9a] hover:text-[#ece7dc] border border-transparent hover:border-[#2d3240]",
+              )}
+              title="Toggle test runner"
+              aria-label="Toggle test runner"
+            >
+              <IconTestPipe size={12} stroke={1.5} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setHistoryOpen((prev) => !prev)}
+              disabled={!isPolicyTab}
+              className={cn(
+                "inline-flex items-center gap-1 px-2 py-1 text-[9px] font-mono rounded transition-colors disabled:opacity-40 disabled:hover:text-[#6f7f9a] disabled:hover:border-transparent",
+                historyOpen
+                  ? "bg-[#d4a84b]/15 text-[#d4a84b] border border-[#d4a84b]/30"
+                  : "text-[#6f7f9a] hover:text-[#ece7dc] border border-transparent hover:border-[#2d3240]",
+              )}
+              title="Toggle version history"
+              aria-label="Version history"
+            >
+              <IconHistory size={12} stroke={1.5} />
+            </button>
+          </div>
+        </div>
+
+        <ClaudeCodeHint
+          hintId="editor.validate"
+          className="mx-2 mt-1.5 mb-0.5"
+        />
+
+        <div className="flex-1 min-h-0 flex">
+          {showExplorer && (
+            <div className="w-[280px] shrink-0 border-r border-[#2d3240]">
+              <ExplorerPanel
+                project={explorerProject}
+                onToggleDir={toggleDir}
+                onOpenFile={(file) => { void handleOpenExplorerFile(file.path); }}
+                onExpandAll={expandAll}
+                onCollapseAll={collapseAll}
+                filter={projectState.filter}
+                onFilterChange={setFilter}
+                formatFilter={projectState.formatFilter}
+                onFormatFilterChange={setFormatFilter}
+                activeFilePath={activeTab ? relativePathByTabId.get(activeTab.id) ?? null : null}
+              />
+            </div>
+          )}
+
+          <div className="flex-1 min-w-0">
+            {showCommandCenter ? (
+              <PolicyCommandCenter onClose={() => setShowCommandCenter(false)} />
+            ) : showHome ? (
+              <EditorHomeTab onNavigateToTab={() => setShowHome(false)} />
+            ) : showGuards ? (
+              <GuardsPage onNavigateToEditor={() => setShowGuards(false)} />
+            ) : showCompare ? (
+              <CompareLayout />
+            ) : showCoverage ? (
+              <MitreHeatmap tabs={tabs} />
+            ) : isPolicyTab && testRunnerOpen ? (
+              <ResizablePanelGroup direction="vertical" className="h-full">
+                <ResizablePanel defaultSize={65} minSize={30}>
+                  <div className="h-full flex flex-col">
+                    <div className="flex-1 min-h-0">
+                      <SplitEditor />
+                    </div>
+                    {showProblems && (
+                      <div className="h-[180px] shrink-0">
+                        <ProblemsPanel diagnostics={problems} className="h-full" />
+                      </div>
+                    )}
+                  </div>
+                </ResizablePanel>
+                <ResizableHandle
+                  className="bg-[#2d3240] hover:bg-[#d4a84b]/40 transition-colors data-[resize-handle-active]:bg-[#d4a84b]"
+                  withHandle
+                />
+                <ResizablePanel defaultSize={35} minSize={15}>
+                  <TestRunnerPanel />
+                </ResizablePanel>
+              </ResizablePanelGroup>
+            ) : (
+              <div className="h-full flex flex-col">
+                <div className="flex-1 min-h-0">
+                  <SplitEditor />
+                </div>
+                {showProblems && (
+                  <div className="h-[180px] shrink-0">
+                    <ProblemsPanel diagnostics={problems} className="h-full" />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {historyOpen && !showHome && isPolicyTab && (
+            <div className="w-[280px] shrink-0">
+              <VersionHistoryPanel
+                policyId={policyId}
+                currentYaml={state.yaml}
+                currentPolicy={state.activePolicy}
+                onRollback={handleRollback}
+                onCompare={handleCompare}
+              />
+            </div>
           )}
         </div>
 
-        {/* Version history panel (collapsible right sidebar) */}
-        {historyOpen && !showHome && (
-          <div className="w-[280px] shrink-0">
-            <VersionHistoryPanel
-              policyId={policyId}
-              currentYaml={state.yaml}
-              currentPolicy={state.activePolicy}
-              onRollback={handleRollback}
-              onCompare={handleCompare}
-            />
-          </div>
-        )}
-      </div>
+        <CommandPalette
+          open={commandPaletteOpen}
+          onClose={() => setCommandPaletteOpen(false)}
+          onNewTab={(fileType) => {
+            multiDispatch({ type: "NEW_TAB", fileType });
+            navigate("/editor");
+          }}
+          onNavigate={(path) => navigate(path)}
+          onOpenFile={() => { void openFile(); }}
+          onValidate={handleValidateCurrentFile}
+          onToggleCoverage={() => setShowCoverage((prev) => !prev)}
+        />
 
-      {/* Version diff dialog */}
-      <VersionDiffDialog
-        open={diffDialogOpen}
-        onOpenChange={setDiffDialogOpen}
-        versions={versions}
-        currentPolicy={state.activePolicy}
-        currentYaml={state.yaml}
-        initialFromId={diffFromId}
-        initialToId={diffToId}
-        onRollback={handleRollback}
-      />
-    </div>
+        <VersionDiffDialog
+          open={diffDialogOpen}
+          onOpenChange={setDiffDialogOpen}
+          versions={versions}
+          currentPolicy={state.activePolicy}
+          currentYaml={state.yaml}
+          initialFromId={diffFromId}
+          initialToId={diffToId}
+          onRollback={handleRollback}
+        />
+      </div>
     </TestRunnerProvider>
   );
 }

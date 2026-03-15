@@ -189,17 +189,23 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
     }
   }, [json]);
 
-  const updateField = useCallback(
-    (path: string[], value: unknown) => {
+  const commitEvent = useCallback(
+    (updater: (current: Record<string, unknown>) => Record<string, unknown>) => {
       try {
-        const current = JSON.parse(json || "{}") as Record<string, unknown>;
-        const updated = deepSet(current, path, value);
+        const updated = updater(event);
         onJsonChange(JSON.stringify(updated, null, 2));
       } catch {
         // If JSON is fundamentally broken, do nothing
       }
     },
-    [json, onJsonChange],
+    [event, onJsonChange],
+  );
+
+  const updateField = useCallback(
+    (path: string[], value: unknown) => {
+      commitEvent((current) => deepSet(current, path, value));
+    },
+    [commitEvent],
   );
 
   // Convenience getters
@@ -296,12 +302,14 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
             options={CLASS_UID_OPTIONS}
             onChange={(v) => {
               const numVal = Number(v);
-              updateField(["class_uid"], numVal || undefined);
-              // Auto-derive category_uid
-              const cat = CATEGORY_FROM_CLASS[numVal];
-              if (cat) {
-                updateField(["category_uid"], cat.uid);
-              }
+              commitEvent((current) => {
+                let updated = deepSet(current, ["class_uid"], numVal || undefined);
+                const cat = CATEGORY_FROM_CLASS[numVal];
+                if (cat) {
+                  updated = deepSet(updated, ["category_uid"], cat.uid);
+                }
+                return updated;
+              });
             }}
             readOnly={readOnly}
             required

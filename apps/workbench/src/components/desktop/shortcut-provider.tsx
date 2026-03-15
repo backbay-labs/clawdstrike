@@ -2,16 +2,16 @@ import { useMemo, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useKeyboardShortcuts, type ShortcutAction } from "@/lib/keyboard-shortcuts";
 import { useWorkbench, useMultiPolicy } from "@/lib/workbench/multi-policy-store";
-import { policyToYaml } from "@/lib/workbench/yaml-utils";
+import { triggerNativeValidation } from "@/lib/workbench/use-native-validation";
 import { ShortcutHelpDialog } from "./shortcut-help-dialog";
 
 export const SHORTCUT_DEFINITIONS = [
   // File
-  { key: "s", meta: true, shift: false, description: "Save policy", category: "File" },
+  { key: "s", meta: true, shift: false, description: "Save current file", category: "File" },
   { key: "s", meta: true, shift: true, description: "Save As", category: "File" },
   { key: "n", meta: true, shift: false, description: "New policy", category: "File" },
-  { key: "o", meta: true, shift: false, description: "Open policy file", category: "File" },
-  { key: "e", meta: true, shift: false, description: "Export YAML", category: "File" },
+  { key: "o", meta: true, shift: false, description: "Open detection file", category: "File" },
+  { key: "e", meta: true, shift: false, description: "Export current source", category: "File" },
   // Tabs
   { key: "t", meta: true, shift: false, description: "New tab", category: "Tabs" },
   { key: "w", meta: true, shift: false, description: "Close tab", category: "Tabs" },
@@ -20,8 +20,8 @@ export const SHORTCUT_DEFINITIONS = [
   { key: "z", meta: true, shift: true, description: "Redo", category: "Edit" },
   { key: "b", meta: true, shift: false, description: "Toggle sidebar", category: "Edit" },
   // Policy
-  { key: "v", meta: true, shift: true, description: "Validate policy", category: "Policy" },
-  { key: "y", meta: true, shift: true, description: "Copy YAML to clipboard", category: "Policy" },
+  { key: "v", meta: true, shift: true, description: "Validate current file", category: "Policy" },
+  { key: "y", meta: true, shift: true, description: "Copy current source", category: "Policy" },
   // Navigate
   { key: "1", meta: true, shift: false, description: "Editor", category: "Navigate" },
   { key: "2", meta: true, shift: false, description: "Threat Lab", category: "Navigate" },
@@ -71,10 +71,10 @@ export function ShortcutProvider() {
   }, [dispatch, state.ui.sidebarCollapsed]);
 
   const handleValidate = useCallback(() => {
-    const yaml = policyToYaml(state.activePolicy);
-    dispatch({ type: "SET_YAML", yaml });
+    if (!activeTab) return;
+    void triggerNativeValidation(activeTab.fileType, state.yaml, dispatch);
     navigate("/editor");
-  }, [state.activePolicy, dispatch, navigate]);
+  }, [activeTab, state.yaml, dispatch, navigate]);
 
   const handleNewTab = useCallback(() => {
     multiDispatch({ type: "NEW_TAB" });
@@ -94,10 +94,10 @@ export function ShortcutProvider() {
     () => [
       // File — shift:true entries must come before shift:false to match first
       { key: "s", meta: true, shift: true, description: "Save As", action: () => void saveFileAs() },
-      { key: "s", meta: true, description: "Save policy", action: () => void saveFile() },
+      { key: "s", meta: true, description: "Save current file", action: () => void saveFile() },
       { key: "n", meta: true, description: "New policy", action: () => { newPolicy(); navigate("/editor"); } },
-      { key: "o", meta: true, description: "Open policy file", action: async () => { await openFile(); navigate("/editor"); } },
-      { key: "e", meta: true, description: "Export YAML", action: exportYaml },
+      { key: "o", meta: true, description: "Open detection file", action: async () => { await openFile(); navigate("/editor"); } },
+      { key: "e", meta: true, description: "Export current source", action: exportYaml },
       // Tabs
       { key: "t", meta: true, description: "New tab", action: handleNewTab },
       { key: "w", meta: true, description: "Close tab", action: handleCloseTab },
@@ -106,8 +106,8 @@ export function ShortcutProvider() {
       { key: "z", meta: true, description: "Undo", action: undo },
       { key: "b", meta: true, description: "Toggle sidebar", action: handleToggleSidebar },
       // Policy
-      { key: "v", meta: true, shift: true, description: "Validate policy", action: handleValidate },
-      { key: "y", meta: true, shift: true, description: "Copy YAML to clipboard", action: copyYaml },
+      { key: "v", meta: true, shift: true, description: "Validate current file", action: handleValidate },
+      { key: "y", meta: true, shift: true, description: "Copy current source", action: copyYaml },
       // Navigate (Cmd+1..6)
       ...NAV_ROUTES.map((route, i) => ({
         key: String(i + 1),

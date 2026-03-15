@@ -104,7 +104,7 @@ fn reset_sign_rate_limit() {
 }
 
 /// Check a normalized, lowercased path string against the sensitive patterns.
-fn check_sensitive_path(check_str: &str) -> Result<(), String> {
+pub(crate) fn check_sensitive_path(check_str: &str) -> Result<(), String> {
     // Check sensitive prefixes.
     for pattern in SENSITIVE_PATTERNS {
         if check_str.contains(pattern) {
@@ -126,7 +126,7 @@ fn check_sensitive_path(check_str: &str) -> Result<(), String> {
 ///
 /// Rejects paths with `..` segments after normalization and paths that target
 /// sensitive directories or files.
-fn validate_file_path(path: &str) -> Result<PathBuf, String> {
+pub(crate) fn validate_file_path(path: &str) -> Result<PathBuf, String> {
     if path.is_empty() {
         return Err("Empty file path".into());
     }
@@ -217,7 +217,7 @@ fn open_file_write_no_follow(path: &Path) -> Result<std::fs::File, String> {
     })
 }
 
-async fn read_text_file_secure(path: PathBuf) -> Result<String, String> {
+pub(crate) async fn read_text_file_secure(path: PathBuf) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
         let mut file = open_file_read_no_follow(&path)?;
         let mut yaml = String::new();
@@ -234,7 +234,7 @@ async fn read_text_file_secure(path: PathBuf) -> Result<String, String> {
     })?
 }
 
-async fn write_text_file_secure(path: PathBuf, output: String) -> Result<(), String> {
+pub(crate) async fn write_text_file_secure(path: PathBuf, output: String) -> Result<(), String> {
     let bytes = output.into_bytes();
     tokio::task::spawn_blocking(move || {
         let mut file = open_file_write_no_follow(&path)?;

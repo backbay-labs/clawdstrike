@@ -2,6 +2,7 @@ import { Component, lazy, Suspense, useEffect } from "react";
 import type { ErrorInfo, ReactNode } from "react";
 import { HashRouter, Routes, Route, Navigate } from "react-router-dom";
 import { MultiPolicyProvider } from "@/lib/workbench/multi-policy-store";
+import { ProjectProvider } from "@/lib/workbench/project-store";
 import { FleetConnectionProvider } from "@/lib/workbench/use-fleet-connection";
 import { GeneralSettingsProvider } from "@/lib/workbench/use-general-settings";
 import { HintSettingsProvider } from "@/lib/workbench/use-hint-settings";
@@ -292,23 +293,25 @@ function AppProviders({ children }: { children: ReactNode }) {
         <ToastProvider>
           <GeneralSettingsProvider>
             <HintSettingsProvider>
-              <MultiPolicyProvider>
-                <SentinelProvider>
-                  <FindingProvider>
-                    <SignalProvider>
-                      <IntelProvider>
-                        <MissionProvider>
-                          <SwarmFeedProvider>
-                            <SwarmProvider>
-                              <FleetConnectionProvider>{children}</FleetConnectionProvider>
-                            </SwarmProvider>
-                          </SwarmFeedProvider>
-                        </MissionProvider>
-                      </IntelProvider>
-                    </SignalProvider>
-                  </FindingProvider>
-                </SentinelProvider>
-              </MultiPolicyProvider>
+              <ProjectProvider>
+                <MultiPolicyProvider>
+                  <SentinelProvider>
+                    <FindingProvider>
+                      <SignalProvider>
+                        <IntelProvider>
+                          <MissionProvider>
+                            <SwarmFeedProvider>
+                              <SwarmProvider>
+                                <FleetConnectionProvider>{children}</FleetConnectionProvider>
+                              </SwarmProvider>
+                            </SwarmFeedProvider>
+                          </MissionProvider>
+                        </IntelProvider>
+                      </SignalProvider>
+                    </FindingProvider>
+                  </SentinelProvider>
+                </MultiPolicyProvider>
+              </ProjectProvider>
             </HintSettingsProvider>
           </GeneralSettingsProvider>
         </ToastProvider>
