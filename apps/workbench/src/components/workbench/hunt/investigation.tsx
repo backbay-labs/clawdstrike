@@ -5,6 +5,7 @@ import {
   IconFileAnalytics,
   IconShieldCheck,
   IconShieldX,
+  IconShieldPlus,
   IconNetwork,
   IconTerminal,
   IconFile,
@@ -23,6 +24,7 @@ import {
   IconUser,
   IconNote,
   IconCheck,
+  IconTarget,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import type {
@@ -35,6 +37,9 @@ import type {
   AgentEvent,
 } from "@/lib/workbench/hunt-types";
 import type { Verdict, TestActionType } from "@/lib/workbench/types";
+import { useCoverageGaps } from "@/lib/workbench/detection-workflow/use-coverage-gaps";
+import type { CoverageGapInput } from "@/lib/workbench/detection-workflow/coverage-gap-engine";
+import { CoverageGapCard } from "@/components/workbench/coverage/coverage-gap-card";
 
 
 interface InvestigationWorkbenchProps {
@@ -43,6 +48,7 @@ interface InvestigationWorkbenchProps {
   onCreateInvestigation: (investigation: Investigation) => void;
   onUpdateInvestigation: (id: string, updates: Partial<Investigation>) => void;
   onAddAnnotation: (investigationId: string, text: string) => void;
+  onDraftDetection?: (investigation: Investigation) => void;
 }
 
 
@@ -181,6 +187,7 @@ export function InvestigationWorkbench({
   onCreateInvestigation,
   onUpdateInvestigation,
   onAddAnnotation,
+  onDraftDetection,
 }: InvestigationWorkbenchProps) {
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
@@ -1097,13 +1104,120 @@ export function InvestigationWorkbench({
                         );
                       })}
                     </div>
+
+                    {/* Draft Detection button */}
+                    {onDraftDetection && selectedCase && (
+                      <>
+                        <div className="h-4 w-px bg-[#2d3240]/60" />
+                        <button
+                          data-testid="investigation-draft-detection"
+                          onClick={() => onDraftDetection(selectedCase)}
+                          className="flex items-center gap-1.5 rounded-md border border-[#7c9aef]/25 bg-[#7c9aef]/10 px-2.5 py-1 text-[10px] font-medium text-[#7c9aef] hover:bg-[#7c9aef]/20 transition-colors"
+                        >
+                          <IconShieldPlus size={12} stroke={1.5} />
+                          Draft Detection
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               )}
             </div>
           )}
+
+          {/* ----------------------------------------------------------------- */}
+          {/* COVERAGE GAPS PANEL */}
+          {/* ----------------------------------------------------------------- */}
+          {selectedCase && (
+            <InvestigationCoverageGaps
+              investigation={selectedCase}
+              events={events}
+              onDraftDetection={onDraftDetection}
+            />
+          )}
         </div>
       </div>
+    </div>
+  );
+}
+
+
+function InvestigationCoverageGaps({
+  investigation,
+  events,
+  onDraftDetection,
+}: {
+  investigation: Investigation;
+  events: AgentEvent[];
+  onDraftDetection?: (investigation: Investigation) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  // Gather events in scope for this investigation
+  const scopeEvents = useMemo(
+    () =>
+      events.filter(
+        (e) =>
+          investigation.eventIds.includes(e.id) ||
+          investigation.sessionIds.includes(e.sessionId),
+      ),
+    [events, investigation.eventIds, investigation.sessionIds],
+  );
+
+  const gapInput = useMemo<CoverageGapInput>(
+    () => ({
+      events: scopeEvents,
+      investigations: [investigation],
+    }),
+    [scopeEvents, investigation],
+  );
+
+  const { gaps, dismiss, draftFromGap } = useCoverageGaps(gapInput, {
+    onDraftFromGap: onDraftDetection
+      ? () => onDraftDetection(investigation)
+      : undefined,
+  });
+
+  if (gaps.length === 0) return null;
+
+  return (
+    <div
+      className={cn(
+        "shrink-0 border-t border-[#2d3240]/60 bg-[#0b0d13] flex flex-col transition-all",
+        expanded ? "max-h-48" : "h-8",
+      )}
+    >
+      <div className="shrink-0 px-4 py-1.5 flex items-center justify-between border-b border-[#2d3240]/40">
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          className="flex items-center gap-1.5 text-[9px] font-semibold uppercase tracking-wider text-[#6f7f9a]/50 hover:text-[#ece7dc] transition-colors"
+        >
+          {expanded ? (
+            <IconChevronDown size={10} stroke={2} />
+          ) : (
+            <IconChevronUp size={10} stroke={2} />
+          )}
+          <IconTarget size={10} stroke={1.5} className="text-[#d4a84b]/60" />
+          Coverage Gaps
+          <span className="text-[#6f7f9a]/30 font-mono">
+            ({gaps.length})
+          </span>
+        </button>
+      </div>
+
+      {expanded && (
+        <div className="flex-1 overflow-y-auto px-4 py-2 space-y-2">
+          {gaps.map((gap) => (
+            <CoverageGapCard
+              key={gap.id}
+              gap={gap}
+              compact
+              onDraft={() => draftFromGap(gap)}
+              onDismiss={() => dismiss(gap.id)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

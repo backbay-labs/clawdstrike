@@ -477,10 +477,16 @@ function LogicTree({
 function DetectionSection({ detection }: { detection: SigmaDetection }) {
   const [hoveredSelection, setHoveredSelection] = useState<string | null>(null);
 
+  // Memoize the selections object separately so that the rest spread does not
+  // create a new reference on every render.  We key on the stringified detection
+  // to ensure the memo updates when any field (condition or selection maps) changes.
+  const detectionKey = useMemo(() => JSON.stringify(detection), [detection]);
+
   const groups = useMemo(() => {
     const { condition, ...selections } = detection;
     return parseConditionGroups(condition || "", selections as Record<string, unknown>);
-  }, [detection]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detectionKey]);
 
   return (
     <div className="flex flex-col gap-3">

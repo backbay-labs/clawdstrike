@@ -3,6 +3,7 @@
 // ---------------------------------------------------------------------------
 
 import type { Node } from "@xyflow/react";
+import type { FileType } from "./file-type-registry";
 
 // ---------------------------------------------------------------------------
 // Enums / tagged unions
@@ -63,7 +64,19 @@ export interface SwarmBoardNodeData {
   // UI state
   maximized?: boolean;
   editing?: boolean;
+  // Detection workflow metadata — optional extensions
+  artifactKind?: "detection_rule" | "evidence_pack" | "lab_run" | "conversion_output" | "publication_manifest";
+  documentId?: string;
+  evidencePackId?: string;
+  labRunId?: string;
+  publicationId?: string;
+  format?: FileType;
+  publishState?: "draft" | "validated" | "published" | "deployed";
+  coverageDelta?: { added: string[]; removed: string[] };
 }
+
+/** The set of detection artifact kinds a SwarmBoardNode can represent. */
+export type DetectionArtifactKind = NonNullable<SwarmBoardNodeData["artifactKind"]>;
 
 // ---------------------------------------------------------------------------
 // Edge types

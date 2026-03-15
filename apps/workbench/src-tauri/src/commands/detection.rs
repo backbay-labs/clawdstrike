@@ -1,7 +1,7 @@
-//! Detection engineering commands — Sigma, YARA, and OCSF validation stubs.
+//! Detection engineering commands — Sigma, YARA, and OCSF validation, testing, and conversion.
 //!
-//! These commands provide basic structural validation now. Full integration with
-//! `hunt_correlate` and `clawdstrike_ocsf` will be wired in Phase 1/2.
+//! Provides structural validation, Sigma rule compilation/testing via `hunt_correlate`,
+//! OCSF normalization via `clawdstrike_ocsf`, and Sigma-to-policy conversion.
 
 use super::workbench::{
     check_sensitive_path, export_policy_file, read_text_file_secure, validate_file_path,
@@ -45,22 +45,59 @@ pub struct OcsfValidationResponse {
     pub event_class: Option<String>,
 }
 
-// Phase 1 will add test-execution commands that consume these types.
-#[allow(dead_code)]
+// ---- Sigma Test/Compile Response Types ----
+
 #[derive(Debug, Serialize, Deserialize)]
-pub struct SigmaTestResult {
-    pub passed: bool,
-    pub findings: Vec<SigmaTestFinding>,
-    pub duration_ms: u64,
-    pub errors: Vec<String>,
+pub struct SigmaTestResponse {
+    pub matched: bool,
+    pub findings: Vec<SigmaTestFindingEntry>,
+    pub events_tested: usize,
+    pub events_matched: usize,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize)]
-pub struct SigmaTestFinding {
+pub struct SigmaTestFindingEntry {
+    pub title: String,
     pub severity: String,
-    pub message: String,
-    pub matched_event_index: Option<usize>,
+    pub evidence_refs: Vec<String>,
+    pub event_index: Option<usize>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SigmaCompileResponse {
+    pub valid: bool,
+    pub title: Option<String>,
+    pub compiled_artifact: Option<String>,
+    pub diagnostics: Vec<DetectionDiagnostic>,
+}
+
+// ---- OCSF Normalize Response Types ----
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OcsfNormalizeResponse {
+    pub valid: bool,
+    pub class_uid: Option<i64>,
+    pub event_class: Option<String>,
+    pub missing_fields: Vec<String>,
+    pub invalid_fields: Vec<OcsfFieldError>,
+    pub diagnostics: Vec<DetectionDiagnostic>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OcsfFieldError {
+    pub field: String,
+    pub error: String,
+}
+
+// ---- Sigma Convert Response Type ----
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SigmaConvertResponse {
+    pub success: bool,
+    pub target_format: String,
+    pub output: Option<String>,
+    pub diagnostics: Vec<DetectionDiagnostic>,
+    pub converter_version: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -88,19 +125,24 @@ fn check_source_size(source: &str) -> Result<(), String> {
     Ok(())
 }
 
-// TODO: This function handles `"strings"` and `/regex/` but does not account for
-// YARA hex string literals (`{ AB CD ?? }`) — braces inside hex strings are counted
-// as rule-level braces, which could cause false positives in brace-balance checks
-// for rules that use hex string literals. Acceptable for now; a full YARA lexer
-// would be needed to handle this correctly.
+/// Count structural (rule-level) braces in a YARA source line, ignoring braces
+/// inside `"strings"`, `/regex/` literals, and YARA hex string literals (`{ AB CD ?? }`).
+///
+/// Hex string context is detected by a preceding `=` before `{` — YARA hex strings
+/// are always assigned via `$hex = { ... }`. When we see `= {`, we enter hex-string
+/// mode and skip all content (including `{`/`}`) until the closing `}`.
 fn count_braces_outside_literals(line: &str) -> (i32, i32) {
     let mut opens = 0;
     let mut closes = 0;
     let mut in_string = false;
     let mut in_regex = false;
+    let mut in_hex_string = false;
     let mut escaped = false;
     let chars: Vec<char> = line.chars().collect();
     let mut i = 0;
+    // Track the last non-whitespace character before the current position to detect
+    // hex string assignment context (`= {`).
+    let mut last_non_ws: Option<char> = None;
 
     while i < chars.len() {
         let ch = chars[i];
@@ -117,12 +159,24 @@ fn count_braces_outside_literals(line: &str) -> (i32, i32) {
             continue;
         }
 
-        if !in_string && !in_regex && ch == '/' && chars.get(i + 1) == Some(&'/') {
+        // End-of-line comment
+        if !in_string && !in_regex && !in_hex_string && ch == '/' && chars.get(i + 1) == Some(&'/') {
             break;
+        }
+
+        // Hex string closing brace — exit hex mode, don't count the brace
+        if in_hex_string {
+            if ch == '}' {
+                in_hex_string = false;
+                last_non_ws = Some(ch);
+            }
+            i += 1;
+            continue;
         }
 
         if ch == '"' && !in_regex {
             in_string = !in_string;
+            last_non_ws = Some(ch);
             i += 1;
             continue;
         }
@@ -132,11 +186,13 @@ fn count_braces_outside_literals(line: &str) -> (i32, i32) {
             let next = chars.get(i + 1).copied().unwrap_or(' ');
             if !in_regex && !prev.is_alphanumeric() && next != '/' && next != '*' {
                 in_regex = true;
+                last_non_ws = Some(ch);
                 i += 1;
                 continue;
             }
             if in_regex {
                 in_regex = false;
+                last_non_ws = Some(ch);
                 i += 1;
                 while i < chars.len() && chars[i].is_ascii_alphabetic() {
                     i += 1;
@@ -147,12 +203,21 @@ fn count_braces_outside_literals(line: &str) -> (i32, i32) {
 
         if !in_string && !in_regex {
             if ch == '{' {
+                // Detect hex string context: the last non-whitespace char before `{` is `=`
+                if last_non_ws == Some('=') {
+                    in_hex_string = true;
+                    i += 1;
+                    continue;
+                }
                 opens += 1;
             } else if ch == '}' {
                 closes += 1;
             }
         }
 
+        if !ch.is_whitespace() {
+            last_non_ws = Some(ch);
+        }
         i += 1;
     }
 
@@ -260,7 +325,7 @@ pub fn validate_sigma_rule(source: String) -> Result<SigmaValidationResponse, St
                 });
             };
 
-            if !map.contains_key(&serde_yaml::Value::String("title".into())) {
+            if !map.contains_key(serde_yaml::Value::String("title".into())) {
                 diagnostics.push(DetectionDiagnostic {
                     severity: "error".into(),
                     message: "Missing required field: title".into(),
@@ -268,7 +333,7 @@ pub fn validate_sigma_rule(source: String) -> Result<SigmaValidationResponse, St
                     column: None,
                 });
             }
-            if !map.contains_key(&serde_yaml::Value::String("detection".into())) {
+            if !map.contains_key(serde_yaml::Value::String("detection".into())) {
                 diagnostics.push(DetectionDiagnostic {
                     severity: "error".into(),
                     message: "Missing required field: detection".into(),
@@ -276,7 +341,7 @@ pub fn validate_sigma_rule(source: String) -> Result<SigmaValidationResponse, St
                     column: None,
                 });
             }
-            if !map.contains_key(&serde_yaml::Value::String("logsource".into())) {
+            if !map.contains_key(serde_yaml::Value::String("logsource".into())) {
                 diagnostics.push(DetectionDiagnostic {
                     severity: "error".into(),
                     message: "Missing required field: logsource".into(),
@@ -285,7 +350,7 @@ pub fn validate_sigma_rule(source: String) -> Result<SigmaValidationResponse, St
                 });
             }
 
-            if let Some(detection) = map.get(&serde_yaml::Value::String("detection".into())) {
+            if let Some(detection) = map.get(serde_yaml::Value::String("detection".into())) {
                 if !detection.is_mapping() {
                     diagnostics.push(DetectionDiagnostic {
                         severity: "error".into(),
@@ -294,7 +359,7 @@ pub fn validate_sigma_rule(source: String) -> Result<SigmaValidationResponse, St
                         column: None,
                     });
                 } else if !detection.as_mapping().is_some_and(|det| {
-                    det.contains_key(&serde_yaml::Value::String("condition".into()))
+                    det.contains_key(serde_yaml::Value::String("condition".into()))
                 }) {
                     diagnostics.push(DetectionDiagnostic {
                         severity: "error".into(),
@@ -305,7 +370,7 @@ pub fn validate_sigma_rule(source: String) -> Result<SigmaValidationResponse, St
                 }
             }
 
-            if let Some(logsource) = map.get(&serde_yaml::Value::String("logsource".into())) {
+            if let Some(logsource) = map.get(serde_yaml::Value::String("logsource".into())) {
                 if !logsource.is_mapping() {
                     diagnostics.push(DetectionDiagnostic {
                         severity: "error".into(),
@@ -344,7 +409,8 @@ pub fn validate_yara_rule(source: String) -> Result<YaraValidationResponse, Stri
 
     let mut diagnostics = Vec::new();
     let mut rule_count = 0u32;
-    let mut current_rule: Option<(String, u32, bool)> = None;
+    // Track brace depth as i32 to detect negative depth (more closes than opens).
+    let mut current_rule: Option<(String, i32, bool)> = None;
 
     for (idx, line) in source.lines().enumerate() {
         let trimmed = line.trim();
@@ -376,7 +442,7 @@ pub fn validate_yara_rule(source: String) -> Result<YaraValidationResponse, Stri
                     .unwrap_or("unnamed")
                     .to_string();
                 let (opens, closes) = count_braces_outside_literals(line);
-                current_rule = Some((rule_name, (opens - closes).max(0) as u32, false));
+                current_rule = Some((rule_name, opens - closes, false));
                 rule_count += 1;
                 continue;
             }
@@ -388,10 +454,19 @@ pub fn validate_yara_rule(source: String) -> Result<YaraValidationResponse, Stri
             }
 
             let (opens, closes) = count_braces_outside_literals(line);
-            let next_depth = (*brace_depth as i32) + opens - closes;
-            *brace_depth = next_depth.max(0) as u32;
+            *brace_depth += opens - closes;
 
-            if next_depth <= 0 {
+            if *brace_depth < 0 {
+                diagnostics.push(DetectionDiagnostic {
+                    severity: "error".into(),
+                    message: format!(
+                        "YARA rule '{rule_name}' has unbalanced braces (more closing than opening)"
+                    ),
+                    line: Some(line_no),
+                    column: None,
+                });
+                current_rule = None;
+            } else if *brace_depth == 0 {
                 if !*saw_condition {
                     diagnostics.push(DetectionDiagnostic {
                         severity: "error".into(),
@@ -418,7 +493,7 @@ pub fn validate_yara_rule(source: String) -> Result<YaraValidationResponse, Stri
                 column: None,
             });
         }
-        if brace_depth > 0 {
+        if brace_depth != 0 {
             diagnostics.push(DetectionDiagnostic {
                 severity: "error".into(),
                 message: format!("YARA rule '{rule_name}' has unbalanced braces"),
@@ -613,20 +688,23 @@ pub async fn export_detection_file(
     check_source_size(&content)?;
     let _ = validate_file_path(&path)?;
 
-    let validation_message = match file_type.as_str() {
+    let validation_failed = match file_type.as_str() {
         "sigma_rule" => {
             let result = validate_sigma_rule(content.clone())?;
             if result.valid {
                 None
             } else {
-                Some(
-                    result
-                        .diagnostics
-                        .iter()
-                        .map(|d| format_detection_diagnostic(d))
-                        .collect::<Vec<_>>()
-                        .join("; "),
-                )
+                let details = result
+                    .diagnostics
+                    .iter()
+                    .map(format_detection_diagnostic)
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                Some(if details.is_empty() {
+                    "Validation failed".to_string()
+                } else {
+                    details
+                })
             }
         }
         "yara_rule" => {
@@ -634,14 +712,17 @@ pub async fn export_detection_file(
             if result.valid {
                 None
             } else {
-                Some(
-                    result
-                        .diagnostics
-                        .iter()
-                        .map(|d| format_detection_diagnostic(d))
-                        .collect::<Vec<_>>()
-                        .join("; "),
-                )
+                let details = result
+                    .diagnostics
+                    .iter()
+                    .map(format_detection_diagnostic)
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                Some(if details.is_empty() {
+                    "Validation failed".to_string()
+                } else {
+                    details
+                })
             }
         }
         "ocsf_event" => {
@@ -649,28 +730,29 @@ pub async fn export_detection_file(
             if result.valid {
                 None
             } else {
-                Some(
-                    result
-                        .diagnostics
-                        .iter()
-                        .filter(|d| d.severity == "error")
-                        .map(|d| format_detection_diagnostic(d))
-                        .collect::<Vec<_>>()
-                        .join("; "),
-                )
+                let details = result
+                    .diagnostics
+                    .iter()
+                    .filter(|d| d.severity == "error")
+                    .map(format_detection_diagnostic)
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                Some(if details.is_empty() {
+                    "Validation failed".to_string()
+                } else {
+                    details
+                })
             }
         }
         _ => Some("Unsupported detection file type".into()),
     };
 
-    if let Some(message) = validation_message {
-        if !message.is_empty() {
-            return Ok(ExportResponse {
-                success: false,
-                path,
-                message: format!("Validation failed: {message}"),
-            });
-        }
+    if let Some(message) = validation_failed {
+        return Ok(ExportResponse {
+            success: false,
+            path,
+            message: format!("Validation failed: {message}"),
+        });
     }
 
     let export_path = validate_file_path(&path)?;
@@ -693,5 +775,451 @@ pub async fn export_detection_file(
         success: true,
         path,
         message: "Detection file exported successfully".into(),
+    })
+}
+
+// ---- Sigma Testing & Compilation Commands ----
+
+/// Maximum events JSON payload size (8 MiB — events arrays can be larger than rules).
+const MAX_EVENTS_SIZE: usize = 8 * 1024 * 1024;
+
+/// Build a [`hunt_query::timeline::TimelineEvent`] from a user-provided JSON object.
+///
+/// Since `TimelineEvent` does not derive `Deserialize`, we construct it field-by-field
+/// from the parsed JSON value. Unrecognized or missing optional fields fall back to
+/// sensible defaults so that minimal test payloads work out of the box.
+fn json_to_timeline_event(
+    value: &serde_json::Value,
+) -> Result<hunt_query::timeline::TimelineEvent, String> {
+    let timestamp_str = value
+        .get("timestamp")
+        .and_then(|v| v.as_str())
+        .unwrap_or("2026-01-01T00:00:00Z");
+    let timestamp = chrono::DateTime::parse_from_rfc3339(timestamp_str)
+        .map(|dt| dt.with_timezone(&chrono::Utc))
+        .unwrap_or_else(|_| chrono::Utc::now());
+
+    let source = value
+        .get("source")
+        .and_then(|v| v.as_str())
+        .and_then(hunt_query::query::EventSource::parse)
+        .unwrap_or(hunt_query::query::EventSource::Receipt);
+
+    let kind = value
+        .get("kind")
+        .and_then(|v| v.as_str())
+        .and_then(hunt_query::timeline::TimelineEventKind::parse)
+        .unwrap_or(hunt_query::timeline::TimelineEventKind::GuardDecision);
+
+    let verdict = value
+        .get("verdict")
+        .and_then(|v| v.as_str())
+        .and_then(hunt_query::timeline::NormalizedVerdict::parse)
+        .unwrap_or(hunt_query::timeline::NormalizedVerdict::None);
+
+    Ok(hunt_query::timeline::TimelineEvent {
+        event_id: value.get("event_id").and_then(|v| v.as_str()).map(String::from),
+        timestamp,
+        source,
+        kind,
+        verdict,
+        severity: value.get("severity").and_then(|v| v.as_str()).map(String::from),
+        summary: value
+            .get("summary")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        process: value.get("process").and_then(|v| v.as_str()).map(String::from),
+        namespace: value.get("namespace").and_then(|v| v.as_str()).map(String::from),
+        pod: value.get("pod").and_then(|v| v.as_str()).map(String::from),
+        action_type: value.get("action_type").and_then(|v| v.as_str()).map(String::from),
+        signature_valid: value.get("signature_valid").and_then(|v| v.as_bool()),
+        raw: Some(value.clone()),
+    })
+}
+
+/// OCSF class name lookup matching the existing mapping in `validate_ocsf_event`.
+fn ocsf_class_name(uid: i64) -> Option<String> {
+    Some(match uid {
+        1001 => "File Activity".into(),
+        1007 => "Process Activity".into(),
+        2004 => "Detection Finding".into(),
+        4001 => "Network Activity".into(),
+        _ => return None,
+    })
+}
+
+#[tauri::command]
+pub fn test_sigma_rule(
+    source: String,
+    events_json: String,
+) -> Result<SigmaTestResponse, String> {
+    check_source_size(&source)?;
+    if events_json.len() > MAX_EVENTS_SIZE {
+        return Err(format!(
+            "Events JSON exceeds maximum size ({} bytes > {} bytes)",
+            events_json.len(),
+            MAX_EVENTS_SIZE
+        ));
+    }
+
+    let events_value: Vec<serde_json::Value> = serde_json::from_str(&events_json)
+        .map_err(|e| format!("Failed to parse events JSON array: {e}"))?;
+
+    let mut timeline_events = Vec::with_capacity(events_value.len());
+    for (idx, ev) in events_value.iter().enumerate() {
+        timeline_events.push(
+            json_to_timeline_event(ev)
+                .map_err(|e| format!("Failed to parse event at index {idx}: {e}"))?,
+        );
+    }
+
+    let events_tested = timeline_events.len();
+
+    let result = hunt_correlate::detection::test_rule_source("sigma", &source, &timeline_events)
+        .map_err(|e| format!("Sigma test error: {e}"))?;
+
+    let findings: Vec<SigmaTestFindingEntry> = result
+        .findings
+        .iter()
+        .map(|f| SigmaTestFindingEntry {
+            title: f.title.clone(),
+            severity: f.severity.clone(),
+            evidence_refs: f.evidence_refs.clone(),
+            event_index: None,
+        })
+        .collect();
+
+    let events_matched = findings.len();
+    let matched = !findings.is_empty();
+
+    Ok(SigmaTestResponse {
+        matched,
+        findings,
+        events_tested,
+        events_matched,
+    })
+}
+
+#[tauri::command]
+pub fn compile_sigma_rule(source: String) -> Result<SigmaCompileResponse, String> {
+    check_source_size(&source)?;
+
+    match hunt_correlate::detection::compile_rule_source("sigma", &source) {
+        Ok(compilation) => {
+            let title = compilation
+                .compiled_artifact
+                .get("title")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+
+            let artifact_json = serde_json::to_string_pretty(&compilation.compiled_artifact)
+                .unwrap_or_else(|_| "{}".to_string());
+
+            let mut diagnostics: Vec<DetectionDiagnostic> = compilation
+                .warnings
+                .iter()
+                .map(|w| DetectionDiagnostic {
+                    severity: "warning".into(),
+                    message: w.clone(),
+                    line: None,
+                    column: None,
+                })
+                .collect();
+
+            if !diagnostics.iter().any(|d| d.severity == "error") {
+                diagnostics.push(DetectionDiagnostic {
+                    severity: "info".into(),
+                    message: format!("Compiled as {} engine", compilation.engine_kind),
+                    line: None,
+                    column: None,
+                });
+            }
+
+            Ok(SigmaCompileResponse {
+                valid: true,
+                title,
+                compiled_artifact: Some(artifact_json),
+                diagnostics,
+            })
+        }
+        Err(e) => Ok(SigmaCompileResponse {
+            valid: false,
+            title: None,
+            compiled_artifact: None,
+            diagnostics: vec![DetectionDiagnostic {
+                severity: "error".into(),
+                message: format!("Sigma compilation failed: {e}"),
+                line: None,
+                column: None,
+            }],
+        }),
+    }
+}
+
+// ---- OCSF Normalization Command ----
+
+#[tauri::command]
+pub fn normalize_ocsf_event(json: String) -> Result<OcsfNormalizeResponse, String> {
+    check_source_size(&json)?;
+
+    let value: serde_json::Value = serde_json::from_str(&json).map_err(|e| {
+        format!("JSON parse error: {e}")
+    })?;
+
+    if !value.is_object() {
+        return Ok(OcsfNormalizeResponse {
+            valid: false,
+            class_uid: None,
+            event_class: None,
+            missing_fields: vec![],
+            invalid_fields: vec![],
+            diagnostics: vec![DetectionDiagnostic {
+                severity: "error".into(),
+                message: "OCSF event must be a JSON object".into(),
+                line: None,
+                column: None,
+            }],
+        });
+    }
+
+    let validation_errors = clawdstrike_ocsf::validate_ocsf_json(&value);
+
+    let mut missing_fields = Vec::new();
+    let mut invalid_fields = Vec::new();
+    let mut diagnostics = Vec::new();
+
+    for err in &validation_errors {
+        match err {
+            clawdstrike_ocsf::OcsfValidationError::MissingField { field } => {
+                missing_fields.push(field.to_string());
+                diagnostics.push(DetectionDiagnostic {
+                    severity: "error".into(),
+                    message: format!("Missing required OCSF field: {field}"),
+                    line: None,
+                    column: None,
+                });
+            }
+            clawdstrike_ocsf::OcsfValidationError::InvalidType { field, expected } => {
+                invalid_fields.push(OcsfFieldError {
+                    field: field.to_string(),
+                    error: format!("expected {expected}"),
+                });
+                diagnostics.push(DetectionDiagnostic {
+                    severity: "error".into(),
+                    message: format!("Invalid type for OCSF field {field}: expected {expected}"),
+                    line: None,
+                    column: None,
+                });
+            }
+            clawdstrike_ocsf::OcsfValidationError::TypeUidMismatch { expected, actual } => {
+                invalid_fields.push(OcsfFieldError {
+                    field: "type_uid".into(),
+                    error: format!("expected {expected}, got {actual}"),
+                });
+                diagnostics.push(DetectionDiagnostic {
+                    severity: "error".into(),
+                    message: format!("type_uid mismatch: expected {expected}, got {actual}"),
+                    line: None,
+                    column: None,
+                });
+            }
+            clawdstrike_ocsf::OcsfValidationError::InvalidSeverity { value: sev } => {
+                invalid_fields.push(OcsfFieldError {
+                    field: "severity_id".into(),
+                    error: format!("value {sev} is not a valid OCSF severity (0-6, 99)"),
+                });
+                diagnostics.push(DetectionDiagnostic {
+                    severity: "error".into(),
+                    message: format!(
+                        "severity_id {sev} is not a valid OCSF severity (0-6, 99)"
+                    ),
+                    line: None,
+                    column: None,
+                });
+            }
+        }
+    }
+
+    let class_uid = value
+        .get("class_uid")
+        .and_then(|v| v.as_i64());
+
+    let event_class = class_uid.and_then(ocsf_class_name).or_else(|| {
+        class_uid.map(|uid| format!("Unknown ({uid})"))
+    });
+
+    let valid = validation_errors.is_empty();
+
+    if valid {
+        diagnostics.push(DetectionDiagnostic {
+            severity: "info".into(),
+            message: "OCSF event passes all validation checks".into(),
+            line: None,
+            column: None,
+        });
+    }
+
+    Ok(OcsfNormalizeResponse {
+        valid,
+        class_uid,
+        event_class,
+        missing_fields,
+        invalid_fields,
+        diagnostics,
+    })
+}
+
+// ---- Sigma Conversion Command ----
+
+#[tauri::command]
+pub fn convert_sigma_rule(
+    source: String,
+    target_format: String,
+) -> Result<SigmaConvertResponse, String> {
+    check_source_size(&source)?;
+
+    match target_format.as_str() {
+        "native_policy" => convert_sigma_to_native_policy(&source),
+        other => Ok(SigmaConvertResponse {
+            success: false,
+            target_format: other.to_string(),
+            output: None,
+            diagnostics: vec![DetectionDiagnostic {
+                severity: "error".into(),
+                message: format!(
+                    "Unsupported target format '{other}'. Supported: native_policy"
+                ),
+                line: None,
+                column: None,
+            }],
+            converter_version: "0.1.0".into(),
+        }),
+    }
+}
+
+fn convert_sigma_to_native_policy(source: &str) -> Result<SigmaConvertResponse, String> {
+    // First, compile the Sigma rule to validate it
+    let compilation = hunt_correlate::detection::compile_rule_source("sigma", source)
+        .map_err(|e| format!("Sigma compilation failed: {e}"))?;
+
+    // Parse the Sigma YAML to extract metadata
+    let parsed: serde_json::Value = serde_yaml::from_str(source)
+        .map_err(|e| format!("Sigma YAML parse error: {e}"))?;
+
+    let title = parsed
+        .get("title")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Sigma Imported Rule");
+    let description = parsed
+        .get("description")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Converted from Sigma rule");
+    let level = parsed
+        .get("level")
+        .and_then(|v| v.as_str())
+        .unwrap_or("medium");
+    let status = parsed
+        .get("status")
+        .and_then(|v| v.as_str())
+        .unwrap_or("experimental");
+
+    // Extract logsource for guard mapping
+    let logsource = parsed.get("logsource");
+    let category = logsource
+        .and_then(|ls| ls.get("category"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("generic");
+    let product = logsource
+        .and_then(|ls| ls.get("product"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("any");
+
+    // Map Sigma level to policy severity
+    let policy_level = match level {
+        "critical" => "strict",
+        "high" => "strict",
+        "medium" => "default",
+        "low" | "informational" => "permissive",
+        _ => "default",
+    };
+
+    // Map logsource category to relevant guards
+    let guard_config = match category {
+        "process_creation" | "process_access" | "image_load" => {
+            format!(
+                "    shell_command:\n      blocked_commands:\n        - \"# Sigma: {title}\"\n      log_level: \"{level}\""
+            )
+        }
+        "file_event" | "file_access" | "file_creation" | "file_delete" | "file_rename" => {
+            format!(
+                "    forbidden_path:\n      paths:\n        - \"# Sigma: {title}\"\n      log_level: \"{level}\""
+            )
+        }
+        "network_connection" | "dns_query" | "dns" | "proxy" | "firewall" => {
+            format!(
+                "    egress_allowlist:\n      allowed_domains:\n        - \"# Sigma: {title}\"\n      log_level: \"{level}\""
+            )
+        }
+        _ => {
+            format!(
+                "    # No direct guard mapping for logsource category '{category}'\n    # Review and configure appropriate guards manually\n    shell_command:\n      log_level: \"{level}\""
+            )
+        }
+    };
+
+    let policy_yaml = format!(
+        r#"# Auto-generated from Sigma rule: {title}
+# Status: {status} | Level: {level} | Product: {product}
+# {description}
+#
+# Source compilation: {engine_kind} engine
+# NOTE: This is a structural template. Detection logic from the Sigma
+# rule's condition/selection blocks should be reviewed and mapped to
+# the appropriate guard parameters.
+
+schema_version: "1.5.0"
+extends: {policy_level}
+
+guards:
+{guard_config}
+"#,
+        engine_kind = compilation.engine_kind,
+    );
+
+    let mut diagnostics = Vec::new();
+    diagnostics.push(DetectionDiagnostic {
+        severity: "info".into(),
+        message: format!(
+            "Converted Sigma rule '{}' to native policy template (extends: {})",
+            title, policy_level
+        ),
+        line: None,
+        column: None,
+    });
+    diagnostics.push(DetectionDiagnostic {
+        severity: "warning".into(),
+        message: "Detection logic requires manual review — Sigma condition/selection semantics \
+                  are not fully translatable to guard configurations"
+            .into(),
+        line: None,
+        column: None,
+    });
+
+    for w in &compilation.warnings {
+        diagnostics.push(DetectionDiagnostic {
+            severity: "warning".into(),
+            message: w.clone(),
+            line: None,
+            column: None,
+        });
+    }
+
+    Ok(SigmaConvertResponse {
+        success: true,
+        target_format: "native_policy".into(),
+        output: Some(policy_yaml),
+        diagnostics,
+        converter_version: "0.1.0".into(),
     })
 }

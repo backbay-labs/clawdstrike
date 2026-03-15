@@ -44,10 +44,13 @@ import {
   saveDetectionFile,
   readDetectionFileByPath,
 } from "@/lib/tauri-bridge";
+import { getDocumentIdentityStore } from "./detection-workflow/document-identity-store";
 
 
 export interface PolicyTab {
   id: string;
+  /** Stable document identity — survives tab close/reopen, save, rename. */
+  documentId: string;
   name: string;
   filePath: string | null;
   dirty: boolean;
@@ -85,7 +88,14 @@ export interface BulkGuardUpdate {
 }
 
 export type MultiPolicyAction =
-  | { type: "NEW_TAB"; policy?: WorkbenchPolicy; filePath?: string | null; fileType?: FileType; yaml?: string }
+  | {
+    type: "NEW_TAB";
+    policy?: WorkbenchPolicy;
+    filePath?: string | null;
+    fileType?: FileType;
+    yaml?: string;
+    documentId?: string;
+  }
   | { type: "CLOSE_TAB"; tabId: string }
   | { type: "SWITCH_TAB"; tabId: string }
   | { type: "SET_SPLIT_MODE"; mode: SplitMode }
@@ -140,6 +150,27 @@ function createTabId(): string {
   return crypto.randomUUID();
 }
 
+function createDocumentId(): string {
+  return crypto.randomUUID();
+}
+
+/**
+ * Resolve or create a documentId for a file path.
+ * If the file has been opened before, returns its existing documentId.
+ * Otherwise creates a new one and registers the alias.
+ */
+function resolveDocumentId(filePath: string | null): string {
+  if (!filePath) return createDocumentId();
+
+  const store = getDocumentIdentityStore();
+  const existing = store.resolve(filePath);
+  if (existing) return existing;
+
+  const newId = createDocumentId();
+  store.register(filePath, newId);
+  return newId;
+}
+
 function emptyValidation(): ValidationResult {
   return {
     valid: true,
@@ -152,6 +183,7 @@ function emptyNativeValidation(): NativeValidationState {
   return {
     guardErrors: {},
     topLevelErrors: [],
+    topLevelWarnings: [],
     loading: false,
     valid: null,
   };
@@ -403,7 +435,7 @@ function evaluateTabSource(
   };
 }
 
-function createDefaultTab(id?: string, fileType?: FileType): PolicyTab {
+function createDefaultTab(id?: string, fileType?: FileType, documentId?: string): PolicyTab {
   const nextFileType = fileType ?? "clawdstrike_policy";
   const yaml = isPolicyFileType(nextFileType)
     ? policyToYaml(DEFAULT_POLICY)
@@ -417,6 +449,7 @@ function createDefaultTab(id?: string, fileType?: FileType): PolicyTab {
   );
   return {
     id: id ?? createTabId(),
+    documentId: documentId ?? createDocumentId(),
     name,
     filePath: null,
     dirty: false,
@@ -435,6 +468,7 @@ function createTabFromPolicy(policy: WorkbenchPolicy, filePath?: string | null, 
   const yaml = policyToYaml(policy);
   return {
     id: createTabId(),
+    documentId: resolveDocumentId(filePath ?? null),
     name: policy.name || "Untitled",
     filePath: filePath ?? null,
     dirty: false,
@@ -753,7 +787,7 @@ function multiPolicyReducer(state: MultiPolicyState, action: MultiPolicyAction):
       if (action.policy) {
         newTab = createTabFromPolicy(action.policy, action.filePath, action.fileType);
       } else if (action.yaml) {
-        newTab = createDefaultTab(undefined, action.fileType);
+        newTab = createDefaultTab(undefined, action.fileType, action.documentId);
         newTab = applySourceToTab(newTab, action.yaml, {
           dirty: false,
           nameFallback: FILE_TYPE_REGISTRY[action.fileType ?? newTab.fileType].label,
@@ -761,7 +795,7 @@ function multiPolicyReducer(state: MultiPolicyState, action: MultiPolicyAction):
         });
         newTab._cleanSnapshot = takeTabSnapshot(newTab);
       } else {
-        newTab = createDefaultTab(undefined, action.fileType);
+        newTab = createDefaultTab(undefined, action.fileType, action.documentId);
       }
       return {
         ...state,
@@ -855,6 +889,7 @@ function multiPolicyReducer(state: MultiPolicyState, action: MultiPolicyAction):
       const duped: PolicyTab = {
         ...source,
         id: createTabId(),
+        documentId: createDocumentId(), // New document identity for duplicates
         name: `${source.name} (copy)`,
         filePath: null,
         dirty: true,
@@ -918,19 +953,27 @@ function multiPolicyReducer(state: MultiPolicyState, action: MultiPolicyAction):
     case "OPEN_TAB_OR_SWITCH": {
       const existing = state.tabs.find((t) => t.filePath === action.filePath);
       if (existing) {
+        // If content hasn't changed, just switch to the existing tab without
+        // resetting documentId, undo history, or other metadata.
+        if (existing.yaml === action.yaml && existing.fileType === action.fileType) {
+          return { ...state, activeTabId: existing.id };
+        }
+        // Content changed on disk — replace but preserve documentId
         return {
           ...state,
-          tabs: state.tabs.map((tab) =>
-            tab.id === existing.id
-              ? replaceTabFromOpenedFile(tab, action.filePath, action.fileType, action.yaml, action.name)
-              : tab,
-          ),
+          tabs: state.tabs.map((tab) => {
+            if (tab.id !== existing.id) return tab;
+            const replaced = replaceTabFromOpenedFile(tab, action.filePath, action.fileType, action.yaml, action.name);
+            return { ...replaced, documentId: existing.documentId };
+          }),
           activeTabId: existing.id,
         };
       }
       if (state.tabs.length >= MAX_TABS) return state;
+      // Resolve documentId from alias store so reopened files keep their identity
+      const resolvedDocId = resolveDocumentId(action.filePath);
       const newTab = replaceTabFromOpenedFile(
-        createDefaultTab(undefined, action.fileType),
+        createDefaultTab(undefined, action.fileType, resolvedDocId),
         action.filePath,
         action.fileType,
         action.yaml,
@@ -1010,7 +1053,9 @@ function multiPolicyReducer(state: MultiPolicyState, action: MultiPolicyAction):
           break;
         }
 
-        const restored = applySourceToTab(createDefaultTab(entry.tabId, entry.fileType), entry.yaml, {
+        // Resolve documentId for restored tabs via alias store
+        const restoredDocId = resolveDocumentId(entry.filePath);
+        const restored = applySourceToTab(createDefaultTab(entry.tabId, entry.fileType, restoredDocId), entry.yaml, {
           dirty: true,
           filePath: entry.filePath,
           nameFallback: entry.policyName || "Recovered Policy",
@@ -1081,7 +1126,7 @@ function toWorkbenchState(state: MultiPolicyState): WorkbenchState {
       comparisonYaml: "",
       filePath: null,
       dirty: false,
-      nativeValidation: { guardErrors: {}, topLevelErrors: [], loading: false, valid: null },
+      nativeValidation: { guardErrors: {}, topLevelErrors: [], topLevelWarnings: [], loading: false, valid: null },
       _undoPast: [],
       _undoFuture: [],
       _cleanSnapshot: null,
@@ -1109,6 +1154,8 @@ function toWorkbenchState(state: MultiPolicyState): WorkbenchState {
 
 interface PersistedTab {
   id: string;
+  /** Stable document identity — persisted so restored tabs keep their documentId. */
+  documentId?: string;
   name: string;
   filePath: string | null;
   yaml: string;
@@ -1129,6 +1176,7 @@ function persistTabs(state: MultiPolicyState): void {
         const sensitiveFieldsStripped = sanitized.sensitiveFieldsStripped;
         return {
           id: t.id,
+          documentId: t.documentId,
           name: t.name,
           filePath: sensitiveFieldsStripped ? null : t.filePath,
           yaml: sanitized.yaml,
@@ -1166,7 +1214,9 @@ function loadPersistedTabs(): MultiPolicyState | null {
 
     const tabs: PolicyTab[] = validPersistedTabs.map((pt) => {
       const fileType = pt.fileType ?? "clawdstrike_policy";
-      const hydrated = applySourceToTab(createDefaultTab(pt.id, fileType), pt.yaml, {
+      // Migration: legacy tabs without documentId get one resolved from filePath or generated fresh
+      const documentId = pt.documentId ?? resolveDocumentId(pt.filePath);
+      const hydrated = applySourceToTab(createDefaultTab(pt.id, fileType, documentId), pt.yaml, {
         dirty: false,
         filePath: pt.filePath,
         nameFallback: pt.name || FILE_TYPE_REGISTRY[fileType].label,
@@ -1502,6 +1552,8 @@ export function MultiPolicyProvider({ children }: { children: ReactNode }) {
         currentTab.name,
       );
       if (!savedPath) return;
+      // Register alias so reopening this path resolves the same documentId
+      getDocumentIdentityStore().register(savedPath, currentTab.documentId);
       multiDispatch({ type: "SET_FILE_PATH", path: savedPath });
       multiDispatch({ type: "MARK_CLEAN" });
       pushRecentFile(savedPath);

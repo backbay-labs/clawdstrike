@@ -650,6 +650,7 @@ dependencies = [
  "hex",
  "hostname",
  "hunt-correlate",
+ "hunt-query",
  "hush-core",
  "iota_stronghold",
  "libc",

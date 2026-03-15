@@ -1,7 +1,30 @@
 # Detection Engineering IDE — Architectural Index
 
 > Synthesized from 13-agent codebase and competitive landscape analysis.
-> Last updated: 2026-03-14
+> Last updated: 2026-03-15
+
+## 0. Current Status Note
+
+This index and the original companion docs describe the baseline expansion from a policy editor into a multi-format detection IDE. Since then, the workbench has already shipped substantial parts of that plan:
+
+- typed detection tabs and format-aware open/save
+- Sigma, YARA, and OCSF editor surfaces
+- mounted command palette, explorer, problems panel, and ATT&CK heatmap
+- Hunt, Simulate, and Swarm Board surfaces that are now relevant to the next planning wave
+
+**The Detection Lab implementation is now complete (2026-03-15).** All six phases (0-5) from the implementation plan have been delivered. The detection-workflow module provides 25 source files with a barrel export at `detection-workflow/index.ts` covering types, adapters (policy, sigma, yara, ocsf), stores (document identity, evidence pack, lab run, publication), services (draft generation, explainability, coverage gap discovery, evidence redaction), hooks (draft detection, evidence packs, lab execution, publication, coverage gaps, swarm launch), and swarm integration (detection nodes, session templates, receipt linking).
+
+Reference documents:
+
+- [`DETECTION-LAB-ARCHITECTURE.md`](./DETECTION-LAB-ARCHITECTURE.md) -- architecture
+- [`DETECTION-LAB-IMPLEMENTATION.md`](./DETECTION-LAB-IMPLEMENTATION.md) -- implementation plan (complete)
+
+Recommended reading order now:
+
+1. this index
+2. [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the original baseline assumptions
+3. [`DETECTION-LAB-ARCHITECTURE.md`](./DETECTION-LAB-ARCHITECTURE.md) for the current code-grounded extension
+4. [`DETECTION-LAB-IMPLEMENTATION.md`](./DETECTION-LAB-IMPLEMENTATION.md) for the execution plan and completion status
 
 ---
 
@@ -47,12 +70,14 @@ React 19 + Tauri 2 + Vite 6 + CodeMirror 6
 
 ### Editor Model
 
-The current editor is policy-only:
-- `PolicyTab` interface in `multi-policy-store.tsx` — one tab = one policy
+Historical baseline when this index was first written:
+- `PolicyTab` interface in `multi-policy-store.tsx` was still the conceptual center of the editor model
 - Visual form editor (left) + YAML source (right) via `split-editor.tsx`
-- `yaml-editor.tsx` wraps CodeMirror 6 with ClawdStrike theme
-- `yaml-schema.ts` provides schema-driven autocompletion
+- `yaml-editor.tsx` wrapped CodeMirror 6 with the ClawdStrike theme
+- `yaml-schema.ts` provided schema-driven autocompletion
 - 3-layer validation: client-side schema check, Rust Tauri command, guard evaluation
+
+For the current shipped multi-format state and the next-wave planning assumptions, use the detection-lab docs linked above.
 
 ### Rust Backend
 
@@ -129,17 +154,26 @@ These colors pass WCAG AA contrast ratio on the workbench dark theme (`#1a1a2e` 
 
 ## 6. Document Index
 
-Companion documents (to be written separately in this directory):
+Companion documents in this directory:
 
 | Document | Purpose |
 |----------|---------|
 | `ROADMAP.md` | Phased implementation plan with milestones and deliverables |
 | `ARCHITECTURE.md` | Detailed technical architecture: component tree, state flow, Tauri command surface |
+| `DETECTION-LAB-ARCHITECTURE.md` | Repo-grounded architecture for the closed-loop detection workflow: hunt, replay, lab, swarm, publish, coverage, and explainability |
+| `DETECTION-LAB-IMPLEMENTATION.md` | Implementation slices, storage/API contracts, merge order, and verification plan for the next-wave features |
 | `UI-SPEC.md` | UI/UX specification with wireframes, interaction flows, and accessibility notes |
 | `RISK-ANALYSIS.md` | Full risk register with probability, impact, and mitigation plans |
 | `COMPETITIVE-LANDSCAPE.md` | Market research: existing tools, positioning, differentiation strategy |
 | `FORMAT-SPECS.md` | OCSF/YARA/Sigma format reference for editor integration (schemas, examples, validation rules) |
 | `PR-193-ANALYSIS.md` | PR #193 cherry-pick analysis: what to take, what to leave, merge strategy |
+
+Recommended reading order for the current initiative:
+
+1. `ARCHITECTURE.md`
+2. `ROADMAP.md`
+3. `DETECTION-LAB-ARCHITECTURE.md`
+4. `DETECTION-LAB-IMPLEMENTATION.md`
 
 ---
 

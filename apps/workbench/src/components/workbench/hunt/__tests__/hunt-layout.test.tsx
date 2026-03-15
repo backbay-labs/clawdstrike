@@ -49,6 +49,7 @@ vi.mock("@/lib/workbench/use-fleet-connection", async () => {
 });
 
 import { HuntLayout } from "../hunt-layout";
+import { MultiPolicyProvider } from "@/lib/workbench/multi-policy-store";
 
 async function flushMicrotasks() {
   await Promise.resolve();
@@ -96,7 +97,7 @@ describe("HuntLayout", () => {
   });
 
   it("stops polling while the stream is paused and resumes on live", async () => {
-    render(<HuntLayout />);
+    render(<MultiPolicyProvider><HuntLayout /></MultiPolicyProvider>);
     await flushMicrotasks();
 
     expect(fleetClientMocks.fetchAuditEvents).toHaveBeenCalledTimes(1);

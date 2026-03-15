@@ -78,6 +78,8 @@ export type NativeValidationErrors = Record<string, string[]>;
 export interface NativeValidationState {
   guardErrors: NativeValidationErrors;
   topLevelErrors: string[];
+  /** Non-error diagnostics (warnings/info) from native detection validation. */
+  topLevelWarnings: string[];
   loading: boolean;
   valid: boolean | null;
 }
@@ -464,6 +466,7 @@ function getInitialState(): WorkbenchState {
     nativeValidation: {
       guardErrors: {},
       topLevelErrors: [],
+      topLevelWarnings: [],
       loading: false,
       valid: null,
     },

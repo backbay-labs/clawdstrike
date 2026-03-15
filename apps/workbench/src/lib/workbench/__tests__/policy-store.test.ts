@@ -239,6 +239,7 @@ function makeInitialState(overrides?: Partial<WorkbenchState>): WorkbenchState {
     nativeValidation: {
       guardErrors: {},
       topLevelErrors: [],
+      topLevelWarnings: [],
       loading: false,
       valid: null,
     },

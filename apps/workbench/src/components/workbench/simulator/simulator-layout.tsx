@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import type { TestScenario, SimulationResult, TestActionType, Verdict, GuardSimResult, EvaluationPathStep, PostureReport, PostureBudget } from "@/lib/workbench/types";
-import { useWorkbench } from "@/lib/workbench/multi-policy-store";
+import { useWorkbench, useMultiPolicy } from "@/lib/workbench/multi-policy-store";
 import { useToast } from "@/components/ui/toast";
 import { simulatePolicy } from "@/lib/workbench/simulation-engine";
 import { PRE_BUILT_SCENARIOS } from "@/lib/workbench/pre-built-scenarios";
@@ -20,6 +21,11 @@ import {
 import { generateBatchReport, downloadReport, type BatchTestReport } from "@/lib/workbench/report-generator";
 import { generateScenariosFromPolicy } from "@/lib/workbench/scenario-generator";
 import { analyzeCoverage, type CoverageReport } from "@/lib/workbench/coverage-analyzer";
+import { isPolicyFileType, FILE_TYPE_REGISTRY, type FileType } from "@/lib/workbench/file-type-registry";
+import { useLabExecution } from "@/lib/workbench/detection-workflow/use-lab-execution";
+import { useSwarmLaunch } from "@/lib/workbench/detection-workflow/use-swarm-launch";
+import { useEvidencePacks } from "@/lib/workbench/detection-workflow/use-evidence-packs";
+import type { EvidencePack, LabRun } from "@/lib/workbench/detection-workflow/shared-types";
 import { ScenarioList } from "./scenario-list";
 import { ScenarioBuilder } from "./scenario-builder";
 import { ResultsPanel } from "./results-panel";
@@ -28,6 +34,9 @@ import { ReportDialog } from "./report-dialog";
 import { ObservePanel } from "./observe-panel";
 import { ThreatMatrix } from "./threat-matrix";
 import { TrustprintLab } from "./trustprint-lab";
+import { LabFormatHeader } from "./lab-format-header";
+import { LabRunHistoryPanel } from "./lab-run-history-panel";
+import { ExplainabilityPanel } from "@/components/workbench/editor/explainability-panel";
 import {
   IconFileReport,
   IconDownload,
@@ -38,13 +47,16 @@ import {
   IconShieldCheck,
   IconCircle,
   IconFingerprint,
+  IconFlask,
+  IconHistory,
+  IconTopologyStar3,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { SubTabBar, type SubTab } from "../shared/sub-tab-bar";
 import { ClaudeCodeHint } from "@/components/workbench/shared/claude-code-hint";
 
 
-type SimulatorTab = "scenarios" | "trustprint-lab" | "observe" | "coverage";
+type SimulatorTab = "scenarios" | "trustprint-lab" | "observe" | "coverage" | "lab" | "history";
 
 // Helpers to map between the workbench TestScenario format and the Rust
 // simulate_action command's flat parameter format.
@@ -236,6 +248,12 @@ const SIMULATOR_TABS: SubTab[] = [
   { id: "coverage", label: "Coverage", icon: IconGrid3x3 },
 ];
 
+/** Tabs shown for non-policy file types (Sigma, YARA, OCSF). */
+const NON_POLICY_TABS: SubTab[] = [
+  { id: "lab", label: "Lab", icon: IconFlask },
+  { id: "history", label: "History", icon: IconHistory },
+];
+
 function SimulatorStatusIndicators({
   threatLevel,
   engineConnected,
@@ -287,7 +305,9 @@ function SimulatorStatusIndicators({
 
 export function SimulatorLayout() {
   const { state } = useWorkbench();
+  const { activeTab: activeTabObj } = useMultiPolicy();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<SimulatorTab>("scenarios");
   const [scenarios, setScenarios] = useState<TestScenario[]>(PRE_BUILT_SCENARIOS);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -301,6 +321,39 @@ export function SimulatorLayout() {
   const [batchReport, setBatchReport] = useState<BatchTestReport | null>(null);
   const [autoScenarios, setAutoScenarios] = useState<TestScenario[]>([]);
   const [coverageReport, setCoverageReport] = useState<CoverageReport | null>(null);
+
+  // ---- Format awareness ----
+  const currentFileType = activeTabObj?.fileType;
+  const currentDocumentId = activeTabObj?.documentId;
+  const currentSource = activeTabObj?.yaml ?? "";
+  const isPolicy = currentFileType != null && isPolicyFileType(currentFileType);
+
+  // Lab execution hook — provides adapter-based execution for all formats
+  const labExecution = useLabExecution(currentDocumentId, currentFileType);
+  const evidencePacks = useEvidencePacks(currentDocumentId, currentFileType);
+
+  // Swarm launch hook — creates detection nodes on the SwarmBoard
+  const swarmLaunch = useSwarmLaunch({
+    documentId: currentDocumentId,
+    fileType: currentFileType,
+    tabId: activeTabObj?.id,
+    name: activeTabObj?.name,
+    filePath: activeTabObj?.filePath,
+    onNavigate: (path) => navigate(path),
+  });
+
+  // Determine which tabs to show based on file type
+  const visibleTabs = useMemo(
+    () => (isPolicy ? SIMULATOR_TABS : NON_POLICY_TABS),
+    [isPolicy],
+  );
+
+  // If the active tab is invalid for the current file type, reset it
+  const effectiveTab = useMemo(() => {
+    const validIds = visibleTabs.map((t) => t.id);
+    if (validIds.includes(activeTab)) return activeTab;
+    return validIds[0] as SimulatorTab;
+  }, [activeTab, visibleTabs]);
 
   const hasPostureConfig = Boolean(state.activePolicy.posture);
   const engineConnected = isDesktop();
@@ -328,6 +381,41 @@ export function SimulatorLayout() {
     setCumulativePosture(null);
     setPostureStateJson(null);
   }, []);
+
+  const selectedEvidencePack = useMemo(
+    () =>
+      evidencePacks.packs.find((pack) => pack.id === evidencePacks.selectedPackId)
+      ?? evidencePacks.packs[0]
+      ?? null,
+    [evidencePacks.packs, evidencePacks.selectedPackId],
+  );
+
+  const handleRunDetectionLab = useCallback(async () => {
+    if (!selectedEvidencePack || !currentSource) {
+      toast({
+        type: "warning",
+        title: "Lab run unavailable",
+        description: !currentSource ? "Open a detection document with source content" : "Select or create an evidence pack",
+      });
+      return;
+    }
+
+    const result = await labExecution.executeRun(selectedEvidencePack, currentSource);
+    if (!result) {
+      toast({
+        type: "error",
+        title: "Lab run failed",
+        description: "The selected detection could not be executed against the evidence pack.",
+      });
+      return;
+    }
+
+    toast({
+      type: result.run.summary.failed === 0 ? "success" : "warning",
+      title: result.run.summary.failed === 0 ? "Lab run passed" : "Lab run completed with failures",
+      description: `${result.run.summary.passed}/${result.run.summary.totalCases} cases passed`,
+    });
+  }, [currentSource, labExecution, selectedEvidencePack, toast]);
 
   const runScenario = useCallback(
     async (scenario: TestScenario): Promise<SimulationResult> => {
@@ -698,21 +786,31 @@ export function SimulatorLayout() {
 
   return (
     <div className="flex flex-col h-full min-h-0">
+      {/* Format-aware lab header */}
+      <LabFormatHeader
+        fileType={currentFileType}
+        lastRun={labExecution.lastRun}
+        isRunning={labExecution.isRunning}
+      />
+
       {/* Sub-tab bar with status indicators */}
       <SubTabBar
-        tabs={SIMULATOR_TABS}
-        activeTab={activeTab}
+        tabs={visibleTabs}
+        activeTab={effectiveTab}
         onTabChange={(id) => setActiveTab(id as SimulatorTab)}
       >
-        <SimulatorStatusIndicators
-          threatLevel={threatLevel}
-          engineConnected={engineConnected}
-        />
+        {isPolicy && (
+          <SimulatorStatusIndicators
+            threatLevel={threatLevel}
+            engineConnected={engineConnected}
+          />
+        )}
       </SubTabBar>
 
       {/* Tab content */}
       <div className="flex-1 min-h-0">
-        {activeTab === "scenarios" && (
+        {/* ---- Policy-specific tabs (unchanged behavior) ---- */}
+        {effectiveTab === "scenarios" && isPolicy && (
           <div className="flex h-full min-h-0 simulator-scan-overlay">
             {/* Left: Scenario list */}
             <div className="w-72 shrink-0 border-r border-[#2d3240] bg-[#0b0d13] flex flex-col max-lg:hidden relative z-[1]">
@@ -814,6 +912,15 @@ export function SimulatorLayout() {
                     >
                       <IconDownload size={13} stroke={1.5} />
                     </button>
+                    {swarmLaunch.canLaunch && (
+                      <button
+                        onClick={() => swarmLaunch.openReviewSwarm()}
+                        className="flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-md bg-[#131721] text-[#6f7f9a] text-[11px] font-medium hover:text-[#d4a84b] hover:bg-[#131721]/80 transition-colors"
+                        title="Open Review Swarm"
+                      >
+                        <IconTopologyStar3 size={13} stroke={1.5} />
+                      </button>
+                    )}
                   </div>
                 </div>
               )}
@@ -864,26 +971,238 @@ export function SimulatorLayout() {
           </div>
         )}
 
-        {activeTab === "trustprint-lab" && (
+        {effectiveTab === "trustprint-lab" && (
           <TrustprintLab />
         )}
 
-        {activeTab === "observe" && (
+        {effectiveTab === "observe" && (
           <ObservePanel />
         )}
 
-        {activeTab === "coverage" && (
+        {effectiveTab === "coverage" && (
           <ThreatMatrix scenarios={allScenarios} results={results} />
+        )}
+
+        {/* ---- Non-policy Lab tab ---- */}
+        {effectiveTab === "lab" && !isPolicy && (
+          <div className="flex h-full min-h-0">
+            <div className="flex-1 min-w-0">
+              <NonPolicyLabContent
+                fileType={currentFileType}
+                canExecute={labExecution.canExecute}
+                isRunning={labExecution.isRunning}
+                lastRun={labExecution.lastRun}
+                packs={evidencePacks.packs}
+                selectedPackId={selectedEvidencePack?.id ?? null}
+                onSelectPack={evidencePacks.selectPack}
+                onCreatePack={async () => {
+                  await evidencePacks.createPack();
+                }}
+                onRunLab={handleRunDetectionLab}
+                swarmLaunch={swarmLaunch}
+              />
+            </div>
+            {labExecution.lastRun &&
+              labExecution.lastRun.explainability.length > 0 && (
+                <div className="w-[280px] shrink-0 max-xl:hidden">
+                  <ExplainabilityPanel
+                    documentId={currentDocumentId}
+                    lastRun={labExecution.lastRun}
+                    baselineRun={
+                      labExecution.runHistory.length > 1
+                        ? labExecution.runHistory[1]
+                        : null
+                    }
+                  />
+                </div>
+              )}
+          </div>
+        )}
+
+        {/* ---- Non-policy History tab ---- */}
+        {effectiveTab === "history" && !isPolicy && (
+          <LabRunHistoryPanel
+            runs={labExecution.runHistory}
+            onDeleteRun={labExecution.deleteRun}
+          />
         )}
       </div>
 
-      {/* Report dialog */}
-      <ReportDialog
-        open={reportDialogOpen}
-        onOpenChange={setReportDialogOpen}
-        report={batchReport}
-        policyName={state.activePolicy.name}
-      />
+      {/* Report dialog (policy only) */}
+      {isPolicy && (
+        <ReportDialog
+          open={reportDialogOpen}
+          onOpenChange={setReportDialogOpen}
+          report={batchReport}
+          policyName={state.activePolicy.name}
+        />
+      )}
+    </div>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// Non-Policy Lab Content
+// ---------------------------------------------------------------------------
+
+function NonPolicyLabContent({
+  fileType,
+  canExecute,
+  isRunning,
+  lastRun,
+  packs,
+  selectedPackId,
+  onSelectPack,
+  onCreatePack,
+  onRunLab,
+  swarmLaunch,
+}: {
+  fileType: FileType | undefined;
+  canExecute: boolean;
+  isRunning: boolean;
+  lastRun: LabRun | null;
+  packs: EvidencePack[];
+  selectedPackId: string | null;
+  onSelectPack: (packId: string | null) => void;
+  onCreatePack: () => Promise<void>;
+  onRunLab: () => Promise<void>;
+  swarmLaunch: import("@/lib/workbench/detection-workflow/use-swarm-launch").SwarmLaunchActions;
+}) {
+  if (!fileType) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-[#6f7f9a] px-8">
+        <span className="text-[13px] font-medium">No document selected</span>
+      </div>
+    );
+  }
+
+  const descriptor = FILE_TYPE_REGISTRY[fileType];
+
+  if (!canExecute) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-[#6f7f9a] px-8">
+        <div className="w-16 h-16 rounded-2xl bg-[#131721] border border-[#2d3240]/60 flex items-center justify-center mb-5">
+          <IconFlask size={24} stroke={1.2} className="empty-state-icon text-[#6f7f9a]" />
+        </div>
+        <span className="text-[14px] font-medium text-[#6f7f9a] mb-1.5">
+          Lab not available
+        </span>
+        <span className="text-[12px] text-[#6f7f9a]/60 text-center leading-relaxed max-w-[320px] mb-4">
+          Lab execution is not yet available for{" "}
+          <span style={{ color: descriptor.iconColor }} className="font-semibold">
+            {descriptor.label}
+          </span>{" "}
+          files. A detection workflow adapter must be registered before lab runs
+          can be executed for this format.
+        </span>
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-[#2d3240] bg-[#131721]">
+          <div
+            className="w-2 h-2 rounded-full"
+            style={{ backgroundColor: descriptor.iconColor }}
+          />
+          <span className="text-[10px] font-mono text-[#6f7f9a]">
+            Adapter status: not registered
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-center justify-center h-full text-[#6f7f9a] px-8">
+      <div className="w-16 h-16 rounded-2xl bg-[#131721] border border-[#2d3240]/60 flex items-center justify-center mb-5">
+        <IconFlask
+          size={24}
+          stroke={1.2}
+          style={{ color: descriptor.iconColor }}
+          className={isRunning ? "animate-pulse" : ""}
+        />
+      </div>
+      <span className="text-[14px] font-medium text-[#ece7dc] mb-1.5">
+        {descriptor.label} Lab
+      </span>
+      <span className="text-[12px] text-[#6f7f9a]/60 text-center leading-relaxed max-w-[320px] mb-4">
+        {isRunning
+          ? "Lab run in progress..."
+          : lastRun
+            ? `Last run: ${lastRun.summary.passed}/${lastRun.summary.totalCases} passed`
+            : "Ready to run. Provide an evidence pack and execute a lab run to validate this detection."}
+      </span>
+      <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-[#2d3240] bg-[#131721]">
+        <IconCircle size={6} stroke={0} fill="#3dbf84" className="animate-pulse" />
+        <span className="text-[10px] font-mono text-[#3dbf84]/70">
+          Adapter registered
+        </span>
+      </div>
+      <div className="mt-4 w-full max-w-[340px] rounded-xl border border-[#2d3240] bg-[#0b0d13] p-4 flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-[10px] font-mono uppercase tracking-wider text-[#6f7f9a]">
+            Evidence Pack
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              void onCreatePack();
+            }}
+            className="rounded-md border border-[#2d3240] px-2 py-1 text-[10px] font-mono text-[#6f7f9a] hover:text-[#ece7dc] hover:border-[#d4a84b]/30 transition-colors"
+          >
+            New Pack
+          </button>
+        </div>
+        {packs.length > 0 ? (
+          <select
+            value={selectedPackId ?? ""}
+            onChange={(event) => onSelectPack(event.target.value || null)}
+            className="h-8 rounded-md border border-[#2d3240] bg-[#131721] px-2 text-[10px] text-[#ece7dc] focus:outline-none focus:border-[#d4a84b]/40"
+          >
+            {packs.map((pack) => {
+              const caseCount = Object.values(pack.datasets).reduce((sum, items) => sum + items.length, 0);
+              return (
+                <option key={pack.id} value={pack.id}>
+                  {pack.title} ({caseCount} cases)
+                </option>
+              );
+            })}
+          </select>
+        ) : (
+          <div className="rounded-md border border-dashed border-[#2d3240] px-3 py-2 text-[10px] text-[#6f7f9a] text-center">
+            No evidence packs yet. Draft from Hunt or create a pack to run this detection.
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={() => {
+            void onRunLab();
+          }}
+          disabled={isRunning || packs.length === 0 || !selectedPackId}
+          className={cn(
+            "h-8 rounded-lg text-[11px] font-medium transition-colors",
+            isRunning || packs.length === 0 || !selectedPackId
+              ? "bg-[#131721] text-[#6f7f9a] border border-[#2d3240] opacity-50 cursor-not-allowed"
+              : "bg-[#d4a84b] text-[#05060a] hover:bg-[#e8c36a]",
+          )}
+        >
+          {isRunning ? "Running Lab..." : "Run Detection Lab"}
+        </button>
+      </div>
+      {swarmLaunch.canLaunch && (
+        <button
+          type="button"
+          onClick={() => {
+            if (lastRun) {
+              swarmLaunch.openReviewSwarmWithRun(lastRun.id);
+            } else {
+              swarmLaunch.openReviewSwarm();
+            }
+          }}
+          className="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-mono text-[#6f7f9a] hover:text-[#d4a84b] border border-[#2d3240] hover:border-[#d4a84b]/30 rounded-md transition-colors"
+          title="Open Review Swarm"
+        >
+          <IconTopologyStar3 size={13} stroke={1.5} />
+          Open Review Swarm
+        </button>
+      )}
     </div>
   );
 }

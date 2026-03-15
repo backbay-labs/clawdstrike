@@ -477,6 +477,116 @@ export async function signReceiptPersistentNative(
 }
 
 
+// ---- Detection Lab Command Types ----
+
+export interface TauriSigmaTestResponse {
+  matched: boolean;
+  findings: Array<{
+    title: string;
+    severity: string;
+    evidence_refs: string[];
+    event_index: number | null;
+  }>;
+  events_tested: number;
+  events_matched: number;
+}
+
+export interface TauriSigmaCompileResponse {
+  valid: boolean;
+  title: string | null;
+  compiled_artifact: string | null;
+  diagnostics: TauriDetectionDiagnostic[];
+}
+
+export interface TauriOcsfNormalizeResponse {
+  valid: boolean;
+  class_uid: number | null;
+  event_class: string | null;
+  missing_fields: string[];
+  invalid_fields: Array<{ field: string; error: string }>;
+  diagnostics: TauriDetectionDiagnostic[];
+}
+
+export interface TauriSigmaConvertResponse {
+  success: boolean;
+  target_format: string;
+  output: string | null;
+  diagnostics: TauriDetectionDiagnostic[];
+  converter_version: string;
+}
+
+// ---- Detection Lab Command Wrappers ----
+
+/**
+ * Test a Sigma rule against a set of events via the Rust backend.
+ * Returns null when not running inside Tauri.
+ */
+export async function testSigmaRuleNative(
+  source: string,
+  eventsJson: string,
+): Promise<TauriSigmaTestResponse | null> {
+  if (!isDesktop()) return null;
+  try {
+    return await tauriInvoke<TauriSigmaTestResponse>("test_sigma_rule", { source, eventsJson });
+  } catch (err) {
+    console.warn("[tauri-commands] test_sigma_rule failed:", err);
+    return null;
+  }
+}
+
+/**
+ * Compile a Sigma rule and return diagnostics via the Rust backend.
+ * Returns null when not running inside Tauri.
+ */
+export async function compileSigmaRuleNative(
+  source: string,
+): Promise<TauriSigmaCompileResponse | null> {
+  if (!isDesktop()) return null;
+  try {
+    return await tauriInvoke<TauriSigmaCompileResponse>("compile_sigma_rule", { source });
+  } catch (err) {
+    console.warn("[tauri-commands] compile_sigma_rule failed:", err);
+    return null;
+  }
+}
+
+/**
+ * Normalize and validate an OCSF event via the Rust backend.
+ * Returns null when not running inside Tauri.
+ */
+export async function normalizeOcsfEventNative(
+  json: string,
+): Promise<TauriOcsfNormalizeResponse | null> {
+  if (!isDesktop()) return null;
+  try {
+    return await tauriInvoke<TauriOcsfNormalizeResponse>("normalize_ocsf_event", { json });
+  } catch (err) {
+    console.warn("[tauri-commands] normalize_ocsf_event failed:", err);
+    return null;
+  }
+}
+
+/**
+ * Convert a Sigma rule to a target format (e.g. SPL, KQL) via the Rust backend.
+ * Returns null when not running inside Tauri.
+ */
+export async function convertSigmaRuleNative(
+  source: string,
+  targetFormat: string,
+): Promise<TauriSigmaConvertResponse | null> {
+  if (!isDesktop()) return null;
+  try {
+    return await tauriInvoke<TauriSigmaConvertResponse>("convert_sigma_rule", {
+      source,
+      targetFormat,
+    });
+  } catch (err) {
+    console.warn("[tauri-commands] convert_sigma_rule failed:", err);
+    return null;
+  }
+}
+
+
 export interface TauriMcpStatusResponse {
   url: string;
   token: string;

@@ -13,6 +13,8 @@ import {
   type MitreTactic,
   type TechniqueCoverage,
 } from "@/lib/workbench/mitre-attack-data";
+import type { CoverageGapCandidate } from "@/lib/workbench/detection-workflow/shared-types";
+import { CoverageGapCard } from "./coverage-gap-card";
 import {
   IconShieldCheck,
   IconTarget,
@@ -24,6 +26,12 @@ import {
 
 interface MitreHeatmapProps {
   tabs: PolicyTab[];
+  /** Optional inferred gaps from the coverage gap engine. */
+  inferredGaps?: CoverageGapCandidate[];
+  /** Callback when drafting from an inferred gap cell. */
+  onDraftFromGap?: (gap: CoverageGapCandidate) => void;
+  /** Callback when dismissing an inferred gap cell. */
+  onDismissGap?: (gapId: string) => void;
 }
 
 interface TooltipState {
@@ -95,6 +103,19 @@ function computeCoverage(tabs: PolicyTab[]): Map<string, TechniqueCoverage> {
   return coverageMap;
 }
 
+/** Build a set of technique IDs that are inferred gaps. */
+function computeGapTechniques(gaps: CoverageGapCandidate[]): Map<string, CoverageGapCandidate> {
+  const map = new Map<string, CoverageGapCandidate>();
+  for (const gap of gaps) {
+    for (const tech of gap.techniqueHints) {
+      if (!map.has(tech)) {
+        map.set(tech, gap);
+      }
+    }
+  }
+  return map;
+}
+
 
 // ---- Intensity helpers ----
 
@@ -139,29 +160,45 @@ function blendedColor(rules: { name: string; fileType: FileType }[]): string {
   return maxColor;
 }
 
+/** Gap color for inferred gaps (amber/orange hatched). */
+const GAP_COLOR = "#d4a84b";
+
 
 // ---- Component ----
 
-export function MitreHeatmap({ tabs }: MitreHeatmapProps) {
+export function MitreHeatmap({ tabs, inferredGaps, onDraftFromGap, onDismissGap }: MitreHeatmapProps) {
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
   const [selectedTechnique, setSelectedTechnique] = useState<string | null>(null);
 
   const coverageMap = useMemo(() => computeCoverage(tabs), [tabs]);
 
-  const { coveredCount, totalCount, coveragePercent } = useMemo(() => {
+  const gapTechniqueMap = useMemo(
+    () => computeGapTechniques(inferredGaps ?? []),
+    [inferredGaps],
+  );
+
+  const { coveredCount, totalCount, coveragePercent, gapCount } = useMemo(() => {
     let covered = 0;
     for (const entry of coverageMap.values()) {
       if (entry.ruleCount > 0) covered++;
     }
     const total = MITRE_TECHNIQUES.length;
+    // Count gap techniques that are not already covered
+    let gaps = 0;
+    for (const techId of gapTechniqueMap.keys()) {
+      const entry = coverageMap.get(techId);
+      if (!entry || entry.ruleCount === 0) gaps++;
+    }
     return {
       coveredCount: covered,
       totalCount: total,
       coveragePercent: total > 0 ? Math.round((covered / total) * 100) : 0,
+      gapCount: gaps,
     };
-  }, [coverageMap]);
+  }, [coverageMap, gapTechniqueMap]);
 
-  // Group techniques by tactic
+  // Group techniques by tactic — deps intentionally empty because
+  // MITRE_TACTICS and MITRE_TECHNIQUES are module-level constants.
   const techniquesByTactic = useMemo(() => {
     const groups = new Map<MitreTactic, MitreTechnique[]>();
     for (const tactic of MITRE_TACTICS) {
@@ -196,6 +233,10 @@ export function MitreHeatmap({ tabs }: MitreHeatmapProps) {
 
   const selectedCoverage = selectedTechnique
     ? coverageMap.get(selectedTechnique) ?? null
+    : null;
+
+  const selectedGap = selectedTechnique
+    ? gapTechniqueMap.get(selectedTechnique) ?? null
     : null;
 
   const coverageColor =
@@ -260,6 +301,18 @@ export function MitreHeatmap({ tabs }: MitreHeatmapProps) {
             <span className="w-2 h-2 rounded-sm" style={{ backgroundColor: "rgba(61,191,132,0.9)" }} />
             3+
           </span>
+          {gapCount > 0 && (
+            <span className="flex items-center gap-1 ml-2 border-l border-[#2d3240]/40 pl-2">
+              <span
+                className="w-2 h-2 rounded-sm border"
+                style={{
+                  borderColor: `${GAP_COLOR}80`,
+                  background: `repeating-linear-gradient(45deg, transparent, transparent 1px, ${GAP_COLOR}20 1px, ${GAP_COLOR}20 2px)`,
+                }}
+              />
+              Inferred Gap ({gapCount})
+            </span>
+          )}
         </div>
       </div>
 
@@ -300,6 +353,7 @@ export function MitreHeatmap({ tabs }: MitreHeatmapProps) {
                     const coverage = coverageMap.get(tech.id);
                     const ruleCount = coverage?.ruleCount ?? 0;
                     const rules = coverage?.rules ?? [];
+                    const isGap = ruleCount === 0 && gapTechniqueMap.has(tech.id);
                     const opacity = intensityOpacity(ruleCount);
                     const fillColor = ruleCount > 0 ? blendedColor(rules) : "transparent";
                     const isSelected = selectedTechnique === tech.id;
@@ -309,7 +363,7 @@ export function MitreHeatmap({ tabs }: MitreHeatmapProps) {
                         key={tech.id}
                         className={cn(
                           "relative h-10 rounded-sm border transition-all duration-150 text-left px-1.5 py-1 group",
-                          ruleCount === 0
+                          ruleCount === 0 && !isGap
                             ? "bg-[#070810] border-[#2d3240]/30 hover:border-[#2d3240]/60"
                             : "hover:scale-[1.02] hover:shadow-md cursor-pointer",
                           isSelected && "ring-1 ring-[#d4a84b] scale-[1.02]",
@@ -318,11 +372,21 @@ export function MitreHeatmap({ tabs }: MitreHeatmapProps) {
                           backgroundColor:
                             ruleCount > 0
                               ? `color-mix(in srgb, ${fillColor} ${Math.round(opacity * 100)}%, #070810)`
-                              : "#070810",
+                              : isGap
+                                ? "#070810"
+                                : "#070810",
                           borderColor:
                             ruleCount > 0
                               ? `color-mix(in srgb, ${fillColor} 40%, transparent)`
-                              : undefined,
+                              : isGap
+                                ? `${GAP_COLOR}50`
+                                : undefined,
+                          // Hatched pattern for inferred gaps via background-image
+                          ...(isGap
+                            ? {
+                                backgroundImage: `repeating-linear-gradient(45deg, transparent, transparent 2px, ${GAP_COLOR}12 2px, ${GAP_COLOR}12 4px)`,
+                              }
+                            : {}),
                         }}
                         onClick={() => handleCellClick(tech.id)}
                         onMouseEnter={(e) => handleCellHover(tech.id, e)}
@@ -336,7 +400,9 @@ export function MitreHeatmap({ tabs }: MitreHeatmapProps) {
                             "text-[8px] font-mono leading-tight block truncate",
                             ruleCount > 0
                               ? "text-[#ece7dc]/80"
-                              : "text-[#6f7f9a]/40",
+                              : isGap
+                                ? "text-[#d4a84b]/60"
+                                : "text-[#6f7f9a]/40",
                           )}
                         >
                           {tech.name}
@@ -347,6 +413,14 @@ export function MitreHeatmap({ tabs }: MitreHeatmapProps) {
                             style={{ color: fillColor }}
                           >
                             {ruleCount}
+                          </span>
+                        )}
+                        {isGap && ruleCount === 0 && (
+                          <span
+                            className="absolute top-0.5 right-1 text-[6px] font-mono font-bold"
+                            style={{ color: GAP_COLOR }}
+                          >
+                            GAP
                           </span>
                         )}
                       </button>
@@ -394,7 +468,7 @@ export function MitreHeatmap({ tabs }: MitreHeatmapProps) {
               </span>
             </div>
 
-            {selectedCoverage.rules.length === 0 ? (
+            {selectedCoverage.rules.length === 0 && !selectedGap ? (
               <div className="px-4 py-4 text-center">
                 <span className="text-[10px] font-mono text-[#6f7f9a]/50">
                   No rules cover this technique
@@ -429,13 +503,32 @@ export function MitreHeatmap({ tabs }: MitreHeatmapProps) {
                 </div>
               </ScrollArea>
             )}
+
+            {/* Gap card when selecting a gap technique */}
+            {selectedGap && selectedCoverage.ruleCount === 0 && (
+              <div className="px-4 py-3 border-t border-[#2d3240]">
+                <span className="text-[9px] font-mono uppercase tracking-wider text-[#d4a84b]/70 block mb-2">
+                  Inferred Gap
+                </span>
+                <CoverageGapCard
+                  gap={selectedGap}
+                  compact
+                  onDraft={onDraftFromGap ? () => onDraftFromGap(selectedGap) : undefined}
+                  onDismiss={onDismissGap ? () => onDismissGap(selectedGap.id) : undefined}
+                />
+              </div>
+            )}
           </div>
         )}
       </div>
 
       {/* Floating tooltip */}
       {tooltip && !selectedTechnique && (
-        <HeatmapTooltip tooltip={tooltip} coverageMap={coverageMap} />
+        <HeatmapTooltip
+          tooltip={tooltip}
+          coverageMap={coverageMap}
+          gapTechniqueMap={gapTechniqueMap}
+        />
       )}
     </div>
   );
@@ -447,12 +540,16 @@ export function MitreHeatmap({ tabs }: MitreHeatmapProps) {
 function HeatmapTooltip({
   tooltip,
   coverageMap,
+  gapTechniqueMap,
 }: {
   tooltip: TooltipState;
   coverageMap: Map<string, TechniqueCoverage>;
+  gapTechniqueMap: Map<string, CoverageGapCandidate>;
 }) {
   const coverage = coverageMap.get(tooltip.techniqueId);
   if (!coverage) return null;
+
+  const isGap = coverage.ruleCount === 0 && gapTechniqueMap.has(tooltip.techniqueId);
 
   return (
     <div
@@ -472,7 +569,11 @@ function HeatmapTooltip({
             {coverage.technique.name}
           </span>
         </div>
-        {coverage.ruleCount === 0 ? (
+        {isGap ? (
+          <span className="text-[9px] font-mono text-[#d4a84b]/70">
+            Inferred gap — click to view details
+          </span>
+        ) : coverage.ruleCount === 0 ? (
           <span className="text-[9px] font-mono text-[#c45c5c]/70">
             No coverage
           </span>

@@ -220,9 +220,10 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
     [commitEvent],
   );
 
-  // Convenience getters
-  const classUid = (event.class_uid as number) ?? 0;
-  const severityId = (event.severity_id as number) ?? 0;
+  // Convenience getters — use null sentinel so explicit 0 is distinguishable
+  // from "not set".
+  const classUid = event.class_uid != null ? (event.class_uid as number) : null;
+  const severityId = event.severity_id != null ? (event.severity_id as number) : null;
   const isDetectionFinding = classUid === 2004;
 
   // Validation summary
@@ -241,7 +242,7 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
     if (parseError) {
       errors.push(`JSON parse error: ${parseError}`);
     }
-    if (!event.class_uid && event.class_uid !== 0) {
+    if (event.class_uid == null) {
       errors.push("Select an event class to continue.");
     }
     if (event.time === undefined || event.time === null) {
@@ -254,7 +255,7 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
   }, [event, parseError]);
 
   // Derive category info
-  const categoryInfo = CATEGORY_FROM_CLASS[classUid];
+  const categoryInfo = classUid != null ? CATEGORY_FROM_CLASS[classUid] : undefined;
 
   return (
     <ScrollArea className="h-full">
@@ -276,7 +277,7 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
 
         {/* Severity + Class summary bar */}
         <div className="flex items-center gap-2 px-4 pt-3 pb-0">
-          {classUid > 0 && (
+          {classUid != null && (
             <span
               className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[9px] font-mono border rounded"
               style={{
@@ -288,7 +289,7 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
               {CLASS_UID_OPTIONS.find((o) => o.value === classUid)?.label ?? `Class ${classUid}`}
             </span>
           )}
-          {event.severity_id != null && (
+          {severityId != null && (
             <span
               className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[9px] font-mono border rounded"
               style={{
@@ -310,12 +311,20 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
         <Section title="Event Class" icon={IconFileAnalytics} accentColor={ACCENT}>
           <SelectInput
             label="Event Class"
-            value={classUid ? String(classUid) : ""}
+            value={classUid != null ? String(classUid) : ""}
             options={CLASS_UID_OPTIONS}
             onChange={(v) => {
+              if (v === "") {
+                commitEvent((current) => {
+                  let updated = deepSet(current, ["class_uid"], undefined);
+                  updated = deepSet(updated, ["category_uid"], undefined);
+                  return updated;
+                });
+                return;
+              }
               const numVal = Number(v);
               commitEvent((current) => {
-                let updated = deepSet(current, ["class_uid"], isNaN(numVal) ? undefined : numVal);
+                let updated = deepSet(current, ["class_uid"], numVal);
                 const cat = CATEGORY_FROM_CLASS[numVal];
                 if (cat) {
                   updated = deepSet(updated, ["category_uid"], cat.uid);

@@ -9,6 +9,7 @@ import {
   IconCircleDot,
   IconShieldCheck,
   IconArrowRight,
+  IconFileExport,
 } from "@tabler/icons-react";
 import { emitAuditEvent } from "@/lib/workbench/local-audit";
 import {
@@ -22,7 +23,8 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { useFleetConnection } from "@/lib/workbench/use-fleet-connection";
-import { useWorkbench } from "@/lib/workbench/multi-policy-store";
+import { useWorkbench, useMultiPolicy } from "@/lib/workbench/multi-policy-store";
+import { isPolicyFileType } from "@/lib/workbench/file-type-registry";
 import {
   deployPolicy,
   validateRemotely,
@@ -38,6 +40,28 @@ const CONFIRM_TEXT = "deploy";
 export function DeployPanel() {
   const { connection, agents, remotePolicyInfo, refreshRemotePolicy } = useFleetConnection();
   const { state } = useWorkbench();
+  const { activeTab } = useMultiPolicy();
+
+  // Hard gate: non-policy tabs cannot use direct fleet deploy
+  const activeFileType = activeTab?.fileType;
+  if (activeFileType && !isPolicyFileType(activeFileType)) {
+    return (
+      <div className="flex flex-col gap-3 p-4 border-t border-[#2d3240]/60">
+        <div className="flex items-center justify-between">
+          <h3 className="text-[10px] font-semibold uppercase tracking-wider text-[#6f7f9a]">
+            Fleet Deployment
+          </h3>
+        </div>
+        <div className="flex items-center gap-2 px-3 py-2 rounded-md text-[10px] border bg-[#d4a84b]/5 border-[#d4a84b]/15 text-[#d4a84b]">
+          <IconFileExport size={12} stroke={1.5} />
+          <span>
+            Direct fleet deploy is only available for native policy files.
+            Use the <strong>Publish</strong> panel to convert and export this {activeTab?.fileType ?? "file"}.
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   const [deployOpen, setDeployOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);

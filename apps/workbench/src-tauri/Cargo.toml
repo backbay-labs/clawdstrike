@@ -24,6 +24,7 @@ chrono = { version = "0.4", features = ["serde"] }
 hush-core = { path = "../../../crates/libs/hush-core" }
 clawdstrike = { path = "../../../crates/libs/clawdstrike" }
 hunt-correlate = { path = "../../../crates/libs/hunt-correlate" }
+hunt-query = { path = "../../../crates/libs/hunt-query" }
 clawdstrike-ocsf = { path = "../../../crates/libs/clawdstrike-ocsf" }
 tauri-plugin-fs = "2"
 tauri-plugin-http = "2"

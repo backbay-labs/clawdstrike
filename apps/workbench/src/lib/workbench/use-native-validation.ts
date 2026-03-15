@@ -34,6 +34,7 @@ const GUARD_IDS: readonly string[] = [
 const EMPTY_NATIVE_VALIDATION: NativeValidationState = {
   guardErrors: {},
   topLevelErrors: [],
+  topLevelWarnings: [],
   loading: false,
   valid: null,
 };
@@ -56,7 +57,7 @@ function formatDetectionDiagnostic(diagnostic: TauriDetectionDiagnostic): string
 
 function parsePolicyValidationResponse(
   response: TauriValidationResponse,
-): Pick<NativeValidationState, "guardErrors" | "topLevelErrors" | "valid"> {
+): Pick<NativeValidationState, "guardErrors" | "topLevelErrors" | "topLevelWarnings" | "valid"> {
   const guardErrors: NativeValidationErrors = {};
   const topLevelErrors: string[] = [];
 
@@ -79,6 +80,7 @@ function parsePolicyValidationResponse(
   return {
     guardErrors,
     topLevelErrors,
+    topLevelWarnings: [],
     valid: response.valid,
   };
 }
@@ -87,9 +89,23 @@ function detectionDiagnosticsToState(
   valid: boolean,
   diagnostics: TauriDetectionDiagnostic[],
 ): NativeValidationState {
+  const topLevelErrors: string[] = [];
+  const topLevelWarnings: string[] = [];
+
+  for (const diag of diagnostics) {
+    const formatted = formatDetectionDiagnostic(diag);
+    if (diag.severity === "error") {
+      topLevelErrors.push(formatted);
+    } else {
+      // "warning" and "info" go to warnings so they don't block validation
+      topLevelWarnings.push(formatted);
+    }
+  }
+
   return {
     guardErrors: {},
-    topLevelErrors: diagnostics.map(formatDetectionDiagnostic),
+    topLevelErrors,
+    topLevelWarnings,
     loading: false,
     valid,
   };

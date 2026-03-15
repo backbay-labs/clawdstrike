@@ -212,6 +212,7 @@ describe("countNativeErrors", () => {
     const state: NativeValidationState = {
       guardErrors: {},
       topLevelErrors: [],
+      topLevelWarnings: [],
       loading: false,
       valid: true,
     };
@@ -222,6 +223,7 @@ describe("countNativeErrors", () => {
     const state: NativeValidationState = {
       guardErrors: {},
       topLevelErrors: ["error1", "error2"],
+      topLevelWarnings: [],
       loading: false,
       valid: false,
     };
@@ -235,6 +237,7 @@ describe("countNativeErrors", () => {
         egress_allowlist: ["error2", "error3"],
       },
       topLevelErrors: [],
+      topLevelWarnings: [],
       loading: false,
       valid: false,
     };
@@ -248,6 +251,7 @@ describe("countNativeErrors", () => {
         jailbreak: ["err2", "err3"],
       },
       topLevelErrors: ["parse error"],
+      topLevelWarnings: [],
       loading: false,
       valid: false,
     };
@@ -258,6 +262,7 @@ describe("countNativeErrors", () => {
     const state: NativeValidationState = {
       guardErrors: {},
       topLevelErrors: [],
+      topLevelWarnings: [],
       loading: true,
       valid: null,
     };

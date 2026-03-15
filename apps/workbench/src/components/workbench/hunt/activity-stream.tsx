@@ -13,6 +13,7 @@ import {
   IconMessage,
   IconSearch,
   IconAlertTriangle,
+  IconShieldPlus,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { VerdictBadge } from "@/components/workbench/shared/verdict-badge";
@@ -36,6 +37,7 @@ interface ActivityStreamProps {
   events: AgentEvent[];
   onEscalate: (eventIds: string[], note: string) => void;
   onFilterChange: (filters: StreamFilters) => void;
+  onDraftDetection?: (events: AgentEvent[]) => void;
   filters: StreamFilters;
   stats: StreamStats;
   live: boolean;
@@ -241,6 +243,7 @@ export function ActivityStream({
   events,
   onEscalate,
   onFilterChange,
+  onDraftDetection,
   filters,
   stats,
   live,
@@ -286,6 +289,15 @@ export function ActivityStream({
       );
     },
     [onEscalate],
+  );
+
+  const handleDraftFromCluster = useCallback(
+    (cluster: AnomalyCluster) => {
+      if (!onDraftDetection) return;
+      const clusterEvents = events.filter((e) => cluster.eventIds.includes(e.id));
+      onDraftDetection(clusterEvents);
+    },
+    [events, onDraftDetection],
   );
 
   const updateFilter = useCallback(
@@ -525,6 +537,7 @@ export function ActivityStream({
                     <ClusterSeparator
                       cluster={cluster}
                       onInvestigate={handleEscalateCluster}
+                      onDraftDetection={onDraftDetection ? handleDraftFromCluster : undefined}
                     />
                   )}
                   <EventRow
@@ -571,6 +584,20 @@ export function ActivityStream({
             color="#c45c5c"
             pulse={stats.anomalies > 0}
           />
+
+          {/* Draft Detection button — drafts a rule from all visible events */}
+          {onDraftDetection && filteredEvents.length > 0 && (
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              transition={{ type: "spring", bounce: 0.4, duration: 0.2 }}
+              data-testid="activity-stream-draft-detection"
+              onClick={() => onDraftDetection(filteredEvents)}
+              className="ml-auto flex items-center gap-1.5 rounded-md border border-[#7c9aef]/25 bg-[#7c9aef]/10 px-3 py-1.5 text-[10px] font-medium text-[#7c9aef] hover:bg-[#7c9aef]/20 transition-colors"
+            >
+              <IconShieldPlus size={13} stroke={1.5} />
+              Draft Detection
+            </motion.button>
+          )}
         </div>
       </div>
     </div>
@@ -812,9 +839,11 @@ function FlagBadge({ flag }: { flag: EventFlag }) {
 function ClusterSeparator({
   cluster,
   onInvestigate,
+  onDraftDetection,
 }: {
   cluster: AnomalyCluster;
   onInvestigate: (cluster: AnomalyCluster) => void;
+  onDraftDetection?: (cluster: AnomalyCluster) => void;
 }) {
   return (
     <div className="flex items-center gap-3 px-3 py-2 bg-[#c45c5c]/5 border-y border-[#c45c5c]/15">
@@ -826,18 +855,34 @@ function ClusterSeparator({
       <span className="text-[9px] text-[#c45c5c]/50">
         {cluster.eventIds.length} flagged events
       </span>
-      <motion.button
-        whileTap={{ scale: 0.92 }}
-        transition={{ type: "spring", bounce: 0.4, duration: 0.2 }}
-        onClick={(e) => {
-          e.stopPropagation();
-          onInvestigate(cluster);
-        }}
-        className="ml-auto flex items-center gap-1 rounded-md border border-[#c45c5c]/25 bg-[#c45c5c]/10 px-2.5 py-1 text-[10px] font-medium text-[#c45c5c] hover:bg-[#c45c5c]/20 transition-colors"
-      >
-        Investigate
-        <IconChevronRight size={11} stroke={1.5} />
-      </motion.button>
+      <div className="ml-auto flex items-center gap-2">
+        {onDraftDetection && (
+          <motion.button
+            whileTap={{ scale: 0.92 }}
+            transition={{ type: "spring", bounce: 0.4, duration: 0.2 }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDraftDetection(cluster);
+            }}
+            className="flex items-center gap-1 rounded-md border border-[#7c9aef]/25 bg-[#7c9aef]/10 px-2.5 py-1 text-[10px] font-medium text-[#7c9aef] hover:bg-[#7c9aef]/20 transition-colors"
+          >
+            <IconShieldPlus size={11} stroke={1.5} />
+            Draft
+          </motion.button>
+        )}
+        <motion.button
+          whileTap={{ scale: 0.92 }}
+          transition={{ type: "spring", bounce: 0.4, duration: 0.2 }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onInvestigate(cluster);
+          }}
+          className="flex items-center gap-1 rounded-md border border-[#c45c5c]/25 bg-[#c45c5c]/10 px-2.5 py-1 text-[10px] font-medium text-[#c45c5c] hover:bg-[#c45c5c]/20 transition-colors"
+        >
+          Investigate
+          <IconChevronRight size={11} stroke={1.5} />
+        </motion.button>
+      </div>
     </div>
   );
 }

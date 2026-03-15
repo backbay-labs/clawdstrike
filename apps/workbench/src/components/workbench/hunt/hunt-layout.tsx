@@ -9,6 +9,8 @@ import {
 } from "@/lib/workbench/hunt-engine";
 import { useFleetConnection } from "@/lib/workbench/use-fleet-connection";
 import { fetchAuditEvents } from "@/lib/workbench/fleet-client";
+import { useMultiPolicy } from "@/lib/workbench/multi-policy-store";
+import { useDraftDetection } from "@/lib/workbench/detection-workflow/use-draft-detection";
 import {
   IconActivity,
   IconChartBar,
@@ -118,6 +120,17 @@ export function HuntLayout() {
   const connected = connection.connected;
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Draft detection hook — bridges Hunt -> Editor
+  const { multiDispatch } = useMultiPolicy();
+  const {
+    draftFromEvents,
+    draftFromInvestigation,
+    draftFromPattern,
+  } = useDraftDetection({
+    dispatch: multiDispatch,
+    onNavigateToEditor: undefined, // Hunt is embedded; no navigation needed
+  });
+
   // Fetch events from fleet and convert + enrich
   const fetchEvents = useCallback(async () => {
     if (!connected) return;
@@ -217,6 +230,7 @@ export function HuntLayout() {
             events={events}
             filters={streamFilters}
             onFilterChange={setStreamFilters}
+            onDraftDetection={draftFromEvents}
             stats={streamStats}
             live={streamLive}
             onToggleLive={() => setStreamLive((prev) => !prev)}
@@ -264,6 +278,7 @@ export function HuntLayout() {
           <InvestigationWorkbench
             investigations={investigations}
             events={events}
+            onDraftDetection={draftFromInvestigation}
             onCreateInvestigation={(inv) => {
               setInvestigations((prev) => [inv, ...prev]);
             }}
@@ -297,7 +312,12 @@ export function HuntLayout() {
         )}
 
         {activeTab === "patterns" && (
-          <PatternMining patterns={patterns} events={events} onPatternsChange={setPatterns} />
+          <PatternMining
+            patterns={patterns}
+            events={events}
+            onPatternsChange={setPatterns}
+            onDraftDetection={draftFromPattern}
+          />
         )}
       </div>
     </div>

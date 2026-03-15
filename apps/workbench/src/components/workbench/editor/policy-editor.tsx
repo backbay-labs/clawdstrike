@@ -9,6 +9,9 @@ import { PolicyCommandCenter } from "@/components/workbench/editor/policy-comman
 import { VersionHistoryPanel } from "@/components/workbench/editor/version-history-panel";
 import { VersionDiffDialog } from "@/components/workbench/editor/version-diff-dialog";
 import { TestRunnerPanel } from "@/components/workbench/editor/test-runner-panel";
+import { EvidencePackPanel } from "@/components/workbench/editor/evidence-pack-panel";
+import { ExplainabilityPanel } from "@/components/workbench/editor/explainability-panel";
+import { PublishPanel } from "@/components/workbench/editor/publish-panel";
 import { ExplorerPanel } from "@/components/workbench/explorer/explorer-panel";
 import { MitreHeatmap } from "@/components/workbench/coverage/mitre-heatmap";
 import { GuardsPage } from "@/components/workbench/guards/guards-page";
@@ -42,11 +45,17 @@ import {
   IconAlertCircle,
   IconTarget,
   IconSearch,
+  IconPackage,
+  IconBulb,
+  IconFileExport,
+  IconTopologyStar3,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { ClaudeCodeHint } from "@/components/workbench/shared/claude-code-hint";
 import { TestRunnerProvider, useTestRunnerOptional } from "@/lib/workbench/test-store";
 import { simulatePolicy } from "@/lib/workbench/simulation-engine";
+import { useLabExecution } from "@/lib/workbench/detection-workflow/use-lab-execution";
+import { useSwarmLaunch } from "@/lib/workbench/detection-workflow/use-swarm-launch";
 import type { TestActionType, Verdict } from "@/lib/workbench/types";
 
 
@@ -335,7 +344,23 @@ export function PolicyEditor() {
   const [showCoverage, setShowCoverage] = useState(false);
   const [showExplorer, setShowExplorer] = useState(false);
   const [showProblems, setShowProblems] = useState(false);
+  const [evidenceOpen, setEvidenceOpen] = useState(false);
+  const [explainOpen, setExplainOpen] = useState(false);
+  const [publishOpen, setPublishOpen] = useState(false);
   const isPolicyTab = activeTab ? isPolicyFileType(activeTab.fileType) : true;
+
+  // Lab execution hook for explainability traces
+  const labExecution = useLabExecution(activeTab?.documentId, activeTab?.fileType);
+
+  // Swarm launch hook — creates detection nodes on the SwarmBoard
+  const swarmLaunch = useSwarmLaunch({
+    documentId: activeTab?.documentId,
+    fileType: activeTab?.fileType,
+    tabId: activeTab?.id,
+    name: activeTab?.name,
+    filePath: activeTab?.filePath,
+    onNavigate: (path) => navigate(path),
+  });
 
   // Activate panels based on URL search params on mount
   useEffect(() => {
@@ -464,6 +489,12 @@ export function PolicyEditor() {
         file,
         fileType: tab.fileType,
       }));
+      const nativeTopLevelWarnings = (tab.nativeValidation.topLevelWarnings ?? []).map((message) => ({
+        severity: "warning" as const,
+        message,
+        file,
+        fileType: tab.fileType,
+      }));
       const nativeGuardIssues = Object.entries(tab.nativeValidation.guardErrors).flatMap(
         ([guardId, messages]) =>
           messages.map((message) => ({
@@ -474,17 +505,16 @@ export function PolicyEditor() {
           })),
       );
 
-      return [...clientIssues, ...nativeTopLevel, ...nativeGuardIssues];
+      return [...clientIssues, ...nativeTopLevel, ...nativeTopLevelWarnings, ...nativeGuardIssues];
     });
   }, [tabs]);
 
-  // Use the active tab's ID as the policyId for version tracking
-  const policyId = activeTab?.id;
-  const { versions } = useVersionHistory(policyId);
+  const versionDocumentId = activeTab?.documentId;
+  const { versions } = useVersionHistory(versionDocumentId);
 
   // Auto-create versions on explicit save (dirty -> clean transition)
   useAutoVersion(
-    isPolicyTab ? policyId : undefined,
+    isPolicyTab ? versionDocumentId : undefined,
     state.yaml,
     state.activePolicy,
     isPolicyTab && state.dirty,
@@ -715,6 +745,58 @@ export function PolicyEditor() {
             >
               <IconHistory size={12} stroke={1.5} />
             </button>
+            <button
+              type="button"
+              onClick={() => setEvidenceOpen((prev) => !prev)}
+              className={cn(
+                "inline-flex items-center gap-1 px-2 py-1 text-[9px] font-mono rounded transition-colors",
+                evidenceOpen
+                  ? "bg-[#d4a84b]/15 text-[#d4a84b] border border-[#d4a84b]/30"
+                  : "text-[#6f7f9a] hover:text-[#ece7dc] border border-transparent hover:border-[#2d3240]",
+              )}
+              title="Evidence packs"
+              aria-label="Evidence packs"
+            >
+              <IconPackage size={12} stroke={1.5} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setExplainOpen((prev) => !prev)}
+              className={cn(
+                "inline-flex items-center gap-1 px-2 py-1 text-[9px] font-mono rounded transition-colors",
+                explainOpen
+                  ? "bg-[#d4a84b]/15 text-[#d4a84b] border border-[#d4a84b]/30"
+                  : "text-[#6f7f9a] hover:text-[#ece7dc] border border-transparent hover:border-[#2d3240]",
+              )}
+              title="Explainability traces"
+              aria-label="Explain"
+            >
+              <IconBulb size={12} stroke={1.5} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setPublishOpen((prev) => !prev)}
+              className={cn(
+                "inline-flex items-center gap-1 px-2 py-1 text-[9px] font-mono rounded transition-colors",
+                publishOpen
+                  ? "bg-[#3dbf84]/15 text-[#3dbf84] border border-[#3dbf84]/30"
+                  : "text-[#6f7f9a] hover:text-[#ece7dc] border border-transparent hover:border-[#2d3240]",
+              )}
+              title="Publish"
+              aria-label="Publish"
+            >
+              <IconFileExport size={12} stroke={1.5} />
+            </button>
+            <button
+              type="button"
+              onClick={() => swarmLaunch.openReviewSwarm()}
+              disabled={!swarmLaunch.canLaunch}
+              className="inline-flex items-center gap-1 px-2 py-1 text-[9px] font-mono text-[#6f7f9a] hover:text-[#d4a84b] border border-transparent hover:border-[#2d3240] rounded transition-colors disabled:opacity-40 disabled:hover:text-[#6f7f9a] disabled:hover:border-transparent"
+              title="Open Review Swarm"
+              aria-label="Open Review Swarm"
+            >
+              <IconTopologyStar3 size={12} stroke={1.5} />
+            </button>
           </div>
         </div>
 
@@ -791,7 +873,7 @@ export function PolicyEditor() {
           {historyOpen && !showHome && isPolicyTab && (
             <div className="w-[280px] shrink-0">
               <VersionHistoryPanel
-                policyId={policyId}
+                policyId={versionDocumentId}
                 currentYaml={state.yaml}
                 currentPolicy={state.activePolicy}
                 onRollback={handleRollback}
@@ -799,20 +881,43 @@ export function PolicyEditor() {
               />
             </div>
           )}
-        </div>
 
-        {/* Version history panel (collapsible right sidebar — responsive) */}
-        {historyOpen && !showHome && (
-          <div className="w-[280px] shrink-0 max-lg:hidden">
-            <VersionHistoryPanel
-              policyId={policyId}
-              currentYaml={state.yaml}
-              currentPolicy={state.activePolicy}
-              onRollback={handleRollback}
-              onCompare={handleCompare}
-            />
-          </div>
-        )}
+          {evidenceOpen && !showHome && (
+            <div className="w-[280px] shrink-0">
+              <EvidencePackPanel
+                documentId={activeTab?.documentId}
+                fileType={activeTab?.fileType}
+              />
+            </div>
+          )}
+
+          {explainOpen && !showHome && (
+            <div className="w-[280px] shrink-0">
+              <ExplainabilityPanel
+                documentId={activeTab?.documentId}
+                lastRun={labExecution.lastRun}
+                baselineRun={labExecution.runHistory.length > 1 ? labExecution.runHistory[1] : null}
+                onJumpToLine={(line) => {
+                  window.dispatchEvent(
+                    new CustomEvent("workbench:jump-to-line", { detail: { line } }),
+                  );
+                }}
+              />
+            </div>
+          )}
+
+          {publishOpen && !showHome && (
+            <div className="w-[280px] shrink-0 border-l border-[#2d3240]">
+              <PublishPanel
+                documentId={activeTab?.documentId}
+                fileType={activeTab?.fileType}
+                source={state.yaml}
+                validationValid={state.validation.valid}
+                lastLabRun={labExecution.lastRun}
+              />
+            </div>
+          )}
+        </div>
 
         <CommandPalette
           open={commandPaletteOpen}

@@ -13,12 +13,13 @@ interface CommandPaletteProps {
   onOpenFile: () => void;
   onValidate: () => void;
   onToggleCoverage: () => void;
+  onDraftDetectionFromHunt?: () => void;
 }
 
 interface Command {
   id: string;
   label: string;
-  category: "File" | "Navigate" | "Format";
+  category: "File" | "Navigate" | "Format" | "Hunt";
   shortcut?: string;
   /** Hex color for the format dot (new-file commands). */
   dotColor?: string;
@@ -27,7 +28,7 @@ interface Command {
 
 // ---- Helpers ----
 
-const CATEGORY_ORDER = ["File", "Navigate", "Format"] as const;
+const CATEGORY_ORDER = ["File", "Navigate", "Hunt", "Format"] as const;
 
 function buildCommands(
   onNewTab: (ft: FileType) => void,
@@ -36,6 +37,7 @@ function buildCommands(
   onValidate: () => void,
   onToggleCoverage: () => void,
   onClose: () => void,
+  onDraftDetectionFromHunt?: () => void,
 ): Command[] {
   const reg = FILE_TYPE_REGISTRY;
   return [
@@ -125,6 +127,19 @@ function buildCommands(
       action: () => { onNavigate("/compliance"); onClose(); },
     },
 
+    // Hunt
+    ...(onDraftDetectionFromHunt
+      ? [
+          {
+            id: "draft-detection-from-hunt",
+            label: "Draft Detection from Hunt",
+            category: "Hunt" as const,
+            dotColor: "#7c9aef",
+            action: () => { onDraftDetectionFromHunt(); onClose(); },
+          },
+        ]
+      : []),
+
     // Format
     {
       id: "validate",
@@ -152,6 +167,7 @@ export function CommandPalette({
   onOpenFile,
   onValidate,
   onToggleCoverage,
+  onDraftDetectionFromHunt,
 }: CommandPaletteProps) {
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -159,8 +175,8 @@ export function CommandPalette({
   const listRef = useRef<HTMLDivElement>(null);
 
   const commands = useMemo(
-    () => buildCommands(onNewTab, onNavigate, onOpenFile, onValidate, onToggleCoverage, onClose),
-    [onNewTab, onNavigate, onOpenFile, onValidate, onToggleCoverage, onClose],
+    () => buildCommands(onNewTab, onNavigate, onOpenFile, onValidate, onToggleCoverage, onClose, onDraftDetectionFromHunt),
+    [onNewTab, onNavigate, onOpenFile, onValidate, onToggleCoverage, onClose, onDraftDetectionFromHunt],
   );
 
   // Filter commands by query
