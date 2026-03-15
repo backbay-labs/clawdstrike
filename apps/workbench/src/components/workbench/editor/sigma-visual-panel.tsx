@@ -230,7 +230,7 @@ function levelColor(level: SigmaLevel): string {
     case "low":
       return "#3dbf84";
     case "informational":
-      return "#7c9aef";
+      return "#8b9dc3";
     default:
       return "#6f7f9a";
   }
@@ -290,7 +290,7 @@ export function SigmaVisualPanel({ yaml: yamlText, onYamlChange, readOnly }: Sig
 
   return (
     <ScrollArea className="h-full">
-      <div className="flex flex-col">
+      <div className="flex flex-col pb-6">
         {/* Format sigil */}
         <div className="flex items-center gap-2 px-4 pt-3 pb-1">
           <span className="text-base font-black tracking-tight" style={{ color: ACCENT }}>SIG</span>
@@ -490,8 +490,6 @@ export function SigmaVisualPanel({ yaml: yamlText, onYamlChange, readOnly }: Sig
           )}
         </Section>
 
-        {/* Bottom padding */}
-        <div className="h-6" />
       </div>
     </ScrollArea>
   );

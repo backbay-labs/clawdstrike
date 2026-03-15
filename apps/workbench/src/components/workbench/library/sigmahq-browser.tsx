@@ -34,9 +34,9 @@ const LEVEL_COLORS: Record<string, { bg: string; text: string; border: string }>
     border: "border-[#6f7f9a]/20",
   },
   low: {
-    bg: "bg-[#5cc5c4]/10",
-    text: "text-[#5cc5c4]",
-    border: "border-[#5cc5c4]/20",
+    bg: "bg-[#3dbf84]/10",
+    text: "text-[#3dbf84]",
+    border: "border-[#3dbf84]/20",
   },
   medium: {
     bg: "bg-[#d4a84b]/10",
@@ -1147,7 +1147,7 @@ export function SigmaHQBrowser({ onImport }: SigmaHQBrowserProps) {
               <div
                 key={rule.id}
                 className={cn(
-                  "group flex flex-col rounded-lg border border-[#2d3240] bg-[#0b0d13] p-4 hover:border-[#2d3240] hover:bg-[#0b0d13]/80 transition-all duration-200",
+                  "group flex flex-col rounded-lg border border-[#2d3240] bg-[#0b0d13] p-4 hover:border-[#3d4250] hover:bg-[#0b0d13]/80 transition-colors duration-150",
                   isExpanded && "col-span-1 sm:col-span-2 lg:col-span-3",
                 )}
               >

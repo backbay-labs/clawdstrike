@@ -210,9 +210,10 @@ function TabItem({
 
       {/* Format indicator dot */}
       <span
-        className="inline-block w-2.5 h-2.5 rounded-full mr-0.5 flex-shrink-0"
+        className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0"
         style={{ backgroundColor: FILE_TYPE_REGISTRY[tab.fileType ?? "clawdstrike_policy"].iconColor }}
         title={FILE_TYPE_REGISTRY[tab.fileType ?? "clawdstrike_policy"].label}
+        aria-label={FILE_TYPE_REGISTRY[tab.fileType ?? "clawdstrike_policy"].label}
       />
 
       {/* Dirty dot */}
@@ -238,9 +239,8 @@ function TabItem({
             onClose();
           }}
           className={cn(
-            "shrink-0 p-0.5 rounded hover:bg-[#c45c5c]/20 hover:text-[#c45c5c] transition-colors",
-            "opacity-0 group-hover:opacity-100",
-            isActive && "opacity-60",
+            "shrink-0 p-1 rounded hover:bg-[#c45c5c]/20 hover:text-[#c45c5c] transition-colors",
+            isActive ? "opacity-60 group-hover:opacity-100" : "opacity-0 group-hover:opacity-100",
           )}
           title="Close tab"
         >
@@ -579,6 +579,7 @@ export function PolicyTabBar({ isHomeActive, onHomeClick, onTabSwitch }: PolicyT
                     <span
                       className="inline-block w-2 h-2 rounded-full shrink-0"
                       style={{ backgroundColor: FILE_TYPE_REGISTRY[item.fileType].iconColor }}
+                      aria-hidden="true"
                     />
                     <span className="flex-1 text-left">{item.label}</span>
                     <span className="text-[#6f7f9a]/60 text-[10px]">{item.ext}</span>

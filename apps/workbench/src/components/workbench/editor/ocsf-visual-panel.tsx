@@ -243,7 +243,7 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
 
   return (
     <ScrollArea className="h-full">
-      <div className="flex flex-col">
+      <div className="flex flex-col pb-6">
         {/* Format sigil */}
         <div className="flex items-center gap-2 px-4 pt-3 pb-1">
           <span className="text-base font-black tracking-tight" style={{ color: ACCENT }}>OCSF</span>
@@ -527,8 +527,6 @@ export function OcsfVisualPanel({ json, onJsonChange, readOnly }: OcsfVisualPane
           </div>
         </Section>
 
-        {/* Bottom padding */}
-        <div className="h-6" />
       </div>
     </ScrollArea>
   );

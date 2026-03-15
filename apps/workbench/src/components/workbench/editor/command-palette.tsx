@@ -68,7 +68,7 @@ function buildCommands(
       label: "Open File\u2026",
       category: "File",
       shortcut: "\u2318O",
-      action: () => { console.log("[command-palette] open file (placeholder)"); onClose(); },
+      action: () => { onClose(); },
     },
 
     // Navigate
@@ -125,13 +125,13 @@ function buildCommands(
       label: "Validate Current File",
       category: "Format",
       shortcut: "\u2318\u21a9",
-      action: () => { console.log("[command-palette] validate (placeholder)"); onClose(); },
+      action: () => { onClose(); },
     },
     {
       id: "attack-coverage",
       label: "Show ATT&CK Coverage",
       category: "Format",
-      action: () => { console.log("[command-palette] ATT&CK coverage (placeholder)"); onClose(); },
+      action: () => { onClose(); },
     },
   ];
 }
@@ -220,6 +220,9 @@ export function CommandPalette({ open, onClose, onNewTab, onNavigate }: CommandP
           e.preventDefault();
           onClose();
           break;
+        case "Tab":
+          e.preventDefault(); // Trap focus inside palette
+          break;
       }
     },
     [flatItems.length, executeSelected, onClose],
@@ -233,7 +236,11 @@ export function CommandPalette({ open, onClose, onNewTab, onNavigate }: CommandP
       {open && (
         <>
           {/* Backdrop */}
-          <div
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.12 }}
             className="fixed inset-0 bg-black/50 z-50"
             onClick={onClose}
           />
@@ -243,6 +250,8 @@ export function CommandPalette({ open, onClose, onNewTab, onNavigate }: CommandP
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.97, y: -8 }}
             transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
+            role="dialog"
+            aria-modal="true"
             className="fixed top-[15vh] left-1/2 -translate-x-1/2 z-50 w-full max-w-[560px] max-h-[400px] bg-[#0b0d13] border border-[#2d3240] rounded-lg shadow-2xl flex flex-col overflow-hidden"
             onClick={(e) => e.stopPropagation()}
             onKeyDown={handleKeyDown}
@@ -268,7 +277,7 @@ export function CommandPalette({ open, onClose, onNewTab, onNavigate }: CommandP
             </div>
 
             {/* Command list */}
-            <div ref={listRef} className="overflow-y-auto flex-1">
+            <div ref={listRef} className="overflow-y-auto flex-1" role="listbox">
               {groups.length === 0 && (
                 <div className="px-4 py-6 text-center font-mono">
                   <div className="text-[12px] text-[#6f7f9a]">No matching commands</div>
@@ -291,12 +300,14 @@ export function CommandPalette({ open, onClose, onNewTab, onNavigate }: CommandP
                       <div
                         key={cmd.id}
                         data-active={isActive}
+                        role="option"
+                        aria-selected={isActive}
                         className={`flex items-center justify-between py-2 cursor-pointer transition-colors ${
                           isActive
                             ? "bg-[#131721]/60 text-[#ece7dc]"
                             : "text-[#ece7dc] hover:bg-[#131721]/60"
                         }`}
-                        style={isActive ? { borderLeft: '3px solid #d4a84b', paddingLeft: '13px', paddingRight: '16px' } : { paddingLeft: '16px', paddingRight: '16px' }}
+                        style={{ borderLeft: '3px solid transparent', paddingLeft: '13px', paddingRight: '16px', borderLeftColor: isActive ? '#d4a84b' : 'transparent' }}
                         onMouseEnter={() => setSelectedIndex(idx)}
                         onClick={() => cmd.action()}
                       >

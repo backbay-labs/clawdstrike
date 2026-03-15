@@ -224,7 +224,7 @@ export function MitreHeatmap({ tabs }: MitreHeatmapProps) {
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
               <IconShieldCheck size={13} stroke={1.5} style={{ color: coverageColor }} />
-              <span className="text-4xl font-black tabular-nums" style={{ color: coveragePercent > 50 ? '#3dbf84' : coveragePercent > 25 ? '#d4a84b' : '#c45c5c' }}>
+              <span className="text-4xl font-black tabular-nums" style={{ color: coverageColor }}>
                 {coveragePercent}%
               </span>
               <span className="text-[11px] font-mono text-[#6f7f9a] ml-2">

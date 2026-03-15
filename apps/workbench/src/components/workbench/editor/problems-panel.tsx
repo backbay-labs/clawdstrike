@@ -35,7 +35,7 @@ type SeverityFilter = "all" | "error" | "warning" | "info";
 const SEVERITY_ACCENT: Record<ProblemEntry["severity"], string> = {
   error: "#c45c5c",
   warning: "#d4a84b",
-  info: "#6f7f9a",
+  info: "#6b8ec9",
 };
 
 const SEVERITY_ICONS: Record<ProblemEntry["severity"], typeof IconAlertCircle> = {
@@ -174,8 +174,9 @@ function ProblemRow({ entry }: { entry: ProblemEntry }) {
         <span
           className="w-1.5 h-1.5 rounded-full shrink-0"
           style={{ backgroundColor: descriptor.iconColor }}
+          aria-label={descriptor.label}
         />
-        <span className="text-[10px] font-mono text-[#ece7dc] truncate max-w-[120px]">
+        <span className="text-[10px] font-mono text-[#ece7dc] truncate max-w-[120px]" title={entry.file}>
           {entry.file}
         </span>
         {entry.line != null && (

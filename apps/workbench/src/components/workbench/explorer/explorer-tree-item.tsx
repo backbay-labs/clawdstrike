@@ -122,6 +122,7 @@ export function ExplorerTreeItem({
         <span
           className="shrink-0 w-[7px] h-[7px] rounded-full"
           style={{ backgroundColor: descriptor.iconColor }}
+          aria-label={descriptor.label}
         />
       )}
 

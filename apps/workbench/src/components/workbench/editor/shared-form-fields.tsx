@@ -5,8 +5,8 @@
  * Tailwind classes, which avoids the JIT class-generation problem where
  * `focus:border-[${variable}]` never gets compiled.
  */
-import { useState } from "react";
-import { IconChevronRight } from "@tabler/icons-react";
+import { useState, useId } from "react";
+import { IconChevronRight, IconChevronDown } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 
 
@@ -58,11 +58,20 @@ export function Section({
           </span>
         )}
       </button>
-      {open && (
-        <div className="flex flex-col gap-3 px-4 pb-4 pt-1">
-          {children}
+      <div
+        className="grid transition-[grid-template-rows]"
+        style={{
+          gridTemplateRows: open ? '1fr' : '0fr',
+          transitionDuration: 'var(--duration-normal, 250ms)',
+          transitionTimingFunction: 'var(--ease-out-quart, cubic-bezier(0.25, 1, 0.5, 1))',
+        }}
+      >
+        <div className="overflow-hidden">
+          <div className="flex flex-col gap-3 px-4 pb-4 pt-1">
+            {children}
+          </div>
         </div>
-      )}
+      </div>
     </section>
   );
 }
@@ -70,9 +79,9 @@ export function Section({
 
 // ---- Field Label ----
 
-export function FieldLabel({ label, required }: { label: string; required?: boolean }) {
+export function FieldLabel({ label, required, htmlFor }: { label: string; required?: boolean; htmlFor?: string }) {
   return (
-    <label className="text-[10px] font-mono text-[#6f7f9a] uppercase tracking-wide">
+    <label htmlFor={htmlFor} className="text-[10px] font-semibold text-[#6f7f9a] uppercase tracking-[0.06em]">
       {label}
       {required && <span className="text-[#c45c5c] ml-0.5">*</span>}
     </label>
@@ -91,6 +100,7 @@ export function TextInput({
   readOnly,
   mono,
   accentColor,
+  id: idProp,
 }: {
   label: string;
   value: string;
@@ -100,13 +110,17 @@ export function TextInput({
   readOnly?: boolean;
   mono?: boolean;
   accentColor: string;
+  id?: string;
 }) {
   const [focused, setFocused] = useState(false);
+  const autoId = useId();
+  const id = idProp ?? autoId;
 
   return (
     <div className="flex flex-col gap-1">
-      <FieldLabel label={label} required={required} />
+      <FieldLabel label={label} required={required} htmlFor={id} />
       <input
+        id={id}
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -116,7 +130,7 @@ export function TextInput({
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         className={cn(
-          "bg-[#0b0d13] border border-[#2d3240] rounded text-[11px] text-[#ece7dc] px-2 py-1 outline-none transition-colors",
+          "bg-[#0b0d13] border border-[#2d3240] rounded text-[11px] text-[#ece7dc] px-2 py-1 transition-colors",
           readOnly && "opacity-60 cursor-default",
           mono && "font-mono",
         )}
@@ -136,6 +150,7 @@ export function TextArea({
   readOnly,
   rows = 3,
   accentColor,
+  id: idProp,
 }: {
   label: string;
   value: string;
@@ -144,13 +159,17 @@ export function TextArea({
   readOnly?: boolean;
   rows?: number;
   accentColor: string;
+  id?: string;
 }) {
   const [focused, setFocused] = useState(false);
+  const autoId = useId();
+  const id = idProp ?? autoId;
 
   return (
     <div className="flex flex-col gap-1">
-      <FieldLabel label={label} />
+      <FieldLabel label={label} htmlFor={id} />
       <textarea
+        id={id}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
@@ -160,7 +179,7 @@ export function TextArea({
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         className={cn(
-          "bg-[#0b0d13] border border-[#2d3240] rounded text-[11px] font-mono text-[#ece7dc] px-2 py-1.5 outline-none transition-colors resize-none leading-relaxed",
+          "bg-[#0b0d13] border border-[#2d3240] rounded text-[11px] font-mono text-[#ece7dc] px-2 py-1.5 transition-colors resize-none leading-relaxed",
           readOnly && "opacity-60 cursor-default",
         )}
       />
@@ -182,6 +201,7 @@ export function SelectInput({
   required,
   placeholder,
   accentColor,
+  id: idProp,
 }: {
   label: string;
   value: string;
@@ -191,40 +211,51 @@ export function SelectInput({
   required?: boolean;
   placeholder?: string;
   accentColor: string;
+  id?: string;
 }) {
   const [focused, setFocused] = useState(false);
+  const autoId = useId();
+  const id = idProp ?? autoId;
 
   return (
     <div className="flex flex-col gap-1">
-      <FieldLabel label={label} required={required} />
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={readOnly}
-        style={focused ? { borderColor: `${accentColor}80` } : undefined}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
-        className={cn(
-          "bg-[#0b0d13] border border-[#2d3240] rounded text-[11px] font-mono text-[#ece7dc] px-2 py-1 outline-none transition-colors appearance-none cursor-pointer",
-          readOnly && "opacity-60 cursor-default",
-        )}
-      >
-        {placeholder && <option value="">{placeholder}</option>}
-        {options.map((opt) => {
-          if (typeof opt === "string") {
+      <FieldLabel label={label} required={required} htmlFor={id} />
+      <div className="relative">
+        <select
+          id={id}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          disabled={readOnly}
+          style={focused ? { borderColor: `${accentColor}80` } : undefined}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          className={cn(
+            "bg-[#0b0d13] border border-[#2d3240] rounded text-[11px] font-mono text-[#ece7dc] px-2 py-1 pr-7 transition-colors appearance-none cursor-pointer w-full",
+            readOnly && "opacity-60 cursor-default",
+          )}
+        >
+          {placeholder && <option value="">{placeholder}</option>}
+          {options.map((opt) => {
+            if (typeof opt === "string") {
+              return (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              );
+            }
             return (
-              <option key={opt} value={opt}>
-                {opt}
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
               </option>
             );
-          }
-          return (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          );
-        })}
-      </select>
+          })}
+        </select>
+        <IconChevronDown
+          size={10}
+          stroke={1.5}
+          className="absolute right-2 top-1/2 -translate-y-1/2 text-[#6f7f9a]/50 pointer-events-none"
+        />
+      </div>
     </div>
   );
 }
