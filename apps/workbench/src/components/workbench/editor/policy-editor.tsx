@@ -912,7 +912,7 @@ export function PolicyEditor() {
                 documentId={activeTab?.documentId}
                 fileType={activeTab?.fileType}
                 source={state.yaml}
-                validationValid={state.validation.valid}
+                validationValid={state.validation.valid && state.nativeValidation.valid !== false}
                 lastLabRun={labExecution.lastRun}
               />
             </div>

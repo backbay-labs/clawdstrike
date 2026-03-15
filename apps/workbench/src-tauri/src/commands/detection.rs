@@ -131,12 +131,19 @@ fn check_source_size(source: &str) -> Result<(), String> {
 /// Hex string context is detected by a preceding `=` before `{` — YARA hex strings
 /// are always assigned via `$hex = { ... }`. When we see `= {`, we enter hex-string
 /// mode and skip all content (including `{`/`}`) until the closing `}`.
-fn count_braces_outside_literals(line: &str) -> (i32, i32) {
+/// Count structural `{` and `}` on a single line, skipping braces that appear inside
+/// string literals, regex literals, hex strings (`= { ... }`), line comments (`//`),
+/// and block comments (`/* ... */`).
+///
+/// `in_block_comment` is threaded through successive calls so that multi-line `/* */`
+/// comments are handled correctly.  The updated flag is returned alongside the counts.
+fn count_braces_outside_literals(line: &str, in_block_comment: bool) -> (i32, i32, bool) {
     let mut opens = 0;
     let mut closes = 0;
     let mut in_string = false;
     let mut in_regex = false;
     let mut in_hex_string = false;
+    let mut in_block = in_block_comment;
     let mut escaped = false;
     let chars: Vec<char> = line.chars().collect();
     let mut i = 0;
@@ -146,6 +153,17 @@ fn count_braces_outside_literals(line: &str) -> (i32, i32) {
 
     while i < chars.len() {
         let ch = chars[i];
+
+        // Inside a block comment — look only for the closing `*/`
+        if in_block {
+            if ch == '*' && chars.get(i + 1) == Some(&'/') {
+                in_block = false;
+                i += 2;
+            } else {
+                i += 1;
+            }
+            continue;
+        }
 
         if escaped {
             escaped = false;
@@ -162,6 +180,13 @@ fn count_braces_outside_literals(line: &str) -> (i32, i32) {
         // End-of-line comment
         if !in_string && !in_regex && !in_hex_string && ch == '/' && chars.get(i + 1) == Some(&'/') {
             break;
+        }
+
+        // Block comment opening
+        if !in_string && !in_regex && !in_hex_string && ch == '/' && chars.get(i + 1) == Some(&'*') {
+            in_block = true;
+            i += 2;
+            continue;
         }
 
         // Hex string closing brace — exit hex mode, don't count the brace
@@ -221,7 +246,7 @@ fn count_braces_outside_literals(line: &str) -> (i32, i32) {
         i += 1;
     }
 
-    (opens, closes)
+    (opens, closes, in_block)
 }
 
 fn format_detection_diagnostic(diagnostic: &DetectionDiagnostic) -> String {
@@ -411,6 +436,7 @@ pub fn validate_yara_rule(source: String) -> Result<YaraValidationResponse, Stri
     let mut rule_count = 0u32;
     // Track brace depth as i32 to detect negative depth (more closes than opens).
     let mut current_rule: Option<(String, i32, bool)> = None;
+    let mut in_block_comment = false;
 
     for (idx, line) in source.lines().enumerate() {
         let trimmed = line.trim();
@@ -449,7 +475,8 @@ pub fn validate_yara_rule(source: String) -> Result<YaraValidationResponse, Stri
                     .next()
                     .unwrap_or("unnamed")
                     .to_string();
-                let (opens, closes) = count_braces_outside_literals(line);
+                let (opens, closes, blk) = count_braces_outside_literals(line, in_block_comment);
+                in_block_comment = blk;
                 current_rule = Some((rule_name, opens - closes, false));
                 rule_count += 1;
                 continue;
@@ -461,7 +488,8 @@ pub fn validate_yara_rule(source: String) -> Result<YaraValidationResponse, Stri
                 *saw_condition = true;
             }
 
-            let (opens, closes) = count_braces_outside_literals(line);
+            let (opens, closes, blk) = count_braces_outside_literals(line, in_block_comment);
+            in_block_comment = blk;
             *brace_depth += opens - closes;
 
             if *brace_depth < 0 {
@@ -885,7 +913,15 @@ pub fn test_sigma_rule(
         })
         .collect();
 
-    let events_matched = findings.len();
+    // Count unique matched events by deduplicating on evidence_refs — each unique
+    // set of evidence references corresponds to a distinct matched event.
+    let events_matched = {
+        let mut seen = std::collections::HashSet::new();
+        for f in &findings {
+            seen.extend(f.evidence_refs.iter().cloned());
+        }
+        seen.len()
+    };
     let matched = !findings.is_empty();
 
     Ok(SigmaTestResponse {
@@ -1093,6 +1129,26 @@ pub fn convert_sigma_rule(
     }
 }
 
+/// Escape a string value for safe embedding in YAML output.
+///
+/// If the value contains YAML-special characters (`:`, `#`, `'`, `"`, `{`, `}`,
+/// `[`, `]`, `>`, `|`, `*`, `&`, `!`, `%`, `@`, `` ` ``), or has leading/trailing
+/// whitespace, wrap it in double quotes and escape internal double-quotes and
+/// backslashes.  Plain alphanumeric strings pass through unchanged.
+fn escape_yaml_string(s: &str) -> String {
+    const SPECIAL: &[char] = &[':', '#', '\'', '"', '{', '}', '[', ']', '>', '|', '*', '&', '!', '%', '@', '`', ','];
+    let needs_quoting = s.is_empty()
+        || s.starts_with(|c: char| c.is_whitespace())
+        || s.ends_with(|c: char| c.is_whitespace())
+        || s.contains(SPECIAL);
+    if needs_quoting {
+        let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
+        format!("\"{escaped}\"")
+    } else {
+        s.to_string()
+    }
+}
+
 fn convert_sigma_to_native_policy(source: &str) -> Result<SigmaConvertResponse, String> {
     // First, compile the Sigma rule to validate it
     let compilation = hunt_correlate::detection::compile_rule_source("sigma", source)
@@ -1102,11 +1158,11 @@ fn convert_sigma_to_native_policy(source: &str) -> Result<SigmaConvertResponse, 
     let parsed: serde_json::Value = serde_yaml::from_str(source)
         .map_err(|e| format!("Sigma YAML parse error: {e}"))?;
 
-    let title = parsed
+    let title_raw = parsed
         .get("title")
         .and_then(|v| v.as_str())
         .unwrap_or("Sigma Imported Rule");
-    let description = parsed
+    let description_raw = parsed
         .get("description")
         .and_then(|v| v.as_str())
         .unwrap_or("Converted from Sigma rule");
@@ -1114,10 +1170,16 @@ fn convert_sigma_to_native_policy(source: &str) -> Result<SigmaConvertResponse, 
         .get("level")
         .and_then(|v| v.as_str())
         .unwrap_or("medium");
-    let status = parsed
+    let status_raw = parsed
         .get("status")
         .and_then(|v| v.as_str())
         .unwrap_or("experimental");
+
+    // Escape strings that will be embedded in YAML to prevent malformed output
+    // when they contain special YAML characters (`:`, `#`, `'`, `"`, etc.).
+    let title = escape_yaml_string(title_raw);
+    let description = escape_yaml_string(description_raw);
+    let status = escape_yaml_string(status_raw);
 
     // Extract logsource for guard mapping
     let logsource = parsed.get("logsource");
@@ -1125,10 +1187,11 @@ fn convert_sigma_to_native_policy(source: &str) -> Result<SigmaConvertResponse, 
         .and_then(|ls| ls.get("category"))
         .and_then(|v| v.as_str())
         .unwrap_or("generic");
-    let product = logsource
+    let product_raw = logsource
         .and_then(|ls| ls.get("product"))
         .and_then(|v| v.as_str())
         .unwrap_or("any");
+    let product = escape_yaml_string(product_raw);
 
     // Map Sigma level to policy severity
     let policy_level = match level {
@@ -1187,7 +1250,7 @@ guards:
         severity: "info".into(),
         message: format!(
             "Converted Sigma rule '{}' to native policy template (extends: {})",
-            title, policy_level
+            title_raw, policy_level
         ),
         line: None,
         column: None,

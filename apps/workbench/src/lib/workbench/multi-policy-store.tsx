@@ -300,6 +300,50 @@ function validateSigmaSource(yaml: string): ValidationResult {
   return toValidationResult(errors, "sigma");
 }
 
+function countBracesOutsideHexStrings(line: string): { opens: number; closes: number } {
+  let opens = 0;
+  let closes = 0;
+  let inString = false;
+  let inHexString = false;
+  let lastNonWs = "";
+
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+
+    // End-of-line comment
+    if (!inString && !inHexString && ch === "/" && line[i + 1] === "/") break;
+
+    // Inside hex string — skip until closing brace
+    if (inHexString) {
+      if (ch === "}") inHexString = false;
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = !inString;
+      lastNonWs = ch;
+      continue;
+    }
+
+    if (inString) continue;
+
+    if (ch === "{") {
+      // Detect hex string context: `= {` pattern
+      if (lastNonWs === "=") {
+        inHexString = true;
+        continue;
+      }
+      opens++;
+    } else if (ch === "}") {
+      closes++;
+    }
+
+    if (ch.trim()) lastNonWs = ch;
+  }
+
+  return { opens, closes };
+}
+
 function validateYaraSource(source: string): ValidationResult {
   const errors: string[] = [];
   const lines = source.split(/\r?\n/);
@@ -316,10 +360,11 @@ function validateYaraSource(source: string): ValidationResult {
       if (currentRule && !currentRule.sawCondition) {
         errors.push(`Rule "${currentRule.name}" is missing a condition section`);
       }
+      const braces = countBracesOutsideHexStrings(line);
       currentRule = {
         name: ruleMatch[1],
         sawCondition: false,
-        braceDepth: (line.match(/\{/g) ?? []).length - (line.match(/\}/g) ?? []).length,
+        braceDepth: braces.opens - braces.closes,
       };
       ruleCount += 1;
       continue;
@@ -331,8 +376,8 @@ function validateYaraSource(source: string): ValidationResult {
       currentRule.sawCondition = true;
     }
 
-    currentRule.braceDepth += (line.match(/\{/g) ?? []).length;
-    currentRule.braceDepth -= (line.match(/\}/g) ?? []).length;
+    const braces = countBracesOutsideHexStrings(line);
+    currentRule.braceDepth += braces.opens - braces.closes;
 
     if (currentRule.braceDepth <= 0) {
       if (!currentRule.sawCondition) {
