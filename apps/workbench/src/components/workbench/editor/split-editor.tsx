@@ -92,7 +92,7 @@ function PaneTabSelector({
     <div className="flex items-center px-2 py-1 bg-[#0b0d13] border-b border-[#2d3240]">
       <Select
         value={selectedTabId ?? undefined}
-        onValueChange={(val: string) => onSelect(val)}
+        onValueChange={(val) => { if (val) onSelect(val); }}
       >
         <SelectTrigger className="h-7 text-[10px] font-mono bg-[#131721] border-[#2d3240] text-[#ece7dc]">
           <SelectValue placeholder="Select policy..." />
