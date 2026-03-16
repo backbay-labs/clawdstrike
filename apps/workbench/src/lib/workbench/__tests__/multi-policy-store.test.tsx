@@ -271,6 +271,46 @@ function YaraValidationHarness() {
       },
       "new-yara-comment",
     ),
+    React.createElement(
+      "button",
+      {
+        type: "button",
+        onClick: () =>
+          multiDispatch({
+            type: "NEW_TAB",
+            fileType: "yara_rule",
+            yaml: `/*
+rule ignored_comment {
+  condition:
+    true
+}
+*/
+rule actual_rule {
+  condition:
+    true
+}
+`,
+          }),
+      },
+      "new-yara-commented-rule",
+    ),
+    React.createElement(
+      "button",
+      {
+        type: "button",
+        onClick: () =>
+          multiDispatch({
+            type: "NEW_TAB",
+            fileType: "yara_rule",
+            yaml: `/* banner */ rule inline_comment {
+  condition:
+    true
+}
+`,
+          }),
+      },
+      "new-yara-inline-comment-prefix",
+    ),
     React.createElement("span", { "data-testid": "yara-valid" }, String(state.validation.valid)),
     React.createElement(
       "pre",
@@ -571,6 +611,36 @@ level: medium
     );
 
     fireEvent.click(screen.getByRole("button", { name: "new-yara-comment" }));
+
+    expect(screen.getByTestId("yara-valid").textContent).toBe("true");
+    expect(screen.getByTestId("yara-errors").textContent).toBe("");
+  });
+
+  it("ignores rule declarations that appear only inside multiline comments", () => {
+    render(
+      React.createElement(
+        MultiPolicyProvider,
+        null,
+        React.createElement(YaraValidationHarness),
+      ),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "new-yara-commented-rule" }));
+
+    expect(screen.getByTestId("yara-valid").textContent).toBe("true");
+    expect(screen.getByTestId("yara-errors").textContent).toBe("");
+  });
+
+  it("detects rule declarations that follow an inline block-comment prefix", () => {
+    render(
+      React.createElement(
+        MultiPolicyProvider,
+        null,
+        React.createElement(YaraValidationHarness),
+      ),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "new-yara-inline-comment-prefix" }));
 
     expect(screen.getByTestId("yara-valid").textContent).toBe("true");
     expect(screen.getByTestId("yara-errors").textContent).toBe("");

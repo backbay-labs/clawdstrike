@@ -28,6 +28,8 @@ import { useVersionHistory } from "@/lib/workbench/use-version-history";
 import { useAutoVersion } from "@/lib/workbench/use-auto-version";
 import type { PolicyVersion } from "@/lib/workbench/version-store";
 import { getPrimaryExtension, isPolicyFileType, sanitizeFilenameStem, basenameFromPath } from "@/lib/workbench/file-type-registry";
+import { isDesktop } from "@/lib/tauri-bridge";
+import { policyToYaml } from "@/lib/workbench/yaml-utils";
 import { triggerNativeValidation } from "@/lib/workbench/use-native-validation";
 import {
   IconWand,
@@ -658,9 +660,22 @@ export function PolicyEditor() {
 
   const handleValidateCurrentFile = useCallback(() => {
     if (!activeTab) return;
-    void triggerNativeValidation(activeTab.fileType, state.yaml, dispatch);
+    const source = isPolicyFileType(activeTab.fileType)
+      ? policyToYaml(state.activePolicy)
+      : state.yaml;
+    const shouldSyncYaml = isPolicyFileType(activeTab.fileType)
+      && (state.dirty || source !== state.yaml);
+
+    if (shouldSyncYaml) {
+      dispatch({ type: "SET_YAML", yaml: source });
+    }
+
+    if (isDesktop()) {
+      void triggerNativeValidation(activeTab.fileType, source, dispatch);
+    }
+
     setShowProblems(true);
-  }, [activeTab, state.yaml, dispatch]);
+  }, [activeTab, state.activePolicy, state.yaml, state.dirty, dispatch]);
 
   return (
     <TestRunnerProvider key={activeTab?.id ?? "no-active-tab"}>

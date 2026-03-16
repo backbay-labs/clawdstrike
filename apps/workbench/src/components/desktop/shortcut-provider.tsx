@@ -2,6 +2,9 @@ import { useMemo, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useKeyboardShortcuts, type ShortcutAction } from "@/lib/keyboard-shortcuts";
 import { useWorkbench, useMultiPolicy } from "@/lib/workbench/multi-policy-store";
+import { isDesktop } from "@/lib/tauri-bridge";
+import { isPolicyFileType } from "@/lib/workbench/file-type-registry";
+import { policyToYaml } from "@/lib/workbench/yaml-utils";
 import { triggerNativeValidation } from "@/lib/workbench/use-native-validation";
 import { ShortcutHelpDialog } from "./shortcut-help-dialog";
 
@@ -72,9 +75,22 @@ export function ShortcutProvider() {
 
   const handleValidate = useCallback(() => {
     if (!activeTab) return;
-    void triggerNativeValidation(activeTab.fileType, state.yaml, dispatch);
+    const source = isPolicyFileType(activeTab.fileType)
+      ? policyToYaml(state.activePolicy)
+      : state.yaml;
+    const shouldSyncYaml = isPolicyFileType(activeTab.fileType)
+      && (state.dirty || source !== state.yaml);
+
+    if (shouldSyncYaml) {
+      dispatch({ type: "SET_YAML", yaml: source });
+    }
+
+    if (isDesktop()) {
+      void triggerNativeValidation(activeTab.fileType, source, dispatch);
+    }
+
     navigate("/editor");
-  }, [activeTab, state.yaml, dispatch, navigate]);
+  }, [activeTab, state.activePolicy, state.yaml, state.dirty, dispatch, navigate]);
 
   const handleNewTab = useCallback(() => {
     multiDispatch({ type: "NEW_TAB" });
