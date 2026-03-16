@@ -177,6 +177,51 @@ fn canonicalize_worktree_path(candidate: &str, expected_base: &Path) -> Result<P
     Ok(canonical)
 }
 
+fn resolve_worktree_base(repo_root: &Path) -> Result<PathBuf, String> {
+    let canonical_root = std::fs::canonicalize(repo_root).map_err(|e| {
+        format!(
+            "Cannot resolve repository root {}: {e}",
+            repo_root.display()
+        )
+    })?;
+    let worktree_base = repo_root.join(WORKTREE_DIR);
+
+    if std::fs::symlink_metadata(&worktree_base)
+        .map(|metadata| metadata.file_type().is_symlink())
+        .unwrap_or(false)
+    {
+        return Err(format!(
+            "Worktree directory must not be a symlink: {}",
+            worktree_base.display()
+        ));
+    }
+
+    std::fs::create_dir_all(&worktree_base).map_err(|e| {
+        format!(
+            "Failed to create worktree directory {}: {e}",
+            worktree_base.display()
+        )
+    })?;
+
+    let canonical_base = std::fs::canonicalize(&worktree_base).map_err(|e| {
+        format!(
+            "Failed to resolve worktree directory {}: {e}",
+            worktree_base.display()
+        )
+    })?;
+
+    if canonical_base.parent() != Some(canonical_root.as_path())
+        || !canonical_base.starts_with(&canonical_root)
+    {
+        return Err(format!(
+            "Worktree directory escaped repository root: {}",
+            canonical_base.display()
+        ));
+    }
+
+    Ok(canonical_base)
+}
+
 fn is_registered_worktree(repo_root: &str, target: &Path) -> Result<bool, String> {
     let output = run_git(repo_root, &["worktree", "list", "--porcelain"])?;
     for line in output.lines() {
@@ -212,13 +257,7 @@ pub async fn worktree_create<R: Runtime>(
         let canonical_root_str = canonical_root.to_string_lossy().to_string();
         let normalized_branch = normalize_branch_name(&canonical_root_str, &branch_name)?;
 
-        let worktree_base = canonical_root.join(WORKTREE_DIR);
-        std::fs::create_dir_all(&worktree_base).map_err(|e| {
-            format!(
-                "Failed to create worktree directory {}: {e}",
-                worktree_base.display()
-            )
-        })?;
+        let worktree_base = resolve_worktree_base(&canonical_root)?;
 
         let dir_name = branch_dir_name(&normalized_branch);
         let worktree_path = worktree_base.join(&dir_name);
@@ -483,4 +522,35 @@ pub async fn worktree_status<R: Runtime>(
         })
     })
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_worktree_base_accepts_real_directory() {
+        let repo_root = tempfile::tempdir().expect("temp repo root");
+        let resolved = resolve_worktree_base(repo_root.path()).expect("expected real directory");
+        let expected = repo_root
+            .path()
+            .canonicalize()
+            .expect("canonical repo root")
+            .join(WORKTREE_DIR);
+
+        assert_eq!(resolved, expected);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resolve_worktree_base_rejects_symlink() {
+        let repo_root = tempfile::tempdir().expect("temp repo root");
+        let escaped = tempfile::tempdir().expect("escaped target");
+        let link_path = repo_root.path().join(WORKTREE_DIR);
+
+        std::os::unix::fs::symlink(escaped.path(), &link_path).expect("create symlink");
+
+        let err = resolve_worktree_base(repo_root.path()).expect_err("expected symlink rejection");
+        assert!(err.contains("must not be a symlink"));
+    }
 }

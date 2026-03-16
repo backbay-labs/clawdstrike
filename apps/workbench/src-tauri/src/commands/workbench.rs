@@ -1175,25 +1175,21 @@ pub async fn verify_receipt_chain(
         });
     }
 
-    // Sort by timestamp (stable sort preserves original order for equal timestamps).
-    let mut sorted = receipts.clone();
-    sorted.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
-
     // Validate that all timestamps conform to ISO 8601 with Z suffix so that
     // lexicographic comparison is correct (Fix #19).
-    let non_conforming_timestamps: Vec<&str> = sorted
+    let non_conforming_timestamps: Vec<&str> = receipts
         .iter()
         .filter(|r| !is_valid_utc_timestamp(&r.timestamp))
         .map(|r| r.timestamp.as_str())
         .collect();
 
-    let mut per_receipt: Vec<ChainReceiptVerification> = Vec::with_capacity(sorted.len());
+    let mut per_receipt: Vec<ChainReceiptVerification> = Vec::with_capacity(receipts.len());
     let mut any_sig_failed = false;
     let mut any_sig_verified = false;
     let mut timestamps_ordered = true;
     let mut chain_hash_input = Vec::new();
 
-    for (i, r) in sorted.iter().enumerate() {
+    for (i, r) in receipts.iter().enumerate() {
         // Chain-level canonical format: "id:timestamp:verdict:guard:policy_name".
         // This is used for the chain hash (always) and as the *first* signature
         // verification attempt.
@@ -1208,7 +1204,7 @@ pub async fn verify_receipt_chain(
         let (ts_valid, ts_note) = if i == 0 {
             (true, "First receipt in chain.".to_string())
         } else {
-            let prev = &sorted[i - 1];
+            let prev = &receipts[i - 1];
             if r.timestamp >= prev.timestamp {
                 (true, "Timestamp >= previous.".to_string())
             } else {
@@ -1275,19 +1271,19 @@ pub async fn verify_receipt_chain(
     // ordered, and at least one signature was positively verified (or the chain
     // is empty). Unparseable signatures alone no longer count as "valid". (#20)
     let chain_intact =
-        !any_sig_failed && timestamps_ordered && (any_sig_verified || sorted.is_empty());
+        !any_sig_failed && timestamps_ordered && (any_sig_verified || receipts.is_empty());
 
     let mut summary = if chain_intact {
         format!(
             "Chain of {} receipt(s) verified successfully.",
-            sorted.len()
+            receipts.len()
         )
     } else {
         let mut issues = Vec::new();
         if any_sig_failed {
             issues.push("signature verification failure(s)");
         }
-        if !any_sig_verified && !sorted.is_empty() {
+        if !any_sig_verified && !receipts.is_empty() {
             issues.push("no signatures could be positively verified");
         }
         if !timestamps_ordered {
@@ -1295,7 +1291,7 @@ pub async fn verify_receipt_chain(
         }
         format!(
             "Chain of {} receipt(s) has issues: {}.",
-            sorted.len(),
+            receipts.len(),
             issues.join(", ")
         )
     };
@@ -1315,7 +1311,7 @@ pub async fn verify_receipt_chain(
         all_signatures_valid: !any_sig_failed,
         timestamps_ordered,
         chain_intact,
-        chain_length: sorted.len(),
+        chain_length: receipts.len(),
         summary,
     })
 }
@@ -2356,17 +2352,24 @@ posture:
     }
 
     #[tokio::test]
-    async fn verify_chain_unordered_input_is_sorted_before_verification() {
-        // Input arrives out of order; verify_receipt_chain sorts by timestamp
-        // before checking ordering, so the result should be ordered.
+    async fn verify_chain_unordered_input_fails_timestamp_ordering() {
         let chain = vec![
             make_chain_receipt("r1", "2026-03-01T00:02:00Z", "allow"),
             make_chain_receipt("r2", "2026-03-01T00:00:00Z", "deny"),
             make_chain_receipt("r3", "2026-03-01T00:01:00Z", "warn"),
         ];
         let res = verify_receipt_chain(chain).await.unwrap();
-        assert!(res.timestamps_ordered);
+        assert!(!res.timestamps_ordered);
         assert_eq!(res.chain_length, 3);
+        assert_eq!(
+            res.receipts
+                .iter()
+                .map(|r| r.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["r1", "r2", "r3"]
+        );
+        assert!(!res.receipts[1].timestamp_order_valid);
+        assert!(res.summary.contains("timestamp ordering violation"));
     }
 
     #[tokio::test]
@@ -2462,6 +2465,24 @@ posture:
             res1.chain_hash, res2.chain_hash,
             "chain hash should be deterministic"
         );
+    }
+
+    #[tokio::test]
+    async fn verify_chain_hash_depends_on_receipt_order() {
+        let ordered = vec![
+            make_chain_receipt("r1", "2026-03-01T00:00:00Z", "allow"),
+            make_chain_receipt("r2", "2026-03-01T00:01:00Z", "deny"),
+        ];
+        let reordered = vec![
+            make_chain_receipt("r2", "2026-03-01T00:01:00Z", "deny"),
+            make_chain_receipt("r1", "2026-03-01T00:00:00Z", "allow"),
+        ];
+
+        let ordered_res = verify_receipt_chain(ordered).await.unwrap();
+        let reordered_res = verify_receipt_chain(reordered).await.unwrap();
+
+        assert_ne!(ordered_res.chain_hash, reordered_res.chain_hash);
+        assert!(!reordered_res.timestamps_ordered);
     }
 
     /// P1-4: Receipts signed over the exact canonical hush-core payload should

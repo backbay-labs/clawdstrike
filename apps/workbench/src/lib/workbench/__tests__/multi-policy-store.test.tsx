@@ -320,6 +320,57 @@ rule actual_rule {
   );
 }
 
+function StructuredValidationHarness() {
+  const { multiDispatch } = useMultiPolicy();
+  const { state } = useWorkbench();
+
+  return React.createElement(
+    "div",
+    null,
+    React.createElement(
+      "button",
+      {
+        type: "button",
+        onClick: () =>
+          multiDispatch({
+            type: "NEW_TAB",
+            fileType: "sigma_rule",
+            yaml: `title: Broken Sigma
+id: 11111111-1111-1111-1111-111111111111
+status: experimental
+logsource:
+  category: process_creation
+detection:
+  selection: foo
+  condition: selection
+level: medium
+`,
+          }),
+      },
+      "new-sigma-bad-selector",
+    ),
+    React.createElement(
+      "button",
+      {
+        type: "button",
+        onClick: () =>
+          multiDispatch({
+            type: "NEW_TAB",
+            fileType: "ocsf_event",
+            yaml: '{"class_uid":1001,"activity_id":"x","severity_id":"high","metadata":{}}',
+          }),
+      },
+      "new-ocsf-bad-types",
+    ),
+    React.createElement("span", { "data-testid": "structured-valid" }, String(state.validation.valid)),
+    React.createElement(
+      "pre",
+      { "data-testid": "structured-errors" },
+      state.validation.errors.map((issue) => issue.message).join("\n"),
+    ),
+  );
+}
+
 beforeEach(() => {
   localStorage.clear();
 });
@@ -644,5 +695,42 @@ level: medium
 
     expect(screen.getByTestId("yara-valid").textContent).toBe("true");
     expect(screen.getByTestId("yara-errors").textContent).toBe("");
+  });
+
+  it("rejects Sigma sources without object-valued detection selectors", () => {
+    render(
+      React.createElement(
+        MultiPolicyProvider,
+        null,
+        React.createElement(StructuredValidationHarness),
+      ),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "new-sigma-bad-selector" }));
+
+    expect(screen.getByTestId("structured-valid").textContent).toBe("false");
+    expect(screen.getByTestId("structured-errors").textContent).toContain(
+      "object-valued detection selector",
+    );
+  });
+
+  it("rejects OCSF sources with invalid required field types", () => {
+    render(
+      React.createElement(
+        MultiPolicyProvider,
+        null,
+        React.createElement(StructuredValidationHarness),
+      ),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "new-ocsf-bad-types" }));
+
+    expect(screen.getByTestId("structured-valid").textContent).toBe("false");
+    expect(screen.getByTestId("structured-errors").textContent).toContain(
+      "Invalid type for OCSF field activity_id",
+    );
+    expect(screen.getByTestId("structured-errors").textContent).toContain(
+      "Invalid type for OCSF field severity_id",
+    );
   });
 });

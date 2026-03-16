@@ -700,6 +700,7 @@ describe("ocsf-adapter", () => {
       const parsed = JSON.parse(result.source);
       expect(parsed.class_uid).toBe(1007); // Process Activity
       expect(parsed.category_uid).toBe(1); // System Activity
+      expect(parsed.type_uid).toBe(parsed.class_uid * 100 + parsed.activity_id);
       expect(parsed.activity_id).toBeGreaterThanOrEqual(1);
       expect(parsed.severity_id).toBeGreaterThanOrEqual(1);
       expect(parsed.metadata).toBeDefined();
@@ -735,6 +736,9 @@ describe("ocsf-adapter", () => {
       const result = ocsfAdapter.buildDraft(seed);
       const parsed = JSON.parse(result.source);
       expect(parsed.class_uid).toBe(2004); // Detection Finding
+      expect(parsed.action_id).toBe(2);
+      expect(parsed.disposition_id).toBe(2);
+      expect(parsed.finding_info.analytic.name).toBe("ClawdStrike Detection Lab");
     });
 
     it("includes enrichments from technique hints", () => {
@@ -780,6 +784,8 @@ describe("ocsf-adapter", () => {
         expect(item.kind).toBe("ocsf_event");
         if (item.kind === "ocsf_event") {
           expect(item.payload.class_uid).toBeDefined();
+          expect(item.payload.type_uid).toBeDefined();
+          expect(item.payload.metadata).toBeDefined();
           expect(item.expected).toBe("valid");
         }
       }

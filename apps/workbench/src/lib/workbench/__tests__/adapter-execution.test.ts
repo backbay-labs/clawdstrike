@@ -45,6 +45,49 @@ level: medium
 `;
 }
 
+function makeValidOcsfPayload(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  const classUid = typeof overrides.class_uid === "number" ? overrides.class_uid : 1007;
+  const activityId = typeof overrides.activity_id === "number" ? overrides.activity_id : 1;
+  const categoryUid = classUid === 2004 ? 2 : classUid === 4001 || classUid === 4003 ? 4 : 1;
+  const metadata = overrides.metadata ?? {
+    version: "1.4.0",
+    product: {
+      name: "ClawdStrike Detection Lab",
+      vendor_name: "Backbay Labs",
+    },
+  };
+
+  const findingFields = classUid === 2004
+    ? {
+        action_id: overrides.action_id ?? 2,
+        disposition_id: overrides.disposition_id ?? 2,
+        finding_info: overrides.finding_info ?? {
+          uid: "finding-1",
+          title: "Finding",
+          analytic: {
+            name: "ClawdStrike Detection Lab",
+            type_id: 1,
+            type: "Rule",
+          },
+        },
+      }
+    : {};
+
+  return {
+    class_uid: classUid,
+    category_uid: overrides.category_uid ?? categoryUid,
+    type_uid: overrides.type_uid ?? classUid * 100 + activityId,
+    activity_id: activityId,
+    severity_id: overrides.severity_id ?? 3,
+    status_id: overrides.status_id ?? 1,
+    time: overrides.time ?? Date.now(),
+    message: overrides.message ?? "OCSF test event",
+    metadata,
+    ...findingFields,
+    ...overrides,
+  };
+}
+
 // Ensure adapters are imported (side-effect registration)
 beforeAll(() => {
   void sigmaAdapter;
@@ -412,14 +455,7 @@ describe("ocsf adapter runLab", () => {
           {
             id: "case-valid",
             kind: "ocsf_event",
-            payload: {
-              class_uid: 1007,
-              activity_id: 1,
-              severity_id: 3,
-              status_id: 1,
-              time: Date.now(),
-              message: "Process creation",
-            },
+            payload: makeValidOcsfPayload({ message: "Process creation" }),
             expected: "valid",
           },
         ],
@@ -532,11 +568,7 @@ describe("ocsf adapter runLab", () => {
           {
             id: "case-1",
             kind: "ocsf_event",
-            payload: {
-              class_uid: 1007,
-              activity_id: 1,
-              severity_id: 2,
-            },
+            payload: makeValidOcsfPayload({ severity_id: 2 }),
             expected: "valid",
           },
         ],
@@ -629,11 +661,7 @@ describe("ocsf adapter runLab", () => {
           {
             id: "case-valid",
             kind: "ocsf_event",
-            payload: {
-              class_uid: 2004,
-              activity_id: 1,
-              severity_id: 4,
-            },
+            payload: makeValidOcsfPayload({ class_uid: 2004, severity_id: 4 }),
             expected: "valid",
           },
         ],

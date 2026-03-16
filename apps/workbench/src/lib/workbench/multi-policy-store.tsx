@@ -296,9 +296,26 @@ function extractNameFromSource(
   return fallback || FILE_TYPE_REGISTRY[fileType].label;
 }
 
+function hasSigmaObjectValuedDetectionSelector(detection: Record<string, unknown>): boolean {
+  return Object.entries(detection).some(
+    ([key, value]) =>
+      key !== "condition"
+      && key !== "timeframe"
+      && value != null
+      && typeof value === "object"
+      && !Array.isArray(value),
+  );
+}
+
 function validateSigmaSource(yaml: string): ValidationResult {
-  const { errors } = parseSigmaYaml(yaml);
-  return toValidationResult(errors, "sigma");
+  const { rule, errors } = parseSigmaYaml(yaml);
+  const nextErrors = [...errors];
+
+  if (rule && !hasSigmaObjectValuedDetectionSelector(rule.detection as Record<string, unknown>)) {
+    nextErrors.push("Sigma import requires at least one object-valued detection selector");
+  }
+
+  return toValidationResult(nextErrors, "sigma");
 }
 
 interface YaraScanState {
@@ -488,26 +505,96 @@ function validateOcsfSource(json: string): ValidationResult {
 
     const event = value as Record<string, unknown>;
     const errors: string[] = [];
-    const warnings: string[] = [];
 
-    if (typeof event.class_uid !== "number" || !Number.isInteger(event.class_uid) || event.class_uid < 0) {
-      errors.push("Missing required field: class_uid");
-    }
-    if (typeof event.activity_id !== "number" || !Number.isInteger(event.activity_id)) {
-      errors.push("Missing required field: activity_id");
-    }
-    if (typeof event.severity_id !== "number" || !Number.isInteger(event.severity_id)) {
-      errors.push("Missing required field: severity_id");
-    }
-    if (event.metadata == null || typeof event.metadata !== "object" || Array.isArray(event.metadata)) {
-      warnings.push("Missing recommended field: metadata");
-    }
+    const asRecord = (candidate: unknown): Record<string, unknown> | null =>
+      candidate && typeof candidate === "object" && !Array.isArray(candidate)
+        ? candidate as Record<string, unknown>
+        : null;
 
-    return {
-      valid: errors.length === 0,
-      errors: errors.map((message) => ({ path: "ocsf", message, severity: "error" })),
-      warnings: warnings.map((message) => ({ path: "ocsf", message, severity: "warning" })),
+    const readUnsignedInteger = (field: string): number | null => {
+      const current = event[field];
+      if (current === undefined || current === null) {
+        errors.push(`Missing required OCSF field: ${field}`);
+        return null;
+      }
+      if (typeof current !== "number" || !Number.isInteger(current) || current < 0) {
+        errors.push(`Invalid type for OCSF field ${field}: expected unsigned integer`);
+        return null;
+      }
+      return current;
     };
+
+    const readInteger = (field: string): number | null => {
+      const current = event[field];
+      if (current === undefined || current === null) {
+        errors.push(`Missing required OCSF field: ${field}`);
+        return null;
+      }
+      if (typeof current !== "number" || !Number.isInteger(current)) {
+        errors.push(`Invalid type for OCSF field ${field}: expected integer`);
+        return null;
+      }
+      return current;
+    };
+
+    const classUid = readUnsignedInteger("class_uid");
+    const activityId = readUnsignedInteger("activity_id");
+    const typeUid = readUnsignedInteger("type_uid");
+    const severityId = readUnsignedInteger("severity_id");
+    readUnsignedInteger("status_id");
+    readInteger("time");
+    readUnsignedInteger("category_uid");
+
+    const metadata = asRecord(event.metadata);
+    if (!metadata) {
+      errors.push("Missing required OCSF field: metadata");
+    } else {
+      if (typeof metadata.version !== "string" || metadata.version.trim() === "") {
+        errors.push("Missing required OCSF field: metadata.version");
+      }
+
+      const product = asRecord(metadata.product);
+      if (!product) {
+        errors.push("Missing required OCSF field: metadata.product");
+      } else {
+        if (typeof product.name !== "string" || product.name.trim() === "") {
+          errors.push("Missing required OCSF field: metadata.product.name");
+        }
+        if (typeof product.vendor_name !== "string" || product.vendor_name.trim() === "") {
+          errors.push("Missing required OCSF field: metadata.product.vendor_name");
+        }
+      }
+    }
+
+    if (classUid !== null && activityId !== null && typeUid !== null && typeUid !== classUid * 100 + activityId) {
+      errors.push(`type_uid mismatch: expected ${classUid * 100 + activityId}, got ${typeUid}`);
+    }
+
+    if (severityId !== null && severityId > 6 && severityId !== 99) {
+      errors.push(`severity_id ${severityId} is not a valid OCSF severity (0-6, 99)`);
+    }
+
+    if (classUid === 2004) {
+      const findingInfo = asRecord(event.finding_info);
+      if (!findingInfo) {
+        errors.push("Missing required OCSF field: finding_info");
+      } else {
+        if (typeof findingInfo.uid !== "string" || findingInfo.uid.trim() === "") {
+          errors.push("Missing required OCSF field: finding_info.uid");
+        }
+        if (typeof findingInfo.title !== "string" || findingInfo.title.trim() === "") {
+          errors.push("Missing required OCSF field: finding_info.title");
+        }
+        if (findingInfo.analytic === undefined || findingInfo.analytic === null) {
+          errors.push("Missing required OCSF field: finding_info.analytic");
+        }
+      }
+
+      readUnsignedInteger("action_id");
+      readUnsignedInteger("disposition_id");
+    }
+
+    return toValidationResult(errors, "ocsf");
   } catch (error) {
     return toValidationResult(
       [`JSON parse error: ${error instanceof Error ? error.message : String(error)}`],

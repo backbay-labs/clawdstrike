@@ -151,13 +151,21 @@ fn is_allowed_env_var(key: &str) -> bool {
 /// Path-like values are rejected so caller input cannot execute arbitrary binaries.
 const ALLOWED_SHELLS: &[&str] = &["sh", "bash", "zsh", "fish", "cmd", "powershell", "pwsh"];
 
-fn normalize_shell(shell: &str) -> Option<String> {
+fn normalize_shell(shell: &str, allow_absolute_paths: bool) -> Option<String> {
     let shell = shell.trim();
     if shell.is_empty() {
         return None;
     }
 
     let path = Path::new(shell);
+
+    if path.is_absolute() && !allow_absolute_paths {
+        eprintln!(
+            "[terminal] Rejected absolute shell override from caller payload: {:?}",
+            shell
+        );
+        return None;
+    }
 
     // Reject relative paths with directory components (e.g. `./bash`,
     // `subdir/bash`) — only bare names and absolute paths are accepted.
@@ -226,7 +234,7 @@ fn validate_session_id(session_id: &str) -> Result<(), String> {
 fn default_shell() -> String {
     std::env::var("SHELL")
         .ok()
-        .and_then(|s| normalize_shell(&s))
+        .and_then(|s| normalize_shell(&s, true))
         .unwrap_or_else(|| {
             if cfg!(target_os = "windows") {
                 "cmd".to_string()
@@ -390,7 +398,7 @@ pub async fn terminal_create<R: Runtime>(
     // Validate cwd exists
     let cwd = normalize_cwd(&cwd)?;
     let shell_path = match shell.as_deref() {
-        Some(requested) => normalize_shell(requested)
+        Some(requested) => normalize_shell(requested, false)
             .ok_or_else(|| format!("Requested shell is not allowed: {requested}"))?,
         None => default_shell(),
     };
@@ -825,5 +833,36 @@ pub async fn kill_all_sessions(state: &TerminalState) {
             let _ = t.await;
         }
         remove_ring_buffer(&id);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_shell;
+
+    #[test]
+    fn normalize_shell_rejects_relative_path_components() {
+        assert!(normalize_shell("./bash", false).is_none());
+        assert!(normalize_shell("subdir/zsh", false).is_none());
+    }
+
+    #[test]
+    fn normalize_shell_rejects_absolute_paths_from_caller_payloads() {
+        #[cfg(unix)]
+        let path = "/tmp/bash";
+        #[cfg(windows)]
+        let path = r"C:\temp\bash.exe";
+
+        assert!(normalize_shell(path, false).is_none());
+    }
+
+    #[test]
+    fn normalize_shell_allows_allowlisted_absolute_default_shells() {
+        #[cfg(unix)]
+        let path = "/bin/bash";
+        #[cfg(windows)]
+        let path = r"C:\Windows\System32\cmd.exe";
+
+        assert_eq!(normalize_shell(path, true).as_deref(), Some(path));
     }
 }

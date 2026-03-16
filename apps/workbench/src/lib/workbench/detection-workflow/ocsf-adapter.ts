@@ -93,32 +93,167 @@ function inferSeverityId(seed: DraftSeed): number {
   return 1; // Informational
 }
 
+function buildOcsfMetadata(): Record<string, unknown> {
+  return {
+    version: "1.4.0",
+    product: {
+      name: "ClawdStrike Detection Lab",
+      uid: "clawdstrike-detection-lab",
+      vendor_name: "Backbay Labs",
+    },
+  };
+}
+
+function buildFindingInfo(uid: string, title: string, techniqueHints: string[]): Record<string, unknown> {
+  return {
+    uid,
+    title,
+    analytic: {
+      name: "ClawdStrike Detection Lab",
+      type_id: 1,
+      type: "Rule",
+    },
+    ...(techniqueHints.length > 0 ? { types: techniqueHints } : {}),
+  };
+}
+
+function buildBaseOcsfEvent(
+  classUid: number,
+  activityId: number,
+  severityId: number,
+  message: string,
+): Record<string, unknown> {
+  return {
+    class_uid: classUid,
+    category_uid: inferCategoryUid(classUid),
+    type_uid: classUid * 100 + activityId,
+    activity_id: activityId,
+    severity_id: severityId,
+    status_id: 1,
+    time: Date.now(),
+    message,
+    metadata: buildOcsfMetadata(),
+  };
+}
+
+function asRecord(candidate: unknown): Record<string, unknown> | null {
+  return candidate && typeof candidate === "object" && !Array.isArray(candidate)
+    ? candidate as Record<string, unknown>
+    : null;
+}
+
+function validateOcsfPayloadFallback(payload: Record<string, unknown>): {
+  valid: boolean;
+  classUid: number | null;
+  missingFields: string[];
+  invalidFields: string[];
+} {
+  const missingFields: string[] = [];
+  const invalidFields: string[] = [];
+
+  const readUnsignedInteger = (field: string): number | null => {
+    const current = payload[field];
+    if (current === undefined || current === null) {
+      missingFields.push(field);
+      return null;
+    }
+    if (typeof current !== "number" || !Number.isInteger(current) || current < 0) {
+      invalidFields.push(`${field}: expected unsigned integer`);
+      return null;
+    }
+    return current;
+  };
+
+  const readInteger = (field: string): number | null => {
+    const current = payload[field];
+    if (current === undefined || current === null) {
+      missingFields.push(field);
+      return null;
+    }
+    if (typeof current !== "number" || !Number.isInteger(current)) {
+      invalidFields.push(`${field}: expected integer`);
+      return null;
+    }
+    return current;
+  };
+
+  const classUid = readUnsignedInteger("class_uid");
+  const activityId = readUnsignedInteger("activity_id");
+  const typeUid = readUnsignedInteger("type_uid");
+  const severityId = readUnsignedInteger("severity_id");
+  readUnsignedInteger("status_id");
+  readInteger("time");
+  readUnsignedInteger("category_uid");
+
+  const metadata = asRecord(payload.metadata);
+  if (!metadata) {
+    missingFields.push("metadata");
+  } else {
+    if (typeof metadata.version !== "string" || metadata.version.trim() === "") {
+      missingFields.push("metadata.version");
+    }
+
+    const product = asRecord(metadata.product);
+    if (!product) {
+      missingFields.push("metadata.product");
+    } else {
+      if (typeof product.name !== "string" || product.name.trim() === "") {
+        missingFields.push("metadata.product.name");
+      }
+      if (typeof product.vendor_name !== "string" || product.vendor_name.trim() === "") {
+        missingFields.push("metadata.product.vendor_name");
+      }
+    }
+  }
+
+  if (classUid !== null && activityId !== null && typeUid !== null && typeUid !== classUid * 100 + activityId) {
+    invalidFields.push(`type_uid: expected ${classUid * 100 + activityId}, got ${typeUid}`);
+  }
+
+  if (severityId !== null && severityId > 6 && severityId !== 99) {
+    invalidFields.push(`severity_id: value ${severityId} is not a valid OCSF severity (0-6, 99)`);
+  }
+
+  if (classUid === 2004) {
+    const findingInfo = asRecord(payload.finding_info);
+    if (!findingInfo) {
+      missingFields.push("finding_info");
+    } else {
+      if (typeof findingInfo.uid !== "string" || findingInfo.uid.trim() === "") {
+        missingFields.push("finding_info.uid");
+      }
+      if (typeof findingInfo.title !== "string" || findingInfo.title.trim() === "") {
+        missingFields.push("finding_info.title");
+      }
+      if (findingInfo.analytic === undefined || findingInfo.analytic === null) {
+        missingFields.push("finding_info.analytic");
+      }
+    }
+
+    readUnsignedInteger("action_id");
+    readUnsignedInteger("disposition_id");
+  }
+
+  return {
+    valid: missingFields.length === 0 && invalidFields.length === 0,
+    classUid,
+    missingFields,
+    invalidFields,
+  };
+}
+
 // ---- OCSF Event Builder ----
 
 function buildOcsfEvent(seed: DraftSeed): Record<string, unknown> {
   const classUid = inferClassUid(seed);
-  const categoryUid = inferCategoryUid(classUid);
   const activityId = inferActivityId(seed);
   const severityId = inferSeverityId(seed);
-  const now = Date.now();
-
-  const event: Record<string, unknown> = {
-    class_uid: classUid,
-    category_uid: categoryUid,
-    activity_id: activityId,
-    severity_id: severityId,
-    status_id: 1,
-    time: now,
-    message: `Detection from ${seed.kind}: ${seed.id.slice(0, 8)}`,
-    metadata: {
-      version: "1.4.0",
-      product: {
-        name: "ClawdStrike Detection Lab",
-        uid: "clawdstrike-detection-lab",
-        vendor_name: "Backbay Labs",
-      },
-    },
-  };
+  const event: Record<string, unknown> = buildBaseOcsfEvent(
+    classUid,
+    activityId,
+    severityId,
+    `Detection from ${seed.kind}: ${seed.id.slice(0, 8)}`,
+  );
 
   // Populate format-specific fields based on class
   if (classUid === 1001) {
@@ -143,11 +278,9 @@ function buildOcsfEvent(seed: DraftSeed): Record<string, unknown> {
     };
   } else if (classUid === 2004) {
     // Detection Finding
-    event["finding_info"] = {
-      uid: seed.id,
-      title: `Finding from ${seed.kind}`,
-      types: seed.techniqueHints,
-    };
+    event["action_id"] = 2;
+    event["disposition_id"] = 2;
+    event["finding_info"] = buildFindingInfo(seed.id, `Finding from ${seed.kind}`, seed.techniqueHints);
   }
 
   // Add technique hints as enrichments
@@ -199,15 +332,24 @@ const ocsfAdapter: DetectionWorkflowAdapter = {
       const classUid = inferClassUid(seed);
 
       const ocsfPayload: Record<string, unknown> = {
-        class_uid: classUid,
-        category_uid: inferCategoryUid(classUid),
-        activity_id: 1,
-        severity_id: inferSeverityId(seed),
-        status_id: 1,
-        time: Date.now(),
-        message: `Event ${eventId}`,
+        ...buildBaseOcsfEvent(
+          classUid,
+          1,
+          inferSeverityId(seed),
+          `Event ${eventId}`,
+        ),
         ...spreadEventData(eventData),
       };
+
+      if (classUid === 2004) {
+        ocsfPayload["action_id"] = 2;
+        ocsfPayload["disposition_id"] = 2;
+        ocsfPayload["finding_info"] = buildFindingInfo(
+          eventId,
+          `Finding from ${seed.kind}`,
+          seed.techniqueHints,
+        );
+      }
 
       const item: EvidenceItem = {
         id: crypto.randomUUID(),
@@ -288,22 +430,11 @@ const ocsfAdapter: DetectionWorkflowAdapter = {
         missingFields = nativeResult.missing_fields;
         invalidFields = nativeResult.invalid_fields.map((f) => `${f.field}: ${f.error}`);
       } else {
-        // Client-side fallback: check required OCSF fields
-        const requiredFields = ["class_uid", "activity_id", "severity_id"];
-        missingFields = requiredFields.filter((f) => {
-          const val = payload[f];
-          return val === undefined || val === null;
-        });
-
-        // Validate that numeric fields are positive (non-zero for class_uid)
-        const classUidVal = payload["class_uid"];
-        if (typeof classUidVal === "number" && classUidVal > 0) {
-          classUid = classUidVal;
-        } else if (typeof classUidVal === "number") {
-          invalidFields.push("class_uid: must be a positive integer");
-        }
-
-        isValid = missingFields.length === 0 && invalidFields.length === 0 && classUid !== null;
+        const fallback = validateOcsfPayloadFallback(payload);
+        isValid = fallback.valid;
+        classUid = fallback.classUid;
+        missingFields = fallback.missingFields;
+        invalidFields = fallback.invalidFields;
       }
 
       const passed = expectedValid === isValid;

@@ -334,6 +334,15 @@ fn detect_file_type_from_path_and_content(path: &str, content: &str) -> Detectio
 
 // ---- Sigma Commands ----
 
+fn sigma_detection_has_selector_mapping(detection: &serde_yaml::Mapping) -> bool {
+    detection.iter().any(|(key, value)| {
+        !matches!(
+            key,
+            serde_yaml::Value::String(name) if name == "condition" || name == "timeframe"
+        ) && value.is_mapping()
+    })
+}
+
 #[tauri::command]
 pub fn validate_sigma_rule(source: String) -> Result<SigmaValidationResponse, String> {
     check_source_size(&source)?;
@@ -396,6 +405,18 @@ pub fn validate_sigma_rule(source: String) -> Result<SigmaValidationResponse, St
                     diagnostics.push(DetectionDiagnostic {
                         severity: "error".into(),
                         message: "detection.condition is required".into(),
+                        line: None,
+                        column: None,
+                    });
+                } else if detection
+                    .as_mapping()
+                    .is_some_and(|det| !sigma_detection_has_selector_mapping(det))
+                {
+                    diagnostics.push(DetectionDiagnostic {
+                        severity: "error".into(),
+                        message:
+                            "Sigma import requires at least one object-valued detection selector"
+                                .into(),
                         line: None,
                         column: None,
                     });
@@ -583,6 +604,37 @@ pub fn validate_yara_rule(source: String) -> Result<YaraValidationResponse, Stri
 
 // ---- OCSF Commands ----
 
+fn ocsf_validation_diagnostics(
+    errors: &[clawdstrike_ocsf::OcsfValidationError],
+) -> Vec<DetectionDiagnostic> {
+    errors
+        .iter()
+        .map(|error| {
+            let message = match error {
+                clawdstrike_ocsf::OcsfValidationError::MissingField { field } => {
+                    format!("Missing required OCSF field: {field}")
+                }
+                clawdstrike_ocsf::OcsfValidationError::InvalidType { field, expected } => {
+                    format!("Invalid type for OCSF field {field}: expected {expected}")
+                }
+                clawdstrike_ocsf::OcsfValidationError::TypeUidMismatch { expected, actual } => {
+                    format!("type_uid mismatch: expected {expected}, got {actual}")
+                }
+                clawdstrike_ocsf::OcsfValidationError::InvalidSeverity { value } => {
+                    format!("severity_id {value} is not a valid OCSF severity (0-6, 99)")
+                }
+            };
+
+            DetectionDiagnostic {
+                severity: "error".into(),
+                message,
+                line: None,
+                column: None,
+            }
+        })
+        .collect()
+}
+
 #[tauri::command]
 pub fn validate_ocsf_event(json: String) -> Result<OcsfValidationResponse, String> {
     check_source_size(&json)?;
@@ -603,59 +655,9 @@ pub fn validate_ocsf_event(json: String) -> Result<OcsfValidationResponse, Strin
                 });
             }
 
-            let mut diagnostics = Vec::new();
-            let has_class_uid = value.get("class_uid").is_some();
-            let class_uid = match value.get("class_uid") {
-                Some(v) => match v.as_i64() {
-                    Some(uid) => Some(uid),
-                    None => {
-                        diagnostics.push(DetectionDiagnostic {
-                            severity: "error".into(),
-                            message: "class_uid must be an integer".into(),
-                            line: None,
-                            column: None,
-                        });
-                        None
-                    }
-                },
-                None => None,
-            };
-
-            if !has_class_uid {
-                diagnostics.push(DetectionDiagnostic {
-                    severity: "error".into(),
-                    message: "Missing required field: class_uid".into(),
-                    line: None,
-                    column: None,
-                });
-            }
-
-            if value.get("activity_id").is_none() {
-                diagnostics.push(DetectionDiagnostic {
-                    severity: "error".into(),
-                    message: "Missing required field: activity_id".into(),
-                    line: None,
-                    column: None,
-                });
-            }
-
-            if value.get("severity_id").is_none() {
-                diagnostics.push(DetectionDiagnostic {
-                    severity: "error".into(),
-                    message: "Missing required field: severity_id".into(),
-                    line: None,
-                    column: None,
-                });
-            }
-
-            if value.get("metadata").is_none() {
-                diagnostics.push(DetectionDiagnostic {
-                    severity: "warning".into(),
-                    message: "Missing recommended field: metadata".into(),
-                    line: None,
-                    column: None,
-                });
-            }
+            let class_uid = value.get("class_uid").and_then(|v| v.as_i64());
+            let diagnostics =
+                ocsf_validation_diagnostics(&clawdstrike_ocsf::validate_ocsf_json(&value));
 
             let event_class = class_uid
                 .and_then(ocsf_class_name)
@@ -1452,6 +1454,43 @@ rule actual_rule {
         );
         assert_eq!(response.rule_count, 1);
         assert!(response.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn validate_sigma_rule_rejects_rules_without_object_selectors() {
+        let response = validate_sigma_rule(
+            r#"title: Missing selector object
+logsource:
+  product: windows
+detection:
+  selection: foo
+  condition: selection
+"#
+            .to_string(),
+        )
+        .expect("sigma validation should complete");
+
+        assert!(!response.valid);
+        assert!(response.diagnostics.iter().any(|diagnostic| diagnostic
+            .message
+            .contains("object-valued detection selector")));
+    }
+
+    #[test]
+    fn validate_ocsf_event_rejects_invalid_required_field_types() {
+        let response = validate_ocsf_event(
+            r#"{"class_uid":1001,"activity_id":"x","severity_id":"high","metadata":{}}"#
+                .to_string(),
+        )
+        .expect("ocsf validation should complete");
+
+        assert!(!response.valid);
+        assert!(response.diagnostics.iter().any(|diagnostic| diagnostic
+            .message
+            .contains("Invalid type for OCSF field activity_id")));
+        assert!(response.diagnostics.iter().any(|diagnostic| diagnostic
+            .message
+            .contains("Invalid type for OCSF field severity_id")));
     }
 
     #[test]
