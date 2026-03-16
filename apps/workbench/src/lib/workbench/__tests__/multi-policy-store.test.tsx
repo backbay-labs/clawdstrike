@@ -193,6 +193,83 @@ guards:
   );
 }
 
+function YaraValidationHarness() {
+  const { multiDispatch } = useMultiPolicy();
+  const { state } = useWorkbench();
+
+  return React.createElement(
+    "div",
+    null,
+    React.createElement(
+      "button",
+      {
+        type: "button",
+        onClick: () =>
+          multiDispatch({
+            type: "NEW_TAB",
+            fileType: "yara_rule",
+            yaml: `rule regex_quantifier {
+  strings:
+    $re = /a{2,3}/
+  condition:
+    $re
+}
+`,
+          }),
+      },
+      "new-yara-regex",
+    ),
+    React.createElement(
+      "button",
+      {
+        type: "button",
+        onClick: () =>
+          multiDispatch({
+            type: "NEW_TAB",
+            fileType: "yara_rule",
+            yaml: `rule multiline_hex {
+  strings:
+    $hex = {
+      AA BB
+      CC DD
+    }
+  condition:
+    $hex
+}
+`,
+          }),
+      },
+      "new-yara-hex",
+    ),
+    React.createElement(
+      "button",
+      {
+        type: "button",
+        onClick: () =>
+          multiDispatch({
+            type: "NEW_TAB",
+            fileType: "yara_rule",
+            yaml: `rule commented_braces {
+  /*
+    this stray brace should not close the rule }
+  */
+  condition:
+    true
+}
+`,
+          }),
+      },
+      "new-yara-comment",
+    ),
+    React.createElement("span", { "data-testid": "yara-valid" }, String(state.validation.valid)),
+    React.createElement(
+      "pre",
+      { "data-testid": "yara-errors" },
+      state.validation.errors.map((issue) => issue.message).join("\n"),
+    ),
+  );
+}
+
 beforeEach(() => {
   localStorage.clear();
 });
@@ -414,5 +491,50 @@ level: medium
     expect(screen.getByTestId("active-file-type").textContent).toBe("sigma_rule");
     expect(screen.getByTestId("active-yaml").textContent).toContain("title: Persisted Sigma");
     expect(screen.getByTestId("active-yaml").textContent).not.toContain("guards:");
+  });
+
+  it("does not miscount braces inside YARA regex literals", () => {
+    render(
+      React.createElement(
+        MultiPolicyProvider,
+        null,
+        React.createElement(YaraValidationHarness),
+      ),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "new-yara-regex" }));
+
+    expect(screen.getByTestId("yara-valid").textContent).toBe("true");
+    expect(screen.getByTestId("yara-errors").textContent).toBe("");
+  });
+
+  it("keeps multi-line YARA hex strings out of structural brace counting", () => {
+    render(
+      React.createElement(
+        MultiPolicyProvider,
+        null,
+        React.createElement(YaraValidationHarness),
+      ),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "new-yara-hex" }));
+
+    expect(screen.getByTestId("yara-valid").textContent).toBe("true");
+    expect(screen.getByTestId("yara-errors").textContent).toBe("");
+  });
+
+  it("ignores braces inside YARA block comments", () => {
+    render(
+      React.createElement(
+        MultiPolicyProvider,
+        null,
+        React.createElement(YaraValidationHarness),
+      ),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "new-yara-comment" }));
+
+    expect(screen.getByTestId("yara-valid").textContent).toBe("true");
+    expect(screen.getByTestId("yara-errors").textContent).toBe("");
   });
 });

@@ -1,8 +1,10 @@
+import React from "react";
 import { describe, it, expect, vi } from "vitest";
-import { screen } from "@testing-library/react";
+import { fireEvent, screen } from "@testing-library/react";
 import { StatusBar } from "../status-bar";
 import { renderWithProviders } from "@/test/test-helpers";
 import { GUARD_REGISTRY } from "@/lib/workbench/guard-registry";
+import { useMultiPolicy, useWorkbench } from "@/lib/workbench/multi-policy-store";
 
 vi.mock("@/lib/tauri-bridge", () => ({
   isDesktop: vi.fn(() => false),
@@ -11,6 +13,50 @@ vi.mock("@/lib/tauri-bridge", () => ({
   maximizeWindow: vi.fn(),
   closeWindow: vi.fn(),
 }));
+
+function DetectionStatusHarness() {
+  const { multiDispatch } = useMultiPolicy();
+  const { dispatch } = useWorkbench();
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() =>
+          multiDispatch({
+            type: "NEW_TAB",
+            fileType: "yara_rule",
+            yaml: `rule demo_rule {
+  strings:
+    $re = /a{2,3}/
+  condition:
+    $re
+}
+`,
+          })}
+      >
+        open-yara
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          dispatch({
+            type: "SET_NATIVE_VALIDATION",
+            payload: {
+              guardErrors: {},
+              topLevelErrors: ["Native YARA validation failed"],
+              topLevelWarnings: [],
+              loading: false,
+              valid: false,
+            },
+          })}
+      >
+        set-native-invalid
+      </button>
+      <StatusBar />
+    </>
+  );
+}
 
 describe("StatusBar", () => {
   it("shows 'Valid' status when there are no errors or warnings", () => {
@@ -53,5 +99,15 @@ describe("StatusBar", () => {
     const footer = screen.getByRole("contentinfo");
     expect(footer).toBeInTheDocument();
     expect(footer.tagName).toBe("FOOTER");
+  });
+
+  it("prefers native validation status for detection tabs when available", () => {
+    renderWithProviders(<DetectionStatusHarness />);
+
+    fireEvent.click(screen.getByRole("button", { name: "open-yara" }));
+    fireEvent.click(screen.getByRole("button", { name: "set-native-invalid" }));
+
+    expect(screen.getByText("1 error")).toBeInTheDocument();
+    expect(screen.getByText("YARA Rule")).toBeInTheDocument();
   });
 });

@@ -300,71 +300,154 @@ function validateSigmaSource(yaml: string): ValidationResult {
   return toValidationResult(errors, "sigma");
 }
 
-function countBracesOutsideHexStrings(line: string): { opens: number; closes: number } {
+interface YaraScanState {
+  inBlockComment: boolean;
+  inHexString: boolean;
+}
+
+function analyzeYaraLine(
+  line: string,
+  state: YaraScanState,
+): {
+  code: string;
+  opens: number;
+  closes: number;
+  hasCondition: boolean;
+  state: YaraScanState;
+} {
   let opens = 0;
   let closes = 0;
   let inString = false;
-  let inHexString = false;
-  let lastNonWs = "";
+  let inRegex = false;
+  let escaped = false;
+  let inBlockComment = state.inBlockComment;
+  let inHexString = state.inHexString;
+  let lastStructuralNonWs = "";
+  let code = "";
 
   for (let i = 0; i < line.length; i++) {
     const ch = line[i];
+    const next = line[i + 1];
 
-    // End-of-line comment
-    if (!inString && !inHexString && ch === "/" && line[i + 1] === "/") break;
+    if (inBlockComment) {
+      if (ch === "*" && next === "/") {
+        inBlockComment = false;
+        i++;
+      }
+      continue;
+    }
 
-    // Inside hex string — skip until closing brace
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (ch === "\\" && (inString || inRegex)) {
+      escaped = true;
+      continue;
+    }
+
+    if (!inString && !inRegex && !inHexString && ch === "/" && next === "/") {
+      break;
+    }
+
+    if (!inString && !inRegex && !inHexString && ch === "/" && next === "*") {
+      inBlockComment = true;
+      i++;
+      continue;
+    }
+
     if (inHexString) {
-      if (ch === "}") inHexString = false;
+      if (ch === "}") {
+        inHexString = false;
+        lastStructuralNonWs = "";
+      }
       continue;
     }
 
-    if (ch === '"') {
+    if (ch === '"' && !inRegex) {
       inString = !inString;
-      lastNonWs = ch;
+      if (!inString) {
+        lastStructuralNonWs = "";
+      }
       continue;
     }
 
-    if (inString) continue;
-
-    if (ch === "{") {
-      // Detect hex string context: `= {` pattern
-      if (lastNonWs === "=") {
-        inHexString = true;
+    if (ch === "/" && !inString) {
+      const prev = i > 0 ? line[i - 1] : " ";
+      if (!inRegex && !/[A-Za-z0-9_]/.test(prev) && next !== "/" && next !== "*") {
+        inRegex = true;
         continue;
       }
-      opens++;
-    } else if (ch === "}") {
-      closes++;
+      if (inRegex) {
+        inRegex = false;
+        lastStructuralNonWs = "";
+        while (/[A-Za-z]/.test(line[i + 1] ?? "")) {
+          i++;
+        }
+        continue;
+      }
     }
 
-    if (ch.trim()) lastNonWs = ch;
+    if (!inString && !inRegex) {
+      if (ch === "{") {
+        if (lastStructuralNonWs === "=") {
+          inHexString = true;
+          continue;
+        }
+        opens++;
+      } else if (ch === "}") {
+        closes++;
+      }
+
+      code += ch;
+      if (ch.trim()) {
+        lastStructuralNonWs = ch;
+      }
+    }
   }
 
-  return { opens, closes };
+  return {
+    code,
+    opens,
+    closes,
+    hasCondition: code.includes("condition:"),
+    state: { inBlockComment, inHexString },
+  };
+}
+
+function stripYaraRuleModifiers(line: string): string {
+  let rest = line.trim();
+  while (rest.startsWith("private ") || rest.startsWith("global ")) {
+    if (rest.startsWith("private ")) {
+      rest = rest.slice("private ".length).trimStart();
+      continue;
+    }
+    rest = rest.slice("global ".length).trimStart();
+  }
+  return rest;
 }
 
 function validateYaraSource(source: string): ValidationResult {
   const errors: string[] = [];
   const lines = source.split(/\r?\n/);
   let ruleCount = 0;
+  let scanState: YaraScanState = { inBlockComment: false, inHexString: false };
   let currentRule: { name: string; sawCondition: boolean; braceDepth: number } | null = null;
 
   for (const line of lines) {
-    const trimmed = line.trim();
-    const ruleMatch = trimmed.match(
-      /^(?:(?:private|global)\s+)*(?:rule)\s+([A-Za-z_]\w*)\b/,
-    );
+    const analyzed = analyzeYaraLine(line, scanState);
+    scanState = analyzed.state;
+    const ruleMatch = stripYaraRuleModifiers(analyzed.code).match(/^rule\s+([A-Za-z_]\w*)\b/);
 
     if (ruleMatch) {
       if (currentRule && !currentRule.sawCondition) {
         errors.push(`Rule "${currentRule.name}" is missing a condition section`);
       }
-      const braces = countBracesOutsideHexStrings(line);
       currentRule = {
         name: ruleMatch[1],
-        sawCondition: false,
-        braceDepth: braces.opens - braces.closes,
+        sawCondition: analyzed.hasCondition,
+        braceDepth: analyzed.opens - analyzed.closes,
       };
       ruleCount += 1;
       continue;
@@ -372,12 +455,11 @@ function validateYaraSource(source: string): ValidationResult {
 
     if (!currentRule) continue;
 
-    if (trimmed.startsWith("condition:")) {
+    if (analyzed.hasCondition) {
       currentRule.sawCondition = true;
     }
 
-    const braces = countBracesOutsideHexStrings(line);
-    currentRule.braceDepth += braces.opens - braces.closes;
+    currentRule.braceDepth += analyzed.opens - analyzed.closes;
 
     if (currentRule.braceDepth <= 0) {
       if (!currentRule.sawCondition) {

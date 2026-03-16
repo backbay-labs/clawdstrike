@@ -20,14 +20,18 @@ export function StatusBar() {
   const { tabs, activeTab: currentTab } = useMultiPolicy();
   const { connection } = useFleetConnection();
   const navigate = useNavigate();
-  const { activePolicy, validation, filePath } = state;
+  const { activePolicy, validation, filePath, nativeValidation } = state;
   const desktop = isDesktop();
   const fileType = currentTab?.fileType ?? "clawdstrike_policy";
   const policyTab = isPolicyFileType(fileType);
 
   // ---- Validation status ----
-  const errorCount = validation.errors.length;
-  const warningCount = validation.warnings.length;
+  const errorCount = !policyTab && nativeValidation.valid !== null
+    ? nativeValidation.topLevelErrors.length
+    : validation.errors.length;
+  const warningCount = !policyTab && nativeValidation.valid !== null
+    ? nativeValidation.topLevelWarnings.length
+    : validation.warnings.length;
 
   let statusIcon: string;
   let statusText: string;

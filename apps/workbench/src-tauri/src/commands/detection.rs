@@ -133,15 +133,21 @@ fn check_source_size(source: &str) -> Result<(), String> {
 /// inside string literals, regex literals, hex strings (`= { ... }`), line comments,
 /// and block comments.
 ///
-/// `in_block_comment` is threaded through successive calls so that multi-line `/* */`
-/// comments are handled correctly. The updated flag is returned alongside the scrubbed
-/// code fragment.
-fn scrub_yara_line(line: &str, in_block_comment: bool) -> (String, bool) {
+/// The state is threaded through successive calls so that multi-line `/* */`
+/// comments and multi-line hex strings are handled correctly. The updated state
+/// is returned alongside the scrubbed code fragment.
+#[derive(Clone, Copy, Debug, Default)]
+struct YaraScrubState {
+    in_block_comment: bool,
+    in_hex_string: bool,
+}
+
+fn scrub_yara_line(line: &str, state: YaraScrubState) -> (String, YaraScrubState) {
     let mut code = String::with_capacity(line.len());
     let mut in_string = false;
     let mut in_regex = false;
-    let mut in_hex_string = false;
-    let mut in_block = in_block_comment;
+    let mut in_hex_string = state.in_hex_string;
+    let mut in_block = state.in_block_comment;
     let mut escaped = false;
     let chars: Vec<char> = line.chars().collect();
     let mut i = 0;
@@ -176,12 +182,14 @@ fn scrub_yara_line(line: &str, in_block_comment: bool) -> (String, bool) {
         }
 
         // End-of-line comment
-        if !in_string && !in_regex && !in_hex_string && ch == '/' && chars.get(i + 1) == Some(&'/') {
+        if !in_string && !in_regex && !in_hex_string && ch == '/' && chars.get(i + 1) == Some(&'/')
+        {
             break;
         }
 
         // Block comment opening
-        if !in_string && !in_regex && !in_hex_string && ch == '/' && chars.get(i + 1) == Some(&'*') {
+        if !in_string && !in_regex && !in_hex_string && ch == '/' && chars.get(i + 1) == Some(&'*')
+        {
             in_block = true;
             i += 2;
             continue;
@@ -191,7 +199,7 @@ fn scrub_yara_line(line: &str, in_block_comment: bool) -> (String, bool) {
         if in_hex_string {
             if ch == '}' {
                 in_hex_string = false;
-                last_non_ws = Some(ch);
+                last_non_ws = None;
             }
             i += 1;
             continue;
@@ -199,7 +207,9 @@ fn scrub_yara_line(line: &str, in_block_comment: bool) -> (String, bool) {
 
         if ch == '"' && !in_regex {
             in_string = !in_string;
-            last_non_ws = Some(ch);
+            if !in_string {
+                last_non_ws = None;
+            }
             i += 1;
             continue;
         }
@@ -209,13 +219,12 @@ fn scrub_yara_line(line: &str, in_block_comment: bool) -> (String, bool) {
             let next = chars.get(i + 1).copied().unwrap_or(' ');
             if !in_regex && !prev.is_alphanumeric() && next != '/' && next != '*' {
                 in_regex = true;
-                last_non_ws = Some(ch);
                 i += 1;
                 continue;
             }
             if in_regex {
                 in_regex = false;
-                last_non_ws = Some(ch);
+                last_non_ws = None;
                 i += 1;
                 while i < chars.len() && chars[i].is_ascii_alphabetic() {
                     i += 1;
@@ -229,6 +238,7 @@ fn scrub_yara_line(line: &str, in_block_comment: bool) -> (String, bool) {
                 // Detect hex string context: the last non-whitespace char before `{` is `=`
                 if last_non_ws == Some('=') {
                     in_hex_string = true;
+                    last_non_ws = None;
                     i += 1;
                     continue;
                 }
@@ -236,23 +246,29 @@ fn scrub_yara_line(line: &str, in_block_comment: bool) -> (String, bool) {
             code.push(ch);
         }
 
-        if !ch.is_whitespace() {
+        if !in_string && !in_regex && !ch.is_whitespace() {
             last_non_ws = Some(ch);
         }
         i += 1;
     }
 
-    (code, in_block)
+    (
+        code,
+        YaraScrubState {
+            in_block_comment: in_block,
+            in_hex_string,
+        },
+    )
 }
 
 /// Analyze a YARA source line for structural braces and a `condition:` token while
 /// ignoring strings, regexes, hex strings, and comments.
-fn analyze_yara_line(line: &str, in_block_comment: bool) -> (i32, i32, bool, bool) {
-    let (code, in_block_comment) = scrub_yara_line(line, in_block_comment);
+fn analyze_yara_line(line: &str, state: YaraScrubState) -> (i32, i32, bool, YaraScrubState) {
+    let (code, state) = scrub_yara_line(line, state);
     let opens = code.chars().filter(|ch| *ch == '{').count() as i32;
     let closes = code.chars().filter(|ch| *ch == '}').count() as i32;
     let has_condition = code.contains("condition:");
-    (opens, closes, has_condition, in_block_comment)
+    (opens, closes, has_condition, state)
 }
 
 fn format_detection_diagnostic(diagnostic: &DetectionDiagnostic) -> String {
@@ -442,7 +458,7 @@ pub fn validate_yara_rule(source: String) -> Result<YaraValidationResponse, Stri
     let mut rule_count = 0u32;
     // Track brace depth as i32 to detect negative depth (more closes than opens).
     let mut current_rule: Option<(String, i32, bool)> = None;
-    let mut in_block_comment = false;
+    let mut line_state = YaraScrubState::default();
 
     for (idx, line) in source.lines().enumerate() {
         let trimmed = line.trim();
@@ -463,12 +479,11 @@ pub fn validate_yara_rule(source: String) -> Result<YaraValidationResponse, Stri
         }
         {
             // Only detect rule declarations outside block comments.
-            if !in_block_comment {
+            if !line_state.in_block_comment && !line_state.in_hex_string {
                 if let Some(rule_decl) = after_modifiers.strip_prefix("rule ") {
                     // Emit a diagnostic for the previous rule if it was not properly
                     // terminated (brace_depth != 0) before starting a new one.
-                    if let Some((prev_name, prev_depth, prev_saw_condition)) = current_rule.take()
-                    {
+                    if let Some((prev_name, prev_depth, prev_saw_condition)) = current_rule.take() {
                         if !prev_saw_condition {
                             diagnostics.push(DetectionDiagnostic {
                                 severity: "error".into(),
@@ -499,9 +514,9 @@ pub fn validate_yara_rule(source: String) -> Result<YaraValidationResponse, Stri
                     // Count braces on the rule declaration line itself so that
                     // single-line rules (e.g. `rule x { condition: true }`) are
                     // tracked correctly.
-                    let (opens, closes, saw_condition, blk) =
-                        analyze_yara_line(line, in_block_comment);
-                    in_block_comment = blk;
+                    let (opens, closes, saw_condition, next_state) =
+                        analyze_yara_line(line, line_state);
+                    line_state = next_state;
                     current_rule = Some((rule_name, opens - closes, saw_condition));
                     rule_count += 1;
                     continue;
@@ -510,9 +525,9 @@ pub fn validate_yara_rule(source: String) -> Result<YaraValidationResponse, Stri
         }
 
         if let Some((rule_name, brace_depth, saw_condition)) = current_rule.as_mut() {
-            let (opens, closes, line_has_condition, blk) =
-                analyze_yara_line(line, in_block_comment);
-            in_block_comment = blk;
+            let (opens, closes, line_has_condition, next_state) =
+                analyze_yara_line(line, line_state);
+            line_state = next_state;
             if line_has_condition {
                 *saw_condition = true;
             }
@@ -658,9 +673,9 @@ pub fn validate_ocsf_event(json: String) -> Result<OcsfValidationResponse, Strin
                 });
             }
 
-            let event_class = class_uid.and_then(ocsf_class_name).or_else(|| {
-                class_uid.map(|uid| format!("Unknown ({uid})"))
-            });
+            let event_class = class_uid
+                .and_then(ocsf_class_name)
+                .or_else(|| class_uid.map(|uid| format!("Unknown ({uid})")));
 
             let valid = diagnostics.iter().all(|d| d.severity != "error");
             Ok(OcsfValidationResponse {
@@ -735,7 +750,6 @@ pub async fn export_detection_file(
     }
 
     check_source_size(&content)?;
-    let _ = validate_file_path(&path)?;
 
     let validation_failed = match file_type.as_str() {
         "sigma_rule" => {
@@ -809,10 +823,14 @@ pub async fn export_detection_file(
     // Check sensitive path BEFORE writing to prevent writing to sensitive locations
     if let Ok(canon) = export_path.canonicalize().or_else(|_| {
         // If the file doesn't exist yet, canonicalize the parent directory
-        export_path.parent()
+        export_path
+            .parent()
             .and_then(|p| p.canonicalize().ok())
             .map(|p| p.join(export_path.file_name().unwrap_or_default()))
-            .ok_or(std::io::Error::new(std::io::ErrorKind::NotFound, "no parent"))
+            .ok_or(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "no parent",
+            ))
     }) {
         let canon_check = canon.to_string_lossy().replace('\\', "/").to_lowercase();
         check_sensitive_path(&canon_check)?;
@@ -867,21 +885,36 @@ fn json_to_timeline_event(
         .unwrap_or(hunt_query::timeline::NormalizedVerdict::None);
 
     Ok(hunt_query::timeline::TimelineEvent {
-        event_id: value.get("event_id").and_then(|v| v.as_str()).map(String::from),
+        event_id: value
+            .get("event_id")
+            .and_then(|v| v.as_str())
+            .map(String::from),
         timestamp,
         source,
         kind,
         verdict,
-        severity: value.get("severity").and_then(|v| v.as_str()).map(String::from),
+        severity: value
+            .get("severity")
+            .and_then(|v| v.as_str())
+            .map(String::from),
         summary: value
             .get("summary")
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string(),
-        process: value.get("process").and_then(|v| v.as_str()).map(String::from),
-        namespace: value.get("namespace").and_then(|v| v.as_str()).map(String::from),
+        process: value
+            .get("process")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        namespace: value
+            .get("namespace")
+            .and_then(|v| v.as_str())
+            .map(String::from),
         pod: value.get("pod").and_then(|v| v.as_str()).map(String::from),
-        action_type: value.get("action_type").and_then(|v| v.as_str()).map(String::from),
+        action_type: value
+            .get("action_type")
+            .and_then(|v| v.as_str())
+            .map(String::from),
         signature_valid: value.get("signature_valid").and_then(|v| v.as_bool()),
         raw: Some(value.clone()),
     })
@@ -899,10 +932,7 @@ fn ocsf_class_name(uid: i64) -> Option<String> {
 }
 
 #[tauri::command]
-pub fn test_sigma_rule(
-    source: String,
-    events_json: String,
-) -> Result<SigmaTestResponse, String> {
+pub fn test_sigma_rule(source: String, events_json: String) -> Result<SigmaTestResponse, String> {
     check_source_size(&source)?;
     if events_json.len() > MAX_EVENTS_SIZE {
         return Err(format!(
@@ -944,10 +974,8 @@ pub fn test_sigma_rule(
     // of distinct findings (capped by events_tested).  Previous code counted
     // individual evidence_refs strings which are field-ref IDs, not events.
     let unique_event_count = {
-        let indices: std::collections::HashSet<usize> = findings
-            .iter()
-            .filter_map(|f| f.event_index)
-            .collect();
+        let indices: std::collections::HashSet<usize> =
+            findings.iter().filter_map(|f| f.event_index).collect();
         if indices.is_empty() {
             // No event-level attribution — best estimate is distinct findings.
             findings.len()
@@ -1028,9 +1056,8 @@ pub fn compile_sigma_rule(source: String) -> Result<SigmaCompileResponse, String
 pub fn normalize_ocsf_event(json: String) -> Result<OcsfNormalizeResponse, String> {
     check_source_size(&json)?;
 
-    let value: serde_json::Value = serde_json::from_str(&json).map_err(|e| {
-        format!("JSON parse error: {e}")
-    })?;
+    let value: serde_json::Value =
+        serde_json::from_str(&json).map_err(|e| format!("JSON parse error: {e}"))?;
 
     if !value.is_object() {
         return Ok(OcsfNormalizeResponse {
@@ -1096,9 +1123,7 @@ pub fn normalize_ocsf_event(json: String) -> Result<OcsfNormalizeResponse, Strin
                 });
                 diagnostics.push(DetectionDiagnostic {
                     severity: "error".into(),
-                    message: format!(
-                        "severity_id {sev} is not a valid OCSF severity (0-6, 99)"
-                    ),
+                    message: format!("severity_id {sev} is not a valid OCSF severity (0-6, 99)"),
                     line: None,
                     column: None,
                 });
@@ -1106,13 +1131,11 @@ pub fn normalize_ocsf_event(json: String) -> Result<OcsfNormalizeResponse, Strin
         }
     }
 
-    let class_uid = value
-        .get("class_uid")
-        .and_then(|v| v.as_i64());
+    let class_uid = value.get("class_uid").and_then(|v| v.as_i64());
 
-    let event_class = class_uid.and_then(ocsf_class_name).or_else(|| {
-        class_uid.map(|uid| format!("Unknown ({uid})"))
-    });
+    let event_class = class_uid
+        .and_then(ocsf_class_name)
+        .or_else(|| class_uid.map(|uid| format!("Unknown ({uid})")));
 
     let valid = validation_errors.is_empty();
 
@@ -1152,9 +1175,7 @@ pub fn convert_sigma_rule(
             output: None,
             diagnostics: vec![DetectionDiagnostic {
                 severity: "error".into(),
-                message: format!(
-                    "Unsupported target format '{other}'. Supported: native_policy"
-                ),
+                message: format!("Unsupported target format '{other}'. Supported: native_policy"),
                 line: None,
                 column: None,
             }],
@@ -1170,7 +1191,9 @@ pub fn convert_sigma_rule(
 /// whitespace, wrap it in double quotes and escape internal double-quotes and
 /// backslashes.  Plain alphanumeric strings pass through unchanged.
 fn escape_yaml_string(s: &str) -> String {
-    const SPECIAL: &[char] = &[':', '#', '\'', '"', '{', '}', '[', ']', '>', '|', '*', '&', '!', '%', '@', '`', ','];
+    const SPECIAL: &[char] = &[
+        ':', '#', '\'', '"', '{', '}', '[', ']', '>', '|', '*', '&', '!', '%', '@', '`', ',',
+    ];
     let has_control = s.chars().any(|c| c.is_control());
     let needs_quoting = s.is_empty()
         || s.starts_with(|c: char| c.is_whitespace())
@@ -1213,8 +1236,8 @@ fn convert_sigma_to_native_policy(source: &str) -> Result<SigmaConvertResponse, 
         .map_err(|e| format!("Sigma compilation failed: {e}"))?;
 
     // Parse the Sigma YAML to extract metadata
-    let parsed: serde_json::Value = serde_yaml::from_str(source)
-        .map_err(|e| format!("Sigma YAML parse error: {e}"))?;
+    let parsed: serde_json::Value =
+        serde_yaml::from_str(source).map_err(|e| format!("Sigma YAML parse error: {e}"))?;
 
     let title_raw = parsed
         .get("title")
@@ -1224,7 +1247,7 @@ fn convert_sigma_to_native_policy(source: &str) -> Result<SigmaConvertResponse, 
         .get("description")
         .and_then(|v| v.as_str())
         .unwrap_or("Converted from Sigma rule");
-    let level = parsed
+    let level_raw = parsed
         .get("level")
         .and_then(|v| v.as_str())
         .unwrap_or("medium");
@@ -1238,6 +1261,7 @@ fn convert_sigma_to_native_policy(source: &str) -> Result<SigmaConvertResponse, 
     let title_comment = sanitize_yaml_comment_text(title_raw);
     let description_comment = sanitize_yaml_comment_text(description_raw);
     let status_comment = sanitize_yaml_comment_text(status_raw);
+    let level_comment = sanitize_yaml_comment_text(level_raw);
 
     // Extract logsource for guard mapping
     let logsource = parsed.get("logsource");
@@ -1245,6 +1269,7 @@ fn convert_sigma_to_native_policy(source: &str) -> Result<SigmaConvertResponse, 
         .and_then(|ls| ls.get("category"))
         .and_then(|v| v.as_str())
         .unwrap_or("generic");
+    let category_comment = sanitize_yaml_comment_text(category);
     let product_raw = logsource
         .and_then(|ls| ls.get("product"))
         .and_then(|v| v.as_str())
@@ -1260,10 +1285,10 @@ fn convert_sigma_to_native_policy(source: &str) -> Result<SigmaConvertResponse, 
         let inner = title_sanitized.replace('\\', "\\\\").replace('"', "\\\"");
         format!("\"# Sigma: {inner}\"")
     };
-    let level_yaml = escape_yaml_string(level);
+    let level_yaml = escape_yaml_string(level_raw);
 
     // Map Sigma level to policy severity
-    let policy_level = match level {
+    let policy_level = match level_raw {
         "critical" => "strict",
         "high" => "strict",
         "medium" => "default",
@@ -1290,14 +1315,14 @@ fn convert_sigma_to_native_policy(source: &str) -> Result<SigmaConvertResponse, 
         }
         _ => {
             format!(
-                "    # No direct guard mapping for logsource category '{category}'\n    # Review and configure appropriate guards manually\n    shell_command:\n      log_level: {level_yaml}"
+                "    # No direct guard mapping for logsource category '{category_comment}'\n    # Review and configure appropriate guards manually\n    shell_command:\n      log_level: {level_yaml}"
             )
         }
     };
 
     let policy_yaml = format!(
         r#"# Auto-generated from Sigma rule: {title_comment}
-# Status: {status_comment} | Level: {level} | Product: {product_comment}
+# Status: {status_comment} | Level: {level_comment} | Product: {product_comment}
 # {description_comment}
 #
 # Source compilation: {engine_kind} engine
@@ -1365,11 +1390,35 @@ mod tests {
         assert!(response.valid, "expected inline condition rule to be valid");
         assert_eq!(response.rule_count, 1);
         assert!(
-            response
-                .diagnostics
-                .iter()
-                .all(|diagnostic| !diagnostic.message.contains("missing a required 'condition:'")),
+            response.diagnostics.iter().all(|diagnostic| !diagnostic
+                .message
+                .contains("missing a required 'condition:'")),
             "unexpected missing-condition diagnostic: {:?}",
+            response.diagnostics
+        );
+    }
+
+    #[test]
+    fn validate_yara_rule_accepts_multiline_hex_strings() {
+        let response = validate_yara_rule(
+            r#"rule multiline_hex {
+    strings:
+        $hex = {
+            AA BB
+            CC DD
+        }
+    condition:
+        $hex
+}"#
+            .to_string(),
+        )
+        .expect("multiline hex YARA rule should validate");
+
+        assert!(response.valid, "expected multiline hex rule to be valid");
+        assert_eq!(response.rule_count, 1);
+        assert!(
+            response.diagnostics.is_empty(),
+            "unexpected diagnostics: {:?}",
             response.diagnostics
         );
     }
@@ -1395,9 +1444,43 @@ detection:
 
         serde_yaml::from_str::<serde_yaml::Value>(&output)
             .expect("generated native policy should remain valid YAML");
-        assert!(output.contains("# Auto-generated from Sigma rule: Suspicious Command: PowerShell #1"));
+        assert!(
+            output.contains("# Auto-generated from Sigma rule: Suspicious Command: PowerShell #1")
+        );
         assert!(output.contains("- \"# Sigma: Suspicious Command: PowerShell #1\""));
         assert!(!output.contains("\"# Sigma: \\\"Suspicious Command: PowerShell #1\\\"\""));
+    }
+
+    #[test]
+    fn convert_sigma_to_native_policy_sanitizes_level_comments() {
+        let sigma = r#"title: "Multiline Level"
+description: Convert safely
+status: experimental
+level: |
+  high
+  schema_version: "9.9.9"
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    CommandLine|contains: bash
+  condition: selection
+"#;
+
+        let response =
+            convert_sigma_to_native_policy(sigma).expect("sigma conversion should succeed");
+        let output = response.output.expect("expected native policy output");
+        let parsed = serde_yaml::from_str::<serde_yaml::Value>(&output)
+            .expect("generated native policy should remain valid YAML");
+
+        assert!(output.contains("Level: high schema_version: \"9.9.9\" | Product: linux"));
+        assert_eq!(
+            parsed
+                .get("schema_version")
+                .and_then(|value| value.as_str()),
+            Some("1.5.0")
+        );
     }
 
     #[test]

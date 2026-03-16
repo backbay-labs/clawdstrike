@@ -124,11 +124,8 @@ function PostureCore({
   const segments = useMemo(() => {
     const result: { angle: number; active: boolean }[] = [];
     const step = 360 / totalGuards;
-    let idx = 0;
-    for (const guard of GUARD_REGISTRY) {
-      const cfg = (guard as { id: string }).id;
+    for (let idx = 0; idx < GUARD_REGISTRY.length; idx++) {
       result.push({ angle: step * idx, active: idx < enabledGuards });
-      idx++;
     }
     return result;
   }, [enabledGuards, totalGuards]);
