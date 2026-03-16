@@ -177,7 +177,8 @@ export function sanitizeFilenameStem(name: string, fallback: string): string {
 
 /**
  * Returns the file type based solely on file extension, or null if
- * the extension is ambiguous (e.g. `.yaml` could be policy or sigma).
+ * the extension is ambiguous (e.g. `.yaml` could be policy or sigma,
+ * `.json` could be an OCSF event or a policy export).
  */
 export function getFileTypeByExtension(filename: string): FileType | null {
   const lower = filename.toLowerCase();
@@ -185,19 +186,56 @@ export function getFileTypeByExtension(filename: string): FileType | null {
   if (lower.endsWith(".yar") || lower.endsWith(".yara")) {
     return "yara_rule";
   }
-  if (lower.endsWith(".json")) {
-    return "ocsf_event";
-  }
-  // .yaml / .yml are ambiguous between policy and sigma
+  // .yaml / .yml are ambiguous between policy and sigma.
+  // .json is ambiguous between policy exports, OCSF events, and
+  // arbitrary JSON files that should fall back to content heuristics.
   return null;
+}
+
+function parseJsonObject(content: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(content) as unknown;
+    return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function isInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value);
+}
+
+function looksLikePolicyJson(content: string): boolean {
+  const parsed = parseJsonObject(content);
+  if (!parsed) {
+    return false;
+  }
+
+  return typeof parsed.schema_version === "string" || typeof parsed.guards === "object";
+}
+
+function looksLikeOcsfJson(content: string): boolean {
+  const parsed = parseJsonObject(content);
+  if (!parsed || !isInteger(parsed.class_uid)) {
+    return false;
+  }
+
+  return (
+    isInteger(parsed.category_uid) ||
+    (parsed.metadata !== null && typeof parsed.metadata === "object") ||
+    (parsed.finding_info !== null && typeof parsed.finding_info === "object")
+  );
 }
 
 /**
  * Detect the file type from a filename and its content.
  *
- * 1. Unambiguous extensions resolve immediately (.yar/.yara -> yara_rule, .json -> ocsf_event).
- * 2. For YAML files (.yaml/.yml), content heuristics disambiguate policy vs sigma.
- * 3. Unknown extensions fall back to content heuristics, then clawdstrike_policy.
+ * 1. Unambiguous extensions resolve immediately (.yar/.yara -> yara_rule).
+ * 2. Content heuristics disambiguate JSON policy exports / OCSF events.
+ * 3. YAML content heuristics disambiguate policy vs sigma.
+ * 4. Unknown extensions fall back to clawdstrike_policy.
  */
 export function detectFileType(filename: string, content: string): FileType {
   // Step 1 -- unambiguous extensions
@@ -206,7 +244,15 @@ export function detectFileType(filename: string, content: string): FileType {
     return byExt;
   }
 
-  // Step 2 -- content heuristics (for YAML or unknown extensions)
+  // Step 2 -- JSON heuristics
+  if (looksLikePolicyJson(content)) {
+    return "clawdstrike_policy";
+  }
+  if (looksLikeOcsfJson(content)) {
+    return "ocsf_event";
+  }
+
+  // Step 3 -- content heuristics (for YAML or unknown extensions)
   if (content.includes("guards:") || content.includes("schema_version:")) {
     return "clawdstrike_policy";
   }
@@ -217,7 +263,7 @@ export function detectFileType(filename: string, content: string): FileType {
     return "sigma_rule";
   }
 
-  // Step 3 -- default fallback
+  // Step 4 -- default fallback
   return "clawdstrike_policy";
 }
 
