@@ -7,7 +7,10 @@
  */
 
 import { cn } from "@/lib/utils";
-import { FILE_TYPE_REGISTRY, type FileType } from "@/lib/workbench/file-type-registry";
+import {
+  FILE_TYPE_REGISTRY,
+  isRegisteredFileType,
+} from "@/lib/workbench/file-type-registry";
 import type { CoverageGapCandidate } from "@/lib/workbench/detection-workflow/shared-types";
 import {
   IconShieldPlus,
@@ -32,10 +35,6 @@ interface CoverageGapCardProps {
   onDraft?: (gap: CoverageGapCandidate) => void;
   onDismiss?: (gapId: string) => void;
   compact?: boolean;
-}
-
-function isRegisteredFileType(format: string): format is FileType {
-  return format in FILE_TYPE_REGISTRY;
 }
 
 export function CoverageGapCard({

@@ -257,11 +257,212 @@ fn scrub_yara_line(line: &str, state: YaraScrubState) -> (String, YaraScrubState
     )
 }
 
-fn analyze_yara_code(code: &str) -> (i32, i32, bool) {
-    let opens = code.chars().filter(|ch| *ch == '{').count() as i32;
-    let closes = code.chars().filter(|ch| *ch == '}').count() as i32;
-    let has_condition = code.contains("condition:");
-    (opens, closes, has_condition)
+#[derive(Clone, Copy, Debug, Default)]
+struct YaraCodeAnalysis {
+    opens: i32,
+    closes: i32,
+    has_condition: bool,
+}
+
+#[derive(Clone, Debug)]
+struct YaraRuleState {
+    name: String,
+    brace_depth: i32,
+    saw_condition: bool,
+    saw_body_open: bool,
+}
+
+fn is_yara_identifier_start(ch: u8) -> bool {
+    ch.is_ascii_alphabetic() || ch == b'_'
+}
+
+fn is_yara_identifier_continue(ch: u8) -> bool {
+    ch.is_ascii_alphanumeric() || ch == b'_'
+}
+
+fn contains_yara_condition_section(code: &str) -> bool {
+    let bytes = code.as_bytes();
+    let mut i = 0;
+
+    while i < bytes.len() {
+        if !is_yara_identifier_start(bytes[i]) {
+            i += 1;
+            continue;
+        }
+
+        let start = i;
+        i += 1;
+        while i < bytes.len() && is_yara_identifier_continue(bytes[i]) {
+            i += 1;
+        }
+
+        if &code[start..i] != "condition" {
+            continue;
+        }
+
+        let mut j = i;
+        while j < bytes.len() && bytes[j].is_ascii_whitespace() {
+            j += 1;
+        }
+
+        if bytes.get(j) == Some(&b':') {
+            return true;
+        }
+    }
+
+    false
+}
+
+fn analyze_yara_code(code: &str) -> YaraCodeAnalysis {
+    let mut analysis = YaraCodeAnalysis::default();
+    for ch in code.chars() {
+        match ch {
+            '{' => analysis.opens += 1,
+            '}' => analysis.closes += 1,
+            _ => {}
+        }
+    }
+    analysis.has_condition = contains_yara_condition_section(code);
+    analysis
+}
+
+fn parse_yara_rule_declaration(code: &str) -> Option<(&str, &str)> {
+    let mut rest = code.trim_start();
+    loop {
+        if let Some(next) = rest.strip_prefix("private ") {
+            rest = next.trim_start();
+            continue;
+        }
+        if let Some(next) = rest.strip_prefix("global ") {
+            rest = next.trim_start();
+            continue;
+        }
+        break;
+    }
+
+    let rest = rest.strip_prefix("rule")?;
+    let first = rest.as_bytes().first().copied()?;
+    if !first.is_ascii_whitespace() {
+        return None;
+    }
+
+    let rest = rest.trim_start();
+    let mut chars = rest.char_indices();
+    let Some((_, first_char)) = chars.next() else {
+        return None;
+    };
+    if !is_yara_identifier_start(first_char as u8) {
+        return None;
+    }
+
+    let mut name_end = rest.len();
+    for (idx, ch) in chars {
+        if !is_yara_identifier_continue(ch as u8) {
+            name_end = idx;
+            break;
+        }
+    }
+
+    let name = &rest[..name_end];
+    let tail = rest[name_end..].trim_start();
+    Some((name, tail))
+}
+
+fn analyze_yara_rule_declaration(code: &str) -> YaraRuleState {
+    let Some(open_idx) = code.find('{') else {
+        return YaraRuleState {
+            name: String::new(),
+            brace_depth: 0,
+            saw_condition: false,
+            saw_body_open: false,
+        };
+    };
+
+    let after_open = &code[(open_idx + 1)..];
+    let analysis = analyze_yara_code(after_open);
+    YaraRuleState {
+        name: String::new(),
+        brace_depth: 1 + analysis.opens - analysis.closes,
+        saw_condition: analysis.has_condition,
+        saw_body_open: true,
+    }
+}
+
+fn is_json_integer(value: Option<&serde_json::Value>) -> bool {
+    matches!(value, Some(serde_json::Value::Number(number)) if number.is_i64() || number.is_u64())
+}
+
+fn is_json_object(value: Option<&serde_json::Value>) -> bool {
+    matches!(value, Some(serde_json::Value::Object(_)))
+}
+
+fn looks_like_clawdstrike_policy_json(object: &serde_json::Map<String, serde_json::Value>) -> bool {
+    let has_schema_version = object
+        .get("schema_version")
+        .and_then(serde_json::Value::as_str)
+        .is_some();
+    let has_guards = is_json_object(object.get("guards"));
+    let additional_policy_fields = [
+        "extends",
+        "custom_guards",
+        "settings",
+        "posture",
+        "origins",
+        "rulesets",
+    ]
+    .iter()
+    .filter(|key| object.contains_key(**key))
+    .count();
+
+    has_guards || (has_schema_version && additional_policy_fields >= 1)
+}
+
+fn looks_like_ocsf_json(object: &serde_json::Map<String, serde_json::Value>) -> bool {
+    if !is_json_integer(object.get("class_uid")) {
+        return false;
+    }
+
+    let support_signals = [
+        is_json_integer(object.get("category_uid")),
+        is_json_integer(object.get("activity_id")),
+        is_json_integer(object.get("severity_id")),
+        is_json_integer(object.get("type_uid")),
+        is_json_object(object.get("metadata")),
+        is_json_object(object.get("finding_info")),
+    ]
+    .into_iter()
+    .filter(|signal| *signal)
+    .count();
+
+    support_signals >= 2
+}
+
+fn detect_json_object_file_type(content: &str) -> Option<DetectionFileType> {
+    let value: serde_json::Value = serde_json::from_str(content).ok()?;
+    let object = value.as_object()?;
+
+    if looks_like_clawdstrike_policy_json(object) {
+        return Some(DetectionFileType {
+            file_type: "clawdstrike_policy".into(),
+            confidence: 0.95,
+        });
+    }
+
+    if object.contains_key("detection") && object.contains_key("logsource") {
+        return Some(DetectionFileType {
+            file_type: "sigma_rule".into(),
+            confidence: 0.8,
+        });
+    }
+
+    if looks_like_ocsf_json(object) {
+        return Some(DetectionFileType {
+            file_type: "ocsf_event".into(),
+            confidence: 0.9,
+        });
+    }
+
+    None
 }
 
 fn detect_file_type_from_content(content: &str) -> DetectionFileType {
@@ -297,10 +498,15 @@ fn detect_file_type_from_content(content: &str) -> DetectionFileType {
             confidence: 0.7,
         };
     }
+
+    if let Some(detected) = detect_json_object_file_type(content) {
+        return detected;
+    }
+
     if content.trim_start().starts_with('{') {
         return DetectionFileType {
-            file_type: "ocsf_event".into(),
-            confidence: 0.6,
+            file_type: "clawdstrike_policy".into(),
+            confidence: 0.2,
         };
     }
 
@@ -323,16 +529,64 @@ fn detect_file_type_from_path_and_content(path: &str, content: &str) -> Detectio
         };
     }
     if matches!(extension.as_deref(), Some("json")) {
-        return DetectionFileType {
-            file_type: "ocsf_event".into(),
-            confidence: 1.0,
-        };
+        return detect_json_object_file_type(content).unwrap_or(DetectionFileType {
+            file_type: "clawdstrike_policy".into(),
+            confidence: 0.2,
+        });
     }
 
     detect_file_type_from_content(content)
 }
 
 // ---- Sigma Commands ----
+
+fn push_yara_rule_completion_diagnostics(
+    diagnostics: &mut Vec<DetectionDiagnostic>,
+    rule: &YaraRuleState,
+    line: Option<u32>,
+    before_next_rule: bool,
+) {
+    if !rule.saw_body_open {
+        diagnostics.push(DetectionDiagnostic {
+            severity: "error".into(),
+            message: format!(
+                "YARA rule '{}' is missing an opening '{{' for the rule body",
+                rule.name
+            ),
+            line,
+            column: None,
+        });
+        return;
+    }
+
+    if !rule.saw_condition {
+        diagnostics.push(DetectionDiagnostic {
+            severity: "error".into(),
+            message: format!(
+                "YARA rule '{}' is missing a required 'condition:' section",
+                rule.name
+            ),
+            line,
+            column: None,
+        });
+    }
+
+    if rule.brace_depth != 0 {
+        diagnostics.push(DetectionDiagnostic {
+            severity: "error".into(),
+            message: if before_next_rule {
+                format!(
+                    "YARA rule '{}' has unterminated body (unbalanced braces) before next rule declaration",
+                    rule.name
+                )
+            } else {
+                format!("YARA rule '{}' has unbalanced braces", rule.name)
+            },
+            line,
+            column: None,
+        });
+    }
+}
 
 fn sigma_detection_has_selector_mapping(detection: &serde_yaml::Mapping) -> bool {
     detection.iter().any(|(key, value)| {
@@ -462,8 +716,7 @@ pub fn validate_yara_rule(source: String) -> Result<YaraValidationResponse, Stri
 
     let mut diagnostics = Vec::new();
     let mut rule_count = 0u32;
-    // Track brace depth as i32 to detect negative depth (more closes than opens).
-    let mut current_rule: Option<(String, i32, bool)> = None;
+    let mut current_rule: Option<YaraRuleState> = None;
     let mut line_state = YaraScrubState::default();
 
     for (idx, line) in source.lines().enumerate() {
@@ -471,92 +724,73 @@ pub fn validate_yara_rule(source: String) -> Result<YaraValidationResponse, Stri
         let (scrubbed_line, next_line_state) = scrub_yara_line(line, line_state);
         let trimmed = scrubbed_line.trim_start();
 
-        // Strip optional YARA rule modifiers (`private`, `global`) in any order.
-        // Handles `private rule`, `global rule`, `private global rule`, and
-        // `global private rule`.
-        let mut after_modifiers = trimmed;
-        loop {
-            if let Some(rest) = after_modifiers.strip_prefix("private ") {
-                after_modifiers = rest.trim_start();
-            } else if let Some(rest) = after_modifiers.strip_prefix("global ") {
-                after_modifiers = rest.trim_start();
-            } else {
-                break;
-            }
-        }
-        if let Some(rule_decl) = after_modifiers.strip_prefix("rule ") {
-            // Emit a diagnostic for the previous rule if it was not properly
-            // terminated (brace_depth != 0) before starting a new one.
-            if let Some((prev_name, prev_depth, prev_saw_condition)) = current_rule.take() {
-                if !prev_saw_condition {
-                    diagnostics.push(DetectionDiagnostic {
-                        severity: "error".into(),
-                        message: format!(
-                            "YARA rule '{prev_name}' is missing a required 'condition:' section"
-                        ),
-                        line: Some(line_no.saturating_sub(1)),
-                        column: None,
-                    });
-                }
-                if prev_depth != 0 {
-                    diagnostics.push(DetectionDiagnostic {
-                        severity: "error".into(),
-                        message: format!(
-                            "YARA rule '{prev_name}' has unterminated body (unbalanced braces) before next rule declaration"
-                        ),
-                        line: Some(line_no.saturating_sub(1)),
-                        column: None,
-                    });
-                }
+        if let Some((rule_name, declaration_tail)) = parse_yara_rule_declaration(trimmed) {
+            if let Some(previous_rule) = current_rule.take() {
+                push_yara_rule_completion_diagnostics(
+                    &mut diagnostics,
+                    &previous_rule,
+                    Some(line_no.saturating_sub(1)),
+                    true,
+                );
             }
 
-            let rule_name = rule_decl
-                .split(|c: char| c.is_whitespace() || c == '{' || c == ':')
-                .next()
-                .unwrap_or("unnamed")
-                .to_string();
-            let declaration_tail = rule_decl
-                .strip_prefix(&rule_name)
-                .map(str::trim_start)
-                .unwrap_or("");
-            // Count braces on the rule declaration line itself so that
-            // single-line rules (e.g. `rule x { condition: true }`) are
-            // tracked correctly.
-            let (opens, closes, saw_condition) = analyze_yara_code(declaration_tail);
-            current_rule = Some((rule_name, opens - closes, saw_condition));
+            let mut rule_state = analyze_yara_rule_declaration(declaration_tail);
+            rule_state.name = rule_name.to_string();
             rule_count += 1;
+
+            if rule_state.saw_body_open && rule_state.brace_depth < 0 {
+                diagnostics.push(DetectionDiagnostic {
+                    severity: "error".into(),
+                    message: format!(
+                        "YARA rule '{}' has unbalanced braces (more closing than opening)",
+                        rule_state.name
+                    ),
+                    line: Some(line_no),
+                    column: None,
+                });
+            } else if rule_state.saw_body_open && rule_state.brace_depth == 0 {
+                push_yara_rule_completion_diagnostics(
+                    &mut diagnostics,
+                    &rule_state,
+                    Some(line_no),
+                    false,
+                );
+            } else {
+                current_rule = Some(rule_state);
+            }
+
             line_state = next_line_state;
             continue;
         }
 
-        if let Some((rule_name, brace_depth, saw_condition)) = current_rule.as_mut() {
-            let (opens, closes, line_has_condition) = analyze_yara_code(&scrubbed_line);
-            if line_has_condition {
-                *saw_condition = true;
+        if let Some(rule) = current_rule.as_mut() {
+            let analysis = analyze_yara_code(&scrubbed_line);
+            if analysis.has_condition {
+                rule.saw_condition = true;
             }
-            *brace_depth += opens - closes;
+            if analysis.opens > 0 {
+                rule.saw_body_open = true;
+            }
+            rule.brace_depth += analysis.opens - analysis.closes;
 
-            if *brace_depth < 0 {
+            if rule.brace_depth < 0 {
                 diagnostics.push(DetectionDiagnostic {
                     severity: "error".into(),
                     message: format!(
-                        "YARA rule '{rule_name}' has unbalanced braces (more closing than opening)"
+                        "YARA rule '{}' has unbalanced braces (more closing than opening)",
+                        rule.name
                     ),
                     line: Some(line_no),
                     column: None,
                 });
                 current_rule = None;
-            } else if *brace_depth == 0 {
-                if !*saw_condition {
-                    diagnostics.push(DetectionDiagnostic {
-                        severity: "error".into(),
-                        message: format!(
-                            "YARA rule '{rule_name}' is missing a required 'condition:' section"
-                        ),
-                        line: Some(line_no),
-                        column: None,
-                    });
-                }
+            } else if rule.saw_body_open && rule.brace_depth == 0 {
+                push_yara_rule_completion_diagnostics(
+                    &mut diagnostics,
+                    rule,
+                    Some(line_no),
+                    false,
+                );
                 current_rule = None;
             }
         }
@@ -564,25 +798,8 @@ pub fn validate_yara_rule(source: String) -> Result<YaraValidationResponse, Stri
         line_state = next_line_state;
     }
 
-    if let Some((rule_name, brace_depth, saw_condition)) = current_rule {
-        if !saw_condition {
-            diagnostics.push(DetectionDiagnostic {
-                severity: "error".into(),
-                message: format!(
-                    "YARA rule '{rule_name}' is missing a required 'condition:' section"
-                ),
-                line: None,
-                column: None,
-            });
-        }
-        if brace_depth != 0 {
-            diagnostics.push(DetectionDiagnostic {
-                severity: "error".into(),
-                message: format!("YARA rule '{rule_name}' has unbalanced braces"),
-                line: None,
-                column: None,
-            });
-        }
+    if let Some(rule) = current_rule {
+        push_yara_rule_completion_diagnostics(&mut diagnostics, &rule, None, false);
     }
 
     if rule_count == 0 {
@@ -1204,9 +1421,16 @@ fn escape_yaml_string(s: &str) -> String {
 }
 
 fn sanitize_yaml_comment_text(s: &str) -> String {
-    s.lines()
+    s.chars()
+        .map(|ch| match ch {
+            '\n' | '\r' | '\u{2028}' | '\u{2029}' => ' ',
+            c if c.is_control() => ' ',
+            c => c,
+        })
+        .collect::<String>()
+        .split_whitespace()
         .map(str::trim)
-        .filter(|line| !line.is_empty())
+        .filter(|fragment| !fragment.is_empty())
         .collect::<Vec<_>>()
         .join(" ")
 }
@@ -1457,6 +1681,18 @@ rule actual_rule {
     }
 
     #[test]
+    fn validate_yara_rule_accepts_inline_rule_with_comment_braces() {
+        let response = validate_yara_rule(
+            "rule inline_comment_braces { /* {ignored} */ condition: true }".to_string(),
+        )
+        .expect("inline comment brace rule should validate");
+
+        assert!(response.valid);
+        assert_eq!(response.rule_count, 1);
+        assert!(response.diagnostics.is_empty());
+    }
+
+    #[test]
     fn validate_sigma_rule_rejects_rules_without_object_selectors() {
         let response = validate_sigma_rule(
             r#"title: Missing selector object
@@ -1491,6 +1727,38 @@ detection:
         assert!(response.diagnostics.iter().any(|diagnostic| diagnostic
             .message
             .contains("Invalid type for OCSF field severity_id")));
+    }
+
+    #[test]
+    fn detect_file_type_from_json_path_recognizes_policy_json() {
+        let detected = detect_file_type_from_path_and_content(
+            "exported-policy.json",
+            r#"{"schema_version":"1.5.0","guards":{"forbidden_path":{"enabled":true}}}"#,
+        );
+
+        assert_eq!(detected.file_type, "clawdstrike_policy");
+        assert!(detected.confidence >= 0.9);
+    }
+
+    #[test]
+    fn detect_file_type_from_json_path_does_not_force_arbitrary_json_to_ocsf() {
+        let detected = detect_file_type_from_path_and_content(
+            "package.json",
+            r#"{"name":"fixture","version":"1.0.0"}"#,
+        );
+
+        assert_ne!(detected.file_type, "ocsf_event");
+    }
+
+    #[test]
+    fn detect_file_type_from_json_path_recognizes_ocsf_json() {
+        let detected = detect_file_type_from_path_and_content(
+            "event.json",
+            r#"{"class_uid":2004,"category_uid":2,"metadata":{"version":"1.4.0"},"finding_info":{"title":"test"}}"#,
+        );
+
+        assert_eq!(detected.file_type, "ocsf_event");
+        assert!(detected.confidence >= 0.9);
     }
 
     #[test]
@@ -1545,6 +1813,41 @@ detection:
             .expect("generated native policy should remain valid YAML");
 
         assert!(output.contains("Level: high schema_version: \"9.9.9\" | Product: linux"));
+        assert_eq!(
+            parsed
+                .get("schema_version")
+                .and_then(|value| value.as_str()),
+            Some("1.5.0")
+        );
+    }
+
+    #[test]
+    fn convert_sigma_to_native_policy_sanitizes_category_comments() {
+        let sigma = r#"title: "Category comment"
+description: Convert safely
+status: experimental
+level: medium
+logsource:
+  product: linux
+  category: |
+    odd
+    guards:
+      forbidden_path: {}
+detection:
+  selection:
+    CommandLine|contains: bash
+  condition: selection
+"#;
+
+        let response =
+            convert_sigma_to_native_policy(sigma).expect("sigma conversion should succeed");
+        let output = response.output.expect("expected native policy output");
+        let parsed = serde_yaml::from_str::<serde_yaml::Value>(&output)
+            .expect("generated native policy should remain valid YAML");
+
+        assert!(output.contains(
+            "No direct guard mapping for logsource category 'odd guards: forbidden_path: {}'"
+        ));
         assert_eq!(
             parsed
                 .get("schema_version")

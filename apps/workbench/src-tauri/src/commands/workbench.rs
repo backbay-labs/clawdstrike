@@ -1153,7 +1153,7 @@ pub async fn sign_receipt_persistent(
 /// existing chain hashes stable.
 #[tauri::command]
 pub async fn verify_receipt_chain(
-    receipts: Vec<ChainReceiptInput>,
+    mut receipts: Vec<ChainReceiptInput>,
 ) -> Result<ChainVerificationResponse, String> {
     if receipts.len() > MAX_CHAIN_LENGTH {
         return Err(format!(
@@ -1177,11 +1177,15 @@ pub async fn verify_receipt_chain(
 
     // Validate that all timestamps conform to ISO 8601 with Z suffix so that
     // lexicographic comparison is correct (Fix #19).
-    let non_conforming_timestamps: Vec<&str> = receipts
+    let non_conforming_timestamps = receipts
         .iter()
         .filter(|r| !is_valid_utc_timestamp(&r.timestamp))
-        .map(|r| r.timestamp.as_str())
-        .collect();
+        .count();
+
+    let input_was_sorted = receipts
+        .windows(2)
+        .all(|pair| pair[0].timestamp <= pair[1].timestamp);
+    receipts.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
 
     let mut per_receipt: Vec<ChainReceiptVerification> = Vec::with_capacity(receipts.len());
     let mut any_sig_failed = false;
@@ -1297,12 +1301,15 @@ pub async fn verify_receipt_chain(
     };
 
     // Append a warning if any timestamps don't conform to the expected format.
-    if !non_conforming_timestamps.is_empty() {
+    if non_conforming_timestamps > 0 {
         summary.push_str(&format!(
             " Warning: {} timestamp(s) do not conform to ISO 8601 UTC format (expected *T*Z); \
              lexicographic ordering may be unreliable.",
-            non_conforming_timestamps.len()
+            non_conforming_timestamps
         ));
+    }
+    if !input_was_sorted {
+        summary.push_str(" Input receipts were normalized by timestamp before verification.");
     }
 
     Ok(ChainVerificationResponse {
@@ -2352,24 +2359,24 @@ posture:
     }
 
     #[tokio::test]
-    async fn verify_chain_unordered_input_fails_timestamp_ordering() {
+    async fn verify_chain_unordered_input_is_normalized_before_verification() {
         let chain = vec![
             make_chain_receipt("r1", "2026-03-01T00:02:00Z", "allow"),
             make_chain_receipt("r2", "2026-03-01T00:00:00Z", "deny"),
             make_chain_receipt("r3", "2026-03-01T00:01:00Z", "warn"),
         ];
         let res = verify_receipt_chain(chain).await.unwrap();
-        assert!(!res.timestamps_ordered);
+        assert!(res.timestamps_ordered);
         assert_eq!(res.chain_length, 3);
         assert_eq!(
             res.receipts
                 .iter()
                 .map(|r| r.id.as_str())
                 .collect::<Vec<_>>(),
-            vec!["r1", "r2", "r3"]
+            vec!["r2", "r3", "r1"]
         );
-        assert!(!res.receipts[1].timestamp_order_valid);
-        assert!(res.summary.contains("timestamp ordering violation"));
+        assert!(res.receipts.iter().all(|receipt| receipt.timestamp_order_valid));
+        assert!(res.summary.contains("normalized by timestamp"));
     }
 
     #[tokio::test]
@@ -2468,7 +2475,7 @@ posture:
     }
 
     #[tokio::test]
-    async fn verify_chain_hash_depends_on_receipt_order() {
+    async fn verify_chain_hash_is_order_independent_after_normalization() {
         let ordered = vec![
             make_chain_receipt("r1", "2026-03-01T00:00:00Z", "allow"),
             make_chain_receipt("r2", "2026-03-01T00:01:00Z", "deny"),
@@ -2481,8 +2488,8 @@ posture:
         let ordered_res = verify_receipt_chain(ordered).await.unwrap();
         let reordered_res = verify_receipt_chain(reordered).await.unwrap();
 
-        assert_ne!(ordered_res.chain_hash, reordered_res.chain_hash);
-        assert!(!reordered_res.timestamps_ordered);
+        assert_eq!(ordered_res.chain_hash, reordered_res.chain_hash);
+        assert!(reordered_res.timestamps_ordered);
     }
 
     /// P1-4: Receipts signed over the exact canonical hush-core payload should
