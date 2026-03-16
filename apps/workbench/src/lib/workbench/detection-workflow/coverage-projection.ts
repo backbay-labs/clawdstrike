@@ -144,10 +144,10 @@ function extractOcsfCoverage(
 
     const classUid = parsed.class_uid;
     if (classUid === 1001) {
+      dataSources.add("file");
+    } else if (classUid === 1007) {
       dataSources.add("process");
       dataSources.add("command");
-    } else if (classUid === 2001) {
-      dataSources.add("file");
     } else if (classUid === 4001 || classUid === 4003) {
       dataSources.add("network");
     } else if (classUid === 6003) {

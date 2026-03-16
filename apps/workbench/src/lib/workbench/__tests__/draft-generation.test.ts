@@ -698,7 +698,7 @@ describe("ocsf-adapter", () => {
       expect(result.fileType).toBe("ocsf_event");
 
       const parsed = JSON.parse(result.source);
-      expect(parsed.class_uid).toBe(1001); // Process Activity
+      expect(parsed.class_uid).toBe(1007); // Process Activity
       expect(parsed.category_uid).toBe(1); // System Activity
       expect(parsed.activity_id).toBeGreaterThanOrEqual(1);
       expect(parsed.severity_id).toBeGreaterThanOrEqual(1);
@@ -723,7 +723,7 @@ describe("ocsf-adapter", () => {
       });
       const result = ocsfAdapter.buildDraft(seed);
       const parsed = JSON.parse(result.source);
-      expect(parsed.class_uid).toBe(2001); // File System Activity
+      expect(parsed.class_uid).toBe(1001); // File Activity
     });
 
     it("uses Detection Finding for investigations", () => {
@@ -734,7 +734,7 @@ describe("ocsf-adapter", () => {
       });
       const result = ocsfAdapter.buildDraft(seed);
       const parsed = JSON.parse(result.source);
-      expect(parsed.class_uid).toBe(2002); // Detection Finding
+      expect(parsed.class_uid).toBe(2004); // Detection Finding
     });
 
     it("includes enrichments from technique hints", () => {

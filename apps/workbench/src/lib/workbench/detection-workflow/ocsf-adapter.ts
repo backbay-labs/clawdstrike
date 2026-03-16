@@ -43,9 +43,9 @@ async function sha256Hex(text: string): Promise<string> {
 
 /**
  * OCSF class UID mapping:
- * - 1001: Process Activity
- * - 2001: File System Activity
- * - 2002: Detection Finding
+ * - 1001: File Activity
+ * - 1007: Process Activity
+ * - 2004: Detection Finding
  * - 4001: Network Activity
  * - 4003: DNS Activity
  * - 6003: API Activity
@@ -54,25 +54,25 @@ function inferClassUid(seed: DraftSeed): number {
   const hints = seed.dataSourceHints;
 
   if (hints.includes("process") || hints.includes("command")) {
-    return 1001; // Process Activity
+    return 1007; // Process Activity
   }
   if (hints.includes("network")) {
     return 4001; // Network Activity
   }
   if (hints.includes("file")) {
-    return 2001; // File System Activity
+    return 1001; // File Activity
   }
   if (hints.includes("tool") || hints.includes("prompt")) {
     return 6003; // API Activity
   }
 
   // Default: Detection Finding — good for investigations and patterns
-  return 2002;
+  return 2004;
 }
 
 function inferCategoryUid(classUid: number): number {
-  if (classUid === 1001) return 1; // System Activity
-  if (classUid === 2001 || classUid === 2002) return 2; // Findings
+  if (classUid === 1001 || classUid === 1007) return 1; // System Activity
+  if (classUid === 2004) return 2; // Findings
   if (classUid === 4001 || classUid === 4003) return 4; // Network Activity
   if (classUid === 6003) return 6; // Application Activity
   return 2; // Default to Findings
@@ -122,18 +122,18 @@ function buildOcsfEvent(seed: DraftSeed): Record<string, unknown> {
 
   // Populate format-specific fields based on class
   if (classUid === 1001) {
+    // File Activity
+    const paths = seed.extractedFields["paths"] as string[] | undefined;
+    event["file"] = {
+      name: paths?.[0] ?? "",
+      path: paths?.[0] ?? "",
+    };
+  } else if (classUid === 1007) {
     // Process Activity
     const commands = seed.extractedFields["commands"] as string[] | undefined;
     event["process"] = {
       cmd_line: commands?.[0] ?? "",
       name: "",
-    };
-  } else if (classUid === 2001) {
-    // File System Activity
-    const paths = seed.extractedFields["paths"] as string[] | undefined;
-    event["file"] = {
-      name: paths?.[0] ?? "",
-      path: paths?.[0] ?? "",
     };
   } else if (classUid === 4001) {
     // Network Activity
@@ -141,7 +141,7 @@ function buildOcsfEvent(seed: DraftSeed): Record<string, unknown> {
     event["dst_endpoint"] = {
       hostname: domains?.[0] ?? "",
     };
-  } else if (classUid === 2002) {
+  } else if (classUid === 2004) {
     // Detection Finding
     event["finding_info"] = {
       uid: seed.id,

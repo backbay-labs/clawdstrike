@@ -1043,7 +1043,7 @@ describe("Scenario: Publication SHA-256 integrity across all adapters", () => {
     ocsf_event: JSON.stringify(
       {
         class_uid: 1001,
-        activity_name: "Process Activity",
+        activity_name: "File Activity",
         actor: { user: { name: "analyst" } },
       },
       null,
@@ -1136,23 +1136,23 @@ describe("Scenario: OCSF adapter draft from tool/prompt events", () => {
   it("generates OCSF events with correct class UIDs for different data sources", () => {
     const ocsfAdapter = getAdapter("ocsf_event")!;
 
-    // Process events -> class_uid 1001
+    // Process events -> class_uid 1007
     const processEvents: AgentEvent[] = [makeShellCommandEvent("ls -la")];
     const processSeed = mapEventsToDraftSeed(processEvents, {
       preferredFormats: ["ocsf_event"],
     });
     const processDraft = ocsfAdapter.buildDraft(processSeed);
     const processOcsf = JSON.parse(processDraft.source);
-    expect(processOcsf.class_uid).toBe(1001);
+    expect(processOcsf.class_uid).toBe(1007);
 
-    // File events -> class_uid 2001
+    // File events -> class_uid 1001
     const fileEvents: AgentEvent[] = [makeFileAccessEvent("/etc/hosts")];
     const fileSeed = mapEventsToDraftSeed(fileEvents, {
       preferredFormats: ["ocsf_event"],
     });
     const fileDraft = ocsfAdapter.buildDraft(fileSeed);
     const fileOcsf = JSON.parse(fileDraft.source);
-    expect(fileOcsf.class_uid).toBe(2001);
+    expect(fileOcsf.class_uid).toBe(1001);
 
     // Network events -> class_uid 4001
     const netEvents: AgentEvent[] = [makeNetworkEvent("example.com")];

@@ -229,6 +229,17 @@ export function getDescriptor(fileType: FileType): FileTypeDescriptor {
   return FILE_TYPE_REGISTRY[fileType];
 }
 
+export function isRegisteredFileType(value: unknown): value is FileType {
+  return typeof value === "string" && value in FILE_TYPE_REGISTRY;
+}
+
+export function coerceFileType(
+  value: unknown,
+  fallback: FileType = "clawdstrike_policy",
+): FileType {
+  return isRegisteredFileType(value) ? value : fallback;
+}
+
 /**
  * Extract the filename (basename) from a file path, normalizing
  * backslashes for cross-platform paths. Returns null for empty/null input.

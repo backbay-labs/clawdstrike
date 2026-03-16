@@ -32,6 +32,7 @@ import {
 } from "./storage-sanitizer";
 import {
   FILE_TYPE_REGISTRY,
+  coerceFileType,
   getPrimaryExtension,
   isPolicyFileType,
   sanitizeFilenameStem,
@@ -563,7 +564,7 @@ function evaluateTabSource(
 }
 
 function createDefaultTab(id?: string, fileType?: FileType, documentId?: string): PolicyTab {
-  const nextFileType = fileType ?? "clawdstrike_policy";
+  const nextFileType = coerceFileType(fileType);
   const yaml = isPolicyFileType(nextFileType)
     ? policyToYaml(DEFAULT_POLICY)
     : FILE_TYPE_REGISTRY[nextFileType].defaultContent;
@@ -1340,7 +1341,7 @@ function loadPersistedTabs(): MultiPolicyState | null {
     if (validPersistedTabs.length === 0) return null;
 
     const tabs: PolicyTab[] = validPersistedTabs.map((pt) => {
-      const fileType = pt.fileType ?? "clawdstrike_policy";
+      const fileType = coerceFileType(pt.fileType);
       // Migration: legacy tabs without documentId get one resolved from filePath or generated fresh
       const documentId = pt.documentId ?? resolveDocumentId(pt.filePath);
       const hydrated = applySourceToTab(createDefaultTab(pt.id, fileType, documentId), pt.yaml, {

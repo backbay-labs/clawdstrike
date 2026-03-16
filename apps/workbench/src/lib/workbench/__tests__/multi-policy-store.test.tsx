@@ -76,6 +76,16 @@ function PersistedSuiteHarness() {
   );
 }
 
+function PersistedFileTypeHarness() {
+  const { activeTab } = useMultiPolicy();
+
+  return React.createElement(
+    "span",
+    { "data-testid": "persisted-file-type" },
+    activeTab?.fileType ?? "",
+  );
+}
+
 function SigmaTabHarness() {
   const { multiDispatch, activeTab, tabs } = useMultiPolicy();
   const { state } = useWorkbench();
@@ -373,6 +383,34 @@ guards:
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("coerces invalid persisted file types back to a safe default", () => {
+    localStorage.setItem(
+      TABS_STORAGE_KEY,
+      JSON.stringify({
+        tabs: [
+          {
+            id: "tab-invalid-type",
+            name: "Recovered Policy",
+            fileType: "mystery_type",
+            filePath: null,
+            yaml: 'version: "1.2.0"\nname: "Recovered Policy"\n',
+          },
+        ],
+        activeTabId: "tab-invalid-type",
+      }),
+    );
+
+    render(
+      React.createElement(
+        MultiPolicyProvider,
+        null,
+        React.createElement(PersistedFileTypeHarness),
+      ),
+    );
+
+    expect(screen.getByTestId("persisted-file-type").textContent).toBe("clawdstrike_policy");
   });
 
   it("sanitizes saved policies before persisting them to localStorage", async () => {

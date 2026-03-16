@@ -55,10 +55,6 @@ pub struct SigmaTestResponse {
     pub events_matched: usize,
 }
 
-fn estimate_sigma_events_matched(findings_len: usize, events_tested: usize) -> usize {
-    findings_len.min(events_tested)
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SigmaTestFindingEntry {
     pub title: String,
@@ -261,14 +257,11 @@ fn scrub_yara_line(line: &str, state: YaraScrubState) -> (String, YaraScrubState
     )
 }
 
-/// Analyze a YARA source line for structural braces and a `condition:` token while
-/// ignoring strings, regexes, hex strings, and comments.
-fn analyze_yara_line(line: &str, state: YaraScrubState) -> (i32, i32, bool, YaraScrubState) {
-    let (code, state) = scrub_yara_line(line, state);
+fn analyze_yara_code(code: &str) -> (i32, i32, bool) {
     let opens = code.chars().filter(|ch| *ch == '{').count() as i32;
     let closes = code.chars().filter(|ch| *ch == '}').count() as i32;
     let has_condition = code.contains("condition:");
-    (opens, closes, has_condition, state)
+    (opens, closes, has_condition)
 }
 
 fn detect_file_type_from_content(content: &str) -> DetectionFileType {
@@ -453,8 +446,9 @@ pub fn validate_yara_rule(source: String) -> Result<YaraValidationResponse, Stri
     let mut line_state = YaraScrubState::default();
 
     for (idx, line) in source.lines().enumerate() {
-        let trimmed = line.trim();
         let line_no = (idx + 1) as u32;
+        let (scrubbed_line, next_line_state) = scrub_yara_line(line, line_state);
+        let trimmed = scrubbed_line.trim_start();
 
         // Strip optional YARA rule modifiers (`private`, `global`) in any order.
         // Handles `private rule`, `global rule`, `private global rule`, and
@@ -469,61 +463,53 @@ pub fn validate_yara_rule(source: String) -> Result<YaraValidationResponse, Stri
                 break;
             }
         }
-        {
-            // Only detect rule declarations outside block comments.
-            if !line_state.in_block_comment && !line_state.in_hex_string {
-                if let Some(rule_decl) = after_modifiers.strip_prefix("rule ") {
-                    // Emit a diagnostic for the previous rule if it was not properly
-                    // terminated (brace_depth != 0) before starting a new one.
-                    if let Some((prev_name, prev_depth, prev_saw_condition)) = current_rule.take() {
-                        if !prev_saw_condition {
-                            diagnostics.push(DetectionDiagnostic {
-                                severity: "error".into(),
-                                message: format!(
-                                    "YARA rule '{prev_name}' is missing a required 'condition:' section"
-                                ),
-                                line: Some(line_no.saturating_sub(1)),
-                                column: None,
-                            });
-                        }
-                        if prev_depth != 0 {
-                            diagnostics.push(DetectionDiagnostic {
-                                severity: "error".into(),
-                                message: format!(
-                                    "YARA rule '{prev_name}' has unterminated body (unbalanced braces) before next rule declaration"
-                                ),
-                                line: Some(line_no.saturating_sub(1)),
-                                column: None,
-                            });
-                        }
-                    }
-
-                    let rule_name = rule_decl
-                        .split(|c: char| c.is_whitespace() || c == '{' || c == ':')
-                        .next()
-                        .unwrap_or("unnamed")
-                        .to_string();
-                    let declaration_tail = rule_decl
-                        .strip_prefix(&rule_name)
-                        .map(str::trim_start)
-                        .unwrap_or("");
-                    // Count braces on the rule declaration line itself so that
-                    // single-line rules (e.g. `rule x { condition: true }`) are
-                    // tracked correctly.
-                    let (opens, closes, saw_condition, next_state) =
-                        analyze_yara_line(declaration_tail, line_state);
-                    line_state = next_state;
-                    current_rule = Some((rule_name, opens - closes, saw_condition));
-                    rule_count += 1;
-                    continue;
+        if let Some(rule_decl) = after_modifiers.strip_prefix("rule ") {
+            // Emit a diagnostic for the previous rule if it was not properly
+            // terminated (brace_depth != 0) before starting a new one.
+            if let Some((prev_name, prev_depth, prev_saw_condition)) = current_rule.take() {
+                if !prev_saw_condition {
+                    diagnostics.push(DetectionDiagnostic {
+                        severity: "error".into(),
+                        message: format!(
+                            "YARA rule '{prev_name}' is missing a required 'condition:' section"
+                        ),
+                        line: Some(line_no.saturating_sub(1)),
+                        column: None,
+                    });
+                }
+                if prev_depth != 0 {
+                    diagnostics.push(DetectionDiagnostic {
+                        severity: "error".into(),
+                        message: format!(
+                            "YARA rule '{prev_name}' has unterminated body (unbalanced braces) before next rule declaration"
+                        ),
+                        line: Some(line_no.saturating_sub(1)),
+                        column: None,
+                    });
                 }
             }
+
+            let rule_name = rule_decl
+                .split(|c: char| c.is_whitespace() || c == '{' || c == ':')
+                .next()
+                .unwrap_or("unnamed")
+                .to_string();
+            let declaration_tail = rule_decl
+                .strip_prefix(&rule_name)
+                .map(str::trim_start)
+                .unwrap_or("");
+            // Count braces on the rule declaration line itself so that
+            // single-line rules (e.g. `rule x { condition: true }`) are
+            // tracked correctly.
+            let (opens, closes, saw_condition) = analyze_yara_code(declaration_tail);
+            current_rule = Some((rule_name, opens - closes, saw_condition));
+            rule_count += 1;
+            line_state = next_line_state;
+            continue;
         }
 
         if let Some((rule_name, brace_depth, saw_condition)) = current_rule.as_mut() {
-            let (opens, closes, line_has_condition, next_state) =
-                analyze_yara_line(line, line_state);
-            line_state = next_state;
+            let (opens, closes, line_has_condition) = analyze_yara_code(&scrubbed_line);
             if line_has_condition {
                 *saw_condition = true;
             }
@@ -553,6 +539,8 @@ pub fn validate_yara_rule(source: String) -> Result<YaraValidationResponse, Stri
                 current_rule = None;
             }
         }
+
+        line_state = next_line_state;
     }
 
     if let Some((rule_name, brace_depth, saw_condition)) = current_rule {
@@ -974,7 +962,7 @@ pub fn test_sigma_rule(source: String, events_json: String) -> Result<SigmaTestR
 
     // `hunt_correlate` does not return event-level attribution yet, so
     // `events_matched` is a bounded heuristic based on distinct findings.
-    let events_matched = estimate_sigma_events_matched(findings.len(), events_tested);
+    let events_matched = findings.len().min(events_tested);
     let matched = !findings.is_empty();
 
     Ok(SigmaTestResponse {
@@ -1431,6 +1419,42 @@ mod tests {
     }
 
     #[test]
+    fn validate_yara_rule_ignores_rule_tokens_inside_multiline_comments() {
+        let response = validate_yara_rule(
+            r#"/*
+rule ignored_comment {
+  condition:
+    true
+}
+*/
+rule actual_rule {
+  condition:
+    true
+}"#
+            .to_string(),
+        )
+        .expect("commented rule token should not affect validation");
+
+        assert!(response.valid, "expected actual rule to be valid");
+        assert_eq!(response.rule_count, 1);
+        assert!(response.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn validate_yara_rule_accepts_rule_after_inline_block_comment_prefix() {
+        let response =
+            validate_yara_rule("/* banner */ rule inline_comment { condition: true }".to_string())
+                .expect("rule after inline block comment should validate");
+
+        assert!(
+            response.valid,
+            "expected rule after inline block comment to be valid"
+        );
+        assert_eq!(response.rule_count, 1);
+        assert!(response.diagnostics.is_empty());
+    }
+
+    #[test]
     fn convert_sigma_to_native_policy_keeps_special_titles_yaml_safe() {
         let sigma = r#"title: "Suspicious Command: PowerShell #1"
 description: Detects "weird" command lines
@@ -1488,12 +1512,5 @@ detection:
                 .and_then(|value| value.as_str()),
             Some("1.5.0")
         );
-    }
-
-    #[test]
-    fn estimate_sigma_events_matched_never_exceeds_tested_events() {
-        assert_eq!(estimate_sigma_events_matched(0, 5), 0);
-        assert_eq!(estimate_sigma_events_matched(2, 5), 2);
-        assert_eq!(estimate_sigma_events_matched(9, 3), 3);
     }
 }

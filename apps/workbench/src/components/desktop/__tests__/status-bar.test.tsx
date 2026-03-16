@@ -69,6 +69,22 @@ function DetectionStatusHarness() {
       >
         set-native-invalid
       </button>
+      <button
+        type="button"
+        onClick={() =>
+          dispatch({
+            type: "SET_NATIVE_VALIDATION",
+            payload: {
+              guardErrors: {},
+              topLevelErrors: [],
+              topLevelWarnings: [],
+              loading: true,
+              valid: null,
+            },
+          })}
+      >
+        set-native-loading
+      </button>
       <StatusBar />
     </>
   );
@@ -129,6 +145,18 @@ describe("StatusBar", () => {
     fireEvent.click(screen.getByRole("button", { name: "set-native-invalid" }));
 
     expect(screen.getByText("1 error")).toBeInTheDocument();
+    expect(screen.getByText("YARA Rule")).toBeInTheDocument();
+  });
+
+  it("shows a validating state while desktop native validation is still pending", () => {
+    vi.mocked(isDesktop).mockReturnValue(true);
+    renderWithProviders(<DetectionStatusHarness />);
+
+    fireEvent.click(screen.getByRole("button", { name: "open-invalid-yara" }));
+    fireEvent.click(screen.getByRole("button", { name: "set-native-loading" }));
+
+    expect(screen.getByText("Validating...")).toBeInTheDocument();
+    expect(screen.queryByText("1 error")).not.toBeInTheDocument();
     expect(screen.getByText("YARA Rule")).toBeInTheDocument();
   });
 

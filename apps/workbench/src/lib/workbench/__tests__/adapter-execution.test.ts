@@ -413,7 +413,7 @@ describe("ocsf adapter runLab", () => {
             id: "case-valid",
             kind: "ocsf_event",
             payload: {
-              class_uid: 1001,
+              class_uid: 1007,
               activity_id: 1,
               severity_id: 3,
               status_id: 1,
@@ -533,7 +533,7 @@ describe("ocsf adapter runLab", () => {
             id: "case-1",
             kind: "ocsf_event",
             payload: {
-              class_uid: 1001,
+              class_uid: 1007,
               activity_id: 1,
               severity_id: 2,
             },
@@ -554,7 +554,7 @@ describe("ocsf adapter runLab", () => {
     expect(result.run.explainability[0].kind).toBe("ocsf_validation");
 
     if (result.run.explainability[0].kind === "ocsf_validation") {
-      expect(result.run.explainability[0].classUid).toBe(1001);
+      expect(result.run.explainability[0].classUid).toBe(1007);
       expect(result.run.explainability[0].missingFields).toEqual([]);
     }
   });
@@ -630,7 +630,7 @@ describe("ocsf adapter runLab", () => {
             id: "case-valid",
             kind: "ocsf_event",
             payload: {
-              class_uid: 2002,
+              class_uid: 2004,
               activity_id: 1,
               severity_id: 4,
             },
