@@ -333,7 +333,7 @@ guards:
     default_action: allow
 "#;
     let original = Policy::from_yaml(clawdstrike_yaml).expect("parse original");
-    let spec = hushspec_compiler::decompile(&original);
+    let spec = hushspec_compiler::decompile(&original).expect("decompile should succeed");
     let compiled = hushspec_compiler::compile(&spec).expect("compile back");
 
     // Key fields should match
@@ -438,7 +438,7 @@ name: desc-test
 description: A very important policy
 "#;
     let original = Policy::from_yaml(clawdstrike_yaml).expect("parse original");
-    let spec = hushspec_compiler::decompile(&original);
+    let spec = hushspec_compiler::decompile(&original).expect("decompile should succeed");
     let compiled = hushspec_compiler::compile(&spec).expect("compile back");
 
     assert_eq!(compiled.description, original.description);
@@ -574,7 +574,7 @@ extensions:
       top_k: 7
 "#;
     let policy = Policy::from_yaml_auto(yaml).expect("should compile");
-    let spec = hushspec_compiler::decompile(&policy);
+    let spec = hushspec_compiler::decompile(&policy).expect("decompile should succeed");
 
     // Compile the decompiled spec back and verify spider_sense is preserved
     let recompiled = hushspec_compiler::compile(&spec).expect("recompile should succeed");
@@ -611,7 +611,7 @@ extensions:
       enabled: true
 "#;
     let policy = Policy::from_yaml_auto(yaml).expect("should compile");
-    let spec = hushspec_compiler::decompile(&policy);
+    let spec = hushspec_compiler::decompile(&policy).expect("decompile should succeed");
     let ext = spec.extensions.expect("extensions");
     let det = ext.detection.expect("detection");
     let ti = det.threat_intel.expect("threat_intel");
@@ -644,7 +644,7 @@ fn decompile_forbidden_paths_materializes_clawdstrike_defaults() {
     let mut policy = Policy::default();
     policy.guards.forbidden_path = Some(ForbiddenPathConfig::with_defaults());
 
-    let spec = hushspec_compiler::decompile(&policy);
+    let spec = hushspec_compiler::decompile(&policy).expect("decompile should succeed");
     let validation = hushspec::validate(&spec);
     assert!(
         validation.is_valid(),
@@ -677,11 +677,52 @@ fn decompile_forbidden_paths_materializes_clawdstrike_defaults() {
 
 #[test]
 fn decompile_omits_default_merge_strategy() {
-    let spec = hushspec_compiler::decompile(&Policy::default());
+    let spec = hushspec_compiler::decompile(&Policy::default()).expect("decompile should succeed");
     assert!(
         spec.merge_strategy.is_none(),
         "default deep-merge should be omitted from decompiled HushSpec"
     );
+}
+
+#[test]
+fn decompile_rejects_egress_log_default_action() {
+    let policy = Policy::from_yaml(
+        r#"
+version: "1.5.0"
+guards:
+  egress_allowlist:
+    default_action: log
+"#,
+    )
+    .expect("policy should parse");
+
+    let err = hushspec_compiler::decompile(&policy).expect_err("log should not decompile");
+    let msg = err.to_string();
+    assert!(msg.contains("guards.egress_allowlist.default_action"));
+    assert!(msg.contains("log"));
+}
+
+#[test]
+fn decompile_rejects_origin_egress_log_default_action() {
+    let policy = Policy::from_yaml(
+        r#"
+version: "1.5.0"
+origins:
+  default_behavior: deny
+  profiles:
+    - id: slack-internal
+      match_rules:
+        provider: slack
+      egress:
+        default_action: log
+"#,
+    )
+    .expect("policy should parse");
+
+    let err = hushspec_compiler::decompile(&policy).expect_err("log should not decompile");
+    let msg = err.to_string();
+    assert!(msg.contains("origins.profiles[slack-internal].egress.default_action"));
+    assert!(msg.contains("log"));
 }
 
 // ---------------------------------------------------------------------------

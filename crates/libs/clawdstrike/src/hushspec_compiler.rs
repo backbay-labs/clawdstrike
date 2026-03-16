@@ -139,7 +139,10 @@ pub fn compile_hushspec(yaml: &str) -> Result<Policy> {
 /// Engine-only fields (settings, broker, custom_guards, async config, merge helpers)
 /// are dropped since they have no HushSpec representation. Detection guards
 /// (prompt injection, jailbreak, Spider Sense) are mapped to the detection extension.
-pub fn decompile(policy: &Policy) -> hushspec::HushSpec {
+///
+/// Returns an error when the policy contains semantics that HushSpec cannot
+/// represent losslessly, such as egress `default_action: log`.
+pub fn decompile(policy: &Policy) -> Result<hushspec::HushSpec> {
     let mut rules = hushspec::Rules::default();
     let mut has_rules = false;
 
@@ -169,12 +172,10 @@ pub fn decompile(policy: &Policy) -> hushspec::HushSpec {
             enabled: eg.enabled,
             allow: eg.allow.clone(),
             block: eg.block.clone(),
-            default: match eg.default_action {
-                Some(PolicyAction::Allow) | Some(PolicyAction::Log) => {
-                    hushspec::DefaultAction::Allow
-                }
-                Some(PolicyAction::Block) | None => hushspec::DefaultAction::Block,
-            },
+            default: decompile_egress_default_action(
+                eg.default_action.as_ref(),
+                "guards.egress_allowlist.default_action",
+            )?,
         });
     }
 
@@ -307,7 +308,7 @@ pub fn decompile(policy: &Policy) -> hushspec::HushSpec {
     // Decompile origins
     if let Some(origins_cfg) = &policy.origins {
         has_extensions = true;
-        extensions.origins = Some(decompile_origins(origins_cfg));
+        extensions.origins = Some(decompile_origins(origins_cfg)?);
     }
 
     // Decompile detection guards -> detection extension
@@ -376,7 +377,7 @@ pub fn decompile(policy: &Policy) -> hushspec::HushSpec {
         MergeStrategy::DeepMerge => None,
     };
 
-    hushspec::HushSpec {
+    Ok(hushspec::HushSpec {
         hushspec: hushspec::HUSHSPEC_VERSION.to_string(),
         name: if policy.name.is_empty() {
             None
@@ -396,7 +397,7 @@ pub fn decompile(policy: &Policy) -> hushspec::HushSpec {
         } else {
             None
         },
-    }
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -407,6 +408,19 @@ fn decompile_forbidden_path_patterns(fp: &ForbiddenPathConfig) -> Vec<String> {
     // HushSpec has no sentinel for "use engine defaults", so decompile the
     // concrete effective pattern set instead of collapsing to an empty list.
     fp.effective_patterns()
+}
+
+fn decompile_egress_default_action(
+    action: Option<&PolicyAction>,
+    field_path: &str,
+) -> Result<hushspec::DefaultAction> {
+    match action {
+        Some(PolicyAction::Allow) => Ok(hushspec::DefaultAction::Allow),
+        Some(PolicyAction::Block) | None => Ok(hushspec::DefaultAction::Block),
+        Some(PolicyAction::Log) => Err(Error::ConfigError(format!(
+            "Cannot decompile {field_path}=log to HushSpec: egress defaults only support allow or block"
+        ))),
+    }
 }
 
 #[cfg(all(feature = "policy-event", not(feature = "full")))]
@@ -783,7 +797,9 @@ fn compile_detection(
 // Internal helpers: decompile direction (Clawdstrike -> HushSpec)
 // ---------------------------------------------------------------------------
 
-fn decompile_origins(origins_cfg: &OriginsConfig) -> hushspec::extensions::OriginsExtension {
+fn decompile_origins(
+    origins_cfg: &OriginsConfig,
+) -> Result<hushspec::extensions::OriginsExtension> {
     let default_behavior = match origins_cfg.default_behavior {
         Some(OriginDefaultBehavior::Deny) | None => {
             hushspec::extensions::OriginDefaultBehavior::Deny
@@ -796,7 +812,7 @@ fn decompile_origins(origins_cfg: &OriginsConfig) -> hushspec::extensions::Origi
     let profiles = origins_cfg
         .profiles
         .iter()
-        .map(|p| {
+        .map(|p| -> Result<hushspec::extensions::OriginProfile> {
             let match_rules = if p.match_rules == OriginMatch::default() {
                 None
             } else {
@@ -829,17 +845,22 @@ fn decompile_origins(origins_cfg: &OriginsConfig) -> hushspec::extensions::Origi
                 max_args_size: mt.max_args_size,
             });
 
-            let egress = p.egress.as_ref().map(|eg| hushspec::EgressRule {
-                enabled: eg.enabled,
-                allow: eg.allow.clone(),
-                block: eg.block.clone(),
-                default: match eg.default_action {
-                    Some(PolicyAction::Allow) | Some(PolicyAction::Log) => {
-                        hushspec::DefaultAction::Allow
-                    }
-                    Some(PolicyAction::Block) | None => hushspec::DefaultAction::Block,
-                },
-            });
+            let egress = p
+                .egress
+                .as_ref()
+                .map(|eg| {
+                    let field_path = format!("origins.profiles[{}].egress.default_action", p.id);
+                    Ok::<_, Error>(hushspec::EgressRule {
+                        enabled: eg.enabled,
+                        allow: eg.allow.clone(),
+                        block: eg.block.clone(),
+                        default: decompile_egress_default_action(
+                            eg.default_action.as_ref(),
+                            &field_path,
+                        )?,
+                    })
+                })
+                .transpose()?;
 
             let data = p
                 .data
@@ -877,7 +898,7 @@ fn decompile_origins(origins_cfg: &OriginsConfig) -> hushspec::extensions::Origi
                     require_approval: b.require_approval,
                 });
 
-            hushspec::extensions::OriginProfile {
+            Ok(hushspec::extensions::OriginProfile {
                 id: p.id.clone(),
                 match_rules,
                 posture: p.posture.clone(),
@@ -887,14 +908,14 @@ fn decompile_origins(origins_cfg: &OriginsConfig) -> hushspec::extensions::Origi
                 budgets,
                 bridge,
                 explanation: p.explanation.clone(),
-            }
+            })
         })
-        .collect();
+        .collect::<Result<Vec<_>>>()?;
 
-    hushspec::extensions::OriginsExtension {
+    Ok(hushspec::extensions::OriginsExtension {
         default_behavior,
         profiles,
-    }
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -1070,7 +1091,7 @@ mod tests {
         assert_eq!(policy.version, POLICY_SCHEMA_VERSION);
         assert_eq!(policy.name, "test");
 
-        let roundtrip = decompile(&policy);
+        let roundtrip = decompile(&policy).expect("decompile should succeed");
         assert_eq!(roundtrip.name, Some("test".to_string()));
     }
 
@@ -1218,7 +1239,7 @@ mod tests {
         assert_eq!(pi.max_scan_bytes, 100_000);
 
         // Roundtrip through decompile
-        let roundtrip = decompile(&policy);
+        let roundtrip = decompile(&policy).expect("decompile should succeed");
         let ext = roundtrip.extensions.expect("extensions should be set");
         let det = ext.detection.expect("detection should be set");
         let pi_rt = det
@@ -1269,7 +1290,7 @@ mod tests {
         assert!(posture_cfg.states.contains_key("initial"));
 
         // Roundtrip
-        let roundtrip = decompile(&policy);
+        let roundtrip = decompile(&policy).expect("decompile should succeed");
         let ext = roundtrip.extensions.expect("extensions should be set");
         let posture_rt = ext.posture.expect("posture should be set");
         assert_eq!(posture_rt.initial, "initial");
@@ -1322,7 +1343,7 @@ mod tests {
         );
 
         // Roundtrip
-        let roundtrip = decompile(&policy);
+        let roundtrip = decompile(&policy).expect("decompile should succeed");
         let ext = roundtrip.extensions.expect("extensions should be set");
         let origins_rt = ext.origins.expect("origins should be set");
         assert_eq!(origins_rt.profiles[0].id, "slack-internal");
@@ -1365,7 +1386,7 @@ mod tests {
         assert_eq!(ss.top_k, 3);
 
         // Roundtrip through decompile
-        let roundtrip = decompile(&policy);
+        let roundtrip = decompile(&policy).expect("decompile should succeed");
         let ext = roundtrip.extensions.expect("extensions should be set");
         let det = ext.detection.expect("detection should be set");
         let ti = det.threat_intel.expect("threat_intel should be set");

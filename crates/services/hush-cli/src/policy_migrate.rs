@@ -443,7 +443,12 @@ pub(crate) fn migrate_policy_yaml(
                 kind: "config_error",
                 message: format!("Failed to parse Clawdstrike policy: {}", e),
             })?;
-        let spec = clawdstrike::hushspec_compiler::decompile(&policy);
+        let spec =
+            clawdstrike::hushspec_compiler::decompile(&policy).map_err(|e| PolicyMigrateError {
+                code: ExitCode::ConfigError,
+                kind: "config_error",
+                message: format!("Failed to decompile Clawdstrike policy to HushSpec: {}", e),
+            })?;
         let migrated_yaml = spec.to_yaml().map_err(|e| PolicyMigrateError {
             code: ExitCode::RuntimeError,
             kind: "runtime_error",

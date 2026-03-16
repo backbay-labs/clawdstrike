@@ -3524,6 +3524,35 @@ extends: clawdstrike:default
         assert!(stderr.contains(clawdstrike::policy::POLICY_SCHEMA_VERSION));
         assert!(stderr.contains("hushspec"));
     }
+
+    #[test]
+    fn migrate_to_hushspec_rejects_egress_log_default_action() {
+        let input = r#"
+version: "1.5.0"
+guards:
+  egress_allowlist:
+    default_action: log
+"#;
+
+        let err = migrate_policy_yaml(
+            input,
+            &PolicyMigrateOptions {
+                from: None,
+                to: "hushspec".to_string(),
+                legacy_openclaw: false,
+            },
+        )
+        .expect_err("lossy egress log defaults should be rejected");
+
+        assert_eq!(err.code, ExitCode::ConfigError);
+        assert!(err
+            .message
+            .contains("Failed to decompile Clawdstrike policy to HushSpec"));
+        assert!(err
+            .message
+            .contains("guards.egress_allowlist.default_action"));
+        assert!(err.message.contains("log"));
+    }
 }
 
 #[cfg(test)]

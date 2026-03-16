@@ -100,7 +100,7 @@ guards:
 "#;
 
     let policy = Policy::from_yaml(yaml).expect("policy should parse under policy-event build");
-    let spec = hushspec_compiler::decompile(&policy);
+    let spec = hushspec_compiler::decompile(&policy).expect("decompile should succeed");
     let ti = spec
         .extensions
         .expect("extensions should be present")
