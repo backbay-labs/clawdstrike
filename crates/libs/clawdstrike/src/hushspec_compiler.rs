@@ -186,13 +186,16 @@ pub fn decompile(policy: &Policy) -> Result<hushspec::HushSpec> {
             patterns: sl
                 .effective_patterns()
                 .iter()
-                .map(|p| hushspec::rules::SecretPattern {
-                    name: p.name.clone(),
-                    pattern: p.pattern.clone(),
-                    severity: deconvert_severity(&p.severity),
-                    description: p.description.clone(),
+                .map(|p| -> Result<hushspec::rules::SecretPattern> {
+                    let field_path = format!("guards.secret_leak.patterns[{}].severity", p.name);
+                    Ok(hushspec::rules::SecretPattern {
+                        name: p.name.clone(),
+                        pattern: p.pattern.clone(),
+                        severity: deconvert_severity(&p.severity, &field_path)?,
+                        description: p.description.clone(),
+                    })
                 })
-                .collect(),
+                .collect::<Result<Vec<_>>>()?,
             skip_paths: sl.skip_paths.clone(),
         });
     }
@@ -930,12 +933,14 @@ fn convert_severity(s: &hushspec::Severity) -> Severity {
     }
 }
 
-fn deconvert_severity(s: &Severity) -> hushspec::Severity {
+fn deconvert_severity(s: &Severity, field_path: &str) -> Result<hushspec::Severity> {
     match s {
-        Severity::Critical => hushspec::Severity::Critical,
-        Severity::Error => hushspec::Severity::Error,
-        // Info and Warning both map to Warn (HushSpec has no Info variant)
-        Severity::Warning | Severity::Info => hushspec::Severity::Warn,
+        Severity::Critical => Ok(hushspec::Severity::Critical),
+        Severity::Error => Ok(hushspec::Severity::Error),
+        Severity::Warning => Ok(hushspec::Severity::Warn),
+        Severity::Info => Err(Error::ConfigError(format!(
+            "Cannot decompile {field_path}=info to HushSpec: secret pattern severity only supports warn, error, or critical"
+        ))),
     }
 }
 
@@ -1164,12 +1169,22 @@ mod tests {
             Severity::Warning
         );
         assert_eq!(
-            deconvert_severity(&Severity::Warning),
+            deconvert_severity(
+                &Severity::Warning,
+                "guards.secret_leak.patterns[test].severity"
+            )
+            .expect("warning should decompile"),
             hushspec::Severity::Warn
         );
-        assert_eq!(
-            deconvert_severity(&Severity::Info),
-            hushspec::Severity::Warn
+        let err = deconvert_severity(
+            &Severity::Info,
+            "guards.secret_leak.patterns[test].severity",
+        )
+        .expect_err("info should be rejected");
+        assert!(
+            err.to_string()
+                .contains("guards.secret_leak.patterns[test].severity"),
+            "error should point at the unsupported field"
         );
     }
 

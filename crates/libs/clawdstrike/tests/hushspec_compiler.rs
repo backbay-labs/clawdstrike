@@ -10,7 +10,7 @@
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use clawdstrike::guards::ForbiddenPathConfig;
+use clawdstrike::guards::{ForbiddenPathConfig, SecretLeakConfig, SecretPattern, Severity};
 use clawdstrike::hushspec_compiler;
 use clawdstrike::Policy;
 
@@ -723,6 +723,27 @@ origins:
     let msg = err.to_string();
     assert!(msg.contains("origins.profiles[slack-internal].egress.default_action"));
     assert!(msg.contains("log"));
+}
+
+#[test]
+fn decompile_rejects_info_secret_pattern_severity() {
+    let mut policy = Policy::default();
+    policy.guards.secret_leak = Some(SecretLeakConfig {
+        patterns: vec![SecretPattern {
+            name: "informational-secret".to_string(),
+            pattern: "INFO_TOKEN_[A-Z0-9]+".to_string(),
+            severity: Severity::Info,
+            description: Some("Info-level secret".to_string()),
+            luhn_check: false,
+            masking: None,
+        }],
+        ..SecretLeakConfig::default()
+    });
+
+    let err = hushspec_compiler::decompile(&policy).expect_err("info should not decompile");
+    let msg = err.to_string();
+    assert!(msg.contains("guards.secret_leak.patterns[informational-secret].severity"));
+    assert!(msg.contains("info"));
 }
 
 // ---------------------------------------------------------------------------

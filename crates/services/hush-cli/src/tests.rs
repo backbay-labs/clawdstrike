@@ -3504,7 +3504,7 @@ extends: clawdstrike:default
 
         let code = cmd_policy_migrate(
             PolicyMigrateCommand {
-                input: "-".to_string(),
+                input: "policy.yaml".to_string(),
                 from: None,
                 to: "2.0.0".to_string(),
                 legacy_openclaw: false,
