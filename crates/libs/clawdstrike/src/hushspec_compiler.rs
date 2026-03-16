@@ -750,15 +750,13 @@ fn compile_detection(
     // Spider Sense mapping is feature-gated.
     #[cfg(feature = "full")]
     if let Some(ti) = &ext.threat_intel {
-        let mut cfg = crate::async_guards::threat_intel::SpiderSensePolicyConfig {
+        let cfg = crate::async_guards::threat_intel::SpiderSensePolicyConfig {
             enabled: ti.enabled,
             pattern_db_path: ti.pattern_db.clone().unwrap_or_default(),
             similarity_threshold: ti.similarity_threshold,
             top_k: ti.top_k,
             ..Default::default()
         };
-        // Re-enable since Default sets enabled=false
-        cfg.enabled = ti.enabled;
         guards.spider_sense = Some(cfg);
     }
 

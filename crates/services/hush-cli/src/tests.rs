@@ -3377,7 +3377,11 @@ settings:
 
 #[cfg(test)]
 mod policy_migrate_contract {
-    use crate::policy_migrate::{migrate_policy_yaml, PolicyMigrateMode, PolicyMigrateOptions};
+    use crate::policy_migrate::{
+        cmd_policy_migrate, migrate_policy_yaml, PolicyMigrateCommand, PolicyMigrateMode,
+        PolicyMigrateOptions,
+    };
+    use crate::ExitCode;
 
     #[test]
     fn migrates_policy_version_1_0_0_to_1_1_0_and_validates() {
@@ -3491,6 +3495,34 @@ extends: clawdstrike:default
         let policy = clawdstrike::Policy::from_yaml(&res.migrated_yaml).expect("output loads");
         assert_eq!(policy.version, "1.2.0");
         assert_eq!(policy.name, "Schema bump");
+    }
+
+    #[test]
+    fn invalid_target_error_mentions_hushspec() {
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+
+        let code = cmd_policy_migrate(
+            PolicyMigrateCommand {
+                input: "-".to_string(),
+                from: None,
+                to: "2.0.0".to_string(),
+                legacy_openclaw: false,
+                output: None,
+                in_place: false,
+                json: false,
+                dry_run: false,
+            },
+            &mut stdout,
+            &mut stderr,
+        );
+
+        assert_eq!(code, ExitCode::InvalidArgs);
+        assert!(stdout.is_empty());
+
+        let stderr = String::from_utf8(stderr).expect("stderr should be utf-8");
+        assert!(stderr.contains(clawdstrike::policy::POLICY_SCHEMA_VERSION));
+        assert!(stderr.contains("hushspec"));
     }
 }
 

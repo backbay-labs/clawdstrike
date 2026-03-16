@@ -107,7 +107,7 @@ pub fn cmd_policy_migrate(
                 error: Some(CliJsonError {
                     kind: "invalid_args",
                     message: format!(
-                        "Unsupported target schema version. Supported: {}",
+                        "Unsupported target schema version. Supported: {}, hushspec",
                         supported_to
                     ),
                 }),
