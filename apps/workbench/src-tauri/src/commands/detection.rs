@@ -272,11 +272,11 @@ struct YaraRuleState {
     saw_body_open: bool,
 }
 
-fn is_yara_identifier_start(ch: u8) -> bool {
+fn is_yara_identifier_start_byte(ch: u8) -> bool {
     ch.is_ascii_alphabetic() || ch == b'_'
 }
 
-fn is_yara_identifier_continue(ch: u8) -> bool {
+fn is_yara_identifier_continue_byte(ch: u8) -> bool {
     ch.is_ascii_alphanumeric() || ch == b'_'
 }
 
@@ -285,14 +285,14 @@ fn contains_yara_condition_section(code: &str) -> bool {
     let mut i = 0;
 
     while i < bytes.len() {
-        if !is_yara_identifier_start(bytes[i]) {
+        if !is_yara_identifier_start_byte(bytes[i]) {
             i += 1;
             continue;
         }
 
         let start = i;
         i += 1;
-        while i < bytes.len() && is_yara_identifier_continue(bytes[i]) {
+        while i < bytes.len() && is_yara_identifier_continue_byte(bytes[i]) {
             i += 1;
         }
 
@@ -351,13 +351,13 @@ fn parse_yara_rule_declaration(code: &str) -> Option<(&str, &str)> {
     let Some((_, first_char)) = chars.next() else {
         return None;
     };
-    if !is_yara_identifier_start(first_char as u8) {
+    if !(first_char.is_ascii_alphabetic() || first_char == '_') {
         return None;
     }
 
     let mut name_end = rest.len();
     for (idx, ch) in chars {
-        if !is_yara_identifier_continue(ch as u8) {
+        if !(ch.is_ascii_alphanumeric() || ch == '_') {
             name_end = idx;
             break;
         }
@@ -785,12 +785,7 @@ pub fn validate_yara_rule(source: String) -> Result<YaraValidationResponse, Stri
                 });
                 current_rule = None;
             } else if rule.saw_body_open && rule.brace_depth == 0 {
-                push_yara_rule_completion_diagnostics(
-                    &mut diagnostics,
-                    rule,
-                    Some(line_no),
-                    false,
-                );
+                push_yara_rule_completion_diagnostics(&mut diagnostics, rule, Some(line_no), false);
                 current_rule = None;
             }
         }
@@ -1420,7 +1415,7 @@ fn escape_yaml_string(s: &str) -> String {
     }
 }
 
-fn sanitize_yaml_comment_text(s: &str) -> String {
+fn sanitize_yaml_inline_text(s: &str) -> String {
     s.chars()
         .map(|ch| match ch {
             '\n' | '\r' | '\u{2028}' | '\u{2029}' => ' ',
@@ -1433,6 +1428,10 @@ fn sanitize_yaml_comment_text(s: &str) -> String {
         .filter(|fragment| !fragment.is_empty())
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+fn sanitize_yaml_comment_text(s: &str) -> String {
+    sanitize_yaml_inline_text(s)
 }
 
 fn convert_sigma_to_native_policy(source: &str) -> Result<SigmaConvertResponse, String> {
@@ -1485,12 +1484,9 @@ fn convert_sigma_to_native_policy(source: &str) -> Result<SigmaConvertResponse, 
     // newlines/control chars, then manually construct the quoted value so we
     // avoid the double-quoting that would occur if escape_yaml_string
     // wrapped an already-quoted result.
-    let title_sanitized = sanitize_yaml_comment_text(title_raw);
-    let sigma_marker = {
-        let inner = title_sanitized.replace('\\', "\\\\").replace('"', "\\\"");
-        format!("\"# Sigma: {inner}\"")
-    };
-    let level_yaml = escape_yaml_string(level_raw);
+    let title_sanitized = sanitize_yaml_inline_text(title_raw);
+    let sigma_marker = escape_yaml_string(&format!("# Sigma: {title_sanitized}"));
+    let level_yaml = escape_yaml_string(&sanitize_yaml_inline_text(level_raw));
 
     // Map Sigma level to policy severity
     let policy_level = match level_raw {
@@ -1693,6 +1689,38 @@ rule actual_rule {
     }
 
     #[test]
+    fn validate_yara_rule_requires_a_rule_body_before_next_declaration() {
+        let response = validate_yara_rule(
+            r#"rule missing_body
+rule actual_rule { condition: true }"#
+                .to_string(),
+        )
+        .expect("YARA validation should complete");
+
+        assert!(!response.valid);
+        assert!(response.diagnostics.iter().any(|diagnostic| diagnostic
+            .message
+            .contains("missing an opening '{' for the rule body")));
+    }
+
+    #[test]
+    fn validate_yara_rule_does_not_treat_condition_identifiers_as_condition_section() {
+        let response = validate_yara_rule(
+            r#"rule condition_identifier {
+    meta:
+        condition_label = "still not a condition section"
+}"#
+            .to_string(),
+        )
+        .expect("YARA validation should complete");
+
+        assert!(!response.valid);
+        assert!(response.diagnostics.iter().any(|diagnostic| diagnostic
+            .message
+            .contains("missing a required 'condition:' section")));
+    }
+
+    #[test]
     fn validate_sigma_rule_rejects_rules_without_object_selectors() {
         let response = validate_sigma_rule(
             r#"title: Missing selector object
@@ -1745,6 +1773,16 @@ detection:
         let detected = detect_file_type_from_path_and_content(
             "package.json",
             r#"{"name":"fixture","version":"1.0.0"}"#,
+        );
+
+        assert_ne!(detected.file_type, "ocsf_event");
+    }
+
+    #[test]
+    fn detect_file_type_from_json_path_requires_structural_ocsf_signals() {
+        let detected = detect_file_type_from_path_and_content(
+            "suspicious.json",
+            r#"{"class_uid":2004,"metadata":{"source":"lab"},"severity_id":"high"}"#,
         );
 
         assert_ne!(detected.file_type, "ocsf_event");
@@ -1853,6 +1891,42 @@ detection:
                 .get("schema_version")
                 .and_then(|value| value.as_str()),
             Some("1.5.0")
+        );
+    }
+
+    #[test]
+    fn convert_sigma_to_native_policy_sanitizes_inline_marker_and_log_level_values() {
+        let sigma = r#"title: "Marker # injected"
+description: Convert safely
+status: experimental
+level: |
+  high
+  guards:
+    forbidden_path: {}
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    CommandLine|contains: bash
+  condition: selection
+"#;
+
+        let response =
+            convert_sigma_to_native_policy(sigma).expect("sigma conversion should succeed");
+        let output = response.output.expect("expected native policy output");
+        let parsed = serde_yaml::from_str::<serde_yaml::Value>(&output)
+            .expect("generated native policy should remain valid YAML");
+
+        assert!(output.contains("- \"# Sigma: Marker # injected\""));
+        assert!(!output.contains("\n  guards:\n    forbidden_path: {}"));
+        assert_eq!(
+            parsed
+                .get("guards")
+                .and_then(|guards| guards.get("shell_command"))
+                .and_then(|shell| shell.get("log_level"))
+                .and_then(|value| value.as_str()),
+            Some("high guards: forbidden_path: {}")
         );
     }
 }

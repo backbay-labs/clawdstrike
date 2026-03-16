@@ -2375,7 +2375,10 @@ posture:
                 .collect::<Vec<_>>(),
             vec!["r2", "r3", "r1"]
         );
-        assert!(res.receipts.iter().all(|receipt| receipt.timestamp_order_valid));
+        assert!(res
+            .receipts
+            .iter()
+            .all(|receipt| receipt.timestamp_order_valid));
         assert!(res.summary.contains("normalized by timestamp"));
     }
 
