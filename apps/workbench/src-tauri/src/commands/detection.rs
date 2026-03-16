@@ -271,14 +271,6 @@ fn analyze_yara_line(line: &str, state: YaraScrubState) -> (i32, i32, bool, Yara
     (opens, closes, has_condition, state)
 }
 
-fn format_detection_diagnostic(diagnostic: &DetectionDiagnostic) -> String {
-    match (diagnostic.line, diagnostic.column) {
-        (Some(line), Some(column)) => format!("line {line}:{column}: {}", diagnostic.message),
-        (Some(line), None) => format!("line {line}: {}", diagnostic.message),
-        _ => diagnostic.message.clone(),
-    }
-}
-
 fn detect_file_type_from_content(content: &str) -> DetectionFileType {
     if content.contains("guards:") || content.contains("schema_version:") {
         return DetectionFileType {
@@ -755,6 +747,13 @@ pub async fn export_detection_file(
 
     check_source_size(&content)?;
 
+    let format_validation_message =
+        |diagnostic: &DetectionDiagnostic| match (diagnostic.line, diagnostic.column) {
+            (Some(line), Some(column)) => format!("line {line}:{column}: {}", diagnostic.message),
+            (Some(line), None) => format!("line {line}: {}", diagnostic.message),
+            _ => diagnostic.message.clone(),
+        };
+
     let validation_failed = match file_type.as_str() {
         "sigma_rule" => {
             let result = validate_sigma_rule(content.clone())?;
@@ -764,7 +763,7 @@ pub async fn export_detection_file(
                 let details = result
                     .diagnostics
                     .iter()
-                    .map(format_detection_diagnostic)
+                    .map(|diagnostic| format_validation_message(diagnostic))
                     .collect::<Vec<_>>()
                     .join("; ");
                 Some(if details.is_empty() {
@@ -782,7 +781,7 @@ pub async fn export_detection_file(
                 let details = result
                     .diagnostics
                     .iter()
-                    .map(format_detection_diagnostic)
+                    .map(|diagnostic| format_validation_message(diagnostic))
                     .collect::<Vec<_>>()
                     .join("; ");
                 Some(if details.is_empty() {
@@ -801,7 +800,7 @@ pub async fn export_detection_file(
                     .diagnostics
                     .iter()
                     .filter(|d| d.severity == "error")
-                    .map(format_detection_diagnostic)
+                    .map(|diagnostic| format_validation_message(diagnostic))
                     .collect::<Vec<_>>()
                     .join("; ");
                 Some(if details.is_empty() {
@@ -973,21 +972,9 @@ pub fn test_sigma_rule(source: String, events_json: String) -> Result<SigmaTestR
         })
         .collect();
 
-    // `hunt_correlate` does not return event-level attribution yet, so count
-    // unique event indices where available; otherwise fall back to the number
-    // of distinct findings (capped by events_tested).  Previous code counted
-    // individual evidence_refs strings which are field-ref IDs, not events.
-    let unique_event_count = {
-        let indices: std::collections::HashSet<usize> =
-            findings.iter().filter_map(|f| f.event_index).collect();
-        if indices.is_empty() {
-            // No event-level attribution — best estimate is distinct findings.
-            findings.len()
-        } else {
-            indices.len()
-        }
-    };
-    let events_matched = estimate_sigma_events_matched(unique_event_count, events_tested);
+    // `hunt_correlate` does not return event-level attribution yet, so
+    // `events_matched` is a bounded heuristic based on distinct findings.
+    let events_matched = estimate_sigma_events_matched(findings.len(), events_tested);
     let matched = !findings.is_empty();
 
     Ok(SigmaTestResponse {
