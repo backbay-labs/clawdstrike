@@ -772,7 +772,9 @@ pub async fn terminal_preview<R: Runtime>(
         }
     }
 
-    let n = lines.unwrap_or(DEFAULT_PREVIEW_LINES).min(MAX_PREVIEW_LINES);
+    let n = lines
+        .unwrap_or(DEFAULT_PREVIEW_LINES)
+        .min(MAX_PREVIEW_LINES);
 
     let buf = get_ring_buffer(&session_id)
         .ok_or_else(|| format!("Ring buffer not found for session: {session_id}"))?;

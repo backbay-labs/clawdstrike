@@ -511,11 +511,15 @@ pub fn validate_yara_rule(source: String) -> Result<YaraValidationResponse, Stri
                         .next()
                         .unwrap_or("unnamed")
                         .to_string();
+                    let declaration_tail = rule_decl
+                        .strip_prefix(&rule_name)
+                        .map(str::trim_start)
+                        .unwrap_or("");
                     // Count braces on the rule declaration line itself so that
                     // single-line rules (e.g. `rule x { condition: true }`) are
                     // tracked correctly.
                     let (opens, closes, saw_condition, next_state) =
-                        analyze_yara_line(line, line_state);
+                        analyze_yara_line(declaration_tail, line_state);
                     line_state = next_state;
                     current_rule = Some((rule_name, opens - closes, saw_condition));
                     rule_count += 1;
@@ -1415,6 +1419,22 @@ mod tests {
         .expect("multiline hex YARA rule should validate");
 
         assert!(response.valid, "expected multiline hex rule to be valid");
+        assert_eq!(response.rule_count, 1);
+        assert!(
+            response.diagnostics.is_empty(),
+            "unexpected diagnostics: {:?}",
+            response.diagnostics
+        );
+    }
+
+    #[test]
+    fn validate_yara_rule_accepts_inline_hex_on_rule_declaration_line() {
+        let response = validate_yara_rule(
+            r#"rule inline_hex { strings: $hex = { AA BB CC DD } condition: $hex }"#.to_string(),
+        )
+        .expect("inline hex YARA rule should validate");
+
+        assert!(response.valid, "expected inline hex rule to be valid");
         assert_eq!(response.rule_count, 1);
         assert!(
             response.diagnostics.is_empty(),

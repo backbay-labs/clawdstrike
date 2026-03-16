@@ -92,7 +92,12 @@ where
     let join = tauri::async_runtime::spawn_blocking(operation);
     let timed = tokio::time::timeout(Duration::from_secs(GIT_OP_TIMEOUT_SECS), join)
         .await
-        .map_err(|_| format!("Worktree operation timed out after {}s", GIT_OP_TIMEOUT_SECS))?;
+        .map_err(|_| {
+            format!(
+                "Worktree operation timed out after {}s",
+                GIT_OP_TIMEOUT_SECS
+            )
+        })?;
     timed.map_err(|e| format!("Worktree operation failed: {e}"))?
 }
 
@@ -251,7 +256,13 @@ pub async fn worktree_create<R: Runtime>(
             // Syntax: git worktree add -b <new-branch> <path>
             run_git(
                 &canonical_root_str,
-                &["worktree", "add", "-b", &normalized_branch, &worktree_path_str],
+                &[
+                    "worktree",
+                    "add",
+                    "-b",
+                    &normalized_branch,
+                    &worktree_path_str,
+                ],
             )?;
         }
 

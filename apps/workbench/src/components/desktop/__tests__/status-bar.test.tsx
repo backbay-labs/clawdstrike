@@ -1,10 +1,11 @@
 import React from "react";
-import { describe, it, expect, vi } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
 import { fireEvent, screen } from "@testing-library/react";
 import { StatusBar } from "../status-bar";
 import { renderWithProviders } from "@/test/test-helpers";
 import { GUARD_REGISTRY } from "@/lib/workbench/guard-registry";
 import { useMultiPolicy, useWorkbench } from "@/lib/workbench/multi-policy-store";
+import { isDesktop } from "@/lib/tauri-bridge";
 
 vi.mock("@/lib/tauri-bridge", () => ({
   isDesktop: vi.fn(() => false),
@@ -40,6 +41,21 @@ function DetectionStatusHarness() {
       <button
         type="button"
         onClick={() =>
+          multiDispatch({
+            type: "NEW_TAB",
+            fileType: "yara_rule",
+            yaml: `rule missing_condition {
+  strings:
+    $a = "x"
+}
+`,
+          })}
+      >
+        open-invalid-yara
+      </button>
+      <button
+        type="button"
+        onClick={() =>
           dispatch({
             type: "SET_NATIVE_VALIDATION",
             payload: {
@@ -57,6 +73,10 @@ function DetectionStatusHarness() {
     </>
   );
 }
+
+beforeEach(() => {
+  vi.mocked(isDesktop).mockReturnValue(false);
+});
 
 describe("StatusBar", () => {
   it("shows 'Valid' status when there are no errors or warnings", () => {
@@ -102,10 +122,20 @@ describe("StatusBar", () => {
   });
 
   it("prefers native validation status for detection tabs when available", () => {
+    vi.mocked(isDesktop).mockReturnValue(true);
     renderWithProviders(<DetectionStatusHarness />);
 
     fireEvent.click(screen.getByRole("button", { name: "open-yara" }));
     fireEvent.click(screen.getByRole("button", { name: "set-native-invalid" }));
+
+    expect(screen.getByText("1 error")).toBeInTheDocument();
+    expect(screen.getByText("YARA Rule")).toBeInTheDocument();
+  });
+
+  it("falls back to format-aware client validation for detection tabs on web", () => {
+    renderWithProviders(<DetectionStatusHarness />);
+
+    fireEvent.click(screen.getByRole("button", { name: "open-invalid-yara" }));
 
     expect(screen.getByText("1 error")).toBeInTheDocument();
     expect(screen.getByText("YARA Rule")).toBeInTheDocument();

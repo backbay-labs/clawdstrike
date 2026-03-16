@@ -26,10 +26,13 @@ export function StatusBar() {
   const policyTab = isPolicyFileType(fileType);
 
   // ---- Validation status ----
-  const errorCount = !policyTab && nativeValidation.valid !== null
-    ? nativeValidation.topLevelErrors.length
+  const useNativeDetectionValidation = desktop && !policyTab && nativeValidation.valid !== null;
+  const nativeErrorCount = nativeValidation.topLevelErrors.length
+    + Object.values(nativeValidation.guardErrors).reduce((count, issues) => count + issues.length, 0);
+  const errorCount = useNativeDetectionValidation
+    ? nativeErrorCount
     : validation.errors.length;
-  const warningCount = !policyTab && nativeValidation.valid !== null
+  const warningCount = useNativeDetectionValidation
     ? nativeValidation.topLevelWarnings.length
     : validation.warnings.length;
 

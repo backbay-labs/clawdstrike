@@ -3,11 +3,11 @@
 
 mod commands;
 
+use capability::CommandCapabilityState;
 use commands::{
     capability, detection, mcp_sidecar, repo_roots, stronghold as stronghold_cmds, terminal,
     workbench, worktree,
 };
-use capability::CommandCapabilityState;
 use mcp_sidecar::McpState;
 use stronghold_cmds::StrongholdState;
 #[allow(unused_imports)]
@@ -33,10 +33,9 @@ fn main() {
         })
         .manage(StrongholdState::new())
         .manage(McpState::new())
-        .manage(
-            std::sync::Arc::new(tokio::sync::Mutex::new(capability::CommandCapabilityManager::new()))
-                as CommandCapabilityState,
-        )
+        .manage(std::sync::Arc::new(tokio::sync::Mutex::new(
+            capability::CommandCapabilityManager::new(),
+        )) as CommandCapabilityState)
         .manage(
             std::sync::Arc::new(tokio::sync::Mutex::new(terminal::TerminalManager::new()))
                 as TerminalState,

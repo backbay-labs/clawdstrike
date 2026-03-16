@@ -3,6 +3,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import type { PolicyTab } from "@/lib/workbench/multi-policy-store";
 import { FILE_TYPE_REGISTRY, type FileType } from "@/lib/workbench/file-type-registry";
+import { parseSigmaYaml } from "@/lib/workbench/sigma-types";
 import {
   MITRE_TECHNIQUES,
   MITRE_TACTICS,
@@ -40,6 +41,10 @@ interface TooltipState {
   y: number;
 }
 
+function extractSigmaTechniqueIds(yaml: string): string[] {
+  const { rule } = parseSigmaYaml(yaml);
+  return rule?.tags ? extractSigmaTechniques(rule.tags) : [];
+}
 
 // ---- Coverage computation ----
 
@@ -63,17 +68,7 @@ function computeCoverage(tabs: PolicyTab[]): Map<string, TechniqueCoverage> {
 
     switch (fileType) {
       case "sigma_rule": {
-        // Extract tags from YAML for attack.tXXXX patterns
-        const tagMatch = /tags:\s*\n((?:\s+-\s+.*\n?)*)/m.exec(yaml);
-        if (tagMatch) {
-          const tagLines = tagMatch[1].split("\n");
-          const tags: string[] = [];
-          for (const line of tagLines) {
-            const m = /^\s+-\s+(.+)$/.exec(line);
-            if (m) tags.push(m[1].trim());
-          }
-          techniqueIds = extractSigmaTechniques(tags);
-        }
+        techniqueIds = extractSigmaTechniqueIds(yaml);
         break;
       }
       case "yara_rule": {
@@ -91,11 +86,14 @@ function computeCoverage(tabs: PolicyTab[]): Map<string, TechniqueCoverage> {
     }
 
     // Update coverage for each extracted technique
-    for (const techId of techniqueIds) {
+    for (const techId of new Set(techniqueIds)) {
       const entry = coverageMap.get(techId);
       if (entry) {
-        entry.ruleCount++;
-        entry.rules.push({ name, fileType });
+        coverageMap.set(techId, {
+          technique: entry.technique,
+          ruleCount: entry.ruleCount + 1,
+          rules: [...entry.rules, { name, fileType }],
+        });
       }
     }
   }
