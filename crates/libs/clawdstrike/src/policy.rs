@@ -789,7 +789,7 @@ impl Policy {
 
     /// Parse from YAML string, auto-detecting HushSpec or Clawdstrike format.
     ///
-    /// If the document starts with `hushspec:`, it is parsed and compiled via
+    /// If the document contains a top-level `hushspec:` key, it is parsed and compiled via
     /// [`compile_hushspec`](crate::hushspec_compiler::compile_hushspec).
     /// Otherwise falls through to
     /// [`from_yaml`](Self::from_yaml).

@@ -22,16 +22,31 @@ use crate::posture;
 
 use hush_proxy::policy::PolicyAction;
 
-/// Returns true if the YAML string appears to be a HushSpec document (starts with `hushspec:`).
+/// Returns true if the YAML string appears to be a HushSpec document.
 ///
-/// Leading blank lines and comment lines (`# ...`) are skipped before checking.
+/// Detection is based on the presence of a top-level `hushspec` key, regardless
+/// of key order. A lightweight line scan is retained as a fallback when the
+/// document does not parse cleanly as generic YAML.
 pub fn is_hushspec(yaml: &str) -> bool {
+    if let Ok(serde_yaml::Value::Mapping(map)) = serde_yaml::from_str::<serde_yaml::Value>(yaml) {
+        return map
+            .keys()
+            .any(|key| matches!(key, serde_yaml::Value::String(s) if s == "hushspec"));
+    }
+
     for line in yaml.lines() {
         let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') || trimmed == "---" || trimmed == "..." {
+        if trimmed.is_empty()
+            || trimmed.starts_with('#')
+            || trimmed == "---"
+            || trimmed == "..."
+            || line.starts_with([' ', '\t'])
+        {
             continue;
         }
-        return trimmed.starts_with("hushspec:");
+        if trimmed.starts_with("hushspec:") {
+            return true;
+        }
     }
     false
 }
@@ -389,10 +404,8 @@ pub fn decompile(policy: &Policy) -> hushspec::HushSpec {
 // ---------------------------------------------------------------------------
 
 fn decompile_forbidden_path_patterns(fp: &ForbiddenPathConfig) -> Vec<String> {
-    if fp.patterns.is_none() && fp.additional_patterns.is_empty() && fp.remove_patterns.is_empty() {
-        return Vec::new();
-    }
-
+    // HushSpec has no sentinel for "use engine defaults", so decompile the
+    // concrete effective pattern set instead of collapsing to an empty list.
     fp.effective_patterns()
 }
 
@@ -442,11 +455,9 @@ fn compile_rules(rules: &hushspec::rules::Rules, guards: &mut GuardConfigs) {
     if let Some(fp) = &rules.forbidden_paths {
         guards.forbidden_path = Some(ForbiddenPathConfig {
             enabled: fp.enabled,
-            patterns: if fp.patterns.is_empty() {
-                None
-            } else {
-                Some(fp.patterns.clone())
-            },
+            // In HushSpec, an empty list is still an explicit override that clears
+            // inherited/base patterns rather than "use Clawdstrike defaults".
+            patterns: Some(fp.patterns.clone()),
             exceptions: fp.exceptions.clone(),
             additional_patterns: vec![],
             remove_patterns: vec![],
@@ -1035,6 +1046,12 @@ mod tests {
     #[test]
     fn test_is_hushspec_false() {
         assert!(!is_hushspec("version: \"1.5.0\"\nname: test\n"));
+    }
+
+    #[test]
+    fn test_is_hushspec_with_reordered_top_level_key() {
+        assert!(is_hushspec("name: test\nhushspec: \"0.1.0\"\n"));
+        assert!(!is_hushspec("metadata:\n  hushspec: \"0.1.0\"\n"));
     }
 
     #[test]

@@ -24,6 +24,9 @@ fn is_hushspec_detects_format() {
         "hushspec: \"0.1.0\"\nname: test\n"
     ));
     assert!(hushspec_compiler::is_hushspec(
+        "name: test\nhushspec: \"0.1.0\"\n"
+    ));
+    assert!(hushspec_compiler::is_hushspec(
         "# comment\nhushspec: \"0.1.0\"\n"
     ));
     assert!(!hushspec_compiler::is_hushspec(
@@ -36,6 +39,9 @@ fn is_hushspec_detects_format() {
     ));
     assert!(hushspec_compiler::is_hushspec(
         "---\n# comment\nhushspec: \"0.1.0\"\n"
+    ));
+    assert!(!hushspec_compiler::is_hushspec(
+        "metadata:\n  hushspec: \"0.1.0\"\n"
     ));
 }
 
@@ -106,6 +112,29 @@ rules:
         .as_ref()
         .expect("forbidden_path should be set");
     assert_eq!(fp.exceptions, vec!["**/.ssh/config"]);
+}
+
+#[test]
+fn compile_forbidden_paths_preserves_explicit_empty_patterns() {
+    let yaml = r#"
+hushspec: "0.1.0"
+rules:
+  forbidden_paths:
+    patterns: []
+"#;
+
+    let policy = Policy::from_yaml_auto(yaml).expect("should compile empty forbidden_paths");
+    let fp = policy
+        .guards
+        .forbidden_path
+        .as_ref()
+        .expect("forbidden_path guard should exist");
+
+    assert_eq!(fp.patterns.as_ref(), Some(&Vec::<String>::new()));
+    assert!(
+        fp.effective_patterns().is_empty(),
+        "explicit empty HushSpec patterns should clear forbidden paths"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -611,7 +640,7 @@ rules:
 }
 
 #[test]
-fn decompile_forbidden_paths_preserves_implicit_defaults() {
+fn decompile_forbidden_paths_materializes_clawdstrike_defaults() {
     let mut policy = Policy::default();
     policy.guards.forbidden_path = Some(ForbiddenPathConfig::with_defaults());
 
@@ -629,9 +658,10 @@ fn decompile_forbidden_paths_preserves_implicit_defaults() {
         .as_ref()
         .expect("forbidden_paths should exist");
     assert!(
-        forbidden_paths.patterns.is_empty(),
-        "implicit defaults should decompile as an empty pattern list"
+        !forbidden_paths.patterns.is_empty(),
+        "Clawdstrike defaults should decompile to explicit HushSpec patterns"
     );
+    assert!(forbidden_paths.patterns.contains(&"**/.ssh/**".to_string()));
 
     let recompiled = hushspec_compiler::compile(&spec).expect("recompile should succeed");
     let recompiled_fp = recompiled
@@ -639,9 +669,9 @@ fn decompile_forbidden_paths_preserves_implicit_defaults() {
         .forbidden_path
         .as_ref()
         .expect("forbidden_path should roundtrip");
-    assert!(
-        recompiled_fp.patterns.is_none(),
-        "empty HushSpec patterns should preserve implicit Clawdstrike defaults"
+    assert_eq!(
+        recompiled_fp.effective_patterns(),
+        ForbiddenPathConfig::with_defaults().effective_patterns()
     );
 }
 
