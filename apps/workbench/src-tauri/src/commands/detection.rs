@@ -326,27 +326,30 @@ fn analyze_yara_code(code: &str) -> YaraCodeAnalysis {
     analysis
 }
 
+fn strip_yara_keyword_with_whitespace<'a>(code: &'a str, keyword: &str) -> Option<&'a str> {
+    let rest = code.strip_prefix(keyword)?;
+    let first = rest.as_bytes().first().copied()?;
+    if !first.is_ascii_whitespace() {
+        return None;
+    }
+    Some(rest.trim_start())
+}
+
 fn parse_yara_rule_declaration(code: &str) -> Option<(&str, &str)> {
     let mut rest = code.trim_start();
     loop {
-        if let Some(next) = rest.strip_prefix("private ") {
-            rest = next.trim_start();
+        if let Some(next) = strip_yara_keyword_with_whitespace(rest, "private") {
+            rest = next;
             continue;
         }
-        if let Some(next) = rest.strip_prefix("global ") {
-            rest = next.trim_start();
+        if let Some(next) = strip_yara_keyword_with_whitespace(rest, "global") {
+            rest = next;
             continue;
         }
         break;
     }
 
-    let rest = rest.strip_prefix("rule")?;
-    let first = rest.as_bytes().first().copied()?;
-    if !first.is_ascii_whitespace() {
-        return None;
-    }
-
-    let rest = rest.trim_start();
+    let rest = strip_yara_keyword_with_whitespace(rest, "rule")?;
     let mut chars = rest.char_indices();
     let Some((_, first_char)) = chars.next() else {
         return None;
@@ -1434,6 +1437,13 @@ fn sanitize_yaml_comment_text(s: &str) -> String {
     sanitize_yaml_inline_text(s)
 }
 
+fn format_sigma_source_compilation_comment(engine_kind: &str) -> String {
+    format!(
+        "# Source compilation: {} engine",
+        sanitize_yaml_comment_text(engine_kind)
+    )
+}
+
 fn convert_sigma_to_native_policy(source: &str) -> Result<SigmaConvertResponse, String> {
     // First, compile the Sigma rule to validate it
     let compilation = hunt_correlate::detection::compile_rule_source("sigma", source)
@@ -1487,6 +1497,8 @@ fn convert_sigma_to_native_policy(source: &str) -> Result<SigmaConvertResponse, 
     let title_sanitized = sanitize_yaml_inline_text(title_raw);
     let sigma_marker = escape_yaml_string(&format!("# Sigma: {title_sanitized}"));
     let level_yaml = escape_yaml_string(&sanitize_yaml_inline_text(level_raw));
+    let source_compilation_comment =
+        format_sigma_source_compilation_comment(&compilation.engine_kind);
 
     // Map Sigma level to policy severity
     let policy_level = match level_raw {
@@ -1526,7 +1538,7 @@ fn convert_sigma_to_native_policy(source: &str) -> Result<SigmaConvertResponse, 
 # Status: {status_comment} | Level: {level_comment} | Product: {product_comment}
 # {description_comment}
 #
-# Source compilation: {engine_kind} engine
+{source_compilation_comment}
 # NOTE: This is a structural template. Detection logic from the Sigma
 # rule's condition/selection blocks should be reviewed and mapped to
 # the appropriate guard parameters.
@@ -1537,7 +1549,7 @@ extends: {policy_level}
 guards:
 {guard_config}
 "#,
-        engine_kind = compilation.engine_kind,
+        source_compilation_comment = source_compilation_comment,
     );
 
     let mut diagnostics = Vec::new();
@@ -1682,6 +1694,18 @@ rule actual_rule {
             "rule inline_comment_braces { /* {ignored} */ condition: true }".to_string(),
         )
         .expect("inline comment brace rule should validate");
+
+        assert!(response.valid);
+        assert_eq!(response.rule_count, 1);
+        assert!(response.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn validate_yara_rule_accepts_modifier_whitespace_variants() {
+        let response = validate_yara_rule(
+            "private\trule tabbed_modifier {\ncondition:\n  true\n}".to_string(),
+        )
+        .expect("YARA validation should complete");
 
         assert!(response.valid);
         assert_eq!(response.rule_count, 1);
@@ -1928,5 +1952,17 @@ detection:
                 .and_then(|value| value.as_str()),
             Some("high guards: forbidden_path: {}")
         );
+    }
+
+    #[test]
+    fn format_sigma_source_compilation_comment_sanitizes_engine_kind() {
+        let comment =
+            format_sigma_source_compilation_comment("content\nschema_version: \"9.9.9\"");
+
+        assert_eq!(
+            comment,
+            "# Source compilation: content schema_version: \"9.9.9\" engine"
+        );
+        assert!(!comment.contains('\n'));
     }
 }
