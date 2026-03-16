@@ -1,0 +1,43 @@
+hushspec_test: "0.1.0"
+description: "Tool access control evaluation"
+policy:
+  hushspec: "0.1.0"
+  rules:
+    tool_access:
+      allow:
+        - read_file
+        - list_directory
+        - search
+      block:
+        - shell_exec
+        - run_command
+      require_confirmation:
+        - file_write
+        - git_push
+      default: block
+cases:
+  - description: "allow listed tool"
+    action:
+      type: tool_call
+      target: "read_file"
+    expect: allow
+  - description: "deny blocked tool"
+    action:
+      type: tool_call
+      target: "shell_exec"
+    expect: deny
+  - description: "deny unlisted tool (default block)"
+    action:
+      type: tool_call
+      target: "deploy_production"
+    expect: deny
+  - description: "require confirmation for flagged tool"
+    action:
+      type: tool_call
+      target: "file_write"
+    expect: warn
+  - description: "block takes precedence over allow"
+    action:
+      type: tool_call
+      target: "run_command"
+    expect: deny

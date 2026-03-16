@@ -30,7 +30,7 @@ tokio = { workspace = true, optional = true }
 dirs = { workspace = true, optional = true }
 nono = { workspace = true, optional = true }
 serde_yaml = { workspace = true, optional = true }
-hushspec = { git = "https://github.com/backbay-labs/hush.git", optional = true }
+hushspec = { version = "0.1.0", path = "../../../vendor/hushspec", optional = true }
 toml = { workspace = true, optional = true }
 glob = { workspace = true, optional = true }
 chrono = { workspace = true, optional = true }

@@ -10,6 +10,7 @@
 
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
+use clawdstrike::guards::ForbiddenPathConfig;
 use clawdstrike::hushspec_compiler;
 use clawdstrike::Policy;
 
@@ -588,6 +589,68 @@ extensions:
     assert!(
         ti.pattern_db.is_none(),
         "empty pattern_db_path should decompile to None"
+    );
+}
+
+#[test]
+fn compile_hushspec_rejects_invalid_clawdstrike_glob() {
+    let yaml = r#"
+hushspec: "0.1.0"
+rules:
+  forbidden_paths:
+    patterns:
+      - "["
+"#;
+
+    let err = hushspec_compiler::compile_hushspec(yaml).expect_err("invalid glob should fail");
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("guards.forbidden_path.patterns"),
+        "error should include the validated policy field, got: {msg}"
+    );
+}
+
+#[test]
+fn decompile_forbidden_paths_preserves_implicit_defaults() {
+    let mut policy = Policy::default();
+    policy.guards.forbidden_path = Some(ForbiddenPathConfig::with_defaults());
+
+    let spec = hushspec_compiler::decompile(&policy);
+    let validation = hushspec::validate(&spec);
+    assert!(
+        validation.is_valid(),
+        "decompiled HushSpec should stay valid: {:?}",
+        validation.errors
+    );
+
+    let rules = spec.rules.as_ref().expect("rules should exist");
+    let forbidden_paths = rules
+        .forbidden_paths
+        .as_ref()
+        .expect("forbidden_paths should exist");
+    assert!(
+        forbidden_paths.patterns.is_empty(),
+        "implicit defaults should decompile as an empty pattern list"
+    );
+
+    let recompiled = hushspec_compiler::compile(&spec).expect("recompile should succeed");
+    let recompiled_fp = recompiled
+        .guards
+        .forbidden_path
+        .as_ref()
+        .expect("forbidden_path should roundtrip");
+    assert!(
+        recompiled_fp.patterns.is_none(),
+        "empty HushSpec patterns should preserve implicit Clawdstrike defaults"
+    );
+}
+
+#[test]
+fn decompile_omits_default_merge_strategy() {
+    let spec = hushspec_compiler::decompile(&Policy::default());
+    assert!(
+        spec.merge_strategy.is_none(),
+        "default deep-merge should be omitted from decompiled HushSpec"
     );
 }
 

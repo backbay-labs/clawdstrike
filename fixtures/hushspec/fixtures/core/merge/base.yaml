@@ -1,0 +1,12 @@
+hushspec: "0.1.0"
+name: base
+rules:
+  egress:
+    allow:
+      - "a.com"
+      - "b.com"
+    default: block
+  forbidden_paths:
+    patterns:
+      - "**/.ssh/**"
+      - "**/.aws/**"

@@ -1,0 +1,10 @@
+hushspec: "0.1.0"
+rules:
+  secret_patterns:
+    patterns:
+      - name: duplicate
+        pattern: "aaa"
+        severity: critical
+      - name: duplicate
+        pattern: "bbb"
+        severity: warn

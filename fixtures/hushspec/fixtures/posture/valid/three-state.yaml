@@ -1,0 +1,48 @@
+hushspec: "0.1.0"
+name: three-state-posture
+extensions:
+  posture:
+    initial: standard
+    states:
+      restricted:
+        description: Minimal access after violation
+        capabilities:
+          - file_access
+        budgets: {}
+      standard:
+        description: Normal operation
+        capabilities:
+          - file_access
+          - file_write
+          - egress
+        budgets:
+          file_writes: 50
+          egress_calls: 20
+      elevated:
+        description: Full access for incident response
+        capabilities:
+          - file_access
+          - file_write
+          - egress
+          - shell
+          - tool_call
+          - patch
+        budgets:
+          file_writes: 200
+    transitions:
+      - from: restricted
+        to: standard
+        on: user_approval
+      - from: standard
+        to: elevated
+        on: user_approval
+      - from: "*"
+        to: restricted
+        on: critical_violation
+      - from: elevated
+        to: standard
+        on: timeout
+        after: "1h"
+      - from: standard
+        to: restricted
+        on: budget_exhausted

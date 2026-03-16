@@ -1,0 +1,7 @@
+hushspec: "0.1.0"
+rules:
+  secret_patterns:
+    patterns:
+      - name: test
+        pattern: "secret"
+        severity: banana

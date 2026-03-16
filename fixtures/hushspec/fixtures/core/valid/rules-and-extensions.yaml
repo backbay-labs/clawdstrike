@@ -1,0 +1,39 @@
+hushspec: "0.1.0"
+name: rules-plus-extensions
+description: Complete document with rules and all extensions
+rules:
+  egress:
+    allow: ["api.openai.com", "*.anthropic.com"]
+    default: block
+  tool_access:
+    block: [shell_exec]
+    default: allow
+  forbidden_paths:
+    patterns: ["**/.ssh/**", "**/.aws/**"]
+extensions:
+  posture:
+    initial: standard
+    states:
+      standard:
+        capabilities: [file_access, egress, tool_call]
+        budgets:
+          egress_calls: 50
+      restricted:
+        capabilities: [file_access]
+    transitions:
+      - from: "*"
+        to: restricted
+        on: critical_violation
+  origins:
+    default_behavior: deny
+    profiles:
+      - id: internal
+        match:
+          visibility: internal
+        budgets:
+          tool_calls: 100
+  detection:
+    prompt_injection:
+      block_at_or_above: high
+    jailbreak:
+      block_threshold: 50

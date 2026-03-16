@@ -101,7 +101,8 @@ pub fn compile(spec: &hushspec::HushSpec) -> Result<Policy> {
 ///
 /// This is the recommended entry point for loading HushSpec documents. It parses
 /// the YAML, runs HushSpec schema validation, and compiles the result into a
-/// Clawdstrike [`Policy`]. Returns an error if parsing or validation fails.
+/// validated Clawdstrike [`Policy`]. Returns an error if parsing or validation
+/// fails at either the HushSpec or Clawdstrike layer.
 pub fn compile_hushspec(yaml: &str) -> Result<Policy> {
     let spec = hushspec::HushSpec::parse(yaml)
         .map_err(|e| Error::ConfigError(format!("Failed to parse HushSpec YAML: {e}")))?;
@@ -113,7 +114,9 @@ pub fn compile_hushspec(yaml: &str) -> Result<Policy> {
             errors.join(", ")
         )));
     }
-    compile(&spec)
+    let policy = compile(&spec)?;
+    policy.validate()?;
+    Ok(policy)
 }
 
 /// Decompile a Clawdstrike Policy back into a HushSpec document.
@@ -122,14 +125,6 @@ pub fn compile_hushspec(yaml: &str) -> Result<Policy> {
 /// are dropped since they have no HushSpec representation. Detection guards
 /// (prompt injection, jailbreak, Spider Sense) are mapped to the detection extension.
 pub fn decompile(policy: &Policy) -> hushspec::HushSpec {
-    decompile_to_hushspec(policy)
-}
-
-/// Decompile a Clawdstrike Policy back into a HushSpec document (named export).
-///
-/// This is an alias for [`decompile`] and shares the same semantics: engine-only
-/// fields are dropped and detection guards are mapped to the detection extension.
-pub fn decompile_to_hushspec(policy: &Policy) -> hushspec::HushSpec {
     let mut rules = hushspec::Rules::default();
     let mut has_rules = false;
 
@@ -138,7 +133,7 @@ pub fn decompile_to_hushspec(policy: &Policy) -> hushspec::HushSpec {
         has_rules = true;
         rules.forbidden_paths = Some(hushspec::ForbiddenPathsRule {
             enabled: fp.enabled,
-            patterns: fp.effective_patterns(),
+            patterns: decompile_forbidden_path_patterns(fp),
             exceptions: fp.exceptions.clone(),
         });
     }
@@ -353,7 +348,7 @@ pub fn decompile_to_hushspec(policy: &Policy) -> hushspec::HushSpec {
     let merge_strategy = match &policy.merge_strategy {
         MergeStrategy::Replace => Some(hushspec::schema::MergeStrategy::Replace),
         MergeStrategy::Merge => Some(hushspec::schema::MergeStrategy::Merge),
-        MergeStrategy::DeepMerge => Some(hushspec::schema::MergeStrategy::DeepMerge),
+        MergeStrategy::DeepMerge => None,
     };
 
     hushspec::HushSpec {
@@ -382,6 +377,14 @@ pub fn decompile_to_hushspec(policy: &Policy) -> hushspec::HushSpec {
 // ---------------------------------------------------------------------------
 // Internal helpers: compile direction (HushSpec -> Clawdstrike)
 // ---------------------------------------------------------------------------
+
+fn decompile_forbidden_path_patterns(fp: &ForbiddenPathConfig) -> Vec<String> {
+    if fp.patterns.is_none() && fp.additional_patterns.is_empty() && fp.remove_patterns.is_empty() {
+        return Vec::new();
+    }
+
+    fp.effective_patterns()
+}
 
 fn compile_rules(rules: &hushspec::rules::Rules, guards: &mut GuardConfigs) {
     if let Some(fp) = &rules.forbidden_paths {

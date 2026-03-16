@@ -1,0 +1,13 @@
+hushspec: "0.1.0"
+extensions:
+  posture:
+    initial: a
+    states:
+      a:
+        capabilities: []
+      b:
+        capabilities: []
+    transitions:
+      - from: a
+        to: b
+        on: timeout

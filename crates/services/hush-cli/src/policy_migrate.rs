@@ -414,13 +414,13 @@ pub(crate) fn migrate_policy_yaml(
     // HushSpec → Clawdstrike (input is HushSpec, target is a version like "1.5.0")
     if is_hushspec_input && !to_hushspec {
         // Use compile_hushspec which includes parse + validate + compile
-        let policy = clawdstrike::hushspec_compiler::compile_hushspec(input_yaml).map_err(
-            |e| PolicyMigrateError {
+        let policy = clawdstrike::hushspec_compiler::compile_hushspec(input_yaml).map_err(|e| {
+            PolicyMigrateError {
                 code: ExitCode::ConfigError,
                 kind: "config_error",
                 message: format!("Failed to compile HushSpec: {}", e),
-            },
-        )?;
+            }
+        })?;
         let migrated_yaml = serde_yaml::to_string(&policy).map_err(|e| PolicyMigrateError {
             code: ExitCode::RuntimeError,
             kind: "runtime_error",

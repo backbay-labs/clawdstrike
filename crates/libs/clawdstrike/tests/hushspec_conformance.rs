@@ -1,8 +1,8 @@
 #![cfg(feature = "full")]
 //! HushSpec fixture conformance tests.
 //!
-//! These tests load every fixture from the canonical `hush/fixtures/` directory
-//! and verify the Clawdstrike HushSpec compiler handles them correctly:
+//! These tests load fixtures from the vendored HushSpec snapshot and verify the
+//! Clawdstrike HushSpec compiler handles them correctly:
 //!
 //! - Valid fixtures parse + validate + compile without error.
 //! - Invalid fixtures are rejected at parse or validation time.
@@ -15,7 +15,12 @@ use clawdstrike::hushspec_compiler;
 use clawdstrike::policy::POLICY_SCHEMA_VERSION;
 use std::path::Path;
 
-const FIXTURES_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../../hush/fixtures");
+const HUSHSPEC_SNAPSHOT_DIR: &str =
+    concat!(env!("CARGO_MANIFEST_DIR"), "/../../../fixtures/hushspec");
+const FIXTURES_DIR: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../../fixtures/hushspec/fixtures"
+);
 
 fn fixture_path(relative: &str) -> std::path::PathBuf {
     Path::new(FIXTURES_DIR).join(relative)
@@ -466,7 +471,7 @@ fn merge_replace_matches_expected() {
 
 #[test]
 fn compile_hushspec_default_ruleset() {
-    let path = Path::new(FIXTURES_DIR).join("../rulesets/default.yaml");
+    let path = Path::new(HUSHSPEC_SNAPSHOT_DIR).join("rulesets/default.yaml");
     let yaml = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("Failed to read default ruleset: {}", e));
     let spec = hushspec::HushSpec::parse(&yaml).expect("parse default ruleset");
@@ -501,7 +506,7 @@ fn compile_hushspec_default_ruleset() {
 
 #[test]
 fn compile_hushspec_strict_ruleset() {
-    let path = Path::new(FIXTURES_DIR).join("../rulesets/strict.yaml");
+    let path = Path::new(HUSHSPEC_SNAPSHOT_DIR).join("rulesets/strict.yaml");
     let yaml = std::fs::read_to_string(&path).expect("read strict");
     let spec = hushspec::HushSpec::parse(&yaml).expect("parse strict");
     let validation = hushspec::validate(&spec);
@@ -529,7 +534,7 @@ fn compile_hushspec_strict_ruleset() {
 
 #[test]
 fn compile_hushspec_permissive_ruleset() {
-    let path = Path::new(FIXTURES_DIR).join("../rulesets/permissive.yaml");
+    let path = Path::new(HUSHSPEC_SNAPSHOT_DIR).join("rulesets/permissive.yaml");
     let yaml = std::fs::read_to_string(&path).expect("read permissive");
     let spec = hushspec::HushSpec::parse(&yaml).expect("parse permissive");
     let validation = hushspec::validate(&spec);

@@ -1,0 +1,28 @@
+hushspec_test: "0.1.0"
+description: "Computer use guard evaluation"
+policy:
+  hushspec: "0.1.0"
+  rules:
+    computer_use:
+      enabled: true
+      mode: guardrail
+      allowed_actions:
+        - remote.session.connect
+        - remote.session.disconnect
+        - input.inject
+cases:
+  - description: "allow listed action"
+    action:
+      type: computer_use
+      target: "remote.session.connect"
+    expect: allow
+  - description: "warn on unlisted action (guardrail mode)"
+    action:
+      type: computer_use
+      target: "remote.file_transfer"
+    expect: warn
+  - description: "allow input injection"
+    action:
+      type: computer_use
+      target: "input.inject"
+    expect: allow

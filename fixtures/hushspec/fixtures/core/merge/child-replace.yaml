@@ -1,0 +1,8 @@
+hushspec: "0.1.0"
+name: child-replace
+extends: base
+merge_strategy: replace
+rules:
+  tool_access:
+    block: ["shell_exec"]
+    default: allow

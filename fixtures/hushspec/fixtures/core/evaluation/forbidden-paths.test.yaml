@@ -1,0 +1,39 @@
+hushspec_test: "0.1.0"
+description: "Forbidden paths guard evaluation"
+policy:
+  hushspec: "0.1.0"
+  rules:
+    forbidden_paths:
+      patterns:
+        - "**/.ssh/**"
+        - "**/.aws/**"
+        - "/etc/passwd"
+        - "/etc/shadow"
+      exceptions:
+        - "**/.ssh/config"
+cases:
+  - description: "deny access to SSH key"
+    action:
+      type: file_read
+      target: "/home/user/.ssh/id_rsa"
+    expect: deny
+  - description: "deny access to AWS credentials"
+    action:
+      type: file_read
+      target: "/home/user/.aws/credentials"
+    expect: deny
+  - description: "deny access to /etc/passwd"
+    action:
+      type: file_read
+      target: "/etc/passwd"
+    expect: deny
+  - description: "allow SSH config exception"
+    action:
+      type: file_read
+      target: "/home/user/.ssh/config"
+    expect: allow
+  - description: "allow normal file"
+    action:
+      type: file_read
+      target: "/home/user/src/main.rs"
+    expect: allow

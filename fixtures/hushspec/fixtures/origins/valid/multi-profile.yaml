@@ -1,0 +1,42 @@
+hushspec: "0.1.0"
+name: multi-origin-profiles
+extensions:
+  origins:
+    default_behavior: deny
+    profiles:
+      - id: incident-room
+        match:
+          provider: slack
+          tags: [incident]
+        posture: elevated
+        tool_access:
+          default: allow
+        budgets:
+          tool_calls: 200
+        explanation: Incident response channel
+      - id: external-chat
+        match:
+          visibility: external_shared
+        data:
+          redact_before_send: true
+          block_sensitive_outputs: true
+        budgets:
+          tool_calls: 20
+      - id: code-review
+        match:
+          provider: github
+          space_type: pull_request
+        tool_access:
+          block: [deploy, delete]
+          default: allow
+        bridge:
+          allow_cross_origin: true
+          allowed_targets:
+            - provider: slack
+              tags: [engineering]
+          require_approval: false
+      - id: internal-default
+        match:
+          visibility: internal
+        budgets:
+          tool_calls: 50

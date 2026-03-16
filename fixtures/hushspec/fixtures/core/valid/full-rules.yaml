@@ -1,0 +1,43 @@
+hushspec: "0.1.0"
+name: full-rules
+description: Tests all 10 rule types
+rules:
+  forbidden_paths:
+    patterns: ["**/.ssh/**"]
+    exceptions: ["**/.ssh/config"]
+  path_allowlist:
+    enabled: true
+    read: ["./src/**"]
+    write: ["./src/**"]
+    patch: ["./src/**"]
+  egress:
+    allow: ["api.openai.com"]
+    block: ["*.evil.com"]
+    default: block
+  secret_patterns:
+    patterns:
+      - name: aws_key
+        pattern: "AKIA[0-9A-Z]{16}"
+        severity: critical
+    skip_paths: ["**/test/**"]
+  patch_integrity:
+    max_additions: 500
+    max_deletions: 200
+    forbidden_patterns: ["rm -rf /"]
+  shell_commands:
+    forbidden_patterns: ["rm -rf /"]
+  tool_access:
+    allow: ["read_file"]
+    block: ["shell_exec"]
+    default: allow
+  computer_use:
+    enabled: true
+    mode: guardrail
+    allowed_actions: ["remote.session.connect"]
+  remote_desktop_channels:
+    enabled: true
+    clipboard: false
+    audio: true
+  input_injection:
+    enabled: true
+    allowed_types: ["keyboard", "mouse"]

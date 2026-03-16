@@ -652,6 +652,7 @@ dependencies = [
  "hush-core",
  "hush-proxy",
  "hush-spine",
+ "hushspec",
  "js-sys",
  "nono",
  "pubgrub",
@@ -2146,6 +2147,16 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "x509-parser 0.16.0",
+]
+
+[[package]]
+name = "hushspec"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
