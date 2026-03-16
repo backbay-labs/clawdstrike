@@ -78,20 +78,30 @@ harness = false
 default = ["full"]
 spine = ["dep:spine"]
 policy-event = [
-  "dep:async-trait",
-  "dep:hush-proxy",
-  "dep:hushspec",
-  "dep:serde_yaml",
-  "dep:toml",
-  "dep:glob",
-  "dep:chrono",
-  "dep:globset",
+    "dep:async-trait",
+    "dep:hush-proxy",
+    "dep:hushspec",
+    "dep:serde_yaml",
+    "dep:toml",
+    "dep:glob",
+    "dep:chrono",
+    "dep:globset",
 ]
 full = [
-  "policy-event",
-  "spine",
-  "dep:tokio", "dep:dirs", "dep:nono", "dep:dashmap", "dep:futures", "dep:uuid",
-  "dep:reqwest", "dep:sha2", "dep:semver", "dep:pubgrub", "dep:tar", "dep:zstd",
+    "policy-event",
+    "spine",
+    "dep:tokio",
+    "dep:dirs",
+    "dep:nono",
+    "dep:dashmap",
+    "dep:futures",
+    "dep:uuid",
+    "dep:reqwest",
+    "dep:sha2",
+    "dep:semver",
+    "dep:pubgrub",
+    "dep:tar",
+    "dep:zstd",
 ]
 ipfs = ["full"]
 llm-judge-openai = ["full"]

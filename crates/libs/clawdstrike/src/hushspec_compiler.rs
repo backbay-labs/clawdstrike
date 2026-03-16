@@ -39,8 +39,8 @@ pub fn is_hushspec(yaml: &str) -> bool {
 /// Compile a HushSpec document into a Clawdstrike Policy.
 ///
 /// Converts portable HushSpec rules, extensions (posture, origins, detection), and
-/// merge strategy into Clawdstrike-native types. Requires the `full` feature for
-/// Spider Sense / threat-intel compilation.
+/// merge strategy into Clawdstrike-native types. In `policy-event`-only builds,
+/// threat-intel config is preserved via the raw `guards.spider_sense` passthrough.
 ///
 /// Note: this function does **not** call `policy.validate()`; callers that need
 /// validation should use [`compile_hushspec`] or validate the resulting policy
@@ -340,6 +340,16 @@ pub fn decompile(policy: &Policy) -> hushspec::HushSpec {
         }
     }
 
+    #[cfg(all(feature = "policy-event", not(feature = "full")))]
+    {
+        if let Some(ref ss) = policy.guards.spider_sense {
+            if let Some(ti) = decompile_policy_event_threat_intel_passthrough(ss) {
+                has_detection = true;
+                detection.threat_intel = Some(ti);
+            }
+        }
+    }
+
     if has_detection {
         has_extensions = true;
         extensions.detection = Some(detection);
@@ -384,6 +394,48 @@ fn decompile_forbidden_path_patterns(fp: &ForbiddenPathConfig) -> Vec<String> {
     }
 
     fp.effective_patterns()
+}
+
+#[cfg(all(feature = "policy-event", not(feature = "full")))]
+fn compile_policy_event_threat_intel_passthrough(
+    ti: &hushspec::extensions::ThreatIntelDetection,
+) -> serde_json::Value {
+    serde_json::json!({
+        "enabled": ti.enabled,
+        "pattern_db_path": ti.pattern_db.clone().unwrap_or_default(),
+        "similarity_threshold": ti.similarity_threshold,
+        "top_k": ti.top_k,
+    })
+}
+
+#[cfg(all(feature = "policy-event", not(feature = "full")))]
+fn decompile_policy_event_threat_intel_passthrough(
+    spider_sense: &serde_json::Value,
+) -> Option<hushspec::extensions::ThreatIntelDetection> {
+    let obj = spider_sense.as_object()?;
+
+    let enabled = obj.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
+    let pattern_db = obj
+        .get("pattern_db_path")
+        .and_then(|v| v.as_str())
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned);
+    let similarity_threshold = obj
+        .get("similarity_threshold")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.85);
+    let top_k = obj
+        .get("top_k")
+        .and_then(|v| v.as_u64())
+        .and_then(|v| usize::try_from(v).ok())
+        .unwrap_or(5);
+
+    Some(hushspec::extensions::ThreatIntelDetection {
+        enabled,
+        pattern_db,
+        similarity_threshold,
+        top_k,
+    })
 }
 
 fn compile_rules(rules: &hushspec::rules::Rules, guards: &mut GuardConfigs) {
@@ -695,7 +747,7 @@ fn compile_detection(
         });
     }
 
-    // Spider Sense mapping is feature-gated
+    // Spider Sense mapping is feature-gated.
     #[cfg(feature = "full")]
     if let Some(ti) = &ext.threat_intel {
         let mut cfg = crate::async_guards::threat_intel::SpiderSensePolicyConfig {
@@ -708,6 +760,11 @@ fn compile_detection(
         // Re-enable since Default sets enabled=false
         cfg.enabled = ti.enabled;
         guards.spider_sense = Some(cfg);
+    }
+
+    #[cfg(all(feature = "policy-event", not(feature = "full")))]
+    if let Some(ti) = &ext.threat_intel {
+        guards.spider_sense = Some(compile_policy_event_threat_intel_passthrough(ti));
     }
 
     Ok(())
