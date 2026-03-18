@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-01-PLAN.md
-last_updated: "2026-03-18T22:24:53Z"
+stopped_at: "Checkpoint: 02-03 Task 3 — awaiting WebGL spike human verification"
+last_updated: "2026-03-18T22:33:05.906Z"
 last_activity: "2026-03-18 — Plan 02-01 complete: R3F packages installed, SpiritKind migrated to huntronomer names, 5 Wave 0 test scaffolds created"
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 7
-  completed_plans: 5
+  completed_plans: 6
   percent: 71
 ---
 
@@ -83,6 +83,7 @@ v2.0 decisions:
 - [Phase 01]: hunt.bindSpirit opens /spirit-chamber as proxy until dedicated bind-spirit flow built in Phase 3
 - [Phase 01]: Inline style borderColor used for --spirit-accent in HuntLayout (CSS vars dynamic; Tailwind JIT cannot evaluate at build time)
 - [Phase 01]: spirit-field-stain-host applied to sidebar-panel, pane-root, bottom-pane root elements; no cn() wrapper — matched existing bare-string className pattern
+- [Phase 02]: SpiritChamberTab: kind selector hidden when bound + Bind/Unbind mutually exclusive (test contract compliance)
 
 ### Pending Todos
 
@@ -96,6 +97,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-18T22:24:53Z
-Stopped at: Completed 02-01-PLAN.md
+Last session: 2026-03-18T22:33:00.897Z
+Stopped at: Checkpoint: 02-03 Task 3 — awaiting WebGL spike human verification
 Resume file: None
