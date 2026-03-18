@@ -221,17 +221,10 @@ do
     fi
 done
 
-if command -v node &> /dev/null; then
-    while IFS= read -r PLUGIN_JSON; do
-        echo "  Updating ${PLUGIN_JSON}..."
-        sed_inplace "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" "$PLUGIN_JSON"
-    done < <(find_openclaw_plugin_files)
-else
-    while IFS= read -r PLUGIN_JSON; do
-        echo "  Updating ${PLUGIN_JSON}..."
-        sed_inplace "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" "$PLUGIN_JSON"
-    done < <(find_openclaw_plugin_files)
-fi
+while IFS= read -r PLUGIN_JSON; do
+    echo "  Updating ${PLUGIN_JSON}..."
+    sed_inplace "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" "$PLUGIN_JSON"
+done < <(find_openclaw_plugin_files)
 
 if command -v npm &> /dev/null && [[ -f "package-lock.json" ]]; then
     echo "  Refreshing root package-lock.json workspace metadata..."
