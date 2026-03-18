@@ -1,118 +1,84 @@
-# Requirements: ClawdStrike Workbench v1.1 — IDE Completeness
+# Requirements: ClawdStrike Workbench v2.0 — Huntronomer Integration
 
 **Defined:** 2026-03-18
-**Core Value:** Security operators get a professional-grade IDE with search, quick navigation, and file management — closing the gap from "IDE scaffold" to "real tool"
+**Core Value:** Security operators get an immersive IDE with spirit-driven 3D layers — observatory, nexus, and spirit companion woven into IDE surfaces across three tiers
 
-## v1.1 Requirements
+## v2.0 Requirements
 
-### Search
+### Spirit System
 
-- [x] **SRCH-01**: User can find text in the current file via Cmd+F with match highlighting and navigation
-- [x] **SRCH-02**: User can find and replace text in the current file via Cmd+H
-- [x] **SRCH-03**: User can search across all workspace files via Cmd+Shift+F with results list
-- [x] **SRCH-04**: Search results show file path, line number, and matching context
-- [x] **SRCH-05**: Search supports case-sensitive, whole-word, and regex toggles
+- [x] **SPRT-01**: User can see spirit field stain CSS gradients on panel/sidebar backgrounds when a spirit is bound
+- [x] **SPRT-02**: User can see spirit accent color applied to hunt-related UI elements
+- [ ] **SPRT-03**: User can see animated spirit orb in ActivityBar replacing static icon when spirit is bound
+- [ ] **SPRT-04**: User can see mini spirit companion R3F canvas (~150px) in right sidebar
+- [ ] **SPRT-05**: User can open spirit chamber as a pane tab via command palette (spirit.bind) to bind/unbind spirits
+- [ ] **SPRT-06**: User can open spirit creation chamber with full atmosphere and manifestation canvas as a pane tab
 
-### Quick Navigation
+### Observatory
 
-- [x] **NAV-01**: User can open any file by name via Cmd+P (Quick Open) with fuzzy matching
-- [x] **NAV-02**: Quick Open shows recent files at the top when input is empty
-- [x] **NAV-03**: Breadcrumb bar above the editor shows path (Project > Folder > File) with click navigation
-- [x] **NAV-04**: User can go to a specific line number via Cmd+G
+- [x] **OBS-01**: User can see artifact count badges on activity bar icons from observatory seam data
+- [x] **OBS-02**: User can click observatory stations to open corresponding views as pane tabs (route bridge)
+- [ ] **OBS-03**: User can open observatory world as a full editor pane tab via command palette (observatory.open)
+- [ ] **OBS-04**: User can probe active station via command palette (observatory.probe) to scan for artifacts
+- [ ] **OBS-05**: User can switch observatory to flow mode for immersive exploration
+- [ ] **OBS-06**: User can activate WASD character controller Easter-egg in observatory flow mode
 
-### File Tree
+### Nexus
 
-- [x] **TREE-01**: User can create a new file from Explorer context menu or toolbar button
-- [x] **TREE-02**: User can rename a file via context menu or F2 key
-- [x] **TREE-03**: User can delete a file via context menu with confirmation dialog
-- [x] **TREE-04**: Explorer shows file status indicators (modified dot, error badge)
+- [ ] **NXS-01**: User can open cyber nexus as "Hunt Deck" pane tab via command palette (nexus.open)
 
-### Tab System
+### Forensics
 
-- [x] **TAB-01**: Tab bar shows navigation arrows when tabs overflow horizontal space
-- [x] **TAB-02**: User can scroll through tabs with scroll wheel or arrow buttons
-- [x] **TAB-03**: Tab context menu includes "Close to the Right" and "Close Saved"
+- [ ] **FRNX-01**: User can see forensics river mini-view in bottom pane "Tape" tab
 
-### Detection Engineering
+## v2 Future Requirements
 
-- [ ] **DET-01**: Editor gutter shows "Run Test" button on hover for testable guards
-- [ ] **DET-02**: Editor gutter shows coverage gap indicators (uncovered MITRE techniques)
-- [ ] **DET-03**: Guard configuration shows execution order with drag-to-reorder
+### Advanced Spirit
 
-### Terminal
+- **SPRT-07**: Receipt/evidence 3D preview in editor tabs (hero prop viewer)
+- **SPRT-08**: Spirit mood transitions animate in real-time based on hunt activity
+- **SPRT-09**: Observatory minimap in sidebar showing station overview
 
-- [x] **TERM-01**: User can split terminal panel horizontally to show two sessions side by side
-- [x] **TERM-02**: User can rename terminal sessions via double-click on tab title
+### Advanced Observatory
 
-### Detection Editor Integration
-
-- [ ] **DINT-01**: Guards browser opens as a pane tab (not full-page overlay) for side-by-side with policy editor
-- [ ] **DINT-02**: Compare/diff view opens as a pane tab (not overlay) supporting split-pane comparison
-- [ ] **DINT-03**: Visual builders (Sigma, YARA, OCSF) open as editor tabs from Explorer or command palette
-- [ ] **DINT-04**: Evidence Pack, Explainability, Version History render as resizable right-sidebar panels
-- [ ] **DINT-05**: Live Agent Tab and SDK Integration Tab promoted to standalone pane-openable views
-- [ ] **DINT-06**: Hunt findings can draft policies (hunt → policy pipeline connected)
-- [ ] **DINT-07**: Coverage gap analysis accessible as a pane tab with MITRE heatmap
-- [ ] **DINT-08**: TrustPrint suite (pattern explorer, provider wizard, threshold tuner) accessible from command palette
-
-## v2 Requirements
-
-### Advanced IDE
-
-- **ADV-01**: Go to Symbol (Cmd+Shift+O) for guard names, policy sections
-- **ADV-02**: Welcome/getting started tab with quick-start templates
-- **ADV-03**: Right sidebar Outline panel showing document structure
-- **ADV-04**: Keybinding customization UI
-- **ADV-05**: Session restore (reopen last files/layout on startup)
+- **OBS-07**: Observatory missions with multi-station probe sequences
+- **OBS-08**: Probe cooldown timers visible in observatory HUD
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| Git integration | Workbench manages detection projects, not source control |
-| Multi-cursor editing | CodeMirror supports it, but not priority for YAML/policy editing |
-| Minimap | Low value for policy files (typically <200 lines) |
-| Custom themes | Dark-only for now |
+| VRM avatar rendering | Too heavy for IDE context; spirit orb is the right abstraction |
+| Full Rapier physics outside observatory flow mode | Only needed for character controller Easter-egg |
+| postprocessing effects (bloom, SSAO) | GPU budget belongs to IDE responsiveness, not visual effects |
+| glia SOCBackground theme provider | Desktop-app-only; workbench has its own design system |
+| Multiple simultaneous 3D tabs | Tauri/WebKit 8-context WebGL limit; one active 3D tab at a time |
+| VRM avatar in spirit companion | Orb + simple geometry is sufficient for sidebar scale |
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SRCH-01 | Phase 1 | Complete |
-| SRCH-02 | Phase 1 | Complete |
-| SRCH-03 | Phase 2 | Complete |
-| SRCH-04 | Phase 2 | Complete |
-| SRCH-05 | Phase 2 | Complete |
-| NAV-01 | Phase 3 | Complete |
-| NAV-02 | Phase 3 | Complete |
-| NAV-03 | Phase 3 | Complete |
-| NAV-04 | Phase 3 | Complete |
-| TREE-01 | Phase 4 | Complete |
-| TREE-02 | Phase 4 | Complete |
-| TREE-03 | Phase 4 | Complete |
-| TREE-04 | Phase 4 | Complete |
-| TAB-01 | Phase 5 | Complete |
-| TAB-02 | Phase 5 | Complete |
-| TAB-03 | Phase 5 | Complete |
-| DET-01 | Phase 6 | Pending |
-| DET-02 | Phase 6 | Pending |
-| DET-03 | Phase 6 | Pending |
-| TERM-01 | Phase 5 | Complete |
-| TERM-02 | Phase 5 | Complete |
-| DINT-01 | Phase 7 | Pending |
-| DINT-02 | Phase 7 | Pending |
-| DINT-03 | Phase 7 | Pending |
-| DINT-04 | Phase 7 | Pending |
-| DINT-05 | Phase 7 | Pending |
-| DINT-06 | Phase 7 | Pending |
-| DINT-07 | Phase 7 | Pending |
-| DINT-08 | Phase 7 | Pending |
+| SPRT-01 | Phase 1 | Complete |
+| SPRT-02 | Phase 1 | Complete |
+| OBS-01 | Phase 1 | Complete |
+| OBS-02 | Phase 1 | Complete |
+| SPRT-03 | Phase 2 | Pending |
+| SPRT-04 | Phase 2 | Pending |
+| SPRT-05 | Phase 2 | Pending |
+| OBS-03 | Phase 3 | Pending |
+| OBS-04 | Phase 3 | Pending |
+| OBS-05 | Phase 3 | Pending |
+| OBS-06 | Phase 3 | Pending |
+| FRNX-01 | Phase 3 | Pending |
+| NXS-01 | Phase 4 | Pending |
+| SPRT-06 | Phase 4 | Pending |
 
 **Coverage:**
-- v1.1 requirements: 29 total
-- Mapped to phases: 29
-- Unmapped: 0
+- v2.0 requirements: 14 total
+- Mapped to phases: 14
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-18*
-*Last updated: 2026-03-18 after v1.1 milestone initialization*
+*Last updated: 2026-03-18 — traceability updated after v2.0 roadmap creation*

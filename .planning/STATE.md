@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
 milestone: v2.0
-milestone_name: Huntronomer Integration
-status: in-progress
-stopped_at: Defining requirements
-last_updated: "2026-03-18T20:00:00Z"
-last_activity: 2026-03-18 -- Milestone v2.0 started
+milestone_name: milestone
+status: planning
+stopped_at: Completed 01-01-PLAN.md
+last_updated: "2026-03-18T21:32:59.712Z"
+last_activity: 2026-03-18 — Roadmap created for v2.0 Huntronomer Integration
 progress:
-  total_phases: 0
+  total_phases: 4
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 3
+  completed_plans: 1
   percent: 0
 ---
 
@@ -21,14 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-18)
 
 **Core value:** Security operators get an immersive IDE with spirit-driven 3D layers woven into IDE surfaces
-**Current focus:** Defining requirements for v2.0 Huntronomer Integration
+**Current focus:** Phase 1 — Spirit + Observatory State Foundation
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-03-18 — Milestone v2.0 started
+Phase: 1 of 4 (Spirit + Observatory State Foundation)
+Plan: 1 of 3 in current phase
+Status: In Progress
+Last activity: 2026-03-18 — Plan 01-01 complete: spirit-store and observatory-store created
+
+Progress: [███░░░░░░░] 33%
 
 ## Previous Milestone (v1.1 — IDE Completeness)
 
@@ -44,60 +46,30 @@ Summary: Delivered IDE shell — activity bar, 7 sidebar panels, pane tab system
 
 ## Performance Metrics
 
-**v1.0 Velocity:**
-| Phase | Plan | Duration | Tasks | Files |
-|-------|------|----------|-------|-------|
-| Phase 01 P01 | 5min | 2 tasks | 7 files |
-| Phase 01 P02 | 14min | 3 tasks | 5 files |
-| Phase 02 P01 | 5min | 2 tasks | 6 files |
-| Phase 02 P02 | 10min | 2 tasks | 5 files |
-| Phase 02 P03 | 7min | 2 tasks | 7 files |
-| Phase 03 P01 | 4min | 2 tasks | 8 files |
-| Phase 03 P02 | 3min | 2 tasks | 3 files |
-| Phase 04 P01 | 2min | 2 tasks | 2 files |
-| Phase 04 P02 | 2min | 2 tasks | 2 files |
+**Velocity (recent — v1.1):**
+- Total plans completed: 10
+- Average duration: ~3 min
+- Total execution time: ~30 min
 
-**v1.1 Velocity:**
-| Phase | Plan | Duration | Tasks | Files |
-|-------|------|----------|-------|-------|
-| Phase 01 P01 | 2min | 2 tasks | 2 files |
-| Phase 03 P02 | 2min | 2 tasks | 2 files |
-| Phase 05 P02 | 2min | 1 tasks | 3 files |
-| Phase 03 P01 | 3min | 2 tasks | 4 files |
-| Phase 05 P02 | 2min | 1 tasks | 3 files |
-| Phase 02 P01 | 5min | 2 tasks | 5 files |
-| Phase 05 P01 | 5min | 2 tasks | 3 files |
-| Phase 04 P01 | 6min | 2 tasks | 8 files |
-| Phase 02 P02 | 3min | 2 tasks | 5 files |
-| Phase 04 P02 | 3min | 2 tasks | 5 files |
+*Updated after each plan completion*
 
 ## Accumulated Context
 
 ### Decisions
 
-Key v1.0 decisions carried forward:
-- SpeakeasyPanel uses `inline` prop for right sidebar rendering
+v1.0 decisions carried forward:
 - openApp searches all pane groups for route dedup
 - navigate-commands uses Zustand getState() (no react-router dependency)
-- Gold border removed from pane container (too prominent for IDE)
 - Lab sub-apps independently routable at /swarm-board, /hunt, /simulator
 
-v1.1 decisions:
-- Module-level EditorView ref for command dispatch (simpler than React context)
-- searchKeymap Mod-h handler extraction for replace mode (stable public API)
-- search({ top: true }) for IDE-standard top-positioned search panel
-- Split terminal uses [leftId, rightId] tuple (max 2 panes, simple model)
-- BreadcrumbBar self-hides via internal null return (consumer needs no conditional)
-- Folder breadcrumb click expands dir AND reveals Explorer sidebar via showPanel
-- regex crate added as direct dep for search; 10K match cap; results grouped by file
-- createDetectionFile composes saveDetectionFile with FILE_TYPE_REGISTRY defaultContent
-- mutateTree helper uses immutable shallow-copy-on-write for Zustand state correctness
-
-v2.0 decisions:
+v2.0 decisions (pending):
 - Mini R3F canvas lives in right sidebar (already has resize handle)
 - Observatory is a TAB/PANE not a panel (like VS Code Markdown Preview)
 - deriveObservatoryWorld survives — powers both full tab and minimap
-- Character controller is opt-in in observatory tab flow mode
+- Character controller is opt-in Easter-egg in observatory tab flow mode only
+- WebGL Canvas architecture (separate Canvas vs root Canvas + drei View) — OPEN, resolve in Phase 2 spike
+- [Phase 01]: Spirit store uses no-immer create() pattern; SPIRIT_ACCENT_MAP is module-level const not in state
+- [Phase 01]: Observatory setStations recomputes artifactCount aggregate inline to keep seamSummary consistent with stations array
 
 ### Pending Todos
 
@@ -105,10 +77,12 @@ None yet.
 
 ### Blockers/Concerns
 
-None yet.
+- [Phase 2]: KEY DECISION — WebGL Canvas architecture must be resolved before any Canvas placement. Audit drei@^10.0.0 issue #2471 status and test Tauri WebKit context ceiling in Phase 2 spike.
+- [Phase 3]: glia-three RiverView may own its own Canvas — audit package source before committing to ForensicsTapeTab implementation.
+- [Phase 4]: NexusStateContext full dependency mapping required before migration begins — do not start Phase 4 without this audit.
 
 ## Session Continuity
 
-Last session: 2026-03-18T20:00:00Z
-Stopped at: Defining requirements for v2.0
-Resume file: Starting new milestone
+Last session: 2026-03-18T21:32:59.710Z
+Stopped at: Completed 01-01-PLAN.md
+Resume file: None
