@@ -1,6 +1,6 @@
 [package]
 name = "clawdstrike-agent"
-version = "0.2.6"
+version = "0.2.7"
 description = "Clawdstrike Agent - Security enforcement runtime for AI coding tools"
 edition = "2021"
 rust-version = "1.80"

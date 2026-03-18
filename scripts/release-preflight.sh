@@ -50,6 +50,11 @@ def read_json(rel: str) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def read_text(rel: str) -> str:
+    path = repo_root / rel
+    return path.read_text(encoding="utf-8")
+
+
 def check(label: str, actual: str | None) -> str | None:
     if actual is None:
         return f"{label}: missing version"
@@ -64,6 +69,10 @@ cargo = read_toml("Cargo.toml")
 workspace_version = cargo.get("workspace", {}).get("package", {}).get("version")
 errors.append(check("Cargo.toml [workspace.package].version", workspace_version))
 
+for dep_name in ("clawdstrike-logos", "logos-ffi", "logos-z3"):
+    dep_version = cargo.get("workspace", {}).get("dependencies", {}).get(dep_name, {}).get("version")
+    errors.append(check(f"Cargo.toml [workspace.dependencies].{dep_name}.version", dep_version))
+
 root_package = read_json("package.json")
 workspace_entries = root_package.get("workspaces")
 workspace_set: set[str] = set()
@@ -71,6 +80,19 @@ if not isinstance(workspace_entries, list):
     errors.append("package.json workspaces: missing or not an array")
 else:
     workspace_set = {entry for entry in workspace_entries if isinstance(entry, str)}
+
+root_lock = read_json("package-lock.json")
+root_lock_packages = root_lock.get("packages", {})
+for rel, expected_name in (
+    ("crates/libs/hush-wasm", "@clawdstrike/wasm"),
+    ("packages/adapters/clawdstrike-openclaw", "@clawdstrike/openclaw"),
+    ("packages/sdk/hush-ts", "@clawdstrike/sdk"),
+):
+    lock_entry = root_lock_packages.get(rel, {})
+    actual_name = lock_entry.get("name")
+    if actual_name != expected_name:
+        errors.append(f"package-lock.json {rel} name: expected {expected_name}, found {actual_name}")
+    errors.append(check(f"package-lock.json {rel} version", lock_entry.get("version")))
 
 pyproject = read_toml("packages/sdk/hush-py/pyproject.toml")
 py_version = pyproject.get("project", {}).get("version")
@@ -101,6 +123,15 @@ errors.append(
     )
 )
 
+logos_z3 = read_toml("crates/libs/logos-z3/Cargo.toml")
+errors.append(check("crates/libs/logos-z3/Cargo.toml [package].version", logos_z3.get("package", {}).get("version")))
+errors.append(
+    check(
+        "crates/libs/logos-z3/Cargo.toml [dependencies].logos-ffi.version",
+        logos_z3.get("dependencies", {}).get("logos-ffi", {}).get("version"),
+    )
+)
+
 agent_cargo = read_toml("apps/agent/src-tauri/Cargo.toml")
 agent_cargo_version = agent_cargo.get("package", {}).get("version")
 errors.append(
@@ -109,6 +140,33 @@ errors.append(
         agent_cargo_version,
     )
 )
+
+openclaw_plugin = read_json("packages/adapters/clawdstrike-openclaw/openclaw.plugin.json")
+errors.append(
+    check(
+        "packages/adapters/clawdstrike-openclaw/openclaw.plugin.json version",
+        openclaw_plugin.get("version"),
+    )
+)
+
+for rel, dep_names in (
+    ("infra/docker/workspace-control-api.toml", ("hush-core", "spine")),
+    ("infra/docker/workspace-hushd.toml", ("hush-core", "hush-proxy", "spine", "clawdstrike", "clawdstrike-ocsf", "clawdstrike-policy-event", "hunt-scan", "hunt-query", "hush-certification")),
+    ("infra/docker/workspace-registry.toml", ("hush-core", "clawdstrike", "spine", "hush-proxy")),
+):
+    workspace_toml = read_toml(rel)
+    workspace_toml_version = workspace_toml.get("workspace", {}).get("package", {}).get("version")
+    errors.append(check(f"{rel} [workspace.package].version", workspace_toml_version))
+    for dep_name in dep_names:
+        dep_version = workspace_toml.get("workspace", {}).get("dependencies", {}).get(dep_name, {}).get("version")
+        errors.append(check(f"{rel} [workspace.dependencies].{dep_name}.version", dep_version))
+
+formula = read_text("infra/packaging/HomebrewFormula/hush.rb")
+if f"/archive/refs/tags/v{expected}.tar.gz" not in formula:
+    errors.append(
+        "infra/packaging/HomebrewFormula/hush.rb url: "
+        f"expected archive tag v{expected}.tar.gz"
+    )
 
 agent_tauri = read_json("apps/agent/src-tauri/tauri.conf.json")
 errors.append(
@@ -154,6 +212,25 @@ for pkg_path in sorted((repo_root / "packages").rglob("package.json")):
         workspace_rel = str(pkg_path.parent.relative_to(repo_root))
         if workspace_rel not in workspace_set:
             errors.append(f"{rel}: publishable package is missing from package.json workspaces")
+
+    lock_path = pkg_path.with_name("package-lock.json")
+    if lock_path.exists():
+        lock_rel = str(lock_path.relative_to(repo_root))
+        lock_data = read_json(lock_rel)
+        lock_root = lock_data.get("packages", {}).get("", {})
+        errors.append(check(f"{lock_rel} top-level version", lock_data.get("version")))
+        errors.append(check(f"{lock_rel} packages[''].version", lock_root.get("version")))
+        if lock_data.get("name") != name:
+            errors.append(f"{lock_rel} top-level name: expected {name}, found {lock_data.get('name')}")
+        if lock_root.get("name") != name:
+            errors.append(f"{lock_rel} packages[''].name: expected {name}, found {lock_root.get('name')}")
+        for field in ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies"):
+            expected_deps = data.get(field)
+            actual_deps = lock_root.get(field)
+            if expected_deps is None and actual_deps is not None:
+                errors.append(f"{lock_rel} packages[''].{field}: expected missing field")
+            elif expected_deps is not None and actual_deps != expected_deps:
+                errors.append(f"{lock_rel} packages[''].{field}: expected package.json to match")
 
 errors.append(check("crates/libs/hush-wasm/package.json", read_json("crates/libs/hush-wasm/package.json").get("version")))
 

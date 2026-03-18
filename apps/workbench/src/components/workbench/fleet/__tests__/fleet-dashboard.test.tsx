@@ -29,7 +29,7 @@ vi.mock("@/lib/workbench/use-fleet-connection", async () => {
           last_heartbeat_at: new Date().toISOString(),
           posture: "strict",
           policy_version: "sha256:abc",
-          daemon_version: "0.2.6",
+          daemon_version: "0.2.7",
           runtime_count: 1,
           seconds_since_heartbeat: 5,
           online: true,

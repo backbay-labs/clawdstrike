@@ -1,6 +1,6 @@
 {
   "name": "@clawdstrike/broker-client",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "description": "Capability issuance and execute client for the Clawdstrike secret broker",
   "type": "module",
   "main": "dist/index.js",

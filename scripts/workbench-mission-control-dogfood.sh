@@ -622,7 +622,7 @@ seed_openclaw_heartbeat() {
     -H "Content-Type: application/json" \
     "$hushd_url/api/v1/agent/heartbeat" \
     -d "$(cat <<EOF
-{"endpoint_agent_id":"$endpoint_id","posture":"strict","daemon_version":"0.2.6","policy_version":"sha256:mission-dogfood"}
+{"endpoint_agent_id":"$endpoint_id","posture":"strict","daemon_version":"0.2.7","policy_version":"sha256:mission-dogfood"}
 EOF
 )" >/dev/null
 

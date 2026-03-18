@@ -1,6 +1,6 @@
 {
   "name": "@clawdstrike/openai",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "description": "In-process tool boundary hooks for the OpenAI Agents SDK",
   "type": "module",
   "main": "dist/index.js",
@@ -21,8 +21,8 @@
     "format:check": "biome check src/"
   },
   "dependencies": {
-    "@clawdstrike/adapter-core": "^0.2.6",
-    "@clawdstrike/broker-client": "^0.2.6"
+    "@clawdstrike/adapter-core": "^0.2.7",
+    "@clawdstrike/broker-client": "^0.2.7"
   },
   "devDependencies": {
     "@types/node": "^25.2.0",

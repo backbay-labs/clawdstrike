@@ -192,14 +192,14 @@ interface HeartbeatDef {
 }
 
 const HEARTBEATS: HeartbeatDef[] = [
-  { endpoint_agent_id: "agent-orchestrator-001", posture: "strict", daemon_version: "0.2.6", policy_version: "sha256:fleet-test" },
-  { endpoint_agent_id: "agent-planner-002", posture: "strict", daemon_version: "0.2.6", policy_version: "sha256:fleet-test" },
+  { endpoint_agent_id: "agent-orchestrator-001", posture: "strict", daemon_version: "0.2.7", policy_version: "sha256:fleet-test" },
+  { endpoint_agent_id: "agent-planner-002", posture: "strict", daemon_version: "0.2.7", policy_version: "sha256:fleet-test" },
   { endpoint_agent_id: "agent-coder-003", posture: "default", daemon_version: "0.2.4", policy_version: "sha256:fleet-test" },
-  { endpoint_agent_id: "agent-tester-004", posture: "strict", daemon_version: "0.2.6", policy_version: "sha256:fleet-test" },
+  { endpoint_agent_id: "agent-tester-004", posture: "strict", daemon_version: "0.2.7", policy_version: "sha256:fleet-test" },
   { endpoint_agent_id: "agent-researcher-005", posture: "permissive", daemon_version: "0.2.3", policy_version: "sha256:old-version" },
-  { endpoint_agent_id: "agent-deployer-006", posture: "strict", daemon_version: "0.2.6", policy_version: "sha256:fleet-test" },
-  { endpoint_agent_id: "agent-monitor-007", posture: "strict", daemon_version: "0.2.6", policy_version: "sha256:fleet-test" },
-  { endpoint_agent_id: "agent-reviewer-008", posture: "default", daemon_version: "0.2.6", policy_version: "sha256:fleet-test" },
+  { endpoint_agent_id: "agent-deployer-006", posture: "strict", daemon_version: "0.2.7", policy_version: "sha256:fleet-test" },
+  { endpoint_agent_id: "agent-monitor-007", posture: "strict", daemon_version: "0.2.7", policy_version: "sha256:fleet-test" },
+  { endpoint_agent_id: "agent-reviewer-008", posture: "default", daemon_version: "0.2.7", policy_version: "sha256:fleet-test" },
 ];
 
 interface RuntimeHeartbeatDef {

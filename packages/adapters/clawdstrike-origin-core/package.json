@@ -1,6 +1,6 @@
 {
   "name": "@clawdstrike/origin-core",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "description": "Trust adapter framework for origin-aware security enforcement",
   "type": "module",
   "main": "dist/index.js",

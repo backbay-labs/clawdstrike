@@ -53,7 +53,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "0.2.6"
+version = "0.2.7"
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/backbay-labs/clawdstrike"
@@ -163,22 +163,22 @@ md-5 = "0.10"
 jsonwebtoken = { version = "10", default-features = false, features = ["aws_lc_rs", "use_pem"] }
 
 # Internal crates
-hush-core = { path = "crates/libs/hush-core", version = "0.2.6" }
-hush-proxy = { path = "crates/libs/hush-proxy", version = "0.2.6" }
-clawdstrike = { path = "crates/libs/clawdstrike", version = "0.2.6", default-features = false }
-clawdstrike-broker-protocol = { path = "crates/libs/clawdstrike-broker-protocol", version = "0.2.6" }
-hush-certification = { path = "crates/libs/hush-certification", version = "0.2.6" }
-spine = { package = "hush-spine", path = "crates/libs/spine", version = "0.2.6" }
-bridge-runtime = { path = "crates/libs/bridge-runtime", version = "0.2.6" }
-hush-multi-agent = { path = "crates/libs/hush-multi-agent", version = "0.2.6" }
-hunt-scan = { path = "crates/libs/hunt-scan", version = "0.2.6" }
-hunt-query = { path = "crates/libs/hunt-query", version = "0.2.6" }
-hunt-correlate = { path = "crates/libs/hunt-correlate", version = "0.2.6" }
-clawdstrike-logos = { path = "crates/libs/clawdstrike-logos", version = "0.2.6" }
-logos-ffi = { path = "crates/libs/logos-ffi", version = "0.2.6" }
-logos-z3 = { path = "crates/libs/logos-z3", version = "0.2.6" }
-clawdstrike-ocsf = { path = "crates/libs/clawdstrike-ocsf", version = "0.2.6" }
-clawdstrike-policy-event = { path = "crates/libs/clawdstrike-policy-event", version = "0.2.6", default-features = false }
+hush-core = { path = "crates/libs/hush-core", version = "0.2.7" }
+hush-proxy = { path = "crates/libs/hush-proxy", version = "0.2.7" }
+clawdstrike = { path = "crates/libs/clawdstrike", version = "0.2.7", default-features = false }
+clawdstrike-broker-protocol = { path = "crates/libs/clawdstrike-broker-protocol", version = "0.2.7" }
+hush-certification = { path = "crates/libs/hush-certification", version = "0.2.7" }
+spine = { package = "hush-spine", path = "crates/libs/spine", version = "0.2.7" }
+bridge-runtime = { path = "crates/libs/bridge-runtime", version = "0.2.7" }
+hush-multi-agent = { path = "crates/libs/hush-multi-agent", version = "0.2.7" }
+hunt-scan = { path = "crates/libs/hunt-scan", version = "0.2.7" }
+hunt-query = { path = "crates/libs/hunt-query", version = "0.2.7" }
+hunt-correlate = { path = "crates/libs/hunt-correlate", version = "0.2.7" }
+clawdstrike-logos = { path = "crates/libs/clawdstrike-logos", version = "0.2.7" }
+logos-ffi = { path = "crates/libs/logos-ffi", version = "0.2.7" }
+logos-z3 = { path = "crates/libs/logos-z3", version = "0.2.7" }
+clawdstrike-ocsf = { path = "crates/libs/clawdstrike-ocsf", version = "0.2.7" }
+clawdstrike-policy-event = { path = "crates/libs/clawdstrike-policy-event", version = "0.2.7", default-features = false }
 nono = { path = "infra/vendor/nono", version = "0.11.0", default-features = false }
 
 [profile.release]

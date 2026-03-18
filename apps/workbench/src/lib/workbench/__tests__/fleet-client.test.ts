@@ -82,7 +82,7 @@ describe("testConnection", () => {
     const health = await testConnection("http://localhost:9876", "test-key");
     expect(health).toMatchObject({
       status: "healthy",
-      version: "0.2.6-test",
+      version: "0.2.7-test",
     });
     expect(health.uptime_secs).toBe(3600);
   });

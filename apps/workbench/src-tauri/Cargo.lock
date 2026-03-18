@@ -592,7 +592,7 @@ dependencies = [
 
 [[package]]
 name = "clawdstrike"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -629,7 +629,7 @@ dependencies = [
 
 [[package]]
 name = "clawdstrike-logos"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "clawdstrike",
  "glob",
@@ -646,7 +646,7 @@ dependencies = [
 
 [[package]]
 name = "clawdstrike-ocsf"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "chrono",
  "serde",
@@ -2240,7 +2240,7 @@ checksum = "6dbf3de79e51f3d586ab4cb9d5c3e2c14aa28ed23d180cf89b4df0454a69cc87"
 
 [[package]]
 name = "hunt-correlate"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "async-nats",
  "chrono",
@@ -2262,7 +2262,7 @@ dependencies = [
 
 [[package]]
 name = "hunt-query"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "async-nats",
  "chrono",
@@ -2285,7 +2285,7 @@ dependencies = [
 
 [[package]]
 name = "hunt-scan"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "chrono",
  "clawdstrike",
@@ -2309,7 +2309,7 @@ dependencies = [
 
 [[package]]
 name = "hush-core"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "chrono",
  "ed25519-dalek",
@@ -2328,7 +2328,7 @@ dependencies = [
 
 [[package]]
 name = "hush-proxy"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "globset",
  "serde",
@@ -2337,7 +2337,7 @@ dependencies = [
 
 [[package]]
 name = "hush-spine"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "async-nats",
  "chrono",
@@ -3003,7 +3003,7 @@ checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
 
 [[package]]
 name = "logos-ffi"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "chrono",
  "hex",

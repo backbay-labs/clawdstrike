@@ -1,6 +1,6 @@
 {
   "name": "@clawdstrike/policy",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "description": "Canonical policy loader and engine (async guards + threat intel)",
   "type": "module",
   "main": "dist/index.js",
@@ -24,7 +24,7 @@
     "format:check": "biome check src/"
   },
   "dependencies": {
-    "@clawdstrike/adapter-core": "^0.2.6",
+    "@clawdstrike/adapter-core": "^0.2.7",
     "js-yaml": "^4.1.0",
     "lru-cache": "^11.2.2"
   },

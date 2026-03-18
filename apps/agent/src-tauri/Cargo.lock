@@ -590,7 +590,7 @@ dependencies = [
 
 [[package]]
 name = "clawdstrike-agent"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -1894,7 +1894,7 @@ checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
 
 [[package]]
 name = "hush-core"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "chrono",
  "ed25519-dalek",
@@ -1913,7 +1913,7 @@ dependencies = [
 
 [[package]]
 name = "hush-spine"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "async-nats",
  "chrono",

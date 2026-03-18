@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - No unreleased changes yet.
 
+## [0.2.7] - 2026-03-18
+
+### Added
+
+- Added formal verification across the policy toolchain with Lean 4 proofs, solver-backed Z3 checks, Aeneas regeneration coverage, CLI attestation reporting, and CI verification lanes (#202).
+
+### Changed
+
+- Normalized `0.2.7` release metadata across the Rust workspace, npm workspace, Python SDK, docker workspace manifests, OpenClaw plugin manifest, and packaging assets, and hardened the release scripts/preflight to cover those surfaces in future cuts.
+
+### Fixed
+
+- Fixed the OpenClaw `tool_result_persist` hook so synchronous post-result enforcement, redaction, and async scanner follow-up now run on real tool traffic instead of being silently dropped (#205).
+- Hardened policy verification and extends loading semantics so strict inheritance checks, backend attestation levels, and formal verification CI behave consistently across CLI, library, and workbench flows (#202).
+
 ## [0.2.6] - 2026-03-16
 
 ### Added
@@ -76,7 +91,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Release pipeline: protoc installation, npm publish race conditions, crate ordering
 - Adapters: bump `adapter-core` minimum to `^0.1.1` and sync lock files
 
-[Unreleased]: https://github.com/backbay-labs/clawdstrike/compare/v0.2.6...HEAD
+[Unreleased]: https://github.com/backbay-labs/clawdstrike/compare/v0.2.7...HEAD
+[0.2.7]: https://github.com/backbay-labs/clawdstrike/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/backbay-labs/clawdstrike/compare/v0.2.5...v0.2.6
 [0.1.2]: https://github.com/backbay-labs/clawdstrike/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/backbay-labs/clawdstrike/compare/v0.1.0...v0.1.1

@@ -1,6 +1,6 @@
 [package]
 name = "logos-z3"
-version = "0.2.6"
+version = "0.2.7"
 edition = "2021"
 rust-version = "1.93"
 license = "Apache-2.0"
@@ -13,7 +13,7 @@ default = []
 z3-static = ["z3/static-link-z3"]
 
 [dependencies]
-logos-ffi = { path = "../logos-ffi", version = "0.2.6" }
+logos-ffi = { path = "../logos-ffi", version = "0.2.7" }
 
 # Z3 SMT solver bindings (uses system Z3 by default)
 z3 = { version = "0.12", default-features = false }

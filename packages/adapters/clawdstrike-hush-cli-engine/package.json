@@ -1,6 +1,6 @@
 {
   "name": "@clawdstrike/engine-local",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "description": "Policy engine adapter that shells out to hush policy eval",
   "type": "module",
   "main": "dist/index.js",
@@ -21,7 +21,7 @@
     "format:check": "biome check src/"
   },
   "dependencies": {
-    "@clawdstrike/adapter-core": "^0.2.6"
+    "@clawdstrike/adapter-core": "^0.2.7"
   },
   "devDependencies": {
     "@types/node": "^25.2.0",
