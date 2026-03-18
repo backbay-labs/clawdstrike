@@ -13,8 +13,11 @@ describe("SpiritOrbIcon", () => {
   it("applies radial-gradient using the accentColor", () => {
     const { container } = render(<SpiritOrbIcon accentColor="#3dbf84" />);
     const span = container.querySelector("span") as HTMLElement;
-    expect(span.style.background).toContain("radial-gradient");
-    expect(span.style.background).toContain("3dbf84");
+    // background property contains the radial-gradient (may use var() reference)
+    expect(span.style.background || span.style.backgroundImage).toContain("radial-gradient");
+    // jsdom normalizes hex colors in gradient stops to rgb(); check the raw style attribute
+    // which preserves the --spirit-orb-color custom property value as the literal hex string
+    expect(span.getAttribute("style")).toContain("3dbf84");
   });
 
   it("uses default size 16 when size prop omitted", () => {

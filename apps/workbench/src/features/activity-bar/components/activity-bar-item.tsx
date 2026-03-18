@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 import type { SigilProps } from "@/components/desktop/sidebar-icons";
 import type { ActivityBarItemId } from "../types";
+import { SpiritOrbIcon } from "@/features/spirit/components/spirit-orb-icon";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -14,6 +15,7 @@ interface ActivityBarItemProps {
   active: boolean;
   onClick: () => void;
   badge?: number;
+  orbColor?: string;
 }
 
 export function ActivityBarItem({
@@ -23,6 +25,7 @@ export function ActivityBarItem({
   active,
   onClick,
   badge,
+  orbColor,
 }: ActivityBarItemProps) {
   return (
     <button
@@ -54,15 +57,19 @@ export function ActivityBarItem({
           }}
         />
       )}
-      <Icon
-        size={18}
-        stroke={1.4}
-        style={
-          active
-            ? { filter: "drop-shadow(0 0 4px rgba(212,168,75,0.25))" }
-            : undefined
-        }
-      />
+      {orbColor ? (
+        <SpiritOrbIcon accentColor={orbColor} size={18} />
+      ) : (
+        <Icon
+          size={18}
+          stroke={1.4}
+          style={
+            active
+              ? { filter: "drop-shadow(0 0 4px rgba(212,168,75,0.25))" }
+              : undefined
+          }
+        />
+      )}
       {/* Seam badge */}
       {badge !== undefined && badge > 0 && (
         <span

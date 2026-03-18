@@ -673,3 +673,9 @@ button:active:not(:disabled) {
   border-radius: 3px;
   line-height: 1;
 }
+
+/* Spirit orb pulse animation — used by SpiritOrbIcon in ActivityBar */
+@keyframes spirit-orb-pulse {
+  0%, 100% { opacity: 0.85; transform: scale(1); }
+  50%       { opacity: 1;    transform: scale(1.08); }
+}
