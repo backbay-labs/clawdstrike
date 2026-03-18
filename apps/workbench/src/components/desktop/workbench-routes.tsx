@@ -137,6 +137,14 @@ const MissionControlPage = lazy(() =>
   })),
 );
 
+function PlaceholderPane({ label }: { label: string }) {
+  return (
+    <div className="flex flex-1 items-center justify-center text-[#6f7f9a] text-sm font-mono">
+      {label} — coming in a later phase
+    </div>
+  );
+}
+
 function parseRoute(route: string): URL {
   const normalized = route.startsWith("/") ? route : `/${route}`;
   return new URL(normalized, "https://clawdstrike.local");
@@ -205,6 +213,9 @@ export function getWorkbenchRouteLabel(route: string): string {
   if (url.pathname === "/approvals") return "Approvals";
   if (url.pathname === "/fleet") return "Fleet";
   if (url.pathname === "/audit") return "Audit";
+  if (url.pathname === "/observatory") return "Observatory";
+  if (url.pathname === "/spirit-chamber") return "Spirit Chamber";
+  if (url.pathname === "/nexus") return "Nexus";
   return "Workbench";
 }
 
@@ -279,5 +290,8 @@ export const WORKBENCH_ROUTE_OBJECTS: RouteObject[] = [
     ),
   },
   { path: "overview", element: <Navigate to="/home" replace /> },
+  { path: "observatory", element: <PlaceholderPane label="Observatory" /> },
+  { path: "spirit-chamber", element: <PlaceholderPane label="Spirit Chamber" /> },
+  { path: "nexus", element: <PlaceholderPane label="Nexus" /> },
   { path: "*", element: <Navigate to="/home" replace /> },
 ];

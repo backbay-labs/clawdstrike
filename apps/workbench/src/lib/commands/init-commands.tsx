@@ -22,6 +22,7 @@ import {
   registerEditCommands,
   registerPolicyCommands,
   registerViewCommands,
+  registerHuntronomerCommands,
 } from "./index";
 import { ShortcutHelpDialog } from "@/components/desktop/shortcut-help-dialog";
 
@@ -145,6 +146,8 @@ export function InitCommands() {
       showHeartbeat: () => useActivityBarStore.getState().actions.showPanel("heartbeat"),
       toggleAudit: () => useBottomPaneStore.getState().toggleTab("audit"),
     });
+
+    registerHuntronomerCommands();
 
     // No cleanup needed — commands are re-registered (overwritten) when deps change.
     // The registry uses a Map keyed by id, so re-registration is idempotent.
