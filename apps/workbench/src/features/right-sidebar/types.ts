@@ -1,1 +1,1 @@
-export type RightSidebarPanel = "speakeasy";
+export type RightSidebarPanel = "speakeasy" | "spirit";
