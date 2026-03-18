@@ -13,7 +13,13 @@
     "strict": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@backbay/glia-three/three": [
+        "../../../../backbay-sdk/packages/glia-three/src/three/index.ts"
+      ],
+      "@backbay/glia-three/environment": [
+        "../../../../backbay-sdk/packages/glia-three/src/environment/index.ts"
+      ]
     }
   },
   "include": ["src"]

@@ -1,7 +1,7 @@
 import type { Artifact, Hunt, Run } from "../huntTypes";
 import type { HuntSpiritBindSource, HuntSpiritKind, HuntSpiritMood } from "../spirit";
 
-export type SpiritBindMode = "quick-bind" | "thesis" | "anchor-artifacts" | "manual";
+export type SpiritBindMode = "quick-configure" | "thesis" | "anchor-artifacts" | "manual";
 
 export interface SpiritBindContext {
   hunt: Hunt;

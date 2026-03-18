@@ -9,6 +9,7 @@ import type { TabKind, TabState } from "./workbenchState";
 export interface TabContentProps {
   tab: TabState;
   isActive: boolean;
+  groupId: string;
 }
 
 export interface TabRegistryEntry {
@@ -62,6 +63,11 @@ const SecurityOverviewView = React.lazy(() =>
 const WorkspaceShellScreen = React.lazy(() =>
   import("@/features/workspace/shell/WorkspaceShellScreen").then((m) => ({
     default: m.WorkspaceShellScreen,
+  })),
+);
+const SpiritChamberTab = React.lazy(() =>
+  import("@/shell/workbench/spirit-ritual/SpiritChamberTab").then((m) => ({
+    default: m.SpiritChamberTab,
   })),
 );
 
@@ -172,6 +178,12 @@ export const TAB_REGISTRY: Record<TabKind, TabRegistryEntry> = {
     component: OperationsHubView,
     icon: "dashboard",
     defaultTitle: "Operations",
+    keepAlive: true,
+  },
+  "spirit-chamber": {
+    component: SpiritChamberTab,
+    icon: "spirit",
+    defaultTitle: "Spirit",
     keepAlive: true,
   },
   file: {

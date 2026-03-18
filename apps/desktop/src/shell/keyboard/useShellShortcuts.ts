@@ -69,6 +69,7 @@ export function useShellShortcuts(handlers: ShellShortcutHandlers) {
 
       const isMeta = e.metaKey || e.ctrlKey;
       const key = e.key.toLowerCase();
+      const isWorkbench = handlers.isWorkbench === true;
 
       // Escape: Close modal/panel
       if (key === "escape") {
@@ -106,49 +107,55 @@ export function useShellShortcuts(handlers: ShellShortcutHandlers) {
       }
 
       // Cmd+Shift+1-4: Switch shell (workbench v2)
-      if (isMeta && e.shiftKey && ["1", "2", "3", "4"].includes(key)) {
+      if (
+        isWorkbench &&
+        isMeta &&
+        e.shiftKey &&
+        ["1", "2", "3", "4"].includes(key) &&
+        handlers.onSelectShell
+      ) {
         e.preventDefault();
-        handlers.onSelectShell?.(parseInt(key, 10));
+        handlers.onSelectShell(parseInt(key, 10));
         return;
       }
 
       // Cmd+Shift+H: Toggle hunt dock (workbench v2)
-      if (isMeta && e.shiftKey && key === "h") {
+      if (isWorkbench && isMeta && e.shiftKey && key === "h" && handlers.onToggleHuntDock) {
         e.preventDefault();
-        handlers.onToggleHuntDock?.();
+        handlers.onToggleHuntDock();
         return;
       }
 
       // Cmd+Shift+B: Toggle sidebar (workbench v2)
-      if (isMeta && e.shiftKey && key === "b") {
+      if (isWorkbench && isMeta && e.shiftKey && key === "b" && handlers.onToggleSidebar) {
         e.preventDefault();
-        handlers.onToggleSidebar?.();
+        handlers.onToggleSidebar();
         return;
       }
 
       // Cmd+J: Toggle bottom panel (workbench v2)
-      if (isMeta && key === "j") {
+      if (isWorkbench && isMeta && key === "j" && handlers.onToggleBottomPanel) {
         e.preventDefault();
-        handlers.onToggleBottomPanel?.();
+        handlers.onToggleBottomPanel();
         return;
       }
 
       // Cmd+\: Toggle inspector (workbench v2)
-      if (isMeta && key === "\\") {
+      if (isWorkbench && isMeta && key === "\\" && handlers.onToggleInspector) {
         e.preventDefault();
-        handlers.onToggleInspector?.();
+        handlers.onToggleInspector();
         return;
       }
 
       // Cmd+W: Close active tab (workbench v2)
-      if (isMeta && key === "w") {
+      if (isWorkbench && isMeta && key === "w" && handlers.onCloseTab) {
         e.preventDefault();
-        handlers.onCloseTab?.();
+        handlers.onCloseTab();
         return;
       }
 
       // Ctrl+Tab / Ctrl+Shift+Tab: Next/prev tab in active pane
-      if (e.ctrlKey && key === "tab") {
+      if (isWorkbench && e.ctrlKey && key === "tab" && (handlers.onNextTab || handlers.onPrevTab)) {
         e.preventDefault();
         if (e.shiftKey) {
           handlers.onPrevTab?.();
@@ -161,7 +168,7 @@ export function useShellShortcuts(handlers: ShellShortcutHandlers) {
       // Cmd+1-9: Select view by index (v1) or lens (v2)
       if (isMeta && !e.shiftKey && VIEW_KEYS[key]) {
         e.preventDefault();
-        if (handlers.isWorkbench) {
+        if (isWorkbench) {
           const index = parseInt(key, 10);
           if (index <= 7 && handlers.onSelectLens) {
             handlers.onSelectLens(index);

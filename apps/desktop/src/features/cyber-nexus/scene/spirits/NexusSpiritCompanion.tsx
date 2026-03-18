@@ -2,42 +2,31 @@ import { Html, Line } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import { useMemo, useRef } from "react";
 import * as THREE from "three";
+import {
+  blendHex,
+  renderSpiritContourGeometry,
+} from "@/shell/workbench/spirit/sceneVisuals";
+import type { SpiritSurfaceReceiveState } from "@/shell/workbench/spirit-ritual/release";
 import type { StrikecellDomainId } from "../../types";
 import { GlyphSentinel } from "../sentinels/GlyphSentinel";
 import type { NexusSpiritSceneActor } from "./runtime";
 
-function blendHex(base: string, mix: string, alpha: number): string {
-  const color = new THREE.Color(base);
-  color.lerp(new THREE.Color(mix), alpha);
-  return `#${color.getHexString()}`;
-}
-
-function contourGeometry(contour: string) {
-  switch (contour) {
-    case "reticle-vector":
-      return <octahedronGeometry args={[0.64, 1]} />;
-    case "aperture-reveal":
-      return <sphereGeometry args={[0.58, 24, 24]} />;
-    case "chamber-bracket":
-      return <dodecahedronGeometry args={[0.62, 0]} />;
-    case "thread-arc":
-      return <torusKnotGeometry args={[0.42, 0.12, 72, 12]} />;
-    case "proof-stack":
-      return <cylinderGeometry args={[0.48, 0.62, 0.82, 7]} />;
-    default:
-      return <icosahedronGeometry args={[0.6, 1]} />;
-  }
-}
-
 interface NexusSpiritCompanionProps {
   actor: NexusSpiritSceneActor | null;
+  receiveState: SpiritSurfaceReceiveState;
   strikecellPositions: Map<StrikecellDomainId, THREE.Vector3>;
 }
 
-export function NexusSpiritCompanion({ actor, strikecellPositions }: NexusSpiritCompanionProps) {
+export function NexusSpiritCompanion({
+  actor,
+  receiveState,
+  strikecellPositions,
+}: NexusSpiritCompanionProps) {
   const groupRef = useRef<THREE.Group | null>(null);
   const ringRef = useRef<THREE.Mesh | null>(null);
   const pulseRef = useRef<THREE.Mesh | null>(null);
+  const anchorPulseRef = useRef<THREE.Mesh | null>(null);
+  const wakePulseRef = useRef<THREE.Mesh | null>(null);
   const shardRefs = useRef<Array<THREE.Mesh | null>>([]);
 
   const anchorPosition = actor ? (strikecellPositions.get(actor.anchorStrikecellId) ?? null) : null;
@@ -57,6 +46,8 @@ export function NexusSpiritCompanion({ actor, strikecellPositions }: NexusSpirit
     if (!group || !actor || !anchorPosition) return;
 
     const elapsed = clock.elapsedTime;
+    const isReceiving = receiveState === "receiving";
+    const isAftermath = receiveState === "aftermath";
     const anchorOffsetX = actor.likelyStationId === actor.anchorStrikecellId ? 1.84 : 1.48;
     const anchorOffsetZ = actor.cue?.kind === "transit" ? 0.28 : 0.18;
     const transitLift = actor.cue?.kind === "transit" ? Math.sin(elapsed * 3.4) * 0.16 : 0;
@@ -80,6 +71,45 @@ export function NexusSpiritCompanion({ actor, strikecellPositions }: NexusSpirit
       const pulse =
         1 + Math.max(0, Math.sin(elapsed * 3.6)) * (0.28 + actor.presenceStrength * 0.18);
       pulseRef.current.scale.set(pulse, pulse, pulse);
+    }
+
+    if (anchorPulseRef.current) {
+      const anchorPulse =
+        actor.cue?.kind === "bind" || actor.cue?.kind === "recenter"
+          ? 1 + Math.max(0, Math.sin(elapsed * 4.2)) * 0.54
+          : actor.cue?.kind === "transit"
+            ? 1 + Math.max(0, Math.sin(elapsed * 3.2)) * 0.28
+            : isReceiving
+              ? 1 + Math.max(0, Math.sin(elapsed * 2.8)) * 0.24
+              : isAftermath
+                ? 1 + Math.max(0, Math.sin(elapsed * 1.8)) * 0.12
+            : 1;
+      anchorPulseRef.current.scale.set(anchorPulse, anchorPulse, anchorPulse);
+      const material = anchorPulseRef.current.material as THREE.MeshBasicMaterial;
+      material.opacity =
+        actor.cue?.kind === "bind"
+          ? 0.28
+          : actor.cue?.kind === "recenter"
+            ? 0.22
+            : actor.cue?.kind === "transit"
+              ? 0.14
+              : isReceiving
+                ? 0.18
+                : isAftermath
+                  ? 0.1
+              : 0.06;
+    }
+
+    if (wakePulseRef.current) {
+      const wakePulse =
+        isReceiving
+          ? 1.04 + Math.max(0, Math.sin(elapsed * 2.6)) * 0.2
+          : isAftermath
+            ? 1.01 + Math.max(0, Math.sin(elapsed * 1.5)) * 0.1
+            : 1;
+      wakePulseRef.current.scale.set(wakePulse, wakePulse, wakePulse);
+      const wakeMaterial = wakePulseRef.current.material as THREE.MeshBasicMaterial;
+      wakeMaterial.opacity = isReceiving ? 0.2 : isAftermath ? 0.1 : 0.03;
     }
 
     shardRefs.current.forEach((mesh, index) => {
@@ -116,6 +146,22 @@ export function NexusSpiritCompanion({ actor, strikecellPositions }: NexusSpirit
 
   return (
     <group>
+      {(actor.cue?.kind === "bind" ||
+        actor.cue?.kind === "recenter" ||
+        actor.cue?.kind === "transit" ||
+        receiveState !== "idle") && anchorPosition ? (
+        <group position={anchorPosition}>
+          <mesh ref={anchorPulseRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.84, 0]}>
+            <ringGeometry args={[1.88, 2.22, 56]} />
+            <meshBasicMaterial color={actor.accentColor} transparent opacity={0.06} />
+          </mesh>
+          <mesh ref={wakePulseRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.84, 0]}>
+            <ringGeometry args={[2.26, 2.56, 64]} />
+            <meshBasicMaterial color={actor.accentColor} transparent opacity={0.03} />
+          </mesh>
+        </group>
+      ) : null}
+
       {affinityRings.map((entry) => (
         <group key={entry.stationId} position={entry.position ?? [0, 0, 0]}>
           <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.86, 0]}>
@@ -123,7 +169,11 @@ export function NexusSpiritCompanion({ actor, strikecellPositions }: NexusSpirit
             <meshBasicMaterial
               color={actor.accentColor}
               transparent
-              opacity={0.08 + entry.strength * 0.22}
+              opacity={
+                0.08 +
+                entry.strength * 0.22 +
+                (receiveState === "receiving" ? 0.12 : receiveState === "aftermath" ? 0.06 : 0)
+              }
               depthWrite={false}
             />
           </mesh>
@@ -133,7 +183,11 @@ export function NexusSpiritCompanion({ actor, strikecellPositions }: NexusSpirit
               <meshBasicMaterial
                 color={actor.accentColor}
                 transparent
-                opacity={0.14 + entry.strength * 0.22}
+                opacity={
+                  0.14 +
+                  entry.strength * 0.22 +
+                  (receiveState === "receiving" ? 0.1 : receiveState === "aftermath" ? 0.05 : 0)
+                }
                 depthWrite={false}
               />
             </mesh>
@@ -149,7 +203,11 @@ export function NexusSpiritCompanion({ actor, strikecellPositions }: NexusSpirit
           ]}
           color={tetherColor}
           transparent
-          opacity={0.24 + actor.focusBeam * 0.22}
+          opacity={
+            0.24 +
+            actor.focusBeam * 0.22 +
+            (receiveState === "receiving" ? 0.08 : receiveState === "aftermath" ? 0.04 : 0)
+          }
           lineWidth={1.2}
         />
       ) : null}
@@ -172,7 +230,7 @@ export function NexusSpiritCompanion({ actor, strikecellPositions }: NexusSpirit
 
       <group ref={groupRef}>
         <mesh>
-          {contourGeometry(actor.contour)}
+          {renderSpiritContourGeometry(actor.contour, "companion")}
           <meshStandardMaterial
             color={accent}
             emissive={accent}

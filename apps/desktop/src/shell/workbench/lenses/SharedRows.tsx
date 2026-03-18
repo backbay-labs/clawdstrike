@@ -275,3 +275,64 @@ export function EmptyState({ text }: { text: string }) {
     </div>
   );
 }
+
+export function LensRegistrySection({
+  title,
+  preview,
+  promoted,
+  expanded,
+  onToggle,
+  children,
+}: {
+  title: string;
+  preview: string;
+  promoted: boolean;
+  expanded: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className="mx-[8px] my-[2px] overflow-hidden rounded-[7px]"
+      style={{
+        border: promoted
+          ? "1px solid rgba(213,173,87,0.10)"
+          : "1px solid transparent",
+        background: promoted
+          ? "rgba(213,173,87,0.028)"
+          : "transparent",
+      }}
+    >
+      <button
+        type="button"
+        className="flex w-full items-center justify-between px-[10px] py-[5px] text-left"
+        onClick={onToggle}
+      >
+        <span
+          className="font-mono text-[10px] uppercase tracking-[0.12em]"
+          style={{
+            color: promoted
+              ? "rgba(213,173,87,0.72)"
+              : "rgba(182,183,193,0.38)",
+          }}
+        >
+          {title}
+        </span>
+        <span
+          className="font-mono text-[10px]"
+          style={{ color: promoted ? "rgba(213,173,87,0.74)" : "rgba(182,183,193,0.3)" }}
+        >
+          {expanded ? "−" : "+"}
+        </span>
+      </button>
+
+      {!expanded && (
+        <div className="px-[10px] pb-[7px] text-[12px] text-[rgba(182,183,193,0.36)]">
+          {preview}
+        </div>
+      )}
+
+      {expanded && <div className="pb-[4px]">{children}</div>}
+    </div>
+  );
+}

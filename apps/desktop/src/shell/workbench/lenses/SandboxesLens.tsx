@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { LensProps } from "./SharedRows";
-import { ActionRow, EmptyState } from "./SharedRows";
+import { ActionRow, EmptyState, LensRegistrySection } from "./SharedRows";
 import { TerminalIcon, TemplateIcon, PlusIcon } from "./LensIcons";
 import type { LensSectionDirective } from "../anticipation/types";
 
@@ -109,11 +109,10 @@ export function SandboxesLens({
       {descriptors.map((section) => {
         const expanded = manualExpanded[section.id] ?? section.defaultExpanded;
         return (
-          <SandboxesRegistrySection
+          <LensRegistrySection
             key={section.id}
             title={section.title}
             preview={section.preview}
-            reason={section.promotedReason}
             promoted={promoted.has(section.id)}
             expanded={expanded}
             onToggle={() => {
@@ -124,71 +123,9 @@ export function SandboxesLens({
             }}
           >
             {section.render()}
-          </SandboxesRegistrySection>
+          </LensRegistrySection>
         );
       })}
-    </div>
-  );
-}
-
-function SandboxesRegistrySection({
-  title,
-  preview,
-  reason,
-  promoted,
-  expanded,
-  onToggle,
-  children,
-}: {
-  title: string;
-  preview: string;
-  reason?: string;
-  promoted: boolean;
-  expanded: boolean;
-  onToggle: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <div
-      className="mx-[8px] my-1 overflow-hidden rounded-[8px]"
-      style={{
-        border: promoted
-          ? "1px solid rgba(213,173,87,0.18)"
-          : "1px solid rgba(213,173,87,0.06)",
-        background: promoted
-          ? "rgba(213,173,87,0.045)"
-          : "rgba(255,255,255,0.01)",
-      }}
-    >
-      <button
-        type="button"
-        className="flex w-full items-center justify-between px-[10px] py-[6px] text-left"
-        onClick={onToggle}
-      >
-        <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-[rgba(182,183,193,0.4)]">
-          {title}
-        </span>
-        <span
-          className="font-mono text-[10px]"
-          style={{ color: promoted ? "rgba(213,173,87,0.8)" : "rgba(182,183,193,0.35)" }}
-        >
-          {expanded ? "−" : "+"}
-        </span>
-      </button>
-
-      {reason && (
-        <div className="px-[10px] pb-[4px] font-mono text-[10px] text-[rgba(213,173,87,0.72)]">
-          {reason}
-        </div>
-      )}
-
-      {!expanded && (
-        <div className="px-[10px] pb-[8px] text-[12px] text-[rgba(182,183,193,0.42)]">
-          {preview}
-        </div>
-      )}
-
-      {expanded && <div className="pb-[6px]">{children}</div>}
     </div>
   );
 }

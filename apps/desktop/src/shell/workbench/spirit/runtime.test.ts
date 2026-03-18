@@ -11,7 +11,7 @@ describe("normalizeHuntSpiritState", () => {
   it("hydrates a bound spirit with defaults", () => {
     const spirit = normalizeHuntSpiritState({
       kind: "forge",
-      bindSource: "quick-bind",
+      bindSource: "quick-configure",
       anchorArtifactIds: ["art_1", "art_1", ""],
     });
 
@@ -34,7 +34,7 @@ describe("deriveHuntSpiritRuntimeState", () => {
   it("promotes attach mode into an absorb stance", () => {
     const spirit = createHuntSpiritState({
       kind: "forge",
-      bindSource: "quick-bind",
+      bindSource: "quick-configure",
       bindReason: "Run-heavy and file-led.",
       confidenceScore: 82,
     });

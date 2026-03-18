@@ -7,7 +7,7 @@
  * - Focused pane has a subtle gold top border and receives keyboard shortcuts.
  */
 import { useCallback, useRef, useState } from "react";
-import { useWorkbench, useWorkbenchDispatch } from "./WorkbenchStateProvider";
+import { useWorkbench } from "./WorkbenchStateProvider";
 import { TabBar } from "./TabBar";
 import { TabContentRenderer } from "./TabContentRenderer";
 
@@ -15,7 +15,6 @@ const MIN_PANE_WIDTH_PX = 200;
 
 export function SplitPaneContainer() {
   const { state } = useWorkbench();
-  const dispatch = useWorkbenchDispatch();
   const { tabGroups } = state;
 
   const [focusedGroupId, setFocusedGroupId] = useState<string>(
@@ -57,7 +56,6 @@ export function SplitPaneContainer() {
       const onMove = (me: PointerEvent) => {
         const dx = me.clientX - startX;
         const newLeft = Math.max(MIN_PANE_WIDTH_PX, leftWidth + dx);
-        const newRight = Math.max(MIN_PANE_WIDTH_PX, rightWidth - dx);
 
         // Clamp so neither side goes below min
         const clampedLeft = Math.min(newLeft, leftWidth + rightWidth - MIN_PANE_WIDTH_PX);

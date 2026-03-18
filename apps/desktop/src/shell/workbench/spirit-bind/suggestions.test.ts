@@ -35,7 +35,7 @@ describe("spirit bind suggestions", () => {
     };
     const context = buildContext(forgeHunt, store);
     const draft: SpiritBindDraft = {
-      mode: "quick-bind",
+      mode: "quick-configure",
       thesis: "",
       selectedAnchorArtifactIds: [],
       manualKind: null,

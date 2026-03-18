@@ -12,6 +12,7 @@ import type {
   SemanticAssignmentIndex,
   SemanticAttachment,
 } from "./huntTypes";
+import type { HuntSpiritState } from "./spirit";
 import {
   createHuntId,
   createRunId,
@@ -20,12 +21,16 @@ import {
   HUNT_COLORS,
   HUNT_ICONS,
 } from "./huntTypes";
+import { createDefaultHuntSpiritState, normalizeHuntSpiritState } from "./spirit";
 
 const MAX_RECENT = 8;
 
 export type HuntAction =
-  | { type: "HUNT_CREATE"; payload: { title: string; color?: string; icon?: string } }
+  | { type: "HUNT_CREATE"; payload: { title: string; color?: string; icon?: string; currentShell?: string | null; currentLens?: string | null } }
   | { type: "HUNT_UPDATE"; payload: { id: string; changes: Partial<Pick<Hunt, "title" | "status" | "color" | "icon">> } }
+  | { type: "HUNT_CONFIGURE_SPIRIT"; payload: { huntId: string; spirit: HuntSpiritState } }
+  | { type: "HUNT_RECONFIGURE_SPIRIT"; payload: { huntId: string; spirit: HuntSpiritState } }
+  | { type: "HUNT_PIN_SPIRIT"; payload: { huntId: string; isPinned: boolean } }
   | { type: "HUNT_DELETE"; payload: { id: string } }
   | { type: "HUNT_SET_ACTIVE"; payload: { id: string | null } }
   | { type: "HUNT_ADD_ARTIFACT"; payload: { huntId: string; artifact: Omit<Artifact, "createdAt"> & { id?: string } } }
@@ -104,11 +109,32 @@ function findArtifactSemantic(
   return null;
 }
 
+function applySpiritUpdate(
+  hunt: Hunt,
+  nextSpirit: HuntSpiritState,
+  mode: "configure" | "reconfigure",
+): HuntSpiritState {
+  const normalized = normalizeHuntSpiritState(nextSpirit);
+  if (!normalized) {
+    return hunt.spirit ?? nextSpirit;
+  }
+  if (mode === "configure") {
+    return normalized;
+  }
+  return {
+    ...normalized,
+    boundAt: hunt.spirit?.boundAt ?? normalized.boundAt,
+    reboundAt: Date.now(),
+  };
+}
+
 export function huntReducer(state: HuntStore, action: HuntAction): HuntStore {
   switch (action.type) {
     case "HUNT_CREATE": {
       const id = createHuntId();
       const huntCount = Object.keys(state.hunts).length;
+      const color = action.payload.color ?? HUNT_COLORS[huntCount % HUNT_COLORS.length];
+      const icon = action.payload.icon ?? HUNT_ICONS[huntCount % HUNT_ICONS.length];
       const hunt: Hunt = {
         id,
         title: action.payload.title,
@@ -116,9 +142,15 @@ export function huntReducer(state: HuntStore, action: HuntAction): HuntStore {
         artifactIds: [],
         runIds: [],
         caseId: null,
-        color: action.payload.color ?? HUNT_COLORS[huntCount % HUNT_COLORS.length],
-        icon: action.payload.icon ?? HUNT_ICONS[huntCount % HUNT_ICONS.length],
-        spirit: null,
+        color,
+        icon,
+        spirit: createDefaultHuntSpiritState({
+          title: action.payload.title,
+          icon,
+          currentShell: action.payload.currentShell ?? null,
+          currentLens: action.payload.currentLens ?? null,
+          fallbackIndex: huntCount,
+        }),
         semanticAssignments: {},
       };
       return {
@@ -128,6 +160,54 @@ export function huntReducer(state: HuntStore, action: HuntAction): HuntStore {
           ...state.dock,
           activeHuntId: id,
           recentHuntIds: addToRecent(state.dock.recentHuntIds, id),
+        },
+      };
+    }
+
+    case "HUNT_CONFIGURE_SPIRIT": {
+      const hunt = state.hunts[action.payload.huntId];
+      if (!hunt) return state;
+      return {
+        ...state,
+        hunts: {
+          ...state.hunts,
+          [hunt.id]: {
+            ...hunt,
+            spirit: applySpiritUpdate(hunt, action.payload.spirit, "configure"),
+          },
+        },
+      };
+    }
+
+    case "HUNT_RECONFIGURE_SPIRIT": {
+      const hunt = state.hunts[action.payload.huntId];
+      if (!hunt) return state;
+      return {
+        ...state,
+        hunts: {
+          ...state.hunts,
+          [hunt.id]: {
+            ...hunt,
+            spirit: applySpiritUpdate(hunt, action.payload.spirit, "reconfigure"),
+          },
+        },
+      };
+    }
+
+    case "HUNT_PIN_SPIRIT": {
+      const hunt = state.hunts[action.payload.huntId];
+      if (!hunt || !hunt.spirit) return state;
+      return {
+        ...state,
+        hunts: {
+          ...state.hunts,
+          [hunt.id]: {
+            ...hunt,
+            spirit: {
+              ...hunt.spirit,
+              isPinned: action.payload.isPinned,
+            },
+          },
         },
       };
     }

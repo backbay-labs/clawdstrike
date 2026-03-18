@@ -16,6 +16,7 @@ import {
   selectActiveHuntSpiritSignalSnapshot,
 } from "@/shell/workbench/spirit";
 import { useWorkbench } from "@/shell/workbench/WorkbenchStateProvider";
+import { deriveHuntObservatorySceneState, type HuntStationId } from "@/features/hunt-observatory";
 import { NexusAppRail } from "./components/NexusAppRail";
 import { NexusCanvas } from "./components/NexusCanvas";
 import { NexusControlStrip } from "./components/NexusControlStrip";
@@ -40,6 +41,12 @@ import {
   type NexusSpiritCueEvent,
 } from "./scene/spirits/runtime";
 import {
+  buildNexusAtlasRead,
+  NEXUS_ATLAS_GROUP_ORDER,
+  getNexusStationLabel,
+  resolveNexusObservatoryStationId,
+} from "./observatory";
+import {
   type NexusContextMenuState,
   NexusStateProvider,
   useEscClosePriority,
@@ -49,26 +56,7 @@ import type { NexusLayoutMode, NexusOperationMode, Strikecell, StrikecellDomainI
 
 const NEXUS_FOCUS_STORAGE_KEY = "sdr:cyber-nexus:lastFocus";
 const NEXUS_HERO_DISMISSED_KEY = "sdr:cyber-nexus:heroDismissed";
-const SEARCH_GROUP_ORDER = ["core", "operations", "intel"] as const;
-
-const SEARCH_GROUP_LABELS: Record<(typeof SEARCH_GROUP_ORDER)[number], string> = {
-  core: "Core Systems",
-  operations: "Operations Fabric",
-  intel: "Intelligence Exchange",
-};
-
-const SEARCH_GROUP_BY_STRIKECELL: Record<StrikecellDomainId, (typeof SEARCH_GROUP_ORDER)[number]> =
-  {
-    "security-overview": "core",
-    "threat-radar": "core",
-    "attack-graph": "core",
-    "network-map": "core",
-    "forensics-river": "core",
-    workflows: "operations",
-    events: "operations",
-    policies: "operations",
-    marketplace: "intel",
-  };
+const SEARCH_GROUP_ORDER = NEXUS_ATLAS_GROUP_ORDER;
 
 function statusChipClass(status: Strikecell["status"]) {
   switch (status) {
@@ -82,6 +70,75 @@ function statusChipClass(status: Strikecell["status"]) {
       return "text-sdr-text-muted";
   }
 }
+
+const ATLAS_RAIL_STRIKECELLS: Strikecell[] = [
+  {
+    id: "security-overview",
+    name: "Horizon",
+    routeId: "nexus/scene",
+    description: "",
+    status: "healthy",
+    activityCount: 0,
+    nodeCount: 0,
+    nodes: [],
+    tags: [],
+  },
+  {
+    id: "attack-graph",
+    name: "Subjects",
+    routeId: "nexus/scene",
+    description: "",
+    status: "healthy",
+    activityCount: 0,
+    nodeCount: 0,
+    nodes: [],
+    tags: [],
+  },
+  {
+    id: "network-map",
+    name: "Operations",
+    routeId: "nexus/scene",
+    description: "",
+    status: "healthy",
+    activityCount: 0,
+    nodeCount: 0,
+    nodes: [],
+    tags: [],
+  },
+  {
+    id: "forensics-river",
+    name: "Evidence",
+    routeId: "nexus/scene",
+    description: "",
+    status: "healthy",
+    activityCount: 0,
+    nodeCount: 0,
+    nodes: [],
+    tags: [],
+  },
+  {
+    id: "policies",
+    name: "Judgment",
+    routeId: "nexus/scene",
+    description: "",
+    status: "healthy",
+    activityCount: 0,
+    nodeCount: 0,
+    nodes: [],
+    tags: [],
+  },
+  {
+    id: "threat-radar",
+    name: "Watchfield",
+    routeId: "nexus/scene",
+    description: "",
+    status: "healthy",
+    activityCount: 0,
+    nodeCount: 0,
+    nodes: [],
+    tags: [],
+  },
+];
 
 function useCyberNexusExternalData() {
   const { status } = useConnection();
@@ -196,6 +253,7 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
       // Ignore
     }
   }, []);
+  const heroOverlayVisible = heroVisible && location.pathname !== "/nexus/scene";
 
   useEffect(() => {
     const listener = (event: Event) => {
@@ -260,6 +318,7 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
   }, [activeSpiritSnapshot, state.selection.activeStrikecellId]);
   const [activeSpiritCue, setActiveSpiritCue] = useState<NexusSpiritCueEvent | null>(null);
   const previousSpiritSnapshotRef = useRef<typeof activeSpiritSnapshot>(null);
+  const previousSpiritRuntimeRef = useRef<typeof activeSpiritRuntime>(null);
   const previousSpiritStrikecellRef = useRef<StrikecellDomainId | null>(null);
   const previousCameraResetRef = useRef(state.cameraResetToken);
   const activateStrikecell = useCallback(
@@ -296,19 +355,19 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
   }, [searchQuery, strikecells]);
 
   const groupedStrikecells = useMemo(() => {
-    const buckets: Record<(typeof SEARCH_GROUP_ORDER)[number], Strikecell[]> = {
-      core: [],
-      operations: [],
-      intel: [],
-    };
+    const buckets = Object.fromEntries(
+      SEARCH_GROUP_ORDER.map((stationId) => [stationId, [] as Strikecell[]]),
+    ) as Record<(typeof SEARCH_GROUP_ORDER)[number], Strikecell[]>;
 
     filteredStrikecells.forEach((strikecell) => {
-      buckets[SEARCH_GROUP_BY_STRIKECELL[strikecell.id]].push(strikecell);
+      const stationId = resolveNexusObservatoryStationId(strikecell.id);
+      if (!stationId) return;
+      buckets[stationId].push(strikecell);
     });
 
     return SEARCH_GROUP_ORDER.map((groupId) => ({
       id: groupId,
-      label: SEARCH_GROUP_LABELS[groupId],
+      label: getNexusStationLabel(groupId),
       items: buckets[groupId],
     })).filter((group) => group.items.length > 0);
   }, [filteredStrikecells]);
@@ -320,6 +379,7 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
   useEffect(() => {
     const cue = detectNexusSpiritCue({
       runtime: activeSpiritRuntime,
+      previousRuntime: previousSpiritRuntimeRef.current,
       snapshot: activeSpiritSnapshot,
       previousSnapshot: previousSpiritSnapshotRef.current,
       activeStrikecellId: state.selection.activeStrikecellId,
@@ -329,6 +389,7 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
       nowMs: Date.now(),
     });
     if (cue) setActiveSpiritCue(cue);
+    previousSpiritRuntimeRef.current = activeSpiritRuntime;
     previousSpiritSnapshotRef.current = activeSpiritSnapshot;
     previousSpiritStrikecellRef.current = state.selection.activeStrikecellId;
     previousCameraResetRef.current = state.cameraResetToken;
@@ -379,7 +440,7 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
     const params = new URLSearchParams(location.search);
     if (params.get("focus") === state.selection.activeStrikecellId) return;
     params.set("focus", state.selection.activeStrikecellId);
-    navigate({ pathname: "/nexus", search: `?${params.toString()}` }, { replace: true });
+    navigate({ pathname: location.pathname, search: `?${params.toString()}` }, { replace: true });
   }, [location.pathname, location.search, navigate, state.selection.activeStrikecellId]);
 
   useEffect(() => {
@@ -389,7 +450,7 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
         return;
       }
 
-      if (heroVisible) return;
+      if (heroOverlayVisible) return;
 
       const isMeta = event.metaKey || event.ctrlKey;
 
@@ -479,7 +540,7 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
     setLayoutMode,
     setSearchOpen,
     setViewMode,
-    heroVisible,
+    heroOverlayVisible,
     state.carouselFocused,
     state.searchOpen,
     state.hud.viewMode,
@@ -558,6 +619,21 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
     [activateStrikecell],
   );
 
+  const handleSelectObservatoryStation = useCallback(
+    (stationId: HuntStationId) => {
+      const candidates = strikecells.filter(
+        (strikecell) => resolveNexusObservatoryStationId(strikecell.id) === stationId,
+      );
+      if (candidates.length === 0) return;
+      const next =
+        candidates.find((strikecell) => strikecell.id === state.selection.activeStrikecellId)
+        ?? [...candidates].sort((left, right) => right.activityCount - left.activityCount)[0];
+      if (!next) return;
+      activateStrikecell(next.id);
+    },
+    [activateStrikecell, state.selection.activeStrikecellId, strikecells],
+  );
+
   const handleContextAction = useCallback(
     (action: "focus" | "expand" | "pin-left" | "pin-right" | "unpin" | "open" | "clear") => {
       const menu = state.contextMenu;
@@ -613,6 +689,35 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
   );
 
   const empty = strikecells.length === 0;
+  const atlasRead = useMemo(
+    () =>
+      activeSpiritSnapshot
+        ? deriveHuntObservatorySceneState(activeSpiritSnapshot, {
+            mode: "atlas",
+            activeStationId: resolveNexusObservatoryStationId(
+              state.selection.activeStrikecellId,
+            ),
+          })
+        : null,
+    [activeSpiritSnapshot, state.selection.activeStrikecellId],
+  );
+  const observatorySceneState = useMemo(
+    () =>
+      buildNexusAtlasRead({
+        sceneState: atlasRead,
+        activeStrikecell,
+        activeSpiritActor,
+      }),
+    [activeSpiritActor, activeStrikecell, atlasRead],
+  );
+  const activeRailStrikecellId = useMemo(() => {
+    const activeStationId = resolveNexusObservatoryStationId(state.selection.activeStrikecellId);
+    return (
+      ATLAS_RAIL_STRIKECELLS.find(
+        (strikecell) => resolveNexusObservatoryStationId(strikecell.id) === activeStationId,
+      )?.id ?? null
+    );
+  }, [state.selection.activeStrikecellId]);
 
   return (
     <div className="origin-shell-bg relative flex h-full flex-col overflow-hidden">
@@ -620,7 +725,10 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
         connectionStatus={connectionStatus}
         layoutMode={state.layoutMode}
         activeStrikecell={activeStrikecell}
-        brandSubline="Huntronomer"
+        brandSubline="Observatory Atlas"
+        atlasLabel={observatorySceneState.label}
+        atlasCode={observatorySceneState.code}
+        atlasReason={observatorySceneState.reason}
         commandQuery={searchQuery}
         layoutDropdownOpen={state.hud.layoutDropdownOpen}
         onOpenSearch={() => setSearchOpen(true)}
@@ -654,6 +762,7 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
             fieldVisible={state.hud.fieldVisible}
             cameraResetToken={state.cameraResetToken}
             activeSpiritActor={activeSpiritActor}
+            observatorySceneState={atlasRead}
             onSelectStrikecell={(id) => activateStrikecell(id)}
             onToggleExpandedStrikecell={toggleExpanded}
             onToggleNodeSelection={toggleNodeSelection}
@@ -695,9 +804,15 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
         ) : null}
 
         <NexusAppRail
-          strikecells={strikecells}
-          openAppId={state.drawerAppId}
-          onToggleApp={(id) => setDrawerApp(state.drawerAppId === id ? null : id)}
+          strikecells={ATLAS_RAIL_STRIKECELLS}
+          openAppId={activeRailStrikecellId}
+          onToggleApp={(id) => {
+            const stationId = resolveNexusObservatoryStationId(id);
+            if (!stationId) return;
+            handleSelectObservatoryStation(stationId);
+          }}
+          mode="station"
+          title="Atlas"
         />
 
         <NexusOverlayDrawer
@@ -722,7 +837,7 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
                       autoFocus
                       value={searchQuery}
                       onChange={(event) => setSearchQuery(event.target.value)}
-                      placeholder="Search strikecells..."
+                      placeholder="Search atlas stations..."
                       className="premium-input w-full px-3 py-2 text-sm text-sdr-text-primary placeholder:text-sdr-text-muted outline-none"
                     />
                     <span className="premium-chip px-2 py-1 text-[9px] font-mono uppercase tracking-[0.12em] text-sdr-text-secondary">
@@ -731,7 +846,7 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
                   </div>
                   <div className="mt-2 flex items-center gap-2">
                     <span className="origin-label text-[9px] tracking-[0.16em] text-[color:rgba(213,173,87,0.86)]">
-                      Command Lens
+                      Atlas Lens
                     </span>
                     <span className="premium-chip px-1.5 py-0.5 text-[8px] font-mono uppercase tracking-[0.12em] text-sdr-text-secondary">
                       Mode: {operationModeDescriptor.label}
@@ -842,7 +957,7 @@ function CyberNexusInner({ strikecells }: { strikecells: Strikecell[] }) {
         ) : null}
       </div>
 
-      <NexusHeroOverlay visible={heroVisible} onDismiss={dismissHero} />
+      <NexusHeroOverlay visible={heroOverlayVisible} onDismiss={dismissHero} />
     </div>
   );
 }

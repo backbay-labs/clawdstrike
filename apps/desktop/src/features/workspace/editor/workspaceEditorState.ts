@@ -229,6 +229,8 @@ export function completeWorkspaceEditorBufferSave(
     return state;
   }
 
+  const nextDraftContents = existing.draftContents;
+
   return {
     ...state,
     buffers: {
@@ -238,7 +240,7 @@ export function completeWorkspaceEditorBufferSave(
         status: "ready",
         loaded: true,
         savedContents: payload.contents,
-        draftContents: payload.contents,
+        draftContents: nextDraftContents,
         modifiedAt: payload.modifiedAt,
         errorMessage: undefined,
       },

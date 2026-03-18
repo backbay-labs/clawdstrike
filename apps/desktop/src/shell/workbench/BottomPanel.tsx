@@ -5,9 +5,10 @@
  * State is driven by BottomPanelState via useBottomPanel() / useWorkbenchDispatch().
  */
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import type { BottomPanelTabId } from "./workbenchState";
 import { BOTTOM_PANEL_REGISTRY } from "./bottomPanelRegistry";
-import { useBottomPanel, useWorkbenchDispatch } from "./WorkbenchStateProvider";
+import { useActiveTab, useBottomPanel, useWorkbenchDispatch } from "./WorkbenchStateProvider";
 import { useAnticipationContext, useSidebarDirector } from "./anticipation";
 
 const TAB_IDS: BottomPanelTabId[] = ["tape", "terminal", "receipts", "tasks", "replay", "diff"];
@@ -16,11 +17,16 @@ const TAB_STRIP_HEIGHT = 28;
 const RESIZE_HANDLE_HEIGHT = 4;
 
 export function BottomPanel() {
+  const location = useLocation();
   const { activeTab, collapsed, height } = useBottomPanel();
   const dispatch = useWorkbenchDispatch();
+  const activeWorkbenchTab = useActiveTab();
   const anticipation = useAnticipationContext();
   const sidebarDirector = useSidebarDirector();
   const promotion = sidebarDirector.adjacentSurfacePromotion;
+  const inObservatoryRoute =
+    location.pathname === "/nexus" || location.pathname === "/nexus/scene";
+  const suppressPromotion = activeWorkbenchTab?.kind === "spirit-chamber" || inObservatoryRoute;
 
   const [isDragging, setIsDragging] = useState(false);
   const dragStartY = useRef(0);
@@ -71,9 +77,11 @@ export function BottomPanel() {
 
   useEffect(() => {
     if (
-      !promotion.bottomPanelTab ||
-      !promotion.shouldOpenBottomPanel ||
-      (!collapsed && activeTab === promotion.bottomPanelTab)
+      suppressPromotion
+      || collapsed
+      || !promotion.bottomPanelTab
+      || !promotion.shouldOpenBottomPanel
+      || activeTab === promotion.bottomPanelTab
     ) {
       return;
     }
@@ -81,18 +89,27 @@ export function BottomPanel() {
     dispatch({ type: "SET_BOTTOM_PANEL_TAB", payload: promotion.bottomPanelTab });
   }, [
     activeTab,
+    activeWorkbenchTab?.kind,
     collapsed,
     dispatch,
+    inObservatoryRoute,
     promotion.bottomPanelTab,
     promotion.shouldOpenBottomPanel,
+    suppressPromotion,
   ]);
 
   const entry = BOTTOM_PANEL_REGISTRY[activeTab];
   const ContentComponent = entry?.component;
   const showReason =
-    Boolean(promotion.bottomPanelTab)
+    !suppressPromotion
+    && !collapsed
+    && Boolean(promotion.bottomPanelTab)
     && Boolean(promotion.reason)
     && (promotion.shouldOpenBottomPanel || activeTab === promotion.bottomPanelTab);
+
+  if (suppressPromotion && collapsed) {
+    return null;
+  }
 
   return (
     <div

@@ -15,9 +15,21 @@ import {
 } from "./workbenchState";
 import type { Hunt, HuntStore, HuntDockState, Artifact } from "./huntTypes";
 import { createInitialHuntStore } from "./huntTypes";
-import { normalizeHuntSpiritState } from "./spirit";
+import { ensureHuntSpiritState } from "./spirit";
 
 const STORAGE_KEY = "huntronomer:workbench:state:v1";
+
+function normalizeSemanticAssignments(
+  value: unknown,
+): Record<string, string[]> {
+  if (!value || typeof value !== "object") return {};
+
+  return Object.fromEntries(
+    Object.entries(value).flatMap(([semantic, artifactIds]) =>
+      Array.isArray(artifactIds) ? [[semantic, artifactIds.filter((id): id is string => typeof id === "string")]] : [],
+    ),
+  );
+}
 
 function loadPersistedState(): Partial<WorkbenchState> | null {
   try {
@@ -50,19 +62,50 @@ function hydrateHuntStore(persistedHuntStore: Partial<HuntStore>): HuntStore {
     Object.entries({
       ...seeded.hunts,
       ...(persistedHuntStore.hunts ?? {}),
-    }).map(([id, hunt]) => [
+    }).map(([id, hunt], index) => [
       id,
       {
         ...hunt,
-        spirit: normalizeHuntSpiritState(hunt.spirit),
+        spirit: ensureHuntSpiritState(hunt.spirit, {
+          title: hunt.title,
+          icon: hunt.icon,
+          fallbackIndex: index,
+        }),
+        semanticAssignments: normalizeSemanticAssignments(hunt.semanticAssignments),
       },
     ]),
   ) as Record<string, Hunt>;
+  const runs = Object.fromEntries(
+    Object.entries({
+      ...seeded.runs,
+      ...(persistedHuntStore.runs ?? {}),
+    }).map(([id, run]) => [
+      id,
+      {
+        ...run,
+        semanticAssignments: normalizeSemanticAssignments(run.semanticAssignments),
+      },
+    ]),
+  ) as HuntStore["runs"];
+  const cases = Object.fromEntries(
+    Object.entries({
+      ...seeded.cases,
+      ...(persistedHuntStore.cases ?? {}),
+    }).map(([id, linkedCase]) => [
+      id,
+      {
+        ...linkedCase,
+        semanticAssignments: normalizeSemanticAssignments(linkedCase.semanticAssignments),
+      },
+    ]),
+  ) as HuntStore["cases"];
 
   return {
     ...seeded,
     ...persistedHuntStore,
     hunts,
+    runs,
+    cases,
     dock: { ...seeded.dock, ...persistedHuntStore.dock },
   };
 }

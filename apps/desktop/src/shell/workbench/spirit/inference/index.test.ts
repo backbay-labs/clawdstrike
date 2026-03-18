@@ -92,12 +92,12 @@ describe("createInferredHuntSpiritState", () => {
     expect(snapshot).not.toBeNull();
 
     const spirit = createInferredHuntSpiritState(snapshot!, {
-      bindSource: "quick-bind",
+      bindSource: "quick-configure",
       thesis: "Trace the mounted payload path.",
     });
 
     expect(spirit.kind).toBe("forge");
-    expect(spirit.bindSource).toBe("quick-bind");
+    expect(spirit.bindSource).toBe("quick-configure");
     expect(spirit.liveMood).toBe("pressured");
     expect(spirit.anchorArtifactIds.length).toBeGreaterThan(0);
     expect(spirit.bindReason).toContain("Biases");

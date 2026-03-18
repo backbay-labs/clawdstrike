@@ -110,7 +110,7 @@ function makeSnapshot(overrides: Partial<HuntSpiritSignalSnapshot> = {}): HuntSp
     suggestedAnchorArtifactIds: ["artifact-1"],
     boundSpirit: createHuntSpiritState({
       kind: "tracker",
-      bindSource: "quick-bind",
+      bindSource: "quick-configure",
       bindReason: "Target-heavy hunt with live threat pressure.",
       confidenceScore: 82,
       boundAt: 1_000,
@@ -200,6 +200,32 @@ describe("detectNexusSpiritCue", () => {
     expect(cue?.kind).toBe("recenter");
     expect(cue?.fromStrikecellId).toBe("security-overview");
   });
+
+  it("does not keep re-emitting focus while the stance is already focused", () => {
+    const snapshot = makeSnapshot();
+    const runtime = deriveHuntSpiritRuntimeState(snapshot.boundSpirit, {
+      currentShell: snapshot.currentShell,
+      currentLens: snapshot.currentLens,
+      likelyIntent: "watch",
+      confidenceScore: snapshot.confidenceScore,
+      activeStationId: "security-overview",
+      isActive: true,
+    });
+
+    const cue = detectNexusSpiritCue({
+      runtime,
+      previousRuntime: runtime,
+      snapshot,
+      previousSnapshot: snapshot,
+      activeStrikecellId: "security-overview",
+      previousActiveStrikecellId: "security-overview",
+      recenterToken: 0,
+      previousRecenterToken: 0,
+      nowMs: 10_000,
+    });
+
+    expect(cue).toBeNull();
+  });
 });
 
 describe("deriveNexusSpiritSceneActor", () => {
@@ -223,9 +249,74 @@ describe("deriveNexusSpiritSceneActor", () => {
     });
 
     expect(actor).not.toBeNull();
-    expect(actor?.anchorStrikecellId).toBe("security-overview");
-    expect(actor?.likelyStationId).toBe("security-overview");
-    expect(actor?.presenceStrength).toBeGreaterThan(0.35);
-    expect(actor?.stationAffinities["threat-radar"]).toBeGreaterThan(0.2);
+    if (!actor) throw new Error("expected scene actor");
+    expect(actor.anchorStrikecellId).toBe("security-overview");
+    expect(actor.likelyStationId).toBe("security-overview");
+    expect(actor.presenceStrength).toBeGreaterThan(0.35);
+    expect(actor.stationAffinities["threat-radar"]).toBeGreaterThan(0.2);
+    expect(actor.observatoryAnchorStationId).toBe("signal");
+    expect(actor.observatoryLikelyStationId).toBe("signal");
+    expect(actor.observatoryStationAffinities).toBeDefined();
+    if (!actor.observatoryStationAffinities) {
+      throw new Error("expected observatory station affinities");
+    }
+    expect(actor.observatoryStationAffinities.watch).toBeGreaterThan(0.2);
+    expect(actor.observatoryActor).toBeDefined();
+    if (!actor.observatoryActor) throw new Error("expected observatory actor");
+    expect(actor.observatoryActor.type).toBe("spirit-field");
+    expect(actor.observatoryActor.stance).toBe("focus");
+    expect(actor.observatoryActor.cueKind).toBeNull();
+  });
+
+  it("collapses nexus strikecell emphasis into observatory stations", () => {
+    const snapshot = makeSnapshot({
+      likelyIntent: "attach-evidence",
+      artifactCounts: {
+        receipt: 2,
+        file: 1,
+        entity: 0,
+      },
+      semanticCounts: {
+        evidence: 1,
+      },
+    });
+    const runtime = deriveHuntSpiritRuntimeState(snapshot.boundSpirit, {
+      currentShell: snapshot.currentShell,
+      currentLens: "notes",
+      likelyIntent: snapshot.likelyIntent,
+      confidenceScore: snapshot.confidenceScore,
+      activeStationId: "forensics-river",
+      isActive: true,
+    });
+
+    const actor = deriveNexusSpiritSceneActor({
+      runtime,
+      snapshot,
+      strikecells: STRIKECELLS,
+      activeStrikecellId: "forensics-river",
+      cue: {
+        kind: "transit",
+        reason: "Moving toward evidence flow.",
+        durationMs: 2_600,
+        startedAt: 4_000,
+        expiresAt: 6_600,
+        fromStrikecellId: "security-overview",
+        toStrikecellId: "forensics-river",
+      },
+    });
+
+    expect(actor).not.toBeNull();
+    if (!actor) throw new Error("expected scene actor");
+    expect(actor.observatoryAnchorStationId).toBe("receipts");
+    expect(actor.observatoryLikelyStationId).toBe("receipts");
+    expect(actor.observatoryStationAffinities).toBeDefined();
+    if (!actor.observatoryStationAffinities) {
+      throw new Error("expected observatory station affinities");
+    }
+    expect(actor.observatoryStationAffinities.receipts).toBeGreaterThan(0.4);
+    expect(actor.observatoryActor).toBeDefined();
+    if (!actor.observatoryActor) throw new Error("expected observatory actor");
+    expect(actor.observatoryActor.cueKind).toBe("transit");
+    expect(actor.observatoryActor.likelyStationId).toBe("receipts");
   });
 });

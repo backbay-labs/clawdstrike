@@ -46,4 +46,16 @@ describe("selectActiveHuntSpiritSignalSnapshot", () => {
     expect(snapshot?.semanticCounts.cite).toBe(1);
     expect(snapshot?.confidenceScore).toBe(91);
   });
+
+  it("tolerates missing semantic assignment maps on hydrated legacy records", () => {
+    const state = createInitialWorkbenchState();
+    state.huntStore.hunts.hunt_demo_1.semanticAssignments = null as never;
+    state.huntStore.runs.run_demo_1.semanticAssignments = null as never;
+
+    const snapshot = selectActiveHuntSpiritSignalSnapshot(state);
+
+    expect(snapshot).not.toBeNull();
+    expect(snapshot?.huntId).toBe("hunt_demo_1");
+    expect(snapshot?.semanticCounts.mount).toBeUndefined();
+  });
 });

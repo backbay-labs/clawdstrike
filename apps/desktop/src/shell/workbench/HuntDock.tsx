@@ -18,20 +18,24 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useWorkbenchDispatch } from "./WorkbenchStateProvider";
-import { useHuntStore, useActiveHunt, useHuntDock } from "./WorkbenchStateProvider";
+import { useHuntStore, useActiveHunt, useHuntDock, useLens, useShell } from "./WorkbenchStateProvider";
 import type { Hunt } from "./huntTypes";
 import { groupArtifactsByKind, formatArtifactBreakdown } from "./huntTypes";
+import { buildHuntObservatorySeamSummary } from "./observatorySeam";
 import { useDropTarget, useDragState } from "./DragDropContext";
 import { useHoverAnticipation, ProximalAffordance, DRAG_ROLE_MAP, useSidebarWakeAnchor } from "./anticipation";
 import type { DropRole } from "./anticipation";
+import { getHuntSpiritMeta } from "./spirit";
 import {
-  SpiritActionButton,
   SpiritGlyph,
-  getSpiritActionLabel,
-  getSpiritBiasLine,
-  getSpiritDetailLine,
-  getSpiritSecondaryActionLabel,
+  requestSpiritChamber,
 } from "./spirit/components";
+import {
+  getSpiritReleaseCueTimestamp,
+  SPIRIT_SURFACE_AFTERMATH_MS,
+  SPIRIT_SURFACE_RECEIVE_MS,
+  type SpiritSurfaceReceiveState,
+} from "./spirit-ritual/release";
 
 const PILL_SIZE = 32;
 const HOVER_DELAY_MS = 100;
@@ -80,6 +84,14 @@ const SEMANTIC_LABELS: Record<string, string> = {
   compare: "Compare",
 };
 
+function formatSpiritSurfaceLabel(value: string): string {
+  return value
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 function HuntPill({
   hunt,
   huntStore,
@@ -98,8 +110,12 @@ function HuntPill({
   const [hovered, setHovered] = useState(false);
   const [dropFlash, setDropFlash] = useState(false);
   const [springExpanded, setSpringExpanded] = useState(false);
+  const [releaseReceiveState, setReleaseReceiveState] = useState<SpiritSurfaceReceiveState>("idle");
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const springTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const receiveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const aftermathTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastReleaseCueRef = useRef<number | null>(null);
   const pillRef = useRef<HTMLButtonElement>(null);
 
   // Drag state — for spring-loaded expansion
@@ -203,10 +219,25 @@ function HuntPill({
   const activeRun = hunt.runIds
     .map((id) => huntStore.runs[id])
     .find((r) => r?.status === "running") ?? null;
-  const spiritBias = getSpiritBiasLine(hunt);
-  const spiritDetail = getSpiritDetailLine(hunt);
-  const spiritPrimaryAction = getSpiritActionLabel(hunt);
-  const spiritSecondaryAction = getSpiritSecondaryActionLabel(hunt);
+  const seamSummary = buildHuntObservatorySeamSummary(hunt, {
+    hunts: { [hunt.id]: hunt },
+    runs: huntStore.runs,
+    artifacts: huntStore.artifacts,
+    cases: {},
+    dock: {
+      activeHuntId: hunt.id,
+      recentHuntIds: [],
+      pinnedHuntIds: [],
+      collapsed: false,
+      bucketSummaryCollapsed: false,
+    },
+  });
+  const spiritMeta = getHuntSpiritMeta(hunt.spirit?.kind);
+  const spiritAccent = spiritMeta?.accentColor ?? hunt.color;
+  const spiritReleaseCueAt = getSpiritReleaseCueTimestamp(hunt.spirit);
+  const isReceivingRelease = releaseReceiveState === "receiving";
+  const isReleaseAftermath = releaseReceiveState === "aftermath";
+  const isReleaseLive = releaseReceiveState !== "idle";
 
   // Semantic drop roles for spring-loaded state
   const dropRoles: DropRole[] = (springExpanded && draggedKind)
@@ -250,8 +281,68 @@ function HuntPill({
       || (hovered && !isDragging && !isActivated)
     );
 
+  useEffect(() => {
+    if (!spiritReleaseCueAt) return undefined;
+    if (lastReleaseCueRef.current === null) {
+      lastReleaseCueRef.current = spiritReleaseCueAt;
+      return undefined;
+    }
+    if (spiritReleaseCueAt <= lastReleaseCueRef.current) return undefined;
+    lastReleaseCueRef.current = spiritReleaseCueAt;
+    setReleaseReceiveState("receiving");
+    if (receiveTimerRef.current) clearTimeout(receiveTimerRef.current);
+    if (aftermathTimerRef.current) clearTimeout(aftermathTimerRef.current);
+    receiveTimerRef.current = setTimeout(() => {
+      setReleaseReceiveState("aftermath");
+      receiveTimerRef.current = null;
+    }, SPIRIT_SURFACE_RECEIVE_MS);
+    aftermathTimerRef.current = setTimeout(() => {
+      setReleaseReceiveState("idle");
+      aftermathTimerRef.current = null;
+    }, SPIRIT_SURFACE_RECEIVE_MS + SPIRIT_SURFACE_AFTERMATH_MS);
+    return () => {
+      if (receiveTimerRef.current) {
+        clearTimeout(receiveTimerRef.current);
+        receiveTimerRef.current = null;
+      }
+      if (aftermathTimerRef.current) {
+        clearTimeout(aftermathTimerRef.current);
+        aftermathTimerRef.current = null;
+      }
+    };
+  }, [spiritReleaseCueAt]);
+
   return (
     <div className="hunt-dock__pill-wrapper" style={{ position: "relative" }}>
+      <div
+        aria-hidden="true"
+        data-testid={isReceivingRelease ? "hunt-dock-spirit-receive" : undefined}
+        style={{
+          position: "absolute",
+          inset: -5,
+          borderRadius: 12,
+          border: `1px solid ${spiritAccent}44`,
+          background: `radial-gradient(circle at 50% 50%, ${spiritAccent}24, transparent 72%)`,
+          opacity: isReceivingRelease ? 0.92 : isReleaseAftermath ? 0.46 : 0,
+          transform: isReceivingRelease ? "scale(1.12)" : isReleaseAftermath ? "scale(1.04)" : "scale(0.9)",
+          transition: "opacity 180ms ease, transform 760ms cubic-bezier(0.18, 0.82, 0.28, 1)",
+          pointerEvents: "none",
+        }}
+      />
+      <div
+        aria-hidden="true"
+        data-testid={isReleaseAftermath ? "hunt-dock-spirit-aftermath" : undefined}
+        style={{
+          position: "absolute",
+          inset: -10,
+          borderRadius: 16,
+          border: `1px solid ${spiritAccent}20`,
+          opacity: isReceivingRelease ? 0.6 : isReleaseAftermath ? 0.34 : 0,
+          transform: isReceivingRelease ? "scale(1.28)" : isReleaseAftermath ? "scale(1.2)" : "scale(0.98)",
+          transition: "opacity 220ms ease-out 50ms, transform 980ms cubic-bezier(0.16, 0.84, 0.24, 1)",
+          pointerEvents: "none",
+        }}
+      />
       {/* Active indicator — 2px left bar */}
       {isActive && (
         <div
@@ -285,6 +376,10 @@ function HuntPill({
                 : "1.5px solid transparent",
           background: isActive
             ? `${hunt.color}18`
+            : isReceivingRelease
+              ? `${spiritAccent}18`
+            : isReleaseAftermath
+              ? `${spiritAccent}12`
             : isDropHighlight
               ? "rgba(213,173,87,0.08)"
               : hovered
@@ -298,6 +393,10 @@ function HuntPill({
           position: "relative",
           boxShadow: isDropHighlight
             ? "0 0 8px rgba(213,173,87,0.15)"
+            : isReceivingRelease
+              ? `0 0 14px ${spiritAccent}32`
+            : isReleaseAftermath
+              ? `0 0 10px ${spiritAccent}18`
             : isCompatibleTarget
               ? "0 0 6px rgba(213,173,87,0.08)"
               : undefined,
@@ -322,7 +421,7 @@ function HuntPill({
         onPointerLeave={handleDropTargetPointerLeave}
       >
         {hunt.spirit ? (
-          <SpiritGlyph hunt={hunt} size={18} glow={isActive || hovered || isDropHighlight} />
+          <SpiritGlyph hunt={hunt} size={18} glow={isActive || hovered || isDropHighlight || isReleaseLive} />
         ) : (
           <HuntPillIcon icon={hunt.icon} color={hunt.color} />
         )}
@@ -351,37 +450,29 @@ function HuntPill({
             <SpiritGlyph hunt={hunt} size={18} glow={Boolean(hunt.spirit)} />
             <div className="font-mono text-[11px] text-[rgba(232,230,222,0.85)]">{hunt.title}</div>
           </div>
-          <div className="mt-1 font-mono text-[10px] text-[rgba(213,173,87,0.72)]">
-            {hunt.spirit ? spiritBias : spiritDetail}
-          </div>
-          <div className="font-mono text-[10px] text-[rgba(182,183,193,0.5)]">
-            {breakdown || `${hunt.artifactIds.length} artifacts`}
-          </div>
-          <div className="flex items-center gap-1.5 font-mono text-[10px]">
-            {activeRun ? (
-              <>
+          {seamSummary.stations.length > 0 ? (
+            <div className="mt-1 flex flex-wrap gap-1">
+              {seamSummary.stations.slice(0, 3).map((station, index) => (
                 <span
-                  className="inline-block h-[5px] w-[5px] rounded-full"
+                  key={station.stationId}
+                  className="rounded-full border px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.08em]"
                   style={{
-                    background: "#3dbf84",
-                    boxShadow: "0 0 4px rgba(61,191,132,0.5)",
+                    borderColor:
+                      index === 0 ? "rgba(213,173,87,0.22)" : "rgba(232,230,222,0.08)",
+                    color:
+                      index === 0 ? "rgba(244,225,177,0.82)" : "rgba(182,183,193,0.56)",
+                    background:
+                      index === 0 ? "rgba(213,173,87,0.08)" : "rgba(232,230,222,0.03)",
                   }}
-                />
-                <span className="text-[rgba(61,191,132,0.7)]">{activeRun.label}</span>
-              </>
-            ) : (
-              <span className="text-[rgba(182,183,193,0.35)]">{hunt.status}</span>
-            )}
-          </div>
-          {!springExpanded && (
-            <div
-              className="mt-1.5 flex items-center gap-2 pt-1.5"
-              style={{ borderTop: "1px solid rgba(213,173,87,0.1)" }}
-            >
-              <SpiritActionButton label={spiritPrimaryAction} disabled />
-              <SpiritActionButton label={spiritSecondaryAction} disabled />
+                >
+                  {station.code} {station.count}
+                </span>
+              ))}
             </div>
-          )}
+          ) : null}
+          <div className="mt-1 font-mono text-[10px] text-[rgba(182,183,193,0.42)]">
+            {(activeRun?.label ?? seamSummary.caseTitle ?? breakdown) || `${hunt.artifactIds.length} artifacts`}
+          </div>
 
           {/* Spring-loaded semantic drop slots — appear after 300ms drag hover */}
           {springExpanded && dropRoles.length > 0 && (
@@ -431,8 +522,10 @@ function HuntPill({
 export function HuntDock() {
   const dispatch = useWorkbenchDispatch();
   const huntStore = useHuntStore();
-  const activeHunt = useActiveHunt();
+  useActiveHunt();
   const dock = useHuntDock();
+  const { lens } = useLens();
+  const shell = useShell();
   const dragState = useDragState();
   const isDragging = dragState.active;
   const [contextMenu, setContextMenu] = useState<{ huntId: string; x: number; y: number } | null>(null);
@@ -451,9 +544,13 @@ export function HuntDock() {
   const handleNewHunt = useCallback(() => {
     dispatch({
       type: "HUNT_CREATE",
-      payload: { title: `Hunt ${Object.keys(huntStore.hunts).length + 1}` },
+      payload: {
+        title: `Hunt ${Object.keys(huntStore.hunts).length + 1}`,
+        currentShell: shell,
+        currentLens: lens,
+      },
     });
-  }, [dispatch, huntStore.hunts]);
+  }, [dispatch, huntStore.hunts, lens, shell]);
 
   const handleSelect = useCallback(
     (huntId: string) => {
@@ -669,6 +766,7 @@ export function HuntDock() {
           </div>
         </>
       )}
+
     </div>
   );
 }

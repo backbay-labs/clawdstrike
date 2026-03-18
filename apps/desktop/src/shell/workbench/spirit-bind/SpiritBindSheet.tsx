@@ -4,10 +4,10 @@ import { HUNT_SPIRIT_KINDS, getHuntSpiritMeta } from "../spirit";
 import { buildSpiritBindPreviewModel } from "./preview";
 import { buildSpiritBindCommit, canBindSpiritDraft, deriveSpiritBindCandidate } from "./suggestions";
 import type { SpiritBindCommit, SpiritBindContext, SpiritBindMode } from "./types";
-import { MAX_ANCHORS, useSpiritBindDraft } from "./useSpiritBindDraft";
+import { createInitialSpiritBindDraft, MAX_ANCHORS, useSpiritBindDraft } from "./useSpiritBindDraft";
 
 const MODE_LABELS: Array<{ id: SpiritBindMode; label: string; caption: string }> = [
-  { id: "quick-bind", label: "Quick Bind", caption: "Infer from the current hunt and move in one click." },
+  { id: "quick-configure", label: "Quick Configure", caption: "Affirm or retune the current hunt posture in one step." },
   { id: "thesis", label: "Thesis", caption: "Author one sentence to fix the hunt posture." },
   { id: "anchor-artifacts", label: "Anchor Artifacts", caption: "Choose up to three artifacts that define the center." },
   { id: "manual", label: "Manual Spirit", caption: "Override the suggestion with a direct spirit choice." },
@@ -38,7 +38,12 @@ export function SpiritBindSheet({
   onDismiss: () => void;
   onSkip: () => void;
 }) {
-  const { draft, setMode, setThesis, toggleAnchor, setManualKind, setPinned } = useSpiritBindDraft();
+  const { draft, setMode, setThesis, toggleAnchor, setManualKind, setPinned } = useSpiritBindDraft(
+    createInitialSpiritBindDraft({
+      thesis: context.hunt.spirit?.thesis,
+      isPinned: context.hunt.spirit?.isPinned,
+    }),
+  );
 
   const candidate = useMemo(() => deriveSpiritBindCandidate(context, draft), [context, draft]);
   const preview = useMemo(() => buildSpiritBindPreviewModel(context, candidate), [candidate, context]);
@@ -55,7 +60,7 @@ export function SpiritBindSheet({
 
   return (
     <section
-      aria-label="Bind Spirit"
+      aria-label="Configure Spirit"
       className="flex w-[760px] flex-col overflow-hidden rounded-2xl"
       style={panelStyle("rgba(213,173,87,0.18)")}
       data-testid="spirit-bind-sheet"
@@ -69,13 +74,13 @@ export function SpiritBindSheet({
             className="font-mono text-[11px] uppercase tracking-[0.14em]"
             style={{ color: "rgba(213,173,87,0.78)" }}
           >
-            Bind Spirit
+            Configure Spirit
           </div>
           <div className="mt-2 text-[22px]" style={{ color: "rgba(236,233,225,0.94)" }}>
             {context.hunt.title}
           </div>
           <div className="mt-1 text-[12px]" style={{ color: "rgba(182,183,193,0.64)" }}>
-            Draft the hunt now, release it into the dock, wake, and workspace when ready.
+            Every hunt starts with a spirit. Tune the current posture, then release the update into dock, wake, and workspace.
           </div>
         </div>
         <div className="flex gap-2">
@@ -86,7 +91,7 @@ export function SpiritBindSheet({
             onClick={onSkip}
             data-testid="spirit-bind-skip"
           >
-            Skip for now
+            Keep current spirit
           </button>
           <button
             type="button"
@@ -102,7 +107,7 @@ export function SpiritBindSheet({
 
       <div className="grid grid-cols-[1.15fr_0.85fr] gap-0">
         <div className="border-r px-5 py-4" style={{ borderColor: "rgba(213,173,87,0.08)" }}>
-          <div className="grid grid-cols-2 gap-2" role="tablist" aria-label="Bind Spirit modes">
+          <div className="grid grid-cols-2 gap-2" role="tablist" aria-label="Configure Spirit modes">
             {MODE_LABELS.map((mode) => {
               const active = draft.mode === mode.id;
               return (
@@ -131,10 +136,10 @@ export function SpiritBindSheet({
           </div>
 
           <div className="mt-4 rounded-2xl border p-4" style={{ borderColor: "rgba(213,173,87,0.12)", background: "rgba(232,230,222,0.02)" }}>
-            {draft.mode === "quick-bind" && (
+            {draft.mode === "quick-configure" && (
               <div data-testid="spirit-bind-quick-panel">
                 <div className="font-mono text-[11px] uppercase tracking-[0.1em]" style={{ color: "rgba(213,173,87,0.76)" }}>
-                  Suggested posture
+                  Current posture
                 </div>
                 <div className="mt-2 flex items-center gap-2">
                   <div className="rounded-full border px-3 py-1 text-[13px]" style={{ borderColor: `${bindAccent}50`, color: bindAccent }}>
@@ -360,7 +365,7 @@ export function SpiritBindSheet({
               style={{ borderColor: "rgba(182,183,193,0.18)", color: "rgba(182,183,193,0.72)" }}
               onClick={onSkip}
             >
-              Keep hunt unbound
+              Keep current spirit
             </button>
             <button
               type="button"
@@ -377,7 +382,7 @@ export function SpiritBindSheet({
               }}
               data-testid="spirit-bind-submit"
             >
-              Bind Spirit
+              Apply Spirit
             </button>
           </div>
         </div>

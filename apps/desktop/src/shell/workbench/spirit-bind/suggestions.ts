@@ -61,9 +61,9 @@ function normalizeModeSource(mode: SpiritBindDraft["mode"]): SpiritBindCommit["b
       return "anchor-artifacts";
     case "manual":
       return "manual";
-    case "quick-bind":
+    case "quick-configure":
     default:
-      return "quick-bind";
+      return "quick-configure";
   }
 }
 
@@ -263,7 +263,7 @@ export function canBindSpiritDraft(draft: SpiritBindDraft): boolean {
       return draft.selectedAnchorArtifactIds.length > 0;
     case "manual":
       return draft.manualKind !== null;
-    case "quick-bind":
+    case "quick-configure":
     default:
       return true;
   }

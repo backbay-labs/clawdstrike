@@ -1,8 +1,9 @@
 # Huntronomer Dogfooding
 
-This document defines the current fast dogfood loop for the restored Huntronomer desktop app.
+This note defines the current fast dogfood loop for the Huntronomer desktop shell and the
+spirit-ritual chamber.
 
-## Quick Smoke
+## Quick Browser Smoke
 
 Run:
 
@@ -15,8 +16,12 @@ The script:
 - reuses `http://localhost:1420` if a dev server is already live
 - otherwise starts `bun run dev --host localhost --port 1420` in `apps/desktop`
 - opens a fresh browser session with `playwright-cli`
-- captures the Huntronomer launch overlay
-- dismisses into the current Hunt Deck shell
+- waits for the first settled shell paint before capturing the live deck
+- captures `launch-overlay.*` and `command-deck.*` as separate browser artifacts
+- creates a hunt from the dock
+- opens the ritual chamber from the hunt header spirit affordance
+- releases the default spirit, prefers a room field stain when the room is mounted, and otherwise captures the deck aftermath beat
+- switches to observatory-specific assertions automatically when `HUNTRONOMER_SMOKE_URL` points at `#/nexus/scene`
 - saves artifacts under `output/playwright/huntronomer-smoke/<timestamp>/`
 
 Artifacts:
@@ -26,9 +31,18 @@ Artifacts:
 - `command-deck-snapshot.md`
 - `launch-overlay.txt`
 - `command-deck.txt`
+- `spirit-chamber.png`
+- `spirit-chamber.txt`
+- `spirit-chamber-snapshot.md`
+- `spirit-release.json`
+- `spirit-release.png`
 - `console-errors.txt`
 - `network.txt`
 - `summary.json`
+
+The `launch-overlay.*` and `command-deck.*` names are historical compatibility labels from the
+older shell smoke path, but they are now captured separately from the live page instead of being
+file-copied placeholders.
 
 ## Spirit Verification Smoke
 
@@ -38,15 +52,16 @@ Run:
 scripts/huntronomer-spirit-smoke.sh
 ```
 
-This focused smoke covers the hunt-spirit operator path that is already landed in tests but not yet
-fully wired into the live browser shell:
+This focused smoke now covers the ritual chamber and the existing spirit runtime surfaces:
 
-1. instant `HUNT_CREATE`
-2. quick bind payload generation
-3. pinned manual rebind payload generation
-4. dock and smart-bucket identity rendering
-5. Forensics spirit actor derivation
-6. Nexus spirit companion derivation
+1. ritual chamber launch via the public `SpiritBindSheet` seam
+2. ritual-native chamber copy and release controls
+3. keyboard reachability for the mode rail and manual selection controls
+4. multimodal ritual draft tests under `spirit-ritual/state`, `draw`, `upload`, and `modes`
+5. atmosphere and release overlay pointer safety checks
+6. dock and smart-bucket identity rendering
+7. Forensics spirit actor derivation
+8. Nexus spirit companion derivation
 
 Artifacts:
 
@@ -70,26 +85,37 @@ Examples:
 HUNTRONOMER_SMOKE_HEADED=1 scripts/huntronomer-playwright-smoke.sh
 HUNTRONOMER_SMOKE_STRICT_CONSOLE=1 scripts/huntronomer-playwright-smoke.sh
 HUNTRONOMER_SMOKE_START_DEV=0 scripts/huntronomer-playwright-smoke.sh
+HUNTRONOMER_SMOKE_URL=http://localhost:1420/#/nexus/scene scripts/huntronomer-playwright-smoke.sh
 ```
 
 ## What The Smoke Proves
 
-Today the smoke path verifies:
+Today the combined smoke path verifies:
 
-1. the Huntronomer page loads
-2. the first-run launch overlay renders with the `Runtime security workbench` copy
-3. the `Start a hunt` CTA transitions into the shell
-4. the current Hunt Deck shell renders with `LIVE`, `REPLAY`, and `Security Scene`
-5. the command deck artifacts can be captured for regression review
+1. the Huntronomer shell loads from a fresh browser session
+2. the workbench chrome renders with `WIRE`, `SCOPES`, `TAPE`, and `CONTEXT`
+3. the dock `New hunt` control adds a new active hunt without forcing the chamber open
+4. the hunt header spirit affordance opens the chamber on demand
+5. the chamber presents `Spirit Chamber`, `Creation modes`, `Current read`, and `Release Spirit`
+6. the default quick release can be committed and the chamber closes
+7. the default quick release prefers a visible room field stain before the smoke captures, and falls back to the deck aftermath on routes without the room mounted
+8. the ritual atmosphere and release overlays stay non-blocking in component-level verification
+9. `#/nexus/scene` renders the observatory atlas shell with `OBSERVATORY ATLAS`, `STATIONS`, `FIELD BIAS`, and `CONTEXT`
 
-This is intentionally a shell-level smoke, not a complete product validation.
+This is still a fast operator smoke, not a full product validation.
 
-The spirit smoke complements that shell pass by proving the landed spirit runtime and UI contracts
-from a deterministic test harness while shared shell wiring remains under `ORCH`.
+## Current Manual Dogfood Gaps
+
+Use manual dogfood or targeted Vitest for:
+
+- thesis, draw, upload, and hybrid release behavior in a live browser session
+- focus trap, Escape dismissal, and focus return from the chamber
+- native Tauri correctness
+- fully connected local agent and daemon behavior
 
 ## Current Expected Console Errors
 
-In a normal local browser-only run, the current app may emit errors like:
+In a normal local browser-only run, the app may emit errors like:
 
 - `Agent local API token is unavailable`
 - `ERR_CONNECTION_REFUSED` for `http://localhost:9876/health`
@@ -103,11 +129,10 @@ This smoke flow drives the browser-hosted UI, not the native Tauri shell. Use it
 
 - layout regressions
 - route and shell regressions
-- launch overlay regressions
+- ritual chamber launch/regression checks
 - obvious runtime-state failures visible from the web surface
 
-Do not treat it as proof of native Tauri correctness on macOS. For native-path checks, pair it
-with:
+Do not treat it as proof of native Tauri correctness on macOS. Pair it with:
 
 ```bash
 cd apps/desktop && bun run tauri:dev
@@ -115,14 +140,3 @@ cd apps/desktop && bun run typecheck
 cd apps/desktop && bun run test -- --run
 cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
 ```
-
-Likewise, do not treat the browser smoke as proof that `Bind Spirit` is live in the shell yet. The
-sheet implementation exists, but the shared workbench registration path is still orchestrator-owned.
-Use `scripts/huntronomer-spirit-smoke.sh` for spirit-specific verification until that live shell
-wiring lands.
-
-## Current Product Assumption
-
-This smoke targets the current restored Huntronomer shell, which still lands in the Hunt Deck
-(`#/nexus`) after the launch overlay. When the roadmap moves the product to a true `Signal Wire`
-home surface, update this smoke to follow the new default operator loop.

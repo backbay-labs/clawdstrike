@@ -3,3 +3,4 @@ export * from "./defaults";
 export * from "./runtime";
 export * from "./selectors";
 export * from "./inference";
+export * from "./tab";

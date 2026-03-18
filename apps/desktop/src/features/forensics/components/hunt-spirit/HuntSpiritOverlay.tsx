@@ -2,41 +2,41 @@ import { Canvas, useFrame } from "@react-three/fiber";
 import { clsx } from "clsx";
 import * as React from "react";
 import * as THREE from "three";
+import {
+  blendHex,
+  renderSpiritContourGeometry,
+} from "@/shell/workbench/spirit/sceneVisuals";
+import { SpiritAtmosphereLayer } from "@/shell/workbench/spirit-ritual/atmosphere";
+import {
+  SPIRIT_SURFACE_AFTERMATH_MS,
+  SPIRIT_SURFACE_RECEIVE_MS,
+  SpiritReleaseChoreography,
+  type SpiritSurfaceReceiveState,
+} from "@/shell/workbench/spirit-ritual/release";
 import type { HuntSpiritSceneActor } from "./runtime";
+import {
+  projectForensicsSpiritRitualModel,
+  resolveForensicsSpiritReleasePhase,
+} from "./ritualProjection";
 
 type HuntSpiritOverlayProps = {
   actor: HuntSpiritSceneActor | null;
   className?: string;
 };
 
-function blendHex(base: string, mix: string, alpha: number): string {
-  const color = new THREE.Color(base);
-  color.lerp(new THREE.Color(mix), alpha);
-  return `#${color.getHexString()}`;
-}
-
-function contourGeometry(contour: string) {
-  switch (contour) {
-    case "reticle-vector":
-      return <octahedronGeometry args={[0.92, 1]} />;
-    case "aperture-reveal":
-      return <sphereGeometry args={[0.82, 28, 28]} />;
-    case "chamber-bracket":
-      return <dodecahedronGeometry args={[0.88, 0]} />;
-    case "thread-arc":
-      return <torusKnotGeometry args={[0.56, 0.18, 88, 14]} />;
-    case "proof-stack":
-      return <cylinderGeometry args={[0.72, 0.92, 1.1, 7]} />;
-    default:
-      return <icosahedronGeometry args={[0.86, 1]} />;
-  }
-}
-
-function HuntSpiritNode({ actor }: { actor: HuntSpiritSceneActor }) {
+function HuntSpiritNode({
+  actor,
+  receiveState,
+}: {
+  actor: HuntSpiritSceneActor;
+  receiveState: SpiritSurfaceReceiveState;
+}) {
   const groupRef = React.useRef<THREE.Group | null>(null);
   const ringRef = React.useRef<THREE.Mesh | null>(null);
   const pulseRef = React.useRef<THREE.Mesh | null>(null);
   const beamRef = React.useRef<THREE.Mesh | null>(null);
+  const receiveRef = React.useRef<THREE.Mesh | null>(null);
+  const wakeRef = React.useRef<THREE.Mesh | null>(null);
   const shardRefs = React.useRef<Array<THREE.Mesh | null>>([]);
   const accent = React.useMemo(() => new THREE.Color(actor.accentColor), [actor.accentColor]);
   const halo = React.useMemo(
@@ -54,6 +54,8 @@ function HuntSpiritNode({ actor }: { actor: HuntSpiritSceneActor }) {
 
     const elapsed = clock.elapsedTime;
     const cueKind = actor.cue?.kind ?? null;
+    const isReceiving = receiveState === "receiving";
+    const isAftermath = receiveState === "aftermath";
     const bindPulse = cueKind === "bind" ? Math.sin(elapsed * 4.8) * 0.24 : 0;
     const focusLean = cueKind === "focus" || actor.stance === "focus" ? 0.18 : 0.05;
     const absorbPull = cueKind === "absorb" ? 0.24 : 0;
@@ -81,8 +83,44 @@ function HuntSpiritNode({ actor }: { actor: HuntSpiritSceneActor }) {
 
     if (pulseRef.current) {
       const pulse =
-        1 + Math.max(0, Math.sin(elapsed * 3.8)) * (0.4 + actor.presenceStrength * 0.25);
+        1 +
+        Math.max(0, Math.sin(elapsed * 3.8)) *
+          (0.4 + actor.presenceStrength * 0.25 + (isReceiving ? 0.14 : 0.06));
       pulseRef.current.scale.set(pulse, pulse, pulse);
+    }
+
+    if (receiveRef.current) {
+      const receiveVisible =
+        cueKind === "bind" || cueKind === "witness" || cueKind === "absorb" || isReceiving || isAftermath;
+      const receivePulse =
+        1 +
+        Math.max(0, Math.sin(elapsed * (cueKind === "bind" ? 4.2 : 3.1))) *
+          (cueKind === "bind" ? 0.62 : cueKind === "witness" ? 0.34 : 0.28);
+      receiveRef.current.scale.set(receivePulse, receivePulse, receivePulse);
+      const material = receiveRef.current.material as THREE.MeshBasicMaterial;
+      material.opacity = receiveVisible
+        ? cueKind === "bind"
+          ? 0.34
+          : cueKind === "witness"
+            ? 0.22
+            : isReceiving
+              ? 0.24
+              : isAftermath
+                ? 0.14
+                : 0.18
+        : 0.05;
+    }
+
+    if (wakeRef.current) {
+      const wakeScale =
+        isReceiving
+          ? 1.1 + Math.max(0, Math.sin(elapsed * 2.8)) * 0.26
+          : isAftermath
+            ? 1.02 + Math.max(0, Math.sin(elapsed * 1.8)) * 0.12
+            : 1;
+      wakeRef.current.scale.set(wakeScale, wakeScale, wakeScale);
+      const wakeMaterial = wakeRef.current.material as THREE.MeshBasicMaterial;
+      wakeMaterial.opacity = isReceiving ? 0.22 : isAftermath ? 0.1 : 0.03;
     }
 
     if (beamRef.current) {
@@ -111,7 +149,7 @@ function HuntSpiritNode({ actor }: { actor: HuntSpiritSceneActor }) {
   return (
     <group ref={groupRef} position={[actor.laneBias * 4.8, actor.altitude, -0.6]}>
       <mesh>
-        {contourGeometry(actor.contour)}
+        {renderSpiritContourGeometry(actor.contour, "overlay")}
         <meshStandardMaterial
           color={accent}
           emissive={accent}
@@ -153,6 +191,16 @@ function HuntSpiritNode({ actor }: { actor: HuntSpiritSceneActor }) {
         />
       </mesh>
 
+      <mesh ref={receiveRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, -1.28, 0]}>
+        <ringGeometry args={[1.28, 1.62, 56]} />
+        <meshBasicMaterial color={halo} transparent opacity={0.05} depthWrite={false} />
+      </mesh>
+
+      <mesh ref={wakeRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, -1.26, 0]}>
+        <ringGeometry args={[1.64, 2.04, 64]} />
+        <meshBasicMaterial color={halo} transparent opacity={0.03} depthWrite={false} />
+      </mesh>
+
       <mesh ref={beamRef} rotation={[0, 0, 0]}>
         <cylinderGeometry args={[0.08, 0.32, 2.8, 20, 1, true]} />
         <meshBasicMaterial color={halo} transparent opacity={0.18} depthWrite={false} />
@@ -183,8 +231,53 @@ function HuntSpiritNode({ actor }: { actor: HuntSpiritSceneActor }) {
 export function HuntSpiritOverlay({ actor, className }: HuntSpiritOverlayProps) {
   if (!actor) return null;
 
+  const [receiveState, setReceiveState] = React.useState<SpiritSurfaceReceiveState>("idle");
+  const receiveTimerRef = React.useRef<number | null>(null);
+  const aftermathTimerRef = React.useRef<number | null>(null);
+  const lastCueRef = React.useRef<number | null>(null);
+  const ritualModel = projectForensicsSpiritRitualModel(actor);
+  const releasePhase = resolveForensicsSpiritReleasePhase(actor);
+  const cueStartedAt = actor.cue?.startedAt ?? null;
+
+  React.useEffect(() => {
+    if (!cueStartedAt) return undefined;
+    if (lastCueRef.current === null) {
+      lastCueRef.current = cueStartedAt;
+      return undefined;
+    }
+    if (cueStartedAt <= lastCueRef.current) return undefined;
+    lastCueRef.current = cueStartedAt;
+    setReceiveState("receiving");
+    if (receiveTimerRef.current) window.clearTimeout(receiveTimerRef.current);
+    if (aftermathTimerRef.current) window.clearTimeout(aftermathTimerRef.current);
+    receiveTimerRef.current = window.setTimeout(() => {
+      setReceiveState("aftermath");
+      receiveTimerRef.current = null;
+    }, SPIRIT_SURFACE_RECEIVE_MS);
+    aftermathTimerRef.current = window.setTimeout(() => {
+      setReceiveState("idle");
+      aftermathTimerRef.current = null;
+    }, SPIRIT_SURFACE_RECEIVE_MS + SPIRIT_SURFACE_AFTERMATH_MS);
+    return () => {
+      if (receiveTimerRef.current) {
+        window.clearTimeout(receiveTimerRef.current);
+        receiveTimerRef.current = null;
+      }
+      if (aftermathTimerRef.current) {
+        window.clearTimeout(aftermathTimerRef.current);
+        aftermathTimerRef.current = null;
+      }
+    };
+  }, [cueStartedAt]);
   return (
     <>
+      <div className="pointer-events-none absolute inset-x-[18%] top-[12%] bottom-[18%] z-[16]">
+        <SpiritAtmosphereLayer
+          model={ritualModel}
+          reducedMotion={!actor.cue || actor.cue.kind === "focus"}
+        />
+      </div>
+
       <div className={clsx("pointer-events-none absolute inset-0 z-[17]", className)}>
         <Canvas
           dpr={[1, 1.6]}
@@ -196,48 +289,19 @@ export function HuntSpiritOverlay({ actor, className }: HuntSpiritOverlayProps) 
           <directionalLight position={[6, 10, 8]} intensity={1.18} color="#fff0c8" />
           <pointLight position={[-6, 5, 4]} intensity={0.52} color={actor.accentColor} />
           <pointLight position={[6, 5, -2]} intensity={0.34} color="#7cb8ff" />
-          <HuntSpiritNode actor={actor} />
+          <HuntSpiritNode actor={actor} receiveState={receiveState} />
         </Canvas>
       </div>
 
-      <div className="pointer-events-none absolute top-[132px] right-4 z-[19] max-w-[320px] rounded-xl border border-[rgba(212,168,75,0.28)] bg-[linear-gradient(180deg,rgba(11,14,21,0.92)_0%,rgba(7,10,15,0.95)_100%)] px-3 py-2 shadow-[0_18px_44px_rgba(0,0,0,0.46)]">
-        <div className="flex items-center gap-2">
-          <span
-            className="h-2.5 w-2.5 rounded-full shadow-[0_0_14px_currentColor]"
-            style={{ color: actor.accentColor, background: actor.accentColor }}
-          />
-          <div className="text-[10px] font-mono uppercase tracking-[0.16em] text-[rgba(212,168,75,0.94)]">
-            Active Hunt Spirit
-          </div>
-        </div>
-
-        <div className="mt-1 text-sm font-mono uppercase tracking-[0.08em] text-sdr-text-primary">
-          {actor.label} · {actor.huntTitle}
-        </div>
-
-        <div className="mt-1 text-xs text-sdr-text-secondary">
-          {actor.cue?.reason ?? actor.reason ?? "Holding field over the active river lane."}
-        </div>
-
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          <span className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] font-mono uppercase tracking-[0.12em] text-white/68">
-            {actor.stance}
-          </span>
-          {actor.activeStationId ? (
-            <span className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] font-mono uppercase tracking-[0.12em] text-white/56">
-              {actor.activeStationId.replaceAll("-", " ")}
-            </span>
-          ) : null}
-          {actor.emphasis.map((item) => (
-            <span
-              key={item}
-              className="rounded-full border border-[rgba(212,168,75,0.22)] px-2 py-0.5 text-[10px] font-mono uppercase tracking-[0.12em] text-[rgba(244,225,177,0.82)]"
-            >
-              {item}
-            </span>
-          ))}
-        </div>
-      </div>
+      {releasePhase ? (
+        <SpiritReleaseChoreography
+          model={ritualModel}
+          phase={releasePhase}
+          className="z-[18]"
+          reducedMotion={actor.cue?.kind === "focus"}
+          variant="room"
+        />
+      ) : null}
     </>
   );
 }

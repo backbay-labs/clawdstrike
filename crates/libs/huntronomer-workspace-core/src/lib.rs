@@ -4,6 +4,7 @@ pub mod fs;
 pub mod proc;
 pub mod search;
 pub mod settings;
+pub mod terminal;
 pub mod watch;
 pub mod workspace;
 
@@ -19,5 +20,10 @@ pub use search::{
     SearchSummary, WorkspaceSearchEvent, WorkspaceSearchEventKind,
 };
 pub use settings::{WorkspaceSettings, WorkspaceSettingsStore};
+pub use terminal::{
+    AllowedTerminalTask, OpenTerminalRequest, ResizeTerminalRequest, RunTerminalTaskRequest,
+    ShellProfile, TerminalError, TerminalService, TerminalSession, TerminalSessionKind,
+    WorkspaceTerminalEvent, WorkspaceTerminalEventKind, WriteTerminalRequest,
+};
 pub use watch::{WatchService, WorkspaceFsEvent, WorkspaceFsEventKind};
 pub use workspace::{WorkspaceError, WorkspaceRoot, WorkspaceService};

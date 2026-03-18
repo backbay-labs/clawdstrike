@@ -30,3 +30,10 @@ The north star is:
 
 > a hunt is created instantly, but spirit shaping feels like entering a chamber, gathering intent, manifesting a living form, and releasing it into the workspace
 
+## Design Set
+
+- [Spirit Chamber Redesign Spec](./chamber-redesign-spec.md)
+- [Spirit Chamber Third Pass Plan](./third-pass-plan.md)
+- [Spirit Chamber Fourth Pass Plan](./fourth-pass-plan.md)
+- [Spirit Ritual Roadmap](./roadmap.md)
+- [Spirit Ritual Swarm Plan](./swarm-plan.md)

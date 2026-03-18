@@ -42,7 +42,7 @@ describe("SpiritBindSheet", () => {
     vi.restoreAllMocks();
   });
 
-  it("starts in quick bind and commits a one-click bind", async () => {
+  it("starts in quick configure and commits a one-click spirit update", async () => {
     const onBind = vi.fn();
 
     await act(async () => {
@@ -64,7 +64,7 @@ describe("SpiritBindSheet", () => {
     });
 
     expect(onBind).toHaveBeenCalledTimes(1);
-    expect(onBind.mock.calls[0][0].bindSource).toBe("quick-bind");
+    expect(onBind.mock.calls[0][0].bindSource).toBe("quick-configure");
     expect(onBind.mock.calls[0][0].anchorArtifactIds.length).toBeGreaterThan(0);
   });
 
@@ -87,15 +87,21 @@ describe("SpiritBindSheet", () => {
       (container.querySelector('[data-testid="spirit-bind-mode-thesis"]') as HTMLButtonElement).click();
     });
 
+    const textarea = container.querySelector('[data-testid="spirit-bind-thesis-input"]') as HTMLTextAreaElement;
+    const valueSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
+    if (!valueSetter) throw new Error("Missing textarea value setter");
+
+    await act(async () => {
+      valueSetter.call(textarea, "");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      textarea.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
     const submit = container.querySelector('[data-testid="spirit-bind-submit"]') as HTMLButtonElement;
     await act(async () => {
       submit.click();
     });
     expect(onBind).not.toHaveBeenCalled();
-
-    const textarea = container.querySelector('[data-testid="spirit-bind-thesis-input"]') as HTMLTextAreaElement;
-    const valueSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
-    if (!valueSetter) throw new Error("Missing textarea value setter");
 
     await act(async () => {
       valueSetter.call(textarea, "Trace lateral movement through the sandbox execution chain");
@@ -155,7 +161,7 @@ describe("SpiritBindSheet", () => {
     expect(onBind.mock.calls[0][0].anchorArtifactIds).not.toContain("art_demo_6");
   });
 
-  it("routes skip and dismiss affordances without forcing bind", async () => {
+  it("routes keep-current and dismiss affordances without forcing changes", async () => {
     const onSkip = vi.fn();
     const onDismiss = vi.fn();
 

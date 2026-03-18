@@ -7,11 +7,11 @@
  *   ──────────────────── 24px StatusBar ────────────────────────────
  *
  * Preserves all ShellLayout functionality: command palette, policy draft guard,
- * launch overlay, keyboard shortcuts, and session management.
+ * keyboard shortcuts, and session management.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { BlockerFunction } from "react-router-dom";
-import { useBlocker, useLocation, useNavigate } from "react-router-dom";
+import { useBlocker, useLocation, useNavigate, useOutlet } from "react-router-dom";
 import { useConnection } from "@/context/ConnectionContext";
 import { dispatchCyberNexusCommand } from "@/features/cyber-nexus/events";
 import {
@@ -25,7 +25,6 @@ import {
 } from "@/features/forensics/policy-workbench/events";
 
 import { CommandPalette } from "@/shell/components/CommandPalette";
-import { HuntronomerLaunchOverlay } from "@/shell/components/HuntronomerLaunchOverlay";
 import { SHELL_OPEN_COMMAND_PALETTE_EVENT } from "@/shell/events";
 import { useShellShortcuts } from "@/shell/keyboard";
 import { getPlugins, getVisiblePlugins } from "@/shell/plugins";
@@ -39,7 +38,12 @@ import { HuntDock } from "./HuntDock";
 import { LensSidebar } from "./LensSidebar";
 import { SplitPaneContainer } from "./SplitPaneContainer";
 import { StatusBar } from "./StatusBar";
-import { WorkbenchStateProvider, useWorkbench, useWorkbenchDispatch } from "./WorkbenchStateProvider";
+import {
+  WorkbenchStateProvider,
+  useActiveTab,
+  useWorkbench,
+  useWorkbenchDispatch,
+} from "./WorkbenchStateProvider";
 import { DragDropProvider, useDragState, useDropTarget } from "./DragDropContext";
 import {
   AnticipationProvider,
@@ -51,152 +55,10 @@ import {
   SidebarWakeAnchorProvider,
   useAnticipationContext,
 } from "./anticipation";
+import { getWorkbenchAppBridgeTarget } from "./routeBridge";
+import { buildSpiritChamberTab } from "./spirit";
+import { subscribeToSpiritChamberRequests } from "./spirit/components";
 import type { LensId, ShellMode, TabGroupState, TabState, TabKind } from "./workbenchState";
-
-/* ── Full-viewport Welcome Screen (Cursor-style) ────────────────── */
-
-const WELCOME_QUICK_ACTIONS = [
-  {
-    icon: (
-      <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6a1.5 1.5 0 011.5-1.5h3L9 6h6.5A1.5 1.5 0 0117 7.5v7a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 013 14.5V6z" /></svg>
-    ),
-    label: "Open folder",
-    action: "open-folder" as const,
-  },
-  {
-    icon: (
-      <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="10" cy="10" r="5" /><circle cx="10" cy="10" r="1.5" fill="currentColor" stroke="none" /><path d="M10 3v2M10 15v2M3 10h2M15 10h2" /></svg>
-    ),
-    label: "Start a hunt",
-    action: "start-hunt" as const,
-  },
-  {
-    icon: (
-      <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="14" height="14" rx="2" /><path d="M3 8h14" /><path d="M8 8v9" /></svg>
-    ),
-    label: "Command palette",
-    action: "palette" as const,
-  },
-] as const;
-
-function WelcomeScreen({ onAction }: { onAction: (action: string) => void }) {
-  return (
-    <div
-      className="relative flex flex-col overflow-hidden"
-      style={{ width: "100vw", height: "100vh", background: "#05060a" }}
-    >
-      {/* Full-bleed wallpaper */}
-      <div
-        className="absolute inset-0"
-        style={{
-          backgroundImage: "url(/huntronomer-wallpaper.png)",
-          backgroundSize: "cover",
-          backgroundPosition: "center 40%",
-          opacity: 0.35,
-        }}
-      />
-      {/* Gradient overlay — darken edges, focus center */}
-      <div
-        className="absolute inset-0"
-        style={{
-          background:
-            "radial-gradient(ellipse 70% 60% at 50% 45%, transparent 0%, rgba(5,6,10,0.7) 70%, rgba(5,6,10,0.92) 100%)",
-        }}
-      />
-
-      {/* Centered content */}
-      <div className="relative z-10 flex flex-1 flex-col items-center justify-center">
-        <div className="flex flex-col items-center gap-8" style={{ marginTop: "-4vh" }}>
-          {/* Wordmark */}
-          <div className="flex flex-col items-center gap-1">
-            <h1
-              className="text-[22px] font-light tracking-[0.18em] uppercase"
-              style={{ fontFamily: "var(--font-mono)", color: "rgba(213, 173, 87, 0.85)" }}
-            >
-              Huntronomer
-            </h1>
-            <p
-              className="text-[12px] tracking-[0.08em]"
-              style={{ color: "rgba(182, 183, 193, 0.5)" }}
-            >
-              Runtime security workbench
-            </p>
-          </div>
-
-          {/* Quick actions */}
-          <div className="flex gap-3">
-            {WELCOME_QUICK_ACTIONS.map((qa) => (
-              <button
-                key={qa.action}
-                type="button"
-                className="welcome-action-card"
-                onClick={() => onAction(qa.action)}
-              >
-                <span className="welcome-action-card__icon">{qa.icon}</span>
-                <span className="welcome-action-card__label">{qa.label}</span>
-              </button>
-            ))}
-          </div>
-
-          {/* Recent section */}
-          <div className="flex flex-col items-start gap-2" style={{ width: 380 }}>
-            <span
-              className="text-[11px] uppercase tracking-[0.1em]"
-              style={{ fontFamily: "var(--font-mono)", color: "rgba(182, 183, 193, 0.4)" }}
-            >
-              Recent
-            </span>
-            <div className="flex w-full flex-col">
-              <WelcomeRecentRow label="Default workspace" meta="~/workspace" />
-              <WelcomeRecentRow label="huntronomer-config" meta="~/.config/huntronomer" />
-            </div>
-          </div>
-
-          {/* Keyboard hint */}
-          <p className="text-[11px]" style={{ color: "rgba(182, 183, 193, 0.3)" }}>
-            Press{" "}
-            <kbd className="rounded border border-[rgba(182,183,193,0.15)] px-1 py-0.5 font-mono text-[10px]">
-              ⌘K
-            </kbd>{" "}
-            to open the command palette
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function WelcomeRecentRow({ label, meta }: { label: string; meta: string }) {
-  return (
-    <button
-      type="button"
-      className="flex h-[32px] w-full items-center justify-between rounded px-2 transition-colors hover:bg-[rgba(213,173,87,0.04)]"
-    >
-      <span className="text-[13px]" style={{ color: "rgba(232, 230, 222, 0.65)" }}>{label}</span>
-      <span className="text-[11px]" style={{ color: "rgba(182, 183, 193, 0.3)" }}>{meta}</span>
-    </button>
-  );
-}
-
-/* ── Existing helpers ────────────────────────────────────────────── */
-
-const HUNTRONOMER_LAUNCH_DISMISSED_KEY = "huntronomer:launch:dismissed:v1";
-
-function shouldShowHuntronomerLaunch(): boolean {
-  try {
-    return globalThis.localStorage?.getItem(HUNTRONOMER_LAUNCH_DISMISSED_KEY) !== "1";
-  } catch {
-    return true;
-  }
-}
-
-function persistHuntronomerLaunchDismissal() {
-  try {
-    globalThis.localStorage?.setItem(HUNTRONOMER_LAUNCH_DISMISSED_KEY, "1");
-  } catch {
-    // Ignore storage errors in restricted or embedded runtimes.
-  }
-}
 
 const LENS_BY_INDEX: LensId[] = ["scopes", "history", "files", "sandboxes", "entities", "swarms", "notes"];
 const SHELL_BY_INDEX: ShellMode[] = ["wire", "hunt", "lab", "case"];
@@ -212,12 +74,32 @@ function findTabByKind(
   return null;
 }
 
+function findTabBySourceUri(
+  tabGroups: TabGroupState[],
+  sourceUri: string,
+): { groupId: string; tab: TabState } | null {
+  for (const group of tabGroups) {
+    const tab = group.tabs.find((candidate) => candidate.sourceUri === sourceUri);
+    if (tab) return { groupId: group.id, tab };
+  }
+  return null;
+}
+
 function WorkbenchShellInner() {
   const navigate = useNavigate();
   const location = useLocation();
+  const outlet = useOutlet();
   const { state: wbState } = useWorkbench();
   const wbDispatch = useWorkbenchDispatch();
+  const activeWorkbenchTab = useActiveTab();
   const routeBridgeProcessed = useRef<string | null>(null);
+  const spiritFocusLayoutRef = useRef<{
+    inspectorVisible: boolean;
+    bottomCollapsed: boolean;
+    sidebarCollapsed: boolean;
+  } | null>(
+    null,
+  );
 
   const plugins = useMemo(() => getPlugins(), []);
   const visiblePlugins = useMemo(() => getVisiblePlugins(), []);
@@ -226,6 +108,10 @@ function WorkbenchShellInner() {
     const seg = location.pathname.split("/").filter(Boolean)[0];
     return seg ?? null;
   }, [location.pathname]);
+  const showRoutedPluginView =
+    location.pathname === "/nexus/scene"
+    && Boolean(outlet)
+    && activeWorkbenchTab?.kind !== "spirit-chamber";
 
   const storedActiveAppId = useActiveApp();
   const activeAppId = useMemo<AppId>(() => {
@@ -236,14 +122,16 @@ function WorkbenchShellInner() {
         : null;
     return (fromRoute ?? fromStore ?? visiblePlugins[0]?.id ?? plugins[0]?.id ?? "nexus") as AppId;
   }, [plugins, routeAppId, storedActiveAppId, visiblePlugins]);
+  const inObservatoryRoute =
+    location.pathname === "/nexus"
+    || location.pathname === "/nexus/scene"
+    || (activeAppId === "nexus"
+      && (activeWorkbenchTab?.kind === "hunt" || routeAppId === "nexus"));
 
   const { createSession, setActiveApp } = useSessionActions();
 
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [hasPolicyWorkbenchDirtyDraft, setHasPolicyWorkbenchDirtyDraft] = useState(false);
-  const [showHuntronomerLaunch, setShowHuntronomerLaunch] = useState(() =>
-    shouldShowHuntronomerLaunch(),
-  );
   const unsavedPolicyWarning = "You have unsaved policy changes. Leave Nexus anyway?";
 
   // -- Command palette event listener --
@@ -252,6 +140,83 @@ function WorkbenchShellInner() {
     window.addEventListener(SHELL_OPEN_COMMAND_PALETTE_EVENT, open);
     return () => window.removeEventListener(SHELL_OPEN_COMMAND_PALETTE_EVENT, open);
   }, []);
+
+  useEffect(() => {
+    return subscribeToSpiritChamberRequests((detail) => {
+      const hunt = wbState.huntStore.hunts[detail.huntId];
+      if (!hunt) return;
+
+      const chamberTab = buildSpiritChamberTab(hunt, detail.source);
+      const existing = chamberTab.sourceUri
+        ? findTabBySourceUri(wbState.tabGroups, chamberTab.sourceUri)
+        : null;
+
+      if (existing) {
+        wbDispatch({
+          type: "SET_ACTIVE_TAB",
+          payload: { groupId: existing.groupId, tabId: existing.tab.id },
+        });
+        return;
+      }
+
+      const targetGroupId = wbState.tabGroups.find((group) => group.activeTabId)?.id ?? "main";
+      wbDispatch({
+        type: "OPEN_TAB",
+        payload: {
+          groupId: targetGroupId,
+          openMode: "replace",
+          tab: chamberTab,
+        },
+      });
+    });
+  }, [wbDispatch, wbState.huntStore.hunts, wbState.tabGroups]);
+
+  useEffect(() => {
+    const spiritActive = activeWorkbenchTab?.kind === "spirit-chamber";
+
+    if (spiritActive) {
+      if (!spiritFocusLayoutRef.current) {
+        spiritFocusLayoutRef.current = {
+          inspectorVisible: wbState.inspector.visible,
+          bottomCollapsed: wbState.bottomPanel.collapsed,
+          sidebarCollapsed: wbState.sidebarCollapsed,
+        };
+      }
+
+      if (wbState.inspector.visible) {
+        wbDispatch({ type: "SET_INSPECTOR_VISIBLE", payload: false });
+      }
+      if (!wbState.bottomPanel.collapsed) {
+        wbDispatch({ type: "SET_BOTTOM_PANEL_COLLAPSED", payload: true });
+      }
+      if (!wbState.sidebarCollapsed) {
+        wbDispatch({ type: "SET_SIDEBAR_COLLAPSED", payload: true });
+      }
+      return;
+    }
+
+    const previous = spiritFocusLayoutRef.current;
+    if (!previous) {
+      return;
+    }
+    spiritFocusLayoutRef.current = null;
+
+    if (wbState.inspector.visible !== previous.inspectorVisible) {
+      wbDispatch({ type: "SET_INSPECTOR_VISIBLE", payload: previous.inspectorVisible });
+    }
+    if (wbState.bottomPanel.collapsed !== previous.bottomCollapsed) {
+      wbDispatch({ type: "SET_BOTTOM_PANEL_COLLAPSED", payload: previous.bottomCollapsed });
+    }
+    if (wbState.sidebarCollapsed !== previous.sidebarCollapsed) {
+      wbDispatch({ type: "SET_SIDEBAR_COLLAPSED", payload: previous.sidebarCollapsed });
+    }
+  }, [
+    activeWorkbenchTab?.kind,
+    wbDispatch,
+    wbState.bottomPanel.collapsed,
+    wbState.inspector.visible,
+    wbState.sidebarCollapsed,
+  ]);
 
   // -- Policy workbench dirty state listener --
   useEffect(() => {
@@ -491,7 +456,10 @@ function WorkbenchShellInner() {
   // -- Route-to-tab bridge --
   // Intercept /<appId> routes, convert to OPEN_TAB dispatches, then clear URL
   useEffect(() => {
-    const seg = location.pathname.split("/").filter(Boolean)[0];
+    const seg = getWorkbenchAppBridgeTarget(
+      location.pathname,
+      plugins.map((plugin) => plugin.id),
+    );
     if (!seg) return;
     // Prevent re-processing the same route
     if (routeBridgeProcessed.current === location.pathname + location.search) return;
@@ -555,34 +523,6 @@ function WorkbenchShellInner() {
     handleSelectApp(visiblePlugins[prevIndex].id);
   }, [visiblePlugins, activeAppId, handleSelectApp]);
 
-  const handleDismissHuntronomerLaunch = useCallback(() => {
-    persistHuntronomerLaunchDismissal();
-    setShowHuntronomerLaunch(false);
-  }, []);
-
-  // -- Welcome screen: show when all tab groups are empty --
-  const hasAnyTabs = wbState.tabGroups.some((g) => g.tabs.length > 0);
-
-  const handleWelcomeAction = useCallback(
-    (action: string) => {
-      if (action === "palette") {
-        setIsCommandPaletteOpen(true);
-      } else if (action === "open-folder") {
-        window.dispatchEvent(new Event(WORKSPACE_OPEN_FOLDER_EVENT));
-        navigate("/workspace");
-      } else if (action === "start-hunt") {
-        wbDispatch({
-          type: "OPEN_TAB",
-          payload: {
-            groupId: "main",
-            tab: { kind: "hunt", title: "Hunt Deck", isPreview: false, isPinned: false, isDirty: false },
-          },
-        });
-      }
-    },
-    [navigate, wbDispatch],
-  );
-
   // -- Keyboard shortcuts --
   useShellShortcuts({
     onNewSession: handleNewSession,
@@ -645,23 +585,6 @@ function WorkbenchShellInner() {
     },
   });
 
-  // Full-viewport welcome when no tabs are open
-  if (!hasAnyTabs) {
-    return (
-      <>
-        <WelcomeScreen onAction={handleWelcomeAction} />
-
-        {/* Command palette is still accessible via ⌘K on the welcome screen */}
-        <CommandPalette
-          isOpen={isCommandPaletteOpen}
-          onClose={() => setIsCommandPaletteOpen(false)}
-          onSelectApp={handleSelectApp}
-          extraCommands={activeAppId === "workspace" ? workspaceCommands : cyberNexusCommands}
-        />
-      </>
-    );
-  }
-
   return (
     <StagingShelfProvider>
       <DragDropProvider>
@@ -676,7 +599,9 @@ function WorkbenchShellInner() {
                   "spine dock sidebar bottom  inspector"
                   "status status status status status"
                 `,
-                gridTemplateColumns: "56px auto auto 1fr auto",
+                gridTemplateColumns: inObservatoryRoute
+                  ? "56px auto 0px 1fr 0px"
+                  : "56px auto auto 1fr auto",
                 gridTemplateRows: "1fr auto 24px",
                 height: "100vh",
                 width: "100vw",
@@ -695,55 +620,61 @@ function WorkbenchShellInner() {
               </div>
 
               {/* LensSidebar - spans rows 1-2 */}
-              <div style={{ gridArea: "sidebar", overflow: "visible", position: "relative", zIndex: 20 }}>
-                <LensSidebar
-                  onOpenPath={(relativePath, options) => {
-                    wbDispatch({
-                      type: "OPEN_TAB",
-                      payload: {
-                        groupId: "main",
-                        openMode: options?.openMode,
-                        tab: {
-                          kind: "file",
-                          title: relativePath.split("/").pop() ?? relativePath,
-                          subtitle: relativePath,
-                          sourceUri: relativePath,
-                          isPreview: true,
-                          isPinned: false,
-                          isDirty: false,
-                          metadata: options?.reason ? { anticipationReason: options.reason } : undefined,
+              {!inObservatoryRoute ? (
+                <div style={{ gridArea: "sidebar", overflow: "visible", position: "relative", zIndex: 20 }}>
+                  <LensSidebar
+                    onOpenPath={(relativePath, options) => {
+                      wbDispatch({
+                        type: "OPEN_TAB",
+                        payload: {
+                          groupId: "main",
+                          openMode: options?.openMode,
+                          tab: {
+                            kind: "file",
+                            title: relativePath.split("/").pop() ?? relativePath,
+                            subtitle: relativePath,
+                            sourceUri: relativePath,
+                            isPreview: true,
+                            isPinned: false,
+                            isDirty: false,
+                            metadata: options?.reason ? { anticipationReason: options.reason } : undefined,
+                          },
                         },
-                      },
-                    });
-                    wbDispatch({
-                      type: "SET_SELECTION",
-                      payload: {
-                        entityType: "file",
-                        entityId: relativePath,
-                        metadata: { path: relativePath, name: relativePath.split("/").pop() ?? relativePath },
-                      },
-                    });
-                  }}
-                />
-              </div>
+                      });
+                      wbDispatch({
+                        type: "SET_SELECTION",
+                        payload: {
+                          entityType: "file",
+                          entityId: relativePath,
+                          metadata: { path: relativePath, name: relativePath.split("/").pop() ?? relativePath },
+                        },
+                      });
+                    }}
+                  />
+                </div>
+              ) : null}
 
               {/* Content area (tabbed split panes) */}
               <main
                 className="relative z-10 flex flex-1 flex-col overflow-hidden"
                 style={{ gridArea: "content" }}
               >
-                <SplitPaneContainer />
+                {showRoutedPluginView ? outlet : <SplitPaneContainer />}
               </main>
 
               {/* Bottom panel (tape, terminal, receipts, tasks, replay, diff) */}
-              <div style={{ gridArea: "bottom" }}>
-                <BottomPanel />
-              </div>
+              {!inObservatoryRoute ? (
+                <div style={{ gridArea: "bottom" }}>
+                  <BottomPanel />
+                </div>
+              ) : null}
 
               {/* Context inspector (right side) - spans rows 1-2 */}
-              <div style={{ gridArea: "inspector", overflow: "hidden" }}>
-                <ContextInspector />
-              </div>
+              {!inObservatoryRoute ? (
+                <div style={{ gridArea: "inspector", overflow: "hidden" }}>
+                  <ContextInspector />
+                </div>
+              ) : null}
 
               {/* Staging shelf + Attach overlay (inside DragDropProvider) */}
               <AnticipationOverlays />
@@ -759,11 +690,6 @@ function WorkbenchShellInner() {
             onClose={() => setIsCommandPaletteOpen(false)}
             onSelectApp={handleSelectApp}
             extraCommands={activeAppId === "workspace" ? workspaceCommands : cyberNexusCommands}
-          />
-
-          <HuntronomerLaunchOverlay
-            visible={showHuntronomerLaunch}
-            onDismiss={handleDismissHuntronomerLaunch}
           />
         </AnticipationProvider>
       </DragDropProvider>

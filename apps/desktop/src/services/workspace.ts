@@ -28,6 +28,51 @@ export interface WorkspaceFile {
   modifiedAt?: string;
 }
 
+export interface WorkspacePathSearchMatch {
+  rootId: string;
+  relativePath: string;
+  name: string;
+  kind: WorkspaceEntryKind;
+}
+
+export interface WorkspaceContentSearchMatch {
+  rootId: string;
+  relativePath: string;
+  lineNumber: number;
+  column: number;
+  lineText: string;
+  preview: string;
+}
+
+export interface WorkspaceGitFileStatus {
+  rootId: string;
+  relativePath: string;
+  stagedStatus: string;
+  unstagedStatus: string;
+  additions: number;
+  deletions: number;
+}
+
+export interface WorkspaceGitStatusSummary {
+  rootId: string;
+  branch: string;
+  ahead: number;
+  behind: number;
+  stagedCount: number;
+  unstagedCount: number;
+  untrackedCount: number;
+  changedFiles: WorkspaceGitFileStatus[];
+}
+
+export interface WorkspaceGitDiffSummary {
+  rootId: string;
+  relativePath?: string;
+  fileCount: number;
+  additions: number;
+  deletions: number;
+  previewLines: string[];
+}
+
 interface BackendWorkspaceFile {
   root?: WorkspaceRoot;
   entry?: WorkspaceEntry & { canonicalPath?: string };
@@ -74,7 +119,11 @@ type WorkspaceCommandName =
   | "workspace_register_root"
   | "workspace_list_dir"
   | "workspace_read_file"
-  | "workspace_list_recent_roots";
+  | "workspace_list_recent_roots"
+  | "workspace_search_paths"
+  | "workspace_search_content"
+  | "workspace_git_status"
+  | "workspace_git_diff_summary";
 
 async function getTauriInvoke() {
   const { invoke } = await import("@tauri-apps/api/core");
@@ -223,8 +272,99 @@ const MOCK_FILE_CONTENTS: Record<string, string> = {
   "README.md": "# Huntronomer Workspace\n\nScaffold root for the desktop workspace shell.\n",
 };
 
+const MOCK_GIT_STATUS: WorkspaceGitStatusSummary = {
+  rootId: MOCK_ROOT.id,
+  branch: "feature/ws6-search-git-ui",
+  ahead: 2,
+  behind: 0,
+  stagedCount: 1,
+  unstagedCount: 2,
+  untrackedCount: 1,
+  changedFiles: [
+    {
+      rootId: MOCK_ROOT.id,
+      relativePath: "briefs/hunt-plan.md",
+      stagedStatus: "M",
+      unstagedStatus: " ",
+      additions: 6,
+      deletions: 1,
+    },
+    {
+      rootId: MOCK_ROOT.id,
+      relativePath: "rules/sigma/outbound-spike.yml",
+      stagedStatus: " ",
+      unstagedStatus: "M",
+      additions: 2,
+      deletions: 0,
+    },
+    {
+      rootId: MOCK_ROOT.id,
+      relativePath: "receipts/case-114.json",
+      stagedStatus: "?",
+      unstagedStatus: "?",
+      additions: 14,
+      deletions: 0,
+    },
+  ],
+};
+
+const MOCK_GIT_DIFFS: Record<string, WorkspaceGitDiffSummary> = {
+  "__workspace__": {
+    rootId: MOCK_ROOT.id,
+    fileCount: 3,
+    additions: 22,
+    deletions: 1,
+    previewLines: [
+      "briefs/hunt-plan.md | 7 ++++++-",
+      "rules/sigma/outbound-spike.yml | 2 ++",
+      "receipts/case-114.json | 14 ++++++++++++++",
+    ],
+  },
+  "briefs/hunt-plan.md": {
+    rootId: MOCK_ROOT.id,
+    relativePath: "briefs/hunt-plan.md",
+    fileCount: 1,
+    additions: 6,
+    deletions: 1,
+    previewLines: [
+      "@@ hunt-plan @@",
+      "+ Add quick-open keyboard path",
+      "+ Stream rg matches into the workspace pane",
+      "- Keep search panel as placeholder",
+    ],
+  },
+  "rules/sigma/outbound-spike.yml": {
+    rootId: MOCK_ROOT.id,
+    relativePath: "rules/sigma/outbound-spike.yml",
+    fileCount: 1,
+    additions: 2,
+    deletions: 0,
+    previewLines: [
+      "@@ detection @@",
+      "+ selection:",
+      "+   bytes_outbound_gt: 50000000",
+    ],
+  },
+  "receipts/case-114.json": {
+    rootId: MOCK_ROOT.id,
+    relativePath: "receipts/case-114.json",
+    fileCount: 1,
+    additions: 14,
+    deletions: 0,
+    previewLines: [
+      "@@ case receipt @@",
+      '+  "workspace_summary": "WS6 mock git handoff"',
+      '+  "review_required": true',
+    ],
+  },
+};
+
 function flattenEntries(entries: WorkspaceEntry[]): WorkspaceEntry[] {
   return entries.flatMap((entry) => [entry, ...(entry.children ? flattenEntries(entry.children) : [])]);
+}
+
+function getMockFileEntries() {
+  return flattenEntries(MOCK_TREE).filter((entry) => entry.kind === "file");
 }
 
 function findEntryByRelativePath(entries: WorkspaceEntry[], relativePath: string) {
@@ -393,6 +533,114 @@ export async function readWorkspaceFile(
   return toWorkspaceFile(payload);
 }
 
+export async function searchWorkspacePaths(
+  rootId: string,
+  query: string,
+): Promise<WorkspacePathSearchMatch[]> {
+  if (!isTauri()) {
+    if (rootId !== MOCK_ROOT.id) {
+      throw new WorkspaceServiceError({
+        code: "workspace_root_unknown",
+        message: `Unknown mock root: ${rootId}`,
+      });
+    }
+
+    const needle = query.trim().toLowerCase();
+    if (!needle) return [];
+
+    return getMockFileEntries()
+      .filter((entry) => entry.relativePath.toLowerCase().includes(needle))
+      .map((entry) => ({
+        rootId,
+        relativePath: entry.relativePath,
+        name: entry.name,
+        kind: entry.kind,
+      }));
+  }
+
+  return invokeWorkspace<WorkspacePathSearchMatch[]>("workspace_search_paths", { rootId, query });
+}
+
+export async function searchWorkspaceContent(
+  rootId: string,
+  query: string,
+): Promise<WorkspaceContentSearchMatch[]> {
+  if (!isTauri()) {
+    if (rootId !== MOCK_ROOT.id) {
+      throw new WorkspaceServiceError({
+        code: "workspace_root_unknown",
+        message: `Unknown mock root: ${rootId}`,
+      });
+    }
+
+    const needle = query.trim().toLowerCase();
+    if (!needle) return [];
+
+    return Object.entries(MOCK_FILE_CONTENTS).flatMap(([relativePath, contents]) =>
+      contents.split("\n").flatMap((lineText, lineIndex) => {
+        const column = lineText.toLowerCase().indexOf(needle);
+        if (column === -1) return [];
+
+        return [
+          {
+            rootId,
+            relativePath,
+            lineNumber: lineIndex + 1,
+            column: column + 1,
+            lineText,
+            preview: `${relativePath}:${lineIndex + 1} ${lineText.trim()}`,
+          },
+        ];
+      }),
+    );
+  }
+
+  return invokeWorkspace<WorkspaceContentSearchMatch[]>("workspace_search_content", { rootId, query });
+}
+
+export async function getWorkspaceGitStatus(rootId: string): Promise<WorkspaceGitStatusSummary> {
+  if (!isTauri()) {
+    if (rootId !== MOCK_ROOT.id) {
+      throw new WorkspaceServiceError({
+        code: "workspace_root_unknown",
+        message: `Unknown mock root: ${rootId}`,
+      });
+    }
+
+    return MOCK_GIT_STATUS;
+  }
+
+  return invokeWorkspace<WorkspaceGitStatusSummary>("workspace_git_status", { rootId });
+}
+
+export async function getWorkspaceGitDiffSummary(
+  rootId: string,
+  relativePath?: string,
+): Promise<WorkspaceGitDiffSummary> {
+  if (!isTauri()) {
+    if (rootId !== MOCK_ROOT.id) {
+      throw new WorkspaceServiceError({
+        code: "workspace_root_unknown",
+        message: `Unknown mock root: ${rootId}`,
+      });
+    }
+
+    return MOCK_GIT_DIFFS[relativePath ?? "__workspace__"] ?? {
+      rootId,
+      relativePath,
+      fileCount: 0,
+      additions: 0,
+      deletions: 0,
+      previewLines: ["No diff preview available for this path yet."],
+    };
+  }
+
+  return invokeWorkspace<WorkspaceGitDiffSummary>("workspace_git_diff_summary", {
+    rootId,
+    relativePath,
+  });
+}
+
 export async function listRecentWorkspaceRoots(): Promise<WorkspaceRoot[]> {
   if (!isTauri()) {
     return [MOCK_ROOT];
@@ -401,15 +649,33 @@ export async function listRecentWorkspaceRoots(): Promise<WorkspaceRoot[]> {
   return invokeWorkspace<WorkspaceRoot[]>("workspace_list_recent_roots", {});
 }
 
-export async function getWorkspaceShellSnapshot(): Promise<WorkspaceShellSnapshot> {
+export async function getWorkspaceShellSnapshot(
+  preferredRootId?: string,
+): Promise<WorkspaceShellSnapshot> {
   if (!isTauri()) {
+    if (preferredRootId && preferredRootId !== MOCK_ROOT.id) {
+      throw new WorkspaceServiceError({
+        code: "workspace_root_unknown",
+        message: `Unknown mock root: ${preferredRootId}`,
+      });
+    }
+
     return createMockWorkspaceShellSnapshot();
   }
 
   const roots = await listRecentWorkspaceRoots();
-  const activeRoot = roots[0];
+  const activeRoot = preferredRootId
+    ? roots.find((root) => root.id === preferredRootId)
+    : roots[0];
 
   if (!activeRoot) {
+    if (preferredRootId) {
+      throw new WorkspaceServiceError({
+        code: "workspace_root_unknown",
+        message: `Unknown workspace root: ${preferredRootId}`,
+      });
+    }
+
     return {
       roots: [],
       tree: [],

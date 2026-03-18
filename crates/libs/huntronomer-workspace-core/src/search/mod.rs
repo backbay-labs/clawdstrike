@@ -392,7 +392,7 @@ fn finish_child(
         (status, stderr)
     };
 
-    if status.success() || cancelled.load(Ordering::SeqCst) {
+    if status.success() || cancelled.load(Ordering::SeqCst) || status.code() == Some(1) {
         let _ = sender.send(WorkspaceSearchEvent {
             job_id: job.job_id.clone(),
             kind: WorkspaceSearchEventKind::Done,

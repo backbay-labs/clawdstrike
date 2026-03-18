@@ -4,13 +4,16 @@ import type { SpiritBindDraft, SpiritBindMode } from "./types";
 
 const MAX_ANCHORS = 3;
 
-export function createInitialSpiritBindDraft(): SpiritBindDraft {
+export function createInitialSpiritBindDraft(input?: {
+  thesis?: string | null;
+  isPinned?: boolean;
+}): SpiritBindDraft {
   return {
-    mode: "quick-bind",
-    thesis: "",
+    mode: "quick-configure",
+    thesis: input?.thesis ?? "",
     selectedAnchorArtifactIds: [],
     manualKind: null,
-    isPinned: false,
+    isPinned: input?.isPinned ?? false,
   };
 }
 

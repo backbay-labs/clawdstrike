@@ -13,12 +13,12 @@ import * as React from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useConnection } from "@/context/ConnectionContext";
 import { type OpenClawGatewayRuntime, useOpenClaw } from "@/context/OpenClawContext";
+import { ObservatoryWorldCanvas, type HuntStationId } from "@/features/hunt-observatory";
 import { NexusAppRail } from "@/features/cyber-nexus/components/NexusAppRail";
 import { NexusControlStrip } from "@/features/cyber-nexus/components/NexusControlStrip";
 import type { NexusLayoutMode, Strikecell, StrikecellDomainId } from "@/features/cyber-nexus/types";
-import { AgentGlyphOverlay } from "@/features/forensics/components/AgentGlyphOverlay";
+import { deriveHuntObservatorySceneState } from "@/features/hunt-observatory";
 import { AgentOrbHud } from "@/features/forensics/components/AgentOrbHud";
-import { HuntSpiritOverlay } from "@/features/forensics/components/hunt-spirit/HuntSpiritOverlay";
 import {
   deriveHuntSpiritSceneActor,
   detectHuntSpiritSceneCue,
@@ -36,7 +36,13 @@ import {
   deriveHuntSpiritRuntimeState,
   selectActiveHuntSpiritSignalSnapshot,
 } from "@/shell/workbench/spirit";
+import {
+  SPIRIT_SURFACE_AFTERMATH_MS,
+  SPIRIT_SURFACE_RECEIVE_MS,
+  type SpiritSurfaceReceiveState,
+} from "@/shell/workbench/spirit-ritual/release";
 import { useWorkbench } from "@/shell/workbench/WorkbenchStateProvider";
+import { buildForensicsFlowRead, resolveForensicsObservatoryStationId } from "./observatory";
 
 type Agent = { id: string; label: string; color?: string };
 type RiverAction = River.RiverAction;
@@ -87,7 +93,7 @@ const LIVE_TIME_RANGE_LEAD_MS = 5500;
 const NEXUS_RAIL_STRIKECELLS: Strikecell[] = [
   {
     id: "security-overview",
-    name: "Security",
+    name: "Horizon",
     routeId: "nexus",
     description: "",
     status: "healthy",
@@ -98,18 +104,7 @@ const NEXUS_RAIL_STRIKECELLS: Strikecell[] = [
   },
   {
     id: "attack-graph",
-    name: "Attack",
-    routeId: "nexus",
-    description: "",
-    status: "healthy",
-    activityCount: 0,
-    nodeCount: 0,
-    nodes: [],
-    tags: [],
-  },
-  {
-    id: "threat-radar",
-    name: "Threat",
+    name: "Subjects",
     routeId: "nexus",
     description: "",
     status: "healthy",
@@ -120,7 +115,40 @@ const NEXUS_RAIL_STRIKECELLS: Strikecell[] = [
   },
   {
     id: "network-map",
-    name: "Arena",
+    name: "Operations",
+    routeId: "nexus",
+    description: "",
+    status: "healthy",
+    activityCount: 0,
+    nodeCount: 0,
+    nodes: [],
+    tags: [],
+  },
+  {
+    id: "forensics-river",
+    name: "Evidence",
+    routeId: "nexus",
+    description: "",
+    status: "healthy",
+    activityCount: 0,
+    nodeCount: 0,
+    nodes: [],
+    tags: [],
+  },
+  {
+    id: "policies",
+    name: "Judgment",
+    routeId: "nexus",
+    description: "",
+    status: "healthy",
+    activityCount: 0,
+    nodeCount: 0,
+    nodes: [],
+    tags: [],
+  },
+  {
+    id: "threat-radar",
+    name: "Watchfield",
     routeId: "nexus",
     description: "",
     status: "healthy",
@@ -131,37 +159,54 @@ const NEXUS_RAIL_STRIKECELLS: Strikecell[] = [
   },
 ];
 
-type NexusSceneMode = "security" | "attack" | "threat" | "arena";
+type NexusSceneMode = "horizon" | "subjects" | "operations" | "evidence" | "judgment" | "watchfield";
 
 const SCENE_BY_STRIKECELL: Record<StrikecellDomainId, NexusSceneMode> = {
-  "security-overview": "security",
-  "attack-graph": "attack",
-  "threat-radar": "threat",
-  "network-map": "arena",
-  "forensics-river": "security",
-  events: "security",
-  marketplace: "security",
-  policies: "security",
-  workflows: "security",
+  "security-overview": "horizon",
+  "attack-graph": "subjects",
+  "threat-radar": "watchfield",
+  "network-map": "operations",
+  "forensics-river": "evidence",
+  events: "horizon",
+  marketplace: "watchfield",
+  policies: "judgment",
+  workflows: "operations",
 };
 
 const SCENE_META: Record<NexusSceneMode, { title: string; subtitle: string }> = {
-  security: {
-    title: "Security Scene",
-    subtitle: "Live policy posture, detector telemetry, and guarded flow lanes.",
+  horizon: {
+    title: "Horizon",
+    subtitle: "Fresh change crossing into the active hunt world.",
   },
-  attack: {
-    title: "Attack Builder Lab",
-    subtitle: "Construct and inspect operator attack paths before execution.",
+  subjects: {
+    title: "Subjects",
+    subtitle: "Entities, scopes, and active relationships under pressure.",
   },
-  threat: {
-    title: "Threat Scene",
-    subtitle: "Signal and anomaly focus across active agents and approvals.",
+  operations: {
+    title: "Operations",
+    subtitle: "Active runs, interventions, and mounted inputs shaping the field.",
   },
-  arena: {
-    title: "Arena Network View",
-    subtitle: "Topology-style operational lanes for connected session traffic.",
+  evidence: {
+    title: "Evidence",
+    subtitle: "Proof objects, policy traces, and replayable receipts gathering weight.",
   },
+  judgment: {
+    title: "Judgment",
+    subtitle: "Authored meaning hardening into decisions and promoted memory.",
+  },
+  watchfield: {
+    title: "Watchfield",
+    subtitle: "Long-tail attention holding the perimeter around the hunt.",
+  },
+};
+
+const FLOW_STATION_TARGETS: Record<HuntStationId, StrikecellDomainId> = {
+  signal: "security-overview",
+  targets: "attack-graph",
+  run: "network-map",
+  receipts: "forensics-river",
+  "case-notes": "policies",
+  watch: "threat-radar",
 };
 
 const RUNTIME_SESSION_KEYS = {
@@ -887,8 +932,7 @@ export function ForensicsRiverView() {
   const [layoutDropdownOpen, setLayoutDropdownOpen] = React.useState(false);
   const [commandQuery, setCommandQuery] = React.useState("");
   const [openAppId, setOpenAppId] = React.useState<StrikecellDomainId | null>("security-overview");
-  const [sceneMode, setSceneMode] = React.useState<NexusSceneMode>("security");
-  const [sceneRevision, setSceneRevision] = React.useState(0);
+  const [sceneMode, setSceneMode] = React.useState<NexusSceneMode>("horizon");
   const [sceneTransition, setSceneTransition] = React.useState<{
     from: NexusSceneMode;
     to: NexusSceneMode;
@@ -1082,7 +1126,7 @@ export function ForensicsRiverView() {
   const sceneMeta = SCENE_META[sceneMode];
 
   const sceneDataset = React.useMemo<RiverDataset>(() => {
-    if (sceneMode === "attack") {
+    if (sceneMode === "subjects") {
       const focusActions = telemetryDataset.actions.filter(
         (action) =>
           action.kind === "exec" ||
@@ -1106,7 +1150,7 @@ export function ForensicsRiverView() {
       };
     }
 
-    if (sceneMode === "threat") {
+    if (sceneMode === "watchfield") {
       const threatActions = telemetryDataset.actions
         .filter((action) => action.policyStatus !== "allowed" || action.riskScore >= 0.45)
         .slice(-54);
@@ -1122,13 +1166,37 @@ export function ForensicsRiverView() {
       };
     }
 
-    if (sceneMode === "arena") {
+    if (sceneMode === "operations") {
       return {
         ...telemetryDataset,
         policies: telemetryDataset.policies.map((policy) => ({
           ...policy,
           type: policy.type === "hard-deny" ? "soft" : policy.type,
           coverageGap: false,
+        })),
+      };
+    }
+
+    if (sceneMode === "evidence") {
+      return {
+        ...telemetryDataset,
+        actions: telemetryDataset.actions.filter(
+          (action) =>
+            action.policyStatus !== "allowed" ||
+            action.kind === "query" ||
+            action.kind === "message",
+        ),
+        signals: telemetryDataset.signals.slice(-36),
+      };
+    }
+
+    if (sceneMode === "judgment") {
+      return {
+        ...telemetryDataset,
+        actions: telemetryDataset.actions.map((action) => ({
+          ...action,
+          noveltyScore: clamp01(action.noveltyScore * 0.72),
+          blastRadius: clamp01(action.blastRadius * 0.86),
         })),
       };
     }
@@ -1227,12 +1295,18 @@ export function ForensicsRiverView() {
   const [activeSpiritCue, setActiveSpiritCue] = React.useState<HuntSpiritSceneCueEvent | null>(
     null,
   );
+  const [roomReceiveState, setRoomReceiveState] = React.useState<SpiritSurfaceReceiveState>("idle");
+  const roomReceiveTimerRef = React.useRef<number | null>(null);
+  const roomAftermathTimerRef = React.useRef<number | null>(null);
+  const roomCueRef = React.useRef<number | null>(null);
   const previousSpiritSnapshotRef = React.useRef<typeof activeSpiritSnapshot>(null);
+  const previousSpiritRuntimeRef = React.useRef<typeof activeSpiritRuntime>(null);
   const previousSpiritStationRef = React.useRef<string | null>(null);
 
   React.useEffect(() => {
     const cue = detectHuntSpiritSceneCue({
       runtime: activeSpiritRuntime,
+      previousRuntime: previousSpiritRuntimeRef.current,
       snapshot: activeSpiritSnapshot,
       previousSnapshot: previousSpiritSnapshotRef.current,
       activeStationId: openAppId,
@@ -1240,6 +1314,7 @@ export function ForensicsRiverView() {
       nowMs: Date.now(),
     });
     if (cue) setActiveSpiritCue(cue);
+    previousSpiritRuntimeRef.current = activeSpiritRuntime;
     previousSpiritSnapshotRef.current = activeSpiritSnapshot;
     previousSpiritStationRef.current = openAppId;
   }, [activeSpiritRuntime, activeSpiritSnapshot, openAppId]);
@@ -1274,22 +1349,60 @@ export function ForensicsRiverView() {
       }),
     [activeSpiritCue, activeSpiritRuntime, activeSpiritSnapshot, openAppId],
   );
+  const activeSpiritCueAt = activeSpiritCue?.startedAt ?? null;
+  const activeObservatoryStationId = React.useMemo(
+    () => resolveForensicsObservatoryStationId(openAppId),
+    [openAppId],
+  );
+
+  React.useEffect(() => {
+    if (!activeSpiritCueAt) return undefined;
+    if (roomCueRef.current === null) {
+      roomCueRef.current = activeSpiritCueAt;
+      return undefined;
+    }
+    if (activeSpiritCueAt <= roomCueRef.current) return undefined;
+    roomCueRef.current = activeSpiritCueAt;
+    setRoomReceiveState("receiving");
+    if (roomReceiveTimerRef.current) window.clearTimeout(roomReceiveTimerRef.current);
+    if (roomAftermathTimerRef.current) window.clearTimeout(roomAftermathTimerRef.current);
+    roomReceiveTimerRef.current = window.setTimeout(() => {
+      setRoomReceiveState("aftermath");
+      roomReceiveTimerRef.current = null;
+    }, SPIRIT_SURFACE_RECEIVE_MS);
+    roomAftermathTimerRef.current = window.setTimeout(() => {
+      setRoomReceiveState("idle");
+      roomAftermathTimerRef.current = null;
+    }, SPIRIT_SURFACE_RECEIVE_MS + SPIRIT_SURFACE_AFTERMATH_MS);
+    return () => {
+      if (roomReceiveTimerRef.current) {
+        window.clearTimeout(roomReceiveTimerRef.current);
+        roomReceiveTimerRef.current = null;
+      }
+      if (roomAftermathTimerRef.current) {
+        window.clearTimeout(roomAftermathTimerRef.current);
+        roomAftermathTimerRef.current = null;
+      }
+    };
+  }, [activeSpiritCueAt]);
+  const observatorySceneState = React.useMemo(() => {
+    if (!activeSpiritSnapshot) return null;
+    return deriveHuntObservatorySceneState(activeSpiritSnapshot, {
+      mode: "flow",
+      activeStationId: activeObservatoryStationId,
+      roomReceiveState,
+      openedDetailSurface: "none",
+    });
+  }, [activeObservatoryStationId, activeSpiritSnapshot, roomReceiveState]);
+  const observatoryFlowRead = React.useMemo(
+    () => buildForensicsFlowRead(observatorySceneState, activeObservatoryStationId),
+    [activeObservatoryStationId, observatorySceneState],
+  );
 
   const handleClearFocus = React.useCallback(() => {
     setSelectedSessionKey("__all__");
     setFocusedAgentId(null);
   }, [setFocusedAgentId, setSelectedSessionKey]);
-
-  const sceneFeatureFlags = React.useMemo(
-    () => ({
-      showPolicyRails: sceneMode !== "arena",
-      showCausalThreads: true,
-      showSignals: sceneMode !== "arena",
-      showDetectors: sceneMode !== "attack",
-      showIncidents: sceneMode === "threat" ? true : sceneDataset.incidents.length > 0,
-    }),
-    [sceneDataset.incidents.length, sceneMode],
-  );
 
   React.useEffect(() => {
     if (!sessionId) return;
@@ -1566,7 +1679,6 @@ export function ForensicsRiverView() {
         window.clearTimeout(sceneTransitionTimerRef.current);
       }
       setSceneTransition({ from: sceneMode, to: nextScene });
-      setSceneRevision((value) => value + 1);
       sceneTransitionTimerRef.current = window.setTimeout(() => {
         setSceneTransition(null);
         sceneTransitionTimerRef.current = null;
@@ -1580,13 +1692,18 @@ export function ForensicsRiverView() {
     setSceneTransition({ from: sceneMode, to: nextScene });
     setOpenAppId(id);
     setSceneMode(nextScene);
-    setSceneRevision((value) => value + 1);
     sceneTransitionTimerRef.current = window.setTimeout(() => {
       setSceneTransition(null);
       sceneTransitionTimerRef.current = null;
     }, 560);
   };
 
+  const handleSelectFlowStation = React.useCallback(
+    (stationId: HuntStationId) => {
+      handleOpenRailStrikecell(FLOW_STATION_TARGETS[stationId]);
+    },
+    [handleOpenRailStrikecell],
+  );
   return (
     <div className="flex h-full w-full" style={{ background: "#050510" }}>
       <div className="relative min-w-0 flex-1">
@@ -1594,7 +1711,10 @@ export function ForensicsRiverView() {
           connectionStatus={daemonStatus}
           layoutMode={layoutMode}
           activeStrikecell={activeStrikecell}
-          brandSubline="Huntronomer"
+          brandSubline="Observatory Flow"
+          atlasLabel={observatoryFlowRead.label}
+          atlasCode={observatoryFlowRead.code}
+          atlasReason={observatoryFlowRead.reason}
           commandQuery={commandQuery}
           layoutDropdownOpen={layoutDropdownOpen}
           onOpenSearch={() => {}}
@@ -1611,14 +1731,16 @@ export function ForensicsRiverView() {
         />
 
         <div className="absolute top-[72px] left-0 right-0 z-20 px-4 py-2 pointer-events-none">
-          <div className="pointer-events-auto flex items-center gap-2">
+          <div className="pointer-events-auto inline-flex max-w-[920px] flex-wrap items-center gap-2 rounded-full border border-[rgba(213,173,87,0.14)] bg-[rgba(7,10,16,0.82)] px-3 py-2 shadow-[0_14px_34px_rgba(0,0,0,0.28)] backdrop-blur-md">
             <button onClick={() => setMode("live")} className={cls(mode === "live")}>
               LIVE
             </button>
             <button onClick={() => setMode("replay")} className={cls(mode === "replay")}>
               REPLAY
             </button>
-            <div className="ml-2 text-xs font-mono text-white/35">{statusLabel}</div>
+            <div className="ml-1 text-[10px] font-mono uppercase tracking-[0.12em] text-white/38">
+              {statusLabel}
+            </div>
             <InlineMenuSelect
               value={selectedSessionKey}
               options={sessionOptions}
@@ -1644,63 +1766,54 @@ export function ForensicsRiverView() {
               }}
               title="Live window"
             />
-            <div className="ml-3 text-sm text-white/50">
-              {focusedSceneDataset.actions.length} actions ·{" "}
-              {Math.max(focusedSceneDataset.agents.length, agentGlyphs.length)} agents ·{" "}
-              {focusedSceneDataset.signals.length} signals · {focusedSceneDataset.incidents.length}{" "}
-              incidents
+            <div className="h-5 w-px bg-white/8" />
+            <div className="text-[10px] font-mono uppercase tracking-[0.14em] text-[rgba(244,225,177,0.82)]">
+              {observatoryFlowRead.code}
             </div>
-          </div>
-
-          <div className="pointer-events-auto mt-2 inline-flex max-w-[720px] items-start gap-3 rounded-lg border border-[rgba(213,173,87,0.26)] bg-[linear-gradient(180deg,rgba(10,13,20,0.92)_0%,rgba(6,9,15,0.95)_100%)] px-3 py-2 shadow-[0_12px_28px_rgba(0,0,0,0.45)]">
-            <div className="text-[10px] font-mono uppercase tracking-[0.14em] text-[rgba(213,173,87,0.9)]">
-              Scene
+            <div className="max-w-[320px] truncate text-[11px] text-sdr-text-secondary">
+              {observatoryFlowRead.reason}
             </div>
-            <div className="min-w-0">
-              <div className="text-xs font-mono uppercase tracking-[0.1em] text-sdr-text-primary">
-                {sceneMeta.title}
-              </div>
-              <div className="mt-0.5 text-xs text-sdr-text-secondary">{sceneMeta.subtitle}</div>
+            <div className="text-[10px] font-mono uppercase tracking-[0.12em] text-white/42">
+              {focusedSceneDataset.actions.length} act · {focusedSceneDataset.signals.length} sig ·{" "}
+              {focusedSceneDataset.incidents.length} inc
             </div>
           </div>
         </div>
 
         {sceneTransition ? (
           <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
-            <div className="rounded-xl border border-[rgba(213,173,87,0.36)] bg-[linear-gradient(180deg,rgba(10,13,20,0.92)_0%,rgba(6,9,14,0.94)_100%)] px-4 py-3 shadow-[0_18px_44px_rgba(0,0,0,0.52)]">
+            <div className="rounded-full border border-[rgba(213,173,87,0.22)] bg-[rgba(7,10,16,0.8)] px-4 py-2 shadow-[0_18px_44px_rgba(0,0,0,0.34)]">
               <div className="text-[10px] font-mono uppercase tracking-[0.16em] text-[rgba(213,173,87,0.92)]">
                 Station transfer
               </div>
-              <div className="mt-1 text-sm font-mono uppercase tracking-[0.1em] text-sdr-text-primary">
+              <div className="mt-1 text-xs font-mono uppercase tracking-[0.1em] text-sdr-text-primary">
                 {SCENE_META[sceneTransition.to].title}
-              </div>
-              <div className="mt-1 text-xs text-sdr-text-secondary">
-                Calibrating scene vectors and guard overlays.
               </div>
             </div>
           </div>
         ) : null}
 
-        <River.RiverView
-          key={`station:${sceneMode}:${sceneRevision}`}
-          actions={focusedSceneDataset.actions}
-          agents={focusedSceneDataset.agents}
-          policies={focusedSceneDataset.policies}
-          signals={focusedSceneDataset.signals}
-          incidents={focusedSceneDataset.incidents}
-          detectors={focusedSceneDataset.detectors}
-          causalLinks={focusedSceneDataset.causalLinks}
-          timeRange={focusedSceneDataset.timeRange}
-          autoPlay={mode === "live"}
-          showPolicyRails={sceneFeatureFlags.showPolicyRails}
-          showCausalThreads={sceneFeatureFlags.showCausalThreads}
-          showSignals={sceneFeatureFlags.showSignals}
-          showDetectors={sceneFeatureFlags.showDetectors}
-          showIncidents={sceneFeatureFlags.showIncidents}
+        <ObservatoryWorldCanvas
+          className="absolute inset-0"
+          mode="flow"
+          sceneState={observatorySceneState}
+          activeStationId={activeObservatoryStationId}
+          cameraResetToken={sceneMode === "operations" ? 2 : 1}
+          spirit={
+            activeSpiritActor
+              ? {
+                  kind: activeSpiritActor.kind,
+                  accentColor: activeSpiritActor.accentColor,
+                  likelyStationId: activeSpiritActor.observatoryLikelyStationId ?? null,
+                  cueKind: activeSpiritActor.observatoryActor?.cueKind ?? null,
+                }
+              : null
+          }
+          onSelectStation={(stationId) => {
+            handleOpenRailStrikecell(FLOW_STATION_TARGETS[stationId]);
+          }}
         />
 
-        <HuntSpiritOverlay actor={activeSpiritActor} />
-        <AgentGlyphOverlay glyphs={agentGlyphs} />
         <AgentOrbHud
           focusedGlyph={focusedGlyph}
           focusedSessionKey={focusedGlyph?.sessionKey ?? null}
@@ -1712,7 +1825,7 @@ export function ForensicsRiverView() {
           openAppId={openAppId}
           onToggleApp={handleOpenRailStrikecell}
           mode="station"
-          title="Stations"
+          title="Flow"
           transitioningId={sceneTransition ? openAppId : null}
         />
       </div>

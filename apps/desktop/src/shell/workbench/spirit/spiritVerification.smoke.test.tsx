@@ -200,22 +200,26 @@ describe("hunt spirit verification smoke", () => {
     container.remove();
   });
 
-  it("proves create stays instant while quick bind propagates across dock, sidebar, and 3D runtimes", async () => {
+  it("proves create stays instant while default spirit creation and reconfiguration propagate across dock, sidebar, and 3D runtimes", async () => {
     const { huntStore, huntId, hunt, context } = buildQuickBindHarness();
-    expect(hunt.spirit).toBeNull();
+    expect(hunt.spirit).not.toBeNull();
+    expect(hunt.spirit?.bindSource).toBe("default-create");
 
     const commit = buildSpiritBindCommit(context, createInitialSpiritBindDraft());
-    expect(commit.bindSource).toBe("quick-bind");
+    expect(commit.bindSource).toBe("quick-configure");
     expect(commit.anchorArtifactIds).toContain("smoke_receipt");
 
     const state = createInitialWorkbenchState();
     state.shell = "hunt";
     state.lens = "files";
     state.huntStore = huntStore;
-    state.huntStore.hunts[huntId] = {
-      ...hunt,
-      spirit: createHuntSpiritState(commit),
-    };
+    state.huntStore = huntReducer(state.huntStore, {
+      type: "HUNT_RECONFIGURE_SPIRIT",
+      payload: {
+        huntId,
+        spirit: createHuntSpiritState(commit),
+      },
+    });
     state.huntStore.dock.activeHuntId = huntId;
 
     const snapshot = selectActiveHuntSpiritSignalSnapshot(state);
@@ -265,7 +269,7 @@ describe("hunt spirit verification smoke", () => {
     expect(nexusActor?.stationAffinities["forensics-river"]).toBeGreaterThan(0.3);
   });
 
-  it("keeps bind controls keyboard-reachable and supports pinned manual rebind payloads", async () => {
+  it("keeps the public bind seam pointed at the ritual chamber with keyboard-reachable controls", async () => {
     const { context } = buildQuickBindHarness();
     const onBindCalls: Array<unknown> = [];
 
@@ -281,12 +285,18 @@ describe("hunt spirit verification smoke", () => {
       );
     });
 
-    const tablist = container.querySelector('[role="tablist"][aria-label="Bind Spirit modes"]');
+    const chamber = container.querySelector('[data-testid="spirit-bind-sheet"]') as HTMLElement | null;
+    const stationRail = container.querySelector('[role="tablist"][aria-label="Spirit modes"]');
     const manualTab = container.querySelector('[data-testid="spirit-bind-mode-manual"]') as HTMLButtonElement | null;
     const pinToggle = container.querySelector('[data-testid="spirit-bind-pin-toggle"]') as HTMLButtonElement | null;
     const submit = container.querySelector('[data-testid="spirit-bind-submit"]') as HTMLButtonElement | null;
 
-    expect(tablist).toBeTruthy();
+    expect(chamber?.textContent).toContain("Spirit");
+    expect(chamber?.textContent).toContain("Keep current");
+    expect(chamber?.textContent).toContain("Pin to hunt");
+    expect(chamber?.textContent).toContain("Apply spirit");
+    expect(chamber?.getAttribute("aria-label")).toBe("Configure Spirit");
+    expect(stationRail).toBeTruthy();
     expect(manualTab?.disabled).toBe(false);
     expect(pinToggle?.disabled).toBe(false);
     expect(submit?.disabled).toBe(false);
@@ -298,19 +308,43 @@ describe("hunt spirit verification smoke", () => {
       manualTab?.click();
     });
 
-    const manualLedger = container.querySelector('[data-testid="spirit-bind-manual-ledger"]') as HTMLButtonElement | null;
-    expect(manualLedger).toBeTruthy();
+    const radioGroup = container.querySelector('[role="radiogroup"][aria-label="Manual spirit selection"]');
+    const radioButtons = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('[role="radio"]'),
+    );
+    const currentCheckedIndex = radioButtons.findIndex(
+      (button) => button.getAttribute("aria-checked") === "true",
+    );
+    const nextCheckedIndex = currentCheckedIndex >= 0
+      ? (currentCheckedIndex + 1) % radioButtons.length
+      : 0;
+
+    expect(radioGroup).toBeTruthy();
+    expect(radioButtons.length).toBeGreaterThan(1);
+    expect(currentCheckedIndex).toBeGreaterThanOrEqual(0);
+
+    radioButtons[currentCheckedIndex]?.focus();
+    await act(async () => {
+      radioButtons[currentCheckedIndex]?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }),
+      );
+    });
+
+    expect(document.activeElement).toBe(radioButtons[nextCheckedIndex]);
+    expect(radioButtons[nextCheckedIndex]?.getAttribute("aria-checked")).toBe("true");
+    const manualPinToggle = container.querySelector('[data-testid="spirit-bind-pin-toggle"]') as HTMLButtonElement | null;
+
+    expect(manualPinToggle?.getAttribute("role")).toBe("switch");
+    expect(manualPinToggle?.getAttribute("aria-checked")).toBe("false");
 
     await act(async () => {
-      manualLedger?.click();
-      pinToggle?.click();
+      manualPinToggle?.click();
       submit?.click();
     });
 
     expect(onBindCalls).toHaveLength(1);
     expect(onBindCalls[0]).toMatchObject({
       bindSource: "manual",
-      kind: "ledger",
       isPinned: true,
     });
   });

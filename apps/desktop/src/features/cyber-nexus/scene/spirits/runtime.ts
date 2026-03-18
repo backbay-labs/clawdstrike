@@ -1,4 +1,10 @@
-import type { HuntSpiritRuntimeState, HuntSpiritSignalSnapshot } from "@/shell/workbench/spirit";
+import type {
+  HuntSpiritKind,
+  HuntSpiritRuntimeState,
+  HuntSpiritSignalSnapshot,
+} from "@/shell/workbench/spirit";
+import { clamp01, countOf, hasRecentBind } from "@/shell/workbench/spirit/sceneMath";
+import type { HuntStationId, SpiritFieldActor } from "@/features/hunt-observatory";
 import type { Strikecell, StrikecellDomainId } from "../../types";
 
 export type NexusSpiritCueKind = "bind" | "transit" | "focus" | "recenter";
@@ -16,6 +22,7 @@ export interface NexusSpiritCueEvent {
 export interface NexusSpiritSceneActor {
   huntId: string;
   huntTitle: string;
+  kind: HuntSpiritKind;
   label: string;
   accentColor: string;
   contour: string;
@@ -25,6 +32,10 @@ export interface NexusSpiritSceneActor {
   reason: string | null;
   anchorStrikecellId: StrikecellDomainId;
   likelyStationId: StrikecellDomainId | null;
+  observatoryAnchorStationId?: HuntStationId | null;
+  observatoryLikelyStationId?: HuntStationId | null;
+  observatoryStationAffinities?: Partial<Record<HuntStationId, number>>;
+  observatoryActor?: SpiritFieldActor;
   presenceStrength: number;
   orbitRadius: number;
   altitude: number;
@@ -32,32 +43,94 @@ export interface NexusSpiritSceneActor {
   stationAffinities: Partial<Record<StrikecellDomainId, number>>;
 }
 
-function clamp01(value: number): number {
-  if (!Number.isFinite(value)) return 0;
-  return Math.max(0, Math.min(1, value));
+function mapStrikecellToObservatoryStation(
+  strikecellId: StrikecellDomainId | null,
+): HuntStationId | null {
+  switch (strikecellId) {
+    case "security-overview":
+      return "signal";
+    case "attack-graph":
+      return "targets";
+    case "workflows":
+      return "run";
+    case "forensics-river":
+      return "receipts";
+    case "threat-radar":
+      return "watch";
+    case "network-map":
+      return "run";
+    default:
+      return null;
+  }
 }
 
-function countOf(
-  counts: HuntSpiritSignalSnapshot["artifactCounts"] | HuntSpiritSignalSnapshot["semanticCounts"],
-  key: string,
-): number {
-  const value = counts[key as keyof typeof counts];
-  return typeof value === "number" ? value : 0;
+function mapRuntimeStanceToObservatory(
+  stance: HuntSpiritRuntimeState["stance"],
+): SpiritFieldActor["stance"] {
+  switch (stance) {
+    case "attune":
+    case "idle":
+      return "watchful";
+    case "focus":
+      return "focus";
+    case "witness":
+      return "witness";
+    case "absorb":
+      return "absorb";
+    case "transit":
+      return "transit";
+  }
 }
 
-function hasRecentBind(
-  snapshot: HuntSpiritSignalSnapshot,
-  previousSnapshot: HuntSpiritSignalSnapshot | null,
-  nowMs: number,
-): boolean {
-  const spirit = snapshot.boundSpirit;
-  if (!spirit) return false;
+function mapCueKindToObservatory(
+  cueKind: NexusSpiritCueEvent["kind"] | null,
+): SpiritFieldActor["cueKind"] {
+  switch (cueKind) {
+    case "bind":
+    case "transit":
+    case "focus":
+      return cueKind;
+    case "recenter":
+      return "focus";
+    default:
+      return null;
+  }
+}
 
-  const previousSpirit = previousSnapshot?.boundSpirit ?? null;
-  const latestBindAt = Math.max(spirit.boundAt, spirit.reboundAt ?? 0);
-  if (previousSpirit === null) return true;
-  if (spirit.reboundAt !== previousSpirit.reboundAt) return true;
-  return nowMs - latestBindAt <= 4_500;
+function collapseToObservatoryStationAffinities(
+  stationAffinities: Partial<Record<StrikecellDomainId, number>>,
+): Partial<Record<HuntStationId, number>> {
+  const collapsed: Partial<Record<HuntStationId, number>> = {};
+
+  for (const [strikecellId, affinity] of Object.entries(stationAffinities) as Array<
+    [StrikecellDomainId, number | undefined]
+  >) {
+    const stationId = mapStrikecellToObservatoryStation(strikecellId);
+    if (!stationId) continue;
+    collapsed[stationId] = clamp01((collapsed[stationId] ?? 0) + (affinity ?? 0));
+  }
+
+  return collapsed;
+}
+
+function resolveObservatoryLikelyStationId(
+  stationAffinities: Partial<Record<HuntStationId, number>>,
+  activeStrikecellId: StrikecellDomainId | null,
+): HuntStationId | null {
+  let bestId = mapStrikecellToObservatoryStation(activeStrikecellId);
+  let bestScore = bestId ? (stationAffinities[bestId] ?? 0) : 0;
+
+  for (const [stationId, score] of Object.entries(stationAffinities) as Array<
+    [HuntStationId, number | undefined]
+  >) {
+    const currentScore = score ?? 0;
+    if (currentScore > bestScore) {
+      bestId = stationId;
+      bestScore = currentScore;
+    }
+  }
+
+  return bestId;
 }
 
 function applyWeight(
@@ -188,6 +261,7 @@ function resolveLikelyStationId(
 
 export function detectNexusSpiritCue(input: {
   runtime: HuntSpiritRuntimeState;
+  previousRuntime?: HuntSpiritRuntimeState | null;
   snapshot: HuntSpiritSignalSnapshot | null;
   previousSnapshot: HuntSpiritSignalSnapshot | null;
   activeStrikecellId: StrikecellDomainId | null;
@@ -198,6 +272,7 @@ export function detectNexusSpiritCue(input: {
 }): NexusSpiritCueEvent | null {
   const {
     runtime,
+    previousRuntime = null,
     snapshot,
     previousSnapshot,
     activeStrikecellId,
@@ -255,8 +330,9 @@ export function detectNexusSpiritCue(input: {
 
   const previousIntent = previousSnapshot?.likelyIntent ?? null;
   const previousLens = previousSnapshot?.currentLens ?? null;
+  const enteredFocus = runtime.stance === "focus" && previousRuntime?.stance !== "focus";
   if (
-    runtime.stance === "focus" ||
+    enteredFocus ||
     (snapshot.confidenceScore >= 56 &&
       (previousIntent !== snapshot.likelyIntent || previousLens !== snapshot.currentLens))
   ) {
@@ -287,6 +363,13 @@ export function deriveNexusSpiritSceneActor(input: {
   const likelyStationId = resolveLikelyStationId(stationAffinities, activeStrikecellId);
   const anchorStrikecellId = activeStrikecellId ?? likelyStationId;
   if (!anchorStrikecellId) return null;
+  const observatoryStationAffinities = collapseToObservatoryStationAffinities(stationAffinities);
+  const observatoryLikelyStationId = resolveObservatoryLikelyStationId(
+    observatoryStationAffinities,
+    activeStrikecellId,
+  );
+  const observatoryAnchorStationId =
+    mapStrikecellToObservatoryStation(anchorStrikecellId) ?? observatoryLikelyStationId;
 
   const cueBoost = cue?.kind === "bind" ? 0.16 : cue?.kind === "transit" ? 0.14 : 0.08;
   const affinityFocus = likelyStationId ? (stationAffinities[likelyStationId] ?? 0) : 0;
@@ -294,6 +377,7 @@ export function deriveNexusSpiritSceneActor(input: {
   return {
     huntId: snapshot.huntId,
     huntTitle: snapshot.huntTitle,
+    kind: runtime.kind,
     label: runtime.label,
     accentColor: runtime.accentColor ?? "#d4a84b",
     contour: runtime.contour ?? "field",
@@ -303,6 +387,17 @@ export function deriveNexusSpiritSceneActor(input: {
     reason: runtime.reason ?? snapshot.boundSpirit.bindReason ?? null,
     anchorStrikecellId,
     likelyStationId,
+    observatoryAnchorStationId,
+    observatoryLikelyStationId,
+    observatoryStationAffinities,
+    observatoryActor: {
+      type: "spirit-field",
+      kind: runtime.kind,
+      stance: mapRuntimeStanceToObservatory(runtime.stance),
+      likelyStationId: observatoryLikelyStationId,
+      emphasis: runtime.emphasis.slice(0, 3),
+      cueKind: mapCueKindToObservatory(cue?.kind ?? null),
+    },
     presenceStrength: clamp01(runtime.fieldStrength * 0.72 + affinityFocus * 0.24 + cueBoost),
     orbitRadius: 1.1 + runtime.motion.aura * 1.2 + (cue?.kind === "recenter" ? 0.16 : 0),
     altitude: 1.28 + runtime.motion.openness * 0.9 + (cue?.kind === "focus" ? 0.18 : 0),

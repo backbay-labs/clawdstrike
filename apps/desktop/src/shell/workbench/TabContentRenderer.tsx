@@ -126,7 +126,7 @@ export function TabContentRenderer({ groupId, poolSize = 3 }: TabContentRenderer
                 </div>
               }
             >
-              <Component tab={tab} isActive={isActive} />
+              <Component tab={tab} isActive={isActive} groupId={groupId} />
             </Suspense>
           </div>
         );

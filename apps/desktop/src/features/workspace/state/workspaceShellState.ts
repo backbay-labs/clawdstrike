@@ -122,6 +122,22 @@ export function setWorkspaceActiveRoot(
   };
 }
 
+export function applyWorkspaceRootSnapshot(
+  state: WorkspaceSurfaceState,
+  snapshot: WorkspaceShellSnapshot,
+): WorkspaceSurfaceState {
+  const nextState = createWorkspaceSurfaceState(snapshot);
+
+  return {
+    ...nextState,
+    focusedPane: state.route.section === "file" ? nextState.focusedPane : state.focusedPane,
+    route: {
+      section: state.route.section === "file" ? nextState.route.section : state.route.section,
+      activeFilePath: nextState.route.activeFilePath,
+    },
+  };
+}
+
 export function focusWorkspacePane(
   state: WorkspaceSurfaceState,
   pane: WorkspacePaneId,

@@ -39,6 +39,13 @@ import {
   useSidebarWakeController,
 } from "./anticipation";
 import { useDragSemanticSelection, useDragState, useDropTarget } from "./DragDropContext";
+import {
+  getSpiritReleaseCueTimestamp,
+  resolveSpiritSurfaceReceiveState,
+  SPIRIT_SURFACE_AFTERMATH_MS,
+  SPIRIT_SURFACE_RECEIVE_MS,
+  type SpiritSurfaceReceiveState,
+} from "./spirit-ritual/release";
 import type { OpenTabMode } from "./workbenchState";
 
 const MAX_WIDTH = 400;
@@ -118,7 +125,10 @@ export function LensSidebar({ onOpenPath }: LensSidebarProps) {
   const autoOpenedRef = useRef(false);
   const edgePeekRef = useRef(false);
   const edgeCloseTimerRef = useRef<number | null>(null);
+  const spiritReceiveTimerRef = useRef<number | null>(null);
+  const spiritAftermathTimerRef = useRef<number | null>(null);
   const [sidebarViewportLeft, setSidebarViewportLeft] = useState(0);
+  const [spiritReleaseState, setSpiritReleaseState] = useState<SpiritSurfaceReceiveState>("idle");
 
   const handleSelectTab = useCallback((tabId: string) => {
     dispatch({ type: "SET_ACTIVE_TAB", payload: { groupId: "main", tabId } });
@@ -207,6 +217,54 @@ export function LensSidebar({ onOpenPath }: LensSidebarProps) {
       clearEdgeCloseTimer();
     };
   }, [clearEdgeCloseTimer]);
+
+  useEffect(() => {
+    if (spiritReceiveTimerRef.current !== null) {
+      window.clearTimeout(spiritReceiveTimerRef.current);
+      spiritReceiveTimerRef.current = null;
+    }
+    if (spiritAftermathTimerRef.current !== null) {
+      window.clearTimeout(spiritAftermathTimerRef.current);
+      spiritAftermathTimerRef.current = null;
+    }
+
+    const releaseAt = getSpiritReleaseCueTimestamp(activeHunt?.spirit);
+    if (!releaseAt) {
+      setSpiritReleaseState("idle");
+      return undefined;
+    }
+
+    const elapsedMs = Date.now() - releaseAt;
+    const nextState = resolveSpiritSurfaceReceiveState(elapsedMs);
+    setSpiritReleaseState(nextState);
+
+    if (nextState === "receiving") {
+      spiritReceiveTimerRef.current = window.setTimeout(() => {
+        setSpiritReleaseState("aftermath");
+        spiritReceiveTimerRef.current = null;
+      }, Math.max(1, SPIRIT_SURFACE_RECEIVE_MS - elapsedMs));
+      spiritAftermathTimerRef.current = window.setTimeout(() => {
+        setSpiritReleaseState("idle");
+        spiritAftermathTimerRef.current = null;
+      }, Math.max(1, SPIRIT_SURFACE_RECEIVE_MS + SPIRIT_SURFACE_AFTERMATH_MS - elapsedMs));
+    } else if (nextState === "aftermath") {
+      spiritAftermathTimerRef.current = window.setTimeout(() => {
+        setSpiritReleaseState("idle");
+        spiritAftermathTimerRef.current = null;
+      }, Math.max(1, SPIRIT_SURFACE_RECEIVE_MS + SPIRIT_SURFACE_AFTERMATH_MS - elapsedMs));
+    }
+
+    return () => {
+      if (spiritReceiveTimerRef.current !== null) {
+        window.clearTimeout(spiritReceiveTimerRef.current);
+        spiritReceiveTimerRef.current = null;
+      }
+      if (spiritAftermathTimerRef.current !== null) {
+        window.clearTimeout(spiritAftermathTimerRef.current);
+        spiritAftermathTimerRef.current = null;
+      }
+    };
+  }, [activeHunt?.id, activeHunt?.spirit?.boundAt, activeHunt?.spirit?.reboundAt, activeHunt?.spirit]);
 
   useEffect(() => {
     let frameId: number | null = window.requestAnimationFrame(measureSidebarViewportLeft);
@@ -391,9 +449,9 @@ export function LensSidebar({ onOpenPath }: LensSidebarProps) {
       ["related-notes", "citations", "case-link"],
       30,
     );
+    const shouldQuietForRelease = spiritReleaseState !== "idle";
 
-    const shouldShowIntent =
-      anticipation.isAttachMode || anticipation.confidence !== "low";
+    const shouldShowIntent = !shouldQuietForRelease && anticipation.isAttachMode;
     if (shouldShowIntent) {
       blocks.push({
         id: "intent",
@@ -409,7 +467,7 @@ export function LensSidebar({ onOpenPath }: LensSidebarProps) {
       });
     }
 
-    if (anticipation.pathBreadcrumbs.length > 0 && pathMeta.visible) {
+    if (!shouldQuietForRelease && anticipation.pathBreadcrumbs.length > 0 && pathMeta.visible) {
       blocks.push({
         id: "path",
         priority: pathMeta.priority,
@@ -424,7 +482,7 @@ export function LensSidebar({ onOpenPath }: LensSidebarProps) {
       });
     }
 
-    if (!liveContext.isEmpty && liveMeta.visible) {
+    if (!shouldQuietForRelease && !liveContext.isEmpty && liveMeta.visible) {
       blocks.push({
         id: "live",
         priority: liveMeta.priority,
@@ -437,7 +495,7 @@ export function LensSidebar({ onOpenPath }: LensSidebarProps) {
       });
     }
 
-    if (suggested.length > 0 && suggestedMeta.visible) {
+    if (!shouldQuietForRelease && suggested.length > 0 && suggestedMeta.visible) {
       blocks.push({
         id: "suggested",
         priority: suggestedMeta.priority,
@@ -450,27 +508,37 @@ export function LensSidebar({ onOpenPath }: LensSidebarProps) {
       });
     }
 
-    blocks.push({
-      id: "content",
-      priority: 90,
-      promoted: false,
-      element: (
-        <LensContent
-          lens={anticipation.currentLens}
-          shell={anticipation.currentShell}
-          activeHunt={activeHunt}
-          huntStore={huntStore}
-          onOpenPath={handleOpenPath}
-          entitiesDirective={sidebarDirector.lensSections.entities}
-          notesDirective={sidebarDirector.lensSections.notes}
-          filesDirective={sidebarDirector.lensSections.files}
-          scopesDirective={sidebarDirector.lensSections.scopes}
-          historyDirective={sidebarDirector.lensSections.history}
-          sandboxesDirective={sidebarDirector.lensSections.sandboxes}
-          swarmsDirective={sidebarDirector.lensSections.swarms}
-        />
-      ),
-    });
+    if (spiritReleaseState !== "receiving") {
+      blocks.push({
+        id: "content",
+        priority: 90,
+        promoted: false,
+        element: (
+          <div
+            style={{
+              opacity: spiritReleaseState === "aftermath" ? 0.62 : 1,
+              filter: spiritReleaseState === "idle" ? undefined : "saturate(0.82)",
+              transition: "opacity 180ms ease, filter 220ms ease",
+            }}
+          >
+            <LensContent
+              lens={anticipation.currentLens}
+              shell={anticipation.currentShell}
+              activeHunt={activeHunt}
+              huntStore={huntStore}
+              onOpenPath={handleOpenPath}
+              entitiesDirective={sidebarDirector.lensSections.entities}
+              notesDirective={sidebarDirector.lensSections.notes}
+              filesDirective={sidebarDirector.lensSections.files}
+              scopesDirective={sidebarDirector.lensSections.scopes}
+              historyDirective={sidebarDirector.lensSections.history}
+              sandboxesDirective={sidebarDirector.lensSections.sandboxes}
+              swarmsDirective={sidebarDirector.lensSections.swarms}
+            />
+          </div>
+        ),
+      });
+    }
 
     return blocks.sort((a, b) => a.priority - b.priority);
   }, [
@@ -484,6 +552,7 @@ export function LensSidebar({ onOpenPath }: LensSidebarProps) {
     handleSelectTab,
     handleSuggestedAction,
     sidebarDirector,
+    spiritReleaseState,
   ]);
   const panelWidth = sidebarCollapsed ? COLLAPSED_HOTZONE_WIDTH : sidebarWidth;
   const panelTransition = useMemo(
@@ -742,11 +811,11 @@ function SurfaceCard({
       className="mx-[8px] my-1 overflow-hidden rounded-[8px]"
       style={{
         border: promoted
-          ? "1px solid rgba(213,173,87,0.16)"
-          : "1px solid rgba(213,173,87,0.06)",
+          ? "1px solid rgba(213,173,87,0.10)"
+          : "1px solid transparent",
         background: promoted
-          ? "rgba(213,173,87,0.04)"
-          : "rgba(255,255,255,0.01)",
+          ? "rgba(213,173,87,0.03)"
+          : "transparent",
       }}
     >
       {children}
@@ -807,7 +876,7 @@ function IntentGravityPanel({
 
   const defaultLabel = anticipation.dropPrediction?.defaultLabel
     ?? anticipation.defaultDropRole?.label
-    ?? "Anticipating next move";
+    ?? "Likely next move";
   const reason = anticipation.dropPrediction?.reason
     ?? director.globalReason
     ?? (anticipation.defaultDropRole
@@ -826,23 +895,6 @@ function IntentGravityPanel({
           : "rgba(255,255,255,0.015)",
       }}
     >
-      <div className="flex items-center gap-1.5">
-        <span
-          className="inline-block h-[5px] w-[5px] rounded-full"
-          style={{
-            background: anticipation.confidence === "high"
-              ? "rgba(213,173,87,0.75)"
-              : "rgba(213,173,87,0.36)",
-          }}
-        />
-        <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-[rgba(213,173,87,0.8)]">
-          {anticipation.phase}
-        </span>
-        <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-[rgba(182,183,193,0.35)]">
-          {anticipation.confidence}
-        </span>
-      </div>
-
       <div className="mt-1 flex items-center gap-2">
         <span className="text-[13px] text-[rgba(232,230,222,0.84)]">{defaultLabel}</span>
         {anticipation.modifierOverride && (
@@ -883,7 +935,7 @@ function IntentGravityPanel({
         </div>
       )}
 
-      {lensTargets.length > 1 && (
+      {anticipation.confidence === "high" && lensTargets.length > 1 && (
         <div className="mt-2 flex flex-wrap items-center gap-1">
           <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-[rgba(182,183,193,0.35)]">
             Focus

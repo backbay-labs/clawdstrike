@@ -11,6 +11,13 @@ keep_browser="${HUNTRONOMER_SMOKE_KEEP_BROWSER:-0}"
 strict_console="${HUNTRONOMER_SMOKE_STRICT_CONSOLE:-0}"
 timeout_secs="${HUNTRONOMER_SMOKE_TIMEOUT_SECS:-30}"
 
+route_mode="shell"
+case "$url" in
+  *"#/nexus/scene"*)
+    route_mode="observatory-scene"
+    ;;
+esac
+
 run_id="$(date -u +%Y%m%dT%H%M%SZ)"
 session="hsm-$$-$(date -u +%H%M%S)"
 output_dir="$repo_root/output/playwright/huntronomer-smoke/$run_id"
@@ -22,6 +29,11 @@ deck_text_file="$output_dir/command-deck.txt"
 snapshot_file="$output_dir/command-deck-snapshot.md"
 overlay_screenshot="$output_dir/launch-overlay.png"
 deck_screenshot="$output_dir/command-deck.png"
+ritual_text_file="$output_dir/spirit-chamber.txt"
+ritual_snapshot_file="$output_dir/spirit-chamber-snapshot.md"
+ritual_screenshot="$output_dir/spirit-chamber.png"
+ritual_release_file="$output_dir/spirit-release.json"
+ritual_release_screenshot="$output_dir/spirit-release.png"
 console_file="$output_dir/console-errors.txt"
 network_file="$output_dir/network.txt"
 summary_file="$output_dir/summary.json"
@@ -38,6 +50,71 @@ require_cmd() {
 
 pw() {
   PLAYWRIGHT_CLI_SESSION="$session" npx --yes --package @playwright/cli playwright-cli "$@"
+}
+
+wait_for_shell_paint() {
+  pw eval "$(cat <<'EOF'
+async () => {
+  const wait = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
+  const until = async (predicate, timeoutMs = 5000) => {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      if (predicate()) return true;
+      await wait(50);
+    }
+    throw new Error("shell-not-ready");
+  };
+
+  await until(() => Boolean(document.querySelector('button[title="New hunt (Cmd+Shift+H)"]')));
+  if ("fonts" in document && document.fonts?.ready) {
+    try {
+      await document.fonts.ready;
+    } catch {
+      // Ignore font readiness failures in smoke mode.
+    }
+  }
+
+  await new Promise((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve(undefined))),
+  );
+  await wait(450);
+
+  return JSON.stringify(
+    {
+      ready: true,
+      canvasCount: document.querySelectorAll("canvas").length,
+      title: document.title,
+    },
+    null,
+    2,
+  );
+}
+EOF
+)" >/dev/null
+}
+
+wait_for_chamber_paint() {
+  pw eval "$(cat <<'EOF'
+async () => {
+  const wait = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
+  const until = async (predicate, timeoutMs = 5000) => {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      if (predicate()) return true;
+      await wait(50);
+    }
+    throw new Error("chamber-not-ready");
+  };
+
+  await until(() => Boolean(document.querySelector('[data-testid="spirit-bind-sheet"]')));
+  await new Promise((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve(undefined))),
+  );
+  await wait(180);
+  return JSON.stringify({ ready: true }, null, 2);
+}
+EOF
+)" >/dev/null
 }
 
 wait_for_url() {
@@ -101,33 +178,201 @@ if [[ "$headed" == "1" ]]; then
 fi
 
 pw open "${open_args[@]}" >/dev/null
+wait_for_shell_paint
 pw screenshot --filename "$overlay_screenshot" >/dev/null
 pw eval '() => document.body.innerText.slice(0, 4000)' >"$overlay_text_file"
 
-grep -iq "huntronomer" "$overlay_text_file"
-grep -iq "runtime security workbench" "$overlay_text_file"
-grep -iq "start a hunt" "$overlay_text_file"
+if [[ "$route_mode" == "observatory-scene" ]]; then
+  grep -q "OBSERVATORY ATLAS" "$overlay_text_file"
+  grep -q "WATCHFIELD" "$overlay_text_file"
+  grep -q "LAYOUT" "$overlay_text_file"
+  grep -q "OBSERVE" "$overlay_text_file"
+else
+  grep -q "WIRE" "$overlay_text_file"
+  grep -q "SCOPES" "$overlay_text_file"
+  grep -q "TAPE" "$overlay_text_file"
+  grep -q "CONTEXT" "$overlay_text_file"
+fi
 
-pw eval '() => {
-  const button = Array.from(document.querySelectorAll("button")).find((element) =>
-    element.textContent?.toLowerCase().includes("start a hunt"),
-  );
-  if (!button) {
-    throw new Error("Start a hunt button not found");
-  }
-  button.click();
-  return true;
-}' >/dev/null
-sleep 1
-
-pw snapshot --filename "$snapshot_file" >/dev/null
+wait_for_shell_paint
 pw screenshot --filename "$deck_screenshot" >/dev/null
 pw eval '() => document.body.innerText.slice(0, 4000)' >"$deck_text_file"
+pw snapshot --filename "$snapshot_file" >/dev/null
 
-grep -q "LIVE" "$deck_text_file"
-grep -q "REPLAY" "$deck_text_file"
-grep -iq "hunt deck" "$deck_text_file"
-grep -iq "security scene" "$deck_text_file"
+if [[ "$route_mode" == "observatory-scene" ]]; then
+  grep -q "OBSERVATORY ATLAS" "$deck_text_file"
+  grep -q "WATCHFIELD" "$deck_text_file"
+  grep -q "LAYOUT" "$deck_text_file"
+  grep -q "OBSERVE" "$deck_text_file"
+else
+  grep -q "WIRE" "$deck_text_file"
+  grep -q "SCOPES" "$deck_text_file"
+  grep -q "TAPE" "$deck_text_file"
+  grep -q "CONTEXT" "$deck_text_file"
+fi
+
+if [[ "$route_mode" != "observatory-scene" ]]; then
+pw eval "$(cat <<'EOF'
+async () => {
+  const wait = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
+  const until = async (predicate, timeoutMs = 6000) => {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      if (predicate()) return true;
+      await wait(50);
+    }
+    return false;
+  };
+
+  const button = document.querySelector('button[title="New hunt (Cmd+Shift+H)"]');
+  if (!(button instanceof HTMLButtonElement)) {
+    return JSON.stringify(
+      {
+        clicked: false,
+        error: "new-hunt-button-missing",
+      },
+      null,
+      2,
+    );
+  }
+  button.click();
+  await new Promise((resolve) => window.setTimeout(resolve, 250));
+
+  const spiritEntry = document.querySelector('[data-testid="smart-bucket-spirit-open"]');
+  if (!(spiritEntry instanceof HTMLButtonElement)) {
+    return JSON.stringify(
+      {
+        clicked: false,
+        error: "spirit-entry-missing",
+      },
+      null,
+      2,
+    );
+  }
+
+  spiritEntry.click();
+  const chamberReady = await until(
+    () =>
+      Boolean(document.querySelector('[data-testid="spirit-bind-sheet"]'))
+      && Boolean(document.querySelector('[data-testid="spirit-bind-mode-rail"]')),
+  );
+
+  return JSON.stringify(
+    {
+      clicked: true,
+      hasSpiritEntry: true,
+      hasChamber: chamberReady && Boolean(document.querySelector('[data-testid="spirit-bind-sheet"]')),
+      hasModeRail: Boolean(
+        document.querySelector('[data-testid="spirit-bind-mode-rail"]'),
+      ),
+      hasPinToggle: Boolean(
+        document.querySelector('[data-testid="spirit-bind-pin-toggle"][role="switch"]'),
+      ),
+      hasReleaseButton: Array.from(document.querySelectorAll("button")).some(
+        (element) => element.textContent?.includes("Apply spirit"),
+      ),
+      text: document.body.innerText.slice(0, 6000),
+    },
+    null,
+    2,
+  );
+}
+EOF
+)" >"$ritual_text_file"
+
+grep -q '\\"clicked\\": true' "$ritual_text_file"
+grep -q '\\"hasSpiritEntry\\": true' "$ritual_text_file"
+grep -q '\\"hasChamber\\": true' "$ritual_text_file"
+grep -q '\\"hasModeRail\\": true' "$ritual_text_file"
+grep -q '\\"hasPinToggle\\": true' "$ritual_text_file"
+grep -q '\\"hasReleaseButton\\": true' "$ritual_text_file"
+grep -qi "Spirit" "$ritual_text_file"
+grep -qi "MANUAL" "$ritual_text_file"
+grep -qi "PIN TO HUNT" "$ritual_text_file"
+grep -qi "Apply spirit" "$ritual_text_file"
+
+wait_for_chamber_paint
+pw screenshot --filename "$ritual_screenshot" >/dev/null
+pw snapshot --filename "$ritual_snapshot_file" >/dev/null
+
+pw eval "$(cat <<'EOF'
+async () => {
+  const releaseButton = document.querySelector('[data-testid="spirit-bind-submit"]');
+  if (!(releaseButton instanceof HTMLButtonElement)) {
+    return JSON.stringify(
+      {
+        clicked: false,
+        error: "release-button-missing",
+      },
+      null,
+      2,
+    );
+  }
+  releaseButton.click();
+  const wait = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
+  const until = async (predicate, timeoutMs = 5000) => {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      if (predicate()) return true;
+      await wait(60);
+    }
+    throw new Error("release-afterglow-not-ready");
+  };
+
+  await until(
+    () => !document.querySelector('[data-testid="spirit-bind-sheet"]'),
+    5000,
+  );
+  await until(
+    () =>
+      Boolean(document.querySelector('[data-testid="forensics-room-afterglow"]')) ||
+      Boolean(document.querySelector('[data-testid="nexus-room-afterglow"]')) ||
+      Boolean(document.querySelector('[data-testid="hunt-dock-spirit-aftermath"]')) ||
+      Boolean(document.querySelector('[data-testid="smart-bucket-spirit-aftermath"]')),
+    5000,
+  );
+  await new Promise((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve(undefined))),
+  );
+  await wait(140);
+
+  return JSON.stringify(
+    {
+      clicked: true,
+      chamberStillOpen: Boolean(document.querySelector('[data-testid="spirit-bind-sheet"]')),
+      roomAfterglowVisible:
+        Boolean(document.querySelector('[data-testid="forensics-room-afterglow"]')) ||
+        Boolean(document.querySelector('[data-testid="nexus-room-afterglow"]')),
+      forensicsRoomAfterglowVisible: Boolean(
+        document.querySelector('[data-testid="forensics-room-afterglow"]'),
+      ),
+      nexusRoomAfterglowVisible: Boolean(
+        document.querySelector('[data-testid="nexus-room-afterglow"]'),
+      ),
+      dockAfterglowVisible: Boolean(document.querySelector('[data-testid="hunt-dock-spirit-aftermath"]')),
+      bucketAfterglowVisible: Boolean(document.querySelector('[data-testid="smart-bucket-spirit-aftermath"]')),
+      text: document.body.innerText.slice(0, 5000),
+    },
+    null,
+    2,
+  );
+}
+EOF
+)" >"$ritual_release_file"
+
+grep -q '\\"clicked\\": true' "$ritual_release_file"
+grep -q '\\"chamberStillOpen\\": false' "$ritual_release_file"
+if ! grep -q '\\"roomAfterglowVisible\\": true' "$ritual_release_file"; then
+  grep -q '\\"dockAfterglowVisible\\": true' "$ritual_release_file"
+fi
+pw screenshot --filename "$ritual_release_screenshot" >/dev/null
+else
+  printf '{\n  "status": "not_applicable",\n  "route_mode": "observatory-scene"\n}\n' >"$ritual_text_file"
+  printf '{\n  "status": "not_applicable",\n  "route_mode": "observatory-scene"\n}\n' >"$ritual_release_file"
+  : >"$ritual_snapshot_file"
+  : >"$ritual_screenshot"
+  : >"$ritual_release_screenshot"
+fi
 
 pw console error >"$console_file" || true
 pw network >"$network_file" || true
@@ -149,6 +394,7 @@ fi
 
 export HUNTRONOMER_SMOKE_SUMMARY_FILE="$summary_file"
 export HUNTRONOMER_SMOKE_URL_VALUE="$url"
+export HUNTRONOMER_SMOKE_ROUTE_MODE="$route_mode"
 export HUNTRONOMER_SMOKE_RUN_ID="$run_id"
 export HUNTRONOMER_SMOKE_SESSION="$session"
 export HUNTRONOMER_SMOKE_OUTPUT_DIR="$output_dir"
@@ -162,6 +408,11 @@ export HUNTRONOMER_SMOKE_DECK_TEXT="$deck_text_file"
 export HUNTRONOMER_SMOKE_SNAPSHOT="$snapshot_file"
 export HUNTRONOMER_SMOKE_OVERLAY_SCREENSHOT="$overlay_screenshot"
 export HUNTRONOMER_SMOKE_DECK_SCREENSHOT="$deck_screenshot"
+export HUNTRONOMER_SMOKE_RITUAL_TEXT="$ritual_text_file"
+export HUNTRONOMER_SMOKE_RITUAL_SNAPSHOT="$ritual_snapshot_file"
+export HUNTRONOMER_SMOKE_RITUAL_SCREENSHOT="$ritual_screenshot"
+export HUNTRONOMER_SMOKE_RITUAL_RELEASE="$ritual_release_file"
+export HUNTRONOMER_SMOKE_RITUAL_RELEASE_SCREENSHOT="$ritual_release_screenshot"
 export HUNTRONOMER_SMOKE_CONSOLE_FILE="$console_file"
 export HUNTRONOMER_SMOKE_NETWORK_FILE="$network_file"
 export HUNTRONOMER_SMOKE_VITE_LOG="$vite_log"
@@ -174,6 +425,7 @@ from pathlib import Path
 summary = {
     "status": "ok",
     "url": os.environ["HUNTRONOMER_SMOKE_URL_VALUE"],
+    "route_mode": os.environ["HUNTRONOMER_SMOKE_ROUTE_MODE"],
     "run_id": os.environ["HUNTRONOMER_SMOKE_RUN_ID"],
     "session": os.environ["HUNTRONOMER_SMOKE_SESSION"],
     "output_dir": os.environ["HUNTRONOMER_SMOKE_OUTPUT_DIR"],
@@ -188,6 +440,11 @@ summary = {
         "snapshot": os.environ["HUNTRONOMER_SMOKE_SNAPSHOT"],
         "overlay_screenshot": os.environ["HUNTRONOMER_SMOKE_OVERLAY_SCREENSHOT"],
         "deck_screenshot": os.environ["HUNTRONOMER_SMOKE_DECK_SCREENSHOT"],
+        "ritual_text": os.environ["HUNTRONOMER_SMOKE_RITUAL_TEXT"],
+        "ritual_snapshot": os.environ["HUNTRONOMER_SMOKE_RITUAL_SNAPSHOT"],
+        "ritual_screenshot": os.environ["HUNTRONOMER_SMOKE_RITUAL_SCREENSHOT"],
+        "ritual_release": os.environ["HUNTRONOMER_SMOKE_RITUAL_RELEASE"],
+        "ritual_release_screenshot": os.environ["HUNTRONOMER_SMOKE_RITUAL_RELEASE_SCREENSHOT"],
         "console_errors": os.environ["HUNTRONOMER_SMOKE_CONSOLE_FILE"],
         "network": os.environ["HUNTRONOMER_SMOKE_NETWORK_FILE"],
         "vite_log": os.environ["HUNTRONOMER_SMOKE_VITE_LOG"],

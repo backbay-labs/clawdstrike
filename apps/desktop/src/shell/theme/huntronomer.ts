@@ -9,7 +9,6 @@
 const GOLD = "#d5ad57";
 const GOLD_DIM = "#9f7c3a";
 const STEEL = "#7e8ba7";
-const STEEL_DIM = "#5b667f";
 const GREEN = "#3dbf84";
 const AMBER = "#d4a84b";
 const RED = "#c45c5c";

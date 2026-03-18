@@ -34,12 +34,35 @@ changing the product center of gravity from a multi-plugin SDR launcher to:
   what to translate into Huntronomer, and what to leave behind from Baia
 - [Spirit Ritual Rewrite](./spirit-ritual/README.md) - Baia-inspired rewrite of spirit creation
   into a multimodal artistic chamber with manifestation, release, and 3D continuity
+- [Spirit Chamber Redesign Spec](./spirit-ritual/chamber-redesign-spec.md) - concrete redesign
+  spec for making the chamber feel like a living artistic scene instead of a premium settings sheet
+- [Spirit Chamber Third Pass Plan](./spirit-ritual/third-pass-plan.md) - concrete three-lane
+  execution plan for spirit-specific grammars, orbit/station controls, and release aftermath
+- [Spirit Chamber Fourth Pass Plan](./spirit-ritual/fourth-pass-plan.md) - current execution plan
+  for chamber authorship, vessel emergence, and room-level consequence after release
 - [Hunt Spirit Creation Flow](./hunt-spirit-creation-flow.md) - canonical user-facing flow for
   instant default spirit creation plus operator-led configuration and retuning over time
 - [Hunt Spirits Roadmap](./hunt-spirits-roadmap.md) - phase-by-phase implementation roadmap with
   ticket slices, dependencies, and acceptance gates for turning spirit into a real desktop program
 - [Hunt Spirits In The 3D Workspace](./hunt-spirits-3d-workspace-concept.md) - proposed spatial
   architecture for making hunt spirits live in Nexus, Forensics River, and station-aware scenes
+- [Hunt Observatory Concept](./hunt-observatory-concept.md) - repo-grounded target picture for a
+  usable 3D hunt observatory built from the current Hunt Dock, Nexus, Forensics River, Realm,
+  Console, and `glia-three` references
+- [Hunt Observatory Spec](./hunt-observatory-spec.md) - concrete station taxonomy, shared scene
+  contracts, mode behavior, UI boundaries, and migration order for implementing the observatory
+- [Hunt Observatory Reference Harvest](./hunt-observatory-reference-harvest.md) - what to borrow
+  from `trident`, `three-maps`, and `Console` for a stronger derived world, district-recipe, and
+  layout-driven observatory architecture
+- [Hunt Observatory Roadmap](./hunt-observatory-roadmap.md) - phased implementation plan and
+  ticket slices for `OBS-P0` through `OBS-P6`
+- [Hunt Observatory Swarm Plan](./hunt-observatory-swarm-plan.md) - orchestrator/worker lane map,
+  wave order, verification matrix, and merge sequencing for observatory execution
+- [Hunt Observatory Character Controller Plan](./hunt-observatory-character-controller-plan.md) -
+  concrete integration plan for adding a controllable physics-driven operator avatar to the
+  observatory world
+- [Hunt Observatory Character Controller Swarm Plan](./hunt-observatory-character-controller-swarm-plan.md) -
+  lane map, shared-file ownership, and wave order for the observatory character-controller swarm
 - [Hunt Spirits Swarm Plan](./hunt-spirits-swarm-plan.md) - orchestrator/worker lane map, wave
   order, verification matrix, and shared-file boundaries for parallel execution
 - [Sidebar Intelligence](./sidebar-intelligence/README.md) - completed/continuing initiative for

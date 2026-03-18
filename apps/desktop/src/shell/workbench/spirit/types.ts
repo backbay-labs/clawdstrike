@@ -20,12 +20,13 @@ export const HUNT_SPIRIT_MOODS = [
 export type HuntSpiritMood = (typeof HUNT_SPIRIT_MOODS)[number];
 
 export const HUNT_SPIRIT_BIND_SOURCES = [
-  "quick-bind",
+  "default-create",
+  "quick-configure",
   "thesis",
   "anchor-artifacts",
   "manual",
   "system-inferred",
-  "rebind",
+  "reconfigure",
 ] as const;
 
 export type HuntSpiritBindSource = (typeof HUNT_SPIRIT_BIND_SOURCES)[number];

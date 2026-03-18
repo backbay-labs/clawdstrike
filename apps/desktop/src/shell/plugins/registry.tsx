@@ -14,6 +14,11 @@ const NexusView = React.lazy(() =>
     default: m.ForensicsRiverView,
   })),
 );
+const CyberNexusSceneView = React.lazy(() =>
+  import("@/features/cyber-nexus/CyberNexusView").then((m) => ({
+    default: m.CyberNexusView,
+  })),
+);
 const OperationsHubView = React.lazy(() =>
   import("@/features/operations/OperationsHubView").then((m) => ({ default: m.OperationsHubView })),
 );
@@ -67,6 +72,7 @@ const plugins: AppPlugin[] = [
     singleton: true,
     routes: [
       { path: "", element: <NexusView />, index: true },
+      { path: "scene", element: <CyberNexusSceneView /> },
       { path: ":sessionId", element: <NexusView /> },
     ],
   },

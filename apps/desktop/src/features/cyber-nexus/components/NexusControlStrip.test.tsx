@@ -35,7 +35,7 @@ describe("NexusControlStrip", () => {
     container.remove();
   });
 
-  it("renders beta tag, mono search input, and profile menu actions", () => {
+  it("renders atlas read, mono search input, and profile menu actions", () => {
     const onOpenOperations = vi.fn();
 
     container = document.createElement("div");
@@ -63,10 +63,10 @@ describe("NexusControlStrip", () => {
       );
     });
 
-    expect(container.textContent).toContain("BETA");
+    expect(container.textContent).toContain("Atlas");
 
     const input = container.querySelector(
-      "input[placeholder*='Search strikecells']",
+      "input[placeholder*='Search stations']",
     ) as HTMLInputElement;
     expect(input).toBeTruthy();
     expect(input.className.includes("font-mono")).toBe(true);

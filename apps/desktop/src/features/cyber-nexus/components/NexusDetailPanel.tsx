@@ -1,4 +1,5 @@
 import type { Strikecell, StrikecellDomainId, StrikecellNode, StrikecellStatus } from "../types";
+import { getNexusStationCode, getNexusStationLabel, getNexusStationReason, resolveNexusObservatoryStationId } from "../observatory";
 
 interface NexusDetailPanelProps {
   open: boolean;
@@ -54,6 +55,7 @@ export function NexusDetailPanel({
 }: NexusDetailPanelProps) {
   const active = findActive(strikecells, activeStrikecellId);
   const focused = findFocusedNode(active, focusedNodeId);
+  const activeStationId = resolveNexusObservatoryStationId(active?.id ?? null);
 
   return (
     <aside
@@ -64,7 +66,7 @@ export function NexusDetailPanel({
       aria-hidden={!open}
     >
       <div className="flex items-center justify-between border-b border-sdr-border-subtle px-4 py-3">
-        <h2 className="origin-headline text-sm">Nexus Detail</h2>
+        <h2 className="origin-headline text-sm">Atlas Detail</h2>
         <button
           type="button"
           onClick={onClose}
@@ -83,7 +85,17 @@ export function NexusDetailPanel({
           <div>
             <div className="origin-label mb-1 text-[10px]">Strikecell</div>
             <div className="text-lg font-semibold text-sdr-text-primary">{active.name}</div>
+            {activeStationId ? (
+              <div className="mt-1 text-[10px] font-mono uppercase tracking-[0.12em] text-[color:rgba(213,173,87,0.84)]">
+                {getNexusStationCode(activeStationId)} · {getNexusStationLabel(activeStationId)}
+              </div>
+            ) : null}
             <div className="mt-1 text-xs text-sdr-text-secondary">{active.description}</div>
+            {activeStationId ? (
+              <div className="mt-1 text-xs text-sdr-text-muted">
+                {getNexusStationReason(activeStationId)}
+              </div>
+            ) : null}
             <span
               className={[
                 "mt-2 inline-block rounded border px-2 py-0.5 text-[10px] font-mono uppercase",
@@ -149,7 +161,7 @@ export function NexusDetailPanel({
               onClick={() => onOpenFullView(active.routeId)}
               className="origin-focus-ring rounded border border-sdr-accent-amber/45 bg-sdr-accent-amber/10 px-3 py-1.5 text-xs font-mono text-sdr-accent-amber"
             >
-              OPEN FULL VIEW
+              OPEN VIEW
             </button>
             <button
               type="button"

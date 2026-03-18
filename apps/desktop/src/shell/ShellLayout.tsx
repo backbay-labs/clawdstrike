@@ -18,7 +18,6 @@ import {
 } from "@/features/forensics/policy-workbench/events";
 import { isPolicyWorkbenchEnabled } from "@/features/forensics/policy-workbench/featureFlags";
 import { CommandPalette } from "./components/CommandPalette";
-import { HuntronomerLaunchOverlay } from "./components/HuntronomerLaunchOverlay";
 import { NavRail } from "./components/NavRail";
 import { DockProvider, DockSystem } from "./dock";
 import { SHELL_OPEN_COMMAND_PALETTE_EVENT } from "./events";
@@ -28,24 +27,6 @@ import type { AppId } from "./plugins/types";
 import { shouldBlockDirtyPolicyDraftExit } from "./policyDraftGuard";
 import { SOCBackground } from "./SOCBackground";
 import { useActiveApp, useSessionActions } from "./sessions";
-
-const HUNTRONOMER_LAUNCH_DISMISSED_KEY = "huntronomer:launch:dismissed:v1";
-
-function shouldShowHuntronomerLaunch(): boolean {
-  try {
-    return globalThis.localStorage?.getItem(HUNTRONOMER_LAUNCH_DISMISSED_KEY) !== "1";
-  } catch {
-    return true;
-  }
-}
-
-function persistHuntronomerLaunchDismissal() {
-  try {
-    globalThis.localStorage?.setItem(HUNTRONOMER_LAUNCH_DISMISSED_KEY, "1");
-  } catch {
-    // Ignore storage errors in restricted or embedded runtimes.
-  }
-}
 
 export function ShellLayout() {
   const navigate = useNavigate();
@@ -74,9 +55,6 @@ export function ShellLayout() {
 
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [hasPolicyWorkbenchDirtyDraft, setHasPolicyWorkbenchDirtyDraft] = useState(false);
-  const [showHuntronomerLaunch, setShowHuntronomerLaunch] = useState(() =>
-    shouldShowHuntronomerLaunch(),
-  );
   const unsavedPolicyWarning = "You have unsaved policy changes. Leave Nexus anyway?";
   useEffect(() => {
     const open = () => setIsCommandPaletteOpen(true);
@@ -354,11 +332,6 @@ export function ShellLayout() {
     handleSelectApp(visiblePlugins[prevIndex].id);
   }, [visiblePlugins, activeAppId, handleSelectApp]);
 
-  const handleDismissHuntronomerLaunch = useCallback(() => {
-    persistHuntronomerLaunchDismissal();
-    setShowHuntronomerLaunch(false);
-  }, []);
-
   // Keyboard shortcuts
   useShellShortcuts({
     onNewSession: handleNewSession,
@@ -424,11 +397,6 @@ export function ShellLayout() {
           onClose={() => setIsCommandPaletteOpen(false)}
           onSelectApp={handleSelectApp}
           extraCommands={activeAppId === "workspace" ? workspaceCommands : cyberNexusCommands}
-        />
-
-        <HuntronomerLaunchOverlay
-          visible={showHuntronomerLaunch}
-          onDismiss={handleDismissHuntronomerLaunch}
         />
       </div>
     </DockProvider>

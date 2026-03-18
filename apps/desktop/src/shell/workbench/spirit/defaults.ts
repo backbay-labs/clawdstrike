@@ -53,6 +53,59 @@ export const HUNT_SPIRIT_META: Record<HuntSpiritKind, HuntSpiritMeta> = {
   },
 };
 
+const DEFAULT_SPIRIT_ORDER: HuntSpiritKind[] = [
+  "tracker",
+  "lantern",
+  "forge",
+  "loom",
+  "ledger",
+];
+
+const TITLE_HINTS: Array<{ pattern: RegExp; kind: HuntSpiritKind; weight: number }> = [
+  { pattern: /\b(trace|track|watch|target|pivot)\b/i, kind: "tracker", weight: 3.2 },
+  { pattern: /\b(receipt|cite|prove|proof|evidence)\b/i, kind: "lantern", weight: 3.2 },
+  { pattern: /\b(file|mount|sandbox|payload|run|replay)\b/i, kind: "forge", weight: 3.2 },
+  { pattern: /\b(map|cluster|graph|thread|scope|infra|infrastructure)\b/i, kind: "loom", weight: 3.2 },
+  { pattern: /\b(case|report|compare|audit|history|brief)\b/i, kind: "ledger", weight: 3.2 },
+];
+
+const ICON_HINTS: Record<string, Partial<Record<HuntSpiritKind, number>>> = {
+  crosshair: { tracker: 2.6 },
+  target: { tracker: 2.4 },
+  shield: { lantern: 2.2 },
+  search: { loom: 2.1, tracker: 1.1 },
+  alert: { lantern: 1.8, ledger: 0.8 },
+  radar: { loom: 2.4 },
+  bug: { tracker: 1.4, forge: 0.8 },
+  lock: { ledger: 2.2, lantern: 1 },
+};
+
+const SHELL_HINTS: Record<string, Partial<Record<HuntSpiritKind, number>>> = {
+  wire: { loom: 1.5, tracker: 1.2 },
+  hunt: { tracker: 1.4, lantern: 0.9 },
+  lab: { forge: 1.9 },
+  case: { ledger: 1.9, lantern: 1.1 },
+};
+
+const LENS_HINTS: Record<string, Partial<Record<HuntSpiritKind, number>>> = {
+  entities: { tracker: 1.8 },
+  notes: { ledger: 1.7, lantern: 1.1 },
+  files: { forge: 1.8 },
+  sandboxes: { forge: 1.9 },
+  scopes: { loom: 1.8 },
+  history: { loom: 1.4, ledger: 0.9 },
+  swarms: { tracker: 1.1, loom: 1.1 },
+};
+
+export interface DefaultHuntSpiritInput {
+  title: string;
+  icon?: string | null;
+  currentShell?: string | null;
+  currentLens?: string | null;
+  fallbackIndex?: number;
+  boundAt?: number;
+}
+
 function normalizeIdList(values: string[] | null | undefined): string[] {
   if (!values) return [];
   return Array.from(
@@ -75,6 +128,111 @@ function isHuntSpiritMood(value: unknown): value is HuntSpiritMood {
 
 function isHuntSpiritBindSource(value: unknown): value is HuntSpiritBindSource {
   return typeof value === "string" && HUNT_SPIRIT_BIND_SOURCE_SET.has(value);
+}
+
+function applyWeightMap(
+  scores: Record<HuntSpiritKind, number>,
+  weights: Partial<Record<HuntSpiritKind, number>> | undefined,
+): void {
+  if (!weights) return;
+  for (const kind of HUNT_SPIRIT_KINDS) {
+    scores[kind] += weights[kind] ?? 0;
+  }
+}
+
+function inferDefaultSpiritKind(input: DefaultHuntSpiritInput): {
+  kind: HuntSpiritKind;
+  confidenceScore: number;
+  reason: string;
+} {
+  const scores = {
+    tracker: 0,
+    lantern: 0,
+    forge: 0,
+    loom: 0,
+    ledger: 0,
+  } satisfies Record<HuntSpiritKind, number>;
+  const title = input.title.trim();
+  let usedTitleHint = false;
+
+  for (const hint of TITLE_HINTS) {
+    if (hint.pattern.test(title)) {
+      scores[hint.kind] += hint.weight;
+      usedTitleHint = true;
+    }
+  }
+
+  applyWeightMap(scores, input.icon ? ICON_HINTS[input.icon] : undefined);
+  applyWeightMap(scores, input.currentShell ? SHELL_HINTS[input.currentShell] : undefined);
+  applyWeightMap(scores, input.currentLens ? LENS_HINTS[input.currentLens] : undefined);
+
+  if (scores.tracker === 0 && scores.lantern === 0 && scores.forge === 0 && scores.loom === 0 && scores.ledger === 0) {
+    const fallbackKind = DEFAULT_SPIRIT_ORDER[(input.fallbackIndex ?? 0) % DEFAULT_SPIRIT_ORDER.length];
+    return {
+      kind: fallbackKind,
+      confidenceScore: 54,
+      reason: "Default spirit established from hunt creation and stable fallback rotation.",
+    };
+  }
+
+  const ranked = [...DEFAULT_SPIRIT_ORDER]
+    .map((kind) => ({ kind, score: scores[kind] }))
+    .sort((left, right) => right.score - left.score);
+  const top = ranked[0];
+  const runnerUp = ranked[1];
+  const confidenceScore = Math.max(
+    58,
+    Math.min(86, Math.round(60 + top.score * 5 + Math.max(0, (top.score - (runnerUp?.score ?? 0)) * 4))),
+  );
+
+  let reason = "Default spirit established from hunt creation context.";
+  if (usedTitleHint) {
+    reason = "Default spirit established from the hunt title and current context.";
+  } else if (input.currentLens) {
+    reason = `Default spirit established from the ${input.currentLens} lane and current shell context.`;
+  } else if (input.currentShell) {
+    reason = `Default spirit established from the ${input.currentShell} shell context.`;
+  } else if (input.icon) {
+    reason = "Default spirit established from hunt identity cues.";
+  }
+
+  return {
+    kind: top.kind,
+    confidenceScore,
+    reason,
+  };
+}
+
+export function createDefaultHuntSpiritState(input: DefaultHuntSpiritInput): HuntSpiritState {
+  const inferred = inferDefaultSpiritKind(input);
+  const meta = getHuntSpiritMeta(inferred.kind);
+  const defaultBiases = (meta?.defaultBiases ?? [])
+    .slice(0, 3)
+    .map((entry) => entry.replace(/-/g, " "));
+  const liveMood: HuntSpiritMood =
+    input.currentShell === "lab" || inferred.kind === "forge"
+      ? "focused"
+      : input.currentShell === "case" || inferred.kind === "ledger" || inferred.kind === "lantern"
+        ? "witnessing"
+        : "attuned";
+
+  return createHuntSpiritState({
+    kind: inferred.kind,
+    bindSource: "default-create",
+    bindReason: defaultBiases.length > 0
+      ? `${inferred.reason} Biases ${defaultBiases.join(", ")} across local hunt surfaces.`
+      : inferred.reason,
+    confidenceScore: inferred.confidenceScore,
+    liveMood,
+    boundAt: input.boundAt,
+  });
+}
+
+export function ensureHuntSpiritState(
+  input: Partial<HuntSpiritState> | null | undefined,
+  fallback: DefaultHuntSpiritInput,
+): HuntSpiritState {
+  return normalizeHuntSpiritState(input) ?? createDefaultHuntSpiritState(fallback);
 }
 
 export function createHuntSpiritState(input: {

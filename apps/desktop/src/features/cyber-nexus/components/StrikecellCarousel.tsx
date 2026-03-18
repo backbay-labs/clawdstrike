@@ -1,5 +1,6 @@
 import { clsx } from "clsx";
 import { useMemo, useState } from "react";
+import { getNexusStationCode, getNexusStationLabel, resolveNexusObservatoryStationId } from "../observatory";
 import type { Strikecell, StrikecellDomainId, StrikecellStatus } from "../types";
 
 interface StrikecellCarouselProps {
@@ -119,7 +120,7 @@ export function StrikecellCarousel({
           <div className="mb-2 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="origin-glyph-orb origin-glyph-orb--small" aria-hidden="true" />
-              <div className="origin-label text-[10px] tracking-[0.15em]">Strikecell Arc</div>
+              <div className="origin-label text-[10px] tracking-[0.15em]">Station Arc</div>
             </div>
             <span className="text-[9px] font-mono text-sdr-text-muted">Tab/Arrows</span>
           </div>
@@ -132,6 +133,7 @@ export function StrikecellCarousel({
               const curveOffset = Math.cos(normalized * (Math.PI / 2)) * 36;
               const top = index * 68;
               const isPinned = pinned.left === strikecell.id || pinned.right === strikecell.id;
+              const stationId = resolveNexusObservatoryStationId(strikecell.id);
 
               return (
                 <div
@@ -172,6 +174,9 @@ export function StrikecellCarousel({
                       </span>
                     </div>
                     <div className="mt-1 text-[10px] font-mono text-sdr-text-muted">
+                      {getNexusStationCode(stationId)} · {getNexusStationLabel(stationId)}
+                    </div>
+                    <div className="mt-0.5 text-[10px] font-mono text-sdr-text-muted">
                       {strikecell.activityCount} activity · {strikecell.nodeCount} nodes
                     </div>
                     {isPinned ? (

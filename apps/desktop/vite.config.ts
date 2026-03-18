@@ -7,6 +7,14 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "@backbay/glia-three/three": path.resolve(
+        __dirname,
+        "../../../../backbay-sdk/packages/glia-three/src/three/index.ts",
+      ),
+      "@backbay/glia-three/environment": path.resolve(
+        __dirname,
+        "../../../../backbay-sdk/packages/glia-three/src/environment/index.ts",
+      ),
       // Tauri v2: `invoke` lives in `@tauri-apps/api/core`
       "@tauri-apps/api/tauri": "@tauri-apps/api/core",
     },

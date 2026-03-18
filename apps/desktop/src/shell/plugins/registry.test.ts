@@ -23,4 +23,10 @@ describe("plugin registry", () => {
     const paths = nexus?.routes.filter((route) => !route.index).map((route) => route.path);
     expect(paths).toContain(":sessionId");
   });
+
+  it("exposes a real cyber nexus scene route under nexus", () => {
+    const nexus = getPlugin("nexus");
+    const paths = nexus?.routes.filter((route) => !route.index).map((route) => route.path);
+    expect(paths).toContain("scene");
+  });
 });

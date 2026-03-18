@@ -11,7 +11,7 @@ export type TabKind =
   | "signal-thread" | "hunt" | "receipt" | "case" | "sandbox"
   | "artifact" | "brief" | "profile" | "policy"
   | "threat-radar" | "attack-graph" | "network-map"
-  | "workflow" | "marketplace" | "operations"
+  | "workflow" | "marketplace" | "operations" | "spirit-chamber"
   | "file" | "note" | "welcome";
 
 export interface TabState {
@@ -174,9 +174,11 @@ export type WorkbenchAction =
   | { type: "SET_SIDEBAR_COLLAPSED"; payload: boolean }
   | { type: "SET_SIDEBAR_WIDTH"; payload: number }
   | { type: "TOGGLE_BOTTOM_PANEL" }
+  | { type: "SET_BOTTOM_PANEL_COLLAPSED"; payload: boolean }
   | { type: "SET_BOTTOM_PANEL_TAB"; payload: BottomPanelTabId }
   | { type: "SET_BOTTOM_PANEL_HEIGHT"; payload: number }
   | { type: "TOGGLE_INSPECTOR" }
+  | { type: "SET_INSPECTOR_VISIBLE"; payload: boolean }
   | { type: "SET_INSPECTOR_TAB"; payload: InspectorTabId }
   | { type: "SET_INSPECTOR_WIDTH"; payload: number }
   | { type: "SET_POSTURE"; payload: PostureMode }
@@ -348,6 +350,13 @@ export function workbenchReducer(state: WorkbenchState, action: WorkbenchAction)
         bottomPanel: { ...state.bottomPanel, collapsed: !state.bottomPanel.collapsed },
       };
 
+    case "SET_BOTTOM_PANEL_COLLAPSED":
+      if (action.payload === state.bottomPanel.collapsed) return state;
+      return {
+        ...state,
+        bottomPanel: { ...state.bottomPanel, collapsed: action.payload },
+      };
+
     case "SET_BOTTOM_PANEL_TAB":
       return {
         ...state,
@@ -371,6 +380,13 @@ export function workbenchReducer(state: WorkbenchState, action: WorkbenchAction)
       return {
         ...state,
         inspector: { ...state.inspector, visible: !state.inspector.visible },
+      };
+
+    case "SET_INSPECTOR_VISIBLE":
+      if (action.payload === state.inspector.visible) return state;
+      return {
+        ...state,
+        inspector: { ...state.inspector, visible: action.payload },
       };
 
     case "SET_INSPECTOR_TAB":

@@ -32,6 +32,16 @@ const STANCE_LABELS: Record<string, string> = {
   transit: "Repositioning",
 };
 
+const BIND_SOURCE_LABELS: Record<string, string> = {
+  "default-create": "Creation seed",
+  "quick-configure": "Quick release",
+  thesis: "Thesis shaped",
+  "anchor-artifacts": "Anchor release",
+  manual: "Manual retune",
+  "system-inferred": "System inferred",
+  reconfigure: "Retuned posture",
+};
+
 function buildContourPath(contour: string | null | undefined): string {
   return CONTOUR_PATHS[contour ?? ""] ?? CONTOUR_PATHS["reticle-vector"];
 }
@@ -39,7 +49,7 @@ function buildContourPath(contour: string | null | undefined): string {
 export function getSpiritBiasLine(hunt: Hunt): string {
   const spirit = hunt.spirit;
   if (!isBoundHuntSpirit(spirit)) {
-    return "No spirit bound yet";
+    return "Creation seed is settling around this hunt.";
   }
 
   const runtime = deriveHuntSpiritRuntimeState(spirit, { isActive: true });
@@ -58,21 +68,96 @@ export function getSpiritBiasLine(hunt: Hunt): string {
 export function getSpiritDetailLine(hunt: Hunt): string {
   const spirit = hunt.spirit;
   if (!isBoundHuntSpirit(spirit)) {
-    return "Add spirit when the hunt posture is clear";
+    return "Open spirit settings whenever you want to shape a clearer posture.";
   }
 
-  return spirit.thesis ?? spirit.bindReason ?? "Bound spirit is shaping local surfaces";
+  return spirit.thesis ?? spirit.bindReason ?? "Released spirit is shaping local surfaces";
 }
 
 export function getSpiritActionLabel(hunt: Hunt): string {
   if (!isBoundHuntSpirit(hunt.spirit)) {
-    return "Add Spirit";
+    return "Pin On Release";
   }
   return hunt.spirit.isPinned ? "Spirit Pinned" : "Pin Spirit";
 }
 
 export function getSpiritSecondaryActionLabel(hunt: Hunt): string {
-  return isBoundHuntSpirit(hunt.spirit) ? "Rebind Spirit" : "Bind Sheet";
+  return isBoundHuntSpirit(hunt.spirit) ? "Configure Spirit" : "Open Spirit";
+}
+
+export function canPinSpirit(hunt: Hunt): boolean {
+  return isBoundHuntSpirit(hunt.spirit) && !hunt.spirit.isPinned;
+}
+
+export function getSpiritStageLabel(hunt: Hunt): string {
+  if (!isBoundHuntSpirit(hunt.spirit)) {
+    return "Seed settling";
+  }
+  return hunt.spirit.isPinned ? "Pinned spirit" : "Released spirit";
+}
+
+export function getSpiritBindSourceLabel(hunt: Hunt): string {
+  const spirit = hunt.spirit;
+  if (!isBoundHuntSpirit(spirit)) {
+    return "Creation seed";
+  }
+  return BIND_SOURCE_LABELS[spirit.bindSource] ?? "Released posture";
+}
+
+export function getSpiritContinuityLine(hunt: Hunt): string {
+  const spirit = hunt.spirit;
+  if (!isBoundHuntSpirit(spirit)) {
+    return "Default seed is present. Open spirit settings to retune it deliberately.";
+  }
+  const origin = getSpiritBindSourceLabel(hunt);
+  const anchorCount = spirit.anchorArtifactIds.length;
+  if (anchorCount > 0) {
+    return `${origin} · ${anchorCount} anchor${anchorCount === 1 ? "" : "s"}`;
+  }
+  return `${origin} · ${MOOD_LABELS[spirit.liveMood] ?? spirit.liveMood}`;
+}
+
+export function SpiritBiasChips({
+  hunt,
+  limit = 3,
+}: {
+  hunt: Hunt;
+  limit?: number;
+}) {
+  const spirit = hunt.spirit;
+  const meta = getHuntSpiritMeta(spirit?.kind);
+  const accentColor = meta?.accentColor ?? hunt.color;
+  const runtime = spirit
+    ? deriveHuntSpiritRuntimeState(spirit, { isActive: true })
+    : null;
+  const emphasis = (runtime?.emphasis.length ? runtime.emphasis : meta?.defaultBiases ?? [])
+    .filter(Boolean)
+    .slice(0, limit)
+    .map((entry) => entry.replace(/-/g, " "));
+
+  if (emphasis.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5" data-testid="spirit-bias-chips">
+      {emphasis.map((entry) => (
+        <span
+          key={entry}
+          className="rounded-full border px-2 py-0.5 font-mono uppercase"
+          style={{
+            fontSize: 8,
+            letterSpacing: "0.08em",
+            borderColor: `${accentColor}26`,
+            background: `${accentColor}0d`,
+            color: "rgba(232,230,222,0.62)",
+          }}
+        >
+          {entry}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 export function SpiritGlyph({
@@ -155,7 +240,7 @@ export function SpiritInlineSummary({
               color: isBoundHuntSpirit(spirit) ? accentColor : "rgba(213,173,87,0.58)",
             }}
           >
-            {meta?.label ?? "Add Spirit"}
+            {meta?.label ?? "Spirit"}
           </span>
           {isBoundHuntSpirit(spirit) && (
             <span
@@ -199,6 +284,8 @@ export function SpiritConsoleCard({
     ? deriveHuntSpiritRuntimeState(spirit, { isActive: true })
     : null;
   const accentColor = meta?.accentColor ?? hunt.color;
+  const continuity = getSpiritContinuityLine(hunt);
+  const stage = getSpiritStageLabel(hunt);
 
   return (
     <div
@@ -212,16 +299,16 @@ export function SpiritConsoleCard({
     >
       <div className="flex items-start justify-between gap-3">
         <SpiritInlineSummary hunt={hunt} showBias compact />
-        {runtime && (
+        {(runtime || !isBoundHuntSpirit(spirit)) && (
           <span
             className="shrink-0 font-mono uppercase"
             style={{
               fontSize: 9,
               letterSpacing: "0.08em",
-              color: "rgba(232,230,222,0.56)",
+              color: isBoundHuntSpirit(spirit) ? accentColor : "rgba(213,173,87,0.56)",
             }}
           >
-            {STANCE_LABELS[runtime.stance] ?? runtime.stance}
+            {runtime ? (STANCE_LABELS[runtime.stance] ?? runtime.stance) : stage}
           </span>
         )}
       </div>
@@ -231,6 +318,17 @@ export function SpiritConsoleCard({
       >
         {getSpiritDetailLine(hunt)}
       </div>
+      <div
+        className="mt-1 truncate font-mono uppercase"
+        style={{
+          fontSize: 8,
+          letterSpacing: "0.08em",
+          color: isBoundHuntSpirit(spirit) ? accentColor : "rgba(213,173,87,0.58)",
+        }}
+      >
+        {continuity}
+      </div>
+      <SpiritBiasChips hunt={hunt} />
     </div>
   );
 }
@@ -238,9 +336,11 @@ export function SpiritConsoleCard({
 export function SpiritActionButton({
   label,
   disabled = false,
+  onClick,
 }: {
   label: string;
   disabled?: boolean;
+  onClick?: () => void;
 }) {
   return (
     <button
@@ -260,6 +360,7 @@ export function SpiritActionButton({
       }}
       title={disabled ? "Shared spirit action wiring is still owned by ORCH" : undefined}
       data-testid={`spirit-action-${label.toLowerCase().replace(/\s+/g, "-")}`}
+      onClick={onClick}
     >
       {label}
     </button>

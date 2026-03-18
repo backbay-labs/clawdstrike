@@ -35,7 +35,7 @@ function makeSnapshot(overrides: Partial<HuntSpiritSignalSnapshot> = {}): HuntSp
     suggestedAnchorArtifactIds: ["artifact-1"],
     boundSpirit: createHuntSpiritState({
       kind: "lantern",
-      bindSource: "quick-bind",
+      bindSource: "quick-configure",
       bindReason: "Receipt-led inquiry.",
       confidenceScore: 78,
       boundAt: 1_000,
@@ -71,7 +71,7 @@ describe("detectHuntSpiritSceneCue", () => {
     const previousSnapshot = makeSnapshot({
       boundSpirit: createHuntSpiritState({
         kind: "lantern",
-        bindSource: "quick-bind",
+        bindSource: "quick-configure",
         bindReason: "Receipt-led inquiry.",
         confidenceScore: 78,
         boundAt: 1_000,
@@ -104,6 +104,29 @@ describe("detectHuntSpiritSceneCue", () => {
 
     expect(cue?.kind).toBe("witness");
   });
+
+  it("does not keep re-emitting focus while the stance is already focused", () => {
+    const snapshot = makeSnapshot();
+    const runtime = deriveHuntSpiritRuntimeState(snapshot.boundSpirit, {
+      currentShell: snapshot.currentShell,
+      currentLens: snapshot.currentLens,
+      likelyIntent: "watch",
+      confidenceScore: snapshot.confidenceScore,
+      activeStationId: "security-overview",
+    });
+
+    const cue = detectHuntSpiritSceneCue({
+      runtime,
+      previousRuntime: runtime,
+      snapshot,
+      previousSnapshot: snapshot,
+      activeStationId: "security-overview",
+      previousActiveStationId: "security-overview",
+      nowMs: 10_000,
+    });
+
+    expect(cue).toBeNull();
+  });
 });
 
 describe("deriveHuntSpiritSceneActor", () => {
@@ -125,9 +148,60 @@ describe("deriveHuntSpiritSceneActor", () => {
     });
 
     expect(actor).not.toBeNull();
-    expect(actor?.huntId).toBe("hunt-1");
-    expect(actor?.label).toBe("Lantern");
-    expect(actor?.laneBias).toBeGreaterThan(0);
-    expect(actor?.presenceStrength).toBeGreaterThan(0.3);
+    if (!actor) throw new Error("expected scene actor");
+    expect(actor.huntId).toBe("hunt-1");
+    expect(actor.label).toBe("Lantern");
+    expect(actor.laneBias).toBeGreaterThan(0);
+    expect(actor.presenceStrength).toBeGreaterThan(0.3);
+    expect(actor.observatoryActiveStationId).toBe("watch");
+    expect(actor.observatoryLikelyStationId).toBe("watch");
+    expect(actor.observatoryActor).toBeDefined();
+    if (!actor.observatoryActor) throw new Error("expected observatory actor");
+    expect(actor.observatoryActor.type).toBe("spirit-field");
+    expect(actor.observatoryActor.stance).toBe("focus");
+    expect(actor.observatoryActor.cueKind).toBeNull();
+  });
+
+  it("derives observatory receipt posture from evidence-led intent", () => {
+    const snapshot = makeSnapshot({
+      likelyIntent: "attach-evidence",
+      artifactCounts: {
+        receipt: 2,
+        evidence: 1,
+        file: 0,
+      },
+      semanticCounts: {
+        evidence: 1,
+      },
+    });
+    const runtime = deriveHuntSpiritRuntimeState(snapshot.boundSpirit, {
+      currentShell: snapshot.currentShell,
+      currentLens: "notes",
+      likelyIntent: snapshot.likelyIntent,
+      confidenceScore: snapshot.confidenceScore,
+      activeStationId: "security-overview",
+    });
+
+    const actor = deriveHuntSpiritSceneActor({
+      runtime,
+      snapshot,
+      activeStationId: "security-overview",
+      cue: {
+        kind: "witness",
+        reason: "Witnessing new proof.",
+        durationMs: 2_800,
+        startedAt: 5_000,
+        expiresAt: 7_800,
+      },
+    });
+
+    expect(actor).not.toBeNull();
+    if (!actor) throw new Error("expected scene actor");
+    expect(actor.observatoryActiveStationId).toBe("signal");
+    expect(actor.observatoryLikelyStationId).toBe("receipts");
+    expect(actor.observatoryActor).toBeDefined();
+    if (!actor.observatoryActor) throw new Error("expected observatory actor");
+    expect(actor.observatoryActor.cueKind).toBe("witness");
+    expect(actor.observatoryActor.likelyStationId).toBe("receipts");
   });
 });

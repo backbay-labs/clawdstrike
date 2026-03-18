@@ -105,14 +105,17 @@ function countArtifacts(
 }
 
 export function countSemanticAssignments(
-  assignments: SemanticAssignmentIndex,
+  assignments: SemanticAssignmentIndex | null | undefined,
 ): HuntSpiritSemanticCounts {
   const counts: HuntSpiritSemanticCounts = {};
+  if (!assignments || typeof assignments !== "object") {
+    return counts;
+  }
 
   for (const [semantic, artifactIds] of Object.entries(assignments) as Array<
     [SemanticAttachment, string[]]
   >) {
-    if (artifactIds.length > 0) {
+    if (Array.isArray(artifactIds) && artifactIds.length > 0) {
       incrementCount(counts, semantic, artifactIds.length);
     }
   }
@@ -220,11 +223,15 @@ export function selectSuggestedSpiritAnchorArtifactIds(
 
   const scores = new Map<string, number>();
 
-  const awardAssignments = (assignments: SemanticAssignmentIndex): void => {
+  const awardAssignments = (assignments: SemanticAssignmentIndex | null | undefined): void => {
+    if (!assignments || typeof assignments !== "object") {
+      return;
+    }
     for (const [semantic, artifactIds] of Object.entries(assignments) as Array<
       [SemanticAttachment, string[]]
     >) {
       const semanticScore = SEMANTIC_PRIORITY[semantic] ?? 1;
+      if (!Array.isArray(artifactIds)) continue;
       for (const artifactId of artifactIds) {
         scores.set(artifactId, (scores.get(artifactId) ?? 0) + semanticScore);
       }

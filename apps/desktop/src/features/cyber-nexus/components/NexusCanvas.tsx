@@ -1,21 +1,18 @@
-import { Html, Line, OrbitControls } from "@react-three/drei";
-import { Canvas, type ThreeEvent } from "@react-three/fiber";
-import { type RefObject, Suspense, useEffect, useMemo, useRef, useState } from "react";
-import * as THREE from "three";
-import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
-import { calculateLayoutPositions } from "../layouts";
-import { GlyphSentinel, type Vec3 } from "../scene/sentinels/GlyphSentinel";
-import { NexusSpiritCompanion } from "../scene/spirits/NexusSpiritCompanion";
+import { useMemo } from "react";
+import {
+  type HuntObservatorySceneState,
+  type HuntStationId,
+} from "@/features/hunt-observatory";
+import { ObservatoryWorldCanvas } from "@/features/hunt-observatory/world/ObservatoryWorldCanvas";
 import type { NexusSpiritSceneActor } from "../scene/spirits/runtime";
-import { GroundPlatform } from "../scene/terrain/GroundPlatform";
 import type {
   NexusLayoutMode,
   NexusViewMode,
   Strikecell,
   StrikecellConnection,
   StrikecellDomainId,
-  StrikecellStatus,
 } from "../types";
+import { resolveNexusObservatoryStationId } from "../observatory";
 
 interface NexusCanvasProps {
   strikecells: Strikecell[];
@@ -29,6 +26,7 @@ interface NexusCanvasProps {
   fieldVisible: boolean;
   cameraResetToken: number;
   activeSpiritActor: NexusSpiritSceneActor | null;
+  observatorySceneState: HuntObservatorySceneState | null;
   onSelectStrikecell: (id: StrikecellDomainId) => void;
   onToggleExpandedStrikecell: (id: StrikecellDomainId) => void;
   onToggleNodeSelection: (nodeId: string) => void;
@@ -42,387 +40,49 @@ interface NexusCanvasProps {
   ) => void;
 }
 
-const STATUS_COLORS: Record<StrikecellStatus, string> = {
-  healthy: "#3dbf84",
-  warning: "#d4a84b",
-  critical: "#c45c5c",
-  offline: "#617089",
+const STRIKECELL_BY_STATION: Record<HuntStationId, StrikecellDomainId> = {
+  signal: "security-overview",
+  targets: "attack-graph",
+  run: "network-map",
+  receipts: "forensics-river",
+  "case-notes": "policies",
+  watch: "threat-radar",
 };
-
-const STATUS_HUES: Record<StrikecellStatus, number> = {
-  healthy: 145,
-  warning: 50,
-  critical: 10,
-  offline: 210,
-};
-
-function toVectorMap(
-  strikecells: Strikecell[],
-  layoutMode: NexusLayoutMode,
-  viewMode: NexusViewMode,
-  connections: StrikecellConnection[],
-): Map<StrikecellDomainId, THREE.Vector3> {
-  const layoutNodes = strikecells.map((strikecell) => ({
-    id: strikecell.id,
-    activityCount: strikecell.activityCount,
-    status: strikecell.status,
-  }));
-  const positions = calculateLayoutPositions(layoutMode, layoutNodes, connections);
-  const map = new Map<StrikecellDomainId, THREE.Vector3>();
-
-  strikecells.forEach((strikecell) => {
-    const position = positions.get(strikecell.id);
-    if (!position) return;
-    const y = viewMode === "grid" ? 0.65 : position.y;
-    const z = viewMode === "grid" ? position.z * 0.74 : position.z;
-    map.set(strikecell.id, new THREE.Vector3(position.x, y, z));
-  });
-
-  return map;
-}
-
-function CameraRig({
-  controlsRef,
-  viewMode,
-  activeStrikecellId,
-  strikecellPositions,
-  cameraResetToken,
-}: {
-  controlsRef: RefObject<OrbitControlsImpl | null>;
-  viewMode: NexusViewMode;
-  activeStrikecellId: StrikecellDomainId | null;
-  strikecellPositions: Map<StrikecellDomainId, THREE.Vector3>;
-  cameraResetToken: number;
-}) {
-  useEffect(() => {
-    const controls = controlsRef.current;
-    if (!controls) return;
-
-    const preset =
-      viewMode === "grid"
-        ? { position: new THREE.Vector3(0, 25, 15), target: new THREE.Vector3(0, 0, 0) }
-        : { position: new THREE.Vector3(0, 9, 22), target: new THREE.Vector3(0, 0.8, 0) };
-
-    const active = activeStrikecellId ? strikecellPositions.get(activeStrikecellId) : null;
-    if (active) {
-      controls.target.copy(active);
-      controls.object.position.set(
-        active.x + preset.position.x * 0.26,
-        preset.position.y,
-        active.z + preset.position.z * 0.26,
-      );
-      controls.update();
-      return;
-    }
-
-    controls.object.position.copy(preset.position);
-    controls.target.copy(preset.target);
-    controls.update();
-  }, [activeStrikecellId, cameraResetToken, controlsRef, strikecellPositions, viewMode]);
-
-  return null;
-}
 
 export function NexusCanvas({
-  strikecells,
-  connections,
   activeStrikecellId,
-  expandedStrikecellIds,
-  selectedNodeIds: _selectedNodeIds,
-  focusedNodeId: _focusedNodeId,
-  layoutMode,
-  viewMode,
-  fieldVisible,
   cameraResetToken,
   activeSpiritActor,
+  observatorySceneState,
   onSelectStrikecell,
-  onToggleExpandedStrikecell,
-  onToggleNodeSelection: _onToggleNodeSelection,
-  onFocusNode: _onFocusNode,
-  onBackgroundClick,
-  onContextMenu,
 }: NexusCanvasProps) {
-  const controlsRef = useRef<OrbitControlsImpl>(null);
-  const previousActiveRef = useRef<StrikecellDomainId | null>(null);
-  const [sentinel, setSentinel] = useState<{ from: Vec3; to: Vec3; hue: number } | null>(null);
-
-  const strikecellPositions = useMemo(
-    () => toVectorMap(strikecells, layoutMode, viewMode, connections),
-    [connections, layoutMode, strikecells, viewMode],
+  const activeStationId = useMemo(
+    () => resolveNexusObservatoryStationId(activeStrikecellId),
+    [activeStrikecellId],
   );
 
-  useEffect(() => {
-    if (!activeStrikecellId) return;
-    const next = strikecellPositions.get(activeStrikecellId);
-    if (!next) return;
-
-    const prevId = previousActiveRef.current;
-    previousActiveRef.current = activeStrikecellId;
-    if (!prevId) return;
-
-    const prev = strikecellPositions.get(prevId);
-    if (!prev) return;
-
-    const status =
-      strikecells.find((strikecell) => strikecell.id === activeStrikecellId)?.status ?? "healthy";
-    const hue = STATUS_HUES[status];
-
-    setSentinel({
-      from: { x: prev.x, y: prev.y + 0.2, z: prev.z },
-      to: { x: next.x, y: next.y, z: next.z },
-      hue,
-    });
-  }, [activeStrikecellId, strikecellPositions, strikecells]);
-
-  const connectionLines = useMemo(() => {
-    return connections
-      .map((connection) => {
-        const source = strikecellPositions.get(connection.sourceId);
-        const target = strikecellPositions.get(connection.targetId);
-        if (!source || !target) return null;
-        return {
-          id: connection.id,
-          points: [source.toArray(), target.toArray()] as [
-            [number, number, number],
-            [number, number, number],
-          ],
-          opacity: 0.16 + connection.strength * 0.34,
-          strength: connection.strength,
-          sourceId: connection.sourceId,
-          targetId: connection.targetId,
-        };
-      })
-      .filter(
-        (
-          line,
-        ): line is {
-          id: string;
-          points: [[number, number, number], [number, number, number]];
-          opacity: number;
-          strength: number;
-          sourceId: StrikecellDomainId;
-          targetId: StrikecellDomainId;
-        } => Boolean(line),
-      );
-  }, [connections, strikecellPositions]);
-
   return (
-    <div className="absolute inset-0">
-      <Canvas
-        camera={{ position: [0, 9, 22], fov: 46 }}
-        dpr={[1, 1.5]}
-        performance={{ min: 0.6 }}
-        gl={{ antialias: true, powerPreference: "high-performance" }}
-        onPointerMissed={onBackgroundClick}
-      >
-        <Suspense fallback={null}>
-          <color attach="background" args={["#06080e"]} />
-          <fog attach="fog" args={["#06080e", 15, 45]} />
-          <ambientLight intensity={0.36} />
-          <pointLight position={[12, 14, 10]} intensity={0.58} color="#7e8ba7" />
-          <pointLight position={[-10, -2, -8]} intensity={0.43} color="#d5ad57" />
-
-          {fieldVisible ? (
-            <group position={[0, -2.2, 0]}>
-              <GroundPlatform radius={16} hue={45} showGrid />
-            </group>
-          ) : null}
-
-          {sentinel ? (
-            <GlyphSentinel
-              from={sentinel.from}
-              to={sentinel.to}
-              hue={sentinel.hue}
-              onArrive={() => setSentinel(null)}
-            />
-          ) : null}
-
-          {connectionLines.map((line) => (
-            <Line
-              key={line.id}
-              points={line.points}
-              color={
-                (activeSpiritActor?.stationAffinities[line.sourceId] ?? 0) > 0.22 ||
-                (activeSpiritActor?.stationAffinities[line.targetId] ?? 0) > 0.22
-                  ? (activeSpiritActor?.accentColor ?? "#d5ad57")
-                  : line.strength > 0.7
-                    ? "#d5ad57"
-                    : "#7e8ba7"
+    <div className="relative h-full w-full">
+      <ObservatoryWorldCanvas
+        className="absolute inset-0"
+        mode="atlas"
+        sceneState={observatorySceneState}
+        activeStationId={activeStationId}
+        cameraResetToken={cameraResetToken}
+        spirit={
+          activeSpiritActor
+            ? {
+                kind: activeSpiritActor.kind,
+                accentColor: activeSpiritActor.accentColor,
+                likelyStationId: activeSpiritActor.observatoryLikelyStationId ?? null,
+                cueKind: activeSpiritActor.observatoryActor?.cueKind ?? null,
               }
-              transparent
-              opacity={line.opacity}
-              lineWidth={1.1}
-            />
-          ))}
-
-          <NexusSpiritCompanion
-            actor={activeSpiritActor}
-            strikecellPositions={strikecellPositions}
-          />
-
-          {strikecells.map((strikecell) => {
-            const position = strikecellPositions.get(strikecell.id);
-            if (!position) return null;
-            const active = strikecell.id === activeStrikecellId;
-            const accent = STATUS_COLORS[strikecell.status];
-            const spiritAffinity = activeSpiritActor?.stationAffinities[strikecell.id] ?? 0;
-            const spiritLikely = activeSpiritActor?.likelyStationId === strikecell.id;
-            const spiritAccent = activeSpiritActor?.accentColor ?? accent;
-            const ringOpacity = active ? 0.28 : 0.14 + spiritAffinity * 0.12;
-
-            return (
-              <group key={strikecell.id} position={position}>
-                <mesh
-                  scale={[active ? 1.3 : 1, active ? 1.3 : 1, active ? 1.3 : 1]}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onSelectStrikecell(strikecell.id);
-                  }}
-                  onDoubleClick={(event) => {
-                    event.stopPropagation();
-                    onToggleExpandedStrikecell(strikecell.id);
-                  }}
-                  onContextMenu={(event: ThreeEvent<MouseEvent>) => {
-                    event.stopPropagation();
-                    event.nativeEvent.preventDefault();
-                    onContextMenu(strikecell.id, "strikecell", event.nativeEvent, strikecell.id);
-                  }}
-                >
-                  <dodecahedronGeometry args={[1.05, 0]} />
-                  <meshStandardMaterial
-                    color="#0f141e"
-                    roughness={0.3}
-                    metalness={0.92}
-                    emissive={accent}
-                    emissiveIntensity={active ? 0.42 : 0.22 + spiritAffinity * 0.24}
-                  />
-                </mesh>
-
-                <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.9, 0]}>
-                  <ringGeometry args={[1.15, active ? 1.55 : 1.4, 48]} />
-                  <meshBasicMaterial color={accent} transparent opacity={ringOpacity} />
-                </mesh>
-
-                {spiritAffinity > 0.12 ? (
-                  <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.87, 0]}>
-                    <ringGeometry args={[1.46, 1.76 + spiritAffinity * 0.22, 52]} />
-                    <meshBasicMaterial
-                      color={spiritAccent}
-                      transparent
-                      opacity={0.08 + spiritAffinity * 0.22}
-                    />
-                  </mesh>
-                ) : null}
-
-                {spiritLikely ? (
-                  <mesh position={[0, 0.38, 0]}>
-                    <cylinderGeometry
-                      args={[0.04, 0.16, 1.05 + spiritAffinity * 0.8, 18, 1, true]}
-                    />
-                    <meshBasicMaterial
-                      color={spiritAccent}
-                      transparent
-                      opacity={0.12 + spiritAffinity * 0.18}
-                      depthWrite={false}
-                    />
-                  </mesh>
-                ) : null}
-
-                <Html
-                  center
-                  position={[0, -1.78, 0]}
-                  distanceFactor={10.5}
-                  style={{ pointerEvents: "none" }}
-                >
-                  <div className="origin-card rounded-md border border-[color:color-mix(in_srgb,var(--origin-panel-border)_55%,transparent)] px-2 py-1 text-[10px] font-mono text-sdr-text-primary whitespace-nowrap">
-                    {strikecell.name}
-                  </div>
-                </Html>
-
-                {expandedStrikecellIds.includes(strikecell.id) ? (
-                  <group>
-                    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.82, 0]}>
-                      <ringGeometry args={[1.7, 1.95, 56]} />
-                      <meshBasicMaterial color="#d5ad57" transparent opacity={0.22} />
-                    </mesh>
-                    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.82, 0]}>
-                      <ringGeometry args={[2.15, 2.28, 56]} />
-                      <meshBasicMaterial color={accent} transparent opacity={0.12} />
-                    </mesh>
-                  </group>
-                ) : null}
-              </group>
-            );
-          })}
-
-          <OrbitControls
-            ref={controlsRef}
-            enablePan
-            enableZoom
-            enableRotate
-            autoRotate={false}
-            minDistance={8}
-            maxDistance={38}
-            minPolarAngle={viewMode === "grid" ? Math.PI * 0.1 : Math.PI * 0.24}
-            maxPolarAngle={viewMode === "grid" ? Math.PI * 0.46 : Math.PI * 0.56}
-            target={[0, 0, 0]}
-          />
-
-          <CameraRig
-            controlsRef={controlsRef}
-            viewMode={viewMode}
-            activeStrikecellId={activeStrikecellId}
-            strikecellPositions={strikecellPositions}
-            cameraResetToken={cameraResetToken}
-          />
-        </Suspense>
-      </Canvas>
-
-      {activeSpiritActor ? (
-        <div className="pointer-events-none absolute top-4 right-4 z-20 max-w-[320px] rounded-xl border border-[rgba(212,168,75,0.24)] bg-[linear-gradient(180deg,rgba(10,13,20,0.92)_0%,rgba(6,9,14,0.96)_100%)] px-3 py-2 shadow-[0_18px_44px_rgba(0,0,0,0.44)]">
-          <div className="flex items-center gap-2">
-            <span
-              className="h-2.5 w-2.5 rounded-full shadow-[0_0_14px_currentColor]"
-              style={{
-                color: activeSpiritActor.accentColor,
-                background: activeSpiritActor.accentColor,
-              }}
-            />
-            <div className="text-[10px] font-mono uppercase tracking-[0.16em] text-[rgba(212,168,75,0.94)]">
-              Active Hunt Spirit
-            </div>
-          </div>
-
-          <div className="mt-1 text-sm font-mono uppercase tracking-[0.08em] text-sdr-text-primary">
-            {activeSpiritActor.label} · {activeSpiritActor.huntTitle}
-          </div>
-
-          <div className="mt-1 text-xs text-sdr-text-secondary">
-            {activeSpiritActor.cue?.reason ??
-              activeSpiritActor.reason ??
-              "Holding posture against the active strikecell."}
-          </div>
-
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            <span className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] font-mono uppercase tracking-[0.12em] text-white/68">
-              {activeSpiritActor.stance}
-            </span>
-            {activeSpiritActor.likelyStationId ? (
-              <span className="rounded-full border border-[rgba(212,168,75,0.22)] px-2 py-0.5 text-[10px] font-mono uppercase tracking-[0.12em] text-[rgba(244,225,177,0.82)]">
-                {activeSpiritActor.likelyStationId.replaceAll("-", " ")}
-              </span>
-            ) : null}
-            {activeSpiritActor.emphasis.map((item) => (
-              <span
-                key={item}
-                className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] font-mono uppercase tracking-[0.12em] text-white/56"
-              >
-                {item}
-              </span>
-            ))}
-          </div>
-        </div>
-      ) : null}
+            : null
+        }
+        onSelectStation={(stationId) => {
+          onSelectStrikecell(STRIKECELL_BY_STATION[stationId]);
+        }}
+      />
     </div>
   );
 }

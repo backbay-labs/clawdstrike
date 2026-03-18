@@ -8,18 +8,21 @@ import {
   type WorkspaceServiceError,
 } from "@/services/workspace";
 import { WorkspaceEditorPane } from "@/features/workspace/editor";
+import { WorkspaceGitPanel } from "@/features/workspace/git";
+import { WorkspaceSearchPanel, type WorkspaceSearchSelection } from "@/features/workspace/search";
 import {
+  applyWorkspaceRootSnapshot,
   createWorkspaceSurfaceState,
   focusWorkspacePane,
   getWorkspaceActiveTab,
   selectWorkspacePath,
   setWorkspaceAccessDenied,
-  setWorkspaceActiveRoot,
   toggleWorkspaceTreePath,
   upsertWorkspaceTab,
   type WorkspaceRouteSection,
   type WorkspaceSurfaceState,
 } from "@/features/workspace/state/workspaceShellState";
+import { WorkspaceTerminalPanel } from "@/features/workspace/terminal";
 import { WORKSPACE_OPEN_FOLDER_EVENT } from "@/features/workspace/shell/workspaceCommands";
 import { WorkspaceBreadcrumbs, findWorkspaceEntryByPath } from "@/features/workspace/tree/WorkspaceBreadcrumbs";
 import { WorkspaceTreeView } from "@/features/workspace/tree/WorkspaceTreeView";
@@ -127,25 +130,46 @@ export function WorkspaceShellScreen({ section = "workspace" }: WorkspaceShellSc
 
   const activeTab = useMemo(() => getWorkspaceActiveTab(state), [state]);
 
-  const handleSelectEntry = useCallback((entry: WorkspaceEntry) => {
+  const openWorkspacePath = useCallback((relativePath: string, title?: string) => {
     setState((current) => {
-      if (entry.kind === "directory") {
+      const entry = findWorkspaceEntryByPath(current.rootTree, relativePath);
+      if (entry?.kind === "directory") {
         return focusWorkspacePane(current, "workspace-tree");
       }
-
-      const existingTab = current.tabs.find((candidate) => candidate.relativePath === entry.relativePath);
+      const existingTab = current.tabs.find((candidate) => candidate.relativePath === relativePath);
 
       return upsertWorkspaceTab(
-        selectWorkspacePath(current, entry.relativePath),
+        selectWorkspacePath(current, relativePath),
         existingTab ?? {
-          id: `workspace-${entry.relativePath}`,
-          title: entry.name,
-          relativePath: entry.relativePath,
+          id: `workspace-${relativePath}`,
+          title:
+            title ??
+            entry?.name ??
+            relativePath.split("/").filter(Boolean).pop() ??
+            relativePath,
+          relativePath,
           kind: "file",
         },
       );
     });
   }, []);
+
+  const handleSelectEntry = useCallback((entry: WorkspaceEntry) => {
+    if (entry.kind === "directory") {
+      setState((current) => focusWorkspacePane(current, "workspace-tree"));
+      return;
+    }
+
+    openWorkspacePath(entry.relativePath, entry.name);
+  }, [openWorkspacePath]);
+
+  const handleOpenSearchResult = useCallback((selection: WorkspaceSearchSelection) => {
+    openWorkspacePath(selection.relativePath);
+  }, [openWorkspacePath]);
+
+  const handleOpenGitPath = useCallback((relativePath: string) => {
+    openWorkspacePath(relativePath);
+  }, [openWorkspacePath]);
 
   const handleTrustRoot = useCallback(async () => {
     const candidate = registerRootPath.trim() || window.prompt?.("Candidate workspace path")?.trim();
@@ -169,6 +193,27 @@ export function WorkspaceShellScreen({ section = "workspace" }: WorkspaceShellSc
       setIsLoading(false);
     }
   }, [applySnapshot, registerRootPath]);
+
+  const handleSelectRoot = useCallback(async (rootId: string) => {
+    if (!rootId || rootId === state.activeRootId) return;
+
+    setIsLoading(true);
+    try {
+      const snapshot = await getWorkspaceShellSnapshot(rootId);
+      setDirtyBuffers({});
+      setState((current) => applyWorkspaceRootSnapshot(current, snapshot));
+    } catch (error) {
+      const serviceError = error as WorkspaceServiceError;
+      setState((current) =>
+        setWorkspaceAccessDenied(current, {
+          code: serviceError.code ?? "workspace_request_failed",
+          message: serviceError.message,
+        }),
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }, [state.activeRootId]);
 
   useEffect(() => {
     const handleOpenFolder = () => {
@@ -244,7 +289,9 @@ export function WorkspaceShellScreen({ section = "workspace" }: WorkspaceShellSc
                 <select
                   aria-label="Trusted workspace roots"
                   value={activeRoot?.id}
-                  onChange={(event) => setState((current) => setWorkspaceActiveRoot(current, event.target.value))}
+                  onChange={(event) => {
+                    void handleSelectRoot(event.target.value);
+                  }}
                   className="rounded-lg border border-sdr-border bg-sdr-bg-primary/60 px-2 py-1 text-xs text-sdr-text-primary"
                 >
                   {state.roots.map((root) => (
@@ -347,6 +394,8 @@ export function WorkspaceShellScreen({ section = "workspace" }: WorkspaceShellSc
                     activeTabTitle={activeTab?.title}
                     activeFilePath={state.route.activeFilePath}
                     onDirtyStateChange={updateDirtyBufferState}
+                    onOpenSearchResult={handleOpenSearchResult}
+                    onOpenGitPath={handleOpenGitPath}
                   />
                 </div>
               </section>
@@ -411,12 +460,16 @@ function WorkspaceMainPane({
   activeTabTitle,
   activeFilePath,
   onDirtyStateChange,
+  onOpenSearchResult,
+  onOpenGitPath,
 }: {
   section: WorkspaceRouteSection;
   activeRoot?: WorkspaceRoot;
   activeTabTitle?: string;
   activeFilePath?: string;
   onDirtyStateChange: (rootId: string, relativePath: string, isDirty: boolean) => void;
+  onOpenSearchResult: (selection: WorkspaceSearchSelection) => void;
+  onOpenGitPath: (relativePath: string) => void;
 }) {
   if (section === "workspace") {
     return (
@@ -429,16 +482,43 @@ function WorkspaceMainPane({
     );
   }
 
+  if (section === "tree") {
+    return (
+      <div className="space-y-3 text-sm text-sdr-text-secondary">
+        <p>The explorer stays pinned in the left rail so file selection and pane routing remain keyboard-fast.</p>
+        <PanelRow label="Trusted root" value={activeRoot?.name ?? "None"} />
+        <PanelRow label="Explorer mode" value="Tree selection drives tabs and editor focus" />
+        <PanelRow label="Next action" value="Pick a file from the left rail to open it in the editor" />
+      </div>
+    );
+  }
+
   if (section === "search") {
-    return <PlaceholderPanel title="Search reserved for WS6" description="Quick-open and content-search results will stream into this pane." />;
+    return (
+      <WorkspaceSearchPanel
+        rootId={activeRoot?.id}
+        onOpenResult={onOpenSearchResult}
+      />
+    );
   }
 
   if (section === "git") {
-    return <PlaceholderPanel title="Git status reserved for WS6" description="Branch, ahead/behind, and changed-file summary will anchor here." />;
+    return (
+      <WorkspaceGitPanel
+        rootId={activeRoot?.id}
+        activePath={activeFilePath}
+        onOpenPath={onOpenGitPath}
+      />
+    );
   }
 
   if (section === "terminal") {
-    return <PlaceholderPanel title="Terminal reserved for WS5" description="PTY-backed shell and task sessions mount here without taking over the explorer." />;
+    return (
+      <WorkspaceTerminalPanel
+        rootId={activeRoot?.id}
+        rootName={activeRoot?.name}
+      />
+    );
   }
 
   return (

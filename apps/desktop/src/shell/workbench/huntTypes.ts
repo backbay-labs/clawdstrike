@@ -154,7 +154,7 @@ export function createInitialHuntStore(): HuntStore {
       icon: "crosshair",
       spirit: createHuntSpiritState({
         kind: "forge",
-        bindSource: "quick-bind",
+        bindSource: "quick-configure",
         bindReason: "Run-heavy hunt with mounted file inputs and active sandbox pressure.",
         thesis: "Trace the mounted payload path through lateral movement pivots.",
         anchorArtifactIds: ["art_demo_3", "art_demo_2"],

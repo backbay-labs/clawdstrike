@@ -5,8 +5,9 @@
  * State driven by InspectorState via useContextInspector() / useWorkbenchDispatch().
  */
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import type { InspectorTabId } from "./workbenchState";
-import { useContextInspector, useWorkbenchDispatch } from "./WorkbenchStateProvider";
+import { useActiveTab, useContextInspector, useWorkbenchDispatch } from "./WorkbenchStateProvider";
 import { useAnticipationContext, useSidebarDirector } from "./anticipation";
 
 const ContextTab = lazy(() =>
@@ -38,29 +39,6 @@ const INSPECTOR_TABS: InspectorTabDef[] = [
 const TAB_STRIP_HEIGHT = 28;
 const RESIZE_HANDLE_WIDTH = 4;
 
-function InspectorPlaceholder({ text, icon }: { text: string; icon?: string }) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        height: "100%",
-        gap: 8,
-        color: "var(--color-text-muted, #6b7280)",
-        fontFamily: "monospace",
-        fontSize: 11,
-        padding: 16,
-        textAlign: "center",
-      }}
-    >
-      {icon && <span style={{ fontSize: 24, opacity: 0.4 }}>{icon}</span>}
-      {text}
-    </div>
-  );
-}
-
 function InspectorContent({ tabId }: { tabId: InspectorTabId }) {
   switch (tabId) {
     case "context":
@@ -75,11 +53,16 @@ function InspectorContent({ tabId }: { tabId: InspectorTabId }) {
 }
 
 export function ContextInspector() {
+  const location = useLocation();
   const { activeTab, width, visible } = useContextInspector();
   const dispatch = useWorkbenchDispatch();
+  const activeWorkbenchTab = useActiveTab();
   const anticipation = useAnticipationContext();
   const sidebarDirector = useSidebarDirector();
   const promotion = sidebarDirector.adjacentSurfacePromotion;
+  const inObservatoryRoute =
+    location.pathname === "/nexus" || location.pathname === "/nexus/scene";
+  const suppressPromotion = activeWorkbenchTab?.kind === "spirit-chamber" || inObservatoryRoute;
 
   const [isDragging, setIsDragging] = useState(false);
   const dragStartX = useRef(0);
@@ -127,9 +110,11 @@ export function ContextInspector() {
 
   useEffect(() => {
     if (
-      !promotion.inspectorTab ||
-      !promotion.shouldShowInspector ||
-      (visible && activeTab === promotion.inspectorTab)
+      suppressPromotion
+      || !promotion.inspectorTab
+      || !promotion.shouldShowInspector
+      || !visible
+      || activeTab === promotion.inspectorTab
     ) {
       return;
     }
@@ -138,8 +123,10 @@ export function ContextInspector() {
   }, [
     activeTab,
     dispatch,
+    inObservatoryRoute,
     promotion.inspectorTab,
     promotion.shouldShowInspector,
+    suppressPromotion,
     visible,
   ]);
 
@@ -254,7 +241,7 @@ export function ContextInspector() {
           })}
         </div>
 
-        {promotion.reason && promotion.inspectorTab && (
+        {!suppressPromotion && promotion.reason && promotion.inspectorTab && (
           <div
             style={{
               minHeight: 18,
