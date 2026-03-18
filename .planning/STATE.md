@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: milestone
 status: executing
-stopped_at: "Completed 02-02-PLAN.md"
-last_updated: "2026-03-18T22:38:00Z"
+stopped_at: Completed 02-03-PLAN.md
+last_updated: "2026-03-18T22:41:41.270Z"
 last_activity: "2026-03-18 — Plan 02-02 complete: SpiritOrbIcon CSS orb in ActivityBar (SPRT-03), SpiritCompanionCanvas R3F demand-frameloop in right sidebar Spirit panel (SPRT-04)"
 progress:
   total_phases: 4
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 7
-  completed_plans: 6
+  completed_plans: 7
   percent: 75
 ---
 
@@ -87,6 +87,7 @@ v2.0 decisions:
 - [Phase 02-02]: SpiritOrbIcon uses CSS custom property --spirit-orb-color to preserve raw hex in style attribute (jsdom normalizes hex in gradient stops to rgb())
 - [Phase 02-02]: SpiritCompanionCanvas returns null when accentColor is null — prevents WebGL context creation when no spirit is bound
 - [Phase 02-02]: RightSidebarPanel extended to "speakeasy" | "spirit"; Wave 0 @ts-expect-error guards removed after type extension
+- [Phase 02]: Separate Canvas per pane tab (not root Canvas + drei View) — drei View #2471 z-index issue, WebGL context-disposes verified by code review, deferred to Phase 3 for full Tauri runtime confirmation
 
 ### Pending Todos
 
@@ -100,6 +101,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-18T22:38:00Z
-Stopped at: Completed 02-02-PLAN.md
+Last session: 2026-03-18T22:41:41.268Z
+Stopped at: Completed 02-03-PLAN.md
 Resume file: None
