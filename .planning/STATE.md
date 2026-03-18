@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: milestone
-status: planning
-stopped_at: Completed 01-01-PLAN.md
-last_updated: "2026-03-18T21:32:59.712Z"
-last_activity: 2026-03-18 — Roadmap created for v2.0 Huntronomer Integration
+status: executing
+stopped_at: Completed 01-03-PLAN.md
+last_updated: "2026-03-18T21:37:30Z"
+last_activity: "2026-03-18 — Plan 01-03 complete: Hunt activity bar item, seam badge, observatory routes, 5 Hunt commands"
 progress:
   total_phases: 4
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 3
-  completed_plans: 1
-  percent: 0
+  completed_plans: 3
+  percent: 100
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-03-18)
 
 ## Current Position
 
-Phase: 1 of 4 (Spirit + Observatory State Foundation)
-Plan: 1 of 3 in current phase
-Status: In Progress
-Last activity: 2026-03-18 — Plan 01-01 complete: spirit-store and observatory-store created
+Phase: 1 of 4 (Spirit + Observatory State Foundation) — COMPLETE
+Plan: 3 of 3 in current phase
+Status: In Progress — Ready for Phase 2
+Last activity: 2026-03-18 — Plan 01-03 complete: Hunt activity bar item, seam badge, observatory routes, 5 Hunt commands
 
-Progress: [███░░░░░░░] 33%
+Progress: [██████████] 100% (Phase 1 complete)
 
 ## Previous Milestone (v1.1 — IDE Completeness)
 
@@ -70,6 +70,12 @@ v2.0 decisions (pending):
 - WebGL Canvas architecture (separate Canvas vs root Canvas + drei View) — OPEN, resolve in Phase 2 spike
 - [Phase 01]: Spirit store uses no-immer create() pattern; SPIRIT_ACCENT_MAP is module-level const not in state
 - [Phase 01]: Observatory setStations recomputes artifactCount aggregate inline to keep seamSummary consistent with stations array
+- [Phase 01]: SpiritFieldInjector subscribes to kind+accentColor only; fieldStrength reserved for future intensity scaling
+- [Phase 01]: CSS fallback var(--spirit-field-stain, transparent) prevents flash before injector mounts
+- [Phase 01]: SpiritFieldInjector mounted as first child in DesktopLayout before InitCommands
+- [Phase 01]: ActivityBarItem badge prop is sparse (undefined = no badge, number > 0 = render green pulse dot); liveness color split deferred to later phase
+- [Phase 01]: PlaceholderPane is inline in workbench-routes.tsx for transitional routes (/observatory, /spirit-chamber, /nexus)
+- [Phase 01]: hunt.bindSpirit opens /spirit-chamber as proxy until dedicated bind-spirit flow built in Phase 3
 
 ### Pending Todos
 
@@ -83,6 +89,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-18T21:32:59.710Z
-Stopped at: Completed 01-01-PLAN.md
+Last session: 2026-03-18T21:37:30Z
+Stopped at: Completed 01-03-PLAN.md
 Resume file: None

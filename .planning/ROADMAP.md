@@ -10,7 +10,7 @@ This milestone integrates the huntronomer 3D spirit companion, observatory world
 - Integer phases (1, 2, 3): Planned milestone work
 - Decimal phases (e.g., 1.1): Urgent insertions (marked with INSERTED)
 
-- [ ] **Phase 1: Spirit + Observatory State Foundation** — Two Zustand stores, CSS field stain, accent color, activity bar seam badges, route bridge, 5 commands (no R3F)
+- [x] **Phase 1: Spirit + Observatory State Foundation** — Two Zustand stores, CSS field stain, accent color, activity bar seam badges, route bridge, 5 commands (no R3F) (completed 2026-03-18)
 - [ ] **Phase 2: R3F Infrastructure + Small Embeds** — Install R3F packages, resolve WebGL Canvas architecture, spirit orb (CSS/SVG), spirit companion mini-canvas, spirit chamber pane tab
 - [ ] **Phase 3: Full Immersive Panes (Observatory + Forensics)** — Observatory world as full editor pane with probe/flow-mode/character-controller, forensics river Tape tab
 - [ ] **Phase 4: Nexus + Spirit Creation** — NexusStateContext → Zustand migration, cyber nexus Hunt Deck pane tab, spirit creation chamber with full atmosphere
@@ -88,7 +88,7 @@ Phase 1 → Phase 2 → Phase 3 → Phase 4. Strict sequential dependency — ea
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Spirit + Observatory State Foundation | 1/3 | In Progress|  |
+| 1. Spirit + Observatory State Foundation | 3/3 | Complete   | 2026-03-18 |
 | 2. R3F Infrastructure + Small Embeds | 0/3 | Not started | - |
 | 3. Full Immersive Panes (Observatory + Forensics) | 0/4 | Not started | - |
 | 4. Nexus + Spirit Creation | 0/3 | Not started | - |
