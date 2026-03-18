@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-04-PLAN.md
-last_updated: "2026-03-18T21:50:15.229Z"
-last_activity: "2026-03-18 — Plan 01-03 complete: Hunt activity bar item, seam badge, observatory routes, 5 Hunt commands"
+stopped_at: Completed 02-01-PLAN.md
+last_updated: "2026-03-18T22:24:53Z"
+last_activity: "2026-03-18 — Plan 02-01 complete: R3F packages installed, SpiritKind migrated to huntronomer names, 5 Wave 0 test scaffolds created"
 progress:
   total_phases: 4
   completed_phases: 1
-  total_plans: 4
-  completed_plans: 4
-  percent: 100
+  total_plans: 7
+  completed_plans: 5
+  percent: 71
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-03-18)
 
 ## Current Position
 
-Phase: 1 of 4 (Spirit + Observatory State Foundation) — COMPLETE
-Plan: 3 of 3 in current phase
-Status: In Progress — Ready for Phase 2
-Last activity: 2026-03-18 — Plan 01-03 complete: Hunt activity bar item, seam badge, observatory routes, 5 Hunt commands
+Phase: 2 of 4 (R3F Infrastructure + Small Embeds)
+Plan: 1 of 3 in current phase — COMPLETE
+Status: In Progress — Phase 2 active
+Last activity: 2026-03-18 — Plan 02-01 complete: R3F packages installed, SpiritKind migrated to huntronomer names, 5 Wave 0 test scaffolds created
 
-Progress: [██████████] 100% (Phase 1 complete)
+Progress: [████████░░] 71% (Phase 2 Plan 1/3 complete)
 
 ## Previous Milestone (v1.1 — IDE Completeness)
 
@@ -62,12 +62,17 @@ v1.0 decisions carried forward:
 - navigate-commands uses Zustand getState() (no react-router dependency)
 - Lab sub-apps independently routable at /swarm-board, /hunt, /simulator
 
-v2.0 decisions (pending):
+v2.0 decisions:
 - Mini R3F canvas lives in right sidebar (already has resize handle)
 - Observatory is a TAB/PANE not a panel (like VS Code Markdown Preview)
 - deriveObservatoryWorld survives — powers both full tab and minimap
 - Character controller is opt-in Easter-egg in observatory tab flow mode only
 - WebGL Canvas architecture (separate Canvas vs root Canvas + drei View) — OPEN, resolve in Phase 2 spike
+- [Phase 02-01]: @react-three/fiber pinned at ^9.0.0 (not ^9.5.0) for React 19.2.4 compatibility
+- [Phase 02-01]: three pinned at ^0.170.0 to match huntronomer target
+- [Phase 02-01]: SpiritKind = sentinel | oracle | witness | specter (huntronomer names; ember/tide/verdant/void/neutral retired)
+- [Phase 02-01]: SPIRIT_ACCENT_MAP: sentinel=#3dbf84, oracle=#7b68ee, witness=#d4a84b, specter=#c45c5c
+- [Phase 02-01]: Wave 0 test scaffolds use @ts-expect-error to allow runtime testing before type extension
 - [Phase 01]: Spirit store uses no-immer create() pattern; SPIRIT_ACCENT_MAP is module-level const not in state
 - [Phase 01]: Observatory setStations recomputes artifactCount aggregate inline to keep seamSummary consistent with stations array
 - [Phase 01]: SpiritFieldInjector subscribes to kind+accentColor only; fieldStrength reserved for future intensity scaling
@@ -91,6 +96,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-18T21:50:15.227Z
-Stopped at: Completed 01-04-PLAN.md
+Last session: 2026-03-18T22:24:53Z
+Stopped at: Completed 02-01-PLAN.md
 Resume file: None

@@ -89,6 +89,6 @@ Phase 1 → Phase 2 → Phase 3 → Phase 4. Strict sequential dependency — ea
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Spirit + Observatory State Foundation | 4/4 | Complete   | 2026-03-18 |
-| 2. R3F Infrastructure + Small Embeds | 0/3 | Not started | - |
+| 2. R3F Infrastructure + Small Embeds | 1/3 | In Progress|  |
 | 3. Full Immersive Panes (Observatory + Forensics) | 0/4 | Not started | - |
 | 4. Nexus + Spirit Creation | 0/3 | Not started | - |

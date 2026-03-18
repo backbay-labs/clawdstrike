@@ -9,9 +9,9 @@
 
 - [x] **SPRT-01**: User can see spirit field stain CSS gradients on panel/sidebar backgrounds when a spirit is bound
 - [x] **SPRT-02**: User can see spirit accent color applied to hunt-related UI elements
-- [ ] **SPRT-03**: User can see animated spirit orb in ActivityBar replacing static icon when spirit is bound
-- [ ] **SPRT-04**: User can see mini spirit companion R3F canvas (~150px) in right sidebar
-- [ ] **SPRT-05**: User can open spirit chamber as a pane tab via command palette (spirit.bind) to bind/unbind spirits
+- [x] **SPRT-03**: User can see animated spirit orb in ActivityBar replacing static icon when spirit is bound
+- [x] **SPRT-04**: User can see mini spirit companion R3F canvas (~150px) in right sidebar
+- [x] **SPRT-05**: User can open spirit chamber as a pane tab via command palette (spirit.bind) to bind/unbind spirits
 - [ ] **SPRT-06**: User can open spirit creation chamber with full atmosphere and manifestation canvas as a pane tab
 
 ### Observatory
@@ -63,9 +63,9 @@
 | SPRT-02 | Phase 1 | Complete |
 | OBS-01 | Phase 1 | Complete |
 | OBS-02 | Phase 1 | Complete |
-| SPRT-03 | Phase 2 | Pending |
-| SPRT-04 | Phase 2 | Pending |
-| SPRT-05 | Phase 2 | Pending |
+| SPRT-03 | Phase 2 | Complete |
+| SPRT-04 | Phase 2 | Complete |
+| SPRT-05 | Phase 2 | Complete |
 | OBS-03 | Phase 3 | Pending |
 | OBS-04 | Phase 3 | Pending |
 | OBS-05 | Phase 3 | Pending |
