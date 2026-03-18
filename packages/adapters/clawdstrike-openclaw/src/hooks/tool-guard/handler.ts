@@ -571,7 +571,7 @@ function normalizeToolResultEvent(
   const messageRecord = asRecord(currentMessage);
   const toolName =
     asNonEmptyString(event.toolName) ??
-    hookCtx?.toolName ??
+    asNonEmptyString(hookCtx?.toolName) ??
     asNonEmptyString(messageRecord?.toolName) ??
     "unknown";
   const sessionId =

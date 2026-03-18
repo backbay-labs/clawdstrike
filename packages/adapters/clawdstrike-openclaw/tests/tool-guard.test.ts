@@ -937,4 +937,38 @@ describe('Tool Guard Handler — modern OpenClaw runtime payloads', () => {
       },
     ]);
   });
+
+  it('ignores blank hook context tool names and falls back to the message payload', async () => {
+    rememberToolInvocation(
+      'modern-session',
+      'read',
+      { path: `${HOME}/.ssh/id_rsa` },
+      'tool-call-2',
+    );
+
+    const event: ModernToolResultPersistEvent = {
+      toolCallId: 'tool-call-2',
+      message: {
+        role: 'toolResult',
+        toolName: 'read',
+        toolCallId: 'tool-call-2',
+        content: [{ type: 'text', text: 'safe looking content' }],
+      },
+    };
+
+    const result = await toolGuardHandler(event as any, {
+      sessionKey: 'modern-session',
+      toolName: '   ',
+      toolCallId: 'tool-call-2',
+    });
+    const message = (result as { message?: Record<string, unknown> } | undefined)?.message;
+
+    expect(message?.isError).toBe(true);
+    expect(message?.content).toEqual([
+      {
+        type: 'text',
+        text: expect.stringContaining('[clawdstrike] Blocked by forbidden_path'),
+      },
+    ]);
+  });
 });
