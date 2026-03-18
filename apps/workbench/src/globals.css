@@ -186,6 +186,24 @@
   border-color: rgba(212, 168, 75, 0.25);
 }
 
+/* Spirit field stain overlay — applied to panel host containers */
+.spirit-field-stain-host {
+  position: relative;
+}
+.spirit-field-stain-host::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at top-left, var(--spirit-field-stain, transparent) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+  transition: background var(--duration-slow) ease-out;
+}
+.spirit-field-stain-host > * {
+  position: relative;
+  z-index: 1;
+}
+
 /* ==========================================================================
    Typography Utilities
    ========================================================================== */
