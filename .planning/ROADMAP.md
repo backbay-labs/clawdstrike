@@ -59,13 +59,13 @@ Plans:
   3. User can toggle observatory flow mode — the scene transitions from atlas overview to immersive first-person-ready navigation
   4. User can activate WASD character controller in flow mode as an opt-in Easter egg (lazily loaded with Rapier physics; not active by default)
   5. User sees the forensics river mini-view in a "Tape" tab in the bottom pane, rendering live telemetry (conditional on glia-three own-Canvas audit from Phase 2 spike)
-**Plans**: TBD
+**Plans**: 4 plans
 
 Plans:
-- [ ] 03-01: ObservatoryTab route + deriveObservatoryWorld port + atlas mode rendering + tab-switch visibility-toggle (no shader recompile)
-- [ ] 03-02: Observatory probe command + flow mode toggle + observatory HUD
-- [ ] 03-03: WASD character controller Easter-egg (lazy-load Rapier + ecctrl, opt-in only, flow mode only)
-- [ ] 03-04: ForensicsTapeTab in bottom pane (conditional on glia-three audit; fork/adapter plan if glia-three owns its own Canvas)
+- [ ] 03-01-PLAN.md — Observatory world foundation: world types/stations/deriveObservatoryWorld port + ObservatoryWorldCanvas port + ObservatoryTab store bridge + /observatory route swap (Wave 1)
+- [ ] 03-02-PLAN.md — Probe command + frameloop switching + ObservatoryProbeHud + flow mode toggle + CameraControls (Wave 2)
+- [ ] 03-03-PLAN.md — WASD character controller Easter-egg: Rapier+ecctrl install, character subsystem port, FlowModeController lazy-load, double-click activation (Wave 3)
+- [ ] 03-04-PLAN.md — ForensicsTapePanel CSS horizontal timeline + BottomPaneTab "tape" extension + Tape button in bottom-pane.tsx (Wave 1, independent)
 
 ### Phase 4: Nexus + Spirit Creation
 **Goal**: The cyber nexus Hunt Deck pane tab is live (backed by nexus-store.ts after NexusStateContext migration), and the spirit creation chamber offers full atmosphere and manifestation canvas as a pane tab
