@@ -869,7 +869,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cargo build --release --target ${{ matrix.target }} -p hushd --bin hushd --bin clawdstriked
+          cargo build --release --target ${{ matrix.target }} -p hushd --bin hushd
 
       - name: Rename hushd binary (Unix)
         if: runner.os != 'Windows'
