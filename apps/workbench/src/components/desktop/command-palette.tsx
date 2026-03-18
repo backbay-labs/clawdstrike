@@ -62,9 +62,11 @@ const CATEGORY_ORDER: CommandCategory[] = [
   "Guard",
   "Sentinel",
   "Fleet",
+  "Hunt",
   "Test",
   "Receipt",
   "View",
+  "Sidebar",
   "Help",
 ];
 
