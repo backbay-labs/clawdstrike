@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: milestone
 status: executing
-stopped_at: "Checkpoint: 02-03 Task 3 — awaiting WebGL spike human verification"
-last_updated: "2026-03-18T22:33:05.906Z"
-last_activity: "2026-03-18 — Plan 02-01 complete: R3F packages installed, SpiritKind migrated to huntronomer names, 5 Wave 0 test scaffolds created"
+stopped_at: "Completed 02-02-PLAN.md"
+last_updated: "2026-03-18T22:38:00Z"
+last_activity: "2026-03-18 — Plan 02-02 complete: SpiritOrbIcon CSS orb in ActivityBar (SPRT-03), SpiritCompanionCanvas R3F demand-frameloop in right sidebar Spirit panel (SPRT-04)"
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 7
   completed_plans: 6
-  percent: 71
+  percent: 75
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-18)
 ## Current Position
 
 Phase: 2 of 4 (R3F Infrastructure + Small Embeds)
-Plan: 1 of 3 in current phase — COMPLETE
+Plan: 2 of 3 in current phase — COMPLETE
 Status: In Progress — Phase 2 active
-Last activity: 2026-03-18 — Plan 02-01 complete: R3F packages installed, SpiritKind migrated to huntronomer names, 5 Wave 0 test scaffolds created
+Last activity: 2026-03-18 — Plan 02-02 complete: SpiritOrbIcon CSS orb in ActivityBar (SPRT-03), SpiritCompanionCanvas R3F demand-frameloop in right sidebar Spirit panel (SPRT-04)
 
-Progress: [████████░░] 71% (Phase 2 Plan 1/3 complete)
+Progress: [████████░░] 75% (Phase 2 Plan 2/3 complete)
 
 ## Previous Milestone (v1.1 — IDE Completeness)
 
@@ -84,6 +84,9 @@ v2.0 decisions:
 - [Phase 01]: Inline style borderColor used for --spirit-accent in HuntLayout (CSS vars dynamic; Tailwind JIT cannot evaluate at build time)
 - [Phase 01]: spirit-field-stain-host applied to sidebar-panel, pane-root, bottom-pane root elements; no cn() wrapper — matched existing bare-string className pattern
 - [Phase 02]: SpiritChamberTab: kind selector hidden when bound + Bind/Unbind mutually exclusive (test contract compliance)
+- [Phase 02-02]: SpiritOrbIcon uses CSS custom property --spirit-orb-color to preserve raw hex in style attribute (jsdom normalizes hex in gradient stops to rgb())
+- [Phase 02-02]: SpiritCompanionCanvas returns null when accentColor is null — prevents WebGL context creation when no spirit is bound
+- [Phase 02-02]: RightSidebarPanel extended to "speakeasy" | "spirit"; Wave 0 @ts-expect-error guards removed after type extension
 
 ### Pending Todos
 
@@ -97,6 +100,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-18T22:33:00.897Z
-Stopped at: Checkpoint: 02-03 Task 3 — awaiting WebGL spike human verification
+Last session: 2026-03-18T22:38:00Z
+Stopped at: Completed 02-02-PLAN.md
 Resume file: None
