@@ -42,12 +42,12 @@ Plans:
   2. User sees a mini R3F spirit companion (~150px canvas, demand frameloop) in the right sidebar spirit-companion panel
   3. User can open spirit chamber as a pane tab via command palette (spirit.bind) and interact with the bind/unbind ritual
   4. The WebGL Canvas architecture decision (separate Canvas vs root Canvas + drei View) is documented and validated in a spike component before any further 3D tabs are built
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 02-01: Install R3F packages + WebGL architecture spike (audit drei #2471 in v10, test context count ceiling, document decision)
-- [ ] 02-02: Animated spirit orb in ActivityBar (CSS/SVG), right-sidebar spirit-companion panel switch, SpiritCompanionCanvas (mini R3F)
-- [ ] 02-03: SpiritChamberTab route + pane-store integration + spirit.bind command wiring
+- [ ] 02-01-PLAN.md — R3F package install + SpiritKind migration (sentinel/oracle/witness/specter) + Wave 0 test scaffolds
+- [ ] 02-02-PLAN.md — SpiritOrbIcon CSS orb + ActivityBar orbColor wiring + SpiritCompanionCanvas R3F + right sidebar Spirit panel
+- [ ] 02-03-PLAN.md — SpiritChamberTab form + /spirit-chamber route wiring + 02-ARCHITECTURE-DECISION.md ADR
 
 ### Phase 3: Full Immersive Panes (Observatory + Forensics)
 **Goal**: The full observatory world renders as an editor pane tab with atlas mode by default, probe command active, flow mode opt-in, and WASD character controller Easter-egg; the forensics river mini-view lives in the bottom pane Tape tab
