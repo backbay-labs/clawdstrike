@@ -217,7 +217,10 @@ export function HuntLayout() {
   );
 
   return (
-    <div className="flex flex-col h-full min-h-0">
+    <div
+      className="flex flex-col h-full min-h-0 border border-transparent transition-colors duration-[400ms] ease-out"
+      style={{ borderColor: "var(--spirit-accent)" }}
+    >
       {/* Sub-tab bar with status indicators */}
       <SubTabBar
         tabs={HUNT_TABS}
