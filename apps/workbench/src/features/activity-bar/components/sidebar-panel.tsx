@@ -102,7 +102,7 @@ export function SidebarPanel() {
       role="tabpanel"
       id="sidebar-panel"
       aria-labelledby={`activity-bar-tab-${activeItem}`}
-      className="shrink-0 bg-[#0b0d13] overflow-hidden transition-[width] duration-[250ms] ease-[cubic-bezier(0.25,0.1,0.25,1)]"
+      className="shrink-0 bg-[#0b0d13] overflow-hidden transition-[width] duration-[250ms] ease-[cubic-bezier(0.25,0.1,0.25,1)] spirit-field-stain-host"
       style={{ width: sidebarVisible ? sidebarWidth : 0 }}
     >
       {sidebarVisible && (

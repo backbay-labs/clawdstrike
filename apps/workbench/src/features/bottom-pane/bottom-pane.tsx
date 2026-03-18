@@ -12,7 +12,7 @@ export function BottomPane() {
   const isSplit = splitTerminalIds != null;
 
   return (
-    <section data-testid="bottom-pane" className="flex h-full min-h-0 flex-col border-t border-[#202531] bg-[#07090f]">
+    <section data-testid="bottom-pane" className="flex h-full min-h-0 flex-col border-t border-[#202531] bg-[#07090f] spirit-field-stain-host">
       <header className="flex items-center justify-between border-b border-[#202531] px-3 py-2">
         <div className="flex items-center gap-1">
           <button

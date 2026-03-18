@@ -41,7 +41,7 @@ export function PaneRoot() {
   const root = usePaneStore((state) => state.root);
 
   return (
-    <div data-testid="pane-root" className="h-full w-full overflow-hidden p-3">
+    <div data-testid="pane-root" className="h-full w-full overflow-hidden p-3 spirit-field-stain-host">
       <PaneNodeRenderer node={root} />
     </div>
   );
