@@ -313,6 +313,14 @@ export class PolicyEngine {
     return sanitizeOutputText(secretsRedacted).sanitized;
   }
 
+  evaluateSync(event: PolicyEvent): Decision {
+    return this.applyMode(this.evaluateDeterministic(event), this.config.mode);
+  }
+
+  hasAsyncGuards(): boolean {
+    return this.threatIntelEngine !== null;
+  }
+
   async evaluate(event: PolicyEvent): Promise<Decision> {
     const base = this.evaluateDeterministic(event);
 

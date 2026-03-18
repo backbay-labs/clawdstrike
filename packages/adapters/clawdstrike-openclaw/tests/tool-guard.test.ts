@@ -11,7 +11,11 @@ import toolGuardHandler, {
   initialize as initToolGuard,
 } from '../src/hooks/tool-guard/handler.js';
 import { inferEventTypeFromName } from '../src/classification.js';
-import type { ToolResultPersistEvent, ClawdstrikeConfig } from '../src/types.js';
+import type {
+  ClawdstrikeConfig,
+  ModernToolResultPersistEvent,
+  ToolResultPersistEvent,
+} from '../src/types.js';
 
 const HOME = homedir();
 
@@ -31,6 +35,23 @@ function makeToolResultEvent(
       toolResult: { toolName, params, result },
     },
     messages: [],
+  };
+}
+
+function makeModernToolResultEvent(
+  toolName: string,
+  messageText: string,
+): ModernToolResultPersistEvent {
+  return {
+    toolName,
+    toolCallId: 'tool-call-1',
+    message: {
+      role: 'toolResult',
+      toolName,
+      toolCallId: 'tool-call-1',
+      content: [{ type: 'text', text: messageText }],
+      timestamp: Date.now(),
+    },
   };
 }
 
@@ -822,5 +843,46 @@ describe('Tool Guard Handler — edge cases', () => {
     await toolGuardHandler(event);
     // Should not crash; URL is extracted from command string
     expect(event.messages.every((m) => !m.includes('patch_integrity'))).toBe(true);
+  });
+});
+
+describe('Tool Guard Handler — modern OpenClaw runtime payloads', () => {
+  const config: ClawdstrikeConfig = {
+    policy: 'clawdstrike:ai-agent-minimal',
+    mode: 'deterministic',
+    logLevel: 'error',
+  };
+
+  beforeEach(() => {
+    initToolGuard(config);
+  });
+
+  it('sanitizes modern tool_result_persist messages synchronously', async () => {
+    const event = makeModernToolResultEvent('read', 'Contact alice@example.com for access');
+
+    const result = await toolGuardHandler(event as any, { sessionKey: 'modern-session' });
+    const message = (result as { message?: { content?: Array<{ text?: string }> } } | undefined)?.message;
+    const text = message?.content?.[0]?.text ?? '';
+
+    expect(text).toContain('[REDACTED:email]');
+    expect(text).not.toContain('alice@example.com');
+  });
+
+  it('rewrites denied modern tool results into synthetic error messages', async () => {
+    const event = makeModernToolResultEvent(
+      'generic_tool',
+      'ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+    );
+
+    const result = await toolGuardHandler(event as any, { sessionKey: 'modern-session' });
+    const message = (result as { message?: Record<string, unknown> } | undefined)?.message;
+
+    expect(message?.isError).toBe(true);
+    expect(message?.content).toEqual([
+      {
+        type: 'text',
+        text: expect.stringContaining('[clawdstrike] Blocked by secret_leak'),
+      },
+    ]);
   });
 });

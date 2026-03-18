@@ -1,6 +1,6 @@
 {
   "name": "@clawdstrike/openclaw",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "description": "Clawdstrike security plugin for OpenClaw",
   "type": "module",
   "main": "dist/index.js",

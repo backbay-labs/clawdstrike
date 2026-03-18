@@ -37,6 +37,24 @@ describe("PolicyEngine", () => {
     expect(decision.guard).toBe("forbidden_path");
   });
 
+  it("supports deterministic synchronous evaluation for hot-path hooks", () => {
+    const engine = new PolicyEngine({
+      policy: "clawdstrike:ai-agent-minimal",
+      mode: "deterministic",
+      logLevel: "error",
+    });
+
+    const decision = engine.evaluateSync({
+      eventId: "t1-sync",
+      eventType: "file_read",
+      timestamp: new Date().toISOString(),
+      data: { type: "file", path: `${homedir()}/.ssh/id_rsa`, operation: "read" },
+    });
+
+    expect(decision.status).toBe("deny");
+    expect(engine.hasAsyncGuards()).toBe(false);
+  });
+
   it("skips spider_sense custom guard execution when spider_sense toggle is false", async () => {
     const policyPath = join(testDir, "spider-sense-toggle-policy.yaml");
     writeFileSync(

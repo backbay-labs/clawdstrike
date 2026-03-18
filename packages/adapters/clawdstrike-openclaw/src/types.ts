@@ -336,6 +336,16 @@ export interface ToolResultPersistEvent {
 }
 
 /**
+ * Modern OpenClaw tool_result_persist hook payload (v2026 runtime).
+ */
+export interface ModernToolResultPersistEvent {
+  toolName?: string;
+  toolCallId?: string;
+  message: unknown;
+  isSynthetic?: boolean;
+}
+
+/**
  * Hook event context for agent:bootstrap
  */
 export interface AgentBootstrapEvent {
@@ -427,7 +437,11 @@ export interface BeforeToolCallHookResult {
   params?: Record<string, unknown>;
 }
 
-export type HookHandlerResult = void | BeforeToolCallHookResult;
+export interface ToolResultPersistHookResult {
+  message?: unknown;
+}
+
+export type HookHandlerResult = void | BeforeToolCallHookResult | ToolResultPersistHookResult;
 
 export type HookHandler = (
   event: HookEvent,

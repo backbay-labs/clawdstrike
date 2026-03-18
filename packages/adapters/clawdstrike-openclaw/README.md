@@ -1,6 +1,6 @@
 # @clawdstrike/openclaw
 
-Clawdstrike security plugin for OpenClaw. Provides tool-layer guardrails (preflight policy checks + post-action output blocking/redaction) for AI agents running in OpenClaw.
+Clawdstrike security plugin for OpenClaw. Provides tool-layer guardrails (preflight policy checks + synchronous post-action output rewriting/redaction) for AI agents running in OpenClaw.
 
 See [Enforcement Tiers & Integration Contract](https://github.com/backbay-labs/clawdstrike/blob/main/docs/src/concepts/enforcement-tiers.md) for what is enforceable at the tool boundary (and what requires a sandbox/broker).
 

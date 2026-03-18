@@ -8,7 +8,7 @@ Clawdstrike enforces policy at the **OpenClaw tool boundary**:
 
 - **Pre-context inbound**: `inbound_message` / `user_input` hooks can allow, warn, block, or sanitize text before it reaches the model context.
 - **Preflight**: agents can use `policy_check` before attempting risky operations.
-- **Post-action**: the `tool_result_persist` hook can block/redact tool outputs and record violations.
+- **Post-action**: the synchronous `tool_result_persist` hook can rewrite/redact persisted tool outputs and record violations.
 
 This is **not** an OS sandbox. If an agent/runtime can access the filesystem/network without going through OpenClaw tools, Clawdstrike cannot stop it.
 
@@ -156,7 +156,7 @@ egress:
     - "localhost"
 ```
 
-Note: egress policy is enforced at the tool boundary. If a network request is already executed by a tool, the post-action hook cannot undo the side effect; it can only block/redact persistence of the result.
+Note: egress policy is enforced at the tool boundary. If a network request is already executed by a tool, the post-action hook cannot undo the side effect; it can only rewrite/redact persistence of the result. Because `tool_result_persist` is synchronous in OpenClaw, deterministic blocking/redaction happens inline and async custom guards run as best-effort follow-up observers.
 
 ### Filesystem Protection
 
