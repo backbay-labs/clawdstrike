@@ -1,9 +1,4 @@
-export type SpiritKind =
-  | "ember"     // fire/red hue — #e05c3a
-  | "tide"      // water/blue hue — #3a8ae0
-  | "verdant"   // nature/green hue — #3dbf84
-  | "void"      // dark/purple hue — #7a3ae0
-  | "neutral";  // gold hue — #d4a84b (default when spirit bound without affinity)
+export type SpiritKind = "sentinel" | "oracle" | "witness" | "specter";
 
 export type SpiritMood = "idle" | "active" | "alert" | "dormant";
 

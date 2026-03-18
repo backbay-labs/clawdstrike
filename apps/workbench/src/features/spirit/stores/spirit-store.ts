@@ -3,11 +3,10 @@ import { createSelectors } from "@/lib/create-selectors";
 import type { SpiritKind, SpiritMood, SpiritState } from "../types";
 
 const SPIRIT_ACCENT_MAP: Record<SpiritKind, string> = {
-  ember: "#e05c3a",
-  tide: "#3a8ae0",
-  verdant: "#3dbf84",
-  void: "#7a3ae0",
-  neutral: "#d4a84b",
+  sentinel: "#3dbf84",  // green
+  oracle:   "#7b68ee",  // medium purple
+  witness:  "#d4a84b",  // amber/gold
+  specter:  "#c45c5c",  // muted red
 };
 
 const useSpiritStoreBase = create<SpiritState>((set) => ({
