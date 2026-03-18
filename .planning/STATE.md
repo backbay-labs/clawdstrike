@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-03-PLAN.md
-last_updated: "2026-03-18T21:37:30Z"
+stopped_at: Completed 01-04-PLAN.md
+last_updated: "2026-03-18T21:50:15.229Z"
 last_activity: "2026-03-18 — Plan 01-03 complete: Hunt activity bar item, seam badge, observatory routes, 5 Hunt commands"
 progress:
   total_phases: 4
   completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
+  total_plans: 4
+  completed_plans: 4
   percent: 100
 ---
 
@@ -76,6 +76,8 @@ v2.0 decisions (pending):
 - [Phase 01]: ActivityBarItem badge prop is sparse (undefined = no badge, number > 0 = render green pulse dot); liveness color split deferred to later phase
 - [Phase 01]: PlaceholderPane is inline in workbench-routes.tsx for transitional routes (/observatory, /spirit-chamber, /nexus)
 - [Phase 01]: hunt.bindSpirit opens /spirit-chamber as proxy until dedicated bind-spirit flow built in Phase 3
+- [Phase 01]: Inline style borderColor used for --spirit-accent in HuntLayout (CSS vars dynamic; Tailwind JIT cannot evaluate at build time)
+- [Phase 01]: spirit-field-stain-host applied to sidebar-panel, pane-root, bottom-pane root elements; no cn() wrapper — matched existing bare-string className pattern
 
 ### Pending Todos
 
@@ -89,6 +91,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-18T21:37:30Z
-Stopped at: Completed 01-03-PLAN.md
+Last session: 2026-03-18T21:50:15.227Z
+Stopped at: Completed 01-04-PLAN.md
 Resume file: None
