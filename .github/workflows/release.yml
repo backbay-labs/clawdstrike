@@ -781,17 +781,39 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Build release binaries
+        shell: bash
         run: |
-          cargo build --release --target ${{ matrix.target }} -p hush-cli
-          cargo build --release --target ${{ matrix.target }} -p hushd
+          set -euo pipefail
+          cargo build --release --target ${{ matrix.target }} -p hush-cli --bin hush --bin clawdstrike
+          cargo build --release --target ${{ matrix.target }} -p hushd --bin hushd
 
       - name: Rename binary (Unix)
         if: runner.os != 'Windows'
-        run: cp target/${{ matrix.target }}/release/hush ${{ matrix.artifact }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_dir="target/${{ matrix.target }}/release"
+          bin_path="${release_dir}/hush"
+          if [[ ! -f "${bin_path}" ]]; then
+            echo "Missing expected binary: ${bin_path}" >&2
+            ls -la "${release_dir}" >&2 || true
+            exit 1
+          fi
+          cp "${bin_path}" "${{ matrix.artifact }}"
 
       - name: Rename binary (Windows)
         if: runner.os == 'Windows'
-        run: cp target/${{ matrix.target }}/release/hush.exe ${{ matrix.artifact }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_dir="target/${{ matrix.target }}/release"
+          bin_path="${release_dir}/hush.exe"
+          if [[ ! -f "${bin_path}" ]]; then
+            echo "Missing expected binary: ${bin_path}" >&2
+            ls -la "${release_dir}" >&2 || true
+            exit 1
+          fi
+          cp "${bin_path}" "${{ matrix.artifact }}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v6
