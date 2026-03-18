@@ -55,6 +55,32 @@ def read_text(rel: str) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def expand_workspace_dirs(patterns: list[str]) -> list[Path]:
+    results: list[Path] = []
+    for pattern in patterns:
+        parts = pattern.split("/")
+        results.extend(expand_workspace_pattern(repo_root, parts))
+    deduped = {path.resolve(): path for path in results}
+    return sorted(deduped.values())
+
+
+def expand_workspace_pattern(current: Path, parts: list[str]) -> list[Path]:
+    if not parts:
+        if (current / "package.json").exists():
+            return [current]
+        return []
+
+    part = parts[0]
+    if part == "*":
+        paths: list[Path] = []
+        for child in current.iterdir():
+            if child.is_dir():
+                paths.extend(expand_workspace_pattern(child, parts[1:]))
+        return paths
+
+    return expand_workspace_pattern(current / part, parts[1:])
+
+
 def check(label: str, actual: str | None) -> str | None:
     if actual is None:
         return f"{label}: missing version"
@@ -80,6 +106,13 @@ if not isinstance(workspace_entries, list):
     errors.append("package.json workspaces: missing or not an array")
 else:
     workspace_set = {entry for entry in workspace_entries if isinstance(entry, str)}
+workspace_dirs = expand_workspace_dirs(list(workspace_set))
+workspace_dir_by_name: dict[str, Path] = {}
+for workspace_dir in workspace_dirs:
+    manifest = read_json(str(workspace_dir.relative_to(repo_root) / "package.json"))
+    name = manifest.get("name")
+    if isinstance(name, str):
+        workspace_dir_by_name[name] = workspace_dir
 
 root_lock = read_json("package-lock.json")
 root_lock_packages = root_lock.get("packages", {})
@@ -231,6 +264,32 @@ for pkg_path in sorted((repo_root / "packages").rglob("package.json")):
                 errors.append(f"{lock_rel} packages[''].{field}: expected missing field")
             elif expected_deps is not None and actual_deps != expected_deps:
                 errors.append(f"{lock_rel} packages[''].{field}: expected package.json to match")
+
+        internal_deps = {
+            dep_name
+            for field in ("dependencies", "optionalDependencies")
+            for dep_name in (data.get(field) or {}).keys()
+            if dep_name in workspace_dir_by_name
+        }
+        for dep_name in sorted(internal_deps):
+            dep_dir = workspace_dir_by_name[dep_name]
+            expected_resolved = os.path.relpath(dep_dir, start=pkg_path.parent).replace(os.sep, "/")
+            linked_entry = lock_data.get("packages", {}).get(f"node_modules/{dep_name}", {})
+            if linked_entry.get("link") is not True:
+                errors.append(f"{lock_rel} node_modules/{dep_name}: expected local link entry")
+            elif linked_entry.get("resolved") != expected_resolved:
+                errors.append(
+                    f"{lock_rel} node_modules/{dep_name}.resolved: "
+                    f"expected {expected_resolved}, found {linked_entry.get('resolved')}"
+                )
+
+            linked_package = lock_data.get("packages", {}).get(expected_resolved, {})
+            if linked_package.get("name") != dep_name:
+                errors.append(
+                    f"{lock_rel} {expected_resolved}.name: "
+                    f"expected {dep_name}, found {linked_package.get('name')}"
+                )
+            errors.append(check(f"{lock_rel} {expected_resolved}.version", linked_package.get("version")))
 
 errors.append(check("crates/libs/hush-wasm/package.json", read_json("crates/libs/hush-wasm/package.json").get("version")))
 

@@ -222,45 +222,9 @@ do
 done
 
 if command -v node &> /dev/null; then
-    while IFS= read -r LOCK_JSON; do
-        PACKAGE_JSON="$(dirname "$LOCK_JSON")/package.json"
-        if [[ ! -f "$PACKAGE_JSON" ]]; then
-            continue
-        fi
-        echo "  Syncing ${LOCK_JSON} root metadata..."
-        node -e "
-            const fs = require('fs');
-            const lockPath = process.argv[1];
-            const packagePath = process.argv[2];
-            const manifest = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
-            const lock = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
-            const rootEntry = (lock.packages ??= {})[''] ?? (lock.packages[''] = {});
-            for (const field of ['name', 'version', 'dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies', 'engines', 'bin']) {
-                if (Object.hasOwn(manifest, field)) {
-                    if (field === 'name' || field === 'version') {
-                        lock[field] = manifest[field];
-                    }
-                    rootEntry[field] = manifest[field];
-                } else {
-                    delete rootEntry[field];
-                    if (field === 'name' || field === 'version') {
-                        delete lock[field];
-                    }
-                }
-            }
-            fs.writeFileSync(lockPath, JSON.stringify(lock, null, 2) + '\\n');
-        " "$LOCK_JSON" "$PACKAGE_JSON"
-    done < <(find_package_lock_files)
-
     while IFS= read -r PLUGIN_JSON; do
         echo "  Updating ${PLUGIN_JSON}..."
-        node -e "
-            const fs = require('fs');
-            const path = process.argv[1];
-            const plugin = JSON.parse(fs.readFileSync(path, 'utf8'));
-            plugin.version = process.argv[2];
-            fs.writeFileSync(path, JSON.stringify(plugin, null, 2) + '\\n');
-        " "$PLUGIN_JSON" "$VERSION"
+        sed_inplace "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" "$PLUGIN_JSON"
     done < <(find_openclaw_plugin_files)
 else
     while IFS= read -r PLUGIN_JSON; do
@@ -272,6 +236,36 @@ fi
 if command -v npm &> /dev/null && [[ -f "package-lock.json" ]]; then
     echo "  Refreshing root package-lock.json workspace metadata..."
     npm install --package-lock-only --ignore-scripts >/dev/null
+fi
+
+if command -v npm &> /dev/null; then
+    while IFS= read -r LOCK_JSON; do
+        LOCK_DIR="$(dirname "$LOCK_JSON")"
+        echo "  Refreshing ${LOCK_JSON} resolved dependency graph..."
+        (
+            cd "$LOCK_DIR"
+            npm install --package-lock-only --ignore-scripts >/dev/null
+        )
+    done < <(find_package_lock_files)
+fi
+
+if command -v node &> /dev/null; then
+    echo "  Syncing package-local lockfiles to local workspace links..."
+    node scripts/sync-package-locks.mjs
+fi
+
+if command -v node &> /dev/null && [[ -f "package-lock.json" ]] && [[ -f "package.json" ]]; then
+    echo "  Sanitizing root package-lock.json metadata..."
+    node -e "
+        const fs = require('fs');
+        const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+        const lockPath = 'package-lock.json';
+        const lock = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+        if (!Object.hasOwn(pkg, 'name')) {
+            delete lock.name;
+        }
+        fs.writeFileSync(lockPath, JSON.stringify(lock, null, 2) + '\\n');
+    "
 fi
 
 echo ""
