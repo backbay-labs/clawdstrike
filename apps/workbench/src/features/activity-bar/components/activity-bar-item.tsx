@@ -13,6 +13,7 @@ interface ActivityBarItemProps {
   tooltip: string;
   active: boolean;
   onClick: () => void;
+  badge?: number;
 }
 
 export function ActivityBarItem({
@@ -21,6 +22,7 @@ export function ActivityBarItem({
   tooltip,
   active,
   onClick,
+  badge,
 }: ActivityBarItemProps) {
   return (
     <button
@@ -29,7 +31,7 @@ export function ActivityBarItem({
       aria-selected={active}
       aria-controls="sidebar-panel"
       id={`activity-bar-tab-${id}`}
-      title={tooltip}
+      title={badge && badge > 0 ? `${tooltip} — ${badge > 99 ? "99+" : badge} artifact${badge === 1 ? "" : "s"}` : tooltip}
       onClick={onClick}
       className={cn(
         "w-9 h-9 flex items-center justify-center relative",
@@ -61,6 +63,16 @@ export function ActivityBarItem({
             : undefined
         }
       />
+      {/* Seam badge */}
+      {badge !== undefined && badge > 0 && (
+        <span
+          aria-label={`${badge > 99 ? "99+" : badge} artifact${badge === 1 ? "" : "s"} in active hunt`}
+          className={cn(
+            "absolute top-0.5 right-0.5 h-2 w-2 rounded-full",
+            "bg-[#3dbf84] animate-pulse",
+          )}
+        />
+      )}
     </button>
   );
 }

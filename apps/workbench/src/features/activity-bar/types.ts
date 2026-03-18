@@ -7,6 +7,7 @@ import {
   SigilLibrary,
   SigilFleet,
   SigilCompliance,
+  SigilHunt,
 } from "@/components/desktop/sidebar-icons";
 import { IconSearch } from "@tabler/icons-react";
 
@@ -18,6 +19,7 @@ import { IconSearch } from "@tabler/icons-react";
  */
 export type ActivityBarItemId =
   | "heartbeat"
+  | "hunt"
   | "sentinels"
   | "findings"
   | "explorer"
@@ -39,6 +41,7 @@ export interface ActivityBarItemConfig {
  * diamond inline rather than a standard sigil).
  */
 export const ACTIVITY_BAR_ITEMS: readonly ActivityBarItemConfig[] = [
+  { id: "hunt", label: "Hunt", tooltip: "Hunt (artifacts & observatory)", icon: SigilHunt },
   { id: "sentinels", label: "Sentinels", tooltip: "Sentinels", icon: SigilSentinel },
   { id: "findings", label: "Findings & Intel", tooltip: "Findings & Intel", icon: SigilFindings },
   { id: "explorer", label: "Explorer", tooltip: "Explorer (Cmd+Shift+E)", icon: SigilEditor },
