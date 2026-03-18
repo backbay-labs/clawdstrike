@@ -321,6 +321,16 @@ export class PolicyEngine {
     return this.threatIntelEngine !== null;
   }
 
+  async evaluateAsyncGuards(event: PolicyEvent): Promise<Decision> {
+    if (!this.threatIntelEngine) {
+      return { status: "allow" };
+    }
+
+    const threatIntelDecision = await this.threatIntelEngine.evaluate(event);
+    const applied = this.applyOnViolation(threatIntelDecision as Decision);
+    return this.applyMode(applied, this.config.mode);
+  }
+
   async evaluate(event: PolicyEvent): Promise<Decision> {
     const base = this.evaluateDeterministic(event);
 

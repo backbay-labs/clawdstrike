@@ -11,6 +11,7 @@ import toolGuardHandler, {
   initialize as initToolGuard,
 } from '../src/hooks/tool-guard/handler.js';
 import { inferEventTypeFromName } from '../src/classification.js';
+import { rememberToolInvocation } from '../src/hooks/tool-invocation-state.js';
 import type {
   ClawdstrikeConfig,
   ModernToolResultPersistEvent,
@@ -873,6 +874,57 @@ describe('Tool Guard Handler — modern OpenClaw runtime payloads', () => {
       'generic_tool',
       'ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
     );
+
+    const result = await toolGuardHandler(event as any, { sessionKey: 'modern-session' });
+    const message = (result as { message?: Record<string, unknown> } | undefined)?.message;
+
+    expect(message?.isError).toBe(true);
+    expect(message?.content).toEqual([
+      {
+        type: 'text',
+        text: expect.stringContaining('[clawdstrike] Blocked by secret_leak'),
+      },
+    ]);
+  });
+
+  it('recovers modern tool params from the prior tool invocation state', async () => {
+    rememberToolInvocation(
+      'modern-session',
+      'read',
+      { path: `${HOME}/.ssh/id_rsa` },
+      'tool-call-1',
+    );
+
+    const event = makeModernToolResultEvent('read', 'safe looking content');
+    const result = await toolGuardHandler(event as any, {
+      sessionKey: 'modern-session',
+      toolCallId: 'tool-call-1',
+    });
+    const message = (result as { message?: Record<string, unknown> } | undefined)?.message;
+
+    expect(message?.isError).toBe(true);
+    expect(message?.content).toEqual([
+      {
+        type: 'text',
+        text: expect.stringContaining('[clawdstrike] Blocked by forbidden_path'),
+      },
+    ]);
+  });
+
+  it('prefers structured modern result payloads over content summaries', async () => {
+    const event: ModernToolResultPersistEvent = {
+      toolName: 'generic_tool',
+      toolCallId: 'tool-call-1',
+      message: {
+        role: 'toolResult',
+        toolName: 'generic_tool',
+        toolCallId: 'tool-call-1',
+        content: [{ type: 'text', text: 'done' }],
+        result: {
+          token: 'ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+        },
+      },
+    };
 
     const result = await toolGuardHandler(event as any, { sessionKey: 'modern-session' });
     const message = (result as { message?: Record<string, unknown> } | undefined)?.message;

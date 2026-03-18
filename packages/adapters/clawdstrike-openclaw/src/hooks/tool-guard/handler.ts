@@ -21,6 +21,7 @@ import type {
 } from "../../types.js";
 import { checkAndConsumeApproval } from "../approval-state.js";
 import { extractPath, normalizeApprovalResource } from "../approval-utils.js";
+import { clearAllToolInvocations, takeToolInvocationParams } from "../tool-invocation-state.js";
 
 // ── LRU Decision Cache ──────────────────────────────────────────────
 
@@ -157,6 +158,7 @@ export function initialize(config: ClawdstrikeConfig): void {
   const engine = initializeEngine(config);
   currentConfig = config;
   decisionCache = new DecisionCache();
+  clearAllToolInvocations();
   cachedPolicyKey = policyCacheKey(engine.getPolicy());
 }
 
@@ -325,13 +327,6 @@ function extractModernToolResult(message: unknown): unknown {
     return message;
   }
 
-  const contentText = extractTextContent(record.content);
-  if (contentText !== undefined) {
-    return contentText;
-  }
-  if (typeof record.text === "string") {
-    return record.text;
-  }
   if ("result" in record) {
     return record.result;
   }
@@ -347,7 +342,29 @@ function extractModernToolResult(message: unknown): unknown {
     return details.output;
   }
 
+  const contentText = extractTextContent(record.content);
+  if (contentText !== undefined) {
+    return contentText;
+  }
+  if (typeof record.text === "string") {
+    return record.text;
+  }
+
   return message;
+}
+
+function mergeToolParams(
+  explicitParams: Record<string, unknown>,
+  rememberedParams: Record<string, unknown> | null,
+): Record<string, unknown> {
+  if (!rememberedParams) {
+    return explicitParams;
+  }
+
+  return {
+    ...rememberedParams,
+    ...explicitParams,
+  };
 }
 
 function sanitizeModernToolMessage(
@@ -562,11 +579,14 @@ function normalizeToolResultEvent(
     hookCtx?.sessionKey ??
     hookCtx?.agentId ??
     "openclaw-runtime";
+  const toolCallId = asNonEmptyString(event.toolCallId) ?? hookCtx?.toolCallId;
+  const explicitParams = messageRecord ? extractModernToolParams(messageRecord) : {};
+  const rememberedParams = takeToolInvocationParams(sessionId, toolName, toolCallId);
 
   return {
     sessionId,
     toolName,
-    params: messageRecord ? extractModernToolParams(messageRecord) : {},
+    params: mergeToolParams(explicitParams, rememberedParams),
     result: extractModernToolResult(currentMessage),
     deny(decision) {
       currentMessage = buildBlockedToolResultMessage(
@@ -610,7 +630,7 @@ function maybeRunAsyncFollowUp(
   }
 
   void policyEngine
-    .evaluate(policyEvent)
+    .evaluateAsyncGuards(policyEvent)
     .then((decision) => {
       if (decision.status === "allow") {
         return;
