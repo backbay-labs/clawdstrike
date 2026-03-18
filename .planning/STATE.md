@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.1
-milestone_name: milestone
+milestone: v2.0
+milestone_name: Huntronomer Integration
 status: in-progress
-stopped_at: Completed 04-02-PLAN.md
-last_updated: "2026-03-18T19:49:10Z"
-last_activity: 2026-03-18 -- Completed Phase 4 Plan 2 (File Tree Mutations - Rename, Delete, Status)
+stopped_at: Defining requirements
+last_updated: "2026-03-18T20:00:00Z"
+last_activity: 2026-03-18 -- Milestone v2.0 started
 progress:
-  total_phases: 7
-  completed_phases: 5
-  total_plans: 9
-  completed_plans: 9
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -20,17 +20,21 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-03-18)
 
-**Core value:** Security operators get a professional-grade IDE with search, quick navigation, and file management
-**Current focus:** Phase 4 File Tree Mutations (complete)
+**Core value:** Security operators get an immersive IDE with spirit-driven 3D layers woven into IDE surfaces
+**Current focus:** Defining requirements for v2.0 Huntronomer Integration
 
 ## Current Position
 
-Phase: 4 of 7 (File Tree Mutations) COMPLETE
-Plan: 2 of 2 COMPLETE
-Status: Phase 04 complete, all v1.1 plans done
-Last activity: 2026-03-18 -- Completed Phase 4 Plan 2 (File Tree Mutations - Rename, Delete, Status)
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-18 — Milestone v2.0 started
 
-Progress: [██████████] 100%
+## Previous Milestone (v1.1 — IDE Completeness)
+
+Completed: 2026-03-18 (phases 1-5 of 7; phases 6-7 handled by separate agent)
+Phases: 5/7 | Plans: 9/9 | Requirements: 18/29
+Summary: Added in-file search, global search, quick navigation, file tree mutations, tab overflow, terminal splits
 
 ## Previous Milestone (v1.0 — IDE Pivot)
 
@@ -83,25 +87,17 @@ v1.1 decisions:
 - searchKeymap Mod-h handler extraction for replace mode (stable public API)
 - search({ top: true }) for IDE-standard top-positioned search panel
 - Split terminal uses [leftId, rightId] tuple (max 2 panes, simple model)
-- Split auto-creates second session if fewer than 2 exist
-- Closing split session exits split mode automatically
 - BreadcrumbBar self-hides via internal null return (consumer needs no conditional)
 - Folder breadcrumb click expands dir AND reveals Explorer sidebar via showPanel
-- [Phase 03]: Used tauri-bridge readDetectionFileByPath instead of direct Tauri plugin-fs for QuickOpen file reads
-- [Phase 03]: Module-level useSyncExternalStore for QuickOpenDialog visibility (self-contained, no separate store)
-- [Phase 05]: Split terminal uses [leftId, rightId] tuple (max 2 panes, simple model)
-- [Phase 02]: regex crate added as direct dep for search; 10K match cap; results grouped by file in store
-- [Phase 05]: closeSavedViews closes non-active tabs (PaneView has no dirty state)
-- [Phase 05]: PaneTabContextMenu co-located in pane-tab-bar.tsx matching policy-tab-bar styling
-- [Phase 04]: createDetectionFile composes saveDetectionFile with FILE_TYPE_REGISTRY defaultContent (no new Tauri command)
-- [Phase 04]: mutateTree helper uses immutable shallow-copy-on-write for Zustand state correctness
-- [Phase 04]: ExplorerContextMenu follows PaneTabContextMenu pattern for visual consistency
-- [Phase 02]: IconSearch from @tabler/icons-react used directly as activity bar icon (SigilProps compatible)
-- [Phase 02]: SearchPanel split into presentational + connected components for testability
-- [Phase 02]: 300ms debounce on search input with immediate Enter key override
-- [Phase 04]: Delete confirmation uses Dialog primitives with dark IDE theme override (bg-[#131721])
-- [Phase 04]: FileStatus map keyed by relative file path, error badge takes visual priority over modified dot
-- [Phase 04]: Newly created files auto-marked as modified to demonstrate status indicators
+- regex crate added as direct dep for search; 10K match cap; results grouped by file
+- createDetectionFile composes saveDetectionFile with FILE_TYPE_REGISTRY defaultContent
+- mutateTree helper uses immutable shallow-copy-on-write for Zustand state correctness
+
+v2.0 decisions:
+- Mini R3F canvas lives in right sidebar (already has resize handle)
+- Observatory is a TAB/PANE not a panel (like VS Code Markdown Preview)
+- deriveObservatoryWorld survives — powers both full tab and minimap
+- Character controller is opt-in in observatory tab flow mode
 
 ### Pending Todos
 
@@ -113,6 +109,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-18T19:49:10Z
-Stopped at: Completed 04-02-PLAN.md
-Resume file: All v1.1 planned phases complete
+Last session: 2026-03-18T20:00:00Z
+Stopped at: Defining requirements for v2.0
+Resume file: Starting new milestone
