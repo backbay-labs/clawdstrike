@@ -1,4 +1,4 @@
-import { CameraShake, Line, OrbitControls, Sparkles, Stars, useGLTF, type ShakeController } from "@react-three/drei";
+import { Billboard, CameraShake, Html, Line, OrbitControls, Sparkles, Stars, Text, useGLTF, type ShakeController } from "@react-three/drei";
 import {
   CapsuleCollider,
   CuboidCollider,
@@ -678,6 +678,36 @@ function ObservatoryHeroPropFallbackModel({
   }
 }
 
+// UIP-01: 3D waypoint beacon (Billboard + Text) for active mission objective stations.
+// Uses useFrame pulsing opacity on the ring mesh — no Html elements.
+function MissionObjectiveBeacon({ position, label }: { position: [number, number, number]; label: string }) {
+  const meshRef = useRef<THREE.Mesh | null>(null);
+  useFrame(({ clock }) => {
+    if (meshRef.current) {
+      const mat = meshRef.current.material as THREE.MeshBasicMaterial;
+      mat.opacity = 0.5 + Math.sin(clock.elapsedTime * 2.5) * 0.3;
+    }
+  });
+  const beaconPos: [number, number, number] = [position[0], position[1] + 2.8, position[2]];
+  return (
+    <Billboard position={beaconPos}>
+      <Text
+        fontSize={0.20}
+        color="#f4d060"
+        anchorX="center"
+        anchorY="bottom"
+        renderOrder={10}
+      >
+        {`[ ${label} ]`}
+      </Text>
+      <mesh ref={meshRef} position={[0, -0.05, 0]} renderOrder={9}>
+        <ringGeometry args={[0.14, 0.20, 32]} />
+        <meshBasicMaterial color="#f4d060" transparent opacity={0.8} depthWrite={false} />
+      </mesh>
+    </Billboard>
+  );
+}
+
 function ObservatoryHeroProp({
   prop,
   active,
@@ -795,6 +825,28 @@ function ObservatoryHeroProp({
           noise={0.8}
         />
       ) : null}
+      {/* UIP-03: Html occlude tooltip — shown only for the interactable (nearest) prop */}
+      {interactable && (
+        <Html
+          position={[0, 1.2, 0]}
+          distanceFactor={8}
+          occlude
+          style={{ pointerEvents: 'none' }}
+        >
+          <div style={{
+            background: 'rgba(4,8,14,0.88)',
+            border: '1px solid rgba(244,208,96,0.3)',
+            borderRadius: 6,
+            padding: '4px 8px',
+            fontSize: 11,
+            color: '#f4d060',
+            fontFamily: 'monospace',
+            whiteSpace: 'nowrap',
+          }}>
+            {prop.assetId.replace(/-/g, ' ').toUpperCase()}
+          </div>
+        </Html>
+      )}
     </group>
   );
 }
@@ -4357,6 +4409,16 @@ function ObservatoryWorldScene({
         onSelect={onSelectStation}
         onHover={onHoverStation}
       />
+      {/* UIP-01: 3D waypoint beacons on mission objective stations */}
+      {missionTargetStationId && world.districts
+        .filter((d) => d.id === missionTargetStationId)
+        .map((d) => (
+          <MissionObjectiveBeacon
+            key={`beacon:${d.id}`}
+            position={d.position}
+            label={d.label}
+          />
+        ))}
     </>
   );
 }
