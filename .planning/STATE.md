@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v4.0
 milestone_name: AAA Observatory Experience
-status: executing
-stopped_at: Completed 12-particle-effects-04-PLAN.md
-last_updated: "2026-03-19T18:42:01.738Z"
+status: completed
+stopped_at: Completed 13-character-polish-01-PLAN.md
+last_updated: "2026-03-19T18:55:40.262Z"
 last_activity: 2026-03-19 — completed CharacterVFX + ObservatoryVFXPools wiring (plan 12-04)
 progress:
   total_phases: 5
   completed_phases: 3
-  total_plans: 10
-  completed_plans: 10
-  percent: 90
+  total_plans: 12
+  completed_plans: 11
+  percent: 100
 ---
 
 # Project State
@@ -80,6 +80,8 @@ Progress: [██████████] 100%
 - [Phase 12-particle-effects]: wawa-vfx has no useVFX hook — VFXEmitter forwarded ref + emitAtPos() is the correct burst emission API
 - [Phase 12-particle-effects]: VFXEmitterSettings.speed is [number, number] tuple (min/max range), not [number]
 - [Phase 12-particle-effects]: CharacterVFX uses prevGroundedRef + wasThrustingRef pattern for exact one-shot landing burst and continuous thruster toggle
+- [Phase 13-character-polish]: land durationSeconds extended 0.18->0.30 for easeOutBack overshoot settling room; COMPRESS_PHASE=0.35 splits two-phase squash-stretch
+- [Phase 13-character-polish]: easeFlipProgress phase boundary at t=0.6: cubic-in slow wind-up + easeOutBack snap-plant; volume-conserving XZ = 1/sqrt(scaleY)
 
 ### Blockers/Concerns
 
@@ -89,6 +91,6 @@ Progress: [██████████] 100%
 
 ## Session Continuity
 
-Last session: 2026-03-19T18:42:01.736Z
-Stopped at: Completed 12-particle-effects-04-PLAN.md
+Last session: 2026-03-19T18:55:33.897Z
+Stopped at: Completed 13-character-polish-01-PLAN.md
 Resume file: None
