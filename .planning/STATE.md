@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 04-03-PLAN.md
-last_updated: "2026-03-19T00:50:00.000Z"
+stopped_at: Completed 04-02-PLAN.md
+last_updated: "2026-03-19T01:17:10.581Z"
 last_activity: "2026-03-19 — Plan 04-03 complete: spirit-ritual canvas/model.ts ported, SpiritManifestationCanvas + SpiritAtmosphereLayer (pure CSS/SVG), SpiritChamberTab full creation chamber (SPRT-06)"
 progress:
   total_phases: 4
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 14
-  completed_plans: 13
+  completed_plans: 14
   percent: 79
 ---
 
@@ -104,6 +104,8 @@ v2.0 decisions:
 - [Phase 04-03]: HuntSpiritKind/RuntimeState/Meta inlined into model.ts; createHuntSpiritState + deriveHuntSpiritRuntimeState stubbed with stable motion envelope from confidenceScore
 - [Phase 04-03]: SpiritBindContext/Candidate defined as workbench-local types; no huntronomer Hunt/Artifact imports
 - [Phase 04-03]: SPIRIT_ACCENT_MAP duplicated locally in spirit-chamber-tab.tsx to avoid import coupling with spirit-store internals
+- [Phase 04-02]: NexusTab mode fixed to atlas (no mode toggle) — nexus is an overview surface, not a walkable world
+- [Phase 04-02]: resolveNexusObservatoryStationId ported inline to keep workbench self-contained (no huntronomer import)
 
 ### Pending Todos
 
@@ -117,6 +119,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-19T00:40:00.000Z
-Stopped at: Completed 04-01-PLAN.md
+Last session: 2026-03-19T01:17:10.579Z
+Stopped at: Completed 04-02-PLAN.md
 Resume file: None

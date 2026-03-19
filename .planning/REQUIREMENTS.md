@@ -25,7 +25,7 @@
 
 ### Nexus
 
-- [ ] **NXS-01**: User can open cyber nexus as "Hunt Deck" pane tab via command palette (nexus.open)
+- [x] **NXS-01**: User can open cyber nexus as "Hunt Deck" pane tab via command palette (nexus.open)
 
 ### Forensics
 
@@ -71,7 +71,7 @@
 | OBS-05 | Phase 3 | Complete |
 | OBS-06 | Phase 3 | Complete |
 | FRNX-01 | Phase 3 | Complete |
-| NXS-01 | Phase 4 | Pending |
+| NXS-01 | Phase 4 | Complete |
 | SPRT-06 | Phase 4 | Complete |
 
 **Coverage:**
