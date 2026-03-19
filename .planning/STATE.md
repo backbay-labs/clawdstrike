@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-03-PLAN.md
-last_updated: "2026-03-18T22:41:41.270Z"
-last_activity: "2026-03-18 — Plan 02-02 complete: SpiritOrbIcon CSS orb in ActivityBar (SPRT-03), SpiritCompanionCanvas R3F demand-frameloop in right sidebar Spirit panel (SPRT-04)"
+stopped_at: Completed 03-04-PLAN.md
+last_updated: "2026-03-18T23:58:00Z"
+last_activity: "2026-03-18 — Plan 03-04 complete: ForensicsTapePanel CSS-only horizontal timeline, Tape tab registered in bottom pane (FRNX-01)"
 progress:
   total_phases: 4
   completed_phases: 2
-  total_plans: 7
-  completed_plans: 7
-  percent: 75
+  total_plans: 11
+  completed_plans: 8
+  percent: 73
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-03-18)
 
 ## Current Position
 
-Phase: 2 of 4 (R3F Infrastructure + Small Embeds)
-Plan: 2 of 3 in current phase — COMPLETE
-Status: In Progress — Phase 2 active
-Last activity: 2026-03-18 — Plan 02-02 complete: SpiritOrbIcon CSS orb in ActivityBar (SPRT-03), SpiritCompanionCanvas R3F demand-frameloop in right sidebar Spirit panel (SPRT-04)
+Phase: 3 of 4 (Full Immersive Panes — Observatory + Forensics)
+Plan: 4 of 5 in current phase — IN PROGRESS (03-04 complete)
+Status: In Progress — Phase 3 active
+Last activity: 2026-03-18 — Plan 03-04 complete: ForensicsTapePanel CSS-only horizontal timeline, Tape tab registered in bottom pane (FRNX-01)
 
-Progress: [████████░░] 75% (Phase 2 Plan 2/3 complete)
+Progress: [████████░░] 73% (Phase 3 Plan 4/5 in progress)
 
 ## Previous Milestone (v1.1 — IDE Completeness)
 
@@ -88,6 +88,7 @@ v2.0 decisions:
 - [Phase 02-02]: SpiritCompanionCanvas returns null when accentColor is null — prevents WebGL context creation when no spirit is bound
 - [Phase 02-02]: RightSidebarPanel extended to "speakeasy" | "spirit"; Wave 0 @ts-expect-error guards removed after type extension
 - [Phase 02]: Separate Canvas per pane tab (not root Canvas + drei View) — drei View #2471 z-index issue, WebGL context-disposes verified by code review, deferred to Phase 3 for full Tauri runtime confirmation
+- [Phase 03-04]: ForensicsTapePanel CSS-only with 4 mock events — glia-three deferred pending audit; BottomPaneTab extended to 5 members (terminal|problems|output|audit|tape)
 
 ### Pending Todos
 
@@ -101,6 +102,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-18T22:41:41.268Z
-Stopped at: Completed 02-03-PLAN.md
+Last session: 2026-03-18T23:58:00Z
+Stopped at: Completed 03-04-PLAN.md
 Resume file: None

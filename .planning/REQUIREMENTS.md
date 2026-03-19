@@ -29,7 +29,7 @@
 
 ### Forensics
 
-- [ ] **FRNX-01**: User can see forensics river mini-view in bottom pane "Tape" tab
+- [x] **FRNX-01**: User can see forensics river mini-view in bottom pane "Tape" tab
 
 ## v2 Future Requirements
 
@@ -70,7 +70,7 @@
 | OBS-04 | Phase 3 | Pending |
 | OBS-05 | Phase 3 | Pending |
 | OBS-06 | Phase 3 | Pending |
-| FRNX-01 | Phase 3 | Pending |
+| FRNX-01 | Phase 3 | Complete |
 | NXS-01 | Phase 4 | Pending |
 | SPRT-06 | Phase 4 | Pending |
 
