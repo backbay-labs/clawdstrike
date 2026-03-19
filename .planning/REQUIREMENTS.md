@@ -1,97 +1,112 @@
-# Requirements: ClawdStrike Workbench v2.0 — Huntronomer Integration
+# Requirements: ClawdStrike Workbench v4.0 — AAA Observatory Experience
 
-**Defined:** 2026-03-18
-**Core Value:** Security operators get an immersive IDE with spirit-driven 3D layers — observatory, nexus, and spirit companion woven into IDE surfaces across three tiers
+**Defined:** 2026-03-19
+**Core Value:** Transform the observatory from functional demo to AAA-quality immersive experience with post-processing, particles, cinematic camera, polished character, world detail, and production UI
 
-## v2.0 Requirements
+## v4.0 Requirements
 
-### Spirit System
+### Post-Processing
 
-- [x] **SPRT-01**: User can see spirit field stain CSS gradients on panel/sidebar backgrounds when a spirit is bound
-- [x] **SPRT-02**: User can see spirit accent color applied to hunt-related UI elements
-- [x] **SPRT-03**: User can see animated spirit orb in ActivityBar replacing static icon when spirit is bound
-- [x] **SPRT-04**: User can see mini spirit companion R3F canvas (~150px) in right sidebar
-- [x] **SPRT-05**: User can open spirit chamber as a pane tab via command palette (spirit.bind) to bind/unbind spirits
-- [x] **SPRT-06**: User can open spirit creation chamber with full atmosphere and manifestation canvas as a pane tab
+- [x] **PP-01**: Observatory scene renders with bloom on all emissive elements (spirit shells, station halos, probe beams)
+- [x] **PP-02**: Vignette + SMAA + tone mapping applied as always-on baseline effects
+- [x] **PP-03**: Subtle depth-of-field activates when interacting with hero props (Autofocus targeting world position)
+- [ ] **PP-04**: Per-spirit-kind color grading via runtime-swappable LUT
 
-### Observatory
+### Particles
 
-- [x] **OBS-01**: User can see artifact count badges on activity bar icons from observatory seam data
-- [x] **OBS-02**: User can click observatory stations to open corresponding views as pane tabs (route bridge)
-- [x] **OBS-03**: User can open observatory world as a full editor pane tab via command palette (observatory.open)
-- [x] **OBS-04**: User can probe active station via command palette (observatory.probe) to scan for artifacts
-- [x] **OBS-05**: User can switch observatory to flow mode for immersive exploration
-- [x] **OBS-06**: User can activate WASD character controller Easter-egg in observatory flow mode
+- [ ] **PFX-01**: Landing dust cloud bursts from ground on character touchdown
+- [ ] **PFX-02**: Probe energy discharge — expanding particle shell on probe dispatch
+- [ ] **PFX-03**: Station ambient motes — floating particles around hero props
+- [ ] **PFX-04**: Spirit companion trail — accent-colored particle trail following the orb
+- [ ] **PFX-05**: Thruster exhaust on player avatar backpack during sprint and jump
 
-### Nexus
+### Camera
 
-- [x] **NXS-01**: User can open cyber nexus as "Hunt Deck" pane tab via command palette (nexus.open)
+- [ ] **CAM-01**: Spawn fly-by — automated camera sweep with letterbox bars on first observatory open
+- [ ] **CAM-02**: Dynamic FOV — widens during sprint (42→52), tightens during probe scan (42→35)
+- [ ] **CAM-03**: Screen shake on probe dispatch and character landing
+- [ ] **CAM-04**: Focus pull to mission objective station when starting a mission
 
-### Forensics
+### Character
 
-- [x] **FRNX-01**: User can see forensics river mini-view in bottom pane "Tape" tab
+- [ ] **CHR-01**: Weight-based locomotion blending — idle/walk/run clips with velocity-driven weights
+- [ ] **CHR-02**: Landing squash-stretch — scale Y compression with easeOutBack overshoot
+- [ ] **CHR-03**: Idle breathing — subtle torso Y oscillation layered on AnimationMixer
+- [ ] **CHR-04**: Sprint lean — body tilts forward proportional to velocity
+- [ ] **CHR-05**: Flip easing — two-phase easeInCubic + easeOutBack for settle
+- [ ] **CHR-06**: Footstep events — cycle-zero-crossing detection for particle/SFX sync
 
-## v3.0 Requirements (Spirit Reactivity & Observatory Evolution)
+### World Detail
 
-### Spirit Reactivity
+- [ ] **WLD-01**: HDR skybox via drei Environment replacing flat Stars
+- [ ] **WLD-02**: Procedural district geometry — buildings/structures per station zone
+- [ ] **WLD-03**: Ground surface variety — tinted materials per district zone
+- [ ] **WLD-04**: Environmental storytelling props near stations
 
-- [x] **SPRT-10**: Spirit mood auto-transitions based on policy lint errors + probe activity (deriveSpiritMood + SpiritMoodReactor)
-- [x] **SPRT-11**: Spirit kind visually shifts CodeMirror editor palette without cursor loss (Compartment reconfiguration)
+### NPCs
 
-### Observatory Minimap
+- [ ] **NPC-01**: Instanced mesh crew members at stations (4 per station, 24 total)
+- [ ] **NPC-02**: Simple patrol paths — waypoint-based lerp within station zones
+- [ ] **NPC-03**: Player proximity reaction — look-at + wave gesture
 
-- [x] **OBS-10**: User can see observatory minimap sidebar panel with SVG station dots, artifact counts, and probe state
+### UI Polish
 
-## v2 Future Requirements
-
-### Advanced Spirit
-
-- **SPRT-07**: Receipt/evidence 3D preview in editor tabs (hero prop viewer)
-- **SPRT-08**: Spirit mood transitions animate in real-time based on hunt activity
-- **SPRT-09**: Observatory minimap in sidebar showing station overview (superseded by OBS-10)
-
-### Advanced Observatory
-
-- **OBS-07**: Observatory missions with multi-station probe sequences
-- **OBS-08**: Probe cooldown timers visible in observatory HUD
+- [ ] **UIP-01**: 3D waypoint beacons to mission objectives
+- [ ] **UIP-02**: Circular probe charge ring replacing text HUD
+- [ ] **UIP-03**: Tooltip system for interactable props
+- [ ] **UIP-04**: Achievement popups for mission completion
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| VRM avatar rendering | Too heavy for IDE context; spirit orb is the right abstraction |
-| Full Rapier physics outside observatory flow mode | Only needed for character controller Easter-egg |
-| postprocessing effects (bloom, SSAO) | GPU budget belongs to IDE responsiveness, not visual effects |
-| glia SOCBackground theme provider | Desktop-app-only; workbench has its own design system |
-| Multiple simultaneous 3D tabs | Tauri/WebKit 8-context WebGL limit; one active 3D tab at a time |
-| VRM avatar in spirit companion | Orb + simple geometry is sufficient for sidebar scale |
+| Motion blur | Conflicts with frameloop="demand" |
+| Audio/SFX | Separate milestone — needs Web Audio API integration |
+| Combat/damage | Observatory is exploration, not combat |
+| Ragdoll physics | Squash-stretch is sufficient for landing feel |
+| Custom GLSL shaders | Stock materials + postprocessing sufficient |
+| Real-time multiplayer | Requires NATS server — deferred to v5.0 |
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SPRT-01 | Phase 1 | Complete |
-| SPRT-02 | Phase 1 | Complete |
-| OBS-01 | Phase 1 | Complete |
-| OBS-02 | Phase 1 | Complete |
-| SPRT-03 | Phase 2 | Complete |
-| SPRT-04 | Phase 2 | Complete |
-| SPRT-05 | Phase 2 | Complete |
-| OBS-03 | Phase 3 | Complete |
-| OBS-04 | Phase 3 | Complete |
-| OBS-05 | Phase 3 | Complete |
-| OBS-06 | Phase 3 | Complete |
-| FRNX-01 | Phase 3 | Complete |
-| NXS-01 | Phase 4 | Complete |
-| SPRT-06 | Phase 4 | Complete |
-| SPRT-10 | Phase 5 | Complete |
-| OBS-10 | Phase 5 | Complete |
+| PP-01 | Phase 10 | Complete |
+| PP-02 | Phase 10 | Complete |
+| PP-03 | Phase 10 | Complete |
+| PP-04 | Phase 10 | Pending |
+| CAM-01 | Phase 11 | Pending |
+| CAM-02 | Phase 11 | Pending |
+| CAM-03 | Phase 11 | Pending |
+| CAM-04 | Phase 11 | Pending |
+| PFX-01 | Phase 12 | Pending |
+| PFX-02 | Phase 12 | Pending |
+| PFX-03 | Phase 12 | Pending |
+| PFX-04 | Phase 12 | Pending |
+| PFX-05 | Phase 12 | Pending |
+| CHR-01 | Phase 13 | Pending |
+| CHR-02 | Phase 13 | Pending |
+| CHR-03 | Phase 13 | Pending |
+| CHR-04 | Phase 13 | Pending |
+| CHR-05 | Phase 13 | Pending |
+| CHR-06 | Phase 13 | Pending |
+| WLD-01 | Phase 14 | Pending |
+| WLD-02 | Phase 14 | Pending |
+| WLD-03 | Phase 14 | Pending |
+| WLD-04 | Phase 14 | Pending |
+| NPC-01 | Phase 14 | Pending |
+| NPC-02 | Phase 14 | Pending |
+| NPC-03 | Phase 14 | Pending |
+| UIP-01 | Phase 14 | Pending |
+| UIP-02 | Phase 14 | Pending |
+| UIP-03 | Phase 14 | Pending |
+| UIP-04 | Phase 14 | Pending |
 
 **Coverage:**
-- v2.0 requirements: 14 total, all complete
-- v3.0 requirements: SPRT-10 complete, OBS-10 complete, SPRT-11 pending
-- Unmapped: 0 ✓
+- v4.0 requirements: 30 total
+- Mapped to phases: 30
+- Unmapped: 0
 
 ---
-*Requirements defined: 2026-03-18*
-*Last updated: 2026-03-19 — v3.0 requirements added; SPRT-10 + OBS-10 marked complete*
+*Requirements defined: 2026-03-19*
+*Traceability updated: 2026-03-19*
