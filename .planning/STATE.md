@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v4.0
 milestone_name: AAA Observatory Experience
 status: completed
-stopped_at: Completed 13-character-polish-01-PLAN.md
-last_updated: "2026-03-19T18:55:40.262Z"
+stopped_at: Completed 13-character-polish-02-PLAN.md
+last_updated: "2026-03-19T19:02:13.449Z"
 last_activity: 2026-03-19 — completed CharacterVFX + ObservatoryVFXPools wiring (plan 12-04)
 progress:
   total_phases: 5
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 12
-  completed_plans: 11
+  completed_plans: 12
   percent: 100
 ---
 
@@ -82,6 +82,8 @@ Progress: [██████████] 100%
 - [Phase 12-particle-effects]: CharacterVFX uses prevGroundedRef + wasThrustingRef pattern for exact one-shot landing burst and continuous thruster toggle
 - [Phase 13-character-polish]: land durationSeconds extended 0.18->0.30 for easeOutBack overshoot settling room; COMPRESS_PHASE=0.35 splits two-phase squash-stretch
 - [Phase 13-character-polish]: easeFlipProgress phase boundary at t=0.6: cubic-in slow wind-up + easeOutBack snap-plant; volume-conserving XZ = 1/sqrt(scaleY)
+- [Phase 13-character-polish]: Weight-based locomotion: all three actions (idle/walk/run) playing at weight 0 simultaneously; updateLocomotionWeights drives weights per frame based on horizontalSpeed
+- [Phase 13-character-polish]: Footstep events via cycle sign-flip detection using same rate formula as sampleWalkPose/sampleRunPose; fires observatory:footstrike CustomEvent with foot+position detail
 
 ### Blockers/Concerns
 
@@ -91,6 +93,6 @@ Progress: [██████████] 100%
 
 ## Session Continuity
 
-Last session: 2026-03-19T18:55:33.897Z
-Stopped at: Completed 13-character-polish-01-PLAN.md
+Last session: 2026-03-19T19:02:13.446Z
+Stopped at: Completed 13-character-polish-02-PLAN.md
 Resume file: None

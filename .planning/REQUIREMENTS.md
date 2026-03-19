@@ -29,12 +29,12 @@
 
 ### Character
 
-- [ ] **CHR-01**: Weight-based locomotion blending — idle/walk/run clips with velocity-driven weights
+- [x] **CHR-01**: Weight-based locomotion blending — idle/walk/run clips with velocity-driven weights
 - [x] **CHR-02**: Landing squash-stretch — scale Y compression with easeOutBack overshoot
-- [ ] **CHR-03**: Idle breathing — subtle torso Y oscillation layered on AnimationMixer
-- [ ] **CHR-04**: Sprint lean — body tilts forward proportional to velocity
+- [x] **CHR-03**: Idle breathing — subtle torso Y oscillation layered on AnimationMixer
+- [x] **CHR-04**: Sprint lean — body tilts forward proportional to velocity
 - [x] **CHR-05**: Flip easing — two-phase easeInCubic + easeOutBack for settle
-- [ ] **CHR-06**: Footstep events — cycle-zero-crossing detection for particle/SFX sync
+- [x] **CHR-06**: Footstep events — cycle-zero-crossing detection for particle/SFX sync
 
 ### World Detail
 
@@ -84,12 +84,12 @@
 | PFX-03 | Phase 12 | Complete |
 | PFX-04 | Phase 12 | Complete |
 | PFX-05 | Phase 12 | Complete |
-| CHR-01 | Phase 13 | Pending |
+| CHR-01 | Phase 13 | Complete |
 | CHR-02 | Phase 13 | Complete |
-| CHR-03 | Phase 13 | Pending |
-| CHR-04 | Phase 13 | Pending |
+| CHR-03 | Phase 13 | Complete |
+| CHR-04 | Phase 13 | Complete |
 | CHR-05 | Phase 13 | Complete |
-| CHR-06 | Phase 13 | Pending |
+| CHR-06 | Phase 13 | Complete |
 | WLD-01 | Phase 14 | Pending |
 | WLD-02 | Phase 14 | Pending |
 | WLD-03 | Phase 14 | Pending |
