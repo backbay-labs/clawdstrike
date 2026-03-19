@@ -1,4 +1,4 @@
-import { Billboard, CameraShake, Html, Line, OrbitControls, Sparkles, Stars, Text, useGLTF, type ShakeController } from "@react-three/drei";
+import { Billboard, CameraShake, Environment, Html, Line, OrbitControls, Sparkles, Text, useGLTF, type ShakeController } from "@react-three/drei";
 import {
   CapsuleCollider,
   CuboidCollider,
@@ -80,6 +80,7 @@ import { applyObservatoryProbeConsequences } from "../world/probeConsequences";
 import { ProbeDischargeVFX } from "../vfx/ProbeDischargeVFX";
 import { CharacterVFX } from "../vfx/CharacterVFX";
 import { ObservatoryVFXPools } from "../vfx/ObservatoryVFXPools";
+import { StationNpcCrew } from "../world/npcCrew";
 
 export interface ObservatoryWorldCanvasProps {
   mode: HuntObservatorySceneState["mode"];
@@ -4419,6 +4420,15 @@ function ObservatoryWorldScene({
             label={d.label}
           />
         ))}
+
+      {/* NPC-01/02/03: Instanced capsule crew, patrol loops, proximity wave */}
+      {world.districts.map((district) => (
+        <StationNpcCrew
+          key={`npc:${district.id}`}
+          stationWorldPos={district.position}
+          colorHex={district.colorHex}
+        />
+      ))}
     </>
   );
 }
