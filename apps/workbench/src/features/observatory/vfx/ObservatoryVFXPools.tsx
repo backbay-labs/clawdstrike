@@ -1,4 +1,4 @@
-import { VFXParticles } from "wawa-vfx";
+import { VFXParticles, RenderMode } from "wawa-vfx";
 
 /**
  * ObservatoryVFXPools
@@ -25,7 +25,7 @@ export function ObservatoryVFXPools() {
         name="landing-dust"
         settings={{
           nbParticles: 200,
-          renderMode: "billboard",
+          renderMode: RenderMode.Billboard,
           gravity: [0, -4, 0],
           fadeAlpha: [0.0, 0.1],
         }}
@@ -35,7 +35,7 @@ export function ObservatoryVFXPools() {
         name="thruster-exhaust"
         settings={{
           nbParticles: 300,
-          renderMode: "stretchBillboard",
+          renderMode: RenderMode.StretchBillboard,
           gravity: [0, 1.5, 0],
           fadeAlpha: [0.0, 0.15],
         }}
