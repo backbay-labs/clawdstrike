@@ -51,10 +51,10 @@
 
 ### UI Polish
 
-- [ ] **UIP-01**: 3D waypoint beacons to mission objectives
-- [ ] **UIP-02**: Circular probe charge ring replacing text HUD
-- [ ] **UIP-03**: Tooltip system for interactable props
-- [ ] **UIP-04**: Achievement popups for mission completion
+- [x] **UIP-01**: 3D waypoint beacons to mission objectives
+- [x] **UIP-02**: Circular probe charge ring replacing text HUD
+- [x] **UIP-03**: Tooltip system for interactable props
+- [x] **UIP-04**: Achievement popups for mission completion
 
 ## Out of Scope
 
@@ -97,10 +97,10 @@
 | NPC-01 | Phase 14 | Complete |
 | NPC-02 | Phase 14 | Complete |
 | NPC-03 | Phase 14 | Complete |
-| UIP-01 | Phase 14 | Pending |
-| UIP-02 | Phase 14 | Pending |
-| UIP-03 | Phase 14 | Pending |
-| UIP-04 | Phase 14 | Pending |
+| UIP-01 | Phase 14 | Complete |
+| UIP-02 | Phase 14 | Complete |
+| UIP-03 | Phase 14 | Complete |
+| UIP-04 | Phase 14 | Complete |
 
 **Coverage:**
 - v4.0 requirements: 30 total

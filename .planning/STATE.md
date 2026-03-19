@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v4.0
 milestone_name: AAA Observatory Experience
 status: completed
-stopped_at: Completed 14-02-PLAN.md
-last_updated: "2026-03-19T19:23:58.018Z"
+stopped_at: Completed 14-03-PLAN.md
+last_updated: "2026-03-19T19:24:11.270Z"
 last_activity: 2026-03-19 — completed CharacterVFX + ObservatoryVFXPools wiring (plan 12-04)
 progress:
   total_phases: 5
@@ -91,6 +91,9 @@ Progress: [██████████] 100%
 - [Phase 14-world-detail-npcs-ui]: districtGeometry.tsx (not .ts) required for JSX; ReactElement over JSX.Element for tsconfig isolatedModules
 - [Phase 14-world-detail-npcs-ui]: Environment Suspense + dark #04080f fallback — HDR file must be manually sourced from polyhaven.com at 1K
 - [Phase 14]: NpcCrew.tsx (not .ts): JSX content requires .tsx extension; NpcInstance ref typed as THREE.Object3D | null for drei Instance; patrol waypoints resolve to world-space via useMemo
+- [Phase 14-world-detail-npcs-ui]: Waypoint beacons use Billboard + Text (drei), NOT Html — avoids per-frame DOM measurement perf trap at scale
+- [Phase 14-world-detail-npcs-ui]: Achievement popups placed outside Canvas (screen-space overlay) — Framer Motion AnimatePresence cannot run inside R3F Canvas
+- [Phase 14-world-detail-npcs-ui]: ProbeChargeRing is pure SVG in DOM — HUD is screen-space UI, no 3D needed
 
 ### Blockers/Concerns
 
@@ -100,6 +103,6 @@ Progress: [██████████] 100%
 
 ## Session Continuity
 
-Last session: 2026-03-19T19:23:43.448Z
-Stopped at: Completed 14-02-PLAN.md
+Last session: 2026-03-19T19:24:11.267Z
+Stopped at: Completed 14-03-PLAN.md
 Resume file: None
