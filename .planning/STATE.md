@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Spirit & Observatory Evolution
 status: executing
-stopped_at: Completed 06-observatory-glb-props-spirit-affinity-rings 06-02-PLAN.md
-last_updated: "2026-03-19T13:13:36.406Z"
+stopped_at: Completed 07-spirit-evolution-persistence 07-01-PLAN.md
+last_updated: "2026-03-19T13:28:55.996Z"
 last_activity: "2026-03-19 — Plan 05-03 complete: ObservatoryMinimapPanel SVG + polarToSvg + 13 tests + Observatory activity bar + CATEGORY_ORDER (OBS-10)"
 progress:
   total_phases: 5
   completed_phases: 2
-  total_plans: 5
-  completed_plans: 5
+  total_plans: 7
+  completed_plans: 6
   percent: 67
 ---
 
@@ -119,6 +119,10 @@ v2.0 decisions:
 - [Phase 06]: useGLTF.preload() called at module level for all 7 ready assets to reduce first-open load time
 - [Phase 06]: blendHex test midpoint corrected: Math.round(127.5)=128=0x80 not 0x7f (JS rounding)
 - [Phase 06-02]: accentColor null default in ObservatoryScene: rings invisible when no spirit bound; CoreNode gets explicit '#d8c895' fallback
+- [Phase 07-spirit-evolution-persistence]: partialize in persist excludes actions from localStorage — only evolution Record serialized
+- [Phase 07-spirit-evolution-persistence]: grantXp called via getState() in effects to avoid tracker re-renders
+- [Phase 07-spirit-evolution-persistence]: 10s cooldown per event type prevents XP grinding during rapid probe/lint cycles
+- [Phase 07-spirit-evolution-persistence]: level stored redundantly in KindEvolution for O(1) reads by 07-02 canvas
 
 ### Pending Todos
 
@@ -132,6 +136,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-19T13:13:36.404Z
-Stopped at: Completed 06-observatory-glb-props-spirit-affinity-rings 06-02-PLAN.md
+Last session: 2026-03-19T13:28:55.994Z
+Stopped at: Completed 07-spirit-evolution-persistence 07-01-PLAN.md
 Resume file: None
