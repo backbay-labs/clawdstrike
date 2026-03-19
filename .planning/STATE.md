@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v4.0
 milestone_name: AAA Observatory Experience
 status: planning
-stopped_at: Completed 11-camera-cinematics-shake-01-PLAN.md
-last_updated: "2026-03-19T18:09:16.918Z"
+stopped_at: Completed 11-camera-cinematics-shake-02-PLAN.md
+last_updated: "2026-03-19T18:18:07.668Z"
 last_activity: 2026-03-19 — v4.0 roadmap created, all 30 requirements mapped
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 10
-  completed_plans: 4
+  completed_plans: 5
   percent: 0
 ---
 
@@ -67,6 +67,8 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 11-camera-cinematics-shake]: FovController lerps camera.fov using lerpAlpha(5.0); targets: sprint=52, probe=35, rest=42; safeDelta cap prevents spiral on frame drops
 - [Phase 11-camera-cinematics-shake]: CameraShake mounted with intensity=0 (dormant); shakeRef.setIntensity called imperatively on observatory:shake CustomEvent; probe=0.45, landing=0.7
 - [Phase 11-camera-cinematics-shake]: OrbitControls makeDefault added — required for CameraShake to track controls correctly via R3F state.controls
+- [Phase 11-camera-cinematics-shake]: Fly-by uses existing WorldCameraRig Bezier machinery (bezierPoint + smoothstep01) reused for waypoint sequencing — no new animation system needed
+- [Phase 11-camera-cinematics-shake]: frameloop prop threaded through ObservatoryWorldCanvas to Canvas (option a) — simpler than useThree approach from inside Canvas
 
 ### Blockers/Concerns
 
@@ -76,6 +78,6 @@ Progress: [░░░░░░░░░░] 0%
 
 ## Session Continuity
 
-Last session: 2026-03-19T18:09:16.915Z
-Stopped at: Completed 11-camera-cinematics-shake-01-PLAN.md
+Last session: 2026-03-19T18:18:07.666Z
+Stopped at: Completed 11-camera-cinematics-shake-02-PLAN.md
 Resume file: None
