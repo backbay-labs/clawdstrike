@@ -157,11 +157,11 @@ Plans:
   2. Spirit companion canvas renders additional visual layers as level increases — level 2 adds a shadow ring, level 3 adds an orbit torus, level 4 adds a pulse ring, level 5 adds orbit shards
   3. Spirit level and XP survive closing and reopening the workbench — each spirit kind independently retains its progression
   4. Level-up triggers a brief visual burst in the companion canvas without interrupting other IDE activity
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 07-01: spirit-evolution-store.ts (Zustand, localStorage persistence keyed per SpiritKind) + SpiritExperienceTracker component (XP event wiring from probe/lint/simulation stores)
-- [ ] 07-02: SpiritCompanionCanvas level-gated geometry layers (shadow ring, orbit torus, pulse ring, orbit shards) + level-up pulse animation
+- [ ] 07-01-PLAN.md — spirit-evolution-store.ts (Zustand + localStorage persist, grantXp per SpiritKind) + SpiritExperienceTracker (probe/lint XP wiring) + desktop-layout mount
+- [ ] 07-02-PLAN.md — SpiritCompanionCanvas level-gated geometry layers (shadow ring, orbit torus, pulse ring, orbit shards) + level-up burst animation
 
 ### Phase 8: Observatory Missions + Evidence 3D Preview
 **Goal**: The observatory has purpose — sequential multi-station probe missions guide operators through the world with a HUD showing objectives; receipt and evidence files open as atmospheric 3D prop viewers instead of plain text
