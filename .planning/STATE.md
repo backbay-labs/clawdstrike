@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v4.0
 milestone_name: AAA Observatory Experience
 status: completed
-stopped_at: Completed 13-character-polish-02-PLAN.md
-last_updated: "2026-03-19T19:02:13.449Z"
+stopped_at: Completed 14-02-PLAN.md (at checkpoint)
+last_updated: "2026-03-19T19:19:43.003Z"
 last_activity: 2026-03-19 — completed CharacterVFX + ObservatoryVFXPools wiring (plan 12-04)
 progress:
   total_phases: 5
   completed_phases: 4
-  total_plans: 12
-  completed_plans: 12
+  total_plans: 15
+  completed_plans: 13
   percent: 100
 ---
 
@@ -84,6 +84,8 @@ Progress: [██████████] 100%
 - [Phase 13-character-polish]: easeFlipProgress phase boundary at t=0.6: cubic-in slow wind-up + easeOutBack snap-plant; volume-conserving XZ = 1/sqrt(scaleY)
 - [Phase 13-character-polish]: Weight-based locomotion: all three actions (idle/walk/run) playing at weight 0 simultaneously; updateLocomotionWeights drives weights per frame based on horizontalSpeed
 - [Phase 13-character-polish]: Footstep events via cycle sign-flip detection using same rate formula as sampleWalkPose/sampleRunPose; fires observatory:footstrike CustomEvent with foot+position detail
+- [Phase 14-world-detail-npcs-ui]: npcCrew.tsx (not .ts): JSX content requires .tsx extension
+- [Phase 14-world-detail-npcs-ui]: NpcInstance ref typed as THREE.Object3D | null for drei <Instance> (not InstancedMesh)
 
 ### Blockers/Concerns
 
@@ -93,6 +95,6 @@ Progress: [██████████] 100%
 
 ## Session Continuity
 
-Last session: 2026-03-19T19:02:13.446Z
-Stopped at: Completed 13-character-polish-02-PLAN.md
+Last session: 2026-03-19T19:19:37.368Z
+Stopped at: Completed 14-02-PLAN.md (at checkpoint)
 Resume file: None

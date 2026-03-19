@@ -324,4 +324,4 @@ Phase 10 first (bloom transforms all downstream visual work). Phases 11 and 12 c
 | 11. Camera Cinematics + Shake | 3/3 | Complete    | 2026-03-19 | - |
 | 12. Particle Effects | 4/4 | Complete    | 2026-03-19 | - |
 | 13. Character Polish | 2/2 | Complete    | 2026-03-19 | - |
-| 14. World Detail + NPCs + UI | v4.0 | 0/TBD | Not started | - |
+| 14. World Detail + NPCs + UI | 1/3 | In Progress|  | - |

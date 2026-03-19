@@ -45,9 +45,9 @@
 
 ### NPCs
 
-- [ ] **NPC-01**: Instanced mesh crew members at stations (4 per station, 24 total)
-- [ ] **NPC-02**: Simple patrol paths — waypoint-based lerp within station zones
-- [ ] **NPC-03**: Player proximity reaction — look-at + wave gesture
+- [x] **NPC-01**: Instanced mesh crew members at stations (4 per station, 24 total)
+- [x] **NPC-02**: Simple patrol paths — waypoint-based lerp within station zones
+- [x] **NPC-03**: Player proximity reaction — look-at + wave gesture
 
 ### UI Polish
 
@@ -94,9 +94,9 @@
 | WLD-02 | Phase 14 | Pending |
 | WLD-03 | Phase 14 | Pending |
 | WLD-04 | Phase 14 | Pending |
-| NPC-01 | Phase 14 | Pending |
-| NPC-02 | Phase 14 | Pending |
-| NPC-03 | Phase 14 | Pending |
+| NPC-01 | Phase 14 | Complete |
+| NPC-02 | Phase 14 | Complete |
+| NPC-03 | Phase 14 | Complete |
 | UIP-01 | Phase 14 | Pending |
 | UIP-02 | Phase 14 | Pending |
 | UIP-03 | Phase 14 | Pending |
