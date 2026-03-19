@@ -1,14 +1,15 @@
-// Ported from huntronomer apps/desktop/src/features/hunt-observatory/world/probeConsequences.ts
-// Adaptation: missionLoop dependency removed (missions deferred to OBS-07).
-// buildMissionRead simplified to not accept a mission parameter.
-
-import { HUNT_STATION_LABELS, type HuntStationId } from "./stations";
+import { HUNT_STATION_LABELS } from "./stations";
+import type { HuntStationId } from "./types";
 import type {
   DerivedObservatoryWorld,
   ObservatoryCrewRecipe,
   ObservatoryDistrictProbeReaction,
   ObservatoryProbeReactionState,
 } from "./deriveObservatoryWorld";
+import {
+  getCurrentObservatoryMissionObjective,
+  type ObservatoryMissionLoopState,
+} from "./missionLoop";
 import type { ObservatoryProbeState } from "./probeRuntime";
 
 interface ObservatoryProbeStationProfile {
@@ -78,21 +79,31 @@ function toProbeReactionState(
 function buildMissionRead(
   stationId: HuntStationId,
   state: ObservatoryProbeReactionState,
+  mission: ObservatoryMissionLoopState | null,
 ): string {
   const profile = PROBE_STATION_PROFILES[stationId];
-  return state === "surveying" ? profile.activeRead : profile.cooldownRead;
+  const objective = getCurrentObservatoryMissionObjective(mission);
+  const stationLabel = HUNT_STATION_LABELS[stationId];
+  const baseRead = state === "surveying" ? profile.activeRead : profile.cooldownRead;
+  if (!objective || objective.stationId !== stationId) {
+    return baseRead;
+  }
+  return state === "surveying"
+    ? `Mission assist at ${stationLabel}: ${objective.actionLabel} is now staged. ${baseRead}`
+    : `Mission assist at ${stationLabel}: ${objective.actionLabel} remains staged while the probe recharges. ${baseRead}`;
 }
 
 function buildDistrictProbeReaction(
   stationId: HuntStationId,
   state: ObservatoryProbeReactionState,
+  mission: ObservatoryMissionLoopState | null,
   intensity: number,
 ): ObservatoryDistrictProbeReaction {
   const profile = PROBE_STATION_PROFILES[stationId];
   return {
     state,
     intensity,
-    read: buildMissionRead(stationId, state),
+    read: buildMissionRead(stationId, state, mission),
     crewDirective:
       state === "surveying" ? profile.crewDirectiveActive : profile.crewDirectiveCooldown,
   };
@@ -149,6 +160,7 @@ function boostRouteForProbe(
 export function applyObservatoryProbeConsequences(
   world: DerivedObservatoryWorld,
   probeState: ObservatoryProbeState,
+  mission: ObservatoryMissionLoopState | null,
 ): {
   world: DerivedObservatoryWorld;
   directive: ObservatoryProbeWorldDirective | null;
@@ -163,6 +175,7 @@ export function applyObservatoryProbeConsequences(
   const districtReaction = buildDistrictProbeReaction(
     stationId,
     reactionState,
+    mission,
     intensity,
   );
   const boostedRoutes = boostRouteForProbe(world, stationId, intensity);

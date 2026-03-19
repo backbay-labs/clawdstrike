@@ -12,7 +12,6 @@ vi.mock("@react-three/fiber", () => ({
   useThree: () => ({ invalidate: vi.fn() }),
 }));
 
-// @ts-expect-error — FlowModeController does not exist yet (Wave 0 scaffold)
 import { FlowModeController } from "@/features/observatory/components/FlowModeController";
 
 describe("FlowModeController (OBS-06)", () => {

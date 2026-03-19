@@ -216,7 +216,7 @@ export function ObservatoryTab() {
   }, [mode, showEasterEggNotification]);
 
   return (
-    <div className="relative flex-1 overflow-hidden" onDoubleClick={handleDoubleClick}>
+    <div className="relative h-full flex-1 overflow-hidden" onDoubleClick={handleDoubleClick}>
       <div className="absolute inset-0">
         <CanvasErrorBoundary>
         <ObservatoryWorldCanvas
@@ -224,13 +224,9 @@ export function ObservatoryTab() {
           sceneState={sceneState}
           activeStationId={null}
           spirit={spirit}
-          characterControllerEnabled={characterControllerEnabled}
-          paneIsActive={paneIsActive}
-          frameloop={frameloop}
-          probeState={probeState}
           cameraResetToken={cameraResetToken}
-          stationAffinities={stationAffinities}
           onSelectStation={handleSelectStation}
+          className="absolute inset-0"
         />
         </CanvasErrorBoundary>
       </div>

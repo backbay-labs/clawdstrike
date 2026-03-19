@@ -147,9 +147,9 @@ export function NexusTab() {
             sceneState={sceneState}
             activeStationId={activeStationId}
             spirit={spirit}
-            frameloop="demand"
             cameraResetToken={cameraResetToken}
             onSelectStation={handleSelectStation}
+            className="absolute inset-0"
           />
         )}
       </div>

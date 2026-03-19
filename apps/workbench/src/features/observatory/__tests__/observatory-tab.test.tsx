@@ -53,7 +53,6 @@ vi.mock("@/features/spirit/stores/spirit-store", () => ({
 import { useObservatoryStore } from "@/features/observatory/stores/observatory-store";
 import { useSpiritStore } from "@/features/spirit/stores/spirit-store";
 
-// @ts-expect-error — ObservatoryTab does not exist yet (Wave 0 scaffold)
 import { ObservatoryTab } from "@/features/observatory/components/ObservatoryTab";
 
 const mockUseStations = useObservatoryStore.use.stations as ReturnType<typeof vi.fn>;
@@ -166,12 +165,10 @@ describe("ObservatoryTab — probe state machine (OBS-04)", () => {
 
 describe("ObservatoryProbeHud (OBS-04 HUD overlay)", () => {
   // ObservatoryProbeHud renders null when status=ready, shows status text otherwise
-  // @ts-expect-error — component created in Task 2
   let ObservatoryProbeHud: typeof import("@/features/observatory/components/ObservatoryProbeHud").ObservatoryProbeHud;
 
   beforeEach(async () => {
     const mod = await import("@/features/observatory/components/ObservatoryProbeHud");
-    // @ts-expect-error — accessing named export
     ObservatoryProbeHud = mod.ObservatoryProbeHud;
   });
 
