@@ -18,6 +18,7 @@ vi.mock("@react-three/drei", () => ({
   Stars: vi.fn(() => null),
   OrbitControls: vi.fn(() => null),
   CameraControls: vi.fn(() => null),
+  CameraShake: vi.fn(() => null),
   Line: vi.fn(() => null),
   useGLTF: Object.assign(vi.fn(() => ({ scene: { clone: () => null } })), {
     preload: vi.fn(),
@@ -160,6 +161,21 @@ describe("ObservatoryTab — probe state machine (OBS-04)", () => {
     // After clicking, mode should switch to flow — button text becomes FLOW
     const modeDiv = container.querySelector("[data-observatory-mode]");
     expect(modeDiv?.getAttribute("data-observatory-mode")).toBe("flow");
+  });
+
+  it("dispatches observatory:shake event on probe dispatch (CAM-03)", () => {
+    render(<ObservatoryTab />);
+    const shakeEvents: CustomEvent[] = [];
+    const handler = (e: Event) => shakeEvents.push(e as CustomEvent);
+    window.addEventListener("observatory:shake", handler);
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent("observatory:probe"));
+    });
+
+    window.removeEventListener("observatory:shake", handler);
+    expect(shakeEvents.length).toBe(1);
+    expect(shakeEvents[0].detail.intensity).toBeGreaterThan(0);
   });
 });
 

@@ -1772,6 +1772,8 @@ function ObservatoryPlayerRig({
   const runtime = useObservatoryPlayerRuntime({ bodyAdapter, spawn });
   const appliedSpawnIdRef = useRef<string | null>(null);
   const jumpPadCooldownUntilRef = useRef(0);
+  // CAM-03: landing shake — track airborne state for transition detection
+  const wasAirborneRef = useRef(false);
   const lastWorldStateRef = useRef<ObservatoryPlayerWorldState | null>(null);
   const runtimeResetRef = useRef(runtime.reset);
   const inputResetRef = useRef(resetInput);
@@ -1826,9 +1828,10 @@ function ObservatoryPlayerRig({
     });
     const nextState = stepResult.state;
     const interactableProp = resolveNearestInteractableHeroProp(heroProps, nextState.position);
+    const isAirborne = !nextState.grounded;
     playerFocusRef.current = {
       action: nextState.activeAction,
-      airborne: !nextState.grounded,
+      airborne: isAirborne,
       facingRadians: nextState.facingRadians,
       moving: nextState.moveMagnitude > 0.12,
       moveVector: nextState.moveVector,
@@ -1836,6 +1839,11 @@ function ObservatoryPlayerRig({
       sprinting: nextState.sprinting,
       stationId: nextState.stationId,
     };
+    // CAM-03: landing shake — detect airborne→grounded transition
+    if (wasAirborneRef.current && !isAirborne) {
+      window.dispatchEvent(new CustomEvent("observatory:shake", { detail: { intensity: 0.7 } }));
+    }
+    wasAirborneRef.current = isAirborne;
     const nextWorldState: ObservatoryPlayerWorldState = {
       interactableAssetId: interactableProp?.assetId ?? null,
       stationId: nextState.stationId,

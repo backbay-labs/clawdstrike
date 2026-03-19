@@ -159,6 +159,8 @@ export function ObservatoryTab() {
         "signal";
       const next = dispatchObservatoryProbe(resolved, targetId, now);
       setFrameloop("always");
+      // CAM-03: probe dispatch shake — fast decay
+      window.dispatchEvent(new CustomEvent("observatory:shake", { detail: { intensity: 0.45 } }));
       return next;
     });
   }, [mission]);
