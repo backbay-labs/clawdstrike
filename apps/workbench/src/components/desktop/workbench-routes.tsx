@@ -149,6 +149,12 @@ const ObservatoryTab = lazy(() =>
   })),
 );
 
+const NexusTab = lazy(() =>
+  import("@/features/nexus/components/NexusTab").then((m) => ({
+    default: m.NexusTab,
+  })),
+);
+
 function PlaceholderPane({ label }: { label: string }) {
   return (
     <div className="flex flex-1 items-center justify-center text-[#6f7f9a] text-sm font-mono">
@@ -304,6 +310,6 @@ export const WORKBENCH_ROUTE_OBJECTS: RouteObject[] = [
   { path: "overview", element: <Navigate to="/home" replace /> },
   { path: "observatory", element: <Suspense fallback={<div className="flex-1" />}><ObservatoryTab /></Suspense> },
   { path: "spirit-chamber", element: <Suspense fallback={<div className="flex-1" />}><SpiritChamberTab /></Suspense> },
-  { path: "nexus", element: <PlaceholderPane label="Nexus" /> },
+  { path: "nexus", element: <Suspense fallback={<div className="flex-1" />}><NexusTab /></Suspense> },
   { path: "*", element: <Navigate to="/home" replace /> },
 ];
