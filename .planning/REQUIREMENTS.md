@@ -14,11 +14,11 @@
 
 ### Particles
 
-- [ ] **PFX-01**: Landing dust cloud bursts from ground on character touchdown
+- [x] **PFX-01**: Landing dust cloud bursts from ground on character touchdown
 - [ ] **PFX-02**: Probe energy discharge — expanding particle shell on probe dispatch
 - [ ] **PFX-03**: Station ambient motes — floating particles around hero props
-- [ ] **PFX-04**: Spirit companion trail — accent-colored particle trail following the orb
-- [ ] **PFX-05**: Thruster exhaust on player avatar backpack during sprint and jump
+- [x] **PFX-04**: Spirit companion trail — accent-colored particle trail following the orb
+- [x] **PFX-05**: Thruster exhaust on player avatar backpack during sprint and jump
 
 ### Camera
 
@@ -79,11 +79,11 @@
 | CAM-02 | Phase 11 | Complete |
 | CAM-03 | Phase 11 | Complete |
 | CAM-04 | Phase 11 | Complete |
-| PFX-01 | Phase 12 | Pending |
+| PFX-01 | Phase 12 | Complete |
 | PFX-02 | Phase 12 | Pending |
 | PFX-03 | Phase 12 | Pending |
-| PFX-04 | Phase 12 | Pending |
-| PFX-05 | Phase 12 | Pending |
+| PFX-04 | Phase 12 | Complete |
+| PFX-05 | Phase 12 | Complete |
 | CHR-01 | Phase 13 | Pending |
 | CHR-02 | Phase 13 | Pending |
 | CHR-03 | Phase 13 | Pending |

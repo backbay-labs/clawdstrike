@@ -313,6 +313,6 @@ Phase 10 first (bloom transforms all downstream visual work). Phases 11 and 12 c
 | 9. Nexus Force Graph | v3.0 | 2/2 | Complete | 2026-03-19 |
 | 10. Post-Processing Foundation | 3/3 | Complete    | 2026-03-19 | - |
 | 11. Camera Cinematics + Shake | 3/3 | Complete    | 2026-03-19 | - |
-| 12. Particle Effects | 1/4 | In Progress|  | - |
+| 12. Particle Effects | 3/4 | In Progress|  | - |
 | 13. Character Polish | v4.0 | 0/TBD | Not started | - |
 | 14. World Detail + NPCs + UI | v4.0 | 0/TBD | Not started | - |

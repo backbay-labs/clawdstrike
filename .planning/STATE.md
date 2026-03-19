@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v4.0
 milestone_name: AAA Observatory Experience
 status: completed
-stopped_at: Completed 12-particle-effects-02-PLAN.md
-last_updated: "2026-03-19T18:32:03.773Z"
-last_activity: 2026-03-19 — completed CAM-04 mission focus pull (plan 11-03)
+stopped_at: Completed 12-particle-effects-03-PLAN.md
+last_updated: "2026-03-19T18:35:04Z"
+last_activity: 2026-03-19 — completed PFX-02 probe discharge + PFX-03 station sparkles (plan 12-03)
 progress:
   total_phases: 5
   completed_phases: 2
   total_plans: 10
-  completed_plans: 7
+  completed_plans: 9
   percent: 0
 ---
 
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-03-19)
 
 ## Current Position
 
-Phase: 11 of 14 (Camera Cinematics Shake)
-Plan: 03 of 03 (complete)
-Status: Phase 11 complete — all CAM requirements addressed
-Last activity: 2026-03-19 — completed CAM-04 mission focus pull (plan 11-03)
+Phase: 12 of 14 (Particle Effects)
+Plan: 01 of 04 (complete)
+Status: Phase 12 in progress — PFX-01 and PFX-05 pools declared, emitters in Plans 02/03
+Last activity: 2026-03-19 — completed PFX pool registry (plan 12-01)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [█████████░] 90%
 
 ## Performance Metrics
 
@@ -73,6 +73,10 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 11-camera-cinematics-shake]: dwellRef pattern: useRef<{expiresAt:number}|null> suppresses new goal-change flights for 1.8s after flight completes; isDwelling uses slow lerp (lerpSpeed*0.4) for soft hold
 - [Phase 11-camera-cinematics-shake]: flyByActive guard on activeStationId prevents mission focus flight racing with opening cinematic fly-by
 - [Phase 12-particle-effects]: Trail wraps inner mesh child — meshRef stays on mesh; local=false for world-space sampling; attenuation quadratic (t*t); interval=2 reduces segment density; test mock is React.Fragment passthrough
+- [Phase 12-particle-effects]: VFXParticlesSettings is pool-level only (nbParticles, renderMode, gravity, fadeAlpha); per-particle settings (lifetime, size, color) go on VFXEmitter at emit time
+- [Phase 12-particle-effects]: RenderMode enum (Billboard/StretchBillboard) must be imported from wawa-vfx; string literals rejected by TypeScript
+- [Phase 12-particle-effects]: ProbeDischargeVFX uses mesh.count=0 when inactive — zero GPU cost between probes; FIBONACCI_POINTS pre-computed at module load
+- [Phase 12-particle-effects]: Sparkles gated on !dormant in ObservatoryHeroProp; world.core.accentColor confirmed as accent color path in DerivedObservatoryWorld
 
 ### Blockers/Concerns
 
@@ -82,6 +86,6 @@ Progress: [░░░░░░░░░░] 0%
 
 ## Session Continuity
 
-Last session: 2026-03-19T18:32:03.770Z
-Stopped at: Completed 12-particle-effects-02-PLAN.md
+Last session: 2026-03-19T18:35:04Z
+Stopped at: Completed 12-particle-effects-03-PLAN.md
 Resume file: None
