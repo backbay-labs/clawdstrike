@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { terminalService } from "@/lib/workbench/terminal-service";
 
-export type BottomPaneTab = "terminal" | "problems" | "output" | "audit";
+export type BottomPaneTab = "terminal" | "problems" | "output" | "audit" | "tape";
 
 export interface OutputEntry {
   id: string;

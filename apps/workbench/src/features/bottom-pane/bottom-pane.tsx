@@ -1,10 +1,11 @@
-import { IconAlertTriangle, IconTerminal2, IconX, IconTerminal, IconLogs, IconFileAnalytics, IconLayoutColumns } from "@tabler/icons-react";
+import { IconAlertTriangle, IconTerminal2, IconX, IconTerminal, IconLogs, IconFileAnalytics, IconLayoutColumns, IconTimeline } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { useBottomPaneStore } from "./bottom-pane-store";
 import { ProblemsPanel } from "./problems-panel";
 import { TerminalPanel } from "./terminal-panel";
 import { OutputPanel } from "./output-panel";
 import { AuditTailPanel } from "./audit-tail-panel";
+import { ForensicsTapePanel } from "@/features/forensics/components/ForensicsTapePanel";
 
 export function BottomPane() {
   const activeTab = useBottomPaneStore((state) => state.activeTab);
@@ -67,6 +68,19 @@ export function BottomPane() {
             <IconFileAnalytics size={13} stroke={1.8} />
             Audit
           </button>
+          <button
+            type="button"
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors",
+              activeTab === "tape"
+                ? "bg-[#131721] text-[#ece7dc]"
+                : "text-[#6f7f9a] hover:bg-[#0f1219] hover:text-[#ece7dc]",
+            )}
+            onClick={() => useBottomPaneStore.getState().setActiveTab("tape")}
+          >
+            <IconTimeline size={13} stroke={1.8} />
+            Tape
+          </button>
         </div>
 
         <div className="flex items-center gap-1">
@@ -110,6 +124,8 @@ export function BottomPane() {
           <ProblemsPanel />
         ) : activeTab === "audit" ? (
           <AuditTailPanel />
+        ) : activeTab === "tape" ? (
+          <ForensicsTapePanel />
         ) : (
           <OutputPanel />
         )}
