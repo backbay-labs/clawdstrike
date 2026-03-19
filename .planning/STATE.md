@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-04-PLAN.md
-last_updated: "2026-03-18T23:58:00Z"
+stopped_at: Completed 03-01-PLAN.md
+last_updated: "2026-03-19T00:09:30.536Z"
 last_activity: "2026-03-18 — Plan 03-04 complete: ForensicsTapePanel CSS-only horizontal timeline, Tape tab registered in bottom pane (FRNX-01)"
 progress:
   total_phases: 4
   completed_phases: 2
   total_plans: 11
-  completed_plans: 8
+  completed_plans: 9
   percent: 73
 ---
 
@@ -89,6 +89,10 @@ v2.0 decisions:
 - [Phase 02-02]: RightSidebarPanel extended to "speakeasy" | "spirit"; Wave 0 @ts-expect-error guards removed after type extension
 - [Phase 02]: Separate Canvas per pane tab (not root Canvas + drei View) — drei View #2471 z-index issue, WebGL context-disposes verified by code review, deferred to Phase 3 for full Tauri runtime confirmation
 - [Phase 03-04]: ForensicsTapePanel CSS-only with 4 mock events — glia-three deferred pending audit; BottomPaneTab extended to 5 members (terminal|problems|output|audit|tape)
+- [Phase 03-01]: probeConsequences.ts missionLoop dependency stripped; buildMissionRead simplified to not accept mission parameter
+- [Phase 03-01]: ObservatoryWorldCanvas Physics deferred to 03-03 (Physics always-on overhead pitfall)
+- [Phase 03-01]: All hero prop assets set to availability=slot — GLB assets not in workbench; fallback procedural geometry only in Phase 3
+- [Phase 03-01]: [Phase 03-01]: ObservatoryTab as Store Bridge — reads workbench stores, builds HuntObservatorySceneState, passes to ObservatoryWorldCanvas as props
 
 ### Pending Todos
 
@@ -102,6 +106,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-18T23:58:00Z
-Stopped at: Completed 03-04-PLAN.md
+Last session: 2026-03-19T00:09:30.532Z
+Stopped at: Completed 03-01-PLAN.md
 Resume file: None
