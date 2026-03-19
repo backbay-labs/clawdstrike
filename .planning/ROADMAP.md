@@ -301,7 +301,12 @@ Plans:
   3. Environmental prop clusters appear near each station (monitors, crates, cable runs) providing storytelling context without blocking navigation
   4. 24 NPC crew members (4 per station) are visible as instanced mesh figures; they follow 4-waypoint patrol loops within their station zone and turn to face and wave when the player approaches within 5 units
   5. 3D waypoint beacons (Billboard + Text) mark active mission objective stations; the circular probe charge ring replaces the text HUD readout; interactable props show tooltip overlays on hover; mission completion triggers an achievement popup in the IDE shell layer
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 14-01-PLAN.md — HDR skybox + district buildings + ground tints + env props (WLD-01–04)
+- [ ] 14-02-PLAN.md — Instanced NPC crew: patrol loops + proximity wave reaction (NPC-01–03)
+- [ ] 14-03-PLAN.md — UI polish: beacons + probe charge ring + tooltips + achievement popups (UIP-01–04)
 
 ## Progress
 
@@ -318,5 +323,5 @@ Phase 10 first (bloom transforms all downstream visual work). Phases 11 and 12 c
 | 10. Post-Processing Foundation | 3/3 | Complete    | 2026-03-19 | - |
 | 11. Camera Cinematics + Shake | 3/3 | Complete    | 2026-03-19 | - |
 | 12. Particle Effects | 4/4 | Complete    | 2026-03-19 | - |
-| 13. Character Polish | 2/2 | Complete   | 2026-03-19 | - |
+| 13. Character Polish | 2/2 | Complete    | 2026-03-19 | - |
 | 14. World Detail + NPCs + UI | v4.0 | 0/TBD | Not started | - |
