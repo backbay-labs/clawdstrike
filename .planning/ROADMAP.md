@@ -142,11 +142,11 @@ Plans:
   1. Each of the 7 observatory stations renders its station-specific GLB 3D model (signal-dish-tower, subjects-lattice-anchor, operations-scan-rig, evidence-vault-rack, judgment-dais, watchfield-sentinel-beacon, operator-drone) instead of the fallback procedural sphere
   2. Fallback procedural geometry still renders correctly for any station whose GLB fails to load or is unavailable
   3. Floor halo rings appear beneath observatory stations, glowing in the bound spirit's accent color; ring intensity scales with spirit affinity at each station
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 06-01: Copy 7 GLB directories to public/observatory-props/, flip propAssets.ts availability flags, add HeroPropMesh component with useGLTF + bob animation
-- [ ] 06-02: Port blendHex utility into spirit/scene-math.ts; add stationAffinities prop to ObservatoryWorldCanvas; render floor ring meshes at HUNT_STATION_PLACEMENTS positions
+- [ ] 06-01-PLAN.md — Copy 7 GLBs to public/observatory-props/, flip propAssets.ts availability, HeroPropMesh with useGLTF + bob animation
+- [ ] 06-02-PLAN.md — blendHex into spirit/scene-math.ts; AffinityRingMesh + stationAffinities in ObservatoryWorldCanvas; ObservatoryTab wiring
 
 ### Phase 7: Spirit Evolution & Persistence
 **Goal**: Spirits grow with the operator — XP accumulates from hunt activity, visual complexity increases at each level (shadow ring, orbit torus, pulse ring, orbit shards), and progress survives across workbench sessions
