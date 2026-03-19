@@ -1,8 +1,8 @@
-// Wave 0: NexusTab does not exist yet — tests will fail until 04-02-PLAN.md ships.
-// This file establishes the test contract that NexusTab (Plan 02) must satisfy.
+// NexusTab tests — NXS-01 (atlas view) + NXS-02 (layout toggle)
 //
 // NXS-01: NexusTab renders ObservatoryWorldCanvas in atlas mode
 // NXS-01: station select calls pane-store.openApp with mapped route
+// NXS-02: toggle button switches between atlas and force-directed views
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, fireEvent } from "@testing-library/react";
@@ -45,12 +45,27 @@ vi.mock(
   }),
 );
 
-// Mock nexus store
+// Mock NexusForceCanvas
+vi.mock("@/features/nexus/components/NexusForceCanvas", () => ({
+  NexusForceCanvas: () => <div data-testid="nexus-force-canvas" />,
+}));
+
+// Track layoutMode state for tests
+let mockLayoutMode = "radial";
+const mockSetLayoutMode = vi.fn((mode: string) => {
+  mockLayoutMode = mode;
+});
+
+// Mock nexus store — includes layoutMode + setLayoutMode
 vi.mock("@/features/nexus/stores/nexus-store", () => ({
   useNexusStore: {
     use: {
       strikecells: vi.fn(() => []),
+      layoutMode: vi.fn(() => mockLayoutMode),
     },
+    getState: () => ({
+      actions: { setLayoutMode: mockSetLayoutMode },
+    }),
   },
 }));
 
@@ -62,12 +77,15 @@ vi.mock("@/features/panes/pane-store", () => ({
   },
 }));
 
-// @ts-expect-error — NexusTab does not exist yet (Wave 0 scaffold — will be created in 04-02-PLAN.md)
 import { NexusTab } from "@/features/nexus/components/NexusTab";
+import { useNexusStore } from "@/features/nexus/stores/nexus-store";
 
-describe("NexusTab (NXS-01 — Wave 0 stubs)", () => {
+describe("NexusTab (NXS-01 — atlas mode)", () => {
   beforeEach(() => {
     mockOpenApp.mockClear();
+    mockSetLayoutMode.mockClear();
+    mockLayoutMode = "radial";
+    (useNexusStore.use.layoutMode as ReturnType<typeof vi.fn>).mockReturnValue("radial");
   });
 
   it("renders ObservatoryWorldCanvas in atlas mode", () => {
@@ -86,5 +104,47 @@ describe("NexusTab (NXS-01 — Wave 0 stubs)", () => {
     fireEvent.click(canvas);
 
     expect(mockOpenApp).toHaveBeenCalledWith("/home");
+  });
+});
+
+describe("NexusTab layout toggle (NXS-02)", () => {
+  beforeEach(() => {
+    mockOpenApp.mockClear();
+    mockSetLayoutMode.mockClear();
+    mockLayoutMode = "radial";
+    (useNexusStore.use.layoutMode as ReturnType<typeof vi.fn>).mockReturnValue("radial");
+  });
+
+  it("renders atlas view (ObservatoryWorldCanvas) by default", () => {
+    const { getByTestId, queryByTestId } = render(<NexusTab />);
+    expect(getByTestId("observatory-world-canvas")).toBeDefined();
+    expect(queryByTestId("nexus-force-canvas")).toBeNull();
+  });
+
+  it("toggle button reads 'Force Graph' in atlas mode", () => {
+    const { getByTestId } = render(<NexusTab />);
+    const btn = getByTestId("nexus-layout-toggle");
+    expect(btn.textContent).toBe("Force Graph");
+  });
+
+  it("clicking toggle calls setLayoutMode('force-directed')", () => {
+    const { getByTestId } = render(<NexusTab />);
+    fireEvent.click(getByTestId("nexus-layout-toggle"));
+    expect(mockSetLayoutMode).toHaveBeenCalledWith("force-directed");
+  });
+
+  it("renders NexusForceCanvas when layoutMode is force-directed", () => {
+    mockLayoutMode = "force-directed";
+    (useNexusStore.use.layoutMode as ReturnType<typeof vi.fn>).mockReturnValue("force-directed");
+    const { getByTestId, queryByTestId } = render(<NexusTab />);
+    expect(getByTestId("nexus-force-canvas")).toBeDefined();
+    expect(queryByTestId("observatory-world-canvas")).toBeNull();
+  });
+
+  it("toggle button reads 'Atlas View' in force-directed mode", () => {
+    mockLayoutMode = "force-directed";
+    (useNexusStore.use.layoutMode as ReturnType<typeof vi.fn>).mockReturnValue("force-directed");
+    const { getByTestId } = render(<NexusTab />);
+    expect(getByTestId("nexus-layout-toggle").textContent).toBe("Atlas View");
   });
 });

@@ -1,9 +1,8 @@
 // NexusTab — store bridge that reads workbench stores and renders the 3D Observatory
-// in atlas mode. Mirrors the ObservatoryTab pattern exactly.
+// in atlas mode, or the force-directed NexusForceCanvas in force mode.
 //
 // Plan 04-02: NXS-01 — user can open cyber nexus as "Hunt Deck" pane tab.
-// hunt.openNexus already calls usePaneStore.getState().openApp("/nexus", "Nexus");
-// this component makes that route render real content.
+// Plan 09-02: NXS-02 — toggle between atlas (ObservatoryWorldCanvas) and force-directed (NexusForceCanvas).
 
 import { useState, useCallback, useMemo } from "react";
 import type { HuntObservatorySceneState, HuntStationId, HuntStationState } from "@/features/observatory/world/types";
@@ -12,6 +11,7 @@ import { useNexusStore } from "../stores/nexus-store";
 import { useSpiritStore } from "@/features/spirit/stores/spirit-store";
 import { usePaneStore } from "@/features/panes/pane-store";
 import { ObservatoryWorldCanvas } from "@/features/observatory/components/ObservatoryWorldCanvas";
+import { NexusForceCanvas } from "./NexusForceCanvas";
 import type { SpiritKind } from "@/features/spirit/types";
 import { STRIKECELL_BY_STATION, STRIKECELL_ROUTE_MAP } from "../types";
 import type { StrikecellDomainId } from "../types";
@@ -60,8 +60,16 @@ export function NexusTab() {
   const [cameraResetToken, setCameraResetToken] = useState(0);
 
   const strikecells = useNexusStore.use.strikecells();
+  const layoutMode = useNexusStore.use.layoutMode();
   const kind = useSpiritStore.use.kind();
   const accentColor = useSpiritStore.use.accentColor();
+
+  const isForceMode = layoutMode === "force-directed";
+
+  const handleToggleLayout = useCallback(() => {
+    const next = isForceMode ? "radial" : "force-directed";
+    useNexusStore.getState().actions.setLayoutMode(next);
+  }, [isForceMode]);
 
   // Derive activeStationId from the currently selected strikecell
   const activeStationId = useMemo(
@@ -118,16 +126,32 @@ export function NexusTab() {
 
   return (
     <div className="relative flex-1 overflow-hidden" data-testid="nexus-tab">
+      {/* Layout toggle button — top-right overlay */}
+      <div className="absolute top-3 right-3 z-10">
+        <button
+          type="button"
+          onClick={handleToggleLayout}
+          data-testid="nexus-layout-toggle"
+          className="rounded bg-black/60 px-3 py-1.5 text-xs font-medium text-white hover:bg-black/80 border border-white/20 transition-colors"
+        >
+          {isForceMode ? "Atlas View" : "Force Graph"}
+        </button>
+      </div>
+
       <div className="absolute inset-0">
-        <ObservatoryWorldCanvas
-          mode="atlas"
-          sceneState={sceneState}
-          activeStationId={activeStationId}
-          spirit={spirit}
-          frameloop="demand"
-          cameraResetToken={cameraResetToken}
-          onSelectStation={handleSelectStation}
-        />
+        {isForceMode ? (
+          <NexusForceCanvas />
+        ) : (
+          <ObservatoryWorldCanvas
+            mode="atlas"
+            sceneState={sceneState}
+            activeStationId={activeStationId}
+            spirit={spirit}
+            frameloop="demand"
+            cameraResetToken={cameraResetToken}
+            onSelectStation={handleSelectStation}
+          />
+        )}
       </div>
 
       {/* Test assertion target — reports active strikecell for automation */}
