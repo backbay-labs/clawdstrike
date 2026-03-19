@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Spirit & Observatory Evolution
 status: executing
-stopped_at: Completed 08-observatory-missions-evidence-preview 08-02-PLAN.md
-last_updated: "2026-03-19T14:00:07.839Z"
+stopped_at: Completed 09-nexus-force-graph 09-01-PLAN.md
+last_updated: "2026-03-19T14:21:53.444Z"
 last_activity: "2026-03-19 — Plan 05-03 complete: ObservatoryMinimapPanel SVG + polarToSvg + 13 tests + Observatory activity bar + CATEGORY_ORDER (OBS-10)"
 progress:
   total_phases: 5
   completed_phases: 4
-  total_plans: 10
-  completed_plans: 10
+  total_plans: 12
+  completed_plans: 11
   percent: 67
 ---
 
@@ -131,6 +131,9 @@ v2.0 decisions:
 - [Phase 08]: missionLoop.ts ported verbatim from huntronomer; import paths adjusted (../types -> ./types)
 - [Phase 08]: deriveObservatoryMissionBranch always yields operations-first in workbench until live station status flows from backend
 - [Phase 08-observatory-missions-evidence-preview]: ObservatoryMissionHud imports ObservatoryMissionLoopState directly from ../world/missionLoop; mission selector added to useObservatoryStore; observatory.mission.start command also opens /observatory pane
+- [Phase 09-01]: r3f-forcegraph@1.1.1 peer deps: { react: '*', three: '>=0.154' } — no R3F constraint, compatible with three ^0.170.0
+- [Phase 09-01]: r3f-forcegraph@1.1.1 has no onNodeDrag API — drag-pin deferred; OrbitControls handle camera manipulation
+- [Phase 09-01]: ForceGraph ref uses any-typed MutableRefObject + eslint-disable to bypass FCwithRef generic inference complexity
 
 ### Pending Todos
 
@@ -144,6 +147,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-19T14:00:07.836Z
-Stopped at: Completed 08-observatory-missions-evidence-preview 08-02-PLAN.md
+Last session: 2026-03-19T14:21:53.442Z
+Stopped at: Completed 09-nexus-force-graph 09-01-PLAN.md
 Resume file: None
