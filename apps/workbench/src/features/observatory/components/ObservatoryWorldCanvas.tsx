@@ -566,9 +566,10 @@ function ObservatoryHeroProp({
           color="#0a1018"
           emissive={glowColor}
           emissiveIntensity={
-            ((active ? 0.22 : 0.08) + (missionTarget ? 0.14 : 0) + (interactable ? 0.1 : 0))
+            ((active ? 1.8 : 0.08) + (missionTarget ? 0.5 : 0) + (interactable ? 0.3 : 0))
             * (0.56 + presenceScale * 0.44)
           }
+          toneMapped={false}
         />
       </mesh>
       <mesh
@@ -1980,9 +1981,10 @@ function TransitConvoy({
           <meshStandardMaterial
             color={color}
             emissive={color}
-            emissiveIntensity={0.48 + route.intensity * 0.42}
+            emissiveIntensity={1.2 + route.intensity * 1.8}
             transparent
             opacity={(0.82 - index * 0.1) * Math.max(0.24, modeOpacityScale)}
+            toneMapped={false}
           />
         </mesh>
       ))}
@@ -3848,9 +3850,10 @@ function ThesisCore({
         <meshStandardMaterial
           color="#efe8d5"
           emissive={accent}
-          emissiveIntensity={core.torusEmissiveIntensity}
+          emissiveIntensity={Math.max(1.8, core.torusEmissiveIntensity * 2.5)}
           transparent
           opacity={0.92}
+          toneMapped={false}
         />
       </mesh>
       <group ref={groupRef}>
@@ -3859,11 +3862,12 @@ function ThesisCore({
           <meshStandardMaterial
             color="#ede6c9"
             emissive={accent}
-            emissiveIntensity={0.48}
+            emissiveIntensity={2.2}
             roughness={0.36}
             metalness={0.18}
             transparent
             opacity={core.shellOpacity}
+            toneMapped={false}
           />
         </mesh>
         <mesh position={[0, -0.72, 0]}>
