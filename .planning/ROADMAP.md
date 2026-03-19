@@ -201,7 +201,7 @@ Phase 5 → Phase 6 → Phase 7 → Phase 8 → Phase 9. Phases 5 and 6 have no 
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 5. Spirit Reactivity & Editor Integration | 0/3 | Not started | - |
+| 5. Spirit Reactivity & Editor Integration | 1/3 | In Progress|  |
 | 6. Observatory GLB Props + Spirit Affinity Rings | 0/2 | Not started | - |
 | 7. Spirit Evolution & Persistence | 0/2 | Not started | - |
 | 8. Observatory Missions + Evidence 3D Preview | 0/3 | Not started | - |

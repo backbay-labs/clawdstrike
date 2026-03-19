@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v2.0
-milestone_name: milestone
+milestone: v3.0
+milestone_name: Spirit & Observatory Evolution
 status: executing
 stopped_at: Completed 04-02-PLAN.md
-last_updated: "2026-03-19T01:17:10.581Z"
+last_updated: "2026-03-19T12:36:46.110Z"
 last_activity: "2026-03-19 — Plan 04-03 complete: spirit-ritual canvas/model.ts ported, SpiritManifestationCanvas + SpiritAtmosphereLayer (pure CSS/SVG), SpiritChamberTab full creation chamber (SPRT-06)"
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 14
-  completed_plans: 14
+  total_phases: 5
+  completed_phases: 0
+  total_plans: 3
+  completed_plans: 1
   percent: 79
 ---
 
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-03-18)
 
 ## Current Position
 
-Phase: 4 of 4 (Nexus + Spirit Creation)
-Plan: 3 of 3 in current phase — IN PROGRESS (04-03 complete)
-Status: In Progress — Phase 4 active
-Last activity: 2026-03-19 — Plan 04-03 complete: spirit-ritual canvas/model.ts ported, SpiritManifestationCanvas + SpiritAtmosphereLayer (pure CSS/SVG), SpiritChamberTab full creation chamber (SPRT-06)
+Phase: 5 of 5 (Spirit Reactivity & Editor Integration)
+Plan: 1 of 3 in current phase — 05-01 complete
+Status: In Progress — Phase 5 active
+Last activity: 2026-03-19 — Plan 05-01 complete: deriveSpiritMood pure function + SpiritMoodReactor debounced component (SPRT-10)
 
-Progress: [████████░░] 79% (Phase 4 Plan 3/3 in progress)
+Progress: [███░░░░░░░] 33%
 
 ## Previous Milestone (v1.1 — IDE Completeness)
 
@@ -106,6 +106,9 @@ v2.0 decisions:
 - [Phase 04-03]: SPIRIT_ACCENT_MAP duplicated locally in spirit-chamber-tab.tsx to avoid import coupling with spirit-store internals
 - [Phase 04-02]: NexusTab mode fixed to atlas (no mode toggle) — nexus is an overview surface, not a walkable world
 - [Phase 04-02]: resolveNexusObservatoryStationId ported inline to keep workbench self-contained (no huntronomer import)
+- [Phase 05-01]: deriveSpiritMood priority order: dormant > alert > active > idle (lint errors beat probe active)
+- [Phase 05-01]: SpiritMoodReactor debounces setMood calls by 500ms via useRef<setTimeout> to prevent mood thrashing
+- [Phase 05-01]: hasLintErrors = tabs.some(t => t.validation.errors.length > 0); probeActive = seamSummary.activeProbes > 0
 
 ### Pending Todos
 
@@ -119,6 +122,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-19T01:17:10.579Z
-Stopped at: Completed 04-02-PLAN.md
+Last session: 2026-03-19T12:35:55Z
+Stopped at: Completed 05-01-PLAN.md
 Resume file: None
