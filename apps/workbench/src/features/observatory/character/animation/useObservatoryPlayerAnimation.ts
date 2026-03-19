@@ -77,6 +77,10 @@ export function useObservatoryPlayerAnimation({
     new Map(),
   );
   const activeClipNameRef = useRef<string | null>(null);
+  const breathElapsedRef = useRef(0);
+  const smoothedLeanRef = useRef(0);
+  const prevCycleSignRef = useRef(0);
+  const hipsBoneRef = useRef<Object3D | null>(null);
 
   useEffect(() => {
     clipEntriesRef.current.clear();
@@ -124,6 +128,16 @@ export function useObservatoryPlayerAnimation({
       }
     }
 
+    // Cache hip bone for sprint lean — search common Mixamo + generic names
+    hipsBoneRef.current = null;
+    for (const boneName of ["Hips", "mixamorigHips", "Root", "Pelvis"]) {
+      const found = modelScene.getObjectByName(boneName);
+      if (found) {
+        hipsBoneRef.current = found;
+        break;
+      }
+    }
+
     clipEntriesRef.current = nextEntries;
     mixerRef.current = mixer;
 
@@ -132,6 +146,7 @@ export function useObservatoryPlayerAnimation({
       mixer.uncacheRoot(modelScene);
       clipEntriesRef.current.clear();
       activeClipNameRef.current = null;
+      hipsBoneRef.current = null;
       mixerRef.current = null;
     };
   }, [modelClips, modelScene]);
@@ -210,6 +225,65 @@ export function useObservatoryPlayerAnimation({
 
     applyRootPose(animatedRootRef.current, pose, suppressSpin);
     applyFallbackPose(fallbackRigRefs, pose);
+
+    // CHR-03: Idle breathing — additive Y oscillation fading to zero when moving
+    breathElapsedRef.current += delta;
+    const idleWeight = Math.max(0, 1 - resolved.horizontalSpeed / WALK_SPEED_THRESHOLD);
+    const breathOffset = Math.sin(breathElapsedRef.current * 1.8) * 0.018 * idleWeight;
+    if (animatedRootRef.current) {
+      animatedRootRef.current.position.y += breathOffset;
+    }
+
+    // CHR-04: Sprint lean — forward tilt proportional to speed, smoothed via expLerp
+    const MAX_LEAN_RADIANS = 0.18; // ~10 degrees forward
+    const leanTarget =
+      Math.min(resolved.horizontalSpeed / RUN_SPEED_THRESHOLD, 1.0) * MAX_LEAN_RADIANS;
+    const lerpAlpha = 1 - Math.exp(-8 * delta);
+    smoothedLeanRef.current =
+      smoothedLeanRef.current + (leanTarget - smoothedLeanRef.current) * lerpAlpha;
+    if (hipsBoneRef.current) {
+      // Negative X rotation = forward lean in standard right-hand skeleton
+      hipsBoneRef.current.rotation.x -= smoothedLeanRef.current;
+    }
+
+    // CHR-06: Footstep cycle-zero-crossing detection
+    if (
+      (resolved.action === "walk" || resolved.action === "run") &&
+      controllerState.grounded
+    ) {
+      // Compute cycle using same formula as sampleWalkPose / sampleRunPose
+      const elapsed = actionElapsedRef.current;
+      const speedFactor = Math.min(resolved.horizontalSpeed / RUN_SPEED_THRESHOLD, 1.35);
+      const cycleRate =
+        resolved.action === "walk"
+          ? 5.8 + Math.min(Math.max(speedFactor, 0.45), 0.88) * 1.4
+          : 8.6 + Math.min(Math.max(speedFactor, 0.8), 1.2) * 2.4;
+      const cycleValue = Math.sin(elapsed * cycleRate);
+      const cycleSign = cycleValue > 0 ? 1 : cycleValue < 0 ? -1 : 0;
+
+      if (
+        prevCycleSignRef.current !== 0 &&
+        cycleSign !== 0 &&
+        cycleSign !== prevCycleSignRef.current
+      ) {
+        // Sign flip = foot strike
+        window.dispatchEvent(
+          new CustomEvent("observatory:footstrike", {
+            detail: {
+              foot: cycleSign < 0 ? "right" : "left",
+              position: controllerState.position,
+            },
+          }),
+        );
+      }
+
+      if (cycleSign !== 0) {
+        prevCycleSignRef.current = cycleSign;
+      }
+    } else {
+      // Reset sign tracking when not walking/running so first step fires correctly
+      prevCycleSignRef.current = 0;
+    }
 
     snapshotRef.current = {
       ...resolved,
