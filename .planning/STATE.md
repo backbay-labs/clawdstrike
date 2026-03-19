@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Spirit & Observatory Evolution
 status: executing
-stopped_at: Completed 08-observatory-missions-evidence-preview 08-01-PLAN.md
-last_updated: "2026-03-19T13:53:29.264Z"
+stopped_at: Completed 08-observatory-missions-evidence-preview 08-02-PLAN.md
+last_updated: "2026-03-19T14:00:07.839Z"
 last_activity: "2026-03-19 — Plan 05-03 complete: ObservatoryMinimapPanel SVG + polarToSvg + 13 tests + Observatory activity bar + CATEGORY_ORDER (OBS-10)"
 progress:
   total_phases: 5
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 10
-  completed_plans: 9
+  completed_plans: 10
   percent: 67
 ---
 
@@ -130,6 +130,7 @@ v2.0 decisions:
 - [Phase 08-03]: [08-03]: Record<FileType,...> exhaustive maps updated with receipt entry in editor-home-tab, tauri-bridge, and e2e test
 - [Phase 08]: missionLoop.ts ported verbatim from huntronomer; import paths adjusted (../types -> ./types)
 - [Phase 08]: deriveObservatoryMissionBranch always yields operations-first in workbench until live station status flows from backend
+- [Phase 08-observatory-missions-evidence-preview]: ObservatoryMissionHud imports ObservatoryMissionLoopState directly from ../world/missionLoop; mission selector added to useObservatoryStore; observatory.mission.start command also opens /observatory pane
 
 ### Pending Todos
 
@@ -143,6 +144,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-19T13:53:29.261Z
-Stopped at: Completed 08-observatory-missions-evidence-preview 08-01-PLAN.md
+Last session: 2026-03-19T14:00:07.836Z
+Stopped at: Completed 08-observatory-missions-evidence-preview 08-02-PLAN.md
 Resume file: None
