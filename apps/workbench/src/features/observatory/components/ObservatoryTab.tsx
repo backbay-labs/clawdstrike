@@ -11,7 +11,7 @@
 // - window event "observatory:probe" → dispatchProbe callback
 // - mode toggle button (ATLAS/FLOW) in top-right corner of tab
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, Component, type ReactNode } from "react";
 import type { HuntObservatorySceneState, HuntStationId, HuntStationState } from "../world/types";
 import { HUNT_STATION_LABELS, HUNT_STATION_PLACEMENTS } from "../world/stations";
 import { useObservatoryStore } from "../stores/observatory-store";
@@ -43,6 +43,26 @@ const SPIRIT_KIND_MAP: Record<SpiritKind, "tracker" | "lantern" | "ledger" | "fo
 
 function cn(...classes: (string | false | null | undefined)[]): string {
   return classes.filter(Boolean).join(" ");
+}
+
+// Temporary error boundary to surface R3F errors that Suspense swallows
+class CanvasErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null };
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="absolute inset-0 flex items-center justify-center bg-[#05060a] text-red-400 text-xs font-mono p-4">
+          <div>
+            <p className="text-sm font-bold mb-2">Observatory Error</p>
+            <pre className="whitespace-pre-wrap max-w-[600px] overflow-auto">{this.state.error.message}</pre>
+            <pre className="whitespace-pre-wrap max-w-[600px] overflow-auto text-[#6f7f9a] mt-2">{this.state.error.stack?.split('\n').slice(0, 5).join('\n')}</pre>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 export function ObservatoryTab() {
@@ -198,6 +218,7 @@ export function ObservatoryTab() {
   return (
     <div className="relative flex-1 overflow-hidden" onDoubleClick={handleDoubleClick}>
       <div className="absolute inset-0">
+        <CanvasErrorBoundary>
         <ObservatoryWorldCanvas
           mode={mode}
           sceneState={sceneState}
@@ -211,6 +232,7 @@ export function ObservatoryTab() {
           stationAffinities={stationAffinities}
           onSelectStation={handleSelectStation}
         />
+        </CanvasErrorBoundary>
       </div>
 
       {/* OBS-05: Mode toggle button (ATLAS/FLOW) — absolute top-right, z-10 */}

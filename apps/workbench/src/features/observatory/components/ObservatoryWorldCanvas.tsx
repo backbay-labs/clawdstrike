@@ -7,11 +7,12 @@
 // Canvas: frameloop is a prop (defaults "demand"). dpr=[1, 1.8].
 
 import { Text, Stars, OrbitControls, CameraControls, useGLTF } from "@react-three/drei";
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import {
   Suspense,
   type RefObject,
   useCallback,
+  useEffect,
   useMemo,
   useRef,
 } from "react";
@@ -526,6 +527,11 @@ function ObservatoryScene({
   stationAffinities?: Record<HuntStationId, number>;
   onSelectStation?: (id: HuntStationId) => void;
 }) {
+  // Force initial render in demand frameloop mode — without this, the scene
+  // renders once before the camera rig positions the camera, then never updates.
+  const { invalidate } = useThree();
+  useEffect(() => { invalidate(); }, [invalidate]);
+
   const controlsRef = useRef<THREE.EventDispatcher | null>(null);
   const world = useMemo(
     () => deriveObservatoryWorld({ mode, sceneState, activeStationId, spirit }),
@@ -698,7 +704,7 @@ export function ObservatoryWorldCanvas({
       gl={{ antialias: true, alpha: false, powerPreference: "high-performance" }}
       className={className}
       style={{ width: "100%", height: "100%" }}
-      camera={{ fov: 42 }}
+      camera={{ fov: 42, position: [0, 20.4, 36.8], near: 0.5, far: 200 }}
     >
       <Suspense fallback={null}>
         <ObservatoryScene
