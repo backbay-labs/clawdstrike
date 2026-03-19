@@ -220,7 +220,7 @@ Plans:
 - [x] **Phase 11: Camera Cinematics + Shake** — Spawn fly-by with letterbox bars, dynamic FOV during sprint and probe scan, screen shake on probe dispatch and landing, focus pull to mission objectives (completed 2026-03-19)
 - [x] **Phase 12: Particle Effects** — Landing dust, probe energy discharge shell, station ambient motes, spirit companion trail, thruster exhaust on avatar backpack (completed 2026-03-19)
 - [x] **Phase 13: Character Polish** — Weight-based locomotion blending, landing squash-stretch with overshoot, idle breathing layer, sprint lean, flip easing, footstep event detection (completed 2026-03-19)
-- [ ] **Phase 14: World Detail + NPCs + UI** — HDR skybox, procedural district geometry, ground surface variety, environmental props, instanced NPC crews with patrol + reactions, 3D waypoint beacons, probe charge ring, tooltip system, achievement popups
+- [x] **Phase 14: World Detail + NPCs + UI** — HDR skybox, procedural district geometry, ground surface variety, environmental props, instanced NPC crews with patrol + reactions, 3D waypoint beacons, probe charge ring, tooltip system, achievement popups (completed 2026-03-19)
 
 ## Phase Details
 
@@ -324,4 +324,4 @@ Phase 10 first (bloom transforms all downstream visual work). Phases 11 and 12 c
 | 11. Camera Cinematics + Shake | 3/3 | Complete    | 2026-03-19 | - |
 | 12. Particle Effects | 4/4 | Complete    | 2026-03-19 | - |
 | 13. Character Polish | 2/2 | Complete    | 2026-03-19 | - |
-| 14. World Detail + NPCs + UI | 2/3 | In Progress|  | - |
+| 14. World Detail + NPCs + UI | 3/3 | Complete   | 2026-03-19 | - |

@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v4.0
 milestone_name: AAA Observatory Experience
 status: completed
-stopped_at: Completed 14-01-PLAN.md (at checkpoint)
-last_updated: "2026-03-19T19:21:35.365Z"
+stopped_at: Completed 14-02-PLAN.md
+last_updated: "2026-03-19T19:23:58.018Z"
 last_activity: 2026-03-19 — completed CharacterVFX + ObservatoryVFXPools wiring (plan 12-04)
 progress:
   total_phases: 5
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 15
-  completed_plans: 14
+  completed_plans: 15
   percent: 100
 ---
 
@@ -88,6 +88,9 @@ Progress: [██████████] 100%
 - [Phase 14-world-detail-npcs-ui]: NpcInstance ref typed as THREE.Object3D | null for drei <Instance> (not InstancedMesh)
 - [Phase 14-world-detail-npcs-ui]: districtGeometry.tsx (not .ts) required for JSX; ReactElement over JSX.Element for tsconfig isolatedModules
 - [Phase 14-world-detail-npcs-ui]: Environment Suspense + dark #04080f fallback — HDR file must be manually sourced from polyhaven.com at 1K
+- [Phase 14-world-detail-npcs-ui]: districtGeometry.tsx (not .ts) required for JSX; ReactElement over JSX.Element for tsconfig isolatedModules
+- [Phase 14-world-detail-npcs-ui]: Environment Suspense + dark #04080f fallback — HDR file must be manually sourced from polyhaven.com at 1K
+- [Phase 14]: NpcCrew.tsx (not .ts): JSX content requires .tsx extension; NpcInstance ref typed as THREE.Object3D | null for drei Instance; patrol waypoints resolve to world-space via useMemo
 
 ### Blockers/Concerns
 
@@ -97,6 +100,6 @@ Progress: [██████████] 100%
 
 ## Session Continuity
 
-Last session: 2026-03-19T19:21:30.141Z
-Stopped at: Completed 14-01-PLAN.md (at checkpoint)
+Last session: 2026-03-19T19:23:43.448Z
+Stopped at: Completed 14-02-PLAN.md
 Resume file: None

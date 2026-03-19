@@ -25,10 +25,12 @@ decisions:
   - "Patrol speed constant 0.5 units/sec via lerp alpha = PATROL_SPEED * delta per frame"
   - "Proximity threshold 5.0 units — camera.position used as player proxy"
   - "NpcCrew mounted after WatchfieldPerimeter + MissionObjectiveBeacons in scene JSX"
+requirements-completed: [NPC-01, NPC-02, NPC-03]
+
 metrics:
-  duration: "~15 minutes"
+  duration: "~20 minutes"
   completed_date: "2026-03-19"
-  tasks_completed: 2
+  tasks_completed: 3
   tasks_total: 3
   files_created: 1
   files_modified: 1
@@ -62,9 +64,9 @@ Two files implement the full NPC crew system:
 - **Files modified:** `npcCrew.tsx` (created with correct extension)
 - **Commit:** 479758009
 
-## Checkpoint Status
+## Human Verification
 
-Plan execution paused at Task 3 (human-verify checkpoint). Tasks 1 and 2 committed. Awaiting visual verification in the running workbench.
+Task 3 (human-verify checkpoint) approved by user: "approved — 24 NPC capsule crew with patrol and proximity reactions verified". All 3 tasks complete.
 
 ## Self-Check
 
