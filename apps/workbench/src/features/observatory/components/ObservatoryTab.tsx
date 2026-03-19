@@ -12,6 +12,9 @@
 // - mode toggle button (ATLAS/FLOW) in top-right corner of tab
 
 import { useState, useCallback, useEffect, useRef, Component, type ReactNode } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import { useAchievementStore } from "../stores/achievement-store";
+import type { Achievement } from "../stores/achievement-store";
 import type { HuntObservatorySceneState, HuntStationId, HuntStationState } from "../world/types";
 import { HUNT_STATION_LABELS, HUNT_STATION_PLACEMENTS } from "../world/stations";
 import { useObservatoryStore } from "../stores/observatory-store";
@@ -63,6 +66,47 @@ class CanvasErrorBoundary extends Component<{ children: ReactNode }, { error: Er
     }
     return this.props.children;
   }
+}
+
+// UIP-04: Achievement popup toast — spring slide-in from right, auto-dismiss at 3.2s.
+function AchievementToast({ achievement, onDone }: { achievement: Achievement; onDone: () => void }) {
+  useEffect(() => {
+    const timer = setTimeout(onDone, 3200);
+    return () => clearTimeout(timer);
+  }, [onDone]);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: 60 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: 60 }}
+      transition={{ type: 'spring', stiffness: 380, damping: 28 }}
+      className="bg-[#0a0d14]/90 border border-yellow-500/30 rounded-lg px-4 py-2 text-sm backdrop-blur-sm"
+    >
+      <div className="text-yellow-400 font-bold font-mono text-[11px] tracking-widest">{achievement.title}</div>
+      <div className="text-yellow-200/60 text-[10px] font-mono mt-0.5">{achievement.description}</div>
+    </motion.div>
+  );
+}
+
+// UIP-04: Achievement overlay layer — renders outside Canvas using Framer Motion AnimatePresence.
+function AchievementLayer() {
+  const queue = useAchievementStore.use.queue();
+  const popAchievement = useAchievementStore.use.actions().popAchievement;
+
+  return (
+    <div className="absolute bottom-6 right-4 z-30 flex flex-col gap-2 pointer-events-none">
+      <AnimatePresence mode="popLayout">
+        {queue.map((achievement: Achievement) => (
+          <AchievementToast
+            key={achievement.id}
+            achievement={achievement}
+            onDone={() => popAchievement(achievement.id)}
+          />
+        ))}
+      </AnimatePresence>
+    </div>
+  );
 }
 
 export function ObservatoryTab() {
@@ -141,6 +185,24 @@ export function ObservatoryTab() {
   const mission = useObservatoryStore.use.mission();
   const kind = useSpiritStore.use.kind();
   const accentColor = useSpiritStore.use.accentColor();
+
+  // UIP-04: Push achievement when a new mission objective is completed.
+  // Tracks length delta to detect newly added completed objective IDs.
+  const pushAchievement = useAchievementStore.use.actions().pushAchievement;
+  const prevCompletedCountRef = useRef(0);
+  useEffect(() => {
+    if (!mission) { prevCompletedCountRef.current = 0; return; }
+    const count = mission.completedObjectiveIds.length;
+    if (count > prevCompletedCountRef.current) {
+      const newId = mission.completedObjectiveIds[count - 1];
+      pushAchievement({
+        id: `obj-${newId ?? 'unknown'}-${Date.now()}`,
+        title: "OBJECTIVE COMPLETE",
+        description: (newId ?? '').replace(/-/g, ' '),
+      });
+    }
+    prevCompletedCountRef.current = count;
+  }, [mission?.completedObjectiveIds?.length, pushAchievement]);
 
   // CAM-04: Derive active mission objective station for camera focus flight
   const missionObjectiveStationId: HuntStationId | null = mission
@@ -342,6 +404,9 @@ export function ObservatoryTab() {
         data-observatory-character-controller={characterControllerEnabled ? "on" : "off"}
         data-observatory-probe-status={probeState.status}
       />
+
+      {/* UIP-04: Achievement popups — outside Canvas, Framer Motion AnimatePresence */}
+      <AchievementLayer />
     </div>
   );
 }

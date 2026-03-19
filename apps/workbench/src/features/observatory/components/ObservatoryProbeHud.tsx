@@ -3,9 +3,10 @@
 // Renders null when probeState.status === "ready" (no active probe).
 //
 // Plan 03-02: OBS-04 — probe lifecycle HUD.
-// SCOPE: This charge bar is minimal probe lifecycle feedback, not the full OBS-08
+// Plan 14-03: UIP-02 — circular SVG charge ring replaces linear bar in cooldown phase.
+// SCOPE: This charge ring is minimal probe lifecycle feedback, not the full OBS-08
 //   cooldown timer (deferred). The ring animation in the canvas is the primary visual;
-//   this bar supplements it within the HUD.
+//   this ring supplements it within the HUD.
 
 import { useState, useEffect } from "react";
 import type { ObservatoryProbeState } from "../world/probeRuntime";
@@ -16,6 +17,46 @@ import {
 
 export interface ObservatoryProbeHudProps {
   probeState: ObservatoryProbeState;
+}
+
+// UIP-02: Circular SVG arc ring replacing the linear charge bar.
+// stroke-dashoffset encodes fill progress; rotated -90deg so arc starts at 12-o'clock.
+function ProbeChargeRingsvg({ charge }: { charge: number }) {
+  const r = 22;
+  const cx = 28;
+  const cy = 28;
+  const circumference = 2 * Math.PI * r;
+  const filled = Math.max(0, Math.min(1, charge));
+  const dashoffset = circumference * (1 - filled);
+  const accentColor = "var(--spirit-accent, #3dbf84)";
+  return (
+    <svg width={56} height={56} style={{ overflow: 'visible' }}>
+      {/* Background ring */}
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke="#1a2035" strokeWidth={3} />
+      {/* Charge arc — strokeDashoffset animates fill */}
+      <circle
+        cx={cx} cy={cy} r={r}
+        fill="none"
+        stroke={accentColor}
+        strokeWidth={3}
+        strokeDasharray={circumference}
+        strokeDashoffset={dashoffset}
+        strokeLinecap="round"
+        transform={`rotate(-90 ${cx} ${cy})`}
+        style={{ transition: 'stroke-dashoffset 0.1s linear' }}
+      />
+      {/* Charge percent label */}
+      <text
+        x={cx} y={cy + 4}
+        textAnchor="middle"
+        fontSize={9}
+        fontFamily="monospace"
+        fill={accentColor}
+      >
+        {Math.round(filled * 100)}%
+      </text>
+    </svg>
+  );
 }
 
 function cn(...classes: (string | false | null | undefined)[]): string {
@@ -76,15 +117,9 @@ export function ObservatoryProbeHud({ probeState }: ObservatoryProbeHudProps) {
                 {Math.ceil(remainingMs / 1000)}s
               </span>
             </div>
-            {/* Charge bar — width = charge * 100% */}
-            <div className="h-1 w-full rounded-full bg-[#1a2035] overflow-hidden">
-              <div
-                className="h-full rounded-full transition-all duration-100 ease-linear"
-                style={{
-                  width: `${Math.max(0, Math.min(1, charge)) * 100}%`,
-                  backgroundColor: "var(--spirit-accent, #3dbf84)",
-                }}
-              />
+            {/* UIP-02: Circular probe charge ring — SVG arc */}
+            <div className="flex justify-center py-1">
+              <ProbeChargeRingsvg charge={charge} />
             </div>
           </>
         )}
