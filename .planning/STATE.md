@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v4.0
 milestone_name: AAA Observatory Experience
 status: completed
-stopped_at: Completed 14-02-PLAN.md (at checkpoint)
-last_updated: "2026-03-19T19:19:43.003Z"
+stopped_at: Completed 14-01-PLAN.md (at checkpoint)
+last_updated: "2026-03-19T19:21:35.365Z"
 last_activity: 2026-03-19 — completed CharacterVFX + ObservatoryVFXPools wiring (plan 12-04)
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 15
-  completed_plans: 13
+  completed_plans: 14
   percent: 100
 ---
 
@@ -86,6 +86,8 @@ Progress: [██████████] 100%
 - [Phase 13-character-polish]: Footstep events via cycle sign-flip detection using same rate formula as sampleWalkPose/sampleRunPose; fires observatory:footstrike CustomEvent with foot+position detail
 - [Phase 14-world-detail-npcs-ui]: npcCrew.tsx (not .ts): JSX content requires .tsx extension
 - [Phase 14-world-detail-npcs-ui]: NpcInstance ref typed as THREE.Object3D | null for drei <Instance> (not InstancedMesh)
+- [Phase 14-world-detail-npcs-ui]: districtGeometry.tsx (not .ts) required for JSX; ReactElement over JSX.Element for tsconfig isolatedModules
+- [Phase 14-world-detail-npcs-ui]: Environment Suspense + dark #04080f fallback — HDR file must be manually sourced from polyhaven.com at 1K
 
 ### Blockers/Concerns
 
@@ -95,6 +97,6 @@ Progress: [██████████] 100%
 
 ## Session Continuity
 
-Last session: 2026-03-19T19:19:37.368Z
-Stopped at: Completed 14-02-PLAN.md (at checkpoint)
+Last session: 2026-03-19T19:21:30.141Z
+Stopped at: Completed 14-01-PLAN.md (at checkpoint)
 Resume file: None

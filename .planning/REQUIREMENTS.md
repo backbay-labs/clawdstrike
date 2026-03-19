@@ -38,10 +38,10 @@
 
 ### World Detail
 
-- [ ] **WLD-01**: HDR skybox via drei Environment replacing flat Stars
-- [ ] **WLD-02**: Procedural district geometry — buildings/structures per station zone
-- [ ] **WLD-03**: Ground surface variety — tinted materials per district zone
-- [ ] **WLD-04**: Environmental storytelling props near stations
+- [x] **WLD-01**: HDR skybox via drei Environment replacing flat Stars
+- [x] **WLD-02**: Procedural district geometry — buildings/structures per station zone
+- [x] **WLD-03**: Ground surface variety — tinted materials per district zone
+- [x] **WLD-04**: Environmental storytelling props near stations
 
 ### NPCs
 
@@ -90,10 +90,10 @@
 | CHR-04 | Phase 13 | Complete |
 | CHR-05 | Phase 13 | Complete |
 | CHR-06 | Phase 13 | Complete |
-| WLD-01 | Phase 14 | Pending |
-| WLD-02 | Phase 14 | Pending |
-| WLD-03 | Phase 14 | Pending |
-| WLD-04 | Phase 14 | Pending |
+| WLD-01 | Phase 14 | Complete |
+| WLD-02 | Phase 14 | Complete |
+| WLD-03 | Phase 14 | Complete |
+| WLD-04 | Phase 14 | Complete |
 | NPC-01 | Phase 14 | Complete |
 | NPC-02 | Phase 14 | Complete |
 | NPC-03 | Phase 14 | Complete |
