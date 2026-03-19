@@ -285,7 +285,11 @@ Plans:
   4. The character's body tilts forward during sprint proportional to speed, returning upright at walk and idle speeds
   5. Front-flips and back-flips snap to the landed orientation with a micro-overshoot bounce on the settle phase rather than decelerating evenly to a stop
   6. Each footstrike in walk and run fires a detectable event (callback or observable) at the correct cycle moment — usable by particle and SFX systems without guessing at frame timing
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 13-01-PLAN.md — moveSet.ts: flip easing (CHR-05) + landing squash-stretch with easeOutBack overshoot (CHR-02) — TDD plan (Wave 1)
+- [ ] 13-02-PLAN.md — useObservatoryPlayerAnimation.ts: weight-based locomotion blending (CHR-01) + breathing layer (CHR-03) + sprint lean (CHR-04) + footstep events (CHR-06) (Wave 2)
 
 ### Phase 14: World Detail + NPCs + UI
 **Goal**: The observatory world is a populated environment — an HDR skybox replaces flat stars, districts around stations have procedural architecture and varied ground surfaces, environmental props provide storytelling context, instanced NPC crews patrol and react to the player, and the UI communicates state through 3D beacons, charge indicators, contextual tooltips, and mission achievement popups
@@ -313,6 +317,6 @@ Phase 10 first (bloom transforms all downstream visual work). Phases 11 and 12 c
 | 9. Nexus Force Graph | v3.0 | 2/2 | Complete | 2026-03-19 |
 | 10. Post-Processing Foundation | 3/3 | Complete    | 2026-03-19 | - |
 | 11. Camera Cinematics + Shake | 3/3 | Complete    | 2026-03-19 | - |
-| 12. Particle Effects | 4/4 | Complete   | 2026-03-19 | - |
-| 13. Character Polish | v4.0 | 0/TBD | Not started | - |
+| 12. Particle Effects | 4/4 | Complete    | 2026-03-19 | - |
+| 13. Character Polish | v4.0 | 0/2 | Not started | - |
 | 14. World Detail + NPCs + UI | v4.0 | 0/TBD | Not started | - |
