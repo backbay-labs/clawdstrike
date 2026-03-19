@@ -12,7 +12,7 @@
 - [x] **SPRT-03**: User can see animated spirit orb in ActivityBar replacing static icon when spirit is bound
 - [x] **SPRT-04**: User can see mini spirit companion R3F canvas (~150px) in right sidebar
 - [x] **SPRT-05**: User can open spirit chamber as a pane tab via command palette (spirit.bind) to bind/unbind spirits
-- [ ] **SPRT-06**: User can open spirit creation chamber with full atmosphere and manifestation canvas as a pane tab
+- [x] **SPRT-06**: User can open spirit creation chamber with full atmosphere and manifestation canvas as a pane tab
 
 ### Observatory
 
@@ -72,7 +72,7 @@
 | OBS-06 | Phase 3 | Complete |
 | FRNX-01 | Phase 3 | Complete |
 | NXS-01 | Phase 4 | Pending |
-| SPRT-06 | Phase 4 | Pending |
+| SPRT-06 | Phase 4 | Complete |
 
 **Coverage:**
 - v2.0 requirements: 14 total

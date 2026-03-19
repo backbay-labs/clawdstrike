@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 04-01-PLAN.md
-last_updated: "2026-03-19T00:40:00.000Z"
-last_activity: "2026-03-19 — Plan 04-01 complete: nexus/types.ts (Strikecell types + DEMO_STRIKECELLS + routing maps), nexus-store.ts (useNexusStore), Wave 0 test stubs (NXS-01)"
+stopped_at: Completed 04-03-PLAN.md
+last_updated: "2026-03-19T00:50:00.000Z"
+last_activity: "2026-03-19 — Plan 04-03 complete: spirit-ritual canvas/model.ts ported, SpiritManifestationCanvas + SpiritAtmosphereLayer (pure CSS/SVG), SpiritChamberTab full creation chamber (SPRT-06)"
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 14
-  completed_plans: 12
-  percent: 76
+  completed_plans: 13
+  percent: 79
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-18)
 ## Current Position
 
 Phase: 4 of 4 (Nexus + Spirit Creation)
-Plan: 1 of 3 in current phase — IN PROGRESS (04-01 complete)
+Plan: 3 of 3 in current phase — IN PROGRESS (04-03 complete)
 Status: In Progress — Phase 4 active
-Last activity: 2026-03-19 — Plan 04-01 complete: nexus/types.ts (Strikecell types + DEMO_STRIKECELLS + routing maps), nexus-store.ts (useNexusStore), Wave 0 test stubs (NXS-01)
+Last activity: 2026-03-19 — Plan 04-03 complete: spirit-ritual canvas/model.ts ported, SpiritManifestationCanvas + SpiritAtmosphereLayer (pure CSS/SVG), SpiritChamberTab full creation chamber (SPRT-06)
 
-Progress: [████████░░] 76% (Phase 4 Plan 1/3 in progress)
+Progress: [████████░░] 79% (Phase 4 Plan 3/3 in progress)
 
 ## Previous Milestone (v1.1 — IDE Completeness)
 
@@ -101,6 +101,9 @@ v2.0 decisions:
 - [Phase 04-01]: STRIKECELL_BY_STATION placed in types.ts (not NexusCanvas) — workbench has no NexusCanvas yet, routing map belongs at types layer
 - [Phase 04-01]: Wave 0 tests fail with Vite module resolution error (not syntax error) — @ts-expect-error guards NexusTab import, Vite transform-time error is expected Wave 0 failure mode
 - [Phase 04-01]: DEMO_STRIKECELLS all status=offline, nodes=[] — workbench has no live backend, demo data is placeholder only
+- [Phase 04-03]: HuntSpiritKind/RuntimeState/Meta inlined into model.ts; createHuntSpiritState + deriveHuntSpiritRuntimeState stubbed with stable motion envelope from confidenceScore
+- [Phase 04-03]: SpiritBindContext/Candidate defined as workbench-local types; no huntronomer Hunt/Artifact imports
+- [Phase 04-03]: SPIRIT_ACCENT_MAP duplicated locally in spirit-chamber-tab.tsx to avoid import coupling with spirit-store internals
 
 ### Pending Todos
 
