@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-01-PLAN.md
-last_updated: "2026-03-19T00:09:30.536Z"
+stopped_at: Completed 03-02-PLAN.md
+last_updated: "2026-03-19T00:19:55.216Z"
 last_activity: "2026-03-18 — Plan 03-04 complete: ForensicsTapePanel CSS-only horizontal timeline, Tape tab registered in bottom pane (FRNX-01)"
 progress:
   total_phases: 4
   completed_phases: 2
   total_plans: 11
-  completed_plans: 9
+  completed_plans: 10
   percent: 73
 ---
 
@@ -93,6 +93,8 @@ v2.0 decisions:
 - [Phase 03-01]: ObservatoryWorldCanvas Physics deferred to 03-03 (Physics always-on overhead pitfall)
 - [Phase 03-01]: All hero prop assets set to availability=slot — GLB assets not in workbench; fallback procedural geometry only in Phase 3
 - [Phase 03-01]: [Phase 03-01]: ObservatoryTab as Store Bridge — reads workbench stores, builds HuntObservatorySceneState, passes to ObservatoryWorldCanvas as props
+- [Phase 03-full-immersive-panes-observatory-forensics]: ObservatoryWorldCanvas probeState moved to prop: canvas is pure renderer, probe lifecycle owned by ObservatoryTab
+- [Phase 03-02]: CameraControls (drei) used in flow mode, OrbitControls in atlas mode; WorldCameraRig handles bezier camera lerp on mode transition
 
 ### Pending Todos
 
@@ -106,6 +108,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-19T00:09:30.532Z
-Stopped at: Completed 03-01-PLAN.md
+Last session: 2026-03-19T00:19:55.212Z
+Stopped at: Completed 03-02-PLAN.md
 Resume file: None

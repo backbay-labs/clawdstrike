@@ -19,8 +19,8 @@
 - [x] **OBS-01**: User can see artifact count badges on activity bar icons from observatory seam data
 - [x] **OBS-02**: User can click observatory stations to open corresponding views as pane tabs (route bridge)
 - [x] **OBS-03**: User can open observatory world as a full editor pane tab via command palette (observatory.open)
-- [ ] **OBS-04**: User can probe active station via command palette (observatory.probe) to scan for artifacts
-- [ ] **OBS-05**: User can switch observatory to flow mode for immersive exploration
+- [x] **OBS-04**: User can probe active station via command palette (observatory.probe) to scan for artifacts
+- [x] **OBS-05**: User can switch observatory to flow mode for immersive exploration
 - [ ] **OBS-06**: User can activate WASD character controller Easter-egg in observatory flow mode
 
 ### Nexus
@@ -67,8 +67,8 @@
 | SPRT-04 | Phase 2 | Complete |
 | SPRT-05 | Phase 2 | Complete |
 | OBS-03 | Phase 3 | Complete |
-| OBS-04 | Phase 3 | Pending |
-| OBS-05 | Phase 3 | Pending |
+| OBS-04 | Phase 3 | Complete |
+| OBS-05 | Phase 3 | Complete |
 | OBS-06 | Phase 3 | Pending |
 | FRNX-01 | Phase 3 | Complete |
 | NXS-01 | Phase 4 | Pending |
