@@ -163,6 +163,26 @@ export const DEMO_STRIKECELLS: Strikecell[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Demo connections — 13 edges wiring the 9 strikecell domains
+// ---------------------------------------------------------------------------
+
+export const DEMO_CONNECTIONS: StrikecellConnection[] = [
+  { id: "conn-sec-threat",     sourceId: "security-overview", targetId: "threat-radar",    kind: "data-flow",  strength: 0.9 },
+  { id: "conn-sec-events",     sourceId: "security-overview", targetId: "events",          kind: "data-flow",  strength: 0.8 },
+  { id: "conn-sec-policies",   sourceId: "security-overview", targetId: "policies",        kind: "dependency", strength: 0.7 },
+  { id: "conn-threat-attack",  sourceId: "threat-radar",      targetId: "attack-graph",    kind: "data-flow",  strength: 1.0 },
+  { id: "conn-threat-market",  sourceId: "threat-radar",      targetId: "marketplace",     kind: "related",    strength: 0.4 },
+  { id: "conn-attack-network", sourceId: "attack-graph",      targetId: "network-map",     kind: "data-flow",  strength: 0.8 },
+  { id: "conn-attack-forensic",sourceId: "attack-graph",      targetId: "forensics-river", kind: "data-flow",  strength: 0.9 },
+  { id: "conn-network-work",   sourceId: "network-map",       targetId: "workflows",       kind: "dependency", strength: 0.6 },
+  { id: "conn-work-policies",  sourceId: "workflows",         targetId: "policies",        kind: "dependency", strength: 0.7 },
+  { id: "conn-forensic-events",sourceId: "forensics-river",   targetId: "events",          kind: "data-flow",  strength: 0.8 },
+  { id: "conn-events-policies",sourceId: "events",            targetId: "policies",        kind: "related",    strength: 0.5 },
+  { id: "conn-policies-market",sourceId: "policies",          targetId: "marketplace",     kind: "related",    strength: 0.3 },
+  { id: "conn-market-work",    sourceId: "marketplace",       targetId: "workflows",       kind: "dependency", strength: 0.5 },
+];
+
+// ---------------------------------------------------------------------------
 // Routing maps
 // ---------------------------------------------------------------------------
 

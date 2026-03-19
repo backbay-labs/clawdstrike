@@ -49,6 +49,7 @@
     "lucide-react": "^0.577.0",
     "motion": "^12.33.0",
     "picomatch": "^4.0.2",
+    "r3f-forcegraph": "^1.1.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-resizable-panels": "^2.1.7",
