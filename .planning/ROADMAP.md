@@ -252,9 +252,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 11-01-PLAN.md — FovController (sprint/probe FOV) + CameraShake (probe dispatch + landing shake) + OrbitControls makeDefault (Wave 1)
-- [ ] 11-02-PLAN.md — Spawn fly-by waypoint sequence in WorldCameraRig + letterbox bars + frameloop-always + skip handler (Wave 2)
-- [ ] 11-03-PLAN.md — Mission focus pull with 1.8s dwell: missionFocusDwellMs in ObservatoryCameraRecipe + dwellRef in WorldCameraRig + mission objective activeStationId (Wave 3)
+- [x] 11-01-PLAN.md — FovController (sprint/probe FOV) + CameraShake (probe dispatch + landing shake) + OrbitControls makeDefault (Wave 1)
+- [x] 11-02-PLAN.md — Spawn fly-by waypoint sequence in WorldCameraRig + letterbox bars + frameloop-always + skip handler (Wave 2)
+- [x] 11-03-PLAN.md — Mission focus pull with 1.8s dwell: missionFocusDwellMs in ObservatoryCameraRecipe + dwellRef in WorldCameraRig + mission objective activeStationId (Wave 3)
 
 ### Phase 12: Particle Effects
 **Goal**: The observatory feels alive with physical feedback — character footfalls stir dust, probe launches expand particle shells, station props breathe with ambient motes, the spirit orb leaves a glowing trail, and avatar thrusters fire during sprinting and jumping
@@ -312,7 +312,7 @@ Phase 10 first (bloom transforms all downstream visual work). Phases 11 and 12 c
 | 8. Observatory Missions + Evidence 3D Preview | v3.0 | 3/3 | Complete | 2026-03-19 |
 | 9. Nexus Force Graph | v3.0 | 2/2 | Complete | 2026-03-19 |
 | 10. Post-Processing Foundation | 3/3 | Complete    | 2026-03-19 | - |
-| 11. Camera Cinematics + Shake | 2/3 | In Progress|  | - |
+| 11. Camera Cinematics + Shake | 3/3 | Complete | 2026-03-19 | - |
 | 12. Particle Effects | v4.0 | 0/TBD | Not started | - |
 | 13. Character Polish | v4.0 | 0/TBD | Not started | - |
 | 14. World Detail + NPCs + UI | v4.0 | 0/TBD | Not started | - |

@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v4.0
 milestone_name: AAA Observatory Experience
 status: planning
-stopped_at: Completed 11-camera-cinematics-shake-02-PLAN.md
-last_updated: "2026-03-19T18:18:07.668Z"
-last_activity: 2026-03-19 — v4.0 roadmap created, all 30 requirements mapped
+stopped_at: Completed 11-camera-cinematics-shake-03-PLAN.md
+last_updated: "2026-03-19T18:24:14Z"
+last_activity: 2026-03-19 — completed CAM-04 mission focus pull with dwellRef suppression
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 10
-  completed_plans: 5
+  completed_plans: 6
   percent: 0
 ---
 
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-03-19)
 
 ## Current Position
 
-Phase: 10 of 14 (Post-Processing Foundation)
-Plan: —
-Status: Ready to plan
-Last activity: 2026-03-19 — v4.0 roadmap created, all 30 requirements mapped
+Phase: 11 of 14 (Camera Cinematics Shake)
+Plan: 03 of 03 (complete)
+Status: Phase 11 complete — all CAM requirements addressed
+Last activity: 2026-03-19 — completed CAM-04 mission focus pull (plan 11-03)
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -69,6 +69,9 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 11-camera-cinematics-shake]: OrbitControls makeDefault added — required for CameraShake to track controls correctly via R3F state.controls
 - [Phase 11-camera-cinematics-shake]: Fly-by uses existing WorldCameraRig Bezier machinery (bezierPoint + smoothstep01) reused for waypoint sequencing — no new animation system needed
 - [Phase 11-camera-cinematics-shake]: frameloop prop threaded through ObservatoryWorldCanvas to Canvas (option a) — simpler than useThree approach from inside Canvas
+- [Phase 11-camera-cinematics-shake]: missionFocusDwellMs required (non-optional) on ObservatoryCameraRecipe; deriveCameraRecipe returns 1800ms for atlas+focusStation, 0 otherwise
+- [Phase 11-camera-cinematics-shake]: dwellRef pattern: useRef<{expiresAt:number}|null> suppresses new goal-change flights for 1.8s after flight completes; isDwelling uses slow lerp (lerpSpeed*0.4) for soft hold
+- [Phase 11-camera-cinematics-shake]: flyByActive guard on activeStationId prevents mission focus flight racing with opening cinematic fly-by
 
 ### Blockers/Concerns
 
@@ -78,6 +81,6 @@ Progress: [░░░░░░░░░░] 0%
 
 ## Session Continuity
 
-Last session: 2026-03-19T18:18:07.666Z
-Stopped at: Completed 11-camera-cinematics-shake-02-PLAN.md
+Last session: 2026-03-19T18:24:14Z
+Stopped at: Completed 11-camera-cinematics-shake-03-PLAN.md
 Resume file: None

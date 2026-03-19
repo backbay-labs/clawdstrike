@@ -25,7 +25,7 @@
 - [x] **CAM-01**: Spawn fly-by — automated camera sweep with letterbox bars on first observatory open
 - [x] **CAM-02**: Dynamic FOV — widens during sprint (42→52), tightens during probe scan (42→35)
 - [x] **CAM-03**: Screen shake on probe dispatch and character landing
-- [ ] **CAM-04**: Focus pull to mission objective station when starting a mission
+- [x] **CAM-04**: Focus pull to mission objective station when starting a mission
 
 ### Character
 
@@ -78,7 +78,7 @@
 | CAM-01 | Phase 11 | Complete |
 | CAM-02 | Phase 11 | Complete |
 | CAM-03 | Phase 11 | Complete |
-| CAM-04 | Phase 11 | Pending |
+| CAM-04 | Phase 11 | Complete |
 | PFX-01 | Phase 12 | Pending |
 | PFX-02 | Phase 12 | Pending |
 | PFX-03 | Phase 12 | Pending |
