@@ -74,12 +74,12 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. User can open the cyber nexus as a "Hunt Deck" pane tab via command palette (nexus.open), with the nexus graph rendering correctly and strikecell clicks bridging to pane-store.openApp
   2. User can open the spirit creation chamber as a pane tab with full atmosphere canvas and manifestation flow for creating new spirits
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 04-01: nexus-store.ts (NexusStateContext → Zustand migration, full dependency map audit before implementation)
-- [ ] 04-02: NexusTab route + NexusCanvas port + NexusSpiritCompanion + strikecell adapter
-- [ ] 04-03: SpiritCreationChamber pane tab + atmosphere canvas + manifestation flow
+- [x] 04-01-PLAN.md — nexus types + nexus-store (minimal Zustand, DEMO_STRIKECELLS, STRIKECELL_BY_STATION, STRIKECELL_ROUTE_MAP) + Wave 0 test scaffolds (Wave 1)
+- [ ] 04-02-PLAN.md — NexusTab store bridge (ObservatoryWorldCanvas atlas mode, strikecell routing) + /nexus route swap (Wave 2, depends on 04-01)
+- [ ] 04-03-PLAN.md — SpiritCreationChamber port (canvas/model + SpiritManifestationCanvas + SpiritAtmosphereLayer) + replace SpiritChamberTab (Wave 1, independent)
 
 ## Progress
 
@@ -91,4 +91,4 @@ Phase 1 → Phase 2 → Phase 3 → Phase 4. Strict sequential dependency — ea
 | 1. Spirit + Observatory State Foundation | 4/4 | Complete   | 2026-03-18 |
 | 2. R3F Infrastructure + Small Embeds | 3/3 | Complete   | 2026-03-18 |
 | 3. Full Immersive Panes (Observatory + Forensics) | 4/4 | Complete   | 2026-03-19 |
-| 4. Nexus + Spirit Creation | 0/3 | Not started | - |
+| 4. Nexus + Spirit Creation | 1/3 | In progress | - |

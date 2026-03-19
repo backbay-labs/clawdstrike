@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-03-PLAN.md
-last_updated: "2026-03-19T00:34:26.730Z"
-last_activity: "2026-03-18 — Plan 03-04 complete: ForensicsTapePanel CSS-only horizontal timeline, Tape tab registered in bottom pane (FRNX-01)"
+stopped_at: Completed 04-01-PLAN.md
+last_updated: "2026-03-19T00:40:00.000Z"
+last_activity: "2026-03-19 — Plan 04-01 complete: nexus/types.ts (Strikecell types + DEMO_STRIKECELLS + routing maps), nexus-store.ts (useNexusStore), Wave 0 test stubs (NXS-01)"
 progress:
   total_phases: 4
   completed_phases: 3
-  total_plans: 11
-  completed_plans: 11
-  percent: 73
+  total_plans: 14
+  completed_plans: 12
+  percent: 76
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-03-18)
 
 ## Current Position
 
-Phase: 3 of 4 (Full Immersive Panes — Observatory + Forensics)
-Plan: 4 of 5 in current phase — IN PROGRESS (03-04 complete)
-Status: In Progress — Phase 3 active
-Last activity: 2026-03-18 — Plan 03-04 complete: ForensicsTapePanel CSS-only horizontal timeline, Tape tab registered in bottom pane (FRNX-01)
+Phase: 4 of 4 (Nexus + Spirit Creation)
+Plan: 1 of 3 in current phase — IN PROGRESS (04-01 complete)
+Status: In Progress — Phase 4 active
+Last activity: 2026-03-19 — Plan 04-01 complete: nexus/types.ts (Strikecell types + DEMO_STRIKECELLS + routing maps), nexus-store.ts (useNexusStore), Wave 0 test stubs (NXS-01)
 
-Progress: [████████░░] 73% (Phase 3 Plan 4/5 in progress)
+Progress: [████████░░] 76% (Phase 4 Plan 1/3 in progress)
 
 ## Previous Milestone (v1.1 — IDE Completeness)
 
@@ -98,6 +98,9 @@ v2.0 decisions:
 - [Phase 03-03]: Inline transient notification instead of useToast to avoid ToastProvider context in tests
 - [Phase 03-03]: moveSet.ts ported alongside runtime.ts (required dependency for flip physics)
 - [Phase 03-03]: FlowModeController API uses test contract (characterControllerEnabled+onEnable) rather than plan spec (enabled+paneIsActive)
+- [Phase 04-01]: STRIKECELL_BY_STATION placed in types.ts (not NexusCanvas) — workbench has no NexusCanvas yet, routing map belongs at types layer
+- [Phase 04-01]: Wave 0 tests fail with Vite module resolution error (not syntax error) — @ts-expect-error guards NexusTab import, Vite transform-time error is expected Wave 0 failure mode
+- [Phase 04-01]: DEMO_STRIKECELLS all status=offline, nodes=[] — workbench has no live backend, demo data is placeholder only
 
 ### Pending Todos
 
@@ -111,6 +114,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-19T00:34:26.727Z
-Stopped at: Completed 03-03-PLAN.md
+Last session: 2026-03-19T00:40:00.000Z
+Stopped at: Completed 04-01-PLAN.md
 Resume file: None
