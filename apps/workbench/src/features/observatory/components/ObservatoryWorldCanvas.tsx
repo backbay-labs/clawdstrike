@@ -59,6 +59,8 @@ export interface ObservatoryWorldCanvasProps {
   cameraResetToken?: number;
   onSelectStation?: (stationId: HuntStationId) => void;
   className?: string;
+  /** Per-station affinity values in [0, 1]; absent = all zero (rings invisible). */
+  stationAffinities?: Record<HuntStationId, number>;
 }
 
 const PRIMARY_RADIUS = 13.8;
@@ -277,6 +279,31 @@ function ProbeRingEffect({ stationId, probeState }: { stationId: HuntStationId; 
   );
 }
 
+// ─── AffinityRingMesh ────────────────────────────────────────────────────────
+// Floor halo ring beneath a station. Glows in spirit accent color.
+// Opacity and outer radius scale with affinity strength.
+// Only visible when accentColor is non-null and affinity > 0.
+function AffinityRingMesh({
+  stationId,
+  affinity,
+  accentColor,
+}: {
+  stationId: HuntStationId;
+  affinity: number;
+  accentColor: string | null;
+}) {
+  const [x, , z] = stationWorldPosition(stationId);
+  if (!accentColor || affinity <= 0) return null;
+  const outerRadius = 1.98 + affinity * 0.24;
+  const opacity = 0.08 + affinity * 0.22;
+  return (
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[x, -0.3, z]}>
+      <ringGeometry args={[1.58, outerRadius, 48]} />
+      <meshBasicMaterial color={accentColor} transparent opacity={opacity} depthWrite={false} />
+    </mesh>
+  );
+}
+
 // ─── HeroPropMesh ────────────────────────────────────────────────────────────
 // Loads a GLB hero prop via useGLTF and applies a gentle bob animation.
 // Only rendered when recipe.availability === "ready". Wrapped in Suspense by caller.
@@ -485,6 +512,7 @@ function ObservatoryScene({
   paneIsActive = false,
   probeState,
   cameraResetToken,
+  stationAffinities,
   onSelectStation,
 }: {
   mode: "atlas" | "flow";
@@ -495,6 +523,7 @@ function ObservatoryScene({
   paneIsActive?: boolean;
   probeState: ObservatoryProbeState | null;
   cameraResetToken: number;
+  stationAffinities?: Record<HuntStationId, number>;
   onSelectStation?: (id: HuntStationId) => void;
 }) {
   const controlsRef = useRef<THREE.EventDispatcher | null>(null);
@@ -503,7 +532,8 @@ function ObservatoryScene({
     [mode, sceneState, activeStationId, spirit],
   );
 
-  const accentColor = spirit?.accentColor ?? "#d8c895";
+  // null when no spirit bound — rings render nothing; CoreNode gets fallback below
+  const accentColor: string | null = spirit?.accentColor ?? null;
   // Labels visible in atlas mode; hidden in flow mode for immersion
   const labelsVisible = mode === "atlas";
 
@@ -576,8 +606,8 @@ function ObservatoryScene({
       {/* Flow mode terrain floor plane (100x100 dark plane visible through floor) */}
       {mode === "flow" && <FlowModeTerrain />}
 
-      {/* Core node */}
-      <CoreNode accentColor={accentColor} />
+      {/* Core node — uses warm sand fallback when no spirit bound */}
+      <CoreNode accentColor={accentColor ?? "#d8c895"} />
 
       {/* Station spheres */}
       {HUNT_STATION_PLACEMENTS.map((placement) => {
@@ -594,6 +624,16 @@ function ObservatoryScene({
           />
         );
       })}
+
+      {/* Spirit affinity floor rings — glow in accent color proportional to affinity */}
+      {HUNT_STATION_PLACEMENTS.map((placement) => (
+        <AffinityRingMesh
+          key={`affinity-ring:${placement.id}`}
+          stationId={placement.id}
+          affinity={stationAffinities?.[placement.id] ?? 0}
+          accentColor={accentColor}
+        />
+      ))}
 
       {/* Probe ring animation (shown when probe is active) */}
       {probeState && probeState.status !== "ready" && probeState.targetStationId && (
@@ -647,6 +687,7 @@ export function ObservatoryWorldCanvas({
   frameloop = "demand",
   probeState = null,
   cameraResetToken = 0,
+  stationAffinities,
   onSelectStation,
   className,
 }: ObservatoryWorldCanvasProps) {
@@ -669,6 +710,7 @@ export function ObservatoryWorldCanvas({
           paneIsActive={paneIsActive}
           probeState={probeState}
           cameraResetToken={cameraResetToken}
+          stationAffinities={stationAffinities}
           onSelectStation={onSelectStation}
         />
       </Suspense>

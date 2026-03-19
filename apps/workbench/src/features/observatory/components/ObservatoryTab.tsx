@@ -26,6 +26,7 @@ import {
   dispatchObservatoryProbe,
 } from "../world/probeRuntime";
 import { ObservatoryProbeHud } from "./ObservatoryProbeHud";
+import { STATION_AFFINITY_MAP } from "@/features/spirit/scene-math";
 
 // Fixed station IDs that huntronomer recognizes — maps workbench stations to world positions.
 const WORKBENCH_STATION_IDS: HuntStationId[] = HUNT_STATION_PLACEMENTS.map((p) => p.id);
@@ -81,6 +82,11 @@ export function ObservatoryTab() {
   const stations = useObservatoryStore.use.stations();
   const kind = useSpiritStore.use.kind();
   const accentColor = useSpiritStore.use.accentColor();
+
+  // Derive per-station affinity map from the bound spirit kind.
+  // undefined when no spirit bound — rings render invisible.
+  const stationAffinities: Record<HuntStationId, number> | undefined =
+    kind ? STATION_AFFINITY_MAP[kind] : undefined;
 
   // Build HuntStationState[] — map workbench stations to huntronomer station IDs by index.
   // Workbench station[0] → signal, [1] → targets, [2] → run, [3] → receipts, [4] → case-notes, [5] → watch.
@@ -177,6 +183,7 @@ export function ObservatoryTab() {
           frameloop={frameloop}
           probeState={probeState}
           cameraResetToken={cameraResetToken}
+          stationAffinities={stationAffinities}
           onSelectStation={handleSelectStation}
         />
       </div>
