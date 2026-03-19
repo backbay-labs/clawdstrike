@@ -1,6 +1,5 @@
 // Ported from huntronomer apps/desktop/src/features/cyber-nexus/types.ts
 // Removed: StrikecellSourceSnapshot (glia-three + tauri imports not available in workbench)
-// Removed: NexusHudState, NexusSelectionState, NexusOperationMode, NexusEscLayer (full NexusStateContext types)
 // Added: DEMO_STRIKECELLS, STRIKECELL_BY_STATION, STRIKECELL_ROUTE_MAP
 
 import type { HuntStationId } from "@/features/observatory/world/types";
@@ -50,6 +49,30 @@ export interface Strikecell {
 
 export type NexusLayoutMode = "radial" | "typed-lanes" | "force-directed";
 export type NexusViewMode = "galaxy" | "grid";
+export type NexusOperationMode = "observe" | "trace" | "contain" | "execute";
+
+export type NexusEscLayer =
+  | "search"
+  | "context-menu"
+  | "layout-dropdown"
+  | "drawer"
+  | "carousel-focus"
+  | "expanded"
+  | "selection";
+
+export interface NexusHudState {
+  viewMode: NexusViewMode;
+  fieldVisible: boolean;
+  layoutDropdownOpen: boolean;
+  detailPanelOpen: boolean;
+}
+
+export interface NexusSelectionState {
+  activeStrikecellId: StrikecellDomainId | null;
+  selectedNodeIds: string[];
+  focusedNodeId: string | null;
+  expandedStrikecellIds: StrikecellDomainId[];
+}
 
 export interface NexusGraph {
   nodes: StrikecellNode[];
@@ -57,7 +80,7 @@ export interface NexusGraph {
 }
 
 // ---------------------------------------------------------------------------
-// Demo data — all strikecells offline with no nodes (workbench has no live backend)
+// Demo data -- all strikecells offline with no nodes (workbench has no live backend)
 // ---------------------------------------------------------------------------
 
 export const DEMO_STRIKECELLS: Strikecell[] = [
@@ -163,7 +186,7 @@ export const DEMO_STRIKECELLS: Strikecell[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// Demo connections — 13 edges wiring the 9 strikecell domains
+// Demo connections -- 13 edges wiring the 9 strikecell domains
 // ---------------------------------------------------------------------------
 
 export const DEMO_CONNECTIONS: StrikecellConnection[] = [
@@ -186,7 +209,7 @@ export const DEMO_CONNECTIONS: StrikecellConnection[] = [
 // Routing maps
 // ---------------------------------------------------------------------------
 
-/** Maps observatory station → strikecell domain (reverse lookup for onSelectStation). */
+/** Maps observatory station -> strikecell domain (reverse lookup for onSelectStation). */
 export const STRIKECELL_BY_STATION: Record<HuntStationId, StrikecellDomainId> = {
   signal: "security-overview",
   targets: "attack-graph",
@@ -196,7 +219,7 @@ export const STRIKECELL_BY_STATION: Record<HuntStationId, StrikecellDomainId> = 
   watch: "threat-radar",
 };
 
-/** Maps strikecell domain → workbench route for openApp navigation. */
+/** Maps strikecell domain -> workbench route for openApp navigation. */
 export const STRIKECELL_ROUTE_MAP: Record<StrikecellDomainId, string> = {
   "security-overview": "/home",
   "threat-radar": "/hunt",
