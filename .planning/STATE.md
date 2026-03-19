@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Spirit & Observatory Evolution
 status: executing
-stopped_at: Completed 07-spirit-evolution-persistence 07-02-PLAN.md
-last_updated: "2026-03-19T13:33:47.989Z"
+stopped_at: Completed 08-observatory-missions-evidence-preview 08-01-PLAN.md
+last_updated: "2026-03-19T13:53:29.264Z"
 last_activity: "2026-03-19 — Plan 05-03 complete: ObservatoryMinimapPanel SVG + polarToSvg + 13 tests + Observatory activity bar + CATEGORY_ORDER (OBS-10)"
 progress:
   total_phases: 5
   completed_phases: 3
-  total_plans: 7
-  completed_plans: 7
+  total_plans: 10
+  completed_plans: 9
   percent: 67
 ---
 
@@ -125,6 +125,11 @@ v2.0 decisions:
 - [Phase 07-spirit-evolution-persistence]: level stored redundantly in KindEvolution for O(1) reads by 07-02 canvas
 - [Phase 07-spirit-evolution-persistence]: OrbitShards refs declared as ref0/ref1/ref2 individually (not in loop) to satisfy React Rules of Hooks
 - [Phase 07-spirit-evolution-persistence]: Level-up burst uses burstRef+levelRef state machine in useFrame without triggering re-renders
+- [Phase 08-03]: [08-03]: ReceiptPreviewTab uses inline procedural VaultRackMesh; GLB useGLTF loading not added to avoid coupling to ObservatoryWorldCanvas
+- [Phase 08-03]: [08-03]: receipt.open command in category 'Receipt' for distinct palette grouping
+- [Phase 08-03]: [08-03]: Record<FileType,...> exhaustive maps updated with receipt entry in editor-home-tab, tauri-bridge, and e2e test
+- [Phase 08]: missionLoop.ts ported verbatim from huntronomer; import paths adjusted (../types -> ./types)
+- [Phase 08]: deriveObservatoryMissionBranch always yields operations-first in workbench until live station status flows from backend
 
 ### Pending Todos
 
@@ -138,6 +143,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-19T13:33:47.987Z
-Stopped at: Completed 07-spirit-evolution-persistence 07-02-PLAN.md
+Last session: 2026-03-19T13:53:29.261Z
+Stopped at: Completed 08-observatory-missions-evidence-preview 08-01-PLAN.md
 Resume file: None
