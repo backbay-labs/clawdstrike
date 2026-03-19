@@ -26,6 +26,7 @@ export interface ViewCommandDeps {
   showFleet: () => void;
   showCompliance: () => void;
   showHeartbeat: () => void;
+  showObservatory: () => void;
   toggleAudit: () => void;
 }
 
@@ -220,6 +221,13 @@ export function registerViewCommands(deps: ViewCommandDeps): void {
       category: "Sidebar",
       context: "global",
       execute: () => deps.showHeartbeat(),
+    },
+    {
+      id: "observatory.minimap",
+      title: "Show Observatory Minimap",
+      category: "Observatory",
+      context: "global",
+      execute: () => deps.showObservatory(),
     },
     {
       id: "view.toggleAudit",
