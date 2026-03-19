@@ -172,12 +172,12 @@ Plans:
   2. Mission HUD overlay shows the current objective title, hint text, and action label at all times while a mission is active
   3. Mission completion state persists while the observatory tab is open — completed objectives stay completed and the sequence advances correctly
   4. User can open a .receipt or .hush evidence file from the file tree and see a 3D hero prop viewer tab (evidence-vault-rack model with orbit controls, metadata panel showing verdict, policy, and signature)
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 08-01: Port missionLoop.ts from huntronomer source; add mission state to observatory-store; wire probe target to follow active mission objective
-- [ ] 08-02: ObservatoryMissionHud component (current objective display, hint, action label); mission start/reset commands
-- [ ] 08-03: Add "receipt" to FileType union; build ReceiptPreviewTab (R3F canvas + OrbitControls + metadata overlay); wire pane-store to open receipt files as ReceiptPreviewTab
+- [ ] 08-01-PLAN.md — Port missionLoop.ts from huntronomer source; extend observatory-store with mission state + actions (Wave 1)
+- [ ] 08-02-PLAN.md — ObservatoryMissionHud overlay + ObservatoryTab probe target wiring + mission start/reset commands (Wave 2)
+- [ ] 08-03-PLAN.md — Add "receipt" to FileType union; ReceiptPreviewTab R3F canvas + metadata panel; /receipt-preview route + command (Wave 1, independent)
 
 ### Phase 9: Nexus Force Graph
 **Goal**: The cyber nexus Hunt Deck stops being a static atlas and becomes a living force-directed graph — strikecell nodes cluster by physics, edges show connection strength, and operators can drag nodes to explore the topology
