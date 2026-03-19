@@ -27,7 +27,7 @@ import {
 } from "../world/probeRuntime";
 import { ObservatoryProbeHud } from "./ObservatoryProbeHud";
 import { ObservatoryMissionHud } from "./ObservatoryMissionHud";
-import { resolveObservatoryMissionProbeTargetStationId } from "../world/missionLoop";
+import { resolveObservatoryMissionProbeTargetStationId, getCurrentObservatoryMissionObjective } from "../world/missionLoop";
 import { STATION_AFFINITY_MAP } from "@/features/spirit/scene-math";
 
 // Fixed station IDs that huntronomer recognizes — maps workbench stations to world positions.
@@ -142,6 +142,11 @@ export function ObservatoryTab() {
   const kind = useSpiritStore.use.kind();
   const accentColor = useSpiritStore.use.accentColor();
 
+  // CAM-04: Derive active mission objective station for camera focus flight
+  const missionObjectiveStationId: HuntStationId | null = mission
+    ? (getCurrentObservatoryMissionObjective(mission)?.stationId ?? null)
+    : null;
+
   // Derive per-station affinity map from the bound spirit kind.
   // undefined when no spirit bound — rings render invisible.
   const stationAffinities: Record<HuntStationId, number> | undefined =
@@ -212,6 +217,8 @@ export function ObservatoryTab() {
   useEffect(() => {
     const handler = () => {
       useObservatoryStore.getState().actions.startMission("workbench", Date.now());
+      // CAM-04: force WorldCameraRig goalChanged even if desiredPosition is identical (edge case)
+      setCameraResetToken((prev) => prev + 1);
     };
     window.addEventListener("observatory:mission:start", handler);
     return () => window.removeEventListener("observatory:mission:start", handler);
@@ -264,7 +271,7 @@ export function ObservatoryTab() {
         <ObservatoryWorldCanvas
           mode={mode}
           sceneState={sceneState}
-          activeStationId={null}
+          activeStationId={flyByActive ? null : missionObjectiveStationId}
           spirit={spirit}
           cameraResetToken={cameraResetToken}
           onSelectStation={handleSelectStation}

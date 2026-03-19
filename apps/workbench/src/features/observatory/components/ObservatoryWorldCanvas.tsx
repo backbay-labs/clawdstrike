@@ -277,6 +277,8 @@ function WorldCameraRig({
   // CAM-01: fly-by refs — track which waypoint we're on and whether we already called complete
   const waypointIndexRef = useRef(0);
   const flyByCompleteCalledRef = useRef(false);
+  // CAM-04: mission focus dwell — holds camera on objective station after flight completes
+  const dwellRef = useRef<{ expiresAt: number } | null>(null);
   const desired = useMemo(
     () => ({
       position: new THREE.Vector3(...camera.desiredPosition),
@@ -436,6 +438,22 @@ function WorldCameraRig({
       ? desired.position.clone().lerp(chasePosition, followStrength)
       : desired.position.clone();
 
+    // CAM-04: suppress goal change while dwell is active (hold on objective station)
+    const isDwelling = dwellRef.current !== null && clock.elapsedTime < dwellRef.current.expiresAt;
+    if (isDwelling) {
+      // Camera is holding — do NOT launch a new flight. Soft lerp toward current target.
+      // When dwell expires, goalChanged will naturally take effect on the next frame.
+      const alpha = lerpAlpha(camera.lerpSpeed * 0.4, delta);
+      controls.object.position.lerp(followedPosition, alpha);
+      controls.target.lerp(followedTarget, alpha);
+      controls.update();
+      return;
+    }
+    // Dwell expired — clear it so next goalChanged triggers normally
+    if (dwellRef.current && clock.elapsedTime >= dwellRef.current.expiresAt) {
+      dwellRef.current = null;
+    }
+
     if (goalChanged) {
       const fromPosition = controls.object.position.clone();
       const fromTarget = controls.target.clone();
@@ -477,6 +495,10 @@ function WorldCameraRig({
         controls.target.copy(flightRef.current.toTarget);
         flightRef.current = null;
         controls.update();
+        // CAM-04: Set dwell period if camera.missionFocusDwellMs > 0
+        if (camera.missionFocusDwellMs > 0) {
+          dwellRef.current = { expiresAt: clock.elapsedTime + camera.missionFocusDwellMs / 1000 };
+        }
         return;
       }
       const eased = smoothstep01(progress);
