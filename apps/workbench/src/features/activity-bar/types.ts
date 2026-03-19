@@ -8,6 +8,7 @@ import {
   SigilFleet,
   SigilCompliance,
   SigilHunt,
+  SigilObservatory,
 } from "@/components/desktop/sidebar-icons";
 import { IconSearch } from "@tabler/icons-react";
 
@@ -26,7 +27,8 @@ export type ActivityBarItemId =
   | "search"
   | "library"
   | "fleet"
-  | "compliance";
+  | "compliance"
+  | "observatory";
 
 export interface ActivityBarItemConfig {
   id: ActivityBarItemId;
@@ -49,4 +51,5 @@ export const ACTIVITY_BAR_ITEMS: readonly ActivityBarItemConfig[] = [
   { id: "library", label: "Library", tooltip: "Library", icon: SigilLibrary },
   { id: "fleet", label: "Fleet & Topology", tooltip: "Fleet & Topology", icon: SigilFleet },
   { id: "compliance", label: "Compliance", tooltip: "Compliance", icon: SigilCompliance },
+  { id: "observatory", label: "Observatory", tooltip: "Observatory Minimap", icon: SigilObservatory },
 ];

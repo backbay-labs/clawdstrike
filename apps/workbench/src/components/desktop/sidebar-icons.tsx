@@ -190,6 +190,24 @@ export function SigilTopology(p: SigilProps) {
 }
 
 
+/** Observatory — ring with station dots (minimap motif) */
+export function SigilObservatory(p: SigilProps) {
+  return (
+    <svg {...base(p)}>
+      {/* outer ring */}
+      <circle cx="12" cy="12" r="9" fill="none" />
+      {/* center core */}
+      <circle cx="12" cy="12" r="2" />
+      {/* 5 station dots on ring */}
+      <circle cx="12" cy="3" r="1.2" />
+      <circle cx="20.5" cy="7.5" r="1.2" />
+      <circle cx="20.5" cy="16.5" r="1.2" />
+      <circle cx="3.5" cy="16.5" r="1.2" />
+      <circle cx="3.5" cy="7.5" r="1.2" />
+    </svg>
+  );
+}
+
 /** Settings — diamond core with radiating control lines */
 export function SigilSettings(p: SigilProps) {
   return (

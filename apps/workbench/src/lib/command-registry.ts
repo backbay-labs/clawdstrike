@@ -18,6 +18,7 @@ export type CommandCategory =
   | "View"
   | "Sidebar"
   | "Hunt"
+  | "Observatory"
   | "Help";
 
 export type CommandContext = "global" | "editor" | "terminal" | "pane";

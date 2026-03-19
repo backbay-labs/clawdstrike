@@ -9,6 +9,7 @@ import { LibraryPanel } from "../panels/library-panel";
 import { FleetPanel } from "../panels/fleet-panel";
 import { CompliancePanel } from "../panels/compliance-panel";
 import { SearchPanelConnected } from "@/features/search/components/search-panel";
+import { ObservatoryMinimapPanel } from "@/features/observatory/panels/observatory-minimap-panel";
 import type { ActivityBarItemId } from "../types";
 
 // ---------------------------------------------------------------------------
@@ -85,6 +86,8 @@ function renderPanel(activeItem: ActivityBarItemId) {
       return <FleetPanel />;
     case "compliance":
       return <CompliancePanel />;
+    case "observatory":
+      return <ObservatoryMinimapPanel />;
   }
 }
 
