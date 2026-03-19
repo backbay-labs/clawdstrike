@@ -3,7 +3,7 @@
 // language support, validation backend, icons, and colors.
 
 /** Discriminated union of all supported file types. */
-export type FileType = "clawdstrike_policy" | "sigma_rule" | "yara_rule" | "ocsf_event";
+export type FileType = "clawdstrike_policy" | "sigma_rule" | "yara_rule" | "ocsf_event" | "receipt";
 
 /** Descriptor for a registered file type. */
 export interface FileTypeDescriptor {
@@ -151,6 +151,16 @@ export const FILE_TYPE_REGISTRY: Record<FileType, FileTypeDescriptor> = {
     testable: false,
     convertibleTo: [],
   },
+  receipt: {
+    id: "receipt",
+    label: "Receipt / Evidence",
+    shortLabel: "Receipt",
+    extensions: [".receipt", ".hush"],
+    iconColor: "#7ee6f2",
+    defaultContent: "",
+    testable: false,
+    convertibleTo: [],
+  },
 };
 
 // ---- Detection helpers ----
@@ -183,6 +193,9 @@ export function sanitizeFilenameStem(name: string, fallback: string): string {
 export function getFileTypeByExtension(filename: string): FileType | null {
   const lower = filename.toLowerCase();
 
+  if (lower.endsWith(".receipt") || lower.endsWith(".hush")) {
+    return "receipt";
+  }
   if (lower.endsWith(".yar") || lower.endsWith(".yara")) {
     return "yara_rule";
   }
