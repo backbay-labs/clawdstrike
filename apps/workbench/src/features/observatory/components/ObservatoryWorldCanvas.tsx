@@ -1,4 +1,4 @@
-import { CameraShake, Line, OrbitControls, Stars, useGLTF, type ShakeController } from "@react-three/drei";
+import { CameraShake, Line, OrbitControls, Sparkles, Stars, useGLTF, type ShakeController } from "@react-three/drei";
 import {
   CapsuleCollider,
   CuboidCollider,
@@ -77,6 +77,7 @@ import {
   type ObservatoryProbeState,
 } from "../world/probeRuntime";
 import { applyObservatoryProbeConsequences } from "../world/probeConsequences";
+import { ProbeDischargeVFX } from "../vfx/ProbeDischargeVFX";
 
 export interface ObservatoryWorldCanvasProps {
   mode: HuntObservatorySceneState["mode"];
@@ -779,6 +780,18 @@ function ObservatoryHeroProp({
             opacity={missionTarget ? 0.3 : 0.18}
           />
         </mesh>
+      ) : null}
+      {/* PFX-03: Station ambient motes — frustum-culled via parent group bounding sphere */}
+      {!dormant ? (
+        <Sparkles
+          count={30}
+          scale={2.5}
+          size={0.6}
+          speed={0.3}
+          opacity={0.35}
+          color={prop.glowColor}
+          noise={0.8}
+        />
       ) : null}
     </group>
   );
@@ -4115,6 +4128,14 @@ function ObservatoryWorldScene({
       ),
     [world.heroProps],
   );
+
+  // PFX-02: Probe discharge position — derive from probeLockedTargetStationId's hero prop
+  const probeDischargePosition = useMemo((): [number, number, number] => {
+    if (!probeLockedTargetStationId) return [0, 0, 0];
+    const prop = heroPropByStation.get(probeLockedTargetStationId);
+    return prop?.position ?? [0, 0, 0];
+  }, [heroPropByStation, probeLockedTargetStationId]);
+
   const probeTargetStationId =
     (probeStatus === "active"
       ? probeLockedTargetStationId ?? activeHeroInteraction?.targetStationId ?? missionTargetStationId ?? interactionStationId ?? world.likelyStationId
@@ -4283,6 +4304,12 @@ function ObservatoryWorldScene({
           prop={prop}
         />
       ))}
+      {/* PFX-02: Probe energy discharge shell */}
+      <ProbeDischargeVFX
+        position={probeDischargePosition}
+        probeStatus={probeStatus}
+        color={world.core.accentColor}
+      />
       {world.districts.map((district) => (
         <DistrictHeroChoreography
           key={`arrival:${district.id}`}
