@@ -188,11 +188,11 @@ Plans:
   2. User can drag individual strikecell nodes to reposition them; the graph reheats and re-stabilizes around the dragged position
   3. Clicking a node in the force graph navigates to the same strikecell destination as clicking in atlas mode (STRIKECELL_ROUTE_MAP preserved)
   4. User can toggle between atlas layout and force-directed layout via the layout mode control in NexusTab
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 09-01: Add r3f-forcegraph (or three-forcegraph) dependency; add connections to nexus-store; create NexusForceCanvas component with OrbitControls + R3fForceGraph wired to strikecells + connections
-- [ ] 09-02: Wire layoutMode toggle in NexusTab (atlas → ObservatoryWorldCanvas, force-directed → NexusForceCanvas); wire onNodeClick to existing STRIKECELL_ROUTE_MAP
+- [ ] 09-01-PLAN.md — Install r3f-forcegraph (peer deps verified: three >=0.154, no R3F constraint); DEMO_CONNECTIONS (13 edges); nexus-store connections slice; NexusForceCanvas with OrbitControls + draggable nodes (Wave 1)
+- [ ] 09-02-PLAN.md — nexus-store layoutMode field; NexusTab toggle button (atlas/force-directed); conditional render ObservatoryWorldCanvas vs NexusForceCanvas; extended tests (Wave 2)
 
 ## Progress
 
