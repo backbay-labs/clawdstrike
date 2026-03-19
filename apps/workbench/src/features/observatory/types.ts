@@ -1,3 +1,6 @@
+import type { ObservatoryMissionLoopState } from "./world/missionLoop";
+import type { ObservatoryHeroPropAssetId } from "./world/propAssets";
+
 export type ObservatoryStationKind =
   | "hunt"           // maps to /hunt pane route
   | "observatory"    // maps to /observatory pane route (Phase 3)
@@ -22,10 +25,14 @@ export interface ObservatoryState {
   stations: ObservatoryStation[];
   seamSummary: ObservatorySeamSummary;
   connected: boolean; // true when linked to live hunt data
+  mission: ObservatoryMissionLoopState | null;
   actions: {
     setStations: (stations: ObservatoryStation[]) => void;
     updateSeamSummary: (summary: Partial<ObservatorySeamSummary>) => void;
     setConnected: (connected: boolean) => void;
     addArtifacts: (stationId: string, count: number) => void;
+    startMission: (huntId: string, nowMs?: number) => void;
+    completeObjective: (assetId: ObservatoryHeroPropAssetId, nowMs?: number) => void;
+    resetMission: () => void;
   };
 }
