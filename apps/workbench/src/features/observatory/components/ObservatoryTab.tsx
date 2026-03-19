@@ -24,6 +24,7 @@ import {
   advanceObservatoryProbeState,
   dispatchObservatoryProbe,
 } from "../world/probeRuntime";
+import { ObservatoryProbeHud } from "./ObservatoryProbeHud";
 
 // Fixed station IDs that huntronomer recognizes — maps workbench stations to world positions.
 const WORKBENCH_STATION_IDS: HuntStationId[] = HUNT_STATION_PLACEMENTS.map((p) => p.id);
@@ -171,6 +172,9 @@ export function ObservatoryTab() {
       >
         {mode === "flow" ? "FLOW" : "ATLAS"}
       </button>
+
+      {/* OBS-04: Probe HUD overlay — renders null when status=ready */}
+      <ObservatoryProbeHud probeState={probeState} />
 
       {/* Probe status indicator and mode state attrs for tests */}
       <div

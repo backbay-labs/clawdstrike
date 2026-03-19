@@ -152,3 +152,87 @@ describe("ObservatoryTab — probe state machine (OBS-04)", () => {
     expect(modeDiv?.getAttribute("data-observatory-mode")).toBe("flow");
   });
 });
+
+describe("ObservatoryProbeHud (OBS-04 HUD overlay)", () => {
+  // ObservatoryProbeHud renders null when status=ready, shows status text otherwise
+  // @ts-expect-error — component created in Task 2
+  let ObservatoryProbeHud: typeof import("@/features/observatory/components/ObservatoryProbeHud").ObservatoryProbeHud;
+
+  beforeEach(async () => {
+    const mod = await import("@/features/observatory/components/ObservatoryProbeHud");
+    // @ts-expect-error — accessing named export
+    ObservatoryProbeHud = mod.ObservatoryProbeHud;
+  });
+
+  it("renders null when probeState.status is ready", async () => {
+    const { createInitialObservatoryProbeState } = await import(
+      "@/features/observatory/world/probeRuntime"
+    );
+    const state = createInitialObservatoryProbeState();
+    const { container } = render(<ObservatoryProbeHud probeState={state} />);
+    expect(container.firstChild).toBeNull();
+  });
+
+  it("renders PROBING text when probeState.status is active", async () => {
+    const { dispatchObservatoryProbe, createInitialObservatoryProbeState } = await import(
+      "@/features/observatory/world/probeRuntime"
+    );
+    const initial = createInitialObservatoryProbeState();
+    const active = dispatchObservatoryProbe(initial, "signal", 0);
+    const { container } = render(<ObservatoryProbeHud probeState={active} />);
+    expect(container.firstChild).not.toBeNull();
+    expect(container.textContent?.toLowerCase()).toContain("probing");
+  });
+
+  it("renders charge bar when probeState.status is cooldown", async () => {
+    const {
+      dispatchObservatoryProbe,
+      advanceObservatoryProbeState,
+      createInitialObservatoryProbeState,
+      OBSERVATORY_PROBE_ACTIVE_MS,
+    } = await import("@/features/observatory/world/probeRuntime");
+    const initial = createInitialObservatoryProbeState();
+    const active = dispatchObservatoryProbe(initial, "signal", 0);
+    const cooldown = advanceObservatoryProbeState(active, OBSERVATORY_PROBE_ACTIVE_MS + 20);
+    const { container } = render(<ObservatoryProbeHud probeState={cooldown} />);
+    expect(container.firstChild).not.toBeNull();
+    // Should show some cooldown indicator
+    expect(container.textContent?.toLowerCase()).toMatch(/cooldown/);
+  });
+
+  it("exports getObservatoryProbeCharge function", async () => {
+    const { getObservatoryProbeCharge } = await import(
+      "@/features/observatory/world/probeRuntime"
+    );
+    expect(typeof getObservatoryProbeCharge).toBe("function");
+  });
+});
+
+describe("hunt-commands.ts — observatory.probe (OBS-04)", () => {
+  it("registers observatory.probe command that dispatches observatory:probe CustomEvent", async () => {
+    const { registerHuntronomerCommands } = await import("@/lib/commands/hunt-commands");
+    const { commandRegistry } = await import("@/lib/command-registry");
+
+    // Register commands
+    registerHuntronomerCommands();
+
+    // Find the observatory.probe command
+    const allCommands = commandRegistry.getAll();
+    const probeCmd = allCommands.find((cmd) => cmd.id === "observatory.probe");
+    expect(probeCmd).toBeDefined();
+    expect(probeCmd?.category).toBe("Hunt");
+    expect(probeCmd?.title).toBe("Probe Active Station");
+
+    // Executing the command should dispatch the "observatory:probe" event
+    const events: Event[] = [];
+    const handler = (e: Event) => events.push(e);
+    window.addEventListener("observatory:probe", handler);
+
+    probeCmd?.execute();
+
+    window.removeEventListener("observatory:probe", handler);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toBeInstanceOf(CustomEvent);
+    expect(events[0].type).toBe("observatory:probe");
+  });
+});

@@ -41,6 +41,14 @@ export function registerHuntronomerCommands(): void {
       category: "Hunt",
       execute: () => usePaneStore.getState().openApp("/spirit-chamber", "Spirit Chamber"),
     },
+    {
+      id: "observatory.probe",
+      title: "Probe Active Station",
+      category: "Hunt",
+      execute: () => {
+        window.dispatchEvent(new CustomEvent("observatory:probe"));
+      },
+    },
   ];
 
   commandRegistry.registerAll(commands);
