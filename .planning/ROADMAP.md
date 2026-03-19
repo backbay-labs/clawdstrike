@@ -202,7 +202,7 @@ Phase 5 → Phase 6 → Phase 7 → Phase 8 → Phase 9. Phases 5 and 6 have no 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 5. Spirit Reactivity & Editor Integration | 3/3 | Complete   | 2026-03-19 |
-| 6. Observatory GLB Props + Spirit Affinity Rings | 0/2 | Not started | - |
+| 6. Observatory GLB Props + Spirit Affinity Rings | 1/2 | In Progress|  |
 | 7. Spirit Evolution & Persistence | 0/2 | Not started | - |
 | 8. Observatory Missions + Evidence 3D Preview | 0/3 | Not started | - |
 | 9. Nexus Force Graph | 0/2 | Not started | - |
