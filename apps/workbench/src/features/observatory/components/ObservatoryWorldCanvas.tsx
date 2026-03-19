@@ -4418,6 +4418,12 @@ export function ObservatoryWorldCanvas({
     () => world.heroProps.find((entry) => entry.assetId === "operator-drone") ?? null,
     [world.heroProps],
   );
+  // PP-03: Resolve world position of active hero prop for Autofocus DOF
+  const activeHeroPropPosition = useMemo((): [number, number, number] | null => {
+    if (!activeHeroInteraction) return null;
+    const prop = world.heroProps.find((p) => p.assetId === activeHeroInteraction.assetId);
+    return prop?.position ?? null;
+  }, [activeHeroInteraction, world.heroProps]);
   useEffect(() => {
     const timer = window.setInterval(() => {
       const nowMs = performance.now();
@@ -4825,7 +4831,7 @@ export function ObservatoryWorldCanvas({
               world={world}
             />
           </Physics>
-          <ObservatoryPostFX />
+          <ObservatoryPostFX activeHeroPropPosition={activeHeroPropPosition} />
         </Suspense>
       </Canvas>
       <ObservatoryMissionOverlay
