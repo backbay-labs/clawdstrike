@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v4.0
 milestone_name: AAA Observatory Experience
-status: planning
-stopped_at: Completed 11-camera-cinematics-shake-03-PLAN.md
-last_updated: "2026-03-19T18:24:14Z"
-last_activity: 2026-03-19 — completed CAM-04 mission focus pull with dwellRef suppression
+status: completed
+stopped_at: Completed 12-particle-effects-02-PLAN.md
+last_updated: "2026-03-19T18:32:03.773Z"
+last_activity: 2026-03-19 — completed CAM-04 mission focus pull (plan 11-03)
 progress:
   total_phases: 5
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 10
-  completed_plans: 6
+  completed_plans: 7
   percent: 0
 ---
 
@@ -72,6 +72,7 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 11-camera-cinematics-shake]: missionFocusDwellMs required (non-optional) on ObservatoryCameraRecipe; deriveCameraRecipe returns 1800ms for atlas+focusStation, 0 otherwise
 - [Phase 11-camera-cinematics-shake]: dwellRef pattern: useRef<{expiresAt:number}|null> suppresses new goal-change flights for 1.8s after flight completes; isDwelling uses slow lerp (lerpSpeed*0.4) for soft hold
 - [Phase 11-camera-cinematics-shake]: flyByActive guard on activeStationId prevents mission focus flight racing with opening cinematic fly-by
+- [Phase 12-particle-effects]: Trail wraps inner mesh child — meshRef stays on mesh; local=false for world-space sampling; attenuation quadratic (t*t); interval=2 reduces segment density; test mock is React.Fragment passthrough
 
 ### Blockers/Concerns
 
@@ -81,6 +82,6 @@ Progress: [░░░░░░░░░░] 0%
 
 ## Session Continuity
 
-Last session: 2026-03-19T18:24:14Z
-Stopped at: Completed 11-camera-cinematics-shake-03-PLAN.md
+Last session: 2026-03-19T18:32:03.770Z
+Stopped at: Completed 12-particle-effects-02-PLAN.md
 Resume file: None
