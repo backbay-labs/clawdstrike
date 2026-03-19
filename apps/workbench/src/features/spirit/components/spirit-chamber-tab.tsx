@@ -1,7 +1,29 @@
 // apps/workbench/src/features/spirit/components/spirit-chamber-tab.tsx
-import { useState } from "react";
-import { useSpiritStore } from "../stores/spirit-store";
+// Plan 04-03: Full spirit creation chamber replacing Phase 2 plain form.
+// SpiritAtmosphereLayer + SpiritManifestationCanvas + kind pill selector + bind/unbind.
+import { useMemo, useState } from "react";
 import type { SpiritKind } from "../types";
+import { useSpiritStore } from "../stores/spirit-store";
+import { buildSpiritManifestationModel } from "./spirit-ritual/canvas/model";
+import type { SpiritBindCandidate, SpiritBindContext } from "./spirit-ritual/canvas/model";
+import { SpiritManifestationCanvas } from "./spirit-ritual/canvas/SpiritManifestationCanvas";
+import { SpiritAtmosphereLayer } from "./spirit-ritual/atmosphere/SpiritAtmosphereLayer";
+
+// Maps workbench SpiritKind to huntronomer HuntSpiritKind
+const SPIRIT_KIND_TO_HUNT_KIND: Record<SpiritKind, "tracker" | "lantern" | "ledger" | "forge"> = {
+  sentinel: "tracker",
+  oracle: "lantern",
+  witness: "ledger",
+  specter: "forge",
+};
+
+// Accent color map (same as spirit-store SPIRIT_ACCENT_MAP — kept local to avoid import coupling)
+const SPIRIT_ACCENT_MAP: Record<SpiritKind, string> = {
+  sentinel: "#3dbf84",
+  oracle: "#7b68ee",
+  witness: "#d4a84b",
+  specter: "#c45c5c",
+};
 
 const SPIRIT_KIND_OPTIONS: { value: SpiritKind; label: string }[] = [
   { value: "sentinel", label: "Sentinel" },
@@ -13,9 +35,45 @@ const SPIRIT_KIND_OPTIONS: { value: SpiritKind; label: string }[] = [
 export function SpiritChamberTab() {
   const kind = useSpiritStore.use.kind();
   const accentColor = useSpiritStore.use.accentColor();
-  const mood = useSpiritStore.use.mood();
 
-  const [selectedKind, setSelectedKind] = useState<SpiritKind>("sentinel");
+  // Default selected kind to bound kind if a spirit is already bound
+  const [selectedKind, setSelectedKind] = useState<SpiritKind>(kind ?? "sentinel");
+
+  const model = useMemo(() => {
+    const huntKind = SPIRIT_KIND_TO_HUNT_KIND[selectedKind];
+    const selectedAccent = SPIRIT_ACCENT_MAP[selectedKind];
+
+    const syntheticContext: SpiritBindContext = {
+      hunt: {
+        id: "workbench-spirit",
+        title: "Workbench",
+        spirit: null,
+        artifactIds: [],
+        color: accentColor ?? selectedAccent,
+      },
+      artifacts: {},
+      runs: {},
+      currentLens: null,
+      currentShell: null,
+      activeStationId: null,
+    };
+
+    const candidate: SpiritBindCandidate = {
+      kind: huntKind,
+      label: SPIRIT_KIND_OPTIONS.find((o) => o.value === selectedKind)?.label ?? selectedKind,
+      confidenceScore: 0.75,
+      rationale: "Manual selection.",
+      biasLine: "Pulls toward the active workspace.",
+      predictedFocusSurfaces: [],
+      alternates: [],
+      liveMood: "attuned",
+      bindSource: "manual",
+      thesis: null,
+      anchorArtifactIds: [],
+    };
+
+    return buildSpiritManifestationModel(syntheticContext, candidate);
+  }, [selectedKind, accentColor]);
 
   function handleBind() {
     useSpiritStore.getState().actions.bindSpirit(selectedKind);
@@ -26,71 +84,65 @@ export function SpiritChamberTab() {
   }
 
   return (
-    <div className="flex flex-1 flex-col items-center justify-center p-6">
-      <div className="w-full max-w-xs rounded-lg border border-[#2d3240] bg-[#0b0d13] p-5 flex flex-col gap-4">
-        {/* Header */}
-        <div className="flex items-center gap-2">
-          <span className="font-display font-semibold text-[14px] text-[#ece7dc]">
-            Spirit Chamber
-          </span>
-        </div>
+    <div className="relative flex-1 overflow-hidden" style={{ minHeight: 0 }}>
+      {/* Atmosphere layer — absolute inset, z-[2] */}
+      <SpiritAtmosphereLayer
+        model={model}
+        reducedMotion={false}
+        className="absolute inset-0 z-[2]"
+      />
 
-        {/* Current spirit status */}
-        <div className="flex items-center gap-2 text-[12px]">
-          {kind !== null && accentColor !== null ? (
-            <>
-              <span
-                aria-label="Spirit accent color"
+      {/* Manifestation canvas — absolute inset, z-[3], centered */}
+      <div className="absolute inset-0 z-[3] flex items-center justify-center p-6">
+        <SpiritManifestationCanvas
+          model={model}
+          className="w-full max-w-[560px]"
+          showLegend
+        />
+      </div>
+
+      {/* Controls overlay — bottom bar, z-[10] */}
+      <div className="absolute inset-x-0 bottom-8 z-[10] flex flex-col items-center gap-3">
+        {/* Kind pill row */}
+        <div className="flex gap-2">
+          {SPIRIT_KIND_OPTIONS.map((opt) => {
+            const isSelected = selectedKind === opt.value;
+            const pillAccent = SPIRIT_ACCENT_MAP[opt.value];
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                aria-pressed={isSelected}
+                onClick={() => setSelectedKind(opt.value)}
+                className="rounded-full px-4 py-1.5 text-[12px] font-medium transition-all"
                 style={{
-                  display: "inline-block",
-                  width: 10,
-                  height: 10,
-                  borderRadius: "50%",
-                  backgroundColor: accentColor,
-                  boxShadow: `0 0 6px ${accentColor}66`,
-                  flexShrink: 0,
+                  border: `1px solid ${isSelected ? `${pillAccent}60` : "rgba(171,177,191,0.18)"}`,
+                  background: isSelected
+                    ? `linear-gradient(180deg, ${pillAccent}18, rgba(8,11,18,0.82))`
+                    : "rgba(255,255,255,0.03)",
+                  color: isSelected ? "rgba(241,239,234,0.92)" : "rgba(182,183,193,0.64)",
+                  boxShadow: isSelected ? `0 0 16px ${pillAccent}22` : "none",
                 }}
-              />
-              <span className="text-[#ece7dc] capitalize">
-                {kind} bound — {mood}
-              </span>
-            </>
-          ) : (
-            <span className="text-[#6f7f9a]">No spirit bound</span>
-          )}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
         </div>
 
-        {/* Kind selector — shown only when no spirit is bound */}
-        {kind === null && (
-          <div className="flex flex-col gap-1">
-            <label
-              htmlFor="spirit-kind-select"
-              className="text-[11px] font-medium text-[#6f7f9a] uppercase tracking-wider"
-            >
-              Kind
-            </label>
-            <select
-              id="spirit-kind-select"
-              value={selectedKind}
-              onChange={(e) => setSelectedKind(e.target.value as SpiritKind)}
-              className="w-full rounded border border-[#2d3240] bg-[#131721] px-2 py-1.5 text-[13px] text-[#ece7dc] outline-none focus:border-[#d4a84b]/50"
-            >
-              {SPIRIT_KIND_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        {/* Action buttons */}
+        {/* Bind / Unbind buttons */}
         <div className="flex gap-2">
           {kind === null ? (
             <button
               type="button"
               onClick={handleBind}
-              className="flex-1 rounded border border-[#2d3240] bg-[#131721] px-3 py-1.5 text-[13px] font-medium text-[#ece7dc] transition-colors hover:border-[#d4a84b]/40 hover:text-[#d4a84b]"
+              className="rounded-full px-5 py-2 text-[13px] font-medium transition-all"
+              style={{
+                border: `1px solid ${SPIRIT_ACCENT_MAP[selectedKind]}46`,
+                background: "linear-gradient(180deg, rgba(16,20,30,0.94), rgba(8,11,19,0.98))",
+                color: "rgba(244,225,177,0.92)",
+                boxShadow: `0 10px 24px ${SPIRIT_ACCENT_MAP[selectedKind]}18`,
+              }}
             >
               Bind
             </button>
@@ -98,7 +150,12 @@ export function SpiritChamberTab() {
             <button
               type="button"
               onClick={handleUnbind}
-              className="flex-1 rounded border border-[#2d3240] bg-[#131721] px-3 py-1.5 text-[13px] font-medium text-[#6f7f9a] transition-colors hover:border-[#c45c5c]/40 hover:text-[#c45c5c]"
+              className="rounded-full px-5 py-2 text-[13px] font-medium transition-all"
+              style={{
+                border: "1px solid rgba(196,92,92,0.36)",
+                background: "linear-gradient(180deg, rgba(16,20,30,0.94), rgba(8,11,19,0.98))",
+                color: "rgba(220,180,180,0.82)",
+              }}
             >
               Unbind
             </button>
