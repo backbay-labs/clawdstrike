@@ -86,6 +86,12 @@ export interface ObservatoryWorldCanvasProps {
   cameraResetToken?: number;
   onSelectStation?: (stationId: HuntStationId) => void;
   className?: string;
+  /** CAM-01: frameloop for the R3F Canvas — "always" during fly-by, "demand" otherwise */
+  frameloop?: "demand" | "always";
+  /** CAM-01: set flyByActive=true to run the opening camera sweep */
+  flyByActive?: boolean;
+  /** CAM-01: called when the fly-by sequence finishes all waypoints */
+  onFlyByComplete?: () => void;
 }
 // PP-04: Maps ObservatorySpiritVisual.kind back to SpiritKind for LUT lookup.
 // ObservatoryTab maps: sentinel→tracker, oracle→lantern, witness→ledger, specter→forge
@@ -99,6 +105,19 @@ const OBSERVATORY_KIND_TO_SPIRIT_KIND: Record<string, SpiritKind> = {
 
 const STATION_HEIGHT = 0.72;
 const ERUPTION_DURATION_MS = 2800;
+
+// CAM-01: Fly-by waypoint sequence — 3 legs sweeping the station ring, ~4.8s total.
+// Positions arc from south-east low approach -> west elevated arc -> atlas default landing.
+// Guard: legs with travel < 0.5 units are skipped automatically.
+const FLY_BY_WAYPOINTS: ReadonlyArray<{
+  readonly position: readonly [number, number, number];
+  readonly target: readonly [number, number, number];
+  readonly durationMs: number;
+}> = [
+  { position: [28, 8, 28],    target: [0, 2, 0],    durationMs: 1600 },
+  { position: [-22, 14, 20],  target: [0, 3, 0],    durationMs: 1600 },
+  { position: [0, 20.4, 36.8], target: [0, 1.2, 0], durationMs: 1600 },
+] as const;
 const DISTRICT_ARRIVAL_DURATION_MS = 2400;
 const PLAYER_COLLIDER_HALF_HEIGHT = 0.46;
 const PLAYER_COLLIDER_RADIUS = 0.34;
@@ -227,11 +246,15 @@ function bezierPoint(
 function WorldCameraRig({
   camera,
   controlsRef,
+  flyByActive,
+  onFlyByComplete,
   playerFocusRef,
   resetToken,
 }: {
   camera: ObservatoryCameraRecipe;
   controlsRef: RefObject<THREE.EventDispatcher | null>;
+  flyByActive: boolean;
+  onFlyByComplete: () => void;
   playerFocusRef: RefObject<ObservatoryPlayerFocusState | null>;
   resetToken: number;
 }) {
@@ -251,6 +274,9 @@ function WorldCameraRig({
     viaTarget: THREE.Vector3;
     toTarget: THREE.Vector3;
   } | null>(null);
+  // CAM-01: fly-by refs — track which waypoint we're on and whether we already called complete
+  const waypointIndexRef = useRef(0);
+  const flyByCompleteCalledRef = useRef(false);
   const desired = useMemo(
     () => ({
       position: new THREE.Vector3(...camera.desiredPosition),
@@ -267,6 +293,96 @@ function WorldCameraRig({
       update?: () => void;
     } | null;
     if (!controls?.object || !controls.target || !controls.update) return;
+
+    // CAM-01: fly-by sequencing — runs before normal tracking when flyByActive=true
+    if (flyByActive && !flyByCompleteCalledRef.current) {
+      // First frame of fly-by: place camera at waypoint 0 and mark initialized
+      if (!initializedRef.current) {
+        const wp = FLY_BY_WAYPOINTS[0];
+        controls.object.position.set(wp.position[0], wp.position[1], wp.position[2]);
+        controls.target.set(wp.target[0], wp.target[1], wp.target[2]);
+        controls.update();
+        initializedRef.current = true;
+        waypointIndexRef.current = 0;
+        return;
+      }
+      // Launch flight to next waypoint if none in progress
+      if (!flightRef.current) {
+        const idx = waypointIndexRef.current;
+        if (idx >= FLY_BY_WAYPOINTS.length) {
+          // All waypoints done — hand off
+          flyByCompleteCalledRef.current = true;
+          onFlyByComplete();
+          return;
+        }
+        const wp = FLY_BY_WAYPOINTS[idx];
+        const from = controls.object.position.clone();
+        const to = new THREE.Vector3(wp.position[0], wp.position[1], wp.position[2]);
+        const toTarget = new THREE.Vector3(wp.target[0], wp.target[1], wp.target[2]);
+        const fromTarget = controls.target.clone();
+        const axis = to.clone().sub(from);
+        const travelDist = axis.length();
+        // Guard: skip near-zero travel legs
+        if (travelDist < 0.5) {
+          waypointIndexRef.current = idx + 1;
+          return;
+        }
+        const lateral = new THREE.Vector3(-axis.z, 0, axis.x)
+          .normalize()
+          .multiplyScalar(Math.min(2.4, 0.8 + travelDist * 0.04));
+        const via = from
+          .clone()
+          .lerp(to, 0.5)
+          .add(lateral)
+          .setY(Math.max(from.y, to.y) + camera.arrivalLift + 1.2);
+        const viaTarget = fromTarget
+          .clone()
+          .lerp(toTarget, 0.5)
+          .setY(Math.max(fromTarget.y, toTarget.y) + camera.arrivalLift * 0.32);
+        flightRef.current = {
+          startTime: clock.elapsedTime,
+          duration: wp.durationMs / 1000,
+          fromPosition: from,
+          viaPosition: via,
+          toPosition: to,
+          fromTarget,
+          viaTarget,
+          toTarget,
+        };
+      }
+      // Run the active fly-by flight
+      if (flightRef.current) {
+        const progress =
+          (clock.elapsedTime - flightRef.current.startTime) / flightRef.current.duration;
+        if (progress >= 1) {
+          controls.object.position.copy(flightRef.current.toPosition);
+          controls.target.copy(flightRef.current.toTarget);
+          controls.update();
+          flightRef.current = null;
+          waypointIndexRef.current += 1;
+          return;
+        }
+        const eased = smoothstep01(progress);
+        const travelPos = bezierPoint(
+          flightRef.current.fromPosition,
+          flightRef.current.viaPosition,
+          flightRef.current.toPosition,
+          eased,
+        );
+        const travelTgt = bezierPoint(
+          flightRef.current.fromTarget,
+          flightRef.current.viaTarget,
+          flightRef.current.toTarget,
+          eased,
+        );
+        controls.object.position.copy(travelPos);
+        controls.target.copy(travelTgt);
+        controls.update();
+        return;
+      }
+      return;
+    }
+
     if (!initializedRef.current) {
       controls.object.position.copy(initial);
       controls.target.copy(desired.target);
@@ -3920,6 +4036,8 @@ function ThesisCore({
 function ObservatoryWorldScene({
   world,
   cameraResetToken,
+  flyByActive,
+  onFlyByComplete,
   hoveredStationId,
   eruptionStrengthByStation,
   eruptionStrengthByRouteStation,
@@ -3938,6 +4056,8 @@ function ObservatoryWorldScene({
 }: {
   world: DerivedObservatoryWorld;
   cameraResetToken: number;
+  flyByActive: boolean;
+  onFlyByComplete: () => void;
   hoveredStationId: HuntStationId | null;
   eruptionStrengthByStation: Partial<Record<HuntStationId, number>>;
   eruptionStrengthByRouteStation: Partial<Record<HuntStationId, number>>;
@@ -4071,6 +4191,8 @@ function ObservatoryWorldScene({
       <WorldCameraRig
         camera={world.camera}
         controlsRef={controlsRef}
+        flyByActive={flyByActive}
+        onFlyByComplete={onFlyByComplete}
         playerFocusRef={playerFocusRef}
         resetToken={cameraResetToken}
       />
@@ -4411,6 +4533,9 @@ export function ObservatoryWorldCanvas({
   cameraResetToken = 0,
   onSelectStation,
   className,
+  frameloop,
+  flyByActive = false,
+  onFlyByComplete,
 }: ObservatoryWorldCanvasProps) {
   const [hoveredStationId, setHoveredStationId] = useState<HuntStationId | null>(null);
   const [eruptions, setEruptions] = useState<WorldEruption[]>([]);
@@ -4869,6 +4994,7 @@ export function ObservatoryWorldCanvas({
       <Canvas
         onPointerMissed={() => setHoveredStationId(null)}
         dpr={[1, 1.8]}
+        frameloop={frameloop ?? "demand"}
         camera={{ position: world.camera.initialPosition, fov: world.camera.fov }}
         gl={{ antialias: false, alpha: false, powerPreference: "high-performance" }}
         style={{ background: world.environment.backgroundColor }}
@@ -4879,6 +5005,8 @@ export function ObservatoryWorldCanvas({
             <ObservatoryWorldScene
               world={reactiveWorld}
               cameraResetToken={cameraResetToken}
+              flyByActive={flyByActive}
+              onFlyByComplete={onFlyByComplete ?? (() => {})}
               hoveredStationId={hoveredStationId}
               eruptionStrengthByStation={eruptionStrengthByStation}
               eruptionStrengthByRouteStation={eruptionStrengthByRouteStation}
