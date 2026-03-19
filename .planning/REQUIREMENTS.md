@@ -36,7 +36,7 @@
 ### Spirit Reactivity
 
 - [x] **SPRT-10**: Spirit mood auto-transitions based on policy lint errors + probe activity (deriveSpiritMood + SpiritMoodReactor)
-- [ ] **SPRT-11**: Spirit kind visually shifts CodeMirror editor palette without cursor loss (Compartment reconfiguration)
+- [x] **SPRT-11**: Spirit kind visually shifts CodeMirror editor palette without cursor loss (Compartment reconfiguration)
 
 ### Observatory Minimap
 

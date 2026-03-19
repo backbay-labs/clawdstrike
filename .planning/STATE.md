@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Spirit & Observatory Evolution
 status: executing
-stopped_at: Completed 05-03-PLAN.md
-last_updated: "2026-03-19T12:39:20Z"
-last_activity: "2026-03-19 — Plan 05-03 complete: ObservatoryMinimapPanel SVG component, SigilObservatory, Observatory activity bar item + sidebar case + CommandCategory (OBS-10)"
+stopped_at: Completed 05-spirit-reactivity-editor-integration 05-02-PLAN.md
+last_updated: "2026-03-19T12:42:38.119Z"
+last_activity: "2026-03-19 — Plan 05-03 complete: ObservatoryMinimapPanel SVG + polarToSvg + 13 tests + Observatory activity bar + CATEGORY_ORDER (OBS-10)"
 progress:
   total_phases: 5
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 3
-  completed_plans: 2
+  completed_plans: 3
   percent: 67
 ---
 
@@ -112,6 +112,8 @@ v2.0 decisions:
 - [Phase 05-03]: polarToSvg exported as named export from observatory-minimap-panel.tsx for pure unit testing (no component mount needed)
 - [Phase 05-03]: "Observatory" CommandCategory placed between "Hunt" and "Test" in CATEGORY_ORDER
 - [Phase 05-03]: Artifact badge: SVG text at (x+7, y-5) with fontWeight=bold — rendered only when artifactCount > 0
+- [Phase 05-spirit-reactivity-editor-integration]: Compartment reconfigure approach: avoids editor flicker, preserves cursor and scroll position on spirit change
+- [Phase 05-spirit-reactivity-editor-integration]: Token tinting: t=0.35 blend factor for prop/keyword/operator, t=0.25 for strings — subtle shift toward spirit accent without full palette replacement
 
 ### Pending Todos
 
@@ -125,6 +127,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-19T12:39:20Z
-Stopped at: Completed 05-03-PLAN.md
+Last session: 2026-03-19T12:42:38.117Z
+Stopped at: Completed 05-spirit-reactivity-editor-integration 05-02-PLAN.md
 Resume file: None
