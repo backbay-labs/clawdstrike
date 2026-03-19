@@ -1,4 +1,4 @@
-import { Billboard, CameraShake, Environment, Html, Line, OrbitControls, Sparkles, Text, useGLTF, type ShakeController } from "@react-three/drei";
+import { Billboard, CameraShake, Html, Line, OrbitControls, Sparkles, Stars, Text, useGLTF, type ShakeController } from "@react-three/drei";
 import {
   CapsuleCollider,
   CuboidCollider,
@@ -4247,19 +4247,17 @@ function ObservatoryWorldScene({
 
   return (
     <>
-      {/* WLD-01: Dark fallback color + HDR space nebula skybox (Environment takes over background) */}
-      {/* Download CC0 space HDR from polyhaven.com (night/space category) at 1K resolution,
-          save as apps/workbench/public/textures/space-nebula.hdr */}
+      {/* WLD-01: Dark space background with Stars. HDR skybox available when
+          a CC0 .hdr file is placed at public/textures/space-nebula.hdr */}
       <color attach="background" args={["#04080f"]} />
-      <Suspense fallback={null}>
-        <Environment
-          files="/textures/space-nebula.hdr"
-          background
-          backgroundBlurriness={0}
-          backgroundIntensity={0.6}
-          resolution={256}
-        />
-      </Suspense>
+      <Stars
+        radius={world.environment.starsRadius}
+        depth={world.environment.starsDepth}
+        count={world.environment.starsCount}
+        factor={world.environment.starsFactor}
+        fade
+        speed={0.4}
+      />
       <fog attach="fog" args={[world.environment.fogColor, world.environment.fogNear, world.environment.fogFar]} />
       <ambientLight intensity={world.environment.ambientIntensity} color={world.environment.ambientColor} />
       <hemisphereLight args={["#b7d4ff", "#02050b", 0.18]} />
