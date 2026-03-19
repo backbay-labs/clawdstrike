@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v4.0
 milestone_name: AAA Observatory Experience
-status: completed
-stopped_at: Completed 12-particle-effects-03-PLAN.md
-last_updated: "2026-03-19T18:35:04Z"
-last_activity: 2026-03-19 — completed PFX-02 probe discharge + PFX-03 station sparkles (plan 12-03)
+status: executing
+stopped_at: Completed 12-particle-effects-04-PLAN.md
+last_updated: "2026-03-19T18:42:01.738Z"
+last_activity: 2026-03-19 — completed CharacterVFX + ObservatoryVFXPools wiring (plan 12-04)
 progress:
   total_phases: 5
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 10
-  completed_plans: 9
-  percent: 0
+  completed_plans: 10
+  percent: 90
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-19)
 ## Current Position
 
 Phase: 12 of 14 (Particle Effects)
-Plan: 01 of 04 (complete)
-Status: Phase 12 in progress — PFX-01 and PFX-05 pools declared, emitters in Plans 02/03
-Last activity: 2026-03-19 — completed PFX pool registry (plan 12-01)
+Plan: 04 of 04 (complete)
+Status: Phase 12 complete — all VFX effects wired: landing dust, thruster exhaust, probe discharge, station sparkles, spirit trail
+Last activity: 2026-03-19 — completed CharacterVFX + ObservatoryVFXPools wiring (plan 12-04)
 
-Progress: [█████████░] 90%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -77,6 +77,9 @@ Progress: [█████████░] 90%
 - [Phase 12-particle-effects]: RenderMode enum (Billboard/StretchBillboard) must be imported from wawa-vfx; string literals rejected by TypeScript
 - [Phase 12-particle-effects]: ProbeDischargeVFX uses mesh.count=0 when inactive — zero GPU cost between probes; FIBONACCI_POINTS pre-computed at module load
 - [Phase 12-particle-effects]: Sparkles gated on !dormant in ObservatoryHeroProp; world.core.accentColor confirmed as accent color path in DerivedObservatoryWorld
+- [Phase 12-particle-effects]: wawa-vfx has no useVFX hook — VFXEmitter forwarded ref + emitAtPos() is the correct burst emission API
+- [Phase 12-particle-effects]: VFXEmitterSettings.speed is [number, number] tuple (min/max range), not [number]
+- [Phase 12-particle-effects]: CharacterVFX uses prevGroundedRef + wasThrustingRef pattern for exact one-shot landing burst and continuous thruster toggle
 
 ### Blockers/Concerns
 
@@ -86,6 +89,6 @@ Progress: [█████████░] 90%
 
 ## Session Continuity
 
-Last session: 2026-03-19T18:35:04Z
-Stopped at: Completed 12-particle-effects-03-PLAN.md
+Last session: 2026-03-19T18:42:01.736Z
+Stopped at: Completed 12-particle-effects-04-PLAN.md
 Resume file: None
