@@ -113,7 +113,7 @@ Plans:
 
 - [x] **Phase 5: Spirit Reactivity & Editor Integration** — Mood reacts to hunt signals automatically; spirit kind shifts CodeMirror theme; observatory minimap in sidebar (completed 2026-03-19)
 - [x] **Phase 6: Observatory GLB Props + Spirit Affinity Rings** — Seven station-specific GLB 3D models replace fallback spheres; floor halo rings show active spirit affinity on stations (completed 2026-03-19)
-- [ ] **Phase 7: Spirit Evolution & Persistence** — Spirits gain XP from hunts, visually gain complexity; evolution state persists across sessions via localStorage
+- [x] **Phase 7: Spirit Evolution & Persistence** — Spirits gain XP from hunts, visually gain complexity; evolution state persists across sessions via localStorage (completed 2026-03-19)
 - [ ] **Phase 8: Observatory Missions + Evidence 3D Preview** — Multi-station probe mission sequences with HUD; receipt/evidence files open as 3D hero prop viewer tabs
 - [ ] **Phase 9: Nexus Force Graph** — Nexus renders as force-directed layout with physics clustering and draggable nodes
 
@@ -203,6 +203,6 @@ Phase 5 → Phase 6 → Phase 7 → Phase 8 → Phase 9. Phases 5 and 6 have no 
 |-------|----------------|--------|-----------|
 | 5. Spirit Reactivity & Editor Integration | 3/3 | Complete   | 2026-03-19 |
 | 6. Observatory GLB Props + Spirit Affinity Rings | 2/2 | Complete   | 2026-03-19 |
-| 7. Spirit Evolution & Persistence | 1/2 | In Progress|  |
+| 7. Spirit Evolution & Persistence | 2/2 | Complete   | 2026-03-19 |
 | 8. Observatory Missions + Evidence 3D Preview | 0/3 | Not started | - |
 | 9. Nexus Force Graph | 0/2 | Not started | - |

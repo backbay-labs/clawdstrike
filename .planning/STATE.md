@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Spirit & Observatory Evolution
 status: executing
-stopped_at: Completed 07-spirit-evolution-persistence 07-01-PLAN.md
-last_updated: "2026-03-19T13:28:55.996Z"
+stopped_at: Completed 07-spirit-evolution-persistence 07-02-PLAN.md
+last_updated: "2026-03-19T13:33:47.989Z"
 last_activity: "2026-03-19 — Plan 05-03 complete: ObservatoryMinimapPanel SVG + polarToSvg + 13 tests + Observatory activity bar + CATEGORY_ORDER (OBS-10)"
 progress:
   total_phases: 5
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 7
-  completed_plans: 6
+  completed_plans: 7
   percent: 67
 ---
 
@@ -123,6 +123,8 @@ v2.0 decisions:
 - [Phase 07-spirit-evolution-persistence]: grantXp called via getState() in effects to avoid tracker re-renders
 - [Phase 07-spirit-evolution-persistence]: 10s cooldown per event type prevents XP grinding during rapid probe/lint cycles
 - [Phase 07-spirit-evolution-persistence]: level stored redundantly in KindEvolution for O(1) reads by 07-02 canvas
+- [Phase 07-spirit-evolution-persistence]: OrbitShards refs declared as ref0/ref1/ref2 individually (not in loop) to satisfy React Rules of Hooks
+- [Phase 07-spirit-evolution-persistence]: Level-up burst uses burstRef+levelRef state machine in useFrame without triggering re-renders
 
 ### Pending Todos
 
@@ -136,6 +138,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-19T13:28:55.994Z
-Stopped at: Completed 07-spirit-evolution-persistence 07-01-PLAN.md
+Last session: 2026-03-19T13:33:47.987Z
+Stopped at: Completed 07-spirit-evolution-persistence 07-02-PLAN.md
 Resume file: None
