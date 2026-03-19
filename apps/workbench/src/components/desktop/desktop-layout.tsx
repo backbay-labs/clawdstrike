@@ -20,6 +20,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/componen
 import { InitCommands } from "@/lib/commands/init-commands";
 import { SpiritFieldInjector } from "@/features/spirit/components/spirit-field-injector";
 import { SpiritMoodReactor } from "@/features/spirit/components/spirit-mood-reactor";
+import { SpiritExperienceTracker } from "@/features/spirit/components/spirit-experience-tracker";
 import { useMultiPolicy } from "@/features/policy/stores/multi-policy-store";
 import { useAutoSave } from "@/lib/workbench/use-auto-save";
 import { normalizeWorkbenchRoute } from "./workbench-routes";
@@ -80,6 +81,8 @@ export function DesktopLayout() {
       <SpiritFieldInjector />
       {/* Spirit mood reactor — derives mood from workbench signals, 500ms debounced */}
       <SpiritMoodReactor />
+      {/* Spirit experience tracker — grants XP on probe completion and lint pass events */}
+      <SpiritExperienceTracker />
       {/* Command registry initialization + global keyboard shortcuts */}
       <InitCommands />
       <ShortcutProvider />
