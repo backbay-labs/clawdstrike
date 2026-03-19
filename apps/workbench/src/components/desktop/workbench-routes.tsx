@@ -155,6 +155,12 @@ const NexusTab = lazy(() =>
   })),
 );
 
+const ReceiptPreviewTab = lazy(() =>
+  import("@/features/evidence/components/ReceiptPreviewTab").then((m) => ({
+    default: m.ReceiptPreviewTab,
+  })),
+);
+
 function PlaceholderPane({ label }: { label: string }) {
   return (
     <div className="flex flex-1 items-center justify-center text-[#6f7f9a] text-sm font-mono">
@@ -234,6 +240,7 @@ export function getWorkbenchRouteLabel(route: string): string {
   if (url.pathname === "/observatory") return "Observatory";
   if (url.pathname === "/spirit-chamber") return "Spirit Chamber";
   if (url.pathname === "/nexus") return "Nexus";
+  if (url.pathname === "/receipt-preview") return "Receipt Preview";
   return "Workbench";
 }
 
@@ -311,5 +318,6 @@ export const WORKBENCH_ROUTE_OBJECTS: RouteObject[] = [
   { path: "observatory", element: <Suspense fallback={<div className="flex-1" />}><ObservatoryTab /></Suspense> },
   { path: "spirit-chamber", element: <Suspense fallback={<div className="flex-1" />}><SpiritChamberTab /></Suspense> },
   { path: "nexus", element: <Suspense fallback={<div className="flex-1" />}><NexusTab /></Suspense> },
+  { path: "receipt-preview", element: <Suspense fallback={<div className="flex-1" />}><ReceiptPreviewTab /></Suspense> },
   { path: "*", element: <Navigate to="/home" replace /> },
 ];

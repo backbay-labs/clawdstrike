@@ -49,6 +49,12 @@ export function registerHuntronomerCommands(): void {
         window.dispatchEvent(new CustomEvent("observatory:probe"));
       },
     },
+    {
+      id: "receipt.open",
+      title: "Open Receipt Preview",
+      category: "Receipt",
+      execute: () => usePaneStore.getState().openApp("/receipt-preview", "Receipt Preview"),
+    },
   ];
 
   commandRegistry.registerAll(commands);

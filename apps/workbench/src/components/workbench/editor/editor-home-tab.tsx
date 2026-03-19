@@ -85,6 +85,7 @@ const FORMAT_ICONS: Record<FileType, typeof IconShieldLock> = {
   sigma_rule: IconRadar2,
   yara_rule: IconBug,
   ocsf_event: IconSchema,
+  receipt: IconFileText,
 };
 
 // ---------------------------------------------------------------------------
