@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Spirit & Observatory Evolution
 status: executing
-stopped_at: Completed 09-nexus-force-graph 09-01-PLAN.md
-last_updated: "2026-03-19T14:21:53.444Z"
+stopped_at: Completed 09-nexus-force-graph 09-02-PLAN.md
+last_updated: "2026-03-19T14:29:12.114Z"
 last_activity: "2026-03-19 — Plan 05-03 complete: ObservatoryMinimapPanel SVG + polarToSvg + 13 tests + Observatory activity bar + CATEGORY_ORDER (OBS-10)"
 progress:
   total_phases: 5
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 12
-  completed_plans: 11
+  completed_plans: 12
   percent: 67
 ---
 
@@ -134,6 +134,8 @@ v2.0 decisions:
 - [Phase 09-01]: r3f-forcegraph@1.1.1 peer deps: { react: '*', three: '>=0.154' } — no R3F constraint, compatible with three ^0.170.0
 - [Phase 09-01]: r3f-forcegraph@1.1.1 has no onNodeDrag API — drag-pin deferred; OrbitControls handle camera manipulation
 - [Phase 09-01]: ForceGraph ref uses any-typed MutableRefObject + eslint-disable to bypass FCwithRef generic inference complexity
+- [Phase 09-nexus-force-graph]: layoutMode defaults to 'radial' — NexusLayoutMode union is radial|typed-lanes|force-directed; NexusTab renders ObservatoryWorldCanvas for non-force-directed values
+- [Phase 09-nexus-force-graph]: Toggle calls useNexusStore.getState().actions.setLayoutMode() inside useCallback — same Zustand getState() pattern as existing usePaneStore.getState().openApp()
 
 ### Pending Todos
 
@@ -147,6 +149,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-19T14:21:53.442Z
-Stopped at: Completed 09-nexus-force-graph 09-01-PLAN.md
+Last session: 2026-03-19T14:29:01.133Z
+Stopped at: Completed 09-nexus-force-graph 09-02-PLAN.md
 Resume file: None
