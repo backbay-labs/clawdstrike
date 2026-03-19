@@ -64,6 +64,8 @@ export interface ObservatoryCameraRecipe {
   arrivalDurationMs: number;
   arrivalLift: number;
   settleRadius: number;
+  /** CAM-04: How long (ms) to hold on a mission objective station after flight completes. 0 = no dwell. */
+  missionFocusDwellMs: number;
 }
 
 export interface ObservatoryGrowthAnchorRecipe {
@@ -1423,6 +1425,7 @@ function deriveCameraRecipe(
       arrivalDurationMs: mode === "flow" ? 1100 : 1300,
       arrivalLift: mode === "flow" ? 3.4 : 4.8,
       settleRadius: mode === "flow" ? 0.7 : 1.1,
+      missionFocusDwellMs: 0,
     };
   }
 
@@ -1455,6 +1458,9 @@ function deriveCameraRecipe(
     arrivalDurationMs: mode === "flow" ? 980 : 1220,
     arrivalLift: mode === "flow" ? 3.1 : 4.3,
     settleRadius: profile.settleRadius,
+    // CAM-04: dwell for 1800ms when focused on a specific station in atlas mode.
+    // In flow mode, the camera already follows the player — dwell is not meaningful.
+    missionFocusDwellMs: mode === "atlas" ? 1800 : 0,
   };
 }
 
