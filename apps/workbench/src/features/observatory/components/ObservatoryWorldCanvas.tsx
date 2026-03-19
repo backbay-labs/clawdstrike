@@ -14,7 +14,6 @@ import {
   useCallback,
   useMemo,
   useRef,
-  useState,
 } from "react";
 import * as THREE from "three";
 import {
@@ -39,6 +38,7 @@ export interface ObservatoryWorldCanvasProps {
   spirit?: ObservatorySpiritVisual;
   characterControllerEnabled?: boolean;
   frameloop?: "demand" | "always";
+  probeState?: ObservatoryProbeState | null;
   cameraResetToken?: number;
   onSelectStation?: (stationId: HuntStationId) => void;
   className?: string;
@@ -526,13 +526,11 @@ export function ObservatoryWorldCanvas({
   spirit,
   characterControllerEnabled = false,
   frameloop = "demand",
+  probeState = null,
   cameraResetToken = 0,
   onSelectStation,
   className,
 }: ObservatoryWorldCanvasProps) {
-  // Probe state lives here for now — purely visual/transient, no Zustand store
-  const [probeState] = useState<ObservatoryProbeState | null>(null);
-
   return (
     <Canvas
       frameloop={frameloop}

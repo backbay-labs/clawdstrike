@@ -4,14 +4,26 @@
 //
 // This component intentionally props the canvas with a pre-built sceneState —
 // it is the ONLY place that reads workbench stores and converts to huntronomer types.
+//
+// Plan 03-02 additions:
+// - probeState: ObservatoryProbeState in local useState
+// - frameloop: "demand" | "always" — switches to "always" during active probe, back to "demand" otherwise
+// - window event "observatory:probe" → dispatchProbe callback
+// - mode toggle button (ATLAS/FLOW) in top-right corner of tab
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import type { HuntObservatorySceneState, HuntStationId, HuntStationState } from "../world/types";
 import { HUNT_STATION_LABELS, HUNT_STATION_PLACEMENTS } from "../world/stations";
 import { useObservatoryStore } from "../stores/observatory-store";
 import { useSpiritStore } from "@/features/spirit/stores/spirit-store";
 import { ObservatoryWorldCanvas } from "./ObservatoryWorldCanvas";
 import type { SpiritKind } from "@/features/spirit/types";
+import type { ObservatoryProbeState } from "../world/probeRuntime";
+import {
+  createInitialObservatoryProbeState,
+  advanceObservatoryProbeState,
+  dispatchObservatoryProbe,
+} from "../world/probeRuntime";
 
 // Fixed station IDs that huntronomer recognizes — maps workbench stations to world positions.
 const WORKBENCH_STATION_IDS: HuntStationId[] = HUNT_STATION_PLACEMENTS.map((p) => p.id);
@@ -24,10 +36,22 @@ const SPIRIT_KIND_MAP: Record<SpiritKind, "tracker" | "lantern" | "ledger" | "fo
   specter: "forge",
 };
 
+function cn(...classes: (string | false | null | undefined)[]): string {
+  return classes.filter(Boolean).join(" ");
+}
+
 export function ObservatoryTab() {
   const [mode, setMode] = useState<"atlas" | "flow">("atlas");
   const [characterControllerEnabled, setCharacterControllerEnabled] = useState(false);
   const [cameraResetToken, setCameraResetToken] = useState(0);
+
+  // OBS-04: Probe state machine (local — purely visual/transient, not in Zustand store)
+  const [probeState, setProbeState] = useState<ObservatoryProbeState>(
+    () => createInitialObservatoryProbeState(),
+  );
+
+  // OBS-04: Frameloop switching — "always" during active probe, "demand" otherwise
+  const [frameloop, setFrameloop] = useState<"demand" | "always">("demand");
 
   const stations = useObservatoryStore.use.stations();
   const kind = useSpiritStore.use.kind();
@@ -67,6 +91,34 @@ export function ObservatoryTab() {
       ? { kind: SPIRIT_KIND_MAP[kind], accentColor }
       : null;
 
+  // OBS-04: Dispatch probe — advances state machine and switches frameloop to "always"
+  const dispatchProbe = useCallback(() => {
+    const now = performance.now();
+    setProbeState((prev) => {
+      const resolved = advanceObservatoryProbeState(prev, now);
+      if (resolved.status !== "ready") return prev;
+      // Default to first WORKBENCH_STATION_ID ("signal") when no active station selected
+      const targetId: HuntStationId = WORKBENCH_STATION_IDS[0] ?? "signal";
+      const next = dispatchObservatoryProbe(resolved, targetId, now);
+      setFrameloop("always");
+      return next;
+    });
+  }, []);
+
+  // OBS-04: Listen for "observatory:probe" window CustomEvent from command palette
+  useEffect(() => {
+    const handler = () => dispatchProbe();
+    window.addEventListener("observatory:probe", handler);
+    return () => window.removeEventListener("observatory:probe", handler);
+  }, [dispatchProbe]);
+
+  // OBS-04: Revert frameloop to "demand" when probe exits active state
+  useEffect(() => {
+    if (probeState.status !== "active") {
+      setFrameloop("demand");
+    }
+  }, [probeState.status]);
+
   const handleSelectStation = useCallback(
     (stationId: HuntStationId) => {
       // Station selection — resets camera to focus on selected station.
@@ -81,9 +133,8 @@ export function ObservatoryTab() {
   const handleDoubleClick = useCallback(() => {
     if (mode === "flow") {
       setCharacterControllerEnabled((prev) => {
-        // Easter-egg toast (console log for now; toast integration in 03-02)
+        // Easter-egg toast (console log for now; toast integration deferred)
         if (!prev) {
-          // WASD controls activated
           console.debug("[Observatory] WASD character controller activated");
         }
         return !prev;
@@ -100,19 +151,34 @@ export function ObservatoryTab() {
           activeStationId={null}
           spirit={spirit}
           characterControllerEnabled={characterControllerEnabled}
-          frameloop="demand"
+          frameloop={frameloop}
+          probeState={probeState}
           cameraResetToken={cameraResetToken}
           onSelectStation={handleSelectStation}
         />
       </div>
-      {/* Mode toggle (exposed for Plan 03-02 flow mode toggle button) */}
+
+      {/* OBS-05: Mode toggle button (ATLAS/FLOW) — absolute top-right, z-10 */}
+      <button
+        type="button"
+        className={cn(
+          "absolute top-2 right-2 z-10 rounded-md px-2 py-1 text-[10px] font-mono transition-colors",
+          mode === "flow"
+            ? "bg-[#131721] text-[#3dbf84] border border-[#3dbf84]/40"
+            : "bg-[#0a0d14]/80 text-[#6f7f9a] border border-[#202531]",
+        )}
+        onClick={() => setMode(mode === "atlas" ? "flow" : "atlas")}
+      >
+        {mode === "flow" ? "FLOW" : "ATLAS"}
+      </button>
+
+      {/* Probe status indicator and mode state attrs for tests */}
       <div
-        className="absolute bottom-4 right-4 z-10"
+        className="sr-only"
         data-observatory-mode={mode}
         data-observatory-character-controller={characterControllerEnabled ? "on" : "off"}
-      >
-        {/* Placeholder for flow mode toggle button — added in Plan 03-02 */}
-      </div>
+        data-observatory-probe-status={probeState.status}
+      />
     </div>
   );
 }
