@@ -4,7 +4,8 @@
 
 - ✅ **v1.0 IDE Pivot** — Phases 1-4 (shipped 2026-03-18/19)
 - ✅ **v2.0 Huntronomer Integration** — Phases 1-4 (shipped 2026-03-19)
-- 🚧 **v3.0 Spirit & Observatory Evolution** — Phases 5-9 (in progress)
+- ✅ **v3.0 Spirit & Observatory Evolution** — Phases 5-9 (shipped 2026-03-19)
+- 🚧 **v4.0 AAA Observatory Experience** — Phases 10-14 (in progress)
 
 ---
 
@@ -105,7 +106,8 @@ Plans:
 
 ---
 
-## v3.0 Spirit & Observatory Evolution
+<details>
+<summary>✅ v3.0 Spirit & Observatory Evolution (Phases 5-9) — SHIPPED 2026-03-19</summary>
 
 **Milestone Goal:** Evolve the 3D integration from "ported and working" to "alive and rich" — spirits react to hunt activity, shape the code editor experience, gain XP and evolve visually; the observatory comes alive with GLB hero props, affinity rings, probe missions, and a minimap; evidence files open as 3D previews; the nexus renders as a physics-based force graph.
 
@@ -131,7 +133,7 @@ Plans:
 
 Plans:
 - [x] 05-01-PLAN.md — deriveSpiritMood pure fn + SpiritMoodReactor (auto mood from lint/probe signals)
-- [ ] 05-02-PLAN.md — YamlEditor Compartment spirit theme (themeCompartment + highlightCompartment, no flicker)
+- [x] 05-02-PLAN.md — YamlEditor Compartment spirit theme (themeCompartment + highlightCompartment, no flicker)
 - [x] 05-03-PLAN.md — ObservatoryMinimapPanel SVG + Observatory activity bar item + CommandCategory
 
 ### Phase 6: Observatory GLB Props + Spirit Affinity Rings
@@ -145,8 +147,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 06-01-PLAN.md — Copy 7 GLBs to public/observatory-props/, flip propAssets.ts availability, HeroPropMesh with useGLTF + bob animation
-- [ ] 06-02-PLAN.md — blendHex into spirit/scene-math.ts; AffinityRingMesh + stationAffinities in ObservatoryWorldCanvas; ObservatoryTab wiring
+- [x] 06-01-PLAN.md — Copy 7 GLBs to public/observatory-props/, flip propAssets.ts availability, HeroPropMesh with useGLTF + bob animation
+- [x] 06-02-PLAN.md — blendHex into spirit/scene-math.ts; AffinityRingMesh + stationAffinities in ObservatoryWorldCanvas; ObservatoryTab wiring
 
 ### Phase 7: Spirit Evolution & Persistence
 **Goal**: Spirits grow with the operator — XP accumulates from hunt activity, visual complexity increases at each level (shadow ring, orbit torus, pulse ring, orbit shards), and progress survives across workbench sessions
@@ -160,8 +162,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 07-01-PLAN.md — spirit-evolution-store.ts (Zustand + localStorage persist, grantXp per SpiritKind) + SpiritExperienceTracker (probe/lint XP wiring) + desktop-layout mount
-- [ ] 07-02-PLAN.md — SpiritCompanionCanvas level-gated geometry layers (shadow ring, orbit torus, pulse ring, orbit shards) + level-up burst animation
+- [x] 07-01-PLAN.md — spirit-evolution-store.ts (Zustand + localStorage persist, grantXp per SpiritKind) + SpiritExperienceTracker (probe/lint XP wiring) + desktop-layout mount
+- [x] 07-02-PLAN.md — SpiritCompanionCanvas level-gated geometry layers (shadow ring, orbit torus, pulse ring, orbit shards) + level-up burst animation
 
 ### Phase 8: Observatory Missions + Evidence 3D Preview
 **Goal**: The observatory has purpose — sequential multi-station probe missions guide operators through the world with a HUD showing objectives; receipt and evidence files open as atmospheric 3D prop viewers instead of plain text
@@ -175,9 +177,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 08-01-PLAN.md — Port missionLoop.ts from huntronomer source; extend observatory-store with mission state + actions (Wave 1)
-- [ ] 08-02-PLAN.md — ObservatoryMissionHud overlay + ObservatoryTab probe target wiring + mission start/reset commands (Wave 2)
-- [ ] 08-03-PLAN.md — Add "receipt" to FileType union; ReceiptPreviewTab R3F canvas + metadata panel; /receipt-preview route + command (Wave 1, independent)
+- [x] 08-01-PLAN.md — Port missionLoop.ts from huntronomer source; extend observatory-store with mission state + actions (Wave 1)
+- [x] 08-02-PLAN.md — ObservatoryMissionHud overlay + ObservatoryTab probe target wiring + mission start/reset commands (Wave 2)
+- [x] 08-03-PLAN.md — Add "receipt" to FileType union; ReceiptPreviewTab R3F canvas + metadata panel; /receipt-preview route + command (Wave 1, independent)
 
 ### Phase 9: Nexus Force Graph
 **Goal**: The cyber nexus Hunt Deck stops being a static atlas and becomes a living force-directed graph — strikecell nodes cluster by physics, edges show connection strength, and operators can drag nodes to explore the topology
@@ -191,18 +193,115 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 09-01-PLAN.md — Install r3f-forcegraph (peer deps verified: three >=0.154, no R3F constraint); DEMO_CONNECTIONS (13 edges); nexus-store connections slice; NexusForceCanvas with OrbitControls + draggable nodes (Wave 1)
-- [ ] 09-02-PLAN.md — nexus-store layoutMode field; NexusTab toggle button (atlas/force-directed); conditional render ObservatoryWorldCanvas vs NexusForceCanvas; extended tests (Wave 2)
+- [x] 09-01-PLAN.md — Install r3f-forcegraph (peer deps verified: three >=0.154, no R3F constraint); DEMO_CONNECTIONS (13 edges); nexus-store connections slice; NexusForceCanvas with OrbitControls + draggable nodes (Wave 1)
+- [x] 09-02-PLAN.md — nexus-store layoutMode field; NexusTab toggle button (atlas/force-directed); conditional render ObservatoryWorldCanvas vs NexusForceCanvas; extended tests (Wave 2)
+
+## Progress
+
+| Phase | Plans Complete | Status | Completed |
+|-------|----------------|--------|-----------|
+| 5. Spirit Reactivity & Editor Integration | 3/3 | Complete | 2026-03-19 |
+| 6. Observatory GLB Props + Spirit Affinity Rings | 2/2 | Complete | 2026-03-19 |
+| 7. Spirit Evolution & Persistence | 2/2 | Complete | 2026-03-19 |
+| 8. Observatory Missions + Evidence 3D Preview | 3/3 | Complete | 2026-03-19 |
+| 9. Nexus Force Graph | 2/2 | Complete | 2026-03-19 |
+
+</details>
+
+---
+
+## v4.0 AAA Observatory Experience
+
+**Milestone Goal:** Transform the observatory from functional demo to AAA-quality immersive experience — post-processing pipeline, cinematic camera system, particle effects, polished character animation, world detail with NPCs, and production UI. Bloom transforms all subsequent visual work; phases 11 and 12 can run in parallel after Phase 10 lands.
+
+## Phases
+
+- [ ] **Phase 10: Post-Processing Foundation** — EffectComposer with bloom, vignette, SMAA, tone mapping, conditional DOF on hero props, per-spirit LUT color grading
+- [ ] **Phase 11: Camera Cinematics + Shake** — Spawn fly-by with letterbox bars, dynamic FOV during sprint and probe scan, screen shake on probe dispatch and landing, focus pull to mission objectives
+- [ ] **Phase 12: Particle Effects** — Landing dust, probe energy discharge shell, station ambient motes, spirit companion trail, thruster exhaust on avatar backpack
+- [ ] **Phase 13: Character Polish** — Weight-based locomotion blending, landing squash-stretch with overshoot, idle breathing layer, sprint lean, flip easing, footstep event detection
+- [ ] **Phase 14: World Detail + NPCs + UI** — HDR skybox, procedural district geometry, ground surface variety, environmental props, instanced NPC crews with patrol + reactions, 3D waypoint beacons, probe charge ring, tooltip system, achievement popups
+
+## Phase Details
+
+### Phase 10: Post-Processing Foundation
+**Goal**: The observatory scene is visually transformed by a production post-processing pipeline — emissive surfaces bloom, edges vignette, anti-aliasing is SMAA-quality, tone mapping ensures correct HDR response, and each spirit kind applies its own LUT color grade to the final frame
+**Depends on**: Phase 9 (observatory world stable, GLB props loaded, spirit-store has active spirit kind)
+**Requirements**: PP-01, PP-02, PP-03, PP-04
+**Success Criteria** (what must be TRUE):
+  1. Spirit shell, station halos, and probe beam materials glow with visible bloom when emissiveIntensity > 1, with no bloom on non-emissive geometry
+  2. Vignette, SMAA, and ACES filmic tone mapping are always active — the scene has darker edges, clean anti-aliasing, and correct HDR response at rest
+  3. Interacting with a hero prop (entering the active state) pulls focus toward the prop's world position with a visible bokeh effect on background geometry; DOF deactivates when no prop is active
+  4. Switching the bound spirit kind changes the visible color grade of the entire scene within one frame — warm amber for Architect, cold blue for Sentinel, high-contrast cyan-purple for Phantom, desaturated green for Wraith
+**Plans**: 3 plans
+
+Plans:
+- [ ] 10-01-PLAN.md — Package install + ObservatoryPostFX component (EffectComposer + Bloom + Vignette + ToneMapping + SMAA) + Canvas antialias:false (Wave 1)
+- [ ] 10-02-PLAN.md — Emissive material upgrades (toneMapped=false + emissiveIntensity boosts) + Autofocus DOF wiring via activeHeroInteraction (Wave 2)
+- [ ] 10-03-PLAN.md — buildSpiritLut utility (programmatic Data3DTexture per spirit kind) + LUT component in EffectComposer + spirit kind wiring (Wave 3)
+
+### Phase 11: Camera Cinematics + Shake
+**Goal**: The camera system is cinematic — the observatory opens with an automated flyover that establishes the world before handing control to the user, sprinting widens the FOV and probe scanning narrows it, kinetic events create screen shake, and starting a mission snaps camera attention to the objective station
+**Depends on**: Phase 10 (post-processing pipeline in place; bloom and DOF transform the visual impact of camera moves)
+**Requirements**: CAM-01, CAM-02, CAM-03, CAM-04
+**Success Criteria** (what must be TRUE):
+  1. Opening the observatory tab for the first time in a session triggers a 4–5 second automated camera sweep across the station ring with CSS letterbox bars framing the sequence; bars dissolve and user control resumes when the fly-by completes
+  2. Sprinting in flow mode visibly widens the camera FOV (42 → 52) with a smooth transition; activating a probe scan visibly narrows the FOV (42 → 35); FOV returns to 42 at rest
+  3. Dispatching a probe causes a perceptible camera shake (fast decay); the character landing from a jump causes a heavier, slower shake
+  4. Starting a mission objective causes the camera to fly to and briefly hold on the target station before resuming normal tracking behavior
+**Plans**: TBD
+
+### Phase 12: Particle Effects
+**Goal**: The observatory feels alive with physical feedback — character footfalls stir dust, probe launches expand particle shells, station props breathe with ambient motes, the spirit orb leaves a glowing trail, and avatar thrusters fire during sprinting and jumping
+**Depends on**: Phase 10 (post-processing pipeline; bloom on emissive particle materials elevates particle visual quality); install wawa-vfx
+**Requirements**: PFX-01, PFX-02, PFX-03, PFX-04, PFX-05
+**Success Criteria** (what must be TRUE):
+  1. Character landing from a jump emits a burst of ground-level dust particles at the contact point; the burst is proportional — harder landings produce denser clouds
+  2. Probe dispatch expands a particle shell outward from the probe dispatch point and fades within 1.2 seconds; exactly one shell per dispatch event
+  3. Each station hero prop has continuously floating ambient motes visible at close range; motes are frustum-culled and distance-gated so they impose no cost on distant stations
+  4. The spirit companion orb leaves an accent-colored particle trail as it moves; trail fades along its length
+  5. Avatar backpack thrusters emit stretched-billboard exhaust particles during sprint and jump; exhaust is absent during idle and walk states
+**Plans**: TBD
+
+### Phase 13: Character Polish
+**Goal**: The character controller feels weighted and alive — locomotion blends smoothly across speed tiers, landings compress and spring back, the character breathes at idle, leans forward at speed, flips with elastic snap, and footsteps can drive particle and SFX events
+**Depends on**: Phase 12 (footstep events from CHR-06 drive PFX-01 landing dust and PFX-05 thruster; particle pools must exist before footstep callback wiring)
+**Requirements**: CHR-01, CHR-02, CHR-03, CHR-04, CHR-05, CHR-06
+**Success Criteria** (what must be TRUE):
+  1. Transitioning from idle to walk to run is visually smooth — no discrete clip snap; blend weights shift continuously with velocity so intermediate speeds show intermediate postures
+  2. Landing from a jump visibly compresses the character (Y squash) and springs back past neutral (overshoot) before settling — the effect reads as weight, not a snap to standing
+  3. The character's torso oscillates subtly at idle with a breathing cadence visible in the shoulder line; breathing scales to zero when moving
+  4. The character's body tilts forward during sprint proportional to speed, returning upright at walk and idle speeds
+  5. Front-flips and back-flips snap to the landed orientation with a micro-overshoot bounce on the settle phase rather than decelerating evenly to a stop
+  6. Each footstrike in walk and run fires a detectable event (callback or observable) at the correct cycle moment — usable by particle and SFX systems without guessing at frame timing
+**Plans**: TBD
+
+### Phase 14: World Detail + NPCs + UI
+**Goal**: The observatory world is a populated environment — an HDR skybox replaces flat stars, districts around stations have procedural architecture and varied ground surfaces, environmental props provide storytelling context, instanced NPC crews patrol and react to the player, and the UI communicates state through 3D beacons, charge indicators, contextual tooltips, and mission achievement popups
+**Depends on**: Phase 10 (HDR skybox and environment lighting require the post-processing pipeline to display correctly; bloom on emissive building accents needs Phase 10); Phase 12 and 13 can be parallel with Phase 14
+**Requirements**: WLD-01, WLD-02, WLD-03, WLD-04, NPC-01, NPC-02, NPC-03, UIP-01, UIP-02, UIP-03, UIP-04
+**Success Criteria** (what must be TRUE):
+  1. The observatory background is a space nebula HDR skybox — flat procedural Stars are replaced; the skybox is visible in both atlas and flow modes with consistent ambient lighting
+  2. Each station zone has 4-8 procedurally generated buildings and structures seeded to that station, creating distinct districts; ground surfaces use per-zone emissive tints
+  3. Environmental prop clusters appear near each station (monitors, crates, cable runs) providing storytelling context without blocking navigation
+  4. 24 NPC crew members (4 per station) are visible as instanced mesh figures; they follow 4-waypoint patrol loops within their station zone and turn to face and wave when the player approaches within 5 units
+  5. 3D waypoint beacons (Billboard + Text) mark active mission objective stations; the circular probe charge ring replaces the text HUD readout; interactable props show tooltip overlays on hover; mission completion triggers an achievement popup in the IDE shell layer
+**Plans**: TBD
 
 ## Progress
 
 **Execution Order:**
-Phase 5 → Phase 6 → Phase 7 → Phase 8 → Phase 9. Phases 5 and 6 have no mutual dependency and can be interleaved; Phase 7 depends on Phase 5 signals; Phase 8 depends on Phase 6 props; Phase 9 is fully independent.
+Phase 10 first (bloom transforms all downstream visual work). Phases 11 and 12 can run in parallel after Phase 10. Phase 13 depends on Phase 12 (footstep events drive particle callbacks). Phase 14 depends on Phase 10 for environment lighting; it can run parallel to Phases 12 and 13.
 
-| Phase | Plans Complete | Status | Completed |
-|-------|----------------|--------|-----------|
-| 5. Spirit Reactivity & Editor Integration | 3/3 | Complete   | 2026-03-19 |
-| 6. Observatory GLB Props + Spirit Affinity Rings | 2/2 | Complete   | 2026-03-19 |
-| 7. Spirit Evolution & Persistence | 2/2 | Complete   | 2026-03-19 |
-| 8. Observatory Missions + Evidence 3D Preview | 3/3 | Complete   | 2026-03-19 |
-| 9. Nexus Force Graph | 2/2 | Complete   | 2026-03-19 |
+| Phase | Milestone | Plans Complete | Status | Completed |
+|-------|-----------|----------------|--------|-----------|
+| 5. Spirit Reactivity & Editor Integration | v3.0 | 3/3 | Complete | 2026-03-19 |
+| 6. Observatory GLB Props + Spirit Affinity Rings | v3.0 | 2/2 | Complete | 2026-03-19 |
+| 7. Spirit Evolution & Persistence | v3.0 | 2/2 | Complete | 2026-03-19 |
+| 8. Observatory Missions + Evidence 3D Preview | v3.0 | 3/3 | Complete | 2026-03-19 |
+| 9. Nexus Force Graph | v3.0 | 2/2 | Complete | 2026-03-19 |
+| 10. Post-Processing Foundation | v4.0 | 0/3 | Not started | - |
+| 11. Camera Cinematics + Shake | v4.0 | 0/TBD | Not started | - |
+| 12. Particle Effects | v4.0 | 0/TBD | Not started | - |
+| 13. Character Polish | v4.0 | 0/TBD | Not started | - |
+| 14. World Detail + NPCs + UI | v4.0 | 0/TBD | Not started | - |
