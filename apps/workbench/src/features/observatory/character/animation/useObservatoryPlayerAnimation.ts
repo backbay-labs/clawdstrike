@@ -15,6 +15,8 @@ import {
   resolveObservatoryActionClipName,
   resolveObservatoryPlayerAction,
   sampleObservatoryPlayerPose,
+  WALK_SPEED_THRESHOLD,
+  RUN_SPEED_THRESHOLD,
   type ObservatoryPlayerActionResolution,
   type ObservatoryPlayerControllerStateLike,
   type ObservatoryPlayerVisualAction,
@@ -113,6 +115,15 @@ export function useObservatoryPlayerAnimation({
       nextEntries.set(visualAction, { action, clipName, oneShot });
     }
 
+    // Start locomotion clips playing at weight 0 — weight-based blending requires all to be active
+    for (const locomotionAction of ["idle", "walk", "run"] as const) {
+      const entry = nextEntries.get(locomotionAction);
+      if (entry) {
+        entry.action.setEffectiveWeight(0);
+        entry.action.play();
+      }
+    }
+
     clipEntriesRef.current = nextEntries;
     mixerRef.current = mixer;
 
@@ -145,14 +156,48 @@ export function useObservatoryPlayerAnimation({
     currentActionRef.current = resolved.action;
     lastGroundedRef.current = controllerState.grounded;
 
-    const clipEntry = selectClipEntry(clipEntriesRef.current, resolved.action);
+    const isLocomotion =
+      resolved.action === "idle" ||
+      resolved.action === "walk" ||
+      resolved.action === "run";
 
-    if (clipEntry) {
-      playClipEntry(clipEntriesRef.current, clipEntry, activeClipNameRef.current);
-      activeClipNameRef.current = clipEntry.clipName;
-    } else if (activeClipNameRef.current) {
-      fadeOutClipByName(clipEntriesRef.current, activeClipNameRef.current);
-      activeClipNameRef.current = null;
+    let suppressSpin: boolean;
+
+    if (isLocomotion) {
+      // Weight-based blending — no hard switch
+      updateLocomotionWeights(clipEntriesRef.current, resolved.horizontalSpeed);
+      suppressSpin = true;
+
+      // Clear any active one-shot clip that may still be fading out
+      if (activeClipNameRef.current) {
+        const activeEntry = [...clipEntriesRef.current.values()].find(
+          (e) => e.clipName === activeClipNameRef.current,
+        );
+        if (activeEntry?.oneShot) {
+          fadeOutClipByName(clipEntriesRef.current, activeClipNameRef.current);
+          activeClipNameRef.current = null;
+        }
+      }
+    } else {
+      // One-shot actions (jump, land, front-flip, back-flip): hard switch as before
+      // Reset locomotion weights to 0 while one-shot plays
+      clipEntriesRef.current.get("idle")?.action.setEffectiveWeight(0);
+      clipEntriesRef.current.get("walk")?.action.setEffectiveWeight(0);
+      clipEntriesRef.current.get("run")?.action.setEffectiveWeight(0);
+
+      const clipEntry = selectClipEntry(clipEntriesRef.current, resolved.action);
+      if (clipEntry) {
+        playClipEntry(clipEntriesRef.current, clipEntry, activeClipNameRef.current);
+        activeClipNameRef.current = clipEntry.clipName;
+      } else if (activeClipNameRef.current) {
+        fadeOutClipByName(clipEntriesRef.current, activeClipNameRef.current);
+        activeClipNameRef.current = null;
+      }
+      suppressSpin = Boolean(
+        activeClipNameRef.current &&
+          activeClipNameRef.current ===
+            clipEntriesRef.current.get(resolved.action)?.clipName,
+      );
     }
 
     mixerRef.current?.update(delta);
@@ -162,16 +207,16 @@ export function useObservatoryPlayerAnimation({
       elapsedSeconds: actionElapsedRef.current,
       horizontalSpeed: resolved.horizontalSpeed,
     });
-    const hasSpecificClip =
-      clipEntry?.clipName === clipEntriesRef.current.get(resolved.action)?.clipName;
 
-    applyRootPose(animatedRootRef.current, pose, Boolean(hasSpecificClip));
+    applyRootPose(animatedRootRef.current, pose, suppressSpin);
     applyFallbackPose(fallbackRigRefs, pose);
 
     snapshotRef.current = {
       ...resolved,
       actionElapsedSeconds: actionElapsedRef.current,
-      assetClipName: clipEntry?.clipName ?? null,
+      assetClipName: isLocomotion
+        ? (clipEntriesRef.current.get(resolved.action)?.clipName ?? null)
+        : (activeClipNameRef.current ?? null),
     };
   });
 
@@ -229,6 +274,32 @@ function fadeOutClipByName(
       break;
     }
   }
+}
+
+function updateLocomotionWeights(
+  entries: Map<ObservatoryPlayerVisualAction, ObservatoryClipEntry>,
+  horizontalSpeed: number,
+): void {
+  const WALK_MIN = WALK_SPEED_THRESHOLD; // 0.3
+  const RUN_MIN = RUN_SPEED_THRESHOLD;   // 2.2
+
+  let idleW = 0, walkW = 0, runW = 0;
+
+  if (horizontalSpeed < WALK_MIN) {
+    idleW = 1;
+  } else if (horizontalSpeed < RUN_MIN) {
+    const t = (horizontalSpeed - WALK_MIN) / (RUN_MIN - WALK_MIN);
+    idleW = 1 - t;
+    walkW = t;
+  } else {
+    const t = Math.min((horizontalSpeed - RUN_MIN) / 2.0, 1);
+    walkW = 1 - t;
+    runW = t;
+  }
+
+  entries.get("idle")?.action.setEffectiveWeight(idleW);
+  entries.get("walk")?.action.setEffectiveWeight(walkW);
+  entries.get("run")?.action.setEffectiveWeight(runW);
 }
 
 function applyRootPose(

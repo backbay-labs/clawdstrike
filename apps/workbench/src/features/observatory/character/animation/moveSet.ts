@@ -174,9 +174,9 @@ export const OBSERVATORY_PLAYER_CLIP_CANDIDATES = Object.fromEntries(
   Object.entries(OBSERVATORY_PLAYER_MOVE_SPECS).map(([key, spec]) => [key, spec.clipCandidates]),
 ) as unknown as Record<ObservatoryPlayerVisualAction, readonly string[]>;
 
-const WALK_SPEED_THRESHOLD = 0.3;
-const RUN_SPEED_THRESHOLD = 2.2;
-const LAND_HOLD_SECONDS = OBSERVATORY_PLAYER_ACTION_DURATIONS.land;
+export const WALK_SPEED_THRESHOLD = 0.3;
+export const RUN_SPEED_THRESHOLD = 2.2;
+export const LAND_HOLD_SECONDS = OBSERVATORY_PLAYER_ACTION_DURATIONS.land;
 
 export function getObservatoryPlayerMoveSpec(
   action: ObservatoryPlayerVisualAction,
