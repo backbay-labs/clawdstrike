@@ -78,6 +78,8 @@ import {
 } from "../world/probeRuntime";
 import { applyObservatoryProbeConsequences } from "../world/probeConsequences";
 import { ProbeDischargeVFX } from "../vfx/ProbeDischargeVFX";
+import { CharacterVFX } from "../vfx/CharacterVFX";
+import { ObservatoryVFXPools } from "../vfx/ObservatoryVFXPools";
 
 export interface ObservatoryWorldCanvasProps {
   mode: HuntObservatorySceneState["mode"];
@@ -2089,6 +2091,14 @@ function ObservatoryPlayerRig({
         scale={1.48}
         trimColor="#e9d48c"
         visorColor="#c8fbff"
+      />
+      {/* PFX-01 + PFX-05: Character-driven particle effects */}
+      <CharacterVFX
+        position={runtime.state.position}
+        grounded={runtime.state.grounded}
+        sprinting={runtime.state.sprinting}
+        activeAction={runtime.state.activeAction}
+        facingRadians={runtime.state.facingRadians}
       />
     </>
   );
@@ -5085,6 +5095,8 @@ export function ObservatoryWorldCanvas({
             activeHeroPropPosition={activeHeroPropPosition}
             spiritLut={spiritLut}
           />
+          {/* PFX-01 + PFX-05: wawa-vfx particle pools — must be inside Canvas */}
+          <ObservatoryVFXPools />
         </Suspense>
       </Canvas>
       <ObservatoryMissionOverlay
