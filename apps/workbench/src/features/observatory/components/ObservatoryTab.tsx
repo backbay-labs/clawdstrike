@@ -26,6 +26,8 @@ import {
   dispatchObservatoryProbe,
 } from "../world/probeRuntime";
 import { ObservatoryProbeHud } from "./ObservatoryProbeHud";
+import { ObservatoryMissionHud } from "./ObservatoryMissionHud";
+import { resolveObservatoryMissionProbeTargetStationId } from "../world/missionLoop";
 import { STATION_AFFINITY_MAP } from "@/features/spirit/scene-math";
 
 // Fixed station IDs that huntronomer recognizes — maps workbench stations to world positions.
@@ -80,6 +82,7 @@ export function ObservatoryTab() {
   const [frameloop, setFrameloop] = useState<"demand" | "always">("demand");
 
   const stations = useObservatoryStore.use.stations();
+  const mission = useObservatoryStore.use.mission();
   const kind = useSpiritStore.use.kind();
   const accentColor = useSpiritStore.use.accentColor();
 
@@ -123,18 +126,22 @@ export function ObservatoryTab() {
       : null;
 
   // OBS-04: Dispatch probe — advances state machine and switches frameloop to "always"
+  // OBS-12: probe target follows active mission objective station via resolveObservatoryMissionProbeTargetStationId
   const dispatchProbe = useCallback(() => {
     const now = performance.now();
     setProbeState((prev) => {
       const resolved = advanceObservatoryProbeState(prev, now);
       if (resolved.status !== "ready") return prev;
-      // Default to first WORKBENCH_STATION_ID ("signal") when no active station selected
-      const targetId: HuntStationId = WORKBENCH_STATION_IDS[0] ?? "signal";
+      // Mission-aware target: follows current mission objective, falls back to first station
+      const targetId: HuntStationId =
+        resolveObservatoryMissionProbeTargetStationId(mission, {}) ??
+        WORKBENCH_STATION_IDS[0] ??
+        "signal";
       const next = dispatchObservatoryProbe(resolved, targetId, now);
       setFrameloop("always");
       return next;
     });
-  }, []);
+  }, [mission]);
 
   // OBS-04: Listen for "observatory:probe" window CustomEvent from command palette
   useEffect(() => {
@@ -142,6 +149,24 @@ export function ObservatoryTab() {
     window.addEventListener("observatory:probe", handler);
     return () => window.removeEventListener("observatory:probe", handler);
   }, [dispatchProbe]);
+
+  // OBS-12: Listen for "observatory:mission:start" to start a mission
+  useEffect(() => {
+    const handler = () => {
+      useObservatoryStore.getState().actions.startMission("workbench", Date.now());
+    };
+    window.addEventListener("observatory:mission:start", handler);
+    return () => window.removeEventListener("observatory:mission:start", handler);
+  }, []);
+
+  // OBS-12: Listen for "observatory:mission:reset" to reset the mission
+  useEffect(() => {
+    const handler = () => {
+      useObservatoryStore.getState().actions.resetMission();
+    };
+    window.addEventListener("observatory:mission:reset", handler);
+    return () => window.removeEventListener("observatory:mission:reset", handler);
+  }, []);
 
   // OBS-04: Revert frameloop to "demand" when probe exits active state
   useEffect(() => {
@@ -204,6 +229,9 @@ export function ObservatoryTab() {
 
       {/* OBS-04: Probe HUD overlay — renders null when status=ready */}
       <ObservatoryProbeHud probeState={probeState} />
+
+      {/* OBS-11: Mission HUD overlay — renders null when no mission active */}
+      <ObservatoryMissionHud mission={mission} />
 
       {/* OBS-06: Easter-egg activation toast — inline notification, no ToastProvider required */}
       {easterEggMsg && (

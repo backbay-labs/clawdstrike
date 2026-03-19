@@ -19,6 +19,9 @@ vi.mock("@react-three/drei", () => ({
   OrbitControls: vi.fn(() => null),
   CameraControls: vi.fn(() => null),
   Line: vi.fn(() => null),
+  useGLTF: Object.assign(vi.fn(() => ({ scene: { clone: () => null } })), {
+    preload: vi.fn(),
+  }),
 }));
 
 // Mock observatory store
@@ -26,7 +29,14 @@ vi.mock("@/features/observatory/stores/observatory-store", () => ({
   useObservatoryStore: {
     use: {
       stations: vi.fn(() => []),
+      mission: vi.fn(() => null),
     },
+    getState: vi.fn(() => ({
+      actions: {
+        startMission: vi.fn(),
+        resetMission: vi.fn(),
+      },
+    })),
   },
 }));
 

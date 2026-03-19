@@ -55,6 +55,23 @@ export function registerHuntronomerCommands(): void {
       category: "Receipt",
       execute: () => usePaneStore.getState().openApp("/receipt-preview", "Receipt Preview"),
     },
+    {
+      id: "observatory.mission.start",
+      title: "Start Observatory Mission",
+      category: "Observatory",
+      execute: () => {
+        window.dispatchEvent(new CustomEvent("observatory:mission:start"));
+        usePaneStore.getState().openApp("/observatory", "Observatory");
+      },
+    },
+    {
+      id: "observatory.mission.reset",
+      title: "Reset Observatory Mission",
+      category: "Observatory",
+      execute: () => {
+        window.dispatchEvent(new CustomEvent("observatory:mission:reset"));
+      },
+    },
   ];
 
   commandRegistry.registerAll(commands);
