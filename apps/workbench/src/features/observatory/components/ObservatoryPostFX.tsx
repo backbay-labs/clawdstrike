@@ -5,6 +5,7 @@ import {
   Bloom,
   Autofocus,
   Vignette,
+  LUT,
   ToneMapping,
   SMAA,
 } from "@react-three/postprocessing";
@@ -19,21 +20,22 @@ export interface ObservatoryPostFXProps {
    */
   activeHeroPropPosition?: [number, number, number] | null;
   /**
-   * THREE.Texture LUT for per-spirit color grading.
-   * Plan 03 will implement this prop — placeholder for forward compat.
+   * THREE.Data3DTexture LUT for per-spirit color grading.
+   * Built by buildSpiritLut(kind) in buildSpiritLut.ts.
+   * When null/undefined, no LUT is applied (identity response).
    */
-  spiritLut?: THREE.Texture | null;
+  spiritLut?: THREE.Data3DTexture | null;
 }
 
 /**
  * ObservatoryPostFX — EffectComposer for the observatory Canvas.
  *
  * Effect order (mandatory):
- *   Bloom → [Autofocus DOF when hero active] → Vignette → [LUT - Plan 03] → ToneMapping → SMAA
+ *   Bloom → [Autofocus DOF] → [LUT color grade] → Vignette → ToneMapping → SMAA
  */
 export function ObservatoryPostFX({
   activeHeroPropPosition,
-  spiritLut: _spiritLut,
+  spiritLut,
 }: ObservatoryPostFXProps) {
   // EffectComposer.children is typed as JSX.Element | JSX.Element[] — it does not accept null.
   // Build the effect list imperatively so TypeScript sees a JSX.Element[].
@@ -65,7 +67,14 @@ export function ObservatoryPostFX({
     );
   }
 
-  // PP-04: LUT color grading — inserted by Plan 03
+  // PP-04: LUT color grading — per-spirit kind, swapped at runtime.
+  // Positioned before Vignette so the vignette darkening happens after grading.
+  // tetrahedralInterpolation gives higher quality at negligible cost.
+  if (spiritLut) {
+    effects.push(
+      <LUT key="lut" lut={spiritLut} tetrahedralInterpolation />,
+    );
+  }
 
   effects.push(
     // PP-02: Vignette — subtle edge darkening, always on

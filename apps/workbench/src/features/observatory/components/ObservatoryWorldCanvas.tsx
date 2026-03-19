@@ -9,6 +9,8 @@ import {
 } from "@react-three/rapier";
 import { Canvas, type ThreeEvent, useFrame } from "@react-three/fiber";
 import { ObservatoryPostFX } from "./ObservatoryPostFX";
+import { buildSpiritLut } from "../utils/buildSpiritLut";
+import type { SpiritKind } from "@/features/spirit/types";
 import { Suspense, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import {
@@ -85,6 +87,16 @@ export interface ObservatoryWorldCanvasProps {
   onSelectStation?: (stationId: HuntStationId) => void;
   className?: string;
 }
+// PP-04: Maps ObservatorySpiritVisual.kind back to SpiritKind for LUT lookup.
+// ObservatoryTab maps: sentinel→tracker, oracle→lantern, witness→ledger, specter→forge
+// "loom" is a valid ObservatorySpiritVisual.kind but not in SpiritKind — returns undefined.
+const OBSERVATORY_KIND_TO_SPIRIT_KIND: Record<string, SpiritKind> = {
+  tracker: "sentinel",
+  lantern: "oracle",
+  ledger: "witness",
+  forge: "specter",
+};
+
 const STATION_HEIGHT = 0.72;
 const ERUPTION_DURATION_MS = 2800;
 const DISTRICT_ARRIVAL_DURATION_MS = 2400;
@@ -4424,6 +4436,16 @@ export function ObservatoryWorldCanvas({
     const prop = world.heroProps.find((p) => p.assetId === activeHeroInteraction.assetId);
     return prop?.position ?? null;
   }, [activeHeroInteraction, world.heroProps]);
+  // PP-04: Build LUT texture for current spirit kind.
+  // spirit.kind is the observatory visual kind (tracker/lantern/ledger/forge/loom).
+  // Reverse-map to SpiritKind, then build the 3D LUT texture.
+  // Returns null when no spirit is bound or kind is unmapped (identity pass-through).
+  const spiritLut = useMemo(() => {
+    if (!spirit?.kind) return null;
+    const spiritKind = OBSERVATORY_KIND_TO_SPIRIT_KIND[spirit.kind];
+    if (!spiritKind) return null;
+    return buildSpiritLut(spiritKind);
+  }, [spirit?.kind]);
   useEffect(() => {
     const timer = window.setInterval(() => {
       const nowMs = performance.now();
@@ -4831,7 +4853,10 @@ export function ObservatoryWorldCanvas({
               world={world}
             />
           </Physics>
-          <ObservatoryPostFX activeHeroPropPosition={activeHeroPropPosition} />
+          <ObservatoryPostFX
+            activeHeroPropPosition={activeHeroPropPosition}
+            spiritLut={spiritLut}
+          />
         </Suspense>
       </Canvas>
       <ObservatoryMissionOverlay
