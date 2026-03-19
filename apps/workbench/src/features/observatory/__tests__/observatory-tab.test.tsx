@@ -232,6 +232,47 @@ describe("ObservatoryProbeHud (OBS-04 HUD overlay)", () => {
   });
 });
 
+describe("ObservatoryTab — fly-by cinematics (CAM-01)", () => {
+  beforeEach(() => {
+    mockUseStations.mockReturnValue([]);
+    mockUseKind.mockReturnValue(null);
+    mockUseAccentColor.mockReturnValue(null);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("shows letterbox bars (h-12) on initial render (CAM-01)", () => {
+    const { container } = render(<ObservatoryTab />);
+    // At least one element should have the h-12 class (letterbox bars are active on mount)
+    const bars = container.querySelectorAll(".h-12");
+    expect(bars.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("letterbox bars hide (h-0) after Escape key press skips fly-by (CAM-01)", () => {
+    const { container } = render(<ObservatoryTab />);
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    });
+    // bars should have h-0 now (fly-by ended)
+    const bars = container.querySelectorAll(".h-0");
+    expect(bars.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("registers keydown listener for Escape skip on mount (CAM-01)", () => {
+    const addEventSpy = vi.spyOn(window, "addEventListener");
+    render(<ObservatoryTab />);
+    const keydownRegistered = addEventSpy.mock.calls.some((call) => call[0] === "keydown");
+    expect(keydownRegistered).toBe(true);
+  });
+
+  it("renders without crash with flyByActive=true on mount (CAM-01)", () => {
+    const { container } = render(<ObservatoryTab />);
+    expect(container.firstChild).not.toBeNull();
+  });
+});
+
 describe("hunt-commands.ts — observatory.probe (OBS-04)", () => {
   it("registers observatory.probe command that dispatches observatory:probe CustomEvent", async () => {
     const { registerHuntronomerCommands } = await import("@/lib/commands/hunt-commands");

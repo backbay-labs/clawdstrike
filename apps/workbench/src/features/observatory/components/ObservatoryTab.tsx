@@ -101,6 +101,42 @@ export function ObservatoryTab() {
   // OBS-04: Frameloop switching — "always" during active probe, "demand" otherwise
   const [frameloop, setFrameloop] = useState<"demand" | "always">("demand");
 
+  // CAM-01: Fly-by state — true until the opening sweep finishes for the first time this session
+  const [flyByActive, setFlyByActive] = useState(true);
+  // flyByDoneRef stays true once the fly-by completes; prevents replay on re-mount
+  const flyByDoneRef = useRef(false);
+
+  // CAM-01: Called when WorldCameraRig finishes all waypoints or user skips
+  const handleFlyByComplete = useCallback(() => {
+    flyByDoneRef.current = true;
+    setFlyByActive(false);
+    // Revert frameloop to demand — fly-by was holding it at "always"
+    setFrameloop("demand");
+  }, []);
+
+  // CAM-01: Skip fly-by on click or Escape
+  const handleSkipFlyBy = useCallback(() => {
+    if (!flyByActive) return;
+    handleFlyByComplete();
+  }, [flyByActive, handleFlyByComplete]);
+
+  // CAM-01: Force frameloop=always while fly-by is active
+  useEffect(() => {
+    if (flyByActive && !flyByDoneRef.current) {
+      setFrameloop("always");
+    }
+  }, [flyByActive]);
+
+  // CAM-01: Escape key skips fly-by
+  useEffect(() => {
+    if (!flyByActive) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") handleSkipFlyBy();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [flyByActive, handleSkipFlyBy]);
+
   const stations = useObservatoryStore.use.stations();
   const mission = useObservatoryStore.use.mission();
   const kind = useSpiritStore.use.kind();
@@ -218,7 +254,11 @@ export function ObservatoryTab() {
   }, [mode, showEasterEggNotification]);
 
   return (
-    <div className="relative h-full flex-1 overflow-hidden" onDoubleClick={handleDoubleClick}>
+    <div
+      className="relative h-full flex-1 overflow-hidden"
+      onDoubleClick={handleDoubleClick}
+      onClick={flyByActive ? handleSkipFlyBy : undefined}
+    >
       <div className="absolute inset-0">
         <CanvasErrorBoundary>
         <ObservatoryWorldCanvas
@@ -229,8 +269,33 @@ export function ObservatoryTab() {
           cameraResetToken={cameraResetToken}
           onSelectStation={handleSelectStation}
           className="absolute inset-0"
+          flyByActive={flyByActive}
+          frameloop={frameloop}
+          onFlyByComplete={handleFlyByComplete}
         />
         </CanvasErrorBoundary>
+      </div>
+
+      {/* CAM-01: Letterbox top bar — h-12 during fly-by, h-0 after */}
+      <div
+        className={cn(
+          "absolute top-0 left-0 right-0 z-20 pointer-events-none bg-black transition-all duration-500",
+          flyByActive ? "h-12" : "h-0",
+        )}
+      />
+
+      {/* CAM-01: Letterbox bottom bar — h-12 during fly-by, h-0 after; shows skip hint */}
+      <div
+        className={cn(
+          "absolute bottom-0 left-0 right-0 z-20 pointer-events-none transition-all duration-500 flex items-center justify-center bg-black",
+          flyByActive ? "h-12" : "h-0 overflow-hidden",
+        )}
+      >
+        {flyByActive && (
+          <span className="text-[10px] font-mono text-white/40 tracking-widest select-none">
+            CLAWDSTRIKE WORKBENCH — SECURITY OBSERVATORY &nbsp;&middot;&nbsp; ESC to skip
+          </span>
+        )}
       </div>
 
       {/* OBS-05: Mode toggle button (ATLAS/FLOW) — absolute top-right, z-10 */}
@@ -247,11 +312,11 @@ export function ObservatoryTab() {
         {mode === "flow" ? "FLOW" : "ATLAS"}
       </button>
 
-      {/* OBS-04: Probe HUD overlay — renders null when status=ready */}
-      <ObservatoryProbeHud probeState={probeState} />
+      {/* OBS-04: Probe HUD overlay — hidden during fly-by so letterbox bars are unobstructed */}
+      {!flyByActive && <ObservatoryProbeHud probeState={probeState} />}
 
-      {/* OBS-11: Mission HUD overlay — renders null when no mission active */}
-      <ObservatoryMissionHud mission={mission} />
+      {/* OBS-11: Mission HUD overlay — hidden during fly-by */}
+      {!flyByActive && <ObservatoryMissionHud mission={mission} />}
 
       {/* OBS-06: Easter-egg activation toast — inline notification, no ToastProvider required */}
       {easterEggMsg && (
