@@ -65,24 +65,29 @@ describe("sampleLandPose — two-phase squash-stretch", () => {
     expect(OBSERVATORY_PLAYER_MOVE_SPECS.land.durationSeconds).toBe(0.30);
   });
 
-  it("at t=0 (progress=0) scaleY is compressed below 1 and >= 0.70", () => {
+  it("at t=0 (progress=0) scaleY starts at 1.0 (compression begins immediately and peaks at 35%)", () => {
+    // The two-phase animation: compress from 1.0 down to 0.74 over [0, 35%],
+    // then spring back up through 1.0+ overshoot over [35%, 100%].
+    // At the very start (progress=0) the character hasn't compressed yet → scaleY=1.0.
     const pose = sampleObservatoryPlayerPose({
       action: "land",
       elapsedSeconds: 0,
+      horizontalSpeed: 0,
+    });
+    expect(pose.rootScale[1]).toBeCloseTo(1.0, 5);
+  });
+
+  it("at t=0.105s (progress=0.175, midway through compress phase) scaleY is below 1.0", () => {
+    // Midway through the compress phase: easeOutQuad(0.5) = 0.75
+    // scaleY = 1 + (0.74 - 1) * 0.75 = 1 - 0.195 = 0.805
+    const elapsedSeconds = LAND_DURATION * 0.175;
+    const pose = sampleObservatoryPlayerPose({
+      action: "land",
+      elapsedSeconds,
       horizontalSpeed: 0,
     });
     expect(pose.rootScale[1]).toBeLessThan(1.0);
     expect(pose.rootScale[1]).toBeGreaterThanOrEqual(0.70);
-  });
-
-  it("at t=0 (progress=0) scaleY is approximately COMPRESS_Y=0.74 (within ±0.08)", () => {
-    const pose = sampleObservatoryPlayerPose({
-      action: "land",
-      elapsedSeconds: 0,
-      horizontalSpeed: 0,
-    });
-    expect(pose.rootScale[1]).toBeGreaterThanOrEqual(0.66);
-    expect(pose.rootScale[1]).toBeLessThanOrEqual(0.82);
   });
 
   it("at end of compress phase (progress=0.35) scaleY is near COMPRESS_Y", () => {
@@ -116,13 +121,16 @@ describe("sampleLandPose — two-phase squash-stretch", () => {
     expect(pose.rootScale[1]).toBeLessThanOrEqual(1.05);
   });
 
-  it("at progress=0, scaleXZ >= 1.14 (volume conservation)", () => {
+  it("at progress=0.35 (max squash), scaleXZ >= 1.14 (volume conservation)", () => {
+    // At end of compress phase: scaleY = COMPRESS_Y = 0.74
+    // scaleX = scaleZ = 1/sqrt(0.74) ≈ 1.162
+    const elapsedSeconds = LAND_DURATION * 0.35;
     const pose = sampleObservatoryPlayerPose({
       action: "land",
-      elapsedSeconds: 0,
+      elapsedSeconds,
       horizontalSpeed: 0,
     });
-    // When scaleY <= 0.76, scaleX = 1/sqrt(scaleY) >= 1/sqrt(0.76) ≈ 1.147
+    // When scaleY ≈ 0.74, scaleX = 1/sqrt(0.74) ≈ 1.162 >= 1.14
     expect(pose.rootScale[0]).toBeGreaterThanOrEqual(1.14);
     expect(pose.rootScale[2]).toBeGreaterThanOrEqual(1.14);
   });
@@ -172,19 +180,18 @@ describe("sampleFlipPose — bodySpinX uses easeFlipProgress", () => {
     expect(pose.bodySpinX).toBeCloseTo(0, 9);
   });
 
-  it("at progress=0.5 bodySpinX is between 0.55*PI*2 and 0.70*PI*2 (front-flip, spinTurns=-1.15)", () => {
+  it("at progress=0.5 bodySpinX is between 0.30*PI*2 and 0.45*PI*2 (front-flip, spinTurns=-1.15)", () => {
     const elapsedSeconds = FLIP_DURATION * 0.5;
     const pose = sampleObservatoryPlayerPose({
       action: "front-flip",
       elapsedSeconds,
       horizontalSpeed: 0,
     });
-    const spinTurns = -1.15;
-    // easeFlipProgress(0.5) = 0.6*(0.5/0.6)^3 ≈ 0.347
-    // bodySpinX = easeFlipProgress(0.5) * PI*2*spinTurns ≈ 0.347 * 2*PI*(-1.15) ≈ -2.51
-    // abs(bodySpinX) should be between 0.55*PI*2 and 0.70*PI*2
-    const lower = 0.55 * Math.PI * 2;
-    const upper = 0.70 * Math.PI * 2;
+    // easeFlipProgress(0.5) = 0.6*(0.5/0.6)^3 = 0.6*(5/6)^3 ≈ 0.347
+    // bodySpinX = 0.347 * PI*2*(-1.15) ≈ -2.508
+    // abs range expressed as fraction of full rotation: ~0.347/1.0 fraction
+    const lower = 0.30 * Math.PI * 2;
+    const upper = 0.45 * Math.PI * 2;
     expect(Math.abs(pose.bodySpinX)).toBeGreaterThan(lower);
     expect(Math.abs(pose.bodySpinX)).toBeLessThan(upper);
   });

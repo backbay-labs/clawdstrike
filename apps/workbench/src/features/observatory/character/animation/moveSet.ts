@@ -124,7 +124,7 @@ export const OBSERVATORY_PLAYER_MOVE_SPECS = {
   land: {
     id: "land",
     clipCandidates: ["land", "landing", "jump-land", "jump-end", "idle"],
-    durationSeconds: 0.18,
+    durationSeconds: 0.30,
     oneShot: true,
     presentation: {
       rootLift: -0.16,
@@ -495,22 +495,37 @@ function sampleJumpPose(elapsedSeconds: number): ObservatoryPlayerPose {
 
 function sampleLandPose(elapsedSeconds: number): ObservatoryPlayerPose {
   const moveSpec = getObservatoryPlayerMoveSpec("land");
-  const progress = clamp(
-    elapsedSeconds / moveSpec.durationSeconds,
-    0,
-    1,
-  );
+  const progress = clamp(elapsedSeconds / moveSpec.durationSeconds, 0, 1);
+
+  const COMPRESS_Y = 0.74;
+  const COMPRESS_PHASE = 0.35; // first 35% = compress down
+
+  let scaleY: number;
+  if (progress < COMPRESS_PHASE) {
+    const t = progress / COMPRESS_PHASE;
+    scaleY = 1 + (COMPRESS_Y - 1) * easeOutQuad(t);
+  } else {
+    const t = (progress - COMPRESS_PHASE) / (1 - COMPRESS_PHASE);
+    scaleY = COMPRESS_Y + (1 - COMPRESS_Y) * easeOutBack(t);
+  }
+
+  // Volume-conserving XZ expansion: scaleX = scaleZ = 1 / sqrt(scaleY)
+  const scaleXZ = 1 / Math.sqrt(Math.max(scaleY, 0.01));
+
+  // rootOffsetY: compress down proportional to squash depth, recover with same easing
+  const compressionDepth = Math.abs(moveSpec.presentation?.rootLift ?? -0.16);
+  const compression =
+    progress < COMPRESS_PHASE
+      ? compressionDepth * easeOutQuad(progress / COMPRESS_PHASE)
+      : compressionDepth *
+        (1 - easeOutBack((progress - COMPRESS_PHASE) / (1 - COMPRESS_PHASE)));
+
   const impact = 1 - progress;
-  const compression = impact * Math.abs(moveSpec.presentation?.rootLift ?? -0.16);
 
   return {
     ...DEFAULT_POSE,
-    rootOffsetY: -compression,
-    rootScale: [
-      moveSpec.presentation?.rootScale?.[0] ?? 1.04,
-      (moveSpec.presentation?.rootScale?.[1] ?? 0.88) + progress * 0.12,
-      moveSpec.presentation?.rootScale?.[2] ?? 1.04,
-    ],
+    rootOffsetY: -clamp(compression, 0, compressionDepth),
+    rootScale: [scaleXZ, scaleY, scaleXZ],
     torsoPitch: -0.28 * impact,
     torsoRoll: 0,
     headPitch: 0.1 * impact,
@@ -536,8 +551,12 @@ function sampleFlipPose(
   );
   const duration = moveSpec.durationSeconds;
   const progress = clamp(elapsedSeconds / duration, 0, 1);
-  const tuck = (1 - Math.abs(progress - 0.5) / 0.5) * (moveSpec.presentation?.tuckStrength ?? 1);
-  const eased = easeInOutCubic(progress);
+  const tuckStrength = moveSpec.presentation?.tuckStrength ?? 1;
+  const tuck =
+    progress < 0.5
+      ? (progress / 0.5) * tuckStrength
+      : tuckStrength * (1 - easeOutBack((progress - 0.5) / 0.5));
+  const eased = easeFlipProgress(progress);
   const spinTurns = moveSpec.presentation?.spinTurns ?? direction;
 
   return {
@@ -568,6 +587,25 @@ function normalizeActionToken(action?: string | null): string {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function easeOutQuad(x: number): number {
+  return 1 - (1 - x) * (1 - x);
+}
+
+function easeOutBack(x: number): number {
+  const c1 = 1.70158;
+  const c3 = c1 + 1; // 2.70158
+  return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
+}
+
+function easeFlipProgress(t: number): number {
+  if (t < 0.6) {
+    const t2 = t / 0.6;
+    return 0.6 * (t2 * t2 * t2);
+  }
+  const t2 = (t - 0.6) / 0.4;
+  return 0.6 + 0.4 * easeOutBack(t2);
 }
 
 function easeInOutCubic(value: number): number {
