@@ -19,6 +19,7 @@ import { getActivePaneRoute, usePaneStore } from "@/features/panes/pane-store";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { InitCommands } from "@/lib/commands/init-commands";
 import { SpiritFieldInjector } from "@/features/spirit/components/spirit-field-injector";
+import { SpiritMoodReactor } from "@/features/spirit/components/spirit-mood-reactor";
 import { useMultiPolicy } from "@/features/policy/stores/multi-policy-store";
 import { useAutoSave } from "@/lib/workbench/use-auto-save";
 import { normalizeWorkbenchRoute } from "./workbench-routes";
@@ -77,6 +78,8 @@ export function DesktopLayout() {
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#05060a]">
       {/* Spirit CSS var injection — must be first so vars are available to all children */}
       <SpiritFieldInjector />
+      {/* Spirit mood reactor — derives mood from workbench signals, 500ms debounced */}
+      <SpiritMoodReactor />
       {/* Command registry initialization + global keyboard shortcuts */}
       <InitCommands />
       <ShortcutProvider />
