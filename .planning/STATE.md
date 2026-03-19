@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Spirit & Observatory Evolution
 status: executing
-stopped_at: Completed 04-02-PLAN.md
-last_updated: "2026-03-19T12:36:46.110Z"
-last_activity: "2026-03-19 — Plan 04-03 complete: spirit-ritual canvas/model.ts ported, SpiritManifestationCanvas + SpiritAtmosphereLayer (pure CSS/SVG), SpiritChamberTab full creation chamber (SPRT-06)"
+stopped_at: Completed 05-03-PLAN.md
+last_updated: "2026-03-19T12:39:20Z"
+last_activity: "2026-03-19 — Plan 05-03 complete: ObservatoryMinimapPanel SVG component, SigilObservatory, Observatory activity bar item + sidebar case + CommandCategory (OBS-10)"
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 3
-  completed_plans: 1
-  percent: 79
+  completed_plans: 2
+  percent: 67
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-18)
 ## Current Position
 
 Phase: 5 of 5 (Spirit Reactivity & Editor Integration)
-Plan: 1 of 3 in current phase — 05-01 complete
+Plan: 3 of 3 in current phase — 05-01, 05-03 complete
 Status: In Progress — Phase 5 active
-Last activity: 2026-03-19 — Plan 05-01 complete: deriveSpiritMood pure function + SpiritMoodReactor debounced component (SPRT-10)
+Last activity: 2026-03-19 — Plan 05-03 complete: ObservatoryMinimapPanel SVG + polarToSvg + 13 tests + Observatory activity bar + CATEGORY_ORDER (OBS-10)
 
-Progress: [███░░░░░░░] 33%
+Progress: [██████░░░░] 67%
 
 ## Previous Milestone (v1.1 — IDE Completeness)
 
@@ -109,6 +109,9 @@ v2.0 decisions:
 - [Phase 05-01]: deriveSpiritMood priority order: dormant > alert > active > idle (lint errors beat probe active)
 - [Phase 05-01]: SpiritMoodReactor debounces setMood calls by 500ms via useRef<setTimeout> to prevent mood thrashing
 - [Phase 05-01]: hasLintErrors = tabs.some(t => t.validation.errors.length > 0); probeActive = seamSummary.activeProbes > 0
+- [Phase 05-03]: polarToSvg exported as named export from observatory-minimap-panel.tsx for pure unit testing (no component mount needed)
+- [Phase 05-03]: "Observatory" CommandCategory placed between "Hunt" and "Test" in CATEGORY_ORDER
+- [Phase 05-03]: Artifact badge: SVG text at (x+7, y-5) with fontWeight=bold — rendered only when artifactCount > 0
 
 ### Pending Todos
 
@@ -122,6 +125,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-19T12:35:55Z
-Stopped at: Completed 05-01-PLAN.md
+Last session: 2026-03-19T12:39:20Z
+Stopped at: Completed 05-03-PLAN.md
 Resume file: None

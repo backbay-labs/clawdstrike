@@ -31,13 +31,24 @@
 
 - [x] **FRNX-01**: User can see forensics river mini-view in bottom pane "Tape" tab
 
+## v3.0 Requirements (Spirit Reactivity & Observatory Evolution)
+
+### Spirit Reactivity
+
+- [x] **SPRT-10**: Spirit mood auto-transitions based on policy lint errors + probe activity (deriveSpiritMood + SpiritMoodReactor)
+- [ ] **SPRT-11**: Spirit kind visually shifts CodeMirror editor palette without cursor loss (Compartment reconfiguration)
+
+### Observatory Minimap
+
+- [x] **OBS-10**: User can see observatory minimap sidebar panel with SVG station dots, artifact counts, and probe state
+
 ## v2 Future Requirements
 
 ### Advanced Spirit
 
 - **SPRT-07**: Receipt/evidence 3D preview in editor tabs (hero prop viewer)
 - **SPRT-08**: Spirit mood transitions animate in real-time based on hunt activity
-- **SPRT-09**: Observatory minimap in sidebar showing station overview
+- **SPRT-09**: Observatory minimap in sidebar showing station overview (superseded by OBS-10)
 
 ### Advanced Observatory
 
@@ -73,12 +84,14 @@
 | FRNX-01 | Phase 3 | Complete |
 | NXS-01 | Phase 4 | Complete |
 | SPRT-06 | Phase 4 | Complete |
+| SPRT-10 | Phase 5 | Complete |
+| OBS-10 | Phase 5 | Complete |
 
 **Coverage:**
-- v2.0 requirements: 14 total
-- Mapped to phases: 14
+- v2.0 requirements: 14 total, all complete
+- v3.0 requirements: SPRT-10 complete, OBS-10 complete, SPRT-11 pending
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-18*
-*Last updated: 2026-03-18 — traceability updated after v2.0 roadmap creation*
+*Last updated: 2026-03-19 — v3.0 requirements added; SPRT-10 + OBS-10 marked complete*

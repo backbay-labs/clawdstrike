@@ -130,9 +130,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 05-01-PLAN.md — deriveSpiritMood pure fn + SpiritMoodReactor (auto mood from lint/probe signals)
+- [x] 05-01-PLAN.md — deriveSpiritMood pure fn + SpiritMoodReactor (auto mood from lint/probe signals)
 - [ ] 05-02-PLAN.md — YamlEditor Compartment spirit theme (themeCompartment + highlightCompartment, no flicker)
-- [ ] 05-03-PLAN.md — ObservatoryMinimapPanel SVG + Observatory activity bar item + CommandCategory
+- [x] 05-03-PLAN.md — ObservatoryMinimapPanel SVG + Observatory activity bar item + CommandCategory
 
 ### Phase 6: Observatory GLB Props + Spirit Affinity Rings
 **Goal**: The observatory world looks like a real 3D environment — each station has its specific industrial/sci-fi 3D prop model loaded from a GLB file; floor halo rings beneath stations glow in the bound spirit's accent color weighted by affinity
