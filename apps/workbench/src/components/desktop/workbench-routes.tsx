@@ -143,9 +143,9 @@ const SpiritChamberTab = lazy(() =>
   })),
 );
 
-const WebGLSpikeCanvas = lazy(() =>
-  import("@/features/spirit/components/webgl-spike-canvas").then((m) => ({
-    default: m.WebGLSpikeCanvas,
+const ObservatoryTab = lazy(() =>
+  import("@/features/observatory/components/ObservatoryTab").then((m) => ({
+    default: m.ObservatoryTab,
   })),
 );
 
@@ -302,7 +302,7 @@ export const WORKBENCH_ROUTE_OBJECTS: RouteObject[] = [
     ),
   },
   { path: "overview", element: <Navigate to="/home" replace /> },
-  { path: "observatory", element: <Suspense fallback={<div className="flex-1" />}><WebGLSpikeCanvas /></Suspense> },
+  { path: "observatory", element: <Suspense fallback={<div className="flex-1" />}><ObservatoryTab /></Suspense> },
   { path: "spirit-chamber", element: <Suspense fallback={<div className="flex-1" />}><SpiritChamberTab /></Suspense> },
   { path: "nexus", element: <PlaceholderPane label="Nexus" /> },
   { path: "*", element: <Navigate to="/home" replace /> },
