@@ -6,7 +6,7 @@
 // Physics: conditional on mode === "flow" && characterControllerEnabled (never always-on).
 // Canvas: frameloop is a prop (defaults "demand"). dpr=[1, 1.8].
 
-import { Text, Stars, OrbitControls, CameraControls } from "@react-three/drei";
+import { Text, Stars, OrbitControls, CameraControls, useGLTF } from "@react-three/drei";
 import { Canvas, useFrame } from "@react-three/fiber";
 import {
   Suspense,
@@ -32,11 +32,20 @@ import type {
   HuntObservatorySceneState,
   HuntStationId,
   ObservatorySpiritVisual as _ObservatorySpiritVisual,
+  ObservatoryHeroPropRecipe,
 } from "../world/deriveObservatoryWorld";
 import type { ObservatorySpiritVisual } from "../world/deriveObservatoryWorld";
 import { deriveObservatoryWorld } from "../world/deriveObservatoryWorld";
+import { OBSERVATORY_HERO_PROP_ASSETS } from "../world/propAssets";
 import type { ObservatoryProbeState } from "../world/probeRuntime";
 import { advanceObservatoryProbeState, OBSERVATORY_PROBE_ACTIVE_MS } from "../world/probeRuntime";
+
+// Preload all hero prop GLBs at module evaluation time for smoother initial load.
+Object.values(OBSERVATORY_HERO_PROP_ASSETS).forEach((asset) => {
+  if (asset.availability === "ready") {
+    useGLTF.preload(asset.url);
+  }
+});
 
 export interface ObservatoryWorldCanvasProps {
   mode: "atlas" | "flow";
@@ -265,6 +274,34 @@ function ProbeRingEffect({ stationId, probeState }: { stationId: HuntStationId; 
       <ringGeometry args={[0.8, 1.0, 32]} />
       <meshBasicMaterial color={color} transparent opacity={0.6} />
     </mesh>
+  );
+}
+
+// ─── HeroPropMesh ────────────────────────────────────────────────────────────
+// Loads a GLB hero prop via useGLTF and applies a gentle bob animation.
+// Only rendered when recipe.availability === "ready". Wrapped in Suspense by caller.
+function HeroPropMesh({ recipe }: { recipe: ObservatoryHeroPropRecipe }) {
+  const { scene } = useGLTF(recipe.assetUrl);
+  const groupRef = useRef<THREE.Group | null>(null);
+
+  useFrame(({ clock }) => {
+    if (!groupRef.current) return;
+    const elapsed = clock.elapsedTime;
+    groupRef.current.position.y =
+      recipe.position[1] + Math.sin(elapsed * recipe.bobSpeed) * recipe.bobAmplitude;
+  });
+
+  const clonedScene = useMemo(() => scene.clone(), [scene]);
+
+  return (
+    <group
+      ref={groupRef}
+      position={recipe.position}
+      rotation={recipe.rotation}
+      scale={recipe.scale}
+    >
+      <primitive object={clonedScene} />
+    </group>
   );
 }
 
@@ -564,6 +601,16 @@ function ObservatoryScene({
           stationId={probeState.targetStationId}
           probeState={probeState}
         />
+      )}
+
+      {/* Hero prop GLB models — rendered additively above station spheres.
+          Suspense fallback=null: sphere remains as hit target while GLB loads. */}
+      {world.heroProps.map((recipe) =>
+        recipe.availability === "ready" ? (
+          <Suspense key={recipe.key} fallback={null}>
+            <HeroPropMesh recipe={recipe} />
+          </Suspense>
+        ) : null,
       )}
 
       {/* Flow mode atmosphere overlay — subtle glow above terrain */}
