@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Spirit & Observatory Evolution
 status: executing
-stopped_at: Completed 06-observatory-glb-props-spirit-affinity-rings 06-01-PLAN.md
-last_updated: "2026-03-19T13:04:49.215Z"
+stopped_at: Completed 06-observatory-glb-props-spirit-affinity-rings 06-02-PLAN.md
+last_updated: "2026-03-19T13:13:36.406Z"
 last_activity: "2026-03-19 — Plan 05-03 complete: ObservatoryMinimapPanel SVG + polarToSvg + 13 tests + Observatory activity bar + CATEGORY_ORDER (OBS-10)"
 progress:
   total_phases: 5
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 5
-  completed_plans: 4
+  completed_plans: 5
   percent: 67
 ---
 
@@ -117,6 +117,8 @@ v2.0 decisions:
 - [Phase 06]: scene.clone() used in HeroPropMesh to prevent shared Three.js scene graph mutation
 - [Phase 06]: Hero props rendered additively above StationSphere (sphere stays as clickable hit target below GLB prop)
 - [Phase 06]: useGLTF.preload() called at module level for all 7 ready assets to reduce first-open load time
+- [Phase 06]: blendHex test midpoint corrected: Math.round(127.5)=128=0x80 not 0x7f (JS rounding)
+- [Phase 06-02]: accentColor null default in ObservatoryScene: rings invisible when no spirit bound; CoreNode gets explicit '#d8c895' fallback
 
 ### Pending Todos
 
@@ -130,6 +132,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-19T13:04:49.212Z
-Stopped at: Completed 06-observatory-glb-props-spirit-affinity-rings 06-01-PLAN.md
+Last session: 2026-03-19T13:13:36.404Z
+Stopped at: Completed 06-observatory-glb-props-spirit-affinity-rings 06-02-PLAN.md
 Resume file: None
