@@ -17,6 +17,7 @@ vi.mock("@react-three/drei", () => ({
   Text: vi.fn(() => null),
   Stars: vi.fn(() => null),
   OrbitControls: vi.fn(() => null),
+  CameraControls: vi.fn(() => null),
   Line: vi.fn(() => null),
 }));
 

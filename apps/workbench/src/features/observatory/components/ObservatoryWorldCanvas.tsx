@@ -6,7 +6,7 @@
 // Physics: conditional on mode === "flow" && characterControllerEnabled (never always-on).
 // Canvas: frameloop is a prop (defaults "demand"). dpr=[1, 1.8].
 
-import { Text, Stars, OrbitControls } from "@react-three/drei";
+import { Text, Stars, OrbitControls, CameraControls } from "@react-three/drei";
 import { Canvas, useFrame } from "@react-three/fiber";
 import {
   Suspense,
@@ -266,12 +266,14 @@ function StationSphere({
   artifactCount,
   isActive,
   isLikely,
+  labelsVisible,
   onSelect,
 }: {
   stationId: HuntStationId;
   artifactCount: number;
   isActive: boolean;
   isLikely: boolean;
+  labelsVisible: boolean;
   onSelect?: (id: HuntStationId) => void;
 }) {
   const pos = stationWorldPosition(stationId);
@@ -302,21 +304,23 @@ function StationSphere({
         <ringGeometry args={[radius * 1.1, radius * 1.45, 32]} />
         <meshBasicMaterial color={color} transparent opacity={isActive ? 0.32 : 0.12} />
       </mesh>
-      {/* drei Text label above sphere */}
-      <Text
-        position={[0, radius + 0.7, 0]}
-        fontSize={0.44}
-        color={color}
-        anchorX="center"
-        anchorY="middle"
-        outlineColor="#030608"
-        outlineWidth={0.02}
-        maxWidth={3}
-      >
-        {label}
-      </Text>
-      {/* Artifact count badge */}
-      {artifactCount > 0 && (
+      {/* drei Text label above sphere — atlas mode only; hidden in flow mode */}
+      {labelsVisible && (
+        <Text
+          position={[0, radius + 0.7, 0]}
+          fontSize={0.44}
+          color={color}
+          anchorX="center"
+          anchorY="middle"
+          outlineColor="#030608"
+          outlineWidth={0.02}
+          maxWidth={3}
+        >
+          {label}
+        </Text>
+      )}
+      {/* Artifact count badge — atlas mode only */}
+      {labelsVisible && artifactCount > 0 && (
         <Text
           position={[radius * 0.8, radius * 0.8, 0]}
           fontSize={0.28}
@@ -396,6 +400,36 @@ function ObservatoryFloor({ mode }: { mode: "atlas" | "flow" }) {
   );
 }
 
+// ─── FlowModeFog ─────────────────────────────────────────────────────────────
+// FogExp2 for flow mode immersive atmosphere. Only rendered in flow mode.
+// Replaces the linear fog used in atlas mode.
+function FlowModeFog() {
+  return (
+    <fogExp2
+      attach="fog"
+      color="#07090f"
+      density={0.04}
+    />
+  );
+}
+
+// ─── FlowModeTerrain ─────────────────────────────────────────────────────────
+// Simple terrain floor plane for flow mode. Adds the "ground" feel.
+function FlowModeTerrain() {
+  return (
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]} receiveShadow>
+      <planeGeometry args={[100, 100]} />
+      <meshStandardMaterial
+        color="#060b15"
+        roughness={0.92}
+        metalness={0.08}
+        transparent
+        opacity={0.88}
+      />
+    </mesh>
+  );
+}
+
 // ─── Scene (inside Canvas) ───────────────────────────────────────────────────
 function ObservatoryScene({
   mode,
@@ -423,10 +457,12 @@ function ObservatoryScene({
   );
 
   const accentColor = spirit?.accentColor ?? "#d8c895";
+  // Labels visible in atlas mode; hidden in flow mode for immersion
+  const labelsVisible = mode === "atlas";
 
   return (
     <>
-      {/* Camera */}
+      {/* Camera — WorldCameraRig bezier lerps between atlas and flow positions */}
       <WorldCameraRig
         position={world.camera.desiredPosition}
         target={world.camera.desiredTarget}
@@ -437,15 +473,20 @@ function ObservatoryScene({
         controlsRef={controlsRef}
         resetToken={cameraResetToken}
       />
-      <OrbitControls
-        ref={controlsRef as React.Ref<unknown>}
-        enabled={mode === "atlas"}
-        minDistance={world.camera.minDistance}
-        maxDistance={world.camera.maxDistance}
-        dampingFactor={world.camera.dampingFactor}
-        enableDamping
-        makeDefault
-      />
+      {/* Atlas mode: OrbitControls for free look; Flow mode: CameraControls for first-person nav */}
+      {mode === "atlas" ? (
+        <OrbitControls
+          ref={controlsRef as React.Ref<unknown>}
+          enabled
+          minDistance={world.camera.minDistance}
+          maxDistance={world.camera.maxDistance}
+          dampingFactor={world.camera.dampingFactor}
+          enableDamping
+          makeDefault
+        />
+      ) : (
+        <CameraControls makeDefault />
+      )}
 
       {/* Lighting */}
       <ambientLight color={world.environment.ambientColor} intensity={world.environment.ambientIntensity} />
@@ -461,13 +502,17 @@ function ObservatoryScene({
         intensity={world.environment.pointLightIntensity}
       />
 
-      {/* Background atmosphere */}
-      <fog
-        attach="fog"
-        color={world.environment.fogColor}
-        near={world.environment.fogNear}
-        far={world.environment.fogFar}
-      />
+      {/* Fog — flow mode uses FogExp2 for dense atmosphere; atlas uses linear fog from deriveObservatoryWorld */}
+      {mode === "flow" ? (
+        <FlowModeFog />
+      ) : (
+        <fog
+          attach="fog"
+          color={world.environment.fogColor}
+          near={world.environment.fogNear}
+          far={world.environment.fogFar}
+        />
+      )}
       <color attach="background" args={[world.environment.backgroundColor]} />
       <Stars
         radius={world.environment.starsRadius}
@@ -480,6 +525,9 @@ function ObservatoryScene({
 
       {/* Floor */}
       <ObservatoryFloor mode={mode} />
+
+      {/* Flow mode terrain floor plane (100x100 dark plane visible through floor) */}
+      {mode === "flow" && <FlowModeTerrain />}
 
       {/* Core node */}
       <CoreNode accentColor={accentColor} />
@@ -494,6 +542,7 @@ function ObservatoryScene({
             artifactCount={stationState?.artifactCount ?? 0}
             isActive={activeStationId === placement.id}
             isLikely={sceneState?.likelyStationId === placement.id}
+            labelsVisible={labelsVisible}
             onSelect={onSelectStation}
           />
         );
@@ -507,7 +556,7 @@ function ObservatoryScene({
         />
       )}
 
-      {/* Flow mode atmosphere — only in flow mode (Character controller deferred to FlowModeController) */}
+      {/* Flow mode atmosphere overlay — subtle glow above terrain */}
       {mode === "flow" && (
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.1, 0]}>
           <circleGeometry args={[28, 32]} />
