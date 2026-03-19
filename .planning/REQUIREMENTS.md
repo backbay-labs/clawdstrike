@@ -21,7 +21,7 @@
 - [x] **OBS-03**: User can open observatory world as a full editor pane tab via command palette (observatory.open)
 - [x] **OBS-04**: User can probe active station via command palette (observatory.probe) to scan for artifacts
 - [x] **OBS-05**: User can switch observatory to flow mode for immersive exploration
-- [ ] **OBS-06**: User can activate WASD character controller Easter-egg in observatory flow mode
+- [x] **OBS-06**: User can activate WASD character controller Easter-egg in observatory flow mode
 
 ### Nexus
 
@@ -69,7 +69,7 @@
 | OBS-03 | Phase 3 | Complete |
 | OBS-04 | Phase 3 | Complete |
 | OBS-05 | Phase 3 | Complete |
-| OBS-06 | Phase 3 | Pending |
+| OBS-06 | Phase 3 | Complete |
 | FRNX-01 | Phase 3 | Complete |
 | NXS-01 | Phase 4 | Pending |
 | SPRT-06 | Phase 4 | Pending |
