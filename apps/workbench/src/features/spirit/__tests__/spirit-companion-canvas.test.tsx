@@ -13,6 +13,10 @@ vi.mock("@react-three/fiber", () => ({
   useThree: () => ({ invalidate: vi.fn() }),
 }));
 
+vi.mock("@react-three/drei", () => ({
+  Trail: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
+
 describe("SpiritCompanionCanvas", () => {
   beforeEach(() => {
     useSpiritStore.getState().actions.unbindSpirit();

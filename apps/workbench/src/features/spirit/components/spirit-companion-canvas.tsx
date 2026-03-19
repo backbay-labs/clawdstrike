@@ -1,6 +1,7 @@
 // apps/workbench/src/features/spirit/components/spirit-companion-canvas.tsx
 
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { Trail } from "@react-three/drei";
 import { useRef, Suspense, useEffect } from "react";
 import * as THREE from "three";
 import { useSpiritStore } from "../stores/spirit-store";
@@ -162,16 +163,27 @@ function SpiritOrbScene({
 
   return (
     <>
-      <mesh ref={meshRef}>
-        <icosahedronGeometry args={[1, 1]} />
-        <meshStandardMaterial
-          color={color}
-          emissive={color}
-          emissiveIntensity={0.4 + (level - 1) * 0.12}
-          roughness={0.2}
-          metalness={0.8}
-        />
-      </mesh>
+      <Trail
+        width={0.15}
+        color={color}
+        length={8}
+        decay={2}
+        local={false}
+        stride={0}
+        interval={2}
+        attenuation={(t) => t * t}
+      >
+        <mesh ref={meshRef}>
+          <icosahedronGeometry args={[1, 1]} />
+          <meshStandardMaterial
+            color={color}
+            emissive={color}
+            emissiveIntensity={0.4 + (level - 1) * 0.12}
+            roughness={0.2}
+            metalness={0.8}
+          />
+        </mesh>
+      </Trail>
       {level >= 2 && <ShadowRing color={color} />}
       {level >= 3 && <OrbitTorus color={color} />}
       {level >= 4 && <PulseRing color={color} />}
