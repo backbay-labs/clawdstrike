@@ -11,11 +11,12 @@
 // - window event "observatory:probe" → dispatchProbe callback
 // - mode toggle button (ATLAS/FLOW) in top-right corner of tab
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import type { HuntObservatorySceneState, HuntStationId, HuntStationState } from "../world/types";
 import { HUNT_STATION_LABELS, HUNT_STATION_PLACEMENTS } from "../world/stations";
 import { useObservatoryStore } from "../stores/observatory-store";
 import { useSpiritStore } from "@/features/spirit/stores/spirit-store";
+import { usePaneStore, getActivePaneRoute } from "@/features/panes/pane-store";
 import { ObservatoryWorldCanvas } from "./ObservatoryWorldCanvas";
 import type { SpiritKind } from "@/features/spirit/types";
 import type { ObservatoryProbeState } from "../world/probeRuntime";
@@ -45,6 +46,29 @@ export function ObservatoryTab() {
   const [mode, setMode] = useState<"atlas" | "flow">("atlas");
   const [characterControllerEnabled, setCharacterControllerEnabled] = useState(false);
   const [cameraResetToken, setCameraResetToken] = useState(0);
+  // Inline transient notification for Easter-egg (avoids ToastProvider context requirement in tests).
+  // Message auto-clears after 3 seconds.
+  const [easterEggMsg, setEasterEggMsg] = useState<string | null>(null);
+  const easterEggTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showEasterEggNotification = useCallback((msg: string) => {
+    if (easterEggTimerRef.current) clearTimeout(easterEggTimerRef.current);
+    setEasterEggMsg(msg);
+    easterEggTimerRef.current = setTimeout(() => setEasterEggMsg(null), 3000);
+  }, []);
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (easterEggTimerRef.current) clearTimeout(easterEggTimerRef.current);
+    };
+  }, []);
+
+  // paneIsActive: true when the active pane is showing the /observatory route.
+  // Prevents WASD from consuming keyboard events when another pane is focused.
+  const paneIsActive = usePaneStore((state) =>
+    getActivePaneRoute(state.root, state.activePaneId) === "/observatory",
+  );
 
   // OBS-04: Probe state machine (local — purely visual/transient, not in Zustand store)
   const [probeState, setProbeState] = useState<ObservatoryProbeState>(
@@ -132,16 +156,13 @@ export function ObservatoryTab() {
   );
 
   const handleDoubleClick = useCallback(() => {
-    if (mode === "flow") {
-      setCharacterControllerEnabled((prev) => {
-        // Easter-egg toast (console log for now; toast integration deferred)
-        if (!prev) {
-          console.debug("[Observatory] WASD character controller activated");
-        }
-        return !prev;
-      });
-    }
-  }, [mode]);
+    if (mode !== "flow") return;
+    setCharacterControllerEnabled((prev) => {
+      const next = !prev;
+      showEasterEggNotification(next ? "WASD controls activated" : "WASD controls deactivated");
+      return next;
+    });
+  }, [mode, showEasterEggNotification]);
 
   return (
     <div className="relative flex-1 overflow-hidden" onDoubleClick={handleDoubleClick}>
@@ -152,6 +173,7 @@ export function ObservatoryTab() {
           activeStationId={null}
           spirit={spirit}
           characterControllerEnabled={characterControllerEnabled}
+          paneIsActive={paneIsActive}
           frameloop={frameloop}
           probeState={probeState}
           cameraResetToken={cameraResetToken}
@@ -175,6 +197,16 @@ export function ObservatoryTab() {
 
       {/* OBS-04: Probe HUD overlay — renders null when status=ready */}
       <ObservatoryProbeHud probeState={probeState} />
+
+      {/* OBS-06: Easter-egg activation toast — inline notification, no ToastProvider required */}
+      {easterEggMsg && (
+        <div
+          className="absolute bottom-8 left-1/2 -translate-x-1/2 z-20 px-4 py-2 rounded-md bg-[#0b0d13] border border-[#3dbf84]/40 text-[#3dbf84] text-xs font-mono pointer-events-none select-none"
+          data-testid="easter-egg-toast"
+        >
+          {easterEggMsg}
+        </div>
+      )}
 
       {/* Probe status indicator and mode state attrs for tests */}
       <div

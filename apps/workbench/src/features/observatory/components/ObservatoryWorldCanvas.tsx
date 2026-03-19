@@ -15,6 +15,13 @@ import {
   useMemo,
   useRef,
 } from "react";
+import React from "react";
+
+// Lazy import — FlowModeController is the lazy module boundary for @react-three/rapier.
+// Rapier is never in the main bundle; it only loads when the Easter-egg is activated.
+const LazyFlowModeController = React.lazy(() =>
+  import("./FlowModeController").then((m) => ({ default: m.FlowModeController })),
+);
 import * as THREE from "three";
 import {
   HUNT_STATION_LABELS,
@@ -37,6 +44,7 @@ export interface ObservatoryWorldCanvasProps {
   activeStationId: HuntStationId | null;
   spirit?: ObservatorySpiritVisual;
   characterControllerEnabled?: boolean;
+  paneIsActive?: boolean;
   frameloop?: "demand" | "always";
   probeState?: ObservatoryProbeState | null;
   cameraResetToken?: number;
@@ -437,6 +445,7 @@ function ObservatoryScene({
   activeStationId,
   spirit,
   characterControllerEnabled = false,
+  paneIsActive = false,
   probeState,
   cameraResetToken,
   onSelectStation,
@@ -446,6 +455,7 @@ function ObservatoryScene({
   activeStationId: HuntStationId | null;
   spirit?: ObservatorySpiritVisual;
   characterControllerEnabled?: boolean;
+  paneIsActive?: boolean;
   probeState: ObservatoryProbeState | null;
   cameraResetToken: number;
   onSelectStation?: (id: HuntStationId) => void;
@@ -563,6 +573,18 @@ function ObservatoryScene({
           <meshBasicMaterial color="#0a1428" transparent opacity={0.28} />
         </mesh>
       )}
+
+      {/* OBS-06: Character controller Easter-egg — only rendered in flow mode when activated.
+          Physics wrapper lives inside FlowModeController (guaranteed no Rapier overhead when off). */}
+      {mode === "flow" && characterControllerEnabled && (
+        <Suspense fallback={null}>
+          <LazyFlowModeController
+            characterControllerEnabled={true}
+            onEnable={() => {}}
+            paneIsActive={paneIsActive}
+          />
+        </Suspense>
+      )}
     </>
   );
 }
@@ -574,6 +596,7 @@ export function ObservatoryWorldCanvas({
   activeStationId,
   spirit,
   characterControllerEnabled = false,
+  paneIsActive = false,
   frameloop = "demand",
   probeState = null,
   cameraResetToken = 0,
@@ -596,6 +619,7 @@ export function ObservatoryWorldCanvas({
           activeStationId={activeStationId}
           spirit={spirit}
           characterControllerEnabled={characterControllerEnabled}
+          paneIsActive={paneIsActive}
           probeState={probeState}
           cameraResetToken={cameraResetToken}
           onSelectStation={onSelectStation}
