@@ -266,7 +266,13 @@ Plans:
   3. Each station hero prop has continuously floating ambient motes visible at close range; motes are frustum-culled and distance-gated so they impose no cost on distant stations
   4. The spirit companion orb leaves an accent-colored particle trail as it moves; trail fades along its length
   5. Avatar backpack thrusters emit stretched-billboard exhaust particles during sprint and jump; exhaust is absent during idle and walk states
-**Plans**: TBD
+**Plans**: 4 plans
+
+Plans:
+- [ ] 12-01-PLAN.md — Install wawa-vfx + ObservatoryVFXPools (landing-dust + thruster-exhaust pool declarations) (Wave 1)
+- [ ] 12-02-PLAN.md — Spirit Trail (PFX-04): drei Trail wrapping orb mesh in SpiritCompanionCanvas (Wave 1, independent)
+- [ ] 12-03-PLAN.md — ProbeDischargeVFX InstancedMesh (PFX-02) + Station Sparkles motes (PFX-03) in ObservatoryWorldCanvas (Wave 1)
+- [ ] 12-04-PLAN.md — CharacterVFX landing dust (PFX-01) + thruster exhaust (PFX-05) + mount all pools (Wave 2)
 
 ### Phase 13: Character Polish
 **Goal**: The character controller feels weighted and alive — locomotion blends smoothly across speed tiers, landings compress and spring back, the character breathes at idle, leans forward at speed, flips with elastic snap, and footsteps can drive particle and SFX events

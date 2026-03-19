@@ -1,4 +1,4 @@
-import { Line, OrbitControls, Stars, useGLTF } from "@react-three/drei";
+import { CameraShake, Line, OrbitControls, Stars, useGLTF, type ShakeController } from "@react-three/drei";
 import {
   CapsuleCollider,
   CuboidCollider,
@@ -160,6 +160,24 @@ interface MissionInteractionSource {
 
 function lerpAlpha(speed: number, delta: number): number {
   return 1 - Math.exp(-speed * delta);
+}
+
+function FovController({
+  playerFocusRef,
+  probeActive,
+}: {
+  playerFocusRef: RefObject<ObservatoryPlayerFocusState | null>;
+  probeActive: boolean;
+}) {
+  useFrame(({ camera }, delta) => {
+    const pCam = camera as THREE.PerspectiveCamera;
+    const safeDelta = Math.min(delta, 1 / 20);
+    const sprinting = playerFocusRef.current?.sprinting ?? false;
+    const targetFov = probeActive ? 35 : sprinting ? 52 : 42;
+    pCam.fov += (targetFov - pCam.fov) * lerpAlpha(5.0, safeDelta);
+    pCam.updateProjectionMatrix();
+  });
+  return null;
 }
 
 function distanceSquared(a: [number, number, number], b: [number, number, number]): number {
@@ -3929,6 +3947,7 @@ function ObservatoryWorldScene({
   playerFocusRef: RefObject<ObservatoryPlayerFocusState | null>;
 }) {
   const controlsRef = useRef<THREE.EventDispatcher | null>(null);
+  const shakeRef = useRef<ShakeController | null>(null);
   const [arrivalCue, setArrivalCue] = useState<DistrictArrivalCue | null>(null);
   const previousPrimaryStationIdRef = useRef<HuntStationId | null>(null);
   const interactionStationId =
@@ -3955,6 +3974,16 @@ function ObservatoryWorldScene({
     world.districts.find((district) => district.active)?.id ??
     (world.watchfield.active ? "watch" : null) ??
     world.likelyStationId;
+
+  // CAM-03: Listen for observatory:shake events dispatched by probe/landing triggers
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ intensity: number }>).detail;
+      shakeRef.current?.setIntensity(detail.intensity ?? 0.4);
+    };
+    window.addEventListener("observatory:shake", handler);
+    return () => window.removeEventListener("observatory:shake", handler);
+  }, []);
 
   useEffect(() => {
     if (!primaryStationId || !HERO_CHOREOGRAPHY_STATIONS.has(primaryStationId)) {
@@ -4022,6 +4051,7 @@ function ObservatoryWorldScene({
 
       <OrbitControls
         ref={controlsRef as never}
+        makeDefault
         enableRotate={false}
         enablePan={false}
         enableZoom
@@ -4035,6 +4065,19 @@ function ObservatoryWorldScene({
         controlsRef={controlsRef}
         playerFocusRef={playerFocusRef}
         resetToken={cameraResetToken}
+      />
+      <FovController playerFocusRef={playerFocusRef} probeActive={probeStatus === "active"} />
+      <CameraShake
+        ref={shakeRef}
+        intensity={0}
+        decay
+        decayRate={0.85}
+        maxYaw={0.018}
+        maxPitch={0.012}
+        maxRoll={0.008}
+        yawFrequency={0.6}
+        pitchFrequency={0.5}
+        rollFrequency={0.4}
       />
 
       <ThesisCore core={world.core} />
