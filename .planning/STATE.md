@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v4.0
 milestone_name: AAA Observatory Experience
 status: planning
-stopped_at: Completed 10-post-processing-foundation-02-PLAN.md
-last_updated: "2026-03-19T17:44:56.751Z"
+stopped_at: Completed 10-post-processing-foundation-03-PLAN.md
+last_updated: "2026-03-19T17:51:45.462Z"
 last_activity: 2026-03-19 — v4.0 roadmap created, all 30 requirements mapped
 progress:
   total_phases: 5
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 3
-  completed_plans: 2
+  completed_plans: 3
   percent: 0
 ---
 
@@ -63,6 +63,7 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 10-post-processing-foundation]: Effect order is mandatory: Bloom -> Vignette -> ToneMapping (ACES_FILMIC) -> SMAA
 - [Phase 10-post-processing-foundation]: EffectComposer children typed as JSX.Element|JSX.Element[] (no null): use imperative JSX.Element[] array with conditional push for Autofocus instead of null-returning JSX ternary
 - [Phase 10-post-processing-foundation]: Bloom targets require both emissiveIntensity > 1 AND toneMapped={false}: 4 materials updated — spirit shell (2.2), torus (max(1.8, recipe*2.5)), convoy pods (1.2 + intensity*1.8), active hero prop cylinder (1.8 active)
+- [Phase 10-post-processing-foundation]: Plan 03: Programmatic 17x17x17 Data3DTexture LUTs (not .cube files) for spirit color grading — sentinel=cool teal, oracle=warm violet, witness=warm gold, specter=deep red shadow crush
 
 ### Blockers/Concerns
 
@@ -72,6 +73,6 @@ Progress: [░░░░░░░░░░] 0%
 
 ## Session Continuity
 
-Last session: 2026-03-19T17:44:56.749Z
-Stopped at: Completed 10-post-processing-foundation-02-PLAN.md
+Last session: 2026-03-19T17:51:45.459Z
+Stopped at: Completed 10-post-processing-foundation-03-PLAN.md
 Resume file: None

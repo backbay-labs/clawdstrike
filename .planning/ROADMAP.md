@@ -216,7 +216,7 @@ Plans:
 
 ## Phases
 
-- [ ] **Phase 10: Post-Processing Foundation** — EffectComposer with bloom, vignette, SMAA, tone mapping, conditional DOF on hero props, per-spirit LUT color grading
+- [x] **Phase 10: Post-Processing Foundation** — EffectComposer with bloom, vignette, SMAA, tone mapping, conditional DOF on hero props, per-spirit LUT color grading (completed 2026-03-19)
 - [ ] **Phase 11: Camera Cinematics + Shake** — Spawn fly-by with letterbox bars, dynamic FOV during sprint and probe scan, screen shake on probe dispatch and landing, focus pull to mission objectives
 - [ ] **Phase 12: Particle Effects** — Landing dust, probe energy discharge shell, station ambient motes, spirit companion trail, thruster exhaust on avatar backpack
 - [ ] **Phase 13: Character Polish** — Weight-based locomotion blending, landing squash-stretch with overshoot, idle breathing layer, sprint lean, flip easing, footstep event detection
@@ -300,7 +300,7 @@ Phase 10 first (bloom transforms all downstream visual work). Phases 11 and 12 c
 | 7. Spirit Evolution & Persistence | v3.0 | 2/2 | Complete | 2026-03-19 |
 | 8. Observatory Missions + Evidence 3D Preview | v3.0 | 3/3 | Complete | 2026-03-19 |
 | 9. Nexus Force Graph | v3.0 | 2/2 | Complete | 2026-03-19 |
-| 10. Post-Processing Foundation | 2/3 | In Progress|  | - |
+| 10. Post-Processing Foundation | 3/3 | Complete   | 2026-03-19 | - |
 | 11. Camera Cinematics + Shake | v4.0 | 0/TBD | Not started | - |
 | 12. Particle Effects | v4.0 | 0/TBD | Not started | - |
 | 13. Character Polish | v4.0 | 0/TBD | Not started | - |

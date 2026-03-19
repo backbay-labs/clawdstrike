@@ -10,7 +10,7 @@
 - [x] **PP-01**: Observatory scene renders with bloom on all emissive elements (spirit shells, station halos, probe beams)
 - [x] **PP-02**: Vignette + SMAA + tone mapping applied as always-on baseline effects
 - [x] **PP-03**: Subtle depth-of-field activates when interacting with hero props (Autofocus targeting world position)
-- [ ] **PP-04**: Per-spirit-kind color grading via runtime-swappable LUT
+- [x] **PP-04**: Per-spirit-kind color grading via runtime-swappable LUT
 
 ### Particles
 
@@ -74,7 +74,7 @@
 | PP-01 | Phase 10 | Complete |
 | PP-02 | Phase 10 | Complete |
 | PP-03 | Phase 10 | Complete |
-| PP-04 | Phase 10 | Pending |
+| PP-04 | Phase 10 | Complete |
 | CAM-01 | Phase 11 | Pending |
 | CAM-02 | Phase 11 | Pending |
 | CAM-03 | Phase 11 | Pending |
