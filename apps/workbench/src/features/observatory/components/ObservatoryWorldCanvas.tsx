@@ -8,6 +8,7 @@ import {
   type RapierRigidBody,
 } from "@react-three/rapier";
 import { Canvas, type ThreeEvent, useFrame } from "@react-three/fiber";
+import { ObservatoryPostFX } from "./ObservatoryPostFX";
 import { Suspense, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import {
@@ -4786,7 +4787,7 @@ export function ObservatoryWorldCanvas({
         onPointerMissed={() => setHoveredStationId(null)}
         dpr={[1, 1.8]}
         camera={{ position: world.camera.initialPosition, fov: world.camera.fov }}
-        gl={{ antialias: true, alpha: false, powerPreference: "high-performance" }}
+        gl={{ antialias: false, alpha: false, powerPreference: "high-performance" }}
         style={{ background: world.environment.backgroundColor }}
       >
         <Suspense fallback={null}>
@@ -4820,6 +4821,7 @@ export function ObservatoryWorldCanvas({
               world={world}
             />
           </Physics>
+          <ObservatoryPostFX />
         </Suspense>
       </Canvas>
       <ObservatoryMissionOverlay
