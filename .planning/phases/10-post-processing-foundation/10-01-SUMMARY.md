@@ -98,6 +98,14 @@ None - plan executed exactly as written.
 - Post-processing infrastructure is live. Plans 02 and 03 can now insert DOF (Autofocus between Bloom and Vignette) and LUT (between Vignette and ToneMapping) using the documented insertion slots in ObservatoryPostFX.tsx comments.
 - Forward-compat props `activeHeroPropPosition` and `spiritLut` are stubbed and ready for Plans 02 and 03 to implement.
 
+## Self-Check: PASSED
+
+- FOUND: apps/workbench/src/features/observatory/components/ObservatoryPostFX.tsx
+- FOUND: .planning/phases/10-post-processing-foundation/10-01-SUMMARY.md
+- FOUND: commit 123fda75c (chore: install packages)
+- FOUND: commit 089d9d070 (feat: ObservatoryPostFX)
+- FOUND: commit 5ae902d2a (feat: wire into canvas)
+
 ---
 *Phase: 10-post-processing-foundation*
 *Completed: 2026-03-19*
