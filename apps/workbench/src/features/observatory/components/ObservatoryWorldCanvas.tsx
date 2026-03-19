@@ -81,6 +81,7 @@ import { ProbeDischargeVFX } from "../vfx/ProbeDischargeVFX";
 import { CharacterVFX } from "../vfx/CharacterVFX";
 import { ObservatoryVFXPools } from "../vfx/ObservatoryVFXPools";
 import { StationNpcCrew } from "../world/npcCrew";
+import { StationBuilding, DistrictGround, DistrictEnvProps } from "../world/districtGeometry";
 
 export interface ObservatoryWorldCanvasProps {
   mode: HuntObservatorySceneState["mode"];
@@ -4246,7 +4247,19 @@ function ObservatoryWorldScene({
 
   return (
     <>
-      <color attach="background" args={[world.environment.backgroundColor]} />
+      {/* WLD-01: Dark fallback color + HDR space nebula skybox (Environment takes over background) */}
+      {/* Download CC0 space HDR from polyhaven.com (night/space category) at 1K resolution,
+          save as apps/workbench/public/textures/space-nebula.hdr */}
+      <color attach="background" args={["#04080f"]} />
+      <Suspense fallback={null}>
+        <Environment
+          files="/textures/space-nebula.hdr"
+          background
+          backgroundBlurriness={0}
+          backgroundIntensity={0.6}
+          resolution={256}
+        />
+      </Suspense>
       <fog attach="fog" args={[world.environment.fogColor, world.environment.fogNear, world.environment.fogFar]} />
       <ambientLight intensity={world.environment.ambientIntensity} color={world.environment.ambientColor} />
       <hemisphereLight args={["#b7d4ff", "#02050b", 0.18]} />
@@ -4266,14 +4279,6 @@ function ObservatoryWorldScene({
         color={world.environment.pointLightColor}
       />
       <PlayerAccentLights playerFocusRef={playerFocusRef} />
-      <Stars
-        radius={world.environment.starsRadius}
-        depth={world.environment.starsDepth}
-        count={world.environment.starsCount}
-        factor={world.environment.starsFactor}
-        fade
-        speed={0.4}
-      />
       <gridHelper
         args={[world.environment.gridSize, world.environment.gridDivisions, "#10243b", "#081624"]}
         position={[0, -0.06, 0]}
@@ -4410,6 +4415,26 @@ function ObservatoryWorldScene({
         onSelect={onSelectStation}
         onHover={onHoverStation}
       />
+
+      {/* WLD-02/03/04: District buildings, ground planes, env props */}
+      {world.districts.map((district) => (
+        <group key={`district-geo:${district.id}`} position={district.position}>
+          <StationBuilding
+            seed={district.position[0] * 1000 + district.position[2]}
+            position={[0, 0, 0]}
+          />
+          <DistrictGround
+            position={[0, 0, 0]}
+            colorHex={district.colorHex}
+          />
+          <DistrictEnvProps
+            position={[0, 0, 0]}
+            colorHex={district.colorHex}
+            seed={district.position[0] * 100 + district.position[2] * 37}
+          />
+        </group>
+      ))}
+
       {/* UIP-01: 3D waypoint beacons on mission objective stations */}
       {missionTargetStationId && world.districts
         .filter((d) => d.id === missionTargetStationId)
