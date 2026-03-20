@@ -18,6 +18,7 @@ import { useFlightLoop } from "./useFlightLoop";
 import { DEFAULT_FLIGHT_STATE } from "./flight-types";
 import type { FlightState } from "./flight-types";
 import type { ObservatoryPlayerFocusState } from "../../components/flow-runtime/grounding";
+import { ChaseCamera } from "./ChaseCamera";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -92,8 +93,12 @@ export function SpaceFlightController({
   }, []);
 
   return (
-    <group ref={shipRef}>
-      <ShipMesh accentColor={accentColor} />
-    </group>
+    <>
+      <group ref={shipRef}>
+        <ShipMesh accentColor={accentColor} />
+      </group>
+      {/* FLT-05: Chase camera — follows ship with lerp-lagged tracking */}
+      <ChaseCamera shipRef={shipRef} />
+    </>
   );
 }
