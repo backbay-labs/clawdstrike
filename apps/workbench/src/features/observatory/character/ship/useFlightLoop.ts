@@ -78,6 +78,17 @@ export interface UseFlightLoopOptions {
   shipRef: React.RefObject<THREE.Group | null>;
   /** Callback to push flight state to store (~100ms throttle, not every frame) */
   onStateChange?: (state: FlightState) => void;
+  /**
+   * When this ref is false, thrust and rotation processing are skipped.
+   * Damping and position updates still apply so the ship decelerates smoothly.
+   * The docking system sets this to false during dock lock to take ownership.
+   */
+  flightInputEnabled?: React.RefObject<boolean>;
+}
+
+export interface UseFlightLoopResult {
+  /** The internal velocity vector ref — exposed for docking system magnet-pull bias injection */
+  velRef: React.RefObject<THREE.Vector3>;
 }
 
 // ---------------------------------------------------------------------------
@@ -89,7 +100,8 @@ export function useFlightLoop({
   config = DEFAULT_FLIGHT_CONFIG,
   shipRef,
   onStateChange,
-}: UseFlightLoopOptions): void {
+  flightInputEnabled,
+}: UseFlightLoopOptions): UseFlightLoopResult {
   // Internal velocity accumulated across frames (world space)
   const velRef = useRef<THREE.Vector3>(new THREE.Vector3(0, 0, 0));
 
@@ -112,6 +124,9 @@ export function useFlightLoop({
     // Clamp delta to avoid huge jumps after tab-unfocus or pausing
     const dt = Math.min(delta, 1 / 20);
 
+    // Check whether the docking system has disabled flight input
+    const inputActive = flightInputEnabled === undefined || flightInputEnabled.current !== false;
+
     // -----------------------------------------------------------------------
     // Read intent values; zero consumed one-shot fields after reading
     // -----------------------------------------------------------------------
@@ -124,14 +139,14 @@ export function useFlightLoop({
     // Zero mouse deltas — they are accumulated-since-last-frame values
     intent.mouseDeltaX = 0;
     intent.mouseDeltaY = 0;
-    // Zero one-shot flags
+    // Zero one-shot flags (interactTriggered is consumed by useDockingSystem, not here)
     intent.boostTriggered = false;
-    intent.interactTriggered = false;
 
     // -----------------------------------------------------------------------
     // Rotation — yaw around world Y, pitch around ship-local X
+    // (Skipped when flight input is disabled by the docking system)
     // -----------------------------------------------------------------------
-    if (mouseDeltaX !== 0 || mouseDeltaY !== 0) {
+    if (inputActive && (mouseDeltaX !== 0 || mouseDeltaY !== 0)) {
       const yawAngle = -mouseDeltaX * config.yawSensitivity;
       const pitchAngle = -mouseDeltaY * config.pitchSensitivity;
 
@@ -151,10 +166,11 @@ export function useFlightLoop({
 
     // -----------------------------------------------------------------------
     // Thrust — derive ship axes from current quaternion
+    // (Skipped when flight input is disabled by the docking system)
     // -----------------------------------------------------------------------
     const vel = velRef.current;
 
-    if (thrust !== 0 || strafe !== 0 || vertical !== 0) {
+    if (inputActive && (thrust !== 0 || strafe !== 0 || vertical !== 0)) {
       // Forward: -Z in ship space (cone tip faces -Z per ShipMesh)
       _forward.set(0, 0, -1).applyQuaternion(ship.quaternion);
       // Right: +X in ship space
@@ -278,6 +294,9 @@ export function useFlightLoop({
       }
     }
   });
+
+  // Return velRef so useDockingSystem can inject magnet-pull bias directly
+  return { velRef };
 }
 
 // Suppress unused warning for _velocity — kept for future use (rollback/replay)

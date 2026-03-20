@@ -15,11 +15,14 @@ import { useThree } from "@react-three/fiber";
 import { ShipMesh } from "./ShipMesh";
 import { useFlightInput } from "./useFlightInput";
 import { useFlightLoop } from "./useFlightLoop";
+import { useDockingSystem } from "./useDockingSystem";
 import { DEFAULT_FLIGHT_STATE, DEFAULT_FLIGHT_CONFIG } from "./flight-types";
 import type { FlightState } from "./flight-types";
+import type { DockingState } from "./docking-types";
 import type { ObservatoryPlayerFocusState } from "../../components/flow-runtime/grounding";
 import { ChaseCamera } from "./ChaseCamera";
 import { ShipThrusterVFX } from "./ShipThrusterVFX";
+import { useObservatoryStore } from "../../stores/observatory-store";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -53,23 +56,37 @@ export function SpaceFlightController({
   const thrustIntensityRef = useRef(0);
   const boostingRef = useRef(false);
 
+  // DCK: Flight input enabled ref — set to false during dock lock sequence
+  const flightInputEnabledRef = useRef(true);
+  const setFlightInputEnabled = useCallback((enabled: boolean) => {
+    flightInputEnabledRef.current = enabled;
+  }, []);
+
   // Flight input — keyboard + mouse → FlightIntent ref
   const { intentRef, requestPointerLock } = useFlightInput({ enabled: inputEnabled });
 
+  // DCK: dockingState store action — stable reference via getState()
+  const handleDockingStateChange = useCallback((state: DockingState) => {
+    useObservatoryStore.getState().actions.setDockingState(state);
+  }, []);
+
   // State change bridge: updates both onStateChange callback AND playerFocusRef
+  // Does NOT overwrite playerFocusRef.position when docked (docking system owns position)
   const handleStateChange = useCallback(
     (state: FlightState) => {
-      // Write to playerFocusRef so FovController and WorldCameraRig can read it
-      playerFocusRef.current = {
-        action: state.currentSpeed > 30 ? "sprint" : state.currentSpeed > 1 ? "walk" : null,
-        airborne: false,
-        facingRadians: 0, // Not used for flight — quaternion is the truth
-        moving: state.currentSpeed > 0.5,
-        moveVector: [0, 0],
-        position: [...state.position] as [number, number, number],
-        sprinting: state.speedTier === "boost",
-        stationId: state.nearestStationId,
-      };
+      // Only update playerFocusRef when not docked (docking system manages position during lock)
+      if (flightInputEnabledRef.current) {
+        playerFocusRef.current = {
+          action: state.currentSpeed > 30 ? "sprint" : state.currentSpeed > 1 ? "walk" : null,
+          airborne: false,
+          facingRadians: 0, // Not used for flight — quaternion is the truth
+          moving: state.currentSpeed > 0.5,
+          moveVector: [0, 0],
+          position: [...state.position] as [number, number, number],
+          sprinting: state.speedTier === "boost",
+          stationId: state.nearestStationId,
+        };
+      }
 
       // FLT-06: Update thruster VFX refs — thrustIntensity = speed / cruiseSpeed (0-1+)
       thrustIntensityRef.current = Math.min(1, state.currentSpeed / DEFAULT_FLIGHT_CONFIG.cruiseSpeed);
@@ -80,8 +97,22 @@ export function SpaceFlightController({
     [playerFocusRef, onStateChange],
   );
 
-  // Flight physics loop — mutates shipRef each frame
-  useFlightLoop({ intentRef, shipRef, onStateChange: handleStateChange });
+  // Flight physics loop — mutates shipRef each frame; returns velRef for docking system
+  const { velRef } = useFlightLoop({
+    intentRef,
+    shipRef,
+    onStateChange: handleStateChange,
+    flightInputEnabled: flightInputEnabledRef,
+  });
+
+  // DCK: Three-zone docking system — approach / magnet-pull / dock lock / undock
+  useDockingSystem({
+    shipRef,
+    intentRef,
+    velocityRef: velRef,
+    setFlightInputEnabled,
+    onDockingStateChange: handleDockingStateChange,
+  });
 
   // Pointer lock on canvas click
   const { gl } = useThree();
