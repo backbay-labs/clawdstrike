@@ -47,6 +47,11 @@ const _velocity = new THREE.Vector3();
 const _stationPos = new THREE.Vector3();
 const _shipPos = new THREE.Vector3();
 
+// Pre-allocated scratch objects for autopilot slerp — zero GC in useFrame
+const _targetPos = new THREE.Vector3();
+const _toTarget = new THREE.Vector3();
+const _targetQuat = new THREE.Quaternion();
+
 // ---------------------------------------------------------------------------
 // Dock proximity helper (pure, module-level — no allocations)
 // ---------------------------------------------------------------------------
@@ -84,6 +89,15 @@ export interface UseFlightLoopOptions {
    * The docking system sets this to false during dock lock to take ownership.
    */
   flightInputEnabled?: React.RefObject<boolean>;
+  /**
+   * Ref holding the current autopilot target station id.
+   * When non-null, useFlightLoop slews ship quaternion toward the target and
+   * applies cruise thrust once aligned (dot > 0.95). Mouse rotation is skipped
+   * while autopilot is active.
+   */
+  autopilotRef?: React.RefObject<HuntStationId | null>;
+  /** Called when WASD/mouse input cancels autopilot, or dock proximity fires */
+  onAutopilotCancel?: () => void;
 }
 
 export interface UseFlightLoopResult {
@@ -101,6 +115,8 @@ export function useFlightLoop({
   shipRef,
   onStateChange,
   flightInputEnabled,
+  autopilotRef,
+  onAutopilotCancel,
 }: UseFlightLoopOptions): UseFlightLoopResult {
   // Internal velocity accumulated across frames (world space)
   const velRef = useRef<THREE.Vector3>(new THREE.Vector3(0, 0, 0));
@@ -143,10 +159,23 @@ export function useFlightLoop({
     intent.boostTriggered = false;
 
     // -----------------------------------------------------------------------
-    // Rotation — yaw around world Y, pitch around ship-local X
-    // (Skipped when flight input is disabled by the docking system)
+    // Autopilot — check for manual override before any rotation
     // -----------------------------------------------------------------------
-    if (inputActive && (mouseDeltaX !== 0 || mouseDeltaY !== 0)) {
+    const autopilotTargetId = autopilotRef?.current ?? null;
+    const hasManualInput =
+      thrust !== 0 || strafe !== 0 || vertical !== 0 || mouseDeltaX !== 0 || mouseDeltaY !== 0;
+
+    if (autopilotTargetId !== null && hasManualInput && onAutopilotCancel) {
+      onAutopilotCancel();
+    }
+
+    // -----------------------------------------------------------------------
+    // Rotation — yaw around world Y, pitch around ship-local X
+    // Skipped when flight input is disabled OR autopilot is active
+    // -----------------------------------------------------------------------
+    const autopilotActive = autopilotTargetId !== null && !hasManualInput;
+
+    if (inputActive && !autopilotActive && (mouseDeltaX !== 0 || mouseDeltaY !== 0)) {
       const yawAngle = -mouseDeltaX * config.yawSensitivity;
       const pitchAngle = -mouseDeltaY * config.pitchSensitivity;
 
@@ -165,10 +194,45 @@ export function useFlightLoop({
     }
 
     // -----------------------------------------------------------------------
+    // Autopilot slerp + cruise thrust
+    // -----------------------------------------------------------------------
+    const vel = velRef.current;
+
+    if (inputActive && autopilotActive) {
+      const targetEntry = OBSERVATORY_STATION_POSITIONS[autopilotTargetId];
+      _targetPos.set(targetEntry[0], targetEntry[1], targetEntry[2]);
+      _toTarget.copy(_targetPos).sub(ship.position);
+      const distToTarget = _toTarget.length();
+
+      // Cancel autopilot when entering dock proximity zone
+      if (distToTarget <= config.dockProximityRadius && onAutopilotCancel) {
+        onAutopilotCancel();
+      } else {
+        _toTarget.normalize();
+
+        // Build target quaternion: ship -Z faces toward target
+        _forward.set(0, 0, -1);
+        _targetQuat.setFromUnitVectors(_forward, _toTarget);
+
+        // Slerp toward target quaternion at 0.03/frame
+        ship.quaternion.slerp(_targetQuat, 0.03);
+        ship.quaternion.normalize();
+
+        // Apply cruise thrust when ship is well-aligned (dot > 0.95)
+        _forward.set(0, 0, -1).applyQuaternion(ship.quaternion);
+        const dot = _forward.dot(_toTarget);
+        if (dot > 0.95) {
+          // Apply thrust in ship forward direction
+          _thrustVec.copy(_forward).multiplyScalar(config.thrustAcceleration * dt);
+          vel.add(_thrustVec);
+        }
+      }
+    }
+
+    // -----------------------------------------------------------------------
     // Thrust — derive ship axes from current quaternion
     // (Skipped when flight input is disabled by the docking system)
     // -----------------------------------------------------------------------
-    const vel = velRef.current;
 
     if (inputActive && (thrust !== 0 || strafe !== 0 || vertical !== 0)) {
       // Forward: -Z in ship space (cone tip faces -Z per ShipMesh)
@@ -288,6 +352,7 @@ export function useFlightLoop({
           pointerLocked: document.pointerLockElement != null,
           currentSpeed: vel.length(),
           nearestStationId: nearestStationRef.current?.stationId ?? null,
+          autopilotTargetStationId: autopilotRef?.current ?? null,
         };
 
         onStateChange(snapshot);

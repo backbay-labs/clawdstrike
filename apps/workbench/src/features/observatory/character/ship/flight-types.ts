@@ -46,6 +46,8 @@ export interface FlightState {
   currentSpeed: number;
   /** Nearest station id if within dockProximityRadius, null otherwise */
   nearestStationId: HuntStationId | null;
+  /** Autopilot target station id — null when not active */
+  autopilotTargetStationId: HuntStationId | null;
 }
 
 export interface FlightIntent {
@@ -97,6 +99,7 @@ export const DEFAULT_FLIGHT_STATE: FlightState = {
   pointerLocked: false,
   currentSpeed: 0,
   nearestStationId: null,
+  autopilotTargetStationId: null,
 };
 
 /** 4 thruster nozzles on rear of ship, symmetric pattern */

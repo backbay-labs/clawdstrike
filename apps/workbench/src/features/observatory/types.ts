@@ -137,6 +137,8 @@ export interface ObservatoryState {
   flightState: FlightState;
   /** Phase 23: docking state slice */
   dockingState: DockingState;
+  /** Phase 25: autopilot target — separate from flightState (user intent, not physics) */
+  autopilotTargetStationId: HuntStationId | null;
   actions: {
     setStations: (stations: ObservatoryStation[]) => void;
     updateSeamSummary: (summary: Partial<ObservatorySeamSummary>) => void;
@@ -184,5 +186,7 @@ export interface ObservatoryState {
     resetFlightState: () => void;
     setDockingState: (updater: DockingState | ((current: DockingState) => DockingState)) => void;
     resetDockingState: () => void;
+    setAutopilotTarget: (stationId: HuntStationId | null) => void;
+    clearAutopilot: () => void;
   };
 }

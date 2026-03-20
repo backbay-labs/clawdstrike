@@ -67,6 +67,7 @@ const useObservatoryStoreBase = create<ObservatoryState>((set, get) => ({
   telemetrySnapshotMs: null,
   flightState: { ...DEFAULT_FLIGHT_STATE },
   dockingState: { ...DEFAULT_DOCKING_STATE },
+  autopilotTargetStationId: null,
   actions: {
     setStations: (stations: ObservatoryStation[]) => {
       const artifactCount = stations.reduce((sum, s) => sum + s.artifactCount, 0);
@@ -223,6 +224,10 @@ const useObservatoryStoreBase = create<ObservatoryState>((set, get) => ({
       })),
     resetDockingState: () =>
       set({ dockingState: { ...DEFAULT_DOCKING_STATE } }),
+    setAutopilotTarget: (stationId) =>
+      set({ autopilotTargetStationId: stationId }),
+    clearAutopilot: () =>
+      set({ autopilotTargetStationId: null }),
   },
 }));
 
