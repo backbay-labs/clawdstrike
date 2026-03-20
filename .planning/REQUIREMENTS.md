@@ -15,7 +15,7 @@
 
 - [x] **SPC-01**: Stations positioned at 200-500 unit radius with varied elevations (Y -15 to +60), logarithmic depth buffer enabled, replacing the flat Y=0 ring
 - [ ] **SPC-02**: 3-layer starfield — procedural Star Nest shader (far background sphere), InstancedMesh mid-field stars (15K, dual-hemisphere), drei Sparkles near-dust (<2K particles)
-- [ ] **SPC-03**: Billboard nebula cloud patches near stations — plane geometry with cloud texture, colored point lights, visible through bloom
+- [x] **SPC-03**: Billboard nebula cloud patches near stations — plane geometry with cloud texture, colored point lights, visible through bloom
 - [ ] **SPC-04**: Void space between stations with depth fog scaled to new world radius
 - [ ] **SPC-05**: Space lanes rendered as emissive CatmullRomCurve3 TubeGeometry between connected stations with animated dash-offset energy flow
 - [ ] **SPC-06**: Space lane particle streams — instanced particles flowing along lane curves via wawa-vfx stretchBillboard
@@ -113,7 +113,7 @@
 |-------------|-------|--------|
 | SPC-01 | Phase 20 | Complete |
 | SPC-02 | Phase 22 | Pending |
-| SPC-03 | Phase 22 | Pending |
+| SPC-03 | Phase 22 | Complete |
 | SPC-04 | Phase 22 | Pending |
 | SPC-05 | Phase 22 | Pending |
 | SPC-06 | Phase 22 | Pending |

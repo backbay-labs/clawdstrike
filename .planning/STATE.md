@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v6.0
 milestone_name: Observatory Space Flight
 status: completed
-stopped_at: Completed 21-04-PLAN.md
-last_updated: "2026-03-20T17:28:26.572Z"
+stopped_at: Completed 22-02-PLAN.md
+last_updated: "2026-03-20T17:47:04.911Z"
 last_activity: 2026-03-20 — Chase camera + thruster VFX (FLT-05, FLT-06)
 progress:
   total_phases: 7
   completed_phases: 2
-  total_plans: 6
-  completed_plans: 6
+  total_plans: 9
+  completed_plans: 7
   percent: 100
 ---
 
@@ -49,6 +49,7 @@ Progress: [██████████] 100%
 | Phase 21 P02 | 7 | 2 tasks | 8 files |
 | Phase 21 P03 | 5 | 1 tasks | 1 files |
 | Phase 21 P04 | 8 | 2 tasks | 4 files |
+| Phase 22-space-environment-art P02 | 7min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -75,6 +76,8 @@ Progress: [██████████] 100%
 - [Phase 21]: Speed cap lerp uses dt*5 factor (~0.2s convergence) for smooth deceleration instead of frame-rate snap
 - [Phase 21]: Chase camera offset (0,4,14) in ship-local space rotated by ship quaternion; followFactor=0.07 with 0.8s fast-convergence snap on mount
 - [Phase 21]: thrustIntensityRef/boostingRef are plain refs not state — avoids re-renders in 60Hz flight loop
+- [Phase 22-space-environment-art]: HUNT_STATION_ORDER (all 6) used so watch station also gets nebula clouds
+- [Phase 22-space-environment-art]: Procedural Canvas2D radial gradient texture avoids external PNG asset dependency for nebula patches
 
 ### Blockers/Concerns
 
@@ -83,6 +86,6 @@ Progress: [██████████] 100%
 
 ## Session Continuity
 
-Last session: 2026-03-20T17:22:56.771Z
-Stopped at: Completed 21-04-PLAN.md
+Last session: 2026-03-20T17:47:04.908Z
+Stopped at: Completed 22-02-PLAN.md
 Resume file: None
