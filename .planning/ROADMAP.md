@@ -473,11 +473,11 @@ Plans:
   3. Logarithmic depth buffer is active — no Z-fighting artifacts visible at any camera distance within the expanded world
   4. Each station displays composable primitive geometry (torus habitat ring, cylinder hub, plane solar panels, box docking bay) driven by a per-station seed, replacing the former ground-level buildings
   5. All existing observatory tests continue to pass after the renderer swap and scale change
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 20-01: three 0.171+ upgrade + WebGPU async renderer swap + logarithmic depth buffer + world scale constants (SPC-01 foundation)
-- [ ] 20-02: Floating station geometry — SpaceStationMesh composable primitives (torus/cylinder/panel/bay) seeded per station; deriveObservatoryWorld position update (STN-01)
+- [ ] 20-01-PLAN.md — three 0.171+ upgrade + WebGPU renderer swap + logarithmic depth buffer + space-scale world constants + elevation type (SPC-01)
+- [ ] 20-02-PLAN.md — SpaceStationMesh composable primitives (torus/cylinder/panel/bay) seeded per station, wired into scene (STN-01)
 
 ### Phase 21: Flight Controller
 **Goal**: Analysts pilot a ship through space — velocity-based flight with quaternion rotation, configurable damping, three speed tiers, and a chase camera that follows the ship with smooth lag; thruster particles fire with thrust intensity
