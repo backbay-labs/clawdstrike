@@ -459,7 +459,7 @@ Plans:
 - [x] **Phase 23: Station Detail + Docking** — 4-tier LOD, beacon lights, Fresnel rim glow, docking ring geometry, three-zone docking system with automated docking sequence (completed 2026-03-20)
 - [x] **Phase 24: Space Flight HUD** — Speed indicator, heading compass, target brackets, off-screen arrows, distance readouts, ref-mutation 60fps updates (completed 2026-03-20)
 - [x] **Phase 25: Star Chart + Transitions** — Star chart minimap, flight path trail, click-to-autopilot, station status icons, boost FOV punch, warp speed lines, arrival name card, bloom spike, proximity fade (completed 2026-03-20)
-- [ ] **Phase 26: Discovery + Missions** — Progressive station reveal, discovery animation, mission waypoint path, mission-guided flight flow
+- [x] **Phase 26: Discovery + Missions** — Progressive station reveal, discovery animation, mission waypoint path, mission-guided flight flow (completed 2026-03-20)
 
 ## Phase Details
 
@@ -576,8 +576,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 26-01-PLAN.md — Progressive station reveal + discovery animation (DSC-01, DSC-02)
-- [ ] 26-02-PLAN.md — Mission waypoint trail + narrative flight directives (DSC-03, DSC-04)
+- [x] 26-01-PLAN.md — Progressive station reveal + discovery animation (DSC-01, DSC-02)
+- [x] 26-02-PLAN.md — Mission waypoint trail + narrative flight directives (DSC-03, DSC-04)
 
 ## Progress
 
@@ -592,4 +592,4 @@ Phase 20 first — it is the spatial substrate everything else builds on. Phase 
 | 23. Station Detail + Docking | 3/3 | Complete    | 2026-03-20 | - |
 | 24. Space Flight HUD | v6.0 | Complete    | 2026-03-20 | 2026-03-20 |
 | 25. Star Chart + Transitions | 4/4 | Complete    | 2026-03-20 | - |
-| 26. Discovery + Missions | v6.0 | 0/2 | Not started | - |
+| 26. Discovery + Missions | 2/2 | Complete   | 2026-03-20 | 2026-03-20 |

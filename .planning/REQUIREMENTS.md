@@ -70,10 +70,10 @@
 
 ### Discovery & Missions
 
-- [ ] **DSC-01**: Progressive station reveal — first visit shows only hub + 2 nearest stations; others appear as dim "uncharted" markers
-- [ ] **DSC-02**: Station discovery animation — lights power on, structures unfold when player first approaches an uncharted station
-- [ ] **DSC-03**: Mission waypoint path — glowing trail from player to mission objective station, visible in flight
-- [ ] **DSC-04**: Mission-guided flight flow — mission objectives direct player between stations ("Signal detected at Horizon, investigate" → fly there)
+- [x] **DSC-01**: Progressive station reveal — first visit shows only hub + 2 nearest stations; others appear as dim "uncharted" markers
+- [x] **DSC-02**: Station discovery animation — lights power on, structures unfold when player first approaches an uncharted station
+- [x] **DSC-03**: Mission waypoint path — glowing trail from player to mission objective station, visible in flight
+- [x] **DSC-04**: Mission-guided flight flow — mission objectives direct player between stations ("Signal detected at Horizon, investigate" → fly there)
 
 ## v7.0 Requirements (Deferred)
 
@@ -147,10 +147,10 @@
 | TRN-03 | Phase 25 | Complete |
 | TRN-04 | Phase 25 | Complete |
 | TRN-05 | Phase 25 | Complete |
-| DSC-01 | Phase 26 | Pending |
-| DSC-02 | Phase 26 | Pending |
-| DSC-03 | Phase 26 | Pending |
-| DSC-04 | Phase 26 | Pending |
+| DSC-01 | Phase 26 | Complete |
+| DSC-02 | Phase 26 | Complete |
+| DSC-03 | Phase 26 | Complete |
+| DSC-04 | Phase 26 | Complete |
 
 **Coverage:**
 - v6.0 requirements: 40 total

@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v6.0
 milestone_name: Observatory Space Flight
 status: completed
-stopped_at: Completed 25-02-PLAN.md
-last_updated: "2026-03-20T19:51:09.993Z"
-last_activity: 2026-03-20 — Station arrival name card cinematic (StationArrivalCard, TRN-03) + proximity-based NPC crew fade (stationProximityRef, TRN-05)
+stopped_at: Completed 26-01-PLAN.md
+last_updated: "2026-03-20T20:08:07.397Z"
+last_activity: "2026-03-20 — Mission waypoint trail (CatmullRom tube, #44ff88) + mission HUD narrative flight directives per station"
 progress:
   total_phases: 7
-  completed_phases: 6
-  total_plans: 18
-  completed_plans: 18
+  completed_phases: 7
+  total_plans: 20
+  completed_plans: 20
   percent: 100
 ---
 
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-03-20)
 
 ## Current Position
 
-Phase: 25 of 26 (Star Chart Transitions)
-Plan: 4 of 4 (complete)
-Status: Phase 25 Plan 04 COMPLETE — Station arrival name card cinematic + proximity-based NPC crew fade
-Last activity: 2026-03-20 — Station arrival name card cinematic (StationArrivalCard, TRN-03) + proximity-based NPC crew fade (stationProximityRef, TRN-05)
+Phase: 26 of 26 (Discovery Missions)
+Plan: 2 of 2 (complete)
+Status: Phase 26 Plan 02 COMPLETE — Mission waypoint trail + narrative flight directives
+Last activity: 2026-03-20 — Mission waypoint trail (CatmullRom tube, #44ff88) + mission HUD narrative flight directives per station
 
 Progress: [██████████] 100%
 
@@ -61,6 +61,8 @@ Progress: [██████████] 100%
 | Phase 25 P04 | 5min | 2 tasks | 4 files |
 | Phase 25-star-chart-transitions P03 | 7 | 2 tasks | 4 files |
 | Phase 25 P02 | 4min | 2 tasks | 6 files |
+| Phase 26 P02 | 12min | 2 tasks | 5 files |
+| Phase 26 P01 | 7min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -121,6 +123,14 @@ Progress: [██████████] 100%
 - [Phase 25-02]: autopilotTargetStationId kept as top-level store field (not inside flightState) — user intent vs physics state
 - [Phase 25-02]: Autopilot slerp 0.03/frame; cruise thrust when forward dot > 0.95; WASD/mouse and dock proximity both fire onAutopilotCancel
 - [Phase 25-02]: Trail buffer circular (max 50, sampled every 500ms via Date.now() in rAF); trail polyline + autopilot dashed line driven imperatively via refs — zero React re-renders
+- [Phase 26-02]: MissionWaypointTrail uses playerInputEnabled (already encodes characterControllerEnabled && flow mode) — avoids separate prop drilling
+- [Phase 26-02]: Geometry rebuild threshold 2 units (distanceToSquared=4) — balances responsiveness vs per-frame TubeGeometry GC cost
+- [Phase 26-02]: shouldShowWaypointTrail pure gate function exported for testability without R3F setup
+- [Phase 26-02]: FLIGHT_NARRATIVES exported from ObservatoryMissionHud; inFlightMode defaults false for backward compatibility
+- [Phase 26]: Phase 26: discoveredStations initialized with Set(['signal','targets']) — hub origin area + 2 nearest stations start revealed, remaining 4 undiscovered
+- [Phase 26]: Phase 26: DISCOVERY_RADIUS=200 — triggers beyond 180-unit mid-LOD boundary so billboard label tier sees animation starting
+- [Phase 26]: Phase 26: isDiscoveredRef local to StationLodWrapper mirrors store Set to avoid subscription in 60fps useFrame loop
+- [Phase 26]: Phase 26: visitedStations module-level Set removed from minimap — discoveredStations store field is now authoritative source of truth
 
 ### Blockers/Concerns
 
@@ -129,6 +139,6 @@ Progress: [██████████] 100%
 
 ## Session Continuity
 
-Last session: 2026-03-20T19:46:39.481Z
-Stopped at: Completed 25-02-PLAN.md
+Last session: 2026-03-20T20:08:07.392Z
+Stopped at: Completed 26-01-PLAN.md
 Resume file: None
