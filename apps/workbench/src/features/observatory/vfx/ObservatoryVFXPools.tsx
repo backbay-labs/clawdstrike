@@ -50,6 +50,16 @@ export function ObservatoryVFXPools() {
           fadeAlpha: [0.0, 0.12],
         }}
       />
+      {/* SPC-06: Lane particle streams — stretchBillboard along lane curves */}
+      <VFXParticles
+        name="lane-particle-stream"
+        settings={{
+          nbParticles: 600,
+          renderMode: RenderMode.StretchBillboard,
+          gravity: [0, 0, 0],
+          fadeAlpha: [0.0, 0.15],
+        }}
+      />
     </>
   );
 }
