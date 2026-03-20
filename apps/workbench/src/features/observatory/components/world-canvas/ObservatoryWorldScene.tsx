@@ -117,7 +117,7 @@ export function ObservatoryWorldScene({
         playerFocusRef={playerFocusRef}
         resetToken={cameraResetToken}
       />
-      <FovController playerFocusRef={playerFocusRef} probeActive={probeStatus === "active"} />
+      <FovController playerFocusRef={playerFocusRef} probeActive={probeStatus === "active"} boostActive={false} />
       <CameraShake
         ref={shakeRef as never}
         intensity={0}

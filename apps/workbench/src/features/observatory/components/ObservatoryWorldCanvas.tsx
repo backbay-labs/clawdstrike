@@ -4699,21 +4699,14 @@ export function ObservatoryWorldCanvas({
         dpr={performanceProfile.dpr}
         frameloop={canvasFrameloop}
         camera={{ position: world.camera.initialPosition, fov: world.camera.fov }}
-        gl={async (_defaultProps) => {
-          try {
-            const { WebGPURenderer } = await import("three/webgpu");
-            const renderer = new WebGPURenderer({ antialias: true, logarithmicDepthBuffer: true });
-            await renderer.init();
-            return renderer;
-          } catch {
-            // Fallback to WebGL2 with logarithmic depth buffer
-            return new THREE.WebGLRenderer({
-              antialias: false,
-              alpha: false,
-              powerPreference: "high-performance",
-              logarithmicDepthBuffer: true,
-            });
-          }
+        gl={{
+          // WebGPU renderer disabled: @react-three/postprocessing (EffectComposer)
+          // calls renderer.getContext().getContextAttributes() which is WebGL-only.
+          // Re-enable after postprocessing library adds WebGPU support.
+          antialias: false,
+          alpha: false,
+          powerPreference: "high-performance",
+          logarithmicDepthBuffer: true,
         }}
         style={{ background: world.environment.backgroundColor }}
       >

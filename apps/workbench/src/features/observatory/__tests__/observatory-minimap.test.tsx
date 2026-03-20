@@ -59,7 +59,8 @@ const observatoryState = vi.hoisted(() => ({
     boostOnCooldown: false,
     pointerLocked: false,
     currentSpeed: 0,
-    nearestStationId: null,
+    nearestStationId: null as string | null,
+    autopilotTargetStationId: null as string | null,
   },
   // Phase 26: all stations discovered by default in tests (full render for assertions)
   discoveredStations: new Set(["signal", "targets", "run", "receipts", "case-notes", "watch"]),
