@@ -590,7 +590,7 @@ Phase 20 first — it is the spatial substrate everything else builds on. Phase 
 | 20. Spatial Foundation | 2/2 | Complete    | 2026-03-20 | - |
 | 21. Flight Controller | 4/4 | Complete    | 2026-03-20 | - |
 | 22. Space Environment Art | 3/3 | Complete    | 2026-03-20 | - |
-| 23. Station Detail + Docking | v6.0 | 0/3 | Not started | - |
+| 23. Station Detail + Docking | 2/3 | In Progress|  | - |
 | 24. Space Flight HUD | v6.0 | 0/2 | Not started | - |
 | 25. Star Chart + Transitions | v6.0 | 0/4 | Not started | - |
 | 26. Discovery + Missions | v6.0 | 0/3 | Not started | - |

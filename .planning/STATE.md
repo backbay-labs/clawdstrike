@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v6.0
 milestone_name: Observatory Space Flight
 status: completed
-stopped_at: Completed 22-03-PLAN.md
-last_updated: "2026-03-20T17:59:49.908Z"
+stopped_at: Completed 23-01-PLAN.md
+last_updated: "2026-03-20T18:20:06.710Z"
 last_activity: 2026-03-20 — Space lanes TubeGeometry + dash-offset energy flow + wawa-vfx particles (SPC-05, SPC-06)
 progress:
   total_phases: 7
   completed_phases: 3
-  total_plans: 9
-  completed_plans: 9
+  total_plans: 12
+  completed_plans: 11
   percent: 100
 ---
 
@@ -52,6 +52,8 @@ Progress: [██████████] 100%
 | Phase 22-space-environment-art P02 | 7min | 2 tasks | 3 files |
 | Phase 22 P01 | 3 | 2 tasks | 4 files |
 | Phase 22 P03 | ~3min | 2 tasks | 4 files |
+| Phase 23 P02 | 6min | 2 tasks | 3 files |
+| Phase 23 P01 | 7 | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -85,6 +87,10 @@ Progress: [██████████] 100%
 - [Phase 22]: Background layers use renderOrder negative + depthWrite:false + depthTest:false for correct z-ordering
 - [Phase 22-03]: ShaderMaterial with GLSL dashOffset uniform chosen for lane tube animation — fract() scroll on TubeGeometry UVs is GPU-cheap; per-lane offset (i*2.1) staggers phase
 - [Phase 22-03]: VFXEmitter for lane particles: position updated imperatively via curve.getPointAt(t) + startEmitting(false) each frame; t advances delta*0.4 (~2.5s cycle matches 2s particle lifetime)
+- [Phase 23]: StationDockingRing reads flightState via getState() inside useFrame — zero subscriptions, zero re-renders in 60Hz loop
+- [Phase 23]: MeshBasicMaterial with toneMapped=false for docking ring so bloom picks it up without scene lights
+- [Phase 23]: drei Detailed distances=[0,60,180,500] for 4-tier station LOD: full mesh+glow (0-60), simplified ring (60-180), billboard label (180-500), beacon sprite (500+)
+- [Phase 23]: Fresnel pow(1-dot,4) on FrontSide sphere radius*1.3 for rim glow halo; AdditiveBlending Canvas2D radial sprite for beacon fog visibility
 
 ### Blockers/Concerns
 
@@ -93,6 +99,6 @@ Progress: [██████████] 100%
 
 ## Session Continuity
 
-Last session: 2026-03-20T17:53:31Z
-Stopped at: Completed 22-03-PLAN.md
+Last session: 2026-03-20T18:20:06.707Z
+Stopped at: Completed 23-01-PLAN.md
 Resume file: None

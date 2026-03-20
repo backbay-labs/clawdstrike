@@ -32,10 +32,10 @@
 ### Station Design
 
 - [x] **STN-01**: Floating space station geometry replacing ground-level buildings — composable primitives (torus habitat ring, cylinder hub, plane solar panels, box docking bay) driven by per-station seed
-- [ ] **STN-02**: 4-tier LOD via drei Detailed — near (full geometry ~5K tris), mid (simplified hub+ring ~500 tris), far (billboard sprite + Html label), beacon (single sprite + point light)
-- [ ] **STN-03**: Station beacon lights visible at extreme distance — emissive bloom sprites with additive blending, pulsing intensity
-- [ ] **STN-04**: Fresnel rim-glow shader on near-LOD stations for atmospheric halo effect
-- [ ] **STN-05**: Docking ring geometry around each station — visual landing approach guide with flanking guide lights
+- [x] **STN-02**: 4-tier LOD via drei Detailed — near (full geometry ~5K tris), mid (simplified hub+ring ~500 tris), far (billboard sprite + Html label), beacon (single sprite + point light)
+- [x] **STN-03**: Station beacon lights visible at extreme distance — emissive bloom sprites with additive blending, pulsing intensity
+- [x] **STN-04**: Fresnel rim-glow shader on near-LOD stations for atmospheric halo effect
+- [x] **STN-05**: Docking ring geometry around each station — visual landing approach guide with flanking guide lights
 
 ### Docking System
 
@@ -124,10 +124,10 @@
 | FLT-05 | Phase 21 | Complete |
 | FLT-06 | Phase 21 | Complete |
 | STN-01 | Phase 20 | Complete |
-| STN-02 | Phase 23 | Pending |
-| STN-03 | Phase 23 | Pending |
-| STN-04 | Phase 23 | Pending |
-| STN-05 | Phase 23 | Pending |
+| STN-02 | Phase 23 | Complete |
+| STN-03 | Phase 23 | Complete |
+| STN-04 | Phase 23 | Complete |
+| STN-05 | Phase 23 | Complete |
 | DCK-01 | Phase 23 | Pending |
 | DCK-02 | Phase 23 | Pending |
 | DCK-03 | Phase 23 | Pending |
