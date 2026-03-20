@@ -10,6 +10,7 @@ import type {
   HuntStationStatus,
 } from "./world/types";
 import type { FlightState } from "./character/ship/flight-types";
+import type { DockingState } from "./character/ship/docking-types";
 
 export type ObservatoryStationKind =
   | "hunt"           // maps to /hunt pane route
@@ -134,6 +135,8 @@ export interface ObservatoryState {
   telemetrySnapshotMs: number | null;
   /** Phase 21: space flight state slice */
   flightState: FlightState;
+  /** Phase 23: docking state slice */
+  dockingState: DockingState;
   actions: {
     setStations: (stations: ObservatoryStation[]) => void;
     updateSeamSummary: (summary: Partial<ObservatorySeamSummary>) => void;
@@ -179,5 +182,7 @@ export interface ObservatoryState {
     resetMission: () => void;
     setFlightState: (updater: FlightState | ((current: FlightState) => FlightState)) => void;
     resetFlightState: () => void;
+    setDockingState: (updater: DockingState | ((current: DockingState) => DockingState)) => void;
+    resetDockingState: () => void;
   };
 }

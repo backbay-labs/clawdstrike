@@ -19,6 +19,10 @@ import {
   DEFAULT_FLIGHT_STATE,
   type FlightState,
 } from "../character/ship/flight-types";
+import {
+  DEFAULT_DOCKING_STATE,
+  type DockingState,
+} from "../character/ship/docking-types";
 
 function createDefaultObservatoryStations(): ObservatoryStation[] {
   return HUNT_STATION_ORDER.map((id) => ({
@@ -62,6 +66,7 @@ const useObservatoryStoreBase = create<ObservatoryState>((set, get) => ({
   selectedStationId: null,
   telemetrySnapshotMs: null,
   flightState: { ...DEFAULT_FLIGHT_STATE },
+  dockingState: { ...DEFAULT_DOCKING_STATE },
   actions: {
     setStations: (stations: ObservatoryStation[]) => {
       const artifactCount = stations.reduce((sum, s) => sum + s.artifactCount, 0);
@@ -212,6 +217,12 @@ const useObservatoryStoreBase = create<ObservatoryState>((set, get) => ({
       })),
     resetFlightState: () =>
       set({ flightState: { ...DEFAULT_FLIGHT_STATE } }),
+    setDockingState: (updater: DockingState | ((current: DockingState) => DockingState)) =>
+      set((state) => ({
+        dockingState: typeof updater === "function" ? updater(state.dockingState) : updater,
+      })),
+    resetDockingState: () =>
+      set({ dockingState: { ...DEFAULT_DOCKING_STATE } }),
   },
 }));
 
