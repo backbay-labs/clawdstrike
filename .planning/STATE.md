@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v6.0
 milestone_name: Observatory Space Flight
-status: completed
-stopped_at: Completed 23-03-PLAN.md
-last_updated: "2026-03-20T18:36:44.243Z"
-last_activity: 2026-03-20 — Space lanes TubeGeometry + dash-offset energy flow + wawa-vfx particles (SPC-05, SPC-06)
+status: in-progress
+stopped_at: Completed 24-01-PLAN.md
+last_updated: "2026-03-20T18:54:30Z"
+last_activity: 2026-03-20 — Space Flight HUD foundation: camera bridge, speed indicator, heading compass (HUD-01, HUD-02, HUD-06)
 progress:
   total_phases: 7
   completed_phases: 4
-  total_plans: 12
-  completed_plans: 12
+  total_plans: 13
+  completed_plans: 13
   percent: 100
 ---
 
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-03-20)
 
 ## Current Position
 
-Phase: 22 of 26 (Space Environment Art)
-Plan: 3 of 3 (complete)
-Status: Phase 22 COMPLETE — all 3 plans done (SPC-01 through SPC-06 fulfilled)
-Last activity: 2026-03-20 — Space lanes TubeGeometry + dash-offset energy flow + wawa-vfx particles (SPC-05, SPC-06)
+Phase: 24 of 26 (Space Flight HUD)
+Plan: 1 of ? (complete)
+Status: Phase 24 Plan 01 COMPLETE — HUD foundation: camera bridge, speed indicator, heading compass
+Last activity: 2026-03-20 — Space Flight HUD DOM overlay with rAF+ref-mutation 60fps updates (HUD-01, HUD-02, HUD-06)
 
 Progress: [██████████] 100%
 
@@ -55,6 +55,7 @@ Progress: [██████████] 100%
 | Phase 23 P02 | 6min | 2 tasks | 3 files |
 | Phase 23 P01 | 7 | 2 tasks | 5 files |
 | Phase 23 P03 | 7min | 2 tasks | 6 files |
+| Phase 24 P01 | 5min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -95,6 +96,11 @@ Progress: [██████████] 100%
 - [Phase 23]: easeOutCubic chosen for dock lock lerp: fast approach, gentle landing like Elite Dangerous auto-dock
 - [Phase 23]: velRef returned from useFlightLoop so useDockingSystem can inject magnet-pull bias without prop drilling
 - [Phase 23]: flightInputEnabled ref gates rotation+thrust only; damping still runs so ship decelerates naturally during dock lock
+- [Phase 24-01]: rAF+getState() chosen over useSelector for HUD frame loop — zero subscriptions, zero React re-renders at 60fps
+- [Phase 24-01]: opacity:0 visibility toggle (not conditional render) per HUD-06 — keeps DOM nodes alive and rAF loops running
+- [Phase 24-01]: HudCameraBridge uses useFrame(-100) priority; .copy() on Matrix4/Vector3 — no allocations in frame callback
+- [Phase 24-01]: Pre-allocated THREE.Quaternion/Euler for HeadingCompass yaw extraction at module level — zero GC in 60fps loop
+- [Phase 24-01]: STATION_COLORS_HEX replicated in hud-constants.ts (not exported from observatory-world-template.ts)
 
 ### Blockers/Concerns
 
@@ -103,6 +109,6 @@ Progress: [██████████] 100%
 
 ## Session Continuity
 
-Last session: 2026-03-20T18:28:42.181Z
-Stopped at: Completed 23-03-PLAN.md
+Last session: 2026-03-20T18:54:30Z
+Stopped at: Completed 24-01-PLAN.md
 Resume file: None

@@ -543,7 +543,7 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 24-01-PLAN.md — Camera bridge + SpeedIndicator + HeadingCompass (HUD-01, HUD-02, HUD-06)
+- [x] 24-01-PLAN.md — Camera bridge + SpeedIndicator + HeadingCompass (HUD-01, HUD-02, HUD-06)
 - [ ] 24-02-PLAN.md — TargetBrackets + OffScreenArrows + distance readouts + ObservatoryTab wiring (HUD-03, HUD-04, HUD-05)
 
 ### Phase 25: Star Chart + Transitions
@@ -591,6 +591,6 @@ Phase 20 first — it is the spatial substrate everything else builds on. Phase 
 | 21. Flight Controller | 4/4 | Complete    | 2026-03-20 | - |
 | 22. Space Environment Art | 3/3 | Complete    | 2026-03-20 | - |
 | 23. Station Detail + Docking | 3/3 | Complete    | 2026-03-20 | - |
-| 24. Space Flight HUD | v6.0 | 0/2 | Not started | - |
+| 24. Space Flight HUD | v6.0 | 1/2 | In progress | - |
 | 25. Star Chart + Transitions | v6.0 | 0/4 | Not started | - |
 | 26. Discovery + Missions | v6.0 | 0/3 | Not started | - |

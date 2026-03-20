@@ -46,12 +46,12 @@
 
 ### HUD & UI
 
-- [ ] **HUD-01**: Speed indicator — vertical bar showing current velocity relative to speed tier cap
-- [ ] **HUD-02**: Heading compass strip — horizontal bar at top with cardinal directions and station labels at angular positions
+- [x] **HUD-01**: Speed indicator — vertical bar showing current velocity relative to speed tier cap
+- [x] **HUD-02**: Heading compass strip — horizontal bar at top with cardinal directions and station labels at angular positions
 - [ ] **HUD-03**: Target brackets — diamond/L-corner shapes around selected station, scale inversely with distance, color-coded by status
 - [ ] **HUD-04**: Off-screen station arrows — directional arrows at screen edges for stations not in view, with station name + distance
 - [ ] **HUD-05**: Distance readouts — numeric distance count attached to station markers, fading in during approach
-- [ ] **HUD-06**: All HUD elements use DOM ref-based useFrame mutation (never setState) for 60fps updates
+- [x] **HUD-06**: All HUD elements use DOM ref-based useFrame mutation (never setState) for 60fps updates
 
 ### Star Chart
 
@@ -132,12 +132,12 @@
 | DCK-02 | Phase 23 | Complete |
 | DCK-03 | Phase 23 | Complete |
 | DCK-04 | Phase 23 | Complete |
-| HUD-01 | Phase 24 | Pending |
-| HUD-02 | Phase 24 | Pending |
+| HUD-01 | Phase 24 | Complete |
+| HUD-02 | Phase 24 | Complete |
 | HUD-03 | Phase 24 | Pending |
 | HUD-04 | Phase 24 | Pending |
 | HUD-05 | Phase 24 | Pending |
-| HUD-06 | Phase 24 | Pending |
+| HUD-06 | Phase 24 | Complete |
 | MAP-01 | Phase 25 | Pending |
 | MAP-02 | Phase 25 | Pending |
 | MAP-03 | Phase 25 | Pending |
