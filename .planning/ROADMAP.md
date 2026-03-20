@@ -573,12 +573,11 @@ Plans:
   2. Flying within discovery range of an uncharted station triggers a lights-power-on + structures-unfold animation before the station appears at full detail
   3. When a mission is active, a glowing trail from the player's ship to the objective station is visible during flight — analysts can follow it without consulting the star chart
   4. Mission text directs analysts between stations with narrative framing ("Signal detected at Horizon, investigate") and the active mission waypoint updates when objectives advance
-**Plans**: 4 plans
+**Plans**: 2 plans
 
 Plans:
-- [ ] 26-01: Progressive station reveal state in observatory-store (visited set, uncharted markers) + discovery range detection (DSC-01)
-- [ ] 26-02: Station discovery animation — lights-on + structures-unfold sequence on first approach (DSC-02)
-- [ ] 26-03: Mission waypoint trail (glowing CatmullRom path from ship to objective) + mission-guided flight narrative flow (DSC-03, DSC-04)
+- [ ] 26-01-PLAN.md — Progressive station reveal + discovery animation (DSC-01, DSC-02)
+- [ ] 26-02-PLAN.md — Mission waypoint trail + narrative flight directives (DSC-03, DSC-04)
 
 ## Progress
 
@@ -593,4 +592,4 @@ Phase 20 first — it is the spatial substrate everything else builds on. Phase 
 | 23. Station Detail + Docking | 3/3 | Complete    | 2026-03-20 | - |
 | 24. Space Flight HUD | v6.0 | Complete    | 2026-03-20 | 2026-03-20 |
 | 25. Star Chart + Transitions | 4/4 | Complete    | 2026-03-20 | - |
-| 26. Discovery + Missions | v6.0 | 0/3 | Not started | - |
+| 26. Discovery + Missions | v6.0 | 0/2 | Not started | - |
