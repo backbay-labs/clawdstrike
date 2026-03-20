@@ -489,13 +489,13 @@ Plans:
   3. Tapping boost activates 3x speed with a visible FOV punch and enters boost cooldown — the analyst cannot chain boosts without a cooldown gap; entering station proximity automatically caps speed to dock approach tier
   4. The chase camera follows behind and above the ship with smooth lerp lag — the ship leads the camera, not the other way around
   5. Thruster particle exhaust scales visibly with thrust intensity via wawa-vfx stretchBillboard — idle ship shows no exhaust, full thrust shows bright stretched trails
-**Plans**: TBD
+**Plans**: 4 plans
 
 Plans:
-- [ ] 21-01: Ship mesh component (ShipMesh) with thruster geometry + FlightController store slice (velocity, quaternion, speed tier state) — replaces capsule avatar (FLT-01)
-- [ ] 21-02: Velocity+quaternion flight loop (useFrame), WASD input mapping, velocity damping (FLT-02, FLT-03)
-- [ ] 21-03: Speed tier system (cruise/boost/dock caps), boost cooldown, dock proximity detection (FLT-04)
-- [ ] 21-04: Chase camera rig (lerp lag offset in ship local space) + thruster exhaust VFX (FLT-05, FLT-06)
+- [ ] 21-01-PLAN.md — Flight types + ShipMesh + observatory-store flight slice (FLT-01)
+- [ ] 21-02-PLAN.md — SpaceFlightController + useFlightInput + useFlightLoop (FLT-02, FLT-03)
+- [ ] 21-03-PLAN.md — Speed tiers: cruise/boost/dock caps + boost cooldown + dock proximity (FLT-04)
+- [ ] 21-04-PLAN.md — Chase camera + thruster exhaust VFX (FLT-05, FLT-06)
 
 ### Phase 22: Space Environment Art
 **Goal**: The void between stations feels like deep space — a 3-layer starfield fills the background, nebula cloud patches float near stations, depth fog fades distant geometry, emissive lanes connect stations, and particle streams flow along those lanes
@@ -507,7 +507,7 @@ Plans:
   3. Depth fog scales correctly to the new world radius — distant stations fade into void rather than hard-cutting at a fog plane
   4. Emissive CatmullRom tube lanes connect adjacent stations with animated dash-offset energy flow visible during flight
   5. Instanced particles stream along lane curves using wawa-vfx stretchBillboard — flow direction matches lane orientation
-**Plans**: TBD
+**Plans**: 4 plans
 
 Plans:
 - [ ] 22-01: StarNestShader background sphere + InstancedMesh mid-field stars (15K dual-hemisphere) + drei Sparkles near-dust (SPC-02)
@@ -523,7 +523,7 @@ Plans:
   2. Flying within 50 units of a station's docking axis causes the ship to drift gently toward the dock point (magnet-pull zone); the pull strengthens as distance decreases
   3. Closing within 15 units triggers an automated 1-second camera transition to docked view, flight controls disable, and the station's docked state activates
   4. Triggering undock pushes the ship away from the station with launch velocity and re-enables full flight controls
-**Plans**: TBD
+**Plans**: 4 plans
 
 Plans:
 - [ ] 23-01: 4-tier LOD via drei Detailed (near/mid/far billboard/beacon) + STN-03 beacon pulse + STN-04 Fresnel rim shader (STN-02, STN-03, STN-04)
@@ -540,7 +540,7 @@ Plans:
   3. The selected station has diamond/L-corner bracket markers scaled inversely with distance and color-coded by status (unvisited, active mission, docked)
   4. Stations outside the camera frustum show directional arrows at screen edges with station name and distance; arrows vanish when the station enters view
   5. Numeric distance readouts attached to station markers fade in during approach and are legible at near-dock range — no setState calls in the HUD update loop
-**Plans**: TBD
+**Plans**: 4 plans
 
 Plans:
 - [ ] 24-01: SpeedIndicator + HeadingCompass DOM components with useFrame ref-mutation pattern (HUD-01, HUD-02, HUD-06)
@@ -556,7 +556,7 @@ Plans:
   3. Station status is readable on the chart — mission active, artifacts pending, docked, and unvisited are visually distinct
   4. Activating boost animates FOV from 60 to 90 and back over 1.1s, fires instanced tube speed-line particles from screen center, and spikes bloom intensity — all three effects resolve before boost cooldown ends
   5. First entering dock proximity plays a 1.2s letterbox + station name slide-in card; approaching a station progressively reveals sub-elements (artifact counts, threat level, NPC visibility) while fading the distance marker
-**Plans**: TBD
+**Plans**: 4 plans
 
 Plans:
 - [ ] 25-01: StarChartMinimap component — replaces SVG ring, renders station dots + player arrow + lane connections + status icons (MAP-01, MAP-04)
@@ -573,7 +573,7 @@ Plans:
   2. Flying within discovery range of an uncharted station triggers a lights-power-on + structures-unfold animation before the station appears at full detail
   3. When a mission is active, a glowing trail from the player's ship to the objective station is visible during flight — analysts can follow it without consulting the star chart
   4. Mission text directs analysts between stations with narrative framing ("Signal detected at Horizon, investigate") and the active mission waypoint updates when objectives advance
-**Plans**: TBD
+**Plans**: 4 plans
 
 Plans:
 - [ ] 26-01: Progressive station reveal state in observatory-store (visited set, uncharted markers) + discovery range detection (DSC-01)
