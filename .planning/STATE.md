@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v6.0
 milestone_name: Observatory Space Flight
-status: completed
-stopped_at: Completed 20-02-PLAN.md
-last_updated: "2026-03-20T16:45:13.379Z"
-last_activity: 2026-03-20 — SpaceStationMesh implemented (STN-01), all observatory tests pass
+status: in-progress
+stopped_at: Completed 21-01-PLAN.md
+last_updated: "2026-03-20T17:04:11Z"
+last_activity: 2026-03-20 — Flight type system + ShipMesh + observatory store flight slice (FLT-01)
 progress:
   total_phases: 7
   completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
-  percent: 5
+  total_plans: 6
+  completed_plans: 3
+  percent: 10
 ---
 
 # Project State
@@ -25,19 +25,19 @@ See: .planning/PROJECT.md (updated 2026-03-20)
 
 ## Current Position
 
-Phase: 20 of 26 (Spatial Foundation)
-Plan: 2 of 2 (complete)
-Status: Phase 20 complete — all plans done
-Last activity: 2026-03-20 — SpaceStationMesh implemented (STN-01), all observatory tests pass
+Phase: 21 of 26 (Flight Controller)
+Plan: 1 of 4 (complete)
+Status: Phase 21 in progress — Plan 01 done (type contracts + ShipMesh + store slice)
+Last activity: 2026-03-20 — Flight type system, ShipMesh, observatory store flight slice (FLT-01)
 
-Progress: [█░░░░░░░░░] 5%
+Progress: [█░░░░░░░░░] 10%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed (v6.0): 2
-- Average duration: ~15 min
-- Total execution time: ~30 min
+- Total plans completed (v6.0): 3
+- Average duration: ~11 min
+- Total execution time: ~34 min
 
 *Updated after each plan completion*
 
@@ -45,6 +45,7 @@ Progress: [█░░░░░░░░░] 5%
 |-------|------|----------|-------|-------|
 | 20 | 01 | ~15m | 3 | 5 |
 | 20 | 02 | ~15m | 2 | 6 |
+| 21 | 01 | ~4m | 2 | 4 |
 
 ## Accumulated Context
 
@@ -61,6 +62,9 @@ Progress: [█░░░░░░░░░] 5%
 - [Phase 20-spatial-foundation]: WORLD_RADIUS=300 in observatory-world-template.ts; station positions include elevationY baked in so all consumers (camera, NPC, hero props) get correct Y without offset
 - [Phase 20-spatial-foundation]: StationBuilding/DistrictGround/DistrictEnvProps removed from scene — districtGeometry.tsx preserved for mulberry32 used by Plan 02 SpaceStationMesh
 - [Phase 20-02]: SpaceStationMesh uses separate PRNG offsets (seed+77, seed+99) for docking arm angle and antenna transforms to avoid correlation with layout PRNG stream
+- [Phase 21-01]: FlightState/FlightConfig/FlightIntent/SpeedTier types established; DEFAULT_FLIGHT_CONFIG constants (cruiseSpeed:40, boost:3x 2s/4s, damp:1.5, dockSpeed:8, dockRadius:50)
+- [Phase 21-01]: DEFAULT_FLIGHT_STATE spawns at [0, 80, 200]; flightState added as flat field in ObservatoryState (not separate store)
+- [Phase 21-01]: ShipMesh uses ReactElement return type (not JSX.Element); hull ConeGeometry rotated 90° around X so tip faces -Z (forward)
 
 ### Blockers/Concerns
 
@@ -69,6 +73,6 @@ Progress: [█░░░░░░░░░] 5%
 
 ## Session Continuity
 
-Last session: 2026-03-20T17:00:00.000Z
-Stopped at: Completed 20-02-PLAN.md
+Last session: 2026-03-20T17:04:11Z
+Stopped at: Completed 21-01-PLAN.md
 Resume file: None

@@ -22,7 +22,7 @@
 
 ### Flight Controller
 
-- [ ] **FLT-01**: Ship mesh replaces capsule avatar — visible ship model with thruster geometry
+- [x] **FLT-01**: Ship mesh replaces capsule avatar — visible ship model with thruster geometry
 - [ ] **FLT-02**: Velocity-based flight controller with quaternion rotation (no gravity, no Rapier) — WASD for thrust/strafe, mouse for pitch/yaw
 - [ ] **FLT-03**: Velocity damping for "flight assist" feel (configurable damping factor ~1.0-2.0)
 - [ ] **FLT-04**: Three speed tiers — cruise (normal cap), boost (3x with cooldown + FOV punch), dock approach (reduced cap near stations)
@@ -117,7 +117,7 @@
 | SPC-04 | Phase 22 | Pending |
 | SPC-05 | Phase 22 | Pending |
 | SPC-06 | Phase 22 | Pending |
-| FLT-01 | Phase 21 | Pending |
+| FLT-01 | Phase 21 | Complete |
 | FLT-02 | Phase 21 | Pending |
 | FLT-03 | Phase 21 | Pending |
 | FLT-04 | Phase 21 | Pending |

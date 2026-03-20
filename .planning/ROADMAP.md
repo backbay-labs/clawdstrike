@@ -492,7 +492,7 @@ Plans:
 **Plans**: 4 plans
 
 Plans:
-- [ ] 21-01-PLAN.md — Flight types + ShipMesh + observatory-store flight slice (FLT-01)
+- [x] 21-01-PLAN.md — Flight types + ShipMesh + observatory-store flight slice (FLT-01) — completed 2026-03-20
 - [ ] 21-02-PLAN.md — SpaceFlightController + useFlightInput + useFlightLoop (FLT-02, FLT-03)
 - [ ] 21-03-PLAN.md — Speed tiers: cruise/boost/dock caps + boost cooldown + dock proximity (FLT-04)
 - [ ] 21-04-PLAN.md — Chase camera + thruster exhaust VFX (FLT-05, FLT-06)
@@ -588,7 +588,7 @@ Phase 20 first — it is the spatial substrate everything else builds on. Phase 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 20. Spatial Foundation | 2/2 | Complete    | 2026-03-20 | - |
-| 21. Flight Controller | v6.0 | 0/4 | Not started | - |
+| 21. Flight Controller | v6.0 | 1/4 | In progress | - |
 | 22. Space Environment Art | v6.0 | 0/3 | Not started | - |
 | 23. Station Detail + Docking | v6.0 | 0/3 | Not started | - |
 | 24. Space Flight HUD | v6.0 | 0/2 | Not started | - |
