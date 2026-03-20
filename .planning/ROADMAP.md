@@ -5,7 +5,9 @@
 - ✅ **v1.0 IDE Pivot** — Phases 1-4 (shipped 2026-03-18/19)
 - ✅ **v2.0 Huntronomer Integration** — Phases 1-4 (shipped 2026-03-19)
 - ✅ **v3.0 Spirit & Observatory Evolution** — Phases 5-9 (shipped 2026-03-19)
-- 🚧 **v4.0 AAA Observatory Experience** — Phases 10-14 (in progress)
+- ✅ **v4.0 AAA Observatory Experience** — Phases 10-14 (shipped 2026-03-19)
+- ✅ **v5.0 Observatory Analyst Experience** — Phases 15-19 (shipped 2026-03-20)
+- 🚧 **v6.0 Observatory Space Flight** — Phases 20-26 (in progress)
 
 ---
 
@@ -210,7 +212,8 @@ Plans:
 
 ---
 
-## v4.0 AAA Observatory Experience
+<details>
+<summary>✅ v4.0 AAA Observatory Experience (Phases 10-14) — SHIPPED 2026-03-19</summary>
 
 **Milestone Goal:** Transform the observatory from functional demo to AAA-quality immersive experience — post-processing pipeline, cinematic camera system, particle effects, polished character animation, world detail with NPCs, and production UI. Bloom transforms all subsequent visual work; phases 11 and 12 can run in parallel after Phase 10 lands.
 
@@ -236,9 +239,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 10-01-PLAN.md — Package install + ObservatoryPostFX component (EffectComposer + Bloom + Vignette + ToneMapping + SMAA) + Canvas antialias:false (Wave 1)
-- [ ] 10-02-PLAN.md — Emissive material upgrades (toneMapped=false + emissiveIntensity boosts) + Autofocus DOF wiring via activeHeroInteraction (Wave 2)
-- [ ] 10-03-PLAN.md — buildSpiritLut utility (programmatic Data3DTexture per spirit kind) + LUT component in EffectComposer + spirit kind wiring (Wave 3)
+- [x] 10-01-PLAN.md — Package install + ObservatoryPostFX component (EffectComposer + Bloom + Vignette + ToneMapping + SMAA) + Canvas antialias:false (Wave 1)
+- [x] 10-02-PLAN.md — Emissive material upgrades (toneMapped=false + emissiveIntensity boosts) + Autofocus DOF wiring via activeHeroInteraction (Wave 2)
+- [x] 10-03-PLAN.md — buildSpiritLut utility (programmatic Data3DTexture per spirit kind) + LUT component in EffectComposer + spirit kind wiring (Wave 3)
 
 ### Phase 11: Camera Cinematics + Shake
 **Goal**: The camera system is cinematic — the observatory opens with an automated flyover that establishes the world before handing control to the user, sprinting widens the FOV and probe scanning narrows it, kinetic events create screen shake, and starting a mission snaps camera attention to the objective station
@@ -269,10 +272,10 @@ Plans:
 **Plans**: 4 plans
 
 Plans:
-- [ ] 12-01-PLAN.md — Install wawa-vfx + ObservatoryVFXPools (landing-dust + thruster-exhaust pool declarations) (Wave 1)
-- [ ] 12-02-PLAN.md — Spirit Trail (PFX-04): drei Trail wrapping orb mesh in SpiritCompanionCanvas (Wave 1, independent)
-- [ ] 12-03-PLAN.md — ProbeDischargeVFX InstancedMesh (PFX-02) + Station Sparkles motes (PFX-03) in ObservatoryWorldCanvas (Wave 1)
-- [ ] 12-04-PLAN.md — CharacterVFX landing dust (PFX-01) + thruster exhaust (PFX-05) + mount all pools (Wave 2)
+- [x] 12-01-PLAN.md — Install wawa-vfx + ObservatoryVFXPools (landing-dust + thruster-exhaust pool declarations) (Wave 1)
+- [x] 12-02-PLAN.md — Spirit Trail (PFX-04): drei Trail wrapping orb mesh in SpiritCompanionCanvas (Wave 1, independent)
+- [x] 12-03-PLAN.md — ProbeDischargeVFX InstancedMesh (PFX-02) + Station Sparkles motes (PFX-03) in ObservatoryWorldCanvas (Wave 1)
+- [x] 12-04-PLAN.md — CharacterVFX landing dust (PFX-01) + thruster exhaust (PFX-05) + mount all pools (Wave 2)
 
 ### Phase 13: Character Polish
 **Goal**: The character controller feels weighted and alive — locomotion blends smoothly across speed tiers, landings compress and spring back, the character breathes at idle, leans forward at speed, flips with elastic snap, and footsteps can drive particle and SFX events
@@ -288,8 +291,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 13-01-PLAN.md — moveSet.ts: flip easing (CHR-05) + landing squash-stretch with easeOutBack overshoot (CHR-02) — TDD plan (Wave 1)
-- [ ] 13-02-PLAN.md — useObservatoryPlayerAnimation.ts: weight-based locomotion blending (CHR-01) + breathing layer (CHR-03) + sprint lean (CHR-04) + footstep events (CHR-06) (Wave 2)
+- [x] 13-01-PLAN.md — moveSet.ts: flip easing (CHR-05) + landing squash-stretch with easeOutBack overshoot (CHR-02) — TDD plan (Wave 1)
+- [x] 13-02-PLAN.md — useObservatoryPlayerAnimation.ts: weight-based locomotion blending (CHR-01) + breathing layer (CHR-03) + sprint lean (CHR-04) + footstep events (CHR-06) (Wave 2)
 
 ### Phase 14: World Detail + NPCs + UI
 **Goal**: The observatory world is a populated environment — an HDR skybox replaces flat stars, districts around stations have procedural architecture and varied ground surfaces, environmental props provide storytelling context, instanced NPC crews patrol and react to the player, and the UI communicates state through 3D beacons, charge indicators, contextual tooltips, and mission achievement popups
@@ -304,24 +307,290 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 14-01-PLAN.md — HDR skybox + district buildings + ground tints + env props (WLD-01–04)
-- [ ] 14-02-PLAN.md — Instanced NPC crew: patrol loops + proximity wave reaction (NPC-01–03)
-- [ ] 14-03-PLAN.md — UI polish: beacons + probe charge ring + tooltips + achievement popups (UIP-01–04)
+- [x] 14-01-PLAN.md — HDR skybox + district buildings + ground tints + env props (WLD-01–04)
+- [x] 14-02-PLAN.md — Instanced NPC crew: patrol loops + proximity wave reaction (NPC-01–03)
+- [x] 14-03-PLAN.md — UI polish: beacons + probe charge ring + tooltips + achievement popups (UIP-01–04)
+
+## Progress
+
+| Phase | Milestone | Plans Complete | Status | Completed |
+|-------|-----------|----------------|--------|-----------|
+| 10. Post-Processing Foundation | v4.0 | 3/3 | Complete | 2026-03-19 |
+| 11. Camera Cinematics + Shake | v4.0 | 3/3 | Complete | 2026-03-19 |
+| 12. Particle Effects | v4.0 | 4/4 | Complete | 2026-03-19 |
+| 13. Character Polish | v4.0 | 2/2 | Complete | 2026-03-19 |
+| 14. World Detail + NPCs + UI | v4.0 | 3/3 | Complete | 2026-03-19 |
+
+</details>
+
+---
+
+<details>
+<summary>✅ v5.0 Observatory Analyst Experience (Phases 15-19) — SHIPPED 2026-03-20</summary>
+
+**Milestone Goal:** Turn the observatory into an operator-grade hunt analysis surface with
+explainable telemetry, guided probes and compound missions, replay intelligence, collaborative
+timeline markers, and a leaner runtime architecture that can support more context-heavy features.
+
+## Phases
+
+- [x] **Phase 15: Explainability + Multi-Lane Pressure** — district explanation model, ranked
+  causes, multi-lane pressure, smoothing, hysteresis
+- [x] **Phase 16: Guided Probes + Compound Missions + Analyst Presets** — recommendation-driven
+  probe UX, compound mission synthesis, route shortcuts, analyst view lenses
+- [x] **Phase 17: Replay Intelligence + Cooperative Timeline** — bookmarks, jump-to-spike,
+  annotations, compare-now-vs-then, collaborative markers
+- [x] **Phase 18: Runtime Decomposition + Performance Envelope** — deeper canvas split,
+  event-driven invalidation, LOD tiers, pooled route resources
+- [x] **Phase 19: Cinematic Context + Ghost Memory + Hunt Weather** — `Why this matters`
+  cinematics, case-note ghosts, telemetry-driven ambience
+
+## Phase Details
+
+### Phase 15: Explainability + Multi-Lane Pressure
+**Goal**: Every district state becomes explainable and stable enough to drive recommendations,
+missions, replay, and cinematic context
+**Depends on**: Phase 14 (world detail, UI polish, and runtime visual substrate exist)
+**Requirements**: OBSX-01, OBSX-02, OBSX-03
+**Success Criteria** (what must be TRUE):
+  1. User can select a district/station and see a ranked explanation of what made it hot, including
+     receipts, anomalies, investigations, findings, or policy drift
+  2. The telemetry model can represent more than one meaningful hot station at a time instead of
+     collapsing the hunt state into a single dominant winner
+  3. Pressure near thresholds no longer causes visible UI/world thrash under live churn or replay
+     scrubbing
+**Plans**: 2 plans
+
+Plans:
+- [x] 15-01-PLAN.md — Multi-lane telemetry + smoothing/hysteresis + shared explanation types
+- [x] 15-02-PLAN.md — Explainability panel shell + integration tests
+
+### Phase 16: Guided Probes + Compound Missions + Analyst Presets
+**Goal**: The observatory tells the operator what to do next, not just what is happening
+**Depends on**: Phase 15
+**Requirements**: OBSX-04, OBSX-05, OBSX-06
+**Success Criteria** (what must be TRUE):
+  1. After a probe, the operator sees what changed, why it matters, and at least one direct next
+     action when the hunt context supports it
+  2. Missions can synthesize compound objectives spanning multiple telemetry categories in one plan
+  3. Analyst presets can refocus overlays and camera emphasis around named lenses such as `Threat`,
+     `Evidence`, `Receipts`, and `Nexus`
+**Plans**: 3 plans
+
+Plans:
+- [x] 16-01-PLAN.md — Recommendation contract + probe delta summaries
+- [x] 16-02-PLAN.md — Compound mission synthesis + mission HUD upgrades
+- [x] 16-03-PLAN.md — Analyst presets + route shortcuts
+
+### Phase 17: Replay Intelligence + Cooperative Timeline
+**Goal**: Replay becomes an investigation tool rather than a simple time scrubber
+**Depends on**: Phase 15
+**Requirements**: OBSX-07, OBSX-08, OBSX-09
+**Success Criteria** (what must be TRUE):
+  1. Replay can jump to derived spikes and let the operator bookmark meaningful moments
+  2. The operator can annotate replay and compare a chosen snapshot against current state per
+     district
+  3. Multiple investigation or analyst markers can coexist on the replay timeline
+**Plans**: 3 plans
+
+Plans:
+- [x] 17-01-PLAN.md — Replay snapshot model + spike detection
+- [x] 17-02-PLAN.md — Replay bookmarks/annotations + compare panel
+- [x] 17-03-PLAN.md — Cooperative timeline markers + persistence strategy
+
+### Phase 18: Runtime Decomposition + Performance Envelope
+**Goal**: The observatory is structurally cheaper to evolve and operationally cheaper to render
+**Depends on**: Phase 15 for shared contracts; can overlap with Phase 16
+**Requirements**: OBSX-13, OBSX-14, OBSX-15, OBSX-16
+**Success Criteria** (what must be TRUE):
+  1. `ObservatoryWorldCanvas.tsx` shrinks into a composition root with extracted controllers and
+     modules
+  2. Idle states avoid unnecessary full-scene churn via event-driven invalidation
+  3. Distant or low-relevance world simulation runs in cheaper LOD tiers
+  4. Route pulses, eruptions, and other repeated effects avoid avoidable per-event allocation churn
+**Plans**: 3 plans
+
+Plans:
+- [x] 18-01-PLAN.md — Canvas decomposition into extracted world controllers
+- [x] 18-02-PLAN.md — Invalidation zones + LOD policy
+- [x] 18-03-PLAN.md — Resource pooling/memoization + perf harness extensions
+
+### Phase 19: Cinematic Context + Ghost Memory + Hunt Weather
+**Goal**: The world adds richer context and memory without sacrificing actionability
+**Depends on**: Phases 16-18
+**Requirements**: OBSX-10, OBSX-11, OBSX-12
+**Success Criteria** (what must be TRUE):
+  1. Critical or probe-driven spikes can trigger a brief, skippable `Why this matters` framing
+     sequence with causal overlay and route jump
+  2. Prior findings or receipt traces can appear as readable in-world ghosts that enrich, rather
+     than obstruct, the scene
+  3. Hunt weather reflects telemetry quality and intensity while preserving readability and
+     navigation
+**Plans**: 3 plans
+
+Plans:
+- [x] 19-01-PLAN.md — Spike cinematic framing + recommendation handoff
+- [x] 19-02-PLAN.md — Case-note ghosts + memory-layer contracts
+- [x] 19-03-PLAN.md — Hunt weather controller + readability guardrails
+
+## Progress
+
+| Phase | Milestone | Plans Complete | Status | Completed |
+|-------|-----------|----------------|--------|-----------|
+| 15. Explainability + Multi-Lane Pressure | v5.0 | 2/2 | Complete | 2026-03-20 |
+| 16. Guided Probes + Compound Missions + Analyst Presets | v5.0 | 3/3 | Complete | 2026-03-20 |
+| 17. Replay Intelligence + Cooperative Timeline | v5.0 | 3/3 | Complete | 2026-03-20 |
+| 18. Runtime Decomposition + Performance Envelope | v5.0 | 3/3 | Complete | 2026-03-20 |
+| 19. Cinematic Context + Ghost Memory + Hunt Weather | v5.0 | 3/3 | Complete | 2026-03-20 |
+
+</details>
+
+---
+
+## v6.0 Observatory Space Flight
+
+**Milestone Goal:** Transform the observatory from a ground-level station ring into an immersive space environment where analysts fly a ship between floating space stations — the journey between stations is as engaging as the destination.
+
+## Phases
+
+- [ ] **Phase 20: Spatial Foundation** — Bump three to 0.171+, WebGPU renderer swap, space-scale world (200-500 unit radius), logarithmic depth buffer, floating station geometry replacing ground buildings
+- [ ] **Phase 21: Flight Controller** — Ship mesh, velocity+quaternion flight, damping, three speed tiers (cruise/boost/dock), chase camera, thruster particle trails
+- [ ] **Phase 22: Space Environment Art** — 3-layer starfield, billboard nebula clouds, void depth fog, emissive space lanes, lane particle streams
+- [ ] **Phase 23: Station Detail + Docking** — 4-tier LOD, beacon lights, Fresnel rim glow, docking ring geometry, three-zone docking system with automated docking sequence
+- [ ] **Phase 24: Space Flight HUD** — Speed indicator, heading compass, target brackets, off-screen arrows, distance readouts, ref-mutation 60fps updates
+- [ ] **Phase 25: Star Chart + Transitions** — Star chart minimap, flight path trail, click-to-autopilot, station status icons, boost FOV punch, warp speed lines, arrival name card, bloom spike, proximity fade
+- [ ] **Phase 26: Discovery + Missions** — Progressive station reveal, discovery animation, mission waypoint path, mission-guided flight flow
+
+## Phase Details
+
+### Phase 20: Spatial Foundation
+**Goal**: The observatory world exists at space scale — stations float at 200-500 unit radius with varied elevations, the renderer runs on WebGPU (with WebGL2 fallback), and the logarithmic depth buffer prevents Z-fighting across the vast depth range
+**Depends on**: Phase 19 (v5.0 runtime decomposition and world substrate stable)
+**Requirements**: SPC-01, STN-01
+**Success Criteria** (what must be TRUE):
+  1. Observatory opens and stations are positioned in a 200-500 unit sphere at varied Y elevations (-15 to +60) — the flat ground ring is gone
+  2. The renderer runs on WebGPU where the browser supports it, falling back to WebGL2 transparently — existing MeshStandardMaterial and postprocessing render correctly in both paths
+  3. Logarithmic depth buffer is active — no Z-fighting artifacts visible at any camera distance within the expanded world
+  4. Each station displays composable primitive geometry (torus habitat ring, cylinder hub, plane solar panels, box docking bay) driven by a per-station seed, replacing the former ground-level buildings
+  5. All existing observatory tests continue to pass after the renderer swap and scale change
+**Plans**: TBD
+
+Plans:
+- [ ] 20-01: three 0.171+ upgrade + WebGPU async renderer swap + logarithmic depth buffer + world scale constants (SPC-01 foundation)
+- [ ] 20-02: Floating station geometry — SpaceStationMesh composable primitives (torus/cylinder/panel/bay) seeded per station; deriveObservatoryWorld position update (STN-01)
+
+### Phase 21: Flight Controller
+**Goal**: Analysts pilot a ship through space — velocity-based flight with quaternion rotation, configurable damping, three speed tiers, and a chase camera that follows the ship with smooth lag; thruster particles fire with thrust intensity
+**Depends on**: Phase 20 (space-scale world and station geometry must exist before flight is meaningful)
+**Requirements**: FLT-01, FLT-02, FLT-03, FLT-04, FLT-05, FLT-06
+**Success Criteria** (what must be TRUE):
+  1. A ship mesh (with thruster geometry) is visible in the scene — the capsule avatar is replaced; the ship is the player's vessel
+  2. WASD applies thrust and strafe; mouse controls pitch and yaw via quaternion rotation; releasing controls damps velocity smoothly to a stop (no gravity, no Rapier)
+  3. Tapping boost activates 3x speed with a visible FOV punch and enters boost cooldown — the analyst cannot chain boosts without a cooldown gap; entering station proximity automatically caps speed to dock approach tier
+  4. The chase camera follows behind and above the ship with smooth lerp lag — the ship leads the camera, not the other way around
+  5. Thruster particle exhaust scales visibly with thrust intensity via wawa-vfx stretchBillboard — idle ship shows no exhaust, full thrust shows bright stretched trails
+**Plans**: TBD
+
+Plans:
+- [ ] 21-01: Ship mesh component (ShipMesh) with thruster geometry + FlightController store slice (velocity, quaternion, speed tier state) — replaces capsule avatar (FLT-01)
+- [ ] 21-02: Velocity+quaternion flight loop (useFrame), WASD input mapping, velocity damping (FLT-02, FLT-03)
+- [ ] 21-03: Speed tier system (cruise/boost/dock caps), boost cooldown, dock proximity detection (FLT-04)
+- [ ] 21-04: Chase camera rig (lerp lag offset in ship local space) + thruster exhaust VFX (FLT-05, FLT-06)
+
+### Phase 22: Space Environment Art
+**Goal**: The void between stations feels like deep space — a 3-layer starfield fills the background, nebula cloud patches float near stations, depth fog fades distant geometry, emissive lanes connect stations, and particle streams flow along those lanes
+**Depends on**: Phase 20 (world scale established; star and lane positions depend on station coordinates at space scale)
+**Requirements**: SPC-02, SPC-03, SPC-04, SPC-05, SPC-06
+**Success Criteria** (what must be TRUE):
+  1. Three distinct star layers are visible — a procedural Star Nest shader sphere in the far background, 15K InstancedMesh mid-field stars distributed across dual hemispheres, and drei Sparkles near-dust; parallax between layers is perceptible during flight
+  2. Billboard nebula cloud patches appear near stations — colored point lights make them glow through bloom; patches are visible from approach distance
+  3. Depth fog scales correctly to the new world radius — distant stations fade into void rather than hard-cutting at a fog plane
+  4. Emissive CatmullRom tube lanes connect adjacent stations with animated dash-offset energy flow visible during flight
+  5. Instanced particles stream along lane curves using wawa-vfx stretchBillboard — flow direction matches lane orientation
+**Plans**: TBD
+
+Plans:
+- [ ] 22-01: StarNestShader background sphere + InstancedMesh mid-field stars (15K dual-hemisphere) + drei Sparkles near-dust (SPC-02)
+- [ ] 22-02: Billboard nebula cloud patches + colored point lights + void depth fog scaled to world radius (SPC-03, SPC-04)
+- [ ] 22-03: Space lanes — emissive CatmullRomCurve3 TubeGeometry + animated dash-offset + lane particle streams (SPC-05, SPC-06)
+
+### Phase 23: Station Detail + Docking
+**Goal**: Stations are navigational destinations with visual depth — four LOD tiers shift geometry complexity with distance, beacon lights pulse at extreme range, Fresnel rim glow halos near stations, docking rings guide approach, and a three-zone docking system automates the final landing sequence
+**Depends on**: Phase 21 (flight controller must exist for docking zones to be meaningful; approach speed tier triggers from FLT-04); Phase 20 (station geometry exists from STN-01)
+**Requirements**: STN-02, STN-03, STN-04, STN-05, DCK-01, DCK-02, DCK-03, DCK-04
+**Success Criteria** (what must be TRUE):
+  1. Stations visually shift complexity as the ship approaches — far range shows a billboard sprite and point light; mid range shows a simplified hub+ring; near range shows full geometry with Fresnel rim glow; beacon light is always visible at extreme distance
+  2. Flying within 50 units of a station's docking axis causes the ship to drift gently toward the dock point (magnet-pull zone); the pull strengthens as distance decreases
+  3. Closing within 15 units triggers an automated 1-second camera transition to docked view, flight controls disable, and the station's docked state activates
+  4. Triggering undock pushes the ship away from the station with launch velocity and re-enables full flight controls
+**Plans**: TBD
+
+Plans:
+- [ ] 23-01: 4-tier LOD via drei Detailed (near/mid/far billboard/beacon) + STN-03 beacon pulse + STN-04 Fresnel rim shader (STN-02, STN-03, STN-04)
+- [ ] 23-02: Docking ring geometry + flanking guide lights per station (STN-05)
+- [ ] 23-03: Three-zone docking system — approach detection, magnet-pull lerp, dock lock sequence + undock launch (DCK-01, DCK-02, DCK-03, DCK-04)
+
+### Phase 24: Space Flight HUD
+**Goal**: Analysts always know where they are, how fast they are moving, and where their target is — a DOM-based HUD updates at 60fps via ref mutation with a speed bar, heading compass, target brackets, off-screen arrows, and distance readouts
+**Depends on**: Phase 21 (flight controller provides velocity, speed tier, and heading data; HUD elements are meaningless without flight state)
+**Requirements**: HUD-01, HUD-02, HUD-03, HUD-04, HUD-05, HUD-06
+**Success Criteria** (what must be TRUE):
+  1. A vertical speed bar is always visible during flight, reflecting current velocity relative to the active speed tier cap — it fills as the ship accelerates and empties as it decelerates
+  2. A horizontal compass strip at the top of the view shows cardinal directions and station labels at their angular positions relative to the ship's heading — labels shift as the ship rotates
+  3. The selected station has diamond/L-corner bracket markers scaled inversely with distance and color-coded by status (unvisited, active mission, docked)
+  4. Stations outside the camera frustum show directional arrows at screen edges with station name and distance; arrows vanish when the station enters view
+  5. Numeric distance readouts attached to station markers fade in during approach and are legible at near-dock range — no setState calls in the HUD update loop
+**Plans**: TBD
+
+Plans:
+- [ ] 24-01: SpeedIndicator + HeadingCompass DOM components with useFrame ref-mutation pattern (HUD-01, HUD-02, HUD-06)
+- [ ] 24-02: TargetBrackets (in-frustum) + OffScreenArrows (out-of-frustum) + distance readouts (HUD-03, HUD-04, HUD-05)
+
+### Phase 25: Star Chart + Transitions
+**Goal**: Analysts can navigate by map and feel the drama of space travel — a star chart minimap replaces the SVG ring, click-to-autopilot guides flight, boost launches punch FOV and bloom, station arrivals play name cards, and proximity reveals station detail progressively
+**Depends on**: Phase 21 (flight controller for autopilot navigation and boost FOV punch); Phase 23 (docking system for arrival sequence trigger)
+**Requirements**: MAP-01, MAP-02, MAP-03, MAP-04, TRN-01, TRN-02, TRN-03, TRN-04, TRN-05
+**Success Criteria** (what must be TRUE):
+  1. The observatory minimap is a star chart — station positions, the player location with facing indicator, and lane connections are rendered; the SVG ring minimap is replaced
+  2. Clicking a station on the chart engages auto-navigation toward it — the ship turns and begins flying to the target without manual steering
+  3. Station status is readable on the chart — mission active, artifacts pending, docked, and unvisited are visually distinct
+  4. Activating boost animates FOV from 60 to 90 and back over 1.1s, fires instanced tube speed-line particles from screen center, and spikes bloom intensity — all three effects resolve before boost cooldown ends
+  5. First entering dock proximity plays a 1.2s letterbox + station name slide-in card; approaching a station progressively reveals sub-elements (artifact counts, threat level, NPC visibility) while fading the distance marker
+**Plans**: TBD
+
+Plans:
+- [ ] 25-01: StarChartMinimap component — replaces SVG ring, renders station dots + player arrow + lane connections + status icons (MAP-01, MAP-04)
+- [ ] 25-02: Flight path trail on star chart + click-to-autopilot navigation engagement (MAP-02, MAP-03)
+- [ ] 25-03: Boost transition effects — FOV punch animation + warp speed line particles + bloom spike (TRN-01, TRN-02, TRN-04)
+- [ ] 25-04: Station arrival name card (ObservatoryCinematicOverlay letterbox + name slide) + proximity detail fade (TRN-03, TRN-05)
+
+### Phase 26: Discovery + Missions
+**Goal**: The space environment rewards exploration — stations are hidden until discovered, powering on dramatically on first approach; mission objectives draw glowing paths through space and direct analysts to specific stations with narrative hooks
+**Depends on**: Phase 23 (station geometry and docking needed for discovery animation and mission arrival); Phase 21 (flight controller needed for mission waypoint path visibility during flight)
+**Requirements**: DSC-01, DSC-02, DSC-03, DSC-04
+**Success Criteria** (what must be TRUE):
+  1. Opening the observatory shows only the starting hub and 2 nearest stations; other stations appear as dim uncharted markers — the full station ring is not immediately revealed
+  2. Flying within discovery range of an uncharted station triggers a lights-power-on + structures-unfold animation before the station appears at full detail
+  3. When a mission is active, a glowing trail from the player's ship to the objective station is visible during flight — analysts can follow it without consulting the star chart
+  4. Mission text directs analysts between stations with narrative framing ("Signal detected at Horizon, investigate") and the active mission waypoint updates when objectives advance
+**Plans**: TBD
+
+Plans:
+- [ ] 26-01: Progressive station reveal state in observatory-store (visited set, uncharted markers) + discovery range detection (DSC-01)
+- [ ] 26-02: Station discovery animation — lights-on + structures-unfold sequence on first approach (DSC-02)
+- [ ] 26-03: Mission waypoint trail (glowing CatmullRom path from ship to objective) + mission-guided flight narrative flow (DSC-03, DSC-04)
 
 ## Progress
 
 **Execution Order:**
-Phase 10 first (bloom transforms all downstream visual work). Phases 11 and 12 can run in parallel after Phase 10. Phase 13 depends on Phase 12 (footstep events drive particle callbacks). Phase 14 depends on Phase 10 for environment lighting; it can run parallel to Phases 12 and 13.
+Phase 20 first — it is the spatial substrate everything else builds on. Phase 21 (flight controller) must land before Phase 23 (docking) and Phase 24 (HUD). Phase 22 (environment art) depends on world scale but not flight, so it can overlap with Phase 21. Phase 23 depends on both Phases 20 and 21. Phases 24 and 25 depend on Phase 21 for flight data. Phase 26 is the final layer and depends on Phases 23 and 21.
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 5. Spirit Reactivity & Editor Integration | v3.0 | 3/3 | Complete | 2026-03-19 |
-| 6. Observatory GLB Props + Spirit Affinity Rings | v3.0 | 2/2 | Complete | 2026-03-19 |
-| 7. Spirit Evolution & Persistence | v3.0 | 2/2 | Complete | 2026-03-19 |
-| 8. Observatory Missions + Evidence 3D Preview | v3.0 | 3/3 | Complete | 2026-03-19 |
-| 9. Nexus Force Graph | v3.0 | 2/2 | Complete | 2026-03-19 |
-| 10. Post-Processing Foundation | 3/3 | Complete    | 2026-03-19 | - |
-| 11. Camera Cinematics + Shake | 3/3 | Complete    | 2026-03-19 | - |
-| 12. Particle Effects | 4/4 | Complete    | 2026-03-19 | - |
-| 13. Character Polish | 2/2 | Complete    | 2026-03-19 | - |
-| 14. World Detail + NPCs + UI | 3/3 | Complete   | 2026-03-19 | - |
+| 20. Spatial Foundation | v6.0 | 0/2 | Not started | - |
+| 21. Flight Controller | v6.0 | 0/4 | Not started | - |
+| 22. Space Environment Art | v6.0 | 0/3 | Not started | - |
+| 23. Station Detail + Docking | v6.0 | 0/3 | Not started | - |
+| 24. Space Flight HUD | v6.0 | 0/2 | Not started | - |
+| 25. Star Chart + Transitions | v6.0 | 0/4 | Not started | - |
+| 26. Discovery + Missions | v6.0 | 0/3 | Not started | - |

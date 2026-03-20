@@ -111,52 +111,52 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SPC-01 | — | Pending |
-| SPC-02 | — | Pending |
-| SPC-03 | — | Pending |
-| SPC-04 | — | Pending |
-| SPC-05 | — | Pending |
-| SPC-06 | — | Pending |
-| FLT-01 | — | Pending |
-| FLT-02 | — | Pending |
-| FLT-03 | — | Pending |
-| FLT-04 | — | Pending |
-| FLT-05 | — | Pending |
-| FLT-06 | — | Pending |
-| STN-01 | — | Pending |
-| STN-02 | — | Pending |
-| STN-03 | — | Pending |
-| STN-04 | — | Pending |
-| STN-05 | — | Pending |
-| DCK-01 | — | Pending |
-| DCK-02 | — | Pending |
-| DCK-03 | — | Pending |
-| DCK-04 | — | Pending |
-| HUD-01 | — | Pending |
-| HUD-02 | — | Pending |
-| HUD-03 | — | Pending |
-| HUD-04 | — | Pending |
-| HUD-05 | — | Pending |
-| HUD-06 | — | Pending |
-| MAP-01 | — | Pending |
-| MAP-02 | — | Pending |
-| MAP-03 | — | Pending |
-| MAP-04 | — | Pending |
-| TRN-01 | — | Pending |
-| TRN-02 | — | Pending |
-| TRN-03 | — | Pending |
-| TRN-04 | — | Pending |
-| TRN-05 | — | Pending |
-| DSC-01 | — | Pending |
-| DSC-02 | — | Pending |
-| DSC-03 | — | Pending |
-| DSC-04 | — | Pending |
+| SPC-01 | Phase 20 | Pending |
+| SPC-02 | Phase 22 | Pending |
+| SPC-03 | Phase 22 | Pending |
+| SPC-04 | Phase 22 | Pending |
+| SPC-05 | Phase 22 | Pending |
+| SPC-06 | Phase 22 | Pending |
+| FLT-01 | Phase 21 | Pending |
+| FLT-02 | Phase 21 | Pending |
+| FLT-03 | Phase 21 | Pending |
+| FLT-04 | Phase 21 | Pending |
+| FLT-05 | Phase 21 | Pending |
+| FLT-06 | Phase 21 | Pending |
+| STN-01 | Phase 20 | Pending |
+| STN-02 | Phase 23 | Pending |
+| STN-03 | Phase 23 | Pending |
+| STN-04 | Phase 23 | Pending |
+| STN-05 | Phase 23 | Pending |
+| DCK-01 | Phase 23 | Pending |
+| DCK-02 | Phase 23 | Pending |
+| DCK-03 | Phase 23 | Pending |
+| DCK-04 | Phase 23 | Pending |
+| HUD-01 | Phase 24 | Pending |
+| HUD-02 | Phase 24 | Pending |
+| HUD-03 | Phase 24 | Pending |
+| HUD-04 | Phase 24 | Pending |
+| HUD-05 | Phase 24 | Pending |
+| HUD-06 | Phase 24 | Pending |
+| MAP-01 | Phase 25 | Pending |
+| MAP-02 | Phase 25 | Pending |
+| MAP-03 | Phase 25 | Pending |
+| MAP-04 | Phase 25 | Pending |
+| TRN-01 | Phase 25 | Pending |
+| TRN-02 | Phase 25 | Pending |
+| TRN-03 | Phase 25 | Pending |
+| TRN-04 | Phase 25 | Pending |
+| TRN-05 | Phase 25 | Pending |
+| DSC-01 | Phase 26 | Pending |
+| DSC-02 | Phase 26 | Pending |
+| DSC-03 | Phase 26 | Pending |
+| DSC-04 | Phase 26 | Pending |
 
 **Coverage:**
 - v6.0 requirements: 40 total
-- Mapped to phases: 0
-- Unmapped: 40 ⚠️
+- Mapped to phases: 40
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-20*
-*Last updated: 2026-03-20 after initial definition*
+*Last updated: 2026-03-20 after roadmap creation (v6.0 Phases 20-26)*
