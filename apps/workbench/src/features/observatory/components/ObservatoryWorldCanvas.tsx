@@ -88,6 +88,7 @@ import { HudCameraBridge } from "./hud/camera-bridge";
 import { ObservatoryWorldScene as ExtractedObservatoryWorldScene } from "./world-canvas/ObservatoryWorldScene";
 import { useObservatoryWorldLifecycle } from "./world-canvas/useObservatoryWorldLifecycle";
 import { useObservatoryStore } from "../stores/observatory-store";
+import type { FlightState } from "../character/ship/flight-types";
 import { WarpSpeedLines } from "../vfx/WarpSpeedLines";
 import { MissionWaypointTrail } from "./MissionWaypointTrail";
 
@@ -4684,6 +4685,14 @@ export function ObservatoryWorldCanvas({
     triggerHeroProp,
     world.heroProps,
   ]);
+
+  // FlightState store bridge — writes live position/quaternion/speedTier/currentSpeed
+  // into the store at ~100ms intervals via the onStateChange prop chain.
+  // Uses getState() (imperative write) so this 60fps callback never causes React re-renders.
+  const handleFlightStateChange = useCallback((state: FlightState) => {
+    useObservatoryStore.getState().actions.setFlightState(state);
+  }, []);
+
   return (
     <div className={className} style={{ background: world.environment.backgroundColor }}>
       <Canvas
@@ -4778,6 +4787,7 @@ export function ObservatoryWorldCanvas({
                 heroProps={world.heroProps}
                 inputEnabled={playerInputEnabled}
                 onInteractProp={triggerHeroProp}
+                onStateChange={handleFlightStateChange}
                 onWorldStateChange={setPlayerWorldState}
                 playerFocusRef={playerFocusRef}
                 preferredStationId={activeStationId ?? world.likelyStationId}

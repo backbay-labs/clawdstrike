@@ -31,12 +31,14 @@ const LazySpaceFlightController = lazy(() =>
 
 export function ObservatoryFlowRuntimeScene({
   inputEnabled = false,
+  onStateChange,
   playerFocusRef,
 }: ObservatoryFlowRuntimeSceneProps) {
   return (
     <Suspense fallback={null}>
       <LazySpaceFlightController
         inputEnabled={inputEnabled}
+        onStateChange={onStateChange}
         playerFocusRef={playerFocusRef}
       />
     </Suspense>

@@ -7,7 +7,7 @@
 - ✅ **v3.0 Spirit & Observatory Evolution** — Phases 5-9 (shipped 2026-03-19)
 - ✅ **v4.0 AAA Observatory Experience** — Phases 10-14 (shipped 2026-03-19)
 - ✅ **v5.0 Observatory Analyst Experience** — Phases 15-19 (shipped 2026-03-20)
-- 🚧 **v6.0 Observatory Space Flight** — Phases 20-26 (in progress)
+- 🚧 **v6.0 Observatory Space Flight** — Phases 20-27 (in progress)
 
 ---
 
@@ -460,6 +460,7 @@ Plans:
 - [x] **Phase 24: Space Flight HUD** — Speed indicator, heading compass, target brackets, off-screen arrows, distance readouts, ref-mutation 60fps updates (completed 2026-03-20)
 - [x] **Phase 25: Star Chart + Transitions** — Star chart minimap, flight path trail, click-to-autopilot, station status icons, boost FOV punch, warp speed lines, arrival name card, bloom spike, proximity fade (completed 2026-03-20)
 - [x] **Phase 26: Discovery + Missions** — Progressive station reveal, discovery animation, mission waypoint path, mission-guided flight flow (completed 2026-03-20)
+- [ ] **Phase 27: Flight State Bridge + Autopilot Wiring** — FlightState store bridge + autopilot ref bridge (gap closure)
 
 ## Phase Details
 
@@ -590,6 +591,11 @@ Plans:
   3. Boost activation triggers FOV punch (60→90→60), warp speed lines, and bloom spike simultaneously — all three effects visible because store.flightState.speedTier correctly reports "boost"
   4. Flying within 200 units of an uncharted station triggers the discovery animation — StationLodWrapper proximity check fires because store.flightState.position reflects real ship position
   5. Star chart trail renders the ship's recent trajectory as a fading line — trail buffer receives changing positions from store
+**Plans**: 1 plan
+
+Plans:
+- [ ] 27-01-PLAN.md — FlightState store bridge (onStateChange prop chain) + autopilot ref bridge (MAP-02, MAP-03)
+
 
 ## Progress
 
@@ -605,4 +611,4 @@ Phase 20 first — it is the spatial substrate everything else builds on. Phase 
 | 24. Space Flight HUD | v6.0 | Complete    | 2026-03-20 | 2026-03-20 |
 | 25. Star Chart + Transitions | 4/4 | Complete    | 2026-03-20 | - |
 | 26. Discovery + Missions | 2/2 | Complete    | 2026-03-20 | 2026-03-20 |
-| 27. Flight State Bridge + Autopilot Wiring | v6.0 | 0/0 | Planned | - |
+| 27. Flight State Bridge + Autopilot Wiring | v6.0 | 0/1 | Planned | - |
