@@ -89,6 +89,7 @@ import { ObservatoryWorldScene as ExtractedObservatoryWorldScene } from "./world
 import { useObservatoryWorldLifecycle } from "./world-canvas/useObservatoryWorldLifecycle";
 import { useObservatoryStore } from "../stores/observatory-store";
 import { WarpSpeedLines } from "../vfx/WarpSpeedLines";
+import { MissionWaypointTrail } from "./MissionWaypointTrail";
 
 const LazyObservatoryPostFX = lazy(() =>
   import("./ObservatoryPostFX").then((module) => ({ default: module.ObservatoryPostFX })),
@@ -4747,6 +4748,11 @@ export function ObservatoryWorldCanvas({
             onTriggerHeroProp={triggerHeroProp}
             onSelectStation={onSelectStation}
             playerFocusRef={playerFocusRef}
+          />
+          {/* DSC-03: Mission waypoint trail — glowing green CatmullRom tube to objective station */}
+          <MissionWaypointTrail
+            mission={mission}
+            characterControllerEnabled={playerInputEnabled}
           />
           {effectiveWeatherState ? (
             <ObservatoryWeatherLayer
