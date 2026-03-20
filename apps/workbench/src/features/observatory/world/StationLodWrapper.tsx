@@ -1,10 +1,10 @@
 /**
- * StationLodWrapper.tsx — STN-02
+ * StationLodWrapper.tsx — STN-02 / STN-05
  *
  * Four-tier LOD system for space stations using drei's Detailed component.
  *
  * LOD tiers (distance thresholds):
- *   0  – 60  units  : Full SpaceStationMesh + Fresnel rim glow halo
+ *   0  – 60  units  : Full SpaceStationMesh + Fresnel rim glow halo + docking ring
  *   60 – 180 units  : Simplified hub + ring geometry (~500 tris)
  *   180 – 500 units : Billboard text label with station name
  *   500+    units   : Pulsing beacon sprite + point light
@@ -15,9 +15,12 @@ import { Detailed, Billboard, Text } from "@react-three/drei";
 import { SpaceStationMesh, type SpaceStationMeshProps } from "./districtGeometry";
 import { StationBeacon } from "./StationBeacon";
 import { StationFresnelGlow } from "./StationFresnelGlow";
+import { StationDockingRing } from "./StationDockingRing";
+import type { HuntStationId } from "./types";
 
 export interface StationLodWrapperProps extends SpaceStationMeshProps {
   stationLabel: string;
+  stationId: HuntStationId;
 }
 
 /** LOD distance thresholds: near / mid / far / beacon */
@@ -34,6 +37,7 @@ export function StationLodWrapper({
   floatAmplitude = 0.12,
   pulseSpeed = 0.0018,
   stationLabel,
+  stationId,
 }: StationLodWrapperProps): ReactElement {
   const stationProps: SpaceStationMeshProps = {
     position: [0, 0, 0],
@@ -47,13 +51,14 @@ export function StationLodWrapper({
     <group position={position}>
       {/* drei Detailed switches between children based on camera distance */}
       <Detailed distances={LOD_DISTANCES}>
-        {/* Tier 0 (near, 0–60 units): full geometry + Fresnel glow */}
+        {/* Tier 0 (near, 0-60 units): full geometry + Fresnel glow + docking ring */}
         <group>
           <SpaceStationMesh {...stationProps} />
           <StationFresnelGlow colorHex={colorHex} radius={5} />
+          <StationDockingRing colorHex={colorHex} stationId={stationId} />
         </group>
 
-        {/* Tier 1 (mid, 60–180 units): simplified hub + ring only */}
+        {/* Tier 1 (mid, 60-180 units): simplified hub + ring only */}
         <group>
           <mesh rotation={[Math.PI / 2, 0, 0]}>
             <torusGeometry args={[3, 0.2, 12, 32]} />
@@ -72,7 +77,7 @@ export function StationLodWrapper({
           </mesh>
         </group>
 
-        {/* Tier 2 (far, 180–500 units): billboard label */}
+        {/* Tier 2 (far, 180-500 units): billboard label */}
         <group>
           <Billboard follow lockX={false} lockY={false} lockZ={false}>
             <Text

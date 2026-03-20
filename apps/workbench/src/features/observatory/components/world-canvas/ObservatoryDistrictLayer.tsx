@@ -1,7 +1,7 @@
-import { memo, useMemo } from "react";
+import { useMemo } from "react";
 import { MemoizedStationDistrict, MemoizedWatchfieldPerimeter, MissionObjectiveBeacon } from "../../components/ObservatoryWorldCanvas";
 import { StationNpcCrew } from "../../world/npcCrew";
-import { SpaceStationMesh } from "../../world/districtGeometry";
+import { StationLodWrapper } from "../../world/StationLodWrapper";
 import { createSpaceStationSeed } from "../../world/districtGeometryResources";
 import type { ObservatoryDistrictLayerProps } from "./observatory-world-scene-types";
 
@@ -73,15 +73,17 @@ export function ObservatoryDistrictLayer({
         />
       ))}
 
-      {/* STN-01: Floating space station geometry */}
+      {/* STN-01/STN-02/STN-05: Floating space station geometry with 4-tier LOD + docking ring */}
       {world.districts.map((district) => (
-        <SpaceStationMesh
-          key={`station-mesh:${district.id}`}
+        <StationLodWrapper
+          key={`station-lod:${district.id}`}
           position={district.position as [number, number, number]}
           colorHex={district.colorHex}
           seed={createSpaceStationSeed(district.position[0], district.position[2])}
           floatAmplitude={district.floatAmplitude ?? 0.12}
           pulseSpeed={district.pulseSpeed ?? 0.0018}
+          stationLabel={district.label}
+          stationId={district.id}
         />
       ))}
     </>
