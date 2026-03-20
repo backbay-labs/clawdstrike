@@ -62,11 +62,11 @@
 
 ### Transitions & Cinematics
 
-- [ ] **TRN-01**: Boost/warp FOV punch — camera FOV animates 60→90→60 over 1.1s during boost activation
-- [ ] **TRN-02**: Warp speed lines — instanced tube particles radiating from screen center during boost, visible through bloom
-- [ ] **TRN-03**: Station arrival name card — letterbox bars + station name slide-in (1.2s hold) via ObservatoryCinematicOverlay
-- [ ] **TRN-04**: Bloom spike during warp — temporary increase in bloom intensity and luminance during boost transition
-- [ ] **TRN-05**: Proximity-based detail fade — station sub-elements (artifact counts, threat level, NPC visibility) fade in as camera approaches, marker fades out
+- [x] **TRN-01**: Boost/warp FOV punch — camera FOV animates 60→90→60 over 1.1s during boost activation
+- [x] **TRN-02**: Warp speed lines — instanced tube particles radiating from screen center during boost, visible through bloom
+- [x] **TRN-03**: Station arrival name card — letterbox bars + station name slide-in (1.2s hold) via ObservatoryCinematicOverlay
+- [x] **TRN-04**: Bloom spike during warp — temporary increase in bloom intensity and luminance during boost transition
+- [x] **TRN-05**: Proximity-based detail fade — station sub-elements (artifact counts, threat level, NPC visibility) fade in as camera approaches, marker fades out
 
 ### Discovery & Missions
 
@@ -142,11 +142,11 @@
 | MAP-02 | Phase 25 | Pending |
 | MAP-03 | Phase 25 | Pending |
 | MAP-04 | Phase 25 | Complete |
-| TRN-01 | Phase 25 | Pending |
-| TRN-02 | Phase 25 | Pending |
-| TRN-03 | Phase 25 | Pending |
-| TRN-04 | Phase 25 | Pending |
-| TRN-05 | Phase 25 | Pending |
+| TRN-01 | Phase 25 | Complete |
+| TRN-02 | Phase 25 | Complete |
+| TRN-03 | Phase 25 | Complete |
+| TRN-04 | Phase 25 | Complete |
+| TRN-05 | Phase 25 | Complete |
 | DSC-01 | Phase 26 | Pending |
 | DSC-02 | Phase 26 | Pending |
 | DSC-03 | Phase 26 | Pending |

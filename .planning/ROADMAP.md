@@ -562,7 +562,7 @@ Plans:
 - [ ] 25-01-PLAN.md — StarChartMinimap component — replaces SVG ring, renders station dots + player arrow + lane connections + status icons (MAP-01, MAP-04)
 - [ ] 25-02-PLAN.md — Flight path trail on star chart + click-to-autopilot navigation engagement (MAP-02, MAP-03)
 - [ ] 25-03-PLAN.md — Boost transition effects — FOV punch animation + warp speed line particles + bloom spike (TRN-01, TRN-02, TRN-04)
-- [ ] 25-04-PLAN.md — Station arrival name card (ObservatoryCinematicOverlay letterbox + name slide) + proximity detail fade (TRN-03, TRN-05)
+- [x] 25-04-PLAN.md — Station arrival name card (ObservatoryCinematicOverlay letterbox + name slide) + proximity detail fade (TRN-03, TRN-05)
 
 ### Phase 26: Discovery + Missions
 **Goal**: The space environment rewards exploration — stations are hidden until discovered, powering on dramatically on first approach; mission objectives draw glowing paths through space and direct analysts to specific stations with narrative hooks
@@ -592,5 +592,5 @@ Phase 20 first — it is the spatial substrate everything else builds on. Phase 
 | 22. Space Environment Art | 3/3 | Complete    | 2026-03-20 | - |
 | 23. Station Detail + Docking | 3/3 | Complete    | 2026-03-20 | - |
 | 24. Space Flight HUD | v6.0 | Complete    | 2026-03-20 | 2026-03-20 |
-| 25. Star Chart + Transitions | 1/4 | In Progress|  | - |
+| 25. Star Chart + Transitions | 3/4 | In Progress|  | - |
 | 26. Discovery + Missions | v6.0 | 0/3 | Not started | - |
