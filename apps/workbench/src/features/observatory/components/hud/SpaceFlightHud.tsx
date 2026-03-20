@@ -1,5 +1,5 @@
 /**
- * SpaceFlightHud.tsx — Phase 24 HUD-01, HUD-02, HUD-06
+ * SpaceFlightHud.tsx — Phase 24 HUD-01, HUD-02, HUD-03, HUD-04, HUD-05, HUD-06
  *
  * Root HUD overlay component. Wraps all Space Flight HUD instruments in a single
  * absolute-positioned overlay div that sits on top of the R3F Canvas.
@@ -14,8 +14,12 @@
  * never via useState or useSelector. This keeps re-render count at zero in the frame loop.
  */
 
+import { useRef } from "react";
 import { SpeedIndicator } from "./SpeedIndicator";
 import { HeadingCompass } from "./HeadingCompass";
+import { TargetBrackets } from "./TargetBrackets";
+import { OffScreenArrows } from "./OffScreenArrows";
+import { useHudProjection } from "./useHudProjection";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -35,8 +39,12 @@ export interface SpaceFlightHudProps {
 // ---------------------------------------------------------------------------
 
 export function SpaceFlightHud({ visible }: SpaceFlightHudProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { projectionsRef } = useHudProjection(containerRef);
+
   return (
     <div
+      ref={containerRef}
       style={{
         position: "absolute",
         inset: 0,
@@ -59,9 +67,11 @@ export function SpaceFlightHud({ visible }: SpaceFlightHudProps) {
       {/* HUD-02: Horizontal heading compass — top-center */}
       <HeadingCompass />
 
-      {/* Plan 02 will populate these with projection-based elements */}
-      <div data-testid="hud-target-brackets" />
-      <div data-testid="hud-offscreen-arrows" />
+      {/* HUD-03: L-corner target brackets for in-frustum stations */}
+      <TargetBrackets projectionsRef={projectionsRef} />
+
+      {/* HUD-04: Off-screen directional arrows at screen edges */}
+      <OffScreenArrows projectionsRef={projectionsRef} />
     </div>
   );
 }

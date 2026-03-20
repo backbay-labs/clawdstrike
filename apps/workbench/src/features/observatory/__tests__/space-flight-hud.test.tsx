@@ -56,6 +56,32 @@ vi.mock("three", async () => {
 });
 
 // ---------------------------------------------------------------------------
+// Mock useHudProjection — prevents import chain from reaching observatory-world-template
+// (which calls CatmullRomCurve3 at module scope with a mocked Vector3)
+// ---------------------------------------------------------------------------
+
+vi.mock("@/features/observatory/components/hud/useHudProjection", () => ({
+  useHudProjection: () => ({ projectionsRef: { current: [] } }),
+}));
+
+// ---------------------------------------------------------------------------
+// Mock camera-bridge — so SpaceFlightHud doesn't need R3F for tests
+// ---------------------------------------------------------------------------
+
+vi.mock("@/features/observatory/components/hud/camera-bridge", () => ({
+  hudCameraRef: {
+    current: {
+      projectionMatrix: { copy: () => ({ multiply: () => ({}) }), elements: new Float32Array(16) },
+      matrixWorldInverse: { elements: new Float32Array(16) },
+      fov: 60,
+      aspect: 1,
+      position: { x: 0, y: 80, z: 200 },
+    },
+  },
+  HudCameraBridge: () => null,
+}));
+
+// ---------------------------------------------------------------------------
 // Mock observatory store
 // ---------------------------------------------------------------------------
 

@@ -41,6 +41,7 @@ import { ObservatoryReplayHud } from "./ObservatoryReplayHud";
 import { ObservatoryReplayComparePanel } from "./ObservatoryReplayComparePanel";
 import { ObservatoryExplainabilityPanel } from "./ObservatoryExplainabilityPanel";
 import { ObservatoryAnalystPresetBar } from "./ObservatoryAnalystPresetBar";
+import { SpaceFlightHud } from "./hud/SpaceFlightHud";
 import { ObservatoryCinematicOverlay } from "./ObservatoryCinematicOverlay";
 import {
   createObservatoryMissionPlan,
@@ -860,6 +861,11 @@ export function ObservatoryTab() {
         />
         </CanvasErrorBoundary>
       </div>
+
+      {/* Phase 24 HUD: SpaceFlightHud overlay — visible only during flight mode */}
+      <SpaceFlightHud
+        visible={!flyByActive && !replay.enabled && characterControllerEnabled && mode === "flow"}
+      />
 
       {/* CAM-01: Letterbox top bar — h-12 during fly-by, h-0 after */}
       <div

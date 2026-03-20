@@ -83,6 +83,7 @@ import {
 import { ObservatoryGhostLayer } from "./ObservatoryGhostLayer";
 import { ObservatoryWeatherLayer } from "./ObservatoryWeatherLayer";
 import { ObservatoryInvalidationController } from "./world-canvas/ObservatoryInvalidationController";
+import { HudCameraBridge } from "./hud/camera-bridge";
 import { ObservatoryWorldScene as ExtractedObservatoryWorldScene } from "./world-canvas/ObservatoryWorldScene";
 import { useObservatoryWorldLifecycle } from "./world-canvas/useObservatoryWorldLifecycle";
 
@@ -4528,6 +4529,8 @@ export function ObservatoryWorldCanvas({
             playerFocusRef={playerFocusRef}
             probeStatus={resolvedProbeState.status}
           />
+          {/* Phase 24 HUD-06: Camera bridge — writes camera matrices into hudCameraRef each frame */}
+          <HudCameraBridge />
           <ObservatoryInvalidationController sources={realtimeActivitySources} />
           <ExtractedObservatoryWorldScene
             world={reactiveWorld}
