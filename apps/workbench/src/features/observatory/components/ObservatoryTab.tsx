@@ -7,34 +7,85 @@
 //
 // Plan 03-02 additions:
 // - probeState: ObservatoryProbeState in local useState
-// - frameloop: "demand" | "always" — switches to "always" during active probe, back to "demand" otherwise
 // - window event "observatory:probe" → dispatchProbe callback
 // - mode toggle button (ATLAS/FLOW) in top-right corner of tab
 
-import { useState, useCallback, useEffect, useRef, Component, type ReactNode } from "react";
+import {
+  useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  Component,
+  type ReactNode,
+} from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { useAchievementStore } from "../stores/achievement-store";
 import type { Achievement } from "../stores/achievement-store";
-import type { HuntObservatorySceneState, HuntStationId, HuntStationState } from "../world/types";
-import { HUNT_STATION_LABELS, HUNT_STATION_PLACEMENTS } from "../world/stations";
+import type { HuntStationId } from "../world/types";
+import type { ObservatoryReplayAnnotation } from "../types";
 import { useObservatoryStore } from "../stores/observatory-store";
+import { useHuntStore } from "@/features/hunt/stores/hunt-store";
 import { useSpiritStore } from "@/features/spirit/stores/spirit-store";
 import { usePaneStore, getActivePaneRoute } from "@/features/panes/pane-store";
 import { ObservatoryWorldCanvas } from "./ObservatoryWorldCanvas";
 import type { SpiritKind } from "@/features/spirit/types";
-import type { ObservatoryProbeState } from "../world/probeRuntime";
 import {
-  createInitialObservatoryProbeState,
   advanceObservatoryProbeState,
+  createInitialObservatoryProbeState,
   dispatchObservatoryProbe,
 } from "../world/probeRuntime";
 import { ObservatoryProbeHud } from "./ObservatoryProbeHud";
 import { ObservatoryMissionHud } from "./ObservatoryMissionHud";
-import { resolveObservatoryMissionProbeTargetStationId, getCurrentObservatoryMissionObjective } from "../world/missionLoop";
-import { STATION_AFFINITY_MAP } from "@/features/spirit/scene-math";
-
-// Fixed station IDs that huntronomer recognizes — maps workbench stations to world positions.
-const WORKBENCH_STATION_IDS: HuntStationId[] = HUNT_STATION_PLACEMENTS.map((p) => p.id);
+import { ObservatoryReplayHud } from "./ObservatoryReplayHud";
+import { ObservatoryReplayComparePanel } from "./ObservatoryReplayComparePanel";
+import { ObservatoryExplainabilityPanel } from "./ObservatoryExplainabilityPanel";
+import { ObservatoryAnalystPresetBar } from "./ObservatoryAnalystPresetBar";
+import { ObservatoryCinematicOverlay } from "./ObservatoryCinematicOverlay";
+import {
+  createObservatoryMissionPlan,
+  deriveObservatoryMissionBranch,
+  getCurrentObservatoryMissionObjective,
+} from "../world/missionLoop";
+import type { ObservatoryHeroPropAssetId } from "../world/propAssets";
+import { preloadObservatoryAssets } from "../utils/observatory-performance";
+import { buildObservatorySceneState } from "../world/observatory-scene-bridge";
+import { getObservatoryNowMs, useObservatoryNow } from "../utils/observatory-time";
+import {
+  buildObservatoryReplayFrames,
+  buildObservatoryReplaySnapshot,
+  buildObservatoryReplayTimeline,
+  deriveObservatoryTelemetry,
+  type DerivedObservatoryTelemetry,
+  findObservatoryReplaySpikeFrameIndex,
+} from "../world/observatory-telemetry";
+import {
+  buildObservatoryReplayMarkers,
+  mergeObservatoryReplayMarkers,
+} from "../world/observatory-replay-markers";
+import {
+  openObservatoryRecommendationRoute,
+  openObservatoryStationRoute,
+  setObservatoryAnalystPreset,
+} from "../commands/observatory-command-actions";
+import {
+  buildObservatoryProbeGuidance,
+  type ObservatoryProbeGuidance,
+} from "../world/observatory-recommendations";
+import {
+  buildObservatorySpikeCueKey,
+  deriveObservatorySpikeCue,
+  type ObservatorySpikeCue,
+} from "../world/observatory-presence";
+import {
+  deriveObservatoryGhostMemories,
+  resolveObservatoryGhostPresentation,
+} from "../world/observatory-ghost-memory";
+import { deriveObservatoryWeatherState } from "../world/observatory-weather";
+import {
+  loadPersistedObservatoryReplayArtifacts,
+  savePersistedObservatoryReplayArtifacts,
+} from "../utils/observatory-replay-persistence";
 
 // Maps workbench SpiritKind to ObservatorySpiritVisual.kind
 const SPIRIT_KIND_MAP: Record<SpiritKind, "tracker" | "lantern" | "ledger" | "forge"> = {
@@ -112,7 +163,9 @@ function AchievementLayer() {
 export function ObservatoryTab() {
   const [mode, setMode] = useState<"atlas" | "flow">("atlas");
   const [characterControllerEnabled, setCharacterControllerEnabled] = useState(false);
+  const [ghostMode, setGhostMode] = useState<"off" | "auto" | "full">("auto");
   const [cameraResetToken, setCameraResetToken] = useState(0);
+  const [replayArtifactsHydrated, setReplayArtifactsHydrated] = useState(false);
   // Inline transient notification for Easter-egg (avoids ToastProvider context requirement in tests).
   // Message auto-clears after 3 seconds.
   const [easterEggMsg, setEasterEggMsg] = useState<string | null>(null);
@@ -131,19 +184,15 @@ export function ObservatoryTab() {
     };
   }, []);
 
+  useEffect(() => {
+    preloadObservatoryAssets();
+  }, []);
+
   // paneIsActive: true when the active pane is showing the /observatory route.
   // Prevents WASD from consuming keyboard events when another pane is focused.
   const paneIsActive = usePaneStore((state) =>
     getActivePaneRoute(state.root, state.activePaneId) === "/observatory",
   );
-
-  // OBS-04: Probe state machine (local — purely visual/transient, not in Zustand store)
-  const [probeState, setProbeState] = useState<ObservatoryProbeState>(
-    () => createInitialObservatoryProbeState(),
-  );
-
-  // OBS-04: Frameloop switching — "always" during active probe, "demand" otherwise
-  const [frameloop, setFrameloop] = useState<"demand" | "always">("demand");
 
   // CAM-01: Fly-by state — true until the opening sweep finishes for the first time this session
   const [flyByActive, setFlyByActive] = useState(true);
@@ -154,8 +203,6 @@ export function ObservatoryTab() {
   const handleFlyByComplete = useCallback(() => {
     flyByDoneRef.current = true;
     setFlyByActive(false);
-    // Revert frameloop to demand — fly-by was holding it at "always"
-    setFrameloop("demand");
   }, []);
 
   // CAM-01: Skip fly-by on click or Escape
@@ -163,13 +210,6 @@ export function ObservatoryTab() {
     if (!flyByActive) return;
     handleFlyByComplete();
   }, [flyByActive, handleFlyByComplete]);
-
-  // CAM-01: Force frameloop=always while fly-by is active
-  useEffect(() => {
-    if (flyByActive && !flyByDoneRef.current) {
-      setFrameloop("always");
-    }
-  }, [flyByActive]);
 
   // CAM-01: Escape key skips fly-by
   useEffect(() => {
@@ -182,9 +222,57 @@ export function ObservatoryTab() {
   }, [flyByActive, handleSkipFlyBy]);
 
   const stations = useObservatoryStore.use.stations();
+  const confidence = useObservatoryStore.use.confidence();
+  const likelyStationId = useObservatoryStore.use.likelyStationId();
+  const pressureLanes = useObservatoryStore.use.pressureLanes();
+  const analystPresetId = useObservatoryStore.use.analystPresetId();
   const mission = useObservatoryStore.use.mission();
+  const probeState = useObservatoryStore.use.probeState();
+  const replay = useObservatoryStore.use.replay();
+  const roomReceiveState = useObservatoryStore.use.roomReceiveState();
+  const selectedStationId = useObservatoryStore.use.selectedStationId();
+  const observatoryActions = useObservatoryStore.use.actions();
+  const connected = useObservatoryStore.use.connected();
+  const huntEvents = useHuntStore.use.events();
+  const huntBaselines = useHuntStore.use.baselines();
+  const huntInvestigations = useHuntStore.use.investigations();
+  const huntPatterns = useHuntStore.use.patterns();
   const kind = useSpiritStore.use.kind();
   const accentColor = useSpiritStore.use.accentColor();
+  const openApp = usePaneStore((state) => state.openApp);
+  const probeNowMs = useObservatoryNow(probeState.status !== "ready");
+  const runtimeEnvironment = useMemo(() => {
+    const navigatorConnection =
+      typeof navigator !== "undefined" && "connection" in navigator
+        ? (navigator as Navigator & { connection?: { saveData?: boolean } }).connection
+        : undefined;
+    const reducedMotion =
+      typeof window !== "undefined"
+      && typeof window.matchMedia === "function"
+      && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    return {
+      reducedMotion,
+      saveData: navigatorConnection?.saveData === true,
+    };
+  }, []);
+  const probeTelemetryBaselineRef = useRef<DerivedObservatoryTelemetry | null>(null);
+  const previousStationEmphasisRef = useRef<Partial<Record<HuntStationId, number>>>({});
+  const previousLikelyStationIdRef = useRef<HuntStationId | null>(null);
+  const previousProbeStatusRef = useRef<typeof probeState.status | null>(probeState.status);
+  const dismissedCueKeyRef = useRef<string | null>(null);
+  const [activeSpikeCue, setActiveSpikeCue] = useState<ObservatorySpikeCue | null>(null);
+
+  useEffect(() => {
+    observatoryActions.setProbeState((current) => advanceObservatoryProbeState(current, probeNowMs));
+  }, [observatoryActions, probeNowMs]);
+
+  useEffect(() => {
+    observatoryActions.setActiveProbes(probeState.status === "active" ? 1 : 0);
+    return () => {
+      observatoryActions.setActiveProbes(0);
+    };
+  }, [observatoryActions, probeState.status]);
 
   // UIP-04: Push achievement when a new mission objective is completed.
   // Tracks length delta to detect newly added completed objective IDs.
@@ -196,7 +284,7 @@ export function ObservatoryTab() {
     if (count > prevCompletedCountRef.current) {
       const newId = mission.completedObjectiveIds[count - 1];
       pushAchievement({
-        id: `obj-${newId ?? 'unknown'}-${Date.now()}`,
+        id: `obj-${newId ?? 'unknown'}-${Math.round(getObservatoryNowMs())}`,
         title: "OBJECTIVE COMPLETE",
         description: (newId ?? '').replace(/-/g, ' '),
       });
@@ -204,120 +292,539 @@ export function ObservatoryTab() {
     prevCompletedCountRef.current = count;
   }, [mission?.completedObjectiveIds?.length, pushAchievement]);
 
+  const fallbackLiveTelemetry = useMemo(
+    () =>
+      deriveObservatoryTelemetry({
+        baselines: huntBaselines,
+        connected,
+        events: huntEvents,
+        investigations: huntInvestigations,
+        patterns: huntPatterns,
+      }),
+    [connected, huntBaselines, huntEvents, huntInvestigations, huntPatterns],
+  );
+  const liveTelemetry = useMemo<DerivedObservatoryTelemetry>(
+    () => ({
+      confidence: pressureLanes.length > 0 ? confidence : fallbackLiveTelemetry.confidence,
+      likelyStationId: likelyStationId ?? fallbackLiveTelemetry.likelyStationId,
+      pressureLanes: pressureLanes.length > 0 ? pressureLanes : fallbackLiveTelemetry.pressureLanes,
+      roomReceiveState,
+      stations:
+        pressureLanes.length > 0
+          ? stations
+          : fallbackLiveTelemetry.stations,
+      telemetrySnapshotMs: fallbackLiveTelemetry.telemetrySnapshotMs,
+    }),
+    [
+      confidence,
+      fallbackLiveTelemetry,
+      likelyStationId,
+      pressureLanes,
+      roomReceiveState,
+      stations,
+    ],
+  );
+  const sceneState = useMemo(
+    () => buildObservatorySceneState({
+      analystPresetId,
+      confidence: liveTelemetry.confidence,
+      likelyStationId: liveTelemetry.likelyStationId,
+      mode,
+      roomReceiveState: liveTelemetry.roomReceiveState,
+      spiritFieldBias: kind ? 0.5 : 0,
+      stations: liveTelemetry.stations,
+    }),
+    [analystPresetId, kind, liveTelemetry, mode],
+  );
+  const replayFrames = useMemo(
+    () => buildObservatoryReplayFrames(huntEvents),
+    [huntEvents],
+  );
+  const replayTimeline = useMemo(
+    () =>
+      buildObservatoryReplayTimeline({
+        baselines: huntBaselines,
+        connected,
+        events: huntEvents,
+        investigations: huntInvestigations,
+        nowMs: liveTelemetry.telemetrySnapshotMs,
+        patterns: huntPatterns,
+      }),
+    [
+      connected,
+      huntBaselines,
+      huntEvents,
+      huntInvestigations,
+      huntPatterns,
+      liveTelemetry.telemetrySnapshotMs,
+    ],
+  );
+  const replaySpikes = replayTimeline.spikes;
+  const replayBookmarks = replay.bookmarks ?? [];
+  const replayAnnotations = replay.annotations ?? [];
+  const replayFrame = replay.enabled
+    ? (replayFrames[Math.min(replay.frameIndex, Math.max(0, replayFrames.length - 1))]
+      ?? replayFrames[replayFrames.length - 1]
+      ?? null)
+    : null;
+  const replayTelemetry = useMemo(
+    () => {
+      if (!replay.enabled || !replayFrame) {
+        return null;
+      }
+      const maxFrameIndex = Math.min(replay.frameIndex, Math.max(0, replayFrames.length - 1));
+      let previousTelemetry: DerivedObservatoryTelemetry | null = null;
+      for (let frameIndex = 0; frameIndex <= maxFrameIndex; frameIndex += 1) {
+        previousTelemetry = deriveObservatoryTelemetry({
+          baselines: huntBaselines,
+          connected,
+          events: huntEvents,
+          investigations: huntInvestigations,
+          patterns: huntPatterns,
+          previousTelemetry,
+          snapshotMs: replayFrames[frameIndex]?.timestampMs ?? null,
+        });
+      }
+      return previousTelemetry;
+    },
+    [connected, huntBaselines, huntEvents, huntInvestigations, huntPatterns, replay.enabled, replay.frameIndex, replayFrame, replayFrames],
+  );
+  const effectiveTelemetry = replay.enabled && replayTelemetry ? replayTelemetry : liveTelemetry;
+  const effectiveSceneState = useMemo(
+    () => buildObservatorySceneState({
+      analystPresetId,
+      confidence: effectiveTelemetry.confidence,
+      likelyStationId: effectiveTelemetry.likelyStationId,
+      mode,
+      roomReceiveState: effectiveTelemetry.roomReceiveState,
+      spiritFieldBias: kind ? 0.5 : 0,
+      stations: effectiveTelemetry.stations,
+    }),
+    [analystPresetId, effectiveTelemetry, kind, mode],
+  );
+  const effectiveMission = replay.enabled ? null : mission;
+  const effectiveProbeState = replay.enabled ? createInitialObservatoryProbeState() : probeState;
+  const currentMissionObjective = getCurrentObservatoryMissionObjective(effectiveMission);
+  const probeGuidance = useMemo<ObservatoryProbeGuidance | null>(
+    () =>
+      buildObservatoryProbeGuidance({
+        currentTelemetry: effectiveTelemetry,
+        missionObjective: currentMissionObjective
+          ? {
+              stationId: currentMissionObjective.stationId,
+              title: currentMissionObjective.title,
+            }
+          : null,
+        previousTelemetry: probeTelemetryBaselineRef.current,
+        probeState: effectiveProbeState,
+      }),
+    [currentMissionObjective, effectiveProbeState, effectiveTelemetry],
+  );
+  const panelStationId =
+    selectedStationId
+    ?? effectiveTelemetry.pressureLanes[0]?.stationId
+    ?? effectiveTelemetry.likelyStationId
+    ?? null;
+  const panelStation = panelStationId
+    ? effectiveTelemetry.stations.find((station) => station.id === panelStationId) ?? null
+    : null;
   // CAM-04: Derive active mission objective station for camera focus flight
-  const missionObjectiveStationId: HuntStationId | null = mission
-    ? (getCurrentObservatoryMissionObjective(mission)?.stationId ?? null)
+  const missionObjectiveStationId: HuntStationId | null = effectiveMission
+    ? (getCurrentObservatoryMissionObjective(effectiveMission)?.stationId ?? null)
     : null;
 
-  // Derive per-station affinity map from the bound spirit kind.
-  // undefined when no spirit bound — rings render invisible.
-  const stationAffinities: Record<HuntStationId, number> | undefined =
-    kind ? STATION_AFFINITY_MAP[kind] : undefined;
-
-  // Build HuntStationState[] — map workbench stations to huntronomer station IDs by index.
-  // Workbench station[0] → signal, [1] → targets, [2] → run, [3] → receipts, [4] → case-notes, [5] → watch.
-  // If workbench has no stations or fewer than 6, pad remaining with artifactCount 0.
-  const stationStates: HuntStationState[] = WORKBENCH_STATION_IDS.map((huntId, index) => {
-    const workbenchStation = stations[index] ?? null;
-    return {
-      id: huntId,
-      label: HUNT_STATION_LABELS[huntId],
-      status: "idle",
-      affinity: 0,
-      emphasis: 0,
-      artifactCount: workbenchStation?.artifactCount ?? 0,
-      hasUnread: (workbenchStation?.artifactCount ?? 0) > 0,
-    };
-  });
-
-  const sceneState: HuntObservatorySceneState = {
-    huntId: "workbench",
-    mode,
-    stations: stationStates,
-    activeSelection: { type: "none" },
-    likelyStationId: null,
-    roomReceiveState: "idle",
-    spiritFieldBias: kind ? 0.5 : 0,
-    confidence: 0.5,
-    cameraPreset: "overview",
-    openedDetailSurface: "none",
-  };
-
-  const spirit =
-    kind && accentColor
-      ? { kind: SPIRIT_KIND_MAP[kind], accentColor }
-      : null;
-
-  // OBS-04: Dispatch probe — advances state machine and switches frameloop to "always"
-  // OBS-12: probe target follows active mission objective station via resolveObservatoryMissionProbeTargetStationId
-  const dispatchProbe = useCallback(() => {
-    const now = performance.now();
-    setProbeState((prev) => {
-      const resolved = advanceObservatoryProbeState(prev, now);
-      if (resolved.status !== "ready") return prev;
-      // Mission-aware target: follows current mission objective, falls back to first station
-      const targetId: HuntStationId =
-        resolveObservatoryMissionProbeTargetStationId(mission, {}) ??
-        WORKBENCH_STATION_IDS[0] ??
-        "signal";
-      const next = dispatchObservatoryProbe(resolved, targetId, now);
-      setFrameloop("always");
-      // CAM-03: probe dispatch shake — fast decay
-      window.dispatchEvent(new CustomEvent("observatory:shake", { detail: { intensity: 0.45 } }));
-      return next;
+  const spirit = useMemo(
+    () => (kind && accentColor ? { kind: SPIRIT_KIND_MAP[kind], accentColor } : null),
+    [accentColor, kind],
+  );
+  const liveSnapshot = useMemo(
+    () =>
+      buildObservatoryReplaySnapshot({
+        frame: {
+          eventCount: huntEvents.length,
+          label: "Live scene",
+          timestampMs: liveTelemetry.telemetrySnapshotMs,
+        },
+        frameIndex: replayFrames.length,
+        telemetry: liveTelemetry,
+      }),
+    [huntEvents.length, liveTelemetry, replayFrames.length],
+  );
+  const replaySnapshot = useMemo(
+    () =>
+      replay.enabled && replayFrame
+        ? buildObservatoryReplaySnapshot({
+            frame: replayFrame,
+            frameIndex: Math.min(replay.frameIndex, Math.max(0, replayFrames.length - 1)),
+            telemetry: effectiveTelemetry,
+          })
+        : null,
+    [effectiveTelemetry, replay.enabled, replay.frameIndex, replayFrame, replayFrames.length],
+  );
+  const liveSpikeCue = useMemo(
+    () =>
+      deriveObservatorySpikeCue({
+        flyByActive,
+        likelyStationId: liveTelemetry.likelyStationId,
+        missionTargetStationId: currentMissionObjective?.stationId ?? null,
+        mode,
+        nowMs: liveTelemetry.telemetrySnapshotMs,
+        previousCueKey: dismissedCueKeyRef.current,
+        previousLikelyStationId: previousLikelyStationIdRef.current,
+        previousProbeStatus: previousProbeStatusRef.current,
+        previousStationEmphasis: previousStationEmphasisRef.current,
+        probeState,
+        replayEnabled: replay.enabled,
+        selectedStationId,
+        stations: liveTelemetry.stations,
+      }),
+    [
+      currentMissionObjective?.stationId,
+      flyByActive,
+      liveTelemetry.likelyStationId,
+      liveTelemetry.stations,
+      liveTelemetry.telemetrySnapshotMs,
+      mode,
+      probeState,
+      replay.enabled,
+      selectedStationId,
+    ],
+  );
+  const ghostTraces = useMemo(
+    () =>
+      deriveObservatoryGhostMemories({
+        activeStationId: selectedStationId ?? missionObjectiveStationId,
+        events: huntEvents,
+        ghostMode,
+        investigations: huntInvestigations,
+        likelyStationId: effectiveTelemetry.likelyStationId,
+        missionTargetStationId: missionObjectiveStationId,
+        mode,
+        nowMs: effectiveTelemetry.telemetrySnapshotMs,
+        probeState: effectiveProbeState,
+        replayEnabled: replay.enabled,
+        selectedStationId,
+        stations: effectiveTelemetry.stations,
+      }),
+    [
+      effectiveProbeState,
+      effectiveTelemetry.likelyStationId,
+      effectiveTelemetry.stations,
+      effectiveTelemetry.telemetrySnapshotMs,
+      ghostMode,
+      huntEvents,
+      huntInvestigations,
+      missionObjectiveStationId,
+      mode,
+      replay.enabled,
+      selectedStationId,
+    ],
+  );
+  const ghostPresentation = useMemo(
+    () =>
+      resolveObservatoryGhostPresentation({
+        activeStationId: selectedStationId ?? missionObjectiveStationId,
+        ghostMode,
+        mode,
+        probeState: effectiveProbeState,
+        replayEnabled: replay.enabled,
+        selectedStationId,
+        traceCount: ghostTraces.length,
+      }),
+    [
+      effectiveProbeState,
+      ghostMode,
+      ghostTraces.length,
+      missionObjectiveStationId,
+      mode,
+      replay.enabled,
+      selectedStationId,
+    ],
+  );
+  const weatherState = useMemo(
+    () =>
+      deriveObservatoryWeatherState({
+        confidence: effectiveTelemetry.confidence,
+        connected,
+        likelyStationId: effectiveTelemetry.likelyStationId,
+        mode,
+        missionTargetStationId: missionObjectiveStationId,
+        nowMs: effectiveTelemetry.telemetrySnapshotMs,
+        replayEnabled: replay.enabled,
+        reducedMotion: runtimeEnvironment.reducedMotion,
+        roomReceiveState: effectiveTelemetry.roomReceiveState,
+        saveData: runtimeEnvironment.saveData,
+        stations: effectiveTelemetry.stations,
+      }),
+    [
+      connected,
+      effectiveTelemetry.confidence,
+      effectiveTelemetry.likelyStationId,
+      effectiveTelemetry.roomReceiveState,
+      effectiveTelemetry.stations,
+      effectiveTelemetry.telemetrySnapshotMs,
+      missionObjectiveStationId,
+      mode,
+      replay.enabled,
+      runtimeEnvironment.reducedMotion,
+      runtimeEnvironment.saveData,
+    ],
+  );
+  const replayMarkers = useMemo(() => {
+    const authoredMarkers = buildObservatoryReplayMarkers({
+      annotations: replayAnnotations,
+      bookmarks: replayBookmarks,
+      events: huntEvents,
+      frames: replayFrames,
+      investigations: [],
     });
-  }, [mission]);
+    const investigationMarkers = buildObservatoryReplayMarkers({
+      annotations: [],
+      bookmarks: [],
+      events: huntEvents,
+      frames: replayFrames,
+      investigations: huntInvestigations,
+    });
+    return mergeObservatoryReplayMarkers(authoredMarkers, investigationMarkers);
+  }, [huntEvents, huntInvestigations, replayAnnotations, replayBookmarks, replayFrames]);
 
-  // OBS-04: Listen for "observatory:probe" window CustomEvent from command palette
-  useEffect(() => {
-    const handler = () => dispatchProbe();
-    window.addEventListener("observatory:probe", handler);
-    return () => window.removeEventListener("observatory:probe", handler);
-  }, [dispatchProbe]);
+  const handleMissionObjectiveComplete = useCallback(
+    (assetId: ObservatoryHeroPropAssetId, nowMs: number) =>
+      observatoryActions.completeObjective(assetId, nowMs, {
+        branchHint: deriveObservatoryMissionBranch(sceneState),
+      }),
+    [observatoryActions, sceneState],
+  );
 
-  // OBS-12: Listen for "observatory:mission:start" to start a mission
-  useEffect(() => {
-    const handler = () => {
-      useObservatoryStore.getState().actions.startMission("workbench", Date.now());
-      // CAM-04: force WorldCameraRig goalChanged even if desiredPosition is identical (edge case)
-      setCameraResetToken((prev) => prev + 1);
-    };
-    window.addEventListener("observatory:mission:start", handler);
-    return () => window.removeEventListener("observatory:mission:start", handler);
-  }, []);
-
-  // OBS-12: Listen for "observatory:mission:reset" to reset the mission
-  useEffect(() => {
-    const handler = () => {
-      useObservatoryStore.getState().actions.resetMission();
-    };
-    window.addEventListener("observatory:mission:reset", handler);
-    return () => window.removeEventListener("observatory:mission:reset", handler);
-  }, []);
-
-  // OBS-04: Revert frameloop to "demand" when probe exits active state
-  useEffect(() => {
-    if (probeState.status !== "active") {
-      setFrameloop("demand");
+  const handleDispatchProbe = useCallback(() => {
+    if (replay.enabled) {
+      return;
     }
-  }, [probeState.status]);
+    const nowMs = getObservatoryNowMs();
+    const targetStationId = selectedStationId ?? missionObjectiveStationId ?? likelyStationId ?? "signal";
+    probeTelemetryBaselineRef.current = effectiveTelemetry;
+    observatoryActions.setProbeState((current) =>
+      dispatchObservatoryProbe(advanceObservatoryProbeState(current, nowMs), targetStationId, nowMs),
+    );
+  }, [effectiveTelemetry, likelyStationId, missionObjectiveStationId, observatoryActions, replay.enabled, selectedStationId]);
 
   const handleSelectStation = useCallback(
     (stationId: HuntStationId) => {
-      // Station selection — resets camera to focus on selected station.
-      // Full routing deferred to later plan.
+      if (selectedStationId === stationId) {
+        openObservatoryStationRoute(stationId);
+        return;
+      }
+      observatoryActions.setSelectedStation(stationId);
       setCameraResetToken((prev) => prev + 1);
-      // noop for now; onSelectStation prop for future routing
-      void stationId;
     },
-    [],
+    [observatoryActions, selectedStationId],
   );
+  const handleStartMission = useCallback(() => {
+    observatoryActions.startMission("workbench", probeNowMs, {
+      branchHint: deriveObservatoryMissionBranch(effectiveSceneState),
+      plan: createObservatoryMissionPlan({
+        investigations: huntInvestigations,
+        patterns: huntPatterns,
+        sceneState: effectiveSceneState,
+      }),
+    });
+    probeTelemetryBaselineRef.current = null;
+    observatoryActions.resetProbe();
+    observatoryActions.setReplayState({ enabled: false, frameIndex: 0, frameMs: null });
+    setCameraResetToken((prev) => prev + 1);
+  }, [effectiveSceneState, huntInvestigations, huntPatterns, observatoryActions, probeNowMs]);
+  const handleReplayToggle = useCallback(() => {
+    observatoryActions.setReplayState({
+      enabled: !replay.enabled,
+      frameIndex: replay.enabled ? 0 : Math.max(0, replayFrames.length - 1),
+      frameMs: replay.enabled
+        ? null
+        : replayFrames[Math.max(0, replayFrames.length - 1)]?.timestampMs ?? null,
+      selectedDistrictId: replay.enabled ? null : selectedStationId ?? null,
+      selectedSpikeTimestampMs: null,
+    });
+  }, [observatoryActions, replay.enabled, replayFrames, selectedStationId]);
+  const handleReplayJumpSpike = useCallback(
+    (direction: "prev" | "next") => {
+      const currentFrameIndex = Math.min(replay.frameIndex, Math.max(0, replayFrames.length - 1));
+      const targetFrameIndex = findObservatoryReplaySpikeFrameIndex(
+        replaySpikes,
+        currentFrameIndex,
+        direction,
+      );
+      if (targetFrameIndex == null) {
+        return;
+      }
+      const targetFrame = replayFrames[targetFrameIndex] ?? null;
+      const targetSpike = replaySpikes.find((spike) => spike.frameIndex === targetFrameIndex) ?? null;
+      observatoryActions.setReplayState({
+        enabled: true,
+        frameIndex: targetFrameIndex,
+        frameMs: targetFrame?.timestampMs ?? null,
+        selectedDistrictId: targetSpike?.districtId ?? null,
+        selectedSpikeTimestampMs: targetSpike?.timestampMs ?? targetFrame?.timestampMs ?? null,
+      });
+      if (targetSpike?.districtId) {
+        observatoryActions.setSelectedStation(targetSpike.districtId);
+      }
+    },
+    [observatoryActions, replay.frameIndex, replayFrames, replaySpikes],
+  );
+  const handleAddReplayBookmark = useCallback(
+    (frame: (typeof replayFrames)[number]) => {
+      const districtId =
+        replaySnapshot?.likelyStationId
+        ?? replay.selectedDistrictId
+        ?? selectedStationId
+        ?? effectiveTelemetry.likelyStationId
+        ?? "signal";
+      const districtLabel =
+        replaySnapshot?.districts.find((district) => district.districtId === districtId)?.label
+        ?? panelStation?.label
+        ?? frame.label;
+      observatoryActions.addReplayBookmark({
+        districtId,
+        frameIndex: Math.min(replay.frameIndex, Math.max(0, replayFrames.length - 1)),
+        id: `bookmark:${frame.timestampMs}:${replayBookmarks.length}`,
+        label: `${districtLabel} · ${frame.label}`,
+        timestampMs: frame.timestampMs,
+      });
+    },
+    [
+      effectiveTelemetry.likelyStationId,
+      observatoryActions,
+      panelStation?.label,
+      replay.frameIndex,
+      replay.selectedDistrictId,
+      replayBookmarks.length,
+      replayFrames.length,
+      replaySnapshot,
+      selectedStationId,
+    ],
+  );
+  const handleReplaySelectDistrict = useCallback(
+    (districtId: HuntStationId) => {
+      observatoryActions.setReplayState({
+        selectedDistrictId: districtId,
+      });
+      observatoryActions.setSelectedStation(districtId);
+    },
+    [observatoryActions],
+  );
+  const handleReplayCreateAnnotation = useCallback(
+    (annotation: ObservatoryReplayAnnotation) => {
+      observatoryActions.upsertReplayAnnotation(annotation);
+      observatoryActions.setReplayState({
+        selectedDistrictId: annotation.districtId,
+      });
+    },
+    [observatoryActions],
+  );
+  const handleDismissSpikeCue = useCallback(() => {
+    if (activeSpikeCue) {
+      dismissedCueKeyRef.current = buildObservatorySpikeCueKey(activeSpikeCue);
+    }
+    setActiveSpikeCue(null);
+  }, [activeSpikeCue]);
+  const handleOpenSpikeCueRoute = useCallback(
+    (stationId: HuntStationId) => {
+      if (activeSpikeCue) {
+        dismissedCueKeyRef.current = buildObservatorySpikeCueKey(activeSpikeCue);
+      }
+      openObservatoryStationRoute(stationId);
+      setActiveSpikeCue(null);
+    },
+    [activeSpikeCue],
+  );
+  const cycleGhostMode = useCallback(() => {
+    setGhostMode((current) =>
+      current === "off" ? "auto" : current === "auto" ? "full" : "off",
+    );
+  }, []);
+  const handleReplayJumpMarker = useCallback(
+    (markerId: string) => {
+      const marker = replayMarkers.find((entry) => entry.id === markerId);
+      if (!marker) {
+        return;
+      }
+      observatoryActions.setReplayState({
+        enabled: true,
+        frameIndex: marker.frameIndex,
+        frameMs: marker.timestampMs,
+        selectedDistrictId: marker.districtId,
+        selectedSpikeTimestampMs: null,
+      });
+      if (marker.districtId) {
+        observatoryActions.setSelectedStation(marker.districtId);
+      }
+    },
+    [observatoryActions, replayMarkers],
+  );
+
+  useEffect(() => {
+    const handleProbe = () => {
+      handleDispatchProbe();
+    };
+    const handleMissionStart = () => {
+      handleStartMission();
+    };
+    const handleMissionReset = () => {
+      observatoryActions.resetMission();
+      observatoryActions.resetProbe();
+      observatoryActions.setReplayState({ enabled: false, frameIndex: 0, frameMs: null });
+    };
+    window.addEventListener("observatory:probe", handleProbe);
+    window.addEventListener("observatory:mission:start", handleMissionStart);
+    window.addEventListener("observatory:mission:reset", handleMissionReset);
+    return () => {
+      window.removeEventListener("observatory:probe", handleProbe);
+      window.removeEventListener("observatory:mission:start", handleMissionStart);
+      window.removeEventListener("observatory:mission:reset", handleMissionReset);
+    };
+  }, [handleDispatchProbe, handleStartMission, observatoryActions]);
+  useEffect(() => {
+    if (liveSpikeCue == null) {
+      return;
+    }
+    setActiveSpikeCue((current) =>
+      current?.cueKey === liveSpikeCue.cueKey ? current : liveSpikeCue,
+    );
+  }, [liveSpikeCue]);
+  useEffect(() => {
+    if (flyByActive || replay.enabled) {
+      setActiveSpikeCue(null);
+    }
+  }, [flyByActive, replay.enabled]);
+  useEffect(() => {
+    previousStationEmphasisRef.current = Object.fromEntries(
+      liveTelemetry.stations.map((station) => [station.id, station.emphasis ?? 0]),
+    ) as Partial<Record<HuntStationId, number>>;
+    previousLikelyStationIdRef.current = liveTelemetry.likelyStationId;
+    previousProbeStatusRef.current = probeState.status;
+  }, [liveTelemetry.likelyStationId, liveTelemetry.stations, probeState.status]);
+  useEffect(() => {
+    observatoryActions.setReplayMarkers(replayMarkers);
+  }, [observatoryActions, replayMarkers]);
+  useEffect(() => {
+    const persisted = loadPersistedObservatoryReplayArtifacts();
+    observatoryActions.hydrateReplayArtifacts(persisted);
+    setReplayArtifactsHydrated(true);
+  }, [observatoryActions]);
+  useEffect(() => {
+    if (!replayArtifactsHydrated) {
+      return;
+    }
+    savePersistedObservatoryReplayArtifacts({
+      annotations: replayAnnotations,
+      bookmarks: replayBookmarks,
+    });
+  }, [replayAnnotations, replayArtifactsHydrated, replayBookmarks]);
 
   const handleDoubleClick = useCallback(() => {
     if (mode !== "flow") return;
     setCharacterControllerEnabled((prev) => {
       const next = !prev;
-      showEasterEggNotification(next ? "WASD controls activated" : "WASD controls deactivated");
+      showEasterEggNotification(next ? "Flight controls activated" : "Flight controls deactivated");
       return next;
     });
   }, [mode, showEasterEggNotification]);
@@ -332,14 +839,23 @@ export function ObservatoryTab() {
         <CanvasErrorBoundary>
         <ObservatoryWorldCanvas
           mode={mode}
-          sceneState={sceneState}
-          activeStationId={flyByActive ? null : missionObjectiveStationId}
+          sceneState={effectiveSceneState}
+          mission={effectiveMission}
+          probeState={effectiveProbeState}
+          ghostPresentation={ghostPresentation}
+          ghostTraces={ghostTraces}
+          activeStationId={flyByActive ? null : selectedStationId ?? missionObjectiveStationId}
           spirit={spirit}
+          weatherState={weatherState}
           cameraResetToken={cameraResetToken}
           onSelectStation={handleSelectStation}
+          onProbeStateChange={observatoryActions.setProbeState}
+          onMissionObjectiveComplete={handleMissionObjectiveComplete}
           className="absolute inset-0"
           flyByActive={flyByActive}
-          frameloop={frameloop}
+          frameloop={flyByActive || effectiveProbeState.status !== "ready" ? "always" : "demand"}
+          playerInputEnabled={!replay.enabled && paneIsActive && characterControllerEnabled && mode === "flow"}
+          replayFrameIndex={replay.enabled ? replay.frameIndex : null}
           onFlyByComplete={handleFlyByComplete}
         />
         </CanvasErrorBoundary>
@@ -381,11 +897,91 @@ export function ObservatoryTab() {
         {mode === "flow" ? "FLOW" : "ATLAS"}
       </button>
 
+      {!flyByActive && (
+        <ObservatoryAnalystPresetBar
+          activePresetId={analystPresetId}
+          onSelectPreset={(presetId) => setObservatoryAnalystPreset(presetId)}
+        />
+      )}
+
+      {!flyByActive && (
+        <button
+          type="button"
+          className="absolute top-14 right-24 z-10 rounded-md border border-[#202531] bg-[#0a0d14]/88 px-3 py-2 text-[10px] font-mono uppercase tracking-[0.16em] text-[#9cc7ff] transition-colors hover:border-[#9cc7ff]/40"
+          onClick={cycleGhostMode}
+        >
+          Ghost {ghostMode}
+        </button>
+      )}
+
+      {!flyByActive && (
+        <ObservatoryReplayHud
+          frames={replayFrames}
+          bookmarks={replayBookmarks}
+          markers={replayMarkers}
+          onAddBookmark={handleAddReplayBookmark}
+          onJumpSpike={handleReplayJumpSpike}
+          onJumpToMarker={handleReplayJumpMarker}
+          replay={replay}
+          selectedSpikeTimestampMs={replay.selectedSpikeTimestampMs ?? null}
+          spikes={replaySpikes}
+          onToggle={handleReplayToggle}
+          onUpdate={observatoryActions.setReplayState}
+        />
+      )}
+
+      {!flyByActive && replay.enabled && (
+        <ObservatoryReplayComparePanel
+          liveSnapshot={liveSnapshot}
+          replaySnapshot={replaySnapshot}
+          selectedDistrictId={replay.selectedDistrictId ?? selectedStationId}
+          onCreateAnnotation={handleReplayCreateAnnotation}
+          onSelectDistrict={handleReplaySelectDistrict}
+        />
+      )}
+
+      {!flyByActive && (
+        <ObservatoryExplainabilityPanel
+          station={panelStation}
+          lanes={effectiveTelemetry.pressureLanes}
+          replayEnabled={replay.enabled}
+          onOpenRoute={(route, label) => openApp(route, label)}
+          onSelectStation={(stationId) => observatoryActions.setSelectedStation(stationId)}
+        />
+      )}
+
       {/* OBS-04: Probe HUD overlay — hidden during fly-by so letterbox bars are unobstructed */}
-      {!flyByActive && <ObservatoryProbeHud probeState={probeState} />}
+      {!flyByActive && !replay.enabled && (
+        <ObservatoryProbeHud
+          guidance={probeGuidance}
+          onOpenNextAction={
+            probeGuidance?.recommendation
+              ? () => openObservatoryRecommendationRoute(probeGuidance.recommendation)
+              : null
+          }
+          probeState={probeState}
+        />
+      )}
 
       {/* OBS-11: Mission HUD overlay — hidden during fly-by */}
-      {!flyByActive && <ObservatoryMissionHud mission={mission} />}
+      {!flyByActive && !replay.enabled && <ObservatoryMissionHud mission={mission} />}
+
+      {!flyByActive && !replay.enabled && !mission && (
+        <button
+          type="button"
+          className="absolute top-14 right-2 z-10 rounded-md border border-[#d4a84b]/30 bg-[#0a0d14]/88 px-3 py-2 text-[10px] font-mono uppercase tracking-[0.18em] text-[#f0e5b0] transition-colors hover:border-[#d4a84b]/50"
+          onClick={handleStartMission}
+        >
+          Start Mission
+        </button>
+      )}
+
+      <ObservatoryCinematicOverlay
+        cue={activeSpikeCue}
+        visible={!flyByActive && !replay.enabled && activeSpikeCue != null}
+        onDismiss={handleDismissSpikeCue}
+        onOpenRoute={handleOpenSpikeCueRoute}
+      />
 
       {/* OBS-06: Easter-egg activation toast — inline notification, no ToastProvider required */}
       {easterEggMsg && (
@@ -403,6 +999,7 @@ export function ObservatoryTab() {
         data-observatory-mode={mode}
         data-observatory-character-controller={characterControllerEnabled ? "on" : "off"}
         data-observatory-probe-status={probeState.status}
+        data-observatory-replay={replay.enabled ? "on" : "off"}
       />
 
       {/* UIP-04: Achievement popups — outside Canvas, Framer Motion AnimatePresence */}

@@ -100,8 +100,8 @@ vi.mock("@/features/observatory/components/ObservatoryWeatherLayer", () => ({
   },
 }));
 
-vi.mock("@/features/observatory/components/flow-runtime/ObservatoryFlowPhysicsBootstrap", () => ({
-  ObservatoryFlowPhysicsBootstrap: (props: Record<string, unknown>) => {
+vi.mock("@/features/observatory/character/ship/SpaceFlightController", () => ({
+  SpaceFlightController: (props: Record<string, unknown>) => {
     flowRuntimeMock.props.push(props);
     if (flowRuntimeMock.suspend) {
       throw flowRuntimeMock.suspension;
@@ -371,7 +371,7 @@ describe("ObservatoryWorldCanvas performance flags", () => {
     expect(await screen.findByTestId("observatory-flow-physics-bootstrap")).toBeTruthy();
     expect(await screen.findByTestId("observatory-postfx")).toBeTruthy();
     expect(await screen.findByTestId("observatory-vfx-pools")).toBeTruthy();
-    expect(flowRuntimeMock.props[flowRuntimeMock.props.length - 1]?.enableCharacterVfx).toBe(true);
+    expect(flowRuntimeMock.props[flowRuntimeMock.props.length - 1]?.inputEnabled).toBe(true);
     expect(fiberMock.canvasProps[fiberMock.canvasProps.length - 1]?.dpr).toEqual([1, 1.5]);
     expect(sceneMock.props[sceneMock.props.length - 1]?.missionTargetStationId).toBeNull();
   });
@@ -502,7 +502,8 @@ describe("ObservatoryWorldCanvas performance flags", () => {
     await waitFor(() => {
       expect(screen.queryByTestId("observatory-vfx-pools")).toBeNull();
     });
-    expect(flowRuntimeMock.props[flowRuntimeMock.props.length - 1]?.enableCharacterVfx).toBe(false);
+    // SpaceFlightController does not receive enableCharacterVfx — flight controller handles its own VFX
+    expect(flowRuntimeMock.props[flowRuntimeMock.props.length - 1]?.inputEnabled).toBeDefined();
   });
 
   it("keeps post fx visible while the flow runtime boundary is still loading", async () => {

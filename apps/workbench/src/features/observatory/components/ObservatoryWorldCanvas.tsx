@@ -202,7 +202,7 @@ export function FovController({
     const pCam = camera as THREE.PerspectiveCamera;
     const safeDelta = Math.min(delta, 1 / 20);
     const sprinting = playerFocusRef.current?.sprinting ?? false;
-    const targetFov = probeActive ? 35 : sprinting ? 52 : 42;
+    const targetFov = probeActive ? 35 : sprinting ? 90 : 60;
     pCam.fov += (targetFov - pCam.fov) * lerpAlpha(5.0, safeDelta);
     pCam.updateProjectionMatrix();
   });
