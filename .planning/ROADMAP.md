@@ -454,7 +454,7 @@ Plans:
 ## Phases
 
 - [x] **Phase 20: Spatial Foundation** — Bump three to 0.171+, WebGPU renderer swap, space-scale world (200-500 unit radius), logarithmic depth buffer, floating station geometry replacing ground buildings (completed 2026-03-20)
-- [ ] **Phase 21: Flight Controller** — Ship mesh, velocity+quaternion flight, damping, three speed tiers (cruise/boost/dock), chase camera, thruster particle trails
+- [x] **Phase 21: Flight Controller** — Ship mesh, velocity+quaternion flight, damping, three speed tiers (cruise/boost/dock), chase camera, thruster particle trails (completed 2026-03-20)
 - [ ] **Phase 22: Space Environment Art** — 3-layer starfield, billboard nebula clouds, void depth fog, emissive space lanes, lane particle streams
 - [ ] **Phase 23: Station Detail + Docking** — 4-tier LOD, beacon lights, Fresnel rim glow, docking ring geometry, three-zone docking system with automated docking sequence
 - [ ] **Phase 24: Space Flight HUD** — Speed indicator, heading compass, target brackets, off-screen arrows, distance readouts, ref-mutation 60fps updates
@@ -588,7 +588,7 @@ Phase 20 first — it is the spatial substrate everything else builds on. Phase 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 20. Spatial Foundation | 2/2 | Complete    | 2026-03-20 | - |
-| 21. Flight Controller | 3/4 | In Progress|  | - |
+| 21. Flight Controller | 4/4 | Complete   | 2026-03-20 | - |
 | 22. Space Environment Art | v6.0 | 0/3 | Not started | - |
 | 23. Station Detail + Docking | v6.0 | 0/3 | Not started | - |
 | 24. Space Flight HUD | v6.0 | 0/2 | Not started | - |

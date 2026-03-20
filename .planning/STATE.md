@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v6.0
 milestone_name: Observatory Space Flight
 status: executing
-stopped_at: Completed 21-03-PLAN.md
-last_updated: "2026-03-20T17:21:13.077Z"
+stopped_at: Completed 21-04-PLAN.md
+last_updated: "2026-03-20T17:22:56.774Z"
 last_activity: 2026-03-20 — Three-tier speed system with boost activation/cooldown + dock proximity (FLT-04)
 progress:
   total_phases: 7
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 6
-  completed_plans: 5
-  percent: 67
+  completed_plans: 6
+  percent: 83
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-20)
 ## Current Position
 
 Phase: 21 of 26 (Flight Controller)
-Plan: 3 of 4 (complete)
-Status: Phase 21 in progress — Plan 03 done (three-tier speed system: cruise/boost/dock)
-Last activity: 2026-03-20 — Three-tier speed system with boost activation/cooldown + dock proximity (FLT-04)
+Plan: 4 of 4 (complete)
+Status: Phase 21 COMPLETE — all 4 plans done (FLT-01 through FLT-06 fulfilled)
+Last activity: 2026-03-20 — Chase camera + thruster VFX (FLT-05, FLT-06)
 
-Progress: [████████░░] 83%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -48,6 +48,7 @@ Progress: [████████░░] 83%
 | 21 | 01 | ~4m | 2 | 4 |
 | Phase 21 P02 | 7 | 2 tasks | 8 files |
 | Phase 21 P03 | 5 | 1 tasks | 1 files |
+| Phase 21 P04 | 8 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -72,6 +73,8 @@ Progress: [████████░░] 83%
 - [Phase 21]: [Phase 21-02]: ObservatoryFlowRuntimeScene is lazy module boundary — Rapier removed from main bundle; SpaceFlightController loaded lazily
 - [Phase 21]: Boost cooldown timer anchored to boostActivatedAtMs; elapsed >= durationMs + cooldownMs clears it (single ref, no separate cooldown start time)
 - [Phase 21]: Speed cap lerp uses dt*5 factor (~0.2s convergence) for smooth deceleration instead of frame-rate snap
+- [Phase 21]: Chase camera offset (0,4,14) in ship-local space rotated by ship quaternion; followFactor=0.07 with 0.8s fast-convergence snap on mount
+- [Phase 21]: thrustIntensityRef/boostingRef are plain refs not state — avoids re-renders in 60Hz flight loop
 
 ### Blockers/Concerns
 
@@ -80,6 +83,6 @@ Progress: [████████░░] 83%
 
 ## Session Continuity
 
-Last session: 2026-03-20T17:21:05.040Z
-Stopped at: Completed 21-03-PLAN.md
+Last session: 2026-03-20T17:22:56.771Z
+Stopped at: Completed 21-04-PLAN.md
 Resume file: None

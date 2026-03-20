@@ -26,8 +26,8 @@
 - [x] **FLT-02**: Velocity-based flight controller with quaternion rotation (no gravity, no Rapier) — WASD for thrust/strafe, mouse for pitch/yaw
 - [x] **FLT-03**: Velocity damping for "flight assist" feel (configurable damping factor ~1.0-2.0)
 - [x] **FLT-04**: Three speed tiers — cruise (normal cap), boost (3x with cooldown + FOV punch), dock approach (reduced cap near stations)
-- [ ] **FLT-05**: Chase camera following ship with lerp lag (offset in ship's local space, smooth follow factor ~0.05-0.1)
-- [ ] **FLT-06**: Ship thruster particle effects — exhaust trails scaling with thrust intensity via wawa-vfx
+- [x] **FLT-05**: Chase camera following ship with lerp lag (offset in ship's local space, smooth follow factor ~0.05-0.1)
+- [x] **FLT-06**: Ship thruster particle effects — exhaust trails scaling with thrust intensity via wawa-vfx
 
 ### Station Design
 
@@ -121,8 +121,8 @@
 | FLT-02 | Phase 21 | Complete |
 | FLT-03 | Phase 21 | Complete |
 | FLT-04 | Phase 21 | Complete |
-| FLT-05 | Phase 21 | Pending |
-| FLT-06 | Phase 21 | Pending |
+| FLT-05 | Phase 21 | Complete |
+| FLT-06 | Phase 21 | Complete |
 | STN-01 | Phase 20 | Complete |
 | STN-02 | Phase 23 | Pending |
 | STN-03 | Phase 23 | Pending |
