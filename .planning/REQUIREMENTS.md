@@ -17,8 +17,8 @@
 - [x] **SPC-02**: 3-layer starfield — procedural Star Nest shader (far background sphere), InstancedMesh mid-field stars (15K, dual-hemisphere), drei Sparkles near-dust (<2K particles)
 - [x] **SPC-03**: Billboard nebula cloud patches near stations — plane geometry with cloud texture, colored point lights, visible through bloom
 - [x] **SPC-04**: Void space between stations with depth fog scaled to new world radius
-- [ ] **SPC-05**: Space lanes rendered as emissive CatmullRomCurve3 TubeGeometry between connected stations with animated dash-offset energy flow
-- [ ] **SPC-06**: Space lane particle streams — instanced particles flowing along lane curves via wawa-vfx stretchBillboard
+- [x] **SPC-05**: Space lanes rendered as emissive CatmullRomCurve3 TubeGeometry between connected stations with animated dash-offset energy flow
+- [x] **SPC-06**: Space lane particle streams — instanced particles flowing along lane curves via wawa-vfx stretchBillboard
 
 ### Flight Controller
 

@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v6.0
 milestone_name: Observatory Space Flight
 status: completed
-stopped_at: Completed 22-01-PLAN.md
-last_updated: "2026-03-20T17:48:22.946Z"
-last_activity: 2026-03-20 — Chase camera + thruster VFX (FLT-05, FLT-06)
+stopped_at: Completed 22-03-PLAN.md
+last_updated: "2026-03-20T17:53:31Z"
+last_activity: 2026-03-20 — Space lanes TubeGeometry + dash-offset energy flow + wawa-vfx particles (SPC-05, SPC-06)
 progress:
   total_phases: 7
   completed_phases: 2
   total_plans: 9
-  completed_plans: 8
+  completed_plans: 9
   percent: 100
 ---
 
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-03-20)
 
 ## Current Position
 
-Phase: 21 of 26 (Flight Controller)
-Plan: 4 of 4 (complete)
-Status: Phase 21 COMPLETE — all 4 plans done (FLT-01 through FLT-06 fulfilled)
-Last activity: 2026-03-20 — Chase camera + thruster VFX (FLT-05, FLT-06)
+Phase: 22 of 26 (Space Environment Art)
+Plan: 3 of 3 (complete)
+Status: Phase 22 COMPLETE — all 3 plans done (SPC-01 through SPC-06 fulfilled)
+Last activity: 2026-03-20 — Space lanes TubeGeometry + dash-offset energy flow + wawa-vfx particles (SPC-05, SPC-06)
 
 Progress: [██████████] 100%
 
@@ -51,6 +51,7 @@ Progress: [██████████] 100%
 | Phase 21 P04 | 8 | 2 tasks | 4 files |
 | Phase 22-space-environment-art P02 | 7min | 2 tasks | 3 files |
 | Phase 22 P01 | 3 | 2 tasks | 4 files |
+| Phase 22 P03 | ~3min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -82,6 +83,8 @@ Progress: [██████████] 100%
 - [Phase 22]: Star Nest shader inlined as template literal in ObservatoryStarfield.tsx (avoids ?raw Vite import complexity in tests)
 - [Phase 22]: FogExp2 density 0.0008 chosen — stations visible ~500 units, geometry fades at 800+
 - [Phase 22]: Background layers use renderOrder negative + depthWrite:false + depthTest:false for correct z-ordering
+- [Phase 22-03]: ShaderMaterial with GLSL dashOffset uniform chosen for lane tube animation — fract() scroll on TubeGeometry UVs is GPU-cheap; per-lane offset (i*2.1) staggers phase
+- [Phase 22-03]: VFXEmitter for lane particles: position updated imperatively via curve.getPointAt(t) + startEmitting(false) each frame; t advances delta*0.4 (~2.5s cycle matches 2s particle lifetime)
 
 ### Blockers/Concerns
 
@@ -90,6 +93,6 @@ Progress: [██████████] 100%
 
 ## Session Continuity
 
-Last session: 2026-03-20T17:48:22.944Z
-Stopped at: Completed 22-01-PLAN.md
+Last session: 2026-03-20T17:53:31Z
+Stopped at: Completed 22-03-PLAN.md
 Resume file: None

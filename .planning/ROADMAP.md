@@ -455,7 +455,7 @@ Plans:
 
 - [x] **Phase 20: Spatial Foundation** — Bump three to 0.171+, WebGPU renderer swap, space-scale world (200-500 unit radius), logarithmic depth buffer, floating station geometry replacing ground buildings (completed 2026-03-20)
 - [x] **Phase 21: Flight Controller** — Ship mesh, velocity+quaternion flight, damping, three speed tiers (cruise/boost/dock), chase camera, thruster particle trails (completed 2026-03-20)
-- [ ] **Phase 22: Space Environment Art** — 3-layer starfield, billboard nebula clouds, void depth fog, emissive space lanes, lane particle streams
+- [x] **Phase 22: Space Environment Art** — 3-layer starfield, billboard nebula clouds, void depth fog, emissive space lanes, lane particle streams (completed 2026-03-20)
 - [ ] **Phase 23: Station Detail + Docking** — 4-tier LOD, beacon lights, Fresnel rim glow, docking ring geometry, three-zone docking system with automated docking sequence
 - [ ] **Phase 24: Space Flight HUD** — Speed indicator, heading compass, target brackets, off-screen arrows, distance readouts, ref-mutation 60fps updates
 - [ ] **Phase 25: Star Chart + Transitions** — Star chart minimap, flight path trail, click-to-autopilot, station status icons, boost FOV punch, warp speed lines, arrival name card, bloom spike, proximity fade
@@ -510,9 +510,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 22-01-PLAN.md — 3-layer starfield (Star Nest shader + 15K InstancedMesh + Sparkles) + FogExp2 depth fog (SPC-02, SPC-04)
-- [ ] 22-02-PLAN.md — Billboard nebula cloud patches + station-colored point lights (SPC-03)
-- [ ] 22-03-PLAN.md — Emissive CatmullRom TubeGeometry space lanes + animated dash-offset + wawa-vfx lane particle streams (SPC-05, SPC-06)
+- [x] 22-01-PLAN.md — 3-layer starfield (Star Nest shader + 15K InstancedMesh + Sparkles) + FogExp2 depth fog (SPC-02, SPC-04)
+- [x] 22-02-PLAN.md — Billboard nebula cloud patches + station-colored point lights (SPC-03)
+- [x] 22-03-PLAN.md — Emissive CatmullRom TubeGeometry space lanes + animated dash-offset + wawa-vfx lane particle streams (SPC-05, SPC-06)
 
 ### Phase 23: Station Detail + Docking
 **Goal**: Stations are navigational destinations with visual depth — four LOD tiers shift geometry complexity with distance, beacon lights pulse at extreme range, Fresnel rim glow halos near stations, docking rings guide approach, and a three-zone docking system automates the final landing sequence
@@ -589,7 +589,7 @@ Phase 20 first — it is the spatial substrate everything else builds on. Phase 
 |-------|-----------|----------------|--------|-----------|
 | 20. Spatial Foundation | 2/2 | Complete    | 2026-03-20 | - |
 | 21. Flight Controller | 4/4 | Complete    | 2026-03-20 | - |
-| 22. Space Environment Art | 2/3 | In Progress|  | - |
+| 22. Space Environment Art | 3/3 | Complete | 2026-03-20 | - |
 | 23. Station Detail + Docking | v6.0 | 0/3 | Not started | - |
 | 24. Space Flight HUD | v6.0 | 0/2 | Not started | - |
 | 25. Star Chart + Transitions | v6.0 | 0/4 | Not started | - |
