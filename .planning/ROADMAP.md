@@ -458,7 +458,7 @@ Plans:
 - [x] **Phase 22: Space Environment Art** — 3-layer starfield, billboard nebula clouds, void depth fog, emissive space lanes, lane particle streams (completed 2026-03-20)
 - [x] **Phase 23: Station Detail + Docking** — 4-tier LOD, beacon lights, Fresnel rim glow, docking ring geometry, three-zone docking system with automated docking sequence (completed 2026-03-20)
 - [x] **Phase 24: Space Flight HUD** — Speed indicator, heading compass, target brackets, off-screen arrows, distance readouts, ref-mutation 60fps updates (completed 2026-03-20)
-- [ ] **Phase 25: Star Chart + Transitions** — Star chart minimap, flight path trail, click-to-autopilot, station status icons, boost FOV punch, warp speed lines, arrival name card, bloom spike, proximity fade
+- [x] **Phase 25: Star Chart + Transitions** — Star chart minimap, flight path trail, click-to-autopilot, station status icons, boost FOV punch, warp speed lines, arrival name card, bloom spike, proximity fade (completed 2026-03-20)
 - [ ] **Phase 26: Discovery + Missions** — Progressive station reveal, discovery animation, mission waypoint path, mission-guided flight flow
 
 ## Phase Details
@@ -592,5 +592,5 @@ Phase 20 first — it is the spatial substrate everything else builds on. Phase 
 | 22. Space Environment Art | 3/3 | Complete    | 2026-03-20 | - |
 | 23. Station Detail + Docking | 3/3 | Complete    | 2026-03-20 | - |
 | 24. Space Flight HUD | v6.0 | Complete    | 2026-03-20 | 2026-03-20 |
-| 25. Star Chart + Transitions | 3/4 | In Progress|  | - |
+| 25. Star Chart + Transitions | 4/4 | Complete   | 2026-03-20 | - |
 | 26. Discovery + Missions | v6.0 | 0/3 | Not started | - |

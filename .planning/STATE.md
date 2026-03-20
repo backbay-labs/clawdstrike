@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v6.0
 milestone_name: Observatory Space Flight
 status: completed
-stopped_at: Completed 25-03-PLAN.md
-last_updated: "2026-03-20T19:39:02.832Z"
+stopped_at: Completed 25-02-PLAN.md
+last_updated: "2026-03-20T19:46:39.484Z"
 last_activity: 2026-03-20 — Station arrival name card cinematic (StationArrivalCard, TRN-03) + proximity-based NPC crew fade (stationProximityRef, TRN-05)
 progress:
   total_phases: 7
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 18
-  completed_plans: 17
+  completed_plans: 18
   percent: 100
 ---
 
@@ -60,6 +60,7 @@ Progress: [██████████] 100%
 | Phase 25 P01 | 3min | 2 tasks | 2 files |
 | Phase 25 P04 | 5min | 2 tasks | 4 files |
 | Phase 25-star-chart-transitions P03 | 7 | 2 tasks | 4 files |
+| Phase 25 P02 | 4min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -117,6 +118,9 @@ Progress: [██████████] 100%
 - [Phase 25-03]: InstancedMesh over wawa-vfx for WarpSpeedLines: cylindrical streaks need matrix control, not particle lifetime/spawn API
 - [Phase 25-03]: seededRandom per instance index for stable streak positions without per-frame GC allocation
 - [Phase 25-03]: setTimeout bloom spike in outer component: boost fires at most every 6s, acceptable React setState
+- [Phase 25-02]: autopilotTargetStationId kept as top-level store field (not inside flightState) — user intent vs physics state
+- [Phase 25-02]: Autopilot slerp 0.03/frame; cruise thrust when forward dot > 0.95; WASD/mouse and dock proximity both fire onAutopilotCancel
+- [Phase 25-02]: Trail buffer circular (max 50, sampled every 500ms via Date.now() in rAF); trail polyline + autopilot dashed line driven imperatively via refs — zero React re-renders
 
 ### Blockers/Concerns
 
@@ -125,6 +129,6 @@ Progress: [██████████] 100%
 
 ## Session Continuity
 
-Last session: 2026-03-20T19:39:02.827Z
-Stopped at: Completed 25-03-PLAN.md
+Last session: 2026-03-20T19:46:39.481Z
+Stopped at: Completed 25-02-PLAN.md
 Resume file: None
