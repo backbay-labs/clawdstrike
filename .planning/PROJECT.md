@@ -1,28 +1,12 @@
-# ClawdStrike Workbench IDE Pivot
+# ClawdStrike Workbench IDE
 
 ## What This Is
 
-ClawdStrike Workbench is a Tauri 2 + React 19 desktop application for security operations — policy authoring, threat simulation, compliance scoring, fleet management, swarm orchestration, and receipt verification. This milestone transforms its UX from a sidebar-nav dashboard into a VS Code/Cursor-like security IDE with activity bar, splittable panes, file tree, and panel system.
+ClawdStrike Workbench is a Tauri 2 + React 19 desktop security IDE with an immersive 3D observatory space flight experience. Operators author policies, run simulations, and investigate hunts in a VS Code-like pane system — then fly a ship through a space environment to navigate between observatory stations, discover threats, and follow mission-guided investigation paths.
 
 ## Core Value
 
-Security operators can work across multiple views simultaneously — policy editor beside simulation results, swarm board beside audit log — with a folder-first navigation model and IDE-grade keyboard workflows. The huntronomer integration adds a spirit-driven immersive layer: 3D observatory, cyber nexus, and spirit companion woven into IDE surfaces.
-
-## Current Milestone: v6.0 Observatory Space Flight
-
-**Goal:** Transform the observatory from a ground-level station ring into an immersive space environment where analysts fly a ship between floating space stations.
-
-**Target features:**
-- Space-scale world with stations at 200-500 unit radius, different elevations, starfield/nebula/debris void
-- Ship-based flight controller — velocity+quaternion movement, damping, speed tiers (cruise/boost/dock), chase camera
-- Floating space station geometry — procedural torus-ring/cylinder/panel stations with LOD via drei Detailed
-- Three-zone docking system (approach → magnet-pull → dock lock) with automated docking sequence
-- Space environment art — 3-layer starfield (Star Nest shader + InstancedMesh + Sparkles), billboard nebula clouds, emissive CatmullRom space lanes
-- Space flight HUD — heading compass, target brackets, off-screen station arrows, speed indicator, distance readouts
-- Star chart minimap replacing SVG ring minimap
-- Warp/boost transitions with FOV punch + speed lines + bloom spike
-- Station approach UI with proximity-based detail fade-in
-- Progressive station discovery and mission-guided flight paths
+Security operators work across multiple views simultaneously with a spirit-driven immersive layer — flying between floating space stations in an observatory that makes threat investigation feel like exploration.
 
 ## Requirements
 
@@ -41,24 +25,36 @@ Security operators can work across multiple views simultaneously — policy edit
 - ✓ Global search (Cmd+Shift+F) with results panel — v1.1
 - ✓ File tree mutations (create, rename, delete, status indicators) — v1.1
 - ✓ Tab overflow scrolling, context menu, terminal splits — v1.1
+- ✓ Spirit + observatory Zustand stores, CSS field stain, accent color, seam badges — v2.0
+- ✓ R3F infrastructure, spirit companion mini-canvas, spirit chamber pane tab — v2.0
+- ✓ Observatory world as full editor pane (atlas + flow modes), probe commands — v2.0
+- ✓ Cyber nexus Hunt Deck pane tab, spirit creation chamber — v2.0
+- ✓ Spirit mood reactivity, editor palette shifting, observatory minimap — v3.0
+- ✓ Observatory GLB hero props, spirit affinity rings — v3.0
+- ✓ Spirit XP evolution with persistent progression, level-gated geometry layers — v3.0
+- ✓ Multi-station probe missions with HUD, evidence 3D preview — v3.0
+- ✓ Nexus force-directed graph with physics clustering — v3.0
+- ✓ Post-processing pipeline (bloom, vignette, SMAA, DOF, LUT per spirit) — v4.0
+- ✓ Camera cinematics (fly-by, dynamic FOV, screen shake, mission focus pull) — v4.0
+- ✓ Particle effects (landing dust, probe discharge, station motes, spirit trail, thruster exhaust) — v4.0
+- ✓ Character polish (locomotion blending, squash-stretch, breathing, sprint lean) — v4.0
+- ✓ World detail (HDR skybox, procedural districts, env props, 24 NPC crew, 3D beacons, tooltips) — v4.0
+- ✓ Explainability + multi-lane pressure + smoothing/hysteresis — v5.0
+- ✓ Guided probes + compound missions + analyst presets — v5.0
+- ✓ Replay intelligence + cooperative timeline markers — v5.0
+- ✓ Runtime decomposition + event-driven invalidation + LOD + resource pooling — v5.0
+- ✓ Cinematic context + ghost memory + hunt weather — v5.0
+- ✓ Space-scale world (300-unit radius, WebGPU renderer, logarithmic depth buffer) — v6.0
+- ✓ Ship flight controller (velocity+quaternion, 3 speed tiers, chase camera, thruster VFX) — v6.0
+- ✓ Space environment art (Star Nest starfield, nebula clouds, space lanes, depth fog) — v6.0
+- ✓ Station LOD + Fresnel glow + docking rings + three-zone docking system — v6.0
+- ✓ Space flight HUD (speed bar, compass, brackets, arrows, distance — 60fps ref-mutation) — v6.0
+- ✓ Star chart minimap + click-to-autopilot + boost transitions + arrival cinematics — v6.0
+- ✓ Progressive station discovery + mission waypoint trails + narrative flight — v6.0
 
 ### Active
 
-- [ ] Spirit field stain on panel/sidebar backgrounds
-- [ ] Spirit accent color on hunt-related UI elements
-- [ ] Observatory seam powering activity bar badges
-- [ ] Route bridge: station clicks → openApp()
-- [ ] Spirit chamber as pane tab view
-- [ ] Mini spirit companion R3F canvas in right sidebar
-- [ ] Animated spirit orb in ActivityBar (replaces static icon when bound)
-- [ ] Receipt/evidence 3D preview in editor tabs
-- [ ] Forensics river mini-view in bottom pane "Tape" tab
-- [ ] Observatory world as full editor pane (atlas default, flow mode opt-in)
-- [ ] Cyber nexus as "Hunt Deck" pane tab
-- [ ] Spirit creation chamber with full atmosphere + manifestation canvas
-- [ ] Character controller Easter-egg in observatory flow mode
-- [ ] spirit-store.ts and observatory-store.ts Zustand stores
-- [ ] Commands: observatory.open, observatory.probe, spirit.bind, spirit.release, nexus.open
+(No active requirements — awaiting next milestone definition)
 
 ### Out of Scope
 
@@ -68,48 +64,34 @@ Security operators can work across multiple views simultaneously — policy edit
 - Full file system abstraction — workbench has its own DetectionProject tree
 - Database viewer — irrelevant to security policy IDE
 - AI chat side panel — ClawdStrike is the security layer, not an agent (Speakeasy is operator chat)
-- VRM avatar rendering — too heavy for IDE; spirit orb is the right abstraction
-- Full Rapier physics in workbench — observatory uses simplified scene, not full simulation
+- VR/XR support — desktop-first; VR deferred indefinitely
+- Full Newtonian physics — arcade flight feel better for analyst tool
+- Combat/weapons — observatory is investigation, not combat
+- Procedural planet generation — stations are the destination, not planets
+- Real GLTF station models (v6.0) — procedural primitives first; GLBs are v7.0 polish
+- Multiple camera modes — chase camera only for v6.0; cockpit view deferred
 
 ## Context
 
-### Foundation Already Built
-The workbench-dev branch (feat/workbench-dev) completed Phase A and C foundation work:
-- Zustand migration (11 stores, createSelectors utility)
-- Command registry (50+ commands, categories, keybindings, context awareness)
-- Binary tree pane system (split/close/focus/resize)
-- Bottom pane (Terminal/Problems/Output with Zustand store)
-- Multi-policy store decomposition (1846-line monolith → 3 focused stores + bridge)
-
-v1.1 added: in-file search, global search, file tree mutations, tab overflow, terminal splits.
+### Shipped State (v6.0)
+- 59 files modified, +10,365 / -2,112 LOC in v6.0 alone
+- Tech stack: Tauri 2, React 19, TypeScript, Zustand, React Three Fiber 9, drei 10, wawa-vfx, three 0.171+
+- WebGPU renderer with WebGL2 fallback, logarithmic depth buffer
+- 40 v6.0 requirements fully satisfied (audit passed)
+- 6 milestones shipped (v1.0 IDE Pivot, v2.0 Huntronomer Integration, v3.0 Spirit & Observatory Evolution, v4.0 AAA Observatory Experience, v5.0 Observatory Analyst Experience, v6.0 Observatory Space Flight)
 
 ### Huntronomer Source
 Source 3D code lives in `clawdstrike-worktrees/huntronomer-workspace-orch` (branch `feature/huntronomer-workspace-orchestrator`, committed @ `1586fe2a1`).
-
-Key source directories to port:
-- `apps/desktop/src/shell/workbench/spirit/` → spirit types, defaults, sceneVisuals, fieldStain, sceneMath
-- `apps/desktop/src/shell/workbench/spirit-ritual/` → creation chamber, modes, atmosphere, canvas, controls
-- `apps/desktop/src/features/hunt-observatory/` → character controller, world, stations, probes, missions
-- `apps/desktop/src/features/cyber-nexus/` → CyberNexusView, NexusCanvas, NexusSpiritCompanion
-- `apps/desktop/src/features/forensics/` → ForensicsRiverView, HuntSpiritOverlay
 
 ### Two App Architectures
 - `apps/desktop/` — Old huntronomer shell (NavRail + plugins, session-based, has all 3D features)
 - `apps/workbench/` — New IDE workbench (ActivityBar + SidebarPanel + PaneRoot + BottomPane + StatusBar)
 
-### Codebase Scale
-- 504 total files (380 src + 124 tests)
-- 213 workbench components across 27 directories
-- 146 lib/workbench utility files
-- 19 primary routes, 16+ lazy-loaded pages
-
 ### Design System
 - shadcn/ui primitives (16 components in components/ui/)
-- Tailwind CSS
-- Custom animated components (wobble-card, moving-border)
+- Tailwind CSS, dark theme only
+- React Three Fiber 9 + drei 10 + wawa-vfx for 3D
 - Monospace typography throughout
-- Dark theme (only theme supported)
-- React Three Fiber 9 + drei 10 + Rapier 2.2 already in deps
 
 ## Constraints
 
@@ -119,7 +101,8 @@ Key source directories to port:
 - **Terminal**: ghostty-web + PTY — existing integration
 - **Graph**: @xyflow/react — existing swarm board integration
 - **Editor**: CodeMirror — existing policy editor integration
-- **Compatibility**: All 19 existing routes must remain reachable (no functionality loss)
+- **Renderer**: three 0.171+ with WebGPU (WebGL2 fallback)
+- **Compatibility**: All existing routes must remain reachable
 - **Testing**: All existing tests must pass after each phase
 
 ## Key Decisions
@@ -129,13 +112,16 @@ Key source directories to port:
 | Activity bar + sidebar panels (not redesigned nav) | VS Code model proven; reuses existing sigil icons | ✓ Good |
 | Current routes become "apps" (zero page component changes) | Minimizes risk; pages render in panes instead of full-page | ✓ Good |
 | Sidebar panels are lightweight summaries, not full pages | Full dashboards open as editor tabs; sidebar for glance-and-navigate | ✓ Good |
-| Right sidebar for Speakeasy only (Inspector is stretch) | Speakeasy already exists; Inspector needs context-resolution system | ✓ Good |
-| Lab decomposed into 3 independent apps | Enables side-by-side policy editor + simulation (key use case) | ✓ Good |
-| Mini R3F canvas in right sidebar | Right sidebar already has resize handle; spirit companion fits naturally | — Pending |
-| Observatory as TAB/PANE not a panel | Like VS Code Markdown Preview — full pane view, not squeezed sidebar | — Pending |
-| deriveObservatoryWorld survives | Powers both full tab and minimap views | — Pending |
-| Character controller is opt-in Easter-egg | Only in observatory tab flow mode; not default experience | — Pending |
-| 2 new Zustand stores (spirit-store, observatory-store) | Minimal new state surface; typed spirit/observatory state | — Pending |
+| Observatory as TAB/PANE not a panel | Like VS Code Markdown Preview — full pane view, not squeezed sidebar | ✓ Good |
+| Character controller is opt-in Easter-egg | Only in observatory tab flow mode; not default experience | ✓ Good |
+| Mini R3F canvas in right sidebar | Right sidebar already has resize handle; spirit companion fits naturally | ✓ Good |
+| 2 new Zustand stores (spirit-store, observatory-store) | Minimal new state surface; typed spirit/observatory state | ✓ Good |
+| Velocity-based flight (no Rapier) | Simpler, more controllable, no overhead for zero-G arcade feel | ✓ Good |
+| WebGPU renderer with WebGL2 fallback | Future-proof; three 0.171+ one-liner swap; existing materials work as-is | ✓ Good |
+| DOM-based HUD (not R3F overlays) | 60fps ref-mutation avoids React re-renders; CSS overlay doesn't fight Canvas | ✓ Good |
+| Three-zone docking system | Approach→magnet-pull→dock-lock feels natural; avoids binary snap | ✓ Good |
+| Star chart replaces SVG ring minimap | Space-scale positions need real XZ mapping; click-to-autopilot needs dots | ✓ Good |
+| Progressive station discovery (session-only) | Rewards exploration without persistent state complexity | ✓ Good |
 
 ---
-*Last updated: 2026-03-20 after v6.0 Observatory Space Flight milestone start*
+*Last updated: 2026-03-20 after v6.0 Observatory Space Flight milestone completion*
