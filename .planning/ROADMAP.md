@@ -507,12 +507,12 @@ Plans:
   3. Depth fog scales correctly to the new world radius — distant stations fade into void rather than hard-cutting at a fog plane
   4. Emissive CatmullRom tube lanes connect adjacent stations with animated dash-offset energy flow visible during flight
   5. Instanced particles stream along lane curves using wawa-vfx stretchBillboard — flow direction matches lane orientation
-**Plans**: 4 plans
+**Plans**: 3 plans
 
 Plans:
-- [ ] 22-01: StarNestShader background sphere + InstancedMesh mid-field stars (15K dual-hemisphere) + drei Sparkles near-dust (SPC-02)
-- [ ] 22-02: Billboard nebula cloud patches + colored point lights + void depth fog scaled to world radius (SPC-03, SPC-04)
-- [ ] 22-03: Space lanes — emissive CatmullRomCurve3 TubeGeometry + animated dash-offset + lane particle streams (SPC-05, SPC-06)
+- [ ] 22-01-PLAN.md — 3-layer starfield (Star Nest shader + 15K InstancedMesh + Sparkles) + FogExp2 depth fog (SPC-02, SPC-04)
+- [ ] 22-02-PLAN.md — Billboard nebula cloud patches + station-colored point lights (SPC-03)
+- [ ] 22-03-PLAN.md — Emissive CatmullRom TubeGeometry space lanes + animated dash-offset + wawa-vfx lane particle streams (SPC-05, SPC-06)
 
 ### Phase 23: Station Detail + Docking
 **Goal**: Stations are navigational destinations with visual depth — four LOD tiers shift geometry complexity with distance, beacon lights pulse at extreme range, Fresnel rim glow halos near stations, docking rings guide approach, and a three-zone docking system automates the final landing sequence
