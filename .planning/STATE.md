@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v6.0
 milestone_name: Observatory Space Flight
 status: executing
-stopped_at: Completed 21-02-PLAN.md
-last_updated: "2026-03-20T17:16:52.260Z"
-last_activity: 2026-03-20 — Flight type system, ShipMesh, observatory store flight slice (FLT-01)
+stopped_at: Completed 21-03-PLAN.md
+last_updated: "2026-03-20T17:21:13.077Z"
+last_activity: 2026-03-20 — Three-tier speed system with boost activation/cooldown + dock proximity (FLT-04)
 progress:
   total_phases: 7
   completed_phases: 1
   total_plans: 6
-  completed_plans: 4
-  percent: 10
+  completed_plans: 5
+  percent: 67
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-03-20)
 ## Current Position
 
 Phase: 21 of 26 (Flight Controller)
-Plan: 2 of 4 (complete)
-Status: Phase 21 in progress — Plan 02 done (useFlightInput + useFlightLoop + SpaceFlightController)
-Last activity: 2026-03-20 — Keyboard+mouse flight controller with quaternion physics (FLT-02, FLT-03)
+Plan: 3 of 4 (complete)
+Status: Phase 21 in progress — Plan 03 done (three-tier speed system: cruise/boost/dock)
+Last activity: 2026-03-20 — Three-tier speed system with boost activation/cooldown + dock proximity (FLT-04)
 
-Progress: [███████░░░] 67%
+Progress: [████████░░] 83%
 
 ## Performance Metrics
 
@@ -47,6 +47,7 @@ Progress: [███████░░░] 67%
 | 20 | 02 | ~15m | 2 | 6 |
 | 21 | 01 | ~4m | 2 | 4 |
 | Phase 21 P02 | 7 | 2 tasks | 8 files |
+| Phase 21 P03 | 5 | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -69,6 +70,8 @@ Progress: [███████░░░] 67%
 - [Phase 21]: useFlightInput uses ref-only mutation (Set<string> + intentRef), no setState — avoids re-renders in 60Hz+ frame loop
 - [Phase 21]: [Phase 21-02]: Yaw via quaternion.premultiply (world-Y), pitch via quaternion.multiply (local-X) — standard FPS rotation, no gimbal lock
 - [Phase 21]: [Phase 21-02]: ObservatoryFlowRuntimeScene is lazy module boundary — Rapier removed from main bundle; SpaceFlightController loaded lazily
+- [Phase 21]: Boost cooldown timer anchored to boostActivatedAtMs; elapsed >= durationMs + cooldownMs clears it (single ref, no separate cooldown start time)
+- [Phase 21]: Speed cap lerp uses dt*5 factor (~0.2s convergence) for smooth deceleration instead of frame-rate snap
 
 ### Blockers/Concerns
 
@@ -77,6 +80,6 @@ Progress: [███████░░░] 67%
 
 ## Session Continuity
 
-Last session: 2026-03-20T17:16:52.257Z
-Stopped at: Completed 21-02-PLAN.md
+Last session: 2026-03-20T17:21:05.040Z
+Stopped at: Completed 21-03-PLAN.md
 Resume file: None
