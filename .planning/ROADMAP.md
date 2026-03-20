@@ -540,11 +540,11 @@ Plans:
   3. The selected station has diamond/L-corner bracket markers scaled inversely with distance and color-coded by status (unvisited, active mission, docked)
   4. Stations outside the camera frustum show directional arrows at screen edges with station name and distance; arrows vanish when the station enters view
   5. Numeric distance readouts attached to station markers fade in during approach and are legible at near-dock range — no setState calls in the HUD update loop
-**Plans**: 4 plans
+**Plans**: 2 plans
 
 Plans:
-- [ ] 24-01: SpeedIndicator + HeadingCompass DOM components with useFrame ref-mutation pattern (HUD-01, HUD-02, HUD-06)
-- [ ] 24-02: TargetBrackets (in-frustum) + OffScreenArrows (out-of-frustum) + distance readouts (HUD-03, HUD-04, HUD-05)
+- [ ] 24-01-PLAN.md — Camera bridge + SpeedIndicator + HeadingCompass (HUD-01, HUD-02, HUD-06)
+- [ ] 24-02-PLAN.md — TargetBrackets + OffScreenArrows + distance readouts + ObservatoryTab wiring (HUD-03, HUD-04, HUD-05)
 
 ### Phase 25: Star Chart + Transitions
 **Goal**: Analysts can navigate by map and feel the drama of space travel — a star chart minimap replaces the SVG ring, click-to-autopilot guides flight, boost launches punch FOV and bloom, station arrivals play name cards, and proximity reveals station detail progressively
