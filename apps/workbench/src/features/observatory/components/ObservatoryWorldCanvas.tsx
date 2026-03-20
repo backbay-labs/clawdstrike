@@ -62,6 +62,8 @@ import {
 import { applyObservatoryProbeConsequences } from "../world/probeConsequences";
 import { ProbeDischargeVFX } from "../vfx/ProbeDischargeVFX";
 import { StationNpcCrew } from "../world/npcCrew";
+import { SpaceStationMesh } from "../world/districtGeometry";
+import { createSpaceStationSeed } from "../world/districtGeometryResources";
 import {
   createObservatoryPerformanceProfile,
   type ObservatoryRuntimeQuality,
@@ -3931,6 +3933,16 @@ function ObservatoryWorldScene({
           key={`npc:${district.id}`}
           stationWorldPos={district.position}
           colorHex={district.colorHex}
+        />
+      ))}
+
+      {/* STN-01: Floating space station geometry */}
+      {world.districts.map((district) => (
+        <SpaceStationMesh
+          key={`station-mesh:${district.id}`}
+          position={district.position as [number, number, number]}
+          colorHex={district.colorHex}
+          seed={createSpaceStationSeed(district.position[0], district.position[2])}
         />
       ))}
     </>
