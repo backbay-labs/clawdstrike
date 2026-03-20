@@ -453,7 +453,7 @@ Plans:
 
 ## Phases
 
-- [ ] **Phase 20: Spatial Foundation** — Bump three to 0.171+, WebGPU renderer swap, space-scale world (200-500 unit radius), logarithmic depth buffer, floating station geometry replacing ground buildings
+- [x] **Phase 20: Spatial Foundation** — Bump three to 0.171+, WebGPU renderer swap, space-scale world (200-500 unit radius), logarithmic depth buffer, floating station geometry replacing ground buildings (completed 2026-03-20)
 - [ ] **Phase 21: Flight Controller** — Ship mesh, velocity+quaternion flight, damping, three speed tiers (cruise/boost/dock), chase camera, thruster particle trails
 - [ ] **Phase 22: Space Environment Art** — 3-layer starfield, billboard nebula clouds, void depth fog, emissive space lanes, lane particle streams
 - [ ] **Phase 23: Station Detail + Docking** — 4-tier LOD, beacon lights, Fresnel rim glow, docking ring geometry, three-zone docking system with automated docking sequence
@@ -587,7 +587,7 @@ Phase 20 first — it is the spatial substrate everything else builds on. Phase 
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 20. Spatial Foundation | 1/2 | In Progress|  | - |
+| 20. Spatial Foundation | 2/2 | Complete   | 2026-03-20 | - |
 | 21. Flight Controller | v6.0 | 0/4 | Not started | - |
 | 22. Space Environment Art | v6.0 | 0/3 | Not started | - |
 | 23. Station Detail + Docking | v6.0 | 0/3 | Not started | - |
