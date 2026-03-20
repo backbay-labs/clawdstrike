@@ -6,6 +6,7 @@ import { Instance, Instances } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import { useMemo, useRef } from "react";
 import * as THREE from "three";
+import type { ObservatoryLodTier } from "../utils/observatory-performance";
 import type { ObservatoryVec3 } from "./deriveObservatoryWorld";
 
 const PROXIMITY_THRESHOLD = 5.0;
@@ -27,19 +28,64 @@ interface NpcInstanceProps {
   waypointOffsets: [[number, number], [number, number], [number, number], [number, number]];
   stationWorldPos: ObservatoryVec3;
   color: string;
+  lodTier: ObservatoryLodTier;
 }
 
-function NpcInstance({ waypointOffsets, stationWorldPos, color: _color }: NpcInstanceProps) {
-  const groupRef = useRef<THREE.Object3D | null>(null);
+export interface ObservatoryNpcCrewMotionMode {
+  canLookAt: boolean;
+  canWave: boolean;
+  patrolEnabled: boolean;
+  coarseStepSeconds: number | null;
+}
 
-  // World-space patrol waypoints (Y = 0, NPC stands on floor)
+export function resolveObservatoryNpcCrewMotionMode(
+  lodTier: ObservatoryLodTier,
+): ObservatoryNpcCrewMotionMode {
+  switch (lodTier) {
+    case "focus":
+      return {
+        canLookAt: true,
+        canWave: true,
+        coarseStepSeconds: null,
+        patrolEnabled: true,
+      };
+    case "near":
+      return {
+        canLookAt: false,
+        canWave: false,
+        coarseStepSeconds: null,
+        patrolEnabled: true,
+      };
+    case "far":
+      return {
+        canLookAt: false,
+        canWave: false,
+        coarseStepSeconds: 0.4,
+        patrolEnabled: true,
+      };
+    case "dormant":
+    default:
+      return {
+        canLookAt: false,
+        canWave: false,
+        coarseStepSeconds: null,
+        patrolEnabled: false,
+      };
+  }
+}
+
+function NpcInstance({ waypointOffsets, stationWorldPos, color: _color, lodTier }: NpcInstanceProps) {
+  const groupRef = useRef<THREE.Object3D | null>(null);
+  const motionMode = useMemo(() => resolveObservatoryNpcCrewMotionMode(lodTier), [lodTier]);
+
+  // World-space patrol waypoints (Y = station elevation, NPC floats at station level)
   const waypoints = useMemo(
     () =>
       waypointOffsets.map(
-        ([ox, oz]) => new THREE.Vector3(stationWorldPos[0] + ox, 0, stationWorldPos[2] + oz),
+        ([ox, oz]) => new THREE.Vector3(stationWorldPos[0] + ox, stationWorldPos[1], stationWorldPos[2] + oz),
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [stationWorldPos[0], stationWorldPos[2], waypointOffsets],
+    [stationWorldPos[0], stationWorldPos[1], stationWorldPos[2], waypointOffsets],
   );
 
   const posRef = useRef(waypoints[0].clone());
@@ -47,10 +93,26 @@ function NpcInstance({ waypointOffsets, stationWorldPos, color: _color }: NpcIns
   const wavingRef = useRef(false);
   const waveTimerRef = useRef(0);
   const armOffsetRef = useRef(0);
+  const coarseAccumulatorRef = useRef(0);
 
   useFrame(({ camera }, delta) => {
     const obj = groupRef.current;
     if (!obj) return;
+
+    if (!motionMode.patrolEnabled) {
+      obj.position.copy(posRef.current);
+      return;
+    }
+
+    const dist = posRef.current.distanceTo(camera.position);
+    if (motionMode.coarseStepSeconds !== null) {
+      coarseAccumulatorRef.current += delta;
+      if (coarseAccumulatorRef.current < motionMode.coarseStepSeconds) {
+        obj.position.copy(posRef.current);
+        return;
+      }
+      coarseAccumulatorRef.current = 0;
+    }
 
     // --- Patrol lerp ---
     const target = waypoints[waypointIdxRef.current];
@@ -61,8 +123,7 @@ function NpcInstance({ waypointOffsets, stationWorldPos, color: _color }: NpcIns
     }
 
     // --- Proximity check ---
-    const dist = posRef.current.distanceTo(camera.position);
-    if (dist < PROXIMITY_THRESHOLD) {
+    if (motionMode.canWave && dist < PROXIMITY_THRESHOLD) {
       wavingRef.current = true;
       waveTimerRef.current += delta;
     } else {
@@ -79,7 +140,7 @@ function NpcInstance({ waypointOffsets, stationWorldPos, color: _color }: NpcIns
     obj.position.copy(posRef.current);
 
     // --- Look-at player when waving ---
-    if (wavingRef.current) {
+    if (motionMode.canLookAt && wavingRef.current) {
       obj.lookAt(camera.position.x, posRef.current.y, camera.position.z);
     }
   });
@@ -90,7 +151,7 @@ function NpcInstance({ waypointOffsets, stationWorldPos, color: _color }: NpcIns
   return (
     <Instance
       ref={groupRef}
-      position={[spawnX, 0, spawnZ]}
+      position={[spawnX, stationWorldPos[1], spawnZ]}
     />
   );
 }
@@ -98,9 +159,10 @@ function NpcInstance({ waypointOffsets, stationWorldPos, color: _color }: NpcIns
 export interface StationNpcCrewProps {
   stationWorldPos: ObservatoryVec3;
   colorHex: string;
+  lodTier?: ObservatoryLodTier;
 }
 
-export function StationNpcCrew({ stationWorldPos, colorHex }: StationNpcCrewProps) {
+export function StationNpcCrew({ stationWorldPos, colorHex, lodTier = "near" }: StationNpcCrewProps) {
   return (
     <Instances limit={8}>
       <capsuleGeometry args={[0.12, 0.35, 4, 8]} />
@@ -111,6 +173,7 @@ export function StationNpcCrew({ stationWorldPos, colorHex }: StationNpcCrewProp
           waypointOffsets={npc.waypointOffsets}
           stationWorldPos={stationWorldPos}
           color={colorHex}
+          lodTier={lodTier}
         />
       ))}
     </Instances>

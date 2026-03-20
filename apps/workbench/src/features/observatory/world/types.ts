@@ -19,6 +19,7 @@ export interface HuntStationPlacement {
   label: string;
   angleDeg: number;
   radius: number;
+  elevationY: number;
 }
 
 export interface HuntStationState {

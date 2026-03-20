@@ -1,25 +1,29 @@
 import { Billboard, CameraShake, Html, Line, OrbitControls, Sparkles, Stars, Text, useGLTF, type ShakeController } from "@react-three/drei";
-import {
-  CapsuleCollider,
-  CuboidCollider,
-  CylinderCollider,
-  Physics,
-  RigidBody,
-  type RapierRigidBody,
-} from "@react-three/rapier";
 import { Canvas, type ThreeEvent, useFrame } from "@react-three/fiber";
-import { ObservatoryPostFX } from "./ObservatoryPostFX";
 import { buildSpiritLut } from "../utils/buildSpiritLut";
+import { createNormalizedObservatoryModelInstance } from "../utils/observatory-models";
 import type { SpiritKind } from "@/features/spirit/types";
-import { Suspense, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import * as THREE from "three";
 import {
-  HUNT_STATION_LABELS,
-} from "../world/stations";
+  Suspense,
+  lazy,
+  memo,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import * as THREE from "three";
 import type {
   HuntObservatorySceneState,
   HuntStationId,
 } from "../world/types";
+import type {
+  ObservatoryGhostPresentation,
+  ObservatoryGhostTrace,
+} from "../world/observatory-ghost-memory";
+import type { ObservatoryWeatherState } from "../world/observatory-weather";
 
 import {
   OBSERVATORY_ASTRONAUT_OPERATOR_ANIMATION_URLS,
@@ -27,18 +31,6 @@ import {
   OBSERVATORY_ASTRONAUT_OPERATOR_TEXTURE_SOURCE_URL,
 } from "../character/avatar/assetManifest";
 import { ObservatoryPlayerAvatar } from "../character/avatar/ObservatoryPlayerAvatar";
-import { useObservatoryPlayerRuntime } from "../character/controller/useObservatoryPlayerRuntime";
-import { useObservatoryPlayerInput } from "../character/input/useObservatoryPlayerInput";
-import {
-  createObservatoryBoundaryColliders,
-  createObservatoryPlayerCapsuleCollider,
-} from "../character/physics/colliders";
-import type {
-  ObservatoryColliderSpec,
-  ObservatoryPlayerBodyAdapter,
-  ObservatoryPlayerCommand,
-  ObservatoryPlayerSpawnPoint,
-} from "../character/types";
 import {
   deriveObservatoryWorld,
   type DerivedObservatoryWorld,
@@ -53,14 +45,6 @@ import {
   type ObservatoryWatchfieldRecipe,
 } from "../world/deriveObservatoryWorld";
 import {
-  resolveObservatoryTraversalHalfExtents,
-  shouldAdhereObservatoryPlayerToGround,
-} from "../world/grounding";
-import {
-  OBSERVATORY_MISSION_OBJECTIVES,
-  completeObservatoryMissionObjective,
-  createObservatoryMissionLoopState,
-  deriveObservatoryMissionBranch,
   getCurrentObservatoryMissionObjective,
   isObservatoryMissionObjectiveProp,
   resolveObservatoryMissionProbeTargetStationId,
@@ -69,7 +53,6 @@ import {
 import {
   advanceObservatoryProbeState,
   canDispatchObservatoryProbe,
-  createInitialObservatoryProbeState,
   dispatchObservatoryProbe,
   getObservatoryProbeCharge,
   getObservatoryProbeRemainingMs,
@@ -78,21 +61,66 @@ import {
 } from "../world/probeRuntime";
 import { applyObservatoryProbeConsequences } from "../world/probeConsequences";
 import { ProbeDischargeVFX } from "../vfx/ProbeDischargeVFX";
-import { CharacterVFX } from "../vfx/CharacterVFX";
-import { ObservatoryVFXPools } from "../vfx/ObservatoryVFXPools";
 import { StationNpcCrew } from "../world/npcCrew";
-import { StationBuilding, DistrictGround, DistrictEnvProps } from "../world/districtGeometry";
+import {
+  createObservatoryPerformanceProfile,
+  type ObservatoryRuntimeQuality,
+  shouldRenderObservatoryPostFx,
+} from "../utils/observatory-performance";
+import { getObservatoryNowMs, useObservatoryNow } from "../utils/observatory-time";
+import type {
+  MissionInteractionSource,
+  ObservatoryPlayerFocusState,
+  ObservatoryPlayerWorldState,
+} from "./flow-runtime/grounding";
+import { ObservatoryMissionOverlay } from "./ObservatoryMissionOverlay";
+import {
+  ObservatoryQualityMonitor,
+  ObservatoryRuntimeActivityMonitor,
+} from "./ObservatoryRuntimeMonitors";
+import { ObservatoryGhostLayer } from "./ObservatoryGhostLayer";
+import { ObservatoryWeatherLayer } from "./ObservatoryWeatherLayer";
+import { ObservatoryInvalidationController } from "./world-canvas/ObservatoryInvalidationController";
+import { ObservatoryWorldScene as ExtractedObservatoryWorldScene } from "./world-canvas/ObservatoryWorldScene";
+import { useObservatoryWorldLifecycle } from "./world-canvas/useObservatoryWorldLifecycle";
+
+const LazyObservatoryPostFX = lazy(() =>
+  import("./ObservatoryPostFX").then((module) => ({ default: module.ObservatoryPostFX })),
+);
+const LazyObservatoryFlowRuntimeScene = lazy(() =>
+  import("./ObservatoryFlowRuntimeScene").then((module) => ({ default: module.ObservatoryFlowRuntimeScene })),
+);
+const LazyObservatoryVFXPools = lazy(() =>
+  import("../vfx/ObservatoryVFXPools").then((module) => ({ default: module.ObservatoryVFXPools })),
+);
 
 export interface ObservatoryWorldCanvasProps {
   mode: HuntObservatorySceneState["mode"];
   sceneState: HuntObservatorySceneState | null;
+  mission: ObservatoryMissionLoopState | null;
+  probeState: ObservatoryProbeState;
   activeStationId: HuntStationId | null;
+  ghostPresentation?: ObservatoryGhostPresentation;
+  ghostTraces?: ObservatoryGhostTrace[];
   spirit?: ObservatorySpiritVisual;
+  weatherState?: ObservatoryWeatherState | null;
   cameraResetToken?: number;
   onSelectStation?: (stationId: HuntStationId) => void;
+  onProbeStateChange?: (
+    next:
+      | ObservatoryProbeState
+      | ((current: ObservatoryProbeState) => ObservatoryProbeState),
+  ) => void;
+  onMissionObjectiveComplete?: (
+    assetId: ObservatoryHeroPropRecipe["assetId"],
+    nowMs: number,
+  ) => ObservatoryMissionLoopState | null;
   className?: string;
   /** CAM-01: frameloop for the R3F Canvas — "always" during fly-by, "demand" otherwise */
   frameloop?: "demand" | "always";
+  /** Gates keyboard listeners so the active pane owns movement controls. */
+  playerInputEnabled?: boolean;
+  replayFrameIndex?: number | null;
   /** CAM-01: set flyByActive=true to run the opening camera sweep */
   flyByActive?: boolean;
   /** CAM-01: called when the fly-by sequence finishes all waypoints */
@@ -119,16 +147,11 @@ const FLY_BY_WAYPOINTS: ReadonlyArray<{
   readonly target: readonly [number, number, number];
   readonly durationMs: number;
 }> = [
-  { position: [28, 8, 28],    target: [0, 2, 0],    durationMs: 1600 },
-  { position: [-22, 14, 20],  target: [0, 3, 0],    durationMs: 1600 },
-  { position: [0, 20.4, 36.8], target: [0, 1.2, 0], durationMs: 1600 },
+  { position: [420, 120, 420],   target: [0, 10, 0],  durationMs: 1800 },
+  { position: [-330, 210, 300],  target: [0, 15, 0],  durationMs: 1800 },
+  { position: [0, 310, 550],     target: [0, 5, 0],   durationMs: 1800 },
 ] as const;
 const DISTRICT_ARRIVAL_DURATION_MS = 2400;
-const PLAYER_COLLIDER_HALF_HEIGHT = 0.46;
-const PLAYER_COLLIDER_RADIUS = 0.34;
-const PLAYER_STAND_HEIGHT = PLAYER_COLLIDER_HALF_HEIGHT + PLAYER_COLLIDER_RADIUS;
-const PLAYER_GROUNDED_EPSILON = 0.12;
-const PLAYER_INTERACT_DISTANCE = 2.2;
 const HERO_CHOREOGRAPHY_STATIONS = new Set<HuntStationId>(["signal", "run", "receipts", "case-notes"]);
 const EVENT_KIND_BY_STATION: Partial<Record<HuntStationId, "signal" | "run" | "evidence" | "judgment" | "watch">> = {
   signal: "signal",
@@ -162,31 +185,11 @@ interface DistrictArrivalCue {
   token: number;
 }
 
-interface ObservatoryPlayerFocusState {
-  action: string | null;
-  airborne: boolean;
-  facingRadians: number;
-  moving: boolean;
-  moveVector: [number, number];
-  position: [number, number, number];
-  sprinting: boolean;
-  stationId?: HuntStationId | null;
-}
-
-interface ObservatoryPlayerWorldState {
-  interactableAssetId: ObservatoryHeroPropRecipe["assetId"] | null;
-  stationId: HuntStationId | null;
-}
-
-interface MissionInteractionSource {
-  source: "click" | "player";
-}
-
 function lerpAlpha(speed: number, delta: number): number {
   return 1 - Math.exp(-speed * delta);
 }
 
-function FovController({
+export function FovController({
   playerFocusRef,
   probeActive,
 }: {
@@ -204,51 +207,27 @@ function FovController({
   return null;
 }
 
-function distanceSquared(a: [number, number, number], b: [number, number, number]): number {
-  const dx = a[0] - b[0];
-  const dy = a[1] - b[1];
-  const dz = a[2] - b[2];
-  return dx * dx + dy * dy + dz * dz;
-}
-
-function resolveNearestInteractableHeroProp(
-  props: ObservatoryHeroPropRecipe[],
-  position: [number, number, number],
-): ObservatoryHeroPropRecipe | null {
-  let best: ObservatoryHeroPropRecipe | null = null;
-  let bestDistance = PLAYER_INTERACT_DISTANCE * PLAYER_INTERACT_DISTANCE;
-  for (const prop of props) {
-    if (prop.stationId === "core") continue;
-    const candidate: [number, number, number] = [prop.position[0], prop.position[1] + 0.8, prop.position[2]];
-    const dist = distanceSquared(position, candidate);
-    if (dist <= bestDistance) {
-      best = prop;
-      bestDistance = dist;
-    }
-  }
-  return best;
-}
-
 function smoothstep01(value: number): number {
   const clamped = Math.min(1, Math.max(0, value));
   return clamped * clamped * (3 - 2 * clamped);
 }
 
-function bezierPoint(
+function bezierPointInto(
+  out: THREE.Vector3,
   start: THREE.Vector3,
   mid: THREE.Vector3,
   end: THREE.Vector3,
   t: number,
 ): THREE.Vector3 {
   const inverse = 1 - t;
-  return start
-    .clone()
+  return out
+    .copy(start)
     .multiplyScalar(inverse * inverse)
-    .add(mid.clone().multiplyScalar(2 * inverse * t))
-    .add(end.clone().multiplyScalar(t * t));
+    .addScaledVector(mid, 2 * inverse * t)
+    .addScaledVector(end, t * t);
 }
 
-function WorldCameraRig({
+export function WorldCameraRig({
   camera,
   controlsRef,
   flyByActive,
@@ -265,11 +244,18 @@ function WorldCameraRig({
 }) {
   const initializedRef = useRef(false);
   const previousGoalRef = useRef<{
+    initialized: boolean;
     position: THREE.Vector3;
     target: THREE.Vector3;
     resetToken: number;
-  } | null>(null);
+  }>({
+    initialized: false,
+    position: new THREE.Vector3(),
+    target: new THREE.Vector3(),
+    resetToken: 0,
+  });
   const flightRef = useRef<{
+    active: boolean;
     startTime: number;
     duration: number;
     fromPosition: THREE.Vector3;
@@ -278,20 +264,42 @@ function WorldCameraRig({
     fromTarget: THREE.Vector3;
     viaTarget: THREE.Vector3;
     toTarget: THREE.Vector3;
-  } | null>(null);
+  }>({
+    active: false,
+    startTime: 0,
+    duration: 0,
+    fromPosition: new THREE.Vector3(),
+    viaPosition: new THREE.Vector3(),
+    toPosition: new THREE.Vector3(),
+    fromTarget: new THREE.Vector3(),
+    viaTarget: new THREE.Vector3(),
+    toTarget: new THREE.Vector3(),
+  });
   // CAM-01: fly-by refs — track which waypoint we're on and whether we already called complete
   const waypointIndexRef = useRef(0);
   const flyByCompleteCalledRef = useRef(false);
   // CAM-04: mission focus dwell — holds camera on objective station after flight completes
   const dwellRef = useRef<{ expiresAt: number } | null>(null);
-  const desired = useMemo(
-    () => ({
-      position: new THREE.Vector3(...camera.desiredPosition),
-      target: new THREE.Vector3(...camera.desiredTarget),
-    }),
-    [camera.desiredPosition, camera.desiredTarget],
+  const chaseTargetRef = useRef(new THREE.Vector3());
+  const chasePositionRef = useRef(new THREE.Vector3());
+  const followedTargetRef = useRef(new THREE.Vector3());
+  const followedPositionRef = useRef(new THREE.Vector3());
+  const axisRef = useRef(new THREE.Vector3());
+  const lateralRef = useRef(new THREE.Vector3());
+  const travelPositionRef = useRef(new THREE.Vector3());
+  const travelTargetRef = useRef(new THREE.Vector3());
+  const desiredPosition = useMemo(
+    () => new THREE.Vector3(...camera.desiredPosition),
+    [camera.desiredPosition],
   );
-  const initial = useMemo(() => new THREE.Vector3(...camera.initialPosition), [camera.initialPosition]);
+  const desiredTarget = useMemo(
+    () => new THREE.Vector3(...camera.desiredTarget),
+    [camera.desiredTarget],
+  );
+  const initialPosition = useMemo(
+    () => new THREE.Vector3(...camera.initialPosition),
+    [camera.initialPosition],
+  );
 
   useFrame(({ clock }, delta) => {
     const controls = controlsRef.current as unknown as {
@@ -314,7 +322,7 @@ function WorldCameraRig({
         return;
       }
       // Launch flight to next waypoint if none in progress
-      if (!flightRef.current) {
+      if (!flightRef.current.active) {
         const idx = waypointIndexRef.current;
         if (idx >= FLY_BY_WAYPOINTS.length) {
           // All waypoints done — hand off
@@ -323,60 +331,57 @@ function WorldCameraRig({
           return;
         }
         const wp = FLY_BY_WAYPOINTS[idx];
-        const from = controls.object.position.clone();
-        const to = new THREE.Vector3(wp.position[0], wp.position[1], wp.position[2]);
-        const toTarget = new THREE.Vector3(wp.target[0], wp.target[1], wp.target[2]);
-        const fromTarget = controls.target.clone();
-        const axis = to.clone().sub(from);
+        const flight = flightRef.current;
+        flight.fromPosition.copy(controls.object.position);
+        flight.toPosition.set(wp.position[0], wp.position[1], wp.position[2]);
+        flight.toTarget.set(wp.target[0], wp.target[1], wp.target[2]);
+        flight.fromTarget.copy(controls.target);
+        const axis = axisRef.current.copy(flight.toPosition).sub(flight.fromPosition);
         const travelDist = axis.length();
         // Guard: skip near-zero travel legs
         if (travelDist < 0.5) {
           waypointIndexRef.current = idx + 1;
           return;
         }
-        const lateral = new THREE.Vector3(-axis.z, 0, axis.x)
+        const lateral = lateralRef.current
+          .set(-axis.z, 0, axis.x)
           .normalize()
           .multiplyScalar(Math.min(2.4, 0.8 + travelDist * 0.04));
-        const via = from
-          .clone()
-          .lerp(to, 0.5)
+        flight.viaPosition
+          .copy(flight.fromPosition)
+          .lerp(flight.toPosition, 0.5)
           .add(lateral)
-          .setY(Math.max(from.y, to.y) + camera.arrivalLift + 1.2);
-        const viaTarget = fromTarget
-          .clone()
-          .lerp(toTarget, 0.5)
-          .setY(Math.max(fromTarget.y, toTarget.y) + camera.arrivalLift * 0.32);
-        flightRef.current = {
-          startTime: clock.elapsedTime,
-          duration: wp.durationMs / 1000,
-          fromPosition: from,
-          viaPosition: via,
-          toPosition: to,
-          fromTarget,
-          viaTarget,
-          toTarget,
-        };
+          .setY(Math.max(flight.fromPosition.y, flight.toPosition.y) + camera.arrivalLift + 1.2);
+        flight.viaTarget
+          .copy(flight.fromTarget)
+          .lerp(flight.toTarget, 0.5)
+          .setY(Math.max(flight.fromTarget.y, flight.toTarget.y) + camera.arrivalLift * 0.32);
+        flight.startTime = clock.elapsedTime;
+        flight.duration = wp.durationMs / 1000;
+        flight.active = true;
       }
       // Run the active fly-by flight
-      if (flightRef.current) {
+      if (flightRef.current.active) {
         const progress =
           (clock.elapsedTime - flightRef.current.startTime) / flightRef.current.duration;
         if (progress >= 1) {
           controls.object.position.copy(flightRef.current.toPosition);
           controls.target.copy(flightRef.current.toTarget);
           controls.update();
-          flightRef.current = null;
+          flightRef.current.active = false;
           waypointIndexRef.current += 1;
           return;
         }
         const eased = smoothstep01(progress);
-        const travelPos = bezierPoint(
+        const travelPos = bezierPointInto(
+          travelPositionRef.current,
           flightRef.current.fromPosition,
           flightRef.current.viaPosition,
           flightRef.current.toPosition,
           eased,
         );
-        const travelTgt = bezierPoint(
+        const travelTgt = bezierPointInto(
+          travelTargetRef.current,
           flightRef.current.fromTarget,
           flightRef.current.viaTarget,
           flightRef.current.toTarget,
@@ -391,22 +396,21 @@ function WorldCameraRig({
     }
 
     if (!initializedRef.current) {
-      controls.object.position.copy(initial);
-      controls.target.copy(desired.target);
+      controls.object.position.copy(initialPosition);
+      controls.target.copy(desiredTarget);
       controls.update();
       initializedRef.current = true;
-      previousGoalRef.current = {
-        position: desired.position.clone(),
-        target: desired.target.clone(),
-        resetToken,
-      };
+      previousGoalRef.current.initialized = true;
+      previousGoalRef.current.position.copy(desiredPosition);
+      previousGoalRef.current.target.copy(desiredTarget);
+      previousGoalRef.current.resetToken = resetToken;
       return;
     }
     const previousGoal = previousGoalRef.current;
     const goalChanged =
-      previousGoal == null ||
-      previousGoal.position.distanceToSquared(desired.position) > 0.25 ||
-      previousGoal.target.distanceToSquared(desired.target) > 0.12 ||
+      !previousGoal.initialized ||
+      previousGoal.position.distanceToSquared(desiredPosition) > 0.25 ||
+      previousGoal.target.distanceToSquared(desiredTarget) > 0.12 ||
       previousGoal.resetToken !== resetToken;
 
     const playerFocus = playerFocusRef.current;
@@ -423,25 +427,27 @@ function WorldCameraRig({
         : playerFocus.facingRadians
       : 0;
     const chaseTarget = playerFocus
-      ? new THREE.Vector3(
+      ? chaseTargetRef.current.set(
           playerFocus.position[0],
           1.62 + (playerFocus.airborne ? 0.5 : playerFocus.moving ? 0.18 : 0),
           playerFocus.position[2],
         )
       : null;
     const chasePosition = playerFocus
-      ? new THREE.Vector3(
+      ? chasePositionRef.current.set(
           playerFocus.position[0] - Math.sin(chaseHeading) * (playerFocus.sprinting ? 5.8 : 4.8),
           3.7 + (playerFocus.airborne ? 1.2 : playerFocus.moving ? 0.56 : 0.2),
           playerFocus.position[2] - Math.cos(chaseHeading) * (playerFocus.sprinting ? 5.8 : 4.8),
         )
       : null;
-    const followedTarget = chaseTarget
-      ? desired.target.clone().lerp(chaseTarget, followStrength)
-      : desired.target.clone();
-    const followedPosition = chasePosition
-      ? desired.position.clone().lerp(chasePosition, followStrength)
-      : desired.position.clone();
+    const followedTarget = followedTargetRef.current.copy(desiredTarget);
+    if (chaseTarget) {
+      followedTarget.lerp(chaseTarget, followStrength);
+    }
+    const followedPosition = followedPositionRef.current.copy(desiredPosition);
+    if (chasePosition) {
+      followedPosition.lerp(chasePosition, followStrength);
+    }
 
     // CAM-04: suppress goal change while dwell is active (hold on objective station)
     const isDwelling = dwellRef.current !== null && clock.elapsedTime < dwellRef.current.expiresAt;
@@ -460,45 +466,41 @@ function WorldCameraRig({
     }
 
     if (goalChanged) {
-      const fromPosition = controls.object.position.clone();
-      const fromTarget = controls.target.clone();
-      const axis = followedPosition.clone().sub(fromPosition);
+      const flight = flightRef.current;
+      flight.fromPosition.copy(controls.object.position);
+      flight.fromTarget.copy(controls.target);
+      const axis = axisRef.current.copy(followedPosition).sub(flight.fromPosition);
       const travelDistance = axis.length();
-      const lateral = new THREE.Vector3(-axis.z, 0, axis.x)
+      const lateral = lateralRef.current
+        .set(-axis.z, 0, axis.x)
         .normalize()
         .multiplyScalar(Math.min(1.8, 0.6 + travelDistance * 0.03));
-      const viaPosition = fromPosition
-        .clone()
+      flight.viaPosition
+        .copy(flight.fromPosition)
         .lerp(followedPosition, 0.5)
         .add(lateral)
-        .setY(Math.max(fromPosition.y, followedPosition.y) + camera.arrivalLift + travelDistance * 0.05);
-      const viaTarget = fromTarget
-        .clone()
+        .setY(Math.max(flight.fromPosition.y, followedPosition.y) + camera.arrivalLift + travelDistance * 0.05);
+      flight.viaTarget
+        .copy(flight.fromTarget)
         .lerp(followedTarget, 0.5)
-        .setY(Math.max(fromTarget.y, followedTarget.y) + camera.arrivalLift * 0.32);
-      flightRef.current = {
-        startTime: clock.elapsedTime,
-        duration: camera.arrivalDurationMs / 1000,
-        fromPosition,
-        viaPosition,
-        toPosition: followedPosition.clone(),
-        fromTarget,
-        viaTarget,
-        toTarget: followedTarget.clone(),
-      };
-      previousGoalRef.current = {
-        position: followedPosition.clone(),
-        target: followedTarget.clone(),
-        resetToken,
-      };
+        .setY(Math.max(flight.fromTarget.y, followedTarget.y) + camera.arrivalLift * 0.32);
+      flight.startTime = clock.elapsedTime;
+      flight.duration = camera.arrivalDurationMs / 1000;
+      flight.toPosition.copy(followedPosition);
+      flight.toTarget.copy(followedTarget);
+      flight.active = true;
+      previousGoal.initialized = true;
+      previousGoal.position.copy(followedPosition);
+      previousGoal.target.copy(followedTarget);
+      previousGoal.resetToken = resetToken;
     }
 
-    if (flightRef.current) {
+    if (flightRef.current.active) {
       const progress = (clock.elapsedTime - flightRef.current.startTime) / flightRef.current.duration;
       if (progress >= 1) {
         controls.object.position.copy(flightRef.current.toPosition);
         controls.target.copy(flightRef.current.toTarget);
-        flightRef.current = null;
+        flightRef.current.active = false;
         controls.update();
         // CAM-04: Set dwell period if camera.missionFocusDwellMs > 0
         if (camera.missionFocusDwellMs > 0) {
@@ -507,13 +509,15 @@ function WorldCameraRig({
         return;
       }
       const eased = smoothstep01(progress);
-      const travelPosition = bezierPoint(
+      const travelPosition = bezierPointInto(
+        travelPositionRef.current,
         flightRef.current.fromPosition,
         flightRef.current.viaPosition,
         flightRef.current.toPosition,
         eased,
       );
-      const travelTarget = bezierPoint(
+      const travelTarget = bezierPointInto(
+        travelTargetRef.current,
         flightRef.current.fromTarget,
         flightRef.current.viaTarget,
         flightRef.current.toTarget,
@@ -548,13 +552,8 @@ function ReadyObservatoryHeroPropModel({
 }) {
   const loaded = useGLTF(prop.assetUrl);
   const root = useMemo(() => {
-    const clone = loaded.scene.clone(true);
-    const bounds = new THREE.Box3().setFromObject(clone);
-    if (Number.isFinite(bounds.min.y) && Number.isFinite(bounds.max.y)) {
-      clone.position.y -= bounds.min.y;
-    }
-    return clone;
-  }, [loaded.scene]);
+    return createNormalizedObservatoryModelInstance(prop.assetUrl, loaded.scene);
+  }, [loaded.scene, prop.assetUrl]);
 
   useEffect(() => {
     root.traverse((child) => {
@@ -682,7 +681,7 @@ function ObservatoryHeroPropFallbackModel({
 
 // UIP-01: 3D waypoint beacon (Billboard + Text) for active mission objective stations.
 // Uses useFrame pulsing opacity on the ring mesh — no Html elements.
-function MissionObjectiveBeacon({ position, label }: { position: [number, number, number]; label: string }) {
+export function MissionObjectiveBeacon({ position, label }: { position: [number, number, number]; label: string }) {
   const meshRef = useRef<THREE.Mesh | null>(null);
   useFrame(({ clock }) => {
     if (meshRef.current) {
@@ -1163,7 +1162,7 @@ function JudgmentSealConsequence({
   );
 }
 
-function HeroConsequenceLayer({
+export function HeroConsequenceLayer({
   interaction,
   world,
   mission,
@@ -1209,7 +1208,7 @@ function readArrivalProgress(cue: DistrictArrivalCue | null): { decay: number; p
     return { decay: 0, progress: 1 };
   }
   const duration = Math.max(1, cue.expiresAt - cue.startedAt);
-  const progress = Math.min(1, Math.max(0, (performance.now() - cue.startedAt) / duration));
+  const progress = Math.min(1, Math.max(0, (getObservatoryNowMs() - cue.startedAt) / duration));
   return {
     decay: 1 - smoothstep01(progress),
     progress,
@@ -1223,7 +1222,7 @@ function readInteractionStrength(
   if (!interaction) return 0;
   if (assetId && interaction.assetId !== assetId) return 0;
   const duration = Math.max(1, interaction.expiresAt - interaction.startedAt);
-  const progress = Math.min(1, Math.max(0, (performance.now() - interaction.startedAt) / duration));
+  const progress = Math.min(1, Math.max(0, (getObservatoryNowMs() - interaction.startedAt) / duration));
   return Math.sin(progress * Math.PI);
 }
 
@@ -1575,13 +1574,18 @@ function DistrictHeroChoreography({
   }
 }
 
-function PlayerAccentLights({
+export function PlayerAccentLights({
   playerFocusRef,
 }: {
   playerFocusRef: RefObject<ObservatoryPlayerFocusState | null>;
 }) {
   const keyLightRef = useRef<THREE.PointLight | null>(null);
   const rimLightRef = useRef<THREE.PointLight | null>(null);
+  const playerPositionRef = useRef(new THREE.Vector3());
+  const keyTargetRef = useRef(new THREE.Vector3());
+  const keyOffsetRef = useRef(new THREE.Vector3());
+  const rimTargetRef = useRef(new THREE.Vector3());
+  const rimOffsetRef = useRef(new THREE.Vector3());
 
   useFrame((_, delta) => {
     const keyLight = keyLightRef.current;
@@ -1600,14 +1604,16 @@ function PlayerAccentLights({
       return;
     }
 
-    const playerPosition = new THREE.Vector3(...focus.position);
+    const playerPosition = playerPositionRef.current.set(...focus.position);
     const airborneLift = focus.airborne ? 1 : 0.35;
-    const keyTarget = playerPosition
-      .clone()
-      .add(new THREE.Vector3(1.8, 3.4 + airborneLift, 2.1));
-    const rimTarget = playerPosition
-      .clone()
-      .add(new THREE.Vector3(-2.4, 1.9 + airborneLift * 0.6, -2.8));
+    const keyOffset = keyOffsetRef.current.set(1.8, 3.4 + airborneLift, 2.1);
+    const rimOffset = rimOffsetRef.current.set(-2.4, 1.9 + airborneLift * 0.6, -2.8);
+    const keyTarget = keyTargetRef.current
+      .copy(playerPosition)
+      .add(keyOffset);
+    const rimTarget = rimTargetRef.current
+      .copy(playerPosition)
+      .add(rimOffset);
 
     keyLight.position.lerp(keyTarget, keyAlpha);
     rimLight.position.lerp(rimTarget, keyAlpha);
@@ -1638,521 +1644,6 @@ function PlayerAccentLights({
         decay={2}
         distance={12}
         intensity={0}
-      />
-    </>
-  );
-}
-
-function resolveObservatoryWorldSpawn(
-  world: DerivedObservatoryWorld,
-  preferredStationId: HuntStationId | null,
-): ObservatoryPlayerSpawnPoint {
-  const stationDistrict =
-    world.districts.find((district) => district.id === preferredStationId) ??
-    world.districts.find((district) => district.active) ??
-    world.districts.find((district) => district.likely) ??
-    null;
-  if (stationDistrict) {
-    const preferredSurface = [...stationDistrict.traversalSurfaces].sort((left, right) => {
-      const rank = (kind: typeof left.kind): number => {
-        switch (kind) {
-          case "observation-platform":
-            return 0;
-          case "control-deck":
-            return 1;
-          case "platform":
-            return 2;
-          case "ledge":
-            return 3;
-          case "bridge":
-            return 4;
-          case "catwalk":
-            return 5;
-          case "hanging-platform":
-            return 6;
-          case "ramp":
-            return 7;
-          case "jump-pad":
-            return 8;
-        }
-      };
-      const rankDelta = rank(left.kind) - rank(right.kind);
-      if (rankDelta !== 0) return rankDelta;
-      return right.scale[1] - left.scale[1];
-    })[0] ?? null;
-    const towardCoreX = -stationDistrict.position[0];
-    const towardCoreZ = -stationDistrict.position[2];
-    if (preferredSurface) {
-      const surfaceCenterX = stationDistrict.position[0] + preferredSurface.position[0];
-      const surfaceCenterY = stationDistrict.position[1] + preferredSurface.position[1];
-      const surfaceCenterZ = stationDistrict.position[2] + preferredSurface.position[2];
-      const topY = surfaceCenterY + preferredSurface.scale[1] * 0.5;
-      return {
-        id: `district:${stationDistrict.id}:${preferredSurface.key}`,
-        label: `${stationDistrict.label} Arrival`,
-        position: [surfaceCenterX, topY + PLAYER_STAND_HEIGHT + 0.05, surfaceCenterZ],
-        facingRadians: Math.atan2(towardCoreX, towardCoreZ),
-        stationId: stationDistrict.id,
-      };
-    }
-    return {
-      id: `district:${stationDistrict.id}`,
-      label: stationDistrict.label,
-      position: [
-        stationDistrict.position[0],
-        0.24 + PLAYER_STAND_HEIGHT,
-        stationDistrict.position[2],
-      ],
-      facingRadians: Math.atan2(towardCoreX, towardCoreZ),
-      stationId: stationDistrict.id,
-    };
-  }
-
-  return {
-    id: "thesis-core",
-    label: "Thesis Core",
-    position: [0, PLAYER_STAND_HEIGHT, 6.6],
-    facingRadians: Math.PI,
-    stationId: null,
-  };
-}
-
-function resolveGroundHeight(
-  world: DerivedObservatoryWorld,
-  position: [number, number, number],
-): number {
-  let resolvedHeight = 0;
-  for (const district of world.districts) {
-    const dx = position[0] - district.position[0];
-    const dz = position[2] - district.position[2];
-    const distance = Math.hypot(dx, dz);
-    const plateRadius = Math.max(2.8, district.baseDiscRadius * 0.82);
-    if (distance <= plateRadius) {
-      resolvedHeight = Math.max(resolvedHeight, 0.24);
-    }
-    for (const surface of district.traversalSurfaces) {
-      const surfaceCenter = new THREE.Vector3(
-        district.position[0] + surface.position[0],
-        district.position[1] + surface.position[1],
-        district.position[2] + surface.position[2],
-      );
-      if (surface.colliderKind === "cylinder") {
-        const radialDistance = Math.hypot(position[0] - surfaceCenter.x, position[2] - surfaceCenter.z);
-        if (radialDistance <= surface.scale[0] * 0.5) {
-          resolvedHeight = Math.max(resolvedHeight, surfaceCenter.y + surface.scale[1] * 0.5);
-        }
-        continue;
-      }
-
-      const rotation = new THREE.Euler(...surface.rotation);
-      const quaternion = new THREE.Quaternion().setFromEuler(rotation);
-      const inverse = quaternion.clone().invert();
-      const localPoint = new THREE.Vector3(
-        position[0] - surfaceCenter.x,
-        position[1] - surfaceCenter.y,
-        position[2] - surfaceCenter.z,
-      ).applyQuaternion(inverse);
-      const [halfX, halfY, halfZ] = resolveObservatoryTraversalHalfExtents(surface);
-      const half = new THREE.Vector3(halfX, halfY, halfZ);
-      if (Math.abs(localPoint.x) <= half.x && Math.abs(localPoint.z) <= half.z) {
-        const topPoint = new THREE.Vector3(localPoint.x, half.y, localPoint.z)
-          .applyQuaternion(quaternion)
-          .add(surfaceCenter);
-        resolvedHeight = Math.max(resolvedHeight, topPoint.y);
-      }
-    }
-  }
-  const watchDx = position[0] - world.watchfield.position[0];
-  const watchDz = position[2] - world.watchfield.position[2];
-  if (Math.hypot(watchDx, watchDz) <= 1.8) {
-    resolvedHeight = Math.max(resolvedHeight, 0.24);
-  }
-  return resolvedHeight;
-}
-
-function resolveNearestDistrictId(
-  world: DerivedObservatoryWorld,
-  position: [number, number, number],
-): HuntStationId | null {
-  let nearestId: HuntStationId | null = null;
-  let nearestDistance = Number.POSITIVE_INFINITY;
-  for (const district of world.districts) {
-    const dx = position[0] - district.position[0];
-    const dz = position[2] - district.position[2];
-    const distance = Math.hypot(dx, dz);
-    if (distance < nearestDistance) {
-      nearestDistance = distance;
-      nearestId = district.id;
-    }
-  }
-
-  return nearestDistance <= 12 ? nearestId : null;
-}
-
-function resolveJumpPadBoost(
-  world: DerivedObservatoryWorld,
-  position: [number, number, number],
-): number | null {
-  for (const district of world.districts) {
-    for (const surface of district.traversalSurfaces) {
-      if (surface.kind !== "jump-pad" || !surface.jumpBoost) {
-        continue;
-      }
-      const centerX = district.position[0] + surface.position[0];
-      const centerZ = district.position[2] + surface.position[2];
-      const radius = surface.scale[0] * 0.5;
-      if (Math.hypot(position[0] - centerX, position[2] - centerZ) <= radius) {
-        return surface.jumpBoost;
-      }
-    }
-  }
-  return null;
-}
-
-function createStationPlateSpecs(world: DerivedObservatoryWorld): ObservatoryColliderSpec[] {
-  return world.districts.flatMap((district) => {
-    const districtSpecs: ObservatoryColliderSpec[] = [
-      {
-        id: `station-plate:${district.id}`,
-        translation: [district.position[0], 0, district.position[2]],
-        friction: 0.96,
-        restitution: 0,
-        userData: { stationId: district.id, label: district.label },
-        shape: {
-          kind: "cylinder",
-          halfHeight: 0.24,
-          radius: Math.max(2.8, district.baseDiscRadius * 0.82),
-        },
-      },
-    ];
-    for (const surface of district.traversalSurfaces) {
-      districtSpecs.push({
-        id: `traversal:${district.id}:${surface.key}`,
-        translation: [
-          district.position[0] + surface.position[0],
-          district.position[1] + surface.position[1],
-          district.position[2] + surface.position[2],
-        ],
-        friction: surface.kind === "jump-pad" ? 0.84 : 0.96,
-        restitution: surface.kind === "jump-pad" ? 0.08 : 0,
-        rotationEuler: surface.rotation,
-        userData: { stationId: district.id, surfaceKind: surface.kind },
-        shape:
-          surface.colliderKind === "cylinder"
-            ? {
-                kind: "cylinder",
-                halfHeight: surface.scale[1] * 0.5,
-                radius: surface.scale[0] * 0.5,
-              }
-            : {
-                kind: "box",
-                halfExtents: resolveObservatoryTraversalHalfExtents(surface),
-              },
-      });
-    }
-    return districtSpecs;
-  });
-}
-
-function ColliderFromSpec({ spec }: { spec: ObservatoryColliderSpec }) {
-  const rotation = spec.rotationEuler ?? [0, 0, 0];
-  switch (spec.shape.kind) {
-    case "box":
-      return (
-        <CuboidCollider
-          args={spec.shape.halfExtents}
-          friction={spec.friction}
-          position={spec.translation}
-          restitution={spec.restitution}
-          rotation={rotation}
-          sensor={spec.sensor}
-        />
-      );
-    case "capsule":
-      return (
-        <CapsuleCollider
-          args={[spec.shape.halfHeight, spec.shape.radius]}
-          friction={spec.friction}
-          position={spec.translation}
-          restitution={spec.restitution}
-          rotation={rotation}
-          sensor={spec.sensor}
-        />
-      );
-    case "cylinder":
-      return (
-        <CylinderCollider
-          args={[spec.shape.halfHeight, spec.shape.radius]}
-          friction={spec.friction}
-          position={spec.translation}
-          restitution={spec.restitution}
-          rotation={rotation}
-          sensor={spec.sensor}
-        />
-      );
-    default:
-      return null;
-  }
-}
-
-function ObservatoryWorldColliders({ world }: { world: DerivedObservatoryWorld }) {
-  const specs = useMemo(() => {
-    const arenaRadius = Math.max(46, world.environment.floorRadius * 0.9);
-    return [
-      ...createObservatoryBoundaryColliders({
-        arenaRadius,
-        floorThickness: 0.4,
-        wallHeight: 7,
-        wallThickness: 0.8,
-      }),
-      ...createStationPlateSpecs(world),
-    ];
-  }, [world]);
-
-  return (
-    <>
-      {specs.map((spec) => (
-        <ColliderFromSpec key={spec.id} spec={spec} />
-      ))}
-    </>
-  );
-}
-
-function ObservatoryPlayerRig({
-  heroProps,
-  playerFocusRef,
-  world,
-  preferredStationId,
-  onInteractProp,
-  onWorldStateChange,
-}: {
-  heroProps: ObservatoryHeroPropRecipe[];
-  playerFocusRef: RefObject<ObservatoryPlayerFocusState | null>;
-  world: DerivedObservatoryWorld;
-  preferredStationId: HuntStationId | null;
-  onInteractProp?: (prop: ObservatoryHeroPropRecipe, meta: MissionInteractionSource) => void;
-  onWorldStateChange?: (state: ObservatoryPlayerWorldState) => void;
-}) {
-  const spawn = useMemo(
-    () => resolveObservatoryWorldSpawn(world, preferredStationId),
-    [preferredStationId, world],
-  );
-  const bodyRef = useRef<RapierRigidBody | null>(null);
-  const { intent, consumeTransientActions, reset: resetInput } = useObservatoryPlayerInput();
-  const bodyAdapter = useMemo<ObservatoryPlayerBodyAdapter>(
-    () => ({
-      readSnapshot: () => {
-        const body = bodyRef.current;
-        if (!body) return null;
-        const translation = body.translation();
-        const velocity = body.linvel();
-        const position: [number, number, number] = [
-          translation.x,
-          translation.y,
-          translation.z,
-        ];
-        return {
-          position,
-          velocity: [velocity.x, velocity.y, velocity.z],
-          grounded:
-            translation.y <=
-              resolveGroundHeight(world, position) + PLAYER_STAND_HEIGHT + PLAYER_GROUNDED_EPSILON
-            && Math.abs(velocity.y) <= 1.6,
-          stationId: resolveNearestDistrictId(world, position),
-        };
-      },
-      applyCommand: (command: ObservatoryPlayerCommand) => {
-        const body = bodyRef.current;
-        if (!body) return;
-        body.setLinvel(
-          {
-            x: command.linearVelocity[0],
-            y: command.linearVelocity[1],
-            z: command.linearVelocity[2],
-          },
-          true,
-        );
-      },
-    }),
-    [world],
-  );
-  const runtime = useObservatoryPlayerRuntime({ bodyAdapter, spawn });
-  const appliedSpawnIdRef = useRef<string | null>(null);
-  const jumpPadCooldownUntilRef = useRef(0);
-  // CAM-03: landing shake — track airborne state for transition detection
-  const wasAirborneRef = useRef(false);
-  const lastWorldStateRef = useRef<ObservatoryPlayerWorldState | null>(null);
-  const runtimeResetRef = useRef(runtime.reset);
-  const inputResetRef = useRef(resetInput);
-
-  useEffect(() => {
-    runtimeResetRef.current = runtime.reset;
-  }, [runtime.reset]);
-
-  useEffect(() => {
-    inputResetRef.current = resetInput;
-  }, [resetInput]);
-
-  useEffect(() => {
-    const nextState = {
-      action: runtime.state.activeAction,
-      grounded: runtime.state.grounded,
-      position: runtime.state.position,
-      sprinting: runtime.state.sprinting,
-      stationId: runtime.state.stationId,
-    };
-    const rootWindow = window as Window & {
-      __huntronomerObservatoryPlayer?: typeof nextState;
-    };
-    rootWindow.__huntronomerObservatoryPlayer = nextState;
-    return () => {
-      delete rootWindow.__huntronomerObservatoryPlayer;
-    };
-  }, [runtime.state]);
-
-  useFrame(({ camera, clock }, delta) => {
-    const body = bodyRef.current;
-    if (body && appliedSpawnIdRef.current !== spawn.id) {
-      appliedSpawnIdRef.current = spawn.id;
-      body.setTranslation(
-        { x: spawn.position[0], y: spawn.position[1], z: spawn.position[2] },
-        true,
-      );
-      body.setLinvel({ x: 0, y: 0, z: 0 }, true);
-      inputResetRef.current();
-      runtimeResetRef.current(spawn);
-      return;
-    }
-
-    const direction = new THREE.Vector3();
-    camera.getWorldDirection(direction);
-    const cameraYawRadians = Math.atan2(direction.x, direction.z);
-
-    const stepResult = runtime.step(intent, {
-      deltaSeconds: delta,
-      nowMs: clock.elapsedTime * 1000,
-      cameraYawRadians,
-    });
-    const nextState = stepResult.state;
-    const interactableProp = resolveNearestInteractableHeroProp(heroProps, nextState.position);
-    const isAirborne = !nextState.grounded;
-    playerFocusRef.current = {
-      action: nextState.activeAction,
-      airborne: isAirborne,
-      facingRadians: nextState.facingRadians,
-      moving: nextState.moveMagnitude > 0.12,
-      moveVector: nextState.moveVector,
-      position: nextState.position,
-      sprinting: nextState.sprinting,
-      stationId: nextState.stationId,
-    };
-    // CAM-03: landing shake — detect airborne→grounded transition
-    if (wasAirborneRef.current && !isAirborne) {
-      window.dispatchEvent(new CustomEvent("observatory:shake", { detail: { intensity: 0.7 } }));
-    }
-    wasAirborneRef.current = isAirborne;
-    const nextWorldState: ObservatoryPlayerWorldState = {
-      interactableAssetId: interactableProp?.assetId ?? null,
-      stationId: nextState.stationId,
-    };
-    if (
-      nextWorldState.interactableAssetId !== lastWorldStateRef.current?.interactableAssetId
-      || nextWorldState.stationId !== lastWorldStateRef.current?.stationId
-    ) {
-      lastWorldStateRef.current = nextWorldState;
-      onWorldStateChange?.(nextWorldState);
-    }
-    if (body && nextState.grounded) {
-      const jumpBoost = resolveJumpPadBoost(world, nextState.position);
-      if (jumpBoost != null && clock.elapsedTime * 1000 >= jumpPadCooldownUntilRef.current) {
-        jumpPadCooldownUntilRef.current = clock.elapsedTime * 1000 + 850;
-        body.setLinvel(
-          {
-            x: stepResult.command.linearVelocity[0],
-            y: jumpBoost,
-            z: stepResult.command.linearVelocity[2],
-          },
-          true,
-        );
-      }
-    }
-    if (body) {
-      const translation = body.translation();
-      const bodyVelocity = body.linvel();
-      const groundHeight = resolveGroundHeight(world, [translation.x, translation.y, translation.z]);
-      const minBodyY = groundHeight + PLAYER_STAND_HEIGHT;
-      const hoverGap = translation.y - minBodyY;
-      if (
-        shouldAdhereObservatoryPlayerToGround({
-          activeFlip: nextState.activeFlip != null,
-          hoverGap,
-          jumpQueued: intent.jump,
-          verticalVelocityY: bodyVelocity.y,
-        })
-      ) {
-        body.setTranslation({ x: translation.x, y: minBodyY, z: translation.z }, true);
-        body.setLinvel({ x: bodyVelocity.x, y: 0, z: bodyVelocity.z }, true);
-      } else if (translation.y < minBodyY - 0.14 && bodyVelocity.y < 0) {
-        body.setTranslation({ x: translation.x, y: minBodyY, z: translation.z }, true);
-        body.setLinvel({ x: bodyVelocity.x, y: 0, z: bodyVelocity.z }, true);
-      }
-    }
-    if (intent.interact && interactableProp) {
-      onInteractProp?.(interactableProp, { source: "player" });
-    }
-    if (intent.jump || intent.flipBack || intent.flipFront || intent.interact) {
-      consumeTransientActions();
-    }
-  });
-
-  const playerCollider = useMemo(
-    () =>
-      createObservatoryPlayerCapsuleCollider(
-        spawn,
-        PLAYER_COLLIDER_HALF_HEIGHT,
-        PLAYER_COLLIDER_RADIUS,
-      ),
-    [spawn],
-  );
-
-  return (
-    <>
-      <RigidBody
-        ref={bodyRef}
-        canSleep={false}
-        ccd
-        colliders={false}
-        enabledRotations={[false, false, false]}
-        linearDamping={2.8}
-        lockRotations
-        position={spawn.position}
-        type="dynamic"
-      >
-        <CapsuleCollider
-          args={[playerCollider.shape.kind === "capsule" ? playerCollider.shape.halfHeight : 0.46, playerCollider.shape.kind === "capsule" ? playerCollider.shape.radius : 0.34]}
-          friction={playerCollider.friction}
-          restitution={playerCollider.restitution}
-        />
-      </RigidBody>
-      <ObservatoryPlayerAvatar
-        accentColor={world.core.accentColor}
-        animationAssetUrls={OBSERVATORY_ASTRONAUT_OPERATOR_ANIMATION_URLS}
-        assetUrl={OBSERVATORY_ASTRONAUT_OPERATOR_ASSET_URL}
-        bodyColor="#0f1926"
-        controllerState={runtime.state}
-        materialSourceUrl={OBSERVATORY_ASTRONAUT_OPERATOR_TEXTURE_SOURCE_URL}
-        positionOffset={[0, -0.8, 0]}
-        scale={1.48}
-        trimColor="#e9d48c"
-        visorColor="#c8fbff"
-      />
-      {/* PFX-01 + PFX-05: Character-driven particle effects */}
-      <CharacterVFX
-        position={runtime.state.position}
-        grounded={runtime.state.grounded}
-        sprinting={runtime.state.sprinting}
-        activeAction={runtime.state.activeAction}
-        facingRadians={runtime.state.facingRadians}
       />
     </>
   );
@@ -2193,7 +1684,7 @@ function FlowPulse({
   );
 }
 
-function TransitConvoy({
+export function TransitConvoy({
   route,
   modeOpacityScale,
 }: {
@@ -2245,7 +1736,7 @@ function TransitConvoy({
   );
 }
 
-function TransitCorridor({
+export function TransitCorridor({
   route,
   color,
   modeOpacityScale,
@@ -2273,7 +1764,7 @@ function TransitCorridor({
   );
 }
 
-function TransitRoute({
+export function TransitRoute({
   route,
   eruptionStrength,
   modeOpacityScale,
@@ -3507,7 +2998,7 @@ function DistrictArrivalLights({
   );
 }
 
-function StationDistrict({
+export function StationDistrict({
   district,
   interactionState,
   eruptionStrength,
@@ -3583,7 +3074,7 @@ function StationDistrict({
     }
     if (groupRef.current) {
       groupRef.current.position.y =
-        STATION_HEIGHT + Math.sin(clock.elapsedTime * 0.8 + district.position[0]) * district.floatAmplitude;
+        district.position[1] + Math.sin(clock.elapsedTime * 0.8 + district.position[0]) * district.floatAmplitude;
     }
   });
   return (
@@ -3699,7 +3190,9 @@ function StationDistrict({
   );
 }
 
-function HypothesisScaffold({
+export const MemoizedStationDistrict = memo(StationDistrict);
+
+export function HypothesisScaffold({
   scaffold,
 }: {
   scaffold: ObservatoryHypothesisScaffoldRecipe;
@@ -3791,7 +3284,7 @@ function HypothesisScaffold({
   );
 }
 
-function WatchfieldPerimeter({
+export function WatchfieldPerimeter({
   watchfield,
   eruptionStrength,
   raisedPosture,
@@ -3866,6 +3359,8 @@ function WatchfieldPerimeter({
   );
 }
 
+export const MemoizedWatchfieldPerimeter = memo(WatchfieldPerimeter);
+
 function ProbeBreadcrumbPath({
   colorHex,
   points,
@@ -3924,7 +3419,7 @@ function ProbeBreadcrumbPath({
   );
 }
 
-function OperatorProbe({
+export function OperatorProbe({
   world,
   targetStationId,
   activeRoute,
@@ -3937,6 +3432,10 @@ function OperatorProbe({
   const beamRef = useRef<THREE.Mesh | null>(null);
   const anchorRef = useRef<THREE.Group | null>(null);
   const currentTargetRef = useRef(new THREE.Vector3(0, 4.2, 0));
+  const hoverTargetRef = useRef(new THREE.Vector3());
+  const orbitOffsetRef = useRef(new THREE.Vector3());
+  const beamTargetRef = useRef(new THREE.Vector3());
+  const beamLookAtRef = useRef(new THREE.Vector3());
 
   const resolvedTarget = useMemo(() => {
     if (targetStationId === "watch") {
@@ -3977,19 +3476,27 @@ function OperatorProbe({
     if (!groupRef.current || !beamRef.current || !anchorRef.current || !resolvedTarget) return;
     const orbitAngle = clock.elapsedTime * 0.7;
     const orbitRadius = 1.1;
-    const hoverTarget = resolvedTarget.base
-      .clone()
-      .add(new THREE.Vector3(Math.cos(orbitAngle) * orbitRadius, 3.4 + Math.sin(clock.elapsedTime * 1.4) * 0.18, Math.sin(orbitAngle) * orbitRadius));
+    const hoverTarget = hoverTargetRef.current
+      .copy(resolvedTarget.base)
+      .add(
+        orbitOffsetRef.current.set(
+          Math.cos(orbitAngle) * orbitRadius,
+          3.4 + Math.sin(clock.elapsedTime * 1.4) * 0.18,
+          Math.sin(orbitAngle) * orbitRadius,
+        ),
+      );
     currentTargetRef.current.lerp(hoverTarget, lerpAlpha(4.8, delta));
     groupRef.current.position.copy(currentTargetRef.current);
     groupRef.current.lookAt(resolvedTarget.anchor);
     anchorRef.current.position.copy(resolvedTarget.anchor);
 
-    const beamTarget = resolvedTarget.anchor.clone().sub(groupRef.current.position);
+    const beamTarget = beamTargetRef.current
+      .copy(resolvedTarget.anchor)
+      .sub(groupRef.current.position);
     const beamLength = Math.max(0.8, beamTarget.length());
     beamRef.current.position.set(0, -beamLength * 0.5, 0);
     beamRef.current.scale.set(1, beamLength, 1);
-    beamRef.current.lookAt(new THREE.Vector3(0, -beamLength, 0));
+    beamRef.current.lookAt(beamLookAtRef.current.set(0, -beamLength, 0));
   });
 
   if (!resolvedTarget) return null;
@@ -4067,7 +3574,7 @@ function OperatorProbe({
   );
 }
 
-function ThesisCore({
+export function ThesisCore({
   core,
 }: {
   core: DerivedObservatoryWorld["core"];
@@ -4137,7 +3644,6 @@ function ObservatoryWorldScene({
   cameraResetToken,
   flyByActive,
   onFlyByComplete,
-  hoveredStationId,
   eruptionStrengthByStation,
   eruptionStrengthByRouteStation,
   activeHeroInteraction,
@@ -4150,14 +3656,12 @@ function ObservatoryWorldScene({
   watchfieldRaised,
   onTriggerHeroProp,
   onSelectStation,
-  onHoverStation,
   playerFocusRef,
 }: {
   world: DerivedObservatoryWorld;
   cameraResetToken: number;
   flyByActive: boolean;
   onFlyByComplete: () => void;
-  hoveredStationId: HuntStationId | null;
   eruptionStrengthByStation: Partial<Record<HuntStationId, number>>;
   eruptionStrengthByRouteStation: Partial<Record<HuntStationId, number>>;
   activeHeroInteraction: ActiveHeroInteraction | null;
@@ -4170,12 +3674,12 @@ function ObservatoryWorldScene({
   watchfieldRaised: boolean;
   onTriggerHeroProp?: (prop: ObservatoryHeroPropRecipe, meta: MissionInteractionSource) => void;
   onSelectStation?: (stationId: HuntStationId) => void;
-  onHoverStation?: (stationId: HuntStationId | null) => void;
   playerFocusRef: RefObject<ObservatoryPlayerFocusState | null>;
 }) {
   const controlsRef = useRef<THREE.EventDispatcher | null>(null);
   const shakeRef = useRef<ShakeController | null>(null);
   const [arrivalCue, setArrivalCue] = useState<DistrictArrivalCue | null>(null);
+  const [hoveredStationId, setHoveredStationId] = useState<HuntStationId | null>(null);
   const previousPrimaryStationIdRef = useRef<HuntStationId | null>(null);
   const interactionStationId =
     activeHeroInteraction?.stationId === "core" ? null : activeHeroInteraction?.stationId ?? null;
@@ -4221,6 +3725,10 @@ function ObservatoryWorldScene({
   }, []);
 
   useEffect(() => {
+    setHoveredStationId(null);
+  }, [cameraResetToken, flyByActive, interactionStationId, world.likelyStationId, world.watchfield.active]);
+
+  useEffect(() => {
     if (!primaryStationId || !HERO_CHOREOGRAPHY_STATIONS.has(primaryStationId)) {
       previousPrimaryStationIdRef.current = primaryStationId;
       return;
@@ -4229,7 +3737,7 @@ function ObservatoryWorldScene({
       return;
     }
     previousPrimaryStationIdRef.current = primaryStationId;
-    const now = performance.now();
+    const now = getObservatoryNowMs();
     const nextCue: DistrictArrivalCue = {
       expiresAt: now + DISTRICT_ARRIVAL_DURATION_MS,
       startedAt: now,
@@ -4277,14 +3785,6 @@ function ObservatoryWorldScene({
         color={world.environment.pointLightColor}
       />
       <PlayerAccentLights playerFocusRef={playerFocusRef} />
-      <gridHelper
-        args={[world.environment.gridSize, world.environment.gridDivisions, "#10243b", "#081624"]}
-        position={[0, -0.06, 0]}
-      />
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.08, 0]}>
-        <circleGeometry args={[world.environment.floorRadius, 128]} />
-        <meshBasicMaterial color="#06111d" transparent opacity={world.environment.floorOpacity} />
-      </mesh>
 
       <OrbitControls
         ref={controlsRef as never}
@@ -4386,7 +3886,7 @@ function ObservatoryWorldScene({
       ))}
 
       {world.districts.map((district) => (
-        <StationDistrict
+        <MemoizedStationDistrict
           key={district.id}
           district={district}
           interactionState={
@@ -4402,36 +3902,17 @@ function ObservatoryWorldScene({
           missionTarget={missionTargetStationId === district.id}
           modeProfile={world.modeProfile}
           onSelect={onSelectStation}
-          onHover={onHoverStation}
+          onHover={setHoveredStationId}
         />
       ))}
 
-      <WatchfieldPerimeter
+      <MemoizedWatchfieldPerimeter
         watchfield={world.watchfield}
         eruptionStrength={eruptionStrengthByStation.watch ?? 0}
         raisedPosture={watchfieldRaised}
         onSelect={onSelectStation}
-        onHover={onHoverStation}
+        onHover={setHoveredStationId}
       />
-
-      {/* WLD-02/03/04: District buildings, ground planes, env props */}
-      {world.districts.map((district) => (
-        <group key={`district-geo:${district.id}`} position={district.position}>
-          <StationBuilding
-            seed={district.position[0] * 1000 + district.position[2]}
-            position={[0, 0, 0]}
-          />
-          <DistrictGround
-            position={[0, 0, 0]}
-            colorHex={district.colorHex}
-          />
-          <DistrictEnvProps
-            position={[0, 0, 0]}
-            colorHex={district.colorHex}
-            seed={district.position[0] * 100 + district.position[2] * 37}
-          />
-        </group>
-      ))}
 
       {/* UIP-01: 3D waypoint beacons on mission objective stations */}
       {missionTargetStationId && world.districts
@@ -4456,258 +3937,38 @@ function ObservatoryWorldScene({
   );
 }
 
-function ObservatoryMissionOverlay({
-  mission,
-  currentObjective,
-  playerWorldState,
-  canDispatchProbe,
-  probeCharge,
-  probeCountdownMs,
-  probeActive,
-  probeCrewDirective,
-  probeDirectiveRead,
-  probeTargetStationId,
-  onDispatchCurrentObjectiveProbe,
-  onFocusCurrentObjective,
-}: {
-  mission: ObservatoryMissionLoopState | null;
-  currentObjective: ReturnType<typeof getCurrentObservatoryMissionObjective>;
-  playerWorldState: ObservatoryPlayerWorldState;
-  canDispatchProbe: boolean;
-  probeCharge: number;
-  probeCountdownMs: number;
-  probeActive: boolean;
-  probeCrewDirective: string | null;
-  probeDirectiveRead: string | null;
-  probeTargetStationId: HuntStationId | null;
-  onDispatchCurrentObjectiveProbe: () => boolean;
-  onFocusCurrentObjective: () => boolean;
-}) {
-  if (!mission) return null;
-  const actionButtonStyle = {
-    padding: "8px 12px",
-    borderRadius: 12,
-    border: "1px solid rgba(210, 187, 117, 0.26)",
-    background: "rgba(11, 18, 30, 0.88)",
-    color: "#f7f1d0",
-    fontSize: 12,
-    fontWeight: 600,
-    letterSpacing: "0.08em",
-    textTransform: "uppercase" as const,
-    cursor: "pointer",
-    pointerEvents: "auto" as const,
-  };
-  const probeCountdownSeconds = (probeCountdownMs / 1000).toFixed(1);
-  const probeChargePercent = Math.round(probeCharge * 100);
-  return (
-    <>
-      <div
-        style={{
-          position: "absolute",
-          top: 20,
-          left: 20,
-          maxWidth: 360,
-          padding: "14px 16px",
-          borderRadius: 16,
-          border: "1px solid rgba(230, 201, 127, 0.28)",
-          background: "linear-gradient(180deg, rgba(5,10,17,0.88), rgba(4,8,14,0.76))",
-          boxShadow: "0 18px 48px rgba(0,0,0,0.28)",
-          color: "#eef6ff",
-          pointerEvents: "none",
-        }}
-      >
-        <div style={{ fontSize: 11, letterSpacing: "0.22em", color: "#d2bb75", textTransform: "uppercase" }}>
-          Hunt Loop
-        </div>
-        <div style={{ marginTop: 8, fontSize: 18, fontWeight: 600 }}>
-          {currentObjective ? currentObjective.title : "Finding sealed"}
-        </div>
-        <div style={{ marginTop: 8, fontSize: 13, lineHeight: 1.5, color: "rgba(228, 238, 248, 0.78)" }}>
-          {currentObjective ? currentObjective.hint : "The current observatory loop is complete. The world is holding the sealed finding."}
-        </div>
-        {mission.branch ? (
-          <div style={{ marginTop: 8, fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(156,188,214,0.78)" }}>
-            Branch · {mission.branch === "operations-first" ? "Operations First" : "Evidence First"}
-          </div>
-        ) : null}
-        {currentObjective ? (
-          <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap", pointerEvents: "auto" }}>
-            <button
-              type="button"
-              onClick={() => {
-                onFocusCurrentObjective();
-              }}
-              style={actionButtonStyle}
-            >
-              Focus objective
-            </button>
-            <button
-              type="button"
-              disabled={!canDispatchProbe}
-              onClick={() => {
-                if (!canDispatchProbe) return;
-                onDispatchCurrentObjectiveProbe();
-              }}
-              style={{
-                ...actionButtonStyle,
-                border: `1px solid ${probeActive ? "rgba(127, 225, 255, 0.42)" : canDispatchProbe ? "rgba(210, 187, 117, 0.26)" : "rgba(92, 118, 146, 0.24)"}`,
-                background: probeActive ? "rgba(11, 28, 40, 0.9)" : canDispatchProbe ? actionButtonStyle.background : "rgba(8, 14, 22, 0.72)",
-                color: probeActive ? "#d4f7ff" : canDispatchProbe ? actionButtonStyle.color : "rgba(178, 192, 208, 0.62)",
-                cursor: canDispatchProbe ? "pointer" : "not-allowed",
-              }}
-            >
-              {probeActive ? "Probe en route" : canDispatchProbe ? "Dispatch probe" : "Probe recharging"}
-            </button>
-          </div>
-        ) : null}
-        {probeTargetStationId ? (
-          <div style={{ marginTop: 10, fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: probeActive ? "#96ecff" : "rgba(156,188,214,0.78)" }}>
-            {probeActive ? "Probe lock" : "Probe standby"} · {HUNT_STATION_LABELS[probeTargetStationId]}
-          </div>
-        ) : null}
-        <div style={{ marginTop: 8, fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: probeActive ? "#96ecff" : canDispatchProbe ? "rgba(156,188,214,0.78)" : "rgba(210, 187, 117, 0.82)" }}>
-          {probeActive
-            ? `Probe active · ${probeCountdownSeconds}s`
-            : canDispatchProbe
-              ? `Probe charged · ${probeChargePercent}%`
-              : `Probe charging · ${probeChargePercent}% · ${probeCountdownSeconds}s`}
-        </div>
-        {probeDirectiveRead ? (
-          <div
-            style={{
-              marginTop: 10,
-              padding: "10px 12px",
-              borderRadius: 12,
-              border: "1px solid rgba(127, 225, 255, 0.18)",
-              background: "rgba(7, 18, 28, 0.56)",
-            }}
-          >
-            <div
-              style={{
-                fontSize: 10,
-                letterSpacing: "0.18em",
-                textTransform: "uppercase",
-                color: probeActive ? "#96ecff" : "rgba(156,188,214,0.74)",
-              }}
-            >
-              Probe consequence
-            </div>
-            <div
-              style={{
-                marginTop: 6,
-                fontSize: 12,
-                lineHeight: 1.5,
-                color: "rgba(228, 238, 248, 0.82)",
-              }}
-            >
-              {probeDirectiveRead}
-            </div>
-            {probeCrewDirective ? (
-              <div
-                style={{
-                  marginTop: 6,
-                  fontSize: 10,
-                  letterSpacing: "0.12em",
-                  textTransform: "uppercase",
-                  color: "rgba(210, 187, 117, 0.82)",
-                }}
-              >
-                Crew · {probeCrewDirective}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-        <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-          {OBSERVATORY_MISSION_OBJECTIVES.map((objective, index) => {
-            const complete = mission.completedObjectiveIds.includes(objective.id);
-            const active = currentObjective?.id === objective.id;
-            return (
-              <div
-                key={objective.id}
-                style={{
-                  padding: "6px 10px",
-                  borderRadius: 999,
-                  border: `1px solid ${complete ? "rgba(104, 210, 164, 0.46)" : active ? "rgba(230, 201, 127, 0.48)" : "rgba(255,255,255,0.08)"}`,
-                  color: complete ? "#9df6c5" : active ? "#fff0c4" : "rgba(219,227,238,0.52)",
-                  fontSize: 11,
-                  letterSpacing: "0.12em",
-                  textTransform: "uppercase",
-                  background: complete ? "rgba(22,54,43,0.34)" : active ? "rgba(52,42,18,0.3)" : "rgba(255,255,255,0.02)",
-                }}
-              >
-                {index + 1}. {objective.stationId === "signal"
-                  ? "Horizon"
-                  : objective.stationId === "targets"
-                  ? "Subjects"
-                  : objective.stationId === "run"
-                  ? "Operations"
-                  : objective.stationId === "receipts"
-                  ? "Evidence"
-                  : "Judgment"}
-              </div>
-            );
-          })}
-        </div>
-        <div style={{ marginTop: 12, fontSize: 11, letterSpacing: "0.14em", color: "rgba(156,188,214,0.78)", textTransform: "uppercase" }}>
-          WASD move · Space jump · F interact
-          {playerWorldState.stationId ? ` · ${playerWorldState.stationId}` : ""}
-        </div>
-      </div>
-      {currentObjective && playerWorldState.interactableAssetId === currentObjective.assetId ? (
-        <div
-          style={{
-            position: "absolute",
-            left: "50%",
-            bottom: 28,
-            transform: "translateX(-50%)",
-            padding: "12px 16px",
-            borderRadius: 14,
-            border: "1px solid rgba(230, 201, 127, 0.32)",
-            background: "rgba(6,10,17,0.82)",
-            boxShadow: "0 12px 32px rgba(0,0,0,0.24)",
-            color: "#fff2c6",
-            pointerEvents: "none",
-          }}
-        >
-          <div style={{ fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: "rgba(210,187,117,0.92)" }}>
-            Press F
-          </div>
-          <div style={{ marginTop: 6, fontSize: 15, fontWeight: 600 }}>{currentObjective.actionLabel}</div>
-        </div>
-      ) : null}
-    </>
-  );
-}
-
 export function ObservatoryWorldCanvas({
   mode,
   sceneState,
+  mission,
+  probeState,
   activeStationId,
+  ghostPresentation = "off",
+  ghostTraces = [],
   spirit = null,
+  weatherState = null,
   cameraResetToken = 0,
   onSelectStation,
+  onProbeStateChange,
+  onMissionObjectiveComplete,
   className,
   frameloop,
+  playerInputEnabled = false,
+  replayFrameIndex = null,
   flyByActive = false,
   onFlyByComplete,
 }: ObservatoryWorldCanvasProps) {
-  const [hoveredStationId, setHoveredStationId] = useState<HuntStationId | null>(null);
   const [eruptions, setEruptions] = useState<WorldEruption[]>([]);
   const [activeHeroInteraction, setActiveHeroInteraction] = useState<ActiveHeroInteraction | null>(null);
   const [watchfieldRaised, setWatchfieldRaised] = useState(false);
-  const [probeState, setProbeState] = useState<ObservatoryProbeState>(() =>
-    createInitialObservatoryProbeState(),
-  );
   const [playerWorldState, setPlayerWorldState] = useState<ObservatoryPlayerWorldState>({
     interactableAssetId: null,
     stationId: null,
   });
-  const [mission, setMission] = useState<ObservatoryMissionLoopState | null>(() =>
-    sceneState?.huntId
-      ? createObservatoryMissionLoopState(sceneState.huntId, performance.now(), {
-          branchHint: deriveObservatoryMissionBranch(sceneState),
-        })
-      : null,
+  const [adaptiveQuality, setAdaptiveQuality] = useState<ObservatoryRuntimeQuality>("high");
+  const [runtimeActivityHigh, setRuntimeActivityHigh] = useState(false);
+  const now = useObservatoryNow(
+    activeHeroInteraction !== null || probeState.status !== "ready" || eruptions.length > 0,
   );
   const playerFocusRef = useRef<ObservatoryPlayerFocusState | null>(null);
   const previousWorldRef = useRef<{
@@ -4717,32 +3978,23 @@ export function ObservatoryWorldCanvas({
     receiveState: DerivedObservatoryWorld["receiveState"];
   } | null>(null);
   useEffect(() => {
-    setHoveredStationId(null);
-  }, [activeStationId, mode, cameraResetToken]);
-  useEffect(() => {
-    if (!activeHeroInteraction) return;
-    const timer = window.setTimeout(() => {
-      setActiveHeroInteraction((current) =>
-        current?.expiresAt === activeHeroInteraction.expiresAt ? null : current,
-      );
-    }, Math.max(0, activeHeroInteraction.expiresAt - performance.now()));
-    return () => window.clearTimeout(timer);
-  }, [activeHeroInteraction]);
-  useEffect(() => {
-    setMission(
-      sceneState?.huntId
-        ? createObservatoryMissionLoopState(sceneState.huntId, performance.now(), {
-            branchHint: deriveObservatoryMissionBranch(sceneState),
-          })
-        : null,
+    if (!activeHeroInteraction || now < activeHeroInteraction.expiresAt) {
+      return;
+    }
+    setActiveHeroInteraction((current) =>
+      current?.expiresAt === activeHeroInteraction.expiresAt ? null : current,
     );
+  }, [activeHeroInteraction, now]);
+  useEffect(() => {
     setActiveHeroInteraction(null);
-    setProbeState(createInitialObservatoryProbeState());
     setPlayerWorldState({ interactableAssetId: null, stationId: null });
   }, [sceneState?.huntId]);
+  useEffect(() => {
+    setWatchfieldRaised(mission?.progress.watchfieldRaised ?? false);
+  }, [mission?.progress.watchfieldRaised]);
   const world = useMemo(
     () => deriveObservatoryWorld({ mode, sceneState, activeStationId, spirit }),
-    [activeStationId, mode, sceneState, spirit, cameraResetToken],
+    [activeStationId, mode, sceneState, spirit],
   );
   const currentMissionObjective = useMemo(
     () => getCurrentObservatoryMissionObjective(mission),
@@ -4776,18 +4028,63 @@ export function ObservatoryWorldCanvas({
     if (!spiritKind) return null;
     return buildSpiritLut(spiritKind);
   }, [spirit?.kind]);
+  const performanceProfile = useMemo(() => {
+    const navigatorConnection =
+      typeof navigator !== "undefined" && "connection" in navigator
+        ? (navigator as Navigator & { connection?: { saveData?: boolean } }).connection
+        : undefined;
+    const prefersReducedMotion =
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    return createObservatoryPerformanceProfile({
+      mode,
+      flyByActive,
+      activeHeroInteraction: activeHeroInteraction !== null,
+      playerInputEnabled,
+      runtimeQuality: runtimeActivityHigh ? "low" : adaptiveQuality,
+      hardwareConcurrency:
+        typeof navigator !== "undefined" ? navigator.hardwareConcurrency : null,
+      prefersReducedMotion,
+      saveData: navigatorConnection?.saveData === true,
+      spiritBound: spiritLut !== null,
+    });
+  }, [activeHeroInteraction, adaptiveQuality, flyByActive, mode, playerInputEnabled, runtimeActivityHigh, spiritLut]);
+  const effectiveWeatherState = useMemo(() => {
+    if (!weatherState || !performanceProfile.enableWeather) {
+      return null;
+    }
+    const budgetRank = { off: 0, reduced: 1, full: 2 } as const;
+    const budget =
+      budgetRank[performanceProfile.weatherBudget] < budgetRank[weatherState.budget]
+        ? performanceProfile.weatherBudget
+        : weatherState.budget;
+    if (budget === "off") {
+      return null;
+    }
+    if (budget === weatherState.budget) {
+      return weatherState;
+    }
+    return {
+      ...weatherState,
+      budget,
+      density: Math.min(weatherState.density, 0.06),
+      labelOcclusionOpacity: Math.min(weatherState.labelOcclusionOpacity, 0.1),
+    };
+  }, [performanceProfile.enableWeather, performanceProfile.weatherBudget, weatherState]);
+  const flowRuntimeEnabled = performanceProfile.mountFlowSystems;
   useEffect(() => {
-    const timer = window.setInterval(() => {
-      const nowMs = performance.now();
-      setProbeState((current) => {
-        const next = advanceObservatoryProbeState(current, nowMs);
-        return next === current ? current : next;
-      });
-    }, 180);
-    return () => window.clearInterval(timer);
-  }, []);
+    if (flowRuntimeEnabled) {
+      return;
+    }
+    setAdaptiveQuality("high");
+    setRuntimeActivityHigh(false);
+    playerFocusRef.current = null;
+    setPlayerWorldState({ interactableAssetId: null, stationId: null });
+  }, [flowRuntimeEnabled]);
   useEffect(() => {
-    const now = performance.now();
+    const nowMs = getObservatoryNowMs();
     const previous = previousWorldRef.current;
     const nextEruptions: WorldEruption[] = [];
     if (previous) {
@@ -4798,11 +4095,11 @@ export function ObservatoryWorldCanvas({
           const kind = EVENT_KIND_BY_STATION[district.id];
           if (kind) {
             nextEruptions.push({
-              key: `${district.id}-${now}`,
+              key: `${district.id}-${nowMs}`,
               stationId: district.id,
               routeStationId: district.id === "signal" ? "targets" : district.id,
-              startedAt: now,
-              expiresAt: now + ERUPTION_DURATION_MS,
+              startedAt: nowMs,
+              expiresAt: nowMs + ERUPTION_DURATION_MS,
               kind,
             });
           }
@@ -4812,11 +4109,11 @@ export function ObservatoryWorldCanvas({
         const previousStage = previous.scaffoldStages[scaffold.key];
         if (previousStage && previousStage !== scaffold.stage) {
           nextEruptions.push({
-            key: `${scaffold.key}-${now}`,
+            key: `${scaffold.key}-${nowMs}`,
             stationId: scaffold.primaryStationId,
             routeStationId: scaffold.primaryStationId,
-            startedAt: now,
-            expiresAt: now + ERUPTION_DURATION_MS,
+            startedAt: nowMs,
+            expiresAt: nowMs + ERUPTION_DURATION_MS,
             kind: scaffold.stage === "weakening" ? "evidence" : "judgment",
           });
         }
@@ -4826,11 +4123,11 @@ export function ObservatoryWorldCanvas({
           world.districts.find((district) => district.active)?.id ?? world.likelyStationId ?? null;
         if (stationId) {
           nextEruptions.push({
-            key: `receive-${stationId}-${now}`,
+            key: `receive-${stationId}-${nowMs}`,
             stationId,
             routeStationId: stationId,
-            startedAt: now,
-            expiresAt: now + ERUPTION_DURATION_MS,
+            startedAt: nowMs,
+            expiresAt: nowMs + ERUPTION_DURATION_MS,
             kind: EVENT_KIND_BY_STATION[stationId] ?? "signal",
           });
         }
@@ -4838,10 +4135,10 @@ export function ObservatoryWorldCanvas({
     }
     if (nextEruptions.length > 0) {
       setEruptions((current) =>
-        [...current.filter((entry) => entry.expiresAt > now), ...nextEruptions].slice(-8),
+        [...current.filter((entry) => entry.expiresAt > nowMs), ...nextEruptions].slice(-8),
       );
     } else {
-      setEruptions((current) => current.filter((entry) => entry.expiresAt > now));
+      setEruptions((current) => current.filter((entry) => entry.expiresAt > nowMs));
     }
     previousWorldRef.current = {
       stationArtifactCounts: Object.fromEntries(
@@ -4857,17 +4154,42 @@ export function ObservatoryWorldCanvas({
     };
   }, [world]);
   useEffect(() => {
-    const timer = window.setInterval(() => {
-      const now = performance.now();
-      setEruptions((current) => current.filter((entry) => entry.expiresAt > now));
-    }, 180);
-    return () => window.clearInterval(timer);
-  }, []);
-  const now = performance.now();
+    setEruptions((current) => {
+      if (!current.some((entry) => entry.expiresAt <= now)) {
+        return current;
+      }
+      return current.filter((entry) => entry.expiresAt > now);
+    });
+  }, [now]);
+  const hasActiveEruptions = useMemo(
+    () => eruptions.some((entry) => entry.expiresAt > now),
+    [eruptions, now],
+  );
   const resolvedProbeState = useMemo(
     () => advanceObservatoryProbeState(probeState, now),
     [now, probeState],
   );
+  const { effectiveFrameloop, realtimeActivitySources } = useObservatoryWorldLifecycle({
+    activeHeroInteraction: activeHeroInteraction !== null,
+    cameraResetToken,
+    eruptionCount: eruptions.length,
+    flyByActive,
+    missionTargetStationId: currentMissionObjective?.stationId ?? null,
+    playerInputEnabled,
+    probeStatus: resolvedProbeState.status,
+    replayFrameIndex,
+    replayScrubbing: false,
+    routeSignature: [
+      activeStationId ?? "none",
+      cameraResetToken,
+      currentMissionObjective?.stationId ?? "none",
+      replayFrameIndex ?? "noreplay",
+      world.likelyStationId ?? "none",
+    ].join("|"),
+    selectedStationId: activeStationId ?? null,
+    shouldInvalidateOnRouteChange: cameraResetToken > 0,
+  });
+  const canvasFrameloop = frameloop === "always" ? "always" : effectiveFrameloop;
   const canDispatchProbe = useMemo(
     () => canDispatchObservatoryProbe(resolvedProbeState, now),
     [resolvedProbeState, now],
@@ -4905,166 +4227,176 @@ export function ObservatoryWorldCanvas({
       return acc;
     }, {});
   }, [eruptions, now]);
-  const triggerHeroProp = (
-    prop: ObservatoryHeroPropRecipe,
-    meta: MissionInteractionSource = { source: "click" },
-  ) => {
-    const nowMs = performance.now();
-    let nextSelectionStationId: HuntStationId | null =
-      prop.stationId === "core" ? null : prop.stationId;
-    const durations: Partial<Record<ObservatoryHeroPropRecipe["assetId"], number>> = {
-      "signal-dish-tower": 5600,
-      "subjects-lattice-anchor": 5400,
-      "operations-scan-rig": 6000,
-      "evidence-vault-rack": 5600,
-      "judgment-dais": 6200,
-      "watchfield-sentinel-beacon": 6800,
-      "operator-drone": OBSERVATORY_PROBE_ACTIVE_MS,
-    };
-    const targetStationId =
-      prop.assetId === "operator-drone"
-        ? resolveObservatoryMissionProbeTargetStationId(mission, {
-            activeStationId,
-            likelyStationId: world.likelyStationId ?? "signal",
-          }) ?? "signal"
-        : null;
-    if (prop.assetId === "operator-drone") {
-      if (!canDispatchObservatoryProbe(probeState, nowMs)) {
-        return;
+  const triggerHeroProp = useCallback(
+    (
+      prop: ObservatoryHeroPropRecipe,
+      meta: MissionInteractionSource = { source: "click" },
+    ) => {
+      const nowMs = getObservatoryNowMs();
+      let nextSelectionStationId: HuntStationId | null =
+        prop.stationId === "core" ? null : prop.stationId;
+      const durations: Partial<Record<ObservatoryHeroPropRecipe["assetId"], number>> = {
+        "signal-dish-tower": 5600,
+        "subjects-lattice-anchor": 5400,
+        "operations-scan-rig": 6000,
+        "evidence-vault-rack": 5600,
+        "judgment-dais": 6200,
+        "watchfield-sentinel-beacon": 6800,
+        "operator-drone": OBSERVATORY_PROBE_ACTIVE_MS,
+      };
+      const targetStationId =
+        prop.assetId === "operator-drone"
+          ? resolveObservatoryMissionProbeTargetStationId(mission, {
+              activeStationId,
+              likelyStationId: world.likelyStationId ?? "signal",
+            }) ?? "signal"
+          : null;
+      if (prop.assetId === "operator-drone") {
+        if (!canDispatchObservatoryProbe(probeState, nowMs)) {
+          return;
+        }
+        onProbeStateChange?.((current) => dispatchObservatoryProbe(current, targetStationId, nowMs));
       }
-      setProbeState((current) => dispatchObservatoryProbe(current, targetStationId, nowMs));
-    }
-    if (prop.assetId === "operator-drone" && targetStationId) {
-      nextSelectionStationId = targetStationId;
-    }
-    setActiveHeroInteraction({
-      assetId: prop.assetId,
-      expiresAt: nowMs + (durations[prop.assetId] ?? 6200),
-      startedAt: nowMs,
-      stationId: prop.stationId,
-      targetStationId,
-    });
-    if (meta.source === "player" && mission && isObservatoryMissionObjectiveProp(mission, prop.assetId)) {
-      const nextMission = completeObservatoryMissionObjective(mission, prop.assetId, nowMs, {
-        branchHint: deriveObservatoryMissionBranch(sceneState),
+      if (prop.assetId === "operator-drone" && targetStationId) {
+        nextSelectionStationId = targetStationId;
+      }
+      setActiveHeroInteraction({
+        assetId: prop.assetId,
+        expiresAt: nowMs + (durations[prop.assetId] ?? 6200),
+        startedAt: nowMs,
+        stationId: prop.stationId,
+        targetStationId,
       });
-      setMission(nextMission);
-      const nextObjective = getCurrentObservatoryMissionObjective(nextMission);
-      if (nextObjective) {
-        nextSelectionStationId = nextObjective.stationId;
+      if (meta.source === "player" && mission && isObservatoryMissionObjectiveProp(mission, prop.assetId)) {
+        const nextMission = onMissionObjectiveComplete?.(prop.assetId, nowMs) ?? mission;
+        const nextObjective = getCurrentObservatoryMissionObjective(nextMission);
+        if (nextObjective) {
+          nextSelectionStationId = nextObjective.stationId;
+        }
       }
-    }
-    if (prop.assetId === "watchfield-sentinel-beacon") {
-      setWatchfieldRaised((current) => !current);
-    }
-    const heroEvents: WorldEruption[] = (() => {
-      switch (prop.assetId) {
-        case "signal-dish-tower":
-          return [
-            {
-              key: `hero-signal-${nowMs}`,
-              stationId: "signal",
-              routeStationId: "targets",
-              startedAt: nowMs,
-              expiresAt: nowMs + ERUPTION_DURATION_MS,
-              kind: "signal",
-            },
-          ];
-        case "subjects-lattice-anchor":
-          return [
-            {
-              key: `hero-subjects-${nowMs}`,
-              stationId: "targets",
-              routeStationId: "targets",
-              startedAt: nowMs,
-              expiresAt: nowMs + ERUPTION_DURATION_MS,
-              kind: "signal",
-            },
-            {
-              key: `hero-subjects-run-${nowMs}`,
-              stationId: "run",
-              routeStationId: "run",
-              startedAt: nowMs,
-              expiresAt: nowMs + ERUPTION_DURATION_MS,
-              kind: "run",
-            },
-          ];
-        case "operations-scan-rig":
-          return [
-            {
-              key: `hero-run-${nowMs}`,
-              stationId: "run",
-              routeStationId: "run",
-              startedAt: nowMs,
-              expiresAt: nowMs + ERUPTION_DURATION_MS,
-              kind: "run",
-            },
-            {
-              key: `hero-run-evidence-${nowMs}`,
-              stationId: "receipts",
-              routeStationId: "receipts",
-              startedAt: nowMs,
-              expiresAt: nowMs + ERUPTION_DURATION_MS,
-              kind: "run",
-            },
-          ];
-        case "evidence-vault-rack":
-          return [
-            {
-              key: `hero-evidence-${nowMs}`,
-              stationId: "receipts",
-              routeStationId: "receipts",
-              startedAt: nowMs,
-              expiresAt: nowMs + ERUPTION_DURATION_MS,
-              kind: "evidence",
-            },
-          ];
-        case "judgment-dais":
-          return [
-            {
-              key: `hero-judgment-${nowMs}`,
-              stationId: "case-notes",
-              routeStationId: "case-notes",
-              startedAt: nowMs,
-              expiresAt: nowMs + ERUPTION_DURATION_MS,
-              kind: "judgment",
-            },
-          ];
-        case "watchfield-sentinel-beacon":
-          return [
-            {
-              key: `hero-watch-${nowMs}`,
-              stationId: "watch",
-              routeStationId: "watch",
-              startedAt: nowMs,
-              expiresAt: nowMs + ERUPTION_DURATION_MS,
-              kind: "watch",
-            },
-          ];
-        case "operator-drone":
-          return targetStationId
-            ? [
-                {
-                  key: `hero-drone-${nowMs}`,
-                  stationId: targetStationId,
-                  routeStationId: targetStationId,
-                  startedAt: nowMs,
-                  expiresAt: nowMs + ERUPTION_DURATION_MS,
-                  kind: EVENT_KIND_BY_STATION[targetStationId] ?? "signal",
-                },
-              ]
-            : [];
-        default:
-          return [];
+      if (prop.assetId === "watchfield-sentinel-beacon") {
+        setWatchfieldRaised((current) => !current);
       }
-    })();
-    if (heroEvents.length > 0) {
-      setEruptions((current) => [...current.filter((entry) => entry.expiresAt > nowMs), ...heroEvents].slice(-12));
-    }
-    if (nextSelectionStationId) {
-      onSelectStation?.(nextSelectionStationId);
-    }
-  };
+      const heroEvents: WorldEruption[] = (() => {
+        switch (prop.assetId) {
+          case "signal-dish-tower":
+            return [
+              {
+                key: `hero-signal-${nowMs}`,
+                stationId: "signal",
+                routeStationId: "targets",
+                startedAt: nowMs,
+                expiresAt: nowMs + ERUPTION_DURATION_MS,
+                kind: "signal",
+              },
+            ];
+          case "subjects-lattice-anchor":
+            return [
+              {
+                key: `hero-subjects-${nowMs}`,
+                stationId: "targets",
+                routeStationId: "targets",
+                startedAt: nowMs,
+                expiresAt: nowMs + ERUPTION_DURATION_MS,
+                kind: "signal",
+              },
+              {
+                key: `hero-subjects-run-${nowMs}`,
+                stationId: "run",
+                routeStationId: "run",
+                startedAt: nowMs,
+                expiresAt: nowMs + ERUPTION_DURATION_MS,
+                kind: "run",
+              },
+            ];
+          case "operations-scan-rig":
+            return [
+              {
+                key: `hero-run-${nowMs}`,
+                stationId: "run",
+                routeStationId: "run",
+                startedAt: nowMs,
+                expiresAt: nowMs + ERUPTION_DURATION_MS,
+                kind: "run",
+              },
+              {
+                key: `hero-run-evidence-${nowMs}`,
+                stationId: "receipts",
+                routeStationId: "receipts",
+                startedAt: nowMs,
+                expiresAt: nowMs + ERUPTION_DURATION_MS,
+                kind: "run",
+              },
+            ];
+          case "evidence-vault-rack":
+            return [
+              {
+                key: `hero-evidence-${nowMs}`,
+                stationId: "receipts",
+                routeStationId: "receipts",
+                startedAt: nowMs,
+                expiresAt: nowMs + ERUPTION_DURATION_MS,
+                kind: "evidence",
+              },
+            ];
+          case "judgment-dais":
+            return [
+              {
+                key: `hero-judgment-${nowMs}`,
+                stationId: "case-notes",
+                routeStationId: "case-notes",
+                startedAt: nowMs,
+                expiresAt: nowMs + ERUPTION_DURATION_MS,
+                kind: "judgment",
+              },
+            ];
+          case "watchfield-sentinel-beacon":
+            return [
+              {
+                key: `hero-watch-${nowMs}`,
+                stationId: "watch",
+                routeStationId: "watch",
+                startedAt: nowMs,
+                expiresAt: nowMs + ERUPTION_DURATION_MS,
+                kind: "watch",
+              },
+            ];
+          case "operator-drone":
+            return targetStationId
+              ? [
+                  {
+                    key: `hero-drone-${nowMs}`,
+                    stationId: targetStationId,
+                    routeStationId: targetStationId,
+                    startedAt: nowMs,
+                    expiresAt: nowMs + ERUPTION_DURATION_MS,
+                    kind: EVENT_KIND_BY_STATION[targetStationId] ?? "signal",
+                  },
+                ]
+              : [];
+          default:
+            return [];
+        }
+      })();
+      if (heroEvents.length > 0) {
+        setEruptions((current) =>
+          [...current.filter((entry) => entry.expiresAt > nowMs), ...heroEvents].slice(-12),
+        );
+      }
+      if (nextSelectionStationId) {
+        onSelectStation?.(nextSelectionStationId);
+      }
+    },
+    [
+      activeStationId,
+      mission,
+      onMissionObjectiveComplete,
+      onProbeStateChange,
+      onSelectStation,
+      probeState,
+      world.likelyStationId,
+    ],
+  );
   const focusCurrentObjective = useCallback(() => {
     if (!currentMissionObjective) return false;
     onSelectStation?.(currentMissionObjective.stationId);
@@ -5146,52 +4478,111 @@ export function ObservatoryWorldCanvas({
   return (
     <div className={className} style={{ background: world.environment.backgroundColor }}>
       <Canvas
-        onPointerMissed={() => setHoveredStationId(null)}
-        dpr={[1, 1.8]}
-        frameloop={frameloop ?? "demand"}
+        dpr={performanceProfile.dpr}
+        frameloop={canvasFrameloop}
         camera={{ position: world.camera.initialPosition, fov: world.camera.fov }}
-        gl={{ antialias: false, alpha: false, powerPreference: "high-performance" }}
+        gl={async (_defaultProps) => {
+          try {
+            const { WebGPURenderer } = await import("three/webgpu");
+            const renderer = new WebGPURenderer({ antialias: true, logarithmicDepthBuffer: true });
+            await renderer.init();
+            return renderer;
+          } catch {
+            // Fallback to WebGL2 with logarithmic depth buffer
+            return new THREE.WebGLRenderer({
+              antialias: false,
+              alpha: false,
+              powerPreference: "high-performance",
+              logarithmicDepthBuffer: true,
+            });
+          }
+        }}
         style={{ background: world.environment.backgroundColor }}
       >
         <Suspense fallback={null}>
-          <Physics colliders={false} gravity={[0, 0, 0]} timeStep="vary">
-            <ObservatoryWorldColliders world={world} />
-            <ObservatoryWorldScene
-              world={reactiveWorld}
-              cameraResetToken={cameraResetToken}
-              flyByActive={flyByActive}
-              onFlyByComplete={onFlyByComplete ?? (() => {})}
-              hoveredStationId={hoveredStationId}
-              eruptionStrengthByStation={eruptionStrengthByStation}
-              eruptionStrengthByRouteStation={eruptionStrengthByRouteStation}
-              activeHeroInteraction={activeHeroInteraction}
-              mission={mission}
-              missionTargetStationId={currentMissionObjective?.stationId ?? null}
-              missionTargetAssetId={currentMissionObjective?.assetId ?? null}
-              playerInteractableAssetId={playerWorldState.interactableAssetId}
-              probeLockedTargetStationId={resolvedProbeState.targetStationId}
-              probeStatus={resolvedProbeState.status}
-              watchfieldRaised={watchfieldRaised}
-              onTriggerHeroProp={triggerHeroProp}
-              onSelectStation={onSelectStation}
-              onHoverStation={setHoveredStationId}
-              playerFocusRef={playerFocusRef}
-            />
-            <ObservatoryPlayerRig
-              heroProps={world.heroProps}
-              onInteractProp={triggerHeroProp}
-              onWorldStateChange={setPlayerWorldState}
-              playerFocusRef={playerFocusRef}
-              preferredStationId={activeStationId ?? world.likelyStationId}
-              world={world}
-            />
-          </Physics>
-          <ObservatoryPostFX
-            activeHeroPropPosition={activeHeroPropPosition}
-            spiritLut={spiritLut}
+          <ObservatoryQualityMonitor
+            enabled={flowRuntimeEnabled}
+            onQualityChange={(quality) => {
+              setAdaptiveQuality((current) => (current === quality ? current : quality));
+            }}
           />
-          {/* PFX-01 + PFX-05: wawa-vfx particle pools — must be inside Canvas */}
-          <ObservatoryVFXPools />
+          <ObservatoryRuntimeActivityMonitor
+            activeHeroInteractionActive={activeHeroInteraction !== null}
+            enabled={flowRuntimeEnabled}
+            hasActiveEruptions={hasActiveEruptions}
+            onHighActivityChange={(next) => {
+              setRuntimeActivityHigh((current) => (current === next ? current : next));
+            }}
+            playerFocusRef={playerFocusRef}
+            probeStatus={resolvedProbeState.status}
+          />
+          <ObservatoryInvalidationController sources={realtimeActivitySources} />
+          <ExtractedObservatoryWorldScene
+            world={reactiveWorld}
+            cameraResetToken={cameraResetToken}
+            flyByActive={flyByActive}
+            onFlyByComplete={onFlyByComplete ?? (() => {})}
+            eruptionStrengthByStation={eruptionStrengthByStation}
+            eruptionStrengthByRouteStation={eruptionStrengthByRouteStation}
+            activeHeroInteraction={activeHeroInteraction}
+            mission={mission}
+            missionTargetStationId={currentMissionObjective?.stationId ?? null}
+            missionTargetAssetId={currentMissionObjective?.assetId ?? null}
+            playerInteractableAssetId={
+              flowRuntimeEnabled ? playerWorldState.interactableAssetId : null
+            }
+            probeLockedTargetStationId={resolvedProbeState.targetStationId}
+            probeStatus={resolvedProbeState.status}
+            watchfieldRaised={watchfieldRaised}
+            onTriggerHeroProp={triggerHeroProp}
+            onSelectStation={onSelectStation}
+            playerFocusRef={playerFocusRef}
+          />
+          {effectiveWeatherState ? (
+            <ObservatoryWeatherLayer
+              missionTargetStationId={currentMissionObjective?.stationId ?? null}
+              weather={effectiveWeatherState}
+              world={reactiveWorld}
+            />
+          ) : null}
+          {ghostTraces.length > 0 ? (
+            <ObservatoryGhostLayer
+              likelyStationId={reactiveWorld.likelyStationId}
+              missionTargetStationId={currentMissionObjective?.stationId ?? null}
+              presentation={ghostPresentation}
+              selectedStationId={activeStationId ?? null}
+              traces={ghostTraces}
+              world={reactiveWorld}
+            />
+          ) : null}
+          {flowRuntimeEnabled ? (
+            <Suspense fallback={null}>
+              <LazyObservatoryFlowRuntimeScene
+                enableCharacterVfx={performanceProfile.enableParticles}
+                heroProps={world.heroProps}
+                inputEnabled={playerInputEnabled}
+                onInteractProp={triggerHeroProp}
+                onWorldStateChange={setPlayerWorldState}
+                playerFocusRef={playerFocusRef}
+                preferredStationId={activeStationId ?? world.likelyStationId}
+                world={world}
+              />
+            </Suspense>
+          ) : null}
+          {shouldRenderObservatoryPostFx(performanceProfile) ? (
+            <Suspense fallback={null}>
+              <LazyObservatoryPostFX
+                activeHeroPropPosition={activeHeroPropPosition}
+                profile={performanceProfile}
+                spiritLut={spiritLut}
+              />
+            </Suspense>
+          ) : null}
+          {performanceProfile.mountVfxPools ? (
+            <Suspense fallback={null}>
+              <LazyObservatoryVFXPools />
+            </Suspense>
+          ) : null}
         </Suspense>
       </Canvas>
       <ObservatoryMissionOverlay

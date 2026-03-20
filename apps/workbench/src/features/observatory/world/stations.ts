@@ -34,10 +34,10 @@ export const HUNT_STATION_LABELS: Record<HuntStationId, string> = {
 };
 
 export const HUNT_STATION_PLACEMENTS: HuntStationPlacement[] = [
-  { id: "signal", label: HUNT_STATION_LABELS.signal, angleDeg: -132, radius: 1 },
-  { id: "targets", label: HUNT_STATION_LABELS.targets, angleDeg: -54, radius: 1 },
-  { id: "run", label: HUNT_STATION_LABELS.run, angleDeg: 6, radius: 1 },
-  { id: "receipts", label: HUNT_STATION_LABELS.receipts, angleDeg: 66, radius: 1 },
-  { id: "case-notes", label: HUNT_STATION_LABELS["case-notes"], angleDeg: 126, radius: 1 },
-  { id: "watch", label: HUNT_STATION_LABELS.watch, angleDeg: 180, radius: 1.26 },
+  { id: "signal", label: HUNT_STATION_LABELS.signal, angleDeg: -132, radius: 1, elevationY: 35 },
+  { id: "targets", label: HUNT_STATION_LABELS.targets, angleDeg: -54, radius: 1, elevationY: 10 },
+  { id: "run", label: HUNT_STATION_LABELS.run, angleDeg: 6, radius: 1, elevationY: -5 },
+  { id: "receipts", label: HUNT_STATION_LABELS.receipts, angleDeg: 66, radius: 1, elevationY: -15 },
+  { id: "case-notes", label: HUNT_STATION_LABELS["case-notes"], angleDeg: 126, radius: 1, elevationY: 20 },
+  { id: "watch", label: HUNT_STATION_LABELS.watch, angleDeg: 180, radius: 1.26, elevationY: 40 },
 ];
