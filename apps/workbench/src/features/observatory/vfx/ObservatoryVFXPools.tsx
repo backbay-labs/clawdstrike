@@ -40,6 +40,16 @@ export function ObservatoryVFXPools() {
           fadeAlpha: [0.0, 0.15],
         }}
       />
+      {/* FLT-06: Ship thruster exhaust — stretchBillboard along velocity, slight backward drift */}
+      <VFXParticles
+        name="ship-thruster-exhaust"
+        settings={{
+          nbParticles: 400,
+          renderMode: RenderMode.StretchBillboard,
+          gravity: [0, 0.5, 0],
+          fadeAlpha: [0.0, 0.12],
+        }}
+      />
     </>
   );
 }

@@ -15,10 +15,11 @@ import { useThree } from "@react-three/fiber";
 import { ShipMesh } from "./ShipMesh";
 import { useFlightInput } from "./useFlightInput";
 import { useFlightLoop } from "./useFlightLoop";
-import { DEFAULT_FLIGHT_STATE } from "./flight-types";
+import { DEFAULT_FLIGHT_STATE, DEFAULT_FLIGHT_CONFIG } from "./flight-types";
 import type { FlightState } from "./flight-types";
 import type { ObservatoryPlayerFocusState } from "../../components/flow-runtime/grounding";
 import { ChaseCamera } from "./ChaseCamera";
+import { ShipThrusterVFX } from "./ShipThrusterVFX";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -47,6 +48,11 @@ export function SpaceFlightController({
 }: SpaceFlightControllerProps) {
   const shipRef = useRef<THREE.Group>(null);
 
+  // FLT-06: Track thrust intensity and boost state for ShipThrusterVFX
+  // Use refs (not state) to avoid re-renders in the 60Hz frame loop
+  const thrustIntensityRef = useRef(0);
+  const boostingRef = useRef(false);
+
   // Flight input — keyboard + mouse → FlightIntent ref
   const { intentRef, requestPointerLock } = useFlightInput({ enabled: inputEnabled });
 
@@ -64,6 +70,10 @@ export function SpaceFlightController({
         sprinting: state.speedTier === "boost",
         stationId: state.nearestStationId,
       };
+
+      // FLT-06: Update thruster VFX refs — thrustIntensity = speed / cruiseSpeed (0-1+)
+      thrustIntensityRef.current = Math.min(1, state.currentSpeed / DEFAULT_FLIGHT_CONFIG.cruiseSpeed);
+      boostingRef.current = state.speedTier === "boost";
 
       onStateChange?.(state);
     },
@@ -99,6 +109,13 @@ export function SpaceFlightController({
       </group>
       {/* FLT-05: Chase camera — follows ship with lerp-lagged tracking */}
       <ChaseCamera shipRef={shipRef} />
+      {/* FLT-06: Thruster exhaust particles — 4 nozzles, scales with thrust intensity */}
+      <ShipThrusterVFX
+        shipRef={shipRef}
+        thrustIntensity={thrustIntensityRef.current}
+        boosting={boostingRef.current}
+        accentColor={accentColor}
+      />
     </>
   );
 }
