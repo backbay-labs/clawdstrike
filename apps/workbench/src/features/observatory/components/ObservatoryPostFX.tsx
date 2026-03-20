@@ -10,6 +10,7 @@ import {
   SMAA,
 } from "@react-three/postprocessing";
 import { BlendFunction, ToneMappingMode } from "postprocessing";
+import type { ObservatoryPerformanceProfile } from "../utils/observatory-performance";
 
 export interface ObservatoryPostFXProps {
   /**
@@ -25,6 +26,21 @@ export interface ObservatoryPostFXProps {
    * When null/undefined, no LUT is applied (identity response).
    */
   spiritLut?: THREE.Data3DTexture | null;
+  profile: Pick<
+    ObservatoryPerformanceProfile,
+    | "enableAutofocus"
+    | "enableBloom"
+    | "enableLut"
+    | "enableSmaa"
+    | "enableToneMapping"
+    | "enableVignette"
+  >;
+  /**
+   * TRN-04: Bloom spike override — replaces the default luminanceThreshold (0.85)
+   * during boost activation. Parent drives a spike from 0.85 → 0.5 → 0.85 over ~1.3s.
+   * When null/undefined, uses the default threshold of 0.85.
+   */
+  bloomLuminanceOverride?: number | null;
 }
 
 /**
@@ -36,25 +52,34 @@ export interface ObservatoryPostFXProps {
 export function ObservatoryPostFX({
   activeHeroPropPosition,
   spiritLut,
+  profile,
+  bloomLuminanceOverride,
 }: ObservatoryPostFXProps) {
   // EffectComposer.children is typed as JSX.Element | JSX.Element[] — it does not accept null.
   // Build the effect list imperatively so TypeScript sees a JSX.Element[].
-  const effects: JSX.Element[] = [
-    // PP-01: Bloom — emissive surfaces glow.
-    // Only materials with emissiveIntensity > 1 AND toneMapped={false} bloom.
-    <Bloom
-      key="bloom"
-      intensity={1.5}
-      luminanceThreshold={0.85}
-      luminanceSmoothing={0.025}
-      mipmapBlur
-      radius={0.35}
-    />,
-  ];
+  const effects: JSX.Element[] = [];
+
+  if (profile.enableBloom) {
+    // TRN-04: bloomLuminanceOverride allows the bloom threshold to be driven externally
+    // (e.g. during boost activation where it drops from 0.85 → 0.5 → 0.85 over ~1.3s).
+    const luminanceThreshold = bloomLuminanceOverride ?? 0.85;
+    effects.push(
+      // PP-01: Bloom — emissive surfaces glow.
+      // Only materials with emissiveIntensity > 1 AND toneMapped={false} bloom.
+      <Bloom
+        key="bloom"
+        intensity={1.5}
+        luminanceThreshold={luminanceThreshold}
+        luminanceSmoothing={0.025}
+        mipmapBlur
+        radius={0.35}
+      />,
+    );
+  }
 
   // PP-03: Autofocus DOF — conditionally mounted on hero prop interaction.
   // Unmounted (not just disabled) when inactive to save GPU.
-  if (activeHeroPropPosition) {
+  if (profile.enableAutofocus && activeHeroPropPosition) {
     effects.push(
       <Autofocus
         key="autofocus"
@@ -70,25 +95,37 @@ export function ObservatoryPostFX({
   // PP-04: LUT color grading — per-spirit kind, swapped at runtime.
   // Positioned before Vignette so the vignette darkening happens after grading.
   // tetrahedralInterpolation gives higher quality at negligible cost.
-  if (spiritLut) {
+  if (profile.enableLut && spiritLut) {
     effects.push(
       <LUT key="lut" lut={spiritLut} tetrahedralInterpolation />,
     );
   }
 
-  effects.push(
-    // PP-02: Vignette — subtle edge darkening, always on
-    <Vignette
-      key="vignette"
-      offset={0.3}
-      darkness={0.6}
-      blendFunction={BlendFunction.NORMAL}
-    />,
-    // PP-02: ToneMapping — ACES filmic, must be second-to-last
-    <ToneMapping key="tonemapping" mode={ToneMappingMode.ACES_FILMIC} />,
-    // PP-02: SMAA — anti-aliasing replacement, always last
-    <SMAA key="smaa" />,
-  );
+  if (profile.enableVignette) {
+    effects.push(
+      // PP-02: Vignette — subtle edge darkening, always on
+      <Vignette
+        key="vignette"
+        offset={0.3}
+        darkness={0.6}
+        blendFunction={BlendFunction.NORMAL}
+      />,
+    );
+  }
+
+  if (profile.enableToneMapping) {
+    effects.push(
+      // PP-02: ToneMapping — ACES filmic, must be second-to-last
+      <ToneMapping key="tonemapping" mode={ToneMappingMode.ACES_FILMIC} />,
+    );
+  }
+
+  if (profile.enableSmaa) {
+    effects.push(
+      // PP-02: SMAA — anti-aliasing replacement, always last
+      <SMAA key="smaa" />,
+    );
+  }
 
   return (
     <EffectComposer
