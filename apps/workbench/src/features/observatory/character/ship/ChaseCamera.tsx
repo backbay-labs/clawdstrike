@@ -16,6 +16,9 @@
 import { useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
+import { useObservatoryStore } from "../../stores/observatory-store";
+import { DOCKING_CONFIG } from "./docking-types";
+import { stationPosition } from "../../world/observatory-world-template";
 
 // ---------------------------------------------------------------------------
 // Module-level pre-allocated vectors — never recreated inside useFrame
@@ -25,6 +28,8 @@ const _desiredPos = new THREE.Vector3();
 const _lookTarget = new THREE.Vector3();
 const _offset = new THREE.Vector3();
 const _shipForward = new THREE.Vector3();
+const _dockPos = new THREE.Vector3();
+const _dockCamOffset = new THREE.Vector3();
 
 // ---------------------------------------------------------------------------
 // Props
@@ -81,14 +86,40 @@ export function ChaseCamera({
       mountedAtRef.current = now;
     }
 
+    // Clamp delta to avoid huge jumps on tab focus restore
+    const safeDelta = Math.min(delta, 1 / 20);
+
+    // --- Check docking state for camera mode ----------------------------
+    const { dockingState } = useObservatoryStore.getState();
+    const isDocked = dockingState.zone === "dock" && dockingState.stationId != null;
+
+    if (isDocked) {
+      // DCK-03: Docked camera — lerp to a front-facing station view
+      const dockStationPos = stationPosition(dockingState.stationId!);
+      _dockPos.copy(dockStationPos);
+
+      // Offset the camera: station position + dockedCameraOffset
+      const [ox, oy, oz] = DOCKING_CONFIG.dockedCameraOffset;
+      _dockCamOffset.set(
+        _dockPos.x + ox,
+        _dockPos.y + oy,
+        _dockPos.z + oz,
+      );
+
+      // Smooth transition over cameraTransitionDurationMs (~1s)
+      const dockAlpha = 1 - Math.exp(-3.0 * safeDelta); // ~1s convergence
+      camera.position.lerp(_dockCamOffset, dockAlpha);
+      camera.lookAt(_dockPos);
+      camera.updateMatrixWorld();
+      return;
+    }
+
+    // --- Chase camera (normal flight) -----------------------------------
     // During the first 0.8s after mount, use a much higher factor to snap
     // the camera into chase position quickly rather than drifting in slowly
     const elapsedSinceMount = (now - mountedAtRef.current) / 1000;
     const effectiveFollowFactor =
       elapsedSinceMount < 0.8 ? 2.0 : followFactor;
-
-    // Clamp delta to avoid huge jumps on tab focus restore
-    const safeDelta = Math.min(delta, 1 / 20);
 
     // --- Desired camera position ------------------------------------------
     // Rotate the local-space offset by the ship's world quaternion to get the
@@ -103,8 +134,6 @@ export function ChaseCamera({
     _lookTarget.copy(ship.position).addScaledVector(_shipForward, lookAheadDistance);
 
     // --- Frame-rate independent exponential lerp --------------------------
-    // alpha = 1 - exp(-k * dt) converges to the same position regardless of fps
-    // With followFactor=0.07 and 60fps: alpha ≈ 0.066 per frame (visually lagged)
     const alpha = 1 - Math.exp(-effectiveFollowFactor * 60 * safeDelta);
     camera.position.lerp(_desiredPos, alpha);
 
