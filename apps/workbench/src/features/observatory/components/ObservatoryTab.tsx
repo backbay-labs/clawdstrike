@@ -42,13 +42,15 @@ import { ObservatoryReplayComparePanel } from "./ObservatoryReplayComparePanel";
 import { ObservatoryExplainabilityPanel } from "./ObservatoryExplainabilityPanel";
 import { ObservatoryAnalystPresetBar } from "./ObservatoryAnalystPresetBar";
 import { SpaceFlightHud } from "./hud/SpaceFlightHud";
-import { ObservatoryCinematicOverlay } from "./ObservatoryCinematicOverlay";
+import { ObservatoryCinematicOverlay, StationArrivalCard } from "./ObservatoryCinematicOverlay";
 import {
   createObservatoryMissionPlan,
   deriveObservatoryMissionBranch,
   getCurrentObservatoryMissionObjective,
 } from "../world/missionLoop";
 import type { ObservatoryHeroPropAssetId } from "../world/propAssets";
+import { OBSERVATORY_STATION_POSITIONS } from "../world/observatory-world-template";
+import { HUNT_STATION_ORDER } from "../world/stations";
 import { preloadObservatoryAssets } from "../utils/observatory-performance";
 import { buildObservatorySceneState } from "../world/observatory-scene-bridge";
 import { getObservatoryNowMs, useObservatoryNow } from "../utils/observatory-time";
@@ -263,6 +265,10 @@ export function ObservatoryTab() {
   const previousProbeStatusRef = useRef<typeof probeState.status | null>(probeState.status);
   const dismissedCueKeyRef = useRef<string | null>(null);
   const [activeSpikeCue, setActiveSpikeCue] = useState<ObservatorySpikeCue | null>(null);
+
+  // TRN-03: Station arrival name card — triggered once per station per session within 180 units
+  const arrivedStationsRef = useRef(new Set<HuntStationId>());
+  const [arrivalStation, setArrivalStation] = useState<HuntStationId | null>(null);
 
   useEffect(() => {
     observatoryActions.setProbeState((current) => advanceObservatoryProbeState(current, probeNowMs));
@@ -796,6 +802,33 @@ export function ObservatoryTab() {
       setActiveSpikeCue(null);
     }
   }, [flyByActive, replay.enabled]);
+
+  // TRN-03: Proximity detection for station arrival name card
+  // Subscribe to flightState store changes (rare event — not per-frame)
+  useEffect(() => {
+    if (flyByActive || replay.enabled || !characterControllerEnabled) return;
+
+    const unsubscribe = useObservatoryStore.subscribe((state) => {
+      const position = state.flightState.position;
+      if (!position) return;
+      const [px, py, pz] = position;
+      for (const stationId of HUNT_STATION_ORDER) {
+        if (arrivedStationsRef.current.has(stationId)) continue;
+        const stationPos = OBSERVATORY_STATION_POSITIONS[stationId];
+        const dx = px - stationPos[0];
+        const dy = py - stationPos[1];
+        const dz = pz - stationPos[2];
+        const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (distance < 180) {
+          arrivedStationsRef.current.add(stationId);
+          setArrivalStation((current) => current === null ? stationId : current);
+          break;
+        }
+      }
+    });
+
+    return unsubscribe;
+  }, [flyByActive, replay.enabled, characterControllerEnabled]);
   useEffect(() => {
     previousStationEmphasisRef.current = Object.fromEntries(
       liveTelemetry.stations.map((station) => [station.id, station.emphasis ?? 0]),
@@ -987,6 +1020,13 @@ export function ObservatoryTab() {
         visible={!flyByActive && !replay.enabled && activeSpikeCue != null}
         onDismiss={handleDismissSpikeCue}
         onOpenRoute={handleOpenSpikeCueRoute}
+      />
+
+      {/* TRN-03: Station arrival name card — shown on first approach within 180 units, once per station per session */}
+      <StationArrivalCard
+        stationId={arrivalStation}
+        visible={!flyByActive && !replay.enabled && arrivalStation !== null}
+        onComplete={() => setArrivalStation(null)}
       />
 
       {/* OBS-06: Easter-egg activation toast — inline notification, no ToastProvider required */}
