@@ -1,4 +1,4 @@
-import { CameraShake, OrbitControls, Stars } from "@react-three/drei";
+import { CameraShake, OrbitControls } from "@react-three/drei";
 import type { RefObject } from "react";
 import { useMemo, useRef } from "react";
 import * as THREE from "three";
@@ -22,6 +22,7 @@ import { createObservatoryLodPolicy, type ObservatoryLodTier } from "../../utils
 import type { ObservatoryPlayerFocusState } from "../flow-runtime/grounding";
 import { ObservatoryDistrictLayer } from "./ObservatoryDistrictLayer";
 import { ObservatoryNebulaClouds } from "./ObservatoryNebulaClouds";
+import { ObservatoryStarfield } from "./ObservatoryStarfield";
 import { ObservatoryTransitLayer } from "./ObservatoryTransitLayer";
 import type { ObservatoryWorldSceneProps } from "./observatory-world-scene-types";
 
@@ -79,15 +80,8 @@ export function ObservatoryWorldScene({
   return (
     <>
       <color attach="background" args={["#04080f"]} />
-      <Stars
-        radius={world.environment.starsRadius}
-        depth={world.environment.starsDepth}
-        count={world.environment.starsCount}
-        factor={world.environment.starsFactor}
-        fade
-        speed={0.4}
-      />
-      <fog attach="fog" args={[world.environment.fogColor, world.environment.fogNear, world.environment.fogFar]} />
+      <ObservatoryStarfield />
+      <fogExp2 attach="fog" args={["#060a14", 0.0008]} />
       <ambientLight intensity={world.environment.ambientIntensity} color={world.environment.ambientColor} />
       <hemisphereLight args={["#b7d4ff", "#02050b", 0.18]} />
       <directionalLight
