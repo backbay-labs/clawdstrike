@@ -89,6 +89,17 @@ const _q = new THREE.Quaternion();
 const _euler = new THREE.Euler();
 
 // ---------------------------------------------------------------------------
+// Module-level flight path trail buffer (last 50 positions)
+// ---------------------------------------------------------------------------
+
+const MAX_TRAIL_POINTS = 50;
+const TRAIL_SAMPLE_INTERVAL_MS = 500;
+
+/** Circular trail buffer: oldest-first XZ positions in world space */
+const trailBuffer: Array<{ x: number; z: number }> = [];
+let lastTrailSampleMs = 0;
+
+// ---------------------------------------------------------------------------
 // Module-level visited station tracking
 // ---------------------------------------------------------------------------
 
@@ -140,13 +151,18 @@ export function ObservatoryMinimapPanel() {
 
   // Ref for the player arrow SVG group (updated via rAF, no re-renders)
   const arrowGroupRef = useRef<SVGGElement | null>(null);
+  // Ref for the flight trail polyline (updated via rAF, no re-renders)
+  const trailPolylineRef = useRef<SVGPolylineElement | null>(null);
+  // Ref for the autopilot dashed indicator line (updated via rAF, no re-renders)
+  const autopilotLineRef = useRef<SVGLineElement | null>(null);
 
-  // rAF loop: update player arrow position and rotation
+  // rAF loop: update player arrow, trail buffer, and autopilot line
   useEffect(() => {
     let rafId = 0;
 
     function tick() {
-      const { flightState } = useObservatoryStore.getState();
+      const storeState = useObservatoryStore.getState();
+      const { flightState, autopilotTargetStationId } = storeState;
       const [px, , pz] = flightState.position;
       const [qx, qy, qz, qw] = flightState.quaternion;
 
@@ -154,13 +170,53 @@ export function ObservatoryMinimapPanel() {
       _euler.setFromQuaternion(_q, "YXZ");
       const yaw = _euler.y;
 
-      const { x, y } = worldToChart(px, pz);
+      const playerChart = worldToChart(px, pz);
       // SVG rotation: negate yaw because SVG Y is down and world Z is into screen
       const rotDeg = (-yaw * 180) / Math.PI;
 
       const group = arrowGroupRef.current;
       if (group) {
-        group.setAttribute("transform", `translate(${x},${y}) rotate(${rotDeg})`);
+        group.setAttribute("transform", `translate(${playerChart.x},${playerChart.y}) rotate(${rotDeg})`);
+      }
+
+      // Sample trail buffer every TRAIL_SAMPLE_INTERVAL_MS
+      const nowMs = Date.now();
+      if (nowMs - lastTrailSampleMs >= TRAIL_SAMPLE_INTERVAL_MS) {
+        lastTrailSampleMs = nowMs;
+        trailBuffer.push({ x: px, z: pz });
+        if (trailBuffer.length > MAX_TRAIL_POINTS) {
+          trailBuffer.shift();
+        }
+      }
+
+      // Update trail polyline
+      const polyline = trailPolylineRef.current;
+      if (polyline && trailBuffer.length >= 2) {
+        const pts = trailBuffer.map((pt) => {
+          const c = worldToChart(pt.x, pt.z);
+          return `${c.x},${c.y}`;
+        });
+        polyline.setAttribute("points", pts.join(" "));
+        polyline.style.display = "";
+      } else if (polyline) {
+        polyline.style.display = "none";
+      }
+
+      // Update autopilot dashed indicator line
+      const apLine = autopilotLineRef.current;
+      if (apLine) {
+        if (autopilotTargetStationId !== null) {
+          const targetPos = stationChartPositions[autopilotTargetStationId];
+          if (targetPos) {
+            apLine.setAttribute("x1", String(playerChart.x));
+            apLine.setAttribute("y1", String(playerChart.y));
+            apLine.setAttribute("x2", String(targetPos.x));
+            apLine.setAttribute("y2", String(targetPos.y));
+            apLine.style.display = "";
+          }
+        } else {
+          apLine.style.display = "none";
+        }
       }
 
       rafId = requestAnimationFrame(tick);
@@ -168,7 +224,8 @@ export function ObservatoryMinimapPanel() {
 
     rafId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafId);
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stationChartPositions]);
 
   const hasActiveProbe = activeProbes > 0;
 
@@ -256,6 +313,36 @@ export function ObservatoryMinimapPanel() {
             );
           })}
 
+          {/* Flight path trail — fading polyline of last 50 positions (rAF-driven, no re-renders) */}
+          <polyline
+            ref={trailPolylineRef}
+            points=""
+            fill="none"
+            stroke="rgba(255,255,255,0.5)"
+            strokeWidth="1"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            pointerEvents="none"
+            data-testid="flight-trail"
+            style={{ display: "none" }}
+          />
+
+          {/* Autopilot indicator — dashed line from player to target station (rAF-driven) */}
+          <line
+            ref={autopilotLineRef}
+            x1={CHART_CENTER_X}
+            y1={CHART_CENTER_Y}
+            x2={CHART_CENTER_X}
+            y2={CHART_CENTER_Y}
+            stroke="#e0e6ef"
+            strokeWidth="1"
+            strokeDasharray="4 3"
+            opacity={0.6}
+            pointerEvents="none"
+            data-testid="autopilot-line"
+            style={{ display: "none" }}
+          />
+
           {/* Station dots + status icons */}
           {HUNT_STATION_ORDER.map((id) => {
             const { x, y } = stationChartPositions[id];
@@ -276,7 +363,10 @@ export function ObservatoryMinimapPanel() {
                   r={dotRadius}
                   fill={dotColor}
                   opacity={0.95}
-                  onClick={() => openObservatoryStationRoute(id)}
+                  onClick={() => {
+                    openObservatoryStationRoute(id);
+                    useObservatoryStore.getState().actions.setAutopilotTarget(id);
+                  }}
                   style={{ cursor: "pointer" }}
                   data-station-id={id}
                 />

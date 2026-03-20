@@ -65,6 +65,8 @@ const observatoryState = vi.hoisted(() => ({
 
 const openObservatoryStationRouteMock = vi.hoisted(() => vi.fn());
 
+const setAutopilotTargetMock = vi.hoisted(() => vi.fn());
+
 vi.mock("@/features/observatory/stores/observatory-store", () => ({
   useObservatoryStore: Object.assign(
     vi.fn(
@@ -82,6 +84,10 @@ vi.mock("@/features/observatory/stores/observatory-store", () => ({
       getState: vi.fn(() => ({
         flightState: observatoryState.flightState,
         dockingState: observatoryState.dockingState,
+        autopilotTargetStationId: null,
+        actions: {
+          setAutopilotTarget: setAutopilotTargetMock,
+        },
       })),
     },
   ),
@@ -191,8 +197,10 @@ describe("ObservatoryMinimapPanel rendering — star chart", () => {
       pointerLocked: false,
       currentSpeed: 0,
       nearestStationId: null,
+      autopilotTargetStationId: null,
     };
     openObservatoryStationRouteMock.mockReset();
+    setAutopilotTargetMock.mockReset();
     mockStations.mockReturnValue(observatoryState.stations);
     mockConnected.mockReturnValue(observatoryState.connected);
     mockSelectedStationId.mockReturnValue(observatoryState.selectedStationId);
@@ -283,6 +291,22 @@ describe("ObservatoryMinimapPanel rendering — star chart", () => {
     expect(signalDot).not.toBeNull();
     fireEvent.click(signalDot as SVGCircleElement);
     expect(openObservatoryStationRouteMock).toHaveBeenCalledWith("signal");
+  });
+
+  it("calls setAutopilotTarget with station id when a station dot is clicked", () => {
+    const { container } = render(<ObservatoryMinimapPanel />);
+    const signalDot = container.querySelector("[data-station-id='signal']");
+    expect(signalDot).not.toBeNull();
+    fireEvent.click(signalDot as SVGCircleElement);
+    expect(setAutopilotTargetMock).toHaveBeenCalledWith("signal");
+  });
+
+  it("calls setAutopilotTarget with the correct station id for each station", () => {
+    const { container } = render(<ObservatoryMinimapPanel />);
+    const runDot = container.querySelector("[data-station-id='run']");
+    expect(runDot).not.toBeNull();
+    fireEvent.click(runDot as SVGCircleElement);
+    expect(setAutopilotTargetMock).toHaveBeenCalledWith("run");
   });
 
   it("renders diamond status icon when dockingState.zone==='dock' for a station", () => {
