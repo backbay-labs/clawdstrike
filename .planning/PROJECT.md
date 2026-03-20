@@ -8,21 +8,21 @@ ClawdStrike Workbench is a Tauri 2 + React 19 desktop application for security o
 
 Security operators can work across multiple views simultaneously — policy editor beside simulation results, swarm board beside audit log — with a folder-first navigation model and IDE-grade keyboard workflows. The huntronomer integration adds a spirit-driven immersive layer: 3D observatory, cyber nexus, and spirit companion woven into IDE surfaces.
 
-## Current Milestone: v2.0 Huntronomer Integration
+## Current Milestone: v6.0 Observatory Space Flight
 
-**Goal:** Integrate 3D cyber-nexus, spirit system, and observatory features from the huntronomer branch into the VS Code-like IDE workbench across three tiers: CSS/state drop-ins, small R3F embeds, and full immersive pane tabs.
+**Goal:** Transform the observatory from a ground-level station ring into an immersive space environment where analysts fly a ship between floating space stations.
 
 **Target features:**
-- Spirit field stain on panel backgrounds + spirit accent color on hunt UI
-- Observatory seam powering activity bar badges (artifact counts)
-- Spirit chamber and observatory as pane tab views
-- Mini spirit companion R3F canvas in right sidebar
-- Animated spirit orb in ActivityBar when spirit is bound
-- Cyber nexus as alternative "Hunt Deck" pane
-- Forensics river mini-view in bottom pane "Tape" tab
-- Route bridge: station clicks → pane-store.openApp()
-- New Zustand stores: spirit-store, observatory-store
-- New commands: observatory.open, observatory.probe, spirit.bind, spirit.release, nexus.open
+- Space-scale world with stations at 200-500 unit radius, different elevations, starfield/nebula/debris void
+- Ship-based flight controller — velocity+quaternion movement, damping, speed tiers (cruise/boost/dock), chase camera
+- Floating space station geometry — procedural torus-ring/cylinder/panel stations with LOD via drei Detailed
+- Three-zone docking system (approach → magnet-pull → dock lock) with automated docking sequence
+- Space environment art — 3-layer starfield (Star Nest shader + InstancedMesh + Sparkles), billboard nebula clouds, emissive CatmullRom space lanes
+- Space flight HUD — heading compass, target brackets, off-screen station arrows, speed indicator, distance readouts
+- Star chart minimap replacing SVG ring minimap
+- Warp/boost transitions with FOV punch + speed lines + bloom spike
+- Station approach UI with proximity-based detail fade-in
+- Progressive station discovery and mission-guided flight paths
 
 ## Requirements
 
@@ -138,4 +138,4 @@ Key source directories to port:
 | 2 new Zustand stores (spirit-store, observatory-store) | Minimal new state surface; typed spirit/observatory state | — Pending |
 
 ---
-*Last updated: 2026-03-18 after v2.0 Huntronomer Integration milestone start*
+*Last updated: 2026-03-20 after v6.0 Observatory Space Flight milestone start*
