@@ -592,4 +592,4 @@ Phase 20 first — it is the spatial substrate everything else builds on. Phase 
 | 23. Station Detail + Docking | 3/3 | Complete    | 2026-03-20 | - |
 | 24. Space Flight HUD | v6.0 | Complete    | 2026-03-20 | 2026-03-20 |
 | 25. Star Chart + Transitions | 4/4 | Complete    | 2026-03-20 | - |
-| 26. Discovery + Missions | 2/2 | Complete   | 2026-03-20 | 2026-03-20 |
+| 26. Discovery + Missions | 2/2 | Complete    | 2026-03-20 | 2026-03-20 |
