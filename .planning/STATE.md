@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v6.0
 milestone_name: Observatory Space Flight
-status: in-progress
+status: completed
 stopped_at: Completed 24-02-PLAN.md
-last_updated: "2026-03-20T19:07:00Z"
-last_activity: 2026-03-20 — Space Flight HUD projection elements: target brackets, off-screen arrows, distance readouts (HUD-03, HUD-04, HUD-05)
+last_updated: "2026-03-20T19:13:54.527Z"
+last_activity: 2026-03-20 — Full SpaceFlightHud wired (all 5 instruments active), HudCameraBridge in Canvas, visibility gates in ObservatoryTab (HUD-03, HUD-04, HUD-05)
 progress:
   total_phases: 7
-  completed_phases: 4
-  total_plans: 13
-  completed_plans: 13
+  completed_phases: 5
+  total_plans: 14
+  completed_plans: 14
   percent: 100
 ---
 
