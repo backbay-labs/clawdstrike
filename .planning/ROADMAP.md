@@ -523,12 +523,12 @@ Plans:
   2. Flying within 50 units of a station's docking axis causes the ship to drift gently toward the dock point (magnet-pull zone); the pull strengthens as distance decreases
   3. Closing within 15 units triggers an automated 1-second camera transition to docked view, flight controls disable, and the station's docked state activates
   4. Triggering undock pushes the ship away from the station with launch velocity and re-enables full flight controls
-**Plans**: 4 plans
+**Plans**: 3 plans
 
 Plans:
-- [ ] 23-01: 4-tier LOD via drei Detailed (near/mid/far billboard/beacon) + STN-03 beacon pulse + STN-04 Fresnel rim shader (STN-02, STN-03, STN-04)
-- [ ] 23-02: Docking ring geometry + flanking guide lights per station (STN-05)
-- [ ] 23-03: Three-zone docking system — approach detection, magnet-pull lerp, dock lock sequence + undock launch (DCK-01, DCK-02, DCK-03, DCK-04)
+- [ ] 23-01-PLAN.md — 4-tier LOD (drei Detailed) + beacon lights + Fresnel rim glow (STN-02, STN-03, STN-04)
+- [ ] 23-02-PLAN.md — Docking ring geometry + flanking guide lights per station (STN-05)
+- [ ] 23-03-PLAN.md — Three-zone docking system: approach, magnet-pull, dock lock + undock (DCK-01, DCK-02, DCK-03, DCK-04)
 
 ### Phase 24: Space Flight HUD
 **Goal**: Analysts always know where they are, how fast they are moving, and where their target is — a DOM-based HUD updates at 60fps via ref mutation with a speed bar, heading compass, target brackets, off-screen arrows, and distance readouts
