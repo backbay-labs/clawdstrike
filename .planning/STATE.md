@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v6.0
 milestone_name: Observatory Space Flight
 status: in-progress
-stopped_at: Completed 24-01-PLAN.md
-last_updated: "2026-03-20T18:54:30Z"
-last_activity: 2026-03-20 — Space Flight HUD foundation: camera bridge, speed indicator, heading compass (HUD-01, HUD-02, HUD-06)
+stopped_at: Completed 24-02-PLAN.md
+last_updated: "2026-03-20T19:07:00Z"
+last_activity: 2026-03-20 — Space Flight HUD projection elements: target brackets, off-screen arrows, distance readouts (HUD-03, HUD-04, HUD-05)
 progress:
   total_phases: 7
   completed_phases: 4
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-03-20)
 ## Current Position
 
 Phase: 24 of 26 (Space Flight HUD)
-Plan: 1 of ? (complete)
-Status: Phase 24 Plan 01 COMPLETE — HUD foundation: camera bridge, speed indicator, heading compass
-Last activity: 2026-03-20 — Space Flight HUD DOM overlay with rAF+ref-mutation 60fps updates (HUD-01, HUD-02, HUD-06)
+Plan: 2 of ? (complete)
+Status: Phase 24 Plan 02 COMPLETE — HUD projection: target brackets, off-screen arrows, distance readouts
+Last activity: 2026-03-20 — Full SpaceFlightHud wired (all 5 instruments active), HudCameraBridge in Canvas, visibility gates in ObservatoryTab (HUD-03, HUD-04, HUD-05)
 
 Progress: [██████████] 100%
 
@@ -56,6 +56,7 @@ Progress: [██████████] 100%
 | Phase 23 P01 | 7 | 2 tasks | 5 files |
 | Phase 23 P03 | 7min | 2 tasks | 6 files |
 | Phase 24 P01 | 5min | 2 tasks | 6 files |
+| Phase 24 P02 | 7min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -101,6 +102,10 @@ Progress: [██████████] 100%
 - [Phase 24-01]: HudCameraBridge uses useFrame(-100) priority; .copy() on Matrix4/Vector3 — no allocations in frame callback
 - [Phase 24-01]: Pre-allocated THREE.Quaternion/Euler for HeadingCompass yaw extraction at module level — zero GC in 60fps loop
 - [Phase 24-01]: STATION_COLORS_HEX replicated in hud-constants.ts (not exported from observatory-world-template.ts)
+- [Phase 24-02]: Single useHudProjection rAF loop updates projectionsRef; TargetBrackets + OffScreenArrows each run their own rAF reading that ref — decoupled consumers, one source of truth
+- [Phase 24-02]: CSS custom property --bracket-color on bracket container allows 4 corner divs to share color without per-corner inline style updates
+- [Phase 24-02]: Mock useHudProjection in space-flight-hud.test.tsx to prevent observatory-world-template CatmullRomCurve3 init chain breaking mocked THREE.Vector3
+- [Phase 24-02]: SpaceFlightHud visibility gate: !flyByActive AND !replay.enabled AND characterControllerEnabled AND mode=flow (all four required)
 
 ### Blockers/Concerns
 
@@ -109,6 +114,6 @@ Progress: [██████████] 100%
 
 ## Session Continuity
 
-Last session: 2026-03-20T18:54:30Z
-Stopped at: Completed 24-01-PLAN.md
+Last session: 2026-03-20T19:07:00Z
+Stopped at: Completed 24-02-PLAN.md
 Resume file: None
