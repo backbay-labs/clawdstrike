@@ -39,10 +39,10 @@
 
 ### Docking System
 
-- [ ] **DCK-01**: Three-zone approach system — approach (>50 units: beacon + label), magnet-pull (15-50 units: gentle lerp toward dock axis), dock lock (<15 units: automated sequence)
-- [ ] **DCK-02**: Magnet-pull zone lerps ship toward docking point with distance-proportional strength
-- [ ] **DCK-03**: Dock lock triggers automated camera transition (1s), disables flight controls, transitions to docked station view
-- [ ] **DCK-04**: Undock action restores flight controls and pushes ship away from station with launch velocity
+- [x] **DCK-01**: Three-zone approach system — approach (>50 units: beacon + label), magnet-pull (15-50 units: gentle lerp toward dock axis), dock lock (<15 units: automated sequence)
+- [x] **DCK-02**: Magnet-pull zone lerps ship toward docking point with distance-proportional strength
+- [x] **DCK-03**: Dock lock triggers automated camera transition (1s), disables flight controls, transitions to docked station view
+- [x] **DCK-04**: Undock action restores flight controls and pushes ship away from station with launch velocity
 
 ### HUD & UI
 
@@ -128,10 +128,10 @@
 | STN-03 | Phase 23 | Complete |
 | STN-04 | Phase 23 | Complete |
 | STN-05 | Phase 23 | Complete |
-| DCK-01 | Phase 23 | Pending |
-| DCK-02 | Phase 23 | Pending |
-| DCK-03 | Phase 23 | Pending |
-| DCK-04 | Phase 23 | Pending |
+| DCK-01 | Phase 23 | Complete |
+| DCK-02 | Phase 23 | Complete |
+| DCK-03 | Phase 23 | Complete |
+| DCK-04 | Phase 23 | Complete |
 | HUD-01 | Phase 24 | Pending |
 | HUD-02 | Phase 24 | Pending |
 | HUD-03 | Phase 24 | Pending |
