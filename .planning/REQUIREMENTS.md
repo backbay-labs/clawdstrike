@@ -55,10 +55,10 @@
 
 ### Star Chart
 
-- [ ] **MAP-01**: Star chart minimap replacing SVG ring map — shows all station positions, player location with facing indicator, and pressure lane connections
+- [x] **MAP-01**: Star chart minimap replacing SVG ring map — shows all station positions, player location with facing indicator, and pressure lane connections
 - [ ] **MAP-02**: Flight path trail — player's recent trajectory drawn as a fading line on the chart
 - [ ] **MAP-03**: Click-to-autopilot — click a station on the chart to engage auto-navigation toward it
-- [ ] **MAP-04**: Station status icons on chart — mission active, artifacts pending, docked, unvisited indicators
+- [x] **MAP-04**: Station status icons on chart — mission active, artifacts pending, docked, unvisited indicators
 
 ### Transitions & Cinematics
 
@@ -138,10 +138,10 @@
 | HUD-04 | Phase 24 | Complete |
 | HUD-05 | Phase 24 | Complete |
 | HUD-06 | Phase 24 | Complete |
-| MAP-01 | Phase 25 | Pending |
+| MAP-01 | Phase 25 | Complete |
 | MAP-02 | Phase 25 | Pending |
 | MAP-03 | Phase 25 | Pending |
-| MAP-04 | Phase 25 | Pending |
+| MAP-04 | Phase 25 | Complete |
 | TRN-01 | Phase 25 | Pending |
 | TRN-02 | Phase 25 | Pending |
 | TRN-03 | Phase 25 | Pending |

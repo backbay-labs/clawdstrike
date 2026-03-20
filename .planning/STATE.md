@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v6.0
 milestone_name: Observatory Space Flight
 status: completed
-stopped_at: Completed 24-02-PLAN.md
-last_updated: "2026-03-20T19:13:54.527Z"
+stopped_at: Completed 25-01-PLAN.md
+last_updated: "2026-03-20T19:35:40.749Z"
 last_activity: 2026-03-20 — Full SpaceFlightHud wired (all 5 instruments active), HudCameraBridge in Canvas, visibility gates in ObservatoryTab (HUD-03, HUD-04, HUD-05)
 progress:
   total_phases: 7
   completed_phases: 5
-  total_plans: 14
-  completed_plans: 14
+  total_plans: 18
+  completed_plans: 15
   percent: 100
 ---
 
@@ -57,6 +57,7 @@ Progress: [██████████] 100%
 | Phase 23 P03 | 7min | 2 tasks | 6 files |
 | Phase 24 P01 | 5min | 2 tasks | 6 files |
 | Phase 24 P02 | 7min | 2 tasks | 8 files |
+| Phase 25 P01 | 3min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -106,6 +107,8 @@ Progress: [██████████] 100%
 - [Phase 24-02]: CSS custom property --bracket-color on bracket container allows 4 corner divs to share color without per-corner inline style updates
 - [Phase 24-02]: Mock useHudProjection in space-flight-hud.test.tsx to prevent observatory-world-template CatmullRomCurve3 init chain breaking mocked THREE.Vector3
 - [Phase 24-02]: SpaceFlightHud visibility gate: !flyByActive AND !replay.enabled AND characterControllerEnabled AND mode=flow (all four required)
+- [Phase 25]: worldToChart uses dynamic bounds from all station positions + 15% padding for auto-scaling to any world layout
+- [Phase 25]: DockingState uses zone=='dock' (not phase=='docked') and stationId (not targetStationId) — plan interface description was incorrect, fixed during implementation
 
 ### Blockers/Concerns
 
@@ -114,6 +117,6 @@ Progress: [██████████] 100%
 
 ## Session Continuity
 
-Last session: 2026-03-20T19:07:00Z
-Stopped at: Completed 24-02-PLAN.md
+Last session: 2026-03-20T19:35:40.746Z
+Stopped at: Completed 25-01-PLAN.md
 Resume file: None

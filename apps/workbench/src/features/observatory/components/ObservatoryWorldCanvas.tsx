@@ -64,6 +64,7 @@ import { ProbeDischargeVFX } from "../vfx/ProbeDischargeVFX";
 import { StationNpcCrew } from "../world/npcCrew";
 import { SpaceStationMesh } from "../world/districtGeometry";
 import { createSpaceStationSeed } from "../world/districtGeometryResources";
+import { OBSERVATORY_STATION_POSITIONS } from "../world/observatory-world-template";
 import {
   createObservatoryPerformanceProfile,
   type ObservatoryRuntimeQuality,
@@ -86,6 +87,8 @@ import { ObservatoryInvalidationController } from "./world-canvas/ObservatoryInv
 import { HudCameraBridge } from "./hud/camera-bridge";
 import { ObservatoryWorldScene as ExtractedObservatoryWorldScene } from "./world-canvas/ObservatoryWorldScene";
 import { useObservatoryWorldLifecycle } from "./world-canvas/useObservatoryWorldLifecycle";
+import { useObservatoryStore } from "../stores/observatory-store";
+import { WarpSpeedLines } from "../vfx/WarpSpeedLines";
 
 const LazyObservatoryPostFX = lazy(() =>
   import("./ObservatoryPostFX").then((module) => ({ default: module.ObservatoryPostFX })),
@@ -192,18 +195,155 @@ function lerpAlpha(speed: number, delta: number): number {
   return 1 - Math.exp(-speed * delta);
 }
 
+// ---------------------------------------------------------------------------
+// TRN-05: Station proximity fade
+// ---------------------------------------------------------------------------
+
+/**
+ * Module-level ref storing per-station distance from the ship (updated once per frame).
+ * All station sub-elements that need proximity fade read from this ref.
+ */
+const stationProximityRef: Record<HuntStationId, number> = {
+  signal: Infinity,
+  targets: Infinity,
+  run: Infinity,
+  receipts: Infinity,
+  "case-notes": Infinity,
+  watch: Infinity,
+};
+
+/**
+ * Computes NPC crew proximity opacity from distance.
+ * NPCs fade in between 180 (invisible) and 120 units (fully visible).
+ * Formula: clamp((180 - distance) / 60, 0, 1)
+ */
+function computeNpcProximityOpacity(distance: number): number {
+  return Math.min(1, Math.max(0, (180 - distance) / 60));
+}
+
+/**
+ * Computes distance-label opacity from distance.
+ * Labels fade out as camera approaches — visible at 180, invisible at 60.
+ * Formula: clamp((distance - 60) / 120, 0, 1)
+ */
+function computeDistanceFadeOpacity(distance: number): number {
+  return Math.min(1, Math.max(0, (distance - 60) / 120));
+}
+
+/**
+ * StationNpcCrewFade — wraps StationNpcCrew with per-frame proximity opacity.
+ * Updates opacity from the module-level stationProximityRef; avoids React re-renders
+ * by using a threshold check (only updates state on meaningful opacity change).
+ */
+function StationNpcCrewFade({
+  stationId,
+  stationWorldPos,
+  colorHex,
+  lodTier,
+}: {
+  stationId: HuntStationId;
+  stationWorldPos: [number, number, number];
+  colorHex: string;
+  lodTier?: import("../utils/observatory-performance").ObservatoryLodTier;
+}) {
+  const [proximityOpacity, setProximityOpacity] = useState(1);
+  const lastOpacityRef = useRef(1);
+
+  useFrame(() => {
+    const distance = stationProximityRef[stationId] ?? Infinity;
+    const nextOpacity = computeNpcProximityOpacity(distance);
+    // Only trigger a re-render when opacity change is meaningful (>1% threshold)
+    if (Math.abs(nextOpacity - lastOpacityRef.current) > 0.01) {
+      lastOpacityRef.current = nextOpacity;
+      setProximityOpacity(nextOpacity);
+    }
+  });
+
+  return (
+    <StationNpcCrew
+      stationWorldPos={stationWorldPos}
+      colorHex={colorHex}
+      lodTier={lodTier}
+      proximityOpacity={proximityOpacity}
+    />
+  );
+}
+
+/**
+ * TRN-01: Boost FOV phase constants
+ *   ramp-up:   FOV 60 → 90 over 0.3s, ease-in (t*t)
+ *   sustain:   hold 90 while boost is active
+ *   ramp-down: FOV 90 → 60 over 0.8s, ease-out (1-(1-t)^2)
+ */
+const BOOST_FOV_RAMP_UP_S = 0.3;
+const BOOST_FOV_RAMP_DOWN_S = 0.8;
+const BOOST_FOV_BASE = 60;
+const BOOST_FOV_PEAK = 90;
+
 export function FovController({
   playerFocusRef,
   probeActive,
+  boostActive,
 }: {
   playerFocusRef: RefObject<ObservatoryPlayerFocusState | null>;
   probeActive: boolean;
+  /** TRN-01: true when flightState.speedTier === "boost" */
+  boostActive: boolean;
 }) {
+  // TRN-01: Boost FOV phase tracking — refs only, no setState in 60fps loop
+  const boostFovPhaseRef = useRef<"idle" | "ramp-up" | "sustain" | "ramp-down">("idle");
+  const boostFovTimerRef = useRef(0);
+  const prevBoostActiveRef = useRef(boostActive);
+
   useFrame(({ camera }, delta) => {
     const pCam = camera as THREE.PerspectiveCamera;
     const safeDelta = Math.min(delta, 1 / 20);
-    const sprinting = playerFocusRef.current?.sprinting ?? false;
-    const targetFov = probeActive ? 35 : sprinting ? 90 : 60;
+
+    // TRN-01: Detect boost transition edges
+    const wasBoostActive = prevBoostActiveRef.current;
+    prevBoostActiveRef.current = boostActive;
+
+    if (!wasBoostActive && boostActive) {
+      // Boost just activated: start ramp-up
+      boostFovPhaseRef.current = "ramp-up";
+      boostFovTimerRef.current = 0;
+    } else if (wasBoostActive && !boostActive && boostFovPhaseRef.current === "sustain") {
+      // Boost ended while sustaining: start ramp-down
+      boostFovPhaseRef.current = "ramp-down";
+      boostFovTimerRef.current = 0;
+    }
+
+    // TRN-01: Compute FOV from boost phase
+    let boostFov: number | null = null;
+    const phase = boostFovPhaseRef.current;
+    if (phase === "ramp-up") {
+      boostFovTimerRef.current += safeDelta;
+      const t = Math.min(boostFovTimerRef.current / BOOST_FOV_RAMP_UP_S, 1);
+      const eased = t * t; // ease-in
+      boostFov = BOOST_FOV_BASE + (BOOST_FOV_PEAK - BOOST_FOV_BASE) * eased;
+      if (boostFovTimerRef.current >= BOOST_FOV_RAMP_UP_S) {
+        boostFovPhaseRef.current = "sustain";
+      }
+    } else if (phase === "sustain") {
+      boostFov = BOOST_FOV_PEAK;
+    } else if (phase === "ramp-down") {
+      boostFovTimerRef.current += safeDelta;
+      const t = Math.min(boostFovTimerRef.current / BOOST_FOV_RAMP_DOWN_S, 1);
+      const eased = 1 - (1 - t) * (1 - t); // ease-out
+      boostFov = BOOST_FOV_PEAK - (BOOST_FOV_PEAK - BOOST_FOV_BASE) * eased;
+      if (boostFovTimerRef.current >= BOOST_FOV_RAMP_DOWN_S) {
+        boostFovPhaseRef.current = "idle";
+      }
+    }
+
+    let targetFov: number;
+    if (boostFov !== null) {
+      targetFov = boostFov;
+    } else {
+      const sprinting = playerFocusRef.current?.sprinting ?? false;
+      targetFov = probeActive ? 35 : sprinting ? 90 : 60;
+    }
+
     pCam.fov += (targetFov - pCam.fov) * lerpAlpha(5.0, safeDelta);
     pCam.updateProjectionMatrix();
   });
@@ -3681,6 +3821,9 @@ function ObservatoryWorldScene({
 }) {
   const controlsRef = useRef<THREE.EventDispatcher | null>(null);
   const shakeRef = useRef<ShakeController | null>(null);
+  // TRN-01/TRN-02: Read speedTier from store — subscription fires only on boost start/end (~rarely)
+  const speedTier = useObservatoryStore((s) => s.flightState.speedTier);
+  const boostFov = speedTier === "boost";
   const [arrivalCue, setArrivalCue] = useState<DistrictArrivalCue | null>(null);
   const [hoveredStationId, setHoveredStationId] = useState<HuntStationId | null>(null);
   const previousPrimaryStationIdRef = useRef<HuntStationId | null>(null);
@@ -3756,6 +3899,20 @@ function ObservatoryWorldScene({
     };
   }, [primaryStationId]);
 
+  // TRN-05: Update module-level stationProximityRef once per frame from ship position.
+  // Reads via getState() — zero React subscriptions, zero re-renders in the 60Hz loop.
+  useFrame(() => {
+    const pos = useObservatoryStore.getState().flightState.position;
+    const [px, py, pz] = pos;
+    for (const stationId of Object.keys(stationProximityRef) as HuntStationId[]) {
+      const sp = OBSERVATORY_STATION_POSITIONS[stationId];
+      const dx = px - sp[0];
+      const dy = py - sp[1];
+      const dz = pz - sp[2];
+      stationProximityRef[stationId] = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
+  });
+
   return (
     <>
       {/* WLD-01: Dark space background with Stars. HDR skybox available when
@@ -3808,7 +3965,7 @@ function ObservatoryWorldScene({
         playerFocusRef={playerFocusRef}
         resetToken={cameraResetToken}
       />
-      <FovController playerFocusRef={playerFocusRef} probeActive={probeStatus === "active"} />
+      <FovController playerFocusRef={playerFocusRef} probeActive={probeStatus === "active"} boostActive={boostFov} />
       <CameraShake
         ref={shakeRef}
         intensity={0}
@@ -3929,10 +4086,12 @@ function ObservatoryWorldScene({
         ))}
 
       {/* NPC-01/02/03: Instanced capsule crew, patrol loops, proximity wave */}
+      {/* TRN-05: proximityFade — StationNpcCrewFade wraps StationNpcCrew with per-frame detailFade */}
       {world.districts.map((district) => (
-        <StationNpcCrew
+        <StationNpcCrewFade
           key={`npc:${district.id}`}
-          stationWorldPos={district.position}
+          stationId={district.id}
+          stationWorldPos={district.position as [number, number, number]}
           colorHex={district.colorHex}
         />
       ))}
@@ -3946,6 +4105,9 @@ function ObservatoryWorldScene({
           seed={createSpaceStationSeed(district.position[0], district.position[2])}
         />
       ))}
+
+      {/* TRN-02: Warp speed lines — 40 instanced streaks during boost */}
+      <WarpSpeedLines active={speedTier === "boost"} />
     </>
   );
 }
@@ -3980,6 +4142,39 @@ export function ObservatoryWorldCanvas({
   });
   const [adaptiveQuality, setAdaptiveQuality] = useState<ObservatoryRuntimeQuality>("high");
   const [runtimeActivityHigh, setRuntimeActivityHigh] = useState(false);
+  // TRN-04: Bloom spike state — null = default threshold (0.85), number = override during boost
+  // Drives a 0.85 → 0.5 → 0.85 luminanceThreshold spike: 0.8s hold at 0.5, then 0.5s ease back.
+  const [bloomLuminanceOverride, setBloomLuminanceOverride] = useState<number | null>(null);
+  const bloomSpikeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const bloomEaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // TRN-01/TRN-04: Subscribe to speedTier in outer component for bloom spike effect.
+  // (Inner scene subscribes separately for FOV/WarpSpeedLines.)
+  const speedTierOuter = useObservatoryStore((s) => s.flightState.speedTier);
+  useEffect(() => {
+    if (speedTierOuter === "boost") {
+      // Boost activated: drop bloom threshold immediately
+      setBloomLuminanceOverride(0.5);
+      // After 0.8s hold, start easing back — we approximate by discrete steps using rAF budget
+      // (single setState is acceptable here — fires only on boost start, ~once per 6s)
+      if (bloomSpikeTimerRef.current !== null) {
+        clearTimeout(bloomSpikeTimerRef.current);
+      }
+      if (bloomEaseTimerRef.current !== null) {
+        clearTimeout(bloomEaseTimerRef.current);
+      }
+      bloomSpikeTimerRef.current = setTimeout(() => {
+        // Start ease back at 0.8s: ease from 0.5 → 0.85 over 0.5s.
+        // We approximate with a mid-point at 0.25s then full restore at 0.5s.
+        setBloomLuminanceOverride(0.5 + 0.35 * 0.5); // ~0.675 at midpoint
+        bloomEaseTimerRef.current = setTimeout(() => {
+          setBloomLuminanceOverride(null); // restore to default 0.85
+        }, 250);
+      }, 800);
+    }
+    return () => {
+      // Do not clear on boost end — let the ease complete naturally
+    };
+  }, [speedTierOuter]);
   const now = useObservatoryNow(
     activeHeroInteraction !== null || probeState.status !== "ready" || eruptions.length > 0,
   );
@@ -4588,6 +4783,7 @@ export function ObservatoryWorldCanvas({
             <Suspense fallback={null}>
               <LazyObservatoryPostFX
                 activeHeroPropPosition={activeHeroPropPosition}
+                bloomLuminanceOverride={bloomLuminanceOverride}
                 profile={performanceProfile}
                 spiritLut={spiritLut}
               />

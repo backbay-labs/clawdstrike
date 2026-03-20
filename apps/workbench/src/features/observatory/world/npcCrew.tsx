@@ -160,13 +160,21 @@ export interface StationNpcCrewProps {
   stationWorldPos: ObservatoryVec3;
   colorHex: string;
   lodTier?: ObservatoryLodTier;
+  /** TRN-05: Proximity-based opacity (0-1). NPCs fade in between 120-180 units. */
+  proximityOpacity?: number;
 }
 
-export function StationNpcCrew({ stationWorldPos, colorHex, lodTier = "near" }: StationNpcCrewProps) {
+export function StationNpcCrew({ stationWorldPos, colorHex, lodTier = "near", proximityOpacity = 1 }: StationNpcCrewProps) {
+  const transparent = proximityOpacity < 1;
   return (
-    <Instances limit={8}>
+    <Instances limit={8} visible={proximityOpacity > 0}>
       <capsuleGeometry args={[0.12, 0.35, 4, 8]} />
-      <meshStandardMaterial color={colorHex} roughness={0.7} />
+      <meshStandardMaterial
+        color={colorHex}
+        roughness={0.7}
+        transparent={transparent}
+        opacity={proximityOpacity}
+      />
       {STATION_NPC_PATROL_DATA.map((npc, i) => (
         <NpcInstance
           key={i}
