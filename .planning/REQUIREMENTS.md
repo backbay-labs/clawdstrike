@@ -56,8 +56,8 @@
 ### Star Chart
 
 - [x] **MAP-01**: Star chart minimap replacing SVG ring map — shows all station positions, player location with facing indicator, and pressure lane connections
-- [x] **MAP-02**: Flight path trail — player's recent trajectory drawn as a fading line on the chart
-- [x] **MAP-03**: Click-to-autopilot — click a station on the chart to engage auto-navigation toward it
+- [ ] **MAP-02**: Flight path trail — player's recent trajectory drawn as a fading line on the chart
+- [ ] **MAP-03**: Click-to-autopilot — click a station on the chart to engage auto-navigation toward it
 - [x] **MAP-04**: Station status icons on chart — mission active, artifacts pending, docked, unvisited indicators
 
 ### Transitions & Cinematics
@@ -115,8 +115,8 @@
 | SPC-02 | Phase 22 | Complete |
 | SPC-03 | Phase 22 | Complete |
 | SPC-04 | Phase 22 | Complete |
-| SPC-05 | Phase 22 | Pending |
-| SPC-06 | Phase 22 | Pending |
+| SPC-05 | Phase 22 | Complete |
+| SPC-06 | Phase 22 | Complete |
 | FLT-01 | Phase 21 | Complete |
 | FLT-02 | Phase 21 | Complete |
 | FLT-03 | Phase 21 | Complete |
@@ -139,8 +139,8 @@
 | HUD-05 | Phase 24 | Complete |
 | HUD-06 | Phase 24 | Complete |
 | MAP-01 | Phase 25 | Complete |
-| MAP-02 | Phase 25 | Complete |
-| MAP-03 | Phase 25 | Complete |
+| MAP-02 | Phase 27 | Pending |
+| MAP-03 | Phase 27 | Pending |
 | MAP-04 | Phase 25 | Complete |
 | TRN-01 | Phase 25 | Complete |
 | TRN-02 | Phase 25 | Complete |
@@ -159,4 +159,4 @@
 
 ---
 *Requirements defined: 2026-03-20*
-*Last updated: 2026-03-20 after roadmap creation (v6.0 Phases 20-26)*
+*Last updated: 2026-03-20 after gap closure phase creation (v6.0 Phase 27)*

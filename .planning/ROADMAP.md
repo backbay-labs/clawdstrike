@@ -579,10 +579,22 @@ Plans:
 - [x] 26-01-PLAN.md — Progressive station reveal + discovery animation (DSC-01, DSC-02)
 - [x] 26-02-PLAN.md — Mission waypoint trail + narrative flight directives (DSC-03, DSC-04)
 
+### Phase 27: Flight State Bridge + Autopilot Wiring
+**Goal**: The flight controller's runtime state (position, quaternion, speed tier, current speed) propagates to the Zustand store so all downstream consumers (HUD, star chart trail, boost transitions, station arrival cinematics, discovery proximity, NPC proximity fade) receive live data; click-to-autopilot on the star chart engages actual ship navigation
+**Depends on**: Phase 21 (flight controller), Phase 25 (star chart autopilot)
+**Requirements**: MAP-02, MAP-03
+**Gap Closure**: Closes integration gaps from v6.0 milestone audit — restores runtime functionality for TRN-01, TRN-02, TRN-03, TRN-04, TRN-05, DSC-02, HUD-01, HUD-02
+**Success Criteria** (what must be TRUE):
+  1. `store.flightState` updates at 60fps with live position, quaternion, speedTier, and currentSpeed from the flight controller — no stale DEFAULT_FLIGHT_STATE values persist after entering flow mode
+  2. Clicking a station on the star chart minimap causes the ship to turn toward and fly to the target station — the autopilot slerp block in useFlightLoop executes; WASD input cancels autopilot
+  3. Boost activation triggers FOV punch (60→90→60), warp speed lines, and bloom spike simultaneously — all three effects visible because store.flightState.speedTier correctly reports "boost"
+  4. Flying within 200 units of an uncharted station triggers the discovery animation — StationLodWrapper proximity check fires because store.flightState.position reflects real ship position
+  5. Star chart trail renders the ship's recent trajectory as a fading line — trail buffer receives changing positions from store
+
 ## Progress
 
 **Execution Order:**
-Phase 20 first — it is the spatial substrate everything else builds on. Phase 21 (flight controller) must land before Phase 23 (docking) and Phase 24 (HUD). Phase 22 (environment art) depends on world scale but not flight, so it can overlap with Phase 21. Phase 23 depends on both Phases 20 and 21. Phases 24 and 25 depend on Phase 21 for flight data. Phase 26 is the final layer and depends on Phases 23 and 21.
+Phase 20 first — it is the spatial substrate everything else builds on. Phase 21 (flight controller) must land before Phase 23 (docking) and Phase 24 (HUD). Phase 22 (environment art) depends on world scale but not flight, so it can overlap with Phase 21. Phase 23 depends on both Phases 20 and 21. Phases 24 and 25 depend on Phase 21 for flight data. Phase 26 is the final layer and depends on Phases 23 and 21. Phase 27 is a gap closure phase that wires cross-phase integration missed during Phases 21-26.
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -593,3 +605,4 @@ Phase 20 first — it is the spatial substrate everything else builds on. Phase 
 | 24. Space Flight HUD | v6.0 | Complete    | 2026-03-20 | 2026-03-20 |
 | 25. Star Chart + Transitions | 4/4 | Complete    | 2026-03-20 | - |
 | 26. Discovery + Missions | 2/2 | Complete    | 2026-03-20 | 2026-03-20 |
+| 27. Flight State Bridge + Autopilot Wiring | v6.0 | 0/0 | Planned | - |
