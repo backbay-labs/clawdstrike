@@ -8,10 +8,13 @@ import { VFXParticles, RenderMode } from "wawa-vfx";
  * Plan 04 mounts this inside ObservatoryWorldCanvas > Suspense.
  *
  * Pools:
- *   "landing-dust"     — burst on character touchdown (PFX-01)
- *   "thruster-exhaust" — continuous during sprint/jump (PFX-05)
+ *   "landing-dust"        — burst on character touchdown (PFX-01)
+ *   "thruster-exhaust"    — continuous during sprint/jump (PFX-05)
+ *   "ship-thruster-exhaust" — continuous during ship flight (FLT-06)
+ *   "lane-particle-stream"  — ambient lane flow particles (SPC-06)
+ *   "warp-speed-lines"    — boost speed line streaks (TRN-02)
  *
- * Budget: 500 particle pool total, 2 draw calls.
+ * Budget: 1580 particle pool total, 5 draw calls.
  *
  * Note: VFXParticlesSettings provides pool-level settings only (nbParticles,
  * renderMode, gravity, fadeAlpha). Per-particle ranges (lifetime, size, color)
@@ -55,6 +58,16 @@ export function ObservatoryVFXPools() {
         name="lane-particle-stream"
         settings={{
           nbParticles: 600,
+          renderMode: RenderMode.StretchBillboard,
+          gravity: [0, 0, 0],
+          fadeAlpha: [0.0, 0.15],
+        }}
+      />
+      {/* TRN-02: Warp speed lines — boost speed streaks from camera (80 = 40 active + 40 buffer) */}
+      <VFXParticles
+        name="warp-speed-lines"
+        settings={{
+          nbParticles: 80,
           renderMode: RenderMode.StretchBillboard,
           gravity: [0, 0, 0],
           fadeAlpha: [0.0, 0.15],
