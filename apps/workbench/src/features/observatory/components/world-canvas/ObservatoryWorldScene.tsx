@@ -21,6 +21,7 @@ import { ProbeDischargeVFX } from "../../vfx/ProbeDischargeVFX";
 import { createObservatoryLodPolicy, type ObservatoryLodTier } from "../../utils/observatory-performance";
 import type { ObservatoryPlayerFocusState } from "../flow-runtime/grounding";
 import { ObservatoryDistrictLayer } from "./ObservatoryDistrictLayer";
+import { ObservatoryNebulaClouds } from "./ObservatoryNebulaClouds";
 import { ObservatoryTransitLayer } from "./ObservatoryTransitLayer";
 import type { ObservatoryWorldSceneProps } from "./observatory-world-scene-types";
 
@@ -101,6 +102,7 @@ export function ObservatoryWorldScene({
         color={world.environment.pointLightColor}
       />
       <PlayerAccentLights playerFocusRef={playerFocusRef} />
+      <ObservatoryNebulaClouds />
 
       <OrbitControls
         ref={controlsRef as never}
