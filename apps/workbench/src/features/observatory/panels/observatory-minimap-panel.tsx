@@ -1,44 +1,176 @@
 /**
- * ObservatoryMinimapPanel — SVG overview of observatory stations.
- * Reads HUNT_STATION_PLACEMENTS for positions, observatory-store for artifact counts.
- * Rendered in the "Observatory" activity bar sidebar panel.
+ * ObservatoryMinimapPanel — Star chart overview of observatory stations.
+ *
+ * Replaces the polar SVG ring with a top-down orthographic star chart:
+ *   - Station dots at real XZ world positions (OBSERVATORY_STATION_POSITIONS)
+ *   - Lane connections between adjacent stations (LANE_PAIRS topology)
+ *   - Per-station status icons: docked (diamond), mission target (star), unvisited (ring)
+ *   - Player arrow at ship XZ position, rotated by ship yaw (rAF + getState() — zero re-renders)
  *
  * Coordinate mapping:
- *   svgX = cx + radius * RING_R * cos(angleDeg * PI / 180)
- *   svgY = cy + radius * RING_R * sin(angleDeg * PI / 180)
- *   cx=100, cy=100 (center of 200x200 viewBox), RING_R=70
+ *   worldToChart(worldX, worldZ) → { x, y } in 200x200 SVG viewBox
+ *   Chart center (100, 100) corresponds to world origin (0, 0).
+ *   Y elevation is ignored — 2D projection on the XZ plane.
  */
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
+import * as THREE from "three";
 import { useObservatoryStore } from "@/features/observatory/stores/observatory-store";
-import { HUNT_STATION_PLACEMENTS } from "@/features/observatory/world/stations";
+import { HUNT_STATION_ORDER, HUNT_STATION_LABELS } from "@/features/observatory/world/stations";
+import { OBSERVATORY_STATION_POSITIONS } from "@/features/observatory/world/observatory-world-template";
+import { openObservatoryStationRoute } from "../commands/observatory-command-actions";
+import { STATION_COLORS_HEX, HUD_COLORS } from "../components/hud/hud-constants";
+import type { HuntStationId } from "../world/types";
+
+// ---------------------------------------------------------------------------
+// Lane topology (from deriveObservatoryWorld.ts)
+// ---------------------------------------------------------------------------
+
+const LANE_PAIRS: [HuntStationId, HuntStationId][] = [
+  ["signal", "targets"],
+  ["targets", "run"],
+  ["run", "receipts"],
+  ["receipts", "case-notes"],
+];
+
+// ---------------------------------------------------------------------------
+// Coordinate mapping
+// ---------------------------------------------------------------------------
 
 const VIEWBOX_SIZE = 200;
-const CX = 100;
-const CY = 100;
-const RING_R = 70;
+const CHART_CENTER_X = 100;
+const CHART_CENTER_Y = 100;
+const CHART_RADIUS = 85; // max usable radius within the 200x200 viewBox (with 15% padding)
 
-/** Exported for unit testing: maps polar observatory coordinates to 200x200 SVG space. */
-export function polarToSvg(angleDeg: number, radius: number): { x: number; y: number } {
-  const rad = (angleDeg * Math.PI) / 180;
+/** Compute world-space bounds from all station XZ positions. */
+function computeWorldBounds(): { minX: number; maxX: number; minZ: number; maxZ: number } {
+  const positions = HUNT_STATION_ORDER.map((id) => OBSERVATORY_STATION_POSITIONS[id]);
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  for (const pos of positions) {
+    if (pos[0] < minX) minX = pos[0];
+    if (pos[0] > maxX) maxX = pos[0];
+    if (pos[2] < minZ) minZ = pos[2];
+    if (pos[2] > maxZ) maxZ = pos[2];
+  }
+  return { minX, maxX, minZ, maxZ };
+}
+
+const WORLD_BOUNDS = computeWorldBounds();
+/** Half-extents of world bounds, padded 15%. */
+const WORLD_HALF_EXTENT =
+  Math.max(
+    Math.abs(WORLD_BOUNDS.maxX),
+    Math.abs(WORLD_BOUNDS.minX),
+    Math.abs(WORLD_BOUNDS.maxZ),
+    Math.abs(WORLD_BOUNDS.minZ),
+  ) * 1.15;
+
+/**
+ * Maps world XZ coordinates to 200×200 SVG viewBox.
+ * World origin (0, 0) → chart center (100, 100).
+ * Exported for unit testing.
+ */
+export function worldToChart(worldX: number, worldZ: number): { x: number; y: number } {
+  const scale = CHART_RADIUS / WORLD_HALF_EXTENT;
   return {
-    x: CX + radius * RING_R * Math.cos(rad),
-    y: CY + radius * RING_R * Math.sin(rad),
+    x: CHART_CENTER_X + worldX * scale,
+    // SVG Y-axis is inverted relative to world Z
+    y: CHART_CENTER_Y - worldZ * scale,
   };
 }
 
+// ---------------------------------------------------------------------------
+// Pre-allocated THREE objects for rAF callback (zero GC)
+// ---------------------------------------------------------------------------
+
+const _q = new THREE.Quaternion();
+const _euler = new THREE.Euler();
+
+// ---------------------------------------------------------------------------
+// Module-level visited station tracking
+// ---------------------------------------------------------------------------
+
+const visitedStations = new Set<HuntStationId>();
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
 export function ObservatoryMinimapPanel() {
   const stations = useObservatoryStore.use.stations();
-  const seamSummary = useObservatoryStore.use.seamSummary();
+  const artifactCount = useObservatoryStore((state) => state.seamSummary.artifactCount);
+  const activeProbes = useObservatoryStore((state) => state.seamSummary.activeProbes);
+  const connected = useObservatoryStore.use.connected();
+  const selectedStationId = useObservatoryStore.use.selectedStationId();
+  const mission = useObservatoryStore((state) => state.mission);
+  const dockingState = useObservatoryStore((state) => state.dockingState);
 
-  const artifactByStation = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const s of stations) {
-      map.set(s.id, s.artifactCount);
+  // Track visited stations based on docking state
+  if (dockingState.zone === "dock" && dockingState.stationId !== null) {
+    visitedStations.add(dockingState.stationId);
+  }
+
+  // Station chart positions (memoized — world positions are static)
+  const stationChartPositions = useMemo(
+    () =>
+      HUNT_STATION_ORDER.reduce(
+        (acc, id) => {
+          const pos = OBSERVATORY_STATION_POSITIONS[id];
+          acc[id] = worldToChart(pos[0], pos[2]);
+          return acc;
+        },
+        {} as Record<HuntStationId, { x: number; y: number }>,
+      ),
+    [],
+  );
+
+  // Collect current mission station ids
+  const missionStationIds = useMemo(() => {
+    if (!mission) return new Set<HuntStationId>();
+    const ids = new Set<HuntStationId>();
+    for (const obj of mission.objectives) {
+      if (!mission.completedObjectiveIds.includes(obj.id)) {
+        ids.add(obj.stationId);
+      }
     }
-    return map;
-  }, [stations]);
+    return ids;
+  }, [mission]);
 
-  const hasActiveProbe = seamSummary.activeProbes > 0;
+  // Ref for the player arrow SVG group (updated via rAF, no re-renders)
+  const arrowGroupRef = useRef<SVGGElement | null>(null);
+
+  // rAF loop: update player arrow position and rotation
+  useEffect(() => {
+    let rafId = 0;
+
+    function tick() {
+      const { flightState } = useObservatoryStore.getState();
+      const [px, , pz] = flightState.position;
+      const [qx, qy, qz, qw] = flightState.quaternion;
+
+      _q.set(qx, qy, qz, qw);
+      _euler.setFromQuaternion(_q, "YXZ");
+      const yaw = _euler.y;
+
+      const { x, y } = worldToChart(px, pz);
+      // SVG rotation: negate yaw because SVG Y is down and world Z is into screen
+      const rotDeg = (-yaw * 180) / Math.PI;
+
+      const group = arrowGroupRef.current;
+      if (group) {
+        group.setAttribute("transform", `translate(${x},${y}) rotate(${rotDeg})`);
+      }
+
+      rafId = requestAnimationFrame(tick);
+    }
+
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, []);
+
+  const hasActiveProbe = activeProbes > 0;
 
   return (
     <div className="flex flex-col h-full bg-[#0b0d13]">
@@ -49,7 +181,7 @@ export function ObservatoryMinimapPanel() {
         </span>
       </div>
 
-      {/* SVG minimap */}
+      {/* Star chart SVG */}
       <div className="flex-1 flex items-center justify-center p-4">
         <svg
           viewBox={`0 0 ${VIEWBOX_SIZE} ${VIEWBOX_SIZE}`}
@@ -57,66 +189,175 @@ export function ObservatoryMinimapPanel() {
           height="160"
           aria-label="Observatory station map"
         >
-          {/* Outer ring guide */}
+          {/* Subtle background grid: two concentric circles at 33% and 66% */}
           <circle
-            cx={CX}
-            cy={CY}
-            r={RING_R}
+            cx={CHART_CENTER_X}
+            cy={CHART_CENTER_Y}
+            r={CHART_RADIUS * 0.33}
+            fill="none"
+            stroke="#141720"
+            strokeWidth="0.5"
+          />
+          <circle
+            cx={CHART_CENTER_X}
+            cy={CHART_CENTER_Y}
+            r={CHART_RADIUS * 0.66}
+            fill="none"
+            stroke="#141720"
+            strokeWidth="0.5"
+          />
+          {/* Outer boundary circle */}
+          <circle
+            cx={CHART_CENTER_X}
+            cy={CHART_CENTER_Y}
+            r={CHART_RADIUS}
             fill="none"
             stroke="#1a1d28"
             strokeWidth="1"
           />
-          {/* Center core */}
-          <circle cx={CX} cy={CY} r={5} fill="#2d3240" />
-          <circle cx={CX} cy={CY} r={2} fill="#6f7f9a" />
 
-          {/* Station dots */}
-          {HUNT_STATION_PLACEMENTS.map((placement) => {
-            const { x, y } = polarToSvg(placement.angleDeg, placement.radius);
-            const artifactCount = artifactByStation.get(placement.id) ?? 0;
-            const isActive = hasActiveProbe && artifactCount > 0;
-            const dotColor = isActive
-              ? "var(--spirit-accent, #d4a84b)"
-              : "#6f7f9a";
+          {/* Core dot */}
+          <circle cx={CHART_CENTER_X} cy={CHART_CENTER_Y} r={3} fill="#2d3240" />
+          <circle cx={CHART_CENTER_X} cy={CHART_CENTER_Y} r={1.5} fill="#6f7f9a" />
+
+          {/* Lane connections — draw below station dots */}
+          {LANE_PAIRS.map(([fromId, toId]) => {
+            const from = stationChartPositions[fromId];
+            const to = stationChartPositions[toId];
+            return (
+              <line
+                key={`lane-${fromId}-${toId}`}
+                x1={from.x}
+                y1={from.y}
+                x2={to.x}
+                y2={to.y}
+                stroke="#1a1d28"
+                strokeWidth="1"
+                opacity="0.4"
+                data-testid={`lane-${fromId}-${toId}`}
+              />
+            );
+          })}
+
+          {/* Core links — line from each primary station to chart center */}
+          {HUNT_STATION_ORDER.filter((id) => id !== "watch").map((id) => {
+            const pos = stationChartPositions[id];
+            return (
+              <line
+                key={`core-link-${id}`}
+                x1={CHART_CENTER_X}
+                y1={CHART_CENTER_Y}
+                x2={pos.x}
+                y2={pos.y}
+                stroke="#1a1d28"
+                strokeWidth="0.5"
+                opacity="0.2"
+              />
+            );
+          })}
+
+          {/* Station dots + status icons */}
+          {HUNT_STATION_ORDER.map((id) => {
+            const { x, y } = stationChartPositions[id];
+            const isSelected = selectedStationId === id;
+            const isDocked = dockingState.zone === "dock" && dockingState.stationId === id;
+            const isMissionTarget = missionStationIds.has(id);
+            const isUnvisited = !visitedStations.has(id) && !isDocked;
+
+            const dotColor = STATION_COLORS_HEX[id];
+            const dotRadius = isSelected ? 6 : 5;
 
             return (
-              <g key={placement.id}>
+              <g key={id}>
                 {/* Station dot */}
-                <circle cx={x} cy={y} r={5} fill={dotColor} opacity={0.9} />
+                <circle
+                  cx={x}
+                  cy={y}
+                  r={dotRadius}
+                  fill={dotColor}
+                  opacity={0.95}
+                  onClick={() => openObservatoryStationRoute(id)}
+                  style={{ cursor: "pointer" }}
+                  data-station-id={id}
+                />
                 {/* Station label */}
                 <text
                   x={x}
                   y={y + 14}
                   textAnchor="middle"
-                  fill="#6f7f9a"
-                  fontSize="7"
+                  fill={HUD_COLORS.hudTextDim}
+                  fontSize="6"
                   fontFamily="ui-monospace, monospace"
+                  pointerEvents="none"
                 >
-                  {placement.label}
+                  {HUNT_STATION_LABELS[id]}
                 </text>
-                {/* Artifact count badge — only when count > 0 */}
-                {artifactCount > 0 && (
+
+                {/* Status icons — offset above-right of station dot */}
+                {isDocked && (
+                  /* Diamond shape: small rotated square */
+                  <rect
+                    x={x + 5 - 3}
+                    y={y - 10 - 3}
+                    width="6"
+                    height="6"
+                    fill={dotColor}
+                    transform={`rotate(45, ${x + 5}, ${y - 10})`}
+                    data-status="docked"
+                  />
+                )}
+                {!isDocked && isMissionTarget && (
+                  /* Star/asterisk for mission target */
                   <text
-                    x={x + 7}
-                    y={y - 5}
+                    x={x + 6}
+                    y={y - 7}
                     textAnchor="middle"
-                    fill="#d4a84b"
-                    fontSize="7"
+                    fill={dotColor}
+                    fontSize="8"
                     fontWeight="bold"
+                    pointerEvents="none"
+                    data-status="mission"
                   >
-                    {artifactCount}
+                    *
                   </text>
+                )}
+                {!isDocked && !isMissionTarget && isUnvisited && (
+                  /* Ring for unvisited */
+                  <circle
+                    cx={x + 6}
+                    cy={y - 8}
+                    r={3}
+                    fill="none"
+                    stroke={dotColor}
+                    strokeWidth="1"
+                    opacity={0.7}
+                    data-status="unvisited"
+                  />
                 )}
               </g>
             );
           })}
+
+          {/* Player arrow — updated via rAF, no React re-renders */}
+          <g ref={arrowGroupRef} transform={`translate(${CHART_CENTER_X},${CHART_CENTER_Y}) rotate(0)`}>
+            {/* Triangle pointing in -Y direction (forward = up in top-down view) */}
+            <polygon
+              points="0,-6 -3.5,4 3.5,4"
+              fill={HUD_COLORS.hudText}
+              opacity={0.9}
+              pointerEvents="none"
+            />
+          </g>
         </svg>
       </div>
 
       {/* Seam summary footer */}
       <div className="px-3 py-2 border-t border-[#1a1d28]/60 flex gap-3">
         <span className="text-[10px] text-[#6f7f9a]">
-          {seamSummary.artifactCount} artifacts
+          {artifactCount} artifacts
+        </span>
+        <span className={connected ? "text-[10px] text-[#3dbf84]" : "text-[10px] text-[#c45c5c]"}>
+          {connected ? "live feed" : "offline cache"}
         </span>
         {hasActiveProbe && (
           <span className="text-[10px] text-[#3dbf84]">probe active</span>
