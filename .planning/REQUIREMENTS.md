@@ -1,112 +1,162 @@
-# Requirements: ClawdStrike Workbench v4.0 — AAA Observatory Experience
+# Requirements: ClawdStrike Workbench v6.0 Observatory Space Flight
 
-**Defined:** 2026-03-19
-**Core Value:** Transform the observatory from functional demo to AAA-quality immersive experience with post-processing, particles, cinematic camera, polished character, world detail, and production UI
+**Defined:** 2026-03-20
+**Core Value:** Analysts fly a ship through an immersive space environment to reach floating stations — the journey between stations is as engaging as the destination
 
-## v4.0 Requirements
+## Constraints
 
-### Post-Processing
+- **Renderer**: Bump three to 0.171+, swap Canvas gl prop to async WebGPURenderer (one-liner — automatic WebGL2 fallback). Existing MeshStandardMaterial and postprocessing work as-is.
+- **Shaders**: New shaders (starfield, nebula, lanes) should use TSL for WebGPU/WebGL dual compilation. Not a hard gate — raw GLSL still works via WebGL fallback.
+- **Testing**: All existing observatory tests must pass after renderer swap and scale change.
 
-- [x] **PP-01**: Observatory scene renders with bloom on all emissive elements (spirit shells, station halos, probe beams)
-- [x] **PP-02**: Vignette + SMAA + tone mapping applied as always-on baseline effects
-- [x] **PP-03**: Subtle depth-of-field activates when interacting with hero props (Autofocus targeting world position)
-- [x] **PP-04**: Per-spirit-kind color grading via runtime-swappable LUT
+## v6.0 Requirements
 
-### Particles
+### Space World
 
-- [x] **PFX-01**: Landing dust cloud bursts from ground on character touchdown
-- [x] **PFX-02**: Probe energy discharge — expanding particle shell on probe dispatch
-- [x] **PFX-03**: Station ambient motes — floating particles around hero props
-- [x] **PFX-04**: Spirit companion trail — accent-colored particle trail following the orb
-- [x] **PFX-05**: Thruster exhaust on player avatar backpack during sprint and jump
+- [ ] **SPC-01**: Stations positioned at 200-500 unit radius with varied elevations (Y -15 to +60), logarithmic depth buffer enabled, replacing the flat Y=0 ring
+- [ ] **SPC-02**: 3-layer starfield — procedural Star Nest shader (far background sphere), InstancedMesh mid-field stars (15K, dual-hemisphere), drei Sparkles near-dust (<2K particles)
+- [ ] **SPC-03**: Billboard nebula cloud patches near stations — plane geometry with cloud texture, colored point lights, visible through bloom
+- [ ] **SPC-04**: Void space between stations with depth fog scaled to new world radius
+- [ ] **SPC-05**: Space lanes rendered as emissive CatmullRomCurve3 TubeGeometry between connected stations with animated dash-offset energy flow
+- [ ] **SPC-06**: Space lane particle streams — instanced particles flowing along lane curves via wawa-vfx stretchBillboard
 
-### Camera
+### Flight Controller
 
-- [x] **CAM-01**: Spawn fly-by — automated camera sweep with letterbox bars on first observatory open
-- [x] **CAM-02**: Dynamic FOV — widens during sprint (42→52), tightens during probe scan (42→35)
-- [x] **CAM-03**: Screen shake on probe dispatch and character landing
-- [x] **CAM-04**: Focus pull to mission objective station when starting a mission
+- [ ] **FLT-01**: Ship mesh replaces capsule avatar — visible ship model with thruster geometry
+- [ ] **FLT-02**: Velocity-based flight controller with quaternion rotation (no gravity, no Rapier) — WASD for thrust/strafe, mouse for pitch/yaw
+- [ ] **FLT-03**: Velocity damping for "flight assist" feel (configurable damping factor ~1.0-2.0)
+- [ ] **FLT-04**: Three speed tiers — cruise (normal cap), boost (3x with cooldown + FOV punch), dock approach (reduced cap near stations)
+- [ ] **FLT-05**: Chase camera following ship with lerp lag (offset in ship's local space, smooth follow factor ~0.05-0.1)
+- [ ] **FLT-06**: Ship thruster particle effects — exhaust trails scaling with thrust intensity via wawa-vfx
 
-### Character
+### Station Design
 
-- [x] **CHR-01**: Weight-based locomotion blending — idle/walk/run clips with velocity-driven weights
-- [x] **CHR-02**: Landing squash-stretch — scale Y compression with easeOutBack overshoot
-- [x] **CHR-03**: Idle breathing — subtle torso Y oscillation layered on AnimationMixer
-- [x] **CHR-04**: Sprint lean — body tilts forward proportional to velocity
-- [x] **CHR-05**: Flip easing — two-phase easeInCubic + easeOutBack for settle
-- [x] **CHR-06**: Footstep events — cycle-zero-crossing detection for particle/SFX sync
+- [ ] **STN-01**: Floating space station geometry replacing ground-level buildings — composable primitives (torus habitat ring, cylinder hub, plane solar panels, box docking bay) driven by per-station seed
+- [ ] **STN-02**: 4-tier LOD via drei Detailed — near (full geometry ~5K tris), mid (simplified hub+ring ~500 tris), far (billboard sprite + Html label), beacon (single sprite + point light)
+- [ ] **STN-03**: Station beacon lights visible at extreme distance — emissive bloom sprites with additive blending, pulsing intensity
+- [ ] **STN-04**: Fresnel rim-glow shader on near-LOD stations for atmospheric halo effect
+- [ ] **STN-05**: Docking ring geometry around each station — visual landing approach guide with flanking guide lights
 
-### World Detail
+### Docking System
 
-- [x] **WLD-01**: HDR skybox via drei Environment replacing flat Stars
-- [x] **WLD-02**: Procedural district geometry — buildings/structures per station zone
-- [x] **WLD-03**: Ground surface variety — tinted materials per district zone
-- [x] **WLD-04**: Environmental storytelling props near stations
+- [ ] **DCK-01**: Three-zone approach system — approach (>50 units: beacon + label), magnet-pull (15-50 units: gentle lerp toward dock axis), dock lock (<15 units: automated sequence)
+- [ ] **DCK-02**: Magnet-pull zone lerps ship toward docking point with distance-proportional strength
+- [ ] **DCK-03**: Dock lock triggers automated camera transition (1s), disables flight controls, transitions to docked station view
+- [ ] **DCK-04**: Undock action restores flight controls and pushes ship away from station with launch velocity
 
-### NPCs
+### HUD & UI
 
-- [x] **NPC-01**: Instanced mesh crew members at stations (4 per station, 24 total)
-- [x] **NPC-02**: Simple patrol paths — waypoint-based lerp within station zones
-- [x] **NPC-03**: Player proximity reaction — look-at + wave gesture
+- [ ] **HUD-01**: Speed indicator — vertical bar showing current velocity relative to speed tier cap
+- [ ] **HUD-02**: Heading compass strip — horizontal bar at top with cardinal directions and station labels at angular positions
+- [ ] **HUD-03**: Target brackets — diamond/L-corner shapes around selected station, scale inversely with distance, color-coded by status
+- [ ] **HUD-04**: Off-screen station arrows — directional arrows at screen edges for stations not in view, with station name + distance
+- [ ] **HUD-05**: Distance readouts — numeric distance count attached to station markers, fading in during approach
+- [ ] **HUD-06**: All HUD elements use DOM ref-based useFrame mutation (never setState) for 60fps updates
 
-### UI Polish
+### Star Chart
 
-- [x] **UIP-01**: 3D waypoint beacons to mission objectives
-- [x] **UIP-02**: Circular probe charge ring replacing text HUD
-- [x] **UIP-03**: Tooltip system for interactable props
-- [x] **UIP-04**: Achievement popups for mission completion
+- [ ] **MAP-01**: Star chart minimap replacing SVG ring map — shows all station positions, player location with facing indicator, and pressure lane connections
+- [ ] **MAP-02**: Flight path trail — player's recent trajectory drawn as a fading line on the chart
+- [ ] **MAP-03**: Click-to-autopilot — click a station on the chart to engage auto-navigation toward it
+- [ ] **MAP-04**: Station status icons on chart — mission active, artifacts pending, docked, unvisited indicators
+
+### Transitions & Cinematics
+
+- [ ] **TRN-01**: Boost/warp FOV punch — camera FOV animates 60→90→60 over 1.1s during boost activation
+- [ ] **TRN-02**: Warp speed lines — instanced tube particles radiating from screen center during boost, visible through bloom
+- [ ] **TRN-03**: Station arrival name card — letterbox bars + station name slide-in (1.2s hold) via ObservatoryCinematicOverlay
+- [ ] **TRN-04**: Bloom spike during warp — temporary increase in bloom intensity and luminance during boost transition
+- [ ] **TRN-05**: Proximity-based detail fade — station sub-elements (artifact counts, threat level, NPC visibility) fade in as camera approaches, marker fades out
+
+### Discovery & Missions
+
+- [ ] **DSC-01**: Progressive station reveal — first visit shows only hub + 2 nearest stations; others appear as dim "uncharted" markers
+- [ ] **DSC-02**: Station discovery animation — lights power on, structures unfold when player first approaches an uncharted station
+- [ ] **DSC-03**: Mission waypoint path — glowing trail from player to mission objective station, visible in flight
+- [ ] **DSC-04**: Mission-guided flight flow — mission objectives direct player between stations ("Signal detected at Horizon, investigate" → fly there)
+
+## v7.0 Requirements (Deferred)
+
+### Audio
+- **AUD-01**: Thruster engine audio with intensity-based pitch/volume
+- **AUD-02**: Ambient space music with station proximity crossfade
+- **AUD-03**: Docking sequence audio cues
+
+### Multiplayer
+- **MP-01**: Other analyst ships visible in the space (NATS presence)
+- **MP-02**: Shared mission markers and cooperative waypoints
+
+### Ship Customization
+- **SHIP-01**: Spirit companion changes ship appearance (color, trail, thruster style)
+- **SHIP-02**: Ship model selection (3-4 variants)
+
+### Advanced Environment
+- **ENV-01**: Asteroid/debris fields between stations with collision avoidance
+- **ENV-02**: Anomaly encounters — floating data fragments in void space tied to mission system
+- **ENV-03**: Station interiors (docked interior detail view)
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| Motion blur | Conflicts with frameloop="demand" |
-| Audio/SFX | Separate milestone — needs Web Audio API integration |
-| Combat/damage | Observatory is exploration, not combat |
-| Ragdoll physics | Squash-stretch is sufficient for landing feel |
-| Custom GLSL shaders | Stock materials + postprocessing sufficient |
-| Real-time multiplayer | Requires NATS server — deferred to v5.0 |
+| Full Newtonian physics | Arcade flight feel is better for an analyst tool — damping provides "flight assist" |
+| Rapier physics for flight | Velocity-based is simpler, more controllable, and Rapier adds overhead for zero-G |
+| Combat/weapons | Observatory is investigation, not combat |
+| Procedural planet generation | Stations are the destination, not planets |
+| VR/XR support | Desktop-first; VR deferred indefinitely |
+| Real GLTF station models in v6.0 | Procedural primitives first; Meshy/Kenney GLBs are v7.0 polish |
+| Multiple camera modes (cockpit/external) | Chase camera only for v6.0; cockpit view deferred |
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PP-01 | Phase 10 | Complete |
-| PP-02 | Phase 10 | Complete |
-| PP-03 | Phase 10 | Complete |
-| PP-04 | Phase 10 | Complete |
-| CAM-01 | Phase 11 | Complete |
-| CAM-02 | Phase 11 | Complete |
-| CAM-03 | Phase 11 | Complete |
-| CAM-04 | Phase 11 | Complete |
-| PFX-01 | Phase 12 | Complete |
-| PFX-02 | Phase 12 | Complete |
-| PFX-03 | Phase 12 | Complete |
-| PFX-04 | Phase 12 | Complete |
-| PFX-05 | Phase 12 | Complete |
-| CHR-01 | Phase 13 | Complete |
-| CHR-02 | Phase 13 | Complete |
-| CHR-03 | Phase 13 | Complete |
-| CHR-04 | Phase 13 | Complete |
-| CHR-05 | Phase 13 | Complete |
-| CHR-06 | Phase 13 | Complete |
-| WLD-01 | Phase 14 | Complete |
-| WLD-02 | Phase 14 | Complete |
-| WLD-03 | Phase 14 | Complete |
-| WLD-04 | Phase 14 | Complete |
-| NPC-01 | Phase 14 | Complete |
-| NPC-02 | Phase 14 | Complete |
-| NPC-03 | Phase 14 | Complete |
-| UIP-01 | Phase 14 | Complete |
-| UIP-02 | Phase 14 | Complete |
-| UIP-03 | Phase 14 | Complete |
-| UIP-04 | Phase 14 | Complete |
+| SPC-01 | — | Pending |
+| SPC-02 | — | Pending |
+| SPC-03 | — | Pending |
+| SPC-04 | — | Pending |
+| SPC-05 | — | Pending |
+| SPC-06 | — | Pending |
+| FLT-01 | — | Pending |
+| FLT-02 | — | Pending |
+| FLT-03 | — | Pending |
+| FLT-04 | — | Pending |
+| FLT-05 | — | Pending |
+| FLT-06 | — | Pending |
+| STN-01 | — | Pending |
+| STN-02 | — | Pending |
+| STN-03 | — | Pending |
+| STN-04 | — | Pending |
+| STN-05 | — | Pending |
+| DCK-01 | — | Pending |
+| DCK-02 | — | Pending |
+| DCK-03 | — | Pending |
+| DCK-04 | — | Pending |
+| HUD-01 | — | Pending |
+| HUD-02 | — | Pending |
+| HUD-03 | — | Pending |
+| HUD-04 | — | Pending |
+| HUD-05 | — | Pending |
+| HUD-06 | — | Pending |
+| MAP-01 | — | Pending |
+| MAP-02 | — | Pending |
+| MAP-03 | — | Pending |
+| MAP-04 | — | Pending |
+| TRN-01 | — | Pending |
+| TRN-02 | — | Pending |
+| TRN-03 | — | Pending |
+| TRN-04 | — | Pending |
+| TRN-05 | — | Pending |
+| DSC-01 | — | Pending |
+| DSC-02 | — | Pending |
+| DSC-03 | — | Pending |
+| DSC-04 | — | Pending |
 
 **Coverage:**
-- v4.0 requirements: 30 total
-- Mapped to phases: 30
-- Unmapped: 0
+- v6.0 requirements: 40 total
+- Mapped to phases: 0
+- Unmapped: 40 ⚠️
 
 ---
-*Requirements defined: 2026-03-19*
-*Traceability updated: 2026-03-19*
+*Requirements defined: 2026-03-20*
+*Last updated: 2026-03-20 after initial definition*
