@@ -1003,7 +1003,8 @@ export function ObservatoryTab() {
       )}
 
       {/* OBS-11: Mission HUD overlay — hidden during fly-by */}
-      {!flyByActive && !replay.enabled && <ObservatoryMissionHud mission={mission} />}
+      {/* DSC-04: inFlightMode shows station-specific narrative directives */}
+      {!flyByActive && !replay.enabled && <ObservatoryMissionHud mission={mission} inFlightMode={characterControllerEnabled && mode === "flow"} />}
 
       {!flyByActive && !replay.enabled && !mission && (
         <button
