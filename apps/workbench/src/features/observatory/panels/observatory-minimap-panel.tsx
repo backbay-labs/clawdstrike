@@ -100,12 +100,6 @@ const trailBuffer: Array<{ x: number; z: number }> = [];
 let lastTrailSampleMs = 0;
 
 // ---------------------------------------------------------------------------
-// Module-level visited station tracking
-// ---------------------------------------------------------------------------
-
-const visitedStations = new Set<HuntStationId>();
-
-// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -117,11 +111,7 @@ export function ObservatoryMinimapPanel() {
   const selectedStationId = useObservatoryStore.use.selectedStationId();
   const mission = useObservatoryStore((state) => state.mission);
   const dockingState = useObservatoryStore((state) => state.dockingState);
-
-  // Track visited stations based on docking state
-  if (dockingState.zone === "dock" && dockingState.stationId !== null) {
-    visitedStations.add(dockingState.stationId);
-  }
+  const discoveredStations = useObservatoryStore((state) => state.discoveredStations);
 
   // Station chart positions (memoized — world positions are static)
   const stationChartPositions = useMemo(
@@ -346,13 +336,16 @@ export function ObservatoryMinimapPanel() {
           {/* Station dots + status icons */}
           {HUNT_STATION_ORDER.map((id) => {
             const { x, y } = stationChartPositions[id];
+            const isDiscovered = discoveredStations.has(id);
             const isSelected = selectedStationId === id;
             const isDocked = dockingState.zone === "dock" && dockingState.stationId === id;
             const isMissionTarget = missionStationIds.has(id);
-            const isUnvisited = !visitedStations.has(id) && !isDocked;
+            // isUnvisited: discovered but never docked (uses discoveredStations as source of truth)
+            const isUnvisited = isDiscovered && !isDocked;
 
-            const dotColor = STATION_COLORS_HEX[id];
+            const dotColor = isDiscovered ? STATION_COLORS_HEX[id] : "#2d3a4f";
             const dotRadius = isSelected ? 6 : 5;
+            const dotOpacity = isDiscovered ? 0.95 : 0.15;
 
             return (
               <g key={id}>
@@ -362,29 +355,30 @@ export function ObservatoryMinimapPanel() {
                   cy={y}
                   r={dotRadius}
                   fill={dotColor}
-                  opacity={0.95}
+                  opacity={dotOpacity}
                   onClick={() => {
                     openObservatoryStationRoute(id);
                     useObservatoryStore.getState().actions.setAutopilotTarget(id);
                   }}
                   style={{ cursor: "pointer" }}
                   data-station-id={id}
+                  data-discovered={isDiscovered ? "true" : "false"}
                 />
-                {/* Station label */}
+                {/* Station label — "?" for uncharted, full name for discovered */}
                 <text
                   x={x}
                   y={y + 14}
                   textAnchor="middle"
-                  fill={HUD_COLORS.hudTextDim}
+                  fill={isDiscovered ? HUD_COLORS.hudTextDim : "#2d3240"}
                   fontSize="6"
                   fontFamily="ui-monospace, monospace"
                   pointerEvents="none"
                 >
-                  {HUNT_STATION_LABELS[id]}
+                  {isDiscovered ? HUNT_STATION_LABELS[id] : "?"}
                 </text>
 
-                {/* Status icons — offset above-right of station dot */}
-                {isDocked && (
+                {/* Status icons — only for discovered stations */}
+                {isDiscovered && isDocked && (
                   /* Diamond shape: small rotated square */
                   <rect
                     x={x + 5 - 3}
@@ -396,7 +390,7 @@ export function ObservatoryMinimapPanel() {
                     data-status="docked"
                   />
                 )}
-                {!isDocked && isMissionTarget && (
+                {isDiscovered && !isDocked && isMissionTarget && (
                   /* Star/asterisk for mission target */
                   <text
                     x={x + 6}
@@ -411,7 +405,7 @@ export function ObservatoryMinimapPanel() {
                     *
                   </text>
                 )}
-                {!isDocked && !isMissionTarget && isUnvisited && (
+                {isDiscovered && !isDocked && !isMissionTarget && isUnvisited && (
                   /* Ring for unvisited */
                   <circle
                     cx={x + 6}

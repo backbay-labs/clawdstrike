@@ -61,6 +61,8 @@ const observatoryState = vi.hoisted(() => ({
     currentSpeed: 0,
     nearestStationId: null,
   },
+  // Phase 26: all stations discovered by default in tests (full render for assertions)
+  discoveredStations: new Set(["signal", "targets", "run", "receipts", "case-notes", "watch"]),
 }));
 
 const openObservatoryStationRouteMock = vi.hoisted(() => vi.fn());
@@ -199,6 +201,8 @@ describe("ObservatoryMinimapPanel rendering — star chart", () => {
       nearestStationId: null,
       autopilotTargetStationId: null,
     };
+    // Reset all stations to discovered for rendering assertions
+    observatoryState.discoveredStations = new Set(["signal", "targets", "run", "receipts", "case-notes", "watch"]);
     openObservatoryStationRouteMock.mockReset();
     setAutopilotTargetMock.mockReset();
     mockStations.mockReturnValue(observatoryState.stations);
