@@ -460,7 +460,7 @@ Plans:
 - [x] **Phase 24: Space Flight HUD** — Speed indicator, heading compass, target brackets, off-screen arrows, distance readouts, ref-mutation 60fps updates (completed 2026-03-20)
 - [x] **Phase 25: Star Chart + Transitions** — Star chart minimap, flight path trail, click-to-autopilot, station status icons, boost FOV punch, warp speed lines, arrival name card, bloom spike, proximity fade (completed 2026-03-20)
 - [x] **Phase 26: Discovery + Missions** — Progressive station reveal, discovery animation, mission waypoint path, mission-guided flight flow (completed 2026-03-20)
-- [ ] **Phase 27: Flight State Bridge + Autopilot Wiring** — FlightState store bridge + autopilot ref bridge (gap closure)
+- [x] **Phase 27: Flight State Bridge + Autopilot Wiring** — FlightState store bridge + autopilot ref bridge (gap closure) (completed 2026-03-20)
 
 ## Phase Details
 
@@ -611,4 +611,4 @@ Phase 20 first — it is the spatial substrate everything else builds on. Phase 
 | 24. Space Flight HUD | v6.0 | Complete    | 2026-03-20 | 2026-03-20 |
 | 25. Star Chart + Transitions | 4/4 | Complete    | 2026-03-20 | - |
 | 26. Discovery + Missions | 2/2 | Complete    | 2026-03-20 | 2026-03-20 |
-| 27. Flight State Bridge + Autopilot Wiring | v6.0 | 0/1 | Planned | - |
+| 27. Flight State Bridge + Autopilot Wiring | 1/1 | Complete   | 2026-03-20 | - |

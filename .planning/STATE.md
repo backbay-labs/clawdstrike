@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v6.0
 milestone_name: Observatory Space Flight
 status: completed
-stopped_at: Completed 26-01-PLAN.md
-last_updated: "2026-03-20T20:12:40.014Z"
+stopped_at: Completed 27-01-PLAN.md
+last_updated: "2026-03-20T21:22:19.672Z"
 last_activity: "2026-03-20 — Mission waypoint trail (CatmullRom tube, #44ff88) + mission HUD narrative flight directives per station"
 progress:
-  total_phases: 7
-  completed_phases: 7
-  total_plans: 20
-  completed_plans: 20
+  total_phases: 8
+  completed_phases: 8
+  total_plans: 21
+  completed_plans: 21
   percent: 100
 ---
 
@@ -63,6 +63,7 @@ Progress: [██████████] 100%
 | Phase 25 P02 | 4min | 2 tasks | 6 files |
 | Phase 26 P02 | 12min | 2 tasks | 5 files |
 | Phase 26 P01 | 7min | 2 tasks | 6 files |
+| Phase 27 P01 | 7min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -131,6 +132,9 @@ Progress: [██████████] 100%
 - [Phase 26]: Phase 26: DISCOVERY_RADIUS=200 — triggers beyond 180-unit mid-LOD boundary so billboard label tier sees animation starting
 - [Phase 26]: Phase 26: isDiscoveredRef local to StationLodWrapper mirrors store Set to avoid subscription in 60fps useFrame loop
 - [Phase 26]: Phase 26: visitedStations module-level Set removed from minimap — discoveredStations store field is now authoritative source of truth
+- [Phase 27]: handleFlightStateChange uses getState().actions.setFlightState (imperative write) — 60fps callback must not cause React re-renders
+- [Phase 27]: autopilotRef uses zustand v5 full-state subscribe — store created without subscribeWithSelector middleware
+- [Phase 27]: autopilotRef initialized synchronously from getState() before subscription to avoid first-frame race
 
 ### Blockers/Concerns
 
@@ -139,6 +143,6 @@ Progress: [██████████] 100%
 
 ## Session Continuity
 
-Last session: 2026-03-20T20:08:07.392Z
-Stopped at: Completed 26-01-PLAN.md
+Last session: 2026-03-20T21:22:19.669Z
+Stopped at: Completed 27-01-PLAN.md
 Resume file: None
