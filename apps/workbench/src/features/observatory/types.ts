@@ -139,6 +139,8 @@ export interface ObservatoryState {
   dockingState: DockingState;
   /** Phase 25: autopilot target — separate from flightState (user intent, not physics) */
   autopilotTargetStationId: HuntStationId | null;
+  /** Phase 26: session-only discovery set — stations revealed by proximity fly-through */
+  discoveredStations: Set<HuntStationId>;
   actions: {
     setStations: (stations: ObservatoryStation[]) => void;
     updateSeamSummary: (summary: Partial<ObservatorySeamSummary>) => void;
@@ -188,5 +190,6 @@ export interface ObservatoryState {
     resetDockingState: () => void;
     setAutopilotTarget: (stationId: HuntStationId | null) => void;
     clearAutopilot: () => void;
+    discoverStation: (stationId: HuntStationId) => void;
   };
 }

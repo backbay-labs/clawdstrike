@@ -14,6 +14,7 @@ import {
 } from "../world/missionLoop";
 import { createInitialObservatoryProbeState } from "../world/probeRuntime";
 import { HUNT_STATION_LABELS, HUNT_STATION_ORDER } from "../world/stations";
+import type { HuntStationId } from "../world/types";
 import { getObservatoryNowMs } from "../utils/observatory-time";
 import {
   DEFAULT_FLIGHT_STATE,
@@ -68,6 +69,7 @@ const useObservatoryStoreBase = create<ObservatoryState>((set, get) => ({
   flightState: { ...DEFAULT_FLIGHT_STATE },
   dockingState: { ...DEFAULT_DOCKING_STATE },
   autopilotTargetStationId: null,
+  discoveredStations: new Set<HuntStationId>(["signal", "targets"]),
   actions: {
     setStations: (stations: ObservatoryStation[]) => {
       const artifactCount = stations.reduce((sum, s) => sum + s.artifactCount, 0);
@@ -228,6 +230,13 @@ const useObservatoryStoreBase = create<ObservatoryState>((set, get) => ({
       set({ autopilotTargetStationId: stationId }),
     clearAutopilot: () =>
       set({ autopilotTargetStationId: null }),
+    discoverStation: (stationId: HuntStationId) =>
+      set((state) => {
+        if (state.discoveredStations.has(stationId)) return state;
+        const next = new Set(state.discoveredStations);
+        next.add(stationId);
+        return { discoveredStations: next };
+      }),
   },
 }));
 

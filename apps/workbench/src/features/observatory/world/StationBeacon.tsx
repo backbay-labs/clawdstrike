@@ -13,6 +13,8 @@ import * as THREE from "three";
 export interface StationBeaconProps {
   position: [number, number, number];
   colorHex: string;
+  /** Base opacity for the beacon sprite. Default: 0.7. Pass 0.15 for uncharted dim marker. */
+  opacity?: number;
 }
 
 function buildBeaconTexture(): THREE.CanvasTexture {
@@ -39,9 +41,10 @@ function buildBeaconTexture(): THREE.CanvasTexture {
  * Pulsing beacon sprite + point light visible at extreme distances.
  * Pre-allocates refs at component level — no allocations in useFrame.
  */
-export function StationBeacon({ position, colorHex }: StationBeaconProps): ReactElement {
+export function StationBeacon({ position, colorHex, opacity = 0.7 }: StationBeaconProps): ReactElement {
   const spriteRef = useRef<THREE.Sprite>(null);
   const lightRef = useRef<THREE.PointLight>(null);
+  const baseOpacity = opacity;
 
   const texture = useMemo(
     () => (typeof document !== "undefined" ? buildBeaconTexture() : null),
@@ -57,16 +60,19 @@ export function StationBeacon({ position, colorHex }: StationBeaconProps): React
         toneMapped: false,
         depthWrite: false,
         color: new THREE.Color(colorHex),
-        opacity: 0.7,
+        opacity: baseOpacity,
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [colorHex, texture],
+    [colorHex, texture, baseOpacity],
   );
 
   useFrame(({ clock }) => {
     const pulse = Math.sin(clock.elapsedTime * 1.5);
     if (spriteRef.current) {
-      spriteRef.current.material.opacity = 0.7 + pulse * 0.3;
+      // For normal beacons (opacity 0.7): pulse 0.7±0.3
+      // For dim uncharted markers (opacity 0.15): gentle pulse 0.15±0.05
+      const pulseRange = baseOpacity * 0.43;
+      spriteRef.current.material.opacity = baseOpacity + pulse * pulseRange;
     }
     if (lightRef.current) {
       lightRef.current.intensity = 2.5 + pulse * 0.5;
