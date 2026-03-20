@@ -1,5 +1,5 @@
 /**
- * useFlightLoop.ts — Phase 21 FLT-02
+ * useFlightLoop.ts — Phase 21 FLT-02/03
  *
  * useFrame physics loop that applies velocity + quaternion rotation to the ship
  * group ref each frame. All scratch objects are pre-allocated at module level to
@@ -9,7 +9,7 @@
  *   - WASD/Space produce thrust in ship-local axes
  *   - Mouse delta accumulates yaw (world-Y) and pitch (local-X) rotation
  *   - Velocity damps smoothly: v *= 1 - dampingFactor * dt
- *   - Speed is capped at cruiseSpeed (Plan 03 adds boost tier logic)
+ *   - Speed tier system: cruise (40 u/s), boost (120 u/s, 2s/4s), dock (8 u/s)
  *   - Store update is throttled to ~100ms to avoid per-frame setState
  */
 
@@ -22,7 +22,12 @@ import {
   type FlightConfig,
   type FlightIntent,
   type FlightState,
+  type SpeedTier,
 } from "./flight-types";
+import { OBSERVATORY_STATION_POSITIONS } from "../../world/observatory-world-template";
+import { HUNT_STATION_ORDER } from "../../world/stations";
+import type { HuntStationId } from "../../world/types";
+import { getObservatoryNowMs } from "../../utils/observatory-time";
 
 // ---------------------------------------------------------------------------
 // Module-level scratch objects (never re-allocated inside useFrame)
@@ -37,6 +42,30 @@ const _right = new THREE.Vector3();
 const _worldUp = new THREE.Vector3(0, 1, 0);
 const _thrustVec = new THREE.Vector3();
 const _velocity = new THREE.Vector3();
+
+// Pre-allocated vectors for dock proximity checks — avoids GC in hot path
+const _stationPos = new THREE.Vector3();
+const _shipPos = new THREE.Vector3();
+
+// ---------------------------------------------------------------------------
+// Dock proximity helper (pure, module-level — no allocations)
+// ---------------------------------------------------------------------------
+
+function findNearestStation(
+  shipPosition: THREE.Vector3,
+  proximityRadius: number,
+): { stationId: HuntStationId; distance: number } | null {
+  let nearest: { stationId: HuntStationId; distance: number } | null = null;
+  for (const stationId of HUNT_STATION_ORDER) {
+    const pos = OBSERVATORY_STATION_POSITIONS[stationId];
+    _stationPos.set(pos[0], pos[1], pos[2]);
+    const dist = shipPosition.distanceTo(_stationPos);
+    if (dist <= proximityRadius && (nearest === null || dist < nearest.distance)) {
+      nearest = { stationId, distance: dist };
+    }
+  }
+  return nearest;
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -67,6 +96,12 @@ export function useFlightLoop({
   // Snapshot throttle: only push to store every ~100ms
   const lastSnapshotMsRef = useRef<number>(0);
 
+  // Speed tier state machine
+  const speedTierRef = useRef<SpeedTier>("cruise");
+  const boostActivatedAtMsRef = useRef<number | null>(null);
+  const boostOnCooldownRef = useRef(false);
+  const nearestStationRef = useRef<{ stationId: HuntStationId; distance: number } | null>(null);
+
   useFrame((_, delta) => {
     const ship = shipRef.current;
     if (!ship) return;
@@ -85,6 +120,7 @@ export function useFlightLoop({
     const vertical = intent.vertical;
     const mouseDeltaX = intent.mouseDeltaX;
     const mouseDeltaY = intent.mouseDeltaY;
+    const boostTriggered = intent.boostTriggered;
     // Zero mouse deltas — they are accumulated-since-last-frame values
     intent.mouseDeltaX = 0;
     intent.mouseDeltaY = 0;
@@ -147,12 +183,68 @@ export function useFlightLoop({
     vel.multiplyScalar(Math.max(0, 1 - config.dampingFactor * dt));
 
     // -----------------------------------------------------------------------
-    // Speed cap — clamp to cruise speed (boost tier handled in Plan 03)
+    // Dock proximity check
     // -----------------------------------------------------------------------
+    _shipPos.copy(ship.position);
+    nearestStationRef.current = findNearestStation(_shipPos, config.dockProximityRadius);
+
+    // -----------------------------------------------------------------------
+    // Boost state machine
+    // -----------------------------------------------------------------------
+    const nowMs = getObservatoryNowMs();
+
+    if (boostTriggered && !boostOnCooldownRef.current && speedTierRef.current !== "dock") {
+      // Activate boost
+      boostActivatedAtMsRef.current = nowMs;
+      speedTierRef.current = "boost";
+      boostOnCooldownRef.current = false;
+    }
+
+    if (speedTierRef.current === "boost" && boostActivatedAtMsRef.current !== null) {
+      const elapsed = nowMs - boostActivatedAtMsRef.current;
+      if (elapsed >= config.boostDurationMs) {
+        // Boost expired — enter cooldown
+        speedTierRef.current = "cruise";
+        boostOnCooldownRef.current = true;
+      }
+    }
+
+    if (boostOnCooldownRef.current && boostActivatedAtMsRef.current !== null) {
+      const elapsed = nowMs - boostActivatedAtMsRef.current;
+      if (elapsed >= config.boostDurationMs + config.boostCooldownMs) {
+        // Cooldown expired
+        boostOnCooldownRef.current = false;
+        boostActivatedAtMsRef.current = null;
+      }
+    }
+
+    // Dock override: if near a station, force dock tier regardless of boost
+    if (nearestStationRef.current !== null) {
+      if (speedTierRef.current === "boost") {
+        // Cancel boost when entering dock zone
+        boostOnCooldownRef.current = true;
+      }
+      speedTierRef.current = "dock";
+    } else if (speedTierRef.current === "dock") {
+      // Left dock zone — return to cruise
+      speedTierRef.current = "cruise";
+    }
+
+    // -----------------------------------------------------------------------
+    // Speed cap — smooth lerp transition (no hard velocity snap)
+    // -----------------------------------------------------------------------
+    const speedCap =
+      speedTierRef.current === "boost"
+        ? config.cruiseSpeed * config.boostMultiplier // 120
+        : speedTierRef.current === "dock"
+          ? config.dockSpeed // 8
+          : config.cruiseSpeed; // 40
+
     const currentSpeed = vel.length();
-    const speedCap = config.cruiseSpeed;
     if (currentSpeed > speedCap) {
-      vel.multiplyScalar(speedCap / currentSpeed);
+      // Smooth transition: lerp down over ~0.2s (dt*5) rather than hard-snap
+      const lerpedSpeed = currentSpeed + (speedCap - currentSpeed) * Math.min(1, dt * 5);
+      vel.normalize().multiplyScalar(lerpedSpeed);
     }
 
     // -----------------------------------------------------------------------
@@ -164,24 +256,22 @@ export function useFlightLoop({
     // Store snapshot — throttled to ~100ms to avoid per-frame setState
     // -----------------------------------------------------------------------
     if (onStateChange) {
-      const nowMs = performance.now();
       if (nowMs - lastSnapshotMsRef.current >= 100) {
         lastSnapshotMsRef.current = nowMs;
 
         const pos = ship.position;
         const q = ship.quaternion;
-        const speed = vel.length();
 
         const snapshot: FlightState = {
           velocity: [vel.x, vel.y, vel.z],
           quaternion: [q.x, q.y, q.z, q.w],
           position: [pos.x, pos.y, pos.z],
-          speedTier: "cruise", // Plan 03 adds boost tier detection
-          boostActivatedAtMs: DEFAULT_FLIGHT_STATE.boostActivatedAtMs,
-          boostOnCooldown: false,
+          speedTier: speedTierRef.current,
+          boostActivatedAtMs: boostActivatedAtMsRef.current,
+          boostOnCooldown: boostOnCooldownRef.current,
           pointerLocked: document.pointerLockElement != null,
-          currentSpeed: speed,
-          nearestStationId: null, // Plan 03 adds proximity detection
+          currentSpeed: vel.length(),
+          nearestStationId: nearestStationRef.current?.stationId ?? null,
         };
 
         onStateChange(snapshot);
@@ -189,3 +279,6 @@ export function useFlightLoop({
     }
   });
 }
+
+// Suppress unused warning for _velocity — kept for future use (rollback/replay)
+void _velocity;
