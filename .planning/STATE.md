@@ -4,7 +4,7 @@ milestone: v6.0
 milestone_name: Observatory Space Flight
 status: completed
 stopped_at: Completed 25-02-PLAN.md
-last_updated: "2026-03-20T19:46:39.484Z"
+last_updated: "2026-03-20T19:51:09.993Z"
 last_activity: 2026-03-20 — Station arrival name card cinematic (StationArrivalCard, TRN-03) + proximity-based NPC crew fade (stationProximityRef, TRN-05)
 progress:
   total_phases: 7
