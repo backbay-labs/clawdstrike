@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v7.0
 milestone_name: Observatory Production HUD
 status: planning
-stopped_at: Completed 29-02-PLAN.md
-last_updated: "2026-03-21T13:46:07.237Z"
+stopped_at: Completed 30-01-PLAN.md
+last_updated: "2026-03-21T14:00:00.000Z"
 last_activity: 2026-03-21 — v7.0 roadmap created, phases 28-31 defined
 progress:
   total_phases: 4
   completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
+  total_plans: 7
+  completed_plans: 5
   percent: 0
 ---
 
@@ -48,6 +48,8 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 28-design-tokens-panel-audit P01 | 8 | 2 tasks | 16 files |
 | Phase 29-status-strip-panel-registry P01 | 4 | 2 tasks | 5 files |
 | Phase 29 P02 | 12 | 2 tasks | 4 files |
+| Phase 30-left-drawer-hotkeys-flight-hud-restyle P03 | 2 | 2 tasks | 3 files |
+| Phase 30-left-drawer-hotkeys-flight-hud-restyle P01 | 8 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -67,6 +69,10 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 29]: ObservatoryStatusStrip rAF mock call-count guard prevents jsdom stack overflow — synchronous cb(0) must not recurse
 - [Phase 29]: Status strip bg rgba(8,12,24,0.88) not var(--hud-bg) — VIS-02 requires >= 0.85 opacity for text readability
 - [Phase 29]: Preset buttons use React subscriptions not rAF — preset changes are rare user actions not per-frame, subscriptions appropriate
+- [Phase 30]: SpeedIndicator bottom offset = 80 + HUD_STATUS_STRIP_HEIGHT — speed bar clears 28px status strip
+- [Phase 30]: HUD_COLORS replaced by CSS var references in SpeedIndicator and HeadingCompass — components theme via CSS not JS constants
+- [Phase 30]: Always-mounted drawer pattern (translateX not conditional render) — avoids unmount/remount cost on open; consistent with SpaceFlightHud pattern
+- [Phase 30]: Left drawer two-part transition: slide 250ms ease-out then content fade 200ms with 100ms delay — polished reveal sequence
 
 ### Blockers/Concerns
 
@@ -75,6 +81,6 @@ Progress: [░░░░░░░░░░] 0%
 
 ## Session Continuity
 
-Last session: 2026-03-21T13:42:16.625Z
-Stopped at: Completed 29-02-PLAN.md
+Last session: 2026-03-21T13:56:59.444Z
+Stopped at: Completed 30-03-PLAN.md
 Resume file: None
