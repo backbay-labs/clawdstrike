@@ -85,6 +85,13 @@ export const HUD_COMPASS_INNER_WIDTH = 1200;
 /** Height of the persistent status strip at the bottom of the observatory canvas */
 export const HUD_STATUS_STRIP_HEIGHT = 28;
 
+// ---------------------------------------------------------------------------
+// Left drawer constants — Phase 30
+// ---------------------------------------------------------------------------
+
+/** Width of the left drawer panel in pixels (HUD-13: 300-400px range) */
+export const HUD_LEFT_DRAWER_WIDTH = 360;
+
 /**
  * Four analyst preset segments shown in the status strip (HUD-12).
  * Clicking a segment sets the analyst preset; radio-toggle behavior deactivates on re-click.
