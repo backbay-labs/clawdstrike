@@ -1,5 +1,5 @@
 /**
- * ObservatoryLeftDrawer.tsx — Phase 30 HUD-13, VIS-03
+ * ObservatoryLeftDrawer.tsx — Phase 31 HUD-13, VIS-03
  *
  * A 360px wide glassmorphism panel that slides in from the left edge of the
  * observatory canvas when `activePanel` is non-null.
@@ -14,20 +14,43 @@
  *   - Content fade: opacity 0 → 1, 200ms ease-out with 100ms delay (fades in after
  *     drawer is partially slid into position)
  *
- * Content:
- *   - Phase 30: placeholder — shows active panel name in uppercase monospace text
- *   - Phase 31+: placeholder replaced with real panel content
+ * Content (Phase 31):
+ *   - Routes to ExplainabilityDrawerPanel, MissionDrawerPanel,
+ *     ReplayDrawerPanel, or GhostMemoryDrawerPanel based on activePanel value
  *
  * Performance:
  *   - Subscribes to activePanel via useObservatoryStore.use.activePanel() — panel
  *     changes are rare user actions, React subscription is appropriate here.
  */
 
+import type { JSX } from "react";
 import { useObservatoryStore } from "../../stores/observatory-store";
+import type { HudPanelId } from "../../types";
 import {
   HUD_LEFT_DRAWER_WIDTH,
   HUD_STATUS_STRIP_HEIGHT,
 } from "./hud-constants";
+import { ExplainabilityDrawerPanel } from "./panels/ExplainabilityDrawerPanel";
+import { MissionDrawerPanel } from "./panels/MissionDrawerPanel";
+import { ReplayDrawerPanel } from "./panels/ReplayDrawerPanel";
+import { GhostMemoryDrawerPanel } from "./panels/GhostMemoryDrawerPanel";
+
+// ---------------------------------------------------------------------------
+// Panel router
+// ---------------------------------------------------------------------------
+
+function renderPanel(panelId: HudPanelId): JSX.Element {
+  switch (panelId) {
+    case "explainability":
+      return <ExplainabilityDrawerPanel />;
+    case "mission":
+      return <MissionDrawerPanel />;
+    case "replay":
+      return <ReplayDrawerPanel />;
+    case "ghost":
+      return <GhostMemoryDrawerPanel />;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Component
@@ -72,27 +95,11 @@ export function ObservatoryLeftDrawer() {
           height: "100%",
           display: "flex",
           flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
           gap: 8,
+          overflow: "hidden",
         }}
       >
-        {/* Phase 30 placeholder — panel name in uppercase monospace */}
-        {activePanel !== null && (
-          <span
-            data-testid="observatory-left-drawer-panel-name"
-            style={{
-              color: "var(--hud-text-muted, rgba(255, 255, 255, 0.45))",
-              fontSize: 12,
-              fontFamily: "inherit",
-              textTransform: "uppercase",
-              letterSpacing: "0.1em",
-              textAlign: "center",
-            }}
-          >
-            {activePanel}
-          </span>
-        )}
+        {activePanel !== null && renderPanel(activePanel)}
       </div>
     </div>
   );
