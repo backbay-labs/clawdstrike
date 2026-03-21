@@ -1,0 +1,31 @@
+/* ==========================================================================
+   Observatory HUD — Glassmorphism Design Tokens
+   Defined once, shared across status strip, left drawer, and all panels.
+   Phase 28 (VIS-01)
+   ========================================================================== */
+
+:root {
+  /* Background: deep navy, semi-transparent for glassmorphism layering */
+  --hud-bg: rgba(8, 12, 24, 0.75);
+
+  /* Border: subtle white edge for glass separation */
+  --hud-border: 1px solid rgba(255, 255, 255, 0.06);
+
+  /* Shadow: soft depth behind glass panels */
+  --hud-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+
+  /* Text: high-contrast primary text on dark glass */
+  --hud-text: rgba(255, 255, 255, 0.85);
+
+  /* Text (muted): secondary/label text */
+  --hud-text-muted: rgba(255, 255, 255, 0.45);
+
+  /* Accent: spirit-driven highlight, falls back to blue if no spirit bound */
+  --hud-accent: var(--spirit-accent, #4af);
+
+  /* Blur: backdrop-filter blur radius for glass effect */
+  --hud-blur: blur(12px);
+
+  /* Radius: consistent corner rounding across all HUD panels */
+  --hud-radius: 8px;
+}
