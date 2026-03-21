@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v7.0
 milestone_name: Observatory Production HUD
 status: planning
-stopped_at: Completed 28-01-PLAN.md
-last_updated: "2026-03-21T13:20:52.898Z"
+stopped_at: Completed 29-01-PLAN.md
+last_updated: "2026-03-21T13:33:59.648Z"
 last_activity: 2026-03-21 — v7.0 roadmap created, phases 28-31 defined
 progress:
   total_phases: 4
   completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
+  total_plans: 4
+  completed_plans: 3
   percent: 0
 ---
 
@@ -46,6 +46,7 @@ Progress: [░░░░░░░░░░] 0%
 | (v7.0 plans not yet started) | — | — | — | — |
 | Phase 28 P02 | 4 | 1 tasks | 2 files |
 | Phase 28-design-tokens-panel-audit P01 | 8 | 2 tasks | 16 files |
+| Phase 29-status-strip-panel-registry P01 | 4 | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -60,6 +61,8 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 28]: --hud-accent: var(--spirit-accent, #4af) — spirit-driven HUD theming with safe fallback, no hard dependency on spirit being bound
 - [Phase 28]: Deleted all 10 legacy overlay components as clean slate — new panel framework builds from scratch in Phase 29
 - [Phase 28]: ObservatoryRuntimeMonitors.tsx and ObservatoryTelemetryBridge.tsx preserved — R3F hooks and telemetry subscriber still needed
+- [Phase 29]: Panel registry mutual exclusion via single activePanel field — overwrite is sufficient, no explicit close-then-open needed
+- [Phase 29]: ObservatoryAnalystPresetId 'nexus' renamed to 'ghost' (THREAT/EVIDENCE/RECEIPTS/GHOST HUD-12 alignment); ObservatoryStationKind 'nexus' unchanged
 
 ### Blockers/Concerns
 
@@ -68,6 +71,6 @@ Progress: [░░░░░░░░░░] 0%
 
 ## Session Continuity
 
-Last session: 2026-03-21T13:15:43.798Z
-Stopped at: Completed 28-01-PLAN.md
+Last session: 2026-03-21T13:33:59.645Z
+Stopped at: Completed 29-01-PLAN.md
 Resume file: None
