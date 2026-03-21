@@ -76,13 +76,10 @@ import type {
   ObservatoryPlayerFocusState,
   ObservatoryPlayerWorldState,
 } from "./flow-runtime/grounding";
-import { ObservatoryMissionOverlay } from "./ObservatoryMissionOverlay";
 import {
   ObservatoryQualityMonitor,
   ObservatoryRuntimeActivityMonitor,
 } from "./ObservatoryRuntimeMonitors";
-import { ObservatoryGhostLayer } from "./ObservatoryGhostLayer";
-import { ObservatoryWeatherLayer } from "./ObservatoryWeatherLayer";
 import { ObservatoryInvalidationController } from "./world-canvas/ObservatoryInvalidationController";
 import { HudCameraBridge } from "./hud/camera-bridge";
 import { ObservatoryWorldScene as ExtractedObservatoryWorldScene } from "./world-canvas/ObservatoryWorldScene";
@@ -4756,23 +4753,6 @@ export function ObservatoryWorldCanvas({
             mission={mission}
             characterControllerEnabled={playerInputEnabled}
           />
-          {effectiveWeatherState ? (
-            <ObservatoryWeatherLayer
-              missionTargetStationId={currentMissionObjective?.stationId ?? null}
-              weather={effectiveWeatherState}
-              world={reactiveWorld}
-            />
-          ) : null}
-          {ghostTraces.length > 0 ? (
-            <ObservatoryGhostLayer
-              likelyStationId={reactiveWorld.likelyStationId}
-              missionTargetStationId={currentMissionObjective?.stationId ?? null}
-              presentation={ghostPresentation}
-              selectedStationId={activeStationId ?? null}
-              traces={ghostTraces}
-              world={reactiveWorld}
-            />
-          ) : null}
           {flowRuntimeEnabled ? (
             <Suspense fallback={null}>
               <LazyObservatoryFlowRuntimeScene
@@ -4805,20 +4785,6 @@ export function ObservatoryWorldCanvas({
           ) : null}
         </Suspense>
       </Canvas>
-      <ObservatoryMissionOverlay
-        canDispatchProbe={canDispatchProbe}
-        currentObjective={currentMissionObjective}
-        mission={mission}
-        onDispatchCurrentObjectiveProbe={dispatchCurrentObjectiveProbe}
-        onFocusCurrentObjective={focusCurrentObjective}
-        playerWorldState={playerWorldState}
-        probeCharge={probeCharge}
-        probeCountdownMs={probeCountdownMs}
-        probeActive={resolvedProbeState.status === "active"}
-        probeCrewDirective={probeDirective?.crewDirective ?? null}
-        probeDirectiveRead={probeDirective?.missionRead ?? null}
-        probeTargetStationId={resolvedProbeState.targetStationId ?? missionProbeTargetStationId}
-      />
     </div>
   );
 }
