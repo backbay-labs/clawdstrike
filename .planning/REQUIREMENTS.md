@@ -31,10 +31,10 @@
 
 ### Rebuilt Panels
 
-- [ ] **PNL-01**: Explainability panel rebuilt for left drawer — station name, ranked pressure causes, top anomalies, and a "probe" action button. Glassmorphism styling. Content sourced from existing observatory-store data.
-- [ ] **PNL-02**: Mission panel rebuilt for left drawer — active objective, waypoint guidance, narrative text, and objective completion state. Designed for the drawer width.
-- [ ] **PNL-03**: Replay panel rebuilt for left drawer — timeline scrubber, bookmark list, jump-to-spike button, compare-now-vs-then toggle. Compact vertical layout.
-- [ ] **PNL-04**: Ghost memory panel rebuilt for left drawer — prior findings list, receipt traces, case-note history. Scrollable list with timestamps.
+- [x] **PNL-01**: Explainability panel rebuilt for left drawer — station name, ranked pressure causes, top anomalies, and a "probe" action button. Glassmorphism styling. Content sourced from existing observatory-store data.
+- [x] **PNL-02**: Mission panel rebuilt for left drawer — active objective, waypoint guidance, narrative text, and objective completion state. Designed for the drawer width.
+- [x] **PNL-03**: Replay panel rebuilt for left drawer — timeline scrubber, bookmark list, jump-to-spike button, compare-now-vs-then toggle. Compact vertical layout.
+- [x] **PNL-04**: Ghost memory panel rebuilt for left drawer — prior findings list, receipt traces, case-note history. Scrollable list with timestamps.
 
 ### Visual Polish
 
@@ -88,10 +88,10 @@
 | HUD-16 | Phase 30 | Complete |
 | CLN-02 | Phase 30 | Complete |
 | VIS-03 | Phase 30 | Complete |
-| PNL-01 | Phase 31 | Pending |
-| PNL-02 | Phase 31 | Pending |
-| PNL-03 | Phase 31 | Pending |
-| PNL-04 | Phase 31 | Pending |
+| PNL-01 | Phase 31 | Complete |
+| PNL-02 | Phase 31 | Complete |
+| PNL-03 | Phase 31 | Complete |
+| PNL-04 | Phase 31 | Complete |
 
 **Coverage:**
 - v7.0 requirements: 19 total

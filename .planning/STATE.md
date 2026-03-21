@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v7.0
 milestone_name: Observatory Production HUD
 status: executing
-stopped_at: Completed 30-02-PLAN.md
-last_updated: "2026-03-21T14:07:18.608Z"
+stopped_at: Completed 31-01-PLAN.md
+last_updated: "2026-03-21T14:20:57.935Z"
 last_activity: 2026-03-21 — Phase 30 plan 02 complete (hotkeys + station click HUD-14/15/16)
 progress:
   total_phases: 4
   completed_phases: 3
-  total_plans: 7
-  completed_plans: 7
+  total_plans: 9
+  completed_plans: 8
   percent: 85
 ---
 
@@ -51,6 +51,7 @@ Progress: [████████░░] 85%
 | Phase 30-left-drawer-hotkeys-flight-hud-restyle P03 | 2 | 2 tasks | 3 files |
 | Phase 30-left-drawer-hotkeys-flight-hud-restyle P01 | 8 | 2 tasks | 4 files |
 | Phase 30-left-drawer-hotkeys-flight-hud-restyle P02 | 2 | 2 tasks | 3 files |
+| Phase 31-rebuilt-panels P01 | 3 | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -77,6 +78,8 @@ Progress: [████████░░] 85%
 - [Phase 30]: useObservatoryStore.getState() imperative in hotkey handler — event callbacks are not per-frame, no subscription needed
 - [Phase 30]: paneIsActive gates all hotkeys — prevents E/R/M/G from firing when another pane has focus
 - [Phase 30]: handleSelectStation always calls openPanel('explainability') on new station select — openPanel is idempotent if panel already open
+- [Phase 31]: ExplainabilityDrawerPanel renders empty state when selectedStationId is null — panel responsibility, not drawer-level guard
+- [Phase 31]: ReplayDrawerPanel always renders (no null empty state) — replay state always exists in store; only bookmarks section has empty message
 
 ### Blockers/Concerns
 
@@ -85,6 +88,6 @@ Progress: [████████░░] 85%
 
 ## Session Continuity
 
-Last session: 2026-03-21T14:02:12Z
-Stopped at: Completed 30-02-PLAN.md
+Last session: 2026-03-21T14:20:57.931Z
+Stopped at: Completed 31-01-PLAN.md
 Resume file: None

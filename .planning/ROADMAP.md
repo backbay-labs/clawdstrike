@@ -705,4 +705,4 @@ Phase 28 first — clean slate and design tokens before anything is built. Phase
 | 28. Design Tokens + Panel Audit | 2/2 | Complete    | 2026-03-21 | - |
 | 29. Status Strip + Panel Registry | 2/2 | Complete    | 2026-03-21 | - |
 | 30. Left Drawer + Hotkeys + Flight HUD Restyle | 2/3 | Complete    | 2026-03-21 | - |
-| 31. Rebuilt Panels | v7.0 | 0/2 | Not started | - |
+| 31. Rebuilt Panels | 1/2 | In Progress|  | - |
