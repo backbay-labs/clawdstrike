@@ -96,6 +96,7 @@ Plans:
 - [x] 04-02-PLAN.md — NexusTab store bridge (ObservatoryWorldCanvas atlas mode, strikecell routing) + /nexus route swap (Wave 2, depends on 04-01)
 - [x] 04-03-PLAN.md — SpiritCreationChamber port (canvas/model + SpiritManifestationCanvas + SpiritAtmosphereLayer) + replace SpiritChamberTab (Wave 1, independent)
 
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
@@ -198,6 +199,7 @@ Plans:
 Plans:
 - [x] 09-01-PLAN.md — Install r3f-forcegraph (peer deps verified: three >=0.154, no R3F constraint); DEMO_CONNECTIONS (13 edges); nexus-store connections slice; NexusForceCanvas with OrbitControls + draggable nodes (Wave 1)
 - [x] 09-02-PLAN.md — nexus-store layoutMode field; NexusTab toggle button (atlas/force-directed); conditional render ObservatoryWorldCanvas vs NexusForceCanvas; extended tests (Wave 2)
+
 
 ## Progress
 
@@ -311,6 +313,7 @@ Plans:
 - [x] 14-01-PLAN.md — HDR skybox + district buildings + ground tints + env props (WLD-01–04)
 - [x] 14-02-PLAN.md — Instanced NPC crew: patrol loops + proximity wave reaction (NPC-01–03)
 - [x] 14-03-PLAN.md — UI polish: beacons + probe charge ring + tooltips + achievement popups (UIP-01–04)
+
 
 ## Progress
 
@@ -433,6 +436,7 @@ Plans:
 - [x] 19-01-PLAN.md — Spike cinematic framing + recommendation handoff
 - [x] 19-02-PLAN.md — Case-note ghosts + memory-layer contracts
 - [x] 19-03-PLAN.md — Hunt weather controller + readability guardrails
+
 
 ## Progress
 
@@ -597,6 +601,7 @@ Plans:
 Plans:
 - [x] 27-01-PLAN.md — FlightState store bridge (onStateChange prop chain) + autopilot ref bridge (MAP-02, MAP-03)
 
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -687,10 +692,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 31-01: ExplainabilityDrawerPanel (station name, ranked causes, anomalies, probe button) (PNL-01)
-- [ ] 31-02: MissionDrawerPanel (active objective, waypoints, narrative, completion state) (PNL-02)
-- [ ] 31-03: ReplayDrawerPanel (scrubber, bookmarks, jump-to-spike, compare toggle) (PNL-03)
-- [ ] 31-04: GhostMemoryDrawerPanel (findings list, receipt traces, case-notes, timestamps) (PNL-04)
+- [ ] 31-01-PLAN.md — All 4 panel components (Explainability, Mission, Replay, Ghost Memory) + unit tests (PNL-01, PNL-02, PNL-03, PNL-04)
+- [ ] 31-02-PLAN.md — Wire panels into ObservatoryLeftDrawer + update drawer tests (PNL-01, PNL-02, PNL-03, PNL-04)
 
 ## Progress
 
@@ -702,4 +705,4 @@ Phase 28 first — clean slate and design tokens before anything is built. Phase
 | 28. Design Tokens + Panel Audit | 2/2 | Complete    | 2026-03-21 | - |
 | 29. Status Strip + Panel Registry | 2/2 | Complete    | 2026-03-21 | - |
 | 30. Left Drawer + Hotkeys + Flight HUD Restyle | 2/3 | Complete    | 2026-03-21 | - |
-| 31. Rebuilt Panels | v7.0 | 0/4 | Not started | - |
+| 31. Rebuilt Panels | v7.0 | 0/2 | Not started | - |
