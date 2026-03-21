@@ -85,7 +85,9 @@ export interface ObservatoryPressureLane {
   isPrimary: boolean;
 }
 
-export type ObservatoryAnalystPresetId = "threat" | "evidence" | "receipts" | "nexus";
+export type HudPanelId = "explainability" | "replay" | "mission" | "ghost";
+
+export type ObservatoryAnalystPresetId = "threat" | "evidence" | "receipts" | "ghost";
 
 export interface ObservatoryStation {
   affinity?: number;
@@ -141,6 +143,8 @@ export interface ObservatoryState {
   autopilotTargetStationId: HuntStationId | null;
   /** Phase 26: session-only discovery set — stations revealed by proximity fly-through */
   discoveredStations: Set<HuntStationId>;
+  /** Phase 29: panel registry — only one HUD panel open at a time */
+  activePanel: HudPanelId | null;
   actions: {
     setStations: (stations: ObservatoryStation[]) => void;
     updateSeamSummary: (summary: Partial<ObservatorySeamSummary>) => void;
@@ -191,5 +195,8 @@ export interface ObservatoryState {
     setAutopilotTarget: (stationId: HuntStationId | null) => void;
     clearAutopilot: () => void;
     discoverStation: (stationId: HuntStationId) => void;
+    openPanel: (id: HudPanelId) => void;
+    closePanel: () => void;
+    togglePanel: (id: HudPanelId) => void;
   };
 }

@@ -651,11 +651,11 @@ Plans:
   3. Clicking a preset segment (THREAT, EVIDENCE, RECEIPTS, GHOST) activates that lens; clicking the active segment deactivates it; only one segment can be active at a time
   4. The panel registry Zustand slice correctly enforces mutual exclusion — calling `open('mission')` when `'replay'` is active closes replay first; `getActivePanel()` always returns at most one panel ID or null
   5. When a panel is open, its corresponding trigger in the status strip shows a visible active indicator (glow or underline) that clears when the panel closes
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 29-01: Zustand panel registry slice (open/close/toggle, mutual exclusion) + unit tests (HUD-17)
-- [ ] 29-02: ObservatoryStatusStrip component — glassmorphism layout, rAF telemetry update, analyst preset segments (HUD-10, HUD-11, HUD-12, VIS-02, VIS-04)
+- [ ] 29-01-PLAN.md — Zustand panel registry slice (open/close/toggle, mutual exclusion) + unit tests (HUD-17)
+- [ ] 29-02-PLAN.md — ObservatoryStatusStrip component — glassmorphism layout, rAF telemetry update, analyst preset segments (HUD-10, HUD-11, HUD-12, VIS-02, VIS-04)
 
 ### Phase 30: Left Drawer + Hotkeys + Flight HUD Restyle
 **Goal**: Analysts control panels with their keyboard — hotkeys slide the left drawer open to the correct panel or close it entirely, station clicks drive straight to Explainability, and the v6.0 flight HUD chrome is updated to share the glassmorphism treatment without fighting the new status strip
@@ -668,7 +668,7 @@ Plans:
   4. Clicking a station in the 3D scene opens the Explainability panel for that station in the left drawer
   5. The flight HUD elements (speed bar, compass, target brackets, off-screen arrows) are restyled with glassmorphism treatment and repositioned so they do not overlap the status strip
   6. Panel open/close transitions animate at 200-300ms ease-out — the drawer slides in smoothly and content fades in after the drawer reaches its open position
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
 - [ ] 30-01: ObservatoryLeftDrawer container — CSS slide transition, panel slot, glassmorphism shell (HUD-13, VIS-03)
@@ -684,7 +684,7 @@ Plans:
   2. Pressing M opens the Mission panel showing the active objective title, waypoint guidance text, narrative directive, and objective completion checkmarks sourced from the mission loop state
   3. Pressing R opens the Replay panel showing a timeline scrubber, bookmark list, a jump-to-spike button, and a compare-now-vs-then toggle — all controls work against the existing replay store
   4. Pressing G opens the Ghost Memory panel showing prior findings as a scrollable list with timestamps, receipt traces, and case-note text sourced from observatory ghost memory state
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
 - [ ] 31-01: ExplainabilityDrawerPanel (station name, ranked causes, anomalies, probe button) (PNL-01)
