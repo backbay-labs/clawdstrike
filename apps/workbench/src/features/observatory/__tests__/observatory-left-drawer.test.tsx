@@ -5,8 +5,11 @@
  *   a. renders drawer container (data-testid present)
  *   b. drawer is hidden (translateX -100%) when activePanel is null
  *   c. drawer is visible (translateX 0) when activePanel is set
- *   d. shows active panel name as placeholder text (uppercase)
- *   e. switching panels updates placeholder text
+ *   d. renders ExplainabilityDrawerPanel when activePanel is 'explainability'
+ *   e. renders MissionDrawerPanel when activePanel is 'mission'
+ *   f. renders ReplayDrawerPanel when activePanel is 'replay'
+ *   g. renders GhostMemoryDrawerPanel when activePanel is 'ghost'
+ *   h. renders nothing in content area when activePanel is null
  */
 
 import { describe, expect, it, beforeEach } from "vitest";
@@ -53,40 +56,63 @@ describe("ObservatoryLeftDrawer", () => {
     expect(drawer.style.transform).toBe("translateX(0)");
   });
 
-  it("d. shows active panel name as placeholder", () => {
-    useObservatoryStore.setState({
-      ...useObservatoryStore.getState(),
-      activePanel: "mission",
-    });
-    const { container } = render(<ObservatoryLeftDrawer />);
-    const panelName = container.querySelector(
-      "[data-testid='observatory-left-drawer-panel-name']",
-    );
-    expect(panelName).not.toBeNull();
-    // textContent is the raw value ("mission"); CSS textTransform: uppercase is visual-only
-    expect(panelName?.textContent?.toUpperCase()).toContain("MISSION");
-  });
-
-  it("e. switching panels updates placeholder text", () => {
+  it("d. renders ExplainabilityDrawerPanel when activePanel is 'explainability'", () => {
     useObservatoryStore.setState({
       ...useObservatoryStore.getState(),
       activePanel: "explainability",
+      selectedStationId: null,
     });
-    const { container, rerender } = render(<ObservatoryLeftDrawer />);
+    const { container } = render(<ObservatoryLeftDrawer />);
+    const panel = container.querySelector("[data-testid='explainability-drawer-panel']");
+    const emptyState = container.querySelector("[data-testid='explainability-empty-state']");
+    // Either the full panel or its empty state must be present
+    expect(panel !== null || emptyState !== null).toBe(true);
+  });
 
-    // Initial state: explainability
-    const panelName = container.querySelector(
-      "[data-testid='observatory-left-drawer-panel-name']",
-    );
-    expect(panelName?.textContent?.toUpperCase()).toContain("EXPLAINABILITY");
+  it("e. renders MissionDrawerPanel when activePanel is 'mission'", () => {
+    useObservatoryStore.setState({
+      ...useObservatoryStore.getState(),
+      activePanel: "mission",
+      mission: null,
+    });
+    const { container } = render(<ObservatoryLeftDrawer />);
+    const panel = container.querySelector("[data-testid='mission-drawer-panel']");
+    const emptyState = container.querySelector("[data-testid='mission-empty-state']");
+    expect(panel !== null || emptyState !== null).toBe(true);
+  });
 
-    // Switch to ghost
-    useObservatoryStore.setState({ ...useObservatoryStore.getState(), activePanel: "ghost" });
-    rerender(<ObservatoryLeftDrawer />);
+  it("f. renders ReplayDrawerPanel when activePanel is 'replay'", () => {
+    useObservatoryStore.setState({
+      ...useObservatoryStore.getState(),
+      activePanel: "replay",
+    });
+    const { container } = render(<ObservatoryLeftDrawer />);
+    const panel = container.querySelector("[data-testid='replay-drawer-panel']");
+    expect(panel).not.toBeNull();
+  });
 
-    const updatedPanelName = container.querySelector(
-      "[data-testid='observatory-left-drawer-panel-name']",
-    );
-    expect(updatedPanelName?.textContent?.toUpperCase()).toContain("GHOST");
+  it("g. renders GhostMemoryDrawerPanel when activePanel is 'ghost'", () => {
+    useObservatoryStore.setState({
+      ...useObservatoryStore.getState(),
+      activePanel: "ghost",
+    });
+    const { container } = render(<ObservatoryLeftDrawer />);
+    const panel = container.querySelector("[data-testid='ghost-memory-drawer-panel']");
+    const emptyState = container.querySelector("[data-testid='ghost-memory-empty-state']");
+    expect(panel !== null || emptyState !== null).toBe(true);
+  });
+
+  it("h. renders nothing in content area when activePanel is null", () => {
+    useObservatoryStore.setState({ ...useObservatoryStore.getState(), activePanel: null });
+    const { container } = render(<ObservatoryLeftDrawer />);
+
+    // None of the four panel testids should be present
+    expect(container.querySelector("[data-testid='explainability-drawer-panel']")).toBeNull();
+    expect(container.querySelector("[data-testid='explainability-empty-state']")).toBeNull();
+    expect(container.querySelector("[data-testid='mission-drawer-panel']")).toBeNull();
+    expect(container.querySelector("[data-testid='mission-empty-state']")).toBeNull();
+    expect(container.querySelector("[data-testid='replay-drawer-panel']")).toBeNull();
+    expect(container.querySelector("[data-testid='ghost-memory-drawer-panel']")).toBeNull();
+    expect(container.querySelector("[data-testid='ghost-memory-empty-state']")).toBeNull();
   });
 });
