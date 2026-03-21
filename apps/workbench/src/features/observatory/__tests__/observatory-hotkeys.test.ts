@@ -45,8 +45,8 @@ describe("useObservatoryHotkeys", () => {
       activePanel: null,
       actions: {
         ...currentState.actions,
-        togglePanel,
-        closePanel,
+        togglePanel: togglePanel as unknown as (id: import("../types").HudPanelId) => void,
+        closePanel: closePanel as unknown as () => void,
       },
     });
   });

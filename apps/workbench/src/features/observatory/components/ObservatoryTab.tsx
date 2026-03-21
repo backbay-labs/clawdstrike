@@ -38,6 +38,7 @@ import {
 import { SpaceFlightHud } from "./hud/SpaceFlightHud";
 import { ObservatoryStatusStrip } from "./hud/ObservatoryStatusStrip";
 import { ObservatoryLeftDrawer } from "./hud/ObservatoryLeftDrawer";
+import { useObservatoryHotkeys } from "./hud/useObservatoryHotkeys";
 import {
   createObservatoryMissionPlan,
   deriveObservatoryMissionBranch,
@@ -191,6 +192,9 @@ export function ObservatoryTab() {
   const paneIsActive = usePaneStore((state) =>
     getActivePaneRoute(state.root, state.activePaneId) === "/observatory",
   );
+
+  // Phase 30 HUD-14/HUD-15: Panel hotkeys (E/R/M/G/Escape) — only active when this tab is focused
+  useObservatoryHotkeys(paneIsActive);
 
   // CAM-01: Fly-by state — true until the opening sweep finishes for the first time this session
   const [flyByActive, setFlyByActive] = useState(true);
@@ -617,6 +621,8 @@ export function ObservatoryTab() {
         return;
       }
       observatoryActions.setSelectedStation(stationId);
+      // Phase 30 HUD-16: clicking a station opens the Explainability panel
+      observatoryActions.openPanel("explainability");
       setCameraResetToken((prev) => prev + 1);
     },
     [observatoryActions, selectedStationId],
