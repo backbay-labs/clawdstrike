@@ -36,6 +36,7 @@ import {
   dispatchObservatoryProbe,
 } from "../world/probeRuntime";
 import { SpaceFlightHud } from "./hud/SpaceFlightHud";
+import { ObservatoryStatusStrip } from "./hud/ObservatoryStatusStrip";
 import {
   createObservatoryMissionPlan,
   deriveObservatoryMissionBranch,
@@ -892,6 +893,9 @@ export function ObservatoryTab() {
       <SpaceFlightHud
         visible={!flyByActive && !replay.enabled && characterControllerEnabled && mode === "flow"}
       />
+
+      {/* Phase 29 HUD: ObservatoryStatusStrip — persistent cockpit footer, always visible */}
+      <ObservatoryStatusStrip />
 
       {/* CAM-01: Letterbox top bar — h-12 during fly-by, h-0 after */}
       <div
