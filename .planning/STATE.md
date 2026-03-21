@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v7.0
 milestone_name: Observatory Production HUD
-status: ready_to_plan
-stopped_at: Phase 28
-last_updated: "2026-03-21"
-last_activity: "2026-03-21 — v7.0 roadmap created (Phases 28-31)"
+status: planning
+stopped_at: Completed 28-02-PLAN.md
+last_updated: "2026-03-21T13:12:17.973Z"
+last_activity: 2026-03-21 — v7.0 roadmap created, phases 28-31 defined
 progress:
   total_phases: 4
   completed_phases: 0
-  total_plans: 11
-  completed_plans: 0
+  total_plans: 2
+  completed_plans: 1
   percent: 0
 ---
 
@@ -44,6 +44,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase | Plan | Duration | Tasks | Files |
 |-------|------|----------|-------|-------|
 | (v7.0 plans not yet started) | — | — | — | — |
+| Phase 28 P02 | 4 | 1 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -54,6 +55,8 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 27]: handleFlightStateChange uses getState().actions.setFlightState (imperative write) — 60fps callback must not cause React re-renders
 - [v7.0 roadmap]: Clean slate first — all 10 legacy overlay components deleted before framework is built (Phase 28 before 29)
 - [v7.0 roadmap]: CSS custom properties for glassmorphism tokens defined once, shared across status strip, left drawer, and rebuilt panels
+- [Phase 28]: Glassmorphism tokens isolated to observatory-hud.css, imported via globals.css — keeps HUD-specific properties out of main token namespace
+- [Phase 28]: --hud-accent: var(--spirit-accent, #4af) — spirit-driven HUD theming with safe fallback, no hard dependency on spirit being bound
 
 ### Blockers/Concerns
 
@@ -62,6 +65,6 @@ Progress: [░░░░░░░░░░] 0%
 
 ## Session Continuity
 
-Last session: 2026-03-21
-Stopped at: v7.0 roadmap created — ready to plan Phase 28
+Last session: 2026-03-21T13:12:17.970Z
+Stopped at: Completed 28-02-PLAN.md
 Resume file: None

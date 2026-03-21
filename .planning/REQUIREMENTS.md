@@ -38,7 +38,7 @@
 
 ### Visual Polish
 
-- [ ] **VIS-01**: Glassmorphism design tokens (background, border, shadow, text colors, accent) defined as CSS custom properties so all HUD surfaces share the same visual language
+- [x] **VIS-01**: Glassmorphism design tokens (background, border, shadow, text colors, accent) defined as CSS custom properties so all HUD surfaces share the same visual language
 - [ ] **VIS-02**: Status strip uses glassmorphism treatment with solid-enough contrast for text readability (opacity ~0.85 minimum)
 - [ ] **VIS-03**: Left drawer panel transitions are smooth (200-300ms ease-out slide), with content fade-in after the drawer reaches its open position
 - [ ] **VIS-04**: Active panel indicator in the status strip (subtle glow or underline on the panel's trigger segment) so the analyst knows which panel is open without looking at the drawer
@@ -75,7 +75,7 @@
 |-------------|-------|--------|
 | CLN-01 | Phase 28 | Pending |
 | CLN-03 | Phase 28 | Pending |
-| VIS-01 | Phase 28 | Pending |
+| VIS-01 | Phase 28 | Complete |
 | HUD-10 | Phase 29 | Pending |
 | HUD-11 | Phase 29 | Pending |
 | HUD-12 | Phase 29 | Pending |
