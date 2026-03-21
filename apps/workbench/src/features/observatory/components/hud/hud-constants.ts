@@ -1,5 +1,5 @@
 /**
- * hud-constants.ts — Phase 24 HUD-01, HUD-02, HUD-06
+ * hud-constants.ts — Phase 24 HUD-01, HUD-02, HUD-06; Phase 29 HUD-10, HUD-12
  *
  * Shared constants for all Space Flight HUD components.
  * Centralizing here avoids duplication and makes theming easy.
@@ -7,6 +7,7 @@
 
 import type { SpeedTier } from "../../character/ship/flight-types";
 import type { HuntStationId } from "../../world/types";
+import type { ObservatoryAnalystPresetId } from "../../types";
 
 // ---------------------------------------------------------------------------
 // Speed tier colors
@@ -76,3 +77,24 @@ export const HUD_SPEED_BAR_WIDTH = 12;
 export const HUD_COMPASS_WIDTH = 400;
 /** Total width of the inner scrolling compass strip in pixels (one full revolution) */
 export const HUD_COMPASS_INNER_WIDTH = 1200;
+
+// ---------------------------------------------------------------------------
+// Status strip constants — Phase 29
+// ---------------------------------------------------------------------------
+
+/** Height of the persistent status strip at the bottom of the observatory canvas */
+export const HUD_STATUS_STRIP_HEIGHT = 28;
+
+/**
+ * Four analyst preset segments shown in the status strip (HUD-12).
+ * Clicking a segment sets the analyst preset; radio-toggle behavior deactivates on re-click.
+ */
+export const ANALYST_PRESETS: ReadonlyArray<{
+  id: ObservatoryAnalystPresetId;
+  label: string;
+}> = [
+  { id: "threat", label: "THREAT" },
+  { id: "evidence", label: "EVIDENCE" },
+  { id: "receipts", label: "RECEIPTS" },
+  { id: "ghost", label: "GHOST" },
+] as const;
