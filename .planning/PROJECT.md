@@ -51,19 +51,10 @@ Security operators work across multiple views simultaneously with a spirit-drive
 - ✓ Space flight HUD (speed bar, compass, brackets, arrows, distance — 60fps ref-mutation) — v6.0
 - ✓ Star chart minimap + click-to-autopilot + boost transitions + arrival cinematics — v6.0
 - ✓ Progressive station discovery + mission waypoint trails + narrative flight — v6.0
-
-## Current Milestone: v7.0 Observatory Production HUD
-
-**Goal:** Transform the observatory's overlapping panel chaos into a clean cockpit HUD — glassmorphism left drawer (one panel at a time), persistent status strip with analyst presets, hotkey-driven panel switching, and a full panel inventory audit to cut what doesn't earn its space.
-
-**Target features:**
-- Persistent glassmorphism status strip (speed, heading, station count, minimap, analyst preset segments)
-- Single left-drawer panel system with mutual exclusion (one panel at a time, glass blur treatment)
-- Hotkey-driven panel triggers (E/R/M/G) + station click → explainability, Escape closes
-- Analyst presets (THREAT/EVIDENCE/RECEIPTS/GHOST) integrated into status strip as toggle segments
-- Full 11-panel inventory audit — keep, merge, or cut each panel for production
-- Unified z-index management and panel lifecycle (no overlapping, clean transitions)
-- Professional glassmorphism visual treatment (backdrop-filter blur, subtle borders, spirit accent colors)
+- ✓ Clean cockpit HUD — glassmorphism status strip, left drawer, hotkey panel switching — v7.0
+- ✓ Panel registry with mutual exclusion + analyst preset toggle segments — v7.0
+- ✓ Four rebuilt analyst panels (Explainability, Mission, Replay, Ghost Memory) — v7.0
+- ✓ Flight HUD glassmorphism restyle + repositioning — v7.0
 
 ### Active
 
@@ -89,7 +80,7 @@ Security operators work across multiple views simultaneously with a spirit-drive
 - Tech stack: Tauri 2, React 19, TypeScript, Zustand, React Three Fiber 9, drei 10, wawa-vfx, three 0.171+
 - WebGL2 renderer with logarithmic depth buffer (WebGPU deferred — postprocessing library incompatibility)
 - 40 v6.0 requirements fully satisfied (audit passed)
-- 6 milestones shipped (v1.0 IDE Pivot, v2.0 Huntronomer Integration, v3.0 Spirit & Observatory Evolution, v4.0 AAA Observatory Experience, v5.0 Observatory Analyst Experience, v6.0 Observatory Space Flight)
+- 7 milestones shipped (v1.0 IDE Pivot, v2.0 Huntronomer Integration, v3.0 Spirit & Observatory Evolution, v4.0 AAA Observatory Experience, v5.0 Observatory Analyst Experience, v6.0 Observatory Space Flight)
 
 ### Huntronomer Source
 Source 3D code lives in `clawdstrike-worktrees/huntronomer-workspace-orch` (branch `feature/huntronomer-workspace-orchestrator`, committed @ `1586fe2a1`).
@@ -135,4 +126,4 @@ Source 3D code lives in `clawdstrike-worktrees/huntronomer-workspace-orch` (bran
 | Progressive station discovery (session-only) | Rewards exploration without persistent state complexity | ✓ Good |
 
 ---
-*Last updated: 2026-03-20 after v6.0 Observatory Space Flight milestone completion*
+*Last updated: 2026-03-21 after v7.0 Observatory Production HUD milestone completion*
