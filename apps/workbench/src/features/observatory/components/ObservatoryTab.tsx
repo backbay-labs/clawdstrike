@@ -35,14 +35,7 @@ import {
   createInitialObservatoryProbeState,
   dispatchObservatoryProbe,
 } from "../world/probeRuntime";
-import { ObservatoryProbeHud } from "./ObservatoryProbeHud";
-import { ObservatoryMissionHud } from "./ObservatoryMissionHud";
-import { ObservatoryReplayHud } from "./ObservatoryReplayHud";
-import { ObservatoryReplayComparePanel } from "./ObservatoryReplayComparePanel";
-import { ObservatoryExplainabilityPanel } from "./ObservatoryExplainabilityPanel";
-import { ObservatoryAnalystPresetBar } from "./ObservatoryAnalystPresetBar";
 import { SpaceFlightHud } from "./hud/SpaceFlightHud";
-import { ObservatoryCinematicOverlay, StationArrivalCard } from "./ObservatoryCinematicOverlay";
 import {
   createObservatoryMissionPlan,
   deriveObservatoryMissionBranch,
@@ -936,99 +929,6 @@ export function ObservatoryTab() {
         {mode === "flow" ? "FLOW" : "ATLAS"}
       </button>
 
-      {!flyByActive && (
-        <ObservatoryAnalystPresetBar
-          activePresetId={analystPresetId}
-          onSelectPreset={(presetId) => setObservatoryAnalystPreset(presetId)}
-        />
-      )}
-
-      {!flyByActive && (
-        <button
-          type="button"
-          className="absolute top-14 right-24 z-10 rounded-md border border-[#202531] bg-[#0a0d14]/88 px-3 py-2 text-[10px] font-mono uppercase tracking-[0.16em] text-[#9cc7ff] transition-colors hover:border-[#9cc7ff]/40"
-          onClick={cycleGhostMode}
-        >
-          Ghost {ghostMode}
-        </button>
-      )}
-
-      {!flyByActive && (
-        <ObservatoryReplayHud
-          frames={replayFrames}
-          bookmarks={replayBookmarks}
-          markers={replayMarkers}
-          onAddBookmark={handleAddReplayBookmark}
-          onJumpSpike={handleReplayJumpSpike}
-          onJumpToMarker={handleReplayJumpMarker}
-          replay={replay}
-          selectedSpikeTimestampMs={replay.selectedSpikeTimestampMs ?? null}
-          spikes={replaySpikes}
-          onToggle={handleReplayToggle}
-          onUpdate={observatoryActions.setReplayState}
-        />
-      )}
-
-      {!flyByActive && replay.enabled && (
-        <ObservatoryReplayComparePanel
-          liveSnapshot={liveSnapshot}
-          replaySnapshot={replaySnapshot}
-          selectedDistrictId={replay.selectedDistrictId ?? selectedStationId}
-          onCreateAnnotation={handleReplayCreateAnnotation}
-          onSelectDistrict={handleReplaySelectDistrict}
-        />
-      )}
-
-      {!flyByActive && (
-        <ObservatoryExplainabilityPanel
-          station={panelStation}
-          lanes={effectiveTelemetry.pressureLanes}
-          replayEnabled={replay.enabled}
-          onOpenRoute={(route, label) => openApp(route, label)}
-          onSelectStation={(stationId) => observatoryActions.setSelectedStation(stationId)}
-        />
-      )}
-
-      {/* OBS-04: Probe HUD overlay — hidden during fly-by so letterbox bars are unobstructed */}
-      {!flyByActive && !replay.enabled && (
-        <ObservatoryProbeHud
-          guidance={probeGuidance}
-          onOpenNextAction={
-            probeGuidance?.recommendation
-              ? () => openObservatoryRecommendationRoute(probeGuidance.recommendation)
-              : null
-          }
-          probeState={probeState}
-        />
-      )}
-
-      {/* OBS-11: Mission HUD overlay — hidden during fly-by */}
-      {/* DSC-04: inFlightMode shows station-specific narrative directives */}
-      {!flyByActive && !replay.enabled && <ObservatoryMissionHud mission={mission} inFlightMode={characterControllerEnabled && mode === "flow"} />}
-
-      {!flyByActive && !replay.enabled && !mission && (
-        <button
-          type="button"
-          className="absolute top-14 right-2 z-10 rounded-md border border-[#d4a84b]/30 bg-[#0a0d14]/88 px-3 py-2 text-[10px] font-mono uppercase tracking-[0.18em] text-[#f0e5b0] transition-colors hover:border-[#d4a84b]/50"
-          onClick={handleStartMission}
-        >
-          Start Mission
-        </button>
-      )}
-
-      <ObservatoryCinematicOverlay
-        cue={activeSpikeCue}
-        visible={!flyByActive && !replay.enabled && activeSpikeCue != null}
-        onDismiss={handleDismissSpikeCue}
-        onOpenRoute={handleOpenSpikeCueRoute}
-      />
-
-      {/* TRN-03: Station arrival name card — shown on first approach within 180 units, once per station per session */}
-      <StationArrivalCard
-        stationId={arrivalStation}
-        visible={!flyByActive && !replay.enabled && arrivalStation !== null}
-        onComplete={() => setArrivalStation(null)}
-      />
 
       {/* OBS-06: Easter-egg activation toast — inline notification, no ToastProvider required */}
       {easterEggMsg && (
