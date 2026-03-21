@@ -52,9 +52,20 @@ Security operators work across multiple views simultaneously with a spirit-drive
 - ✓ Star chart minimap + click-to-autopilot + boost transitions + arrival cinematics — v6.0
 - ✓ Progressive station discovery + mission waypoint trails + narrative flight — v6.0
 
-### Active
+## Current Milestone: v7.0 Observatory Production HUD
 
-(No active requirements — awaiting next milestone definition)
+**Goal:** Transform the observatory's overlapping panel chaos into a clean cockpit HUD — glassmorphism left drawer (one panel at a time), persistent status strip with analyst presets, hotkey-driven panel switching, and a full panel inventory audit to cut what doesn't earn its space.
+
+**Target features:**
+- Persistent glassmorphism status strip (speed, heading, station count, minimap, analyst preset segments)
+- Single left-drawer panel system with mutual exclusion (one panel at a time, glass blur treatment)
+- Hotkey-driven panel triggers (E/R/M/G) + station click → explainability, Escape closes
+- Analyst presets (THREAT/EVIDENCE/RECEIPTS/GHOST) integrated into status strip as toggle segments
+- Full 11-panel inventory audit — keep, merge, or cut each panel for production
+- Unified z-index management and panel lifecycle (no overlapping, clean transitions)
+- Professional glassmorphism visual treatment (backdrop-filter blur, subtle borders, spirit accent colors)
+
+### Active
 
 ### Out of Scope
 
@@ -76,7 +87,7 @@ Security operators work across multiple views simultaneously with a spirit-drive
 ### Shipped State (v6.0)
 - 59 files modified, +10,365 / -2,112 LOC in v6.0 alone
 - Tech stack: Tauri 2, React 19, TypeScript, Zustand, React Three Fiber 9, drei 10, wawa-vfx, three 0.171+
-- WebGPU renderer with WebGL2 fallback, logarithmic depth buffer
+- WebGL2 renderer with logarithmic depth buffer (WebGPU deferred — postprocessing library incompatibility)
 - 40 v6.0 requirements fully satisfied (audit passed)
 - 6 milestones shipped (v1.0 IDE Pivot, v2.0 Huntronomer Integration, v3.0 Spirit & Observatory Evolution, v4.0 AAA Observatory Experience, v5.0 Observatory Analyst Experience, v6.0 Observatory Space Flight)
 
@@ -101,7 +112,7 @@ Source 3D code lives in `clawdstrike-worktrees/huntronomer-workspace-orch` (bran
 - **Terminal**: ghostty-web + PTY — existing integration
 - **Graph**: @xyflow/react — existing swarm board integration
 - **Editor**: CodeMirror — existing policy editor integration
-- **Renderer**: three 0.171+ with WebGPU (WebGL2 fallback)
+- **Renderer**: three 0.171+ with WebGL2 + logarithmic depth buffer (WebGPU deferred until postprocessing supports it)
 - **Compatibility**: All existing routes must remain reachable
 - **Testing**: All existing tests must pass after each phase
 

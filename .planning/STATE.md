@@ -1,33 +1,33 @@
 ---
 gsd_state_version: 1.0
-milestone: v6.0
-milestone_name: Observatory Space Flight
-status: completed
-stopped_at: Completed 27-01-PLAN.md
-last_updated: "2026-03-20T21:36:36.922Z"
-last_activity: "2026-03-20 — Mission waypoint trail (CatmullRom tube, #44ff88) + mission HUD narrative flight directives per station"
+milestone: v7.0
+milestone_name: Observatory Production HUD
+status: defining_requirements
+stopped_at: null
+last_updated: "2026-03-21"
+last_activity: "2026-03-21 — Milestone v7.0 started"
 progress:
-  total_phases: 8
-  completed_phases: 8
-  total_plans: 21
-  completed_plans: 21
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-20)
+See: .planning/PROJECT.md (updated 2026-03-21)
 
-**Core value:** Analysts fly a ship through an immersive space environment to reach floating stations — the journey between stations is as engaging as the destination
-**Current focus:** Phase 20 — Spatial Foundation (ready to plan)
+**Core value:** Security operators work across multiple views simultaneously with a spirit-driven immersive layer
+**Current focus:** Defining requirements for v7.0 Observatory Production HUD
 
 ## Current Position
 
-Phase: 26 of 26 (Discovery Missions)
-Plan: 2 of 2 (complete)
-Status: Phase 26 Plan 02 COMPLETE — Mission waypoint trail + narrative flight directives
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
 Last activity: 2026-03-20 — Mission waypoint trail (CatmullRom tube, #44ff88) + mission HUD narrative flight directives per station
 
 Progress: [██████████] 100%
