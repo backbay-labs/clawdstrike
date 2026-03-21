@@ -635,11 +635,11 @@ Plans:
   1. Opening the observatory in flow mode shows only the 3D scene and the v6.0 flight HUD — no Hunt Loop panel, no Explainability panel, no Mission Overlay, no Analyst Preset bar, no Ghost Layer, no Weather Layer, no Cinematic Overlay, no Probe HUD, no Replay HUD visible
   2. CSS custom properties `--hud-bg`, `--hud-border`, `--hud-shadow`, `--hud-text`, `--hud-text-muted`, `--hud-accent` are defined in the observatory stylesheet and resolve to the glassmorphism values — any element using them renders with the correct treatment
   3. The 10 removed component files no longer exist anywhere in `apps/workbench/src` — grep for their filenames returns nothing
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 28-01: Delete 10 legacy overlay components from render tree and codebase (CLN-01, CLN-03)
-- [ ] 28-02: Define glassmorphism CSS custom properties as observatory design tokens (VIS-01)
+- [ ] 28-01-PLAN.md — Delete 10 legacy overlay components from render tree and codebase (CLN-01, CLN-03)
+- [ ] 28-02-PLAN.md — Define glassmorphism CSS custom properties as observatory design tokens (VIS-01)
 
 ### Phase 29: Status Strip + Panel Registry
 **Goal**: The observatory has a persistent cockpit footer — a glassmorphism strip anchored to the bottom of the canvas shows live telemetry at 60fps, analyst preset toggles let the operator switch investigative lenses, and the Zustand panel registry enforces that only one left-drawer panel can be open at a time
