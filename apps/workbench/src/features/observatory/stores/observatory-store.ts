@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { createSelectors } from "@/lib/create-selectors";
 import type {
+  HudPanelId,
   ObservatoryReplayAnnotation,
   ObservatoryReplayBookmark,
   ObservatoryReplayMarker,
@@ -70,6 +71,7 @@ const useObservatoryStoreBase = create<ObservatoryState>((set, get) => ({
   dockingState: { ...DEFAULT_DOCKING_STATE },
   autopilotTargetStationId: null,
   discoveredStations: new Set<HuntStationId>(["signal", "targets"]),
+  activePanel: null,
   actions: {
     setStations: (stations: ObservatoryStation[]) => {
       const artifactCount = stations.reduce((sum, s) => sum + s.artifactCount, 0);
@@ -237,6 +239,10 @@ const useObservatoryStoreBase = create<ObservatoryState>((set, get) => ({
         next.add(stationId);
         return { discoveredStations: next };
       }),
+    openPanel: (id: HudPanelId) => set({ activePanel: id }),
+    closePanel: () => set({ activePanel: null }),
+    togglePanel: (id: HudPanelId) =>
+      set((state) => ({ activePanel: state.activePanel === id ? null : id })),
   },
 }));
 
