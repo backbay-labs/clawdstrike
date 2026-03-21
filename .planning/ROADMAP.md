@@ -672,7 +672,7 @@ Plans:
 
 Plans:
 - [ ] 30-01: ObservatoryLeftDrawer container — CSS slide transition, panel slot, glassmorphism shell (HUD-13, VIS-03)
-- [ ] 30-02: Hotkey bindings (E/R/M/G/Escape) wired to panel registry + station click → explainability (HUD-14, HUD-15, HUD-16)
+- [x] 30-02: Hotkey bindings (E/R/M/G/Escape) wired to panel registry + station click → explainability (HUD-14, HUD-15, HUD-16)
 - [ ] 30-03: Flight HUD glassmorphism restyle + reposition to avoid status strip conflict (CLN-02)
 
 ### Phase 31: Rebuilt Panels

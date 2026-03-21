@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v7.0
 milestone_name: Observatory Production HUD
 status: planning
-stopped_at: Completed 30-01-PLAN.md
-last_updated: "2026-03-21T14:00:00.000Z"
-last_activity: 2026-03-21 — v7.0 roadmap created, phases 28-31 defined
+stopped_at: Completed 30-02-PLAN.md
+last_updated: "2026-03-21T14:02:12Z"
+last_activity: 2026-03-21 — Phase 30 plan 02 complete (hotkeys + station click HUD-14/15/16)
 progress:
   total_phases: 4
   completed_phases: 2
   total_plans: 7
-  completed_plans: 5
+  completed_plans: 6
   percent: 0
 ---
 
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-03-21)
 
 ## Current Position
 
-Phase: 28 of 31 (Design Tokens + Panel Audit)
-Plan: — (not started)
-Status: Ready to plan
-Last activity: 2026-03-21 — v7.0 roadmap created, phases 28-31 defined
+Phase: 30 of 31 (Left Drawer + Hotkeys + Flight HUD Restyle)
+Plan: 02 complete
+Status: In progress
+Last activity: 2026-03-21 — Phase 30 plan 02 complete (hotkeys + station click HUD-14/15/16)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [████████░░] 85%
 
 ## Performance Metrics
 
@@ -50,6 +50,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 29 P02 | 12 | 2 tasks | 4 files |
 | Phase 30-left-drawer-hotkeys-flight-hud-restyle P03 | 2 | 2 tasks | 3 files |
 | Phase 30-left-drawer-hotkeys-flight-hud-restyle P01 | 8 | 2 tasks | 4 files |
+| Phase 30-left-drawer-hotkeys-flight-hud-restyle P02 | 2 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -73,6 +74,9 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 30]: HUD_COLORS replaced by CSS var references in SpeedIndicator and HeadingCompass — components theme via CSS not JS constants
 - [Phase 30]: Always-mounted drawer pattern (translateX not conditional render) — avoids unmount/remount cost on open; consistent with SpaceFlightHud pattern
 - [Phase 30]: Left drawer two-part transition: slide 250ms ease-out then content fade 200ms with 100ms delay — polished reveal sequence
+- [Phase 30]: useObservatoryStore.getState() imperative in hotkey handler — event callbacks are not per-frame, no subscription needed
+- [Phase 30]: paneIsActive gates all hotkeys — prevents E/R/M/G from firing when another pane has focus
+- [Phase 30]: handleSelectStation always calls openPanel('explainability') on new station select — openPanel is idempotent if panel already open
 
 ### Blockers/Concerns
 
@@ -81,6 +85,6 @@ Progress: [░░░░░░░░░░] 0%
 
 ## Session Continuity
 
-Last session: 2026-03-21T14:00:00.000Z
-Stopped at: Completed 30-01-PLAN.md
+Last session: 2026-03-21T14:02:12Z
+Stopped at: Completed 30-02-PLAN.md
 Resume file: None
