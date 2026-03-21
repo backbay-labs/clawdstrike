@@ -37,6 +37,7 @@ import {
 } from "../world/probeRuntime";
 import { SpaceFlightHud } from "./hud/SpaceFlightHud";
 import { ObservatoryStatusStrip } from "./hud/ObservatoryStatusStrip";
+import { ObservatoryLeftDrawer } from "./hud/ObservatoryLeftDrawer";
 import {
   createObservatoryMissionPlan,
   deriveObservatoryMissionBranch,
@@ -893,6 +894,9 @@ export function ObservatoryTab() {
       <SpaceFlightHud
         visible={!flyByActive && !replay.enabled && characterControllerEnabled && mode === "flow"}
       />
+
+      {/* Phase 30 HUD: ObservatoryLeftDrawer — slides in from left when a panel is active */}
+      <ObservatoryLeftDrawer />
 
       {/* Phase 29 HUD: ObservatoryStatusStrip — persistent cockpit footer, always visible */}
       <ObservatoryStatusStrip />
