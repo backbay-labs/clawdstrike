@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v7.0
 milestone_name: Observatory Production HUD
 status: executing
-stopped_at: Completed 31-01-PLAN.md
-last_updated: "2026-03-21T14:20:57.935Z"
+stopped_at: Completed 31-02-PLAN.md
+last_updated: "2026-03-21T14:25:54.934Z"
 last_activity: 2026-03-21 — Phase 30 plan 02 complete (hotkeys + station click HUD-14/15/16)
 progress:
   total_phases: 4
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 9
-  completed_plans: 8
+  completed_plans: 9
   percent: 85
 ---
 
@@ -52,6 +52,7 @@ Progress: [████████░░] 85%
 | Phase 30-left-drawer-hotkeys-flight-hud-restyle P01 | 8 | 2 tasks | 4 files |
 | Phase 30-left-drawer-hotkeys-flight-hud-restyle P02 | 2 | 2 tasks | 3 files |
 | Phase 31-rebuilt-panels P01 | 3 | 2 tasks | 5 files |
+| Phase 31-rebuilt-panels P02 | 180 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -80,6 +81,7 @@ Progress: [████████░░] 85%
 - [Phase 30]: handleSelectStation always calls openPanel('explainability') on new station select — openPanel is idempotent if panel already open
 - [Phase 31]: ExplainabilityDrawerPanel renders empty state when selectedStationId is null — panel responsibility, not drawer-level guard
 - [Phase 31]: ReplayDrawerPanel always renders (no null empty state) — replay state always exists in store; only bookmarks section has empty message
+- [Phase 31-02]: renderPanel() helper uses exhaustive switch on HudPanelId — TypeScript ensures all 4 cases covered with no default needed
 
 ### Blockers/Concerns
 
@@ -88,6 +90,6 @@ Progress: [████████░░] 85%
 
 ## Session Continuity
 
-Last session: 2026-03-21T14:20:57.931Z
-Stopped at: Completed 31-01-PLAN.md
+Last session: 2026-03-21T14:25:54.932Z
+Stopped at: Completed 31-02-PLAN.md
 Resume file: None

@@ -628,7 +628,7 @@ Plans:
 - [x] **Phase 28: Design Tokens + Panel Audit** — Define glassmorphism CSS custom properties, remove all 10 legacy overlay components from the render tree, and delete their dead code from the codebase (completed 2026-03-21)
 - [x] **Phase 29: Status Strip + Panel Registry** — Persistent glassmorphism bottom strip with live speed/heading/station data, analyst preset toggle segments, and a Zustand panel registry slice that enforces one-panel-at-a-time mutual exclusion (completed 2026-03-21)
 - [x] **Phase 30: Left Drawer + Hotkeys + Flight HUD Restyle** — Sliding left-drawer panel container with CSS transition, hotkey bindings (E/R/M/G/Escape), station-click-to-explainability wiring, and flight HUD restyled to match glassmorphism treatment (completed 2026-03-21)
-- [ ] **Phase 31: Rebuilt Panels** — Explainability, Mission, Replay, and Ghost Memory panels rebuilt for the left drawer format with compact vertical layouts and glassmorphism styling
+- [x] **Phase 31: Rebuilt Panels** — Explainability, Mission, Replay, and Ghost Memory panels rebuilt for the left drawer format with compact vertical layouts and glassmorphism styling (completed 2026-03-21)
 
 ## Phase Details
 
@@ -705,4 +705,4 @@ Phase 28 first — clean slate and design tokens before anything is built. Phase
 | 28. Design Tokens + Panel Audit | 2/2 | Complete    | 2026-03-21 | - |
 | 29. Status Strip + Panel Registry | 2/2 | Complete    | 2026-03-21 | - |
 | 30. Left Drawer + Hotkeys + Flight HUD Restyle | 2/3 | Complete    | 2026-03-21 | - |
-| 31. Rebuilt Panels | 1/2 | In Progress|  | - |
+| 31. Rebuilt Panels | 2/2 | Complete   | 2026-03-21 | - |
