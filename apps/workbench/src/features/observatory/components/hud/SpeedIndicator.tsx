@@ -22,7 +22,7 @@ import { useEffect, useRef } from "react";
 import { useObservatoryStore } from "../../stores/observatory-store";
 import { DEFAULT_FLIGHT_CONFIG } from "../../character/ship/flight-types";
 import {
-  HUD_COLORS,
+  HUD_STATUS_STRIP_HEIGHT,
   HUD_SPEED_BAR_HEIGHT,
   HUD_SPEED_BAR_WIDTH,
   SPEED_TIER_COLORS,
@@ -87,7 +87,7 @@ export function SpeedIndicator() {
       style={{
         position: "absolute",
         left: 16,
-        bottom: 80,
+        bottom: 80 + HUD_STATUS_STRIP_HEIGHT,
         width: HUD_SPEED_BAR_WIDTH,
         display: "flex",
         flexDirection: "column",
@@ -114,9 +114,9 @@ export function SpeedIndicator() {
           position: "relative",
           width: HUD_SPEED_BAR_WIDTH,
           height: HUD_SPEED_BAR_HEIGHT,
-          backgroundColor: "#1a2035",
+          backgroundColor: "var(--hud-bg, #1a2035)",
           borderRadius: 3,
-          border: `1px solid ${HUD_COLORS.hudBorder}`,
+          border: "var(--hud-border, 1px solid #202531)",
           overflow: "hidden",
         }}
       >
@@ -151,7 +151,7 @@ export function SpeedIndicator() {
           data-testid="hud-speed-readout"
           style={{
             fontSize: 10,
-            color: HUD_COLORS.hudText,
+            color: "var(--hud-text, #c8d2e0)",
             fontVariantNumeric: "tabular-nums",
           }}
         >
@@ -160,7 +160,7 @@ export function SpeedIndicator() {
         <span
           style={{
             fontSize: 7,
-            color: HUD_COLORS.hudTextDim,
+            color: "var(--hud-text-muted, #6f7f9a)",
           }}
         >
           u/s

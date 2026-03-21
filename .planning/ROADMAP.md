@@ -668,7 +668,7 @@ Plans:
   4. Clicking a station in the 3D scene opens the Explainability panel for that station in the left drawer
   5. The flight HUD elements (speed bar, compass, target brackets, off-screen arrows) are restyled with glassmorphism treatment and repositioned so they do not overlap the status strip
   6. Panel open/close transitions animate at 200-300ms ease-out — the drawer slides in smoothly and content fades in after the drawer reaches its open position
-**Plans**: 2 plans
+**Plans**: 3 plans
 
 Plans:
 - [ ] 30-01: ObservatoryLeftDrawer container — CSS slide transition, panel slot, glassmorphism shell (HUD-13, VIS-03)

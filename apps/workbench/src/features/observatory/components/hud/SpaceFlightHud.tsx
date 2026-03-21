@@ -54,7 +54,7 @@ export function SpaceFlightHud({ visible }: SpaceFlightHudProps) {
         // Elite Dangerous instrument typography
         fontFamily: '"JetBrains Mono", "Fira Code", "Menlo", monospace',
         fontSize: "10px",
-        color: "#c8d2e0",
+        color: "var(--hud-text, #c8d2e0)",
         letterSpacing: "0.08em",
         textTransform: "uppercase",
         // Smooth hide/show transitions to avoid jarring cuts
