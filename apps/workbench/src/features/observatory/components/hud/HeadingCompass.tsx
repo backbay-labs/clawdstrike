@@ -34,7 +34,6 @@ import {
   HUNT_STATION_PLACEMENTS,
 } from "../../world/stations";
 import {
-  HUD_COLORS,
   HUD_COMPASS_WIDTH,
   HUD_COMPASS_INNER_WIDTH,
   STATION_COLORS_HEX,
@@ -87,7 +86,7 @@ function CompassStripContents({ offsetX = 0 }: { offsetX?: number }) {
             bottom: 0,
             width: 1,
             height: 4,
-            backgroundColor: HUD_COLORS.hudBorder,
+            backgroundColor: "var(--hud-text-muted, #6f7f9a)",
             transform: "translateX(-50%)",
           }}
         />
@@ -190,10 +189,11 @@ export function HeadingCompass() {
         width: HUD_COMPASS_WIDTH,
         height: 28,
         overflow: "hidden",
-        backgroundColor: "rgba(10, 13, 20, 0.7)",
-        borderBottom: `1px solid ${HUD_COLORS.hudBorder}`,
-        backdropFilter: "blur(4px)",
-        WebkitBackdropFilter: "blur(4px)",
+        background: "var(--hud-bg, rgba(10, 13, 20, 0.7))",
+        borderBottom: "var(--hud-border, 1px solid #202531)",
+        backdropFilter: "var(--hud-blur, blur(12px))",
+        WebkitBackdropFilter: "var(--hud-blur, blur(12px))",
+        borderRadius: "var(--hud-radius, 8px)",
       }}
     >
       {/* Inner scrolling strip — 3x width for seamless wrapping */}
