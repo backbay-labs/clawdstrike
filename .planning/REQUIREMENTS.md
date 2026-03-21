@@ -14,14 +14,14 @@
 
 ### Panel Framework
 
-- [ ] **HUD-10**: Observatory opens to clean 3D scene with only a thin glassmorphism status strip at the bottom — no panels, no overlays, no floating boxes visible by default
-- [ ] **HUD-11**: Status strip shows speed, heading cardinal, station count, and minimap indicator — updated at 60fps via ref-mutation (no setState)
-- [ ] **HUD-12**: Analyst preset segments (THREAT, EVIDENCE, RECEIPTS, GHOST) are toggle buttons inside the status strip — clicking one activates that lens, clicking the active one deactivates it
+- [x] **HUD-10**: Observatory opens to clean 3D scene with only a thin glassmorphism status strip at the bottom — no panels, no overlays, no floating boxes visible by default
+- [x] **HUD-11**: Status strip shows speed, heading cardinal, station count, and minimap indicator — updated at 60fps via ref-mutation (no setState)
+- [x] **HUD-12**: Analyst preset segments (THREAT, EVIDENCE, RECEIPTS, GHOST) are toggle buttons inside the status strip — clicking one activates that lens, clicking the active one deactivates it
 - [ ] **HUD-13**: Single left-drawer panel slot (300-400px wide, glassmorphism) slides in from the left edge with a CSS transition — opening a new panel replaces the current one with no overlap
 - [ ] **HUD-14**: Panel hotkeys (E = Explainability, R = Replay, M = Mission, G = Ghost) toggle their panel open/closed — pressing the same key closes the active panel
 - [ ] **HUD-15**: Escape key closes any open left-drawer panel and returns to clean scene view
 - [ ] **HUD-16**: Clicking a station in the 3D scene opens the Explainability panel for that station in the left drawer
-- [ ] **HUD-17**: Panel registry (Zustand slice) tracks which panel is active, supports open/close/toggle actions, and prevents multiple panels from being open simultaneously
+- [x] **HUD-17**: Panel registry (Zustand slice) tracks which panel is active, supports open/close/toggle actions, and prevents multiple panels from being open simultaneously
 
 ### Panel Cleanup
 
@@ -39,9 +39,9 @@
 ### Visual Polish
 
 - [x] **VIS-01**: Glassmorphism design tokens (background, border, shadow, text colors, accent) defined as CSS custom properties so all HUD surfaces share the same visual language
-- [ ] **VIS-02**: Status strip uses glassmorphism treatment with solid-enough contrast for text readability (opacity ~0.85 minimum)
+- [x] **VIS-02**: Status strip uses glassmorphism treatment with solid-enough contrast for text readability (opacity ~0.85 minimum)
 - [ ] **VIS-03**: Left drawer panel transitions are smooth (200-300ms ease-out slide), with content fade-in after the drawer reaches its open position
-- [ ] **VIS-04**: Active panel indicator in the status strip (subtle glow or underline on the panel's trigger segment) so the analyst knows which panel is open without looking at the drawer
+- [x] **VIS-04**: Active panel indicator in the status strip (subtle glow or underline on the panel's trigger segment) so the analyst knows which panel is open without looking at the drawer
 
 ## v8.0 Requirements (Deferred)
 
@@ -76,12 +76,12 @@
 | CLN-01 | Phase 28 | Complete |
 | CLN-03 | Phase 28 | Complete |
 | VIS-01 | Phase 28 | Complete |
-| HUD-10 | Phase 29 | Pending |
-| HUD-11 | Phase 29 | Pending |
-| HUD-12 | Phase 29 | Pending |
-| HUD-17 | Phase 29 | Pending |
-| VIS-02 | Phase 29 | Pending |
-| VIS-04 | Phase 29 | Pending |
+| HUD-10 | Phase 29 | Complete |
+| HUD-11 | Phase 29 | Complete |
+| HUD-12 | Phase 29 | Complete |
+| HUD-17 | Phase 29 | Complete |
+| VIS-02 | Phase 29 | Complete |
+| VIS-04 | Phase 29 | Complete |
 | HUD-13 | Phase 30 | Pending |
 | HUD-14 | Phase 30 | Pending |
 | HUD-15 | Phase 30 | Pending |
