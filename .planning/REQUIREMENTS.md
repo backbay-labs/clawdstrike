@@ -73,31 +73,31 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| HUD-10 | Pending | Pending |
-| HUD-11 | Pending | Pending |
-| HUD-12 | Pending | Pending |
-| HUD-13 | Pending | Pending |
-| HUD-14 | Pending | Pending |
-| HUD-15 | Pending | Pending |
-| HUD-16 | Pending | Pending |
-| HUD-17 | Pending | Pending |
-| CLN-01 | Pending | Pending |
-| CLN-02 | Pending | Pending |
-| CLN-03 | Pending | Pending |
-| PNL-01 | Pending | Pending |
-| PNL-02 | Pending | Pending |
-| PNL-03 | Pending | Pending |
-| PNL-04 | Pending | Pending |
-| VIS-01 | Pending | Pending |
-| VIS-02 | Pending | Pending |
-| VIS-03 | Pending | Pending |
-| VIS-04 | Pending | Pending |
+| CLN-01 | Phase 28 | Pending |
+| CLN-03 | Phase 28 | Pending |
+| VIS-01 | Phase 28 | Pending |
+| HUD-10 | Phase 29 | Pending |
+| HUD-11 | Phase 29 | Pending |
+| HUD-12 | Phase 29 | Pending |
+| HUD-17 | Phase 29 | Pending |
+| VIS-02 | Phase 29 | Pending |
+| VIS-04 | Phase 29 | Pending |
+| HUD-13 | Phase 30 | Pending |
+| HUD-14 | Phase 30 | Pending |
+| HUD-15 | Phase 30 | Pending |
+| HUD-16 | Phase 30 | Pending |
+| CLN-02 | Phase 30 | Pending |
+| VIS-03 | Phase 30 | Pending |
+| PNL-01 | Phase 31 | Pending |
+| PNL-02 | Phase 31 | Pending |
+| PNL-03 | Phase 31 | Pending |
+| PNL-04 | Phase 31 | Pending |
 
 **Coverage:**
 - v7.0 requirements: 19 total
-- Mapped to phases: 0
-- Unmapped: 19
+- Mapped to phases: 19
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-21*
-*Last updated: 2026-03-21 after milestone v7.0 definition*
+*Last updated: 2026-03-21 after v7.0 roadmap creation (Phases 28-31)*

@@ -8,6 +8,7 @@
 - ✅ **v4.0 AAA Observatory Experience** — Phases 10-14 (shipped 2026-03-19)
 - ✅ **v5.0 Observatory Analyst Experience** — Phases 15-19 (shipped 2026-03-20)
 - ✅ **v6.0 Observatory Space Flight** — Phases 20-27 (shipped 2026-03-20)
+- 🚧 **v7.0 Observatory Production HUD** — Phases 28-31 (in progress)
 
 ---
 
@@ -447,7 +448,8 @@ Plans:
 
 ---
 
-## v6.0 Observatory Space Flight
+<details>
+<summary>✅ v6.0 Observatory Space Flight (Phases 20-27) — SHIPPED 2026-03-20</summary>
 
 **Milestone Goal:** Transform the observatory from a ground-level station ring into an immersive space environment where analysts fly a ship between floating space stations — the journey between stations is as engaging as the destination.
 
@@ -477,8 +479,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 20-01-PLAN.md — three 0.171+ upgrade + WebGPU renderer swap + logarithmic depth buffer + space-scale world constants + elevation type (SPC-01)
-- [ ] 20-02-PLAN.md — SpaceStationMesh composable primitives (torus/cylinder/panel/bay) seeded per station, wired into scene (STN-01)
+- [x] 20-01-PLAN.md — three 0.171+ upgrade + WebGPU renderer swap + logarithmic depth buffer + space-scale world constants + elevation type (SPC-01)
+- [x] 20-02-PLAN.md — SpaceStationMesh composable primitives (torus/cylinder/panel/bay) seeded per station, wired into scene (STN-01)
 
 ### Phase 21: Flight Controller
 **Goal**: Analysts pilot a ship through space — velocity-based flight with quaternion rotation, configurable damping, three speed tiers, and a chase camera that follows the ship with smooth lag; thruster particles fire with thrust intensity
@@ -494,9 +496,9 @@ Plans:
 
 Plans:
 - [x] 21-01-PLAN.md — Flight types + ShipMesh + observatory-store flight slice (FLT-01) — completed 2026-03-20
-- [ ] 21-02-PLAN.md — SpaceFlightController + useFlightInput + useFlightLoop (FLT-02, FLT-03)
-- [ ] 21-03-PLAN.md — Speed tiers: cruise/boost/dock caps + boost cooldown + dock proximity (FLT-04)
-- [ ] 21-04-PLAN.md — Chase camera + thruster exhaust VFX (FLT-05, FLT-06)
+- [x] 21-02-PLAN.md — SpaceFlightController + useFlightInput + useFlightLoop (FLT-02, FLT-03)
+- [x] 21-03-PLAN.md — Speed tiers: cruise/boost/dock caps + boost cooldown + dock proximity (FLT-04)
+- [x] 21-04-PLAN.md — Chase camera + thruster exhaust VFX (FLT-05, FLT-06)
 
 ### Phase 22: Space Environment Art
 **Goal**: The void between stations feels like deep space — a 3-layer starfield fills the background, nebula cloud patches float near stations, depth fog fades distant geometry, emissive lanes connect stations, and particle streams flow along those lanes
@@ -527,9 +529,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 23-01-PLAN.md — 4-tier LOD (drei Detailed) + beacon lights + Fresnel rim glow (STN-02, STN-03, STN-04)
-- [ ] 23-02-PLAN.md — Docking ring geometry + flanking guide lights per station (STN-05)
-- [ ] 23-03-PLAN.md — Three-zone docking system: approach, magnet-pull, dock lock + undock (DCK-01, DCK-02, DCK-03, DCK-04)
+- [x] 23-01-PLAN.md — 4-tier LOD (drei Detailed) + beacon lights + Fresnel rim glow (STN-02, STN-03, STN-04)
+- [x] 23-02-PLAN.md — Docking ring geometry + flanking guide lights per station (STN-05)
+- [x] 23-03-PLAN.md — Three-zone docking system: approach, magnet-pull, dock lock + undock (DCK-01, DCK-02, DCK-03, DCK-04)
 
 ### Phase 24: Space Flight HUD
 **Goal**: Analysts always know where they are, how fast they are moving, and where their target is — a DOM-based HUD updates at 60fps via ref mutation with a speed bar, heading compass, target brackets, off-screen arrows, and distance readouts
@@ -560,9 +562,9 @@ Plans:
 **Plans**: 4 plans
 
 Plans:
-- [ ] 25-01-PLAN.md — StarChartMinimap component — replaces SVG ring, renders station dots + player arrow + lane connections + status icons (MAP-01, MAP-04)
-- [ ] 25-02-PLAN.md — Flight path trail on star chart + click-to-autopilot navigation engagement (MAP-02, MAP-03)
-- [ ] 25-03-PLAN.md — Boost transition effects — FOV punch animation + warp speed line particles + bloom spike (TRN-01, TRN-02, TRN-04)
+- [x] 25-01-PLAN.md — StarChartMinimap component — replaces SVG ring, renders station dots + player arrow + lane connections + status icons (MAP-01, MAP-04)
+- [x] 25-02-PLAN.md — Flight path trail on star chart + click-to-autopilot navigation engagement (MAP-02, MAP-03)
+- [x] 25-03-PLAN.md — Boost transition effects — FOV punch animation + warp speed line particles + bloom spike (TRN-01, TRN-02, TRN-04)
 - [x] 25-04-PLAN.md — Station arrival name card (ObservatoryCinematicOverlay letterbox + name slide) + proximity detail fade (TRN-03, TRN-05)
 
 ### Phase 26: Discovery + Missions
@@ -584,7 +586,6 @@ Plans:
 **Goal**: The flight controller's runtime state (position, quaternion, speed tier, current speed) propagates to the Zustand store so all downstream consumers (HUD, star chart trail, boost transitions, station arrival cinematics, discovery proximity, NPC proximity fade) receive live data; click-to-autopilot on the star chart engages actual ship navigation
 **Depends on**: Phase 21 (flight controller), Phase 25 (star chart autopilot)
 **Requirements**: MAP-02, MAP-03
-**Gap Closure**: Closes integration gaps from v6.0 milestone audit — restores runtime functionality for TRN-01, TRN-02, TRN-03, TRN-04, TRN-05, DSC-02, HUD-01, HUD-02
 **Success Criteria** (what must be TRUE):
   1. `store.flightState` updates at 60fps with live position, quaternion, speedTier, and currentSpeed from the flight controller — no stale DEFAULT_FLIGHT_STATE values persist after entering flow mode
   2. Clicking a station on the star chart minimap causes the ship to turn toward and fly to the target station — the autopilot slerp block in useFlightLoop executes; WASD input cancels autopilot
@@ -594,21 +595,111 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 27-01-PLAN.md — FlightState store bridge (onStateChange prop chain) + autopilot ref bridge (MAP-02, MAP-03)
+- [x] 27-01-PLAN.md — FlightState store bridge (onStateChange prop chain) + autopilot ref bridge (MAP-02, MAP-03)
 
+## Progress
+
+| Phase | Milestone | Plans Complete | Status | Completed |
+|-------|-----------|----------------|--------|-----------|
+| 20. Spatial Foundation | v6.0 | 2/2 | Complete | 2026-03-20 |
+| 21. Flight Controller | v6.0 | 4/4 | Complete | 2026-03-20 |
+| 22. Space Environment Art | v6.0 | 3/3 | Complete | 2026-03-20 |
+| 23. Station Detail + Docking | v6.0 | 3/3 | Complete | 2026-03-20 |
+| 24. Space Flight HUD | v6.0 | 2/2 | Complete | 2026-03-20 |
+| 25. Star Chart + Transitions | v6.0 | 4/4 | Complete | 2026-03-20 |
+| 26. Discovery + Missions | v6.0 | 2/2 | Complete | 2026-03-20 |
+| 27. Flight State Bridge + Autopilot Wiring | v6.0 | 1/1 | Complete | 2026-03-20 |
+
+</details>
+
+---
+
+## v7.0 Observatory Production HUD
+
+**Milestone Goal:** Transform the observatory's overlapping panel chaos into a clean cockpit HUD — glassmorphism left drawer (one panel at a time), persistent status strip with analyst presets, hotkey-driven panel switching, and a full panel inventory audit to cut what doesn't earn its space.
+
+## Phases
+
+- [ ] **Phase 28: Design Tokens + Panel Audit** — Define glassmorphism CSS custom properties, remove all 10 legacy overlay components from the render tree, and delete their dead code from the codebase
+- [ ] **Phase 29: Status Strip + Panel Registry** — Persistent glassmorphism bottom strip with live speed/heading/station data, analyst preset toggle segments, and a Zustand panel registry slice that enforces one-panel-at-a-time mutual exclusion
+- [ ] **Phase 30: Left Drawer + Hotkeys + Flight HUD Restyle** — Sliding left-drawer panel container with CSS transition, hotkey bindings (E/R/M/G/Escape), station-click-to-explainability wiring, and flight HUD restyled to match glassmorphism treatment
+- [ ] **Phase 31: Rebuilt Panels** — Explainability, Mission, Replay, and Ghost Memory panels rebuilt for the left drawer format with compact vertical layouts and glassmorphism styling
+
+## Phase Details
+
+### Phase 28: Design Tokens + Panel Audit
+**Goal**: The observatory has a clean slate and a unified visual language — all legacy overlay clutter is gone, the codebase has no dead panel code, and every future HUD surface has shared CSS tokens to draw from
+**Depends on**: Phase 27 (v6.0 complete; space flight and all overlapping panels are the baseline to clean up)
+**Requirements**: CLN-01, CLN-03, VIS-01
+**Success Criteria** (what must be TRUE):
+  1. Opening the observatory in flow mode shows only the 3D scene and the v6.0 flight HUD — no Hunt Loop panel, no Explainability panel, no Mission Overlay, no Analyst Preset bar, no Ghost Layer, no Weather Layer, no Cinematic Overlay, no Probe HUD, no Replay HUD visible
+  2. CSS custom properties `--hud-bg`, `--hud-border`, `--hud-shadow`, `--hud-text`, `--hud-text-muted`, `--hud-accent` are defined in the observatory stylesheet and resolve to the glassmorphism values — any element using them renders with the correct treatment
+  3. The 10 removed component files no longer exist anywhere in `apps/workbench/src` — grep for their filenames returns nothing
+**Plans**: TBD
+
+Plans:
+- [ ] 28-01: Delete 10 legacy overlay components from render tree and codebase (CLN-01, CLN-03)
+- [ ] 28-02: Define glassmorphism CSS custom properties as observatory design tokens (VIS-01)
+
+### Phase 29: Status Strip + Panel Registry
+**Goal**: The observatory has a persistent cockpit footer — a glassmorphism strip anchored to the bottom of the canvas shows live telemetry at 60fps, analyst preset toggles let the operator switch investigative lenses, and the Zustand panel registry enforces that only one left-drawer panel can be open at a time
+**Depends on**: Phase 28 (CSS tokens must exist before strip styling is applied; clean scene required for unobstructed strip)
+**Requirements**: HUD-10, HUD-11, HUD-12, HUD-17, VIS-02, VIS-04
+**Success Criteria** (what must be TRUE):
+  1. A glassmorphism status strip is permanently visible at the bottom of the observatory canvas — it does not appear/disappear with panel state
+  2. Speed, heading cardinal direction, and station count in the strip update at 60fps via ref-mutation with no React setState calls in the frame loop
+  3. Clicking a preset segment (THREAT, EVIDENCE, RECEIPTS, GHOST) activates that lens; clicking the active segment deactivates it; only one segment can be active at a time
+  4. The panel registry Zustand slice correctly enforces mutual exclusion — calling `open('mission')` when `'replay'` is active closes replay first; `getActivePanel()` always returns at most one panel ID or null
+  5. When a panel is open, its corresponding trigger in the status strip shows a visible active indicator (glow or underline) that clears when the panel closes
+**Plans**: TBD
+
+Plans:
+- [ ] 29-01: Zustand panel registry slice (open/close/toggle, mutual exclusion) + unit tests (HUD-17)
+- [ ] 29-02: ObservatoryStatusStrip component — glassmorphism layout, rAF telemetry update, analyst preset segments (HUD-10, HUD-11, HUD-12, VIS-02, VIS-04)
+
+### Phase 30: Left Drawer + Hotkeys + Flight HUD Restyle
+**Goal**: Analysts control panels with their keyboard — hotkeys slide the left drawer open to the correct panel or close it entirely, station clicks drive straight to Explainability, and the v6.0 flight HUD chrome is updated to share the glassmorphism treatment without fighting the new status strip
+**Depends on**: Phase 29 (panel registry must exist before hotkey bindings can call open/close/toggle; status strip position must be established before flight HUD repositioning)
+**Requirements**: HUD-13, HUD-14, HUD-15, HUD-16, CLN-02, VIS-03
+**Success Criteria** (what must be TRUE):
+  1. A 300-400px wide glassmorphism panel slot slides in from the left edge of the canvas when any panel is opened — the 3D scene is still visible to the right
+  2. Pressing E, R, M, or G opens the corresponding panel (Explainability, Replay, Mission, Ghost) if it is not open; pressing the same key again closes it; pressing a different key switches panels without overlap
+  3. Pressing Escape closes any open left-drawer panel and returns to the clean scene view
+  4. Clicking a station in the 3D scene opens the Explainability panel for that station in the left drawer
+  5. The flight HUD elements (speed bar, compass, target brackets, off-screen arrows) are restyled with glassmorphism treatment and repositioned so they do not overlap the status strip
+  6. Panel open/close transitions animate at 200-300ms ease-out — the drawer slides in smoothly and content fades in after the drawer reaches its open position
+**Plans**: TBD
+
+Plans:
+- [ ] 30-01: ObservatoryLeftDrawer container — CSS slide transition, panel slot, glassmorphism shell (HUD-13, VIS-03)
+- [ ] 30-02: Hotkey bindings (E/R/M/G/Escape) wired to panel registry + station click → explainability (HUD-14, HUD-15, HUD-16)
+- [ ] 30-03: Flight HUD glassmorphism restyle + reposition to avoid status strip conflict (CLN-02)
+
+### Phase 31: Rebuilt Panels
+**Goal**: The four core analyst panels exist as production-quality components sized for the left drawer — Explainability shows ranked threat causes, Mission shows active objectives, Replay gives timeline controls, and Ghost Memory surfaces prior findings — all styled with glassmorphism and drawing from existing observatory-store data
+**Depends on**: Phase 30 (left drawer container must exist and accept panel content; hotkeys must be wired before panels are meaningful to test end-to-end)
+**Requirements**: PNL-01, PNL-02, PNL-03, PNL-04
+**Success Criteria** (what must be TRUE):
+  1. Pressing E (or clicking a station) opens the Explainability panel showing the selected station's name, ranked pressure causes, and top anomalies sourced from observatory-store — a "Probe" action button dispatches a probe for that station
+  2. Pressing M opens the Mission panel showing the active objective title, waypoint guidance text, narrative directive, and objective completion checkmarks sourced from the mission loop state
+  3. Pressing R opens the Replay panel showing a timeline scrubber, bookmark list, a jump-to-spike button, and a compare-now-vs-then toggle — all controls work against the existing replay store
+  4. Pressing G opens the Ghost Memory panel showing prior findings as a scrollable list with timestamps, receipt traces, and case-note text sourced from observatory ghost memory state
+**Plans**: TBD
+
+Plans:
+- [ ] 31-01: ExplainabilityDrawerPanel (station name, ranked causes, anomalies, probe button) (PNL-01)
+- [ ] 31-02: MissionDrawerPanel (active objective, waypoints, narrative, completion state) (PNL-02)
+- [ ] 31-03: ReplayDrawerPanel (scrubber, bookmarks, jump-to-spike, compare toggle) (PNL-03)
+- [ ] 31-04: GhostMemoryDrawerPanel (findings list, receipt traces, case-notes, timestamps) (PNL-04)
 
 ## Progress
 
 **Execution Order:**
-Phase 20 first — it is the spatial substrate everything else builds on. Phase 21 (flight controller) must land before Phase 23 (docking) and Phase 24 (HUD). Phase 22 (environment art) depends on world scale but not flight, so it can overlap with Phase 21. Phase 23 depends on both Phases 20 and 21. Phases 24 and 25 depend on Phase 21 for flight data. Phase 26 is the final layer and depends on Phases 23 and 21. Phase 27 is a gap closure phase that wires cross-phase integration missed during Phases 21-26.
+Phase 28 first — clean slate and design tokens before anything is built. Phase 29 requires Phase 28 tokens. Phase 30 requires Phase 29 panel registry. Phase 31 requires Phase 30 drawer container.
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 20. Spatial Foundation | 2/2 | Complete    | 2026-03-20 | - |
-| 21. Flight Controller | 4/4 | Complete    | 2026-03-20 | - |
-| 22. Space Environment Art | 3/3 | Complete    | 2026-03-20 | - |
-| 23. Station Detail + Docking | 3/3 | Complete    | 2026-03-20 | - |
-| 24. Space Flight HUD | v6.0 | Complete    | 2026-03-20 | 2026-03-20 |
-| 25. Star Chart + Transitions | 4/4 | Complete    | 2026-03-20 | - |
-| 26. Discovery + Missions | 2/2 | Complete    | 2026-03-20 | 2026-03-20 |
-| 27. Flight State Bridge + Autopilot Wiring | 1/1 | Complete    | 2026-03-20 | - |
+| 28. Design Tokens + Panel Audit | v7.0 | 0/2 | Not started | - |
+| 29. Status Strip + Panel Registry | v7.0 | 0/2 | Not started | - |
+| 30. Left Drawer + Hotkeys + Flight HUD Restyle | v7.0 | 0/3 | Not started | - |
+| 31. Rebuilt Panels | v7.0 | 0/4 | Not started | - |
