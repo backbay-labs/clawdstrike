@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v7.0
 milestone_name: Observatory Production HUD
 status: planning
-stopped_at: Completed 28-02-PLAN.md
-last_updated: "2026-03-21T13:12:17.973Z"
+stopped_at: Completed 28-01-PLAN.md
+last_updated: "2026-03-21T13:15:43.801Z"
 last_activity: 2026-03-21 — v7.0 roadmap created, phases 28-31 defined
 progress:
   total_phases: 4
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -45,6 +45,7 @@ Progress: [░░░░░░░░░░] 0%
 |-------|------|----------|-------|-------|
 | (v7.0 plans not yet started) | — | — | — | — |
 | Phase 28 P02 | 4 | 1 tasks | 2 files |
+| Phase 28-design-tokens-panel-audit P01 | 8 | 2 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -57,6 +58,8 @@ Progress: [░░░░░░░░░░] 0%
 - [v7.0 roadmap]: CSS custom properties for glassmorphism tokens defined once, shared across status strip, left drawer, and rebuilt panels
 - [Phase 28]: Glassmorphism tokens isolated to observatory-hud.css, imported via globals.css — keeps HUD-specific properties out of main token namespace
 - [Phase 28]: --hud-accent: var(--spirit-accent, #4af) — spirit-driven HUD theming with safe fallback, no hard dependency on spirit being bound
+- [Phase 28]: Deleted all 10 legacy overlay components as clean slate — new panel framework builds from scratch in Phase 29
+- [Phase 28]: ObservatoryRuntimeMonitors.tsx and ObservatoryTelemetryBridge.tsx preserved — R3F hooks and telemetry subscriber still needed
 
 ### Blockers/Concerns
 
@@ -65,6 +68,6 @@ Progress: [░░░░░░░░░░] 0%
 
 ## Session Continuity
 
-Last session: 2026-03-21T13:12:17.970Z
-Stopped at: Completed 28-02-PLAN.md
+Last session: 2026-03-21T13:15:43.798Z
+Stopped at: Completed 28-01-PLAN.md
 Resume file: None

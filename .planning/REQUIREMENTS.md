@@ -25,9 +25,9 @@
 
 ### Panel Cleanup
 
-- [ ] **CLN-01**: All existing observatory panel/overlay components are removed from the render tree — Hunt Loop, Explainability, Concurrent Pressure, Mission Overlay, Analyst Preset bar, Ghost Layer, Weather Layer, Cinematic Overlay, Probe HUD, Replay HUD (10 components)
+- [x] **CLN-01**: All existing observatory panel/overlay components are removed from the render tree — Hunt Loop, Explainability, Concurrent Pressure, Mission Overlay, Analyst Preset bar, Ghost Layer, Weather Layer, Cinematic Overlay, Probe HUD, Replay HUD (10 components)
 - [ ] **CLN-02**: Flight HUD (speed bar, compass, target brackets, off-screen arrows) is preserved but restyled to match glassmorphism treatment and repositioned to not conflict with the status strip
-- [ ] **CLN-03**: Removed panel components are deleted from the codebase (not just unmounted) — dead code eliminated
+- [x] **CLN-03**: Removed panel components are deleted from the codebase (not just unmounted) — dead code eliminated
 
 ### Rebuilt Panels
 
@@ -73,8 +73,8 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CLN-01 | Phase 28 | Pending |
-| CLN-03 | Phase 28 | Pending |
+| CLN-01 | Phase 28 | Complete |
+| CLN-03 | Phase 28 | Complete |
 | VIS-01 | Phase 28 | Complete |
 | HUD-10 | Phase 29 | Pending |
 | HUD-11 | Phase 29 | Pending |

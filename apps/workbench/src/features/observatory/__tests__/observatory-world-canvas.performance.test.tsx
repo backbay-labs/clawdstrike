@@ -27,10 +27,6 @@ const invalidationMock = vi.hoisted(() => ({
   props: [] as Array<Record<string, unknown>>,
 }));
 
-const weatherMock = vi.hoisted(() => ({
-  props: [] as Array<Record<string, unknown>>,
-}));
-
 vi.mock("@react-three/fiber", () => ({
   Canvas: ({ children, ...props }: { children?: ReactNode }) => {
     fiberMock.canvasProps.push(props);
@@ -90,13 +86,6 @@ vi.mock("@/features/observatory/components/world-canvas/ObservatoryInvalidationC
   ObservatoryInvalidationController: (props: Record<string, unknown>) => {
     invalidationMock.props.push(props);
     return null;
-  },
-}));
-
-vi.mock("@/features/observatory/components/ObservatoryWeatherLayer", () => ({
-  ObservatoryWeatherLayer: (props: Record<string, unknown>) => {
-    weatherMock.props.push(props);
-    return <div data-testid="observatory-weather-layer" />;
   },
 }));
 
@@ -327,7 +316,6 @@ describe("ObservatoryWorldCanvas performance flags", () => {
     flowRuntimeMock.suspension = Promise.resolve();
     sceneMock.props.length = 0;
     invalidationMock.props.length = 0;
-    weatherMock.props.length = 0;
     Object.defineProperty(window, "matchMedia", {
       configurable: true,
       value: vi.fn().mockReturnValue({
@@ -423,58 +411,6 @@ describe("ObservatoryWorldCanvas performance flags", () => {
       sources?: { replayFrameIndex?: number };
     };
     expect(lastInvalidation.sources?.replayFrameIndex).toBe(8);
-  });
-
-  it("clamps or suppresses weather based on the runtime profile instead of mounting it blindly", async () => {
-    render(
-      <ObservatoryWorldCanvas
-        {...baseProps}
-        mode="atlas"
-        weatherState={{
-          budget: "full",
-          density: 0.09,
-          dominantStationId: "receipts",
-          labelOcclusionOpacity: 0.16,
-          missionClearRadius: 3.6,
-          phaseOffset: 0.2,
-          style: "receipt-drizzle",
-          tint: "#b88f4d",
-        }}
-      />,
-    );
-
-    expect(await screen.findByTestId("observatory-weather-layer")).toBeTruthy();
-    expect((weatherMock.props[weatherMock.props.length - 1] as { weather?: { budget?: string } }).weather?.budget).toBe("reduced");
-
-    (window.matchMedia as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
-      addEventListener: vi.fn(),
-      addListener: vi.fn(),
-      dispatchEvent: vi.fn(),
-      matches: true,
-      media: "(prefers-reduced-motion: reduce)",
-      onchange: null,
-      removeEventListener: vi.fn(),
-      removeListener: vi.fn(),
-    });
-
-    render(
-      <ObservatoryWorldCanvas
-        {...baseProps}
-        mode="flow"
-        weatherState={{
-          budget: "full",
-          density: 0.09,
-          dominantStationId: "watch",
-          labelOcclusionOpacity: 0.16,
-          missionClearRadius: 3.6,
-          phaseOffset: 0.2,
-          style: "perimeter-gusts",
-          tint: "#9cb7ff",
-        }}
-      />,
-    );
-
-    expect(screen.getAllByTestId("observatory-weather-layer")).toHaveLength(1);
   });
 
   it("drops to the low runtime profile after a monitor decline", async () => {
