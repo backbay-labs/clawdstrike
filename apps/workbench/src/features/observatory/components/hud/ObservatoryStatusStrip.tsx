@@ -54,7 +54,12 @@ function yawDegToCardinal(yawDeg: number): string {
 // Component
 // ---------------------------------------------------------------------------
 
-export function ObservatoryStatusStrip() {
+interface ObservatoryStatusStripProps {
+  mode: "atlas" | "flow";
+  onModeToggle: () => void;
+}
+
+export function ObservatoryStatusStrip({ mode, onModeToggle }: ObservatoryStatusStripProps) {
   const speedRef = useRef<HTMLSpanElement>(null);
   const headingRef = useRef<HTMLSpanElement>(null);
   const stationCountRef = useRef<HTMLSpanElement>(null);
@@ -199,7 +204,7 @@ export function ObservatoryStatusStrip() {
         </div>
       </div>
 
-      {/* CENTER-RIGHT SECTION — analyst preset pill buttons */}
+      {/* CENTER-RIGHT SECTION — mode toggle + analyst preset pill buttons */}
       <div
         style={{
           display: "flex",
@@ -208,6 +213,57 @@ export function ObservatoryStatusStrip() {
           flex: "0 0 auto",
         }}
       >
+        {/* SCN-02: ATLAS/FLOW mode toggle — first item in center-right, before analyst presets */}
+        <button
+          type="button"
+          data-testid="status-strip-mode-toggle"
+          onClick={onModeToggle}
+          style={{
+            padding: "1px 8px",
+            fontSize: 9,
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+            fontFamily: "inherit",
+            cursor: "pointer",
+            borderRadius: 4,
+            border: "1px solid rgba(255, 255, 255, 0.08)",
+            borderBottom: mode === "flow"
+              ? "2px solid #3dbf84"
+              : "1px solid rgba(255, 255, 255, 0.08)",
+            background: mode === "flow"
+              ? "rgba(61, 191, 132, 0.10)"
+              : "rgba(255, 255, 255, 0.03)",
+            color: mode === "flow"
+              ? "#3dbf84"
+              : "var(--hud-text-muted, rgba(255, 255, 255, 0.45))",
+            boxShadow: mode === "flow"
+              ? "0 2px 8px rgba(61, 191, 132, 0.40)"
+              : "none",
+            outline: "none",
+            transition: "color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease, border-bottom 0.15s ease",
+            minWidth: 52,
+            height: 18,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            marginRight: 4,
+            borderLeft: "1px solid rgba(255, 255, 255, 0.08)",
+          }}
+        >
+          {mode === "flow" ? "FLOW" : "ATLAS"}
+        </button>
+
+        {/* Thin separator between mode toggle and analyst presets */}
+        <span
+          style={{
+            width: 1,
+            height: 12,
+            background: "rgba(255, 255, 255, 0.15)",
+            flex: "0 0 auto",
+            marginRight: 4,
+          }}
+        />
+
         {ANALYST_PRESETS.map((preset) => {
           const isActive = analystPresetId === preset.id;
           return (

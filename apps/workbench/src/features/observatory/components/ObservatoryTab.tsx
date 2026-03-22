@@ -905,7 +905,10 @@ export function ObservatoryTab() {
       <ObservatoryLeftDrawer />
 
       {/* Phase 29 HUD: ObservatoryStatusStrip — persistent cockpit footer, always visible */}
-      <ObservatoryStatusStrip />
+      <ObservatoryStatusStrip
+        mode={mode}
+        onModeToggle={() => setMode(mode === "atlas" ? "flow" : "atlas")}
+      />
 
       {/* CAM-01: Letterbox top bar — h-12 during fly-by, h-0 after */}
       <div
@@ -929,19 +932,7 @@ export function ObservatoryTab() {
         )}
       </div>
 
-      {/* OBS-05: Mode toggle button (ATLAS/FLOW) — absolute top-right, z-10 */}
-      <button
-        type="button"
-        className={cn(
-          "absolute top-2 right-2 z-10 rounded-md px-2 py-1 text-[10px] font-mono transition-colors",
-          mode === "flow"
-            ? "bg-[#131721] text-[#3dbf84] border border-[#3dbf84]/40"
-            : "bg-[#0a0d14]/80 text-[#6f7f9a] border border-[#202531]",
-        )}
-        onClick={() => setMode(mode === "atlas" ? "flow" : "atlas")}
-      >
-        {mode === "flow" ? "FLOW" : "ATLAS"}
-      </button>
+      {/* SCN-02: ATLAS toggle relocated to ObservatoryStatusStrip */}
 
 
       {/* OBS-06: Easter-egg activation toast — inline notification, no ToastProvider required */}

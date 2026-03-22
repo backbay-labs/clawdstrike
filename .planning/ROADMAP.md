@@ -737,7 +737,7 @@ Phase 28 first — clean slate and design tokens before anything is built. Phase
   2. The ATLAS mode toggle button no longer appears in the orphaned top-right corner; it appears as a labeled segment in the status strip alongside THREAT/EVIDENCE/RECEIPTS/GHOST
   3. The status strip has a visible 1px top border with enough contrast to visually separate it from the 3D scene above it
   4. Speed, heading, and station count text in the status strip is legible at a glance — minimum 11px monospace at opacity >= 0.8
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
 - [ ] 32-01-PLAN.md — Fix ObservatoryWorldCanvas blank-scene regression (loading guard + ensure scene content present on first frame) + ATLAS segment wired into ObservatoryStatusStrip (SCN-01, SCN-02)
@@ -752,7 +752,7 @@ Plans:
   2. The drawer has a visible top edge treatment (border or subtle edge glow) that distinguishes it from the scene behind it — it does not appear to float borderlessly
   3. The drawer header bar shows the active panel name in uppercase monospace (e.g., EXPLAINABILITY, MISSION, REPLAY, GHOST MEMORY)
   4. The drawer header bar has a functional close button that calls closePanel() and slides the drawer shut — provides a mouse-based close affordance alongside the Escape hotkey
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
 - [ ] 33-01-PLAN.md — ObservatoryLeftDrawer glassmorphism fix — backdrop-filter blur perceptibility + top border/edge glow treatment (GLS-01, GLS-02)

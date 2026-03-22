@@ -4691,7 +4691,7 @@ export function ObservatoryWorldCanvas({
   }, []);
 
   return (
-    <div className={className} style={{ background: world.environment.backgroundColor }}>
+    <div className={className} style={{ background: "#04080f" }}>
       <Canvas
         dpr={performanceProfile.dpr}
         frameloop={canvasFrameloop}
@@ -4705,7 +4705,7 @@ export function ObservatoryWorldCanvas({
           powerPreference: "high-performance",
           logarithmicDepthBuffer: true,
         }}
-        style={{ background: world.environment.backgroundColor }}
+        style={{ background: "#04080f" }}
       >
         <Suspense fallback={null}>
           <ObservatoryQualityMonitor
