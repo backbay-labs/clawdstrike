@@ -18,8 +18,8 @@
 
 ### Glassmorphism
 
-- [ ] **GLS-01**: Left drawer panel has visible backdrop-filter blur effect — when the 3D scene is rendering behind the drawer, the blur is perceptible (not just a flat dark rectangle)
-- [ ] **GLS-02**: Left drawer has a visible top border or subtle edge glow distinguishing it from the scene behind it
+- [x] **GLS-01**: Left drawer panel has visible backdrop-filter blur effect — when the 3D scene is rendering behind the drawer, the blur is perceptible (not just a flat dark rectangle)
+- [x] **GLS-02**: Left drawer has a visible top border or subtle edge glow distinguishing it from the scene behind it
 
 ### Panel Empty States
 
@@ -64,8 +64,8 @@
 | SCN-02 | Phase 32 | Complete |
 | STS-01 | Phase 32 | Complete |
 | STS-02 | Phase 32 | Complete |
-| GLS-01 | Phase 33 | Pending |
-| GLS-02 | Phase 33 | Pending |
+| GLS-01 | Phase 33 | Complete |
+| GLS-02 | Phase 33 | Complete |
 | DRW-01 | Phase 33 | Pending |
 | DRW-02 | Phase 33 | Pending |
 | EMP-01 | Phase 34 | Pending |
