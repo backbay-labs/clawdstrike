@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v8.0
 milestone_name: Observatory Visual Polish
 status: planning
-stopped_at: Completed 37-01-PLAN.md
-last_updated: "2026-03-22T23:30:01.979Z"
+stopped_at: Completed 37-02-PLAN.md
+last_updated: "2026-03-22T23:34:44.666Z"
 last_activity: 2026-03-22 — v9.0 roadmap created (Phases 35-38)
 progress:
   total_phases: 7
-  completed_phases: 6
+  completed_phases: 7
   total_plans: 12
-  completed_plans: 11
+  completed_plans: 12
   percent: 0
 ---
 
@@ -55,6 +55,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 36-mission-objective-beacons P01 | 3 | 2 tasks | 2 files |
 | Phase 36-mission-objective-beacons P02 | 5 | 2 tasks | 1 files |
 | Phase 37-analyst-preset-overlays P01 | 4 | 2 tasks | 4 files |
+| Phase 37-analyst-preset-overlays P02 | 3 | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -77,6 +78,8 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase Phase 37]: APR-01: Flat CircleGeometry disc at y=0 for threat wash grounds danger zone at floor; 5 orbital motes phase-staggered by index with MOTE_ANGULAR_SPEED=0.7
 - [Phase Phase 37]: APR-02: EvidenceStationHalo torus spins via delta * 0.4 (frame-rate independent) — gold spinning rings at receipt-bearing stations
 - [Phase Phase 37]: APR-03: verdictColor checks headline 'denied' first (highest priority), then detail/score for audit, then defaults to green ALLOW
+- [Phase Phase 37]: GhostPresetOverlay replaces (not supplements) ambientLight via ternary in ObservatoryWorldScene — prevents double-lighting artifacts when GHOST preset is active
+- [Phase Phase 37]: analystPresetId prop defaults to null — ObservatoryWorldSceneProps is backward compatible, only ObservatoryWorldCanvas needed updating
 
 ### Blockers/Concerns
 
@@ -85,6 +88,6 @@ Progress: [░░░░░░░░░░] 0%
 
 ## Session Continuity
 
-Last session: 2026-03-22T23:30:01.976Z
-Stopped at: Completed 37-01-PLAN.md
+Last session: 2026-03-22T23:34:44.663Z
+Stopped at: Completed 37-02-PLAN.md
 Resume file: None
