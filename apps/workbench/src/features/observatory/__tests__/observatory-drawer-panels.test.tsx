@@ -67,6 +67,15 @@ describe("ExplainabilityDrawerPanel", () => {
     const panel = container.querySelector("[data-testid='explainability-drawer-panel']");
     expect(panel).not.toBeNull();
   });
+
+  it("e. empty state shows structured section headers and hint", () => {
+    const { container } = render(<ExplainabilityDrawerPanel />);
+    const el = container.querySelector("[data-testid='explainability-empty-state']");
+    expect(el?.textContent).toContain("STATION");
+    expect(el?.textContent).toContain("PRESSURE");
+    expect(el?.textContent).toContain("ANOMALIES");
+    expect(el?.textContent).toContain("Click a station or press E while hovering");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -118,6 +127,15 @@ describe("MissionDrawerPanel", () => {
     const { container } = render(<MissionDrawerPanel />);
     const panel = container.querySelector("[data-testid='mission-drawer-panel']");
     expect(panel).not.toBeNull();
+  });
+
+  it("e. empty state shows structured section headers and hint", () => {
+    const { container } = render(<MissionDrawerPanel />);
+    const el = container.querySelector("[data-testid='mission-empty-state']");
+    expect(el?.textContent).toContain("BRIEFING");
+    expect(el?.textContent).toContain("OBJECTIVES");
+    expect(el?.textContent).toContain("NARRATIVE");
+    expect(el?.textContent).toContain("Start a mission from the command palette");
   });
 });
 
@@ -223,5 +241,12 @@ describe("GhostMemoryDrawerPanel", () => {
     const { container } = render(<GhostMemoryDrawerPanel />);
     // 0 traces from default store
     expect(container.textContent).toContain("0 trace");
+  });
+
+  it("e. empty state shows explanatory description of ghost memory", () => {
+    const { container } = render(<GhostMemoryDrawerPanel />);
+    const el = container.querySelector("[data-testid='ghost-memory-empty-state']");
+    expect(el?.textContent).toContain("prior hunt findings");
+    expect(el?.textContent).toContain("probing stations");
   });
 });
