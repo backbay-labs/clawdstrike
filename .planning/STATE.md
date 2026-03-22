@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v7.0
-milestone_name: Observatory Production HUD
-status: executing
-stopped_at: Completed 31-02-PLAN.md
-last_updated: "2026-03-21T14:36:03.543Z"
-last_activity: 2026-03-21 — Phase 30 plan 02 complete (hotkeys + station click HUD-14/15/16)
+milestone: v8.0
+milestone_name: Observatory Visual Polish
+status: defining_requirements
+stopped_at: null
+last_updated: "2026-03-21"
+last_activity: "2026-03-21 — Milestone v8.0 started"
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 9
-  completed_plans: 9
-  percent: 85
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-21)
 
 **Core value:** Security operators work across multiple views simultaneously with a spirit-driven immersive layer
-**Current focus:** Phase 28 — Design Tokens + Panel Audit (ready to plan)
+**Current focus:** Defining requirements for v8.0 Observatory Visual Polish
 
 ## Current Position
 
-Phase: 30 of 31 (Left Drawer + Hotkeys + Flight HUD Restyle)
-Plan: 02 complete
-Status: In progress
-Last activity: 2026-03-21 — Phase 30 plan 02 complete (hotkeys + station click HUD-14/15/16)
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-21 — Milestone v8.0 started
 
-Progress: [████████░░] 85%
+Progress: [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 

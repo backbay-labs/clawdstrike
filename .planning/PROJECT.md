@@ -56,6 +56,18 @@ Security operators work across multiple views simultaneously with a spirit-drive
 - ✓ Four rebuilt analyst panels (Explainability, Mission, Replay, Ghost Memory) — v7.0
 - ✓ Flight HUD glassmorphism restyle + repositioning — v7.0
 
+## Current Milestone: v8.0 Observatory Visual Polish
+
+**Goal:** Fix the 6 visual/UX issues identified during dogfooding — 3D scene renders on load, glassmorphism blur is visible, panel empty states have structure, status strip has presence, ATLAS button relocated, and drawer has a close affordance.
+
+**Target features:**
+- Fix blank 3D scene during fly-by / initial load
+- Make glassmorphism backdrop-filter blur visually apparent on the left drawer
+- Rich empty states for Explainability, Mission, and Ghost Memory panels
+- Status strip visual presence (brighter border, higher contrast text)
+- Relocate ATLAS mode toggle into the status strip
+- Panel drawer header bar with title + close button
+
 ### Active
 
 ### Out of Scope
@@ -80,7 +92,7 @@ Security operators work across multiple views simultaneously with a spirit-drive
 - Tech stack: Tauri 2, React 19, TypeScript, Zustand, React Three Fiber 9, drei 10, wawa-vfx, three 0.171+
 - WebGL2 renderer with logarithmic depth buffer (WebGPU deferred — postprocessing library incompatibility)
 - 40 v6.0 requirements fully satisfied (audit passed)
-- 7 milestones shipped (v1.0 IDE Pivot, v2.0 Huntronomer Integration, v3.0 Spirit & Observatory Evolution, v4.0 AAA Observatory Experience, v5.0 Observatory Analyst Experience, v6.0 Observatory Space Flight)
+- 7 milestones shipped (v1.0-v7.0) (v1.0 IDE Pivot, v2.0 Huntronomer Integration, v3.0 Spirit & Observatory Evolution, v4.0 AAA Observatory Experience, v5.0 Observatory Analyst Experience, v6.0 Observatory Space Flight)
 
 ### Huntronomer Source
 Source 3D code lives in `clawdstrike-worktrees/huntronomer-workspace-orch` (branch `feature/huntronomer-workspace-orchestrator`, committed @ `1586fe2a1`).
