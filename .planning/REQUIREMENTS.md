@@ -34,8 +34,8 @@
 
 ### Drawer Chrome
 
-- [ ] **DRW-01**: Left drawer has a header bar showing the active panel name (EXPLAINABILITY / MISSION / REPLAY / GHOST MEMORY) in uppercase monospace
-- [ ] **DRW-02**: Drawer header bar has a close button (X icon or similar) that calls closePanel() — provides a mouse-based close affordance alongside Escape key
+- [x] **DRW-01**: Left drawer has a header bar showing the active panel name (EXPLAINABILITY / MISSION / REPLAY / GHOST MEMORY) in uppercase monospace
+- [x] **DRW-02**: Drawer header bar has a close button (X icon or similar) that calls closePanel() — provides a mouse-based close affordance alongside Escape key
 
 ## v9.0 Requirements (Deferred)
 
@@ -66,8 +66,8 @@
 | STS-02 | Phase 32 | Complete |
 | GLS-01 | Phase 33 | Complete |
 | GLS-02 | Phase 33 | Complete |
-| DRW-01 | Phase 33 | Pending |
-| DRW-02 | Phase 33 | Pending |
+| DRW-01 | Phase 33 | Complete |
+| DRW-02 | Phase 33 | Complete |
 | EMP-01 | Phase 34 | Pending |
 | EMP-02 | Phase 34 | Pending |
 | EMP-03 | Phase 34 | Pending |
