@@ -793,7 +793,7 @@ Phases 32 and 34 have no file overlap and can execute in parallel. Phase 33 is a
 ## Phases
 
 - [x] **Phase 35: Ghost Trace Markers** — Translucent holographic markers at stations with prior findings, sourced from deriveObservatoryGhostMemories(), with GHOST preset opacity gating (GHO-01, GHO-02, GHO-03, GHO-04) (completed 2026-03-22)
-- [ ] **Phase 36: Mission Objective Beacons** — Emissive vertical beacon columns on active mission targets with breathing pulse animation, visible 500+ units, clean removal when no mission active (MSN-01, MSN-02, MSN-03, MSN-04)
+- [x] **Phase 36: Mission Objective Beacons** — Emissive vertical beacon columns on active mission targets with breathing pulse animation, visible 500+ units, clean removal when no mission active (MSN-01, MSN-02, MSN-03, MSN-04) (completed 2026-03-22)
 - [ ] **Phase 37: Analyst Preset Overlays** — THREAT red wash + danger particles, EVIDENCE gold halos, RECEIPTS verdict badge markers, GHOST world dim + full ghost trace reveal, instant neutral restore on deactivate (APR-01, APR-02, APR-03, APR-04, APR-05)
 - [x] **Phase 38: Weather Layer Revival** — Mount the existing weather system in the 3D scene, telemetry-driven fog/particles/lighting, performance profile gating (WTH-01, WTH-02, WTH-03) (completed 2026-03-22)
 
@@ -862,6 +862,6 @@ Phases 35, 36, and 38 are independent and can execute in parallel. Phase 37 depe
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 35. Ghost Trace Markers | 2/2 | Complete   | 2026-03-22 | - |
-| 36. Mission Objective Beacons | 1/2 | In Progress|  | - |
+| 36. Mission Objective Beacons | 2/2 | Complete   | 2026-03-22 | - |
 | 37. Analyst Preset Overlays | v9.0 | 0/TBD | Not started | - |
 | 38. Weather Layer Revival | 1/1 | Complete   | 2026-03-22 | - |

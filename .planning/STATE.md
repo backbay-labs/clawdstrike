@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v8.0
 milestone_name: Observatory Visual Polish
 status: planning
-stopped_at: Completed 36-01-PLAN.md
-last_updated: "2026-03-22T23:14:59.257Z"
+stopped_at: Completed 36-02-PLAN.md
+last_updated: "2026-03-22T23:17:54.264Z"
 last_activity: 2026-03-22 — v9.0 roadmap created (Phases 35-38)
 progress:
   total_phases: 7
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 10
-  completed_plans: 9
+  completed_plans: 10
   percent: 0
 ---
 
@@ -53,6 +53,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 35 P02 | 5 | 2 tasks | 3 files |
 | Phase 36 P01 | 3 | 2 tasks | 2 files |
 | Phase 36-mission-objective-beacons P01 | 3 | 2 tasks | 2 files |
+| Phase 36-mission-objective-beacons P02 | 5 | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -71,6 +72,7 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 36-mission-objective-beacons]: MissionObjectiveBeacons is fully self-contained and prop-driven — reads nothing from store, accepts mission prop only (MSN-04 enforced at top level)
 - [Phase 36-mission-objective-beacons]: Sin cycle uses Math.PI multiplier on clock.elapsedTime for ~2s period; emissiveIntensity range 1.2-2.8 (center 2.0 +/- 0.8)
 - [Phase 36-mission-objective-beacons]: getBeaconStations returns only stations present in mission.objectives — no phantom beacons for stations without objectives
+- [Phase 36-mission-objective-beacons]: MissionObjectiveBeacons placed immediately after MissionWaypointTrail in JSX tree — groups all mission-linked visual components together for maintainability
 
 ### Blockers/Concerns
 
@@ -79,6 +81,6 @@ Progress: [░░░░░░░░░░] 0%
 
 ## Session Continuity
 
-Last session: 2026-03-22T23:14:59.255Z
-Stopped at: Completed 36-01-PLAN.md
+Last session: 2026-03-22T23:17:54.261Z
+Stopped at: Completed 36-02-PLAN.md
 Resume file: None
