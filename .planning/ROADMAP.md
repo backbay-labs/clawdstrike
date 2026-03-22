@@ -839,7 +839,11 @@ Plans:
   3. Activating RECEIPTS preset renders small floating verdict badge markers (ALLOW/DENY/AUDIT icons) near stations that have receipt history
   4. Activating GHOST preset reduces world ambient light by 40%, desaturates non-ghost scene geometry, and elevates ghost trace markers to full opacity
   5. Deactivating any preset returns ambient light, saturation, particles, halos, and badge markers to their neutral baseline within one frame — no tint or particle linger
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 37-01-PLAN.md — ThreatPresetOverlay, EvidencePresetOverlay, ReceiptsPresetOverlay components + unit tests
+- [ ] 37-02-PLAN.md — GhostPresetOverlay + wire all four overlays into ObservatoryWorldScene
 
 ### Phase 38: Weather Layer Revival
 **Goal**: The observatory world has atmospheric conditions driven by hunt telemetry — fog density, ambient lighting, and particle weather effects mount into the 3D scene, scale with pressure, and respect the performance profile
@@ -863,5 +867,5 @@ Phases 35, 36, and 38 are independent and can execute in parallel. Phase 37 depe
 |-------|-----------|----------------|--------|-----------|
 | 35. Ghost Trace Markers | 2/2 | Complete   | 2026-03-22 | - |
 | 36. Mission Objective Beacons | 2/2 | Complete   | 2026-03-22 | - |
-| 37. Analyst Preset Overlays | v9.0 | 0/TBD | Not started | - |
+| 37. Analyst Preset Overlays | v9.0 | 0/2 | Not started | - |
 | 38. Weather Layer Revival | 1/1 | Complete   | 2026-03-22 | - |
