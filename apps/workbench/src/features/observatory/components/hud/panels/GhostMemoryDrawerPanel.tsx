@@ -95,17 +95,33 @@ export function GhostMemoryDrawerPanel() {
           data-testid="ghost-memory-empty-state"
           style={{
             display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
+            flexDirection: "column",
+            gap: 12,
+            padding: "0 0",
             flex: 1,
-            color: "var(--hud-text-muted)",
-            fontSize: 13,
-            fontStyle: "italic",
-            textAlign: "center",
-            padding: "0 16px",
           }}
         >
-          No prior findings or receipts
+          <div
+            style={{
+              fontSize: 12,
+              color: "var(--hud-text-muted)",
+              lineHeight: 1.6,
+            }}
+          >
+            Ghost memory records prior hunt findings, receipt verdicts, and case-note traces
+            from your observatory sessions. Traces serve as persistent breadcrumbs that help
+            you retrace investigative paths across hunts.
+          </div>
+          <div
+            style={{
+              fontSize: 12,
+              color: "var(--hud-text-muted)",
+              lineHeight: 1.6,
+            }}
+          >
+            Traces appear after probing stations, completing mission objectives, or generating
+            receipts during analysis.
+          </div>
         </div>
       ) : (
         /* Traces list */

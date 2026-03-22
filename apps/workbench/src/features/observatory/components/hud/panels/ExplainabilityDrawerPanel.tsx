@@ -45,18 +45,66 @@ export function ExplainabilityDrawerPanel() {
         data-testid="explainability-empty-state"
         style={{
           display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
+          flexDirection: "column",
+          gap: 16,
           height: "100%",
-          color: "var(--hud-text-muted)",
-          fontSize: 13,
-          fontStyle: "italic",
           fontFamily: "inherit",
-          textAlign: "center",
-          padding: "0 16px",
+          padding: 0,
         }}
       >
-        Select a station to inspect
+        {/* Station section placeholder */}
+        <div
+          style={{
+            borderLeft: "4px solid rgba(255,255,255,0.08)",
+            paddingLeft: 12,
+            paddingTop: 4,
+            paddingBottom: 4,
+          }}
+        >
+          <div style={{ ...sectionHeadingStyle, marginBottom: 4 }}>STATION</div>
+          <div style={{ fontSize: 12, color: "var(--hud-text-muted)", fontStyle: "italic" }}>
+            No station selected
+          </div>
+        </div>
+
+        {/* Pressure section placeholder */}
+        <div>
+          <div style={sectionHeadingStyle}>PRESSURE LANES</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {[1, 2, 3].map((i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 11, color: "var(--hud-text-muted)", width: 20, textAlign: "right" }}>{i}</span>
+                <span style={{ flex: 1, height: 8, borderRadius: 4, background: "rgba(255,255,255,0.04)" }} />
+                <div style={{ width: 48, height: 3, borderRadius: 2, background: "rgba(255,255,255,0.04)" }} />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Anomalies section placeholder */}
+        <div>
+          <div style={sectionHeadingStyle}>ANOMALIES</div>
+          <div style={{ fontSize: 12, color: "var(--hud-text-muted)", fontStyle: "italic" }}>
+            No anomalies to display
+          </div>
+        </div>
+
+        {/* Spacer */}
+        <div style={{ flex: 1 }} />
+
+        {/* Hint */}
+        <div
+          style={{
+            fontSize: 12,
+            color: "var(--hud-text-muted)",
+            textAlign: "center",
+            padding: "12px 8px",
+            borderTop: "1px solid rgba(255,255,255,0.04)",
+            lineHeight: 1.5,
+          }}
+        >
+          Click a station or press E while hovering
+        </div>
       </div>
     );
   }

@@ -39,18 +39,72 @@ export function MissionDrawerPanel() {
         data-testid="mission-empty-state"
         style={{
           display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
+          flexDirection: "column",
+          gap: 16,
           height: "100%",
-          color: "var(--hud-text-muted)",
-          fontSize: 13,
-          fontStyle: "italic",
           fontFamily: "inherit",
-          textAlign: "center",
-          padding: "0 16px",
+          padding: 0,
         }}
       >
-        No active mission
+        {/* Briefing section placeholder */}
+        <div>
+          <div style={sectionHeadingStyle}>BRIEFING</div>
+          <div
+            style={{
+              fontSize: 12,
+              color: "var(--hud-text-muted)",
+              fontStyle: "italic",
+              lineHeight: 1.5,
+            }}
+          >
+            No mission briefing available
+          </div>
+        </div>
+
+        {/* Objectives section placeholder */}
+        <div>
+          <div style={sectionHeadingStyle}>OBJECTIVES</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {[1, 2, 3].map((i) => (
+              <div key={i} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <span style={{ fontSize: 14, color: "var(--hud-text-muted)" }}>{"\u25CB"}</span>
+                <span style={{ flex: 1, height: 8, borderRadius: 4, background: "rgba(255,255,255,0.04)" }} />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Narrative section placeholder */}
+        <div>
+          <div style={sectionHeadingStyle}>NARRATIVE</div>
+          <div
+            style={{
+              fontSize: 12,
+              color: "var(--hud-text-muted)",
+              fontStyle: "italic",
+              lineHeight: 1.5,
+            }}
+          >
+            Mission narrative will appear here
+          </div>
+        </div>
+
+        {/* Spacer */}
+        <div style={{ flex: 1 }} />
+
+        {/* Hint */}
+        <div
+          style={{
+            fontSize: 12,
+            color: "var(--hud-text-muted)",
+            textAlign: "center",
+            padding: "12px 8px",
+            borderTop: "1px solid rgba(255,255,255,0.04)",
+            lineHeight: 1.5,
+          }}
+        >
+          Start a mission from the command palette
+        </div>
       </div>
     );
   }
