@@ -865,7 +865,7 @@ Phases 35, 36, and 38 are independent and can execute in parallel. Phase 37 depe
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 35. Ghost Trace Markers | 2/2 | Complete   | 2026-03-22 | - |
-| 36. Mission Objective Beacons | 2/2 | Complete   | 2026-03-22 | - |
-| 37. Analyst Preset Overlays | 2/2 | Complete   | 2026-03-22 | - |
-| 38. Weather Layer Revival | 1/1 | Complete   | 2026-03-22 | - |
+| 35. Ghost Trace Markers | 2/2 | Complete    | 2026-03-22 | - |
+| 36. Mission Objective Beacons | 2/2 | Complete    | 2026-03-22 | - |
+| 37. Analyst Preset Overlays | 2/2 | Complete    | 2026-03-22 | - |
+| 38. Weather Layer Revival | 1/1 | Complete    | 2026-03-22 | - |
