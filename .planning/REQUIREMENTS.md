@@ -62,27 +62,27 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| GHO-01 | Pending | Pending |
-| GHO-02 | Pending | Pending |
-| GHO-03 | Pending | Pending |
-| GHO-04 | Pending | Pending |
-| MSN-01 | Pending | Pending |
-| MSN-02 | Pending | Pending |
-| MSN-03 | Pending | Pending |
-| MSN-04 | Pending | Pending |
-| APR-01 | Pending | Pending |
-| APR-02 | Pending | Pending |
-| APR-03 | Pending | Pending |
-| APR-04 | Pending | Pending |
-| APR-05 | Pending | Pending |
-| WTH-01 | Pending | Pending |
-| WTH-02 | Pending | Pending |
-| WTH-03 | Pending | Pending |
+| GHO-01 | Phase 35 | Pending |
+| GHO-02 | Phase 35 | Pending |
+| GHO-03 | Phase 35 | Pending |
+| GHO-04 | Phase 35 | Pending |
+| MSN-01 | Phase 36 | Pending |
+| MSN-02 | Phase 36 | Pending |
+| MSN-03 | Phase 36 | Pending |
+| MSN-04 | Phase 36 | Pending |
+| APR-01 | Phase 37 | Pending |
+| APR-02 | Phase 37 | Pending |
+| APR-03 | Phase 37 | Pending |
+| APR-04 | Phase 37 | Pending |
+| APR-05 | Phase 37 | Pending |
+| WTH-01 | Phase 38 | Pending |
+| WTH-02 | Phase 38 | Pending |
+| WTH-03 | Phase 38 | Pending |
 
 **Coverage:**
 - v9.0 requirements: 16 total
-- Mapped to phases: 0
-- Unmapped: 16
+- Mapped to phases: 16
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-22*

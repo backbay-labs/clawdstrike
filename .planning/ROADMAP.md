@@ -9,7 +9,8 @@
 - ✅ **v5.0 Observatory Analyst Experience** — Phases 15-19 (shipped 2026-03-20)
 - ✅ **v6.0 Observatory Space Flight** — Phases 20-27 (shipped 2026-03-20)
 - ✅ **v7.0 Observatory Production HUD** — Phases 28-31 (shipped 2026-03-21)
-- ✅ **v8.0 Observatory Visual Polish** — Phases 32-34 (in progress)
+- ✅ **v8.0 Observatory Visual Polish** — Phases 32-34 (shipped 2026-03-22)
+- [ ] **v9.0 Observatory 3D World Polish** — Phases 35-38 (in progress)
 
 ---
 
@@ -781,3 +782,75 @@ Phases 32 and 34 have no file overlap and can execute in parallel. Phase 33 is a
 | 32. Scene & Status Strip Polish | 2/2 | Complete    | 2026-03-22 | - |
 | 33. Drawer Chrome & Glassmorphism | 2/2 | Complete    | 2026-03-22 | - |
 | 34. Panel Empty States | 1/1 | Complete    | 2026-03-22 | - |
+
+
+---
+
+## v9.0 Observatory 3D World Polish
+
+**Milestone Goal:** Make the observatory world visually alive and responsive — ghost traces glow at stations where past findings occurred, mission objective beacons pulse at target stations, analyst presets transform the scene visual mood, and weather effects respond to hunt telemetry.
+
+## Phases
+
+- [ ] **Phase 35: Ghost Trace Markers** — Translucent holographic markers at stations with prior findings, sourced from deriveObservatoryGhostMemories(), with GHOST preset opacity gating (GHO-01, GHO-02, GHO-03, GHO-04)
+- [ ] **Phase 36: Mission Objective Beacons** — Emissive vertical beacon columns on active mission targets with breathing pulse animation, visible 500+ units, clean removal when no mission active (MSN-01, MSN-02, MSN-03, MSN-04)
+- [ ] **Phase 37: Analyst Preset Overlays** — THREAT red wash + danger particles, EVIDENCE gold halos, RECEIPTS verdict badge markers, GHOST world dim + full ghost trace reveal, instant neutral restore on deactivate (APR-01, APR-02, APR-03, APR-04, APR-05)
+- [ ] **Phase 38: Weather Layer Revival** — Mount the existing weather system in the 3D scene, telemetry-driven fog/particles/lighting, performance profile gating (WTH-01, WTH-02, WTH-03)
+
+## Phase Details
+
+### Phase 35: Ghost Trace Markers
+**Goal**: Stations with prior findings are visually marked in 3D space — spectral holographic indicators render at station positions, show finding type glyphs at mid-range, and respond to the GHOST analyst preset for opacity
+**Depends on**: Phase 34 (v8.0 complete — observatory world substrate, ghost memory store, and GHOST preset toggle all stable)
+**Requirements**: GHO-01, GHO-02, GHO-03, GHO-04
+**Success Criteria** (what must be TRUE):
+  1. Stations with prior findings display translucent holographic meshes at their 3D positions — the markers are visually distinct from station geometry (spectral glow, not solid) and visible without activating any preset
+  2. Ghost markers show a small icon or glyph representing the finding type (receipt verdict, probe result, case-note) that is readable when the camera is within 60-180 units of the station
+  3. When the GHOST analyst preset is active, ghost markers render at full opacity; when inactive, they dim to 20% opacity — the transition is immediate and does not linger
+  4. Ghost marker data comes exclusively from deriveObservatoryGhostMemories() — no new data fetching, no new store slices
+**Plans**: TBD
+
+### Phase 36: Mission Objective Beacons
+**Goal**: Active mission targets are clearly identifiable from across the space environment — emissive beacon columns extend upward from target stations with a breathing pulse animation, dim when completed, and vanish entirely when no mission is active
+**Depends on**: Phase 34 (v8.0 complete — mission store and ObservatoryWorldCanvas are stable)
+**Requirements**: MSN-01, MSN-02, MSN-03, MSN-04
+**Success Criteria** (what must be TRUE):
+  1. Active mission objective stations display a vertical emissive beacon column extending upward from the station, visible from 500+ units even through fog
+  2. The active objective beacon pulses with a breathing opacity oscillation on approximately a 2-second cycle — completed objective beacons shift to a static, muted desaturated glow without pulsing
+  3. Beacon color matches the station accent color for active objectives; completed objectives use a muted desaturated version of that color
+  4. When no mission is active, zero beacon geometry renders in the scene — the world has no leftover mission markers
+**Plans**: TBD
+
+### Phase 37: Analyst Preset Overlays
+**Goal**: Each analyst preset transforms the visual mood of the observable world — THREAT districts turn red and emit danger particles, EVIDENCE stations glow gold, RECEIPTS stations show verdict badges, GHOST dims the world and reveals traces, and deactivating any preset instantly restores the neutral scene
+**Depends on**: Phase 35 (ghost trace markers must exist before GHOST preset can reveal them at full opacity via APR-04 cross-referencing GHO-03)
+**Requirements**: APR-01, APR-02, APR-03, APR-04, APR-05
+**Success Criteria** (what must be TRUE):
+  1. Activating THREAT preset tints active-pressure district regions with a red emissive wash and spawns subtle danger particle motes around high-pressure stations
+  2. Activating EVIDENCE preset renders gold emissive halos around stations with receipt data, reusing the affinity ring geometry pattern from v3.0
+  3. Activating RECEIPTS preset renders small floating verdict badge markers (ALLOW/DENY/AUDIT icons) near stations that have receipt history
+  4. Activating GHOST preset reduces world ambient light by 40%, desaturates non-ghost scene geometry, and elevates ghost trace markers to full opacity
+  5. Deactivating any preset returns ambient light, saturation, particles, halos, and badge markers to their neutral baseline within one frame — no tint or particle linger
+**Plans**: TBD
+
+### Phase 38: Weather Layer Revival
+**Goal**: The observatory world has atmospheric conditions driven by hunt telemetry — fog density, ambient lighting, and particle weather effects mount into the 3D scene, scale with pressure, and respect the performance profile
+**Depends on**: Phase 34 (v8.0 complete — observatory world substrate and performance profile system stable; weather system implementation exists from v5.0 hunt weather controller)
+**Requirements**: WTH-01, WTH-02, WTH-03
+**Success Criteria** (what must be TRUE):
+  1. The weather layer renders in the 3D scene — fog, ambient light intensity, and atmospheric particles respond to the weatherState from observatory-store and update when hunt telemetry changes
+  2. Weather intensity visibly scales with hunt telemetry pressure — a calm hunt shows clear skies with minimal fog, a high-pressure hunt shows denser fog and more active atmospheric particles
+  3. On low-quality performance profile settings, weather effects are reduced or disabled — the scene remains usable and does not drop below target frame rate due to weather geometry
+**Plans**: TBD
+
+## Progress
+
+**Execution Order:**
+Phases 35, 36, and 38 are independent and can execute in parallel. Phase 37 depends on Phase 35 (ghost trace markers must exist before the GHOST preset can reveal them at full opacity).
+
+| Phase | Milestone | Plans Complete | Status | Completed |
+|-------|-----------|----------------|--------|-----------|
+| 35. Ghost Trace Markers | v9.0 | 0/TBD | Not started | - |
+| 36. Mission Objective Beacons | v9.0 | 0/TBD | Not started | - |
+| 37. Analyst Preset Overlays | v9.0 | 0/TBD | Not started | - |
+| 38. Weather Layer Revival | v9.0 | 0/TBD | Not started | - |
