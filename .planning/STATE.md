@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v8.0
 milestone_name: Observatory Visual Polish
-status: ready_to_plan
-stopped_at: null
-last_updated: "2026-03-21"
-last_activity: "2026-03-21 — Roadmap created for v8.0 (Phases 32-34)"
+status: planning
+stopped_at: Completed 32-01-PLAN.md
+last_updated: "2026-03-22T03:52:18.061Z"
+last_activity: 2026-03-21 — v8.0 roadmap created (Phases 32-34)
 progress:
   total_phases: 3
   completed_phases: 0
   total_plans: 5
-  completed_plans: 0
+  completed_plans: 1
   percent: 0
 ---
 
@@ -48,6 +48,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 30 P03 | 2 | 2 tasks | 3 files |
 | Phase 30 P02 | 2 | 2 tasks | 3 files |
 | Phase 30 P01 | 8 | 2 tasks | 4 files |
+| Phase 32 P01 | 8 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -58,6 +59,8 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 30]: Always-mounted drawer pattern (translateX not conditional render) — avoids unmount/remount cost; consistent with SpaceFlightHud
 - [Phase 30]: Left drawer two-part transition: slide 250ms ease-out then content fade 200ms with 100ms delay
 - [Phase 31]: ExplainabilityDrawerPanel renders empty state when selectedStationId is null — panel responsibility, not drawer-level guard
+- [Phase 32]: SCN-01: CSS background #04080f hardcoded on canvas wrapper and Canvas element to eliminate pre-WebGL black flash
+- [Phase 32]: SCN-02: ATLAS/FLOW mode toggle relocated from orphaned top-right button to status strip as first segment, mode prop drilled from ObservatoryTab
 
 ### Blockers/Concerns
 
@@ -66,6 +69,6 @@ Progress: [░░░░░░░░░░] 0%
 
 ## Session Continuity
 
-Last session: 2026-03-21T14:25:54.932Z
-Stopped at: v8.0 roadmap created — Phases 32, 33, 34 defined
+Last session: 2026-03-22T03:52:18.059Z
+Stopped at: Completed 32-01-PLAN.md
 Resume file: None
