@@ -808,7 +808,11 @@ Phases 32 and 34 have no file overlap and can execute in parallel. Phase 33 is a
   2. Ghost markers show a small icon or glyph representing the finding type (receipt verdict, probe result, case-note) that is readable when the camera is within 60-180 units of the station
   3. When the GHOST analyst preset is active, ghost markers render at full opacity; when inactive, they dim to 20% opacity — the transition is immediate and does not linger
   4. Ghost marker data comes exclusively from deriveObservatoryGhostMemories() — no new data fetching, no new store slices
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 35-01-PLAN.md — GhostTraceLayer component (holographic ring + glyph meshes at station positions)
+- [ ] 35-02-PLAN.md — Wire GhostTraceLayer into ObservatoryWorldCanvas with GHOST preset opacity gating
 
 ### Phase 36: Mission Objective Beacons
 **Goal**: Active mission targets are clearly identifiable from across the space environment — emissive beacon columns extend upward from target stations with a breathing pulse animation, dim when completed, and vanish entirely when no mission is active
