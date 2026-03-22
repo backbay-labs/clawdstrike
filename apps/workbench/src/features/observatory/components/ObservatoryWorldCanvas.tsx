@@ -88,6 +88,7 @@ import { useObservatoryStore } from "../stores/observatory-store";
 import type { FlightState } from "../character/ship/flight-types";
 import { WarpSpeedLines } from "../vfx/WarpSpeedLines";
 import { MissionWaypointTrail } from "./MissionWaypointTrail";
+import { ObservatoryWeatherLayer } from "./world-canvas/ObservatoryWeatherLayer";
 
 const LazyObservatoryPostFX = lazy(() =>
   import("./ObservatoryPostFX").then((module) => ({ default: module.ObservatoryPostFX })),
@@ -4753,6 +4754,10 @@ export function ObservatoryWorldCanvas({
             mission={mission}
             characterControllerEnabled={playerInputEnabled}
           />
+          {/* WTH-01: Weather layer — telemetry-driven fog/particles/ambient tint */}
+          {effectiveWeatherState !== null ? (
+            <ObservatoryWeatherLayer weatherState={effectiveWeatherState} />
+          ) : null}
           {flowRuntimeEnabled ? (
             <Suspense fallback={null}>
               <LazyObservatoryFlowRuntimeScene
