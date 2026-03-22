@@ -19,7 +19,8 @@
  * Glassmorphism styling (VIS-02):
  *   - background: rgba(8, 12, 24, 0.88) — above 0.85 minimum opacity threshold for readability
  *   - backdropFilter: blur(12px)
- *   - border-top: 1px solid rgba(255, 255, 255, 0.06)
+ *   - border-top: 1px solid rgba(255, 255, 255, 0.12) — STS-01: doubled from 0.06 for visibility
+ *   - fontSize: 11 (STS-02: bumped from 10 for at-a-glance readability)
  *   - boxShadow: 0 8px 32px rgba(0, 0, 0, 0.4) (inverted, shows above canvas)
  *
  * Active indicator (VIS-04):
@@ -120,12 +121,12 @@ export function ObservatoryStatusStrip({ mode, onModeToggle }: ObservatoryStatus
         background: "rgba(8, 12, 24, 0.88)",
         backdropFilter: "var(--hud-blur, blur(12px))",
         WebkitBackdropFilter: "var(--hud-blur, blur(12px))",
-        borderTop: "var(--hud-border, 1px solid rgba(255, 255, 255, 0.06))",
+        borderTop: "1px solid rgba(255, 255, 255, 0.12)",
         boxShadow: "0 -4px 16px rgba(0, 0, 0, 0.3)",
         // Allow pointer events so preset buttons are clickable
         pointerEvents: "auto",
         fontFamily: "'JetBrains Mono', 'Fira Mono', 'Consolas', monospace",
-        fontSize: 10,
+        fontSize: 11,
         letterSpacing: "0.08em",
         textTransform: "uppercase",
         color: "var(--hud-text, rgba(255, 255, 255, 0.85))",
@@ -154,13 +155,13 @@ export function ObservatoryStatusStrip({ mode, onModeToggle }: ObservatoryStatus
           >
             0
           </span>
-          <span style={{ color: "var(--hud-text-muted, rgba(255, 255, 255, 0.45))", fontSize: 8 }}>
+          <span style={{ color: "var(--hud-text-muted, rgba(255, 255, 255, 0.45))", fontSize: 9 }}>
             u/s
           </span>
         </div>
 
         {/* Separator */}
-        <span style={{ color: "var(--hud-text-muted, rgba(255, 255, 255, 0.45))", fontSize: 8 }}>
+        <span style={{ color: "var(--hud-text-muted, rgba(255, 255, 255, 0.45))", fontSize: 9 }}>
           ·
         </span>
 
@@ -180,7 +181,7 @@ export function ObservatoryStatusStrip({ mode, onModeToggle }: ObservatoryStatus
         </div>
 
         {/* Separator */}
-        <span style={{ color: "var(--hud-text-muted, rgba(255, 255, 255, 0.45))", fontSize: 8 }}>
+        <span style={{ color: "var(--hud-text-muted, rgba(255, 255, 255, 0.45))", fontSize: 9 }}>
           ·
         </span>
 
@@ -198,7 +199,7 @@ export function ObservatoryStatusStrip({ mode, onModeToggle }: ObservatoryStatus
           >
             0
           </span>
-          <span style={{ color: "var(--hud-text-muted, rgba(255, 255, 255, 0.45))", fontSize: 8 }}>
+          <span style={{ color: "var(--hud-text-muted, rgba(255, 255, 255, 0.45))", fontSize: 9 }}>
             sta
           </span>
         </div>
