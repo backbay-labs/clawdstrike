@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v8.0
 milestone_name: Observatory Visual Polish
 status: planning
-stopped_at: Completed 32-01-PLAN.md
-last_updated: "2026-03-22T03:52:18.061Z"
+stopped_at: Completed 32-02-PLAN.md
+last_updated: "2026-03-22T03:55:32.790Z"
 last_activity: 2026-03-21 — v8.0 roadmap created (Phases 32-34)
 progress:
   total_phases: 3
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 5
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -49,6 +49,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 30 P02 | 2 | 2 tasks | 3 files |
 | Phase 30 P01 | 8 | 2 tasks | 4 files |
 | Phase 32 P01 | 8 | 2 tasks | 4 files |
+| Phase 32 P02 | 4 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -61,6 +62,7 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 31]: ExplainabilityDrawerPanel renders empty state when selectedStationId is null — panel responsibility, not drawer-level guard
 - [Phase 32]: SCN-01: CSS background #04080f hardcoded on canvas wrapper and Canvas element to eliminate pre-WebGL black flash
 - [Phase 32]: SCN-02: ATLAS/FLOW mode toggle relocated from orphaned top-right button to status strip as first segment, mode prop drilled from ObservatoryTab
+- [Phase 32]: STS-01/STS-02: Status strip border hardcoded to 0.12 opacity (not var(--hud-border)) and fontSize bumped to 11px for at-a-glance readability
 
 ### Blockers/Concerns
 
@@ -69,6 +71,6 @@ Progress: [░░░░░░░░░░] 0%
 
 ## Session Continuity
 
-Last session: 2026-03-22T03:52:18.059Z
-Stopped at: Completed 32-01-PLAN.md
+Last session: 2026-03-22T03:55:32.788Z
+Stopped at: Completed 32-02-PLAN.md
 Resume file: None

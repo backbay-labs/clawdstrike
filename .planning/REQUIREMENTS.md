@@ -13,8 +13,8 @@
 
 ### Scene & Rendering
 
-- [ ] **SCN-01**: Observatory 3D scene renders visible content (stars, stations, or loading indicator) within the first frame — no blank black rectangle during fly-by or initial load
-- [ ] **SCN-02**: ATLAS mode toggle button moves from orphaned top-right corner into the status strip as a labeled segment alongside the analyst presets
+- [x] **SCN-01**: Observatory 3D scene renders visible content (stars, stations, or loading indicator) within the first frame — no blank black rectangle during fly-by or initial load
+- [x] **SCN-02**: ATLAS mode toggle button moves from orphaned top-right corner into the status strip as a labeled segment alongside the analyst presets
 
 ### Glassmorphism
 
@@ -29,8 +29,8 @@
 
 ### Status Strip
 
-- [ ] **STS-01**: Status strip has a visible top border (1px solid with enough contrast to separate it from the scene above)
-- [ ] **STS-02**: Status strip text (speed, heading, station count) is legible at a glance — minimum 11px monospace, opacity >= 0.8
+- [x] **STS-01**: Status strip has a visible top border (1px solid with enough contrast to separate it from the scene above)
+- [x] **STS-02**: Status strip text (speed, heading, station count) is legible at a glance — minimum 11px monospace, opacity >= 0.8
 
 ### Drawer Chrome
 
@@ -60,10 +60,10 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SCN-01 | Phase 32 | Pending |
-| SCN-02 | Phase 32 | Pending |
-| STS-01 | Phase 32 | Pending |
-| STS-02 | Phase 32 | Pending |
+| SCN-01 | Phase 32 | Complete |
+| SCN-02 | Phase 32 | Complete |
+| STS-01 | Phase 32 | Complete |
+| STS-02 | Phase 32 | Complete |
 | GLS-01 | Phase 33 | Pending |
 | GLS-02 | Phase 33 | Pending |
 | DRW-01 | Phase 33 | Pending |
