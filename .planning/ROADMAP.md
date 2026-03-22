@@ -778,6 +778,6 @@ Phases 32 and 34 have no file overlap and can execute in parallel. Phase 33 is a
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 32. Scene & Status Strip Polish | 2/2 | Complete   | 2026-03-22 | - |
+| 32. Scene & Status Strip Polish | 2/2 | Complete    | 2026-03-22 | - |
 | 33. Drawer Chrome & Glassmorphism | v8.0 | 0/2 | Not started | - |
 | 34. Panel Empty States | v8.0 | 0/1 | Not started | - |
