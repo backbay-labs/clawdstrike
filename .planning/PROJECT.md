@@ -56,17 +56,15 @@ Security operators work across multiple views simultaneously with a spirit-drive
 - ✓ Four rebuilt analyst panels (Explainability, Mission, Replay, Ghost Memory) — v7.0
 - ✓ Flight HUD glassmorphism restyle + repositioning — v7.0
 
-## Current Milestone: v8.0 Observatory Visual Polish
+## Current Milestone: v9.0 Observatory 3D World Polish
 
-**Goal:** Fix the 6 visual/UX issues identified during dogfooding — 3D scene renders on load, glassmorphism blur is visible, panel empty states have structure, status strip has presence, ATLAS button relocated, and drawer has a close affordance.
+**Goal:** Make the observatory world visually alive and responsive — ghost traces glow at stations where past findings occurred, mission objective beacons pulse at target stations, analyst presets transform the scene's visual mood, and weather effects respond to hunt telemetry.
 
 **Target features:**
-- Fix blank 3D scene during fly-by / initial load
-- Make glassmorphism backdrop-filter blur visually apparent on the left drawer
-- Rich empty states for Explainability, Mission, and Ghost Memory panels
-- Status strip visual presence (brighter border, higher contrast text)
-- Relocate ATLAS mode toggle into the status strip
-- Panel drawer header bar with title + close button
+- Ghost trace 3D markers — spectral holographic indicators at stations with prior findings/receipts
+- Mission objective beacons — glowing beacon columns on active mission targets, visible from distance
+- Analyst preset overlays — THREAT (red tint + danger particles), EVIDENCE (gold halos), RECEIPTS (verdict markers), GHOST (dim world + reveal traces)
+- Weather layer revival — mount the existing weather system, telemetry-driven fog/particles/lighting
 
 ### Active
 

@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v8.0
-milestone_name: Observatory Visual Polish
-status: planning
-stopped_at: Completed 34-01-PLAN.md
-last_updated: "2026-03-22T04:14:47.485Z"
-last_activity: 2026-03-21 — v8.0 roadmap created (Phases 32-34)
+milestone: v9.0
+milestone_name: Observatory 3D World Polish
+status: defining_requirements
+stopped_at: null
+last_updated: "2026-03-22"
+last_activity: "2026-03-22 — Milestone v9.0 started"
 progress:
-  total_phases: 3
-  completed_phases: 3
-  total_plans: 5
-  completed_plans: 5
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
   percent: 0
 ---
 
