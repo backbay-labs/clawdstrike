@@ -55,16 +55,23 @@ Security operators work across multiple views simultaneously with a spirit-drive
 - ✓ Panel registry with mutual exclusion + analyst preset toggle segments — v7.0
 - ✓ Four rebuilt analyst panels (Explainability, Mission, Replay, Ghost Memory) — v7.0
 - ✓ Flight HUD glassmorphism restyle + repositioning — v7.0
+- ✓ Ghost trace 3D markers — holographic torus+glyph at finding stations, GHOST preset opacity — v9.0
+- ✓ Mission objective beacons — emissive beacon columns at mission targets with breathing pulse — v9.0
+- ✓ Analyst preset overlays — THREAT/EVIDENCE/RECEIPTS/GHOST scene mood transforms — v9.0
+- ✓ Weather layer — telemetry-driven fog, tint light, atmospheric particles — v9.0
 
-## Current Milestone: v9.0 Observatory 3D World Polish
+## Current Milestone: v10.0 Observatory Analyst Toolkit
 
-**Goal:** Make the observatory world visually alive and responsive — ghost traces glow at stations where past findings occurred, mission objective beacons pulse at target stations, analyst presets transform the scene's visual mood, and weather effects respond to hunt telemetry.
+**Goal:** Transform the observatory from a visual experience into a full analyst control surface — replay annotations let operators mark and annotate moments in 3D space, probe delta cards surface what changed and why, split-screen compare mode enables then-vs-now analysis, constellation routes memorialize completed investigations, threat heatmaps project pressure onto the world, spirit trails reveal hidden connections, and station interiors add depth to each investigation node.
 
 **Target features:**
-- Ghost trace 3D markers — spectral holographic indicators at stations with prior findings/receipts
-- Mission objective beacons — glowing beacon columns on active mission targets, visible from distance
-- Analyst preset overlays — THREAT (red tint + danger particles), EVIDENCE (gold halos), RECEIPTS (verdict markers), GHOST (dim world + reveal traces)
-- Weather layer revival — mount the existing weather system, telemetry-driven fog/particles/lighting
+- Replay Annotation Canvas — click 3D space during replay to drop pins with text notes, draw investigation trails, persist to localStorage, visible in Replay drawer
+- Probe Delta Cards — floating 3D cards near target station after probe fires showing pressure shift, explanation, and recommended next action
+- Split-Screen Compare Mode — side-by-side "then" (replay frame) vs "now" (live) observatory worlds with diff overlay highlighting changed stations
+- Constellation Routes — completed missions permanently traced as named constellations in the starfield, clickable to replay that mission
+- Threat Topology Heatmap — volumetric ground-plane gradient showing pressure intensity as continuous field, pulses with telemetry updates
+- Spirit Resonance Trails — bound spirit leaves luminous trails between stations keyed to mood/XP level, level-5 reveals hidden inter-station connections
+- Station Interior Zones — seamless camera-push transition into detailed per-station interior layouts with unique room geometry and NPC activity
 
 ### Active
 
@@ -90,7 +97,7 @@ Security operators work across multiple views simultaneously with a spirit-drive
 - Tech stack: Tauri 2, React 19, TypeScript, Zustand, React Three Fiber 9, drei 10, wawa-vfx, three 0.171+
 - WebGL2 renderer with logarithmic depth buffer (WebGPU deferred — postprocessing library incompatibility)
 - 40 v6.0 requirements fully satisfied (audit passed)
-- 7 milestones shipped (v1.0-v7.0) (v1.0 IDE Pivot, v2.0 Huntronomer Integration, v3.0 Spirit & Observatory Evolution, v4.0 AAA Observatory Experience, v5.0 Observatory Analyst Experience, v6.0 Observatory Space Flight)
+- 9 milestones shipped (v1.0-v9.0) (v1.0 IDE Pivot, v2.0 Huntronomer Integration, v3.0 Spirit & Observatory Evolution, v4.0 AAA Observatory Experience, v5.0 Observatory Analyst Experience, v6.0 Observatory Space Flight, v7.0 Observatory Production HUD, v8.0 Observatory Visual Polish, v9.0 Observatory 3D World Polish)
 
 ### Huntronomer Source
 Source 3D code lives in `clawdstrike-worktrees/huntronomer-workspace-orch` (branch `feature/huntronomer-workspace-orchestrator`, committed @ `1586fe2a1`).
@@ -136,4 +143,4 @@ Source 3D code lives in `clawdstrike-worktrees/huntronomer-workspace-orch` (bran
 | Progressive station discovery (session-only) | Rewards exploration without persistent state complexity | ✓ Good |
 
 ---
-*Last updated: 2026-03-21 after v7.0 Observatory Production HUD milestone completion*
+*Last updated: 2026-03-22 after v9.0 Observatory 3D World Polish milestone completion*

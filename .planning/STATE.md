@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v8.0
-milestone_name: Observatory Visual Polish
+milestone: v10.0
+milestone_name: Observatory Analyst Toolkit
 status: planning
-stopped_at: Completed 37-02-PLAN.md
-last_updated: "2026-03-22T23:40:20.339Z"
-last_activity: 2026-03-22 — v9.0 roadmap created (Phases 35-38)
+stopped_at: Defining requirements
+last_updated: "2026-03-22"
+last_activity: 2026-03-22 — Milestone v10.0 started
 progress:
-  total_phases: 7
-  completed_phases: 7
-  total_plans: 12
-  completed_plans: 12
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
   percent: 0
 ---
 
@@ -21,73 +21,49 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-22)
 
 **Core value:** Security operators work across multiple views simultaneously with a spirit-driven immersive layer
-**Current focus:** Phase 35 — Ghost Trace Markers (ready to plan)
+**Current focus:** Defining requirements for v10.0 Observatory Analyst Toolkit
 
 ## Current Position
 
-Phase: 35 of 38 (Ghost Trace Markers)
-Plan: 0 of TBD in current phase
-Status: Ready to plan
-Last activity: 2026-03-22 — v9.0 roadmap created (Phases 35-38)
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-22 — Milestone v10.0 started
 
 Progress: [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
-**Velocity (v8.0 baseline):**
-- Total plans completed (v8.0): 5
-- Average duration: ~45 min/plan
-- Total execution time: ~225 min
+**Velocity (v9.0 baseline):**
+- Total plans completed (v9.0): 7
+- Average duration: ~5 min/plan
+- Total execution time: ~35 min
 
 *Updated after each plan completion*
 
 | Phase | Plan | Duration | Tasks | Files |
 |-------|------|----------|-------|-------|
-| Phase 32 P01 | 8 | 2 tasks | 4 files |
-| Phase 32 P02 | 4 | 2 tasks | 2 files |
-| Phase 33 P01 | 99 | 2 tasks | 3 files |
-| Phase 33 P02 | 8 | 2 tasks | 3 files |
-| Phase 34 P01 | 2 | 1 tasks | 4 files |
-| Phase 38 P01 | 10 | 2 tasks | 3 files |
-| Phase 35 P01 | 8 | 1 tasks | 2 files |
-| Phase 35 P02 | 5 | 2 tasks | 3 files |
-| Phase 36 P01 | 3 | 2 tasks | 2 files |
-| Phase 36-mission-objective-beacons P01 | 3 | 2 tasks | 2 files |
-| Phase 36-mission-objective-beacons P02 | 5 | 2 tasks | 1 files |
-| Phase 37-analyst-preset-overlays P01 | 4 | 2 tasks | 4 files |
-| Phase 37-analyst-preset-overlays P02 | 3 | 2 tasks | 5 files |
 
 ## Accumulated Context
 
 ### Decisions
 
-- [Phase 28]: Glassmorphism tokens isolated to observatory-hud.css — `--hud-bg`, `--hud-blur`, `--hud-border`, `--hud-text`, `--hud-text-muted`, `--hud-accent` shared across all HUD surfaces
-- [Phase 29]: Status strip bg rgba(8,12,24,0.88) not var(--hud-bg) — VIS-02 requires >= 0.85 opacity for text readability
-- [Phase 30]: Always-mounted drawer pattern (translateX not conditional render) — avoids unmount/remount cost
-- [Phase 32]: SCN-01: CSS background #04080f hardcoded on canvas wrapper to eliminate pre-WebGL black flash
-- [Phase 34]: EMP-03: Ghost Memory empty state uses descriptive paragraphs rather than section headers
-- [Phase 38]: WTH: Fog delta capped at +0.0007 regardless of density to prevent overpowering base 0.0008 fog density
-- [Phase 38]: WTH: effectiveWeatherState=null guard in ObservatoryWorldCanvas prevents weather layer mount for budget=off or enableWeather=false
-- [Phase 35]: JSX toneMapped={false} used in meshBasicMaterial (not object literal) — functionally identical in R3F
-- [Phase 35]: ghostOpacityScale derived in outer ObservatoryWorldCanvas component, not inner scene — co-locates store reads, keeps scene as pure presentational layer
-- [Phase 36]: MissionObjectiveBeacons is fully self-contained and prop-driven — reads nothing from store, accepts mission prop only (MSN-04 enforced at top level)
-- [Phase 36-mission-objective-beacons]: MissionObjectiveBeacons is fully self-contained and prop-driven — reads nothing from store, accepts mission prop only (MSN-04 enforced at top level)
-- [Phase 36-mission-objective-beacons]: Sin cycle uses Math.PI multiplier on clock.elapsedTime for ~2s period; emissiveIntensity range 1.2-2.8 (center 2.0 +/- 0.8)
-- [Phase 36-mission-objective-beacons]: getBeaconStations returns only stations present in mission.objectives — no phantom beacons for stations without objectives
-- [Phase 36-mission-objective-beacons]: MissionObjectiveBeacons placed immediately after MissionWaypointTrail in JSX tree — groups all mission-linked visual components together for maintainability
-- [Phase Phase 37]: APR-01: Flat CircleGeometry disc at y=0 for threat wash grounds danger zone at floor; 5 orbital motes phase-staggered by index with MOTE_ANGULAR_SPEED=0.7
-- [Phase Phase 37]: APR-02: EvidenceStationHalo torus spins via delta * 0.4 (frame-rate independent) — gold spinning rings at receipt-bearing stations
-- [Phase Phase 37]: APR-03: verdictColor checks headline 'denied' first (highest priority), then detail/score for audit, then defaults to green ALLOW
-- [Phase Phase 37]: GhostPresetOverlay replaces (not supplements) ambientLight via ternary in ObservatoryWorldScene — prevents double-lighting artifacts when GHOST preset is active
-- [Phase Phase 37]: analystPresetId prop defaults to null — ObservatoryWorldSceneProps is backward compatible, only ObservatoryWorldCanvas needed updating
+- [Phase 28]: Glassmorphism tokens isolated to observatory-hud.css — `--hud-bg`, `--hud-blur`, `--hud-border`, etc.
+- [Phase 29]: Status strip bg rgba(8,12,24,0.88) not var(--hud-bg) — VIS-02 requires >= 0.85 opacity
+- [Phase 30]: Always-mounted drawer pattern (translateX not conditional render)
+- [Phase 32]: SCN-01: CSS background #04080f on canvas wrapper eliminates pre-WebGL black flash
+- [Phase 35]: ghostOpacityScale derived in outer ObservatoryWorldCanvas, not inner scene
+- [Phase 36]: MissionObjectiveBeacons is fully self-contained and prop-driven
+- [Phase 37]: GhostPresetOverlay replaces ambientLight via ternary — prevents double-lighting
+- [Phase 38]: Fog delta capped at +0.0007; effectiveWeatherState=null guard prevents mount for budget=off
 
 ### Blockers/Concerns
 
-- jsdom prints non-failing warnings for raw R3F tag casing in observatory-ghost-layer.test.tsx
-- Some Three.js-based tests print a non-failing multiple-instances warning in the Vitest environment
+- jsdom prints non-failing warnings for raw R3F tag casing in tests
+- Some Three.js-based tests print non-failing multiple-instances warning
 
 ## Session Continuity
 
-Last session: 2026-03-22T23:34:44.663Z
-Stopped at: Completed 37-02-PLAN.md
+Last session: 2026-03-22
+Stopped at: Defining requirements for v10.0
 Resume file: None
