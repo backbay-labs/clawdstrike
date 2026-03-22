@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v8.0
 milestone_name: Observatory Visual Polish
 status: planning
-stopped_at: Completed 36-02-PLAN.md
-last_updated: "2026-03-22T23:17:54.264Z"
+stopped_at: Completed 37-01-PLAN.md
+last_updated: "2026-03-22T23:30:01.979Z"
 last_activity: 2026-03-22 — v9.0 roadmap created (Phases 35-38)
 progress:
   total_phases: 7
   completed_phases: 6
-  total_plans: 10
-  completed_plans: 10
+  total_plans: 12
+  completed_plans: 11
   percent: 0
 ---
 
@@ -54,6 +54,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 36 P01 | 3 | 2 tasks | 2 files |
 | Phase 36-mission-objective-beacons P01 | 3 | 2 tasks | 2 files |
 | Phase 36-mission-objective-beacons P02 | 5 | 2 tasks | 1 files |
+| Phase 37-analyst-preset-overlays P01 | 4 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -73,6 +74,9 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 36-mission-objective-beacons]: Sin cycle uses Math.PI multiplier on clock.elapsedTime for ~2s period; emissiveIntensity range 1.2-2.8 (center 2.0 +/- 0.8)
 - [Phase 36-mission-objective-beacons]: getBeaconStations returns only stations present in mission.objectives — no phantom beacons for stations without objectives
 - [Phase 36-mission-objective-beacons]: MissionObjectiveBeacons placed immediately after MissionWaypointTrail in JSX tree — groups all mission-linked visual components together for maintainability
+- [Phase Phase 37]: APR-01: Flat CircleGeometry disc at y=0 for threat wash grounds danger zone at floor; 5 orbital motes phase-staggered by index with MOTE_ANGULAR_SPEED=0.7
+- [Phase Phase 37]: APR-02: EvidenceStationHalo torus spins via delta * 0.4 (frame-rate independent) — gold spinning rings at receipt-bearing stations
+- [Phase Phase 37]: APR-03: verdictColor checks headline 'denied' first (highest priority), then detail/score for audit, then defaults to green ALLOW
 
 ### Blockers/Concerns
 
@@ -81,6 +85,6 @@ Progress: [░░░░░░░░░░] 0%
 
 ## Session Continuity
 
-Last session: 2026-03-22T23:17:54.261Z
-Stopped at: Completed 36-02-PLAN.md
+Last session: 2026-03-22T23:30:01.976Z
+Stopped at: Completed 37-01-PLAN.md
 Resume file: None

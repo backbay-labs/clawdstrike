@@ -27,9 +27,9 @@
 
 ### Analyst Preset Overlays
 
-- [ ] **APR-01**: Activating THREAT preset tints active-pressure districts with a red emissive wash and spawns subtle danger particle motes around high-pressure stations
-- [ ] **APR-02**: Activating EVIDENCE preset highlights stations with receipt data using gold emissive halos (reusing the affinity ring pattern from v3.0)
-- [ ] **APR-03**: Activating RECEIPTS preset renders small verdict badge markers (ALLOW/DENY/AUDIT icons) floating near stations that have receipt history
+- [x] **APR-01**: Activating THREAT preset tints active-pressure districts with a red emissive wash and spawns subtle danger particle motes around high-pressure stations
+- [x] **APR-02**: Activating EVIDENCE preset highlights stations with receipt data using gold emissive halos (reusing the affinity ring pattern from v3.0)
+- [x] **APR-03**: Activating RECEIPTS preset renders small verdict badge markers (ALLOW/DENY/AUDIT icons) floating near stations that have receipt history
 - [ ] **APR-04**: Activating GHOST preset dims the world ambient light by 40%, desaturates non-ghost geometry, and reveals ghost trace markers at full opacity (cross-references GHO-03)
 - [ ] **APR-05**: Deactivating any preset returns the world to its neutral visual state within one frame — no lingering tint or particles
 
@@ -70,9 +70,9 @@
 | MSN-02 | Phase 36 | Complete |
 | MSN-03 | Phase 36 | Complete |
 | MSN-04 | Phase 36 | Complete |
-| APR-01 | Phase 37 | Pending |
-| APR-02 | Phase 37 | Pending |
-| APR-03 | Phase 37 | Pending |
+| APR-01 | Phase 37 | Complete |
+| APR-02 | Phase 37 | Complete |
+| APR-03 | Phase 37 | Complete |
 | APR-04 | Phase 37 | Pending |
 | APR-05 | Phase 37 | Pending |
 | WTH-01 | Phase 38 | Complete |
