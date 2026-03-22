@@ -1,5 +1,20 @@
 # Milestones
 
+## v8.0 Observatory Visual Polish (Shipped: 2026-03-22)
+
+**Phases completed:** 3 phases (32-34), 5 plans
+**Audit:** Passed 11/11 requirements
+
+**Key accomplishments:**
+1. Fixed blank 3D scene on load — #04080f CSS background matches in-scene color from frame 0
+2. Relocated ATLAS toggle from orphaned top-right into status strip as mode segment
+3. Status strip contrast doubled (border 0.06→0.12, text 10→11px)
+4. Drawer glassmorphism visible — bg opacity reduced to 0.55, right-edge border + glow added
+5. Drawer header bar with uppercase panel name + X close button for mouse users
+6. Structured empty states in Explainability (section skeletons), Mission (outline), Ghost Memory (explanatory text)
+
+---
+
 ## v7.0 Observatory Production HUD (Shipped: 2026-03-21)
 
 **Phases completed:** 4 phases (28-31), 9 plans
