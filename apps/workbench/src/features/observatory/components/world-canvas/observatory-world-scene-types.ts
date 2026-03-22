@@ -6,6 +6,7 @@ import type { HuntStationId } from "../../world/types";
 import type { ObservatoryLodTier } from "../../utils/observatory-performance";
 import type { MissionInteractionSource, ObservatoryPlayerFocusState } from "../flow-runtime/grounding";
 import type { ObservatoryGhostTrace } from "../../world/observatory-ghost-memory";
+import type { ObservatoryAnalystPresetId } from "../../types";
 
 export interface ObservatoryActiveHeroInteraction {
   assetId: ObservatoryHeroPropRecipe["assetId"];
@@ -58,4 +59,6 @@ export interface ObservatoryWorldSceneProps {
   ghostTraces?: ObservatoryGhostTrace[];
   /** 1.0 = GHOST preset active (full opacity), 0.2 = inactive (dimmed). Default: 0.2 */
   ghostOpacityScale?: number;
+  /** Active analyst preset driving overlay rendering. null = no overlay. */
+  analystPresetId?: ObservatoryAnalystPresetId | null;
 }

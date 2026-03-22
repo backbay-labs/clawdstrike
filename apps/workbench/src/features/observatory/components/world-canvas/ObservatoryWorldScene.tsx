@@ -26,6 +26,10 @@ import { ObservatoryStarfield } from "./ObservatoryStarfield";
 import { ObservatoryTransitLayer } from "./ObservatoryTransitLayer";
 import type { ObservatoryWorldSceneProps } from "./observatory-world-scene-types";
 import { GhostTraceLayer } from "../GhostTraceLayer";
+import { ThreatPresetOverlay } from "../ThreatPresetOverlay";
+import { EvidencePresetOverlay } from "../EvidencePresetOverlay";
+import { ReceiptsPresetOverlay } from "../ReceiptsPresetOverlay";
+import { GhostPresetOverlay } from "../GhostPresetOverlay";
 
 function buildDistrictLodTiers(
   world: DerivedObservatoryWorld,
@@ -54,6 +58,7 @@ function buildDistrictLodTiers(
 
 export function ObservatoryWorldScene({
   activeHeroInteraction,
+  analystPresetId = null,
   cameraResetToken,
   eruptionStrengthByRouteStation,
   eruptionStrengthByStation,
@@ -85,7 +90,15 @@ export function ObservatoryWorldScene({
       <color attach="background" args={["#04080f"]} />
       <ObservatoryStarfield />
       <fogExp2 attach="fog" args={["#060a14", 0.0008]} />
-      <ambientLight intensity={world.environment.ambientIntensity} color={world.environment.ambientColor} />
+      {/* APR-04: GHOST preset dims ambient by 40% + adds cool desaturation tint */}
+      {analystPresetId === "ghost" ? (
+        <GhostPresetOverlay
+          baseIntensity={world.environment.ambientIntensity}
+          baseColor={world.environment.ambientColor}
+        />
+      ) : (
+        <ambientLight intensity={world.environment.ambientIntensity} color={world.environment.ambientColor} />
+      )}
       <hemisphereLight args={["#b7d4ff", "#02050b", 0.18]} />
       <directionalLight
         position={world.environment.directionalLightPosition}
@@ -168,6 +181,18 @@ export function ObservatoryWorldScene({
         world={world}
       />
       <GhostTraceLayer traces={ghostTraces} opacityScale={ghostOpacityScale} />
+      {/* APR-01: THREAT preset — red wash + danger motes at high-pressure districts */}
+      {analystPresetId === "threat" ? (
+        <ThreatPresetOverlay districts={world.districts} />
+      ) : null}
+      {/* APR-02: EVIDENCE preset — gold emissive halos at stations with receipt traces */}
+      {analystPresetId === "evidence" ? (
+        <EvidencePresetOverlay traces={ghostTraces} />
+      ) : null}
+      {/* APR-03: RECEIPTS preset — verdict badge markers at stations with receipt history */}
+      {analystPresetId === "receipts" ? (
+        <ReceiptsPresetOverlay traces={ghostTraces} />
+      ) : null}
     </>
   );
 }

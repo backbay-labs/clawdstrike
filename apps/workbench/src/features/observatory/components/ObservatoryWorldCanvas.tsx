@@ -4755,6 +4755,7 @@ export function ObservatoryWorldCanvas({
             playerFocusRef={playerFocusRef}
             ghostTraces={ghostTraces}
             ghostOpacityScale={ghostOpacityScale}
+            analystPresetId={analystPresetIdOuter}
           />
           {/* DSC-03: Mission waypoint trail — glowing green CatmullRom tube to objective station */}
           <MissionWaypointTrail
