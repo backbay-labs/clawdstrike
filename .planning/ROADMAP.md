@@ -9,6 +9,7 @@
 - ✅ **v5.0 Observatory Analyst Experience** — Phases 15-19 (shipped 2026-03-20)
 - ✅ **v6.0 Observatory Space Flight** — Phases 20-27 (shipped 2026-03-20)
 - ✅ **v7.0 Observatory Production HUD** — Phases 28-31 (shipped 2026-03-21)
+- 🚧 **v8.0 Observatory Visual Polish** — Phases 32-34 (in progress)
 
 ---
 
@@ -619,6 +620,9 @@ Plans:
 
 ---
 
+<details>
+<summary>✅ v7.0 Observatory Production HUD (Phases 28-31) — SHIPPED 2026-03-21</summary>
+
 ## v7.0 Observatory Production HUD
 
 **Milestone Goal:** Transform the observatory's overlapping panel chaos into a clean cockpit HUD — glassmorphism left drawer (one panel at a time), persistent status strip with analyst presets, hotkey-driven panel switching, and a full panel inventory audit to cut what doesn't earn its space.
@@ -706,3 +710,74 @@ Phase 28 first — clean slate and design tokens before anything is built. Phase
 | 29. Status Strip + Panel Registry | 2/2 | Complete    | 2026-03-21 | - |
 | 30. Left Drawer + Hotkeys + Flight HUD Restyle | 2/3 | Complete    | 2026-03-21 | - |
 | 31. Rebuilt Panels | 2/2 | Complete    | 2026-03-21 | - |
+
+
+</details>
+
+---
+
+## v8.0 Observatory Visual Polish
+
+**Milestone Goal:** Fix the 6 visual/UX issues identified during dogfooding — 3D scene renders on load, glassmorphism blur is visible, panel empty states have structure, status strip has presence, ATLAS button relocated, and drawer has a close affordance.
+
+## Phases
+
+- [ ] **Phase 32: Scene & Status Strip Polish** — Fix blank 3D scene on initial load/fly-by, relocate ATLAS toggle into status strip, sharpen status strip border and text contrast (SCN-01, SCN-02, STS-01, STS-02)
+- [ ] **Phase 33: Drawer Chrome & Glassmorphism** — Make left drawer backdrop-filter blur perceptible, add visible top edge treatment, add header bar with panel name and close button (GLS-01, GLS-02, DRW-01, DRW-02)
+- [ ] **Phase 34: Panel Empty States** — Replace bare placeholder text in Explainability, Mission, and Ghost Memory panels with structured empty states and contextual hints (EMP-01, EMP-02, EMP-03)
+
+## Phase Details
+
+### Phase 32: Scene & Status Strip Polish
+**Goal**: The 3D scene is visible from the first frame and the status strip commands attention — no blank black rectangle during fly-by, ATLAS toggle lives in the strip, and the strip's border + text are legible at a glance
+**Depends on**: Phase 31 (ObservatoryWorldCanvas, ObservatoryStatusStrip, and ObservatoryTab exist from v7.0)
+**Requirements**: SCN-01, SCN-02, STS-01, STS-02
+**Success Criteria** (what must be TRUE):
+  1. Opening the observatory tab shows stars, stations, or a loading indicator within the first rendered frame — no blank black rectangle at any point during initial load or fly-by transitions
+  2. The ATLAS mode toggle button no longer appears in the orphaned top-right corner; it appears as a labeled segment in the status strip alongside THREAT/EVIDENCE/RECEIPTS/GHOST
+  3. The status strip has a visible 1px top border with enough contrast to visually separate it from the 3D scene above it
+  4. Speed, heading, and station count text in the status strip is legible at a glance — minimum 11px monospace at opacity >= 0.8
+**Plans**: TBD
+
+Plans:
+- [ ] 32-01-PLAN.md — Fix ObservatoryWorldCanvas blank-scene regression (loading guard + ensure scene content present on first frame) + ATLAS segment wired into ObservatoryStatusStrip (SCN-01, SCN-02)
+- [ ] 32-02-PLAN.md — Status strip top border + text legibility pass (STS-01, STS-02)
+
+### Phase 33: Drawer Chrome & Glassmorphism
+**Goal**: The left drawer has visual depth and chrome — backdrop-filter blur is perceptible against the 3D scene, the top edge distinguishes the drawer from the background, and operators can close the drawer with a mouse click on the header X button
+**Depends on**: Phase 31 (ObservatoryLeftDrawer exists with translateX slide transition)
+**Requirements**: GLS-01, GLS-02, DRW-01, DRW-02
+**Success Criteria** (what must be TRUE):
+  1. When the drawer is open and the 3D scene is rendering behind it, the backdrop-filter blur effect is perceptibly visible — the scene geometry blurs rather than showing through as sharp pixels
+  2. The drawer has a visible top edge treatment (border or subtle edge glow) that distinguishes it from the scene behind it — it does not appear to float borderlessly
+  3. The drawer header bar shows the active panel name in uppercase monospace (e.g., EXPLAINABILITY, MISSION, REPLAY, GHOST MEMORY)
+  4. The drawer header bar has a functional close button that calls closePanel() and slides the drawer shut — provides a mouse-based close affordance alongside the Escape hotkey
+**Plans**: TBD
+
+Plans:
+- [ ] 33-01-PLAN.md — ObservatoryLeftDrawer glassmorphism fix — backdrop-filter blur perceptibility + top border/edge glow treatment (GLS-01, GLS-02)
+- [ ] 33-02-PLAN.md — Drawer header bar — panel name label + close button wired to closePanel() (DRW-01, DRW-02)
+
+### Phase 34: Panel Empty States
+**Goal**: Explainability, Mission, and Ghost Memory panels show structured placeholder content when no data is present — section outlines, muted icons, and contextual hints guide operators rather than leaving them with bare single-line messages
+**Depends on**: Phase 31 (Explainability, Mission, and Ghost Memory panel components exist)
+**Requirements**: EMP-01, EMP-02, EMP-03
+**Success Criteria** (what must be TRUE):
+  1. The Explainability panel empty state shows structured placeholder content with section headers (Station, Pressure, Anomalies), muted icons, and a hint: "Click a station or press E while hovering"
+  2. The Mission panel empty state shows a structured section outline (Briefing, Objectives, Narrative) with muted labels and a hint: "Start a mission from the command palette"
+  3. The Ghost Memory panel empty state shows a "0 traces" header with a muted explanation of what ghost memory records and when traces appear
+**Plans**: TBD
+
+Plans:
+- [ ] 34-01-PLAN.md — Rich empty states for Explainability, Mission, and Ghost Memory panels (EMP-01, EMP-02, EMP-03)
+
+## Progress
+
+**Execution Order:**
+Phases 32 and 34 have no file overlap and can execute in parallel. Phase 33 is also independent. All three phases are pure polish with no cross-dependencies — execute in any order.
+
+| Phase | Milestone | Plans Complete | Status | Completed |
+|-------|-----------|----------------|--------|-----------|
+| 32. Scene & Status Strip Polish | v8.0 | 0/2 | Not started | - |
+| 33. Drawer Chrome & Glassmorphism | v8.0 | 0/2 | Not started | - |
+| 34. Panel Empty States | v8.0 | 0/1 | Not started | - |

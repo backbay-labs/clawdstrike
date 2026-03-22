@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v8.0
 milestone_name: Observatory Visual Polish
-status: defining_requirements
+status: ready_to_plan
 stopped_at: null
 last_updated: "2026-03-21"
-last_activity: "2026-03-21 — Milestone v8.0 started"
+last_activity: "2026-03-21 — Roadmap created for v8.0 (Phases 32-34)"
 progress:
-  total_phases: 0
+  total_phases: 3
   completed_phases: 0
-  total_plans: 0
+  total_plans: 5
   completed_plans: 0
   percent: 0
 ---
@@ -21,75 +21,51 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-21)
 
 **Core value:** Security operators work across multiple views simultaneously with a spirit-driven immersive layer
-**Current focus:** Defining requirements for v8.0 Observatory Visual Polish
+**Current focus:** Phase 32 — Scene & Status Strip Polish (ready to plan)
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-03-21 — Milestone v8.0 started
+Phase: 32 of 34 (Scene & Status Strip Polish)
+Plan: 0 of 2 in current phase
+Status: Ready to plan
+Last activity: 2026-03-21 — v8.0 roadmap created (Phases 32-34)
 
 Progress: [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
-**Velocity (v6.0 baseline):**
-- Total plans completed (v6.0): 21
-- Average duration: ~7 min/plan
-- Total execution time: ~147 min
+**Velocity (v7.0 baseline):**
+- Total plans completed (v7.0): 9
+- Average duration: ~26 min/plan
+- Total execution time: ~234 min
 
 *Updated after each plan completion*
 
 | Phase | Plan | Duration | Tasks | Files |
 |-------|------|----------|-------|-------|
-| (v7.0 plans not yet started) | — | — | — | — |
-| Phase 28 P02 | 4 | 1 tasks | 2 files |
-| Phase 28-design-tokens-panel-audit P01 | 8 | 2 tasks | 16 files |
-| Phase 29-status-strip-panel-registry P01 | 4 | 2 tasks | 5 files |
-| Phase 29 P02 | 12 | 2 tasks | 4 files |
-| Phase 30-left-drawer-hotkeys-flight-hud-restyle P03 | 2 | 2 tasks | 3 files |
-| Phase 30-left-drawer-hotkeys-flight-hud-restyle P01 | 8 | 2 tasks | 4 files |
-| Phase 30-left-drawer-hotkeys-flight-hud-restyle P02 | 2 | 2 tasks | 3 files |
-| Phase 31-rebuilt-panels P01 | 3 | 2 tasks | 5 files |
-| Phase 31-rebuilt-panels P02 | 180 | 2 tasks | 2 files |
+| Phase 31 P02 | 180 | 2 tasks | 2 files |
+| Phase 31 P01 | 3 | 2 tasks | 5 files |
+| Phase 30 P03 | 2 | 2 tasks | 3 files |
+| Phase 30 P02 | 2 | 2 tasks | 3 files |
+| Phase 30 P01 | 8 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
 ### Decisions
 
-- [Phase 24]: DOM-based HUD (not R3F overlays) — 60fps ref-mutation avoids React re-renders; CSS overlay doesn't fight Canvas
-- [Phase 24]: rAF+getState() chosen over useSelector for HUD frame loop — zero subscriptions, zero React re-renders at 60fps
-- [Phase 27]: handleFlightStateChange uses getState().actions.setFlightState (imperative write) — 60fps callback must not cause React re-renders
-- [v7.0 roadmap]: Clean slate first — all 10 legacy overlay components deleted before framework is built (Phase 28 before 29)
-- [v7.0 roadmap]: CSS custom properties for glassmorphism tokens defined once, shared across status strip, left drawer, and rebuilt panels
-- [Phase 28]: Glassmorphism tokens isolated to observatory-hud.css, imported via globals.css — keeps HUD-specific properties out of main token namespace
-- [Phase 28]: --hud-accent: var(--spirit-accent, #4af) — spirit-driven HUD theming with safe fallback, no hard dependency on spirit being bound
-- [Phase 28]: Deleted all 10 legacy overlay components as clean slate — new panel framework builds from scratch in Phase 29
-- [Phase 28]: ObservatoryRuntimeMonitors.tsx and ObservatoryTelemetryBridge.tsx preserved — R3F hooks and telemetry subscriber still needed
-- [Phase 29]: Panel registry mutual exclusion via single activePanel field — overwrite is sufficient, no explicit close-then-open needed
-- [Phase 29]: ObservatoryAnalystPresetId 'nexus' renamed to 'ghost' (THREAT/EVIDENCE/RECEIPTS/GHOST HUD-12 alignment); ObservatoryStationKind 'nexus' unchanged
-- [Phase 29]: ObservatoryStatusStrip rAF mock call-count guard prevents jsdom stack overflow — synchronous cb(0) must not recurse
+- [Phase 28]: Glassmorphism tokens isolated to observatory-hud.css — `--hud-bg`, `--hud-blur`, `--hud-border`, `--hud-text`, `--hud-text-muted`, `--hud-accent` shared across all HUD surfaces
 - [Phase 29]: Status strip bg rgba(8,12,24,0.88) not var(--hud-bg) — VIS-02 requires >= 0.85 opacity for text readability
-- [Phase 29]: Preset buttons use React subscriptions not rAF — preset changes are rare user actions not per-frame, subscriptions appropriate
-- [Phase 30]: SpeedIndicator bottom offset = 80 + HUD_STATUS_STRIP_HEIGHT — speed bar clears 28px status strip
-- [Phase 30]: HUD_COLORS replaced by CSS var references in SpeedIndicator and HeadingCompass — components theme via CSS not JS constants
-- [Phase 30]: Always-mounted drawer pattern (translateX not conditional render) — avoids unmount/remount cost on open; consistent with SpaceFlightHud pattern
-- [Phase 30]: Left drawer two-part transition: slide 250ms ease-out then content fade 200ms with 100ms delay — polished reveal sequence
-- [Phase 30]: useObservatoryStore.getState() imperative in hotkey handler — event callbacks are not per-frame, no subscription needed
-- [Phase 30]: paneIsActive gates all hotkeys — prevents E/R/M/G from firing when another pane has focus
-- [Phase 30]: handleSelectStation always calls openPanel('explainability') on new station select — openPanel is idempotent if panel already open
+- [Phase 30]: Always-mounted drawer pattern (translateX not conditional render) — avoids unmount/remount cost; consistent with SpaceFlightHud
+- [Phase 30]: Left drawer two-part transition: slide 250ms ease-out then content fade 200ms with 100ms delay
 - [Phase 31]: ExplainabilityDrawerPanel renders empty state when selectedStationId is null — panel responsibility, not drawer-level guard
-- [Phase 31]: ReplayDrawerPanel always renders (no null empty state) — replay state always exists in store; only bookmarks section has empty message
-- [Phase 31-02]: renderPanel() helper uses exhaustive switch on HudPanelId — TypeScript ensures all 4 cases covered with no default needed
 
 ### Blockers/Concerns
 
-- jsdom prints non-failing warnings for raw R3F tag casing in `observatory-ghost-layer.test.tsx`
+- jsdom prints non-failing warnings for raw R3F tag casing in observatory-ghost-layer.test.tsx
 - Some Three.js-based tests print a non-failing multiple-instances warning in the Vitest environment
 
 ## Session Continuity
 
 Last session: 2026-03-21T14:25:54.932Z
-Stopped at: Completed 31-02-PLAN.md
+Stopped at: v8.0 roadmap created — Phases 32, 33, 34 defined
 Resume file: None

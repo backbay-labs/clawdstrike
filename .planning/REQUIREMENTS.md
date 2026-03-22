@@ -60,23 +60,23 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SCN-01 | Pending | Pending |
-| SCN-02 | Pending | Pending |
-| GLS-01 | Pending | Pending |
-| GLS-02 | Pending | Pending |
-| EMP-01 | Pending | Pending |
-| EMP-02 | Pending | Pending |
-| EMP-03 | Pending | Pending |
-| STS-01 | Pending | Pending |
-| STS-02 | Pending | Pending |
-| DRW-01 | Pending | Pending |
-| DRW-02 | Pending | Pending |
+| SCN-01 | Phase 32 | Pending |
+| SCN-02 | Phase 32 | Pending |
+| STS-01 | Phase 32 | Pending |
+| STS-02 | Phase 32 | Pending |
+| GLS-01 | Phase 33 | Pending |
+| GLS-02 | Phase 33 | Pending |
+| DRW-01 | Phase 33 | Pending |
+| DRW-02 | Phase 33 | Pending |
+| EMP-01 | Phase 34 | Pending |
+| EMP-02 | Phase 34 | Pending |
+| EMP-03 | Phase 34 | Pending |
 
 **Coverage:**
 - v8.0 requirements: 11 total
-- Mapped to phases: 0
-- Unmapped: 11
+- Mapped to phases: 11
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-21*
-*Last updated: 2026-03-21 after milestone v8.0 definition*
+*Last updated: 2026-03-21 after roadmap creation (Phases 32-34 assigned)*
