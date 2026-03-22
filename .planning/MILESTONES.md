@@ -1,5 +1,19 @@
 # Milestones
 
+## v9.0 Observatory 3D World Polish (Shipped: 2026-03-22)
+
+**Phases completed:** 4 phases (35-38), 7 plans
+**Audit:** Passed 16/16 requirements
+**Tests:** 53 files, 337 tests passing
+
+**Key accomplishments:**
+1. Ghost trace 3D markers — translucent holographic torus+glyph indicators at stations with prior findings, GHOST preset drives opacity (full when active, 20% when inactive)
+2. Mission objective beacons — emissive 180-unit tall beacon columns at mission targets with 2s breathing pulse, station accent color, desaturated for completed objectives
+3. Analyst preset overlays — THREAT (red wash disc + orbital danger motes), EVIDENCE (gold spinning torus halos), RECEIPTS (verdict-colored badge meshes), GHOST (40% ambient dim + cool desaturation tint)
+4. Weather layer revival — fog density modulation, tint point light, atmospheric Sparkles particles driven by hunt telemetry pressure, gated by performance profile
+
+---
+
 ## v8.0 Observatory Visual Polish (Shipped: 2026-03-22)
 
 **Phases completed:** 3 phases (32-34), 5 plans
