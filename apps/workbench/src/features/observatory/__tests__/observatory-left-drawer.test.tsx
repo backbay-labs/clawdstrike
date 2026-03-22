@@ -10,6 +10,7 @@
  *   f. renders ReplayDrawerPanel when activePanel is 'replay'
  *   g. renders GhostMemoryDrawerPanel when activePanel is 'ghost'
  *   h. renders nothing in content area when activePanel is null
+ *   i. drawer uses drawer-specific bg token (GLS-01)
  */
 
 import { describe, expect, it, beforeEach } from "vitest";
@@ -114,5 +115,12 @@ describe("ObservatoryLeftDrawer", () => {
     expect(container.querySelector("[data-testid='replay-drawer-panel']")).toBeNull();
     expect(container.querySelector("[data-testid='ghost-memory-drawer-panel']")).toBeNull();
     expect(container.querySelector("[data-testid='ghost-memory-empty-state']")).toBeNull();
+  });
+
+  it("i. drawer uses drawer-specific bg token (GLS-01)", () => {
+    useObservatoryStore.setState({ ...useObservatoryStore.getState(), activePanel: "explainability" });
+    const { container } = render(<ObservatoryLeftDrawer />);
+    const drawer = container.querySelector("[data-testid='observatory-left-drawer']") as HTMLElement;
+    expect(drawer.style.background).toContain("hud-drawer-bg");
   });
 });

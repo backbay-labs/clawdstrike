@@ -1,5 +1,5 @@
 /**
- * ObservatoryLeftDrawer.tsx — Phase 31 HUD-13, VIS-03
+ * ObservatoryLeftDrawer.tsx — Phase 31 HUD-13, VIS-03; Phase 33 GLS-01, GLS-02
  *
  * A 360px wide glassmorphism panel that slides in from the left edge of the
  * observatory canvas when `activePanel` is non-null.
@@ -72,12 +72,15 @@ export function ObservatoryLeftDrawer() {
         bottom: HUD_STATUS_STRIP_HEIGHT,
         width: HUD_LEFT_DRAWER_WIDTH,
         zIndex: 18,
-        // Glassmorphism treatment (VIS-01 tokens)
-        background: "var(--hud-bg, rgba(8, 12, 24, 0.75))",
+        // Glassmorphism treatment (Phase 33 GLS-01/GLS-02: drawer-specific tokens)
+        // --hud-drawer-bg at 0.55 opacity lets 3D scene bleed through the blur
+        background: "var(--hud-drawer-bg, rgba(8, 12, 24, 0.55))",
         backdropFilter: "var(--hud-blur, blur(12px))",
         WebkitBackdropFilter: "var(--hud-blur, blur(12px))",
-        borderRight: "var(--hud-border, 1px solid rgba(255, 255, 255, 0.06))",
-        boxShadow: "var(--hud-shadow, 0 8px 32px rgba(0, 0, 0, 0.4))",
+        // Right-edge border at 0.12 opacity (up from 0.06) — perceptible glass edge
+        borderRight: "var(--hud-drawer-edge, 1px solid rgba(255, 255, 255, 0.12))",
+        // Depth shadow + subtle right-edge glow (GLS-02)
+        boxShadow: "var(--hud-shadow, 0 8px 32px rgba(0, 0, 0, 0.4)), var(--hud-drawer-glow, 0 0 12px rgba(100, 160, 255, 0.06))",
         // Slide transition (VIS-03): translateX(-100%) when hidden, translateX(0) when open
         transform: isOpen ? "translateX(0)" : "translateX(-100%)",
         transition: "transform 250ms ease-out",
