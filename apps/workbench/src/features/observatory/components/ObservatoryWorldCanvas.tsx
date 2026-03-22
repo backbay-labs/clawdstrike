@@ -88,6 +88,7 @@ import { useObservatoryStore } from "../stores/observatory-store";
 import type { FlightState } from "../character/ship/flight-types";
 import { WarpSpeedLines } from "../vfx/WarpSpeedLines";
 import { MissionWaypointTrail } from "./MissionWaypointTrail";
+import { MissionObjectiveBeacons } from "./MissionObjectiveBeacons";
 import { ObservatoryWeatherLayer } from "./world-canvas/ObservatoryWeatherLayer";
 
 const LazyObservatoryPostFX = lazy(() =>
@@ -4760,6 +4761,8 @@ export function ObservatoryWorldCanvas({
             mission={mission}
             characterControllerEnabled={playerInputEnabled}
           />
+          {/* MSN-01 MSN-02 MSN-03 MSN-04: Emissive beacon columns at mission objective stations */}
+          <MissionObjectiveBeacons mission={mission} />
           {/* WTH-01: Weather layer — telemetry-driven fog/particles/ambient tint */}
           {effectiveWeatherState !== null ? (
             <ObservatoryWeatherLayer weatherState={effectiveWeatherState} />
