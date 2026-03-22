@@ -123,4 +123,33 @@ describe("ObservatoryLeftDrawer", () => {
     const drawer = container.querySelector("[data-testid='observatory-left-drawer']") as HTMLElement;
     expect(drawer.style.background).toContain("hud-drawer-bg");
   });
+
+  it("i. shows drawer header with panel label when activePanel is set (DRW-01)", () => {
+    useObservatoryStore.setState({ ...useObservatoryStore.getState(), activePanel: "explainability", selectedStationId: null });
+    const { container } = render(<ObservatoryLeftDrawer />);
+    const label = container.querySelector("[data-testid='drawer-header-label']");
+    expect(label).not.toBeNull();
+    expect(label!.textContent).toBe("EXPLAINABILITY");
+  });
+
+  it("j. shows GHOST MEMORY label when activePanel is ghost (DRW-01)", () => {
+    useObservatoryStore.setState({ ...useObservatoryStore.getState(), activePanel: "ghost" });
+    const { container } = render(<ObservatoryLeftDrawer />);
+    const label = container.querySelector("[data-testid='drawer-header-label']");
+    expect(label).not.toBeNull();
+    expect(label!.textContent).toBe("GHOST MEMORY");
+  });
+
+  it("k. close button is present when drawer is open (DRW-02)", () => {
+    useObservatoryStore.setState({ ...useObservatoryStore.getState(), activePanel: "mission", mission: null });
+    const { container } = render(<ObservatoryLeftDrawer />);
+    const closeBtn = container.querySelector("[data-testid='drawer-close-button']");
+    expect(closeBtn).not.toBeNull();
+  });
+
+  it("l. no header when activePanel is null", () => {
+    useObservatoryStore.setState({ ...useObservatoryStore.getState(), activePanel: null });
+    const { container } = render(<ObservatoryLeftDrawer />);
+    expect(container.querySelector("[data-testid='drawer-header']")).toBeNull();
+  });
 });
