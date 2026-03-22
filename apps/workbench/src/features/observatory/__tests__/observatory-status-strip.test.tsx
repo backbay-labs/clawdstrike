@@ -137,4 +137,29 @@ describe("ObservatoryStatusStrip", () => {
     expect(container.querySelector("[data-testid='status-strip-mode-toggle']")).not.toBeNull();
     expect(container.querySelector("[data-testid='status-strip-preset-threat']")).not.toBeNull();
   });
+
+  it("STS-01: status strip has a visible top border with 0.12 opacity", () => {
+    const { container } = render(<ObservatoryStatusStrip {...defaultProps} />);
+    const strip = container.querySelector("[data-testid='observatory-status-strip']") as HTMLElement;
+    expect(strip).not.toBeNull();
+    expect(strip.style.borderTop).toContain("0.12");
+    expect(strip.style.borderTop).toContain("solid");
+  });
+
+  it("STS-02: telemetry text is at least 11px", () => {
+    const { container } = render(<ObservatoryStatusStrip {...defaultProps} />);
+    const strip = container.querySelector("[data-testid='observatory-status-strip']") as HTMLElement;
+    expect(strip).not.toBeNull();
+    // fontSize is set as a numeric 11 in inline styles; jsdom serializes it as "11px"
+    const size = parseInt(strip.style.fontSize, 10);
+    expect(size).toBeGreaterThanOrEqual(11);
+  });
+
+  it("STS-02: telemetry text opacity is at least 0.8", () => {
+    const { container } = render(<ObservatoryStatusStrip {...defaultProps} />);
+    const speedEl = container.querySelector("[data-testid='status-strip-speed']") as HTMLElement;
+    expect(speedEl).not.toBeNull();
+    // color is "var(--hud-text, rgba(255, 255, 255, 0.85))" — contains 0.85
+    expect(speedEl.style.color).toContain("0.85");
+  });
 });
