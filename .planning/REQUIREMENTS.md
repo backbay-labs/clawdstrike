@@ -23,9 +23,9 @@
 
 ### Panel Empty States
 
-- [ ] **EMP-01**: Explainability panel empty state shows structured placeholder content — section headers (Station, Pressure, Anomalies), muted icons, and a hint ("Click a station or press E while hovering") instead of bare "Select a station to inspect" text
-- [ ] **EMP-02**: Mission panel empty state shows structured placeholder — section outline (Briefing, Objectives, Narrative) with muted labels and a "Start a mission from the command palette" hint
-- [ ] **EMP-03**: Ghost Memory panel empty state shows structured placeholder — "0 traces" header with a muted explanation of what ghost memory is and when traces appear
+- [x] **EMP-01**: Explainability panel empty state shows structured placeholder content — section headers (Station, Pressure, Anomalies), muted icons, and a hint ("Click a station or press E while hovering") instead of bare "Select a station to inspect" text
+- [x] **EMP-02**: Mission panel empty state shows structured placeholder — section outline (Briefing, Objectives, Narrative) with muted labels and a "Start a mission from the command palette" hint
+- [x] **EMP-03**: Ghost Memory panel empty state shows structured placeholder — "0 traces" header with a muted explanation of what ghost memory is and when traces appear
 
 ### Status Strip
 
@@ -68,9 +68,9 @@
 | GLS-02 | Phase 33 | Complete |
 | DRW-01 | Phase 33 | Complete |
 | DRW-02 | Phase 33 | Complete |
-| EMP-01 | Phase 34 | Pending |
-| EMP-02 | Phase 34 | Pending |
-| EMP-03 | Phase 34 | Pending |
+| EMP-01 | Phase 34 | Complete |
+| EMP-02 | Phase 34 | Complete |
+| EMP-03 | Phase 34 | Complete |
 
 **Coverage:**
 - v8.0 requirements: 11 total
