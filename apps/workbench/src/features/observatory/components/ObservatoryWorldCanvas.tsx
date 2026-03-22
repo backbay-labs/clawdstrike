@@ -4150,6 +4150,10 @@ export function ObservatoryWorldCanvas({
   // TRN-01/TRN-04: Subscribe to speedTier in outer component for bloom spike effect.
   // (Inner scene subscribes separately for FOV/WarpSpeedLines.)
   const speedTierOuter = useObservatoryStore((s) => s.flightState.speedTier);
+  // GHO-03: Read analyst preset for ghost marker opacity gating
+  const analystPresetIdOuter = useObservatoryStore((s) => s.analystPresetId);
+  // GHO-03: full opacity when GHOST preset active, 20% when any other preset or none
+  const ghostOpacityScale = analystPresetIdOuter === "ghost" ? 1.0 : 0.2;
   useEffect(() => {
     if (speedTierOuter === "boost") {
       // Boost activated: drop bloom threshold immediately
@@ -4748,6 +4752,8 @@ export function ObservatoryWorldCanvas({
             onTriggerHeroProp={triggerHeroProp}
             onSelectStation={onSelectStation}
             playerFocusRef={playerFocusRef}
+            ghostTraces={ghostTraces}
+            ghostOpacityScale={ghostOpacityScale}
           />
           {/* DSC-03: Mission waypoint trail — glowing green CatmullRom tube to objective station */}
           <MissionWaypointTrail

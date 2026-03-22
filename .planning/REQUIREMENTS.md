@@ -35,9 +35,9 @@
 
 ### Weather Layer
 
-- [ ] **WTH-01**: Observatory weather layer renders in the 3D scene — fog density, particle effects, and ambient lighting respond to the `weatherState` from observatory-store
-- [ ] **WTH-02**: Weather intensity scales with hunt telemetry pressure — calm hunts show clear skies, high-pressure hunts show denser fog and more active particles
-- [ ] **WTH-03**: Weather effects respect the performance profile — reduced/disabled weather on low-quality settings
+- [x] **WTH-01**: Observatory weather layer renders in the 3D scene — fog density, particle effects, and ambient lighting respond to the `weatherState` from observatory-store
+- [x] **WTH-02**: Weather intensity scales with hunt telemetry pressure — calm hunts show clear skies, high-pressure hunts show denser fog and more active particles
+- [x] **WTH-03**: Weather effects respect the performance profile — reduced/disabled weather on low-quality settings
 
 ## v10.0 Requirements (Deferred)
 
@@ -75,9 +75,9 @@
 | APR-03 | Phase 37 | Pending |
 | APR-04 | Phase 37 | Pending |
 | APR-05 | Phase 37 | Pending |
-| WTH-01 | Phase 38 | Pending |
-| WTH-02 | Phase 38 | Pending |
-| WTH-03 | Phase 38 | Pending |
+| WTH-01 | Phase 38 | Complete |
+| WTH-02 | Phase 38 | Complete |
+| WTH-03 | Phase 38 | Complete |
 
 **Coverage:**
 - v9.0 requirements: 16 total

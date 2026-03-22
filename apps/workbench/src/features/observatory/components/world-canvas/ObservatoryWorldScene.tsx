@@ -25,6 +25,7 @@ import { ObservatoryNebulaClouds } from "./ObservatoryNebulaClouds";
 import { ObservatoryStarfield } from "./ObservatoryStarfield";
 import { ObservatoryTransitLayer } from "./ObservatoryTransitLayer";
 import type { ObservatoryWorldSceneProps } from "./observatory-world-scene-types";
+import { GhostTraceLayer } from "../GhostTraceLayer";
 
 function buildDistrictLodTiers(
   world: DerivedObservatoryWorld,
@@ -57,6 +58,8 @@ export function ObservatoryWorldScene({
   eruptionStrengthByRouteStation,
   eruptionStrengthByStation,
   flyByActive,
+  ghostTraces = [],
+  ghostOpacityScale = 0.2,
   mission,
   missionTargetAssetId,
   missionTargetStationId,
@@ -164,6 +167,7 @@ export function ObservatoryWorldScene({
         watchfieldRaised={watchfieldRaised}
         world={world}
       />
+      <GhostTraceLayer traces={ghostTraces} opacityScale={ghostOpacityScale} />
     </>
   );
 }

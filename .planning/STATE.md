@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v9.0
-milestone_name: Observatory 3D World Polish
-status: roadmap_created
-stopped_at: null
-last_updated: "2026-03-22"
-last_activity: "2026-03-22 — v9.0 roadmap created (Phases 35-38)"
+milestone: v8.0
+milestone_name: Observatory Visual Polish
+status: planning
+stopped_at: Completed 38-01-PLAN.md
+last_updated: "2026-03-22T17:06:33.639Z"
+last_activity: 2026-03-22 — v9.0 roadmap created (Phases 35-38)
 progress:
-  total_phases: 4
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_phases: 7
+  completed_phases: 4
+  total_plans: 10
+  completed_plans: 7
   percent: 0
 ---
 
@@ -48,6 +48,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 33 P01 | 99 | 2 tasks | 3 files |
 | Phase 33 P02 | 8 | 2 tasks | 3 files |
 | Phase 34 P01 | 2 | 1 tasks | 4 files |
+| Phase 38 P01 | 10 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -58,6 +59,8 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 30]: Always-mounted drawer pattern (translateX not conditional render) — avoids unmount/remount cost
 - [Phase 32]: SCN-01: CSS background #04080f hardcoded on canvas wrapper to eliminate pre-WebGL black flash
 - [Phase 34]: EMP-03: Ghost Memory empty state uses descriptive paragraphs rather than section headers
+- [Phase 38]: WTH: Fog delta capped at +0.0007 regardless of density to prevent overpowering base 0.0008 fog density
+- [Phase 38]: WTH: effectiveWeatherState=null guard in ObservatoryWorldCanvas prevents weather layer mount for budget=off or enableWeather=false
 
 ### Blockers/Concerns
 
@@ -66,6 +69,6 @@ Progress: [░░░░░░░░░░] 0%
 
 ## Session Continuity
 
-Last session: 2026-03-22
-Stopped at: v9.0 roadmap created — Phases 35-38 defined
+Last session: 2026-03-22T17:06:33.636Z
+Stopped at: Completed 38-01-PLAN.md
 Resume file: None
