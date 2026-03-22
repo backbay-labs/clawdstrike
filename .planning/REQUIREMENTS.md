@@ -20,10 +20,10 @@
 
 ### Mission Objective Beacons
 
-- [ ] **MSN-01**: Active mission objective stations display a vertical beacon column (emissive cylinder or line) extending upward from the station — visible from 500+ units through fog
-- [ ] **MSN-02**: Beacon pulses with a slow breathing animation (opacity oscillation ~2s cycle) when the station is the current objective; dims to static glow for completed objectives
-- [ ] **MSN-03**: Beacon color matches the station's accent color; completed objective beacons shift to a muted desaturated version
-- [ ] **MSN-04**: No beacon renders when no mission is active — clean world with no leftover markers
+- [x] **MSN-01**: Active mission objective stations display a vertical beacon column (emissive cylinder or line) extending upward from the station — visible from 500+ units through fog
+- [x] **MSN-02**: Beacon pulses with a slow breathing animation (opacity oscillation ~2s cycle) when the station is the current objective; dims to static glow for completed objectives
+- [x] **MSN-03**: Beacon color matches the station's accent color; completed objective beacons shift to a muted desaturated version
+- [x] **MSN-04**: No beacon renders when no mission is active — clean world with no leftover markers
 
 ### Analyst Preset Overlays
 
@@ -66,10 +66,10 @@
 | GHO-02 | Phase 35 | Complete |
 | GHO-03 | Phase 35 | Complete |
 | GHO-04 | Phase 35 | Complete |
-| MSN-01 | Phase 36 | Pending |
-| MSN-02 | Phase 36 | Pending |
-| MSN-03 | Phase 36 | Pending |
-| MSN-04 | Phase 36 | Pending |
+| MSN-01 | Phase 36 | Complete |
+| MSN-02 | Phase 36 | Complete |
+| MSN-03 | Phase 36 | Complete |
+| MSN-04 | Phase 36 | Complete |
 | APR-01 | Phase 37 | Pending |
 | APR-02 | Phase 37 | Pending |
 | APR-03 | Phase 37 | Pending |
