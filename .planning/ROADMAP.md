@@ -823,7 +823,11 @@ Plans:
   2. The active objective beacon pulses with a breathing opacity oscillation on approximately a 2-second cycle — completed objective beacons shift to a static, muted desaturated glow without pulsing
   3. Beacon color matches the station accent color for active objectives; completed objectives use a muted desaturated version of that color
   4. When no mission is active, zero beacon geometry renders in the scene — the world has no leftover mission markers
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 36-01-PLAN.md — MissionObjectiveBeacons component (beacon geometry, animation, pure helpers)
+- [ ] 36-02-PLAN.md — Mount in ObservatoryWorldCanvas + visual smoke test
 
 ### Phase 37: Analyst Preset Overlays
 **Goal**: Each analyst preset transforms the visual mood of the observable world — THREAT districts turn red and emit danger particles, EVIDENCE stations glow gold, RECEIPTS stations show verdict badges, GHOST dims the world and reveals traces, and deactivating any preset instantly restores the neutral scene
