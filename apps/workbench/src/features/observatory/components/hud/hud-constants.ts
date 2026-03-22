@@ -7,7 +7,7 @@
 
 import type { SpeedTier } from "../../character/ship/flight-types";
 import type { HuntStationId } from "../../world/types";
-import type { ObservatoryAnalystPresetId } from "../../types";
+import type { HudPanelId, ObservatoryAnalystPresetId } from "../../types";
 
 // ---------------------------------------------------------------------------
 // Speed tier colors
@@ -91,6 +91,20 @@ export const HUD_STATUS_STRIP_HEIGHT = 28;
 
 /** Width of the left drawer panel in pixels (HUD-13: 300-400px range) */
 export const HUD_LEFT_DRAWER_WIDTH = 360;
+
+/** Height of the drawer header bar in pixels (Phase 33 DRW-01) */
+export const HUD_DRAWER_HEADER_HEIGHT = 36;
+
+/**
+ * Display labels for each HUD panel — shown in the drawer header bar.
+ * Uppercase monospace per DRW-01 requirement.
+ */
+export const PANEL_LABELS: Record<HudPanelId, string> = {
+  explainability: "EXPLAINABILITY",
+  mission: "MISSION",
+  replay: "REPLAY",
+  ghost: "GHOST MEMORY",
+} as const;
 
 /**
  * Four analyst preset segments shown in the status strip (HUD-12).
