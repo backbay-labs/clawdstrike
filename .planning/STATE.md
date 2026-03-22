@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v8.0
 milestone_name: Observatory Visual Polish
 status: planning
-stopped_at: Completed 38-01-PLAN.md
-last_updated: "2026-03-22T17:06:33.639Z"
+stopped_at: Completed 35-02-PLAN.md (Phase 35 complete)
+last_updated: "2026-03-22T17:08:55.427Z"
 last_activity: 2026-03-22 — v9.0 roadmap created (Phases 35-38)
 progress:
   total_phases: 7
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 10
-  completed_plans: 7
+  completed_plans: 8
   percent: 0
 ---
 
@@ -49,6 +49,8 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 33 P02 | 8 | 2 tasks | 3 files |
 | Phase 34 P01 | 2 | 1 tasks | 4 files |
 | Phase 38 P01 | 10 | 2 tasks | 3 files |
+| Phase 35 P01 | 8 | 1 tasks | 2 files |
+| Phase 35 P02 | 5 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -61,6 +63,8 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 34]: EMP-03: Ghost Memory empty state uses descriptive paragraphs rather than section headers
 - [Phase 38]: WTH: Fog delta capped at +0.0007 regardless of density to prevent overpowering base 0.0008 fog density
 - [Phase 38]: WTH: effectiveWeatherState=null guard in ObservatoryWorldCanvas prevents weather layer mount for budget=off or enableWeather=false
+- [Phase 35]: JSX toneMapped={false} used in meshBasicMaterial (not object literal) — functionally identical in R3F
+- [Phase 35]: ghostOpacityScale derived in outer ObservatoryWorldCanvas component, not inner scene — co-locates store reads, keeps scene as pure presentational layer
 
 ### Blockers/Concerns
 
@@ -69,6 +73,6 @@ Progress: [░░░░░░░░░░] 0%
 
 ## Session Continuity
 
-Last session: 2026-03-22T17:06:33.636Z
-Stopped at: Completed 38-01-PLAN.md
+Last session: 2026-03-22T17:08:55.424Z
+Stopped at: Completed 35-02-PLAN.md (Phase 35 complete)
 Resume file: None

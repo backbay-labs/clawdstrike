@@ -13,10 +13,10 @@
 
 ### Ghost Trace Markers
 
-- [ ] **GHO-01**: Stations with prior findings display translucent holographic marker meshes at the station position — markers are visually distinct from station geometry (spectral glow, not solid)
-- [ ] **GHO-02**: Ghost markers show the finding type (receipt verdict, probe result, case-note) as a small icon or glyph visible at mid-range (60-180 units)
-- [ ] **GHO-03**: Ghost markers fade in/out based on the GHOST analyst preset — fully visible when GHOST preset is active, dimmed to 20% opacity when inactive
-- [ ] **GHO-04**: Ghost markers source their data from `deriveObservatoryGhostMemories()` — no new data fetching, just rendering the existing derived traces
+- [x] **GHO-01**: Stations with prior findings display translucent holographic marker meshes at the station position — markers are visually distinct from station geometry (spectral glow, not solid)
+- [x] **GHO-02**: Ghost markers show the finding type (receipt verdict, probe result, case-note) as a small icon or glyph visible at mid-range (60-180 units)
+- [x] **GHO-03**: Ghost markers fade in/out based on the GHOST analyst preset — fully visible when GHOST preset is active, dimmed to 20% opacity when inactive
+- [x] **GHO-04**: Ghost markers source their data from `deriveObservatoryGhostMemories()` — no new data fetching, just rendering the existing derived traces
 
 ### Mission Objective Beacons
 
@@ -62,10 +62,10 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| GHO-01 | Phase 35 | Pending |
-| GHO-02 | Phase 35 | Pending |
-| GHO-03 | Phase 35 | Pending |
-| GHO-04 | Phase 35 | Pending |
+| GHO-01 | Phase 35 | Complete |
+| GHO-02 | Phase 35 | Complete |
+| GHO-03 | Phase 35 | Complete |
+| GHO-04 | Phase 35 | Complete |
 | MSN-01 | Phase 36 | Pending |
 | MSN-02 | Phase 36 | Pending |
 | MSN-03 | Phase 36 | Pending |
