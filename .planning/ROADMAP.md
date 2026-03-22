@@ -841,7 +841,10 @@ Phases 32 and 34 have no file overlap and can execute in parallel. Phase 33 is a
   1. The weather layer renders in the 3D scene — fog, ambient light intensity, and atmospheric particles respond to the weatherState from observatory-store and update when hunt telemetry changes
   2. Weather intensity visibly scales with hunt telemetry pressure — a calm hunt shows clear skies with minimal fog, a high-pressure hunt shows denser fog and more active atmospheric particles
   3. On low-quality performance profile settings, weather effects are reduced or disabled — the scene remains usable and does not drop below target frame rate due to weather geometry
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [ ] 38-01-PLAN.md — Build ObservatoryWeatherLayer + mount in ObservatoryWorldCanvas
 
 ## Progress
 
