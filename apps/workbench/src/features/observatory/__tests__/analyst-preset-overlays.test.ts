@@ -184,6 +184,23 @@ describe("groupReceiptTracesByStation", () => {
   });
 });
 
+// ─── getGhostAmbientIntensity ─────────────────────────────────────────────────
+import { getGhostAmbientIntensity } from "../components/GhostPresetOverlay";
+
+describe("getGhostAmbientIntensity", () => {
+  it("reduces intensity by 40% (returns baseIntensity * 0.6)", () => {
+    expect(getGhostAmbientIntensity(1.0)).toBeCloseTo(0.6);
+  });
+
+  it("returns 0.3 for baseIntensity 0.5", () => {
+    expect(getGhostAmbientIntensity(0.5)).toBeCloseTo(0.3);
+  });
+
+  it("returns 0 for baseIntensity 0", () => {
+    expect(getGhostAmbientIntensity(0)).toBe(0);
+  });
+});
+
 // ─── verdictColor ─────────────────────────────────────────────────────────────
 
 describe("verdictColor", () => {
