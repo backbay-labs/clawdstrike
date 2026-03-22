@@ -766,7 +766,7 @@ Plans:
   1. The Explainability panel empty state shows structured placeholder content with section headers (Station, Pressure, Anomalies), muted icons, and a hint: "Click a station or press E while hovering"
   2. The Mission panel empty state shows a structured section outline (Briefing, Objectives, Narrative) with muted labels and a hint: "Start a mission from the command palette"
   3. The Ghost Memory panel empty state shows a "0 traces" header with a muted explanation of what ghost memory records and when traces appear
-**Plans**: TBD
+**Plans**: 1 plan
 
 Plans:
 - [ ] 34-01-PLAN.md — Rich empty states for Explainability, Mission, and Ghost Memory panels (EMP-01, EMP-02, EMP-03)
