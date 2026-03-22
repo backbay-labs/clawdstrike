@@ -4,7 +4,7 @@ milestone: v8.0
 milestone_name: Observatory Visual Polish
 status: planning
 stopped_at: Completed 36-01-PLAN.md
-last_updated: "2026-03-22T17:13:11.695Z"
+last_updated: "2026-03-22T23:14:59.257Z"
 last_activity: 2026-03-22 — v9.0 roadmap created (Phases 35-38)
 progress:
   total_phases: 7
@@ -52,6 +52,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 35 P01 | 8 | 1 tasks | 2 files |
 | Phase 35 P02 | 5 | 2 tasks | 3 files |
 | Phase 36 P01 | 3 | 2 tasks | 2 files |
+| Phase 36-mission-objective-beacons P01 | 3 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -67,6 +68,9 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 35]: JSX toneMapped={false} used in meshBasicMaterial (not object literal) — functionally identical in R3F
 - [Phase 35]: ghostOpacityScale derived in outer ObservatoryWorldCanvas component, not inner scene — co-locates store reads, keeps scene as pure presentational layer
 - [Phase 36]: MissionObjectiveBeacons is fully self-contained and prop-driven — reads nothing from store, accepts mission prop only (MSN-04 enforced at top level)
+- [Phase 36-mission-objective-beacons]: MissionObjectiveBeacons is fully self-contained and prop-driven — reads nothing from store, accepts mission prop only (MSN-04 enforced at top level)
+- [Phase 36-mission-objective-beacons]: Sin cycle uses Math.PI multiplier on clock.elapsedTime for ~2s period; emissiveIntensity range 1.2-2.8 (center 2.0 +/- 0.8)
+- [Phase 36-mission-objective-beacons]: getBeaconStations returns only stations present in mission.objectives — no phantom beacons for stations without objectives
 
 ### Blockers/Concerns
 
@@ -75,6 +79,6 @@ Progress: [░░░░░░░░░░] 0%
 
 ## Session Continuity
 
-Last session: 2026-03-22T17:13:11.693Z
+Last session: 2026-03-22T23:14:59.255Z
 Stopped at: Completed 36-01-PLAN.md
 Resume file: None
