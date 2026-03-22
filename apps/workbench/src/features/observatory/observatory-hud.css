@@ -14,6 +14,14 @@
   /* Shadow: soft depth behind glass panels */
   --hud-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
 
+  /* Drawer-specific glassmorphism overrides — Phase 33 GLS-01, GLS-02 */
+  /* Reduced opacity (0.55 vs 0.75) so 3D scene bleeds through backdrop-filter blur */
+  --hud-drawer-bg: rgba(8, 12, 24, 0.55);
+  /* Right-edge border at 0.12 opacity (doubled from 0.06) — perceptible glass edge */
+  --hud-drawer-edge: 1px solid rgba(255, 255, 255, 0.12);
+  /* Subtle blue-ish glow on right edge for depth without being garish */
+  --hud-drawer-glow: 0 0 12px rgba(100, 160, 255, 0.06);
+
   /* Text: high-contrast primary text on dark glass */
   --hud-text: rgba(255, 255, 255, 0.85);
 
