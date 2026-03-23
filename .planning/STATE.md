@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v10.0
 milestone_name: Observatory Analyst Toolkit
-status: ready_to_plan
-stopped_at: Roadmap created — ready to plan Phase 39
-last_updated: "2026-03-22"
-last_activity: 2026-03-22 — v10.0 roadmap created (5 phases, 33 requirements)
+status: planning
+stopped_at: Completed 39-01-PLAN.md
+last_updated: "2026-03-23T01:10:26.941Z"
+last_activity: 2026-03-22 — Roadmap created; 5 phases (39-43), 33 requirements mapped
 progress:
-  total_phases: 5
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_phases: 12
+  completed_phases: 7
+  total_plans: 15
+  completed_plans: 13
   percent: 0
 ---
 
@@ -45,6 +45,7 @@ Progress: [░░░░░░░░░░] 0%
 |-------|------|----------|-------|-------|
 
 ## Accumulated Context
+| Phase 39 P01 | 31s | 2 tasks | 3 files |
 
 ### Decisions
 
@@ -54,6 +55,8 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 38]: Fog delta capped at +0.0007; effectiveWeatherState=null guard prevents mount for budget=off
 - [v10.0 Roadmap]: Split-Screen Compare deferred to v11.0 (dual Canvas WebGL context budget risk)
 - [v10.0 Roadmap]: Phase 39 is pure TypeScript — no R3F work; all new scene layers prop-threaded from ObservatoryTab
+- [Phase 39-01]: Duplicate-id rejection in addAnnotationPin/addConstellation uses early-return-state (matches addReplayBookmark precedent) rather than throwing
+- [Phase 39-01]: clearInterior resets to explicit default object rather than spread to ensure all fields reset cleanly
 
 ### Pending Todos
 
@@ -68,6 +71,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-22
-Stopped at: Roadmap created for v10.0 — Phase 39 ready to plan
+Last session: 2026-03-23T01:10:26.939Z
+Stopped at: Completed 39-01-PLAN.md
 Resume file: None
