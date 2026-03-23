@@ -879,7 +879,7 @@ Phases 35, 36, and 38 are independent and can execute in parallel. Phase 37 depe
 
 ## Phases
 
-- [ ] **Phase 39: Store, Persistence, and Derivation Foundations** — Extend observatory-store with annotation/constellation/interior state, bump persistence schema to v2 with migration, write pure derivation utilities, extend ObservatoryInvalidationController for all new visual sources (enables all v10.0 features)
+- [x] **Phase 39: Store, Persistence, and Derivation Foundations** — Extend observatory-store with annotation/constellation/interior state, bump persistence schema to v2 with migration, write pure derivation utilities, extend ObservatoryInvalidationController for all new visual sources (enables all v10.0 features) (completed 2026-03-23)
 - [ ] **Phase 40: Threat Heatmap + Probe Delta Cards** — Ground-plane GLSL heatmap driven by station pressure, analyst-preset integration, floating 3D probe delta cards post-fire with auto-dismiss (HEAT-01..05, PRBI-01..06)
 - [ ] **Phase 41: Constellation Routes + Spirit Trails** — Permanent mission-trace constellations in the starfield with persistence and minimap click, level-gated spirit luminous trails with hidden resonance connections at level 5 (CNST-01..05, SPRT-01..05)
 - [ ] **Phase 42: Replay Annotation Canvas** — Click 3D space during replay to drop named pins with text, drawer list with jump-to-frame, delete, localStorage persistence (ANNO-01..06)
@@ -961,7 +961,7 @@ Phase 39 first (store contracts and invalidation controller). Phase 40 and 41 ca
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 39. Store, Persistence, and Derivation Foundations | 2/3 | In Progress|  | - |
+| 39. Store, Persistence, and Derivation Foundations | 3/3 | Complete   | 2026-03-23 | - |
 | 40. Threat Heatmap + Probe Delta Cards | v10.0 | 0/TBD | Not started | - |
 | 41. Constellation Routes + Spirit Trails | v10.0 | 0/TBD | Not started | - |
 | 42. Replay Annotation Canvas | v10.0 | 0/TBD | Not started | - |
