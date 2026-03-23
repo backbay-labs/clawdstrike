@@ -965,7 +965,11 @@ Plans:
   4. While inside a station, interacting with the hero prop completes mission objectives the same as the exterior interaction — analysts do not need to exit to advance the mission
   5. Pressing Escape or clicking a back affordance exits the interior and smoothly returns the camera to the exterior observatory view
   6. Interior geometry has no z-fighting artifacts — the camera near plane is reduced to 0.02 on interior entry and restored to the exterior value on exit
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 43-01-PLAN.md — Interior configuration data + StationInteriorScene R3F component
+- [ ] 43-02-PLAN.md — Camera transition hook + full wiring (entry/exit triggers, status strip, scene mount)
 
 ## Progress
 
@@ -978,4 +982,4 @@ Phase 39 first (store contracts and invalidation controller). Phase 40 and 41 ca
 | 40. Threat Heatmap + Probe Delta Cards | 3/3 | Complete    | 2026-03-23 | - |
 | 41. Constellation Routes + Spirit Trails | 3/3 | Complete    | 2026-03-23 | - |
 | 42. Replay Annotation Canvas | 2/2 | Complete    | 2026-03-23 | - |
-| 43. Station Interior Zones | v10.0 | 0/TBD | Not started | - |
+| 43. Station Interior Zones | v10.0 | 0/2 | Not started | - |
