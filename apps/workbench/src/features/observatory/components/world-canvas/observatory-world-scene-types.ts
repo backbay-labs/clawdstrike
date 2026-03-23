@@ -8,6 +8,7 @@ import type { MissionInteractionSource, ObservatoryPlayerFocusState } from "../f
 import type { ObservatoryGhostTrace } from "../../world/observatory-ghost-memory";
 import type { ConstellationRoute, ObservatoryAnalystPresetId } from "../../types";
 import type { ObservatoryProbeGuidance } from "../../world/observatory-recommendations";
+import type { SpiritMood } from "@/features/spirit/types";
 
 export interface ObservatoryActiveHeroInteraction {
   assetId: ObservatoryHeroPropRecipe["assetId"];
@@ -74,4 +75,8 @@ export interface ObservatoryWorldSceneProps {
   constellations?: ConstellationRoute[];
   /** Phase 41 CNST: spirit accent color for constellation tint (hex string or null) */
   spiritAccentColor?: string | null;
+  /** Phase 41 SPRT: spirit mood for trail rendering */
+  spiritMood?: SpiritMood | null;
+  /** Phase 41 SPRT: spirit evolution level (1-5) for trail intensity + resonance unlock */
+  spiritLevel?: number;
 }

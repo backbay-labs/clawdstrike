@@ -93,6 +93,8 @@ import { ObservatoryWeatherLayer } from "./world-canvas/ObservatoryWeatherLayer"
 import { deriveHeatmapDataTexture, type HeatmapStationPressure } from "../utils/observatory-derivations";
 import { HUNT_STATION_ORDER } from "../world/stations";
 import type { ObservatoryProbeGuidance } from "../world/observatory-recommendations";
+import { useSpiritStore } from "@/features/spirit/stores/spirit-store";
+import { useSpiritEvolutionStore } from "@/features/spirit/stores/spirit-evolution-store";
 
 const LazyObservatoryPostFX = lazy(() =>
   import("./ObservatoryPostFX").then((module) => ({ default: module.ObservatoryPostFX })),
@@ -4163,6 +4165,15 @@ export function ObservatoryWorldCanvas({
   const ghostOpacityScale = analystPresetIdOuter === "ghost" ? 1.0 : 0.2;
   // CNST-01: constellation routes from observatory store
   const constellations = useObservatoryStore((state) => state.constellations);
+  // SPRT-02: spirit mood for trail rendering — read directly from spirit store
+  const spiritMoodFromStore = useSpiritStore.use.mood();
+  const spiritKindFromStore = useSpiritStore.use.kind();
+  // SPRT-03: spirit level from evolution store for trail intensity + resonance unlock
+  const spiritLevel = useSpiritEvolutionStore(
+    (state) => spiritKindFromStore ? (state.evolution[spiritKindFromStore]?.level ?? 1) : 1,
+  );
+  // Pass mood only when spirit is bound (kind !== null), otherwise null suppresses trails
+  const spiritMood = spiritKindFromStore ? spiritMoodFromStore : null;
   useEffect(() => {
     if (speedTierOuter === "boost") {
       // Boost activated: drop bloom threshold immediately
@@ -4779,6 +4790,8 @@ export function ObservatoryWorldCanvas({
             probeGuidance={probeGuidance}
             constellations={constellations}
             spiritAccentColor={spirit?.accentColor ?? null}
+            spiritMood={spiritMood}
+            spiritLevel={spiritLevel}
           />
           {/* DSC-03: Mission waypoint trail — glowing green CatmullRom tube to objective station */}
           <MissionWaypointTrail

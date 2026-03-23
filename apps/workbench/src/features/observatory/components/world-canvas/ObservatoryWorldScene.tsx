@@ -33,6 +33,8 @@ import { GhostPresetOverlay } from "../GhostPresetOverlay";
 import { ThreatTopologyHeatmap } from "./ThreatTopologyHeatmap";
 import { ProbeDeltaLayer } from "./ProbeDeltaLayer";
 import { ConstellationRoutesLayer } from "./ConstellationRoutesLayer";
+import { SpiritTrailsLayer } from "./SpiritTrailsLayer";
+import { SpiritResonanceConnections } from "./SpiritResonanceConnections";
 import { OBSERVATORY_STATION_POSITIONS } from "../../world/observatory-world-template";
 
 function buildDistrictLodTiers(
@@ -75,6 +77,8 @@ export function ObservatoryWorldScene({
   heatmapPresetMultiplier = 1.0,
   probeGuidance = null,
   spiritAccentColor = null,
+  spiritMood = null,
+  spiritLevel = 1,
   mission,
   missionTargetAssetId,
   missionTargetStationId,
@@ -220,6 +224,22 @@ export function ObservatoryWorldScene({
       {constellations.length > 0 ? (
         <ConstellationRoutesLayer
           constellations={constellations}
+          spiritAccentColor={spiritAccentColor}
+        />
+      ) : null}
+      {/* SPRT-01 through SPRT-03, SPRT-05: Spirit movement trail — mood + level driven */}
+      {spiritAccentColor && spiritMood && spiritMood !== "dormant" ? (
+        <SpiritTrailsLayer
+          spiritAccentColor={spiritAccentColor}
+          spiritMood={spiritMood}
+          spiritLevel={spiritLevel ?? 1}
+          playerFocusRef={playerFocusRef}
+        />
+      ) : null}
+      {/* SPRT-04: Hidden resonance connections — revealed at spirit level 5 */}
+      {spiritAccentColor && (spiritLevel ?? 1) >= 5 ? (
+        <SpiritResonanceConnections
+          spiritLevel={spiritLevel ?? 1}
           spiritAccentColor={spiritAccentColor}
         />
       ) : null}
