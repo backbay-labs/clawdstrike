@@ -982,4 +982,4 @@ Phase 39 first (store contracts and invalidation controller). Phase 40 and 41 ca
 | 40. Threat Heatmap + Probe Delta Cards | 3/3 | Complete    | 2026-03-23 | - |
 | 41. Constellation Routes + Spirit Trails | 3/3 | Complete    | 2026-03-23 | - |
 | 42. Replay Annotation Canvas | 2/2 | Complete    | 2026-03-23 | - |
-| 43. Station Interior Zones | 2/2 | Complete   | 2026-03-23 | - |
+| 43. Station Interior Zones | 2/2 | Complete    | 2026-03-23 | - |
