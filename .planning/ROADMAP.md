@@ -914,7 +914,12 @@ Plans:
   3. Activating the THREAT analyst preset intensifies the heatmap colors; activating any other preset or deactivating all presets returns the heatmap to its baseline intensity
   4. On a low-quality performance profile (weatherBudget=off), no heatmap mesh renders in the scene — the feature is completely absent rather than degraded
   5. After a probe fires and completes, a floating card appears near the target station showing pressure shift direction, an explanation sentence, and a clickable recommended next action — the card auto-dismisses after 8 seconds
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 40-01-PLAN.md — ThreatTopologyHeatmap GLSL shader component (SOC color ramp, pulse animation)
+- [ ] 40-02-PLAN.md — ProbeDeltaCard + ProbeDeltaLayer (glassmorphism DOM overlay, auto-dismiss lifecycle)
+- [ ] 40-03-PLAN.md — Wire heatmap + delta cards into scene hierarchy (performance gating, preset integration)
 
 ### Phase 41: Constellation Routes + Spirit Trails
 **Goal**: Investigation history becomes permanently visible in the star layer — each completed mission traces a named constellation curve through the starfield, and the bound spirit leaves luminous trails between stations as the analyst navigates, revealing hidden connections at level 5
