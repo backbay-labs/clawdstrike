@@ -12,13 +12,14 @@
  *   Chart center (100, 100) corresponds to world origin (0, 0).
  *   Y elevation is ignored — 2D projection on the XZ plane.
  */
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { useObservatoryStore } from "@/features/observatory/stores/observatory-store";
 import { HUNT_STATION_ORDER, HUNT_STATION_LABELS } from "@/features/observatory/world/stations";
 import { OBSERVATORY_STATION_POSITIONS } from "@/features/observatory/world/observatory-world-template";
 import { openObservatoryStationRoute } from "../commands/observatory-command-actions";
 import { STATION_COLORS_HEX, HUD_COLORS } from "../components/hud/hud-constants";
+import type { ConstellationRoute } from "../types";
 import type { HuntStationId } from "../world/types";
 
 // ---------------------------------------------------------------------------
@@ -112,6 +113,9 @@ export function ObservatoryMinimapPanel() {
   const mission = useObservatoryStore((state) => state.mission);
   const dockingState = useObservatoryStore((state) => state.dockingState);
   const discoveredStations = useObservatoryStore((state) => state.discoveredStations);
+  const constellations = useObservatoryStore((state) => state.constellations);
+
+  const [tooltipConstellation, setTooltipConstellation] = useState<ConstellationRoute | null>(null);
 
   // Station chart positions (memoized — world positions are static)
   const stationChartPositions = useMemo(
@@ -126,6 +130,18 @@ export function ObservatoryMinimapPanel() {
       ),
     [],
   );
+
+  // Derive constellation chart polylines (CNST-04)
+  const constellationChartPaths = useMemo(() => {
+    return constellations.map((c) => {
+      const points = c.stationPath
+        .map((stationId) => {
+          const pos = OBSERVATORY_STATION_POSITIONS[stationId];
+          return worldToChart(pos[0], pos[2]);
+        });
+      return { id: c.id, route: c, points };
+    });
+  }, [constellations]);
 
   // Collect current mission station ids
   const missionStationIds = useMemo(() => {
@@ -229,7 +245,7 @@ export function ObservatoryMinimapPanel() {
       </div>
 
       {/* Star chart SVG */}
-      <div className="flex-1 flex items-center justify-center p-4">
+      <div className="flex-1 flex items-center justify-center p-4 relative">
         <svg
           viewBox={`0 0 ${VIEWBOX_SIZE} ${VIEWBOX_SIZE}`}
           width="160"
@@ -282,6 +298,31 @@ export function ObservatoryMinimapPanel() {
                 strokeWidth="1"
                 opacity="0.4"
                 data-testid={`lane-${fromId}-${toId}`}
+              />
+            );
+          })}
+
+          {/* CNST-04: Constellation routes — completed mission traces on minimap */}
+          {constellationChartPaths.map(({ id, route, points }) => {
+            if (points.length < 2) return null;
+            const polylinePoints = points.map((p) => `${p.x},${p.y}`).join(" ");
+            const isSelected = tooltipConstellation?.id === id;
+            return (
+              <polyline
+                key={`constellation-${id}`}
+                points={polylinePoints}
+                fill="none"
+                stroke={isSelected ? "#e8e4f0" : "#8b7fc7"}
+                strokeWidth={isSelected ? "1.5" : "1"}
+                opacity={isSelected ? 0.9 : 0.5}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                style={{ cursor: "pointer" }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setTooltipConstellation(isSelected ? null : route);
+                }}
+                data-testid={`constellation-${id}`}
               />
             );
           })}
@@ -433,6 +474,23 @@ export function ObservatoryMinimapPanel() {
             />
           </g>
         </svg>
+        {tooltipConstellation && (
+          <div
+            className="absolute bg-[#0f1118]/95 border border-[#2a2d3a] rounded px-3 py-2 text-[10px] font-mono pointer-events-auto shadow-lg z-10"
+            style={{ bottom: "8px", left: "50%", transform: "translateX(-50%)" }}
+            onClick={() => setTooltipConstellation(null)}
+            data-testid="constellation-tooltip"
+          >
+            <div className="text-[#e8e4f0] font-medium">{tooltipConstellation.name}</div>
+            <div className="text-[#6f7f9a] mt-0.5">
+              {new Date(tooltipConstellation.createdAtMs).toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Seam summary footer */}
