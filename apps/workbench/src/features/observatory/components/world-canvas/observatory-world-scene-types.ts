@@ -7,6 +7,7 @@ import type { ObservatoryLodTier } from "../../utils/observatory-performance";
 import type { MissionInteractionSource, ObservatoryPlayerFocusState } from "../flow-runtime/grounding";
 import type { ObservatoryGhostTrace } from "../../world/observatory-ghost-memory";
 import type { ObservatoryAnalystPresetId } from "../../types";
+import type { ObservatoryProbeGuidance } from "../../world/observatory-recommendations";
 
 export interface ObservatoryActiveHeroInteraction {
   assetId: ObservatoryHeroPropRecipe["assetId"];
@@ -61,4 +62,12 @@ export interface ObservatoryWorldSceneProps {
   ghostOpacityScale?: number;
   /** Active analyst preset driving overlay rendering. null = no overlay. */
   analystPresetId?: ObservatoryAnalystPresetId | null;
+  /** Phase 40 HEAT: normalized pressure data for heatmap shader (6-element Float32Array) */
+  heatmapPressureData?: Float32Array | null;
+  /** Phase 40 HEAT-04: gate heatmap rendering based on weatherBudget */
+  heatmapVisible?: boolean;
+  /** Phase 40 HEAT-05: THREAT preset multiplier (1.0 = normal, 1.5 = THREAT preset) */
+  heatmapPresetMultiplier?: number;
+  /** Phase 40 PRBI: probe guidance for delta card rendering */
+  probeGuidance?: ObservatoryProbeGuidance | null;
 }

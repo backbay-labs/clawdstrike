@@ -30,6 +30,9 @@ import { ThreatPresetOverlay } from "../ThreatPresetOverlay";
 import { EvidencePresetOverlay } from "../EvidencePresetOverlay";
 import { ReceiptsPresetOverlay } from "../ReceiptsPresetOverlay";
 import { GhostPresetOverlay } from "../GhostPresetOverlay";
+import { ThreatTopologyHeatmap } from "./ThreatTopologyHeatmap";
+import { ProbeDeltaLayer } from "./ProbeDeltaLayer";
+import { OBSERVATORY_STATION_POSITIONS } from "../../world/observatory-world-template";
 
 function buildDistrictLodTiers(
   world: DerivedObservatoryWorld,
@@ -65,6 +68,10 @@ export function ObservatoryWorldScene({
   flyByActive,
   ghostTraces = [],
   ghostOpacityScale = 0.2,
+  heatmapPressureData = null,
+  heatmapVisible = false,
+  heatmapPresetMultiplier = 1.0,
+  probeGuidance = null,
   mission,
   missionTargetAssetId,
   missionTargetStationId,
@@ -181,6 +188,14 @@ export function ObservatoryWorldScene({
         world={world}
       />
       <GhostTraceLayer traces={ghostTraces} opacityScale={ghostOpacityScale} />
+      {/* HEAT-01 through HEAT-05: Threat topology heatmap — ground-plane pressure gradient */}
+      {heatmapVisible && heatmapPressureData ? (
+        <ThreatTopologyHeatmap
+          pressureData={heatmapPressureData}
+          stationPositions={OBSERVATORY_STATION_POSITIONS}
+          presetOpacityMultiplier={heatmapPresetMultiplier}
+        />
+      ) : null}
       {/* APR-01: THREAT preset — red wash + danger motes at high-pressure districts */}
       {analystPresetId === "threat" ? (
         <ThreatPresetOverlay districts={world.districts} />
@@ -193,6 +208,11 @@ export function ObservatoryWorldScene({
       {analystPresetId === "receipts" ? (
         <ReceiptsPresetOverlay traces={ghostTraces} />
       ) : null}
+      {/* PRBI-01 through PRBI-06: Probe delta cards — floating feedback after probe discharge */}
+      <ProbeDeltaLayer
+        probeGuidance={probeGuidance}
+        stationPositions={OBSERVATORY_STATION_POSITIONS}
+      />
     </>
   );
 }
