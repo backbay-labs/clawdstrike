@@ -4161,6 +4161,8 @@ export function ObservatoryWorldCanvas({
   const analystPresetIdOuter = useObservatoryStore((s) => s.analystPresetId);
   // GHO-03: full opacity when GHOST preset active, 20% when any other preset or none
   const ghostOpacityScale = analystPresetIdOuter === "ghost" ? 1.0 : 0.2;
+  // CNST-01: constellation routes from observatory store
+  const constellations = useObservatoryStore((state) => state.constellations);
   useEffect(() => {
     if (speedTierOuter === "boost") {
       // Boost activated: drop bloom threshold immediately
@@ -4775,6 +4777,8 @@ export function ObservatoryWorldCanvas({
             heatmapVisible={heatmapVisible}
             heatmapPresetMultiplier={heatmapPresetMultiplier}
             probeGuidance={probeGuidance}
+            constellations={constellations}
+            spiritAccentColor={spirit?.accentColor ?? null}
           />
           {/* DSC-03: Mission waypoint trail — glowing green CatmullRom tube to objective station */}
           <MissionWaypointTrail

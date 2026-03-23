@@ -32,6 +32,7 @@ import { ReceiptsPresetOverlay } from "../ReceiptsPresetOverlay";
 import { GhostPresetOverlay } from "../GhostPresetOverlay";
 import { ThreatTopologyHeatmap } from "./ThreatTopologyHeatmap";
 import { ProbeDeltaLayer } from "./ProbeDeltaLayer";
+import { ConstellationRoutesLayer } from "./ConstellationRoutesLayer";
 import { OBSERVATORY_STATION_POSITIONS } from "../../world/observatory-world-template";
 
 function buildDistrictLodTiers(
@@ -63,6 +64,7 @@ export function ObservatoryWorldScene({
   activeHeroInteraction,
   analystPresetId = null,
   cameraResetToken,
+  constellations = [],
   eruptionStrengthByRouteStation,
   eruptionStrengthByStation,
   flyByActive,
@@ -72,6 +74,7 @@ export function ObservatoryWorldScene({
   heatmapVisible = false,
   heatmapPresetMultiplier = 1.0,
   probeGuidance = null,
+  spiritAccentColor = null,
   mission,
   missionTargetAssetId,
   missionTargetStationId,
@@ -213,6 +216,13 @@ export function ObservatoryWorldScene({
         probeGuidance={probeGuidance}
         stationPositions={OBSERVATORY_STATION_POSITIONS}
       />
+      {/* CNST-01 through CNST-05: Constellation routes — investigation history in starfield */}
+      {constellations.length > 0 ? (
+        <ConstellationRoutesLayer
+          constellations={constellations}
+          spiritAccentColor={spiritAccentColor}
+        />
+      ) : null}
     </>
   );
 }

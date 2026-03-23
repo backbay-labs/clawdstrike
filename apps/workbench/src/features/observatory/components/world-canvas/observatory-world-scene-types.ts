@@ -6,7 +6,7 @@ import type { HuntStationId } from "../../world/types";
 import type { ObservatoryLodTier } from "../../utils/observatory-performance";
 import type { MissionInteractionSource, ObservatoryPlayerFocusState } from "../flow-runtime/grounding";
 import type { ObservatoryGhostTrace } from "../../world/observatory-ghost-memory";
-import type { ObservatoryAnalystPresetId } from "../../types";
+import type { ConstellationRoute, ObservatoryAnalystPresetId } from "../../types";
 import type { ObservatoryProbeGuidance } from "../../world/observatory-recommendations";
 
 export interface ObservatoryActiveHeroInteraction {
@@ -70,4 +70,8 @@ export interface ObservatoryWorldSceneProps {
   heatmapPresetMultiplier?: number;
   /** Phase 40 PRBI: probe guidance for delta card rendering */
   probeGuidance?: ObservatoryProbeGuidance | null;
+  /** Phase 41 CNST: constellation routes from completed missions */
+  constellations?: ConstellationRoute[];
+  /** Phase 41 CNST: spirit accent color for constellation tint (hex string or null) */
+  spiritAccentColor?: string | null;
 }

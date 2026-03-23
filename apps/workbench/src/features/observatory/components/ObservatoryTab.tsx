@@ -84,7 +84,10 @@ import { deriveObservatoryWeatherState } from "../world/observatory-weather";
 import {
   loadPersistedObservatoryReplayArtifacts,
   savePersistedObservatoryReplayArtifacts,
+  loadPersistedObservatoryReplayArtifactsV2,
+  savePersistedObservatoryReplayArtifactsV2,
 } from "../utils/observatory-replay-persistence";
+import { deriveConstellationFromMission } from "../utils/observatory-derivations";
 
 // Maps workbench SpiritKind to ObservatorySpiritVisual.kind
 const SPIRIT_KIND_MAP: Record<SpiritKind, "tracker" | "lantern" | "ledger" | "forge"> = {
@@ -258,11 +261,14 @@ export function ObservatoryTab() {
       saveData: navigatorConnection?.saveData === true,
     };
   }, []);
+  const constellations = useObservatoryStore.use.constellations();
   const probeTelemetryBaselineRef = useRef<DerivedObservatoryTelemetry | null>(null);
   const previousStationEmphasisRef = useRef<Partial<Record<HuntStationId, number>>>({});
   const previousLikelyStationIdRef = useRef<HuntStationId | null>(null);
   const previousProbeStatusRef = useRef<typeof probeState.status | null>(probeState.status);
   const dismissedCueKeyRef = useRef<string | null>(null);
+  // CNST-01: Track previous mission status to detect completion transitions
+  const prevMissionStatusRef = useRef<string | null>(null);
   const [activeSpikeCue, setActiveSpikeCue] = useState<ObservatorySpikeCue | null>(null);
 
   // TRN-03: Station arrival name card — triggered once per station per session within 180 units
@@ -843,6 +849,11 @@ export function ObservatoryTab() {
   useEffect(() => {
     const persisted = loadPersistedObservatoryReplayArtifacts();
     observatoryActions.hydrateReplayArtifacts(persisted);
+    // CNST-03: Hydrate constellations from v2 schema on mount
+    const persistedV2 = loadPersistedObservatoryReplayArtifactsV2();
+    for (const constellation of persistedV2.constellations) {
+      observatoryActions.addConstellation(constellation);
+    }
     setReplayArtifactsHydrated(true);
   }, [observatoryActions]);
   useEffect(() => {
@@ -854,6 +865,38 @@ export function ObservatoryTab() {
       bookmarks: replayBookmarks,
     });
   }, [replayAnnotations, replayArtifactsHydrated, replayBookmarks]);
+  // CNST-01: Auto-derive constellation when mission completes
+  useEffect(() => {
+    const status = mission?.status ?? null;
+    if (prevMissionStatusRef.current !== "completed" && status === "completed" && mission) {
+      const constellation = deriveConstellationFromMission(mission);
+      if (constellation) {
+        // Override name from first objective title + station (per CONTEXT.md specific idea)
+        if (mission.objectives.length > 0) {
+          const firstObj = mission.objectives[0];
+          constellation.name = `${firstObj.title} at ${firstObj.stationId.charAt(0).toUpperCase() + firstObj.stationId.slice(1)}`;
+        }
+        observatoryActions.addConstellation(constellation);
+        // CNST-04: Enforce 12 constellation cap — evict oldest if over limit
+        if (constellations.length >= 12) {
+          const oldest = constellations[0];
+          if (oldest) {
+            observatoryActions.removeConstellation(oldest.id);
+          }
+        }
+      }
+    }
+    prevMissionStatusRef.current = status;
+  }, [mission, observatoryActions, constellations]);
+  // CNST-03: Auto-save constellations to localStorage v2 on change
+  useEffect(() => {
+    if (!replayArtifactsHydrated) return;
+    const current = loadPersistedObservatoryReplayArtifactsV2();
+    savePersistedObservatoryReplayArtifactsV2({
+      ...current,
+      constellations,
+    });
+  }, [constellations, replayArtifactsHydrated]);
 
   const handleDoubleClick = useCallback(() => {
     if (mode !== "flow") return;
