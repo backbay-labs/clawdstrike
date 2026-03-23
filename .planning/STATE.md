@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v10.0
 milestone_name: Observatory Analyst Toolkit
 status: planning
-stopped_at: Completed 41-03-PLAN.md
-last_updated: "2026-03-23T02:59:16.250Z"
+stopped_at: Completed 41-02-PLAN.md
+last_updated: "2026-03-23T03:04:30.365Z"
 last_activity: 2026-03-22 — Roadmap created; 5 phases (39-43), 33 requirements mapped
 progress:
   total_phases: 12
-  completed_phases: 9
+  completed_phases: 10
   total_plans: 21
-  completed_plans: 20
+  completed_plans: 21
   percent: 0
 ---
 
@@ -53,6 +53,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 40 P03 | 4min | 2 tasks | 4 files |
 | Phase 41 P01 | 308 | 2 tasks | 5 files |
 | Phase 41-constellation-routes-spirit-trails P03 | 269 | 1 tasks | 2 files |
+| Phase 41-constellation-routes-spirit-trails P02 | 479 | 2 tasks | 5 files |
 
 ### Decisions
 
@@ -79,6 +80,8 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 41]: prevMissionStatusRef pattern detects mission completion; cap check at >= 12 before addConstellation fires eviction
 - [Phase Phase 41]: CNST-04: Click (not hover) as primary interaction for constellation polylines on minimap — hover on small SVG polylines is imprecise
 - [Phase Phase 41]: Constellation tooltip positioned at bottom-center of minimap div via absolute positioning; local useState (not store)
+- [Phase 41]: SpiritTrailsLayer uses playerFocusRef (RefObject) not playerPosition (prop) to read position inside useFrame — avoids re-renders each frame
+- [Phase 41]: Trail rendering suppressed when spiritMood=dormant or no spirit bound — prevents ghost trails from unbound state
 
 ### Pending Todos
 
@@ -93,6 +96,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-23T02:59:16.248Z
-Stopped at: Completed 41-03-PLAN.md
+Last session: 2026-03-23T03:04:30.363Z
+Stopped at: Completed 41-02-PLAN.md
 Resume file: None

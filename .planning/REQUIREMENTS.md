@@ -43,11 +43,11 @@ Requirements for v10.0 Observatory Analyst Toolkit. Each maps to roadmap phases.
 
 ### Spirit Trails
 
-- [ ] **SPRT-01**: When a spirit is bound, it leaves luminous trails between stations as the analyst navigates the observatory
-- [ ] **SPRT-02**: Trail color and intensity reflect the spirit's current mood (idle=dim, active=bright, alert=pulsing)
-- [ ] **SPRT-03**: Trail intensity scales with spirit XP level (level 1 = faint wisps, level 5 = vivid luminous ribbons)
-- [ ] **SPRT-04**: At spirit level 5, trails reveal hidden resonance connections between stations that are not visible in the normal transit layer
-- [ ] **SPRT-05**: Trails use fixed-capacity geometry (max 150 points) with oldest points fading out to prevent memory growth
+- [x] **SPRT-01**: When a spirit is bound, it leaves luminous trails between stations as the analyst navigates the observatory
+- [x] **SPRT-02**: Trail color and intensity reflect the spirit's current mood (idle=dim, active=bright, alert=pulsing)
+- [x] **SPRT-03**: Trail intensity scales with spirit XP level (level 1 = faint wisps, level 5 = vivid luminous ribbons)
+- [x] **SPRT-04**: At spirit level 5, trails reveal hidden resonance connections between stations that are not visible in the normal transit layer
+- [x] **SPRT-05**: Trails use fixed-capacity geometry (max 150 points) with oldest points fading out to prevent memory growth
 
 ### Station Interiors
 
@@ -111,11 +111,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | HEAT-03 | Phase 40 | Complete |
 | HEAT-04 | Phase 40 | Complete |
 | HEAT-05 | Phase 40 | Complete |
-| SPRT-01 | Phase 41 | Pending |
-| SPRT-02 | Phase 41 | Pending |
-| SPRT-03 | Phase 41 | Pending |
-| SPRT-04 | Phase 41 | Pending |
-| SPRT-05 | Phase 41 | Pending |
+| SPRT-01 | Phase 41 | Complete |
+| SPRT-02 | Phase 41 | Complete |
+| SPRT-03 | Phase 41 | Complete |
+| SPRT-04 | Phase 41 | Complete |
+| SPRT-05 | Phase 41 | Complete |
 | INTR-01 | Phase 43 | Pending |
 | INTR-02 | Phase 43 | Pending |
 | INTR-03 | Phase 43 | Pending |
