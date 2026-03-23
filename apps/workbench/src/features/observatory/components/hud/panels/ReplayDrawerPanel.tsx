@@ -12,6 +12,7 @@
  */
 
 import { useObservatoryStore } from "../../../stores/observatory-store";
+import type { ObservatoryAnnotationPin } from "../../../types";
 
 // ---------------------------------------------------------------------------
 // Section heading style (shared pattern)
@@ -46,8 +47,10 @@ const buttonBaseStyle: React.CSSProperties = {
 
 export function ReplayDrawerPanel() {
   const replay = useObservatoryStore.use.replay();
+  const annotationPins = useObservatoryStore((state) => state.annotationPins);
 
   const bookmarks = replay.bookmarks ?? [];
+  const sortedPins = [...annotationPins].sort((a, b) => a.frameIndex - b.frameIndex);
   const hasSpikeSelected =
     replay.selectedSpikeTimestampMs !== null &&
     replay.selectedSpikeTimestampMs !== undefined;
@@ -74,6 +77,22 @@ export function ReplayDrawerPanel() {
     useObservatoryStore
       .getState()
       .actions.setReplayState({ enabled: !replay.enabled });
+  }
+
+  // ANNO-05: Jump replay timeline to pin's frame and dispatch camera focus event
+  function handlePinClick(pin: ObservatoryAnnotationPin) {
+    useObservatoryStore.getState().actions.setReplayState({ frameIndex: pin.frameIndex });
+    window.dispatchEvent(
+      new CustomEvent("observatory:camera-focus", {
+        detail: { target: pin.worldPosition, duration: 0.8 },
+      }),
+    );
+  }
+
+  // ANNO-04: Delete a pin — stop propagation to avoid triggering jump
+  function handlePinDelete(e: React.MouseEvent, pinId: string) {
+    e.stopPropagation();
+    useObservatoryStore.getState().actions.removeAnnotationPin(pinId);
   }
 
   return (
@@ -167,6 +186,86 @@ export function ReplayDrawerPanel() {
                 >
                   {new Date(bookmark.timestampMs).toLocaleTimeString()}
                 </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Annotations section — ANNO-04 */}
+      <div>
+        <div style={sectionHeadingStyle}>Annotations</div>
+        {sortedPins.length === 0 ? (
+          <div
+            style={{
+              fontSize: 12,
+              color: "var(--hud-text-muted)",
+              fontStyle: "italic",
+            }}
+          >
+            No pins yet
+          </div>
+        ) : (
+          <div
+            data-testid="annotation-pin-list"
+            style={{ display: "flex", flexDirection: "column", maxHeight: 200, overflowY: "auto" }}
+          >
+            {sortedPins.map((pin) => (
+              <div
+                key={pin.id}
+                data-testid={`annotation-pin-${pin.id}`}
+                onClick={() => handlePinClick(pin)}
+                style={{
+                  padding: "6px 0",
+                  borderBottom: "1px solid rgba(255,255,255,0.04)",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+              >
+                {/* Pin icon — small diamond SVG */}
+                <svg width="10" height="14" viewBox="0 0 10 14" style={{ flexShrink: 0 }}>
+                  <path d="M5 0 L10 7 L5 14 L0 7 Z" fill="var(--hud-accent)" opacity="0.7" />
+                </svg>
+                <span
+                  style={{
+                    fontSize: 13,
+                    color: "var(--hud-text)",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    flex: 1,
+                  }}
+                >
+                  {pin.note || "Untitled pin"}
+                </span>
+                <span
+                  style={{
+                    fontSize: 10,
+                    color: "var(--hud-text-muted)",
+                    flexShrink: 0,
+                  }}
+                >
+                  F{pin.frameIndex}
+                </span>
+                <button
+                  type="button"
+                  data-testid={`annotation-pin-delete-${pin.id}`}
+                  onClick={(e) => handlePinDelete(e, pin.id)}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "var(--hud-text-muted)",
+                    cursor: "pointer",
+                    fontSize: 14,
+                    lineHeight: 1,
+                    padding: "0 2px",
+                    flexShrink: 0,
+                  }}
+                >
+                  x
+                </button>
               </div>
             ))}
           </div>
