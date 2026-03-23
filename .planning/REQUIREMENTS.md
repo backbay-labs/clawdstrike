@@ -18,11 +18,11 @@ Requirements for v10.0 Observatory Analyst Toolkit. Each maps to roadmap phases.
 
 ### Probe Intelligence
 
-- [ ] **PRBI-01**: After a probe fires and completes, a floating delta card appears near the target station in 3D space
-- [ ] **PRBI-02**: Delta card shows what changed (pressure shift direction, new artifact count, status transition)
-- [ ] **PRBI-03**: Delta card shows a one-sentence explanation of why the change matters (from probe consequences)
-- [ ] **PRBI-04**: Delta card shows a recommended next action that is clickable to open the relevant workbench route or advance the mission
-- [ ] **PRBI-05**: Delta card auto-dismisses after 8 seconds or on analyst click/keypress
+- [x] **PRBI-01**: After a probe fires and completes, a floating delta card appears near the target station in 3D space
+- [x] **PRBI-02**: Delta card shows what changed (pressure shift direction, new artifact count, status transition)
+- [x] **PRBI-03**: Delta card shows a one-sentence explanation of why the change matters (from probe consequences)
+- [x] **PRBI-04**: Delta card shows a recommended next action that is clickable to open the relevant workbench route or advance the mission
+- [x] **PRBI-05**: Delta card auto-dismisses after 8 seconds or on analyst click/keypress
 - [ ] **PRBI-06**: Delta card triggers invalidation so the demand-based frame loop renders it correctly
 
 ### Constellation Routes
@@ -95,11 +95,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ANNO-04 | Phase 42 | Pending |
 | ANNO-05 | Phase 42 | Pending |
 | ANNO-06 | Phase 42 | Pending |
-| PRBI-01 | Phase 40 | Pending |
-| PRBI-02 | Phase 40 | Pending |
-| PRBI-03 | Phase 40 | Pending |
-| PRBI-04 | Phase 40 | Pending |
-| PRBI-05 | Phase 40 | Pending |
+| PRBI-01 | Phase 40 | Complete |
+| PRBI-02 | Phase 40 | Complete |
+| PRBI-03 | Phase 40 | Complete |
+| PRBI-04 | Phase 40 | Complete |
+| PRBI-05 | Phase 40 | Complete |
 | PRBI-06 | Phase 40 | Pending |
 | CNST-01 | Phase 41 | Pending |
 | CNST-02 | Phase 41 | Pending |
