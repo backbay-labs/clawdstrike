@@ -4170,6 +4170,8 @@ export function ObservatoryWorldCanvas({
   const annotationPins = useObservatoryStore((state) => state.annotationPins);
   // ANNO-01: replay state for pin drop gating
   const replayState = useObservatoryStore((state) => state.replay);
+  // Phase 43 INTR: interior zone state machine
+  const interiorState = useObservatoryStore.use.interiorState();
   // SPRT-02: spirit mood for trail rendering — read directly from spirit store
   const spiritMoodFromStore = useSpiritStore.use.mood();
   const spiritKindFromStore = useSpiritStore.use.kind();
@@ -4816,6 +4818,16 @@ export function ObservatoryWorldCanvas({
             replayFrameIndex={replayState.frameIndex}
             replayFrameMs={replayState.frameMs ?? null}
             onAnnotationDrop={handleAnnotationDrop}
+            interiorActive={interiorState.active}
+            interiorStationId={interiorState.stationId}
+            interiorTransitionPhase={interiorState.transitionPhase}
+            onInteriorTransitionComplete={(phase) => {
+              if (phase === "inside") {
+                useObservatoryStore.getState().actions.setInteriorState({ transitionPhase: "inside" });
+              } else {
+                useObservatoryStore.getState().actions.clearInterior();
+              }
+            }}
           />
           {/* DSC-03: Mission waypoint trail — glowing green CatmullRom tube to objective station */}
           <MissionWaypointTrail

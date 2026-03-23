@@ -58,9 +58,18 @@ function yawDegToCardinal(yawDeg: number): string {
 interface ObservatoryStatusStripProps {
   mode: "atlas" | "flow";
   onModeToggle: () => void;
+  /** Phase 43 INTR: whether station interior is currently active */
+  interiorActive?: boolean;
+  /** Phase 43 INTR: callback to exit interior and return to exterior view */
+  onExitInterior?: () => void;
 }
 
-export function ObservatoryStatusStrip({ mode, onModeToggle }: ObservatoryStatusStripProps) {
+export function ObservatoryStatusStrip({
+  mode,
+  onModeToggle,
+  interiorActive = false,
+  onExitInterior,
+}: ObservatoryStatusStripProps) {
   const speedRef = useRef<HTMLSpanElement>(null);
   const headingRef = useRef<HTMLSpanElement>(null);
   const stationCountRef = useRef<HTMLSpanElement>(null);
@@ -141,6 +150,41 @@ export function ObservatoryStatusStrip({ mode, onModeToggle }: ObservatoryStatus
           flex: "0 0 auto",
         }}
       >
+        {/* Phase 43 INTR: Exit Interior button — shown when analyst is inside a station */}
+        {interiorActive && onExitInterior ? (
+          <>
+            <button
+              type="button"
+              data-testid="status-strip-exit-interior"
+              onClick={onExitInterior}
+              style={{
+                padding: "1px 10px",
+                fontSize: 9,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                fontFamily: "inherit",
+                cursor: "pointer",
+                borderRadius: 4,
+                border: "1px solid rgba(255, 100, 100, 0.3)",
+                background: "rgba(255, 100, 100, 0.08)",
+                color: "#ff8888",
+                outline: "none",
+                height: 18,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                marginRight: 0,
+                transition: "background 0.15s ease",
+              }}
+            >
+              EXIT INTERIOR
+            </button>
+            <span style={{ color: "var(--hud-text-muted, rgba(255, 255, 255, 0.45))", fontSize: 9 }}>
+              ·
+            </span>
+          </>
+        ) : null}
+
         {/* Speed readout */}
         <div style={{ display: "flex", alignItems: "baseline", gap: 3 }}>
           <span

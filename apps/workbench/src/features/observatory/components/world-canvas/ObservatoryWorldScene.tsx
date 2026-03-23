@@ -1,6 +1,7 @@
 import { CameraShake, OrbitControls } from "@react-three/drei";
-import type { RefObject } from "react";
+import type { ReactNode, RefObject } from "react";
 import { useEffect, useMemo, useRef } from "react";
+import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import type {
   ObservatoryHeroPropRecipe,
@@ -37,6 +38,43 @@ import { SpiritTrailsLayer } from "./SpiritTrailsLayer";
 import { SpiritResonanceConnections } from "./SpiritResonanceConnections";
 import { ReplayAnnotationLayer } from "./ReplayAnnotationLayer";
 import { OBSERVATORY_STATION_POSITIONS } from "../../world/observatory-world-template";
+import { StationInteriorScene } from "./StationInteriorScene";
+import { useInteriorCameraTransition } from "./useInteriorCameraTransition";
+
+// ---------------------------------------------------------------------------
+// ExteriorDimmer — dims exterior scene layers to 0.2 opacity when interior active
+// Stays mounted for smooth reverse transition; interior lerps material opacity
+// ---------------------------------------------------------------------------
+
+const EXTERIOR_DIM_SPEED = 4;
+
+function ExteriorDimmer({
+  targetOpacity,
+  children,
+}: {
+  targetOpacity: number;
+  children: ReactNode;
+}) {
+  const groupRef = useRef<THREE.Group>(null!);
+  useFrame((_, delta) => {
+    if (!groupRef.current) return;
+    groupRef.current.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (mesh.isMesh && mesh.material) {
+        const mat = mesh.material as THREE.Material;
+        mat.transparent = true;
+        mat.opacity = THREE.MathUtils.lerp(
+          mat.opacity,
+          targetOpacity,
+          delta * EXTERIOR_DIM_SPEED,
+        );
+      }
+    });
+  });
+  return <group ref={groupRef}>{children}</group>;
+}
+
+// ---------------------------------------------------------------------------
 
 function buildDistrictLodTiers(
   world: DerivedObservatoryWorld,
@@ -97,6 +135,10 @@ export function ObservatoryWorldScene({
   probeStatus,
   watchfieldRaised,
   world,
+  interiorActive = false,
+  interiorStationId = null,
+  interiorTransitionPhase = null,
+  onInteriorTransitionComplete,
 }: ObservatoryWorldSceneProps) {
   const controlsRef = useRef<THREE.EventDispatcher | null>(null);
   const shakeRef = useRef<{ setIntensity: (intensity: number) => void } | null>(null);
@@ -121,6 +163,31 @@ export function ObservatoryWorldScene({
     () => buildDistrictLodTiers(world, playerFocusRef, missionTargetStationId),
     [missionTargetStationId, playerFocusRef, world],
   );
+
+  // Phase 43 INTR: compute interior target position from station world position
+  const interiorTargetPosition = useMemo(
+    () =>
+      interiorStationId
+        ? (OBSERVATORY_STATION_POSITIONS[interiorStationId] as [number, number, number])
+        : null,
+    [interiorStationId],
+  );
+
+  // Phase 43 INTR: camera transition hook — smooth lerp with FOV narrowing and near-plane adjustment
+  useInteriorCameraTransition({
+    interiorState: {
+      active: interiorActive,
+      stationId: interiorStationId,
+      transitionPhase: interiorTransitionPhase,
+    },
+    targetPosition: interiorTargetPosition,
+    controlsRef,
+    onTransitionComplete: onInteriorTransitionComplete ?? (() => {}),
+  });
+
+  // Phase 43 INTR: exterior dimmer opacity — 0.2 when fully inside, 1.0 otherwise
+  const exteriorDimOpacity =
+    interiorActive && interiorTransitionPhase === "inside" ? 0.2 : 1.0;
 
   return (
     <>
@@ -184,97 +251,112 @@ export function ObservatoryWorldScene({
         rollFrequency={0.4}
       />
 
-      <ThesisCore core={world.core} />
-      <OperatorProbe
-        activeRoute={probeStatus === "active"}
-        world={world}
-        targetStationId={probeLockedTargetStationId ?? missionTargetStationId ?? world.likelyStationId}
-      />
-      <HeroConsequenceLayer interaction={activeHeroInteraction} mission={mission} world={world} />
+      {/* Phase 43 INTR: ExteriorDimmer — dims exterior scene to 0.2 opacity when interior active.
+          Stays mounted at all times to allow smooth reverse transition back to exterior. */}
+      <ExteriorDimmer targetOpacity={exteriorDimOpacity}>
+        <ThesisCore core={world.core} />
+        <OperatorProbe
+          activeRoute={probeStatus === "active"}
+          world={world}
+          targetStationId={probeLockedTargetStationId ?? missionTargetStationId ?? world.likelyStationId}
+        />
+        <HeroConsequenceLayer interaction={activeHeroInteraction} mission={mission} world={world} />
 
-      <ObservatoryTransitLayer
-        eruptionStrengthByRouteStation={eruptionStrengthByRouteStation}
-        missionTargetStationId={missionTargetStationId}
-        world={world}
-      />
-      <ProbeDischargeVFX
-        position={[0, 0, 0]}
-        probeStatus={probeStatus}
-        color={world.core.accentColor}
-      />
-      <ObservatoryDistrictLayer
-        activeHeroInteraction={activeHeroInteraction}
-        districtLodTiers={districtLodTiers}
-        eruptionStrengthByStation={eruptionStrengthByStation}
-        missionTargetAssetId={missionTargetAssetId}
-        missionTargetStationId={missionTargetStationId}
-        modeOpacityScale={world.modeProfile.layoutOpacityScale}
-        onSelectStation={onSelectStation}
-        onTriggerHeroProp={onTriggerHeroProp}
-        playerFocusRef={playerFocusRef}
-        playerInteractableAssetId={playerInteractableAssetId}
-        probeStatus={probeStatus}
-        watchfieldRaised={watchfieldRaised}
-        world={world}
-      />
-      <GhostTraceLayer traces={ghostTraces} opacityScale={ghostOpacityScale} />
-      {/* HEAT-01 through HEAT-05: Threat topology heatmap — ground-plane pressure gradient */}
-      {heatmapVisible && heatmapPressureData ? (
-        <ThreatTopologyHeatmap
-          pressureData={heatmapPressureData}
-          stationPositions={OBSERVATORY_STATION_POSITIONS}
-          presetOpacityMultiplier={heatmapPresetMultiplier}
+        <ObservatoryTransitLayer
+          eruptionStrengthByRouteStation={eruptionStrengthByRouteStation}
+          missionTargetStationId={missionTargetStationId}
+          world={world}
         />
-      ) : null}
-      {/* APR-01: THREAT preset — red wash + danger motes at high-pressure districts */}
-      {analystPresetId === "threat" ? (
-        <ThreatPresetOverlay districts={world.districts} />
-      ) : null}
-      {/* APR-02: EVIDENCE preset — gold emissive halos at stations with receipt traces */}
-      {analystPresetId === "evidence" ? (
-        <EvidencePresetOverlay traces={ghostTraces} />
-      ) : null}
-      {/* APR-03: RECEIPTS preset — verdict badge markers at stations with receipt history */}
-      {analystPresetId === "receipts" ? (
-        <ReceiptsPresetOverlay traces={ghostTraces} />
-      ) : null}
-      {/* PRBI-01 through PRBI-06: Probe delta cards — floating feedback after probe discharge */}
-      <ProbeDeltaLayer
-        probeGuidance={probeGuidance}
-        stationPositions={OBSERVATORY_STATION_POSITIONS}
-      />
-      {/* CNST-01 through CNST-05: Constellation routes — investigation history in starfield */}
-      {constellations.length > 0 ? (
-        <ConstellationRoutesLayer
-          constellations={constellations}
-          spiritAccentColor={spiritAccentColor}
+        <ProbeDischargeVFX
+          position={[0, 0, 0]}
+          probeStatus={probeStatus}
+          color={world.core.accentColor}
         />
-      ) : null}
-      {/* SPRT-01 through SPRT-03, SPRT-05: Spirit movement trail — mood + level driven */}
-      {spiritAccentColor && spiritMood && spiritMood !== "dormant" ? (
-        <SpiritTrailsLayer
-          spiritAccentColor={spiritAccentColor}
-          spiritMood={spiritMood}
-          spiritLevel={spiritLevel ?? 1}
+        <ObservatoryDistrictLayer
+          activeHeroInteraction={activeHeroInteraction}
+          districtLodTiers={districtLodTiers}
+          eruptionStrengthByStation={eruptionStrengthByStation}
+          missionTargetAssetId={missionTargetAssetId}
+          missionTargetStationId={missionTargetStationId}
+          modeOpacityScale={world.modeProfile.layoutOpacityScale}
+          onSelectStation={onSelectStation}
+          onTriggerHeroProp={onTriggerHeroProp}
           playerFocusRef={playerFocusRef}
+          playerInteractableAssetId={playerInteractableAssetId}
+          probeStatus={probeStatus}
+          watchfieldRaised={watchfieldRaised}
+          world={world}
         />
-      ) : null}
-      {/* SPRT-04: Hidden resonance connections — revealed at spirit level 5 */}
-      {spiritAccentColor && (spiritLevel ?? 1) >= 5 ? (
-        <SpiritResonanceConnections
-          spiritLevel={spiritLevel ?? 1}
+        <GhostTraceLayer traces={ghostTraces} opacityScale={ghostOpacityScale} />
+        {/* HEAT-01 through HEAT-05: Threat topology heatmap — ground-plane pressure gradient */}
+        {heatmapVisible && heatmapPressureData ? (
+          <ThreatTopologyHeatmap
+            pressureData={heatmapPressureData}
+            stationPositions={OBSERVATORY_STATION_POSITIONS}
+            presetOpacityMultiplier={heatmapPresetMultiplier}
+          />
+        ) : null}
+        {/* APR-01: THREAT preset — red wash + danger motes at high-pressure districts */}
+        {analystPresetId === "threat" ? (
+          <ThreatPresetOverlay districts={world.districts} />
+        ) : null}
+        {/* APR-02: EVIDENCE preset — gold emissive halos at stations with receipt traces */}
+        {analystPresetId === "evidence" ? (
+          <EvidencePresetOverlay traces={ghostTraces} />
+        ) : null}
+        {/* APR-03: RECEIPTS preset — verdict badge markers at stations with receipt history */}
+        {analystPresetId === "receipts" ? (
+          <ReceiptsPresetOverlay traces={ghostTraces} />
+        ) : null}
+        {/* PRBI-01 through PRBI-06: Probe delta cards — floating feedback after probe discharge */}
+        <ProbeDeltaLayer
+          probeGuidance={probeGuidance}
+          stationPositions={OBSERVATORY_STATION_POSITIONS}
+        />
+        {/* CNST-01 through CNST-05: Constellation routes — investigation history in starfield */}
+        {constellations.length > 0 ? (
+          <ConstellationRoutesLayer
+            constellations={constellations}
+            spiritAccentColor={spiritAccentColor}
+          />
+        ) : null}
+        {/* SPRT-01 through SPRT-03, SPRT-05: Spirit movement trail — mood + level driven */}
+        {spiritAccentColor && spiritMood && spiritMood !== "dormant" ? (
+          <SpiritTrailsLayer
+            spiritAccentColor={spiritAccentColor}
+            spiritMood={spiritMood}
+            spiritLevel={spiritLevel ?? 1}
+            playerFocusRef={playerFocusRef}
+          />
+        ) : null}
+        {/* SPRT-04: Hidden resonance connections — revealed at spirit level 5 */}
+        {spiritAccentColor && (spiritLevel ?? 1) >= 5 ? (
+          <SpiritResonanceConnections
+            spiritLevel={spiritLevel ?? 1}
+            spiritAccentColor={spiritAccentColor}
+          />
+        ) : null}
+        {/* ANNO-01 through ANNO-06: Replay annotation pins — click-to-drop in 3D space */}
+        <ReplayAnnotationLayer
+          annotationPins={annotationPins}
+          replayEnabled={replayEnabled}
+          replayFrameIndex={replayFrameIndex}
+          replayFrameMs={replayFrameMs}
           spiritAccentColor={spiritAccentColor}
+          onDropPin={onAnnotationDrop ?? (() => {})}
+        />
+      </ExteriorDimmer>
+
+      {/* Phase 43 INTR-02/INTR-03: Station interior scene — conditionally mounted when analyst enters */}
+      {interiorActive && interiorStationId && interiorTargetPosition ? (
+        <StationInteriorScene
+          stationId={interiorStationId}
+          stationWorldPosition={interiorTargetPosition}
+          onTriggerHeroProp={onTriggerHeroProp}
+          missionTargetAssetId={missionTargetAssetId}
+          playerInteractableAssetId={playerInteractableAssetId}
         />
       ) : null}
-      {/* ANNO-01 through ANNO-06: Replay annotation pins — click-to-drop in 3D space */}
-      <ReplayAnnotationLayer
-        annotationPins={annotationPins}
-        replayEnabled={replayEnabled}
-        replayFrameIndex={replayFrameIndex}
-        replayFrameMs={replayFrameMs}
-        spiritAccentColor={spiritAccentColor}
-        onDropPin={onAnnotationDrop ?? (() => {})}
-      />
     </>
   );
 }

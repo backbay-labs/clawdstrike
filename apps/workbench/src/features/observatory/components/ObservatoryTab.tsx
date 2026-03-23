@@ -203,6 +203,8 @@ export function ObservatoryTab() {
   const [flyByActive, setFlyByActive] = useState(true);
   // flyByDoneRef stays true once the fly-by completes; prevents replay on re-mount
   const flyByDoneRef = useRef(false);
+  // Phase 43 INTR: double-click detection ref for ATLAS mode interior entry (400ms window)
+  const lastClickedStationRef = useRef<{ id: HuntStationId; time: number } | null>(null);
 
   // CAM-01: Called when WorldCameraRig finishes all waypoints or user skips
   const handleFlyByComplete = useCallback(() => {
@@ -216,16 +218,6 @@ export function ObservatoryTab() {
     handleFlyByComplete();
   }, [flyByActive, handleFlyByComplete]);
 
-  // CAM-01: Escape key skips fly-by
-  useEffect(() => {
-    if (!flyByActive) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") handleSkipFlyBy();
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [flyByActive, handleSkipFlyBy]);
-
   const stations = useObservatoryStore.use.stations();
   const confidence = useObservatoryStore.use.confidence();
   const likelyStationId = useObservatoryStore.use.likelyStationId();
@@ -238,6 +230,9 @@ export function ObservatoryTab() {
   const selectedStationId = useObservatoryStore.use.selectedStationId();
   const observatoryActions = useObservatoryStore.use.actions();
   const connected = useObservatoryStore.use.connected();
+  // Phase 43 INTR: interior zone state + docking state for Enter key trigger
+  const interiorState = useObservatoryStore.use.interiorState();
+  const dockingState = useObservatoryStore.use.dockingState();
   const huntEvents = useHuntStore.use.events();
   const huntBaselines = useHuntStore.use.baselines();
   const huntInvestigations = useHuntStore.use.investigations();
@@ -621,8 +616,36 @@ export function ObservatoryTab() {
     );
   }, [effectiveTelemetry, likelyStationId, missionObjectiveStationId, observatoryActions, replay.enabled, selectedStationId]);
 
+  // Phase 43 INTR: enter interior — set interiorState to entering
+  const handleEnterInterior = useCallback(
+    (stationId: HuntStationId) => {
+      observatoryActions.setInteriorState({
+        active: true,
+        stationId,
+        transitionPhase: "entering",
+      });
+    },
+    [observatoryActions],
+  );
+
+  // Phase 43 INTR: exit interior — start exit transition
+  const handleExitInterior = useCallback(() => {
+    if (!interiorState.active) return;
+    observatoryActions.setInteriorState({ transitionPhase: "exiting" });
+  }, [interiorState.active, observatoryActions]);
+
   const handleSelectStation = useCallback(
     (stationId: HuntStationId) => {
+      // Phase 43 INTR: double-click detection in ATLAS mode — enter interior on second click within 400ms
+      const now = Date.now();
+      const last = lastClickedStationRef.current;
+      if (mode === "atlas" && last && last.id === stationId && now - last.time < 400) {
+        lastClickedStationRef.current = null;
+        handleEnterInterior(stationId);
+        return;
+      }
+      lastClickedStationRef.current = { id: stationId, time: now };
+
       if (selectedStationId === stationId) {
         openObservatoryStationRoute(stationId);
         return;
@@ -632,8 +655,36 @@ export function ObservatoryTab() {
       observatoryActions.openPanel("explainability");
       setCameraResetToken((prev) => prev + 1);
     },
-    [observatoryActions, selectedStationId],
+    [handleEnterInterior, mode, observatoryActions, selectedStationId],
   );
+  // CAM-01: Escape key skips fly-by; Phase 43 INTR: also exits interior when active
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      // Phase 43 INTR: interior exit takes priority over fly-by skip
+      if (interiorState.active) {
+        handleExitInterior();
+        return;
+      }
+      if (flyByActive) handleSkipFlyBy();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [flyByActive, handleExitInterior, handleSkipFlyBy, interiorState.active]);
+
+  // Phase 43 INTR: Enter key entry in FLOW mode when ship is docked
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== "Enter") return;
+      if (mode !== "flow") return;
+      if (dockingState.zone !== "dock" || !dockingState.stationId) return;
+      if (interiorState.active) return;
+      handleEnterInterior(dockingState.stationId);
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [dockingState.stationId, dockingState.zone, handleEnterInterior, interiorState.active, mode]);
+
   const handleStartMission = useCallback(() => {
     observatoryActions.startMission("workbench", probeNowMs, {
       branchHint: deriveObservatoryMissionBranch(effectiveSceneState),
@@ -966,6 +1017,8 @@ export function ObservatoryTab() {
       <ObservatoryStatusStrip
         mode={mode}
         onModeToggle={() => setMode(mode === "atlas" ? "flow" : "atlas")}
+        interiorActive={interiorState.active}
+        onExitInterior={handleExitInterior}
       />
 
       {/* CAM-01: Letterbox top bar — h-12 during fly-by, h-0 after */}
