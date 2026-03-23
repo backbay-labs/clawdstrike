@@ -58,7 +58,8 @@ vi.mock("@/features/observatory/stores/observatory-store", () => {
     },
   };
 
-  const useObservatoryStore = vi.fn((selector: (s: typeof storeInstance) => unknown) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const useObservatoryStore: any = vi.fn((selector: (s: typeof storeInstance) => unknown) => {
     return selector(storeInstance);
   });
   useObservatoryStore.getState = vi.fn(() => storeInstance);
@@ -170,7 +171,8 @@ describe("ReplayAnnotationLayer (Phase 42 ANNO)", () => {
     const pinGroup = container.querySelector(`[data-pin-id="${pin.id}"]`);
     expect(pinGroup).toBeTruthy();
     // The store's getState should be accessible (used for imperative delete calls)
-    const storeState = (useObservatoryStore as ReturnType<typeof vi.fn> & { getState: () => unknown }).getState();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const storeState = (useObservatoryStore as any).getState();
     expect(storeState).toBeTruthy();
   });
 });

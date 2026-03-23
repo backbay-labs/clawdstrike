@@ -19,6 +19,7 @@ import type {
   HuntObservatorySceneState,
   HuntStationId,
 } from "../world/types";
+import type { ObservatoryAnnotationPin } from "../types";
 import type {
   ObservatoryGhostPresentation,
   ObservatoryGhostTrace,
@@ -4165,6 +4166,10 @@ export function ObservatoryWorldCanvas({
   const ghostOpacityScale = analystPresetIdOuter === "ghost" ? 1.0 : 0.2;
   // CNST-01: constellation routes from observatory store
   const constellations = useObservatoryStore((state) => state.constellations);
+  // ANNO-01: annotation pins from observatory store
+  const annotationPins = useObservatoryStore((state) => state.annotationPins);
+  // ANNO-01: replay state for pin drop gating
+  const replayState = useObservatoryStore((state) => state.replay);
   // SPRT-02: spirit mood for trail rendering — read directly from spirit store
   const spiritMoodFromStore = useSpiritStore.use.mood();
   const spiritKindFromStore = useSpiritStore.use.kind();
@@ -4174,6 +4179,20 @@ export function ObservatoryWorldCanvas({
   );
   // Pass mood only when spirit is bound (kind !== null), otherwise null suppresses trails
   const spiritMood = spiritKindFromStore ? spiritMoodFromStore : null;
+  // ANNO-01: drop a new annotation pin at the clicked world position during replay
+  const handleAnnotationDrop = useCallback((worldPosition: [number, number, number]) => {
+    const state = useObservatoryStore.getState();
+    const replay = state.replay;
+    const pin: ObservatoryAnnotationPin = {
+      id: `anno-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      frameIndex: replay.frameIndex,
+      timestampMs: replay.frameMs ?? Date.now(),
+      worldPosition,
+      note: "",
+      districtId: state.likelyStationId ?? ("signal" as HuntStationId),
+    };
+    state.actions.addAnnotationPin(pin);
+  }, []);
   useEffect(() => {
     if (speedTierOuter === "boost") {
       // Boost activated: drop bloom threshold immediately
@@ -4792,6 +4811,11 @@ export function ObservatoryWorldCanvas({
             spiritAccentColor={spirit?.accentColor ?? null}
             spiritMood={spiritMood}
             spiritLevel={spiritLevel}
+            annotationPins={annotationPins}
+            replayEnabled={replayState.enabled}
+            replayFrameIndex={replayState.frameIndex}
+            replayFrameMs={replayState.frameMs ?? null}
+            onAnnotationDrop={handleAnnotationDrop}
           />
           {/* DSC-03: Mission waypoint trail — glowing green CatmullRom tube to objective station */}
           <MissionWaypointTrail

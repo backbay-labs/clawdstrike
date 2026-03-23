@@ -35,6 +35,7 @@ import { ProbeDeltaLayer } from "./ProbeDeltaLayer";
 import { ConstellationRoutesLayer } from "./ConstellationRoutesLayer";
 import { SpiritTrailsLayer } from "./SpiritTrailsLayer";
 import { SpiritResonanceConnections } from "./SpiritResonanceConnections";
+import { ReplayAnnotationLayer } from "./ReplayAnnotationLayer";
 import { OBSERVATORY_STATION_POSITIONS } from "../../world/observatory-world-template";
 
 function buildDistrictLodTiers(
@@ -79,6 +80,11 @@ export function ObservatoryWorldScene({
   spiritAccentColor = null,
   spiritMood = null,
   spiritLevel = 1,
+  annotationPins = [],
+  replayEnabled = false,
+  replayFrameIndex = 0,
+  replayFrameMs = null,
+  onAnnotationDrop,
   mission,
   missionTargetAssetId,
   missionTargetStationId,
@@ -243,6 +249,15 @@ export function ObservatoryWorldScene({
           spiritAccentColor={spiritAccentColor}
         />
       ) : null}
+      {/* ANNO-01 through ANNO-06: Replay annotation pins — click-to-drop in 3D space */}
+      <ReplayAnnotationLayer
+        annotationPins={annotationPins}
+        replayEnabled={replayEnabled}
+        replayFrameIndex={replayFrameIndex}
+        replayFrameMs={replayFrameMs}
+        spiritAccentColor={spiritAccentColor}
+        onDropPin={onAnnotationDrop ?? (() => {})}
+      />
     </>
   );
 }

@@ -6,7 +6,7 @@ import type { HuntStationId } from "../../world/types";
 import type { ObservatoryLodTier } from "../../utils/observatory-performance";
 import type { MissionInteractionSource, ObservatoryPlayerFocusState } from "../flow-runtime/grounding";
 import type { ObservatoryGhostTrace } from "../../world/observatory-ghost-memory";
-import type { ConstellationRoute, ObservatoryAnalystPresetId } from "../../types";
+import type { ConstellationRoute, ObservatoryAnalystPresetId, ObservatoryAnnotationPin } from "../../types";
 import type { ObservatoryProbeGuidance } from "../../world/observatory-recommendations";
 import type { SpiritMood } from "@/features/spirit/types";
 
@@ -79,4 +79,14 @@ export interface ObservatoryWorldSceneProps {
   spiritMood?: SpiritMood | null;
   /** Phase 41 SPRT: spirit evolution level (1-5) for trail intensity + resonance unlock */
   spiritLevel?: number;
+  /** Phase 42 ANNO: annotation pins dropped during replay */
+  annotationPins?: ObservatoryAnnotationPin[];
+  /** Phase 42 ANNO: whether replay is currently active (gates pin drop) */
+  replayEnabled?: boolean;
+  /** Phase 42 ANNO: current replay frame index for stamping new pins */
+  replayFrameIndex?: number;
+  /** Phase 42 ANNO: current replay frame timestamp in ms */
+  replayFrameMs?: number | null;
+  /** Phase 42 ANNO: callback when analyst clicks empty space to drop a pin */
+  onAnnotationDrop?: (worldPosition: [number, number, number]) => void;
 }
