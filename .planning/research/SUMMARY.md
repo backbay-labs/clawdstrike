@@ -1,24 +1,17 @@
 # Project Research Summary
 
-**Project:** Huntronomer Workbench — 3D/Spirit/Observatory Integration
-**Domain:** R3F immersive 3D features embedded in a Tauri 2 + React 19 VS Code-like IDE workbench
-**Researched:** 2026-03-18
-**Confidence:** HIGH — all four research files grounded in first-party source code inspection and official library documentation
-
----
+**Project:** ClawdStrike Workbench — v10.0 Observatory Analyst Toolkit
+**Domain:** 3D immersive security analyst toolkit built on an existing R3F observatory world
+**Researched:** 2026-03-22
+**Confidence:** HIGH
 
 ## Executive Summary
 
-This milestone ports the huntronomer 3D spirit companion, observatory world, cyber nexus, and forensics river features from the standalone `apps/desktop` shell into the production IDE workbench at `apps/workbench`. All source features are implemented and testable — the work is integration and adaptation, not greenfield engineering. The recommended approach follows a strict three-tier layering model: Tier 1 (pure CSS + Zustand state, no WebGL), Tier 2 (targeted R3F embeds — sidebar companion, bottom-pane tape, spirit chamber tab), Tier 3 (full immersive pane tabs — observatory and nexus). This ordering is mandatory because every visual feature depends on `spirit-store.ts` and `observatory-store.ts`, neither of which exist yet in the workbench.
+The v10.0 Observatory Analyst Toolkit adds 7 new features to a mature, fully-functioning R3F observatory: Replay Annotation Canvas, Probe Delta Cards, Split-Screen Compare Mode, Constellation Routes, Threat Topology Heatmap, Spirit Resonance Trails, and Station Interior Zones. The codebase is already at high maturity — the entire Three.js/R3F/Zustand stack is installed and validated, most data infrastructure is already in place, and clear rendering layer patterns are established. The expert pattern for this type of extension is additive scene layers following the `GhostTraceLayer` canonical pattern (pure R3F component, receives typed props from `ObservatoryTab`, no direct store reads inside the R3F tree), with data derivation utilities written first and tested independently.
 
-The stack is locked. No new framework choices are required: `@react-three/fiber@^9.0.0`, `@react-three/drei@^10.0.0`, `three@^0.170.0`, and `@react-three/rapier@^2.2.0` (physics, Tier 3 only) are already in the huntronomer source at these exact versions. The workbench does not yet have R3F; packages must be added before any Tier 2 work begins. The integration contract for 3D views follows three invariants: each pane-tab Canvas uses `position: absolute; inset: 0` to escape the `overflow-auto` pane wrapper; per-frame animation values live in refs, never in Zustand; and new routes are registered in `WORKBENCH_ROUTE_OBJECTS` — not in a parallel router.
+The recommended approach follows a dependency-driven build order: extend TypeScript store and persistence contracts first (no visual work), then build pure derivation utilities, then wire independent R3F scene layers, then tackle interactive and complex features last. This order is dictated by the prop-threading architecture where `ObservatoryTab` is the single store bridge — all new state must be plumbed through before scene layers can use it. Zero new npm packages are required; every capability needed is in the installed `@react-three/drei ^10.7.7` and `three ^0.171.0` stack, including first-use APIs like `<RenderTexture>`, `<CameraControls>`, and `THREE.DataTexture`.
 
-**KEY DECISION REQUIRED — WebGL Context Architecture:** The stack researcher and pitfalls researcher reached opposite conclusions on the root Canvas strategy, and this is the most consequential architectural choice for the entire milestone. It must be resolved before writing any Canvas placement.
-
-- The **Stack researcher recommends separate Canvas per pane tab** (not drei `View`) because `View` requires a single persistent parent Canvas that conflicts with the binary tree pane system's mount/unmount semantics, and `View` has a confirmed z-index issue (drei GitHub #2471) that breaks modal/dialog stacking in the workbench.
-- The **Pitfalls researcher recommends a root Canvas + drei `View` ports** because Tauri uses WebKit, which enforces a hard 8-context WebGL limit. With a separate Canvas per pane tab, opening three 3D tabs simultaneously (observatory + spirit companion + forensics river) is already at the Safari/WebKit ceiling, and one more context silently destroys the oldest one.
-
-Both concerns are real and verified. The decision table is: **if the modal/dialog stacking issue in drei #2471 can be mitigated** (e.g., by managing z-index via a portal host div and CSS containment), the root Canvas + View approach is the safer long-term architecture for a multi-pane IDE. **If the z-index fix is too brittle**, the separate-Canvas approach with a documented ceiling of 3 simultaneous R3F contexts is acceptable for the current feature set, with a plan to consolidate later. This decision must be made explicitly and documented before Tier 2 begins.
+The primary risk is the WebGL context budget: the Split-Screen Compare Mode must not create a second `<Canvas>` element. The existing system already has multiple contexts (observatory, Nexus, spirit companion), and WebKit enforces an 8-context hard limit. Use `drei <View>` scissor rendering within the single existing canvas. Secondary risks are the demand-driven invalidation system (every new visual state source must be explicitly registered in `ObservatoryInvalidationController`) and geometry lifecycle management (Three.js geometries require explicit `dispose()` — failing to do so causes measurable GPU memory accumulation over long sessions). Both risks have clear, low-effort prevention strategies documented in research.
 
 ---
 
@@ -26,157 +19,127 @@ Both concerns are real and verified. The decision table is: **if the modal/dialo
 
 ### Recommended Stack
 
-The workbench stack requires four new npm packages: `@react-three/fiber@^9.0.0`, `@react-three/drei@^10.0.0`, `three@^0.170.0`, and `@types/three@^0.170.0` (dev). Physics (`@react-three/rapier@^2.2.0`) and the character controller (`ecctrl@^1.0.97`) are deferred to Tier 3 and should not be installed until the observatory flow-mode Easter egg is actively being built. VRM avatar rendering (`@pixiv/three-vrm`) is explicitly out of scope per PROJECT.md. The offscreen worker API (`@react-three/offscreen`) is pre-production and Safari-incompatible; `frameloop="demand"` + `invalidate()` provides sufficient CPU relief for non-animating panels.
+The installed stack is sufficient for all 7 features without any new dependencies. The only "new" work is first-time use of drei APIs already installed: `<RenderTexture>` (Feature 3: Split-Screen), `<CameraControls>` (Feature 7: Station Interiors), and `THREE.DataTexture` (Feature 5: Heatmap). Custom GLSL via `THREE.ShaderMaterial` uses the same `/* glsl */` tagged template literal pattern already established in `StationFresnelGlow.tsx`. No new packages — zero install step.
 
-Full Canvas configuration details: `.planning/research/STACK.md`
+Full stack analysis: `.planning/research/STACK.md`
 
 **Core technologies:**
-- `@react-three/fiber@^9.0.0`: React renderer for Three.js — the R3F v9 major is the only version compatible with React 19; v8 is not
-- `@react-three/drei@^10.0.0`: Helper components (OrbitControls, Stars, Html, Line, useGLTF, PerformanceMonitor, View) — v10 is coupled to fiber v9
-- `three@^0.170.0`: Three.js peer dependency — matches huntronomer source; drei 10 / fiber 9 require three ≥ 0.168
-- `@react-three/rapier@^2.2.0`: Physics for observatory flow mode only — v2 adds R3F v9 + React 19 support; defer to Tier 3
-- `motion@^12.33.0` + `zustand@^5.0.12`: Already in workbench — used for CSS animations and 2 new stores respectively
+- `@react-three/fiber ^9.0.0`: scene graph, event handling, `useFrame` animation — already validated and in active use
+- `@react-three/drei ^10.7.7`: `<Html>`, `<Line>`, `<Trail>`, `<Billboard>`, `<CameraControls>` (first use), `<RenderTexture>` (first use) — all available, no install required
+- `three ^0.171.0`: `ShaderMaterial`, `CatmullRomCurve3`, `AdditiveBlending`, `DataTexture` (first use) — all available
+- Zustand (observatory-store, spirit-store, spirit-evolution-store): store contracts already defined; only additive changes needed
+- `observatory-replay-persistence.ts`: localStorage persistence pattern established; needs schema version bump from v1 to v2
+
+**Explicit "do not add" from research:** no second `<Canvas>` for split-screen, no `simpleheat` or other heatmap library, no `@theatre/r3f` for camera animation, no `react-three-scissor` package (conflicts with pane architecture).
 
 ### Expected Features
 
-Full feature list with dependency graph: `.planning/research/FEATURES.md`
+Full feature analysis: `.planning/research/FEATURES.md`
 
-**Must have — table stakes (Tier 1, no R3F):**
-- `spirit-store.ts` — foundation for all downstream visual features; every other feature reads from it
-- `observatory-store.ts` — observatory seam badges, probe state, scene state derivation
-- Spirit field CSS stain on sidebar and pane backgrounds — the ambient "spirit is alive" signal; zero GPU cost
-- Spirit accent color (`--spirit-accent` CSS custom property) — bleeds into hunt UI chrome
-- Activity bar badges from observatory seam (artifactCount, hasUnread per station)
-- Route bridge: station click → `pane-store.openApp()` — makes the system navigable, not decorative
-- Commands: `spirit.bind`, `spirit.release`, `observatory.open`, `observatory.probe`, `nexus.open`
+**Must have (table stakes):**
+- Probe Delta Cards — probe fires → floating 3D card near station showing pressure delta, explanation, next action; auto-dismisses on probe cooldown
+- Constellation Routes — completed missions traced as named permanent starfield lines; persist to localStorage; clickable to replay
+- Replay Annotation Canvas (pins) — click 3D space during replay to drop named pins with text; visible in Replay drawer and 3D scene
+- Threat Topology Heatmap — ground-plane shader gradient showing station pressure intensity; gated to THREAT analyst preset; pulses on telemetry update
+- Spirit Resonance Trails — spirit leaves luminous trails between stations; level-gated intensity; level-5 reveals hidden inter-station connections
+- Replay Annotation Canvas (freehand trails) — pointer-draw investigation paths in 3D space during replay; throttled geometry (not per-frame)
 
-**Should have — differentiators (Tier 2, targeted R3F):**
-- Animated spirit orb in ActivityBar (CSS/SVG animation, no R3F canvas)
-- Mini spirit companion R3F canvas in right sidebar — living 3D presence without full-tab demand
-- Spirit chamber as full pane tab (`/spirit-chamber/:huntId`) — the bind/reconfigure ritual
-- Forensics river "Tape" tab in bottom pane — ambient live telemetry; glia-three audit required first
+**Should have (competitive differentiators):**
+- Split-Screen Compare Mode — side-by-side "then" vs "now" observatory worlds with diff overlay on changed stations
+- Station Interior Zones — seamless camera-push transition into per-station interior layouts with unique room geometry and NPC activity
 
-**Defer — full immersive views (Tier 3):**
-- Observatory world as full editor pane (`/observatory/:huntId`, atlas mode default)
-- Cyber nexus as Hunt Deck pane tab (`/hunt-deck`)
-- Spirit creation chamber (`/spirit-creation/:huntId`)
-- Character controller flow mode Easter egg — opt-in, lazy-loaded, never default
-
-**Anti-features explicitly excluded:**
-- VRM avatar rendering — too heavy for IDE sidebar
-- Full Rapier physics simulation in nexus — background CPU/GPU pressure with 50+ physics nodes
-- Full-screen spirit awakening animation — modal full-screens in an IDE are hostile after the first use
-- Audio feedback — inappropriate for security operators in open-plan or call environments
-- Real-time WebGL receipt previews in editor tabs — conflicts with CodeMirror
+**Defer (v2+):**
+- Constellation deterministic naming (decorative, low analytical value for v10)
+- Interior data panels with live store data (add after basic interiors ship)
+- Hidden resonance connections design for level-5 (requires inter-station domain design decisions)
+- Annotation cross-session sharing/sync (requires backend; localStorage is correct scope)
 
 ### Architecture Approach
 
-The integration slots 3D views into the existing binary tree pane system via three mechanisms: (1) new routes in `WORKBENCH_ROUTE_OBJECTS` (observatory, nexus, spirit-chamber) handled by lazy-loaded components with Suspense; (2) two new Zustand stores (`spirit-store`, `observatory-store`) that inject CSS vars at `DesktopLayout` and feed Zustand selectors to ActivityBar, RightSidebar, BottomPane, and pane-tab components; (3) a route bridge that maps 3D station/strikecell clicks to `pane-store.openApp()` calls. The pane system naturally unmounts R3F canvases on tab switch, which eliminates the need for explicit pause logic — but creates a shader recompilation stutter for large scenes that must be mitigated with visibility-toggle instead of unmount for the observatory and nexus tabs.
+The architecture is additive and prop-threaded: `ObservatoryTab` (1054 lines, the store bridge) derives all state from stores, then passes typed props down through `ObservatoryWorldCanvas` → `ObservatoryWorldScene` → individual layer components. No new scene layer reads Zustand directly (one documented exception: per-frame access via `store.getState()` for high-frequency reads to avoid React re-render overhead). The 7 features each map to a new R3F scene layer component registered in `ObservatoryWorldScene` JSX, plus corresponding store additions and derivation utilities.
 
-Full component diagram and data flow: `.planning/research/ARCHITECTURE.md`
+Full component boundary and data flow maps: `.planning/research/ARCHITECTURE.md`
 
-**Major components:**
-1. `spirit-store.ts` — bound spirit state (kind, mood, accentColor, motion envelope); ambient, affects everything
-2. `observatory-store.ts` — active hunt ID, seam summary, scene state; scoped to hunt-deck views
-3. `SpiritFieldInjector` — side-effect component in DesktopLayout that writes CSS vars to `<html>`
-4. `ActivityBar` (modified) — spirit orb badge + observatory seam badge counts
-5. `RightSidebar` (modified) — new `spirit-companion` panel housing mini R3F canvas
-6. `BottomPane` (modified) — new `tape` tab housing forensics river embed
-7. `ObservatoryTab` — full R3F pane at `/observatory` (Tier 3)
-8. `NexusTab` — full R3F pane at `/nexus` (Tier 3); most entangled — needs NexusStateContext → Zustand migration first
-9. `SpiritChamberTab` — pane at `/spirit-chamber`; CSS animation canvas, zero R3F (Tier 2)
-10. `SpiritCompanionCanvas` — mini R3F in right sidebar; demand frameloop (Tier 2)
-11. `ForensicsTapeTab` — glia-three RiverView embed in bottom pane (Tier 2/3 boundary)
+**Major components to build:**
+1. **Store + Persistence Extensions** — `ObservatoryReplayTrail`, `ConstellationRoute` types; trail/constellation/interior state in `observatory-store`; persistence key version bump to v2
+2. **Data Derivation Utilities** — `deriveConstellationFromMission`, `deriveSpiritResonanceConnections`, `deriveObservatoryCompareState`, `buildStationsFromReplaySnapshot` — pure functions, testable without R3F
+3. **Independent Scene Layers** — `ThreatTopologyHeatmap`, `ConstellationRoutesLayer`, `SpiritResonanceTrails`, `ProbeDeltaLayer` — each a self-contained R3F component added to `ObservatoryWorldScene`
+4. **Interactive Layers** — `ReplayAnnotationLayer` (pointer events), `ObservatoryInteriorLayer` + `StationInteriorScene` (camera state machine)
+5. **Layout Wrapper** — `ObservatorySplitCompareView` + `ObservatoryCompareDiffOverlay` — built last, after Phase C/D prop interfaces are stable
 
 ### Critical Pitfalls
 
-Full 10-pitfall analysis with recovery strategies: `.planning/research/PITFALLS.md`
+Full pitfall analysis with recovery strategies: `.planning/research/PITFALLS.md`
 
-1. **`overflow-auto` collapses Canvas to 150px** — Every 3D route component must start with `<div className="absolute inset-0 overflow-hidden">` to escape the `PaneContainer` scroll wrapper. This is the first thing to verify on any new Canvas tab.
+1. **Split-screen second WebGL context** — never use two `<Canvas>` elements for the compare mode. Use `drei <View>` scissor within the existing single canvas. WebKit (Tauri target) enforces an 8-context hard limit; the existing system already consumes multiple contexts. Warning sign: spirit companion canvas goes black when split-screen opens.
 
-2. **WebGL context exhaustion (WebKit hard limit: 8)** — Tauri targets WebKit which enforces 8 simultaneous WebGL contexts. With separate Canvas per pane tab, opening observatory + nexus + companion + tape = 4 contexts, leaving margin for browser overhead. Root Canvas + drei View is the bulletproof solution but carries the z-index risk (see KEY DECISION above).
+2. **Invalidation controller not updated for new visual sources** — `ObservatoryInvalidationController.sourceKey` must be extended with new entries before any visual code per feature: `annotationDropCount`, `heatmapPulseVersion`, `spiritTrailSegmentCount`, `constellationCount`, `interiorTransitionPhase`. Missing entries cause scene changes to never render until an unrelated camera event fires. Applies to all 7 features; must be the first implementation step per feature.
 
-3. **Tab switch causes shader recompilation stutter (500ms+ freeze)** — The pane system unmounts inactive routes. For large 3D scenes, use CSS `visibility: hidden` + `frameloop="never"` instead of letting the route unmount. Establish this pattern before the first full observatory tab.
+3. **Heatmap shader overdraw** — a full-coverage GLSL heatmap on a 300-unit ground plane compounds with the existing 15+ transparent render layers. Implement as a baked `DataTexture` updated on telemetry change events (not per-frame GLSL evaluation). Gate behind `weatherBudget` — at `"off"`, skip entirely.
 
-4. **`useFrame` writing to Zustand triggers 60fps React reconcile** — Per-frame animation values must live in `useRef`, never in Zustand setters. Zustand is for user-action-triggered state only. This is a project-wide coding contract, not a per-component concern.
+4. **Trail geometry GPU leak** — Three.js geometries require explicit `dispose()`. Custom `TubeGeometry` or `BufferGeometry` created per trail segment without cleanup causes monotonically growing `renderer.info.memory.geometries` over long sessions. Use fixed-capacity buffer geometry or `useEffect` cleanup disposals.
 
-5. **NexusStateContext does not bridge into R3F Canvas** — The existing `NexusStateContext` (React context) is invisible to components inside the Canvas's R3F fiber renderer. The nexus state must be migrated to a `nexus-store.ts` Zustand store before any NexusCanvas porting begins.
+5. **Annotation localStorage bloat** — trail point arrays at 60fps produce thousands of points. Cap at 150 points per trail, enforce 50-annotation eviction policy, and wrap `localStorage.setItem` in try/catch for `QuotaExceededError`. Bump persistence key from v1 to v2.
 
-6. **glia-three `RiverView` likely owns its own Canvas** — ForensicsRiverView imports from `@backbay/glia-three/three`. If that package bundles its own Canvas (likely), it creates a context boundary problem. Audit the package source before committing to the Tape tab implementation.
+6. **Interior transition stutter from Zustand state** — camera push transition must be driven via `useFrame` + mutable ref, not Zustand state updates. React batching skips animation frames. Only write to Zustand on transition completion.
 
----
-
-## KEY DECISION REQUIRED: WebGL Context Architecture
-
-**This must be decided and documented before writing any Canvas placement. It affects every R3F surface in Tiers 2 and 3.**
-
-### Option A: Separate Canvas Per Pane Tab (Stack researcher recommendation)
-- Each 3D view owns its own `<Canvas>` instance
-- Simpler integration: pane mount/unmount lifecycle works naturally
-- Avoids drei View z-index issue (#2471) that breaks modal/dialog stacking
-- **Risk:** WebKit (Tauri target) enforces 8-context hard limit. With companion + tape + observatory + nexus simultaneously open: 4 contexts used. Acceptable if the workbench enforces "only one heavy pane tab at a time" as a rule, and the ActivityBar orb uses CSS/SVG (no canvas).
-- **Mitigation:** Enforce a maximum of 3 simultaneous R3F contexts via pane system; document the ceiling; let the browser silently kill the 4th if exceeded.
-
-### Option B: Root Canvas + drei View Ports (Pitfalls researcher recommendation)
-- Single `<Canvas>` at the App shell level
-- All 3D surfaces use drei `<View>` (scissor sub-views) into the root Canvas
-- One WebGL context total — zero context exhaustion risk
-- **Risk:** drei View requires a persistent parent Canvas that conflicts with pane mount/unmount semantics; confirmed z-index bug (#2471) breaks modal stacking in workbenches
-- **Mitigation:** Manage z-index via a dedicated portal host div in DesktopLayout with explicit CSS containment; accept that View + modal z-index requires careful layer management.
-
-### Recommendation for Resolution
-Audit drei issue #2471 to determine if it has been resolved in drei@^10.0.0 (R3F v9 era). If resolved or mitigatable: use Option B. If still active and affecting modals: use Option A with a 3-context ceiling and clear documentation that the ActivityBar spirit orb must be CSS-only (no Canvas).
+7. **Split-screen "then" world accuracy** — both canvases reading `useObservatoryStore.stations` shows the same live data. The "then" world must use `buildStationsFromReplaySnapshot(replayTimeline.snapshots[frameIndex])` to reconstruct station states with original EWMA smoothing applied — not a fresh re-derivation from raw events at that timestamp.
 
 ---
 
 ## Implications for Roadmap
 
-Based on research, suggested four-phase structure mirroring the Tier dependency model:
+The architecture's dependency graph drives a 5-phase build order with no ambiguity. Phases A and B are pure TypeScript; Phases C and D are R3F; Phase E is the structural layout feature that wraps all prior work.
 
-### Phase 1: Spirit + Observatory State Foundation
-**Rationale:** Every visual feature depends on `spirit-store` and `observatory-store`. These are zero-risk (no R3F, no new packages) and deliver visible results immediately (CSS field stain, accent colors, live badge counts). Unblocks all subsequent work. Must also resolve the KEY DECISION on Canvas architecture at the end of this phase so Tier 2 begins on a locked contract.
-**Delivers:** Two Zustand stores, CSS field stain on sidebar and pane backgrounds, spirit accent color system, activity bar seam badges, route bridge wiring, 5 command palette commands.
-**Addresses:** spirit-store.ts (P1), observatory-store.ts (P1), spirit field CSS stain (P1), spirit accent color (P1), activity bar badges (P1), route bridge (P1), commands (P1)
-**Avoids:** Stale command closure pitfall (Pitfall 10), CSS spirit stain stacking context (Pitfall 9)
-**Research flag:** Standard patterns — no deeper research needed; all implementation is direct port of known-working huntronomer source code.
+### Phase A: Store and Persistence Foundations
+**Rationale:** Features 1 (Annotation Canvas), 4 (Constellation Routes), and 7 (Station Interiors) all require store additions before any R3F work can begin. Getting these contracts correct first prevents prop-interface rework when multiple features are added simultaneously. Pure TypeScript with no visual work — easiest phase to test.
+**Delivers:** Extended `types.ts` (`ObservatoryReplayTrail`, `ConstellationRoute`); extended `observatory-store.ts` (trail, constellation, interior state + actions); persistence key v2 with migration stub; `observatory-constellation-persistence.ts`
+**Addresses:** Annotation Canvas data model, Constellation Routes data model, Interior Zone state machine entry point
+**Avoids:** Prop-interface churn when multiple features are added simultaneously
 
-### Phase 2: R3F Package Install + WebGL Architecture Contract
-**Rationale:** Installing R3F packages is a prerequisite for all Tier 2 work. More importantly, the WebGL context architecture decision (KEY DECISION above) must be locked here — it cannot be deferred to "when we see a bug." This phase is short in code but high in consequence.
-**Delivers:** R3F packages installed in `apps/workbench`; Canvas architecture decision documented; `absolute inset-0` host div pattern validated in a spike Canvas component; drei `<Html>` clipping strategy validated.
-**Uses:** `@react-three/fiber@^9.0.0`, `@react-three/drei@^10.0.0`, `three@^0.170.0`, `@types/three@^0.170.0`
-**Avoids:** overflow-auto canvas height collapse (Pitfall 1), WebGL context exhaustion (Pitfall 2), Html labels escaping pane bounds (Pitfall 7)
-**Research flag:** Needs targeted research — audit drei@^10.0.0 changelog and issue #2471 status to resolve the KEY DECISION; audit `@backbay/glia-three` package source for own-Canvas detection.
+### Phase B: Data Derivation Utilities
+**Rationale:** Pure functions define the data contracts that all R3F scene layers consume. Writing them before R3F code enables isolated unit testing and prevents schema mismatches — especially `buildStationsFromReplaySnapshot`, which is a prerequisite for split-screen correctness. Derivation utilities written here also gate whether Phase C layers can be built correctly.
+**Delivers:** `deriveConstellationFromMission`, `deriveSpiritResonanceConnections`, `deriveObservatoryCompareState`, `buildStationsFromReplaySnapshot`; constellation tracking wired into `ObservatoryTab` mission-complete handler
+**Addresses:** Split-Screen Compare accuracy (Pitfall 8), Spirit Resonance level-gate design
+**Avoids:** Re-running `deriveObservatoryTelemetry` on stale single-frame snapshot (produces wrong pressure values)
 
-### Phase 3: Targeted R3F Embeds (Tier 2)
-**Rationale:** Small 3D surfaces with bounded scope. Spirit chamber tab is CSS-only (no R3F) but requires spirit-store from Phase 1. Mini companion canvas is the first real WebGL surface — validates the Canvas architecture decision in a low-risk context before the large scenes. Forensics tape tab depends on the glia-three audit from Phase 2.
-**Delivers:** Animated spirit orb in ActivityBar (CSS/SVG), mini spirit companion R3F canvas in right sidebar (demand frameloop), spirit chamber pane tab (CSS animation canvas), forensics tape tab (conditional on glia-three audit).
-**Implements:** SpiritCompanionCanvas, SpiritChamberTab, ForensicsTapeTab, right-sidebar spirit panel switch, bottom-pane tape tab
-**Avoids:** useFrame Zustand write at 60fps (Pitfall 4), tab switch stutter — companion canvas is small enough to allow remount
-**Research flag:** Standard patterns for companion canvas and chamber tab; conditional on glia-three findings for tape tab (if glia-three has own Canvas, a fork/adapter plan is needed before Phase 3 completes).
+### Phase C: Independent Scene Layers
+**Rationale:** These 4 features have no cross-dependencies on each other and build directly on Phase A/B contracts. Each follows the canonical `GhostTraceLayer` pattern exactly — pure R3F layer, props from `ObservatoryTab`, wired into `ObservatoryWorldScene`. Lowest-risk features with highest analyst value per implementation cost.
+**Delivers:** `ThreatTopologyHeatmap` (GLSL heatmap shader), `ConstellationRoutesLayer` (permanent mission traces), `SpiritResonanceTrails` (level-gated luminous trails), `ProbeDeltaLayer` + `ProbeDeltaCard` (floating probe result cards)
+**Uses:** `THREE.DataTexture` (heatmap baking), `drei <Trail>` (spirit trails), `drei <Html transform sprite>` (delta cards), `THREE.CatmullRomCurve3` (constellation geometry), `drei <Billboard>` (card facing)
+**Avoids:** Heatmap overdraw (DataTexture bake approach, not per-frame GLSL), delta card HUD occlusion (`portal` + `occlude` props on `<Html>`), geometry GPU leak (dispose pattern in `useEffect` cleanup)
 
-### Phase 4: Full Immersive Pane Tabs (Tier 3)
-**Rationale:** Observatory and nexus are the largest components and the most entangled. Observatory depends on stable spirit-store and observatory-store from Phase 1. Nexus is the most entangled (imports ObservatoryWorldCanvas, NexusSpiritCompanion, strikecell adapter) and requires the NexusStateContext-to-Zustand migration before any canvas port. Character controller is an Easter egg and must be the last item.
-**Delivers:** Observatory world as full editor pane (atlas mode, no character controller by default), cyber nexus as Hunt Deck pane tab, spirit creation chamber, character controller flow mode (opt-in, lazy-loaded).
-**Implements:** ObservatoryTab, NexusTab, nexus-store.ts (Zustand migration), deriveObservatoryWorld port, observatory-world.ts, SpiritCreationChamber
-**Avoids:** NexusStateContext context isolation in Canvas (Pitfall 5), OrbitControls vs pane activation (Pitfall 6), tab switch scene recompile stutter on Observatory/Nexus (Pitfall 3)
-**Research flag:** Needs phase-level research — NexusStateContext migration scope is large and must be fully mapped before implementation begins. Observatory character controller (Rapier physics, ecctrl, animation state machine) needs its own scoped research sub-task.
+### Phase D: Interactive Layers
+**Rationale:** Both features require pointer event handling in 3D space (annotations) or a multi-state camera controller (interiors) — more complex than Phase C. Station Interiors is the most technically demanding feature, requiring a 3-state camera state machine and log-Z depth buffer mitigation for interior scale. Phase C must be complete first so the `ObservatoryWorldScene` prop interface is stable.
+**Delivers:** `ReplayAnnotationLayer` (3D pin drops + freehand trail drawing with throttled geometry), `ObservatoryInteriorLayer` + `StationInteriorScene` (6 procedural station interiors) + `InteriorCameraController`
+**Uses:** `drei <CameraControls>` (replaces `<OrbitControls>` for interior `fitToBox()` transitions); `useFrame` + `useRef` for transition animation (not Zustand state — avoids batching stutter)
+**Avoids:** Interior transition stutter (Pitfall 6 — `useFrame` ref pattern, not Zustand), log-Z z-fighting (camera `near` drops to `0.02` on interior entry), annotation localStorage bloat (150-point cap per trail)
+
+### Phase E: Split-Screen Compare
+**Rationale:** Highest architectural cost because it wraps `ObservatoryWorldCanvas`, which has accrued all new props from Phases C and D. Building it last means the dual-view prop wiring is done once on a stable interface. Also requires Phase B's `buildStationsFromReplaySnapshot` utility. The `<View>`-based scissor architecture must be designed before any compare world scene code is written.
+**Delivers:** `ObservatorySplitCompareView` (dual scissor layout via `drei <View>`), `ObservatoryCompareDiffOverlay` (DOM diff badge overlay), compare mode toggle wired into `ReplayDrawerPanel` and `ObservatoryTab`
+**Uses:** `drei <View>` scissor (not a second `<Canvas>`); `disablePostFx={true}` on both views; `frameloop="demand"` on both views
+**Avoids:** Second WebGL context (Pitfall 1 — single canvas with View scissor), "then" world showing live data (Pitfall 8 — `buildStationsFromReplaySnapshot`)
 
 ### Phase Ordering Rationale
 
-- **State before rendering:** Both Zustand stores are required by every visual feature. Starting with CSS-only work means real visible progress on day 1 without any WebGL risk.
-- **Architecture contract before any canvas:** The KEY DECISION must be locked before the first `<Canvas>` is written. A wrong architecture discovered at Phase 4 is a rewrite; discovered at Phase 2 spike, it is a 1-day pivot.
-- **Small canvas before large canvas:** The spirit companion validates the Canvas host pattern (absolute inset-0, frameloop, GL config) at a small scale. If the pattern is wrong, fixing it on a 100px sidebar widget costs minutes; fixing it after ObservatoryWorldCanvas is wired would cost hours.
-- **Nexus last:** NexusStateContext migration, ObservatoryWorldCanvas import, NexusSpiritCompanion wiring, and strikecell adapter are all dependencies. Nexus is the only component that cannot be built without all other components being stable first.
+- Phase A precedes all others: the store contracts must exist before any component reads from them via props
+- Phase B before C/D/E: derivation utilities are the data contracts for scene layers; writing them first enables unit testing in isolation
+- Phase C before D: `ObservatoryWorldScene` prop interface should be stable from simpler additions before the complex interactive features add more
+- Phase E last: wraps the full `ObservatoryWorldCanvas` — only one pass of dual-view prop wiring needed after all prior prop additions
+- `ObservatoryInvalidationController.sourceKey` must be updated as the very first implementation step per feature, before any scene geometry or shader code
 
 ### Research Flags
 
-Phases needing deeper research during planning:
-- **Phase 2:** drei@^10.0.0 issue #2471 status audit (KEY DECISION); glia-three package own-Canvas audit. Both are one-off investigations, not broad research.
-- **Phase 4:** NexusStateContext full dependency mapping before migration; Rapier + ecctrl integration for observatory flow mode Easter egg.
+Phases likely needing deeper research during planning:
+- **Phase D (Station Interior Zones):** The log-Z depth buffer mitigation strategy has two candidate approaches — camera `near` adjustment vs. renderer mode swap with material recompile. The renderer mode swap causes `renderer.info.programs` spike (material recompilation). Prototype both before building 6 interior geometry sets to pick the correct approach.
+- **Phase E (Split-Screen: `<View>` vs `<RenderTexture>`):** STACK.md recommends `<RenderTexture>` for its composability inside the existing Canvas without structural changes; ARCHITECTURE.md and PITFALLS.md recommend `<View>` scissor. This disagreement needs resolution before Phase E begins. `<View>` is likely correct for full-scene rendering; `<RenderTexture>` is better for embedded sub-scenes (e.g., a minimap). Confirm with a prototype.
 
 Phases with standard patterns (skip research-phase):
-- **Phase 1:** Direct port of known-working huntronomer code. Patterns are established (createSelectors, CSS vars, buildSpiritFieldStainStyle). No research needed.
-- **Phase 3:** Spirit companion canvas pattern is a strict subset of ObservatoryWorldCanvas — already researched. Spirit chamber tab is CSS-only — no new patterns.
+- **Phase A (Store/Persistence):** Pure TypeScript extension of existing Zustand patterns — well-established in this codebase, zero ambiguity
+- **Phase B (Derivation Utilities):** Pure functions mirroring existing `deriveObservatoryWorld`, `deriveObservatoryWeatherState` patterns
+- **Phase C (Independent Scene Layers):** Each follows `GhostTraceLayer` canonical pattern exactly; all APIs confirmed in STACK.md
+- **Phase C: Probe Delta Cards specifically:** All infrastructure already exists (`probeGuidance`, `probeState`, `observatory-recommendations.ts`); this is the most "wiring" feature in the milestone
 
 ---
 
@@ -184,48 +147,41 @@ Phases with standard patterns (skip research-phase):
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | All versions verified against huntronomer `apps/desktop/package.json` and official R3F/drei v9/v10 migration docs. No ambiguity. |
-| Features | HIGH | Based on direct source code analysis of both apps. Features are implemented and running in huntronomer source; integration complexity is known. |
-| Architecture | HIGH | All component boundaries and store designs grounded in direct inspection of workbench and huntronomer source. The pane system, route registration, and store patterns are established in the codebase. |
-| Pitfalls | HIGH | 8 of 10 pitfalls verified against official R3F GitHub issues and docs. Two (glia-three own-Canvas, Tauri WebKit context limit specifics) are MEDIUM — confirmed as general patterns but Tauri-specific behavior needs validation. |
+| Stack | HIGH | All findings from direct `package.json` + source file inspection; versions confirmed; "no new packages" conclusion verified against drei 10.7.7 and three 0.171.0 API surface |
+| Features | HIGH | Directly sourced from codebase analysis of existing infrastructure, existing types, and existing pattern files; complexity assessments grounded in actual code |
+| Architecture | HIGH | All integration maps from direct source inspection of `ObservatoryTab.tsx` (1054 lines), `ObservatoryWorldCanvas.tsx`, `ObservatoryWorldScene.tsx`, `observatory-store.ts`, `types.ts`, and all referenced layer components |
+| Pitfalls | HIGH | Derived from direct inspection of `ObservatoryInvalidationController.tsx`, `observatory-replay-persistence.ts`, `observatory-telemetry.ts`; verified against R3F, drei, Three.js, and MDN official docs |
 
 **Overall confidence:** HIGH
 
 ### Gaps to Address
 
-- **drei View z-index status in v10:** Issue #2471 was documented against an earlier drei version. Whether it is resolved or mitigatable in drei@^10.0.0 (paired with R3F v9) is unconfirmed. This is the primary open question. Resolution: check the drei@10.0.0 changelog and test a spike with a modal overlay during Phase 2.
-
-- **glia-three Canvas ownership:** `@backbay/glia-three/three` `RiverView` usage pattern suggests it renders its own Canvas, but this was not confirmed by direct source inspection of the glia-three package. Resolution: read glia-three source before committing to Phase 3 ForensicsRiverView implementation.
-
-- **Exact WebKit context limit in current Tauri 2 + WebKit version:** The 8-context limit is documented for Safari/WebKit in general, but the exact behavior under Tauri 2's WebView may differ slightly. Resolution: write a context-count test in Phase 2 spike by opening multiple R3F canvases and checking for context loss warnings.
-
-- **Observatory character controller scope:** The Rapier + ecctrl + animation state machine integration for flow mode is large. No detailed research was done on the Phase 4 Easter egg because it is deliberately deferred. Resolution: dedicated research sub-task when observatory atlas mode (Phase 4 primary) is complete.
+- **`<View>` vs `<RenderTexture>` for Split-Screen:** STACK.md and ARCHITECTURE.md/PITFALLS.md give different recommendations. Resolve by prototyping both in Phase E planning — `<View>` scissor is the safer choice for full observatory scene rendering, `<RenderTexture>` is better for embedded sub-scene portals.
+- **Level-5 hidden resonance connection design:** Which inter-station connections are "hidden" at level 5 is a product design decision not fully specified in research. FEATURES.md suggests 3-4 pairs but leaves selection to implementation. This needs explicit design decisions before `deriveSpiritResonanceConnections` can be written in Phase B.
+- **Interior geometry design:** FEATURES.md specifies procedural primitive-based interiors with unique features per station, but the 6 interior layout templates (`world/station-interior-templates.ts`) are a design task that should precede Phase D implementation.
+- **`weatherBudget` integration for heatmap:** PITFALLS.md specifies gating heatmap behind `ObservatoryWeatherBudget` (`"off"` / `"reduced"` / `"full"` levels) but ARCHITECTURE.md does not detail this integration. Verify `ObservatoryPerformanceProfile` exposes the right hook before implementing heatmap in Phase C.
 
 ---
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- R3F official docs (r3f.docs.pmnd.rs) — Canvas props, frameloop, dpr, v9 migration, performance pitfalls
-- drei official docs (drei.docs.pmnd.rs) — PerformanceMonitor, View, Html component
-- Direct inspection: `huntronomer-workspace-orch/apps/desktop/package.json` — R3F package versions
-- Direct inspection: `huntronomer-workspace-orch/apps/desktop/src/features/hunt-observatory/` — observatory types, world, probe
-- Direct inspection: `huntronomer-workspace-orch/apps/desktop/src/features/cyber-nexus/` — nexus canvas, context, state
-- Direct inspection: `huntronomer-workspace-orch/apps/desktop/src/shell/workbench/spirit/` — spirit types, field stain, scene math
-- Direct inspection: `apps/workbench/src/features/panes/pane-store.ts`, `pane-root.tsx`, `pane-container.tsx`
-- Direct inspection: `apps/workbench/src/components/desktop/workbench-routes.tsx`, `desktop-layout.tsx`
-- Direct inspection: `apps/workbench/src/features/activity-bar/`, `right-sidebar/`, `bottom-pane/`
-- GitHub: R3F issues #514, #3093 (WebGLRenderer leak on unmount)
-- GitHub: R3F discussions #2716 (multiple canvas), #2457 (WebKit context limit), #2080 (state management without restarter)
-- GitHub: R3F issue #2149 (canvas resize after container resize)
+- `apps/workbench/src/features/observatory/` — direct inspection of all observatory source files: `ObservatoryTab.tsx`, `ObservatoryWorldCanvas.tsx`, `ObservatoryWorldScene.tsx`, `observatory-store.ts`, `types.ts`, `observatory-replay-persistence.ts`, `GhostTraceLayer.tsx`, `MissionWaypointTrail.tsx`, `spirit-companion-canvas.tsx`, `StationFresnelGlow.tsx`, `ObservatoryInvalidationController.tsx`
+- `apps/workbench/package.json` — confirmed installed versions (`@react-three/drei ^10.7.7`, `three ^0.171.0`)
+- drei official docs (`drei.docs.pmnd.rs`) — `<Html>`, `<Trail>`, `<CameraControls>`, `<RenderTexture>`, `<View>`, `<Billboard>`, `<Line>`
+- Three.js official docs — `BufferGeometry.dispose()`, `logarithmicDepthBuffer`, `DataTexture`, `WebGLRenderer`
+- MDN Web Docs — WebGL context limits, localStorage `QuotaExceededError`
+- R3F official docs — demand rendering, `frameloop="demand"`, `invalidate()`, performance pitfalls
 
 ### Secondary (MEDIUM confidence)
-- GitHub: drei issue #2471 (View z-index) — documented against earlier drei version; v10 status unconfirmed
-- GitHub: Tauri issue #6559 (R3F + Tauri WebGL context) — Tauri-version-dependent; may not apply to Tauri 2
+- Drei community discussions — `<Html>` `distanceFactor` stutter during fast camera transitions; `<View>` z-index issues in pane context
+- Three.js forum — multiple scenes/viewports single-canvas recommendation; heatmap GLSL approach
+- Three.js examples — `Line2` from `three/addons` for large-scale lines with correct depth behavior
 
 ### Tertiary (LOW confidence)
-- WebSearch: drei View pattern for multi-panel architectures — general community patterns, not verified against current versions
+- Codrops: Matrix Sentinels TSL particle trails — position history buffer pattern (TSL-specific; adapted to Three.js patterns)
+- Zed blog: split diffs — alignment non-expectation in live-update comparison scenarios
 
 ---
-*Research completed: 2026-03-18*
+*Research completed: 2026-03-22*
 *Ready for roadmap: yes*

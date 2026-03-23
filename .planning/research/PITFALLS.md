@@ -1,266 +1,267 @@
 # Pitfalls Research
 
-**Domain:** R3F 3D features embedded in a VS Code-like IDE workbench (Tauri 2 + React 19)
-**Researched:** 2026-03-18
-**Confidence:** HIGH — all critical pitfalls verified against official R3F docs, GitHub issues, and direct inspection of the codebase
+**Domain:** R3F Observatory v10.0 — Adding Analyst Toolkit Features to a Mature 3D World
+**Researched:** 2026-03-22
+**Confidence:** HIGH — derived from direct codebase inspection of existing invalidation system, replay persistence, performance profile, and scene layer architecture; verified against R3F and Three.js documented behavior.
+
+> **Note:** This file supersedes the v2.0 integration pitfalls (canvas height, context limit, tab switch stutter, useFrame/Zustand boundary, NexusStateContext isolation, OrbitControls, Html labels, glia-three context, CSS stacking, stale command closures). Those pitfalls remain valid but are not repeated here. This document covers only the new pitfalls introduced by the seven v10.0 features.
 
 ---
 
 ## Critical Pitfalls
 
-### Pitfall 1: `overflow-auto` on the Pane Content Div Collapses the Canvas to 150px
+### Pitfall 1: Split-Screen Compare Mode Creates a Second WebGL Context in a Already Context-Constrained System
 
 **What goes wrong:**
-The R3F `Canvas` component sizes itself to 100% of its nearest `position: relative` or `position: absolute` ancestor. The current `PaneContainer` wraps content in a `motion.div` with `className="min-h-0 flex-1 overflow-auto"`. When a Canvas lives inside an `overflow-auto` div, the browser cannot compute a scrollable intrinsic height, so the canvas falls back to the browser's default inline element height — 150px. The scene renders at 150px regardless of how tall the pane actually is.
+The obvious implementation of Split-Screen Compare Mode is two `<Canvas>` elements side-by-side — one for the replay frame world, one for the live world. The existing system already uses multiple WebGL contexts (Observatory, Nexus, spirit companion). Adding a second Canvas for the compare mode can push the session over the browser WebGL context limit (Chrome: 16, WebKit: 8), causing silent context loss on existing canvases. Even below the hard limit, two full observatory scenes render simultaneously, doubling draw call and overdraw load.
 
 **Why it happens:**
-CSS flex-shrink arithmetic with `overflow: auto` does not forward explicit heights to children the same way `overflow: hidden` does. R3F's internal ResizeObserver sees the scroll container's computed height as indeterminate and falls back to a fixed intrinsic value.
+Each `<Canvas>` creates a `WebGLRenderer` with its own context. R3F does not share renderers between Canvas instances. The compare mode splits the view area so each half looks smaller, making it feel like "less work" — but each half is a full observatory world running at the original context's GPU cost, just scissored.
 
 **How to avoid:**
-3D pane tabs must override the `overflow-auto` wrapper by rendering a `position: absolute; inset: 0` host div, and the Canvas must live inside that absolute div. The route component for Observatory, Nexus, and ForensicsRiver should NOT be wrapped in the scrollable container — they should fill their parent via absolute positioning.
+Use a single Canvas with scissor rendering for both views. R3F's `<View>` component (drei) enables scissor-based sub-views inside a single Canvas. The left view tracks a `div` for the replay world; the right view tracks a `div` for the live world. Both share the single WebGL context and postprocessing pipeline.
 
-The cleanest pattern: each 3D route component starts with a `<div className="absolute inset-0">` shell — matching what `NexusCanvas.tsx` already does. The `PaneContainer` `motion.div` can keep `overflow-auto` for all text/list panes; 3D tabs opt out by being absolutely positioned children.
+Critically: the live world already exists as the primary scene. The "then" (replay frame) world should be a lightweight re-render of the same geometry with a separate camera and scene state override — not a second mounted scene. A `frameloop="demand"` invalidation trigger that fires when `splitScreenEnabled` toggles ensures the idle side does not burn CPU.
+
+The diff overlay (highlighting stations that changed) should be a DOM HUD layer using the existing ref-mutation pattern, not a 3D overlay that requires another draw pass.
 
 **Warning signs:**
-- Canvas renders at exactly 150px height regardless of window size.
-- Resizing the pane has no effect on the canvas height.
-- The scene looks vertically squashed.
+- Console: `THREE.WebGLRenderer: A WebGL context could not be created.`
+- Spirit companion canvas goes black when split-screen opens.
+- Chrome DevTools GPU tab shows two WebGLRenderer entries while split-screen is active.
+- Frame time doubles immediately when split-screen activates.
 
 **Phase to address:**
-Tier 2 (first R3F embed in a pane tab). Must be resolved before any Canvas lands in a route rendered by `PaneRouteRenderer`.
+Split-Screen Compare Mode phase (feature 3). Establish the View-based scissor architecture before writing any compare world scene code. The diff overlay DOM layer must be designed before the 3D compare layer to avoid backtracking.
 
 ---
 
-### Pitfall 2: Multiple `<Canvas>` Instances Exhaust WebGL Contexts (16-Context Browser Limit)
+### Pitfall 2: Heatmap Shader Overdraw Destroys Frame Rate When Existing Post-Processing Pipeline is Active
 
 **What goes wrong:**
-Browsers allow only 8-16 simultaneous WebGL contexts (Chrome/WebKit enforces a hard limit; the oldest context is silently destroyed when the limit is hit). The workbench will have up to four concurrent Canvas elements: Observatory tab, Nexus Hunt Deck tab, Forensics Tape tab (bottom pane), and the Mini Spirit Companion in the right sidebar. If the user splits panes and opens multiple 3D tabs, contexts accumulate and older views go black with `THREE.WebGLRenderer: Context Lost`.
+The Threat Topology Heatmap is a volumetric ground-plane gradient. The common approach is a full-screen quad with a fragment shader that ray-marches through a pressure field. In the existing scene, the observatory already runs a `@react-three/postprocessing` EffectComposer with bloom, vignette, SMAA, LUT, and tone mapping. A volumetric shader added as a scene object (not a postprocessing effect) renders before the composer pass, meaning the bloom and tone mapping then process the heatmap pixels — causing washed-out or over-bloomed colors that do not match design intent.
+
+The second failure mode: the heatmap fragment shader samples a 2D texture or evaluates a multi-point pressure function per-fragment across the entire ground plane. In a 300-unit radius world, the ground plane covers a large screen area. A naive per-fragment pressure evaluation at 6 stations produces acceptable results in isolation but compounds with the existing 15+ render layers (starfield, nebula, fog, bloom, weather particles, ghost traces, beacon columns) into unacceptable overdraw.
 
 **Why it happens:**
-Each R3F `<Canvas>` creates its own `WebGLRenderer` and therefore its own WebGL context. The browser limit is per-tab (Chromium: 16, Safari: 8). This is a confirmed, known issue in R3F's GitHub issues for multi-canvas architectures.
+Overdraw accumulates multiplicatively. Each semi-transparent layer that covers the same screen pixel adds to the fragment shader execution count. Existing weather particles already introduce overdraw. The heatmap, if implemented as a large translucent plane, adds another full-coverage transparent draw on top of all existing layers.
 
 **How to avoid:**
-Establish a single root `<Canvas>` at the application shell level and use `@react-three/drei`'s `<View>` component (scissor-based sub-views) for the Mini Spirit Companion and any other small embedded canvas. The root Canvas uses `<View.Port />` and each embedded 3D element registers via `<View>`. This shares a single WebGL context across all 3D surfaces.
+Implement the heatmap as a postprocessing effect (a custom `Effect` subclass from `postprocessing`) rather than a scene object. This runs once per pixel after opaque rendering, reading the depth buffer to reconstruct world position and evaluate the pressure field. Cost is one full-screen pass instead of one per-fragment scene draw.
 
-The ForensicsRiver uses `@backbay/glia-three/three` which may own its own Canvas — this must be audited before porting. If glia-three wraps its own Canvas, a portal adapter (using `createPortal` from R3F) or a refactored View-based render path will be needed.
+Alternatively: bake the pressure field into a small (64x64) `DataTexture` updated on telemetry change events (not per-frame), and sample that texture in a simple translucent plane material with `blending: THREE.AdditiveBlending` and `depthWrite: false`. This is a single cheap texture sample per fragment instead of per-fragment math.
 
-The ActivityBar spirit orb is tiny enough that a CSS/SVG animation is preferable to a Canvas — avoiding an entirely new context for a 48px element.
+The heatmap must be gated behind the existing `ObservatoryWeatherBudget` system — at `"off"` budget, skip entirely; at `"reduced"`, use the baked texture approach; at `"full"`, use the postprocessing effect.
 
 **Warning signs:**
-- Console warning: `THREE.WebGLRenderer: A WebGL context could not be created.`
-- Console warning: `Too many active WebGL contexts. Oldest context will be lost.`
-- A previously-open 3D tab goes black when a new one is opened.
-- Visible in Chrome DevTools GPU tab as rising context count.
+- Frame time spikes when heatmap is first enabled and does not recover.
+- Heatmap colors look blown-out or neon — symptom of bloom processing a bright heatmap source.
+- Weather budget `"off"` mode does not disable the heatmap (it should).
+- GPU profiler shows a large fragment shader execution time dominated by the ground plane draw.
 
 **Phase to address:**
-Tier 1 architectural decision — must be resolved before writing any Canvas placement in the workbench. A single root Canvas approach must be established as the integration contract.
+Threat Topology Heatmap phase (feature 5). Verify weather budget integration before adding the heatmap to the scene. Implement the DataTexture baking approach first; the postprocessing upgrade is a later optimization.
 
 ---
 
-### Pitfall 3: Canvas Mount/Unmount on Tab Switch Causes Geometry Recompilation and Memory Spikes
+### Pitfall 3: Annotation Store Bloat from Unbounded 3D Pin Serialization into LocalStorage
 
 **What goes wrong:**
-The pane system renders only the active tab's route; inactive tabs are unmounted. When the user switches away from Observatory or Nexus and then back, R3F tears down the entire Three.js scene (disposing buffers, shader programs, geometries) and then recompiles everything from scratch on re-mount. This causes:
-- Visible recompilation stutter (500ms+ freeze) on tab re-open.
-- GPU shader compilation spikes.
-- Potential memory fragmentation from repeated alloc/free cycles.
+The Replay Annotation Canvas allows operators to drop 3D pins with text during replay. If each annotation stores its 3D world position as a Vector3 (`[x, y, z]`) plus a trail geometry (serialized as a point array), the localStorage entry grows unboundedly with session use. The existing replay persistence key (`clawdstrike:observatory:replay:v1`) already stores `ObservatoryReplayAnnotation[]` without any size limits. Adding 3D positions, per-pin color, and freehand trail point arrays to each annotation entry can quickly push the payload into megabytes — localStorage has a 5–10 MB quota and throws `QuotaExceededError` synchronously when full.
 
 **Why it happens:**
-`PaneContainer` keys its content `motion.div` on `activeView.route` and the underlying `PaneRouteRenderer` calls `useRoutes`. Route changes unmount the previous route component entirely. Three.js does not keep shader programs or geometries alive across WebGLRenderer context resets.
+`savePersistedObservatoryReplayArtifacts` does a single `localStorage.setItem` with `JSON.stringify`. Trail paths that capture high-frequency pointer events (30fps * 2-minute trail = 3600 points per trail) bloat the JSON payload. Neither the current save function nor the validation functions in `observatory-replay-persistence.ts` enforce size caps.
 
 **How to avoid:**
-Two strategies (pick one per component size):
+Three required constraints:
+1. Cap trail point arrays at a fixed sample rate (every 200ms, not every frame) and a maximum length (150 points per trail, discarding oldest when full).
+2. Limit total annotation count per hunt session. Enforce an eviction policy (e.g., keep the 50 most recent by `timestampMs`).
+3. Wrap `savePersistedObservatoryReplayArtifacts` in a try/catch for `QuotaExceededError` and silently drop the oldest annotation when quota is exceeded rather than crashing.
 
-1. **Visibility toggle instead of unmount** — keep the 3D tab mounted but CSS-hidden (`display: none` or `visibility: hidden`) when not active. R3F supports `frameloop="never"` to pause rendering while hidden. This preserves compiled shaders and GPU memory.
+Store 3D positions as `[number, number, number]` tuples, not `THREE.Vector3` instances. The existing `asAnnotations` validator must be extended to validate the new position and trail fields and strip oversized trails on deserialization.
 
-2. **Suspense + aggressive asset caching** — if unmount is unavoidable, ensure all geometries and materials are declared outside the Canvas component scope (module-level constants) so they survive the component lifecycle. Use `useLoader` for any texture assets; it caches by URL. Accept the recompile cost as a one-time expense per session.
-
-For Observatory and Nexus (large scenes), strategy 1 is preferred. For ForensicsRiver in the bottom pane (likely always mounted as a tab), it is less critical.
+The annotation store slice in `useObservatoryStore` should have a derived selector `hasAnnotations` that computes a serialized byte estimate and surfaces a warning in the Replay drawer when payload approaches 1 MB.
 
 **Warning signs:**
-- Observable freeze when switching back to a 3D tab.
-- Chrome DevTools Performance panel shows a large "Compile Shader" task on tab re-focus.
-- GPU memory in chrome://gpu briefly spikes then drops and spikes again on re-open.
+- `QuotaExceededError` in the browser console during a long replay session.
+- Replay drawer takes >200ms to open (deserializing a large localStorage entry).
+- Annotations from previous sessions are absent — overwritten because quota exceeded and save failed silently without the try/catch guard.
+- `JSON.stringify(annotations).length` logged in dev tools grows by thousands on each trail creation.
 
 **Phase to address:**
-Tier 2 (Observatory as pane tab). The visibility-over-unmount pattern must be established before the first full-scene pane tab.
+Replay Annotation Canvas phase (feature 1). The persistence schema must be designed with size constraints from the start — retrofitting them after data is already persisted requires a migration.
 
 ---
 
-### Pitfall 4: `useFrame` Writing to Zustand Triggers Full React Re-renders at 60fps
+### Pitfall 4: Invalidation System Does Not Trigger on Annotation Drop or Heatmap Pulse — Scene Stays Dark
 
 **What goes wrong:**
-If animation code inside `useFrame` calls a Zustand setter (e.g., updating spirit position, orb state, or observatory camera coordinates in a store), it drives React's reconciler at 60fps. Every component subscribed to that store re-renders every frame, tanking keyboard responsiveness, CodeMirror performance, and all other IDE panels.
+The observatory uses demand-based frame invalidation (`frameloop="demand"` on the Canvas). The `ObservatoryInvalidationController` watches a `sourceKey` derived from `activeHeroInteraction`, `eruptionCount`, `flyByActive`, `missionTargetStationId`, `playerInputEnabled`, `probeStatus`, `replayFrameIndex`, `replayScrubbing`, `routeSignature`, and `selectedStationId`. New visual state introduced by v10.0 features — annotation drop positions, trail drawing progress, heatmap pulse phase, spirit resonance trail updates, constellation geometry additions, and interior zone transitions — are not in this source list. If a new feature mutates 3D scene state without also triggering `invalidate()`, the change is computed but never rendered: the scene stays frozen until the next unrelated invalidation event.
 
 **Why it happens:**
-`useFrame` runs outside React's scheduler but Zustand `set()` calls go through React's state update path, triggering synchronous re-renders. The official R3F pitfalls documentation explicitly calls this out: "Never setState in useFrame."
+The `ObservatoryInvalidationController` was designed incrementally; each new animation source must be explicitly added to the `sourceKey` computation. This is easy to forget when implementing a feature that seems "self-contained" (e.g., a trail that appends points to a ref rather than updating a Zustand store field).
 
 **How to avoid:**
-Animation state that changes every frame must live in mutable refs, not in Zustand. Use `useRef` for per-frame values (camera position, orb pulse phase, particle positions). Zustand is the right home for stable state that changes on user action: spirit bound/unbound, observatory open/closed, selected nexus node. The boundary is: "does this value change at 60fps?" — if yes, use ref; if no, use Zustand.
+Every new source of scene change in v10.0 must have a corresponding entry in `ObservatoryInvalidationController.sourceKey`. The specific additions needed:
 
-For the spirit orb in the ActivityBar: drive the CSS animation via a CSS custom property updated by a `requestAnimationFrame` loop if needed, rather than a Zustand subscription.
+- Annotation canvas: `annotationDropCount` (increments on each pin drop)
+- Heatmap: `heatmapPulseVersion` (increments on telemetry update that changes pressure)
+- Spirit resonance trails: `spiritTrailSegmentCount` (increments when a new trail segment is committed)
+- Constellation routes: `constellationCount` (increments when a new constellation is permanently added)
+- Station interiors: `interiorTransitionPhase` (changes during camera push transition)
+
+For animations that need continuous frames (heatmap pulse glow, spirit trail fade), the weather budget system already controls `enableWeather` — add a similar `enableHeatmap` flag to `ObservatoryPerformanceProfile` and drive `shouldKeepObservatoryRealtimeActive` to return `true` when heatmap animation is active.
 
 **Warning signs:**
-- React DevTools Profiler shows the entire workbench re-rendering every 16ms.
-- CodeMirror editor input has visible lag while a 3D pane is open.
-- `useFrame` callback contains calls to `useStore`, `set()`, or `dispatch()`.
+- Dropping an annotation pin appears to have no visual effect until the camera moves.
+- Heatmap shows correct pressure values in the store but the ground plane doesn't update.
+- Spirit trail segments appear in bursts rather than smoothly (triggered only by coincidental invalidations from other sources).
+- `invalidate()` call count is zero over a 10-second interval when only heatmap/trails are changing.
 
 **Phase to address:**
-All tiers — this is a coding contract that must be established as a rule before any `useFrame` code is written.
+Applies to all seven features (features 1–7). The invalidation extension must be the first implementation step for each feature — before any scene geometry or shader code is written.
 
 ---
 
-### Pitfall 5: NexusStateContext (React Context Provider) Wrapping a Canvas Causes Context Isolation
+### Pitfall 5: Spirit Resonance Trail Geometry Accumulates Unboundedly and Causes GPU Memory Pressure
 
 **What goes wrong:**
-R3F's custom renderer runs in a separate React reconciler context. Normal React context providers (like `NexusStateContext.Provider`) that wrap a `<Canvas>` do NOT automatically pass their values into the Three.js scene tree. Any component inside the Canvas that calls `useNexusState()` will throw "must be used within NexusStateProvider" or receive `null` even if the provider exists outside the Canvas.
+Spirit Resonance Trails draw luminous paths between stations as the spirit moves. The common approach with `@react-three/drei`'s `<Trail>` component (already used in the spirit companion canvas) maintains a rolling buffer of recent positions. However, "permanent" trails that persist between stations — especially the level-5 hidden inter-station connections — require a different approach: geometry that grows over the session as more paths are traversed. If each new connection adds a new `THREE.TubeGeometry` or `THREE.BufferGeometry` to the scene without ever disposing the old ones, GPU memory accumulates indefinitely.
+
+The problem compounds because R3F will not automatically call `.dispose()` on geometries created inside `useEffect` or `useMemo` when a component re-renders with new props. If trail segments are created as new geometry objects on each segment update, the old geometry leaks.
 
 **Why it happens:**
-R3F is a separate React renderer instance. Context does not bridge between the host renderer and the R3F fiber renderer automatically.
+Three.js geometries are not garbage collected — they must be explicitly disposed via `geometry.dispose()`. Trail libraries that grow their buffer do not share this problem because they reuse a fixed-size buffer. Custom tube geometry created per-trail-segment does not have this protection.
 
 **How to avoid:**
-State shared between 3D components and the outside world must be managed either:
-1. Via Zustand (Zustand stores are module-level singletons, not tied to React context trees) — this is already the project's primary state management approach.
-2. Via R3F's `useThree` store for Three.js-specific state.
-3. If React context is unavoidable, use `drei`'s `<context.bridge>` utilities or pass values as props to Canvas children.
+Use a fixed-capacity geometry approach: pre-allocate a `THREE.BufferGeometry` with the maximum expected point count (e.g., 256 vertices per trail arc), updating the `position` attribute buffer in-place when new points are added. The attribute count does not change; only the data does.
 
-The NexusStateContext is currently a `useReducer`-based React Context. For the workbench integration, its state should be migrated to the new `nexus-store.ts` Zustand store so it works naturally inside the Canvas.
+For permanent level-5 constellation connections, represent each arc as an `instancedMesh` of pre-computed arc segments — 6 possible inter-station pairs means at most 6 arc geometries, each created once and updated by toggling visibility or opacity.
 
-**Warning signs:**
-- Runtime error: "useNexusState must be used within NexusStateProvider" thrown from a component inside `<Canvas>`.
-- Components inside Canvas receive stale or default context values.
-- `useContext` returns `null` inside Three.js components.
-
-**Phase to address:**
-Tier 2 (Nexus Hunt Deck pane). The NexusStateContext-to-Zustand migration must happen before porting NexusCanvas into the workbench.
-
----
-
-### Pitfall 6: OrbitControls Captures Pointer Events and Breaks Pane Mouse-Down Activation
-
-**What goes wrong:**
-The existing `NexusCanvas` uses `OrbitControls`. OrbitControls calls `element.setPointerCapture()` on pointer-down to handle drag orbiting. When the pane activation handler (`onMouseDownCapture` in `PaneContainer`) fires, the event has already been captured by OrbitControls and the pane's "set active" logic may conflict or fail. Users trying to click on a non-focused 3D pane to focus it may instead start an orbit drag.
-
-**Why it happens:**
-`PaneContainer.onMouseDownCapture` uses capture-phase handling to activate the pane. OrbitControls also uses pointer capture. The two capture handlers compete for the same initial pointer-down event on the canvas element.
-
-**How to avoid:**
-Detect when the active pane is being set via `onPointerDownCapture` before OrbitControls processes the event. One robust approach: gate OrbitControls pointer capture behind a check that the pane is already active. Alternatively, add `onPointerDown` to the Canvas wrapper that calls `usePaneStore.getState().setActivePane(pane.id)` before R3F's event system processes it — matching the pattern already used in `PaneContainer`.
-
-**Warning signs:**
-- Clicking on an inactive 3D tab starts a camera orbit on the inactive pane without activating it.
-- Focused pane does not switch when clicking the 3D canvas.
-- Pane border active indicator does not update when clicking the canvas area.
-
-**Phase to address:**
-Tier 2 (first full-pane 3D canvas). Must be addressed in the Canvas host wrapper component, not in OrbitControls itself.
-
----
-
-### Pitfall 7: R3F `drei` `<Html>` Labels Escape Canvas Clipping and Overlay IDE Chrome
-
-**What goes wrong:**
-`NexusCanvas` uses `<Html>` from drei to render node labels (the origin-card divs). `<Html>` renders into a separate DOM portal that is positioned absolutely relative to the document, not the canvas. When the canvas is inside a pane tab, HTML labels may:
-- Render outside the pane's bounding box and overlap the tab bar, sidebar, or bottom pane.
-- Remain visible even when the pane is scrolled, hidden, or behind another pane.
-- Intercept pointer events on IDE chrome elements that sit below them in DOM order.
-
-**Why it happens:**
-drei's `<Html>` portals to a div appended to the Canvas's parent (or `document.body`). It does not clip to the canvas bounds.
-
-**How to avoid:**
-Wrap the Canvas container in `overflow: hidden` (the `absolute inset-0` host div already does this, as long as it is a positioned container). Additionally, pass `occlude` prop to `<Html>` to hide labels when they are behind objects, and consider setting `portal={{ current: canvasHostDivRef.current }}` to constrain the portal to the pane's DOM subtree.
-
-For the workbench integration, clip the canvas host div explicitly: `<div className="absolute inset-0 overflow-hidden">`.
-
-**Warning signs:**
-- Node labels visible outside the pane border lines.
-- Clicking on empty IDE toolbar area triggers a 3D scene label interaction.
-- Label elements visible in DOM outside the pane's DOM subtree.
-
-**Phase to address:**
-Tier 2 (Nexus Hunt Deck and Observatory pane tabs). Should be tested in the first 3D pane tab before the others.
-
----
-
-### Pitfall 8: `@backbay/glia-three` RiverView Owns Its Own Canvas — Cannot be Trivially Embedded
-
-**What goes wrong:**
-`ForensicsRiverView` imports `RiverView as River` from `@backbay/glia-three/three`. Based on the usage pattern (it is the primary rendering element of the view), this package almost certainly renders its own internal `<Canvas>`. If so, embedding it in the bottom pane tab creates a second WebGL context (see Pitfall 2), and there is no guaranteed API to pass an external renderer or scissor-viewport into it.
-
-**Why it happens:**
-External packages that bundle their own Canvas cannot share the host application's WebGL context unless they expose a `gl` prop or a `frameloop`/`renderer` override interface. Most third-party 3D packages do not expose this.
-
-**How to avoid:**
-Before embedding ForensicsRiverView, audit the glia-three package source:
-- If it exposes a `gl` prop or renders as a R3F child (using `useThree`), it can be placed inside the root Canvas as a child.
-- If it renders its own Canvas, either fork/patch the component to accept an external renderer, or accept a second context and manage the total context count carefully to stay under the browser limit.
-
-As a fallback: the Tape tab can render a simplified non-Canvas river visualization (SVG or canvas 2D) that approximates the visual without requiring WebGL.
-
-**Warning signs:**
-- `ForensicsRiverView` not rendering inside the workbench Canvas structure.
-- Second `WebGLRenderer` instance visible in Three.js devtools or memory profiler.
-- Context count increments when Tape tab is opened.
-
-**Phase to address:**
-Tier 2/3 boundary — must be investigated before committing to the ForensicsRiver bottom pane tab.
-
----
-
-### Pitfall 9: CSS Spirit Field Stain Using `mix-blend-mode` or `backdrop-filter` Creates New Stacking Contexts That Break Z-Index
-
-**What goes wrong:**
-The spirit field stain is a CSS visual effect on panel backgrounds. If implemented using `backdrop-filter`, `mix-blend-mode`, or CSS `filter` properties, those properties create new CSS stacking contexts. This breaks any `z-index` layering within those panels: dropdown menus, tooltips, and popover command palettes that rely on high z-index values render below the effect layer, not above it.
-
-**Why it happens:**
-CSS `backdrop-filter`, `filter`, `transform`, and `will-change: transform` all create stacking contexts. Elements inside a stacking context cannot escape it with z-index — they are clipped to their stacking context's paint layer.
-
-**How to avoid:**
-Apply backdrop-filter or filter effects on a pseudo-element (`::before` or `::after`) or a dedicated sibling div positioned absolutely behind content, not on the content container itself. The content area remains a clean stacking context and dropdowns/modals layer correctly.
-
-Alternatively, use CSS custom properties to blend color into the background without creating stacking contexts — e.g., a translucent color overlay using `background: color-mix(...)` or a radial gradient with low opacity.
-
-**Warning signs:**
-- Command palette or dropdown menus render behind panel backgrounds.
-- `z-index: 9999` on a tooltip has no effect when inside a spirit-stained panel.
-- Chrome DevTools Layer panel shows unexpected composite layers around spirit-stained areas.
-
-**Phase to address:**
-Tier 1 (CSS spirit stain drop-in). Must be validated before moving to Tier 2, because Tier 2 adds more complex layering.
-
----
-
-### Pitfall 10: Zustand Spirit/Observatory Stores Subscribing to Keyboard Commands Cause Stale Closure Captures
-
-**What goes wrong:**
-The command registry uses `createSelectors` and binds commands like `spirit.bind`, `observatory.open` at registration time. If the command handler is a closure that captures Zustand state at registration time (not at invocation time), it will call `bind()` with the spirit state as it was when the command was registered, not the current state. This results in commands that appear to work once and then do nothing on subsequent invocations.
-
-**Why it happens:**
-Commands registered with a closure that reads store state via a captured selector will not see state updates made after registration. This is a classic stale closure problem amplified by Zustand's selector pattern.
-
-**How to avoid:**
-Command handlers must call `useStore.getState()` (the imperative accessor) at invocation time, not closure-capture state. Pattern:
-
+Dispose any geometry that is created dynamically (e.g., for animated trail effects) in the `useEffect` cleanup function:
 ```typescript
-// Wrong — captures state at registration time:
-const spiritState = useSpiritStore.use.spirit();
-registry.register("spirit.bind", () => bindSpirit(spiritState));
-
-// Correct — reads current state at invocation time:
-registry.register("spirit.bind", () => {
-  const spirit = useSpiritStore.getState().spirit;
-  useSpiritStore.getState().bindSpirit(spirit);
-});
+useEffect(() => {
+  const geo = new THREE.TubeGeometry(curve, 32, 0.05, 8, false);
+  return () => { geo.dispose(); };
+}, [curve]);
 ```
 
 **Warning signs:**
-- A command works the first time but does nothing on subsequent invocations.
-- Command behavior reflects state from when the app was loaded, not current state.
-- Console logging inside the command handler shows stale values.
+- Chrome DevTools Memory panel shows steadily increasing "three.js geometries" count in the GPU memory section.
+- Frame time degrades gradually over a 30-minute observatory session.
+- React DevTools shows `TubeGeometry` or `BufferGeometry` objects accumulating in the component tree without corresponding disposal.
+- `renderer.info.memory.geometries` value climbs monotonically in dev logging.
 
 **Phase to address:**
-Tier 1 (new command registrations: observatory.open, spirit.bind, etc.).
+Spirit Resonance Trails phase (feature 6) and Constellation Routes phase (feature 4). Both involve permanent geometry that grows with session activity. Trail geometry disposal pattern must be established in feature 6 before constellation routes adds another permanent geometry layer.
+
+---
+
+### Pitfall 6: Station Interior Transition Breaks the Demand-Driven Invalidation and Log-Z Depth Buffer
+
+**What goes wrong:**
+The Station Interior Zone transition pushes the camera inside a per-station interior layout. Two sub-problems:
+
+**Sub-problem A (Invalidation):** The camera transition is an animation over ~60 frames. If invalidation is demand-driven and the transition is driven by a Zustand `interiorTransitionPhase` field, the transition renders correctly only if `invalidate()` is called on every frame of the animation. Storing phase as a `0..1` float in Zustand and relying on the React re-render to drive `invalidate()` causes the transition to stutter — React batches state updates and may skip frames.
+
+**Sub-problem B (Log-Z depth buffer):** The existing scene uses a logarithmic depth buffer (`logarithmicDepthBuffer: true` on the WebGLRenderer) to handle the 300-unit world scale. Interior zones are small (sub-5-unit rooms) and contain close-together geometry. The log-Z depth buffer trades near-plane precision for far-plane precision. In a small interior room, this inverts the trade-off: near-plane z-fighting becomes visible between closely-spaced walls, floors, and props that are less than 1 unit apart. Interior zones will exhibit z-fighting artifacts with the same renderer settings that work fine in the outer world.
+
+**Why it happens:**
+Log-Z depth buffer is calibrated for the outer world's near/far camera clip planes (e.g., `near: 0.5, far: 2000`). Interior geometry at sub-unit spacing hits the precision limit of the log-Z formula at very small distances. Transition animation driven by Zustand state misses the "always-render-during-transition" requirement of the demand invalidation system.
+
+**How to avoid:**
+For Sub-problem A: drive the transition animation entirely in `useFrame` with a mutable ref for phase, and call `invalidate()` explicitly on every frame until the transition completes. Transition completion (phase === 1) is the only moment that writes to Zustand (to persist the `insideInterior: true` state).
+
+For Sub-problem B: when transitioning into an interior zone, temporarily adjust the camera's `near` clip plane to a smaller value (e.g., `0.02` instead of `0.5`) and ensure interior geometry has sufficient polygon separation (minimum 0.05 unit gap between co-planar surfaces). Consider disabling the log-Z buffer for the interior camera and using a standard depth buffer configured for the interior's scale. This requires switching the renderer's `logarithmicDepthBuffer` setting on the fly — which is possible via `renderer.logarithmicDepthBuffer = false` followed by recompiling affected materials' shader programs.
+
+**Warning signs:**
+- Camera transition into interior stutters or snaps rather than animating smoothly.
+- Z-fighting stripes visible on interior floors and walls while outer-world geometry is clean.
+- `renderer.info.programs` count spikes when entering interior — symptom of material recompilation after renderer settings change.
+- Interior transition completes instantly on first try but stalls on subsequent transitions — symptom of phase being reset to 0 by Zustand re-render before the animation finishes.
+
+**Phase to address:**
+Station Interior Zones phase (feature 7). This is the most technically isolated feature and should be implemented last. The log-Z mitigation strategy (camera near adjustment vs. renderer mode swap) should be prototyped before building the full interior geometry system.
+
+---
+
+### Pitfall 7: Probe Delta Cards Using `<Html>` from drei Escape the Canvas Pane Boundary and Overlap HUD Chrome
+
+**What goes wrong:**
+Probe Delta Cards are floating 3D info cards near target stations. The natural implementation is `<Html>` from drei positioned at the station's world coordinates. However, the existing `<Html>` clipping problem (documented in v2.0 PITFALLS.md as Pitfall 7) applies with greater impact here: delta cards are designed to be visually prominent and positioned near stations that may be at the edge of the camera frustum. A card near the edge can partially clip outside the pane, overlapping the HUD chrome, the glassmorphism status strip, or the cockpit drawer panels.
+
+The second issue: `<Html>` elements in drei receive pointer events. A delta card that is "behind" a 3D station mesh (occluded) but whose DOM element is still rendered in front of the HUD will intercept mouse clicks intended for HUD panel buttons.
+
+**Why it happens:**
+drei's `<Html>` portals to a sibling div of the canvas. The portal's position is computed via `project()` from the camera's frustum — correct for the 3D position, but the DOM element is not clipped to the canvas bounding box. The HUD overlay (DOM layer) sits in the same stacking context.
+
+**How to avoid:**
+Use drei's `<Html occlude portal={{ current: canvasHostDivRef.current }}>` with the `portal` prop pointing to the canvas host div. This constrains the HTML portals to the canvas host's DOM subtree, enabling `overflow: hidden` on the host to clip them.
+
+Additionally, use the `occlude` prop so that cards behind geometry are hidden (matching the station's actual 3D visibility). This prevents occluded cards from intercepting HUD pointer events.
+
+For cards that need to interact with the HUD (e.g., a "View Full Delta" button that opens the Replay panel), use the HUD callback pattern: the card stores its intended action in a Zustand field (`pendingDeltaCardAction`), and the HUD DOM layer reads this field to render the action button — keeping all interactive DOM in the HUD layer, not in the drei `<Html>` portal.
+
+**Warning signs:**
+- Delta card text visible outside the pane border.
+- Clicking a HUD panel button activates the delta card behind it instead.
+- `occlude` not set — card visible through station mesh from camera angles where it should be hidden.
+- Multiple delta cards stacking on top of each other when several stations receive probes simultaneously.
+
+**Phase to address:**
+Probe Delta Cards phase (feature 2). Establish the `portal` + `occlude` pattern in the first delta card implementation before adding more card variants.
+
+---
+
+### Pitfall 8: Split-Screen State Sync — Two Scene States Running Different `deriveObservatoryTelemetry` Passes Diverge Silently
+
+**What goes wrong:**
+Split-Screen Compare Mode needs two observatory worlds: the "now" state (live telemetry) and the "then" state (a frozen replay snapshot). The "then" world must derive its stations, pressure lanes, and weather from the replay frame's telemetry input — a separate `DerivedObservatoryTelemetry` computed at `snapshotMs = replayFrameMs`. If both worlds read from the same `useObservatoryStore` state, they will show the same world (the live one). If the "then" world derives from a separate computation, it must receive a `previousTelemetry: null` seed (because it has no smoothing history at that point in time), causing it to show raw pressure without the hysteresis smoothing the user saw during the actual replay — making the "then" world look different from what was actually shown at that time.
+
+**Why it happens:**
+`deriveObservatoryTelemetry` uses smoothing (EWMA with `SMOOTHING_ALPHA = 0.36`) and status hysteresis to avoid jitter. The replay timeline snapshots were computed with smoothing applied at each step. A retrospective single-frame computation at `snapshotMs` without a smoothing chain produces different emphasis and status values than the originally-displayed scene — the "then" view shows different pressure values than the operator actually saw, undermining the analytical value of the comparison.
+
+**How to avoid:**
+The "then" world for split-screen must read its scene state from the already-computed `ObservatoryReplaySnapshot` stored in the replay timeline — specifically `replayTimeline.snapshots[selectedFrameIndex]`. This snapshot contains emphasis, status, and artifactCount values that were already smoothed during the original timeline build. The compare world reconstructs its `ObservatoryStation[]` array from the snapshot's `districts` array, not by re-running `deriveObservatoryTelemetry`.
+
+Add a utility function `buildStationsFromReplaySnapshot(snapshot: ObservatoryReplaySnapshot): ObservatoryStation[]` that maps the snapshot's district data back to the station shape expected by the scene rendering code. This ensures the "then" world shows exactly what was computed when the timeline was built.
+
+**Warning signs:**
+- The "then" world shows different pressure intensities than the operator remembers from that time point.
+- Diff overlay highlights stations as "changed" when the analyst believes they were the same.
+- Both worlds show the live state when split-screen opens — symptom of both reading `useObservatoryStore.stations` without branching.
+- Toggling between replay frames while in split-screen causes the "then" world to briefly flash the live state.
+
+**Phase to address:**
+Split-Screen Compare Mode phase (feature 3). The `buildStationsFromReplaySnapshot` utility must be implemented and tested before the split-screen visual is rendered.
+
+---
+
+### Pitfall 9: Constellation Route Geometry Added to the Starfield Scene Layer Conflicts with Logarithmic Depth Precision at Large Distances
+
+**What goes wrong:**
+Constellation Routes trace permanent starfield paths between station world positions. Stations are at world-space positions within the 300-unit radius world. A tube or line geometry connecting two station positions (e.g., `signal` at [50, 10, 30] to `targets` at [-60, 8, -40]) passes through large world-space distances. At the far end of the log-Z depth buffer's range, depth precision degrades: constellation lines may z-fight with nebula planes, starfield geometry, or each other when viewed from the observatory's center.
+
+A second problem: the route geometry is "permanent" — it should survive replay mode, atlas mode, and weather changes. If it is added as a child of a group that is conditionally rendered (e.g., inside the weather layer group or the starfield group that is toggled for performance), it may disappear when those groups are hidden.
+
+**Why it happens:**
+The log-Z buffer provides good precision for the near/mid range (<100 units) but degrades for geometry that passes through both near and far zones in a single mesh. The line from station to station covers the full radius of the world. Additionally, constellation geometry added to the wrong scene group inherits that group's visibility toggle.
+
+**How to avoid:**
+Render constellation routes as a top-level scene group with `renderOrder = -1` (behind most geometry) and `depthWrite = false` combined with `depthTest = true`. Setting `depthWrite: false` prevents constellation lines from occluding other geometry while still being occluded themselves by stations and ships.
+
+For the log-Z depth precision problem, use `THREE.Line2` (from `three/addons/lines/Line2`) with `vertexColors = true` instead of `THREE.Line`. `Line2` handles depth correctly at large scales and supports variable line width.
+
+Constellation routes must be a child of the root scene group (not weather, not starfield, not NPC crew groups) so that visibility is independent of those systems.
+
+**Warning signs:**
+- Constellation lines appear to flicker or z-fight against the starfield when viewed from center.
+- Lines disappear when weather is disabled or when replay mode changes.
+- `depthWrite: true` on a constellation material causes stations to be "hidden behind" constellation geometry from certain angles.
+- `THREE.Line` (not Line2) used for routes — visible as fixed 1px lines regardless of distance, which looks flat and has known depth precision issues.
+
+**Phase to address:**
+Constellation Routes phase (feature 4). The `Line2` + `depthWrite: false` approach must be decided before route geometry is built. Verify depth behavior by testing from the center of the world with multiple routes active.
 
 ---
 
@@ -268,12 +269,13 @@ Tier 1 (new command registrations: observatory.open, spirit.bind, etc.).
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|----------------|-----------------|
-| One Canvas per 3D tab instead of root Canvas + Views | Simpler initial integration | Hits browser's 8-16 context limit when 3+ tabs open simultaneously; contexts lost silently | Never — the limit is hard and Tauri uses WebKit which has an 8-context limit |
-| Keep NexusStateContext as React Context instead of migrating to Zustand | Less refactor work | Context does not bridge into Canvas; 3D components cannot read nexus state | Never for state consumed inside Canvas |
-| Leaving `overflow-auto` on pane content div when 3D tabs render | No CSS changes needed | Canvas locks to 150px height | Never for full-viewport 3D panes |
-| CSS spirit stain using `backdrop-filter` directly on container | Easy one-liner | Creates stacking context; breaks dropdown z-index | Acceptable only if confirmed that no z-indexed overlays exist in that panel subtree |
-| Skipping `dispose()` on geometry/materials in R3F components | Less cleanup code | GPU memory accumulates; eventual performance degradation or OOM on long sessions | Never for ShaderMaterial or BufferGeometry created with `new` |
-| Using React `useState` for per-frame animation values (orb pulse, particle positions) | Matches React patterns | Triggers reconciler at 60fps; all store subscribers re-render every frame | Never |
+| Two full `<Canvas>` elements for split-screen | Simple implementation, no scissor setup | Second context; doubles GPU load; exceeds context limit in Tauri/WebKit | Never — use View-based scissor |
+| Heatmap as scene mesh with per-fragment pressure math | Easy to prototype | Massive overdraw on 300-unit ground plane; compounds with existing 15+ transparent layers | Acceptable for a non-ship prototype; unacceptable in production |
+| Storing trail point arrays without size caps in localStorage | All points preserved | `QuotaExceededError` after long sessions; data loss if not caught | Never — always cap at 150 points per trail |
+| Creating new `TubeGeometry` per trail segment without disposal | Simplest geometry update approach | GPU memory leak; frame time degrades over 30-minute session | Acceptable in a test harness; never in production |
+| Driving interior transition phase via Zustand state updates | Fits existing state patterns | React batching skips frames; transition stutters | Never for multi-frame animations — use `useFrame` + ref |
+| Using `<Html>` without `occlude` and `portal` for delta cards | Default drei usage, no extra setup | Cards escape pane boundary; occluded cards intercept HUD clicks | Never when cards are in a scene with overlapping HUD DOM elements |
+| Re-computing "then" world telemetry from raw events at `snapshotMs` | No separate snapshot storage needed | Produces different pressure values than originally shown; undermines comparison validity | Never — always read from stored `ObservatoryReplaySnapshot.districts` |
 
 ---
 
@@ -281,13 +283,14 @@ Tier 1 (new command registrations: observatory.open, spirit.bind, etc.).
 
 | Integration Point | Common Mistake | Correct Approach |
 |-------------------|----------------|------------------|
-| NexusCanvas inside PaneRouteRenderer | Placing Canvas inside `overflow-auto` motion.div | Render `<div className="absolute inset-0">` as first child of the route component; Canvas fills it |
-| NexusStateContext + Canvas | Using useNexusState() inside Canvas children | Migrate Nexus state to Zustand `nexus-store.ts`; read via `useNexusStore` inside and outside Canvas |
-| Spirit orb in 48px ActivityBar | Creating a new `<Canvas>` for a 48px element | Use a CSS/SVG animation or a `<View>` inside the root Canvas via a portal div in the ActivityBar |
-| Mini spirit companion in right sidebar | New `<Canvas frameloop="always">` in sidebar | Root Canvas + `<View frames={1}>` tracking the sidebar div; `frameloop="demand"` with `invalidate()` |
-| ForensicsRiver bottom pane tab | Blindly mounting `<ForensicsRiverView>` | Audit glia-three for own Canvas; if found, either accept second context or fork to accept external renderer |
-| Command registry + new stores | Closure-capturing Zustand state in handlers | All command handlers call `getState()` at invocation, not at registration |
-| OrbitControls + pane activation | No special handling needed | Ensure `onPointerDownCapture` on Canvas wrapper calls `setActivePane` before OrbitControls captures |
+| `ObservatoryInvalidationController` + new features | Adding new scene state without adding it to `sourceKey` | For each new visual source (annotation count, heatmap pulse, trail count, constellation count, interior phase), add a corresponding field to `sourceKey` |
+| `deriveObservatoryWeatherState` + heatmap | Heatmap always visible regardless of weather budget | Gate heatmap behind `weatherBudget` check; disable at `"off"`, use baked texture at `"reduced"` |
+| Replay persistence + 3D annotation positions | Storing `THREE.Vector3` objects in the annotation record | Store as `[number, number, number]` tuple; validate shape in `asAnnotations()` |
+| Split-screen + existing replay store | Both worlds reading `useObservatoryStore.stations` | "Then" world reads `buildStationsFromReplaySnapshot(replayTimeline.snapshots[frameIndex])` |
+| Trail geometry lifecycle | Geometry created in `useMemo` without cleanup | All dynamic geometry created with `new THREE` must have a `useEffect(() => { return () => geo.dispose(); }, [...])` pattern |
+| Station interiors + log-Z depth buffer | Interior z-fighting with same camera near/far settings as outer world | Decrease camera `near` to `0.02` on interior entry; restore on exit |
+| Constellation routes + scene layer group | Routes added inside weather or starfield conditional group | Constellation route group must be a direct child of the root scene; independent visibility |
+| `<Html>` delta cards + HUD chrome | Interactive buttons inside `<Html>` compete with HUD events | HUD actions stored in Zustand as `pendingAction`; all interactive DOM lives in the HUD DOM layer |
 
 ---
 
@@ -295,27 +298,41 @@ Tier 1 (new command registrations: observatory.open, spirit.bind, etc.).
 
 | Trap | Symptoms | Prevention | When It Breaks |
 |------|----------|------------|----------------|
-| `useFrame` calling Zustand `set()` | 60fps React reconciler churn; CodeMirror lag; entire workbench re-renders on every frame | Use mutable refs for per-frame values; Zustand only for user-action-triggered state | Immediately visible with any animation that writes to a Zustand store per frame |
-| `new THREE.Vector3()` inside `useFrame` | GC pauses every few seconds; stuttering animation | Declare Vector3 in component scope; use `.set()` to reuse | Subtle; gets worse over time with longer sessions |
-| `frameloop="always"` on hidden/inactive tabs | CPU/GPU spinning when Observatory tab not visible | Set `frameloop="demand"` for demand-driven scenes; use `visibility change` events to pause | Any time the user works in a non-3D pane with a 3D pane open elsewhere |
-| Remounting full scene on every tab switch | 500ms+ freeze on re-open; shader recompilation | Keep 3D panes CSS-hidden when inactive; never rely on route unmount for cleanup | Every tab switch to/from 3D pane |
-| Multiple `<Canvas>` components live simultaneously | Oldest context goes black when context limit hit | Root Canvas + View architecture; one context total | When 3+ 3D tabs are open at the same time (common in a split-pane IDE) |
-| `<Html>` labels without `occlude` or portal override | Labels float over IDE chrome (tab bar, status bar) | `overflow: hidden` on canvas host; `portal` prop to constrain to pane subtree | Any time the pane is not full-height or the canvas has sibling elements above it in z-order |
+| Two full Canvas elements for compare mode | Frame time doubles; context lost on spirit canvas | Single Canvas + View scissor architecture | Immediately on open in WebKit (8-context limit) |
+| Heatmap volumetric shader on large ground plane | Frame time spikes >16ms when heatmap first enabled | Baked DataTexture updated on telemetry events, not per-frame shader evaluation | Visible at any display resolution on scenes with 15+ existing transparent layers |
+| Unbounded trail point array in localStorage | `QuotaExceededError` in console; silent annotation data loss | 150-point cap per trail; 50-annotation eviction; try/catch around localStorage.setItem | After ~20 trail annotations in a session |
+| Trail geometry not disposed on segment update | `renderer.info.memory.geometries` grows monotonically | `useEffect` cleanup calls `geometry.dispose()` on each trail segment object | Subtle degradation starting after ~10 minutes of active trail drawing |
+| Zustand state driving interior transition phase | Transition stutters or snaps | `useFrame` + mutable ref for phase; Zustand written only at transition end | Every transition attempt when state batching occurs |
+| Heatmap continuously triggering invalidation when idle | CPU/GPU burns when observatory is open but no probe activity | Heatmap animation frames only when `budget === "full"` AND telemetry changed since last render; otherwise static texture | Any time the observatory is left open in background |
+| Constellation route geometry inside weather group | Routes disappear when weather disabled | Constellation group independent from weather group; `renderOrder = -1`, `depthWrite = false` | Every time weather is toggled off (including on reduced-motion devices) |
+
+---
+
+## UX Pitfalls
+
+| Pitfall | User Impact | Better Approach |
+|---------|-------------|-----------------|
+| 3D annotation pin requires pixel-precise click to place in a 300-unit world | Operator misses intended location by several units; pins land on wrong stations | Snap pin placement to the nearest station's world position when within 10 units; show a preview ghost pin before click-confirm |
+| Interior transition lacks orientation anchor — operator loses sense of which station they entered | After transition, operator cannot tell which station's interior they are in | Show the station name and icon in the HUD during the interior camera push; fade it out after 3 seconds |
+| Freehand trail drawing during replay conflicts with camera pan (both use click-drag) | Operator accidentally pans camera while trying to draw a trail | Trail draw mode requires an explicit toggle (e.g., a pencil button in the Replay HUD panel); default click-drag remains camera pan |
+| Delta cards for multiple simultaneous probe results overlap in 3D space near the same station | Cards stack on top of each other; only the topmost is readable | Use a fan layout: offset cards angularly around the station's position; each card gets its own angular slot |
+| Spirit resonance trail at level 5 reveals "hidden" connections as prominent glowing arcs | Operators mistake the hidden-connection visualization for live threat data | Add a "connection origin: spirit resonance" label to these arcs; use a visually distinct style (dashed or dotted) vs. regular trails |
+| Constellation route click-to-replay triggers immediately on first click | Accidental clicks on bright constellation lines trigger full mission replays | Require a two-step confirm: first click selects the constellation (highlights it); second click within 3 seconds triggers replay |
 
 ---
 
 ## "Looks Done But Isn't" Checklist
 
-- [ ] **Canvas height:** Verify the 3D pane fills the full pane area by resizing the pane splitter — if canvas stays 150px, the overflow-auto container was not removed.
-- [ ] **Context count:** Open all 3D tabs simultaneously and check the console for "Context Lost" warnings — if any appear, the multi-Canvas architecture must be fixed before shipping.
-- [ ] **Tab switch stutter:** Switch between Observatory and a text pane 5 times rapidly — if there is a freeze on re-enter, the visibility-not-unmount strategy is needed.
-- [ ] **useFrame + store writes:** Search all `useFrame` callbacks for any call that ends in `set()`, `setState()`, or a Zustand action — these must be replaced with ref mutations.
-- [ ] **Spirit stain z-index:** Open the command palette while a spirit-stained panel is visible — if the palette renders behind the panel, a stacking context was created.
-- [ ] **Spirit orb WebGL budget:** With all 3D tabs open, confirm the spirit orb still animates — if it stopped, it exceeded the context budget.
-- [ ] **Nexus context in Canvas:** After migration, open Nexus tab and verify node labels render with correct names — if they show defaults, context bridging failed.
-- [ ] **ForensicsRiver context count:** Open Tape tab and check Three.js memory stats — if a second renderer appears, glia-three created its own Canvas.
-- [ ] **Command stale closure:** Call `spirit.bind` twice in the same session with different spirits — if the second call applies the first spirit, the stale closure pitfall was hit.
-- [ ] **OrbitControls pane activation:** Click on an inactive Nexus pane — confirm the pane activates (border highlights) before the camera starts orbiting.
+- [ ] **Annotation invalidation:** Drop a pin during replay with no camera movement — verify the pin appears without needing to move the camera. If it doesn't appear, `annotationDropCount` is not in the `sourceKey`.
+- [ ] **Trail size cap:** Create 200 rapid freehand trail points in a single drawing session — verify localStorage entry stays under 100 KB. If it grows uncapped, the 150-point limit was not enforced.
+- [ ] **Heatmap weather budget:** Set reduced-motion in OS settings — verify heatmap is not rendered. If it renders, it is not gated behind `weatherBudget`.
+- [ ] **Split-screen context count:** Open split-screen mode while spirit companion is active — verify the spirit companion canvas does not go black. If it does, two Canvas elements were created.
+- [ ] **Trail geometry disposal:** Draw 20 trail segments over 5 minutes, then check `renderer.info.memory.geometries` in dev — verify it does not exceed the initial geometry count by more than the expected fixed amount. If it grows unboundedly, `dispose()` is missing.
+- [ ] **Interior transition smoothness:** Trigger an interior entry 5 times in a row — verify each transition animates smoothly without stuttering or snapping. If it stutters, phase is being driven by Zustand instead of `useFrame`.
+- [ ] **Interior depth z-fighting:** Enter any station interior and look at floor/wall junctions — verify no z-fighting stripes. If they appear, camera `near` was not adjusted for interior scale.
+- [ ] **Constellation independence from weather:** Disable weather via `reducedMotion = true` in the performance profile — verify constellation routes remain visible. If they disappear, they are inside the weather scene group.
+- [ ] **Delta card HUD occlusion:** Position a delta card between the camera and a HUD panel button — verify the button still responds to clicks. If the card intercepts the click, `occlude` and `portal` are not set.
+- [ ] **Split-screen "then" accuracy:** Select a replay frame where one station had `status: "active"` — verify the "then" world shows that station as active, not at its current live status. If it shows live status, the world is reading from `useObservatoryStore` instead of the snapshot.
 
 ---
 
@@ -323,14 +340,15 @@ Tier 1 (new command registrations: observatory.open, spirit.bind, etc.).
 
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
-| overflow-auto canvas height stuck | LOW | Add `absolute inset-0` wrapper div inside the 3D route component; no changes to PaneContainer |
-| Multiple Canvas context exhaustion | MEDIUM | Establish root Canvas at App shell level; convert embedded canvases to `<View>` portals; audit glia-three |
-| Tab switch recompile stutter | MEDIUM | Add CSS visibility toggle to PaneContainer keyed on whether route is a 3D route; keep component mounted |
-| useFrame Zustand write at 60fps | LOW | Move animation values to `useRef`; only call Zustand setters from user event handlers |
-| Context isolation for NexusStateContext | MEDIUM | Migrate nexusReducer state to `nexus-store.ts` Zustand; replace `useNexusState()` calls inside Canvas with Zustand hook |
-| Html labels escaping pane | LOW | Add `overflow: hidden` to canvas host div; add `portal` prop to `<Html>` components |
-| Stale command closure | LOW | Replace captured state with `getState()` calls in all new command handlers |
-| Spirit stain stacking context | LOW | Move `backdrop-filter` or `filter` to a `::before` pseudo-element on the panel |
+| Split-screen creates second Canvas context | MEDIUM | Introduce `<View>` scissor architecture; move compare world to a View portal tracked by a div in the split layout |
+| Heatmap overdraw kills frame rate | LOW | Move heatmap to a postprocessing Effect or switch to baked DataTexture updated on telemetry change events |
+| localStorage quota exceeded from trail data | LOW | Add try/catch + eviction policy to `savePersistedObservatoryReplayArtifacts`; trim trail points to 150 on next save |
+| Trail geometry GPU leak | MEDIUM | Add `useEffect(() => { return () => geo.dispose(); }, [geo])` to all trail segment components; accept one GC pass to clear accumulated garbage |
+| Interior transition stutter | LOW | Move `interiorTransitionPhase` from Zustand to `useRef`; drive via `useFrame`; write to Zustand only on completion |
+| Constellation routes disappear with weather | LOW | Move constellation route group out of weather group; render as independent scene sibling |
+| Delta cards intercept HUD clicks | LOW | Add `occlude` and `portal` props to all `<Html>` in delta card components; move interactive buttons to HUD DOM layer |
+| "Then" world shows live data | MEDIUM | Implement `buildStationsFromReplaySnapshot` utility; replace `useObservatoryStore.stations` read in the compare world with snapshot-derived stations |
+| Invalidation not triggering for new features | LOW | Audit `ObservatoryInvalidationController.sourceKey` against each new visual state source; add missing fields |
 
 ---
 
@@ -338,34 +356,33 @@ Tier 1 (new command registrations: observatory.open, spirit.bind, etc.).
 
 | Pitfall | Prevention Phase | Verification |
 |---------|------------------|--------------|
-| overflow-auto canvas height collapse | Tier 2 — first 3D pane tab | Pane resize test; canvas fills full pane height |
-| Multiple Canvas context exhaustion | Tier 1 architectural contract | All 3D tabs open simultaneously; no "Context Lost" in console |
-| Tab switch scene recompile stutter | Tier 2 — Observatory as pane tab | Switch 5x rapidly; no visible freeze |
-| useFrame writing Zustand at 60fps | All tiers — coding contract | React DevTools Profiler shows no 60fps render cycles |
-| NexusStateContext isolation in Canvas | Tier 2 — Nexus Hunt Deck tab | Nexus node labels render correct names |
-| OrbitControls vs pane activation | Tier 2 — first Canvas with OrbitControls | Click inactive Nexus pane: pane activates before orbit starts |
-| Html labels escaping pane bounds | Tier 2 — Nexus tab | Labels clipped at pane border; not visible over IDE chrome |
-| glia-three ForensicsRiver own Canvas | Tier 2/3 boundary investigation | Three.js devtools show only one renderer in memory |
-| CSS spirit stain stacking context | Tier 1 — CSS spirit stain drop-in | Command palette renders above spirit-stained panel |
-| Stale command closure in new stores | Tier 1 — new Zustand stores + commands | Call spirit.bind twice; second call reflects current state |
+| Split-screen second Canvas context | Feature 3: Split-Screen Compare Mode | Open split-screen; spirit companion remains active; no "Context Lost" warning |
+| Heatmap shader overdraw | Feature 5: Threat Topology Heatmap | `renderer.info.render.calls` does not spike when heatmap is enabled |
+| Annotation store localStorage bloat | Feature 1: Replay Annotation Canvas | 200 rapid trail points stay under 100 KB in localStorage |
+| Invalidation missing for new features | All features (1–7), first implementation step | Each new feature's visual change is visible without camera movement |
+| Trail geometry GPU leak | Feature 6: Spirit Resonance Trails | `renderer.info.memory.geometries` stays stable after 20-minute session |
+| Station interior log-Z z-fighting | Feature 7: Station Interior Zones | Interior floor/wall junctions show no depth artifacts |
+| Interior transition Zustand stutter | Feature 7: Station Interior Zones | 5 consecutive transitions animate smoothly |
+| Probe delta card HUD occlusion | Feature 2: Probe Delta Cards | Delta cards clip to pane boundary; HUD buttons respond through cards |
+| Split-screen "then" world accuracy | Feature 3: Split-Screen Compare Mode | "Then" world station states match stored snapshot, not live state |
+| Constellation depth z-fighting | Feature 4: Constellation Routes | Constellation lines stable when viewed from world center with all routes active |
+| Constellation visibility independence | Feature 4: Constellation Routes | Routes visible with `reducedMotion = true` and weather budget `"off"` |
 
 ---
 
 ## Sources
 
-- [R3F Performance Pitfalls (official)](https://r3f.docs.pmnd.rs/advanced/pitfalls) — authoritative, HIGH confidence
-- [R3F Scaling Performance (official)](https://r3f.docs.pmnd.rs/advanced/scaling-performance) — authoritative, HIGH confidence
-- [drei View component docs](https://drei.docs.pmnd.rs/portals/view) — authoritative, HIGH confidence
-- [Leaking WebGLRenderer on unmount — Issue #514](https://github.com/pmndrs/react-three-fiber/issues/514) — HIGH confidence
-- [Leaking WebGLRenderer — Issue #3093](https://github.com/pmndrs/react-three-fiber/issues/3093) — HIGH confidence
-- [Too many active WebGL contexts on Safari — Discussion #2457](https://github.com/pmndrs/react-three-fiber/discussions/2457) — HIGH confidence
-- [Multiple canvas in a component — Discussion #2716](https://github.com/pmndrs/react-three-fiber/discussions/2716) — HIGH confidence
-- [Canvas resize delayed after container resize — Issue #2149](https://github.com/pmndrs/react-three-fiber/issues/2149) — HIGH confidence
-- [State management without restarting render loop — Discussion #2080](https://github.com/pmndrs/react-three-fiber/discussions/2080) — HIGH confidence
-- [Tauri + R3F WebGL context issues — Issue #6559](https://github.com/tauri-apps/tauri/issues/6559) — MEDIUM confidence (Tauri-specific; issue may be version-dependent)
-- Direct codebase inspection: `PaneContainer`, `NexusCanvas`, `NexusStateContext`, `ActivityBar`, `ForensicsRiverView`, `GlyphSentinel`, `GroundPlatform` — HIGH confidence
+- Direct codebase inspection: `ObservatoryInvalidationController.tsx`, `observatory-performance.ts`, `observatory-replay-persistence.ts`, `observatory-telemetry.ts`, `observatory-weather.ts`, `spirit-companion-canvas.tsx`, `FlowModeController.tsx`, `NexusCanvas.tsx`, `observatory-replay-diff.ts` — HIGH confidence
+- [R3F Performance Pitfalls — demand rendering and invalidation](https://r3f.docs.pmnd.rs/advanced/pitfalls) — HIGH confidence
+- [drei `<Html>` occlude and portal props](https://drei.docs.pmnd.rs/misc/html) — HIGH confidence
+- [drei `<View>` scissor rendering](https://drei.docs.pmnd.rs/portals/view) — HIGH confidence
+- [Three.js BufferGeometry dispose() — memory management](https://threejs.org/docs/#api/en/core/BufferGeometry.dispose) — HIGH confidence
+- [Three.js logarithmicDepthBuffer — precision tradeoffs](https://threejs.org/docs/#api/en/renderers/WebGLRenderer) — HIGH confidence
+- [Three.js Line2 from three/addons for large-scale lines](https://threejs.org/examples/#webgl_lines_fat) — MEDIUM confidence (example-based, not formal API doc)
+- [WebGL context limit per tab — MDN and Chromium behavior](https://developer.mozilla.org/en-US/docs/Web/API/WebGLRenderingContext) — HIGH confidence
+- [localStorage quota limits and QuotaExceededError — MDN](https://developer.mozilla.org/en-US/docs/Web/API/Storage/setItem) — HIGH confidence
 
 ---
 
-*Pitfalls research for: R3F 3D features in VS Code-like IDE workbench (huntronomer-workbench)*
-*Researched: 2026-03-18*
+*Pitfalls research for: R3F Observatory v10.0 Analyst Toolkit (7 new features on existing mature scene)*
+*Researched: 2026-03-22*

@@ -1,455 +1,706 @@
-# Architecture Research
+# Architecture Patterns
 
-**Domain:** 3D R3F canvas integration into a VS Code-like IDE workbench (Tauri 2 + React 19 + Zustand)
-**Researched:** 2026-03-18
-**Confidence:** HIGH — based on direct inspection of both source codebases
+**Domain:** v10.0 Observatory Analyst Toolkit — 7 new features on top of existing R3F observatory
+**Researched:** 2026-03-22
+**Confidence:** HIGH — based on direct inspection of all relevant existing files
 
-## Standard Architecture
+---
 
-### System Overview
+## Existing Architecture (Confirmed State)
 
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│                         DesktopLayout                                │
-│  ┌──────────┐  ┌──────────────┐  ┌──────────────────┐  ┌─────────┐  │
-│  │ActivityBar│  │SidebarPanel  │  │   Main Column    │  │RightSide│  │
-│  │  48px    │  │240px (resiz.)│  │  (flex-1 min-w-0)│  │  bar    │  │
-│  │          │  │              │  │ ┌────────────────┐│  │  320px  │  │
-│  │spirit orb│  │  hunt panel  │  │ │   PaneRoot     ││  │(resiz.) │  │
-│  │badge     │  │  (seam data) │  │ │ ┌────────────┐ ││  │         │  │
-│  │          │  │              │  │ │ │PaneContainer│ ││  │Spirit   │  │
-│  └──────────┘  └──────────────┘  │ │ │ ┌────────┐ │ ││  │Companion│  │
-│                                  │ │ │ │R3F Tab │ │ ││  │Canvas   │  │
-│                                  │ │ │ └────────┘ │ ││  │         │  │
-│                                  │ │ └────────────┘ ││  └─────────┘  │
-│                                  │ └────────────────┘│               │
-│                                  │  ┌──────────────┐ │               │
-│                                  │  │  BottomPane  │ │               │
-│                                  │  │  (tape tab)  │ │               │
-│                                  │  └──────────────┘ │               │
-│                                  └──────────────────┘                │
-└──────────────────────────────────────────────────────────────────────┘
+Before mapping integrations, the established architecture must be understood precisely:
 
-Zustand Store Layer (cross-cutting):
-┌────────────┐  ┌──────────────────┐  ┌─────────────────────────────┐
-│spirit-store│  │observatory-store │  │  Existing 11 stores          │
-│  (new)     │  │  (new)           │  │  (pane, activity-bar,        │
-│            │  │                  │  │   right-sidebar, bottom-pane)│
-└────────────┘  └──────────────────┘  └─────────────────────────────┘
-```
-
-### Component Responsibilities
-
-| Component | Responsibility | Lives In |
-|-----------|---------------|----------|
-| `ActivityBar` | Icon rail with spirit orb badge when spirit is bound; observatory seam powers badge counts | `features/activity-bar/` |
-| `SidebarPanel` | Left sidebar showing hunt panel with seam-derived artifact counts | `features/activity-bar/` |
-| `PaneRoot` | Binary tree of panes; renders 3D tabs as routes (observatory, nexus, spirit-chamber) | `features/panes/` |
-| `PaneContainer` | Wraps `PaneRouteRenderer`; the `overflow-auto` div is the 3D canvas parent | `features/panes/` |
-| `PaneRouteRenderer` | Uses `useRoutes` — new 3D routes registered here to land R3F canvases as tabs | `features/panes/` |
-| `RightSidebar` | Currently Speakeasy-only; add panel switch to show `SpiritCompanionCanvas` (mini R3F) | `features/right-sidebar/` |
-| `BottomPane` | Add "Tape" tab housing `ForensicsRiverMiniView` | `features/bottom-pane/` |
-| `spirit-store` | Bound spirit state: kind, accentColor, mood, motion envelope; drives CSS field stain + orb | `features/spirit/` (new) |
-| `observatory-store` | Active hunt ID, seam summary, station counts; feeds activity bar badges | `features/observatory/` (new) |
-| `SpiritCreationChamber` | Pane tab (`/spirit-chamber`); pure CSS animation canvas, zero R3F, drop-in port | `features/spirit/` (new) |
-| `ObservatoryWorldCanvas` | Pane tab (`/observatory`); full R3F + Rapier scene; character controller opt-in | `features/observatory/` (new) |
-| `CyberNexusView` | Pane tab (`/nexus`); R3F graph canvas + overlay UI; heavy, only mount when active | `features/nexus/` (new) |
-| `ForensicsRiverMiniView` | BottomPane "Tape" tab; `@backbay/glia-three` RiverView, slim embed | `features/forensics/` (new) |
-
-## Recommended Project Structure
+### The Orchestration Stack
 
 ```
-apps/workbench/src/
-├── features/
-│   ├── spirit/                    # NEW — spirit state + CSS field stain
-│   │   ├── spirit-store.ts        # Zustand store: bound spirit, mood, accentColor
-│   │   ├── spirit-field-stain.ts  # Pure CSS gradient builder (port from huntronomer)
-│   │   ├── spirit-math.ts         # sceneMath port: motion envelope math
-│   │   ├── spirit-visuals.ts      # sceneVisuals port: CSS animation values
-│   │   ├── spirit-defaults.ts     # defaults.ts port: kind → meta map
-│   │   ├── spirit-types.ts        # HuntSpiritState, HuntSpiritKind, etc.
-│   │   └── components/
-│   │       ├── spirit-orb.tsx     # Animated ActivityBar orb (SVG/CSS, no R3F)
-│   │       ├── spirit-chamber-tab.tsx  # Pane route for /spirit-chamber
-│   │       └── spirit-companion-canvas.tsx  # Mini R3F in RightSidebar
-│   ├── observatory/               # NEW — observatory seam + full tab
-│   │   ├── observatory-store.ts   # Zustand store: activeHuntId, seam summary
-│   │   ├── observatory-seam.ts    # buildHuntObservatorySeamSummary port
-│   │   ├── observatory-types.ts   # HuntObservatorySceneState, actors, etc.
-│   │   ├── observatory-world.ts   # deriveObservatoryWorld port
-│   │   └── components/
-│   │       └── observatory-tab.tsx  # Pane route for /observatory (wraps ObservatoryWorldCanvas)
-│   ├── nexus/                     # NEW — cyber nexus "Hunt Deck" tab
-│   │   ├── nexus-state.ts         # NexusStateContext port → local useReducer or Zustand slice
-│   │   ├── nexus-types.ts
-│   │   └── components/
-│   │       ├── nexus-tab.tsx      # Pane route for /nexus
-│   │       ├── nexus-canvas.tsx   # ObservatoryWorldCanvas embed
-│   │       └── nexus-spirit-companion.tsx
-│   ├── forensics/                 # NEW — forensics river mini-view
-│   │   └── components/
-│   │       └── forensics-tape-tab.tsx  # BottomPane "Tape" embed
-│   ├── activity-bar/              # MODIFY — add spirit orb + seam badge
-│   ├── right-sidebar/             # MODIFY — add spirit companion panel
-│   └── bottom-pane/               # MODIFY — add "tape" tab
+ObservatoryTab.tsx (1054 lines)
+  ├─ Reads: observatory-store, hunt-store, spirit-store, pane-store
+  ├─ Derives: liveTelemetry, effectiveTelemetry, replayFrames, replayTelemetry,
+  │           sceneState, effectiveSceneState, ghostTraces, weatherState,
+  │           replayMarkers, probeGuidance, ghostPresentation
+  ├─ Handlers: handleSelectStation, handleDispatchProbe, handleStartMission,
+  │            handleReplayToggle, handleReplayCreateAnnotation, ...
+  └─ Renders:
+       ObservatoryWorldCanvas (full R3F scene)
+       SpaceFlightHud (flight HUD overlay)
+       ObservatoryLeftDrawer (panels: explainability, mission, replay, ghost)
+       ObservatoryStatusStrip (footer, presets, mode toggle)
+       AchievementLayer
 ```
 
-### Structure Rationale
-
-- **features/ domain directories:** Each 3D surface is a self-contained feature with its own store slice, types, and components. This matches the existing workbench pattern (`panes/`, `activity-bar/`, `right-sidebar/`).
-- **spirit/ separated from observatory/:** Spirit state is ambient (affects CSS everywhere). Observatory state is scoped to hunt-deck views. They communicate via derived selectors, not direct coupling.
-- **No shared R3F `<Canvas>` singleton:** Each R3F surface owns its own `<Canvas>`. Sharing one canvas across split panes is technically possible but creates lifecycle complexity without meaningful performance benefit at this scale.
-
-## Architectural Patterns
-
-### Pattern 1: Route-as-Pane-Tab for 3D Views
-
-**What:** New 3D views are registered as routes in `WORKBENCH_ROUTE_OBJECTS`. The pane system renders them via `PaneRouteRenderer`, which calls `useRoutes`. Any route can be opened as a tab via `usePaneStore.getState().openApp(route)`.
-
-**When to use:** For full-pane 3D views (observatory, nexus, spirit-chamber). The route becomes the tab handle. This requires zero changes to `PaneRoot` or `PaneContainer`.
-
-**Trade-offs:** Routes must be unique paths. The 3D canvas mounts/unmounts on tab focus change. This is the desired behavior for performance — see Pattern 3.
-
-**Example:**
-```typescript
-// workbench-routes.tsx additions
-const ObservatoryTab = lazy(() =>
-  import("@/features/observatory/components/observatory-tab").then((m) => ({
-    default: m.ObservatoryTab,
-  })),
-);
-
-const NexusTab = lazy(() =>
-  import("@/features/nexus/components/nexus-tab").then((m) => ({
-    default: m.NexusTab,
-  })),
-);
-
-// In WORKBENCH_ROUTE_OBJECTS:
-{ path: "observatory", element: <Suspense fallback={<div className="flex-1" />}><ObservatoryTab /></Suspense> },
-{ path: "nexus",       element: <Suspense fallback={<div className="flex-1" />}><NexusTab /></Suspense> },
-{ path: "spirit-chamber", element: <SpiritChamberTab /> },
-
-// In getWorkbenchRouteLabel:
-if (url.pathname === "/observatory") return "Observatory";
-if (url.pathname === "/nexus") return "Hunt Deck";
-if (url.pathname === "/spirit-chamber") return "Spirit Chamber";
-
-// Commands registered in init-commands.tsx:
-registry.register({
-  id: "observatory.open",
-  label: "Open Observatory",
-  execute: () => usePaneStore.getState().openApp("/observatory"),
-});
+```
+ObservatoryWorldCanvas.tsx (~900 lines)
+  ├─ Derives: derivedWorld (from sceneState), lodTiers, eruptions
+  ├─ Manages: per-frame animation, probe eruptions, district arrivals
+  └─ Renders (R3F Canvas):
+       ObservatoryWorldScene (15+ render layers)
+         ├─ ObservatoryStarfield, ObservatoryNebulaClouds, ObservatoryWeatherLayer
+         ├─ ObservatoryDistrictLayer, ObservatoryTransitLayer
+         ├─ GhostTraceLayer, MissionWaypointTrail, MissionObjectiveBeacons
+         ├─ ThreatPresetOverlay, EvidencePresetOverlay,
+         │  ReceiptsPresetOverlay, GhostPresetOverlay
+         ├─ ThesisCore, OperatorProbe, HeroConsequenceLayer, ProbeDischargeVFX
+         └─ WorldCameraRig, FovController, CameraShake
 ```
 
-### Pattern 2: CSS Field Stain via spirit-store CSS Variables
+### Store Architecture
 
-**What:** When a spirit is bound, `spirit-store` exposes the accent color and spirit kind. A React effect (or CSS-in-JS at DesktopLayout) applies CSS custom properties (`--spirit-accent`, `--spirit-kind`) to `document.documentElement`. Panel backgrounds layer the field stain as a `::before` pseudo-element or an absolutely positioned div with `mix-blend-mode: screen`.
+```
+observatory-store.ts (Zustand)
+  stations, pressureLanes, analystPresetId, seamSummary, connected,
+  confidence, likelyStationId, mission, probeState,
+  replay: { enabled, frameIndex, frameMs, bookmarks, annotations, markers },
+  roomReceiveState, selectedStationId, flightState, dockingState,
+  autopilotTargetStationId, discoveredStations, activePanel
+  HudPanelId = "explainability" | "replay" | "mission" | "ghost"
 
-**When to use:** For all ambient spirit color effects (panel stains, activity bar badge color, tab accent lines). Keeps the stain logic in CSS rather than JS re-renders.
+spirit-store.ts (Zustand)
+  kind, mood, fieldStrength, accentColor
 
-**Trade-offs:** CSS vars approach means one global update instead of per-component subscriptions. The `buildSpiritFieldStainStyle()` function from huntronomer returns `CSSProperties`, which is already compatible — pass the result as inline style on a positioned overlay div inside each surface that needs staining.
+spirit-evolution-store.ts (Zustand, persisted to localStorage)
+  evolution: Record<SpiritKind, { xp: number, level: number }>
+  Level thresholds: L1=0, L2=50, L3=150, L4=350, L5=700
+```
 
-**Example:**
-```typescript
-// spirit-store.ts exposes:
-interface SpiritStoreState {
-  boundSpirit: HuntSpiritState | null;
-  runtimeState: HuntSpiritRuntimeState;
-  // derived:
-  accentColor: string;   // from getHuntSpiritMeta(kind).accentColor
-  fieldStrength: number; // 0-1
+### Persistence Layer
+
+```
+observatory-replay-persistence.ts
+  Key: "clawdstrike:observatory:replay:v1"
+  Persists: { annotations: ObservatoryReplayAnnotation[], bookmarks: ObservatoryReplayBookmark[] }
+  Pattern: loadPersistedObservatoryReplayArtifacts / savePersistedObservatoryReplayArtifacts
+  Load: on ObservatoryTab mount (hydrateReplayArtifacts → store)
+  Save: in useEffect watching [replayAnnotations, replayBookmarks]
+```
+
+### Key Types
+
+```
+ObservatoryReplayAnnotation {
+  id, frameIndex, timestampMs, districtId, authorLabel,
+  body, sourceType: "manual"|"bookmark"|"spike", sourceId?
 }
 
-// In DesktopLayout (or a <SpiritFieldInjector /> side-effect component):
-useEffect(() => {
-  document.documentElement.style.setProperty("--spirit-accent", accentColor);
-  document.documentElement.style.setProperty("--spirit-field", String(fieldStrength));
-}, [accentColor, fieldStrength]);
-
-// Panel surfaces that receive the stain render:
-<div className="absolute inset-0 pointer-events-none" style={buildSpiritFieldStainStyle({
-  kind, accentColor, receiveState, surface, focusXPercent, focusYPercent
-})} />
-```
-
-### Pattern 3: R3F Canvas Lifecycle Tied to Pane Focus
-
-**What:** The `PaneContainer` wraps content in a `motion.div` that is `overflow-auto`. When a tab is not active, the pane-route-renderer still renders the component but the tab is visually hidden (the PaneTabBar switches the visible tab; the inactive route is not rendered at all — `useRoutes` returns the matching element only for the active route string).
-
-Looking at `PaneRouteRenderer`: it calls `useRoutes(WORKBENCH_ROUTE_OBJECTS, normalizeWorkbenchRoute(route))`. Each `PaneContainer` renders the route of its active view. When a tab becomes inactive (user switches tabs in the same pane), the route's element unmounts from that pane. This means R3F canvases naturally unmount/remount on tab switch.
-
-**Implication:** No explicit "pause when not focused" logic needed for pane tabs. The canvas unmounts. For the RightSidebar companion canvas and the BottomPane tape tab, they mount when the panel is visible and unmount when collapsed — already handled by the conditional render in `DesktopLayout` (`rightSidebarVisible && <RightSidebar />`).
-
-**Performance consideration:** R3F `<Canvas>` with `frameloop="demand"` stops rendering frames when there is no interaction. Use this for the companion canvas and tape tab. The full observatory tab can use `frameloop="always"` for the ambient animation but should respond to a `usePaneStore` subscription to pause the render loop when the pane is not the active pane in split-pane mode.
-
-**Example:**
-```typescript
-// In ObservatoryTab: suspend rendering when pane is not visible
-const activePaneRoute = usePaneStore((state) =>
-  getActivePaneRoute(state.root, state.activePaneId),
-);
-const isVisible = activePaneRoute === "/observatory";
-
-// Pass to canvas:
-<Canvas frameloop={isVisible ? "always" : "demand"} />
-```
-
-### Pattern 4: Route Bridge — Station Clicks to openApp()
-
-**What:** The huntronomer `routeBridge.ts` maps pathname segments to app IDs. In the workbench, the equivalent is `usePaneStore.getState().openApp(route)`. When a user clicks a station in the Observatory or a strikecell in the Nexus, call `openApp` with the relevant route.
-
-**When to use:** Anywhere a 3D surface needs to navigate the IDE (station → policy editor, strikecell → fleet view, etc.).
-
-**Trade-offs:** This is one-way from 3D surface to pane store. The reverse (IDE navigation updating the 3D scene selection) is handled by the observatory-store/spirit-store reading from the pane store's active route — a derived selector, not a direct subscription loop.
-
-**Example:**
-```typescript
-// In ObservatoryTab or NexusTab:
-function handleStationClick(stationId: HuntStationId) {
-  const route = STATION_ROUTE_MAP[stationId]; // e.g. "signal" → "/findings"
-  usePaneStore.getState().openApp(route);
+ObservatoryGhostTrace {
+  id, stationId, route, routeLabel, sourceKind: "finding"|"receipt",
+  sourceId, authorLabel, headline, detail, timestampMs, score
 }
+
+HuntStationId = "signal"|"targets"|"run"|"receipts"|"case-notes"|"watch"
+
+OBSERVATORY_STATION_POSITIONS: Record<HuntStationId, [number,number,number]>
+  (space-scale: stations at ~300-unit radius)
 ```
 
-## Data Flow
+### Render Layer Pattern (Reference)
 
-### Spirit State Flow
+`GhostTraceLayer.tsx` is the canonical reference for adding a new R3F scene layer:
+- Pure R3F functional component
+- Receives typed props derived in `ObservatoryTab`
+- Reads station positions from `OBSERVATORY_STATION_POSITIONS`
+- Zero store reads inside the R3F tree (all data flows in as props)
+- `useFrame` for animation with pre-allocated module-level vectors
+- Registered in `ObservatoryWorldScene` JSX as a self-contained layer
+
+---
+
+## Feature Integration Maps
+
+### Feature 1: Replay Annotation Canvas
+
+**What it does:** Click 3D space during replay to drop pins with text notes, draw investigation trails, persist to localStorage, visible in Replay drawer.
+
+**Existing infrastructure already in place:**
+- `ObservatoryReplayAnnotation` type exists in `types.ts` (id, frameIndex, timestampMs, districtId, authorLabel, body, sourceType)
+- `upsertReplayAnnotation` / `removeReplayAnnotation` actions exist in `observatory-store.ts`
+- Persistence already saves/loads annotations via `observatory-replay-persistence.ts`
+- `handleReplayCreateAnnotation` callback exists in `ObservatoryTab.tsx`
+- `replay.annotations` already flows through to `replayMarkers`
+
+**What is missing / needs to be built:**
+- 3D pin mesh component — `ReplayAnnotationLayer.tsx` (new R3F scene layer)
+  - Renders a `<mesh>` at the clicked 3D world position per annotation
+  - Only visible when `replay.enabled === true`
+  - Reads `replay.annotations` from store (or receives as props from `ObservatoryWorldCanvas`)
+  - Click on existing pin → opens edit modal
+- Freehand trail drawing — `ReplayTrailCanvas.tsx` (new R3F scene layer)
+  - Intercepts pointer events on an invisible plane mesh when "draw mode" is active
+  - Builds `THREE.Line` from accumulated pointer positions
+  - Needs a new trail type — `ObservatoryReplayTrail` — to store point sequences in the store
+- "Draw mode" toggle button in `ReplayDrawerPanel.tsx` (existing, modify)
+- Annotation list view in `ReplayDrawerPanel.tsx` (existing, modify)
+- `ObservatoryWorldCanvas` needs to receive `replayAnnotations` as a prop (modify interface)
+- `ObservatoryWorldScene` needs `<ReplayAnnotationLayer />` added (modify)
+
+**Store changes:**
+- `ObservatoryState.replay` needs `trails?: ObservatoryReplayTrail[]` field
+- New actions: `addReplayTrail`, `removeReplayTrail`
+- `PersistedObservatoryReplayArtifacts` needs `trails` added
+- Persistence key version bump: `"clawdstrike:observatory:replay:v2"`
+
+**Files to modify:**
+- `types.ts` — add `ObservatoryReplayTrail` interface
+- `stores/observatory-store.ts` — add trail state + actions
+- `utils/observatory-replay-persistence.ts` — add trail persistence
+- `components/ObservatoryWorldCanvas.tsx` — add `replayAnnotations` prop, pass to scene
+- `components/world-canvas/ObservatoryWorldScene.tsx` — add `<ReplayAnnotationLayer />`
+- `components/hud/panels/ReplayDrawerPanel.tsx` — add draw mode toggle + annotation list
+- `components/ObservatoryTab.tsx` — wire annotation click handler into canvas
+
+**Files to create:**
+- `components/ReplayAnnotationLayer.tsx` — R3F pin + trail renderer
+- `world/observatory-replay-trails.ts` — trail data utilities
+
+---
+
+### Feature 2: Probe Delta Cards
+
+**What it does:** Floating 3D cards near target station after probe fires showing pressure shift, explanation, and recommended next action.
+
+**Existing infrastructure already in place:**
+- `probeState: ObservatoryProbeState` in store tracks probe status ("ready" | "active" | "cooling")
+- `probeTelemetryBaselineRef.current` in `ObservatoryTab` already captures pre-probe telemetry
+- `probeGuidance: ObservatoryProbeGuidance | null` is already derived in `ObservatoryTab`
+  - `buildObservatoryProbeGuidance` in `world/observatory-recommendations.ts` returns guidance cards
+- `probeLockedTargetStationId` flows from `ObservatoryTab` to `ObservatoryWorldScene`
+- `OBSERVATORY_STATION_POSITIONS` gives the 3D anchor for each station
+
+**What is missing / needs to be built:**
+- `ProbeDeltaCard.tsx` — R3F Html card component (using drei `<Html>`)
+  - Positioned at station XZ + Y offset (above station mesh)
+  - Shows: pressure delta (before/after), explanation text, recommended next probe target
+  - Billboard orientation (faces camera)
+  - Animated entry: fade + scale in on probe "cooling" state
+  - Dismisses when probe resets to "ready" or station changes
+- `ProbeDeltaLayer.tsx` — R3F scene layer that renders 0–1 `ProbeDeltaCard` instances
+  - Receives: `probeGuidance`, `probeStatus`, `probeLockedTargetStationId`
+  - Only renders when `probeStatus === "cooling"` and guidance is non-null
+
+**ObservatoryWorldScene changes:**
+- Add `probeGuidance` prop to `ObservatoryWorldSceneProps` (modify `observatory-world-scene-types.ts`)
+- Add `<ProbeDeltaLayer />` to `ObservatoryWorldScene` JSX
+
+**ObservatoryWorldCanvas changes:**
+- Accept `probeGuidance` as a prop, forward to `ObservatoryWorldScene`
+
+**ObservatoryTab changes:**
+- Pass `probeGuidance` to `ObservatoryWorldCanvas`
+
+**Files to modify:**
+- `components/world-canvas/observatory-world-scene-types.ts` — add `probeGuidance` to `ObservatoryWorldSceneProps`
+- `components/world-canvas/ObservatoryWorldScene.tsx` — add `<ProbeDeltaLayer />`
+- `components/ObservatoryWorldCanvas.tsx` — accept + forward `probeGuidance`
+- `components/ObservatoryTab.tsx` — pass `probeGuidance` to canvas
+
+**Files to create:**
+- `components/ProbeDeltaCard.tsx` — drei `<Html>` floating card
+- `components/ProbeDeltaLayer.tsx` — R3F scene layer
+
+---
+
+### Feature 3: Split-Screen Compare Mode
+
+**What it does:** Side-by-side "then" (replay frame) vs "now" (live) observatory worlds with diff overlay highlighting changed stations.
+
+**Existing infrastructure already in place:**
+- `replayTelemetry` (replay frame state) and `liveTelemetry` (live state) are both derived in `ObservatoryTab`
+- `liveSnapshot` and `replaySnapshot` are already derived
+- `effectiveSceneState` switches between live and replay scene states
+- The pane system supports split views via binary tree `PaneNode`
+
+**What is missing / needs to be built:**
+- `ObservatorySplitCompareView.tsx` — new top-level wrapper
+  - Uses CSS `display: grid; grid-template-columns: 1fr 1fr`
+  - Left canvas: replay scene (receives `replayTelemetry`-derived state)
+  - Right canvas: live scene (receives `liveTelemetry`-derived state)
+  - Both render `ObservatoryWorldCanvas` with `frameloop="demand"`
+  - Diff overlay: positioned absolutely across both canvases, highlights stations where pressure delta > threshold
+- `deriveObservatoryCompareState` utility — pure function
+  - Input: `{ liveTelemetry, replayTelemetry }`
+  - Output: `{ changedStations: { stationId, pressureDelta, statusChange }[] }`
+- `ObservatoryCompareDiffOverlay.tsx` — DOM overlay (not R3F)
+  - Receives `changedStations`, positions highlight badges using `useHudProjection` pattern (project 3D station positions to screen space)
+- Toggle in `ObservatoryStatusStrip` or `ReplayDrawerPanel`
+  - Sets `compareMode: boolean` — new state, likely `ObservatoryTab` local `useState`
+
+**Key constraint:** Two simultaneous `ObservatoryWorldCanvas` instances both instantiate full R3F `<Canvas>` contexts. This is the most expensive feature. Use `frameloop="demand"` on both. Do not duplicate the post-processing pipeline for the compare canvases — disable `ObservatoryPostFX` in compare mode.
+
+**Files to modify:**
+- `components/ObservatoryTab.tsx` — add `compareMode` state, render `ObservatorySplitCompareView` vs standard view
+- `components/hud/panels/ReplayDrawerPanel.tsx` — add compare mode toggle
+- `components/ObservatoryWorldCanvas.tsx` — accept `disablePostFx?: boolean` prop
+
+**Files to create:**
+- `components/ObservatorySplitCompareView.tsx` — dual-canvas layout
+- `components/ObservatoryCompareDiffOverlay.tsx` — DOM diff badge overlay
+- `utils/observatory-compare.ts` — `deriveObservatoryCompareState` pure function
+
+---
+
+### Feature 4: Constellation Routes
+
+**What it does:** Completed missions permanently traced as named constellations in the starfield, clickable to replay that mission.
+
+**Existing infrastructure already in place:**
+- `mission.completedObjectiveIds` tracks which objectives completed
+- `mission.objectives` lists station sequence for completed missions
+- `OBSERVATORY_STATION_POSITIONS` gives station positions
+- `ObservatoryStarfield.tsx` renders the starfield layer
+- `MissionWaypointTrail.tsx` pattern: `THREE.CatmullRomCurve3` + `THREE.TubeGeometry` with `AdditiveBlending`
+- `ObservatoryReplayBookmark` already tracks mission context
+
+**What is missing / needs to be built:**
+- `ConstellationRoute` data type — represents a completed mission trace
+  ```ts
+  interface ConstellationRoute {
+    id: string;        // mission huntId + timestamp
+    label: string;     // mission briefing or auto-generated name
+    stationIds: HuntStationId[];  // objective station sequence
+    completedAtMs: number;
+    huntId: string;
+  }
+  ```
+- Persistence: new localStorage key `"clawdstrike:observatory:constellations:v1"`
+- `ConstellationRoutesLayer.tsx` — R3F scene layer
+  - Uses `THREE.CatmullRomCurve3` connecting station positions
+  - Renders as thin tube or `<Line>` with dim emissive material
+  - `onPointerClick` → fires `observatory:replay:load` event to jump to that mission
+  - Uses `<Html>` label (drei) for constellation name
+  - Permanent — visible in both atlas and replay modes
+- `useConstellationRoutes` hook — loads from localStorage, derives from completed missions
+
+**Store changes:**
+- `ConstellationRoute[]` can live in `observatory-store` OR a dedicated thin store
+- Recommendation: add `constellations: ConstellationRoute[]` to `observatory-store`
+- New actions: `addConstellation`, `hydrateConstellations`
+
+**ObservatoryWorldScene changes:**
+- Add `<ConstellationRoutesLayer />` after `ObservatoryTransitLayer`
+
+**ObservatoryTab changes:**
+- On `mission.status === "completed"`, push a `ConstellationRoute` to store
+- Hydrate constellations from localStorage alongside replay artifacts
+
+**Files to modify:**
+- `types.ts` — add `ConstellationRoute` interface
+- `stores/observatory-store.ts` — add `constellations` state + actions
+- `components/world-canvas/ObservatoryWorldScene.tsx` — add `<ConstellationRoutesLayer />`
+- `components/ObservatoryWorldCanvas.tsx` — accept + forward `constellations` prop
+- `components/ObservatoryTab.tsx` — complete-mission → add constellation, hydrate on mount
+
+**Files to create:**
+- `components/ConstellationRoutesLayer.tsx` — R3F constellation renderer
+- `utils/observatory-constellation-persistence.ts` — load/save from localStorage
+- `world/observatory-constellations.ts` — `deriveConstellationFromMission` utility
+
+---
+
+### Feature 5: Threat Topology Heatmap
+
+**What it does:** Volumetric ground-plane gradient showing pressure intensity as continuous field, pulses with telemetry updates.
+
+**Existing infrastructure already in place:**
+- `effectiveTelemetry.stations[].emphasis` (0–1) per station — the pressure scalar
+- `effectiveTelemetry.pressureLanes` with `rawPressure`, `score`, `emphasis`
+- `ObservatoryDistrictLayer` already uses district pressure for emissive intensity
+- `ThreatPresetOverlay.tsx` — renders danger motes at high-pressure districts (same data source)
+- `world/deriveObservatoryWorld.ts` — `world.districts[].emphasis`, `world.environment`
+
+**What is missing / needs to be built:**
+- `ThreatTopologyHeatmap.tsx` — R3F scene layer
+  - Ground-plane mesh (XZ plane at Y = 0 or slightly below station floor level)
+  - Custom shader material using fragment shader:
+    - Samples station positions and pressure values as uniforms
+    - Renders smooth radial gradient blobs (SDF-based Gaussian falloff) per station
+    - AdditiveBlending for overlapping pressure zones
+    - Pulses opacity/intensity on telemetry updates via uniform animation
+  - Uses `shaderMaterial` from drei or raw `THREE.ShaderMaterial`
+  - Only visible when `analystPresetId === "threat"` OR always visible at low opacity
+- Station positions passed as a uniform array (max 6 stations)
+- Pressure values passed as a uniform float array
+
+**Existing shader infrastructure:**
+- `apps/workbench/src/features/observatory/shaders/` already exists (check contents)
+- The pattern of custom fragment shaders is established in the codebase
+
+**Performance note:** Ground-plane heatmap is a single mesh with custom fragment shader. One `drawCall`. Zero instancing required. This is lightweight.
+
+**ObservatoryWorldScene changes:**
+- Add `<ThreatTopologyHeatmap />` after background layers, before district layer
+- Pass `stations` (from `world.districts`) with pressure values
+
+**Files to modify:**
+- `components/world-canvas/ObservatoryWorldScene.tsx` — add `<ThreatTopologyHeatmap />`
+- `components/world-canvas/observatory-world-scene-types.ts` — no interface change needed if derived from `world.districts`
+
+**Files to create:**
+- `components/ThreatTopologyHeatmap.tsx` — ground-plane shader mesh
+- `shaders/heatmap.frag.glsl` — fragment shader for pressure gradient (or inline as template literal)
+
+---
+
+### Feature 6: Spirit Resonance Trails
+
+**What it does:** Bound spirit leaves luminous trails between stations keyed to mood/XP level, level-5 reveals hidden inter-station connections.
+
+**Existing infrastructure already in place:**
+- `spirit-store.ts`: `kind`, `mood`, `accentColor`, `fieldStrength`
+- `spirit-evolution-store.ts`: `evolution[kind].level` (1–5), XP thresholds
+- `spirit` prop already flows from `ObservatoryTab` → `ObservatoryWorldCanvas` as `ObservatorySpiritVisual`
+- `MissionWaypointTrail.tsx` pattern: animated tube with `AdditiveBlending` — directly reusable
+- `ObservatoryTransitLayer.tsx` — existing route/lane rendering between stations
+- Station positions and transit route structure in `world/observatory-world-template.ts`
+
+**What is missing / needs to be built:**
+- `SpiritResonanceTrails.tsx` — R3F scene layer
+  - Renders animated curved tubes between stations
+  - Tube count and which connections are shown gate on spirit level:
+    - Level 1–4: trails only on current mission route stations
+    - Level 5: reveals hidden cross-station connections (e.g., signal ↔ receipts, targets ↔ case-notes)
+  - Color: `spirit.accentColor` with luminosity keyed to `fieldStrength`
+  - Animation: flow direction pulse using `useFrame` + offset `shaderMaterial` or animated `THREE.Line`
+  - Mood-reactive: "alert" mood → faster pulse, "calm" mood → slow drift
+  - Visibility gate: only when spirit is bound (`kind !== null`)
+- `deriveSpiritResonanceConnections` utility — pure function
+  - Input: `{ kind, level, stations, missionStationIds }`
+  - Output: `{ connections: { from: HuntStationId, to: HuntStationId, strength: number }[] }`
+  - Level-5 hidden connections are per-kind constants (each spirit kind reveals different pairs)
+
+**Spirit level read path:**
+```ts
+// In ObservatoryTab:
+const spiritLevel = useSpiritEvolutionStore((state) =>
+  kind ? state.evolution[kind].level : 1
+);
+// Pass as prop to ObservatoryWorldCanvas → ObservatoryWorldScene → SpiritResonanceTrails
+```
+
+**ObservatoryWorldScene changes:**
+- Add `<SpiritResonanceTrails />` near transit layer
+- Needs new props: `spiritLevel`, `spiritMood`, `spiritAccentColor`
+
+**Files to modify:**
+- `components/world-canvas/observatory-world-scene-types.ts` — add spirit level/mood to scene props
+- `components/world-canvas/ObservatoryWorldScene.tsx` — add `<SpiritResonanceTrails />`
+- `components/ObservatoryWorldCanvas.tsx` — accept + forward spirit level/mood
+- `components/ObservatoryTab.tsx` — read `spiritLevel` from evolution store, pass to canvas
+
+**Files to create:**
+- `components/SpiritResonanceTrails.tsx` — R3F trail renderer
+- `world/observatory-spirit-resonance.ts` — `deriveSpiritResonanceConnections` utility
+
+---
+
+### Feature 7: Station Interior Zones
+
+**What it does:** Seamless camera-push transition into detailed per-station interior layouts with unique room geometry and NPC activity.
+
+**Existing infrastructure already in place:**
+- `dockingState` in `observatory-store` tracks docking proximity and state
+- `WorldCameraRig` already has `arrivalDurationMs` and `arrivalLift` for camera transitions
+- `OBSERVATORY_STATION_POSITIONS` gives station origins
+- `ObservatoryDistrictLayer.tsx` renders the exterior station geometry
+- `StationDockingRing.tsx`, `StationFresnelGlow.tsx` already exist as per-station components
+- `characterControllerEnabled` (flow mode) gates player input
+- NPC crew system in `world/npcCrew.tsx` — `StationNpcCrew` already renders crew per station
+- `OBSERVATORY_HERO_PROP_ASSETS` — per-station prop sets
+
+**What is missing / needs to be built:**
+- Interior state tracking — new `selectedStationId` already exists; add `interiorMode: boolean`
+  - Or: derive from `dockingState.status === "docked"` + camera distance < interior threshold
+- `StationInteriorScene.tsx` — per-station interior geometry component
+  - One component, parameterized by `stationId`
+  - Interior geometry is procedural (matching exterior aesthetic) — rooms built from box/cylinder primitives
+  - 6 station interior templates as static data in `world/station-interior-templates.ts`
+  - Rooms: control deck, archive bay, observation window, reactor chamber (station-dependent)
+  - Interior NPC activity: reuses `StationNpcCrew` at closer scale
+- Camera transition system
+  - `InteriorCameraController.tsx` — overrides `WorldCameraRig` when interior mode active
+  - Transition: lerp camera from exterior orbital to interior first-person/close-up position
+  - Exit: double-tap back key or distance trigger
+- `ObservatoryInteriorLayer.tsx` — R3F scene layer
+  - Mounts `StationInteriorScene` for the currently selected/docked station
+  - Handles interior/exterior fade crossfade (exterior fades out, interior fades in)
+
+**Key architectural constraint:** Station interiors must NOT break the existing scene layer composition in `ObservatoryWorldScene`. Interiors render as an additional layer only when the camera is within the interior threshold distance. Use `visible` prop or conditional render gated on `interiorMode`, not a separate R3F `<Canvas>`.
+
+**Files to modify:**
+- `types.ts` — add `interiorMode: boolean` to `ObservatoryState` (or derive it)
+- `stores/observatory-store.ts` — add `interiorMode` state + `enterInterior`/`exitInterior` actions
+- `components/world-canvas/ObservatoryWorldScene.tsx` — add `<ObservatoryInteriorLayer />`
+- `components/world-canvas/observatory-world-scene-types.ts` — add interior props
+- `components/ObservatoryWorldCanvas.tsx` — forward `interiorMode` + `selectedStationId` to scene
+- `components/ObservatoryTab.tsx` — watch docking state, trigger interior mode
+
+**Files to create:**
+- `components/ObservatoryInteriorLayer.tsx` — R3F interior mounting logic + crossfade
+- `components/StationInteriorScene.tsx` — parametric interior geometry
+- `world/station-interior-templates.ts` — 6 station interior layout data
+- `components/InteriorCameraController.tsx` — close-up camera behavior
+
+---
+
+## Component Boundary Summary
+
+### New R3F Scene Layers (added to ObservatoryWorldScene)
+
+| Layer Component | Position in Scene | Data Source |
+|----------------|-------------------|-------------|
+| `ReplayAnnotationLayer` | After `GhostTraceLayer` | `replay.annotations`, `replay.trails` |
+| `ProbeDeltaLayer` | After `OperatorProbe` | `probeGuidance`, `probeStatus` |
+| `ConstellationRoutesLayer` | After `ObservatoryTransitLayer` | `constellations` from store |
+| `ThreatTopologyHeatmap` | Before `ObservatoryDistrictLayer` | `world.districts` pressure |
+| `SpiritResonanceTrails` | Near `ObservatoryTransitLayer` | `spiritLevel`, `spiritMood`, `spirit.accentColor` |
+| `ObservatoryInteriorLayer` | After all district layers | `interiorMode`, `selectedStationId` |
+
+Split-Screen Compare (`ObservatorySplitCompareView`) is a layout wrapper, not a scene layer — it instantiates two complete `ObservatoryWorldCanvas` trees side-by-side.
+
+### New DOM Overlays (added to ObservatoryTab)
+
+| Component | Layer | Trigger |
+|-----------|-------|---------|
+| `ObservatoryCompareDiffOverlay` | `z-25` above canvas | `compareMode === true && replay.enabled` |
+
+### Modified Existing Files
+
+| File | What Changes |
+|------|-------------|
+| `types.ts` | + `ObservatoryReplayTrail`, `ConstellationRoute`, `interiorMode` on `ObservatoryState` |
+| `stores/observatory-store.ts` | + trail/constellation/interior state + actions |
+| `utils/observatory-replay-persistence.ts` | + trails, version bump to v2 |
+| `components/ObservatoryWorldCanvas.tsx` | + `replayAnnotations`, `probeGuidance`, `constellations`, `spiritLevel`, `spiritMood`, `interiorMode`, `disablePostFx` props |
+| `components/world-canvas/ObservatoryWorldScene.tsx` | + 6 new layer components |
+| `components/world-canvas/observatory-world-scene-types.ts` | + new props for all new layers |
+| `components/ObservatoryTab.tsx` | + wire all new data → canvas, + `compareMode` state, + constellation tracking |
+| `components/hud/panels/ReplayDrawerPanel.tsx` | + draw mode toggle, annotation list, compare toggle |
+
+---
+
+## Data Flow Changes
+
+### Annotation Canvas Data Flow
 
 ```
-[spirit-store]
-    boundSpirit, runtimeState, accentColor, fieldStrength
-         |
-         ├──→ DesktopLayout (CSS var injector)
-         │       --spirit-accent, --spirit-field on <html>
-         │
-         ├──→ ActivityBar
-         │       spirit orb SVG animation driven by runtimeState.motion
-         │       replaces static icon when boundSpirit !== null
-         │
-         ├──→ SpiritChamberTab (/spirit-chamber)
-         │       renders SpiritManifestationCanvas using spirit kind + motion
-         │
-         ├──→ SpiritCompanionCanvas (RightSidebar panel)
-         │       mini R3F Canvas, driven by runtimeState
-         │
-         └──→ Panel field stains (NexusTab, ForensicsTapeTab)
-                buildSpiritFieldStainStyle() as inline overlay div
-
-Commands (spirit.bind, spirit.release) → spirit-store.actions
+[User click in replay mode]
+  → ReplayAnnotationLayer pointer handler
+  → ObservatoryTab.handleReplayCreateAnnotation(annotation)
+  → observatoryActions.upsertReplayAnnotation(annotation)
+  → relay.annotations in store
+  → savePersistedObservatoryReplayArtifacts (side-effect in ObservatoryTab)
+  → replayAnnotations prop → ObservatoryWorldCanvas → ObservatoryWorldScene → ReplayAnnotationLayer (re-render)
 ```
 
-### Observatory/Seam Data Flow
+### Probe Delta Card Data Flow
 
 ```
-[observatory-store]
-    activeHuntId, seamSummary (HuntObservatorySeamSummary)
-         |
-         ├──→ ActivityBar
-         │       badge counts from seamSummary.stations[].count
-         │
-         ├──→ SidebarPanel (hunt section)
-         │       station list with seam counts
-         │
-         ├──→ ObservatoryTab (/observatory)
-         │       passes sceneState to ObservatoryWorldCanvas
-         │
-         └──→ NexusTab (/nexus)
-                atlasRead derived from seamSummary + spirit-store
-
-Commands (observatory.open, observatory.probe) → observatory-store.actions
-observatory-store reads from usePaneStore (active route) to infer context
+[Probe fires → probeState.status changes to "cooling"]
+  → probeGuidance derived in ObservatoryTab (already done, uses probeTelemetryBaselineRef)
+  → probeGuidance prop → ObservatoryWorldCanvas → ObservatoryWorldScene → ProbeDeltaLayer
+  → ProbeDeltaCard rendered at probeLockedTargetStationId position
 ```
 
-### Pane System Integration
+### Constellation Data Flow
 
 ```
-[User: opens observatory command]
-    ↓
-init-commands.tsx → usePaneStore.getState().openApp("/observatory")
-    ↓
-pane-store: addViewToGroup({ route: "/observatory", label: "Observatory" })
-    ↓
-PaneContainer renders PaneRouteRenderer with route="/observatory"
-    ↓
-useRoutes matches ObservatoryTab → mounts R3F Canvas
-    ↓
-ObservatoryTab subscribes to observatory-store + spirit-store
-    ↓
-[User: clicks station in ObservatoryTab]
-    ↓
-handleStationClick → usePaneStore.getState().openApp("/findings")
-    ↓
-PaneContainer updates active view, ObservatoryTab route stays live in tab bar
+[Mission status becomes "completed"]
+  → ObservatoryTab useEffect watching mission.status
+  → deriveConstellationFromMission(mission) → ConstellationRoute
+  → observatoryActions.addConstellation(constellation)
+  → saveConstellations to localStorage
+  → constellations prop → ObservatoryWorldCanvas → ConstellationRoutesLayer (re-render)
 ```
 
-### Store Interaction Map
+### Spirit Resonance Data Flow
 
 ```
-spirit-store ←──────────────────────────────── Commands (spirit.bind / spirit.release)
-     │
-     │ read: accentColor, runtimeState, motion
-     ↓
-ActivityBar, panel stains, SpiritChamberTab, SpiritCompanionCanvas
-
-observatory-store ←──────────────────────────── Commands (observatory.probe)
-     │        ↑
-     │        └── reads usePaneStore.activePaneRoute for context inference
-     │
-     │ read: seamSummary, sceneState
-     ↓
-ActivityBar badges, ObservatoryTab, NexusTab
-
-pane-store (unchanged) ←───────────────────── Commands (observatory.open, nexus.open)
-     │
-     │ openApp("/observatory"), openApp("/nexus"), openApp("/spirit-chamber")
-     ↓
-PaneRouteRenderer → mounts 3D tab components
-
-right-sidebar-store (modified) ←─────────────── Commands (spirit.showCompanion)
-     │ activePanel: "speakeasy" | "spirit-companion"
-     ↓
-RightSidebar renders SpeakeasyPanel OR SpiritCompanionCanvas
-
-bottom-pane-store (modified)
-     │ activeTab: "terminal" | "problems" | "output" | "audit" | "tape"
-     ↓
-BottomPane renders ForensicsTapeTab when "tape" is active
+[Spirit level changes (XP granted)]
+  → spirit-evolution-store.evolution[kind].level
+  → ObservatoryTab reads spiritLevel via selector
+  → deriveSpiritResonanceConnections({ kind, level, stations })
+  → spiritLevel prop → ObservatoryWorldCanvas → SpiritResonanceTrails
+  → connections rendered as animated tubes in 3D
 ```
 
-## Scaling Considerations
-
-This is a desktop Tauri app. "Scale" means performance at runtime, not user count.
-
-| Concern | Mitigation |
-|---------|-----------|
-| Multiple R3F canvases active simultaneously | Only one heavy canvas (observatory or nexus) should be in a pane at a time. The companion canvas uses `frameloop="demand"` and is small (right sidebar width ≈ 320px). The tape tab mini view is also demand-rendered. Maximum concurrent R3F instances: 2 (one pane tab + one sidebar/bottom embed). |
-| Observatory canvas with Rapier physics | Character controller physics loop runs at 60fps. Use `frameloop="always"` only for observatory tab. Gate with `isVisible` check from pane store. |
-| Spirit field stain re-renders | Field stain is CSS gradient on a positioned div. Updating it requires only the overlay div's inline style to change — no React tree re-render. The `buildSpiritFieldStainStyle()` call is memoized on `(kind, accentColor, receiveState, focusX, focusY)`. |
-| Large NexusCanvas with many strikecells | NexusCanvas uses ObservatoryWorldCanvas (same R3F scene, atlas mode). The Three.js instancing in the existing implementation already handles the node count. Port the existing approach unchanged. |
-| GLTF/texture loading (astronaut avatar) | Use `useGLTF.preload()` for the observatory character assets when the observatory tab is first opened, not at app boot. Preload in `ObservatoryTab` on component mount using `useEffect`. |
-
-## Anti-Patterns
-
-### Anti-Pattern 1: Shared R3F `<Canvas>` Singleton
-
-**What people do:** Create one global `<Canvas>` rendered in `DesktopLayout` to "save resources," portaling 3D content into it.
-
-**Why it's wrong:** React Three Fiber `<Canvas>` manages its own renderer lifecycle and React root. Portaling into a canvas from outside its React subtree requires `createPortal` from R3F (not React DOM), breaks standard component tree access to context, and makes mount/unmount lifecycle unclear. The Zustand stores can't gate rendering properly. The existing workbench pane system already handles unmounting naturally — let it.
-
-**Do this instead:** Each 3D view owns its own `<Canvas>`. Keep them small for embeds (`frameloop="demand"`, reduced pixel ratio). The observatory tab is the only "always-on" full canvas.
-
-### Anti-Pattern 2: spirit-store Depending on observatory-store
-
-**What people do:** Put spirit bind/release logic inside observatory-store because "the spirit is part of the hunt."
-
-**Why it's wrong:** Spirit is ambient — it affects CSS field stains in nexus, forensics river, and the right-sidebar companion, none of which are hunt-observatory concerns. Coupling them means toggling the spirit orb triggers observatory re-renders.
-
-**Do this instead:** `spirit-store` is purely about the bound spirit's kind/mood/motion. `observatory-store` reads from `spirit-store` via selector when it needs the spirit field bias (e.g., to compute station emphasis in the scene). One-way dependency: `observatory-store → spirit-store`, never the reverse.
-
-### Anti-Pattern 3: WorkbenchStateProvider Context for Spirit/Observatory State
-
-**What people do:** Add `spiritState` and `observatoryState` to the existing monolithic `WorkbenchStateProvider` context (as seen in the huntronomer source — the old `useWorkbench()` hook carries all state).
-
-**Why it's wrong:** The workbench already migrated away from this pattern (1846-line monolith → 3 focused Zustand stores). Adding spirit/observatory state back into a context provider re-creates the same problem: any component reading spirit state gets re-rendered when observatory state changes.
-
-**Do this instead:** Two independent Zustand stores with `createSelectors`. Components subscribe to only the slices they need. Spirit state consumers (`ActivityBar`, panel stains) never re-render when observatory seam data changes.
-
-### Anti-Pattern 4: Registering 3D Routes Outside WORKBENCH_ROUTE_OBJECTS
-
-**What people do:** Add a separate router for 3D views, or render them directly in a custom `PaneContainer` variant that bypasses the route system.
-
-**Why it's wrong:** `PaneRouteRenderer` calls `useRoutes(WORKBENCH_ROUTE_OBJECTS, route)`. Any route not in `WORKBENCH_ROUTE_OBJECTS` renders nothing. More importantly, `getWorkbenchRouteLabel` and `normalizeWorkbenchRoute` need to know about new routes for tab labels and URL normalization to work correctly.
-
-**Do this instead:** Add `/observatory`, `/nexus`, `/spirit-chamber` to `WORKBENCH_ROUTE_OBJECTS` with `lazy()` + `<Suspense>` wrappers. Add labels in `getWorkbenchRouteLabel`. That is the only registration point needed.
-
-## Integration Points
-
-### Internal Boundaries
-
-| Boundary | Communication | Notes |
-|----------|---------------|-------|
-| `spirit-store` → `ActivityBar` | Zustand selector subscription | Orb replaces static icon; badge color uses accentColor |
-| `spirit-store` → `DesktopLayout` | `useEffect` → CSS var on `<html>` | Single injection point for ambient field stain |
-| `spirit-store` → `SpiritChamberTab` | Direct Zustand read | Chamber reads kind + motion for manifestation canvas |
-| `spirit-store` → `SpiritCompanionCanvas` | Direct Zustand read | Mini R3F in right sidebar |
-| `observatory-store` → `ActivityBar` | Zustand selector | Seam station counts → badge numbers |
-| `observatory-store` → `ObservatoryTab` | Direct Zustand read | Derives scene state for R3F canvas |
-| `observatory-store` → `NexusTab` | Direct Zustand read | Atlas mode for nexus canvas |
-| `pane-store` (existing) → `ObservatoryTab` | Read activePaneRoute | Gate canvas render loop |
-| `pane-store` (existing) → `Commands` | `openApp()` mutation | Commands open 3D tabs as pane views |
-| `right-sidebar-store` (modified) | add `"spirit-companion"` panel | RightSidebar panel switch |
-| `bottom-pane-store` (modified) | add `"tape"` tab | BottomPane tab addition |
-| `ObservatoryTab` → `pane-store` | `openApp()` on station click | Route bridge: station → IDE view |
-| `NexusTab` → `pane-store` | `openApp()` on strikecell action | Route bridge: nexus → IDE view |
-| `ForensicsTapeTab` → `spirit-store` | Read accentColor for river overlay | HuntSpiritOverlay CSS tint |
-
-### External Dependencies to Add
-
-| Package | Version | Purpose | Already in workbench? |
-|---------|---------|---------|----------------------|
-| `@react-three/fiber` | ^9.0.0 | R3F core | No — must add |
-| `@react-three/drei` | ^10.0.0 | R3F helpers (OrbitControls, Stars, Line, useGLTF) | No — must add |
-| `@react-three/rapier` | ^2.2.0 | Physics for observatory character | No — must add |
-| `three` | ^0.170.0 | Three.js core | No — must add |
-| `@backbay/glia-three` | ^0.2.0-alpha.5 | ForensicsRiverView (River component) | No — must add |
-
-All five packages are already installed in the huntronomer source app. They are workspace-compatible. Add to `apps/workbench/package.json` dependencies.
-
-## Suggested Build Order (Tier Dependencies)
+### Interior Zone Data Flow
 
 ```
-Tier 1 (no R3F required — CSS/state only)
-  spirit-store.ts + spirit-types.ts
-       ↓
-  spirit-field-stain.ts (port of fieldStain.ts)
-       ↓
-  SpiritFieldInjector → DesktopLayout CSS vars
-       ↓
-  ActivityBar spirit orb (SVG/CSS animation, no R3F)
-       ↓
-  observatory-store.ts + observatory-seam.ts
-       ↓
-  ActivityBar seam badge counts
-       ↓
-  Route bridge wiring: commands → openApp()
-
-Tier 2 (R3F embeds — install packages first)
-  Install @react-three/fiber, drei, rapier, three, glia-three
-       ↓
-  SpiritChamberTab (CSS canvas, no R3F — but needs spirit-store from Tier 1)
-       ↓
-  SpiritCompanionCanvas (mini R3F, demand frameloop)
-       ↓
-  ForensicsTapeTab (glia-three River embed, demand frameloop)
-
-Tier 3 (full R3F pane tabs — depends on Tier 1 stores + Tier 2 packages)
-  deriveObservatoryWorld port → observatory-world.ts
-       ↓
-  ObservatoryTab with ObservatoryWorldCanvas (atlas mode, no character)
-       ↓
-  NexusTab with NexusCanvas (uses ObservatoryWorldCanvas internally)
-       ↓
-  Observatory character controller Easter-egg (opt-in flow mode)
+[Ship docks at station (dockingState.status changes)]
+  → ObservatoryTab useEffect watching dockingState
+  → When docked: observatoryActions.enterInterior(stationId)
+  → interiorMode prop → ObservatoryWorldCanvas → ObservatoryInteriorLayer
+  → InteriorCameraController overrides WorldCameraRig
+  → StationInteriorScene renders procedural interior
 ```
 
-Tier 1 has zero new npm dependencies and is pure state + CSS logic — safe to build and test before any R3F packages land. Tier 2 requires the package additions but the canvases are small embeds. Tier 3 contains the largest components and should be gated behind the stores being stable.
+---
+
+## Suggested Build Order
+
+Dependencies between the 7 features must drive phase ordering. Some features have zero cross-dependencies; others require store extensions that others rely on.
+
+### Phase A: Store + Persistence Extensions (pre-req for features 1, 4, 7)
+
+No R3F changes. Pure TypeScript.
+
+1. Extend `types.ts` with `ObservatoryReplayTrail`, `ConstellationRoute`
+2. Extend `observatory-store.ts` with trail, constellation, interior state + actions
+3. Extend `observatory-replay-persistence.ts` with trail persistence (version bump)
+4. Add `utils/observatory-constellation-persistence.ts`
+
+**Why first:** Features 1, 4, and 7 all need store changes. Getting them in cleanly before any R3F work means the scene layers have stable data contracts.
+
+### Phase B: Data Derivation Utilities (pre-req for features 2, 4, 5, 6)
+
+Pure functions, fully testable without R3F.
+
+5. `world/observatory-constellations.ts` — `deriveConstellationFromMission`
+6. `world/observatory-spirit-resonance.ts` — `deriveSpiritResonanceConnections`
+7. `utils/observatory-compare.ts` — `deriveObservatoryCompareState`
+8. Add constellation tracking to `ObservatoryTab.tsx` (detect mission complete → push constellation)
+
+**Why second:** These pure functions define the data contracts that the R3F components will consume. Writing them first enables unit testing in isolation.
+
+### Phase C: Independent R3F Scene Layers (no cross-dependencies)
+
+Can be parallelized if working in separate lanes.
+
+9. `ThreatTopologyHeatmap` (Feature 5) — derives entirely from `world.districts`, no new store fields
+10. `ConstellationRoutesLayer` (Feature 4) — depends on Phase A store + Phase B utility
+11. `SpiritResonanceTrails` (Feature 6) — depends on Phase B utility + spiritLevel prop threading
+12. `ProbeDeltaLayer` + `ProbeDeltaCard` (Feature 2) — depends only on existing `probeGuidance`
+
+Wire each into `ObservatoryWorldScene` and `ObservatoryWorldCanvas` prop chains as they complete.
+
+### Phase D: Interactive R3F Layers (require pointer handling)
+
+13. `ReplayAnnotationLayer` (Feature 1) — pointer events on 3D plane, depends on Phase A store
+14. `ObservatoryInteriorLayer` + `StationInteriorScene` (Feature 7) — most complex; depends on Phase A store, requires `InteriorCameraController`
+
+### Phase E: Layout Feature (requires two-canvas coordination)
+
+15. `ObservatorySplitCompareView` + `ObservatoryCompareDiffOverlay` (Feature 3) — build last because it wraps `ObservatoryWorldCanvas` (which has accrued new props in phases C/D) and needs the compare utility from Phase B
+
+**Why last:** Split-screen is the highest-cost feature (two simultaneous canvases) and depends on all the prop interface changes from phases C/D being stable. Building it last avoids re-doing the dual-canvas prop wiring multiple times.
+
+### Dependency Graph
+
+```
+Phase A (store extensions)
+  ↓
+Phase B (pure derivation utils)
+  ↓
+Phase C (independent scene layers) — can run in parallel
+  ├─ ThreatTopologyHeatmap
+  ├─ ConstellationRoutesLayer
+  ├─ SpiritResonanceTrails
+  └─ ProbeDeltaLayer
+  ↓
+Phase D (interactive layers)
+  ├─ ReplayAnnotationLayer
+  └─ StationInteriorScene / ObservatoryInteriorLayer
+  ↓
+Phase E (layout wrapper)
+  └─ ObservatorySplitCompareView
+```
+
+---
+
+## Critical Constraints
+
+### No New R3F Canvas Instances (except Feature 3)
+
+All features except Split-Screen Compare must live inside the existing single R3F `<Canvas>` in `ObservatoryWorldCanvas.tsx`. Adding scene layers inside the existing `ObservatoryWorldScene` tree is the correct pattern, not creating additional canvases.
+
+### Prop Threading Pattern
+
+`ObservatoryTab` is the store bridge. All new state read from stores happens there, then flows as props:
+
+```
+stores → ObservatoryTab → ObservatoryWorldCanvas → ObservatoryWorldScene → layer component
+```
+
+Scene layer components do NOT read from Zustand stores directly. They receive typed props. This is the existing pattern (confirmed in `GhostTraceLayer`, `MissionObjectiveBeacons`, `MissionWaypointTrail`).
+
+Exception: `MissionWaypointTrail` reads `flightState` directly via `useObservatoryStore.getState()` inside `useFrame` — this is acceptable for high-frequency per-frame reads to avoid React re-render overhead. Follow this exception pattern for features that need per-frame position data.
+
+### ObservatoryTab Complexity Budget
+
+`ObservatoryTab.tsx` is already 1054 lines. Each feature adds ~20–50 lines of handler + derivation code. With 7 features the file could grow to ~1350–1400 lines. This is acceptable (the existing architecture document notes this is the intended orchestrator pattern) but avoid adding new `useMemo` chains with more than 5 dependencies.
+
+### Split-Screen Performance Gate
+
+`ObservatorySplitCompareView` must:
+1. Force `disablePostFx={true}` on both canvases — two post-processing pipelines running simultaneously will degrade performance significantly on integrated GPUs
+2. Use `frameloop="demand"` on both canvases
+3. Only mount when `compareMode === true && replay.enabled === true` — not as a persistent mount
+
+### Level-5 Spirit Resonance Gate
+
+`deriveSpiritResonanceConnections` must gate hidden connection reveal behind `level === 5` strictly. This is a product-level decision already documented in `PROJECT.md`. The function should have an explicit `if (level < 5) return []` guard for the hidden connections path, making the gate testable in unit tests.
+
+### Annotation Persistence Schema Version
+
+Bumping `OBSERVATORY_REPLAY_PERSISTENCE_KEY` from `v1` to `v2` requires a migration strategy. Options:
+1. Attempt to read v1, migrate annotations/bookmarks forward, write as v2 (best for existing users)
+2. Silently drop v1 data if v2 not found (acceptable given no production users yet)
+
+Given v10.0 is milestone development, option 2 is sufficient. The persistence utility should check version and fall back to empty state rather than crashing on schema mismatch.
+
+---
+
+## Anti-Patterns to Avoid
+
+### Avoid: R3F Store Reads in Render-Path Components
+
+**Wrong:** Adding `useObservatoryStore.use.constellations()` inside `ConstellationRoutesLayer`
+**Right:** Read in `ObservatoryTab`, derive what the layer needs, pass as props
+
+### Avoid: Two Post-Processing Pipelines in Compare Mode
+
+**Wrong:** Letting both `ObservatorySplitCompareView` canvases load `LazyObservatoryPostFX`
+**Right:** Pass `disablePostFx={true}` to both canvas instances in compare mode
+
+### Avoid: Interior Scene as a Separate Route
+
+**Wrong:** Creating a `/observatory-interior/:stationId` route that opens in a new pane
+**Right:** Interior is a camera + geometry transition within the same R3F canvas. The pane tab stays `/observatory`. Only the camera position and visible geometry layers change.
+
+### Avoid: Heatmap Per-Frame Rebuild
+
+**Wrong:** Rebuilding `PlaneGeometry` or recomputing UV maps every frame for the heatmap
+**Right:** Use a custom `ShaderMaterial` with uniforms updated each frame. Geometry is static (one flat plane). Pressure values flow in as `float[6]` uniform arrays — fast GPU-side update.
+
+### Avoid: Constellation Routes in the TransitLayer
+
+**Wrong:** Adding constellation rendering inside `ObservatoryTransitLayer.tsx`
+**Right:** `ObservatoryTransitLayer` renders mission-active routes. Constellations are permanent historical traces with different visual treatment (dimmer, different color, labeled). They belong in their own `ConstellationRoutesLayer` component.
+
+---
 
 ## Sources
 
-- Direct inspection: `apps/workbench/src/components/desktop/desktop-layout.tsx`
-- Direct inspection: `apps/workbench/src/features/panes/pane-store.ts`, `pane-root.tsx`, `pane-container.tsx`, `pane-route-renderer.tsx`
-- Direct inspection: `apps/workbench/src/features/activity-bar/`, `right-sidebar/`, `bottom-pane/`
-- Direct inspection: `apps/workbench/src/components/desktop/workbench-routes.tsx`
-- Direct inspection: huntronomer source — `spirit/types.ts`, `spirit/fieldStain.ts`, `observatorySeam.ts`
-- Direct inspection: huntronomer source — `features/hunt-observatory/types.ts`, `world/ObservatoryWorldCanvas.tsx` (imports)
-- Direct inspection: huntronomer source — `features/cyber-nexus/CyberNexusView.tsx`, `components/NexusCanvas.tsx`
-- Direct inspection: huntronomer source — `features/forensics/ForensicsRiverView.tsx`
-- Direct inspection: huntronomer source — `spirit-ritual/canvas/SpiritManifestationCanvas.tsx`
-- Direct inspection: huntronomer source — `apps/desktop/package.json` for R3F package versions
-- Confidence: HIGH — all findings from first-party source code, no external sources required
+- Direct inspection: `ObservatoryTab.tsx` (full 1054-line read)
+- Direct inspection: `stores/observatory-store.ts` (complete)
+- Direct inspection: `components/world-canvas/ObservatoryWorldScene.tsx` (complete)
+- Direct inspection: `components/world-canvas/observatory-world-scene-types.ts` (complete)
+- Direct inspection: `components/ObservatoryWorldCanvas.tsx` (interface + first 234 lines)
+- Direct inspection: `types.ts` (complete)
+- Direct inspection: `utils/observatory-replay-persistence.ts` (complete)
+- Direct inspection: `components/GhostTraceLayer.tsx` (canonical layer pattern)
+- Direct inspection: `components/MissionWaypointTrail.tsx` (trail pattern + store.getState() exception)
+- Direct inspection: `components/MissionObjectiveBeacons.tsx` (beacon pattern)
+- Direct inspection: `stores/spirit-evolution-store.ts` (level thresholds + store shape)
+- Direct inspection: `stores/spirit-store.ts` (kind/mood/accentColor)
+- Direct inspection: `world/stations.ts` (station IDs and positions)
+- Direct inspection: `world/observatory-ghost-memory.ts` (trace type + derive pattern)
+- Direct inspection: `world/missionLoop.ts` (mission types)
+- Direct inspection: `components/hud/panels/ReplayDrawerPanel.tsx` (panel pattern)
+- Direct inspection: `components/hud/ObservatoryLeftDrawer.tsx` (HudPanelId pattern)
+- Direct inspection: `components/hud/hud-constants.ts` (HudPanelId values, PANEL_LABELS)
+- Direct inspection: `.planning/PROJECT.md` (milestone context, constraints)
+- Direct inspection: `docs/plans/clawdstrike/huntronomer/observatory-analyst-experience/target-architecture.md`
+- Confidence: HIGH — all findings from first-party source code inspection
 
 ---
-*Architecture research for: 3D R3F integration into VS Code-like Tauri workbench*
-*Researched: 2026-03-18*
+*Architecture research for: v10.0 Observatory Analyst Toolkit (7 features)*
+*Researched: 2026-03-22*
