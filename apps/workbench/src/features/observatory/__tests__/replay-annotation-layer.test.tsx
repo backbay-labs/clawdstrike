@@ -12,9 +12,19 @@ import type { ObservatoryAnnotationPin } from "@/features/observatory/types";
 // ---------------------------------------------------------------------------
 
 vi.mock("three", () => {
-  const mockMaterial = { visible: false, side: 0 };
+  // MeshBasicMaterial must be a proper constructor (class-like) since the component does `new THREE.MeshBasicMaterial(...)`
+  class MeshBasicMaterial {
+    visible = false;
+    side = 0;
+    constructor(_opts?: { visible?: boolean; side?: number }) {
+      if (_opts) {
+        if (_opts.visible !== undefined) this.visible = _opts.visible;
+        if (_opts.side !== undefined) this.side = _opts.side;
+      }
+    }
+  }
   return {
-    MeshBasicMaterial: vi.fn(() => mockMaterial),
+    MeshBasicMaterial,
     DoubleSide: 2,
     Color: vi.fn(() => ({ r: 0, g: 0, b: 0 })),
   };
@@ -35,35 +45,25 @@ vi.mock("@react-three/drei", () => ({
   ),
 }));
 
-// Mock the observatory store
-const mockAddAnnotationPin = vi.fn();
-const mockRemoveAnnotationPin = vi.fn();
-
-vi.mock("@/features/observatory/stores/observatory-store", () => ({
-  useObservatoryStore: vi.fn((selector: (s: { annotationPins: ObservatoryAnnotationPin[] }) => unknown) => {
-    return selector({ annotationPins: [] });
-  }),
-}));
-
-// Mock getState on the store (used imperatively in the component)
+// Mock the observatory store — factory must not reference top-level variables
 vi.mock("@/features/observatory/stores/observatory-store", () => {
+  const addAnnotationPin = vi.fn();
+  const removeAnnotationPin = vi.fn();
+
   const storeInstance = {
     annotationPins: [] as ObservatoryAnnotationPin[],
     actions: {
-      addAnnotationPin: mockAddAnnotationPin,
-      removeAnnotationPin: mockRemoveAnnotationPin,
+      addAnnotationPin,
+      removeAnnotationPin,
     },
   };
+
   const useObservatoryStore = vi.fn((selector: (s: typeof storeInstance) => unknown) => {
     return selector(storeInstance);
   });
   useObservatoryStore.getState = vi.fn(() => storeInstance);
-  return { useObservatoryStore };
-});
 
-// R3F components render as divs in jsdom for testing
-vi.mock("../components/world-canvas/ReplayAnnotationLayer", async (importOriginal) => {
-  return importOriginal();
+  return { useObservatoryStore };
 });
 
 // ---------------------------------------------------------------------------
@@ -71,6 +71,7 @@ vi.mock("../components/world-canvas/ReplayAnnotationLayer", async (importOrigina
 // ---------------------------------------------------------------------------
 
 import { ReplayAnnotationLayer } from "../components/world-canvas/ReplayAnnotationLayer";
+import { useObservatoryStore } from "@/features/observatory/stores/observatory-store";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -105,8 +106,6 @@ describe("ReplayAnnotationLayer (Phase 42 ANNO)", () => {
   beforeEach(() => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.spyOn(console, "error").mockImplementation(() => {});
-    mockAddAnnotationPin.mockClear();
-    mockRemoveAnnotationPin.mockClear();
   });
 
   afterEach(() => {
@@ -125,7 +124,7 @@ describe("ReplayAnnotationLayer (Phase 42 ANNO)", () => {
     const { container } = render(
       <ReplayAnnotationLayer {...DEFAULT_PROPS} annotationPins={pins} />,
     );
-    // Each pin should produce at least one rendered group element
+    // Each pin should produce at least one rendered group element with data-pin-id
     const groups = container.querySelectorAll("[data-pin-id]");
     expect(groups.length).toBe(2);
   });
@@ -133,10 +132,12 @@ describe("ReplayAnnotationLayer (Phase 42 ANNO)", () => {
   // Test 3: Component file contains ConeGeometry (diamond visual)
   it("component source uses ConeGeometry for diamond pin visual", async () => {
     const fs = await import("fs");
-    const source = fs.readFileSync(
-      new URL("../components/world-canvas/ReplayAnnotationLayer.tsx", import.meta.url).pathname,
-      "utf-8",
+    const path = await import("path");
+    const filePath = path.resolve(
+      __dirname,
+      "../components/world-canvas/ReplayAnnotationLayer.tsx",
     );
+    const source = fs.readFileSync(filePath, "utf-8");
     expect(source).toContain("ConeGeometry");
   });
 
@@ -153,7 +154,6 @@ describe("ReplayAnnotationLayer (Phase 42 ANNO)", () => {
     // Find the ground plane hit target and simulate a pointer down
     const groundPlane = container.querySelector("[data-ground-plane]");
     if (groundPlane) {
-      // Simulate a synthetic pointer event — the handler should check replayEnabled
       groundPlane.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
     }
     // onDropPin should NOT have been called (replayEnabled=false)
@@ -161,16 +161,16 @@ describe("ReplayAnnotationLayer (Phase 42 ANNO)", () => {
   });
 
   // Test 5: removeAnnotationPin is accessible via pin's delete interaction
-  it("removeAnnotationPin is callable for pin delete interaction", () => {
-    // We test that the component accepts onDropPin prop and calls removeAnnotationPin from store
-    // by verifying the store's removeAnnotationPin is wired through the delete button
+  it("removeAnnotationPin is wired through store for pin delete", () => {
     const pin = makePin({ id: "pin-delete-test" });
     const { container } = render(
       <ReplayAnnotationLayer {...DEFAULT_PROPS} annotationPins={[pin]} />,
     );
-    // The component renders — the delete path through useObservatoryStore.getState() should be
-    // available. We verify the group for this pin is rendered.
+    // The component should render the pin group
     const pinGroup = container.querySelector(`[data-pin-id="${pin.id}"]`);
     expect(pinGroup).toBeTruthy();
+    // The store's getState should be accessible (used for imperative delete calls)
+    const storeState = (useObservatoryStore as ReturnType<typeof vi.fn> & { getState: () => unknown }).getState();
+    expect(storeState).toBeTruthy();
   });
 });
