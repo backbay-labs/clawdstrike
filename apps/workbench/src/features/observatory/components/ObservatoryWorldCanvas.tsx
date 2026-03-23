@@ -90,6 +90,9 @@ import { WarpSpeedLines } from "../vfx/WarpSpeedLines";
 import { MissionWaypointTrail } from "./MissionWaypointTrail";
 import { MissionObjectiveBeacons } from "./MissionObjectiveBeacons";
 import { ObservatoryWeatherLayer } from "./world-canvas/ObservatoryWeatherLayer";
+import { deriveHeatmapDataTexture, type HeatmapStationPressure } from "../utils/observatory-derivations";
+import { HUNT_STATION_ORDER } from "../world/stations";
+import type { ObservatoryProbeGuidance } from "../world/observatory-recommendations";
 
 const LazyObservatoryPostFX = lazy(() =>
   import("./ObservatoryPostFX").then((module) => ({ default: module.ObservatoryPostFX })),
@@ -132,6 +135,8 @@ export interface ObservatoryWorldCanvasProps {
   flyByActive?: boolean;
   /** CAM-01: called when the fly-by sequence finishes all waypoints */
   onFlyByComplete?: () => void;
+  /** Phase 40 PRBI: Probe guidance for delta card rendering. */
+  probeGuidance?: ObservatoryProbeGuidance | null;
 }
 // PP-04: Maps ObservatorySpiritVisual.kind back to SpiritKind for LUT lookup.
 // ObservatoryTab maps: sentinel→tracker, oracle→lantern, witness→ledger, specter→forge
@@ -4133,6 +4138,7 @@ export function ObservatoryWorldCanvas({
   replayFrameIndex = null,
   flyByActive = false,
   onFlyByComplete,
+  probeGuidance = null,
 }: ObservatoryWorldCanvasProps) {
   const [eruptions, setEruptions] = useState<WorldEruption[]>([]);
   const [activeHeroInteraction, setActiveHeroInteraction] = useState<ActiveHeroInteraction | null>(null);
@@ -4286,6 +4292,15 @@ export function ObservatoryWorldCanvas({
       labelOcclusionOpacity: Math.min(weatherState.labelOcclusionOpacity, 0.1),
     };
   }, [performanceProfile.enableWeather, performanceProfile.weatherBudget, weatherState]);
+  const heatmapPressureData = useMemo(() => {
+    const pressures: HeatmapStationPressure[] = world.districts.map((d) => ({
+      stationId: d.id,
+      pressure: d.emphasis,
+    }));
+    return deriveHeatmapDataTexture(pressures, HUNT_STATION_ORDER);
+  }, [world.districts]);
+  const heatmapVisible = performanceProfile.weatherBudget !== "off";
+  const heatmapPresetMultiplier = analystPresetIdOuter === "threat" ? 1.5 : 1.0;
   const flowRuntimeEnabled = performanceProfile.mountFlowSystems;
   useEffect(() => {
     if (flowRuntimeEnabled) {
@@ -4756,6 +4771,10 @@ export function ObservatoryWorldCanvas({
             ghostTraces={ghostTraces}
             ghostOpacityScale={ghostOpacityScale}
             analystPresetId={analystPresetIdOuter}
+            heatmapPressureData={heatmapPressureData}
+            heatmapVisible={heatmapVisible}
+            heatmapPresetMultiplier={heatmapPresetMultiplier}
+            probeGuidance={probeGuidance}
           />
           {/* DSC-03: Mission waypoint trail — glowing green CatmullRom tube to objective station */}
           <MissionWaypointTrail

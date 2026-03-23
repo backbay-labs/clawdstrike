@@ -892,6 +892,7 @@ export function ObservatoryTab() {
           playerInputEnabled={!replay.enabled && paneIsActive && characterControllerEnabled && mode === "flow"}
           replayFrameIndex={replay.enabled ? replay.frameIndex : null}
           onFlyByComplete={handleFlyByComplete}
+          probeGuidance={probeGuidance}
         />
         </CanvasErrorBoundary>
       </div>
