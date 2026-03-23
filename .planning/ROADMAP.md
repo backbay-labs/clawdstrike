@@ -931,7 +931,12 @@ Plans:
   3. After multiple completed missions, the starfield shows multiple constellations accumulating as a visible investigation history
   4. With a spirit bound, navigating between stations leaves a luminous trail — trail color and intensity reflect the spirit's current mood, and trail brightness scales visibly with spirit XP level (level 1 faint, level 5 vivid)
   5. At spirit level 5, additional glowing connections appear between stations that are not part of the normal transit network — these hidden resonance connections are distinct from the transit lane geometry
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 41-01-PLAN.md — ConstellationRoutesLayer R3F component + persistence wiring (CNST-01, CNST-02, CNST-03, CNST-05)
+- [ ] 41-02-PLAN.md — SpiritTrailsLayer + SpiritResonanceConnections R3F components + store wiring (SPRT-01 through SPRT-05)
+- [ ] 41-03-PLAN.md — Minimap constellation markers with click-to-tooltip (CNST-04)
 
 ### Phase 42: Replay Annotation Canvas
 **Goal**: The replay timeline becomes a writable investigation surface — analysts drop named pins directly in 3D space during replay, attach text notes, manage annotations from the Replay drawer, and their work survives across sessions
@@ -968,6 +973,6 @@ Phase 39 first (store contracts and invalidation controller). Phase 40 and 41 ca
 |-------|-----------|----------------|--------|-----------|
 | 39. Store, Persistence, and Derivation Foundations | 3/3 | Complete    | 2026-03-23 | - |
 | 40. Threat Heatmap + Probe Delta Cards | 3/3 | Complete    | 2026-03-23 | - |
-| 41. Constellation Routes + Spirit Trails | v10.0 | 0/TBD | Not started | - |
+| 41. Constellation Routes + Spirit Trails | v10.0 | 0/3 | Planned | - |
 | 42. Replay Annotation Canvas | v10.0 | 0/TBD | Not started | - |
 | 43. Station Interior Zones | v10.0 | 0/TBD | Not started | - |
