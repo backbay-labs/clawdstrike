@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v10.0
 milestone_name: Observatory Analyst Toolkit
 status: planning
-stopped_at: Completed 39-01-PLAN.md
-last_updated: "2026-03-23T01:10:26.941Z"
+stopped_at: Completed 39-02-PLAN.md
+last_updated: "2026-03-23T01:14:06.575Z"
 last_activity: 2026-03-22 — Roadmap created; 5 phases (39-43), 33 requirements mapped
 progress:
   total_phases: 12
   completed_phases: 7
   total_plans: 15
-  completed_plans: 13
+  completed_plans: 14
   percent: 0
 ---
 
@@ -46,6 +46,7 @@ Progress: [░░░░░░░░░░] 0%
 
 ## Accumulated Context
 | Phase 39 P01 | 31s | 2 tasks | 3 files |
+| Phase 39 P02 | 2min | 1 tasks | 2 files |
 
 ### Decisions
 
@@ -57,6 +58,8 @@ Progress: [░░░░░░░░░░] 0%
 - [v10.0 Roadmap]: Phase 39 is pure TypeScript — no R3F work; all new scene layers prop-threaded from ObservatoryTab
 - [Phase 39-01]: Duplicate-id rejection in addAnnotationPin/addConstellation uses early-return-state (matches addReplayBookmark precedent) rather than throwing
 - [Phase 39-01]: clearInterior resets to explicit default object rather than spread to ensure all fields reset cleanly
+- [Phase 39]: v2 load tries v2 key first then falls back to v1 migration — preserves all existing data without data loss
+- [Phase 39]: v2 save writes only to v2 key — v1 key never updated once v2 schema is live
 
 ### Pending Todos
 
@@ -71,6 +74,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-23T01:10:26.939Z
-Stopped at: Completed 39-01-PLAN.md
+Last session: 2026-03-23T01:14:06.573Z
+Stopped at: Completed 39-02-PLAN.md
 Resume file: None
