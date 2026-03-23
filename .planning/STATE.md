@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v10.0
 milestone_name: Observatory Analyst Toolkit
 status: planning
-stopped_at: Completed 42-02-PLAN.md
-last_updated: "2026-03-23T03:43:40.165Z"
+stopped_at: Completed 43-01-PLAN.md
+last_updated: "2026-03-23T14:17:21.088Z"
 last_activity: 2026-03-22 — Roadmap created; 5 phases (39-43), 33 requirements mapped
 progress:
   total_phases: 12
   completed_phases: 11
-  total_plans: 23
-  completed_plans: 23
+  total_plans: 25
+  completed_plans: 24
   percent: 0
 ---
 
@@ -56,6 +56,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 41-constellation-routes-spirit-trails P02 | 479 | 2 tasks | 5 files |
 | Phase 42-replay-annotation-canvas P01 | 342 | 2 tasks | 5 files |
 | Phase 42-replay-annotation-canvas P02 | 276 | 2 tasks | 4 files |
+| Phase 43-station-interior-zones P01 | 307 | 2 tasks | 2 files |
 
 ### Decisions
 
@@ -89,6 +90,8 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 42]: Remove+add pattern for annotation pin note updates (store has no upsert action)
 - [Phase 42]: Drawer dispatches window CustomEvent (observatory:camera-focus) for camera focus — decoupled from R3F scene tree
 - [Phase 42]: Camera focus event listener in ObservatoryWorldScene snaps controlsRef.target; OrbitControls dampingFactor provides smooth transition naturally
+- [Phase 43]: HuntStationId imported from ./types (world-local) not ../types — station-interior-config.ts lives inside world/
+- [Phase 43]: InteriorNpcCrew uses Instances limit=4 — 3 NPCs + 1 spare slot per station interior
 
 ### Pending Todos
 
@@ -103,6 +106,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-23T03:39:32.893Z
-Stopped at: Completed 42-02-PLAN.md
+Last session: 2026-03-23T14:17:21.085Z
+Stopped at: Completed 43-01-PLAN.md
 Resume file: None
