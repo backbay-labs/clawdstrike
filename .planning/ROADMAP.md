@@ -949,7 +949,10 @@ Plans:
   4. Clicking a pin in the Replay drawer jumps the replay timeline to the frame when that pin was dropped and moves the camera to focus on the pin's 3D position
   5. After closing and reopening the workbench, previously dropped pins for that replay are still present in both the 3D scene and the Replay drawer
   6. Deleting a pin from the Replay drawer or by clicking it in 3D space removes it from the scene, the drawer list, and localStorage immediately
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 42-01-PLAN.md — 3D annotation layer: diamond pin geometry, click-to-drop ground plane, edit overlay, label display, scene prop threading
+- [ ] 42-02-PLAN.md — Drawer annotations section: pin list with jump-to-frame + camera focus + delete, localStorage v2 hydrate/save
 
 ### Phase 43: Station Interior Zones
 **Goal**: Each station is a navigable destination with interior depth — analysts push the camera inside any station to explore a unique room layout with active NPCs, interact with the station hero prop to complete mission objectives, and exit cleanly back to the exterior observatory
