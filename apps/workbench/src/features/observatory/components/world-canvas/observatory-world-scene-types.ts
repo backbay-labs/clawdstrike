@@ -89,4 +89,12 @@ export interface ObservatoryWorldSceneProps {
   replayFrameMs?: number | null;
   /** Phase 42 ANNO: callback when analyst clicks empty space to drop a pin */
   onAnnotationDrop?: (worldPosition: [number, number, number]) => void;
+  /** Phase 43 INTR: whether interior is currently active */
+  interiorActive?: boolean;
+  /** Phase 43 INTR: station being viewed in interior mode */
+  interiorStationId?: HuntStationId | null;
+  /** Phase 43 INTR: current transition phase for camera lerp */
+  interiorTransitionPhase?: "entering" | "inside" | "exiting" | null;
+  /** Phase 43 INTR: callback when interior camera transition completes */
+  onInteriorTransitionComplete?: (phase: "inside" | null) => void;
 }
