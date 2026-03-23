@@ -23,7 +23,7 @@ Requirements for v10.0 Observatory Analyst Toolkit. Each maps to roadmap phases.
 - [x] **PRBI-03**: Delta card shows a one-sentence explanation of why the change matters (from probe consequences)
 - [x] **PRBI-04**: Delta card shows a recommended next action that is clickable to open the relevant workbench route or advance the mission
 - [x] **PRBI-05**: Delta card auto-dismisses after 8 seconds or on analyst click/keypress
-- [ ] **PRBI-06**: Delta card triggers invalidation so the demand-based frame loop renders it correctly
+- [x] **PRBI-06**: Delta card triggers invalidation so the demand-based frame loop renders it correctly
 
 ### Constellation Routes
 
@@ -38,8 +38,8 @@ Requirements for v10.0 Observatory Analyst Toolkit. Each maps to roadmap phases.
 - [x] **HEAT-01**: A ground-plane gradient mesh renders below the station ring showing threat pressure intensity as a continuous color field
 - [x] **HEAT-02**: Heatmap uses SOC-standard color ramp (blue/teal = calm, amber/red = critical) driven by per-station pressure values
 - [x] **HEAT-03**: Heatmap pulses and shifts as telemetry updates arrive, with smooth interpolation between states
-- [ ] **HEAT-04**: Heatmap respects the existing performance budget system (off/reduced/full) and is gated behind weatherBudget
-- [ ] **HEAT-05**: Heatmap integrates with analyst presets — THREAT preset intensifies the heatmap, other presets dim it
+- [x] **HEAT-04**: Heatmap respects the existing performance budget system (off/reduced/full) and is gated behind weatherBudget
+- [x] **HEAT-05**: Heatmap integrates with analyst presets — THREAT preset intensifies the heatmap, other presets dim it
 
 ### Spirit Trails
 
@@ -100,7 +100,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PRBI-03 | Phase 40 | Complete |
 | PRBI-04 | Phase 40 | Complete |
 | PRBI-05 | Phase 40 | Complete |
-| PRBI-06 | Phase 40 | Pending |
+| PRBI-06 | Phase 40 | Complete |
 | CNST-01 | Phase 41 | Pending |
 | CNST-02 | Phase 41 | Pending |
 | CNST-03 | Phase 41 | Pending |
@@ -109,8 +109,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | HEAT-01 | Phase 40 | Complete |
 | HEAT-02 | Phase 40 | Complete |
 | HEAT-03 | Phase 40 | Complete |
-| HEAT-04 | Phase 40 | Pending |
-| HEAT-05 | Phase 40 | Pending |
+| HEAT-04 | Phase 40 | Complete |
+| HEAT-05 | Phase 40 | Complete |
 | SPRT-01 | Phase 41 | Pending |
 | SPRT-02 | Phase 41 | Pending |
 | SPRT-03 | Phase 41 | Pending |

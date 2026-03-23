@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v10.0
 milestone_name: Observatory Analyst Toolkit
 status: planning
-stopped_at: Completed 40-02-PLAN.md
-last_updated: "2026-03-23T01:49:55.747Z"
+stopped_at: Completed 40-03-PLAN.md
+last_updated: "2026-03-23T01:57:10.808Z"
 last_activity: 2026-03-22 — Roadmap created; 5 phases (39-43), 33 requirements mapped
 progress:
   total_phases: 12
-  completed_phases: 8
+  completed_phases: 9
   total_plans: 18
-  completed_plans: 17
+  completed_plans: 18
   percent: 0
 ---
 
@@ -50,6 +50,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 39 P03 | 145s | 2 tasks | 4 files |
 | Phase 40 P01 | 108s | 1 tasks | 2 files |
 | Phase 40 P02 | 393 | 2 tasks | 3 files |
+| Phase 40 P03 | 4min | 2 tasks | 4 files |
 
 ### Decisions
 
@@ -69,6 +70,8 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 40]: Heatmap uPressure uniforms mutated via ref in useFrame to avoid material re-creation per frame
 - [Phase 40]: ProbeDeltaCard committed in 40-01 test commit — file was created correctly, no re-write needed
 - [Phase 40]: ProbeDeltaLayer uses two-timer pattern: 7500ms fade-start + 8000ms full removal for smooth auto-dismiss
+- [Phase 40]: heatmapVisible = weatherBudget !== 'off' reuses weather budget as single gate for ground-plane effects (heatmap + weather layer share same performance budget)
+- [Phase 40]: ProbeDeltaLayer always mounted in scene (no outer conditional) — internally returns null when probeGuidance is null
 
 ### Pending Todos
 
@@ -83,6 +86,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-23T01:49:55.744Z
-Stopped at: Completed 40-02-PLAN.md
+Last session: 2026-03-23T01:57:10.805Z
+Stopped at: Completed 40-03-PLAN.md
 Resume file: None
