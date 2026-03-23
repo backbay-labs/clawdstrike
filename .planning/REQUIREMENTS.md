@@ -11,9 +11,9 @@ Requirements for v10.0 Observatory Analyst Toolkit. Each maps to roadmap phases.
 
 - [x] **ANNO-01**: Analyst can click a point in 3D space during replay to drop a pin marker at that world position
 - [x] **ANNO-02**: Analyst can attach a text note to each dropped pin via an inline input field
-- [ ] **ANNO-03**: Dropped pins persist to localStorage alongside replay frames and survive tab close/reopen
-- [ ] **ANNO-04**: Analyst can view all pins for the current replay as a scrollable list in the Replay drawer panel
-- [ ] **ANNO-05**: Analyst can click a pin in the Replay drawer to jump the replay timeline to that pin's frame and focus the camera on its 3D position
+- [x] **ANNO-03**: Dropped pins persist to localStorage alongside replay frames and survive tab close/reopen
+- [x] **ANNO-04**: Analyst can view all pins for the current replay as a scrollable list in the Replay drawer panel
+- [x] **ANNO-05**: Analyst can click a pin in the Replay drawer to jump the replay timeline to that pin's frame and focus the camera on its 3D position
 - [x] **ANNO-06**: Analyst can delete individual pins from the Replay drawer or by clicking the pin in 3D space
 
 ### Probe Intelligence
@@ -91,9 +91,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | ANNO-01 | Phase 42 | Complete |
 | ANNO-02 | Phase 42 | Complete |
-| ANNO-03 | Phase 42 | Pending |
-| ANNO-04 | Phase 42 | Pending |
-| ANNO-05 | Phase 42 | Pending |
+| ANNO-03 | Phase 42 | Complete |
+| ANNO-04 | Phase 42 | Complete |
+| ANNO-05 | Phase 42 | Complete |
 | ANNO-06 | Phase 42 | Complete |
 | PRBI-01 | Phase 40 | Complete |
 | PRBI-02 | Phase 40 | Complete |
