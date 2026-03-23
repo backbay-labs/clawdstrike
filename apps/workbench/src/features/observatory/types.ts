@@ -87,6 +87,29 @@ export interface ObservatoryPressureLane {
 
 export type HudPanelId = "explainability" | "replay" | "mission" | "ghost";
 
+export interface ObservatoryAnnotationPin {
+  id: string;
+  frameIndex: number;
+  timestampMs: number;
+  worldPosition: [number, number, number];
+  note: string;
+  districtId: HuntStationId;
+}
+
+export interface ConstellationRoute {
+  id: string;
+  name: string;
+  createdAtMs: number;
+  stationPath: HuntStationId[];
+  missionHuntId: string;
+}
+
+export interface ObservatoryInteriorState {
+  active: boolean;
+  stationId: HuntStationId | null;
+  transitionPhase: "entering" | "inside" | "exiting" | null;
+}
+
 export type ObservatoryAnalystPresetId = "threat" | "evidence" | "receipts" | "ghost";
 
 export interface ObservatoryStation {
@@ -145,6 +168,12 @@ export interface ObservatoryState {
   discoveredStations: Set<HuntStationId>;
   /** Phase 29: panel registry — only one HUD panel open at a time */
   activePanel: HudPanelId | null;
+  /** Phase 39: annotation pins dropped during replay */
+  annotationPins: ObservatoryAnnotationPin[];
+  /** Phase 39: constellation routes from completed missions */
+  constellations: ConstellationRoute[];
+  /** Phase 39: interior zone state machine */
+  interiorState: ObservatoryInteriorState;
   actions: {
     setStations: (stations: ObservatoryStation[]) => void;
     updateSeamSummary: (summary: Partial<ObservatorySeamSummary>) => void;
@@ -198,5 +227,13 @@ export interface ObservatoryState {
     openPanel: (id: HudPanelId) => void;
     closePanel: () => void;
     togglePanel: (id: HudPanelId) => void;
+    addAnnotationPin: (pin: ObservatoryAnnotationPin) => void;
+    removeAnnotationPin: (pinId: string) => void;
+    clearAnnotationPins: () => void;
+    addConstellation: (route: ConstellationRoute) => void;
+    removeConstellation: (routeId: string) => void;
+    clearConstellations: () => void;
+    setInteriorState: (state: Partial<ObservatoryInteriorState>) => void;
+    clearInterior: () => void;
   };
 }

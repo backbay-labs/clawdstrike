@@ -897,7 +897,12 @@ Phases 35, 36, and 38 are independent and can execute in parallel. Phase 37 depe
   3. `observatory-replay-persistence.ts` loads both v1 and v2 schemas without throwing — the migration path from v1 is exercised in a unit test
   4. `deriveConstellationFromMission`, `deriveSpiritResonanceConnections`, and `deriveHeatmapDataTexture` all have passing unit tests against typed inputs
   5. `ObservatoryInvalidationController.sourceKey` includes `annotationDropCount`, `heatmapPulseVersion`, `spiritTrailSegmentCount`, `constellationCount`, and `interiorTransitionPhase`
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 39-01-PLAN.md — v10.0 type contracts + store slices (annotation pins, constellations, interior state)
+- [ ] 39-02-PLAN.md — localStorage v2 persistence schema with v1 migration
+- [ ] 39-03-PLAN.md — Derivation utilities + invalidation controller extension
 
 ### Phase 40: Threat Heatmap + Probe Delta Cards
 **Goal**: The observatory world has two new data-reactive visual layers — a ground-plane heatmap projects threat pressure as a continuous color gradient across the station ring, and floating delta cards appear near stations after probes fire, showing what changed and what to do next
@@ -956,7 +961,7 @@ Phase 39 first (store contracts and invalidation controller). Phase 40 and 41 ca
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 39. Store, Persistence, and Derivation Foundations | v10.0 | 0/TBD | Not started | - |
+| 39. Store, Persistence, and Derivation Foundations | v10.0 | 0/3 | Not started | - |
 | 40. Threat Heatmap + Probe Delta Cards | v10.0 | 0/TBD | Not started | - |
 | 41. Constellation Routes + Spirit Trails | v10.0 | 0/TBD | Not started | - |
 | 42. Replay Annotation Canvas | v10.0 | 0/TBD | Not started | - |

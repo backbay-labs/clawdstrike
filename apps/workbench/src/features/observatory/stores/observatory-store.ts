@@ -2,12 +2,15 @@ import { create } from "zustand";
 import { createSelectors } from "@/lib/create-selectors";
 import type {
   HudPanelId,
+  ObservatoryAnnotationPin,
   ObservatoryReplayAnnotation,
   ObservatoryReplayBookmark,
   ObservatoryReplayMarker,
   ObservatoryStation,
   ObservatorySeamSummary,
   ObservatoryState,
+  ConstellationRoute,
+  ObservatoryInteriorState,
 } from "../types";
 import {
   createObservatoryMissionLoopState,
@@ -72,6 +75,9 @@ const useObservatoryStoreBase = create<ObservatoryState>((set, get) => ({
   autopilotTargetStationId: null,
   discoveredStations: new Set<HuntStationId>(["signal", "targets"]),
   activePanel: null,
+  annotationPins: [],
+  constellations: [],
+  interiorState: { active: false, stationId: null, transitionPhase: null },
   actions: {
     setStations: (stations: ObservatoryStation[]) => {
       const artifactCount = stations.reduce((sum, s) => sum + s.artifactCount, 0);
@@ -243,6 +249,32 @@ const useObservatoryStoreBase = create<ObservatoryState>((set, get) => ({
     closePanel: () => set({ activePanel: null }),
     togglePanel: (id: HudPanelId) =>
       set((state) => ({ activePanel: state.activePanel === id ? null : id })),
+    addAnnotationPin: (pin: ObservatoryAnnotationPin) =>
+      set((state) => {
+        if (state.annotationPins.some((p) => p.id === pin.id)) return state;
+        return { annotationPins: [...state.annotationPins, pin] };
+      }),
+    removeAnnotationPin: (pinId: string) =>
+      set((state) => ({
+        annotationPins: state.annotationPins.filter((p) => p.id !== pinId),
+      })),
+    clearAnnotationPins: () => set({ annotationPins: [] }),
+    addConstellation: (route: ConstellationRoute) =>
+      set((state) => {
+        if (state.constellations.some((c) => c.id === route.id)) return state;
+        return { constellations: [...state.constellations, route] };
+      }),
+    removeConstellation: (routeId: string) =>
+      set((state) => ({
+        constellations: state.constellations.filter((c) => c.id !== routeId),
+      })),
+    clearConstellations: () => set({ constellations: [] }),
+    setInteriorState: (update: Partial<ObservatoryInteriorState>) =>
+      set((state) => ({
+        interiorState: { ...state.interiorState, ...update },
+      })),
+    clearInterior: () =>
+      set({ interiorState: { active: false, stationId: null, transitionPhase: null } }),
   },
 }));
 
