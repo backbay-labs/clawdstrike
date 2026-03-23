@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v10.0
 milestone_name: Observatory Analyst Toolkit
 status: planning
-stopped_at: Completed 40-03-PLAN.md
-last_updated: "2026-03-23T02:00:59.130Z"
+stopped_at: Completed 41-01-PLAN.md
+last_updated: "2026-03-23T02:52:30.093Z"
 last_activity: 2026-03-22 — Roadmap created; 5 phases (39-43), 33 requirements mapped
 progress:
   total_phases: 12
   completed_phases: 9
-  total_plans: 18
-  completed_plans: 18
+  total_plans: 21
+  completed_plans: 19
   percent: 0
 ---
 
@@ -51,6 +51,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 40 P01 | 108s | 1 tasks | 2 files |
 | Phase 40 P02 | 393 | 2 tasks | 3 files |
 | Phase 40 P03 | 4min | 2 tasks | 4 files |
+| Phase 41 P01 | 308 | 2 tasks | 5 files |
 
 ### Decisions
 
@@ -72,6 +73,9 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 40]: ProbeDeltaLayer uses two-timer pattern: 7500ms fade-start + 8000ms full removal for smooth auto-dismiss
 - [Phase 40]: heatmapVisible = weatherBudget !== 'off' reuses weather budget as single gate for ground-plane effects (heatmap + weather layer share same performance budget)
 - [Phase 40]: ProbeDeltaLayer always mounted in scene (no outer conditional) — internally returns null when probeGuidance is null
+- [Phase 41]: CatmullRomCurve3 tension=0.4 + 64 sample points for smooth constellation arcs in star layer
+- [Phase 41]: 30% spirit accent lerp on #e8e4f0 base for constellation color (depthWrite=false + toneMapped=false per locked CONTEXT.md)
+- [Phase 41]: prevMissionStatusRef pattern detects mission completion; cap check at >= 12 before addConstellation fires eviction
 
 ### Pending Todos
 
@@ -86,6 +90,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-23T01:57:10.805Z
-Stopped at: Completed 40-03-PLAN.md
+Last session: 2026-03-23T02:52:30.090Z
+Stopped at: Completed 41-01-PLAN.md
 Resume file: None

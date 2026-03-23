@@ -27,11 +27,11 @@ Requirements for v10.0 Observatory Analyst Toolkit. Each maps to roadmap phases.
 
 ### Constellation Routes
 
-- [ ] **CNST-01**: When a mission completes, the route the analyst followed is permanently traced as a constellation in the starfield
-- [ ] **CNST-02**: Each constellation is rendered as a luminous curve connecting the stations visited during the mission, positioned above the world plane in the star layer
-- [ ] **CNST-03**: Constellations persist to localStorage and are visible across sessions
+- [x] **CNST-01**: When a mission completes, the route the analyst followed is permanently traced as a constellation in the starfield
+- [x] **CNST-02**: Each constellation is rendered as a luminous curve connecting the stations visited during the mission, positioned above the world plane in the star layer
+- [x] **CNST-03**: Constellations persist to localStorage and are visible across sessions
 - [ ] **CNST-04**: Analyst can click a constellation in the star chart minimap to see its name and the date it was created
-- [ ] **CNST-05**: Over multiple completed missions, the starfield accumulates constellations showing the analyst's investigation history
+- [x] **CNST-05**: Over multiple completed missions, the starfield accumulates constellations showing the analyst's investigation history
 
 ### Threat Heatmap
 
@@ -101,11 +101,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PRBI-04 | Phase 40 | Complete |
 | PRBI-05 | Phase 40 | Complete |
 | PRBI-06 | Phase 40 | Complete |
-| CNST-01 | Phase 41 | Pending |
-| CNST-02 | Phase 41 | Pending |
-| CNST-03 | Phase 41 | Pending |
+| CNST-01 | Phase 41 | Complete |
+| CNST-02 | Phase 41 | Complete |
+| CNST-03 | Phase 41 | Complete |
 | CNST-04 | Phase 41 | Pending |
-| CNST-05 | Phase 41 | Pending |
+| CNST-05 | Phase 41 | Complete |
 | HEAT-01 | Phase 40 | Complete |
 | HEAT-02 | Phase 40 | Complete |
 | HEAT-03 | Phase 40 | Complete |
