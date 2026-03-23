@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v10.0
 milestone_name: Observatory Analyst Toolkit
 status: planning
-stopped_at: Completed 41-02-PLAN.md
-last_updated: "2026-03-23T03:08:39.906Z"
+stopped_at: Completed 42-01-PLAN.md
+last_updated: "2026-03-23T03:32:18.520Z"
 last_activity: 2026-03-22 — Roadmap created; 5 phases (39-43), 33 requirements mapped
 progress:
   total_phases: 12
   completed_phases: 10
-  total_plans: 21
-  completed_plans: 21
+  total_plans: 23
+  completed_plans: 22
   percent: 0
 ---
 
@@ -54,6 +54,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 41 P01 | 308 | 2 tasks | 5 files |
 | Phase 41-constellation-routes-spirit-trails P03 | 269 | 1 tasks | 2 files |
 | Phase 41-constellation-routes-spirit-trails P02 | 479 | 2 tasks | 5 files |
+| Phase 42-replay-annotation-canvas P01 | 342 | 2 tasks | 5 files |
 
 ### Decisions
 
@@ -82,6 +83,9 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase Phase 41]: Constellation tooltip positioned at bottom-center of minimap div via absolute positioning; local useState (not store)
 - [Phase 41]: SpiritTrailsLayer uses playerFocusRef (RefObject) not playerPosition (prop) to read position inside useFrame — avoids re-renders each frame
 - [Phase 41]: Trail rendering suppressed when spiritMood=dormant or no spirit bound — prevents ghost trails from unbound state
+- [Phase 42]: depthTest is not a valid prop on drei Text — removed; labels rely on natural draw order
+- [Phase 42]: ReplayAnnotationLayer ground plane uses onPointerDown (not onClick) to avoid orbit control conflicts; replayEnabled guard prevents accidental drops
+- [Phase 42]: Remove+add pattern for annotation pin note updates (store has no upsert action)
 
 ### Pending Todos
 
@@ -96,6 +100,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-23T03:04:30.363Z
-Stopped at: Completed 41-02-PLAN.md
+Last session: 2026-03-23T03:32:18.518Z
+Stopped at: Completed 42-01-PLAN.md
 Resume file: None
