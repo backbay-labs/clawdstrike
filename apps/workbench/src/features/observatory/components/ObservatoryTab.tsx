@@ -262,6 +262,7 @@ export function ObservatoryTab() {
     };
   }, []);
   const constellations = useObservatoryStore.use.constellations();
+  const annotationPins = useObservatoryStore((state) => state.annotationPins);
   const probeTelemetryBaselineRef = useRef<DerivedObservatoryTelemetry | null>(null);
   const previousStationEmphasisRef = useRef<Partial<Record<HuntStationId, number>>>({});
   const previousLikelyStationIdRef = useRef<HuntStationId | null>(null);
@@ -854,6 +855,10 @@ export function ObservatoryTab() {
     for (const constellation of persistedV2.constellations) {
       observatoryActions.addConstellation(constellation);
     }
+    // ANNO-03: Hydrate annotation pins from v2 schema on mount
+    for (const pin of persistedV2.annotationPins) {
+      observatoryActions.addAnnotationPin(pin);
+    }
     setReplayArtifactsHydrated(true);
   }, [observatoryActions]);
   useEffect(() => {
@@ -897,6 +902,15 @@ export function ObservatoryTab() {
       constellations,
     });
   }, [constellations, replayArtifactsHydrated]);
+  // ANNO-03: Auto-save annotation pins to localStorage v2 on change
+  useEffect(() => {
+    if (!replayArtifactsHydrated) return;
+    const current = loadPersistedObservatoryReplayArtifactsV2();
+    savePersistedObservatoryReplayArtifactsV2({
+      ...current,
+      annotationPins,
+    });
+  }, [annotationPins, replayArtifactsHydrated]);
 
   const handleDoubleClick = useCallback(() => {
     if (mode !== "flow") return;

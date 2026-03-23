@@ -1,6 +1,6 @@
 import { CameraShake, OrbitControls } from "@react-three/drei";
 import type { RefObject } from "react";
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import type {
   ObservatoryHeroPropRecipe,
@@ -100,6 +100,23 @@ export function ObservatoryWorldScene({
 }: ObservatoryWorldSceneProps) {
   const controlsRef = useRef<THREE.EventDispatcher | null>(null);
   const shakeRef = useRef<{ setIntensity: (intensity: number) => void } | null>(null);
+
+  // ANNO-05: Camera focus on annotation pin — snap orbit controls target to pin position
+  // OrbitControls dampingFactor provides natural smooth feel without explicit lerp
+  useEffect(() => {
+    function handleCameraFocus(e: Event) {
+      const detail = (e as CustomEvent).detail as
+        | { target: [number, number, number]; duration: number }
+        | undefined;
+      if (!detail?.target || !controlsRef.current) return;
+      const controls = controlsRef.current as unknown as { target: THREE.Vector3 };
+      if (!controls.target) return;
+      controls.target.set(detail.target[0], detail.target[1], detail.target[2]);
+    }
+    window.addEventListener("observatory:camera-focus", handleCameraFocus);
+    return () => window.removeEventListener("observatory:camera-focus", handleCameraFocus);
+  }, []);
+
   const districtLodTiers = useMemo(
     () => buildDistrictLodTiers(world, playerFocusRef, missionTargetStationId),
     [missionTargetStationId, playerFocusRef, world],
