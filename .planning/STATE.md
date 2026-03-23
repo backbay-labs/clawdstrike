@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v10.0
 milestone_name: Observatory Analyst Toolkit
 status: planning
-stopped_at: Completed 43-01-PLAN.md
-last_updated: "2026-03-23T14:17:21.088Z"
+stopped_at: Completed 43-02-PLAN.md
+last_updated: "2026-03-23T14:27:49.949Z"
 last_activity: 2026-03-22 — Roadmap created; 5 phases (39-43), 33 requirements mapped
 progress:
   total_phases: 12
-  completed_phases: 11
+  completed_phases: 12
   total_plans: 25
-  completed_plans: 24
+  completed_plans: 25
   percent: 0
 ---
 
@@ -57,6 +57,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 42-replay-annotation-canvas P01 | 342 | 2 tasks | 5 files |
 | Phase 42-replay-annotation-canvas P02 | 276 | 2 tasks | 4 files |
 | Phase 43-station-interior-zones P01 | 307 | 2 tasks | 2 files |
+| Phase 43-station-interior-zones P02 | 468 | 2 tasks | 6 files |
 
 ### Decisions
 
@@ -92,6 +93,9 @@ Progress: [░░░░░░░░░░] 0%
 - [Phase 42]: Camera focus event listener in ObservatoryWorldScene snaps controlsRef.target; OrbitControls dampingFactor provides smooth transition naturally
 - [Phase 43]: HuntStationId imported from ./types (world-local) not ../types — station-interior-config.ts lives inside world/
 - [Phase 43]: InteriorNpcCrew uses Instances limit=4 — 3 NPCs + 1 spare slot per station interior
+- [Phase 43]: Phase 43-02: ExteriorDimmer stays mounted at all times — material opacity lerped via useFrame enables smooth reverse transition
+- [Phase 43]: Phase 43-02: Escape key combined handler — interior exit takes priority over fly-by skip
+- [Phase 43]: Phase 43-02: Double-click (400ms window) in ATLAS mode + Enter when docked in FLOW mode for interior entry
 
 ### Pending Todos
 
@@ -106,6 +110,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-23T14:17:21.085Z
-Stopped at: Completed 43-01-PLAN.md
+Last session: 2026-03-23T14:27:49.946Z
+Stopped at: Completed 43-02-PLAN.md
 Resume file: None

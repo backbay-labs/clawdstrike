@@ -51,11 +51,11 @@ Requirements for v10.0 Observatory Analyst Toolkit. Each maps to roadmap phases.
 
 ### Station Interiors
 
-- [ ] **INTR-01**: Analyst can trigger a seamless camera-push transition from the exterior station view into a detailed interior view
+- [x] **INTR-01**: Analyst can trigger a seamless camera-push transition from the exterior station view into a detailed interior view
 - [x] **INTR-02**: Each of the 6 stations has a unique interior layout with distinct room geometry matching its function (signal = radar room, receipts = vault, etc.)
 - [x] **INTR-03**: Interior view shows NPCs performing station-specific activities inside the room
-- [ ] **INTR-04**: Analyst can interact with the station's hero prop from inside the interior (same mission objective completion as exterior)
-- [ ] **INTR-05**: Analyst can exit the interior back to the exterior observatory view via a back action or Escape key
+- [x] **INTR-04**: Analyst can interact with the station's hero prop from inside the interior (same mission objective completion as exterior)
+- [x] **INTR-05**: Analyst can exit the interior back to the exterior observatory view via a back action or Escape key
 - [x] **INTR-06**: Interior transition adjusts camera near plane to prevent z-fighting in close-quarters geometry
 
 ## v11.0 Requirements
@@ -116,11 +116,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SPRT-03 | Phase 41 | Complete |
 | SPRT-04 | Phase 41 | Complete |
 | SPRT-05 | Phase 41 | Complete |
-| INTR-01 | Phase 43 | Pending |
+| INTR-01 | Phase 43 | Complete |
 | INTR-02 | Phase 43 | Complete |
 | INTR-03 | Phase 43 | Complete |
-| INTR-04 | Phase 43 | Pending |
-| INTR-05 | Phase 43 | Pending |
+| INTR-04 | Phase 43 | Complete |
+| INTR-05 | Phase 43 | Complete |
 | INTR-06 | Phase 43 | Complete |
 
 **Coverage:**
