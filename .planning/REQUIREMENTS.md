@@ -89,13 +89,45 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (populated by roadmapper) | | |
+| ANNO-01 | Phase 42 | Pending |
+| ANNO-02 | Phase 42 | Pending |
+| ANNO-03 | Phase 42 | Pending |
+| ANNO-04 | Phase 42 | Pending |
+| ANNO-05 | Phase 42 | Pending |
+| ANNO-06 | Phase 42 | Pending |
+| PRBI-01 | Phase 40 | Pending |
+| PRBI-02 | Phase 40 | Pending |
+| PRBI-03 | Phase 40 | Pending |
+| PRBI-04 | Phase 40 | Pending |
+| PRBI-05 | Phase 40 | Pending |
+| PRBI-06 | Phase 40 | Pending |
+| CNST-01 | Phase 41 | Pending |
+| CNST-02 | Phase 41 | Pending |
+| CNST-03 | Phase 41 | Pending |
+| CNST-04 | Phase 41 | Pending |
+| CNST-05 | Phase 41 | Pending |
+| HEAT-01 | Phase 40 | Pending |
+| HEAT-02 | Phase 40 | Pending |
+| HEAT-03 | Phase 40 | Pending |
+| HEAT-04 | Phase 40 | Pending |
+| HEAT-05 | Phase 40 | Pending |
+| SPRT-01 | Phase 41 | Pending |
+| SPRT-02 | Phase 41 | Pending |
+| SPRT-03 | Phase 41 | Pending |
+| SPRT-04 | Phase 41 | Pending |
+| SPRT-05 | Phase 41 | Pending |
+| INTR-01 | Phase 43 | Pending |
+| INTR-02 | Phase 43 | Pending |
+| INTR-03 | Phase 43 | Pending |
+| INTR-04 | Phase 43 | Pending |
+| INTR-05 | Phase 43 | Pending |
+| INTR-06 | Phase 43 | Pending |
 
 **Coverage:**
-- v10.0 requirements: 29 total
-- Mapped to phases: 0
-- Unmapped: 29
+- v10.0 requirements: 33 total
+- Mapped to phases: 33
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-22*
-*Last updated: 2026-03-22 after initial definition*
+*Last updated: 2026-03-22 after roadmap creation (v10.0 Phases 39-43)*

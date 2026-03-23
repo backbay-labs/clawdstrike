@@ -10,7 +10,8 @@
 - ✅ **v6.0 Observatory Space Flight** — Phases 20-27 (shipped 2026-03-20)
 - ✅ **v7.0 Observatory Production HUD** — Phases 28-31 (shipped 2026-03-21)
 - ✅ **v8.0 Observatory Visual Polish** — Phases 32-34 (shipped 2026-03-22)
-- [ ] **v9.0 Observatory 3D World Polish** — Phases 35-38 (in progress)
+- ✅ **v9.0 Observatory 3D World Polish** — Phases 35-38 (shipped 2026-03-22)
+- 🚧 **v10.0 Observatory Analyst Toolkit** — Phases 39-43 (in progress)
 
 ---
 
@@ -869,3 +870,94 @@ Phases 35, 36, and 38 are independent and can execute in parallel. Phase 37 depe
 | 36. Mission Objective Beacons | 2/2 | Complete    | 2026-03-22 | - |
 | 37. Analyst Preset Overlays | 2/2 | Complete    | 2026-03-22 | - |
 | 38. Weather Layer Revival | 1/1 | Complete    | 2026-03-22 | - |
+
+---
+
+## v10.0 Observatory Analyst Toolkit
+
+**Milestone Goal:** Transform the observatory from a visual experience into a full analyst control surface — threat heatmaps project pressure onto the world, probe delta cards surface what changed and why, constellation routes memorialize completed investigations, spirit trails reveal hidden connections, replay annotations let operators mark moments in 3D space, and station interiors add depth to each investigation node.
+
+## Phases
+
+- [ ] **Phase 39: Store, Persistence, and Derivation Foundations** — Extend observatory-store with annotation/constellation/interior state, bump persistence schema to v2 with migration, write pure derivation utilities, extend ObservatoryInvalidationController for all new visual sources (enables all v10.0 features)
+- [ ] **Phase 40: Threat Heatmap + Probe Delta Cards** — Ground-plane GLSL heatmap driven by station pressure, analyst-preset integration, floating 3D probe delta cards post-fire with auto-dismiss (HEAT-01..05, PRBI-01..06)
+- [ ] **Phase 41: Constellation Routes + Spirit Trails** — Permanent mission-trace constellations in the starfield with persistence and minimap click, level-gated spirit luminous trails with hidden resonance connections at level 5 (CNST-01..05, SPRT-01..05)
+- [ ] **Phase 42: Replay Annotation Canvas** — Click 3D space during replay to drop named pins with text, drawer list with jump-to-frame, delete, localStorage persistence (ANNO-01..06)
+- [ ] **Phase 43: Station Interior Zones** — Seamless camera-push transition into 6 unique per-station interiors, NPC activity, hero prop interaction, exit back to exterior (INTR-01..06)
+
+## Phase Details
+
+### Phase 39: Store, Persistence, and Derivation Foundations
+**Goal**: The TypeScript data contracts for all five new visual systems are locked and tested — store slices for annotation pins, constellation routes, and interior state exist; localStorage schema is bumped to v2 with a migration stub; derivation utilities are written and unit-tested; invalidation controller is extended for every new visual source
+**Depends on**: Phase 38 (v9.0 complete — observatory-store, types.ts, observatory-replay-persistence.ts, and ObservatoryInvalidationController are the stable baseline)
+**Requirements**: (foundation phase — enables phases 40-43; no direct v10.0 requirement is solely deliverable here)
+**Success Criteria** (what must be TRUE):
+  1. `ObservatoryAnnotationPin`, `ConstellationRoute`, and `ObservatoryInteriorState` types compile cleanly and are exported from the observatory types barrel
+  2. The observatory-store exposes annotation, constellation, and interior state slices — add/remove/clear actions round-trip correctly in unit tests
+  3. `observatory-replay-persistence.ts` loads both v1 and v2 schemas without throwing — the migration path from v1 is exercised in a unit test
+  4. `deriveConstellationFromMission`, `deriveSpiritResonanceConnections`, and `deriveHeatmapDataTexture` all have passing unit tests against typed inputs
+  5. `ObservatoryInvalidationController.sourceKey` includes `annotationDropCount`, `heatmapPulseVersion`, `spiritTrailSegmentCount`, `constellationCount`, and `interiorTransitionPhase`
+**Plans**: TBD
+
+### Phase 40: Threat Heatmap + Probe Delta Cards
+**Goal**: The observatory world has two new data-reactive visual layers — a ground-plane heatmap projects threat pressure as a continuous color gradient across the station ring, and floating delta cards appear near stations after probes fire, showing what changed and what to do next
+**Depends on**: Phase 39 (heatmap gating requires `weatherBudget` hook from store; delta card invalidation requires extended sourceKey; `deriveHeatmapDataTexture` utility must exist before ThreatTopologyHeatmap can consume it)
+**Requirements**: HEAT-01, HEAT-02, HEAT-03, HEAT-04, HEAT-05, PRBI-01, PRBI-02, PRBI-03, PRBI-04, PRBI-05, PRBI-06
+**Success Criteria** (what must be TRUE):
+  1. A ground-plane color gradient mesh is visible below the station ring during observatory use — blue/teal regions indicate low pressure stations, amber/red regions indicate high-pressure stations, matching SOC-standard ramp
+  2. The heatmap visibly shifts and pulses when hunt telemetry updates arrive — smooth interpolation is perceptible between telemetry states rather than a hard cut
+  3. Activating the THREAT analyst preset intensifies the heatmap colors; activating any other preset or deactivating all presets returns the heatmap to its baseline intensity
+  4. On a low-quality performance profile (weatherBudget=off), no heatmap mesh renders in the scene — the feature is completely absent rather than degraded
+  5. After a probe fires and completes, a floating card appears near the target station showing pressure shift direction, an explanation sentence, and a clickable recommended next action — the card auto-dismisses after 8 seconds
+**Plans**: TBD
+
+### Phase 41: Constellation Routes + Spirit Trails
+**Goal**: Investigation history becomes permanently visible in the star layer — each completed mission traces a named constellation curve through the starfield, and the bound spirit leaves luminous trails between stations as the analyst navigates, revealing hidden connections at level 5
+**Depends on**: Phase 39 (constellation persistence and `deriveConstellationFromMission` utility must exist; `deriveSpiritResonanceConnections` must exist for level-5 hidden connections)
+**Requirements**: CNST-01, CNST-02, CNST-03, CNST-04, CNST-05, SPRT-01, SPRT-02, SPRT-03, SPRT-04, SPRT-05
+**Success Criteria** (what must be TRUE):
+  1. Completing a mission causes a luminous curve to appear in the starfield connecting the stations visited during that mission — the constellation is visible from anywhere in the observatory and persists across tab close/reopen
+  2. Clicking a constellation on the star chart minimap shows a tooltip with the constellation name and the date it was created
+  3. After multiple completed missions, the starfield shows multiple constellations accumulating as a visible investigation history
+  4. With a spirit bound, navigating between stations leaves a luminous trail — trail color and intensity reflect the spirit's current mood, and trail brightness scales visibly with spirit XP level (level 1 faint, level 5 vivid)
+  5. At spirit level 5, additional glowing connections appear between stations that are not part of the normal transit network — these hidden resonance connections are distinct from the transit lane geometry
+**Plans**: TBD
+
+### Phase 42: Replay Annotation Canvas
+**Goal**: The replay timeline becomes a writable investigation surface — analysts drop named pins directly in 3D space during replay, attach text notes, manage annotations from the Replay drawer, and their work survives across sessions
+**Depends on**: Phase 39 (annotation store slice and localStorage v2 persistence must exist before the R3F pointer layer can write to them; ANNO-03 requires the persistence layer from Phase 39)
+**Requirements**: ANNO-01, ANNO-02, ANNO-03, ANNO-04, ANNO-05, ANNO-06
+**Success Criteria** (what must be TRUE):
+  1. Clicking a point in 3D space during replay places a visible pin marker at that world position — the pin is distinguishable from station geometry (distinctive icon or glow, not a floating dot)
+  2. Clicking a placed pin opens an inline input field where the analyst can type a text note and confirm it — the note text is then visible as a label near the pin
+  3. All pins created during a replay session are listed in the Replay drawer panel as a scrollable list with their note text
+  4. Clicking a pin in the Replay drawer jumps the replay timeline to the frame when that pin was dropped and moves the camera to focus on the pin's 3D position
+  5. After closing and reopening the workbench, previously dropped pins for that replay are still present in both the 3D scene and the Replay drawer
+  6. Deleting a pin from the Replay drawer or by clicking it in 3D space removes it from the scene, the drawer list, and localStorage immediately
+**Plans**: TBD
+
+### Phase 43: Station Interior Zones
+**Goal**: Each station is a navigable destination with interior depth — analysts push the camera inside any station to explore a unique room layout with active NPCs, interact with the station hero prop to complete mission objectives, and exit cleanly back to the exterior observatory
+**Depends on**: Phase 39 (interior state machine entry in observatory-store must exist; `interiorTransitionPhase` invalidation key must be registered); Phase 40 (probe delta cards wired into ObservatoryWorldScene — prop interface must be stable before adding interior layer)
+**Requirements**: INTR-01, INTR-02, INTR-03, INTR-04, INTR-05, INTR-06
+**Success Criteria** (what must be TRUE):
+  1. Triggering an interior transition from any station smoothly pushes the camera from the exterior view into the station interior without a visible cut or flash — the transition feels seamless
+  2. Each of the 6 stations has a visually distinct interior room — the Signal station looks like a radar room, the Receipts station looks like a vault; room geometry is unique per station, not reused
+  3. NPCs in the interior perform visible station-specific activities (typing, examining equipment, patrolling) rather than standing idle
+  4. While inside a station, interacting with the hero prop completes mission objectives the same as the exterior interaction — analysts do not need to exit to advance the mission
+  5. Pressing Escape or clicking a back affordance exits the interior and smoothly returns the camera to the exterior observatory view
+  6. Interior geometry has no z-fighting artifacts — the camera near plane is reduced to 0.02 on interior entry and restored to the exterior value on exit
+**Plans**: TBD
+
+## Progress
+
+**Execution Order:**
+Phase 39 first (store contracts and invalidation controller). Phase 40 and 41 can execute in parallel after Phase 39 (both depend only on Phase 39 foundations, no cross-dependency). Phase 42 depends only on Phase 39. Phase 43 depends on Phase 39 and Phase 40 (prop interface stability from Phase 40 before adding interior layer).
+
+| Phase | Milestone | Plans Complete | Status | Completed |
+|-------|-----------|----------------|--------|-----------|
+| 39. Store, Persistence, and Derivation Foundations | v10.0 | 0/TBD | Not started | - |
+| 40. Threat Heatmap + Probe Delta Cards | v10.0 | 0/TBD | Not started | - |
+| 41. Constellation Routes + Spirit Trails | v10.0 | 0/TBD | Not started | - |
+| 42. Replay Annotation Canvas | v10.0 | 0/TBD | Not started | - |
+| 43. Station Interior Zones | v10.0 | 0/TBD | Not started | - |
