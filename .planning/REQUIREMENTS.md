@@ -35,9 +35,9 @@ Requirements for v10.0 Observatory Analyst Toolkit. Each maps to roadmap phases.
 
 ### Threat Heatmap
 
-- [ ] **HEAT-01**: A ground-plane gradient mesh renders below the station ring showing threat pressure intensity as a continuous color field
-- [ ] **HEAT-02**: Heatmap uses SOC-standard color ramp (blue/teal = calm, amber/red = critical) driven by per-station pressure values
-- [ ] **HEAT-03**: Heatmap pulses and shifts as telemetry updates arrive, with smooth interpolation between states
+- [x] **HEAT-01**: A ground-plane gradient mesh renders below the station ring showing threat pressure intensity as a continuous color field
+- [x] **HEAT-02**: Heatmap uses SOC-standard color ramp (blue/teal = calm, amber/red = critical) driven by per-station pressure values
+- [x] **HEAT-03**: Heatmap pulses and shifts as telemetry updates arrive, with smooth interpolation between states
 - [ ] **HEAT-04**: Heatmap respects the existing performance budget system (off/reduced/full) and is gated behind weatherBudget
 - [ ] **HEAT-05**: Heatmap integrates with analyst presets — THREAT preset intensifies the heatmap, other presets dim it
 
@@ -106,9 +106,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CNST-03 | Phase 41 | Pending |
 | CNST-04 | Phase 41 | Pending |
 | CNST-05 | Phase 41 | Pending |
-| HEAT-01 | Phase 40 | Pending |
-| HEAT-02 | Phase 40 | Pending |
-| HEAT-03 | Phase 40 | Pending |
+| HEAT-01 | Phase 40 | Complete |
+| HEAT-02 | Phase 40 | Complete |
+| HEAT-03 | Phase 40 | Complete |
 | HEAT-04 | Phase 40 | Pending |
 | HEAT-05 | Phase 40 | Pending |
 | SPRT-01 | Phase 41 | Pending |

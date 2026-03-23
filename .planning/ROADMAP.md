@@ -967,7 +967,7 @@ Phase 39 first (store contracts and invalidation controller). Phase 40 and 41 ca
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 39. Store, Persistence, and Derivation Foundations | 3/3 | Complete    | 2026-03-23 | - |
-| 40. Threat Heatmap + Probe Delta Cards | v10.0 | 0/TBD | Not started | - |
+| 40. Threat Heatmap + Probe Delta Cards | 1/3 | In Progress|  | - |
 | 41. Constellation Routes + Spirit Trails | v10.0 | 0/TBD | Not started | - |
 | 42. Replay Annotation Canvas | v10.0 | 0/TBD | Not started | - |
 | 43. Station Interior Zones | v10.0 | 0/TBD | Not started | - |
