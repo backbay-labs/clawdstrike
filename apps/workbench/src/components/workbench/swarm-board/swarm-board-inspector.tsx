@@ -46,7 +46,7 @@ import {
 
 const INSPECTOR_WIDTH = 340;
 
-const NODE_TYPE_META: Record<
+export const NODE_TYPE_META: Record<
   SwarmNodeType,
   { icon: typeof IconTerminal2; label: string; color: string }
 > = {
