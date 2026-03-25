@@ -23,7 +23,7 @@ describe("snap-to-grid", () => {
 
   it("rounds up when closer to the upper grid line", () => {
     expect(snapToGrid(113, 20)).toBe(120);
-    expect(snapToGrid(91, 20)).toBe(80);
+    expect(snapToGrid(91, 20)).toBe(100);
   });
 
   it("snaps zero correctly", () => {
