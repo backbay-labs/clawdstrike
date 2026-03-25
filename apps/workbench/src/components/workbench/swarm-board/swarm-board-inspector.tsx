@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "motion/react";
+import { useShallow } from "zustand/react/shallow";
 import type { AgentConversationTurn } from "@clawdstrike/swarm-engine";
 import {
   IconX,
@@ -23,8 +24,9 @@ import {
   IconFileCode,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
-import { useSwarmBoard } from "@/features/swarm/stores/swarm-board-store";
+import { useSwarmBoard, useSwarmBoardStore } from "@/features/swarm/stores/swarm-board-store";
 import type { SwarmBoardNodeData, SwarmNodeType, DetectionArtifactKind } from "@/features/swarm/swarm-board-types";
+import { ComparisonInspector } from "./comparison-inspector";
 import { usePaneStore } from "@/features/panes/pane-store";
 import { FILE_TYPE_REGISTRY, type FileType } from "@/lib/workbench/file-type-registry";
 import type { EvidencePack, LabRun, PublicationManifest } from "@/lib/workbench/detection-workflow/shared-types";
@@ -45,6 +47,7 @@ import {
 // ---------------------------------------------------------------------------
 
 const INSPECTOR_WIDTH = 340;
+const COMPARISON_INSPECTOR_WIDTH = 680;
 
 export const NODE_TYPE_META: Record<
   SwarmNodeType,
@@ -64,11 +67,26 @@ export const NODE_TYPE_META: Record<
 
 export function SwarmBoardInspector() {
   const { state, selectNode, selectedNode } = useSwarmBoard();
-  const open = state.inspectorOpen && selectedNode != null;
+  const { selectedNodes, comparisonMode } = useSwarmBoardStore(
+    useShallow((s) => ({
+      selectedNodes: s.selectedNodes,
+      comparisonMode: s.comparisonMode,
+    })),
+  );
+
+  const open = comparisonMode
+    ? selectedNodes.length > 1
+    : state.inspectorOpen && selectedNode != null;
+
+  const width = comparisonMode ? COMPARISON_INSPECTOR_WIDTH : INSPECTOR_WIDTH;
 
   const handleClose = useCallback(() => {
-    selectNode(null);
-  }, [selectNode]);
+    if (comparisonMode) {
+      useSwarmBoardStore.getState().actions.setSelectedNodeIds([]);
+    } else {
+      selectNode(null);
+    }
+  }, [comparisonMode, selectNode]);
 
   useEffect(() => {
     if (!open) return;
@@ -81,23 +99,30 @@ export function SwarmBoardInspector() {
 
   return (
     <AnimatePresence>
-      {open && selectedNode && (
+      {open && (
         <motion.aside
-          initial={{ x: INSPECTOR_WIDTH, opacity: 0 }}
+          key={comparisonMode ? "comparison" : "single"}
+          initial={{ x: width, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
-          exit={{ x: INSPECTOR_WIDTH, opacity: 0 }}
+          exit={{ x: width, opacity: 0 }}
           transition={{ type: "spring", damping: 30, stiffness: 280 }}
           className="fixed top-0 right-0 h-full z-50 flex flex-col border-l border-[#14181f]"
-          style={{ backgroundColor: "#08090e", width: INSPECTOR_WIDTH }}
-          aria-label="Node inspector"
+          style={{ backgroundColor: "#08090e", width }}
+          aria-label={comparisonMode ? "Node comparison" : "Node inspector"}
           role="complementary"
         >
-          <InspectorContent
-            nodeId={selectedNode.id}
-            data={selectedNode.data as SwarmBoardNodeData}
-            fileWatchRevision={state.fileWatchRevision}
-            onClose={handleClose}
-          />
+          {comparisonMode ? (
+            <ComparisonInspector nodes={selectedNodes} onClose={handleClose} />
+          ) : (
+            selectedNode && (
+              <InspectorContent
+                nodeId={selectedNode.id}
+                data={selectedNode.data as SwarmBoardNodeData}
+                fileWatchRevision={state.fileWatchRevision}
+                onClose={handleClose}
+              />
+            )
+          )}
         </motion.aside>
       )}
     </AnimatePresence>

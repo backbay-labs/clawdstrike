@@ -1,5 +1,5 @@
 import React from "react";
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, fireEvent } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 
@@ -38,19 +38,25 @@ vi.mock("@xyflow/react", () => ({
 }));
 
 // ---------------------------------------------------------------------------
-// Mock motion/react
+// Mock motion/react — AnimatePresence passes children, motion.aside renders
+// as a <div> preserving style and aria props for width/label assertions.
 // ---------------------------------------------------------------------------
 
 vi.mock("motion/react", () => {
-  const MotionComponent = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  const MotionAside = React.forwardRef<
+    HTMLDivElement,
+    React.HTMLAttributes<HTMLDivElement> & { style?: React.CSSProperties }
+  >((props, ref) => <div ref={ref} {...props} />);
+  MotionAside.displayName = "MotionAside";
+  const MotionDiv = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
     (props, ref) => <div ref={ref} {...props} />,
   );
-  MotionComponent.displayName = "MotionComponent";
+  MotionDiv.displayName = "MotionDiv";
   return {
     AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
     motion: {
-      aside: MotionComponent,
-      div: MotionComponent,
+      aside: MotionAside,
+      div: MotionDiv,
     },
   };
 });
@@ -71,6 +77,25 @@ vi.mock("react-syntax-highlighter/dist/cjs/styles/prism", () => ({
 vi.mock("../artifact-preview-pane", () => ({
   ArtifactPreviewPane: () => <div data-testid="artifact-preview-pane">artifact-preview</div>,
 }));
+
+// ---------------------------------------------------------------------------
+// Mock comparison-inspector for isolated UI switching tests
+// ---------------------------------------------------------------------------
+
+vi.mock("../comparison-inspector", () => ({
+  ComparisonInspector: ({ nodes, onClose }: { nodes: unknown[]; onClose: () => void }) => (
+    <div data-testid="comparison-inspector">
+      <span data-testid="comparison-count">{nodes.length}</span>
+      <button data-testid="comparison-close" onClick={onClose}>close</button>
+    </div>
+  ),
+}));
+
+// ---------------------------------------------------------------------------
+// Import real component after mocks
+// ---------------------------------------------------------------------------
+
+import { SwarmBoardInspector } from "../swarm-board-inspector";
 
 // ---------------------------------------------------------------------------
 // Test data factories
@@ -113,7 +138,7 @@ function makeReceiptNodeConfig(overrides?: Partial<SwarmBoardNodeData>) {
 
 const STORAGE_KEY = "clawdstrike_workbench_swarm_board";
 
-function ComparisonHarness() {
+function ComparisonHarness({ withInspector = false }: { withInspector?: boolean } = {}) {
   const {
     state,
     addNode,
@@ -213,6 +238,8 @@ function ComparisonHarness() {
       >
         deselect-all
       </button>
+
+      {withInspector && <SwarmBoardInspector />}
     </div>
   );
 }
@@ -240,12 +267,12 @@ function seedEmptyBoard(): void {
   );
 }
 
-function renderHarness() {
+function renderHarness(opts?: { withInspector?: boolean }) {
   seedEmptyBoard();
   return render(
     <MemoryRouter>
       <SwarmBoardProvider>
-        <ComparisonHarness />
+        <ComparisonHarness withInspector={opts?.withInspector} />
       </SwarmBoardProvider>
     </MemoryRouter>,
   );
@@ -395,9 +422,120 @@ describe("backward compatibility", () => {
   });
 });
 
-describe("comparison mode UI switching (placeholder)", () => {
-  it.todo("renders ComparisonInspector when comparisonMode is true");
-  it.todo("renders existing InspectorContent when single node selected");
-  it.todo("receipt comparison calls summarizeReceiptPosture with selected nodes");
-  it.todo("mixed-type selection renders MixedComparison fallback");
+describe("comparison mode UI switching", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("renders ComparisonInspector when comparisonMode is true", () => {
+    renderHarness({ withInspector: true });
+
+    // Add two agent nodes
+    act(() => {
+      screen.getByTestId("add-agent-1").click();
+    });
+    act(() => {
+      screen.getByTestId("add-agent-2").click();
+    });
+
+    // Multi-select both
+    act(() => {
+      screen.getByTestId("set-multi-select").click();
+    });
+
+    // Comparison inspector should be rendered (via mock)
+    expect(screen.getByTestId("comparison-inspector")).toBeInTheDocument();
+    expect(screen.getByTestId("comparison-count").textContent).toBe("2");
+  });
+
+  it("renders existing InspectorContent when single node selected", () => {
+    renderHarness({ withInspector: true });
+
+    // Add one agent node
+    act(() => {
+      screen.getByTestId("add-agent-1").click();
+    });
+
+    // Select the agent node (last added node -- use the store to get correct ID)
+    act(() => {
+      const nodes = useSwarmBoardStore.getState().nodes;
+      const agentNode = nodes.find((n) => (n.data as SwarmBoardNodeData).title === "Agent Alpha");
+      if (agentNode) {
+        useSwarmBoardStore.getState().actions.setSelectedNodeIds([agentNode.id]);
+      }
+    });
+
+    // Comparison inspector should NOT be rendered
+    expect(screen.queryByTestId("comparison-inspector")).toBeNull();
+    // Single-node inspector should be present
+    expect(screen.getByLabelText("Node inspector")).toBeInTheDocument();
+    // Should show the agent's title
+    expect(screen.getByLabelText("Node inspector")).toHaveTextContent("Agent Alpha");
+  });
+
+  it("closes comparison mode on Escape key", () => {
+    renderHarness({ withInspector: true });
+
+    // Add two nodes and multi-select
+    act(() => {
+      screen.getByTestId("add-agent-1").click();
+    });
+    act(() => {
+      screen.getByTestId("add-agent-2").click();
+    });
+    act(() => {
+      screen.getByTestId("set-multi-select").click();
+    });
+
+    // Comparison inspector visible
+    expect(screen.getByTestId("comparison-inspector")).toBeInTheDocument();
+
+    // Press Escape
+    act(() => {
+      fireEvent.keyDown(window, { key: "Escape" });
+    });
+
+    // Comparison inspector should be gone
+    expect(screen.queryByTestId("comparison-inspector")).toBeNull();
+  });
+
+  it("inspector widens to 680px in comparison mode", () => {
+    renderHarness({ withInspector: true });
+
+    // Add two nodes and multi-select
+    act(() => {
+      screen.getByTestId("add-agent-1").click();
+    });
+    act(() => {
+      screen.getByTestId("add-agent-2").click();
+    });
+    act(() => {
+      screen.getByTestId("set-multi-select").click();
+    });
+
+    // The motion.aside (rendered as div by mock) should have width 680
+    const aside = screen.getByLabelText("Node comparison");
+    expect(aside.style.width).toBe("680px");
+  });
+
+  it("mixed-type selection renders comparison inspector", () => {
+    renderHarness({ withInspector: true });
+
+    // Add one agent and one receipt
+    act(() => {
+      screen.getByTestId("add-agent-1").click();
+    });
+    act(() => {
+      screen.getByTestId("add-receipt-1").click();
+    });
+
+    // Multi-select both (mixed types)
+    act(() => {
+      screen.getByTestId("set-multi-select").click();
+    });
+
+    // Comparison inspector should render (ComparisonInspector handles the mixed routing internally)
+    expect(screen.getByTestId("comparison-inspector")).toBeInTheDocument();
+    expect(screen.getByTestId("comparison-count").textContent).toBe("2");
+  });
 });
