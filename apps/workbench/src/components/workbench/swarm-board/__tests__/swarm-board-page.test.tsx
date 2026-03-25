@@ -56,10 +56,12 @@ vi.mock("@xyflow/react", () => {
     useReactFlow: () => ({
       setViewport: vi.fn(),
       getViewport: () => ({ x: 0, y: 0, zoom: 1 }),
+      getNodes: () => [],
       fitView: vi.fn(),
       zoomIn: vi.fn(),
       zoomOut: vi.fn(),
     }),
+    useViewport: () => ({ x: 0, y: 0, zoom: 1 }),
     MarkerType: { ArrowClosed: "arrowclosed" },
     Position: { Left: "left", Right: "right", Top: "top", Bottom: "bottom" },
     Handle: ({ type, position }: { type: string; position: string }) => (

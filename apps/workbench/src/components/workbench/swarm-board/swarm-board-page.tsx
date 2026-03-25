@@ -62,6 +62,7 @@ import { SwarmBoardToolbar } from "./swarm-board-toolbar";
 import { SwarmBoardLeftRail } from "./swarm-board-left-rail";
 import { SwarmBoardInspector } from "./swarm-board-inspector";
 import { buildSwarmBoardAtmosphere } from "./swarm-board-atmosphere";
+import { EdgeIndicators } from "./components/edge-indicators";
 import {
   SWARM_BOARD_GRID_GAP,
   SWARM_BOARD_GRID_MAJOR_GAP,
@@ -1114,6 +1115,8 @@ function SwarmBoardCanvas() {
                 pannable
                 zoomable
               />
+              {/* Off-screen node indicators -- arrows on canvas edge */}
+              <EdgeIndicators />
               {/* No Controls component — toolbar provides zoom */}
             </ReactFlow>
 

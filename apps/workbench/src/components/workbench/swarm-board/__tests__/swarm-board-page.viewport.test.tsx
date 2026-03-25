@@ -28,11 +28,14 @@ vi.mock("@xyflow/react", () => ({
   Background: () => null,
   BackgroundVariant: { Dots: "dots" },
   MiniMap: () => null,
+  Panel: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
   useReactFlow: () => ({
     fitView: fitViewMock,
     setViewport: setViewportMock,
+    getNodes: () => [],
     viewportInitialized: true,
   }),
+  useViewport: () => ({ x: 0, y: 0, zoom: 1 }),
   applyNodeChanges: (changes: unknown, nodes: unknown) => nodes,
   applyEdgeChanges: (changes: unknown, edges: unknown) => edges,
 }));
