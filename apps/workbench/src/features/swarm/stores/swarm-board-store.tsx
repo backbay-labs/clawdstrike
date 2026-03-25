@@ -1777,6 +1777,7 @@ export function useSwarmBoard(): SwarmBoardContextValue {
       nodes: s.nodes,
       edges: s.edges,
       selectedNodeId: s.selectedNodeId,
+      selectedNodeIds: s.selectedNodeIds,
       inspectorOpen: s.inspectorOpen,
       fileWatchRevision: s.fileWatchRevision,
       bundlePath: s.bundlePath,

@@ -36,6 +36,7 @@ vi.mock("@xyflow/react", () => ({
     viewportInitialized: true,
   }),
   useViewport: () => ({ x: 0, y: 0, zoom: 1 }),
+  useOnSelectionChange: vi.fn(),
   applyNodeChanges: (changes: unknown, nodes: unknown) => nodes,
   applyEdgeChanges: (changes: unknown, edges: unknown) => edges,
 }));

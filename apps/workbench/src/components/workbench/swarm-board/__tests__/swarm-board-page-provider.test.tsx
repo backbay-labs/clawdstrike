@@ -25,6 +25,7 @@ vi.mock("@xyflow/react", () => {
       zoomOut: vi.fn(),
     }),
     useViewport: () => ({ x: 0, y: 0, zoom: 1 }),
+    useOnSelectionChange: vi.fn(),
     applyNodeChanges: (_changes: unknown[], nodes: unknown[]) => nodes,
     applyEdgeChanges: (_changes: unknown[], edges: unknown[]) => edges,
     MarkerType: { ArrowClosed: "arrowclosed" },
