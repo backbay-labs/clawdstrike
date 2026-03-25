@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createBoardNode } from "@/features/swarm/stores/swarm-board-store";
 import {
   SWARM_BOARD_GRID_GAP,
+  SWARM_BOARD_GRID_MAJOR_GAP,
   SWARM_BOARD_PAN_ON_DRAG_BUTTONS,
   SWARM_BOARD_SHORTCUT_HINT,
   SWARM_BOARD_ZOOM_ACTIVATION_KEY_CODE,
@@ -72,9 +73,25 @@ describe("swarm-board canvas controls", () => {
     expect(nudgeSelectedBoardNodes([node], null, "ArrowLeft")).toBeNull();
   });
 
+  it("nudges by SWARM_BOARD_GRID_MAJOR_GAP when given a major step", () => {
+    const selected = createBoardNode({
+      nodeType: "note",
+      title: "S",
+      position: { x: 100, y: 200 },
+    });
+    const next = nudgeSelectedBoardNodes(
+      [selected],
+      selected.id,
+      "ArrowRight",
+      SWARM_BOARD_GRID_MAJOR_GAP,
+    );
+    expect(next?.[0]?.position).toEqual({ x: 100 + SWARM_BOARD_GRID_MAJOR_GAP, y: 200 });
+  });
+
   it("pins the intended quick-win interaction config", () => {
     expect(SWARM_BOARD_PAN_ON_DRAG_BUTTONS).toEqual([1]);
     expect(SWARM_BOARD_ZOOM_ACTIVATION_KEY_CODE).toEqual(["Meta", "Control"]);
     expect(SWARM_BOARD_SHORTCUT_HINT).toContain("arrows nudge");
+    expect(SWARM_BOARD_SHORTCUT_HINT).toContain("G follow");
   });
 });

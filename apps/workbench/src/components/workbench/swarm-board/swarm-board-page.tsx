@@ -35,6 +35,8 @@ import {
   type OnNodesChange,
   type OnEdgesChange,
   type NodeMouseHandler,
+  type OnNodeDrag,
+  type SelectionDragHandler,
   applyNodeChanges,
   applyEdgeChanges,
 } from "@xyflow/react";
@@ -67,6 +69,7 @@ import {
   SWARM_BOARD_SHORTCUT_HINT,
   nudgeSelectedBoardNodes,
 } from "./swarm-board-canvas-controls";
+import { snapPositionToGrid, positionNeedsSnap } from "@/features/swarm/canvas/snap-to-grid";
 import {
   SWARM_VIEWPORT_HARD_MAX_ZOOM,
   SWARM_VIEWPORT_HARD_MIN_ZOOM,
@@ -146,6 +149,17 @@ interface NodeContextMenuState {
   y: number;
 }
 
+/** Returns true when the event target is a text input or inside a .nodrag zone. */
+function isInputTarget(e: KeyboardEvent): boolean {
+  const target = e.target as HTMLElement;
+  return (
+    target.tagName === "INPUT" ||
+    target.tagName === "TEXTAREA" ||
+    target.isContentEditable ||
+    !!target.closest(".nodrag")
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Inner canvas component (needs both SwarmBoardProvider and ReactFlowProvider)
 // ---------------------------------------------------------------------------
@@ -197,6 +211,9 @@ function SwarmBoardCanvas() {
 
   // Follow-active toggle
   const [followActive, setFollowActive] = useState(false);
+
+  // Space+drag pan mode
+  const [spaceHeld, setSpaceHeld] = useState(false);
 
   // Hovered node tracking for edge hover-reveal
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
@@ -412,6 +429,36 @@ function SwarmBoardCanvas() {
         target: params.target,
         type: "handoff",
       });
+    },
+    [storeActions],
+  );
+
+  // Snap single node to grid on drag end
+  const onNodeDragStop: OnNodeDrag = useCallback(
+    (_event, node) => {
+      if (!positionNeedsSnap(node.position)) return;
+      const snapped = snapPositionToGrid(node.position);
+      storeActions.setNodes(
+        nodesRef.current.map((n) =>
+          n.id === node.id ? { ...n, position: snapped } : n,
+        ),
+      );
+    },
+    [storeActions],
+  );
+
+  // Snap all dragged nodes to grid on multi-selection drag end
+  const onSelectionDragStop: SelectionDragHandler = useCallback(
+    (_event, draggedNodes) => {
+      const needsSnap = draggedNodes.some((d) => positionNeedsSnap(d.position));
+      if (!needsSnap) return;
+      const draggedIds = new Set(draggedNodes.map((d) => d.id));
+      storeActions.setNodes(
+        nodesRef.current.map((n) => {
+          if (!draggedIds.has(n.id)) return n;
+          return { ...n, position: snapPositionToGrid(n.position) };
+        }),
+      );
     },
     [storeActions],
   );
@@ -661,15 +708,7 @@ function SwarmBoardCanvas() {
     function handleKeyDown(e: KeyboardEvent) {
       // Don't intercept when typing in an input, textarea, contentEditable,
       // or inside an xterm terminal container
-      const target = e.target as HTMLElement;
-      if (
-        target.tagName === "INPUT" ||
-        target.tagName === "TEXTAREA" ||
-        target.isContentEditable ||
-        target.closest(".nodrag")
-      ) {
-        return;
-      }
+      if (isInputTarget(e)) return;
 
       const isMeta = e.metaKey || e.ctrlKey;
 
@@ -768,8 +807,8 @@ function SwarmBoardCanvas() {
           return;
         }
 
-        // Space -> toggle follow active
-        if (e.key === " ") {
+        // G -> toggle follow active (moved from Space to avoid conflict with Space+drag pan)
+        if (e.key === "g" || e.key === "G") {
           e.preventDefault();
           setFollowActive((prev) => !prev);
           return;
@@ -780,6 +819,32 @@ function SwarmBoardCanvas() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [selectNode, storeActions, addNode, fitBoard, getDropPosition, spawnSession, state.repoRoot, state.selectedNodeId]);
+
+  // Space+drag pan — hold Space to enable left-click pan mode
+  useEffect(() => {
+    function handleSpaceDown(e: KeyboardEvent) {
+      if (e.key !== " " || e.repeat || isInputTarget(e)) return;
+      e.preventDefault();
+      setSpaceHeld(true);
+    }
+    function handleSpaceUp(e: KeyboardEvent) {
+      if (e.key !== " ") return;
+      setSpaceHeld(false);
+    }
+    // Also reset on blur (user switches window while holding Space)
+    function handleBlur() {
+      setSpaceHeld(false);
+    }
+
+    window.addEventListener("keydown", handleSpaceDown);
+    window.addEventListener("keyup", handleSpaceUp);
+    window.addEventListener("blur", handleBlur);
+    return () => {
+      window.removeEventListener("keydown", handleSpaceDown);
+      window.removeEventListener("keyup", handleSpaceUp);
+      window.removeEventListener("blur", handleBlur);
+    };
+  }, []);
 
   // Follow active — auto-zoom to running node
   useEffect(() => {
@@ -888,6 +953,11 @@ function SwarmBoardCanvas() {
     [receiptPosture],
   );
 
+  const activePanOnDrag = useMemo(
+    () => (spaceHeld ? [0, 1] : SWARM_BOARD_PAN_ON_DRAG_BUTTONS),
+    [spaceHeld],
+  );
+
   return (
     <div className="flex flex-col h-full w-full" style={{ backgroundColor: "#05060a" }}>
       {/* Toolbar (uses useReactFlow) */}
@@ -906,7 +976,7 @@ function SwarmBoardCanvas() {
         <SwarmBoardLeftRail />
 
         {/* Canvas */}
-        <div ref={canvasViewportRef} className="flex-1 relative flex flex-col">
+        <div ref={canvasViewportRef} className={`flex-1 relative flex flex-col${spaceHeld ? " space-held" : ""}`}>
           <div className="flex-1 relative">
             {/* Global keyframe animations for node breathing effects */}
             <style>{`
@@ -943,6 +1013,8 @@ function SwarmBoardCanvas() {
               .react-flow__node {
                 animation: nodeEnter 0.3s ease-out;
               }
+              .space-held .react-flow__pane { cursor: grab; }
+              .space-held .react-flow__pane:active { cursor: grabbing; }
             `}</style>
 
             <ReactFlow
@@ -969,7 +1041,7 @@ function SwarmBoardCanvas() {
               fitViewOptions={FIT_VIEW_OPTIONS}
               minZoom={SWARM_VIEWPORT_HARD_MIN_ZOOM}
               maxZoom={SWARM_VIEWPORT_HARD_MAX_ZOOM}
-              panOnDrag={SWARM_BOARD_PAN_ON_DRAG_BUTTONS}
+              panOnDrag={activePanOnDrag}
               zoomOnScroll={false}
               zoomOnPinch={false}
               zoomOnDoubleClick={false}

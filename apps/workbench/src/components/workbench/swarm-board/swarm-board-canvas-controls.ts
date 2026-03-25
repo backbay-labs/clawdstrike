@@ -6,7 +6,7 @@ export const SWARM_BOARD_GRID_MAJOR_GAP = 80;
 export const SWARM_BOARD_PAN_ON_DRAG_BUTTONS = [1];
 export const SWARM_BOARD_ZOOM_ACTIVATION_KEY_CODE = ["Meta", "Control"] as const;
 export const SWARM_BOARD_PAN_ON_SCROLL_SPEED = 1.15;
-export const SWARM_BOARD_SHORTCUT_HINT = "1-6 add / arrows nudge / F fit / Space follow";
+export const SWARM_BOARD_SHORTCUT_HINT = "1-6 add / arrows nudge / F fit / G follow";
 
 export function nudgeSelectedBoardNodes(
   nodes: Array<Node<SwarmBoardNodeData>>,
