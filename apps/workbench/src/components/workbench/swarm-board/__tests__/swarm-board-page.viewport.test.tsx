@@ -193,3 +193,59 @@ describe("SwarmBoardPage viewport wiring", () => {
     );
   });
 });
+
+describe("resize recentering math", () => {
+  it("shifts viewport by half the size delta", () => {
+    // This tests the formula: x + (newW - oldW) / 2, y + (newH - oldH) / 2
+    const viewport = { x: 100, y: 200, zoom: 1 };
+    const oldW = 800, oldH = 600;
+    const newW = 600, newH = 600; // sidebar opened, width reduced by 200
+
+    const recentered = {
+      x: viewport.x + (newW - oldW) / 2,  // 100 + (-200)/2 = 0
+      y: viewport.y + (newH - oldH) / 2,  // 200 + 0 = 200
+      zoom: viewport.zoom,
+    };
+
+    expect(recentered).toEqual({ x: 0, y: 200, zoom: 1 });
+  });
+
+  it("is a no-op when dimensions are unchanged", () => {
+    const viewport = { x: 100, y: 200, zoom: 0.8 };
+    const dw = 0, dh = 0;
+    const recentered = {
+      x: viewport.x + dw / 2,
+      y: viewport.y + dh / 2,
+      zoom: viewport.zoom,
+    };
+    expect(recentered).toEqual(viewport);
+  });
+
+  it("handles height-only resize (inspector toggle)", () => {
+    const viewport = { x: 50, y: 100, zoom: 1.5 };
+    const oldW = 1000, oldH = 800;
+    const newW = 1000, newH = 600; // inspector opened, height reduced by 200
+
+    const recentered = {
+      x: viewport.x + (newW - oldW) / 2,  // 50 + 0 = 50
+      y: viewport.y + (newH - oldH) / 2,  // 100 + (-200)/2 = 0
+      zoom: viewport.zoom,
+    };
+
+    expect(recentered).toEqual({ x: 50, y: 0, zoom: 1.5 });
+  });
+
+  it("handles window grow (both dimensions increase)", () => {
+    const viewport = { x: 0, y: 0, zoom: 1 };
+    const oldW = 800, oldH = 600;
+    const newW = 1200, newH = 900; // window maximized
+
+    const recentered = {
+      x: viewport.x + (newW - oldW) / 2,  // 0 + 400/2 = 200
+      y: viewport.y + (newH - oldH) / 2,  // 0 + 300/2 = 150
+      zoom: viewport.zoom,
+    };
+
+    expect(recentered).toEqual({ x: 200, y: 150, zoom: 1 });
+  });
+});

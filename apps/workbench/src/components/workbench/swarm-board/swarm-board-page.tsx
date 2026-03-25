@@ -703,6 +703,38 @@ function SwarmBoardCanvas() {
     };
   }, [cancelSnapback]);
 
+  // Resize recentering — shift viewport by half the size delta to keep
+  // content visually centered when the canvas container changes size
+  // (sidebar toggle, inspector open/close, window resize).
+  useEffect(() => {
+    const el = canvasViewportRef.current;
+    if (!el) return;
+    let prevW = el.clientWidth;
+    let prevH = el.clientHeight;
+
+    const observer = new ResizeObserver(() => {
+      const w = el.clientWidth;
+      const h = el.clientHeight;
+      if (w === prevW && h === prevH) return;
+
+      const dw = (w - prevW) / 2;
+      const dh = (h - prevH) / 2;
+      prevW = w;
+      prevH = h;
+
+      setControlledViewport(
+        {
+          x: viewportRef.current.x + dw,
+          y: viewportRef.current.y + dh,
+          zoom: viewportRef.current.zoom,
+        },
+        "imperative",
+      );
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [setControlledViewport]);
+
   // ------- Keyboard shortcuts -------
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -730,11 +762,13 @@ function SwarmBoardCanvas() {
         return;
       }
 
-      if (!isMeta && !e.shiftKey && !e.altKey && !target.closest(".react-flow__node")) {
+      if (!isMeta && !e.altKey && !(e.target as HTMLElement).closest?.(".react-flow__node")) {
+        const step = e.shiftKey ? SWARM_BOARD_GRID_MAJOR_GAP : SWARM_BOARD_GRID_GAP;
         const nudgedNodes = nudgeSelectedBoardNodes(
           nodesRef.current,
           state.selectedNodeId,
           e.key,
+          step,
         );
         if (nudgedNodes) {
           e.preventDefault();
@@ -1036,6 +1070,8 @@ function SwarmBoardCanvas() {
               onNodeMouseEnter={onNodeMouseEnter}
               onNodeMouseLeave={onNodeMouseLeave}
               onPaneClick={onPaneClick}
+              onNodeDragStop={onNodeDragStop}
+              onSelectionDragStop={onSelectionDragStop}
               nodesDraggable
               nodesConnectable
               fitViewOptions={FIT_VIEW_OPTIONS}
