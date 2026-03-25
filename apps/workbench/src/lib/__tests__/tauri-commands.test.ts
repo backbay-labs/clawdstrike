@@ -1,80 +1,116 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { cancelSearchInProjectNative, searchInProjectNative } from "../tauri-commands";
 
-const bridgeMocks = vi.hoisted(() => ({
+const { invokeMock, isDesktopMock } = vi.hoisted(() => ({
   invokeMock: vi.fn(),
-  isDesktop: vi.fn(() => false),
-  hasWorkbenchE2EInvoke: vi.fn(() => false),
-  getWorkbenchE2EBridge: vi.fn(() => null),
+  isDesktopMock: vi.fn(),
 }));
 
 vi.mock("../tauri-bridge", () => ({
-  isDesktop: bridgeMocks.isDesktop,
+  isDesktop: isDesktopMock,
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: bridgeMocks.invokeMock,
+  invoke: invokeMock,
 }));
 
-vi.mock("@/lib/workbench/e2e-bridge", () => ({
-  hasWorkbenchE2EInvoke: bridgeMocks.hasWorkbenchE2EInvoke,
-  getWorkbenchE2EBridge: bridgeMocks.getWorkbenchE2EBridge,
-}));
+import {
+  configureSwarmFileWatcherNative,
+  readAppPersistenceFileNative,
+  respondToRpcFrontendRequestNative,
+  searchInProjectNative,
+  stopSwarmFileWatcherNative,
+  writeAppPersistenceFileNative,
+} from "../tauri-commands";
 
 describe("searchInProjectNative", () => {
   beforeEach(() => {
-    bridgeMocks.invokeMock.mockReset();
-    bridgeMocks.isDesktop.mockReset();
-    bridgeMocks.isDesktop.mockReturnValue(false);
-    bridgeMocks.hasWorkbenchE2EInvoke.mockReset();
-    bridgeMocks.hasWorkbenchE2EInvoke.mockReturnValue(false);
-    bridgeMocks.getWorkbenchE2EBridge.mockReset();
-    bridgeMocks.getWorkbenchE2EBridge.mockReturnValue(null);
+    invokeMock.mockReset();
+    isDesktopMock.mockReset();
+    isDesktopMock.mockReturnValue(true);
   });
 
-  it("returns null when neither desktop nor the E2E bridge is available", async () => {
+  it("returns null outside desktop mode", async () => {
+    isDesktopMock.mockReturnValue(false);
+
     await expect(
-      searchInProjectNative("/workspace/project", "needle", false, false, false),
+      searchInProjectNative("/workspace/alpha", "needle", false, false, false),
     ).resolves.toBeNull();
 
-    expect(bridgeMocks.invokeMock).not.toHaveBeenCalled();
+    expect(invokeMock).not.toHaveBeenCalled();
   });
 
-  it("rethrows search errors with the backend message intact", async () => {
-    const invoke = vi.fn().mockRejectedValue("Invalid regex: unclosed character class");
-    bridgeMocks.hasWorkbenchE2EInvoke.mockReturnValue(true);
-    bridgeMocks.getWorkbenchE2EBridge.mockReturnValue({ invoke } as never);
+  it("preserves tauri invocation errors for callers", async () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    invokeMock.mockRejectedValueOnce({ message: "invalid regex" });
 
     await expect(
-      searchInProjectNative("/workspace/project", "[", false, false, true),
-    ).rejects.toThrow("Invalid regex: unclosed character class");
+      searchInProjectNative("/workspace/alpha", "needle(", false, false, true),
+    ).rejects.toThrow("invalid regex");
+
+    expect(consoleErrorSpy).toHaveBeenCalled();
+    consoleErrorSpy.mockRestore();
   });
 });
 
-describe("cancelSearchInProjectNative", () => {
+describe("app persistence commands", () => {
   beforeEach(() => {
-    bridgeMocks.invokeMock.mockReset();
-    bridgeMocks.isDesktop.mockReset();
-    bridgeMocks.isDesktop.mockReturnValue(false);
-    bridgeMocks.hasWorkbenchE2EInvoke.mockReset();
-    bridgeMocks.hasWorkbenchE2EInvoke.mockReturnValue(false);
-    bridgeMocks.getWorkbenchE2EBridge.mockReset();
-    bridgeMocks.getWorkbenchE2EBridge.mockReturnValue(null);
+    invokeMock.mockReset();
+    isDesktopMock.mockReset();
+    isDesktopMock.mockReturnValue(true);
   });
 
-  it("returns early when neither desktop nor the E2E bridge is available", async () => {
-    await expect(cancelSearchInProjectNative("search-1")).resolves.toBeUndefined();
+  it("reads persistence files through the native command surface", async () => {
+    invokeMock.mockResolvedValueOnce("{\"version\":1}");
 
-    expect(bridgeMocks.invokeMock).not.toHaveBeenCalled();
+    await expect(readAppPersistenceFileNative("swarm-board-state.v1.json")).resolves.toBe(
+      "{\"version\":1}",
+    );
+
+    expect(invokeMock).toHaveBeenCalledWith("read_app_persistence_file", {
+      filename: "swarm-board-state.v1.json",
+    });
   });
 
-  it("uses the E2E invoke bridge when available", async () => {
-    const invoke = vi.fn().mockResolvedValue(undefined);
-    bridgeMocks.hasWorkbenchE2EInvoke.mockReturnValue(true);
-    bridgeMocks.getWorkbenchE2EBridge.mockReturnValue({ invoke } as never);
+  it("skips persistence writes outside desktop mode", async () => {
+    isDesktopMock.mockReturnValue(false);
 
-    await expect(cancelSearchInProjectNative("search-1")).resolves.toBeUndefined();
+    await expect(
+      writeAppPersistenceFileNative("swarm-board-state.v1.json", "{}"),
+    ).resolves.toBe(false);
 
-    expect(invoke).toHaveBeenCalledWith("cancel_search_in_project", { searchId: "search-1" });
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it("configures the backend file watcher with typed request payloads", async () => {
+    await expect(
+      configureSwarmFileWatcherNative({
+        persistence_filenames: ["swarm-board-state.v1.json"],
+        workspace_paths: ["/tmp/evidence/findings.json"],
+      }),
+    ).resolves.toBe(true);
+
+    expect(invokeMock).toHaveBeenCalledWith("configure_swarm_file_watcher", {
+      request: {
+        persistence_filenames: ["swarm-board-state.v1.json"],
+        workspace_paths: ["/tmp/evidence/findings.json"],
+      },
+    });
+  });
+
+  it("stops the backend file watcher when no watch scopes remain", async () => {
+    await expect(stopSwarmFileWatcherNative()).resolves.toBe(true);
+    expect(invokeMock).toHaveBeenCalledWith("stop_swarm_file_watcher", undefined);
+  });
+
+  it("acknowledges bridged frontend RPC requests through the native command surface", async () => {
+    await expect(
+      respondToRpcFrontendRequestNative("req-123", { ok: true }),
+    ).resolves.toBe(true);
+
+    expect(invokeMock).toHaveBeenCalledWith("rpc_frontend_respond", {
+      requestId: "req-123",
+      payload: { ok: true },
+      error: null,
+    });
   });
 });

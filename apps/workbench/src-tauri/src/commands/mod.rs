@@ -1,7 +1,10 @@
 pub mod capability;
 pub mod detection;
+pub mod file_watcher;
 pub mod mcp_sidecar;
+pub mod persistence;
 pub mod repo_roots;
+pub mod rpc_socket;
 pub mod stronghold;
 pub mod terminal;
 pub mod workbench;

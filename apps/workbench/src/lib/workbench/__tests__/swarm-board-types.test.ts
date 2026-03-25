@@ -334,6 +334,7 @@ describe("SwarmBoardState", () => {
       edges: [],
       selectedNodeId: null,
       inspectorOpen: false,
+      fileWatchRevision: 0,
       bundlePath: "",
     };
 
@@ -353,6 +354,7 @@ describe("SwarmBoardState", () => {
       edges: [],
       selectedNodeId: "node-123",
       inspectorOpen: true,
+      fileWatchRevision: 0,
       bundlePath: "",
     };
 

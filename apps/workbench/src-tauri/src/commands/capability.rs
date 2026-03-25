@@ -148,7 +148,7 @@ fn ensure_trusted_window<R: Runtime>(window: &tauri::Window<R>) -> Result<(), St
 
 fn policy_for_command(command: &str) -> Result<ScopePolicy, String> {
     match command.trim() {
-        "terminal_list" | "terminal_preview" => Ok(ScopePolicy {
+        "terminal_list" | "terminal_preview" | "terminal_discover" => Ok(ScopePolicy {
             scope: AuthorizationScope::TerminalRead,
             ttl_secs: TERMINAL_READ_TTL_SECS,
             max_uses: TERMINAL_READ_MAX_USES,
@@ -156,7 +156,7 @@ fn policy_for_command(command: &str) -> Result<ScopePolicy, String> {
             message:
                 "Allow this window to list and preview terminal sessions for the next 60 seconds?",
         }),
-        "terminal_create" | "terminal_kill" | "terminal_resize" => Ok(ScopePolicy {
+        "terminal_create" | "terminal_kill" | "terminal_resize" | "terminal_reconnect" => Ok(ScopePolicy {
             scope: AuthorizationScope::TerminalLifecycle,
             ttl_secs: TERMINAL_LIFECYCLE_TTL_SECS,
             max_uses: TERMINAL_LIFECYCLE_MAX_USES,

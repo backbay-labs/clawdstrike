@@ -12,6 +12,8 @@ vi.mock("@xyflow/react", () => {
   return {
     ReactFlow: ReactFlowMock,
     ReactFlowProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    Background: () => null,
+    BackgroundVariant: { Dots: "dots" },
     MiniMap: () => <div data-testid="react-flow-minimap" />,
     useReactFlow: () => ({
       getViewport: () => ({ x: 0, y: 0, zoom: 1 }),
@@ -57,6 +59,7 @@ vi.mock("@/features/swarm/coordinator-instance", () => ({
 
 vi.mock("@/features/swarm/stores/swarm-engine-provider", () => ({
   SwarmEngineProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  useSwarmEngine: () => ({ engine: null, taskGraph: null }),
   useOptionalSwarmEngine: () => null,
 }));
 

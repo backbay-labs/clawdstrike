@@ -58,6 +58,9 @@ export interface SessionInfo {
   alive: boolean;
   exit_code: number | null;
   line_count: number;
+  shell: string;
+  persistence_mode: "direct" | "tmux";
+  recovery_state: "fresh" | "recoverable" | "recovered";
 }
 
 export interface WorktreeInfo {
@@ -91,6 +94,18 @@ export const terminalService = {
     env?: Record<string, string>,
   ): Promise<SessionInfo> =>
     invokeSensitive<SessionInfo>("terminal_create", { cwd, shell, env }),
+
+  /**
+   * Discover recoverable tmux-backed sessions persisted across app restarts.
+   */
+  discover: (): Promise<SessionInfo[]> =>
+    invokeSensitive<SessionInfo[]>("terminal_discover"),
+
+  /**
+   * Reattach a previously discovered tmux-backed session.
+   */
+  reconnect: (sessionId: string): Promise<SessionInfo> =>
+    invokeSensitive<SessionInfo>("terminal_reconnect", { sessionId }),
 
   /**
    * Write data (keystrokes, paste, etc.) to a session's PTY stdin.

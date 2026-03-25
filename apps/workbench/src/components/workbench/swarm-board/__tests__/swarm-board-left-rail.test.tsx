@@ -128,6 +128,65 @@ function LeftRailHarness() {
       </button>
       <button
         type="button"
+        data-testid="add-receipt-allow"
+        onClick={() =>
+          addNode({
+            nodeType: "receipt",
+            title: "File write check",
+            position: { x: 0, y: 300 },
+            data: {
+              verdict: "allow",
+              guardResults: [
+                { guard: "ForbiddenPathGuard", allowed: true, duration_ms: 2 },
+                { guard: "PatchIntegrityGuard", allowed: true, duration_ms: 7 },
+              ],
+            },
+          })
+        }
+      >
+        add-receipt-allow
+      </button>
+      <button
+        type="button"
+        data-testid="add-receipt-warn"
+        onClick={() =>
+          addNode({
+            nodeType: "receipt",
+            title: "Spider sense warn",
+            position: { x: 150, y: 300 },
+            data: {
+              verdict: "warn",
+              guardResults: [
+                { guard: "ForbiddenPathGuard", allowed: true, duration_ms: 5 },
+                { guard: "SpiderSenseGuard", allowed: true, duration_ms: 9 },
+              ],
+            },
+          })
+        }
+      >
+        add-receipt-warn
+      </button>
+      <button
+        type="button"
+        data-testid="add-receipt-deny"
+        onClick={() =>
+          addNode({
+            nodeType: "receipt",
+            title: "Shell denied",
+            position: { x: 300, y: 300 },
+            data: {
+              verdict: "deny",
+              guardResults: [
+                { guard: "ForbiddenPathGuard", allowed: false, duration_ms: 4 },
+              ],
+            },
+          })
+        }
+      >
+        add-receipt-deny
+      </button>
+      <button
+        type="button"
         data-testid="add-note"
         onClick={() =>
           addNode({
@@ -384,6 +443,42 @@ describe("SwarmBoardLeftRail", () => {
 
       // Branches section is hidden entirely when there are no branches
       expect(screen.queryByTitle("Branches")).toBeNull();
+    });
+  });
+
+  describe("policy heatmap", () => {
+    it("hides the policy section when there are no receipt guard results", () => {
+      renderLeftRail();
+
+      expect(screen.queryByTitle("Policy")).toBeNull();
+    });
+
+    it("shows aggregated guard rows with latency and posture counts", () => {
+      renderLeftRail();
+
+      act(() => {
+        screen.getByTestId("add-receipt-allow").click();
+      });
+      act(() => {
+        screen.getByTestId("add-receipt-warn").click();
+      });
+      act(() => {
+        screen.getByTestId("add-receipt-deny").click();
+      });
+
+      expect(screen.getByTitle("Policy")).toBeInTheDocument();
+      expect(screen.getByText("ForbiddenPathGuard")).toBeInTheDocument();
+
+      const row = screen.getByTestId("policy-row-ForbiddenPathGuard");
+      expect(row).toHaveTextContent("3");
+      expect(row).toHaveTextContent("1d");
+      expect(row).toHaveTextContent("1w");
+      expect(row).toHaveTextContent("1a");
+      expect(row).toHaveTextContent("3r");
+      expect(row).toHaveTextContent("avg 4ms max 5ms");
+
+      expect(screen.getByText("3r 5e 1d")).toBeInTheDocument();
+      expect(screen.getByText("2a 2w")).toBeInTheDocument();
     });
   });
 

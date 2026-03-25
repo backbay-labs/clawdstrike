@@ -1,0 +1,160 @@
+#!/usr/bin/env node
+
+import { createConnection } from "node:net";
+import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+
+function usage() {
+  console.error("Usage: csw <method> [params-json] [--info <path>] [--token <token>]");
+  console.error("Example: csw rpc.discover '{}'");
+}
+
+function defaultAppDataDir() {
+  const home = homedir();
+  if (process.platform === "darwin") {
+    return join(home, "Library", "Application Support", "com.clawdstrike.workbench");
+  }
+  if (process.platform === "win32") {
+    const appData = process.env.APPDATA ?? join(home, "AppData", "Roaming");
+    return join(appData, "com.clawdstrike.workbench");
+  }
+  return join(process.env.XDG_DATA_HOME ?? join(home, ".local", "share"), "com.clawdstrike.workbench");
+}
+
+function parseArgs(argv) {
+  const args = [...argv];
+  let infoPath = process.env.CSW_RPC_INFO ?? join(defaultAppDataDir(), "ipc.json");
+  let token = process.env.CSW_RPC_TOKEN ?? null;
+  const positional = [];
+
+  while (args.length > 0) {
+    const arg = args.shift();
+    if (arg === "--info") {
+      infoPath = args.shift();
+      continue;
+    }
+    if (arg === "--token") {
+      token = args.shift();
+      continue;
+    }
+    if (arg === "--help" || arg === "-h") {
+      usage();
+      process.exit(0);
+    }
+    positional.push(arg);
+  }
+
+  if (!infoPath) {
+    throw new Error("Missing --info value");
+  }
+
+  return {
+    infoPath,
+    token,
+    method: positional[0],
+    paramsJson: positional[1] ?? "{}",
+  };
+}
+
+function readRuntimeInfo(infoPath) {
+  if (!existsSync(infoPath)) {
+    throw new Error(`RPC info file not found: ${infoPath}`);
+  }
+  return JSON.parse(readFileSync(infoPath, "utf8"));
+}
+
+function resolveToken(runtimeInfo, explicitToken) {
+  if (explicitToken) {
+    return explicitToken;
+  }
+  const tokenPath = runtimeInfo.token_file;
+  if (!tokenPath || !existsSync(tokenPath)) {
+    throw new Error("RPC token file was not found and no --token override was provided");
+  }
+  return readFileSync(tokenPath, "utf8").trim();
+}
+
+function connect(runtimeInfo) {
+  if (runtimeInfo.transport === "unix") {
+    return createConnection(runtimeInfo.endpoint);
+  }
+  if (runtimeInfo.transport === "tcp") {
+    const host = runtimeInfo.host ?? "127.0.0.1";
+    const port = runtimeInfo.port;
+    if (typeof port !== "number") {
+      throw new Error("TCP RPC runtime info is missing a port");
+    }
+    return createConnection(port, host);
+  }
+  throw new Error(`Unsupported RPC transport: ${runtimeInfo.transport}`);
+}
+
+async function sendRequest(runtimeInfo, token, method, params) {
+  const socket = connect(runtimeInfo);
+  const payload = JSON.stringify({
+    jsonrpc: "2.0",
+    id: Date.now(),
+    method,
+    params,
+    auth: `Bearer ${token}`,
+  }) + "\n";
+
+  return new Promise((resolve, reject) => {
+    let buffer = "";
+
+    socket.on("connect", () => {
+      socket.write(payload);
+    });
+
+    socket.on("data", (chunk) => {
+      buffer += chunk.toString("utf8");
+      const newlineIndex = buffer.indexOf("\n");
+      if (newlineIndex === -1) {
+        return;
+      }
+      const line = buffer.slice(0, newlineIndex).trim();
+      socket.end();
+      if (!line) {
+        reject(new Error("Received an empty RPC response"));
+        return;
+      }
+      try {
+        resolve(JSON.parse(line));
+      } catch (error) {
+        reject(error);
+      }
+    });
+
+    socket.on("error", reject);
+  });
+}
+
+async function main() {
+  const { infoPath, token: explicitToken, method, paramsJson } = parseArgs(process.argv.slice(2));
+  if (!method) {
+    usage();
+    process.exit(1);
+  }
+
+  const runtimeInfo = readRuntimeInfo(infoPath);
+  const token = resolveToken(runtimeInfo, explicitToken);
+
+  let params;
+  try {
+    params = JSON.parse(paramsJson);
+  } catch (error) {
+    throw new Error(`Failed to parse params JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  const response = await sendRequest(runtimeInfo, token, method, params);
+  process.stdout.write(JSON.stringify(response, null, 2) + "\n");
+  if (response?.error) {
+    process.exit(1);
+  }
+}
+
+main().catch((error) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+});

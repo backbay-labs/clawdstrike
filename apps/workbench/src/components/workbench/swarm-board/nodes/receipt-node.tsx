@@ -2,7 +2,7 @@
  * ReceiptNode — legal document stamp aesthetic.
  *
  * The verdict (ALLOW/DENY) is the dominant visual element — large, bold,
- * impossible to miss. Guard details are secondary, quieter.
+ * impossible to miss. Secondary verification detail lives in the inspector.
  */
 
 import { memo } from "react";
@@ -50,12 +50,15 @@ function ReceiptNodeInner({ data, selected }: NodeProps) {
   const VerdictIcon = vs.icon;
   const guards = d.guardResults ?? [];
 
-  const sigHash = d.sessionId
-    ? `0x${d.sessionId.replace(/[^a-f0-9]/gi, "").padEnd(40, "0").slice(0, 40)}`
-    : "0x" + "0".repeat(40);
-
-  const timeStr = d.createdAt
-    ? new Date(d.createdAt).toLocaleTimeString(undefined, {
+  const rawTimeSource = d.receiptData?.timestamp
+    ? Date.parse(d.receiptData.timestamp)
+    : d.createdAt;
+  const timeSource =
+    typeof rawTimeSource === "number" && Number.isFinite(rawTimeSource)
+      ? rawTimeSource
+      : null;
+  const timeStr = timeSource != null
+    ? new Date(timeSource).toLocaleTimeString(undefined, {
         hour: "2-digit",
         minute: "2-digit",
         second: "2-digit",
@@ -77,15 +80,15 @@ function ReceiptNodeInner({ data, selected }: NodeProps) {
         backgroundColor: selected ? "#0e1018" : "#0a0c11",
         width: "100%",
         height: "100%",
-        minWidth: 240,
-        minHeight: 160,
+        minWidth: 220,
+        minHeight: 96,
         // Thin top accent line — the "seal" color
         borderTop: `2px solid ${vs.accent}30`,
       }}
     >
       <NodeResizer
-        minWidth={240}
-        minHeight={160}
+        minWidth={220}
+        minHeight={96}
         isVisible={selected}
         lineClassName="!border-[#c49a3c]/25"
         handleClassName="!w-1.5 !h-1.5 !bg-[#c49a3c] !border-[#0a0c11]"
@@ -123,65 +126,34 @@ function ReceiptNodeInner({ data, selected }: NodeProps) {
             className="ml-auto text-[8px] font-mono text-[#2a2f3a] self-start mt-0.5"
             style={{ fontVariantNumeric: 'tabular-nums' }}
           >
-            {timeStr}
+            {formatReceiptNodeTime(timeSource, timeStr)}
           </span>
         )}
       </div>
 
-      {/* Guard results — secondary, compact */}
-      {guards.length > 0 && (
-        <div className="px-3 py-1.5">
-          {guards.slice(0, 6).map((gr, i) => (
-            <div key={i} className="flex items-center gap-1.5 py-[2px]">
-              <span
-                className="w-1 h-1 rounded-full shrink-0"
-                style={{ backgroundColor: gr.allowed ? "#38a876" : "#b85450" }}
-              />
-              <span className="text-[9px] text-[#4a5568] font-mono truncate flex-1">
-                {gr.guard}
-              </span>
-              {gr.duration_ms != null && (
-                <span
-                  className="text-[8px] text-[#2a2f3a] font-mono shrink-0"
-                  style={{ fontVariantNumeric: 'tabular-nums' }}
-                >
-                  {gr.duration_ms}ms
-                </span>
-              )}
-            </div>
-          ))}
-          {guards.length > 6 && (
-            <span className="text-[8px] text-[#2a2f3a] ml-2.5">
-              +{guards.length - 6} more
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* Signature footer — like a stamp seal */}
+      {/* Verification footer — preserve board-level trust state, move raw detail to inspector */}
       <div
-        className="flex items-center gap-1.5 px-3 py-1.5 mt-auto"
+        className="flex items-center gap-2 px-3 py-1.5 mt-auto"
         style={{ borderTop: '1px solid #1a1e2820' }}
       >
         <span
-          className="text-[7px] text-[#2a2f3a] font-mono truncate flex-1"
-          style={{ fontVariantNumeric: 'tabular-nums' }}
-          title={sigHash}
+          className="text-[8px] text-[#4a5568] font-mono"
+          style={{ fontVariantNumeric: "tabular-nums" }}
         >
-          sig {sigHash.slice(0, 18)}...
+          {guards.length} guard{guards.length !== 1 ? "s" : ""}
         </span>
         {d.signatureVerified === true ? (
-          <span className="flex items-center gap-0.5 shrink-0" title="Signature verified">
+          <span className="flex items-center gap-0.5 shrink-0 ml-auto" title="Signature verified">
             <IconShieldCheck size={10} stroke={2} style={{ color: '#38a876' }} />
             <span className="text-[7px] font-mono" style={{ color: '#38a876' }}>Verified</span>
           </span>
         ) : d.signatureVerified === false ? (
-          <span className="flex items-center gap-0.5 shrink-0" title="Signature verification failed">
+          <span className="flex items-center gap-0.5 shrink-0 ml-auto" title="Signature verification failed">
             <IconShieldOff size={10} stroke={2} style={{ color: '#b85450' }} />
             <span className="text-[7px] font-mono" style={{ color: '#b85450' }}>Unverified</span>
           </span>
         ) : d.signature && d.publicKey ? (
-          <span className="flex items-center gap-0.5 shrink-0" title="Verification pending">
+          <span className="flex items-center gap-0.5 shrink-0 ml-auto" title="Verification pending">
             <IconShieldQuestion size={10} stroke={2} style={{ color: '#4a5568' }} />
             <span className="text-[7px] font-mono" style={{ color: '#4a5568' }}>Pending</span>
           </span>
@@ -198,3 +170,15 @@ function ReceiptNodeInner({ data, selected }: NodeProps) {
 }
 
 export const ReceiptNode = memo(ReceiptNodeInner);
+
+function formatReceiptNodeTime(timeSource: number | null, fallback: string): string {
+  if (timeSource == null) {
+    return fallback;
+  }
+
+  const deltaSeconds = Math.max(0, Math.floor((Date.now() - timeSource) / 1000));
+  if (deltaSeconds < 60) return `${deltaSeconds}s ago`;
+  if (deltaSeconds < 3600) return `${Math.floor(deltaSeconds / 60)}m ago`;
+  if (deltaSeconds < 86_400) return `${Math.floor(deltaSeconds / 3600)}h ago`;
+  return `${Math.floor(deltaSeconds / 86_400)}d ago`;
+}

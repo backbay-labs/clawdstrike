@@ -55,14 +55,14 @@ function TerminalTaskNodeInner({ data, selected }: NodeProps) {
         width: "100%",
         height: "100%",
         minWidth: 220,
-        minHeight: 80,
+        minHeight: 72,
         // Left accent — status color as a 2px stripe
         borderLeft: `2px solid ${cfg.color}50`,
       }}
     >
       <NodeResizer
         minWidth={220}
-        minHeight={80}
+        minHeight={72}
         isVisible={selected}
         lineClassName="!border-[#c49a3c]/25"
         handleClassName="!w-1.5 !h-1.5 !bg-[#c49a3c] !border-[#0a0c11]"
@@ -100,22 +100,13 @@ function TerminalTaskNodeInner({ data, selected }: NodeProps) {
 
       {/* Task description — compact, secondary */}
       <div className="px-2.5 pb-2">
-        <p className="text-[10px] text-[#4a5568] leading-[1.5] line-clamp-2">
+        <p className={cn(
+          "text-[10px] text-[#4a5568] leading-[1.5]",
+          selected ? "line-clamp-2" : "line-clamp-1",
+        )}>
           {d.taskPrompt ?? "No task description"}
         </p>
       </div>
-
-      {/* Session ID — barely visible, bottom */}
-      {d.sessionId && (
-        <div className="px-2.5 pb-1.5">
-          <span
-            className="text-[7px] text-[#1a1e28] font-mono truncate block"
-            style={{ fontVariantNumeric: 'tabular-nums' }}
-          >
-            {d.sessionId}
-          </span>
-        </div>
-      )}
 
       <Handle
         type="source"

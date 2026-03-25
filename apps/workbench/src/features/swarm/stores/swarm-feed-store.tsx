@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, type ReactNode } from "react";
 import { create } from "zustand";
 import { createSelectors } from "@/lib/create-selectors";
+import { isDesktop } from "@/lib/tauri-bridge";
 import {
   FINDING_ENVELOPE_SCHEMA,
   hashProtocolPayload,
@@ -35,10 +36,22 @@ import {
   type FindingTrustPolicyDecision,
   type FindingTrustPolicyRejectionReason,
 } from "@/features/swarm/swarm-trust-policy";
+import {
+  SWARM_FEED_PERSISTENCE_FILE,
+  readSwarmPersistencePayload,
+  writeSwarmPersistencePayload,
+} from "./swarm-persistence";
+import {
+  clearSwarmFileWatchScope,
+  setSwarmFileWatchScope,
+  subscribeSwarmFileWatchEvents,
+} from "./swarm-file-watch";
 
 export const SWARM_FEED_STORAGE_KEY = "clawdstrike_workbench_swarm_feed";
 let lastSwarmFeedStorageSnapshot =
   typeof window === "undefined" ? null : readSwarmFeedStorageSnapshot();
+let swarmFeedPersistenceReady = typeof window === "undefined" || !isDesktop();
+let swarmFeedHydratePromise: Promise<void> | null = null;
 
 function readSwarmFeedStorageSnapshot(): string | null {
   try {
@@ -117,6 +130,7 @@ export interface SwarmFeedState {
 }
 
 type MaybePromise<T> = T | Promise<T>;
+type PersistedSwarmFeedPayload = SwarmFeedState;
 
 const INITIAL_SWARM_FEED_STATE: SwarmFeedState = {
   findingEnvelopes: [],
@@ -722,12 +736,8 @@ function normalizeRevocationEnvelopeRecord(value: unknown): SwarmRevocationEnvel
   };
 }
 
-function loadPersistedSwarmFeed(): SwarmFeedState | null {
+function normalizePersistedSwarmFeed(parsed: unknown): SwarmFeedState | null {
   try {
-    const raw = localStorage.getItem(SWARM_FEED_STORAGE_KEY);
-    if (!raw) return null;
-
-    const parsed = JSON.parse(raw);
     if (!isRecord(parsed)) {
       return FAIL_CLOSED_SWARM_FEED_STATE;
     }
@@ -873,6 +883,17 @@ function loadPersistedSwarmFeed(): SwarmFeedState | null {
       ),
     };
   } catch (error) {
+    console.warn("[swarm-feed-store] normalizePersistedSwarmFeed failed:", error);
+    return FAIL_CLOSED_SWARM_FEED_STATE;
+  }
+}
+
+function loadPersistedSwarmFeed(): SwarmFeedState | null {
+  try {
+    const raw = localStorage.getItem(SWARM_FEED_STORAGE_KEY);
+    if (!raw) return null;
+    return normalizePersistedSwarmFeed(JSON.parse(raw));
+  } catch (error) {
     console.warn("[swarm-feed-store] loadPersistedSwarmFeed failed:", error);
     return FAIL_CLOSED_SWARM_FEED_STATE;
   }
@@ -884,7 +905,7 @@ function loadPersistedSwarmFeed(): SwarmFeedState | null {
 // restoration.
 function persistSwarmFeed(state: SwarmFeedState): void {
   try {
-    const raw = JSON.stringify({
+    const payload: PersistedSwarmFeedPayload = {
       findingEnvelopes: state.findingEnvelopes,
       headAnnouncements: state.headAnnouncements,
       revocationEnvelopes: state.revocationEnvelopes,
@@ -893,7 +914,17 @@ function persistSwarmFeed(state: SwarmFeedState): void {
       quarantinedRevocationEnvelopes: state.quarantinedRevocationEnvelopes,
       defaultTrustPolicy: state.defaultTrustPolicy,
       trustPolicies: state.trustPolicies,
-    });
+    };
+    if (isDesktop()) {
+      void writeSwarmPersistencePayload(SWARM_FEED_PERSISTENCE_FILE, payload).then((ok) => {
+        if (!ok) {
+          console.error("[swarm-feed-store] disk persist failed");
+        }
+      });
+      return;
+    }
+
+    const raw = JSON.stringify(payload);
     localStorage.setItem(SWARM_FEED_STORAGE_KEY, raw);
     lastSwarmFeedStorageSnapshot = raw;
   } catch (error) {
@@ -909,6 +940,11 @@ function syncSwarmFeedStoreWithStorage(options?: {
   force?: boolean;
   persistHydratedState?: boolean;
 }): void {
+  if (isDesktop()) {
+    void hydrateSwarmFeedStoreFromDisk(options?.force ?? false);
+    return;
+  }
+
   const force = options?.force ?? false;
   const snapshot = readSwarmFeedStorageSnapshot();
   if (!force && snapshot === lastSwarmFeedStorageSnapshot) {
@@ -1633,6 +1669,9 @@ let _pendingPersistState: SwarmFeedState | null = null;
 let _persistDeadlineMs: number | null = null;
 
 function schedulePersist(state: SwarmFeedState): void {
+  if (!swarmFeedPersistenceReady) {
+    return;
+  }
   _pendingPersistState = state;
 
   const now = Date.now();
@@ -1965,6 +2004,37 @@ const useSwarmFeedStoreBase = create<SwarmFeedStoreState>()((set, get) => ({
   },
 }));
 
+async function hydrateSwarmFeedStoreFromDisk(force = false): Promise<void> {
+  if (!isDesktop()) {
+    swarmFeedPersistenceReady = true;
+    return;
+  }
+  if (swarmFeedHydratePromise && !force) {
+    return swarmFeedHydratePromise;
+  }
+
+  swarmFeedHydratePromise = (async () => {
+    const legacy = loadPersistedSwarmFeed();
+    const payload = await readSwarmPersistencePayload(SWARM_FEED_PERSISTENCE_FILE);
+    const restored = normalizePersistedSwarmFeed(payload) ?? legacy ?? INITIAL_SWARM_FEED_STATE;
+
+    replaceSwarmFeedStoreState(restored);
+    for (const record of restored.findingEnvelopes) {
+      queueFindingDigestHydration(record);
+    }
+
+    swarmFeedPersistenceReady = true;
+
+    if (!payload && legacy) {
+      schedulePersist(useSwarmFeedStoreBase.getState());
+    }
+  })().finally(() => {
+    swarmFeedHydratePromise = null;
+  });
+
+  return swarmFeedHydratePromise;
+}
+
 // Hydrate digests for all initial finding envelopes
 for (const record of initialFeedState.findingEnvelopes) {
   queueFindingDigestHydration(record);
@@ -2079,6 +2149,7 @@ export function useSwarmFeed(): SwarmFeedContextValue {
 /** @deprecated No-op wrapper. The store is now global via Zustand. */
 export function SwarmFeedProvider({ children }: { children: ReactNode }) {
   const initialized = useRef(false);
+  const watchScopeIdRef = useRef(`swarm-feed-${Math.random().toString(36).slice(2)}`);
   if (!initialized.current) {
     initialized.current = true;
     resetDigestHydrationTracker();
@@ -2095,6 +2166,30 @@ export function SwarmFeedProvider({ children }: { children: ReactNode }) {
       force: true,
       persistHydratedState: true,
     });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!isDesktop()) {
+      return;
+    }
+
+    const scopeId = watchScopeIdRef.current;
+    void setSwarmFileWatchScope(scopeId, {
+      persistenceFilenames: [SWARM_FEED_PERSISTENCE_FILE],
+    });
+    const unsubscribe = subscribeSwarmFileWatchEvents((event) => {
+      if (
+        event.category === "persistence" &&
+        event.filenames.includes(SWARM_FEED_PERSISTENCE_FILE)
+      ) {
+        void hydrateSwarmFeedStoreFromDisk(true);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+      void clearSwarmFileWatchScope(scopeId);
+    };
   }, []);
 
   return children;

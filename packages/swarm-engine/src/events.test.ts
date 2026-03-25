@@ -4,12 +4,14 @@ import {
   type SwarmEngineEventMap,
   type SwarmEngineEvent,
   type AgentSpawnedEvent,
+  type AgentMessageEvent,
   type TaskCreatedEvent,
   type HookTriggeredEvent,
 } from "./events.js";
 import type {
   AgentSession,
   AgentMetrics,
+  AgentConversationTurn,
   Task,
 } from "./types.js";
 
@@ -115,8 +117,23 @@ function makeTask(overrides?: Partial<Task>): Task {
   };
 }
 
+function makeConversationTurn(
+  overrides?: Partial<AgentConversationTurn>,
+): AgentConversationTurn {
+  return {
+    id: "turn_01HXKTEST000000000000000",
+    kind: "prompt",
+    role: "user",
+    content: "Audit the auth middleware.",
+    createdAt: Date.now(),
+    toolName: null,
+    metadata: {},
+    ...overrides,
+  };
+}
+
 // ============================================================================
-// All 23 event kind strings
+// All 24 event kind strings
 // ============================================================================
 
 const ALL_EVENT_KINDS = [
@@ -124,6 +141,7 @@ const ALL_EVENT_KINDS = [
   "agent.status_changed",
   "agent.heartbeat",
   "agent.terminated",
+  "agent.message",
   "task.created",
   "task.assigned",
   "task.status_changed",
@@ -424,6 +442,7 @@ describe("SwarmEngineEvent", () => {
         case "agent.status_changed":
         case "agent.heartbeat":
         case "agent.terminated":
+        case "agent.message":
           return "agent";
         case "task.created":
         case "task.assigned":
@@ -467,6 +486,15 @@ describe("SwarmEngineEvent", () => {
     };
     expect(getEventCategory(spawnedEvent)).toBe("agent");
 
+    const messageEvent: AgentMessageEvent = {
+      kind: "agent.message",
+      agentId: "agt_01HXKTEST000000000000000",
+      turn: makeConversationTurn(),
+      sourceAgentId: "agt_01HXKTEST000000000000000",
+      timestamp: Date.now(),
+    };
+    expect(getEventCategory(messageEvent)).toBe("agent");
+
     // Runtime test: TaskCreatedEvent narrows correctly
     const taskEvent: TaskCreatedEvent = {
       kind: "task.created",
@@ -488,12 +516,12 @@ describe("SwarmEngineEvent", () => {
     expect(getEventCategory(hookEvent)).toBe("hooks");
   });
 
-  it("SwarmEngineEventMap has 23 entries (all distinct)", () => {
-    expect(ALL_EVENT_KINDS.length).toBe(23);
-    expect(new Set(ALL_EVENT_KINDS).size).toBe(23);
+  it("SwarmEngineEventMap has 24 entries (all distinct)", () => {
+    expect(ALL_EVENT_KINDS.length).toBe(24);
+    expect(new Set(ALL_EVENT_KINDS).size).toBe(24);
   });
 
-  it("all 23 kind strings match known event categories", () => {
+  it("all 24 kind strings match known event categories", () => {
     const categories = {
       agent: ALL_EVENT_KINDS.filter((k) => k.startsWith("agent.")),
       task: ALL_EVENT_KINDS.filter((k) => k.startsWith("task.")),
@@ -504,7 +532,7 @@ describe("SwarmEngineEvent", () => {
       guard: ALL_EVENT_KINDS.filter((k) => k.startsWith("guard.") || k.startsWith("action.")),
     };
 
-    expect(categories.agent).toHaveLength(4);
+    expect(categories.agent).toHaveLength(5);
     expect(categories.task).toHaveLength(6);
     expect(categories.topology).toHaveLength(3);
     expect(categories.consensus).toHaveLength(3);

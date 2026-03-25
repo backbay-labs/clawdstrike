@@ -1,3 +1,18 @@
+// ---------------------------------------------------------------------------
+// SwarmBoard Store — Zustand store with createSelectors for board CRUD
+//
+// Migrated from React Context + useReducer to Zustand, matching the
+// swarm-store.tsx / swarm-feed-store.tsx pattern. The Zustand store is
+// globally accessible (no provider tree required for read-only access).
+//
+// SwarmBoardProvider is kept as a thin wrapper that manages:
+// - Auto-detect repoRoot on mount (terminalService.getCwd)
+// - Session spawn/kill lifecycle (PTY refs, exit monitoring, worktrees)
+// - Session context (spawn/kill methods via SwarmBoardSessionContext)
+//
+// The existing useSwarmBoard() hook composes Zustand store + session context
+// for backward compatibility.
+// ---------------------------------------------------------------------------
 import {
   createContext,
   useContext,
@@ -11,6 +26,7 @@ import { create } from "zustand";
 import { useShallow } from "zustand/react/shallow";
 import { createSelectors } from "@/lib/create-selectors";
 import { MarkerType, type Node, type Edge } from "@xyflow/react";
+import { isDesktop } from "@/lib/tauri-bridge";
 import type {
   SwarmBoardNodeData,
   SwarmBoardEdge,
@@ -19,10 +35,74 @@ import type {
   SessionStatus,
   RiskLevel,
 } from "@/features/swarm/swarm-board-types";
+import type { Receipt } from "@/lib/workbench/types";
 import { terminalService, worktreeService } from "@/lib/workbench/terminal-service";
 import type { UnlistenFn } from "@tauri-apps/api/event";
+import {
+  SWARM_BOARD_PERSISTENCE_FILE,
+  readSwarmPersistencePayload,
+  writeSwarmPersistencePayload,
+} from "./swarm-persistence";
+import {
+  clearSwarmFileWatchScope,
+  normalizeSwarmFileWatchPath,
+  setSwarmFileWatchScope,
+  subscribeSwarmFileWatchEvents,
+} from "./swarm-file-watch";
 
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/** Maximum number of live xterm terminals to keep active simultaneously. */
 export const MAX_ACTIVE_TERMINALS = 8;
+/** Maximum number of total persistent sessions to keep on the board. */
+export const MAX_TOTAL_SESSIONS = 64;
+/** Keep persisted replay history bounded so board snapshots stay durable. */
+const MAX_PERSISTED_AGENT_CONVERSATION_TURNS = 200;
+
+export type ReceiptPostureState = "neutral" | "allow" | "warn" | "deny";
+
+export interface ReceiptPostureSummary {
+  totalReceipts: number;
+  totalSignals: number;
+  allowCount: number;
+  warnCount: number;
+  denyCount: number;
+  allowRatio: number;
+  warnRatio: number;
+  denyRatio: number;
+  dominantState: ReceiptPostureState;
+}
+
+export interface GuardPolicySummary {
+  guard: string;
+  receiptCount: number;
+  totalEvaluations: number;
+  allowCount: number;
+  warnCount: number;
+  denyCount: number;
+  allowRatio: number;
+  warnRatio: number;
+  denyRatio: number;
+  averageLatencyMs: number | null;
+  maxLatencyMs: number | null;
+}
+
+export interface GuardPolicyHeatmapSummary {
+  totalReceipts: number;
+  receiptsWithGuards: number;
+  totalEvaluations: number;
+  uniqueGuards: number;
+  allowCount: number;
+  warnCount: number;
+  denyCount: number;
+  guards: GuardPolicySummary[];
+}
+
+// ---------------------------------------------------------------------------
+// Legacy Action type — kept for backward compat type exports
+// ---------------------------------------------------------------------------
 
 export type SwarmBoardAction =
   | { type: "ADD_NODE"; node: Node<SwarmBoardNodeData> }
@@ -41,46 +121,253 @@ export type SwarmBoardAction =
   | { type: "SET_SESSION_METADATA"; sessionId: string; metadata: Partial<SwarmBoardNodeData> }
   | { type: "TOPOLOGY_LAYOUT"; topology: string; positions: Map<string, { x: number; y: number }> }
   | { type: "ENGINE_SYNC"; engineNodes: Array<{ id: string; agentId?: string; taskId?: string; data: Partial<SwarmBoardNodeData>; position?: { x: number; y: number } }>; engineEdges: SwarmBoardEdge[] }
-  | { type: "GUARD_EVALUATE"; agentNodeId: string; verdict: string; guardResults: Array<{ guard: string; allowed: boolean; duration_ms?: number }>; signature?: string; publicKey?: string };
+  | { type: "GUARD_EVALUATE"; agentNodeId: string; verdict: string; guardResults: Array<{ guard: string; allowed: boolean; duration_ms?: number }>; receipt?: Receipt };
+
+// ---------------------------------------------------------------------------
+// Persistence
+// ---------------------------------------------------------------------------
 
 const STORAGE_KEY = "clawdstrike_workbench_swarm_board";
+let boardPersistenceReady = typeof window === "undefined" || !isDesktop();
+let boardHydratePromise: Promise<void> | null = null;
+
+function isAbsoluteFilePath(path: string): boolean {
+  return path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path);
+}
+
+function joinFilePath(root: string, path: string): string {
+  const safeRoot = root.replace(/[\\/]+$/, "");
+  const safePath = path.replace(/^[\\/]+/, "");
+  return `${safeRoot}/${safePath}`;
+}
+
+export function resolveBoardWatchFilePath(
+  filePath: string | undefined,
+  repoRoot: string,
+): string | null {
+  if (!filePath) {
+    return null;
+  }
+  const trimmed = filePath.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (isAbsoluteFilePath(trimmed)) {
+    return normalizeSwarmFileWatchPath(trimmed);
+  }
+  if (!repoRoot) {
+    return null;
+  }
+  return normalizeSwarmFileWatchPath(joinFilePath(repoRoot, trimmed));
+}
+
+export function collectBoardWatchWorkspacePaths(
+  nodes: Array<Node<SwarmBoardNodeData>>,
+  repoRoot: string,
+  bundlePath: string,
+): string[] {
+  const paths = new Set<string>();
+
+  if (bundlePath) {
+    paths.add(normalizeSwarmFileWatchPath(`${bundlePath}/board.json`));
+  }
+
+  for (const node of nodes) {
+    const data = node.data as SwarmBoardNodeData;
+    const artifactPath = resolveBoardWatchFilePath(
+      typeof data.filePath === "string" ? data.filePath : undefined,
+      repoRoot,
+    );
+    if (artifactPath) {
+      paths.add(artifactPath);
+    }
+
+    const diffPath = resolveBoardWatchFilePath(
+      typeof data.diffPath === "string" ? data.diffPath : undefined,
+      repoRoot,
+    );
+    if (diffPath) {
+      paths.add(diffPath);
+    }
+  }
+
+  return Array.from(paths).sort();
+}
+
+interface PersistedBoardPayload {
+  boardId: string;
+  repoRoot: string;
+  nodes: Node<SwarmBoardNodeData>[];
+  edges: SwarmBoardEdge[];
+}
+
+function truncateConversationHistory(
+  history: SwarmBoardNodeData["conversationHistory"],
+): SwarmBoardNodeData["conversationHistory"] {
+  if (!Array.isArray(history)) {
+    return undefined;
+  }
+  if (history.length <= MAX_PERSISTED_AGENT_CONVERSATION_TURNS) {
+    return history;
+  }
+  return history.slice(-MAX_PERSISTED_AGENT_CONVERSATION_TURNS);
+}
 
 function sanitizePersistedNode(
   node: Node<SwarmBoardNodeData>,
 ): Node<SwarmBoardNodeData> {
-  if (!node.data?.engineManaged) {
-    return node;
-  }
+  const data: SwarmBoardNodeData = {
+    ...node.data,
+    conversationHistory: truncateConversationHistory(node.data?.conversationHistory),
+  };
 
-  const {
-    branch: _branch,
-    worktreePath: _worktreePath,
-    filesTouched: _filesTouched,
-    previewLines: _previewLines,
-    taskPrompt: _taskPrompt,
-    ...restData
-  } = node.data;
+  if (data.engineManaged) {
+    data.branch = undefined;
+    data.worktreePath = undefined;
+    data.filesTouched = undefined;
+    data.previewLines = undefined;
+    data.taskPrompt = undefined;
+  }
 
   return {
     ...node,
-    data: restData,
+    data,
+  };
+}
+
+function isRecoverableTmuxNode(data: SwarmBoardNodeData | undefined): boolean {
+  return Boolean(data?.sessionId && data.sessionPersistence === "tmux");
+}
+
+function buildSessionMetadataPatch(
+  session: {
+    branch: string | null;
+    shell: string;
+    persistence_mode: "direct" | "tmux";
+    recovery_state: "fresh" | "recoverable" | "recovered";
+  },
+  options?: {
+    manualSession?: boolean;
+    terminalAttached?: boolean;
+  },
+): Partial<SwarmBoardNodeData> {
+  return {
+    branch: session.branch ?? undefined,
+    sessionShell: session.shell,
+    sessionPersistence: session.persistence_mode,
+    sessionRecoveryState: session.recovery_state,
+    ...(options?.manualSession !== undefined
+      ? { manualSession: options.manualSession }
+      : {}),
+    ...(options?.terminalAttached !== undefined
+      ? { terminalAttached: options.terminalAttached }
+      : {}),
+  };
+}
+
+function normalizePersistedBoard(parsed: unknown): Partial<SwarmBoardState> | null {
+  if (
+    !parsed ||
+    typeof parsed !== "object" ||
+    !Array.isArray((parsed as { nodes?: unknown }).nodes) ||
+    !Array.isArray((parsed as { edges?: unknown }).edges)
+  ) {
+    return null;
+  }
+
+  const record = parsed as PersistedBoardPayload;
+
+  const validNodes = record.nodes.filter(
+    (n): n is Node<SwarmBoardNodeData> =>
+      typeof n === "object" &&
+      n !== null &&
+      typeof (n as Record<string, unknown>).id === "string" &&
+      typeof (n as Record<string, unknown>).position === "object" &&
+      typeof (n as Record<string, unknown>).data === "object",
+  );
+
+  const validEdges = record.edges.filter(
+    (e): e is SwarmBoardEdge =>
+      typeof e === "object" &&
+      e !== null &&
+      typeof (e as unknown as Record<string, unknown>).id === "string" &&
+      typeof (e as unknown as Record<string, unknown>).source === "string" &&
+      typeof (e as unknown as Record<string, unknown>).target === "string",
+  );
+
+  if (validNodes.length === 0) return null;
+
+  const sanitizedNodes = validNodes.map((n) => {
+    const sanitizedNode = sanitizePersistedNode(n);
+    if (!sanitizedNode.data?.sessionId) {
+      return sanitizedNode;
+    }
+
+    if (isRecoverableTmuxNode(sanitizedNode.data)) {
+      return {
+        ...sanitizedNode,
+        data: {
+          ...sanitizedNode.data,
+          terminalAttached: false,
+          manualSession: true,
+          sessionRecoveryState: "recoverable",
+        },
+      } as Node<SwarmBoardNodeData>;
+    }
+
+    return {
+      ...sanitizedNode,
+      data: {
+        ...sanitizedNode.data,
+        sessionId: undefined,
+        terminalAttached: false,
+        sessionPersistence: "direct",
+        sessionRecoveryState: "fresh",
+        status:
+          sanitizedNode.data.status === "running"
+            ? "idle"
+            : sanitizedNode.data.status,
+      },
+    } as Node<SwarmBoardNodeData>;
+  });
+
+  return {
+    boardId: typeof record.boardId === "string" ? record.boardId : generateBoardId(),
+    repoRoot: typeof record.repoRoot === "string" ? record.repoRoot : "",
+    nodes: sanitizedNodes,
+    edges: validEdges,
+  };
+}
+
+function serializePersistedBoard(state: SwarmBoardState): PersistedBoardPayload {
+  return {
+    boardId: state.boardId,
+    repoRoot: state.repoRoot,
+    nodes: state.nodes.map((node) => sanitizePersistedNode(node)),
+    edges: state.edges,
   };
 }
 
 function persistBoard(state: SwarmBoardState): void {
   try {
-    const persisted = {
-      boardId: state.boardId,
-      repoRoot: state.repoRoot,
-      nodes: state.nodes.map(sanitizePersistedNode),
-      edges: state.edges,
-    };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
+    const persisted = serializePersistedBoard(state);
+    if (isDesktop()) {
+      void writeSwarmPersistencePayload(SWARM_BOARD_PERSISTENCE_FILE, persisted).then((ok) => {
+        if (!ok) {
+          console.error("[swarm-board-store] disk persist failed");
+        }
+      });
+    } else {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
+    }
 
-    // File-backed persistence for .swarm bundles (Tauri only)
+    // File-backed persistence for .swarm bundles
     if (state.bundlePath) {
       import("@/lib/tauri-bridge").then(({ writeSwarmBoardJson }) => {
-        writeSwarmBoardJson(state.bundlePath, persisted).catch((err: unknown) => {
+        writeSwarmBoardJson(
+          state.bundlePath,
+          persisted as unknown as Record<string, unknown>,
+        ).catch((err: unknown) => {
           console.error("[swarm-board-store] file persist failed:", err);
         });
       }).catch(() => {
@@ -96,68 +383,244 @@ function loadPersistedBoard(): Partial<SwarmBoardState> | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (
-      !parsed ||
-      typeof parsed !== "object" ||
-      !Array.isArray(parsed.nodes) ||
-      !Array.isArray(parsed.edges)
-    ) {
-      return null;
-    }
-
-    const validNodes = (parsed.nodes as unknown[]).filter(
-      (n): n is Node<SwarmBoardNodeData> =>
-        typeof n === "object" &&
-        n !== null &&
-        typeof (n as Record<string, unknown>).id === "string" &&
-        typeof (n as Record<string, unknown>).position === "object" &&
-        typeof (n as Record<string, unknown>).data === "object",
-    );
-
-    const validEdges = (parsed.edges as unknown[]).filter(
-      (e): e is SwarmBoardEdge =>
-        typeof e === "object" &&
-        e !== null &&
-        typeof (e as Record<string, unknown>).id === "string" &&
-        typeof (e as Record<string, unknown>).source === "string" &&
-        typeof (e as Record<string, unknown>).target === "string",
-    );
-
-    if (validNodes.length === 0) return null;
-
-    // PTY sessions don't survive reloads
-    const sanitizedNodes = validNodes.map((n) => {
-      const persistedNode = sanitizePersistedNode(n);
-      if (n.data?.sessionId) {
-        return {
-          ...persistedNode,
-          data: {
-            ...persistedNode.data,
-            sessionId: undefined,
-            status:
-              persistedNode.data.status === "running"
-                ? "idle"
-                : persistedNode.data.status,
-          },
-        } as Node<SwarmBoardNodeData>;
-      }
-      return persistedNode;
-    });
-
-    return {
-      boardId: typeof parsed.boardId === "string" ? parsed.boardId : generateBoardId(),
-      repoRoot: typeof parsed.repoRoot === "string" ? parsed.repoRoot : "",
-      nodes: sanitizedNodes,
-      edges: validEdges,
-    };
+    return normalizePersistedBoard(JSON.parse(raw));
   } catch (e) {
     console.warn("[swarm-board-store] loadPersistedBoard failed:", e);
     return null;
   }
 }
 
+// ---------------------------------------------------------------------------
+// ID generators
+// ---------------------------------------------------------------------------
+
 let nodeCounter = 0;
+
+const AUTH_CHANGES_DIFF = `diff --git a/src/middleware/auth.rs b/src/middleware/auth.rs
+index 91c8f76..5f14219 100644
+--- a/src/middleware/auth.rs
++++ b/src/middleware/auth.rs
+@@ -1,7 +1,13 @@
+ use crate::middleware::token::TokenClaims;
++use crate::middleware::rate_limit::RateLimitContext;
+
+ pub fn validate_token(token: &str) -> Result<TokenClaims, AuthError> {
+-    decode_token(token)
++    let claims = decode_token(token)?;
++    if claims.expired() {
++        return Err(AuthError::ExpiredToken);
++    }
++
++    Ok(claims)
+ }
+diff --git a/tests/auth_test.rs b/tests/auth_test.rs
+index 321aa77..611ae21 100644
+--- a/tests/auth_test.rs
++++ b/tests/auth_test.rs
+@@ -12,3 +12,7 @@ fn validates_token() {}
+
+ #[test]
+ fn validates_token() {}
++
++#[test]
++fn rejects_expired_token() {}
+`;
+
+function resolveReceiptPosture(data: SwarmBoardNodeData): Exclude<ReceiptPostureState, "neutral"> | null {
+  if (data.verdict === "allow" || data.verdict === "warn" || data.verdict === "deny") {
+    return data.verdict;
+  }
+
+  const guardResults = data.guardResults ?? [];
+  if (guardResults.some((guard) => !guard.allowed)) {
+    return "deny";
+  }
+  if (guardResults.length > 0) {
+    return "allow";
+  }
+
+  return null;
+}
+
+function resolveGuardPolicyVerdict(
+  receipt: SwarmBoardNodeData,
+  guardResult: { allowed: boolean },
+): Exclude<ReceiptPostureState, "neutral"> {
+  if (!guardResult.allowed) {
+    return "deny";
+  }
+
+  // Board-level guard results do not encode warn directly, so warning receipts
+  // treat otherwise-allowed guard evaluations as warning posture.
+  return receipt.verdict === "warn" ? "warn" : "allow";
+}
+
+export function summarizeReceiptPosture(
+  nodes: Array<Node<SwarmBoardNodeData>>,
+): ReceiptPostureSummary {
+  let totalReceipts = 0;
+  let allowCount = 0;
+  let warnCount = 0;
+  let denyCount = 0;
+
+  for (const node of nodes) {
+    const data = node.data as SwarmBoardNodeData;
+    if (data.nodeType !== "receipt") {
+      continue;
+    }
+
+    totalReceipts += 1;
+    const posture = resolveReceiptPosture(data);
+    if (posture === "allow") {
+      allowCount += 1;
+    } else if (posture === "warn") {
+      warnCount += 1;
+    } else if (posture === "deny") {
+      denyCount += 1;
+    }
+  }
+
+  const totalSignals = allowCount + warnCount + denyCount;
+  const dominantState: ReceiptPostureState =
+    denyCount > 0 && denyCount >= warnCount && denyCount >= allowCount
+      ? "deny"
+      : warnCount > 0 && warnCount >= allowCount
+        ? "warn"
+        : allowCount > 0
+          ? "allow"
+          : "neutral";
+
+  return {
+    totalReceipts,
+    totalSignals,
+    allowCount,
+    warnCount,
+    denyCount,
+    allowRatio: totalSignals > 0 ? allowCount / totalSignals : 0,
+    warnRatio: totalSignals > 0 ? warnCount / totalSignals : 0,
+    denyRatio: totalSignals > 0 ? denyCount / totalSignals : 0,
+    dominantState,
+  };
+}
+
+export function summarizeGuardPolicyHeatmap(
+  nodes: Array<Node<SwarmBoardNodeData>>,
+): GuardPolicyHeatmapSummary {
+  const guardMap = new Map<
+    string,
+    {
+      receiptIds: Set<string>;
+      totalEvaluations: number;
+      allowCount: number;
+      warnCount: number;
+      denyCount: number;
+      latencyTotalMs: number;
+      latencySamples: number;
+      maxLatencyMs: number | null;
+    }
+  >();
+
+  let totalReceipts = 0;
+  let receiptsWithGuards = 0;
+  let totalEvaluations = 0;
+  let allowCount = 0;
+  let warnCount = 0;
+  let denyCount = 0;
+
+  for (const node of nodes) {
+    const data = node.data as SwarmBoardNodeData;
+    if (data.nodeType !== "receipt") {
+      continue;
+    }
+
+    totalReceipts += 1;
+    const guardResults = data.guardResults ?? [];
+    if (guardResults.length === 0) {
+      continue;
+    }
+
+    receiptsWithGuards += 1;
+
+    for (const guardResult of guardResults) {
+      const entry = guardMap.get(guardResult.guard) ?? {
+        receiptIds: new Set<string>(),
+        totalEvaluations: 0,
+        allowCount: 0,
+        warnCount: 0,
+        denyCount: 0,
+        latencyTotalMs: 0,
+        latencySamples: 0,
+        maxLatencyMs: null,
+      };
+
+      entry.receiptIds.add(node.id);
+      entry.totalEvaluations += 1;
+      totalEvaluations += 1;
+
+      const verdict = resolveGuardPolicyVerdict(data, guardResult);
+      if (verdict === "allow") {
+        entry.allowCount += 1;
+        allowCount += 1;
+      } else if (verdict === "warn") {
+        entry.warnCount += 1;
+        warnCount += 1;
+      } else {
+        entry.denyCount += 1;
+        denyCount += 1;
+      }
+
+      if (typeof guardResult.duration_ms === "number") {
+        entry.latencyTotalMs += guardResult.duration_ms;
+        entry.latencySamples += 1;
+        entry.maxLatencyMs =
+          entry.maxLatencyMs == null
+            ? guardResult.duration_ms
+            : Math.max(entry.maxLatencyMs, guardResult.duration_ms);
+      }
+
+      guardMap.set(guardResult.guard, entry);
+    }
+  }
+
+  const guards = Array.from(guardMap.entries())
+    .map(([guard, entry]): GuardPolicySummary => ({
+      guard,
+      receiptCount: entry.receiptIds.size,
+      totalEvaluations: entry.totalEvaluations,
+      allowCount: entry.allowCount,
+      warnCount: entry.warnCount,
+      denyCount: entry.denyCount,
+      allowRatio: entry.totalEvaluations > 0 ? entry.allowCount / entry.totalEvaluations : 0,
+      warnRatio: entry.totalEvaluations > 0 ? entry.warnCount / entry.totalEvaluations : 0,
+      denyRatio: entry.totalEvaluations > 0 ? entry.denyCount / entry.totalEvaluations : 0,
+      averageLatencyMs:
+        entry.latencySamples > 0 ? entry.latencyTotalMs / entry.latencySamples : null,
+      maxLatencyMs: entry.maxLatencyMs,
+    }))
+    .sort((left, right) => {
+      if (right.totalEvaluations !== left.totalEvaluations) {
+        return right.totalEvaluations - left.totalEvaluations;
+      }
+      if (right.denyCount !== left.denyCount) {
+        return right.denyCount - left.denyCount;
+      }
+      if (right.warnCount !== left.warnCount) {
+        return right.warnCount - left.warnCount;
+      }
+      return left.guard.localeCompare(right.guard);
+    });
+
+  return {
+    totalReceipts,
+    receiptsWithGuards,
+    totalEvaluations,
+    uniqueGuards: guards.length,
+    allowCount,
+    warnCount,
+    denyCount,
+    guards,
+  };
+}
 
 function generateBoardId(): string {
   return `board-${Date.now().toString(36)}`;
@@ -167,6 +630,10 @@ export function generateNodeId(prefix: string = "sbn"): string {
   nodeCounter += 1;
   return `${prefix}-${Date.now().toString(36)}-${nodeCounter}`;
 }
+
+// ---------------------------------------------------------------------------
+// Node factory
+// ---------------------------------------------------------------------------
 
 export interface CreateNodeConfig {
   nodeType: SwarmNodeType;
@@ -189,6 +656,7 @@ export function createBoardNode(config: CreateNodeConfig): Node<SwarmBoardNodeDa
     createdAt: Date.now(),
   };
 
+  // Dimension defaults per node type
   const dimensions: Record<SwarmNodeType, { width?: number; height?: number }> = {
     agentSession: { width: 380, height: 280 },
     terminalTask: { width: 300, height: 180 },
@@ -209,6 +677,10 @@ export function createBoardNode(config: CreateNodeConfig): Node<SwarmBoardNodeDa
     ...(dims.height ? { height: dims.height } : {}),
   };
 }
+
+// ---------------------------------------------------------------------------
+// Mock data seeder
+// ---------------------------------------------------------------------------
 
 export function createMockBoard(): {
   nodes: Node<SwarmBoardNodeData>[];
@@ -355,15 +827,14 @@ export function createMockBoard(): {
     data: {
       status: "idle",
       diffSummary: {
-        added: 47,
-        removed: 12,
+        added: 8,
+        removed: 1,
         files: [
           "src/middleware/auth.rs",
-          "src/middleware/token.rs",
           "tests/auth_test.rs",
-          "Cargo.toml",
         ],
       },
+      diffContent: AUTH_CHANGES_DIFF,
     },
   });
 
@@ -456,12 +927,18 @@ export function createMockBoard(): {
   return { nodes, edges };
 }
 
+// ---------------------------------------------------------------------------
+// Edge color helper
+// ---------------------------------------------------------------------------
+
 function edgeColor(type?: SwarmBoardEdge["type"]): string {
   switch (type) {
     case "handoff":
       return "#5b8def";
     case "spawned":
       return "#d4a84b";
+    case "dependency":
+      return "#7085ad";
     case "artifact":
       return "#3dbf84";
     case "receipt":
@@ -472,6 +949,10 @@ function edgeColor(type?: SwarmBoardEdge["type"]): string {
       return "#2d3240";
   }
 }
+
+// ---------------------------------------------------------------------------
+// Convert SwarmBoardEdge[] to React Flow Edge[]
+// ---------------------------------------------------------------------------
 
 function toRfEdges(edges: SwarmBoardEdge[]): Edge[] {
   return edges.map((e) => ({
@@ -484,21 +965,32 @@ function toRfEdges(edges: SwarmBoardEdge[]): Edge[] {
     animated: e.type === "spawned",
     style: { stroke: edgeColor(e.type) },
     markerEnd:
-      e.type === "handoff" || e.type === "spawned"
+      e.type === "handoff" || e.type === "spawned" || e.type === "dependency"
         ? { type: MarkerType.ArrowClosed, color: edgeColor(e.type) }
         : undefined,
   }));
 }
 
+// ---------------------------------------------------------------------------
+// Debounced persistence
+// ---------------------------------------------------------------------------
+
 let _persistTimer: ReturnType<typeof setTimeout> | null = null;
 
 function schedulePersist(state: SwarmBoardState): void {
+  if (!boardPersistenceReady) {
+    return;
+  }
   if (_persistTimer) clearTimeout(_persistTimer);
   _persistTimer = setTimeout(() => {
     persistBoard(state);
     _persistTimer = null;
   }, 500);
 }
+
+// ---------------------------------------------------------------------------
+// Initial state
+// ---------------------------------------------------------------------------
 
 function getInitialState(): SwarmBoardState {
   const persisted = loadPersistedBoard();
@@ -510,10 +1002,12 @@ function getInitialState(): SwarmBoardState {
       edges: (persisted.edges ?? []) as SwarmBoardEdge[],
       selectedNodeId: null,
       inspectorOpen: false,
+      fileWatchRevision: 0,
       bundlePath: "",
     };
   }
 
+  // Start with an empty board — users create real sessions via "Launch Swarm"
   return {
     boardId: generateBoardId(),
     repoRoot: "",
@@ -521,18 +1015,32 @@ function getInitialState(): SwarmBoardState {
     edges: [],
     selectedNodeId: null,
     inspectorOpen: false,
+    fileWatchRevision: 0,
     bundlePath: "",
   };
 }
 
+// ---------------------------------------------------------------------------
+// Zustand store type
+// ---------------------------------------------------------------------------
+
 interface SwarmBoardStoreState extends SwarmBoardState {
+  // Derived state
   selectedNode: Node<SwarmBoardNodeData> | undefined;
   rfEdges: Edge[];
+
+  // Actions namespace (matching swarm-store.tsx pattern)
   actions: {
     addNode: (config: CreateNodeConfig) => Node<SwarmBoardNodeData>;
     addNodeDirect: (node: Node<SwarmBoardNodeData>) => void;
     removeNode: (nodeId: string) => void;
     updateNode: (nodeId: string, patch: Partial<SwarmBoardNodeData>) => void;
+    updateNodeRecord: (
+      nodeId: string,
+      patch: Omit<Partial<Node<SwarmBoardNodeData>>, "id" | "data"> & {
+        data?: Partial<SwarmBoardNodeData>;
+      },
+    ) => Node<SwarmBoardNodeData> | undefined;
     selectNode: (nodeId: string | null) => void;
     addEdge: (edge: SwarmBoardEdge) => void;
     removeEdge: (edgeId: string) => void;
@@ -546,20 +1054,14 @@ interface SwarmBoardStoreState extends SwarmBoardState {
     toggleInspector: (open?: boolean) => void;
     loadFromBundle: (bundlePath: string) => Promise<void>;
     topologyLayout: (topology: string, positions: Map<string, { x: number; y: number }>) => void;
-    applyTopologyLayout: (topologyEdges: SwarmBoardEdge[], positions: Map<string, { x: number; y: number }>) => void;
     engineSync: (engineNodes: Array<{ id: string; agentId?: string; taskId?: string; data: Partial<SwarmBoardNodeData>; position?: { x: number; y: number } }>, engineEdges: SwarmBoardEdge[]) => void;
-    addGuardReceipt: (config: {
-      verdict: "allow" | "deny" | "warn";
-      guardResults: Array<{ guard: string; allowed: boolean; duration_ms?: number }>;
-      signature?: string;
-      publicKey?: string;
-      agentNodeId?: string;
-      position?: { x: number; y: number };
-      detail?: string;
-    }) => Node<SwarmBoardNodeData>;
-    guardEvaluate: (agentNodeId: string, verdict: string, guardResults: Array<{ guard: string; allowed: boolean; duration_ms?: number }>, signature?: string, publicKey?: string) => void;
+    guardEvaluate: (agentNodeId: string, verdict: string, guardResults: Array<{ guard: string; allowed: boolean; duration_ms?: number }>, receipt?: Receipt) => void;
   };
 }
+
+// ---------------------------------------------------------------------------
+// Derived helpers
+// ---------------------------------------------------------------------------
 
 function deriveSelectedNode(
   nodes: Node<SwarmBoardNodeData>[],
@@ -567,6 +1069,19 @@ function deriveSelectedNode(
 ): Node<SwarmBoardNodeData> | undefined {
   return selectedNodeId ? nodes.find((n) => n.id === selectedNodeId) : undefined;
 }
+
+function receiptCreatedAt(receipt: Receipt | undefined): number | undefined {
+  if (!receipt) {
+    return undefined;
+  }
+
+  const timestamp = Date.parse(receipt.timestamp);
+  return Number.isFinite(timestamp) ? timestamp : undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Zustand store
+// ---------------------------------------------------------------------------
 
 const initialState = getInitialState();
 
@@ -579,6 +1094,7 @@ const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
     addNode: (config: CreateNodeConfig): Node<SwarmBoardNodeData> => {
       const node = createBoardNode(config);
       const current = get();
+      // Prevent duplicates
       if (current.nodes.some((n) => n.id === node.id)) return node;
       const nodes = [...current.nodes, node];
       set({
@@ -629,6 +1145,40 @@ const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
         selectedNode: deriveSelectedNode(nodes, current.selectedNodeId),
       });
       schedulePersist({ ...get() });
+    },
+
+    updateNodeRecord: (
+      nodeId: string,
+      patch: Omit<Partial<Node<SwarmBoardNodeData>>, "id" | "data"> & {
+        data?: Partial<SwarmBoardNodeData>;
+      },
+    ): Node<SwarmBoardNodeData> | undefined => {
+      const current = get();
+      let updatedNode: Node<SwarmBoardNodeData> | undefined;
+      const nodes = current.nodes.map((node) => {
+        if (node.id !== nodeId) {
+          return node;
+        }
+
+        updatedNode = {
+          ...node,
+          ...patch,
+          data: patch.data ? { ...node.data, ...patch.data } : node.data,
+          id: node.id,
+        };
+        return updatedNode;
+      });
+
+      if (!updatedNode) {
+        return undefined;
+      }
+
+      set({
+        nodes,
+        selectedNode: deriveSelectedNode(nodes, current.selectedNodeId),
+      });
+      schedulePersist({ ...get() });
+      return updatedNode;
     },
 
     selectNode: (nodeId: string | null): void => {
@@ -762,19 +1312,27 @@ const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
     },
 
     loadFromBundle: async (bundlePath: string): Promise<void> => {
+      boardPersistenceReady = false;
       try {
         const { readSwarmBundle } = await import("@/lib/tauri-bridge");
         const data = await readSwarmBundle(bundlePath);
         if (!data?.board) {
-          // Empty bundle: just set the path
-          set({ bundlePath });
+          // Empty bundle — just set the path, keep empty board
+          set({ bundlePath, fileWatchRevision: 0 });
+          boardPersistenceReady = true;
           return;
         }
         const board = data.board as Record<string, unknown>;
-        const nodes = Array.isArray(board.nodes) ? board.nodes as Node<SwarmBoardNodeData>[] : [];
-        const edges = Array.isArray(board.edges) ? board.edges as SwarmBoardEdge[] : [];
-        const boardId = typeof board.boardId === "string" ? board.boardId : generateBoardId();
-        const repoRoot = typeof board.repoRoot === "string" ? board.repoRoot : "";
+        const normalized = normalizePersistedBoard({
+          boardId: typeof board.boardId === "string" ? board.boardId : generateBoardId(),
+          repoRoot: typeof board.repoRoot === "string" ? board.repoRoot : "",
+          nodes: Array.isArray(board.nodes) ? board.nodes as Node<SwarmBoardNodeData>[] : [],
+          edges: Array.isArray(board.edges) ? board.edges as SwarmBoardEdge[] : [],
+        });
+        const nodes = (normalized?.nodes ?? []) as Node<SwarmBoardNodeData>[];
+        const edges = (normalized?.edges ?? []) as SwarmBoardEdge[];
+        const boardId = normalized?.boardId ?? generateBoardId();
+        const repoRoot = normalized?.repoRoot ?? "";
         set({
           bundlePath,
           boardId,
@@ -783,12 +1341,15 @@ const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
           edges,
           selectedNodeId: null,
           inspectorOpen: false,
+          fileWatchRevision: 0,
           selectedNode: undefined,
           rfEdges: toRfEdges(edges),
         });
+        boardPersistenceReady = true;
       } catch (err) {
         console.error("[swarm-board-store] loadFromBundle failed:", err);
-        set({ bundlePath });
+        set({ bundlePath, fileWatchRevision: 0 });
+        boardPersistenceReady = true;
       }
     },
 
@@ -805,233 +1366,148 @@ const useSwarmBoardStoreBase = create<SwarmBoardStoreState>()((set, get) => ({
       schedulePersist({ ...get() });
     },
 
-    applyTopologyLayout: (
-      topologyEdges: SwarmBoardEdge[],
-      positions: Map<string, { x: number; y: number }>,
-    ): void => {
-      set((current) => {
-        const nodes = current.nodes.map((node) => {
-          const nextPosition = positions.get(node.id);
-          return nextPosition ? { ...node, position: nextPosition } : node;
-        });
-        const edges = [
-          ...current.edges.filter((edge) => edge.type !== "topology"),
-          ...topologyEdges,
-        ];
-
-        return {
-          nodes,
-          edges,
-          rfEdges: toRfEdges(edges),
-          selectedNode: deriveSelectedNode(nodes, current.selectedNodeId),
-        };
-      });
-      schedulePersist({ ...get() });
-    },
-
     engineSync: (
       engineNodes: Array<{ id: string; agentId?: string; taskId?: string; data: Partial<SwarmBoardNodeData>; position?: { x: number; y: number } }>,
       engineEdges: SwarmBoardEdge[],
     ): void => {
       const current = get();
-      const lookupById = new Map(engineNodes.map((en) => [en.id, en]));
-      const lookupByAgentId = new Map(
-        engineNodes
-          .filter((en) => en.agentId)
-          .map((en) => [en.agentId!, en]),
-      );
-      const lookupByTaskId = new Map(
-        engineNodes
-          .filter((en) => en.taskId)
-          .map((en) => [en.taskId!, en]),
-      );
-      const isSnapshotManagedNode = (node: Node<SwarmBoardNodeData>): boolean => {
-        const data = node.data as SwarmBoardNodeData;
-        return (
-          data.engineManaged === true &&
-          (data.nodeType === "agentSession" || data.nodeType === "terminalTask")
-        );
-      };
-      const findMatchingEngineNode = (
-        node: Node<SwarmBoardNodeData>,
-      ): (typeof engineNodes)[number] | undefined => {
-        const data = node.data as SwarmBoardNodeData;
-        return (
-          lookupById.get(node.id) ??
-          (data.agentId ? lookupByAgentId.get(data.agentId) : undefined) ??
-          (data.taskId ? lookupByTaskId.get(data.taskId) : undefined)
-        );
-      };
-
-      const preservedNodes = current.nodes.filter(
-        (node) => !isSnapshotManagedNode(node),
-      );
-      const reconciledNodes = engineNodes.map((engineNode) => {
-        const existingNode = current.nodes.find((node) => {
-          if (!isSnapshotManagedNode(node)) {
-            return false;
-          }
-
-          return findMatchingEngineNode(node)?.id === engineNode.id;
-        });
-
-        if (existingNode) {
-          const existingData = existingNode.data as SwarmBoardNodeData;
+      const lookup = new Map(engineNodes.map((en) => [en.id, en]));
+      const nodes = current.nodes
+        .filter((n) => {
+          const data = n.data as SwarmBoardNodeData;
+          return !(data.engineManaged && data.nodeType !== "receipt" && !lookup.has(n.id));
+        })
+        .map((n) => {
+        const d = n.data as SwarmBoardNodeData;
+        const eng = lookup.get(n.id);
+        if (d.engineManaged && eng) {
           return {
-            ...existingNode,
-            id: engineNode.id,
-            type:
-              (engineNode.data.nodeType as SwarmBoardNodeData["nodeType"]) ??
-              existingNode.type,
-            data: {
-              ...existingData,
-              ...engineNode.data,
-              agentId: engineNode.agentId,
-              taskId: engineNode.taskId,
-              engineManaged: true,
-            },
-            position: engineNode.position ?? existingNode.position,
+            ...n,
+            data: { ...d, ...eng.data, agentId: eng.agentId, taskId: eng.taskId },
+            position: eng.position ?? n.position,
           };
         }
-
-        const newNode = createBoardNode({
-          nodeType:
-            (engineNode.data.nodeType as SwarmBoardNodeData["nodeType"]) ??
-            "agentSession",
-          title: (engineNode.data.title as string) ?? engineNode.id,
-          position: engineNode.position,
-          data: {
-            ...engineNode.data,
-            agentId: engineNode.agentId,
-            taskId: engineNode.taskId,
-            engineManaged: true,
-          },
-        });
-
-        return { ...newNode, id: engineNode.id };
+        return n;
       });
-      const nodes = [...preservedNodes, ...reconciledNodes];
-      const nodeIds = new Set(nodes.map((node) => node.id));
-      const isSnapshotManagedEdge = (edge: SwarmBoardEdge): boolean =>
-        edge.type === "spawned" || edge.type === "topology";
 
-      const edgesById = new Map(
-        current.edges
-          .filter((edge) => !isSnapshotManagedEdge(edge))
-          .map((edge) => [edge.id, edge]),
+      // Add new engine nodes that are not already present
+      const existingIds = new Set(nodes.map((n) => n.id));
+      for (const en of engineNodes) {
+        if (!existingIds.has(en.id)) {
+          const newNode = createBoardNode({
+            nodeType: (en.data.nodeType as SwarmBoardNodeData["nodeType"]) ?? "agentSession",
+            title: (en.data.title as string) ?? en.id,
+            position: en.position,
+            data: { ...en.data, agentId: en.agentId, taskId: en.taskId, engineManaged: true },
+          });
+          // Override the generated id with the engine-provided id
+          nodes.push({ ...newNode, id: en.id });
+        }
+      }
+
+      const snapshotManagedEdgeTypes = new Set<SwarmBoardEdge["type"]>([
+        "spawned",
+        "dependency",
+        "topology",
+      ]);
+      const preservedEdges = current.edges.filter(
+        (edge) => !snapshotManagedEdgeTypes.has(edge.type ?? "handoff"),
       );
-      for (const engineEdge of engineEdges) {
-        edgesById.set(engineEdge.id, engineEdge);
+      const nodeIds = new Set(nodes.map((node) => node.id));
+      const edgesById = new Map<string, SwarmBoardEdge>();
+      for (const edge of preservedEdges) {
+        edgesById.set(edge.id, edge);
+      }
+      for (const edge of engineEdges) {
+        edgesById.set(edge.id, edge);
       }
       const edges = Array.from(edgesById.values()).filter(
         (edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target),
       );
+      const selectedNodeId = current.selectedNodeId && nodes.some((n) => n.id === current.selectedNodeId)
+        ? current.selectedNodeId
+        : null;
 
       set({
         nodes,
         edges,
         rfEdges: toRfEdges(edges),
-        selectedNode: deriveSelectedNode(nodes, current.selectedNodeId),
+        selectedNodeId,
+        selectedNode: deriveSelectedNode(nodes, selectedNodeId),
       });
       schedulePersist({ ...get() });
-    },
-
-    addGuardReceipt: ({
-      verdict,
-      guardResults,
-      signature,
-      publicKey,
-      agentNodeId,
-      position,
-      detail,
-    }): Node<SwarmBoardNodeData> => {
-      const current = get();
-
-      if (signature && signature.length > 0) {
-        const duplicate = current.nodes.find(
-          (n) => (n.data as SwarmBoardNodeData).nodeType === "receipt" &&
-                 (n.data as SwarmBoardNodeData).signature === signature,
-        );
-        if (duplicate) return duplicate;
-      }
-
-      const agentNode = agentNodeId
-        ? current.nodes.find((n) => n.id === agentNodeId)
-        : undefined;
-      const anchor = agentNode?.position ?? position ?? {
-        x: 100 + Math.random() * 400,
-        y: 100 + Math.random() * 300,
-      };
-
-      const receiptNode = createBoardNode({
-        nodeType: "receipt",
-        title: `Guard: ${verdict.toUpperCase()}`,
-        position: { x: anchor.x, y: anchor.y + 340 },
-        data: {
-          verdict,
-          guardResults,
-          signature,
-          publicKey,
-          status: "completed",
-          engineManaged: true,
-          ...(detail ? { previewLines: [detail] } : {}),
-        },
-      });
-
-      const edges = agentNode
-        ? [
-          ...current.edges,
-          {
-            id: `edge-receipt-${receiptNode.id}-${agentNode.id}`,
-            source: agentNode.id,
-            target: receiptNode.id,
-            type: "receipt" as const,
-            label: verdict,
-          },
-        ]
-        : current.edges;
-      const nodes = [...current.nodes, receiptNode];
-
-      set({
-        nodes,
-        edges,
-        rfEdges: toRfEdges(edges),
-        selectedNode: deriveSelectedNode(nodes, current.selectedNodeId),
-      });
-      schedulePersist({ ...get() });
-      return receiptNode;
     },
 
     guardEvaluate: (
       agentNodeId: string,
       verdict: string,
       guardResults: Array<{ guard: string; allowed: boolean; duration_ms?: number }>,
-      signature?: string,
-      publicKey?: string,
+      receipt?: Receipt,
     ): void => {
       const current = get();
       const agentNode = current.nodes.find((n) => n.id === agentNodeId);
       if (!agentNode) return;
 
-      get().actions.addGuardReceipt({
-        agentNodeId: agentNode.id,
-        verdict: verdict as "allow" | "deny" | "warn",
-        guardResults,
-        signature,
-        publicKey,
+      // Dedup: skip if a receipt with the same signature already exists
+      if (receipt?.signature) {
+        const duplicate = current.nodes.some(
+          (n) => (n.data as SwarmBoardNodeData).nodeType === "receipt" &&
+                 (n.data as SwarmBoardNodeData).signature === receipt.signature,
+        );
+        if (duplicate) return;
+      }
+
+      const receiptNode = createBoardNode({
+        nodeType: "receipt",
+        title: `Guard: ${verdict.toUpperCase()}`,
+        position: { x: agentNode.position.x, y: agentNode.position.y + 340 },
+        data: {
+          ...(receiptCreatedAt(receipt) != null
+            ? { createdAt: receiptCreatedAt(receipt) }
+            : {}),
+          verdict: verdict as "allow" | "deny" | "warn",
+          guardResults,
+          signature: receipt?.signature,
+          publicKey: receipt?.publicKey,
+          receiptData: receipt,
+          status: "completed",
+          engineManaged: true,
+        },
       });
+
+      const nodes = [...current.nodes, receiptNode];
+      const receiptEdge: SwarmBoardEdge = {
+        id: `edge-receipt-${receiptNode.id}-${agentNodeId}`,
+        source: agentNodeId,
+        target: receiptNode.id,
+        type: "receipt",
+        label: verdict,
+      };
+      const edges = [...current.edges, receiptEdge];
+
+      set({
+        nodes,
+        edges,
+        rfEdges: toRfEdges(edges),
+        selectedNode: deriveSelectedNode(nodes, current.selectedNodeId),
+      });
+      schedulePersist({ ...get() });
     },
   },
 }));
 
-// Used for test reset and provider mount
+// Expose getInitialState and reinitialize for test reset / provider mount
 function reinitializeFromStorage(): void {
+  boardPersistenceReady = !isDesktop();
   const fresh = getInitialState();
   useSwarmBoardStoreBase.setState({
     ...fresh,
     selectedNode: deriveSelectedNode(fresh.nodes, fresh.selectedNodeId),
     rfEdges: toRfEdges(fresh.edges),
   });
+  if (isDesktop()) {
+    void hydrateSwarmBoardFromDisk(true);
+  }
 }
 
 const storeWithInitialState = Object.assign(useSwarmBoardStoreBase, {
@@ -1040,6 +1516,53 @@ const storeWithInitialState = Object.assign(useSwarmBoardStoreBase, {
 });
 
 export const useSwarmBoardStore = createSelectors(storeWithInitialState);
+
+async function hydrateSwarmBoardFromDisk(force = false): Promise<void> {
+  if (!isDesktop()) {
+    boardPersistenceReady = true;
+    return;
+  }
+  if (boardHydratePromise && !force) {
+    return boardHydratePromise;
+  }
+
+  boardHydratePromise = (async () => {
+    const legacy = loadPersistedBoard();
+    const payload = await readSwarmPersistencePayload(SWARM_BOARD_PERSISTENCE_FILE);
+    const restored = normalizePersistedBoard(payload) ?? legacy;
+
+    if (restored?.nodes && restored.nodes.length > 0) {
+      const edges = (restored.edges ?? []) as SwarmBoardEdge[];
+      const nodes = restored.nodes as Node<SwarmBoardNodeData>[];
+      useSwarmBoardStoreBase.setState({
+        boardId: restored.boardId ?? generateBoardId(),
+        repoRoot: restored.repoRoot ?? "",
+        nodes,
+        edges,
+        selectedNodeId: null,
+        inspectorOpen: false,
+        fileWatchRevision: 0,
+        bundlePath: "",
+        selectedNode: undefined,
+        rfEdges: toRfEdges(edges),
+      });
+    }
+
+    boardPersistenceReady = true;
+
+    if (!payload && legacy) {
+      schedulePersist(useSwarmBoardStoreBase.getState());
+    }
+  })().finally(() => {
+    boardHydratePromise = null;
+  });
+
+  return boardHydratePromise;
+}
+
+// ---------------------------------------------------------------------------
+// Session context (spawn/kill — needs mutable refs + Tauri callbacks)
+// ---------------------------------------------------------------------------
 
 export interface SpawnSessionOptions {
   cwd: string;
@@ -1066,7 +1589,7 @@ export interface SpawnWorktreeSessionOptions {
   shell?: string;
 }
 
-export interface SwarmBoardSessionContextValue {
+interface SwarmBoardSessionContextValue {
   spawnSession: (opts: SpawnSessionOptions) => Promise<Node<SwarmBoardNodeData>>;
   spawnClaudeSession: (opts: SpawnClaudeSessionOptions) => Promise<Node<SwarmBoardNodeData>>;
   spawnWorktreeSession: (opts: SpawnWorktreeSessionOptions) => Promise<Node<SwarmBoardNodeData>>;
@@ -1075,16 +1598,9 @@ export interface SwarmBoardSessionContextValue {
 
 const SwarmBoardSessionContext = createContext<SwarmBoardSessionContextValue | null>(null);
 
-const NOOP_SESSION_METHODS: SwarmBoardSessionContextValue = {
-  spawnSession: () =>
-    Promise.reject(new Error("useSwarmBoard must be used within SwarmBoardProvider for session management")),
-  spawnClaudeSession: () =>
-    Promise.reject(new Error("useSwarmBoard must be used within SwarmBoardProvider for session management")),
-  spawnWorktreeSession: () =>
-    Promise.reject(new Error("useSwarmBoard must be used within SwarmBoardProvider for session management")),
-  killSession: () =>
-    Promise.reject(new Error("useSwarmBoard must be used within SwarmBoardProvider for session management")),
-};
+// ---------------------------------------------------------------------------
+// Backward-compatible context value shape
+// ---------------------------------------------------------------------------
 
 interface SwarmBoardContextValue {
   state: SwarmBoardState;
@@ -1103,6 +1619,10 @@ interface SwarmBoardContextValue {
   spawnWorktreeSession: (opts: SpawnWorktreeSessionOptions) => Promise<Node<SwarmBoardNodeData>>;
   killSession: (nodeId: string) => Promise<void>;
 }
+
+// ---------------------------------------------------------------------------
+// Dispatch shim — routes legacy dispatch calls to Zustand actions
+// ---------------------------------------------------------------------------
 
 function createDispatchShim(): (action: SwarmBoardAction) => void {
   return (action: SwarmBoardAction) => {
@@ -1157,11 +1677,15 @@ function createDispatchShim(): (action: SwarmBoardAction) => void {
         actions.engineSync(action.engineNodes, action.engineEdges);
         break;
       case "GUARD_EVALUATE":
-        actions.guardEvaluate(action.agentNodeId, action.verdict, action.guardResults, action.signature, action.publicKey);
+        actions.guardEvaluate(action.agentNodeId, action.verdict, action.guardResults, action.receipt);
         break;
     }
   };
 }
+
+// ---------------------------------------------------------------------------
+// Hook
+// ---------------------------------------------------------------------------
 
 export function useSwarmBoard(): SwarmBoardContextValue {
   const state = useSwarmBoardStore(
@@ -1172,6 +1696,7 @@ export function useSwarmBoard(): SwarmBoardContextValue {
       edges: s.edges,
       selectedNodeId: s.selectedNodeId,
       inspectorOpen: s.inspectorOpen,
+      fileWatchRevision: s.fileWatchRevision,
       bundlePath: s.bundlePath,
     })),
   );
@@ -1179,8 +1704,26 @@ export function useSwarmBoard(): SwarmBoardContextValue {
   const rfEdges = useSwarmBoardStore((s) => s.rfEdges);
   const actions = useSwarmBoardStore((s) => s.actions);
 
+  // Session context (may be null if called outside SwarmBoardProvider)
+  const sessionCtx = useContext(SwarmBoardSessionContext);
+
   const dispatch = useMemo(() => createDispatchShim(), []);
-  const sessionMethods = useSwarmBoardSession();
+
+  const noopSession = useMemo(
+    () => ({
+      spawnSession: () =>
+        Promise.reject(new Error("useSwarmBoard must be used within SwarmBoardProvider for session management")),
+      spawnClaudeSession: () =>
+        Promise.reject(new Error("useSwarmBoard must be used within SwarmBoardProvider for session management")),
+      spawnWorktreeSession: () =>
+        Promise.reject(new Error("useSwarmBoard must be used within SwarmBoardProvider for session management")),
+      killSession: () =>
+        Promise.reject(new Error("useSwarmBoard must be used within SwarmBoardProvider for session management")),
+    }),
+    [],
+  );
+
+  const sessionMethods = sessionCtx ?? noopSession;
 
   return useMemo(
     () => ({
@@ -1201,11 +1744,44 @@ export function useSwarmBoard(): SwarmBoardContextValue {
   );
 }
 
-export function useSwarmBoardSession(): SwarmBoardSessionContextValue {
-  return useContext(SwarmBoardSessionContext) ?? NOOP_SESSION_METHODS;
-}
+// ---------------------------------------------------------------------------
+// Provider — thin wrapper for session lifecycle
+// ---------------------------------------------------------------------------
 
 export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNode; bundlePath?: string }) {
+  const boardNodes = useSwarmBoardStore((s) => s.nodes);
+  const repoRoot = useSwarmBoardStore((s) => s.repoRoot);
+  const activeBundlePath = useSwarmBoardStore((s) => s.bundlePath);
+  const selectedNode = useSwarmBoardStore((s) => s.selectedNode);
+  const watchScopeIdRef = useRef(`swarm-board-${Math.random().toString(36).slice(2)}`);
+  const workspaceWatchPaths = useMemo(
+    () => collectBoardWatchWorkspacePaths(boardNodes, repoRoot, activeBundlePath),
+    [activeBundlePath, boardNodes, repoRoot],
+  );
+  const persistenceWatchFilenames = useMemo(
+    () => (activeBundlePath ? [] : [SWARM_BOARD_PERSISTENCE_FILE]),
+    [activeBundlePath],
+  );
+  const workspaceWatchSignature = workspaceWatchPaths.join("\n");
+  const persistenceWatchSignature = persistenceWatchFilenames.join("\n");
+  const recoverableSessionSignature = useMemo(
+    () =>
+      boardNodes
+        .filter((node) => {
+          const data = node.data as SwarmBoardNodeData;
+          return data.nodeType === "agentSession" && isRecoverableTmuxNode(data) && !data.terminalAttached;
+        })
+        .map((node) => {
+          const data = node.data as SwarmBoardNodeData;
+          return `${node.id}:${data.sessionId ?? ""}:${data.sessionRecoveryState ?? ""}`;
+        })
+        .sort()
+        .join("\n"),
+    [boardNodes],
+  );
+
+  // Re-initialize store from localStorage on mount (scratch boards),
+  // or load from .swarm bundle when bundlePath is provided.
   useEffect(() => {
     if (bundlePath) {
       useSwarmBoardStore.getState().actions.loadFromBundle(bundlePath);
@@ -1214,6 +1790,7 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
     }
   }, [bundlePath]);
 
+  // Auto-detect repoRoot on mount if empty
   useEffect(() => {
     const state = useSwarmBoardStore.getState();
     if (state.repoRoot) return;
@@ -1229,10 +1806,75 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
       });
   }, []);
 
+  useEffect(() => {
+    if (!isDesktop()) {
+      return;
+    }
+
+    const scopeId = watchScopeIdRef.current;
+    void setSwarmFileWatchScope(scopeId, {
+      persistenceFilenames: persistenceWatchFilenames,
+      workspacePaths: workspaceWatchPaths,
+    });
+
+    return () => {
+      void clearSwarmFileWatchScope(scopeId);
+    };
+  }, [persistenceWatchSignature, workspaceWatchSignature]);
+
+  useEffect(() => {
+    if (!isDesktop()) {
+      return;
+    }
+
+    return subscribeSwarmFileWatchEvents((event) => {
+      const current = useSwarmBoardStore.getState();
+
+      if (
+        event.category === "persistence" &&
+        !current.bundlePath &&
+        event.filenames.includes(SWARM_BOARD_PERSISTENCE_FILE)
+      ) {
+        void hydrateSwarmBoardFromDisk(true);
+        return;
+      }
+
+      const bundleBoardPath = current.bundlePath
+        ? normalizeSwarmFileWatchPath(`${current.bundlePath}/board.json`)
+        : null;
+      if (
+        bundleBoardPath &&
+        event.paths.some((path) => normalizeSwarmFileWatchPath(path) === bundleBoardPath)
+      ) {
+        void current.actions.loadFromBundle(current.bundlePath);
+        return;
+      }
+
+      if (event.category !== "workspace") {
+        return;
+      }
+
+      const watchedPaths = new Set(
+        collectBoardWatchWorkspacePaths(current.nodes, current.repoRoot, current.bundlePath),
+      );
+      const hasRelevantWorkspaceChange = event.paths.some((path) =>
+        watchedPaths.has(normalizeSwarmFileWatchPath(path)),
+      );
+
+      if (hasRelevantWorkspaceChange) {
+        useSwarmBoardStoreBase.setState((state) => ({
+          fileWatchRevision: state.fileWatchRevision + 1,
+        }));
+      }
+    });
+  }, []);
+
+  // Track exit listeners and worktree paths for cleanup
   const exitListenersRef = useRef<Map<string, UnlistenFn>>(new Map());
   const worktreeMapRef = useRef<Map<string, string>>(new Map());
   const closedSessionsRef = useRef<Set<string>>(new Set());
   const killingRef = useRef<Set<string>>(new Set());
+  const reconnectingRef = useRef<Set<string>>(new Set());
 
   const cleanupSessionTracking = useCallback((sessionId: string): string | undefined => {
     closedSessionsRef.current.add(sessionId);
@@ -1250,6 +1892,20 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
     return wtPath;
   }, []);
 
+  const refreshSessionPreview = useCallback(
+    async (nodeId: string, sessionId: string, fallback?: string[]) => {
+      try {
+        const previewLines = await terminalService.preview(sessionId, 24);
+        useSwarmBoardStore.getState().actions.updateNode(nodeId, { previewLines });
+      } catch {
+        if (fallback) {
+          useSwarmBoardStore.getState().actions.updateNode(nodeId, { previewLines: fallback });
+        }
+      }
+    },
+    [],
+  );
+
   const monitorSessionExit = useCallback(
     (sessionId: string) => {
       closedSessionsRef.current.delete(sessionId);
@@ -1259,7 +1915,11 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
             exitCode === null ? "completed" : exitCode === 0 ? "completed" : "failed";
           const { actions } = useSwarmBoardStore.getState();
           actions.setSessionStatus(sessionId, status, exitCode ?? undefined);
-          actions.setSessionMetadata(sessionId, { sessionId: undefined });
+          actions.setSessionMetadata(sessionId, {
+            sessionId: undefined,
+            terminalAttached: false,
+            sessionRecoveryState: "fresh",
+          });
           cleanupSessionTracking(sessionId);
         })
         .then((unlisten) => {
@@ -1283,6 +1943,132 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
     },
     [cleanupSessionTracking],
   );
+
+  useEffect(() => {
+    if (!isDesktop()) {
+      return;
+    }
+
+    const recoverableNodes = useSwarmBoardStore
+      .getState()
+      .nodes.filter((node) => {
+        const data = node.data as SwarmBoardNodeData;
+        return data.nodeType === "agentSession" && isRecoverableTmuxNode(data) && !data.terminalAttached;
+      });
+
+    if (recoverableNodes.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+    void terminalService
+      .discover()
+      .then(async (sessions) => {
+        if (cancelled) {
+          return;
+        }
+
+        const sessionMap = new Map(sessions.map((session) => [session.id, session]));
+        for (const node of recoverableNodes) {
+          if (cancelled) {
+            return;
+          }
+
+          const data = node.data as SwarmBoardNodeData;
+          const sessionId = data.sessionId;
+          if (!sessionId) {
+            continue;
+          }
+
+          const session = sessionMap.get(sessionId);
+          if (!session) {
+            useSwarmBoardStore.getState().actions.updateNode(node.id, {
+              sessionId: undefined,
+              terminalAttached: false,
+              sessionRecoveryState: "fresh",
+              status: data.status === "running" ? "failed" : data.status,
+            });
+            continue;
+          }
+
+          useSwarmBoardStore.getState().actions.updateNode(node.id, {
+            ...buildSessionMetadataPatch(session, {
+              manualSession: true,
+              terminalAttached: false,
+            }),
+            status: data.status === "blocked" ? "blocked" : "running",
+          });
+
+          await refreshSessionPreview(node.id, session.id, data.previewLines);
+        }
+      })
+      .catch((err) => {
+        console.error("[swarm-board-store] Failed to discover tmux sessions:", err);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [recoverableSessionSignature, refreshSessionPreview]);
+
+  useEffect(() => {
+    if (!isDesktop() || !selectedNode) {
+      return;
+    }
+
+    const data = selectedNode.data as SwarmBoardNodeData;
+    if (
+      data.nodeType !== "agentSession" ||
+      !data.sessionId ||
+      data.sessionPersistence !== "tmux" ||
+      data.terminalAttached
+    ) {
+      return;
+    }
+
+    const sessionId = data.sessionId;
+    if (reconnectingRef.current.has(sessionId)) {
+      return;
+    }
+
+    reconnectingRef.current.add(sessionId);
+    let cancelled = false;
+
+    void terminalService
+      .reconnect(sessionId)
+      .then(async (session) => {
+        if (cancelled) {
+          return;
+        }
+
+        monitorSessionExit(session.id);
+        useSwarmBoardStore.getState().actions.updateNode(selectedNode.id, {
+          ...buildSessionMetadataPatch(session, {
+            manualSession: true,
+            terminalAttached: true,
+          }),
+          status: data.status === "blocked" ? "blocked" : "running",
+        });
+        await refreshSessionPreview(selectedNode.id, session.id, data.previewLines);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          console.error("[swarm-board-store] Failed to reconnect session:", err);
+          useSwarmBoardStore.getState().actions.updateNode(selectedNode.id, {
+            terminalAttached: false,
+            manualSession: true,
+            sessionRecoveryState: "recoverable",
+          });
+        }
+      })
+      .finally(() => {
+        reconnectingRef.current.delete(sessionId);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [monitorSessionExit, refreshSessionPreview, selectedNode]);
 
   const spawnSession = useCallback(
     async (opts: SpawnSessionOptions): Promise<Node<SwarmBoardNodeData>> => {
@@ -1309,7 +2095,6 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
         position: opts.position,
         data: {
           agentModel: opts.launchClaude ? "claude" : "shell",
-          branch: sessionInfo.branch ?? undefined,
           status: "running",
           sessionId: sessionInfo.id,
           previewLines: [],
@@ -1318,6 +2103,10 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
           changedFilesCount: 0,
           risk: "low",
           policyMode: "default",
+          ...buildSessionMetadataPatch(sessionInfo, {
+            manualSession: false,
+            terminalAttached: true,
+          }),
         },
       });
 
@@ -1396,7 +2185,6 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
         position: opts.position,
         data: {
           agentModel: "claude",
-          branch: branchName || sessionInfo.branch || undefined,
           worktreePath,
           status: "running",
           sessionId: sessionInfo.id,
@@ -1406,6 +2194,16 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
           changedFilesCount: 0,
           risk: "low",
           policyMode: "default",
+          ...buildSessionMetadataPatch(
+            {
+              ...sessionInfo,
+              branch: branchName || sessionInfo.branch,
+            },
+            {
+              manualSession: false,
+              terminalAttached: true,
+            },
+          ),
         },
       });
 
@@ -1452,7 +2250,6 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
         position: opts.position,
         data: {
           agentModel: "shell",
-          branch: branchName,
           worktreePath: wtInfo.path,
           status: "running",
           sessionId: sessionInfo.id,
@@ -1462,6 +2259,16 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
           changedFilesCount: 0,
           risk: "low",
           policyMode: "default",
+          ...buildSessionMetadataPatch(
+            {
+              ...sessionInfo,
+              branch: branchName,
+            },
+            {
+              manualSession: false,
+              terminalAttached: true,
+            },
+          ),
         },
       });
 
@@ -1512,6 +2319,8 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
         useSwarmBoardStore.getState().actions.updateNode(nodeId, {
           status: finalStatus,
           sessionId: undefined,
+          terminalAttached: false,
+          sessionRecoveryState: "fresh",
           ...(wtPath ? { worktreePath: undefined } : {}),
         });
         killingRef.current.delete(nodeId);
@@ -1520,6 +2329,7 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
     [cleanupSessionTracking],
   );
 
+  // Clean up all listeners on unmount
   useEffect(() => {
     return () => {
       for (const unlisten of exitListenersRef.current.values()) {
@@ -1547,5 +2357,9 @@ export function SwarmBoardProvider({ children, bundlePath }: { children: ReactNo
     </SwarmBoardSessionContext.Provider>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Type re-exports
+// ---------------------------------------------------------------------------
 
 export type { SwarmBoardState, SwarmBoardNodeData, SwarmBoardEdge, SwarmNodeType, SessionStatus, RiskLevel };

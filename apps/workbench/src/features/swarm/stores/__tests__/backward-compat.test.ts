@@ -13,6 +13,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Node } from "@xyflow/react";
+import type { Receipt } from "@clawdstrike/swarm-engine";
 import type {
   SwarmBoardNodeData,
   SwarmBoardEdge,
@@ -67,6 +68,26 @@ function resetStore(): void {
   seedEmptyBoard();
   useSwarmBoardStore.setState(useSwarmBoardStore.getInitialState());
   useSwarmBoardStore.getState().actions.clearBoard();
+}
+
+function makeReceipt(
+  verdict: "allow" | "deny" | "warn",
+  guard: string,
+  signature: string,
+  publicKey: string,
+): Receipt {
+  return {
+    id: `rcpt-${signature.slice(0, 8) || "unsigned"}`,
+    timestamp: new Date("2026-03-25T12:00:00.000Z").toISOString(),
+    verdict,
+    guard,
+    policyName: "compat-test-policy",
+    action: { type: "shell_command", target: "compat-test" },
+    evidence: {},
+    signature,
+    publicKey,
+    valid: true,
+  };
 }
 
 beforeEach(() => {
@@ -379,8 +400,21 @@ describe("Engine actions are additive, not breaking", () => {
       agentNode.id,
       "allow",
       [{ guard: "ForbiddenPathGuard", allowed: true, duration_ms: 2 }],
-      "sig123",
-      "pub456",
+      {
+        id: "rct_test_01",
+        timestamp: "2026-03-25T12:00:00.000Z",
+        verdict: "allow",
+        guard: "ForbiddenPathGuard",
+        policyName: "strict-default",
+        action: {
+          type: "shell_command",
+          target: "/tmp/project",
+        },
+        evidence: {},
+        signature: "sig123",
+        publicKey: "pub456",
+        valid: true,
+      },
     );
 
     const state = useSwarmBoardStore.getState();
@@ -409,15 +443,13 @@ describe("Engine actions are additive, not breaking", () => {
       agentNode.id,
       "allow",
       [{ guard: "ForbiddenPathGuard", allowed: true, duration_ms: 2 }],
-      "abcd".repeat(32),
-      "1234".repeat(16),
+      makeReceipt("allow", "ForbiddenPathGuard", "abcd".repeat(32), "1234".repeat(16)),
     );
     actions.guardEvaluate(
       agentNode.id,
       "allow",
       [{ guard: "ForbiddenPathGuard", allowed: true, duration_ms: 2 }],
-      "abcd".repeat(32),
-      "1234".repeat(16),
+      makeReceipt("allow", "ForbiddenPathGuard", "abcd".repeat(32), "1234".repeat(16)),
     );
 
     const state = useSwarmBoardStore.getState();
@@ -437,15 +469,13 @@ describe("Engine actions are additive, not breaking", () => {
       agentNode.id,
       "deny",
       [{ guard: "ForbiddenPathGuard", allowed: false, duration_ms: 2 }],
-      "",
-      "",
+      makeReceipt("deny", "ForbiddenPathGuard", "", ""),
     );
     actions.guardEvaluate(
       agentNode.id,
       "deny",
       [{ guard: "ForbiddenPathGuard", allowed: false, duration_ms: 3 }],
-      "",
-      "",
+      makeReceipt("deny", "ForbiddenPathGuard", "", ""),
     );
 
     const state = useSwarmBoardStore.getState();
@@ -453,33 +483,30 @@ describe("Engine actions are additive, not breaking", () => {
     expect(state.edges.filter((edge) => edge.type === "receipt")).toHaveLength(2);
   });
 
-  it("addGuardReceipt supports detached receipts with shared dedupe semantics", () => {
+  it("guardEvaluate stores the attached receipt payload on the created node", () => {
     const { actions } = useSwarmBoardStore.getState();
-
-    actions.addGuardReceipt({
-      verdict: "deny",
-      guardResults: [{ guard: "engine_error", allowed: false }],
-      signature: "feed".repeat(32),
-      publicKey: "5678".repeat(16),
+    const agentNode = actions.addNode({
+      nodeType: "agentSession",
+      title: "Receipt Agent",
       position: { x: 120, y: 80 },
-      detail: "engine exploded",
     });
-    actions.addGuardReceipt({
-      verdict: "deny",
-      guardResults: [{ guard: "engine_error", allowed: false }],
-      signature: "feed".repeat(32),
-      publicKey: "5678".repeat(16),
-      position: { x: 240, y: 120 },
-      detail: "engine exploded",
-    });
+
+    const receipt = makeReceipt("deny", "engine_error", "feed".repeat(32), "5678".repeat(16));
+    actions.guardEvaluate(
+      agentNode.id,
+      "deny",
+      [{ guard: "engine_error", allowed: false }],
+      receipt,
+    );
 
     const state = useSwarmBoardStore.getState();
     const receiptNodes = state.nodes.filter((node) => node.data.nodeType === "receipt");
 
     expect(receiptNodes).toHaveLength(1);
-    expect(state.edges.filter((edge) => edge.type === "receipt")).toHaveLength(0);
-    expect(receiptNodes[0]?.position).toEqual({ x: 120, y: 420 });
-    expect(receiptNodes[0]?.data.previewLines).toEqual(["engine exploded"]);
+    expect(state.edges.filter((edge) => edge.type === "receipt")).toHaveLength(1);
+    expect(receiptNodes[0]?.data.signature).toBe(receipt.signature);
+    expect(receiptNodes[0]?.data.publicKey).toBe(receipt.publicKey);
+    expect(receiptNodes[0]?.data.receiptData).toEqual(receipt);
   });
 });
 

@@ -16,5 +16,6 @@ export const readDetectionFileByPath = vi.fn(() => Promise.resolve(null));
 export const openPolicyFile = vi.fn(() => Promise.resolve(null));
 export const readPolicyFileByPath = vi.fn(() => Promise.resolve(null));
 export const pickSavePath = vi.fn(() => Promise.resolve(null));
+export const pickDirectoryPath = vi.fn(() => Promise.resolve(null));
 export const saveDetectionFile = vi.fn(() => Promise.resolve(null));
 export const savePolicyFile = vi.fn(() => Promise.resolve(null));

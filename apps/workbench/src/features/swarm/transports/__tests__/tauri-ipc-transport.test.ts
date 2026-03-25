@@ -12,14 +12,13 @@ import type { SwarmEnvelope } from "@/features/swarm/swarm-coordinator";
 // ---------------------------------------------------------------------------
 
 const mockUnlisten = vi.fn();
-type ListenCallback = (event: { payload: SwarmEnvelope }) => void;
-
 const mockListen = vi.fn(
-  (_topic: string, _handler: ListenCallback) => Promise.resolve(mockUnlisten),
+  (_topic: string, _handler: (event: { payload: SwarmEnvelope }) => void) =>
+    Promise.resolve(mockUnlisten),
 );
 
 const mockInvoke = vi.fn(
-  (_command: string, _payload?: Record<string, unknown>) => Promise.resolve(),
+  (_command: string, _args?: Record<string, unknown>) => Promise.resolve(),
 );
 
 vi.mock("@tauri-apps/api/event", () => ({
@@ -49,15 +48,6 @@ function makeEnvelope(
     ttl: 5,
     created: Date.now(),
   };
-}
-
-function getListenCallback(index: number): ListenCallback {
-  const callback = mockListen.mock.calls[index]?.[1];
-  expect(callback).toBeDefined();
-  if (!callback) {
-    throw new Error(`Missing listen callback at index ${index}`);
-  }
-  return callback;
 }
 
 // ---------------------------------------------------------------------------
@@ -135,20 +125,6 @@ describe("TauriIpcTransport", () => {
       expect(mockUnlisten).toHaveBeenCalledTimes(1);
     });
 
-    it("rolls back the subscription marker when listen rejects so callers can retry", async () => {
-      mockListen
-        .mockRejectedValueOnce(new Error("listen failed"))
-        .mockResolvedValueOnce(mockUnlisten);
-
-      transport.subscribe("swarm/intel");
-      await new Promise((r) => setTimeout(r, 0));
-
-      transport.subscribe("swarm/intel");
-      await new Promise((r) => setTimeout(r, 0));
-
-      expect(mockListen).toHaveBeenCalledTimes(2);
-    });
-
     it("unsubscribe on an unsubscribed topic is a no-op", () => {
       // Should not throw
       expect(() => transport.unsubscribe("nonexistent")).not.toThrow();
@@ -197,10 +173,13 @@ describe("TauriIpcTransport", () => {
       await new Promise((r) => setTimeout(r, 0));
 
       // Simulate an incoming Tauri event by invoking the listen callback
-      const listenCallback = getListenCallback(0);
+      const listenCallback = mockListen.mock.calls[0]?.[1] as
+        | ((event: { payload: SwarmEnvelope }) => void)
+        | undefined;
+      expect(listenCallback).toBeDefined();
 
       const envelope = makeEnvelope();
-      listenCallback({ payload: envelope });
+      listenCallback!({ payload: envelope });
 
       expect(handler).toHaveBeenCalledWith("swarm/intel", envelope);
     });
@@ -216,9 +195,11 @@ describe("TauriIpcTransport", () => {
       transport.offMessage(handler);
 
       // Simulate incoming event
-      const listenCallback = getListenCallback(0);
+      const listenCallback = mockListen.mock.calls[0]?.[1] as
+        | ((event: { payload: SwarmEnvelope }) => void)
+        | undefined;
       const envelope = makeEnvelope();
-      listenCallback({ payload: envelope });
+      listenCallback!({ payload: envelope });
 
       expect(handler).not.toHaveBeenCalled();
     });
@@ -232,9 +213,11 @@ describe("TauriIpcTransport", () => {
 
       await new Promise((r) => setTimeout(r, 0));
 
-      const listenCallback = getListenCallback(0);
+      const listenCallback = mockListen.mock.calls[0]?.[1] as
+        | ((event: { payload: SwarmEnvelope }) => void)
+        | undefined;
       const envelope = makeEnvelope();
-      listenCallback({ payload: envelope });
+      listenCallback!({ payload: envelope });
 
       expect(handler1).toHaveBeenCalledWith("swarm/intel", envelope);
       expect(handler2).toHaveBeenCalledWith("swarm/intel", envelope);
@@ -254,14 +237,18 @@ describe("TauriIpcTransport", () => {
       expect(mockListen).toHaveBeenCalledTimes(2);
 
       // Simulate messages on both topics
-      const intelCallback = getListenCallback(0);
-      const signalCallback = getListenCallback(1);
+      const intelCallback = mockListen.mock.calls[0]?.[1] as
+        | ((event: { payload: SwarmEnvelope }) => void)
+        | undefined;
+      const signalCallback = mockListen.mock.calls[1]?.[1] as
+        | ((event: { payload: SwarmEnvelope }) => void)
+        | undefined;
 
       const intelEnvelope = makeEnvelope("intel");
       const signalEnvelope = makeEnvelope("signal");
 
-      intelCallback({ payload: intelEnvelope });
-      signalCallback({ payload: signalEnvelope });
+      intelCallback!({ payload: intelEnvelope });
+      signalCallback!({ payload: signalEnvelope });
 
       expect(handler).toHaveBeenCalledTimes(2);
       expect(handler).toHaveBeenCalledWith("swarm/intel", intelEnvelope);

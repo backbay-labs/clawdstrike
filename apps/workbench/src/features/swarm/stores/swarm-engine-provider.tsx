@@ -1,6 +1,17 @@
 /**
- * React context provider for SwarmOrchestrator lifecycle and guard-gated session spawning.
- * When `enabled` is false, operates in manual mode with no engine overhead.
+ * SwarmEngineProvider -- React context provider that manages the lifecycle of a
+ * SwarmOrchestrator instance from @clawdstrike/swarm-engine.
+ *
+ * Provides:
+ * - Engine initialization on mount with error fallback (mode="error")
+ * - Cleanup via shutdown() on unmount (NOT dispose -- Pitfall 8)
+ * - React strict mode double-mount guard via `cancelled` boolean
+ * - Convenience hooks: useSwarmEngine, useAgentRegistry, useTaskGraph, useTopology
+ *
+ * When `enabled` is false, the provider operates in manual mode: all hooks
+ * return null and the existing SwarmBoard works as-is with no engine overhead.
+ *
+ * @module
  */
 
 import {
@@ -22,6 +33,7 @@ import {
   TopologyManager,
   type GuardedAction,
   type SwarmEngineEventMap,
+  type SwarmEngineState,
   type SwarmOrchestratorConfig,
 } from "@clawdstrike/swarm-engine";
 import type { SwarmBoardNodeData } from "../swarm-board-types";
@@ -33,7 +45,17 @@ import {
 } from "./swarm-board-store";
 import { workbenchGuardEvaluator } from "./workbench-guard-evaluator";
 
+// ---------------------------------------------------------------------------
+// Context value type
+// ---------------------------------------------------------------------------
+
 export interface SwarmEngineContextValue {
+  /**
+   * The SwarmOrchestrator is the primary API. All mutations should go through
+   * it so that the guard pipeline is enforced. Use the read-only accessors
+   * (getAgent, getTask, getTopologyState) for UI reads instead of touching
+   * raw subsystems directly.
+   */
   engine: SwarmOrchestrator | null;
   /** @deprecated Use engine.getState().agents instead. Kept for migration. */
   agentRegistry: AgentRegistry | null;
@@ -42,8 +64,14 @@ export interface SwarmEngineContextValue {
   /** @deprecated Use engine.getState().topology instead. Kept for migration. */
   topology: TopologyManager | null;
   isReady: boolean;
+  /** "engine" = orchestrator running, "manual" = fallback/disabled, "error" = init failed */
   mode: "engine" | "manual" | "error";
+  /** Non-null when mode === "error". Describes what went wrong. */
   error: string | null;
+  /**
+   * Wraps a spawnSession call with guard pipeline evaluation and receipt node creation.
+   * Falls back to calling spawnFn directly when engine is unavailable (manual/error mode).
+   */
   spawnEngineSession: (
     spawnFn: (opts: SpawnSessionOptions) => Promise<Node<SwarmBoardNodeData>>,
     opts: SpawnSessionOptions,
@@ -58,12 +86,15 @@ export interface SwarmEngineContextValue {
   ) => Promise<Node<SwarmBoardNodeData>>;
 }
 
-type SwarmEngineContextState = Omit<
-  SwarmEngineContextValue,
-  "spawnEngineSession" | "spawnEngineClaudeSession" | "spawnEngineWorktreeSession"
->;
+// ---------------------------------------------------------------------------
+// Context
+// ---------------------------------------------------------------------------
 
 const SwarmEngineContext = createContext<SwarmEngineContextValue | null>(null);
+
+// ---------------------------------------------------------------------------
+// Default config for the workbench orchestrator
+// ---------------------------------------------------------------------------
 
 const WORKBENCH_CONFIG: SwarmOrchestratorConfig = {
   namespace: "workbench",
@@ -98,7 +129,22 @@ const WORKBENCH_CONFIG: SwarmOrchestratorConfig = {
   guardEvaluator: workbenchGuardEvaluator,
 };
 
-const MANUAL_CONTEXT_STATE: SwarmEngineContextState = {
+// ---------------------------------------------------------------------------
+// Manual-mode passthrough: calls spawnFn directly (no guard evaluation)
+// ---------------------------------------------------------------------------
+
+const manualSpawnEngineSession: SwarmEngineContextValue["spawnEngineSession"] =
+  (spawnFn, opts) => spawnFn(opts);
+const manualSpawnEngineClaudeSession: SwarmEngineContextValue["spawnEngineClaudeSession"] =
+  (spawnFn, opts) => spawnFn(opts);
+const manualSpawnEngineWorktreeSession: SwarmEngineContextValue["spawnEngineWorktreeSession"] =
+  (spawnFn, opts) => spawnFn(opts);
+
+// ---------------------------------------------------------------------------
+// Initial context value (manual/disabled state)
+// ---------------------------------------------------------------------------
+
+const MANUAL_CONTEXT: SwarmEngineContextValue = {
   engine: null,
   agentRegistry: null,
   taskGraph: null,
@@ -106,6 +152,9 @@ const MANUAL_CONTEXT_STATE: SwarmEngineContextState = {
   isReady: false,
   mode: "manual",
   error: null,
+  spawnEngineSession: manualSpawnEngineSession,
+  spawnEngineClaudeSession: manualSpawnEngineClaudeSession,
+  spawnEngineWorktreeSession: manualSpawnEngineWorktreeSession,
 };
 
 interface PositionedSpawnOptions {
@@ -171,8 +220,13 @@ function buildSpawnGuardAction(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Provider
+// ---------------------------------------------------------------------------
+
 export interface SwarmEngineProviderProps {
   children: ReactNode;
+  /** When false, no engine is created and all hooks return null (manual mode). */
   enabled?: boolean;
 }
 
@@ -180,18 +234,18 @@ export function SwarmEngineProvider({
   children,
   enabled = true,
 }: SwarmEngineProviderProps) {
-  const [contextState, setContextState] =
-    useState<SwarmEngineContextState>(MANUAL_CONTEXT_STATE);
+  const [contextValue, setContextValue] =
+    useState<SwarmEngineContextValue>(MANUAL_CONTEXT);
 
   const engineRef = useRef<SwarmOrchestrator | null>(null);
 
   useEffect(() => {
     if (!enabled) {
-      setContextState(MANUAL_CONTEXT_STATE);
+      setContextValue(MANUAL_CONTEXT);
       return;
     }
 
-    let cancelled = false;
+    let cancelled = false; // React strict mode double-mount guard (PITFALL 2)
     let orchestrator: SwarmOrchestrator | null = null;
 
     try {
@@ -210,16 +264,15 @@ export function SwarmEngineProvider({
         topologyMgr,
         WORKBENCH_CONFIG,
       );
-      orchestrator.initialize();
+      orchestrator.initialize(); // synchronous -- throws on failure (PITFALL 5)
 
       if (cancelled) {
         orchestrator.shutdown();
-        orchestrator = null;
         return;
       }
 
       engineRef.current = orchestrator;
-      setContextState({
+      setContextValue({
         engine: orchestrator,
         agentRegistry: registry,
         taskGraph,
@@ -227,18 +280,29 @@ export function SwarmEngineProvider({
         isReady: true,
         mode: "engine",
         error: null,
+        spawnEngineSession: manualSpawnEngineSession, // overridden by valueWithSpawn
+        spawnEngineClaudeSession: manualSpawnEngineClaudeSession,
+        spawnEngineWorktreeSession: manualSpawnEngineWorktreeSession,
       });
     } catch (err) {
-      orchestrator?.shutdown();
-      orchestrator = null;
       if (cancelled) return;
+      if (orchestrator) {
+        try {
+          orchestrator.shutdown();
+        } catch (shutdownErr) {
+          console.warn(
+            "[SwarmEngineProvider] Failed to shut down partially initialized orchestrator:",
+            shutdownErr instanceof Error ? shutdownErr.message : String(shutdownErr),
+          );
+        }
+      }
       const message = err instanceof Error ? err.message : String(err);
       console.warn(
         "[SwarmEngineProvider] Engine init failed, falling back to manual mode:",
         message,
       );
       engineRef.current = null;
-      setContextState({
+      setContextValue({
         engine: null,
         agentRegistry: null,
         taskGraph: null,
@@ -246,15 +310,18 @@ export function SwarmEngineProvider({
         isReady: false,
         mode: "error",
         error: message,
+        spawnEngineSession: manualSpawnEngineSession,
+        spawnEngineClaudeSession: manualSpawnEngineClaudeSession,
+        spawnEngineWorktreeSession: manualSpawnEngineWorktreeSession,
       });
     }
 
     return () => {
       cancelled = true;
-      const activeEngine = engineRef.current ?? orchestrator;
-      activeEngine?.shutdown();
-      engineRef.current = null;
-      orchestrator = null;
+      if (engineRef.current) {
+        engineRef.current.shutdown(); // NOT dispose -- Pitfall 8
+        engineRef.current = null;
+      }
     };
   }, [enabled]);
 
@@ -271,8 +338,7 @@ export function SwarmEngineProvider({
         allowed: guardResult.verdict !== "deny",
         duration_ms: guardResult.duration_ms,
       })),
-      result.receipt.signature,
-      result.receipt.publicKey,
+      result.receipt,
     );
   }, []);
 
@@ -283,6 +349,7 @@ export function SwarmEngineProvider({
       opts: Opts,
     ): Promise<Node<SwarmBoardNodeData>> {
       const engine = engineRef.current;
+
       if (!engine) {
         return spawnFn(opts);
       }
@@ -291,35 +358,39 @@ export function SwarmEngineProvider({
       try {
         result = await engine.evaluateGuard(buildSpawnGuardAction(kind, opts));
       } catch (guardErr) {
-        const message =
-          guardErr instanceof Error ? guardErr.message : String(guardErr);
-        const { actions } = useSwarmBoardStore.getState();
         console.warn(
-          "[SwarmEngineProvider] Guard evaluation failed; denying spawn:",
-          message,
+          "[SwarmEngineProvider] Guard evaluation failed, falling back to manual spawn:",
+          guardErr instanceof Error ? guardErr.message : String(guardErr),
         );
-
-        return actions.addGuardReceipt({
-          verdict: "deny",
-          guardResults: [{ guard: "engine_error", allowed: false }],
-          position: opts.position,
-          detail: message,
-        });
+        return spawnFn(opts);
       }
 
       if (!result.allowed) {
         const { actions } = useSwarmBoardStore.getState();
-
-        return actions.addGuardReceipt({
-          verdict: result.verdict,
-          guardResults: result.guardResults.map((guardResult) => ({
-            guard: guardResult.guardId,
-            allowed: guardResult.verdict !== "deny",
-            duration_ms: guardResult.duration_ms,
-          })),
-          signature: result.receipt.signature,
-          publicKey: result.receipt.publicKey,
-          position: opts.position,
+        const position = opts.position ?? {
+          x: 100 + Math.random() * 400,
+          y: 100 + Math.random() * 300,
+        };
+        return actions.addNode({
+          nodeType: "receipt",
+          title: "Guard: DENY",
+          position: { x: position.x, y: position.y + 340 },
+          data: {
+            ...(Number.isFinite(Date.parse(result.receipt.timestamp))
+              ? { createdAt: Date.parse(result.receipt.timestamp) }
+              : {}),
+            verdict: "deny",
+            guardResults: result.guardResults.map((gr) => ({
+              guard: gr.guardId,
+              allowed: gr.verdict !== "deny",
+              duration_ms: gr.duration_ms,
+            })),
+            signature: result.receipt.signature,
+            publicKey: result.receipt.publicKey,
+            receiptData: result.receipt,
+            status: "completed",
+            engineManaged: true,
+          },
         });
       }
 
@@ -359,13 +430,13 @@ export function SwarmEngineProvider({
 
   const valueWithSpawn = useMemo(
     () => ({
-      ...contextState,
+      ...contextValue,
       spawnEngineSession,
       spawnEngineClaudeSession,
       spawnEngineWorktreeSession,
     }),
     [
-      contextState,
+      contextValue,
       spawnEngineSession,
       spawnEngineClaudeSession,
       spawnEngineWorktreeSession,
@@ -379,7 +450,14 @@ export function SwarmEngineProvider({
   );
 }
 
-/** Throws if called outside SwarmEngineProvider. */
+// ---------------------------------------------------------------------------
+// Convenience hooks
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns the full SwarmEngine context value.
+ * Throws if called outside of SwarmEngineProvider.
+ */
 export function useSwarmEngine(): SwarmEngineContextValue {
   const ctx = useContext(SwarmEngineContext);
   if (ctx === null) {
@@ -391,7 +469,45 @@ export function useSwarmEngine(): SwarmEngineContextValue {
   return ctx;
 }
 
-/** Returns null if no provider is mounted (safe for compatibility layers). */
 export function useOptionalSwarmEngine(): SwarmEngineContextValue | null {
   return useContext(SwarmEngineContext);
+}
+
+/**
+ * Returns a read-only snapshot of the agent registry state via the orchestrator.
+ * Returns null if the engine is not ready. Does NOT expose the mutable
+ * AgentRegistry -- all mutations must go through SwarmOrchestrator methods
+ * so that the guard pipeline is enforced.
+ *
+ * @deprecated Prefer `useSwarmEngine().engine?.getState().agents` for one-off reads.
+ */
+export function useAgentRegistry(): ReturnType<AgentRegistry["getState"]> | null {
+  const { engine } = useSwarmEngine();
+  return engine?.getState().agents ?? null;
+}
+
+/**
+ * Returns a read-only snapshot of the task graph state via the orchestrator.
+ * Returns null if the engine is not ready. Does NOT expose the mutable
+ * TaskGraph -- all mutations must go through SwarmOrchestrator methods
+ * so that the guard pipeline is enforced.
+ *
+ * @deprecated Prefer `useSwarmEngine().engine?.getState().tasks` for one-off reads.
+ */
+export function useTaskGraph(): ReturnType<TaskGraph["getState"]> | null {
+  const { engine } = useSwarmEngine();
+  return engine?.getState().tasks ?? null;
+}
+
+/**
+ * Returns a read-only snapshot of the topology state via the orchestrator.
+ * Returns null if the engine is not ready. Does NOT expose the mutable
+ * TopologyManager -- all mutations must go through SwarmOrchestrator methods
+ * so that the guard pipeline is enforced.
+ *
+ * @deprecated Prefer `useSwarmEngine().engine?.getState().topology` for one-off reads.
+ */
+export function useTopology(): SwarmEngineState["topology"] | null {
+  const { engine } = useSwarmEngine();
+  return engine?.getState().topology ?? null;
 }

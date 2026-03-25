@@ -7,10 +7,14 @@
  * no padding excess.
  */
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { IconCircleFilled } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
-import { useSwarmBoard } from "@/features/swarm/stores/swarm-board-store";
+import {
+  useSwarmBoard,
+  summarizeGuardPolicyHeatmap,
+  type GuardPolicySummary,
+} from "@/features/swarm/stores/swarm-board-store";
 import type { SwarmBoardNodeData, SessionStatus } from "@/features/swarm/swarm-board-types";
 
 // ---------------------------------------------------------------------------
@@ -41,27 +45,63 @@ export function SwarmBoardLeftRail() {
 
   const toggle = useCallback(() => setCollapsed((c) => !c), []);
 
-  const sessions = state.nodes.filter(
-    (n) => (n.data as SwarmBoardNodeData).nodeType === "agentSession",
+  const sessions = useMemo(
+    () =>
+      state.nodes.filter(
+        (n) => (n.data as SwarmBoardNodeData).nodeType === "agentSession",
+      ),
+    [state.nodes],
   );
-  const artifacts = state.nodes.filter(
-    (n) => (n.data as SwarmBoardNodeData).nodeType === "artifact",
+  const artifacts = useMemo(
+    () =>
+      state.nodes.filter(
+        (n) => (n.data as SwarmBoardNodeData).nodeType === "artifact",
+      ),
+    [state.nodes],
   );
 
-  const branches = Array.from(
-    new Set(
-      sessions
-        .map((n) => (n.data as SwarmBoardNodeData).branch)
-        .filter(Boolean) as string[],
-    ),
+  const branches = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          sessions
+            .map((n) => (n.data as SwarmBoardNodeData).branch)
+            .filter(Boolean) as string[],
+        ),
+      ),
+    [sessions],
   );
 
-  const hunts = Array.from(
-    new Set(
-      state.nodes
-        .map((n) => (n.data as SwarmBoardNodeData).huntId)
-        .filter(Boolean) as string[],
-    ),
+  const hunts = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          state.nodes
+            .map((n) => (n.data as SwarmBoardNodeData).huntId)
+            .filter(Boolean) as string[],
+        ),
+      ),
+    [state.nodes],
+  );
+
+  const policyHeatmap = useMemo(
+    () => summarizeGuardPolicyHeatmap(state.nodes),
+    [state.nodes],
+  );
+
+  const topPolicyGuards = useMemo(
+    () => policyHeatmap.guards.slice(0, 5),
+    [policyHeatmap.guards],
+  );
+
+  const policySummaryText = useMemo(
+    () =>
+      [
+        `${policyHeatmap.receiptsWithGuards}r`,
+        `${policyHeatmap.totalEvaluations}e`,
+        `${policyHeatmap.denyCount}d`,
+      ].join(" "),
+    [policyHeatmap],
   );
 
   if (collapsed) {
@@ -79,6 +119,11 @@ export function SwarmBoardLeftRail() {
           &#x203a;
         </button>
         <span className="text-[9px] text-[#1e2230] font-mono tabular-nums mt-3">{sessions.length}</span>
+        {policyHeatmap.uniqueGuards > 0 && (
+          <span className="text-[8px] text-[#38221d] font-mono tabular-nums mt-1">
+            {policyHeatmap.denyCount}d
+          </span>
+        )}
       </div>
     );
   }
@@ -185,6 +230,21 @@ export function SwarmBoardLeftRail() {
         </RailSection>
       )}
 
+      {/* Policy */}
+      {policyHeatmap.uniqueGuards > 0 && (
+        <RailSection label="P" title="Policy" count={policyHeatmap.uniqueGuards}>
+          <div className="px-2 py-1 font-mono text-[8px] text-[#3d4250]">
+            <div className="flex items-center justify-between gap-2">
+              <span>{policySummaryText}</span>
+              <span>{policyHeatmap.allowCount}a {policyHeatmap.warnCount}w</span>
+            </div>
+          </div>
+          {topPolicyGuards.map((guard) => (
+            <PolicyRow key={guard.guard} summary={guard} />
+          ))}
+        </RailSection>
+      )}
+
       {/* Branches */}
       {branches.length > 0 && (
         <RailSection label="B" title="Branches" count={branches.length}>
@@ -199,6 +259,58 @@ export function SwarmBoardLeftRail() {
       )}
     </div>
   );
+}
+
+function PolicyRow({ summary }: { summary: GuardPolicySummary }) {
+  return (
+    <div className="px-2 py-1 font-mono" data-testid={`policy-row-${summary.guard}`}>
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] text-[#c3cfdf] truncate flex-1">{summary.guard}</span>
+        <span className="text-[8px] text-[#1e2230] tabular-nums">{summary.totalEvaluations}</span>
+      </div>
+      <div className="mt-1 flex items-center gap-2">
+        <RatioBar summary={summary} />
+        <span className="text-[8px] tabular-nums whitespace-nowrap">
+          <span className="text-[#e74c3c]">{summary.denyCount}d</span>{" "}
+          <span className="text-[#d4a84b]">{summary.warnCount}w</span>{" "}
+          <span className="text-[#3dbf84]">{summary.allowCount}a</span>
+        </span>
+      </div>
+      <div className="mt-0.5 text-[8px] text-[#3d4250] tabular-nums">
+        {summary.receiptCount}r {formatLatency(summary)}
+      </div>
+    </div>
+  );
+}
+
+function RatioBar({ summary }: { summary: GuardPolicySummary }) {
+  const segments = [
+    { key: "deny", ratio: summary.denyRatio, color: "#6d231d" },
+    { key: "warn", ratio: summary.warnRatio, color: "#70521f" },
+    { key: "allow", ratio: summary.allowRatio, color: "#184634" },
+  ].filter((segment) => segment.ratio > 0);
+
+  return (
+    <div className="flex h-[4px] flex-1 overflow-hidden rounded-full bg-[#0f1119]">
+      {segments.map((segment) => (
+        <span
+          key={segment.key}
+          style={{
+            width: `${Math.max(segment.ratio * 100, 8)}%`,
+            backgroundColor: segment.color,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function formatLatency(summary: GuardPolicySummary): string {
+  if (summary.averageLatencyMs == null || summary.maxLatencyMs == null) {
+    return "lat n/a";
+  }
+
+  return `avg ${Math.round(summary.averageLatencyMs)}ms max ${summary.maxLatencyMs}ms`;
 }
 
 // ---------------------------------------------------------------------------

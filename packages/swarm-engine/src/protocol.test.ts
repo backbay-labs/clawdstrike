@@ -167,6 +167,10 @@ describe("EVENT_TO_CHANNEL", () => {
     expect(EVENT_TO_CHANNEL["agent.heartbeat"]).toBe("agent_lifecycle");
   });
 
+  it('maps "agent.message" to "agent_lifecycle"', () => {
+    expect(EVENT_TO_CHANNEL["agent.message"]).toBe("agent_lifecycle");
+  });
+
   it('maps "task.created" to "task_orchestration"', () => {
     expect(EVENT_TO_CHANNEL["task.created"]).toBe("task_orchestration");
   });
@@ -243,8 +247,8 @@ describe("EVENT_TO_CHANNEL", () => {
     expect(EVENT_TO_CHANNEL["action.completed"]).toBe("coordination");
   });
 
-  it("covers all 23 SwarmEngineEventMap keys", () => {
-    expect(Object.keys(EVENT_TO_CHANNEL)).toHaveLength(23);
+  it("covers all 24 SwarmEngineEventMap keys", () => {
+    expect(Object.keys(EVENT_TO_CHANNEL)).toHaveLength(24);
   });
 });
 
@@ -320,12 +324,12 @@ describe("ProtocolBridge", () => {
   it("connect() subscribes to all mapped events", () => {
     const { emitter, bridge } = createBridge();
     bridge.connect();
-    // There should be 23 listeners (one per EVENT_TO_CHANNEL key)
+    const expectedListeners = Object.keys(EVENT_TO_CHANNEL).length;
     const totalListeners = Object.keys(EVENT_TO_CHANNEL).reduce(
       (sum, key) => sum + emitter.listenerCount(key as keyof SwarmEngineEventMap),
       0,
     );
-    expect(totalListeners).toBe(23);
+    expect(totalListeners).toBe(expectedListeners);
     bridge.disconnect();
   });
 
@@ -335,11 +339,12 @@ describe("ProtocolBridge", () => {
     bridge.connect();
     bridge.connect();
 
+    const expectedListeners = Object.keys(EVENT_TO_CHANNEL).length;
     const totalListeners = Object.keys(EVENT_TO_CHANNEL).reduce(
       (sum, key) => sum + emitter.listenerCount(key as keyof SwarmEngineEventMap),
       0,
     );
-    expect(totalListeners).toBe(23);
+    expect(totalListeners).toBe(expectedListeners);
 
     emitter.emit("agent.heartbeat", {
       kind: "agent.heartbeat",

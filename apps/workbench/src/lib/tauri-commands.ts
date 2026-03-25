@@ -171,6 +171,19 @@ export interface TauriChainVerificationResponse {
   summary: string;
 }
 
+export type TauriSwarmFileWatchCategory = "persistence" | "workspace";
+
+export interface TauriSwarmFileWatchEvent {
+  category: TauriSwarmFileWatchCategory;
+  paths: string[];
+  filenames: string[];
+}
+
+export interface TauriConfigureSwarmFileWatcherRequest {
+  persistence_filenames?: string[];
+  workspace_paths?: string[];
+}
+
 
 async function tauriInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   const e2eInvoke = getWorkbenchE2EBridge()?.invoke;
@@ -222,6 +235,75 @@ export async function validatePolicyNative(yaml: string): Promise<TauriValidatio
   } catch (err) {
     console.error("[tauri-commands] validate_policy failed:", err);
     return null;
+  }
+}
+
+export async function readAppPersistenceFileNative(
+  filename: string,
+): Promise<string | null> {
+  if (!isDesktop()) return null;
+  try {
+    return await tauriInvoke<string | null>("read_app_persistence_file", { filename });
+  } catch (err) {
+    console.error("[tauri-commands] read_app_persistence_file failed:", err);
+    return null;
+  }
+}
+
+export async function writeAppPersistenceFileNative(
+  filename: string,
+  content: string,
+): Promise<boolean> {
+  if (!isDesktop()) return false;
+  try {
+    await tauriInvoke<void>("write_app_persistence_file", { filename, content });
+    return true;
+  } catch (err) {
+    console.error("[tauri-commands] write_app_persistence_file failed:", err);
+    return false;
+  }
+}
+
+export async function configureSwarmFileWatcherNative(
+  request: TauriConfigureSwarmFileWatcherRequest,
+): Promise<boolean> {
+  if (!isDesktop()) return false;
+  try {
+    await tauriInvoke<void>("configure_swarm_file_watcher", { request });
+    return true;
+  } catch (err) {
+    console.error("[tauri-commands] configure_swarm_file_watcher failed:", err);
+    return false;
+  }
+}
+
+export async function stopSwarmFileWatcherNative(): Promise<boolean> {
+  if (!isDesktop()) return false;
+  try {
+    await tauriInvoke<void>("stop_swarm_file_watcher");
+    return true;
+  } catch (err) {
+    console.error("[tauri-commands] stop_swarm_file_watcher failed:", err);
+    return false;
+  }
+}
+
+export async function respondToRpcFrontendRequestNative(
+  requestId: string,
+  payload?: unknown,
+  error?: string,
+): Promise<boolean> {
+  if (!isDesktop()) return false;
+  try {
+    await tauriInvoke<void>("rpc_frontend_respond", {
+      requestId,
+      payload: payload ?? null,
+      error: error ?? null,
+    });
+    return true;
+  } catch (err) {
+    console.error("[tauri-commands] rpc_frontend_respond failed:", err);
+    return false;
   }
 }
 

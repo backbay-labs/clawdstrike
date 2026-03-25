@@ -6,6 +6,7 @@ import { MemoryRouter } from "react-router-dom";
 import {
   SwarmBoardProvider,
   useSwarmBoard,
+  useSwarmBoardStore,
 } from "@/features/swarm/stores/swarm-board-store";
 import type { SwarmBoardNodeData } from "@/features/swarm/swarm-board-types";
 
@@ -13,11 +14,10 @@ import type { SwarmBoardNodeData } from "@/features/swarm/swarm-board-types";
 // Mock @xyflow/react with spies for zoom/fit functions
 // ---------------------------------------------------------------------------
 
-const mockZoomIn = vi.fn();
-const mockZoomOut = vi.fn();
-const mockFitView = vi.fn();
-const mockGetViewport = vi.fn(() => ({ x: 0, y: 0, zoom: 1 }));
-const mockGetNodes = vi.fn(() => [] as Record<string, unknown>[]);
+const mockFitBoard = vi.fn();
+const mockFitNodes = vi.fn();
+const mockZoomByFactor = vi.fn();
+const mockViewport = { x: 0, y: 0, zoom: 1 };
 
 vi.mock("@xyflow/react", () => ({
   ReactFlow: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
@@ -30,11 +30,11 @@ vi.mock("@xyflow/react", () => ({
   useEdgesState: (initial: unknown[]) => [initial, vi.fn(), vi.fn()],
   useReactFlow: () => ({
     setViewport: vi.fn(),
-    getViewport: mockGetViewport,
-    fitView: mockFitView,
-    zoomIn: mockZoomIn,
-    zoomOut: mockZoomOut,
-    getNodes: mockGetNodes,
+    getViewport: () => mockViewport,
+    fitView: vi.fn(),
+    zoomIn: vi.fn(),
+    zoomOut: vi.fn(),
+    getNodes: vi.fn(() => []),
   }),
   MarkerType: { ArrowClosed: "arrowclosed" },
   Position: { Left: "left", Right: "right", Top: "top", Bottom: "bottom" },
@@ -60,7 +60,14 @@ function ToolbarHarness() {
         {state.nodes.map((n) => (n.data as SwarmBoardNodeData).nodeType).join(",")}
       </pre>
       <pre data-testid="edge-count">{state.edges.length}</pre>
-      <SwarmBoardToolbar />
+      <SwarmBoardToolbar
+        viewportController={{
+          viewport: mockViewport,
+          fitBoard: mockFitBoard,
+          fitNodes: mockFitNodes,
+          zoomByFactor: mockZoomByFactor,
+        }}
+      />
     </div>
   );
 }
@@ -111,13 +118,9 @@ function renderToolbar() {
 
 beforeEach(() => {
   localStorage.clear();
-  mockZoomIn.mockClear();
-  mockZoomOut.mockClear();
-  mockFitView.mockClear();
-  mockGetNodes.mockClear();
-  mockGetViewport.mockClear();
-  mockGetViewport.mockReturnValue({ x: 0, y: 0, zoom: 1 });
-  mockGetNodes.mockReturnValue([]);
+  mockFitBoard.mockClear();
+  mockFitNodes.mockClear();
+  mockZoomByFactor.mockClear();
 });
 
 describe("SwarmBoardToolbar", () => {
@@ -198,7 +201,9 @@ describe("SwarmBoardToolbar", () => {
           vi.advanceTimersByTime(100);
         });
 
-        expect(mockFitView).toHaveBeenCalled();
+        expect(mockFitBoard).toHaveBeenCalledWith(
+          expect.objectContaining({ padding: 0.15, duration: 400 }),
+        );
       } finally {
         vi.useRealTimers();
       }
@@ -217,7 +222,7 @@ describe("SwarmBoardToolbar", () => {
           vi.advanceTimersByTime(100);
         });
 
-        expect(mockFitView).not.toHaveBeenCalled();
+        expect(mockFitBoard).not.toHaveBeenCalled();
       } finally {
         vi.useRealTimers();
       }
@@ -229,10 +234,10 @@ describe("SwarmBoardToolbar", () => {
       renderToolbar();
 
       act(() => {
-        screen.getByLabelText("Gather").click();
+        screen.getByLabelText("Gather (F)").click();
       });
 
-      expect(mockFitView).toHaveBeenCalledWith(
+      expect(mockFitBoard).toHaveBeenCalledWith(
         expect.objectContaining({ padding: 0.2, duration: 500 }),
       );
     });
@@ -242,38 +247,46 @@ describe("SwarmBoardToolbar", () => {
     it("zooms to running nodes when present", () => {
       renderToolbar();
 
-      const runningNode = {
-        id: "running-1",
-        data: { status: "running", nodeType: "agentSession", title: "Active" },
-        position: { x: 100, y: 100 },
-      };
-      mockGetNodes.mockReturnValue([runningNode]);
-
       act(() => {
-        screen.getByLabelText("Follow Active").click();
+        useSwarmBoardStore.getState().actions.addNode({
+          nodeType: "agentSession",
+          title: "Active",
+          position: { x: 100, y: 100 },
+          data: { status: "running" },
+        });
       });
 
-      expect(mockFitView).toHaveBeenCalledWith(
+      act(() => {
+        screen.getByLabelText("Follow Active (Space)").click();
+      });
+
+      expect(mockFitNodes).toHaveBeenCalledWith(
         expect.objectContaining({
-          nodes: [runningNode],
-          padding: 0.5,
-          duration: 400,
+          0: expect.objectContaining({
+            data: expect.objectContaining({ status: "running", title: "Active" }),
+          }),
         }),
+        expect.objectContaining({ padding: 0.5, duration: 400 }),
       );
     });
 
     it("does nothing when no running nodes", () => {
       renderToolbar();
 
-      mockGetNodes.mockReturnValue([
-        { id: "idle-1", data: { status: "idle" }, position: { x: 0, y: 0 } },
-      ]);
-
       act(() => {
-        screen.getByLabelText("Follow Active").click();
+        useSwarmBoardStore.getState().actions.addNode({
+          nodeType: "agentSession",
+          title: "Idle",
+          position: { x: 0, y: 0 },
+          data: { status: "idle" },
+        });
       });
 
-      expect(mockFitView).not.toHaveBeenCalled();
+      act(() => {
+        screen.getByLabelText("Follow Active (Space)").click();
+      });
+
+      expect(mockFitNodes).not.toHaveBeenCalled();
     });
   });
 
@@ -286,8 +299,8 @@ describe("SwarmBoardToolbar", () => {
         "New Terminal",
         "Add Note",
         "Auto Layout",
-        "Gather",
-        "Follow Active",
+        "Gather (F)",
+        "Follow Active (Space)",
         "Clear board",
       ];
 

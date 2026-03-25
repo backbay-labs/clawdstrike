@@ -7,60 +7,34 @@ const {
   mockSpawnClaudeSession,
   mockSpawnWorktreeSession,
   mockKillSession,
-  mockSpawnEngineSession,
-  mockSpawnEngineClaudeSession,
-  mockSpawnEngineWorktreeSession,
-  mockUseSwarmBoardStore,
+  mockUseSwarmBoard,
 } = vi.hoisted(() => {
   const mockSpawnSession = vi.fn();
   const mockSpawnClaudeSession = vi.fn();
   const mockSpawnWorktreeSession = vi.fn();
   const mockKillSession = vi.fn();
-  const mockSpawnEngineSession = vi.fn();
-  const mockSpawnEngineClaudeSession = vi.fn();
-  const mockSpawnEngineWorktreeSession = vi.fn();
 
-  const mockUseSwarmBoardStore = Object.assign(
-    (selector: (state: { actions: { removeNode: ReturnType<typeof vi.fn> } }) => unknown) =>
-      selector({ actions: { removeNode: vi.fn() } }),
-    {
-      use: {
-        repoRoot: () => "/repo",
-        nodes: () => [],
-      },
-    },
-  );
+  const mockUseSwarmBoard = vi.fn(() => ({
+    state: { repoRoot: "/repo", nodes: [] },
+    removeNode: vi.fn(),
+    spawnSession: mockSpawnSession,
+    spawnClaudeSession: mockSpawnClaudeSession,
+    spawnWorktreeSession: mockSpawnWorktreeSession,
+    killSession: mockKillSession,
+  }));
 
   return {
     mockSpawnSession,
     mockSpawnClaudeSession,
     mockSpawnWorktreeSession,
     mockKillSession,
-    mockSpawnEngineSession,
-    mockSpawnEngineClaudeSession,
-    mockSpawnEngineWorktreeSession,
-    mockUseSwarmBoardStore,
+    mockUseSwarmBoard,
   };
 });
 
 vi.mock("../swarm-board-store", () => ({
-  MAX_ACTIVE_TERMINALS: 8,
-  useSwarmBoardStore: mockUseSwarmBoardStore,
-  useSwarmBoardSession: () => ({
-    spawnSession: mockSpawnSession,
-    spawnClaudeSession: mockSpawnClaudeSession,
-    spawnWorktreeSession: mockSpawnWorktreeSession,
-    killSession: mockKillSession,
-  }),
-}));
-
-vi.mock("@/features/swarm/stores/swarm-engine-provider", () => ({
-  useOptionalSwarmEngine: () => ({
-    mode: "engine",
-    spawnEngineSession: mockSpawnEngineSession,
-    spawnEngineClaudeSession: mockSpawnEngineClaudeSession,
-    spawnEngineWorktreeSession: mockSpawnEngineWorktreeSession,
-  }),
+  MAX_TOTAL_SESSIONS: 64,
+  useSwarmBoard: mockUseSwarmBoard,
 }));
 
 describe("useTerminalSessions", () => {
@@ -68,36 +42,30 @@ describe("useTerminalSessions", () => {
     vi.clearAllMocks();
   });
 
-  it("routes terminal session spawns through the engine wrapper when engine mode is enabled", async () => {
-    mockSpawnEngineSession.mockResolvedValue({ id: "node_terminal" });
+  it("delegates terminal spawns through the board session API", async () => {
+    mockSpawnSession.mockResolvedValue({ id: "node_terminal" });
 
     const { result } = renderHook(() => useTerminalSessions());
     await result.current.spawnSession({ cwd: "/repo", title: "Terminal" });
 
-    expect(mockSpawnEngineSession).toHaveBeenCalledWith(
-      mockSpawnSession,
+    expect(mockSpawnSession).toHaveBeenCalledWith(
       expect.objectContaining({ cwd: "/repo", title: "Terminal" }),
     );
-    expect(mockSpawnSession).not.toHaveBeenCalled();
   });
 
-  it("routes Claude and worktree spawns through the engine wrapper when engine mode is enabled", async () => {
-    mockSpawnEngineClaudeSession.mockResolvedValue({ id: "node_claude" });
-    mockSpawnEngineWorktreeSession.mockResolvedValue({ id: "node_worktree" });
+  it("delegates Claude and worktree spawns through the board session API", async () => {
+    mockSpawnClaudeSession.mockResolvedValue({ id: "node_claude" });
+    mockSpawnWorktreeSession.mockResolvedValue({ id: "node_worktree" });
 
     const { result } = renderHook(() => useTerminalSessions());
     await result.current.spawnClaudeSession({ prompt: "review" });
     await result.current.spawnWorktreeSession({ branch: "feat/test" });
 
-    expect(mockSpawnEngineClaudeSession).toHaveBeenCalledWith(
-      mockSpawnClaudeSession,
+    expect(mockSpawnClaudeSession).toHaveBeenCalledWith(
       expect.objectContaining({ prompt: "review" }),
     );
-    expect(mockSpawnEngineWorktreeSession).toHaveBeenCalledWith(
-      mockSpawnWorktreeSession,
+    expect(mockSpawnWorktreeSession).toHaveBeenCalledWith(
       expect.objectContaining({ branch: "feat/test" }),
     );
-    expect(mockSpawnClaudeSession).not.toHaveBeenCalled();
-    expect(mockSpawnWorktreeSession).not.toHaveBeenCalled();
   });
 });

@@ -5,10 +5,11 @@ mod commands;
 
 use capability::CommandCapabilityState;
 use commands::{
-    capability, detection, mcp_sidecar, repo_roots, stronghold as stronghold_cmds, terminal,
-    workbench, worktree,
+    capability, detection, file_watcher, mcp_sidecar, persistence, repo_roots,
+    rpc_socket, stronghold as stronghold_cmds, terminal, workbench, worktree,
 };
 use mcp_sidecar::McpState;
+use rpc_socket::RpcSocketState;
 use stronghold_cmds::StrongholdState;
 #[allow(unused_imports)]
 use tauri::Manager;
@@ -41,6 +42,8 @@ fn main() {
             std::sync::Arc::new(tokio::sync::Mutex::new(terminal::TerminalManager::new()))
                 as TerminalState,
         )
+        .manage(file_watcher::SwarmFileWatcherState::default())
+        .manage(std::sync::Arc::new(rpc_socket::RpcSocketStateInner::default()) as RpcSocketState)
         .setup(|app| {
             clawdstrike_logos::verifier::install_clawdstrike_policy_load_verifier();
 
@@ -88,6 +91,18 @@ fn main() {
                     err
                 );
             }
+
+            let rpc_state: RpcSocketState = (*app.state::<RpcSocketState>()).clone();
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(err) = rpc_socket::start_rpc_socket_server(&app_handle, &rpc_state).await
+                {
+                    eprintln!(
+                        "[workbench] WARNING: failed to start JSON-RPC control socket: {}",
+                        err
+                    );
+                }
+            });
 
             Ok(())
         })
@@ -146,7 +161,14 @@ fn main() {
             detection::compile_sigma_rule,
             detection::normalize_ocsf_event,
             detection::convert_sigma_rule,
+            persistence::read_app_persistence_file,
+            persistence::write_app_persistence_file,
+            file_watcher::configure_swarm_file_watcher,
+            file_watcher::stop_swarm_file_watcher,
+            rpc_socket::rpc_frontend_respond,
             terminal::terminal_create,
+            terminal::terminal_discover,
+            terminal::terminal_reconnect,
             terminal::terminal_write,
             terminal::terminal_resize,
             terminal::terminal_kill,
@@ -170,10 +192,13 @@ fn main() {
 
                 // Clean up all terminal sessions on exit.
                 let terminal_state = app.state::<TerminalState>();
+                let rpc_state = app.state::<RpcSocketState>();
                 // Use a blocking approach since we're in a sync callback.
                 let state_clone = (*terminal_state).clone();
+                let rpc_state_clone = (*rpc_state).clone();
                 tauri::async_runtime::block_on(async {
                     terminal::kill_all_sessions(&state_clone).await;
+                    rpc_socket::stop_rpc_socket_server(&rpc_state_clone).await;
                 });
             }
         });

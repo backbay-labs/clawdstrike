@@ -1,19 +1,36 @@
+/**
+ * SwarmBoardPage — full-page React Flow canvas for multi-agent coordination.
+ *
+ * This is the core SwarmBoard view. It renders the React Flow graph with
+ * custom node types, a toolbar, minimap, controls, and an inspector drawer.
+ *
+ * Architecture: ReactFlowProvider wraps the canvas, while the page keeps
+ * viewport state in controlled mode so toolbar actions and wheel gestures
+ * share one source of truth. SwarmBoardProvider sits outside to manage
+ * node/edge state.
+ */
+
 import React, { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { useCoordinatorBoardBridge } from "@/features/swarm/hooks/use-coordinator-board-bridge";
 import { usePolicyEvalBoardBridge } from "@/features/swarm/hooks/use-policy-eval-board-bridge";
 import { useTrustGraphBridge } from "@/features/swarm/hooks/use-trust-graph-bridge";
 import { useReceiptFlowBridge, receiptEdgeTimestamps } from "@/features/swarm/hooks/use-receipt-flow-bridge";
-import { SwarmEngineProvider, useOptionalSwarmEngine } from "@/features/swarm/stores/swarm-engine-provider";
+import { SwarmEngineProvider, useSwarmEngine } from "@/features/swarm/stores/swarm-engine-provider";
 import { useEngineBoardBridge } from "@/features/swarm/hooks/use-engine-board-bridge";
 import { getCoordinator } from "@/features/swarm/coordinator-instance";
+import { useSwarmRpcBridge } from "@/features/swarm/rpc/swarm-rpc-bridge";
+import { registerSwarmRpcViewportController } from "@/features/swarm/rpc/swarm-rpc-viewport";
 import {
   ReactFlow,
   ReactFlowProvider,
+  Background,
+  BackgroundVariant,
   MiniMap,
   useReactFlow,
   type Node,
   type Edge,
+  type Viewport,
   type OnConnect,
   type OnNodesChange,
   type OnEdgesChange,
@@ -22,6 +39,7 @@ import {
   applyEdgeChanges,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+// ghostty-web uses canvas rendering — no external CSS needed
 import {
   IconSearch,
   IconCopy,
@@ -29,16 +47,51 @@ import {
   IconCommand,
 } from "@tabler/icons-react";
 
-import { SwarmBoardProvider, useSwarmBoard, useSwarmBoardStore } from "@/features/swarm/stores/swarm-board-store";
+import {
+  SwarmBoardProvider,
+  useSwarmBoard,
+  useSwarmBoardStore,
+  summarizeReceiptPosture,
+} from "@/features/swarm/stores/swarm-board-store";
 import { usePaneStore } from "@/features/panes/pane-store";
 import { swarmBoardNodeTypes } from "./nodes";
 import { swarmBoardEdgeTypes } from "./edges";
 import { SwarmBoardToolbar } from "./swarm-board-toolbar";
 import { SwarmBoardLeftRail } from "./swarm-board-left-rail";
 import { SwarmBoardInspector } from "./swarm-board-inspector";
+import { buildSwarmBoardAtmosphere } from "./swarm-board-atmosphere";
+import {
+  SWARM_BOARD_GRID_GAP,
+  SWARM_BOARD_GRID_MAJOR_GAP,
+  SWARM_BOARD_PAN_ON_DRAG_BUTTONS,
+  SWARM_BOARD_SHORTCUT_HINT,
+  nudgeSelectedBoardNodes,
+} from "./swarm-board-canvas-controls";
+import {
+  SWARM_VIEWPORT_HARD_MAX_ZOOM,
+  SWARM_VIEWPORT_HARD_MIN_ZOOM,
+  SWARM_VIEWPORT_SNAPBACK_DELAY_MS,
+  SWARM_VIEWPORT_TARGET_MAX_ZOOM,
+  SWARM_VIEWPORT_TARGET_MIN_ZOOM,
+  applyViewportWheelPan,
+  applyViewportWheelZoom,
+  areViewportsEqual,
+  getZoomIndicatorLabel,
+  shouldSyncControlledViewport,
+  shouldZoomCanvasWheel,
+  stepViewportSnapback,
+  viewportNeedsSnapback,
+  zoomViewportAroundPoint,
+  type SwarmViewportPoint,
+  type SwarmViewportSource,
+} from "@/features/swarm/canvas/viewport-controller";
 import type { SwarmBoardNodeData, SwarmNodeType } from "@/features/swarm/swarm-board-types";
-import { useTerminalSessionsFromBoard } from "@/lib/workbench/use-terminal-sessions";
 
+// ---------------------------------------------------------------------------
+// Styles
+// ---------------------------------------------------------------------------
+
+/** Override React Flow's default background/chrome to match dark theme */
 const RF_STYLE: React.CSSProperties = {
   backgroundColor: "#05060a",
 };
@@ -59,7 +112,10 @@ const CONNECTION_LINE_STYLE = { stroke: "#d4a84b60", strokeWidth: 1.5 };
 const PRO_OPTIONS = { hideAttribution: true };
 const DELETE_KEY_CODE = ["Backspace", "Delete"];
 const SELECTION_KEY_CODE = ["Shift"];
+const DEFAULT_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 1 };
+const ZOOM_INDICATOR_HIDE_MS = 1200;
 
+// Minimap node color by type
 function minimapNodeColor(node: Node): string {
   const data = node.data as SwarmBoardNodeData | undefined;
   switch (data?.nodeType) {
@@ -80,41 +136,90 @@ function minimapNodeColor(node: Node): string {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Context menu state
+// ---------------------------------------------------------------------------
+
 interface NodeContextMenuState {
   nodeId: string;
   x: number;
   y: number;
 }
 
+// ---------------------------------------------------------------------------
+// Inner canvas component (needs both SwarmBoardProvider and ReactFlowProvider)
+// ---------------------------------------------------------------------------
+
 function SwarmBoardCanvas() {
-  const board = useSwarmBoard();
-  const { state, selectNode, removeNode, addNode, updateNode, rfEdges, killSession } = board;
-  const { spawnSession } = useTerminalSessionsFromBoard(board);
+  const {
+    state,
+    selectNode,
+    removeNode,
+    addNode,
+    updateNode,
+    rfEdges,
+    killSession,
+    spawnSession,
+    spawnClaudeSession,
+    spawnWorktreeSession,
+  } = useSwarmBoard();
   const { nodes, edges } = state;
   const storeActions = useSwarmBoardStore((s) => s.actions);
   const reactFlow = useReactFlow();
 
+  // Bridge SwarmCoordinator messages to board store (live intel/detection nodes)
   const coordinator = useMemo(() => getCoordinator(), []);
   useCoordinatorBoardBridge(coordinator);
   usePolicyEvalBoardBridge(coordinator);
   useTrustGraphBridge(coordinator);
 
+  // Bridge feed store findings to receipt nodes on the board
   useReceiptFlowBridge();
-  const engineCtx = useOptionalSwarmEngine();
-  useEngineBoardBridge(engineCtx?.engine ?? null);
 
+  // Bridge engine events to board store (live engine-managed nodes)
+  const engineCtx = useSwarmEngine();
+  useEngineBoardBridge(engineCtx.engine, engineCtx.taskGraph);
+  useSwarmRpcBridge({
+    spawnSession,
+    spawnClaudeSession,
+    spawnWorktreeSession,
+    killSession,
+  });
+
+  // Coordinator status for stats bar
   const coordinatorConnected = coordinator?.isConnected ?? false;
   const outboxSize = coordinator?.outboxSize ?? 0;
   const joinedSwarms = coordinator?.joinedSwarmIds?.length ?? 0;
 
+  // Context menu
   const [contextMenu, setContextMenu] = useState<NodeContextMenuState | null>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
+  // Follow-active toggle
   const [followActive, setFollowActive] = useState(false);
 
+  // Hovered node tracking for edge hover-reveal
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+  const [viewport, setViewport] = useState<Viewport>(DEFAULT_VIEWPORT);
+  const [zoomIndicator, setZoomIndicator] = useState<string | null>(null);
+  const canvasViewportRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef(viewport);
+  viewportRef.current = viewport;
+  const viewportSourceRef = useRef<SwarmViewportSource>("idle");
+  const snapbackTimerRef = useRef<number | null>(null);
+  const snapbackFrameRef = useRef<number | null>(null);
+  const zoomIndicatorTimerRef = useRef<number | null>(null);
+  const lastViewportFocusRef = useRef<SwarmViewportPoint | null>(null);
+  const hasInitialFitRef = useRef(false);
+  const isMacLikeRef = useRef(
+    typeof navigator !== "undefined"
+      ? /Mac|iPhone|iPad|iPod/i.test(navigator.platform)
+      : false,
+  );
 
-  // Refs avoid stale closures in React Flow's rapid drag callbacks
+  // Use refs to avoid stale closures in callbacks — React Flow calls these
+  // handlers rapidly during drag operations and the callback identity must
+  // stay stable to avoid unnecessary re-subscriptions.
   const nodesRef = useRef(nodes);
   nodesRef.current = nodes;
   const rfEdgesRef = useRef(rfEdges);
@@ -122,14 +227,152 @@ function SwarmBoardCanvas() {
   const edgesRef = useRef(edges);
   edgesRef.current = edges;
 
+  const cancelSnapback = useCallback(() => {
+    if (snapbackTimerRef.current != null) {
+      window.clearTimeout(snapbackTimerRef.current);
+      snapbackTimerRef.current = null;
+    }
+    if (snapbackFrameRef.current != null) {
+      window.cancelAnimationFrame(snapbackFrameRef.current);
+      snapbackFrameRef.current = null;
+    }
+  }, []);
+
+  const setControlledViewport = useCallback((nextViewport: Viewport, source: SwarmViewportSource) => {
+    viewportSourceRef.current = source;
+    viewportRef.current = nextViewport;
+    setViewport((current) => (areViewportsEqual(current, nextViewport) ? current : nextViewport));
+  }, []);
+
+  const showZoomIndicatorLabel = useCallback((zoom: number) => {
+    setZoomIndicator(getZoomIndicatorLabel(zoom));
+    if (zoomIndicatorTimerRef.current != null) {
+      window.clearTimeout(zoomIndicatorTimerRef.current);
+    }
+    zoomIndicatorTimerRef.current = window.setTimeout(() => {
+      setZoomIndicator(null);
+      zoomIndicatorTimerRef.current = null;
+    }, ZOOM_INDICATOR_HIDE_MS);
+  }, []);
+
+  const scheduleSnapback = useCallback(() => {
+    cancelSnapback();
+    if (!viewportNeedsSnapback(viewportRef.current)) {
+      viewportSourceRef.current = "idle";
+      return;
+    }
+
+    snapbackTimerRef.current = window.setTimeout(() => {
+      const tick = () => {
+        const rect = canvasViewportRef.current?.getBoundingClientRect();
+        const focalPoint = lastViewportFocusRef.current ?? {
+          x: rect ? rect.width / 2 : window.innerWidth / 2,
+          y: rect ? rect.height / 2 : window.innerHeight / 2,
+        };
+        const nextViewport = stepViewportSnapback(viewportRef.current, focalPoint);
+        const done = !viewportNeedsSnapback(nextViewport);
+
+        setControlledViewport(nextViewport, done ? "idle" : "snapback");
+
+        if (done) {
+          snapbackFrameRef.current = null;
+          return;
+        }
+
+        snapbackFrameRef.current = window.requestAnimationFrame(tick);
+      };
+
+      setControlledViewport(viewportRef.current, "snapback");
+      snapbackFrameRef.current = window.requestAnimationFrame(tick);
+      snapbackTimerRef.current = null;
+    }, SWARM_VIEWPORT_SNAPBACK_DELAY_MS);
+  }, [cancelSnapback, setControlledViewport]);
+
+  const fitBoard = useCallback(
+    (options?: { padding?: number; duration?: number }) => {
+      if (nodesRef.current.length === 0) {
+        return;
+      }
+      cancelSnapback();
+      viewportSourceRef.current = "imperative";
+      void reactFlow.fitView({
+        padding: options?.padding ?? FIT_VIEW_OPTIONS.padding,
+        duration: options?.duration ?? 0,
+      });
+    },
+    [cancelSnapback, reactFlow],
+  );
+
+  const fitNodesInViewport = useCallback(
+    (
+      nodesToFit: Array<Node<SwarmBoardNodeData>>,
+      options?: { padding?: number; duration?: number },
+    ) => {
+      if (nodesToFit.length === 0) {
+        return;
+      }
+      cancelSnapback();
+      viewportSourceRef.current = "imperative";
+      void reactFlow.fitView({
+        nodes: nodesToFit,
+        padding: options?.padding ?? FIT_VIEW_OPTIONS.padding,
+        duration: options?.duration ?? 0,
+      });
+    },
+    [cancelSnapback, reactFlow],
+  );
+
+  const zoomViewportByFactor = useCallback(
+    (factor: number, options?: { duration?: number }) => {
+      const rect = canvasViewportRef.current?.getBoundingClientRect();
+      const focalPoint = {
+        x: rect ? rect.width / 2 : window.innerWidth / 2,
+        y: rect ? rect.height / 2 : window.innerHeight / 2,
+      };
+      lastViewportFocusRef.current = focalPoint;
+      cancelSnapback();
+
+      const currentViewport = viewportRef.current;
+      const targetZoom = Math.min(
+        SWARM_VIEWPORT_TARGET_MAX_ZOOM,
+        Math.max(SWARM_VIEWPORT_TARGET_MIN_ZOOM, currentViewport.zoom * factor),
+      );
+      const targetViewport = zoomViewportAroundPoint(
+        currentViewport,
+        targetZoom,
+        focalPoint,
+      );
+
+      viewportSourceRef.current = "imperative";
+      showZoomIndicatorLabel(targetZoom);
+      void reactFlow.setViewport(targetViewport, { duration: options?.duration ?? 0 });
+    },
+    [cancelSnapback, reactFlow, showZoomIndicatorLabel],
+  );
+
+  const setViewportFromRpc = useCallback(
+    async (nextViewport: Viewport, options?: { duration?: number }) => {
+      cancelSnapback();
+      viewportSourceRef.current = "imperative";
+      viewportRef.current = nextViewport;
+      setViewport((current) => (areViewportsEqual(current, nextViewport) ? current : nextViewport));
+      await reactFlow.setViewport(nextViewport, { duration: options?.duration ?? 0 });
+      return viewportRef.current;
+    },
+    [cancelSnapback, reactFlow],
+  );
+
+  // Handle React Flow's built-in node changes (drag, resize, select, remove)
   const onNodesChange: OnNodesChange = useCallback(
     (changes) => {
+      // Intercept removals to clean up live PTY sessions before the node is deleted
       for (const change of changes) {
         if (change.type === "remove") {
           const node = nodesRef.current.find((n) => n.id === change.id);
           if (node) {
             const d = node.data as SwarmBoardNodeData;
             if (d.sessionId && (d.status === "running" || d.status === "blocked")) {
+              // Fire-and-forget: kill session + worktree cleanup
               killSession(change.id).catch(() => {});
             }
           }
@@ -141,9 +384,11 @@ function SwarmBoardCanvas() {
     [storeActions, killSession],
   );
 
+  // Handle React Flow's built-in edge changes (remove)
   const onEdgesChange: OnEdgesChange = useCallback(
     (changes) => {
       const updated = applyEdgeChanges(changes, rfEdgesRef.current);
+      // Convert back to our edge format
       const newEdges = updated.map((e) => ({
         id: e.id,
         source: e.source,
@@ -156,6 +401,7 @@ function SwarmBoardCanvas() {
     [storeActions],
   );
 
+  // Handle new connections drawn by the user
   const onConnect: OnConnect = useCallback(
     (params) => {
       if (!params.source || !params.target) return;
@@ -170,6 +416,7 @@ function SwarmBoardCanvas() {
     [storeActions],
   );
 
+  // Node click -> select & open inspector
   const onNodeClick: NodeMouseHandler = useCallback(
     (_event, node) => {
       selectNode(node.id);
@@ -178,20 +425,25 @@ function SwarmBoardCanvas() {
     [selectNode],
   );
 
+  // Double-click on node -> type-specific behavior
   const onNodeDoubleClick: NodeMouseHandler = useCallback(
     (_event, node) => {
       const d = node.data as SwarmBoardNodeData;
       selectNode(node.id);
 
       if (d.nodeType === "agentSession") {
+        // Open inspector AND expand terminal preview
         updateNode(node.id, { maximized: true });
       } else if (d.nodeType === "note") {
+        // Enter edit mode
         updateNode(node.id, { editing: true });
       }
+      // For all other types, just opening inspector (via selectNode) is sufficient
     },
     [selectNode, updateNode],
   );
 
+  // Right-click on node -> context menu
   const onNodeContextMenu: NodeMouseHandler = useCallback(
     (event, node) => {
       event.preventDefault();
@@ -204,16 +456,20 @@ function SwarmBoardCanvas() {
     [],
   );
 
+  // Click on empty canvas -> deselect
   const onPaneClick = useCallback(() => {
     selectNode(null);
     setContextMenu(null);
     setHoveredNodeId(null);
   }, [selectNode]);
 
+  // Click on edge -> open receipt detail for receipt-type edges
   const onEdgeClick = useCallback(
     (_event: React.MouseEvent, edge: Edge) => {
+      // Only handle receipt-type edges
       const edgeType = (edge.data?.edgeType as string) ?? findEdgeType(edge.id, edgesRef.current);
       if (edgeType !== "receipt") return;
+      // Find the receipt node (target of the receipt edge)
       const receiptNode = nodesRef.current.find((n) => n.id === edge.target);
       if (!receiptNode) return;
       const shortId = receiptNode.id.slice(0, 8);
@@ -222,6 +478,7 @@ function SwarmBoardCanvas() {
     [],
   );
 
+  // Track hovered node for edge hover-reveal behavior
   const onNodeMouseEnter: NodeMouseHandler = useCallback(
     (_event, node) => {
       setHoveredNodeId(node.id);
@@ -236,6 +493,7 @@ function SwarmBoardCanvas() {
     [],
   );
 
+  // Close context menu on click-outside
   useEffect(() => {
     if (!contextMenu) return;
     function handleClickOutside(e: MouseEvent) {
@@ -254,11 +512,12 @@ function SwarmBoardCanvas() {
     };
   }, [contextMenu]);
 
+  // Get viewport center for new nodes
   const getDropPosition = useCallback(() => {
     try {
-      const viewport = reactFlow.getViewport();
-      const centerX = (-viewport.x + window.innerWidth / 2) / viewport.zoom;
-      const centerY = (-viewport.y + window.innerHeight / 2) / viewport.zoom;
+      const currentViewport = viewportRef.current;
+      const centerX = (-currentViewport.x + window.innerWidth / 2) / currentViewport.zoom;
+      const centerY = (-currentViewport.y + window.innerHeight / 2) / currentViewport.zoom;
       return {
         x: centerX + (Math.random() - 0.5) * 100,
         y: centerY + (Math.random() - 0.5) * 100,
@@ -266,10 +525,142 @@ function SwarmBoardCanvas() {
     } catch {
       return { x: 200 + Math.random() * 300, y: 200 + Math.random() * 200 };
     }
-  }, [reactFlow]);
+  }, []);
+
+  const handleViewportChange = useCallback((nextViewport: Viewport) => {
+    if (!shouldSyncControlledViewport(viewportSourceRef.current)) {
+      return;
+    }
+
+    viewportRef.current = nextViewport;
+    setViewport((current) => (areViewportsEqual(current, nextViewport) ? current : nextViewport));
+  }, []);
+
+  const handleMoveStart = useCallback(
+    (event: MouseEvent | TouchEvent | null, nextViewport: Viewport) => {
+      viewportSourceRef.current = event == null ? "imperative" : "pointer";
+      if (shouldSyncControlledViewport(viewportSourceRef.current)) {
+        viewportRef.current = nextViewport;
+        setViewport((current) => (areViewportsEqual(current, nextViewport) ? current : nextViewport));
+      }
+    },
+    [],
+  );
+
+  const handleMoveEnd = useCallback(
+    (event: MouseEvent | TouchEvent | null, nextViewport: Viewport) => {
+      if (shouldSyncControlledViewport(viewportSourceRef.current)) {
+        viewportRef.current = nextViewport;
+        setViewport((current) => (areViewportsEqual(current, nextViewport) ? current : nextViewport));
+      }
+      viewportSourceRef.current = "idle";
+    },
+    [],
+  );
 
   useEffect(() => {
+    if (nodes.length === 0) {
+      hasInitialFitRef.current = false;
+      return;
+    }
+    const viewportReady = (reactFlow as { viewportInitialized?: boolean }).viewportInitialized ?? true;
+    if (!viewportReady) {
+      return;
+    }
+    if (hasInitialFitRef.current) {
+      return;
+    }
+
+    hasInitialFitRef.current = true;
+    fitBoard();
+  }, [nodes.length, fitBoard, reactFlow]);
+
+  useEffect(() => {
+    return registerSwarmRpcViewportController({
+      getViewport: () => viewportRef.current,
+      setViewport: setViewportFromRpc,
+    });
+  }, [setViewportFromRpc]);
+
+  useEffect(() => {
+    const canvasEl = canvasViewportRef.current;
+    if (!canvasEl) {
+      return;
+    }
+
+    const handleWheel = (event: WheelEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (
+        !target ||
+        target.closest(".nowheel") ||
+        target.closest(".react-flow__controls") ||
+        target.closest(".react-flow__panel") ||
+        target.closest("input, textarea, select, [contenteditable='true']") ||
+        target.closest(".react-flow__minimap")
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      cancelSnapback();
+
+      if (viewportSourceRef.current === "imperative") {
+        void reactFlow.setViewport(viewportRef.current, { duration: 0 });
+      }
+
+      const rect = canvasEl.getBoundingClientRect();
+      const focalPoint = {
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top,
+      };
+      lastViewportFocusRef.current = focalPoint;
+
+      const nextViewport = shouldZoomCanvasWheel(event, isMacLikeRef.current)
+        ? applyViewportWheelZoom(viewportRef.current, event.deltaY, focalPoint)
+        : applyViewportWheelPan(viewportRef.current, event.deltaX, event.deltaY);
+
+      setControlledViewport(nextViewport, "wheel");
+
+      if (shouldZoomCanvasWheel(event, isMacLikeRef.current)) {
+        showZoomIndicatorLabel(nextViewport.zoom);
+        scheduleSnapback();
+      } else {
+        viewportSourceRef.current = "idle";
+      }
+    };
+
+    const handleGesture = (event: Event) => {
+      event.preventDefault();
+    };
+
+    canvasEl.addEventListener("wheel", handleWheel, { capture: true, passive: false });
+    canvasEl.addEventListener("gesturestart", handleGesture as EventListener, { capture: true, passive: false });
+    canvasEl.addEventListener("gesturechange", handleGesture as EventListener, { capture: true, passive: false });
+    canvasEl.addEventListener("gestureend", handleGesture as EventListener, { capture: true, passive: false });
+
+    return () => {
+      canvasEl.removeEventListener("wheel", handleWheel, true);
+      canvasEl.removeEventListener("gesturestart", handleGesture as EventListener, true);
+      canvasEl.removeEventListener("gesturechange", handleGesture as EventListener, true);
+      canvasEl.removeEventListener("gestureend", handleGesture as EventListener, true);
+    };
+  }, [cancelSnapback, reactFlow, scheduleSnapback, setControlledViewport, showZoomIndicatorLabel]);
+
+  useEffect(() => {
+    return () => {
+      cancelSnapback();
+      if (zoomIndicatorTimerRef.current != null) {
+        window.clearTimeout(zoomIndicatorTimerRef.current);
+      }
+    };
+  }, [cancelSnapback]);
+
+  // ------- Keyboard shortcuts -------
+  useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
+      // Don't intercept when typing in an input, textarea, contentEditable,
+      // or inside an xterm terminal container
       const target = e.target as HTMLElement;
       if (
         target.tagName === "INPUT" ||
@@ -282,12 +673,14 @@ function SwarmBoardCanvas() {
 
       const isMeta = e.metaKey || e.ctrlKey;
 
+      // Escape -> deselect all and close inspector
       if (e.key === "Escape") {
         selectNode(null);
         setContextMenu(null);
         return;
       }
 
+      // Cmd/Ctrl+A -> select all nodes
       if (isMeta && e.key === "a") {
         e.preventDefault();
         const allNodes = nodesRef.current.map((n) => ({
@@ -298,11 +691,25 @@ function SwarmBoardCanvas() {
         return;
       }
 
+      if (!isMeta && !e.shiftKey && !e.altKey && !target.closest(".react-flow__node")) {
+        const nudgedNodes = nudgeSelectedBoardNodes(
+          nodesRef.current,
+          state.selectedNodeId,
+          e.key,
+        );
+        if (nudgedNodes) {
+          e.preventDefault();
+          storeActions.setNodes(nudgedNodes);
+          return;
+        }
+      }
+
+      // Cmd/Ctrl+Shift+N -> new session node (real PTY with fallback)
       if (isMeta && e.shiftKey && e.key === "N") {
         e.preventDefault();
         const cwd = state.repoRoot || "/tmp";
         spawnSession({ cwd, position: getDropPosition(), title: "Terminal" }).catch(() => {
-          // Fallback if Tauri unavailable
+          // Fallback to mock node if Tauri is not available
           addNode({
             nodeType: "agentSession",
             title: "Session (offline)",
@@ -322,6 +729,7 @@ function SwarmBoardCanvas() {
         return;
       }
 
+      // Cmd/Ctrl+Shift+M -> new note node
       if (isMeta && e.shiftKey && e.key === "M") {
         e.preventDefault();
         addNode({
@@ -333,6 +741,7 @@ function SwarmBoardCanvas() {
         return;
       }
 
+      // Number keys 1-6: quick-add node types
       if (!isMeta && !e.shiftKey && !e.altKey) {
         const quickAddMap: Record<string, { nodeType: SwarmNodeType; title: string }> = {
           "1": { nodeType: "agentSession", title: "New Session" },
@@ -352,12 +761,14 @@ function SwarmBoardCanvas() {
           return;
         }
 
+        // F -> fit view (gather)
         if (e.key === "f" || e.key === "F") {
           e.preventDefault();
-          reactFlow.fitView({ padding: 0.2, duration: 500 });
+          fitBoard({ padding: 0.2, duration: 500 });
           return;
         }
 
+        // Space -> toggle follow active
         if (e.key === " ") {
           e.preventDefault();
           setFollowActive((prev) => !prev);
@@ -368,8 +779,9 @@ function SwarmBoardCanvas() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [selectNode, storeActions, addNode, getDropPosition, reactFlow, spawnSession, state.repoRoot]);
+  }, [selectNode, storeActions, addNode, fitBoard, getDropPosition, spawnSession, state.repoRoot, state.selectedNodeId]);
 
+  // Follow active — auto-zoom to running node
   useEffect(() => {
     if (!followActive) return;
     const interval = setInterval(() => {
@@ -377,16 +789,16 @@ function SwarmBoardCanvas() {
         (n) => (n.data as SwarmBoardNodeData).status === "running",
       );
       if (runningNode) {
-        reactFlow.fitView({
-          nodes: [runningNode],
+        fitNodesInViewport([runningNode], {
           padding: 0.5,
           duration: 400,
         });
       }
     }, 2000);
     return () => clearInterval(interval);
-  }, [followActive, reactFlow]);
+  }, [fitNodesInViewport, followActive]);
 
+  // Context menu actions
   const handleContextInspect = useCallback(() => {
     if (contextMenu) {
       selectNode(contextMenu.nodeId);
@@ -413,6 +825,7 @@ function SwarmBoardCanvas() {
 
   const handleContextDelete = useCallback(() => {
     if (contextMenu) {
+      // Kill the PTY session if this is a live terminal node
       const node = nodesRef.current.find((n) => n.id === contextMenu.nodeId);
       if (node) {
         const d = node.data as SwarmBoardNodeData;
@@ -425,15 +838,18 @@ function SwarmBoardCanvas() {
     }
   }, [contextMenu, removeNode, killSession]);
 
+  // Memoize the type maps (must be stable references)
   const nodeTypes = useMemo(() => swarmBoardNodeTypes, []);
   const edgeTypes = useMemo(() => swarmBoardEdgeTypes, []);
 
+  // Enrich edges with hoveredNodeId for hover-reveal behavior + receipt activity timestamps
   const enrichedEdges = useMemo(() => {
     const selectedId = state.selectedNodeId;
     const now = Date.now();
     const RECEIPT_ACTIVITY_MS = 3000;
 
     return rfEdges.map((e) => {
+      // Check for receipt edge activity timestamp (bright pulse for 3s after creation)
       const receiptTs = receiptEdgeTimestamps.get(e.id);
       const receiptActivityAt = receiptTs != null && (now - receiptTs) < RECEIPT_ACTIVITY_MS
         ? receiptTs
@@ -451,6 +867,7 @@ function SwarmBoardCanvas() {
     });
   }, [rfEdges, hoveredNodeId, state.selectedNodeId]);
 
+  // Stats
   const totalNodes = nodes.length;
   const runningSessions = nodes.filter(
     (n) => (n.data as SwarmBoardNodeData).nodeType === "agentSession" &&
@@ -465,16 +882,33 @@ function SwarmBoardCanvas() {
   ).length;
   const totalEdges = edges.length;
   const isEmpty = totalNodes === 0;
+  const receiptPosture = useMemo(() => summarizeReceiptPosture(nodes), [nodes]);
+  const boardAtmosphere = useMemo(
+    () => buildSwarmBoardAtmosphere(receiptPosture),
+    [receiptPosture],
+  );
 
   return (
     <div className="flex flex-col h-full w-full" style={{ backgroundColor: "#05060a" }}>
-      <SwarmBoardToolbar />
+      {/* Toolbar (uses useReactFlow) */}
+      <SwarmBoardToolbar
+        viewportController={{
+          viewport,
+          fitBoard,
+          fitNodes: fitNodesInViewport,
+          zoomByFactor: zoomViewportByFactor,
+        }}
+      />
 
+      {/* Main area: left rail + canvas */}
       <div className="flex flex-1 min-h-0">
+        {/* Left rail — workspace explorer (Section 9) */}
         <SwarmBoardLeftRail />
 
-        <div className="flex-1 relative flex flex-col">
+        {/* Canvas */}
+        <div ref={canvasViewportRef} className="flex-1 relative flex flex-col">
           <div className="flex-1 relative">
+            {/* Global keyframe animations for node breathing effects */}
             <style>{`
               @keyframes breathe-gold {
                 0%, 100% { box-shadow: 0 0 12px 0 rgba(212,168,75,0.05); }
@@ -500,6 +934,12 @@ function SwarmBoardCanvas() {
                 from { opacity: 0; transform: scale(0.85); }
                 to { opacity: 1; transform: scale(1); }
               }
+              .react-flow__selection {
+                background: rgba(212, 168, 75, 0.05);
+                border: 1px solid rgba(212, 168, 75, 0.28);
+                border-radius: 4px;
+                box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+              }
               .react-flow__node {
                 animation: nodeEnter 0.3s ease-out;
               }
@@ -508,11 +948,15 @@ function SwarmBoardCanvas() {
             <ReactFlow
               nodes={nodes}
               edges={enrichedEdges}
+              viewport={viewport}
               nodeTypes={nodeTypes}
               edgeTypes={edgeTypes}
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
               onConnect={onConnect}
+              onViewportChange={handleViewportChange}
+              onMoveStart={handleMoveStart}
+              onMoveEnd={handleMoveEnd}
               onNodeClick={onNodeClick}
               onNodeDoubleClick={onNodeDoubleClick}
               onNodeContextMenu={onNodeContextMenu}
@@ -522,10 +966,16 @@ function SwarmBoardCanvas() {
               onPaneClick={onPaneClick}
               nodesDraggable
               nodesConnectable
-              fitView
               fitViewOptions={FIT_VIEW_OPTIONS}
-              minZoom={0.1}
-              maxZoom={2}
+              minZoom={SWARM_VIEWPORT_HARD_MIN_ZOOM}
+              maxZoom={SWARM_VIEWPORT_HARD_MAX_ZOOM}
+              panOnDrag={SWARM_BOARD_PAN_ON_DRAG_BUTTONS}
+              zoomOnScroll={false}
+              zoomOnPinch={false}
+              zoomOnDoubleClick={false}
+              panOnScroll={false}
+              zoomActivationKeyCode={null}
+              panActivationKeyCode={null}
               defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
               connectionLineStyle={CONNECTION_LINE_STYLE}
               proOptions={PRO_OPTIONS}
@@ -533,6 +983,21 @@ function SwarmBoardCanvas() {
               deleteKeyCode={DELETE_KEY_CODE}
               selectionKeyCode={SELECTION_KEY_CODE}
             >
+              <Background
+                id="swarm-grid-minor"
+                variant={BackgroundVariant.Dots}
+                gap={SWARM_BOARD_GRID_GAP}
+                size={1}
+                color="rgba(255,255,255,0.06)"
+              />
+              <Background
+                id="swarm-grid-major"
+                variant={BackgroundVariant.Dots}
+                gap={SWARM_BOARD_GRID_MAJOR_GAP}
+                size={1.4}
+                color="rgba(255,255,255,0.12)"
+              />
+              {/* MiniMap — subtle, blends into bottom-right corner */}
               <MiniMap
                 style={MINIMAP_STYLE}
                 nodeColor={minimapNodeColor}
@@ -541,26 +1006,53 @@ function SwarmBoardCanvas() {
                 pannable
                 zoomable
               />
+              {/* No Controls component — toolbar provides zoom */}
             </ReactFlow>
 
+            {zoomIndicator && (
+              <div
+                className="absolute top-3 left-1/2 -translate-x-1/2 pointer-events-none z-20 rounded-sm border border-[#1a1f2e] bg-[#0b0d13]/90 px-2 py-1 text-[10px] font-mono text-[#c3cfdf]"
+                data-testid="canvas-zoom-indicator"
+              >
+                {zoomIndicator}
+              </div>
+            )}
+
+            {/* Canvas atmosphere — radial vignette */}
             <div
               className="absolute inset-0 pointer-events-none"
+              data-testid="canvas-atmosphere-glow"
+              data-atmosphere-state={boardAtmosphere.state}
               style={{
-                background: 'radial-gradient(ellipse at 50% 50%, rgba(12,14,20,0.0) 0%, rgba(5,6,10,0.6) 70%, rgba(2,3,5,0.9) 100%)',
+                background: boardAtmosphere.glow,
                 zIndex: 0,
+                opacity: 0.7,
               }}
             />
             <div
               className="absolute inset-0 pointer-events-none"
+              data-testid="canvas-atmosphere-vignette"
+              data-atmosphere-state={boardAtmosphere.state}
+              style={{
+                background: boardAtmosphere.vignette,
+                zIndex: 0,
+              }}
+            />
+            {/* Subtle noise texture overlay */}
+            <div
+              className="absolute inset-0 pointer-events-none"
+              data-testid="canvas-atmosphere-noise"
+              data-atmosphere-state={boardAtmosphere.state}
               style={{
                 backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E")`,
                 backgroundRepeat: 'repeat',
                 backgroundSize: '256px 256px',
                 zIndex: 0,
-                opacity: 0.4,
+                opacity: boardAtmosphere.noiseOpacity,
               }}
             />
 
+            {/* Empty board state */}
             {isEmpty && (
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10">
                 <h1 className="text-[32px] font-syne font-bold text-[#1a1f2e] tracking-tight">
@@ -584,8 +1076,10 @@ function SwarmBoardCanvas() {
               </div>
             )}
 
+            {/* Inspector overlay */}
             <SwarmBoardInspector />
 
+            {/* Node context menu */}
             {contextMenu && (
               <NodeContextMenu
                 ref={contextMenuRef}
@@ -597,6 +1091,7 @@ function SwarmBoardCanvas() {
             )}
           </div>
 
+          {/* Stats bar */}
           <SwarmBoardStatsBar
             totalNodes={totalNodes}
             runningSessions={runningSessions}
@@ -613,6 +1108,10 @@ function SwarmBoardCanvas() {
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Node Context Menu
+// ---------------------------------------------------------------------------
 
 const NodeContextMenu = forwardRef<
   HTMLDivElement,
@@ -657,6 +1156,10 @@ const NodeContextMenu = forwardRef<
 
 NodeContextMenu.displayName = "NodeContextMenu";
 
+// ---------------------------------------------------------------------------
+// Stats Bar
+// ---------------------------------------------------------------------------
+
 const STATS_BAR_HEIGHT = 20;
 
 function SwarmBoardStatsBar({
@@ -680,6 +1183,7 @@ function SwarmBoardStatsBar({
   outboxSize: number;
   joinedSwarms: number;
 }) {
+  // Build stat segments, then join with dot separator
   const segments: Array<{ text: string; color?: string }> = [
     { text: `${totalNodes} nodes` },
   ];
@@ -689,6 +1193,7 @@ function SwarmBoardStatsBar({
   if (totalEdges > 0) segments.push({ text: `${totalEdges} edges` });
   if (followActive) segments.push({ text: "following", color: "#3dbf84" });
 
+  // Coordinator status segments
   if (coordinatorConnected && joinedSwarms > 0) {
     segments.push({ text: `${joinedSwarms} swarm${joinedSwarms !== 1 ? "s" : ""}`, color: "#3dbf84" });
   }
@@ -713,11 +1218,15 @@ function SwarmBoardStatsBar({
         ))}
       </span>
       <span className="ml-auto text-[8px] text-[#0f1119] font-mono">
-        1-6 add / F fit / Space follow
+        {SWARM_BOARD_SHORTCUT_HINT}
       </span>
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Error Boundary — catches render errors in the engine-dependent subtree
+// ---------------------------------------------------------------------------
 
 interface SwarmBoardErrorBoundaryState {
   hasError: boolean;
@@ -761,7 +1270,14 @@ class SwarmBoardErrorBoundary extends React.Component<
   }
 }
 
+// ---------------------------------------------------------------------------
+// Page wrapper — sets up providers in correct order
+// ---------------------------------------------------------------------------
+
 export function SwarmBoardPage() {
+  // Extract bundlePath from the wildcard route segment.
+  // Route is "swarm-board/*" so location.pathname looks like "/swarm-board/encoded%2Fpath"
+  // For the plain "/swarm-board" route (scratch board), bundlePath will be undefined.
   const location = useLocation();
   const bundlePath = useMemo(() => {
     const prefix = "/swarm-board/";
@@ -788,12 +1304,17 @@ export function SwarmBoardPage() {
   );
 }
 
+// Default export for lazy loading in App.tsx
 export default SwarmBoardPage;
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 function findEdgeType(
   edgeId: string,
   edges: Array<{ id: string; type?: string }>,
-): "handoff" | "spawned" | "artifact" | "receipt" | "topology" | undefined {
+) : "handoff" | "spawned" | "artifact" | "receipt" | "topology" | "dependency" | undefined {
   const found = edges.find((e) => e.id === edgeId);
-  return found?.type as "handoff" | "spawned" | "artifact" | "receipt" | "topology" | undefined;
+  return found?.type as "handoff" | "spawned" | "artifact" | "receipt" | "topology" | "dependency" | undefined;
 }

@@ -9,16 +9,14 @@
 
 import { useCallback, useMemo } from "react";
 import {
-  useSwarmBoardSession,
-  useSwarmBoardStore,
-  MAX_ACTIVE_TERMINALS,
+  useSwarmBoard,
+  MAX_TOTAL_SESSIONS,
   type SpawnSessionOptions,
   type SpawnClaudeSessionOptions,
   type SpawnWorktreeSessionOptions,
 } from "./swarm-board-store";
 import type { SwarmBoardNodeData } from "./swarm-board-types";
 import type { Node } from "@xyflow/react";
-import { useOptionalSwarmEngine } from "@/features/swarm/stores/swarm-engine-provider";
 
 // ---------------------------------------------------------------------------
 // Types re-exported for convenience
@@ -49,36 +47,22 @@ function useTerminalSessionsWithSource({
   spawnWorktreeSession: rawSpawnWorktreeSession,
   killSession,
 }: TerminalSessionSource) {
-  const engineCtx = useOptionalSwarmEngine();
-
   const spawnSession = useCallback(
-    async (opts: SpawnSessionOptions): Promise<Node<SwarmBoardNodeData>> => {
-      if (engineCtx?.mode === "engine") {
-        return engineCtx.spawnEngineSession(rawSpawnSession, opts);
-      }
-      return rawSpawnSession(opts);
-    },
-    [engineCtx, rawSpawnSession],
+    async (opts: SpawnSessionOptions): Promise<Node<SwarmBoardNodeData>> =>
+      rawSpawnSession(opts),
+    [rawSpawnSession],
   );
 
   const spawnClaudeSession = useCallback(
-    async (opts: SpawnClaudeSessionOptions): Promise<Node<SwarmBoardNodeData>> => {
-      if (engineCtx?.mode === "engine") {
-        return engineCtx.spawnEngineClaudeSession(rawSpawnClaudeSession, opts);
-      }
-      return rawSpawnClaudeSession(opts);
-    },
-    [engineCtx, rawSpawnClaudeSession],
+    async (opts: SpawnClaudeSessionOptions): Promise<Node<SwarmBoardNodeData>> =>
+      rawSpawnClaudeSession(opts),
+    [rawSpawnClaudeSession],
   );
 
   const spawnWorktreeSession = useCallback(
-    async (opts: SpawnWorktreeSessionOptions): Promise<Node<SwarmBoardNodeData>> => {
-      if (engineCtx?.mode === "engine") {
-        return engineCtx.spawnEngineWorktreeSession(rawSpawnWorktreeSession, opts);
-      }
-      return rawSpawnWorktreeSession(opts);
-    },
-    [engineCtx, rawSpawnWorktreeSession],
+    async (opts: SpawnWorktreeSessionOptions): Promise<Node<SwarmBoardNodeData>> =>
+      rawSpawnWorktreeSession(opts),
+    [rawSpawnWorktreeSession],
   );
 
   // -----------------------------------------------------------------------
@@ -160,13 +144,21 @@ function useTerminalSessionsWithSource({
   const activeSessionCount = useMemo(
     () => nodes.filter((n) => {
       const d = n.data as SwarmBoardNodeData;
-      return d.sessionId && (d.status === "running" || d.status === "blocked");
+      return d.sessionId && d.terminalAttached !== false && (d.status === "running" || d.status === "blocked");
     }).length,
     [nodes],
   );
 
-  /** Whether we can spawn more sessions (below the limit). */
-  const canSpawnMore = activeSessionCount < MAX_ACTIVE_TERMINALS;
+  const totalSessionCount = useMemo(
+    () => nodes.filter((n) => {
+      const d = n.data as SwarmBoardNodeData;
+      return d.nodeType === "agentSession" && Boolean(d.sessionId);
+    }).length,
+    [nodes],
+  );
+
+  /** Whether we can spawn more sessions (below the persistent-session limit). */
+  const canSpawnMore = totalSessionCount < MAX_TOTAL_SESSIONS;
 
   /** Whether repoRoot is configured. */
   const hasRepoRoot = Boolean(repoRoot);
@@ -186,6 +178,7 @@ function useTerminalSessionsWithSource({
     removeNodeWithCleanup,
     // Queries
     activeSessionCount,
+    totalSessionCount,
     canSpawnMore,
     hasRepoRoot,
     repoRoot,
@@ -193,16 +186,23 @@ function useTerminalSessionsWithSource({
 }
 
 export function useTerminalSessions() {
-  const repoRoot = useSwarmBoardStore.use.repoRoot();
-  const nodes = useSwarmBoardStore.use.nodes();
-  const removeNode = useSwarmBoardStore((s) => s.actions.removeNode);
-  const session = useSwarmBoardSession();
+  const {
+    state,
+    removeNode,
+    spawnSession,
+    spawnClaudeSession,
+    spawnWorktreeSession,
+    killSession,
+  } = useSwarmBoard();
 
   return useTerminalSessionsWithSource({
-    repoRoot,
-    nodes,
+    repoRoot: state.repoRoot,
+    nodes: state.nodes,
     removeNode,
-    ...session,
+    spawnSession,
+    spawnClaudeSession,
+    spawnWorktreeSession,
+    killSession,
   });
 }
 

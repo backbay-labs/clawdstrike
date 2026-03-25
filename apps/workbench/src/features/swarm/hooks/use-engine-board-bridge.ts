@@ -1,46 +1,76 @@
-/** Bridges SwarmOrchestrator events to the Zustand board store. */
+/**
+ * useEngineBoardBridge -- React hook that bridges SwarmOrchestrator's
+ * TypedEventEmitter events to the Zustand board store.
+ *
+ * Maps engine lifecycle, task, topology, and guard events to board node
+ * creation, status updates, layout repositioning, and receipt nodes.
+ *
+ * Follows the same pattern as useCoordinatorBoardBridge:
+ * - Subscribe in useEffect
+ * - Dedup by agentId/taskId before creating nodes (INTG-08)
+ * - Call useSwarmBoardStore.getState().actions.* (not hook selectors)
+ * - Clean up on unmount
+ *
+ * Additionally implements the evaluating glow pattern from
+ * usePolicyEvalBoardBridge for guard.evaluated events (INTG-09).
+ */
 
 import { useEffect, useRef } from "react";
-import type { SwarmOrchestrator } from "@clawdstrike/swarm-engine";
-import {
-  createBoardNode,
-  useSwarmBoardStore,
-} from "@/features/swarm/stores/swarm-board-store";
 import type {
-  SwarmBoardEdge,
-  SwarmBoardNodeData,
-  SessionStatus,
-} from "@/features/swarm/swarm-board-types";
+  AgentConversationTurn,
+  SwarmOrchestrator,
+  Task,
+  TaskGraph,
+} from "@clawdstrike/swarm-engine";
+import { useSwarmBoardStore } from "@/features/swarm/stores/swarm-board-store";
+import type { SwarmBoardNodeData, SessionStatus } from "@/features/swarm/swarm-board-types";
 import type { Node } from "@xyflow/react";
-import { computeLayout } from "@/features/swarm/layout/topology-layout";
-import { nextNodePosition } from "./node-position";
+import {
+  computeLayout,
+  computeTaskDagLayout,
+} from "@/features/swarm/layout/topology-layout";
 
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/** Duration in ms that the evaluating glow remains visible. */
 const EVAL_GLOW_DURATION_MS = 2000;
-const DEFAULT_LAYOUT_VIEWPORT = { width: 1200, height: 800 };
-const TASK_VERTICAL_OFFSET = 200;
-const TASK_VERTICAL_STAGGER = 24;
+const MAX_AGENT_CONVERSATION_TURNS = 200;
+
+// ---------------------------------------------------------------------------
+// Position helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Calculate a position for a new auto-created node, placing it to the right
+ * of the rightmost existing node with slight vertical jitter.
+ * Copied from use-coordinator-board-bridge.ts lines 36-44.
+ */
+function nextNodePosition(
+  nodes: Array<{ position: { x: number; y: number } }>,
+): { x: number; y: number } {
+  if (nodes.length === 0) return { x: 200, y: 200 };
+  const maxX = Math.max(...nodes.map((n) => n.position.x));
+  const avgY =
+    nodes.reduce((sum, n) => sum + n.position.y, 0) / nodes.length;
+  return { x: maxX + 320, y: avgY + (Math.random() - 0.5) * 100 };
+}
+
+// ---------------------------------------------------------------------------
+// Status mapping: engine AgentSessionStatus -> board SessionStatus
+// ---------------------------------------------------------------------------
 
 function mapEngineStatus(engineStatus: string): SessionStatus {
   switch (engineStatus) {
-    case "created":
-    case "queued":
-    case "assigned":
-      return "idle";
     case "running":
       return "running";
     case "idle":
       return "idle";
     case "busy":
       return "running";
-    case "paused":
-    case "draining":
-      return "blocked";
     case "terminated":
       return "completed";
-    case "cancelled":
-      return "completed";
-    case "timeout":
-      return "failed";
     case "offline":
       return "failed";
     case "completed":
@@ -52,276 +82,269 @@ function mapEngineStatus(engineStatus: string): SessionStatus {
     case "evaluating":
       return "evaluating";
     default:
+      return "running";
+  }
+}
+
+function appendConversationTurn(
+  history: AgentConversationTurn[] | undefined,
+  turn: AgentConversationTurn,
+): AgentConversationTurn[] {
+  const nextHistory = [...(history ?? []), turn];
+  if (nextHistory.length <= MAX_AGENT_CONVERSATION_TURNS) {
+    return nextHistory;
+  }
+  return nextHistory.slice(-MAX_AGENT_CONVERSATION_TURNS);
+}
+
+function dependencyEdgeId(sourceNodeId: string, targetNodeId: string): string {
+  return `edge-dependency-${sourceNodeId}-${targetNodeId}`;
+}
+
+function spawnedEdgeId(sourceNodeId: string, targetNodeId: string): string {
+  return `edge-spawn-${sourceNodeId}-${targetNodeId}`;
+}
+
+function resolveBlockingTaskIds(
+  dependencyTaskIds: string[],
+  nodes: Array<Node<SwarmBoardNodeData>>,
+): string[] {
+  return dependencyTaskIds.filter((dependencyTaskId) => {
+    const dependencyNode = nodes.find(
+      (node) => node.data.taskId === dependencyTaskId,
+    );
+    return dependencyNode?.data.status !== "completed";
+  });
+}
+
+function mapTaskStatus(task: Task, nodes: Array<Node<SwarmBoardNodeData>>): SessionStatus {
+  const blockingTaskIds = resolveBlockingTaskIds(task.dependencies, nodes);
+
+  switch (task.status) {
+    case "running":
+      return "running";
+    case "paused":
+      return "blocked";
+    case "completed":
+      return "completed";
+    case "failed":
+    case "cancelled":
+    case "timeout":
+      return "failed";
+    case "created":
+      return blockingTaskIds.length > 0 ? "blocked" : "idle";
+    case "queued":
+    case "assigned":
+    default:
       return "idle";
   }
 }
 
-function seedBoardFromEngineSnapshot(engine: SwarmOrchestrator): void {
-  const snapshot = engine.getState();
-  const { actions } = useSwarmBoardStore.getState();
-
-  const topologyNodeById = new Map(
-    snapshot.topology.nodes.map((topologyNode) => [topologyNode.id, topologyNode]),
-  );
-  const agentPositions = new Map(
-    snapshot.topology.nodes
-      .filter(
-        (topologyNode) =>
-          topologyNode.positionX !== null && topologyNode.positionY !== null,
-      )
-      .map((topologyNode) => [
-        topologyNode.agentId,
-        { x: topologyNode.positionX ?? 0, y: topologyNode.positionY ?? 0 },
-      ]),
-  );
-
-  const agentNodes = Object.values(snapshot.agents).map((agent) => ({
-    id: agent.id,
-    agentId: agent.id,
-    data: {
-      nodeType: "agentSession" as const,
-      title: agent.name,
-      status: mapEngineStatus(agent.status),
-      agentId: agent.id,
-      agentModel: agent.agentModel ?? agent.role,
-      branch: agent.branch ?? undefined,
-      worktreePath: agent.worktreePath ?? undefined,
-      risk: agent.risk,
-      policyMode: agent.policyMode ?? undefined,
-      receiptCount: agent.receiptCount,
-      blockedActionCount: agent.blockedActionCount,
-      changedFilesCount: agent.changedFilesCount,
-      filesTouched: agent.filesTouched,
-      toolBoundaryEvents: agent.toolBoundaryEvents,
-      confidence: agent.confidence ?? undefined,
-      engineManaged: true,
-    },
-    position: agentPositions.get(agent.id),
-  }));
-
-  const seededTaskCounts = new Map<string, number>();
-
-  const taskNodes = Object.values(snapshot.tasks).map((task) => {
-    const agentPosition = task.assignedTo
-      ? agentPositions.get(task.assignedTo)
-      : undefined;
-    const taskIndex = task.assignedTo
-      ? (seededTaskCounts.get(task.assignedTo) ?? 0)
-      : 0;
-
-    if (task.assignedTo) {
-      seededTaskCounts.set(task.assignedTo, taskIndex + 1);
-    }
-
-    return {
-      id: task.id,
-      taskId: task.id,
-      agentId: task.assignedTo ?? undefined,
-      data: {
-        nodeType: "terminalTask" as const,
-        title: task.type ?? task.name ?? "Task",
-        status: mapEngineStatus(task.status),
-        taskId: task.id,
-        agentId: task.assignedTo ?? undefined,
-        engineManaged: true,
-        taskPrompt: task.taskPrompt ?? task.description,
-        previewLines: task.previewLines,
-      },
-      position: agentPosition
-        ? getStackedTaskPosition(agentPosition, taskIndex)
-        : undefined,
-    };
-  });
-
-  const taskEdges = Object.values(snapshot.tasks)
-    .filter((task) => task.assignedTo)
-    .map((task) => ({
-      id: `edge-spawn-${task.id}`,
-      source: task.assignedTo!,
-      target: task.id,
-      type: "spawned" as const,
-    }));
-
-  const topologyEdges = snapshot.topology.edges.map((topologyEdge) => {
-    const fromNode = topologyNodeById.get(topologyEdge.from);
-    const toNode = topologyNodeById.get(topologyEdge.to);
-    return {
-      id: `edge-topo-${topologyEdge.from}-${topologyEdge.to}`,
-      source: fromNode?.agentId ?? topologyEdge.from,
-      target: toNode?.agentId ?? topologyEdge.to,
-      type: "topology" as const,
-    };
-  });
-
-  actions.engineSync(
-    [...agentNodes, ...taskNodes],
-    [...taskEdges, ...topologyEdges],
-  );
-}
-
-function buildTopologyEdges(
-  nodes: Node<SwarmBoardNodeData>[],
-  topologyEdges: Array<{ from: string; to: string }> | undefined,
-): SwarmBoardEdge[] {
-  if (!topologyEdges?.length) {
-    return [];
-  }
-
-  return topologyEdges.flatMap((topologyEdge) => {
-    const fromNode = nodes.find(
-      (node) =>
-        node.data.agentId === topologyEdge.from || node.id === topologyEdge.from,
-    );
-    const toNode = nodes.find(
-      (node) =>
-        node.data.agentId === topologyEdge.to || node.id === topologyEdge.to,
-    );
-
-    if (!fromNode || !toNode) {
-      return [];
-    }
-
-    return [{
-      id: `edge-topo-${topologyEdge.from}-${topologyEdge.to}`,
-      source: fromNode.id,
-      target: toNode.id,
-      type: "topology" as const,
-    }];
-  });
-}
-
-function getStackedTaskPosition(
-  agentPosition: { x: number; y: number },
-  taskIndex: number,
-): { x: number; y: number } {
+function buildTaskNodePatch(
+  task: Task,
+  nodes: Array<Node<SwarmBoardNodeData>>,
+): Partial<SwarmBoardNodeData> {
+  const dependencyTaskIds = [...task.dependencies];
   return {
-    x: agentPosition.x,
-    y: agentPosition.y + TASK_VERTICAL_OFFSET + taskIndex * TASK_VERTICAL_STAGGER,
+    title: task.name ?? task.type ?? "Task",
+    status: mapTaskStatus(task, nodes),
+    taskId: task.id,
+    agentId: task.assignedTo ?? undefined,
+    engineManaged: true,
+    createdAt: task.createdAt,
+    taskPrompt: task.description ?? task.taskPrompt ?? task.type,
+    previewLines: task.previewLines,
+    dependencyTaskIds,
+    blockingTaskIds: resolveBlockingTaskIds(dependencyTaskIds, nodes),
   };
 }
 
-function getAssignedTaskPosition(
-  nodes: Node<SwarmBoardNodeData>[],
-  agentId: string | null | undefined,
-  excludeTaskNodeId?: string,
-): { x: number; y: number } | undefined {
-  if (!agentId) {
-    return undefined;
-  }
+type TaskGraphReader = Pick<TaskGraph, "getTopologicalOrder" | "getDependencyEdges" | "getTask">;
 
-  const agentNode = nodes.find(
-    (node) => node.data.agentId === agentId,
-  );
+// ---------------------------------------------------------------------------
+// Hook
+// ---------------------------------------------------------------------------
 
-  if (!agentNode) {
-    return undefined;
-  }
-
-  const siblingTaskCount = nodes.filter((node) => {
-    if (node.id === excludeTaskNodeId) {
-      return false;
-    }
-
-    return (
-      node.data.nodeType === "terminalTask" &&
-      node.data.agentId === agentId
-    );
-  }).length;
-
-  return getStackedTaskPosition(agentNode.position, siblingTaskCount);
-}
-
-function getLayoutViewport(): { width: number; height: number } {
-  if (typeof window === "undefined") {
-    return DEFAULT_LAYOUT_VIEWPORT;
-  }
-
-  const flowCanvas = document.querySelector(".react-flow");
-  if (flowCanvas) {
-    const rect = flowCanvas.getBoundingClientRect();
-    if (rect.width > 0 && rect.height > 0) {
-      return {
-        width: rect.width,
-        height: rect.height,
-      };
-    }
-  }
-
-  const width = Math.max(
-    window.innerWidth || 0,
-    document.documentElement?.clientWidth || 0,
-  );
-  const height = Math.max(
-    window.innerHeight || 0,
-    document.documentElement?.clientHeight || 0,
-  );
-
-  return {
-    width: width > 0 ? width : DEFAULT_LAYOUT_VIEWPORT.width,
-    height: height > 0 ? height : DEFAULT_LAYOUT_VIEWPORT.height,
-  };
-}
-
-export function useEngineBoardBridge(engine: SwarmOrchestrator | null): void {
+/**
+ * Bridge SwarmOrchestrator engine events to the Zustand board store.
+ *
+ * @param engine - The SwarmOrchestrator instance, or null if unavailable.
+ */
+export function useEngineBoardBridge(
+  engine: SwarmOrchestrator | null,
+  taskGraph?: TaskGraphReader | null,
+): void {
+  // Glow tracking refs (matching usePolicyEvalBoardBridge exactly)
   const timeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const restoreStatusRef = useRef<Map<string, SessionStatus>>(new Map());
 
   useEffect(() => {
     if (!engine) return;
+    const orchestrator = engine;
 
     const store = useSwarmBoardStore.getState;
     const unsubs: Array<() => void> = [];
     const timeouts = timeoutsRef.current;
     const restoreStatuses = restoreStatusRef.current;
-    const clearPendingGuardGlow = (
-      nodeId: string,
-      options: { restore?: boolean } = {},
-    ): void => {
-      const timeout = timeouts.get(nodeId);
-      if (timeout != null) {
-        clearTimeout(timeout);
-        timeouts.delete(nodeId);
-      }
-      if (options.restore) {
-        const restoreTo = restoreStatuses.get(nodeId) ?? "running";
-        const currentNode = store().nodes.find((node) => node.id === nodeId);
-        if (currentNode?.data.status === "evaluating") {
-          store().actions.updateNode(nodeId, { status: restoreTo });
-        }
-      }
-      restoreStatuses.delete(nodeId);
-    };
 
-    const events = engine.getEvents();
-    seedBoardFromEngineSnapshot(engine);
+    // Access the shared event emitter via the orchestrator's public accessor.
+    const events = orchestrator.getEvents();
 
+    function syncTaskDagLayout(): void {
+      const { nodes, edges, actions } = store();
+      const result = computeTaskDagLayout(
+        nodes as Node<SwarmBoardNodeData>[],
+        edges,
+        { width: 1200, height: 800 },
+      );
+      if (result.positions.size > 0) {
+        actions.topologyLayout("hierarchical", result.positions);
+      }
+    }
+
+    function upsertTaskNode(task: Task): Node<SwarmBoardNodeData> {
+      const { nodes, actions } = store();
+      const existingTaskNode = nodes.find(
+        (node: Node<SwarmBoardNodeData>) => node.data.taskId === task.id,
+      );
+      const patch = buildTaskNodePatch(task, nodes);
+
+      if (existingTaskNode) {
+        actions.updateNode(existingTaskNode.id, patch);
+        return {
+          ...existingTaskNode,
+          data: {
+            ...existingTaskNode.data,
+            ...patch,
+          },
+        };
+      }
+
+      const parentNode = nodes.find(
+        (node: Node<SwarmBoardNodeData>) => node.data.agentId === task.assignedTo,
+      );
+      const position = parentNode
+        ? { x: parentNode.position.x, y: parentNode.position.y + 200 }
+        : nextNodePosition(nodes);
+
+      return actions.addNode({
+        nodeType: "terminalTask",
+        title: (patch.title as string) ?? task.name ?? task.type ?? "Task",
+        position,
+        data: {
+          nodeType: "terminalTask",
+          ...patch,
+        },
+      });
+    }
+
+    function addDependencyEdge(sourceTaskId: string, targetTaskId: string): void {
+      const { nodes, actions } = store();
+      const sourceNode = nodes.find(
+        (node: Node<SwarmBoardNodeData>) => node.data.taskId === sourceTaskId,
+      );
+      const targetNode = nodes.find(
+        (node: Node<SwarmBoardNodeData>) => node.data.taskId === targetTaskId,
+      );
+
+      if (!sourceNode || !targetNode) {
+        return;
+      }
+
+      actions.addEdge({
+        id: dependencyEdgeId(sourceNode.id, targetNode.id),
+        source: sourceNode.id,
+        target: targetNode.id,
+        type: "dependency",
+        label: "depends on",
+      });
+    }
+
+    function addSpawnedEdge(agentId: string | null | undefined, taskNodeId: string): void {
+      if (!agentId) {
+        return;
+      }
+
+      const { nodes, actions } = store();
+      const parentNode = nodes.find(
+        (node: Node<SwarmBoardNodeData>) => node.data.agentId === agentId,
+      );
+      if (!parentNode) {
+        return;
+      }
+
+      actions.addEdge({
+        id: spawnedEdgeId(parentNode.id, taskNodeId),
+        source: parentNode.id,
+        target: taskNodeId,
+        type: "spawned",
+      });
+    }
+
+    function bootstrapTaskDag(): void {
+      const orderedTasks =
+        taskGraph?.getTopologicalOrder?.() ??
+        Object.values(orchestrator.getState().tasks).sort((a, b) => a.sequence - b.sequence);
+
+      if (orderedTasks.length === 0) {
+        return;
+      }
+
+      for (const task of orderedTasks) {
+        const taskNode = upsertTaskNode(task);
+        addSpawnedEdge(task.assignedTo, taskNode.id);
+      }
+
+      const dependencyEdges =
+        taskGraph?.getDependencyEdges?.() ??
+        orderedTasks.flatMap((task) =>
+          task.dependencies.map((dependencyTaskId) => ({
+            sourceTaskId: dependencyTaskId,
+            targetTaskId: task.id,
+          })),
+        );
+
+      for (const edge of dependencyEdges) {
+        addDependencyEdge(edge.sourceTaskId, edge.targetTaskId);
+      }
+
+      syncTaskDagLayout();
+    }
+
+    bootstrapTaskDag();
+
+    // -----------------------------------------------------------------------
+    // 1. agent.spawned -> addNode({ nodeType: "agentSession" }) (INTG-02, INTG-08)
+    // -----------------------------------------------------------------------
     unsubs.push(
       events.on("agent.spawned", (event: any) => {
         const { nodes, actions } = store();
+
+        // Dedup: skip if a node with this agentId already exists
         if (nodes.some((n: Node<SwarmBoardNodeData>) => n.data.agentId === event.agent.id)) return;
 
         const position = nextNodePosition(nodes);
-        const agentNode = {
-          ...createBoardNode({
+
+        actions.addNode({
+          nodeType: "agentSession",
+          title: event.agent.name ?? event.agent.id,
+          position,
+          data: {
             nodeType: "agentSession",
             title: event.agent.name ?? event.agent.id,
-            position,
-            data: {
-              nodeType: "agentSession",
-              title: event.agent.name ?? event.agent.id,
-              status: mapEngineStatus(event.agent.status),
-              agentId: event.agent.id,
-              agentModel: event.agent.role,
-              engineManaged: true,
-            },
-          }),
-          id: event.agent.id,
-        };
-
-        actions.addNodeDirect(agentNode);
+            status: mapEngineStatus(event.agent.status ?? "idle"),
+            agentId: event.agent.id,
+            agentModel: event.agent.role,
+            engineManaged: true,
+            conversationHistory: engine.getConversationHistory(event.agent.id),
+          },
+        });
       }),
     );
 
+    // -----------------------------------------------------------------------
+    // 2. agent.status_changed -> updateNode (INTG-02)
+    // -----------------------------------------------------------------------
     unsubs.push(
       events.on("agent.status_changed", (event: any) => {
         const { nodes, actions } = store();
@@ -332,14 +355,16 @@ export function useEngineBoardBridge(engine: SwarmOrchestrator | null): void {
         if (!node) return;
 
         const mappedStatus = mapEngineStatus(event.newStatus);
-        if (timeouts.has(node.id) && mappedStatus !== "evaluating") {
-          restoreStatuses.set(node.id, mappedStatus);
-        }
         actions.updateNode(node.id, { status: mappedStatus });
       }),
     );
 
-    // Engine-managed nodes lack sessionId, so use updateNode (not setSessionMetadata).
+    // -----------------------------------------------------------------------
+    // 3. agent.heartbeat -> updateNode (INTG-02)
+    //    Engine-managed nodes don't have a sessionId, so setSessionMetadata
+    //    (which matches by sessionId) would be a no-op. Use updateNode which
+    //    matches by node.id directly.
+    // -----------------------------------------------------------------------
     unsubs.push(
       events.on("agent.heartbeat", (event: any) => {
         const { nodes, actions } = store();
@@ -356,6 +381,9 @@ export function useEngineBoardBridge(engine: SwarmOrchestrator | null): void {
       }),
     );
 
+    // -----------------------------------------------------------------------
+    // 4. agent.terminated -> updateNode({ status: "completed" }) (INTG-02)
+    // -----------------------------------------------------------------------
     unsubs.push(
       events.on("agent.terminated", (event: any) => {
         const { nodes, actions } = store();
@@ -365,7 +393,6 @@ export function useEngineBoardBridge(engine: SwarmOrchestrator | null): void {
         );
         if (!node) return;
 
-        clearPendingGuardGlow(node.id);
         actions.updateNode(node.id, {
           status: "completed",
           exitCode: event.exitCode,
@@ -373,123 +400,146 @@ export function useEngineBoardBridge(engine: SwarmOrchestrator | null): void {
       }),
     );
 
+    // -----------------------------------------------------------------------
+    // 5. agent.message -> append replay turn to the owning agent session
+    // -----------------------------------------------------------------------
+    unsubs.push(
+      events.on("agent.message", (event: any) => {
+        const { nodes, actions } = store();
+
+        const agentNode = nodes.find(
+          (n: Node<SwarmBoardNodeData>) => n.data.agentId === event.agentId,
+        );
+        if (!agentNode) return;
+
+        const currentHistory = (agentNode.data as SwarmBoardNodeData)
+          .conversationHistory;
+        actions.updateNode(agentNode.id, {
+          conversationHistory: appendConversationTurn(currentHistory, event.turn),
+        });
+      }),
+    );
+
+    // -----------------------------------------------------------------------
+    // 6. task.created -> addNode({ nodeType: "terminalTask" }) + addEdge (INTG-02, INTG-08)
+    // -----------------------------------------------------------------------
     unsubs.push(
       events.on("task.created", (event: any) => {
         const { nodes, actions } = store();
+
+        // Dedup: skip if a node with this taskId already exists
         if (nodes.some((n: Node<SwarmBoardNodeData>) => n.data.taskId === event.task.id)) return;
 
+        // Find parent agent node by assignedTo
         const parentNode = nodes.find(
           (n: Node<SwarmBoardNodeData>) =>
             n.data.agentId === event.task.assignedTo,
         );
 
-        const position = getAssignedTaskPosition(
-          nodes,
-          event.task.assignedTo,
-        ) ?? nextNodePosition(nodes);
+        // Position: below parent if found, else nextNodePosition
+        const position = parentNode
+          ? { x: parentNode.position.x, y: parentNode.position.y + 200 }
+          : nextNodePosition(nodes);
 
-        const taskNode = {
-          ...createBoardNode({
+        const taskNode = actions.addNode({
+          nodeType: "terminalTask",
+          title: event.task.name ?? event.task.type ?? "Task",
+          position,
+          data: {
             nodeType: "terminalTask",
-            title: event.task.type ?? event.task.name ?? "Task",
-            position,
-            data: {
-              nodeType: "terminalTask",
-              title: event.task.type ?? event.task.name ?? "Task",
-              status: mapEngineStatus(event.task.status),
-              taskId: event.task.id,
-              agentId: event.task.assignedTo,
-              engineManaged: true,
-              taskPrompt: event.task.taskPrompt ?? event.task.description,
-            },
-          }),
-          id: event.task.id,
-        };
+            ...buildTaskNodePatch(event.task, nodes),
+          },
+        });
 
-        actions.addNodeDirect(taskNode);
-
-        if (parentNode) {
+        // Add spawned edge from parent agent to task
+        if (event.task.assignedTo && parentNode) {
           actions.addEdge({
-            id: `edge-spawn-${event.task.id}`,
+            id: spawnedEdgeId(parentNode.id, taskNode.id),
             source: parentNode.id,
             target: taskNode.id,
             type: "spawned",
           });
         }
+
+        for (const dependencyTaskId of event.task.dependencies ?? []) {
+          addDependencyEdge(dependencyTaskId, event.task.id);
+        }
+
+        syncTaskDagLayout();
       }),
     );
 
+    // -----------------------------------------------------------------------
+    // 7. task.assigned -> attach agent/task relationship and edge
+    // -----------------------------------------------------------------------
     unsubs.push(
-      events.on("task.status_changed", (event: any) => {
+      events.on("task.assigned", (event: any) => {
         const { nodes, actions } = store();
 
         const taskNode = nodes.find(
-          (n: Node<SwarmBoardNodeData>) => n.data.taskId === event.taskId,
+          (node: Node<SwarmBoardNodeData>) => node.data.taskId === event.taskId,
         );
-        if (!taskNode) return;
-
-        actions.updateNode(taskNode.id, {
-          status: mapEngineStatus(event.newStatus),
-        });
-      }),
-    );
-
-    unsubs.push(
-      events.on("task.assigned", (event: any) => {
-        const { nodes, edges, actions } = store();
-
-        const taskNode = nodes.find(
-          (n: Node<SwarmBoardNodeData>) => n.data.taskId === event.taskId,
-        );
-        if (!taskNode) return;
-
-        const agentNode = nodes.find(
-          (n: Node<SwarmBoardNodeData>) => n.data.agentId === event.agentId,
-        );
-
-        const nextNodes = nodes.map((node) => {
-          if (node.id !== taskNode.id) {
-            return node;
+        if (!taskNode) {
+          const task = taskGraph?.getTask(event.taskId);
+          if (task) {
+            const createdNode = upsertTaskNode(task);
+            addSpawnedEdge(event.agentId, createdNode.id);
+            syncTaskDagLayout();
           }
-
-          return {
-            ...node,
-            position: agentNode
-              ? (
-                getAssignedTaskPosition(nodes, event.agentId, taskNode.id) ??
-                node.position
-              )
-              : node.position,
-            data: {
-              ...node.data,
-              agentId: event.agentId,
-              status: mapEngineStatus("assigned"),
-            },
-          };
-        });
-
-        if (!agentNode) {
-          actions.loadState({ nodes: nextNodes });
           return;
         }
 
-        const nextEdges = [
-          ...edges.filter(
-            (edge: SwarmBoardEdge) =>
-              !(edge.type === "spawned" && edge.target === taskNode.id),
-          ),
-          {
-            id: `edge-spawn-${event.taskId}`,
-            source: agentNode.id,
-            target: taskNode.id,
-            type: "spawned" as const,
-          },
-        ];
-
-        actions.loadState({ nodes: nextNodes, edges: nextEdges });
+        actions.updateNode(taskNode.id, {
+          agentId: event.agentId,
+        });
+        addSpawnedEdge(event.agentId, taskNode.id);
+        syncTaskDagLayout();
       }),
     );
 
+    // -----------------------------------------------------------------------
+    // 8. task.status_changed -> keep task tile state aligned with TaskGraph
+    // -----------------------------------------------------------------------
+    unsubs.push(
+      events.on("task.status_changed", (event: any) => {
+        const { nodes, actions } = store();
+        const task = taskGraph?.getTask(event.taskId);
+        const taskNode = nodes.find(
+          (node: Node<SwarmBoardNodeData>) => node.data.taskId === event.taskId,
+        );
+
+        if (task) {
+          if (taskNode) {
+            actions.updateNode(taskNode.id, buildTaskNodePatch(task, nodes));
+          } else {
+            upsertTaskNode(task);
+            syncTaskDagLayout();
+          }
+          return;
+        }
+
+        if (!taskNode) {
+          return;
+        }
+
+        actions.updateNode(taskNode.id, {
+          status:
+            event.newStatus === "running"
+              ? "running"
+              : event.newStatus === "completed"
+                ? "completed"
+                : event.newStatus === "failed" ||
+                    event.newStatus === "cancelled" ||
+                    event.newStatus === "timeout"
+                  ? "failed"
+                  : "idle",
+        });
+      }),
+    );
+
+    // -----------------------------------------------------------------------
+    // 9. task.completed -> updateNode (INTG-02)
+    // -----------------------------------------------------------------------
     unsubs.push(
       events.on("task.completed", (event: any) => {
         const { nodes, actions } = store();
@@ -503,6 +553,9 @@ export function useEngineBoardBridge(engine: SwarmOrchestrator | null): void {
       }),
     );
 
+    // -----------------------------------------------------------------------
+    // 10. task.failed -> updateNode({ status: "failed" }) (INTG-02)
+    // -----------------------------------------------------------------------
     unsubs.push(
       events.on("task.failed", (event: any) => {
         const { nodes, actions } = store();
@@ -512,13 +565,41 @@ export function useEngineBoardBridge(engine: SwarmOrchestrator | null): void {
         );
         if (!taskNode) return;
 
-        actions.updateNode(taskNode.id, { status: "failed" });
+        actions.updateNode(taskNode.id, {
+          status: event.retryable ? "idle" : "failed",
+        });
       }),
     );
 
+    // -----------------------------------------------------------------------
+    // 11. task.progress -> task preview line updates
+    // -----------------------------------------------------------------------
+    unsubs.push(
+      events.on("task.progress", (event: any) => {
+        const { nodes, actions } = store();
+
+        const taskNode = nodes.find(
+          (node: Node<SwarmBoardNodeData>) => node.data.taskId === event.taskId,
+        );
+        if (!taskNode) return;
+
+        actions.updateNode(taskNode.id, {
+          status: "running",
+          previewLines: [
+            `[${event.percent}%] ${event.currentStep}`,
+          ],
+        });
+      }),
+    );
+
+    // -----------------------------------------------------------------------
+    // 12. guard.evaluated -> guardEvaluate action + evaluating glow (INTG-02, INTG-09)
+    // -----------------------------------------------------------------------
     unsubs.push(
       events.on("guard.evaluated", (event: any) => {
         const { nodes, actions } = store();
+
+        // Find agent node by action.agentId
         const agentNode = nodes.find(
           (n: Node<SwarmBoardNodeData>) =>
             n.data.agentId === event.action?.agentId,
@@ -528,37 +609,32 @@ export function useEngineBoardBridge(engine: SwarmOrchestrator | null): void {
           const nodeId = agentNode.id;
           const currentStatus = (agentNode.data as SwarmBoardNodeData).status;
 
+          // Evaluating glow pattern (copied from usePolicyEvalBoardBridge)
           const existingTimeout = timeouts.get(nodeId);
           if (existingTimeout != null) {
             clearTimeout(existingTimeout);
-          }
-
-          if (currentStatus !== "evaluating" || !restoreStatuses.has(nodeId)) {
+          } else {
+            // Only save restore status if this is a fresh evaluation
             restoreStatuses.set(
               nodeId,
               currentStatus === "evaluating" ? "running" : currentStatus,
             );
           }
 
+          // Set the node to evaluating status (triggers gold glow ring)
           actions.updateNode(nodeId, { status: "evaluating" });
 
+          // Schedule reset back to previous status after glow duration
           const timeout = setTimeout(() => {
             timeouts.delete(nodeId);
             const restoreTo = restoreStatuses.get(nodeId) ?? "running";
             restoreStatuses.delete(nodeId);
-            const currentNode = store().nodes.find((node) => node.id === nodeId);
-            const latestStatus = currentNode?.data.status;
-
-            // Don't overwrite fresher lifecycle updates that landed during the glow
-            if (latestStatus !== "evaluating") {
-              return;
-            }
-
             actions.updateNode(nodeId, { status: restoreTo });
           }, EVAL_GLOW_DURATION_MS);
 
           timeouts.set(nodeId, timeout);
 
+          // Create receipt node via guardEvaluate action
           actions.guardEvaluate(
             nodeId,
             event.result?.verdict ?? "deny",
@@ -567,51 +643,82 @@ export function useEngineBoardBridge(engine: SwarmOrchestrator | null): void {
               allowed: g.verdict !== "deny",
               duration_ms: g.duration_ms ?? g.durationMs,
             })),
-            event.result?.receipt?.signature,
-            event.result?.receipt?.publicKey,
+            event.result?.receipt,
           );
         }
       }),
     );
 
+    // -----------------------------------------------------------------------
+    // 13 & 14. Shared handler for topology.updated and topology.rebalanced
+    // -----------------------------------------------------------------------
     function handleTopologyEvent(topologyState: { type?: string; edges?: Array<{ from: string; to: string }> } | undefined): void {
       const { nodes, edges, actions } = store();
       const topoType = (topologyState?.type ?? "mesh") as Parameters<typeof computeLayout>[2];
-      const currentNodes = nodes as Node<SwarmBoardNodeData>[];
-      const nextTopologyEdges = buildTopologyEdges(currentNodes, topologyState?.edges);
-      const nextEdges = [
-        ...edges.filter((edge) => edge.type !== "topology"),
-        ...nextTopologyEdges,
-      ];
 
       const result = computeLayout(
-        currentNodes,
-        nextEdges,
+        nodes as Node<SwarmBoardNodeData>[],
+        edges,
         topoType,
-        getLayoutViewport(),
+        { width: 1200, height: 800 },
       );
 
-      actions.applyTopologyLayout(nextTopologyEdges, result.positions);
+      actions.topologyLayout(topoType, result.positions);
+
+      // Reconcile topology edges: remove stale ones, add new ones
+      // First, remove all existing topology edges
+      const nonTopoEdges = edges.filter((e) => e.type !== "topology");
+      actions.setEdges(nonTopoEdges);
+
+      // Then add the current topology edges
+      if (topologyState?.edges) {
+        for (const topoEdge of topologyState.edges) {
+          // Map topology node IDs to board node IDs via agentId matching
+          const fromNode = nodes.find(
+            (n: Node<SwarmBoardNodeData>) =>
+              n.data.agentId === topoEdge.from || n.id === topoEdge.from,
+          );
+          const toNode = nodes.find(
+            (n: Node<SwarmBoardNodeData>) =>
+              n.data.agentId === topoEdge.to || n.id === topoEdge.to,
+          );
+          if (fromNode && toNode) {
+            actions.addEdge({
+              id: `edge-topo-${topoEdge.from}-${topoEdge.to}`,
+              source: fromNode.id,
+              target: toNode.id,
+              type: "topology",
+            });
+          }
+        }
+      }
     }
 
+    // 9. topology.updated (INTG-02)
     unsubs.push(
       events.on("topology.updated", (event: any) => {
         handleTopologyEvent(event.newTopology);
       }),
     );
 
+    // 10. topology.rebalanced (INTG-02)
     unsubs.push(
       events.on("topology.rebalanced", (event: any) => {
         handleTopologyEvent(event.topology);
       }),
     );
 
+    // -----------------------------------------------------------------------
+    // Cleanup: unsubscribe all events + clear all glow timeouts
+    // -----------------------------------------------------------------------
     return () => {
       unsubs.forEach((fn) => fn());
 
-      for (const nodeId of Array.from(timeouts.keys())) {
-        clearPendingGuardGlow(nodeId, { restore: true });
+      for (const timeout of timeouts.values()) {
+        clearTimeout(timeout);
       }
+      timeouts.clear();
+      restoreStatuses.clear();
     };
   }, [engine]);
 }

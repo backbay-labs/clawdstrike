@@ -109,16 +109,6 @@ function ArtifactNodeInner({ data, selected }: NodeProps) {
         {filename}
       </span>
 
-      {/* File type — tiny, only if present */}
-      {d.fileType && (
-        <span
-          className="text-[7px] font-mono uppercase"
-          style={{ color: `${fileColor}80`, letterSpacing: '0.1em' }}
-        >
-          {d.fileType}
-        </span>
-      )}
-
       <Handle
         type="source"
         position={Position.Bottom}

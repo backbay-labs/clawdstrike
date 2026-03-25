@@ -72,16 +72,27 @@ export function ReceiptDetailPage() {
   const VerdictIcon = vc.icon;
   const guards = d.guardResults ?? [];
 
-  // Signature hash derived from sessionId (matches receipt-node.tsx sigHash logic)
-  const sigHash = d.sessionId
-    ? `0x${d.sessionId.replace(/[^a-f0-9]/gi, "").padEnd(40, "0").slice(0, 40)}`
-    : "0x" + "0".repeat(40);
+  const receiptRef =
+    d.receiptData?.id ??
+    d.publicKey ??
+    (d.signature
+      ? d.signature.slice(0, 40)
+      : d.sessionId
+        ? `0x${d.sessionId.replace(/[^a-f0-9]/gi, "").padEnd(40, "0").slice(0, 40)}`
+        : "Unavailable");
 
   const passedCount = guards.filter((g) => g.allowed).length;
   const failedCount = guards.filter((g) => !g.allowed).length;
 
-  const timeStr = d.createdAt
-    ? new Date(d.createdAt).toLocaleString(undefined, {
+  const rawTimeSource = d.receiptData?.timestamp
+    ? Date.parse(d.receiptData.timestamp)
+    : d.createdAt;
+  const timeSource =
+    typeof rawTimeSource === "number" && Number.isFinite(rawTimeSource)
+      ? rawTimeSource
+      : null;
+  const timeStr = timeSource != null
+    ? new Date(timeSource).toLocaleString(undefined, {
         year: "numeric",
         month: "short",
         day: "numeric",
@@ -124,13 +135,13 @@ export function ReceiptDetailPage() {
           </div>
         </div>
 
-        {/* Section: Policy Hash */}
-        <Section title="Policy Hash">
+        {/* Section: Receipt */}
+        <Section title="Receipt">
           <code
             className="text-xs font-mono break-all"
             style={{ color: "#6f7f9a" }}
           >
-            {sigHash.slice(0, 18)}
+            {receiptRef}
           </code>
         </Section>
 
@@ -192,7 +203,7 @@ export function ReceiptDetailPage() {
               className="text-xs font-mono break-all flex-1"
               style={{ color: "#6f7f9a", fontVariantNumeric: "tabular-nums" }}
             >
-              {d.signature ?? sigHash}
+              {d.signature ?? "No signature available"}
             </code>
           </div>
         </Section>
@@ -249,9 +260,6 @@ function SignatureVerificationBadge({
   }
 
   if (hasSignature) {
-    // TODO: When @clawdstrike/hush-wasm is available in the workbench, call
-    // verifyDetachedPayload() from signature-adapter.ts to perform real Ed25519
-    // verification in the browser. For now, show a pending state.
     return (
       <span className="inline-flex items-center gap-1.5 px-2 py-1 text-[10px] font-mono uppercase rounded-md bg-[#6f7f9a]/10 text-[#6f7f9a] border border-[#6f7f9a]/20">
         <IconShieldQuestion size={12} stroke={2} />

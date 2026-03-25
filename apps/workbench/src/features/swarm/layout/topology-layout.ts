@@ -1,3 +1,8 @@
+// ---------------------------------------------------------------------------
+// Topology Layout -- pure-math layout algorithms for SwarmBoard node
+// positioning. No React/DOM imports. Dispatched by topology type.
+// ---------------------------------------------------------------------------
+
 import type { Node } from "@xyflow/react";
 import type {
   SwarmBoardNodeData,
@@ -5,11 +10,24 @@ import type {
   SwarmNodeType,
 } from "@/features/swarm/swarm-board-types";
 
+// ---------------------------------------------------------------------------
+// Public types
+// ---------------------------------------------------------------------------
+
+/**
+ * Result of a layout computation -- a map from node ID to its computed
+ * position within the viewport.
+ */
 export interface LayoutResult {
   positions: Map<string, { x: number; y: number }>;
 }
 
+/** Supported topology types (mirroring @clawdstrike/swarm-engine TopologyType). */
 type TopologyType = "mesh" | "hierarchical" | "centralized" | "hybrid" | "adaptive";
+
+// ---------------------------------------------------------------------------
+// Constants -- ported verbatim from control-console/src/utils/forceLayout.ts
+// ---------------------------------------------------------------------------
 
 const CHARGE = 500;
 const SPRING_REST_LENGTH = 80;
@@ -17,11 +35,32 @@ const SPRING_K = 0.01;
 const CENTER_GRAVITY = 0.001;
 const DAMPING = 0.9;
 
+/** SwarmBoard node radius for bounds clamping. */
 const NODE_RADIUS = 60;
+/** Number of force simulation iterations (damping=0.9 converges well by 100). */
 const MESH_ITERATIONS = 100;
+
+/** Vertical gap between layers in hierarchical/hybrid layouts. */
 const RANK_SEP = 120;
+/** Horizontal gap between nodes within a layer. */
 const NODE_SEP = 80;
+
+/** Iterations for 1D intra-rank force pass in hybrid layout. */
 const HYBRID_INTRA_RANK_ITERATIONS = 50;
+
+/** Prefer operational nodes as centralized hubs before falling back to id order. */
+const HUB_PRIORITY: Record<SwarmNodeType, number> = {
+  agentSession: 0,
+  terminalTask: 1,
+  diff: 2,
+  artifact: 3,
+  note: 4,
+  receipt: 5,
+};
+
+// ---------------------------------------------------------------------------
+// Layer assignment for hierarchical/hybrid layouts
+// ---------------------------------------------------------------------------
 
 const NODE_TYPE_LAYER: Record<SwarmNodeType, number> = {
   agentSession: 0,
@@ -32,6 +71,19 @@ const NODE_TYPE_LAYER: Record<SwarmNodeType, number> = {
   receipt: 2,
 };
 
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/**
+ * Compute node positions for the given topology type.
+ *
+ * @param nodes - React Flow nodes with SwarmBoardNodeData
+ * @param edges - Board edges describing connectivity
+ * @param topology - Which layout algorithm to use
+ * @param viewport - Available viewport dimensions
+ * @returns A map from node ID to computed {x, y} position
+ */
 export function computeLayout(
   nodes: Node<SwarmBoardNodeData>[],
   edges: SwarmBoardEdge[],
@@ -58,11 +110,50 @@ export function computeLayout(
     case "hybrid":
       return hybridLayout(nodes, edges, viewport);
     case "adaptive":
+      // Adaptive defaults to mesh
       return meshLayout(nodes, edges, viewport);
     default:
       return meshLayout(nodes, edges, viewport);
   }
 }
+
+/**
+ * Compute a layered layout for the engine-managed task DAG subgraph only.
+ *
+ * This keeps task decomposition readable without forcing artifact/receipt
+ * nodes into the same layout pass.
+ */
+export function computeTaskDagLayout(
+  nodes: Node<SwarmBoardNodeData>[],
+  edges: SwarmBoardEdge[],
+  viewport: { width: number; height: number },
+): LayoutResult {
+  const dagNodes = nodes.filter((node) => {
+    const data = node.data as SwarmBoardNodeData;
+    return (
+      data.engineManaged === true &&
+      (data.nodeType === "agentSession" || data.nodeType === "terminalTask")
+    );
+  });
+
+  if (dagNodes.length === 0) {
+    return { positions: new Map() };
+  }
+
+  const dagNodeIds = new Set(dagNodes.map((node) => node.id));
+  const dagEdges = edges.filter((edge) =>
+    (edge.type === "spawned" || edge.type === "dependency") &&
+    dagNodeIds.has(edge.source) &&
+    dagNodeIds.has(edge.target),
+  );
+
+  return hierarchicalLayout(dagNodes, dagEdges, viewport);
+}
+
+// ---------------------------------------------------------------------------
+// Mesh layout (force-directed)
+// Ported from apps/control-console/src/utils/forceLayout.ts
+// ---------------------------------------------------------------------------
 
 interface SimNode {
   id: string;
@@ -72,24 +163,26 @@ interface SimNode {
   vy: number;
 }
 
-/** Force-directed mesh layout. O(n^2) per iteration, fine for <50 nodes. */
+/**
+ * Force-directed mesh layout.
+ *
+ * Complexity: O(n^2) per iteration due to all-pairs charge repulsion,
+ * run for MESH_ITERATIONS (100) ticks. This is fine for typical board
+ * sizes (<50 nodes). For >50 nodes, consider debouncing layout calls
+ * or offloading the simulation to a Web Worker to avoid blocking the
+ * main thread.
+ */
 function meshLayout(
   nodes: Node<SwarmBoardNodeData>[],
   edges: SwarmBoardEdge[],
   viewport: { width: number; height: number },
 ): LayoutResult {
   const { width, height } = viewport;
-  const originNodeCount = nodes.filter(
-    (node) => node.position.x === 0 && node.position.y === 0,
-  ).length;
 
+  // Initialize simulation nodes -- spread evenly if no existing position,
+  // otherwise use current position as starting point.
   const simNodes: SimNode[] = nodes.map((n, i) => {
-    // Preserve a single node intentionally placed at the origin; treat
-    // duplicated (0, 0) positions as "unset" seeds that need spreading.
-    const hasPosition =
-      n.position.x !== 0 ||
-      n.position.y !== 0 ||
-      originNodeCount === 1;
+    const hasPosition = n.position.x !== 0 || n.position.y !== 0;
     return {
       id: n.id,
       x: hasPosition ? n.position.x : (width / (nodes.length + 1)) * (i + 1),
@@ -101,8 +194,9 @@ function meshLayout(
 
   const nodeMap = new Map(simNodes.map((n) => [n.id, n]));
 
+  // Run simulation for MESH_ITERATIONS ticks
   for (let iter = 0; iter < MESH_ITERATIONS; iter++) {
-    // Charge repulsion
+    // Charge repulsion (verbatim from forceLayout.ts)
     for (let i = 0; i < simNodes.length; i++) {
       for (let j = i + 1; j < simNodes.length; j++) {
         const a = simNodes[i],
@@ -120,7 +214,7 @@ function meshLayout(
       }
     }
 
-    // Spring attraction
+    // Spring attraction (verbatim from forceLayout.ts)
     for (const edge of edges) {
       const a = nodeMap.get(edge.source),
         b = nodeMap.get(edge.target);
@@ -137,6 +231,7 @@ function meshLayout(
       b.vy -= fy;
     }
 
+    // Center gravity (verbatim from forceLayout.ts)
     const cx = width / 2,
       cy = height / 2;
     for (const n of simNodes) {
@@ -144,6 +239,7 @@ function meshLayout(
       n.vy += (cy - n.y) * CENTER_GRAVITY;
     }
 
+    // Damping + position update + bounds (verbatim from forceLayout.ts)
     for (const n of simNodes) {
       n.vx *= DAMPING;
       n.vy *= DAMPING;
@@ -161,6 +257,10 @@ function meshLayout(
   return { positions };
 }
 
+// ---------------------------------------------------------------------------
+// Hierarchical layout (Sugiyama-style)
+// ---------------------------------------------------------------------------
+
 function hierarchicalLayout(
   nodes: Node<SwarmBoardNodeData>[],
   edges: SwarmBoardEdge[],
@@ -170,10 +270,16 @@ function hierarchicalLayout(
   return layeredPositions(layers, viewport);
 }
 
+/**
+ * Assign each node to a layer based on nodeType and edge structure.
+ * Uses BFS from root nodes (no incoming edges), taking the max of
+ * (parent_layer + 1, type_layer) for each node.
+ */
 function assignLayers(
   nodes: Node<SwarmBoardNodeData>[],
   edges: SwarmBoardEdge[],
 ): Map<number, Node<SwarmBoardNodeData>[]> {
+  // Build adjacency and incoming-edge sets
   const children = new Map<string, string[]>();
   const incoming = new Set<string>();
 
@@ -184,11 +290,15 @@ function assignLayers(
     incoming.add(edge.target);
   }
 
+  // Layer assignment: BFS from roots
   const nodeById = new Map(nodes.map((n) => [n.id, n]));
   const layerOf = new Map<string, number>();
 
+  // Start with roots (nodes with no incoming edges)
   const roots = nodes.filter((n) => !incoming.has(n.id));
+  // If no roots found (cycle), use all agentSession nodes as roots
   const startNodes = roots.length > 0 ? roots : nodes.filter((n) => n.data.nodeType === "agentSession");
+  // Final fallback: use all nodes
   const queue = (startNodes.length > 0 ? startNodes : nodes).map((n) => n.id);
 
   for (const id of queue) {
@@ -198,6 +308,7 @@ function assignLayers(
     layerOf.set(id, typeLayer);
   }
 
+  // BFS to propagate layers
   const visited = new Set<string>();
   const bfsQueue = [...queue];
   while (bfsQueue.length > 0) {
@@ -222,12 +333,14 @@ function assignLayers(
     }
   }
 
+  // Assign any unvisited nodes by their type layer
   for (const n of nodes) {
     if (!layerOf.has(n.id)) {
       layerOf.set(n.id, NODE_TYPE_LAYER[n.data.nodeType] ?? 0);
     }
   }
 
+  // Group by layer
   const layers = new Map<number, Node<SwarmBoardNodeData>[]>();
   for (const n of nodes) {
     const layer = layerOf.get(n.id) ?? 0;
@@ -239,6 +352,10 @@ function assignLayers(
   return layers;
 }
 
+/**
+ * Convert layer assignments to (x, y) positions.
+ * Each layer is centered horizontally within the viewport.
+ */
 function layeredPositions(
   layers: Map<number, Node<SwarmBoardNodeData>[]>,
   viewport: { width: number; height: number },
@@ -247,6 +364,7 @@ function layeredPositions(
   const sortedLayers = [...layers.entries()].sort(([a], [b]) => a - b);
   const layerCount = sortedLayers.length;
 
+  // Vertical centering: compute total height and center in viewport
   const totalHeight = (layerCount - 1) * RANK_SEP;
   const startY = Math.max(NODE_RADIUS, (viewport.height - totalHeight) / 2);
 
@@ -267,6 +385,10 @@ function layeredPositions(
   return { positions };
 }
 
+// ---------------------------------------------------------------------------
+// Centralized layout (hub-spoke)
+// ---------------------------------------------------------------------------
+
 function centralizedLayout(
   nodes: Node<SwarmBoardNodeData>[],
   edges: SwarmBoardEdge[],
@@ -276,44 +398,30 @@ function centralizedLayout(
   const cx = width / 2;
   const cy = height / 2;
 
-  const degreeByNodeId = new Map<string, number>();
+  const degreeById = new Map<string, number>();
+  for (const node of nodes) {
+    degreeById.set(node.id, 0);
+  }
   for (const edge of edges) {
-    degreeByNodeId.set(edge.source, (degreeByNodeId.get(edge.source) ?? 0) + 1);
-    degreeByNodeId.set(edge.target, (degreeByNodeId.get(edge.target) ?? 0) + 1);
+    degreeById.set(edge.source, (degreeById.get(edge.source) ?? 0) + 1);
+    degreeById.set(edge.target, (degreeById.get(edge.target) ?? 0) + 1);
   }
 
-  const connectedNodes = nodes.filter(
-    (node) => (degreeByNodeId.get(node.id) ?? 0) > 0,
-  );
+  const hub = [...nodes].sort((a, b) => {
+    const degreeDelta = (degreeById.get(b.id) ?? 0) - (degreeById.get(a.id) ?? 0);
+    if (degreeDelta !== 0) {
+      return degreeDelta;
+    }
 
-  const hub = connectedNodes.reduce<Node<SwarmBoardNodeData> | null>(
-    (best, node) => {
-      if (!best) {
-        return node;
-      }
+    const priorityDelta =
+      (HUB_PRIORITY[a.data.nodeType] ?? Number.MAX_SAFE_INTEGER) -
+      (HUB_PRIORITY[b.data.nodeType] ?? Number.MAX_SAFE_INTEGER);
+    if (priorityDelta !== 0) {
+      return priorityDelta;
+    }
 
-      const degree = degreeByNodeId.get(node.id) ?? 0;
-      const bestDegree = degreeByNodeId.get(best.id) ?? 0;
-      if (degree !== bestDegree) {
-        return degree > bestDegree ? node : best;
-      }
-
-      const nodeIsAgent = node.data.nodeType === "agentSession";
-      const bestIsAgent = best.data.nodeType === "agentSession";
-      if (nodeIsAgent !== bestIsAgent) {
-        return nodeIsAgent ? node : best;
-      }
-
-      const nodeLayer = NODE_TYPE_LAYER[node.data.nodeType] ?? Number.MAX_SAFE_INTEGER;
-      const bestLayer = NODE_TYPE_LAYER[best.data.nodeType] ?? Number.MAX_SAFE_INTEGER;
-      if (nodeLayer !== bestLayer) {
-        return nodeLayer < bestLayer ? node : best;
-      }
-
-      return node.id.localeCompare(best.id) < 0 ? node : best;
-    },
-    null,
-  ) ?? (nodes.find((n) => n.data.nodeType === "agentSession") ?? nodes[0]);
+    return a.id.localeCompare(b.id);
+  })[0];
   const spokes = nodes.filter((n) => n.id !== hub.id);
 
   const positions = new Map<string, { x: number; y: number }>();
@@ -321,6 +429,7 @@ function centralizedLayout(
 
   if (spokes.length === 0) return { positions };
 
+  // Spoke radius: 35% of min dimension
   const radius = Math.min(width, height) * 0.35;
 
   for (let i = 0; i < spokes.length; i++) {
@@ -334,30 +443,39 @@ function centralizedLayout(
   return { positions };
 }
 
+// ---------------------------------------------------------------------------
+// Hybrid layout (Sugiyama backbone + 1D force within ranks)
+// ---------------------------------------------------------------------------
+
 function hybridLayout(
   nodes: Node<SwarmBoardNodeData>[],
   edges: SwarmBoardEdge[],
   viewport: { width: number; height: number },
 ): LayoutResult {
+  // Step 1: Hierarchical layer assignment and initial positions
   const layers = assignLayers(nodes, edges);
   const initial = layeredPositions(layers, viewport);
 
+  // Step 2: Within each rank, run a 1D force pass on x-axis only
   const sortedLayers = [...layers.entries()].sort(([a], [b]) => a - b);
 
   for (const [, layerNodes] of sortedLayers) {
     if (layerNodes.length <= 1) continue;
 
+    // Build 1D simulation state (x positions + velocities)
     const simX: { id: string; x: number; vx: number }[] = layerNodes.map((n) => ({
       id: n.id,
       x: initial.positions.get(n.id)?.x ?? viewport.width / 2,
       vx: 0,
     }));
 
+    // Build intra-rank edge set (only edges between nodes in this rank)
     const rankIds = new Set(layerNodes.map((n) => n.id));
     const rankEdges = edges.filter((e) => rankIds.has(e.source) && rankIds.has(e.target));
     const simMap = new Map(simX.map((s) => [s.id, s]));
 
     for (let iter = 0; iter < HYBRID_INTRA_RANK_ITERATIONS; iter++) {
+      // 1D charge repulsion
       for (let i = 0; i < simX.length; i++) {
         for (let j = i + 1; j < simX.length; j++) {
           const a = simX[i], b = simX[j];
@@ -370,6 +488,7 @@ function hybridLayout(
         }
       }
 
+      // 1D spring attraction
       for (const edge of rankEdges) {
         const a = simMap.get(edge.source), b = simMap.get(edge.target);
         if (!a || !b) continue;
@@ -381,11 +500,13 @@ function hybridLayout(
         b.vx -= fx;
       }
 
+      // Center gravity (1D)
       const centerX = viewport.width / 2;
       for (const s of simX) {
         s.vx += (centerX - s.x) * CENTER_GRAVITY;
       }
 
+      // Damping + update + bounds
       for (const s of simX) {
         s.vx *= DAMPING;
         s.x += s.vx;
@@ -393,6 +514,7 @@ function hybridLayout(
       }
     }
 
+    // Write back x positions (keep y from hierarchical)
     for (const s of simX) {
       const pos = initial.positions.get(s.id);
       if (pos) {

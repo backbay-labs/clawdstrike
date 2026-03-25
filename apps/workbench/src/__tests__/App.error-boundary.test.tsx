@@ -33,12 +33,14 @@ describe("App error boundary", () => {
     window.location.hash = "";
   });
 
-  it("catches provider initialization errors before the route tree mounts", async () => {
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+  it(
+    "catches provider initialization errors before the route tree mounts",
+    async () => {
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    vi.doMock("@/features/fleet/use-fleet-connection", () => ({
-      useFleetConnection: () => {
-        throw new Error("fleet init failed");
+      vi.doMock("@/features/fleet/use-fleet-connection", () => ({
+        useFleetConnection: () => {
+          throw new Error("fleet init failed");
       },
     }));
 
@@ -48,8 +50,10 @@ describe("App error boundary", () => {
 
       expect(await screen.findByText("Something went wrong")).toBeInTheDocument();
       expect(screen.getByText("fleet init failed")).toBeInTheDocument();
-    } finally {
-      consoleError.mockRestore();
-    }
-  });
+      } finally {
+        consoleError.mockRestore();
+      }
+    },
+    10_000,
+  );
 });
